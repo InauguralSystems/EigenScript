@@ -28,7 +28,8 @@ All notable changes to EigenScript are documented here.
   `embed_smoke` (the only consumer shape that can hit it).
 
 - **json/store encode: magnitude checked before the double→int narrowing
-  cast (#816).** `store_json_encode` and the builtin `json_encode` ran
+  cast (#816).** `store_json_encode`, the builtin `json_encode`,
+  `json_build`, and the json-path number formatter ran
   `(int)n` before the range guard — UB for any number beyond int's range
   (`store_put of [db, {"n": 1e300}]` reached it); correct output was a
   hardware accident (x86-64 `cvttsd2si`). Same class as #695. The guard

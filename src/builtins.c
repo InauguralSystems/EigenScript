@@ -1348,7 +1348,10 @@ Value* builtin_json_build(Value *arg) {
         Value *val = arg->data.list.items[i + 1];
         if (val->type == VAL_NUM) {
             double d = val->data.num;
-            if (d == (double)(int)d && d >= -1e9 && d <= 1e9)
+            /* #816: range BEFORE the cast — same class as the other two
+             * encoder sites; this variant shape was caught by the new
+             * float-cast-overflow gate in CI, not by pattern-grep. */
+            if (d >= -1e9 && d <= 1e9 && d == (double)(int)d)
                 strbuf_append_fmt(&out, "%d", (int)d);
             else
                 strbuf_append_fmt(&out, "%.15g", d);
@@ -2226,7 +2229,8 @@ Value* builtin_json_path(Value *arg) {
     if (current->type == VAL_NUM) {
         char buf[64];
         double d = current->data.num;
-        if (d == (double)(int)d && fabs(d) < 1e9)
+        /* #816: range before the cast (see json_build above). */
+        if (fabs(d) < 1e9 && d == (double)(int)d)
             snprintf(buf, sizeof(buf), "%d", (int)d);
         else
             snprintf(buf, sizeof(buf), "%.15g", d);
