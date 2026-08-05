@@ -446,7 +446,7 @@ unary and `of` are right-associative.
   are accepted (`a[2.0]` works), since EigenScript has a single number type;
   but a fractional value is never silently truncated. Because `/` always
   yields a double, a division-derived index must be collapsed explicitly —
-  `a[floor of (lo + hi) / 2]` — which keeps the rounding decision in the
+  `a[floor of ((lo + hi) / 2)]` — which keeps the rounding decision in the
   programmer's hands. A value that is fractional only through float drift
   (`2.9999998`) also raises, surfacing the sloppy arithmetic rather than
   mis-indexing.
@@ -482,8 +482,15 @@ list index is a logic error. Both forms of dict access (`d.k` and `d["k"]`)
 agree. Use `has_key of [d, "k"]` to test membership when `null` is itself a
 valid stored value.
 
-**Status:** Enforced — `tests/test_dict.eigs`, `OP_DOT_GET` /
-`OP_INDEX_GET` in `vm.c`.
+That rationale covers a **dict**. It does not cover `null`, which is not a
+dict — so `null.k` and `null["k"]` **raise**, like field access on any other
+non-dict (#872). This is what keeps a typo'd path from propagating: `d.mising`
+is `null` at the miss, and walking through it (`d.mising.deeper`) fails
+*there* rather than yielding `null` through arbitrary depth and surfacing
+somewhere unrelated, or nowhere.
+
+**Status:** Enforced — `tests/test_dict.eigs` (incl. the null-receiver
+cases), `OP_DOT_GET` / `OP_INDEX_GET` in `vm.c`.
 
 ## Statistics convention (library)
 

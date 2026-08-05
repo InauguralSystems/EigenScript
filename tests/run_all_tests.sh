@@ -4279,6 +4279,54 @@ fi
 rm -rf "$CONT_DIR"
 echo ""
 
+# [99j] Discarded interrogative is a compile error (#869). `what is 42` reads
+# as an assignment, parses as a question about the literal 42, and used to run
+# to completion at rc=0 with no diagnostic — the statement's entire effect was
+# discarded. Only lint caught it. The check keys on the DISCARD, so the REPL
+# and `eval` (whose last statement IS the result) must keep answering.
+echo "[99j] Discarded interrogative (#869)"
+SK_DIR=$(mktemp -d /tmp/eigs_sk869_XXXX)
+printf 'what is 42\nprint of "still alive"\ncount is 1\nwhere is count\nprint of (str of count)\n' > "$SK_DIR/discard.eigs"
+SK_OUT=$(./eigenscript "$SK_DIR/discard.eigs" 2>&1); SK_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$SK_RC" -ne 0 ] && echo "$SK_OUT" | grep -q "'what is ...' is an interrogative" \
+   && echo "$SK_OUT" | grep -q "'where is ...' is an interrogative" \
+   && ! echo "$SK_OUT" | grep -q "still alive"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: a discarded interrogative aborts before the program runs (was: silent, rc=0)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: discarded interrogative should be a compile error (rc=$SK_RC)"
+    echo "$SK_OUT" | head -5
+fi
+
+# The REPL's last statement IS the result, so an interrogative there answers.
+SK_REPL=$(printf 'x is 5\nwhat is x\n' | ./eigenscript 2>&1)
+TOTAL=$((TOTAL + 1))
+if echo "$SK_REPL" | grep -q "=> 5" && ! echo "$SK_REPL" | grep -q "Compile error"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: the REPL still answers 'what is x'"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: the REPL must still answer an interrogative"
+    echo "$SK_REPL" | head -5
+fi
+
+# Same for `eval`, and for an interrogative used inside an expression.
+printf 'z is 3\nprint of (str of (eval of "what is z"))\nprint of (str of (what is z))\n' > "$SK_DIR/live.eigs"
+SK_LIVE=$(./eigenscript "$SK_DIR/live.eigs" 2>&1); SK_LIVE_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$SK_LIVE_RC" -eq 0 ] && [ "$(echo "$SK_LIVE" | head -1)" = "3" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: eval and expression-position interrogatives are untouched"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: eval / expression interrogatives must keep working (rc=$SK_LIVE_RC)"
+    echo "$SK_LIVE" | head -5
+fi
+rm -rf "$SK_DIR"
+echo ""
+
 # [99i] Uniform -Werror=switch gate (#817 follow-up; #835 extended it to
 # compile-bearing shell scripts). Dry-runs every compiling Makefile target
 # plus the audited scripts (tools/freestanding_check.sh) and asserts every

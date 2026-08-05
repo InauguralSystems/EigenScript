@@ -84,4 +84,53 @@ loop while ci < 50:
 assert_eq of [churn2.keep1 + churn2.keep2, 3, "surviving keys resolve after churn"]
 assert_eq of [len of churn2, 2, "only survivors remain"]
 
+# ---- #872: null is not a dict, so field access on it RAISES ----
+# LANGUAGE_CONTRACT.md makes dict-miss-returns-null a deliberate decision: a
+# missing key is a lookup miss, not a logic error. That rationale covers a
+# DICT. It does not cover `null`, which was the one non-dict type on which
+# field access silently succeeded — so a typo'd config path propagated through
+# arbitrary depth and surfaced somewhere else entirely, or nowhere.
+
+nl is null
+c_field is 0
+k_field is ""
+try:
+    bad is nl.foo
+catch e:
+    c_field is 1
+    k_field is e.kind
+assert_eq of [c_field, 1, "N872 null.field raises"]
+assert_eq of [k_field, "type_mismatch", "N872 null.field kind is type_mismatch"]
+
+c_index is 0
+try:
+    bad2 is nl["foo"]
+catch e:
+    c_index is 1
+assert_eq of [c_index, 1, "N872 null[\"key\"] raises"]
+
+# The propagation case from the issue: it stops at the FIRST hop now.
+c_deep is 0
+try:
+    bad3 is nl.a.b.c
+catch e:
+    c_deep is 1
+assert_eq of [c_deep, 1, "N872 a chained access through null raises at the first hop"]
+
+# A missing key on a real dict is still null — that behavior is deliberate
+# and unchanged; only null-as-a-receiver changed.
+d872 is {"k": 1}
+assert_eq of [d872.k, 1, "N872 a present key still reads"]
+assert_true of [d872.missing == null, "N872 a dict miss is still null, on purpose"]
+assert_true of [d872["missing"] == null, "N872 a dict index miss is still null"]
+
+# And a miss that yields null still raises when you walk THROUGH it, which is
+# what makes the typo visible instead of silent.
+c_walk is 0
+try:
+    bad4 is d872.missing.deeper
+catch e:
+    c_walk is 1
+assert_eq of [c_walk, 1, "N872 walking through a dict miss raises"]
+
 test_summary of null
