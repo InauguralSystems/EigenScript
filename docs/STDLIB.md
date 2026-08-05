@@ -491,7 +491,19 @@ widget signatures.
 Theme (`lib/ui_theme.eigs`):
 `theme`, `set_theme`, `theme_dark`/`theme_light`/`theme_high_contrast`.
 Animation (`lib/ui_anim.eigs`): `tween`, `cancel_tweens`. Text metrics
-(`lib/ui_draw.eigs`): `text_width`, `text_height`.
+(`lib/ui_draw.eigs`): `text_width`, `text_height`. Clip stack
+(`lib/ui_draw.eigs`, #823): `ui_clip_push of [x, y, w, h]` /
+`ui_clip_pop` — a nesting clip over `gfx_clip` where each push
+INTERSECTS with the current clip and pop restores the parent clip
+instead of clearing it. `render` wraps every widget's draw in a push of
+its own rect, so **widget drawing is contained**: a `canvas` `on_paint`
+cannot spill over surrounding chrome, and a child wider than its parent
+(the classic overflowing side-panel label) crops at the parent's edge.
+A custom paint routine that needs a tighter clip pushes its own — it
+composes with the widget clip automatically. Widgets whose render
+legitimately leaves the rect (`dropdown`/`combobox` open lists, `menu`,
+`dialog`'s dim overlay, `grid`'s row-label gutter) opt out via their
+registry entry (`"clip": 0`).
 
 **Widget constructors, by family** (each returns a plain dict; see the
 module header for the full argument list):
@@ -664,7 +676,11 @@ Notes on widget state, where the toolkit could otherwise shadow yours:
   sized rect (an invisible full-window click-catcher backing an overlay,
   since containers are hit-transparent where no child sits). The
   constructor measures once either way, so a `null` size never reaches
-  the layout engine.
+  the layout engine. **Overflow is defined (#823)**: text is clipped to
+  the label's rect intersected with its ancestors', so a label wider
+  than its column crops at the column edge instead of drawing over the
+  neighbouring chrome. To size deliberately rather than discover
+  truncation in a screenshot, measure first with `text_width`.
 - **`grid.owns_cells`** (default 1) decides who owns the pattern. Leave it
   1 and the widget flips `cells[r][c]` itself, then calls `on_cell`. Set
   it 0 and mouse/keyboard report `(row, col)` without touching `cells` —

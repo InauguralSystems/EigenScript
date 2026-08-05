@@ -191,7 +191,22 @@ define render(widget, ox, oy) as:
     ay is oy + widget.y
     entry is _widget_registry[widget.type]
     if entry != null and entry.render != null:
-        entry.render of [widget, ax, ay]
+        # Containment (#823): every widget draws under a clip of its own
+        # rect, intersected with its ancestors' via the ui_draw clip
+        # stack — canvas on_paint included, so a paint callback cannot
+        # spill over surrounding chrome, and a child wider than its
+        # parent (the dynamics side-panel label) crops at the parent
+        # edge. A registry entry opts out with "clip": 0 — reserved for
+        # widgets whose render legitimately leaves the rect (dropdown /
+        # combobox open lists, the floating menu, dialog's full-screen
+        # dim). Their escape from ANCESTOR clips still ends at whatever
+        # clip is active when they render.
+        if entry.clip != null and entry.clip == 0:
+            entry.render of [widget, ax, ay]
+        else:
+            ui_clip_push of [ax, ay, widget.w, widget.h]
+            entry.render of [widget, ax, ay]
+            ui_clip_pop of null
     # Disabled overlay
     if widget.enabled != null and widget.enabled == 0:
         _draw_disabled_overlay of [ax, ay, widget.w, widget.h]

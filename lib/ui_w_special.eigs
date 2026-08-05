@@ -90,9 +90,9 @@ define _render_splitter(widget, ax, ay) as:
     bw is widget.bar_width
     # Panel A (left)
     if widget.panel_a != null:
-        gfx_clip of [ax, ay, sp, widget.h]
+        ui_clip_push of [ax, ay, sp, widget.h]
         render of [widget.panel_a, ax, ay]
-        gfx_clip of null
+        ui_clip_pop of null
     # Divider bar
     dbg is _theme.panel_border
     if widget.hover == 1 or widget.dragging == 1:
@@ -100,9 +100,9 @@ define _render_splitter(widget, ax, ay) as:
     gfx_rect of [ax + sp, ay, bw, widget.h, dbg[0], dbg[1], dbg[2]]
     # Panel B (right)
     if widget.panel_b != null:
-        gfx_clip of [ax + sp + bw, ay, widget.w - sp - bw, widget.h]
+        ui_clip_push of [ax + sp + bw, ay, widget.w - sp - bw, widget.h]
         render of [widget.panel_b, ax + sp + bw, ay]
-        gfx_clip of null
+        ui_clip_pop of null
 
 define _render_piano_kb(widget, ax, ay) as:
     kw is widget.key_w

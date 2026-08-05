@@ -2545,6 +2545,40 @@ else
     echo ""
 fi
 
+# [132] UI containment render-decode oracle (#823 — probe-gated: needs a
+# gfx build). The stubbed [63] suite proves containment on RECORDED clip
+# state; this section proves it on real pixels: the actual SDL software
+# renderer (dummy video driver) draws an escaping canvas on_paint and an
+# overflowing label, and gfx_read decodes the back buffer. Includes its
+# own planted fault (registry clip opt-out must turn the probe red).
+UC_PROBE_FILE=$(mktemp /tmp/eigs_uc_probe_XXXXXX.eigs)
+cat > "$UC_PROBE_FILE" <<'PROBE'
+print of (gfx_text_width of ["m", 1])
+PROBE
+UC_PROBE_OUT=$(./eigenscript "$UC_PROBE_FILE" 2>&1)
+rm -f "$UC_PROBE_FILE"
+
+if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
+    echo "[132] UI Containment Render-Decode Oracle (9 checks)"
+    UC_OUTPUT=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_ui_containment_gfx.eigs 2>&1); UC_RC=$?
+    if rc_ok "$UC_RC" "$UC_OUTPUT" && echo "$UC_OUTPUT" | grep -q "All tests passed"; then
+        TOTAL=$((TOTAL + 9))
+        PASS=$((PASS + 9))
+        echo "  PASS: real-pixel containment + planted fault"
+    elif echo "$UC_OUTPUT" | grep -q "^SKIP:"; then
+        echo "  SKIP: $(echo "$UC_OUTPUT" | grep "^SKIP:" | head -1)"
+    else
+        TOTAL=$((TOTAL + 9))
+        FAIL=$((FAIL + 9))
+        echo "  FAIL: ui containment oracle"
+        echo "$UC_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+    fi
+    echo ""
+else
+    echo "[132] UI containment oracle SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
+    echo ""
+fi
+
 # [64] list_truncate builtin
 echo "[64] List Truncate (9 checks)"
 LT_OUTPUT=$(./eigenscript ../tests/test_list_truncate.eigs 2>&1); LT_OUTPUT_RC=$?

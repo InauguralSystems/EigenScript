@@ -674,7 +674,7 @@ define _render_chart(widget, ax, ay) as:
         _chart_line of [v.px, zp[1], v.px + v.pw, zp[1], r, acol]
     # Series + markers: software-clipped per primitive, and gfx_clip'd as
     # well so the real renderer enforces it independently.
-    gfx_clip of [v.px, v.py, v.pw, v.ph]
+    ui_clip_push of [v.px, v.py, v.pw, v.ph]
     for si in range of (len of widget.series):
         local s is widget.series[si]
         local c is _chart_series_color of [widget, si]
@@ -745,7 +745,7 @@ define _render_chart(widget, ax, ay) as:
             _chart_dot of [lgx + 4, v.py + 6, 3, r, c]
             _chart_text of [lgx + 12, v.py + 2, lab, txt, 1, r]
             lgx is lgx + (text_width of [lab, 1]) + 20
-    gfx_clip of null
+    ui_clip_pop of null
     # Axis captions
     if (len of widget.x_label) > 0:
         local xw is text_width of [widget.x_label, 1]
@@ -939,7 +939,7 @@ define _render_waveform_view(widget, ax, ay) as:
 define _render_code_view(widget, ax, ay) as:
     # Background
     gfx_rect of [ax, ay, widget.w, widget.h, 20, 20, 30]
-    gfx_clip of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
+    ui_clip_push of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
     # Split text into lines by scanning for newline; line_offs keeps each
     # line's absolute start offset so span offsets (#838) map to columns.
     lines is []
@@ -1012,7 +1012,7 @@ define _render_code_view(widget, ax, ay) as:
                             local sx is tx + (text_width of [pre, 1])
                             local sxw is text_width of [pre, 1]
                             _draw_text_clipped of [sx, ly, tmaxw - sxw, seg, fgc, 1]
-    gfx_clip of null
+    ui_clip_pop of null
     # Border
     gfx_rrect of [ax, ay, widget.w, 1, 0, 35, 35, 45]
     gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, 35, 35, 45]
@@ -1548,7 +1548,7 @@ define _render_timeline(widget, ax, ay) as:
         _chart_text of [(floor of tx) + 2, v.ry + 2, (_chart_fmt of [ticks[ti], tstep]), dim, 1, [v.rx, v.ry, v.rw, v.rh]]
     # Items: gfx_clip for the real renderer, software intersect per
     # primitive for the containment property itself.
-    gfx_clip of [v.px, v.py, v.pw, v.ph]
+    ui_clip_push of [v.px, v.py, v.pw, v.ph]
     local bx1 is v.px + v.pw
     for si in range of (len of widget.spans):
         local s is widget.spans[si]
@@ -1603,7 +1603,7 @@ define _render_timeline(widget, ax, ay) as:
                     if imx + imw > bx1:
                         imw is bx1 - imx
                     gfx_rect of [imx, imy, imw, imh, mc[0], mc[1], mc[2]]
-    gfx_clip of null
+    ui_clip_pop of null
     # Cursor/scrubber: a rule across the body plus a handle in the ruler.
     if widget.cursor != null:
         local cx is v.px + (widget.cursor - v.t0) * xscale

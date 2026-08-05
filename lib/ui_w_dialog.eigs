@@ -316,6 +316,7 @@ define _clear_hover_dialog(widget) as:
 # ---- Registration ----
 
 _register_widget of ["dialog", {
+    "clip": 0,
     "render": _render_dialog,
     "hit_test": _hit_test_dialog,
     "on_mousedown": _mousedown_dialog,

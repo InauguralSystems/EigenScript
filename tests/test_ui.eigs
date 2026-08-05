@@ -2562,6 +2562,135 @@ dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 352, "button": 1}]
 assert_eq of [dcel.editing, 1, "#847 editable_label double-click still starts editing"]
 
 # ============================================================
+# #823 — widget drawing is contained (clip stack + render() clip)
+# ============================================================
+# A stubbed gfx layer cannot crop, so containment is proved the same way
+# as the chart's (#819): on the RECORDED clip state. The claim here is
+# stronger than "a clip was set" — it is that the clip ACTIVE while a
+# widget's primitives record equals the widget rect intersected with
+# every ancestor's, and that popping restores the parent clip instead of
+# clearing it.
+print of "--- #823 containment: clip stack + render() widget clip ---"
+
+# Active clip when the rect marked by this rgb was recorded.
+# Returns the clip rect, null (no clip active), or "no-marker".
+define _clip823_at(mr, mg, mb) as:
+    local act is null
+    for i in range of (len of _gfx_log):
+        local e is _gfx_log[i]
+        if e[0] == "clip":
+            act is e[1]
+        elif e[0] == "rect":
+            local a is e[1]
+            if a[4] == mr and a[5] == mg and a[6] == mb:
+                return act
+    return "no-marker"
+
+define _rect823_eq(r, x, y, w, h) as:
+    if r == null:
+        return 0
+    if r[0] == x and r[1] == y and r[2] == w and r[3] == h:
+        return 1
+    return 0
+
+# ---- Clip stack unit: intersection + parent restore ----
+_gfx_log is []
+_gfx_rec is 1
+ui_clip_push of [10, 10, 100, 100]
+ui_clip_push of [50, 50, 200, 100]
+ui_clip_pop of null
+ui_clip_pop of null
+_gfx_rec is 0
+assert_true of [(_rect823_eq of [_gfx_log[0][1], 10, 10, 100, 100]) == 1, "#823 first push sets its own rect"]
+assert_true of [(_rect823_eq of [_gfx_log[1][1], 50, 50, 60, 60]) == 1, "#823 nested push INTERSECTS with the parent clip"]
+assert_true of [(_rect823_eq of [_gfx_log[2][1], 10, 10, 100, 100]) == 1, "#823 pop RESTORES the parent clip, not null"]
+assert_eq of [_gfx_log[3][1], null, "#823 final pop clears the clip"]
+
+# Disjoint rects intersect to a degenerate (empty) clip, never negative.
+_gfx_log is []
+_gfx_rec is 1
+ui_clip_push of [0, 0, 50, 50]
+ui_clip_push of [200, 200, 50, 50]
+ui_clip_pop of null
+ui_clip_pop of null
+_gfx_rec is 0
+assert_true of [_gfx_log[1][1][2] == 0 and _gfx_log[1][1][3] == 0, "#823 disjoint nested clip degenerates to zero size"]
+
+# ---- canvas on_paint runs under a clip of the widget rect ----
+define _p823_paint(w, ax, ay) as:
+    gfx_rect of [ax - 40, ay - 40, 400, 400, 7, 8, 9]
+
+cc823 is canvas of ["cc823", 20, 30, 100, 80, _p823_paint, null]
+_gfx_log is []
+_gfx_rec is 1
+render of [cc823, 0, 0]
+_gfx_rec is 0
+assert_true of [(_rect823_eq of [(_clip823_at of [7, 8, 9]), 20, 30, 100, 80]) == 1, "#823 canvas on_paint records under a clip of exactly the canvas rect"]
+clip823_last is "unset"
+for c8i in range of (len of _gfx_log):
+    if _gfx_log[c8i][0] == "clip":
+        clip823_last is _gfx_log[c8i][1]
+assert_eq of [clip823_last, null, "#823 render() restores a clear clip after the widget"]
+
+# ---- nesting: a child crops at its parent's edge ----
+pn823 is panel of ["pn823", 10, 10, 100, 100]
+cc823b is canvas of ["cc823b", 50, 50, 100, 80, _p823_paint, null]
+add_child of [pn823, cc823b]
+_gfx_log is []
+_gfx_rec is 1
+render of [pn823, 0, 0]
+_gfx_rec is 0
+assert_true of [(_rect823_eq of [(_clip823_at of [7, 8, 9]), 60, 60, 50, 50]) == 1, "#823 a child's clip is its rect INTERSECTED with the parent panel"]
+
+# ---- label overflow is DEFINED: cropped at the container edge ----
+# The dynamics side-panel defect: an auto-sized label wider than its
+# column drew past the panel. Under render() the label's clip intersects
+# the panel rect, so the text crops at the panel edge.
+lp823 is panel of ["lp823", 10, 10, 80, 40]
+lb823 is label of ["lb823", 2, 2, "a caption far wider than an 80px column"]
+add_child of [lp823, lb823]
+_gfx_log is []
+_gfx_rec is 1
+render of [lp823, 0, 0]
+_gfx_rec is 0
+lb823_clip is "unset"
+for l8i in range of (len of _gfx_log):
+    if _gfx_log[l8i][0] == "clip":
+        lb823_clip is _gfx_log[l8i][1]
+    elif _gfx_log[l8i][0] == "text":
+        if _gfx_log[l8i][1][2] == "a caption far wider than an 80px column":
+            break
+assert_true of [lb823.w > 80, "#823 the label really is wider than its column"]
+assert_true of [lb823_clip != "unset" and lb823_clip != null, "#823 label text records under an active clip"]
+assert_eq of [lb823_clip[0] + lb823_clip[2], 90, "#823 the label clip ends at the panel's right edge"]
+
+# ---- planted fault: the probe DOES see a missing clip ----
+# Re-register canvas with the clip opt-out; the same render must record
+# the paint marker with NO active clip. If this assertion could not go
+# red, every containment claim above would be vacuous.
+_widget_registry["canvas"].clip is 0
+_gfx_log is []
+_gfx_rec is 1
+render of [cc823, 0, 0]
+_gfx_rec is 0
+assert_eq of [_clip823_at of [7, 8, 9], null, "#823 with the clip disabled the probe reports NO active clip (planted fault)"]
+_widget_registry["canvas"].clip is null
+_gfx_log is []
+_gfx_rec is 1
+render of [cc823, 0, 0]
+_gfx_rec is 0
+assert_true of [(_rect823_eq of [(_clip823_at of [7, 8, 9]), 20, 30, 100, 80]) == 1, "#823 restoring the registration restores containment"]
+
+# ---- opt-outs stay opt-outs: dropdown's open list is unclipped ----
+dd823 is dropdown of ["dd823", 5, 5, 120, ["alpha", "beta"], 0, null]
+dd823.open is 1
+_gfx_log is []
+_gfx_rec is 1
+render of [dd823, 0, 0]
+_gfx_rec is 0
+assert_eq of [_count_kind of "clip", 0, "#823 dropdown renders its open list without a widget clip (registry opt-out)"]
+
+# ============================================================
 # Summary
 # ============================================================
 

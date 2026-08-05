@@ -609,6 +609,7 @@ define _close_menus(widget) as:
 # ---- Registration ----
 
 _register_widget of ["dropdown", {
+    "clip": 0,
     "render": _render_dropdown,
     "hit_test": _hit_test_dropdown,
     "on_mousedown": _mousedown_dropdown,
@@ -621,6 +622,7 @@ _register_widget of ["dropdown", {
 }]
 
 _register_widget of ["menu", {
+    "clip": 0,
     "render": _render_menu,
     "hit_test": _hit_test_menu,
     "on_mousedown": _mousedown_menu,

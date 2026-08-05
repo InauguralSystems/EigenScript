@@ -100,6 +100,7 @@ static Uint32 (*p_SDL_GetMouseState)(int*, int*);
 static Uint32 (*p_SDL_GetTicks)(void);
 static void (*p_SDL_Delay)(Uint32);
 static int (*p_SDL_RenderSetClipRect)(SDL_Renderer*, const SDL_Rect*);
+static int (*p_SDL_RenderReadPixels)(SDL_Renderer*, const SDL_Rect*, Uint32, void*, int);
 
 /* Texture function pointers (for framebuffer blit) */
 typedef void SDL_Texture;
@@ -161,6 +162,7 @@ static int load_sdl2(void) {
     p_SDL_GetModState = dlsym(g_sdl_lib, "SDL_GetModState");
     p_SDL_GetMouseState = dlsym(g_sdl_lib, "SDL_GetMouseState");
     p_SDL_RenderSetClipRect = dlsym(g_sdl_lib, "SDL_RenderSetClipRect");
+    p_SDL_RenderReadPixels = dlsym(g_sdl_lib, "SDL_RenderReadPixels");
     p_SDL_CreateTexture = dlsym(g_sdl_lib, "SDL_CreateTexture");
     p_SDL_DestroyTexture = dlsym(g_sdl_lib, "SDL_DestroyTexture");
     p_SDL_UpdateTexture = dlsym(g_sdl_lib, "SDL_UpdateTexture");
@@ -572,6 +574,36 @@ Value* builtin_gfx_clip(Value *arg) {
     clip.h = (int)arg->data.list.items[3]->data.num;
     p_SDL_RenderSetClipRect(g_renderer, &clip);
     return make_null();
+}
+
+/* gfx_read of [x, y] — read back one rendered pixel as [r, g, b].
+ * Reads the CURRENT back buffer: call after drawing, before gfx_present
+ * (post-present back-buffer contents are undefined under SDL_Renderer).
+ * This is the render-decode oracle primitive (#823): a containment claim
+ * is proved on real pixels, not on recorded draw calls — the #599 lesson
+ * that a stubbed-gfx suite cannot see a C-side defect. Renderer pixels
+ * are a nondeterministic input (font rasterisation, driver, backend), so
+ * this takes the TAKE/RECORD tape pair like audio_stream_queued.
+ * Returns null with no window, no SDL symbol, or a failed read. */
+Value* builtin_gfx_read(Value *arg) {
+    TRACE_NONDET_TAKE("gfx_read");
+    if (!g_renderer || !p_SDL_RenderReadPixels || !arg ||
+        arg->type != VAL_LIST || arg->data.list.count < 2)
+        TRACE_NONDET_RECORD("gfx_read", make_null());
+    SDL_Rect r;
+    r.x = (int)arg->data.list.items[0]->data.num;
+    r.y = (int)arg->data.list.items[1]->data.num;
+    r.w = 1;
+    r.h = 1;
+    Uint32 px = 0;
+    if (p_SDL_RenderReadPixels(g_renderer, &r, MY_SDL_PIXELFORMAT_ARGB8888,
+                               &px, (int)sizeof(Uint32)) != 0)
+        TRACE_NONDET_RECORD("gfx_read", make_null());
+    Value *out = make_list(3);
+    list_append_owned(out, make_num((double)((px >> 16) & 0xFF)));
+    list_append_owned(out, make_num((double)((px >> 8) & 0xFF)));
+    list_append_owned(out, make_num((double)(px & 0xFF)));
+    TRACE_NONDET_RECORD("gfx_read", out);
 }
 
 /* gfx_present of null — flip buffer to screen */
