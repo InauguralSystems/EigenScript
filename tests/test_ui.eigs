@@ -2493,6 +2493,75 @@ set_theme of saved_theme
 _gfx_log is []
 
 # ============================================================
+# #847: rapid second click falls through on widgets without a
+# declared double-click meaning
+# ============================================================
+# The gfx_ticks stub returns a constant, so every repeat mousedown on
+# the same id lands inside the 400ms double-click window. Pre-#847
+# that swallowed the second click on ANY widget; now only widgets
+# that declared a double-click meaning (editable_label, or an
+# on_dblclick handler) consume it — everything else reaches the
+# registry on_mousedown. NOTE: no last_click_id resets here — the
+# rapid-repeat window IS the scenario under test.
+
+print of "--- #847 double-click fall-through ---"
+
+dcroot is panel of ["dcroot", 0, 0, 400, 400]
+
+# A checkbox toggles in its registry on_mousedown: a rapid second
+# click must toggle it back, not vanish.
+dccb is checkbox of ["dccb", 10, 10, "cb", 0, null]
+add_child of [dcroot, dccb]
+
+# Piano: a rapid double-tap on the same key (normal playing speed)
+# must retrigger the note.
+dcnotes is []
+define dc_on_note(w, n, on) as:
+    append of [dcnotes, [n, on]]
+dcpk is piano_keyboard of ["dcpk", 10, 100, 2, dc_on_note]
+add_child of [dcroot, dcpk]
+
+# A widget WITH on_dblclick keeps the old semantics: the second click
+# is consumed by the handler and the registry mousedown is skipped.
+dcdbl is [0]
+define dc_on_dbl(w) as:
+    dcdbl[0] is dcdbl[0] + 1
+dccb2 is checkbox of ["dccb2", 10, 300, "cb2", 0, null]
+dccb2.on_dblclick is dc_on_dbl
+add_child of [dcroot, dccb2]
+
+_layout of [dcroot, 0, 0]
+_ui.last_click_id is ""
+
+dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 15, "button": 1}]
+dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 15, "button": 1}]
+assert_eq of [dccb.value, 1, "#847 first click toggles the checkbox on"]
+dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 15, "button": 1}]
+dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 15, "button": 1}]
+assert_eq of [dccb.value, 0, "#847 rapid second click toggles it back (was swallowed)"]
+
+dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 110, "button": 1}]
+dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 110, "button": 1}]
+dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 110, "button": 1}]
+dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 110, "button": 1}]
+assert_eq of [len of dcnotes, 4, "#847 rapid double-tap retriggers the note (2 on + 2 off)"]
+
+dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 305, "button": 1}]
+assert_eq of [dccb2.value, 1, "#847 declared-dblclick widget: first click still toggles"]
+dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 305, "button": 1}]
+assert_eq of [dcdbl[0], 1, "#847 declared-dblclick widget: second click fires on_dblclick"]
+assert_eq of [dccb2.value, 1, "#847 declared-dblclick widget: second click consumed, no re-toggle"]
+
+# editable_label's built-in double-click meaning is unchanged.
+dcel is editable_label of ["dcel", 10, 350, "txt", null]
+add_child of [dcroot, dcel]
+_layout of [dcroot, 0, 0]
+_ui.last_click_id is ""
+dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 352, "button": 1}]
+dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 352, "button": 1}]
+assert_eq of [dcel.editing, 1, "#847 editable_label double-click still starts editing"]
+
+# ============================================================
 # Summary
 # ============================================================
 
