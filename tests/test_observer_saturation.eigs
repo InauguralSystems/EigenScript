@@ -47,16 +47,16 @@ define run_converge() as:
         k is k + 1
     return [report of x, converged of x]
 
-# One decade below the ceiling, held constant: unsaturated, so the rest bands
-# stay available. This is what keeps the gate tight to the boundary rather
-# than to "large".
+# One decade below the ceiling, held constant: unsaturated, so the SATURATION
+# gate must not fire. This pins the gate tight to the boundary rather than to
+# "large" — and nothing more than that. See the note at case 4.
 define run_below_ceiling() as:
     local b is 1e307
     local k is 0
     loop while k < 12:
         b is 1e307
         k is k + 1
-    return [report of b, converged of b]
+    return [report of b, converged of b, diverging of b]
 
 # A literal at the ceiling that never overflowed. The runtime cannot tell this
 # apart from a saturated value (that indistinguishability is #865), so it reads
@@ -107,13 +107,25 @@ if not (c[0] == "converged"):
 if not (c[1] == 1):
     fail of "converged predicate lost a genuine convergence"
 
-# --- Case 4: below the ceiling the rest bands remain available.
+# --- Case 4: the gate is tight to the ceiling and does not fire below it.
+#
+# This case asserts ONE thing: the saturation gate did not claim 1e307. It
+# deliberately does NOT assert that `converged` is the right verdict there.
+#
+# An earlier version of this file did assert exactly that ("1e307 constant
+# should still converge"), which reads as an endorsement of the whole region
+# below the ceiling. It is not defensible. `h_low = 0.1` against
+# H(x) = H_b(1/(1+|x|)) puts every |x| > ~76 under the entropy floor, so
+# `converged` fires across [77, 1e307] — a geometric runaway certifies at
+# x ~= 2.9e5 — and the entropy channel cannot distinguish this constant from
+# a runaway that flattened here. That region is #861, still open; the
+# saturation gate closed one point at the top of it. Pinning the verdict here
+# would pin the defect. See tests/test_convergence_oracle.eigs for the scored
+# measurement of what the predicate actually gets right.
 b is run_below_ceiling of null
-print of ("below-ceiling: report=" + b[0])
-if not (b[0] == "converged"):
-    fail of ("1e307 constant should still converge, got " + b[0])
-if not (b[1] == 1):
-    fail of "converged predicate rejected an unsaturated constant"
+print of ("below-ceiling: report=" + b[0] + " (verdict not asserted — #861)")
+if not (b[2] == 0):
+    fail of "the saturation gate fired below the ceiling — it must be tight to 1e308"
 
 # --- Case 5: a literal at the ceiling reads diverging, by design.
 l is run_literal_ceiling of null
