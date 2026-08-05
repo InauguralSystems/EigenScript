@@ -1199,6 +1199,11 @@ char* value_to_string(Value *v);
 void eigs_num_text(char *buf, size_t nbuf, double n);
 void observer_ensure_fresh(Value *v);
 void eigs_json_escape_string(strbuf *out, const char *s);
+/* #880: decode a JSON string body (s[*pos] = first byte after the opening
+ * quote) into `out`, leaving *pos past the closing quote. One decoder for
+ * json_decode, the LSP, and the DAP — they used to disagree on which escapes
+ * exist. */
+void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out);
 
 /* ---- Registration ---- */
 

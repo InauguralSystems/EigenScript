@@ -255,6 +255,36 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **EigenScript could not read a CRLF source file at all, and that is
+  why the LSP was useless on Windows documents (#880).** The issue named
+  the JSON-RPC unescaper, which was real: `src/eigenlsp.c` and
+  `src/eigsdap.c` each hand-rolled the same five-escape subset, dropped
+  `\r`, `\b`, `\f` and `\uXXXX`, and re-emitted the backslash — so a
+  Windows client's text arrived with a literal backslash-r in it. But
+  fixing that only got the CR as far as the lexer, which rejected it:
+  `eigenscript win.eigs` died with `unexpected character` on **every
+  line**. Not a tooling bug — the language, and a straight blocker on
+  the Windows Tier-1 roadmap. The lexer now treats the CR of a CRLF pair
+  as whitespace outside string literals (a CR *inside* a literal is data
+  and is preserved; a lone CR is deliberately not a line break).
+  Rather than write a sixth escape decoder, the runtime's own JSON
+  string decoder — the one carrying #724's surrogate-pair handling — was
+  extracted as `eigs_json_decode_string_body`, and all three callers now
+  share it. Which made a third bug visible: **`json_decode` was missing
+  `\b` and `\f` too.** Its default arm dropped the backslash, so
+  `json_decode of "a\bc"` silently returned `abc` — the same subset gap,
+  in the language's primary parser rather than in the tooling. A CRLF
+  document now yields diagnostics byte-identical to the LF one.
+
+- **The LSP advertises `positionEncoding: utf-8` (#881).** Positions are
+  byte offsets, which is deliberate — `LANGUAGE_CONTRACT.md` makes the
+  byte model a language-level promise (`len of "café"` is 5) — so the
+  server was internally consistent. The defect was not *saying* so: LSP
+  3.17 reads a server that negotiates no `positionEncoding` as `utf-16`,
+  so clients decoded byte offsets as UTF-16 code units and every range
+  after a non-ASCII character landed in the wrong place, drifting
+  further along the line with each one.
+
 - **`unobserved:` leaked its depth on every exit edge but one, silently
   killing the observer for the rest of the process (#871, found while
   fixing it).** `g_unobserved_depth` is a runtime counter that only

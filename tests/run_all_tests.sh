@@ -4325,6 +4325,48 @@ else
     echo "$SK_LIVE" | head -5
 fi
 rm -rf "$SK_DIR"
+# [99k] CRLF source files (#880). EigenScript could not read one AT ALL —
+# `eigenscript win.eigs` died with "unexpected character" on every line — which
+# is also why the language server was useless on any document a Windows editor
+# saved: fixing the JSON-RPC unescaper only got the CR as far as the lexer,
+# which then rejected it.
+echo "[99k] CRLF source files (#880)"
+CR_DIR=$(mktemp -d /tmp/eigs_crlf880_XXXX)
+printf 'a is 1\r\n\r\nif a > 0:\r\n    print of "crlf works"\r\n' > "$CR_DIR/win.eigs"
+CR_OUT=$(./eigenscript "$CR_DIR/win.eigs" 2>&1); CR_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$CR_RC" -eq 0 ] && [ "$CR_OUT" = "crlf works" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: a CRLF source file runs (was: 'unexpected character' on every line)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: CRLF source file should run (rc=$CR_RC out=$CR_OUT)"
+fi
+
+# A CR inside a string LITERAL is data, not a line ending, and must survive.
+printf 'lit is "a\rb"\r\nprint of (str of (len of lit))\r\n' > "$CR_DIR/lit.eigs"
+CR_LIT=$(./eigenscript "$CR_DIR/lit.eigs" 2>&1); CR_LIT_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$CR_LIT_RC" -eq 0 ] && [ "$CR_LIT" = "3" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: a CR inside a string literal is preserved as data"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: CR inside a string literal must be preserved (rc=$CR_LIT_RC out=$CR_LIT)"
+fi
+
+# LF files must be byte-for-byte unaffected.
+printf 'a is 1\n\nif a > 0:\n    print of "lf works"\n' > "$CR_DIR/lf.eigs"
+CR_LF=$(./eigenscript "$CR_DIR/lf.eigs" 2>&1); CR_LF_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$CR_LF_RC" -eq 0 ] && [ "$CR_LF" = "lf works" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: LF sources are unaffected"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: LF sources must be unaffected (rc=$CR_LF_RC out=$CR_LF)"
+fi
+rm -rf "$CR_DIR"
 echo ""
 
 # [99i] Uniform -Werror=switch gate (#817 follow-up; #835 extended it to

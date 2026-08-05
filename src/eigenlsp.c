@@ -124,21 +124,14 @@ static char* json_get_string(const char *json, const char *key) {
     p++;
     strbuf sb;
     strbuf_init(&sb);
-    while (*p && *p != '"') {
-        if (*p == '\\' && *(p+1)) {
-            p++;
-            switch (*p) {
-                case 'n': strbuf_append_char(&sb, '\n'); break;
-                case 't': strbuf_append_char(&sb, '\t'); break;
-                case '\\': strbuf_append_char(&sb, '\\'); break;
-                case '"': strbuf_append_char(&sb, '"'); break;
-                case '/': strbuf_append_char(&sb, '/'); break;
-                default: strbuf_append_char(&sb, '\\'); strbuf_append_char(&sb, *p); break;
-            }
-        } else {
-            strbuf_append_char(&sb, *p);
-        }
-        p++;
+    /* #880: one shared decoder with json_decode (eigenscript.h). The local
+     * five-escape switch that used to live here dropped \r, \b, \f and
+     * \uXXXX and re-emitted the backslash verbatim — so a CRLF document
+     * arrived with literal backslash-r in its text and every Windows client
+     * got a bogus syntax error and zero real diagnostics. */
+    {
+        int pos = 0;
+        eigs_json_decode_string_body(p, &pos, &sb);
     }
     return strbuf_finish(&sb);
 }
@@ -687,6 +680,15 @@ static void handle_initialize(int id) {
     lsp_response(id,
         "{"
             "\"capabilities\":{"
+                /* #881: positions here are BYTE offsets, which is deliberate —
+                 * LANGUAGE_CONTRACT.md makes the byte model a language-level
+                 * promise (`len of "café"` is 5), so the server is internally
+                 * consistent. The defect was not saying so: LSP 3.17 treats a
+                 * server that negotiates no positionEncoding as utf-16, so a
+                 * client decoded byte offsets as UTF-16 code units and every
+                 * range after a non-ASCII character landed in the wrong place,
+                 * drifting further along the line with each one. */
+                "\"positionEncoding\":\"utf-8\","
                 "\"textDocumentSync\":1,"
                 "\"completionProvider\":{\"triggerCharacters\":[\".\",\" \"]},"
                 "\"hoverProvider\":true,"
