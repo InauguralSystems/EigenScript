@@ -29,13 +29,17 @@
 #   `-Werror=switch-enum` is a different warning and must NOT satisfy
 #   this gate.
 #
-# Blind spots, stated honestly: compiles hidden INSIDE shell scripts are
-# invisible to `make -n` and out of scope here — and the exclusion is not
-# hypothetical: tools/freestanding_check.sh compiles its runtime set
-# WITHOUT the flag (a known gap, tracked separately, deliberately not
-# absorbed into this gate's scope); build.sh's three compile lines are
-# armed (#786). This gate asserts the invariant over what `make` emits —
-# no more, no less.
+# Compiles hidden INSIDE shell scripts are invisible to `make -n`, so the
+# scripts whose compile lines the classifier can recognize are audited
+# DIRECTLY (#835): comment lines stripped, then the script text goes
+# through the same join/split/classify pipeline as a dry-run stream, with
+# the same per-script zero-line hard failure. Today that list is
+# tools/freestanding_check.sh — its gcc lines name "src/$f.c" literally.
+# Blind spot, stated honestly: build.sh stays out of scope — its three
+# compile lines are armed (#786) but name their sources via
+# $SOURCES/$LSP_SOURCES variables, which the recognizer cannot tell from
+# a pure link line, so auditing it would assert nothing (and the lsp/
+# minimal lines would trip the zero-line assertion spuriously).
 #
 # A gate that silently matches nothing is worse than no gate — it passes
 # forever. Two assertions prevent that. PER TARGET: a dry run yielding
@@ -73,6 +77,15 @@ MIN_LINES=100
 TARGETS="build full http zlib net gfx asan asan-http tsan valgrind poison \
          lsp dap jit-smoke lib embed-smoke embed-smoke-gfx pgo coverage \
          fuzz fuzz-libfuzzer freestanding-libc-diff"
+
+# Compile-bearing shell scripts audited directly (#835) — see header.
+SCRIPT_AUDITS="tools/freestanding_check.sh"
+
+# Comment lines must not be examined: a script comment QUOTING a bare
+# compile line is not a compile.
+strip_comments() {
+    grep -vE '^[[:space:]]*#'
+}
 
 EXAMINED=0          # compile invocations examined, all targets
 VIOLATIONS=0        # examined invocations missing the flag
@@ -266,6 +279,28 @@ EOF
         st_fail=1
     fi
 
+    # Script-audit shapes (#835): a compile line inside a shell script is
+    # classified exactly like a dry-run line once comments are stripped.
+    expect_caught "script compile line, flag dropped" 'src/$f.c' <<'EOF'
+gcc -O2 -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE -Werror=implicit-function-declaration -c "src/$f.c" -o "$BUILD/$f.o"
+EOF
+    expect_clean "script compile line, flag present" <<'EOF'
+gcc -O2 -ffreestanding -Werror=implicit-function-declaration -Werror=switch -c "src/$f.c" -o "$BUILD/$f.o"
+EOF
+
+    # A comment quoting a bare compile must not be examined at all.
+    EXAMINED=0; VIOLATIONS=0; TARGET_EXAMINED=0
+    strip_comments <<'EOF' | join_continuations > "$st_joined"
+# gcc -O2 -c src/vm.c -o vm.o   (quoted in a comment; not a compile)
+    # indented comment: gcc -c src/jit.c
+echo hello
+EOF
+    audit_stream "selftest:script-comment" < "$st_joined"
+    if [ "$EXAMINED" -ne 0 ] || [ "$VIOLATIONS" -ne 0 ]; then
+        echo "SELFTEST FAILED: commented compile lines were examined ($EXAMINED/$VIOLATIONS)"
+        st_fail=1
+    fi
+
     # `-Werror=switch-enum` is a DIFFERENT warning: it must not satisfy the
     # check, and the real flag alongside it must.
     expect_caught "switch-enum is not switch" "src/vm.c" <<'EOF'
@@ -338,6 +373,17 @@ for t in $TARGETS; do
     audit_target "$t" <<< "$(printf '%s\n' "$dry" | join_continuations)" || empty_failed=1
 done
 
+# Compile-bearing scripts (#835): same classifier, same zero-line
+# assertion, comment lines stripped first.
+for s in $SCRIPT_AUDITS; do
+    if [ ! -f "$s" ]; then
+        echo "GATE ERROR: script '$s' not found — cannot audit it"
+        make_failed=1
+        continue
+    fi
+    audit_target "script:$s" <<< "$(strip_comments < "$s" | join_continuations)" || empty_failed=1
+done
+
 if [ "$make_failed" -ne 0 ] || [ "$empty_failed" -ne 0 ]; then
     exit 1
 fi
@@ -346,5 +392,5 @@ if [ "$VIOLATIONS" -gt 0 ]; then
     echo "werror-switch gate FAILED: $VIOLATIONS of $EXAMINED compile invocations lack $FLAG"
     exit 1
 fi
-echo "werror-switch gate OK: all $EXAMINED compile invocations across $(echo $TARGETS | wc -w | tr -d ' ') dry-run targets carry $FLAG"
+echo "werror-switch gate OK: all $EXAMINED compile invocations across $(echo $TARGETS | wc -w | tr -d ' ') dry-run targets + $(echo $SCRIPT_AUDITS | wc -w | tr -d ' ') script(s) carry $FLAG"
 exit 0

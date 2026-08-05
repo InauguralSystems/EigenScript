@@ -25,6 +25,20 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The freestanding profile now enforces switch exhaustiveness
+  (#835).** `tools/freestanding_check.sh` was a third compile mechanism
+  alongside the Makefile and `build.sh`, and neither of its hand-written
+  `gcc` invocations carried `-Werror=switch` — so an unhandled
+  `ASTType`/opcode case that is a hard error on every other build path
+  only warned there. Both invocations are armed (verified with a planted
+  enum case: `make freestanding-check` now fails on it), and the [99i]
+  werror-switch gate learned to audit compile-bearing shell scripts —
+  comment-stripped, through the same classifier as the Makefile dry
+  runs, with the same zero-line hard failure and new selftest shapes —
+  so this can't regress silently. `build.sh` stays outside the gate,
+  stated honestly in the gate header: its compile lines name sources via
+  `$SOURCES` variables the recognizer cannot tell from a link line.
+
 - **Widget drawing is contained (#823).** `render` now wraps every
   widget's draw in a clip of its own rect intersected with its
   ancestors' — `canvas` `on_paint` included, so a paint callback can no
