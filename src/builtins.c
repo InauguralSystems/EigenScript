@@ -1072,11 +1072,16 @@ static int eigs_json_read_hex4(const char *s, int *pos, unsigned int *out) {
     return 1;
 }
 
-static Value* eigs_json_parse_string(const char *s, int *pos) {
-    if (s[*pos] != '"') { g_json_parse_err = 1; return NULL; }   /* #495 */
-    (*pos)++;
-    strbuf buf;
-    strbuf_init(&buf);
+/* #880: THE JSON string-body decoder. `s[*pos]` is the first byte after the
+ * opening quote; decodes into `out` and leaves *pos past the closing quote.
+ *
+ * Extracted so the LSP and DAP JSON-RPC readers share it instead of each
+ * hand-rolling a five-escape subset. Both of those dropped \r, \b, \f and
+ * \uXXXX and re-emitted the backslash verbatim, which made every CRLF
+ * document unusable — JSON requires a CR to be escaped, so a Windows client's
+ * text arrived with literal backslash-r in it and produced a bogus syntax
+ * error and zero real diagnostics. */
+void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
     while (s[*pos] && s[*pos] != '"') {
         if (s[*pos] == '\\') {
             (*pos)++;
@@ -1089,12 +1094,17 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
              * fix one layer down. */
             if (s[*pos] == '\0') break;
             switch (s[*pos]) {
-                case '"': strbuf_append_char(&buf, '"'); break;
-                case '\\': strbuf_append_char(&buf, '\\'); break;
-                case 'n': strbuf_append_char(&buf, '\n'); break;
-                case 'r': strbuf_append_char(&buf, '\r'); break;
-                case 't': strbuf_append_char(&buf, '\t'); break;
-                case '/': strbuf_append_char(&buf, '/'); break;
+                case '"': strbuf_append_char(out, '"'); break;
+                case '\\': strbuf_append_char(out, '\\'); break;
+                case 'n': strbuf_append_char(out, '\n'); break;
+                case 'r': strbuf_append_char(out, '\r'); break;
+                case 't': strbuf_append_char(out, '\t'); break;
+                /* #880: \b and \f are RFC 8259 escapes and were missing
+                 * here as well — the default arm dropped the backslash, so
+                 * json_decode silently turned "a\bc" into "abc". */
+                case 'b': strbuf_append_char(out, '\b'); break;
+                case 'f': strbuf_append_char(out, '\f'); break;
+                case '/': strbuf_append_char(out, '/'); break;
                 case 'u': {
                     unsigned int cp;
                     if (!eigs_json_read_hex4(s, pos, &cp)) {
@@ -1103,7 +1113,7 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
                          * decode raises; lenient callers get U+FFFD and the
                          * offending text is parsed normally from here. */
                         g_json_parse_recoverable = 1;
-                        eigs_json_append_cp(&buf, 0xFFFD);
+                        eigs_json_append_cp(out, 0xFFFD);
                         break;
                     }
                     if (cp >= 0xD800 && cp <= 0xDBFF) {
@@ -1124,34 +1134,42 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
                         }
                         if (paired) {
                             cp = 0x10000u + ((cp - 0xD800u) << 10) + (lo - 0xDC00u);
-                            eigs_json_append_cp(&buf, cp);
+                            eigs_json_append_cp(out, cp);
                         } else {
                             g_json_parse_recoverable = 1;
-                            eigs_json_append_cp(&buf, 0xFFFD);
+                            eigs_json_append_cp(out, 0xFFFD);
                         }
                     } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
                         /* #724: lone low surrogate — strict raise + U+FFFD */
                         g_json_parse_recoverable = 1;
-                        eigs_json_append_cp(&buf, 0xFFFD);
+                        eigs_json_append_cp(out, 0xFFFD);
                     } else if (cp == 0) {
                         /* #724: NUL cannot live in a C-terminated string
                          * (EMBEDDING.md) — strict raise + lenient U+FFFD. */
                         g_json_parse_recoverable = 1;
-                        eigs_json_append_cp(&buf, 0xFFFD);
+                        eigs_json_append_cp(out, 0xFFFD);
                     } else {
-                        eigs_json_append_cp(&buf, cp);
+                        eigs_json_append_cp(out, cp);
                     }
                     break;
                 }
-                default: strbuf_append_char(&buf, s[*pos]); break;
+                default: strbuf_append_char(out, s[*pos]); break;
             }
         } else {
-            strbuf_append_char(&buf, s[*pos]);
+            strbuf_append_char(out, s[*pos]);
         }
         (*pos)++;
     }
     if (s[*pos] == '"') (*pos)++;
     else g_json_parse_err = 1;   /* #495: unterminated string (hit EOF) */
+}
+
+static Value* eigs_json_parse_string(const char *s, int *pos) {
+    if (s[*pos] != '"') { g_json_parse_err = 1; return NULL; }   /* #495 */
+    (*pos)++;
+    strbuf buf;
+    strbuf_init(&buf);
+    eigs_json_decode_string_body(s, pos, &buf);
     Value *v = make_str(buf.data);
     strbuf_free(&buf);
     return v;

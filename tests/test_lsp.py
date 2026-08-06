@@ -142,6 +142,13 @@ def main():
     check("advertises documentFormattingProvider", caps.get("documentFormattingProvider") is True)
     check("advertises renameProvider", caps.get("renameProvider") is True)
     check("advertises codeActionProvider", caps.get("codeActionProvider") is True)
+    # #881: positions here are BYTE offsets, which is deliberate (the byte
+    # model is a language-level promise). The defect was not SAYING so: LSP
+    # 3.17 reads a server that negotiates nothing as utf-16, so a client
+    # decoded byte offsets as UTF-16 code units and every range after a
+    # non-ASCII character landed in the wrong place.
+    check("advertises positionEncoding utf-8 (#881)",
+          caps.get("positionEncoding") == "utf-8")
     stp = caps.get("semanticTokensProvider")
     check("advertises semanticTokensProvider (full)",
           isinstance(stp, dict) and stp.get("full") is True)
@@ -617,6 +624,24 @@ def main():
           any(ty == fi for (_, _, _, ty) in toks))
     check("semanticTokens carries accurate lengths (22 → len 2)",
           any(ty == ni and L == 2 for (_, _, L, ty) in toks))
+
+    # #880: a CRLF document must behave exactly like the LF one. The
+    # JSON-RPC unescaper used to drop \r (re-emitting the backslash), so a
+    # Windows document arrived with literal backslash-r in its text and
+    # produced one bogus syntax error and ZERO real diagnostics.
+    crlf_src = "a is 1\nb is 2\nc is undefined_thing\n"
+    lf_diags = diagnostics(converse([did_open(crlf_src)]))
+    crlf_diags = diagnostics(converse([did_open(crlf_src.replace("\n", "\r\n"))]))
+
+    def shape(ds):
+        return sorted((d["range"]["start"]["line"], d["range"]["start"]["character"],
+                       d.get("code", ""), d["message"]) for d in ds)
+
+    check("CRLF document yields real diagnostics, not a syntax error (#880)",
+          len(crlf_diags) > 0 and
+          not any("unexpected character" in d["message"] for d in crlf_diags))
+    check("CRLF document diagnostics match the LF ones exactly (#880)",
+          shape(crlf_diags) == shape(lf_diags))
 
     # If the LSP was built under a sanitizer, fail on any report it emitted.
     check("no sanitizer reports from the LSP process", not SANITIZER_HITS)

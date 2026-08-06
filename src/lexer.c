@@ -254,6 +254,10 @@ TokenList tokenize(const char *source) {
                 if (*p == '\n') { p++; line++; col = 0; }
                 continue;
             }
+            /* #880: a CRLF blank line — swallow the CR so the '\n' below sees
+             * an empty line rather than falling through to indent handling
+             * with a stray carriage return as the first "real" character. */
+            if (*p == '\r' && p[1] == '\n') p++;
             if (*p == '\n') {
                 p++; line++; col = 0;
                 continue;
@@ -283,7 +287,15 @@ TokenList tokenize(const char *source) {
             at_line_start = 0;
         }
 
-        if (*p == ' ' || *p == '\t') {
+        /* #880: EigenScript could not read a CRLF source file at all —
+         * `eigenscript win.eigs` died with "unexpected character" on every
+         * line, which also made the language server useless on any document
+         * a Windows editor saved. The CR of a CRLF pair is skipped here so
+         * the '\n' does the line break; a CR inside a string LITERAL is
+         * untouched (that path scans its own bytes), so a program that
+         * genuinely embeds one is unaffected. A lone CR as a line terminator
+         * (classic Mac, pre-OS X) is deliberately not a line break. */
+        if (*p == ' ' || *p == '\t' || (*p == '\r' && p[1] == '\n')) {
             p++; col++;
             continue;
         }

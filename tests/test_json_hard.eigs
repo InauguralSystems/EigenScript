@@ -421,4 +421,19 @@ assert of [jb_huge == ("{\"v\": " + (str of 1.23e15) + "}"), "JH97 json_build ag
 jb_huge2 is json_build of ["v", 1.23e300]
 assert of [jb_huge2 == "{\"v\": 1.23e+300}", "JH97 json_build keeps exponent form past 2^53"]
 
+# --- #880: \b and \f are RFC 8259 escapes and were missing from the decoder.
+# The default arm dropped the backslash, so json_decode silently turned
+# "a\bc" into "abc" — the same subset gap that made the LSP unusable on CRLF.
+esc_b is json_decode of "{\"s\": \"a\\bc\"}"
+assert of [len of esc_b.s == 3, "JH98 backslash-b is one character"]
+assert of [ord of (char_at of [esc_b.s, 1]) == 8, "JH98 backslash-b is BACKSPACE (0x08), not 'b'"]
+
+esc_f is json_decode of "{\"s\": \"a\\fc\"}"
+assert of [len of esc_f.s == 3, "JH99 backslash-f is one character"]
+assert of [ord of (char_at of [esc_f.s, 1]) == 12, "JH99 backslash-f is FORM FEED (0x0c), not 'f'"]
+
+# \r was already handled here; pin it alongside so the trio cannot regress.
+esc_r2 is json_decode of "{\"s\": \"a\\rc\"}"
+assert of [ord of (char_at of [esc_r2.s, 1]) == 13, "JH100 backslash-r is CR (0x0d)"]
+
 print of "json hard: all passed"
