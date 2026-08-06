@@ -974,6 +974,13 @@ name matches **both**, the runtime prints a one-line warning to stderr
 (once per name per process) naming the file used and the file shadowed
 — rename the project file if the stdlib module is the one you want.
 
+The *project* arm means a file you wrote. An **installed** stdlib
+(`<prefix>/lib/eigenscript/`, what `make install` writes) answers the bare
+`name.eigs` shape as readily as `lib/name.eigs`, but it is the stdlib arm
+either way: it never counts as a project file, so it neither warns nor
+displaces the stdlib shipped alongside the running binary or extracted
+from a bundle (#904).
+
 ```eigenscript
 import math
 print of (math.clamp of [15, 0, 10])

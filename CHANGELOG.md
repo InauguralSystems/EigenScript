@@ -67,6 +67,39 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **An installed stdlib no longer shadows itself (#904).** `import`
+  resolves project-first (#821), probing `<name>.eigs` before
+  `lib/<name>.eigs`. But the resolver chain's tail steps are the *install
+  roots* — `<prefix>/lib/eigenscript/` and `~/.local/lib/eigenscript/`,
+  which is what `make install` writes — and they answer the bare
+  `<name>.eigs` request just as readily as `lib/<name>.eigs`. So on any
+  machine that had ever run `make install`, the installed stdlib came
+  back as the *project* hit, and every stdlib import produced two defects
+  at once:
+
+  - a spurious `Warning: import 'json' matches both a project file and a
+    stdlib module` on stderr, once per name — the diagnostic reporting
+    the stdlib as shadowing itself;
+  - a real resolution bug behind it: the installed copy **won**, over the
+    stdlib shipped next to the binary actually running and over a
+    bundle's own extracted `lib/`. A bundle — the one artifact of this
+    project designed to be copied to a machine you don't control — quietly
+    ran the host's stdlib instead of the one it carries.
+
+  Bundle replay took the visible damage: the replayed run was byte-identical
+  to the recorded one, same tape, same draw, same stdout, and failed its
+  byte-identity check on the one prepended warning line.
+  A resolution hit now reports *which* half of the chain answered
+  (`resolve_eigenscript_file_from_ex`), and an install-root hit is the
+  stdlib arm — never the project arm. Genuine project shadowing warns
+  exactly as before.
+
+  Found on a second machine, not by CI: every CI leg runs the suite from
+  the build tree and none runs `make install`, so the suite was green
+  there and red for anyone who followed the README's install path first.
+  Both new gates simulate the install through `HOME` rather than
+  requiring one, so CI covers the configuration it cannot itself create.
+
 - **`--pkg add` resolves the remote's default branch instead of
   fabricating `main` (#879).** `lib/pkg.eigs` hardcoded `tag is "main"`
   when no tag was given, so the clone ran

@@ -1468,6 +1468,39 @@ else
     printf '%s\n' "$SH821_ERR" | head -3
 fi
 rm -rf "$SH821_DIR"
+
+# #904: an INSTALLED stdlib is not a project file. The bare `<name>.eigs`
+# half of import's project-first probe reaches the install roots too
+# (`<prefix>/lib/eigenscript/`, `~/.local/lib/eigenscript/` — what
+# `make install` writes), so on any machine that had run it, EVERY stdlib
+# import reported the stdlib as shadowing itself, and the installed copy
+# won over the stdlib shipped with the binary being run. CI has never run
+# `make install`, which is exactly why this stayed invisible here and was
+# found on a second machine; HOME is the lever that simulates the install
+# without one. Asserted: no warning, the RIGHT file resolves (the planted
+# install copy has no `abs`, so a wrong pick fails outright), and a real
+# project shadow still warns.
+SH904_DIR=$(mktemp -d)
+SH904_BIN="$PWD/eigenscript"
+mkdir -p "$SH904_DIR/home/.local/lib/eigenscript"
+printf 'INSTALLED_COPY is 1\n' > "$SH904_DIR/home/.local/lib/eigenscript/math.eigs"
+printf 'import math\nprint of (math.abs of -5)\n' > "$SH904_DIR/clean.eigs"
+printf 'MARKER is 42\n' > "$SH904_DIR/physics.eigs"
+printf 'import physics\nprint of physics.MARKER\n' > "$SH904_DIR/shadow.eigs"
+SH904_OUT=$(cd "$SH904_DIR" && HOME="$SH904_DIR/home" "$SH904_BIN" clean.eigs 2>/dev/null)
+SH904_WARNS=$(cd "$SH904_DIR" && HOME="$SH904_DIR/home" "$SH904_BIN" clean.eigs 2>&1 >/dev/null \
+    | grep -c "Warning: import")
+SH904_SHADOW=$(cd "$SH904_DIR" && HOME="$SH904_DIR/home" "$SH904_BIN" shadow.eigs 2>&1 >/dev/null \
+    | grep -c "Warning: import 'physics'")
+TOTAL=$((TOTAL + 3))
+if [ "$SH904_WARNS" = "0" ] && [ "$SH904_OUT" = "5" ] && [ "$SH904_SHADOW" = "1" ]; then
+    PASS=$((PASS + 3))
+    echo "  PASS: installed stdlib is not a project file (#904)"
+else
+    FAIL=$((FAIL + 3))
+    echo "  FAIL: installed stdlib is not a project file (#904) — warnings=$SH904_WARNS (want 0), math.abs of -5 = '$SH904_OUT' (want 5), real-shadow warnings=$SH904_SHADOW (want 1)"
+fi
+rm -rf "$SH904_DIR"
 echo ""
 
 # [38] Pattern matching
@@ -1661,7 +1694,7 @@ echo ""
 
 # [42g] --bundle (#413): single-file distribution — script + eigs_modules +
 # stdlib in one executable; tape-attached bundles replay byte-identically.
-echo "[42g] Bundle (14 checks)"
+echo "[42g] Bundle (16 checks)"
 BN_OUTPUT=$(bash "$TESTS_DIR/test_bundle.sh" 2>&1)
 BN_PASS=$(echo "$BN_OUTPUT" | grep -c "PASS:" || true)
 BN_FAIL=$(echo "$BN_OUTPUT" | grep -c "FAIL:" || true)

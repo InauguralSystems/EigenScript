@@ -1259,6 +1259,16 @@ int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_c
  * module's own imports relative to that module's directory. */
 int resolve_eigenscript_file_from(const char *base, const char *path,
                                    char *resolved, size_t resolved_cap);
+/* #904: which half of the chain answered. The chain's tail steps are the
+ * installed stdlib roots (`<prefix>/lib/eigenscript/`, `~/.local/lib/
+ * eigenscript/`), and they answer a bare `<name>.eigs` request as well as
+ * `lib/<name>.eigs` — so a STDLIB_ROOT hit on a bare request is the stdlib
+ * itself, not a project file shadowing it. */
+#define EIGS_RESOLVE_PROJECT       0
+#define EIGS_RESOLVE_STDLIB_ROOT   1
+int resolve_eigenscript_file_from_ex(const char *base, const char *path,
+                                      char *resolved, size_t resolved_cap,
+                                      int *origin);
 Value* eigs_json_parse_value(const char *s, int *pos);
 /* #777: the ONLY entry point for a top-level (non-recursive) JSON parse.
  * Clears both thread-local parse flags (g_json_parse_err,

@@ -183,5 +183,33 @@ case "$ROUT" in
     *) fail "plain interpreter still starts the REPL" "rc=$RC out=$ROUT" ;;
 esac
 
+# ---- 11. #904: an INSTALLED stdlib must not shadow the bundle's own
+# extracted lib/. import resolves project-first, and the bare
+# `<name>.eigs` half of that probe reaches the install roots too
+# (`~/.local/lib/eigenscript/`, what `make install` writes) — so the
+# installed copy came back as a "project file" and the bundle was told it
+# was shadowing itself. The warning went to stderr on every stdlib import,
+# which is what broke replay's byte-identity check: same tape, same draw,
+# same stdout, one extra line. CI never runs `make install`, so the
+# install root is simulated through HOME.
+FAKE_HOME="$TMPDIR/fakehome"
+mkdir -p "$FAKE_HOME/.local/lib/eigenscript"
+# A distinguishable stand-in, not a copy: if the INSTALLED file wins,
+# json_from_pairs is missing and the run fails outright.
+echo 'INSTALLED_COPY is 1' > "$FAKE_HOME/.local/lib/eigenscript/json.eigs"
+IOUT=$(cd / && HOME="$FAKE_HOME" "$APP/out" 2>&1); RC=$?
+if [ "$RC" -eq 0 ] && echo "$IOUT" | grep -q '{"k": 1}' \
+   && ! echo "$IOUT" | grep -q "Warning: import"; then
+    ok "installed stdlib does not shadow the bundle's own lib/"
+else
+    fail "installed stdlib does not shadow the bundle's own lib/" \
+         "rc=$RC: $(echo "$IOUT" | head -2)"
+fi
+IA=$(cd / && HOME="$FAKE_HOME" "$APP/out2" --replay 2>&1)
+[ "$IA" = "$REC_OUT" ] \
+    && ok "replay stays byte-identical with an installed stdlib present" \
+    || fail "replay stays byte-identical with an installed stdlib present" \
+            "recorded: $REC_OUT / replayed: $IA"
+
 echo "BUNDLE: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
