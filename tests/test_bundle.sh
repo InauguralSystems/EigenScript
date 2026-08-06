@@ -156,6 +156,27 @@ POUT=$("$EIGS" "$APP/plain.eigs" 2>&1); RC=$?
     && ok "plain interpreter runs a script normally" \
     || fail "plain interpreter runs a script normally" "rc=$RC out=$POUT"
 
+# ---- 10b. THE regression gate for the above. The head magic is stored
+# XOR-obfuscated so its plaintext is never in the runtime image; if a compiler
+# constant-folds that obfuscation away, the plaintext lands in rodata and every
+# plain `eigenscript` start finds the magic inside itself and refuses with
+# exit 3. That is not hypothetical: gcc -O2 did not fold it, clang did, and
+# CI's macOS job went red with "plain interpreter still starts the REPL"
+# failing. The key is `volatile` now, but assert the OUTCOME rather than trust
+# the compiler — this catches it at test time on any toolchain.
+if command -v python3 >/dev/null 2>&1; then
+    if python3 -c "
+import sys
+plain = b'\\x7fEIGS-BUNDLE-ARCHIVE-v2\\x00'
+sys.exit(0 if plain not in open('$EIGS','rb').read() else 1)
+"; then
+        ok "head magic plaintext is NOT in the interpreter image (fold guard)"
+    else
+        fail "head magic plaintext is NOT in the interpreter image (fold guard)" \
+             "the obfuscation was constant-folded — every plain start will refuse itself"
+    fi
+fi
+
 ROUT=$(echo 'print of "repl-ok"' | "$EIGS" 2>&1); RC=$?
 case "$ROUT" in
     *repl-ok*) ok "plain interpreter still starts the REPL (no false refusal)" ;;

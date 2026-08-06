@@ -332,7 +332,13 @@ All notable changes to EigenScript are documented here.
   that a damaged bundle invoked *with* arguments still behaves as an
   interpreter; the shipped form (`./myapp`) is the case that matters.
   `tests/test_bundle.sh` covers all four states including the
-  no-false-positive checks on the plain binary.
+  no-false-positive checks on the plain binary — plus a **fold guard**
+  that greps the built interpreter for the plaintext magic, because the
+  obfuscation is only as good as the compiler's willingness to leave it
+  alone: gcc -O2 did not fold it, **clang did**, and CI's macOS job went
+  red with every REPL check failing at exit 3. The key is `volatile`
+  now, and a coincidental magic match is additionally rejected unless a
+  well-formed entry header follows it.
 
 - **vm_run_bytecode/sandbox_run: an assembled chunk's temporal opcodes
   now turn history recording on themselves (#831).** `g_trace_hist` was
