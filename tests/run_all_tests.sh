@@ -3873,14 +3873,36 @@ done
 echo ""
 
 # [97] Example programs — every examples/*.eigs (and examples/stem/*.eigs)
-# must run to a clean exit. examples/errors/ is covered by [90]; the gfx
-# demos (gfx_* builtins) need `make gfx`, the net demos (net_listen) need
-# `make net`, and both are skipped unconditionally here — their dedicated
-# sections ([62], [125]) exercise them under the right build.
+# must run to a clean exit. examples/errors/ is covered by [90].
+#
+# #886: the gfx demos used to be skipped by CONTENT (`grep gfx_`), which is
+# unconditional — so NO build variant ever ran them, and one sat broken
+# (`ui._layout`, a private member) until an unrelated PR deleted the line by
+# accident. They are now skipped only when the binary lacks gfx, and run under
+# the dummy video driver otherwise. The net demos still need `make net` and a
+# free port, so they stay content-skipped.
+#
+# A gfx demo ends in `ui.app_loop`, which is an interactive event loop: under
+# the dummy driver no quit event ever arrives, so reaching it means timing out.
+# That is the PASS signal here — rc 124 means the program got through parse,
+# module load, widget construction and layout without erroring, which is the
+# failure class this section exists to catch. It deliberately does NOT verify
+# loop behavior; [132] and the lib/ui sections own that.
+#
+# Every gfx run is memory-capped: an unbounded UI run can take the whole box.
 # Each runs from its own directory (so relative paths resolve) with stdin
 # closed. rc_ok tolerates the spawn-thread LeakSanitizer floor; no non-gfx
 # example uses spawn, so this stays leak-clean.
-echo "[97] Example programs (examples/*.eigs; gfx demos skipped)"
+EX_GFX_PROBE=$(mktemp /tmp/eigs_ex_gfx_XXXXXX.eigs)
+echo 'print of (gfx_text_width of ["m", 1])' > "$EX_GFX_PROBE"
+EX_HAS_GFX=0
+if ! ./eigenscript "$EX_GFX_PROBE" 2>&1 | grep -q "undefined variable"; then EX_HAS_GFX=1; fi
+rm -f "$EX_GFX_PROBE"
+if [ "$EX_HAS_GFX" = "1" ]; then
+    echo "[97] Example programs (examples/*.eigs; gfx demos INCLUDED)"
+else
+    echo "[97] Example programs (examples/*.eigs; gfx demos skipped — no gfx build)"
+fi
 EX_PASS=0; EX_FAIL=0; EX_SKIP=0
 EIGS_ABS="$(pwd)/eigenscript"
 # Runaway guard reuses the shared $EIGS_TMO (defined near the top). The old
@@ -3889,7 +3911,24 @@ EIGS_ABS="$(pwd)/eigenscript"
 # (#616). $EIGS_TMO's generous budget keeps this a runaway backstop, not a perf
 # gate — a genuine hang still fails, a slow-but-working example does not.
 for f in $(find ../examples -name '*.eigs' -not -path '*/errors/*' | sort); do
-    if grep -qE 'gfx_|net_listen' "$f"; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
+    if grep -q 'net_listen' "$f"; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
+    if grep -q 'gfx_' "$f"; then
+        if [ "$EX_HAS_GFX" != "1" ]; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
+        # #886: reaching the event loop (rc 124) is the pass; any other
+        # nonzero rc is a real setup failure. Memory-capped — an unbounded
+        # UI run can take the whole machine.
+        EX_OUT=$( cd "$(dirname "$f")" && ulimit -v 2000000 2>/dev/null; \
+                  cd "$(dirname "$f")" && SDL_VIDEODRIVER=dummy timeout 3 \
+                  "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
+        if [ "$EX_RC" = "124" ] || [ "$EX_RC" = "0" ]; then
+            EX_PASS=$((EX_PASS + 1))
+        else
+            echo "  FAIL($EX_RC): $f (gfx demo errored before its event loop)"
+            printf '%s\n' "$EX_OUT" | tail -2 | sed 's/^/      /'
+            EX_FAIL=$((EX_FAIL + 1))
+        fi
+        continue
+    fi
     EX_OUT=$( cd "$(dirname "$f")" && $EIGS_TMO "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
     if [ "$EX_RC" = "124" ]; then
         echo "  FAIL(124): $f (timed out after ${EIGS_TEST_TIMEOUT}s — runaway)"
@@ -3908,7 +3947,11 @@ FAIL=$((FAIL + EX_FAIL))
 if [ "$EX_FAIL" -gt 0 ]; then
     echo "  FAIL: $EX_FAIL example(s) errored"
 else
-    echo "  PASS: all $EX_PASS example programs run clean ($EX_SKIP gfx skipped)"
+    if [ "$EX_HAS_GFX" = "1" ]; then
+        echo "  PASS: all $EX_PASS example programs run clean (gfx demos included; $EX_SKIP net skipped)"
+    else
+        echo "  PASS: all $EX_PASS example programs run clean ($EX_SKIP gfx/net skipped — no gfx build)"
+    fi
 fi
 echo ""
 

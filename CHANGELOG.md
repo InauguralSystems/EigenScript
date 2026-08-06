@@ -303,6 +303,28 @@ All notable changes to EigenScript are documented here.
   so clients decoded byte offsets as UTF-16 code units and every range
   after a non-ASCII character landed in the wrong place, drifting
   further along the line with each one.
+- **The gfx examples are actually run now — no build variant ever ran
+  them (#886).** Section [97] skipped example programs by **content**
+  (`grep -qE 'gfx_|net_listen'`), which is unconditional: `make gfx`
+  builds the extension and [132] exercises the real SDL renderer, but
+  the nine `gfx_` examples were skipped in every variant, so nothing
+  covered them anywhere. The suite reported this honestly ("10 gfx
+  skipped"); the gap was that nothing else covered them either.
+  The skip is now gated on build capability (the same probe [132] uses),
+  and under a gfx build each demo runs against the dummy video driver,
+  memory-capped. A gfx demo ends in `ui.app_loop`, an interactive event
+  loop that no quit event ever reaches headlessly — so *reaching* it
+  (rc 124) is the pass signal: the program got through parse, module
+  load, widget construction and layout without erroring, which is the
+  failure class this catches. It deliberately does not verify loop
+  behavior; [132] and the lib/ui sections own that. Validated with the
+  issue's own bug planted back in (a call to the private `ui._layout`),
+  which the section catches.
+  Worth recording: that bug is **already gone** — `b49e85c`, an
+  unrelated sandbox/zlib PR, deleted the offending line by accident
+  after the issue was filed. Which is the issue's point exactly: with
+  nothing running these, they break and get fixed invisibly. The example
+  count under a gfx build goes 72 → 81.
 
 - **`unobserved:` leaked its depth on every exit edge but one, silently
   killing the observer for the rest of the process (#871, found while
