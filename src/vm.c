@@ -5377,8 +5377,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             char request[4096];
             char path_buf[8192];
 
-            extern int resolve_eigenscript_file_from(const char *base, const char *name,
-                                                      char *out, size_t outlen);
             extern char *read_file_util(const char *path, long *size);
 
             /* Per-file resolution base (Phase 0b): an `import` inside a
@@ -5399,12 +5397,26 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * both is a collision worth a diagnostic whichever way
              * resolution goes. */
             char stdlib_buf[8192];
+            int user_origin = EIGS_RESOLVE_PROJECT;
             snprintf(request, sizeof(request), "%.1024s.eigs", name);
-            int user_hit = resolve_eigenscript_file_from(resolve_base, request,
-                                                          path_buf, sizeof(path_buf));
+            int user_hit = resolve_eigenscript_file_from_ex(resolve_base, request,
+                                                             path_buf, sizeof(path_buf),
+                                                             &user_origin);
             snprintf(request, sizeof(request), "lib/%.1024s.eigs", name);
-            int stdlib_hit = resolve_eigenscript_file_from(resolve_base, request,
-                                                            stdlib_buf, sizeof(stdlib_buf));
+            int stdlib_hit = resolve_eigenscript_file_from_ex(resolve_base, request,
+                                                               stdlib_buf, sizeof(stdlib_buf),
+                                                               NULL);
+
+            /* #904: the bare `<name>.eigs` request also probes the installed
+             * stdlib roots, so on a machine that has run `make install` EVERY
+             * stdlib import came back with a "project" hit at
+             * `~/.local/lib/eigenscript/<name>.eigs` — a phantom collision
+             * (spurious warning on every import) AND a resolution bug: the
+             * installed copy won over the stdlib shipped with the binary
+             * being run, and over a bundle's own extracted lib/. A stdlib-root
+             * hit is the stdlib arm; it is never the project arm. */
+            if (user_hit && stdlib_hit && user_origin == EIGS_RESOLVE_STDLIB_ROOT)
+                user_hit = 0;
 
             if (!user_hit && !stdlib_hit) {
                 rt_error(EK_IO, current_line, "import: module '%s' not found "

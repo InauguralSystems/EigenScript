@@ -34,6 +34,14 @@ int resolve_eigenscript_file_from(const char *base, const char *path,
     return 0;   /* nothing resolves without a filesystem */
 }
 
+int resolve_eigenscript_file_from_ex(const char *base, const char *path,
+                                      char *resolved, size_t resolved_cap,
+                                      int *origin) {
+    (void)base; (void)path; (void)resolved; (void)resolved_cap;
+    if (origin) *origin = EIGS_RESOLVE_PROJECT;
+    return 0;
+}
+
 #else /* host profile */
 
 #include <termios.h>
@@ -852,10 +860,21 @@ static int try_eigs_modules_walk(const char *base, const char *path,
     return 0;
 }
 
-int resolve_eigenscript_file_from(const char *base, const char *path,
-                                   char *resolved, size_t resolved_cap) {
+int resolve_eigenscript_file_from_ex(const char *base, const char *path,
+                                      char *resolved, size_t resolved_cap,
+                                      int *origin) {
     char candidate[8192];
 
+    /* #904: report which half of the chain answered. The tail steps below
+     * are the *installed stdlib roots* (`<prefix>/lib/eigenscript/`, from
+     * `make install`), and they answer a bare `<name>.eigs` request just as
+     * readily as `lib/<name>.eigs` — so a hit there is the stdlib wearing a
+     * project-shaped request, not a project file. Callers that must tell
+     * the two apart (import's collision diagnostic) pass `origin`. */
+#define RESOLVED(step)                                                       \
+    do { if (origin) *origin = (step); return 1; } while (0)
+
+    if (origin) *origin = EIGS_RESOLVE_PROJECT;
     if (!path || !resolved || resolved_cap == 0) return 0;
     if (!base || !base[0]) base = g_script_dir;
 
@@ -877,25 +896,31 @@ int resolve_eigenscript_file_from(const char *base, const char *path,
     if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
 
     snprintf(candidate, sizeof(candidate), "%.4000s/../lib/eigenscript/%.4000s", g_exe_dir, path);
-    if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+    if (try_resolve_path(candidate, resolved, resolved_cap)) RESOLVED(EIGS_RESOLVE_STDLIB_ROOT);
 
     if (strncmp(path, "lib/", 4) == 0) {
         snprintf(candidate, sizeof(candidate), "%.4000s/../lib/eigenscript/%.4000s", g_exe_dir, path + 4);
-        if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+        if (try_resolve_path(candidate, resolved, resolved_cap)) RESOLVED(EIGS_RESOLVE_STDLIB_ROOT);
     }
 
     const char *home = getenv("HOME");
     if (home) {
         snprintf(candidate, sizeof(candidate), "%.2000s/.local/lib/eigenscript/%.4000s", home, path);
-        if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+        if (try_resolve_path(candidate, resolved, resolved_cap)) RESOLVED(EIGS_RESOLVE_STDLIB_ROOT);
 
         if (strncmp(path, "lib/", 4) == 0) {
             snprintf(candidate, sizeof(candidate), "%.2000s/.local/lib/eigenscript/%.4000s", home, path + 4);
-            if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+            if (try_resolve_path(candidate, resolved, resolved_cap)) RESOLVED(EIGS_RESOLVE_STDLIB_ROOT);
         }
     }
 
     return 0;
+#undef RESOLVED
+}
+
+int resolve_eigenscript_file_from(const char *base, const char *path,
+                                   char *resolved, size_t resolved_cap) {
+    return resolve_eigenscript_file_from_ex(base, path, resolved, resolved_cap, NULL);
 }
 
 Value* builtin_load_file(Value *arg) {

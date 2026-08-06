@@ -537,6 +537,40 @@ jobs:
           test -x "$HOME/.local/bin/eigenlsp"
           "$HOME/.local/bin/eigenscript" --version
 
+      # #904: this job is the ONLY leg that creates the configuration a
+      # contributor has after following the README — a build-tree binary
+      # *and* an installed stdlib in ~/.local/lib/eigenscript (install.sh
+      # writes both). It just never looked at it: `--version` imports
+      # nothing. So a stdlib import that reported the stdlib as shadowing
+      # itself, and resolved to the installed copy over the one shipped
+      # next to the binary being run, was green here and 4-red on any
+      # machine that had run install.sh. Both binaries are checked: the
+      # installed one (single stdlib) and the tree one (two stdlibs — the
+      # arrangement that actually forked resolution).
+      - if: needs.scope.outputs.code == 'true'
+        name: A stdlib import is clean with an installed stdlib present (#904)
+        run: |
+          # install.sh's second pass (`./build.sh lsp`) starts with `rm -f
+          # eigenscript` inside src/, so the tree binary is gone by the time
+          # install.sh returns — rebuild it. The two binaries differ only in
+          # where they SIT, which is the whole point: `<exe>/../lib/` is a
+          # resolution step, so the tree binary sees two stdlibs and the
+          # installed one sees a single stdlib under `<exe>/../lib/eigenscript/`.
+          ./build.sh
+          test -x src/eigenscript
+          printf 'import json\nprint of (json.json_from_pairs of ([["k", 1]]))\n' > /tmp/inst904.eigs
+          for BIN in "$HOME/.local/bin/eigenscript" "$PWD/src/eigenscript"; do
+            OUT=$(cd / && "$BIN" /tmp/inst904.eigs 2>&1)
+            echo "$BIN -> $OUT"
+            if ! echo "$OUT" | grep -q '{"k": 1}'; then
+              echo "FAIL: stdlib did not resolve for $BIN"; exit 1
+            fi
+            if echo "$OUT" | grep -q "Warning: import"; then
+              echo "FAIL: spurious shadowing warning from $BIN"; exit 1
+            fi
+          done
+          echo "no import shadowed itself"
+
   # Performance regression gate (#398). Wall-clock flakes on shared runners, so
   # the gate compares deterministic cachegrind instruction counts (Ir) of THIS
   # commit against origin/main — both built in the same runner, so the diff is a
