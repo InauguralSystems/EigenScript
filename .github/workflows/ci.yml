@@ -550,6 +550,14 @@ jobs:
       - if: needs.scope.outputs.code == 'true'
         name: A stdlib import is clean with an installed stdlib present (#904)
         run: |
+          # install.sh's second pass (`./build.sh lsp`) starts with `rm -f
+          # eigenscript` inside src/, so the tree binary is gone by the time
+          # install.sh returns — rebuild it. The two binaries differ only in
+          # where they SIT, which is the whole point: `<exe>/../lib/` is a
+          # resolution step, so the tree binary sees two stdlibs and the
+          # installed one sees a single stdlib under `<exe>/../lib/eigenscript/`.
+          ./build.sh
+          test -x src/eigenscript
           printf 'import json\nprint of (json.json_from_pairs of ([["k", 1]]))\n' > /tmp/inst904.eigs
           for BIN in "$HOME/.local/bin/eigenscript" "$PWD/src/eigenscript"; do
             OUT=$(cd / && "$BIN" /tmp/inst904.eigs 2>&1)
