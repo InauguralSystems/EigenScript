@@ -1661,7 +1661,7 @@ echo ""
 
 # [42g] --bundle (#413): single-file distribution — script + eigs_modules +
 # stdlib in one executable; tape-attached bundles replay byte-identically.
-echo "[42g] Bundle (8 checks)"
+echo "[42g] Bundle (14 checks)"
 BN_OUTPUT=$(bash "$TESTS_DIR/test_bundle.sh" 2>&1)
 BN_PASS=$(echo "$BN_OUTPUT" | grep -c "PASS:" || true)
 BN_FAIL=$(echo "$BN_OUTPUT" | grep -c "FAIL:" || true)

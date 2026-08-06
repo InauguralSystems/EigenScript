@@ -50,6 +50,7 @@
 #define TRAILER_SIZE   24
 #define BUNDLE_HEAD_LEN 24
 
+
 /* #882: a head magic at the START of the archive region, so a bundle whose
  * trailer is gone is still recognizable AS a bundle.
  *
@@ -72,9 +73,18 @@ static const unsigned char BUNDLE_HEAD_OBF[BUNDLE_HEAD_LEN] = {
     0x77, 0x1b, 0x08, 0x19, 0x12, 0x13, 0x0c, 0x1f, 0x77, 0x2c, 0x68, 0x5a
 };
 
+/* The key is `volatile` on purpose. With a plain constant, an optimizer is
+ * free to constant-fold this whole loop and materialize the PLAINTEXT in
+ * rodata — which is exactly what it must not do, because then the runtime
+ * image contains the magic and every plain `eigenscript` start finds it
+ * inside itself and refuses to run. gcc -O2 did not fold it; clang did, and
+ * CI's macOS job caught it as "plain interpreter still starts the REPL"
+ * failing with exit 3. A volatile read cannot be folded away. */
 static void bundle_head_magic(unsigned char out[BUNDLE_HEAD_LEN]) {
+    static volatile unsigned char key = 0x5A;
+    unsigned char k = key;
     for (size_t i = 0; i < BUNDLE_HEAD_LEN; i++)
-        out[i] = (unsigned char)(BUNDLE_HEAD_OBF[i] ^ 0x5A);
+        out[i] = (unsigned char)(BUNDLE_HEAD_OBF[i] ^ k);
 }
 
 /* Refuse loudly, exit 3 — the same contract the tape layer uses for a damaged
@@ -98,6 +108,31 @@ static int own_exe_path(const char *argv0, char *out, size_t cap) {
  * interpreter start, which is interactive, so an ~800 KB read is invisible.
  * Takes the FIRST occurrence: the writer emits it immediately after the
  * runtime image, so anything matching later is inside the payload. */
+/* Does a plausible archive entry header start at `off`? The writer emits
+ * [u32 path_len][path bytes, no NUL][u64 size][bytes], so a real archive head
+ * is followed by a small length, a printable relative path, and a size that
+ * fits in the file. Used to reject a coincidental magic match. */
+static int bundle_entry_header_plausible(FILE *f, long off) {
+    if (fseek(f, 0, SEEK_END) != 0) return 0;
+    long fsz = ftell(f);
+    if (fsz < 0 || off < 0 || off >= fsz) return 0;
+    if (fseek(f, off, SEEK_SET) != 0) return 0;
+
+    uint32_t plen;
+    if (fread(&plen, 4, 1, f) != 1) return 0;
+    if (plen == 0 || plen > 2048) return 0;
+
+    char rel[2049];
+    if (fread(rel, 1, plen, f) != plen) return 0;
+    for (uint32_t i = 0; i < plen; i++)
+        if (rel[i] < 0x20 || (unsigned char)rel[i] > 0x7e) return 0;
+
+    uint64_t size;
+    if (fread(&size, 8, 1, f) != 1) return 0;
+    if (size > (uint64_t)fsz) return 0;
+    return 1;
+}
+
 static int bundle_scan_for_head(FILE *f) {
     unsigned char want[BUNDLE_HEAD_LEN];
     bundle_head_magic(want);
@@ -112,8 +147,20 @@ static int bundle_scan_for_head(FILE *f) {
         size_t have = carry + got;
         if (have >= BUNDLE_HEAD_LEN) {
             for (size_t i = 0; i + BUNDLE_HEAD_LEN <= have; i++)
-                if (buf[i] == want[0] && memcmp(buf + i, want, BUNDLE_HEAD_LEN) == 0)
-                    return 1;
+                if (buf[i] == want[0] && memcmp(buf + i, want, BUNDLE_HEAD_LEN) == 0) {
+                    /* Belt and braces after the clang fold above: a match is
+                     * only believed if a well-formed first entry header
+                     * follows it. A stray occurrence in some future rodata
+                     * blob will not be followed by a plausible
+                     * [u32 path_len][printable path][u64 size], so it cannot
+                     * make the interpreter refuse itself. */
+                    long at = ftell(f);
+                    if (at < 0) return 0;
+                    long head_end = at - (long)(have - i) + BUNDLE_HEAD_LEN;
+                    int believable = bundle_entry_header_plausible(f, head_end);
+                    if (fseek(f, at, SEEK_SET) != 0) return 0;
+                    if (believable) return 1;
+                }
         }
         if (got == 0) return 0;
         carry = (have >= BUNDLE_HEAD_LEN - 1) ? BUNDLE_HEAD_LEN - 1 : have;
