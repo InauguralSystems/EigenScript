@@ -268,11 +268,36 @@ define cmd_list() as:
 # target dir to keep `add` idempotent — a re-add against the same
 # name picks up the new url/tag instead of mixing trees. Returns
 # {"commit": sha, "tree": tree_sha} on success, {} on failure.
+# #879: the clone argument list for a dep. `--pkg add` used to hardcode
+# `tag is "main"` when the caller gave no tag, so every clone ran
+# `git clone --branch main` and failed outright on any repository whose
+# default branch is master/trunk/develop — and the fabricated "main" was
+# PERSISTED into eigs.json before the clone was attempted, leaving a project
+# `--pkg install` could never recover. PACKAGE_SPEC.md:60 says "default branch
+# if omitted", so an omitted tag now means exactly that: no --branch, and git
+# picks the remote's own default. Three call sites (add / install / update)
+# share this so they cannot drift on what "no tag" means.
+define clone_args(git_url, target, tag) as:
+    if tag == null or tag == "":
+        return ["clone", "--depth", "1", git_url, target]
+    return ["clone", "--depth", "1", "--branch", tag, git_url, target]
+
+# The branch a checkout actually landed on, or "" if it is detached/unknown.
+# Used to report which default branch `add` resolved to.
+define git_current_branch(work_dir) as:
+    result is exec_capture of ["git", "-C", work_dir, "rev-parse", "--abbrev-ref", "HEAD"]
+    if result[0] != 0:
+        return ""
+    out is trim of result[1]
+    if out == "HEAD":
+        return ""
+    return out
+
 define fetch_dep(name, git_url, tag) as:
     mkdir of MODULES_DIR
     target is MODULES_DIR + "/" + (pkg_leaf of name)
     rmtree of target
-    ok is run_git of ["clone", "--depth", "1", "--branch", tag, git_url, target]
+    ok is run_git of (clone_args of [git_url, target, tag])
     if ok == 0:
         return {}
     commit is git_head_commit of target
@@ -283,7 +308,7 @@ define fetch_dep(name, git_url, tag) as:
     if tree == "":
         print of f"could not resolve tree hash for {name}"
         return {}
-    return {"commit": commit, "tree": tree}
+    return {"commit": commit, "tree": tree, "branch": git_current_branch of target}
 
 define cmd_add(arg_list) as:
     if (len of arg_list) < 2:
@@ -294,7 +319,11 @@ define cmd_add(arg_list) as:
     if err != "":
         throw of f"--pkg add: {err}"
     git_url is arg_list[1]
-    tag is "main"
+    # #879: omitted means "the remote's default branch", not the literal
+    # string "main". Fabricating one both broke the clone on master/trunk
+    # repos AND was written into eigs.json first, so the project could not
+    # be recovered by `--pkg install` afterwards.
+    tag is ""
     if (len of arg_list) >= 3:
         tag is arg_list[2]
 
@@ -303,7 +332,13 @@ define cmd_add(arg_list) as:
     manifest is read_manifest of null
     if (has_key of [manifest, "deps"]) == 0:
         manifest.deps is {}
-    manifest.deps[name] is {"git": git_url, "tag": tag}
+    # An omitted tag is recorded as omitted — the manifest carries the
+    # REQUESTED ref, the lockfile carries the resolved commit. Writing a
+    # guessed branch here is what made the old failure unrecoverable.
+    if tag == "":
+        manifest.deps[name] is {"git": git_url}
+    else:
+        manifest.deps[name] is {"git": git_url, "tag": tag}
     write_manifest of manifest
 
     fetched is fetch_dep of [name, git_url, tag]
@@ -311,11 +346,22 @@ define cmd_add(arg_list) as:
         throw of f"fetch failed for {name}"
 
     lock is read_lockfile of null
-    lock[name] is {"git": git_url, "tag": tag,
-                   "commit": fetched.commit, "tree": fetched.tree}
+    if tag == "":
+        lock[name] is {"git": git_url,
+                       "commit": fetched.commit, "tree": fetched.tree}
+    else:
+        lock[name] is {"git": git_url, "tag": tag,
+                       "commit": fetched.commit, "tree": fetched.tree}
     write_lockfile of lock
 
-    print of f"Added {name} -> {git_url} @ {tag} ({fetched.commit[0:8]})"
+    shown is tag
+    if shown == "":
+        shown is fetched.branch
+        if shown == "":
+            shown is "default branch"
+        else:
+            shown is shown + " (default branch)"
+    print of f"Added {name} -> {git_url} @ {shown} ({fetched.commit[0:8]})"
     return 0
 
 # Reproduce eigs_modules/ from manifest + lockfile. For each dep:
@@ -351,7 +397,7 @@ define cmd_install() as:
 
         # Clone with depth 1 at the tag, then if we have a locked
         # commit, fetch that specific commit and check it out.
-        ok is run_git of ["clone", "--depth", "1", "--branch", tag, git_url, target]
+        ok is run_git of (clone_args of [git_url, target, tag])   # #879
         if ok == 0:
             throw of f"install failed: clone for {name} failed"
 

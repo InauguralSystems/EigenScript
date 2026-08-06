@@ -3783,27 +3783,27 @@ else
 fi
 echo ""
 
-echo "[95] --pkg fetch (6 checks)"
+echo "[95] --pkg fetch (11 checks)"
 # Phase 1b: --pkg add and --pkg install actually shell out to git
 # against a local file:// repo. Verifies the clone lands in
 # eigs_modules/, the lockfile records the resolved commit, the
 # clone is importable through Phase 0c's eigs_modules resolver, and
 # the lockfile wins over a force-pushed tag. Also asserts bare names
 # are rejected (namespaced-identifier rule).
-TOTAL=$((TOTAL + 6))
+TOTAL=$((TOTAL + 11))
 PKG2_OUT=$(EIGENSCRIPT="./eigenscript" bash "$TESTS_DIR/test_pkg_fetch.sh" 2>&1); PKG2_RC=$?
 PKG2_PASS=$(echo "$PKG2_OUT" | grep -c "^  PASS:" || true)
 PKG2_SKIP=$(echo "$PKG2_OUT" | grep -c "^  SKIP:" || true)
-if [ "$PKG2_RC" = "0" ] && [ "$PKG2_PASS" = "6" ]; then
+if [ "$PKG2_RC" = "0" ] && [ "$PKG2_PASS" = "11" ]; then
     echo "$PKG2_OUT" | grep "^  PASS:"
-    PASS=$((PASS + 6))
+    PASS=$((PASS + 11))
 elif [ "$PKG2_SKIP" -gt "0" ]; then
     echo "$PKG2_OUT" | grep "^  SKIP:"
-    PASS=$((PASS + 6))
+    PASS=$((PASS + 11))
 else
     echo "  FAIL: --pkg fetch (rc=$PKG2_RC, passes=$PKG2_PASS)"
     echo "$PKG2_OUT" | head -20
-    FAIL=$((FAIL + 6))
+    FAIL=$((FAIL + 11))
 fi
 echo ""
 

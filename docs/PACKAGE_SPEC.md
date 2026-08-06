@@ -54,7 +54,15 @@ eigenscript --pkg help                                 print usage
 
 - **add** — clones `<git-url>` at `[tag]` (default branch if omitted)
   into `eigs_modules/<name>/`, records the resolved commit + tree hash
-  in `eigs.lock.json`, and writes the dep into `eigs.json`.
+  in `eigs.lock.json`, and writes the dep into `eigs.json`. An omitted
+  tag is **recorded as omitted** — no `"tag"` key — and the clone runs
+  without `--branch`, so git picks the remote's own default. The
+  manifest carries the *requested* ref; the lockfile carries the
+  *resolved* commit, which is what makes the install reproducible.
+  (Before #879 an omitted tag was written as the literal `"main"`
+  before the clone was attempted, which failed outright on any
+  `master`/`trunk`/`develop` remote and left a manifest `install` could
+  never recover.)
 - **install** — reproduces `eigs_modules/` from manifest + lockfile.
   Existing checkouts are wiped before re-clone, so install is
   idempotent and deterministic from the lockfile alone.
