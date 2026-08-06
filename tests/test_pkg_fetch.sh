@@ -142,3 +142,74 @@ if [ "$APP_OUT2" != "hello from greeting" ]; then
     exit 1
 fi
 echo "  PASS: lockfile wins over a moved tag"
+
+# ---- #879: a remote whose default branch is NOT "main" ----
+# `--pkg add` hardcoded `tag is "main"`, so it ran
+# `git clone --branch main` and failed outright on master/trunk/develop —
+# and it PERSISTED the fabricated {"tag": "main"} into eigs.json BEFORE
+# attempting the clone, leaving a project `--pkg install` could never
+# recover. PACKAGE_SPEC.md:60 says "default branch if omitted".
+mkdir -p "$TMP/msource"
+cd "$TMP/msource"
+git init -q -b master
+git config user.email "test@example.com"
+git config user.name "Test"
+cat > mylib.eigs <<'EOF'
+mylib_greet is "hello from a master-branch repo"
+EOF
+git add -A
+git commit -q -m "init on master"
+
+mkdir -p "$TMP/mproject"
+cd "$TMP/mproject"
+ADD_M=$("$EIGS" --pkg add alice/mylib "file://$TMP/msource" 2>&1) || {
+    echo "  FAIL: --pkg add should work on a master-branch remote"
+    echo "$ADD_M"
+    exit 1
+}
+echo "  PASS: --pkg add resolves a non-main default branch"
+
+# The manifest must NOT carry a fabricated tag — an omitted tag stays omitted,
+# which is what makes the project recoverable.
+if grep -q '"tag"' eigs.json; then
+    echo "  FAIL: eigs.json must not record a guessed tag"
+    cat eigs.json
+    exit 1
+fi
+echo "  PASS: an omitted tag is recorded as omitted, not guessed"
+
+# The recovery path the old bug destroyed: reinstall from the manifest alone.
+rm -rf eigs_modules
+INSTALL_M=$("$EIGS" --pkg install 2>&1) || {
+    echo "  FAIL: --pkg install must recover a dep with no tag"
+    echo "$INSTALL_M"
+    exit 1
+}
+cat > mapp.eigs <<'EOF'
+import mylib
+print of mylib.mylib_greet
+EOF
+MAPP_OUT=$("$EIGS" mapp.eigs 2>&1)
+if [ "$MAPP_OUT" != "hello from a master-branch repo" ]; then
+    echo "  FAIL: reinstalled master-branch dep should be usable — got '$MAPP_OUT'"
+    exit 1
+fi
+echo "  PASS: --pkg install recovers a no-tag dep (was: unrecoverable)"
+
+VERIFY_M=$("$EIGS" --pkg verify 2>&1) || {
+    echo "  FAIL: --pkg verify should pass for a no-tag dep"
+    echo "$VERIFY_M"
+    exit 1
+}
+echo "  PASS: --pkg verify passes for a no-tag dep"
+
+# An explicit tag is still honored, unchanged.
+mkdir -p "$TMP/mproject2"
+cd "$TMP/mproject2"
+"$EIGS" --pkg add alice/mylib "file://$TMP/msource" master > /dev/null 2>&1
+if ! grep -q '"tag": *"master"' eigs.json; then
+    echo "  FAIL: an explicit tag must still be recorded"
+    cat eigs.json
+    exit 1
+fi
+echo "  PASS: an explicit tag is still recorded and used"

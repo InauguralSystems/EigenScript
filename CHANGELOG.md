@@ -67,6 +67,25 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`--pkg add` resolves the remote's default branch instead of
+  fabricating `main` (#879).** `lib/pkg.eigs` hardcoded `tag is "main"`
+  when no tag was given, so the clone ran
+  `git clone --depth 1 --branch main` and **failed outright** on any
+  repository whose default branch is `master`, `trunk` or `develop`.
+  Worse, the fabricated tag was persisted into `eigs.json` *before* the
+  clone was attempted — deliberately, so `add` is recoverable by
+  re-running `install` — which meant the recovery path was poisoned too:
+  the project was left naming a branch that does not exist, and
+  `--pkg install` could never fix it.
+  `PACKAGE_SPEC.md:60` already said "default branch if omitted", so an
+  omitted tag now means exactly that: no `--branch`, git picks the
+  remote's default, and the manifest records **no `tag` key** rather
+  than a guess. The lockfile still pins the resolved commit, which is
+  what makes install reproducible. One `clone_args` helper is shared by
+  `add`, `install` and `update` so the three cannot drift on what "no
+  tag" means. `--pkg add` now also reports which default branch it
+  resolved to.
+
 - **Memory corruption: values escaping an `arena_mark`…`arena_reset`
   scope (#873).** `promote_if_arena` copied only numbers and strings to
   the heap on store; a LIST escaping the scope became a dangling
