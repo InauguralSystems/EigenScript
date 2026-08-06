@@ -1474,10 +1474,12 @@ rm -rf "$SH821_DIR"
 # (`<prefix>/lib/eigenscript/`, `~/.local/lib/eigenscript/` — what
 # `make install` writes), so on any machine that had run it, EVERY stdlib
 # import reported the stdlib as shadowing itself, and the installed copy
-# won over the stdlib shipped with the binary being run. CI has never run
-# `make install`, which is exactly why this stayed invisible here and was
-# found on a second machine; HOME is the lever that simulates the install
-# without one. Asserted: no warning, the RIGHT file resolves (the planted
+# won over the stdlib shipped with the binary being run. CI HAD that
+# configuration all along — the install-smoke leg runs install.sh, which
+# writes both — and asserted nothing about it, which is why this stayed
+# invisible here and was found on a second machine. HOME is the lever
+# that puts the install root in front of EVERY leg, not just the one that
+# installs. Asserted: no warning, the RIGHT file resolves (the planted
 # install copy has no `abs`, so a wrong pick fails outright), and a real
 # project shadow still warns.
 SH904_DIR=$(mktemp -d)

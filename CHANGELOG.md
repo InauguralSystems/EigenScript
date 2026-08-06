@@ -94,11 +94,14 @@ All notable changes to EigenScript are documented here.
   stdlib arm — never the project arm. Genuine project shadowing warns
   exactly as before.
 
-  Found on a second machine, not by CI: every CI leg runs the suite from
-  the build tree and none runs `make install`, so the suite was green
-  there and red for anyone who followed the README's install path first.
-  Both new gates simulate the install through `HOME` rather than
-  requiring one, so CI covers the configuration it cannot itself create.
+  Found on a second machine, not by CI — though CI had the configuration
+  the whole time. Every suite leg runs from the build tree, and the one
+  leg that installs (`install-smoke`, via `install.sh`) asserted only
+  that the binaries existed: `--version` imports nothing. So that runner
+  sat in the broken state and reported green, while the suite was red for
+  anyone who followed the README's install path first. That leg now
+  imports a stdlib module, and both new suite gates simulate the install
+  root through `HOME` so every leg carries the check.
 
 - **`--pkg add` resolves the remote's default branch instead of
   fabricating `main` (#879).** `lib/pkg.eigs` hardcoded `tag is "main"`

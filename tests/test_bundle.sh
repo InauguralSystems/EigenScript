@@ -190,8 +190,9 @@ esac
 # installed copy came back as a "project file" and the bundle was told it
 # was shadowing itself. The warning went to stderr on every stdlib import,
 # which is what broke replay's byte-identity check: same tape, same draw,
-# same stdout, one extra line. CI never runs `make install`, so the
-# install root is simulated through HOME.
+# same stdout, one extra line. The install root is simulated through HOME
+# so every leg carries this check — CI's one installing leg (install-smoke)
+# runs on a different runner and never reaches the bundle tests.
 FAKE_HOME="$TMPDIR/fakehome"
 mkdir -p "$FAKE_HOME/.local/lib/eigenscript"
 # A distinguishable stand-in, not a copy: if the INSTALLED file wins,
