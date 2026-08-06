@@ -307,7 +307,7 @@ jobs:
         run: make gfx
 
       - if: needs.scope.outputs.code == 'true'
-        name: Run full suite against gfx build (executes audio section [62])
+        name: Run full suite against gfx build (audio [62], containment [132], gfx examples [97])
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true'
