@@ -347,6 +347,7 @@ const char *op_name(uint8_t op) {
     N(OP_LOCAL_DOT_GET) N(OP_LOCAL_DOT_SET) N(OP_LOCAL_IDX_GET)
     N(OP_LOCAL_IDX_DOT_GET) N(OP_LOCAL_IDX_DOT_SET)
     N(OP_INTERROGATE_NAMED) N(OP_INTERROGATE_NAMED_AT)
+    N(OP_INTERROGATE_NAMED_WHEN)
     N(OP_DEFAULT_PARAM) N(OP_DESTRUCTURE_UNPACK) N(OP_SLICE_GET)
     N(OP_REPORT_SLOT)
     N(OP_REPORT_NAME) N(OP_OBSERVE_VALUE_SLOT) N(OP_OBSERVE_VALUE_NAME)
@@ -477,6 +478,7 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     case OP_LOCAL_IDX_GET:
         roles[0] = VR_RAW; roles[1] = VR_RAW; return 2;     /* slot, list idx */
     case OP_INTERROGATE_NAMED: case OP_INTERROGATE_NAMED_AT:
+    case OP_INTERROGATE_NAMED_WHEN:
         roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* kind, name */
     case OP_PREDICATE_SLOT:
         roles[0] = VR_RAW; roles[1] = VR_RAW; return 2;     /* kind, slot (runtime-guarded) */
@@ -602,6 +604,8 @@ int chunk_verify(EigsChunk *chunk) {
  *   OP_INTERROGATE_NAMED, kind 6 (`prev`)  -> arm that name
  *   OP_INTERROGATE_NAMED_AT, any kind      -> arm that name; the observer
  *     kinds (3-5: where/why/how) also need observer-state capture
+ *   OP_INTERROGATE_NAMED_WHEN, any kind    -> arm that name AND its occurrence
+ *     ring (#868); same observer-kind rule
  *   OP_GET_NAME of "state_at"              -> wildcard (queries every name)
  * Pay-for-what-you-use: a chunk with no temporal opcode arms nothing, so
  * temporal-free vm_run_bytecode users keep recording off. */
@@ -613,13 +617,17 @@ void chunk_arm_temporal(const EigsChunk *chunk) {
         if (op == OP_LINE) { i += 1 + 4; continue; }
         VerifyRole roles[3];
         int nops = op_verify_operands(op, roles);
-        if (op == OP_INTERROGATE_NAMED || op == OP_INTERROGATE_NAMED_AT) {
+        if (op == OP_INTERROGATE_NAMED || op == OP_INTERROGATE_NAMED_AT ||
+            op == OP_INTERROGATE_NAMED_WHEN) {
             int kind = code[i + 1] | (code[i + 2] << 8);
             int name_idx = code[i + 3] | (code[i + 4] << 8);
             /* VR_NAME (verified) guarantees a string constant. */
-            if (op == OP_INTERROGATE_NAMED_AT || kind == 6) {
-                trace_arm_history_name(chunk->constants[name_idx]->data.str);
-                if (op == OP_INTERROGATE_NAMED_AT && kind >= 3 && kind <= 5)
+            if (op == OP_INTERROGATE_NAMED_AT || op == OP_INTERROGATE_NAMED_WHEN ||
+                kind == 6) {
+                const char *nm = chunk->constants[name_idx]->data.str;
+                if (op == OP_INTERROGATE_NAMED_WHEN) trace_arm_occurrences_name(nm);
+                else                                 trace_arm_history_name(nm);
+                if (op != OP_INTERROGATE_NAMED && kind >= 3 && kind <= 5)
                     g_trace_obs_hist = 1;
             }
         } else if (op == OP_GET_NAME) {

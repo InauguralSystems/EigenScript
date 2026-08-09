@@ -6,6 +6,55 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **`<kw> is x when <n>` — the past is addressable per assignment, so a
+  loop's iterations survive it (#868).** Temporal interrogatives were keyed
+  by source line, and a source line is not an injective address for an
+  execution: `#827`'s pruning retains only the strict suffix minima of the
+  line sequence, so a loop body that assigns one name N times keeps exactly
+  ONE entry. `what is x at <body line>` answered the last iteration and the
+  other N-1 were unreachable — with `prev of x` reaching one further step
+  back and that being the entire available depth. The interesting temporal
+  question is almost always about a particular iteration or call, so the
+  addressable set excluded most of what the feature is for. Line addressing
+  is also edit-brittle: inserting a line above a query silently changes what
+  it means, which is why `tests/test_temporal.eigs` has to be line-number
+  sensitive.
+
+  `when <n>` addresses the **nth recorded assignment** instead — 1-based, in
+  execution order, injective by construction and unmoved by edits:
+
+  ```eigenscript
+  x is 0
+  for i in range of 5:
+      x is i * 10
+  print of (what is x when 3)   # 10 — the second iteration
+  print of (prev of x when 3)   # 0  — the one before it
+  ```
+
+  Every interrogative takes it (`who`/`when`/`where`/`why`/`how`, and `prev
+  of x when n` = assignment `n - 1`). Additive: `at` is unchanged, and its
+  answers are byte-identical.
+
+  Retention is bounded at the same time, because per-occurrence storage is
+  precisely what #827 was about. The occurrences ride a separate per-name
+  **ring** — the last `EIGS_OCC_WINDOW` assignments, default 256 — so peak
+  RSS stays flat across a 16x increase in iteration count. Arming is the
+  narrowest of the three tiers: a ring exists only for a name some
+  `when`-qualified query named at compile time, with no wildcard, so
+  `state_at` / an open tape / `spawn` cannot widen it to every binding the
+  way they widen the line history.
+
+  The two empty answers are kept distinct rather than collapsed to `null`:
+  an ordinal that has not happened yet is `null`, but one that has **aged out
+  of the window raises**, naming the retained range and the env var. The
+  runtime had that value and dropped it to stay bounded; reporting it as
+  `null` would be indistinguishable from a name that was never assigned —
+  a confident wrong answer instead of a missing one.
+
+  Note the ordinal space is the history's own recorded-assignment counter,
+  which disagrees with the unqualified `when is x` by the number of
+  assignments made inside `unobserved:` blocks — filed as #908.
+
 - **`math_flags` / `clear_math_flags` — the numeric clamps are no longer
   undetectable (#865).** "Finite by construction" (NaN → 0, overflow →
   ±1e308) keeps a program running, which is the point, but it kept it

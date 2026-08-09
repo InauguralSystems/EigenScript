@@ -209,6 +209,14 @@ typedef enum {
                          * Appended, not mid-list. */
     OP_TRAJECTORY_NAME, /* [name_idx:16] `trajectory of <name>` — resolve the binding's
                          * (env,slot) and snapshot it. */
+    OP_INTERROGATE_NAMED_WHEN, /* [kind:16][name_idx:16] `<kw> is x when <N>` (#868) —
+                                * interrogate at the Nth RECORDED assignment (ordinal
+                                * popped from the stack), not at a source line. The `at`
+                                * address space is source lines, which is not injective:
+                                * a loop body executed N times keeps one live history
+                                * entry (#827's suffix-minima pruning), so every
+                                * iteration but the last is unaddressable. Ordinals are
+                                * injective and edit-stable. Appended, not mid-list. */
 
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;

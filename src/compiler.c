@@ -315,6 +315,7 @@ static int op_stack_effect(uint8_t op8) {
     case OP_LOCAL_IDX_DOT_SET:  /* peek TOS, write = 0 */
         return 0;
     case OP_INTERROGATE_NAMED:  /* pop 1, push 1 = 0 */
+    case OP_INTERROGATE_NAMED_WHEN: /* pop ordinal, push result = 0 */
     case OP_INTERROGATE_NAMED_AT:  /* pop line, push result = 0 */
         return 0;
     case OP_DEFAULT_PARAM:  /* conditional skip — no stack change */
@@ -651,6 +652,8 @@ static void collect_referenced_names_skip(ASTNode *node, ASTNode *skip, NameSet 
         collect_referenced_names_skip(node->data.interrogate.expr, skip, out);
         if (node->data.interrogate.at_expr)
             collect_referenced_names_skip(node->data.interrogate.at_expr, skip, out);
+        if (node->data.interrogate.when_expr)
+            collect_referenced_names_skip(node->data.interrogate.when_expr, skip, out);
         break;
     case AST_TRY:
         for (int i = 0; i < node->data.trycatch.try_count; i++)
@@ -790,6 +793,8 @@ static void collect_referenced_names(ASTNode *node, NameSet *out) {
         collect_referenced_names(node->data.interrogate.expr, out);
         if (node->data.interrogate.at_expr)
             collect_referenced_names(node->data.interrogate.at_expr, out);
+        if (node->data.interrogate.when_expr)
+            collect_referenced_names(node->data.interrogate.when_expr, out);
         break;
     case AST_PREDICATE:
         /* PREDICATE uses similar shape to relation/interrogate; descend on whatever lives in it */
@@ -1085,6 +1090,7 @@ static int ast_has_closure(ASTNode *node) {
         break;
     case AST_INTERROGATE:
         ANY(node->data.interrogate.expr); ANY(node->data.interrogate.at_expr);
+        ANY(node->data.interrogate.when_expr);
         break;
     /* Nothing to do for these. Enumerated rather than covered by a `default:`
      * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
@@ -1164,7 +1170,8 @@ static int subtree_overwrite_safe(ASTNode *n, NameSet *bound, Env *env) {
     case AST_DOT_ASSIGN:   SAFE(n->data.dot_assign.target); SAFE(n->data.dot_assign.expr); break;
     case AST_INDEX_ASSIGN: SAFE(n->data.index_assign.target); SAFE(n->data.index_assign.index); SAFE(n->data.index_assign.expr); break;
     case AST_SLICE:        SAFE(n->data.slice.target); SAFE(n->data.slice.start); SAFE(n->data.slice.end); break;
-    case AST_INTERROGATE:  SAFE(n->data.interrogate.expr); SAFE(n->data.interrogate.at_expr); break;
+    case AST_INTERROGATE:  SAFE(n->data.interrogate.expr); SAFE(n->data.interrogate.at_expr);
+                           SAFE(n->data.interrogate.when_expr); break;
     /* Leaves with no binding effect. */
     case AST_IDENT: case AST_NUM: case AST_STR: case AST_NULL:
     case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE:
@@ -1242,6 +1249,7 @@ static void scan_for_interrogated(ASTNode *node, NameSet *out) {
         }
         scan_for_interrogated(node->data.interrogate.expr, out);
         scan_for_interrogated(node->data.interrogate.at_expr, out);
+        scan_for_interrogated(node->data.interrogate.when_expr, out);
         break;
     case AST_BINOP:
         scan_for_interrogated(node->data.binop.left, out);
@@ -2880,11 +2888,44 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
          * set is exact; a non-ident operand never reads the history at all
          * (bare OP_INTERROGATE) but arms the wildcard anyway — widening is
          * the safe direction. */
-        if (kind == 6 || at_expr) {
+        ASTNode *when_expr = node->data.interrogate.when_expr;
+
+        if (kind == 6 || at_expr || when_expr) {
             if (expr && expr->type == AST_IDENT)
                 trace_arm_history_name(expr->data.ident.name);
             else
                 trace_arm_history_all();
+        }
+
+        /* #868: `when <N>` addresses an occurrence, which needs the ring.
+         * Armed per-name and only here — see trace.h on why this tier has no
+         * wildcard. A non-name operand has no binding and therefore no
+         * occurrence sequence, so it is an error rather than a silently
+         * dropped qualifier. */
+        if (when_expr) {
+            if (expr && expr->type == AST_IDENT) {
+                trace_arm_occurrences_name(expr->data.ident.name);
+            } else {
+                fprintf(stderr,
+                    "Compile error line %d: 'when <n>' requires a variable name\n",
+                    node->line);
+                eigs_record_first_error(node->line,
+                    "'when <n>' requires a variable name");
+                g_parse_errors++;
+            }
+        }
+
+        if (when_expr && expr && expr->type == AST_IDENT) {
+            /* `<kw> is x when <expr>` — push the ordinal, emit the WHEN op.
+             * Same shape as the AT form below: the operand's value is never
+             * needed, only its compile-time name. */
+            if (kind >= 3 && kind <= 5)
+                g_trace_obs_hist = 1;   /* enable observer-state capture */
+            compile_node(c, when_expr);
+            int name_idx = add_string_constant(c, expr->data.ident.name);
+            emit_op_u16_u16(c, OP_INTERROGATE_NAMED_WHEN,
+                            (uint16_t)kind, (uint16_t)name_idx, node->line);
+            break;
         }
 
         if (at_expr && expr && expr->type == AST_IDENT) {

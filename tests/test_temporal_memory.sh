@@ -121,6 +121,25 @@ q is what is x at 5
 print of "done"
 EOF
 
+# #868: the occurrence ring. `when <N>` is the one temporal form that must keep
+# per-iteration state, so it is the form most able to reintroduce this bug —
+# it deliberately survives the #827 pruning that bounds every case above. Its
+# bound is a different mechanism (a fixed-size ring per armed name, not
+# reachability), so it needs its own row in this gate.
+cat > "$TMP/when_live.eigs" <<'EOF'
+N is num of (env_get of "N")
+x is 0
+i is 0
+loop while i < N:
+    x is [i, i, i, i]
+    i is i + 1
+# Address the NEWEST ordinal, not a fixed small one: with N up at 1.6M a
+# literal `when 3` is correctly evicted and raises, which this harness would
+# read as the ulimit cap firing. The point here is retention, not lookup.
+q is what is x when (when is x)
+print of "done"
+EOF
+
 N_SMALL=200000
 N_BIG=1600000
 
@@ -154,7 +173,7 @@ CEIL=$(( BASE_BIG * 4 ))
 # increase multiplied peak RSS ~7x; bounded, the two are identical.
 SLOP=$(( BASE_BIG / 2 ))
 
-for prog in dead live at_live; do
+for prog in dead live at_live when_live; do
     SMALL=$(peak_kb "$TMP/$prog.eigs" "$N_SMALL")
     BIG=$(peak_kb "$TMP/$prog.eigs" "$N_BIG")
     if [ -z "$SMALL" ] || [ -z "$BIG" ]; then
@@ -174,6 +193,50 @@ for prog in dead live at_live; do
         bad "$prog peak RSS grows with iteration count" "+${GROWTH} kB over 8x, slop ${SLOP} kB"
     fi
 done
+
+# ---- #868: the window boundary.
+#
+# The ring is bounded, so an old-enough ordinal is genuinely gone. It must NOT
+# come back as null: null already means "that assignment has not happened",
+# and answering an evicted ordinal the same way turns a dropped fact into a
+# confident wrong answer. Evicted raises; past-the-end stays null.
+cat > "$TMP/evict.eigs" <<'EOF'
+x is 0
+i is 0
+loop while i < 1000:
+    x is i
+    i is i + 1
+print of ("newest " + (str of (what is x when 1001)))
+print of ("oldest-retained-ok " + (str of (what is x when 900)))
+print of ("past-end " + (str of (what is x when 5000)))
+print of ("evicted " + (str of (what is x when 5)))
+EOF
+
+EV_OUT=$("$EIGS" "$TMP/evict.eigs" 2>&1); EV_RC=$?
+if [ "$EV_RC" -ne 0 ] && echo "$EV_OUT" | grep -q "outside the retained window"; then
+    ok "an evicted ordinal raises instead of answering null"
+else
+    bad "evicted ordinal did not raise" "rc=$EV_RC"
+fi
+if echo "$EV_OUT" | grep -q "^past-end null"; then
+    ok "an ordinal past the end is null (has not happened yet)"
+else
+    bad "past-the-end ordinal was not null" "$(echo "$EV_OUT" | grep past-end)"
+fi
+if echo "$EV_OUT" | grep -q "^newest 999"; then
+    ok "the newest ordinal is retained"
+else
+    bad "newest ordinal wrong" "$(echo "$EV_OUT" | grep newest)"
+fi
+
+# The window is configurable, and widening it makes the same ordinal readable —
+# which is what proves the raise above was the BOUND and not a lookup bug.
+EV2_OUT=$(EIGS_OCC_WINDOW=2000 "$EIGS" "$TMP/evict.eigs" 2>&1); EV2_RC=$?
+if [ "$EV2_RC" -eq 0 ] && echo "$EV2_OUT" | grep -q "^evicted 3"; then
+    ok "EIGS_OCC_WINDOW widens the retained window (same ordinal now reads 3)"
+else
+    bad "EIGS_OCC_WINDOW did not widen the window" "rc=$EV2_RC"
+fi
 
 echo "TEMPORAL_MEM: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

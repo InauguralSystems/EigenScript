@@ -131,6 +131,19 @@ typedef struct {
     long long count;
 } LineCount;
 
+/* #868: one recorded assignment, addressable by ordinal. Carries the same
+ * observer snapshot as HistoryEntry so `where/why/how is x when N` answers
+ * from the occurrence rather than the line. No `prev_value` twin is needed —
+ * unlike the pruned line history, the ring still HOLDS ordinal N-1, so
+ * `prev of x when N` is just a second lookup. */
+typedef struct {
+    EigsSlot value;
+    uint8_t  obs_valid;
+    double   entropy;
+    double   dH;
+    double   last_entropy;
+} OccEntry;
+
 /* #739: the prev-table lives on EigsThread, not in a file static. It is keyed
  * by INTERNED NAME POINTER, and the intern table is itself per-thread
  * (`g_env_name_interns` -> `eigs_current->env_name_interns`), so two threads'
@@ -156,6 +169,16 @@ typedef struct TracePrevEntry {
     LineCount     *lc;          /* (line -> count) histogram, sorted by line */
     int            lc_count;
     int            lc_cap;
+    /* #868: occurrence ring — the last `trace_occ_window()` recorded assigns.
+     * Allocated lazily on the first armed assign, so an unarmed name costs
+     * one pointer of struct and nothing else. */
+    OccEntry      *occ;
+    int            occ_cap;     /* allocated slots (== window once allocated) */
+    int            occ_count;   /* live slots, <= occ_cap */
+    int            occ_head;    /* next write index (mod occ_cap) */
+    long long      occ_total;   /* total recorded assigns = the newest ordinal */
+    uint8_t        occ_armed;
+    uint32_t       occ_armed_gen;
 } PrevEntry;
 
 /* ----- #827 (defect A): per-name arming.
@@ -189,6 +212,74 @@ static int arm_set_has(const char *name) {
     for (int i = 0; i < g_arm_count; i++)
         if (strcmp(g_arm_names[i], name) == 0) return 1;
     return 0;
+}
+
+/* ----- #868: the occurrence-arming tier.
+ *
+ * Separate from g_arm_names on purpose. That set is widened to the wildcard by
+ * `state_at`, by an open tape, and by `spawn` — all of which would then put a
+ * bounded-but-real ring on EVERY name. None of them widens this one: a
+ * compiled program gets a ring only for a name some `when`-qualified query
+ * named at compile time, which is the only way it can ever be read back.
+ *
+ * The single wildcard (g_occ_all) belongs to the INTERACTIVE REPL alone, where
+ * the assignments precede the query that would arm them — see
+ * trace_arm_occurrences_all in trace.h. */
+static char   **g_occ_names = NULL;
+static int      g_occ_count = 0;
+static int      g_occ_cap   = 0;
+static int      g_occ_all   = 0;   /* interactive REPL only — see trace.h */
+static uint32_t g_occ_gen   = 1;
+static int      g_occ_window = 0;   /* 0 = not yet resolved */
+
+int trace_occ_window(void) {
+    if (g_occ_window) return g_occ_window;
+    g_occ_window = TRACE_OCC_WINDOW_DEFAULT;
+    const char *e = getenv("EIGS_OCC_WINDOW");
+    if (e && *e) {
+        char *end = NULL;
+        long v = strtol(e, &end, 10);
+        if (end && *end == '\0' && v >= 1) {
+            if (v > TRACE_OCC_WINDOW_MAX) v = TRACE_OCC_WINDOW_MAX;
+            g_occ_window = (int)v;
+        }
+    }
+    return g_occ_window;
+}
+
+static int occ_set_has(const char *name) {
+    if (g_occ_all) return 1;
+    for (int i = 0; i < g_occ_count; i++)
+        if (strcmp(g_occ_names[i], name) == 0) return 1;
+    return 0;
+}
+
+void trace_arm_occurrences_all(void) {
+    if (g_occ_all) return;
+    g_occ_all = 1;
+    g_occ_gen++;
+    trace_arm_history_all();
+}
+
+void trace_arm_occurrences_name(const char *name) {
+    if (!name || g_occ_all) return;
+    /* The ring is fed from prev_record_assign, which only runs when the
+     * line-history is armed for this name — so arm that too. */
+    trace_arm_history_name(name);
+    if (occ_set_has(name)) return;
+    if (g_occ_count >= g_occ_cap) {
+        int nc = g_occ_cap ? g_occ_cap * 2 : 8;
+        char **nn = realloc(g_occ_names, (size_t)nc * sizeof(char *));
+        if (!nn) return;         /* OOM: this name simply gets no ring */
+        g_occ_names = nn;
+        g_occ_cap = nc;
+    }
+    size_t len = strlen(name) + 1;
+    char *copy = malloc(len);
+    if (!copy) return;
+    memcpy(copy, name, len);
+    g_occ_names[g_occ_count++] = copy;
+    g_occ_gen++;
 }
 
 /* Widen to the wildcard WITHOUT enabling recording. Separate from
@@ -303,6 +394,54 @@ static void hist_drop(HistoryEntry *h) {
     if (h->has_prev_value) slot_decref(h->prev_value);
 }
 
+/* #868: append one recorded assignment to the ring, evicting the oldest once
+ * the window is full. Called only for an occurrence-armed name.
+ *
+ * occ_total counts the assignment BEFORE the store can fail, on purpose. The
+ * ordinal exists because the assignment happened; whether we managed to keep
+ * its value is a storage question. Counting only what we stored would make an
+ * unstorable ordinal read back as MISS — "that assignment never happened" —
+ * which is exactly the confident wrong answer the MISS/EVICTED split exists to
+ * prevent. Counted-but-absent reads as EVICTED and raises instead.
+ *
+ * The (occ_total - occ_count, occ_total] mapping survives this: entries are
+ * appended in order, so whatever the ring does hold is always the newest
+ * occ_count ordinals. */
+static void occ_record(PrevEntry *e, EigsSlot value) {
+    e->occ_total++;
+    if (!e->occ) {
+        int w = trace_occ_window();
+        e->occ = calloc((size_t)w, sizeof(OccEntry));
+        if (!e->occ) return;
+        e->occ_cap = w;
+    }
+    if (e->occ_count == e->occ_cap) {
+        /* Full: the slot about to be written holds the oldest retained
+         * assignment. Drop its ref before overwriting. */
+        slot_decref(e->occ[e->occ_head].value);
+    } else {
+        e->occ_count++;
+    }
+    OccEntry *o = &e->occ[e->occ_head];
+    slot_incref(value);
+    o->value = value;
+    o->obs_valid = 0;      /* filled by trace_record_obs, as for HistoryEntry */
+    e->occ_head = (e->occ_head + 1) % e->occ_cap;
+}
+
+/* Index of `ordinal` in the ring, or -1 if it is not retained. The ring holds
+ * ordinals (occ_total - occ_count, occ_total] — newest at occ_head-1. */
+static int occ_index_of(const PrevEntry *e, long long ordinal) {
+    if (!e->occ || e->occ_count == 0) return -1;
+    if (ordinal > e->occ_total) return -1;
+    if (ordinal <= e->occ_total - e->occ_count) return -1;
+    long long back = e->occ_total - ordinal;          /* 0 == newest */
+    long long idx = (long long)e->occ_head - 1 - back;
+    idx %= e->occ_cap;
+    if (idx < 0) idx += e->occ_cap;
+    return (int)idx;
+}
+
 static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
     if (!eigs_current || !name) return;
     if (g_prev_count * PREV_LOAD_DEN >= g_prev_cap * PREV_LOAD_NUM) {
@@ -340,6 +479,17 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
     /* Stamp with the current VM line as cached by trace_line. */
     int line = g_trace_current_line;
     lc_bump(e, line);
+
+    /* #868: the occurrence ring runs alongside the line history, not inside
+     * it — the pruning below is what collapses a loop body, and the ring
+     * exists precisely to survive that. Recompute the arming decision on the
+     * same generation-cache pattern as e->armed. Unlike e->armed there is no
+     * wildcard, so an unarmed name pays one compare. */
+    if (__builtin_expect(e->occ_armed_gen != g_occ_gen, 0)) {
+        e->occ_armed_gen = g_occ_gen;
+        e->occ_armed = (uint8_t)occ_set_has(name);
+    }
+    if (e->occ_armed) occ_record(e, value);
 
     /* Reserve BEFORE pruning, so an allocation failure leaves the history
      * exactly as it was. Pruning first and then failing to append would
@@ -395,7 +545,20 @@ void trace_record_obs(const char *name, double entropy, double dH,
                       double last_entropy) {
     if (!eigs_current || !name || !g_prev_tab) return;
     PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, name);
-    if (!e->name || e->hist_count == 0) return;
+    if (!e->name) return;
+    /* #868: patch the newest ring entry too, so `where/why/how is x when N`
+     * reads the same slot-sourced trajectory the `at` forms do. Independent of
+     * hist_count — the ring can be armed and populated on an assignment whose
+     * history entry was just pruned away. */
+    if (e->occ && e->occ_count > 0) {
+        int oi = e->occ_head == 0 ? e->occ_cap - 1 : e->occ_head - 1;
+        OccEntry *o = &e->occ[oi];
+        o->entropy = entropy;
+        o->dH = dH;
+        o->last_entropy = last_entropy;
+        o->obs_valid = 1;
+    }
+    if (e->hist_count == 0) return;
     HistoryEntry *h = &e->history[e->hist_count - 1];
     h->entropy = entropy;
     h->dH = dH;
@@ -484,6 +647,62 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
     }
 
     return 0;
+}
+
+int trace_query_when(int kind, const char *interned_name, long long ordinal,
+                     EigsSlot *out, long long *total, long long *oldest) {
+    if (total) *total = 0;
+    if (oldest) *oldest = 0;
+    if (!eigs_current || !interned_name || !out || !g_prev_tab)
+        return TRACE_WHEN_MISS;
+    PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, interned_name);
+    if (!e->name) return TRACE_WHEN_MISS;
+
+    if (total) *total = e->occ_total;
+    if (oldest) *oldest = e->occ_count ? e->occ_total - e->occ_count + 1 : 0;
+
+    /* `who is x when N` — the binding name is timeless, so it answers for any
+     * ordinal that could have happened. */
+    if (kind == 1) {
+        if (ordinal < 1 || ordinal > e->occ_total) return TRACE_WHEN_MISS;
+        Value *s = make_str(interned_name);
+        *out = slot_from_value(s);
+        return TRACE_WHEN_HIT;
+    }
+
+    /* `when is x when N` — the count of assignments up to the Nth is N. Also
+     * answerable without the entry, so it too only needs the range check. */
+    if (kind == 2) {
+        if (ordinal < 1 || ordinal > e->occ_total) return TRACE_WHEN_MISS;
+        *out = slot_from_num((double)ordinal);
+        return TRACE_WHEN_HIT;
+    }
+
+    /* `prev of x when N` is `what is x when N-1` — the ring still holds the
+     * predecessor, so unlike the pruned line history no per-entry prev_value
+     * twin is needed. Ordinal 1 has no predecessor. */
+    long long want = (kind == 6) ? ordinal - 1 : ordinal;
+    if (kind == 6 && ordinal >= 1 && ordinal <= e->occ_total && want < 1)
+        return TRACE_WHEN_MISS;
+    if (want < 1 || want > e->occ_total) return TRACE_WHEN_MISS;
+
+    int idx = occ_index_of(e, want);
+    if (idx < 0) return TRACE_WHEN_EVICTED;
+    OccEntry *o = &e->occ[idx];
+
+    if (kind >= 3 && kind <= 5) {
+        if (!o->obs_valid) return TRACE_WHEN_MISS;
+        double r = (kind == 3) ? o->entropy
+                 : (kind == 4) ? o->dH
+                 : observer_settledness(o->dH);   /* #412: how = f(dH) */
+        *out = slot_from_num(r);
+        return TRACE_WHEN_HIT;
+    }
+
+    /* kind 0 (what) and kind 6 (prev, already shifted to N-1). */
+    *out = o->value;
+    slot_incref(*out);
+    return TRACE_WHEN_HIT;
 }
 
 /* #736: the observed-loop machinery injects bindings of its own
@@ -1169,8 +1388,16 @@ void trace_thread_release(void) {
         if (e->has_current) slot_decref(e->current);
         for (int j = 0; j < e->hist_count; j++)
             hist_drop(&e->history[j]);
+        /* #868: the ring holds a counted ref per live slot. Walk the LIVE
+         * ordinals, not 0..occ_cap — an unfilled ring has zeroed slots, and
+         * slot_decref on a zeroed slot is not the same as a no-op. */
+        for (int j = 0; j < e->occ_count; j++) {
+            int idx = occ_index_of(e, e->occ_total - j);
+            if (idx >= 0) slot_decref(e->occ[idx].value);
+        }
         free(e->history);
         free(e->lc);
+        free(e->occ);
     }
     free(tab);
 }

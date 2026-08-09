@@ -1,0 +1,109 @@
+# test_temporal_when.eigs — #868.
+#
+# `<kw> is x when <N>` addresses the Nth RECORDED assignment, not a source
+# line. The `at` address space is source lines, which is not injective: the
+# #827 pruning retains only the strict suffix minima of the line sequence, so a
+# loop body that assigns one name N times keeps exactly ONE live entry and
+# every iteration but the last is unreachable. These checks pin the occurrence
+# address space, its bound, and the two distinct ways it can miss.
+#
+# NOT line-number sensitive — that is the point of the feature. No check below
+# hardcodes a line of this file, so inserting one is safe.
+
+pass_count is 0
+fail_count is 0
+
+define check(args) as:
+    label is args[0]
+    cond is args[1]
+    if cond:
+        pass_count is pass_count + 1
+    else:
+        fail_count is fail_count + 1
+        print of ("FAIL: " + label)
+
+# ---- (1) The issue's own repro: every iteration is addressable.
+#
+# `x is 0` is assignment 1; the loop body then assigns 0, 10, 20, 30, 40 as
+# assignments 2..6. Before #868 only the last was reachable — `what is x at
+# <body line>` answered 40 for every query, because the four earlier entries
+# had been pruned as unreachable.
+x is 0
+for i in range of 5:
+    x is i * 10
+
+check of ["when reports 6 assignments", (when is x) == 6]
+check of ["occurrence 1", (what is x when 1) == 0]
+check of ["occurrence 2", (what is x when 2) == 0]
+check of ["occurrence 3", (what is x when 3) == 10]
+check of ["occurrence 4", (what is x when 4) == 20]
+check of ["occurrence 5", (what is x when 5) == 30]
+check of ["occurrence 6", (what is x when 6) == 40]
+
+# The line-keyed form still answers what it always did — `when` is additive,
+# it does not change `at`.
+check of ["at is unchanged", (what is x at 999) == 40]
+
+# ---- (2) prev walks the ring, so it is no longer one step deep.
+#
+# `prev of x` alone reaches exactly one assignment back. Addressed by
+# ordinal, every predecessor in the window is reachable.
+check of ["prev of occurrence 6", (prev of x when 6) == 30]
+check of ["prev of occurrence 4", (prev of x when 4) == 10]
+check of ["prev of occurrence 2", (prev of x when 2) == 0]
+check of ["prev of occurrence 1 is null", (prev of x when 1) == null]
+
+# ---- (3) The timeless / degenerate kinds.
+check of ["who by occurrence", (who is x when 3) == "x"]
+check of ["when by occurrence is the ordinal", (when is x when 4) == 4]
+
+# ---- (4) Missing vs evicted are different answers.
+#
+# An ordinal past the total names an assignment that has not happened — a
+# legitimate question whose answer is "nothing yet", so null. An ordinal that
+# aged out of the retained window is a fact the runtime HAD and dropped, and
+# raises instead (checked from the shell harness, which can read the exit
+# code and message; a raise cannot be observed from inside the program).
+check of ["past the end is null", (what is x when 7) == null]
+check of ["zero is null", (what is x when 0) == null]
+check of ["negative is null", (what is x when 0 - 3) == null]
+
+# ---- (5) A second name keeps its own independent ordinal sequence.
+y is "a"
+y is "b"
+y is "c"
+check of ["y occurrence 1", (what is y when 1) == "a"]
+check of ["y occurrence 2", (what is y when 2) == "b"]
+check of ["y occurrence 3", (what is y when 3) == "c"]
+check of ["x is unaffected by y", (what is x when 3) == 10]
+
+# ---- (6) Non-numeric values ride the ring by reference, like the history.
+z is [1, 2]
+z is [3, 4]
+zz is what is z when 1
+check of ["list occurrence 1", zz[0] == 1]
+check of ["list occurrence 2", (what is z when 2)[1] == 4]
+
+# ---- (7) The ordinal is an expression, not a literal.
+n is 3
+check of ["computed ordinal", (what is x when n) == 10]
+check of ["arithmetic ordinal", (what is x when n + 1) == 20]
+
+# ---- (8) Assignments inside a function body get ordinals too — the address
+# space is per-binding and execution-ordered, so a name assigned by repeated
+# calls is addressable per call, which line-keying also could not express.
+counter is 0
+define tick() as:
+    counter is counter + 1
+
+tick of 0
+tick of 0
+tick of 0
+check of ["call 1", (what is counter when 2) == 1]
+check of ["call 2", (what is counter when 3) == 2]
+check of ["call 3", (what is counter when 4) == 3]
+
+if fail_count == 0:
+    print of "All tests passed"
+else:
+    print of fail_count

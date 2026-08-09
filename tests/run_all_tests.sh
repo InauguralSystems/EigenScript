@@ -2915,6 +2915,14 @@ check_eigs_suite "JIT temporal at/state_at under OSR (g_trace_current_line)" tes
 # too. It is the semantic half; the memory half is [70d].
 check_eigs_suite "temporal history pruning keeps every answer (#827)" test_temporal_pruning.eigs "All tests passed" 22
 
+# [70g] #868 — occurrence-addressed history. The #827 pruning above keeps only
+# the strict suffix minima of the line sequence, so a loop body that assigns one
+# name N times retains exactly ONE entry: `what is x at <body line>` answers the
+# LAST iteration and every earlier one is unreachable. `<kw> is x when <N>`
+# addresses the Nth recorded assignment instead, which is injective and
+# edit-stable. Deliberately NOT line-number sensitive, unlike [70]/[70f].
+check_eigs_suite "occurrence-addressed temporal history (#868)" test_temporal_when.eigs "All tests passed" 28
+
 # [70d] #827 — and the history must stay BOUNDED. Peak RSS at two iteration
 # counts 8x apart, ceiling + flatness, for a dead-code `prev of`, a live
 # `prev of`, and a live `at` query. Pre-fix this ran 203 MB and climbing; it
@@ -2922,7 +2930,7 @@ check_eigs_suite "temporal history pruning keeps every answer (#827)" test_tempo
 # so no sanitizer sees it. Skips on sanitizer builds (ASan overhead swamps it).
 echo "[70d] Temporal history is bounded (#827)"
 TMEM_OUTPUT=$(bash "$TESTS_DIR/test_temporal_memory.sh" 2>&1); TMEM_RC=$?
-echo "$TMEM_OUTPUT" | grep -E "^  (PASS|FAIL|SKIP|baseline|dead|live|at_live)"
+echo "$TMEM_OUTPUT" | grep -E "^  (PASS|FAIL|SKIP|baseline|dead|live|at_live|when_live)"
 TMEM_N=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: \([0-9]*\) passed.*/\1/p')
 TMEM_F=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: [0-9]* passed, \([0-9]*\) failed.*/\1/p')
 TMEM_N=${TMEM_N:-0}; TMEM_F=${TMEM_F:-0}
