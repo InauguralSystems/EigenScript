@@ -538,6 +538,23 @@ static int resolve_local(Compiler *c, const char *name, uint32_t hash) {
     return -1;
 }
 
+/* #895: slot resolution for the observer call-forms whose operand is a bare
+ * name — `report of x`, `report_value of x`, `trajectory of x`, `observe of x`,
+ * `<predicate> of x`. Each picks a *_SLOT opcode when the name is a frame slot
+ * and a *_NAME opcode otherwise, and each used to ask for the slot only inside
+ * a function (`c->enclosing`). At module scope that is wrong for exactly the
+ * names an `unobserved:` block promotes to module slots (Part B): the binding
+ * is a slot, so the *_NAME opcode's env lookup finds nothing and the form
+ * raised `undefined variable` for a name a plain read of resolves two lines
+ * later. Mirrors the AST_IDENT read path — module scope resolves a slot only
+ * for a promoted name, so an ordinary module binding still takes *_NAME. */
+static int resolve_observer_operand_slot(Compiler *c, ASTNode *id) {
+    const char *name = id->data.ident.name;
+    if (!c->enclosing && !name_set_has(&c->module_slot_names, name)) return -1;
+    uint32_t h = id->name_hash ? id->name_hash : env_hash_name(name);
+    return resolve_local(c, name, h);
+}
+
 static int add_local(Compiler *c, const char *name, uint32_t hash) {
     if (c->local_count >= MAX_LOCALS) return -1;
     int slot = c->local_count;
@@ -2539,8 +2556,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             if (fn_node && fn_node->type == AST_PREDICATE &&
                 arg_node && arg_node->type == AST_IDENT) {
                 uint16_t pkind = (uint16_t)fn_node->data.predicate.kind;
-                uint32_t ph = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
-                int pslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, ph) : -1;
+                int pslot = resolve_observer_operand_slot(c, arg_node);
                 if (pslot >= 0) {
                     emit_op_u16_u16(c, OP_PREDICATE_SLOT, pkind, (uint16_t)pslot, node->line);
                     break;
@@ -2552,8 +2568,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             if (fn_node && fn_node->type == AST_IDENT &&
                 strcmp(fn_node->data.ident.name, "report") == 0 &&
                 arg_node && arg_node->type == AST_IDENT) {
-                uint32_t rh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
-                int rslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, rh) : -1;
+                int rslot = resolve_observer_operand_slot(c, arg_node);
                 if (rslot >= 0) { emit_op_u16(c, OP_REPORT_SLOT, (uint16_t)rslot, node->line); break; }
                 /* Phase-3 B: not a local — report the name's binding via its slot. */
                 int rnidx = add_string_constant(c, arg_node->data.ident.name);
@@ -2565,8 +2580,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 arg_node && arg_node->type == AST_IDENT) {
                 /* #294 `report_value of <ident>` — classify the binding's VALUE
                  * trajectory (parallel to report, which classifies entropy). */
-                uint32_t rh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
-                int rslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, rh) : -1;
+                int rslot = resolve_observer_operand_slot(c, arg_node);
                 if (rslot >= 0) { emit_op_u16(c, OP_REPORT_VALUE_SLOT, (uint16_t)rslot, node->line); break; }
                 int rnidx = add_string_constant(c, arg_node->data.ident.name);
                 emit_op_u16(c, OP_REPORT_VALUE_NAME, (uint16_t)rnidx, node->line);
@@ -2578,8 +2592,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 /* #421 `trajectory of <ident>` — snapshot the binding's observer
                  * windows into a dict VALUE that survives a call boundary (the
                  * slot itself is binding-identity). `classify of t` reads it. */
-                uint32_t th = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
-                int tslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, th) : -1;
+                int tslot = resolve_observer_operand_slot(c, arg_node);
                 if (tslot >= 0) { emit_op_u16(c, OP_TRAJECTORY_SLOT, (uint16_t)tslot, node->line); break; }
                 int tnidx = add_string_constant(c, arg_node->data.ident.name);
                 emit_op_u16(c, OP_TRAJECTORY_NAME, (uint16_t)tnidx, node->line);
@@ -2592,8 +2605,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             if (fn_node && fn_node->type == AST_IDENT &&
                 strcmp(fn_node->data.ident.name, "observe") == 0 &&
                 arg_node && arg_node->type == AST_IDENT) {
-                uint32_t oh = arg_node->name_hash ? arg_node->name_hash : env_hash_name(arg_node->data.ident.name);
-                int oslot = c->enclosing ? resolve_local(c, arg_node->data.ident.name, oh) : -1;
+                int oslot = resolve_observer_operand_slot(c, arg_node);
                 if (oslot >= 0) { emit_op_u16(c, OP_OBSERVE_VALUE_SLOT, (uint16_t)oslot, node->line); break; }
                 int onidx = add_string_constant(c, arg_node->data.ident.name);
                 emit_op_u16(c, OP_OBSERVE_VALUE_NAME, (uint16_t)onidx, node->line);
