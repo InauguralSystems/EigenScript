@@ -663,6 +663,24 @@ OUTPUT=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
 check_contains "E003 JSON severity error" "$OUTPUT" '"code":"E003","severity":"error"'
 rm -f "$TMPFILE"
 
+# Fires inside a temporal qualifier — BOTH `at <expr>` and `when <expr>` (#868).
+# The lint walkers descend into the interrogative's qualifier expression, and a
+# new qualifier field is exactly the kind of addition they silently skip: six
+# separate walkers in lint.c carry the descent, none of which the compiler
+# would flag for missing a case. `when` shipped with all six unpatched and a
+# typo'd ordinal name linted clean while the `at` twin errored.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 1
+x is 2
+print of (what is x at nope_at)
+print of (what is x when nope_when)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "E003 fires inside an 'at' qualifier" "$OUTPUT" "undefined name 'nope_at'"
+check_contains "E003 fires inside a 'when' qualifier (#868)" "$OUTPUT" "undefined name 'nope_when'"
+rm -f "$TMPFILE"
+
 # Fires in callee position too (typo'd function name).
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'

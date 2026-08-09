@@ -371,6 +371,29 @@ x
 1
 ```
 
+The past is addressable per **assignment**, not just as a single step back —
+so a loop's individual iterations stay reachable after it has finished:
+
+```eigenscript
+total is 0
+for n in [5, 10, 20]:
+    total is total + n
+print of (what is total when 2)
+print of (what is total when 3)
+print of (what is total when 4)
+```
+```output
+5
+15
+35
+```
+
+In Python the equivalent is a list you remembered to append to before the fact,
+inside a loop you had already decided to instrument. Here the question is asked
+afterwards, of a program that was not written to answer it. (Retention is
+bounded — the last 256 assignments per queried binding — so this costs a fixed
+amount rather than growing with the loop.)
+
 In Python you would write the convergence loop with an explicit
 threshold; in EigenScript the loop condition *is* the semantic intent:
 

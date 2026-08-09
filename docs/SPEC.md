@@ -1332,6 +1332,41 @@ print of score
 print of (what is score at 2)   # 25 — line-number qualified history
 ```
 
+### Addressing an occurrence: `when <n>`
+
+`at <line>` addresses a **source line**, which is not injective: a line inside
+a loop or a repeatedly-called function executes many times, and only the most
+recent execution is reachable. `when <n>` addresses the **nth recorded
+assignment** to that binding instead — 1-based, in execution order — so every
+iteration is individually addressable, and the query does not shift meaning
+when a line is inserted above it.
+
+```eigenscript
+x is 0
+for i in range of 3:
+    x is i * 10
+print of (what is x when 2)
+print of (what is x when 4)
+print of (prev of x when 4)
+print of (when is x)
+```
+```output
+0
+20
+10
+4
+```
+
+Every interrogative takes the qualifier: `who is x when 2`, `where is x when
+2`, and `prev of x when n` (the value at assignment `n - 1`).
+
+Retention is **bounded** — the last 256 assignments per queried binding, so a
+long-running loop cannot grow without limit. `EIGS_OCC_WINDOW` sets a different
+window. The two ways a query can come back empty are kept distinct: an ordinal
+that has not happened yet answers `null`, while one that has aged out of the
+window **raises**, because reporting a dropped value as `null` would be
+indistinguishable from one that was never assigned.
+
 ## Concurrency
 
 `spawn of [fn, args...]` runs a function on a new thread and returns a

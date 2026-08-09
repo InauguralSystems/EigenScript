@@ -307,6 +307,8 @@ static void collect_refs(ASTNode *node, LintContext *ctx) {
             collect_refs(node->data.interrogate.expr, ctx);
             if (node->data.interrogate.at_expr)
                 collect_refs(node->data.interrogate.at_expr, ctx);
+            if (node->data.interrogate.when_expr)          /* #868 */
+                collect_refs(node->data.interrogate.when_expr, ctx);
             break;
         case AST_IMPORT:
             /* import names become available */
@@ -2163,6 +2165,8 @@ static void w016_scan(ASTNode *n, LintContext *ctx) {
             w016_scan(n->data.interrogate.expr, ctx);
             if (n->data.interrogate.at_expr)
                 w016_scan(n->data.interrogate.at_expr, ctx);
+            if (n->data.interrogate.when_expr)             /* #868 */
+                w016_scan(n->data.interrogate.when_expr, ctx);
             break;
         /* Nothing to do for these. Enumerated rather than covered by a `default:`
          * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
@@ -2320,6 +2324,8 @@ static void w017_scan(ASTNode *n, LintContext *ctx) {
             w017_scan(n->data.interrogate.expr, ctx);
             if (n->data.interrogate.at_expr)
                 w017_scan(n->data.interrogate.at_expr, ctx);
+            if (n->data.interrogate.when_expr)             /* #868 */
+                w017_scan(n->data.interrogate.when_expr, ctx);
             break;
         /* Nothing to do for these. Enumerated rather than covered by a `default:`
          * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
@@ -2420,6 +2426,7 @@ static void check_one_element_arg_list(ASTNode *ast, LintContext *ctx) {
     case AST_INTERROGATE:                                                    \
         if ((childvar = (n)->data.interrogate.expr))    { STMT; }            \
         if ((childvar = (n)->data.interrogate.at_expr)) { STMT; }            \
+        if ((childvar = (n)->data.interrogate.when_expr)) { STMT; }          \
         break;                                                               \
     case AST_TRY:                                                            \
         for (_lfe_i = 0; _lfe_i < (n)->data.trycatch.try_count; _lfe_i++)    \
@@ -3082,6 +3089,8 @@ static void w018_scan(ASTNode *n, LintContext *ctx, W018Scope *sc) {
             w018_scan(n->data.interrogate.expr, ctx, sc);
             if (n->data.interrogate.at_expr)
                 w018_scan(n->data.interrogate.at_expr, ctx, sc);
+            if (n->data.interrogate.when_expr)             /* #868 */
+                w018_scan(n->data.interrogate.when_expr, ctx, sc);
             break;
         /* Nothing to do for these. Enumerated rather than covered by a `default:`
          * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
@@ -3483,6 +3492,7 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
         case AST_INTERROGATE:
             e003_walk(n->data.interrogate.expr, e, ctx, mode);
             e003_walk(n->data.interrogate.at_expr, e, ctx, mode);
+            e003_walk(n->data.interrogate.when_expr, e, ctx, mode);  /* #868 */
             break;
         /* Nothing to do for these. Enumerated rather than covered by a `default:`
          * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build

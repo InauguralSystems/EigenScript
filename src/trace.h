@@ -83,6 +83,48 @@ void trace_arm_history_all_mt(void);
 void trace_arm_history_name(const char *name);
 void trace_history_disable(void);
 
+/* #868: arm the OCCURRENCE RING for `name` — a third, strictly narrower tier
+ * than the two above.
+ *
+ * The line-keyed history (#827) retains only the strict suffix minima of the
+ * line sequence, so a loop body that assigns one name N times keeps exactly ONE
+ * live entry: every iteration but the last is unaddressable. That pruning is
+ * what bounds the history by program TEXT, and it is not negotiable — so
+ * per-iteration addressing needs its own storage with its own bound.
+ *
+ * The ring keeps the last `trace_occ_window()` recorded assignments to an armed
+ * name, addressable by 1-based ordinal. Bounded by WINDOW * armed names, so it
+ * cannot reintroduce #827's unbounded growth.
+ *
+ * Armed ONLY by a `when`-qualified query naming a compile-time identifier.
+ * Deliberately NOT armed by `state_at`, by an open tape, or by the `at` forms:
+ * all of those are line-keyed and answer fine from the pruned history, and
+ * arming them would put a ring on every name in the program — exactly the
+ * whole-program over-arming #827 was filed about. */
+void trace_arm_occurrences_name(const char *name);
+
+/* Wildcard occurrence arming — ring every name. INTERACTIVE REPL ONLY.
+ *
+ * The REPL compiles line by line, so `x is 1` is already compiled and run
+ * before the later `what is x when 1` can arm anything: without this, every
+ * `when` query in a session answers null for assignments made on earlier
+ * lines. `repl_interactive` has the same problem for the line history and
+ * solves it the same way (trace_arm_history_all).
+ *
+ * Deliberately not reachable from a script: a compiled program knows its
+ * `when` targets at compile time, so it never needs the wildcard, and giving
+ * it one would put a ring on every binding — the over-arming #827 fixed. The
+ * piped/non-interactive path does not call this either (byte-identical output
+ * is its contract). */
+void trace_arm_occurrences_all(void);
+
+/* Retained-window size, in assignments per armed name. Defaults to
+ * TRACE_OCC_WINDOW_DEFAULT; overridden by EIGS_OCC_WINDOW (clamped). Read once
+ * per process on first use. */
+int trace_occ_window(void);
+#define TRACE_OCC_WINDOW_DEFAULT 256
+#define TRACE_OCC_WINDOW_MAX     (1 << 20)
+
 /* Source line currently being executed. Written by OP_LINE (a plain global
  * store — cheaper than a call; the JIT also stamps it via a flat-address
  * write, so it can't be __thread), read by trace_assign to stamp history
@@ -206,6 +248,35 @@ int trace_query_prev(const char *interned_name, EigsSlot *out);
  *                          (requires g_trace_obs_hist; miss returns 0)
  */
 int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out);
+
+/* #868 — `<kw> is x when <N>`: the state at the Nth RECORDED assignment to
+ * `name`, ordinals 1-based and ascending in execution order.
+ *
+ * The ordinal space is the history's own recorded-assignment counter, NOT
+ * `env->assign_counts` (what the unqualified `when is x` reports). The two
+ * disagree by the number of assignments made inside `unobserved:` blocks —
+ * see #908; this form indexes what was actually recorded, because that is the
+ * only counter that can address a stored entry.
+ *
+ * `kind` mirrors trace_query_at, resolved against the occurrence instead of a
+ * line: 0 (what) the value; 6 (prev) the value at ordinal N-1; 2 (when) N
+ * itself; 1 (who) the binding name; 3/4/5 (where/why/how) the observer snapshot
+ * captured at that assignment.
+ *
+ * Return value distinguishes the two ways to miss, because conflating them is
+ * a wrong answer: an ordinal that aged out of the window is a fact the runtime
+ * HAD and dropped, and must not read as "never happened".
+ *   TRACE_WHEN_HIT     — *out filled (caller owns the ref)
+ *   TRACE_WHEN_MISS    — N < 1, or N > total: that assignment has not happened
+ *   TRACE_WHEN_EVICTED — 1 <= N <= total but older than the retained window
+ * On MISS/EVICTED, *total and *oldest report the recorded count and the oldest
+ * still-retained ordinal (oldest is 0 when nothing is retained) so the caller
+ * can raise a message that says which it was. */
+#define TRACE_WHEN_HIT      1
+#define TRACE_WHEN_MISS     0
+#define TRACE_WHEN_EVICTED (-1)
+int trace_query_when(int kind, const char *interned_name, long long ordinal,
+                     EigsSlot *out, long long *total, long long *oldest);
 
 /* Phase 4 — `state_at(line)` whole-program backward query.
  *

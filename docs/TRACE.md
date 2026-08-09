@@ -371,6 +371,41 @@ in-run time travel.
   a line-sorted array — `O(log D)` where `D` is the number of distinct
   assigning lines. This replaced the periodic line-floor segment index,
   which existed only to make scanning an unbounded array survivable.
+- **`when <n>` addresses an occurrence, and needs its own storage** (#868).
+  The pruning above is exactly what makes a loop body unaddressable: the
+  surviving entry for a line assigned N times is the Nth, so `what is x at
+  <body line>` answers the last iteration and the other N-1 are gone. That
+  is correct for a line-keyed question and useless for the question people
+  actually ask ("what was `x` on iteration 2"). Source lines are the wrong
+  address space for it — not injective over executions, and shifted by any
+  edit above the query.
+
+  So `<kw> is x when <n>` indexes the **nth recorded assignment**, and rides
+  a separate per-name **ring buffer** that survives the pruning. Its bound is
+  a fixed window rather than reachability: the last `EIGS_OCC_WINDOW`
+  assignments (default 256) per armed name, so retention is again independent
+  of how long the program runs. Memory is `window x armed names`, and the
+  ring pins that many values — which is why the arming tier below is the
+  narrowest of the three.
+
+  The two empty answers are deliberately different. An ordinal that has not
+  happened yet is `null`; one that aged out of the window **raises**. They
+  cannot share a representation: the runtime *had* the evicted value and
+  dropped it to stay bounded, and reporting that as `null` would be a
+  confident wrong answer rather than a missing one.
+
+  The ordinal space is the history's own recorded-assignment counter, which is
+  **not** what the unqualified `when is x` reports — the two disagree by the
+  number of assignments made inside `unobserved:` blocks (#908). This form has
+  to index what was actually recorded, because that is the only counter that
+  can address a stored entry.
+- **Occurrence arming is the third and narrowest tier** (#868). A name gets a
+  ring only if a `when`-qualified query named it at compile time. Unlike the
+  line-history arming there is no wildcard: `state_at`, an open tape, and
+  `spawn` all widen the history to every name, and letting them widen this
+  too would put a ring on every binding in the program — the whole-program
+  over-arming #827 was filed about, reintroduced by the back door. Those
+  forms are all line-keyed and answer fine from the pruned history.
 - Per-assign cost of the history: one cache line + a pointer compare,
   plus the pop-while that retires the entries the new assignment kills
   (amortized O(1) — an entry is pushed once and popped once).

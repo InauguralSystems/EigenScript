@@ -392,6 +392,7 @@ void free_ast(ASTNode *node) {
         case AST_INTERROGATE:
             free_ast(node->data.interrogate.expr);
             free_ast(node->data.interrogate.at_expr);
+            free_ast(node->data.interrogate.when_expr);
             break;
         case AST_IMPORT:
             free(node->data.import.module_name);
@@ -590,6 +591,7 @@ static ASTNode *clone_ast(ASTNode *node) {
             n->data.interrogate.kind = node->data.interrogate.kind;
             n->data.interrogate.expr = clone_ast(node->data.interrogate.expr);
             n->data.interrogate.at_expr = clone_ast(node->data.interrogate.at_expr);
+            n->data.interrogate.when_expr = clone_ast(node->data.interrogate.when_expr);
             break;
         case AST_PREDICATE:
             n->data.predicate.kind = node->data.predicate.kind;
@@ -768,15 +770,25 @@ static ASTNode* parse_primary(Parser *p) {
         if (p_cur(p)->type == TOK_IS) {
             p_advance(p);
             ASTNode *expr = parse_expression(p);
-            ASTNode *at_expr = NULL;
+            ASTNode *at_expr = NULL, *when_expr = NULL;
             if (p_cur(p)->type == TOK_AT) {
                 p_advance(p);
                 at_expr = parse_expression(p);
+            } else if (p_cur(p)->type == TOK_WHEN) {
+                /* #868: `<kw> is x when <N>` — the Nth recorded assignment.
+                 * Unambiguous against the nested-interrogative reading
+                 * (`what is (when is y)`): that one is reached through
+                 * parse_expression above and consumes TOK_WHEN before we get
+                 * here, so arriving with TOK_WHEN current means the operand
+                 * is already complete and this `when` is a qualifier. */
+                p_advance(p);
+                when_expr = parse_expression(p);
             }
             ASTNode *n = make_node(AST_INTERROGATE, p_cur(p)->line);
             n->data.interrogate.kind = kind;
             n->data.interrogate.expr = expr;
             n->data.interrogate.at_expr = at_expr;
+            n->data.interrogate.when_expr = when_expr;
             return n;
         }
         ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
@@ -811,15 +823,19 @@ static ASTNode* parse_primary(Parser *p) {
                     "'prev of' requires a variable name");
                 g_parse_errors++;
             }
-            ASTNode *at_expr = NULL;
+            ASTNode *at_expr = NULL, *when_expr = NULL;
             if (p_cur(p)->type == TOK_AT) {
                 p_advance(p);
                 at_expr = parse_expression(p);
+            } else if (p_cur(p)->type == TOK_WHEN) {
+                p_advance(p);                        /* #868 — see parse_primary */
+                when_expr = parse_expression(p);
             }
             ASTNode *n = make_node(AST_INTERROGATE, p_cur(p)->line);
             n->data.interrogate.kind = 6;
             n->data.interrogate.expr = expr;
             n->data.interrogate.at_expr = at_expr;
+            n->data.interrogate.when_expr = when_expr;
             return n;
         }
         ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);

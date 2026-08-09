@@ -2721,6 +2721,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
         [OP_LOCAL_IDX_DOT_SET] = &&lbl_LOCAL_IDX_DOT_SET,
         [OP_INTERROGATE_NAMED] = &&lbl_INTERROGATE_NAMED,
         [OP_INTERROGATE_NAMED_AT] = &&lbl_INTERROGATE_NAMED_AT,
+        [OP_INTERROGATE_NAMED_WHEN] = &&lbl_INTERROGATE_NAMED_WHEN,
         [OP_DEFAULT_PARAM] = &&lbl_DEFAULT_PARAM,
         [OP_DESTRUCTURE_UNPACK] = &&lbl_DESTRUCTURE_UNPACK,
         [OP_SLICE_GET] = &&lbl_SLICE_GET,
@@ -4982,6 +4983,60 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             slot_decref(at_slot);
         }
         vm_push(result);
+        DISPATCH();
+    }
+
+    CASE(INTERROGATE_NAMED_WHEN): {
+        /* #868: `<kw> is x when <N>` — the state at the Nth recorded
+         * assignment. The ordinal is on the stack. */
+        uint16_t kind = read_u16(ip); ip += 2;
+        uint16_t name_idx = read_u16(ip); ip += 2;
+        Value *ord_v = vm_pop();
+        int ord_is_num = (ord_v && ord_v->type == VAL_NUM);
+        double ord_d = ord_is_num ? ord_v->data.num : 0.0;
+        val_decref(ord_v);
+        const char *name = chunk->const_interns[name_idx];
+
+        if (!ord_is_num) {
+            rt_error(EK_TYPE, current_line,
+                "'when' ordinal must be a number");
+            vm_push(make_null());
+            DISPATCH();
+        }
+        /* A fractional ordinal names no assignment. Truncating silently would
+         * answer a question that was not asked. */
+        if (ord_d != (double)(long long)ord_d) {
+            rt_error(EK_VALUE, current_line,
+                "'when' ordinal must be a whole number, got %g", ord_d);
+            vm_push(make_null());
+            DISPATCH();
+        }
+
+        long long ordinal = (long long)ord_d;
+        EigsSlot w_slot;
+        long long total = 0, oldest = 0;
+        int r = trace_query_when(kind, name, ordinal, &w_slot, &total, &oldest);
+        if (r == TRACE_WHEN_HIT) {
+            Value *result = slot_to_value(w_slot);
+            slot_decref(w_slot);
+            vm_push(result);
+            DISPATCH();
+        }
+        if (r == TRACE_WHEN_EVICTED) {
+            /* The runtime HAD this assignment and dropped it to stay bounded.
+             * Reporting null here would be indistinguishable from "never
+             * assigned" — a wrong answer rather than a missing one. */
+            rt_error(EK_VALUE, current_line,
+                "assignment %lld of '%s' is outside the retained window "
+                "(retaining %lld..%lld; raise EIGS_OCC_WINDOW, currently %d)",
+                ordinal, name, oldest, total, trace_occ_window());
+            vm_push(make_null());
+            DISPATCH();
+        }
+        /* MISS: the ordinal names an assignment that has not happened. That is
+         * a legitimate question with the answer "nothing yet" — null, as with
+         * every other unreachable temporal read. */
+        vm_push(make_null());
         DISPATCH();
     }
 

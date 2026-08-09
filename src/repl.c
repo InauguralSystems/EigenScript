@@ -588,6 +588,9 @@ static void repl_interactive(Env *env) {
     /* #827: a REPL line can name any binding assigned by an earlier line,
      * so the narrow per-name arming cannot apply here — wildcard. */
     trace_arm_history_all();
+    /* #868: same reasoning for the occurrence ring — a `when <n>` query typed
+     * after the assignments it asks about must still find them. */
+    trace_arm_occurrences_all();
     g_trace_obs_hist = 1;
 
     hist_load();
