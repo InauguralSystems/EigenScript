@@ -11,6 +11,7 @@ here are enforced by the suite (`run_all_tests.sh` EM1–EM30 and
 |----------|--------|-----------|----------|
 | Syntax error | `Syntax error line N: ...` | 1 | Tokenizer problem. Accumulates all errors, aborts before execution. |
 | Parse error | `Parse error line N: ...` | 1 | Parser problem. Accumulates all errors, aborts before execution. |
+| Compile error | `Compile error line N: ...` | 1 | Bytecode-generation problem — a construct that parses but cannot be compiled. Accumulates, aborts before execution (see below). |
 | Runtime error (uncaught) | `Error line N: ...` + stack trace | 1 | Type mismatch, undefined variable, index out of bounds, non-callable, uncaught `throw`. Prints to stderr and **halts** — no statement after the error runs. |
 | Runtime error (caught) | `{kind, message, line}` dict bound to the `catch` variable | — | Recoverable with `try`/`catch`; execution continues in the handler. `kind` is from the closed set below. |
 | Warning | `Warning line N: ...` | 0 | Recoverable issue (division by zero yields `0`). Prints to stderr, continues execution. |
@@ -20,6 +21,27 @@ Parse errors prevent execution entirely — the program never runs if
 parsing fails. Warnings allow execution to continue; **uncaught runtime
 errors do not** — they halt with exit 1 so scripts fail loudly for
 callers, Makefiles, and CI.
+
+### Compile errors
+
+A compile error is a program that *parses* and still cannot be turned into
+bytecode. Like parse errors they abort before anything runs, and the program's
+exit line is a count — `N compile error(s) — aborting` — after the individual
+diagnostics:
+
+| Message | Cause |
+|---|---|
+| `'break' outside a loop` / `'continue' outside a loop` | Loop-control statement with no enclosing loop (they used to be silent no-ops). |
+| `'try' nested more than N deep` | The per-frame handler stack is bounded. |
+| `'when <n>' requires a variable name` | The occurrence qualifier addresses a binding's history, so its operand must be a name. |
+| `'<word> is ...' is an interrogative, not an assignment` | A question word cannot be assigned with `is`, and the statement's result is discarded (#869). |
+| `constant pool exceeds 65536 entries in one chunk` | The pool index is a u16. Split the unit. |
+| `expression nesting too deep to compile (limit N)` | The compiler bounds its own recursion so a deep expression cannot overflow the C stack. **An f-string costs about two levels per interpolation** — the lexer desugars it into a `+` chain — so a long one reaches the limit with nothing nested-looking in the source. Split the expression (#912). |
+| `bytecode loop offset too large` | A loop body whose back-edge does not fit a u16 operand. |
+
+Each is reported once per compile even where the underlying guard trips
+repeatedly, so the count on the final line can exceed the number of distinct
+messages.
 
 ## Stack traces
 
@@ -92,6 +114,7 @@ result dict gains `"error": {kind, message, line}` when `ok` is 0.
 | Successful execution | 0 |
 | File not found | 1 |
 | Syntax / parse errors | 1 |
+| Compile errors | 1 |
 | Uncaught runtime error or `throw` | 1 |
 | Unjoined task dies of an uncaught error (fire-and-forget) | 1 |
 | Assertion failure | 1 |

@@ -6,6 +6,31 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **A too-deep expression now says so (#912).** `compile_node`'s depth guard was
+  the one `g_parse_errors++` site in `compiler.c` that printed nothing: it
+  recorded the message for an embedder and stopped there, so from a terminal the
+  program died with a bare `N compile error(s) — aborting` — no line, no
+  message, no caret — and `--lint` on the same file stayed clean.
+
+  It bites through **f-strings** above all. The lexer desugars one into a `+`
+  chain (~2 levels per interpolation), so an f-string past ~62 `{}` fields
+  reaches the 128-level limit with nothing nested-looking in the source. That is
+  reachable by accretion — a status line, a CSV row, a debug dump — and it cost
+  a 15-minute bisect in a consumer repo to find, because nothing pointed at the
+  statement, the file, or the concept.
+
+  The guard now prints `Compile error line N: expression nesting too deep to
+  compile (limit 128) — split the expression`, with the f-string mechanism as a
+  note, **once per compile** (it trips again at every sibling of the offending
+  node, and one message repeated is not more information). The
+  `Bytecode loop offset too large at line N` message was the other odd one out
+  and now matches the `Compile error line N:` format every other site uses.
+
+  `docs/DIAGNOSTICS.md` gains the compile-error category, which it never had —
+  seven messages that existed in the code and in no document.
+
+### Fixed
+
 - **`report of x` no longer raises "undefined variable" for a name an
   `unobserved:` block promoted to a module slot (#895).** A name assigned
   only inside such a block and never referenced outside it is promoted to a

@@ -461,7 +461,9 @@ static void emit_loop(Compiler *c, int loop_start, int line) {
         /* Back-edge too far for a u16 operand. The old code silently
          * truncated it (wrong back-jump → corrupt control flow). Flag the
          * error and clamp to an in-bounds 0 so nothing executes a wild jump. */
-        fprintf(stderr, "Bytecode loop offset too large at line %d\n", line);
+        fprintf(stderr,
+                "Compile error line %d: bytecode loop offset too large\n",
+                line);
         g_parse_errors++;
         offset = 0;
     }
@@ -1891,7 +1893,27 @@ static void compile_node(Compiler *c, ASTNode *node) {
     if (g_parse_depth >= COMPILE_MAX_DEPTH) {
         /* Too deep to compile without overflowing the C stack. Flag the error
          * (entry paths abort before executing, cf. the post-compile check) and
-         * emit a safe in-bounds placeholder rather than recursing further. */
+         * emit a safe in-bounds placeholder rather than recursing further.
+         *
+         * #912: this was the one g_parse_errors++ site in the file that never
+         * printed anything, so from a terminal the program died with a bare
+         * "N compile error(s) — aborting" and `--lint` stayed clean. The
+         * recorded message reached an embedder and nobody else. It bites
+         * through f-strings above all: the lexer desugars one into a `+` chain
+         * (~2 levels per interpolation), so a long status line reaches the
+         * limit with nothing in the source that looks nested. Report once per
+         * compile — the guard trips again at every sibling of the offending
+         * node, and repeating one message is not more information. */
+        if (!g_compile_depth_reported) {
+            g_compile_depth_reported = 1;
+            fprintf(stderr,
+                    "Compile error line %d: expression nesting too deep to "
+                    "compile (limit %d) — split the expression. Note an "
+                    "f-string costs about two levels per interpolation, so a "
+                    "long one reaches this with nothing nested-looking in the "
+                    "source.\n",
+                    node ? node->line : 0, COMPILE_MAX_DEPTH);
+        }
         eigs_record_first_error(node ? node->line : 0,
                                 "expression nesting too deep to compile");
         g_parse_errors++;
@@ -3164,6 +3186,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     }
 
     g_parse_depth = 0;  /* reuse the parse-depth counter as the compile-depth guard */
+    g_compile_depth_reported = 0;   /* #912: one report per compile */
 
     /* For module-level slot promotion: seed local_count past existing env entries
      * so SET_LOCAL slot indices don't collide with builtins/globals already there. */

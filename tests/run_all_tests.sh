@@ -1141,6 +1141,70 @@ else
 fi
 rm -f "$CPG_FILE"
 
+# [114b] Compile-depth guard reports (#912). The guard at compiler.c's
+# compile_node was the one g_parse_errors++ site in the file that printed
+# nothing, so a program that tripped it died with a bare "N compile error(s)
+# — aborting" and --lint stayed clean. It bites through f-strings above all:
+# the lexer desugars one into a `+` chain (~2 levels per interpolation), so a
+# long status line reaches the limit with nothing nested-looking in the
+# source. Asserts the diagnostic exists, names a line, appears exactly ONCE
+# (the guard trips again at every sibling), and that the threshold itself has
+# not moved — 62 interpolations must still compile and run.
+echo "[114b] Compile-depth guard diagnostic (#912)"
+CDG_DEEP=$(mktemp /tmp/eigs_depth_XXXX.eigs)
+CDG_OK=$(mktemp /tmp/eigs_depth_ok_XXXX.eigs)
+CDG_TWO=$(mktemp /tmp/eigs_depth_two_XXXX.eigs)
+python3 -c "
+parts = ''.join('a%d={x}' % i for i in range(63))
+print('x is 1')
+print('print of f\"%s\"' % parts)
+print('print of \"should-not-run\"')" > "$CDG_DEEP"
+python3 -c "
+parts = ''.join('a%d={x}' % i for i in range(62))
+print('x is 1')
+print('print of f\"%s\"' % parts)" > "$CDG_OK"
+python3 -c "
+parts = ''.join('a%d={x}' % i for i in range(70))
+print('x is 1')
+print('print of f\"%s\"' % parts)
+print('print of f\"%s\"' % parts)" > "$CDG_TWO"
+
+CDG_OUT=$(./eigenscript "$CDG_DEEP" </dev/null 2>&1); CDG_RC=$?
+CDG_MSGS=$(echo "$CDG_OUT" | grep -c "expression nesting too deep" || true)
+TOTAL=$((TOTAL + 1))
+if [ "$CDG_RC" -ne 0 ] && [ "$CDG_MSGS" = "1" ] \
+   && echo "$CDG_OUT" | grep -q "Compile error line 2:" \
+   && ! echo "$CDG_OUT" | grep -q "should-not-run"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: too-deep expression names its line (was: silent, count only)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: compile-depth diagnostic (rc=$CDG_RC msgs=$CDG_MSGS)"
+    echo "$CDG_OUT" | head -3
+fi
+
+CDG_OK_OUT=$(./eigenscript "$CDG_OK" </dev/null 2>&1); CDG_OK_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$CDG_OK_RC" -eq 0 ] && echo "$CDG_OK_OUT" | grep -q "a61=1"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: an f-string just under the limit still compiles and runs"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: under-limit f-string regressed (rc=$CDG_OK_RC)"
+    echo "$CDG_OK_OUT" | head -3
+fi
+
+CDG_TWO_MSGS=$(./eigenscript "$CDG_TWO" </dev/null 2>&1 | grep -c "expression nesting too deep" || true)
+TOTAL=$((TOTAL + 1))
+if [ "$CDG_TWO_MSGS" = "1" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: two too-deep expressions still report once per compile"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: depth diagnostic not deduped (msgs=$CDG_TWO_MSGS)"
+fi
+rm -f "$CDG_DEEP" "$CDG_OK" "$CDG_TWO"
+
 # [120] OP_LINE 32-bit operand (#630). The line operand was u16, so every
 # line past 65535 wrapped (line % 65536) and two assignments exactly 65536
 # lines apart collapsed onto one stamp — 'what is x at L' then returned the
