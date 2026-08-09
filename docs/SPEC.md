@@ -1076,7 +1076,9 @@ load_file of "mymodule.eigs"     # definitions land in *your* scope
 
 Every observed variable can be interrogated. `what is x` is its value,
 `who is x` its name, `when is x` the number of times it has been
-assigned. (`where`, `why`, `how` return the observer's entropy,
+assigned — **every** assignment, including those made inside an
+`unobserved:` block, which suppresses observation and not assignment
+(#908). (`where`, `why`, `how` return the observer's entropy,
 entropy-delta, and stability — see [OBSERVER.md](OBSERVER.md).)
 
 ```eigenscript
@@ -1301,6 +1303,28 @@ print of total
 ```
 ```output
 4999950000
+```
+
+What the block suppresses is **observation**, not assignment. The writes
+still happen, still land in the history, and are still counted and
+addressed like any other: `when is x` includes them, and each one takes
+an ordinal that `<kw> is x when <n>` can address (#908). The same rule
+that makes a predicate raise rather than answer from a dead trajectory
+is why the counter does not quietly shrink — a performance annotation
+must not change an answer.
+
+```eigenscript
+c is 0
+c is 1
+unobserved:
+    c is 2
+c is 3
+print of (when is c)
+print of (what is c when 3)
+```
+```output
+4
+2
 ```
 
 ## Temporal interrogatives

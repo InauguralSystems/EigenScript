@@ -2253,7 +2253,7 @@ void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val) {
             EigsSlot new_s = slot_from_value(promoted);
             slot_decref(e->values[idx]);
             e->values[idx] = new_s;
-            if (e->assign_counts && g_unobserved_depth == 0)
+            if (e->assign_counts)
                 e->assign_counts[idx]++;
             env_shared_unlock(e);
             return;
@@ -2278,7 +2278,7 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
         EigsSlot new_s = slot_from_value(promoted);
         slot_decref(env->values[idx]);
         env->values[idx] = new_s;
-        if (env->assign_counts && g_unobserved_depth == 0)
+        if (env->assign_counts)
             env->assign_counts[idx]++;
         env_shared_unlock(env);
         return;
@@ -2312,7 +2312,7 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     if (promoted == val) val_incref(promoted);
     env->values[env->count] = slot_from_value(promoted);
     if (env->assign_counts)
-        env->assign_counts[env->count] = (g_unobserved_depth == 0) ? 1 : 0;
+        env->assign_counts[env->count] = 1;
     env->count++;
     env->binding_version++;
 
@@ -2363,7 +2363,7 @@ void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
         env_shared_unlock(e); /* env_store_slot re-locks; mutex is non-recursive */
         if (idx >= 0) {
             env_store_slot(e, idx, s);
-            if (e->assign_counts && g_unobserved_depth == 0)
+            if (e->assign_counts)
                 env_assign_counts_ptr(e)[idx]++;
             return;
         }
@@ -2378,7 +2378,7 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
     int idx = env_hash_find(&env->hash, interned, h, env->names);
     if (idx >= 0) {
         env_store_slot(env, idx, s);
-        if (env->assign_counts && g_unobserved_depth == 0)
+        if (env->assign_counts)
             env->assign_counts[idx]++;
         return;
     }
@@ -2426,7 +2426,7 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
 store:
     env->values[env->count] = stored;
     if (env->assign_counts)
-        env->assign_counts[env->count] = (g_unobserved_depth == 0) ? 1 : 0;
+        env->assign_counts[env->count] = 1;
     env->count++;
     env->binding_version++;
     if (env->count * 10 > (env->hash.mask + 1) * 7) {
@@ -2533,6 +2533,14 @@ EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found)
     return slot_null();
 }
 
+/* `when is x`. Every bump site — here, in vm.c, and the JIT's emitted inline
+ * SET_NAME sequence — is unconditional behind the NULL check: an assignment
+ * made inside an `unobserved:` block is counted (#908). The block suppresses
+ * OBSERVATION (entropy/dH), not assignment, and the history's own
+ * recorded-assignment counter (trace.c) has never skipped them — it is the
+ * ordinal space `<kw> is x when <n>` addresses (#868), so a gate here would
+ * put this counter below the largest ordinal that exists. Do not reintroduce
+ * one: a performance annotation must not change an answer. */
 int env_get_assign_count(Env *env, const char *name, uint32_t h) {
     if (h == 0) h = env_hash_name(name);
     Env *e = env;

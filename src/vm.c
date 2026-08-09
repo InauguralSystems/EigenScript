@@ -987,7 +987,7 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
         Env *target = ic->walk_depth ? start->parent : start;
         if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
             env_store_slot(target, ic->slot_idx, s);
-            if (target->assign_counts && g_unobserved_depth == 0)
+            if (target->assign_counts)
                 target->assign_counts[ic->slot_idx]++;
             return;
         }
@@ -999,7 +999,7 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
     Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
     if (target) {
         env_store_slot(target, slot_idx, s);
-        if (target->assign_counts && g_unobserved_depth == 0)
+        if (target->assign_counts)
             env_assign_counts_ptr(target)[slot_idx]++;   /* #607 */
         if (depth <= 1) {
             ic->starting_env = start;
@@ -1034,7 +1034,7 @@ void jit_helper_set_name_local(EigsChunk *chunk, int idx) {
                          ic->walk_depth == 0 &&
                          ic->target_ver == start->binding_version, 1)) {
         env_store_slot(start, ic->slot_idx, s);
-        if (start->assign_counts && g_unobserved_depth == 0)
+        if (start->assign_counts)
             start->assign_counts[ic->slot_idx]++;
         return;
     }
@@ -1066,7 +1066,7 @@ void jit_helper_set_fn_name_local(EigsChunk *chunk, int idx) {
                          ic->walk_depth == 0 &&
                          ic->target_ver == target->binding_version, 1)) {
         env_store_slot(target, ic->slot_idx, s);
-        if (target->assign_counts && g_unobserved_depth == 0)
+        if (target->assign_counts)
             target->assign_counts[ic->slot_idx]++;
         return;
     }
@@ -1714,7 +1714,7 @@ static void loop_iter_store(Env *env, double n) {
     if (c->env == env && c->version == env->binding_version &&
         slot_is_num(env->values[c->slot])) {
         env->values[c->slot].d = n;
-        if (env->assign_counts && g_unobserved_depth == 0)
+        if (env->assign_counts)
             env->assign_counts[c->slot]++;
         return;
     }
@@ -3306,7 +3306,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             Env *target = ic->walk_depth ? start->parent : start;
             if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
                 env_store_slot(target, ic->slot_idx, s);
-                if (target->assign_counts && g_unobserved_depth == 0)
+                if (target->assign_counts)
                     target->assign_counts[ic->slot_idx]++;
                 DISPATCH();
             }
@@ -3318,7 +3318,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
         if (target) {
             env_store_slot(target, slot_idx, s);
-            if (target->assign_counts && g_unobserved_depth == 0)
+            if (target->assign_counts)
                 env_assign_counts_ptr(target)[slot_idx]++;   /* #607 */
             if (!g_vm_multithreaded && depth <= 1) {   /* #297: see above */
                 ic->starting_env = start;
@@ -3355,7 +3355,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                              ic->walk_depth == 0 &&
                              ic->target_ver == start->binding_version, 1)) {
             env_store_slot(start, ic->slot_idx, s);
-            if (start->assign_counts && g_unobserved_depth == 0)
+            if (start->assign_counts)
                 start->assign_counts[ic->slot_idx]++;
             DISPATCH();
         }
@@ -3394,7 +3394,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                              ic->walk_depth == 0 &&
                              ic->target_ver == target->binding_version, 1)) {
             env_store_slot(target, ic->slot_idx, s);
-            if (target->assign_counts && g_unobserved_depth == 0)
+            if (target->assign_counts)
                 target->assign_counts[ic->slot_idx]++;
             DISPATCH();
         }

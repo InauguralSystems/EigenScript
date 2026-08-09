@@ -376,6 +376,24 @@ loop while b < 80:
 check of ["bitwise emitters hot loop", bw_total == 5621472]
 
 # ----------------------------------------------------------------
+# 9) #908: the emitted assign_counts bump, inside `unobserved:`.
+#    The inline SET_NAME fast path increments env->assign_counts itself,
+#    and used to re-read EigsThread.unobserved_depth and skip the bump —
+#    mirroring an interpreter gate that is now gone. A stale gate in the
+#    emitter is invisible to any interpreted test: the loop below counts
+#    correctly for its first 5000 iterations and then, once the OSR thunk
+#    takes over, silently stops counting. Restoring the old emitted
+#    sequence makes this check report 5001 instead of 20001.
+# ----------------------------------------------------------------
+hot908 is 0
+unobserved:
+    q908 is 0
+    loop while q908 < 20000:
+        hot908 is q908
+        q908 is q908 + 1
+check of ["unobserved assigns counted in JIT thunk", (when is hot908) == 20001]
+
+# ----------------------------------------------------------------
 print of f"jit paths: {pass_count} passed, {fail_count} failed"
 if fail_count == 0:
     print of "All tests passed"

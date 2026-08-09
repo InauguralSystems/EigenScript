@@ -394,11 +394,21 @@ in-run time travel.
   dropped it to stay bounded, and reporting that as `null` would be a
   confident wrong answer rather than a missing one.
 
-  The ordinal space is the history's own recorded-assignment counter, which is
-  **not** what the unqualified `when is x` reports — the two disagree by the
-  number of assignments made inside `unobserved:` blocks (#908). This form has
-  to index what was actually recorded, because that is the only counter that
-  can address a stored entry.
+  The ordinal space is the history's own recorded-assignment counter, and
+  the unqualified `when is x` now reports the same number (#908). It did
+  not always: `env->assign_counts` skipped assignments made inside an
+  `unobserved:` block while the history counted them, so the two disagreed
+  by exactly that many and an ordinal computed from `when is x` was short
+  by the same amount. Resolving it downward was not open — this form has to
+  index what was actually recorded, because that is the only counter that
+  can address a stored entry, and dropping unobserved assignments from the
+  ordinal space would leave a hole in it: the write happened, its value is
+  retained and readable, and it would have had no address. So the count
+  came up to the history instead, at both the interpreter and JIT bump
+  sites. The two counters are still two (one per-binding in the env, one
+  per-name in the history table, and the env's is maintained only on the
+  slow write paths the compiler forces interrogated names onto) — they are
+  now required to agree.
 - **Occurrence arming is the third and narrowest tier** (#868). A name gets a
   ring only if a `when`-qualified query named it at compile time. Unlike the
   line-history arming there is no wildcard: `state_at`, an open tape, and

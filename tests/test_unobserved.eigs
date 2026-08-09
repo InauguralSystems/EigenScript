@@ -197,4 +197,40 @@ unobserved:  # lint: allow W020 -- checking the block is still functional
 assert of [seen_inside == "equilibrium", "UO-871L the block still suppresses observation"]
 assert of [(moving_probe of 0) == "moving", "UO-871L and normal observation resumes after it"]
 
+# ---- #908: `when is x` counts assignments made inside the block ----
+# The block opts out of OBSERVATION (entropy/dH), not out of assignment: the
+# value is written, the history records it, and `<kw> is x when <n>` (#868)
+# addresses it by ordinal. `when is x` used to read a second counter that
+# skipped these, so the two disagreed by exactly the number of unobserved
+# assignments — and any ordinal computed from `when is x` was short by that
+# much, which is a wrong answer produced by a performance annotation.
+c908 is 0                          # ordinal 1
+c908 is 1                          # ordinal 2
+unobserved:  # lint: allow W020 -- counting the block's assignments is the point
+    c908 is 2                      # ordinal 3
+    c908 is 3                      # ordinal 4
+c908 is 4                          # ordinal 5
+assert of [(when is c908) == 5, "UO-908 unobserved assignments are counted"]
+assert of [(what is c908 when 3) == 2, "UO-908 ordinal 3 is the first unobserved assignment"]
+assert of [(what is c908 when 5) == 4,
+           "UO-908 the last ordinal is the one `when is` reports"]
+
+# Interrogating from inside the block sees the same counter, and a fn-local
+# binding (whose interrogation forces the slow env path) counts identically.
+seen908 is 0
+unobserved:  # lint: allow W020 -- ditto
+    d908 is 0
+    d908 is 1
+    seen908 is when is d908
+assert of [seen908 == 2, "UO-908 the count is readable inside the block"]
+
+define counted908() as:
+    y is 0
+    unobserved:  # lint: allow W020 -- ditto
+        y is 1
+        y is 2
+    y is 3
+    return when is y
+assert of [(counted908 of 0) == 4, "UO-908 fn-local count includes the block"]
+
 test_summary of null
