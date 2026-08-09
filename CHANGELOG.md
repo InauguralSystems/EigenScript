@@ -4,6 +4,33 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`report of x` no longer raises "undefined variable" for a name an
+  `unobserved:` block promoted to a module slot (#895).** A name assigned
+  only inside such a block and never referenced outside it is promoted to a
+  module frame slot. The observer call-forms that take a bare name —
+  `report of x`, `report_value of x`, `trajectory of x`, `observe of x`,
+  `<predicate> of x` — each choose between a `*_SLOT` and a `*_NAME` opcode,
+  and each asked for the slot only inside a function (`c->enclosing`). At
+  module scope they always emitted `*_NAME`, whose env lookup finds nothing
+  for a promoted name, so:
+
+  ```eigenscript
+  unobserved:
+      m is 9.0
+      print of (report of m)     # Error: undefined variable 'm'
+      print of (str of m)        # 4.5 — the same name, read fine
+  ```
+
+  Three of the five raised (`report`, `report_value`, `trajectory`);
+  `observe` happened to answer the no-observation default either way, and a
+  predicate raises the #871 message first. All five now resolve the slot at
+  module scope exactly as the plain-read path does — only for a promoted
+  name, so an ordinary module binding still takes `*_NAME`. The answers are
+  the ones the same code gives when nothing is promoted: an optimization
+  must not change an answer, let alone turn one into an error.
+
 ### Added
 
 - **`<kw> is x when <n>` — the past is addressable per assignment, so a

@@ -152,4 +152,59 @@ if rep_g == "stable":
     assert of [imp_g == 0, "OI19 report=stable => improving=0 (#187)"]
     assert of [div_g == 0, "OI20 report=stable => diverging=0 (#187)"]
 
+
+
+# === #895: OBSERVER CALL-FORMS ON A MODULE-SLOT-PROMOTED NAME ===
+# A name assigned only inside an `unobserved:` block and never referenced
+# outside it is promoted to a module frame slot (Part B). The observer
+# call-forms that take a bare name each choose between a *_SLOT and a
+# *_NAME opcode, and at module scope they used to skip slot resolution
+# entirely — so they emitted the *_NAME form, whose env lookup finds
+# nothing for a promoted name, and `report of m` raised "undefined
+# variable" two lines above a plain read of `m` that works. The answers
+# below must be the ones the same code gives when the name is NOT
+# promoted: an optimization may not change an answer, and it may
+# certainly not turn one into an error.
+
+unobserved:  # lint: allow W020 -- promotion of a block-local name is the point
+    m895 is 9.0
+    m895 is m895 * 0.5
+    rep895 is report of m895
+    repv895 is report_value of m895
+    traj895 is trajectory of m895
+    obs895 is observe of m895
+    plain895 is m895
+
+assert of [plain895 == 4.5, "OI-895 the plain read still works"]
+assert of [rep895 == "equilibrium", "OI-895 report of a promoted name resolves"]
+assert of [repv895 == "equilibrium", "OI-895 report_value of a promoted name resolves"]
+assert of [traj895.observed == 0, "OI-895 trajectory of a promoted name resolves"]
+assert of [obs895[0] == "equilibrium", "OI-895 observe of a promoted name resolves"]
+
+# Same block, but the name escapes it, so nothing is promoted and the
+# *_NAME opcodes run. The answers must be identical.
+unobserved:  # lint: allow W020 -- the control for the case above
+    e895 is 9.0
+    e895 is e895 * 0.5
+    erep895 is report of e895
+    etraj895 is trajectory of e895
+escaped895 is e895
+assert of [erep895 == rep895, "OI-895 promoted and env-bound report agree"]
+assert of [etraj895.observed == traj895.observed,
+           "OI-895 promoted and env-bound trajectory agree"]
+assert of [escaped895 == 4.5, "OI-895 the control's name really did escape"]
+
+# A predicate on a promoted name still raises the #871 message — the block
+# suppresses the trajectory, and that is a different failure from the name
+# being unresolvable.
+caught895 is 0
+try:
+    unobserved:  # lint: allow W020 -- ditto
+        p895 is 9.0
+        p895 is p895 * 0.5
+        q895 is converged of p895
+catch err895:
+    caught895 is 1
+assert of [caught895 == 1, "OI-895 a predicate on a promoted name still raises"]
+
 print of "observer interactions: all passed"
