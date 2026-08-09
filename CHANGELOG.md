@@ -67,6 +67,24 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The UI fragments keep undefined-name protection, and the stdlib gate
+  can see when they don't (#874).** All 18 `lib/ui*.eigs` fragments
+  silenced `E003` wholesale with `# lint: allow-file E003`, the escape
+  `docs/DIAGNOSTICS.md` explicitly discourages, while `# lint: loaded-by`
+  — built for exactly this case — was used nowhere. That switched
+  undefined-name checking off across the subtree where cold branches
+  (per-widget dispatch, rarely-hit handlers) are densest, and it hid two
+  real errors: `lib/ui_layout.eigs` referenced `_label_measure` and
+  `_layout_dock` with no marker at all, so `--lint` exited 1 on the
+  shipped stdlib at v0.38.0. Every fragment now declares
+  `# lint: loaded-by ui.eigs`, which resolves sibling names from the
+  composer's transitive binding set while still firing on a genuine typo
+  (verified with a planted one). The `[stdlib]` suite gate grepped only
+  for `Parse error line`, so it filtered out E-class findings — which
+  are not style — and stayed green through all of it; it now also fails
+  on any `"severity":"error"` from `--lint --json`, proved by reverting
+  `ui_layout.eigs` and watching the gate go red.
+
 - **An installed stdlib no longer shadows itself (#904).** `import`
   resolves project-first (#821), probing `<name>.eigs` before
   `lib/<name>.eigs`. But the resolver chain's tail steps are the *install

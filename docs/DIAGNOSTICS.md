@@ -305,18 +305,21 @@ or nothing:
 
 - **`# lint: allow-file <CODE>...`** silences the listed codes (or `all`) for
   the **whole file**, in both `--lint` and the LSP. Conventionally the first
-  line. This is the escape for module *fragments* — files that a loader
-  `load_file`s into scope the loader provides (e.g. `lib/ui_w_*.eigs` expect
-  `lib/ui.eigs` to have bound `_theme`/`_ui` first), where `E003` would flag
-  every loader-bound name and per-line allows would drown the file:
+  line. It is the blunt escape for a code that a whole file legitimately
+  trips — a generated or vendored module, say:
 
   ```eigenscript
-  # lint: allow-file E003 -- fragment of lib/ui.eigs: loader binds _theme/_ui
+  # lint: allow-file W002 -- generated dispatch table; parameters are positional
   ```
 
-  For the `E003` fragment case specifically, prefer `# lint: loaded-by`
-  (below) — it keeps undefined-name protection that `allow-file E003`
-  abandons.
+  For the `E003` **fragment** case, do not reach for this — use
+  `# lint: loaded-by` (below). `allow-file E003` switches undefined-name
+  checking off for the entire file, and a fragment tree is where cold
+  branches (per-type dispatch, rarely-hit handlers) are densest, so it
+  discards the protection exactly where a typo survives testing longest.
+  The 18 `lib/ui*.eigs` fragments carried `allow-file E003` until #874 and
+  now all declare `# lint: loaded-by ui.eigs`; the swap cost nothing and
+  turned up two real undefined names that had been silenced.
 
 - **`# lint: loaded-by <relpath>`** (#460) declares this file a library
   *fragment* of the named composer. E003 collects the named file's

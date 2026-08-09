@@ -3886,22 +3886,41 @@ else
 fi
 echo ""
 
-# ---- stdlib parse-check: every lib/*.eigs must parse clean ----
+# ---- stdlib lint gate: every lib/*.eigs must parse clean AND be free of
+# ---- error-severity findings ----
 # Regression guard for the keyword-shadow class: an identifier shadowing a
 # reserved keyword (lab.eigs's `stable`, functional.eigs's `when`) is a parse
 # error that load_file used to silently swallow, so a broken stdlib helper was
 # invisible. --lint parses without executing and prints "Parse error line" on a
 # genuine parse error (its nonzero exit also covers style warnings, so grep the
 # message rather than the exit code).
-echo "[stdlib] parse-check every lib/*.eigs (--lint, no execution)"
+#
+# #874: the grep was the WHOLE gate, so it also filtered out E-class findings,
+# which are not style — two real `E003 undefined name` errors sat in
+# lib/ui_layout.eigs at v0.38.0 while this section stayed green, and the
+# section's own comment ("a broken stdlib helper was invisible") reads as
+# broader coverage than a parse check has. Severity now comes from
+# `--lint --json`, so an E-class finding fails the gate the same way a parse
+# error does. W-class stays advisory (the stdlib carries known W002/W012/W021
+# noise; promoting those is a separate cleanup).
+echo "[stdlib] lint-gate every lib/*.eigs (--lint: parse errors + E-class findings)"
 for libf in ../lib/*.eigs; do
     TOTAL=$((TOTAL + 1))
     PC_OUT=$(./eigenscript --lint "$libf" 2>&1 | grep -iE 'Parse error line')
-    if [ -z "$PC_OUT" ]; then
+    # One JSON array per file; an E-class object is `"severity":"error"`.
+    E_OUT=$(./eigenscript --lint --json "$libf" 2>/dev/null \
+            | grep -oE '\{[^{}]*"severity":"error"[^{}]*\}')
+    if [ -z "$PC_OUT" ] && [ -z "$E_OUT" ]; then
         PASS=$((PASS + 1))
-    else
+    elif [ -n "$PC_OUT" ]; then
         echo "  FAIL: $(basename "$libf") has a parse error:"
         printf '%s\n' "$PC_OUT" | head -3
+        FAIL=$((FAIL + 1))
+    else
+        echo "  FAIL: $(basename "$libf") has error-severity lint findings:"
+        printf '%s\n' "$E_OUT" | head -3
+        echo "    (a fragment of a larger composer declares it with"
+        echo "     '# lint: loaded-by <relpath>' — see docs/DIAGNOSTICS.md)"
         FAIL=$((FAIL + 1))
     fi
 done

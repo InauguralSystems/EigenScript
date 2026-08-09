@@ -1,4 +1,4 @@
-# lint: allow-file E003 -- fragment of lib/ui.eigs: the loader binds the shared ui state (_theme, _ui, widget registry, sibling widgets) before this file runs
+# lint: loaded-by ui.eigs -- fragment of the ui toolkit: the composer binds the shared state (_theme, _ui, the widget registry) and every sibling fragment. Declared as a fragment rather than silencing E003 wholesale (#874) — that keeps undefined-name protection, and the UI subtree is where cold branches are densest.
 # ============================================================
 # UI Focus system — build focus list, navigate, handle keys
 # ============================================================
