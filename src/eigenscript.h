@@ -748,6 +748,11 @@ struct EigsThread {
      * call). Reset per top-level entry; reside here so multiple states
      * sharing an OS thread don't see each other's mid-walk depth. */
     int                  parse_depth;
+    /* #912: the compile-depth guard reports once per compile instead of once
+     * per node past the limit — a deep expression trips it at every sibling,
+     * and N copies of the same message is not N pieces of information. Reset
+     * beside g_parse_depth at compile_ast entry. */
+    int                  compile_depth_reported;
     int                  tokenize_depth;
     int                  vts_depth;
     int                  json_depth;
@@ -861,6 +866,7 @@ extern __thread EigsThread *eigs_current;
 #define g_prev_cap            (eigs_current->prev_cap)
 #define g_prev_count          (eigs_current->prev_count)
 #define g_parse_depth         (eigs_current->parse_depth)
+#define g_compile_depth_reported (eigs_current->compile_depth_reported)
 #define g_tokenize_depth      (eigs_current->tokenize_depth)
 #define g_vts_depth           (eigs_current->vts_depth)
 #define g_json_depth          (eigs_current->json_depth)
