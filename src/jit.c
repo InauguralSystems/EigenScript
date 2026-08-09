@@ -1695,14 +1695,6 @@ static uint8_t *emit_mov_disp32_rdx_to_rdi(uint8_t *w, int32_t disp) {
 static uint8_t *emit_test_rdi_rdi(uint8_t *w) {
     *w++ = 0x48; *w++ = 0x85; *w++ = 0xFF; return w;
 }
-/* cmpl $0, disp32(%rax)  (7 bytes) — used for the g_unobserved_depth
- * test after `mov %fs:eigs_current_tpoff, %rax`. Encoding: 83 /7 with
- * ModR/M=10 111 000 (mod=disp32, reg=/7, rm=rax), imm8=0. */
-static uint8_t *emit_cmpl_0_disp32_rax(uint8_t *w, int32_t disp) {
-    *w++ = 0x83; *w++ = 0xB8;
-    w = emit_u32(w, (uint32_t)disp);
-    *w++ = 0x00; return w;
-}
 /* incl (%rdi, %r9, 4)  (4 bytes) — assign_counts[slot_idx]++. */
 static uint8_t *emit_incl_rdi_r9_4(uint8_t *w) {
     *w++ = 0x42; *w++ = 0xFF; *w++ = 0x04; *w++ = 0x8F; return w;
@@ -2685,7 +2677,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *     - slot_incref(s); old = values[idx]; values[idx] = s;
              *       slot_decref(old)  [decref last so free_value can't
              *       observe a half-done store; equivalent order]
-             *   assign_counts bump when non-NULL && g_unobserved_depth==0
+             *   assign_counts bump when non-NULL (#908: no unobserved
+             *   gate — an `unobserved:` assignment still happened)
              *
              * Value stays on TOS — sp untouched, matching the helpers.
              * All guards fire before any mutation, so the helper rerun
@@ -2762,24 +2755,20 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_r10_r9_8_to_rsi(w);
             w = emit_mov_r8_to_r10_r9_8(w);
             /* assign_counts bump — before the decref so %rdx/%r9 are
-             * still live (free_value clobbers caller-saved registers). */
+             * still live (free_value clobbers caller-saved registers).
+             * #908: the emitted sequence used to re-read
+             * EigsThread.unobserved_depth (via the VM.owner back-pointer)
+             * and skip the bump inside an `unobserved:` block, mirroring
+             * the interpreter's gate. Both gates are gone — the counter
+             * `when is x` reports now counts every assignment, so this is
+             * an unconditional increment behind the NULL check. */
             w = emit_mov_disp32_rdx_to_rdi(w, (int32_t)offsetof(Env, assign_counts));
             w = emit_test_rdi_rdi(w);
             uint8_t *nb1_p;
             w = emit_je_rel8(w, &nb1_p);
             uint8_t *nb1_after = w;
-            /* unobserved_depth lives on EigsThread; reach it via
-             * VM.owner (back-pointer set in vm_init). One 7-byte mov
-             * vs the original 9-byte `mov %fs:tpoff, %rax`, no
-             * platform-specific TLS encoding. */
-            w = emit_mov_disp32_rbx_to_rax(w, g_layout.off_vm_owner);
-            w = emit_cmpl_0_disp32_rax(w, g_layout.off_thread_unobserved_depth);
-            uint8_t *nb2_p;
-            w = emit_jnz_rel8(w, &nb2_p);
-            uint8_t *nb2_after = w;
             w = emit_incl_rdi_r9_4(w);
             *nb1_p = (uint8_t)(w - nb1_after);
-            *nb2_p = (uint8_t)(w - nb2_after);
             /* Old-slot decref (immediate no-op / arena skip / free at 0).
              * with_hook: the old binding can be any type (#728). */
             int set_bail = 0;

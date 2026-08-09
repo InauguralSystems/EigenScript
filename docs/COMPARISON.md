@@ -345,7 +345,10 @@ value's own elements — the walk stops at a reference, so a nested container
 contributes only its size term, #685). The boundary is explicit too: a
 binding holding a function classifies `opaque` — a function has no content
 to sample, and the observer names its blind spots (#708) rather than
-reporting a band it cannot defend. You can ask a variable about
+reporting a band it cannot defend. (The `unobserved` boundary is about
+observation only — assignments inside such a block are still counted by
+`when is x` and still addressable by ordinal, because a performance
+annotation must not change an answer, #908.) You can ask a variable about
 itself, terminate loops on *convergence* instead of a hand-written
 epsilon test, and read a variable's past:
 

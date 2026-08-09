@@ -271,6 +271,38 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **`when is x` counts assignments made inside `unobserved:` blocks
+  (#908).** Two counters answered the same question — "how many times
+  has `x` been assigned" — and disagreed. `when is x` read
+  `env->assign_counts`, bumped only when `g_unobserved_depth == 0`;
+  `when is x at L` and the occurrence ring read the history's own
+  recorded-assignment counter, which has no such gate. They diverged by
+  exactly the number of assignments made inside `unobserved:` blocks,
+  and the unobserved assignment's *value* was recorded and readable the
+  whole time — only the count omitted it.
+
+  #868 made that divergence load-bearing: `<kw> is x when <n>` indexes
+  the history's counter, because that is the only counter that can
+  address a stored entry. So `when is x` — the natural way to discover
+  how many assignments there are to ask about — reported a number that
+  was short by one per unobserved assignment, and every ordinal computed
+  from it was off. Matching the history downward would have been worse:
+  the write happens and its value is retained, so dropping it from the
+  ordinal space would leave an addressable-looking hole. The count came
+  up to the history instead.
+
+  `unobserved:` suppresses **observation** (entropy/dH), which is what it
+  always documented; it never meant the assignment did not happen. The
+  same principle that makes an observer predicate raise under one rather
+  than answer from a dead trajectory applies here — a performance
+  annotation must not change an answer. Nine gate sites in `vm.c`, four
+  plus two first-binding sites in `eigenscript.c`, and the emitted
+  sequence in the JIT's inline `SET_NAME` fast path (which re-read
+  `EigsThread.unobserved_depth` through the `VM.owner` back-pointer) are
+  all gone; the JIT bump is now unconditional behind its NULL check.
+  Programs that both use `unobserved:` and ask `when is x` see a larger
+  number.
+
 - **`null.field` and `null["k"]` raise instead of yielding `null`
   (#872).** The contract makes dict-miss-returns-`null` a deliberate
   decision — a missing key is a lookup miss, not a logic error — but
