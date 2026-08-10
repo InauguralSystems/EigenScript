@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-08-10
+
 ### Fixed
 
 - **A too-deep expression now says so (#912).** `compile_node`'s depth guard was
