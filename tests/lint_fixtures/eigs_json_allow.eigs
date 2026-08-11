@@ -1,0 +1,3 @@
+define lint_fixture_identity(x) as:
+    return x
+print of (lint_fixture_identity of [1])

@@ -10,7 +10,7 @@
 
 /* Escape a string for embedding in a JSON string literal (into a caller
  * buffer). Handles the quote/backslash/control set; lint messages are ASCII. */
-void json_escape(const char *s, char *out, size_t outsz) {
+void lint_json_escape(const char *s, char *out, size_t outsz) {
     size_t o = 0;
     for (size_t i = 0; s[i] && o + 2 < outsz; i++) {
         unsigned char c = (unsigned char)s[i];

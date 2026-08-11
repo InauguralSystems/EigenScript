@@ -330,7 +330,7 @@ static void api_emit_params_json(FILE *out, const char *params) {
             if (l >= sizeof(raw)) l = sizeof(raw) - 1;
             memcpy(raw, start, l);
             raw[l] = '\0';
-            json_escape(raw, esc, sizeof(esc));
+            lint_json_escape(raw, esc, sizeof(esc));
             fprintf(out, "%s\"%s\"", first ? "" : ", ", esc);
             first = 0;
         }
@@ -391,7 +391,7 @@ int eigs_api_dump(FILE *out, int json) {
         for (int i = 0; i < core->count; i++) {
             char esc[600];
             if (!core->names[i] || api_is_ext_name(core->names[i])) continue;
-            json_escape(core->names[i], esc, sizeof(esc));
+            lint_json_escape(core->names[i], esc, sizeof(esc));
             fprintf(out, "%s\"%s\"", b_first ? "" : ", ", esc);
             b_first = 0;
         }
@@ -419,8 +419,8 @@ int eigs_api_dump(FILE *out, int json) {
         fprintf(out, "},\n \"lib\": [");
         for (int i = 0; i < fc; i++) {
             char me[600], ne[600];
-            json_escape(fns[i].module, me, sizeof(me));
-            json_escape(fns[i].name, ne, sizeof(ne));
+            lint_json_escape(fns[i].module, me, sizeof(me));
+            lint_json_escape(fns[i].name, ne, sizeof(ne));
             fprintf(out, "%s\n  {\"module\": \"%s\", \"name\": \"%s\", "
                          "\"params\": ", i ? "," : "", me, ne);
             api_emit_params_json(out, fns[i].params);
@@ -1220,8 +1220,8 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     if (!source) {
         if (json_mode) {
             char esc[256], pesc[1024];
-            json_escape("cannot read file", esc, sizeof(esc));
-            json_escape(path, pesc, sizeof(pesc));
+            lint_json_escape("cannot read file", esc, sizeof(esc));
+            lint_json_escape(path, pesc, sizeof(pesc));
             printf("[{\"code\":\"E000\",\"severity\":\"error\",\"line\":0,"
                    "\"file\":\"%s\",\"message\":\"%s '%s'\"}]\n", pesc, esc, pesc);
         } else {
@@ -1242,9 +1242,9 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
          * structured error (the same one the LSP surfaces) as E002. */
         if (json_mode) {
             char esc[512], pesc[1024];
-            json_escape(g_first_error_msg[0] ? g_first_error_msg : "parse error",
+            lint_json_escape(g_first_error_msg[0] ? g_first_error_msg : "parse error",
                         esc, sizeof(esc));
-            json_escape(path, pesc, sizeof(pesc));
+            lint_json_escape(path, pesc, sizeof(pesc));
             printf("[{\"code\":\"E002\",\"severity\":\"error\",\"line\":%d,"
                    "\"column\":%d,\"file\":\"%s\",\"message\":\"%s\"}]\n",
                    g_first_error_line, g_first_error_col + 1, pesc, esc);
@@ -1282,10 +1282,10 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
      * "[]"); human text goes to stderr as before, now with the [CODE]. */
     if (json_mode) {
         char pesc[1024], mesc[512];
-        json_escape(path, pesc, sizeof(pesc));
+        lint_json_escape(path, pesc, sizeof(pesc));
         printf("[");
         for (int i = 0; i < ctx.warning_count; i++) {
-            json_escape(ctx.warnings[i].message, mesc, sizeof(mesc));
+            lint_json_escape(ctx.warnings[i].message, mesc, sizeof(mesc));
             printf("%s{\"code\":\"%s\",\"severity\":\"%s\",\"line\":%d,"
                    "\"file\":\"%s\",\"message\":\"%s\"}",
                    i ? "," : "", ctx.warnings[i].code, ctx.warnings[i].level,
