@@ -92,27 +92,46 @@ TARGET_BATCHES=(
 # TARGET_BATCHES must cover TARGETS exactly.  Keep the hand-written batches
 # loud if a target is ever omitted, added, or listed twice.
 validate_target_batches() {
-    local expected_targets="$1" batch target
+    local expected_targets="$1" batch target expected_target seen_target found
     shift
-    local -a missing=() extras=() duplicates=()
-    declare -A expected_seen=() batch_seen=()
+    local -a seen=() missing=() extras=() duplicates=()
 
-    for target in $expected_targets; do
-        expected_seen["$target"]=1
-    done
     for batch in "$@"; do
         for target in $batch; do
-            if [[ -z ${expected_seen[$target]+x} ]]; then
+            found=0
+            for expected_target in $expected_targets; do
+                if [ "$target" = "$expected_target" ]; then
+                    found=1
+                    break
+                fi
+            done
+            if [ "$found" -eq 0 ]; then
                 extras+=("$target")
-            elif [[ -n ${batch_seen[$target]+x} ]]; then
-                duplicates+=("$target")
             else
-                batch_seen["$target"]=1
+                found=0
+                for seen_target in "${seen[@]}"; do
+                    if [ "$target" = "$seen_target" ]; then
+                        found=1
+                        break
+                    fi
+                done
+                if [ "$found" -ne 0 ]; then
+                    duplicates+=("$target")
+                else
+                    seen+=("$target")
+                fi
             fi
         done
     done
     for target in $expected_targets; do
-        if [[ -z ${batch_seen[$target]+x} ]]; then
+        found=0
+        for seen_target in "${seen[@]}"; do
+            if [ "$target" = "$seen_target" ]; then
+                found=1
+                break
+            fi
+        done
+        if [ "$found" -eq 0 ]; then
             missing+=("$target")
         fi
     done
