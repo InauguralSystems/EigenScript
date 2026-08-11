@@ -8,21 +8,6 @@
 
 /* ---- Lint warning storage ---- */
 
-/* Escape a string for embedding in a JSON string literal (into a caller
- * buffer). Handles the quote/backslash/control set; lint messages are ASCII. */
-void lint_json_escape(const char *s, char *out, size_t outsz) {
-    size_t o = 0;
-    for (size_t i = 0; s[i] && o + 2 < outsz; i++) {
-        unsigned char c = (unsigned char)s[i];
-        if (c == '"' || c == '\\') { out[o++] = '\\'; out[o++] = (char)c; }
-        else if (c == '\n') { out[o++] = '\\'; out[o++] = 'n'; }
-        else if (c == '\t') { out[o++] = '\\'; out[o++] = 't'; }
-        else if (c >= 0x20) { out[o++] = (char)c; }
-        /* other control chars are dropped */
-    }
-    out[o] = '\0';
-}
-
 static void lint_vdiag(LintContext *ctx, int line, int col, int len,
                        const char *level,
                        const char *code, const char *fmt, va_list ap) {

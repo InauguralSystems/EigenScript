@@ -17,6 +17,22 @@
 
 #if !EIGENSCRIPT_FREESTANDING
 
+/* Escape a string for embedding in a JSON string literal (into a caller
+ * buffer). This helper is host-only now that every JSON-producing lint path
+ * lives in this TU; keeping it static prevents a generic host symbol leak. */
+static void lint_json_escape(const char *s, char *out, size_t outsz) {
+    size_t o = 0;
+    for (size_t i = 0; s[i] && o + 2 < outsz; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '"' || c == '\\') { out[o++] = '\\'; out[o++] = (char)c; }
+        else if (c == '\n') { out[o++] = '\\'; out[o++] = 'n'; }
+        else if (c == '\t') { out[o++] = '\\'; out[o++] = 't'; }
+        else if (c >= 0x20) { out[o++] = (char)c; }
+        /* other control chars are dropped */
+    }
+    out[o] = '\0';
+}
+
 /* Known builtin names — the registry itself, never a hand list (#459: the
  * old hand-copied BUILTINS[] array drifted ~120 names behind the binary, so
  * `define dispatch` shadowed a live builtin with no W012/W013). Same

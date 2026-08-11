@@ -38,10 +38,6 @@ void lint_hint(LintContext *ctx, int line, const char *code,
                const char *fmt, ...);
 void lint_error_at(LintContext *ctx, int line, int col, int len,
                    const char *code, const char *fmt, ...);
-/* Linter-internal JSON escaping crosses lint.c/lint_host.c; the prefix keeps
- * it out of an embedding host's generic helper namespace. */
-void lint_json_escape(const char *s, char *out, size_t outsz);
-
 /* Driver/check entry points crossing the TU boundary. */
 int is_builtin_name(const char *name);
 void builtin_name_env_free(void);
