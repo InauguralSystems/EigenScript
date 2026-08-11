@@ -15,7 +15,7 @@ cd "$(dirname "$0")/.."
 BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
 
-SRC="eigenscript lexer parser builtins builtins_host builtins_tensor hash arena state strbuf ext_store fmt lint chunk compiler vm jit trace eigs_embed"
+SRC="eigenscript lexer parser builtins builtins_host builtins_tensor hash arena state strbuf ext_store fmt lint lint_host chunk compiler vm jit trace eigs_embed"
 for f in $SRC; do
     gcc -O2 -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE \
         -Werror=implicit-function-declaration -Werror=switch \
