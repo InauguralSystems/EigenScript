@@ -89,6 +89,45 @@ TARGET_BATCHES=(
     "embed-smoke-gfx"
 )
 
+# TARGET_BATCHES must cover TARGETS exactly.  Keep the hand-written batches
+# loud if a target is ever omitted, added, or listed twice.
+validate_target_batches() {
+    local expected_targets="$1" batch target
+    shift
+    local -a missing=() extras=() duplicates=()
+    declare -A expected_seen=() batch_seen=()
+
+    for target in $expected_targets; do
+        expected_seen["$target"]=1
+    done
+    for batch in "$@"; do
+        for target in $batch; do
+            if [[ -z ${expected_seen[$target]+x} ]]; then
+                extras+=("$target")
+            elif [[ -n ${batch_seen[$target]+x} ]]; then
+                duplicates+=("$target")
+            else
+                batch_seen["$target"]=1
+            fi
+        done
+    done
+    for target in $expected_targets; do
+        if [[ -z ${batch_seen[$target]+x} ]]; then
+            missing+=("$target")
+        fi
+    done
+
+    if [ "${#missing[@]}" -ne 0 ] || [ "${#extras[@]}" -ne 0 ] \
+       || [ "${#duplicates[@]}" -ne 0 ]; then
+        echo "GATE ERROR: TARGET_BATCHES diverges from TARGETS"
+        [ "${#missing[@]}" -eq 0 ] || echo "  missing target(s): ${missing[*]}"
+        [ "${#extras[@]}" -eq 0 ] || echo "  extra target(s): ${extras[*]}"
+        [ "${#duplicates[@]}" -eq 0 ] || echo "  duplicate target(s): ${duplicates[*]}"
+        return 1
+    fi
+    return 0
+}
+
 # Compile-bearing shell scripts audited directly (#835) — see header.
 SCRIPT_AUDITS="tools/freestanding_check.sh"
 
@@ -101,6 +140,7 @@ strip_comments() {
 EXAMINED=0          # compile invocations examined, all targets
 VIOLATIONS=0        # examined invocations missing the flag
 TARGET_EXAMINED=0   # examined within the current target (reset per target)
+TARGETS_AUDITED=0   # target segments with at least one compile invocation
 
 # Join backslash-continued recipe lines into single logical lines.
 join_continuations() {
@@ -226,6 +266,8 @@ audit_batch() {
             fi
             if ! audit_target "${batch_targets[$target_index]}" < "$segment_file"; then
                 batch_failed=1
+            else
+                TARGETS_AUDITED=$((TARGETS_AUDITED + 1))
             fi
             : > "$segment_file"
             target_index=$((target_index + 1))
@@ -269,6 +311,17 @@ if [ "${1:-}" = "--selftest" ]; then
     st_out=$(mktemp /tmp/werror_switch_selftest_out_XXXX)
     st_joined=$(mktemp /tmp/werror_switch_selftest_joined_XXXX)
     trap 'rm -f "$st_out" "$st_joined"' EXIT
+
+    # TARGET_BATCHES must cover TARGETS exactly.  Omitting a target is a hard
+    # failure naming the missing target, rather than a silently smaller gate.
+    if validate_target_batches "build jit-smoke" "build" > "$st_out" 2>&1; then
+        echo "SELFTEST FAILED: divergent target batches were accepted"
+        st_fail=1
+    elif ! grep -qF 'jit-smoke' "$st_out"; then
+        echo "SELFTEST FAILED: divergent target-batch failure did not name 'jit-smoke'"
+        sed 's/^/    /' "$st_out"
+        st_fail=1
+    fi
 
     # expect_clean <name>: stream on stdin must yield 0 violations.
     expect_clean() {
@@ -479,9 +532,13 @@ EOF
     if [ "$st_fail" -ne 0 ]; then
         exit 1
     fi
-    echo "SELFTEST OK: all planted fault shapes caught (incl. two-invocation blocks, switch-enum, zero-line targets), clean shapes pass, floors bite"
+    echo "SELFTEST OK: all planted fault shapes caught (incl. target-batch divergence, two-invocation blocks, switch-enum, zero-line targets), clean shapes pass, floors bite"
     exit 0
 fi
+
+# Validate the target partition before any dry run so a hand-edited batch
+# cannot silently reduce the gate's coverage.
+validate_target_batches "$TARGETS" "${TARGET_BATCHES[@]}" || exit 1
 
 # --- main: dry-run every compiling target and audit what it WOULD run ---
 make_failed=0
@@ -519,5 +576,5 @@ if [ "$VIOLATIONS" -gt 0 ]; then
     echo "werror-switch gate FAILED: $VIOLATIONS of $EXAMINED compile invocations lack $FLAG"
     exit 1
 fi
-echo "werror-switch gate OK: all $EXAMINED compile invocations across $(echo $TARGETS | wc -w | tr -d ' ') dry-run targets + $(echo $SCRIPT_AUDITS | wc -w | tr -d ' ') script(s) carry $FLAG"
+echo "werror-switch gate OK: all $EXAMINED compile invocations across $TARGETS_AUDITED dry-run targets + $(echo $SCRIPT_AUDITS | wc -w | tr -d ' ') script(s) carry $FLAG"
 exit 0
