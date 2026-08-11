@@ -109,12 +109,14 @@ validate_target_batches() {
                 extras+=("$target")
             else
                 found=0
-                for seen_target in "${seen[@]}"; do
-                    if [ "$target" = "$seen_target" ]; then
-                        found=1
-                        break
-                    fi
-                done
+                if [ "${#seen[@]}" -gt 0 ]; then
+                    for seen_target in "${seen[@]}"; do
+                        if [ "$target" = "$seen_target" ]; then
+                            found=1
+                            break
+                        fi
+                    done
+                fi
                 if [ "$found" -ne 0 ]; then
                     duplicates+=("$target")
                 else
@@ -125,12 +127,14 @@ validate_target_batches() {
     done
     for target in $expected_targets; do
         found=0
-        for seen_target in "${seen[@]}"; do
-            if [ "$target" = "$seen_target" ]; then
-                found=1
-                break
-            fi
-        done
+        if [ "${#seen[@]}" -gt 0 ]; then
+            for seen_target in "${seen[@]}"; do
+                if [ "$target" = "$seen_target" ]; then
+                    found=1
+                    break
+                fi
+            done
+        fi
         if [ "$found" -eq 0 ]; then
             missing+=("$target")
         fi
