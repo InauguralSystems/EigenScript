@@ -13,7 +13,7 @@ trap 'rm -rf "$BUILD"' EXIT
 # The harness main consumes the runtime the way EigenOS will: through
 # eigs_embed.h with source strings — main.c (the POSIX CLI) is NOT part
 # of the freestanding profile.
-gcc -Werror=implicit-function-declaration -O2 \
+gcc -Werror=implicit-function-declaration -Werror=switch -Werror=comment -O2 \
     -DEIGENSCRIPT_FREESTANDING=1 \
     -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
     -o "$BUILD/eigs_fs" \
