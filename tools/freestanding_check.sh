@@ -18,7 +18,7 @@ trap 'rm -rf "$BUILD"' EXIT
 SRC="eigenscript lexer parser builtins builtins_host builtins_tensor hash arena state strbuf ext_store fmt lint lint_host chunk compiler vm jit trace eigs_embed"
 for f in $SRC; do
     gcc -O2 -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE \
-        -Werror=implicit-function-declaration -Werror=switch \
+        -Werror=implicit-function-declaration -Werror=switch -Werror=comment \
         -DEIGENSCRIPT_FREESTANDING=1 \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
         -c "src/$f.c" -o "$BUILD/$f.o"
@@ -53,7 +53,7 @@ echo "OK stage 1: freestanding import surface is within the ledger allowlist"
 for f in mini_libc mini_libm mini_fmt mini_strtod; do
     gcc -O2 -ffreestanding -fno-builtin -ffp-contract=off -fno-math-errno \
         -fno-stack-protector -U_FORTIFY_SOURCE \
-        -Werror=implicit-function-declaration -Werror=switch \
+        -Werror=implicit-function-declaration -Werror=switch -Werror=comment \
         -DEIGS_MINI_STANDARD_NAMES=1 \
         -c "src/freestanding/$f.c" -o "$BUILD/$f.o"
 done
