@@ -238,7 +238,18 @@ target_floor() {  # $1 = label
 # Runs on the main path only; the selftest exercises it through planted
 # TARGET_COUNTS streams instead, so synthetic labels need no floors.
 enforce_target_floors() {
-    local failed=0 label count floor
+    local failed=0 label count floor pinned seen
+
+    # BOTH DIRECTIONS, and checking only the first leaves the largest form of
+    # #921's own failure wide open. Forward (every counted target is pinned)
+    # catches a target that joins a batch unpinned. REVERSE (every pinned
+    # target produced a count) catches a target DELETED from TARGETS — which
+    # drops 100% of its compile lines, not merely some, while every remaining
+    # assertion still passes: the per-target zero-emission check never runs for
+    # a target that is no longer dry-run at all, and MIN_LINES=100 is nowhere
+    # near the ~338 real total. Measured: removing `http` from TARGETS silently
+    # stopped checking 29 invocations — including ext_http.c — and the gate
+    # printed "gate OK" and exited 0.
     while read -r label count; do
         [ -z "$label" ] && continue
         floor=$(target_floor "$label")
@@ -256,6 +267,21 @@ enforce_target_floors() {
             failed=1
         fi
     done <<< "$TARGET_COUNTS"
+
+    # Reverse: a pinned floor with no corresponding count means that target is
+    # no longer being audited at all.
+    while read -r pinned _; do
+        [ -z "$pinned" ] && continue
+        seen=$(printf '%s\n' "$TARGET_COUNTS" | awk -v t="$pinned" '$1 == t { print "y"; exit }')
+        if [ -z "$seen" ]; then
+            echo "GATE ERROR: target '$pinned' has a pinned floor but produced NO count —"
+            echo "it is no longer in TARGETS/TARGET_BATCHES, so 100% of its compile lines"
+            echo "stopped being audited while every other assertion still passed."
+            echo "Restore the target, or delete its TARGET_FLOORS entry deliberately."
+            failed=1
+        fi
+    done <<< "$(printf '%s\n' "$TARGET_FLOORS" | grep -v '^[[:space:]]*$')"
+
     return "$failed"
 }
 
@@ -795,21 +821,32 @@ EOF
         st_fail=1
     fi
 
-    # Per-target floors (#921): partial coverage loss must be caught, an
-    # untracked target must be caught, and an at-or-above count must pass.
+    # Per-target floors (#921). Both directions are exercised, and every
+    # fixture is built from the FULL floor table with exactly one mutation —
+    # a 2-entry fixture would now trip the reverse loop for the 25 targets it
+    # omits, which is a fixture bug wearing a real failure's clothes.
     # TARGET_COUNTS is planted directly — no dry run, no tree mutation.
     st_saved_counts="$TARGET_COUNTS"
 
-    TARGET_COUNTS="asan-http 30
-build 25
+    # "label count" for every pinned target, at exactly its floor.
+    st_full_counts() {
+        printf '%s\n' "$TARGET_FLOORS" | grep -v '^[[:space:]]*$' | awk '{ print $1, $2 }'
+    }
+    # Same, with one target's count overridden (or dropped, if count is empty).
+    st_counts_with() {  # $1 = target, $2 = replacement count ("" drops the row)
+        st_full_counts | awk -v t="$1" -v c="$2" '
+            $1 == t { if (c != "") print t, c; next }
+            { print }'
+    }
+
+    TARGET_COUNTS="$(st_full_counts)
 "
     if ! enforce_target_floors >/dev/null 2>&1; then
-        echo "SELFTEST FAILED: at-floor per-target counts were rejected"
+        echo "SELFTEST FAILED: a complete at-floor count set was rejected"
         st_fail=1
     fi
 
-    TARGET_COUNTS="asan-http 1000
-build 25
+    TARGET_COUNTS="$(st_counts_with asan-http 1000)
 "
     if ! enforce_target_floors >/dev/null 2>&1; then
         echo "SELFTEST FAILED: an above-floor per-target count was rejected"
@@ -819,18 +856,30 @@ build 25
     # The #921 shape itself: a batch sibling swallows most of a target's
     # compile lines, leaving it non-zero (so the zero-emission assertion stays
     # silent) but far below its real coverage.
-    TARGET_COUNTS="asan-http 12
-build 25
+    TARGET_COUNTS="$(st_counts_with asan-http 12)
 "
     if enforce_target_floors >/dev/null 2>&1; then
         echo "SELFTEST FAILED: partial coverage loss (30 -> 12) did not trip the per-target floor"
         st_fail=1
     fi
 
-    TARGET_COUNTS="a_target_with_no_floor 40
+    # A target counted but never pinned.
+    TARGET_COUNTS="$(st_full_counts)
+a_target_with_no_floor 40
 "
     if enforce_target_floors >/dev/null 2>&1; then
         echo "SELFTEST FAILED: a target with no pinned floor was accepted"
+        st_fail=1
+    fi
+
+    # The reverse direction: a target DELETED from TARGETS produces no count at
+    # all, so 100% of its coverage vanishes while every FORWARD assertion still
+    # passes on the survivors. Only the reverse loop can see it. Planted as the
+    # real repro's shape — `http` gone, its floor left orphaned in the table.
+    TARGET_COUNTS="$(st_counts_with http "")
+"
+    if enforce_target_floors >/dev/null 2>&1; then
+        echo "SELFTEST FAILED: a pinned target that produced no count at all was accepted"
         st_fail=1
     fi
 
@@ -839,13 +888,52 @@ build 25
     if [ "$st_fail" -ne 0 ]; then
         exit 1
     fi
-    echo "SELFTEST OK: all planted fault shapes caught (incl. target-batch divergence, two-invocation blocks, switch-enum, zero-line targets, partial per-target coverage loss, unpinned targets), clean shapes pass, floors bite"
+    echo "SELFTEST OK: all planted fault shapes caught (incl. target-batch divergence, two-invocation blocks, switch-enum, zero-line targets, partial per-target coverage loss, unpinned targets), clean shapes pass, floors bite in BOTH directions"
     exit 0
 fi
 
 # Validate the target partition before any dry run so a hand-edited batch
 # cannot silently reduce the gate's coverage.
 validate_target_batches "$TARGETS" "${TARGET_BATCHES[@]}" || exit 1
+
+# --print-counts regenerates TARGET_FLOORS. It deliberately drives ONE
+# STANDALONE `make -n -B <target>` per target instead of reading the batched
+# stream, because the batched stream is exactly what the floors exist to
+# police: regenerating from it means that after a batch sibling swallows a
+# target's compile lines, following this script's own documented repair
+# workflow re-pins the DEGRADED number and launders the bug into the baseline.
+# (Measured: under a planted batch-merge fault the batched path printed
+# `embed-smoke-gfx 1` and exited 0.) Standalone runs cannot be corrupted that
+# way — one goal per make invocation means no shared prerequisite can be
+# emitted under a sibling. 22 dry runs cost seconds; correctness of the
+# baseline is worth more than that.
+if [ "${1:-}" = "--print-counts" ]; then
+    echo "# Regenerated TARGET_FLOORS body — paste into TARGET_FLOORS (#921)."
+    echo "# Source: STANDALONE 'make -n -B <target>' per target (never the batched stream)."
+    pc_failed=0
+    for t in $TARGETS; do
+        if ! pc_dry=$(make -n -B --no-print-directory "$t" 2>&1); then
+            echo "# GATE ERROR: 'make -n -B $t' exited nonzero — cannot count it" >&2
+            pc_failed=1
+            continue
+        fi
+        TARGET_EXAMINED=0
+        audit_stream "$t" <<< "$(printf '%s\n' "$pc_dry" | join_continuations)" >/dev/null
+        if [ "$TARGET_EXAMINED" -eq 0 ]; then
+            echo "# GATE ERROR: target '$t' emitted no compile invocations standalone" >&2
+            pc_failed=1
+            continue
+        fi
+        echo "$t $TARGET_EXAMINED"
+    done
+    for sc in $SCRIPT_AUDITS; do
+        [ -f "$sc" ] || { echo "# GATE ERROR: script '$sc' not found" >&2; pc_failed=1; continue; }
+        TARGET_EXAMINED=0
+        audit_stream "script:$sc" <<< "$(strip_comments < "$sc" | join_continuations)" >/dev/null
+        echo "script:$sc $TARGET_EXAMINED"
+    done
+    exit "$pc_failed"
+fi
 
 # --- main: dry-run every compiling target and audit what it WOULD run ---
 make_failed=0
@@ -870,12 +958,6 @@ for s in $SCRIPT_AUDITS; do
     fi
     audit_target "script:$s" <<< "$(strip_comments < "$s" | join_continuations)" || empty_failed=1
 done
-
-if [ "${1:-}" = "--print-counts" ]; then
-    echo "# Regenerated TARGET_FLOORS body — paste into TARGET_FLOORS (#921)."
-    printf '%s' "$TARGET_COUNTS"
-    exit 0
-fi
 
 if [ "$make_failed" -ne 0 ] || [ "$empty_failed" -ne 0 ]; then
     exit 1
