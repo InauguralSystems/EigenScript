@@ -78,7 +78,7 @@ int is_builtin_name(const char *name) {
  *
  * Sibling of W013 (a define shadowing a compiled-in builtin) for the stdlib
  * LIBRARY layer: the common discoverability failure is hand-rolling a
- * function lib/*.eigs already ships (lib/stats.eigs's median/mean; hex4/pad2
+ * function a stdlib module already ships (lib/stats.eigs's median/mean; hex4/pad2
  * hand-rolled twice downstream) — the name is no builtin and the module was
  * never imported, so nothing else connects the two. Name-only matching has
  * false positives (a deliberately-different local `mean`), so W021 is a
@@ -94,7 +94,7 @@ typedef struct {
 } W021Func;
 
 /* The name table: public (non-'_'-prefixed) top-level defines of every
- * lib/*.eigs module, scraped from the same directories the import resolver
+ * stdlib module, scraped from the same directories the import resolver
  * would find them in. (The shared #590 signature scrape does not exist in
  * the tree yet; this is the focused scan the issue calls for. The scrape is
  * line-based — top-level defines sit at column 0 by the STDLIB.md header
@@ -258,7 +258,7 @@ static void w021_build(const char *base) {
  *   - "extensions": the ext_names.h surface BY GROUP (gfx/http/db/model/
  *     net) — the surface of the LANGUAGE, independent of this binary's
  *     build flags (a name here may need `make http`/`make gfx`);
- *   - "lib": every public top-level define of lib/*.eigs WITH its
+ *   - "lib": every public top-level define of each stdlib module WITH its
  *     parameter list as written (defaults included), scraped from the same
  *     directories the import resolver searches, first module wins.
  * Name resolution only — calling conventions live in docs/BUILTINS.md

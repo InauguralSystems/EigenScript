@@ -36,7 +36,7 @@ cd "$(dirname "$0")/.."
 BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
 
-gcc -Werror=implicit-function-declaration -O2 \
+gcc -Werror=implicit-function-declaration -Werror=switch -Werror=comment -O2 \
     -DEIGENSCRIPT_FREESTANDING=1 \
     -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
     -o "$BUILD/embed_stack_soak" \
