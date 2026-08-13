@@ -26,7 +26,14 @@ static int measure_indent(const char *line) {
  * This table must stay in sync with the lexer's symbol switch (lexer.c):
  * an operator the lexer accepts but this table omits falls through to the
  * single-char branches in pass 3, which insert a space *inside* it and
- * silently corrupt the program under --fmt --write (#729). */
+ * silently corrupt the program under --fmt --write (#729).
+ *
+ * That sync is MECHANICAL, not conventional (#750): tools/fmt_operator_sync_check.sh
+ * derives the lexer's set from lexer.c and fails the suite ([99l]) if this table
+ * omits any of it. Convention is what failed the first time — and #729's corpus
+ * gate cannot cover a newly added operator, because no .eigs file uses it yet.
+ * Measured with the gap planted in the binary: `x is 5 |> double` formats to
+ * `x is 5 | > double`, which does not parse. */
 static const char *const MULTI_OPS[] = {
     "<<=", ">>=",
     "==", "!=", "<=", ">=", "<<", ">>",

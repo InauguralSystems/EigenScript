@@ -4538,6 +4538,46 @@ fi
 rm -rf "$CR_DIR"
 echo ""
 
+# [99l] fmt/lexer multi-char operator sync gate (#729 follow-up, #750).
+# fmt.c's spacing pass is character-level, so an operator the lexer accepts but
+# MULTI_OPS omits gets split by the single-char branches — `x is 5 |> double`
+# formats to `x is 5 | > double`, which no longer parses, and --fmt --write
+# corrupts the file on disk. #729's corpus gate only catches this when some
+# .eigs in the repo already uses the operator, which is never true for a newly
+# added one. This compares the two tables directly instead of trusting
+# convention to keep them in sync.
+echo "[99l] fmt/lexer operator-table sync gate (#729/#750)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" >/dev/null 2>&1 && \
+   bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" --selftest >/dev/null 2>&1; then
+    PASS=$((PASS + 1))
+    echo "  PASS: every lexer multi-char operator is covered by fmt.c MULTI_OPS (gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: fmt.c MULTI_OPS has drifted from the lexer, or the gate self-test broke"
+    bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" 2>&1 | head -6
+fi
+echo ""
+
+# [99m] Lint archive symbol-collision gate (#917, hole closed by #922).
+# The #917 split turned lint's json_escape helper into an external symbol and
+# broke the static-library route for any embedder with its own json_escape.
+# The gate links a probe + a colliding host definition against an archive of
+# BOTH lint TUs; #922 found it was compiling lint.c only, so the fault planted
+# in lint_host.c — the TU that actually carries the helper — went undetected.
+# It was also never invoked from anywhere: a gate nobody runs is not a gate.
+echo "[99m] lint archive symbol-collision gate (#917/#922)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/test_lint_linkage.sh" >/dev/null 2>&1; then
+    PASS=$((PASS + 1))
+    echo "  PASS: lint archive keeps json escaping internal in both lint TUs"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: the lint archive exports a colliding json_escape symbol"
+    bash "$TESTS_DIR/test_lint_linkage.sh" 2>&1 | tail -5
+fi
+echo ""
+
 # [99i] Uniform -Werror=switch gate (#817 follow-up; #835 extended it to
 # compile-bearing shell scripts). Dry-runs every compiling Makefile target
 # plus the audited scripts (tools/freestanding_check.sh) and asserts every

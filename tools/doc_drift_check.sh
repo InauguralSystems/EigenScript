@@ -45,4 +45,18 @@ if [ -f docs/llms.txt ] && ! grep -q "EigenScript v$(cat VERSION)" docs/llms.txt
     drift=1
 fi
 
+# 6. ARCHITECTURE.md's raw "N modules in `lib/`" count equals the tree (#833).
+# Distinct from check 4: README's headline is pinned to its own curated table,
+# this one is the unfiltered file count, and it had drifted 73 -> 76 silently
+# because nothing looked at it. Ungated boundaries drift; gated ones don't.
+arch_files=$(ls lib/*.eigs 2>/dev/null | wc -l | tr -d ' ')
+arch_claim=$(grep -oE 'The [0-9]+ modules in `lib/`' docs/ARCHITECTURE.md | grep -oE '[0-9]+')
+if [ -z "$arch_claim" ]; then
+    echo "DRIFT: docs/ARCHITECTURE.md has no 'The N modules in \`lib/\`' claim to check"
+    drift=1
+elif [ "$arch_claim" != "$arch_files" ]; then
+    echo "DRIFT: ARCHITECTURE.md claims ${arch_claim} lib/ modules but the tree has ${arch_files}"
+    drift=1
+fi
+
 exit $drift
