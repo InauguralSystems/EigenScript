@@ -3046,6 +3046,22 @@ echo ""
 echo "[99] Value-Signal Observer (report_value, #294)"
 check_eigs_suite "report_value value-channel verdicts" test_observer_value_signal.eigs "All tests passed." 1
 
+# [99a] Entropy level set (#862). entropy_of_num is H2(1/(1+|x|)), so
+# H(x) = H(1/x) = H(-x) identically and every value's level set is
+# {x, -x, 1/x, -1/x}. A trajectory confined to it has dH EXACTLY 0 — the
+# entropy channel cannot see it at all, by construction, permanently (the
+# entropy constants are load-bearing). What makes such programs classify
+# correctly is the #294 value channel plus the #861/#892 numeric routing.
+# Pins both halves on the exact level set: the value-channel surfaces see a
+# sign-flip and a reciprocal oscillator, the named entropy channel still does
+# not, and the two disagree. Distinct from [99]: that test's oscillator sits in
+# a FLAT-entropy region (dH small, not zero), so it retains its oscillation
+# verdict if numerics are re-routed to entropy — verified by planting exactly
+# that regression (obs_route_num -> 0), which leaves [99]'s oscillation cases
+# green and takes this section to six failures.
+echo "[99a] Observer Entropy Level Set (#862)"
+check_eigs_suite "sign-flip + reciprocal oscillators on the exact level set" test_observer_level_set.eigs "All tests passed." 1
+
 # [100] Worker-thread JIT lifetime (#296). A shared chunk that gets hot and
 # JIT-compiles ON a worker must not leave chunk->jit_code dangling when that
 # worker exits (its per-thread JIT code arena is munmap'd at detach). Crashed
