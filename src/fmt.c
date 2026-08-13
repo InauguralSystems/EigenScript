@@ -29,7 +29,7 @@ static int measure_indent(const char *line) {
  * silently corrupt the program under --fmt --write (#729).
  *
  * That sync is MECHANICAL, not conventional (#750): tools/fmt_operator_sync_check.sh
- * derives the lexer's set from lexer.c and fails the suite ([99g]) if this table
+ * derives the lexer's set from lexer.c and fails the suite ([99l]) if this table
  * omits any of it. Convention is what failed the first time — and #729's corpus
  * gate cannot cover a newly added operator, because no .eigs file uses it yet.
  * Measured with the gap planted in the binary: `x is 5 |> double` formats to

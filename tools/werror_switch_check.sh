@@ -57,7 +57,16 @@
 # committed floor (TARGET_FLOORS), because the first two assertions only see
 # TOTAL loss and global collapse — a target that loses most of its compile
 # lines to a batch sibling sharing a prerequisite stays non-zero and keeps
-# the global total plausible. The examined count is always printed.
+# the global total plausible. Checked in BOTH directions: a pinned floor with
+# no count means the target left TARGETS entirely, dropping 100% of its lines
+# while every other assertion still passes. And ENROLLMENT: the three lists
+# above (TARGETS, SCRIPT_AUDITS, TARGET_FLOORS) only cross-check each OTHER, so
+# a compile surface never added to any of them was invisible to all of them —
+# a new Makefile target running an unflagged `gcc -c src/vm.c` left this gate
+# printing its clean-tree output and exiting 0. enrollment_check anchors the
+# lists to the tree instead: any target emitting a compile line that no audited
+# target emits, and any compile-bearing script outside SCRIPT_AUDITS, is a hard
+# failure. The examined count is always printed.
 #
 # Usage: tools/werror_switch_check.sh [--selftest | --print-counts]
 #   --selftest : feed synthetic dry-run streams (each fault shape planted
@@ -163,6 +172,28 @@ validate_target_batches() {
 }
 
 # Compile-bearing shell scripts audited directly (#835) — see header.
+# Scripts whose apparent compile is not one. Text-level recognition cannot see
+# quoting, so these are waived explicitly rather than by loosening the matcher:
+#   tools/amalgamate.sh          — an echo STRING telling the user how to build
+#                                  the amalgamation by hand; it compiles nothing.
+#   tools/werror_switch_check.sh — this gate. Its own header probe runs
+#                                  `$CC -Werror=comment -fsyntax-only` on one
+#                                  file deliberately, and its matcher patterns
+#                                  contain compiler names as DATA.
+SCRIPT_ENROLL_EXEMPT="tools/amalgamate.sh tools/werror_switch_check.sh"
+
+# An exemption is otherwise an UNBOUNDED waiver: an exempt script can later gain
+# a real compile and stay invisible (verified — appending a genuine
+# `gcc -O2 -c src/vm.c` to amalgamate.sh kept the gate at exit 0). So exempt
+# scripts are content-pinned; changing one fails the gate and forces re-review.
+#
+# tools/werror_switch_check.sh is deliberately NOT pinned: it is this file, so
+# the pin would have to contain a hash of a file containing that hash. Its
+# exemption rests on construction instead — it is the auditor, its compiler
+# names are matcher DATA, and its one real compile is a deliberate
+# -fsyntax-only header probe.
+SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531"
+
 SCRIPT_AUDITS="build.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh web/build.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
@@ -176,6 +207,7 @@ VIOLATIONS=0        # examined invocations missing one or more required flags
 TARGET_EXAMINED=0   # examined within the current target (reset per target)
 TARGETS_AUDITED=0   # target segments with at least one compile invocation
 TARGET_COUNTS=''    # "label count" lines, appended by audit_target
+ALL_COMPILE_LINES=''  # every audited compile invocation, whitespace-normalised
 
 # Per-target compile-invocation FLOORS (#921). The per-target zero-emission
 # assertion only fires on TOTAL loss and MIN_LINES only on global collapse, so
@@ -232,6 +264,104 @@ script:web/build.sh 1
 # Floor for a label, or empty when the label is untracked.
 target_floor() {  # $1 = label
     printf '%s\n' "$TARGET_FLOORS" | awk -v t="$1" '$1 == t { print $2; exit }'
+}
+
+# TARGETS, SCRIPT_AUDITS and TARGET_FLOORS are three hand-written lists that
+# cross-check each other — and NONE of them is anchored to the Makefile. So a
+# compile surface that was never enrolled is invisible to every other assertion
+# in this script: the forward loop never sees it (no count), the reverse loop
+# never sees it (no floor), MIN_LINES does not move, and every pinned floor is
+# still met. Measured: adding a `plugin` target that runs
+# `gcc -Wall -Wextra -O2 -c src/vm.c` — no -Werror=switch, on the largest switch
+# surface in the tree — left the gate printing its clean-tree output and exiting
+# 0. The header's claim to dry-run every compiling target was an assertion, not
+# an invariant.
+#
+# The invariant is about LINES, not targets. `all` and `test` depend on `build`,
+# so they legitimately emit compile lines that ARE audited under `build`;
+# flagging any unenrolled target that emits a compile would be a false positive.
+# What must never happen is an unenrolled target emitting a compile line that NO
+# enrolled target emits. That is what this checks.
+enrollment_check() {
+    local failed=0 t dry seg norm all_targets
+    local mk="${MAKEFILE_SRC:-Makefile}"
+    all_targets=$(grep -oE '^[a-zA-Z0-9_][a-zA-Z0-9_.\-]*:' "$mk" | tr -d ':' | sort -u)
+    for t in $all_targets; do
+        case " $TARGETS " in *" $t "*) continue;; esac
+        if ! dry=$(make -f "$mk" -n -B --no-print-directory "$t" 2>/dev/null); then
+            continue   # a target that cannot even dry-run emits nothing to audit
+        fi
+        while IFS= read -r line; do
+            while IFS= read -r seg; do
+                seg="${seg#"${seg%%[![:space:]]*}"}"
+                seg="${seg%"${seg##*[![:space:]]}"}"
+                [ -z "$seg" ] && continue
+                is_compile_invocation "$seg" || continue
+                norm=$(printf '%s' "$seg" | tr -s '[:space:]' ' ')
+                case "$ALL_COMPILE_LINES" in
+                    *"$norm"*) ;;
+                    *)
+                        echo "GATE ERROR: target '$t' is not in TARGETS and emits a compile"
+                        echo "invocation that NO audited target emits, so it is unchecked:"
+                        printf '    %s\n' "$norm"
+                        echo "Enroll '$t' in TARGETS + TARGET_BATCHES + TARGET_FLOORS, or make it"
+                        echo "reuse an audited recipe."
+                        failed=1
+                        ;;
+                esac
+            done < <(split_invocations <<< "$line")
+        done <<< "$(printf '%s\n' "$dry" | join_continuations)"
+    done
+    # Same hole on the script side: a compile-bearing shell script that was
+    # never added to SCRIPT_AUDITS is audited by nothing. The reverse floor loop
+    # catches a script REMOVED from the list; only this catches one never added.
+    #
+    # Uses the SAME recognizer as the audit (strip_comments -> join -> split ->
+    # is_compile_invocation), not a raw grep: a looser grep flagged
+    # tools/amalgamate.sh for an echo STRING telling the user how to compile,
+    # which is the kind of false positive that gets a check deleted.
+    #
+    # The recognizer is still text-level, so it cannot tell a compile inside a
+    # quoted string from a real one. Two scripts are exempt, each with its
+    # reason — this is a CHECKED list, so a new compile-bearing script still
+    # fails loudly; only these two are waived.
+    local sc
+    for sc in $(ls ./*.sh tools/*.sh web/*.sh 2>/dev/null | sed 's|^\./||' | sort -u); do
+        case " $SCRIPT_AUDITS " in *" $sc "*) continue;; esac
+        case " $SCRIPT_ENROLL_EXEMPT " in *" $sc "*) continue;; esac
+        local found=0 sline sseg
+        while IFS= read -r sline; do
+            while IFS= read -r sseg; do
+                sseg="${sseg#"${sseg%%[![:space:]]*}"}"
+                [ -z "$sseg" ] && continue
+                if is_compile_invocation "$sseg"; then found=1; break; fi
+            done < <(split_invocations <<< "$sline")
+            [ "$found" -eq 1 ] && break
+        done <<< "$(strip_comments < "$sc" | join_continuations)"
+        if [ "$found" -eq 1 ]; then
+            echo "GATE ERROR: script '$sc' contains compile invocations but is not in"
+            echo "SCRIPT_AUDITS, so nothing checks its compile lines for $REQUIRED_FLAGS."
+            echo "Add it to SCRIPT_AUDITS (and pin its floor via --print-counts), or add it"
+            echo "to SCRIPT_ENROLL_EXEMPT with the reason it emits no real compile."
+            failed=1
+        fi
+    done
+
+    # Exempt scripts are content-pinned so the waiver cannot silently widen.
+    local pin pin_path pin_hash now_hash
+    for pin in $SCRIPT_ENROLL_PINS; do
+        pin_path=${pin%%:*}; pin_hash=${pin##*:}
+        [ -f "$pin_path" ] || { echo "GATE ERROR: pinned exempt script '$pin_path' is missing"; failed=1; continue; }
+        now_hash=$(sha256sum "$pin_path" 2>/dev/null | cut -c1-16)
+        if [ "$now_hash" != "$pin_hash" ]; then
+            echo "GATE ERROR: exempt script '$pin_path' CHANGED ($pin_hash -> $now_hash)."
+            echo "Its enrollment exemption was granted for specific content. Re-read it: if it"
+            echo "now really compiles, add it to SCRIPT_AUDITS; if not, update the pin."
+            failed=1
+        fi
+    done
+
+    return "$failed"
 }
 
 # Assert every audited target met its pinned floor and none is untracked.
@@ -342,6 +472,10 @@ audit_stream() {
             seg="${seg%"${seg##*[![:space:]]}"}"
             [ -z "$seg" ] && continue
             is_compile_invocation "$seg" || continue
+            # Remember the normalised line so enrollment_check can ask whether an
+            # UNENROLLED target emits a compile nobody audited (see below).
+            ALL_COMPILE_LINES="${ALL_COMPILE_LINES}$(printf '%s' "$seg" | tr -s '[:space:]' ' ')
+"
             EXAMINED=$((EXAMINED + 1))
             TARGET_EXAMINED=$((TARGET_EXAMINED + 1))
             missing=$(missing_flags "$seg")
@@ -484,6 +618,8 @@ require_minimum() {  # $1 = count
 # --- streams only; the tree is never mutated.
 if [ "${1:-}" = "--selftest" ]; then
     st_fail=0
+    st_work=$(mktemp -d /tmp/werror_selftest_XXXX)
+    trap 'rm -rf -- "$st_work"' EXIT
     # audit_stream must run in THIS shell or its EXAMINED/VIOLATIONS
     # increments die in the command-substitution subshell — capture its
     # stdout via a temp file instead of $(...). Streams go through
@@ -883,12 +1019,39 @@ a_target_with_no_floor 40
         st_fail=1
     fi
 
+    # Enrollment (#921 round 3): a target the three lists never enrolled is
+    # invisible to every OTHER assertion, so only this one can see it. Planted
+    # against a synthetic Makefile via MAKEFILE_SRC — the real tree is untouched.
+    st_mk="$st_work/Makefile.probe"
+    printf '.PHONY: st_plugin\nst_plugin:\n\tgcc -Wall -O2 -c src/vm.c -o /tmp/st_plugin.o\n' > "$st_mk"
+
+    st_saved_lines="$ALL_COMPILE_LINES"
+
+    # Nothing audited emits that line -> must FAIL.
+    ALL_COMPILE_LINES="gcc -O2 -c src/lexer.c -o build/lexer.o
+"
+    if MAKEFILE_SRC="$st_mk" enrollment_check >/dev/null 2>&1; then
+        echo "SELFTEST FAILED: an unenrolled target emitting an unaudited compile was accepted"
+        st_fail=1
+    fi
+
+    # An audited target DOES emit exactly that line -> must PASS (this is the
+    # `all`/`test` case: they re-emit `build`'s lines and must not be flagged).
+    ALL_COMPILE_LINES="gcc -Wall -O2 -c src/vm.c -o /tmp/st_plugin.o
+"
+    if ! MAKEFILE_SRC="$st_mk" enrollment_check >/dev/null 2>&1; then
+        echo "SELFTEST FAILED: an unenrolled target re-emitting an AUDITED line was rejected"
+        st_fail=1
+    fi
+
+    ALL_COMPILE_LINES="$st_saved_lines"
+
     TARGET_COUNTS="$st_saved_counts"
 
     if [ "$st_fail" -ne 0 ]; then
         exit 1
     fi
-    echo "SELFTEST OK: all planted fault shapes caught (incl. target-batch divergence, two-invocation blocks, switch-enum, zero-line targets, partial per-target coverage loss, unpinned targets), clean shapes pass, floors bite in BOTH directions"
+    echo "SELFTEST OK: all planted fault shapes caught (incl. target-batch divergence, two-invocation blocks, switch-enum, zero-line targets, partial per-target coverage loss, unpinned targets), clean shapes pass, floors bite in BOTH directions, unenrolled compile surfaces are caught"
     exit 0
 fi
 
@@ -930,6 +1093,14 @@ if [ "${1:-}" = "--print-counts" ]; then
         [ -f "$sc" ] || { echo "# GATE ERROR: script '$sc' not found" >&2; pc_failed=1; continue; }
         TARGET_EXAMINED=0
         audit_stream "script:$sc" <<< "$(strip_comments < "$sc" | join_continuations)" >/dev/null
+        # Same zero hard-fail the target leg has: emitting a floor of 0 for a
+        # script whose compiles the extractor stopped seeing would pin the
+        # blindness into the baseline as if it were the truth.
+        if [ "$TARGET_EXAMINED" -eq 0 ]; then
+            echo "# GATE ERROR: script '$sc' emitted no compile invocations" >&2
+            pc_failed=1
+            continue
+        fi
         echo "script:$sc $TARGET_EXAMINED"
     done
     exit "$pc_failed"
@@ -964,6 +1135,7 @@ if [ "$make_failed" -ne 0 ] || [ "$empty_failed" -ne 0 ]; then
 fi
 require_minimum "$EXAMINED" || exit 1
 enforce_target_floors || exit 1
+enrollment_check || exit 1
 if [ "$VIOLATIONS" -gt 0 ]; then
     echo "werror warning gate FAILED: $VIOLATIONS of $EXAMINED compile invocations lack one or more of: $REQUIRED_FLAGS"
     exit 1

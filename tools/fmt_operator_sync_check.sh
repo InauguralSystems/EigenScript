@@ -36,21 +36,33 @@ cd "$(dirname "$0")/.." || exit 1
 # Derive the lexer's multi-char operator set from its symbol switch.
 #
 # The lexer spells every multi-char operator as a lookahead chain inside a
-# `case 'X':` block: `*(p+1) == 'a'` for a 2-char operator, plus `*(p+2) == 'b'`
-# on the same line for a 3-char one. Both the `*(p+N)` and `p[N]` spellings are
-# accepted — keying on one of them made the gate depend on a coding STYLE, so an
-# operator added as `if (p[1] == '>')` was invisible AND the reported count did
-# not move, which reads as coverage rather than a miss. Scanning is bounded to
-# the switch body (`switch (*p) {` .. `default:`) so unrelated lookahead
-# elsewhere in the file cannot leak into the set.
+# `case 'X':` block: a lookahead at p+1 for a 2-char operator, plus one at p+2
+# on the same line for a 3-char one.
 #
-# RESIDUAL, stated plainly: this reads the lexer's SOURCE, so a third spelling
-# (a table, a helper call, `memcmp`) still evades it. The honest fix is a
-# behavioral probe that asks the built binary which byte pairs lex as one token,
-# with no source scan at all; it needs a per-operator valid context for each
-# operator class, which is why it is filed as follow-up work on #750 rather than
-# claimed here. EXPECTED_OPS below is the interim backstop: a silent extraction
-# drop shows up as a count mismatch instead of a still-green "all N covered".
+# The lookahead is NORMALISED before matching, because keying on one literal
+# spelling made the gate depend on a coding STYLE and it silently missed every
+# variant of the same code. All of these are now one canonical form:
+#   *(p+1) == 'x'      p[1] == 'x'      *(p + 1) == 'x'      *(p+1)=='x'
+# and 3-char chains may MIX the two spellings (`*(p+1) == '<' && p[2] == '<'`),
+# which an alternation of two fixed patterns could not see. Whitespace is
+# stripped and `*(p+N)`/`p[N]` collapse to `LN` first, so spacing and mixing
+# stop mattering. Scanning is bounded to the switch body (`switch (*p) {` ..
+# `default:`) so unrelated lookahead elsewhere in the file cannot leak in.
+#
+# RESIDUAL, stated precisely because an earlier version of this comment
+# overclaimed. This reads the lexer's SOURCE. Normalisation covers pointer-vs-
+# index spelling, internal whitespace, and mixed 3-char chains — verified by
+# planting each. It does NOT cover a structurally different implementation: a
+# lookup table, a helper call, `memcmp`, or a lookahead through a variable other
+# than `p`. For such an operator the extracted set is unchanged, so EXPECTED_OPS
+# does NOT catch it either — EXPECTED_OPS only fires when the count MOVES, which
+# makes it a backstop against the extractor silently losing an operator it used
+# to see, NOT against one it never saw. The only complete fix is a behavioral
+# probe asking the built binary which byte pairs lex as a single token; `--fmt`
+# is line-based and never parses, so there is no parse-error signal to key on
+# and each operator class needs its own valid context. Filed as follow-up on
+# #750. Until then #729'"'"'s corpus gate is the backstop, and it only bites once
+# some .eigs in the repo actually uses the operator.
 # Portability note: no 3-argument match(), no gensub, no \+ in a regex — this
 # runs on macOS CI, where awk is BSD awk, not gawk. The lookahead lines are
 # reduced to marker lines with sed first, so awk only has to carry the enclosing
@@ -59,10 +71,11 @@ extract_lexer_ops() {
     local lexer="${LEXER_SRC:-src/lexer.c}"
     sed -n '/switch (\*p) {/,/^[[:space:]]*default:/p' "$lexer" \
     | sed -e "s/.*case '\(.\)':.*/CASE \1/" \
-          -e "s/.*\*(p+1) == '\(.\)' \&\& \*(p+2) == '\(.\)'.*/OP2 \1 \2/" \
-          -e "s/.*p\[1\] == '\(.\)' \&\& p\[2\] == '\(.\)'.*/OP2 \1 \2/" \
-          -e "s/.*\*(p+1) == '\(.\)'.*/OP1 \1/" \
-          -e "s/.*p\[1\] == '\(.\)'.*/OP1 \1/" \
+          -e '/^CASE /!s/[[:space:]]//g' \
+          -e '/^CASE /!s/\*(p+1)/L1/g' -e '/^CASE /!s/p\[1\]/L1/g' \
+          -e '/^CASE /!s/\*(p+2)/L2/g' -e '/^CASE /!s/p\[2\]/L2/g' \
+          -e "s/.*L1=='\(.\)'&&L2=='\(.\)'.*/OP2 \1 \2/" \
+          -e "s/.*L1=='\(.\)'.*/OP1 \1/" \
     | awk '
         $1 == "CASE" { c = $2; next }
         c == ""      { next }
@@ -188,6 +201,40 @@ if [ "${1:-}" = "--selftest" ]; then
         st_fail=1
     fi
 
+    # Spelling variants. Each of these was a SILENT PASS before normalisation —
+    # the gate reported "all 18 covered" and the count did not move, so the miss
+    # looked exactly like coverage. Mixed 3-char chains are the subtle one: an
+    # alternation of two fixed patterns cannot see `*(p+1) ... && p[2] ...`.
+    st_plant_cond() {  # $1 = the if-condition text; writes $work/lx.c
+        awk -v cond="$1" '
+            /case .~.:/ && !d {
+                print "            case '"'"'@'"'"':"
+                print "                if (" cond ") { tok_add(&tl, TOK_X, 0, NULL, line, tok_col); p += 2; col += 2; }"
+                print "                else { tok_add(&tl, TOK_AT, 0, NULL, line, tok_col); p++; col++; }"
+                print "                break;"
+                d = 1
+            }
+            { print }
+        ' "${LEXER_SRC:-src/lexer.c}" > "$work/lx.c"
+    }
+    for st_cond in \
+        "*(p+1) == 'x'" \
+        "p[1] == 'x'" \
+        "*(p+1)=='x'" \
+        "*(p + 1) == 'x'" \
+        "p[1]=='x'" \
+        "*(p+1) == 'x' && *(p+2) == 'y'" \
+        "p[1] == 'x' && p[2] == 'y'" \
+        "*(p+1) == 'x' && p[2] == 'y'" \
+        "p[1] == 'x' && *(p+2) == 'y'"
+    do
+        st_plant_cond "$st_cond"
+        if LEXER_SRC="$work/lx.c" compare_tables >/dev/null 2>&1; then
+            echo "SELFTEST FAILED: a planted operator spelled \`$st_cond\` was not caught"
+            st_fail=1
+        fi
+    done
+
     # An empty extraction must be a hard failure, never a silent pass.
     : > "$work/empty.c"
     if LEXER_SRC="$work/empty.c" compare_tables >/dev/null 2>&1; then
@@ -202,7 +249,7 @@ if [ "${1:-}" = "--selftest" ]; then
     if [ "$st_fail" -ne 0 ]; then
         exit 1
     fi
-    echo "SELFTEST OK: planted 2-char and 3-char lexer operators are caught, empty extractions hard-fail, clean tree passes"
+    echo "SELFTEST OK: planted operators caught in all 9 lookahead spellings (pointer/index, spaced/unspaced, 2-char/3-char, and mixed chains), empty extractions hard-fail, clean tree passes"
     exit 0
 fi
 
