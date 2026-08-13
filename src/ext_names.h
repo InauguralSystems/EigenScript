@@ -6,7 +6,7 @@
  *   - the extension's registrar expands X(name, fn) into
  *     env_set_local_owned(env, #name, make_builtin(fn)) — so a builtin
  *     cannot be registered without appearing here;
- *   - the linter (E003, src/lint.c) expands the same lists into its
+ *   - the linter (E003, src/lint_host.c) expands the same lists into its
  *     binding base — so every extension name is known to name-resolution
  *     even in a binary built without that extension (the language surface,
  *     not this binary's build flags, is what the lint describes).
@@ -14,9 +14,9 @@
  * lint.c's old hand-copied BUILTINS list drifted ~120 names behind the
  * runtime and even carried a phantom entry ("error"); this header is the
  * structural fix for the extension half of that problem. The core builtins
- * need no list at all — lint.c calls register_builtins() itself.
+ * need no list at all — lint_host.c calls register_builtins() itself.
  *
- * This header is included from always-compiled TUs (lint.c): keep it to
+ * This header is included from always-compiled TUs (lint_host.c): keep it to
  * pure macros, no declarations that depend on extension types.
  */
 

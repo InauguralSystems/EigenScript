@@ -1,0 +1,7 @@
+{
+  "lint": {
+    "allow": {
+      "eigs_json_allow.eigs": ["W017"]
+    }
+  }
+}

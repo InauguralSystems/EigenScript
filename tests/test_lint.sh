@@ -1002,6 +1002,13 @@ OUT_CWD=$( (cd / && "$EIGS" --lint "$LINTPKG/lib/gen.eigs" 2>&1) || true)
 check_not_contains "#455 allow-list resolves from project root, not cwd" "$OUT_CWD" "W017"
 rm -rf "$LINTPKG"
 
+# The corpus fixture keeps this host-only block reachable outside temporary
+# shell data: its W017 is silenced only by the sibling eigs.json allow-list.
+FIXTURE="$TESTS_DIR/lint_fixtures/eigs_json_allow.eigs"
+OUT_FIXTURE=$($EIGS --lint "$FIXTURE" 2>&1 || true)
+check_not_contains "#455 persistent corpus fixture exercises eigs.json allow-list" \
+    "$OUT_FIXTURE" "W017"
+
 # --- #556: W013 is attributed to the define line itself ---
 # The warning used to land on the first statement AFTER the shadowing define
 # (p_cur had advanced past the body), so a same-line `# lint: allow W013` on

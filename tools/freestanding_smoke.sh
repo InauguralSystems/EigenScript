@@ -20,7 +20,7 @@ gcc -Werror=implicit-function-declaration -O2 \
     src/eigenscript.c src/lexer.c src/parser.c src/builtins.c \
     src/builtins_host.c \
     src/builtins_tensor.c src/hash.c src/arena.c src/state.c src/strbuf.c \
-    src/ext_store.c src/fmt.c src/lint.c src/chunk.c src/compiler.c \
+    src/ext_store.c src/fmt.c src/lint.c src/lint_host.c src/chunk.c src/compiler.c \
     src/vm.c src/jit.c src/trace.c src/eigs_embed.c \
     tools/freestanding_smoke_main.c \
     -lm -lpthread
