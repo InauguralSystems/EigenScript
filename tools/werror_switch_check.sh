@@ -78,6 +78,79 @@ TARGETS="build full http zlib net gfx asan asan-http tsan valgrind poison \
          lsp dap jit-smoke lib embed-smoke embed-smoke-gfx pgo coverage \
          fuzz fuzz-libfuzzer freestanding-libc-diff"
 
+# GNU make emits a shared prerequisite only once when several goals are in
+# one invocation. `embed-smoke-gfx` depends on `gfx`, so keeping that goal in
+# its own batch preserves the per-target counts that separate dry runs gave us
+# while still reducing 22 make parses to two. If a future compile-bearing
+# target gains a shared prerequisite, keep that dependent goal in its own
+# batch as well.
+TARGET_BATCHES=(
+    "build full http zlib net gfx asan asan-http tsan valgrind poison lsp dap jit-smoke lib embed-smoke pgo coverage fuzz fuzz-libfuzzer freestanding-libc-diff"
+    "embed-smoke-gfx"
+)
+
+# TARGET_BATCHES must cover TARGETS exactly.  Keep the hand-written batches
+# loud if a target is ever omitted, added, or listed twice.
+validate_target_batches() {
+    local expected_targets="$1" batch target expected_target seen_target found
+    shift
+    local -a seen=() missing=() extras=() duplicates=()
+
+    for batch in "$@"; do
+        for target in $batch; do
+            found=0
+            for expected_target in $expected_targets; do
+                if [ "$target" = "$expected_target" ]; then
+                    found=1
+                    break
+                fi
+            done
+            if [ "$found" -eq 0 ]; then
+                extras+=("$target")
+            else
+                found=0
+                if [ "${#seen[@]}" -gt 0 ]; then
+                    for seen_target in "${seen[@]}"; do
+                        if [ "$target" = "$seen_target" ]; then
+                            found=1
+                            break
+                        fi
+                    done
+                fi
+                if [ "$found" -ne 0 ]; then
+                    duplicates+=("$target")
+                else
+                    seen+=("$target")
+                fi
+            fi
+        done
+    done
+    for target in $expected_targets; do
+        found=0
+        if [ "${#seen[@]}" -gt 0 ]; then
+            for seen_target in "${seen[@]}"; do
+                if [ "$target" = "$seen_target" ]; then
+                    found=1
+                    break
+                fi
+            done
+        fi
+        if [ "$found" -eq 0 ]; then
+            missing+=("$target")
+        fi
+    done
+
+    if [ "${#missing[@]}" -ne 0 ] || [ "${#extras[@]}" -ne 0 ] \
+       || [ "${#duplicates[@]}" -ne 0 ]; then
+        echo "GATE ERROR: TARGET_BATCHES diverges from TARGETS"
+        [ "${#missing[@]}" -eq 0 ] || echo "  missing target(s): ${missing[*]}"
+        [ "${#extras[@]}" -eq 0 ] || echo "  extra target(s): ${extras[*]}"
+        [ "${#duplicates[@]}" -eq 0 ] || echo "  duplicate target(s): ${duplicates[*]}"
+        return 1
+    fi
+    return 0
+}
+
 # Compile-bearing shell scripts audited directly (#835) — see header.
 SCRIPT_AUDITS="tools/freestanding_check.sh"
 
@@ -90,6 +163,7 @@ strip_comments() {
 EXAMINED=0          # compile invocations examined, all targets
 VIOLATIONS=0        # examined invocations missing the flag
 TARGET_EXAMINED=0   # examined within the current target (reset per target)
+TARGETS_AUDITED=0   # target segments with at least one compile invocation
 
 # Join backslash-continued recipe lines into single logical lines.
 join_continuations() {
@@ -165,6 +239,78 @@ audit_target() {
     return 0
 }
 
+# Marker and wrapper names used to attribute one multi-goal make dry run back
+# to the individual targets. The wrapper recipe is printed by `make -n` after
+# its prerequisite target has emitted all of its recipes, so each marker closes
+# exactly one target segment without executing anything.
+BATCH_MARKER='__WERROR_TARGET_END__'
+BATCH_PREFIX='__werror_audit_'
+
+# Emit an extra makefile on stdout. It adds one phony wrapper per real target;
+# each wrapper depends on that target and prints an end marker as its recipe.
+# The caller feeds this stream to `make -f -`, keeping the dry run to one make
+# parser/spawn while preserving a deterministic target order.
+emit_batch_makefile() {
+    local target_list="$1" t
+    printf '.PHONY:'
+    for t in $target_list; do
+        printf ' %s%s' "$BATCH_PREFIX" "$t"
+    done
+    printf '\n'
+    for t in $target_list; do
+        printf '%s%s: %s\n' "$BATCH_PREFIX" "$t" "$t"
+        printf '\t@echo %s%s\n' "$BATCH_MARKER" "$t"
+    done
+}
+
+# Audit a marker-delimited, continuation-joined stream produced by the
+# wrapper goals above. The segment is handed to audit_target before advancing
+# to the next marker, so EXAMINED/VIOLATIONS remain global while
+# TARGET_EXAMINED and the zero-emission assertion remain per target.
+audit_batch() {
+    local target_list="$1" line marker_target segment_file
+    local target_index=0 batch_failed=0
+    local -a batch_targets=()
+    read -r -a batch_targets <<< "$target_list"
+    segment_file=$(mktemp /tmp/werror_switch_batch_XXXX)
+    : > "$segment_file"
+
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^echo[[:space:]]+${BATCH_MARKER}([[:alnum:]_-]+)$ ]]; then
+            marker_target="${BASH_REMATCH[1]}"
+            if [ "$target_index" -ge "${#batch_targets[@]}" ]; then
+                echo "GATE ERROR: batched dry run emitted an unexpected target marker '$marker_target'"
+                batch_failed=1
+                continue
+            fi
+            if [ "$marker_target" != "${batch_targets[$target_index]}" ]; then
+                echo "GATE ERROR: batched dry run marker '$marker_target' arrived while auditing target '${batch_targets[$target_index]}'"
+                batch_failed=1
+            fi
+            if ! audit_target "${batch_targets[$target_index]}" < "$segment_file"; then
+                batch_failed=1
+            else
+                TARGETS_AUDITED=$((TARGETS_AUDITED + 1))
+            fi
+            : > "$segment_file"
+            target_index=$((target_index + 1))
+        else
+            printf '%s\n' "$line" >> "$segment_file"
+        fi
+    done
+
+    if [ "$target_index" -lt "${#batch_targets[@]}" ]; then
+        echo "GATE ERROR: batched dry run ended before target '${batch_targets[$target_index]}' marker — cannot audit it"
+        batch_failed=1
+    elif [ -s "$segment_file" ]; then
+        echo "GATE ERROR: batched dry run emitted un-attributed lines after its final target marker"
+        batch_failed=1
+    fi
+
+    rm -f "$segment_file"
+    return "$batch_failed"
+}
+
 # Global backstop: hard fail when the total examined count says the matcher
 # saw nothing real.
 require_minimum() {  # $1 = count
@@ -188,6 +334,17 @@ if [ "${1:-}" = "--selftest" ]; then
     st_out=$(mktemp /tmp/werror_switch_selftest_out_XXXX)
     st_joined=$(mktemp /tmp/werror_switch_selftest_joined_XXXX)
     trap 'rm -f "$st_out" "$st_joined"' EXIT
+
+    # TARGET_BATCHES must cover TARGETS exactly.  Omitting a target is a hard
+    # failure naming the missing target, rather than a silently smaller gate.
+    if validate_target_batches "build jit-smoke" "build" > "$st_out" 2>&1; then
+        echo "SELFTEST FAILED: divergent target batches were accepted"
+        st_fail=1
+    elif ! grep -qF 'jit-smoke' "$st_out"; then
+        echo "SELFTEST FAILED: divergent target-batch failure did not name 'jit-smoke'"
+        sed 's/^/    /' "$st_out"
+        st_fail=1
+    fi
 
     # expect_clean <name>: stream on stdin must yield 0 violations.
     expect_clean() {
@@ -279,6 +436,47 @@ EOF
         st_fail=1
     fi
 
+    # The batched path must retain target attribution after one make stream is
+    # split at its target-end markers: a fault in target B must be reported as
+    # target B, not merely as an unarmed compiler line in the merged stream.
+    EXAMINED=0; VIOLATIONS=0; TARGET_EXAMINED=0
+    join_continuations > "$st_joined" <<'EOF'
+gcc -Werror=switch -c src/vm.c -o build/a.o
+echo __WERROR_TARGET_END__selftest-target-a
+gcc -c src/jit.c -o build/b.o
+echo __WERROR_TARGET_END__selftest-target-b
+EOF
+    if ! audit_batch "selftest-target-a selftest-target-b" > "$st_out" < "$st_joined"; then
+        echo "SELFTEST FAILED: merged-stream attribution audit failed to pass"
+        st_fail=1
+    else
+        out=$(cat "$st_out")
+        if [ "$EXAMINED" -ne 2 ] || [ "$VIOLATIONS" -ne 1 ] \
+           || ! printf '%s\n' "$out" | grep -qF 'selftest-target-b' \
+           || ! printf '%s\n' "$out" | grep -qF 'src/jit.c'; then
+            echo "SELFTEST FAILED: merged-stream fault was not attributed to target B (examined=$EXAMINED violations=$VIOLATIONS)"
+            printf '%s\n' "$out" | sed 's/^/    /'
+            st_fail=1
+        fi
+    fi
+
+    # The same marker path must also preserve the anti-vacuity guard: an empty
+    # segment is a hard failure naming the target that emitted no compiles.
+    EXAMINED=0; VIOLATIONS=0; TARGET_EXAMINED=0
+    join_continuations > "$st_joined" <<'EOF'
+echo __WERROR_TARGET_END__selftest-batched-zero
+gcc -Werror=switch -c src/vm.c -o build/nonzero.o
+echo __WERROR_TARGET_END__selftest-batched-nonzero
+EOF
+    if audit_batch "selftest-batched-zero selftest-batched-nonzero" > "$st_out" < "$st_joined"; then
+        echo "SELFTEST FAILED: batched zero-compile target did not fail"
+        st_fail=1
+    elif ! grep -qF 'selftest-batched-zero' "$st_out"; then
+        echo "SELFTEST FAILED: batched zero-compile failure did not name its target"
+        sed 's/^/    /' "$st_out"
+        st_fail=1
+    fi
+
     # Script-audit shapes (#835): a compile line inside a shell script is
     # classified exactly like a dry-run line once comments are stripped.
     expect_caught "script compile line, flag dropped" 'src/$f.c' <<'EOF'
@@ -357,20 +555,29 @@ EOF
     if [ "$st_fail" -ne 0 ]; then
         exit 1
     fi
-    echo "SELFTEST OK: all planted fault shapes caught (incl. two-invocation blocks, switch-enum, zero-line targets), clean shapes pass, floors bite"
+    echo "SELFTEST OK: all planted fault shapes caught (incl. target-batch divergence, two-invocation blocks, switch-enum, zero-line targets), clean shapes pass, floors bite"
     exit 0
 fi
+
+# Validate the target partition before any dry run so a hand-edited batch
+# cannot silently reduce the gate's coverage.
+validate_target_batches "$TARGETS" "${TARGET_BATCHES[@]}" || exit 1
 
 # --- main: dry-run every compiling target and audit what it WOULD run ---
 make_failed=0
 empty_failed=0
-for t in $TARGETS; do
-    if ! dry=$(make -n -B "$t" 2>&1); then
-        echo "GATE ERROR: 'make -n -B $t' exited nonzero — cannot audit $t"
+for target_list in "${TARGET_BATCHES[@]}"; do
+    batch_goals=()
+    for t in $target_list; do
+        batch_goals+=("$BATCH_PREFIX$t")
+    done
+    if ! dry=$(set -o pipefail; emit_batch_makefile "$target_list" | make -n -B -f Makefile -f - "${batch_goals[@]}" 2>&1); then
+        echo "GATE ERROR: 'make -n -B $target_list' exited nonzero — cannot audit the target batch"
         make_failed=1
         continue
     fi
-    audit_target "$t" <<< "$(printf '%s\n' "$dry" | join_continuations)" || empty_failed=1
+    joined=$(printf '%s\n' "$dry" | join_continuations)
+    audit_batch "$target_list" <<< "$joined" || empty_failed=1
 done
 
 # Compile-bearing scripts (#835): same classifier, same zero-line
@@ -392,5 +599,5 @@ if [ "$VIOLATIONS" -gt 0 ]; then
     echo "werror-switch gate FAILED: $VIOLATIONS of $EXAMINED compile invocations lack $FLAG"
     exit 1
 fi
-echo "werror-switch gate OK: all $EXAMINED compile invocations across $(echo $TARGETS | wc -w | tr -d ' ') dry-run targets + $(echo $SCRIPT_AUDITS | wc -w | tr -d ' ') script(s) carry $FLAG"
+echo "werror-switch gate OK: all $EXAMINED compile invocations across $TARGETS_AUDITED dry-run targets + $(echo $SCRIPT_AUDITS | wc -w | tr -d ' ') script(s) carry $FLAG"
 exit 0
