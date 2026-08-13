@@ -180,7 +180,17 @@ validate_target_batches() {
 #                                  `$CC -Werror=comment -fsyntax-only` on one
 #                                  file deliberately, and its matcher patterns
 #                                  contain compiler names as DATA.
-SCRIPT_ENROLL_EXEMPT="tools/amalgamate.sh tools/werror_switch_check.sh"
+#   tests/test_lint_linkage.sh   — a LINKAGE probe (#922). It compiles lint.c and
+#                                  lint_host.c with `-w` ON PURPOSE: it asserts a
+#                                  symbol stays TU-local, and warnings would only
+#                                  add noise. Requiring -Werror=switch here would
+#                                  test nothing the real build does not.
+#   tests/test_amalgamation.sh   — compiles the generated single-file
+#                                  amalgamation as a downstream CONSUMER would,
+#                                  with a consumer's flags. Pinning our internal
+#                                  warning flags onto it would stop it modelling
+#                                  the thing it exists to model.
+SCRIPT_ENROLL_EXEMPT="tools/amalgamate.sh tools/werror_switch_check.sh tests/test_lint_linkage.sh tests/test_amalgamation.sh"
 
 # An exemption is otherwise an UNBOUNDED waiver: an exempt script can later gain
 # a real compile and stay invisible (verified — appending a genuine
@@ -192,7 +202,7 @@ SCRIPT_ENROLL_EXEMPT="tools/amalgamate.sh tools/werror_switch_check.sh"
 # exemption rests on construction instead — it is the auditor, its compiler
 # names are matcher DATA, and its one real compile is a deliberate
 # -fsyntax-only header probe.
-SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531"
+SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage.sh:22b5fe736e74cde5 tests/test_amalgamation.sh:6af977a1cb7fb6f9"
 
 SCRIPT_AUDITS="build.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh web/build.sh"
 
@@ -285,9 +295,23 @@ target_floor() {  # $1 = label
 enrollment_check() {
     local failed=0 t dry seg norm all_targets
     local mk="${MAKEFILE_SRC:-Makefile}"
-    all_targets=$(grep -oE '^[a-zA-Z0-9_][a-zA-Z0-9_.\-]*:' "$mk" | tr -d ':' | sort -u)
+    # Enumerate from MAKE'S OWN DATABASE (post-expansion), not from a grep over
+    # Makefile source. A source grep only sees literal names at column 0, so a
+    # target named through a variable is invisible — and this Makefile ALREADY
+    # declares two that way (`$(LSP_BINARY):`, `$(DAP_BINARY):`). Measured: a
+    # `PLUGIN_T := plugin2` / `$(PLUGIN_T):` target compiling src/vm.c with
+    # neither required flag was not enumerated at all, so the gate passed. The
+    # same blindness covers pattern rules and targets from an `include`d file.
+    #
+    # Filters: `%` drops pattern rules; `build/` drops per-variant objects
+    # (already audited under their variant); and a name that EXISTS as a file is
+    # a source/artifact prerequisite echoed by the database, not a goal.
+    all_targets=$(make -pqRr -f "$mk" 2>/dev/null \
+        | awk '/^[^ \t.#%][^ :=]*:([^=]|$)/ { sub(/:.*/, ""); print }' \
+        | sort -u | grep -v '%' | grep -v '^build/')
     for t in $all_targets; do
         case " $TARGETS " in *" $t "*) continue;; esac
+        [ -e "$t" ] && continue   # an existing file: a prerequisite, not a goal
         if ! dry=$(make -f "$mk" -n -B --no-print-directory "$t" 2>/dev/null); then
             continue   # a target that cannot even dry-run emits nothing to audit
         fi
@@ -325,8 +349,13 @@ enrollment_check() {
     # quoted string from a real one. Two scripts are exempt, each with its
     # reason — this is a CHECKED list, so a new compile-bearing script still
     # fails loudly; only these two are waived.
+    # `git ls-files` rather than a `./*.sh tools/*.sh web/*.sh` glob. The glob
+    # was an UNBOUNDED, UNDOCUMENTED exemption of every other directory — the
+    # exact waiver shape amalgamate.sh is content-pinned to prevent — and it was
+    # already false for the tree: five compile-bearing scripts live in tests/
+    # and none was audited or waived.
     local sc
-    for sc in $(ls ./*.sh tools/*.sh web/*.sh 2>/dev/null | sed 's|^\./||' | sort -u); do
+    for sc in $(git ls-files '*.sh' 2>/dev/null | sort -u); do
         case " $SCRIPT_AUDITS " in *" $sc "*) continue;; esac
         case " $SCRIPT_ENROLL_EXEMPT " in *" $sc "*) continue;; esac
         local found=0 sline sseg
@@ -352,7 +381,20 @@ enrollment_check() {
     for pin in $SCRIPT_ENROLL_PINS; do
         pin_path=${pin%%:*}; pin_hash=${pin##*:}
         [ -f "$pin_path" ] || { echo "GATE ERROR: pinned exempt script '$pin_path' is missing"; failed=1; continue; }
-        now_hash=$(sha256sum "$pin_path" 2>/dev/null | cut -c1-16)
+        # sha256sum is GNU; macOS ships `shasum -a 256`, and CI runs this whole
+        # suite on macos-latest and macos-15-intel. An UNRUNNABLE instrument must
+        # not be reported as a content change — that is a red CI leg pointing at
+        # the wrong file.
+        if command -v sha256sum >/dev/null 2>&1; then
+            now_hash=$(sha256sum "$pin_path" | cut -c1-16)
+        elif command -v shasum >/dev/null 2>&1; then
+            now_hash=$(shasum -a 256 "$pin_path" | cut -c1-16)
+        else
+            echo "GATE ERROR: neither sha256sum nor shasum is available, so the exempt-script"
+            echo "content pins cannot be checked. Install one; do not weaken the pin."
+            failed=1
+            continue
+        fi
         if [ "$now_hash" != "$pin_hash" ]; then
             echo "GATE ERROR: exempt script '$pin_path' CHANGED ($pin_hash -> $now_hash)."
             echo "Its enrollment exemption was granted for specific content. Re-read it: if it"
@@ -619,7 +661,10 @@ require_minimum() {  # $1 = count
 if [ "${1:-}" = "--selftest" ]; then
     st_fail=0
     st_work=$(mktemp -d /tmp/werror_selftest_XXXX)
-    trap 'rm -rf -- "$st_work"' EXIT
+    # NOTE: a later `trap ... EXIT` REPLACES this one rather than adding to it,
+    # so $st_work must be cleaned by the FINAL trap below, not here. Leaving it
+    # in a trap that gets overwritten leaked one /tmp dir per run — 13 had
+    # accumulated on the devbox, one per suite run and one per CI job.
     # audit_stream must run in THIS shell or its EXAMINED/VIOLATIONS
     # increments die in the command-substitution subshell — capture its
     # stdout via a temp file instead of $(...). Streams go through
@@ -627,7 +672,12 @@ if [ "${1:-}" = "--selftest" ]; then
     st_out=$(mktemp /tmp/werror_switch_selftest_out_XXXX)
     st_joined=$(mktemp /tmp/werror_switch_selftest_joined_XXXX)
     st_scratch=$(mktemp -d /tmp/werror_switch_selftest_tree_XXXX)
-    trap 'rm -f "$st_out" "$st_joined"; rm -rf -- "$st_scratch"' EXIT
+    # Every expansion is :-guarded. The script runs under `set -u`, so ONE
+    # unbound name anywhere in a trap aborts the whole trap and everything after
+    # it leaks — verified: a trap whose first rm names an unset var leaves its
+    # later `rm -rf` undone. Guarding is cheap; diagnosing a leak through a dead
+    # trap is not.
+    trap 'rm -f "${st_out:-}" "${st_joined:-}" 2>/dev/null; rm -rf -- "${st_scratch:-/nonexistent}" "${st_work:-/nonexistent}" 2>/dev/null' EXIT
 
     # TARGET_BATCHES must cover TARGETS exactly.  Omitting a target is a hard
     # failure naming the missing target, rather than a silently smaller gate.
