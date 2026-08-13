@@ -45,20 +45,28 @@
 # block comments compiled by the LSP path but absent from a fresh checkout.
 #
 # A gate that silently matches nothing is worse than no gate — it passes
-# forever. Two assertions prevent that. PER TARGET: a dry run yielding
-# zero compile invocations is a hard failure naming the target — each of
-# the 22 targets emits at least one today, and the one-line auxiliary
+# forever, and a gate that silently matches LESS is the same failure wearing
+# a green badge. Three assertions prevent that. PER TARGET: a dry run
+# yielding zero compile invocations is a hard failure naming the target —
+# each of the 22 targets emits at least one today, and the one-line auxiliary
 # legs (jit-smoke, fuzz, freestanding-libc-diff, ...) are exactly where
-# #817's fixes live; a global total cannot see one of those die. And
-# GLOBALLY: an examined count under the floor (100) hard-fails as a
-# matcher-broke signal (the 11 VARIANTS alone emit >200 `-c` invocations
-# under -B). The examined count is always printed.
+# #817's fixes live; a global total cannot see one of those die. GLOBALLY:
+# an examined count under the floor (100) hard-fails as a matcher-broke
+# signal (the 11 VARIANTS alone emit >200 `-c` invocations under -B). And
+# PER-TARGET COVERAGE (#921): every target's examined count must meet a
+# committed floor (TARGET_FLOORS), because the first two assertions only see
+# TOTAL loss and global collapse — a target that loses most of its compile
+# lines to a batch sibling sharing a prerequisite stays non-zero and keeps
+# the global total plausible. The examined count is always printed.
 #
-# Usage: tools/werror_switch_check.sh [--selftest]
+# Usage: tools/werror_switch_check.sh [--selftest | --print-counts]
 #   --selftest : feed synthetic dry-run streams (each fault shape planted
 #                in-memory, no tree mutation) through the classifier and
 #                confirm every one is classified correctly — proves the
 #                checker isn't vacuously green.
+#   --print-counts : run the real dry runs and print the per-target examined
+#                counts in TARGET_FLOORS format, for pasting back after an
+#                intentional coverage change.
 # Exit 0 = every emitted compile invocation carries every required flag; 1 = a
 # violation, a make error, a target emitting no compile lines, an
 # under-floor count, or a selftest failure.
@@ -167,6 +175,89 @@ EXAMINED=0          # compile invocations examined, all targets
 VIOLATIONS=0        # examined invocations missing one or more required flags
 TARGET_EXAMINED=0   # examined within the current target (reset per target)
 TARGETS_AUDITED=0   # target segments with at least one compile invocation
+TARGET_COUNTS=''    # "label count" lines, appended by audit_target
+
+# Per-target compile-invocation FLOORS (#921). The per-target zero-emission
+# assertion only fires on TOTAL loss and MIN_LINES only on global collapse, so
+# PARTIAL loss was invisible: GNU make emits a shared prerequisite once per
+# invocation, so a future target added to a batch alongside a sibling it shares
+# a prerequisite with silently loses those compile lines — coverage could fall
+# from 332 to 180 and the gate would still print OK. That is precisely the
+# "a gate that silently matches less is worse than no gate" mode this script's
+# own header warns about.
+#
+# FLOORS, not exact counts, and that choice is the whole maintenance story:
+# adding a source file or a variant only ever RAISES these numbers, so routine
+# growth needs no edit here. A floor is bumped only when coverage is
+# intentionally removed. An untracked target is itself a hard failure, so a new
+# compile-bearing target cannot join a batch without pinning its coverage.
+#
+# Regenerate after an intentional change with:  tools/werror_switch_check.sh --print-counts
+# A floor of 1 is not a weak floor: `lsp`, `dap`, `lib`, `embed-smoke`,
+# `coverage`, `fuzz`, `fuzz-libfuzzer` and `freestanding-libc-diff` each emit a
+# single compile invocation that names a whole source LIST ($LSP_SOURCES,
+# $SOURCES), so one line IS their full coverage. Verified against standalone
+# `make -n -B <target>` runs when these were pinned: standalone and batched
+# counts agree, so batching is not currently eating any target's lines.
+TARGET_FLOORS='
+build 25
+full 31
+http 29
+zlib 25
+net 26
+gfx 26
+asan 25
+asan-http 30
+tsan 25
+valgrind 25
+poison 25
+lsp 1
+dap 1
+jit-smoke 1
+lib 1
+embed-smoke 1
+embed-smoke-gfx 27
+pgo 2
+coverage 1
+fuzz 1
+fuzz-libfuzzer 1
+freestanding-libc-diff 1
+script:build.sh 3
+script:tools/freestanding_check.sh 2
+script:tools/freestanding_smoke.sh 1
+script:tools/embed_stack_soak.sh 1
+script:web/build.sh 1
+'
+
+# Floor for a label, or empty when the label is untracked.
+target_floor() {  # $1 = label
+    printf '%s\n' "$TARGET_FLOORS" | awk -v t="$1" '$1 == t { print $2; exit }'
+}
+
+# Assert every audited target met its pinned floor and none is untracked.
+# Runs on the main path only; the selftest exercises it through planted
+# TARGET_COUNTS streams instead, so synthetic labels need no floors.
+enforce_target_floors() {
+    local failed=0 label count floor
+    while read -r label count; do
+        [ -z "$label" ] && continue
+        floor=$(target_floor "$label")
+        if [ -z "$floor" ]; then
+            echo "GATE ERROR: target '$label' has no entry in TARGET_FLOORS —"
+            echo "an unpinned target can lose compile lines to a batch sibling silently."
+            echo "Add its floor (tools/werror_switch_check.sh --print-counts)."
+            failed=1
+        elif [ "$count" -lt "$floor" ]; then
+            echo "GATE ERROR: target '$label' examined $count compile invocation(s), below its"
+            echo "pinned floor of $floor — this target's coverage SHRANK. The usual cause is a"
+            echo "batch sibling that now shares a prerequisite with it, so make emitted those"
+            echo "compile lines under the sibling instead. Give this goal its own TARGET_BATCHES"
+            echo "entry, or bump the floor if the removal was intentional."
+            failed=1
+        fi
+    done <<< "$TARGET_COUNTS"
+    return "$failed"
+}
 
 # Join backslash-continued recipe lines into single logical lines.
 join_continuations() {
@@ -250,6 +341,8 @@ audit_target() {
         echo "nothing there to assert the invariant against; refusing to pass silently."
         return 1
     fi
+    TARGET_COUNTS="${TARGET_COUNTS}${label} ${TARGET_EXAMINED}
+"
     return 0
 }
 
@@ -702,10 +795,51 @@ EOF
         st_fail=1
     fi
 
+    # Per-target floors (#921): partial coverage loss must be caught, an
+    # untracked target must be caught, and an at-or-above count must pass.
+    # TARGET_COUNTS is planted directly — no dry run, no tree mutation.
+    st_saved_counts="$TARGET_COUNTS"
+
+    TARGET_COUNTS="asan-http 30
+build 25
+"
+    if ! enforce_target_floors >/dev/null 2>&1; then
+        echo "SELFTEST FAILED: at-floor per-target counts were rejected"
+        st_fail=1
+    fi
+
+    TARGET_COUNTS="asan-http 1000
+build 25
+"
+    if ! enforce_target_floors >/dev/null 2>&1; then
+        echo "SELFTEST FAILED: an above-floor per-target count was rejected"
+        st_fail=1
+    fi
+
+    # The #921 shape itself: a batch sibling swallows most of a target's
+    # compile lines, leaving it non-zero (so the zero-emission assertion stays
+    # silent) but far below its real coverage.
+    TARGET_COUNTS="asan-http 12
+build 25
+"
+    if enforce_target_floors >/dev/null 2>&1; then
+        echo "SELFTEST FAILED: partial coverage loss (30 -> 12) did not trip the per-target floor"
+        st_fail=1
+    fi
+
+    TARGET_COUNTS="a_target_with_no_floor 40
+"
+    if enforce_target_floors >/dev/null 2>&1; then
+        echo "SELFTEST FAILED: a target with no pinned floor was accepted"
+        st_fail=1
+    fi
+
+    TARGET_COUNTS="$st_saved_counts"
+
     if [ "$st_fail" -ne 0 ]; then
         exit 1
     fi
-    echo "SELFTEST OK: all planted fault shapes caught (incl. target-batch divergence, two-invocation blocks, switch-enum, zero-line targets), clean shapes pass, floors bite"
+    echo "SELFTEST OK: all planted fault shapes caught (incl. target-batch divergence, two-invocation blocks, switch-enum, zero-line targets, partial per-target coverage loss, unpinned targets), clean shapes pass, floors bite"
     exit 0
 fi
 
@@ -737,10 +871,17 @@ for s in $SCRIPT_AUDITS; do
     audit_target "script:$s" <<< "$(strip_comments < "$s" | join_continuations)" || empty_failed=1
 done
 
+if [ "${1:-}" = "--print-counts" ]; then
+    echo "# Regenerated TARGET_FLOORS body — paste into TARGET_FLOORS (#921)."
+    printf '%s' "$TARGET_COUNTS"
+    exit 0
+fi
+
 if [ "$make_failed" -ne 0 ] || [ "$empty_failed" -ne 0 ]; then
     exit 1
 fi
 require_minimum "$EXAMINED" || exit 1
+enforce_target_floors || exit 1
 if [ "$VIOLATIONS" -gt 0 ]; then
     echo "werror warning gate FAILED: $VIOLATIONS of $EXAMINED compile invocations lack one or more of: $REQUIRED_FLAGS"
     exit 1
