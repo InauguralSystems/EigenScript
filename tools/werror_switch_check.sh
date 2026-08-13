@@ -311,6 +311,30 @@ audit_batch() {
     return "$batch_failed"
 }
 
+# The one place the batched dry run is spawned. Both the main path and the
+# nested-make selftest guard call THIS, so the guard cannot pass while the
+# real invocation regresses.
+#
+# --no-print-directory is load-bearing, not cosmetic: `make test` runs this
+# gate from a recipe, so the nested make sees MAKELEVEL>0 and brackets its
+# output with `make[1]: Entering/Leaving directory`. The Leaving line lands
+# AFTER the final target marker, and audit_batch's un-attributed-lines
+# assertion correctly refuses to ignore it. The per-target dry runs this
+# replaced tolerated that noise because they asserted nothing about stream
+# shape; batching is stricter, so the noise is turned off at source.
+batch_dry_run() {  # $1 = space-separated target list; prints the raw stream
+    local target_list="$1" t
+    local -a goals=()
+    for t in $target_list; do
+        goals+=("$BATCH_PREFIX$t")
+    done
+    (
+        set -o pipefail
+        emit_batch_makefile "$target_list" \
+            | make -n -B --no-print-directory -f Makefile -f - "${goals[@]}" 2>&1
+    )
+}
+
 # Global backstop: hard fail when the total examined count says the matcher
 # saw nothing real.
 require_minimum() {  # $1 = count
@@ -477,6 +501,20 @@ EOF
         st_fail=1
     fi
 
+    # The batched dry run must survive being invoked FROM a make recipe, which
+    # is how `make test` runs this gate. Uses batch_dry_run, so dropping
+    # --no-print-directory from the real invocation fails HERE.
+    EXAMINED=0; VIOLATIONS=0; TARGET_EXAMINED=0
+    if ! st_dry=$(MAKELEVEL=1 batch_dry_run "jit-smoke"); then
+        echo "SELFTEST FAILED: nested-make batch dry run exited nonzero"
+        st_fail=1
+    elif ! audit_batch "jit-smoke" > "$st_out" \
+         <<< "$(printf '%s\n' "$st_dry" | join_continuations)"; then
+        echo "SELFTEST FAILED: batched dry run is not clean under a nested make (MAKELEVEL>0)"
+        sed 's/^/    /' "$st_out"
+        st_fail=1
+    fi
+
     # Script-audit shapes (#835): a compile line inside a shell script is
     # classified exactly like a dry-run line once comments are stripped.
     expect_caught "script compile line, flag dropped" 'src/$f.c' <<'EOF'
@@ -567,11 +605,7 @@ validate_target_batches "$TARGETS" "${TARGET_BATCHES[@]}" || exit 1
 make_failed=0
 empty_failed=0
 for target_list in "${TARGET_BATCHES[@]}"; do
-    batch_goals=()
-    for t in $target_list; do
-        batch_goals+=("$BATCH_PREFIX$t")
-    done
-    if ! dry=$(set -o pipefail; emit_batch_makefile "$target_list" | make -n -B -f Makefile -f - "${batch_goals[@]}" 2>&1); then
+    if ! dry=$(batch_dry_run "$target_list"); then
         echo "GATE ERROR: 'make -n -B $target_list' exited nonzero — cannot audit the target batch"
         make_failed=1
         continue
