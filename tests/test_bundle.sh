@@ -9,7 +9,7 @@
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$TESTS_DIR/.." && pwd)"
-EIGS="$ROOT/src/eigenscript"
+EIGS="${EIGENSCRIPT:-$ROOT/src/eigenscript}"
 
 PASS=0
 FAIL=0

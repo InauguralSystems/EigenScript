@@ -571,6 +571,17 @@ jobs:
           done
           echo "no import shadowed itself"
 
+      # #905: run only the suite sections that exercise installed-layout
+      # module resolution and bundles. This is deliberately a focused slice,
+      # not a second full-suite leg; the installed binary is passed explicitly
+      # so the assertions exercise ~/.local/lib/eigenscript as well as the
+      # executable-relative stdlib.
+      - if: needs.scope.outputs.code == 'true'
+        name: Installed-layout module and bundle suite subset (#905)
+        run: |
+          export EIGENSCRIPT="$HOME/.local/bin/eigenscript"
+          bash tests/run_install_smoke_subset.sh
+
   # Performance regression gate (#398). Wall-clock flakes on shared runners, so
   # the gate compares deterministic cachegrind instruction counts (Ir) of THIS
   # commit against origin/main — both built in the same runner, so the diff is a
