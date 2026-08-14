@@ -32,6 +32,31 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 # observer_slot_update / observer_slot_update_num / observer_slot_record_value,
 # which WRITE — an opcode that only writes does not force observation, since
 # with the gate closed there is nothing to write for.
+# Touching a slot AT ALL is the real signal. obs_stall_trajectory (vm.c) reads
+# observer state by direct struct access — env_obs_slot(...) then s->dH,
+# s->entropy — and calls no named reader, so a checker keyed on reader FUNCTIONS
+# never reached it. That was this gate's own blind spot: OP_LOOP_STALL_CHECK, the
+# opcode this file's docstring cites as the reason the callee closure exists,
+# was being reported as "listed but not reading".
+#
+# env_obs_slot cannot simply be a reader, because writers call it too and listing
+# a writer would force observation on at every assignment — i.e. delete the gate.
+# So slot-touching opcodes that only WRITE are waived BY NAME below, and every
+# other slot-toucher must appear in chunk_reads_observer. A new opcode that
+# touches a slot now has to be classified deliberately instead of defaulting to
+# invisible.
+SLOT_TOUCH = "env_obs_slot"
+
+WRITE_ONLY_WAIVERS = {
+    # Each of these calls env_obs_slot solely to UPDATE the slot from the value
+    # just assigned. With the gate closed there is nothing to write, so they do
+    # not force observation on.
+    "OP_OBSERVE_ASSIGN":       "writes the slot from the assigned value",
+    "OP_OBSERVE_ASSIGN_LOCAL": "writes the slot from the assigned local",
+    "OP_OBSERVE_NAME_POST":    "#262 re-observe AFTER SET; write-only",
+    "OP_LOCAL_DOT_SET":        "writes the slot after a dot-assignment",
+}
+
 READERS = [
     "observer_slot_report",          # covers _entropy / _value by prefix
     "observer_slot_oscillating",
@@ -131,12 +156,19 @@ def main() -> int:
     eigs = (REPO / "src" / "eigenscript.c").read_text()
 
     # Close the reader set over callees first — see expand_readers().
-    readers = expand_readers({"vm.c": vm, "eigenscript.c": eigs}, READERS)
+    # SLOT_TOUCH seeds the closure too, so a helper that reads a slot by direct
+    # struct access (obs_stall_trajectory) marks every opcode that calls it.
+    # Write-only opcodes are exempted afterwards, by name, below.
+    readers = expand_readers({"vm.c": vm, "eigenscript.c": eigs},
+                             READERS + [SLOT_TOUCH])
 
     # The authoritative set: opcodes whose dispatch body reaches a reader.
     vm_readers = set()
     for op, body in case_blocks(vm):
-        if any(re.search(r"\b%s\s*\(" % re.escape(r), body) for r in readers):
+        hit = any(re.search(r"\b%s\s*\(" % re.escape(r), body) for r in readers)
+        if hit and ("OP_" + op) in WRITE_ONLY_WAIVERS:
+            hit = False          # declared write-only; see WRITE_ONLY_WAIVERS
+        if hit:
             vm_readers.add("OP_" + op)
 
     # The list under test.
