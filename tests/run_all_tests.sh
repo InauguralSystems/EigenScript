@@ -3483,7 +3483,9 @@ check_eigs_suite "split hard" test_split_hard.eigs "split hard: all passed" 1
 check_eigs_suite "tensor overflow guard" test_tensor_overflow.eigs "PASS: tensor overflow guard" 1
 check_eigs_suite "flat-buffer tensors" test_flat_buffer_tensor.eigs "PASS: flat-buffer tensors" 1
 # #745: tiled matmul (k > 32) and multi-row softmax kernel coverage.
-check_eigs_suite "tiled tensor kernels (#745)" test_tensor_kernel_tiling.eigs "TENSOR_KERNEL_TILING_OK" 1
+# #932: a 65x65 by 65x67 matmul so the i and j tile bounds run multi-tile with
+# a partial remainder in every dimension, not only their single-tile path.
+check_eigs_suite "tiled tensor kernels (#745, #932)" test_tensor_kernel_tiling.eigs "TENSOR_KERNEL_TILING_OK" 1
 # #597: vectorized buffer kernels (buf_mix/buf_scale_range/buf_fill/buf_peak/
 # buf_dot + buf_copy loud bounds) — correctness, raise-on-bad-window, and the
 # differential leg (builtin exactly equals the interpreted per-sample loop on
