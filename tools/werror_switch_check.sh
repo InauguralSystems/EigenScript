@@ -20,7 +20,10 @@
 #   recipe line can hold several compiler calls, and each call must carry
 #   the flag on its own: a test over the merged text would let the first
 #   invocation's flag cover an unguarded second one. Each invocation with
-#   a compiler command word (gcc/clang/cc/emcc/$CC/${CC}, quoted or unquoted)
+#   a compiler command word (gcc/clang/cc/emcc/$CC/${CC}, including the
+#   ${CC:-gcc} / ${CC-gcc} default forms with or without the colon, the
+#   .exe suffix, quoted or unquoted, and inside either spelling of a
+#   command substitution — $( ) or backticks)
 #   that COMPILES — it names a .c
 #   source, or (for-loop bodies over a $var, like the coverage leg) it
 #   carries -c — is one examined unit, counted and checked separately.
@@ -511,13 +514,30 @@ is_compile_invocation() {
     # build.sh actually use (#925). Missing the command word does not make a
     # line "unflagged" — it makes it INVISIBLE, so no assertion in this gate can
     # fail on it.
-    # The prefix class admits `(` as well as whitespace: a compile inside a
-    # command substitution — `OUT=$(${CC:-gcc} ... -c foo.c)`, which is exactly
-    # how tests/run_all_tests.sh builds the opcode-ABI TU — has the command word
-    # preceded by `(`, not by a space. Without this the script enrolls and then
-    # yields ZERO compile invocations, which this gate correctly refuses to
-    # treat as a pass (#925).
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]]|\()("?[^[:space:]"]*[-/}])?"?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?"?([[:space:]]|$)|(^|[[:space:]]|\()"?\$\{?CC([:][-=?][^}]*)?\}?"?([[:space:]]|$)' || return 1
+    # The colon is OPTIONAL. POSIX defines ${CC-gcc}, ${CC=cc}, ${CC?msg} and
+    # ${CC+alt} alongside their colon forms — they differ only in whether an
+    # EMPTY CC counts as unset, which is invisible to a text matcher and
+    # irrelevant to whether the line compiles. Fixing only the colon forms in
+    # #925 left the rest of the same family unseen, and `-`/`=`/`?` unseen in
+    # BOTH matchers: the broad cross-check below shared the `[:}]` anchor, so it
+    # could not report the miss either — the two-lists-agreeing-with-each-other
+    # mode again. All four operators are matched, so the family is closed rather
+    # than extended one operator per drift.
+    # The prefix class admits `(` and a BACKTICK as well as whitespace: a
+    # compile inside a command substitution — `OUT=$(${CC:-gcc} ... -c foo.c)`,
+    # which is exactly how tests/run_all_tests.sh builds the opcode-ABI TU — has
+    # the command word preceded by `(`, not by a space. Without this the script
+    # enrolls and then yields ZERO compile invocations, which this gate correctly
+    # refuses to treat as a pass (#925). Backticks are the OTHER spelling of the
+    # same construct and were left out of that fix; `OUT=`gcc -c probe.c`` was
+    # invisible to this matcher AND to the broad one below, so the cross-check
+    # could not have reported it. Both spellings, or the next `$( )` audit finds
+    # nothing while the backtick beside it compiles unflagged.
+    # `.exe` is admitted after the optional -VERSION suffix: the Windows Tier-1
+    # path invokes `gcc.exe` / `x86_64-w64-mingw32-gcc.exe`, and a trailing
+    # `.exe` broke the whole-token anchor in both matchers. No such line is in
+    # the tree today — this is covered before the surface lands, not after.
+    printf '%s\n' "$1" | grep -qE '(^|[[:space:]]|[(`])("?[^[:space:]"]*[-/}])?"?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?(\.exe)?"?([[:space:]]|$)|(^|[[:space:]]|[(`])"?\$\{?CC([:]?[-=?+][^}]*)?\}?"?([[:space:]]|$)' || return 1
     printf '%s\n' "$1" | grep -qE '\.c\b' && return 0
     printf '%s\n' "$1" | grep -qE '(^|[[:space:]])-c([[:space:]]|$)' && return 0
     # `-x c -` compiles from stdin: a real compile with no .c anywhere and no
@@ -567,7 +587,124 @@ recognizer_broad_match() {
     # name is too broad in a way that destroys the check's usefulness — measured,
     # it fired on `acc`, `accumulate`, `accept` and `accuracy` in ordinary test
     # scripts (8 false alarms), and a check that cries wolf gets muted.
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]"'"'"'(={;])([^[:space:]"'"'"';)]*[/}-])?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?([[:space:]"'"'"';)]|$)|\$\{?CC[:}]|\$CC\b'
+    #
+    # Six forms were invisible to BOTH matchers before this change, measured on
+    # the shipped patterns at 50de57e: `gcc.exe`, `x86_64-w64-mingw32-gcc.exe`,
+    # `OUT=`gcc -c probe.c`` (backtick substitution), and the `${CC+alt}`,
+    # `${CC-gcc}`, `${CC?msg}` colon-less operators. Blind TOGETHER is the
+    # dangerous shape, not blind unevenly: the cross-check can only report a
+    # strict miss that the broad matcher sees, so a form both share is invisible
+    # to the very assertion built to catch drift — and the pre-filter (same
+    # pattern) skips such a file outright, so its compile lines are never
+    # audited at all.
+    #
+    # The invariant that prevents this is BROAD ⊇ STRICT on every axis: name
+    # set, path/cross prefix, version and .exe suffix, ${CC} operator class, and
+    # substitution spelling. That is not left to a comment — recognizer_axis_parity
+    # below asserts it mechanically over one representative line per axis, and
+    # --selftest fails if any widening of the strict matcher lands without the
+    # matching widening here.
+    # RECOGNIZER_PATTERN broad
+    printf '%s\n' "$1" | grep -qE '(^|[[:space:]"'"'"'(={;`])([^[:space:]"'"'"';)`]*[/}-])?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?(\.exe)?([[:space:]"'"'"';)`]|$)|\$\{?CC[:}=?+-]|\$CC\b'
+}
+
+# BROAD >= STRICT, asserted per axis rather than promised in a comment.
+#
+# The cross-check can only report a strict miss the BROAD matcher sees. So any
+# axis where broad is tighter is an axis the coverage check is blind on, and
+# blind silently — the pre-filter shares the broad pattern, so a file it skips
+# is never audited at all. Six forms were invisible to both matchers at 50de57e
+# (.exe, cross-prefixed .exe, backtick substitution, and the colon-less
+# ${CC+alt} / ${CC-gcc} / ${CC?msg} operators), which is exactly this failure.
+#
+# One representative line per axis. A widening of is_compile_invocation that
+# does not land here fails --selftest instead of quietly narrowing the gate.
+RECOGNIZER_AXIS_LINES='
+gcc -Wall -c src/vm.c
+cc -c a.c
+emcc -c a.c
+clang-18 -O2 -c src/vm.c
+/usr/bin/gcc -c src/vm.c
+x86_64-w64-mingw32-gcc -c src/vm.c
+gcc.exe -c src/vm.c
+x86_64-w64-mingw32-gcc.exe -c src/vm.c
+${CC} -c a.c
+${CC:-gcc} -c a.c
+${CC-gcc} -c a.c
+${CC:=cc} -c a.c
+${CC=cc} -c a.c
+${CC:?m} -c a.c
+${CC?m} -c a.c
+${CC:+a} -c a.c
+${CC+alt} -c a.c
+OUT=$(gcc -c a.c)
+OUT=`gcc -c a.c`
+'
+
+recognizer_axis_parity() {
+    local failed=0 line
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        if is_compile_invocation "$line" && ! recognizer_broad_match "$line"; then
+            echo "GATE ERROR: the broad matcher is TIGHTER than the strict one on:"
+            printf '    %s\n' "$line"
+            echo "The cross-check can only report a strict miss that broad sees, so this"
+            echo "axis is unpoliced. Widen recognizer_broad_match in the same commit."
+            failed=1
+        fi
+    done <<EOF
+$RECOGNIZER_AXIS_LINES
+EOF
+    # The pre-filter must be the broad pattern VERBATIM. A comment claiming so
+    # is what hid the earlier blindness — the comment said "a bare substring, no
+    # anchoring" long after the code had become the anchored pattern, and a
+    # reader trusting it would conclude wrongful exclusion was impossible.
+    # Compare the two literals in the file instead of describing them.
+    local bp pf self="${BASH_SOURCE[0]:-$0}"
+    if [ ! -r "$self" ]; then
+        echo "GATE ERROR: axis parity cannot read its own source ($self) to compare"
+        echo "the pre-filter against the broad matcher. Refusing to pass on a check"
+        echo "that examined nothing."
+        return 1
+    fi
+    # Anchored on an explicit sentinel, not on incidental text shape. The first
+    # draft grepped for the literal "grep -qE '...'" and matched its OWN
+    # extraction code, so the clean tree reported drift.
+    # Line-anchored: the sentinel must be the whole comment line. Without the
+    # ^[[:space:]]*# anchor these greps ALSO match the two lines just below,
+    # which mention the sentinel as a string literal — the same self-matching
+    # that broke the previous draft, one layer down.
+    bp=$(grep -A1 '^[[:space:]]*# RECOGNIZER_PATTERN broad$'     "$self" | tail -1 | sed 's/^[[:space:]]*//')
+    pf=$(grep -A1 '^[[:space:]]*# RECOGNIZER_PATTERN prefilter$' "$self" | tail -1 | sed 's/^[[:space:]]*//')
+    # Normalise the parts that legitimately differ: the prefilter greps a FILE
+    # and drops the trailing \b, the matcher greps "$1". Compare only the regex.
+    # Strip the wrappers with sed. The previous draft used a parameter
+    # expansion referencing "$f" — a loop variable belonging to a DIFFERENT
+    # function — which is an unbound-variable fatal under `set -u`, and it
+    # aborted the clean run while the planted run still reported correctly.
+    bp=$(printf '%s' "$bp" | sed -e 's/^.*grep -qE //' -e 's/[[:space:]]*$//')
+    pf=$(printf '%s' "$pf" | sed -e 's/^.*grep -qE //' -e 's/ "[$]f".*$//' -e 's/[[:space:]]*$//')
+    # An extraction that finds NOTHING must fail, not skip. Failing open here is
+    # the same silent-pass mode this whole gate exists to prevent, and the first
+    # draft of this very check did exactly that: it keyed on "$0", which is not
+    # the script path when the function is sourced, so both extractions came
+    # back empty, the comparison was skipped and the check reported success.
+    if [ -z "$bp" ] || [ -z "$pf" ]; then
+        echo "GATE ERROR: axis parity could not extract both patterns"
+        echo "  broad matcher pattern found: ${bp:+yes}${bp:-NO}"
+        echo "  pre-filter pattern found:    ${pf:+yes}${pf:-NO}"
+        echo "The comparison would pass vacuously, so it fails instead."
+        return 1
+    fi
+    if [ "${bp#grep -qE }" != "${pf#grep -qE }" ]; then
+        echo "GATE ERROR: the coverage pre-filter pattern has drifted from"
+        echo "recognizer_broad_match. A pre-filter TIGHTER than the matcher it gates"
+        echo "silently excludes files that would have been flagged."
+        printf '  broad    : %s\n' "$bp"
+        printf '  prefilter: %s\n' "$pf"
+        failed=1
+    fi
+    return $failed
 }
 
 # Waivers are SHAPES, not line pins, because a line pin on a log message rots on
@@ -621,11 +758,18 @@ recognizer_coverage_check() {
     # each, after a three-process normalisation pipeline), and only ~10 of 66
     # scripts mention a compiler at all. One grep per file skips the rest
     # outright — 2m50s to a few seconds, on a gate #923 is already open about.
-    # The pre-filter is deliberately LOOSER than recognizer_broad_match (a bare
-    # substring, no anchoring), so it can never exclude a file the real matcher
-    # would have flagged.
+    # DIRECTION: the pre-filter must be no TIGHTER than recognizer_broad_match,
+    # or it silently excludes a file the real matcher would have flagged — the
+    # expensive-but-silent half of a pre-filter's two failure modes. It is not,
+    # as the comment here once claimed, "a bare substring, no anchoring": it is
+    # the broad pattern verbatim (minus the trailing \b, which only loosens it).
+    # That false claim is what hid the `.exe`/backtick/`${CC+}` blindness above —
+    # a reader trusting it would conclude wrongful exclusion was impossible. Keep
+    # this pattern character-identical to recognizer_broad_match; prefilter_axis
+    # selftests assert it.
     for f in $scripts; do
-        grep -qE '(^|[[:space:]"'"'"'(={;])([^[:space:]"'"'"';)]*[/}-])?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?([[:space:]"'"'"';)]|$)|\$\{?CC[:}]|\$CC' "$f" 2>/dev/null \
+        # RECOGNIZER_PATTERN prefilter
+        grep -qE '(^|[[:space:]"'"'"'(={;`])([^[:space:]"'"'"';)`]*[/}-])?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?(\.exe)?([[:space:]"'"'"';)`]|$)|\$\{?CC[:}=?+-]|\$CC\b' "$f" 2>/dev/null \
             || { examined_files=$((examined_files + 1)); continue; }
         # This file is the auditor: its compiler names are matcher DATA, the same
         # construction argument that exempts it from SCRIPT_ENROLL_PINS.
@@ -1011,6 +1155,27 @@ ${CC:-gcc} -std=c11 -I. -c abi_probe.c -o /tmp/abi_probe.o
 EOF
     expect_caught "recognizer: \${CC:=cc} assign-default form" "assign_default.c" <<'EOF'
 ${CC:=cc} -std=c11 -I. -c assign_default.c -o /tmp/assign_default.o
+EOF
+    expect_caught "recognizer: \${CC-gcc} colon-less default form" "posix_default.c" <<'EOF'
+${CC-gcc} -std=c11 -I. -c posix_default.c -o /tmp/posix_default.o
+EOF
+    expect_caught "recognizer: \"\${CC?msg}\" colon-less error form, quoted" "posix_error.c" <<'EOF'
+"${CC?no compiler}" -std=c11 -I. -c posix_error.c -o /tmp/posix_error.o
+EOF
+    expect_caught "recognizer: \${CC=cc} colon-less assign form" "posix_assign.c" <<'EOF'
+${CC=cc} -std=c11 -I. -c posix_assign.c -o /tmp/posix_assign.o
+EOF
+    expect_caught "recognizer: \${CC+alt} alternate form" "posix_alt.c" <<'EOF'
+${CC+alt} -std=c11 -I. -c posix_alt.c -o /tmp/posix_alt.o
+EOF
+    expect_caught "recognizer: backtick command substitution" "backtick_probe.c" <<'EOF'
+OUT=`gcc -std=c11 -I. -c backtick_probe.c -o /tmp/backtick_probe.o`
+EOF
+    expect_caught "recognizer: gcc.exe (Windows Tier-1 surface)" "win_probe.c" <<'EOF'
+gcc.exe -std=c11 -I. -c win_probe.c -o /tmp/win_probe.o
+EOF
+    expect_caught "recognizer: cross-prefixed .exe toolchain" "cross_probe.c" <<'EOF'
+x86_64-w64-mingw32-gcc.exe -std=c11 -I. -c cross_probe.c -o /tmp/cross_probe.o
 EOF
     expect_caught "recognizer: compile inside \$( ) command substitution" "subst_probe.c" <<'EOF'
 OUT=$(${CC:-gcc} -std=c11 -I. -c subst_probe.c -o /tmp/subst_probe.o 2>&1)
@@ -1434,6 +1599,7 @@ if [ "$make_failed" -ne 0 ] || [ "$empty_failed" -ne 0 ]; then
 fi
 require_minimum "$EXAMINED" || exit 1
 enforce_target_floors || exit 1
+recognizer_axis_parity || exit 1
 recognizer_coverage_check || exit 1
 enrollment_check || exit 1
 if [ "$VIOLATIONS" -gt 0 ]; then
