@@ -1,7 +1,9 @@
-# Tiled tensor-kernel coverage (#745).
+# Tiled tensor-kernel coverage (#745, #932).
 #
-# The matmul uses shaped flat buffers with k=65, so the production kernel must
-# execute three k tiles (32 + 32 + 1).  The expected values below are direct
+# The matmuls use shaped flat buffers with k=65, so the production kernel must
+# execute three k tiles (32 + 32 + 1); the second one also runs three i tiles
+# and three j tiles, so every tile bound is taken on a partial-remainder path
+# as well as a full one (#932).  The expected values below are direct
 # arithmetic answers, not another implementation of the tiled kernel.
 
 # A is two constant rows.  B has cancellation-sensitive entries in two output
@@ -29,6 +31,96 @@ assert of [product[1] == 1.0, "TK3 forward k tiles preserve column-1 sum"]
 assert of [product[2] == 0.0, "TK4 zero column remains zero"]
 assert of [product[3] == 2.0, "TK5 second row column-0 sum"]
 assert of [product[4] == 2.0, "TK6 second row column-1 sum"]
+
+# --- Multi-tile i and j bounds (#932) ---------------------------------------
+#
+# The matmul above has itiles = jtiles = 1, so i_end and j_end are only ever
+# taken on their single-tile path: an off-by-one in either bound, a j0 stride
+# error, or a wrong clamp on a final partial tile computes exactly what
+# correct code computes.  This shape gives 3x3x3 tiles at
+# NE_TENSOR_TILE_SIZE 32 with a partial remainder in every dimension --
+# m 65 = 32+32+1, k 65 = 32+32+1 and n 67 = 32+32+3.  n differs from m
+# deliberately: on a square shape a kernel that indexed B by the row stride m
+# instead of n, or that swapped the i and j bounds, would still be right.
+#
+# The expectations are closed-form index arithmetic, not a second matmul.  A
+# is constant along k -- a[i][kk] = i+1 for every kk -- so out[i][j] is (i+1)
+# times the column sum of B, and every column of B holds four nonzero entries
+# whose sum is derived by hand below:
+#
+#     k = 0   (k tile 0)   +1e20
+#     k = 1   (k tile 0)   (j+1) * 1048576      1048576 = 2^20
+#     k = 32  (k tile 1)   -1e20
+#     k = 64  (k tile 2)   j+1
+#
+# so the column sum is (j+1) * 1048577 and out[i][j] is (i+1)*(j+1)*1048577
+# exactly, with no rounding -- hence the exact equalities asserted below.  The
+# two scales are what make the entries cancellation-sensitive in both
+# directions that matter here:
+#
+#   * j+1 is far below the 1e20 term's ulp, so it survives only because it is
+#     added after the pair has cancelled.  Visiting the k tiles in the
+#     opposite order absorbs it into the huge term and loses it, changing the
+#     answer -- the same discipline as the section above, scaled up because
+#     the surviving terms here reach 65*67 = 4355 and the huge term has to
+#     outweigh them by more than 2^53.
+#   * (j+1)*2^20 is a multiple of that ulp, so it survives the huge term
+#     intact.  That is what makes a *repeated* visit visible: a j0 stride that
+#     lets two j tiles overlap runs a column's whole k sequence twice, and
+#     while the second pass reabsorbs the small term it doubles the large one.
+#
+# Traversal order in i and j cannot change any single value -- each out[i][j]
+# accumulates independently -- so those two dimensions are pinned by coverage:
+# every entry is nonzero and distinct per row and per column, so a row or
+# column that a bad bound skips reads 0 and one that an overlapping tile
+# visits twice reads too large.  Order *within* a k tile stays covered by the
+# 2x65 section above.
+col_unit is 1048577
+big_a is buffer of [65, 65]
+for i in range of 65:
+    for k in range of 65:
+        big_a[i * 65 + k] is i + 1
+
+big_b is buffer of [65, 67]
+for j in range of 67:
+    big_b[0 * 67 + j] is 1e20
+    big_b[1 * 67 + j] is (j + 1) * 1048576
+    big_b[32 * 67 + j] is 0 - 1e20
+    big_b[64 * 67 + j] is j + 1
+
+big_product is matmul of [big_a, big_b]
+bps is shape of big_product
+assert of [(bps[0] == 65) and (bps[1] == 67), "TK14 matmul shape is 65x67"]
+
+# Hand-computed values at every i and j tile seam: the last and first row of
+# each i tile, the last and first column of each j tile, and both partial
+# remainders.
+assert of [big_product[0] == 1 * 1 * col_unit, "TK15 (0,0)"]
+assert of [big_product[66] == 1 * 67 * col_unit, "TK16 (0,66) partial j tile"]
+assert of [big_product[31 * 67 + 31] == 32 * 32 * col_unit, "TK17 (31,31) tile 0 seam"]
+assert of [big_product[32 * 67 + 32] == 33 * 33 * col_unit, "TK18 (32,32) tile 1 start"]
+assert of [big_product[63 * 67 + 63] == 64 * 64 * col_unit, "TK19 (63,63) tile 1 end"]
+assert of [big_product[31 * 67 + 64] == 32 * 65 * col_unit, "TK20 (31,64) partial j tile"]
+assert of [big_product[64 * 67 + 31] == 65 * 32 * col_unit, "TK21 (64,31) partial i tile"]
+assert of [big_product[32 * 67 + 63] == 33 * 64 * col_unit, "TK22 (32,63)"]
+assert of [big_product[63 * 67 + 32] == 64 * 33 * col_unit, "TK23 (63,32)"]
+assert of [big_product[64 * 67 + 64] == 65 * 65 * col_unit, "TK24 (64,64) both partials"]
+assert of [big_product[64 * 67 + 66] == 65 * 67 * col_unit, "TK25 (64,66) last element"]
+
+# Every remaining entry, against the same closed form.  Squared deviations
+# cannot cancel, so one wrong entry keeps the total strictly positive.  The
+# grand total is a pair of Gauss sums rather than another traversal of B:
+# sum over i,j of (i+1)*(j+1)*1048577 = (65*66/2) * (67*68/2) * 1048577
+# = 2145 * 2278 * 1048577.
+dev is 0
+grand is 0
+for i in range of 65:
+    for j in range of 67:
+        gap is big_product[i * 67 + j] - ((i + 1) * (j + 1) * col_unit)
+        dev is dev + (gap * gap)
+        grand is grand + big_product[i * 67 + j]
+assert of [dev == 0, "TK26 every 65x67 entry equals (i+1)*(j+1)*1048577"]
+assert of [grand == 5123672280870, "TK27 grand total is 2145*2278*1048577"]
 
 # Softmax must run over a genuinely multi-element, multi-row tensor.  The
 # first row is uniform (all exp(0) terms), while the second has one exp(1)
