@@ -1,8 +1,9 @@
 /*
  * EigenScript Model Inference — shared kernels, forward pass, generation.
  *
- * Public kernels (double precision) exported for EigenScript tensor builtins:
- *   ne_softmax_buf, ne_matmul_buf
+ * Public double-precision tensor kernels are defined in builtins_tensor.c,
+ * which is compiled into every runtime variant. This file owns only the
+ * model-specific float kernels and forward paths.
  *
  * Float-precision model internals:
  *   ne_softmax_buf_f, ne_matmul_buf_f, ne_gelu_buf_f, attention, ffn, PE,
@@ -10,63 +11,6 @@
  */
 
 #include "model_internal.h"
-
-/* ================================================================
- * PUBLIC KERNELS (double precision) — used by eigenscript.c tensor builtins
- * ================================================================ */
-
-void ne_softmax_buf(double* data, int64_t rows, int64_t cols) {
-    for (int64_t i = 0; i < rows; i++) {
-        double* row = data + i * cols;
-        if (cols <= 0) continue;
-        double max_val = row[0];
-        for (int64_t j = 1; j < cols; j++) {
-            if (row[j] > max_val) max_val = row[j];
-        }
-        double sum = 0.0;
-        for (int64_t j = 0; j < cols; j++) {
-            row[j] = exp(row[j] - max_val);
-            sum += row[j];
-        }
-        /* With numerically stable max-subtract, at least one term is
-         * exp(0)=1, so sum should always be >= 1. Guard anyway: on NaN
-         * inputs max_val may itself be NaN and all terms underflow,
-         * leaving sum=0. Fall back to a uniform distribution. */
-        if (!(sum > 0.0)) {
-            double u = 1.0 / (double)cols;
-            for (int64_t j = 0; j < cols; j++) row[j] = u;
-            continue;
-        }
-        for (int64_t j = 0; j < cols; j++) {
-            row[j] /= sum;
-        }
-    }
-}
-
-void ne_matmul_buf(
-    double* a, int64_t m, int64_t k,
-    double* b, int64_t n,
-    double* out
-) {
-    memset(out, 0, m * n * sizeof(double));
-    for (int64_t i0 = 0; i0 < m; i0 += NE_TILE_SIZE) {
-        for (int64_t j0 = 0; j0 < n; j0 += NE_TILE_SIZE) {
-            for (int64_t k0 = 0; k0 < k; k0 += NE_TILE_SIZE) {
-                int64_t i_end = i0 + NE_TILE_SIZE < m ? i0 + NE_TILE_SIZE : m;
-                int64_t j_end = j0 + NE_TILE_SIZE < n ? j0 + NE_TILE_SIZE : n;
-                int64_t k_end = k0 + NE_TILE_SIZE < k ? k0 + NE_TILE_SIZE : k;
-                for (int64_t i = i0; i < i_end; i++) {
-                    for (int64_t kk = k0; kk < k_end; kk++) {
-                        double a_ik = a[i * k + kk];
-                        for (int64_t j = j0; j < j_end; j++) {
-                            out[i * n + j] += a_ik * b[kk * n + j];
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 /* ================================================================
  * FLOAT KERNELS — model internal

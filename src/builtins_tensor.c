@@ -16,37 +16,64 @@ Value* make_num_permanent(double n);
 /* The one consuming builtin — call_eigs_fn must not touch `arg` after it. */
 extern Value* builtin_free_val(Value *arg);
 
-/* Stdlib fallbacks for tensor math kernels. When MODEL extension is
- * enabled the non-static versions from model_infer.c take over via the
- * public prototypes in eigenscript.h. */
-#if !(EIGENSCRIPT_EXT_MODEL)
-static void ne_softmax_buf(double* data, int64_t rows, int64_t cols) {
-    for (int64_t r = 0; r < rows; r++) {
-        double *row = data + r * cols;
+/* Shared double-precision tensor kernels. These live in this always-compiled
+ * translation unit so model-enabled and model-disabled builds execute the
+ * same implementation. The tile size matches the model's float kernels but
+ * stays local here so the core tensor builtins do not depend on model headers. */
+#define NE_TENSOR_TILE_SIZE 32
+
+void ne_softmax_buf(double *data, int64_t rows, int64_t cols) {
+    for (int64_t i = 0; i < rows; i++) {
+        double *row = data + i * cols;
+        if (cols <= 0) continue;
         double max_val = row[0];
-        for (int64_t c = 1; c < cols; c++)
-            if (row[c] > max_val) max_val = row[c];
-        double sum = 0.0;
-        for (int64_t c = 0; c < cols; c++) {
-            row[c] = exp(row[c] - max_val);
-            sum += row[c];
+        for (int64_t j = 1; j < cols; j++) {
+            if (row[j] > max_val) max_val = row[j];
         }
-        for (int64_t c = 0; c < cols; c++)
-            row[c] /= sum;
+        double sum = 0.0;
+        for (int64_t j = 0; j < cols; j++) {
+            row[j] = exp(row[j] - max_val);
+            sum += row[j];
+        }
+        /* With numerically stable max-subtract, at least one term is
+         * exp(0)=1, so sum should always be >= 1. Guard anyway: on NaN
+         * inputs max_val may itself be NaN and all terms underflow,
+         * leaving sum=0. Fall back to a uniform distribution. */
+        if (!(sum > 0.0)) {
+            double u = 1.0 / (double)cols;
+            for (int64_t j = 0; j < cols; j++) row[j] = u;
+            continue;
+        }
+        for (int64_t j = 0; j < cols; j++) {
+            row[j] /= sum;
+        }
     }
 }
 
-static void ne_matmul_buf(
-    double *a, int64_t a_rows, int64_t a_cols,
-    double *b, int64_t b_cols, double *out
+void ne_matmul_buf(
+    double *a, int64_t m, int64_t k,
+    double *b, int64_t n,
+    double *out
 ) {
-    memset(out, 0, a_rows * b_cols * sizeof(double));
-    for (int64_t i = 0; i < a_rows; i++)
-        for (int64_t k = 0; k < a_cols; k++)
-            for (int64_t j = 0; j < b_cols; j++)
-                out[i * b_cols + j] += a[i * a_cols + k] * b[k * b_cols + j];
+    memset(out, 0, m * n * sizeof(double));
+    for (int64_t i0 = 0; i0 < m; i0 += NE_TENSOR_TILE_SIZE) {
+        for (int64_t j0 = 0; j0 < n; j0 += NE_TENSOR_TILE_SIZE) {
+            for (int64_t k0 = 0; k0 < k; k0 += NE_TENSOR_TILE_SIZE) {
+                int64_t i_end = i0 + NE_TENSOR_TILE_SIZE < m ? i0 + NE_TENSOR_TILE_SIZE : m;
+                int64_t j_end = j0 + NE_TENSOR_TILE_SIZE < n ? j0 + NE_TENSOR_TILE_SIZE : n;
+                int64_t k_end = k0 + NE_TENSOR_TILE_SIZE < k ? k0 + NE_TENSOR_TILE_SIZE : k;
+                for (int64_t i = i0; i < i_end; i++) {
+                    for (int64_t kk = k0; kk < k_end; kk++) {
+                        double a_ik = a[i * k + kk];
+                        for (int64_t j = j0; j < j_end; j++) {
+                            out[i * n + j] += a_ik * b[kk * n + j];
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
-#endif
 
 /* ---- flat-buffer tensors -------------------------------------------------
  * A VAL_BUFFER carries an optional 2-D shape (rows/cols; rows==0 => 1-D, length

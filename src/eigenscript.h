@@ -1352,13 +1352,15 @@ int observer_entropy_now(struct Env *e, int idx, double *out);
 double observer_entropy_of_num(double num);   /* lock-free shim for dump sites */
 double compute_entropy(Value *v);             /* the #685 O(own-size) fold */
 
-/* ---- Cross-file functions for MODEL tensor builtins ---- */
-/* When MODEL is enabled, these are defined in model_infer.c.
- * When disabled, eigenscript.c provides static stubs. */
-#if EIGENSCRIPT_EXT_MODEL
+/* ---- Cross-file functions for tensor builtins ---- */
+/* The double-precision kernels are always compiled in builtins_tensor.c so
+ * every runtime variant uses the same implementation. */
 void ne_softmax_buf(double *data, int64_t rows, int64_t cols);
 void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
                    double *b, int64_t b_cols, double *out);
+
+/* Model-only JSON helper. */
+#if EIGENSCRIPT_EXT_MODEL
 Value* json_obj_get(Value *obj, const char *key);
 #endif
 
