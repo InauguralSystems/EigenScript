@@ -5106,7 +5106,18 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         Value *target = slot_as_ptr(tgt_s);
-        int len;
+        /* -1, not 0, and not left uninitialised. The switch below is exhaustive
+         * over ValType — every arm either sets len or raises and DISPATCHes —
+         * and it deliberately has no `default:` so -Werror=switch forces a new
+         * ValType to choose. But C lets an enum object hold a value outside its
+         * enumerators, so gcc cannot prove exhaustiveness and warns that len
+         * "may be used uninitialized" at the negative-bound resolution below
+         * (gcc 13.3: vm.c:5172). Reaching that path at all means a corrupted
+         * type tag. Seeding 0 would then produce a SILENT empty slice; -1 makes
+         * the existing 0<=s<=e<=len check fail loudly with an EK_INDEX error
+         * naming the impossible length. Reported by an outside first-run
+         * attempt, 2026-08-14 — it was in every default build, scrolling past. */
+        int len = -1;
         switch (target->type) {
             case VAL_LIST:   len = target->data.list.count; break;
             case VAL_STR:    len = (int)strlen(target->data.str); break;
