@@ -363,7 +363,21 @@ enrollment_check() {
     # already false for the tree: five compile-bearing scripts live in tests/
     # and none was audited or waived.
     local sc
-    for sc in $(git ls-files '*.sh' 2>/dev/null | sort -u); do
+    # Same enumeration hazard the coverage check hit: --selftest's fault trees
+    # are `git archive HEAD | tar -x` extractions, NOT repositories, so
+    # `git ls-files` returns nothing and this whole loop iterated ZERO scripts
+    # while reporting success — measured at 0 scripts in a fault tree vs 66 in
+    # the real repo, with a planted unenrolled compile going unreported. Fall
+    # back to find, and refuse to pass on an empty enumeration.
+    local enroll_scripts
+    enroll_scripts=$(git ls-files '*.sh' 2>/dev/null | sort -u)
+    [ -z "$enroll_scripts" ] && enroll_scripts=$(find . -name '*.sh' -not -path './.git/*' 2>/dev/null | sed 's|^\./||' | sort -u)
+    if [ -z "$enroll_scripts" ]; then
+        echo "GATE ERROR: script enrollment found NO shell scripts to examine —"
+        echo "the assertion would pass vacuously, so it fails instead."
+        return 1
+    fi
+    for sc in $enroll_scripts; do
         case " $SCRIPT_AUDITS " in *" $sc "*) continue;; esac
         case " $SCRIPT_ENROLL_EXEMPT " in *" $sc "*) continue;; esac
         local found=0 sline sseg
@@ -503,7 +517,7 @@ is_compile_invocation() {
     # preceded by `(`, not by a space. Without this the script enrolls and then
     # yields ZERO compile invocations, which this gate correctly refuses to
     # treat as a pass (#925).
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]]|\()(gcc|clang|cc|emcc|"?\$\{?CC([:][-=?][^}]*)?\}?"?)([[:space:]]|$)' || return 1
+    printf '%s\n' "$1" | grep -qE '(^|[[:space:]]|\()("?[^[:space:]"]*[-/}])?"?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?"?([[:space:]]|$)|(^|[[:space:]]|\()"?\$\{?CC([:][-=?][^}]*)?\}?"?([[:space:]]|$)' || return 1
     printf '%s\n' "$1" | grep -qE '\.c\b' && return 0
     printf '%s\n' "$1" | grep -qE '(^|[[:space:]])-c([[:space:]]|$)' && return 0
     # `-x c -` compiles from stdin: a real compile with no .c anywhere and no
@@ -533,23 +547,57 @@ is_compile_invocation() {
 # backslash continuation as a miss — measured, it produced 13 false alarms
 # against 3 real ones, which is how a coverage check gets muted for noise.
 recognizer_broad_match() {
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]"({=])(gcc|clang|cc|emcc)([[:space:]"});]|$)|\$\{?CC[:}]|\$CC\b'
+    # This MUST be broader than is_compile_invocation on every axis, or the
+    # cross-check is blind exactly where the strict matcher is.
+    #
+    # The first version was broader only in CONTEXT (it admitted more surrounding
+    # punctuation) while sharing the strict matcher's hand-written compiler-NAME
+    # list and its "no prefix" anchoring. So `x86_64-w64-mingw32-gcc`,
+    # `/usr/bin/gcc`, `clang-18` and `${CROSS}gcc` were invisible to BOTH — and a
+    # check cannot report a miss its own broad matcher cannot see. That is the
+    # same two-lists-validating-each-other failure this gate exists to prevent,
+    # reproduced one level up in the fix for it.
+    #
+    # So: any whitespace-delimited token CONTAINING a compiler name, with any
+    # prefix and any suffix. Over-matching here is free — it only adds waiver
+    # load, which is visible and reviewable. Under-matching is silent.
+    # The compiler name must be a whole COMPONENT of the token: at its start, or
+    # immediately after a `/`, `-` or `}` (path, cross-prefix, ${VAR} expansion),
+    # with an optional -VERSION suffix. Matching any token merely CONTAINING the
+    # name is too broad in a way that destroys the check's usefulness — measured,
+    # it fired on `acc`, `accumulate`, `accept` and `accuracy` in ordinary test
+    # scripts (8 false alarms), and a check that cries wolf gets muted.
+    printf '%s\n' "$1" | grep -qE '(^|[[:space:]"'"'"'(={;])([^[:space:]"'"'"';)]*[/}-])?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?([[:space:]"'"'"';)]|$)|\$\{?CC[:}]|\$CC\b'
 }
 
 # Waivers are SHAPES, not line pins, because a line pin on a log message rots on
 # any reword while protecting nothing. Each shape is a structural reason a
 # compiler word can appear on a line that is not a compile invocation.
 recognizer_waived() {
-    local seg="$1"
+    local seg="$1" unquoted quoted
     # 1. A variable assignment: `CC="${CC:-gcc}"` names a compiler, runs nothing.
-    printf '%s\n' "$seg" | grep -qE '^[A-Za-z_][A-Za-z0-9_]*=' && return 0
-    # 2. The compiler word appears only inside a quoted string — a log message or
-    #    a usage hint, e.g. amalgamate.sh's "compile: cc host.c ...".
-    printf '%s\n' "$seg" | sed -e 's/"[^"]*"//g' -e "s/'[^']*'//g" \
-        | grep -qE '(^|[[:space:]"({=])(gcc|clang|cc|emcc)([[:space:]"});]|$)|\$\{?CC[:}]|\$CC\b' || return 0
+    #    Note an ENV-PREFIXED compile (`FOO=bar gcc -c x.c`) is not swallowed by
+    #    this: the strict recognizer already SEES that line, so the waiver is
+    #    never consulted for it.
+    printf '%s\n' "$seg" | grep -qE '^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*$' && return 0
     # 3. A relocatable LINK (`-r`), not a compile: no translation unit is
     #    compiled, so no warning flag applies. tests/test_lint_linkage.sh:48.
     printf '%s\n' "$seg" | grep -qE '(^|[[:space:]])-r([[:space:]]|$)' && return 0
+    # 2. The compiler word appears only inside a quoted string — a log message or
+    #    a usage hint, e.g. amalgamate.sh's "compile: cc host.c ...".
+    #
+    #    But NOT when the quoted text is itself a compile. `sh -c "gcc -c
+    #    src/vm.c"` and `eval "gcc ..."` EXECUTE that string, and `"gcc" -O2 -c
+    #    src/vm.c` is an ordinary invocation whose command word merely happens to
+    #    be quoted. The first version of this shape waived all three — real,
+    #    unflagged compiles of the largest switch surfaces in the tree, exempted
+    #    automatically and silently. So inspect the quoted CONTENT first.
+    quoted=$(printf '%s\n' "$seg" | grep -oE '"[^"]*"' | tr -d '"')
+    if [ -n "$quoted" ] && is_compile_invocation "$quoted"; then
+        return 1
+    fi
+    unquoted=$(printf '%s\n' "$seg" | sed -e 's/"[^"]*"//g')
+    recognizer_broad_match "$unquoted" || return 0
     return 1
 }
 
@@ -569,7 +617,16 @@ recognizer_coverage_check() {
         echo "would pass vacuously, so it fails instead."
         return 1
     fi
+    # Cheap per-file pre-filter. The expensive path is per-SEGMENT (two greps
+    # each, after a three-process normalisation pipeline), and only ~10 of 66
+    # scripts mention a compiler at all. One grep per file skips the rest
+    # outright — 2m50s to a few seconds, on a gate #923 is already open about.
+    # The pre-filter is deliberately LOOSER than recognizer_broad_match (a bare
+    # substring, no anchoring), so it can never exclude a file the real matcher
+    # would have flagged.
     for f in $scripts; do
+        grep -qE '(^|[[:space:]"'"'"'(={;])([^[:space:]"'"'"';)]*[/}-])?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?([[:space:]"'"'"';)]|$)|\$\{?CC[:}]|\$CC' "$f" 2>/dev/null \
+            || { examined_files=$((examined_files + 1)); continue; }
         # This file is the auditor: its compiler names are matcher DATA, the same
         # construction argument that exempts it from SCRIPT_ENROLL_PINS.
         [ "$f" = "tools/werror_switch_check.sh" ] && continue
@@ -976,6 +1033,45 @@ EOF
     expect_clean "recognizer: -r relocatable link is not a compile" <<'EOF'
 "$CC" -r -o /tmp/linked.o /tmp/probe.o /tmp/collision.o
 EOF
+
+    # ---- POSITIVE CONTROL for recognizer_coverage_check itself --------
+    #
+    # Every other assertion in this file is pinned to a floor or a count.
+    # recognizer_coverage_check was pinned to nothing and ran only on the main
+    # path, so a typo in recognizer_broad_match would make it print
+    # "OK ... (0 waived)" forever with nothing noticing — the check would have
+    # become decoration without ever failing. It has no other caller, so nothing
+    # else in the gate exercises those two matchers at all.
+    #
+    # Plant a script carrying a line the BROAD matcher sees, the strict
+    # recognizer does not classify, and no waiver shape covers. The check must
+    # fail and must name the file.
+    st_cov_dir="$st_scratch/covctl"
+    mkdir -p "$st_cov_dir"
+    cat > "$st_cov_dir/rogue_build.sh" <<'ROGUE'
+#!/bin/sh
+gcc -Wall -O2 build/foo.o -o out
+ROGUE
+    if ( cd "$st_cov_dir" && recognizer_coverage_check ) > "$st_out" 2>&1; then
+        echo "SELFTEST FAILED: coverage check passed a line it should have flagged"
+        sed 's/^/    /' "$st_out"
+        st_fail=1
+    elif ! grep -qF 'rogue_build.sh' "$st_out"; then
+        echo "SELFTEST FAILED: coverage check fired but did not name the offending script"
+        sed 's/^/    /' "$st_out"
+        st_fail=1
+    fi
+    # And the negative half: with the offending line removed, it must PASS —
+    # otherwise the control proves only that the check always fails.
+    cat > "$st_cov_dir/rogue_build.sh" <<'CLEAN'
+#!/bin/sh
+gcc -Werror=switch -Werror=comment -Wall -O2 -c src/vm.c -o build/vm.o
+CLEAN
+    if ! ( cd "$st_cov_dir" && recognizer_coverage_check ) > "$st_out" 2>&1; then
+        echo "SELFTEST FAILED: coverage check flagged a clean recognised compile"
+        sed 's/^/    /' "$st_out"
+        st_fail=1
+    fi
 
     # TWO compiler invocations in ONE continuation block: the first
     # invocation's flag must not satisfy the check for the second. Each
