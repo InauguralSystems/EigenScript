@@ -137,12 +137,10 @@ extern int g_training_samples;
 
 #define NE_TILE_SIZE 32
 
-/* ---- Cross-file kernel declarations ---- */
+/* ---- Cross-file model-kernel declarations ---- */
 
-/* Public kernels — defined in model_infer.c, also used by eigenscript.c tensor builtins */
-void ne_softmax_buf(double *data, int64_t rows, int64_t cols);
-void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
-                   double *b, int64_t b_cols, double *out);
+/* The shared double-precision tensor declarations live in eigenscript.h;
+ * this header contains only model-specific kernels. */
 
 /* Internal float kernels — defined in model_infer.c, used by model_train.c */
 void ne_softmax_buf_f(float *data, int64_t rows, int64_t cols);
