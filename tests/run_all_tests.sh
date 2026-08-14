@@ -3101,6 +3101,33 @@ check "gate OPENS on an aliased report (no reader opcode emitted)" "$OBS_G3" "1"
 #    confounded by a second build.
 OBS_G4=$(EIGS_OBS_GATE_STATS=1 EIGS_OBS_FORCE=1 $EIGS_BIN "$OBS_GATE_TMP/plain.eigs" 2>&1 | grep -c 'obs-gate: observed')
 check "EIGS_OBS_FORCE=1 reopens the gate" "$OBS_G4" "1"
+# 6-8. The three misgating classes found by adversarial review. Each is
+#    SILENT: the program runs, prints, and exits 0 while every observer query
+#    returns a rest band. Each is asserted against the observed VALUE, not the
+#    gate's own stats — in the spawn case the stats said "observed" while the
+#    observation was being discarded, so a stats-only check would have passed.
+#    Expected verdict is "moving" (an ordinary geometric climb).
+# 6. Worker threads. obs_needed lived on EigsThread, which eigs_thread_attach
+#    xcalloc's fresh per worker while only the spawning thread runs compile_ast,
+#    so every assignment on a worker skipped observation. EIGS_OBS_FORCE=1 could
+#    not rescue it either. The corpus differential was blind: its only
+#    spawn+observer program asserts iteration counts, never report content.
+printf 'shared is 1.0\n\ndefine worker() as:\n    shared is 2.0\n    shared is 4.0\n    shared is 8.0\n    return 1\n\nh is spawn of worker\nr is thread_join of h\nprint of (report of shared)\n' > "$OBS_GATE_TMP/spawn.eigs"
+OBS_G5=$($EIGS_BIN "$OBS_GATE_TMP/spawn.eigs" 2>&1 | tail -1)
+check "worker-thread assignments are observed (gate is per-STATE, not per-thread)" "$OBS_G5" "moving"
+# 7. eval compiles at RUNTIME, after this unit's assignments already ran, so its
+#    scan cannot arrive in time. The source may not exist until it is built, so
+#    the presence of eval at all is the signal.
+printf 'x is 1.0\nx is 2.0\nx is 4.0\nx is 8.0\nprint of (eval of "report of x")\n' > "$OBS_GATE_TMP/ev.eigs"
+OBS_G6=$($EIGS_BIN "$OBS_GATE_TMP/ev.eigs" 2>&1 | tail -1)
+check "eval of observer code sees the parent's earlier assignments" "$OBS_G6" "moving"
+# 8. Same shape through load_file: parent assigns, THEN loads a module that
+#    interrogates. Closed by pre-scanning string-literal load targets through
+#    resolve_eigenscript_file (the resolver load_file itself uses).
+printf 'print of (report of p)\n' > "$OBS_GATE_TMP/m.eigs"
+printf 'p is 1.0\np is 2.0\np is 4.0\np is 8.0\nload_file of "%s/m.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/par.eigs"
+OBS_G7=$($EIGS_BIN "$OBS_GATE_TMP/par.eigs" 2>&1 | tail -1)
+check "load_file'd module sees the parent's earlier assignments" "$OBS_G7" "moving"
 rm -rf "$OBS_GATE_TMP"
 echo ""
 

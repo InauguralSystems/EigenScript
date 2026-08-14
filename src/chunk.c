@@ -760,7 +760,16 @@ static int const_pool_names_observer(const EigsChunk *chunk) {
      * builtins — the opcode forms are covered by the opcode scan above. */
     static const char *OBS_BUILTINS[] = {
         "observe", "report", "report_value", "trajectory", "classify",
-        "state_at", "get_observer_thresholds", NULL
+        "state_at", "get_observer_thresholds",
+        /* Dynamic code. `eval` compiles a string at RUNTIME, after this unit's
+         * assignments have already executed, so its scan cannot run in time to
+         * observe them: `x is 1.0 ... eval of "report of x"` reported
+         * equilibrium under the gate and "moving" without it. Nothing can see
+         * inside a string that may not exist until it is built
+         * ("rep" + "ort of a" defeats any name match), so the presence of eval
+         * at all is the signal. Cheap in practice — a program doing runtime
+         * codegen is not the throughput case this gate exists for. */
+        "eval", NULL
     };
     for (int i = 0; i < chunk->const_count; i++) {
         const char *s = chunk->const_interns ? chunk->const_interns[i] : NULL;
@@ -769,6 +778,112 @@ static int const_pool_names_observer(const EigsChunk *chunk) {
             if (strcmp(s, OBS_BUILTINS[k]) == 0) return 1;
     }
     return 0;
+}
+
+/* #915: does a string-literal load target read the observer?
+ *
+ * load_file is a RUNTIME builtin with no module cache, so the compiler never
+ * sees a loaded module's AST. That leaves a real hole: a parent that assigns and
+ * THEN loads a module which interrogates those bindings gates itself off, and
+ * the module's own scan flips the bit too late to have observed anything —
+ * measured as `equilibrium` where the pre-gate runtime says `moving`.
+ *
+ * Forcing observation on for any unit mentioning load_file would close it and
+ * also delete the entire win: the consumer this gate exists for (EigenMiniSat)
+ * opens with four load_file calls. So resolve what can be resolved. Every string
+ * constant in a unit that also mentions load_file/import is treated as a
+ * candidate path; each one that names a readable file is TOKENIZED (not merely
+ * grepped — a comment mentioning "trajectory" is not a read) and scanned for
+ * observer-read identifiers, recursively.
+ *
+ * Conservative in the safe direction by construction: a path built at runtime is
+ * not a string constant, so no candidate resolves and the caller forces
+ * observation on. An unrelated string constant that happens to name a file costs
+ * one tokenize and, at worst, an unnecessary observation.
+ */
+static int file_reads_observer(const char *path, int depth) {
+    if (depth > 8) return 1;                 /* give up conservatively */
+    /* Resolve exactly the way load_file does. Opening the path relative to the
+     * working directory instead cost EigenMiniSat two gated units: its
+     * `lib/int_vector.eigs` lives in EigenScript's stdlib, not the consumer
+     * tree, so a cwd-relative open failed, no candidate resolved, and the
+     * conservative fallback forced observation on for the whole program. */
+    char resolved[8192];
+    long fsize = 0;
+    if (!resolve_eigenscript_file(path, resolved, sizeof resolved)) return 0;
+    char *src = read_file_util(resolved, &fsize);
+    if (!src) return 0;                      /* not a real path — not a load */
+    TokenList tl = tokenize(src);
+    int found = 0;
+    static const char *NAMES[] = {
+        "observe", "report", "report_value", "trajectory", "classify",
+        "state_at", "get_observer_thresholds", "eval",
+        "converged", "stable", "improving", "oscillating", "diverging",
+        "equilibrium", NULL
+    };
+    for (int i = 0; i < tl.count && !found; i++) {
+        /* IDENT only. str_val is also set on TOK_STR, and matching those cost
+         * the motivating consumer its gate: lib/solver.eigs and lib/bench.eigs
+         * carry the words "where"/"why"/"how" inside ordinary message strings,
+         * which took EigenMiniSat from 6 gated units to 4. A string mentioning
+         * an observer word is not an observer read. */
+        if (tl.tokens[i].type != TOK_IDENT) continue;
+        const char *sv = tl.tokens[i].str_val;
+        if (!sv) continue;
+        for (int k = 0; NAMES[k]; k++)
+            if (strcmp(sv, NAMES[k]) == 0) { found = 1; break; }
+    }
+    /* The temporal interrogatives lex to their own token types, so they are
+     * matched precisely by TYPE rather than by spelling — which is why the
+     * English words above could be dropped from NAMES entirely. */
+    for (int i = 0; i < tl.count && !found; i++) {
+        switch (tl.tokens[i].type) {
+            case TOK_WHAT: case TOK_WHO: case TOK_WHEN:
+            case TOK_WHERE: case TOK_WHY: case TOK_HOW:
+                found = 1; break;
+            default: break;
+        }
+    }
+    /* A module that loads further modules: recurse through its own string
+     * constants the same way. */
+    for (int i = 0; i < tl.count && !found; i++) {
+        if (tl.tokens[i].type != TOK_STR) continue;   /* a path IS a string */
+        const char *sv = tl.tokens[i].str_val;
+        if (!sv || !strstr(sv, ".eigs")) continue;
+        if (file_reads_observer(sv, depth + 1)) found = 1;
+    }
+    free_tokenlist(&tl);
+    free(src);
+    return found;
+}
+
+/* 1 if this chunk mentions a dynamic module load whose targets cannot all be
+ * proven observer-free. */
+static int chunk_unresolved_load(const EigsChunk *chunk) {
+    int mentions_load = 0;
+    for (int i = 0; i < chunk->const_count; i++) {
+        const char *s = chunk->const_interns ? chunk->const_interns[i] : NULL;
+        if (s && (strcmp(s, "load_file") == 0 || strcmp(s, "import") == 0))
+            mentions_load = 1;
+    }
+    if (!mentions_load) return 0;
+    int resolved_any = 0;
+    for (int i = 0; i < chunk->const_count; i++) {
+        const char *s = chunk->const_interns ? chunk->const_interns[i] : NULL;
+        if (!s || !strstr(s, ".eigs")) continue;
+        char rprobe[8192];
+        long fsize = 0;
+        if (!resolve_eigenscript_file(s, rprobe, sizeof rprobe)) continue;
+        char *probe = read_file_util(rprobe, &fsize);
+        if (!probe) continue;               /* unreadable — not a resolvable target */
+        free(probe);
+        resolved_any = 1;
+        if (file_reads_observer(s, 0)) return 1;
+    }
+    /* Mentions a load but nothing resolved: the path is computed, or relative to
+     * a directory we cannot reconstruct here. Do not gate on evidence we do not
+     * have. */
+    return resolved_any ? 0 : 1;
 }
 
 int chunk_reads_observer(const EigsChunk *chunk) {
@@ -814,6 +929,7 @@ int chunk_reads_observer(const EigsChunk *chunk) {
         }
     }
     if (const_pool_names_observer(chunk)) return 1;
+    if (chunk_unresolved_load(chunk)) return 1;
     for (int f = 0; f < chunk->fn_count; f++)
         if (chunk_reads_observer(chunk->functions[f])) return 1;
     return 0;
