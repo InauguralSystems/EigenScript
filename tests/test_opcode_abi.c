@@ -31,7 +31,8 @@ ABI_ASSERT(OP_DICT, 43);
 ABI_ASSERT(OP_LOOP_CAP_CHECK, 63);
 ABI_ASSERT(OP_LINE, 68);
 
-/* #704: the revision the ABI-stamped descriptors in tests/*.eigs declare. Those
+/* #704: the revision the ABI-stamped descriptors in the .eigs fixtures under
+ * tests/ declare. Those
  * files carry `ABI is 1` as a literal (as an external producer must), so a bump
  * in vm.h that forgets them would otherwise surface as a pile of runtime
  * failures instead of one build error naming the cause. Bump both together. */

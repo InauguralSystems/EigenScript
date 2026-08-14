@@ -197,7 +197,7 @@ record_binary_fingerprint
 echo "[0] Opcode ABI Guard"
 check_binary_fingerprint
 TOTAL=$((TOTAL + 1))
-OP_ABI_OUT=$(${CC:-gcc} -std=c11 -I. \
+OP_ABI_OUT=$(${CC:-gcc} -std=c11 -Werror=switch -Werror=comment -I. \
     -DEIGENSCRIPT_EXT_HTTP=0 \
     -DEIGENSCRIPT_EXT_MODEL=0 \
     -DEIGENSCRIPT_EXT_DB=0 \

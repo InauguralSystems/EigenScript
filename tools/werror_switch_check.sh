@@ -204,7 +204,13 @@ SCRIPT_ENROLL_EXEMPT="tools/amalgamate.sh tools/werror_switch_check.sh tests/tes
 # -fsyntax-only header probe.
 SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage.sh:22b5fe736e74cde5 tests/test_amalgamation.sh:6af977a1cb7fb6f9"
 
-SCRIPT_AUDITS="build.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh web/build.sh"
+# tests/test_leak_guard.sh and tests/run_all_tests.sh joined in #925: widening
+# the recognizer made their compiles VISIBLE for the first time. They were
+# never exempt — they were unseen, which is worse, because an exemption is a
+# decision on record. test_leak_guard.sh:56 compiles the ENTIRE runtime
+# ($SRCS, the largest compile surface in the tree) and carried NEITHER
+# required flag until this change.
+SCRIPT_AUDITS="build.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh web/build.sh tests/test_leak_guard.sh tests/run_all_tests.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
 # compile line is not a compile.
@@ -269,6 +275,8 @@ script:tools/freestanding_check.sh 2
 script:tools/freestanding_smoke.sh 1
 script:tools/embed_stack_soak.sh 1
 script:web/build.sh 1
+script:tests/test_leak_guard.sh 2
+script:tests/run_all_tests.sh 1
 '
 
 # Floor for a label, or empty when the label is untracked.
@@ -483,10 +491,116 @@ split_invocations() {
 # Compile-invocation recognition rule (see header): compiler command word,
 # and it compiles (names a .c, or carries -c over a $var in a loop body).
 is_compile_invocation() {
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]])(gcc|clang|cc|emcc|"?\$\{?CC\}?"?)([[:space:]]|$)' || return 1
+    # Compiler command word. The ${CC:-gcc} / ${CC:=cc} / ${CC:?...} default
+    # forms are matched explicitly: the old pattern accepted $CC and ${CC} but
+    # not the :-default spelling, which is what tests/run_all_tests.sh and
+    # build.sh actually use (#925). Missing the command word does not make a
+    # line "unflagged" — it makes it INVISIBLE, so no assertion in this gate can
+    # fail on it.
+    # The prefix class admits `(` as well as whitespace: a compile inside a
+    # command substitution — `OUT=$(${CC:-gcc} ... -c foo.c)`, which is exactly
+    # how tests/run_all_tests.sh builds the opcode-ABI TU — has the command word
+    # preceded by `(`, not by a space. Without this the script enrolls and then
+    # yields ZERO compile invocations, which this gate correctly refuses to
+    # treat as a pass (#925).
+    printf '%s\n' "$1" | grep -qE '(^|[[:space:]]|\()(gcc|clang|cc|emcc|"?\$\{?CC([:][-=?][^}]*)?\}?"?)([[:space:]]|$)' || return 1
     printf '%s\n' "$1" | grep -qE '\.c\b' && return 0
     printf '%s\n' "$1" | grep -qE '(^|[[:space:]])-c([[:space:]]|$)' && return 0
-    printf '%s\n' "$1" | grep -qE '(\$SOURCES|\$LSP_SOURCES|\$\{SOURCES\[@\]\})'
+    # `-x c -` compiles from stdin: a real compile with no .c anywhere and no
+    # standalone -c. tests/test_leak_guard.sh's ASan probe is exactly this shape;
+    # the coverage check below is what surfaced it (#925).
+    printf '%s\n' "$1" | grep -qE '(^|[[:space:]])-x[[:space:]]+c([[:space:]]|$)' && return 0
+    printf '%s\n' "$1" | grep -qE '(\$SOURCES|\$LSP_SOURCES|\$SRCS|\$\{SOURCES\[@\]\})'
+}
+
+# ---- #925: assert the RECOGNIZER's own coverage -------------------------
+#
+# Widening the two patterns above is necessary and not sufficient: they are
+# hand-written lists, and this is the third time they have drifted from the tree.
+# Every other assertion in this gate — the per-target floors, the reverse loop,
+# enrollment_check, MIN_LINES — counts what is_compile_invocation recognises, so
+# a miss HERE is invisible to all of them. A compile line the recognizer skips is
+# not "unflagged", it is not there.
+#
+# So: cross-check the strict recognizer against a deliberately OVER-BROAD one
+# (a compiler command word appears at all) over every tracked shell script, and
+# hard-fail on anything the broad matcher sees and the strict one does not,
+# unless it is waived below with a reason. That turns "keep the patterns current
+# by convention" into a checked invariant.
+#
+# The comparison runs through this gate's OWN strip_comments | join_continuations
+# | split_invocations pipeline. Comparing raw file lines instead reports every
+# backslash continuation as a miss — measured, it produced 13 false alarms
+# against 3 real ones, which is how a coverage check gets muted for noise.
+recognizer_broad_match() {
+    printf '%s\n' "$1" | grep -qE '(^|[[:space:]"({=])(gcc|clang|cc|emcc)([[:space:]"});]|$)|\$\{?CC[:}]|\$CC\b'
+}
+
+# Waivers are SHAPES, not line pins, because a line pin on a log message rots on
+# any reword while protecting nothing. Each shape is a structural reason a
+# compiler word can appear on a line that is not a compile invocation.
+recognizer_waived() {
+    local seg="$1"
+    # 1. A variable assignment: `CC="${CC:-gcc}"` names a compiler, runs nothing.
+    printf '%s\n' "$seg" | grep -qE '^[A-Za-z_][A-Za-z0-9_]*=' && return 0
+    # 2. The compiler word appears only inside a quoted string — a log message or
+    #    a usage hint, e.g. amalgamate.sh's "compile: cc host.c ...".
+    printf '%s\n' "$seg" | sed -e 's/"[^"]*"//g' -e "s/'[^']*'//g" \
+        | grep -qE '(^|[[:space:]"({=])(gcc|clang|cc|emcc)([[:space:]"});]|$)|\$\{?CC[:}]|\$CC\b' || return 0
+    # 3. A relocatable LINK (`-r`), not a compile: no translation unit is
+    #    compiled, so no warning flag applies. tests/test_lint_linkage.sh:48.
+    printf '%s\n' "$seg" | grep -qE '(^|[[:space:]])-r([[:space:]]|$)' && return 0
+    return 1
+}
+
+recognizer_coverage_check() {
+    local f seg failed=0 waived=0 norm scripts examined_files=0
+    # Enumerate from git where possible, but fall back to find: --selftest's
+    # fault trees are `git archive HEAD | tar -x` extractions, NOT repositories,
+    # so `git ls-files` returns NOTHING there. Measured — this check printed its
+    # OK line with "0 waived" inside a fault tree, i.e. it examined zero files
+    # and reported success. A coverage check that silently measures nothing is
+    # worse than no check, because it reads as evidence.
+    scripts=$(git ls-files '*.sh' 2>/dev/null)
+    [ -z "$scripts" ] && scripts=$(find . -name '*.sh' -not -path './.git/*' 2>/dev/null | sed 's|^\./||')
+    if [ -z "$scripts" ]; then
+        echo "GATE ERROR: recognizer coverage found NO shell scripts to examine."
+        echo "Neither 'git ls-files' nor 'find' enumerated anything — the check"
+        echo "would pass vacuously, so it fails instead."
+        return 1
+    fi
+    for f in $scripts; do
+        # This file is the auditor: its compiler names are matcher DATA, the same
+        # construction argument that exempts it from SCRIPT_ENROLL_PINS.
+        [ "$f" = "tools/werror_switch_check.sh" ] && continue
+        while IFS= read -r seg; do
+            seg="${seg#"${seg%%[![:space:]]*}"}"
+            seg="${seg%"${seg##*[![:space:]]}"}"
+            [ -z "$seg" ] && continue
+            recognizer_broad_match "$seg" || continue
+            is_compile_invocation "$seg" && continue
+            if recognizer_waived "$seg"; then
+                waived=$((waived + 1)); continue
+            fi
+            norm=$(printf '%s' "$seg" | tr -s '[:space:]' ' ')
+            echo "GATE ERROR: $f has a line naming a compiler that the recognizer"
+            echo "does not classify as a compile invocation, and no waiver covers it:"
+            printf '    %s\n' "$norm"
+            echo "Either it IS a compile (widen is_compile_invocation) or it is not"
+            echo "(add a reasoned shape to recognizer_waived). Do not leave it silent."
+            failed=1
+        done <<< "$(strip_comments < "$f" | join_continuations | split_invocations)"
+        examined_files=$((examined_files + 1))
+    done
+    if [ "$examined_files" -eq 0 ]; then
+        echo "GATE ERROR: recognizer coverage examined 0 files despite a non-empty list."
+        return 1
+    fi
+    if [ "$failed" -eq 0 ]; then
+        echo "recognizer coverage OK: $examined_files scripts examined; every" \
+             "compiler-naming line is recognised or waived by shape ($waived waived)"
+    fi
+    return $failed
 }
 
 # Whole-argument flag match: `-Werror=switch-enum` must not satisfy this.
@@ -822,6 +936,45 @@ clang -g -O1 -fsanitize=fuzzer,address,undefined -o fuzz/fuzz_eigenscript fuzz/f
 EOF
     expect_clean "clang compile+link, flag present" <<'EOF'
 clang -g -O1 -fsanitize=fuzzer,address,undefined -Werror=switch -Werror=comment -o fuzz/fuzz_eigenscript fuzz/fuzz_eigenscript.c src/vm.c -lm
+EOF
+
+    # ---- #925: the RECOGNIZER's spellings, one case each ----------------
+    #
+    # These do not test the flag logic; they test that is_compile_invocation
+    # SEES the line at all. A spelling it misses is not reported unflagged — it
+    # is not examined, so VIOLATIONS stays 0 and expect_caught fails. That is
+    # the failure mode that let ${CC:-gcc} and $SRCS sit unrecognised through
+    # two previous rounds of "just add the pattern".
+    #
+    # Every spelling below is one that WAS missed and is now covered. Adding a
+    # new accepted spelling to is_compile_invocation without adding its case
+    # here leaves the next drift silent again.
+    expect_caught "recognizer: \${CC:-gcc} default form" "abi_probe.c" <<'EOF'
+${CC:-gcc} -std=c11 -I. -c abi_probe.c -o /tmp/abi_probe.o
+EOF
+    expect_caught "recognizer: \${CC:=cc} assign-default form" "assign_default.c" <<'EOF'
+${CC:=cc} -std=c11 -I. -c assign_default.c -o /tmp/assign_default.o
+EOF
+    expect_caught "recognizer: compile inside \$( ) command substitution" "subst_probe.c" <<'EOF'
+OUT=$(${CC:-gcc} -std=c11 -I. -c subst_probe.c -o /tmp/subst_probe.o 2>&1)
+EOF
+    expect_caught "recognizer: \$SRCS whole-source-list build" '$SRCS' <<'EOF'
+gcc -O1 -g -fsanitize=address $SRCS -o /tmp/asan_bin -lm -lpthread
+EOF
+    expect_caught "recognizer: -x c - stdin compile" "-x c" <<'EOF'
+gcc -fsanitize=address -x c - -o /tmp/asan_probe
+EOF
+    expect_caught "recognizer: bare cc command word" "bare_probe.c" <<'EOF'
+cc -O2 -c bare_probe.c -o /tmp/bare_probe.o
+EOF
+    # And the negative direction: a compiler word on a line that is NOT a
+    # compile must stay unexamined, or the gate starts demanding warning flags
+    # on variable assignments and relocatable links.
+    expect_clean "recognizer: CC assignment is not an invocation" <<'EOF'
+CC="${CC:-gcc}"
+EOF
+    expect_clean "recognizer: -r relocatable link is not a compile" <<'EOF'
+"$CC" -r -o /tmp/linked.o /tmp/probe.o /tmp/collision.o
 EOF
 
     # TWO compiler invocations in ONE continuation block: the first
@@ -1185,6 +1338,7 @@ if [ "$make_failed" -ne 0 ] || [ "$empty_failed" -ne 0 ]; then
 fi
 require_minimum "$EXAMINED" || exit 1
 enforce_target_floors || exit 1
+recognizer_coverage_check || exit 1
 enrollment_check || exit 1
 if [ "$VIOLATIONS" -gt 0 ]; then
     echo "werror warning gate FAILED: $VIOLATIONS of $EXAMINED compile invocations lack one or more of: $REQUIRED_FLAGS"
