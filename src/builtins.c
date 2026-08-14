@@ -3183,6 +3183,10 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
  * responsible for a well-formed chunk ending in OP_RETURN, stamped with the
  * bytecode ABI revision it was built against (#704). */
 Value* builtin_vm_run_bytecode(Value *arg) {
+    /* #915: an assembled chunk never passes through compile_ast, so nothing ever
+     * scanned it for reader opcodes — exactly the #831 situation one line below.
+     * Observe unconditionally rather than gate on evidence we do not have. */
+    g_obs_needed = 1;
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(arg, abibuf, sizeof abibuf);
     if (abi_err) { rt_error(EK_VALUE, 0, "%s", abi_err); return make_null(); }
@@ -3350,6 +3354,7 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
  * are caught (not propagated). Returns {"ok": 1/0, "result": value} — the graded
  * "does it run?" rung for a self-hosted compiler validating generated code. */
 Value* builtin_sandbox_run(Value *arg) {
+    g_obs_needed = 1;             /* #915: assembled chunk — see vm_run_bytecode */
     Value *desc = (arg && arg->type == VAL_LIST && arg->data.list.count >= 1)
                   ? arg->data.list.items[0] : arg;
     int max_iter = 1000000;

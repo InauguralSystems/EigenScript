@@ -3224,5 +3224,27 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * error path, not the table. */
     if (verify_self && g_parse_errors == 0)
         chunk_verify_self_check(chunk, chunk->name ? chunk->name : "?");
+
+    /* #915 observer gate. compile_ast is the ONE choke point every compilation
+     * path funnels through — the main script (main.c), eval (builtins.c),
+     * load_file (builtins_host.c), import (vm.c), the REPL (repl.c), the embed
+     * API (eigs_embed.c) and ext_http's dynamic handlers — so OR-ing here needs
+     * no hand-maintained caller list, which is the drift failure #921/#925 are
+     * open on. Monotonic: a later unit that reads the observer turns it on for
+     * good; nothing turns it back off.
+     *
+     * Residual, deliberately accepted: a unit compiled AFTER assignments have
+     * already run (a load_file partway through a program, a REPL line) flips
+     * the bit late, so bindings assigned before the flip have no history and
+     * read as unobserved. The full-corpus differential (tools/observer_gate_diff.sh)
+     * is what polices this — if any tracked program exhibits it, the diff goes
+     * red. Force-on sites cover the cases where it is not merely possible but
+     * expected (REPL, embed). */
+    if (!g_obs_needed && getenv("EIGS_OBS_FORCE")) g_obs_needed = 1;  /* #915 escape hatch */
+    if (!g_obs_needed && chunk_reads_observer(chunk)) g_obs_needed = 1;
+    if (getenv("EIGS_OBS_GATE_STATS"))
+        fprintf(stderr, "obs-gate: %s %s\n",
+                g_obs_needed ? "observed" : "unobserved", chunk->name);
+
     return chunk;
 }

@@ -99,6 +99,31 @@ else
     fail "sigusr1: no dump on stderr after SIGUSR1"
 fi
 
+# #915: if the observer gate is closed for this fixture (it has no observer
+# surface, so it is), the FIRST dump has no trajectories to show — nothing was
+# recorded before the signal. That dump must SAY so rather than print empty
+# bands that read as "everything settled", and it arms observation from that
+# point. A SIGUSR1 dump exists to inspect an already-running process, which is
+# the one case where re-running under EIGS_OBS_FORCE=1 is not an option, so the
+# capability is preserved across two signals instead of being dropped.
+if grep -q "observer gate CLOSED" "$ERR1"; then
+    pass "sigusr1: gated first dump declares absence of data (not equilibrium)"
+    # Second signal: observation was armed by the first, so this one carries
+    # real trajectories. The row assertions below grep the whole file and so
+    # match this dump.
+    DUMPS_BEFORE=$(grep -c '^# end dump$' "$ERR1")
+    kill -USR1 "$PID" 2>/dev/null || true
+    for _ in $(seq 1 600); do
+        [ "$(grep -c '^# end dump$' "$ERR1")" -gt "$DUMPS_BEFORE" ] && break
+        sleep 0.1
+    done
+    if [ "$(grep -c '^# end dump$' "$ERR1")" -gt "$DUMPS_BEFORE" ]; then
+        pass "sigusr1: second dump arrived after the gate armed"
+    else
+        fail "sigusr1: no second dump after the gate armed"
+    fi
+fi
+
 # Row shape: name | value | when=<assigns> | entropy=<H> | dH=<dH> | word.
 # when must have 4+ digits (READY is printed at assignment 5000 of
 # step_count, the signal lands strictly after) — a settled long-lived
