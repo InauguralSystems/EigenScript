@@ -7,7 +7,14 @@ set -euo pipefail
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="${EIGENSCRIPT:-$HOME/.local/bin/eigenscript}"
 SUITE_ROOT=$(mktemp -d /tmp/eigs_install_subset_suite.XXXXXX)
-trap 'rm -rf "$SUITE_ROOT"' EXIT
+external_home=""
+external_dir=""
+cleanup() {
+    rm -rf "$SUITE_ROOT"
+    [ -z "$external_home" ] || rm -rf "$external_home"
+    [ -z "$external_dir" ] || rm -rf "$external_dir"
+}
+trap cleanup EXIT
 
 # The normal runner starts in src/, where ../lib is deliberately available.
 # That would let an installed-layout run silently fall back to the checkout's
@@ -70,17 +77,19 @@ record_shell_suite() {
 }
 
 record_external_stdlib() {
-    local ext_home ext_dir ext_script output rc=0
-    ext_home=$(mktemp -d /tmp/eigs_install_subset_home.XXXXXX)
-    ext_dir=$(mktemp -d /tmp/eigs_install_subset_project.XXXXXX)
-    ext_script="$ext_dir/external_stdlib.eigs"
+    local ext_script output rc=0
+    external_home=$(mktemp -d /tmp/eigs_install_subset_home.XXXXXX)
+    external_dir=$(mktemp -d /tmp/eigs_install_subset_project.XXXXXX)
+    ext_script="$external_dir/external_stdlib.eigs"
     printf '%s\n' \
         'load_file of "lib/text_builder.eigs"' \
         'b is text_builder_new of null' \
         'text_builder_append_line of [b, "external stdlib ok"]' \
         'print of (text_builder_to_string of b)' > "$ext_script"
-    output=$(cd "$ext_dir" && HOME="$ext_home" "$EIGS" "$ext_script" </dev/null 2>&1) || rc=$?
-    rm -rf "$ext_home" "$ext_dir"
+    output=$(cd "$external_dir" && HOME="$external_home" "$EIGS" "$ext_script" </dev/null 2>&1) || rc=$?
+    rm -rf "$external_home" "$external_dir"
+    external_home=""
+    external_dir=""
     if [ "$rc" -eq 0 ] && grep -Fq "external stdlib ok" <<<"$output"; then
         echo "PASS: [42e] executable-relative stdlib"
         PASS=$((PASS + 1))
@@ -106,8 +115,26 @@ record_external_stdlib
 record_eigs_suite "[59] Import Error Paths" test_import_errors.eigs "All tests passed."
 
 # [91] Module Cache: repeated imports share one module body and namespace.
-record_eigs_suite "[91] Module Cache" test_module_cache.eigs \
-    "PASS: greeting bound" "PASS: fn from cached module works"
+record_module_cache() {
+    local output rc=0 runs ok=1
+    output=$(cd "$SUITE_ROOT/src" && "$EIGS" "../tests/test_module_cache.eigs" </dev/null 2>&1) || rc=$?
+    runs=$(grep -Fc "FIXTURE_RAN" <<<"$output" || true)
+    for marker in "PASS: greeting bound" "PASS: fn from cached module works"; do
+        if ! grep -Fq "$marker" <<<"$output"; then
+            ok=0
+            break
+        fi
+    done
+    if [ "$rc" -eq 0 ] && [ "$runs" -eq 1 ] && [ "$ok" -eq 1 ]; then
+        echo "PASS: [91] Module Cache"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL: [91] Module Cache (rc=$rc, fixture_runs=$runs)"
+        printf '%s\n' "$output"
+        FAIL=$((FAIL + 1))
+    fi
+}
+record_module_cache
 
 # [92] Module Resolve Base: nested imports anchor at their module directory.
 record_shell_suite "[92] Module Resolve Base" test_module_resolve_base.sh \
