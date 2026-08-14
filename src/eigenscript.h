@@ -544,6 +544,21 @@ struct EigsState {
     /* Observer-classification thresholds (set_observer_threshold builtin).
      * Per-state because they're interpreter configuration, not execution
      * state; one knob per host application, shared across worker threads. */
+    /* #915 observer gate. 0 = nothing compiled into this STATE can ever
+     * interrogate observer bookkeeping, so observer_slot_update skips the
+     * entropy walk (88% of runtime / 8.70x measured on a consumer using no
+     * observer features). MONOTONIC: compile_ast ORs in each unit's scan and
+     * the force-on sites set it; nothing clears it, since clearing would
+     * strand the history of already-observed bindings.
+     *
+     * Per-state for the same reason as the thresholds above, and it was a real
+     * bug when it was not: on EigsThread this field was zero for every spawned
+     * worker (eigs_thread_attach xcalloc's a fresh thread, and only the
+     * spawning thread ever runs compile_ast), so every assignment executed on
+     * a worker silently skipped observation — while the gate's own stats still
+     * reported "observed" and EIGS_OBS_FORCE=1 could not rescue it.
+     */
+    int             obs_needed;
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
@@ -799,13 +814,6 @@ struct EigsThread {
      * and N copies of the same message is not N pieces of information. Reset
      * beside g_parse_depth at compile_ast entry. */
     int                  compile_depth_reported;
-    /* #915 observer gate. 0 = nothing compiled into this state can ever
-     * interrogate observer bookkeeping, so observer_slot_update skips the
-     * entropy walk (88% of runtime / 8.50x ceiling on a consumer that uses
-     * no observer features). MONOTONIC: compile_ast ORs in each unit's scan
-     * and force-on sites set it, but nothing ever clears it back to 0 —
-     * clearing it would strand the history of already-observed bindings. */
-    int                  obs_needed;
     int                  tokenize_depth;
     int                  vts_depth;
     int                  json_depth;
@@ -1004,7 +1012,7 @@ extern __thread EigsThread *eigs_current;
 #define g_prev_count          (eigs_current->prev_count)
 #define g_parse_depth         (eigs_current->parse_depth)
 #define g_compile_depth_reported (eigs_current->compile_depth_reported)
-#define g_obs_needed          (eigs_current->obs_needed)
+#define g_obs_needed          (eigs_current->state->obs_needed)
 #define g_tokenize_depth      (eigs_current->tokenize_depth)
 #define g_vts_depth           (eigs_current->vts_depth)
 #define g_json_depth          (eigs_current->json_depth)
