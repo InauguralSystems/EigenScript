@@ -186,7 +186,9 @@ right" is often wrong at exactly the traps above. Grade it mechanically, cheapes
 check first — this is the same parse→compile→sandbox ladder iLambdaAi uses:
 
 1. **Parse / lint** (no execution): `eigenscript --lint --json prog.eigs`.
-   Empty `[]` = clean; `E002` = parse error — the stderr hint names the likely
+   Empty `[]` = clean; `E004` = the file parses but does not compile (lint
+   compiles the unit and discards the bytecode, so a clean lint means it
+   builds); `E002` = parse error — the stderr hint names the likely
    fix (a paren-style call `f(x)` → `f of x`, `def` → `define … as:`,
    unparenthesized lambda params `x => …` → `(x) => …`, an unknown word used
    like a keyword, a soft-keyword bound with `is`, or genuinely two statements

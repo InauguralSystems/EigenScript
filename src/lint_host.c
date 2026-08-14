@@ -10,6 +10,7 @@
 #include "eigenscript.h"
 #include "ext_names.h"
 #include "lint_internal.h"
+#include "vm.h"   /* #927: lint compiles the unit and discards the chunk */
 
 #ifndef EIGENSCRIPT_VERSION
 #define EIGENSCRIPT_VERSION "dev"
@@ -1294,6 +1295,34 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
         if (ej_allow) val_decref(ej_allow);
     }
 
+    /* #927: a file the compiler REFUSES must not lint clean. Lint stopped at
+     * the parser, so every compile-stage diagnostic — nesting too deep
+     * (#912), `break` outside a loop, an un-encodable jump, a constant pool
+     * past 65536 — was invisible here, and `--lint` answered "no issues
+     * found" with exit 0 for a file `eigenscript` refuses to run. That is the
+     * CI-facing surface: a consumer gates on the exit code, and the weakest
+     * thing it can mean is "this builds".
+     *
+     * So compile the unit and throw the chunk away. Compiling is not running:
+     * `import` and `load_file` are executed by the VM, not resolved here, so
+     * lint still touches nothing but the file in front of it. Every
+     * compile-stage error lands in g_parse_errors exactly the way a parse
+     * error does, and the env mirrors main.c's — the registrar's bindings are
+     * what a real compile of this file sees. */
+    int compile_errors = 0;
+    {
+        g_first_error_line = 0;      /* the recorder keeps only the FIRST, and */
+        g_first_error_msg[0] = '\0'; /* the parse pass may have left one behind */
+        Env *cenv = env_new(NULL);
+        register_builtins(cenv);     /* store/gfx-when-built ride inside (#742) */
+        g_compile_module_slots = 1;
+        EigsChunk *chunk = compile_ast(ast, cenv, source);
+        g_compile_module_slots = 0;
+        compile_errors = g_parse_errors;
+        chunk_free(chunk);
+        env_decref(cenv);
+    }
+
     /* Emit. JSON goes to stdout (machine-consumable, even when clean →
      * "[]"); human text goes to stderr as before, now with the [CODE]. */
     if (json_mode) {
@@ -1307,6 +1336,14 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
                    i ? "," : "", ctx.warnings[i].code, ctx.warnings[i].level,
                    ctx.warnings[i].line, pesc, mesc);
         }
+        if (compile_errors > 0) {
+            lint_json_escape(g_first_error_msg[0] ? g_first_error_msg
+                                                  : "compile error",
+                             mesc, sizeof(mesc));
+            printf("%s{\"code\":\"E004\",\"severity\":\"error\",\"line\":%d,"
+                   "\"file\":\"%s\",\"message\":\"%s\"}",
+                   ctx.warning_count ? "," : "", g_first_error_line, pesc, mesc);
+        }
         printf("]\n");
     } else {
         for (int i = 0; i < ctx.warning_count; i++) {
@@ -1314,7 +1351,12 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
                     ctx.warnings[i].line, ctx.warnings[i].level,
                     ctx.warnings[i].code, ctx.warnings[i].message);
         }
-        if (ctx.warning_count == 0) {
+        if (compile_errors > 0) {
+            /* The compiler printed each diagnostic itself; this is the
+             * summary line, shaped like the parse-error one above. */
+            fprintf(stderr, "%s: %d compile error(s) [E004]\n",
+                    path, compile_errors);
+        } else if (ctx.warning_count == 0) {
             fprintf(stderr, "%s: no issues found\n", path);
         }
     }
@@ -1331,6 +1373,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
      * Hint-severity diagnostics (#591) are pure nudges: they print but never
      * fail either level. (Parse/read errors are E-codes that already
      * returned 1 above.) */
+    if (compile_errors > 0) return 1;   /* E004 is error-severity: fails at either level */
     if (!fail_on_warning) {
         int errors = 0;
         for (int i = 0; i < ctx.warning_count; i++)

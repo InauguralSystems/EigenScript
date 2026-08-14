@@ -38,6 +38,23 @@ check_not_contains() {
     fi
 }
 
+# Exit status is a lint result in its own right — a CI gate reads it and
+# nothing else (#927), so assert it directly rather than inferring it from
+# the message.
+check_status() {
+    TOTAL=$((TOTAL + 1))
+    local test_name="$1"
+    local actual="$2"
+    local expected="$3"
+    if [ "$actual" = "$expected" ]; then
+        echo "  PASS: $test_name"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $test_name (exit $actual, expected $expected)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
 echo "=== Linter Tests ==="
 
 # --- Unused variable ---
@@ -1443,6 +1460,88 @@ print of (three of [1, 2, 3, 4])
 EIGS
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "W022 counts defaulted params in the arity" "$OUTPUT" "W022.*passes 4 arguments but 'three' takes 3"
+rm -f "$TMPFILE"
+
+# --- Compile-stage errors reach the lint surface (#927) ---
+#
+# Lint stopped at the parser, so the one defect no style rule can outrank —
+# the compiler REFUSES this file — was the one thing it stayed silent about:
+# `--lint` printed "no issues found" and exited 0 while running the same file
+# aborted. The invariant under test is not any single compile error: NO input
+# that fails to compile may report success, whatever the compile error is.
+# Compilation is not execution (imports and load_file are runtime ops), so
+# lint still never runs the program.
+check_noncompiling() {
+    local label="$1" file="$2" msg="$3"
+    local out rc
+    out=$($EIGS --lint "$file" 2>&1) && rc=0 || rc=$?
+    check_status "$label exits 1" "$rc" "1"
+    check_contains "$label names the compile error" "$out" "$msg"
+    check_not_contains "$label does not claim a clean file" "$out" "no issues found"
+}
+
+# (a) expression nesting too deep — built here rather than committed, and in
+# shell rather than python3, so this file keeps running standalone. An
+# f-string costs ~2 nesting levels per interpolation (#912), so 63 of them
+# clear the 128-level limit.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+PARTS=""
+i=0
+while [ "$i" -lt 63 ]; do PARTS="${PARTS}a${i}={x}"; i=$((i + 1)); done
+printf 'x is 1\nprint of f"%s"\n' "$PARTS" > "$TMPFILE"
+check_noncompiling "too-deep expression" "$TMPFILE" "expression nesting too deep"
+
+# The machine surface has to agree with the exit code, or a --json consumer
+# reads an empty diagnostic array beside a failing status.
+OUTPUT=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+check_contains "too-deep expression is an E004 error in --json" "$OUTPUT" \
+    '"code":"E004","severity":"error"'
+
+# Error-severity diagnostics fail under both levels — --lint-level error
+# makes WARNINGS advisory, not errors.
+OUTPUT=$($EIGS --lint --lint-level error "$TMPFILE" 2>&1) && RC=0 || RC=$?
+check_status "non-compiling file fails --lint-level error too" "$RC" "1"
+rm -f "$TMPFILE"
+
+# (b) a different compile error entirely: `break` with no loop to break.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 1
+break
+print of x
+EIGS
+check_noncompiling "'break' outside a loop" "$TMPFILE" "'break' outside a loop"
+rm -f "$TMPFILE"
+
+# (c) and its sibling, so the guard is on the class and not on one message.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+x is 1
+continue
+print of x
+EIGS
+check_noncompiling "'continue' outside a loop" "$TMPFILE" "'continue' outside a loop"
+rm -f "$TMPFILE"
+
+# The other half of the invariant: a file that DOES compile still passes.
+# Without this, "always exit 1" would satisfy everything above.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define pick(a, b) as:
+    if a > b:
+        return a
+    else:
+        return b
+n is 0
+loop while n < 3:
+    n is n + 1
+    if n == 2:
+        continue
+print of (pick of [n, 7])
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1) && RC=0 || RC=$?
+check_status "compiling file still exits 0" "$RC" "0"
+check_contains "compiling file still reports clean" "$OUTPUT" "no issues found"
 rm -f "$TMPFILE"
 
 echo ""

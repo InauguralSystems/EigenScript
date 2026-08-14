@@ -743,9 +743,10 @@ static void send_diagnostics(Document *doc) {
         strbuf_append_char(&sb, '}');
     } else if (doc->ast) {
         /* Parse OK → run the linter and publish each diagnostic as a
-         * squiggle carrying its stable code (#3 taxonomy), so the editor
-         * shows the same diagnostics as `--lint` — warnings yellow,
-         * E-class errors red. The doc's filesystem path anchors E003's
+         * squiggle carrying its stable code (#3 taxonomy) — warnings
+         * yellow, E-class errors red. lint_collect only: the unit is never
+         * compiled here, so `--lint`'s compile-stage E004 has no counterpart
+         * in the editor (#935). The doc's filesystem path anchors E003's
          * load_file resolution (as-you-type typo squiggles). */
         LintDiag diags[256];
         const char *fs_path =

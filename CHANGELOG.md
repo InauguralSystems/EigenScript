@@ -4,6 +4,36 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`--lint` no longer reports a clean file the compiler refuses (#927).** Lint
+  ran the lexer, the parser and the lint walkers and stopped there, so the
+  strongest defect a file can have — it does not compile — was the one thing
+  lint stayed silent about:
+
+  ```
+  $ eigenscript deep.eigs
+  Compile error line 2: expression nesting too deep to compile (limit 128) ...
+  2 compile error(s) — aborting          # rc=1
+
+  $ eigenscript --lint deep.eigs
+  deep.eigs: no issues found             # rc=0
+  ```
+
+  Meanwhile an unused parameter exits 1. The exit code reported style and not
+  compilability, and `--lint` is the CI-facing surface: a consumer repo gates
+  its build on it, and the contract it reasonably infers from `rc=0` is *at
+  minimum* that the file builds.
+
+  Lint now compiles the unit and throws the bytecode away, so every
+  compile-stage diagnostic — `break` outside a loop, an expression past the
+  nesting limit, a constant pool past 65536, an un-encodable jump — reaches the
+  lint surface as the new **`E004`** code, in both the human output and
+  `--json`, and fails under either `--lint-level` the way `E002` already does.
+  Compiling is not running: `import` and `load_file` are executed by the VM, so
+  lint still never runs the program, and a file that does compile lints exactly
+  as before.
+
 ## [0.39.0] - 2026-08-10
 
 ### Fixed

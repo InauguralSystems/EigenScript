@@ -43,6 +43,11 @@ Each is reported once per compile even where the underlying guard trips
 repeatedly, so the count on the final line can exceed the number of distinct
 messages.
 
+`--lint` reaches this stage too (#927): it compiles the unit and throws the
+bytecode away, so a file the compiler refuses fails lint as `E004` instead of
+reporting `no issues found`. Compiling is not running — `import` and
+`load_file` are executed by the VM — so lint still never runs the program.
+
 ## Stack traces
 
 An uncaught runtime error (or uncaught `throw`) prints, to stderr: the
@@ -242,6 +247,7 @@ a code's meaning never changes, and retired codes are not reused.
 | `E001` | error | *Reserved* — tokenizer/syntax error. Not currently emitted: lexer-level failures surface through the parser as `E002`. The code is held so `E002` keeps its meaning if a distinct tokenizer diagnostic is added later. |
 | `E002` | error | Parse error (parser). `--lint --json` reports the first one. |
 | `E003` | error | Undefined name — **no binding on any path** (#404). A name is read somewhere but bound nowhere: not by any assignment in any scope, not a parameter/binder (function/lambda params, `for`/comprehension variables, `catch` names, list-pattern names, `import` module names), not a builtin, and not a top-level name of a file pulled in by a literal `load_file` (resolved with the runtime's own resolution chain, transitively). The runtime raises `undefined variable` the moment such a path executes; `E003` surfaces it statically, including on cold branches. See "Name resolution (`E003`)" below for the exact model and escapes. |
+| `E004` | error | Compile error — the file parses and still cannot be turned into bytecode (`break` outside a loop, an expression past the nesting limit, a constant pool past 65536; the full set is under **Compile errors** above). `--lint` compiles the unit and discards the chunk, so a green lint means *at minimum* that the file builds (#927); `--lint --json` reports the first compile error. Not suppressible, like `E002`: an allow-list applies to lint findings, not to a file the compiler refuses. |
 | `E100` | error | Uncaught runtime error (category code; see note below). |
 | `W001` | warning | Unused variable. |
 | `W002` | warning | Unused function parameter. |
@@ -285,6 +291,9 @@ so `--lint --json 2>/dev/null` is pure JSON). Each element is:
 ```
 
 - A clean file emits `[]` (and still exits 0).
+- A file that parses but does not **compile** emits an `E004` element built
+  from the first compile error, alongside any warnings the file also has, and
+  exits 1 under either `--lint-level`.
 - A file that doesn't parse emits a single `E002` element built from the
   first parse error (the same one the LSP surfaces), and exits 1. The `E002`
   element carries a 1-based `"column"` (#407) alongside `"line"`; human parser
@@ -295,7 +304,7 @@ so `--lint --json 2>/dev/null` is pure JSON). Each element is:
   surviving warning.
 
 The `--json` flag may appear before or after the path. Runtime errors are
-not part of `--lint` (it never executes the program).
+not part of `--lint` — it compiles the program but never runs it.
 
 ## Severity control and suppression
 
