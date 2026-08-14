@@ -720,3 +720,101 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
         if (depth > LEAF_ACCESSOR_MAX_DEPTH) return;
     }
 }
+
+/* ---- #915: does this chunk READ observer state? ------------------------
+ *
+ * The observer computes the entropy of every assigned value, walking the whole
+ * reachable container graph. On a consumer that never interrogates a binding
+ * that is 88% of wall time (#915: 8.50x ceiling on EigenMiniSat 4x4). The gate
+ * skips that bookkeeping for programs nothing can ever ask.
+ *
+ * The whole risk is SILENT-WRONG: a program that DOES reach the observer, but
+ * is classified here as one that does not, still runs and still prints — with a
+ * dead observer channel and no crash, leak, or failing assert to show for it.
+ * So this scan is built to be conservative in one direction only. Every unclear
+ * case must answer 1 ("observes"), never 0.
+ *
+ * WHY THE BYTECODE AND NOT THE AST. The obvious implementation is an AST walker
+ * like cond_is_observer_based / scan_dispatch_rebind. Those switch over ~30 node
+ * kinds, and a kind the switch forgets falls to the default — which for this
+ * question means "does not observe", the silent-wrong answer. Bytecode is the
+ * ground truth of what will actually execute: a new AST node that compiles down
+ * to a reader opcode is caught here with no change to this function. The
+ * instruction walk is driven off op_verify_operands, the SAME operand-layout
+ * table the verifier and disassembler use — per #737, which was opened because a
+ * hand-written second copy of that table had drifted on 15 opcodes.
+ *
+ * Two populations are checked:
+ *   1. Reader OPCODES — the direct forms (`report of x`, a bare predicate,
+ *      `trajectory of x`, `where is x`, an observer-conditioned loop).
+ *   2. Reader BUILTIN NAMES in the constant pool — the indirect forms. These
+ *      are ordinary bindings, so `local r is report` then `r of x` compiles to
+ *      GET_NAME "report" + CALL and emits no reader opcode at all. Matching the
+ *      name catches the alias. It also matches an unrelated string that merely
+ *      spells "report", which costs a program its gate and is the safe way to
+ *      be wrong.
+ */
+static int const_pool_names_observer(const EigsChunk *chunk) {
+    /* Anchored to the observer-READ builtins registered in builtins.c (the
+     * sandbox allowlist marks them as a group). Names only reachable as
+     * builtins — the opcode forms are covered by the opcode scan above. */
+    static const char *OBS_BUILTINS[] = {
+        "observe", "report", "report_value", "trajectory", "classify",
+        "state_at", "get_observer_thresholds", NULL
+    };
+    for (int i = 0; i < chunk->const_count; i++) {
+        const char *s = chunk->const_interns ? chunk->const_interns[i] : NULL;
+        if (!s) continue;
+        for (int k = 0; OBS_BUILTINS[k]; k++)
+            if (strcmp(s, OBS_BUILTINS[k]) == 0) return 1;
+    }
+    return 0;
+}
+
+int chunk_reads_observer(const EigsChunk *chunk) {
+    if (!chunk) return 1;            /* unknown -> observe */
+    /* #830's flag: a chunk assembled from a descriptor (vm_run_bytecode /
+     * sandbox_run) never went through the compiler, so nothing scanned it and
+     * its opcode stream is caller-supplied. Do not gate it. */
+    if (!chunk->compiler_scanned) return 1;
+
+    int i = 0;
+    while (i < chunk->code_len) {
+        uint8_t op = chunk->code[i];
+        switch ((OpCode)op) {
+            /* Direct interrogation forms. */
+            case OP_INTERROGATE:
+            case OP_INTERROGATE_NAMED:
+            case OP_INTERROGATE_NAMED_AT:
+            case OP_INTERROGATE_NAMED_WHEN:
+            case OP_PREDICATE:
+            case OP_PREDICATE_SLOT:
+            case OP_PREDICATE_NAME:
+            case OP_REPORT_SLOT:
+            case OP_REPORT_NAME:
+            case OP_REPORT_VALUE_SLOT:
+            case OP_REPORT_VALUE_NAME:
+            case OP_TRAJECTORY_SLOT:
+            case OP_TRAJECTORY_NAME:
+            case OP_OBSERVE_VALUE_SLOT:
+            case OP_OBSERVE_VALUE_NAME:
+            /* An observer-conditioned loop consults the slot to decide halting
+             * (cond_is_observer_based, compiler.c). A plain loop emits
+             * OP_LOOP_CAP_CHECK instead and does not read the observer. */
+            case OP_LOOP_STALL_CHECK:
+                return 1;
+            default: break;
+        }
+        i++;
+        if (op == OP_LINE) {
+            i += 4;                          /* #630: 32-bit operand */
+        } else if (op < OP_COUNT) {
+            VerifyRole roles[3];
+            i += 2 * op_verify_operands(op, roles);
+        }
+    }
+    if (const_pool_names_observer(chunk)) return 1;
+    for (int f = 0; f < chunk->fn_count; f++)
+        if (chunk_reads_observer(chunk->functions[f])) return 1;
+    return 0;
+}

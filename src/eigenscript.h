@@ -753,6 +753,13 @@ struct EigsThread {
      * and N copies of the same message is not N pieces of information. Reset
      * beside g_parse_depth at compile_ast entry. */
     int                  compile_depth_reported;
+    /* #915 observer gate. 0 = nothing compiled into this state can ever
+     * interrogate observer bookkeeping, so observer_slot_update skips the
+     * entropy walk (88% of runtime / 8.50x ceiling on a consumer that uses
+     * no observer features). MONOTONIC: compile_ast ORs in each unit's scan
+     * and force-on sites set it, but nothing ever clears it back to 0 —
+     * clearing it would strand the history of already-observed bindings. */
+    int                  obs_needed;
     int                  tokenize_depth;
     int                  vts_depth;
     int                  json_depth;
@@ -867,6 +874,7 @@ extern __thread EigsThread *eigs_current;
 #define g_prev_count          (eigs_current->prev_count)
 #define g_parse_depth         (eigs_current->parse_depth)
 #define g_compile_depth_reported (eigs_current->compile_depth_reported)
+#define g_obs_needed          (eigs_current->obs_needed)
 #define g_tokenize_depth      (eigs_current->tokenize_depth)
 #define g_vts_depth           (eigs_current->vts_depth)
 #define g_json_depth          (eigs_current->json_depth)

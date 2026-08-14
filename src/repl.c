@@ -67,6 +67,12 @@ static int repl_eval_buffer(Env *env, strbuf *input) {
     g_returning = 0;
     g_return_val = NULL;
     g_has_error = 0;   /* don't carry a prior line's error into this one */
+    /* #915: the observer gate is decided per compiled unit, and at a REPL each
+     * LINE is a unit. Line N+1 can interrogate a binding assigned on line N, by
+     * which time gating line N would already have thrown its history away. There
+     * is no scan that can see a line the user has not typed yet, so the REPL
+     * observes unconditionally. */
+    g_obs_needed = 1;
     EigsChunk *repl_chunk = compile_ast(ast, env, input->data);
     if (g_parse_errors > 0) {   /* e.g. an un-encodable jump/loop offset */
         fprintf(stderr, "%d compile error(s) — line not run\n", g_parse_errors);

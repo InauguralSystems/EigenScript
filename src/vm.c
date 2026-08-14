@@ -210,6 +210,28 @@ static void eigs_observer_dump(Env *leaf) {
     Env *root = leaf;
     while (root->parent) root = root->parent;
     fprintf(stderr, "# eigenscript observer dump (SIGUSR1) — module scope + dumping thread's live frame\n");
+    /* #915: the observer gate can be closed for this program, in which case no
+     * assignment ever updated a slot and every binding below would print as
+     * "equilibrium" with an empty trajectory. That reads as "everything is
+     * settled" when the truth is "nothing was ever measured" — the exact silent
+     * lie this gate must not introduce. Say so instead. */
+    if (!g_obs_needed && !g_trace_obs_hist) {
+        fprintf(stderr,
+                "# NOTE: observer gate CLOSED (#915) — nothing in this program can\n"
+                "#       interrogate the observer, so no trajectories were recorded\n"
+                "#       before this signal. The bands below are absence of data,\n"
+                "#       NOT equilibrium.\n"
+                "#       Observation is now ON: send SIGUSR1 again for a populated\n"
+                "#       dump. (EIGS_OBS_FORCE=1 arms it from process start.)\n");
+        /* Arm from here. A SIGUSR1 dump exists to inspect a process that is
+         * ALREADY RUNNING — the one situation where re-running under
+         * EIGS_OBS_FORCE=1 is not available. Leaving the gate closed would trade
+         * a shipped debugging capability (#660) for throughput on exactly the
+         * programs most worth debugging. Flipping here is safe: the dump runs at
+         * a loop safepoint, not in the signal handler, and g_obs_needed is
+         * monotonic so this cannot flicker. */
+        g_obs_needed = 1;
+    }
     obs_dump_scope("module", root, 1, NULL);
     Env *fn_env = NULL;
     const EigsChunk *fn_chunk = NULL;

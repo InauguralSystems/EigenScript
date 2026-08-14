@@ -640,6 +640,12 @@ void       chunk_patch_jump(EigsChunk *chunk, int offset);
 int        chunk_add_function(EigsChunk *chunk, EigsChunk *fn);
 void       chunk_scan_leaf_accessor(EigsChunk *chunk);  /* #366 */
 void       chunk_disassemble(EigsChunk *chunk, const char *label);
+/* #915: 1 if anything in this chunk (or a nested function chunk) can READ
+ * observer state — a reader opcode, or an observer-read builtin name in the
+ * constant pool (aliasing: `local r is report` emits no reader opcode).
+ * Conservative in one direction only: every unclear case answers 1. Drives
+ * the observer gate, so a wrong 0 is silently-wrong observer results. */
+int        chunk_reads_observer(const EigsChunk *chunk);
 const char *op_name(uint8_t op);
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM
  * runs it. Returns 1 if safe to execute, 0 if it must be rejected. */

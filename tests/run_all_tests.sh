@@ -3062,6 +3062,48 @@ check_eigs_suite "report_value value-channel verdicts" test_observer_value_signa
 echo "[99a] Observer Entropy Level Set (#862)"
 check_eigs_suite "sign-flip + reciprocal oscillators on the exact level set" test_observer_level_set.eigs "All tests passed." 1
 
+# [99n] Observer gate (#915). The gate lets a program skip observer bookkeeping
+# (88% of runtime / 8.50x ceiling on a consumer that never interrogates). Its
+# failure mode is SILENT-WRONG — a misgated program still runs and still prints,
+# with a dead observer channel and nothing to fail on — so this section checks
+# the gate DECISION itself, not merely that programs still produce output.
+echo "[99n] Observer Gate (#915)"
+OBS_GATE_TMP=$(mktemp -d)
+# 1. Drift gate: every opcode whose VM dispatch body reaches an observer READ
+#    must be listed in chunk_reads_observer(). An unlisted reader means a program
+#    using only that opcode gates itself off and then reads slots nobody updated.
+#    The tool is itself validated by planting a missing reader (see its docstring).
+TOTAL=$((TOTAL + 1))
+if python3 "$TESTS_DIR/../tools/observer_reader_ops_check.py" >/dev/null 2>&1; then
+    PASS=$((PASS + 1)); echo "  PASS: every observer-reading opcode is listed in chunk_reads_observer"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: an observer-reading opcode is missing from chunk_reads_observer"
+    python3 "$TESTS_DIR/../tools/observer_reader_ops_check.py" 2>&1 | sed 's/^/    /'
+fi
+# 2. The gate must CLOSE on a program with no observer surface. If this ever
+#    reports "observed", the gate has silently stopped paying for itself and
+#    every performance number attributed to it is stale.
+printf 'x is 0\nfor i in range of 5:\n    x is x + i\nprint of x\n' > "$OBS_GATE_TMP/plain.eigs"
+OBS_G1=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$OBS_GATE_TMP/plain.eigs" 2>&1 | grep -c 'obs-gate: unobserved')
+check "gate CLOSES on a program with no observer surface" "$OBS_G1" "1"
+# 3. And OPEN on a direct observer surface.
+OBS_G2=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$TESTS_DIR/test_observer_level_set.eigs" 2>&1 | grep -c 'obs-gate: observed')
+check "gate OPENS on a direct observer surface" "$OBS_G2" "1"
+# 4. And OPEN on the INDIRECT form. `local r is report` emits NO reader opcode —
+#    it compiles to GET_NAME + CALL — so this passes only because the scan also
+#    matches observer-read builtin names in the constant pool. An opcode-only
+#    scan reports "unobserved" here and silently breaks every aliased report.
+printf 'x is 1.0\nlocal r is report\nx is 2.0\nprint of (r of x)\n' > "$OBS_GATE_TMP/alias.eigs"
+OBS_G3=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$OBS_GATE_TMP/alias.eigs" 2>&1 | grep -c 'obs-gate: observed')
+check "gate OPENS on an aliased report (no reader opcode emitted)" "$OBS_G3" "1"
+# 5. The escape hatch, which is also the baseline arm for perf work: ONE
+#    byte-identical binary serves both arms, so a measurement cannot be
+#    confounded by a second build.
+OBS_G4=$(EIGS_OBS_GATE_STATS=1 EIGS_OBS_FORCE=1 $EIGS_BIN "$OBS_GATE_TMP/plain.eigs" 2>&1 | grep -c 'obs-gate: observed')
+check "EIGS_OBS_FORCE=1 reopens the gate" "$OBS_G4" "1"
+rm -rf "$OBS_GATE_TMP"
+echo ""
+
 # [100] Worker-thread JIT lifetime (#296). A shared chunk that gets hot and
 # JIT-compiles ON a worker must not leave chunk->jit_code dangling when that
 # worker exits (its per-thread JIT code arena is munmap'd at detach). Crashed
