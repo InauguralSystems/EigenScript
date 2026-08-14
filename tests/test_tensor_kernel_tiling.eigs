@@ -1,0 +1,55 @@
+# Tiled tensor-kernel coverage (#745).
+#
+# The matmul uses shaped flat buffers with k=65, so the production kernel must
+# execute three k tiles (32 + 32 + 1).  The expected values below are direct
+# arithmetic answers, not another implementation of the tiled kernel.
+
+# A is two constant rows.  B has cancellation-sensitive entries in two output
+# columns: column 0 changes if the terms inside a k tile are traversed in the
+# opposite order, while column 1 changes if the k tiles themselves are visited
+# in the opposite order.  The remaining column is an ordinary zero result.
+a is buffer of [2, 65]
+for i in range of 2:
+    for k in range of 65:
+        a[i * 65 + k] is i + 1
+
+b is buffer of [65, 3]
+b[0] is 1e16
+b[3] is 0 - 1e16
+b[6] is 1.0
+b[1] is 1e16
+b[32 * 3 + 1] is 0 - 1e16
+b[64 * 3 + 1] is 1.0
+
+product is matmul of [a, b]
+ps is shape of product
+assert of [(ps[0] == 2) and (ps[1] == 3), "TK1 matmul shape is 2x3"]
+assert of [product[0] == 1.0, "TK2 forward k order preserves column-0 sum"]
+assert of [product[1] == 1.0, "TK3 forward k tiles preserve column-1 sum"]
+assert of [product[2] == 0.0, "TK4 zero column remains zero"]
+assert of [product[3] == 2.0, "TK5 second row column-0 sum"]
+assert of [product[4] == 2.0, "TK6 second row column-1 sum"]
+
+# Softmax must run over a genuinely multi-element, multi-row tensor.  The
+# first row is uniform (all exp(0) terms), while the second has one exp(1)
+# term and 39 exp(0) terms.  Bounds use independently derived values rather
+# than reproducing the implementation's max/sum loops.
+soft_input is zeros of [2, 40]
+soft_input[1][0] is 1.0
+soft_output is softmax of soft_input
+ss is shape of soft_output
+assert of [(ss[0] == 2) and (ss[1] == 40), "TK7 softmax shape is 2x40"]
+assert of [soft_output[0][0] == 0.025, "TK8 uniform softmax row"]
+assert of [soft_output[0][39] == 0.025, "TK9 uniform softmax row tail"]
+assert of [(soft_output[1][0] > 0.065) and (soft_output[1][0] < 0.066), "TK10 exp(1) softmax peak"]
+assert of [(soft_output[1][1] > 0.023) and (soft_output[1][1] < 0.024), "TK11 exp(0) softmax tail"]
+
+row0_sum is 0.0
+row1_sum is 0.0
+for j in range of 40:
+    row0_sum is row0_sum + soft_output[0][j]
+    row1_sum is row1_sum + soft_output[1][j]
+assert of [(row0_sum > 0.999999) and (row0_sum < 1.000001), "TK12 softmax row 0 normalizes"]
+assert of [(row1_sum > 0.999999) and (row1_sum < 1.000001), "TK13 softmax row 1 normalizes"]
+
+print of "TENSOR_KERNEL_TILING_OK"
