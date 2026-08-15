@@ -3617,6 +3617,9 @@ echo ""
 # without python3 or the eigenlsp build.
 echo "[88] LSP Behavioral (80 checks)"
 LSP_OUTPUT=$(bash "$TESTS_DIR/test_lsp.sh" 2>&1)
+# Surface the freshness gate's rebuild notice even on a green run — a
+# silently rebuilt binary is the thing that made this section untrustworthy.
+echo "$LSP_OUTPUT" | grep "NOTE:.*rebuilding" || true
 if echo "$LSP_OUTPUT" | grep -q "SKIP:"; then
     echo "$LSP_OUTPUT" | grep "SKIP:"
 else
@@ -3643,6 +3646,8 @@ echo ""
 # reverseContinue. Skips cleanly without python3 or the eigsdap build.
 echo "[126] DAP Behavioral (30 checks)"
 DAPT_OUTPUT=$(bash "$TESTS_DIR/test_dap.sh" 2>&1)
+# See section [88]: surface the freshness gate's rebuild notice on green runs.
+echo "$DAPT_OUTPUT" | grep "NOTE:.*rebuilding" || true
 if echo "$DAPT_OUTPUT" | grep -q "SKIP:"; then
     echo "$DAPT_OUTPUT" | grep "SKIP:"
 else
