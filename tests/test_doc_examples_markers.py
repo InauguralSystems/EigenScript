@@ -20,6 +20,9 @@ from pathlib import Path
 import sys
 
 code = Path(sys.argv[1]).read_text()
+if "error" in code:
+    print("execution error", file=sys.stderr)
+    sys.exit(1)
 print("unmarked-ran" if "unmarked" in code else "marked")
 """
 
@@ -118,6 +121,44 @@ class DocExampleMarkerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertRegex(result.stdout, r"FAIL: .*README\.md:2 .*unpaired")
         self.assertIn("Doc examples: 0 checked, 0 passed, 0 failed, 0 skipped",
+                      result.stdout)
+
+    def test_fenced_block_between_check_and_output_is_an_orphan(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            marked
+            ```
+
+            ```
+            unrelated prose fence
+            ```
+
+            ```output
+            marked
+            ```
+            """
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r"FAIL: .*README\.md:2 .*unpaired")
+        self.assertIn("Doc examples: 0 checked, 0 passed, 0 failed, 0 skipped",
+                      result.stdout)
+
+    def test_execution_error_does_not_count_as_readme_coverage(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            error
+            ```
+            ```output
+            marked
+            ```
+            """
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("FAIL: ", result.stdout)
+        self.assertIn("rc=1", result.stdout)
+        self.assertIn("README.md (README has 0 checked examples)",
                       result.stdout)
 
     def test_zero_readme_markers_fail_with_passing_legacy_docs(self):

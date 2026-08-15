@@ -44,7 +44,7 @@ def blocks(path):
     i = 0
     while i < len(lines):
         m = FENCE.match(lines[i])
-        if m and m.group(1):
+        if m:
             start = i + 1
             j = start
             while j < len(lines) and not lines[j].startswith("```"):
@@ -100,8 +100,6 @@ def main():
                 code_line, code = pending
                 pending = None
                 pending_requires_output = False
-                if is_readme:
-                    readme_checked += 1
                 if listing:
                     print("would run: %s:%d" % (path, code_line))
                     continue
@@ -127,6 +125,8 @@ def main():
                     # tolerated; output must still match exactly.
                     rc_ok = (p.returncode == 0 or
                              "LeakSanitizer: detected memory leaks" in p.stderr)
+                    if is_readme and rc_ok:
+                        readme_checked += 1
                     if got == want and rc_ok:
                         PASS += 1
                         print("  PASS: %s:%d" % (os.path.basename(path), code_line))
