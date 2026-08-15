@@ -17,9 +17,85 @@ CHECKER = ROOT / "tests" / "test_doc_examples.py"
 FAKE_EIGENSCRIPT = """\
 #!/usr/bin/env python3
 from pathlib import Path
+import os
+import signal
 import sys
 
 code = Path(sys.argv[1]).read_text()
+if "asan-leak" in code:
+    print("marked")
+    print("LeakSanitizer: detected memory leaks", file=sys.stderr)
+    sys.exit(7)
+if "asan-mismatch" in code:
+    print("wrong")
+    print("LeakSanitizer: detected memory leaks", file=sys.stderr)
+    sys.exit(7)
+if "mixed-error" in code:
+    print("marked")
+    print("fatal execution failure", file=sys.stderr)
+    print("LeakSanitizer: detected memory leaks", file=sys.stderr)
+    sys.exit(7)
+if "error-after-marker" in code:
+    print("marked")
+    print("LeakSanitizer: detected memory leaks", file=sys.stderr)
+    print("fatal execution failure", file=sys.stderr)
+    sys.exit(7)
+if "asan-hard-and-leak" in code:
+    print("marked")
+    print("==123==ERROR: AddressSanitizer: heap-use-after-free", file=sys.stderr)
+    print("LeakSanitizer: detected memory leaks", file=sys.stderr)
+    sys.exit(7)
+if "stdout-leak" in code:
+    print("marked")
+    print("LeakSanitizer: detected memory leaks")
+    sys.exit(7)
+
+
+def emit_compiler_rt_report():
+    lines = [
+        "",
+        "=================================================================",
+        "==123==ERROR: LeakSanitizer: detected memory leaks",
+        "",
+        "Direct leak of 32 byte(s) in 1 object(s) allocated from:",
+        "    #0 0x7f0000000000 in malloc fake.c:10:1",
+        "    #1 0x7f0000000010 in main fake.c:20:1",
+    ]
+    lines.extend([
+        "Objects leaked above:",
+        "0x602000000010 (32 bytes)",
+        "",
+    ])
+    lines.extend([
+        "Indirect leak of 16 byte(s) in 1 object(s) allocated from:",
+        "    #0 0x7f0000000000 in malloc fake.c:30:1",
+        "    #1 0x7f0000000020 in helper fake.c:40:1",
+    ])
+    lines.extend([
+        "Objects leaked above:",
+        "0x602000000030 (16 bytes)",
+        "",
+        "-----------------------------------------------------",
+        "Suppressions used:",
+        "  count      bytes template",
+        "      1         32 my_suppression",
+        "-----------------------------------------------------",
+        "",
+        "SUMMARY: AddressSanitizer: 48 byte(s) leaked in 2 allocation(s).",
+    ])
+    return lines
+
+
+if "full-leak-report" in code:
+    print("marked")
+    lines = emit_compiler_rt_report()
+    report = "\\n".join(lines) + "\\n"
+    print(report, end="", file=sys.stderr)
+    sys.exit(23)
+if "signaled" in code:
+    print("marked", flush=True)
+    print("LeakSanitizer: detected memory leaks", file=sys.stderr)
+    os.kill(os.getpid(), signal.SIGTERM)
 if "error" in code:
     print("execution error", file=sys.stderr)
     sys.exit(1)
@@ -28,10 +104,11 @@ print("unmarked-ran" if "unmarked" in code else "marked")
 
 
 class DocExampleMarkerTests(unittest.TestCase):
-    def run_checker(self, markdown, *flags):
-        return self.run_checker_files({"README.md": markdown}, *flags)
+    def run_checker(self, markdown, *flags, asan=False):
+        return self.run_checker_files({"README.md": markdown}, *flags,
+                                       asan=asan)
 
-    def run_checker_files(self, documents, *flags):
+    def run_checker_files(self, documents, *flags, asan=False):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory) / "workspace"
             tests = directory / "tests"
@@ -45,7 +122,8 @@ class DocExampleMarkerTests(unittest.TestCase):
                 doc.write_text(textwrap.dedent(markdown))
                 paths.append(str(doc))
             eigenscript = directory / "eigenscript"
-            eigenscript.write_text(FAKE_EIGENSCRIPT)
+            eigenscript.write_text(
+                FAKE_EIGENSCRIPT + ("\n# __asan_init\n" if asan else ""))
             eigenscript.chmod(eigenscript.stat().st_mode | stat.S_IXUSR)
             env = os.environ.copy()
             env["EIGENSCRIPT"] = str(eigenscript)
@@ -79,6 +157,8 @@ class DocExampleMarkerTests(unittest.TestCase):
         self.assertIn("README.md", result.stdout)
         self.assertIn("Doc examples: 1 checked, 1 passed, 0 failed, 0 skipped",
                       result.stdout)
+        self.assertNotIn("README.md (README has 0 checked examples)",
+                         result.stdout)
 
     def test_zero_marked_pairs_fail_the_gate(self):
         result = self.run_checker(
@@ -158,6 +238,161 @@ class DocExampleMarkerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("FAIL: ", result.stdout)
         self.assertIn("rc=1", result.stdout)
+        self.assertIn("README.md (README has 0 checked examples)",
+                      result.stdout)
+
+    def test_leak_marker_does_not_hide_real_failure(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            mixed-error
+            ```
+            ```output
+            marked
+            ```
+            """
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("FAIL: ", result.stdout)
+        self.assertIn("rc=7", result.stdout)
+        self.assertIn("README.md (README has 0 checked examples)",
+                      result.stdout)
+
+    def test_non_asan_nonzero_exit_is_not_tolerated(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            asan-leak
+            ```
+            ```output
+            marked
+            ```
+            """
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("FAIL: ", result.stdout)
+        self.assertIn("rc=7", result.stdout)
+        self.assertIn("README.md (README has 0 checked examples)",
+                      result.stdout)
+
+    def test_asan_nonzero_matching_output_is_tolerated_by_binary_probe(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            asan-leak
+            ```
+            ```output
+            marked
+            ```
+            """,
+            asan=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PASS: README.md", result.stdout)
+        self.assertIn("Doc examples: 1 checked, 1 passed, 0 failed, 0 skipped",
+                      result.stdout)
+        self.assertNotIn("README.md (README has 0 checked examples)",
+                         result.stdout)
+
+    def test_asan_nonzero_mismatched_output_still_fails(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            asan-mismatch
+            ```
+            ```output
+            marked
+            ```
+            """,
+            asan=True,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("FAIL: ", result.stdout)
+        self.assertIn("rc=7", result.stdout)
+        self.assertIn("README.md (README has 0 checked examples)",
+                      result.stdout)
+        self.assertIn(
+            "Doc examples: 1 checked, 0 passed, 1 failed, 0 skipped",
+            result.stdout)
+
+    def test_full_lsan_report_does_not_hide_failure(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            full-leak-report
+            ```
+            ```output
+            marked
+            ```
+            """
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("FAIL: ", result.stdout)
+        self.assertIn("rc=23", result.stdout)
+        self.assertIn("README.md (README has 0 checked examples)",
+                      result.stdout)
+        self.assertIn("Doc examples: 1 checked, 0 passed, 1 failed, 0 skipped",
+                      result.stdout)
+
+    def test_mixed_failure_does_not_count_as_readme_coverage(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            mixed-error
+            ```
+            ```output
+            marked
+            ```
+            """
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("README.md (README has 0 checked examples)",
+                      result.stdout)
+        self.assertIn("Doc examples: 1 checked, 0 passed, 1 failed, 0 skipped",
+                      result.stdout)
+
+    def test_nonzero_exit_variants_do_not_pass_or_count_as_readme_coverage(self):
+        cases = (
+            "error-after-marker",
+            "asan-hard-and-leak",
+            "stdout-leak",
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                result = self.run_checker(
+                    f"""
+                    ```eigenscript check
+                    {case}
+                    ```
+                    ```output
+                    marked
+                    ```
+                    """
+                )
+                self.assertEqual(result.returncode, 1,
+                                 result.stdout + result.stderr)
+                self.assertIn("FAIL: ", result.stdout)
+                self.assertIn("README.md (README has 0 checked examples)",
+                              result.stdout)
+                self.assertIn(
+                    "Doc examples: 1 checked, 0 passed, 1 failed, 0 skipped",
+                    result.stdout)
+
+    def test_signaled_exit_with_lsan_is_not_tolerated(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            signaled
+            ```
+            ```output
+            marked
+            ```
+            """
+        )
+        self.assertNotEqual(result.returncode, 0,
+                             result.stdout + result.stderr)
+        self.assertIn("FAIL: ", result.stdout)
+        self.assertIn("rc=-15", result.stdout)
         self.assertIn("README.md (README has 0 checked examples)",
                       result.stdout)
 

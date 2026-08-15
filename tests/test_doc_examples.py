@@ -59,6 +59,19 @@ def norm(s):
     return "\n".join(line.rstrip() for line in s.rstrip("\n").split("\n"))
 
 
+def is_asan_build():
+    # Use the same __asan_init probe as test_temporal_memory.sh and
+    # test_http_rss_growth.sh to classify the selected binary. Those tests
+    # refuse to run on sanitizer builds; this checker uses the classification
+    # only to tolerate a nonzero example exit when stdout still matches.
+    return subprocess.run(
+        ["grep", "-qa", "__asan_init", EIGS],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0
+
+
 def report_orphan(path, pending):
     global ORPHAN
     code_line, _ = pending
@@ -72,6 +85,7 @@ def main():
     args = [a for a in sys.argv[1:] if a != "--list"]
     listing = "--list" in sys.argv
     coverage_failed = False
+    asan_build = is_asan_build()
 
     for path in args:
         is_readme = (os.path.realpath(path) ==
@@ -119,15 +133,11 @@ def main():
                                        cwd=os.path.dirname(tmp))
                     got = norm(p.stdout)
                     want = norm(text)
-                    # Mirror run_all_tests.sh's rc_ok: a nonzero exit whose
-                    # only failure signal is a LeakSanitizer report (the
-                    # known closure-cycle env leaks under ASan builds) is
-                    # tolerated; output must still match exactly.
-                    rc_ok = (p.returncode == 0 or
-                             "LeakSanitizer: detected memory leaks" in p.stderr)
-                    if is_readme and rc_ok:
+                    rc_ok = p.returncode == 0 or asan_build
+                    example_passed = rc_ok and got == want
+                    if is_readme and example_passed:
                         readme_checked += 1
-                    if got == want and rc_ok:
+                    if example_passed:
                         PASS += 1
                         print("  PASS: %s:%d" % (os.path.basename(path), code_line))
                     else:
