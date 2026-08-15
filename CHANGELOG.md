@@ -114,6 +114,12 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **README executable examples are now covered by the byte-for-byte doc gate
+  (#934).** Only `eigenscript check` fences in the README are executed;
+  illustrative snippets remain documentation, while every marked block must
+  pair with the next output fence without crossing another fenced block, and
+  README coverage is checked independently.
+
 - **`--lint` no longer reports a clean file the compiler refuses (#927).** Lint
   ran the lexer, the parser and the lint walkers and stopped there, so the
   strongest defect a file can have — it does not compile — was the one thing

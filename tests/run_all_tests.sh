@@ -3753,11 +3753,14 @@ fi
 echo ""
 
 # [89] Executable documentation — every eigenscript/output block pair in
-# docs/SPEC.md and docs/COMPARISON.md runs and must match exactly, so
-# the spec cannot drift from the implementation. Skips without python3.
-echo "[89] Doc Examples (SPEC.md + COMPARISON.md + CONCURRENCY.md + STDLIB.md)"
+# docs/SPEC.md, docs/COMPARISON.md, docs/CONCURRENCY.md, docs/STDLIB.md,
+# and the marked README.md examples runs and must match exactly, so the
+# documented surfaces cannot drift from the implementation. Skips without
+# python3.
+echo "[89] Doc Examples (SPEC.md + COMPARISON.md + CONCURRENCY.md + STDLIB.md + README.md)"
 if command -v python3 >/dev/null 2>&1; then
-    DOC_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" "$TESTS_DIR/../docs/SPEC.md" "$TESTS_DIR/../docs/COMPARISON.md" "$TESTS_DIR/../docs/CONCURRENCY.md" "$TESTS_DIR/../docs/STDLIB.md" 2>&1)
+    DOC_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" "$TESTS_DIR/../docs/SPEC.md" "$TESTS_DIR/../docs/COMPARISON.md" "$TESTS_DIR/../docs/CONCURRENCY.md" "$TESTS_DIR/../docs/STDLIB.md" "$TESTS_DIR/../README.md" 2>&1)
+    DOC_RC=$?
     DOC_PASS=$(echo "$DOC_OUTPUT" | grep -c "  PASS:" || true)
     DOC_FAIL=$(echo "$DOC_OUTPUT" | grep -c "  FAIL:" || true)
     TOTAL=$((TOTAL + DOC_PASS + DOC_FAIL))
@@ -3766,8 +3769,28 @@ if command -v python3 >/dev/null 2>&1; then
     if [ "$DOC_FAIL" -gt 0 ]; then
         echo "  FAIL: $DOC_FAIL doc example(s) diverge from the implementation"
         echo "$DOC_OUTPUT" | grep -A8 "FAIL:" | head -20
+    elif [ "$DOC_RC" -ne 0 ]; then
+        TOTAL=$((TOTAL + 1))
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: documentation gate exited $DOC_RC without a failing example"
+        echo "$DOC_OUTPUT"
     else
         echo "  PASS: all $DOC_PASS doc examples match"
+    fi
+
+    # The marker self-test keeps the README opt-in and zero-count safeguards
+    # executable; it uses a temporary fake interpreter and is independent of
+    # the documentation examples above.
+    MARKER_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples_markers.py" 2>&1)
+    MARKER_RC=$?
+    TOTAL=$((TOTAL + 1))
+    if [ "$MARKER_RC" -eq 0 ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: README marker/zero-count self-test"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: README marker/zero-count self-test (rc=$MARKER_RC)"
+        echo "$MARKER_OUTPUT"
     fi
 else
     echo "  SKIP: python3 not available"
