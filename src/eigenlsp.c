@@ -9,6 +9,7 @@
 
 #include "eigenscript.h"
 #include "state.h"
+#include "vm.h"   /* #935: diagnostics compile the unit and discard the chunk */
 #include <pthread.h>
 
 #ifndef EIGENSCRIPT_VERSION
@@ -744,10 +745,8 @@ static void send_diagnostics(Document *doc) {
     } else if (doc->ast) {
         /* Parse OK → run the linter and publish each diagnostic as a
          * squiggle carrying its stable code (#3 taxonomy) — warnings
-         * yellow, E-class errors red. lint_collect only: the unit is never
-         * compiled here, so `--lint`'s compile-stage E004 has no counterpart
-         * in the editor (#935). The doc's filesystem path anchors E003's
-         * load_file resolution (as-you-type typo squiggles). */
+         * yellow, E-class errors red. The doc's filesystem path anchors
+         * E003's load_file resolution (as-you-type typo squiggles). */
         LintDiag diags[256];
         const char *fs_path =
             strncmp(doc->uri, "file://", 7) == 0 ? doc->uri + 7 : NULL;
@@ -772,6 +771,49 @@ static void send_diagnostics(Document *doc) {
                 "\"end\":{\"line\":%d,\"character\":%d}},\"severity\":%d,\"code\":\"%s\","
                 "\"source\":\"eigenscript\",\"message\":", ln, dcol, ln, dend, sev, diags[i].code);
             json_escape_to(&sb, diags[i].message);
+            strbuf_append_char(&sb, '}');
+        }
+
+        /* #935: a unit that PARSES but does not COMPILE used to publish an
+         * empty diagnostics array while the CLI reported the error —
+         * `break` outside a loop (#337), nesting past the depth limit
+         * (#912), a constant pool past 65536. So compile the unit and throw
+         * the chunk away, exactly as `--lint` does (#927): compiling is not
+         * running, and every compile-stage error lands in g_parse_errors
+         * with the first one recorded by eigs_record_first_error. The env
+         * mirrors lint_host's — the registrar's bindings are what a real
+         * compile of this unit sees. */
+        int compile_errors = 0;
+        {
+            g_first_error_line = 0;      /* the recorder keeps only the FIRST, and */
+            g_first_error_msg[0] = '\0'; /* lint_collect may have left one behind */
+            Env *cenv = env_new(NULL);
+            register_builtins(cenv);
+            g_compile_module_slots = 1;
+            int errors_before = g_parse_errors;
+            EigsChunk *chunk = compile_ast(doc->ast, cenv, doc->text);
+            g_compile_module_slots = 0;
+            compile_errors = g_parse_errors - errors_before;
+            chunk_free(chunk);
+            env_decref(cenv);
+        }
+        if (compile_errors > 0) {
+            /* 1-based → 0-based; a position-less error (the constant-pool
+             * guard records line 0) clamps to the top of the document, the
+             * same clamp the lint loop above applies. */
+            int ln = g_first_error_line - 1;
+            if (ln < 0) ln = 0;
+            if (emitted++ > 0) strbuf_append_char(&sb, ',');
+            /* Compile errors carry only a line (eigs_record_first_error
+             * records no token span), so the squiggle spans the whole line —
+             * the same 0..1000 fallback the lint loop uses for a position-
+             * less diagnostic. E004 is `--lint`'s code for this class. */
+            strbuf_append_fmt(&sb,
+                "{\"range\":{\"start\":{\"line\":%d,\"character\":0},"
+                "\"end\":{\"line\":%d,\"character\":1000}},\"severity\":1,\"code\":\"E004\","
+                "\"source\":\"eigenscript\",\"message\":", ln, ln);
+            json_escape_to(&sb, g_first_error_msg[0] ? g_first_error_msg
+                                                     : "compile error");
             strbuf_append_char(&sb, '}');
         }
     }
