@@ -430,7 +430,8 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
  *
  * Checked: every opcode is known (< OP_COUNT) and its operands fit in code;
  * constant/name indices are < const_count; function indices are < fn_count;
- * every jump target lands on an instruction boundary inside code. NOT checked:
+ * every jump target lands on an instruction boundary inside code; and (pass 4)
+ * the operand stack cannot underflow along any path. NOT checked:
  * local/observer slot operands — the VM already guards every slot access
  * (slot < env->count; observer slots auto-grow), so they cannot fault. */
 /* Fill roles[] for op; return its operand count (0..3). Mirrors the operand
@@ -520,8 +521,206 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     return 0;   /* unreachable; silences non-GCC fallthrough warnings */
 }
 
-int chunk_verify(EigsChunk *chunk) {
-    if (!chunk || chunk->code_len <= 0) return 0;
+/* ---- Stack-height model (pass 4) ----
+ *
+ * How much operand stack an instruction requires, and what it leaves behind on
+ * each outgoing edge. The interpreter's fast paths index g_vm.stack[sp - 1] /
+ * [sp - 2] directly (ARITH_FAST and friends, vm.c) instead of going through the
+ * guarded vm_pop(), so an opcode reached with too few operands reads — and for
+ * the in-place num-reuse arms, WRITES — below the base of the VM stack. That is
+ * a heap-buffer-overflow off a calloc'd EigsSlot[65536], reported against
+ * sandbox_run with a two-byte chunk (`[OP_ADD, OP_RETURN]`), and the guarded pop
+ * is exactly the path those opcodes skip for speed. Bounds-checking ~90 direct
+ * accesses in the hottest loop in the runtime is the wrong trade; the height is
+ * a static property of the code, so verify it once at the gate and the fast
+ * paths keep their invariant for free.
+ *
+ * The model has to be EXACT, not merely conservative: the height it predicts is
+ * what the next instruction's requirement is checked against, so a row that is
+ * off by one anywhere corrupts every check downstream of it.
+ *
+ *   need    minimum height required before the instruction executes
+ *   pops    operands consumed
+ *   pushes  results pushed on the fall-through edge; bpushes on the branch edge
+ *           (they differ only for ITER_NEXT and TRY_BEGIN)
+ *
+ * Heights are relative to the frame's base pointer: a call pops its args and
+ * callee before pushing the frame (CASE(CALL), vm.c), so every chunk starts at
+ * height 0 and OP_RETURN's drain (`while (sp > frame->bp)`) bounds the window
+ * from below.
+ *
+ * THE FRAME BASE IS WHY `need` EQUALS `pops` EVEN FOR THE "GUARDED" OPCODES.
+ * It is tempting to let the handlers that pop through vm_pop() (DIV, MOD,
+ * DOT_GET, ITER_SETUP, the interrogatives) ask for nothing, since vm_pop
+ * returns null instead of reading off the end — but its guard is `sp <= 0`, the
+ * bottom of the WHOLE VM stack, not the bottom of this frame's window. A chunk
+ * run by sandbox_run from inside a host expression has bp > 0, so an
+ * under-fed pop there quietly takes the CALLER's operand, hands it to the chunk,
+ * and decrefs it on the way out: the host's own value is freed underneath it —
+ * "double free or corruption (out)" again, one frame up, with no sanitizer
+ * report at the moment of the pop. OP_LIST/OP_DICT clamp their base at 0 and
+ * OP_CALL bails when under-fed, both against the same wrong floor. Only
+ * OP_RETURN compares against frame->bp, and it is the only row here that may
+ * ask for nothing.
+ *
+ * Like op_verify_operands this is an EXHAUSTIVE switch with NO default arm, so
+ * -Werror=switch makes a new opcode a build error here (#737) rather than a
+ * silently unmodelled one — an unmodelled opcode defaulting to "needs nothing"
+ * is precisely the hole this pass exists to close. Keep it in lockstep with the
+ * handler in vm.c; run_all_tests.sh runs the C compiler's own output through
+ * this pass over the whole suite (EIGS_VERIFY_SELF=1), so a row that drifts in
+ * either direction fails there.
+ *
+ * compiler.c has a NET-DELTA twin (its own op_stack_effect, sizing max_stack
+ * during compilation). It is not interchangeable with this one — it carries no
+ * `need` and no control flow, which is the entire content of a safety check —
+ * but the two must agree where they overlap: for every opcode, that function's
+ * delta is this one's pushes - pops on the fall-through edge. Keep the names
+ * distinct: the embed/LSP builds amalgamate every source into ONE translation
+ * unit (build/eigenscript_all.c), so two file-static functions sharing a name
+ * is a build error there and nowhere else — CI's embed-smoke is the only gate
+ * that sees it. */
+typedef enum {
+    FL_NEXT,     /* falls through only */
+    FL_BRANCH,   /* falls through OR takes the jump operand */
+    FL_JUMP,     /* takes the jump operand, never falls through */
+    FL_END       /* leaves the frame — no successor in this chunk */
+} VerifyFlow;
+
+typedef struct { int need, pops, pushes, bpushes; VerifyFlow flow; } StackEffect;
+
+/* operand0 is the instruction's first 16-bit operand (0 when it has none) —
+ * argc/count/n for the variable-arity opcodes. */
+static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
+    /* need, pops, pushes */
+    #define EFF(n_, p_, u_)        ((StackEffect){ (n_), (p_), (u_), 0, FL_NEXT })
+    /* need, pops, pushes on fall-through, pushes on the branch edge */
+    #define EFF_BR(n_, p_, u_, b_) ((StackEffect){ (n_), (p_), (u_), (b_), FL_BRANCH })
+    switch ((OpCode)op8) {
+    /* Pushes, consuming nothing. */
+    case OP_CONST: case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+    case OP_GET_LOCAL: case OP_GET_NAME: case OP_CLOSURE:
+    case OP_LOCAL_DOT_GET: case OP_LOCAL_IDX_GET: case OP_LOCAL_IDX_DOT_GET:
+    case OP_IMPORT: case OP_MATCH: case OP_LISTCOMP_BEGIN:
+    case OP_PREDICATE: case OP_PREDICATE_SLOT: case OP_PREDICATE_NAME:
+    case OP_REPORT_SLOT: case OP_REPORT_NAME:
+    case OP_REPORT_VALUE_SLOT: case OP_REPORT_VALUE_NAME:
+    case OP_OBSERVE_VALUE_SLOT: case OP_OBSERVE_VALUE_NAME:
+    case OP_TRAJECTORY_SLOT: case OP_TRAJECTORY_NAME:
+        return EFF(0, 0, 1);
+
+    /* Reads TOS in place and leaves it there (an assignment opcode keeps the
+     * assigned value as the expression's result). Every one of these takes an
+     * unguarded g_vm.stack[sp - 1] — in the observer cases through
+     * vm_trace_assign / the slot-observe helpers, which index it the same way. */
+    case OP_SET_LOCAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
+    case OP_SET_FN_NAME_LOCAL: case OP_LOCAL_DOT_SET: case OP_LOCAL_IDX_DOT_SET:
+    case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL: case OP_OBSERVE_NAME_POST:
+        return EFF(1, 0, 0);
+
+    /* Direct-index unary: [sp - 1] read and overwritten in place. */
+    case OP_NEG: case OP_NOT: case OP_BNOT:
+        return EFF(1, 1, 1);
+
+    /* ARITH_FAST and its comparison/bitwise twins: [sp-1] and [sp-2] read, and
+     * in the num-reuse arms WRITTEN, before any guard. The reported hole. */
+    case OP_ADD: case OP_SUB: case OP_MUL:
+    case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
+    case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
+    case OP_INDEX_GET: case OP_DOT_SET:
+        return EFF(2, 2, 1);
+
+    /* DIV and MOD have no fast path — both operands come off vm_pop(). Same for
+     * DOT_GET, ITER_SETUP and the interrogatives. They still require their
+     * operands: see the frame-base note above — vm_pop()'s guard is the bottom
+     * of the whole VM stack, not the bottom of this frame's window. */
+    case OP_DIV: case OP_MOD:
+        return EFF(2, 2, 1);
+    case OP_DOT_GET: case OP_ITER_SETUP:
+    case OP_INTERROGATE: case OP_INTERROGATE_NAMED:
+    case OP_INTERROGATE_NAMED_AT: case OP_INTERROGATE_NAMED_WHEN:
+        return EFF(1, 1, 1);
+
+    /* Three direct-index reads before the type checks. */
+    case OP_INDEX_SET: case OP_SLICE_GET: case OP_DISPATCH:
+        return EFF(3, 3, 1);
+
+    case OP_POP:                       /* stack[--sp], unguarded */
+        return EFF(1, 1, 0);
+    case OP_DUP:
+        return EFF(1, 0, 1);
+    case OP_DUP2:
+        return EFF(2, 0, 2);
+
+    /* Variable arity. LIST/DICT clamp their own base and CALL bails when
+     * under-fed, so none of these reads past the VM stack — but the clamp is
+     * again against 0, not this frame's base, so an over-claimed count consumes
+     * the CALLER's operands. Require what they consume. */
+    case OP_LIST:
+        return EFF(operand0, operand0, 1);
+    case OP_DICT:
+        return EFF(2 * operand0, 2 * operand0, 1);
+    case OP_CALL:
+        return EFF(operand0 + 1, operand0 + 1, 1);
+    /* Pops the list through a direct index, then pushes its n elements. */
+    case OP_DESTRUCTURE_UNPACK:
+        return EFF(1, 1, operand0);
+    /* Item via vm_pop(); the accumulator two below is read under an explicit
+     * `sp >= 2` guard — which, being relative to sp, says nothing about bp. */
+    case OP_LISTCOMP_APPEND:
+        return EFF(2, 1, 0);
+
+    /* Conditional control flow. The non-PEEK conditionals pop on BOTH edges via
+     * stack[--sp]; the PEEK pair leaves the tested value in place for the
+     * short-circuit `and`/`or` shape. Both index directly. */
+    case OP_JUMP_IF_FALSE: case OP_JUMP_IF_TRUE:
+        return EFF_BR(1, 1, 0, 0);
+    case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
+        return EFF_BR(1, 0, 0, 0);
+    /* vm_peek(0) on the iterator state is an unguarded stack[sp - 1]. Falling
+     * through advances and pushes the element; the taken edge is loop exit with
+     * the state still on the stack, for the POP the loop epilogue emits. */
+    case OP_ITER_NEXT:
+        return EFF_BR(1, 0, 1, 0);
+    /* Jump operand is the loop-exit / skip target; neither edge touches the
+     * stack. TRY_BEGIN's "branch" is its catch handler: an unwind drains back to
+     * the height recorded here (catch_bp) and pushes the error value, so the
+     * handler is entered exactly one deeper — see CHECK_ERROR in vm.c. */
+    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK: case OP_DEFAULT_PARAM:
+        return EFF_BR(0, 0, 0, 0);
+    case OP_TRY_BEGIN:
+        return EFF_BR(0, 0, 0, 1);
+
+    case OP_JUMP: case OP_JUMP_BACK:
+        return (StackEffect){ 0, 0, 0, 0, FL_JUMP };
+    /* RETURN needs nothing: its own read is height-guarded (`sp > frame->bp`)
+     * and yields null when the frame window is empty. */
+    case OP_RETURN: case OP_RETURN_NULL:
+        return (StackEffect){ 0, 0, 0, 0, FL_END };
+
+    /* Stack-neutral. BREAK/CONTINUE set a flag nothing reads — the compiler
+     * lowers both to jumps — so they are pure no-ops here too. */
+    case OP_LINE: case OP_WIDE:
+    case OP_TRY_END: case OP_BREAK: case OP_CONTINUE:
+    case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
+    case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
+        return EFF(0, 0, 0);
+
+    case OP_COUNT:   /* sentinel — callers bounds-check first */
+        return EFF(0, 0, 0);
+    }
+    return EFF(0, 0, 0);   /* unreachable; silences non-GCC fallthrough warnings */
+    #undef EFF
+    #undef EFF_BR
+}
+
+/* why/whyn: optional diagnostic buffer — the EIGS_VERIFY_SELF gate reports WHICH
+ * instruction a chunk was rejected at, so a stack-effect row that drifts out of
+ * lockstep with vm.c names itself instead of just failing the suite. NULL for
+ * the production callers, which only need the verdict. */
+static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
+    #define WHY(...) do { if (why) snprintf(why, whyn, __VA_ARGS__); } while (0)
+    if (!chunk || chunk->code_len <= 0) { WHY("empty code"); return 0; }
     int n = chunk->code_len;
     const uint8_t *code = chunk->code;
     unsigned char *is_start = calloc((size_t)n + 1, 1);
@@ -587,10 +786,129 @@ int chunk_verify(EigsChunk *chunk) {
     if (ok && last_op != OP_RETURN && last_op != OP_RETURN_NULL &&
         last_op != OP_JUMP && last_op != OP_JUMP_BACK)
         ok = 0;
+    if (!ok) WHY("malformed code, opcode/operand/jump/terminator (passes 1-3)");
+
+    /* Pass 4: the operand stack must not underflow along any path. Abstract
+     * interpretation over the CFG passes 1-2 just validated: walk from entry
+     * (height 0) propagating the height to each successor, and reject a chunk
+     * that reaches an instruction with fewer operands than it consumes. The
+     * height at a given instruction must AGREE on every incoming edge — the
+     * JVM/Wasm rule. That is what keeps this linear (each instruction is visited
+     * once, so a hostile chunk cannot make verification itself the DoS), and it
+     * is the contract a producer already meets: every path reaching a join in
+     * compiler output arrives balanced, which the EIGS_VERIFY_SELF gate holds
+     * us to over the whole suite.
+     *
+     * A height above VM_STACK_MAX is rejected rather than left to fault later:
+     * it is exact, not conservative (heights agree at joins), so such a chunk
+     * could only ever hit the runtime's stack-overflow guard, and bounding the
+     * height keeps this pass's own arithmetic in range.
+     *
+     * Unreachable code is not verified — it cannot execute. Pass 1 already
+     * pinned every opcode and operand in bounds, so the decode below is a
+     * re-walk of validated bytes. */
+    int *height = NULL, *work = NULL;
+    if (ok) {
+        height = malloc((size_t)n * sizeof(int));
+        work   = malloc((size_t)n * sizeof(int));
+        if (!height || !work) ok = 0;
+    }
+    if (ok) {
+        for (int k = 0; k < n; k++) height[k] = -1;
+        int wn = 0;
+        height[0] = 0;
+        work[wn++] = 0;
+        /* dst is an instruction start (pass 2 for jump targets, the decode
+         * stride for fall-through); h is its height on this edge. Each offset
+         * enters the worklist at most once — when it first gets a height — so
+         * wn stays under n. */
+        #define VISIT(dst, hh) do { \
+            int _d = (dst), _h = (hh); \
+            if (_d < 0 || _d >= n || !is_start[_d] || _h < 0 || _h > VM_STACK_MAX) { \
+                WHY("bad edge to offset %d at height %d", _d, _h); ok = 0; \
+            } else if (height[_d] < 0) { \
+                height[_d] = _h; work[wn++] = _d; \
+            } else if (height[_d] != _h) { \
+                WHY("stack height %d != %d where paths join at offset %d", \
+                    _h, height[_d], _d); \
+                ok = 0; \
+            } \
+        } while (0)
+        while (wn > 0 && ok) {
+            int off = work[--wn];
+            int h = height[off];
+            uint8_t op = code[off];
+            int end, operand0 = 0, target = -1;
+            if (op == OP_LINE) {
+                end = off + 1 + 4;
+            } else {
+                VerifyRole roles[3];
+                int nops = op_verify_operands(op, roles);
+                end = off + 1 + 2 * nops;
+                if (nops > 0) operand0 = code[off + 1] | (code[off + 2] << 8);
+                for (int k = 0; k < nops; k++) {
+                    int pos = off + 1 + 2 * k;
+                    int operand = code[pos] | (code[pos + 1] << 8);
+                    if (roles[k] == VR_JFWD)       target = end + operand;
+                    else if (roles[k] == VR_JBACK) target = end - operand;
+                }
+            }
+            StackEffect e = op_verify_stack_effect(op, operand0);
+            if (h < e.need) {   /* underflow — the whole point */
+                WHY("opcode %d at offset %d needs %d operand(s), stack height %d",
+                    (int)op, off, e.need, h);
+                ok = 0; break;
+            }
+            int left = h - e.pops;   /* need >= pops, so this stays >= 0 */
+            switch (e.flow) {
+            case FL_NEXT:   VISIT(end, left + e.pushes); break;
+            case FL_BRANCH: VISIT(end, left + e.pushes);
+                            if (ok) VISIT(target, left + e.bpushes);
+                            break;
+            case FL_JUMP:   VISIT(target, left + e.bpushes); break;
+            case FL_END:    break;
+            }
+        }
+        #undef VISIT
+    }
+    free(height);
+    free(work);
 
     free(is_start);
     free(targets);
     return ok;
+    #undef WHY
+}
+
+int chunk_verify(EigsChunk *chunk) {
+    return chunk_verify_impl(chunk, NULL, 0);
+}
+
+/* Self-check gate (EIGS_VERIFY_SELF=1): hold the C compiler's OWN output to the
+ * untrusted-chunk verifier, over whatever the process compiles. Pass 4's
+ * stack-effect table has to mirror ~90 handlers in vm.c, and the failure mode of
+ * a table that drifts is silent: too strict rejects legitimate bytecode from the
+ * self-hosting compiler in `ouroboros`, too lax reopens the underflow. Compiler
+ * output is the one bytecode corpus we can generate by the thousand — so
+ * run_all_tests.sh exports EIGS_VERIFY_SELF=1 for the whole suite (every .eigs
+ * it already runs becomes a sample, for one O(code_len) walk per compile), and
+ * an opcode whose row is wrong fails at the first program that emits it, naming
+ * the chunk and the offset. Exits rather than returning a verdict: this is a
+ * build-time assertion, not a runtime path. Recurses into nested function
+ * chunks — each is entered at height 0 (CASE(CALL) pops args and callee before
+ * pushing the frame), exactly as verified here. */
+void chunk_verify_self_check(EigsChunk *chunk, const char *unit) {
+    if (!chunk) return;
+    char why[192] = "";
+    if (!chunk_verify_impl(chunk, why, sizeof why)) {
+        fprintf(stderr,
+                "EIGS_VERIFY_SELF: compiler output failed chunk_verify\n"
+                "  unit:  %s\n  chunk: %s\n  why:   %s\n",
+                unit ? unit : "?", chunk->name ? chunk->name : "?", why);
+        exit(70);
+    }
+    for (int f = 0; f < chunk->fn_count; f++)
+        chunk_verify_self_check(chunk->functions[f], unit);
 }
 
 /* #831: descriptor-assembled chunks bypass the compiler's source scan — the

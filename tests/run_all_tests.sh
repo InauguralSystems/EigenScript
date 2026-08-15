@@ -22,6 +22,19 @@ LEAKED=0
 # file, #648). Override with EIGS_TEST_TIMEOUT (seconds) to demonstrate the
 # guard fast without burning the full budget.
 : "${EIGS_TEST_TIMEOUT:=180}"
+
+# Bytecode-verifier self-check: hold the C compiler's OWN output to the verifier
+# that gates untrusted chunks (chunk_verify, including the stack-height pass that
+# closed the sandbox_run underflow). The pass models the stack effect of ~90
+# opcodes, and a row that drifts out of lockstep with vm.c fails silently in both
+# directions — too strict refuses legitimate bytecode from an external producer
+# (ouroboros' self-hosted codegen), too lax reopens the hole. Every .eigs the
+# suite already runs becomes a sample of that table for one O(code_len) walk per
+# compile; a mismatch exits 70 naming the chunk and the offset, which rc_ok
+# fails. Set EIGS_VERIFY_SELF=0 to opt a run out.
+: "${EIGS_VERIFY_SELF:=1}"
+export EIGS_VERIFY_SELF
+
 EIGS_TMO=""
 if command -v timeout >/dev/null 2>&1; then EIGS_TMO="timeout $EIGS_TEST_TIMEOUT"
 elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout $EIGS_TEST_TIMEOUT"; fi
@@ -3470,6 +3483,12 @@ check_eigs_suite "byte<->value builtins (str_from_bytes / f64 bytes)" test_byte_
 check_eigs_suite "write_bytes (binary append/truncate)" test_write_bytes.eigs "All tests passed" 10
 check_eigs_suite "rename / remove_file / is_dir (atomic swap, delete, dir probe)" test_file_rename.eigs "All tests passed" 17
 check_eigs_suite "vm_run_bytecode + sandbox (self-hosting bridge)" test_vm_run_bytecode.eigs "All tests passed" 29
+# Memory-safety gate: an assembled chunk that passes chunk_verify must not be
+# able to underflow the operand stack (the fast paths index the stack directly)
+# or the frame's env chain. Runs the whole opcode space as minimal chunks —
+# reaching the summary IS the assertion, and under ASan a stray read is a
+# nonzero exit.
+check_eigs_suite "assembled-chunk stack/env underflow (verifier pass 4)" test_chunk_verify_stack.eigs "All tests passed" 19
 check_eigs_suite "sandbox fail-closed allowlist (no host-global escape)" test_sandbox_allow.eigs "SANDBOX_ALLOW_OK" 1
 check_eigs_suite "JIT and/or heap-operand decref (no per-iteration leak)" test_jit_andor_leak.eigs "jit-and-or-ok" 1
 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1

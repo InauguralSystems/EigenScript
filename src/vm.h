@@ -644,6 +644,10 @@ const char *op_name(uint8_t op);
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM
  * runs it. Returns 1 if safe to execute, 0 if it must be rejected. */
 int        chunk_verify(EigsChunk *chunk);
+/* EIGS_VERIFY_SELF=1 gate: assert the C compiler's own output satisfies
+ * chunk_verify (including the stack-height pass), or exit 70 naming the chunk
+ * and the reason. Called from compile_ast; see chunk.c for the rationale. */
+void       chunk_verify_self_check(EigsChunk *chunk, const char *unit);
 /* #831: arm history recording for the temporal opcodes an assembled chunk
  * contains (the compiler's source scan, replayed over verified bytecode).
  * Only call on a chunk tree chunk_verify accepted. */

@@ -4,6 +4,78 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- **An assembled chunk could pass the verifier and then corrupt the heap.**
+  Reported against `sandbox_run` — the advertised containment boundary for
+  untrusted bytecode. `chunk_verify` checked opcodes, operand bounds, jump
+  targets and the terminator, but nothing about operand-stack depth, and the
+  interpreter's fast paths index `g_vm.stack[sp - 1]` / `[sp - 2]` directly
+  instead of going through the guarded `vm_pop()`. A two-byte chunk was enough:
+
+  ```eigenscript
+  ABI is 1
+  desc is [ABI, [4, 40], []]           # [OP_ADD, OP_RETURN]
+  r is sandbox_run of [desc, 1000]     # "double free or corruption (out)", SIGABRT
+  ```
+
+  Under ASan that is a heap-buffer-overflow READ 8 bytes before the calloc'd
+  `EigsSlot[65536]` VM stack, and the num-reuse arms *write* there. 37 opcodes
+  reached it — arithmetic, bitwise, comparison, the conditional jumps,
+  `POP`/`DUP`/`DUP2`, `INDEX_GET`/`INDEX_SET`, the `SET_*` family, `DISPATCH`,
+  `SLICE_GET`, `DESTRUCTURE_UNPACK`, the observer opcodes.
+
+  `chunk_verify` gained a **stack-height pass**: abstract interpretation over
+  the control-flow graph the earlier passes validated, from entry at height 0,
+  rejecting any chunk that reaches an instruction with fewer operands than it
+  consumes. Heights must agree on every incoming edge (the JVM/Wasm rule), which
+  keeps verification linear — a hostile chunk cannot make the *verifier* the
+  denial of service. Bounds-checking ~90 direct stack accesses in the hottest
+  loop in the runtime was the alternative; the height is a static property of
+  the code, so it is settled once at the gate and the fast paths keep their
+  invariant for free.
+
+  **The opcodes that pop through the guarded `vm_pop()` are not exempt**, though
+  they look it. `vm_pop`'s guard is `sp <= 0` — the bottom of the whole VM
+  stack, not the bottom of the running frame's window. A chunk run from inside a
+  host expression has a frame base above 0, so an under-fed `DIV` there takes the
+  *caller's* operand, hands it to the chunk, and decrefs it on the way out,
+  freeing a value the host is still using. `OP_LIST`/`OP_DICT` clamp their base
+  against the same wrong floor. Only `OP_RETURN` compares against `frame->bp`,
+  and it is the only opcode the pass lets ask for nothing.
+
+  Two hand-written test descriptors were relying on that underflow and are
+  corrected to what the compiler emits (`GET_NAME` before `INTERROGATE_NAMED`,
+  which consumes its operand); the `OP_DICT` oversized-count case now asserts
+  refusal instead of the runtime clamp it used to check.
+
+- **`OP_LOOP_ENV_END` with no matching `OP_LOOP_ENV_FRESH` was a
+  use-after-free.** Same "the verifier cannot see it" theme, different
+  mechanism: the unmatched `END` walked the frame off the end of its env chain,
+  decref'ing an env the frame only *borrowed* (`owns_env == 0`) and then
+  dereferencing a NULL parent — SIGSEGV on release, use-after-free in
+  `env_decref` under ASan, and it handed the chunk the enclosing scope on the
+  way. This one is settled at the instruction rather than at the gate, because
+  it cannot be settled statically: an error unwinding into a `catch` restores
+  the stack pointer but not `frame->env`, so the live env depth at a handler is
+  not a property of the code. The VM now refuses an `END` when the frame is
+  already at the env it was entered with (`env == fn_env`) and raises a
+  catchable `loop-env underflow` — one pointer compare per loop iteration, off
+  the arithmetic fast path.
+
+- **The verifier's stack-effect table is now gated against drift.** It models
+  ~90 opcodes and fails silently in both directions — too strict refuses
+  legitimate bytecode from an external producer (`ouroboros`' self-hosted
+  codegen), too lax reopens the hole. `run_all_tests.sh` exports
+  `EIGS_VERIFY_SELF=1`, which holds the C compiler's *own* output to the same
+  verifier over every program the suite runs, for one `O(code_len)` walk per
+  compile; a wrong row fails at the first program that emits that opcode, naming
+  the chunk and the offset. The table is an exhaustive switch with no `default`
+  arm, so a *new* opcode is a build error there (#737) rather than an
+  unmodelled one. `tests/test_chunk_verify_stack.eigs` sweeps every byte value
+  0-255 as a minimal chunk at three stack depths — deliberately blind to the
+  opcode table, so an opcode added later is covered the day it lands.
+
 ### Fixed
 
 - **`--lint` no longer reports a clean file the compiler refuses (#927).** Lint

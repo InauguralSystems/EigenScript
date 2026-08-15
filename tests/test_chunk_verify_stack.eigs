@@ -1,0 +1,159 @@
+# chunk_verify pass 4 — the operand stack cannot underflow in an assembled chunk.
+#
+# Reported against sandbox_run: a chunk passed chunk_verify (opcodes, operand
+# bounds, jump targets and terminator all in range) and then popped an EMPTY
+# operand stack at runtime. The interpreter's fast paths index
+# g_vm.stack[sp - 1] / [sp - 2] directly instead of going through the guarded
+# vm_pop(), so the two-byte chunk [OP_ADD, OP_RETURN] read — and through the
+# in-place num-reuse arms, wrote — 8 bytes below the base of the VM stack:
+# "double free or corruption (out)" + SIGABRT on release, a heap-buffer-overflow
+# READ off the calloc'd EigsSlot[65536] under ASan. 37 opcodes reached it.
+#
+# The verifier now walks the chunk's control-flow graph tracking operand-stack
+# height, so an underflowing chunk is refused at the gate and the fast paths
+# keep their invariant without paying for a bounds check per arithmetic op.
+#
+# This file is a memory-safety gate: it must run clean under ASan (make asan).
+# The enumeration below is deliberately blind to the opcode table — it sweeps
+# every byte value 0..255, so an opcode added later is covered the day it lands
+# without anyone remembering to extend a list here.
+
+load_file of "lib/test.eigs"
+
+ABI is 1
+
+# Opcode numbers (src/vm.h enum order) — same literal-constant discipline as
+# test_vm_run_bytecode.eigs: an external producer hardcodes these too.
+CONST is 0
+ADD is 4
+POP is 35
+DUP is 36
+RETURN is 40
+LOOP_ENV_FRESH is 50
+LOOP_ENV_END is 51
+
+# ---- 1. The reported reproducer ----------------------------------------
+# [OP_ADD, OP_RETURN]: passes passes 1-3 (known opcode, no operands, ends in
+# RETURN) and pops two operands off an empty stack.
+add_repro is sandbox_run of [[ABI, [ADD, RETURN], []], 1000]
+assert_eq of [add_repro["ok"], 0, "bare ADD is refused"]
+assert_eq of [add_repro["error"]["message"], "invalid chunk descriptor",
+              "bare ADD refused by the verifier, not at runtime"]
+
+# One operand is still one short of two.
+half_fed is sandbox_run of [[ABI, [CONST,0,0, ADD, RETURN], [1]], 1000]
+assert_eq of [half_fed["ok"], 0, "ADD with one operand is refused"]
+
+# ---- 1b. The "guarded" opcodes are refused too --------------------------
+# DIV and MOD have no fast path — both operands come off vm_pop(), which
+# returns null instead of reading off the end, so they look safe. They are not:
+# vm_pop's guard is `sp <= 0`, the bottom of the WHOLE VM stack, and a chunk
+# run from inside a host expression has a frame base ABOVE that. An under-fed
+# pop there takes the CALLER's operand, hands it to the chunk, and decrefs it
+# on the way out — the host's own value freed underneath it, which is a double
+# free one frame up and nowhere near the pop. Same for the opcodes that clamp
+# their own base at zero (LIST, DICT) rather than at frame->bp.
+DIV is 7
+LIST is 42
+div_under is sandbox_run of [[ABI, [DIV, RETURN], []], 1000]
+assert_eq of [div_under["ok"], 0, "under-fed DIV (a guarded pop) is refused"]
+list_over is sandbox_run of [[ABI, [CONST,0,0, LIST,9,0, RETURN], [1]], 1000]
+assert_eq of [list_over["ok"], 0, "LIST claiming more than the stack holds is refused"]
+div_ok is sandbox_run of [[ABI, [CONST,0,0, CONST,1,0, DIV, RETURN], [84, 2]], 1000]
+assert_eq of [div_ok["result"], 42, "a fed DIV still divides"]
+
+# ---- 2. Balanced chunks still run ---------------------------------------
+# The pass must reject underflow, not arithmetic. Fed correctly, the same
+# opcode runs — a verifier that rejected everything would pass section 1.
+fed is sandbox_run of [[ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 1000]
+assert_eq of [fed["ok"], 1, "a balanced ADD still runs"]
+assert_eq of [fed["result"], 5, "a balanced ADD still computes"]
+
+# Height bookkeeping across the stack shufflers.
+dup_ok is sandbox_run of [[ABI, [CONST,0,0, DUP, ADD, RETURN], [21]], 1000]
+assert_eq of [dup_ok["result"], 42, "DUP feeds the second ADD operand"]
+
+# Both edges of a branch are verified, and an if/else meets at one height —
+# the shape the compiler emits:
+#   0 CONST c0 | 3 JUMP_IF_FALSE +6 | 6 CONST c1 | 9 JUMP +3 | 12 CONST c2 | 15 RETURN
+# The conditional pops on both edges; each arm pushes one; RETURN is reached one
+# deep either way.
+JUMP is 29
+JUMP_IF_FALSE is 31
+branch_ok is sandbox_run of [[ABI,
+    [CONST,0,0, JUMP_IF_FALSE,6,0, CONST,1,0, JUMP,3,0, CONST,2,0, RETURN],
+    [1, 7, 9]], 1000]
+assert_eq of [branch_ok["ok"], 1, "a balanced if/else verifies"]
+assert_eq of [branch_ok["result"], 7, "the taken arm is the one that ran"]
+
+# A join where the two edges DISAGREE on depth is refused. Here the taken edge
+# skips the CONST, so RETURN is reached at height 0 on one path and 1 on the
+# other. The height has to agree on every incoming edge — the JVM/Wasm rule,
+# which is what keeps verification linear — so a producer must emit the
+# balanced shape above. Compiler output already does; this is the contract an
+# external bytecode producer is held to.
+lopsided is sandbox_run of [[ABI, [CONST,0,0, JUMP_IF_FALSE,3,0, CONST,1,0, RETURN], [1, 7]], 1000]
+assert_eq of [lopsided["ok"], 0, "a join at mismatched depth is refused"]
+
+# ---- 3. LOOP_ENV_END with no matching FRESH ------------------------------
+# A distinct mechanism from the stack pass: the env chain, not the operand
+# stack. An unmatched END walked the frame off the end of its env chain,
+# decref'ing an env the frame only borrowed (use-after-free in env_decref) and
+# then dereferencing a NULL parent — SIGSEGV on release. This one cannot be
+# settled statically (an error unwinding into a catch does not restore
+# frame->env), so the VM refuses it at the instruction.
+env_under is sandbox_run of [[ABI, [LOOP_ENV_END, LOOP_ENV_END, LOOP_ENV_END, RETURN], []], 1000]
+assert_eq of [env_under["ok"], 0, "unmatched LOOP_ENV_END is refused"]
+assert_true of [(index_of of [env_under["error"]["message"], "loop-env underflow"]) >= 0,
+                "unmatched LOOP_ENV_END names itself"]
+
+# A matched pair is untouched.
+env_ok is sandbox_run of [[ABI, [LOOP_ENV_FRESH, LOOP_ENV_END, CONST,0,0, RETURN], [9]], 1000]
+assert_eq of [env_ok["result"], 9, "a matched FRESH/END pair still runs"]
+
+# ---- 4. Blind sweep: no single-opcode chunk can crash the VM -------------
+# Every byte value 0..255, at 0/1/2 operand words, from three starting stack
+# heights. Byte values past the opcode table are refused by pass 1; the rest
+# either verify and run, or are refused — never a crash, never memory
+# corruption. Reaching the summary at all IS the assertion (a fault here takes
+# the process, and ASan turns a stray read into a nonzero exit).
+prefix0 is []
+prefix1 is [CONST,0,0]
+prefix2 is [CONST,0,0, CONST,0,0]
+
+sweep_runs is 0
+sweep_ran is 0
+sweep_refused is 0
+
+for op in range of 256:
+    for nops in range of 3:
+        for pfx in range of 3:
+            local code is []
+            local base is prefix0
+            if pfx == 1:
+                base is prefix1
+            if pfx == 2:
+                base is prefix2
+            for b in range of (len of base):
+                append of [code, base[b]]
+            append of [code, op]
+            for w in range of nops:
+                append of [code, 0]
+                append of [code, 0]
+            append of [code, RETURN]
+            local r is sandbox_run of [[ABI, code, [1]], 200]
+            sweep_runs is sweep_runs + 1
+            if r["ok"] == 1:
+                sweep_ran is sweep_ran + 1
+            else:
+                sweep_refused is sweep_refused + 1
+
+assert_eq of [sweep_runs, 2304, "swept every opcode x arity x depth"]
+assert_eq of [sweep_runs, sweep_ran + sweep_refused,
+              "every sweep chunk returned a verdict instead of faulting"]
+assert_true of [sweep_ran > 0, "the sweep is not refusing everything"]
+assert_true of [sweep_refused > 0, "the sweep is not accepting everything"]
+
+print of ("sweep: " + (str of sweep_ran) + " ran, " + (str of sweep_refused) + " refused")
+
+test_summary of null

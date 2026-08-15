@@ -3208,5 +3208,21 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     name_set_free(&module_names);
     name_set_free(&compiler.module_slot_names);
     free(compiler.locals);
+
+    /* Opt-in self-check: every chunk this compiler emits must satisfy the
+     * verifier that gates untrusted chunks. Off unless EIGS_VERIFY_SELF=1 (the
+     * suite sets it for one full pass), so the normal compile path is untouched
+     * bar one cached getenv. */
+    static int verify_self = -1;
+    if (verify_self < 0) {
+        const char *e = getenv("EIGS_VERIFY_SELF");
+        verify_self = (e && *e && strcmp(e, "0") != 0) ? 1 : 0;
+    }
+    /* Only assert on a CLEAN compile: a unit that already failed to parse or
+     * compile can carry a patched-to-0 jump or a truncated tail by design, and
+     * the entry paths abort before running it. Verifying that is checking the
+     * error path, not the table. */
+    if (verify_self && g_parse_errors == 0)
+        chunk_verify_self_check(chunk, chunk->name ? chunk->name : "?");
     return chunk;
 }
