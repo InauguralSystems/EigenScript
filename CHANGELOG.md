@@ -76,6 +76,42 @@ All notable changes to EigenScript are documented here.
   0-255 as a minimal chunk at three stack depths — deliberately blind to the
   opcode table, so an opcode added later is covered the day it lands.
 
+- **An assembled bare back edge crossed no loop cap — `sandbox_run`'s loop
+  budget was a promise only compiler output kept.** The documented contract is
+  that loops under `sandbox_run` are capped so untrusted code cannot hang, but
+  the cap was enforced at `OP_LOOP_CAP_CHECK` / `OP_LOOP_STALL_CHECK`, which
+  the *compiler* emits. An assembled chunk owes nobody a cap check:
+
+  ```eigenscript
+  r is sandbox_run of [[1, [30, 3, 0, 40], []], 10]   # JUMP_BACK to itself
+  ```
+
+  spun forever at 100% CPU with `max_iterations = 10`. Denial of service only
+  — the memory-safety half of this surface closed with the verifier's
+  stack-height pass above.
+
+  The budget is now enforced at the back edge itself, through a **second
+  counter** charged at every `OP_JUMP_BACK` while a sandbox budget is armed
+  (`g_sandbox_loop_max != 0`, which is exactly "inside `sandbox_run`"). A
+  second counter, not the existing `g_loop_iterations`: a compiler-emitted
+  loop crosses *both* a cap check and a back edge per iteration, so one
+  shared counter would halve the documented `max_iterations`. Two counters
+  against one budget, whichever trips first — compiler output trips at the
+  cap check at exactly the documented max; assembled chunks trip at the back
+  edge. The counter is saved and restored at the `sandbox_run` boundary only,
+  never per call frame, so a chunk cannot reset its own budget by calling a
+  function. And JIT compilation is now denied outright inside the sandbox —
+  one `!g_sandbox_active` term on the existing gates, the same shape as the
+  `!g_task_sched` / `!g_arena.active` terms already there — which removes the
+  whole class of "the native tier disagrees with the interpreter's guard on
+  attacker-supplied bytecode": sandboxed code runs interpreted.
+
+  Settling it statically instead — requiring back edges to land on a cap
+  check at verify time — would reject every `for` loop the compiler emits
+  (their back edge targets `ITER_NEXT`), and a live loop budget is not a
+  static property of the code anyway: an assembled chunk can reset the
+  iterator index from the loop body.
+
 ### Fixed
 
 - **`--lint` no longer reports a clean file the compiler refuses (#927).** Lint

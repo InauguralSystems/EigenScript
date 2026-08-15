@@ -3052,8 +3052,14 @@ Value* builtin_sandbox_run(Value *arg) {
 
     int saved_max = g_sandbox_loop_max;
     long long saved_iters = g_loop_iterations;
+    /* #940: the back-edge counter is the sandbox budget's second half — it
+     * is saved/restored HERE, at the sandbox boundary only, never per call
+     * frame (a budget on untrusted code must not reset because the chunk
+     * called a function). */
+    long long saved_backedge_iters = g_loop_backedge_count;
     g_sandbox_loop_max = max_iter > 0 ? max_iter : 1000000;
     g_loop_iterations = 0;
+    g_loop_backedge_count = 0;
     /* #292: arm the allocation budget. Save/restore so nested sandbox_run (or a
      * sandbox_run invoked from already-budgeted code) composes correctly. */
     int    saved_sb_active = g_sandbox_active;
@@ -3082,6 +3088,7 @@ Value* builtin_sandbox_run(Value *arg) {
 
     g_sandbox_loop_max = saved_max;
     g_loop_iterations = saved_iters;
+    g_loop_backedge_count = saved_backedge_iters;   /* #940 */
     g_sandbox_active     = saved_sb_active;
     g_sandbox_bytes_used = saved_sb_used;
     g_sandbox_byte_max   = saved_sb_max;

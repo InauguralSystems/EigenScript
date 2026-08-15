@@ -1,0 +1,76 @@
+# #940: sandbox_run's loop budget is enforced at the back edge itself.
+#
+# sandbox_run's documented contract is that loops are capped so untrusted code
+# cannot hang. The cap used to live only at OP_LOOP_CAP_CHECK /
+# OP_LOOP_STALL_CHECK, which the COMPILER emits — an assembled chunk owes
+# nobody a cap check, so a bare back edge crossed no budget at all:
+#
+#   r is sandbox_run of [[1, [30, 3, 0, 40], []], 10]   # JUMP_BACK to itself
+#
+# spun forever at 100% CPU with max_iterations = 10 (DoS only — the memory
+# half of this surface was #939). The budget now also trips at OP_JUMP_BACK,
+# through a SECOND counter: a compiler-emitted loop crosses both a cap check
+# and a back edge per iteration, so one shared counter would halve the
+# documented max_iterations (#772). Two counters against one budget, whichever
+# trips first — compiler output trips at the cap check at exactly the
+# documented max; assembled chunks trip at the back edge.
+#
+# This file is the regression gate, and its failure mode is special: pre-fix,
+# the chunks in sections 1/2/5 never return at all, so what fails the file
+# without the fix is the suite's per-test timeout (run_all_tests.sh's
+# EIGS_TEST_TIMEOUT runaway guard, rc=124), not an assertion. An assertion
+# that passed both with and without the trip would be worthless here.
+
+load_file of "lib/test.eigs"
+
+ABI is 1
+
+# Opcode numbers (src/vm.h enum order) — same literal-constant discipline as
+# test_vm_run_bytecode.eigs / test_chunk_verify_stack.eigs: an external
+# bytecode producer hardcodes these too.
+JUMP_BACK is 30
+RETURN is 40
+LOOP_CAP_CHECK is 63
+
+# ---- 1. The reported reproducer -------------------------------------------
+# [OP_JUMP_BACK 3, OP_RETURN] jumps to itself. Pre-fix: infinite loop.
+spin is sandbox_run of [[ABI, [JUMP_BACK,3,0, RETURN], []], 10]
+assert_eq of [spin["ok"], 0, "bare back edge returns a cap error, not a hang"]
+assert_eq of [spin["error"]["kind"], "sandbox",
+              "bare back edge names the sandbox budget"]
+
+# ---- 2. The cap is a property, not a constant ------------------------------
+# Same shape under a generous budget must trip too — the point is that SOME
+# bound exists where none did, not the particular max_iterations value.
+spin_big is sandbox_run of [[ABI, [JUMP_BACK,3,0, RETURN], []], 100000]
+assert_eq of [spin_big["ok"], 0, "bare back edge trips under a large budget too"]
+
+# ---- 3. A compiler-shaped loop still trips at the CAP CHECK -----------------
+# [LOOP_CAP_CHECK +3, JUMP_BACK 6, RETURN]: one cap check AND one back edge
+# per iteration — the shape the compiler emits for a plain loop. With
+# max_iterations = 10 the cap check trips first (graceful exit, ok=1).
+# Charged to one shared counter this loop would count 20 and die at the back
+# edge instead — so ok=1 here is the #772 regression guard: adding the
+# back-edge counter must not halve the documented budget.
+capped is sandbox_run of [[ABI, [LOOP_CAP_CHECK,3,0, JUMP_BACK,6,0, RETURN], []], 10]
+assert_eq of [capped["ok"], 1,
+              "compiler-shaped loop trips at the cap check, not the back edge"]
+
+# ---- 4. The trip leaves the host untripped ----------------------------------
+# The counter is armed only inside sandbox_run: after a tripped run, the
+# host's own loops run as before (every for-loop back edge crosses the same
+# opcode).
+total is 0
+for i in range of 100:
+    total is total + i
+assert_eq of [total, 4950, "host loops run normally after a tripped sandbox"]
+
+# ---- 5. A second run starts from zero ----------------------------------------
+# The counter is saved/restored at the sandbox boundary (and only there — a
+# per-frame restore would let a chunk reset its own budget by calling a
+# function). A tripped budget must not leak into the next run: the same chunk
+# trips on its own ten back edges, not on an inherited count.
+again is sandbox_run of [[ABI, [JUMP_BACK,3,0, RETURN], []], 10]
+assert_eq of [again["ok"], 0, "a second run trips on its own fresh budget"]
+
+test_summary of null
