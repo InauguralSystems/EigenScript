@@ -26,6 +26,7 @@ load_file of "lib/test.eigs"
 # them. See tests/test_vm_run_bytecode.eigs for the ABI-stamp contract.
 ABI is 1
 CONST is 0
+GET_NAME is 25
 SET_NAME_LOCAL is 27
 POP is 35
 RETURN is 40
@@ -48,9 +49,14 @@ assert_eq of [prev_armed, 1, "control: the compiled path answers prev"]
 
 # ---- the regression: same question, asked by an assembled chunk.
 #   LINE 10; tmp830 is 11; LINE 20; tmp830 is 22; prev of tmp830   -> 11
+# INTERROGATE_NAMED consumes its operand, so the GET_NAME below is not
+# decoration: it is what the compiler emits for `prev of x` (GET_NAME x;
+# INTERROGATE_NAMED 6 x), and the chunk verifier now requires it. Without it
+# the opcode pops whatever is under this chunk's frame base — the HOST's
+# operand, in a nested run — and decrefs it.
 prevcode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
              LINE,20,0,0,0, CONST,2,0, SET_NAME_LOCAL,1,0, POP,
-             INTERROGATE_NAMED,6,0,1,0, RETURN]
+             GET_NAME,1,0, INTERROGATE_NAMED,6,0,1,0, RETURN]
 got_prev is vm_run_bytecode of [ABI, prevcode, [11, "tmp830", 22]]
 assert_eq of [got_prev, 11, "#830: prev of a descriptor-assigned name (was null)"]
 

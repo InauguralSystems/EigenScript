@@ -152,10 +152,21 @@ assert_eq of [sr_bad["ok"], 0, "verify: sandbox rejects OOB const (ok=0)"]
 # dereferenced NULL. The verifier now requires name operands to be strings.
 DICT is 43
 assert_eq of [vm_run_bytecode of [ABI, [GET_NAME,0,0, RETURN], [42]], null, "verify: name op on numeric const rejected"]
-# OP_DICT with a count larger than the live stack — was an out-of-bounds stack
-# read; now bounded to the pairs actually present (here none -> empty dict).
+# OP_DICT with a count larger than the live stack — once an out-of-bounds stack
+# read, then bounded at runtime to the pairs actually present, and now refused
+# outright by the verifier's stack-height pass.
+#
+# The runtime clamp is not enough on its own and this is why the pass exists:
+# it clamps the base at ZERO, the bottom of the whole VM stack, not at this
+# chunk's frame base. Run nested — sandbox_run called from inside a host
+# expression, which is how a grading ladder uses it — an over-claimed count
+# consumes the CALLER's operands and decrefs them, freeing values the host is
+# still using. A count the stack cannot cover is refused before it runs.
 dr is vm_run_bytecode of [ABI, [DICT,255,255, RETURN], []]
-assert_eq of [type of dr, "dict", "verify: OP_DICT oversized count bounded (no OOB)"]
+assert_eq of [dr, null, "verify: OP_DICT oversized count refused"]
+# The honest form still builds its dict.
+dr_ok is vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, DICT,1,0, RETURN], ["k", 7]]
+assert_eq of [dr_ok["k"], 7, "verify: OP_DICT with the pairs present still runs"]
 
 # --- #348: an out-of-range SET_LOCAL raises instead of silently dropping ---
 # (Slot indices are absolute env positions for module-level chunks, so use

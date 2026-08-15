@@ -36,9 +36,12 @@ INTERROGATE_NAMED_AT is 77
 # ---- the #831 repro: assign twice, ask prev — with nothing anywhere else
 # turning recording on. Answered null before the assembler-side arming.
 #   LINE 10; tmp831 is 11; LINE 20; tmp831 is 22; prev of tmp831 -> 11
+# The GET_NAME feeds INTERROGATE_NAMED's operand — what the compiler emits for
+# `prev of x`, and what the chunk verifier now requires (an under-fed pop takes
+# the caller's operand, below this chunk's frame base).
 prevcode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
              LINE,20,0,0,0, CONST,2,0, SET_NAME_LOCAL,1,0, POP,
-             INTERROGATE_NAMED,6,0,1,0, RETURN]
+             GET_NAME,1,0, INTERROGATE_NAMED,6,0,1,0, RETURN]
 got_prev is vm_run_bytecode of [ABI, prevcode, [11, "tmp831", 22]]
 assert_eq of [got_prev, 11, "#831: prev in a descriptor arms itself (was null)"]
 
@@ -56,7 +59,7 @@ assert_eq of [got_at99, 22, "#831: what-at past the last assignment"]
 # must recurse into functions[], not just scan the module chunk.
 q_desc is [[LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
             LINE,20,0,0,0, CONST,2,0, SET_NAME_LOCAL,1,0, POP,
-            INTERROGATE_NAMED,6,0,1,0, RETURN, RETURN_NULL],
+            GET_NAME,1,0, INTERROGATE_NAMED,6,0,1,0, RETURN, RETURN_NULL],
            [11, "tmp831n", 22], [], 0, "q831", []]
 mod_code is [CLOSURE,0,0, SET_NAME_LOCAL,0,0, POP, GET_NAME,0,0, CALL,0,0, RETURN]
 got_nested is vm_run_bytecode of [ABI, mod_code, ["q831"], [q_desc], 0, "<module>", []]

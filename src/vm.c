@@ -4544,7 +4544,27 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         /* Restore the parent env after loop body: re-take an owned ref
          * on the parent for the frame, then release the loop env (its
          * destructor drops the parent-link ref — net zero on the parent;
-         * a captured loop env survives via its closures' refs). */
+         * a captured loop env survives via its closures' refs).
+         *
+         * Only pop an env this instruction's own FRESH pushed. fn_env is the
+         * env the frame was entered with (callframe_init) and nothing but
+         * LOOP_ENV_FRESH/END moves frame->env off it, so `env == fn_env` means
+         * there is no loop env live and this END is unmatched — reachable only
+         * from an assembled chunk (vm_run_bytecode / sandbox_run), never from
+         * compiler output. Running it anyway walked the frame off the end of
+         * its env chain: it decrefs an env the frame merely BORROWED
+         * (owns_env == 0), which is a use-after-free in env_decref, and the
+         * next END dereferences a NULL parent — SIGSEGV on release, and it
+         * hands the chunk the enclosing scope on the way. Unlike the operand
+         * stack this cannot be settled statically: an error unwinding into a
+         * catch does not restore frame->env (only sp — see CHECK_ERROR), so
+         * the live depth at a handler is not a property of the code. One
+         * pointer compare per loop iteration, off the arithmetic fast path. */
+        if (__builtin_expect(frame->env == frame->fn_env, 0)) {
+            rt_error(EK_VALUE, current_line,
+                     "loop-env underflow: LOOP_ENV_END with no matching LOOP_ENV_FRESH");
+            DISPATCH();   /* DISPATCH runs CHECK_ERROR — catchable, like TRY_BEGIN's cap */
+        }
         Env *loop_env = frame->env;
         Env *parent = loop_env->parent;
         env_incref(parent);
