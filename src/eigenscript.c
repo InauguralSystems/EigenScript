@@ -37,20 +37,35 @@
  * eigenscript.h). The g_* identifiers are macros that expand to
  * `eigs_current->field`. */
 
-/* First syntax/parse error of the current tokenize+parse pass, captured
+/* Earliest syntax/parse error of the current tokenize+parse pass, captured
  * for consumers that can't see the parser's stderr (the LSP, which turns
- * it into a publishDiagnostics squiggle). Reset at the top of tokenize().
- * g_first_error_line is 1-based and 0 when no error has been recorded. */
+ * it into a publishDiagnostics squiggle). Lexing runs over the whole source
+ * before parsing, so phase order is not source order: compare source lines
+ * here and keep the lower one. Lexer call sites pass their tracked source
+ * columns and lengths; legacy call sites without a trustworthy column still
+ * retain the first writer on an equal-line tie. Reset at the top of
+ * tokenize(). g_first_error_line is 1-based and 0 when no source error has
+ * been recorded. */
+static __thread int g_first_error_col_known;
+
 void eigs_record_first_error_at(int line, int col, int len, const char *msg) {
-    if (g_first_error_line) return;   /* keep only the first */
+    int candidate_col_known = col >= 0 && len > 0;
+    if (g_first_error_line > 0) {
+        if (line <= 0 || line > g_first_error_line) return;
+        if (line == g_first_error_line) {
+            if (!g_first_error_col_known || !candidate_col_known ||
+                col >= g_first_error_col) return;
+        }
+    }
     g_first_error_line = line;
-    g_first_error_col = col;
+    g_first_error_col = candidate_col_known ? col : 0;
     g_first_error_len = len;
+    g_first_error_col_known = candidate_col_known;
     snprintf(g_first_error_msg, sizeof(g_first_error_msg), "%s", msg ? msg : "syntax error");
 }
 
 void eigs_record_first_error(int line, const char *msg) {
-    eigs_record_first_error_at(line, 0, 0, msg);
+    eigs_record_first_error_at(line, -1, 0, msg);
 }
 
 /* Structured error payload: set by `throw` so catch can bind the thrown

@@ -59,4 +59,31 @@ elif [ "$arch_claim" != "$arch_files" ]; then
     drift=1
 fi
 
+# 7. Heuristic lexer parse-error text check.
+# For each line containing g_parse_errors++, mark it matched when one
+# eigs_record_first_error(_at)( spelling appears in the preceding four
+# physical lines, then flag a mismatch in the number of matched increment
+# lines. This is deliberately only a text count: it does not strip comments
+# or literals, parse control flow, require one block, localise an offender,
+# or prove one-to-one recorder ownership.
+lexer_parse_errors=$(grep -Ec 'g_parse_errors[[:space:]]*\+\+' src/lexer.c)
+lexer_recorded_errors=$(awk '
+{
+    if ($0 ~ /g_parse_errors[[:space:]]*\+\+/) {
+        for (i = NR - 1; i >= NR - 4 && i > 0; i--) {
+            if (lines[i] ~ /eigs_record_first_error(_at)?[[:space:]]*\(/) {
+                recorded++
+                break
+            }
+        }
+    }
+    lines[NR] = $0
+}
+END { print recorded + 0 }
+' src/lexer.c)
+if [ "$lexer_parse_errors" -ne "$lexer_recorded_errors" ]; then
+    echo "DRIFT: src/lexer.c has ${lexer_parse_errors} parse-error increments but only ${lexer_recorded_errors} nearby first-error recorders"
+    drift=1
+fi
+
 exit $drift

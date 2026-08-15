@@ -180,6 +180,34 @@ def main():
     check("unexpected-char → a diagnostic", bool(d))
     check("diagnostic names the character", bool(d) and "@" in d[0]["message"])
 
+    # --- #943: depth-limit lexer diagnostics retain the stderr detail ---
+    deep_fstring = "x is " + ("f\"{" * 65) + "x" + ("}\"" * 65)
+    r = converse([INIT, did_open(deep_fstring), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#943 f-string depth diagnostic includes the max-level detail",
+          any(x.get("message") ==
+              "syntax error: f-string nesting too deep (max 64 levels)"
+              for x in (d or [])))
+
+    late_depth_doc = "x is 1\n" + deep_fstring
+    r = converse([INIT, did_open(late_depth_doc), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#943 f-string depth diagnostic keeps its source line",
+          any(x.get("message") ==
+              "syntax error: f-string nesting too deep (max 64 levels)"
+              and x.get("range", {}).get("start", {}).get("line") == 1
+              for x in (d or [])))
+
+    deep_indent = ("".join(" " * level + "if true:\n"
+                           for level in range(64))
+                   + " " * 64 + "x is 1\n")
+    r = converse([INIT, did_open(deep_indent), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#943 indent depth diagnostic includes the max-level detail",
+          any(x.get("message") ==
+              "syntax error: indent too deep (max 64 levels)"
+              for x in (d or [])))
+
     # --- error on line 3 maps to 0-based line 2 ---
     r = converse([INIT, did_open("a is 1\nb is 2\nif b\n    print of a\n"), SHUTDOWN, EXIT])
     d = diagnostics(r)
@@ -580,10 +608,9 @@ def main():
     check("allow-file suppresses E003 in LSP diagnostics",
           not any(x.get("code") == "E003" for x in (d or [])))
 
-    # --- unterminated f-string: stale compile count must not become E004 ---
-    # The lexer increments g_parse_errors for this editing-in-progress buffer
-    # without recording a first-error line. It must not publish a positionless
-    # E004 compile error at the top of the document.
+    # --- unterminated f-string: publish the lexer syntax error, not E004 ---
+    # The lexer parse error is recorded so the editor receives the real
+    # position and message instead of a positionless compile-stage fallback.
     r = converse([INIT, did_open('x is f"abc'), SHUTDOWN, EXIT])
     d = diagnostics(r)
     check("#935 unterminated f-string has no positionless E004 compile error at line 0",
@@ -591,6 +618,56 @@ def main():
                   and x.get("message") == "compile error"
                   and x.get("range", {}).get("start", {}).get("line") == 0
                   and x.get("range", {}).get("start", {}).get("character") == 0
+                  for x in (d or [])))
+    check("#943 unterminated f-string publishes a syntax error at line 0",
+          any(x.get("severity") == 1
+              and x.get("message", "").startswith("syntax error:")
+              and x.get("range", {}).get("start", {}).get("line") == 0
+              for x in (d or [])))
+
+    # --- #943: an earlier newly-recorded lexer error pre-empts a later one ---
+    # This is an intentional behavior change: the line-1 `!` is the first
+    # error, so it is now published instead of the line-2 unterminated string.
+    r = converse([INIT, did_open('!\nx is "'), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#943 first lexer error wins over a later error",
+          any(x.get("code") == "E002"
+              and x.get("message") == "syntax error: expected '!=' after '!'"
+              and x.get("range", {}).get("start", {}).get("line") == 0
+              for x in (d or [])))
+
+    # Lexing runs over the whole document before parsing. A lexer error on a
+    # later source line must not displace a parser error on an earlier line.
+    r = converse([INIT, did_open("if true\n!\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#943 earliest source error beats a later lexer error",
+          any(x.get("code") == "E002"
+              and "expected ':'" in x.get("message", "")
+              and x.get("range", {}).get("start", {}).get("line") == 0
+              for x in (d or [])))
+
+    # #943: the first published diagnostic is earliest by source position,
+    # independent of whether lexing or parsing recorded it first. Lexer
+    # errors now carry their tracked source columns, so same-line candidates
+    # can be compared rather than falling back to phase order.
+    ordering_cases = (
+        ("lexer earlier line beats parser later line", "@\nif true\n",
+         "unexpected character '@'", 0, 0),
+        ("parser earlier line beats lexer later line", "if true\n@\n",
+         "expected ':'", 0, 7),
+        ("parser earlier column beats lexer later column", "if true x @",
+         "expected ':'", 0, 8),
+        ("lexer earlier column beats parser later column", "if true @ x",
+         "unexpected character '@'", 0, 8),
+    )
+    for label, source, message, line, character in ordering_cases:
+        r = converse([INIT, did_open(source), SHUTDOWN, EXIT])
+        d = diagnostics(r)
+        check("#943 source-position ordering: " + label,
+              any(x.get("code") == "E002"
+                  and message in x.get("message", "")
+                  and x.get("range", {}).get("start", {}).get("line") == line
+                  and x.get("range", {}).get("start", {}).get("character") == character
                   for x in (d or [])))
 
     # --- E004: parses but does not compile → compile-stage squiggle (#935) ---

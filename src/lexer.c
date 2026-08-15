@@ -206,7 +206,7 @@ const char* tok_base_string(TokType t) {
     return "";
 }
 
-TokenList tokenize(const char *source) {
+static TokenList tokenize_at_line(const char *source, int initial_line, int initial_col) {
     TokenList tl;
     tl.capacity = MAX_TOKENS;
     tl.tokens = xmalloc_array(tl.capacity, sizeof(Token));
@@ -225,8 +225,12 @@ TokenList tokenize(const char *source) {
 
     if (g_tokenize_depth >= MAX_TOKENIZE_DEPTH) {
         fprintf(stderr, "Error: f-string nesting too deep (max %d levels)\n", MAX_TOKENIZE_DEPTH);
+        char msg[64];
+        snprintf(msg, sizeof(msg), "f-string nesting too deep (max %d levels)",
+                 MAX_TOKENIZE_DEPTH);
+        eigs_record_first_error_at(initial_line, initial_col, 1, msg);
         g_parse_errors++;
-        tok_add(&tl, TOK_EOF, 0, NULL, 1, 0);
+        tok_add(&tl, TOK_EOF, 0, NULL, initial_line, initial_col);
         return tl;
     }
     g_tokenize_depth++;
@@ -236,8 +240,8 @@ TokenList tokenize(const char *source) {
     indent_stack[0] = 0;
 
     const char *p = source;
-    int line = 1;
-    int col = 0;
+    int line = initial_line;
+    int col = initial_col;
     int at_line_start = 1;
     int bracket_depth = 0;  /* inside [], {}, () — suppress newlines/indent */
 
@@ -267,6 +271,10 @@ TokenList tokenize(const char *source) {
             if (spaces > indent_stack[indent_top]) {
                 if (indent_top >= MAX_INDENT - 1) {
                     fprintf(stderr, "Syntax error line %d: indent too deep (max %d levels)\n", line, MAX_INDENT);
+                    char msg[64];
+                    snprintf(msg, sizeof(msg), "indent too deep (max %d levels)",
+                             MAX_INDENT);
+                    eigs_record_first_error_at(line, col, 1, msg);
                     g_parse_errors++;
                 } else {
                     indent_top++;
@@ -280,7 +288,8 @@ TokenList tokenize(const char *source) {
                 }
                 if (spaces != indent_stack[indent_top]) {
                     fprintf(stderr, "Syntax error line %d: indentation does not match any outer level\n", line);
-                    eigs_record_first_error(line, "indentation does not match any outer level");
+                    eigs_record_first_error_at(line, col, 1,
+                                               "indentation does not match any outer level");
                     g_parse_errors++;
                 }
             }
@@ -365,6 +374,7 @@ TokenList tokenize(const char *source) {
                     }
                     buf.len = 0;
                     buf.data[0] = '\0';
+                    int expr_col = col + 1;
                     p++; col++; /* skip { */
 
                     /* Emit: + (str of (expr)) */
@@ -411,11 +421,13 @@ TokenList tokenize(const char *source) {
                     if (*p == '}') { p++; col++; }
                     else {
                         fprintf(stderr, "Syntax error line %d: unterminated f-string expression\n", line);
+                        eigs_record_first_error_at(line, tok_col, 1,
+                                                   "unterminated f-string expression");
                         g_parse_errors++;
                     }
 
                     /* Tokenize the inner expression and splice tokens in */
-                    TokenList inner = tokenize(expr_buf.data);
+                    TokenList inner = tokenize_at_line(expr_buf.data, line, expr_col);
                     strbuf_free(&expr_buf);
                     for (int ti = 0; ti < inner.count; ti++) {
                         if (inner.tokens[ti].type == TOK_EOF) break;
@@ -451,6 +463,8 @@ TokenList tokenize(const char *source) {
             if (*p == '"') { p++; col++; }
             else {
                 fprintf(stderr, "Syntax error line %d: unterminated f-string\n", line);
+                eigs_record_first_error_at(line, tok_col, 1,
+                                           "unterminated f-string");
                 g_parse_errors++;
             }
             strbuf_free(&buf);
@@ -487,7 +501,8 @@ TokenList tokenize(const char *source) {
             if (*p == '"') { p++; col++; }
             else {
                 fprintf(stderr, "Syntax error line %d: unterminated string\n", line);
-                eigs_record_first_error(line, "unterminated string");
+                eigs_record_first_error_at(line, tok_col, 1,
+                                           "unterminated string");
                 g_parse_errors++;
             }
             tok_add(&tl, TOK_STR, 0, buf.data, line, tok_col);
@@ -601,6 +616,8 @@ TokenList tokenize(const char *source) {
                 if (*(p+1) == '=') { tok_add(&tl, TOK_NE, 0, NULL, line, tok_col); p += 2; col += 2; }
                 else {
                     fprintf(stderr, "Syntax error line %d: expected '!=' after '!'\n", line);
+                    eigs_record_first_error_at(line, tok_col, 1,
+                                               "expected '!=' after '!'");
                     g_parse_errors++; p++; col++;
                 }
                 break;
@@ -627,7 +644,7 @@ TokenList tokenize(const char *source) {
                 {
                     char m[64];
                     snprintf(m, sizeof(m), "unexpected character '%c'", *p);
-                    eigs_record_first_error(line, m);
+                    eigs_record_first_error_at(line, tok_col, 1, m);
                 }
                 fprintf(stderr, "Syntax error line %d: unexpected character '%c'\n", line, *p);
                 g_parse_errors++;
@@ -648,4 +665,8 @@ TokenList tokenize(const char *source) {
 
     g_tokenize_depth--;
     return tl;
+}
+
+TokenList tokenize(const char *source) {
+    return tokenize_at_line(source, 1, 0);
 }
