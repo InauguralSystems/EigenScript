@@ -970,9 +970,10 @@ require_minimum() {  # $1 = count
     return 0
 }
 
-# --- selftest: every planted fault shape must be caught, every clean shape
-# --- must pass, and the empty-audit assertions must bite. In-memory
-# --- streams only; the tree is never mutated.
+# --- selftest: both integration mutations must be planted and the aggregate
+# --- fault tree must be rejected, every clean shape must pass, and the empty-
+# --- audit assertions must bite. Synthetic streams stay in-memory; integration
+# --- mutations use a scratch archive, never the shipping tree.
 if [ "${1:-}" = "--selftest" ]; then
     st_fail=0
     st_work=$(mktemp -d /tmp/werror_selftest_XXXX)
@@ -985,6 +986,7 @@ if [ "${1:-}" = "--selftest" ]; then
     # stdout via a temp file instead of $(...). Streams go through
     # join_continuations first, exactly like the main path.
     st_out=$(mktemp /tmp/werror_switch_selftest_out_XXXX)
+    st_integration_out=$(mktemp /tmp/werror_switch_selftest_integration_XXXX)
     st_joined=$(mktemp /tmp/werror_switch_selftest_joined_XXXX)
     st_scratch=$(mktemp -d /tmp/werror_switch_selftest_tree_XXXX)
     # Every expansion is :-guarded. The script runs under `set -u`, so ONE
@@ -992,7 +994,7 @@ if [ "${1:-}" = "--selftest" ]; then
     # it leaks — verified: a trap whose first rm names an unset var leaves its
     # later `rm -rf` undone. Guarding is cheap; diagnosing a leak through a dead
     # trap is not.
-    trap 'rm -f "${st_out:-}" "${st_joined:-}" 2>/dev/null; rm -rf -- "${st_scratch:-/nonexistent}" "${st_work:-/nonexistent}" 2>/dev/null' EXIT
+    trap 'rm -f "${st_out:-}" "${st_integration_out:-}" "${st_joined:-}" 2>/dev/null; rm -rf -- "${st_scratch:-/nonexistent}" "${st_work:-/nonexistent}" 2>/dev/null' EXIT
 
     # TARGET_BATCHES must cover TARGETS exactly.  Omitting a target is a hard
     # failure naming the missing target, rather than a silently smaller gate.
@@ -1052,50 +1054,115 @@ if [ "${1:-}" = "--selftest" ]; then
         cp tools/gen_lsp_builtin_index.sh "$root/tools/gen_lsp_builtin_index.sh"
     }
 
-    # Generated-header family: a fault in the builtin generator must make the
-    # gate fail, just like the public-header control fault does. This is an
-    # integration assertion, not a direct compiler-only probe: it catches a
-    # missing generated-header consumer in the gate itself.
-    st_builtin_tree="$st_scratch/builtin"
-    prepare_fault_tree "$st_builtin_tree"
+    # Generated-header family: prove that the planted generator source really
+    # emits the nested-comment fault, then run the one shared gate over the
+    # same tree that also carries the quoted compiler-variable fault.
+    #
+    # Both integration mutations share one archived tree so the full gate only
+    # runs once. A nonzero result from that gate is deliberately an aggregate
+    # assertion; this self-test does not attribute it to either mutation.
+    st_fault_tree="$st_scratch/faults"
+    prepare_fault_tree "$st_fault_tree"
+    st_builtin_header="$st_fault_tree/lsp_builtin_index.h"
+    st_builtin_generator_out="$st_work/lsp_builtin_generator.out"
     sed 's|ext_names.h; hover text|lib/*.eigs; hover text|' \
-        "$st_builtin_tree/tools/gen_lsp_builtin_index.sh" \
-        > "$st_builtin_tree/tools/gen_lsp_builtin_index.sh.planted"
-    mv "$st_builtin_tree/tools/gen_lsp_builtin_index.sh.planted" \
-        "$st_builtin_tree/tools/gen_lsp_builtin_index.sh"
+        "$st_fault_tree/tools/gen_lsp_builtin_index.sh" \
+        > "$st_fault_tree/tools/gen_lsp_builtin_index.sh.planted"
+    # Redirection creates a fresh 0644 file. Restore the tracked generator's
+    # executable mode before replacing it; `chmod +x` is portable on Linux and
+    # macOS, unlike GNU-only `chmod --reference`.
+    chmod +x "$st_fault_tree/tools/gen_lsp_builtin_index.sh.planted"
+    mv "$st_fault_tree/tools/gen_lsp_builtin_index.sh.planted" \
+        "$st_fault_tree/tools/gen_lsp_builtin_index.sh"
     if ! grep -qF 'Names come from the registration seams + lib/*.eigs; hover text' \
-        "$st_builtin_tree/tools/gen_lsp_builtin_index.sh"; then
+        "$st_fault_tree/tools/gen_lsp_builtin_index.sh"; then
         echo "SELFTEST FAILED: builtin-generator mutation was not planted"
-        st_fail=1
-    elif bash "$st_builtin_tree/tools/werror_switch_check.sh" > "$st_out" 2>&1; then
-        echo "SELFTEST FAILED: builtin-generated nested comment was accepted"
-        sed 's/^/    /' "$st_out"
-        st_fail=1
-    elif ! grep -qF 'lsp_builtin_index' "$st_out"; then
-        echo "SELFTEST FAILED: builtin-generated rejection did not identify the generated header"
-        sed 's/^/    /' "$st_out"
         st_fail=1
     fi
 
     # Compiler-variable spelling: retain the other bare $CC calls so the
     # script audit has a nonzero count, then hide one real compile behind the
     # ordinary quoted/braced spelling and remove only its comment flag.
-    st_parser_tree="$st_scratch/parser"
-    prepare_fault_tree "$st_parser_tree"
     sed 's|^    \$CC -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment|    "${CC}" -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch|' \
-        "$st_parser_tree/build.sh" > "$st_parser_tree/build.sh.planted"
-    mv "$st_parser_tree/build.sh.planted" "$st_parser_tree/build.sh"
+        "$st_fault_tree/build.sh" > "$st_fault_tree/build.sh.planted"
+    # This planting also rewrites an executable tracked file via redirection;
+    # keep its mode intact for the nested script audit.
+    chmod +x "$st_fault_tree/build.sh.planted"
+    mv "$st_fault_tree/build.sh.planted" "$st_fault_tree/build.sh"
     if ! grep -qF '"${CC}" -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -O2' \
-        "$st_parser_tree/build.sh"; then
+        "$st_fault_tree/build.sh"; then
         echo "SELFTEST FAILED: quoted/braced compiler mutation was not planted"
         st_fail=1
-    elif bash "$st_parser_tree/tools/werror_switch_check.sh" > "$st_out" 2>&1; then
-        echo "SELFTEST FAILED: quoted/braced compiler invocation was accepted"
-        sed 's/^/    /' "$st_out"
+    fi
+
+    # Generate the header from the planted generator and inspect the planted
+    # file itself. The `lib/*.eigs` sentinel contains the nested `/*` sequence
+    # inside the generated block comment; no compiler diagnostic is consulted.
+    if ( cd "$st_fault_tree" &&
+         tools/gen_lsp_builtin_index.sh "$st_builtin_header" ) \
+         > "$st_builtin_generator_out" 2>&1; then
+        :
+    else
+        echo "SELFTEST FAILED: planted builtin generator did not complete"
+        sed 's/^/    /' "$st_builtin_generator_out"
         st_fail=1
-    elif ! grep -qF '"${CC}"' "$st_out"; then
+    fi
+    if ! grep -qF 'Names come from the registration seams + lib/*.eigs; hover text' \
+        "$st_builtin_header" 2>/dev/null; then
+        echo "SELFTEST FAILED: planted generated header did not contain nested-comment sentinel"
+        if [ -f "$st_builtin_header" ]; then
+            sed 's/^/    /' "$st_builtin_header"
+        fi
+        st_fail=1
+    fi
+
+    # Non-vacuous unrelated-error control: a supported-CC-shaped producer may
+    # mention the planted header while reporting unrelated failures. Keep its
+    # fixture output separate and require every line before accepting the
+    # control; this output is not evidence about either planted mutation.
+    st_unrelated_cc="$st_work/unrelated-compiler-wrapper"
+    st_unrelated_compiler_err="$st_work/lsp_builtin_unrelated_compiler.err"
+    cat > "$st_unrelated_cc" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$EIG923_BUILTIN_HEADER:1: note: wrapper recorded the forced-include input"
+printf '%s\n' "$EIG923_BUILTIN_HEADER:7:3: error: unrelated documentation failure [-Wdocumentation-comments]"
+printf '%s\n' 'src/main.c:1: fatal error: unrelated compiler-wrapper failure'
+exit 1
+EOF
+    chmod +x "$st_unrelated_cc"
+    if (
+        cd "$st_fault_tree" || exit 1
+        EIG923_BUILTIN_HEADER="$st_builtin_header" "$st_unrelated_cc" \
+            -Werror=comment -fsyntax-only -include "$st_builtin_header" src/main.c
+    ) > "$st_unrelated_compiler_err" 2>&1; then
+        echo "SELFTEST FAILED: unrelated compiler control unexpectedly succeeded"
+        st_fail=1
+    else
+        st_unrelated_compiler_status=$?
+        st_unrelated_expected_note="$st_builtin_header:1: note: wrapper recorded the forced-include input"
+        st_unrelated_expected_header_error="$st_builtin_header:7:3: error: unrelated documentation failure [-Wdocumentation-comments]"
+        st_unrelated_expected_error='src/main.c:1: fatal error: unrelated compiler-wrapper failure'
+        if [ "$st_unrelated_compiler_status" -eq 0 ] || \
+           ! grep -qF "$st_unrelated_expected_note" "$st_unrelated_compiler_err" || \
+           ! grep -qF "$st_unrelated_expected_header_error" "$st_unrelated_compiler_err" || \
+           ! grep -qF "$st_unrelated_expected_error" "$st_unrelated_compiler_err"; then
+            echo "SELFTEST FAILED: unrelated compiler control fixture did not emit its expected diagnostics"
+            sed 's/^/    /' "$st_unrelated_compiler_err"
+            st_fail=1
+        fi
+    fi
+
+    # With an arbitrary `CC`, the self-test cannot authenticate which input
+    # caused a rejection. It proves only that both mutations are planted and
+    # that the one shared nested gate rejects the aggregate fault tree.
+    if bash "$st_fault_tree/tools/werror_switch_check.sh" > "$st_integration_out" 2>&1; then
+        echo "SELFTEST FAILED: shared nested gate accepted the aggregate fault tree"
+        sed 's/^/    /' "$st_integration_out"
+        st_fail=1
+    fi
+    if ! grep -qF '"${CC}"' "$st_integration_out"; then
         echo "SELFTEST FAILED: quoted/braced rejection did not identify the compiler invocation"
-        sed 's/^/    /' "$st_out"
+        sed 's/^/    /' "$st_integration_out"
         st_fail=1
     fi
 
@@ -1515,7 +1582,7 @@ a_target_with_no_floor 40
     if [ "$st_fail" -ne 0 ]; then
         exit 1
     fi
-    echo "SELFTEST OK: all planted fault shapes caught (incl. target-batch divergence, two-invocation blocks, switch-enum, zero-line targets, partial per-target coverage loss, unpinned targets), clean shapes pass, floors bite in BOTH directions, unenrolled compile surfaces are caught"
+    echo "SELFTEST OK: both integration mutations planted and aggregate fault tree rejected, synthetic fault shapes caught (incl. target-batch divergence, two-invocation blocks, switch-enum, zero-line targets, partial per-target coverage loss, unpinned targets), clean shapes pass, floors bite in BOTH directions, unenrolled compile surfaces are caught"
     exit 0
 fi
 
@@ -1608,10 +1675,10 @@ if [ "$VIOLATIONS" -gt 0 ]; then
 fi
 
 # The flag-coverage audit proves that every compile line is armed; these
-# one-file probes prove the public header and both generated LSP indexes are
-# clean under the newly required comment warning. Keeping the probes here
-# makes a planted nested comment fail this same gate in a scratch copy,
-# rather than letting a flag-presence-only audit pass vacuously.
+# one-file probes check the configured producer's result for the public header
+# and both generated LSP indexes under the newly required comment warning.
+# Keeping the probes here adds a producer check beyond the flag-presence audit,
+# which would otherwise pass without checking the generated headers.
 CC_BIN="${CC:-gcc}"
 probe_dir=$(mktemp -d /tmp/eigenscript_werror_headers_XXXXXX)
 trap 'rm -rf -- "$probe_dir"' EXIT
@@ -1622,7 +1689,7 @@ probe_generated_header() {
         return 1
     fi
     if ! "$CC_BIN" -Werror=comment -fsyntax-only -include "$output" src/main.c; then
-        echo "werror comment gate FAILED: generated $label LSP header emits -Wcomment"
+        echo "werror comment gate FAILED: configured producer returned nonzero for generated $label LSP header under -Werror=comment"
         return 1
     fi
 }
