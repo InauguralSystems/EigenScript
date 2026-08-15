@@ -133,11 +133,15 @@ semantics.)
 The runtime also classifies each value's trajectory, so a value can tell
 you when it has settled instead of you writing epsilon checks by hand:
 
-```eigenscript
+```eigenscript check
 loss is 50.0
 loop while not converged:     # exits on its own once loss settles
     loss is loss * 0.5
-report of loss                # "converged"  (after 25 steps, loss ~ 1.5e-06)
+print of (report of loss)          # "converged"  (after 25 steps, loss ~ 1.5e-06)
+```
+
+```output
+converged
 ```
 
 ```eigenscript

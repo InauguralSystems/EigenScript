@@ -2,14 +2,18 @@
 # Doc-example checker: every ```eigenscript block in the given Markdown
 # files that is immediately followed by an ```output block is executed,
 # and its stdout must match the output block EXACTLY (trailing whitespace
-# stripped per line). This is what keeps docs/SPEC.md and
-# docs/COMPARISON.md from drifting away from the implementation: a
-# semantics change that isn't reflected in the spec fails the suite.
+# stripped per line). This is what keeps docs/SPEC.md, docs/COMPARISON.md,
+# and the marked README.md examples from drifting away from the
+# implementation: a semantics change that isn't reflected in the docs
+# fails the suite.
 #
 # Conventions:
 #   ```eigenscript        runnable; checked against the next ```output
 #   ```eigenscript skip   runnable syntax but deliberately not executed
 #                         (nondeterministic, needs network, etc.)
+#   ```eigenscript check  runnable root README.md example; checked against the
+#                         next ```output (unmarked README snippets are
+#                         illustrative and ignored)
 #   ```output             expected stdout of the preceding block
 #   fragments that aren't full programs use a plain ``` fence
 #
@@ -59,11 +63,16 @@ def main():
     listing = "--list" in sys.argv
 
     for path in args:
+        is_readme = (os.path.realpath(path) ==
+                     os.path.realpath(os.path.join(ROOT, "README.md")))
         pending = None  # (lineno, code) awaiting an output block
         for lineno, info, arg, text in blocks(path):
             if info == "eigenscript":
                 if arg == "skip":
                     SKIP += 1
+                    pending = None
+                    continue
+                if is_readme and arg != "check":
                     pending = None
                     continue
                 pending = (lineno, text)
@@ -117,8 +126,12 @@ def main():
                 pending = None
 
     print("")
-    print("Doc examples: %d passed, %d failed, %d skipped" % (PASS, FAIL, SKIP))
-    return 1 if FAIL else 0
+    checked = PASS + FAIL
+    print("Doc examples: %d checked, %d passed, %d failed, %d skipped" %
+          (checked, PASS, FAIL, SKIP))
+    if listing:
+        return 0
+    return 1 if FAIL or checked == 0 else 0
 
 
 if __name__ == "__main__":
