@@ -790,9 +790,10 @@ static void send_diagnostics(Document *doc) {
             Env *cenv = env_new(NULL);
             register_builtins(cenv);
             g_compile_module_slots = 1;
+            int errors_before = g_parse_errors;
             EigsChunk *chunk = compile_ast(doc->ast, cenv, doc->text);
             g_compile_module_slots = 0;
-            compile_errors = g_parse_errors;
+            compile_errors = g_parse_errors - errors_before;
             chunk_free(chunk);
             env_decref(cenv);
         }

@@ -580,6 +580,19 @@ def main():
     check("allow-file suppresses E003 in LSP diagnostics",
           not any(x.get("code") == "E003" for x in (d or [])))
 
+    # --- unterminated f-string: stale compile count must not become E004 ---
+    # The lexer increments g_parse_errors for this editing-in-progress buffer
+    # without recording a first-error line. It must not publish a positionless
+    # E004 compile error at the top of the document.
+    r = converse([INIT, did_open('x is f"abc'), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#935 unterminated f-string has no positionless E004 compile error at line 0",
+          not any(x.get("code") == "E004"
+                  and x.get("message") == "compile error"
+                  and x.get("range", {}).get("start", {}).get("line") == 0
+                  and x.get("range", {}).get("start", {}).get("character") == 0
+                  for x in (d or [])))
+
     # --- E004: parses but does not compile → compile-stage squiggle (#935) ---
     # `break` outside a loop PARSES, so the old code published an empty
     # diagnostics array while the CLI reported the compile error.
