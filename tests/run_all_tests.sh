@@ -3489,6 +3489,11 @@ check_eigs_suite "vm_run_bytecode + sandbox (self-hosting bridge)" test_vm_run_b
 # reaching the summary IS the assertion, and under ASan a stray read is a
 # nonzero exit.
 check_eigs_suite "assembled-chunk stack/env underflow (verifier pass 4)" test_chunk_verify_stack.eigs "All tests passed" 19
+# DoS gate (#940): an assembled bare JUMP_BACK owes nobody a cap check, so the
+# sandbox loop budget trips at the back edge itself. Pre-fix this file never
+# terminates — what fails it without the fix is the EIGS_TEST_TIMEOUT runaway
+# guard (rc=124), not an assertion.
+check_eigs_suite "sandbox back-edge loop cap (assembled bare JUMP_BACK)" test_sandbox_backedge_cap.eigs "All tests passed" 6
 check_eigs_suite "sandbox fail-closed allowlist (no host-global escape)" test_sandbox_allow.eigs "SANDBOX_ALLOW_OK" 1
 check_eigs_suite "JIT and/or heap-operand decref (no per-iteration leak)" test_jit_andor_leak.eigs "jit-and-or-ok" 1
 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1

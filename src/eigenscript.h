@@ -691,6 +691,17 @@ struct EigsThread {
     int                  loop_stall_count;
     long long            loop_iterations;   /* #772: uncapped frames exceed int range */
     const char          *loop_exit_reason;
+    /* #940: the sandbox loop budget's SECOND counter, crossed at every
+     * OP_JUMP_BACK while a sandbox budget is armed (g_sandbox_loop_max != 0).
+     * Deliberately NOT loop_iterations: a compiler-emitted loop crosses both
+     * a cap check and a back edge per iteration, so one shared counter would
+     * halve the documented max_iterations (#772). Two counters against one
+     * budget — compiler output trips at the cap check at exactly the
+     * documented max, an assembled chunk (which owes nobody a cap check)
+     * trips here. Scoped per sandbox_run, NOT per call frame (builtins.c
+     * saves/restores it next to saved_iters): a budget on untrusted code
+     * must not reset because the chunk called a function. */
+    long long            loop_backedge_count;
     /* #539 v2: next frame-instance serial — incremented at every frame
      * push, stamped into CallFrame.call_serial. Per-thread, never reset
      * (wrap at 2^32 is fine: adjacent frames never collide). */
@@ -825,6 +836,7 @@ extern __thread EigsThread *eigs_current;
 #define g_vm                  (*eigs_current->vm)
 #define g_loop_stall_count    (eigs_current->loop_stall_count)
 #define g_loop_iterations     (eigs_current->loop_iterations)
+#define g_loop_backedge_count (eigs_current->loop_backedge_count)
 #define g_loop_exit_reason    (eigs_current->loop_exit_reason)
 #define g_call_serial_next    (eigs_current->call_serial_next)
 #define g_jit_cache           (eigs_current->jit_cache)

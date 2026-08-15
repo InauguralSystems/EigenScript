@@ -2649,8 +2649,10 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
      * with parallel workers running the same chunk. #408: also skip while a
      * cooperative task scheduler is active — task code runs interpreted so a
      * JIT thunk never runs mid-suspend (the "non-JIT suspending code" ruling,
-     * coarsened for v1: V8 shipped un-optimized generators for years). */
-    if (!g_vm_multithreaded && !g_task_sched) {
+     * coarsened for v1: V8 shipped un-optimized generators for years).
+     * #940: nor inside sandbox_run — sandboxed code runs interpreted;
+     * JIT-compiling attacker-controlled bytecode is attack surface. */
+    if (!g_vm_multithreaded && !g_task_sched && !g_sandbox_active) {
         chunk->exec_count++;
         jit_register_chunk(chunk);
     }
@@ -3435,6 +3437,34 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             rt_error(EK_INTERRUPT, current_line, "aborted");
             DISPATCH();
         }
+        /* #940: the sandbox loop budget is enforced at the back edge
+         * itself, not only at OP_LOOP_CAP_CHECK / OP_LOOP_STALL_CHECK —
+         * those are emitted by the compiler, and an ASSEMBLED chunk owes
+         * nobody a cap check, so a bare back edge crossed no budget at
+         * all and spun past max_iterations forever (DoS). A second
+         * counter, not g_loop_iterations: a compiler-emitted loop crosses
+         * BOTH a cap check and a back edge per iteration, so one shared
+         * counter would halve the documented max_iterations and break
+         * #772's semantics. Two counters against one budget, whichever
+         * trips first — compiler output trips at the cap check at exactly
+         * the documented max; assembled chunks trip here. Armed exactly
+         * inside sandbox_run (builtins.c sets g_sandbox_loop_max
+         * unconditionally), so outside the sandbox this is a load+test
+         * adjacent to the abort poll above. Saved/restored at the sandbox
+         * boundary only, never per call frame — or a chunk would reset
+         * its own budget by calling a function. There is no graceful exit
+         * here: a bare back edge has no compiler-emitted exit offset, so
+         * the trip raises like the abort above and unwinds through
+         * CHECK_ERROR. */
+        if (g_sandbox_loop_max) {
+            g_loop_backedge_count++;
+            if (g_loop_backedge_count >= g_sandbox_loop_max) {
+                rt_error(EK_SANDBOX, current_line,
+                         "sandbox loop budget exceeded (%d back-edge iterations)",
+                         g_sandbox_loop_max);
+                DISPATCH();
+            }
+        }
         /* Hotness signal: this is the back-edge of every while/for body.
          * Tracking iterations here lets jit_try_compile_chunk gate on
          * "chunk that loops a lot" in addition to "chunk that's called
@@ -3454,8 +3484,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * later call site — state corruption after ~OSR-threshold
          * iterations (first seen as liferaft node tasks dying en masse).
          * #873: nor inside an open arena window — thunk stores don't
-         * arena-promote (see the fresh-entry gate). */
-        if (!g_vm_multithreaded && !g_task_sched && !g_arena.active) {
+         * arena-promote (see the fresh-entry gate).
+         * #940: nor inside sandbox_run — sandboxed code runs interpreted. */
+        if (!g_vm_multithreaded && !g_task_sched && !g_arena.active &&
+            !g_sandbox_active) {
         chunk->back_edge_count++;
 
         /* OSR trigger. For "called once, loops a lot" chunks (the gauntlet
@@ -3810,7 +3842,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * the caller's stack. Resync to the (now-current) caller
              * frame or, if we've fallen below base_frame, hand the
              * result back to C. */
-            if (fn_chunk->jit_state == 0 && !g_vm_multithreaded && !g_task_sched)
+            if (fn_chunk->jit_state == 0 && !g_vm_multithreaded && !g_task_sched &&
+                !g_sandbox_active)
                 jit_try_compile_chunk(fn_chunk);
             /* #533: never enter a thunk while the task scheduler is active,
              * even one compiled before the first spawn — task code runs
@@ -3826,9 +3859,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * Workers interpret shared chunks instead, matching the OSR
              * gate at CASE(JUMP_BACK). */
             /* #873: nor inside an open arena window — emitted stores
-             * don't arena-promote; arena scopes run interpreted. */
+             * don't arena-promote; arena scopes run interpreted.
+             * #940: nor inside sandbox_run — sandboxed code runs
+             * interpreted; JIT-compiling attacker-controlled bytecode is
+             * attack surface (and removes any "the native tier disagrees
+             * with the interpreter's guard on attacker-supplied bytecode"
+             * class). */
             if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched &&
-                !g_arena.active) {
+                !g_arena.active && !g_sandbox_active) {
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
                     /* jit_helper_return popped fn_chunk's frame but left
@@ -5854,10 +5892,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
             /* JIT hook (mirror of OP_CALL bytecode-fn path; #533 task gate,
              * #728 MT gate — see the OP_CALL hook). */
-            if (fn_chunk->jit_state == 0 && !g_vm_multithreaded && !g_task_sched)
+            if (fn_chunk->jit_state == 0 && !g_vm_multithreaded && !g_task_sched &&
+                !g_sandbox_active)
                 jit_try_compile_chunk(fn_chunk);
             if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched &&
-                !g_arena.active) {   /* #873: see the OP_CALL hook */
+                !g_arena.active && !g_sandbox_active) {   /* #873, #940: see the OP_CALL hook */
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
                     /* Stage 4s: OP_RETURN sentinel — see OP_CALL hook.
