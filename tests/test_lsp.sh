@@ -11,12 +11,13 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 LSP="$ROOT/src/eigenlsp"
-if [ ! -x "$LSP" ]; then
-    ( cd "$ROOT" && make lsp ) >/dev/null 2>&1
-fi
-if [ ! -x "$LSP" ]; then
-    echo "  SKIP: eigenlsp not built — LSP tests skipped"
-    exit 0
-fi
+# Presence is not freshness: `make` does not build eigenlsp, so this section
+# could drive a binary from an earlier tree. See tests/aux_binary.sh.
+. "$TESTS_DIR/aux_binary.sh"
+aux_binary_fresh "$LSP" lsp eigenlsp LSP
+case $? in
+    2) exit 0 ;;
+    1) exit 1 ;;
+esac
 
 EIGENLSP="$LSP" python3 "$TESTS_DIR/test_lsp.py"

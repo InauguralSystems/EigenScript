@@ -17,3 +17,20 @@ paths:
 - Adding a doc example? `tests/test_doc_examples.py` runs `docs/SPEC.md` and
   `docs/COMPARISON.md` example/output pairs byte-for-byte (suite [89]/[90]).
   The always-on rule in CLAUDE.md is the merge gate; this is where it lands.
+- **`make` does NOT build `src/eigenlsp` or `src/eigsdap`** — only `make lsp`
+  and `make dap` do, so the documented local loop (`make && cd tests &&
+  ./run_all_tests.sh`) can drive an auxiliary binary from an *earlier tree*
+  against tests from the current one. Sections [88] and [126] now gate on
+  `make -q <target>` through `tests/aux_binary.sh`, rebuild when the target is
+  out of date, and refuse to run if it is still out of date afterwards; the
+  `NOTE: … rebuilding` line is surfaced even on a green run. Bought twice —
+  #825 (a version-skewed eigsdap made the #411 tape gate refuse every tape and
+  18 downstream failures blamed DAP behaviour) and 2026-08-15 (an eigenlsp one
+  day old failed exactly the five new #935 assertions while clearing the
+  #942/#944/#947 queue, costing a full extra suite run to exonerate the code).
+  Do **not** substitute a `--version` comparison: both binaries read `0.39.0`
+  while their sources differed by a day. Do not substitute an mtime glob over
+  `src/*.[ch]` either — that misses `src/freestanding/*.h`, the Makefile, and
+  every generated header. Ask the build system.
+  The expensive direction is not the phantom failure but the phantom **pass**:
+  a stale binary predating a regression reports its whole section green.
