@@ -569,7 +569,17 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
  * is precisely the hole this pass exists to close. Keep it in lockstep with the
  * handler in vm.c; run_all_tests.sh runs the C compiler's own output through
  * this pass over the whole suite (EIGS_VERIFY_SELF=1), so a row that drifts in
- * either direction fails there. */
+ * either direction fails there.
+ *
+ * compiler.c has a NET-DELTA twin (its own op_stack_effect, sizing max_stack
+ * during compilation). It is not interchangeable with this one — it carries no
+ * `need` and no control flow, which is the entire content of a safety check —
+ * but the two must agree where they overlap: for every opcode, that function's
+ * delta is this one's pushes - pops on the fall-through edge. Keep the names
+ * distinct: the embed/LSP builds amalgamate every source into ONE translation
+ * unit (build/eigenscript_all.c), so two file-static functions sharing a name
+ * is a build error there and nowhere else — CI's embed-smoke is the only gate
+ * that sees it. */
 typedef enum {
     FL_NEXT,     /* falls through only */
     FL_BRANCH,   /* falls through OR takes the jump operand */
@@ -581,7 +591,7 @@ typedef struct { int need, pops, pushes, bpushes; VerifyFlow flow; } StackEffect
 
 /* operand0 is the instruction's first 16-bit operand (0 when it has none) —
  * argc/count/n for the variable-arity opcodes. */
-static StackEffect op_stack_effect(uint8_t op8, int operand0) {
+static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
     /* need, pops, pushes */
     #define EFF(n_, p_, u_)        ((StackEffect){ (n_), (p_), (u_), 0, FL_NEXT })
     /* need, pops, pushes on fall-through, pushes on the branch edge */
@@ -843,7 +853,7 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
                     else if (roles[k] == VR_JBACK) target = end - operand;
                 }
             }
-            StackEffect e = op_stack_effect(op, operand0);
+            StackEffect e = op_verify_stack_effect(op, operand0);
             if (h < e.need) {   /* underflow — the whole point */
                 WHY("opcode %d at offset %d needs %d operand(s), stack height %d",
                     (int)op, off, e.need, h);
