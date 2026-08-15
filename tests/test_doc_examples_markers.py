@@ -26,21 +26,28 @@ print("unmarked-ran" if "unmarked" in code else "marked")
 
 class DocExampleMarkerTests(unittest.TestCase):
     def run_checker(self, markdown, *flags):
+        return self.run_checker_files({"README.md": markdown}, *flags)
+
+    def run_checker_files(self, documents, *flags):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory) / "workspace"
             tests = directory / "tests"
             tests.mkdir(parents=True)
             checker = tests / "test_doc_examples.py"
             checker.write_text(CHECKER.read_text())
-            doc = directory / "README.md"
-            doc.write_text(textwrap.dedent(markdown))
+            paths = []
+            for relative_path, markdown in documents.items():
+                doc = directory / relative_path
+                doc.parent.mkdir(parents=True, exist_ok=True)
+                doc.write_text(textwrap.dedent(markdown))
+                paths.append(str(doc))
             eigenscript = directory / "eigenscript"
             eigenscript.write_text(FAKE_EIGENSCRIPT)
             eigenscript.chmod(eigenscript.stat().st_mode | stat.S_IXUSR)
             env = os.environ.copy()
             env["EIGENSCRIPT"] = str(eigenscript)
             return subprocess.run(
-                [sys.executable, str(checker), *flags, str(doc)],
+                [sys.executable, str(checker), *flags, *paths],
                 env=env,
                 capture_output=True,
                 text=True,
@@ -99,6 +106,55 @@ class DocExampleMarkerTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("would run: ", result.stdout)
+
+    def test_unpaired_check_marker_fails_with_its_file_and_line(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            marked
+            ```
+            """
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r"FAIL: .*README\.md:2 .*unpaired")
+        self.assertIn("Doc examples: 0 checked, 0 passed, 0 failed, 0 skipped",
+                      result.stdout)
+
+    def test_zero_readme_markers_fail_with_passing_legacy_docs(self):
+        result = self.run_checker_files(
+            {
+                "docs/SPEC.md":
+                    """
+                    ```eigenscript
+                    legacy-spec
+                    ```
+                    ```output
+                    marked
+                    ```
+                    """,
+                "docs/COMPARISON.md":
+                    """
+                    ```eigenscript
+                    legacy-comparison
+                    ```
+                    ```output
+                    marked
+                    ```
+                    """,
+                "README.md":
+                    """
+                    ```eigenscript
+                    unmarked
+                    ```
+                    ```output
+                    ignored
+                    ```
+                    """,
+            }
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("README.md", result.stdout)
+        self.assertIn("0 checked", result.stdout)
 
 
 if __name__ == "__main__":

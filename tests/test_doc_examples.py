@@ -2,10 +2,11 @@
 # Doc-example checker: every ```eigenscript block in the given Markdown
 # files that is immediately followed by an ```output block is executed,
 # and its stdout must match the output block EXACTLY (trailing whitespace
-# stripped per line). This is what keeps docs/SPEC.md, docs/COMPARISON.md,
-# and the marked README.md examples from drifting away from the
-# implementation: a semantics change that isn't reflected in the docs
-# fails the suite.
+# stripped per line). A marked README block without a paired output block is
+# an error; legacy docs may still contain illustrative unpaired fragments.
+# This is what keeps docs/SPEC.md, docs/COMPARISON.md, and the marked README.md
+# examples from drifting away from the implementation: a semantics change
+# that isn't reflected in the docs fails the suite.
 #
 # Conventions:
 #   ```eigenscript        runnable; checked against the next ```output
@@ -31,6 +32,7 @@ EIGS = os.environ.get("EIGENSCRIPT", os.path.join(ROOT, "src", "eigenscript"))
 PASS = 0
 FAIL = 0
 SKIP = 0
+ORPHAN = 0
 
 FENCE = re.compile(r"^```(\S*)\s*(\S*)\s*$")
 
@@ -57,28 +59,49 @@ def norm(s):
     return "\n".join(line.rstrip() for line in s.rstrip("\n").split("\n"))
 
 
+def report_orphan(path, pending):
+    global ORPHAN
+    code_line, _ = pending
+    ORPHAN += 1
+    print("  FAIL: %s:%d (unpaired eigenscript block; no output block)" %
+          (path, code_line))
+
+
 def main():
     global PASS, FAIL, SKIP
     args = [a for a in sys.argv[1:] if a != "--list"]
     listing = "--list" in sys.argv
+    coverage_failed = False
 
     for path in args:
         is_readme = (os.path.realpath(path) ==
                      os.path.realpath(os.path.join(ROOT, "README.md")))
         pending = None  # (lineno, code) awaiting an output block
+        pending_requires_output = False
+        readme_checked = 0
         for lineno, info, arg, text in blocks(path):
             if info == "eigenscript":
+                if pending is not None and pending_requires_output:
+                    report_orphan(path, pending)
                 if arg == "skip":
                     SKIP += 1
                     pending = None
+                    pending_requires_output = False
                     continue
                 if is_readme and arg != "check":
                     pending = None
+                    pending_requires_output = False
                     continue
                 pending = (lineno, text)
-            elif info == "output" and pending is not None:
+                pending_requires_output = is_readme and arg == "check"
+            elif info == "output":
+                if pending is None:
+                    continue
                 code_line, code = pending
                 pending = None
+                pending_requires_output = False
+                if is_readme:
+                    readme_checked += 1
                 if listing:
                     print("would run: %s:%d" % (path, code_line))
                     continue
@@ -123,7 +146,16 @@ def main():
                 finally:
                     os.unlink(tmp)
             else:
+                if pending is not None and pending_requires_output:
+                    report_orphan(path, pending)
                 pending = None
+                pending_requires_output = False
+
+        if pending is not None and pending_requires_output:
+            report_orphan(path, pending)
+        if is_readme and not listing and readme_checked == 0:
+            coverage_failed = True
+            print("  FAIL: %s (README has 0 checked examples)" % path)
 
     print("")
     checked = PASS + FAIL
@@ -131,7 +163,7 @@ def main():
           (checked, PASS, FAIL, SKIP))
     if listing:
         return 0
-    return 1 if FAIL or checked == 0 else 0
+    return 1 if FAIL or ORPHAN or coverage_failed or checked == 0 else 0
 
 
 if __name__ == "__main__":
