@@ -580,6 +580,28 @@ def main():
     check("allow-file suppresses E003 in LSP diagnostics",
           not any(x.get("code") == "E003" for x in (d or [])))
 
+    # --- E004: parses but does not compile → compile-stage squiggle (#935) ---
+    # `break` outside a loop PARSES, so the old code published an empty
+    # diagnostics array while the CLI reported the compile error.
+    r = converse([INIT, did_open("break\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#935 'break' outside a loop publishes a non-empty diagnostics array",
+          bool(d))
+    e4 = next((x for x in (d or []) if x.get("code") == "E004"), None)
+    check("#935 compile error surfaces as an E004 diagnostic", e4 is not None)
+    check("#935 E004 names the compile error",
+          bool(e4) and "'break' outside a loop" in e4.get("message", ""))
+    check("#935 E004 severity is error (1)",
+          bool(e4) and e4.get("severity") == 1)
+    check("#935 E004 is on the offending line (0-based line 0)",
+          bool(e4) and e4["range"]["start"]["line"] == 0)
+
+    # --- negative: a document that compiles cleanly publishes no E004 ---
+    r = converse([INIT, did_open("loop while true:\n    break\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#935 clean compile publishes no spurious E004",
+          not any(x.get("code") == "E004" for x in (d or [])))
+
     # --- codeAction offers a quickfix for the W001 diagnostic ---
     ca = {"jsonrpc": "2.0", "id": 11, "method": "textDocument/codeAction",
           "params": {"textDocument": {"uri": URI},

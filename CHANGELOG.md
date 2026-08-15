@@ -106,6 +106,23 @@ All notable changes to EigenScript are documented here.
   lint still never runs the program, and a file that does compile lints exactly
   as before.
 
+- **The language server no longer swallows compile-stage errors (#935).** A
+  document that parsed but did not compile published an empty diagnostics
+  array — the editor showed no squiggle while the CLI refused the same source:
+
+  ```
+  $ eigenscript loop_free.eigs
+  Compile error line 1: 'break' outside a loop
+  ```
+
+  versus `publishDiagnostics: {"diagnostics": []}` from `eigenlsp`. The
+  parse-OK arm of `send_diagnostics` ran only `lint_collect`; it now also
+  compiles the unit and throws the chunk away, exactly as `--lint` does for
+  #927, so every compile-stage error — `break` outside a loop, an expression
+  past the nesting limit, a constant pool past 65536 — reaches the editor as an
+  **`E004`** squiggle on the offending line. A document that compiles cleanly
+  publishes nothing new.
+
 ## [0.39.0] - 2026-08-10
 
 ### Fixed
