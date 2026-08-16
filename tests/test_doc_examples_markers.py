@@ -115,6 +115,34 @@ if "full-leak-report" in code:
     report = "\\n".join(lines) + "\\n"
     print(report, end="", file=sys.stderr)
     sys.exit(23)
+misplaced_cases = (
+    ("misplaced-suppression-row", "1 2 fatal execution failure", False),
+    ("misplaced-suppression-header", "Suppressions used:", False),
+    ("misplaced-suppression-columns", "count bytes template", False),
+    ("misplaced-object-line", "0x602000000040 (8 bytes)", False),
+    ("misplaced-frame", "#0 0x7f0000000030 in bad fake.c:50:1", False),
+    ("misplaced-separator", "-----------------------------------------------------", False),
+    ("misplaced-marker", "==456==ERROR: LeakSanitizer: detected memory leaks", False),
+    ("misplaced-summary",
+     "SUMMARY: AddressSanitizer: 8 byte(s) leaked in 1 allocation(s).", False),
+    ("misplaced-direct-block",
+     "Direct leak of 8 byte(s) in 1 object(s) allocated from:", False),
+    ("misplaced-indirect-block",
+     "Indirect leak of 8 byte(s) in 1 object(s) allocated from:", False),
+    ("semantic-before-report", "fatal execution failure", False),
+    ("semantic-after-report", "fatal execution failure", True),
+)
+for token, line, append in misplaced_cases:
+    if token in code:
+        print("marked")
+        lines = emit_compiler_rt_report()
+        if append:
+            lines.append(line)
+        else:
+            lines.insert(0, line)
+        report = "\\n".join(lines) + "\\n"
+        print(report, end="", file=sys.stderr)
+        sys.exit(23)
 if "signaled" in code:
     print("marked", flush=True)
     print("LeakSanitizer: detected memory leaks", file=sys.stderr)
@@ -391,6 +419,7 @@ class DocExampleMarkerTests(unittest.TestCase):
                       result.stdout)
 
     def test_asan_full_lsan_report_is_tolerated(self):
+        """The fixture includes a correctly ordered suppression section."""
         result = self.run_checker(
             """
             ```eigenscript check
@@ -408,6 +437,42 @@ class DocExampleMarkerTests(unittest.TestCase):
                           result.stdout)
         self.assertIn("Doc examples: 1 checked, 1 passed, 0 failed, 0 skipped",
                       result.stdout)
+
+    def test_asan_full_lsan_report_rejects_out_of_context_lines(self):
+        cases = (
+            "misplaced-suppression-row",
+            "misplaced-suppression-header",
+            "misplaced-suppression-columns",
+            "misplaced-object-line",
+            "misplaced-frame",
+            "misplaced-separator",
+            "misplaced-marker",
+            "misplaced-summary",
+            "misplaced-direct-block",
+            "misplaced-indirect-block",
+            "semantic-before-report",
+            "semantic-after-report",
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                result = self.run_checker(
+                    f"""
+                    ```eigenscript check
+                    {case}
+                    ```
+                    ```output
+                    marked
+                    ```
+                    """,
+                    asan=True,
+                )
+                self.assertEqual(result.returncode, 1,
+                                 result.stdout + result.stderr)
+                self.assertIn("FAIL: ", result.stdout)
+                self.assertIn("rc=23", result.stdout)
+                self.assertIn(
+                    "Doc examples: 1 checked, 0 passed, 1 failed, 0 skipped",
+                    result.stdout)
 
     def test_mixed_failure_does_not_count_as_readme_coverage(self):
         result = self.run_checker(

@@ -69,22 +69,12 @@ LSAN_LEAK_KIND_LINE = re.compile(
     r"allocated from:$")
 LSAN_FRAME_LINE = re.compile(
     r"^#\d+\s+0x[0-9A-Fa-f]+(?:\s+in\s+.+|\s+\(.+\))$")
-LSAN_OBJECT_LINE = re.compile(
-    r"^(?:Objects leaked above:|0x[0-9A-Fa-f]+ \(\d+ bytes\))$")
+LSAN_OBJECT_HEADER = "Objects leaked above:"
+LSAN_OBJECT_ADDRESS_LINE = re.compile(r"^0x[0-9A-Fa-f]+ \(\d+ bytes\)$")
 LSAN_SEPARATOR_LINE = re.compile(r"^(?:=+|-+)$")
 LSAN_SUPPRESSION_HEADER = "Suppressions used:"
 LSAN_SUPPRESSION_COLUMNS = re.compile(r"^count\s+bytes\s+template$")
 LSAN_SUPPRESSION_ROW = re.compile(r"^\d+\s+\d+\s+\S.*$")
-
-
-def is_lsan_report_line(line):
-    return (LSAN_LEAK_KIND_LINE.fullmatch(line) is not None or
-            LSAN_FRAME_LINE.fullmatch(line) is not None or
-            LSAN_OBJECT_LINE.fullmatch(line) is not None or
-            LSAN_SEPARATOR_LINE.fullmatch(line) is not None or
-            line == LSAN_SUPPRESSION_HEADER or
-            LSAN_SUPPRESSION_COLUMNS.fullmatch(line) is not None or
-            LSAN_SUPPRESSION_ROW.fullmatch(line) is not None)
 
 
 def is_lsan_only_failure(stderr):
@@ -101,13 +91,61 @@ def is_lsan_only_failure(stderr):
                  if LSAN_SUMMARY_LINE.fullmatch(line) is not None]
     if len(summaries) != 1 or summaries[0] != len(lines) - 1:
         return False
-    if not any(LSAN_LEAK_KIND_LINE.fullmatch(line) is not None
-               for line in lines):
+
+    index = 0
+    if not LSAN_SEPARATOR_LINE.fullmatch(lines[index]):
         return False
-    return all(is_lsan_report_line(line) or
-               LSAN_MARKER_LINE.fullmatch(line) is not None or
-               LSAN_SUMMARY_LINE.fullmatch(line) is not None
-               for line in lines)
+    index += 1
+    if (index >= len(lines) or
+            LSAN_MARKER_LINE.fullmatch(lines[index]) is None):
+        return False
+    index += 1
+
+    leak_blocks = 0
+    while (index < len(lines) and
+           LSAN_LEAK_KIND_LINE.fullmatch(lines[index]) is not None):
+        leak_blocks += 1
+        index += 1
+
+        frames = 0
+        while (index < len(lines) and
+               LSAN_FRAME_LINE.fullmatch(lines[index]) is not None):
+            frames += 1
+            index += 1
+        if frames == 0 or index >= len(lines):
+            return False
+        if lines[index] != LSAN_OBJECT_HEADER:
+            return False
+        index += 1
+
+        objects = 0
+        while (index < len(lines) and
+               LSAN_OBJECT_ADDRESS_LINE.fullmatch(lines[index]) is not None):
+            objects += 1
+            index += 1
+        if objects == 0:
+            return False
+
+    if leak_blocks == 0:
+        return False
+
+    if index < len(lines) and LSAN_SEPARATOR_LINE.fullmatch(lines[index]):
+        index += 1
+        if index >= len(lines) or lines[index] != LSAN_SUPPRESSION_HEADER:
+            return False
+        index += 1
+        if (index >= len(lines) or
+                LSAN_SUPPRESSION_COLUMNS.fullmatch(lines[index]) is None):
+            return False
+        index += 1
+        while (index < len(lines) and
+               LSAN_SUPPRESSION_ROW.fullmatch(lines[index]) is not None):
+            index += 1
+        if index >= len(lines) or not LSAN_SEPARATOR_LINE.fullmatch(lines[index]):
+            return False
+        index += 1
+
+    return index == len(lines) - 1
 
 
 def is_asan_build():
