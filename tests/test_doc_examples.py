@@ -61,19 +61,61 @@ def norm(s):
 
 LSAN_MARKER_LINE = re.compile(
     r"^(?:==\d+==ERROR: )?LeakSanitizer: detected memory leaks$")
+LSAN_SUMMARY_LINE = re.compile(
+    r"^SUMMARY: (?:AddressSanitizer|LeakSanitizer): \d+ byte\(s\) "
+    r"leaked in \d+ allocation\(s\)\.$")
+LSAN_LEAK_KIND_LINE = re.compile(
+    r"^(?:Direct|Indirect) leak of \d+ byte\(s\) in \d+ object\(s\) "
+    r"allocated from:$")
+LSAN_FRAME_LINE = re.compile(
+    r"^#\d+\s+0x[0-9A-Fa-f]+(?:\s+in\s+.+|\s+\(.+\))$")
+LSAN_OBJECT_LINE = re.compile(
+    r"^(?:Objects leaked above:|0x[0-9A-Fa-f]+ \(\d+ bytes\))$")
+LSAN_SEPARATOR_LINE = re.compile(r"^(?:=+|-+)$")
+LSAN_SUPPRESSION_HEADER = "Suppressions used:"
+LSAN_SUPPRESSION_COLUMNS = re.compile(r"^count\s+bytes\s+template$")
+LSAN_SUPPRESSION_ROW = re.compile(r"^\d+\s+\d+\s+\S.*$")
+
+
+def is_lsan_report_line(line):
+    return (LSAN_LEAK_KIND_LINE.fullmatch(line) is not None or
+            LSAN_FRAME_LINE.fullmatch(line) is not None or
+            LSAN_OBJECT_LINE.fullmatch(line) is not None or
+            LSAN_SEPARATOR_LINE.fullmatch(line) is not None or
+            line == LSAN_SUPPRESSION_HEADER or
+            LSAN_SUPPRESSION_COLUMNS.fullmatch(line) is not None or
+            LSAN_SUPPRESSION_ROW.fullmatch(line) is not None)
 
 
 def is_lsan_only_failure(stderr):
-    """Return whether stderr contains only a standalone LSan marker."""
+    """Return whether stderr contains only a standalone or full LSan report."""
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
-    return len(lines) == 1 and LSAN_MARKER_LINE.fullmatch(lines[0]) is not None
+    markers = [i for i, line in enumerate(lines)
+               if LSAN_MARKER_LINE.fullmatch(line) is not None]
+    if len(lines) == 1:
+        return bool(markers)
+    if len(markers) != 1:
+        return False
+
+    summaries = [i for i, line in enumerate(lines)
+                 if LSAN_SUMMARY_LINE.fullmatch(line) is not None]
+    if len(summaries) != 1 or summaries[0] != len(lines) - 1:
+        return False
+    if not any(LSAN_LEAK_KIND_LINE.fullmatch(line) is not None
+               for line in lines):
+        return False
+    return all(is_lsan_report_line(line) or
+               LSAN_MARKER_LINE.fullmatch(line) is not None or
+               LSAN_SUMMARY_LINE.fullmatch(line) is not None
+               for line in lines)
 
 
 def is_asan_build():
     # Use the same __asan_init probe as test_temporal_memory.sh and
     # test_http_rss_growth.sh to classify the selected binary. Those tests
     # refuse to run on sanitizer builds; this checker uses the classification
-    # only to tolerate a nonzero example exit with a standalone LSan marker.
+    # only to tolerate a nonzero example exit with a standalone or complete
+    # LeakSanitizer-only report.
     return subprocess.run(
         ["grep", "-qa", "__asan_init", EIGS],
         stdout=subprocess.DEVNULL,

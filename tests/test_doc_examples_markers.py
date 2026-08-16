@@ -49,6 +49,25 @@ if "asan-hard-and-leak" in code:
     print("==123==ERROR: AddressSanitizer: heap-use-after-free", file=sys.stderr)
     print("LeakSanitizer: detected memory leaks", file=sys.stderr)
     sys.exit(7)
+if "multiple-lsan-markers" in code:
+    print("marked")
+    print("LeakSanitizer: detected memory leaks", file=sys.stderr)
+    print("LeakSanitizer: detected memory leaks", file=sys.stderr)
+    sys.exit(7)
+if "malformed-lsan-report" in code:
+    print("marked")
+    print("=================================================================", file=sys.stderr)
+    print("==123==ERROR: LeakSanitizer: detected memory leaks", file=sys.stderr)
+    print("not a compiler-rt leak frame", file=sys.stderr)
+    print("SUMMARY: AddressSanitizer: 32 byte(s) leaked in 1 allocation(s).",
+          file=sys.stderr)
+    sys.exit(7)
+if "ubsan-and-leak" in code:
+    print("marked")
+    print("fake.eigs:1:1: runtime error: signed integer overflow",
+          file=sys.stderr)
+    print("LeakSanitizer: detected memory leaks", file=sys.stderr)
+    sys.exit(7)
 if "stdout-leak" in code:
     print("marked")
     print("LeakSanitizer: detected memory leaks")
@@ -326,6 +345,9 @@ class DocExampleMarkerTests(unittest.TestCase):
             "asan-hard-and-leak",
             "no-lsan",
             "signaled",
+            "multiple-lsan-markers",
+            "malformed-lsan-report",
+            "ubsan-and-leak",
         )
         for case in cases:
             with self.subTest(case=case):
@@ -366,6 +388,25 @@ class DocExampleMarkerTests(unittest.TestCase):
         self.assertIn("README.md (README has 0 checked examples)",
                       result.stdout)
         self.assertIn("Doc examples: 1 checked, 0 passed, 1 failed, 0 skipped",
+                      result.stdout)
+
+    def test_asan_full_lsan_report_is_tolerated(self):
+        result = self.run_checker(
+            """
+            ```eigenscript check
+            full-leak-report
+            ```
+            ```output
+            marked
+            ```
+            """,
+            asan=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PASS: README.md", result.stdout)
+        self.assertNotIn("README.md (README has 0 checked examples)",
+                          result.stdout)
+        self.assertIn("Doc examples: 1 checked, 1 passed, 0 failed, 0 skipped",
                       result.stdout)
 
     def test_mixed_failure_does_not_count_as_readme_coverage(self):
