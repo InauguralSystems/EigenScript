@@ -59,6 +59,109 @@ def norm(s):
     return "\n".join(line.rstrip() for line in s.rstrip("\n").split("\n"))
 
 
+LSAN_MARKER_LINE = re.compile(
+    r"^(?:==\d+==ERROR: )?LeakSanitizer: detected memory leaks$")
+LSAN_SUMMARY_LINE = re.compile(
+    r"^SUMMARY: (?:AddressSanitizer|LeakSanitizer): \d+ byte\(s\) "
+    r"leaked in \d+ allocation\(s\)\.$")
+LSAN_LEAK_KIND_LINE = re.compile(
+    r"^(?:Direct|Indirect) leak of \d+ byte\(s\) in \d+ object\(s\) "
+    r"allocated from:$")
+LSAN_FRAME_LINE = re.compile(
+    r"^#\d+\s+0x[0-9A-Fa-f]+(?:\s+in\s+.+|\s+\(.+\))$")
+LSAN_OBJECT_HEADER = "Objects leaked above:"
+LSAN_OBJECT_ADDRESS_LINE = re.compile(r"^0x[0-9A-Fa-f]+ \(\d+ bytes\)$")
+LSAN_SEPARATOR_LINE = re.compile(r"^(?:=+|-+)$")
+LSAN_SUPPRESSION_HEADER = "Suppressions used:"
+LSAN_SUPPRESSION_COLUMNS = re.compile(r"^count\s+bytes\s+template$")
+LSAN_SUPPRESSION_ROW = re.compile(r"^\d+\s+\d+\s+\S.*$")
+
+
+def is_lsan_only_failure(stderr):
+    """Return whether stderr contains only a standalone or full LSan report."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    markers = [i for i, line in enumerate(lines)
+               if LSAN_MARKER_LINE.fullmatch(line) is not None]
+    if len(lines) == 1:
+        return bool(markers)
+    if len(markers) != 1:
+        return False
+
+    summaries = [i for i, line in enumerate(lines)
+                 if LSAN_SUMMARY_LINE.fullmatch(line) is not None]
+    if len(summaries) != 1 or summaries[0] != len(lines) - 1:
+        return False
+
+    index = 0
+    if not LSAN_SEPARATOR_LINE.fullmatch(lines[index]):
+        return False
+    index += 1
+    if (index >= len(lines) or
+            LSAN_MARKER_LINE.fullmatch(lines[index]) is None):
+        return False
+    index += 1
+
+    leak_blocks = 0
+    while (index < len(lines) and
+           LSAN_LEAK_KIND_LINE.fullmatch(lines[index]) is not None):
+        leak_blocks += 1
+        index += 1
+
+        frames = 0
+        while (index < len(lines) and
+               LSAN_FRAME_LINE.fullmatch(lines[index]) is not None):
+            frames += 1
+            index += 1
+        if frames == 0 or index >= len(lines):
+            return False
+        if lines[index] != LSAN_OBJECT_HEADER:
+            return False
+        index += 1
+
+        objects = 0
+        while (index < len(lines) and
+               LSAN_OBJECT_ADDRESS_LINE.fullmatch(lines[index]) is not None):
+            objects += 1
+            index += 1
+        if objects == 0:
+            return False
+
+    if leak_blocks == 0:
+        return False
+
+    if index < len(lines) and LSAN_SEPARATOR_LINE.fullmatch(lines[index]):
+        index += 1
+        if index >= len(lines) or lines[index] != LSAN_SUPPRESSION_HEADER:
+            return False
+        index += 1
+        if (index >= len(lines) or
+                LSAN_SUPPRESSION_COLUMNS.fullmatch(lines[index]) is None):
+            return False
+        index += 1
+        while (index < len(lines) and
+               LSAN_SUPPRESSION_ROW.fullmatch(lines[index]) is not None):
+            index += 1
+        if index >= len(lines) or not LSAN_SEPARATOR_LINE.fullmatch(lines[index]):
+            return False
+        index += 1
+
+    return index == len(lines) - 1
+
+
+def is_asan_build():
+    # Use the same __asan_init probe as test_temporal_memory.sh and
+    # test_http_rss_growth.sh to classify the selected binary. Those tests
+    # refuse to run on sanitizer builds; this checker uses the classification
+    # only to tolerate a nonzero example exit with a standalone or complete
+    # LeakSanitizer-only report.
+    return subprocess.run(
+        ["grep", "-qa", "__asan_init", EIGS],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0
+
+
 def report_orphan(path, pending):
     global ORPHAN
     code_line, _ = pending
@@ -72,6 +175,7 @@ def main():
     args = [a for a in sys.argv[1:] if a != "--list"]
     listing = "--list" in sys.argv
     coverage_failed = False
+    asan_build = is_asan_build()
 
     for path in args:
         is_readme = (os.path.realpath(path) ==
@@ -119,15 +223,13 @@ def main():
                                        cwd=os.path.dirname(tmp))
                     got = norm(p.stdout)
                     want = norm(text)
-                    # Mirror run_all_tests.sh's rc_ok: a nonzero exit whose
-                    # only failure signal is a LeakSanitizer report (the
-                    # known closure-cycle env leaks under ASan builds) is
-                    # tolerated; output must still match exactly.
                     rc_ok = (p.returncode == 0 or
-                             "LeakSanitizer: detected memory leaks" in p.stderr)
-                    if is_readme and rc_ok:
+                             (asan_build and p.returncode > 0 and
+                              is_lsan_only_failure(p.stderr)))
+                    example_passed = rc_ok and got == want
+                    if is_readme and example_passed:
                         readme_checked += 1
-                    if got == want and rc_ok:
+                    if example_passed:
                         PASS += 1
                         print("  PASS: %s:%d" % (os.path.basename(path), code_line))
                     else:
