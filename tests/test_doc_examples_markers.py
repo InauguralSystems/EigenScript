@@ -35,6 +35,10 @@ if "mixed-error" in code:
     print("fatal execution failure", file=sys.stderr)
     print("LeakSanitizer: detected memory leaks", file=sys.stderr)
     sys.exit(7)
+if "no-lsan" in code:
+    print("marked")
+    print("fatal execution failure", file=sys.stderr)
+    sys.exit(7)
 if "error-after-marker" in code:
     print("marked")
     print("LeakSanitizer: detected memory leaks", file=sys.stderr)
@@ -314,6 +318,36 @@ class DocExampleMarkerTests(unittest.TestCase):
         self.assertIn(
             "Doc examples: 1 checked, 0 passed, 1 failed, 0 skipped",
             result.stdout)
+
+    def test_asan_nonzero_exit_requires_only_lsan_signal(self):
+        """Kills `rc_ok = p.returncode == 0 or asan_build` broadening."""
+        cases = (
+            "mixed-error",
+            "asan-hard-and-leak",
+            "no-lsan",
+            "signaled",
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                result = self.run_checker(
+                    f"""
+                    ```eigenscript check
+                    {case}
+                    ```
+                    ```output
+                    marked
+                    ```
+                    """,
+                    asan=True,
+                )
+                self.assertEqual(result.returncode, 1,
+                                 result.stdout + result.stderr)
+                self.assertIn("FAIL: ", result.stdout)
+                self.assertIn("README.md (README has 0 checked examples)",
+                              result.stdout)
+                self.assertIn(
+                    "Doc examples: 1 checked, 0 passed, 1 failed, 0 skipped",
+                    result.stdout)
 
     def test_full_lsan_report_does_not_hide_failure(self):
         result = self.run_checker(

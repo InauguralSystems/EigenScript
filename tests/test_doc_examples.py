@@ -59,11 +59,21 @@ def norm(s):
     return "\n".join(line.rstrip() for line in s.rstrip("\n").split("\n"))
 
 
+LSAN_MARKER_LINE = re.compile(
+    r"^(?:==\d+==ERROR: )?LeakSanitizer: detected memory leaks$")
+
+
+def is_lsan_only_failure(stderr):
+    """Return whether stderr contains only a standalone LSan marker."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    return len(lines) == 1 and LSAN_MARKER_LINE.fullmatch(lines[0]) is not None
+
+
 def is_asan_build():
     # Use the same __asan_init probe as test_temporal_memory.sh and
     # test_http_rss_growth.sh to classify the selected binary. Those tests
     # refuse to run on sanitizer builds; this checker uses the classification
-    # only to tolerate a nonzero example exit when stdout still matches.
+    # only to tolerate a nonzero example exit with a standalone LSan marker.
     return subprocess.run(
         ["grep", "-qa", "__asan_init", EIGS],
         stdout=subprocess.DEVNULL,
@@ -133,7 +143,9 @@ def main():
                                        cwd=os.path.dirname(tmp))
                     got = norm(p.stdout)
                     want = norm(text)
-                    rc_ok = p.returncode == 0 or asan_build
+                    rc_ok = (p.returncode == 0 or
+                             (asan_build and p.returncode > 0 and
+                              is_lsan_only_failure(p.stderr)))
                     example_passed = rc_ok and got == want
                     if is_readme and example_passed:
                         readme_checked += 1
