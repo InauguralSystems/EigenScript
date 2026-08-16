@@ -625,6 +625,27 @@ def main():
               and x.get("range", {}).get("start", {}).get("line") == 0
               for x in (d or [])))
 
+    # #943: isolate the lexer branch for an unterminated interpolation. The
+    # second-line `f` starts at source column 5, so the recorder's one-byte
+    # span is published at LSP line 1, characters 5..6. This exact-message
+    # assertion kills the site-local mutation at src/lexer.c:424 that changes
+    # only the recorded `line` argument to 0; the later generic unterminated
+    # f-string recorder would otherwise replace this diagnostic.
+    r = converse([INIT, did_open('\nx is f"{1'), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    fexpr = next((x for x in (d or []) if x.get("code") == "E002"), None)
+    check("#943 unterminated f-string expression is a severity-1 E002",
+          fexpr is not None and fexpr.get("severity") == 1)
+    check("#943 unterminated f-string expression has the exact message",
+          fexpr is not None
+          and fexpr.get("message") == "syntax error: unterminated f-string expression")
+    check("#943 unterminated f-string expression has the source range",
+          fexpr is not None
+          and fexpr.get("range") == {
+              "start": {"line": 1, "character": 5},
+              "end": {"line": 1, "character": 6},
+          })
+
     # --- #943: an earlier newly-recorded lexer error pre-empts a later one ---
     # This is an intentional behavior change: the line-1 `!` is the first
     # error, so it is now published instead of the line-2 unterminated string.
