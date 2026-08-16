@@ -85,5 +85,15 @@ if [ "$lexer_parse_errors" -ne "$lexer_recorded_errors" ]; then
     echo "DRIFT: src/lexer.c has ${lexer_parse_errors} parse-error increments but only ${lexer_recorded_errors} nearby first-error recorders"
     drift=1
 fi
+# Vacuity floor (#956): both counts derive from the same file, so a rename of
+# src/lexer.c or a refactor of the increments behind a helper collapses both
+# sides to 0 and the equality above stays green while examining nothing.
+# src/lexer.c has 8 increments today; 6 leaves refactoring room while still
+# catching the collapse. Floor, not exact pin: adding an increment needs no edit
+# here, only removing coverage does.
+if [ "${lexer_parse_errors:-0}" -lt 6 ]; then
+    echo "DRIFT: lexer parse-error audit examined ${lexer_parse_errors:-0} increments (expected >= 6) — did src/lexer.c move, or the increments change shape?"
+    drift=1
+fi
 
 exit $drift

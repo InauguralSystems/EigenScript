@@ -220,6 +220,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
         g_first_error_line = 0;
         g_first_error_col = 0;
         g_first_error_len = 0;
+        g_first_error_col_known = 0;
         g_first_error_msg[0] = '\0';
     }
 

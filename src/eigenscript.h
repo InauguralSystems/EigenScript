@@ -649,6 +649,9 @@ struct EigsThread {
     int          first_error_col;   /* 0-based column of the first error, or 0 */
     int          first_error_len;   /* source length of the offending token
                                      * (0 = unknown → whole-line LSP range) */
+    int          first_error_col_known; /* first_error_col came with a real
+                                     * column (col >= 0 && len > 0), not the
+                                     * legacy line-only recorder (#955) */
     /* #407 residual: uncaught-error printing raised during VM dispatch is
      * deferred to the dispatch loop's CHECK_ERROR, which knows the failing
      * instruction's bytecode offset (→ column) — rt_error/builtin_throw
@@ -819,6 +822,7 @@ extern __thread EigsThread *eigs_current;
 #define g_first_error_line  (eigs_current->first_error_line)
 #define g_first_error_col   (eigs_current->first_error_col)
 #define g_first_error_len   (eigs_current->first_error_len)
+#define g_first_error_col_known (eigs_current->first_error_col_known)
 #define g_error_print_pending (eigs_current->error_print_pending)
 #define g_error_msg         (eigs_current->error_msg)
 #define g_first_error_msg   (eigs_current->first_error_msg)
