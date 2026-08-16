@@ -45,8 +45,9 @@
  * columns and lengths; legacy call sites without a trustworthy column still
  * retain the first writer on an equal-line tie. Reset at the top of
  * tokenize(). g_first_error_line is 1-based and 0 when no source error has
- * been recorded. */
-static __thread int g_first_error_col_known;
+ * been recorded. g_first_error_col_known is an EigsThread field like its
+ * four siblings (#955) — per-context, so two EigsStates on one thread
+ * cannot cross-read known-ness. */
 
 void eigs_record_first_error_at(int line, int col, int len, const char *msg) {
     int candidate_col_known = col >= 0 && len > 0;

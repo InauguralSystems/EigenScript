@@ -1059,8 +1059,11 @@ if [ "${1:-}" = "--selftest" ]; then
     # same tree that also carries the quoted compiler-variable fault.
     #
     # Both integration mutations share one archived tree so the full gate only
-    # runs once. A nonzero result from that gate is deliberately an aggregate
-    # assertion; this self-test does not attribute it to either mutation.
+    # runs once. Since #954 the gate collects failures instead of exiting at
+    # the flag-audit stage, so that single run reaches the header probes and
+    # each mutation is attributed to its own message: the quoted-"${CC}"
+    # violation line for the script mutation, and probe_generated_header's
+    # producer-agnostic rejection for the builtin-generator mutation.
     st_fault_tree="$st_scratch/faults"
     prepare_fault_tree "$st_fault_tree"
     st_builtin_header="$st_fault_tree/lsp_builtin_index.h"
@@ -1152,9 +1155,6 @@ EOF
         fi
     fi
 
-    # With an arbitrary `CC`, the self-test cannot authenticate which input
-    # caused a rejection. It proves only that both mutations are planted and
-    # that the one shared nested gate rejects the aggregate fault tree.
     if bash "$st_fault_tree/tools/werror_switch_check.sh" > "$st_integration_out" 2>&1; then
         echo "SELFTEST FAILED: shared nested gate accepted the aggregate fault tree"
         sed 's/^/    /' "$st_integration_out"
@@ -1162,6 +1162,18 @@ EOF
     fi
     if ! grep -qF '"${CC}"' "$st_integration_out"; then
         echo "SELFTEST FAILED: quoted/braced rejection did not identify the compiler invocation"
+        sed 's/^/    /' "$st_integration_out"
+        st_fail=1
+    fi
+    # Attribution for the builtin mutation (#954). This message is emitted only
+    # by probe_generated_header itself — never by the compiler, a permission
+    # error, or any other failure that merely mentions the header's path — so
+    # its presence proves the probe executed and rejected the planted header.
+    # Deleting the probe's compile check previously kept this self-test green,
+    # because the aggregate run exited at the flag audit before reaching it.
+    if ! grep -qF 'configured producer returned nonzero for generated builtin LSP header under -Werror=comment' \
+        "$st_integration_out"; then
+        echo "SELFTEST FAILED: builtin header probe did not reject the planted generated header (probe_generated_header may be dead)"
         sed 's/^/    /' "$st_integration_out"
         st_fail=1
     fi
@@ -1669,9 +1681,10 @@ enforce_target_floors || exit 1
 recognizer_axis_parity || exit 1
 recognizer_coverage_check || exit 1
 enrollment_check || exit 1
+gate_failed=0
 if [ "$VIOLATIONS" -gt 0 ]; then
     echo "werror warning gate FAILED: $VIOLATIONS of $EXAMINED compile invocations lack one or more of: $REQUIRED_FLAGS"
-    exit 1
+    gate_failed=1
 fi
 
 # The flag-coverage audit proves that every compile line is armed; these
@@ -1679,6 +1692,12 @@ fi
 # and both generated LSP indexes under the newly required comment warning.
 # Keeping the probes here adds a producer check beyond the flag-presence audit,
 # which would otherwise pass without checking the generated headers.
+#
+# The probes run even when the flag audit already failed (#954): exiting on
+# VIOLATIONS before reaching them meant the aggregate self-test fault tree
+# never executed the probes at all, so deleting a probe's compile check kept
+# the self-test green. Collecting failures instead of exiting also lets one
+# run attribute each planted mutation to its own gate-emitted message.
 CC_BIN="${CC:-gcc}"
 probe_dir=$(mktemp -d /tmp/eigenscript_werror_headers_XXXXXX)
 trap 'rm -rf -- "$probe_dir"' EXIT
@@ -1693,12 +1712,11 @@ probe_generated_header() {
         return 1
     fi
 }
-if ! probe_generated_header tools/gen_lsp_stdlib_index.sh \
-    "$probe_dir/lsp_stdlib_index.h" stdlib; then
-    exit 1
-fi
-if ! probe_generated_header tools/gen_lsp_builtin_index.sh \
-    "$probe_dir/lsp_builtin_index.h" builtin; then
+probe_generated_header tools/gen_lsp_stdlib_index.sh \
+    "$probe_dir/lsp_stdlib_index.h" stdlib || gate_failed=1
+probe_generated_header tools/gen_lsp_builtin_index.sh \
+    "$probe_dir/lsp_builtin_index.h" builtin || gate_failed=1
+if [ "$gate_failed" -ne 0 ]; then
     exit 1
 fi
 echo "werror warning gate OK: all $EXAMINED compile invocations across $TARGETS_AUDITED dry-run targets + $(echo $SCRIPT_AUDITS | wc -w | tr -d ' ') script(s) carry: $REQUIRED_FLAGS"
