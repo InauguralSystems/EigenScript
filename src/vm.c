@@ -2872,6 +2872,19 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push(make_num(r));
         } else if (a->type == VAL_STR && b->type == VAL_STR) {
             int la = strlen(a->data.str), lb = strlen(b->data.str);
+            /* #292's byte budget charged only the size-controlled builtins;
+             * `s is s + s` in a sandboxed loop doubled straight past
+             * max_bytes to an uncatchable x_oom abort() — the grader died
+             * instead of grading (iLambdaAi break-it round, 2026-08-17).
+             * Charge the concat result like any other sandbox allocation;
+             * sandbox_charge raises a catchable EK_SANDBOX on refusal and
+             * is a no-op outside an armed sandbox. The JIT bails to this
+             * interpreter path on non-num ADD, so one site covers both. */
+            if (!sandbox_charge((size_t)la + lb + 1)) {
+                vm_push(make_null());
+                val_decref(a); val_decref(b);
+                DISPATCH();
+            }
             char *s = xmalloc((size_t)la + lb + 1);
             memcpy(s, a->data.str, la);
             memcpy(s + la, b->data.str, lb);

@@ -64,4 +64,22 @@ assert_eq of [ok_concat_tight, 0, "budget: concat(100 slots) under 100-byte budg
 ok_concat_loose is (sandbox_run of [cdesc, 1000000, 100000])["ok"]
 assert_eq of [ok_concat_loose, 1, "budget: concat(100 slots) under 100KB budget -> {ok:1}"]
 
+# --- string concat is charged (the `s is s + s` doubling class) -------------
+# #292 charged only the size-controlled builtins; ADD on two strings allocated
+# uncharged, so a sandboxed doubling loop blew past max_bytes to an
+# uncatchable x_oom abort — the process died instead of the run failing.
+# Chunk: CONST big; CONST big; ADD; RETURN under a 1000-byte budget.
+ADD is 4
+big is ""
+for i in range of 200:
+    big is big + "xxxxxxxx"
+cat_desc is [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [big, big]]
+sr_cat is sandbox_run of [cat_desc, 100000, 1000]
+assert_eq of [sr_cat["ok"], 0, "budget: oversized string concat -> {ok:0}, not abort"]
+cat_kind is sr_cat["error"]["kind"]
+assert_eq of [cat_kind, "sandbox", "budget: concat refusal names the sandbox"]
+# Control: the same concat under an ample budget succeeds.
+sr_cat_ok is sandbox_run of [cat_desc, 100000, 1000000]
+assert_eq of [sr_cat_ok["ok"], 1, "budget: same concat within budget stays ok"]
+
 print of "All tests passed"
