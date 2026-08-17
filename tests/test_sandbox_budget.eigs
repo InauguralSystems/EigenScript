@@ -215,6 +215,23 @@ iso_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], [
 sr_iso is sandbox_run of [iso_desc, 100000, 800]
 assert_eq of [sr_iso["ok"], 0, "budget: dict birth charge fires in isolation"]
 
+# --- the BUFFER class is charged (matmul outer-product amplification) --------
+# "inputs charged" was a false waiver: an outer product amplifies two
+# 3000-element buffers into a 9M-element (72MB) output, which passed a 64MiB
+# budget and loop-aggregated to the uncatchable abort through grade().
+mm_code is [GET_NAME,0,0,
+            GET_NAME,1,0, CONST,2,0, CONST,3,0, CALL,2,0,
+            GET_NAME,1,0, CONST,3,0, CONST,2,0, CALL,2,0,
+            CALL,2,0, POP, CONST,4,0, RETURN]
+mm_desc is [ABI, mm_code, ["matmul", "buffer", 3000, 1, 1]]
+sr_mm is sandbox_run of [mm_desc, 100000, 1000000]
+assert_eq of [sr_mm["ok"], 0, "budget: outer-product matmul -> {ok:0}, not bypass"]
+mm_kind is sr_mm["error"]["kind"]
+assert_eq of [mm_kind, "sandbox", "budget: buffer refusal names the sandbox"]
+mm_small is [ABI, mm_code, ["matmul", "buffer", 10, 1, 1]]
+sr_mm_ok is sandbox_run of [mm_small, 100000, 1000000]
+assert_eq of [sr_mm_ok["ok"], 1, "budget: small matmul within budget stays ok"]
+
 # test_summary (lib/test.eigs) is what makes assertions LOAD-BEARING: it
 # exits nonzero when any assert_eq failed. This file used to print the
 # runner's pass-marker unconditionally — a vacuous gate that reported green

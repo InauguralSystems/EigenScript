@@ -91,6 +91,15 @@ static Value* make_shaped_buffer(int rows, int cols) {
      * the product (see builtin_tensor_matmul); clamp here too as defense. */
     int64_t count64 = (rows > 0) ? (int64_t)rows * cols : cols;
     int count = (count64 >= 0 && count64 <= 10000000) ? (int)count64 : 0;
+    /* Sandbox chokepoint for the BUFFER class: the old "matmul output is
+     * bounded by charged inputs" waiver was false — an OUTER product
+     * amplifies two 3000-element inputs into a 9M-element (72 MB) output,
+     * which graded "ran cleanly" under a 64 MiB budget and loop-aggregated
+     * to the uncatchable x_oom abort through grade() (blind round,
+     * 2026-08-17). Returns NULL on refusal (catchable EK_SANDBOX raised);
+     * callers hand back make_null(). */
+    if (!sandbox_charge((count > 0 ? (size_t)count : 1) * sizeof(double)))
+        return NULL;
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUFFER;
     v->data.buffer.count = count;
@@ -102,6 +111,10 @@ static Value* make_shaped_buffer(int rows, int cols) {
 }
 static Value* make_buffer_like(Value *a) {   /* same count + shape as a */
     int n = a->data.buffer.count;
+    /* Same chokepoint as make_shaped_buffer: no amplification here (output
+     * = input size) but an uncharged aggregate across a loop. */
+    if (!sandbox_charge((n > 0 ? (size_t)n : 1) * sizeof(double)))
+        return NULL;
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUFFER;
     v->data.buffer.count = n;
@@ -305,6 +318,7 @@ Value* builtin_tensor_add(Value *arg) {
     if (a->type == VAL_BUFFER && b->type == VAL_BUFFER &&
         a->data.buffer.count == b->data.buffer.count) {
         Value *res = make_buffer_like(a);
+        if (!res) return make_null();
         for (int i = 0; i < a->data.buffer.count; i++)
             res->data.buffer.data[i] = op_add(a->data.buffer.data[i], b->data.buffer.data[i]);
         return res;
@@ -409,6 +423,7 @@ Value* builtin_tensor_matmul(Value *arg) {
         /* a 1-D left operand yields a 1-D result (mirrors flat_to_tensor_1d) */
         Value *res = (a->data.buffer.rows == 0) ? make_shaped_buffer(0, bc)
                                                 : make_shaped_buffer(ar, bc);
+        if (!res) return make_null();
         ne_matmul_buf(a->data.buffer.data, ar, ac, b->data.buffer.data, bc, res->data.buffer.data);
         return res;
     }
@@ -498,6 +513,7 @@ Value* builtin_tensor_relu(Value *arg) {
     /* flat-buffer fast path: in-place clamp, shape preserved */
     if (arg && arg->type == VAL_BUFFER) {
         Value *res = make_buffer_like(arg);
+        if (!res) return make_null();
         for (int i = 0; i < arg->data.buffer.count; i++) {
             double x = arg->data.buffer.data[i];
             res->data.buffer.data[i] = (x < 0.0) ? 0.0 : x;

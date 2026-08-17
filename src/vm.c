@@ -914,9 +914,12 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * chokepoints too: list_append/make_list growth and dict growth in
  * eigenscript.c — a 100 KB JSON const amplified ~40x into an uncharged tree
  * before that landed. Still exempt, with reasons: zeros_like (mirrors an
- * already-charged input), matmul output (per-call 10M-elem cap; inputs
- * charged), str_from_bytes and substr (output <= an already-charged
- * argument) — all bounded by ARGUMENTS, not by a loop. */
+ * already-charged input), str_from_bytes and substr (output <= an
+ * already-charged argument) — bounded by ARGUMENTS. The matmul waiver was
+ * REMOVED: "inputs charged" is false for an outer product (two 3000-element
+ * inputs -> a 9M-element output), so the buffer allocators
+ * (make_shaped_buffer / make_buffer_like in builtins_tensor.c) now charge
+ * like every other class. */
 int sandbox_charge(size_t bytes) {
     if (!g_sandbox_active || g_sandbox_byte_max == 0) return 1;
     /* Overflow-safe: g_sandbox_bytes_used <= g_sandbox_byte_max is an invariant
