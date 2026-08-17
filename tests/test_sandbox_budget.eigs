@@ -201,6 +201,20 @@ obj_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], [
 sr_obj is sandbox_run of [obj_desc, 100000, 500000]
 assert_eq of [sr_obj["ok"], 0, "budget: small-object amplification -> {ok:0}"]
 
+# --- make_dict's BIRTH charge in isolation -----------------------------------
+# The small-object rows above also grow the outer array, so list_append's
+# charge catches them even with the dict birth charge gutted (a mutation run
+# proved the suite stayed green). This row is sized so ONLY the dict birth
+# charge can refuse it: 8-element outer array (no growth past the default
+# capacity) of 8-key objects under an 800-byte budget.
+iso_json is "[{\"k1\":0,\"k2\":0,\"k3\":0,\"k4\":0,\"k5\":0,\"k6\":0,\"k7\":0,\"k8\":0}"
+for i in range of 7:
+    iso_json is iso_json + ",{\"k1\":0,\"k2\":0,\"k3\":0,\"k4\":0,\"k5\":0,\"k6\":0,\"k7\":0,\"k8\":0}"
+iso_json is iso_json + "]"
+iso_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], ["json_decode", iso_json, 1]]
+sr_iso is sandbox_run of [iso_desc, 100000, 800]
+assert_eq of [sr_iso["ok"], 0, "budget: dict birth charge fires in isolation"]
+
 # test_summary (lib/test.eigs) is what makes assertions LOAD-BEARING: it
 # exits nonzero when any assert_eq failed. This file used to print the
 # runner's pass-marker unconditionally — a vacuous gate that reported green
