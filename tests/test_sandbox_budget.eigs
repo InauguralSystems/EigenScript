@@ -177,6 +177,30 @@ si_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], ["
 sr_si is sandbox_run of [si_desc, 100000, 500000]
 assert_eq of [sr_si["ok"], 0, "budget: scan_ints amplification -> {ok:0}"]
 
+# --- small-container nesting cannot bypass the birth charge ------------------
+# Charging only >8 pre-sizes and doublings left <=8-element containers free:
+# nested seven-element arrays under-charged ~8x per level (387MB RSS under an
+# 80MB budget; a 7x7 nesting resurrected the abort). Every container now
+# charges at birth. Outer array of 20000 seven-element arrays, discarded.
+nest_json is "["
+for i in range of 20000:
+    nest_json is nest_json + "[0,0,0,0,0,0,0],"
+nest_json is nest_json + "[0]]"
+nest_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], ["json_decode", nest_json, 1]]
+sr_nest is sandbox_run of [nest_desc, 100000, 500000]
+assert_eq of [sr_nest["ok"], 0, "budget: nested small-array amplification -> {ok:0}"]
+sr_nest_ok is sandbox_run of [nest_desc, 100000, 64000000]
+assert_eq of [sr_nest_ok["ok"], 1, "budget: same nested decode within ample budget stays ok"]
+
+# --- small JSON OBJECTS are charged too (dict half of the same hole) ---------
+obj_json is "["
+for i in range of 15000:
+    obj_json is obj_json + "{\"a\":0,\"b\":0},"
+obj_json is obj_json + "{\"a\":0}]"
+obj_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], ["json_decode", obj_json, 1]]
+sr_obj is sandbox_run of [obj_desc, 100000, 500000]
+assert_eq of [sr_obj["ok"], 0, "budget: small-object amplification -> {ok:0}"]
+
 # test_summary (lib/test.eigs) is what makes assertions LOAD-BEARING: it
 # exits nonzero when any assert_eq failed. This file used to print the
 # runner's pass-marker unconditionally — a vacuous gate that reported green

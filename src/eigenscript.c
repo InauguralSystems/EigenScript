@@ -1497,12 +1497,24 @@ Value* make_null(void) {
 
 Value* make_list(int capacity) {
     int from_arena = g_arena.active;
-    /* Oversized pre-allocations join the sandbox list chokepoint (see
-     * list_append): on refusal clamp to the default capacity — the charge
-     * already raised, the run is failing, invariants stay intact. */
-    if (capacity > 8 &&
-        !sandbox_charge((size_t)capacity * (sizeof(Value *) + sizeof(Value))))
-        capacity = 8;
+    /* EVERY program-visible container is charged at birth: node + slot
+     * array. Charging only >8 pre-sizes and growth doublings left <=8-slot
+     * containers free, and nesting turned that into an ~8-57x under-charge —
+     * 500K seven-element JSON arrays hit 387MB RSS under an 80MB armed
+     * budget, and a 7x7 nesting resurrected the uncatchable x_oom abort the
+     * flat-array charge had closed (blind round, 2026-08-17). On refusal the
+     * charge has raised catchable EK_SANDBOX and we proceed with the default
+     * capacity — callers assume a non-NULL list; the uncharged slack is one
+     * small node per refused creation, bounded by the iteration cap and
+     * stated here. make_list_heap stays uncharged: VM-internal wrappers
+     * (arg packing, promotion copies, temporal history), all sized by
+     * arguments already in memory, never by an amplifying parse. */
+    {
+        int chg_cap = capacity < 8 ? 8 : capacity;
+        if (!sandbox_charge(sizeof(Value) +
+                            (size_t)chg_cap * sizeof(Value *)))
+            capacity = 8;
+    }
     Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
@@ -1522,9 +1534,8 @@ Value* make_list(int capacity) {
  * Used by the builtin-arg packing path: the wrapper holds incref'd args,
  * and val_decref(arg) must actually walk and release them on return. */
 Value* make_list_heap(int capacity) {
-    if (capacity > 8 &&
-        !sandbox_charge((size_t)capacity * (sizeof(Value *) + sizeof(Value))))
-        capacity = 8;
+    /* Deliberately uncharged: see make_list — every call site is a
+     * VM-internal wrapper sized by values already in memory. */
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
@@ -1582,6 +1593,12 @@ Value* make_builtin(BuiltinFn fn) {
 
 Value* make_dict(int capacity) {
     if (capacity < 8) capacity = 8;
+    /* Charged at birth like make_list — JSON objects of <=8 keys were fully
+     * uncharged (same small-container hole, dict half; blind round,
+     * 2026-08-17). Refusal raises and proceeds small — see make_list. */
+    if (!sandbox_charge(sizeof(Value) +
+                        (size_t)capacity * (sizeof(char *) + sizeof(Value *))))
+        capacity = 8;
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_DICT;
     v->data.dict.keys = xcalloc(capacity, sizeof(char*));
