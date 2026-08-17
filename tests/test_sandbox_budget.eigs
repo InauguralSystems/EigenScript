@@ -98,6 +98,26 @@ assert_eq of [cat_kind, "sandbox", "budget: concat refusal names the sandbox"]
 sr_cat_ok is sandbox_run of [cat_desc, 100000, 1000000]
 assert_eq of [sr_cat_ok["ok"], 1, "budget: same concat within budget stays ok"]
 
+# --- join is charged (the concat side door) ----------------------------------
+# join is output-proportional (sum(parts) + sep*(count-1)) and was left
+# uncharged by the concat fix: `join of [[s, s], ""]` was the same doubling
+# primitive through an allowlisted builtin, and a large-const-input join drove
+# the uncatchable x_oom abort through an armed 1000-byte budget.
+join_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["join", [[big, big], ""]]]
+sr_join is sandbox_run of [join_desc, 100000, 1000]
+assert_eq of [sr_join["ok"], 0, "budget: oversized join -> {ok:0}, not bypass/abort"]
+join_kind is sr_join["error"]["kind"]
+assert_eq of [join_kind, "sandbox", "budget: join refusal names the sandbox"]
+sr_join_ok is sandbox_run of [join_desc, 100000, 1000000]
+assert_eq of [sr_join_ok["ok"], 1, "budget: same join within budget stays ok"]
+
+# --- str_replace is charged (same class, catchably capped at 256MB) ----------
+srep_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["str_replace", [big, "x", "xxxxxxxxxxxxxxxx"]]]
+sr_srep is sandbox_run of [srep_desc, 100000, 1000]
+assert_eq of [sr_srep["ok"], 0, "budget: expanding str_replace -> {ok:0}"]
+sr_srep_ok is sandbox_run of [srep_desc, 100000, 4000000]
+assert_eq of [sr_srep_ok["ok"], 1, "budget: same str_replace within budget stays ok"]
+
 # test_summary (lib/test.eigs) is what makes assertions LOAD-BEARING: it
 # exits nonzero when any assert_eq failed. This file used to print the
 # runner's pass-marker unconditionally — a vacuous gate that reported green

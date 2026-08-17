@@ -244,6 +244,18 @@ Value* builtin_join(Value *arg) {
         if (i > 0) total += sep_len;
     }
 
+    /* #292/#followup: join is output-proportional (total = sum(parts) +
+     * sep_len * (count-1)) and was the one allowlisted string allocator left
+     * uncharged after the concat fix — `join of [[s, s], ""]` was the same
+     * doubling primitive through a side door, and a large-const-input join
+     * drove the uncatchable x_oom abort through an armed 1000-byte budget
+     * (blind round, 2026-08-17). Charge the output before allocating. */
+    if (!sandbox_charge(total + 1)) {
+        for (int i = 0; i < count; i++) free(parts[i]);
+        free(parts);
+        free(lengths);
+        return make_null();
+    }
     /* Single allocation */
     char *result = xmalloc(total + 1);
     int pos = 0;
@@ -1804,6 +1816,10 @@ Value* builtin_str_replace(Value *arg) {
     } else {
         result_len = str_len - count * (old_len - new_len);
     }
+    /* Same class as join: output-proportional, allowlisted, was uncharged —
+     * 100MB allocated inside a 1000-byte budget (blind round, 2026-08-17).
+     * The 256MB hard cap above stays as the catchable upper bound. */
+    if (!sandbox_charge(result_len + 1)) return make_null();
     char *result = xmalloc(result_len + 1);
     char *dst = result;
     p = str;

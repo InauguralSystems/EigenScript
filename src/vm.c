@@ -892,7 +892,8 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * separate budgets, and nothing here needs a lock. The save/restore around the
  * run is what makes NESTING compose, not what makes it thread-safe.
  *
- * Charged at: zeros, fill, buffer, range, concat — the size-controlled list/
+ * Charged at: zeros, fill, buffer, range, concat, the VM's ADD string path,
+ * join, str_replace — the size-controlled list/string/
  * tensor allocators (the issue's vectors) — plus the zlib codecs (inflate/
  * deflate and their zlib_* duals): both the codec's own output buffer and the
  * list of Values built from it. The codecs are the case that breaks the
