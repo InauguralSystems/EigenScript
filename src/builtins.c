@@ -2015,7 +2015,7 @@ Value* builtin_pi(Value *arg) {
 
 static int g_random_seeded = 0;
 
-static void ensure_random_seeded(void) {
+void eigs_ensure_random_seeded(void) {
     if (!g_random_seeded) {
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -2031,7 +2031,7 @@ static void ensure_random_seeded(void) {
 /* random of null → float in [0, 1) */
 Value* builtin_random(Value *arg) {
     (void)arg;
-    ensure_random_seeded();
+    eigs_ensure_random_seeded();
     TRACE_NONDET_RET("random", make_num(drand48()));
 }
 
@@ -2043,7 +2043,7 @@ Value* builtin_random_int(Value *arg) {
     Value *hi = arg->data.list.items[1];
     if (!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM)
         TRACE_NONDET_RET("random_int", make_num(0));
-    ensure_random_seeded();
+    eigs_ensure_random_seeded();
     /* Range-check as doubles before any integer cast — a double outside the
      * int64_t range (or non-finite) makes the cast itself UB (#698 fixed the
      * same cast-before-range-check class in value_to_string). */

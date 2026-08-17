@@ -487,7 +487,13 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
                     logits[i] /= filtered_sum;
             }
 
-            float r = (float)rand() / (float)RAND_MAX;
+            /* Draw from the shared drand48 stream (script-seedable via
+             * seed_random) instead of libc rand(): main() seeds rand() with
+             * time(NULL), which made temp>0 sampling unpinnable from script --
+             * an eval ranking checkpoints on sampled parse rate was promoting
+             * on run-to-run noise (iLambdaAi, 2026-08-17). */
+            eigs_ensure_random_seeded();
+            float r = (float)drand48();
             float cumsum = 0.0f;
             next_token = vocab_size - 1;
             for (int i = 0; i < vocab_size; i++) {
