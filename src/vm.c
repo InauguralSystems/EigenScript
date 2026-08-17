@@ -919,7 +919,18 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * REMOVED: "inputs charged" is false for an outer product (two 3000-element
  * inputs -> a 9M-element output), so the buffer allocators
  * (make_shaped_buffer / make_buffer_like in builtins_tensor.c) now charge
- * like every other class. */
+ * like every other class, as do the two raw-xcalloc buffer producers
+ * buf_from_list and reshape.
+ *
+ * KNOWN RESIDUAL (the pure string transforms — str_lower/str_upper/trim/
+ * substr/json_raw/str_from_bytes): each allocates output <= its input via
+ * raw make_str/xstrdup, so it is safe PER CALL, but a loop re-using one
+ * charged input spawns N uncharged outputs (the list slots are charged, the
+ * string payloads are not). "Bounded by ARGUMENTS" is true per-call and
+ * false across a loop with a reused input. Charging them belongs at a
+ * make_str-adjacent chokepoint that does NOT double-charge the strbuf
+ * consumers (json_encode etc. already charge at strbuf_reserve) — a
+ * considered change, tracked upstream, not a per-site patch. */
 int sandbox_charge(size_t bytes) {
     if (!g_sandbox_active || g_sandbox_byte_max == 0) return 1;
     /* Overflow-safe: g_sandbox_bytes_used <= g_sandbox_byte_max is an invariant

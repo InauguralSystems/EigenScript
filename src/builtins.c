@@ -4748,6 +4748,9 @@ Value* builtin_reshape(Value *arg) {
     int r = (int)arg->data.list.items[1]->data.num;
     int c = (int)arg->data.list.items[2]->data.num;
     if (r < 0 || c < 0 || (long)r * (long)c != (long)b->data.buffer.count) return make_null();
+    /* Same buffer chokepoint as buf_from_list — reshape copies the payload. */
+    if (!sandbox_charge((b->data.buffer.count > 0 ? (size_t)b->data.buffer.count : 1) * sizeof(double)))
+        return make_null();
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUFFER;
     v->data.buffer.count = b->data.buffer.count;
@@ -4813,6 +4816,13 @@ Value* builtin_buf_len(Value *arg) {
 Value* builtin_buf_from_list(Value *arg) {
     if (!arg || arg->type != VAL_LIST) return make_null();
     int n = arg->data.list.count;
+    /* Sandbox chokepoint: the only two buffer producers not routed through the
+     * charged make_shaped_buffer/buf_alloc_flat allocators (this + reshape).
+     * Per-call output == input, but a loop re-using one charged input spawns N
+     * uncharged copies past the budget (blind round, 2026-08-17): 50 copies of
+     * an 800k buffer held 320MB under the 256MB default and abort under a
+     * ulimit. Charge like every other buffer producer. */
+    if (!sandbox_charge((n > 0 ? (size_t)n : 1) * sizeof(double))) return make_null();
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUFFER;
     v->data.buffer.count = n;

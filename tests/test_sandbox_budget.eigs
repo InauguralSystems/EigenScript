@@ -232,6 +232,19 @@ mm_small is [ABI, mm_code, ["matmul", "buffer", 10, 1, 1]]
 sr_mm_ok is sandbox_run of [mm_small, 100000, 1000000]
 assert_eq of [sr_mm_ok["ok"], 1, "budget: small matmul within budget stays ok"]
 
+# --- buf_from_list / reshape: the last two raw-xcalloc buffer producers ------
+# 50 copies of an 800k buffer held 320MB under the default budget (ok:1) until
+# these two charged like every other buffer producer. One aggregating loop.
+bl_src is []
+for i in range of 60000:
+    append of [bl_src, 0.0]
+bfl_code is [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN]
+bfl_desc is [ABI, bfl_code, ["buf_from_list", bl_src, 1]]
+sr_bfl is sandbox_run of [bfl_desc, 100000, 100000]
+assert_eq of [sr_bfl["ok"], 0, "budget: buf_from_list -> {ok:0}, not bypass"]
+sr_bfl_ok is sandbox_run of [bfl_desc, 100000, 4000000]
+assert_eq of [sr_bfl_ok["ok"], 1, "budget: buf_from_list within budget stays ok"]
+
 # test_summary (lib/test.eigs) is what makes assertions LOAD-BEARING: it
 # exits nonzero when any assert_eq failed. This file used to print the
 # runner's pass-marker unconditionally — a vacuous gate that reported green
