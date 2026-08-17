@@ -909,9 +909,14 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * join/str_replace; then text_builder/split, the latter reachable from
  * iLambdaAi's generation vocabulary and aborting the grader), which is the
  * whack-a-mole signature that says charge the allocator, not the callers.
- * Still exempt, with reasons: zeros_like (mirrors an already-charged input)
- * and matmul output (per-call 10M-elem cap; inputs charged) — both bounded
- * by their ARGUMENTS, not by a loop. */
+ * The Value-TREE/list output class (json_decode, json_build, scan_ints/
+ * scan_tokens/scan_int_tokens, tokenize_ids/_with_names) is charged at ITS
+ * chokepoints too: list_append/make_list growth and dict growth in
+ * eigenscript.c — a 100 KB JSON const amplified ~40x into an uncharged tree
+ * before that landed. Still exempt, with reasons: zeros_like (mirrors an
+ * already-charged input), matmul output (per-call 10M-elem cap; inputs
+ * charged), str_from_bytes and substr (output <= an already-charged
+ * argument) — all bounded by ARGUMENTS, not by a loop. */
 int sandbox_charge(size_t bytes) {
     if (!g_sandbox_active || g_sandbox_byte_max == 0) return 1;
     /* Overflow-safe: g_sandbox_bytes_used <= g_sandbox_byte_max is an invariant

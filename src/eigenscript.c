@@ -1497,6 +1497,12 @@ Value* make_null(void) {
 
 Value* make_list(int capacity) {
     int from_arena = g_arena.active;
+    /* Oversized pre-allocations join the sandbox list chokepoint (see
+     * list_append): on refusal clamp to the default capacity — the charge
+     * already raised, the run is failing, invariants stay intact. */
+    if (capacity > 8 &&
+        !sandbox_charge((size_t)capacity * (sizeof(Value *) + sizeof(Value))))
+        capacity = 8;
     Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
@@ -1516,6 +1522,9 @@ Value* make_list(int capacity) {
  * Used by the builtin-arg packing path: the wrapper holds incref'd args,
  * and val_decref(arg) must actually walk and release them on return. */
 Value* make_list_heap(int capacity) {
+    if (capacity > 8 &&
+        !sandbox_charge((size_t)capacity * (sizeof(Value *) + sizeof(Value))))
+        capacity = 8;
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
@@ -1604,6 +1613,10 @@ void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
     /* Grow if needed */
     if (dict->data.dict.count >= dict->data.dict.capacity) {
         int new_cap = dict->data.dict.capacity * 2;
+        /* Sandbox chokepoint, dict half (JSON objects): see list_append. */
+        if (!sandbox_charge((size_t)(new_cap - dict->data.dict.capacity) *
+                            (sizeof(char *) + sizeof(Value *) + sizeof(Value))))
+            return;
         dict->data.dict.keys = xrealloc_array(dict->data.dict.keys, new_cap, sizeof(char*));
         dict->data.dict.vals = xrealloc_array(dict->data.dict.vals, new_cap, sizeof(Value*));
         dict->data.dict.capacity = new_cap;
@@ -1767,6 +1780,20 @@ void list_append(Value *list, Value *item) {
     if (!list || list->type != VAL_LIST) return;
     if (list->data.list.count >= list->data.list.capacity) {
         int new_cap = list->data.list.capacity * 2;
+        /* Sandbox chokepoint for the Value-TREE/list output class: string
+         * outputs are charged at strbuf/text_builder growth, but json_decode
+         * and the scan/tokenize family build LISTS — a 100 KB "[0,0,...]"
+         * const amplified ~40x into an uncharged 2.4 MB tree and a 31 MB one
+         * reached the uncatchable x_oom abort under an armed budget (blind
+         * round, 2026-08-17). Charge each new slot at full node weight
+         * (slot pointer + Value) on the growth delta — amortized, off the
+         * no-growth fast path, no-op outside an armed sandbox. On refusal
+         * the append is DROPPED (no incref taken, so list_append_owned's
+         * decref still releases the item) and the catchable EK_SANDBOX is
+         * already raised. */
+        if (!sandbox_charge((size_t)(new_cap - list->data.list.capacity) *
+                            (sizeof(Value *) + sizeof(Value))))
+            return;
         if (list->arena) {
             /* Cannot realloc arena memory — allocate new array and copy */
             Value **new_items = arena_alloc(safe_size_mul(new_cap, sizeof(Value*)));

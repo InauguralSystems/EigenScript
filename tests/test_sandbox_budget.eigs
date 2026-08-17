@@ -152,6 +152,31 @@ assert_eq of [sr_je["ok"], 0, "budget: json_encode of a big value -> {ok:0}"]
 sr_je_ok is sandbox_run of [je_desc, 100000, 1000000]
 assert_eq of [sr_je_ok["ok"], 1, "budget: same json_encode within budget stays ok"]
 
+# --- the Value-tree/list class is charged (json_decode amplification) --------
+# A "[0,0,...]" const amplifies ~40x into Value nodes + list slots; the tree
+# is DISCARDED (POP) so the post-run result-scan cannot mask the mid-run
+# allocation. Uncharged, this reached x_oom through an armed budget.
+jd_json is "["
+for i in range of 12500:
+    jd_json is jd_json + "0,0,0,0,0,0,0,"
+jd_json is jd_json + "0]"
+jd_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], ["json_decode", jd_json, 1]]
+sr_jd is sandbox_run of [jd_desc, 100000, 500000]
+assert_eq of [sr_jd["ok"], 0, "budget: json_decode amplification -> {ok:0}, not bypass"]
+jd_kind is sr_jd["error"]["kind"]
+assert_eq of [jd_kind, "sandbox", "budget: json_decode refusal names the sandbox"]
+sr_jd_ok is sandbox_run of [jd_desc, 100000, 64000000]
+assert_eq of [sr_jd_ok["ok"], 1, "budget: same decode within an ample budget stays ok"]
+
+# --- scan_ints: same class through the scanner family ------------------------
+# (whitespace-separated — scan_ints rejects comma-joined runs as invalid)
+si_text is ""
+for i in range of 12500:
+    si_text is si_text + "0 0 0 0 0 0 0 0 "
+si_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], ["scan_ints", si_text, 1]]
+sr_si is sandbox_run of [si_desc, 100000, 500000]
+assert_eq of [sr_si["ok"], 0, "budget: scan_ints amplification -> {ok:0}"]
+
 # test_summary (lib/test.eigs) is what makes assertions LOAD-BEARING: it
 # exits nonzero when any assert_eq failed. This file used to print the
 # runner's pass-marker unconditionally — a vacuous gate that reported green
