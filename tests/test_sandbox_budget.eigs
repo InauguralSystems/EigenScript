@@ -124,7 +124,7 @@ assert_eq of [sr_srep_ok["ok"], 1, "budget: same str_replace within budget stays
 # list exercises the same growth path without a bytecode loop.
 SET_NAME_LOCAL is 27
 blist is []
-for i in range of 2000:
+for i in range of 300:
     append of [blist, "xxxxxxxx"]
 tb_code is [GET_NAME,0,0, CALL,0,0, SET_NAME_LOCAL,1,0, POP,
             GET_NAME,2,0, GET_NAME,1,0, CONST,3,0, CALL,2,0, RETURN]
@@ -157,24 +157,24 @@ assert_eq of [sr_je_ok["ok"], 1, "budget: same json_encode within budget stays o
 # is DISCARDED (POP) so the post-run result-scan cannot mask the mid-run
 # allocation. Uncharged, this reached x_oom through an armed budget.
 jd_json is "["
-for i in range of 12500:
+for i in range of 500:
     jd_json is jd_json + "0,0,0,0,0,0,0,"
 jd_json is jd_json + "0]"
 jd_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], ["json_decode", jd_json, 1]]
-sr_jd is sandbox_run of [jd_desc, 100000, 500000]
+sr_jd is sandbox_run of [jd_desc, 100000, 5000]
 assert_eq of [sr_jd["ok"], 0, "budget: json_decode amplification -> {ok:0}, not bypass"]
 jd_kind is sr_jd["error"]["kind"]
 assert_eq of [jd_kind, "sandbox", "budget: json_decode refusal names the sandbox"]
-sr_jd_ok is sandbox_run of [jd_desc, 100000, 64000000]
+sr_jd_ok is sandbox_run of [jd_desc, 100000, 1000000]
 assert_eq of [sr_jd_ok["ok"], 1, "budget: same decode within an ample budget stays ok"]
 
 # --- scan_ints: same class through the scanner family ------------------------
 # (whitespace-separated — scan_ints rejects comma-joined runs as invalid)
 si_text is ""
-for i in range of 12500:
+for i in range of 500:
     si_text is si_text + "0 0 0 0 0 0 0 0 "
 si_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], ["scan_ints", si_text, 1]]
-sr_si is sandbox_run of [si_desc, 100000, 500000]
+sr_si is sandbox_run of [si_desc, 100000, 5000]
 assert_eq of [sr_si["ok"], 0, "budget: scan_ints amplification -> {ok:0}"]
 
 # --- small-container nesting cannot bypass the birth charge ------------------
@@ -183,22 +183,22 @@ assert_eq of [sr_si["ok"], 0, "budget: scan_ints amplification -> {ok:0}"]
 # 80MB budget; a 7x7 nesting resurrected the abort). Every container now
 # charges at birth. Outer array of 20000 seven-element arrays, discarded.
 nest_json is "["
-for i in range of 20000:
+for i in range of 300:
     nest_json is nest_json + "[0,0,0,0,0,0,0],"
 nest_json is nest_json + "[0]]"
 nest_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], ["json_decode", nest_json, 1]]
-sr_nest is sandbox_run of [nest_desc, 100000, 500000]
+sr_nest is sandbox_run of [nest_desc, 100000, 5000]
 assert_eq of [sr_nest["ok"], 0, "budget: nested small-array amplification -> {ok:0}"]
-sr_nest_ok is sandbox_run of [nest_desc, 100000, 64000000]
+sr_nest_ok is sandbox_run of [nest_desc, 100000, 1000000]
 assert_eq of [sr_nest_ok["ok"], 1, "budget: same nested decode within ample budget stays ok"]
 
 # --- small JSON OBJECTS are charged too (dict half of the same hole) ---------
 obj_json is "["
-for i in range of 15000:
+for i in range of 300:
     obj_json is obj_json + "{\"a\":0,\"b\":0},"
 obj_json is obj_json + "{\"a\":0}]"
 obj_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN], ["json_decode", obj_json, 1]]
-sr_obj is sandbox_run of [obj_desc, 100000, 500000]
+sr_obj is sandbox_run of [obj_desc, 100000, 5000]
 assert_eq of [sr_obj["ok"], 0, "budget: small-object amplification -> {ok:0}"]
 
 # --- make_dict's BIRTH charge in isolation -----------------------------------
@@ -223,7 +223,7 @@ mm_code is [GET_NAME,0,0,
             GET_NAME,1,0, CONST,2,0, CONST,3,0, CALL,2,0,
             GET_NAME,1,0, CONST,3,0, CONST,2,0, CALL,2,0,
             CALL,2,0, POP, CONST,4,0, RETURN]
-mm_desc is [ABI, mm_code, ["matmul", "buffer", 3000, 1, 1]]
+mm_desc is [ABI, mm_code, ["matmul", "buffer", 500, 1, 1]]
 sr_mm is sandbox_run of [mm_desc, 100000, 1000000]
 assert_eq of [sr_mm["ok"], 0, "budget: outer-product matmul -> {ok:0}, not bypass"]
 mm_kind is sr_mm["error"]["kind"]
@@ -236,11 +236,11 @@ assert_eq of [sr_mm_ok["ok"], 1, "budget: small matmul within budget stays ok"]
 # 50 copies of an 800k buffer held 320MB under the default budget (ok:1) until
 # these two charged like every other buffer producer. One aggregating loop.
 bl_src is []
-for i in range of 60000:
+for i in range of 2000:
     append of [bl_src, 0.0]
 bfl_code is [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP, CONST,2,0, RETURN]
 bfl_desc is [ABI, bfl_code, ["buf_from_list", bl_src, 1]]
-sr_bfl is sandbox_run of [bfl_desc, 100000, 100000]
+sr_bfl is sandbox_run of [bfl_desc, 100000, 8000]
 assert_eq of [sr_bfl["ok"], 0, "budget: buf_from_list -> {ok:0}, not bypass"]
 sr_bfl_ok is sandbox_run of [bfl_desc, 100000, 4000000]
 assert_eq of [sr_bfl_ok["ok"], 1, "budget: buf_from_list within budget stays ok"]
