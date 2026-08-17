@@ -277,9 +277,16 @@ Value* builtin_join(Value *arg) {
     return v;
 }
 
-static void text_builder_reserve(Value *builder, size_t extra) {
+/* Growth chokepoint for every text_builder op (append/append_line/extend):
+ * the sandbox byte budget is charged on the cap DELTA here, so a sandboxed
+ * program cannot grow a builder past max_bytes — uncharged, a 50000-append
+ * loop over a charged-but-large string reached the uncatchable x_oom abort
+ * from inside grade()'s own generation vocabulary (blind round, 2026-08-17).
+ * Returns 0 on refusal (charge already raised catchable EK_SANDBOX); the
+ * caller must not write. */
+static int text_builder_reserve(Value *builder, size_t extra) {
     size_t need = builder->data.text_builder.len + extra + 1;
-    if (need <= builder->data.text_builder.cap) return;
+    if (need <= builder->data.text_builder.cap) return 1;
     size_t cap = builder->data.text_builder.cap ? builder->data.text_builder.cap : 256;
     while (cap < need) {
         if (cap > ((size_t)-1) / 2) {
@@ -288,14 +295,16 @@ static void text_builder_reserve(Value *builder, size_t extra) {
         }
         cap *= 2;
     }
+    if (!sandbox_charge(cap - builder->data.text_builder.cap)) return 0;
     builder->data.text_builder.data = xrealloc(builder->data.text_builder.data, cap);
     builder->data.text_builder.cap = cap;
+    return 1;
 }
 
 static void text_builder_append_raw(Value *builder, const char *s, int count_part) {
     if (!builder || builder->type != VAL_TEXT_BUILDER || !s) return;
     size_t n = strlen(s);
-    text_builder_reserve(builder, n);
+    if (!text_builder_reserve(builder, n)) return;
     memcpy(builder->data.text_builder.data + builder->data.text_builder.len, s, n);
     builder->data.text_builder.len += n;
     builder->data.text_builder.data[builder->data.text_builder.len] = '\0';
@@ -364,6 +373,8 @@ Value* builtin_text_builder_clear(Value *arg) {
 
 Value* builtin_text_builder_to_string(Value *arg) {
     if (!arg || arg->type != VAL_TEXT_BUILDER) return make_str("");
+    /* The final copy duplicates the (charge-bounded) buffer — charge it too. */
+    if (!sandbox_charge(arg->data.text_builder.len + 1)) return make_null();
     return make_str(arg->data.text_builder.data ? arg->data.text_builder.data : "");
 }
 
@@ -1483,6 +1494,21 @@ Value* builtin_split(Value *arg) {
         if (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_STR)
             delim = arg->data.list.items[1]->data.str;
     }
+    /* Output-proportional and allowlisted: total output ~ input bytes plus a
+     * Value + pointer per part. Uncharged, splitting a large string aborted
+     * mid-build before the post-run result-scan could refuse it (blind
+     * round, 2026-08-17). Count parts first (cheap strstr scan), charge
+     * once, then build. */
+    size_t dlen0 = strlen(delim);
+    size_t in_len = strlen(str);
+    size_t n_parts = 1;
+    if (dlen0 > 0) {
+        const char *pc = str;
+        const char *fc;
+        while ((fc = strstr(pc, delim)) != NULL) { n_parts++; pc = fc + dlen0; }
+    }
+    if (!sandbox_charge(in_len + n_parts * (sizeof(Value) + sizeof(Value *))))
+        return make_null();
     Value *list = make_list(0);
     size_t dlen = strlen(delim);
     if (dlen == 0) {

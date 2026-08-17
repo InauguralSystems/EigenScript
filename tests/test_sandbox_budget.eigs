@@ -118,6 +118,40 @@ assert_eq of [sr_srep["ok"], 0, "budget: expanding str_replace -> {ok:0}"]
 sr_srep_ok is sandbox_run of [srep_desc, 100000, 4000000]
 assert_eq of [sr_srep_ok["ok"], 1, "budget: same str_replace within budget stays ok"]
 
+# --- text_builder growth is charged at its chokepoint ------------------------
+# Uncharged, a 50000-append loop reached the uncatchable x_oom abort from
+# inside grade()'s own generation vocabulary. One extend over a host-built
+# list exercises the same growth path without a bytecode loop.
+SET_NAME_LOCAL is 27
+blist is []
+for i in range of 2000:
+    append of [blist, "xxxxxxxx"]
+tb_code is [GET_NAME,0,0, CALL,0,0, SET_NAME_LOCAL,1,0, POP,
+            GET_NAME,2,0, GET_NAME,1,0, CONST,3,0, CALL,2,0, RETURN]
+tb_desc is [ABI, tb_code, ["text_builder_new", "tb", "text_builder_extend", blist]]
+sr_tb is sandbox_run of [tb_desc, 100000, 1000]
+assert_eq of [sr_tb["ok"], 0, "budget: text_builder growth -> {ok:0}, not abort"]
+tb_kind is sr_tb["error"]["kind"]
+assert_eq of [tb_kind, "sandbox", "budget: text_builder refusal names the sandbox"]
+small_list is ["a", "b", "c"]
+tb_small is [ABI, tb_code, ["text_builder_new", "tb", "text_builder_extend", small_list]]
+sr_tb_ok is sandbox_run of [tb_small, 100000, 1000000]
+assert_eq of [sr_tb_ok["ok"], 1, "budget: small text_builder within budget stays ok"]
+
+# --- split is charged (counted output: input bytes + per-part overhead) ------
+split_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CONST,2,0, CALL,2,0, RETURN], ["split", big, "x"]]
+sr_split is sandbox_run of [split_desc, 100000, 1000]
+assert_eq of [sr_split["ok"], 0, "budget: oversized split -> {ok:0}, not abort"]
+sr_split_ok is sandbox_run of [split_desc, 100000, 4000000]
+assert_eq of [sr_split_ok["ok"], 1, "budget: same split within budget stays ok"]
+
+# --- strbuf consumers are charged at strbuf_reserve (json_encode probe) ------
+je_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["json_encode", big]]
+sr_je is sandbox_run of [je_desc, 100000, 500]
+assert_eq of [sr_je["ok"], 0, "budget: json_encode of a big value -> {ok:0}"]
+sr_je_ok is sandbox_run of [je_desc, 100000, 1000000]
+assert_eq of [sr_je_ok["ok"], 1, "budget: same json_encode within budget stays ok"]
+
 # test_summary (lib/test.eigs) is what makes assertions LOAD-BEARING: it
 # exits nonzero when any assert_eq failed. This file used to print the
 # runner's pass-marker unconditionally — a vacuous gate that reported green

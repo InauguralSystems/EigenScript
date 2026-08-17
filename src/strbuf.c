@@ -7,17 +7,29 @@
  */
 
 #include "eigenscript.h"
+#include "vm.h"   /* sandbox_charge */
 
 #define STRBUF_INIT_CAP 64
 
 void strbuf_init(strbuf *b) {
     b->cap = STRBUF_INIT_CAP;
     b->len = 0;
+    b->refused = 0;
     b->data = xmalloc(b->cap);
     b->data[0] = '\0';
 }
 
+/* Growth is the sandbox chokepoint for every strbuf consumer (JSON encoder,
+ * regex_replace, value_to_string): charging the DELTA here closes the whole
+ * output-proportional-allocator class at once instead of per builtin — three
+ * review rounds each found one more uncharged builtin (concat, then join/
+ * str_replace, then text_builder/split) before the charge moved to the
+ * chokepoints (2026-08-17). On refusal the buffer is POISONED: no growth, all
+ * further appends no-op, and sandbox_charge has already raised the catchable
+ * EK_SANDBOX that fails the sandboxed run. Outside an armed sandbox the
+ * charge is a no-op and behavior is unchanged. */
 void strbuf_reserve(strbuf *b, size_t need) {
+    if (b->refused) return;
     size_t required = b->len + need + 1;
     if (required <= b->cap) return;
     size_t new_cap = b->cap ? b->cap : STRBUF_INIT_CAP;
@@ -25,12 +37,17 @@ void strbuf_reserve(strbuf *b, size_t need) {
         if (new_cap > SIZE_MAX / 2) { new_cap = required; break; }
         new_cap *= 2;
     }
+    if (!sandbox_charge(new_cap - b->cap)) {
+        b->refused = 1;
+        return;
+    }
     b->data = xrealloc_array(b->data, new_cap, 1);
     b->cap = new_cap;
 }
 
 void strbuf_append_char(strbuf *b, char c) {
     strbuf_reserve(b, 1);
+    if (b->refused) return;
     b->data[b->len++] = c;
     b->data[b->len] = '\0';
 }
@@ -38,6 +55,7 @@ void strbuf_append_char(strbuf *b, char c) {
 void strbuf_append_n(strbuf *b, const char *s, size_t n) {
     if (n == 0) return;
     strbuf_reserve(b, n);
+    if (b->refused || b->len + n + 1 > b->cap) return;
     memcpy(b->data + b->len, s, n);
     b->len += n;
     b->data[b->len] = '\0';
@@ -57,6 +75,7 @@ void strbuf_append_fmt(strbuf *b, const char *fmt, ...) {
     va_end(ap);
     if (needed < 0) { va_end(ap2); return; }
     strbuf_reserve(b, (size_t)needed);
+    if (b->refused || b->len + (size_t)needed + 1 > b->cap) { va_end(ap2); return; }
     vsnprintf(b->data + b->len, b->cap - b->len, fmt, ap2);
     va_end(ap2);
     b->len += (size_t)needed;
