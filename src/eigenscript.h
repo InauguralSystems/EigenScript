@@ -792,6 +792,12 @@ struct EigsThread {
      * entering a sandbox capped every other worker's loops and charged their
      * allocations against its budget. */
     int                  sandbox_loop_max;   /* 0 = default 100M */
+    int                  sandbox_cap_hit;    /* set when the armed loop budget
+                                              * truncated a loop; sandbox_run
+                                              * reports the run as NOT ok (a
+                                              * capped program did not "run
+                                              * cleanly" — it produced partial
+                                              * results with exit 0) */
     int                  sandbox_active;
     size_t               sandbox_bytes_used;
     size_t               sandbox_byte_max;   /* 0 = no budget */
@@ -890,6 +896,7 @@ extern __thread EigsThread *eigs_current;
 #define g_task_sched          (eigs_current->task_sched)
 #define g_task_suspend_request (eigs_current->task_suspend_request)
 #define g_sandbox_loop_max    (eigs_current->sandbox_loop_max)
+#define g_sandbox_cap_hit     (eigs_current->sandbox_cap_hit)
 #define g_sandbox_active      (eigs_current->sandbox_active)
 #define g_sandbox_bytes_used  (eigs_current->sandbox_bytes_used)
 #define g_sandbox_byte_max    (eigs_current->sandbox_byte_max)

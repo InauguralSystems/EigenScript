@@ -3051,6 +3051,7 @@ Value* builtin_sandbox_run(Value *arg) {
     val_decref(stub);
 
     int saved_max = g_sandbox_loop_max;
+    int saved_cap_hit = g_sandbox_cap_hit;
     long long saved_iters = g_loop_iterations;
     /* #940: the back-edge counter is the sandbox budget's second half — it
      * is saved/restored HERE, at the sandbox boundary only, never per call
@@ -3058,6 +3059,7 @@ Value* builtin_sandbox_run(Value *arg) {
      * called a function). */
     long long saved_backedge_iters = g_loop_backedge_count;
     g_sandbox_loop_max = max_iter > 0 ? max_iter : 1000000;
+    g_sandbox_cap_hit = 0;
     g_loop_iterations = 0;
     g_loop_backedge_count = 0;
     /* #292: arm the allocation budget. Save/restore so nested sandbox_run (or a
@@ -3072,6 +3074,23 @@ Value* builtin_sandbox_run(Value *arg) {
     Value *result = vm_execute(chunk, sbox);
 
     int ok = g_has_error ? 0 : 1;
+    /* A cap-truncated loop is NOT a clean run: the program continued past a
+     * silently cut loop and produced partial results with exit 0. Reporting
+     * ok:1 let a graded validator award its top "runs cleanly" rung to
+     * infinite and truncated programs (found by iLambdaAi's grader review,
+     * 2026-08-17). Surface it as a structured sandbox error instead. */
+    if (ok && g_sandbox_cap_hit) {
+        ok = 0;
+        Value *ev = make_dict(3);
+        dict_set_owned(ev, "kind", make_str("sandbox"));
+        char capmsg[96];
+        snprintf(capmsg, sizeof(capmsg),
+                 "loop budget exhausted (max_iterations=%d): partial run",
+                 g_sandbox_loop_max);
+        dict_set_owned(ev, "message", make_str(capmsg));
+        dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(out, "error", ev);
+    }
     if (g_has_error) {
         /* #406: surface the failure structurally on the result dict so the
          * graded ladder can discriminate (sandbox denial vs type error vs
@@ -3087,6 +3106,7 @@ Value* builtin_sandbox_run(Value *arg) {
     }
 
     g_sandbox_loop_max = saved_max;
+    g_sandbox_cap_hit = saved_cap_hit;
     g_loop_iterations = saved_iters;
     g_loop_backedge_count = saved_backedge_iters;   /* #940 */
     g_sandbox_active     = saved_sb_active;
