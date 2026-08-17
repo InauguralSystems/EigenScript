@@ -6,6 +6,19 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`sandbox_run` now reports a cap-truncated run as NOT ok.** The loop
+  budget's compiler-emitted cap checks exited the loop gracefully and let the
+  program continue to a clean exit, so `sandbox_run` returned
+  `{ok: 1, result: ...}` for programs whose loops were silently cut — wrong
+  partial results indistinguishable from a clean run, and an infinite loop
+  graded "runs cleanly" by iLambdaAi's validation ladder (found by its grader
+  review, 2026-08-17; the assembled-chunk back-edge path already raised, #940).
+  A per-state `sandbox_cap_hit` flag is set at every cap-trip site and
+  surfaced as a structured `{kind: "sandbox", message: "loop budget exhausted
+  (max_iterations=N): partial run"}` error; in-budget runs are unchanged.
+  Loop-cap semantics OUTSIDE the sandbox are untouched (#772: the cap only
+  arms inside `sandbox_run`).
+
 - **`eigen_generate`'s temperature sampling now draws from the script-seedable
   RNG.** It used libc `rand()`, which `main()` seeds with `time(NULL)`, so
   `seed_random` could not pin it and two identical eval runs sampled different

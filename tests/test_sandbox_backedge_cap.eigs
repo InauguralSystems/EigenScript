@@ -48,13 +48,28 @@ assert_eq of [spin_big["ok"], 0, "bare back edge trips under a large budget too"
 # ---- 3. A compiler-shaped loop still trips at the CAP CHECK -----------------
 # [LOOP_CAP_CHECK +3, JUMP_BACK 6, RETURN]: one cap check AND one back edge
 # per iteration — the shape the compiler emits for a plain loop. With
-# max_iterations = 10 the cap check trips first (graceful exit, ok=1).
-# Charged to one shared counter this loop would count 20 and die at the back
-# edge instead — so ok=1 here is the #772 regression guard: adding the
-# back-edge counter must not halve the documented budget.
+# max_iterations = 10 the cap check trips first: the loop exits gracefully,
+# the program runs to RETURN, and sandbox_run reports the run as CAPPED
+# (ok=0 with the "partial run" message) — a truncated program did not "run
+# cleanly"; reporting ok=1 here let a graded validator award its top rung to
+# infinite programs. The #772 regression guard survives in the MESSAGE: the
+# cap-check trip yields the synthesized partial-run error, while a shared
+# counter would count 20 and die at the back edge with the raise message
+# ("back-edge iterations") instead.
 capped is sandbox_run of [[ABI, [LOOP_CAP_CHECK,3,0, JUMP_BACK,6,0, RETURN], []], 10]
-assert_eq of [capped["ok"], 1,
-              "compiler-shaped loop trips at the cap check, not the back edge"]
+assert_eq of [capped["ok"], 0,
+              "compiler-shaped capped loop reports NOT ok (partial run)"]
+has_partial is index_of of [capped["error"]["message"], "partial run"]
+assert_eq of [has_partial >= 0, 1,
+              "cap-check trip names the partial run, not the back-edge raise"]
+
+# ---- 3b. An untripped run under an armed budget still reports ok ------------
+# The cap-hit flag is per-run (saved/restored at the sandbox boundary): after
+# section 3's capped run, a clean run must NOT inherit the flag.
+CONST is 0
+POP is 35
+small is sandbox_run of [[ABI, [CONST,0,0, POP, RETURN], [7]], 100]
+assert_eq of [small["ok"], 1, "a non-looping run under an armed budget stays ok"]
 
 # ---- 4. The trip leaves the host untripped ----------------------------------
 # The counter is armed only inside sandbox_run: after a tripped run, the

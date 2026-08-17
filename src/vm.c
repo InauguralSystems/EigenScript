@@ -1782,6 +1782,7 @@ int eigs_loop_stall_step(Env *e) {
      * iterations of ANY long program — wrong results with exit 0. */
     if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {
         g_loop_exit_reason = "limit";
+        g_sandbox_cap_hit = 1;   /* a capped run must not report ok (#960-adjacent) */
         should_exit = 1;
     }
     loop_iter_store(e, (double)g_loop_iterations);
@@ -1803,6 +1804,7 @@ int eigs_loop_cap_step(Env *e) {
     int should_exit = 0;
     if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {
         g_loop_exit_reason = "limit";
+        g_sandbox_cap_hit = 1;
         should_exit = 1;
     }
     loop_iter_store(e, (double)g_loop_iterations);
@@ -3459,6 +3461,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (g_sandbox_loop_max) {
             g_loop_backedge_count++;
             if (g_loop_backedge_count >= g_sandbox_loop_max) {
+                g_sandbox_cap_hit = 1;
                 rt_error(EK_SANDBOX, current_line,
                          "sandbox loop budget exceeded (%d back-edge iterations)",
                          g_sandbox_loop_max);
@@ -5391,6 +5394,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {   /* #772 */
             g_loop_exit_reason = "limit";
+            g_sandbox_cap_hit = 1;
             should_exit = 1;
         }
         /* Always expose iteration count */
@@ -5421,6 +5425,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int should_exit = 0;
         if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {   /* #772 */
             g_loop_exit_reason = "limit";
+            g_sandbox_cap_hit = 1;
             should_exit = 1;
         }
         loop_iter_store(frame->env, (double)g_loop_iterations);

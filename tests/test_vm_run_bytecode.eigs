@@ -122,11 +122,16 @@ assert_eq of [(sandbox_run of [recv_desc, 100000])["ok"], 0, "sandbox: recv bloc
 send_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["send", 0]]
 assert_eq of [(sandbox_run of [send_desc, 100000])["ok"], 0, "sandbox: send blocked"]
 
-# sandbox_run: a runaway loop is bounded by the iteration cap (returns, no hang).
+# sandbox_run: a runaway loop is bounded by the iteration cap — it RETURNS
+# (no hang) but reports ok:0: a cap-truncated run produced partial results,
+# and "bounded" must not read as "ran cleanly" (a graded validator was
+# awarding its top rung to infinite programs; cap-hit reporting, 2026-08-17).
 # NUM_ONE; JUMP_IF_FALSE +6; LOOP_CAP_CHECK +3; JUMP_BACK 10; RETURN_NULL
 loopcode is [3, 31,6,0, 63,3,0, 30,10,0, 41]
 sr_loop is sandbox_run of [[ABI, loopcode, []], 1000]
-assert_eq of [sr_loop["ok"], 1, "sandbox: runaway loop bounded (returned)"]
+assert_eq of [sr_loop["ok"], 0, "sandbox: runaway loop bounded (returns, reports capped)"]
+sr_partial is index_of of [sr_loop["error"]["message"], "partial run"]
+assert_eq of [sr_partial >= 0, 1, "sandbox: capped loop names the partial run"]
 
 # --- bytecode verifier: out-of-range operands are rejected, not run ---
 # Untrusted/hand-assembled descriptors must never reach the VM with an
