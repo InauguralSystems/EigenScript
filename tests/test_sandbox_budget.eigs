@@ -42,13 +42,29 @@ ok_default is (sandbox_run of [zeros_desc of 9000000, 1000000])["ok"]
 assert_eq of [ok_default, 0, "budget: default budget bounds zeros(9M) -> {ok:0}, no abort"]
 
 # --- 5. CUMULATIVE (F2): two fills that each fit but together exceed the budget.
-#        Each fill(600k) = 4.8MB; budget 6MB admits one, denies the second. ---
+#        fill(60k) result stays under the boundary result-scan budget
+#        (SANDBOX_RESULT_MAX_NODES = 100000) — the original 600k-element result
+#        was refused AT THE BOUNDARY once that scan budget landed, silently
+#        failing the loose case for as long as this file could not fail (see
+#        the test_summary note below). Charge per fill is MEASURED at N*8
+#        bytes (480,000 for N=60000): tight budget 600,000 admits one fill,
+#        denies the second (960,000 > 600,000); the loose budget admits both
+#        AND the result survives the boundary scan. ---
 two_fills is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP,
-               GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [600000, 0.0]]]
-ok_two_tight is (sandbox_run of [two_fills, 1000000, 6000000])["ok"]
-assert_eq of [ok_two_tight, 0, "budget: two fills (9.6MB) under 6MB -> {ok:0} (cumulative)"]
+               GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [60000, 0.0]]]
+ok_two_tight is (sandbox_run of [two_fills, 1000000, 600000])["ok"]
+assert_eq of [ok_two_tight, 0, "budget: two fills under a one-fill budget -> {ok:0} (cumulative)"]
 ok_two_loose is (sandbox_run of [two_fills, 1000000, 12000000])["ok"]
-assert_eq of [ok_two_loose, 1, "budget: two fills (9.6MB) under 12MB -> {ok:1}"]
+assert_eq of [ok_two_loose, 1, "budget: two fills under an ample budget -> {ok:1}"]
+
+# --- 5b. The boundary result-scan budget is its own refusal: a WITHIN-byte-
+#         budget run whose RESULT exceeds SANDBOX_RESULT_MAX_NODES nodes is
+#         refused at the boundary (callable-scan cost is bounded; a huge
+#         result cannot make the verifier the DoS). Pinned deliberately —
+#         this is the behavior that silently broke the old 600k case. ---
+big_fill is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [600000, 0.0]]]
+sr_bigres is sandbox_run of [big_fill, 1000000, 64000000]
+assert_eq of [sr_bigres["ok"], 0, "boundary: >100k-node result refused at the scan"]
 
 # --- 6. The budget is per-run: a tight run doesn't poison a later generous run ---
 ok_after is (sandbox_run of [zeros_desc of 10, 1000000, 1000000])["ok"]
@@ -82,4 +98,9 @@ assert_eq of [cat_kind, "sandbox", "budget: concat refusal names the sandbox"]
 sr_cat_ok is sandbox_run of [cat_desc, 100000, 1000000]
 assert_eq of [sr_cat_ok["ok"], 1, "budget: same concat within budget stays ok"]
 
-print of "All tests passed"
+# test_summary (lib/test.eigs) is what makes assertions LOAD-BEARING: it
+# exits nonzero when any assert_eq failed. This file used to print the
+# runner's pass-marker unconditionally — a vacuous gate that reported green
+# over a red assertion for as long as the result-scan budget existed
+# (found by a blind review round, 2026-08-17).
+test_summary of null
