@@ -4,6 +4,21 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`eigen_generate`'s temperature sampling now draws from the script-seedable
+  RNG.** It used libc `rand()`, which `main()` seeds with `time(NULL)`, so
+  `seed_random` could not pin it and two identical eval runs sampled different
+  tokens — iLambdaAi's checkpoint-selection gate was ranking models on
+  run-to-run noise (±3% parse rate at n=300, found by an eval-determinism
+  probe 2026-08-17). Sampling now uses the shared drand48 stream behind
+  `random`/`random_int` (`eigs_ensure_random_seeded()` exported from
+  builtins.c): unseeded behavior stays time-random; after `seed_random of N`
+  generation is reproducible. Residual: `eigen_generate` still bypasses the
+  trace tape (nondeterministic output with no `TRACE_NONDET` record), and the
+  `randn`-style tensor fills in builtins_tensor.c still use raw `rand()` —
+  both tracked in #960.
+
 ### Security
 
 - **An assembled chunk could pass the verifier and then corrupt the heap.**

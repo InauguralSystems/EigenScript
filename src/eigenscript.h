@@ -1438,4 +1438,12 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning);
  * in docs/BUILTINS.md / docs/STDLIB.md. Hosted-only (lint_host.c). */
 int eigs_api_dump(FILE *out, int json);
 
+/* Seed the shared drand48 stream from entropy unless seed_random already
+ * pinned it. Exported so extension samplers (model_infer.c's eigen_generate)
+ * draw from the SAME script-seedable stream as random/random_int -- the old
+ * private rand() path was seeded by main's srand(time) and could not be
+ * pinned from script at all (found via iLambdaAi's eval-determinism probe,
+ * 2026-08-17). */
+void eigs_ensure_random_seeded(void);
+
 #endif /* EIGENSCRIPT_H */
