@@ -24,6 +24,145 @@ define zeros_desc(n) as:
 define fill_desc(n) as:
     return [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [n, 0.0]]]
 
+# --- #965 (fix5): a caught byte-budget refusal still refuses the run ---------
+# The VM catch path clears g_has_error and resumes at the handler, so a
+# descriptor that wraps an over-budget allocation in TRY_BEGIN and answers the
+# catch with a small constant laundered the run-level refusal into {ok:1} —
+# the budget was exhausted and the diagnostic latch still held the refusal,
+# yet sandbox_run decided ok solely from the just-cleared g_has_error. A
+# sandbox policy refusal is a property of the RUN, not of one raise: untrusted
+# try/catch may observe it, but cannot erase it. TRY_BEGIN's catch offset
+# lands on the POP at byte 14 (the handler drops the caught error value and
+# returns a marker), so on the laundering path the run "succeeds" with
+# "caught-budget-survived". These sections sit at the TOP of the file so a
+# failure's named FAIL lines precede the intentional-refusal stderr prints in
+# the suite's five-line diagnostic excerpt.
+TRY_BEGIN is 54
+TRY_END is 55
+JUMP is 29
+LINE is 68
+SET_NAME_LOCAL is 27
+LIST is 42
+big_caught is ""
+for i in range of 250:
+    big_caught is big_caught + "XXXXXXXX"
+caught_code is [TRY_BEGIN,11,0, GET_NAME,0,0, CONST,1,0, CALL,1,0,
+                TRY_END, RETURN,
+                POP, CONST,2,0, RETURN]
+caught_lower_desc is [ABI, caught_code, ["str_lower", big_caught, "caught-budget-survived"]]
+sr_caught_lower is sandbox_run of [caught_lower_desc, 100000, 1000]
+assert_eq of [sr_caught_lower["ok"], 0,
+              "budget: caught make_str refusal cannot launder run to ok"]
+cl_kind is ""
+cl_msg is ""
+if sr_caught_lower["ok"] == 0:
+    cl_kind is sr_caught_lower["error"]["kind"]
+    cl_msg is sr_caught_lower["error"]["message"]
+assert_eq of [cl_kind, "sandbox", "budget: caught make_str refusal names the sandbox"]
+assert_eq of [cl_msg, "sandbox memory budget exceeded (used 0 + 2001 > 1000 bytes)",
+              "budget: caught make_str refusal reports its own diagnostic"]
+
+# --- #965 (fix5): same caught shape through the buffer allocator -------------
+caught_buffer_desc is [ABI, caught_code, ["buffer", 500, "caught-budget-survived"]]
+sr_caught_buffer is sandbox_run of [caught_buffer_desc, 100000, 1000]
+assert_eq of [sr_caught_buffer["ok"], 0,
+              "budget: caught buffer refusal cannot launder run to ok"]
+cb_kind is ""
+cb_msg is ""
+if sr_caught_buffer["ok"] == 0:
+    cb_kind is sr_caught_buffer["error"]["kind"]
+    cb_msg is sr_caught_buffer["error"]["message"]
+assert_eq of [cb_kind, "sandbox", "budget: caught buffer refusal names the sandbox"]
+assert_eq of [cb_msg, "sandbox memory budget exceeded (used 0 + 4000 > 1000 bytes)",
+              "budget: caught buffer refusal reports its own diagnostic"]
+
+# --- #965 (fix5): the caught strbuf refusal stays refused (control) ----------
+# Control: the same caught shape through a strbuf-backed producer, sized so
+# the 3-byte budget cannot fit even the catch machinery's own error-dict
+# allocations — the error-value build re-trips the budget, so this run
+# refused BEFORE the sticky-refusal state existed and must still refuse after
+# it. A regression that flips THIS row is a different defect than the
+# laundering one above.
+caught_strbuf_desc is [ABI, caught_code, ["json_encode", "x", "caught-strbuf-survived"]]
+sr_caught_strbuf is sandbox_run of [caught_strbuf_desc, 100000, 3]
+assert_eq of [sr_caught_strbuf["ok"], 0,
+              "budget: caught strbuf refusal stays refused (control)"]
+cs_kind is ""
+if sr_caught_strbuf["ok"] == 0:
+    cs_kind is sr_caught_strbuf["error"]["kind"]
+assert_eq of [cs_kind, "sandbox", "budget: caught strbuf control names the sandbox"]
+
+# --- #965 (fix5): an ordinary caught error must not occupy the refusal record
+# A caught throw("sentinel") arms the run's first-diagnostic latch with USER
+# metadata (kind "user", message "sentinel"). The later over-budget str_lower
+# is the run's first ACTUAL sandbox refusal and must supply the returned
+# kind/message/line; the stale user triple is not a refusal and must not
+# suppress it. OP_LINE 7 marks the throw site and OP_LINE 42 the refusal site
+# so the line field discriminates too. The success arm of the try is
+# unreachable (throw always raises); its POP keeps the verifier's stack-height
+# pass honest anyway.
+ord_code is [LINE,7,0,0,0,
+             TRY_BEGIN,14,0, GET_NAME,0,0, CONST,1,0, CALL,1,0,
+             TRY_END, POP, JUMP,1,0,
+             POP,
+             LINE,42,0,0,0,
+             GET_NAME,2,0, CONST,3,0, CALL,1,0, POP,
+             GET_NAME,2,0, CONST,3,0, CALL,1,0, POP,
+             CONST,4,0, RETURN]
+ord_desc is [ABI, ord_code, ["throw", "sentinel", "str_lower", big_caught, "ordering-survived"]]
+sr_ord is sandbox_run of [ord_desc, 100000, 3000]
+assert_eq of [sr_ord["ok"], 0, "budget: caught user throw then budget refusal -> {ok:0}"]
+ord_kind is ""
+ord_msg is ""
+ord_line is 0
+if sr_ord["ok"] == 0:
+    ord_kind is sr_ord["error"]["kind"]
+    ord_msg is sr_ord["error"]["message"]
+    ord_line is sr_ord["error"]["line"]
+assert_eq of [ord_kind, "sandbox",
+              "budget: first actual refusal wins over a stale caught user error"]
+assert_eq of [ord_msg, "sandbox memory budget exceeded (used 2001 + 2001 > 3000 bytes)",
+              "budget: refusal message wins over the stale caught user message"]
+assert_eq of [ord_line, 42,
+              "budget: refusal line is the refusal site, not the caught throw site"]
+
+# --- #965 (fix5): a sandbox_run nested in a host vm_run_bytecode frame -------
+# The grading-ladder shape (see test_vm_run_bytecode.eigs's nested-run note):
+# an outer chunk running on the HOST calls sandbox_run, which arms, refuses,
+# and restores the per-run refusal state while the outer VM frame is still on
+# the stack. (A run nested INSIDE another armed run is unreachable from
+# untrusted bytecode by design: sandbox_run is not on SANDBOX_ALLOW and
+# descriptor constant pools reject callables, so the boundary can only be
+# re-entered from the host — the save/restore half this section can reach is
+# the host-frame one.) The inner run's caught refusal must still fail the
+# inner run; the outer flow must then continue unpoisoned; and later runs must
+# start from fully independent refusal state.
+nest_inner_desc is [ABI, caught_code, ["str_lower", big_caught, "inner-caught"]]
+nest_outer_code is [GET_NAME,0,0, CONST,1,0, CALL,1,0,
+                    SET_NAME_LOCAL,2,0, POP,
+                    GET_NAME,2,0, CONST,3,0, LIST,2,0, RETURN]
+nest_pair is vm_run_bytecode of [ABI, nest_outer_code,
+                                 ["sandbox_run", [nest_inner_desc, 100000, 1000],
+                                  "nest_r", "outer-continued"]]
+assert_eq of [nest_pair[1], "outer-continued",
+              "nested: outer host flow continues after an inner refused run"]
+nest_inner_ok is nest_pair[0]["ok"]
+assert_eq of [nest_inner_ok, 0,
+              "nested: inner caught refusal still refuses the inner run"]
+nest_inner_kind is ""
+if nest_inner_ok == 0:
+    nest_inner_kind is nest_pair[0]["error"]["kind"]
+assert_eq of [nest_inner_kind, "sandbox", "nested: inner refusal names the sandbox"]
+nest_after is sandbox_run of [nest_inner_desc, 100000, 1000]
+assert_eq of [nest_after["ok"], 0, "nested: later tight run refuses on its own fresh budget"]
+na_msg is ""
+if nest_after["ok"] == 0:
+    na_msg is nest_after["error"]["message"]
+assert_eq of [na_msg, "sandbox memory budget exceeded (used 0 + 2001 > 1000 bytes)",
+              "nested: later refusal reports its own diagnostic, not a restored one"]
+assert_eq of [(sandbox_run of [nest_inner_desc, 100000, 100000])["ok"], 1,
+              "nested: later generous run is not poisoned by the refused runs"]
+
 # --- 1. A big allocation under a tiny budget is rejected (ok=0), not aborted ---
 ok_big is (sandbox_run of [zeros_desc of 1000000, 1000000, 1000])["ok"]
 assert_eq of [ok_big, 0, "budget: zeros(1M) under 1000-byte budget -> {ok:0}"]
