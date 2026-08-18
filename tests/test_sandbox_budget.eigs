@@ -245,6 +245,103 @@ assert_eq of [sr_bfl["ok"], 0, "budget: buf_from_list -> {ok:0}, not bypass"]
 sr_bfl_ok is sandbox_run of [bfl_desc, 100000, 4000000]
 assert_eq of [sr_bfl_ok["ok"], 1, "budget: buf_from_list within budget stays ok"]
 
+# --- #965: pure string transforms charge their payload bytes -----------------
+# str_lower/str_upper/trim/substr/str_from_bytes built output via an uncharged
+# copy constructor, so one charged input reused across a loop aggregated N
+# uncharged payloads (the list SLOTS were charged, the payloads were not).
+# An unbounded str_lower loop — the proven test_vm_run_bytecode `loopcode`
+# skeleton (NUM_ONE; JUMP_IF_FALSE; LOOP_CAP_CHECK; JUMP_BACK) with a
+# transform body — can stop only two ways: the iteration cap ("loop budget
+# exhausted ... partial run") or the byte budget ("sandbox memory budget
+# exceeded"). A 30000-byte budget against a 2001-byte payload must stop the
+# loop on the BYTE budget (~15 iterations), long before the 100000-iteration
+# cap — so the refusal message is the discriminator.
+NUM_ONE is 3
+JUMP_IF_FALSE is 31
+JUMP_BACK is 30
+LOOP_CAP_CHECK is 63
+big965 is ""
+for i in range of 250:
+    big965 is big965 + "XXXXXXXX"
+loop965 is [NUM_ONE, JUMP_IF_FALSE,19,0, LOOP_CAP_CHECK,16,0,
+            GET_NAME,0,0, CONST,1,0, CALL,1,0, SET_NAME_LOCAL,2,0, POP,
+            JUMP_BACK,23,0,
+            GET_NAME,2,0, RETURN]
+loop_desc is [ABI, loop965, ["str_lower", big965, "x"]]
+sr_loop is sandbox_run of [loop_desc, 100000, 30000]
+assert_eq of [sr_loop["ok"], 0, "budget: looped str_lower of a reused input -> {ok:0}"]
+# Error fields exist only when ok flips the expected way, so read them behind
+# a guard: a regression must surface as a failed ASSERTION (the guarded
+# default never matches), never as a crash that skips the remaining checks.
+loop_kind is ""
+loop_msg is ""
+if sr_loop["ok"] == 0:
+    loop_kind is sr_loop["error"]["kind"]
+    loop_msg is sr_loop["error"]["message"]
+assert_eq of [loop_kind, "sandbox", "budget: string-transform refusal names the sandbox"]
+loop_mem is index_of of [loop_msg, "memory budget"]
+assert_eq of [loop_mem >= 0, 1, "budget: loop stops on the byte budget, not the iteration cap"]
+# Per-call: one str_lower over the same input is charged its payload.
+lower_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["str_lower", big965]]
+assert_eq of [(sandbox_run of [lower_desc, 100000, 1000])["ok"], 0, "budget: str_lower payload -> {ok:0}"]
+sr_lower_ok is sandbox_run of [lower_desc, 100000, 100000]
+assert_eq of [sr_lower_ok["ok"], 1, "budget: str_lower within budget stays ok"]
+lower_result is ""
+if sr_lower_ok["ok"] == 1:
+    lower_result is sr_lower_ok["result"]
+assert_eq of [lower_result, str_lower of big965, "budget: str_lower transforms correctly"]
+
+# --- #965: each named transform is charged per call --------------------------
+sfb_bytes is []
+for i in range of 2000:
+    append of [sfb_bytes, 65]
+sfb_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["str_from_bytes", sfb_bytes]]
+assert_eq of [(sandbox_run of [sfb_desc, 100000, 1000])["ok"], 0, "budget: str_from_bytes payload -> {ok:0}"]
+assert_eq of [(sandbox_run of [sfb_desc, 100000, 100000])["ok"], 1, "budget: str_from_bytes within budget stays ok"]
+upper_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["str_upper", big965]]
+assert_eq of [(sandbox_run of [upper_desc, 100000, 1000])["ok"], 0, "budget: str_upper payload -> {ok:0}"]
+assert_eq of [(sandbox_run of [upper_desc, 100000, 100000])["ok"], 1, "budget: str_upper within budget stays ok"]
+sub_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["substr", [big965, 0, 2000]]]
+assert_eq of [(sandbox_run of [sub_desc, 100000, 1000])["ok"], 0, "budget: substr payload -> {ok:0}"]
+assert_eq of [(sandbox_run of [sub_desc, 100000, 100000])["ok"], 1, "budget: substr within budget stays ok"]
+trim_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["trim", big965]]
+assert_eq of [(sandbox_run of [trim_desc, 100000, 1000])["ok"], 0, "budget: trim payload -> {ok:0}"]
+assert_eq of [(sandbox_run of [trim_desc, 100000, 100000])["ok"], 1, "budget: trim within budget stays ok"]
+
+# --- #965: a strbuf-charged producer is NOT charged twice --------------------
+# json_encode of a 100000-char string grows its strbuf to 131072 (charged
+# 131008 at strbuf_reserve). A second charge of the 100001-byte payload at the
+# result wrap would total 231009 > 200000 — this budget admits exactly the
+# single charge.
+big_je is ""
+for i in range of 12500:
+    big_je is big_je + "xxxxxxxx"
+je2_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["json_encode", big_je]]
+assert_eq of [(sandbox_run of [je2_desc, 100000, 200000])["ok"], 1, "budget: json_encode charged once, not twice"]
+
+# --- #965: a VAL_BUFFER result counts its element storage at the scan --------
+# The boundary callable-scan counted a buffer as ONE node regardless of
+# element count, so a 200k-element buffer (1.6MB, within the byte budget)
+# crossed the boundary as a single node. The scan now spends one node per
+# element: 200000 > SANDBOX_RESULT_MAX_NODES (100000) refuses the result.
+buf_big_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["buffer", 200000]]
+sr_bufbig is sandbox_run of [buf_big_desc, 100000, 4000000]
+assert_eq of [sr_bufbig["ok"], 0, "boundary: 200k-element buffer result counts its elements"]
+bufbig_msg is ""
+if sr_bufbig["ok"] == 0:
+    bufbig_msg is sr_bufbig["error"]["message"]
+bufbig_scan is index_of of [bufbig_msg, "too large to scan"]
+assert_eq of [bufbig_scan >= 0, 1, "boundary: buffer refusal is the result scan, not the byte budget"]
+buf_small_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["buffer", 1000]]
+assert_eq of [(sandbox_run of [buf_small_desc, 100000, 4000000])["ok"], 1, "boundary: 1k-element buffer result still crosses"]
+
+# --- #965: the same operations outside a sandbox are unchanged ---------------
+assert_eq of [str_lower of "AbC", "abc", "nosandbox: str_lower unchanged"]
+assert_eq of [trim of "  ab  ", "ab", "nosandbox: trim unchanged"]
+assert_eq of [substr of ["abcdef", 1, 3], "bcd", "nosandbox: substr unchanged"]
+assert_eq of [str_from_bytes of [65, 66, 67], "ABC", "nosandbox: str_from_bytes unchanged"]
+assert_eq of [buf_len of (buffer of 3), 3, "nosandbox: buffer unchanged"]
+
 # test_summary (lib/test.eigs) is what makes assertions LOAD-BEARING: it
 # exits nonzero when any assert_eq failed. This file used to print the
 # runner's pass-marker unconditionally — a vacuous gate that reported green
