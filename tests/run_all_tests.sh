@@ -1647,6 +1647,22 @@ else
 fi
 echo ""
 
+# #971: strict math mode (EIGS_STRICT) — domain ops raise instead of clamping.
+echo "Strict math mode (EIGS_STRICT domain-op raises)"
+SM_OUTPUT=$(bash "$TESTS_DIR/test_strict_math.sh" 2>&1)
+SM_PASS=$(echo "$SM_OUTPUT" | grep -c "PASS:" || true)
+SM_FAIL=$(echo "$SM_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + SM_PASS + SM_FAIL))
+PASS=$((PASS + SM_PASS))
+FAIL=$((FAIL + SM_FAIL))
+if [ "$SM_FAIL" -gt 0 ]; then
+    echo "  FAIL: $SM_FAIL strict-math check(s) failed"
+    echo "$SM_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $SM_PASS strict-math checks"
+fi
+echo ""
+
 # Crash-safety regressions: parser depth guard + builtin int-overflow bounds.
 echo "Crash-safety regressions (parser depth + builtin overflow)"
 PD_OUTPUT=$(bash "$TESTS_DIR/test_parse_depth.sh" 2>&1)

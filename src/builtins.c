@@ -1970,9 +1970,10 @@ Value* builtin_tan(Value *arg) {
 Value* builtin_asin(Value *arg) {
     if (!arg || arg->type != VAL_NUM) return make_num(0);
     double x = arg->data.num;
-    /* #865: an out-of-domain argument is clamped, so `asin of 5` answers
-     * `asin of 1` with no signal. The clamp stays; the invalid bit records it. */
+    /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
+     * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
+        if (g_strict_math) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_num(0); }
         g_math_flags |= EIGS_MATH_INVALID;
         x = (x < -1.0) ? -1.0 : 1.0;
     }
@@ -1982,9 +1983,10 @@ Value* builtin_asin(Value *arg) {
 Value* builtin_acos(Value *arg) {
     if (!arg || arg->type != VAL_NUM) return make_num(0);
     double x = arg->data.num;
-    /* #865: an out-of-domain argument is clamped, so `acos of 5` answers
-     * `acos of 1` with no signal. The clamp stays; the invalid bit records it. */
+    /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
+     * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
+        if (g_strict_math) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_num(0); }
         g_math_flags |= EIGS_MATH_INVALID;
         x = (x < -1.0) ? -1.0 : 1.0;
     }

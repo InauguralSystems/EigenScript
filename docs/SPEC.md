@@ -231,6 +231,14 @@ consequences are contracts you can rely on:
   at `±1e308` instead of becoming `Infinity`. Every *defined* operation returns
   a usable finite number; an *undefined* one — division or modulo by zero —
   raises a `value` error rather than inventing a result (above).
+- **Strict math mode (`EIGS_STRICT=1`) makes out-of-domain ops loud.** By
+  default the substitutions above keep a program running (a kernel or grader
+  wants the finite stand-in). Set the environment variable `EIGS_STRICT=1` and
+  an out-of-domain operation — `sqrt` of a negative, `log` of `≤0`, `asin`/
+  `acos` outside `[-1, 1]` — raises a catchable `value` error instead of
+  substituting, for callers that need arithmetic invalidity to fail loudly.
+  Overflow saturation and the `NaN`→`0` collapse are unchanged by the flag for
+  now. (Division and modulo by zero raise in *both* modes — no defined value.)
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
   `>>` and their `bit_*` builtin forms interpret operands as 64-bit integers, so
   `1 << 40` is exact where an f64 mantissa alone would not help. This is the
