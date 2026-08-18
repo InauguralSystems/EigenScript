@@ -421,6 +421,32 @@ if sr_edge["ok"] == 0:
 edge_scan is index_of of [edge_msg, "too large to scan"]
 assert_eq of [edge_scan >= 0, 1, "boundary: exact-limit refusal is the result scan"]
 
+# --- #965 (fix3): the first budget refusal wins across one producer ---------
+# json_decode is allowlisted and continues an array after a refused string.
+# On the runner sizeof(Value) + 8*sizeof(Value*) is 64 + 8*8 = C=128 bytes for
+# the parser's initial make_list(8). The first 128-byte string grows 64->128,
+# then requests 128 with C+64 used and C+127 available; the independent 64-byte
+# second string later requests 64 with only 63 left. The first refusal must stay
+# visible, rather than being overwritten by that later request.
+first128 is ""
+for i in range of 16:
+    first128 is first128 + "xxxxxxxx"
+second64 is ""
+for i in range of 8:
+    second64 is second64 + "xxxxxxxx"
+multi_json is "[\"" + first128 + "\",\"" + second64 + "\"]"
+multi_json_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN],
+                    ["json_decode", multi_json]]
+sr_multi_json is sandbox_run of [multi_json_desc, 100000, 255]
+assert_eq of [sr_multi_json["ok"], 0,
+              "budget: later independent strbuf refusal keeps {ok:0}"]
+multi_json_msg is ""
+if sr_multi_json["ok"] == 0:
+    multi_json_msg is sr_multi_json["error"]["message"]
+assert_eq of [multi_json_msg,
+              "sandbox memory budget exceeded (used 192 + 128 > 255 bytes)",
+              "budget: first refusal remains exact across multiple strbufs"]
+
 # --- #965 (fix2): raw VM slices charge each newly retained allocation -------
 # OP_SLICE_GET is reachable in an assembled sandbox chunk even though it is
 # not a builtin. Reuse one 1000-byte input, retain each fresh 1000-byte slice,
