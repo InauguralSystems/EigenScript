@@ -4726,6 +4726,24 @@ else
 fi
 echo ""
 
+# [99n] VM operand-width comment drift gate (#958).  The checker derives each
+# `kind` width from vm.c's uintN_t/read_uN decoder and confirms chunk.c's shared
+# VR_RAW verifier table carries the same operand.  Its self-test plants a third
+# mismatch so the gate cannot pass merely because the two reported comments
+# happen to be present.
+echo "[99n] VM operand-width comment drift gate (#958)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/vm_operand_width_check.sh" && \
+   bash "$TESTS_DIR/../tools/vm_operand_width_check.sh" --selftest >/dev/null; then
+    PASS=$((PASS + 1))
+    echo "  PASS: VM kind comments match decoder/verifier widths (gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: vm.h kind-width comments drift from vm.c/chunk.c, or the gate self-test broke"
+    bash "$TESTS_DIR/../tools/vm_operand_width_check.sh" 2>&1 | sed -n '1,8p'
+fi
+echo ""
+
 # [99m] Lint archive symbol-collision gate (#917, hole closed by #922).
 # The #917 split turned lint's json_escape helper into an external symbol and
 # broke the static-library route for any embedder with its own json_escape.
