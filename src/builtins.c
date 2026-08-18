@@ -2802,6 +2802,40 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
     return NULL;
 }
 
+/* Sandbox descriptor constants are copied by reference into the chunk. Keep
+ * that trust boundary data-only: a callable or host-owned execution state in a
+ * pool would be an ambient capability even when its name is absent from the
+ * sealed sandbox environment. Lists/dicts remain valid argument containers,
+ * and buffers remain valid data, but every member must be safe too. A depth cap
+ * makes cyclic or adversarially deep containers fail closed during verification. */
+#define SANDBOX_DESC_CONST_MAX_DEPTH 64
+
+static int sandbox_descriptor_constant_safe(const Value *v, int depth) {
+    if (!v || depth > SANDBOX_DESC_CONST_MAX_DEPTH) return 0;
+    switch (v->type) {
+    case VAL_NUM:
+    case VAL_STR:
+    case VAL_NULL:
+    case VAL_JSON_RAW:
+    case VAL_BUFFER:
+        return 1;
+    case VAL_LIST:
+        for (int i = 0; i < v->data.list.count; i++)
+            if (!sandbox_descriptor_constant_safe(v->data.list.items[i], depth + 1))
+                return 0;
+        return 1;
+    case VAL_DICT:
+        for (int i = 0; i < v->data.dict.count; i++)
+            if (!sandbox_descriptor_constant_safe(v->data.dict.vals[i], depth + 1))
+                return 0;
+        return 1;
+    default:
+        /* VAL_FN, VAL_BUILTIN, and VAL_TEXT_BUILDER either execute host code
+         * or retain mutable host-owned state across the boundary. */
+        return 0;
+    }
+}
+
 /* Build an EigsChunk from a descriptor list, recursively for nested functions.
  * `off` skips the leading ABI-revision stamp: 1 at the top level (where
  * vm_desc_abi_error has already validated it), 0 for nested descriptors, which
@@ -2809,7 +2843,8 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
  *   [ code, constants, functions?, param_count?, name?, local_names? ]
  *   - code        : list of byte ints (opcodes + little-endian operands; 16-bit
  *                   except OP_LINE's, which is 32-bit since #630)
- *   - constants   : constant pool (numbers/strings; strings double as
+ *   - constants   : constant pool (ordinary values; sandbox mode restricts it
+ *                   recursively to data-only scalars/containers; strings double as
  *                   GET_NAME/SET_NAME names)
  *   - functions   : (optional) list of descriptors for nested function chunks,
  *                   referenced by OP_CLOSURE [fn_idx]
@@ -2819,7 +2854,7 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
  *                   sizes the call frame, and the first param_count are the
  *                   parameter names OP_CLOSURE binds.
  * The minimal form is code+constants (a flat module chunk). */
-static EigsChunk *vm_build_chunk_desc(Value *desc, int off) {
+static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
     if (!desc || desc->type != VAL_LIST || desc->data.list.count < off + 2)
         return NULL;
     Value **d = desc->data.list.items + off;
@@ -2841,7 +2876,12 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off) {
      * the dedup collapse nor a skipped NULL may shift an entry (#721). A hole
      * in the pool is a malformed descriptor — reject rather than renumber. */
     for (int i = 0; i < consts->data.list.count; i++) {
-        if (!consts->data.list.items[i]) { chunk_free(chunk); return NULL; }
+        if (!consts->data.list.items[i] ||
+            (sandbox_mode &&
+             !sandbox_descriptor_constant_safe(consts->data.list.items[i], 0))) {
+            chunk_free(chunk);
+            return NULL;
+        }
         chunk_add_constant_positional(chunk, consts->data.list.items[i]);
     }
 
@@ -2851,7 +2891,8 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off) {
      * to (wrong function, or out of range). */
     if (n >= 3 && d[2] && d[2]->type == VAL_LIST) {
         for (int i = 0; i < d[2]->data.list.count; i++) {
-            EigsChunk *fn = vm_build_chunk_desc(d[2]->data.list.items[i], 0);
+            EigsChunk *fn = vm_build_chunk_desc(d[2]->data.list.items[i], 0,
+                                                sandbox_mode);
             if (!fn) { chunk_free(chunk); return NULL; }
             chunk_add_function(chunk, fn);
         }
@@ -2893,7 +2934,7 @@ Value* builtin_vm_run_bytecode(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(arg, abibuf, sizeof abibuf);
     if (abi_err) { rt_error(EK_VALUE, 0, "%s", abi_err); return make_null(); }
-    EigsChunk *chunk = vm_build_chunk_desc(arg, 1);
+    EigsChunk *chunk = vm_build_chunk_desc(arg, 1, 0);
     if (!chunk) return make_null();
     /* #831: the compiler's temporal scan is what turns history recording on,
      * and it never saw this chunk — arm from the verified bytecode instead,
@@ -3073,7 +3114,7 @@ Value* builtin_sandbox_run(Value *arg) {
      * producer is stale" from "your bytecode is malformed" without re-running. */
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
-    EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1);
+    EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
     Value *out = make_dict(2);
     if (!chunk) {
         Value *zero = make_num(0);
