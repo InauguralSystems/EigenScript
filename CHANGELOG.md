@@ -4,6 +4,22 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Strict math mode (`EIGS_STRICT=1`) — out-of-domain ops raise instead of
+  substituting (#971).** By default arithmetic is finite by construction: `sqrt`
+  of a negative → `0`, `log` of `≤0` → a stand-in, `asin`/`acos` outside
+  `[-1, 1]` → clamped, each recording the sticky `invalid` math-flag. Those
+  substitutions keep kernels/graders running but launder an out-of-domain
+  argument into a plausible finite result. With `EIGS_STRICT=1` (per-`EigsState`,
+  read once at creation) each such op raises a catchable `value` error instead —
+  for callers, e.g. a generated-code grader, that need arithmetic invalidity to
+  be loud. Default behavior is unchanged (zero blast radius); overflow saturation
+  and the `NaN`→`0` collapse are not yet gated by the flag. First cut of the
+  observer-honesty half of the #975 ledger; the reframe (raise-under-strict, not
+  "route invalid values through the observer") is because the collapse target `0`
+  is indistinguishable from a real `0` and the substituted values must stay for
+  kernels.
+
 ### Changed
 - **Division and modulo by zero now raise instead of yielding `0`.** `5 / 0`
   printed an uncatchable `stderr` warning and pushed `0`; `5 % 0` was fully

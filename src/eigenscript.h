@@ -533,6 +533,13 @@ struct EigsState {
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
+    /* #971: strict math mode. Off by default — arithmetic is finite by
+     * construction (NaN→0, domain clamps substitute, overflow saturates).
+     * On (EIGS_STRICT=1, read once at creation) makes an out-of-domain
+     * operation RAISE an EK_VALUE error instead of substituting a stand-in,
+     * for callers that need arithmetic invalidity to be loud (e.g. grading
+     * generated code). Per-state config, like the observer thresholds. */
+    int             strict_math;
     /* Global lexical scope for the script + REPL line bodies + sourced
      * modules (load_file). Owned by main/eigenlsp; set after env_new. */
     Env            *global_env;
@@ -842,6 +849,7 @@ extern __thread EigsThread *eigs_current;
 #define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
 #define g_unobserved_depth  (eigs_current->unobserved_depth)
 #define g_math_flags        (eigs_current->math_flags)
+#define g_strict_math       (eigs_current->state->strict_math)
 #define g_builtin_call_env  (eigs_current->builtin_call_env)
 #define g_vm                  (*eigs_current->vm)
 #define g_loop_stall_count    (eigs_current->loop_stall_count)

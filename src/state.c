@@ -29,6 +29,12 @@ EigsState *eigs_state_new(void) {
     st->obs_dh_zero  = 0.001;
     st->obs_dh_small = 0.01;
     st->obs_h_low    = 0.1;
+    /* #971: strict math mode, read once from env at creation (like the JIT
+     * thresholds below). Any non-empty, non-"0" value enables it. */
+    {
+        const char *s = getenv("EIGS_STRICT");
+        st->strict_math = (s && s[0] && s[0] != '0') ? 1 : 0;
+    }
     /* Filesystem anchor defaults; main/eigenlsp overwrite after attach. */
     st->script_dir[0] = '.'; st->script_dir[1] = '\0';
     st->exe_dir[0]    = '.'; st->exe_dir[1]    = '\0';
