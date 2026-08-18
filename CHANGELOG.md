@@ -4,20 +4,32 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-08-17
+
 ### Fixed
 
-- **String concatenation is charged to the sandbox allocation budget.** #292's
-  byte budget charged only the size-controlled builtins (zeros/fill/buffer/
-  range/concat-of-lists), so `s is s + s` in a sandboxed loop doubled straight
-  past `max_bytes` to an uncatchable `x_oom` abort() — a two-line, fully
-  in-vocab generated program killed the grading PROCESS instead of failing the
-  run (iLambdaAi break-it round, 2026-08-17; on an un-ulimited 4 GB box the
-  same program thrash-freezes the machine first). The VM's ADD string path now
-  calls `sandbox_charge` before allocating — catchable EK_SANDBOX on refusal,
-  no-op outside an armed sandbox, and the JIT bails to this path on non-num
-  ADD so one site covers both engines. Residual: other unbounded growth paths
-  (f-string interpolation of already-large values, `join`) remain uncharged —
-  they cannot self-amplify the way `+` can, but a fuller audit is future work.
+- **The `sandbox_run` allocation budget now charges every amplifying allocator
+  class, at the growth chokepoints.** #292 charged only the size-controlled
+  builtins (zeros/fill/buffer/range), leaving a family of output-proportional
+  allocators uncharged: a two-line, fully in-vocab generated program
+  (`s is s + s`, or the same doubling through `join`/`str_replace`/
+  `text_builder`/`split`/`json_decode`/`matmul`/`buf_from_list`) blew past
+  `max_bytes` to an uncatchable `x_oom` abort() — killing the grading PROCESS
+  instead of failing the run (a fuller audit found each class in turn; iLambdaAi
+  grader-hardening rounds, 2026-08-17). The charge now lives at the allocator
+  CHOKEPOINTS rather than per-builtin: the VM's ADD string path, `strbuf_reserve`
+  (json_encode/regex_replace/value_to_string, with poison-on-refusal),
+  `text_builder_reserve`, `make_list`/list-growth and `make_dict`/dict-growth
+  (charged at birth, so nested `<=8`-element containers cannot bypass), the
+  buffer/tensor allocators (`make_shaped_buffer`/`make_buffer_like` — the
+  matmul outer-product waiver was false), and `split`'s counted output.
+  Refusal raises a catchable `EK_SANDBOX`; all paths are a no-op outside an
+  armed sandbox. `sandbox_charge` is NULL-guarded so the non-VM entry points
+  that share these utilities (`--fmt`, `--lint`, `--api`, the lexer) do not
+  dereference an absent state. Residual: the pure string transforms
+  (str_lower/upper/trim/substr/json_raw/str_from_bytes) bypass under
+  loop-aggregation of a reused input, and the intern pool accumulates across
+  runs — tracked in #964/#965.
 
 - **`sandbox_run` now reports a cap-truncated run as NOT ok.** The loop
   budget's compiler-emitted cap checks exited the loop gracefully and let the
