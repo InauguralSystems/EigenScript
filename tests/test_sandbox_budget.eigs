@@ -335,6 +335,98 @@ assert_eq of [bufbig_scan >= 0, 1, "boundary: buffer refusal is the result scan,
 buf_small_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["buffer", 1000]]
 assert_eq of [(sandbox_run of [buf_small_desc, 100000, 4000000])["ok"], 1, "boundary: 1k-element buffer result still crosses"]
 
+# --- #965 (fix1): SMALL strbuf-backed payloads are charged too ----------------
+# strbuf_init's 64-byte initial capacity is never charged and strbuf_reserve
+# charges only growth DELTAS, so a result of <=63 payload bytes transferred by
+# ownership paid ZERO. A loop of small json_encode results must accumulate a
+# per-call payload charge: 4 bytes per "x" result, so a 30000-byte budget
+# stops the loop long before the 100000-iteration cap — the refusal message
+# is again the discriminator. Same proven loopcode skeleton as above.
+je_loop is [NUM_ONE, JUMP_IF_FALSE,19,0, LOOP_CAP_CHECK,16,0,
+            GET_NAME,0,0, CONST,1,0, CALL,1,0, SET_NAME_LOCAL,2,0, POP,
+            JUMP_BACK,23,0,
+            GET_NAME,2,0, RETURN]
+je_loop_desc is [ABI, je_loop, ["json_encode", "x", "r"]]
+sr_jeloop is sandbox_run of [je_loop_desc, 100000, 30000]
+assert_eq of [sr_jeloop["ok"], 0, "budget: looped small json_encode -> {ok:0}"]
+jeloop_kind is ""
+jeloop_msg is ""
+if sr_jeloop["ok"] == 0:
+    jeloop_kind is sr_jeloop["error"]["kind"]
+    jeloop_msg is sr_jeloop["error"]["message"]
+assert_eq of [jeloop_kind, "sandbox", "budget: small-strbuf refusal names the sandbox"]
+jeloop_mem is index_of of [jeloop_msg, "memory budget"]
+assert_eq of [jeloop_mem >= 0, 1, "budget: small-strbuf loop stops on bytes, not the iteration cap"]
+# Per-call: one 3-byte json_encode result charges its 4 payload bytes.
+je_small is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["json_encode", "x"]]
+assert_eq of [(sandbox_run of [je_small, 100000, 3])["ok"], 0, "budget: small json_encode payload -> {ok:0}"]
+sr_jes is sandbox_run of [je_small, 100000, 1000]
+assert_eq of [sr_jes["ok"], 1, "budget: small json_encode within budget stays ok"]
+jes_result is ""
+if sr_jes["ok"] == 1:
+    jes_result is sr_jes["result"]
+assert_eq of [jes_result, "\"x\"", "budget: small json_encode result is correct"]
+
+# --- #965 (fix1): a GROWN strbuf result is charged exactly once ---------------
+# A 100-char string encodes to 102 strbuf bytes: growth charges 64 (64->128),
+# the payload remainder (103 - 64 = 39) is charged at the ownership transfer —
+# total exactly 103, the payload. Budget 102 must refuse; 103 must admit.
+# Charging the payload AGAIN at the wrap (the old make_str shape) would total
+# 64 + 39 + 103 = 206 and refuse the 103 budget, so the pair pins exact-once.
+mid100 is ""
+for i in range of 12:
+    mid100 is mid100 + "xxxxxxxx"
+mid100 is mid100 + "xxxx"
+je_mid is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["json_encode", mid100]]
+assert_eq of [(sandbox_run of [je_mid, 100000, 102])["ok"], 0, "budget: grown strbuf payload (103) refused at 102"]
+assert_eq of [(sandbox_run of [je_mid, 100000, 103])["ok"], 1, "budget: grown strbuf charged exactly once (103 admitted)"]
+
+# --- #965 (fix1): the original refusal diagnostic survives error construction --
+# The error-result dict is built while its make_dict/make_str calls could
+# themselves attempt refused charges against the just-exhausted budget and
+# CLOBBER g_error_raw before it is read into the message. Here the first
+# concat commits 1201 of a 1300 budget and the second is refused, leaving no
+# room for any diagnostic allocation: the reported message must still be the
+# ORIGINAL "used 1201 + 1201 > 1300", not a re-entrant refusal's numbers.
+big_cc is ""
+for i in range of 75:
+    big_cc is big_cc + "xxxxxxxx"
+cc_code is [CONST,0,0, CONST,0,0, ADD, POP, CONST,0,0, CONST,0,0, ADD, RETURN]
+cc_desc is [ABI, cc_code, [big_cc]]
+sr_cc is sandbox_run of [cc_desc, 100000, 1300]
+assert_eq of [sr_cc["ok"], 0, "budget: second oversized concat -> {ok:0}"]
+cc_kind is ""
+cc_msg is ""
+if sr_cc["ok"] == 0:
+    cc_kind is sr_cc["error"]["kind"]
+    cc_msg is sr_cc["error"]["message"]
+assert_eq of [cc_kind, "sandbox", "budget: concat refusal names the sandbox"]
+cc_orig is index_of of [cc_msg, "used 1201 + 1201 > 1300"]
+assert_eq of [cc_orig >= 0, 1, "budget: original refusal diagnostic survives error construction"]
+
+# --- #965 (fix1): the exact result-scan node boundary --------------------------
+# The scan spends one node per VALUE: a container costs 1 + its elements, so a
+# buffer costs 1 container node + 1 per element — identical arithmetic to a
+# flat list of the same length. Against SANDBOX_RESULT_MAX_NODES = 100000:
+# 1 + 99998 = 99999 nodes crosses; 1 + 99999 = 100000 exhausts the budget and
+# fails closed (the scan's strict exhaustion rule, same as lists).
+buf_edge_lo is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["buffer", 99998]]
+assert_eq of [(sandbox_run of [buf_edge_lo, 100000, 4000000])["ok"], 1, "boundary: 1+99998-node buffer result crosses"]
+buf_edge_hi is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["buffer", 99999]]
+sr_edge is sandbox_run of [buf_edge_hi, 100000, 4000000]
+assert_eq of [sr_edge["ok"], 0, "boundary: 1+99999-node buffer result refused at the exact limit"]
+edge_msg is ""
+if sr_edge["ok"] == 0:
+    edge_msg is sr_edge["error"]["message"]
+edge_scan is index_of of [edge_msg, "too large to scan"]
+assert_eq of [edge_scan >= 0, 1, "boundary: exact-limit refusal is the result scan"]
+
+# --- #965 (fix1): changed strbuf consumers outside a sandbox are unchanged -----
+assert_eq of [json_encode of "x", "\"x\"", "nosandbox: json_encode unchanged"]
+assert_eq of [json_build of ["k", 1], "{\"k\": 1}", "nosandbox: json_build unchanged"]
+assert_eq of [str of [1, 2], "[1, 2]", "nosandbox: str of list unchanged"]
+assert_eq of [regex_replace of ["aXbXc", "X", "-"], "a-b-c", "nosandbox: regex_replace unchanged"]
+
 # --- #965: the same operations outside a sandbox are unchanged ---------------
 assert_eq of [str_lower of "AbC", "abc", "nosandbox: str_lower unchanged"]
 assert_eq of [trim of "  ab  ", "ab", "nosandbox: trim unchanged"]
