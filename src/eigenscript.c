@@ -1467,6 +1467,24 @@ Value* promote_if_arena(Value *v) {
 }
 
 Value* make_str(const char *s) {
+    /* #965: the copying string constructor is the sandbox chokepoint for the
+     * pure string transforms (str_lower/str_upper/trim/substr/json_raw/
+     * str_from_bytes, and every other fresh copy): each output is a NEW
+     * allocation no upstream allocator accounted for, so charge the payload
+     * here — once, at the constructor, not per builtin. "Bounded by
+     * ARGUMENTS" was true per call and false across a loop re-using one
+     * charged input (50 uncharged ~20MB outputs under a 200KB budget).
+     * Producers whose payload IS already charged upstream — the VM's ADD
+     * concat, join/split/str_replace/text_builder_to_string (explicit
+     * charges), and the strbuf consumers (json_encode/json_build/json_path/
+     * json_decode/regex_replace/value_to_string, charged at strbuf_reserve)
+     * — wrap with make_str_owned instead, which takes ownership of a buffer
+     * its producer already accounted for and so must NOT charge again.
+     * Refusal follows the make_list precedent: sandbox_charge has already
+     * raised the catchable EK_SANDBOX that fails the run; the string is
+     * still built (bounded by the iteration cap) so callers' non-NULL
+     * assumption holds. No-op outside an armed sandbox. */
+    if (!sandbox_charge(strlen(s) + 1)) { /* raised; proceed like make_list */ }
     int from_arena = g_arena.active;
     Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_STR;
@@ -1478,6 +1496,13 @@ Value* make_str(const char *s) {
 }
 
 Value* make_str_owned(char *s) {
+    /* Deliberately UNCHARGED: ownership-taking constructor for buffers whose
+     * producer already accounted for them (see make_str). Every call site
+     * must uphold that — a producer that allocated without charging belongs
+     * on make_str. KNOWN RESIDUAL: the VM's string-slice operator allocates
+     * its copy raw and lands here without an upstream charge (vm.c), the
+     * same loop-aggregation shape as #965 in an operator the issue's sweep
+     * did not name. */
     int from_arena = g_arena.active;
     Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_STR;

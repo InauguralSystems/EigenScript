@@ -272,9 +272,8 @@ Value* builtin_join(Value *arg) {
     free(parts);
     free(lengths);
 
-    Value *v = make_str(result);
-    free(result);
-    return v;
+    /* #965: total+1 was charged above — take ownership, no second charge. */
+    return make_str_owned(result);
 }
 
 /* Growth chokepoint for every text_builder op (append/append_line/extend):
@@ -375,7 +374,8 @@ Value* builtin_text_builder_to_string(Value *arg) {
     if (!arg || arg->type != VAL_TEXT_BUILDER) return make_str("");
     /* The final copy duplicates the (charge-bounded) buffer — charge it too. */
     if (!sandbox_charge(arg->data.text_builder.len + 1)) return make_null();
-    return make_str(arg->data.text_builder.data ? arg->data.text_builder.data : "");
+    /* #965: charged just above — take ownership of the duplicate. */
+    return make_str_owned(xstrdup(arg->data.text_builder.data ? arg->data.text_builder.data : ""));
 }
 
 /* ==== Bitwise operations ====
@@ -490,6 +490,13 @@ Value* builtin_len(Value *arg) {
 
 Value* builtin_str(Value *arg) {
     char *s = value_to_string(arg);
+    /* #965: value_to_string builds list/dict text in a strbuf whose growth
+     * already charged the sandbox budget at strbuf_reserve — take ownership
+     * of that buffer (make_str_owned, no second charge, no copy). Every
+     * other type returns an uncharged xstrdup, so the copying constructor
+     * charges it there. */
+    if (arg && (arg->type == VAL_LIST || arg->type == VAL_DICT))
+        return make_str_owned(s);
     Value *v = make_str(s);
     free(s);
     return v;
@@ -978,8 +985,9 @@ Value* builtin_json_encode(Value *arg) {
         json_encode_depth_error("json_encode");
         return make_null();
     }
-    Value *result = make_str(out.data);
-    strbuf_free(&out);
+    /* #965: the strbuf growth already charged the payload at strbuf_reserve;
+     * take ownership instead of copying (a copy would charge it twice). */
+    Value *result = make_str_owned(strbuf_finish(&out));
     return result;
 }
 
@@ -1195,8 +1203,8 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
     strbuf buf;
     strbuf_init(&buf);
     eigs_json_decode_string_body(s, pos, &buf);
-    Value *v = make_str(buf.data);
-    strbuf_free(&buf);
+    /* #965: decode growth charged at strbuf_reserve — take ownership. */
+    Value *v = make_str_owned(strbuf_finish(&buf));
     return v;
 }
 
@@ -1442,18 +1450,17 @@ Value* builtin_json_build(Value *arg) {
         }
     }
     strbuf_append_char(&out, '}');
-    Value *result = make_str(out.data);
-    strbuf_free(&out);
+    /* #965: the strbuf growth already charged the payload — take ownership. */
+    Value *result = make_str_owned(strbuf_finish(&out));
     return result;
 }
 
 Value* builtin_json_raw(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_null();
-    Value *v = xmalloc(sizeof(Value));
-    memset(v, 0, sizeof(Value));
+    /* #965: route the copy through the charging constructor (the xmalloc +
+     * xstrdup pair here was an uncharged payload of the same class). */
+    Value *v = make_str(arg->data.str);
     v->type = VAL_JSON_RAW;
-    v->data.str = xstrdup(arg->data.str);
-    v->refcount = 1;
     return v;
 }
 
@@ -1513,8 +1520,10 @@ Value* builtin_split(Value *arg) {
         return make_null();
     Value *list = make_list(0);
     size_t dlen = strlen(delim);
+    /* #965: in_len + per-part overhead was charged above, so every piece
+     * wraps with make_str_owned (a make_str copy would charge it twice). */
     if (dlen == 0) {
-        list_append_owned(list, make_str(str));
+        list_append_owned(list, make_str_owned(xstrdup(str)));
         return list;
     }
     const char *p = str;
@@ -1524,11 +1533,10 @@ Value* builtin_split(Value *arg) {
         char *seg = xmalloc(seg_len + 1);
         memcpy(seg, p, seg_len);
         seg[seg_len] = '\0';
-        list_append_owned(list, make_str(seg));
-        free(seg);
+        list_append_owned(list, make_str_owned(seg));
         p = found + dlen;
     }
-    list_append_owned(list, make_str(p));
+    list_append_owned(list, make_str_owned(xstrdup(p)));
     return list;
 }
 
@@ -1861,9 +1869,8 @@ Value* builtin_str_replace(Value *arg) {
         }
     }
     *dst = '\0';
-    Value *r = make_str(result);
-    free(result);
-    return r;
+    /* #965: result_len+1 was charged above — take ownership, no second charge. */
+    return make_str_owned(result);
 }
 
 
@@ -2345,8 +2352,8 @@ Value* builtin_json_path(Value *arg) {
         json_encode_depth_error("json_path");
         return make_null();
     }
-    Value *r = make_str(out.data);
-    strbuf_free(&out);
+    /* #965: the strbuf growth already charged the payload — take ownership. */
+    Value *r = make_str_owned(strbuf_finish(&out));
     val_decref(root);
     return r;
 }
@@ -2996,6 +3003,20 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
     if (depth > SANDBOX_RESULT_MAX_DEPTH || --(*budget) <= 0) {
         *unverified = 1;
         return 1;
+    }
+    if (v->type == VAL_BUFFER) {
+        /* #965: a buffer's element storage is its real weight. Counting it
+         * as ONE node let a huge buffer cross the boundary as a single node
+         * — aggregated buffers escaped both the byte charge and the node
+         * scan (the double-bypass that made buf_from_list land). Spend one
+         * scan node per element; exhausting the budget fails closed like
+         * any other unwalkable result. */
+        long elems = v->data.buffer.count > 0 ? (long)v->data.buffer.count : 1;
+        *budget -= (elems - 1);   /* the entry check already spent one node */
+        if (*budget <= 0) {
+            *unverified = 1;
+            return 1;
+        }
     }
     if (v->type == VAL_LIST) {
         for (int i = 0; i < v->data.list.count; i++)
@@ -4868,7 +4889,11 @@ Value* builtin_str_from_bytes(Value *arg) {
         s[len++] = (char)b;
     }
     s[len] = '\0';
-    return make_str_owned(s);
+    /* #965: the xcalloc above is an uncharged producer — wrap with the
+     * charging copy constructor, not make_str_owned. */
+    Value *r = make_str(s);
+    free(s);
+    return r;
 }
 
 /* f64_to_bytes of x → list of 8 ints: the big-endian IEEE-754 double encoding
