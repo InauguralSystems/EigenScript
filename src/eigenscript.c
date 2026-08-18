@@ -120,10 +120,19 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
      * stamp the VM's live line so both the printed frame and the caught
      * dict's `line` point at the failing statement instead of 0. */
     if (line == 0) line = vm_current_line();
+    /* A sandboxed producer may keep working in the same C call after a
+     * refused allocation. Keep that run's first diagnostic stable across
+     * every later rt_error, while leaving ordinary non-sandbox errors with
+     * their existing last-write behavior. */
+    if (eigs_current && g_sandbox_active && g_sandbox_error_latched) {
+        g_has_error = 1;
+        return;
+    }
     snprintf(g_error_raw, sizeof(g_error_raw), "%s", tmp);
     snprintf(g_error_msg, sizeof(g_error_msg), "Error line %d: %s", line, tmp);
     g_error_kind = (int)kind;
     g_error_line = line;
+    if (eigs_current && g_sandbox_active) g_sandbox_error_latched = 1;
     g_has_error = 1;
     eigs_clear_error_value();   /* a new error supersedes any thrown value */
     if (g_try_depth == 0) {

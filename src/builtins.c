@@ -670,11 +670,18 @@ Value* builtin_throw(Value *arg) {
      * itself so `catch e` binds a dict/list/string/... unchanged —
      * user throws do NOT get the #406 {kind, message, line} wrapping.
      * Kind/line are still stamped for host/embed introspection. */
+    /* The sandbox error latch belongs to the whole run, not to one producer.
+     * Do not let this direct error writer replace a prior allocation refusal. */
+    if (g_sandbox_active && g_sandbox_error_latched) {
+        g_has_error = 1;
+        return make_null();
+    }
     char *msg = value_to_string(arg);
     snprintf(g_error_msg, sizeof(g_error_msg), "%s", msg);
     snprintf(g_error_raw, sizeof(g_error_raw), "%s", msg);
     g_error_kind = (int)EK_USER;
     g_error_line = vm_current_line();
+    if (g_sandbox_active) g_sandbox_error_latched = 1;
     g_has_error = 1;
     eigs_clear_error_value();
     if (arg) {
@@ -3139,9 +3146,11 @@ Value* builtin_sandbox_run(Value *arg) {
     /* #292: arm the allocation budget. Save/restore so nested sandbox_run (or a
      * sandbox_run invoked from already-budgeted code) composes correctly. */
     int    saved_sb_active = g_sandbox_active;
+    int    saved_sb_error_latched = g_sandbox_error_latched;
     size_t saved_sb_used   = g_sandbox_bytes_used;
     size_t saved_sb_max    = g_sandbox_byte_max;
     g_sandbox_active     = 1;
+    g_sandbox_error_latched = 0;
     g_sandbox_bytes_used = 0;
     g_sandbox_byte_max   = max_bytes;
 
@@ -3229,6 +3238,7 @@ Value* builtin_sandbox_run(Value *arg) {
     dict_set(out, "ok", okv);   /* dict_set increfs; drop our ref */
     val_decref(okv);
     if (result) { dict_set(out, "result", result); val_decref(result); }
+    g_sandbox_error_latched = saved_sb_error_latched;
     return out;
 }
 

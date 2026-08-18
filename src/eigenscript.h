@@ -806,6 +806,8 @@ struct EigsThread {
                                               * cleanly" — it produced partial
                                               * results with exit 0) */
     int                  sandbox_active;
+    int                  sandbox_error_latched; /* first diagnostic in the
+                                                  * currently armed run wins */
     size_t               sandbox_bytes_used;
     size_t               sandbox_byte_max;   /* 0 = no budget */
     /* #739: stream_open/stream_write/stream_close target. Per-OS-thread: it
@@ -906,6 +908,7 @@ extern __thread EigsThread *eigs_current;
 #define g_sandbox_loop_max    (eigs_current->sandbox_loop_max)
 #define g_sandbox_cap_hit     (eigs_current->sandbox_cap_hit)
 #define g_sandbox_active      (eigs_current->sandbox_active)
+#define g_sandbox_error_latched (eigs_current->sandbox_error_latched)
 #define g_sandbox_bytes_used  (eigs_current->sandbox_bytes_used)
 #define g_sandbox_byte_max    (eigs_current->sandbox_byte_max)
 #define g_stream_file         (*(FILE **)&eigs_current->stream_file)
