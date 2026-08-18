@@ -120,6 +120,23 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
      * stamp the VM's live line so both the printed frame and the caught
      * dict's `line` point at the failing statement instead of 0. */
     if (line == 0) line = vm_current_line();
+    /* #965 (fix5): an actual sandbox policy refusal is a property of the RUN,
+     * not of one raise. Record the FIRST one per armed run in state the VM
+     * catch path cannot clear (CHECK_ERROR only clears g_has_error), so
+     * builtin_sandbox_run still reports {ok:0} with this refusal's own
+     * kind/message/line after untrusted code catches it. Ordinary errors —
+     * including a caught throw() — never arm this record, so they cannot
+     * suppress a later refusal's diagnostic either. Deliberately independent
+     * of the error latch below: an earlier latched ordinary error must not
+     * keep a refusal out of the record. */
+    if (eigs_current && g_sandbox_active && kind == EK_SANDBOX &&
+        !g_sandbox_refusal) {
+        g_sandbox_refusal = 1;
+        g_sandbox_refusal_kind = (int)kind;
+        g_sandbox_refusal_line = line;
+        snprintf(g_sandbox_refusal_msg, sizeof(g_sandbox_refusal_msg),
+                 "%s", tmp);
+    }
     /* A sandboxed producer may keep working in the same C call after a
      * refused allocation. Keep that run's first diagnostic stable across
      * every later rt_error, while leaving ordinary non-sandbox errors with

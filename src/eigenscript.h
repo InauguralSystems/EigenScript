@@ -810,6 +810,17 @@ struct EigsThread {
                                                   * currently armed run wins */
     size_t               sandbox_bytes_used;
     size_t               sandbox_byte_max;   /* 0 = no budget */
+    /* #965 (fix5): sticky run-level sandbox POLICY refusal, distinct from the
+     * catch-clearable g_has_error flag and from sandbox_error_latched (which
+     * any ordinary caught error also arms). Armed once per sandboxed run, at
+     * the FIRST EK_SANDBOX raise, with that refusal's kind/message/line
+     * captured; builtin_sandbox_run reads it so a caught refusal still fails
+     * the run with the refusal's own diagnostic. Saved/restored at the
+     * sandbox boundary like the latch, so re-entrant runs compose. */
+    int                  sandbox_refusal;
+    int                  sandbox_refusal_kind;
+    int                  sandbox_refusal_line;
+    char                 sandbox_refusal_msg[3900];
     /* #739: stream_open/stream_write/stream_close target. Per-OS-thread: it
      * was one FILE* per process and stream_open unconditionally closes
      * whatever is already open, so two states streaming at once closed each
@@ -911,6 +922,10 @@ extern __thread EigsThread *eigs_current;
 #define g_sandbox_error_latched (eigs_current->sandbox_error_latched)
 #define g_sandbox_bytes_used  (eigs_current->sandbox_bytes_used)
 #define g_sandbox_byte_max    (eigs_current->sandbox_byte_max)
+#define g_sandbox_refusal      (eigs_current->sandbox_refusal)
+#define g_sandbox_refusal_kind (eigs_current->sandbox_refusal_kind)
+#define g_sandbox_refusal_line (eigs_current->sandbox_refusal_line)
+#define g_sandbox_refusal_msg  (eigs_current->sandbox_refusal_msg)
 #define g_stream_file         (*(FILE **)&eigs_current->stream_file)
 #define g_entry_threshold     (eigs_current->state->jit_entry_threshold)
 #define g_iter_threshold      (eigs_current->state->jit_iter_threshold)

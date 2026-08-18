@@ -3188,16 +3188,28 @@ Value* builtin_sandbox_run(Value *arg) {
      * sandbox_run invoked from already-budgeted code) composes correctly. */
     int    saved_sb_active = g_sandbox_active;
     int    saved_sb_error_latched = g_sandbox_error_latched;
+    /* #965 (fix5): the sticky policy-refusal record composes the same way —
+     * an inner run arms, reports, and then restores the outer run's record. */
+    int    saved_sb_refusal = g_sandbox_refusal;
+    int    saved_sb_refusal_kind = g_sandbox_refusal_kind;
+    int    saved_sb_refusal_line = g_sandbox_refusal_line;
+    char   saved_sb_refusal_msg[sizeof g_sandbox_refusal_msg];
+    memcpy(saved_sb_refusal_msg, g_sandbox_refusal_msg,
+           sizeof saved_sb_refusal_msg);
     size_t saved_sb_used   = g_sandbox_bytes_used;
     size_t saved_sb_max    = g_sandbox_byte_max;
     g_sandbox_active     = 1;
     g_sandbox_error_latched = 0;
+    g_sandbox_refusal    = 0;
     g_sandbox_bytes_used = 0;
     g_sandbox_byte_max   = max_bytes;
 
     Value *result = vm_execute(chunk, sbox);
 
-    int ok = g_has_error ? 0 : 1;
+    /* #965 (fix5): the run fails on the sticky policy-refusal record too, not
+     * only on the catch-clearable g_has_error — a byte-budget refusal the
+     * untrusted chunk CAUGHT is still a refused run. */
+    int ok = (g_has_error || g_sandbox_refusal) ? 0 : 1;
     /* #965 (fix1): restore the budget/loop state BEFORE building any error
      * result. The dicts below are made of make_dict/make_str calls, which
      * CHARGE an armed budget — and after a refusal the budget is exhausted,
@@ -3234,7 +3246,22 @@ Value* builtin_sandbox_run(Value *arg) {
         dict_set_owned(ev, "line", make_num(0));
         dict_set_owned(out, "error", ev);
     }
-    if (g_has_error) {
+    if (!ok && g_sandbox_refusal) {
+        /* #965 (fix5): the run failed BECAUSE of a sandbox policy refusal —
+         * report the FIRST refusal's own triple. Not the latched g_error_*,
+         * which an earlier caught ordinary error (e.g. throw("sentinel")) may
+         * occupy without being a refusal; and not a later error. */
+        Value *ev = make_dict(3);
+        dict_set_owned(ev, "kind",
+                       make_str(err_kind_name((ErrKind)g_sandbox_refusal_kind)));
+        dict_set_owned(ev, "message", make_str(g_sandbox_refusal_msg));
+        dict_set_owned(ev, "line", make_num((double)g_sandbox_refusal_line));
+        dict_set_owned(out, "error", ev);
+        if (g_has_error) {
+            g_has_error = 0;
+            eigs_clear_error_value();
+        }
+    } else if (g_has_error) {
         /* #406: surface the failure structurally on the result dict so the
          * graded ladder can discriminate (sandbox denial vs type error vs
          * parse) without re-running outside the sandbox. Same shape as a
@@ -3280,6 +3307,11 @@ Value* builtin_sandbox_run(Value *arg) {
     val_decref(okv);
     if (result) { dict_set(out, "result", result); val_decref(result); }
     g_sandbox_error_latched = saved_sb_error_latched;
+    g_sandbox_refusal      = saved_sb_refusal;
+    g_sandbox_refusal_kind = saved_sb_refusal_kind;
+    g_sandbox_refusal_line = saved_sb_refusal_line;
+    memcpy(g_sandbox_refusal_msg, saved_sb_refusal_msg,
+           sizeof saved_sb_refusal_msg);
     return out;
 }
 
