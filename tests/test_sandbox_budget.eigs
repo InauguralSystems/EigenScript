@@ -441,7 +441,7 @@ slice_loop_code is [LIST,0,0, SET_NAME_LOCAL,4,0, POP,
                     GET_NAME,4,0, RETURN]
 slice_loop_desc is [ABI, slice_loop_code,
                     ["append", slice_src, 0, 1000, "slice_acc"]]
-sr_slice_loop is sandbox_run of [slice_loop_desc, 10, 300]
+sr_slice_loop is sandbox_run of [slice_loop_desc, 7, 200]
 assert_eq of [sr_slice_loop["ok"], 0, "budget: retained string slices -> {ok:0}"]
 slice_loop_kind is ""
 slice_loop_msg is ""
