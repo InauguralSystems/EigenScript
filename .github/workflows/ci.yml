@@ -26,6 +26,7 @@ jobs:
   scope:
     name: scope
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       code: ${{ steps.detect.outputs.code }}
     steps:
@@ -61,6 +62,7 @@ jobs:
   dev-image:
     name: build dev/ci image
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -129,6 +131,7 @@ jobs:
     name: linux / ${{ matrix.cc }}
     needs: dev-image
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: read
@@ -191,6 +194,7 @@ jobs:
     name: freestanding profile (symbol gate + smoke)
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: read
@@ -224,6 +228,7 @@ jobs:
     name: macos / ${{ matrix.os }}
     needs: scope
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -263,6 +268,7 @@ jobs:
     name: extensions (http+model+gfx suite; embed/lsp/jit-smoke)
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: read
@@ -351,6 +357,7 @@ jobs:
     name: db extension (postgres service)
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: read
@@ -393,6 +400,7 @@ jobs:
     name: asan + ubsan (full suite)
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: read
@@ -463,6 +471,7 @@ jobs:
     name: valgrind (memcheck smoke, JIT off)
     needs: scope
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -510,6 +519,7 @@ jobs:
     name: install.sh (interpreter + eigenlsp on PATH)
     needs: scope
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -592,6 +602,7 @@ jobs:
     name: bench (instruction-count regression gate)
     needs: scope
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
