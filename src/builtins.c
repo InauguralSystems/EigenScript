@@ -490,8 +490,8 @@ Value* builtin_len(Value *arg) {
 
 Value* builtin_str(Value *arg) {
     char *s = value_to_string(arg);
-    /* #965: value_to_string builds list/dict text in a strbuf whose growth
-     * already charged the sandbox budget at strbuf_reserve — take ownership
+    /* #965: value_to_string builds list/dict text in a strbuf whose payload
+     * is already charged (reserve growth + finish shortfall) — take ownership
      * of that buffer (make_str_owned, no second charge, no copy). Every
      * other type returns an uncharged xstrdup, so the copying constructor
      * charges it there. */
@@ -985,8 +985,8 @@ Value* builtin_json_encode(Value *arg) {
         json_encode_depth_error("json_encode");
         return make_null();
     }
-    /* #965: the strbuf growth already charged the payload at strbuf_reserve;
-     * take ownership instead of copying (a copy would charge it twice). */
+    /* #965: the strbuf payload is already charged (reserve growth + finish
+     * shortfall); take ownership instead of copying (a copy would charge it twice). */
     Value *result = make_str_owned(strbuf_finish(&out));
     return result;
 }
@@ -1203,7 +1203,8 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
     strbuf buf;
     strbuf_init(&buf);
     eigs_json_decode_string_body(s, pos, &buf);
-    /* #965: decode growth charged at strbuf_reserve — take ownership. */
+    /* #965: decode payload charged (reserve growth + finish shortfall) —
+     * take ownership. */
     Value *v = make_str_owned(strbuf_finish(&buf));
     return v;
 }
@@ -1450,7 +1451,8 @@ Value* builtin_json_build(Value *arg) {
         }
     }
     strbuf_append_char(&out, '}');
-    /* #965: the strbuf growth already charged the payload — take ownership. */
+    /* #965: the strbuf payload is already charged (reserve growth + finish
+     * shortfall) — take ownership. */
     Value *result = make_str_owned(strbuf_finish(&out));
     return result;
 }
@@ -2352,7 +2354,8 @@ Value* builtin_json_path(Value *arg) {
         json_encode_depth_error("json_path");
         return make_null();
     }
-    /* #965: the strbuf growth already charged the payload — take ownership. */
+    /* #965: the strbuf payload is already charged (reserve growth + finish
+     * shortfall) — take ownership. */
     Value *r = make_str_owned(strbuf_finish(&out));
     val_decref(root);
     return r;
@@ -3009,10 +3012,13 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
          * as ONE node let a huge buffer cross the boundary as a single node
          * — aggregated buffers escaped both the byte charge and the node
          * scan (the double-bypass that made buf_from_list land). Spend one
-         * scan node per element; exhausting the budget fails closed like
-         * any other unwalkable result. */
+         * node per element ON TOP OF the container node the entry check
+         * already spent: 1 + count nodes total, the identical accounting a
+         * flat list of the same length gets — so the exact node boundary
+         * behaves the same for both. Exhaustion fails closed like any other
+         * unwalkable result. */
         long elems = v->data.buffer.count > 0 ? (long)v->data.buffer.count : 1;
-        *budget -= (elems - 1);   /* the entry check already spent one node */
+        *budget -= elems;
         if (*budget <= 0) {
             *unverified = 1;
             return 1;
@@ -3141,19 +3147,38 @@ Value* builtin_sandbox_run(Value *arg) {
     Value *result = vm_execute(chunk, sbox);
 
     int ok = g_has_error ? 0 : 1;
+    /* #965 (fix1): restore the budget/loop state BEFORE building any error
+     * result. The dicts below are made of make_dict/make_str calls, which
+     * CHARGE an armed budget — and after a refusal the budget is exhausted,
+     * so each diagnostic allocation refused again and rt_error CLOBBERED
+     * g_error_raw before it could be read into the message, replacing the
+     * original "used U + R > M" numbers with a re-entrant refusal's. With
+     * the budget disarmed first, error construction charges nothing and the
+     * original diagnostic survives verbatim. cap_hit/loop_max are snapshotted
+     * for the partial-run message, which is the only consumer. */
+    int cap_hit = g_sandbox_cap_hit;
+    int loop_max = g_sandbox_loop_max;
+    g_sandbox_loop_max = saved_max;
+    g_sandbox_cap_hit = saved_cap_hit;
+    g_loop_iterations = saved_iters;
+    g_loop_backedge_count = saved_backedge_iters;   /* #940 */
+    g_sandbox_active     = saved_sb_active;
+    g_sandbox_bytes_used = saved_sb_used;
+    g_sandbox_byte_max   = saved_sb_max;
+
     /* A cap-truncated loop is NOT a clean run: the program continued past a
      * silently cut loop and produced partial results with exit 0. Reporting
      * ok:1 let a graded validator award its top "runs cleanly" rung to
      * infinite and truncated programs (found by iLambdaAi's grader review,
      * 2026-08-17). Surface it as a structured sandbox error instead. */
-    if (ok && g_sandbox_cap_hit) {
+    if (ok && cap_hit) {
         ok = 0;
         Value *ev = make_dict(3);
         dict_set_owned(ev, "kind", make_str("sandbox"));
         char capmsg[96];
         snprintf(capmsg, sizeof(capmsg),
                  "loop budget exhausted (max_iterations=%d): partial run",
-                 g_sandbox_loop_max);
+                 loop_max);
         dict_set_owned(ev, "message", make_str(capmsg));
         dict_set_owned(ev, "line", make_num(0));
         dict_set_owned(out, "error", ev);
@@ -3171,14 +3196,6 @@ Value* builtin_sandbox_run(Value *arg) {
         g_has_error = 0;
         eigs_clear_error_value();
     }
-
-    g_sandbox_loop_max = saved_max;
-    g_sandbox_cap_hit = saved_cap_hit;
-    g_loop_iterations = saved_iters;
-    g_loop_backedge_count = saved_backedge_iters;   /* #940 */
-    g_sandbox_active     = saved_sb_active;
-    g_sandbox_bytes_used = saved_sb_used;
-    g_sandbox_byte_max   = saved_sb_max;
 
     chunk_free(chunk);
     env_decref(sbox);

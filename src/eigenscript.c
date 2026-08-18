@@ -1477,7 +1477,8 @@ Value* make_str(const char *s) {
      * Producers whose payload IS already charged upstream — the VM's ADD
      * concat, join/split/str_replace/text_builder_to_string (explicit
      * charges), and the strbuf consumers (json_encode/json_build/json_path/
-     * json_decode/regex_replace/value_to_string, charged at strbuf_reserve)
+     * json_decode/regex_replace/value_to_string, charged at strbuf_reserve
+     * growth PLUS the payload shortfall at strbuf_finish)
      * — wrap with make_str_owned instead, which takes ownership of a buffer
      * its producer already accounted for and so must NOT charge again.
      * Refusal follows the make_list precedent: sandbox_charge has already

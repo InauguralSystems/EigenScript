@@ -19,15 +19,19 @@ void strbuf_init(strbuf *b) {
     b->data[0] = '\0';
 }
 
-/* Growth is the sandbox chokepoint for every strbuf consumer (JSON encoder,
+/* Growth is a sandbox chokepoint for every strbuf consumer (JSON encoder,
  * regex_replace, value_to_string): charging the DELTA here closes the whole
  * output-proportional-allocator class at once instead of per builtin — three
  * review rounds each found one more uncharged builtin (concat, then join/
  * str_replace, then text_builder/split) before the charge moved to the
- * chokepoints (2026-08-17). On refusal the buffer is POISONED: no growth, all
- * further appends no-op, and sandbox_charge has already raised the catchable
- * EK_SANDBOX that fails the sandboxed run. Outside an armed sandbox the
- * charge is a no-op and behavior is unchanged. */
+ * chokepoints (2026-08-17). The delta alone never covers the initial
+ * STRBUF_INIT_CAP bytes (and can leave a grown buffer's tail payload
+ * unaccounted), so strbuf_finish charges the remaining payload shortfall at
+ * the ownership transfer — together they charge every retained strbuf-backed
+ * string exactly once (#965 fix1). On refusal the buffer is POISONED: no
+ * growth, all further appends no-op, and sandbox_charge has already raised
+ * the catchable EK_SANDBOX that fails the sandboxed run. Outside an armed
+ * sandbox the charge is a no-op and behavior is unchanged. */
 void strbuf_reserve(strbuf *b, size_t need) {
     if (b->refused) return;
     size_t required = b->len + need + 1;
@@ -82,6 +86,21 @@ void strbuf_append_fmt(strbuf *b, const char *fmt, ...) {
 }
 
 char *strbuf_finish(strbuf *b) {
+    /* #965 (fix1): the growth chokepoint (strbuf_reserve) charges only cap
+     * DELTAS, so the STRBUF_INIT_CAP initial bytes are never accounted — and
+     * a grown buffer can still hold payload past its charged growth. The
+     * ownership transfer is the one place a strbuf becomes a RETAINED
+     * program value, so the payload shortfall is charged here: every
+     * strbuf-backed string is then charged exactly once (deltas at reserve,
+     * remainder at finish), never twice, never zero — small json_encode
+     * results included. strbuf_free retains nothing and charges nothing.
+     * Refusal follows the make_list precedent (the charge already raised
+     * catchable EK_SANDBOX); no-op outside an armed sandbox. */
+    size_t charged = b->cap >= STRBUF_INIT_CAP ? b->cap - STRBUF_INIT_CAP : 0;
+    size_t payload = b->len + 1;
+    if (payload > charged) {
+        if (!sandbox_charge(payload - charged)) { /* raised; proceed */ }
+    }
     char *out = b->data;
     b->data = NULL;
     b->len = 0;

@@ -927,7 +927,10 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * payload, and producers whose bytes were already charged upstream (the ADD
  * concat above, join/split/str_replace/text_builder_to_string's explicit
  * charges, and the strbuf consumers — json_encode/json_build/json_path/
- * json_decode/regex_replace/value_to_string) wrap with make_str_owned, the
+ * json_decode/regex_replace/value_to_string, charged at strbuf_reserve
+ * growth PLUS the payload shortfall strbuf_finish charges at the ownership
+ * transfer, so results that never grew past the uncharged initial capacity
+ * are covered too) wrap with make_str_owned, the
  * ownership-taking constructor that presumes producer accounting, so no
  * payload is charged twice. KNOWN RESIDUAL: the string-slice operator
  * allocates its copy raw and wraps with make_str_owned without an upstream
