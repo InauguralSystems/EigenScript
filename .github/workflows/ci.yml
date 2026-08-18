@@ -9,6 +9,15 @@ on:
 permissions:
   contents: read
 
+# Only one CI run per ref in flight: a new push (or PR update) cancels the
+# older run for the same branch. Prevents superseded/hung runs from piling
+# up (2026-08-18: three main-push runs — 214m/118m/81m — alive at once after
+# a valgrind flake, none superseding the others). Pairs with the per-job
+# timeout-minutes, which bounds a single hang; this bounds the *fan-out*.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Is this PR docs-only? A change touching nothing but *.md cannot alter C or
   # .eigs behavior, so the legs below that build/run the runtime have nothing to
