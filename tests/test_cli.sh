@@ -168,16 +168,16 @@ else
     fail "CLI14 REPL parse-error recovery" "rc=$RC out='$OUT'"
 fi
 
-# ---- Script with runtime warning still exits 0 (per EM14/EM15 convention) ----
+# ---- Division by zero raises (uncaught -> exit 1) ----
 TMP=$(mktemp /tmp/eigs_cli_XXXXXX.eigs)
 printf 'x is 10 / 0\n' > "$TMP"
 OUT=$("$EIGS" "$TMP" 2>&1)
 RC=$?
 rm -f "$TMP"
-if [ "$RC" = "0" ] && echo "$OUT" | grep -q "division by zero"; then
-    ok "CLI15 division by zero warns but exits 0"
+if [ "$RC" != "0" ] && echo "$OUT" | grep -q "division by zero"; then
+    ok "CLI15 division by zero raises (exit 1)"
 else
-    fail "CLI15 div-zero warning" "rc=$RC out='$OUT'"
+    fail "CLI15 div-zero raises" "rc=$RC out='$OUT'"
 fi
 
 # ---- Summary ----

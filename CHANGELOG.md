@@ -4,6 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **Division and modulo by zero now raise instead of yielding `0`.** `5 / 0`
+  printed an uncatchable `stderr` warning and pushed `0`; `5 % 0` was fully
+  silent and pushed `0` — a wrong *number* that flowed on indistinguishable
+  from a real result, and the observer read the `0` as `converged`. Both now
+  raise a `value` error (`src/vm.c`), catchable via `try`/`catch`, joining the
+  type- and index-error reforms (#499/#680): an operation with no defined
+  result asserts rather than inventing one. Deliberately unconditional (no
+  strict-mode gate) — the `NaN`→`0` / overflow-saturation *collapse* is a
+  defined finite result and is untouched here (it remains observable via the
+  saturation→`diverging` path; making that channel loud is separate follow-up
+  work). First cut of the "finish the fail-soft→loud reform" ledger.
+
 ## [0.40.0] - 2026-08-17
 
 ### Fixed

@@ -2971,7 +2971,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Value *b = vm_pop(); Value *a = vm_pop();
         if (a->type == VAL_NUM && b->type == VAL_NUM) {
             if (b->data.num == 0.0) {
-                fprintf(stderr, "Warning line %d: division by zero\n", current_line);
+                rt_error(EK_VALUE, current_line, "division by zero");
                 vm_push(make_num(0));
             } else {
                 double r = num_guard(a->data.num / b->data.num);
@@ -2999,6 +2999,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!(a->type == VAL_NUM && b->type == VAL_NUM))
                 rt_error(EK_TYPE, current_line, "cannot apply '%%' to %s and %s",
                     val_type_name(a->type), val_type_name(b->type));
+            else
+                rt_error(EK_VALUE, current_line, "modulo by zero");
             vm_push(make_num(0));
         }
         val_decref(a); val_decref(b);

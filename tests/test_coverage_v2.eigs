@@ -55,9 +55,13 @@ assert of [d.count == 42, "CV2-09 index-assign dict"]
 d["new_key"] is "added"
 assert of [d.new_key == "added", "CV2-10 index-assign dict new key"]
 
-# --- Division by zero (warning path) ---
-zero_div is 10 / 0
-assert of [zero_div == 0, "CV2-11 division by zero returns 0"]
+# --- Division by zero (now raises) ---
+caught_zero_div is 0
+try:
+    zero_div is 10 / 0
+catch e:
+    caught_zero_div is 1
+assert of [caught_zero_div == 1, "CV2-11 division by zero raises"]
 
 # --- eval_num_fast: unary negation ---
 x is 5

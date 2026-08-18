@@ -16,8 +16,8 @@
 # parameter defaults also raise, at parse time — #339.)
 # DIAGNOSTICS are best-effort and intentionally differ (issue #306): raised
 # errors carry no "line N" prefix (eval-time AST nodes don't track source
-# lines), and divide-by-zero returns 0 but can't emit the C VM's stderr
-# "Warning ... division by zero" (EigenScript has no stderr-write builtin).
+# lines), and divide-or-modulo-by-zero raises in both (the C VM raises a
+# `value` error; the meta-interpreter throws, having no stderr-write builtin).
 #
 # Usage:
 #   load_file of "lib/eigen.eigs"
@@ -1255,16 +1255,16 @@ define eigen_eval(node, env) as:
         if op == "*":
             return left * right
         if op == "/":
-            # #306: value is at parity with the C VM (0 on divide-by-zero). The
-            # C VM also writes "Warning line N: division by zero" to stderr;
-            # EigenScript has no stderr-write builtin, so the meta-interpreter
-            # can't emit it. Documented divergence — diagnostic only, not value.
+            # Parity with the C VM: division by zero has no defined value, so
+            # both raise rather than inventing one. The C VM raises a `value`
+            # error; here the meta-interpreter throws (the parity suite checks
+            # only that both raise, not that the error objects are identical).
             if right == 0:
-                return 0
+                throw of "division by zero"
             return left / right
         if op == "%":
             if right == 0:
-                return 0
+                throw of "modulo by zero"
             return left % right
         if op == "==":
             if left == right:
