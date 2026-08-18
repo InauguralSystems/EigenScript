@@ -421,6 +421,84 @@ if sr_edge["ok"] == 0:
 edge_scan is index_of of [edge_msg, "too large to scan"]
 assert_eq of [edge_scan >= 0, 1, "boundary: exact-limit refusal is the result scan"]
 
+# --- #965 (fix2): raw VM slices charge each newly retained allocation -------
+# OP_SLICE_GET is reachable in an assembled sandbox chunk even though it is
+# not a builtin. Reuse one 1000-byte input, retain each fresh 1000-byte slice,
+# and let the byte budget—not the loop cap or result scan—be the discriminator.
+SLICE_GET is 80
+LIST is 42
+SET_NAME_LOCAL is 27
+slice_src is ""
+for i in range of 125:
+    slice_src is slice_src + "xxxxxxxx"
+slice_src is slice_src + "xxxx"
+slice_loop_code is [LIST,0,0, SET_NAME_LOCAL,4,0, POP,
+                    NUM_ONE, JUMP_IF_FALSE,29,0, LOOP_CAP_CHECK,26,0,
+                    GET_NAME,0,0, GET_NAME,4,0,
+                    CONST,1,0, CONST,2,0, CONST,3,0, SLICE_GET,
+                    LIST,2,0, CALL,1,0, POP,
+                    JUMP_BACK,33,0,
+                    GET_NAME,4,0, RETURN]
+slice_loop_desc is [ABI, slice_loop_code,
+                    ["append", slice_src, 0, 1000, "slice_acc"]]
+sr_slice_loop is sandbox_run of [slice_loop_desc, 100, 10000]
+assert_eq of [sr_slice_loop["ok"], 0, "budget: retained string slices -> {ok:0}"]
+slice_loop_kind is ""
+slice_loop_msg is ""
+if sr_slice_loop["ok"] == 0:
+    slice_loop_kind is sr_slice_loop["error"]["kind"]
+    slice_loop_msg is sr_slice_loop["error"]["message"]
+assert_eq of [slice_loop_kind, "sandbox", "budget: string-slice refusal names the sandbox"]
+slice_loop_mem is index_of of [slice_loop_msg, "memory budget"]
+assert_eq of [slice_loop_mem >= 0, 1, "budget: retained string slices stop on bytes, not the iteration cap"]
+
+# A positive buffer slice is below the result-scan ceiling, so only its newly
+# allocated element storage should decide this tight budget.
+slice_target is buffer of 2000
+buf_slice_desc is [ABI, [CONST,0,0, CONST,1,0, CONST,2,0, SLICE_GET, RETURN],
+                   [slice_target, 0, 1000]]
+sr_buf_slice is sandbox_run of [buf_slice_desc, 100000, 1000]
+assert_eq of [sr_buf_slice["ok"], 0, "budget: positive buffer slice charges element storage"]
+
+# Reserve refusal is the first diagnostic. strbuf_finish must transfer the
+# poisoned partial buffer without attempting a second charge that overwrites
+# the original reserve numbers before sandbox_run restores its state.
+refuse_input is ""
+for i in range of 15:
+    refuse_input is refuse_input + "xxxxxxxx"
+refuse_input is refuse_input + "xxxxxx"
+refuse_json_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN],
+                     ["json_encode", refuse_input]]
+sr_refuse_json is sandbox_run of [refuse_json_desc, 100000, 127]
+assert_eq of [sr_refuse_json["ok"], 0, "budget: refused strbuf -> {ok:0}"]
+refuse_kind is ""
+refuse_msg is ""
+if sr_refuse_json["ok"] == 0:
+    refuse_kind is sr_refuse_json["error"]["kind"]
+    refuse_msg is sr_refuse_json["error"]["message"]
+assert_eq of [refuse_kind, "sandbox", "budget: refused strbuf names the sandbox"]
+refuse_orig is index_of of [refuse_msg, "used 64 + 128 > 127"]
+assert_eq of [refuse_orig >= 0, 1, "budget: first strbuf refusal diagnostic survives finish"]
+
+# Empty buffers have no element nodes. Pin the flat and one-level-nested
+# shapes at the same strict boundary as an equal-length list: 99,999 total
+# nodes cross, while the overcounted empty-buffer implementation reaches 100k.
+empty_buf is buffer of 0
+empty_flat is []
+for i in range of 99997:
+    append of [empty_flat, 0]
+append of [empty_flat, empty_buf]
+empty_flat_desc is [ABI, [CONST,0,0, RETURN], [empty_flat]]
+assert_eq of [(sandbox_run of [empty_flat_desc, 100000, 4000000])["ok"], 1,
+              "boundary: empty buffer has weight 1 in a flat result"]
+empty_nested is []
+for i in range of 99996:
+    append of [empty_nested, 0]
+append of [empty_nested, [empty_buf]]
+empty_nested_desc is [ABI, [CONST,0,0, RETURN], [empty_nested]]
+assert_eq of [(sandbox_run of [empty_nested_desc, 100000, 4000000])["ok"], 1,
+              "boundary: nested empty buffer has weight 1 plus its container"]
+
 # --- #965 (fix1): changed strbuf consumers outside a sandbox are unchanged -----
 assert_eq of [json_encode of "x", "\"x\"", "nosandbox: json_encode unchanged"]
 assert_eq of [json_build of ["k", 1], "{\"k\": 1}", "nosandbox: json_build unchanged"]
