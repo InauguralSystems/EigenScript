@@ -423,9 +423,9 @@ assert_eq of [edge_scan >= 0, 1, "boundary: exact-limit refusal is the result sc
 
 # --- #965 (fix3): the first budget refusal wins across one producer ---------
 # json_decode is allowlisted and continues an array after a refused string.
-# On the runner sizeof(Value) + 8*sizeof(Value*) is 64 + 8*8 = C=128 bytes for
+# On the runner sizeof(Value) + 8*sizeof(Value*) is 72 + 8*8 = C=136 bytes for
 # the parser's initial make_list(8). The first 128-byte string grows 64->128,
-# then requests 128 with C+64 used and C+127 available; the independent 64-byte
+# then requests 128 with 200 used and C+127 available; the independent 64-byte
 # second string later requests 64 with only 63 left. The first refusal must stay
 # visible, rather than being overwritten by that later request.
 first128 is ""
@@ -437,15 +437,47 @@ for i in range of 8:
 multi_json is "[\"" + first128 + "\",\"" + second64 + "\"]"
 multi_json_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN],
                     ["json_decode", multi_json]]
-sr_multi_json is sandbox_run of [multi_json_desc, 100000, 255]
+sr_multi_json is sandbox_run of [multi_json_desc, 100000, 263]
 assert_eq of [sr_multi_json["ok"], 0,
               "budget: later independent strbuf refusal keeps {ok:0}"]
 multi_json_msg is ""
 if sr_multi_json["ok"] == 0:
     multi_json_msg is sr_multi_json["error"]["message"]
 assert_eq of [multi_json_msg,
-              "sandbox memory budget exceeded (used 192 + 128 > 255 bytes)",
+              "sandbox memory budget exceeded (used 200 + 128 > 263 bytes)",
               "budget: first refusal remains exact across multiple strbufs"]
+
+# --- #965 (fix3): sandbox descriptors cannot smuggle callable constants ----
+# The production mutation killed by these assertions is accepting a VAL_BUILTIN
+# or VAL_FN in the descriptor constant pool. The fixture is local-only: on the
+# vulnerable path read_bytes_buf is invoked directly by OP_CONST/OP_CALL despite
+# its name being absent from SANDBOX_ALLOW. The safe pool contract is recursive
+# over data containers, never callable or host-mutable capability values.
+descriptor_fixture is "/tmp/eigs_965_sandbox_descriptor_const.bin"
+write_bytes of [descriptor_fixture, [65], 0]
+define descriptor_const_fn(x) as:
+    return x
+builtin_const_desc is [ABI, [CONST,0,0, CONST,1,0, CALL,1,0, RETURN],
+                       [read_bytes_buf, [descriptor_fixture, 1]]]
+sr_builtin_const is sandbox_run of [builtin_const_desc, 100000, 1000000]
+assert_eq of [sr_builtin_const["ok"], 0,
+              "sandbox descriptor: builtin constant is rejected at trust boundary"]
+builtin_const_error is ""
+if sr_builtin_const["ok"] == 0:
+    builtin_const_error is sr_builtin_const["error"]["message"]
+assert_eq of [builtin_const_error, "invalid chunk descriptor",
+              "sandbox descriptor: builtin constant reports invalid descriptor"]
+fn_const_desc is [ABI, [CONST,0,0, CONST,1,0, CALL,1,0, RETURN],
+                  [descriptor_const_fn, 7]]
+sr_fn_const is sandbox_run of [fn_const_desc, 100000, 1000000]
+assert_eq of [sr_fn_const["ok"], 0,
+              "sandbox descriptor: function constant is rejected at trust boundary"]
+fn_const_error is ""
+if sr_fn_const["ok"] == 0:
+    fn_const_error is sr_fn_const["error"]["message"]
+assert_eq of [fn_const_error, "invalid chunk descriptor",
+              "sandbox descriptor: function constant reports invalid descriptor"]
+remove_file of descriptor_fixture
 
 # --- #965 (fix2): raw VM slices charge each newly retained allocation -------
 # OP_SLICE_GET is reachable in an assembled sandbox chunk even though it is
