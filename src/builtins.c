@@ -3013,11 +3013,12 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
          * — aggregated buffers escaped both the byte charge and the node
          * scan (the double-bypass that made buf_from_list land). Spend one
          * node per element ON TOP OF the container node the entry check
-         * already spent: 1 + count nodes total, the identical accounting a
+         * already spent: exactly 1 + count nodes, including count zero, the
+         * identical accounting a
          * flat list of the same length gets — so the exact node boundary
          * behaves the same for both. Exhaustion fails closed like any other
          * unwalkable result. */
-        long elems = v->data.buffer.count > 0 ? (long)v->data.buffer.count : 1;
+        long elems = v->data.buffer.count > 0 ? (long)v->data.buffer.count : 0;
         *budget -= elems;
         if (*budget <= 0) {
             *unverified = 1;

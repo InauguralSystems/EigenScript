@@ -1499,11 +1499,9 @@ Value* make_str(const char *s) {
 Value* make_str_owned(char *s) {
     /* Deliberately UNCHARGED: ownership-taking constructor for buffers whose
      * producer already accounted for them (see make_str). Every call site
-     * must uphold that — a producer that allocated without charging belongs
-     * on make_str. KNOWN RESIDUAL: the VM's string-slice operator allocates
-     * its copy raw and lands here without an upstream charge (vm.c), the
-     * same loop-aggregation shape as #965 in an operator the issue's sweep
-     * did not name. */
+     * must uphold that — raw VM slice copies charge their payload immediately
+     * before this transfer, and all other sandbox-reachable producers either
+     * charge at their allocator chokepoint or are explicit host-only paths. */
     int from_arena = g_arena.active;
     Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_STR;

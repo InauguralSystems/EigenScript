@@ -98,7 +98,10 @@ char *strbuf_finish(strbuf *b) {
      * catchable EK_SANDBOX); no-op outside an armed sandbox. */
     size_t charged = b->cap >= STRBUF_INIT_CAP ? b->cap - STRBUF_INIT_CAP : 0;
     size_t payload = b->len + 1;
-    if (payload > charged) {
+    /* A refused reserve already raised the first diagnostic. The producer may
+     * still finish and transfer its poisoned partial buffer, but must not
+     * re-enter sandbox_charge and replace that diagnostic with a shortfall. */
+    if (!b->refused && payload > charged) {
         if (!sandbox_charge(payload - charged)) { /* raised; proceed */ }
     }
     char *out = b->data;

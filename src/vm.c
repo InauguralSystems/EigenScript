@@ -932,11 +932,10 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * transfer, so results that never grew past the uncharged initial capacity
  * are covered too) wrap with make_str_owned, the
  * ownership-taking constructor that presumes producer accounting, so no
- * payload is charged twice. KNOWN RESIDUAL: the string-slice operator
- * allocates its copy raw and wraps with make_str_owned without an upstream
- * charge — the same loop-aggregation shape in a VM operator the #965 sweep
- * did not name; env name interning is likewise uncharged and permanent
- * (#964). */
+ * payload is charged twice. OP_SLICE_GET's raw string and buffer copies charge
+ * their retained payload before allocation, then transfer ownership through
+ * make_str_owned. Host-only raw readers remain outside the armed sandbox
+ * allowlist; env name interning is likewise uncharged and permanent (#964). */
 int sandbox_charge(size_t bytes) {
     /* strbuf/text_builder/list growth are general utilities used far outside
      * the VM — the standalone `--fmt` formatter, the LSP, the lexer, and any
@@ -5331,16 +5330,25 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             result->data.list.count = n;
         } else if (target->type == VAL_STR) {
+            /* This raw copy becomes a retained program value. Charge its
+             * payload before allocation; make_str_owned then transfers the
+             * already-accounted buffer without charging it again. */
+            if (!sandbox_charge((size_t)n + 1)) { /* raised; proceed */ }
             char *buf = xmalloc((size_t)n + 1);
             if (n > 0) memcpy(buf, target->data.str + start, (size_t)n);
             buf[n] = '\0';
             result = make_str_owned(buf);
         } else {
             /* VAL_BUFFER */
+            /* As with every other raw buffer producer, charge the newly
+             * allocated element storage before xcalloc. A zero-length slice
+             * still allocates one sentinel double, matching buffer(). */
+            size_t alloc_elems = n > 0 ? (size_t)n : 1;
+            if (!sandbox_charge(alloc_elems * sizeof(double))) { /* raised; proceed */ }
             result = xcalloc(1, sizeof(Value));
             result->type = VAL_BUFFER;
             result->data.buffer.count = n;
-            result->data.buffer.data = xcalloc(n > 0 ? n : 1, sizeof(double));
+            result->data.buffer.data = xcalloc(alloc_elems, sizeof(double));
             if (n > 0)
                 memcpy(result->data.buffer.data,
                        target->data.buffer.data + start,
