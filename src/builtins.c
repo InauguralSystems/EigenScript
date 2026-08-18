@@ -244,6 +244,18 @@ Value* builtin_join(Value *arg) {
         if (i > 0) total += sep_len;
     }
 
+    /* #292/#followup: join is output-proportional (total = sum(parts) +
+     * sep_len * (count-1)) and was the one allowlisted string allocator left
+     * uncharged after the concat fix — `join of [[s, s], ""]` was the same
+     * doubling primitive through a side door, and a large-const-input join
+     * drove the uncatchable x_oom abort through an armed 1000-byte budget
+     * (blind round, 2026-08-17). Charge the output before allocating. */
+    if (!sandbox_charge(total + 1)) {
+        for (int i = 0; i < count; i++) free(parts[i]);
+        free(parts);
+        free(lengths);
+        return make_null();
+    }
     /* Single allocation */
     char *result = xmalloc(total + 1);
     int pos = 0;
@@ -265,9 +277,16 @@ Value* builtin_join(Value *arg) {
     return v;
 }
 
-static void text_builder_reserve(Value *builder, size_t extra) {
+/* Growth chokepoint for every text_builder op (append/append_line/extend):
+ * the sandbox byte budget is charged on the cap DELTA here, so a sandboxed
+ * program cannot grow a builder past max_bytes — uncharged, a 50000-append
+ * loop over a charged-but-large string reached the uncatchable x_oom abort
+ * from inside grade()'s own generation vocabulary (blind round, 2026-08-17).
+ * Returns 0 on refusal (charge already raised catchable EK_SANDBOX); the
+ * caller must not write. */
+static int text_builder_reserve(Value *builder, size_t extra) {
     size_t need = builder->data.text_builder.len + extra + 1;
-    if (need <= builder->data.text_builder.cap) return;
+    if (need <= builder->data.text_builder.cap) return 1;
     size_t cap = builder->data.text_builder.cap ? builder->data.text_builder.cap : 256;
     while (cap < need) {
         if (cap > ((size_t)-1) / 2) {
@@ -276,14 +295,16 @@ static void text_builder_reserve(Value *builder, size_t extra) {
         }
         cap *= 2;
     }
+    if (!sandbox_charge(cap - builder->data.text_builder.cap)) return 0;
     builder->data.text_builder.data = xrealloc(builder->data.text_builder.data, cap);
     builder->data.text_builder.cap = cap;
+    return 1;
 }
 
 static void text_builder_append_raw(Value *builder, const char *s, int count_part) {
     if (!builder || builder->type != VAL_TEXT_BUILDER || !s) return;
     size_t n = strlen(s);
-    text_builder_reserve(builder, n);
+    if (!text_builder_reserve(builder, n)) return;
     memcpy(builder->data.text_builder.data + builder->data.text_builder.len, s, n);
     builder->data.text_builder.len += n;
     builder->data.text_builder.data[builder->data.text_builder.len] = '\0';
@@ -352,6 +373,8 @@ Value* builtin_text_builder_clear(Value *arg) {
 
 Value* builtin_text_builder_to_string(Value *arg) {
     if (!arg || arg->type != VAL_TEXT_BUILDER) return make_str("");
+    /* The final copy duplicates the (charge-bounded) buffer — charge it too. */
+    if (!sandbox_charge(arg->data.text_builder.len + 1)) return make_null();
     return make_str(arg->data.text_builder.data ? arg->data.text_builder.data : "");
 }
 
@@ -1471,6 +1494,21 @@ Value* builtin_split(Value *arg) {
         if (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_STR)
             delim = arg->data.list.items[1]->data.str;
     }
+    /* Output-proportional and allowlisted: total output ~ input bytes plus a
+     * Value + pointer per part. Uncharged, splitting a large string aborted
+     * mid-build before the post-run result-scan could refuse it (blind
+     * round, 2026-08-17). Count parts first (cheap strstr scan), charge
+     * once, then build. */
+    size_t dlen0 = strlen(delim);
+    size_t in_len = strlen(str);
+    size_t n_parts = 1;
+    if (dlen0 > 0) {
+        const char *pc = str;
+        const char *fc;
+        while ((fc = strstr(pc, delim)) != NULL) { n_parts++; pc = fc + dlen0; }
+    }
+    if (!sandbox_charge(in_len + n_parts * (sizeof(Value) + sizeof(Value *))))
+        return make_null();
     Value *list = make_list(0);
     size_t dlen = strlen(delim);
     if (dlen == 0) {
@@ -1804,6 +1842,10 @@ Value* builtin_str_replace(Value *arg) {
     } else {
         result_len = str_len - count * (old_len - new_len);
     }
+    /* Same class as join: output-proportional, allowlisted, was uncharged —
+     * 100MB allocated inside a 1000-byte budget (blind round, 2026-08-17).
+     * The 256MB hard cap above stays as the catchable upper bound. */
+    if (!sandbox_charge(result_len + 1)) return make_null();
     char *result = xmalloc(result_len + 1);
     char *dst = result;
     p = str;
@@ -4706,6 +4748,9 @@ Value* builtin_reshape(Value *arg) {
     int r = (int)arg->data.list.items[1]->data.num;
     int c = (int)arg->data.list.items[2]->data.num;
     if (r < 0 || c < 0 || (long)r * (long)c != (long)b->data.buffer.count) return make_null();
+    /* Same buffer chokepoint as buf_from_list — reshape copies the payload. */
+    if (!sandbox_charge((b->data.buffer.count > 0 ? (size_t)b->data.buffer.count : 1) * sizeof(double)))
+        return make_null();
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUFFER;
     v->data.buffer.count = b->data.buffer.count;
@@ -4771,6 +4816,13 @@ Value* builtin_buf_len(Value *arg) {
 Value* builtin_buf_from_list(Value *arg) {
     if (!arg || arg->type != VAL_LIST) return make_null();
     int n = arg->data.list.count;
+    /* Sandbox chokepoint: the only two buffer producers not routed through the
+     * charged make_shaped_buffer/buf_alloc_flat allocators (this + reshape).
+     * Per-call output == input, but a loop re-using one charged input spawns N
+     * uncharged copies past the budget (blind round, 2026-08-17): 50 copies of
+     * an 800k buffer held 320MB under the 256MB default and abort under a
+     * ulimit. Charge like every other buffer producer. */
+    if (!sandbox_charge((n > 0 ? (size_t)n : 1) * sizeof(double))) return make_null();
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUFFER;
     v->data.buffer.count = n;

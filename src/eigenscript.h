@@ -939,6 +939,10 @@ typedef struct {
     char  *data;
     size_t len;
     size_t cap;
+    int    refused;   /* set when a sandbox_charge on growth was refused:
+                       * all further appends become no-ops (fail-safe — the
+                       * charge already raised a catchable EK_SANDBOX, and a
+                       * poisoned buffer must not overflow its old capacity) */
 } strbuf;
 
 void   strbuf_init(strbuf *b);

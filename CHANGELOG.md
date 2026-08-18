@@ -6,6 +6,19 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **String concatenation is charged to the sandbox allocation budget.** #292's
+  byte budget charged only the size-controlled builtins (zeros/fill/buffer/
+  range/concat-of-lists), so `s is s + s` in a sandboxed loop doubled straight
+  past `max_bytes` to an uncatchable `x_oom` abort() — a two-line, fully
+  in-vocab generated program killed the grading PROCESS instead of failing the
+  run (iLambdaAi break-it round, 2026-08-17; on an un-ulimited 4 GB box the
+  same program thrash-freezes the machine first). The VM's ADD string path now
+  calls `sandbox_charge` before allocating — catchable EK_SANDBOX on refusal,
+  no-op outside an armed sandbox, and the JIT bails to this path on non-num
+  ADD so one site covers both engines. Residual: other unbounded growth paths
+  (f-string interpolation of already-large values, `join`) remain uncharged —
+  they cannot self-amplify the way `+` can, but a fuller audit is future work.
+
 - **`sandbox_run` now reports a cap-truncated run as NOT ok.** The loop
   budget's compiler-emitted cap checks exited the loop gracefully and let the
   program continue to a clean exit, so `sandbox_run` returned

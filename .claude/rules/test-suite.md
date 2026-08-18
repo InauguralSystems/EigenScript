@@ -34,3 +34,9 @@ paths:
   every generated header. Ask the build system.
   The expensive direction is not the phantom failure but the phantom **pass**:
   a stale binary predating a regression reports its whole section green.
+- **A `.eigs` test file must end with `test_summary of null`, never its own
+  `print of "All tests passed"`.** The runner's marker-grep is satisfied by
+  either, but only `test_summary` exits nonzero on a failed assertion —
+  `test_sandbox_budget.eigs` printed the marker unconditionally and reported
+  green over a genuinely red assert for weeks (caught by a blind review,
+  2026-08-17, fixed with a planted-flip proof).

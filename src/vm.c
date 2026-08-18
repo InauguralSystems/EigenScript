@@ -892,7 +892,8 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * separate budgets, and nothing here needs a lock. The save/restore around the
  * run is what makes NESTING compose, not what makes it thread-safe.
  *
- * Charged at: zeros, fill, buffer, range, concat — the size-controlled list/
+ * Charged at: zeros, fill, buffer, range, concat, the VM's ADD string path,
+ * join, str_replace — the size-controlled list/string/
  * tensor allocators (the issue's vectors) — plus the zlib codecs (inflate/
  * deflate and their zlib_* duals): both the codec's own output buffer and the
  * list of Values built from it. The codecs are the case that breaks the
@@ -901,12 +902,44 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * what the charge reads, while a compressed blob names nothing and amplifies
  * ~1000x. Uncharged, a 9 KB input decompressed to ~800 MB of Values inside an
  * 8 MiB sandbox (measured 853 MiB peak RSS vs 13 MiB for the charged `zeros`
- * control). NOT yet charged: zeros_like (mirrors an already-charged input),
- * matmul output (per-call capped at 10M elems; its inputs are charged), and the
- * text_builder growth path — those genuinely are bounded by the loop-iteration
- * cap × per-op size. Extending the budget to them is a one-line
- * sandbox_charge() at each; left out to match #292's scope. */
+ * control). The charge now ALSO lives at the two growth CHOKEPOINTS —
+ * strbuf_reserve (JSON encoder, regex_replace, value_to_string) and
+ * text_builder_reserve — plus split's counted output: three review rounds
+ * each found one more uncharged output-proportional builtin (concat; then
+ * join/str_replace; then text_builder/split, the latter reachable from
+ * iLambdaAi's generation vocabulary and aborting the grader), which is the
+ * whack-a-mole signature that says charge the allocator, not the callers.
+ * The Value-TREE/list output class (json_decode, json_build, scan_ints/
+ * scan_tokens/scan_int_tokens, tokenize_ids/_with_names) is charged at ITS
+ * chokepoints too: list_append/make_list growth and dict growth in
+ * eigenscript.c — a 100 KB JSON const amplified ~40x into an uncharged tree
+ * before that landed. Still exempt, with reasons: zeros_like (mirrors an
+ * already-charged input), str_from_bytes and substr (output <= an
+ * already-charged argument) — bounded by ARGUMENTS. The matmul waiver was
+ * REMOVED: "inputs charged" is false for an outer product (two 3000-element
+ * inputs -> a 9M-element output), so the buffer allocators
+ * (make_shaped_buffer / make_buffer_like in builtins_tensor.c) now charge
+ * like every other class, as do the two raw-xcalloc buffer producers
+ * buf_from_list and reshape.
+ *
+ * KNOWN RESIDUAL (the pure string transforms — str_lower/str_upper/trim/
+ * substr/json_raw/str_from_bytes): each allocates output <= its input via
+ * raw make_str/xstrdup, so it is safe PER CALL, but a loop re-using one
+ * charged input spawns N uncharged outputs (the list slots are charged, the
+ * string payloads are not). "Bounded by ARGUMENTS" is true per-call and
+ * false across a loop with a reused input. Charging them belongs at a
+ * make_str-adjacent chokepoint that does NOT double-charge the strbuf
+ * consumers (json_encode etc. already charge at strbuf_reserve) — a
+ * considered change, tracked upstream, not a per-site patch. */
 int sandbox_charge(size_t bytes) {
+    /* strbuf/text_builder/list growth are general utilities used far outside
+     * the VM — the standalone `--fmt` formatter, the LSP, the lexer, and any
+     * pre-state-init path run with eigs_current == NULL. g_sandbox_active
+     * dereferences eigs_current, so guard it here: with no state there is no
+     * armed budget, and the allocation is allowed. (Without this, the strbuf
+     * charge chokepoint NULL-derefs and SIGSEGVs the formatter — a release
+     * crash ASan's differently-initialised state happened to mask, 2026-08-18.) */
+    if (!eigs_current) return 1;
     if (!g_sandbox_active || g_sandbox_byte_max == 0) return 1;
     /* Overflow-safe: g_sandbox_bytes_used <= g_sandbox_byte_max is an invariant
      * (we never commit a charge that breaks it), so the subtraction can't wrap. */
@@ -2872,6 +2905,19 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push(make_num(r));
         } else if (a->type == VAL_STR && b->type == VAL_STR) {
             int la = strlen(a->data.str), lb = strlen(b->data.str);
+            /* #292's byte budget charged only the size-controlled builtins;
+             * `s is s + s` in a sandboxed loop doubled straight past
+             * max_bytes to an uncatchable x_oom abort() — the grader died
+             * instead of grading (iLambdaAi break-it round, 2026-08-17).
+             * Charge the concat result like any other sandbox allocation;
+             * sandbox_charge raises a catchable EK_SANDBOX on refusal and
+             * is a no-op outside an armed sandbox. The JIT bails to this
+             * interpreter path on non-num ADD, so one site covers both. */
+            if (!sandbox_charge((size_t)la + lb + 1)) {
+                vm_push(make_null());
+                val_decref(a); val_decref(b);
+                DISPATCH();
+            }
             char *s = xmalloc((size_t)la + lb + 1);
             memcpy(s, a->data.str, la);
             memcpy(s + la, b->data.str, lb);

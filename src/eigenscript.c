@@ -1497,6 +1497,24 @@ Value* make_null(void) {
 
 Value* make_list(int capacity) {
     int from_arena = g_arena.active;
+    /* EVERY program-visible container is charged at birth: node + slot
+     * array. Charging only >8 pre-sizes and growth doublings left <=8-slot
+     * containers free, and nesting turned that into an ~8-57x under-charge —
+     * 500K seven-element JSON arrays hit 387MB RSS under an 80MB armed
+     * budget, and a 7x7 nesting resurrected the uncatchable x_oom abort the
+     * flat-array charge had closed (blind round, 2026-08-17). On refusal the
+     * charge has raised catchable EK_SANDBOX and we proceed with the default
+     * capacity — callers assume a non-NULL list; the uncharged slack is one
+     * small node per refused creation, bounded by the iteration cap and
+     * stated here. make_list_heap stays uncharged: VM-internal wrappers
+     * (arg packing, promotion copies, temporal history), all sized by
+     * arguments already in memory, never by an amplifying parse. */
+    {
+        int chg_cap = capacity < 8 ? 8 : capacity;
+        if (!sandbox_charge(sizeof(Value) +
+                            (size_t)chg_cap * sizeof(Value *)))
+            capacity = 8;
+    }
     Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
@@ -1516,6 +1534,8 @@ Value* make_list(int capacity) {
  * Used by the builtin-arg packing path: the wrapper holds incref'd args,
  * and val_decref(arg) must actually walk and release them on return. */
 Value* make_list_heap(int capacity) {
+    /* Deliberately uncharged: see make_list — every call site is a
+     * VM-internal wrapper sized by values already in memory. */
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
@@ -1573,6 +1593,12 @@ Value* make_builtin(BuiltinFn fn) {
 
 Value* make_dict(int capacity) {
     if (capacity < 8) capacity = 8;
+    /* Charged at birth like make_list — JSON objects of <=8 keys were fully
+     * uncharged (same small-container hole, dict half; blind round,
+     * 2026-08-17). Refusal raises and proceeds small — see make_list. */
+    if (!sandbox_charge(sizeof(Value) +
+                        (size_t)capacity * (sizeof(char *) + sizeof(Value *))))
+        capacity = 8;
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_DICT;
     v->data.dict.keys = xcalloc(capacity, sizeof(char*));
@@ -1604,6 +1630,10 @@ void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
     /* Grow if needed */
     if (dict->data.dict.count >= dict->data.dict.capacity) {
         int new_cap = dict->data.dict.capacity * 2;
+        /* Sandbox chokepoint, dict half (JSON objects): see list_append. */
+        if (!sandbox_charge((size_t)(new_cap - dict->data.dict.capacity) *
+                            (sizeof(char *) + sizeof(Value *) + sizeof(Value))))
+            return;
         dict->data.dict.keys = xrealloc_array(dict->data.dict.keys, new_cap, sizeof(char*));
         dict->data.dict.vals = xrealloc_array(dict->data.dict.vals, new_cap, sizeof(Value*));
         dict->data.dict.capacity = new_cap;
@@ -1767,6 +1797,20 @@ void list_append(Value *list, Value *item) {
     if (!list || list->type != VAL_LIST) return;
     if (list->data.list.count >= list->data.list.capacity) {
         int new_cap = list->data.list.capacity * 2;
+        /* Sandbox chokepoint for the Value-TREE/list output class: string
+         * outputs are charged at strbuf/text_builder growth, but json_decode
+         * and the scan/tokenize family build LISTS — a 100 KB "[0,0,...]"
+         * const amplified ~40x into an uncharged 2.4 MB tree and a 31 MB one
+         * reached the uncatchable x_oom abort under an armed budget (blind
+         * round, 2026-08-17). Charge each new slot at full node weight
+         * (slot pointer + Value) on the growth delta — amortized, off the
+         * no-growth fast path, no-op outside an armed sandbox. On refusal
+         * the append is DROPPED (no incref taken, so list_append_owned's
+         * decref still releases the item) and the catchable EK_SANDBOX is
+         * already raised. */
+        if (!sandbox_charge((size_t)(new_cap - list->data.list.capacity) *
+                            (sizeof(Value *) + sizeof(Value))))
+            return;
         if (list->arena) {
             /* Cannot realloc arena memory — allocate new array and copy */
             Value **new_items = arena_alloc(safe_size_mul(new_cap, sizeof(Value*)));
