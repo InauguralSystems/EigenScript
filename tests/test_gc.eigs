@@ -214,16 +214,13 @@ catch e:
     caught_idx_type is 1
 check of ["GC24 index-assign on num error", caught_idx_type == 1]
 
-# Modulo by zero (line 284)
+# Modulo by zero raises a `value` error (no defined result), like div/0.
 caught_mod_zero is 0
 try:
     z is 10 % 0
 catch e:
     caught_mod_zero is 1
-# Note: modulo by zero just prints a warning and returns 0 (like div/0)
-# It doesn't set g_has_error, so try/catch won't catch it. Check result.
-z is 10 % 0
-check of ["GC25 modulo by zero returns 0", z == 0]
+check of ["GC25 modulo by zero raises", caught_mod_zero == 1]
 
 # ----------------------------------------------------------------
 # 9) val_type_name fallthrough for JSON_RAW

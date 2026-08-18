@@ -65,14 +65,21 @@ catch e:
     caught6 is 1
 assert of [caught6 == 1, "EE06 try/catch caught num-minus-string"]
 
-# ---- Division by zero: warns but yields a value (doesn't raise) ----
-# Interpreter convention: warning printed to stderr, expression evaluates to 0.
-v_dz is 10 / 0
-assert of [v_dz == 0, "EE07 division by zero returns 0"]
+# ---- Division by zero raises (no defined value) ----
+caught7 is 0
+try:
+    v_dz is 10 / 0
+catch e:
+    caught7 is 1
+assert of [caught7 == 1, "EE07 division by zero raises"]
 
-# ---- Integer 0 / 0 is also 0 ----
-v_dz2 is 0 / 0
-assert of [v_dz2 == 0, "EE08 0/0 returns 0"]
+# ---- 0 / 0 also raises ----
+caught8 is 0
+try:
+    v_dz2 is 0 / 0
+catch e:
+    caught8 is 1
+assert of [caught8 == 1, "EE08 0/0 raises"]
 
 # ---- try/catch around throw with custom message ----
 caught9 is 0

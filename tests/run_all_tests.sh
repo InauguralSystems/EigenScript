@@ -786,7 +786,7 @@ print of items[10]' "|               \^"
 check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Error line 1: cannot apply"
 check_stderr "EM5 index out of bounds" 'items is [1,2,3]
 print of items[10]' "Error line 2: index 10 out of range"
-check_stderr "EM6 division by zero warning" 'print of (10 / 0)' "Warning line 1: division by zero"
+check_stderr "EM6 division by zero raises" 'print of (10 / 0)' "Error line 1: division by zero"
 check_stderr "EM7 undefined variable includes line" 'x is 1
 y is 2
 print of z' "Error line 3: undefined variable"
@@ -812,9 +812,9 @@ if x == 1:
 elif x == 5:
     y is x[0]' "Error line 5: cannot index"
 # An *uncaught* runtime error must fail loudly: non-zero exit, and no further
-# statements run. (Warnings like div-by-zero are not errors — see EM15.)
+# statements run. Division by zero is now such an error (see EM15).
 check_exit "EM14 uncaught runtime error exits non-zero" 'x is [1] - 5' "1"
-check_exit "EM15 warning exits 0" 'x is 10 / 0' "0"
+check_exit "EM15 division by zero exits non-zero" 'x is 10 / 0' "1"
 
 # Regression: uncaught error halts execution (statement after must not run)
 EM16_OUT=$(printf '%s\n' 'x is undefined_thing' 'print of "AFTER"' > /tmp/eigs_em16.eigs; ./eigenscript /tmp/eigs_em16.eigs 2>/dev/null; rm -f /tmp/eigs_em16.eigs)

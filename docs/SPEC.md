@@ -199,16 +199,20 @@ print of (abs of -5)
 5
 ```
 
-Division by zero is a *warning*, not an error: the program continues
-and the result of the division is `0`.
+Division by zero is a runtime error, not a silent result: it has no
+defined value, so — like an out-of-range index — it raises rather than
+inventing one. Uncaught it halts with exit 1; caught, the bound error's
+`kind` is `"value"`. (Modulo by zero raises the same way.)
 
 ```eigenscript
-x is 10 / 0
-print of x
-print of "still running"
+try:
+    x is 10 / 0
+catch e:
+    print of e.kind
+    print of "still running"
 ```
 ```output
-0
+value
 still running
 ```
 
@@ -224,9 +228,9 @@ consequences are contracts you can rely on:
   below 2^53, or use the bitwise seam below for wider exact integer work.
 - **Finite by construction — no `NaN`, no `Infinity` ever reach your program.**
   A `NaN` result collapses to `0` (`sqrt of -1` is `0`), and overflow saturates
-  at `±1e308` instead of becoming `Infinity`. Arithmetic is total: every
-  operation returns a usable finite number (division by zero warns and yields
-  `0`, above).
+  at `±1e308` instead of becoming `Infinity`. Every *defined* operation returns
+  a usable finite number; an *undefined* one — division or modulo by zero —
+  raises a `value` error rather than inventing a result (above).
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
   `>>` and their `bit_*` builtin forms interpret operands as 64-bit integers, so
   `1 << 40` is exact where an f64 mantissa alone would not help. This is the
@@ -848,8 +852,7 @@ a closed vocabulary (below), `message` is the error text without the
 `Error line N:` frame, `line` is the 1-based source line. `throw of
 value` raises a user error and the catch variable binds the thrown
 value itself, unchanged — a thrown string stays a string. An *uncaught*
-runtime error stops the program with a nonzero exit; warnings (like
-division by zero) do not.
+runtime error stops the program with a nonzero exit.
 
 ```eigenscript
 try:
@@ -1712,8 +1715,8 @@ The facts that govern every program, in one place:
 6. **Truthiness**: `0`, `null`, `""`, `[]`, `{}` are falsy; everything
    else is truthy. Comparisons yield `1`/`0`.
 7. **Errors**: runtime errors unwind to the nearest `try`; uncaught
-   they halt the program with exit code 1. Division by zero is a
-   warning that yields `0` and continues.
+   they halt the program with exit code 1. Division and modulo by zero
+   raise a `value` error (they have no defined result).
 8. **Observation**: every assignment outside `unobserved` updates the
    observer; predicates and interrogatives read it. Temporal queries
    additionally record history.

@@ -44,9 +44,19 @@ check of ["or short-circuits to left", eigen_run of "7 or 9", 7]
 check of ["null-bound var", eigen_run of "x is null\nx", null]
 check of ["normal var", eigen_run of "y is 42\ny", 42]
 
-# --- div / mod by zero: value parity (0) ---
-check of ["5 / 0", eigen_run of "5 / 0", 0]
-check of ["5 % 0", eigen_run of "5 % 0", 0]
+# --- div / mod by zero must RAISE in both (C VM raises; meta throws) ---
+div0_caught is 0
+try:
+    r is eigen_run of "5 / 0"
+catch e:
+    div0_caught is 1
+check of ["5 / 0 raises", div0_caught, 1]
+mod0_caught is 0
+try:
+    r is eigen_run of "5 % 0"
+catch e:
+    mod0_caught is 1
+check of ["5 % 0 raises", mod0_caught, 1]
 
 # --- unbound identifier must RAISE (C VM raises; old meta-interp returned null) ---
 undef_caught is 0
