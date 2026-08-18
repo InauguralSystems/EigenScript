@@ -1,34 +1,37 @@
 # Roadmap
 
-Current version: **0.33.0**
+Current version: **0.40.0**
 
-Recently shipped (0.28.0 → 0.33.0, 2026-07-08 → 07-24):
+Recently shipped (0.34.0 → 0.40.0, 2026-07-31 → 08-17):
 
-- **0.29.0** — the strategic headline landed: the **deterministic
-  cooperative task layer on the tape** (#408, seeded scheduler, zero
-  extra tape records), `lib/supervise.eigs` observer-native supervision
-  (#409), and `lib/sync.eigs` cross-`task_yield` locks (#488). 0.28.0 was
-  its increment-4 leadup.
-- **0.30.0** — the debugging-and-distribution release: `--step` eigsdap
-  CLI tape-stepper (#418), tape format v2 (#539), runtime-error carets +
-  token-precise LSP ranges (#407 residual), `--bundle` single-file
-  distribution with optional attached tape (#413), entropy-walk cycle
-  detection (#571), and the first gfx audio capture/playback + lib/ui
-  input trio (#567–#569, #578/#579).
-- **0.31.0** — DAW audio-I/O + live synthesis: bulk audio-I/O kernels
-  (#602/#603), the `audio_stream_*` live-streaming primitive (#612), and
-  `waveform_view` selection markers (#610/#611).
-- **0.32.0** — the desktop-shell release: lib/ui's gap series (#561–#577,
-  #594) surfaced by DeslanStudio's port and closed, including `menu_bar`
-  (#565), `handle_key`/`request_quit` (#563/#564), self-measuring `label`
-  (#561), and `dialog` children + `file_dialog` (#575).
-- **0.33.0** — the silent-wrong-answer release plus the primitives the app
-  fleet forced: the plausible-but-wrong-at-rc=0 sweep (`regex_match` #629,
-  `json_decode` #628, four stdlib math bugs #638–#641, import top-level scope
-  #673, the listcomp/local double binding #633/#642, `report_value` #674), the
-  DEFLATE codecs behind `make zlib` (#684), tape-captured `clock_unix` (#683),
-  four C-backed list operations (#543/#544), `kill -USR1` live observer dumps
-  (#660), and the test-runner integrity pass (#681/#648/#654).
+- **0.34.0** — the attack-surface release: `sandbox_run` containment (#713),
+  `chunk_verify` bounds against an untrusted chunk running off its code,
+  `json_encode` depth bound (cyclic value no longer segfaults), HTTP
+  header-injection + Content-Length framing + slow-loris DoS (#718), and
+  `--pkg install` no longer executing lockfile commands (#714) — plus the
+  loop-cap fix and four more multi-state process-globals (#739).
+- **0.35.0** — machine-legibility + charts: `--api [--json]` surface index,
+  `chart` as a real x-y plot (#819/#820), lint `W022` over-arity literal
+  calls (#733); 0.35.1/0.35.2 bounded the temporal history and restored
+  temporal reads for non-bytecode producers.
+- **0.36.0–0.38.0** — the fleet-UI ladder DeslanStudio/EigenOS forced:
+  wheel-pointer events (#822), `code_view` styled spans (#838), the
+  `timeline` (#842), `dock` multi-panel layout (#848), and `hex_view` byte
+  grid (#850) — plus the uniform `-Werror=switch` invariant gated (#817/#836)
+  and `make` keeping `eigsdap`/`eigenlsp` fresh across a VERSION bump (#825).
+- **0.39.0** — fleet-UI + correctness hardening: `math_flags`/`clear_math_flags`
+  (numeric clamps observable), `gfx_read` render-decode oracle, `ui_clip_push`/
+  `ui_clip_pop`, `<kw> is x when <n>` per-assignment past addressing, the
+  arena-escape memory-corruption fix, JSON lossless number round-trip (#875),
+  typed DB results + raising failures (#887), and freestanding switch
+  exhaustiveness.
+- **0.40.0** — the sandbox-budget + verifier release (forced by iLambdaAi's
+  grade ladder): `sandbox_run` now charges every amplifying allocator class at
+  its growth chokepoint and reports a cap-truncated run as NOT ok, `eigen_generate`
+  temperature sampling is script-seedable, and a cluster of bytecode-verifier
+  hardening fixes (stack-effect drift gate, `OP_LOOP_ENV_END` pairing, a bare
+  back edge crossing the loop cap, and an assembled chunk that could pass the
+  verifier and then corrupt the heap).
 
 Full per-version detail lives in [CHANGELOG.md](CHANGELOG.md) — this file
 is forward-looking.
