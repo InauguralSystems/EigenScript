@@ -74,3 +74,19 @@ iteration, or a collector that quietly stops working).
   Value must be decref'd on *every* path including early returns, and the value
   read out of it before the decref. Three of the five call sites in
   `ext_http.c` had this wrong (#731) — if you touch one, re-audit the rest.
+
+- **A shared utility that gains a VM-state-dependent call crashes every non-VM
+  entry point.** `sandbox_charge` reads `g_sandbox_active` =
+  `eigs_current->sandbox_active`; routing it through the general
+  `strbuf_reserve`/`text_builder`/`make_list` growth chokepoints (the #963
+  sandbox-budget charge) NULL-dereferenced on the `--fmt`/`--lint`/`--api`
+  paths and the lexer, which run with `eigs_current == NULL` — an 8/8
+  reproducible SIGSEGV in the formatter (2026-08-18). When you add a call that
+  assumes an initialised `EigsState` to a utility used outside `vm_execute`,
+  guard it with the codebase's `if (!eigs_current) return ...;` pattern.
+  **ASan hid it**: its differently-initialised state left `eigs_current`
+  non-NULL, so the ASan CI lane stayed green while the release lanes crashed —
+  a green sanitizer lane is not proof the release binary is safe. And the crash
+  presented in CI as a GitHub "hosted runner lost communication (CPU/Memory)"
+  annotation — that was apport's core-dump handler stalling the runner, NOT
+  infra; the suite section that runs `eigenscript --fmt` ([80]) is the gate.
