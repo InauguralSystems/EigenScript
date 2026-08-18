@@ -932,6 +932,14 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * consumers (json_encode etc. already charge at strbuf_reserve) — a
  * considered change, tracked upstream, not a per-site patch. */
 int sandbox_charge(size_t bytes) {
+    /* strbuf/text_builder/list growth are general utilities used far outside
+     * the VM — the standalone `--fmt` formatter, the LSP, the lexer, and any
+     * pre-state-init path run with eigs_current == NULL. g_sandbox_active
+     * dereferences eigs_current, so guard it here: with no state there is no
+     * armed budget, and the allocation is allowed. (Without this, the strbuf
+     * charge chokepoint NULL-derefs and SIGSEGVs the formatter — a release
+     * crash ASan's differently-initialised state happened to mask, 2026-08-18.) */
+    if (!eigs_current) return 1;
     if (!g_sandbox_active || g_sandbox_byte_max == 0) return 1;
     /* Overflow-safe: g_sandbox_bytes_used <= g_sandbox_byte_max is an invariant
      * (we never commit a charge that breaks it), so the subtraction can't wrap. */
