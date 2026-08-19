@@ -94,18 +94,20 @@ assert of [(mpd3 of []) == [null, null, 1], "underfed empty still fires trailing
 
 # #974 JIT binding path: jit_helper_call binds args out of line when a
 # compiled thunk calls a compiled callee — the raise must fire there
-# identically. Warm BOTH chunks past the from-zero entry threshold with
-# valid calls, then keep calling: every over-arity call must raise,
+# identically. Warm the callee past the from-zero entry threshold with
+# valid direct calls, then drive the trigger hot: its body is one
+# straight-line over-arity call (every op in it compiles), so once the
+# trigger crosses the entry threshold its thunk reaches the OP_CALL
+# natively and jit_helper_call does the binding. Every call must raise,
 # whichever engine binds it.
 define oa974_callee(a, b) as:
     return a - b
+oa974_warm is 0
+loop while oa974_warm < 70:
+    oa974_t is oa974_callee of [oa974_warm, 1]
+    oa974_warm is oa974_warm + 1
 define oa974_trigger(x) as:
-    total is 0
-    k is 0
-    loop while k < 3:
-        total is total + (oa974_callee of [k, 1])
-        k is k + 1
-    return total + (oa974_callee of [1, 2, 99])  # lint: allow W022
+    return oa974_callee of [1, 2, 99]  # lint: allow W022
 oa974_raised is 0
 oa974_w is 0
 loop while oa974_w < 70:
