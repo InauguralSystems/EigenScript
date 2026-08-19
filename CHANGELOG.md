@@ -21,6 +21,20 @@ All notable changes to EigenScript are documented here.
   kernels.
 
 ### Changed
+- **`sandbox_run` charges every retained allocation and verifies its
+  descriptor under bounded work (#965).** Pure string transforms
+  (`str_lower`/`trim`/`substr`/`json_raw`/`str_from_bytes`, strbuf-backed
+  encoders, `OP_ADD` concat and raw `OP_SLICE_GET` copies) allocated fresh
+  payloads no allocator charged, so a loop re-using one charged input
+  aggregated unbounded memory under an armed byte budget; the payload is now
+  charged once at the constructor/ownership-transfer chokepoint, the first
+  refusal is sticky for the whole run, and every attachable result — not only
+  a successful one — is scanned for callables. Descriptor constant pools are
+  additionally verified data-only under a shared node budget, so an aliased
+  all-data container graph is refused (`{ok:0}`, `invalid chunk descriptor`)
+  instead of driving an exponential walk before the sandbox's own bounds are
+  armed. Programs that stayed inside the budget are unaffected; a program that
+  was silently over it now gets `{ok:0}` with a `sandbox` error.
 - **Division and modulo by zero now raise instead of yielding `0`.** `5 / 0`
   printed an uncatchable `stderr` warning and pushed `0`; `5 % 0` was fully
   silent and pushed `0` — a wrong *number* that flowed on indistinguishable

@@ -2806,12 +2806,27 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
  * that trust boundary data-only: a callable or host-owned execution state in a
  * pool would be an ambient capability even when its name is absent from the
  * sealed sandbox environment. Lists/dicts remain valid argument containers,
- * and buffers remain valid data, but every member must be safe too. A depth cap
- * makes cyclic or adversarially deep containers fail closed during verification. */
+ * and buffers remain valid data, but every member must be safe too.
+ *
+ * Bounded by a NODE budget and not by depth alone, the same shape the sibling
+ * result scan already carries (sandbox_value_has_callable): a depth cap does
+ * bound a CYCLIC container, where the first unsafe member short-circuits the
+ * walk, but it does not bound an ALIASED all-data DAG — no member is unsafe
+ * there, so nothing short-circuits and every PATH is explored (ten aliases per
+ * level over six levels is seven heap lists and 2.1M visits, at depth 6). This
+ * walk runs while the descriptor is being built, BEFORE the loop cap and the
+ * byte budget are armed, so neither of the sandbox's own bounds applies and
+ * verification would become the DoS the sandbox exists to prevent. Exhausting
+ * either bound returns "unsafe" — the fail-closed direction: a pool that
+ * cannot be walked within the bound is refused, not trusted. Dict keys are
+ * interned C strings rather than Values, so a dict costs one node per VALUE
+ * and needs no separate key walk. */
 #define SANDBOX_DESC_CONST_MAX_DEPTH 64
+#define SANDBOX_DESC_CONST_MAX_NODES 100000
 
-static int sandbox_descriptor_constant_safe(const Value *v, int depth) {
-    if (!v || depth > SANDBOX_DESC_CONST_MAX_DEPTH) return 0;
+static int sandbox_descriptor_constant_safe(const Value *v, int depth,
+                                            long *budget) {
+    if (!v || depth > SANDBOX_DESC_CONST_MAX_DEPTH || --(*budget) <= 0) return 0;
     switch (v->type) {
     case VAL_NUM:
     case VAL_STR:
@@ -2821,12 +2836,14 @@ static int sandbox_descriptor_constant_safe(const Value *v, int depth) {
         return 1;
     case VAL_LIST:
         for (int i = 0; i < v->data.list.count; i++)
-            if (!sandbox_descriptor_constant_safe(v->data.list.items[i], depth + 1))
+            if (!sandbox_descriptor_constant_safe(v->data.list.items[i],
+                                                  depth + 1, budget))
                 return 0;
         return 1;
     case VAL_DICT:
         for (int i = 0; i < v->data.dict.count; i++)
-            if (!sandbox_descriptor_constant_safe(v->data.dict.vals[i], depth + 1))
+            if (!sandbox_descriptor_constant_safe(v->data.dict.vals[i],
+                                                  depth + 1, budget))
                 return 0;
         return 1;
     default:
@@ -2874,11 +2891,16 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
     }
     /* Positional: the code stream indexes this pool by position, so neither
      * the dedup collapse nor a skipped NULL may shift an entry (#721). A hole
-     * in the pool is a malformed descriptor — reject rather than renumber. */
+     * in the pool is a malformed descriptor — reject rather than renumber.
+     * ONE node budget for the whole pool, declared outside the loop: resetting
+     * it per constant would restore the exponential blowup one entry at a
+     * time, since the pool's entries can alias the same container. */
+    long const_budget = SANDBOX_DESC_CONST_MAX_NODES;
     for (int i = 0; i < consts->data.list.count; i++) {
         if (!consts->data.list.items[i] ||
             (sandbox_mode &&
-             !sandbox_descriptor_constant_safe(consts->data.list.items[i], 0))) {
+             !sandbox_descriptor_constant_safe(consts->data.list.items[i], 0,
+                                               &const_budget))) {
             chunk_free(chunk);
             return NULL;
         }
