@@ -96,7 +96,7 @@ check_tree() {
     while read -r op bits; do
         [ -n "$op" ] || continue
         expected=""
-        while read -r decoded_op decoded_bits; do
+        while read -r decoded_op decoded_bits decoded_read decoded_advance; do
             if [ "$decoded_op" = "$op" ]; then
                 expected="$decoded_bits"
                 break
