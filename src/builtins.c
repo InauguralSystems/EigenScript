@@ -3284,10 +3284,13 @@ Value* builtin_sandbox_run(Value *arg) {
      * line} shape as any other refusal, so a grading ladder sees it. */
     long scan_budget = SANDBOX_RESULT_MAX_NODES;
     int scan_unverified = 0;
-    if (ok && result &&
-        sandbox_value_has_callable(result, 0, &scan_budget, &scan_unverified)) {
+    int scan_hit = result &&
+        sandbox_value_has_callable(result, 0, &scan_budget, &scan_unverified);
+    if (scan_hit) {
         val_decref(result);
         result = NULL;
+    }
+    if (scan_hit && ok) {
         ok = 0;
         Value *ev = make_dict(3);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_SANDBOX)));
