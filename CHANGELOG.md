@@ -23,6 +23,10 @@ All notable changes to EigenScript are documented here.
   reproducible. Both were residuals of the v0.40.0 sampler-seedability fix.
 
 ### Added
+- **W023 warns about inverted sibling-branch outer mutation (#870).** When
+  sibling `if`/`elif`/`else` branches assign the same name with and without
+  `local`, the linter warns only when the compiler model proves the bare write
+  can reach a module binding; uncertain binder shapes remain silent.
 - **Strict math mode (`EIGS_STRICT=1`) — out-of-domain ops raise instead of
   substituting (#971).** By default arithmetic is finite by construction: `sqrt`
   of a negative → `0`, `log` of `≤0` → a stand-in, `asin`/`acos` outside
