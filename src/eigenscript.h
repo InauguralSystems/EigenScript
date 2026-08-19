@@ -798,7 +798,12 @@ struct EigsThread {
      * which ext_http does per connection. As process globals, one worker
      * entering a sandbox capped every other worker's loops and charged their
      * allocations against its budget. */
-    int                  sandbox_loop_max;   /* 0 = default 100M */
+    /* Armed only inside sandbox_run. 0 = unarmed (no budget); when armed
+     * with no explicit max_iterations the default is 1,000,000 back edges
+     * for the WHOLE run (builtins.c). The comment here said "default 100M"
+     * — a factor of 100 out, and describing a global default #772 removed
+     * (#941). Outside a sandbox there is no absolute iteration cap. */
+    int                  sandbox_loop_max;
     int                  sandbox_cap_hit;    /* set when the armed loop budget
                                               * truncated a loop; sandbox_run
                                               * reports the run as NOT ok (a

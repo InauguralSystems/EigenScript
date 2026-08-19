@@ -4,6 +4,31 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Documentation
+
+- **`sandbox_run`'s `max_iterations` is bounded by TWO counters with different
+  scopes, and the doc described only one (#948).** `docs/BUILTINS.md` said
+  "Loops are capped at `max_iterations`", which reads as a per-loop cap. Since
+  #940 the bound is really: the compiler-emitted cap check
+  (`OP_LOOP_CAP_CHECK`), which is **per call frame** and exits the loop
+  gracefully as a *partial run*; and the back-edge counter (`OP_JUMP_BACK`),
+  which is a **cumulative total for the whole `sandbox_run`** and raises. The
+  back-edge counter is deliberately not restored per frame — otherwise an
+  assembled chunk could reset its own DoS budget by calling a function — so
+  the same loop called twice within one run can trip it even though each call
+  is individually well inside `max_iterations`. The doc now says that; the
+  behaviour is unchanged.
+  `tests/test_sandbox_backedge_cap.eigs` gains section 6 pinning the crossing:
+  one call trips the per-frame cap check and reports a partial run, two calls
+  trip the cumulative back-edge budget and raise. Both directions are
+  asserted, so neither can pass merely because the two messages coincide.
+  Section 3 already covered the flat-module case; the cross-frame case was the
+  gap.
+  **Open, and deliberately not decided here:** whether the `1000000` default is
+  still right now that it is cumulative across a run rather than per frame — a
+  sandboxed workload doing 1M total iterations across many loops now trips
+  where it previously would not. Left on the issue.
+
 ### Fixed
 
 - **Default parameter values now fire wherever a function is ENTERED, not only
