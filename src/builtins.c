@@ -272,9 +272,8 @@ Value* builtin_join(Value *arg) {
     free(parts);
     free(lengths);
 
-    Value *v = make_str(result);
-    free(result);
-    return v;
+    /* #965: total+1 was charged above — take ownership, no second charge. */
+    return make_str_owned(result);
 }
 
 /* Growth chokepoint for every text_builder op (append/append_line/extend):
@@ -375,7 +374,8 @@ Value* builtin_text_builder_to_string(Value *arg) {
     if (!arg || arg->type != VAL_TEXT_BUILDER) return make_str("");
     /* The final copy duplicates the (charge-bounded) buffer — charge it too. */
     if (!sandbox_charge(arg->data.text_builder.len + 1)) return make_null();
-    return make_str(arg->data.text_builder.data ? arg->data.text_builder.data : "");
+    /* #965: charged just above — take ownership of the duplicate. */
+    return make_str_owned(xstrdup(arg->data.text_builder.data ? arg->data.text_builder.data : ""));
 }
 
 /* ==== Bitwise operations ====
@@ -490,6 +490,13 @@ Value* builtin_len(Value *arg) {
 
 Value* builtin_str(Value *arg) {
     char *s = value_to_string(arg);
+    /* #965: value_to_string builds list/dict text in a strbuf whose payload
+     * is already charged (reserve growth + finish shortfall) — take ownership
+     * of that buffer (make_str_owned, no second charge, no copy). Every
+     * other type returns an uncharged xstrdup, so the copying constructor
+     * charges it there. */
+    if (arg && (arg->type == VAL_LIST || arg->type == VAL_DICT))
+        return make_str_owned(s);
     Value *v = make_str(s);
     free(s);
     return v;
@@ -663,11 +670,18 @@ Value* builtin_throw(Value *arg) {
      * itself so `catch e` binds a dict/list/string/... unchanged —
      * user throws do NOT get the #406 {kind, message, line} wrapping.
      * Kind/line are still stamped for host/embed introspection. */
+    /* The sandbox error latch belongs to the whole run, not to one producer.
+     * Do not let this direct error writer replace a prior allocation refusal. */
+    if (g_sandbox_active && g_sandbox_error_latched) {
+        g_has_error = 1;
+        return make_null();
+    }
     char *msg = value_to_string(arg);
     snprintf(g_error_msg, sizeof(g_error_msg), "%s", msg);
     snprintf(g_error_raw, sizeof(g_error_raw), "%s", msg);
     g_error_kind = (int)EK_USER;
     g_error_line = vm_current_line();
+    if (g_sandbox_active) g_sandbox_error_latched = 1;
     g_has_error = 1;
     eigs_clear_error_value();
     if (arg) {
@@ -978,8 +992,9 @@ Value* builtin_json_encode(Value *arg) {
         json_encode_depth_error("json_encode");
         return make_null();
     }
-    Value *result = make_str(out.data);
-    strbuf_free(&out);
+    /* #965: the strbuf payload is already charged (reserve growth + finish
+     * shortfall); take ownership instead of copying (a copy would charge it twice). */
+    Value *result = make_str_owned(strbuf_finish(&out));
     return result;
 }
 
@@ -1195,8 +1210,9 @@ static Value* eigs_json_parse_string(const char *s, int *pos) {
     strbuf buf;
     strbuf_init(&buf);
     eigs_json_decode_string_body(s, pos, &buf);
-    Value *v = make_str(buf.data);
-    strbuf_free(&buf);
+    /* #965: decode payload charged (reserve growth + finish shortfall) —
+     * take ownership. */
+    Value *v = make_str_owned(strbuf_finish(&buf));
     return v;
 }
 
@@ -1442,18 +1458,18 @@ Value* builtin_json_build(Value *arg) {
         }
     }
     strbuf_append_char(&out, '}');
-    Value *result = make_str(out.data);
-    strbuf_free(&out);
+    /* #965: the strbuf payload is already charged (reserve growth + finish
+     * shortfall) — take ownership. */
+    Value *result = make_str_owned(strbuf_finish(&out));
     return result;
 }
 
 Value* builtin_json_raw(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_null();
-    Value *v = xmalloc(sizeof(Value));
-    memset(v, 0, sizeof(Value));
+    /* #965: route the copy through the charging constructor (the xmalloc +
+     * xstrdup pair here was an uncharged payload of the same class). */
+    Value *v = make_str(arg->data.str);
     v->type = VAL_JSON_RAW;
-    v->data.str = xstrdup(arg->data.str);
-    v->refcount = 1;
     return v;
 }
 
@@ -1513,8 +1529,10 @@ Value* builtin_split(Value *arg) {
         return make_null();
     Value *list = make_list(0);
     size_t dlen = strlen(delim);
+    /* #965: in_len + per-part overhead was charged above, so every piece
+     * wraps with make_str_owned (a make_str copy would charge it twice). */
     if (dlen == 0) {
-        list_append_owned(list, make_str(str));
+        list_append_owned(list, make_str_owned(xstrdup(str)));
         return list;
     }
     const char *p = str;
@@ -1524,11 +1542,10 @@ Value* builtin_split(Value *arg) {
         char *seg = xmalloc(seg_len + 1);
         memcpy(seg, p, seg_len);
         seg[seg_len] = '\0';
-        list_append_owned(list, make_str(seg));
-        free(seg);
+        list_append_owned(list, make_str_owned(seg));
         p = found + dlen;
     }
-    list_append_owned(list, make_str(p));
+    list_append_owned(list, make_str_owned(xstrdup(p)));
     return list;
 }
 
@@ -1861,9 +1878,8 @@ Value* builtin_str_replace(Value *arg) {
         }
     }
     *dst = '\0';
-    Value *r = make_str(result);
-    free(result);
-    return r;
+    /* #965: result_len+1 was charged above — take ownership, no second charge. */
+    return make_str_owned(result);
 }
 
 
@@ -2345,8 +2361,9 @@ Value* builtin_json_path(Value *arg) {
         json_encode_depth_error("json_path");
         return make_null();
     }
-    Value *r = make_str(out.data);
-    strbuf_free(&out);
+    /* #965: the strbuf payload is already charged (reserve growth + finish
+     * shortfall) — take ownership. */
+    Value *r = make_str_owned(strbuf_finish(&out));
     val_decref(root);
     return r;
 }
@@ -2785,6 +2802,153 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
     return NULL;
 }
 
+/* ---- Sandbox descriptor verification: ONE context for the whole graph ----
+ *
+ * A sandbox descriptor is untrusted DATA that becomes an executable chunk
+ * before any of the sandbox's own bounds exist: the loop cap and the byte
+ * budget are armed only AFTER vm_build_chunk_desc returns, so verification
+ * must carry its own bound or become the DoS the sandbox exists to prevent.
+ * It must also carry the OWNERSHIP decision, because the constant pool is one
+ * of the two ways host state reaches sandboxed code (the other is the
+ * allowlist copy in builtin_sandbox_run).
+ *
+ * One DescVerify context is created per sandbox descriptor build and threaded
+ * through every recursive arm — root chunk, nested function chunks, code,
+ * constant containers, function lists, local-name lists:
+ *
+ *   work   ONE total allowance for the ENTIRE graph. A per-chunk or per-pool
+ *          allowance is not a bound at all: N nested chunks multiply it by N,
+ *          which is exactly how "every child is well inside the limit" sums
+ *          to a graph that is not. Exhaustion refuses the descriptor — the
+ *          fail-closed direction: a graph that cannot be verified within the
+ *          bound is refused, not trusted.
+ *   path   the nodes on the CURRENT recursion path. A node that is its own
+ *          ancestor is a back edge: refuse rather than recurse forever.
+ *          Merely REPEATED aliases (a DAG) are not cycles — they are charged
+ *          once per visit and bounded by `work`, which is what stops the
+ *          aliased all-data DAG whose every path is explored because nothing
+ *          unsafe short-circuits it.
+ *   depth  the length of `path`, and so an explicit structural bound on C
+ *          recursion across BOTH the value walk and the chunk walk.
+ *
+ * The allowance is larger than the constants-only bound it replaces because
+ * it now also pays for chunk structure, code bytes, function lists and local
+ * names: a descriptor that fit the old pool-only bound must still fit the new
+ * total. It stays far below the aliased-DAG shapes the pool bound refused. */
+#define SANDBOX_DESC_MAX_DEPTH 64
+#define SANDBOX_DESC_MAX_WORK  150000
+
+typedef struct {
+    long        work;                          /* remaining total allowance */
+    int         depth;                         /* nodes on `path` */
+    const void *path[SANDBOX_DESC_MAX_DEPTH];  /* current recursion path */
+} DescVerify;
+
+/* Spend n units of the one graph allowance; 0 = exhausted. A NULL context is
+ * the TRUSTED build (vm_run_bytecode): that descriptor is the host's own
+ * bootstrap output, not untrusted input, and is neither bounded nor copied. */
+static int desc_spend(DescVerify *ctx, long n) {
+    if (!ctx) return 1;
+    if (n < 0 || n > ctx->work) { ctx->work = 0; return 0; }
+    ctx->work -= n;
+    return 1;
+}
+
+/* Push a node onto the current path: bounds recursion depth and refuses a
+ * back edge. Every successful desc_enter is paired with one desc_leave. */
+static int desc_enter(DescVerify *ctx, const void *node) {
+    if (!ctx) return 1;
+    if (!node || ctx->depth >= SANDBOX_DESC_MAX_DEPTH) return 0;
+    for (int i = 0; i < ctx->depth; i++)
+        if (ctx->path[i] == node) return 0;
+    ctx->path[ctx->depth++] = node;
+    return 1;
+}
+
+static void desc_leave(DescVerify *ctx) {
+    if (ctx && ctx->depth > 0) ctx->depth--;
+}
+
+/* Verify AND isolate one descriptor constant: returns a fresh OWNED value
+ * that shares no mutable object with the host, or NULL when the value is not
+ * admissible data, closes a cycle, or the graph allowance runs out.
+ *
+ * Verifying and copying are deliberately the SAME walk. Checking the pool and
+ * then retaining the checked object by reference is what let a host-owned
+ * list stay the very object the sandbox mutates: `append` is allowlisted, a
+ * container with spare capacity mutates in place with no allocation and no
+ * charge, and the direct-result scan cannot undo a change the host can
+ * already see through its own alias — the callable never appears in the
+ * returned result at all. So the boundary is closed on the way IN.
+ *
+ * Scalars are immutable and are shared by refcount; only containers are
+ * copied. Dict keys are interned C strings rather than Values, so a dict
+ * costs one node per VALUE and needs no separate key walk. A buffer's element
+ * storage is its real weight — the same accounting the sibling result scan
+ * spends (#965) — and is copied, since buf_set writes it in place.
+ * VAL_FN/VAL_BUILTIN are ambient capability and VAL_TEXT_BUILDER is host-owned
+ * mutable state: none of them may cross, at any depth. Enumerated rather than
+ * covered by a `default:` so -Werror=switch forces a new ValType to choose. */
+static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
+    if (!v || !desc_spend(ctx, 1)) return NULL;
+    switch (v->type) {
+    case VAL_NUM:
+    case VAL_STR:
+    case VAL_NULL:
+    case VAL_JSON_RAW:
+        val_incref(v);
+        return v;
+    case VAL_BUFFER: {
+        long n = v->data.buffer.count > 0 ? (long)v->data.buffer.count : 0;
+        if (!desc_spend(ctx, n)) return NULL;
+        Value *c = xcalloc(1, sizeof(Value));
+        c->type = VAL_BUFFER;
+        c->data.buffer.count = v->data.buffer.count;
+        c->data.buffer.rows  = v->data.buffer.rows;
+        c->data.buffer.cols  = v->data.buffer.cols;
+        c->data.buffer.data  = xcalloc(n > 0 ? (size_t)n : 1, sizeof(double));
+        if (n > 0)
+            memcpy(c->data.buffer.data, v->data.buffer.data,
+                   (size_t)n * sizeof(double));
+        c->refcount = 1;
+        return c;
+    }
+    case VAL_LIST: {
+        if (!desc_enter(ctx, v)) return NULL;
+        /* make_list_heap, not make_list: the copy outlives this builtin call
+         * and must not be arena-allocated, and it is sized by a graph already
+         * in memory (the uncharged-wrapper rule make_list_heap documents). */
+        Value *c = make_list_heap(v->data.list.count);
+        for (int i = 0; i < v->data.list.count; i++) {
+            Value *e = desc_isolate_const(ctx, v->data.list.items[i]);
+            if (!e) { val_decref(c); desc_leave(ctx); return NULL; }
+            list_append_owned(c, e);
+        }
+        desc_leave(ctx);
+        return c;
+    }
+    case VAL_DICT: {
+        if (!desc_enter(ctx, v)) return NULL;
+        Value *c = make_dict(v->data.dict.count);
+        for (int i = 0; i < v->data.dict.count; i++) {
+            Value *e = desc_isolate_const(ctx, v->data.dict.vals[i]);
+            if (!e) { val_decref(c); desc_leave(ctx); return NULL; }
+            dict_set_owned(c, v->data.dict.keys[i], e);
+        }
+        desc_leave(ctx);
+        return c;
+    }
+    case VAL_FN:
+    case VAL_BUILTIN:
+    case VAL_TEXT_BUILDER:
+        return NULL;
+    }
+    return NULL;   /* unreachable for a valid ValType */
+}
+
+static EigsChunk *vm_build_chunk_desc_ctx(Value *desc, int off, int sandbox_mode,
+                                          DescVerify *ctx);
+
 /* Build an EigsChunk from a descriptor list, recursively for nested functions.
  * `off` skips the leading ABI-revision stamp: 1 at the top level (where
  * vm_desc_abi_error has already validated it), 0 for nested descriptors, which
@@ -2792,7 +2956,8 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
  *   [ code, constants, functions?, param_count?, name?, local_names? ]
  *   - code        : list of byte ints (opcodes + little-endian operands; 16-bit
  *                   except OP_LINE's, which is 32-bit since #630)
- *   - constants   : constant pool (numbers/strings; strings double as
+ *   - constants   : constant pool (ordinary values; sandbox mode restricts it
+ *                   recursively to data-only scalars/containers; strings double as
  *                   GET_NAME/SET_NAME names)
  *   - functions   : (optional) list of descriptors for nested function chunks,
  *                   referenced by OP_CLOSURE [fn_idx]
@@ -2801,8 +2966,12 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
  *   - local_names : (optional) names for local slots in slot order; the count
  *                   sizes the call frame, and the first param_count are the
  *                   parameter names OP_CLOSURE binds.
- * The minimal form is code+constants (a flat module chunk). */
-static EigsChunk *vm_build_chunk_desc(Value *desc, int off) {
+ * The minimal form is code+constants (a flat module chunk).
+ *
+ * In sandbox mode every arm below spends the ONE DescVerify allowance and
+ * every constant is isolated from the host; see DescVerify above. */
+static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mode,
+                                           DescVerify *ctx) {
     if (!desc || desc->type != VAL_LIST || desc->data.list.count < off + 2)
         return NULL;
     Value **d = desc->data.list.items + off;
@@ -2810,6 +2979,9 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off) {
     Value *code = d[0], *consts = d[1];
     if (!code || code->type != VAL_LIST || !consts || consts->type != VAL_LIST)
         return NULL;
+    /* This chunk plus its code stream: charged BEFORE anything is allocated,
+     * so an over-wide code list is refused rather than emitted first. */
+    if (!desc_spend(ctx, 1 + (long)code->data.list.count)) return NULL;
 
     const char *name = (n >= 5 && d[4] && d[4]->type == VAL_STR) ? d[4]->data.str
                                                                  : "<bootstrap>";
@@ -2822,19 +2994,37 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off) {
     }
     /* Positional: the code stream indexes this pool by position, so neither
      * the dedup collapse nor a skipped NULL may shift an entry (#721). A hole
-     * in the pool is a malformed descriptor — reject rather than renumber. */
+     * in the pool is a malformed descriptor — reject rather than renumber.
+     * In sandbox mode the pool is verified and ISOLATED in one walk against
+     * the graph-wide allowance: the chunk owns a private copy of every
+     * mutable constant, so nothing the sandbox does to a constant is visible
+     * to the host, and nothing the host does mid-run is visible to it. */
     for (int i = 0; i < consts->data.list.count; i++) {
-        if (!consts->data.list.items[i]) { chunk_free(chunk); return NULL; }
-        chunk_add_constant_positional(chunk, consts->data.list.items[i]);
+        Value *item = consts->data.list.items[i];
+        if (!item) { chunk_free(chunk); return NULL; }
+        if (sandbox_mode) {
+            Value *iso = desc_isolate_const(ctx, item);
+            if (!iso) { chunk_free(chunk); return NULL; }
+            chunk_add_constant_positional(chunk, iso);
+            val_decref(iso);            /* the pool holds its own ref */
+        } else {
+            chunk_add_constant_positional(chunk, item);
+        }
     }
 
     /* nested function chunks (creator ref transfers into functions[]). A
      * nested descriptor that fails to build/verify invalidates the whole
      * chunk — silently dropping it would shift the indices OP_CLOSURE refers
-     * to (wrong function, or out of range). */
+     * to (wrong function, or out of range). The recursion carries the SAME
+     * context: a child that reset the allowance would multiply it. */
     if (n >= 3 && d[2] && d[2]->type == VAL_LIST) {
+        if (!desc_spend(ctx, d[2]->data.list.count)) {
+            chunk_free(chunk);
+            return NULL;
+        }
         for (int i = 0; i < d[2]->data.list.count; i++) {
-            EigsChunk *fn = vm_build_chunk_desc(d[2]->data.list.items[i], 0);
+            EigsChunk *fn = vm_build_chunk_desc_ctx(d[2]->data.list.items[i], 0,
+                                                    sandbox_mode, ctx);
             if (!fn) { chunk_free(chunk); return NULL; }
             chunk_add_function(chunk, fn);
         }
@@ -2848,6 +3038,7 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off) {
     /* local-slot names; local_count sizes the call frame (max with param_count) */
     if (n >= 6 && d[5] && d[5]->type == VAL_LIST && d[5]->data.list.count > 0) {
         int lc = d[5]->data.list.count;
+        if (!desc_spend(ctx, lc)) { chunk_free(chunk); return NULL; }
         chunk->local_names = xcalloc(lc, sizeof(char *));
         for (int i = 0; i < lc; i++) {
             Value *nm = d[5]->data.list.items[i];
@@ -2865,6 +3056,29 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off) {
     return chunk;
 }
 
+/* Enter one chunk of the descriptor graph. The depth/back-edge bound covers
+ * CHUNK recursion too, so a self-referential or unboundedly nested descriptor
+ * is refused instead of running the C stack out. Wrapping the body keeps the
+ * enter/leave pairing off every one of its early returns. */
+static EigsChunk *vm_build_chunk_desc_ctx(Value *desc, int off, int sandbox_mode,
+                                          DescVerify *ctx) {
+    if (!desc_enter(ctx, desc)) return NULL;
+    EigsChunk *chunk = vm_build_chunk_desc_body(desc, off, sandbox_mode, ctx);
+    desc_leave(ctx);
+    return chunk;
+}
+
+/* The one verification context is created HERE — once per sandbox descriptor
+ * build — and threaded through every recursive builder and walker arm below
+ * it. The trusted (non-sandbox) build runs with no context at all. */
+static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
+    if (!sandbox_mode) return vm_build_chunk_desc_ctx(desc, off, 0, NULL);
+    DescVerify ctx;
+    ctx.work  = SANDBOX_DESC_MAX_WORK;
+    ctx.depth = 0;
+    return vm_build_chunk_desc_ctx(desc, off, 1, &ctx);
+}
+
 /* vm_run_bytecode of <chunk-descriptor> — assemble a chunk (and its nested
  * function chunks) from EigenScript values and run it on the C VM. The
  * self-hosting bootstrap bridge: a compiler written in EigenScript emits
@@ -2876,7 +3090,7 @@ Value* builtin_vm_run_bytecode(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(arg, abibuf, sizeof abibuf);
     if (abi_err) { rt_error(EK_VALUE, 0, "%s", abi_err); return make_null(); }
-    EigsChunk *chunk = vm_build_chunk_desc(arg, 1);
+    EigsChunk *chunk = vm_build_chunk_desc(arg, 1, 0);
     if (!chunk) return make_null();
     /* #831: the compiler's temporal scan is what turns history recording on,
      * and it never saw this chunk — arm from the verified bytecode instead,
@@ -2997,6 +3211,24 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
         *unverified = 1;
         return 1;
     }
+    if (v->type == VAL_BUFFER) {
+        /* #965: a buffer's element storage is its real weight. Counting it
+         * as ONE node let a huge buffer cross the boundary as a single node
+         * — aggregated buffers escaped both the byte charge and the node
+         * scan (the double-bypass that made buf_from_list land). Spend one
+         * node per element ON TOP OF the container node the entry check
+         * already spent: exactly 1 + count nodes, including count zero, the
+         * identical accounting a
+         * flat list of the same length gets — so the exact node boundary
+         * behaves the same for both. Exhaustion fails closed like any other
+         * unwalkable result. */
+        long elems = v->data.buffer.count > 0 ? (long)v->data.buffer.count : 0;
+        *budget -= elems;
+        if (*budget <= 0) {
+            *unverified = 1;
+            return 1;
+        }
+    }
     if (v->type == VAL_LIST) {
         for (int i = 0; i < v->data.list.count; i++)
             if (sandbox_value_has_callable(v->data.list.items[i], depth + 1,
@@ -3038,7 +3270,7 @@ Value* builtin_sandbox_run(Value *arg) {
      * producer is stale" from "your bytecode is malformed" without re-running. */
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
-    EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1);
+    EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
     Value *out = make_dict(2);
     if (!chunk) {
         Value *zero = make_num(0);
@@ -3084,11 +3316,22 @@ Value* builtin_sandbox_run(Value *arg) {
      * purely for the diagnostic — an EK_SANDBOX "blocked in sandbox" is far
      * more useful to a grading ladder than a bare undefined-variable error. */
     Env *sbox = env_new(NULL);
+    Value *stub = make_builtin(builtin_sandbox_blocked);
     for (int i = 0; SANDBOX_ALLOW[i]; i++) {
         Value *v = env_get(g_global_env, SANDBOX_ALLOW[i]);
-        if (v) env_set_local(sbox, SANDBOX_ALLOW[i], v);
+        if (!v) continue;               /* extension absent from this build */
+        /* Only the pure C BUILTIN the allowlist names may cross. A host that
+         * rebound the name holds an arbitrary value there — often a mutable
+         * container, possibly a function — and copying it aliases host state
+         * inward through a second root: sandboxed code could then mutate a
+         * container the host still holds (the descriptor-constant escape by
+         * another door) or call host code outright. The allowlist grants a
+         * pure-compute capability, not whatever currently answers to its
+         * name, so anything else gets the blocked stub — which is also the
+         * better diagnostic. */
+        env_set_local(sbox, SANDBOX_ALLOW[i],
+                      v->type == VAL_BUILTIN ? v : stub);
     }
-    Value *stub = make_builtin(builtin_sandbox_blocked);
     for (int i = 0; i < g_global_env->count; i++) {
         const char *nm = g_global_env->names[i];
         if (nm && !sandbox_name_allowed(nm))
@@ -3111,33 +3354,81 @@ Value* builtin_sandbox_run(Value *arg) {
     /* #292: arm the allocation budget. Save/restore so nested sandbox_run (or a
      * sandbox_run invoked from already-budgeted code) composes correctly. */
     int    saved_sb_active = g_sandbox_active;
+    int    saved_sb_error_latched = g_sandbox_error_latched;
+    /* #965 (fix5): the sticky policy-refusal record composes the same way —
+     * an inner run arms, reports, and then restores the outer run's record. */
+    int    saved_sb_refusal = g_sandbox_refusal;
+    int    saved_sb_refusal_kind = g_sandbox_refusal_kind;
+    int    saved_sb_refusal_line = g_sandbox_refusal_line;
+    char   saved_sb_refusal_msg[sizeof g_sandbox_refusal_msg];
+    memcpy(saved_sb_refusal_msg, g_sandbox_refusal_msg,
+           sizeof saved_sb_refusal_msg);
     size_t saved_sb_used   = g_sandbox_bytes_used;
     size_t saved_sb_max    = g_sandbox_byte_max;
     g_sandbox_active     = 1;
+    g_sandbox_error_latched = 0;
+    g_sandbox_refusal    = 0;
     g_sandbox_bytes_used = 0;
     g_sandbox_byte_max   = max_bytes;
 
     Value *result = vm_execute(chunk, sbox);
 
-    int ok = g_has_error ? 0 : 1;
+    /* #965 (fix5): the run fails on the sticky policy-refusal record too, not
+     * only on the catch-clearable g_has_error — a byte-budget refusal the
+     * untrusted chunk CAUGHT is still a refused run. */
+    int ok = (g_has_error || g_sandbox_refusal) ? 0 : 1;
+    /* #965 (fix1): restore the budget/loop state BEFORE building any error
+     * result. The dicts below are made of make_dict/make_str calls, which
+     * CHARGE an armed budget — and after a refusal the budget is exhausted,
+     * so each diagnostic allocation refused again and rt_error CLOBBERED
+     * g_error_raw before it could be read into the message, replacing the
+     * original "used U + R > M" numbers with a re-entrant refusal's. With
+     * the budget disarmed first, error construction charges nothing and the
+     * original diagnostic survives verbatim. cap_hit/loop_max are snapshotted
+     * for the partial-run message, which is the only consumer. */
+    int cap_hit = g_sandbox_cap_hit;
+    int loop_max = g_sandbox_loop_max;
+    g_sandbox_loop_max = saved_max;
+    g_sandbox_cap_hit = saved_cap_hit;
+    g_loop_iterations = saved_iters;
+    g_loop_backedge_count = saved_backedge_iters;   /* #940 */
+    g_sandbox_active     = saved_sb_active;
+    g_sandbox_bytes_used = saved_sb_used;
+    g_sandbox_byte_max   = saved_sb_max;
+
     /* A cap-truncated loop is NOT a clean run: the program continued past a
      * silently cut loop and produced partial results with exit 0. Reporting
      * ok:1 let a graded validator award its top "runs cleanly" rung to
      * infinite and truncated programs (found by iLambdaAi's grader review,
      * 2026-08-17). Surface it as a structured sandbox error instead. */
-    if (ok && g_sandbox_cap_hit) {
+    if (ok && cap_hit) {
         ok = 0;
         Value *ev = make_dict(3);
         dict_set_owned(ev, "kind", make_str("sandbox"));
         char capmsg[96];
         snprintf(capmsg, sizeof(capmsg),
                  "loop budget exhausted (max_iterations=%d): partial run",
-                 g_sandbox_loop_max);
+                 loop_max);
         dict_set_owned(ev, "message", make_str(capmsg));
         dict_set_owned(ev, "line", make_num(0));
         dict_set_owned(out, "error", ev);
     }
-    if (g_has_error) {
+    if (!ok && g_sandbox_refusal) {
+        /* #965 (fix5): the run failed BECAUSE of a sandbox policy refusal —
+         * report the FIRST refusal's own triple. Not the latched g_error_*,
+         * which an earlier caught ordinary error (e.g. throw("sentinel")) may
+         * occupy without being a refusal; and not a later error. */
+        Value *ev = make_dict(3);
+        dict_set_owned(ev, "kind",
+                       make_str(err_kind_name((ErrKind)g_sandbox_refusal_kind)));
+        dict_set_owned(ev, "message", make_str(g_sandbox_refusal_msg));
+        dict_set_owned(ev, "line", make_num((double)g_sandbox_refusal_line));
+        dict_set_owned(out, "error", ev);
+        if (g_has_error) {
+            g_has_error = 0;
+            eigs_clear_error_value();
+        }
+    } else if (g_has_error) {
         /* #406: surface the failure structurally on the result dict so the
          * graded ladder can discriminate (sandbox denial vs type error vs
          * parse) without re-running outside the sandbox. Same shape as a
@@ -3151,14 +3442,6 @@ Value* builtin_sandbox_run(Value *arg) {
         eigs_clear_error_value();
     }
 
-    g_sandbox_loop_max = saved_max;
-    g_sandbox_cap_hit = saved_cap_hit;
-    g_loop_iterations = saved_iters;
-    g_loop_backedge_count = saved_backedge_iters;   /* #940 */
-    g_sandbox_active     = saved_sb_active;
-    g_sandbox_bytes_used = saved_sb_used;
-    g_sandbox_byte_max   = saved_sb_max;
-
     chunk_free(chunk);
     env_decref(sbox);
 
@@ -3168,10 +3451,13 @@ Value* builtin_sandbox_run(Value *arg) {
      * line} shape as any other refusal, so a grading ladder sees it. */
     long scan_budget = SANDBOX_RESULT_MAX_NODES;
     int scan_unverified = 0;
-    if (ok && result &&
-        sandbox_value_has_callable(result, 0, &scan_budget, &scan_unverified)) {
+    int scan_hit = result &&
+        sandbox_value_has_callable(result, 0, &scan_budget, &scan_unverified);
+    if (scan_hit) {
         val_decref(result);
         result = NULL;
+    }
+    if (scan_hit && ok) {
         ok = 0;
         Value *ev = make_dict(3);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_SANDBOX)));
@@ -3190,6 +3476,12 @@ Value* builtin_sandbox_run(Value *arg) {
     dict_set(out, "ok", okv);   /* dict_set increfs; drop our ref */
     val_decref(okv);
     if (result) { dict_set(out, "result", result); val_decref(result); }
+    g_sandbox_error_latched = saved_sb_error_latched;
+    g_sandbox_refusal      = saved_sb_refusal;
+    g_sandbox_refusal_kind = saved_sb_refusal_kind;
+    g_sandbox_refusal_line = saved_sb_refusal_line;
+    memcpy(g_sandbox_refusal_msg, saved_sb_refusal_msg,
+           sizeof saved_sb_refusal_msg);
     return out;
 }
 
@@ -4868,7 +5160,11 @@ Value* builtin_str_from_bytes(Value *arg) {
         s[len++] = (char)b;
     }
     s[len] = '\0';
-    return make_str_owned(s);
+    /* #965: the xcalloc above is an uncharged producer — wrap with the
+     * charging copy constructor, not make_str_owned. */
+    Value *r = make_str(s);
+    free(s);
+    return r;
 }
 
 /* f64_to_bytes of x → list of 8 ints: the big-endian IEEE-754 double encoding

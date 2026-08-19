@@ -229,8 +229,9 @@ Value* builtin_regex_replace(Value *arg) {
     strbuf_append(&out, p);
 
     regfree(&re);
-    Value *v = make_str(out.data);
-    strbuf_free(&out);
+    /* #965: the strbuf payload is already charged (reserve growth + finish
+     * shortfall); take ownership instead of copying (a copy would charge it twice). */
+    Value *v = make_str_owned(strbuf_finish(&out));
     return v;
 }
 

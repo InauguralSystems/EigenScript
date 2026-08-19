@@ -18,11 +18,325 @@ POP is 35
 CALL is 39
 RETURN is 40
 
+# --- #965 (root redesign): ONE verification context for the WHOLE graph -----
+# The pool bound added in fix7 is shared across ONE chunk's constants — but
+# every NESTED function chunk re-entered the descriptor builder and declared a
+# FRESH allowance of its own, so the real total was (allowance x number of
+# chunk builds): width and nesting MULTIPLIED the advertised bound instead of
+# spending it. Every child below is individually well inside the allowance and
+# their SUM is not, so only a context shared across the whole recursive graph
+# — root chunk, nested chunks, code, constants, function lists, local names —
+# can refuse this descriptor. Verification runs BEFORE the loop cap and the
+# byte budget are armed, so neither of the sandbox's own bounds applies.
+#
+# These sections sit at the TOP of the file so a failure's named FAIL lines
+# lead the suite's five-line diagnostic excerpt, ahead of the intentional
+# refusal messages the budget sections print to stderr.
+RD_LIST is 42
+RD_CLOSURE is 38
+rd_dag is [1]
+for i in range of 4:
+    rd_dag is [rd_dag, rd_dag, rd_dag, rd_dag, rd_dag,
+               rd_dag, rd_dag, rd_dag, rd_dag, rd_dag]
+rd_child is [[CONST,0,0, RETURN], [rd_dag]]
+rd_over_fns is []
+for i in range of 8:
+    append of [rd_over_fns, rd_child]
+rd_over_desc is [ABI, [CONST,0,0, RETURN], [0], rd_over_fns]
+sr_rd_over is sandbox_run of [rd_over_desc, 100000, 1000000]
+assert_eq of [sr_rd_over["ok"], 0,
+              "descriptor graph: nested chunks share ONE work allowance"]
+rd_over_msg is ""
+if sr_rd_over["ok"] == 0:
+    rd_over_msg is sr_rd_over["error"]["message"]
+assert_eq of [rd_over_msg, "invalid chunk descriptor",
+              "descriptor graph: exhausting the shared allowance fails closed"]
+
+# --- #965 (root redesign): no mutable host alias crosses the boundary -------
+# A descriptor constant was retained BY REFERENCE, so a host-owned list handed
+# in as a constant stayed the same object the sandbox mutated. `append` is
+# allowlisted and a one-element list has spare capacity, so attaching a
+# freshly created sandbox closure to it costs no allocation, trips no charge,
+# and never appears in the returned result — the run answers scalar 0 while
+# the host's carrier already holds a callable. The direct-result scan cannot
+# repair that: the mutation is visible through the host's own alias before the
+# scan runs. So the boundary is closed on the way IN — the sandbox gets its
+# own isolated copy of every mutable constant.
+rd_body is [[CONST,0,0, RETURN], ["x"]]
+rd_carrier is [0]
+rd_attach_desc is [ABI,
+                   [GET_NAME,0,0, CONST,1,0, RD_CLOSURE,0,0, RD_LIST,2,0,
+                    CALL,1,0, POP, CONST,2,0, RETURN],
+                   ["append", rd_carrier, 0], [rd_body]]
+sr_rd_attach is sandbox_run of [rd_attach_desc, 100000, 1000000]
+assert_eq of [(len of rd_carrier), 1,
+              "boundary: sandbox cannot attach a callable to a host-owned list constant"]
+
+# Same property on the buffer arm: buf_set writes element storage in place.
+rd_buf is buffer of 4
+buf_set of [rd_buf, 0, 3]
+rd_bufset_desc is [ABI,
+                   [GET_NAME,0,0, CONST,1,0, CONST,2,0, CONST,3,0, RD_LIST,3,0,
+                    CALL,1,0, POP, CONST,2,0, RETURN],
+                   ["buf_set", rd_buf, 0, 99]]
+sandbox_run of [rd_bufset_desc, 100000, 1000000]
+assert_eq of [buf_get of [rd_buf, 0], 3,
+              "boundary: sandbox buf_set cannot reach the host's buffer constant"]
+
+# ...and on the dict arm: dict_set replaces a value in place.
+rd_dict is {"k": 1}
+rd_dictset_desc is [ABI,
+                    [GET_NAME,0,0, CONST,1,0, CONST,2,0, CONST,3,0, RD_LIST,3,0,
+                     CALL,1,0, POP, CONST,4,0, RETURN],
+                    ["dict_set", rd_dict, "k", 2, 0]]
+sandbox_run of [rd_dictset_desc, 100000, 1000000]
+assert_eq of [rd_dict["k"], 1,
+              "boundary: sandbox dict_set cannot reach the host's dict constant"]
+
+# The constant pool is not the only way a host object enters the sandbox: the
+# allowlist COPIES the global binding of every allowed name. A host that
+# rebound one of those names holds an arbitrary — possibly mutable — value
+# there, and copying it aliases host state in through a second root. Only the
+# pure C builtin the allowlist actually names may cross.
+rd_alias is [0]
+sign_extend is rd_alias
+rd_allow_desc is [ABI,
+                  [GET_NAME,0,0, GET_NAME,1,0, RD_CLOSURE,0,0, RD_LIST,2,0,
+                   CALL,1,0, POP, CONST,2,0, RETURN],
+                  ["append", "sign_extend", 0], [rd_body]]
+sr_rd_allow is sandbox_run of [rd_allow_desc, 100000, 1000000]
+assert_eq of [(len of rd_alias), 1,
+              "boundary: a rebound allowlist name cannot alias host state inward"]
+assert_eq of [sr_rd_allow["ok"], 0,
+              "boundary: a rebound allowlist name is blocked, not copied"]
+
+# --- #965 (root redesign): the controls the redesign must not break ---------
+# An in-budget nested graph still builds, runs and answers, so the fix cannot
+# be a blanket refusal of nested chunks; a back edge in the constant graph
+# TERMINATES instead of recursing until the C stack does; and isolation
+# preserves CONTENT, or every assertion above would be satisfied by handing
+# the sandbox an empty container.
+rd_under_fns is []
+for i in range of 6:
+    append of [rd_under_fns, rd_child]
+rd_under_desc is [ABI, [CONST,0,0, RETURN], [0], rd_under_fns]
+sr_rd_under is sandbox_run of [rd_under_desc, 100000, 1000000]
+assert_eq of [sr_rd_under["ok"], 1,
+              "descriptor graph: an in-budget nested graph still builds and runs"]
+rd_under_result is 999
+if sr_rd_under["ok"] == 1:
+    rd_under_result is sr_rd_under["result"]
+assert_eq of [rd_under_result, 0,
+              "descriptor graph: the in-budget nested graph answers normally"]
+assert_eq of [sr_rd_attach["ok"], 1,
+              "boundary: mutating the sandbox's OWN copy is still an ordinary run"]
+rd_cyc is []
+append of [rd_cyc, rd_cyc]
+rd_cyc_desc is [ABI, [CONST,1,0, RETURN], [rd_cyc, 0]]
+sr_rd_cyc is sandbox_run of [rd_cyc_desc, 100000, 1000000]
+assert_eq of [sr_rd_cyc["ok"], 0,
+              "descriptor graph: a self-referential constant terminates and is refused"]
+list_truncate of [rd_cyc, 0]
+rd_data is [10, 20, 30]
+rd_get_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CONST,2,0, RD_LIST,2,0,
+                      CALL,1,0, RETURN],
+                ["get_at", rd_data, 1]]
+sr_rd_get is sandbox_run of [rd_get_desc, 100000, 1000000]
+rd_get_result is 999
+if sr_rd_get["ok"] == 1:
+    rd_get_result is sr_rd_get["result"]
+assert_eq of [rd_get_result, 20,
+              "boundary: an isolated list constant still reads its own elements"]
+rd_bufget_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CONST,2,0, RD_LIST,2,0,
+                         CALL,1,0, RETURN],
+                   ["buf_get", rd_buf, 0]]
+sr_rd_bufget is sandbox_run of [rd_bufget_desc, 100000, 1000000]
+rd_bufget_result is 999
+if sr_rd_bufget["ok"] == 1:
+    rd_bufget_result is sr_rd_bufget["result"]
+assert_eq of [rd_bufget_result, 3,
+              "boundary: an isolated buffer constant still reads its own elements"]
+
 # zeros of N  /  fill of [N, v]  descriptors (GET_NAME fn; CONST arg; CALL 1).
 define zeros_desc(n) as:
     return [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["zeros", n]]
 define fill_desc(n) as:
     return [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [n, 0.0]]]
+
+# --- adv probe (#965 fix5 review): a caught refusal must not skip the scan ---
+# fix5 decides ok from the sticky refusal record, so a descriptor that catches
+# its own byte-budget refusal and then RETURNS a closure reaches the result
+# attach with ok already 0 - while the callable containment scan stays gated on
+# ok. In every earlier shape a caught refusal still reported ok:1 and the scan
+# ran; refusing the run must not start handing sandbox-authored code across the
+# boundary. Property: a run refused this way carries NO result key (the shape
+# every other failure path already has). The closure is created fresh on both
+# arms, and make_fn never touches the byte budget, so the exhausted budget
+# cannot mask the shape. This section sits at the TOP of the file so a
+# failure's named FAIL lines lead the suite's five-line diagnostic excerpt.
+ADV2_TRY_BEGIN is 54
+ADV2_TRY_END is 55
+ADV2_CLOSURE is 38
+scan_big is ""
+for i in range of 250:
+    scan_big is scan_big + "XXXXXXXX"
+scan_code is [ADV2_TRY_BEGIN,15,0, GET_NAME,0,0, CONST,1,0, CALL,1,0,
+              POP, ADV2_TRY_END, ADV2_CLOSURE,0,0, RETURN,
+              POP, ADV2_CLOSURE,0,0, RETURN]
+scan_fn is [[CONST,0,0, RETURN], ["x"]]
+scan_desc is [ABI, scan_code, ["str_lower", scan_big], [scan_fn]]
+sr_scan is sandbox_run of [scan_desc, 100000, 1000]
+assert_eq of [sr_scan["ok"], 0,
+              "adv scan: caught-refusal run returning a closure still refuses"]
+assert_eq of [has_key of [sr_scan, "result"], 0,
+              "adv scan: refused run must not hand a callable across the boundary"]
+# Control: the SAME closure-returning chunk under a generous budget reaches the
+# scan on the ok path and is refused there with the result dropped - proves the
+# scan itself still works and the failure above is specific to the refusal path.
+sr_scan_ctrl is sandbox_run of [scan_desc, 100000, 100000]
+assert_eq of [sr_scan_ctrl["ok"], 0,
+              "adv scan control: ok-path closure result is scan-refused"]
+assert_eq of [has_key of [sr_scan_ctrl, "result"], 0,
+              "adv scan control: scan refusal drops the callable result"]
+
+# --- #965 (fix5): a caught byte-budget refusal still refuses the run ---------
+# The VM catch path clears g_has_error and resumes at the handler, so a
+# descriptor that wraps an over-budget allocation in TRY_BEGIN and answers the
+# catch with a small constant laundered the run-level refusal into {ok:1} —
+# the budget was exhausted and the diagnostic latch still held the refusal,
+# yet sandbox_run decided ok solely from the just-cleared g_has_error. A
+# sandbox policy refusal is a property of the RUN, not of one raise: untrusted
+# try/catch may observe it, but cannot erase it. TRY_BEGIN's catch offset
+# lands on the POP at byte 14 (the handler drops the caught error value and
+# returns a marker), so on the laundering path the run "succeeds" with
+# "caught-budget-survived". These sections sit at the TOP of the file so a
+# failure's named FAIL lines precede the intentional-refusal stderr prints in
+# the suite's five-line diagnostic excerpt.
+TRY_BEGIN is 54
+TRY_END is 55
+JUMP is 29
+LINE is 68
+SET_NAME_LOCAL is 27
+LIST is 42
+big_caught is ""
+for i in range of 250:
+    big_caught is big_caught + "XXXXXXXX"
+caught_code is [TRY_BEGIN,11,0, GET_NAME,0,0, CONST,1,0, CALL,1,0,
+                TRY_END, RETURN,
+                POP, CONST,2,0, RETURN]
+caught_lower_desc is [ABI, caught_code, ["str_lower", big_caught, "caught-budget-survived"]]
+sr_caught_lower is sandbox_run of [caught_lower_desc, 100000, 1000]
+assert_eq of [sr_caught_lower["ok"], 0,
+              "budget: caught make_str refusal cannot launder run to ok"]
+cl_kind is ""
+cl_msg is ""
+if sr_caught_lower["ok"] == 0:
+    cl_kind is sr_caught_lower["error"]["kind"]
+    cl_msg is sr_caught_lower["error"]["message"]
+assert_eq of [cl_kind, "sandbox", "budget: caught make_str refusal names the sandbox"]
+assert_eq of [cl_msg, "sandbox memory budget exceeded (used 0 + 2001 > 1000 bytes)",
+              "budget: caught make_str refusal reports its own diagnostic"]
+
+# --- #965 (fix5): same caught shape through the buffer allocator -------------
+caught_buffer_desc is [ABI, caught_code, ["buffer", 500, "caught-budget-survived"]]
+sr_caught_buffer is sandbox_run of [caught_buffer_desc, 100000, 1000]
+assert_eq of [sr_caught_buffer["ok"], 0,
+              "budget: caught buffer refusal cannot launder run to ok"]
+cb_kind is ""
+cb_msg is ""
+if sr_caught_buffer["ok"] == 0:
+    cb_kind is sr_caught_buffer["error"]["kind"]
+    cb_msg is sr_caught_buffer["error"]["message"]
+assert_eq of [cb_kind, "sandbox", "budget: caught buffer refusal names the sandbox"]
+assert_eq of [cb_msg, "sandbox memory budget exceeded (used 0 + 4000 > 1000 bytes)",
+              "budget: caught buffer refusal reports its own diagnostic"]
+
+# --- #965 (fix5): the caught strbuf refusal stays refused (control) ----------
+# Control: the same caught shape through a strbuf-backed producer, sized so
+# the 3-byte budget cannot fit even the catch machinery's own error-dict
+# allocations — the error-value build re-trips the budget, so this run
+# refused BEFORE the sticky-refusal state existed and must still refuse after
+# it. A regression that flips THIS row is a different defect than the
+# laundering one above.
+caught_strbuf_desc is [ABI, caught_code, ["json_encode", "x", "caught-strbuf-survived"]]
+sr_caught_strbuf is sandbox_run of [caught_strbuf_desc, 100000, 3]
+assert_eq of [sr_caught_strbuf["ok"], 0,
+              "budget: caught strbuf refusal stays refused (control)"]
+cs_kind is ""
+if sr_caught_strbuf["ok"] == 0:
+    cs_kind is sr_caught_strbuf["error"]["kind"]
+assert_eq of [cs_kind, "sandbox", "budget: caught strbuf control names the sandbox"]
+
+# --- #965 (fix5): an ordinary caught error must not occupy the refusal record
+# A caught throw("sentinel") arms the run's first-diagnostic latch with USER
+# metadata (kind "user", message "sentinel"). The later over-budget str_lower
+# is the run's first ACTUAL sandbox refusal and must supply the returned
+# kind/message/line; the stale user triple is not a refusal and must not
+# suppress it. OP_LINE 7 marks the throw site and OP_LINE 42 the refusal site
+# so the line field discriminates too. The success arm of the try is
+# unreachable (throw always raises); its POP keeps the verifier's stack-height
+# pass honest anyway.
+ord_code is [LINE,7,0,0,0,
+             TRY_BEGIN,14,0, GET_NAME,0,0, CONST,1,0, CALL,1,0,
+             TRY_END, POP, JUMP,1,0,
+             POP,
+             LINE,42,0,0,0,
+             GET_NAME,2,0, CONST,3,0, CALL,1,0, POP,
+             GET_NAME,2,0, CONST,3,0, CALL,1,0, POP,
+             CONST,4,0, RETURN]
+ord_desc is [ABI, ord_code, ["throw", "sentinel", "str_lower", big_caught, "ordering-survived"]]
+sr_ord is sandbox_run of [ord_desc, 100000, 3000]
+assert_eq of [sr_ord["ok"], 0, "budget: caught user throw then budget refusal -> {ok:0}"]
+ord_kind is ""
+ord_msg is ""
+ord_line is 0
+if sr_ord["ok"] == 0:
+    ord_kind is sr_ord["error"]["kind"]
+    ord_msg is sr_ord["error"]["message"]
+    ord_line is sr_ord["error"]["line"]
+assert_eq of [ord_kind, "sandbox",
+              "budget: first actual refusal wins over a stale caught user error"]
+assert_eq of [ord_msg, "sandbox memory budget exceeded (used 2001 + 2001 > 3000 bytes)",
+              "budget: refusal message wins over the stale caught user message"]
+assert_eq of [ord_line, 42,
+              "budget: refusal line is the refusal site, not the caught throw site"]
+
+# --- #965 (fix5): a sandbox_run nested in a host vm_run_bytecode frame -------
+# The grading-ladder shape (see test_vm_run_bytecode.eigs's nested-run note):
+# an outer chunk running on the HOST calls sandbox_run, which arms, refuses,
+# and restores the per-run refusal state while the outer VM frame is still on
+# the stack. (A run nested INSIDE another armed run is unreachable from
+# untrusted bytecode by design: sandbox_run is not on SANDBOX_ALLOW and
+# descriptor constant pools reject callables, so the boundary can only be
+# re-entered from the host — the save/restore half this section can reach is
+# the host-frame one.) The inner run's caught refusal must still fail the
+# inner run; the outer flow must then continue unpoisoned; and later runs must
+# start from fully independent refusal state.
+nest_inner_desc is [ABI, caught_code, ["str_lower", big_caught, "inner-caught"]]
+nest_outer_code is [GET_NAME,0,0, CONST,1,0, CALL,1,0,
+                    SET_NAME_LOCAL,2,0, POP,
+                    GET_NAME,2,0, CONST,3,0, LIST,2,0, RETURN]
+nest_pair is vm_run_bytecode of [ABI, nest_outer_code,
+                                 ["sandbox_run", [nest_inner_desc, 100000, 1000],
+                                  "nest_r", "outer-continued"]]
+assert_eq of [nest_pair[1], "outer-continued",
+              "nested: outer host flow continues after an inner refused run"]
+nest_inner_ok is nest_pair[0]["ok"]
+assert_eq of [nest_inner_ok, 0,
+              "nested: inner caught refusal still refuses the inner run"]
+nest_inner_kind is ""
+if nest_inner_ok == 0:
+    nest_inner_kind is nest_pair[0]["error"]["kind"]
+assert_eq of [nest_inner_kind, "sandbox", "nested: inner refusal names the sandbox"]
+nest_after is sandbox_run of [nest_inner_desc, 100000, 1000]
+assert_eq of [nest_after["ok"], 0, "nested: later tight run refuses on its own fresh budget"]
+na_msg is ""
+if nest_after["ok"] == 0:
+    na_msg is nest_after["error"]["message"]
+assert_eq of [na_msg, "sandbox memory budget exceeded (used 0 + 2001 > 1000 bytes)",
+              "nested: later refusal reports its own diagnostic, not a restored one"]
+assert_eq of [(sandbox_run of [nest_inner_desc, 100000, 100000])["ok"], 1,
+              "nested: later generous run is not poisoned by the refused runs"]
 
 # --- 1. A big allocation under a tiny budget is rejected (ok=0), not aborted ---
 ok_big is (sandbox_run of [zeros_desc of 1000000, 1000000, 1000])["ok"]
@@ -244,6 +558,405 @@ sr_bfl is sandbox_run of [bfl_desc, 100000, 8000]
 assert_eq of [sr_bfl["ok"], 0, "budget: buf_from_list -> {ok:0}, not bypass"]
 sr_bfl_ok is sandbox_run of [bfl_desc, 100000, 4000000]
 assert_eq of [sr_bfl_ok["ok"], 1, "budget: buf_from_list within budget stays ok"]
+
+# --- #965: pure string transforms charge their payload bytes -----------------
+# str_lower/str_upper/trim/substr/str_from_bytes built output via an uncharged
+# copy constructor, so one charged input reused across a loop aggregated N
+# uncharged payloads (the list SLOTS were charged, the payloads were not).
+# An unbounded str_lower loop — the proven test_vm_run_bytecode `loopcode`
+# skeleton (NUM_ONE; JUMP_IF_FALSE; LOOP_CAP_CHECK; JUMP_BACK) with a
+# transform body — can stop only two ways: the iteration cap ("loop budget
+# exhausted ... partial run") or the byte budget ("sandbox memory budget
+# exceeded"). A 30000-byte budget against a 2001-byte payload must stop the
+# loop on the BYTE budget (~15 iterations), long before the 100000-iteration
+# cap — so the refusal message is the discriminator.
+NUM_ONE is 3
+JUMP_IF_FALSE is 31
+JUMP_BACK is 30
+LOOP_CAP_CHECK is 63
+big965 is ""
+for i in range of 250:
+    big965 is big965 + "XXXXXXXX"
+loop965 is [NUM_ONE, JUMP_IF_FALSE,19,0, LOOP_CAP_CHECK,16,0,
+            GET_NAME,0,0, CONST,1,0, CALL,1,0, SET_NAME_LOCAL,2,0, POP,
+            JUMP_BACK,23,0,
+            GET_NAME,2,0, RETURN]
+loop_desc is [ABI, loop965, ["str_lower", big965, "x"]]
+sr_loop is sandbox_run of [loop_desc, 100000, 30000]
+assert_eq of [sr_loop["ok"], 0, "budget: looped str_lower of a reused input -> {ok:0}"]
+# Error fields exist only when ok flips the expected way, so read them behind
+# a guard: a regression must surface as a failed ASSERTION (the guarded
+# default never matches), never as a crash that skips the remaining checks.
+loop_kind is ""
+loop_msg is ""
+if sr_loop["ok"] == 0:
+    loop_kind is sr_loop["error"]["kind"]
+    loop_msg is sr_loop["error"]["message"]
+assert_eq of [loop_kind, "sandbox", "budget: string-transform refusal names the sandbox"]
+loop_mem is index_of of [loop_msg, "memory budget"]
+assert_eq of [loop_mem >= 0, 1, "budget: loop stops on the byte budget, not the iteration cap"]
+# Per-call: one str_lower over the same input is charged its payload.
+lower_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["str_lower", big965]]
+assert_eq of [(sandbox_run of [lower_desc, 100000, 1000])["ok"], 0, "budget: str_lower payload -> {ok:0}"]
+sr_lower_ok is sandbox_run of [lower_desc, 100000, 100000]
+assert_eq of [sr_lower_ok["ok"], 1, "budget: str_lower within budget stays ok"]
+lower_result is ""
+if sr_lower_ok["ok"] == 1:
+    lower_result is sr_lower_ok["result"]
+assert_eq of [lower_result, str_lower of big965, "budget: str_lower transforms correctly"]
+
+# --- #965: each named transform is charged per call --------------------------
+sfb_bytes is []
+for i in range of 2000:
+    append of [sfb_bytes, 65]
+sfb_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["str_from_bytes", sfb_bytes]]
+assert_eq of [(sandbox_run of [sfb_desc, 100000, 1000])["ok"], 0, "budget: str_from_bytes payload -> {ok:0}"]
+assert_eq of [(sandbox_run of [sfb_desc, 100000, 100000])["ok"], 1, "budget: str_from_bytes within budget stays ok"]
+upper_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["str_upper", big965]]
+assert_eq of [(sandbox_run of [upper_desc, 100000, 1000])["ok"], 0, "budget: str_upper payload -> {ok:0}"]
+assert_eq of [(sandbox_run of [upper_desc, 100000, 100000])["ok"], 1, "budget: str_upper within budget stays ok"]
+sub_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["substr", [big965, 0, 2000]]]
+assert_eq of [(sandbox_run of [sub_desc, 100000, 1000])["ok"], 0, "budget: substr payload -> {ok:0}"]
+assert_eq of [(sandbox_run of [sub_desc, 100000, 100000])["ok"], 1, "budget: substr within budget stays ok"]
+trim_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["trim", big965]]
+assert_eq of [(sandbox_run of [trim_desc, 100000, 1000])["ok"], 0, "budget: trim payload -> {ok:0}"]
+assert_eq of [(sandbox_run of [trim_desc, 100000, 100000])["ok"], 1, "budget: trim within budget stays ok"]
+
+# --- #965: a strbuf-charged producer is NOT charged twice --------------------
+# json_encode of a 100000-char string grows its strbuf to 131072 (charged
+# 131008 at strbuf_reserve). A second charge of the 100001-byte payload at the
+# result wrap would total 231009 > 200000 — this budget admits exactly the
+# single charge.
+big_je is ""
+for i in range of 12500:
+    big_je is big_je + "xxxxxxxx"
+je2_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["json_encode", big_je]]
+assert_eq of [(sandbox_run of [je2_desc, 100000, 200000])["ok"], 1, "budget: json_encode charged once, not twice"]
+
+# --- #965: a VAL_BUFFER result counts its element storage at the scan --------
+# The boundary callable-scan counted a buffer as ONE node regardless of
+# element count, so a 200k-element buffer (1.6MB, within the byte budget)
+# crossed the boundary as a single node. The scan now spends one node per
+# element: 200000 > SANDBOX_RESULT_MAX_NODES (100000) refuses the result.
+buf_big_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["buffer", 200000]]
+sr_bufbig is sandbox_run of [buf_big_desc, 100000, 4000000]
+assert_eq of [sr_bufbig["ok"], 0, "boundary: 200k-element buffer result counts its elements"]
+bufbig_msg is ""
+if sr_bufbig["ok"] == 0:
+    bufbig_msg is sr_bufbig["error"]["message"]
+bufbig_scan is index_of of [bufbig_msg, "too large to scan"]
+assert_eq of [bufbig_scan >= 0, 1, "boundary: buffer refusal is the result scan, not the byte budget"]
+buf_small_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["buffer", 1000]]
+assert_eq of [(sandbox_run of [buf_small_desc, 100000, 4000000])["ok"], 1, "boundary: 1k-element buffer result still crosses"]
+
+# --- #965 (fix1): SMALL strbuf-backed payloads are charged too ----------------
+# strbuf_init's 64-byte initial capacity is never charged and strbuf_reserve
+# charges only growth DELTAS, so a result of <=63 payload bytes transferred by
+# ownership paid ZERO. A loop of small json_encode results must accumulate a
+# per-call payload charge: 4 bytes per "x" result, so a 30000-byte budget
+# stops the loop long before the 100000-iteration cap — the refusal message
+# is again the discriminator. Same proven loopcode skeleton as above.
+je_loop is [NUM_ONE, JUMP_IF_FALSE,19,0, LOOP_CAP_CHECK,16,0,
+            GET_NAME,0,0, CONST,1,0, CALL,1,0, SET_NAME_LOCAL,2,0, POP,
+            JUMP_BACK,23,0,
+            GET_NAME,2,0, RETURN]
+je_loop_desc is [ABI, je_loop, ["json_encode", "x", "r"]]
+sr_jeloop is sandbox_run of [je_loop_desc, 100000, 30000]
+assert_eq of [sr_jeloop["ok"], 0, "budget: looped small json_encode -> {ok:0}"]
+jeloop_kind is ""
+jeloop_msg is ""
+if sr_jeloop["ok"] == 0:
+    jeloop_kind is sr_jeloop["error"]["kind"]
+    jeloop_msg is sr_jeloop["error"]["message"]
+assert_eq of [jeloop_kind, "sandbox", "budget: small-strbuf refusal names the sandbox"]
+jeloop_mem is index_of of [jeloop_msg, "memory budget"]
+assert_eq of [jeloop_mem >= 0, 1, "budget: small-strbuf loop stops on bytes, not the iteration cap"]
+# Per-call: one 3-byte json_encode result charges its 4 payload bytes.
+je_small is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["json_encode", "x"]]
+assert_eq of [(sandbox_run of [je_small, 100000, 3])["ok"], 0, "budget: small json_encode payload -> {ok:0}"]
+sr_jes is sandbox_run of [je_small, 100000, 1000]
+assert_eq of [sr_jes["ok"], 1, "budget: small json_encode within budget stays ok"]
+jes_result is ""
+if sr_jes["ok"] == 1:
+    jes_result is sr_jes["result"]
+assert_eq of [jes_result, "\"x\"", "budget: small json_encode result is correct"]
+
+# --- #965 (fix1): a GROWN strbuf result is charged exactly once ---------------
+# A 100-char string encodes to 102 strbuf bytes: growth charges 64 (64->128),
+# the payload remainder (103 - 64 = 39) is charged at the ownership transfer —
+# total exactly 103, the payload. Budget 102 must refuse; 103 must admit.
+# Charging the payload AGAIN at the wrap (the old make_str shape) would total
+# 64 + 39 + 103 = 206 and refuse the 103 budget, so the pair pins exact-once.
+mid100 is ""
+for i in range of 12:
+    mid100 is mid100 + "xxxxxxxx"
+mid100 is mid100 + "xxxx"
+je_mid is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["json_encode", mid100]]
+assert_eq of [(sandbox_run of [je_mid, 100000, 102])["ok"], 0, "budget: grown strbuf payload (103) refused at 102"]
+assert_eq of [(sandbox_run of [je_mid, 100000, 103])["ok"], 1, "budget: grown strbuf charged exactly once (103 admitted)"]
+
+# --- #965 (fix1): the original refusal diagnostic survives error construction --
+# The error-result dict is built while its make_dict/make_str calls could
+# themselves attempt refused charges against the just-exhausted budget and
+# CLOBBER g_error_raw before it is read into the message. Here the first
+# concat commits 1201 of a 1300 budget and the second is refused, leaving no
+# room for any diagnostic allocation: the reported message must still be the
+# ORIGINAL "used 1201 + 1201 > 1300", not a re-entrant refusal's numbers.
+big_cc is ""
+for i in range of 75:
+    big_cc is big_cc + "xxxxxxxx"
+cc_code is [CONST,0,0, CONST,0,0, ADD, POP, CONST,0,0, CONST,0,0, ADD, RETURN]
+cc_desc is [ABI, cc_code, [big_cc]]
+sr_cc is sandbox_run of [cc_desc, 100000, 1300]
+assert_eq of [sr_cc["ok"], 0, "budget: second oversized concat -> {ok:0}"]
+cc_kind is ""
+cc_msg is ""
+if sr_cc["ok"] == 0:
+    cc_kind is sr_cc["error"]["kind"]
+    cc_msg is sr_cc["error"]["message"]
+assert_eq of [cc_kind, "sandbox", "budget: concat refusal names the sandbox"]
+cc_orig is index_of of [cc_msg, "used 1201 + 1201 > 1300"]
+assert_eq of [cc_orig >= 0, 1, "budget: original refusal diagnostic survives error construction"]
+
+# --- #965 (fix1): the exact result-scan node boundary --------------------------
+# The scan spends one node per VALUE: a container costs 1 + its elements, so a
+# buffer costs 1 container node + 1 per element — identical arithmetic to a
+# flat list of the same length. Against SANDBOX_RESULT_MAX_NODES = 100000:
+# 1 + 99998 = 99999 nodes crosses; 1 + 99999 = 100000 exhausts the budget and
+# fails closed (the scan's strict exhaustion rule, same as lists).
+buf_edge_lo is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["buffer", 99998]]
+assert_eq of [(sandbox_run of [buf_edge_lo, 100000, 4000000])["ok"], 1, "boundary: 1+99998-node buffer result crosses"]
+buf_edge_hi is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["buffer", 99999]]
+sr_edge is sandbox_run of [buf_edge_hi, 100000, 4000000]
+assert_eq of [sr_edge["ok"], 0, "boundary: 1+99999-node buffer result refused at the exact limit"]
+edge_msg is ""
+if sr_edge["ok"] == 0:
+    edge_msg is sr_edge["error"]["message"]
+edge_scan is index_of of [edge_msg, "too large to scan"]
+assert_eq of [edge_scan >= 0, 1, "boundary: exact-limit refusal is the result scan"]
+
+# --- #965 (fix3): the first budget refusal wins across one producer ---------
+# json_decode is allowlisted and continues an array after a refused string.
+# On the runner sizeof(Value) + 8*sizeof(Value*) is 72 + 8*8 = C=136 bytes for
+# the parser's initial make_list(8). The first 128-byte string grows 64->128,
+# then requests 128 with 200 used and C+127 available; the independent 64-byte
+# second string later requests 64 with only 63 left. The first refusal must stay
+# visible, rather than being overwritten by that later request.
+first128 is ""
+for i in range of 16:
+    first128 is first128 + "xxxxxxxx"
+second64 is ""
+for i in range of 8:
+    second64 is second64 + "xxxxxxxx"
+multi_json is "[\"" + first128 + "\",\"" + second64 + "\"]"
+multi_json_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN],
+                    ["json_decode", multi_json]]
+sr_multi_json is sandbox_run of [multi_json_desc, 100000, 263]
+assert_eq of [sr_multi_json["ok"], 0,
+              "budget: later independent strbuf refusal keeps {ok:0}"]
+multi_json_msg is ""
+if sr_multi_json["ok"] == 0:
+    multi_json_msg is sr_multi_json["error"]["message"]
+assert_eq of [multi_json_msg,
+              "sandbox memory budget exceeded (used 200 + 128 > 263 bytes)",
+              "budget: first refusal remains exact across multiple strbufs"]
+
+# --- #965 (fix3): sandbox descriptors cannot smuggle callable constants ----
+# The production mutation killed by these assertions is accepting a VAL_BUILTIN
+# or VAL_FN in the descriptor constant pool. The fixture is local-only: on the
+# vulnerable path read_bytes_buf is invoked directly by OP_CONST/OP_CALL despite
+# its name being absent from SANDBOX_ALLOW. The safe pool contract is recursive
+# over data containers, never callable or host-mutable capability values.
+descriptor_fixture is "/tmp/eigs_965_sandbox_descriptor_const.bin"
+write_bytes of [descriptor_fixture, [65], 0]
+define descriptor_const_fn(x) as:
+    return x
+builtin_const_desc is [ABI, [CONST,0,0, CONST,1,0, CALL,1,0, RETURN],
+                       [read_bytes_buf, [descriptor_fixture, 1]]]
+sr_builtin_const is sandbox_run of [builtin_const_desc, 100000, 1000000]
+assert_eq of [sr_builtin_const["ok"], 0,
+              "sandbox descriptor: builtin constant is rejected at trust boundary"]
+builtin_const_error is ""
+if sr_builtin_const["ok"] == 0:
+    builtin_const_error is sr_builtin_const["error"]["message"]
+assert_eq of [builtin_const_error, "invalid chunk descriptor",
+              "sandbox descriptor: builtin constant reports invalid descriptor"]
+fn_const_desc is [ABI, [CONST,0,0, CONST,1,0, CALL,1,0, RETURN],
+                  [descriptor_const_fn, 7]]
+sr_fn_const is sandbox_run of [fn_const_desc, 100000, 1000000]
+assert_eq of [sr_fn_const["ok"], 0,
+              "sandbox descriptor: function constant is rejected at trust boundary"]
+fn_const_error is ""
+if sr_fn_const["ok"] == 0:
+    fn_const_error is sr_fn_const["error"]["message"]
+assert_eq of [fn_const_error, "invalid chunk descriptor",
+              "sandbox descriptor: function constant reports invalid descriptor"]
+remove_file of descriptor_fixture
+
+# --- #965 (fix7): the pool walk is bounded by NODES, and it recurses --------
+# Both fixtures above put their callable at index 0 of the pool, i.e. depth 0,
+# so the VAL_LIST/VAL_DICT arms of sandbox_descriptor_constant_safe were never
+# exercised: dropping the child walk left both green while re-opening the very
+# escape the check exists to close. A callable one level down is reachable by
+# OP_CONST + an index, so the recursive contract is load-bearing.
+list_nest_desc is [ABI, [CONST,1,0, RETURN], [[7, [descriptor_const_fn]], 0]]
+sr_list_nest is sandbox_run of [list_nest_desc, 100000, 1000000]
+assert_eq of [sr_list_nest["ok"], 0,
+              "sandbox descriptor: callable nested in a list constant is rejected"]
+list_nest_msg is ""
+if sr_list_nest["ok"] == 0:
+    list_nest_msg is sr_list_nest["error"]["message"]
+assert_eq of [list_nest_msg, "invalid chunk descriptor",
+              "sandbox descriptor: nested list callable reports invalid descriptor"]
+dict_nest_desc is [ABI, [CONST,1,0, RETURN],
+                   [{"a": 1, "f": descriptor_const_fn}, 0]]
+sr_dict_nest is sandbox_run of [dict_nest_desc, 100000, 1000000]
+assert_eq of [sr_dict_nest["ok"], 0,
+              "sandbox descriptor: callable nested in a dict value is rejected"]
+dict_nest_msg is ""
+if sr_dict_nest["ok"] == 0:
+    dict_nest_msg is sr_dict_nest["error"]["message"]
+assert_eq of [dict_nest_msg, "invalid chunk descriptor",
+              "sandbox descriptor: nested dict callable reports invalid descriptor"]
+
+# A depth cap alone does not bound the walk. An ALIASED all-data DAG has no
+# callable, so nothing short-circuits and every PATH is explored: fan-out 10
+# over six rebindings is seven heap lists but 2,111,111 visits, at depth 6 —
+# nowhere near the depth cap. This runs inside vm_build_chunk_desc, BEFORE the
+# loop cap and the byte budget are armed, so neither bounds it. The sibling
+# result scan (sandbox_value_has_callable) already spends a NODE budget for
+# exactly this reason. Property: verification cost is bounded, and a pool that
+# cannot be walked within the bound is refused rather than trusted.
+dag_over is [1]
+for i in range of 6:
+    dag_over is [dag_over, dag_over, dag_over, dag_over, dag_over,
+                 dag_over, dag_over, dag_over, dag_over, dag_over]
+# The DAG is a CONSTANT and never the result: returning it would let the result
+# scan's own node budget refuse the run, and this assertion would then pass
+# without the descriptor pool ever having been bounded.
+dag_over_desc is [ABI, [CONST,1,0, RETURN], [dag_over, 0]]
+sr_dag_over is sandbox_run of [dag_over_desc, 100000, 1000000]
+assert_eq of [sr_dag_over["ok"], 0,
+              "sandbox descriptor: aliased data DAG past the node budget is refused"]
+dag_over_msg is ""
+if sr_dag_over["ok"] == 0:
+    dag_over_msg is sr_dag_over["error"]["message"]
+assert_eq of [dag_over_msg, "invalid chunk descriptor",
+              "sandbox descriptor: node-budget exhaustion fails closed"]
+
+# CONTROL: the same shape two rebindings shallower is 21,111 visits — inside
+# the bound — so ordinary safe data still verifies and still runs. Without this
+# row a bound of zero would satisfy every assertion above.
+dag_under is [1]
+for i in range of 4:
+    dag_under is [dag_under, dag_under, dag_under, dag_under, dag_under,
+                  dag_under, dag_under, dag_under, dag_under, dag_under]
+dag_under_desc is [ABI, [CONST,1,0, RETURN], [dag_under, 0]]
+assert_eq of [(sandbox_run of [dag_under_desc, 100000, 1000000])["ok"], 1,
+              "sandbox descriptor: aliased data DAG inside the node budget still verifies"]
+
+# The bound is spent across the WHOLE pool, not per constant: eight aliases of
+# the control DAG are 168,888 visits together and 21,111 apiece, so a budget
+# that resets per entry accepts this pool and a shared one refuses it.
+dag_pool is []
+for i in range of 8:
+    append of [dag_pool, dag_under]
+append of [dag_pool, 0]
+dag_pool_desc is [ABI, [CONST,8,0, RETURN], dag_pool]
+sr_dag_pool is sandbox_run of [dag_pool_desc, 100000, 1000000]
+assert_eq of [sr_dag_pool["ok"], 0,
+              "sandbox descriptor: node budget is shared across the whole constant pool"]
+
+# --- #965 (fix2): raw VM slices charge each newly retained allocation -------
+# OP_SLICE_GET is reachable in an assembled sandbox chunk even though it is
+# not a builtin. Reuse one 1000-byte input, retain each fresh 1000-byte slice,
+# and let the byte budget—not the loop cap or result scan—be the discriminator.
+SLICE_GET is 80
+LIST is 42
+SET_NAME_LOCAL is 27
+slice_src is ""
+for i in range of 125:
+    slice_src is slice_src + "xxxxxxxx"
+slice_src is slice_src + "xxxx"
+slice_loop_code is [LIST,0,0, SET_NAME_LOCAL,4,0, POP,
+                    NUM_ONE, JUMP_IF_FALSE,29,0, LOOP_CAP_CHECK,26,0,
+                    GET_NAME,0,0, GET_NAME,4,0,
+                    CONST,1,0, CONST,2,0, CONST,3,0, SLICE_GET,
+                    LIST,2,0, CALL,1,0, POP,
+                    JUMP_BACK,33,0,
+                    GET_NAME,4,0, RETURN]
+slice_loop_desc is [ABI, slice_loop_code,
+                    ["append", slice_src, 0, 1000, "slice_acc"]]
+sr_slice_loop is sandbox_run of [slice_loop_desc, 7, 1000]
+assert_eq of [sr_slice_loop["ok"], 0, "budget: retained string slices -> {ok:0}"]
+slice_loop_kind is ""
+slice_loop_msg is ""
+if sr_slice_loop["ok"] == 0:
+    slice_loop_kind is sr_slice_loop["error"]["kind"]
+    slice_loop_msg is sr_slice_loop["error"]["message"]
+assert_eq of [slice_loop_kind, "sandbox", "budget: string-slice refusal names the sandbox"]
+slice_loop_mem is index_of of [slice_loop_msg, "memory budget"]
+assert_eq of [slice_loop_mem >= 0, 1, "budget: retained string slices stop on bytes, not the iteration cap"]
+
+# A positive buffer slice is below the result-scan ceiling, so only its newly
+# allocated element storage should decide this tight budget.
+slice_target is buffer of 2000
+buf_slice_desc is [ABI, [CONST,0,0, CONST,1,0, CONST,2,0, SLICE_GET, RETURN],
+                   [slice_target, 0, 1000]]
+sr_buf_slice is sandbox_run of [buf_slice_desc, 100000, 1000]
+assert_eq of [sr_buf_slice["ok"], 0, "budget: positive buffer slice charges element storage"]
+
+# Reserve refusal is the first diagnostic. strbuf_finish must transfer the
+# poisoned partial buffer without attempting a second charge that overwrites
+# the original reserve numbers before sandbox_run restores its state.
+refuse_input is ""
+for i in range of 15:
+    refuse_input is refuse_input + "xxxxxxxx"
+refuse_input is refuse_input + "xxxxxx"
+refuse_json_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN],
+                     ["json_encode", refuse_input]]
+sr_refuse_json is sandbox_run of [refuse_json_desc, 100000, 127]
+assert_eq of [sr_refuse_json["ok"], 0, "budget: refused strbuf -> {ok:0}"]
+refuse_kind is ""
+refuse_msg is ""
+if sr_refuse_json["ok"] == 0:
+    refuse_kind is sr_refuse_json["error"]["kind"]
+    refuse_msg is sr_refuse_json["error"]["message"]
+assert_eq of [refuse_kind, "sandbox", "budget: refused strbuf names the sandbox"]
+refuse_orig is index_of of [refuse_msg, "used 64 + 128 > 127"]
+assert_eq of [refuse_orig >= 0, 1, "budget: first strbuf refusal diagnostic survives finish"]
+
+# Empty buffers have no element nodes. Pin the flat and one-level-nested
+# shapes at the same strict boundary as an equal-length list: 99,999 total
+# nodes cross, while the overcounted empty-buffer implementation reaches 100k.
+empty_buf is buffer of 0
+empty_flat is []
+for i in range of 99997:
+    append of [empty_flat, 0]
+append of [empty_flat, empty_buf]
+empty_flat_desc is [ABI, [CONST,0,0, RETURN], [empty_flat]]
+assert_eq of [(sandbox_run of [empty_flat_desc, 100000, 4000000])["ok"], 1,
+              "boundary: empty buffer has weight 1 in a flat result"]
+empty_nested is []
+for i in range of 99996:
+    append of [empty_nested, 0]
+append of [empty_nested, [empty_buf]]
+empty_nested_desc is [ABI, [CONST,0,0, RETURN], [empty_nested]]
+assert_eq of [(sandbox_run of [empty_nested_desc, 100000, 4000000])["ok"], 1,
+              "boundary: nested empty buffer has weight 1 plus its container"]
+
+# --- #965 (fix1): changed strbuf consumers outside a sandbox are unchanged -----
+assert_eq of [json_encode of "x", "\"x\"", "nosandbox: json_encode unchanged"]
+assert_eq of [json_build of ["k", 1], "{\"k\": 1}", "nosandbox: json_build unchanged"]
+assert_eq of [str of [1, 2], "[1, 2]", "nosandbox: str of list unchanged"]
+assert_eq of [regex_replace of ["aXbXc", "X", "-"], "a-b-c", "nosandbox: regex_replace unchanged"]
+
+# --- #965: the same operations outside a sandbox are unchanged ---------------
+assert_eq of [str_lower of "AbC", "abc", "nosandbox: str_lower unchanged"]
+assert_eq of [trim of "  ab  ", "ab", "nosandbox: trim unchanged"]
+assert_eq of [substr of ["abcdef", 1, 3], "bcd", "nosandbox: substr unchanged"]
+assert_eq of [str_from_bytes of [65, 66, 67], "ABC", "nosandbox: str_from_bytes unchanged"]
+assert_eq of [buf_len of (buffer of 3), 3, "nosandbox: buffer unchanged"]
 
 # test_summary (lib/test.eigs) is what makes assertions LOAD-BEARING: it
 # exits nonzero when any assert_eq failed. This file used to print the

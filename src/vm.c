@@ -913,24 +913,29 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * scan_tokens/scan_int_tokens, tokenize_ids/_with_names) is charged at ITS
  * chokepoints too: list_append/make_list growth and dict growth in
  * eigenscript.c — a 100 KB JSON const amplified ~40x into an uncharged tree
- * before that landed. Still exempt, with reasons: zeros_like (mirrors an
- * already-charged input), str_from_bytes and substr (output <= an
- * already-charged argument) — bounded by ARGUMENTS. The matmul waiver was
- * REMOVED: "inputs charged" is false for an outer product (two 3000-element
- * inputs -> a 9M-element output), so the buffer allocators
- * (make_shaped_buffer / make_buffer_like in builtins_tensor.c) now charge
- * like every other class, as do the two raw-xcalloc buffer producers
- * buf_from_list and reshape.
- *
- * KNOWN RESIDUAL (the pure string transforms — str_lower/str_upper/trim/
- * substr/json_raw/str_from_bytes): each allocates output <= its input via
- * raw make_str/xstrdup, so it is safe PER CALL, but a loop re-using one
- * charged input spawns N uncharged outputs (the list slots are charged, the
- * string payloads are not). "Bounded by ARGUMENTS" is true per-call and
- * false across a loop with a reused input. Charging them belongs at a
- * make_str-adjacent chokepoint that does NOT double-charge the strbuf
- * consumers (json_encode etc. already charge at strbuf_reserve) — a
- * considered change, tracked upstream, not a per-site patch. */
+ * before that landed. The matmul waiver was REMOVED: "inputs charged" is
+ * false for an outer product (two 3000-element inputs -> a 9M-element
+ * output), so the buffer allocators (make_shaped_buffer / make_buffer_like
+ * in builtins_tensor.c) now charge like every other class, as do the two
+ * raw-xcalloc buffer producers buf_from_list and reshape. Still exempt, with
+ * reason: zeros_like (mirrors an already-charged input).
+ * The pure string transforms (str_lower/str_upper/trim/
+ * substr/json_raw/str_from_bytes) were the last exempt class: "output <= an
+ * already-charged argument" was true PER CALL and false across a loop with a
+ * reused input (50 uncharged ~20MB copies of one charged input). #965 closed
+ * them at the make_str chokepoint: the copying constructor charges its
+ * payload, and producers whose bytes were already charged upstream (the ADD
+ * concat above, join/split/str_replace/text_builder_to_string's explicit
+ * charges, and the strbuf consumers — json_encode/json_build/json_path/
+ * json_decode/regex_replace/value_to_string, charged at strbuf_reserve
+ * growth PLUS the payload shortfall strbuf_finish charges at the ownership
+ * transfer, so results that never grew past the uncharged initial capacity
+ * are covered too) wrap with make_str_owned, the
+ * ownership-taking constructor that presumes producer accounting, so no
+ * payload is charged twice. OP_SLICE_GET's raw string and buffer copies charge
+ * their retained payload before allocation, then transfer ownership through
+ * make_str_owned. Host-only raw readers remain outside the armed sandbox
+ * allowlist; env name interning is likewise uncharged and permanent (#964). */
 int sandbox_charge(size_t bytes) {
     /* strbuf/text_builder/list growth are general utilities used far outside
      * the VM — the standalone `--fmt` formatter, the LSP, the lexer, and any
@@ -5325,16 +5330,25 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             result->data.list.count = n;
         } else if (target->type == VAL_STR) {
+            /* This raw copy becomes a retained program value. Charge its
+             * payload before allocation; make_str_owned then transfers the
+             * already-accounted buffer without charging it again. */
+            if (!sandbox_charge((size_t)n + 1)) { /* raised; proceed */ }
             char *buf = xmalloc((size_t)n + 1);
             if (n > 0) memcpy(buf, target->data.str + start, (size_t)n);
             buf[n] = '\0';
             result = make_str_owned(buf);
         } else {
             /* VAL_BUFFER */
+            /* As with every other raw buffer producer, charge the newly
+             * allocated element storage before xcalloc. A zero-length slice
+             * still allocates one sentinel double, matching buffer(). */
+            size_t alloc_elems = n > 0 ? (size_t)n : 1;
+            if (!sandbox_charge(alloc_elems * sizeof(double))) { /* raised; proceed */ }
             result = xcalloc(1, sizeof(Value));
             result->type = VAL_BUFFER;
             result->data.buffer.count = n;
-            result->data.buffer.data = xcalloc(n > 0 ? n : 1, sizeof(double));
+            result->data.buffer.data = xcalloc(alloc_elems, sizeof(double));
             if (n > 0)
                 memcpy(result->data.buffer.data,
                        target->data.buffer.data + start,

@@ -120,10 +120,36 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
      * stamp the VM's live line so both the printed frame and the caught
      * dict's `line` point at the failing statement instead of 0. */
     if (line == 0) line = vm_current_line();
+    /* #965 (fix5): an actual sandbox policy refusal is a property of the RUN,
+     * not of one raise. Record the FIRST one per armed run in state the VM
+     * catch path cannot clear (CHECK_ERROR only clears g_has_error), so
+     * builtin_sandbox_run still reports {ok:0} with this refusal's own
+     * kind/message/line after untrusted code catches it. Ordinary errors —
+     * including a caught throw() — never arm this record, so they cannot
+     * suppress a later refusal's diagnostic either. Deliberately independent
+     * of the error latch below: an earlier latched ordinary error must not
+     * keep a refusal out of the record. */
+    if (eigs_current && g_sandbox_active && kind == EK_SANDBOX &&
+        !g_sandbox_refusal) {
+        g_sandbox_refusal = 1;
+        g_sandbox_refusal_kind = (int)kind;
+        g_sandbox_refusal_line = line;
+        snprintf(g_sandbox_refusal_msg, sizeof(g_sandbox_refusal_msg),
+                 "%s", tmp);
+    }
+    /* A sandboxed producer may keep working in the same C call after a
+     * refused allocation. Keep that run's first diagnostic stable across
+     * every later rt_error, while leaving ordinary non-sandbox errors with
+     * their existing last-write behavior. */
+    if (eigs_current && g_sandbox_active && g_sandbox_error_latched) {
+        g_has_error = 1;
+        return;
+    }
     snprintf(g_error_raw, sizeof(g_error_raw), "%s", tmp);
     snprintf(g_error_msg, sizeof(g_error_msg), "Error line %d: %s", line, tmp);
     g_error_kind = (int)kind;
     g_error_line = line;
+    if (eigs_current && g_sandbox_active) g_sandbox_error_latched = 1;
     g_has_error = 1;
     eigs_clear_error_value();   /* a new error supersedes any thrown value */
     if (g_try_depth == 0) {
@@ -1467,6 +1493,25 @@ Value* promote_if_arena(Value *v) {
 }
 
 Value* make_str(const char *s) {
+    /* #965: the copying string constructor is the sandbox chokepoint for the
+     * pure string transforms (str_lower/str_upper/trim/substr/json_raw/
+     * str_from_bytes, and every other fresh copy): each output is a NEW
+     * allocation no upstream allocator accounted for, so charge the payload
+     * here — once, at the constructor, not per builtin. "Bounded by
+     * ARGUMENTS" was true per call and false across a loop re-using one
+     * charged input (50 uncharged ~20MB outputs under a 200KB budget).
+     * Producers whose payload IS already charged upstream — the VM's ADD
+     * concat, join/split/str_replace/text_builder_to_string (explicit
+     * charges), and the strbuf consumers (json_encode/json_build/json_path/
+     * json_decode/regex_replace/value_to_string, charged at strbuf_reserve
+     * growth PLUS the payload shortfall at strbuf_finish)
+     * — wrap with make_str_owned instead, which takes ownership of a buffer
+     * its producer already accounted for and so must NOT charge again.
+     * Refusal follows the make_list precedent: sandbox_charge has already
+     * raised the catchable EK_SANDBOX that fails the run; the string is
+     * still built (bounded by the iteration cap) so callers' non-NULL
+     * assumption holds. No-op outside an armed sandbox. */
+    if (!sandbox_charge(strlen(s) + 1)) { /* raised; proceed like make_list */ }
     int from_arena = g_arena.active;
     Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_STR;
@@ -1478,6 +1523,11 @@ Value* make_str(const char *s) {
 }
 
 Value* make_str_owned(char *s) {
+    /* Deliberately UNCHARGED: ownership-taking constructor for buffers whose
+     * producer already accounted for them (see make_str). Every call site
+     * must uphold that — raw VM slice copies charge their payload immediately
+     * before this transfer, and all other sandbox-reachable producers either
+     * charge at their allocator chokepoint or are explicit host-only paths. */
     int from_arena = g_arena.active;
     Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_STR;

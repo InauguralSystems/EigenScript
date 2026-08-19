@@ -39,6 +39,34 @@ All notable changes to EigenScript are documented here.
   kernels.
 
 ### Changed
+- **`sandbox_run` charges every retained allocation and verifies its
+  descriptor under bounded work (#965).** Pure string transforms
+  (`str_lower`/`trim`/`substr`/`json_raw`/`str_from_bytes`, strbuf-backed
+  encoders, `OP_ADD` concat and raw `OP_SLICE_GET` copies) allocated fresh
+  payloads no allocator charged, so a loop re-using one charged input
+  aggregated unbounded memory under an armed byte budget; the payload is now
+  charged once at the constructor/ownership-transfer chokepoint, the first
+  refusal is sticky for the whole run, and every attachable result — not only
+  a successful one — is scanned for callables. Descriptor constant pools are
+  additionally verified data-only under a shared node budget, so an aliased
+  all-data container graph is refused (`{ok:0}`, `invalid chunk descriptor`)
+  instead of driving an exponential walk before the sandbox's own bounds are
+  armed. Programs that stayed inside the budget are unaffected; a program that
+  was silently over it now gets `{ok:0}` with a `sandbox` error.
+  Descriptor verification is now ONE context for the whole recursive graph
+  rather than a bound per constant pool: a single work allowance, an explicit
+  depth/back-edge bound, and the constants themselves are ISOLATED from the
+  host. A per-chunk allowance was not a bound — nested function chunks
+  multiplied it, so a graph whose children were each comfortably inside the
+  limit was still accepted — and a constant retained by reference stayed the
+  same object sandboxed code mutated, letting an allowlisted `append` attach a
+  freshly created sandbox closure to a host-owned list without the value ever
+  appearing in the returned result. The sandbox now runs against its own copy
+  of every mutable constant (list/dict/buffer, cycles refused), and the
+  allowlist copies only the pure C builtin each allowed name actually holds —
+  a host-rebound allowed name gets the blocked stub instead of aliasing host
+  state inward. Ordinary descriptors, including ones carrying nested function
+  chunks and data constants, are unaffected.
 - **Division and modulo by zero now raise instead of yielding `0`.** `5 / 0`
   printed an uncatchable `stderr` warning and pushed `0`; `5 % 0` was fully
   silent and pushed `0` — a wrong *number* that flowed on indistinguishable
