@@ -200,6 +200,7 @@ if [ "${1:-}" = "--selftest" ]; then
         { print }
         END { if (!done) exit 2 }
     ' "$VM_SOURCE" > "$work/vm.c"
+    awk '{ sub(/uint16_t kind = read_u8/, "uint8_t kind = read_u8"); print }' "$work/vm.c" > "$work/vm_stride.c"
     if [ ! -s "$work/vm.c" ]; then
         echo "SELFTEST FAILED: could not plant OP_INTERROGATE_NAMED decoder-shape mismatch"
         st_fail=1
@@ -212,7 +213,7 @@ if [ "${1:-}" = "--selftest" ]; then
         printf '%s\n' "$out"
         st_fail=1
     else
-        echo "SELFTEST OK: planted OP_INTERROGATE_NAMED decoder-shape mismatch is caught at assertion level"
+        if out=$(VM_HEADER="$work/vm.h" VM_SOURCE="$work/vm_stride.c" check_tree 2>&1); then echo "SELFTEST FAILED: verifier-stride mutation was not caught"; st_fail=1; elif printf '%s\n' "$out" | grep -qF "ASSERTION FAILED: OP_INTERROGATE_NAMED decoder shape disagrees: uint8_t/read_u8/ip advance 1 bytes, verifier stride 2 bytes"; then echo "SELFTEST OK: planted OP_INTERROGATE_NAMED verifier-stride mismatch is caught at assertion level"; else echo "SELFTEST FAILED: verifier-stride mutation did not fail at assertion level"; printf '%s\n' "$out"; st_fail=1; fi
     fi
 
     if [ "$st_fail" -eq 0 ]; then
