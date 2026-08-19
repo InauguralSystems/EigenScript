@@ -2802,56 +2802,152 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
     return NULL;
 }
 
-/* Sandbox descriptor constants are copied by reference into the chunk. Keep
- * that trust boundary data-only: a callable or host-owned execution state in a
- * pool would be an ambient capability even when its name is absent from the
- * sealed sandbox environment. Lists/dicts remain valid argument containers,
- * and buffers remain valid data, but every member must be safe too.
+/* ---- Sandbox descriptor verification: ONE context for the whole graph ----
  *
- * Bounded by a NODE budget and not by depth alone, the same shape the sibling
- * result scan already carries (sandbox_value_has_callable): a depth cap does
- * bound a CYCLIC container, where the first unsafe member short-circuits the
- * walk, but it does not bound an ALIASED all-data DAG — no member is unsafe
- * there, so nothing short-circuits and every PATH is explored (ten aliases per
- * level over six levels is seven heap lists and 2.1M visits, at depth 6). This
- * walk runs while the descriptor is being built, BEFORE the loop cap and the
- * byte budget are armed, so neither of the sandbox's own bounds applies and
- * verification would become the DoS the sandbox exists to prevent. Exhausting
- * either bound returns "unsafe" — the fail-closed direction: a pool that
- * cannot be walked within the bound is refused, not trusted. Dict keys are
- * interned C strings rather than Values, so a dict costs one node per VALUE
- * and needs no separate key walk. */
-#define SANDBOX_DESC_CONST_MAX_DEPTH 64
-#define SANDBOX_DESC_CONST_MAX_NODES 100000
+ * A sandbox descriptor is untrusted DATA that becomes an executable chunk
+ * before any of the sandbox's own bounds exist: the loop cap and the byte
+ * budget are armed only AFTER vm_build_chunk_desc returns, so verification
+ * must carry its own bound or become the DoS the sandbox exists to prevent.
+ * It must also carry the OWNERSHIP decision, because the constant pool is one
+ * of the two ways host state reaches sandboxed code (the other is the
+ * allowlist copy in builtin_sandbox_run).
+ *
+ * One DescVerify context is created per sandbox descriptor build and threaded
+ * through every recursive arm — root chunk, nested function chunks, code,
+ * constant containers, function lists, local-name lists:
+ *
+ *   work   ONE total allowance for the ENTIRE graph. A per-chunk or per-pool
+ *          allowance is not a bound at all: N nested chunks multiply it by N,
+ *          which is exactly how "every child is well inside the limit" sums
+ *          to a graph that is not. Exhaustion refuses the descriptor — the
+ *          fail-closed direction: a graph that cannot be verified within the
+ *          bound is refused, not trusted.
+ *   path   the nodes on the CURRENT recursion path. A node that is its own
+ *          ancestor is a back edge: refuse rather than recurse forever.
+ *          Merely REPEATED aliases (a DAG) are not cycles — they are charged
+ *          once per visit and bounded by `work`, which is what stops the
+ *          aliased all-data DAG whose every path is explored because nothing
+ *          unsafe short-circuits it.
+ *   depth  the length of `path`, and so an explicit structural bound on C
+ *          recursion across BOTH the value walk and the chunk walk.
+ *
+ * The allowance is larger than the constants-only bound it replaces because
+ * it now also pays for chunk structure, code bytes, function lists and local
+ * names: a descriptor that fit the old pool-only bound must still fit the new
+ * total. It stays far below the aliased-DAG shapes the pool bound refused. */
+#define SANDBOX_DESC_MAX_DEPTH 64
+#define SANDBOX_DESC_MAX_WORK  150000
 
-static int sandbox_descriptor_constant_safe(const Value *v, int depth,
-                                            long *budget) {
-    if (!v || depth > SANDBOX_DESC_CONST_MAX_DEPTH || --(*budget) <= 0) return 0;
+typedef struct {
+    long        work;                          /* remaining total allowance */
+    int         depth;                         /* nodes on `path` */
+    const void *path[SANDBOX_DESC_MAX_DEPTH];  /* current recursion path */
+} DescVerify;
+
+/* Spend n units of the one graph allowance; 0 = exhausted. A NULL context is
+ * the TRUSTED build (vm_run_bytecode): that descriptor is the host's own
+ * bootstrap output, not untrusted input, and is neither bounded nor copied. */
+static int desc_spend(DescVerify *ctx, long n) {
+    if (!ctx) return 1;
+    if (n < 0 || n > ctx->work) { ctx->work = 0; return 0; }
+    ctx->work -= n;
+    return 1;
+}
+
+/* Push a node onto the current path: bounds recursion depth and refuses a
+ * back edge. Every successful desc_enter is paired with one desc_leave. */
+static int desc_enter(DescVerify *ctx, const void *node) {
+    if (!ctx) return 1;
+    if (!node || ctx->depth >= SANDBOX_DESC_MAX_DEPTH) return 0;
+    for (int i = 0; i < ctx->depth; i++)
+        if (ctx->path[i] == node) return 0;
+    ctx->path[ctx->depth++] = node;
+    return 1;
+}
+
+static void desc_leave(DescVerify *ctx) {
+    if (ctx && ctx->depth > 0) ctx->depth--;
+}
+
+/* Verify AND isolate one descriptor constant: returns a fresh OWNED value
+ * that shares no mutable object with the host, or NULL when the value is not
+ * admissible data, closes a cycle, or the graph allowance runs out.
+ *
+ * Verifying and copying are deliberately the SAME walk. Checking the pool and
+ * then retaining the checked object by reference is what let a host-owned
+ * list stay the very object the sandbox mutates: `append` is allowlisted, a
+ * container with spare capacity mutates in place with no allocation and no
+ * charge, and the direct-result scan cannot undo a change the host can
+ * already see through its own alias — the callable never appears in the
+ * returned result at all. So the boundary is closed on the way IN.
+ *
+ * Scalars are immutable and are shared by refcount; only containers are
+ * copied. Dict keys are interned C strings rather than Values, so a dict
+ * costs one node per VALUE and needs no separate key walk. A buffer's element
+ * storage is its real weight — the same accounting the sibling result scan
+ * spends (#965) — and is copied, since buf_set writes it in place.
+ * VAL_FN/VAL_BUILTIN are ambient capability and VAL_TEXT_BUILDER is host-owned
+ * mutable state: none of them may cross, at any depth. Enumerated rather than
+ * covered by a `default:` so -Werror=switch forces a new ValType to choose. */
+static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
+    if (!v || !desc_spend(ctx, 1)) return NULL;
     switch (v->type) {
     case VAL_NUM:
     case VAL_STR:
     case VAL_NULL:
     case VAL_JSON_RAW:
-    case VAL_BUFFER:
-        return 1;
-    case VAL_LIST:
-        for (int i = 0; i < v->data.list.count; i++)
-            if (!sandbox_descriptor_constant_safe(v->data.list.items[i],
-                                                  depth + 1, budget))
-                return 0;
-        return 1;
-    case VAL_DICT:
-        for (int i = 0; i < v->data.dict.count; i++)
-            if (!sandbox_descriptor_constant_safe(v->data.dict.vals[i],
-                                                  depth + 1, budget))
-                return 0;
-        return 1;
-    default:
-        /* VAL_FN, VAL_BUILTIN, and VAL_TEXT_BUILDER either execute host code
-         * or retain mutable host-owned state across the boundary. */
-        return 0;
+        val_incref(v);
+        return v;
+    case VAL_BUFFER: {
+        long n = v->data.buffer.count > 0 ? (long)v->data.buffer.count : 0;
+        if (!desc_spend(ctx, n)) return NULL;
+        Value *c = xcalloc(1, sizeof(Value));
+        c->type = VAL_BUFFER;
+        c->data.buffer.count = v->data.buffer.count;
+        c->data.buffer.rows  = v->data.buffer.rows;
+        c->data.buffer.cols  = v->data.buffer.cols;
+        c->data.buffer.data  = xcalloc(n > 0 ? (size_t)n : 1, sizeof(double));
+        if (n > 0)
+            memcpy(c->data.buffer.data, v->data.buffer.data,
+                   (size_t)n * sizeof(double));
+        c->refcount = 1;
+        return c;
     }
+    case VAL_LIST: {
+        if (!desc_enter(ctx, v)) return NULL;
+        /* make_list_heap, not make_list: the copy outlives this builtin call
+         * and must not be arena-allocated, and it is sized by a graph already
+         * in memory (the uncharged-wrapper rule make_list_heap documents). */
+        Value *c = make_list_heap(v->data.list.count);
+        for (int i = 0; i < v->data.list.count; i++) {
+            Value *e = desc_isolate_const(ctx, v->data.list.items[i]);
+            if (!e) { val_decref(c); desc_leave(ctx); return NULL; }
+            list_append_owned(c, e);
+        }
+        desc_leave(ctx);
+        return c;
+    }
+    case VAL_DICT: {
+        if (!desc_enter(ctx, v)) return NULL;
+        Value *c = make_dict(v->data.dict.count);
+        for (int i = 0; i < v->data.dict.count; i++) {
+            Value *e = desc_isolate_const(ctx, v->data.dict.vals[i]);
+            if (!e) { val_decref(c); desc_leave(ctx); return NULL; }
+            dict_set_owned(c, v->data.dict.keys[i], e);
+        }
+        desc_leave(ctx);
+        return c;
+    }
+    case VAL_FN:
+    case VAL_BUILTIN:
+    case VAL_TEXT_BUILDER:
+        return NULL;
+    }
+    return NULL;   /* unreachable for a valid ValType */
 }
+
+static EigsChunk *vm_build_chunk_desc_ctx(Value *desc, int off, int sandbox_mode,
+                                          DescVerify *ctx);
 
 /* Build an EigsChunk from a descriptor list, recursively for nested functions.
  * `off` skips the leading ABI-revision stamp: 1 at the top level (where
@@ -2870,8 +2966,12 @@ static int sandbox_descriptor_constant_safe(const Value *v, int depth,
  *   - local_names : (optional) names for local slots in slot order; the count
  *                   sizes the call frame, and the first param_count are the
  *                   parameter names OP_CLOSURE binds.
- * The minimal form is code+constants (a flat module chunk). */
-static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
+ * The minimal form is code+constants (a flat module chunk).
+ *
+ * In sandbox mode every arm below spends the ONE DescVerify allowance and
+ * every constant is isolated from the host; see DescVerify above. */
+static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mode,
+                                           DescVerify *ctx) {
     if (!desc || desc->type != VAL_LIST || desc->data.list.count < off + 2)
         return NULL;
     Value **d = desc->data.list.items + off;
@@ -2879,6 +2979,9 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
     Value *code = d[0], *consts = d[1];
     if (!code || code->type != VAL_LIST || !consts || consts->type != VAL_LIST)
         return NULL;
+    /* This chunk plus its code stream: charged BEFORE anything is allocated,
+     * so an over-wide code list is refused rather than emitted first. */
+    if (!desc_spend(ctx, 1 + (long)code->data.list.count)) return NULL;
 
     const char *name = (n >= 5 && d[4] && d[4]->type == VAL_STR) ? d[4]->data.str
                                                                  : "<bootstrap>";
@@ -2892,29 +2995,36 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
     /* Positional: the code stream indexes this pool by position, so neither
      * the dedup collapse nor a skipped NULL may shift an entry (#721). A hole
      * in the pool is a malformed descriptor — reject rather than renumber.
-     * ONE node budget for the whole pool, declared outside the loop: resetting
-     * it per constant would restore the exponential blowup one entry at a
-     * time, since the pool's entries can alias the same container. */
-    long const_budget = SANDBOX_DESC_CONST_MAX_NODES;
+     * In sandbox mode the pool is verified and ISOLATED in one walk against
+     * the graph-wide allowance: the chunk owns a private copy of every
+     * mutable constant, so nothing the sandbox does to a constant is visible
+     * to the host, and nothing the host does mid-run is visible to it. */
     for (int i = 0; i < consts->data.list.count; i++) {
-        if (!consts->data.list.items[i] ||
-            (sandbox_mode &&
-             !sandbox_descriptor_constant_safe(consts->data.list.items[i], 0,
-                                               &const_budget))) {
-            chunk_free(chunk);
-            return NULL;
+        Value *item = consts->data.list.items[i];
+        if (!item) { chunk_free(chunk); return NULL; }
+        if (sandbox_mode) {
+            Value *iso = desc_isolate_const(ctx, item);
+            if (!iso) { chunk_free(chunk); return NULL; }
+            chunk_add_constant_positional(chunk, iso);
+            val_decref(iso);            /* the pool holds its own ref */
+        } else {
+            chunk_add_constant_positional(chunk, item);
         }
-        chunk_add_constant_positional(chunk, consts->data.list.items[i]);
     }
 
     /* nested function chunks (creator ref transfers into functions[]). A
      * nested descriptor that fails to build/verify invalidates the whole
      * chunk — silently dropping it would shift the indices OP_CLOSURE refers
-     * to (wrong function, or out of range). */
+     * to (wrong function, or out of range). The recursion carries the SAME
+     * context: a child that reset the allowance would multiply it. */
     if (n >= 3 && d[2] && d[2]->type == VAL_LIST) {
+        if (!desc_spend(ctx, d[2]->data.list.count)) {
+            chunk_free(chunk);
+            return NULL;
+        }
         for (int i = 0; i < d[2]->data.list.count; i++) {
-            EigsChunk *fn = vm_build_chunk_desc(d[2]->data.list.items[i], 0,
-                                                sandbox_mode);
+            EigsChunk *fn = vm_build_chunk_desc_ctx(d[2]->data.list.items[i], 0,
+                                                    sandbox_mode, ctx);
             if (!fn) { chunk_free(chunk); return NULL; }
             chunk_add_function(chunk, fn);
         }
@@ -2928,6 +3038,7 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
     /* local-slot names; local_count sizes the call frame (max with param_count) */
     if (n >= 6 && d[5] && d[5]->type == VAL_LIST && d[5]->data.list.count > 0) {
         int lc = d[5]->data.list.count;
+        if (!desc_spend(ctx, lc)) { chunk_free(chunk); return NULL; }
         chunk->local_names = xcalloc(lc, sizeof(char *));
         for (int i = 0; i < lc; i++) {
             Value *nm = d[5]->data.list.items[i];
@@ -2943,6 +3054,29 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
      * operands before it reaches the VM (which trusts operand indices). */
     if (!chunk_verify(chunk)) { chunk_free(chunk); return NULL; }
     return chunk;
+}
+
+/* Enter one chunk of the descriptor graph. The depth/back-edge bound covers
+ * CHUNK recursion too, so a self-referential or unboundedly nested descriptor
+ * is refused instead of running the C stack out. Wrapping the body keeps the
+ * enter/leave pairing off every one of its early returns. */
+static EigsChunk *vm_build_chunk_desc_ctx(Value *desc, int off, int sandbox_mode,
+                                          DescVerify *ctx) {
+    if (!desc_enter(ctx, desc)) return NULL;
+    EigsChunk *chunk = vm_build_chunk_desc_body(desc, off, sandbox_mode, ctx);
+    desc_leave(ctx);
+    return chunk;
+}
+
+/* The one verification context is created HERE — once per sandbox descriptor
+ * build — and threaded through every recursive builder and walker arm below
+ * it. The trusted (non-sandbox) build runs with no context at all. */
+static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
+    if (!sandbox_mode) return vm_build_chunk_desc_ctx(desc, off, 0, NULL);
+    DescVerify ctx;
+    ctx.work  = SANDBOX_DESC_MAX_WORK;
+    ctx.depth = 0;
+    return vm_build_chunk_desc_ctx(desc, off, 1, &ctx);
 }
 
 /* vm_run_bytecode of <chunk-descriptor> — assemble a chunk (and its nested
@@ -3182,11 +3316,22 @@ Value* builtin_sandbox_run(Value *arg) {
      * purely for the diagnostic — an EK_SANDBOX "blocked in sandbox" is far
      * more useful to a grading ladder than a bare undefined-variable error. */
     Env *sbox = env_new(NULL);
+    Value *stub = make_builtin(builtin_sandbox_blocked);
     for (int i = 0; SANDBOX_ALLOW[i]; i++) {
         Value *v = env_get(g_global_env, SANDBOX_ALLOW[i]);
-        if (v) env_set_local(sbox, SANDBOX_ALLOW[i], v);
+        if (!v) continue;               /* extension absent from this build */
+        /* Only the pure C BUILTIN the allowlist names may cross. A host that
+         * rebound the name holds an arbitrary value there — often a mutable
+         * container, possibly a function — and copying it aliases host state
+         * inward through a second root: sandboxed code could then mutate a
+         * container the host still holds (the descriptor-constant escape by
+         * another door) or call host code outright. The allowlist grants a
+         * pure-compute capability, not whatever currently answers to its
+         * name, so anything else gets the blocked stub — which is also the
+         * better diagnostic. */
+        env_set_local(sbox, SANDBOX_ALLOW[i],
+                      v->type == VAL_BUILTIN ? v : stub);
     }
-    Value *stub = make_builtin(builtin_sandbox_blocked);
     for (int i = 0; i < g_global_env->count; i++) {
         const char *nm = g_global_env->names[i];
         if (nm && !sandbox_name_allowed(nm))
