@@ -208,15 +208,36 @@ fi
 wait "$PID"; RC2=$?
 PIDS="${PIDS% $PID}"
 
-# Mirror the main runner's rc_ok: a LeakSanitizer nonzero exit from the
-# known spawn-thread leak shapes counts as a pass-with-note; any hard
-# ASan/UBSan report is a failure in both subtests.
-if grep -qE 'AddressSanitizer|runtime error:' "$ERR2"; then
-    fail "sigusr1-mt: ASan/UBSan report on stderr"
-elif [ "$RC2" = "0" ]; then
-    pass "sigusr1-mt: clean exit after the dump"
-elif grep -q 'LeakSanitizer: detected memory leaks' "$ERR2"; then
-    pass "sigusr1-mt: LeakSanitizer nonzero exit (known spawn-thread leak shape; tolerated like rc_ok)"
-else
-    fail "sigusr1-mt: exit code $RC2 after the dump (expected 0)"
-fi
+# Share the main runner's rc_ok classification rather than restating it: a
+# LeakSanitizer nonzero exit from the known spawn-thread leak shapes counts as
+# a pass-with-note; any hard ASan/UBSan report is a failure in both subtests.
+#
+# #968: the restatement here was `grep -qE 'AddressSanitizer|runtime error:'`,
+# which matched the BENIGN "SUMMARY: AddressSanitizer: N byte(s) leaked in M
+# allocation(s)." line that ASan's integrated LeakSanitizer prints on a
+# leak-only run — so the tolerated case could never be reached and normal
+# leak-only output was reported as a hard ASan/UBSan failure. The
+# classification now lives in tests/lsan_classify.sh (mutation-proven by
+# tests/test_lsan_classify.sh) and is not restated at call sites.
+. "$TESTS_DIR/lsan_classify.sh"
+
+lsan_classify "$(cat "$ERR2")"
+case $? in
+    1)
+        fail "sigusr1-mt: ASan/UBSan report on stderr"
+        ;;
+    0)
+        if [ "$RC2" = "0" ]; then
+            pass "sigusr1-mt: clean exit after the dump"
+        else
+            pass "sigusr1-mt: LeakSanitizer nonzero exit (known spawn-thread leak shape; tolerated like rc_ok)"
+        fi
+        ;;
+    *)
+        if [ "$RC2" = "0" ]; then
+            pass "sigusr1-mt: clean exit after the dump"
+        else
+            fail "sigusr1-mt: exit code $RC2 after the dump (expected 0)"
+        fi
+        ;;
+esac

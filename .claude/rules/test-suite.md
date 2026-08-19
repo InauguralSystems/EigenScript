@@ -11,6 +11,27 @@ paths:
   tolerated nonzero exit is a LeakSanitizer report (see the leak tally in
   CLAUDE.md; section **[87]** deliberately opts out of that tolerance and is
   gated strictly leak-clean).
+- **Never re-implement the sanitizer-tolerance decision — source
+  `tests/lsan_classify.sh`.** "Is this nonzero exit only a leak report?" was
+  open-coded at three sites and drifted at all three: #945/#953
+  (`test_doc_examples.py`), #969 (`rc_ok` tolerated a heap-use-after-free
+  because a leak line rode along), #968 (`test_sigusr1_dump.sh` read the benign
+  `SUMMARY: AddressSanitizer: N byte(s) leaked` as a hard error). There is now
+  one classifier, returning leak/hard/none, gated by `tests/test_lsan_classify.sh`
+  (corpus of captured compiler-rt output + a mutation train + a differential).
+  Two consequences for anyone editing the suite:
+  - **A hard diagnostic fails at ANY exit code, including 0.** `ASAN_FLAGS`
+    omits `-fno-sanitize-recover`, so UBSan prints `runtime error:` and exits 0;
+    ASan under `halt_on_error=0` does the same. Do not add a `rc == 0` fast path
+    in front of the classification.
+  - **If you `export -f rc_ok` into a child shell, export `lsan_classify` and
+    `lsan_classify_name` with it.** `export -f` carries functions only; a child
+    missing the classifier took `$? = 127` and inverted both verdicts silently.
+    The classifier keeps every pattern *inside* the function for this reason —
+    do not hoist them back to file scope.
+  - Sites that reject *every* sanitizer marker (`check_task_exit`, `test_lsp.py`,
+    `test_dap.py`, sigusr1 subtest 1) are deliberately stricter and do not use
+    the classifier's tolerance.
 - **`tests/test_temporal.eigs` is line-number-sensitive** — its `at`
   queries hardcode line numbers. Append only before the final if/else, and
   re-verify the `grep -n` markers in the file.

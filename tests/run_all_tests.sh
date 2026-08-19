@@ -83,16 +83,50 @@ check_binary_fingerprint() {
 }
 
 # Exit-code gate for .eigs test programs. rc=0 passes. A nonzero rc whose
-# output carries a LeakSanitizer report is tolerated with a warning tally.
-# The env<->fn closure cycles are reclaimed by the cycle collector now
-# (docs/CLOSURE_CYCLE_GC.md — section [87] gates those shapes strictly);
-# the residual tolerated reports are spawn()-thread programs (the
+# output carries a LeakSanitizer report AND NOTHING HARDER is tolerated with a
+# warning tally. The env<->fn closure cycles are reclaimed by the cycle
+# collector now (docs/CLOSURE_CYCLE_GC.md — section [87] gates those shapes
+# strictly); the residual tolerated reports are spawn()-thread programs (the
 # collector is disabled once multithreaded) and a handful of pre-existing
 # non-closure leak shapes. Everything else nonzero — crashes, asserts,
 # UBSan — fails.
+#
+# #969: this used to tolerate ANY output containing the LeakSanitizer marker,
+# so a heap-use-after-free or a UBSan diagnostic riding along in the same
+# capture was counted as a tolerated leak and the run went green. The
+# classification now lives in tests/lsan_classify.sh, is shared with
+# test_sigusr1_dump.sh, and is mutation-proven by tests/test_lsan_classify.sh.
+# A HARD diagnostic fails at ANY exit code, including 0. The repo's ASAN_FLAGS
+# (Makefile) do not pass -fno-sanitize-recover, so GCC's UBSan checks are
+# recoverable: a program hits signed-integer-overflow, prints
+#   file.c:3:36: runtime error: signed integer overflow: 2147483647 + 1 ...
+# then CONTINUES and exits 0. ASan under halt_on_error=0 behaves the same way
+# for a double-free. An `[ "$1" = "0" ] && return 0` fast path never looks at
+# the output in either case, so the diagnostic is tolerated exactly the way
+# #969 was — the fix for #969 does not cover it, because the masking happens
+# before the classifier is consulted rather than inside it.
+. "$TESTS_DIR/lsan_classify.sh"
+
 rc_ok() {
+    local _cls
+    # rc_ok is export -f'd into child shells (sections [99c]/[99d]). `export -f`
+    # carries only the functions it NAMES, so a child that got rc_ok without
+    # lsan_classify would run `lsan_classify: command not found`, take $? = 127,
+    # and invert BOTH bars at once: 127 is not 1 so a hard diagnostic at rc=0
+    # would be tolerated, and 127 is not 0 so genuine leak-only output would be
+    # failed. That is silent in a child shell. Refuse loudly instead — a missing
+    # classifier is a broken harness, never a verdict.
+    if ! declare -F lsan_classify >/dev/null 2>&1; then
+        echo "  FAIL: rc_ok called without lsan_classify in scope — harness bug;" \
+             "add it to the export -f list at this call site" >&2
+        return 1
+    fi
+    lsan_classify "$2"
+    _cls=$?
+    # hard: never tolerated, whatever the exit code says.
+    [ "$_cls" -eq 1 ] && return 1
     [ "$1" = "0" ] && return 0
-    if echo "$2" | grep -q "LeakSanitizer: detected memory leaks"; then
+    if [ "$_cls" -eq 0 ]; then
         LEAKED=$((LEAKED + 1))
         return 0
     fi
@@ -223,6 +257,51 @@ else
     FAIL=$((FAIL + 1))
     echo "  FAIL: opcode numeric ABI changed"
     echo "$OP_ABI_OUT" | head -8
+fi
+echo ""
+
+# Sanitizer-classifier gate (#969/#968). This runs BEFORE the first test block
+# on purpose: rc_ok() decides, 72 times below, whether a nonzero exit is a
+# tolerable leak or a real failure. When that classification was wrong it was
+# wrong SILENTLY — a heap-use-after-free riding along with a leak report was
+# counted as a tolerated leak and the run went green. Every PASS printed after
+# this point is conditional on this section, so it is checked first.
+# The expected check count is PINNED. "At least one check passed" is not a
+# floor — it is satisfied by a gate that has been reduced to a single echo, and
+# two of the ways this gate shrinks need no source edit at all: without python3
+# the differential SKIPs, without a .git dir the tracked-fixture and leavings
+# checks SKIP, and a SKIP counts as neither PASS nor FAIL.
+#
+# A SKIP here is therefore FATAL. Note this is STRICTER than the rest of the
+# suite, deliberately and knowingly: sections [89]/[90] merely SKIP when python3
+# is absent, so a python3-less machine that previously degraded now fails here.
+# That is the intended trade. This classifier decides, 72 times below, whether a
+# nonzero exit is a real failure; a machine that cannot verify it cannot be told
+# the suite is green. Bump the count only when a check is deliberately added or
+# removed.
+CLS_EXPECTED_CHECKS=22
+CLS_OUTPUT=$(bash "$TESTS_DIR/test_lsan_classify.sh" 2>&1)
+CLS_RC=$?
+CLS_PASS=$(echo "$CLS_OUTPUT" | grep -c "^  PASS:" || true)
+CLS_FAIL=$(echo "$CLS_OUTPUT" | grep -c "^  FAIL:" || true)
+CLS_SKIP=$(echo "$CLS_OUTPUT" | grep -c "^  SKIP:" || true)
+if [ "$CLS_RC" -eq 0 ] && [ "$CLS_FAIL" -eq 0 ] && [ "$CLS_SKIP" -eq 0 ] \
+   && [ "$CLS_PASS" -eq "$CLS_EXPECTED_CHECKS" ]; then
+    TOTAL=$((TOTAL + CLS_PASS))
+    PASS=$((PASS + CLS_PASS))
+    echo "  PASS: sanitizer classifier gate ($CLS_PASS checks)"
+else
+    TOTAL=$((TOTAL + CLS_PASS + CLS_FAIL + 1))
+    PASS=$((PASS + CLS_PASS))
+    FAIL=$((FAIL + CLS_FAIL + 1))
+    echo "  FAIL: sanitizer classifier gate (rc=$CLS_RC, $CLS_PASS/$CLS_EXPECTED_CHECKS passed, $CLS_FAIL failed, $CLS_SKIP skipped)"
+    if [ "$CLS_SKIP" -gt 0 ]; then
+        echo "    a SKIPped check is missing coverage, not a pass — python3 and git are required here"
+    fi
+    if [ "$CLS_FAIL" -eq 0 ] && [ "$CLS_PASS" -ne "$CLS_EXPECTED_CHECKS" ]; then
+        echo "    the gate shrank: expected $CLS_EXPECTED_CHECKS checks, it ran $CLS_PASS"
+    fi
+    echo "$CLS_OUTPUT" | sed 's/^/    /'
 fi
 echo ""
 
@@ -4230,7 +4309,7 @@ else
     # SIGTERM if the runaway ignores TERM). GNU/BSD timeout put the command in
     # its own process group and signal the whole group, so a hung eigenscript
     # grandchild is killed too — no orphan.
-    export -f check_eigs_suite rc_ok
+    export -f check_eigs_suite rc_ok lsan_classify lsan_classify_name
     SELFTEST_OUT=$( "$SELFTEST_TMO" -k 3 10 \
         env EIGS_TEST_TIMEOUT=2 EIGS_TMO="$SELFTEST_TMO 2" \
         bash -c '
@@ -4239,7 +4318,7 @@ else
             echo "SELFTEST_DELTAS PASS=$PASS FAIL=$FAIL TOTAL=$TOTAL"
         ' _ "$SELFTEST_NAME" "$SELFTEST_FIXTURE" "$SELFTEST_COUNT" 2>&1 )
     SELFTEST_ORC=$?
-    export -fn check_eigs_suite rc_ok
+    export -fn check_eigs_suite rc_ok lsan_classify lsan_classify_name
     if [ "$SELFTEST_ORC" = "124" ]; then
         # Outer bound tripped: the inner guard never fired, the runaway ran
         # unbounded, our own bound caught it. Broken/missing guard — clean FAIL.
@@ -4275,7 +4354,7 @@ if [ ! -f "$EIGS_BIN" ]; then
     PASS=$((PASS + 1))
     echo "  SKIP: no binary to fingerprint"
 else
-    export -f eigs_binary_fingerprint check_binary_fingerprint record_binary_fingerprint check_eigs_suite rc_ok derive_count
+    export -f eigs_binary_fingerprint check_binary_fingerprint record_binary_fingerprint check_eigs_suite rc_ok lsan_classify lsan_classify_name derive_count
     export EIGS_BIN EIGS_TMO
     SELFTEST_BIN_BAK="${EIGS_BIN}.orig"
     # If the binary is the #740 variant symlink, remember its target so the
@@ -4308,7 +4387,7 @@ else
     else
         mv "$SELFTEST_BIN_BAK" "$EIGS_BIN"
     fi
-    export -fn eigs_binary_fingerprint check_binary_fingerprint record_binary_fingerprint check_eigs_suite rc_ok derive_count
+    export -fn eigs_binary_fingerprint check_binary_fingerprint record_binary_fingerprint check_eigs_suite rc_ok lsan_classify lsan_classify_name derive_count
     if [ "$SELFTEST_RC" -ne 0 ] && printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."; then
         PASS=$((PASS + 1))
         echo "  PASS: binary-fingerprint guard detected mid-run swap and aborted with the expected error"
