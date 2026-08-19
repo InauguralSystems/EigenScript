@@ -24,6 +24,42 @@ define zeros_desc(n) as:
 define fill_desc(n) as:
     return [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["fill", [n, 0.0]]]
 
+# --- adv probe (#965 fix5 review): a caught refusal must not skip the scan ---
+# fix5 decides ok from the sticky refusal record, so a descriptor that catches
+# its own byte-budget refusal and then RETURNS a closure reaches the result
+# attach with ok already 0 - while the callable containment scan stays gated on
+# ok. In every earlier shape a caught refusal still reported ok:1 and the scan
+# ran; refusing the run must not start handing sandbox-authored code across the
+# boundary. Property: a run refused this way carries NO result key (the shape
+# every other failure path already has). The closure is created fresh on both
+# arms, and make_fn never touches the byte budget, so the exhausted budget
+# cannot mask the shape. This section sits at the TOP of the file so a
+# failure's named FAIL lines lead the suite's five-line diagnostic excerpt.
+ADV2_TRY_BEGIN is 54
+ADV2_TRY_END is 55
+ADV2_CLOSURE is 38
+scan_big is ""
+for i in range of 250:
+    scan_big is scan_big + "XXXXXXXX"
+scan_code is [ADV2_TRY_BEGIN,15,0, GET_NAME,0,0, CONST,1,0, CALL,1,0,
+              POP, ADV2_TRY_END, ADV2_CLOSURE,0,0, RETURN,
+              POP, ADV2_CLOSURE,0,0, RETURN]
+scan_fn is [[CONST,0,0, RETURN], ["x"]]
+scan_desc is [ABI, scan_code, ["str_lower", scan_big], [scan_fn]]
+sr_scan is sandbox_run of [scan_desc, 100000, 1000]
+assert_eq of [sr_scan["ok"], 0,
+              "adv scan: caught-refusal run returning a closure still refuses"]
+assert_eq of [has_key of [sr_scan, "result"], 0,
+              "adv scan: refused run must not hand a callable across the boundary"]
+# Control: the SAME closure-returning chunk under a generous budget reaches the
+# scan on the ok path and is refused there with the result dropped - proves the
+# scan itself still works and the failure above is specific to the refusal path.
+sr_scan_ctrl is sandbox_run of [scan_desc, 100000, 100000]
+assert_eq of [sr_scan_ctrl["ok"], 0,
+              "adv scan control: ok-path closure result is scan-refused"]
+assert_eq of [has_key of [sr_scan_ctrl, "result"], 0,
+              "adv scan control: scan refusal drops the callable result"]
+
 # --- #965 (fix5): a caught byte-budget refusal still refuses the run ---------
 # The VM catch path clears g_has_error and resumes at the handler, so a
 # descriptor that wraps an over-budget allocation in TRY_BEGIN and answers the
