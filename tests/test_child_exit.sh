@@ -253,6 +253,15 @@ echo "RESULTS: $PASS/$((PASS + FAIL)) passed, $FAIL failed"
 # exemption survived because the `.sh` filter rejected the same inputs — the
 # two guards covered each other, so either could be deleted with the file
 # still green.
+#
+# This train needs `python3`, which the surrounding suite treats as OPTIONAL
+# (sections [89]/[90] skip without it). Here a missing python3 makes every
+# mutation fail to apply, which is reported as SELFTEST BROKEN and fails the
+# section — deliberately stricter, and stated rather than assumed. The reason
+# is that the alternative is worse: a mutation train that silently does not
+# run leaves the section green while proving nothing, which is the
+# shrink-without-a-source-edit failure this whole file exists to prevent. An
+# unrunnable instrument is BROKEN, never a verdict.
 # ---------------------------------------------------------------------------
 if [ "${1:-}" = "--selftest" ]; then
     [ "$FAIL" -eq 0 ] || { echo "SELFTEST SKIPPED: base run is already red"; exit 1; }
