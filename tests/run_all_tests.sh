@@ -4037,6 +4037,29 @@ if command -v python3 >/dev/null 2>&1; then
         echo "  FAIL: README marker/zero-count self-test (rc=$MARKER_RC)"
         echo "$MARKER_OUTPUT"
     fi
+
+    # #946: the fence PARSER's own self-test. The gate above can only check
+    # examples it can SEE, and it used to be blind to any fence that was
+    # indented or nested in a blockquote — those blocks were never run, never
+    # compared, and never mentioned. This proves each shape is recognised, that
+    # an example's own indentation survives the dedent (EigenScript is
+    # indentation-sensitive, so over-stripping rewrites the program under
+    # test), and that a fence the parser still cannot read is REPORTED rather
+    # than dropped. The case COUNT is pinned: "exit 0" is also what a
+    # self-test reduced to a single echo prints.
+    FENCE_EXPECTED=15
+    FENCE_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" --selftest 2>&1)
+    FENCE_RC=$?
+    FENCE_OK=$(printf '%s\n' "$FENCE_OUTPUT" | grep -c "  selftest ok:" || true)
+    TOTAL=$((TOTAL + 1))
+    if [ "$FENCE_RC" -eq 0 ] && [ "$FENCE_OK" -eq "$FENCE_EXPECTED" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: doc-fence parser self-test ($FENCE_OK shapes recognised)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: doc-fence parser self-test (rc=$FENCE_RC, cases=$FENCE_OK, expected $FENCE_EXPECTED)"
+        printf '%s\n' "$FENCE_OUTPUT" | head -12
+    fi
 else
     echo "  SKIP: python3 not available"
 fi

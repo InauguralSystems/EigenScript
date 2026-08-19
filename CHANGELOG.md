@@ -6,6 +6,47 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The doc-example gate could not see indented or blockquoted fences, so those
+  examples were silently unchecked (#946).** The fence pattern matched only at
+  column zero, and the closing scan used `startswith("```")` — so a fenced
+  block that was indented, or nested in a blockquote or list item, was invisible
+  to the gate. Such a block is valid CommonMark and renders normally on GitHub,
+  so a document could read as fully gated while part of it was never run, never
+  compared, and never mentioned. Measured: a synthetic document with one plain
+  and two nested examples reported `1 checked, exit 0` before and now catches
+  both nested ones. On real files the parser goes from **0 to 4** recognised
+  examples in `docs/DIAGNOSTICS.md` and **0 to 1** in
+  `docs/LANGUAGE_CONTRACT.md` — stated as parser CAPABILITY, not as realised
+  coverage: neither file is passed to the gate by `run_all_tests.sh` and
+  neither pairs its examples with `output` blocks, so nothing new executes in
+  CI today. What changes is that an example written in those shapes can no
+  longer be added and silently ignored.
+  Recognising more turned out to be only half the job, and the first cut of
+  this fix got the other half wrong in an instructive way: it handled
+  indentation and blockquotes but not **list items**, and a list-item fence
+  then *desynchronised* the walk — its closing fence was read as an opening
+  one, every later info string shifted by one, and a plain top-level example
+  that the old parser checked was silently dropped. Coverage went DOWN while
+  the gate still printed `exit 0`. The reporter that was supposed to prevent
+  exactly that could not fire either, because it was built from the same
+  character class as the strict matcher and so was blind to precisely the
+  shapes the strict matcher could not open — a cross-check must be looser on
+  every axis it polices, and that one was looser on none.
+  The parser now handles indentation, blockquotes (nested), list items
+  (`-`/`*`/`+`/`1.`), tilde fences, and fences of more than three backticks;
+  the reporter is derived independently; and an **unterminated** fence is
+  reported rather than swallowing the rest of the document. All thirteen
+  shapes probed are recognised, zero silently dropped, and a sweep of all 36
+  markdown files in the repo produces no false alarms.
+  The dedent strips only the prefix the fence itself carried, because
+  EigenScript is indentation-sensitive and over-stripping silently rewrites the
+  program under test — a first-line-only assertion certified exactly that fault
+  when it was planted, so the self-test compares whole bodies. `--selftest`
+  pins fourteen cases including a negative control (prose that merely mentions
+  a fence mid-line is not a fence) and two that drive `main()` itself, because
+  a mutant that reported an unreadable fence but no longer FAILED on it
+  survived every other case. The suite pins that count.
+
 - **Over-arity through a *callback* now raises, closing the third entry point
   into a user function (#989).** #974 made `two of [1, 2, 99]` raise at
   `CASE(CALL)` and in `jit_helper_call`, but a user function can also be
