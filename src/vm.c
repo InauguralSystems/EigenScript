@@ -2862,12 +2862,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
      * heap Value (via make_num or in-place NUM_REUSE). Immediates aren't
      * emitted until B-3 audits every vm_peek caller for immediate-safe
      * refcount handling. */
-#define ARITH_FAST(OP) do { \
+#define ARITH_FAST(OP, UF) do { \
     EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
     EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
     double _ad, _bd; \
     if (__builtin_expect(slot_as_double(_as, &_ad) & slot_as_double(_bs, &_bd), 1)) { \
         double _r = num_guard(_ad OP _bd); \
+        if ((UF) && _r == 0.0 && _ad != 0.0 && _bd != 0.0) \
+            g_math_flags |= EIGS_MATH_UNDERFLOW; \
         if (slot_is_ptr(_as)) { \
             Value *_a = slot_as_ptr(_as); \
             if (NUM_REUSE(_a)) { \
@@ -2895,7 +2897,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 } while(0)
 
     CASE(ADD): {
-        ARITH_FAST(+);
+        ARITH_FAST(+, 0);
         /* Slow path: handles string concat etc */
         Value *b = vm_pop(); Value *a = vm_pop();
         if (a->type == VAL_NUM && b->type == VAL_NUM) {
@@ -2946,12 +2948,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         DISPATCH();
     }
 
-#define NUM_BINOP(NAME, OP, OPNAME) \
+#define NUM_BINOP(NAME, OP, OPNAME, UF) \
     CASE(NAME): { \
-        ARITH_FAST(OP); \
+        ARITH_FAST(OP, UF); \
         Value *b = vm_pop(); Value *a = vm_pop(); \
         if (a->type == VAL_NUM && b->type == VAL_NUM) { \
             double r = num_guard(a->data.num OP b->data.num); \
+            if ((UF) && r == 0.0 && a->data.num != 0.0 && b->data.num != 0.0) \
+                g_math_flags |= EIGS_MATH_UNDERFLOW; \
             if (NUM_REUSE(a)) { a->data.num = r; vm_push(a); val_decref(b); DISPATCH(); } \
             if (NUM_REUSE(b)) { b->data.num = r; vm_push(b); val_decref(a); DISPATCH(); } \
             vm_push(make_num(r)); \
@@ -2964,8 +2968,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         DISPATCH(); \
     }
 
-    NUM_BINOP(SUB, -, "-")
-    NUM_BINOP(MUL, *, "*")
+    /* UF selector: only * and / can reach zero from nonzero operands.
+     * `5 - 5 == 0` is exact cancellation, so SUB/ADD pass 0 and the
+     * check folds away at compile time. Kept as a parameter on the
+     * SHARED macro rather than a MUL-only copy: a duplicated
+     * expansion drifts from ARITH_FAST the first time anyone edits it,
+     * and the perf measurement that might have justified the copy could
+     * not resolve an effect this small on this hardware (see PR). */
+    NUM_BINOP(SUB, -, "-", 0)
+    NUM_BINOP(MUL, *, "*", 1)
 
     CASE(DIV): {
         Value *b = vm_pop(); Value *a = vm_pop();
@@ -2975,6 +2986,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 vm_push(make_num(0));
             } else {
                 double r = num_guard(a->data.num / b->data.num);
+                /* divisor already known nonzero (the raise above), so a zero
+                 * quotient from a nonzero dividend is underflow. */
+                if (r == 0.0 && a->data.num != 0.0)
+                    g_math_flags |= EIGS_MATH_UNDERFLOW;
                 if (NUM_REUSE(a)) { a->data.num = r; vm_push(a); val_decref(b); DISPATCH(); }
                 if (NUM_REUSE(b)) { b->data.num = r; vm_push(b); val_decref(a); DISPATCH(); }
                 vm_push(make_num(r));
