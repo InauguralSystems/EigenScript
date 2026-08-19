@@ -11,6 +11,7 @@
  */
 
 #include "model_internal.h"
+#include "trace.h"
 
 /* ================================================================
  * FLOAT KERNELS — model internal
@@ -524,15 +525,26 @@ Value* builtin_eigen_model_loaded(Value *arg) {
 
 Value* builtin_eigen_generate(Value *arg) {
     /* Input: [prompt_ids_list, temperature, max_tokens]
-     * Output: list of generated token IDs */
+     * Output: list of generated token IDs
+     *
+     * #960: sampling makes this a nondeterministic return, so it rides the
+     * tape like random/random_int. ONE record per call carries the emitted
+     * token list -- the draws are an implementation detail of the decoding
+     * policy, the list is what the script observes. The TAKE is the first
+     * statement, so replay serves the tokens before the model is consulted:
+     * no checkpoint load, no RNG draw (the net_* contract). Every return
+     * records exactly one value, argument-error paths included, or a program
+     * that hits one desyncs the stream. Unconditional in temperature: the tape
+     * cannot show which branch ran, and replay may not load a model. */
+    TRACE_NONDET_TAKE("eigen_generate");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         fprintf(stderr, "eigen_generate: requires [prompt_ids, temperature, max_tokens]\n");
-        return make_list(0);
+        TRACE_NONDET_RECORD("eigen_generate", make_list(0));
     }
     Value *prompt_list = arg->data.list.items[0];
     if (prompt_list->type != VAL_LIST) {
         fprintf(stderr, "eigen_generate: prompt_ids must be a list\n");
-        return make_list(0);
+        TRACE_NONDET_RECORD("eigen_generate", make_list(0));
     }
 
     double temperature = 0.1;
@@ -546,19 +558,19 @@ Value* builtin_eigen_generate(Value *arg) {
     if (arg->data.list.count >= 4 && arg->data.list.items[3]->type == VAL_NUM)
         top_p = arg->data.list.items[3]->data.num;
 
-    if (!g_model.loaded) return make_list(0);
+    if (!g_model.loaded) TRACE_NONDET_RECORD("eigen_generate", make_list(0));
 
     /* Validate prompt and token count */
     int prompt_len = prompt_list->data.list.count;
     if (prompt_len <= 0) {
         fprintf(stderr, "eigen_generate: prompt must be non-empty\n");
-        return make_list(0);
+        TRACE_NONDET_RECORD("eigen_generate", make_list(0));
     }
     #define EIGS_MAX_GENERATE_TOKENS 4096
     if (max_tokens <= 0 || max_tokens > EIGS_MAX_GENERATE_TOKENS) {
         if (max_tokens <= 0) {
             fprintf(stderr, "eigen_generate: max_tokens must be positive\n");
-            return make_list(0);
+            TRACE_NONDET_RECORD("eigen_generate", make_list(0));
         }
         max_tokens = EIGS_MAX_GENERATE_TOKENS;
     }
@@ -578,7 +590,7 @@ Value* builtin_eigen_generate(Value *arg) {
         list_append_owned(result, make_num((double)output_ids[i]));
     }
     free(output_ids);
-    return result;
+    TRACE_NONDET_RECORD("eigen_generate", result);
 }
 
 Value* builtin_eigen_eval_loss(Value *arg) {
