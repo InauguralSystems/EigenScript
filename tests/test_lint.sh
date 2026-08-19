@@ -579,13 +579,14 @@ define f(flag) as:
     else:
         t is 2
     return t
-print of (str of (f of 0))
+print of ("return value is " + (str of (f of 0)))
 print of ("module t is now " + (str of t))
 EIGS
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "W023 try-region local returns 2" "$RUN" "2"
 check_contains "W023 try-region local leaves module t at 5" "$RUN" "module t is now 5"
-OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+OUTPUT=$($EIGS --lint --lint-level error "$TMPFILE" 2>&1) && LINT_STATUS=0 || LINT_STATUS=$?
+check_status "W023 silent: try-region local lint exits 0" "$LINT_STATUS" "0"
 check_not_contains "W023 silent: try-region local" "$OUTPUT" "W023"
 rm -f "$TMPFILE"
 
@@ -608,7 +609,8 @@ EIGS
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "W023 nested define returns 2" "$RUN" "2"
 check_contains "W023 nested define leaves module t at 5" "$RUN" "module t is now 5"
-OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+OUTPUT=$($EIGS --lint --lint-level error "$TMPFILE" 2>&1) && LINT_STATUS=0 || LINT_STATUS=$?
+check_status "W023 silent: nested define lint exits 0" "$LINT_STATUS" "0"
 check_not_contains "W023 silent: nested define" "$OUTPUT" "W023"
 rm -f "$TMPFILE"
 
@@ -623,11 +625,11 @@ define f(flag) as:
     else:
         t is 2
     return t
-print of (str of (f of 0))
+print of ("return value is " + (str of (f of 0)))
 print of ("module t is now " + (str of t))
 EIGS
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
-check_contains "W023 planted mutation returns 2" "$RUN" "2"
+check_contains "W023 planted mutation returns 2" "$RUN" "^return value is 2$"
 check_contains "W023 planted mutation changes module t" "$RUN" "module t is now 2"
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "W023 fires on sibling-branch outer mutation" "$OUTPUT" "warning\[W023\]: 't'"
@@ -661,7 +663,8 @@ print of ("module t is now " + (str of t))
 EIGS
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "W023 false negative runtime changes module t" "$RUN" "module t is now 2"
-OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+OUTPUT=$($EIGS --lint --lint-level error "$TMPFILE" 2>&1) && LINT_STATUS=0 || LINT_STATUS=$?
+check_status "W023 silent: enclosing catch lint completes" "$LINT_STATUS" "0"
 check_not_contains "W023 silent: enclosing catch false negative" "$OUTPUT" "W023"
 rm -f "$TMPFILE"
 
@@ -680,9 +683,95 @@ print of ("module t is now " + (str of t))
 EIGS
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "W023 no-module runtime exposes undefined t" "$RUN" "undefined variable 't'"
-OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1) && LINT_STATUS=0 || LINT_STATUS=$?
+check_status "W023 no-module lint reports its E003 status" "$LINT_STATUS" "1"
 check_not_contains "W023 silent without a proven module binding" "$OUTPUT" "W023"
 check_contains "W023 no-module control keeps E003" "$OUTPUT" "E003.*undefined name 't'"
+rm -f "$TMPFILE"
+
+# Boundary: one `if`, 63 `elif` arms, and a terminal `else` is 65 branch
+# bodies.  The parser accepts this family; W023 must scan it without a
+# fixed-array overrun and report the real outer mutation normally.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+t is 5
+define f(flag) as:
+    if flag == 0:
+        local t is 1
+EIGS
+i=1
+while [ "$i" -lt 63 ]; do
+    printf '    elif flag == %s:\n        t is 2\n' "$i" >> "$TMPFILE"
+    i=$((i + 1))
+done
+cat >> "$TMPFILE" << 'EIGS'
+    else:
+        t is 2
+    return t
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1) && LINT_STATUS=0 || LINT_STATUS=$?
+check_status "W023 64-arm family lint returns a warning result" "$LINT_STATUS" "1"
+check_contains "W023 64-arm family reaches the diagnostic" "$OUTPUT" "warning\[W023\]: 't'"
+rm -f "$TMPFILE"
+
+# The proof state must not silently discard a real binder after 512 names.
+# `local t` is the 513th distinct name, so the sibling bare write is still
+# function-local at runtime and W023 must fail safe to silence.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+t is 5
+define f(flag) as:
+EIGS
+i=0
+while [ "$i" -lt 512 ]; do
+    printf '    local x%03d is 0\n' "$i" >> "$TMPFILE"
+    i=$((i + 1))
+done
+cat >> "$TMPFILE" << 'EIGS'
+    local t is 1
+    if flag == 1:
+        local t is 2
+    else:
+        t is 3
+    return t
+print of ("saturation return is " + (str of (f of 0)))
+print of ("saturation module t is " + (str of t))
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1) && RUN_STATUS=0 || RUN_STATUS=$?
+check_status "W023 saturation runtime completes" "$RUN_STATUS" "0"
+check_contains "W023 saturation keeps the return local" "$RUN" "^saturation return is 3$"
+check_contains "W023 saturation leaves module t unchanged" "$RUN" "^saturation module t is 5$"
+OUTPUT=$($EIGS --lint --lint-level error "$TMPFILE" 2>&1) && LINT_STATUS=0 || LINT_STATUS=$?
+check_status "W023 saturation lint exits successfully" "$LINT_STATUS" "0"
+check_not_contains "W023 silent after proof-state saturation" "$OUTPUT" "W023"
+rm -f "$TMPFILE"
+
+# Recursive control-flow proof frames must stay below the EigenOS stack
+# contract.  Exercise nested AST_IF descent under an explicit 64 KiB stack
+# limit and require a normal, silent lint result.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+t is 5
+define f(flag) as:
+    local t is 1
+EIGS
+indent='    '
+i=0
+while [ "$i" -lt 18 ]; do
+    printf '%sif 1 == 1:\n' "$indent" >> "$TMPFILE"
+    indent="${indent}    "
+    i=$((i + 1))
+done
+printf '%sif flag == 1:\n' "$indent" >> "$TMPFILE"
+printf '%s    local t is 2\n' "$indent" >> "$TMPFILE"
+printf '%selse:\n' "$indent" >> "$TMPFILE"
+printf '%s    t is 3\n' "$indent" >> "$TMPFILE"
+cat >> "$TMPFILE" << 'EIGS'
+    return t
+EIGS
+STACK_OUTPUT=$( (ulimit -s 64; "$EIGS" --lint --lint-level error "$TMPFILE" 2>&1) ) && STACK_STATUS=0 || STACK_STATUS=$?
+check_status "W023 nested control flow completes under 64 KiB" "$STACK_STATUS" "0"
+check_not_contains "W023 nested control flow stays silent" "$STACK_OUTPUT" "W023"
 rm -f "$TMPFILE"
 
 # --- W016: bare predicate OUTSIDE a loop condition (#396, #247/#262 family) ---
