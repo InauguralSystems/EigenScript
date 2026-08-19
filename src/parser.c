@@ -230,6 +230,29 @@ static void p_skip_newlines(Parser *p) {
     while (p_cur(p)->type == TOK_NEWLINE) p_advance(p);
 }
 
+/* Drain the unread tail of an elif chain after the depth guard refuses it.
+ * Token-level skipping keeps the parser from re-reading every remaining arm
+ * as a separate malformed statement and leaves the cursor after the chain. */
+static void p_skip_elif_tail(Parser *p) {
+    for (;;) {
+        TokType t = p_cur(p)->type;
+        if (t != TOK_ELIF && t != TOK_ELSE) return;
+        p_advance(p);
+        while (p_cur(p)->type != TOK_NEWLINE && p_cur(p)->type != TOK_EOF)
+            p_advance(p);
+        p_skip_newlines(p);
+        if (p_cur(p)->type == TOK_INDENT) {
+            int level = 0;
+            do {
+                if (p_cur(p)->type == TOK_INDENT) level++;
+                else if (p_cur(p)->type == TOK_DEDENT) level--;
+                p_advance(p);
+            } while (level > 0 && p_cur(p)->type != TOK_EOF);
+        }
+        if (t == TOK_ELSE) return;
+    }
+}
+
 ASTNode* make_node_col(ASTType type, int line, int col) {
     ASTNode *n = xcalloc(1, sizeof(ASTNode));
     n->type = type;
@@ -1387,8 +1410,8 @@ static ASTNode* parse_statement_inner(Parser *p);
 static ASTNode* parse_statement(Parser *p) {
     /* Release any chain-charged depth (chain_too_deep) accumulated while
      * parsing this statement, so the bound is per-statement, not cumulative
-     * across a whole function body. Nesting depth is preserved by parse_block's
-     * own guard. */
+     * across a whole function body. The elif desugaring charges at its
+     * recursion site and is released by this same statement boundary. */
     int saved_depth = g_parse_depth;
     ASTNode *r = parse_statement_inner(p);
     g_parse_depth = saved_depth;
@@ -1610,11 +1633,25 @@ static ASTNode* parse_statement_inner(Parser *p) {
         int else_count = 0;
         p_skip_newlines(p);
         if (p_cur(p)->type == TOK_ELIF) {
-            /* Treat elif as: else { if ... } — rewrite token and recurse */
-            p_cur(p)->type = TOK_IF;
-            else_body = xmalloc(sizeof(ASTNode*));
-            else_body[0] = parse_statement(p);
-            else_count = 1;
+            /* Treat elif as: else { if ... } — rewrite token and recurse.
+             * This is syntactically flat but recurses once per arm in C, so
+             * deliberately charge one level on the shared budget before the
+             * descent. The pre-charge makes chain_too_deep's live guard test
+             * the depth the next arm's condition actually parses at; undo its
+             * normal successful increment so one arm, not two, is retained.
+             * Per-arm save/restore is rejected: a chain nested in each body
+             * would restart from the block baseline and multiply the budgets,
+             * reopening the C-stack exhaustion this guard closes. */
+            g_parse_depth++;
+            if (chain_too_deep(p)) {
+                p_skip_elif_tail(p);
+            } else {
+                g_parse_depth--;
+                p_cur(p)->type = TOK_IF;
+                else_body = xmalloc(sizeof(ASTNode*));
+                else_body[0] = parse_statement(p);
+                else_count = 1;
+            }
         } else if (p_cur(p)->type == TOK_ELSE) {
             p_advance(p);
             p_expect(p, TOK_COLON);
