@@ -4,6 +4,24 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`eigen_generate` now rides the trace tape, and the `randn` tensor fills
+  draw from the seedable stream (#960).** Sampled generation carried no
+  `TRACE_NONDET` record, so a program generating at temperature > 0 could not
+  be replayed from its tape — violating the no-untraced-nondeterminism rule the
+  whole `EIGS_TRACE`/`EIGS_REPLAY` substrate rests on. The emitted token list is
+  now one `N eigen_generate=` record per call (not one per sampled position: the
+  draws are an implementation detail of the decoding policy, the list is what
+  the script observes), taken back *before* the model is consulted — a recorded
+  generation replays with no checkpoint on disk and no RNG draw, the boundary
+  the `net_*` family already holds; every return is recorded, argument errors
+  and the no-model-loaded empty list included, so a program that hits one cannot
+  desync the stream. Separately, `random_normal`'s Box-Muller fill still called
+  libc `rand()`, unpinnable from script; it now draws from the same `drand48`
+  stream as `random`/`random_int`, so `seed_random of N` makes a randn tensor
+  reproducible. Both were residuals of the v0.40.0 sampler-seedability fix.
+
 ### Added
 - **Strict math mode (`EIGS_STRICT=1`) — out-of-domain ops raise instead of
   substituting (#971).** By default arithmetic is finite by construction: `sqrt`
