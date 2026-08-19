@@ -133,6 +133,148 @@ rc_ok() {
     return 1
 }
 
+# ---- #988: child `.sh` tests gate on exit status, not just markers ----------
+# rc_ok (above) fixed exactly this disease for `.eigs` programs: "marker-grep
+# alone used to let a crash *after* correct output pass". The ~45 child `.sh`
+# tests were still on the marker-only side of that line, because the
+# idiomatic call site is
+#     FOO_OUTPUT=$(bash "$TESTS_DIR/test_foo.sh" 2>&1)
+# and a command substitution keeps the child's stdout while DISCARDING its
+# exit status. The section then decided purely on `grep -c "FAIL:"`. So a
+# child that printed two PASS: lines and then segfaulted reported a passing
+# section, and a child that did not exist at all (127) reported
+# "0/0 passed, 0 failed" — also a pass. Reproduced at 139, 127 and 1.
+#
+# The fix is central rather than 45 local `$?` checks, because the local form
+# is exactly what every future site would have to remember. `bash` is a
+# function here, so every child invocation is routed through it; when a child
+# exits nonzero it emits a synthetic `FAIL:` line on the child's own stdout.
+# That lands inside the caller's `$(...)` capture, so the EXISTING per-site
+# `grep -c "FAIL:"` logic counts it and the section fails, with no site edit.
+# Sites that stream rather than capture still see it on the terminal, and
+# their `if bash ...; then` already reads the status directly.
+#
+# The ledger is a FILE, not a variable: the increment happens inside the
+# caller's command substitution, i.e. in a subshell, so a shell variable would
+# be discarded along with everything else the subshell touched — the same
+# class of loss this whole section is about.
+#
+# The second half of the bar — "a section that executes zero checks must not
+# report itself as passing" — is NOT covered by exit status: a child can exit
+# 0 having done nothing, and `[42] CLI & REPL (15 checks)` then prints
+# "PASS: all 0 CLI checks" and contributes 0 to TOTAL, so even the RESULTS
+# line looks untouched. For the `test_*.sh` population (46 of 48 follow the
+# marker convention) the child's output is therefore captured and a run with
+# NO markers at all is failed as vacuous. Capture is confined to that
+# population deliberately: the `tools/*.sh` gates print their own prose, and
+# buffering their output would change what a reader sees for no gain.
+#
+# Two side effects of capturing, stated because they are real and small:
+# `$(...)` strips trailing newlines (one is added back, so a child ending in
+# several blank lines loses them), and a captured child's stderr now reaches
+# the caller BEFORE its stdout rather than interleaved. Neither changes marker
+# counting, which is what every section decides on; both would matter to a
+# section that parsed output by line position, and none does.
+#
+# tools/child_exit_check.sh is the drift gate. Note it must check that `bash`
+# is the COMMAND WORD, not merely that no known-bad spelling appears: this is
+# a shell FUNCTION, so `env bash …`, `timeout 60 bash …` or `$EIGS_TMO bash …`
+# exec the real binary and silently leave the mechanism entirely — while still
+# looking like ordinary call sites.
+#
+# There is NO expect-nonzero exemption, because nothing needs one: the only
+# deliberately-aborting child in the suite is section [99f]'s fingerprint
+# self-test, and it runs `bash -c '...'` (an inline program, not a script
+# file), which this function does not account for. If a future site genuinely
+# needs to exit nonzero on purpose, it gets an exemption WITH its reason then.
+CHILD_LEDGER="${CHILD_LEDGER:-$(mktemp "${TMPDIR:-/tmp}/eigs_child_ledger.XXXXXX")}"
+export CHILD_LEDGER
+: > "$CHILD_LEDGER"
+# The suite has several `exit 1` paths before [99p] (the mid-run-rebuild abort
+# among them) and can be interrupted; without this the ledger leaks one file
+# per aborted run. The runner has no other trap — `trap ... EXIT` REPLACES
+# rather than accumulates, so if one is ever added it must call this too.
+trap 'rm -f "${CHILD_LEDGER:-}"' EXIT
+# Children that legitimately emit no PASS:/FAIL: markers, so the vacuity rule
+# must not fire on them. Each is a waiver and states why; an entry that stops
+# being needed is a review event, and tools/child_exit_check.sh pins the list
+# against the tree so it cannot silently grow.
+#   test_lsp.sh / test_lsp_asan.sh — thin wrappers that exec python drivers
+#   (test_lsp.py) which report their own tally in a different format.
+CHILD_NO_MARKERS=" test_lsp.sh test_lsp_asan.sh "
+bash() {
+    # Resolve the script path first: it decides whether this invocation is
+    # accounted for at all, and whether its output must be captured.
+    local __a __what="" __skipnext=0
+    for __a in "$@"; do
+        if [ "$__skipnext" = "1" ]; then __skipnext=0; continue; fi
+        case "$__a" in
+            -c) __what=""; break ;;
+            # Options that CONSUME the next word; without this the value is
+            # mistaken for the script path and a real child escapes accounting
+            # (`bash -o pipefail t.sh` bound __what=pipefail).
+            -o|-O|--rcfile|--init-file) __skipnext=1 ;;
+            --) __skipnext=0 ;;
+            -*) ;;
+            *) __what="$__a"; break ;;
+        esac
+    done
+    case "$__what" in
+        *.sh) ;;
+        *) command bash "$@"; return $? ;;
+    esac
+
+    local __base="${__what##*/}"
+    local __rc __out=""
+    case "$__base" in
+        test_*)
+            # Capture so the vacuity rule can see the markers, then replay
+            # verbatim so every existing call site is unaffected.
+            __out=$(command bash "$@")
+            __rc=$?
+            [ -n "$__out" ] && printf '%s\n' "$__out"
+            ;;
+        *)
+            command bash "$@"
+            __rc=$?
+            ;;
+    esac
+
+    if [ "$__rc" -ne 0 ]; then
+        local __why="exited $__rc"
+        [ ! -f "$__what" ] && __why="is missing (exit $__rc)"
+        echo "  FAIL: $__base $__why without completing — section verdict is not trustworthy (#988)"
+        printf '%s\t%s\n' "$__rc" "$__what" >> "$CHILD_LEDGER"
+        return $__rc
+    fi
+
+    # Exit 0 — but did it actually check anything? A section reporting
+    # "all 0 checks" as a pass is the other half of #988.
+    case "$__base" in
+        test_*)
+            case "$CHILD_NO_MARKERS" in
+                *" $__base "*) return 0 ;;
+            esac
+            # SKIP: counts as reporting. The disease #988 is about is
+            # SILENCE — a child that ran nothing and said nothing, whose
+            # section then printed "all 0 checks" as a pass. A child that
+            # prints `SKIP:` has honestly declined to measure, which is
+            # visible to the reader and is the suite's established
+            # convention for an unavailable tool. Bought in CI (PR #996):
+            # test_temporal_memory.sh skips without GNU `time -f`, without
+            # /proc, and on sanitizer builds — all three exist on the dev
+            # box, so the local run never took those paths and four lanes
+            # went red on a child doing exactly what it was designed to do.
+            if ! printf '%s\n' "$__out" | grep -q -E '(PASS|FAIL|SKIP):'; then
+                echo "  FAIL: $__base exited 0 but reported no checks at all — a section cannot pass on zero checks (#988)"
+                printf '%s\t%s\n' "vacuous" "$__what" >> "$CHILD_LEDGER"
+                return 1
+            fi
+            ;;
+    esac
+    return 0
+}
+
 check() {
     TOTAL=$((TOTAL + 1))
     local test_name="$1"
@@ -3327,15 +3469,15 @@ else
 fi
 
 # [78] spawn with multiple args (0.13.0).
-echo "[78] Spawn With Multiple Args (22 checks)"
+echo "[78] Spawn With Multiple Args (23 checks)"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?
 if rc_ok "$SP_OUTPUT_RC" "$SP_OUTPUT" && echo "$SP_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 22))
-    PASS=$((PASS + 22))
-    echo "  PASS: all 22 spawn-args checks"
+    TOTAL=$((TOTAL + 23))
+    PASS=$((PASS + 23))
+    echo "  PASS: all 23 spawn-args checks"
 else
-    TOTAL=$((TOTAL + 22))
-    FAIL=$((FAIL + 22))
+    TOTAL=$((TOTAL + 23))
+    FAIL=$((FAIL + 23))
     echo "  FAIL: spawn-args tests"
     echo "$SP_OUTPUT" | grep -iE "MISMATCH|FAIL|error" | head -5
 fi
@@ -4781,6 +4923,62 @@ else
     FAIL=$((FAIL + 1))
     echo "  FAIL: a compile line lacks -Werror=switch, or the gate self-test broke (see lines above)"
 fi
+echo ""
+
+# [99o] Child-script exit-status accounting (#988). Two halves: the static
+# gate proves the mechanism is present and unbypassable, the behavioural test
+# proves it actually fails a section for each of the three modes the issue
+# reproduced (139 / 127 / 1). The check COUNT is pinned rather than tested for
+# ">0": "at least one check passed" is satisfied by a gate reduced to a single
+# echo, and both halves here can shrink without a source edit.
+echo "[99o] child-script exit-status accounting (#988)"
+TOTAL=$((TOTAL + 1))
+CEXIT_EXPECTED=17
+CEXIT_OUT=$(bash "$TESTS_DIR/test_child_exit.sh" 2>&1); CEXIT_RC=$?
+CEXIT_COUNT=$(printf '%s\n' "$CEXIT_OUT" | sed -n 's/^RESULTS: \([0-9]*\)\/\([0-9]*\) passed.*/\2/p')
+if bash "$TESTS_DIR/../tools/child_exit_check.sh" >/dev/null \
+   && bash "$TESTS_DIR/../tools/child_exit_check.sh" --selftest >/dev/null \
+   && bash "$TESTS_DIR/test_child_exit.sh" --selftest >/dev/null \
+   && [ "$CEXIT_RC" -eq 0 ] && [ "${CEXIT_COUNT:-0}" -eq "$CEXIT_EXPECTED" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: child .sh exit statuses are accounted for ($CEXIT_COUNT behavioural checks, static gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: child-exit accounting is broken, bypassed, or shrank (rc=$CEXIT_RC, checks=${CEXIT_COUNT:-none}, expected $CEXIT_EXPECTED)"
+    printf '%s\n' "$CEXIT_OUT" | grep -E 'FAIL|BROKEN' | head -5 | sed 's/^/      /'
+    bash "$TESTS_DIR/../tools/child_exit_check.sh" 2>&1 | head -5 | sed 's/^/      /'
+fi
+echo ""
+
+# [99p] Child-script exit-status ledger (#988). The synthetic FAIL: markers
+# emitted by the `bash` wrapper already fail each affected section; this is the
+# roster, so a reader sees WHICH children died rather than inferring it from
+# scattered section output, and so a child whose section never greps for FAIL:
+# still fails the suite. Prints the roster even when empty — "0 children" is a
+# measurement, and a block that only appears on failure is indistinguishable
+# from a block that stopped running.
+echo "[99p] Child-script exit-status ledger (#988)"
+TOTAL=$((TOTAL + 1))
+CHILD_BAD_COUNT=0
+[ -s "$CHILD_LEDGER" ] && CHILD_BAD_COUNT=$(wc -l < "$CHILD_LEDGER" | tr -d ' ')
+if [ "$CHILD_BAD_COUNT" -eq 0 ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: every child .sh test ran to completion (0 nonzero exits)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: $CHILD_BAD_COUNT child .sh invocation(s) did not produce a trustworthy result:"
+    # A vacuous row is NOT a nonzero exit — the child exited 0 and measured
+    # nothing. Reporting it under "exited nonzero" sends the reader looking
+    # for a crash that never happened.
+    while IFS=$'\t' read -r __crc __cpath; do
+        if [ "$__crc" = "vacuous" ]; then
+            echo "      ${__cpath##*/} -> exited 0 but reported no checks"
+        else
+            echo "      ${__cpath##*/} -> exit $__crc"
+        fi
+    done < "$CHILD_LEDGER"
+fi
+rm -f "$CHILD_LEDGER"
 echo ""
 
 # Final guard (#681): if the binary changed during the last block, results are invalid.

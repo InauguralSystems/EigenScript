@@ -488,7 +488,32 @@ jobs:
 
       - if: needs.scope.outputs.code == 'true'
         name: Install Valgrind
-        run: sudo apt-get update && sudo apt-get install -y valgrind
+        # #987: this was a bare `apt-get update && apt-get install`. When the
+        # mirror stalled it hung until the job's 30m cap killed it — and a
+        # timed-out job's conclusion is `cancelled`, which `gh pr checks`
+        # renders as **fail**. So an instrument that never ran presented
+        # identically to a detected regression, on the one gate whose entire
+        # purpose is to answer "did this change cost instructions?". Observed
+        # twice in a row on PR #985 while all 17 other checks passed.
+        #
+        # Bounded retries plus a step-level cap mean a mirror hiccup costs
+        # seconds, and an unreachable mirror fails as SETUP — loudly, and well
+        # inside the job budget, so the measuring steps are never skipped
+        # silently. Worst case here is ~9.5 min, not 30.
+        timeout-minutes: 10
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            if timeout 60 sudo apt-get update \
+               && timeout 120 sudo apt-get install -y valgrind; then
+              valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
+              exit 0
+            fi
+            echo "::warning::apt attempt $attempt failed; retrying"
+            sleep $((attempt * 5))
+          done
+          echo "::error::SETUP FAILURE — could not install valgrind after 3 bounded attempts. This is NOT a regression detected by the gate; the gate never ran."
+          exit 1
 
       - if: needs.scope.outputs.code == 'true'
         name: Build (-O1 -g, minimal)
@@ -619,7 +644,32 @@ jobs:
 
       - if: needs.scope.outputs.code == 'true'
         name: Install Valgrind
-        run: sudo apt-get update && sudo apt-get install -y valgrind
+        # #987: this was a bare `apt-get update && apt-get install`. When the
+        # mirror stalled it hung until the job's 30m cap killed it — and a
+        # timed-out job's conclusion is `cancelled`, which `gh pr checks`
+        # renders as **fail**. So an instrument that never ran presented
+        # identically to a detected regression, on the one gate whose entire
+        # purpose is to answer "did this change cost instructions?". Observed
+        # twice in a row on PR #985 while all 17 other checks passed.
+        #
+        # Bounded retries plus a step-level cap mean a mirror hiccup costs
+        # seconds, and an unreachable mirror fails as SETUP — loudly, and well
+        # inside the job budget, so the measuring steps are never skipped
+        # silently. Worst case here is ~9.5 min, not 30.
+        timeout-minutes: 10
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            if timeout 60 sudo apt-get update \
+               && timeout 120 sudo apt-get install -y valgrind; then
+              valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
+              exit 0
+            fi
+            echo "::warning::apt attempt $attempt failed; retrying"
+            sleep $((attempt * 5))
+          done
+          echo "::error::SETUP FAILURE — could not install valgrind after 3 bounded attempts. This is NOT a regression detected by the gate; the gate never ran."
+          exit 1
 
       - if: needs.scope.outputs.code == 'true'
         name: Build this commit

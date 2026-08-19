@@ -6595,8 +6595,19 @@ static Value *task_start(Task *t) {
         return fn->data.builtin(a);
     }
     Env *call_env = env_new(fn->data.fn.closure);
-    for (int i = 0; i < fn->data.fn.param_count && i < t->argc; i++)
-        env_set_local(call_env, fn->data.fn.params[i], t->args[i]);
+    /* #989: same re-collect carve-out as every other entry point — a
+     * 1-parameter callee binds the WHOLE argument list (`one of [5, 6]` gives
+     * `a = [5, 6]`). This loop bound args[0] and silently dropped the rest.
+     * Over-arity on 2+-param callees is refused in builtin_task_spawn. */
+    if (fn->data.fn.param_count == 1 && t->argc > 1) {
+        Value *collected = make_list(t->argc);
+        for (int i = 0; i < t->argc; i++)
+            list_append(collected, t->args[i]);
+        env_set_local_owned(call_env, fn->data.fn.params[0], collected);
+    } else {
+        for (int i = 0; i < fn->data.fn.param_count && i < t->argc; i++)
+            env_set_local(call_env, fn->data.fn.params[i], t->args[i]);
+    }
     t->run_env = call_env;                  /* Task owns it; base frame borrows */
     t->started = 1;
     EigsChunk *chunk = (EigsChunk *)fn->data.fn.body;

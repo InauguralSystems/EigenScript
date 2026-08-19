@@ -734,12 +734,43 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
         return result;
     }
     if (fn->type != VAL_FN) return make_null();
+    /* #989: over-arity here silently dropped the surplus — the same hole #974
+     * closed at CASE(CALL) and jit_helper_call, left open on the third path
+     * into a user function. `sort_by of [xs, key]` with a 2-param key and
+     * 3-wide elements bound two and discarded the third without a diagnostic.
+     * Same kind and same message as the VM sites, so a callback and a direct
+     * call are indistinguishable to the program. The arity-1 re-collect
+     * carve-out (param_count == 1 binds the whole list) is exempt, and
+     * under-arity is unchanged. */
+    if (fn->data.fn.param_count >= 2 && arg && arg->type == VAL_LIST &&
+        arg->data.list.count > fn->data.fn.param_count) {
+        rt_error(EK_VALUE, 0, "call passes %d arguments but the callee takes %d",
+                 arg->data.list.count, fn->data.fn.param_count);
+        return make_null();
+    }
     Env *call_env = env_new(fn->data.fn.closure);
-    if (fn->data.fn.param_count > 1 && arg && arg->type == VAL_LIST) {
-        for (int pi = 0; pi < fn->data.fn.param_count && pi < arg->data.list.count; pi++)
+    int pc = fn->data.fn.param_count;
+    if (pc > 1 && arg && arg->type == VAL_LIST) {
+        int n = arg->data.list.count;
+        for (int pi = 0; pi < pc && pi < n; pi++)
             env_set_local(call_env, fn->data.fn.params[pi], arg->data.list.items[pi]);
-    } else if (fn->data.fn.param_count == 1) {
+        /* Under-arity null-fill, matching the VM. Leaving the tail unbound
+         * is not the same thing: an unbound name resolves through the
+         * CLOSURE, so a 2-param key over 1-wide elements could silently read
+         * an outer variable of the same name instead of null. */
+        for (int pi = n; pi < pc; pi++)
+            env_set_local_owned(call_env, fn->data.fn.params[pi], make_null());
+    } else if (pc == 1) {
         env_set_local(call_env, fn->data.fn.params[0], arg);
+    } else if (pc > 1) {
+        /* #989: a NON-LIST element reaching a 2+-param callee used to bind
+         * NOTHING — every parameter read null, so `sort_by of [[3,1,2], keyfn]`
+         * with a 2-param key gave every element key 0 and returned the list
+         * UNSORTED, rc 0, no diagnostic. The oracle treats one scalar argument
+         * as a 1-argument call: first slot takes it, the rest null-fill. */
+        env_set_local(call_env, fn->data.fn.params[0], arg);
+        for (int pi = 1; pi < pc; pi++)
+            env_set_local_owned(call_env, fn->data.fn.params[pi], make_null());
     }
     /* param_count == 0: no params to bind */
     if (fn->data.fn.body_count == -1) {

@@ -699,6 +699,48 @@ value
 call passes 3 arguments but the callee takes 2
 ```
 
+This holds wherever a user function is *entered*, not only where it is
+written as a call. A function reached as a callback — `sort_by`'s key
+function, or the entry point of `spawn` / `task_spawn` — raises the same
+`value`-kind error with the same message, so a callback and a direct call
+are indistinguishable to the program. For `spawn` and `task_spawn` the
+error is raised at the spawn site, before the thread or task starts: the
+mismatch is known in advance, and an error raised inside a worker has no
+route back to the code that made it.
+
+The arity-1 carve-out travels with it. A 1-parameter callee re-collects
+the whole argument list at *every* entry point, so `spawn of [one, 5, 6]`
+binds `a = [5, 6]` exactly as `one of [5, 6]` does — it does not bind `5`
+and discard `6`. Under-arity null-fills on all of these paths.
+
+For `sort_by`'s key function specifically, a **list** element is the
+argument list (which is what lets a 2-parameter key destructure a record,
+and what makes over-arity on a 3-wide element an error), while a
+non-list element is a single argument: a 2-parameter key over `[3, 1, 2]`
+receives `a = 3, b = null`, the same binding `two of (3)` produces.
+
+Two limits worth stating rather than leaving to be discovered. Default
+parameter values do **not** fire on the `spawn` / `task_spawn` paths —
+`d of 1` on `define d(a, b is 3)` gives `[1, 3]`, but
+`spawn of [d, 1]` gives `[1, null]`. And a key function that raises
+propagates its own error; `sort_by` no longer reports "key function must
+return a number" on top of it.
+
+```eigenscript
+define two(a, b) as:
+    return a - b
+
+try:
+    print of (sort_by of [[[3, 1, 2]], two])
+catch e:
+    print of e.kind
+    print of e.message
+```
+```output
+value
+call passes 3 arguments but the callee takes 2
+```
+
 **Syntactic limits.** A function or lambda takes at most **16
 parameters**, a `match` at most **64 cases**, and a list literal at most
 **1024 elements**. Exceeding any of these is a parse error that names

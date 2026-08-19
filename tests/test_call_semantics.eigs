@@ -46,6 +46,108 @@ assert of [oa974_xkind == "value", "#974 cross-module error kind is value"]
 assert of [(one of [5, 6]) == [5, 6], "#974 arity-1 carve-out: whole list re-collects"]
 assert of [(len of [1, 2]) == 2, "#974 arity-1 carve-out: len of [1,2] still works"]
 
+# #989: #974 closed the hole at CASE(CALL) and jit_helper_call, but a user
+# function can also be entered from C — sort_by's key callback, spawn, and
+# task_spawn — and those three bound min(param_count, argc) and dropped the
+# surplus in silence. A callback must be indistinguishable from a direct
+# call here, so all three raise the same `value` error.
+oa989_hit is 0
+oa989_kind is ""
+oa989_msg is ""
+try:
+    oa989_r is (sort_by of [[[3, 1, 2], [0, 9, 9]], two])
+catch oa989_e:
+    oa989_hit is 1
+    oa989_kind is oa989_e.kind
+    oa989_msg is oa989_e.message
+assert of [oa989_hit == 1, "#989 sort_by key callback over-arity raises"]
+assert of [oa989_kind == "value", "#989 sort_by callback error kind is value"]
+assert of [(contains of [oa989_msg, "passes 3"]) == 1, "#989 callback message reports passed count"]
+assert of [(contains of [oa989_msg, "takes 2"]) == 1, "#989 callback message reports callee arity"]
+
+# The key function's own error must survive: sort_by used to inspect the
+# returned value and report "must return a number", burying the raise that
+# actually happened under a symptom of it.
+assert of [(contains of [oa989_msg, "must return a number"]) == 0, "#989 real error is not masked by sort_by's return-type check"]
+
+# Carve-out preserved through the callback path: a 1-param key still
+# re-collects the whole element, and a matched-arity key still sorts.
+define k989(e) as:
+    return (get_at of [e, 0])
+assert of [(sort_by of [[[3, 1, 2], [0, 9, 9]], k989]) == [[0, 9, 9], [3, 1, 2]], "#989 arity-1 key re-collects the whole element"]
+assert of [(sort_by of [[[3, 1], [0, 9]], two]) == [[0, 9], [3, 1]], "#989 matched-arity key still sorts"]
+
+# spawn / task_spawn raise at SPAWN time, not inside the worker: the
+# mismatch is known before the thread or task exists, and an error raised
+# on a spawned thread has no route back to the program that made it.
+oa989_sp is 0
+oa989_spkind is ""
+try:
+    oa989_h is (spawn of [two, 1, 2, 3])
+catch oa989_spe:
+    oa989_sp is 1
+    oa989_spkind is oa989_spe.kind
+assert of [oa989_sp == 1, "#989 spawn over-arity raises"]
+assert of [oa989_spkind == "value", "#989 spawn error kind is value"]
+
+oa989_ts is 0
+oa989_tskind is ""
+try:
+    oa989_t is (task_spawn of [two, 1, 2, 3])
+catch oa989_tse:
+    oa989_ts is 1
+    oa989_tskind is oa989_tse.kind
+assert of [oa989_ts == 1, "#989 task_spawn over-arity raises"]
+assert of [oa989_tskind == "value", "#989 task_spawn error kind is value"]
+
+# Matched arity still spawns and returns normally.
+oa989_okh is (spawn of [two, 10, 20])
+assert of [(thread_join of oa989_okh) == -10, "#989 matched-arity spawn still runs"]
+
+# #989 arity-1 through spawn/task_spawn RE-COLLECTS, it does not truncate.
+# This was the last place surplus arguments could still vanish in silence:
+# over-arity on 2+-param callees now raises, but a 1-param callee bound
+# args[0] and dropped the rest, where every other entry point binds the whole
+# list. The oracle is the direct call — `one of [5, 6]` gives `[5, 6]`.
+assert of [(one of [5, 6]) == [5, 6], "#989 oracle: direct arity-1 call re-collects"]
+oa989_r1 is (spawn of [one, 5, 6])
+assert of [(thread_join of oa989_r1) == [5, 6], "#989 spawn arity-1 re-collects (was: bound 5, dropped 6)"]
+oa989_r2 is (task_spawn of [one, 5, 6])
+assert of [(task_join of oa989_r2) == [5, 6], "#989 task_spawn arity-1 re-collects"]
+
+# The re-collect must not swallow the neighbouring shapes: under-arity still
+# null-fills, and one arg to a 1-param callee binds the scalar rather than a
+# 1-element list. (thread_join transfers the result, so each handle is joined
+# exactly once and the value held in a local.)
+define pair989(a, b) as:
+    return [a, b]
+oa989_u1 is (spawn of [pair989, 7])
+oa989_uv is (thread_join of oa989_u1)
+assert of [oa989_uv == [7, null], "#989 spawn under-arity still null-fills"]
+oa989_s1 is (spawn of [one, 9])
+oa989_sv is (thread_join of oa989_s1)
+assert of [oa989_sv == 9, "#989 spawn arity-1 with one arg binds the scalar"]
+oa989_m1 is (spawn of [pair989, 1, 2])
+oa989_mv is (thread_join of oa989_m1)
+assert of [oa989_mv == [1, 2], "#989 spawn matched arity binds per-slot"]
+
+# #989: a NON-LIST element reaching a 2+-param key bound NOTHING — every
+# parameter read null, so a 2-param key over scalar elements gave every
+# element key 0 and sort_by returned the list UNSORTED with rc 0 and no
+# diagnostic. The oracle treats one scalar as a 1-argument call.
+define k989b(v, unused) as:
+    if v == null:
+        return 0
+    return v
+assert of [(sort_by of [[3, 1, 2], k989b]) == [1, 2, 3], "#989 scalar element binds the first slot (was: all keys null -> unsorted)"]
+
+# A list element still SPREADS (that is what lets a 2-param key destructure
+# a record, and what makes over-arity on a 3-wide element an error), so the
+# scalar fix must not have collapsed the two cases into one.
+define k989c(a, b) as:
+    return b
+assert of [(sort_by of [[[9, 2], [9, 1]], k989c]) == [[9, 1], [9, 2]], "#989 list element still spreads across params"]
+
 # #405: a bare literal list after `of` is ALWAYS an argument list, at
 # every count — so [x] is ONE argument: x itself, never a 1-element list.
 assert of [(one of [7]) == 7, "1-element arg list passes the element"]  # lint: allow W017

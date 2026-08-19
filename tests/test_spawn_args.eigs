@@ -55,9 +55,24 @@ check of ["7b", thread_join of t, ["p", null, null]]
 t is spawn of ([show3])
 check of ["7c", thread_join of t, [null, null, null]]
 
-# 8. Overfill: extra args ignored.
-t is spawn of [double, 5, 999, 1000]
-check of ["8a", thread_join of t, 10]
+# 8. Overfill (#989). This used to read "extra args ignored" — `double` is
+# 1-parameter, so `spawn of [double, 5, 999, 1000]` bound x=5 and discarded
+# 999 and 1000 with no diagnostic. Every other entry into a user function
+# treats a 1-parameter callee as RE-COLLECTING the whole argument list
+# (`one of [5, 6]` binds `a = [5, 6]`), so spawn now does too. Over-arity on
+# a 2+-parameter callee raises at the spawn site instead; between them, no
+# argument passed to a spawned function can vanish silently any more.
+#
+# Same migration #974 made: the only caller in the corpus that relied on the
+# drop was this contract test.
+define collect989(x) as:
+    return x
+t is spawn of [collect989, 5, 999, 1000]
+check of ["8a", thread_join of t, [5, 999, 1000]]
+
+# 8b. …and the single-arg form still binds the scalar, not a 1-element list.
+t is spawn of [double, 5]
+check of ["8b", thread_join of t, 10]
 
 # 9. Heterogeneous arg types (number, string, list, dict, null).
 define show5(a, b, c, d, e) as:
