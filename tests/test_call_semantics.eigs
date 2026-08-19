@@ -11,7 +11,40 @@ define three(a, b, c) as:
 # Multi-param functions spread a list argument across parameters
 assert of [(two of [10, 3]) == 7, "2-param spreads list"]
 assert of [(three of [1, 2, 3]) == 6, "3-param spreads list"]
-assert of [(two of [10, 3, 99]) == 7, "extra list elements ignored"]
+
+# #974: over-arity on a callee with 2+ params RAISES a catchable `value`
+# error at the call site — the extra elements are no longer silently
+# dropped. (Lint W022 still fires at --lint time for same-file callees;
+# the runtime raise is the cross-module-robust half of the contract.)
+oa974_same is 0
+oa974_err is null
+try:
+    oa974_r is (two of [10, 3, 99])  # lint: allow W022
+catch oa974_e:
+    oa974_same is 1
+    oa974_err is oa974_e
+assert of [oa974_same == 1, "#974 same-module over-arity raises"]
+assert of [oa974_err.kind == "value", "#974 over-arity error kind is value"]
+assert of [(contains of [oa974_err.message, "passes 3"]) == 1, "#974 message reports passed count"]
+assert of [(contains of [oa974_err.message, "takes 2"]) == 1, "#974 message reports callee arity"]
+
+# #974 cross-module: W022 is same-file-only, so the runtime raise is the
+# only guard here (clamp is defined in lib/math.eigs and takes 3).
+import math
+oa974_x is 0
+oa974_xkind is ""
+try:
+    oa974_xr is (math.clamp of [15, 0, 10, 99])
+catch oa974_xe:
+    oa974_x is 1
+    oa974_xkind is oa974_xe.kind
+assert of [oa974_x == 1, "#974 cross-module over-arity raises (W022-blind)"]
+assert of [oa974_xkind == "value", "#974 cross-module error kind is value"]
+
+# #974 carve-out preserved: a 1-param callee still re-collects the whole
+# list, and 1-arg builtins keep taking the bare list whole.
+assert of [(one of [5, 6]) == [5, 6], "#974 arity-1 carve-out: whole list re-collects"]
+assert of [(len of [1, 2]) == 2, "#974 arity-1 carve-out: len of [1,2] still works"]
 
 # #405: a bare literal list after `of` is ALWAYS an argument list, at
 # every count — so [x] is ONE argument: x itself, never a 1-element list.
@@ -55,6 +88,43 @@ define mpd3(a, b, c is 1) as:
     return [a, b, c]
 assert of [(mpd3 of 5) == [5, null, 1], "underfed mid-call still fires trailing default"]
 assert of [(mpd3 of []) == [null, null, 1], "underfed empty still fires trailing default"]
+
+# #974: under-arity is NOT part of the raise contract — the null-fill and
+# default-fire behavior pinned above stays exactly as before.
+
+# #974 JIT binding path: jit_helper_call binds args out of line when a
+# compiled thunk calls a compiled callee — the raise must fire there
+# identically. Warm the callee past the from-zero entry threshold with
+# valid direct calls, then drive the trigger hot: its body is one
+# straight-line over-arity call (every op in it compiles), so once the
+# trigger crosses the entry threshold its thunk reaches the OP_CALL
+# natively and jit_helper_call does the binding. The callee body carries
+# a branch on purpose: `return a - b` alone is a LEAF ACCESSOR
+# (chunk_scan_leaf_accessor), and leaf accessors execute framelessly —
+# they never accumulate exec_count, so the callee would never compile and
+# the helper would bail to the interpreter (a JIT-only silent-drop mutant
+# stayed green until the branch made the callee compilable). Every call
+# must raise, whichever engine binds it.
+define oa974_callee(a, b) as:
+    if a > 1000000:
+        return 999
+    return a - b
+oa974_warm is 0
+loop while oa974_warm < 70:
+    oa974_t is oa974_callee of [oa974_warm, 1]
+    oa974_warm is oa974_warm + 1
+define oa974_trigger(x) as:
+    return oa974_callee of [1, 2, 99]  # lint: allow W022
+oa974_raised is 0
+oa974_w is 0
+loop while oa974_w < 70:
+    try:
+        oa974_t is oa974_trigger of oa974_w
+    catch oa974_je:
+        if oa974_je.kind == "value":
+            oa974_raised is oa974_raised + 1
+    oa974_w is oa974_w + 1
+assert of [oa974_raised == 70, "#974 over-arity raises on all 70 warm calls (interpreter + JIT tiers)"]
 
 # Assignment binds a reference: lists/dicts are shared, not copied
 a is [1, 2, 3]
