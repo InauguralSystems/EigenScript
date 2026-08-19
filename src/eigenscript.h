@@ -1032,6 +1032,20 @@ void free_value(Value *v);
  * would an FPU. */
 #define EIGS_MATH_OVERFLOW 1u   /* a value saturated at +/-EIGS_NUM_MAX */
 #define EIGS_MATH_INVALID  2u   /* a NaN was collapsed, or a domain clamp fired */
+#define EIGS_MATH_UNDERFLOW 4u  /* #971: a product/quotient of two NONZERO operands
+                                 * came back exactly 0. The result is a real IEEE
+                                 * zero, so nothing downstream can tell it from an
+                                 * exact one — 1e-300 * 1e-300 and 5 - 5 are the
+                                 * same bits. Only * and / raise it: reaching 0 by
+                                 * + or - is exact cancellation, not underflow, and
+                                 * flagging that would fire on ordinary arithmetic.
+                                 *
+                                 * NOTE it cannot live in num_guard(): by the time
+                                 * num_guard sees the result the operands are gone
+                                 * and the value is already 0.0, so the obvious
+                                 * `x != 0 && result == 0` test can never fire
+                                 * there. Detection has to sit where the operands
+                                 * are still live — the arithmetic dispatch. */
 
 static inline double num_guard(double x) {
     /* Fast path unchanged: the flag writes live only on the clamp branches,

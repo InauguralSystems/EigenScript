@@ -817,11 +817,13 @@ Value* builtin_classify(Value *arg) {
  */
 Value* builtin_math_flags(Value *arg) {
     (void)arg;
-    Value *d = make_dict(2);
+    Value *d = make_dict(3);
     Value *ov = make_num((g_math_flags & EIGS_MATH_OVERFLOW) ? 1 : 0);
     Value *iv = make_num((g_math_flags & EIGS_MATH_INVALID) ? 1 : 0);
+    Value *uv = make_num((g_math_flags & EIGS_MATH_UNDERFLOW) ? 1 : 0);
     dict_set_owned(d, "overflow", ov);
     dict_set_owned(d, "invalid", iv);
+    dict_set_owned(d, "underflow", uv);
     return d;
 }
 

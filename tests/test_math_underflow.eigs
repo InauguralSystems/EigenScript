@@ -1,0 +1,85 @@
+# #971 item 3 — underflow-to-zero is detectable.
+#
+# `1e-300 * 1e-300` is 0 and `5 - 5` is 0, bit for bit. Before this, nothing in
+# the language could tell them apart: the first is a magnitude that fell off the
+# bottom of the number line, the second is an exact result. The sticky math
+# flags already separate overflow and invalidity from real values; underflow was
+# the remaining silent collapse.
+#
+# ONLY `*` and `/` raise it. Reaching zero by `+`/`-` is exact cancellation and
+# flagging it would fire on ordinary arithmetic — the controls below pin that,
+# and they are the half that makes this file more than a smoke test.
+#
+# NOTE for anyone extending this: the check cannot live in num_guard(). By the
+# time num_guard sees the result the operands are gone and the value is already
+# 0.0, so the obvious `x != 0 && result == 0` test can never fire there.
+
+pass is 1
+
+define fail(msg) as:
+    pass is 0
+    print of ("FAIL: " + msg)
+    return 0
+
+define uf() as:
+    return (math_flags of null)["underflow"]
+
+# --- raises ------------------------------------------------------------------
+clear_math_flags of null
+a is 1e-300 * 1e-300
+if not (a == 0):
+    fail of "1e-300 * 1e-300 should be 0"
+if not (uf of null == 1):
+    fail of "multiplication underflow was not flagged"
+
+clear_math_flags of null
+b is 1e-300 / 1e300
+if not (uf of null == 1):
+    fail of "division underflow was not flagged"
+
+# --- controls: these must NOT raise -------------------------------------------
+clear_math_flags of null
+c is 5.0 - 5.0
+if not (uf of null == 0):
+    fail of "exact cancellation (5 - 5) was misreported as underflow"
+
+clear_math_flags of null
+d is 0.0 + 0.0
+if not (uf of null == 0):
+    fail of "adding zeros was misreported as underflow"
+
+clear_math_flags of null
+e is 3.0 * 0.0
+if not (uf of null == 0):
+    fail of "multiplying by a real zero was misreported as underflow"
+
+clear_math_flags of null
+f is 2.0 * 3.0
+if not (f == 6):
+    fail of "ordinary multiplication broke"
+if not (uf of null == 0):
+    fail of "ordinary multiplication raised underflow"
+
+# --- the flag is sticky and clearable, like its siblings ----------------------
+clear_math_flags of null
+g is 1e-300 * 1e-300
+h is 2.0 * 3.0
+if not (uf of null == 1):
+    fail of "underflow flag should stay set until cleared"
+clear_math_flags of null
+if not (uf of null == 0):
+    fail of "clear_math_flags did not clear underflow"
+
+# --- it is independent of the other two flags ---------------------------------
+clear_math_flags of null
+i is 1e-300 * 1e-300
+fl is math_flags of null
+if not (fl["overflow"] == 0):
+    fail of "underflow set the overflow flag"
+if not (fl["invalid"] == 0):
+    fail of "underflow set the invalid flag"
+
+if pass == 1:
+    print of "MATH_UNDERFLOW_ALL_PASS"
+else:
+    print of "SOME TESTS FAILED"

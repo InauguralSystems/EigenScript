@@ -3653,6 +3653,9 @@ check_eigs_suite "observer coherence (#412)" test_observer_coherence.eigs "All t
 # the canonical instability reported as maximal stability. Pins the refusal
 # AND that everything below the ceiling classifies exactly as before.
 check_eigs_suite "observer saturation ceiling (#861)" test_observer_saturation.eigs "OBSERVER_SATURATION_ALL_PASS" 1
+# #971 item 3: underflow-to-zero is flagged, and ONLY for * and / — reaching
+# zero by +/- is exact cancellation, which the file's controls pin.
+check_eigs_suite "math underflow flag (#971)" test_math_underflow.eigs "MATH_UNDERFLOW_ALL_PASS" 1
 
 # #861: the convergence predicates scored against an EXTERNAL oracle — 27
 # sequences whose behaviour is known analytically, no implementation
