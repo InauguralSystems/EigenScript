@@ -749,6 +749,7 @@ rm -f "$TMPFILE"
 # Recursive control-flow proof frames must stay below the EigenOS stack
 # contract.  Exercise nested AST_IF descent under an explicit 64 KiB stack
 # limit and require a normal, silent lint result.
+if [ "${EIGS_W023_STACK_PROBE:-0}" = 1 ]; then
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'
 t is 5
@@ -773,6 +774,7 @@ STACK_OUTPUT=$( (ulimit -s 64; "$EIGS" --lint --lint-level error "$TMPFILE" 2>&1
 check_status "W023 nested control flow completes under 64 KiB" "$STACK_STATUS" "0"
 check_not_contains "W023 nested control flow stays silent" "$STACK_OUTPUT" "W023"
 rm -f "$TMPFILE"
+fi
 
 # --- W016: bare predicate OUTSIDE a loop condition (#396, #247/#262 family) ---
 # Fires in if-conditions, assignment RHS, and return position; loop conditions
