@@ -3871,10 +3871,25 @@ static void *thread_entry(void *arg) {
         Env *call_env = env_new(fn->data.fn.closure);
         int bind_n = h->fn_arg_count;
         if (bind_n > fn->data.fn.param_count) bind_n = fn->data.fn.param_count;
-        for (int i = 0; i < bind_n; i++) {
+        /* #989: a 1-parameter callee RE-COLLECTS the whole argument list at
+         * every other entry point (`one of [5, 6]` binds `a = [5, 6]`), but
+         * here `bind_n = min(...)` bound 5 and dropped 6 with no diagnostic.
+         * Over-arity on 2+-param callees is refused at the spawn site, so
+         * this was the last place surplus arguments could still vanish
+         * silently. Re-collect instead of truncating, matching the oracle. */
+        int recollected = (fn->data.fn.param_count == 1 && h->fn_arg_count > 1);
+        if (recollected) {
+            Value *collected = make_list(h->fn_arg_count);
+            for (int i = 0; i < h->fn_arg_count; i++)
+                list_append(collected, h->fn_args[i]);
+            env_set_local_owned(call_env, fn->data.fn.params[0], collected);
+        }
+        for (int i = 0; !recollected && i < bind_n; i++) {
             env_set_local(call_env, fn->data.fn.params[i], h->fn_args[i]);
         }
-        for (int i = bind_n; i < fn->data.fn.param_count; i++) {
+        /* Under-arity null-fill — skipped when the single slot was
+         * re-collected above, or it would overwrite the collected list. */
+        for (int i = bind_n; !recollected && i < fn->data.fn.param_count; i++) {
             env_set_local_owned(call_env, fn->data.fn.params[i], make_null());
         }
         Value *result = make_null();
@@ -3974,6 +3989,22 @@ Value* builtin_spawn(Value *arg) {
             free(fn_args);
         }
         rt_error(EK_TYPE, 0, "spawn requires a function or [function, arg1, ...]");
+        return make_null();
+    }
+    /* #989: `spawn of [fn, 1, 2, 3]` onto a 2-param fn dropped the third arg
+     * inside thread_entry. Raise HERE, not in the worker: the mismatch is
+     * fully known before the thread exists, and an error raised on a spawned
+     * thread has no good way back to the spawning program — it would surface
+     * as a worker that quietly returned the wrong answer. Same kind and
+     * message as the direct call path; the arity-1 re-collect carve-out does
+     * not apply (spawn passes its args flat, never as one re-collected list). */
+    if (fn->type == VAL_FN && fn->data.fn.param_count >= 2 &&
+        fn_arg_count > fn->data.fn.param_count) {
+        int pc = fn->data.fn.param_count;
+        for (int i = 0; i < fn_arg_count; i++) val_decref(fn_args[i]);
+        free(fn_args);
+        rt_error(EK_VALUE, 0, "call passes %d arguments but the callee takes %d",
+                 fn_arg_count, pc);
         return make_null();
     }
     ThreadHandle *h = xmalloc(sizeof(ThreadHandle));
@@ -4369,6 +4400,19 @@ Value* builtin_task_spawn(Value *arg) {
             free(args);
         }
         rt_error(EK_TYPE, 0, "task_spawn requires a function or [function, arg1, ...]");
+        return make_null();
+    }
+    /* #989: same over-arity hole as spawn, on the cooperative-task path
+     * (task_start, vm.c). Raised here at spawn time for the same reason —
+     * the task has not started, so the error lands on the line that made
+     * the mistake instead of inside a scheduled task. */
+    if (fn->type == VAL_FN && fn->data.fn.param_count >= 2 &&
+        argc > fn->data.fn.param_count) {
+        int pc = fn->data.fn.param_count;
+        for (int i = 0; i < argc; i++) val_decref(args[i]);
+        free(args);
+        rt_error(EK_VALUE, 0, "call passes %d arguments but the callee takes %d",
+                 argc, pc);
         return make_null();
     }
     Task *t = xcalloc(1, sizeof(Task));
@@ -6035,6 +6079,14 @@ Value* builtin_sort_by(Value *arg) {
     if (!pairs) return make_null();
     for (int i = 0; i < n; i++) {
         Value *kv = call_eigs_fn(key_fn, list->data.list.items[i]);
+        /* #989: the key function itself raised (over-arity, or anything its
+         * body threw). Its error is the real one — reporting "must return a
+         * number" on top of it would bury the cause under a symptom. */
+        if (g_has_error) {
+            if (kv) val_decref(kv);
+            free(pairs);
+            return make_null();
+        }
         /* #501: a non-numeric key used to coerce to 0.0 — a silent wrong
          * order. Raise instead (mirrors `sort` #368). */
         if (!kv || kv->type != VAL_NUM) {

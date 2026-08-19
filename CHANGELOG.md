@@ -6,6 +6,69 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Over-arity through a *callback* now raises, closing the third entry point
+  into a user function (#989).** #974 made `two of [1, 2, 99]` raise at
+  `CASE(CALL)` and in `jit_helper_call`, but a user function can also be
+  entered from C, and those paths still bound `min(param_count, argc)` and
+  discarded the surplus in silence. The issue reported `sort_by`; the actual
+  population was three — `call_eigs_fn` (`sort_by`'s key function,
+  `must_not_yield`, the gradient helpers), `spawn`, and `task_spawn` — so a
+  2-parameter key over 3-wide elements sorted on a silently truncated key, and
+  `spawn of [fn, 1, 2, 3]` dropped the third argument inside the worker. All
+  three now raise the same catchable `value` error with the same message, so a
+  callback and a direct call are indistinguishable to the program. For `spawn`
+  and `task_spawn` the raise happens at the **spawn site**, not in the worker:
+  the mismatch is fully known before the thread or task exists, and an error
+  raised on a spawned thread has no route back to the program that made it.
+  A blind review of the first cut found the hole it had left, and closing it
+  is a **behavior change worth reading twice**: the over-arity guard exempts
+  arity-1 callees (correctly — they re-collect), but `thread_entry` and
+  `task_start` did not actually re-collect. They bound `args[0]` and dropped
+  the rest, a contract `tests/test_spawn_args.eigs` recorded as *"Overfill:
+  extra args ignored"*. So `spawn of [one, 5, 6]` returned `5` where
+  `one of [5, 6]` gives `[5, 6]`. Once over-arity raised on 2+-param callees,
+  that was the last place an argument passed to a spawned function could
+  vanish in silence. Both sites now **re-collect**, matching the oracle; the
+  only caller in the corpus relying on the drop was that contract test, which
+  is migrated in the same change — exactly the migration #974 made for the
+  same reason. Consumers pin releases, so this surfaces at the next bump.
+  `sort_by` additionally stopped masking the cause — it inspected the returned
+  value and reported "key function must return a number" *on top of* whatever
+  the key function had actually raised. The arity-1 re-collect carve-out is
+  preserved through the callback path (a 1-parameter key still receives the
+  whole element), and under-arity is unchanged.
+- **A child `.sh` test that dies no longer reports a passing section (#988).**
+  The suite's ~45 child scripts run as `FOO=$(bash "$TESTS_DIR/test_foo.sh")`,
+  and a command substitution keeps the child's stdout while **discarding its
+  exit status** — so the section's verdict came from `grep -c "FAIL:"` alone.
+  A child that printed two `PASS:` lines and then segfaulted reported a
+  passing section; a child that did not exist at all reported
+  `0/0 passed, 0 failed`, also a pass. Reproduced at exit 139, 127 and 1. This
+  is the same disease `rc_ok` fixed for `.eigs` programs ("marker-grep alone
+  used to let a crash *after* correct output pass"), left standing on the
+  `.sh` half. Fixed centrally rather than at 45 call sites — a `bash` wrapper
+  function emits a synthetic `FAIL:` line into the child's own captured output
+  (so every existing site's marker logic fails the section with no site edit)
+  and records the child in a ledger reported at `[99p]`. `tools/child_exit_check.sh`
+  is the drift gate (population floor, bypass-spelling check, 6 planted faults
+  + a clean control) and `tests/test_child_exit.sh` proves the mechanism
+  actually fails a section for each of the three modes. Measured on `main`
+  before the fix: all 50 child invocations exited 0, so this closed a latent
+  hazard rather than an active cover-up.
+- **The bench gate's Valgrind install can no longer burn the job cap and
+  report as a red gate (#987).** `sudo apt-get update && sudo apt-get install
+  -y valgrind` had no timeout, retry, or fallback; a stalled mirror hung until
+  the job's `timeout-minutes: 30` killed it. A timed-out job's conclusion is
+  `cancelled`, which `gh pr checks` renders as **fail** — so an instrument
+  that never ran presented identically to a detected regression, on the one
+  gate whose entire purpose is to answer "did this change cost instructions?".
+  Observed twice in a row on PR #985 while the other 17 checks passed. The
+  step now retries three times behind per-command timeouts under a 10-minute
+  step cap, verifies `valgrind --version` actually runs, and fails with an
+  explicit `SETUP FAILURE` message distinguishing it from a gate verdict. The
+  identical unguarded step in the `valgrind (memcheck smoke)` job — which the
+  issue did not mention — was fixed with it.
+
 - **`eigen_generate` now rides the trace tape, and the `randn` tensor fills
   draw from the seedable stream (#960).** Sampled generation carried no
   `TRACE_NONDET` record, so a program generating at temperature > 0 could not

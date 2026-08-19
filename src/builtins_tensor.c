@@ -734,6 +734,20 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
         return result;
     }
     if (fn->type != VAL_FN) return make_null();
+    /* #989: over-arity here silently dropped the surplus — the same hole #974
+     * closed at CASE(CALL) and jit_helper_call, left open on the third path
+     * into a user function. `sort_by of [xs, key]` with a 2-param key and
+     * 3-wide elements bound two and discarded the third without a diagnostic.
+     * Same kind and same message as the VM sites, so a callback and a direct
+     * call are indistinguishable to the program. The arity-1 re-collect
+     * carve-out (param_count == 1 binds the whole list) is exempt, and
+     * under-arity is unchanged. */
+    if (fn->data.fn.param_count >= 2 && arg && arg->type == VAL_LIST &&
+        arg->data.list.count > fn->data.fn.param_count) {
+        rt_error(EK_VALUE, 0, "call passes %d arguments but the callee takes %d",
+                 arg->data.list.count, fn->data.fn.param_count);
+        return make_null();
+    }
     Env *call_env = env_new(fn->data.fn.closure);
     if (fn->data.fn.param_count > 1 && arg && arg->type == VAL_LIST) {
         for (int pi = 0; pi < fn->data.fn.param_count && pi < arg->data.list.count; pi++)
