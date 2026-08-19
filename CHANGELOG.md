@@ -92,6 +92,16 @@ All notable changes to EigenScript are documented here.
   saturation→`diverging` path; making that channel loud is separate follow-up
   work). First cut of the "finish the fail-soft→loud reform" ledger.
 
+### Fixed
+- **A long `elif` chain no longer exhausts the parser's C stack (#926).** Each
+  arm desugars to a nested `if` by recursing in `parse_statement`, so the
+  parser now charges the shared depth budget before descending and drains the
+  unread tail when that bound is reached. Chains that cross the shared budget
+  now receive a bounded parse diagnostic (including `--lint`) instead of a
+  stack crash or noisy cascade; the deliberate arm-depth charge also means
+  the diagnostic changes from the compiler-depth error to a parse-depth error
+  from around the 253-arm boundary.
+
 ## [0.40.0] - 2026-08-17
 
 ### Fixed
