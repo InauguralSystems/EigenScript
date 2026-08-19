@@ -50,3 +50,9 @@ build/
 src/lsp_stdlib_index.h
 src/lsp_builtin_index.h
 src/eigsdap
+
+# Python bytecode caches. tests/test_doc_examples.py is IMPORTED (not just
+# run) by its own --selftest and by ad-hoc probes, which regenerates these; one
+# was committed that way in #998.
+__pycache__/
+*.pyc
