@@ -776,7 +776,19 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
     if (fn->data.fn.body_count == -1) {
         /* Bytecode function */
         EigsChunk *chunk = (EigsChunk *)fn->data.fn.body;
-        Value *result = vm_execute(chunk, call_env);
+        /* #997: how many slots the callback actually supplied — a list
+         * element spreads, anything else is a single argument, and a
+         * 1-parameter callee re-collects into one slot. Without this the
+         * frame claims every slot was supplied and the callee's defaults
+         * never fire. */
+        int supplied = 0;
+        if (pc > 1 && arg && arg->type == VAL_LIST) {
+            supplied = arg->data.list.count;
+            if (supplied > pc) supplied = pc;
+        } else if (pc >= 1 && arg) {
+            supplied = 1;
+        }
+        Value *result = vm_execute_argc(chunk, call_env, supplied);
         env_decref(call_env);
         return result ? result : make_null();
     }

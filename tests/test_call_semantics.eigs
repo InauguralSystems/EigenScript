@@ -131,6 +131,63 @@ oa989_m1 is (spawn of [pair989, 1, 2])
 oa989_mv is (thread_join of oa989_m1)
 assert of [oa989_mv == [1, 2], "#989 spawn matched arity binds per-slot"]
 
+# #997: default parameter values must fire wherever a function is ENTERED,
+# not only at a language-level call site. Every non-call entry went through a
+# frame that claimed `call_argc = param_count` — all slots supplied — so the
+# callee's OP_DEFAULT_PARAM prologue skipped every time and a defaulted
+# parameter silently arrived as null inside a worker or a callback.
+define d997(a, b is 3) as:
+    return [a, b]
+assert of [(d997 of 1) == [1, 3], "#997 oracle: direct call fires the default"]
+d997_h is (spawn of [d997, 1])
+assert of [(thread_join of d997_h) == [1, 3], "#997 spawn fires the default (was [1, null])"]
+d997_t is (task_spawn of [d997, 1])
+assert of [(task_join of d997_t) == [1, 3], "#997 task_spawn fires the default (was [1, null])"]
+
+# The dangerous direction: an argc that is too LOW would fire the default
+# OVER an explicit argument, which is worse than the bug being closed.
+d997_h2 is (spawn of [d997, 1, 9])
+assert of [(thread_join of d997_h2) == [1, 9], "#997 explicit arg is not overwritten by the default"]
+d997_t2 is (task_spawn of [d997, 1, 9])
+assert of [(task_join of d997_t2) == [1, 9], "#997 task_spawn explicit arg survives"]
+
+# #997 dispatch has TWO implementations that must agree: the compiled
+# OP_DISPATCH (chosen for a literal argument list) and builtin_dispatch (the
+# C fallback, chosen for a variable argument list — and also whenever the
+# compilation unit merely MENTIONS eval, per #459). The fallback fed
+# call_argc = param_count, so `dispatch of argv` gave [1, null] where the
+# literal form and a direct `d of 1` both give [1, 3]: an unrelated `eval`
+# reference elsewhere in the file silently changed parameter binding.
+define d997d(a, b is 3) as:
+    return [a, b]
+define m997d(a, b is 2, c is 5) as:
+    return [a, b, c]
+tbl997 is [d997d, m997d]
+argv997 is [tbl997, 0, 1]
+argv997m is [tbl997, 1, 1]
+assert of [(d997d of 1) == [1, 3], "#997 oracle: direct call fires the default"]
+assert of [(dispatch of [tbl997, 0, 1]) == [1, 3], "#997 compiled OP_DISPATCH fires the default"]
+assert of [(dispatch of argv997) == [1, 3], "#997 builtin_dispatch fallback fires the default (was [1, null])"]
+assert of [(dispatch of argv997m) == [1, 2, 5], "#997 fallback fires ALL trailing defaults"]
+
+# Resume must NOT re-fire defaults over live values. The task resume path
+# passes call_argc=0, which is only safe because it jumps straight to the
+# resume dispatch and restores the frame it saved — it never reaches
+# callframe_init. If that ever changes, a suspended task's mutated defaulted
+# parameter would be silently reset on resume.
+define w997(a, b is 99) as:
+    b is 7
+    task_yield of null
+    return [a, b]
+d997_r is (task_spawn of [w997, 1])
+assert of [(task_join of d997_r) == [1, 7], "#997 resume does not re-fire defaults over a mutated parameter"]
+
+# …and through the sort_by callback, where the element decides the arity.
+define k997(v, scale is 10) as:
+    return v * scale
+assert of [(sort_by of [[3, 1, 2], k997]) == [1, 2, 3], "#997 callback fires the default on scalar elements"]
+assert of [(sort_by of [[[3, 2], [1, 5]], k997]) == [[1, 5], [3, 2]], "#997 callback uses the explicit second element, not the default"]
+
 # #989: a NON-LIST element reaching a 2+-param key bound NOTHING — every
 # parameter read null, so a 2-param key over scalar elements gave every
 # element key 0 and sort_by returned the list UNSORTED with rc 0 and no

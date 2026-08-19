@@ -2660,7 +2660,8 @@ static void task_apply_recv_result(Task *t);   /* fill a recv placeholder on res
  * suspended #408 task — restore its copying-stack slice onto the (empty) VM
  * and continue from the innermost frame's saved ip, instead of pushing a
  * fresh base frame. vm_run() is the ordinary fresh-entry wrapper. */
-static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
+static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
+                        int call_argc) {
     int base_frame;
     CallFrame *frame;
     uint8_t *ip;
@@ -2701,7 +2702,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume) {
      * as caller-supplied so OP_DEFAULT_PARAM doesn't re-fire defaults
      * over them — and so a stale value left by a prior frame at this
      * depth can't clobber explicit args. */
-    callframe_init(frame, chunk, env, NULL, 0, chunk->param_count);
+    callframe_init(frame, chunk, env, NULL, 0, call_argc);
     /* #297: JIT hotness bookkeeping is shared per-chunk state and feeds JIT
      * compilation, which is gated off under MT (#296). Skip it while
      * multithreaded — pointless work, and the bare ++ / registry write race
@@ -6121,8 +6122,8 @@ vm_suspend_halt:
 }
 
 /* Ordinary fresh-entry wrapper — the common path for every non-task call. */
-static Value *vm_run(EigsChunk *chunk, Env *env) {
-    return vm_run_ex(chunk, env, NULL);
+static Value *vm_run(EigsChunk *chunk, Env *env, int call_argc) {
+    return vm_run_ex(chunk, env, NULL, call_argc);
 }
 
 /* ---- Public API ---- */
@@ -6611,7 +6612,13 @@ static Value *task_start(Task *t) {
     t->run_env = call_env;                  /* Task owns it; base frame borrows */
     t->started = 1;
     EigsChunk *chunk = (EigsChunk *)fn->data.fn.body;
-    return vm_run_ex(chunk, call_env, NULL);
+    /* #997: pass the REAL argc. vm_run_ex's default of chunk->param_count
+     * marks every slot as caller-supplied, so every OP_DEFAULT_PARAM in the
+     * callee's prologue skipped and a defaulted parameter silently arrived as
+     * null — `d of 1` gives [1, 3] but `task_spawn of [d, 1]` gave [1, null].
+     * A re-collected single slot counts as one supplied argument. */
+    int supplied = (fn->data.fn.param_count == 1 && t->argc > 1) ? 1 : t->argc;
+    return vm_run_ex(chunk, call_env, NULL, supplied);
 }
 
 /* Record a task that just finished (returned or errored) and wake any joiner
@@ -6796,7 +6803,7 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
         if (t->state == TASK_SUSPENDED) {
             /* Resume (the join placeholder, if any, is filled inside the
              * resume path via task_apply_join_result). */
-            r = vm_run_ex(NULL, NULL, t);
+            r = vm_run_ex(NULL, NULL, t, 0);   /* resume: frame already exists */
         } else {
             r = task_start(t);   /* never-run task: bind args + run at base 0 */
         }
@@ -6826,14 +6833,32 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
     return r ? r : make_null();
 }
 
+static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc);
+
+/* #997: same as vm_execute, but the caller states how many parameter slots it
+ * actually supplied. vm_execute assumes ALL of them — correct for module-level
+ * code and handler entries, which bind every slot — but wrong for spawn /
+ * task_spawn / a builtin callback, where an under-arity entry must still let
+ * the callee's OP_DEFAULT_PARAM prologue fire. Passing param_count from those
+ * paths is what made `spawn of [d, 1]` bind b = null where `d of 1` binds
+ * b = 3. Never pass an argc that is too LOW: a default would then fire OVER an
+ * explicit argument, which is worse than the bug this closes. */
+Value *vm_execute_argc(EigsChunk *chunk, Env *env, int call_argc) {
+    return vm_execute_common(chunk, env, call_argc);
+}
+
 Value *vm_execute(EigsChunk *chunk, Env *env) {
+    return vm_execute_common(chunk, env, chunk->param_count);
+}
+
+static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
     vm_init();
     /* Only the OUTERMOST vm_execute drives the scheduler; a nested call
      * (eval/dispatch/import/comparator) runs to completion on the C stack and
      * may not suspend (enforced at CASE(CALL) via base_frame). frame_count==0
      * identifies the outermost. */
     int outermost = (g_vm.frame_count == 0);
-    Value *r = vm_run(chunk, env);
+    Value *r = vm_run(chunk, env, call_argc);
     if (!outermost) return r;
     TaskScheduler *s = sched_get();
     if (!s || !s->active) return r;

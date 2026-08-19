@@ -719,12 +719,13 @@ and what makes over-arity on a 3-wide element an error), while a
 non-list element is a single argument: a 2-parameter key over `[3, 1, 2]`
 receives `a = 3, b = null`, the same binding `two of (3)` produces.
 
-Two limits worth stating rather than leaving to be discovered. Default
-parameter values do **not** fire on the `spawn` / `task_spawn` paths —
-`d of 1` on `define d(a, b is 3)` gives `[1, 3]`, but
-`spawn of [d, 1]` gives `[1, null]`. And a key function that raises
-propagates its own error; `sort_by` no longer reports "key function must
-return a number" on top of it.
+Default parameter values fire on all of these paths too: `d of 1` on
+`define d(a, b is 3)` gives `[1, 3]`, and so do `spawn of [d, 1]`,
+`task_spawn of [d, 1]`, and a `sort_by` key reached with one element. An
+explicitly supplied argument always wins over a default, on every path.
+
+A key function that raises propagates its own error; `sort_by` does not
+report "key function must return a number" on top of it.
 
 ```eigenscript
 define two(a, b) as:

@@ -679,6 +679,12 @@ int sandbox_charge(size_t bytes);
 
 /* VM execution */
 Value     *vm_execute(EigsChunk *chunk, Env *env);
+/* #997: vm_execute with an explicit caller-supplied argument count, so an
+ * under-arity entry from spawn / task_spawn / a builtin callback still lets
+ * the callee's default-parameter prologue fire. vm_execute passes
+ * chunk->param_count (every slot supplied), which is right for module-level
+ * and handler entries and wrong for those three. */
+Value     *vm_execute_argc(EigsChunk *chunk, Env *env, int call_argc);
 
 /* Phase 5: free the per-thread VM struct. Called by eigs_thread_detach
  * so the heap-allocated VM (~1MB) doesn't leak. Safe on a thread whose

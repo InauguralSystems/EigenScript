@@ -3899,7 +3899,12 @@ static void *thread_entry(void *arg) {
             EigsChunk *fn_chunk = (EigsChunk *)fn->data.fn.body;
             if (fn_chunk->local_count > fn->data.fn.param_count)
                 env_reserve_slots(call_env, fn_chunk->local_count);
-            result = vm_execute(fn_chunk, call_env);
+            /* #997: state the REAL argc so an under-arity spawn still fires
+             * the callee's defaults — `spawn of [d, 1]` on
+             * `define d(a, b is 3)` bound b = null where `d of 1` binds 3.
+             * A re-collected single slot counts as one supplied argument. */
+            int supplied = recollected ? 1 : h->fn_arg_count;
+            result = vm_execute_argc(fn_chunk, call_env, supplied);
         } else {
             /* AST-based function — should not happen after bytecode migration */
             result = make_null();
@@ -6202,16 +6207,36 @@ Value* builtin_dispatch(Value *arg) {
     }
 
     if (fn->type == VAL_FN) {
+        int dpc = fn->data.fn.param_count;
         Env *call_env = env_new(fn->data.fn.closure);
-        if (fn->data.fn.param_count > 0) {
+        if (dpc > 0) {
             env_set_local(call_env, fn->data.fn.params[0], fn_arg);
         }
         if (fn->data.fn.body_count == -1) {
             /* Bytecode function */
             EigsChunk *fn_chunk = (EigsChunk *)fn->data.fn.body;
-            if (fn_chunk->local_count > fn->data.fn.param_count)
+            /* #997: mirror CASE(DISPATCH) (vm.c). This C fallback fed
+             * call_argc = param_count, so the callee's OP_DEFAULT_PARAM
+             * prologue never fired and `dispatch of argv` gave [1, null]
+             * where the compiled OP_DISPATCH form of the SAME call, and a
+             * direct `d of 1`, both give [1, 3]. The two forms are chosen by
+             * a compiler guard that falls back here whenever the unit merely
+             * MENTIONS eval (#459), so an unrelated eval reference silently
+             * changed parameter binding.
+             *
+             * CASE(DISPATCH) additionally null-fills slots [1, param_count)
+             * before running the prologue. That is NOT needed here and is
+             * deliberately omitted: this path enters through vm_run_ex, whose
+             * first act is `if (chunk->local_count > env->count)
+             * env_reserve_slots(...)`, so the slots exist by the time
+             * OP_DEFAULT_PARAM writes them. CASE(DISPATCH) is a mid-execution
+             * frame push and gets no such entry reserve, which is why it
+             * carries its own fill. Verified by removing the fill here: all
+             * repros still pass (mechanical-gates §42 — a mutation that
+             * survives may mean redundant, so prove which and delete it). */
+            if (fn_chunk->local_count > dpc)
                 env_reserve_slots(call_env, fn_chunk->local_count);
-            Value *result = vm_execute(fn_chunk, call_env);
+            Value *result = vm_execute_argc(fn_chunk, call_env, dpc > 0 ? 1 : 0);
             env_decref(call_env);
             return result ? result : make_null();
         }

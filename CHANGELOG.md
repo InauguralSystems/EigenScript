@@ -6,6 +6,32 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Default parameter values now fire wherever a function is ENTERED, not only
+  at a call site (#997).** Defaults are not applied by the caller — they are
+  bytecode in the callee's own prologue (`OP_DEFAULT_PARAM`), and the VM skips
+  a slot's default exactly when `slot < frame->call_argc`. Every non-call entry
+  built its frame with `call_argc = chunk->param_count`, i.e. "every slot was
+  supplied", so no default could ever fire on those paths: `d of 1` on
+  `define d(a, b is 3)` gives `[1, 3]`, but `spawn of [d, 1]` gave `[1, null]`,
+  and so did `task_spawn` and a `sort_by` key reached with one element. A
+  defaulted parameter silently arrived as `null` inside a worker — the body saw
+  a value it was written never to see, with nothing raised.
+  All FOUR non-call entries into a bytecode function now state the argc they
+  actually supplied (`vm_execute_argc`), with a re-collected single slot
+  counting as one argument. The fourth — `builtin_dispatch`, the C fallback
+  for `dispatch` — was missed on the first cut and found by enumerating the
+  entry set mechanically (`grep -rn "body_count == -1" src/*.c`) rather than
+  from memory. It matters more than its name suggests: the compiler picks
+  between the compiled `OP_DISPATCH` and this fallback, and falls back
+  whenever the compilation unit merely MENTIONS `eval` (#459), so an
+  unrelated `eval` reference elsewhere in a file silently changed parameter
+  binding — `dispatch of argv` gave `[1, null]` where the literal form and a
+  direct `d of 1` both gave `[1, 3]`. The opposite error is worse than the bug and is tested for
+  explicitly: an argc that is too LOW would fire a default *over* an explicit
+  argument, so `spawn of [d, 1, 9]` binding `[1, 9]` is pinned alongside.
+  `vm_execute` keeps its old contract for module-level and handler entries,
+  which genuinely do bind every slot.
+
 - **The doc-example gate could not see indented or blockquoted fences, so those
   examples were silently unchecked (#946).** The fence pattern matched only at
   column zero, and the closing scan used `startswith("```")` — so a fenced
