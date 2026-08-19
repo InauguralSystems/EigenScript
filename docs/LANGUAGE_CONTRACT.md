@@ -244,14 +244,22 @@ callee's parameters in order:
   So `one of [7]` binds `a = 7`.
 - `f of [a, b]` — **two** arguments. So `momentum of [2, 3]` passes
   `m = 2, v = 3`.
-- Extra elements are ignored; parameters with no matching element take
-  their default, else `null`.
+- **Extra elements raise (#974):** on a callee with 2+ parameters, passing
+  more elements than it has parameters is a runtime error, not a silent
+  truncation — `two of [1, 2, 99]` against `define two(a, b)` raises a
+  catchable `value`-kind error at the call site (`call passes 3 arguments
+  but the callee takes 2`), in the interpreter and the JIT alike, and
+  across module boundaries. Lint `W022` flags the same-file case earlier,
+  at `--lint` time.
+- Parameters with no matching element take their default, else `null`.
+  Under-arity stays silent; #974 changed the over-arity half only.
 - **Arity-1 carve-out:** the elements-bind-in-order rule above assumes
   a callee with 2+ parameters. A 1-parameter, non-defaulted callee has
-  only one slot, so a 2+-element list doesn't distribute into it (and
-  doesn't just bind the first element, discarding the rest per "extra
-  elements are ignored") — the whole list re-collects and binds to
-  that one parameter: for `define one(a)`, `one of [3, 4]` binds
+  only one slot, so a 2+-element list doesn't distribute into it — and it
+  neither raises nor binds just the first element, because the over-arity
+  rule above is scoped to callees with 2+ parameters. The whole list
+  re-collects and binds to that one parameter: for `define one(a)`,
+  `one of [3, 4]` binds
   `a = [3, 4]`, not `a = 3`. This is what keeps `len of [1, 2]`
   returning `2` and `print of [1, 2]` printing the list. The `f of []`
   half of this same exception — an empty list still binds `a = []`
