@@ -390,17 +390,27 @@ fi
 #    removed rather than left in as decoration.
 #
 #    CERT_FLOOR: "python certified at least one" is not a floor either — the
-#    implication is nearly vacuous at 1. It is pinned, for a reason worth
-#    knowing: is_lsan_only_failure() requires an "Objects leaked above:" block
-#    in every leak block, which compiler-rt emits ONLY under
-#    LSAN_OPTIONS=report_objects=1. CI runs ASAN_OPTIONS=detect_leaks=1 without
-#    it, so the Python side rejects ordinary real leak reports and can certify
-#    only the two fixtures below. That is a defect in the Python classifier, not
-#    in this corpus — filed as #980; until it is fixed the reference oracle is
-#    weak here and the floor pins exactly how weak. Raise CERT_FLOOR when #980
-#    lands: the two captured fixtures below are its regression pair.
-#      certified today: leak/bare-marker.txt (single-line form)
+#    implication is nearly vacuous at 1. It is pinned so the reference oracle
+#    cannot quietly go blind.
+#
+#    History worth keeping: this floor sat at 2 because is_lsan_only_failure()
+#    REQUIRED an "Objects leaked above:" block, which compiler-rt emits only
+#    under LSAN_OPTIONS=report_objects=1 — not what CI sets — so it rejected
+#    ordinary real leak reports (#980). Fixed: that section is now optional, and
+#    the floor rose 2 -> 3 as a result. A floor that moves DOWN is a regression
+#    in the oracle, not a number to adjust.
+#      certified today: leak/bare-marker.txt              (single-line form)
+#                       leak/real-asan-leak-only.txt      (default options — #980)
 #                       leak/real-asan-leak-report-objects.txt (report_objects=1)
+#    Most remaining leak/ fixtures interleave the program's own stdout, which
+#    the whole-stderr Python parser correctly declines to certify — that is the
+#    difference in question the implication exists to accommodate, not a gap.
+#    One exception, stated rather than glossed: leak/issue-968-asan-leak-summary.txt
+#    is entirely sanitizer-emitted yet uncertified, because it is the abbreviated
+#    two-line form from #968's bug report (no leading separator, no ==pid==
+#    prefix) rather than a captured report. The shell classifier accepts it on
+#    purpose — it is the shape the issue documents — and the Python walk requires
+#    a full report. Not a defect in either; do not "fix" it by loosening the walk.
 # ---------------------------------------------------------------------------
 echo "[lsan-classify] differential vs tests/test_doc_examples.py"
 if command -v python3 >/dev/null 2>&1; then
@@ -449,7 +459,7 @@ for line in verdicts.read_text().splitlines():
             print("VIOLATION %s python=leak-only shell=%s" % (rel, shell))
             violations += 1
 
-CERT_FLOOR = 2
+CERT_FLOOR = 3
 if examined == 0:
     print("VACUOUS: no fixtures examined")
     sys.exit(2)
