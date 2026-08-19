@@ -3,7 +3,7 @@
 #
 # The enum comments in src/vm.h are an ABI-facing description of the bytecode
 # stream.  This gate derives the truth for every `kind` operand from the VM's
-# uint16_t/read_u16 decoder sites and checks that each opcode is also present in
+# uintN_t/read_uN/advance decoder sites and checks that each opcode is also present in
 # chunk.c's shared VR_RAW verifier table.  It therefore does not keep a second
 # hand-written width list that could drift with the production code.
 #
@@ -19,8 +19,8 @@ VM_HEADER="${VM_HEADER:-src/vm.h}"
 VM_SOURCE="${VM_SOURCE:-src/vm.c}"
 CHUNK_SOURCE="${CHUNK_SOURCE:-src/chunk.c}"
 
-# Emit `OP_NAME bits` for every CASE whose handler reads a uint<bits> kind.
-# The type and width come from the production decoder expression itself.
+# Emit `OP_NAME type_bits read_bits advance_bytes` for every CASE whose handler
+# reads a kind.  All three widths come from the production decoder expression.
 decoder_kind_widths() {
     awk '
         /CASE\([A-Z0-9_]+\)/ {
@@ -29,10 +29,10 @@ decoder_kind_widths() {
             sub(/\).*/, "", op)
         }
         /uint[0-9]+_t[[:space:]]+kind[[:space:]]*=[[:space:]]*read_u[0-9]+[[:space:]]*\(ip\)/ {
-            type = $0
-            sub(/^.*uint/, "", type)
-            sub(/_t.*/, "", type)
-            if (op != "") print "OP_" op, type
+            type = $0; sub(/^.*uint/, "", type); sub(/_t.*/, "", type)
+            read = $0; sub(/^.*read_u/, "", read); sub(/\(.*/, "", read)
+            advance = $0; sub(/^.*ip[[:space:]]*\+=[[:space:]]*/, "", advance); sub(/[^0-9].*/, "", advance)
+            if (op != "") print "OP_" op, type, read, advance
         }
     ' "$VM_SOURCE"
 }
@@ -75,8 +75,8 @@ check_tree() {
         echo "GATE ERROR: no uintN_t/read_uN kind decoder evidence found in $VM_SOURCE"
         return 1
     fi
-    if [ -z "$raw" ]; then
-        echo "GATE ERROR: no VR_RAW verifier evidence found in $CHUNK_SOURCE"
+    if [ -z "$raw" ] || ! sed -n '/static int op_verify_operands/,/\/\* ---- Stack-height model/p' "$CHUNK_SOURCE" | grep -qE '2[[:space:]]*\*[[:space:]]*nops' || ! sed -n '/void chunk_disassemble/,/\/\* ---- Bytecode verifier/p' "$CHUNK_SOURCE" | grep -qE 'i[[:space:]]*\+= 2'; then
+        echo "GATE ERROR: no VR_RAW/u16-stride verifier evidence found in $CHUNK_SOURCE"
         return 1
     fi
     if [ -z "$comments" ]; then
@@ -117,8 +117,12 @@ EOF
 $comments
 EOF
 
-    while read -r op expected; do
+    while read -r op expected read_bits advance_bytes; do
         [ -n "$op" ] || continue
+        if [ "$expected" != "$read_bits" ] || [ "$read_bits" != "$((advance_bytes * 8))" ]; then
+            echo "ASSERTION FAILED: $op decoder shape disagrees: uint${expected}_t/read_u${read_bits}/ip advance ${advance_bytes} bytes"
+            drift=1
+        fi
         got=""
         while read -r comment_op comment_bits; do
             if [ "$comment_op" = "$op" ]; then
