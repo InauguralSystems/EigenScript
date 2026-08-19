@@ -654,6 +654,80 @@ assert_eq of [fn_const_error, "invalid chunk descriptor",
               "sandbox descriptor: function constant reports invalid descriptor"]
 remove_file of descriptor_fixture
 
+# --- #965 (fix7): the pool walk is bounded by NODES, and it recurses --------
+# Both fixtures above put their callable at index 0 of the pool, i.e. depth 0,
+# so the VAL_LIST/VAL_DICT arms of sandbox_descriptor_constant_safe were never
+# exercised: dropping the child walk left both green while re-opening the very
+# escape the check exists to close. A callable one level down is reachable by
+# OP_CONST + an index, so the recursive contract is load-bearing.
+list_nest_desc is [ABI, [CONST,1,0, RETURN], [[7, [descriptor_const_fn]], 0]]
+sr_list_nest is sandbox_run of [list_nest_desc, 100000, 1000000]
+assert_eq of [sr_list_nest["ok"], 0,
+              "sandbox descriptor: callable nested in a list constant is rejected"]
+list_nest_msg is ""
+if sr_list_nest["ok"] == 0:
+    list_nest_msg is sr_list_nest["error"]["message"]
+assert_eq of [list_nest_msg, "invalid chunk descriptor",
+              "sandbox descriptor: nested list callable reports invalid descriptor"]
+dict_nest_desc is [ABI, [CONST,1,0, RETURN],
+                   [{"a": 1, "f": descriptor_const_fn}, 0]]
+sr_dict_nest is sandbox_run of [dict_nest_desc, 100000, 1000000]
+assert_eq of [sr_dict_nest["ok"], 0,
+              "sandbox descriptor: callable nested in a dict value is rejected"]
+dict_nest_msg is ""
+if sr_dict_nest["ok"] == 0:
+    dict_nest_msg is sr_dict_nest["error"]["message"]
+assert_eq of [dict_nest_msg, "invalid chunk descriptor",
+              "sandbox descriptor: nested dict callable reports invalid descriptor"]
+
+# A depth cap alone does not bound the walk. An ALIASED all-data DAG has no
+# callable, so nothing short-circuits and every PATH is explored: fan-out 10
+# over six rebindings is seven heap lists but 2,111,111 visits, at depth 6 —
+# nowhere near the depth cap. This runs inside vm_build_chunk_desc, BEFORE the
+# loop cap and the byte budget are armed, so neither bounds it. The sibling
+# result scan (sandbox_value_has_callable) already spends a NODE budget for
+# exactly this reason. Property: verification cost is bounded, and a pool that
+# cannot be walked within the bound is refused rather than trusted.
+dag_over is [1]
+for i in range of 6:
+    dag_over is [dag_over, dag_over, dag_over, dag_over, dag_over,
+                 dag_over, dag_over, dag_over, dag_over, dag_over]
+# The DAG is a CONSTANT and never the result: returning it would let the result
+# scan's own node budget refuse the run, and this assertion would then pass
+# without the descriptor pool ever having been bounded.
+dag_over_desc is [ABI, [CONST,1,0, RETURN], [dag_over, 0]]
+sr_dag_over is sandbox_run of [dag_over_desc, 100000, 1000000]
+assert_eq of [sr_dag_over["ok"], 0,
+              "sandbox descriptor: aliased data DAG past the node budget is refused"]
+dag_over_msg is ""
+if sr_dag_over["ok"] == 0:
+    dag_over_msg is sr_dag_over["error"]["message"]
+assert_eq of [dag_over_msg, "invalid chunk descriptor",
+              "sandbox descriptor: node-budget exhaustion fails closed"]
+
+# CONTROL: the same shape two rebindings shallower is 21,111 visits — inside
+# the bound — so ordinary safe data still verifies and still runs. Without this
+# row a bound of zero would satisfy every assertion above.
+dag_under is [1]
+for i in range of 4:
+    dag_under is [dag_under, dag_under, dag_under, dag_under, dag_under,
+                  dag_under, dag_under, dag_under, dag_under, dag_under]
+dag_under_desc is [ABI, [CONST,1,0, RETURN], [dag_under, 0]]
+assert_eq of [(sandbox_run of [dag_under_desc, 100000, 1000000])["ok"], 1,
+              "sandbox descriptor: aliased data DAG inside the node budget still verifies"]
+
+# The bound is spent across the WHOLE pool, not per constant: eight aliases of
+# the control DAG are 168,888 visits together and 21,111 apiece, so a budget
+# that resets per entry accepts this pool and a shared one refuses it.
+dag_pool is []
+for i in range of 8:
+    append of [dag_pool, dag_under]
+append of [dag_pool, 0]
+dag_pool_desc is [ABI, [CONST,8,0, RETURN], dag_pool]
+sr_dag_pool is sandbox_run of [dag_pool_desc, 100000, 1000000]
+assert_eq of [sr_dag_pool["ok"], 0,
+              "sandbox descriptor: node budget is shared across the whole constant pool"]
+
 # --- #965 (fix2): raw VM slices charge each newly retained allocation -------
 # OP_SLICE_GET is reachable in an assembled sandbox chunk even though it is
 # not a builtin. Reuse one 1000-byte input, retain each fresh 1000-byte slice,
