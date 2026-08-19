@@ -635,6 +635,137 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "W023 fires on sibling-branch outer mutation" "$OUTPUT" "warning\[W023\]: 't'"
 rm -f "$TMPFILE"
 
+# Binding identity is exact: a local `x` in one arm does not justify a bare
+# `t` in its sibling.  The runtime still mutates module t, but W023 must stay
+# silent because the proof names differ.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+t is 5
+define f(flag) as:
+    if flag == 1:
+        local x is 1
+    else:
+        t is 2
+    return t
+print of ("different-name return is " + (str of (f of 0)))
+print of ("different-name module t is " + (str of t))
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "W023 different-name runtime mutates t" "$RUN" "different-name module t is 2"
+OUTPUT=$($EIGS --lint --lint-level error "$TMPFILE" 2>&1) && LINT_STATUS=0 || LINT_STATUS=$?
+check_status "W023 silent for different-name siblings" "$LINT_STATUS" "0"
+check_not_contains "W023 exact proof-name identity" "$OUTPUT" "W023"
+rm -f "$TMPFILE"
+
+# A complete proof nested under another control-flow node must still fire.
+# This is deliberately outward at runtime (5 -> 2), unlike the dominating
+# local nested case above; a walker that skips all nested live diagnostics
+# must fail the warning assertion here.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+t is 5
+define f(flag) as:
+    if flag == 0:
+        if flag == 1:
+            local t is 1
+        else:
+            t is 2
+    else:
+        print of "skip"
+    return t
+print of ("nested live return is " + (str of (f of 0)))
+print of ("nested live module t is " + (str of t))
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "W023 nested live runtime mutates t" "$RUN" "nested live module t is 2"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1) && LINT_STATUS=0 || LINT_STATUS=$?
+check_status "W023 nested live lint returns a warning result" "$LINT_STATUS" "1"
+check_contains "W023 fires for nested live mutation" "$OUTPUT" "warning\[W023\]: 't'"
+rm -f "$TMPFILE"
+
+# Allocation failure is injected at the real branch/count growth boundary.
+# The hook arms after W023's 2,048-byte branch vector succeeds and fails the
+# immediately following 1,024-byte count vector.  RED must be the linter
+# survival/suppression assertion; a current abort is the defect, never the
+# expected pass condition.  Linux release runners only: LD_PRELOAD is not a
+# portable macOS mechanism, and sanitizer allocators own their interposition.
+if [ "$(uname -s)" = Linux ] && command -v cc >/dev/null 2>&1 \
+    && ! ldd "$EIGS" 2>/dev/null | grep -q 'libasan\|libclang_rt.asan'; then
+    ALLOC_SRC=$(mktemp /tmp/w023_alloc_fail_XXXXXX.c)
+    ALLOC_SO=$(mktemp /tmp/w023_alloc_fail_XXXXXX.so)
+    cat > "$ALLOC_SRC" << 'C'
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <stddef.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+static void *(*real_realloc_fn)(void *, size_t);
+static __thread int resolving;
+static int armed;
+static int failed;
+
+static void resolve_realloc(void) {
+    if (real_realloc_fn) return;
+    resolving = 1;
+    real_realloc_fn = (void *(*)(void *, size_t))dlsym(RTLD_NEXT, "realloc");
+    resolving = 0;
+}
+
+void *realloc(void *ptr, size_t size) {
+    void *result;
+    resolve_realloc();
+    if (!real_realloc_fn) _exit(125);
+    if (!resolving && size == 2048) {
+        result = real_realloc_fn(ptr, size);
+        if (result) armed = 1;
+        return result;
+    }
+    if (!resolving && armed) {
+        armed = 0;
+        if (!failed && size == 1024) {
+            failed = 1;
+            write(STDERR_FILENO, "W023_ALLOC_HOOK_FAILED\n", 24);
+            return NULL;
+        }
+    }
+    return real_realloc_fn(ptr, size);
+}
+C
+    if cc -shared -fPIC -O2 -Wall -Wextra -Werror -o "$ALLOC_SO" "$ALLOC_SRC" -ldl; then
+        TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+        cat > "$TMPFILE" << 'EIGS'
+t is 5
+define f(flag) as:
+    if flag == 0:
+        local t is 1
+EIGS
+        i=1
+        while [ "$i" -lt 128 ]; do
+            printf '    elif flag == %s:\n        t is 2\n' "$i" >> "$TMPFILE"
+            i=$((i + 1))
+        done
+        cat >> "$TMPFILE" << 'EIGS'
+    else:
+        t is 2
+    return t
+EIGS
+        set +e
+        OUTPUT=$(LD_PRELOAD="$ALLOC_SO" "$EIGS" --lint --lint-level error "$TMPFILE" 2>&1)
+        LINT_STATUS=$?
+        set -e
+        check_status "W023 allocation failure linter survives" "$LINT_STATUS" "0"
+        check_contains "W023 allocation hook reached the second leg" "$OUTPUT" "W023_ALLOC_HOOK_FAILED"
+        check_not_contains "W023 allocation failure suppresses warning" "$OUTPUT" "W023]:"
+        rm -f "$TMPFILE"
+    else
+        echo "  FAIL: W023 allocation-failure helper did not compile (not RED evidence)"
+        FAIL=$((FAIL + 1))
+        TOTAL=$((TOTAL + 1))
+    fi
+    rm -f "$ALLOC_SRC" "$ALLOC_SO"
+fi
+
 # Deliberate fail-safe false negative: an enclosing catch binder may own the
 # name, so the nested function's genuine module mutation remains unreported.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
