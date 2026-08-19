@@ -757,7 +757,7 @@ define f(flag) as:
 EIGS
 indent='    '
 i=0
-while [ "$i" -lt 8 ]; do
+while [ "$i" -lt 2 ]; do
     printf '%sif 1 == 1:\n' "$indent" >> "$TMPFILE"
     indent="${indent}    "
     i=$((i + 1))
