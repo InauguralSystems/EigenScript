@@ -1,0 +1,2 @@
+checking that the guard rejects LeakSanitizer: detected memory leaks reports
+All tests passed

@@ -1,0 +1,5 @@
+==4242==WARNING: ThreadSanitizer: data race (pid=4242)
+  Write of size 8 at 0x7b0400000000 by thread T2:
+    #0 handle_release src/vm.c:77 (eigenscript+0x4f1a2)
+  Previous read of size 8 at 0x7b0400000000 by thread T1:
+    #0 handle_acquire src/vm.c:61 (eigenscript+0x4f0c1)

@@ -1,0 +1,2 @@
+ERROR: LeakSanitizer: detected memory leaks
+SUMMARY: AddressSanitizer: double-free src/vm.c:41:3 in value_free

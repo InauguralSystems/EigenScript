@@ -1,0 +1,12 @@
+
+=================================================================
+==1338973==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 32 byte(s) in 1 object(s) allocated from:
+    #0 0x7171542fd9c7 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x5d70c18a419e in main /tmp/claude-1000/-home-jon-src/b9e74a5c-fa6a-4d66-ad0b-c6df0b53573a/scratchpad/leak.c:2
+    #2 0x717153e2a1c9 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:58
+    #3 0x717153e2a28a in __libc_start_main_impl ../csu/libc-start.c:360
+    #4 0x5d70c18a40c4 in _start (/tmp/claude-1000/-home-jon-src/b9e74a5c-fa6a-4d66-ad0b-c6df0b53573a/scratchpad/leak_bin+0x10c4) (BuildId: d413f565eadfd508acc5ee39fe58a25e880321c1)
+
+SUMMARY: AddressSanitizer: 32 byte(s) leaked in 1 allocation(s).

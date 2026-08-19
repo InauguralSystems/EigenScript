@@ -1,0 +1,1 @@
+==4242==SUMMARY: AddressSanitizer: double-free src/vm.c:41:3 in value_free

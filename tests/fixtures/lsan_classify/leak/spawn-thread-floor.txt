@@ -1,0 +1,3 @@
+spawn: 4 threads joined
+==777==ERROR: LeakSanitizer: detected memory leaks
+SUMMARY: AddressSanitizer: 4096 byte(s) leaked in 64 allocation(s).

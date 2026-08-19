@@ -1,0 +1,2 @@
+ubk.c:4:20: runtime error: shift exponent 33 is too large for 32-bit type 'int'
+ubk.c:5:23: runtime error: division by zero

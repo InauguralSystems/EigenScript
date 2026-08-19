@@ -1,0 +1,3 @@
+WARNING: ThreadSanitizer: data race (pid=4242)
+  Write of size 8 at 0x7b0400000000 by thread T2:
+SUMMARY: ThreadSanitizer: data race src/vm.c:77 in handle_release

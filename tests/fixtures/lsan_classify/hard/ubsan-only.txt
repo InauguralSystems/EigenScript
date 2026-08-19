@@ -1,0 +1,2 @@
+src/vm.c:1204:19: runtime error: signed integer overflow: 9223372036854775807 + 1
+SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior src/vm.c:1204:19

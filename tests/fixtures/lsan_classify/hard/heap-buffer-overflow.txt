@@ -1,0 +1,2 @@
+==321==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x60300000fff0
+SUMMARY: AddressSanitizer: heap-buffer-overflow src/lex.c:204:12 in scan_ident
