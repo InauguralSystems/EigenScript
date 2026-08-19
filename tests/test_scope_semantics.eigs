@@ -16,19 +16,26 @@ for i in [10, 20, 30]:
     total is total + i
 assert of [total == 60, "SS2 for-loop mutation of outer var"]
 
-# --- New variable in for-loop is local, not visible outside ---
+# --- SS3 (#959): a new variable first bound in a for body ESCAPES ---
+# This asserted the opposite until #959. It was never a scoping rule — the
+# old comment here said so itself ("EigenScript's env_set creates in the
+# local scope if not found in parents ... So loop_local is gone"), which
+# describes the mechanism rather than an intent. And the mechanism was not
+# even consistent: measured across all six combinations, a module-level for
+# body was the ONLY one that did not escape.
+#
+#            module level    inside a function
+#   if       escapes         escapes
+#   while    escapes         escapes
+#   for      DID NOT         escapes
+#
+# `is` is documented as outward-mutable, with `local` as the opt-in for an
+# inner binding, so the five agreeing cells were right and the sixth was the
+# create-path using the per-iteration loop env. The one caller in the corpus
+# standing on the old behaviour was this test.
 for i in [1]:
     loop_local is 99
-
-# loop_local should not exist in outer scope — but EigenScript's
-# env_set creates in the local scope if not found in parents.
-# After the loop, the loop env is freed. So loop_local is gone.
-caught_local is 0
-try:
-    x is loop_local
-catch e:
-    caught_local is 1
-assert of [caught_local == 1, "SS3 loop-local variable is not visible outside"]
+assert of [loop_local == 99, "SS3 a for-body first-binding escapes, like every other block form (#959)"]
 
 # === FUNCTION SCOPE ===
 
@@ -250,5 +257,51 @@ define comp_body_fresh as:
     return [j642 * 2 for j642 in [1, 2, 3]]
 fresh642 is comp_body_fresh of null
 assert of [fresh642[2] == 6, "SS21 a comprehension with a fresh loop var is unaffected"]
+
+# SS22 (#959): `is` is outward-mutable at EVERY block form. A name first
+# bound inside a top-level `for` body used to be created in the per-iteration
+# loop env and died with the iteration, making `for` the only block form whose
+# first-bindings do not escape — `if` and `loop while` create no env, so
+# theirs always landed in the enclosing scope. That is not a scoping rule, it
+# is the create-path using the starting env; `local` remains the opt-in for a
+# genuinely inner binding. ouroboros carried a passing parity program on this
+# and had to demote it to a must-reject canary when it changed under a pin.
+for q959 in [1, 2]:
+    acc959 is q959
+assert of [acc959 == 2, "SS22 a first-binding in a for body escapes the loop (#959)"]
+
+# The three block forms must agree — that agreement is the actual contract.
+if 1 == 1:
+    if959 is 7
+i959 is 0
+loop while i959 < 2:
+    wh959 is i959
+    i959 is i959 + 1
+assert of [if959 == 7, "SS22 if-body first-binding escapes (unchanged)"]
+assert of [wh959 == 1, "SS22 loop-while-body first-binding escapes (unchanged)"]
+
+# Nested loops reach the enclosing scope, exactly as nested if-blocks do.
+for a959 in [1]:
+    for b959 in [5]:
+        deep959 is a959 + b959
+assert of [deep959 == 6, "SS22 nested for bodies reach the enclosing scope"]
+
+# `local` is untouched: it is a different opcode and stays loop-local.
+loc959 is 0
+for k959 in [1, 2]:
+    local only959 is k959
+try:
+    junk959 is only959
+catch e959:
+    loc959 is 1
+assert of [loc959 == 1, "SS22 `local` in a for body is still loop-local"]
+
+# The loop VARIABLE itself is unchanged — it does not escape either.
+lv959 is 0
+try:
+    junk2959 is q959
+catch e2959:
+    lv959 is 1
+assert of [lv959 == 1, "SS22 the loop variable still does not escape"]
 
 print of "scope semantics: all passed"

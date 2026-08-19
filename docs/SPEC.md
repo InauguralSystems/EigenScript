@@ -120,9 +120,14 @@ builtin
 ## Variables and assignment
 
 Assignment uses `is`. It is outward-mutable: if the name exists in an
-enclosing scope, that binding is updated; otherwise a new local binding
-is created. `local name is expr` forces the binding into the current
-scope even when an outer scope has the same name.
+enclosing scope, that binding is updated; otherwise a new binding is
+created in the enclosing scope. `local name is expr` forces the binding
+into the current scope even when an outer scope has the same name.
+
+This holds at **every** block form. A name first bound inside an `if`
+body, a `loop while` body or a `for` body is visible after the block, in
+exactly the same way, whether the block is at module level or inside a
+function — `local` is the only way to confine a binding to the block.
 
 ```eigenscript
 x is 42
