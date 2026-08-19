@@ -64,7 +64,7 @@ eigenscript --version
 
 ## The Language
 
-```eigenscript
+```eigenscript check
 # Variables
 x is 42
 name is "hello"
@@ -109,22 +109,61 @@ try:
 catch e:
     print of f"Error: {e}"
 ```
+```output
+7
+Hello hello, x is 42
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+5
+positive
+Alice
+15
+Error: {"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41}
+```
 
 ### Ask Your Code
 
 Every value quietly remembers how it has been changing — and you don't pay
 for it until you ask. Six questions, in plain English:
 
-```eigenscript
+At the REPL, where an interrogative displays its answer:
+
+```
+$ eigenscript
+eigs> signal is 10
+eigs> signal is 14
+eigs> signal is 15
+
+eigs> what is signal     => 15        — the value now
+eigs> who is signal      => signal    — the name you gave it
+eigs> when is signal     => 3         — how many times it has been set
+eigs> where is signal    => 0.337…    — how much information it carries
+eigs> why is signal      => -0.016…   — how fast that information is changing
+```
+
+In a script an interrogative is an expression, so use it where a value
+goes — `print of (what is signal)`, `if (when is signal) > 2:`. A bare
+`what is signal` as a statement is refused, because its answer would be
+discarded:
+
+```eigenscript check
 signal is 10
 signal is 14
 signal is 15
-
-what is signal     # 15        — the value now
-who is signal      # "signal"  — the name you gave it
-when is signal     # 3         — how many times it has been set
-where is signal    # ~0.34     — how much information it carries
-why is signal      # ~-0.016   — how fast that information is changing
+print of (what is signal)
+print of (when is signal)
+```
+```output
+15
+3
 ```
 
 (`how` is the sixth interrogative; see the observer guide for its current

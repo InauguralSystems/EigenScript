@@ -6,6 +6,26 @@ All notable changes to EigenScript are documented here.
 
 ### Documentation
 
+- **The README's observer showcase did not compile (#949).** The example the
+  language is arguably *about* — the five interrogatives on a `signal` — was
+  written as bare statements, which the compiler refuses: an interrogative's
+  result would be discarded, so `what is signal` as a statement raises
+  *"'what is ...' is an interrogative, not an assignment"*. A reader copying
+  it into a `.eigs` file got four compile errors and no hint why. It was not
+  wrong syntax — it was a **REPL session**, where a bare interrogative
+  displays its answer, and nothing said so.
+  Every value it claimed is correct (verified: `15`, `signal`, `3`,
+  `0.3372900666170139`, `-0.016069268404407477`), so the fix is presentation:
+  it now shows the REPL transcript it actually is, and is followed by a
+  **checked** script-form example using `print of (what is signal)`, with a
+  sentence on why the bare form is refused in a script.
+  The opening tour example is now checked too. The README goes from **1
+  checked example to 3**, and the doc gate from 82 to 84 — the block that had
+  been broken was one of the seven the gate could not see, which is the
+  coverage half of #946.
+
+### Documentation
+
 - **`sandbox_run`'s `max_iterations` is bounded by TWO counters with different
   scopes, and the doc described only one (#948).** `docs/BUILTINS.md` said
   "Loops are capped at `max_iterations`", which reads as a per-loop cap. Since
