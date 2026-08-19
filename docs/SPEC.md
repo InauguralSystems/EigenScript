@@ -674,6 +674,31 @@ num
 [10, 20]
 ```
 
+**Over-arity raises.** The spread is exact: passing **more** arguments
+than the callee's parameter count is a runtime error, not a silent
+truncation. With `define two(a, b)`, `two of [1, 2, 99]` raises a
+catchable `value`-kind error naming both counts — at the call site, in
+the interpreter and the JIT alike, and across module boundaries. (Lint
+`W022` still catches the same-file case earlier, at `--lint` time.) The
+zero/one-parameter callees above are exempt by design. Under-arity is
+unchanged and deliberately silent for now: missing parameters bind
+`null` (or fire their default), no error.
+
+```eigenscript
+define two(a, b) as:
+    return a - b
+
+try:
+    print of (two of [1, 2, 99])
+catch e:
+    print of e.kind
+    print of e.message
+```
+```output
+value
+call passes 3 arguments but the callee takes 2
+```
+
 **Syntactic limits.** A function or lambda takes at most **16
 parameters**, a `match` at most **64 cases**, and a list literal at most
 **1024 elements**. Exceeding any of these is a parse error that names

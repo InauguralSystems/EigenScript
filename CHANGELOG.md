@@ -67,6 +67,19 @@ All notable changes to EigenScript are documented here.
   a host-rebound allowed name gets the blocked stub instead of aliasing host
   state inward. Ordinary descriptors, including ones carrying nested function
   chunks and data constants, are unaffected.
+- **Over-arity calls on multi-parameter functions now raise instead of
+  silently dropping the extra arguments (#974).** With `define two(a, b)`,
+  `two of [1, 2, 99]` used to bind `a = 1, b = 2` and discard `99` with no
+  diagnostic at any stage — and lint `W022` only sees same-file callees, so
+  the cross-module case had no guard at all. The call site now raises a
+  catchable `value` error (`call passes 3 arguments but the callee takes 2`)
+  in the interpreter and the JIT alike (`src/vm.c`), which is cross-file
+  robust where W022 is structurally blind. The arity-1 re-collect carve-out
+  is preserved (`one of [5, 6]` still binds the whole list, keeping
+  `len of [1, 2]` and friends working), and under-arity still null-fills
+  silently — making that loud is deferred follow-up work, not part of this
+  change. The one corpus caller relying on the drop was the contract test
+  itself (`tests/test_call_semantics.eigs`), migrated in the same change.
 - **Division and modulo by zero now raise instead of yielding `0`.** `5 / 0`
   printed an uncatchable `stderr` warning and pushed `0`; `5 % 0` was fully
   silent and pushed `0` — a wrong *number* that flowed on indistinguishable
