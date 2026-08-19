@@ -65,17 +65,18 @@ header_kind_widths() {
 }
 
 check_tree() {
-    local decoder raw comments missing width op bits expected got drift
+    local decoder raw comments missing width op bits expected got drift verifier_stride
     drift=0
     decoder=$(decoder_kind_widths)
     raw=$(verifier_raw_ops)
     comments=$(header_kind_widths)
+    verifier_stride=$(sed -nE 's/^[[:space:]]*int end = i[[:space:]]*\+[[:space:]]*1[[:space:]]*\+[[:space:]]*([0-9]+)[[:space:]]*\*[[:space:]]*nops.*/\1/p' "$CHUNK_SOURCE" | awk 'NF { print; exit }')
 
     if [ -z "$decoder" ]; then
         echo "GATE ERROR: no uintN_t/read_uN kind decoder evidence found in $VM_SOURCE"
         return 1
     fi
-    if [ -z "$raw" ] || ! grep -qE 'int end = i[[:space:]]*\+[[:space:]]*1[[:space:]]*\+[[:space:]]*2[[:space:]]*\*[[:space:]]*nops' "$CHUNK_SOURCE" || ! sed -n '/void chunk_disassemble/,/\/\* ---- Bytecode verifier/p' "$CHUNK_SOURCE" | grep -qE 'i[[:space:]]*\+= 2'; then
+    if [ -z "$raw" ] || [ -z "$verifier_stride" ] || ! sed -n '/void chunk_disassemble/,/\/\* ---- Bytecode verifier/p' "$CHUNK_SOURCE" | grep -qE 'i[[:space:]]*\+= 2'; then
         echo "GATE ERROR: no VR_RAW/u16-stride verifier evidence found in $CHUNK_SOURCE"
         return 1
     fi
@@ -119,8 +120,8 @@ EOF
 
     while read -r op expected read_bits advance_bytes; do
         [ -n "$op" ] || continue
-        if [ "$expected" != "$read_bits" ] || [ "$read_bits" != "$((advance_bytes * 8))" ]; then
-            echo "ASSERTION FAILED: $op decoder shape disagrees: uint${expected}_t/read_u${read_bits}/ip advance ${advance_bytes} bytes"
+        if [ "$expected" != "$read_bits" ] || [ "$read_bits" != "$((advance_bytes * 8))" ] || [ "$advance_bytes" != "$verifier_stride" ]; then
+            echo "ASSERTION FAILED: $op decoder shape disagrees: uint${expected}_t/read_u${read_bits}/ip advance ${advance_bytes} bytes, verifier stride ${verifier_stride} bytes"
             drift=1
         fi
         got=""
