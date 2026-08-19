@@ -22,10 +22,12 @@
   carve-out is what makes `len of [1, 2]` return `2` and
   `reverse of [1, 2, 3]` reverse the list — but it means you cannot predict
   a binding from the call site alone; you need the callee's arity.
-- **Over-arity is SILENT** on 2+-parameter callees: with `define two(a, b)`,
-  `two of [1, 2, 99]` drops `99` with no error at any stage (lint `W022`
-  catches it when the callee is defined in the same file). Under-arity
-  null-fills, also silently.
+- **Over-arity RAISES** on 2+-parameter callees: with `define two(a, b)`,
+  `two of [1, 2, 99]` is a catchable `value`-kind error at the call site
+  (`call passes 3 arguments but the callee takes 2`), in the interpreter
+  and the JIT alike, and across module boundaries — lint `W022` still
+  catches the same-file case earlier, at `--lint` time. Under-arity
+  null-fills, silently — unchanged by #974 (raising there is deferred).
 - **Parentheses always mean exactly one argument**: `f of ([a, b])` passes the
   literal 2-element list as one argument (the escape hatch), and `f of (x)`
   is an unambiguous single argument.

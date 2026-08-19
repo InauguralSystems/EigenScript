@@ -2240,6 +2240,25 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         /* Frame push — CASE(CALL)'s VAL_FN path verbatim, including
          * the Stage 5i recycled-env fast path. */
         int param_count = fn_val->data.fn.param_count;
+        /* #974: over-arity on a multi-param callee silently dropped the
+         * surplus stack args; raise a catchable value-kind error instead.
+         * The arity-1 re-collect carve-out (param_count == 1 binds the
+         * whole list) is deliberate and exempt; under-arity null-fill is
+         * unchanged. Mirrors the raise in CASE(CALL) — same kind, same
+         * message. The stack is left as if the call completed (null
+         * result) and the caller's ip is fixed to resume_off, then the
+         * deep-bail code hands the pending error to CHECK_ERROR. */
+        if (param_count >= 2 && argc > param_count) {
+            rt_error(EK_VALUE, g_vm.current_line,
+                     "call passes %d arguments but the callee takes %d",
+                     argc, param_count);
+            for (int i = 0; i < argc; i++)
+                slot_decref(g_vm.stack[--g_vm.sp]);
+            slot_decref(g_vm.stack[--g_vm.sp]); /* fn */
+            vm_push(make_null());
+            g_vm.frames[caller_idx].ip = caller_chunk->code + resume_off;
+            return 2;
+        }
         Env *call_env = vm_take_call_env(fn_chunk,
                                          fn_val->data.fn.closure,
                                          param_count, argc);
@@ -3797,6 +3816,25 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * Push new frame and continue dispatch loop. */
             EigsChunk *fn_chunk = (EigsChunk *)fn_val->data.fn.body;
             int param_count = fn_val->data.fn.param_count;
+            /* #974: over-arity on a multi-param callee silently dropped
+             * the surplus stack args (bound = min(param_count, argc)
+             * below); raise a catchable value-kind error instead. The
+             * arity-1 re-collect carve-out (param_count == 1 binds the
+             * whole list) is deliberate and exempt; under-arity null-fill
+             * is unchanged. Mirrors the raise in jit_helper_call — same
+             * kind, same message. Stack cleanup matches the "cannot call"
+             * path below: pop args + fn, push a null placeholder, and let
+             * DISPATCH's CHECK_ERROR unwind. */
+            if (param_count >= 2 && (int)argc > param_count) {
+                rt_error(EK_VALUE, current_line,
+                         "call passes %d arguments but the callee takes %d",
+                         (int)argc, param_count);
+                for (int i = 0; i < argc; i++)
+                    slot_decref(g_vm.stack[--g_vm.sp]);
+                slot_decref(g_vm.stack[--g_vm.sp]); /* fn */
+                vm_push(make_null());
+                DISPATCH();
+            }
             /* #366: frameless leaf-accessor fast path. Bail (0) falls
              * through to the generic call with the stack untouched. */
             if (fn_chunk->leaf_accessor && (int)argc == param_count &&
