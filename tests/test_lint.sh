@@ -732,7 +732,7 @@ void *realloc(void *ptr, size_t size) {
     return real_realloc_fn(ptr, size);
 }
 C
-    if cc -shared -fPIC -O2 -Wall -Wextra -Werror -o "$ALLOC_SO" "$ALLOC_SRC" -ldl; then
+    if cc -shared -fPIC -O2 -Wall -Wextra -Werror -Werror=switch -o "$ALLOC_SO" "$ALLOC_SRC" -ldl; then
         TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
         cat > "$TMPFILE" << 'EIGS'
 t is 5
