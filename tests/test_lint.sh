@@ -700,7 +700,7 @@ define f(flag) as:
         local t is 1
 EIGS
 i=1
-while [ "$i" -lt 63 ]; do
+while [ "$i" -lt 64 ]; do
     printf '    elif flag == %s:\n        t is 2\n' "$i" >> "$TMPFILE"
     i=$((i + 1))
 done
