@@ -98,9 +98,16 @@ assert of [(mpd3 of []) == [null, null, 1], "underfed empty still fires trailing
 # valid direct calls, then drive the trigger hot: its body is one
 # straight-line over-arity call (every op in it compiles), so once the
 # trigger crosses the entry threshold its thunk reaches the OP_CALL
-# natively and jit_helper_call does the binding. Every call must raise,
-# whichever engine binds it.
+# natively and jit_helper_call does the binding. The callee body carries
+# a branch on purpose: `return a - b` alone is a LEAF ACCESSOR
+# (chunk_scan_leaf_accessor), and leaf accessors execute framelessly —
+# they never accumulate exec_count, so the callee would never compile and
+# the helper would bail to the interpreter (a JIT-only silent-drop mutant
+# stayed green until the branch made the callee compilable). Every call
+# must raise, whichever engine binds it.
 define oa974_callee(a, b) as:
+    if a > 1000000:
+        return 999
     return a - b
 oa974_warm is 0
 loop while oa974_warm < 70:
