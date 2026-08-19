@@ -255,7 +255,17 @@ bash() {
             case "$CHILD_NO_MARKERS" in
                 *" $__base "*) return 0 ;;
             esac
-            if ! printf '%s\n' "$__out" | grep -q -E '(PASS|FAIL):'; then
+            # SKIP: counts as reporting. The disease #988 is about is
+            # SILENCE — a child that ran nothing and said nothing, whose
+            # section then printed "all 0 checks" as a pass. A child that
+            # prints `SKIP:` has honestly declined to measure, which is
+            # visible to the reader and is the suite's established
+            # convention for an unavailable tool. Bought in CI (PR #996):
+            # test_temporal_memory.sh skips without GNU `time -f`, without
+            # /proc, and on sanitizer builds — all three exist on the dev
+            # box, so the local run never took those paths and four lanes
+            # went red on a child doing exactly what it was designed to do.
+            if ! printf '%s\n' "$__out" | grep -q -E '(PASS|FAIL|SKIP):'; then
                 echo "  FAIL: $__base exited 0 but reported no checks at all — a section cannot pass on zero checks (#988)"
                 printf '%s\t%s\n' "vacuous" "$__what" >> "$CHILD_LEDGER"
                 return 1
@@ -4923,7 +4933,7 @@ echo ""
 # echo, and both halves here can shrink without a source edit.
 echo "[99o] child-script exit-status accounting (#988)"
 TOTAL=$((TOTAL + 1))
-CEXIT_EXPECTED=16
+CEXIT_EXPECTED=17
 CEXIT_OUT=$(bash "$TESTS_DIR/test_child_exit.sh" 2>&1); CEXIT_RC=$?
 CEXIT_COUNT=$(printf '%s\n' "$CEXIT_OUT" | sed -n 's/^RESULTS: \([0-9]*\)\/\([0-9]*\) passed.*/\2/p')
 if bash "$TESTS_DIR/../tools/child_exit_check.sh" >/dev/null \
@@ -4956,9 +4966,16 @@ if [ "$CHILD_BAD_COUNT" -eq 0 ]; then
     echo "  PASS: every child .sh test ran to completion (0 nonzero exits)"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: $CHILD_BAD_COUNT child .sh invocation(s) exited nonzero:"
+    echo "  FAIL: $CHILD_BAD_COUNT child .sh invocation(s) did not produce a trustworthy result:"
+    # A vacuous row is NOT a nonzero exit — the child exited 0 and measured
+    # nothing. Reporting it under "exited nonzero" sends the reader looking
+    # for a crash that never happened.
     while IFS=$'\t' read -r __crc __cpath; do
-        echo "      ${__cpath##*/} -> exit $__crc"
+        if [ "$__crc" = "vacuous" ]; then
+            echo "      ${__cpath##*/} -> exited 0 but reported no checks"
+        else
+            echo "      ${__cpath##*/} -> exit $__crc"
+        fi
     done < "$CHILD_LEDGER"
 fi
 rm -f "$CHILD_LEDGER"

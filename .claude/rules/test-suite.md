@@ -32,6 +32,18 @@ paths:
   - Sites that reject *every* sanitizer marker (`check_task_exit`, `test_lsp.py`,
     `test_dap.py`, sigusr1 subtest 1) are deliberately stricter and do not use
     the classifier's tolerance.
+- **Never edit `run_all_tests.sh` (or any child `.sh`) while the suite is
+  running.** bash reads a script INCREMENTALLY as it executes — it seeks by
+  byte offset — so an edit that shifts line lengths under a running shell can
+  make it resume mid-token and execute something nobody wrote. This is
+  separate from, and quieter than, the #681 mid-run rebuild guard: that one
+  detects a changed BINARY and aborts loudly; nothing detects a changed
+  RUNNER. Queue the edit and apply it after the run (2026-08-19, PR #996 —
+  two comment additions had to be deferred for exactly this reason).
+- **A child `.sh` runs with cwd `src/`, not the repo root** (the runner does
+  `cd "$(dirname "$0")/../src"`). Invoking one from the repo root to reproduce
+  a failure gives `check ./eigenscript` errors that look like a real failure
+  and are not (2026-08-19).
 - **`tests/test_temporal.eigs` is line-number-sensitive** — its `at`
   queries hardcode line numbers. Append only before the final if/else, and
   re-verify the `grep -n` markers in the file.

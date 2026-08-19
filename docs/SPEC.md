@@ -711,7 +711,20 @@ route back to the code that made it.
 The arity-1 carve-out travels with it. A 1-parameter callee re-collects
 the whole argument list at *every* entry point, so `spawn of [one, 5, 6]`
 binds `a = [5, 6]` exactly as `one of [5, 6]` does — it does not bind `5`
-and discard `6`. Under-arity still null-fills on all of these paths.
+and discard `6`. Under-arity null-fills on all of these paths.
+
+For `sort_by`'s key function specifically, a **list** element is the
+argument list (which is what lets a 2-parameter key destructure a record,
+and what makes over-arity on a 3-wide element an error), while a
+non-list element is a single argument: a 2-parameter key over `[3, 1, 2]`
+receives `a = 3, b = null`, the same binding `two of (3)` produces.
+
+Two limits worth stating rather than leaving to be discovered. Default
+parameter values do **not** fire on the `spawn` / `task_spawn` paths —
+`d of 1` on `define d(a, b is 3)` gives `[1, 3]`, but
+`spawn of [d, 1]` gives `[1, null]`. And a key function that raises
+propagates its own error; `sort_by` no longer reports "key function must
+return a number" on top of it.
 
 ```eigenscript
 define two(a, b) as:

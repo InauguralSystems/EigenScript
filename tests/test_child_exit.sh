@@ -128,6 +128,25 @@ case "$VAC" in
     *) bad "child exiting 0 with zero checks reported a pass ($VAC)" ;;
 esac
 
+# --- case 5b: an explicit SKIP is NOT vacuous -----------------------------
+# The disease is silence, not skipping. A child that prints SKIP: has
+# honestly declined to measure and said so where a reader can see it.
+# Bought in CI (PR #996): test_temporal_memory.sh skips without GNU
+# `time -f`, without /proc, and on sanitizer builds — none of which is true
+# on the dev box, so the local run never took those paths and four lanes went
+# red on a child behaving exactly as designed. A guard whose failures are not
+# believed is worse than no guard.
+cat > "$WORK/test_skipper.sh" <<'EOF'
+#!/bin/bash
+echo "  SKIP: GNU /usr/bin/time -f not available (peak RSS unmeasurable)"
+exit 0
+EOF
+SKIPPED=$(run_capture_section "$WORK/test_skipper.sh")
+case "$SKIPPED" in
+    *SECTION=PASS*) ok "explicit SKIP: is not treated as vacuous" ;;
+    *) bad "a child that printed SKIP: was failed as vacuous ($SKIPPED)" ;;
+esac
+
 # --- case 6: the vacuity WAIVER actually fires ----------------------------
 # CHILD_NO_MARKERS exempts children that legitimately print no markers. If the
 # waiver did not work, those two real sections would fail every run.
@@ -299,7 +318,7 @@ PY
     mutate ".sh filter removed" \
       "s.replace('    case \"\$__what\" in\n        *.sh) ;;\n        *) command bash \"\$@\"; return \$? ;;\n    esac\n', '', 1)"
     mutate "vacuity rule removed" \
-      "s.replace('            if ! printf \'%s\\\\n\' \"\$__out\" | grep -q -E \'(PASS|FAIL):\'; then', '            if false; then', 1)"
+      "s.replace('            if ! printf \'%s\\\\n\' \"\$__out\" | grep -q -E \'(PASS|FAIL|SKIP):\'; then', '            if false; then', 1)"
     mutate "no-marker waiver removed" \
       "s.replace('            case \"\$CHILD_NO_MARKERS\" in\n                *\" \$__base \"*) return 0 ;;\n            esac\n', '', 1)"
     mutate "option-argument skip removed" \

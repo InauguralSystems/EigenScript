@@ -131,6 +131,23 @@ oa989_m1 is (spawn of [pair989, 1, 2])
 oa989_mv is (thread_join of oa989_m1)
 assert of [oa989_mv == [1, 2], "#989 spawn matched arity binds per-slot"]
 
+# #989: a NON-LIST element reaching a 2+-param key bound NOTHING — every
+# parameter read null, so a 2-param key over scalar elements gave every
+# element key 0 and sort_by returned the list UNSORTED with rc 0 and no
+# diagnostic. The oracle treats one scalar as a 1-argument call.
+define k989b(v, unused) as:
+    if v == null:
+        return 0
+    return v
+assert of [(sort_by of [[3, 1, 2], k989b]) == [1, 2, 3], "#989 scalar element binds the first slot (was: all keys null -> unsorted)"]
+
+# A list element still SPREADS (that is what lets a 2-param key destructure
+# a record, and what makes over-arity on a 3-wide element an error), so the
+# scalar fix must not have collapsed the two cases into one.
+define k989c(a, b) as:
+    return b
+assert of [(sort_by of [[[9, 2], [9, 1]], k989c]) == [[9, 1], [9, 2]], "#989 list element still spreads across params"]
+
 # #405: a bare literal list after `of` is ALWAYS an argument list, at
 # every count — so [x] is ONE argument: x itself, never a 1-element list.
 assert of [(one of [7]) == 7, "1-element arg list passes the element"]  # lint: allow W017

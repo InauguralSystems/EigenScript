@@ -32,6 +32,16 @@ All notable changes to EigenScript are documented here.
   only caller in the corpus relying on the drop was that contract test, which
   is migrated in the same change — exactly the migration #974 made for the
   same reason. Consumers pin releases, so this surfaces at the next bump.
+  A third blind round found the remaining cell: a **non-list** element
+  reaching a 2+-parameter key bound *nothing* — every parameter read `null`,
+  so `sort_by of [[3, 1, 2], keyfn]` with a 2-parameter key gave every element
+  key `0` and returned the list **unsorted**, rc 0, no diagnostic. The oracle
+  treats one scalar as a 1-argument call (`a = 3, b = null`), which is what it
+  now does; a *list* element still spreads, which is the record destructuring
+  `sort_by` exists for. Under-arity on the callback path also null-fills
+  explicitly rather than leaving the tail unbound — an unbound name resolves
+  through the CLOSURE, so a 2-parameter key over 1-wide elements could
+  silently read an outer variable of the same name instead of `null`.
   `sort_by` additionally stopped masking the cause — it inspected the returned
   value and reported "key function must return a number" *on top of* whatever
   the key function had actually raised. The arity-1 re-collect carve-out is
@@ -55,6 +65,15 @@ All notable changes to EigenScript are documented here.
   actually fails a section for each of the three modes. Measured on `main`
   before the fix: all 50 child invocations exited 0, so this closed a latent
   hazard rather than an active cover-up.
+- **The suite's own vacuity rule no longer cries wolf on a deliberate skip.**
+  The first cut of #988's zero-check half failed any `test_*.sh` child that
+  exited 0 without printing a `PASS:`/`FAIL:` marker. Ten children have
+  twenty-two legitimate skip paths — no `python3`, no `git`, no `curl`, and
+  **sanitizer build** — and the dev box has every one of those tools, so a
+  local 3976/3976 said nothing about them and four CI lanes went red on
+  children behaving exactly as designed. An explicit `SKIP:` now counts as
+  reporting: the disease is *silence*, not *skipping*. `[99p]` also stopped
+  describing a vacuous child as having "exited nonzero" — it exited 0.
 - **The bench gate's Valgrind install can no longer burn the job cap and
   report as a red gate (#987).** `sudo apt-get update && sudo apt-get install
   -y valgrind` had no timeout, retry, or fallback; a stalled mirror hung until
