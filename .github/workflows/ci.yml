@@ -503,13 +503,29 @@ jobs:
         timeout-minutes: 10
         run: |
           set -uo pipefail
+          # Already present (some runner images ship it)? Nothing to do — and
+          # nothing to hang on.
+          if command -v valgrind >/dev/null 2>&1; then
+            valgrind --version
+            exit 0
+          fi
+          # The stall is in `apt-get update`, not in `install`: on 2026-08-19
+          # it hung the full 60s cap on six job runs across three PRs while
+          # `install` itself was fine, because the package index on the image
+          # is usually fresh enough already. So TRY THE INSTALL FIRST and only
+          # refresh the index if that actually fails — the common path no
+          # longer touches the mirror that hangs.
+          if timeout 120 sudo apt-get install -y valgrind; then
+            valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
+            exit 0
+          fi
           for attempt in 1 2 3; do
+            echo "::warning::valgrind not in the current index; refreshing (attempt $attempt)"
             if timeout 60 sudo apt-get update \
                && timeout 120 sudo apt-get install -y valgrind; then
               valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
               exit 0
             fi
-            echo "::warning::apt attempt $attempt failed; retrying"
             sleep $((attempt * 5))
           done
           echo "::error::SETUP FAILURE — could not install valgrind after 3 bounded attempts. This is NOT a regression detected by the gate; the gate never ran."
@@ -659,13 +675,29 @@ jobs:
         timeout-minutes: 10
         run: |
           set -uo pipefail
+          # Already present (some runner images ship it)? Nothing to do — and
+          # nothing to hang on.
+          if command -v valgrind >/dev/null 2>&1; then
+            valgrind --version
+            exit 0
+          fi
+          # The stall is in `apt-get update`, not in `install`: on 2026-08-19
+          # it hung the full 60s cap on six job runs across three PRs while
+          # `install` itself was fine, because the package index on the image
+          # is usually fresh enough already. So TRY THE INSTALL FIRST and only
+          # refresh the index if that actually fails — the common path no
+          # longer touches the mirror that hangs.
+          if timeout 120 sudo apt-get install -y valgrind; then
+            valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
+            exit 0
+          fi
           for attempt in 1 2 3; do
+            echo "::warning::valgrind not in the current index; refreshing (attempt $attempt)"
             if timeout 60 sudo apt-get update \
                && timeout 120 sudo apt-get install -y valgrind; then
               valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
               exit 0
             fi
-            echo "::warning::apt attempt $attempt failed; retrying"
             sleep $((attempt * 5))
           done
           echo "::error::SETUP FAILURE — could not install valgrind after 3 bounded attempts. This is NOT a regression detected by the gate; the gate never ran."
