@@ -1483,16 +1483,17 @@ static void w023_scan_sequence(ASTNode **stmts, int count, W023Names *bound,
         switch (n->type) {
         case AST_ASSIGN: if (n->data.assign.local_only) name_add(n->data.assign.name, bound->names, &bound->count); break;
         case AST_FUNC: name_add(n->data.func.name, bound->names, &bound->count); break;
-        case AST_FOR: name_add(n->data.forloop.var, bound->names, &bound->count); break;
+        case AST_FOR: name_add(n->data.forloop.var, bound->names, &bound->count); w023_scan_sequence(n->data.forloop.body, n->data.forloop.body_count, bound, fn, ancestors, depth, module, ctx); break;
         case AST_LIST_PATTERN_ASSIGN: for (int j = 0; j < n->data.list_pattern_assign.name_count; j++) name_add(n->data.list_pattern_assign.names[j], bound->names, &bound->count); break;
         case AST_BLOCK: case AST_UNOBSERVED:
             w023_scan_sequence(n->data.block.stmts, n->data.block.count, bound, fn, ancestors, depth, module, ctx); break;
         case AST_TRY:
             w023_scan_sequence(n->data.trycatch.try_body, n->data.trycatch.try_count, bound, fn, ancestors, depth, module, ctx);
-            w023_scan_sequence(n->data.trycatch.catch_body, n->data.trycatch.catch_count, bound, fn, ancestors, depth, module, ctx);
-            name_add(n->data.trycatch.err_name, bound->names, &bound->count); break;
-        case AST_IF: w023_check_if(n, fn, bound, ancestors, depth, module, ctx); break;
-        case AST_LOOP: case AST_MATCH: break;
+            name_add(n->data.trycatch.err_name, bound->names, &bound->count);
+            w023_scan_sequence(n->data.trycatch.catch_body, n->data.trycatch.catch_count, bound, fn, ancestors, depth, module, ctx); break;
+        case AST_IF: w023_check_if(n, fn, bound, ancestors, depth, module, ctx); { W023Names branch = *bound; w023_scan_sequence(n->data.cond.if_body, n->data.cond.if_count, &branch, fn, ancestors, depth, module, ctx); branch = *bound; w023_scan_sequence(n->data.cond.else_body, n->data.cond.else_count, &branch, fn, ancestors, depth, module, ctx); } break;
+        case AST_LOOP: { W023Names body = *bound; w023_scan_sequence(n->data.loop.body, n->data.loop.body_count, &body, fn, ancestors, depth, module, ctx); } break;
+        case AST_MATCH: for (int c = 0; c < n->data.match.case_count; c++) { W023Names body = *bound; w023_scan_sequence(n->data.match.bodies[c], n->data.match.body_counts[c], &body, fn, ancestors, depth, module, ctx); } break;
         case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BINOP: case AST_UNARY: case AST_RELATION: case AST_RETURN: case AST_LIST: case AST_INDEX: case AST_LISTCOMP: case AST_PROGRAM: case AST_INTERROGATE: case AST_PREDICATE: case AST_DICT: case AST_DOT: case AST_BREAK: case AST_CONTINUE: case AST_DOT_ASSIGN: case AST_IMPORT: case AST_LAMBDA: case AST_INDEX_ASSIGN: case AST_SLICE: break;
         }
     }
