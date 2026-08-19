@@ -182,6 +182,34 @@ if [ "${1:-}" = "--selftest" ]; then
         echo "SELFTEST OK: planted OP_INTERROGATE_NAMED mismatch is caught at assertion level"
     fi
 
+    # Plant a decoder-shape mismatch while leaving the uint16_t declaration
+    # and vm.h comment untouched.  A width gate that reads only the destination
+    # type would miss this production drift.
+    awk '
+        /CASE\(INTERROGATE_NAMED\)/ { armed = 1 }
+        armed && /uint16_t kind = read_u16\(ip\); ip \+= 2;/ && !done {
+            sub(/read_u16/, "read_u8")
+            sub(/ip \+= 2/, "ip += 1")
+            done = 1
+        }
+        { print }
+        END { if (!done) exit 2 }
+    ' "$VM_SOURCE" > "$work/vm.c"
+    if [ ! -s "$work/vm.c" ]; then
+        echo "SELFTEST FAILED: could not plant OP_INTERROGATE_NAMED decoder-shape mismatch"
+        st_fail=1
+    elif out=$(VM_SOURCE="$work/vm.c" check_tree 2>&1); then
+        echo "SELFTEST FAILED: planted OP_INTERROGATE_NAMED decoder-shape mismatch was not caught"
+        st_fail=1
+    elif ! printf '%s\n' "$out" | grep -qF \
+        "ASSERTION FAILED: OP_INTERROGATE_NAMED decoder shape"; then
+        echo "SELFTEST FAILED: planted decoder-shape mismatch did not fail at assertion level"
+        printf '%s\n' "$out"
+        st_fail=1
+    else
+        echo "SELFTEST OK: planted OP_INTERROGATE_NAMED decoder-shape mismatch is caught at assertion level"
+    fi
+
     if [ "$st_fail" -eq 0 ]; then
         echo "SELFTEST PASS: decoder/verifier width gate is non-vacuous"
     fi
