@@ -1461,23 +1461,24 @@ static int w023_special_flags(ASTNode **body, int count, const char *name) {
     for (int i = 0; i < count; i++) w023_walk(body[i], W023_SPECIAL, name, &flags, NULL, NULL, 0, NULL); return flags;
 }
 static int w023_prefix_binds(ASTNode **stmts, int limit, const char *name) {
-    char *locals[W015_MAX_NAMES]; int n = 0;
+    char **locals = xcalloc(W015_MAX_NAMES, sizeof(*locals)); int n = 0, result;
     for (int i = 0; i < limit; i++) {
-        w015_collect_locals(stmts[i], locals, &n); if (n >= W015_MAX_NAMES || w023_special_flags(&stmts[i], 1, name) & (W023_ENV_BOUND | W023_DEFINE)) return 1;
+        w015_collect_locals(stmts[i], locals, &n); if (n >= W015_MAX_NAMES || w023_special_flags(&stmts[i], 1, name) & (W023_ENV_BOUND | W023_DEFINE)) { free(locals); return 1; }
     }
-    return name_present(name, locals, n);
+    result = name_present(name, locals, n); free(locals); return result;
 }
 static int w023_enclosing_binds(const char *name, ASTNode **ancestors, int count) {
     for (int a = 0; a < count; a++) {
         ASTNode *fn = ancestors[a];
         for (int p = 0; p < fn->data.func.param_count; p++)
             if (strcmp(fn->data.func.params[p], name) == 0) return 1;
-        char *locals[W015_MAX_NAMES]; int n = 0;
+        char **locals = xcalloc(W015_MAX_NAMES, sizeof(*locals)); int n = 0;
         for (int b = 0; b < fn->data.func.body_count; b++) w015_collect_locals(fn->data.func.body[b], locals, &n);
-        if (n >= W015_MAX_NAMES) return 1;
+        if (n >= W015_MAX_NAMES) { free(locals); return 1; }
         if (name_present(name, locals, n) ||
             (w023_special_flags(fn->data.func.body, fn->data.func.body_count, name) &
-             (W023_CAPTURED | W023_INTERROGATED | W023_ENV_BOUND | W023_DEFINE))) return 1;
+             (W023_CAPTURED | W023_INTERROGATED | W023_ENV_BOUND | W023_DEFINE))) { free(locals); return 1; }
+        free(locals);
     }
     return 0;
 }
