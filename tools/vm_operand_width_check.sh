@@ -75,7 +75,7 @@ check_tree() {
         echo "GATE ERROR: no uintN_t/read_uN kind decoder evidence found in $VM_SOURCE"
         return 1
     fi
-    if [ -z "$raw" ] || ! sed -n '/static int op_verify_operands/,/\/\* ---- Stack-height model/p' "$CHUNK_SOURCE" | grep -qE '2[[:space:]]*\*[[:space:]]*nops' || ! sed -n '/void chunk_disassemble/,/\/\* ---- Bytecode verifier/p' "$CHUNK_SOURCE" | grep -qE 'i[[:space:]]*\+= 2'; then
+    if [ -z "$raw" ] || ! grep -qE 'int end = i[[:space:]]*\+[[:space:]]*1[[:space:]]*\+[[:space:]]*2[[:space:]]*\*[[:space:]]*nops' "$CHUNK_SOURCE" || ! sed -n '/void chunk_disassemble/,/\/\* ---- Bytecode verifier/p' "$CHUNK_SOURCE" | grep -qE 'i[[:space:]]*\+= 2'; then
         echo "GATE ERROR: no VR_RAW/u16-stride verifier evidence found in $CHUNK_SOURCE"
         return 1
     fi
