@@ -1133,8 +1133,8 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
  * examples — so flagging it is noise, not a fence. `_`-prefixed names are the
  * convention for intentional module-private state (as W001 already honors) and
  * are skipped. The general local-discipline lint belongs to the scope-aware
- * name-resolution pass (#404), which can do the dataflow to tell benign reuse
- * from a real clobber; #396 tracks that. Params and `local`-declared names are
+ * name-resolution pass (#404) landed as E003; #870 tracks the still-open
+ * general local-discipline fence. Params and `local`-declared names are
  * excluded; nested functions are not analysed (enclosing scope isn't module). */
 
 #define W015_MAX_NAMES 512
@@ -1296,7 +1296,7 @@ static void check_outer_mutation(ASTNode *ast, LintContext *ctx) {
 
     /* Module scope of interest = top-level FUNCTION names only (see the rule
      * comment: clobbering a function is the unambiguous-bug core; variable
-     * name-reuse is benign under mutate-outward and belongs to #404). */
+     * name-reuse is benign under mutate-outward and belongs to #870). */
     char *module[W015_MAX_NAMES]; int module_n = 0;
     for (int i = 0; i < ast->data.program.count; i++) {
         ASTNode *s = ast->data.program.stmts[i];
