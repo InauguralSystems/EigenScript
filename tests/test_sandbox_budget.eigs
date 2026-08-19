@@ -18,6 +18,145 @@ POP is 35
 CALL is 39
 RETURN is 40
 
+# --- #965 (root redesign): ONE verification context for the WHOLE graph -----
+# The pool bound added in fix7 is shared across ONE chunk's constants — but
+# every NESTED function chunk re-entered the descriptor builder and declared a
+# FRESH allowance of its own, so the real total was (allowance x number of
+# chunk builds): width and nesting MULTIPLIED the advertised bound instead of
+# spending it. Every child below is individually well inside the allowance and
+# their SUM is not, so only a context shared across the whole recursive graph
+# — root chunk, nested chunks, code, constants, function lists, local names —
+# can refuse this descriptor. Verification runs BEFORE the loop cap and the
+# byte budget are armed, so neither of the sandbox's own bounds applies.
+#
+# These sections sit at the TOP of the file so a failure's named FAIL lines
+# lead the suite's five-line diagnostic excerpt, ahead of the intentional
+# refusal messages the budget sections print to stderr.
+RD_LIST is 42
+RD_CLOSURE is 38
+rd_dag is [1]
+for i in range of 4:
+    rd_dag is [rd_dag, rd_dag, rd_dag, rd_dag, rd_dag,
+               rd_dag, rd_dag, rd_dag, rd_dag, rd_dag]
+rd_child is [[CONST,0,0, RETURN], [rd_dag]]
+rd_over_fns is []
+for i in range of 8:
+    append of [rd_over_fns, rd_child]
+rd_over_desc is [ABI, [CONST,0,0, RETURN], [0], rd_over_fns]
+sr_rd_over is sandbox_run of [rd_over_desc, 100000, 1000000]
+assert_eq of [sr_rd_over["ok"], 0,
+              "descriptor graph: nested chunks share ONE work allowance"]
+rd_over_msg is ""
+if sr_rd_over["ok"] == 0:
+    rd_over_msg is sr_rd_over["error"]["message"]
+assert_eq of [rd_over_msg, "invalid chunk descriptor",
+              "descriptor graph: exhausting the shared allowance fails closed"]
+
+# --- #965 (root redesign): no mutable host alias crosses the boundary -------
+# A descriptor constant was retained BY REFERENCE, so a host-owned list handed
+# in as a constant stayed the same object the sandbox mutated. `append` is
+# allowlisted and a one-element list has spare capacity, so attaching a
+# freshly created sandbox closure to it costs no allocation, trips no charge,
+# and never appears in the returned result — the run answers scalar 0 while
+# the host's carrier already holds a callable. The direct-result scan cannot
+# repair that: the mutation is visible through the host's own alias before the
+# scan runs. So the boundary is closed on the way IN — the sandbox gets its
+# own isolated copy of every mutable constant.
+rd_body is [[CONST,0,0, RETURN], ["x"]]
+rd_carrier is [0]
+rd_attach_desc is [ABI,
+                   [GET_NAME,0,0, CONST,1,0, RD_CLOSURE,0,0, RD_LIST,2,0,
+                    CALL,1,0, POP, CONST,2,0, RETURN],
+                   ["append", rd_carrier, 0], [rd_body]]
+sr_rd_attach is sandbox_run of [rd_attach_desc, 100000, 1000000]
+assert_eq of [(len of rd_carrier), 1,
+              "boundary: sandbox cannot attach a callable to a host-owned list constant"]
+
+# Same property on the buffer arm: buf_set writes element storage in place.
+rd_buf is buffer of 4
+buf_set of [rd_buf, 0, 3]
+rd_bufset_desc is [ABI,
+                   [GET_NAME,0,0, CONST,1,0, CONST,2,0, CONST,3,0, RD_LIST,3,0,
+                    CALL,1,0, POP, CONST,2,0, RETURN],
+                   ["buf_set", rd_buf, 0, 99]]
+sandbox_run of [rd_bufset_desc, 100000, 1000000]
+assert_eq of [buf_get of [rd_buf, 0], 3,
+              "boundary: sandbox buf_set cannot reach the host's buffer constant"]
+
+# ...and on the dict arm: dict_set replaces a value in place.
+rd_dict is {"k": 1}
+rd_dictset_desc is [ABI,
+                    [GET_NAME,0,0, CONST,1,0, CONST,2,0, CONST,3,0, RD_LIST,3,0,
+                     CALL,1,0, POP, CONST,4,0, RETURN],
+                    ["dict_set", rd_dict, "k", 2, 0]]
+sandbox_run of [rd_dictset_desc, 100000, 1000000]
+assert_eq of [rd_dict["k"], 1,
+              "boundary: sandbox dict_set cannot reach the host's dict constant"]
+
+# The constant pool is not the only way a host object enters the sandbox: the
+# allowlist COPIES the global binding of every allowed name. A host that
+# rebound one of those names holds an arbitrary — possibly mutable — value
+# there, and copying it aliases host state in through a second root. Only the
+# pure C builtin the allowlist actually names may cross.
+rd_alias is [0]
+sign_extend is rd_alias
+rd_allow_desc is [ABI,
+                  [GET_NAME,0,0, GET_NAME,1,0, RD_CLOSURE,0,0, RD_LIST,2,0,
+                   CALL,1,0, POP, CONST,2,0, RETURN],
+                  ["append", "sign_extend", 0], [rd_body]]
+sr_rd_allow is sandbox_run of [rd_allow_desc, 100000, 1000000]
+assert_eq of [(len of rd_alias), 1,
+              "boundary: a rebound allowlist name cannot alias host state inward"]
+assert_eq of [sr_rd_allow["ok"], 0,
+              "boundary: a rebound allowlist name is blocked, not copied"]
+
+# --- #965 (root redesign): the controls the redesign must not break ---------
+# An in-budget nested graph still builds, runs and answers, so the fix cannot
+# be a blanket refusal of nested chunks; a back edge in the constant graph
+# TERMINATES instead of recursing until the C stack does; and isolation
+# preserves CONTENT, or every assertion above would be satisfied by handing
+# the sandbox an empty container.
+rd_under_fns is []
+for i in range of 6:
+    append of [rd_under_fns, rd_child]
+rd_under_desc is [ABI, [CONST,0,0, RETURN], [0], rd_under_fns]
+sr_rd_under is sandbox_run of [rd_under_desc, 100000, 1000000]
+assert_eq of [sr_rd_under["ok"], 1,
+              "descriptor graph: an in-budget nested graph still builds and runs"]
+rd_under_result is 999
+if sr_rd_under["ok"] == 1:
+    rd_under_result is sr_rd_under["result"]
+assert_eq of [rd_under_result, 0,
+              "descriptor graph: the in-budget nested graph answers normally"]
+assert_eq of [sr_rd_attach["ok"], 1,
+              "boundary: mutating the sandbox's OWN copy is still an ordinary run"]
+rd_cyc is []
+append of [rd_cyc, rd_cyc]
+rd_cyc_desc is [ABI, [CONST,1,0, RETURN], [rd_cyc, 0]]
+sr_rd_cyc is sandbox_run of [rd_cyc_desc, 100000, 1000000]
+assert_eq of [sr_rd_cyc["ok"], 0,
+              "descriptor graph: a self-referential constant terminates and is refused"]
+list_truncate of [rd_cyc, 0]
+rd_data is [10, 20, 30]
+rd_get_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CONST,2,0, RD_LIST,2,0,
+                      CALL,1,0, RETURN],
+                ["get_at", rd_data, 1]]
+sr_rd_get is sandbox_run of [rd_get_desc, 100000, 1000000]
+rd_get_result is 999
+if sr_rd_get["ok"] == 1:
+    rd_get_result is sr_rd_get["result"]
+assert_eq of [rd_get_result, 20,
+              "boundary: an isolated list constant still reads its own elements"]
+rd_bufget_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CONST,2,0, RD_LIST,2,0,
+                         CALL,1,0, RETURN],
+                   ["buf_get", rd_buf, 0]]
+sr_rd_bufget is sandbox_run of [rd_bufget_desc, 100000, 1000000]
+rd_bufget_result is 999
+if sr_rd_bufget["ok"] == 1:
+    rd_bufget_result is sr_rd_bufget["result"]
+assert_eq of [rd_bufget_result, 3,
+              "boundary: an isolated buffer constant still reads its own elements"]
+
 # zeros of N  /  fill of [N, v]  descriptors (GET_NAME fn; CONST arg; CALL 1).
 define zeros_desc(n) as:
     return [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["zeros", n]]
