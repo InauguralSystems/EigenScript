@@ -15,6 +15,18 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
+# Coverage floor. The population below is derived by matching decoder sites in
+# vm.c, so it can SHRINK without anything failing: reformat a decoder site so
+# the match no longer applies AND tidy its [kind:N] comment away in the same
+# pass, and both sides of the cross-check lose the opcode together. Measured on
+# the tree that introduced this gate: doing exactly that took it from 7 operands
+# to 6 and it still printed PASS with exit 0. A `-z` emptiness test is not a
+# floor — it only catches losing ALL of them.
+#
+# Bump this deliberately when a kind operand is genuinely added or removed; a
+# DECREASE is a review event, not a number to adjust.
+KIND_OPERAND_FLOOR="${KIND_OPERAND_FLOOR:-7}"
+
 VM_HEADER="${VM_HEADER:-src/vm.h}"
 VM_SOURCE="${VM_SOURCE:-src/vm.c}"
 CHUNK_SOURCE="${CHUNK_SOURCE:-src/chunk.c}"
@@ -65,7 +77,7 @@ header_kind_widths() {
 }
 
 check_tree() {
-    local decoder raw comments missing width op bits expected got drift verifier_stride
+    local decoder raw comments missing width op bits expected got drift verifier_stride decoder_count
     drift=0
     decoder=$(decoder_kind_widths)
     raw=$(verifier_raw_ops)
@@ -74,6 +86,13 @@ check_tree() {
 
     if [ -z "$decoder" ]; then
         echo "GATE ERROR: no uintN_t/read_uN kind decoder evidence found in $VM_SOURCE"
+        return 1
+    fi
+    decoder_count=$(printf '%s\n' "$decoder" | awk 'NF { n++ } END { print n + 0 }')
+    if [ "$decoder_count" -lt "$KIND_OPERAND_FLOOR" ]; then
+        echo "GATE ERROR: only $decoder_count kind operand(s) found in $VM_SOURCE, floor is $KIND_OPERAND_FLOOR"
+        echo "  the matcher stopped seeing a decoder site, or a kind operand was removed;"
+        echo "  either way this gate is now checking less than it was built to check."
         return 1
     fi
     if [ -z "$raw" ] || [ -z "$verifier_stride" ] || ! sed -n '/void chunk_disassemble/,/\/\* ---- Bytecode verifier/p' "$CHUNK_SOURCE" | grep -qE 'i[[:space:]]*\+= 2'; then
@@ -214,6 +233,36 @@ if [ "${1:-}" = "--selftest" ]; then
         st_fail=1
     else
         if out=$(VM_HEADER="$work/vm.h" VM_SOURCE="$work/vm_stride.c" check_tree 2>&1); then echo "SELFTEST FAILED: verifier-stride mutation was not caught"; st_fail=1; elif printf '%s\n' "$out" | grep -qF "ASSERTION FAILED: OP_INTERROGATE_NAMED decoder shape disagrees: uint8_t/read_u8/ip advance 1 bytes, verifier stride 2 bytes"; then echo "SELFTEST OK: planted OP_INTERROGATE_NAMED verifier-stride mismatch is caught at assertion level"; else echo "SELFTEST FAILED: verifier-stride mutation did not fail at assertion level"; printf '%s\n' "$out"; st_fail=1; fi
+    fi
+
+    # Plant a SIMULTANEOUS loss on both sides: reformat a decoder site so the
+    # matcher misses it AND remove the matching [kind:N] comment. Individually
+    # either one is caught by the opposite direction of the cross-check; losing
+    # both together is what silently shrinks the population, and only the floor
+    # catches it.
+    awk '
+        /uint16_t kind = read_u16\(ip\); ip \+= 2;/ && !done {
+            sub(/uint16_t kind = read_u16\(ip\); ip \+= 2;/,
+                "uint16_t kind =\n            read_u16(ip); ip += 2;")
+            done = 1
+        }
+        { print }
+        END { if (!done) exit 2 }
+    ' "$VM_SOURCE" > "$work/vm_shrunk.c" || st_fail=1
+    sed -E 's@^([[:space:]]*OP_INTERROGATE,[[:space:]]*\/\* )\[kind:16\] @\1@' \
+        "$VM_HEADER" > "$work/vm_shrunk.h"
+    if cmp -s "$work/vm_shrunk.h" "$VM_HEADER"; then
+        echo "SELFTEST FAILED: could not remove the OP_INTERROGATE [kind:16] comment"
+        st_fail=1
+    elif out=$(VM_HEADER="$work/vm_shrunk.h" VM_SOURCE="$work/vm_shrunk.c" check_tree 2>&1); then
+        echo "SELFTEST FAILED: population shrank to 6 and the gate still passed"
+        st_fail=1
+    elif ! printf '%s\n' "$out" | grep -qF "GATE ERROR: only 6 kind operand(s) found"; then
+        echo "SELFTEST FAILED: shrunken population did not trip the coverage floor"
+        printf '%s\n' "$out"
+        st_fail=1
+    else
+        echo "SELFTEST OK: a silently shrinking kind-operand population trips the floor"
     fi
 
     if [ "$st_fail" -eq 0 ]; then
