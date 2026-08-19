@@ -2339,6 +2339,10 @@ Env* env_new(Env *parent) {
     if (parent) env_incref(parent);   /* the parent link is an owned ref */
     e->heap_allocated = 1;
     e->captured = 0;
+    /* Explicit: the freelist branch above does NOT zero the struct (only
+     * `count` is reset), so a stale is_loop_env from the previous occupant
+     * would make an ordinary env look like a loop env (#959). */
+    e->is_loop_env = 0;
     e->env_refcount = 1;              /* creator's ref (frame or C caller) */
     return e;
 }

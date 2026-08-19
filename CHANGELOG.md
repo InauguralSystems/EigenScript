@@ -4,6 +4,43 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A name first bound in a `for` body now escapes the loop, like every other
+  block form (#959).** `is` is documented as outward-mutable — a name not
+  found in any enclosing scope creates a binding there, with `local` as the
+  opt-in for an inner one — but the create path used the *starting* env,
+  which inside a `for` body is the per-iteration loop env, so the binding died
+  with the iteration. Measured across all six combinations, module-level
+  `for` was the ONLY one that did not escape:
+
+  | | module level | inside a function |
+  |---|---|---|
+  | `if` | escapes | escapes |
+  | `loop while` | escapes | escapes |
+  | `for` | **did not** | escapes |
+
+  So the same source construct meant two different things depending on
+  whether it sat at module level or inside a function. `Env` gains an
+  `is_loop_env` flag (set at `OP_LOOP_ENV_FRESH`, and cleared explicitly in
+  `env_new` because the env freelist does not zero a recycled struct), and
+  the two "not found anywhere — create it" sites — `CASE(SET_NAME)` and
+  `jit_helper_set_name` — create the binding in the nearest enclosing
+  non-loop scope. The JIT inlines only the IC-hit path and falls back to that
+  helper, so both tiers agree by construction.
+  `local` is untouched (a different opcode, still loop-local), the loop
+  variable still does not escape, and nested `for` bodies reach the enclosing
+  scope exactly as nested `if` blocks do. The persisted-loop-env optimisation
+  is unaffected: this changes *where a first-binding is created*, not that the
+  loop env is reused.
+  `tests/test_scope_semantics.eigs` SS3 asserted the old behaviour and is
+  migrated — it was the only caller in the corpus standing on it, and its own
+  comment described the mechanism ("EigenScript's env_set creates in the local
+  scope if not found in parents … So loop_local is gone") rather than an
+  intent. Downstream, ouroboros carries a `must_reject` canary for this that
+  fires at the next `EIGS_REF` bump; the case folds back into
+  `test/programs/module_name_in_block.eigs` there.
+
 ### Documentation
 
 - **`sandbox_run`'s `max_iterations` is bounded by TWO counters with different

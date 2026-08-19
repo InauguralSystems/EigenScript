@@ -294,6 +294,16 @@ struct Env {
                          * by env_new, dropped by env_decref's destructor) */
     int heap_allocated;
     int captured;
+    /* #959: set on a per-iteration `for`-loop env (OP_LOOP_ENV_FRESH). `is`
+     * is outward-mutable — a name not bound in any enclosing scope creates
+     * its binding in the ENCLOSING scope — but the create path used the
+     * STARTING env, which inside a for body is this per-iteration env, so
+     * the binding died with the iteration. That made `for` the only block
+     * form whose first-bindings do not escape (`if` and `loop while` create
+     * no env, so theirs land in the enclosing scope), and it broke a
+     * downstream consumer at a pin bump. env_binding_home (vm.c) walks past
+     * these. `local` is unaffected — it is a different opcode. */
+    unsigned char is_loop_env;
     int env_refcount;   /* honest owner count: creator/frame + closures
                          * (make_fn) + child envs (parent link) + a chunk's
                          * parked env_cache. 0 -> destroyed. */

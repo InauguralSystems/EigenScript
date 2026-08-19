@@ -1012,6 +1012,27 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
  * These were the wall between per-fragment thunks and whole-loop
  * native coverage: every `x is ...` statement at module scope or on a
  * captured/interrogated name runs one. */
+/* #959: where a NEW binding is created when `is` finds the name nowhere.
+ *
+ * `is` is defined as outward-mutable: it updates an enclosing binding if one
+ * exists, and otherwise creates one — `local` is the opt-in for an inner
+ * binding. Creating it in the STARTING env broke that inside a `for` body,
+ * because the starting env is the per-iteration loop env, so the binding died
+ * with the iteration. `if` and `loop while` create no env, so their
+ * first-bindings already land in the enclosing scope; `for` was the sole
+ * outlier, and ouroboros had to demote a passing parity program to a
+ * must-reject canary when it changed under a pin bump.
+ *
+ * Walking past loop envs restores the documented rule. Nested loops walk
+ * through all of them to the nearest real scope, which matches how nested
+ * `if` blocks already behave. `local` is unaffected: it compiles to
+ * OP_SET_NAME_LOCAL, a different opcode that never reaches here. */
+static Env *env_binding_home(Env *start) {
+    Env *e = start;
+    while (e->is_loop_env && e->parent) e = e->parent;
+    return e;
+}
+
 void jit_helper_set_name(EigsChunk *chunk, int idx) {
     if (__builtin_expect(g_trace_hist, 0)) {
         vm_trace_assign(chunk, chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
@@ -1048,7 +1069,7 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
         }
         return;
     }
-    env_set_local_pre_interned_slot(start, name, h, s);
+    env_set_local_pre_interned_slot(env_binding_home(start), name, h, s);
     Env *t2 = env_resolve_chain(start, name, h, &slot_idx, &depth);
     if (t2 == start) {
         ic->starting_env = start;
@@ -3421,8 +3442,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             DISPATCH();
         }
-        /* Not found anywhere — create in starting env, then populate IC. */
-        env_set_local_pre_interned_slot(start, name, h, s);
+        /* Not found anywhere — create it in the nearest enclosing NON-loop
+         * scope (#959), then populate IC. */
+        env_set_local_pre_interned_slot(env_binding_home(start), name, h, s);
         Env *t2 = env_resolve_chain(start, name, h, &slot_idx, &depth);
         if (!g_vm_multithreaded && t2 == start) {   /* #297: see above */
             ic->starting_env = start;
@@ -4682,6 +4704,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * (owns_env == 0 base frames) keeps its caller's ref untouched. */
         Env *parent = frame->env;
         Env *loop_env = env_new(parent);
+        loop_env->is_loop_env = 1;   /* #959: see env_binding_home */
         if (frame->owns_env) env_decref(parent);
         frame->env = loop_env;
         frame->owns_env = 1;
