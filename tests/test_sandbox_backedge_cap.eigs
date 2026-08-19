@@ -88,4 +88,48 @@ assert_eq of [total, 4950, "host loops run normally after a tripped sandbox"]
 again is sandbox_run of [[ABI, [JUMP_BACK,3,0, RETURN], []], 10]
 assert_eq of [again["ok"], 0, "a second run trips on its own fresh budget"]
 
+# ---- 6. The back-edge budget is CUMULATIVE ACROSS CALL FRAMES (#948) --------
+# The two counters are scoped differently, on purpose. The per-frame loop
+# counter is saved/restored at every call frame (frame->saved_loop_iter), so
+# each invocation's cap check starts fresh. The back-edge counter is NOT — it
+# is scoped to the whole sandbox_run, so an assembled chunk cannot reset its
+# own DoS budget by calling a function.
+#
+# The consequence is user-visible and was undocumented: the SAME loop, in the
+# same function, reports differently depending on how many times it is called
+# within one run. Section 3 pins the flat-module case; this pins the crossing.
+GET_NAME is 25
+SET_NAME_LOCAL is 27
+CLOSURE is 38
+CALL is 39
+RETURN_NULL is 41
+
+xf_fn is [[LOOP_CAP_CHECK,3,0, JUMP_BACK,6,0, RETURN_NULL], [], [], 0, "f", []]
+xf_one is [CLOSURE,0,0, SET_NAME_LOCAL,0,0, GET_NAME,0,0, CALL,0,0, POP, RETURN_NULL]
+xf_two is [CLOSURE,0,0, SET_NAME_LOCAL,0,0, GET_NAME,0,0, CALL,0,0, POP,
+           GET_NAME,0,0, CALL,0,0, POP, RETURN_NULL]
+
+# One call: the frame's own cap check trips, the loop exits gracefully, and the
+# run is reported as a capped PARTIAL run.
+xf_r1 is sandbox_run of [[ABI, xf_one, ["f"], [xf_fn], 0, "m", []], 10]
+assert_eq of [xf_r1["ok"], 0, "#948 one call: capped run is not ok"]
+xf_p1 is index_of of [xf_r1["error"]["message"], "partial run"]
+assert_eq of [xf_p1 >= 0, 1, "#948 one call trips the per-frame CAP CHECK"]
+
+# Two calls: the second frame's cap check starts fresh, but the back-edge
+# total does not — so the run dies at the back-edge RAISE instead. Same loop,
+# same per-call iteration count, different verdict.
+xf_r2 is sandbox_run of [[ABI, xf_two, ["f"], [xf_fn], 0, "m", []], 10]
+assert_eq of [xf_r2["ok"], 0, "#948 two calls: still not ok"]
+xf_p2 is index_of of [xf_r2["error"]["message"], "back-edge iterations"]
+assert_eq of [xf_p2 >= 0, 1,
+              "#948 two calls trip the CUMULATIVE back-edge budget, not the per-frame cap"]
+
+# Both negatives, so neither assertion above can pass merely because the two
+# messages happen to be the same string.
+assert_eq of [(index_of of [xf_r1["error"]["message"], "back-edge iterations"]) < 0, 1,
+              "#948 one call does NOT reach the back-edge budget"]
+assert_eq of [(index_of of [xf_r2["error"]["message"], "partial run"]) < 0, 1,
+              "#948 two calls do NOT report a graceful partial run"]
+
 test_summary of null
