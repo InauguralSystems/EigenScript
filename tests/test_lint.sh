@@ -563,6 +563,128 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "W015 silent with local / fresh local / _-prefixed fn" "$OUTPUT" "W015"
 rm -f "$TMPFILE"
 
+# --- W023: inverted sibling-branch outer-mutation fence (#870) ---
+# A try-region local dominates the sibling write at runtime, so the warning
+# must stay silent even though the branch pair itself matches the trigger.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+t is 5
+define f(flag) as:
+    try:
+        local t is 9
+    catch e:
+        print of "nope"
+    if flag == 1:
+        local t is 1
+    else:
+        t is 2
+    return t
+print of (str of (f of 0))
+print of ("module t is now " + (str of t))
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "W023 try-region local returns 2" "$RUN" "2"
+check_contains "W023 try-region local leaves module t at 5" "$RUN" "module t is now 5"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W023 silent: try-region local" "$OUTPUT" "W023"
+rm -f "$TMPFILE"
+
+# A nested define binds the name in the current function and likewise
+# dominates the sibling write; the runtime must leave the module binding alone.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+t is 5
+define f(flag) as:
+    define t() as:
+        return 1
+    if flag == 1:
+        local t is 1
+    else:
+        t is 2
+    return t
+print of (str of (f of 0))
+print of ("module t is now " + (str of t))
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "W023 nested define returns 2" "$RUN" "2"
+check_contains "W023 nested define leaves module t at 5" "$RUN" "module t is now 5"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W023 silent: nested define" "$OUTPUT" "W023"
+rm -f "$TMPFILE"
+
+# No dominating binder exists here: the bare sibling write really mutates the
+# module binding and must be diagnosed with the new warning code.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+t is 5
+define f(flag) as:
+    if flag == 1:
+        local t is 1
+    else:
+        t is 2
+    return t
+print of (str of (f of 0))
+print of ("module t is now " + (str of t))
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "W023 planted mutation returns 2" "$RUN" "2"
+check_contains "W023 planted mutation changes module t" "$RUN" "module t is now 2"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "W023 fires on sibling-branch outer mutation" "$OUTPUT" "warning\[W023\]: 't'"
+rm -f "$TMPFILE"
+
+# Deliberate fail-safe false negative: an enclosing catch binder may own the
+# name, so the nested function's genuine module mutation remains unreported.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+# Known false negative, DELIBERATE (maintainer ruling on #870, 2026-08-16):
+# the enclosing catch t: env-binds t in f, so no write to t inside f's
+# subtree is provably module-bound; the runtime walk may land in f's env
+# (when the catch ran). Here the try never raises, g's bare t is 2 walks
+# past f to the module and genuinely mutates it (5 -> 2), and W023 stays
+# silent. Fail-safe is the accepted cost; do not reintroduce binder lists.
+t is 5
+define f(flag) as:
+    define g(flag) as:
+        if flag == 1:
+            local t is 1
+        else:
+            t is 2
+        return t
+    try:
+        print of (str of (g of 0))
+    catch t:
+        print of "nope"
+    return 0
+f of 0
+print of ("module t is now " + (str of t))
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "W023 false negative runtime changes module t" "$RUN" "module t is now 2"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W023 silent: enclosing catch false negative" "$OUTPUT" "W023"
+rm -f "$TMPFILE"
+
+# The module-binding precondition is load-bearing: without a module t, the
+# bare write gets a function-local slot and the later module read is undefined.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define f(flag) as:
+    if flag == 1:
+        local t is 1
+    else:
+        t is 2
+    return t
+print of (str of (f of 0))
+print of ("module t is now " + (str of t))
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "W023 no-module runtime exposes undefined t" "$RUN" "undefined variable 't'"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "W023 silent without a proven module binding" "$OUTPUT" "W023"
+check_contains "W023 no-module control keeps E003" "$OUTPUT" "E003.*undefined name 't'"
+rm -f "$TMPFILE"
+
 # --- W016: bare predicate OUTSIDE a loop condition (#396, #247/#262 family) ---
 # Fires in if-conditions, assignment RHS, and return position; loop conditions
 # are W014's territory (single-assign `loop while not converged` is the
