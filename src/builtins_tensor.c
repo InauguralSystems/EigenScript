@@ -759,6 +759,11 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
 Value* builtin_random_normal(Value *arg) {
     TRACE_NONDET_TAKE("random_normal");
     if (!arg || arg->type != VAL_LIST) TRACE_NONDET_RECORD("random_normal", make_null());
+    /* #960: draw from the shared drand48 stream that `seed_random` pins, not
+     * libc rand() (seeded only by main()'s srand(time(NULL)), so a
+     * randn-initialised tensor was unreproducible from script). After the TAKE
+     * above: a replayed call serves its record without touching the stream. */
+    eigs_ensure_random_seeded();
     int argc = arg->data.list.count;
     if (argc == 3) {
         /* 2D: [rows, cols, scale] */
@@ -769,9 +774,10 @@ Value* builtin_random_normal(Value *arg) {
         for (int r = 0; r < rows; r++) {
             Value *row = make_list(cols);
             for (int c = 0; c < cols; c++) {
-                /* Box-Muller transform for normal distribution */
-                double u1 = ((double)rand() + 1.0) / ((double)RAND_MAX + 1.0);
-                double u2 = ((double)rand() + 1.0) / ((double)RAND_MAX + 1.0);
+                /* Box-Muller. 1 - drand48() lands in (0, 1]: drand48 can
+                 * return exactly 0, and log(0) is an infinity. */
+                double u1 = 1.0 - drand48();
+                double u2 = drand48();
                 double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
                 list_append_owned(row, make_num(z * scale));
             }
@@ -785,8 +791,8 @@ Value* builtin_random_normal(Value *arg) {
         double scale = arg->data.list.items[1]->data.num;
         Value *out = make_list(len);
         for (int i = 0; i < len; i++) {
-            double u1 = ((double)rand() + 1.0) / ((double)RAND_MAX + 1.0);
-            double u2 = ((double)rand() + 1.0) / ((double)RAND_MAX + 1.0);
+            double u1 = 1.0 - drand48();   /* (0, 1] — see the 2D branch */
+            double u2 = drand48();
             double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
             list_append_owned(out, make_num(z * scale));
         }

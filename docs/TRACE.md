@@ -96,6 +96,19 @@ perspective lands on the tape as an `N` record:
   so suppressing it would be meaningless. (`net_close` is deterministic
   and untraced — under replay no socket exists and it is a natural
   no-op, the `audio_capture_close` shape.)
+- **Model extension (#960):** `eigen_generate`. Sampling at temperature
+  above 0 draws from the shared `drand48` stream, so the emitted token list
+  is a nondeterministic return — untaped, a generating program could not be
+  replayed at all. **One record per call carries the whole token list**, not
+  one per sampled position: the draws are an implementation detail of the
+  decoding policy (top-k and top-p consume different numbers of them), the
+  list is what the script observes. TAKE/RECORD-wrapped, so `EIGS_REPLAY`
+  serves the tokens *before the model is consulted* — a recorded generation
+  replays with no checkpoint on disk and without advancing the RNG. Every
+  return is recorded, argument errors and the no-model-loaded empty list
+  included, so a program that hits one cannot desync the stream. Greedy
+  (`temperature < 0.01`) calls ride the same path: the tape cannot show
+  which branch ran, and replay may not load a model to re-derive it.
 - **Audio capture (gfx extension, #579):** `audio_capture_open`,
   `audio_capture_read`. Captured audio is a device input, so the whole
   capture chain is TAKE/RECORD-wrapped: under `EIGS_REPLAY` the tape is
