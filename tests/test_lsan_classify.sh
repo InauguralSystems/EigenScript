@@ -62,13 +62,43 @@ FAIL=0
 fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 
+# All git access goes through here. `-c safe.directory='*'` is required because
+# CI runs the suite INSIDE a container (.github/workflows/ci.yml `container:`),
+# where the checkout is owned by a different uid than the job user, so every
+# plain git call dies with:
+#   fatal: detected dubious ownership in repository at '/__w/EigenScript/...'
+# actions/checkout does add the path to safe.directory, but on the RUNNER's
+# global config, which the container's user does not read. The flag is scoped to
+# the single invocation — no global config is mutated — and these calls are all
+# read-only.
+#
+# This is the suite's first use of git; nothing else in run_all_tests.sh shells
+# out to it, which is why this failure surfaced only here.
+_lc_git() { git -c safe.directory='*' -C "$ROOT" "$@"; }
+
+# Is git usable against this tree? Three outcomes kept distinct, because
+# reporting an unrunnable instrument as a benign absence is how a gate goes
+# quietly blind:
+#   ok      — git works here
+#   absent  — no git binary at all; genuinely nothing to check against
+#   refused — git exists but will not read this tree. NOT a skip: something is
+#             wrong with the environment and the checks that depend on it are
+#             unavailable, which must be loud.
+_lc_git_state() {
+    if ! command -v git >/dev/null 2>&1; then echo absent; return; fi
+    if _lc_git rev-parse --git-dir >/dev/null 2>&1; then echo ok; return; fi
+    # Distinguish "not a repo" (fine — a tarball) from "repo, but refused".
+    if [ -e "$ROOT/.git" ]; then echo refused; else echo absent; fi
+}
+GIT_STATE=$(_lc_git_state)
+
 # Snapshot the tree's untracked set BEFORE doing anything, so the leavings
 # check at the end reports only what THIS RUN created. Comparing against a bare
 # "is anything untracked" would fire on a developer's unrelated scratch file —
 # a gate that cries wolf gets muted.
 UNTRACKED_BEFORE=""
-if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-    UNTRACKED_BEFORE=$(git -C "$ROOT" ls-files --others --exclude-standard -- tests 2>/dev/null)
+if [ "$GIT_STATE" = ok ]; then
+    UNTRACKED_BEFORE=$(_lc_git ls-files --others --exclude-standard -- tests 2>/dev/null)
 fi
 
 # ---------------------------------------------------------------------------
@@ -144,10 +174,12 @@ esac
 #    absent in CI — coverage loss wearing a green badge (§1).
 # ---------------------------------------------------------------------------
 echo "[lsan-classify] fixtures tracked"
-if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-    UNTRACKED=$(git -C "$ROOT" ls-files --others --exclude-standard -- \
+if [ "$GIT_STATE" = refused ]; then
+    fail "git is installed and $ROOT is a repository, but git refuses to read it — the tracked-fixture check cannot run (see _lc_git)"
+elif [ "$GIT_STATE" = ok ]; then
+    UNTRACKED=$(_lc_git ls-files --others --exclude-standard -- \
         "tests/fixtures/lsan_classify" 2>/dev/null)
-    TRACKED_N=$(git -C "$ROOT" ls-files -- "tests/fixtures/lsan_classify" 2>/dev/null | wc -l)
+    TRACKED_N=$(_lc_git ls-files -- "tests/fixtures/lsan_classify" 2>/dev/null | wc -l)
     if [ -n "$UNTRACKED" ]; then
         fail "untracked fixture(s) — present locally, absent in CI:
 $(echo "$UNTRACKED" | sed 's/^/      /')"
@@ -506,8 +538,10 @@ fi
 #    temp dir — neither may leave anything behind in the tree it polices.
 # ---------------------------------------------------------------------------
 echo "[lsan-classify] leavings"
-if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-    UNTRACKED_AFTER=$(git -C "$ROOT" ls-files --others --exclude-standard -- tests 2>/dev/null)
+if [ "$GIT_STATE" = refused ]; then
+    fail "git refuses to read $ROOT — the leavings check cannot run (see _lc_git)"
+elif [ "$GIT_STATE" = ok ]; then
+    UNTRACKED_AFTER=$(_lc_git ls-files --others --exclude-standard -- tests 2>/dev/null)
     NEW_LEAVINGS=$(comm -13 \
         <(printf '%s\n' "$UNTRACKED_BEFORE" | sort) \
         <(printf '%s\n' "$UNTRACKED_AFTER" | sort))

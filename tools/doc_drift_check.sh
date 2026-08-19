@@ -17,10 +17,34 @@ for m in lib/*.eigs; do
 done
 
 # 2. CLAUDE.md's "Latest release" line names the latest tag.
-tag=$(git tag --sort=-v:refname | head -1)
-if [ -n "$tag" ] && ! grep -q "Latest release: ${tag}" CLAUDE.md; then
-    echo "DRIFT: CLAUDE.md 'Latest release' line is not ${tag}"
-    drift=1
+#
+# `-c safe.directory='*'`: CI runs this inside a container (ci.yml `container:`)
+# where the checkout is owned by another uid, so a plain `git tag` dies with
+# "fatal: detected dubious ownership". actions/checkout registers the path on
+# the RUNNER's global config, which the container user never reads.
+#
+# That failure used to be INVISIBLE: git wrote to stderr, `$tag` came back
+# empty, and `[ -n "$tag" ]` skipped the comparison — so this check silently did
+# not run in CI while the section still printed PASS. An empty result and "no
+# drift" have to be distinguishable, or the gate measures nothing and says so in
+# the language of success.
+if ! git -c safe.directory='*' rev-parse --git-dir >/dev/null 2>&1; then
+    if [ -e .git ]; then
+        echo "BROKEN: git will not read this repository — the 'Latest release' check cannot run"
+        drift=1
+    else
+        echo "NOTE: not a git checkout; skipping the 'Latest release' tag comparison"
+    fi
+else
+    tag=$(git -c safe.directory='*' tag --sort=-v:refname | head -1)
+    if [ -z "$tag" ]; then
+        # A tagless clone (shallow / fresh init) is legitimate; say so rather
+        # than passing quietly, so "no tags fetched" cannot look like "in sync".
+        echo "NOTE: repository has no tags; skipping the 'Latest release' comparison"
+    elif ! grep -q "Latest release: ${tag}" CLAUDE.md; then
+        echo "DRIFT: CLAUDE.md 'Latest release' line is not ${tag}"
+        drift=1
+    fi
 fi
 
 # 3. A released VERSION always has its CHANGELOG section.
