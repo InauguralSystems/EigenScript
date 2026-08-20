@@ -730,9 +730,9 @@ Value* builtin_shared_get(Value *arg) {
 }
 
 Value* builtin_shared_has(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);
+    if (!arg || arg->type != VAL_STR) return make_num(0);  /* fs:TODO #971 guards a non-string key; deferred: ext_http is a variant-only build (make http) */
     Server *s = eigs_http_active;
-    if (!s) return make_num(0);
+    if (!s) return make_num(0);  /* fs:ANSWER 0 means "key not present" -- the same value line 739 returns when shared_find misses; with no active server there is no shared store, so nothing is present */
     pthread_mutex_lock(&s->shared_mu);
     int idx = shared_find(s, arg->data.str);
     pthread_mutex_unlock(&s->shared_mu);
@@ -740,9 +740,9 @@ Value* builtin_shared_has(Value *arg) {
 }
 
 Value* builtin_shared_delete(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);
+    if (!arg || arg->type != VAL_STR) return make_num(0);  /* fs:TODO #971 guards a non-string key; deferred: variant-only build */
     Server *s = eigs_http_active;
-    if (!s) return make_num(0);
+    if (!s) return make_num(0);  /* fs:ANSWER 0 means "nothing removed" -- the same value line 761 returns via `removed` when the key is absent */
     pthread_mutex_lock(&s->shared_mu);
     int idx = shared_find(s, arg->data.str);
     int removed = 0;
@@ -777,7 +777,7 @@ Value* builtin_shared_keys(Value *arg) {
 Value* builtin_shared_size(Value *arg) {
     (void)arg;
     Server *s = eigs_http_active;
-    if (!s) return make_num(0);
+    if (!s) return make_num(0);  /* fs:ANSWER 0 is the store's key count, the same quantity line 784 returns; with no active server the store is empty */
     pthread_mutex_lock(&s->shared_mu);
     int n = s->shared_count;
     pthread_mutex_unlock(&s->shared_mu);

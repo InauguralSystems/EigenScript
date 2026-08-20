@@ -419,6 +419,8 @@ static Value* store_json_parse_value(const char *s, int *pos) {
     if (s[*pos] == '-' || isdigit(s[*pos])) return store_json_parse_number(s, pos);
     if (strncmp(s + *pos, "null", 4) == 0) { *pos += 4; return make_null(); }
     if (strncmp(s + *pos, "true", 4) == 0) { *pos += 4; return make_num(1); }
+    /* fs:LITERAL the JSON token `false` decodes to the number 0 — this is the
+     * value being constructed, not a guard; no argument is being rejected. */
     if (strncmp(s + *pos, "false", 5) == 0) { *pos += 5; return make_num(0); }
     return NULL;  /* unknown token */
 }
@@ -1102,12 +1104,16 @@ static Value* builtin_store_get(Value *arg) {
 static Value* builtin_store_delete(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "store_delete requires [handle, collection, key]\n");
+        /* fs:CHANNEL the arity/type failure is already signalled by the
+         * unconditional rt_error above (EK_TYPE latch, catchable — asserted by
+         * CV2-68); this return is the post-raise placeholder, not the answer. */
         return make_num(0);
     }
     Store *store = get_store(arg->data.list.items[0]);
     Value *col_val = arg->data.list.items[1];
     Value *key_val = arg->data.list.items[2];
-    if (!store || !col_val || col_val->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!store || !col_val || col_val->type != VAL_STR,
+              "store_delete", "[store handle, string collection, key]", make_num(0));
 
     const char *collection = col_val->data.str;
     char key_buf[STORE_MAX_KEY_LEN];
@@ -1117,12 +1123,20 @@ static Value* builtin_store_delete(Value *arg) {
     } else if (key_val->type == VAL_NUM) {
         snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)key_val->data.num);
     } else {
-        return make_num(0);
+        /* Reaching the else arm IS the rejection: the key is neither a string
+         * nor a number. Guarded in place with a constant condition so the
+         * if/else chain's control flow is provably unchanged. */
+        ARG_GUARD(1, "store_delete", "a string or number key", make_num(0));
     }
 
     Value *col_info = dict_get(store->catalog, collection);
+    /* fs:ANSWER the collection is absent from the catalog, so no record with
+     * that key exists to delete — 0 is store_delete's documented "deleted
+     * nothing", the same value CV2-69 pins for a missing key. */
     if (!col_info || col_info->type != VAL_DICT) return make_num(0);
     Value *rv = dict_get(col_info, "root");
+    /* fs:ANSWER a catalog entry with no root page has no record pages, so
+     * nothing was deleted. */
     if (!rv) return make_num(0);
     uint32_t pg = (uint32_t)rv->data.num;
     size_t target_key_len = strlen(key_buf);
@@ -1136,6 +1150,9 @@ static Value* builtin_store_delete(Value *arg) {
         for (int i = 0; i < (int)page.count; i++) {
             int kl_offset = offset;
             StoreRecord rec;
+            /* fs:ANSWER on-disk corruption aborts the scan without having
+             * marked any record deleted, so 0 ("deleted nothing") is the
+             * truthful result; nothing about the ARGUMENTS is wrong here. */
             if (store_record_next(&page, &offset, &rec) != 0) return make_num(0);
             if (rec.key_len == 0) continue;  /* deleted */
 
@@ -1155,6 +1172,9 @@ static Value* builtin_store_delete(Value *arg) {
         }
         pg = page.next_page; if (pg >= store->page_count) break;
     }
+    /* fs:ANSWER the whole page chain was scanned and no live record carried
+     * this key — 0 is store_delete's documented "no record matched" (CV2-69
+     * asserts exactly this for a missing key). */
     return make_num(0);
 }
 
@@ -1204,16 +1224,24 @@ static Value* builtin_store_query(Value *arg) {
 static Value* builtin_store_count(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "store_count requires [handle, collection]\n");
+        /* fs:CHANNEL the arity/type failure is already signalled by the
+         * unconditional rt_error above (EK_TYPE latch, catchable — asserted by
+         * CV2-71); this return is the post-raise placeholder, not a count. */
         return make_num(0);
     }
     Store *store = get_store(arg->data.list.items[0]);
     Value *col_val = arg->data.list.items[1];
-    if (!store || !col_val || col_val->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!store || !col_val || col_val->type != VAL_STR,
+              "store_count", "[store handle, string collection]", make_num(0));
 
     const char *collection = col_val->data.str;
     Value *col_info = dict_get(store->catalog, collection);
+    /* fs:ANSWER a collection that is not in the catalog holds no records, so
+     * its count is 0 — the documented result for an unknown collection. */
     if (!col_info || col_info->type != VAL_DICT) return make_num(0);
     Value *rv = dict_get(col_info, "root");
+    /* fs:ANSWER a catalog entry with no root page has no record pages, so the
+     * count is 0. */
     if (!rv) return make_num(0);
     uint32_t pg = (uint32_t)rv->data.num;
 
@@ -1239,6 +1267,9 @@ static Value* builtin_store_count(Value *arg) {
 static Value* builtin_store_update(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
         rt_error(EK_TYPE, 0, "store_update requires [handle, collection, key, record]\n");
+        /* fs:CHANNEL the arity/type failure is already signalled by the
+         * unconditional rt_error above (EK_TYPE latch, catchable); this return
+         * is the post-raise placeholder, not "updated nothing". */
         return make_num(0);
     }
     Value *handle = arg->data.list.items[0];
@@ -1257,6 +1288,9 @@ static Value* builtin_store_update(Value *arg) {
 
     if (!del_result || del_result->data.num == 0) {
         if (del_result) val_decref(del_result);
+        /* fs:ANSWER store_delete reported that no record carried this key, so
+         * there was nothing to update — 0 is store_update's documented "no row
+         * updated"; 1 is produced only when the replace actually happened. */
         return make_num(0);
     }
     val_decref(del_result);
@@ -1269,7 +1303,11 @@ static Value* builtin_store_update(Value *arg) {
     } else if (key_val->type == VAL_NUM) {
         snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)key_val->data.num);
     } else {
-        return make_num(0);
+        /* Defensive only: a key that is neither string nor number was already
+         * rejected by the store_delete call above, which returned 0 and made
+         * this function return at the `del_result` check. Guarded in place
+         * with a constant condition so control flow is provably unchanged. */
+        ARG_GUARD(1, "store_update", "a string or number key", make_num(0));
     }
     dict_set_owned(record, "_id", make_str(key_buf));
 
@@ -1302,14 +1340,20 @@ static Value* builtin_store_collections(Value *arg) {
 static Value* builtin_store_drop(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "store_drop requires [handle, collection]\n");
+        /* fs:CHANNEL the arity/type failure is already signalled by the
+         * unconditional rt_error above (EK_TYPE latch, catchable — asserted by
+         * CV2-74); this return is the post-raise placeholder, not "not dropped". */
         return make_num(0);
     }
     Store *store = get_store(arg->data.list.items[0]);
     Value *col_val = arg->data.list.items[1];
-    if (!store || !col_val || col_val->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!store || !col_val || col_val->type != VAL_STR,
+              "store_drop", "[store handle, string collection]", make_num(0));
 
     const char *collection = col_val->data.str;
     Value *col_info = dict_get(store->catalog, collection);
+    /* fs:ANSWER there is no such collection to drop, so nothing was dropped —
+     * 0 is store_drop's documented "no" against the 1 produced on success. */
     if (!col_info || col_info->type != VAL_DICT) return make_num(0);
 
     /* Mark all pages in chain as free */

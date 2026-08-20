@@ -4465,6 +4465,47 @@ else
 fi
 echo ""
 
+# [99r] Fail-soft classification gate (#971).  Every `return make_num(0)` /
+# `return make_str("")` in the builtin surface must carry a written fs: tag,
+# because the distinction between a fail-soft guard and a documented ANSWER is
+# not derivable from the code — `task_alive` has one of each, four lines apart.
+# The gate proves a DECISION WAS RECORDED, nothing more; whether the decision
+# is right is what [99q]'s pins assert.
+echo "[99r] Fail-soft classification gate (#971)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" >/dev/null && \
+   bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" --selftest >/dev/null; then
+    PASS=$((PASS + 1))
+    echo "  PASS: every fail-soft return is classified (gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: an unclassified fail-soft return, or the gate self-test broke"
+    bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" 2>&1 | sed -n '1,12p'
+fi
+echo ""
+
+# [99s] Strict argument-guard differential (#971), --no-baseline half.
+# The full tool diffs against a build of the parent commit to prove the default
+# path is byte-identical; that half needs two binaries and is a pre-landing
+# step, not a CI one.  What runs here is the rest, and it is not decoration:
+# every converted guard must still raise under EIGS_STRICT, must raise FROM ITS
+# OWN GUARD (a probe that raises elsewhere scored as coverage until this check
+# existed — one probe named a builtin that does not exist and passed on
+# "undefined variable"), every documented ANSWER must stay quiet, and every
+# guard must have a probe.
+echo "[99s] Strict argument-guard differential (#971, no-baseline half)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline >/dev/null 2>&1; then
+    PASS=$((PASS + 1))
+    echo "  PASS: every guard raises from its own guard; every answer stays quiet"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: a guard went silent, raised from the wrong place, a pin broke,"
+    echo "        or a guard has no probe"
+    bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline 2>&1 | sed -n '1,14p'
+fi
+echo ""
+
 # [99c] Runaway-guard self-test (#651). Proves the timeout backstop inside
 # check_eigs_suite (the #649 guard) actually fires AND is tallied exactly,
 # cheaply (~2s), by driving a genuinely non-terminating fixture through the

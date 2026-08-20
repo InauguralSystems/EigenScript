@@ -390,23 +390,23 @@ static const char* scancode_name(int sc) {
 
 /* gfx_open of [width, height, title] */
 Value* builtin_gfx_open(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_num(0);
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_num(0);  /* fs:TODO #971 guards the [w, h, title] arg-list shape; deferred: gfx is a variant-only build (make gfx) no session test can exercise */
     int w = (int)arg->data.list.items[0]->data.num;
     int h = (int)arg->data.list.items[1]->data.num;
     const char *title = arg->data.list.items[2]->type == VAL_STR ? arg->data.list.items[2]->data.str : "EigenScript";
 
     if (!load_sdl2()) {
         fprintf(stderr, "gfx_open: cannot load libSDL2\n");
-        return make_num(0);
+        return make_num(0);  /* fs:ANSWER 0 is gfx_open's open-failed result -- line 422 returns 1 only after a renderer exists; libSDL2 absent is environment state, not a bad argument */
     }
     if (p_SDL_Init(MY_SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "gfx_open: SDL_Init failed: %s\n", p_SDL_GetError());
-        return make_num(0);
+        return make_num(0);  /* fs:ANSWER SDL_Init failed -- same 0-vs-1 open result as line 422, detail printed on stderr above */
     }
     g_window = p_SDL_CreateWindow(title, MY_SDL_WINDOWPOS_CENTERED, MY_SDL_WINDOWPOS_CENTERED, w, h, MY_SDL_WINDOW_RESIZABLE);
     if (!g_window) {
         fprintf(stderr, "gfx_open: SDL_CreateWindow failed: %s\n", p_SDL_GetError());
-        return make_num(0);
+        return make_num(0);  /* fs:ANSWER SDL_CreateWindow failed -- 0 open result; g_window stays NULL so every later gfx builtin no-ops */
     }
     g_renderer = p_SDL_CreateRenderer(g_window, -1, MY_SDL_RENDERER_ACCELERATED | MY_SDL_RENDERER_PRESENTVSYNC);
     if (!g_renderer) {
@@ -416,7 +416,7 @@ Value* builtin_gfx_open(Value *arg) {
         fprintf(stderr, "gfx_open: SDL_CreateRenderer failed\n");
         p_SDL_DestroyWindow(g_window);
         g_window = NULL;
-        return make_num(0);
+        return make_num(0);  /* fs:ANSWER SDL_CreateRenderer failed on both attempts -- 0 open result; the window is destroyed and g_window NULLed first */
     }
     p_SDL_SetRenderDrawBlendMode(g_renderer, MY_SDL_BLENDMODE_BLEND);
     return make_num(1);
@@ -905,7 +905,7 @@ Value* builtin_gfx_text_width(Value *arg) {
         if (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_NUM)
             scale = (int)arg->data.list.items[1]->data.num;
     }
-    if (!text) return make_num(0);
+    if (!text) return make_num(0);  /* fs:TODO #971 guards a non-string / non-[string, ...] argument (text is still NULL here); deferred: variant-only build */
     if (scale < 1) scale = 1;
     if (*text && ttf_available()) {
         void *font = ttf_font_for_scale(scale);
@@ -1068,10 +1068,10 @@ static void audio_free_channels(int lock) {
 
 /* audio_open of [freq, channels] — open the mixer device (callback mode) */
 Value* builtin_audio_open(Value *arg) {
-    if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }
+    if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER 0 is not a device id -- line 1095 returns the real one; libSDL2 unavailable is environment state, not an argument */
     if (!p_SDL_OpenAudioDevice) {
         fprintf(stderr, "audio_open: SDL2 audio symbols not available\n");
-        return make_num(0);
+        return make_num(0);  /* fs:ANSWER SDL2 audio symbols missing -- same no-device-id 0, detail on stderr above */
     }
     p_SDL_Init(MY_SDL_INIT_AUDIO);
 
@@ -1088,7 +1088,7 @@ Value* builtin_audio_open(Value *arg) {
     }
 
     g_audio_device = p_SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (g_audio_device < 2) { g_audio_device = 0; return make_num(0); }
+    if (g_audio_device < 2) { g_audio_device = 0; return make_num(0); }  /* fs:ANSWER SDL_OpenAudioDevice failed; valid ids are >= 2, so 0 is the no-device result and g_audio_device is reset to match */
     g_audio_freq = have.freq;
     g_audio_channels = have.channels;
     p_SDL_PauseAudioDevice(g_audio_device, 0); /* start playing */
@@ -1251,10 +1251,10 @@ Value* builtin_audio_capture_close(Value *arg) {
  * Returns the device id (>= 2), or 0 when SDL/audio is unavailable.
  * Re-opening closes the previous stream device first. */
 Value* builtin_audio_stream_open(Value *arg) {
-    if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }
+    if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER BUILTINS.md audio_stream_open: "0 when SDL/audio is unavailable"; libSDL2 absent is environment state */
     if (!p_SDL_OpenAudioDevice || !p_SDL_QueueAudio) {
         fprintf(stderr, "audio_stream_open: SDL2 audio symbols not available\n");
-        return make_num(0);
+        return make_num(0);  /* fs:ANSWER SDL2 queue-audio symbols missing -- the same documented 0-when-unavailable result */
     }
     p_SDL_Init(MY_SDL_INIT_AUDIO);
 
@@ -1277,7 +1277,7 @@ Value* builtin_audio_stream_open(Value *arg) {
         g_stream_device = 0;
     }
     g_stream_device = p_SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (g_stream_device < 2) { g_stream_device = 0; return make_num(0); }
+    if (g_stream_device < 2) { g_stream_device = 0; return make_num(0); }  /* fs:ANSWER SDL_OpenAudioDevice failed; valid ids are >= 2, so 0 is the documented unavailable result and g_stream_device is reset */
     g_stream_freq = have.freq;
     g_stream_channels = have.channels;
     p_SDL_PauseAudioDevice(g_stream_device, 0);  /* start playing */
@@ -1291,10 +1291,10 @@ Value* builtin_audio_stream_open(Value *arg) {
  * freed immediately. Pure sink, not traced. Returns 1 on success, 0 on a
  * closed device, bad shape, or an SDL queue error. */
 Value* builtin_audio_stream_push(Value *arg) {
-    if (!g_stream_device) return make_num(0);
+    if (!g_stream_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_stream_push: "0 on a closed device"; g_stream_device == 0 is device state, not an argument */
     int n = 0;
     int16_t *buf = audio_convert_samples(arg, &n);
-    if (!buf) return make_num(0);
+    if (!buf) return make_num(0);  /* fs:TODO #971 guards bad sample shape -- audio_convert_samples returns NULL for a non-list/buffer as well as for empty/>64MB; deferred: variant-only build */
     int rc = p_SDL_QueueAudio(g_stream_device, buf,
                               (Uint32)((size_t)n * sizeof(int16_t)));
     free(buf);
@@ -1343,15 +1343,15 @@ Value* builtin_audio_stream_close(Value *arg) {
  * any current track. Returns 1 on success, 0 on failure (missing mixer lib,
  * unreadable/undecodable file, no audio device). */
 Value* builtin_audio_music_play(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1) return make_num(0);
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1) return make_num(0);  /* fs:TODO #971 guards the [path, loops] arg-list shape; deferred: variant-only build */
     Value *pv = arg->data.list.items[0];
-    if (pv->type != VAL_STR) return make_num(0);
+    if (pv->type != VAL_STR) return make_num(0);  /* fs:TODO #971 guards a non-string path; deferred: variant-only build */
     const char *path = pv->data.str;
     int loops = (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_NUM)
                 ? (int)arg->data.list.items[1]->data.num : -1;
-    if (!load_sdl2()) return make_num(0);
+    if (!load_sdl2()) return make_num(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
     p_SDL_Init(MY_SDL_INIT_AUDIO);      /* ensure the audio subsystem is up */
-    if (!load_sdl_mixer()) return make_num(0);
+    if (!load_sdl_mixer()) return make_num(0);  /* fs:ANSWER SDL2_mixer not loadable -- the documented missing-mixer-lib 0 */
     if (!g_mixer_open) {
         p_Mix_Init(MY_MIX_INIT_MP3);
         /* Mix_OpenAudioDevice (not the legacy Mix_OpenAudio) so the music
@@ -1359,7 +1359,7 @@ Value* builtin_audio_music_play(Value *arg) {
         if (p_Mix_OpenAudioDevice(44100, MY_AUDIO_S16SYS, 2, 2048, NULL, 0) < 0) {
             fprintf(stderr, "audio_music: Mix_OpenAudioDevice failed: %s\n",
                     p_SDL_GetError ? p_SDL_GetError() : "?");
-            return make_num(0);
+            return make_num(0);  /* fs:ANSWER Mix_OpenAudioDevice failed (no audio device) -- documented 0, detail on stderr above */
         }
         g_mixer_open = 1;
     }
@@ -1368,12 +1368,12 @@ Value* builtin_audio_music_play(Value *arg) {
     if (!g_music) {
         fprintf(stderr, "audio_music: cannot load '%s': %s\n", path,
                 p_SDL_GetError ? p_SDL_GetError() : "?");
-        return make_num(0);
+        return make_num(0);  /* fs:ANSWER Mix_LoadMUS failed -- the documented unreadable/undecodable-file 0 */
     }
     if (p_Mix_PlayMusic(g_music, loops) < 0) {
         fprintf(stderr, "audio_music: play failed: %s\n",
                 p_SDL_GetError ? p_SDL_GetError() : "?");
-        return make_num(0);
+        return make_num(0);  /* fs:ANSWER Mix_PlayMusic failed -- documented 0; line 1378 returns 1 only when the track is actually playing */
     }
     return make_num(1);
 }
@@ -1402,10 +1402,10 @@ Value* builtin_audio_music_stop(Value *arg) {
 
 /* audio_play of samples — convert float list [-1,1] to int16, queue */
 Value* builtin_audio_play(Value *arg) {
-    if (!g_audio_device) return make_num(0);
+    if (!g_audio_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_play: "0 on ... closed device"; channel ids are slot+1 >= 1 (line 1057), so 0 is not a channel */
     int n = 0;
     int16_t *buf = audio_convert_samples(arg, &n);
-    if (!buf) return make_num(0);
+    if (!buf) return make_num(0);  /* fs:TODO #971 guards bad sample shape -- audio_convert_samples NULLs on a non-list/buffer as well as on empty/>64MB; deferred: variant-only build */
     return make_num(audio_install_channel(buf, n, 1));
 }
 
@@ -1415,19 +1415,19 @@ Value* builtin_audio_play(Value *arg) {
  * or 0 on a bad arg / closed device. */
 Value* builtin_audio_play_loop(Value *arg) {
     if (!g_audio_device || !arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_num(0);
+        return make_num(0);  /* fs:TODO #971 mixed condition: !g_audio_device is device state (must stay soft) but the VAL_LIST/count checks are a real arg guard -- splitting them is the conversion; deferred: variant-only build */
     Value *samples = arg->data.list.items[0];
     Value *loops_v = arg->data.list.items[1];
-    if (!loops_v || loops_v->type != VAL_NUM) return make_num(0);
+    if (!loops_v || loops_v->type != VAL_NUM) return make_num(0);  /* fs:TODO #971 guards a non-number loops argument; deferred: variant-only build */
     /* #152: NaN/huge casts are UB; -1 is the one negative with meaning. */
     double loops_d = loops_v->data.num;
     int loops;
     if (loops_d == -1.0) loops = -1;
-    else if (isnan(loops_d) || loops_d < 1.0 || loops_d > 10000.0) return make_num(0);
+    else if (isnan(loops_d) || loops_d < 1.0 || loops_d > 10000.0) return make_num(0);  /* fs:TODO #971 value-domain guard (NaN / <1 / >10000 loops, the #152 UB-cast bound), not a device or answer path; deferred: variant-only build */
     else loops = (int)loops_d;
     int n = 0;
     int16_t *buf = audio_convert_samples(samples, &n);
-    if (!buf) return make_num(0);
+    if (!buf) return make_num(0);  /* fs:TODO #971 guards bad sample shape via audio_convert_samples returning NULL; deferred: variant-only build */
     return make_num(audio_install_channel(buf, n, loops));
 }
 
@@ -1435,13 +1435,13 @@ Value* builtin_audio_play_loop(Value *arg) {
  * (Tidepool GAP-003). Returns 1, or 0 on a bad channel/arg. */
 Value* builtin_audio_volume(Value *arg) {
     if (!g_audio_device || !arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_num(0);
+        return make_num(0);  /* fs:TODO #971 mixed condition: !g_audio_device is device state (must stay soft) but the VAL_LIST/count checks are a real arg guard; deferred: variant-only build */
     Value *ch_v = arg->data.list.items[0];
     Value *vol_v = arg->data.list.items[1];
     if (!ch_v || ch_v->type != VAL_NUM || !vol_v || vol_v->type != VAL_NUM)
-        return make_num(0);
+        return make_num(0);  /* fs:TODO #971 guards non-number channel/volume arguments; deferred: variant-only build */
     int c = (int)ch_v->data.num - 1;
-    if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);
+    if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing" -- the same value line 1452 returns for an inactive in-range channel; an out-of-range id is definitionally inactive */
     double vol = vol_v->data.num;
     if (isnan(vol) || vol < 0.0) vol = 0.0;
     if (vol > 4.0) vol = 4.0;
@@ -1455,9 +1455,9 @@ Value* builtin_audio_volume(Value *arg) {
 /* audio_stop of channel — stop one mixer channel. Returns 1, or 0 on a
  * bad/inactive channel. */
 Value* builtin_audio_stop(Value *arg) {
-    if (!g_audio_device || !arg || arg->type != VAL_NUM) return make_num(0);
+    if (!g_audio_device || !arg || arg->type != VAL_NUM) return make_num(0);  /* fs:TODO #971 mixed condition: !g_audio_device is device state (must stay soft) but arg->type != VAL_NUM is a real arg guard; deferred: variant-only build */
     int c = (int)arg->data.num - 1;
-    if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);
+    if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active" -- the same value line 1465 returns for an inactive in-range channel */
     p_SDL_LockAudioDevice(g_audio_device);
     int ok = g_audio_ch[c].active;
     g_audio_ch[c].active = 0;
@@ -1468,7 +1468,7 @@ Value* builtin_audio_stop(Value *arg) {
 /* audio_queue_size of null — bytes queued */
 Value* builtin_audio_queue_size(Value *arg) {
     (void)arg;
-    if (!g_audio_device) return make_num(0);
+    if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 bytes queued: with no device no channel holds unplayed samples, which is exactly the total lines 1477-1485 sum for an idle device */
     /* Mixer equivalent of the old queued-bytes count: unplayed bytes
      * summed over active FINITE channels (infinite loops would be
      * infinity; they are excluded so refill-style polls terminate). */

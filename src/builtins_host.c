@@ -77,6 +77,10 @@ Value* builtin_raw_key(Value *arg) {
     enable_raw_mode();
     char buf[4] = {0};
     ssize_t n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
+    /* fs:ANSWER raw_key ignores `arg` entirely ((void)arg above), so this
+     * cannot be an argument guard: VMIN=0/VTIME=0 makes read(2) hand back 0
+     * when no key is waiting, and "" is that no-key answer (docs/BUILTINS.md:388
+     * documents `""` if none). */
     if (n <= 0) return make_str("");
     buf[n] = '\0';
     /* Arrow keys come as ESC [ A/B/C/D */
@@ -191,12 +195,19 @@ Value* builtin_match_all(Value *arg) {
 Value* builtin_regex_replace(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "regex_replace requires [string, pattern, replacement]");
+        /* fs:CHANNEL the rt_error above already raised on g_has_error (it is
+         * unconditional, not gated on g_strict), so this builtin is ALREADY
+         * loud in both modes; the "" only satisfies the C signature, and the VM
+         * discards it at the CHECK_ERROR seam. */
         return make_str("");
     }
     if (arg->data.list.items[0]->type != VAL_STR ||
         arg->data.list.items[1]->type != VAL_STR ||
         arg->data.list.items[2]->type != VAL_STR) {
         rt_error(EK_TYPE, 0, "regex_replace: string, pattern and replacement must be strings");
+        /* fs:CHANNEL same as above — the unconditional rt_error is the error
+         * channel; converting to ARG_GUARD would make this site quieter with
+         * strict OFF, not louder. */
         return make_str("");
     }
     const char *str = arg->data.list.items[0]->data.str;
@@ -208,6 +219,9 @@ Value* builtin_regex_replace(Value *arg) {
      * no-op that hides the broken pattern. Raise. */
     if (regcomp(&re, pattern, REG_EXTENDED) != 0) {
         rt_error(EK_VALUE, 0, "regex_replace: invalid pattern '%s'", pattern);
+        /* fs:CHANNEL #500 already made the invalid pattern raise unconditionally
+         * (EK_VALUE, a regcomp domain failure — not an argument TYPE); the ""
+         * is the discarded post-raise value. */
         return make_str("");
     }
 
@@ -252,31 +266,49 @@ Value* builtin_regex_replace(Value *arg) {
 
 
 Value* builtin_stream_open(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "stream_open", "[path, count]", make_num(0));
     Value *path_val = arg->data.list.items[0];
     Value *count_val = arg->data.list.items[1];
-    if (!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM)
-        return make_num(0);
+    ARG_GUARD(!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM,
+              "stream_open", "[a string path, a number count]", make_num(0));
     if (g_stream_file) { fclose(g_stream_file); g_stream_file = NULL; }
     g_stream_file = xfopen_write(path_val->data.str, "wb");
+    /* fs:ANSWER the arguments were already validated by the two guards above;
+     * reaching here with a NULL FILE* is xfopen_write failing, and the block
+     * comment over this section documents stream_open as answering 1 — so 0
+     * is the "could not open" answer, not a type mistake. */
     if (!g_stream_file) return make_num(0);
     uint32_t count = (uint32_t)count_val->data.num;
     uint32_t header[4] = { 1, 1, count, 0 }; /* ndim=1, rows=1, cols=count, flags=0 */
     if (fwrite(header, sizeof(uint32_t), 4, g_stream_file) != 4) {
         fclose(g_stream_file);
         g_stream_file = NULL;
+        /* fs:ANSWER a short fwrite(3) of the header — an I/O failure after the
+         * file was already opened; 0 is the failure bit paired with the
+         * make_num(1) success value below. */
         return make_num(0);
     }
     return make_num(1);
 }
 
 Value* builtin_stream_write(Value *arg) {
-    if (!g_stream_file || !arg || arg->type != VAL_NUM) return make_num(0);
+    /* The two halves of the original single condition are separated because
+     * only one of them is about the ARGUMENT: `!g_stream_file` is a stream
+     * state, and strict must not report it as a type error. Both halves still
+     * answer make_num(0) with strict off, in either order, so the non-strict
+     * result is unchanged. */
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "stream_write", "a number", make_num(0));
+    /* fs:ANSWER no stream is open — the state, not the argument (which the
+     * guard above already accepted); 0 is the failure bit paired with the
+     * make_num(1) success value below. */
+    if (!g_stream_file) return make_num(0);
     double val = arg->data.num;
     if (fwrite(&val, sizeof(double), 1, g_stream_file) != 1) {
         fclose(g_stream_file);
         g_stream_file = NULL;
+        /* fs:ANSWER a short fwrite(3) of one float64 — an I/O failure, not an
+         * argument mistake; 0 is this builtin's documented failure bit. */
         return make_num(0);
     }
     return make_num(1);
@@ -284,6 +316,9 @@ Value* builtin_stream_write(Value *arg) {
 
 Value* builtin_stream_close(Value *arg) {
     (void)arg;
+    /* fs:ANSWER stream_close ignores `arg` entirely ((void)arg above), so this
+     * cannot be an argument guard: no stream is open, and 0 is the failure bit
+     * paired with the ok?1:0 value below. */
     if (!g_stream_file) return make_num(0);
     int ok = (fclose(g_stream_file) == 0);
     g_stream_file = NULL;
@@ -374,7 +409,7 @@ Value* builtin_exe_path(Value *arg) {
 
 /* chdir of "path" → 1 on success, 0 on failure */
 Value* builtin_chdir(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "chdir", "a string path", make_num(0));
     return make_num(chdir(arg->data.str) == 0 ? 1 : 0);
 }
 
@@ -383,6 +418,8 @@ Value* builtin_mktemp(Value *arg) {
     (void)arg;
     char tmpl[] = "/tmp/eigen_XXXXXX";
     int fd = mkstemp(tmpl);
+    /* fs:ANSWER mktemp ignores `arg` entirely ((void)arg above), so this cannot
+     * be an argument guard: mkstemp(3) failed and "" is the no-path result. */
     if (fd < 0) return make_str("");
     close(fd);
     return make_str(tmpl);
@@ -390,7 +427,7 @@ Value* builtin_mktemp(Value *arg) {
 
 /* rm of "path" → 1 on success, 0 on failure */
 Value* builtin_rm(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "rm", "a string path", make_num(0));
     return make_num(unlink(arg->data.str) == 0 ? 1 : 0);
 }
 
@@ -1048,16 +1085,18 @@ Value* builtin_is_dir(Value *arg) {
  * never a torn mix — the basis for crash-safe log compaction (write a new log to
  * a temp file, then atomically swap it in). Returns 1 on success, 0 on failure. */
 Value* builtin_rename(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "rename", "[old_path, new_path]", make_num(0));
     Value *from = arg->data.list.items[0];
     Value *to = arg->data.list.items[1];
-    if (!from || from->type != VAL_STR || !to || to->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!from || from->type != VAL_STR || !to || to->type != VAL_STR,
+              "rename", "two string paths", make_num(0));
     return make_num(rename(from->data.str, to->data.str) == 0 ? 1 : 0);
 }
 
 /* remove_file of path — delete a file. Returns 1 on success, 0 on failure. */
 Value* builtin_remove_file(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "remove_file", "a string path", make_num(0));
     return make_num(remove(arg->data.str) == 0 ? 1 : 0);
 }
 
@@ -1250,14 +1289,17 @@ Value* builtin_read_line(Value *arg) {
 /* ==== BUILTIN: write_text ==== */
 /* write_text of ["path", text] → 1 on success, 0 on failure. */
 Value* builtin_write_text(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "write_text", "[path, text]", make_num(0));
     Value *path_val = arg->data.list.items[0];
     Value *text_val = arg->data.list.items[1];
-    if (!path_val || path_val->type != VAL_STR ||
-        !text_val || text_val->type != VAL_STR)
-        return make_num(0);
+    ARG_GUARD(!path_val || path_val->type != VAL_STR ||
+              !text_val || text_val->type != VAL_STR,
+              "write_text", "two strings", make_num(0));
     FILE *f = xfopen_write(path_val->data.str, "w");
+    /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
+     * is xfopen_write failing (missing directory, permissions, sandbox), and
+     * the header comment documents write_text as "1 on success, 0 on failure". */
     if (!f) return make_num(0);
     size_t len = strlen(text_val->data.str);
     size_t written = fwrite(text_val->data.str, 1, len, f);
@@ -1714,11 +1756,12 @@ Value* builtin_random_hex(Value *arg) {
  * so it can carry CBOR / arbitrary binary. Surfaced by tidelog's append-only
  * log (write_text is truncate-mode and NUL-truncating). */
 Value* builtin_write_bytes(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "write_bytes", "[path, data] (optionally [path, data, append])", make_num(0));
     Value *path_val = arg->data.list.items[0];
     Value *data = arg->data.list.items[1];
-    if (!path_val || path_val->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!path_val || path_val->type != VAL_STR,
+              "write_bytes", "a string path as its first argument", make_num(0));
     int append = 0;
     if (arg->data.list.count >= 3 && arg->data.list.items[2] &&
         arg->data.list.items[2]->type == VAL_NUM)
@@ -1734,16 +1777,33 @@ Value* builtin_write_bytes(Value *arg) {
         n = data->data.buffer.count;
         bufd = data->data.buffer.data;
     } else {
-        return make_num(0);
+        /* Reaching this else IS the condition: `data` is neither a list of
+         * byte ints nor a buffer, the only two forms the header documents. */
+        ARG_GUARD(1, "write_bytes",
+                  "a list of byte values or a buffer as its second argument",
+                  make_num(0));
     }
 
     unsigned char *out = xmalloc((size_t)(n > 0 ? n : 1));
     for (int i = 0; i < n; i++) {
+        /* Coercion, not a guard: a non-number element silently became 0.0 and
+         * was written as a NUL byte, so `write_bytes of [p, ["a","b"]]` wrote
+         * two zero bytes and reported success. Same class as join/str_replace
+         * — no stand-in return, so invisible to the classifier. The free()
+         * matters: STRICT_REQUIRE returns, and `out` is already allocated. */
+        if (g_strict && items && (!items[i] || items[i]->type != VAL_NUM)) {
+            free(out);
+            rt_error(EK_TYPE, 0, "write_bytes: expected every element to be a number");
+            return make_null();
+        }
         double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
                           : bufd[i];
         out[i] = (unsigned char)((int)dv & 0xFF);
     }
     FILE *f = xfopen_write(path_val->data.str, append ? "ab" : "wb");
+    /* fs:ANSWER the path was accepted by the guard above; a NULL FILE* is
+     * xfopen_write failing, and the header documents write_bytes as yielding
+     * "the number of bytes written, or 0 on failure" — 0 is that failure. */
     if (!f) { free(out); return make_num(0); }
     size_t written = fwrite(out, 1, (size_t)n, f);
     int close_ok = (fclose(f) == 0);

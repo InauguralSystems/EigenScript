@@ -224,7 +224,10 @@ static double op_div(double a, double b) { return (b == 0.0) ? 0.0 : num_guard(a
 static double op_pow(double a, double b) { return num_guard(pow(a, b)); }
 
 static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
-    if (!a || !b) return make_num(0.0);
+    /* Shared by add/subtract/multiply/divide/pow (and by its own recursion on
+     * nested elements), so the guard names that surface rather than one call. */
+    ARG_GUARD(!a || !b, "add/subtract/multiply/divide/pow",
+              "two tensor operands", make_num(0.0));
 
     /* scalar op scalar */
     if (a->type == VAL_NUM && b->type == VAL_NUM)
@@ -306,7 +309,12 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
             list_append_owned(out, tensor_elementwise(a->data.list.items[i], b->data.list.items[i], fn));
         return out;
     }
-    return make_num(0.0);
+    /* Every NUM/LIST combination exits above, so reaching here means an
+     * operand is neither a number nor a list — a string, a dict, a buffer
+     * (`add of [buffer, list]` lands here). That is the wrong-type case, and
+     * 0.0 was indistinguishable from a real elementwise result. */
+    ARG_GUARD(1, "add/subtract/multiply/divide/pow",
+              "numbers or lists as operands", make_num(0.0));
 }
 
 /* ==== BUILTIN: add ==== */
@@ -360,7 +368,11 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
             list_append_owned(out, tensor_unary(v->data.list.items[i], fn));
         return out;
     }
-    return make_num(0.0);
+    /* Both handled types exit above, so `v` is neither a number nor a
+     * list — `sqrt of "hello"` was 0, the exact laundering #971 names. Shared
+     * by sqrt/exp/log/negative and by its own recursion, so the guard names
+     * that surface rather than one call. */
+    ARG_GUARD(1, "sqrt/exp/log/negative", "a number or a list", make_num(0.0));
 }
 
 /* #865: `sqrt of -1` returns 0, which is indistinguishable from `sqrt of 0`.
@@ -490,6 +502,9 @@ Value* builtin_tensor_log_softmax(Value *arg) {
         if (first->type == VAL_LIST) tensor = first; /* [tensor, dim] form */
     }
     /* #632: log(softmax(scalar)) = log(1) = 0. */
+    /* fs:ANSWER softmax of a single element is 1 and log(1) is 0, so 0.0 is
+     * the arithmetic result for a scalar argument — a NUMBER is a valid
+     * argument here, which is what makes this not a type guard (#632). */
     if (tensor && tensor->type == VAL_NUM) return make_num(0.0);
     int rows, cols;
     double *flat = tensor_to_flat(tensor, &rows, &cols);
@@ -564,7 +579,20 @@ Value* builtin_tensor_leaky_relu(Value *arg) {
 
 /* ==== BUILTIN: mean ==== */
 Value* builtin_tensor_mean(Value *arg) {
+    /* Split from the empty case below. `tensor_total` answers 0 for an empty
+     * list AND for any non-tensor — a string, a dict, a function — so one
+     * `total == 0` line was carrying two opposite verdicts: `mean of []`
+     * is the identity, `mean of "hello"` is a laundered type mistake. The
+     * mixed line could not be classified honestly (a blind review caught it
+     * tagged fs:EMPTY, which would have blessed the laundering permanently),
+     * so the type half is hoisted out. Non-strict is byte-identical: both
+     * halves still answer 0.0. Closes the main half of #1008. */
+    ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST,
+              "mean", "a number or a list of numbers", make_num(0.0));
     int total = tensor_total(arg);
+    /* fs:EMPTY nothing to average, and the division below would be 0/0. The
+     * non-tensor case is gone (guarded above), so this line now carries one
+     * verdict only: `mean of []` is the empty mean and strict must not raise. */
     if (total == 0) return make_num(0.0);
     double *flat = xcalloc(total, sizeof(double));
     int idx = 0;
@@ -587,7 +615,20 @@ Value* builtin_tensor_sum(Value *arg) {
         for (int i = 0; i < n; i++) s = num_guard(s + d[i]);
         return make_num(s);
     }
+    /* Split from the empty case below. `tensor_total` answers 0 for an empty
+     * list AND for any non-tensor — a string, a dict, a function — so one
+     * `total == 0` line was carrying two opposite verdicts: `sum of []`
+     * is the identity, `sum of "hello"` is a laundered type mistake. The
+     * mixed line could not be classified honestly (a blind review caught it
+     * tagged fs:EMPTY, which would have blessed the laundering permanently),
+     * so the type half is hoisted out. Non-strict is byte-identical: both
+     * halves still answer 0.0. Closes the main half of #1008. */
+    ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST,
+              "sum", "a number or a list of numbers", make_num(0.0));
     int total = tensor_total(arg);
+    /* fs:EMPTY 0.0 is the additive identity this loop would accumulate over
+     * zero elements. The non-tensor case is guarded above, so `sum of []` is
+     * the only reading left here. */
     if (total == 0) return make_num(0.0);
     double *flat = xcalloc(total, sizeof(double));
     int idx = 0;
@@ -607,7 +648,19 @@ Value* builtin_tensor_norm(Value *arg) {
         for (int i = 0; i < n; i++) s = num_guard(s + num_guard(d[i] * d[i]));
         return make_num(num_guard(sqrt(s)));
     }
+    /* Split from the empty case below. `tensor_total` answers 0 for an empty
+     * list AND for any non-tensor — a string, a dict, a function — so one
+     * `total == 0` line was carrying two opposite verdicts: `norm of []`
+     * is the identity, `norm of "hello"` is a laundered type mistake. The
+     * mixed line could not be classified honestly (a blind review caught it
+     * tagged fs:EMPTY, which would have blessed the laundering permanently),
+     * so the type half is hoisted out. Non-strict is byte-identical: both
+     * halves still answer 0.0. Closes the main half of #1008. */
+    ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST,
+              "norm", "a number or a list of numbers", make_num(0.0));
     int total = tensor_total(arg);
+    /* fs:EMPTY the L2 norm over zero elements is sqrt(0) = 0, exactly what the
+     * loop below would produce. The non-tensor case is guarded above. */
     if (total == 0) return make_num(0.0);
     double *flat = xcalloc(total, sizeof(double));
     int idx = 0;
@@ -665,6 +718,9 @@ Value* builtin_tensor_zeros(Value *arg) {
 /* ==== BUILTIN: zeros_like ==== */
 Value* builtin_tensor_zeros_like(Value *arg) {
     if (!arg) return make_null();
+    /* fs:LITERAL a number is a valid argument and this IS the value being
+     * constructed — the zero of the same shape, which for a scalar is 0.0.
+     * It is the scalar leaf of the recursion below, not a guard. */
     if (arg->type == VAL_NUM) return make_num(0.0);
     if (arg->type == VAL_LIST) {
         Value *out = make_list(arg->data.list.count);
@@ -672,7 +728,10 @@ Value* builtin_tensor_zeros_like(Value *arg) {
             list_append_owned(out, builtin_tensor_zeros_like(arg->data.list.items[i]));
         return out;
     }
-    return make_num(0.0);
+    /* Both shapes zeros_like can mirror exit above, so `arg` is neither a
+     * number nor a list (a string, a dict — or a BUFFER, whose zero should be
+     * a zero buffer, not the scalar 0.0 this used to hand back). */
+    ARG_GUARD(1, "zeros_like", "a number or a list", make_num(0.0));
 }
 
 /* ==== BUILTIN: gather ==== */
@@ -706,6 +765,14 @@ Value* builtin_tensor_gather(Value *arg) {
             return make_num(tensor->data.list.items[idx]->type == VAL_NUM
                 ? tensor->data.list.items[idx]->data.num : 0.0);
     }
+    /* fs:TODO #971 two readings share this one line and cannot be separated
+     * without splitting it. (a) GUARD: `tensor` is not a list, or `indices` is
+     * neither a list nor a number — the wrong-type case, which should raise.
+     * (b) ANSWER: the 1D branch just above fell through because `idx` was out
+     * of range, and out-of-range → 0.0 is this builtin's established behaviour
+     * (the 2D branch above appends make_num(0.0) for the same condition), so
+     * strict must NOT raise on it. Converting as written would turn (b) into a
+     * type error; deferred rather than guessed. */
     return make_num(0.0);
 }
 
@@ -1212,17 +1279,25 @@ Value* builtin_sgd_update_cols(Value *arg) {
 }
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_tensor_save(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "tensor_save", "[tensor, path]", make_num(0));
     Value *tensor = arg->data.list.items[0];
     Value *path_val = arg->data.list.items[1];
-    if (!tensor || tensor->type != VAL_LIST || !path_val || path_val->type != VAL_STR)
-        return make_num(0);
+    ARG_GUARD(!tensor || tensor->type != VAL_LIST || !path_val || path_val->type != VAL_STR,
+              "tensor_save", "[a list tensor, a string path]", make_num(0));
 
     int rows, cols;
     int ndim = tensor_dims(tensor, &rows, &cols);
-    if (ndim == 0) return make_num(0);
+    /* tensor_dims answers 0 for an empty list or one whose first element is
+     * neither a number nor a list — i.e. the argument is a list but not a 1D
+     * or 2D tensor, which is a shape/type mistake in the tensor argument and
+     * not an I/O failure (no file has been opened yet at this point). */
+    ARG_GUARD(ndim == 0, "tensor_save", "a non-empty 1D or 2D tensor", make_num(0));
 
     FILE *f = xfopen_write(path_val->data.str, "wb");
+    /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
+     * is xfopen_write failing, and 0 is this builtin's failure bit (the success
+     * path ends in make_num(1)). */
     if (!f) return make_num(0);
 
     uint32_t header[4] = { (uint32_t)ndim, (uint32_t)rows, (uint32_t)cols, 1 /* flags: has observer */ };
