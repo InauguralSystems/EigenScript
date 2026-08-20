@@ -280,6 +280,7 @@ static void env_hash_init(EnvHash *ht, int cap);
 void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
 static void env_hash_rebuild(EnvHash *ht, char **names, int count);
 static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char **names);
+static void env_intern_scope_remove(char *name);
 
 /* ================================================================
  * VALUE CONSTRUCTORS
@@ -1845,6 +1846,7 @@ void dict_remove(Value *dict, const char *key) {
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     if (idx < 0) return;
     /* keys are interned — do not free */
+    env_intern_scope_remove(dict->data.dict.keys[idx]);
     val_decref(dict->data.dict.vals[idx]);
     /* Shift remaining */
     for (int j = idx; j < dict->data.dict.count - 1; j++) {
@@ -2335,6 +2337,14 @@ static void env_intern_owner_add(Value *value, EnvNameIntern *name) {
     }
     name->owner_next = owner->names;
     owner->names = name;
+}
+
+static void env_intern_scope_remove(char *name) {
+    for (EnvInternValueOwner *owner = g_sandbox_intern_owners; owner; owner = owner->next)
+        for (EnvNameIntern **link = &owner->names; *link; link = &(*link)->owner_next)
+            if ((*link)->name == name) {
+                EnvNameIntern *drop = *link; *link = drop->owner_next;
+                free(drop->name); free(drop); return; }
 }
 
 uint32_t env_intern_scope_begin(void) {
