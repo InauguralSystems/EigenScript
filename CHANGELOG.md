@@ -84,6 +84,134 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`gfx_open`, `audio_open` and `audio_capture_open` no longer reinterpret a
+  string as a number and report success (#1007).** `Value`'s union overlaps
+  `double num` with `char *str`, and all three read `.data.num` with no type
+  check — while a sibling argument on the very next line, and
+  `audio_stream_open` 180 lines away, *were* checked. So a string where a
+  number belonged reinterpreted a pointer as a double and `(int)`-cast it. In
+  practice a pointer's bit pattern is a tiny denormal, so it read as **0** and
+  the call answered as though it had worked:
+
+  | | before | after |
+  |---|---|---|
+  | `gfx_open of ["800", "600", "t"]` | `1` — a 0×0 window | `0`, and raises under strict |
+  | `audio_open of ["44100", "1"]` | `2` — a device id | `0`, and raises under strict |
+  | `audio_capture_open of ["44100", "1"]` | `3` — a device id | `0`, and raises under strict |
+
+  The bogus audio opens took the real device with them, so the *next*
+  well-typed `audio_open` in the same program answered 0.
+  `audio_capture_open` is not one of the two sites #1007 names — it was found
+  by grepping for the shape instead of working the issue's list, and of the
+  three audio `*_open` builtins only `audio_stream_open` had the guard.
+  A fourth site, `audio_stream_open`, never type-punned — its checks are part
+  of the condition — but reached the same silent success by another route: a
+  wrong-typed pair simply SKIPPED the override, opened at the 44100/1 defaults
+  and answered a real device id, so a caller asking for 48000 was told it got
+  what it asked for. It is guarded now too.
+  **And a worse shape than the rest: pointer disclosure.** Seven builtins —
+  `audio_sine`, `audio_saw`, `audio_square`, `audio_sweep`, `audio_noise`,
+  `audio_envelope` and `audio_gain` — BUILD their returned data out of the same
+  unchecked reads, so the pun did not merely mis-draw: it copied a
+  reinterpreted `char *` into a list the script reads back. Executed on the
+  parent binary, `audio_sweep of ["100", 200, 0.01, 0.5, 0]` returned 441
+  samples whose first element was `3.62e-314`, `3.44e-314`, `3.71e-314` on
+  three consecutive runs — an ASLR pointer value, handed to the program, fresh
+  each run. All seven are guarded, and their assertions run on a machine with
+  no libSDL2 (they touch no SDL at all), which is the part of this change CI
+  exercises most directly.
+  **That per-run freshness is now the gate, and it needed no name list.** New
+  suite section **[134]** runs each probe TWICE and diffs: a stable answer is
+  fine whatever it is, a differing one means address-space state reached the
+  program. It matters that the list was DERIVED that way rather than read —
+  writing the fix from the six generators left `audio_gain` unguarded, and only
+  the sweep found it. The section carries a positive control (a genuinely
+  nondeterministic expression that MUST be reported as differing), because with
+  every site fixed "nothing differs" is also what an empty probe list prints.
+  **And the probe SPELLING is part of the mechanism, which cost a round to
+  learn.** Two rows punned an argument that structurally cannot leak, so they
+  passed against a binary with the guard deleted: `audio_square`'s `freq`
+  makes the phase never advance, so every sample is `+amp` exactly and the
+  output is identical run to run; `audio_envelope`'s `attack`/`decay`/`release`
+  only feed `(int)(x * rate)`, which casts the denormal to 0. Only the
+  argument that reaches the RETURNED data discloses — amplitude, and
+  `sustain` with a list long enough to have a sustain region. Every row is now
+  verified DIFFER against a build of the parent commit, and a mutant with two
+  guards deleted fails naming exactly those two.
+  Measured: the section passes on this build; on the parent it fails naming
+  all seven; on the two-guard mutant it fails naming exactly those two.
+  Separately, `audio_convert_samples` **coerced** a non-number element to 0, so
+  a wrong-typed sample list built a valid buffer of silence and the caller's
+  `if (!buf)` guard never saw it — `audio_play of ["a", "b", "c"]` returned a
+  real channel id and played nothing. Coercion is the one shape that cannot be
+  caught downstream, so it is rejected at the element. The REJECTION is
+  unconditional (the caller then answers 0, which is what BUILTINS.md already
+  documents for `audio_play` and what the coercing version could never
+  produce); the RAISE is strict-only, exactly as `ARG_GUARD` behaves. A first
+  draft raised unconditionally and turned a call that used to return a channel
+  id into a fatal error in the default build — the one thing the #971 reform
+  promises not to do, and `lib/audio.eigs` passes user data straight through.
+  **`audio_capture_open`'s guard sits ABOVE its `TRACE_NONDET_TAKE`**, and the
+  placement is load-bearing. Below it, the guard returned before
+  `TRACE_NONDET_RECORD` and the capture run wrote NO record — while the replay
+  run's `TAKE` ran first and CONSUMED one, breaking `trace.h`'s "exactly one
+  record per call either way" contract: every later record for that name
+  shifted by one, and the rejected call replayed as a real device id, silently,
+  even under `EIGS_STRICT=1`. Measured: capture printed `0 2 null`, replay of
+  that same tape printed `2 2 null`. An argument's type is deterministic, so a
+  rejected call is not a nondeterministic input and must not touch the tape.
+  Section [133] gained a third pass that captures and replays the same program
+  and requires the two outputs to be identical — no other pass runs under
+  `EIGS_TRACE`/`EIGS_REPLAY`, which is why the first version got this wrong.
+  All three guards sit **ahead of the SDL load**, which is what makes them
+  reachable on a machine with no libSDL2 — the CI runners have none, so a
+  guard placed after the load would never be exercised there.
+  Before this change `grep -c rt_error src/ext_gfx.c` was **0**: the one
+  builtin surface in the repo where a caller mistake had no loud outcome
+  available, and the surface all 18 `lib/ui*.eigs` modules and the whole app
+  fleet sit on.
+  **The guard-order rule is now a gate, because CI had to teach it.** Three
+  guards were deliberately hoisted above the SDL load and the fourth,
+  `audio_stream_open`, was not. That difference is invisible on a machine WITH
+  libSDL2 — the guard is reached and raises — so every local suite passed, and
+  the CI extensions lane, which has none, failed with exactly one row:
+  `#1007 strict: audio_stream_open raises on string freq/channels — expected
+  type_mismatch, got none`. A guard behind an environment check does not exist
+  in the environment that lacks it. `tools/gfx_guard_order_check.sh` now
+  asserts every `ARG_GUARD` in `ext_gfx.c` precedes its own SDL load, with a
+  floor so a deleted guard is a failure rather than a smaller clean scan; it is
+  suite section **[135]** and is deliberately NOT probe-gated, since it scans
+  source and so runs in the lanes where [133]/[134] skip. It needed comment and
+  string stripping on its first run: the explanatory comment above the guard
+  mentions `load_sdl2()`, and the scanner read its own prose as code.
+
+  **Residual, stated so a green suite is not misread as coverage of #1007:**
+  roughly **89 unchecked `items[N]->data.num` reads remain in `ext_gfx.c`**,
+  along with the ~52 `make_null()` drawing returns where `gfx_rect`/`gfx_line`/
+  `gfx_text` answer a wrong-typed argument by silently drawing nothing. This
+  change closes the sites that report SUCCESS or disclose a pointer; the rest
+  stay open on #1007. `tools/failsoft_classify_check.sh` still cannot see the
+  `make_null()` population at all — it enumerates only `0`/`""`. And
+  `make asan-gfx` is not yet wired into any suite section or CI job: running it
+  over the gfx corpus surfaces pre-existing arena and SDL-internal leaks that
+  need triage first, so it ships as a tool, not as a gate.
+  New suite section **[133]**, two passes. The strict pass is the load-bearing
+  half: the non-strict stand-in for these guards is `0`, which is *also* what
+  all three answer when libSDL2 is simply absent, so a "wrong types give 0"
+  assertion passes on unfixed code in that environment. Measured on the
+  unfixed binary here: 3 rows red in each pass.
+  New `make asan-gfx` target — the same structural gap `asan-http` closed for
+  `ext_http`, one surface over. `make asan` compiles `ext_gfx.c` out, so until
+  now no sanitizer build anywhere, local or CI, ever instrumented it. SDL is
+  `dlopen`'d rather than linked, so it builds on a machine without libSDL2.
+  `tools/strict_differential.sh` learned about variant-only builds: a guard in
+  `ext_gfx.c` cannot be probed by a default binary, so probes for a builtin
+  this build does not contain are **skipped and counted by name** rather than
+  scored as a silent guard. Presence is decided by RUNNING the name, not by
+  reading `--api` — `--api` reports the documented surface, not the linked one
+  (a release binary lists `extension gfx gfx_open` while `gfx_open` is an
+  undefined variable at runtime).
+
 - **A rejected `store_update` no longer destroys the record it was updating
   (#1006).** `store_update` is delete-then-put, and it discarded the put's
   result. `store_put` has genuine failure returns — "record too large",

@@ -70,7 +70,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -118,6 +118,10 @@ SRC_V_asan := $(SOURCES)
 FLAGS_asan := $(ASAN_FLAGS) $(DEFS_OFF) $(VERDEF)
 LIBS_asan  := -lm -lpthread
 
+SRC_V_asan-gfx := $(SOURCES) $(SRC_DIR)/ext_gfx.c
+FLAGS_asan-gfx := $(ASAN_FLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+LIBS_asan-gfx  := -lm -lpthread -ldl
+
 SRC_V_asan-http := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c $(MODEL_SRC)
 FLAGS_asan-http := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 $(VERDEF)
 LIBS_asan-http  := -lm -lpthread
@@ -134,7 +138,7 @@ SRC_V_poison := $(SOURCES)
 FLAGS_poison := -Werror=switch -Werror=comment -g -O1 -DEIGS_POISON $(DEFS_OFF) $(VERDEF)
 LIBS_poison  := -lm -lpthread
 
-VARIANTS := release full http zlib net gfx asan asan-http tsan valgrind poison
+VARIANTS := release full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
@@ -349,6 +353,20 @@ asan: build/asan/eigenscript
 asan-http: build/asan-http/eigenscript
 	$(call RELINK,asan-http)
 	@echo "EigenScript $(VERSION) (asan+ubsan, http+model+net) built. Binary: $(BINARY)"
+
+# ASan+UBSan over ext_gfx.c — the same structural gap asan-http closed for
+# ext_http, one surface over. `make asan` compiles ext_gfx.c out entirely, so
+# until this target existed NO sanitizer build anywhere — local or CI — ever
+# instrumented it, while every app in the fleet (DMG, dynamics, eddy,
+# eigen-edit, eigen-sheet, DeslanStudio) and all 18 lib/ui modules run on it.
+# That is why #1007's union type-puns (a char* read through .data.num and then
+# int-cast) sat in gfx_open and audio_open unreported: -fsanitize=float-cast-
+# overflow names them the moment they execute, and nothing ran it.
+# SDL is dlopen'd, not linked, so this builds on a machine with no libSDL2.
+#   make asan-gfx && SDL_VIDEODRIVER=dummy ./src/eigenscript prog.eigs
+asan-gfx: build/asan-gfx/eigenscript
+	$(call RELINK,asan-gfx)
+	@echo "EigenScript $(VERSION) (asan+ubsan, gfx) built. Binary: $(BINARY)"
 
 # ThreadSanitizer build for the concurrency race gate (tests/test_tsan.sh).
 # Complements ASan (which is not run with the thread checker). Run the tests

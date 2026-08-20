@@ -97,7 +97,7 @@ MIN_LINES=100
 # compiles live inside those scripts), install* (cp; the lsp/dap compiles
 # are covered by their own targets), test/clean/version/print-%/
 # coverage-clean/fuzz-run (no compiles).
-TARGETS="build full http zlib net gfx asan asan-http tsan valgrind poison \
+TARGETS="build full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison \
          lsp dap jit-smoke lib embed-smoke embed-smoke-gfx pgo coverage \
          fuzz fuzz-libfuzzer freestanding-libc-diff sandbox-intern-test"
 
@@ -108,7 +108,7 @@ TARGETS="build full http zlib net gfx asan asan-http tsan valgrind poison \
 # target gains a shared prerequisite, keep that dependent goal in its own
 # batch as well.
 TARGET_BATCHES=(
-    "build full http zlib net gfx asan asan-http tsan valgrind poison lsp dap jit-smoke lib embed-smoke pgo coverage fuzz fuzz-libfuzzer freestanding-libc-diff"
+    "build full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison lsp dap jit-smoke lib embed-smoke pgo coverage fuzz fuzz-libfuzzer freestanding-libc-diff"
     "embed-smoke-gfx"
     "sandbox-intern-test"
 )
@@ -260,6 +260,7 @@ net 26
 gfx 26
 asan 25
 asan-http 30
+asan-gfx 26
 tsan 25
 valgrind 25
 poison 25
@@ -1054,6 +1055,16 @@ if [ "${1:-}" = "--selftest" ]; then
         cp tools/werror_switch_check.sh "$root/tools/werror_switch_check.sh"
         cp build.sh "$root/build.sh"
         cp tools/gen_lsp_builtin_index.sh "$root/tools/gen_lsp_builtin_index.sh"
+        # The Makefile too, and for the same reason as the gate itself: this
+        # gate's whole population is `make -pqRr` over TARGETS, so taking the
+        # gate from the working tree while taking the Makefile from HEAD tests
+        # a combination that exists nowhere. Adding a build target and its
+        # enrollment in ONE change then failed the self-test with
+        # "Enroll 'X' in TARGETS…" — the enrollment was present, the target
+        # was not — and the run exited before ever reaching the header probes,
+        # which is what the failure actually reported (#1007, adding asan-gfx).
+        # The check must be keyed to the tree under test, not to HEAD.
+        cp Makefile "$root/Makefile"
     }
 
     # Generated-header family: prove that the planted generator source really
