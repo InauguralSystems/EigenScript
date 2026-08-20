@@ -3073,26 +3073,49 @@ if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
         b=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
         GD_RUN=$((GD_RUN + 1))
         # A probe that produced nothing measured nothing — two empty strings
-        # compare equal and would score as "no disclosure".
-        [ -z "$a" ] && GD_EMPTY="$GD_EMPTY $nm"
+        # compare equal and would score as "no disclosure". Nor is a stable
+        # ERROR message a pass: an arity change, a rename or a parse slip
+        # degrades the probe into a diagnostic that is identical both runs.
+        case "$a" in
+            "")                       GD_EMPTY="$GD_EMPTY $nm" ;;
+            Error*|*"undefined variable"*|*"Parse error"*) GD_EMPTY="$GD_EMPTY $nm(error)" ;;
+        esac
         if [ "$want" = "same" ]; then
             [ "$a" != "$b" ] && GD_LEAKS="$GD_LEAKS $nm"
         else
             [ "$a" = "$b" ] && GD_LEAKS="$GD_LEAKS control:$nm"
         fi
     }
-    gd_probe audio_gain     'print of (audio_gain of [([1.0]), "2.0"])'                       same
-    gd_probe audio_sine     'print of (audio_sine of ["440", 0.01, 0.5])'                     same
-    gd_probe audio_saw      'print of (audio_saw of ["440", 0.01, 0.5])'                      same
-    gd_probe audio_square   'print of (audio_square of ["440", 0.01, 0.5])'                   same
-    gd_probe audio_sweep    'print of (audio_sweep of ["100", 200, 0.01, 0.5, 0])'            same
-    # Amplitude, not duration: a punned DURATION collapses n to 0 and the
-    # function returns an empty list without ever reading the pointer, so that
-    # spelling is not discriminating.
-    gd_probe audio_noise    'print of (audio_noise of [0.001, "0.5"])'                        same
-    gd_probe audio_envelope 'print of (audio_envelope of [([0.1, 0.2]), "0.01", 0.01, 0.5, 0.01])' same
-    gd_probe audio_mix      'print of (audio_mix of [([1.0]), ([1.0])])'                      same
-    gd_probe gfx_text_width 'print of (gfx_text_width of ["m", "2"])'                         same
+    # EVERY ROW BELOW WAS VERIFIED DISCRIMINATING against a build of the parent
+    # commit: each reports DIFFER there and `same` here. That check is the
+    # whole point and it is not automatic — two earlier spellings punned an
+    # argument that structurally CANNOT leak, so those rows passed against a
+    # binary with the guard deleted:
+    #
+    #   audio_square: punning `freq` makes the phase never advance, so every
+    #     sample is +amp exactly and the output is identical run to run. The
+    #     disclosing argument is `amplitude`, which is written into the samples.
+    #   audio_envelope: `attack`/`decay`/`release` only feed
+    #     `(int)(x * rate)`, which casts the denormal to 0 and can never reach
+    #     the output. Only `sustain` multiplies samples — and only when the
+    #     list is long enough to HAVE a sustain region, hence 32 elements.
+    #
+    # So: pun the argument that reaches the returned data, and confirm the row
+    # fires against a known-bad binary before trusting it.
+    gd_probe audio_gain     'print of (audio_gain of [([1.0]), "2.0"])'                        same
+    gd_probe audio_sine     'print of (audio_sine of [440, 0.01, "0.5"])'                      same
+    gd_probe audio_saw      'print of (audio_saw of [440, 0.01, "0.5"])'                       same
+    gd_probe audio_square   'print of (audio_square of [440, 0.01, "0.5"])'                    same
+    gd_probe audio_sweep    'print of (audio_sweep of [100, 200, 0.01, "0.5", 0])'             same
+    gd_probe audio_noise    'print of (audio_noise of [0.001, "0.5"])'                         same
+    gd_probe audio_envelope 'print of (audio_envelope of [([0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5]), 0.0001, 0.0001, "0.5", 0.0001])' same
+    # NEGATIVE rows: checked against the parent and found NOT to disclose —
+    # audio_mix type-checks both element reads, gfx_text_width int-casts its
+    # scale to 0. They are here so a future edit that starts leaking through
+    # them goes red, and they are named as non-discriminating so the row count
+    # is not mistaken for seven-plus-two of coverage.
+    gd_probe audio_mix      'print of (audio_mix of [([1.0]), ([1.0])])'                       same
+    gd_probe gfx_text_width 'print of (gfx_text_width of ["m", "2"])'                          same
     gd_probe random_control 'print of (random of null)'                                       differ
     rm -rf "$GD_DIR"
 
@@ -3112,6 +3135,22 @@ else
     echo "[134] Pointer-disclosure oracle SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
     echo ""
 fi
+
+# [135] ext_gfx guard-order gate (#1007). Deliberately NOT probe-gated: it
+# scans SOURCE, so it runs in every lane including the ones where [133]/[134]
+# skip for want of a gfx build. That is the point — the fault it catches is
+# invisible on a machine that HAS libSDL2, and the lane that would notice is
+# the one that cannot run the other two sections.
+echo "[135] ext_gfx guard-order (#1007)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/gfx_guard_order_check.sh"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: every ARG_GUARD in ext_gfx.c precedes its own SDL load"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: a guard is behind its SDL load, or the scan went vacuous (see above)"
+fi
+echo ""
 
 # [132] UI containment render-decode oracle (#823 — probe-gated: needs a
 # gfx build). The stubbed [63] suite proves containment on RECORDED clip

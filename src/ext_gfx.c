@@ -1318,6 +1318,24 @@ Value* builtin_audio_capture_close(Value *arg) {
  * Returns the device id (>= 2), or 0 when SDL/audio is unavailable.
  * Re-opening closes the previous stream device first. */
 Value* builtin_audio_stream_open(Value *arg) {
+    /* This site never type-punned — the checks further down are part of the
+     * condition — but it reached the same silent success by a different
+     * route: a wrong-typed pair simply SKIPPED the override, opened the
+     * device at 44100/1 and answered a real id, so a caller that asked for
+     * 48000 was told it got what it asked for.
+     *
+     * ABOVE the SDL load, like its three siblings. This one was placed below
+     * it at first, and the difference is invisible on a machine that HAS
+     * libSDL2: the guard is reached and raises. CI has none, so the function
+     * returned at `load_sdl2()` and the strict row read
+     * "expected type_mismatch, got none" there and only there. A guard behind
+     * an environment check is a guard that does not exist in the environment
+     * that lacks it. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
+                  arg->data.list.items[1]->type != VAL_NUM,
+                  "audio_stream_open", "[number freq, number channels]", make_num(0));
+    }
     if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER BUILTINS.md audio_stream_open: "0 when SDL/audio is unavailable"; libSDL2 absent is environment state */
     if (!p_SDL_OpenAudioDevice || !p_SDL_QueueAudio) {
         fprintf(stderr, "audio_stream_open: SDL2 audio symbols not available\n");
@@ -1332,18 +1350,6 @@ Value* builtin_audio_stream_open(Value *arg) {
     want.samples = 1024;
     want.callback = NULL;   /* queue mode: feed via SDL_QueueAudio */
 
-    /* This site never type-punned — the checks below are part of the
-     * condition — but it reaches the same silent success by a different
-     * route: a wrong-typed pair simply SKIPS the override, opens the device
-     * at 44100/1 and answers a real id, so a caller that asked for 48000 is
-     * told it got what it asked for. Guarded for the same reason as the
-     * other three (#1007); the type checks stay in the condition so the
-     * non-strict control flow is provably unchanged. */
-    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
-                  arg->data.list.items[1]->type != VAL_NUM,
-                  "audio_stream_open", "[number freq, number channels]", make_num(0));
-    }
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
         && arg->data.list.items[0]->type == VAL_NUM
         && arg->data.list.items[1]->type == VAL_NUM) {

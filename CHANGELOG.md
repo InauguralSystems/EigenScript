@@ -128,8 +128,18 @@ All notable changes to EigenScript are documented here.
   the sweep found it. The section carries a positive control (a genuinely
   nondeterministic expression that MUST be reported as differing), because with
   every site fixed "nothing differs" is also what an empty probe list prints.
-  Measured: the section passes on this build and fails on the parent, naming
-  `audio_gain audio_sine audio_saw audio_sweep audio_noise`.
+  **And the probe SPELLING is part of the mechanism, which cost a round to
+  learn.** Two rows punned an argument that structurally cannot leak, so they
+  passed against a binary with the guard deleted: `audio_square`'s `freq`
+  makes the phase never advance, so every sample is `+amp` exactly and the
+  output is identical run to run; `audio_envelope`'s `attack`/`decay`/`release`
+  only feed `(int)(x * rate)`, which casts the denormal to 0. Only the
+  argument that reaches the RETURNED data discloses — amplitude, and
+  `sustain` with a list long enough to have a sustain region. Every row is now
+  verified DIFFER against a build of the parent commit, and a mutant with two
+  guards deleted fails naming exactly those two.
+  Measured: the section passes on this build; on the parent it fails naming
+  all seven; on the two-guard mutant it fails naming exactly those two.
   Separately, `audio_convert_samples` **coerced** a non-number element to 0, so
   a wrong-typed sample list built a valid buffer of silence and the caller's
   `if (!buf)` guard never saw it — `audio_play of ["a", "b", "c"]` returned a
@@ -160,6 +170,21 @@ All notable changes to EigenScript are documented here.
   builtin surface in the repo where a caller mistake had no loud outcome
   available, and the surface all 18 `lib/ui*.eigs` modules and the whole app
   fleet sit on.
+  **The guard-order rule is now a gate, because CI had to teach it.** Three
+  guards were deliberately hoisted above the SDL load and the fourth,
+  `audio_stream_open`, was not. That difference is invisible on a machine WITH
+  libSDL2 — the guard is reached and raises — so every local suite passed, and
+  the CI extensions lane, which has none, failed with exactly one row:
+  `#1007 strict: audio_stream_open raises on string freq/channels — expected
+  type_mismatch, got none`. A guard behind an environment check does not exist
+  in the environment that lacks it. `tools/gfx_guard_order_check.sh` now
+  asserts every `ARG_GUARD` in `ext_gfx.c` precedes its own SDL load, with a
+  floor so a deleted guard is a failure rather than a smaller clean scan; it is
+  suite section **[135]** and is deliberately NOT probe-gated, since it scans
+  source and so runs in the lanes where [133]/[134] skip. It needed comment and
+  string stripping on its first run: the explanatory comment above the guard
+  mentions `load_sdl2()`, and the scanner read its own prose as code.
+
   **Residual, stated so a green suite is not misread as coverage of #1007:**
   roughly **89 unchecked `items[N]->data.num` reads remain in `ext_gfx.c`**,
   along with the ~52 `make_null()` drawing returns where `gfx_rect`/`gfx_line`/
