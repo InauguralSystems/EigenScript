@@ -20,7 +20,6 @@
 set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 SRC=src/ext_gfx.c
-SDL_ENTRY='load_sdl2\(|p_SDL_[A-Za-z_]+\('
 
 rc=0
 # STRIP COMMENTS AND STRING LITERALS FIRST. Without this the scanner reads
@@ -46,17 +45,27 @@ STRIPPED="$(awk '
     }
 ' "$SRC")"
 
-report="$(printf '%s\n' "$STRIPPED" | awk -v entry="$SDL_ENTRY" '
-    /^Value\* builtin_[a-z_0-9]+\(/ { fn=$2; sub(/\(.*/,"",fn); guard=0; sdl=0; next }
+# NO REGEX in the scanner, by design. `$0 ~ entry` with a dynamic pattern and
+# `/^Value\* builtin_[a-z_0-9]+\(/` are both dialect-dependent: measured, mawk
+# resolves them, busybox awk silently reports sdl=0 for every function, and
+# macOS's awk found ZERO functions at all — which the vacuity floor caught in
+# CI rather than letting it pass as a clean scan. index() is exact-substring
+# and behaves identically everywhere, so the check no longer has an awk
+# dialect as an input.
+report="$(printf '%s\n' "$STRIPPED" | awk '
+    index($0, "Value* builtin_") == 1 {
+        fn = $2; k = index(fn, "("); if (k > 0) fn = substr(fn, 1, k - 1)
+        guard = 0; sdl = 0; next
+    }
     fn == "" { next }
-    /ARG_GUARD\(/   && guard == 0 { guard = NR }
-    $0 ~ entry      && sdl   == 0 { sdl   = NR }
-    /^}/ {
+    index($0, "ARG_GUARD(") > 0 && guard == 0 { guard = NR }
+    (index($0, "load_sdl2(") > 0 || index($0, "p_SDL_") > 0) && sdl == 0 { sdl = NR }
+    index($0, "}") == 1 {
         if (guard > 0) {
             if (sdl > 0 && sdl < guard) printf "BAD %s guard@%d after sdl@%d\n", fn, guard, sdl
             else                        printf "OK  %s\n", fn
         }
-        fn=""
+        fn = ""
     }
 ')"
 
