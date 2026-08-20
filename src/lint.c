@@ -1330,42 +1330,131 @@ static int w023_name_present(const W023Names *set, const char *name) {
     for (int i = 0; i < set->count; i++) if (strcmp(set->names[i], name) == 0) return 1;
     return 0;
 }
+static void w023_names_unknown(W023Names *set) {
+    free(set->names);
+    *set = (W023Names){ .unknown = 1 };
+}
 static void w023_name_add(const char *name, W023Names *set) {
-    if (!name) { set->unknown = 1; return; }
+    if (!name) { w023_names_unknown(set); return; }
     if (set->unknown || w023_name_present(set, name)) return;
-    if (set->count == INT_MAX || (size_t)(set->count + 1) > SIZE_MAX / sizeof(*set->names)) { set->unknown = 1; return; }
+    if (set->count == INT_MAX || (size_t)(set->count + 1) > SIZE_MAX / sizeof(*set->names)) { w023_names_unknown(set); return; }
     if (set->count == set->capacity) {
         int capacity = set->capacity ? set->capacity : 8;
-        if (capacity > INT_MAX / 2 || (size_t)capacity > SIZE_MAX / sizeof(*set->names)) { set->unknown = 1; return; }
+        if (capacity > INT_MAX / 2 || (size_t)capacity > SIZE_MAX / sizeof(*set->names)) { w023_names_unknown(set); return; }
         while (capacity <= set->count) {
-            if (capacity > INT_MAX / 2) { set->unknown = 1; return; }
+            if (capacity > INT_MAX / 2) { w023_names_unknown(set); return; }
             capacity *= 2;
         }
-        set->names = xrealloc(set->names, (size_t)capacity * sizeof(*set->names));
+        char **names = realloc(set->names, (size_t)capacity * sizeof(*set->names));
+        if (!names) { w023_names_unknown(set); return; }
+        set->names = names;
         set->capacity = capacity;
     }
     set->names[set->count++] = (char *)name;
 }
-static void w023_names_copy(W023Names *dst, const W023Names *src) {
+static int w023_names_copy(W023Names *dst, const W023Names *src) {
     *dst = (W023Names){ .unknown = src->unknown };
-    if (!src->count) return;
-    if ((size_t)src->count > SIZE_MAX / sizeof(*dst->names)) { dst->unknown = 1; return; }
-    dst->names = xmalloc((size_t)src->count * sizeof(*dst->names));
+    if (src->unknown || !src->count) return 0;
+    if ((size_t)src->count > SIZE_MAX / sizeof(*dst->names)) { dst->unknown = 1; return -1; }
+    dst->names = malloc((size_t)src->count * sizeof(*dst->names));
+    if (!dst->names) { dst->unknown = 1; return -1; }
     memcpy(dst->names, src->names, (size_t)src->count * sizeof(*dst->names));
     dst->count = dst->capacity = src->count;
+    return 0;
 }
 static void w023_names_free(W023Names *set) { free(set->names); set->names = NULL; set->count = set->capacity = 0; }
 static void w023_analyse_function(ASTNode *, ASTNode **, int, W023Names *, LintContext *);
 static void w023_scan_sequence(ASTNode **, int, W023Names *, ASTNode *, ASTNode **, int, W023Names *, LintContext *);
 
+static int w023_node_has_name(const ASTNode *n, const char *name) {
+    if (!n || !name) return 0;
+#define W023_HAS(x) w023_node_has_name((x), name)
+    switch (n->type) {
+    case AST_IDENT:
+        return n->data.ident.name && strcmp(n->data.ident.name, name) == 0;
+    case AST_ASSIGN:
+        return (n->data.assign.name && strcmp(n->data.assign.name, name) == 0) || W023_HAS(n->data.assign.expr);
+    case AST_FUNC:
+        if (n->data.func.name && strcmp(n->data.func.name, name) == 0) return 1;
+        for (int i = 0; i < n->data.func.body_count; i++) if (W023_HAS(n->data.func.body[i])) return 1;
+        return 0;
+    case AST_FOR:
+        if (n->data.forloop.var && strcmp(n->data.forloop.var, name) == 0) return 1;
+        if (W023_HAS(n->data.forloop.iter)) return 1;
+        for (int i = 0; i < n->data.forloop.body_count; i++) if (W023_HAS(n->data.forloop.body[i])) return 1;
+        return 0;
+    case AST_TRY:
+        if (n->data.trycatch.err_name && strcmp(n->data.trycatch.err_name, name) == 0) return 1;
+        for (int i = 0; i < n->data.trycatch.try_count; i++) if (W023_HAS(n->data.trycatch.try_body[i])) return 1;
+        for (int i = 0; i < n->data.trycatch.catch_count; i++) if (W023_HAS(n->data.trycatch.catch_body[i])) return 1;
+        return 0;
+    case AST_LIST_PATTERN_ASSIGN:
+        for (int i = 0; i < n->data.list_pattern_assign.name_count; i++)
+            if (n->data.list_pattern_assign.names[i] && strcmp(n->data.list_pattern_assign.names[i], name) == 0) return 1;
+        return W023_HAS(n->data.list_pattern_assign.expr);
+    case AST_IMPORT:
+        return n->data.import.module_name && strcmp(n->data.import.module_name, name) == 0;
+    case AST_IF:
+        if (W023_HAS(n->data.cond.cond)) return 1;
+        for (int i = 0; i < n->data.cond.if_count; i++) if (W023_HAS(n->data.cond.if_body[i])) return 1;
+        for (int i = 0; i < n->data.cond.else_count; i++) if (W023_HAS(n->data.cond.else_body[i])) return 1;
+        return 0;
+    case AST_LOOP:
+        if (W023_HAS(n->data.loop.cond)) return 1;
+        for (int i = 0; i < n->data.loop.body_count; i++) if (W023_HAS(n->data.loop.body[i])) return 1;
+        return 0;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        for (int i = 0; i < n->data.block.count; i++) if (W023_HAS(n->data.block.stmts[i])) return 1;
+        return 0;
+    case AST_MATCH:
+        if (W023_HAS(n->data.match.expr)) return 1;
+        for (int i = 0; i < n->data.match.case_count; i++) {
+            if (W023_HAS(n->data.match.patterns[i])) return 1;
+            for (int j = 0; j < n->data.match.body_counts[i]; j++) if (W023_HAS(n->data.match.bodies[i][j])) return 1;
+        }
+        return 0;
+    case AST_INTERROGATE:
+        return W023_HAS(n->data.interrogate.expr) || W023_HAS(n->data.interrogate.at_expr) ||
+               W023_HAS(n->data.interrogate.when_expr);
+    case AST_LISTCOMP:
+        if (n->data.listcomp.var && strcmp(n->data.listcomp.var, name) == 0) return 1;
+        return W023_HAS(n->data.listcomp.expr) || W023_HAS(n->data.listcomp.iter) || W023_HAS(n->data.listcomp.filter);
+    case AST_BINOP: return W023_HAS(n->data.binop.left) || W023_HAS(n->data.binop.right);
+    case AST_UNARY: return W023_HAS(n->data.unary.operand);
+    case AST_RELATION: return W023_HAS(n->data.relation.left) || W023_HAS(n->data.relation.right);
+    case AST_RETURN: return W023_HAS(n->data.ret.expr);
+    case AST_LIST:
+        for (int i = 0; i < n->data.list.count; i++) if (W023_HAS(n->data.list.elems[i])) return 1;
+        return 0;
+    case AST_INDEX: return W023_HAS(n->data.index.target) || W023_HAS(n->data.index.index);
+    case AST_DICT:
+        for (int i = 0; i < n->data.dict.count; i++) if (W023_HAS(n->data.dict.keys[i]) || W023_HAS(n->data.dict.vals[i])) return 1;
+        return 0;
+    case AST_DOT: return W023_HAS(n->data.dot.target);
+    case AST_DOT_ASSIGN: return W023_HAS(n->data.dot_assign.target) || W023_HAS(n->data.dot_assign.expr);
+    case AST_INDEX_ASSIGN:
+        return W023_HAS(n->data.index_assign.target) || W023_HAS(n->data.index_assign.index) || W023_HAS(n->data.index_assign.expr);
+    case AST_SLICE:
+        return W023_HAS(n->data.slice.target) || W023_HAS(n->data.slice.start) || W023_HAS(n->data.slice.end);
+    case AST_LAMBDA: return W023_HAS(n->data.lambda.body);
+    case AST_PROGRAM:
+        for (int i = 0; i < n->data.program.count; i++) if (W023_HAS(n->data.program.stmts[i])) return 1;
+        return 0;
+    case AST_NUM:
+    case AST_STR:
+    case AST_NULL:
+    case AST_PREDICATE:
+    case AST_BREAK:
+    case AST_CONTINUE:
+        return 0;
+    }
+#undef W023_HAS
+    return 0;
+}
 static int w023_body_has_name(ASTNode **body, int count, const char *name) {
-    LintContext *tmp = xcalloc(1, sizeof *tmp); int found = 0;
-    for (int i = 0; i < count; i++) { collect_refs(body[i], tmp); collect_assigns(body[i], tmp); }
-    for (int i = 0; i < tmp->ref_count && !found; i++) found = strcmp(tmp->refs[i], name) == 0;
-    for (int i = 0; i < tmp->assign_count && !found; i++) found = strcmp(tmp->assigns[i], name) == 0;
-    for (int i = 0; i < tmp->ref_count; i++) free(tmp->refs[i]);
-    for (int i = 0; i < tmp->assign_count; i++) free(tmp->assigns[i]);
-    free(tmp); return found;
+    for (int i = 0; i < count; i++) if (w023_node_has_name(body[i], name)) return 1;
+    return 0;
 }
 
 /* This one exhaustive walk mirrors compiler module-name collection, closure
@@ -1460,25 +1549,90 @@ static int w023_special_flags(ASTNode **body, int count, const char *name) {
     int flags = 0;
     for (int i = 0; i < count; i++) w023_walk(body[i], W023_SPECIAL, name, &flags, NULL, NULL, 0, NULL); return flags;
 }
-static int w023_prefix_binds(ASTNode **stmts, int limit, const char *name) {
-    char **locals = xcalloc(W015_MAX_NAMES, sizeof(*locals)); int n = 0, result;
-    for (int i = 0; i < limit; i++) {
-        w015_collect_locals(stmts[i], locals, &n); if (n >= W015_MAX_NAMES || w023_special_flags(&stmts[i], 1, name) & (W023_ENV_BOUND | W023_DEFINE)) { free(locals); return 1; }
+static void w023_collect_binders(ASTNode *n, W023Names *locals) {
+    if (!n || locals->unknown) return;
+    switch (n->type) {
+    case AST_ASSIGN:
+        if (n->data.assign.local_only) w023_name_add(n->data.assign.name, locals);
+        break;
+    case AST_LIST_PATTERN_ASSIGN:
+        for (int i = 0; i < n->data.list_pattern_assign.name_count; i++)
+            w023_name_add(n->data.list_pattern_assign.names[i], locals);
+        break;
+    case AST_IF:
+        for (int i = 0; i < n->data.cond.if_count; i++) w023_collect_binders(n->data.cond.if_body[i], locals);
+        for (int i = 0; i < n->data.cond.else_count; i++) w023_collect_binders(n->data.cond.else_body[i], locals);
+        break;
+    case AST_LOOP:
+        for (int i = 0; i < n->data.loop.body_count; i++) w023_collect_binders(n->data.loop.body[i], locals);
+        break;
+    case AST_FOR:
+        w023_name_add(n->data.forloop.var, locals);
+        for (int i = 0; i < n->data.forloop.body_count; i++) w023_collect_binders(n->data.forloop.body[i], locals);
+        break;
+    case AST_TRY:
+        w023_name_add(n->data.trycatch.err_name, locals);
+        for (int i = 0; i < n->data.trycatch.try_count; i++) w023_collect_binders(n->data.trycatch.try_body[i], locals);
+        for (int i = 0; i < n->data.trycatch.catch_count; i++) w023_collect_binders(n->data.trycatch.catch_body[i], locals);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        for (int i = 0; i < n->data.block.count; i++) w023_collect_binders(n->data.block.stmts[i], locals);
+        break;
+    case AST_MATCH:
+        for (int i = 0; i < n->data.match.case_count; i++)
+            for (int j = 0; j < n->data.match.body_counts[i]; j++) w023_collect_binders(n->data.match.bodies[i][j], locals);
+        break;
+    case AST_NUM:
+    case AST_STR:
+    case AST_IDENT:
+    case AST_NULL:
+    case AST_BINOP:
+    case AST_UNARY:
+    case AST_RELATION:
+    case AST_FUNC:
+    case AST_RETURN:
+    case AST_LIST:
+    case AST_INDEX:
+    case AST_LISTCOMP:
+    case AST_PROGRAM:
+    case AST_INTERROGATE:
+    case AST_PREDICATE:
+    case AST_DICT:
+    case AST_DOT:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_DOT_ASSIGN:
+    case AST_IMPORT:
+    case AST_LAMBDA:
+    case AST_INDEX_ASSIGN:
+    case AST_SLICE:
+        break;
     }
-    result = name_present(name, locals, n); free(locals); return result;
+}
+static int w023_prefix_binds(ASTNode **stmts, int limit, const char *name) {
+    W023Names locals = {0};
+    for (int i = 0; i < limit; i++) {
+        w023_collect_binders(stmts[i], &locals);
+        if (locals.unknown) { w023_names_free(&locals); return -1; }
+        if (w023_special_flags(&stmts[i], 1, name) & (W023_ENV_BOUND | W023_DEFINE)) { w023_names_free(&locals); return 1; }
+    }
+    int result = w023_name_present(&locals, name);
+    w023_names_free(&locals);
+    return result;
 }
 static int w023_enclosing_binds(const char *name, ASTNode **ancestors, int count) {
     for (int a = 0; a < count; a++) {
         ASTNode *fn = ancestors[a];
         for (int p = 0; p < fn->data.func.param_count; p++)
             if (strcmp(fn->data.func.params[p], name) == 0) return 1;
-        char **locals = xcalloc(W015_MAX_NAMES, sizeof(*locals)); int n = 0;
-        for (int b = 0; b < fn->data.func.body_count; b++) w015_collect_locals(fn->data.func.body[b], locals, &n);
-        if (n >= W015_MAX_NAMES) { free(locals); return 1; }
-        if (name_present(name, locals, n) ||
+        W023Names locals = {0};
+        for (int b = 0; b < fn->data.func.body_count; b++) w023_collect_binders(fn->data.func.body[b], &locals);
+        if (locals.unknown) { w023_names_free(&locals); return -1; }
+        if (w023_name_present(&locals, name) ||
             (w023_special_flags(fn->data.func.body, fn->data.func.body_count, name) &
-             (W023_CAPTURED | W023_INTERROGATED | W023_ENV_BOUND | W023_DEFINE))) { free(locals); return 1; }
-        free(locals);
+             (W023_CAPTURED | W023_INTERROGATED | W023_ENV_BOUND | W023_DEFINE))) { w023_names_free(&locals); return 1; }
+        w023_names_free(&locals);
     }
     return 0;
 }
@@ -1488,35 +1642,52 @@ static int w023_can_fire(ASTNode *fn, const char *name, W023Names *bound,
     for (int p = 0; p < fn->data.func.param_count; p++) if (strcmp(fn->data.func.params[p], name) == 0) return 0;
     if (w023_special_flags(fn->data.func.body, fn->data.func.body_count, name) &
         (W023_CAPTURED | W023_INTERROGATED | W023_ENV_BOUND)) return 0;
-    return !w023_name_present(bound, name) && !w023_enclosing_binds(name, ancestors, depth);
+    int enclosing = w023_enclosing_binds(name, ancestors, depth);
+    if (enclosing < 0) { w023_names_unknown(module); return 0; }
+    return !w023_name_present(bound, name) && !enclosing;
+}
+
+static int w023_grow_branch_vectors(ASTNode ****branches, int **counts, size_t *capacity) {
+    size_t next = *capacity ? *capacity * 2 : 8;
+    if (next < *capacity || next > SIZE_MAX / sizeof(**branches) || next > SIZE_MAX / sizeof(**counts)) return 0;
+    ASTNode ***grown_branches = realloc(*branches, next * sizeof(**branches));
+    if (!grown_branches) return 0;
+    *branches = grown_branches;
+    int *grown_counts = realloc(*counts, next * sizeof(**counts));
+    if (!grown_counts) return 0;
+    *counts = grown_counts;
+    *capacity = next;
+    return 1;
+}
+static void w023_proof_failure(W023Names *module, ASTNode ***branches, int **counts) {
+    w023_names_unknown(module);
+    free(*branches); *branches = NULL;
+    free(*counts); *counts = NULL;
 }
 
 static void w023_check_if(ASTNode *if_node, ASTNode *fn, W023Names *bound,
                           ASTNode **ancestors, int depth, W023Names *module,
                           LintContext *ctx) {
-    ASTNode ***branches = NULL; int *counts = NULL; size_t capacity = 0, nb = 0; ASTNode *cur = if_node; int overflow = 0;
+    ASTNode ***branches = NULL; int *counts = NULL; size_t capacity = 0, nb = 0; ASTNode *cur = if_node;
     while (cur) {
-        if (nb == capacity) {
-            size_t next = capacity ? capacity * 2 : 8;
-            if (next < capacity || next > SIZE_MAX / sizeof(*branches) || next > SIZE_MAX / sizeof(*counts)) { overflow = 1; break; }
-            branches = xrealloc(branches, next * sizeof(*branches)); counts = xrealloc(counts, next * sizeof(*counts)); capacity = next;
+        if (nb == capacity && !w023_grow_branch_vectors(&branches, &counts, &capacity)) {
+            w023_proof_failure(module, &branches, &counts); return;
         }
         branches[nb] = cur->data.cond.if_body; counts[nb++] = cur->data.cond.if_count;
         if (cur->data.cond.else_count == 1 && cur->data.cond.else_body[0] && cur->data.cond.else_body[0]->type == AST_IF) cur = cur->data.cond.else_body[0];
         else { if (cur->data.cond.else_count) {
-                if (nb == capacity) {
-                    size_t next = capacity > SIZE_MAX / 2 ? 0 : capacity * 2;
-                    if (!next || next > SIZE_MAX / sizeof(*branches) || next > SIZE_MAX / sizeof(*counts)) { overflow = 1; break; }
-                    branches = xrealloc(branches, next * sizeof(*branches)); counts = xrealloc(counts, next * sizeof(*counts)); capacity = next;
+                if (nb == capacity && !w023_grow_branch_vectors(&branches, &counts, &capacity)) {
+                    w023_proof_failure(module, &branches, &counts); return;
                 }
                 branches[nb] = cur->data.cond.else_body; counts[nb++] = cur->data.cond.else_count;
             } cur = NULL; }
     }
-    if (overflow) { free(branches); free(counts); return; }
     for (size_t i = 0; i < nb; i++) for (int j = 0; j < counts[i]; j++) { ASTNode *bare = branches[i][j];
         if (!bare || bare->type != AST_ASSIGN || bare->data.assign.local_only || !bare->data.assign.name) continue; int sibling = 0;
         for (size_t k = 0; k < nb && !sibling; k++) if (k != i) for (int l = 0; l < counts[k]; l++) { ASTNode *local = branches[k][l]; if (local && local->type == AST_ASSIGN && local->data.assign.local_only && local->data.assign.name && strcmp(local->data.assign.name, bare->data.assign.name) == 0) { sibling = 1; break; } }
-        if (sibling && !w023_prefix_binds(branches[i], j, bare->data.assign.name) &&
+        int prefix = sibling ? w023_prefix_binds(branches[i], j, bare->data.assign.name) : 0;
+        if (prefix < 0) { w023_proof_failure(module, &branches, &counts); return; }
+        if (sibling && !prefix &&
             w023_can_fire(fn, bare->data.assign.name, bound, ancestors, depth, module))
             lint_warn(ctx, bare->line, "W023", "'%s' is assigned in sibling branches with and without 'local' and may mutate an outer binding — add 'local'", bare->data.assign.name);
     }
@@ -1526,6 +1697,7 @@ static void w023_scan_sequence(ASTNode **stmts, int count, W023Names *bound,
                                ASTNode *fn, ASTNode **ancestors, int depth,
                                W023Names *module, LintContext *ctx) {
     for (int i = 0; i < count; i++) { ASTNode *n = stmts[i]; if (!n) continue;
+        if (module->unknown || bound->unknown) return;
         switch (n->type) {
         case AST_ASSIGN: if (n->data.assign.local_only) w023_name_add(n->data.assign.name, bound); break;
         case AST_FUNC: w023_name_add(n->data.func.name, bound); break;
@@ -1537,9 +1709,31 @@ static void w023_scan_sequence(ASTNode **stmts, int count, W023Names *bound,
             w023_scan_sequence(n->data.trycatch.try_body, n->data.trycatch.try_count, bound, fn, ancestors, depth, module, ctx);
             w023_name_add(n->data.trycatch.err_name, bound);
             w023_scan_sequence(n->data.trycatch.catch_body, n->data.trycatch.catch_count, bound, fn, ancestors, depth, module, ctx); break;
-        case AST_IF: { W023Names branch; w023_check_if(n, fn, bound, ancestors, depth, module, ctx); w023_names_copy(&branch, bound); w023_scan_sequence(n->data.cond.if_body, n->data.cond.if_count, &branch, fn, ancestors, depth, module, ctx); w023_names_free(&branch); w023_names_copy(&branch, bound); w023_scan_sequence(n->data.cond.else_body, n->data.cond.else_count, &branch, fn, ancestors, depth, module, ctx); w023_names_free(&branch); } break;
-        case AST_LOOP: { W023Names body; w023_names_copy(&body, bound); w023_scan_sequence(n->data.loop.body, n->data.loop.body_count, &body, fn, ancestors, depth, module, ctx); w023_names_free(&body); } break;
-        case AST_MATCH: for (int c = 0; c < n->data.match.case_count; c++) { W023Names body; w023_names_copy(&body, bound); w023_scan_sequence(n->data.match.bodies[c], n->data.match.body_counts[c], &body, fn, ancestors, depth, module, ctx); w023_names_free(&body); } break;
+        case AST_IF: {
+            W023Names branch;
+            w023_check_if(n, fn, bound, ancestors, depth, module, ctx);
+            if (module->unknown || w023_names_copy(&branch, bound) < 0) { w023_names_unknown(module); return; }
+            w023_scan_sequence(n->data.cond.if_body, n->data.cond.if_count, &branch, fn, ancestors, depth, module, ctx);
+            w023_names_free(&branch);
+            if (module->unknown || w023_names_copy(&branch, bound) < 0) { w023_names_unknown(module); return; }
+            w023_scan_sequence(n->data.cond.else_body, n->data.cond.else_count, &branch, fn, ancestors, depth, module, ctx);
+            w023_names_free(&branch);
+        } break;
+        case AST_LOOP: {
+            W023Names body;
+            if (w023_names_copy(&body, bound) < 0) { w023_names_unknown(module); return; }
+            w023_scan_sequence(n->data.loop.body, n->data.loop.body_count, &body, fn, ancestors, depth, module, ctx);
+            w023_names_free(&body);
+        } break;
+        case AST_MATCH:
+            for (int c = 0; c < n->data.match.case_count; c++) {
+                W023Names body;
+                if (w023_names_copy(&body, bound) < 0) { w023_names_unknown(module); return; }
+                w023_scan_sequence(n->data.match.bodies[c], n->data.match.body_counts[c], &body, fn, ancestors, depth, module, ctx);
+                w023_names_free(&body);
+                if (module->unknown) return;
+            }
+            break;
         case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BINOP: case AST_UNARY: case AST_RELATION: case AST_RETURN: case AST_LIST: case AST_INDEX: case AST_LISTCOMP: case AST_PROGRAM: case AST_INTERROGATE: case AST_PREDICATE: case AST_DICT: case AST_DOT: case AST_BREAK: case AST_CONTINUE: case AST_DOT_ASSIGN: case AST_IMPORT: case AST_LAMBDA: case AST_INDEX_ASSIGN: case AST_SLICE: break;
         }
     }
