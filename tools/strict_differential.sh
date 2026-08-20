@@ -225,69 +225,42 @@ print of (len of [1, 2, 3])
 EOF
 )
 
-# The ONE probe whose default-path result legitimately changes, with the
-# reason, pinned by name (a waiver must be visible and bounded — an
-# unnamed tolerance would absorb every future regression too).
+# ---------------------------------------------------- divergence waivers
+# A waiver here says: "this probe's DEFAULT-path answer legitimately changes,
+# and here is why." It is compared against a build of the PARENT COMMIT.
 #
-#   sign_extend: both operands were read as `.data.num` with no VAL_NUM
-#   check, so `sign_extend of ["x", 8]` reinterpreted a `char *` as a
-#   `double`. The baseline prints a pointer-derived denormal
-#   (4.70323982918157e-310 on this box, and a DIFFERENT value on any run
-#   with ASLR). There is no previous behaviour to preserve: it was
-#   undefined, and its output was not even stable across runs. Filed
-#   separately; the guard makes it 0 like every sibling.
+# THEY ARE PR-SCOPED, AND THAT IS THE WHOLE LIFECYCLE. An entry is live for
+# exactly one review — while the change is unmerged and the parent still
+# lacks it. The moment it lands, the parent HAS the fix, the probe stops
+# diverging, and the entry is SPENT: inert, and pure debris. So a waiver is
+# added with the PR that needs it and removed with the next one.
 #
-#   gfx_open, audio_open, audio_capture_open, audio_stream_open (#1007): the
-#   four are a BUG FIX, not a conversion, so unlike every other row here their
-#   default path is SUPPOSED to change and the "identical when off" claim does
-#   not apply to them. What changed, measured against the parent gfx build:
+# Bought (#1016). `sign_extend`'s waiver was written for #971 Phase B and left
+# behind when #1015 landed. From that commit on, the "baseline" contained the
+# guard, so `sign_extend of ["x", 8]` answered a deterministic 0 on BOTH
+# sides — and the waiver's proof, which requires the BASELINE to be unstable,
+# could never hold again. The documented pre-land command
+# (`bash tools/strict_differential.sh <parent-build>`) therefore returned
+# FAIL on a clean tree for every run between #1015 and #1016, while the half
+# it exists to measure was green: `identical-when-off: 63 differing: 0`.
+# A gate that always fails is ignored exactly as fast as one that never fires.
+# The eleven #1007 waivers were added the same day and would have started
+# rotting the moment #1018 merged; the STALE WAIVER check below caught all
+# eleven on the first post-merge run, which is what it is for.
 #
-#       gfx_open of ["800","600","t"]        1 -> 0   (a 0x0 window, reported open)
-#       audio_open of ["44100","1"]          2 -> 0   (a device id, garbage spec)
-#       audio_capture_open of ["44100","1"]  3 -> 0   (a device id, garbage spec)
-#       audio_stream_open of ["44100","1"]   2 -> 0   (a device id, silently at defaults)
+# CI never evaluates any of this: it runs --no-baseline, which skips every
+# `[ -n "$BASE" ]` block. So an entry left here is invisible until the next
+# person runs the two-binary mode by hand and is met with someone else's
+# expired paperwork.
 #
-#   The first three read `.data.num` off a `char *` through Value's union; the
-#   fourth skipped its override and opened at 44100/1 while answering as though
-#   the request had been honoured. In each case the OLD value was a reported
-#   success for an argument the builtin could not honour, so there is no
-#   behaviour worth preserving — and 0 is each one's already-documented
-#   failure answer. Unlike sign_extend these are deterministic, so the
-#   instability proof below does not apply and is not claimed for them.
-#   The two groups make DIFFERENT claims, so each is proven by a check that
-#   matches its own claim rather than by one check applied to both. Running
-#   the instability proof over the deterministic group reported all four as
-#   "WAIVER UNPROVEN — two baseline runs agreed", which is the correct answer
-#   to a question they never asked.
-EXPECTED_DIVERGE_UNSTABLE="sign_extend"
-#   audio_sine / audio_saw / audio_square / audio_sweep / audio_noise /
-#   audio_envelope (#1007, the pointer-disclosure half): all six BUILD their
-#   returned sample list out of unchecked `.data.num` reads, so the pun did
-#   not merely mis-draw — it copied a reinterpreted `char *` into data the
-#   script can read. Executed on the parent binary,
-#   `audio_sweep of ["100", 200, 0.01, 0.5, 0]` returned 441 samples whose
-#   first element was 3.62e-314 / 3.44e-314 / 3.71e-314 on three consecutive
-#   runs: an ASLR pointer value, disclosed per-run.
-#
-#   They sit in the DETERMINISTIC group even so, and the distinction matters:
-#   the probes read `len of (...)`, which is stable (441 -> 0), so the proof
-#   that runs over them is the stable one. Filing them as "unstable" would
-#   apply a check to a quantity that was never unstable and report all six as
-#   UNPROVEN — the same category error one group over. The per-run pointer
-#   value above is executed evidence recorded here, NOT something this tool
-#   re-proves; a probe that printed a sample would be a nondeterministic
-#   fixture and does not belong in a differential as an ordinary row.
-EXPECTED_DIVERGE_FIXED="gfx_open
-audio_open
-audio_capture_open
-audio_stream_open
-audio_sine
-audio_saw
-audio_square
-audio_sweep
-audio_noise
-audio_envelope
-audio_gain"
+# Currently empty, deliberately. Add an entry ONLY alongside the change that
+# needs it, in the group whose proof matches the claim being made:
+#   EXPECTED_DIVERGE_UNSTABLE — "the old answer was undefined and not even
+#     stable across runs" (proof: two baseline runs must DIFFER)
+#   EXPECTED_DIVERGE_FIXED    — "the old answer was stable and wrong"
+#     (proof: two baseline runs must AGREE, and the new answer must be 0)
+EXPECTED_DIVERGE_UNSTABLE=""
+EXPECTED_DIVERGE_FIXED=""
 EXPECTED_DIVERGE="$EXPECTED_DIVERGE_UNSTABLE
 $EXPECTED_DIVERGE_FIXED"
 
@@ -654,27 +627,24 @@ fi
 if [ -n "$BASE" ]; then
     for w in $EXPECTED_DIVERGE_UNSTABLE; do
         if ! printf '%s' "$waived_seen" | grep -qw "$w"; then
-            echo "  NOTE: $w did not differ on this run. For a waiver proven"
-            echo "        run-to-run unstable above, that is a coin landing the"
-            echo "        same way twice, not a stale waiver — the instability"
-            echo "        assertion is the binding check."
+            echo "  SPENT WAIVER: $w is declared divergent but did not differ."
+            echo "                Remove the entry. A waiver is PR-scoped: it is live"
+            echo "                only while the parent lacks the change, and inert the"
+            echo "                moment it lands. Leaving it means the next person to"
+            echo "                run the two-binary mode meets expired paperwork —"
+            echo "                which is how sign_extend kept this tool red from"
+            echo "                #1015 to #1016 (see the waiver block at the top)."
+            rc=1
         fi
     done
-    # The deterministic group gets no such excuse: its whole claim is that the
-    # baseline answer is STABLE and different from the new one. If such a
-    # waiver stops firing, the divergence it excuses is gone and the waiver is
-    # covering nothing — which is exactly the stale waiver §3 warns about.
-    # (Printing the instability text here talked the detector out of its own
-    # finding: `audio_noise` was waived, did not diverge because its probe
-    # punned the duration and BOTH sides answered 0, and was reported as
-    # "waiver proven" with a footnote explaining why that was fine.)
     for w in $EXPECTED_DIVERGE_FIXED; do
         probe_builtin_present "$w" || continue
         if ! printf '%s' "$waived_seen" | grep -qw "$w"; then
-            echo "  STALE WAIVER: $w is declared divergent but did not differ."
-            echo "                Its claim is a STABLE old answer unequal to the new"
-            echo "                one, so a non-divergence means either the probe does"
-            echo "                not reach the guard or the waiver is obsolete."
+            echo "  SPENT WAIVER: $w is declared divergent but did not differ."
+            echo "                Either the probe no longer reaches the guard, or —"
+            echo "                far more likely — the change LANDED and the baseline"
+            echo "                now contains it. Remove the entry; a waiver is
+                PR-scoped (see the waiver block at the top)." | tr -s " "
             rc=1
         fi
     done
