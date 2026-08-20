@@ -11,32 +11,18 @@
 /* The builtin is intentionally exercised directly so the test can inspect
  * the owning EigsThread without adding a public/debug ABI hook. */
 extern Value *builtin_sandbox_run(Value *arg);
+extern size_t env_intern_debug_count(const char *prefix);
 
 static void append_num(Value *list, double n) {
     list_append_owned(list, make_num(n));
 }
 
 static size_t intern_count(void) {
-    size_t count = 0;
-    for (int i = 0; i < ENV_NAME_INTERN_BUCKETS; i++) {
-        for (EnvNameIntern *it = eigs_current->env_name_interns[i]; it;
-             it = it->next)
-            count++;
-    }
-    return count;
+    return env_intern_debug_count(NULL);
 }
 
 static size_t sandbox_only_intern_count(void) {
-    static const char prefix[] = "sandbox-only-key-";
-    size_t count = 0;
-    for (int i = 0; i < ENV_NAME_INTERN_BUCKETS; i++) {
-        for (EnvNameIntern *it = eigs_current->env_name_interns[i]; it;
-             it = it->next) {
-            if (strncmp(it->name, prefix, sizeof(prefix) - 1) == 0)
-                count++;
-        }
-    }
-    return count;
+    return env_intern_debug_count("sandbox-only-key-");
 }
 
 static Value *sandbox_descriptor(int key_number) {
@@ -107,6 +93,7 @@ int main(void) {
         }
         val_decref(out);
     }
+    gc_collect_cycles();
 
     const size_t retained = intern_count() - baseline;
     const size_t sandbox_retained =

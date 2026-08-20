@@ -2347,6 +2347,17 @@ static void env_intern_scope_remove(char *name) {
                 free(drop->name); free(drop); return; }
 }
 
+size_t env_intern_debug_count(const char *prefix) {
+    size_t count = 0;
+    for (int i = 0; i < ENV_NAME_INTERN_BUCKETS; i++)
+        for (EnvNameIntern *it = g_env_name_interns[i]; it; it = it->next)
+            if (!prefix || strncmp(it->name, prefix, strlen(prefix)) == 0) count++;
+    for (EnvInternValueOwner *o = g_sandbox_intern_owners; o; o = o->next)
+        for (EnvNameIntern *it = o->names; it; it = it->owner_next)
+            if (!prefix || strncmp(it->name, prefix, strlen(prefix)) == 0) count++;
+    return count;
+}
+
 uint32_t env_intern_scope_begin(void) {
     uint32_t next = g_sandbox_intern_scope_next + 1;
     if (next == 0) next = 1;  /* zero is the ordinary, unscoped lifetime */
