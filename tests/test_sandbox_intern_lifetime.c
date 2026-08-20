@@ -102,8 +102,8 @@ int main(void) {
     }
     gc_collect_cycles();
 
-    const size_t retained = intern_count() - baseline;
-    const size_t sandbox_retained =
+    const size_t sandbox_retained = intern_count() - baseline;
+    const size_t sandbox_prefix_retained =
         sandbox_only_intern_count() - sandbox_baseline;
     snprintf(key, sizeof key, "sandbox-only-key-%d", 0);
     /* Check the escaped-result control before the retention assertion: a
@@ -119,8 +119,11 @@ int main(void) {
            escaped_value->data.num == 1.0);
     fprintf(stderr,
             "sandbox intern growth: baseline=%zu retained=%zu sandbox_only=%zu\n",
-            baseline, retained, sandbox_retained);
-    assert(retained <= 8);
+            baseline, sandbox_retained, sandbox_prefix_retained);
+    /* `sandbox_retained` is the TOTAL table growth. The prefix count remains
+     * diagnostic-only so this gate cannot pass while another descriptor
+     * constant leaks under a different name. */
+    assert(sandbox_retained <= 8);
 
     val_decref(escaped);
     eigs_close(state);
