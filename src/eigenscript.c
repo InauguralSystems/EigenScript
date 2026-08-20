@@ -1694,7 +1694,13 @@ void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
         dict->data.dict.vals = xrealloc_array(dict->data.dict.vals, new_cap, sizeof(Value*));
         dict->data.dict.capacity = new_cap;
     }
-    dict->data.dict.keys[dict->data.dict.count] = env_intern_name(key);
+    char *interned = env_intern_name(key);
+    /* Claim scoped keys at insertion, not only at the sandbox result boundary:
+     * trace history and other counted Value holders may retain an inner dict
+     * even when that dict is not reachable from the returned result. */
+    if (g_sandbox_intern_scope != 0)
+        interned = env_intern_scope_promote(dict, interned);
+    dict->data.dict.keys[dict->data.dict.count] = interned;
     Value *promoted = promote_if_arena(val);
     dict->data.dict.vals[dict->data.dict.count] = promoted;
     if (promoted == val) val_incref(val);
