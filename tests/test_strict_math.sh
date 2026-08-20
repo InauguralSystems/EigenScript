@@ -23,6 +23,11 @@ fi
 TMP=$(mktemp /tmp/eigs_strict_XXXXXX.eigs)
 trap 'rm -f "$TMP"' EXIT
 
+# NOTE: <expect-substr> must never be the empty string — `grep -qF ""` matches
+# any output, so an empty expectation silently degrades the row to an exit-code
+# check. Rows asserting an EMPTY result wrap it (`f"[{...}]"` against "[]") so
+# the emptiness is something the assertion can actually see.
+#
 # run <name> <env: unset|0|1> <expect-exit 0|1> <expect-substr> <program>
 run() {
     local name="$1" env="$2" xexit="$3" substr="$4" prog="$5"
@@ -72,7 +77,7 @@ run "SM10 strict tensor sqrt raises"  1 1 "out of domain"              'print of
 # was "". Off by default that is unchanged (SM11/SM12 pin it); under strict it
 # raises a catchable `type` error naming the builtin.
 run "SM11 default cos(str) still 0"    unset 0 "0"    'print of (cos of "hello")'
-run "SM12 default str_upper(num) is empty" unset 0 "" 'print of (str_upper of 42)'
+run "SM12 default str_upper(num) is empty" unset 0 "[]" 'print of f"[{str_upper of 42}]"'
 run "SM13 strict cos(str) raises"      1 1 "cos: expected a number"        'print of (cos of "hello")'
 run "SM14 strict str_upper(num) raises" 1 1 "str_upper: expected a string" 'print of (str_upper of 42)'
 run "SM15 strict arity guard raises"   1 1 "substr: expected"              'print of (substr of 42)'
@@ -88,6 +93,53 @@ run "SM17 strict leaves valid args alone" 1 0 "1"                          'prin
 # A sed over `return make_num(0)` would have broken both.
 run "SM18 strict: try_parse(bad) still answers 0" 1 0 "0"  'print of (try_parse of "!!!")'
 run "SM19 strict: unknown task id still not alive" 1 0 "0" 'print of (task_alive of 99999)'
+
+# --- #971 Phase B: the ELEMENT-type guards -----------------------------------
+# Phase A converted the outer ARITY guards and left the inner element-type
+# checks soft, so a call with the right shape and the wrong element types was
+# still silently answered. `contains of [[1,2,3], 2]` is the sharp one: the
+# function's own comment describes that spurious-hit bug as fixed, while the
+# type mistake behind it stayed quiet.
+run "SM20 strict contains(list, num) raises"  1 1 "contains: expected two strings" \
+    'print of (contains of [[1, 2, 3], 2])'
+run "SM21 strict char_at(num, i) raises"      1 1 "char_at: expected"    'print of (char_at of [42, 0])'
+run "SM22 strict substr element type raises"  1 1 "substr: expected"     'print of (substr of [42, 0, 1])'
+run "SM23 strict has_key(num, k) raises"      1 1 "has_key: expected"    'print of (has_key of [42, "k"])'
+run "SM24 strict max over a non-number raises" 1 1 "max: expected"       'print of (max of [1, "x", 3])'
+run "SM25 strict path_join element type raises" 1 1 "path_join: expected" 'print of (path_join of [42, "b"])'
+# NB: the builtin is `add`, not `tensor_add` — the first version of this row
+# named a builtin that does not exist, and "undefined variable" is also rc=1.
+# It failed only because this row asserts on the MESSAGE as well as the exit
+# code; the differential's rc-only check scored the same mistake as coverage
+# until it grew the same assertion.
+run "SM26 strict elementwise add element type raises" 1 1 "expected"    'print of (add of ["x", 1])'
+run "SM27 strict write_bytes type raises"     1 1 "write_bytes: expected" 'print of (write_bytes of 42)'
+
+# str_replace COERCES rather than returning a stand-in — a non-string element
+# silently became "" and the search ran over an empty string. It has no
+# `return make_num(0)` to convert, so it is invisible to the classifier and
+# needed STRICT_REQUIRE (raise under strict, no-op otherwise). Found by the
+# differential, not by the classifier: SM29 is why both harnesses exist.
+run "SM28 default str_replace(num,..) unchanged" unset 0 "[]" \
+'local r is str_replace of [42, "a", "b"]
+print of f"[{r}]"'
+run "SM29 strict str_replace coercion raises"  1 1 "str_replace: expected a string" \
+    'print of (str_replace of [42, "a", "b"])'
+
+# More exclusion pins. These grew with the conversion set on purpose: without
+# them, converting EVERYTHING would score a perfect "raises under strict" and
+# the reform would have no failure mode at all.
+run "SM30 strict: ends_with, suffix too long, still 0" 1 0 "0" 'print of (ends_with of ["ab", "abc"])'
+run "SM31 strict: char_at past the end still empty"    1 0 "[]" \
+'local r is char_at of ["ab", 9]
+print of f"[{r}]"'
+run "SM32 strict: join of an empty list still empty"   1 0 "[]" \
+'local r is join of [[], ","]
+print of f"[{r}]"'
+run "SM33 strict: num still COERCES a list to 0"       1 0 "0" 'print of (num of ([1, 2]))'
+run "SM34 strict: list_contains finding nothing is 0"  1 0 "0" 'print of (list_contains of [[1, 2], 9])'
+run "SM35 strict: JSON false still decodes to 0"       1 0 "0" \
+    'print of (json_path of ["{\"a\": false}", "a"])'
 
 echo "STRICT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

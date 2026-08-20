@@ -227,11 +227,19 @@ Value* builtin_join(Value *arg) {
     Value *list = arg->data.list.items[0];
     Value *sep_val = arg->data.list.items[1];
     ARG_GUARD(!list || list->type != VAL_LIST, "join", "a list as its first argument", make_str(""));
+    /* Coercion, not a guard — a non-string separator silently became "" and
+     * the elements ran together (`join of [["a","b"], 42]` was "ab"). Same
+     * class as str_replace, and it has no stand-in return, so it is invisible
+     * to tools/failsoft_classify_check.sh and needs STRICT_REQUIRE. Found by
+     * a blind review, not by either harness. */
+    STRICT_REQUIRE(sep_val && sep_val->type != VAL_STR, "join", "a string separator");
     const char *sep = (sep_val && sep_val->type == VAL_STR) ? sep_val->data.str : "";
     size_t sep_len = strlen(sep);
 
     /* First pass: compute total length */
     int count = list->data.list.count;
+    /* fs:EMPTY joining no elements produces no characters; "" is the identity
+     * of concatenation, not a rejected argument. */
     if (count == 0) return make_str("");
 
     char **parts = xmalloc_array(count, sizeof(char*));
@@ -485,6 +493,9 @@ Value* builtin_len(Value *arg) {
      * `and` short-circuits, so the guarded len is never reached. */
     rt_error(EK_TYPE, 0, "len: %s has no length",
              arg ? val_type_name(arg->type) : "null");
+    /* fs:CHANNEL the rt_error above has already raised UNCONDITIONALLY — this
+     * is only the C return value the compiler requires. `len` is the reform's
+     * finished state, not a candidate for it. */
     return make_num(0);
 }
 
@@ -502,8 +513,19 @@ Value* builtin_str(Value *arg) {
     return v;
 }
 
+/* Every `return make_num(0)` in this function is fs:ANSWER, and the reason is
+ * one reason: BUILTINS.md documents `num` as "Convert to number (parse string
+ * or COERCE)". A coercion's whole contract is that it accepts anything and
+ * answers, so 0 here is the documented result rather than a stand-in for a
+ * rejected argument — the opposite of `cos of "hello"`.
+ *
+ * This is the sharpest ANSWER case in the file and worth stating plainly: it
+ * IS reachable as a laundering path (`num of [1,2,3]` is 0, and a typo that
+ * hands `num` a list scores as a real zero). Making it loud is a change to
+ * `num`'s documented contract, not a completion of this reform, so it is out
+ * of scope here and belongs in its own issue if wanted. */
 Value* builtin_num(Value *arg) {
-    if (!arg) return make_num(0);
+    if (!arg) return make_num(0);       /* fs:ANSWER coercion contract, see above */
     if (arg->type == VAL_NUM) return arg;
     if (arg->type == VAL_STR) {
         /* Hex strings are converted HERE, never by strtod — same contract
@@ -519,6 +541,9 @@ Value* builtin_num(Value *arg) {
         int neg = 0;
         if (*p == '+' || *p == '-') { neg = (*p == '-'); p++; }
         if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+            /* fs:ANSWER "0x" with no hex digit converts to 0 like any other
+             * non-numeric string — the partial-parse contract this comment
+             * block documents. */
             if (!isxdigit((unsigned char)p[2])) return make_num(0);
             double v = 0;
             p += 2;
@@ -531,8 +556,8 @@ Value* builtin_num(Value *arg) {
         }
         return make_num(strtod(arg->data.str, NULL));
     }
-    if (arg->type == VAL_NULL) return make_num(0);
-    return make_num(0);
+    if (arg->type == VAL_NULL) return make_num(0);   /* fs:ANSWER coercion contract */
+    return make_num(0);                              /* fs:ANSWER coercion contract */
 }
 
 Value* builtin_append(Value *arg) {
@@ -728,7 +753,7 @@ Value* builtin_has_key(Value *arg) {
     ARG_GUARD(arg->type != VAL_LIST || arg->data.list.count < 2, "has_key", "[dict, key]", make_num(0));
     Value *d = arg->data.list.items[0];
     Value *key = arg->data.list.items[1];
-    if (d->type != VAL_DICT || key->type != VAL_STR) return make_num(0);
+    ARG_GUARD(d->type != VAL_DICT || key->type != VAL_STR, "has_key", "[dict, string]", make_num(0));
     return make_num(dict_has(d, key->data.str) ? 1 : 0);
 }
 
@@ -1245,13 +1270,15 @@ static Value* eigs_json_parse_number(const char *s, int *pos) {
     int p = start;
     if (s[p] == '-') p++;
     if (!isdigit((unsigned char)s[p])) {
+        /* fs:CHANNEL failure is signalled out-of-band via g_json_parse_err; the 0 is a placeholder the caller never reads */
         g_json_parse_err = 1; *pos = p; return make_num(0);
     }
     while (isdigit((unsigned char)s[p])) p++;
     if (s[p] == '.') {
         p++;
         if (!isdigit((unsigned char)s[p])) {   /* "1." — frac needs digits */
-            g_json_parse_err = 1; *pos = p; return make_num(0);
+            /* fs:CHANNEL failure is signalled out-of-band via g_json_parse_err; the 0 is a placeholder the caller never reads */
+        g_json_parse_err = 1; *pos = p; return make_num(0);
         }
         while (isdigit((unsigned char)s[p])) p++;
     }
@@ -1259,7 +1286,8 @@ static Value* eigs_json_parse_number(const char *s, int *pos) {
         p++;
         if (s[p] == '+' || s[p] == '-') p++;
         if (!isdigit((unsigned char)s[p])) {   /* "1e", "1e+" — exp needs digits */
-            g_json_parse_err = 1; *pos = p; return make_num(0);
+            /* fs:CHANNEL failure is signalled out-of-band via g_json_parse_err; the 0 is a placeholder the caller never reads */
+        g_json_parse_err = 1; *pos = p; return make_num(0);
         }
         while (isdigit((unsigned char)s[p])) p++;
     }
@@ -1363,6 +1391,9 @@ Value* eigs_json_parse_value(const char *s, int *pos) {
     if (s[*pos] == '-' || isdigit(s[*pos])) return eigs_json_parse_number(s, pos);
     if (strncmp(s + *pos, "null", 4) == 0) { *pos += 4; return make_null(); }
     if (strncmp(s + *pos, "true", 4) == 0) { *pos += 4; return make_num(1); }
+    /* fs:LITERAL this IS how JSON `false` is returned — 0 is the parsed VALUE,
+     * not a stand-in for a rejected argument. A sweep over `return
+     * make_num(0)` would have made every `false` in parsed JSON raise. */
     if (strncmp(s + *pos, "false", 5) == 0) { *pos += 5; return make_num(0); }
     g_json_parse_err = 1;   /* #495: unrecognized token */
     return make_null();
@@ -1492,14 +1523,14 @@ Value* builtin_str_lower(Value *arg) {
 Value* builtin_contains(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "contains", "[haystack, needle]", make_num(0));
     Value *h = arg->data.list.items[0], *n = arg->data.list.items[1];
-    if (!h || h->type != VAL_STR || !n || n->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!h || h->type != VAL_STR || !n || n->type != VAL_STR, "contains", "two strings", make_num(0));
     return make_num(strstr(h->data.str, n->data.str) != NULL ? 1 : 0);
 }
 
 Value* builtin_starts_with(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "starts_with", "[string, prefix]", make_num(0));
     Value *s = arg->data.list.items[0], *p = arg->data.list.items[1];
-    if (!s || s->type != VAL_STR || !p || p->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!s || s->type != VAL_STR || !p || p->type != VAL_STR, "starts_with", "two strings", make_num(0));
     return make_num(strncmp(s->data.str, p->data.str, strlen(p->data.str)) == 0 ? 1 : 0);
 }
 
@@ -1836,6 +1867,14 @@ Value* builtin_trim(Value *arg) {
 Value* builtin_str_replace(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3, "str_replace", "[string, old, new]", make_str(""));
     const char *str = "", *old_s = "", *new_s = "";
+    /* Coercion, not a guard: a non-string element silently stays "" and the
+     * search runs over an empty string. STRICT_REQUIRE rather than ARG_GUARD
+     * because there is no single stand-in — a non-string `old` makes
+     * old_len 0, which returns the ORIGINAL string, while a non-string
+     * `string` returns "". The non-strict path is untouched. */
+    STRICT_REQUIRE(arg->data.list.items[0]->type != VAL_STR, "str_replace", "a string as its first argument");
+    STRICT_REQUIRE(arg->data.list.items[1]->type != VAL_STR, "str_replace", "a string as its second argument");
+    STRICT_REQUIRE(arg->data.list.items[2]->type != VAL_STR, "str_replace", "a string as its third argument");
     if (arg->data.list.items[0]->type == VAL_STR) str = arg->data.list.items[0]->data.str;
     if (arg->data.list.items[1]->type == VAL_STR) old_s = arg->data.list.items[1]->data.str;
     if (arg->data.list.items[2]->type == VAL_STR) new_s = arg->data.list.items[2]->data.str;
@@ -1900,11 +1939,14 @@ Value* builtin_char_at(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "char_at", "[string, index]", make_str(""));
     Value *str_val = arg->data.list.items[0];
     Value *idx_val = arg->data.list.items[1];
-    if (!str_val || str_val->type != VAL_STR || !idx_val || idx_val->type != VAL_NUM)
-        return make_str("");
+    ARG_GUARD(!str_val || str_val->type != VAL_STR || !idx_val || idx_val->type != VAL_NUM,
+              "char_at", "[string, number]", make_str(""));
     int idx = (int)idx_val->data.num;
     int len = strlen(str_val->data.str);
     if (idx < 0) idx += len;
+    /* fs:ANSWER an index outside the string has no character; "" is the
+     * documented result for an in-range TYPE with an out-of-range VALUE,
+     * the same shape `substr` uses below. Not a type mistake. */
     if (idx < 0 || idx >= len) return make_str("");
     char buf[2] = { str_val->data.str[idx], '\0' };
     return make_str(buf);
@@ -1914,9 +1956,11 @@ Value* builtin_char_at(Value *arg) {
 Value* builtin_ends_with(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "ends_with", "[string, suffix]", make_num(0));
     Value *sv = arg->data.list.items[0], *xv = arg->data.list.items[1];
-    if (!sv || sv->type != VAL_STR || !xv || xv->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!sv || sv->type != VAL_STR || !xv || xv->type != VAL_STR, "ends_with", "two strings", make_num(0));
     const char *str = sv->data.str, *suffix = xv->data.str;
     int slen = strlen(str), xlen = strlen(suffix);
+    /* fs:ANSWER a suffix longer than the string is not a suffix of it; 0 is
+     * the predicate's answer, not a stand-in for a rejected argument. */
     if (xlen > slen) return make_num(0);
     return make_num(strcmp(str + slen - xlen, suffix) == 0 ? 1 : 0);
 }
@@ -1928,9 +1972,9 @@ Value* builtin_substr(Value *arg) {
     Value *str_val = arg->data.list.items[0];
     Value *start_val = arg->data.list.items[1];
     Value *len_val = arg->data.list.items[2];
-    if (!str_val || str_val->type != VAL_STR) return make_str("");
-    if (!start_val || start_val->type != VAL_NUM) return make_str("");
-    if (!len_val || len_val->type != VAL_NUM) return make_str("");
+    ARG_GUARD(!str_val || str_val->type != VAL_STR, "substr", "a string as its first argument", make_str(""));
+    ARG_GUARD(!start_val || start_val->type != VAL_NUM, "substr", "a number as its start", make_str(""));
+    ARG_GUARD(!len_val || len_val->type != VAL_NUM, "substr", "a number as its length", make_str(""));
     int slen = strlen(str_val->data.str);
     int start = (int)start_val->data.num;
     int rlen = (int)len_val->data.num;
@@ -1939,6 +1983,9 @@ Value* builtin_substr(Value *arg) {
      * negative after the adjustment (before the string) clamps to 0. */
     if (start < 0) start += slen;
     if (start < 0) start = 0;
+    /* fs:ANSWER a start at or past the end selects no characters; "" is the
+     * documented result of the #504 clamp, an in-range type with an
+     * out-of-range value. */
     if (start >= slen) return make_str("");
     if (rlen < 0) rlen = 0;
     /* Subtraction form, not `start + rlen > slen`: a huge len (e.g. INT_MAX)
@@ -1991,6 +2038,7 @@ Value* builtin_asin(Value *arg) {
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
+        /* fs:STRICT already loud under strict (#977); the soft 0 is the flag-off path */
         if (g_strict) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_num(0); }
         g_math_flags |= EIGS_MATH_INVALID;
         x = (x < -1.0) ? -1.0 : 1.0;
@@ -2004,6 +2052,7 @@ Value* builtin_acos(Value *arg) {
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
+        /* fs:STRICT already loud under strict (#977); the soft 0 is the flag-off path */
         if (g_strict) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_num(0); }
         g_math_flags |= EIGS_MATH_INVALID;
         x = (x < -1.0) ? -1.0 : 1.0;
@@ -2020,7 +2069,7 @@ Value* builtin_atan2(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "atan2", "[y, x]", make_num(0));
     Value *y = arg->data.list.items[0];
     Value *x = arg->data.list.items[1];
-    if (!y || y->type != VAL_NUM || !x || x->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!y || y->type != VAL_NUM || !x || x->type != VAL_NUM, "atan2", "two numbers", make_num(0));
     return make_num(atan2(y->data.num, x->data.num));
 }
 
@@ -2051,11 +2100,18 @@ Value* builtin_abs(Value *arg) {
  * than inventing a partial answer. */
 static Value* minmax_reduce(Value *arg, int want_max) {
     if (arg && arg->type == VAL_NUM) return make_num(arg->data.num);
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1) return make_num(0);
+    /* Split from the empty-list case below: #317 chose the 0 fallback for BOTH
+     * a wrong type and an empty list in one condition, and only the first half
+     * is a type mistake. Splitting keeps the non-strict answer identical while
+     * letting strict speak about the half it should. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST, want_max ? "max" : "min", "a number or a list of numbers", make_num(0));
+    /* fs:EMPTY no elements to reduce over; #317 chose 0 rather than inventing a
+     * partial answer, and an empty list is not a type mistake. */
+    if (arg->data.list.count < 1) return make_num(0);
     double best = 0.0;
     for (int i = 0; i < arg->data.list.count; i++) {
         Value *v = arg->data.list.items[i];
-        if (!v || v->type != VAL_NUM) return make_num(0);
+        ARG_GUARD(!v || v->type != VAL_NUM, want_max ? "max" : "min", "every element to be a number", make_num(0));
         if (i == 0 || (want_max ? v->data.num > best : v->data.num < best))
             best = v->data.num;
     }
@@ -2137,7 +2193,7 @@ Value* builtin_random_int(Value *arg) {
 
 /* seed_random of n → seeds the RNG, returns 1 */
 Value* builtin_seed_random(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_num(0));
     srand48((long)arg->data.num);
     g_random_seeded = 1;
     return make_num(1);
@@ -2181,12 +2237,10 @@ Value* builtin_args(Value *arg) {
 
 /* path_join of [a, b] → "a/b" */
 Value* builtin_path_join(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "path_join", "[a, b]", make_str(""));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
-    if (!a || a->type != VAL_STR || !b || b->type != VAL_STR)
-        return make_str("");
+    ARG_GUARD(!a || a->type != VAL_STR || !b || b->type != VAL_STR, "path_join", "two strings", make_str(""));
     int alen = strlen(a->data.str);
     int blen = strlen(b->data.str);
     /* Skip trailing slash on a, skip leading slash on b */
@@ -2284,7 +2338,7 @@ static Value* json_obj_get(Value *obj, const char *key) {
 
 Value* builtin_json_path(Value *arg) {
     /* json_path of [json_string, "dot.path"] -> value as string, or "" */
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "json_path", "[json_string, path]", make_str(""));
     const char *json_str = "", *path = "";
     if (arg->data.list.items[0]->type == VAL_STR) json_str = arg->data.list.items[0]->data.str;
     if (arg->data.list.items[1]->type == VAL_STR) path = arg->data.list.items[1]->data.str;
@@ -2297,12 +2351,20 @@ Value* builtin_json_path(Value *arg) {
         size_t plen = strlen(path);
         if (path[0] == '.' || path[plen - 1] == '.' || strstr(path, "..")) {
             rt_error(EK_VALUE, 0, "json_path: empty path segment in '%s'", path);
+            /* fs:CHANNEL the rt_error above already raised (#507) */
             return make_str("");
         }
     }
 
     int pos = 0;
     Value *root = eigs_json_parse_root(json_str, &pos);   /* #777: fresh parse */
+    /* fs:TODO #971 PHASE C. This is NOT "no value at that path" — the
+     * DOCUMENT failed to parse, and that input error is laundered into the
+     * same "" that a legitimately-absent key returns, so a caller cannot
+     * tell malformed JSON from a missing field. Converting it means deciding
+     * whether JSON parse failure raises at all, which is a contract change
+     * with its own consumers (the flag channel below, ext_http, tidelog).
+     * Deliberately left soft here and recorded as the Phase C decision. */
     if (!root) return make_str("");
     Value *current = root;   /* walks borrowed children of root */
 
@@ -2315,6 +2377,8 @@ Value* builtin_json_path(Value *arg) {
     while (segment && current) {
         if (current->type == VAL_DICT) {
             current = dict_get(current, segment);
+            /* fs:ANSWER key absent from the object — "no value at that path" is
+             * this function's documented result. */
             if (!current) { val_decref(root); return make_str(""); }
         } else if (current->type == VAL_LIST) {
             /* Array — try numeric index */
@@ -2326,19 +2390,24 @@ Value* builtin_json_path(Value *arg) {
                 if (idx >= 0 && idx < current->data.list.count) {
                     current = current->data.list.items[idx];
                 } else {
+                    /* fs:ANSWER array index out of range — no value at that path */
                     val_decref(root); return make_str("");
                 }
             } else {
                 /* String key: treat as object lookup */
                 current = json_obj_get(current, segment);
+                /* fs:ANSWER key absent — no value at that path */
                 if (!current) { val_decref(root); return make_str(""); }
             }
         } else {
+            /* fs:ANSWER a scalar cannot be descended into; the path does not
+             * resolve, which is the documented "" result. */
             val_decref(root); return make_str("");
         }
         segment = strtok_r(NULL, ".", &saveptr);
     }
 
+    /* fs:ANSWER the walk ended on nothing — no value at that path */
     if (!current) { val_decref(root); return make_str(""); }
     if (current->type == VAL_STR) {
         Value *r = make_str(current->data.str);
@@ -2351,6 +2420,8 @@ Value* builtin_json_path(Value *arg) {
         val_decref(root);
         return make_str(buf);
     }
+    /* fs:ANSWER JSON null renders as the empty string, the documented
+     * scalar rendering — not a rejected argument. */
     if (current->type == VAL_NULL) { val_decref(root); return make_str(""); }
     /* For complex types, json_encode them */
     strbuf out;
@@ -2680,8 +2751,15 @@ Value* builtin_ord(Value *arg) {
 /* try_parse of string → 1 if valid EigenScript syntax, 0 if not.
  * Tokenizes and parses without executing. Suppresses stderr. */
 Value* builtin_try_parse(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);
+    /* The wrong-TYPE half is a mistake; the parse-FAILED half below is the
+     * documented answer. Phase A's writeup used `try_parse of "!!!"` as its
+     * example of a 0 that is an answer — that is the string path, which is
+     * untouched here. Handing `try_parse` a number is not that. */
+    ARG_GUARD(!arg || arg->type != VAL_STR, "try_parse", "a string", make_num(0));
     const char *src = arg->data.str;
+    /* fs:ANSWER empty source is not valid EigenScript syntax; 0 is the
+     * documented result ("1 if valid, 0 if not"), the same channel a
+     * syntactically bad program uses. */
     if (!src || !src[0]) return make_num(0);
 
     /* Suppress stderr during parse attempt (needs fd plumbing — parse
@@ -4563,10 +4641,19 @@ Value* builtin_task_join(Value *arg) {
  * an error — Akka dead-letters / Erlang cast. Returns 1 if delivered, 0 if
  * dropped. Never blocks (the mailbox is unbounded in v1). */
 Value* builtin_task_send(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2 || !g_task_sched)
-        return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "task_send", "[id, value]", make_num(0));
     Value *idv = arg->data.list.items[0];
-    if (!idv || idv->type != VAL_NUM) return make_num(0);
+    /* The type guard precedes the scheduler-state check deliberately. With the
+     * state check first, `task_send of ["x", 1]` outside a task context
+     * returned 0 without ever reaching this guard — a guard nothing can
+     * trigger, and the differential's probe (which spawns a task first) could
+     * not see it. `task_kill` and `stream_write` already order it this way.
+     * Non-strict is unchanged: both halves answer 0. */
+    ARG_GUARD(!idv || idv->type != VAL_NUM, "task_send", "a task id (number)", make_num(0));
+    /* fs:ANSWER no scheduler means there is no task to deliver to, which is
+     * the dead-letter drop this function's contract documents ("0 if
+     * dropped") — split out of the arity guard above, which is a mistake. */
+    if (!g_task_sched) return make_num(0);
     Value *copy = val_clone_for_send(arg->data.list.items[1]);   /* share-nothing */
     int sent = task_deliver((int)idv->data.num, copy);
     if (!sent) val_decref(copy);   /* dropped to a dead task — release the copy */
@@ -4606,7 +4693,10 @@ Value* builtin_task_try_recv(Value *arg) {
  * and suspended slice, wake any joiner with an `interrupt` error, mark it
  * dead. Returns 1 if killed, 0 for a bad/self/finished target. */
 Value* builtin_task_kill(Value *arg) {
-    if (!arg || arg->type != VAL_NUM || !g_task_sched) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "task_kill", "a task id (number)", make_num(0));
+    /* fs:ANSWER no scheduler means no such target; 0 is the documented
+     * "bad/self/finished target" answer, split from the type guard above. */
+    if (!g_task_sched) return make_num(0);
     return make_num(task_do_kill((int)arg->data.num) ? 1 : 0);
 }
 
@@ -4615,6 +4705,10 @@ Value* builtin_task_kill(Value *arg) {
 Value* builtin_task_alive(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "task_alive", "a task id (number)", make_num(0));
     Task *t = (Task*)handle_lookup((int)arg->data.num, HANDLE_TASK);
+    /* fs:ANSWER an unknown id is NOT alive; 0 is this function's documented
+     * answer. Four lines above, an identical `return make_num(0)` is a type
+     * guard that DID convert — the pair Phase A pinned as the reason this
+     * phase is read by hand and not swept. Do not convert this one. */
     if (!t) return make_num(0);
     int alive = (t->state == TASK_READY || t->state == TASK_RUNNING ||
                  t->state == TASK_SUSPENDED);
@@ -5151,17 +5245,20 @@ Value* builtin_buf_get(Value *arg) {
      * stored 0. Raise index_range, matching the buffer `[i]` operator. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "buf_get requires [buffer, index]");
+        /* fs:CHANNEL the rt_error above already raised */
         return make_num(0);
     }
     Value *buf = arg->data.list.items[0];
     if (!buf || buf->type != VAL_BUFFER) {
         rt_error(EK_TYPE, 0, "buf_get: first argument must be a buffer");
+        /* fs:CHANNEL the rt_error above already raised */
         return make_num(0);
     }
     int idx = (int)arg->data.list.items[1]->data.num;
     if (idx < 0 || idx >= buf->data.buffer.count) {
         rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
                  idx, buf->data.buffer.count);
+        /* fs:CHANNEL the EK_INDEX rt_error above already raised (#502) */
         return make_num(0);
     }
     return make_num(buf->data.buffer.data[idx]);
@@ -5235,7 +5332,7 @@ Value* builtin_str_from_bytes(Value *arg) {
         n = arg->data.buffer.count;
         bufd = arg->data.buffer.data;
     } else {
-        return make_str("");
+        ARG_GUARD(1, "str_from_bytes", "a list or buffer of byte values", make_str(""));
     }
     char *s = xcalloc((size_t)(n > 0 ? n : 0) + 1, 1);
     int len = 0;
@@ -5284,7 +5381,7 @@ Value* builtin_f64_from_bytes(Value *arg) {
         for (int i = 0; i < 8 && i < n; i++)
             bytes_in[i] = arg->data.buffer.data[i];
     } else {
-        return make_num(0);
+        ARG_GUARD(1, "f64_from_bytes", "a list or buffer of 8 byte values", make_num(0));
     }
     uint64_t bits = 0;
     for (int i = 0; i < 8; i++)
@@ -5701,12 +5798,14 @@ Value* builtin_buf_fill(Value *arg) {
 Value* builtin_buf_peak(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "buf_peak requires [buffer, off, count]");
+        /* fs:CHANNEL the rt_error above already raised */
         return make_num(0);
     }
     Value *buf = arg->data.list.items[0];
     long long count, off;
     if (!buf_count_arg("buf_peak", arg->data.list.items[2], &count) ||
         !buf_window_arg("buf_peak", buf, arg->data.list.items[1], count, &off))
+        /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
         return make_num(0);
     double *d = &buf->data.buffer.data[off];
     double m = 0.0;
@@ -5726,6 +5825,7 @@ Value* builtin_buf_peak(Value *arg) {
 Value* builtin_buf_dot(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) {
         rt_error(EK_TYPE, 0, "buf_dot requires [a, b, a_off, b_off, count]");
+        /* fs:CHANNEL the rt_error above already raised */
         return make_num(0);
     }
     Value *a = arg->data.list.items[0];
@@ -5734,6 +5834,7 @@ Value* builtin_buf_dot(Value *arg) {
     if (!buf_count_arg("buf_dot", arg->data.list.items[4], &count) ||
         !buf_window_arg("buf_dot", a, arg->data.list.items[2], count, &a_off) ||
         !buf_window_arg("buf_dot", b, arg->data.list.items[3], count, &b_off))
+        /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
         return make_num(0);
     double *ad = &a->data.buffer.data[a_off];
     double *bd = &b->data.buffer.data[b_off];
@@ -5958,10 +6059,19 @@ Value* builtin_buf_resample_linear(Value *arg) {
 /* sign_extend of [val, bits] — sign-extend val from given bit width.
  * E.g. sign_extend of [0xFF, 8] → -1 */
 Value* builtin_sign_extend(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_num(0);
-    double val = arg->data.list.items[0]->data.num;
-    int bits = (int)arg->data.list.items[1]->data.num;
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "sign_extend", "[val, bits]", make_num(0));
+    /* The ELEMENT type check below is new, and it is the one place in this
+     * change where the non-strict result is not byte-identical to before.
+     * It was not fail-softness — it was a union type-pun: both reads below
+     * took `.data.num` off items that were never checked, so
+     * `sign_extend of ["x", 8]` reinterpreted a `char *` as a `double` and
+     * sign-extended whatever that produced. There is no previous behaviour
+     * to preserve, because the previous behaviour was undefined; 0 is the
+     * same stand-in every sibling here uses. Filed as its own issue. */
+    Value *v0 = arg->data.list.items[0], *v1 = arg->data.list.items[1];
+    ARG_GUARD(!v0 || v0->type != VAL_NUM || !v1 || v1->type != VAL_NUM, "sign_extend", "two numbers", make_num(0));
+    double val = v0->data.num;
+    int bits = (int)v1->data.num;
     if (bits <= 0 || bits > 32) return make_num(val);
     int64_t mask = 1LL << (bits - 1);
     if ((int64_t)val & mask)
@@ -6093,6 +6203,8 @@ Value* builtin_list_contains(Value *arg) {
         if (values_equal(list->data.list.items[i], needle))
             return make_num(1);
     }
+    /* fs:ANSWER the scan completed and found nothing; 0 is the predicate's
+     * answer, not a stand-in for a rejected argument. */
     return make_num(0);
 }
 
@@ -6297,12 +6409,10 @@ Value* builtin_dispatch(Value *arg) {
  * accumulation instead. no-NaN/Inf is preserved (num_guard at each step), so
  * the result still respects EigenScript's no-NaN/Inf invariant. */
 static Value* builtin_dot(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "dot", "[a, b]", make_num(0));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
-    if (!a || !b || a->type != VAL_BUFFER || b->type != VAL_BUFFER)
-        return make_num(0);
+    ARG_GUARD(!a || !b || a->type != VAL_BUFFER || b->type != VAL_BUFFER, "dot", "two buffers", make_num(0));
     int n = a->data.buffer.count;
     if (b->data.buffer.count < n) n = b->data.buffer.count;
     double *ad = a->data.buffer.data, *bd = b->data.buffer.data;

@@ -6,6 +6,54 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **The strict argument reform now covers the whole builtin surface, and
+  every fail-soft return in it is classified (#971 Phase B).** Phase A
+  converted the outer *arity* guards and left the inner *element-type*
+  checks soft, so a call with the right shape and the wrong element types
+  was still answered silently — `contains of [[1,2,3], 2]` returned `0`
+  under strict, in a function whose own comment describes that spurious hit
+  as a fixed bug. 45 further guards are converted, in `builtins.c`,
+  `builtins_host.c`, `builtins_tensor.c` and `ext_store.c`.
+  **Two findings changed the shape of the work.** First, the population was
+  bigger than the issue's: its "~89 guards" came from a narrow
+  `return make_num(0)` grep over one file, which missed every
+  `make_num(0.0)` spelling (ten in `builtins_tensor.c`, one of them a
+  textbook null guard) and never looked outside `builtins.c`. The real
+  surface is **165 sites across seven files** — and the seventh, `src/hash.c`,
+  was invisible even to the new gate until its builtin-name pattern learned
+  about digits (`sha256`, `md5`, `hmac_sha256` all have one), while being
+  compiled into every variant. Second, several guards were
+  *mixed* — one condition OR-ing a type mistake with a documented answer
+  (`task_send`'s arity check with "no scheduler"; `min`/`max`'s
+  wrong-type with empty-list) — and those are split so strict speaks about
+  the half it should while the non-strict answer is unchanged.
+  A second macro, `STRICT_REQUIRE`, covers builtins that *coerce* instead of
+  returning a stand-in: `str_replace` silently treated a non-string element
+  as `""`, so it has no stand-in return to convert and no single soft value
+  to preserve. It raises under strict and is a no-op otherwise, making the
+  default path byte-identical by construction rather than by inspection.
+  **Every one of the remaining 120 sites now carries a written
+  classification** (`fs:ANSWER`, `fs:CHANNEL`, `fs:LITERAL`, `fs:EMPTY`,
+  `fs:STRICT`, `fs:TODO`), enforced by `tools/failsoft_classify_check.sh` —
+  because the distinction is not derivable from the code, only from reading
+  it, and an unmarked new site must be a red line rather than a silent
+  omission. 17 sites are `fs:TODO #971`, all in the variant-only extension
+  builds (gfx/http), which no test in a default build can exercise.
+  Verified by `tools/strict_differential.sh` against a build of the parent
+  commit: **52/53 probes byte-identical with the flag off, 53/53 raising
+  under strict, 10/10 answer-pins held**. The one divergence is
+  `sign_extend`, which was not fail-softness but a union type-pun — both
+  operands were read as `.data.num` with no `VAL_NUM` check, so
+  `sign_extend of ["x", 8]` reinterpreted a `char *` as a `double`. The
+  waiver is proven rather than asserted: the harness runs the baseline twice
+  and requires the two results to differ, which they do (a different
+  pointer-derived denormal each run).
+  Three separate bugs found while reading and filed rather than folded in:
+  `store_update` reports success after deleting a record when the re-insert
+  fails (#1006), `ext_gfx.c` has no raise path at all against ~85 fail-soft
+  returns (#1007), and `sum`/`mean`/`norm` launder a wrong-typed argument to
+  `0` through `tensor_total` (#1008).
+
 - **`EIGS_STRICT=1` now makes a wrong-typed builtin argument raise (#971
   Phase A).** ~34 builtins answered a wrong type with a soft stand-in, so a
   type mistake became a plausible value and flowed on indistinguishable from a

@@ -242,13 +242,21 @@ consequences are contracts you can rely on:
   an out-of-domain operation — `sqrt` of a negative, `log` of `≤0`, `asin`/
   `acos` outside `[-1, 1]` — raises a catchable `value` error instead of
   substituting, for callers that need arithmetic invalidity to fail loudly.
-  The same flag governs **argument-type guards**: ~34 builtins answered a
+  The same flag governs **argument-type guards**: builtins that answered a
   wrong-typed argument with a stand-in, so `cos of "hello"` was `0` and
   `str_upper of 42` was `""` — a type mistake became a plausible value. Under
-  strict those raise a catchable `type` error naming the builtin. A `0` or
-  `""` that is a genuine *answer* is untouched in both modes: `try_parse` of
-  invalid syntax still returns `0`, and `task_alive` of an unknown id still
-  returns `0`.
+  strict those raise a catchable `type` error naming the builtin, across the
+  whole builtin surface (`builtins.c`, the host builtins, the tensor ops and
+  the embedded store). A `0` or `""` that is a genuine *answer* is untouched
+  in both modes: `try_parse` of invalid syntax still returns `0`, `task_alive`
+  of an unknown id still returns `0`, `char_at` past the end is still `""`,
+  and `num` still *coerces* (`num of ([1, 2])` is `0` — that is its documented
+  contract, not a guard).
+  The distinction is not derivable from the code: `task_alive` has two
+  `return make_num(0)` lines four apart, one a type guard and one the
+  documented answer. Every site in the surface therefore carries a written
+  classification, mechanically enforced by
+  `tools/failsoft_classify_check.sh`.
   Overflow saturation and the `NaN`→`0` collapse are unchanged by the flag for
   now. (Division and modulo by zero raise in *both* modes — no defined value.)
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`

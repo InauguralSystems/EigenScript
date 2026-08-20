@@ -920,6 +920,33 @@ extern __thread EigsThread *eigs_current;
             return (soft);                                                    \
         }                                                                     \
     } while (0)
+
+/* #971 Phase B: the COERCION shape, which ARG_GUARD cannot express.
+ *
+ * ARG_GUARD fits a guard that answers a wrong argument with one stand-in.
+ * Some builtins instead coerce in place and carry on — `str_replace`'s
+ * `if (items[0]->type == VAL_STR) str = ...` leaves `str` as "" for a
+ * number, so `str_replace of [42, "a", "b"]` silently searches an empty
+ * string. There is no single stand-in to name: the non-strict result is
+ * whatever the rest of the function computes from the coerced value.
+ *
+ * So this raises under strict and does NOTHING otherwise — the non-strict
+ * path is byte-identical BY CONSTRUCTION rather than by inspection, which
+ * is what makes it safe to apply to a site whose soft behaviour is not a
+ * simple early return. The raise still returns, so the caller stops before
+ * consuming the coerced value.
+ *
+ * These sites are invisible to tools/failsoft_classify_check.sh: they have
+ * no `return make_num(0)` to enumerate. Found by the differential instead
+ * (a probe that stayed silent under strict), which is why that harness
+ * exists as well as the classifier. */
+#define STRICT_REQUIRE(cond, who, want)                                       \
+    do {                                                                      \
+        if (g_strict && (cond)) {                                             \
+            rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));           \
+            return make_null();                                               \
+        }                                                                     \
+    } while (0)
 #define g_builtin_call_env  (eigs_current->builtin_call_env)
 #define g_vm                  (*eigs_current->vm)
 #define g_loop_stall_count    (eigs_current->loop_stall_count)

@@ -239,6 +239,8 @@ Value* builtin_sha256(Value *arg) {
      * silent wrong digest. Raise instead. */
     if (!arg || arg->type != VAL_STR) {
         rt_error(EK_TYPE, 0, "sha256 requires a string");
+/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
+         * file loud); this is only the C return value. */
         return make_str("");
     }
     SHA256_CTX ctx;
@@ -254,6 +256,8 @@ Value* builtin_sha256(Value *arg) {
 Value* builtin_md5(Value *arg) {
     if (!arg || arg->type != VAL_STR) {              /* #511 */
         rt_error(EK_TYPE, 0, "md5 requires a string");
+/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
+         * file loud); this is only the C return value. */
         return make_str("");
     }
     MD5_CTX ctx;
@@ -270,11 +274,15 @@ Value* builtin_md5(Value *arg) {
 Value* builtin_sha256_file(Value *arg) {
     if (!arg || arg->type != VAL_STR) {              /* #511 */
         rt_error(EK_TYPE, 0, "sha256_file requires a string path");
+/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
+         * file loud); this is only the C return value. */
         return make_str("");
     }
     FILE *f = fopen(arg->data.str, "rb");
     if (!f) {
         rt_error(EK_IO, 0, "sha256_file: cannot open '%s'", arg->data.str);
+/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
+         * file loud); this is only the C return value. */
         return make_str("");
     }
     SHA256_CTX ctx;
@@ -294,11 +302,15 @@ Value* builtin_sha256_file(Value *arg) {
 Value* builtin_md5_file(Value *arg) {
     if (!arg || arg->type != VAL_STR) {              /* #511 */
         rt_error(EK_TYPE, 0, "md5_file requires a string path");
+/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
+         * file loud); this is only the C return value. */
         return make_str("");
     }
     FILE *f = fopen(arg->data.str, "rb");
     if (!f) {
         rt_error(EK_IO, 0, "md5_file: cannot open '%s'", arg->data.str);
+/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
+         * file loud); this is only the C return value. */
         return make_str("");
     }
     MD5_CTX ctx;
@@ -319,12 +331,16 @@ Value* builtin_md5_file(Value *arg) {
 Value* builtin_hmac_sha256(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {  /* #511 */
         rt_error(EK_TYPE, 0, "hmac_sha256 requires [key, message]");
+/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
+         * file loud); this is only the C return value. */
         return make_str("");
     }
     Value *key_val = arg->data.list.items[0];
     Value *msg_val = arg->data.list.items[1];
     if (!key_val || key_val->type != VAL_STR || !msg_val || msg_val->type != VAL_STR) {
         rt_error(EK_TYPE, 0, "hmac_sha256: key and message must be strings");
+/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
+         * file loud); this is only the C return value. */
         return make_str("");
     }
 

@@ -257,17 +257,17 @@ Value* builtin_db_query_value(Value *arg) {
     if (!arg || (arg->type != VAL_STR && arg->type != VAL_LIST)) {
         rt_error(EK_TYPE, 0, "db_query_value expects a string or [sql, params...] (got %s)",
                  arg ? val_type_name(arg->type) : "null");
-        return make_str("");
+        return make_str("");  /* fs:STRICT the rt_error above is unconditional (not g_strict-gated), so the error latch is already armed and the VM raises; "" is the never-consumed soft value */
     }
-    if (!db_require_conn()) return make_str("");
+    if (!db_require_conn()) return make_str("");  /* fs:STRICT db_require_conn raised EK_IO before returning 0 (ext_db.c:132) */
     PGresult *res = db_exec_from_arg(arg);
-    if (!res) return make_str("");           /* db_build_query already raised */
+    if (!res) return make_str("");           /* db_build_query already raised */  /* fs:STRICT db_build_query already raised (ext_db.c:61 path); the latch is armed */
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         db_raise_stmt(res, "query");
         PQclear(res);
-        return make_str("");
+        return make_str("");  /* fs:STRICT db_raise_stmt raised EK_IO on the line above (ext_db.c:126) */
     }
-    if (PQntuples(res) == 0 || PQnfields(res) == 0) { PQclear(res); return make_str(""); }
+    if (PQntuples(res) == 0 || PQnfields(res) == 0) { PQclear(res); return make_str(""); }  /* fs:ANSWER the header comment (line 256) documents "" for no rows; zero tuples/fields is a successful query with nothing to hand back, and nothing raised */
     /* NULL is not "" — the two used to be the same value here, so a caller
      * could not tell "no value" from "empty value" for any column type. */
     if (PQgetisnull(res, 0, 0)) { PQclear(res); return make_null(); }
@@ -282,7 +282,7 @@ Value* builtin_db_query_value(Value *arg) {
             result = make_num(text[0] == 't' ? 1 : 0);
             break;
         case DBT_NUM:
-            if (!db_check_exact_int(oid, text, colname)) { PQclear(res); return make_str(""); }
+            if (!db_check_exact_int(oid, text, colname)) { PQclear(res); return make_str(""); }  /* fs:STRICT db_check_exact_int raised EK_VALUE for a past-2^53 integer (ext_db.c:211) */
             /* Same rule as the JSON emitter: float4/float8 can be NaN /
              * Infinity / -Infinity, and make_num's num_guard would turn
              * those into 0 and 1e308 — a silently wrong number. Hand back
