@@ -1318,6 +1318,375 @@ static void check_outer_mutation(ASTNode *ast, LintContext *ctx) {
     }
 }
 
+/* ---- W023 (#870): inverted sibling-branch outer-mutation fence ---- */
+/* Prove only the dangerous direction: SET_NAME walks one step to the nearest
+ * environment binding.  Model that runtime walk with dominating binders and
+ * fail safe to silence; an enclosing binder (including catch) is a deliberate false negative. */
+#define W023_MAX_FUNCTION_DEPTH 64
+enum { W023_MODULE, W023_SPECIAL, W023_FUNCTIONS, W023_NAME_SCAN };
+enum { W023_CAPTURED = 1, W023_INTERROGATED = 2, W023_ENV_BOUND = 4, W023_DEFINE = 8 };
+typedef struct { char **names; int count, capacity, unknown; } W023Names;
+static int w023_name_present(const W023Names *set, const char *name) {
+    for (int i = 0; i < set->count; i++) if (strcmp(set->names[i], name) == 0) return 1;
+    return 0;
+}
+static void w023_names_unknown(W023Names *set) {
+    free(set->names);
+    *set = (W023Names){ .unknown = 1 };
+}
+static void w023_name_add(const char *name, W023Names *set) {
+    if (!name) { w023_names_unknown(set); return; }
+    if (set->unknown || w023_name_present(set, name)) return;
+    if (set->count == INT_MAX || (size_t)(set->count + 1) > SIZE_MAX / sizeof(*set->names)) { w023_names_unknown(set); return; }
+    if (set->count == set->capacity) {
+        int capacity = set->capacity ? set->capacity : 8;
+        if (capacity > INT_MAX / 2 || (size_t)capacity > SIZE_MAX / sizeof(*set->names)) { w023_names_unknown(set); return; }
+        while (capacity <= set->count) {
+            if (capacity > INT_MAX / 2) { w023_names_unknown(set); return; }
+            capacity *= 2;
+        }
+        char **names = realloc(set->names, (size_t)capacity * sizeof(*set->names));
+        if (!names) { w023_names_unknown(set); return; }
+        set->names = names;
+        set->capacity = capacity;
+    }
+    set->names[set->count++] = (char *)name;
+}
+static int w023_names_copy(W023Names *dst, const W023Names *src) {
+    *dst = (W023Names){ .unknown = src->unknown };
+    if (src->unknown || !src->count) return 0;
+    if ((size_t)src->count > SIZE_MAX / sizeof(*dst->names)) { dst->unknown = 1; return -1; }
+    dst->names = malloc((size_t)src->count * sizeof(*dst->names));
+    if (!dst->names) { dst->unknown = 1; return -1; }
+    memcpy(dst->names, src->names, (size_t)src->count * sizeof(*dst->names));
+    dst->count = dst->capacity = src->count;
+    return 0;
+}
+static void w023_names_free(W023Names *set) { free(set->names); set->names = NULL; set->count = set->capacity = 0; }
+static void w023_analyse_function(ASTNode *, ASTNode **, int, W023Names *, LintContext *);
+static void w023_scan_sequence(ASTNode **, int, W023Names *, ASTNode *, ASTNode **, int, W023Names *, LintContext *);
+
+static int w023_body_has_name(ASTNode **body, int count, const char *name);
+
+/* This one exhaustive walk mirrors compiler module-name collection, closure
+ * probes, and nested-function discovery.  New AST kinds must be listed. */
+static void w023_walk(ASTNode *n, int mode, const char *name, int *flags,
+                      W023Names *module, ASTNode **ancestors, int depth,
+                      LintContext *ctx) {
+    if (!n) return;
+#define W(x) w023_walk((x), mode, name, flags, module, ancestors, depth, ctx)
+#define N(x) do { const char *w023_name = (x); if (mode == W023_NAME_SCAN && w023_name && name && strcmp(w023_name, name) == 0) *flags = 1; } while (0)
+    switch (n->type) {
+    case AST_ASSIGN:
+        if (mode == W023_MODULE) w023_name_add(n->data.assign.name, module);
+        else { N(n->data.assign.name); W(n->data.assign.expr); }
+        break;
+    case AST_FUNC:
+        if (mode == W023_MODULE) w023_name_add(n->data.func.name, module);
+        else if (mode == W023_SPECIAL) {
+            if (name && strcmp(n->data.func.name, name) == 0) *flags |= W023_DEFINE;
+            if (name && w023_body_has_name(n->data.func.body, n->data.func.body_count, name)) *flags |= W023_CAPTURED;
+        } else if (mode == W023_NAME_SCAN) {
+            N(n->data.func.name);
+            for (int i = 0; i < n->data.func.body_count; i++) W(n->data.func.body[i]);
+        } else if (depth < W023_MAX_FUNCTION_DEPTH) {
+            w023_analyse_function(n, ancestors, depth, module, ctx); ancestors[depth] = n;
+            for (int i = 0; i < n->data.func.body_count; i++) w023_walk(n->data.func.body[i], mode, name, flags, module, ancestors, depth + 1, ctx);
+        }
+        break;
+    case AST_IF:
+        if (mode != W023_MODULE) W(n->data.cond.cond);
+        for (int i = 0; i < n->data.cond.if_count; i++) W(n->data.cond.if_body[i]);
+        for (int i = 0; i < n->data.cond.else_count; i++) W(n->data.cond.else_body[i]); break;
+    case AST_LOOP:
+        if (mode != W023_MODULE) W(n->data.loop.cond); for (int i = 0; i < n->data.loop.body_count; i++) W(n->data.loop.body[i]); break;
+    case AST_BLOCK: case AST_UNOBSERVED:
+        for (int i = 0; i < n->data.block.count; i++) W(n->data.block.stmts[i]); break;
+    case AST_FOR:
+        if (mode == W023_SPECIAL && name && strcmp(n->data.forloop.var, name) == 0) *flags |= W023_ENV_BOUND;
+        N(n->data.forloop.var);
+        if (mode != W023_MODULE) W(n->data.forloop.iter); for (int i = 0; i < n->data.forloop.body_count; i++) W(n->data.forloop.body[i]); break;
+    case AST_TRY:
+        for (int i = 0; i < n->data.trycatch.try_count; i++) W(n->data.trycatch.try_body[i]);
+        if (mode == W023_MODULE) w023_name_add(n->data.trycatch.err_name, module);
+        else if (mode == W023_SPECIAL && name && strcmp(n->data.trycatch.err_name, name) == 0) *flags |= W023_ENV_BOUND;
+        else N(n->data.trycatch.err_name);
+        for (int i = 0; i < n->data.trycatch.catch_count; i++) W(n->data.trycatch.catch_body[i]); break;
+    case AST_MATCH:
+        if (mode != W023_MODULE) W(n->data.match.expr);
+        for (int i = 0; i < n->data.match.case_count; i++) {
+            if (mode != W023_MODULE) W(n->data.match.patterns[i]);
+            for (int j = 0; j < n->data.match.body_counts[i]; j++) W(n->data.match.bodies[i][j]);
+        }
+        break;
+    case AST_LIST_PATTERN_ASSIGN:
+        if (mode == W023_MODULE) {
+            for (int i = 0; i < n->data.list_pattern_assign.name_count; i++)
+                w023_name_add(n->data.list_pattern_assign.names[i], module);
+        } else {
+            for (int i = 0; i < n->data.list_pattern_assign.name_count; i++) N(n->data.list_pattern_assign.names[i]);
+            W(n->data.list_pattern_assign.expr);
+        }
+        break;
+    case AST_INTERROGATE:
+        if (mode == W023_SPECIAL && name && n->data.interrogate.expr &&
+            n->data.interrogate.expr->type == AST_IDENT &&
+            strcmp(n->data.interrogate.expr->data.ident.name, name) == 0) *flags |= W023_INTERROGATED;
+        if (mode != W023_MODULE) {
+            W(n->data.interrogate.expr); W(n->data.interrogate.at_expr); W(n->data.interrogate.when_expr);
+        }
+        break;
+    case AST_LISTCOMP:
+        if (mode == W023_SPECIAL && name && strcmp(n->data.listcomp.var, name) == 0) *flags |= W023_ENV_BOUND;
+        N(n->data.listcomp.var);
+        if (mode != W023_MODULE) {
+            W(n->data.listcomp.expr); W(n->data.listcomp.iter); W(n->data.listcomp.filter);
+        }
+        break;
+    case AST_BINOP: W(n->data.binop.left); W(n->data.binop.right); break;
+    case AST_UNARY: W(n->data.unary.operand); break;
+    case AST_RELATION: W(n->data.relation.left); W(n->data.relation.right); break;
+    case AST_RETURN: W(n->data.ret.expr); break;
+    case AST_LIST: for (int i = 0; i < n->data.list.count; i++) W(n->data.list.elems[i]); break;
+    case AST_INDEX: W(n->data.index.target); W(n->data.index.index); break;
+    case AST_DICT: for (int i = 0; i < n->data.dict.count; i++) { W(n->data.dict.keys[i]); W(n->data.dict.vals[i]); } break;
+    case AST_DOT: W(n->data.dot.target); break;
+    case AST_DOT_ASSIGN: W(n->data.dot_assign.target); W(n->data.dot_assign.expr); break;
+    case AST_INDEX_ASSIGN: W(n->data.index_assign.target); W(n->data.index_assign.index); W(n->data.index_assign.expr); break;
+    case AST_SLICE: W(n->data.slice.target); W(n->data.slice.start); W(n->data.slice.end); break;
+    case AST_LAMBDA:
+        if (mode == W023_SPECIAL && name && w023_body_has_name(&n->data.lambda.body, 1, name)) *flags |= W023_CAPTURED;
+        else if (mode == W023_FUNCTIONS || mode == W023_NAME_SCAN) W(n->data.lambda.body);
+        break;
+    case AST_PROGRAM:
+        for (int i = 0; i < n->data.program.count; i++) W(n->data.program.stmts[i]);
+        break;
+    case AST_IDENT: N(n->data.ident.name); break;
+    case AST_IMPORT: N(n->data.import.module_name); break;
+    case AST_NUM: case AST_STR: case AST_NULL: case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: break;
+    }
+#undef N
+#undef W
+}
+
+static int w023_body_has_name(ASTNode **body, int count, const char *name) {
+    int found = 0;
+    for (int i = 0; i < count && !found; i++) w023_walk(body[i], W023_NAME_SCAN, name, &found, NULL, NULL, 0, NULL);
+    return found;
+}
+
+static int w023_special_flags(ASTNode **body, int count, const char *name) {
+    int flags = 0;
+    for (int i = 0; i < count; i++) w023_walk(body[i], W023_SPECIAL, name, &flags, NULL, NULL, 0, NULL); return flags;
+}
+/* AST_IMPORT is a current-scope binder, not only a name occurrence.  The
+ * compiler emits OP_SET_NAME_LOCAL for it, and the VM stores that binding in
+ * frame->env; a later bare OP_SET_NAME therefore starts at the same binding.
+ * Keep the prefix/enclosing and source-order scans on this shared semantic
+ * rule rather than letting their binder taxonomies drift apart. */
+static void w023_record_current_scope_import(ASTNode *n, W023Names *locals) {
+    if (n && n->type == AST_IMPORT) w023_name_add(n->data.import.module_name, locals);
+}
+static void w023_collect_binders(ASTNode *n, W023Names *locals) {
+    if (!n || locals->unknown) return;
+    switch (n->type) {
+    case AST_ASSIGN:
+        if (n->data.assign.local_only) w023_name_add(n->data.assign.name, locals);
+        break;
+    case AST_LIST_PATTERN_ASSIGN:
+        for (int i = 0; i < n->data.list_pattern_assign.name_count; i++)
+            w023_name_add(n->data.list_pattern_assign.names[i], locals);
+        break;
+    case AST_IF:
+        for (int i = 0; i < n->data.cond.if_count; i++) w023_collect_binders(n->data.cond.if_body[i], locals);
+        for (int i = 0; i < n->data.cond.else_count; i++) w023_collect_binders(n->data.cond.else_body[i], locals);
+        break;
+    case AST_LOOP:
+        for (int i = 0; i < n->data.loop.body_count; i++) w023_collect_binders(n->data.loop.body[i], locals);
+        break;
+    case AST_FOR:
+        w023_name_add(n->data.forloop.var, locals);
+        for (int i = 0; i < n->data.forloop.body_count; i++) w023_collect_binders(n->data.forloop.body[i], locals);
+        break;
+    case AST_TRY:
+        w023_name_add(n->data.trycatch.err_name, locals);
+        for (int i = 0; i < n->data.trycatch.try_count; i++) w023_collect_binders(n->data.trycatch.try_body[i], locals);
+        for (int i = 0; i < n->data.trycatch.catch_count; i++) w023_collect_binders(n->data.trycatch.catch_body[i], locals);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        for (int i = 0; i < n->data.block.count; i++) w023_collect_binders(n->data.block.stmts[i], locals);
+        break;
+    case AST_MATCH:
+        for (int i = 0; i < n->data.match.case_count; i++)
+            for (int j = 0; j < n->data.match.body_counts[i]; j++) w023_collect_binders(n->data.match.bodies[i][j], locals);
+        break;
+    case AST_NUM:
+    case AST_STR:
+    case AST_IDENT:
+    case AST_NULL:
+    case AST_BINOP:
+    case AST_UNARY:
+    case AST_RELATION:
+    case AST_FUNC:
+    case AST_RETURN:
+    case AST_LIST:
+    case AST_INDEX:
+    case AST_LISTCOMP:
+    case AST_PROGRAM:
+    case AST_INTERROGATE:
+    case AST_PREDICATE:
+    case AST_DICT:
+    case AST_DOT:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_DOT_ASSIGN:
+    case AST_LAMBDA:
+    case AST_INDEX_ASSIGN:
+    case AST_SLICE:
+        break;
+    case AST_IMPORT:
+        w023_record_current_scope_import(n, locals);
+        break;
+    }
+}
+static int w023_prefix_binds(ASTNode **stmts, int limit, const char *name) {
+    W023Names locals = {0};
+    for (int i = 0; i < limit; i++) {
+        w023_collect_binders(stmts[i], &locals);
+        if (locals.unknown) { w023_names_free(&locals); return -1; }
+        if (w023_special_flags(&stmts[i], 1, name) & (W023_ENV_BOUND | W023_DEFINE)) { w023_names_free(&locals); return 1; }
+    }
+    int result = w023_name_present(&locals, name);
+    w023_names_free(&locals);
+    return result;
+}
+static int w023_enclosing_binds(const char *name, ASTNode **ancestors, int count) {
+    for (int a = 0; a < count; a++) {
+        ASTNode *fn = ancestors[a];
+        for (int p = 0; p < fn->data.func.param_count; p++)
+            if (strcmp(fn->data.func.params[p], name) == 0) return 1;
+        W023Names locals = {0};
+        for (int b = 0; b < fn->data.func.body_count; b++) w023_collect_binders(fn->data.func.body[b], &locals);
+        if (locals.unknown) { w023_names_free(&locals); return -1; }
+        if (w023_name_present(&locals, name) ||
+            (w023_special_flags(fn->data.func.body, fn->data.func.body_count, name) &
+             (W023_CAPTURED | W023_INTERROGATED | W023_ENV_BOUND | W023_DEFINE))) { w023_names_free(&locals); return 1; }
+        w023_names_free(&locals);
+    }
+    return 0;
+}
+static int w023_can_fire(ASTNode *fn, const char *name, W023Names *bound,
+                         ASTNode **ancestors, int depth, W023Names *module) {
+    if (module->unknown || bound->unknown || !w023_name_present(module, name)) return 0;
+    for (int p = 0; p < fn->data.func.param_count; p++) if (strcmp(fn->data.func.params[p], name) == 0) return 0;
+    if (w023_special_flags(fn->data.func.body, fn->data.func.body_count, name) &
+        (W023_CAPTURED | W023_INTERROGATED | W023_ENV_BOUND)) return 0;
+    int enclosing = w023_enclosing_binds(name, ancestors, depth);
+    if (enclosing < 0) { w023_names_unknown(module); return 0; }
+    return !w023_name_present(bound, name) && !enclosing;
+}
+
+static int w023_grow_branch_vectors(ASTNode ****branches, int **counts, size_t *capacity) {
+    size_t next = *capacity ? *capacity * 2 : 8;
+    if (next < *capacity || next > SIZE_MAX / sizeof(**branches) || next > SIZE_MAX / sizeof(**counts)) return 0;
+    ASTNode ***grown_branches = realloc(*branches, next * sizeof(**branches));
+    if (!grown_branches) return 0;
+    *branches = grown_branches;
+    int *grown_counts = realloc(*counts, next * sizeof(**counts));
+    if (!grown_counts) return 0;
+    *counts = grown_counts;
+    *capacity = next;
+    return 1;
+}
+static void w023_proof_failure(W023Names *module, ASTNode ****branches, int **counts) {
+    w023_names_unknown(module);
+    free(*branches); *branches = NULL;
+    free(*counts); *counts = NULL;
+}
+
+static void w023_check_if(ASTNode *if_node, ASTNode *fn, W023Names *bound,
+                          ASTNode **ancestors, int depth, W023Names *module,
+                          LintContext *ctx) {
+    ASTNode ***branches = NULL; int *counts = NULL; size_t capacity = 0, nb = 0; ASTNode *cur = if_node;
+    while (cur) {
+        if (nb == capacity && !w023_grow_branch_vectors(&branches, &counts, &capacity)) {
+            w023_proof_failure(module, &branches, &counts); return;
+        }
+        branches[nb] = cur->data.cond.if_body; counts[nb++] = cur->data.cond.if_count;
+        if (cur->data.cond.else_count == 1 && cur->data.cond.else_body[0] && cur->data.cond.else_body[0]->type == AST_IF) cur = cur->data.cond.else_body[0];
+        else { if (cur->data.cond.else_count) {
+                if (nb == capacity && !w023_grow_branch_vectors(&branches, &counts, &capacity)) {
+                    w023_proof_failure(module, &branches, &counts); return;
+                }
+                branches[nb] = cur->data.cond.else_body; counts[nb++] = cur->data.cond.else_count;
+            } cur = NULL; }
+    }
+    for (size_t i = 0; i < nb; i++) for (int j = 0; j < counts[i]; j++) { ASTNode *bare = branches[i][j];
+        if (!bare || bare->type != AST_ASSIGN || bare->data.assign.local_only || !bare->data.assign.name) continue; int sibling = 0;
+        for (size_t k = 0; k < nb && !sibling; k++) if (k != i) for (int l = 0; l < counts[k]; l++) { ASTNode *local = branches[k][l]; if (local && local->type == AST_ASSIGN && local->data.assign.local_only && local->data.assign.name && strcmp(local->data.assign.name, bare->data.assign.name) == 0) { sibling = 1; break; } }
+        int prefix = sibling ? w023_prefix_binds(branches[i], j, bare->data.assign.name) : 0;
+        if (prefix < 0) { w023_proof_failure(module, &branches, &counts); return; }
+        if (sibling && !prefix &&
+            w023_can_fire(fn, bare->data.assign.name, bound, ancestors, depth, module))
+            lint_warn(ctx, bare->line, "W023", "'%s' is assigned in sibling branches with and without 'local' and may mutate an outer binding — add 'local'", bare->data.assign.name);
+    }
+    free(branches); free(counts);
+}
+static void w023_scan_sequence(ASTNode **stmts, int count, W023Names *bound,
+                               ASTNode *fn, ASTNode **ancestors, int depth,
+                               W023Names *module, LintContext *ctx) {
+    for (int i = 0; i < count; i++) { ASTNode *n = stmts[i]; if (!n) continue;
+        if (module->unknown || bound->unknown) return;
+        switch (n->type) {
+        case AST_ASSIGN: if (n->data.assign.local_only) w023_name_add(n->data.assign.name, bound); break;
+        case AST_FUNC: w023_name_add(n->data.func.name, bound); break;
+        case AST_FOR: w023_name_add(n->data.forloop.var, bound); w023_scan_sequence(n->data.forloop.body, n->data.forloop.body_count, bound, fn, ancestors, depth, module, ctx); break;
+        case AST_LIST_PATTERN_ASSIGN: for (int j = 0; j < n->data.list_pattern_assign.name_count; j++) w023_name_add(n->data.list_pattern_assign.names[j], bound); break;
+        case AST_BLOCK: case AST_UNOBSERVED:
+            w023_scan_sequence(n->data.block.stmts, n->data.block.count, bound, fn, ancestors, depth, module, ctx); break;
+        case AST_TRY:
+            w023_scan_sequence(n->data.trycatch.try_body, n->data.trycatch.try_count, bound, fn, ancestors, depth, module, ctx);
+            w023_name_add(n->data.trycatch.err_name, bound);
+            w023_scan_sequence(n->data.trycatch.catch_body, n->data.trycatch.catch_count, bound, fn, ancestors, depth, module, ctx); break;
+        case AST_IF: {
+            W023Names branch;
+            w023_check_if(n, fn, bound, ancestors, depth, module, ctx);
+            if (module->unknown || w023_names_copy(&branch, bound) < 0) { w023_names_unknown(module); return; }
+            w023_scan_sequence(n->data.cond.if_body, n->data.cond.if_count, &branch, fn, ancestors, depth, module, ctx);
+            w023_names_free(&branch);
+            if (module->unknown || w023_names_copy(&branch, bound) < 0) { w023_names_unknown(module); return; }
+            w023_scan_sequence(n->data.cond.else_body, n->data.cond.else_count, &branch, fn, ancestors, depth, module, ctx);
+            w023_names_free(&branch);
+        } break;
+        case AST_LOOP: {
+            W023Names body;
+            if (w023_names_copy(&body, bound) < 0) { w023_names_unknown(module); return; }
+            w023_scan_sequence(n->data.loop.body, n->data.loop.body_count, &body, fn, ancestors, depth, module, ctx);
+            w023_names_free(&body);
+        } break;
+        case AST_MATCH:
+            for (int c = 0; c < n->data.match.case_count; c++) {
+                W023Names body;
+                if (w023_names_copy(&body, bound) < 0) { w023_names_unknown(module); return; }
+                w023_scan_sequence(n->data.match.bodies[c], n->data.match.body_counts[c], &body, fn, ancestors, depth, module, ctx);
+                w023_names_free(&body);
+                if (module->unknown) return;
+            }
+            break;
+        case AST_IMPORT: w023_record_current_scope_import(n, bound); break;
+        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BINOP: case AST_UNARY: case AST_RELATION: case AST_RETURN: case AST_LIST: case AST_INDEX: case AST_LISTCOMP: case AST_PROGRAM: case AST_INTERROGATE: case AST_PREDICATE: case AST_DICT: case AST_DOT: case AST_BREAK: case AST_CONTINUE: case AST_DOT_ASSIGN: case AST_LAMBDA: case AST_INDEX_ASSIGN: case AST_SLICE: break;
+        }
+    }
+}
+static void w023_analyse_function(ASTNode *fn, ASTNode **ancestors, int depth, W023Names *module, LintContext *ctx) {
+    W023Names bound = {0}; w023_scan_sequence(fn->data.func.body, fn->data.func.body_count, &bound, fn, ancestors, depth, module, ctx); w023_names_free(&bound);
+}
+static void check_sibling_outer_mutation(ASTNode *ast, LintContext *ctx) {
+    if (!ast || ast->type != AST_PROGRAM) return; W023Names module = {0}; w023_walk(ast, W023_MODULE, NULL, NULL, &module, NULL, 0, NULL); if (!module.count || module.unknown) { w023_names_free(&module); return; }
+    ASTNode *ancestors[W023_MAX_FUNCTION_DEPTH] = {0}; w023_walk(ast, W023_FUNCTIONS, NULL, NULL, &module, ancestors, 0, ctx); w023_names_free(&module);
+}
+
 /* ---- W016: bare trajectory predicate outside a loop condition ---- */
 
 /* A bare predicate (`stable`, `converged`, ...) reads the LAST-OBSERVED
@@ -2409,6 +2778,7 @@ static void check_error_kind_typo(ASTNode *ast, LintContext *ctx) {
 void lint_run_checks(ASTNode *ast, const char *path,
                      const char *source, LintContext *ctx) {
     check_outer_mutation(ast, ctx);
+    check_sibling_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
     check_one_element_arg_list(ast, ctx);
     check_over_arity(ast, ctx);
