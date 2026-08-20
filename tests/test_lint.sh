@@ -689,7 +689,8 @@ rm -f "$TMPFILE"
 # survival/suppression assertion; a current abort is the defect, never the
 # expected pass condition.  Linux release runners only: LD_PRELOAD is not a
 # portable macOS mechanism, and sanitizer allocators own their interposition.
-if [ "$(uname -s)" = Linux ] && command -v cc >/dev/null 2>&1 \
+ALLOC_CC=$(command -v "${ALLOC_COMPILER:-cc}" 2>/dev/null || true)
+if [ "$(uname -s)" = Linux ] && [ -n "$ALLOC_CC" ] \
     && ! ldd "$EIGS" 2>/dev/null | grep -q 'libasan\|libclang_rt.asan'; then
     ALLOC_SRC=$(mktemp /tmp/w023_alloc_fail_XXXXXX.c)
     ALLOC_SO=$(mktemp /tmp/w023_alloc_fail_XXXXXX.so)
@@ -732,7 +733,7 @@ void *realloc(void *ptr, size_t size) {
     return real_realloc_fn(ptr, size);
 }
 C
-    if cc -shared -fPIC -O2 -Wall -Wextra -Werror -Werror=switch -o "$ALLOC_SO" "$ALLOC_SRC" -ldl; then
+    if "$ALLOC_CC" -shared -fPIC -O2 -Wall -Wextra -Werror -Werror=switch -o "$ALLOC_SO" "$ALLOC_SRC" -ldl; then
         TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
         cat > "$TMPFILE" << 'EIGS'
 t is 5
