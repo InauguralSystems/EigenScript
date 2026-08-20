@@ -400,6 +400,33 @@ else
     echo "  FAIL: opcode numeric ABI changed"
     echo "$OP_ABI_OUT" | head -8
 fi
+
+# #964: descriptor strings are untrusted input and must be reclaimed at the
+# sandbox-run boundary. This focused C test is part of the normal runner (and
+# has its own Makefile target) so the retention assertion cannot disappear
+# into a fork-only/manual probe.
+echo "[0a] Sandbox descriptor intern lifetime"
+check_binary_fingerprint
+SANDBOX_INTERN_BUILD=$(make --no-print-directory -C .. sandbox-intern-test 2>&1)
+SANDBOX_INTERN_BUILD_RC=$?
+if [ "$SANDBOX_INTERN_BUILD_RC" -ne 0 ]; then
+    TOTAL=$((TOTAL + 1))
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: sandbox intern lifetime test build (rc=$SANDBOX_INTERN_BUILD_RC)"
+    echo "$SANDBOX_INTERN_BUILD" | tail -12
+else
+    SANDBOX_INTERN_OUT=$(../build/release/test_sandbox_intern_lifetime 2>&1)
+    SANDBOX_INTERN_RC=$?
+    TOTAL=$((TOTAL + 1))
+    if [ "$SANDBOX_INTERN_RC" -eq 0 ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: sandbox descriptor intern lifetime"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: sandbox descriptor intern lifetime (rc=$SANDBOX_INTERN_RC)"
+    fi
+    echo "$SANDBOX_INTERN_OUT"
+fi
 echo ""
 
 # Sanitizer-classifier gate (#969/#968). This runs BEFORE the first test block
