@@ -1259,6 +1259,11 @@ void eigs_thread_drain_caches(EigsThread *th) {
     th->env_freelist = NULL;
     th->env_freelist_count = 0;
 
+    /* Returned sandbox dictionaries own detached intern entries until their
+     * Values are released. A clean thread normally has no live owners here,
+     * but drain defensively before freeing the table itself. */
+    env_intern_release_all_values();
+
     /* env_name_interns: bucket heads + linked-list nodes own ->name. */
     for (int i = 0; i < ENV_NAME_INTERN_BUCKETS; i++) {
         EnvNameIntern *it = th->env_name_interns[i];
@@ -1274,6 +1279,7 @@ void eigs_thread_drain_caches(EigsThread *th) {
 
 void free_value(Value *v) {
     if (!v || v->arena) return;
+    env_intern_release_value(v);
     if (v->type == VAL_NUM) {
         /* Route freed NUMs to freelist for reuse by make_num */
         if (g_num_freelist_count < NUM_FREELIST_CAP) {
@@ -2301,6 +2307,125 @@ static void env_hash_rebuild_retire(Env *env) {
     env_retire_block(env, old_gens);
 }
 
+struct EnvInternValueOwner {
+    Value *value;
+    EnvNameIntern *names;
+    struct EnvInternValueOwner *next;
+};
+
+static EnvInternValueOwner *env_intern_owner_find(Value *value) {
+    for (EnvInternValueOwner *it = g_sandbox_intern_owners; it; it = it->next)
+        if (it->value == value) return it;
+    return NULL;
+}
+
+static void env_intern_owner_add(Value *value, EnvNameIntern *name) {
+    EnvInternValueOwner *owner = env_intern_owner_find(value);
+    if (!owner) {
+        owner = xcalloc(1, sizeof(*owner));
+        owner->value = value;
+        owner->next = g_sandbox_intern_owners;
+        g_sandbox_intern_owners = owner;
+    }
+    name->owner_next = owner->names;
+    owner->names = name;
+}
+
+uint32_t env_intern_scope_begin(void) {
+    uint32_t next = g_sandbox_intern_scope_next + 1;
+    if (next == 0) next = 1;  /* zero is the ordinary, unscoped lifetime */
+    g_sandbox_intern_scope_next = next;
+    g_sandbox_intern_scope = next;
+    return next;
+}
+
+/* A returned dictionary may retain keys whose entries were created in the
+ * run-owned scope. Detach each such entry from the table and attach it to the
+ * owning Value. This keeps every key alias valid without changing Value's
+ * layout; free_value releases the detached entries when that dictionary dies. */
+char *env_intern_scope_promote(Value *owner, char *name) {
+    if (!owner || !name) return name;
+    uint32_t h = env_hash_name(name);
+    int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
+    for (EnvNameIntern **link = &g_env_name_interns[bucket]; *link;
+         link = &(*link)->next) {
+        EnvNameIntern *it = *link;
+        if (it->name == name) {
+            if (it->sandbox_scope == 0) return it->name;
+            *link = it->next;
+            it->next = NULL;
+            env_intern_owner_add(owner, it);
+            return it->name;
+        }
+    }
+    for (EnvInternValueOwner *it = g_sandbox_intern_owners; it; it = it->next) {
+        for (EnvNameIntern *held = it->names; held; held = held->owner_next) {
+            if (held->name != name) continue;
+            if (it->value == owner) return held->name;
+            EnvNameIntern *copy = xcalloc(1, sizeof(*copy));
+            copy->name = xstrdup(name);
+            copy->hash = h;
+            env_intern_owner_add(owner, copy);
+            return copy->name;
+        }
+    }
+    return name; /* process-global channel keys and ordinary names are stable */
+}
+
+/* Release only the entries owned by this run. The caller has already dropped
+ * the temporary sandbox environment and re-homed every escaped dictionary key;
+ * unpromoted entries therefore have no live owner beyond this scope. */
+void env_intern_scope_end(uint32_t scope, uint32_t previous) {
+    if (scope != 0) {
+        for (int i = 0; i < ENV_NAME_INTERN_BUCKETS; i++) {
+            EnvNameIntern **link = &g_env_name_interns[i];
+            while (*link) {
+                EnvNameIntern *it = *link;
+                if (it->sandbox_scope == scope) {
+                    *link = it->next;
+                    free(it->name);
+                    free(it);
+                } else {
+                    link = &it->next;
+                }
+            }
+        }
+    }
+    g_sandbox_intern_scope = previous;
+}
+
+void env_intern_release_value(Value *value) {
+    if (!value) return;
+    EnvInternValueOwner **link = &g_sandbox_intern_owners;
+    while (*link && (*link)->value != value) link = &(*link)->next;
+    if (!*link) return;
+    EnvInternValueOwner *owner = *link;
+    *link = owner->next;
+    EnvNameIntern *name = owner->names;
+    while (name) {
+        EnvNameIntern *next = name->owner_next;
+        free(name->name);
+        free(name);
+        name = next;
+    }
+    free(owner);
+}
+
+void env_intern_release_all_values(void) {
+    while (g_sandbox_intern_owners) {
+        EnvInternValueOwner *owner = g_sandbox_intern_owners;
+        g_sandbox_intern_owners = owner->next;
+        EnvNameIntern *name = owner->names;
+        while (name) {
+            EnvNameIntern *next = name->owner_next;
+            free(name->name);
+            free(name);
+            name = next;
+        }
+        free(owner);
+    }
+}
+
 char *env_intern_name(const char *name) {
     uint32_t h = env_hash_name(name);
     int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
@@ -2311,6 +2436,7 @@ char *env_intern_name(const char *name) {
     EnvNameIntern *it = xcalloc(1, sizeof(EnvNameIntern));
     it->name = xstrdup(name);
     it->hash = h;
+    it->sandbox_scope = g_sandbox_intern_scope;
     it->next = g_env_name_interns[bucket];
     g_env_name_interns[bucket] = it;
     return it->name;

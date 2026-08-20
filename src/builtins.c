@@ -3204,7 +3204,7 @@ static int sandbox_name_allowed(const char *name) {
  * callable there sends the caller hunting for a function that was never in
  * the result. */
 static int sandbox_value_has_callable(Value *v, int depth, long *budget,
-                                      int *unverified) {
+                                      int *unverified, int promote_keys) {
     if (!v) return 0;
     if (v->type == VAL_FN || v->type == VAL_BUILTIN) return 1;
     if (depth > SANDBOX_RESULT_MAX_DEPTH || --(*budget) <= 0) {
@@ -3232,13 +3232,17 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
     if (v->type == VAL_LIST) {
         for (int i = 0; i < v->data.list.count; i++)
             if (sandbox_value_has_callable(v->data.list.items[i], depth + 1,
-                                           budget, unverified))
+                                           budget, unverified, promote_keys))
                 return 1;
     } else if (v->type == VAL_DICT) {
-        for (int i = 0; i < v->data.dict.count; i++)
+        for (int i = 0; i < v->data.dict.count; i++) {
+            if (promote_keys)
+                v->data.dict.keys[i] = env_intern_scope_promote(
+                    v, v->data.dict.keys[i]);
             if (sandbox_value_has_callable(v->data.dict.vals[i], depth + 1,
-                                           budget, unverified))
+                                           budget, unverified, promote_keys))
                 return 1;
+        }
     }
     return 0;
 }
@@ -3365,6 +3369,12 @@ Value* builtin_sandbox_run(Value *arg) {
            sizeof saved_sb_refusal_msg);
     size_t saved_sb_used   = g_sandbox_bytes_used;
     size_t saved_sb_max    = g_sandbox_byte_max;
+    /* Names made by the untrusted VM belong to this run until a returned
+     * dictionary key is explicitly promoted. Descriptor construction and the
+     * sealed environment stay outside the scope, so ordinary host/global names
+     * retain their process lifetime and existing pointer identity. */
+    uint32_t saved_intern_scope = g_sandbox_intern_scope;
+    uint32_t intern_scope = env_intern_scope_begin();
     g_sandbox_active     = 1;
     g_sandbox_error_latched = 0;
     g_sandbox_refusal    = 0;
@@ -3395,6 +3405,10 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_active     = saved_sb_active;
     g_sandbox_bytes_used = saved_sb_used;
     g_sandbox_byte_max   = saved_sb_max;
+    /* Stop tagging names created while we assemble the host-owned diagnostic
+     * wrapper. The run-owned entries remain linked until the result scan has
+     * rehomed every escaped key and the temporary sandbox env is released. */
+    g_sandbox_intern_scope = saved_intern_scope;
 
     /* A cap-truncated loop is NOT a clean run: the program continued past a
      * silently cut loop and produced partial results with exit 0. Reporting
@@ -3442,9 +3456,6 @@ Value* builtin_sandbox_run(Value *arg) {
         eigs_clear_error_value();
     }
 
-    chunk_free(chunk);
-    env_decref(sbox);
-
     /* A callable in the result is a containment break, not a value: calling it
      * from the host runs sandbox-authored code with the caps already restored.
      * Drop the result and report it as a sandbox denial — same {kind, message,
@@ -3452,7 +3463,21 @@ Value* builtin_sandbox_run(Value *arg) {
     long scan_budget = SANDBOX_RESULT_MAX_NODES;
     int scan_unverified = 0;
     int scan_hit = result &&
-        sandbox_value_has_callable(result, 0, &scan_budget, &scan_unverified);
+        sandbox_value_has_callable(result, 0, &scan_budget, &scan_unverified, 0);
+    if (result && !scan_hit) {
+        /* The callable scan already proved this graph walkable. Repeat the
+         * same bounded walk to promote dictionary keys in every nested result
+         * container; an escaping key is then owned by its returned Value,
+         * while unreturned scratch entries can be released at the boundary. */
+        long promote_budget = SANDBOX_RESULT_MAX_NODES;
+        int promote_unverified = 0;
+        int promote_hit = sandbox_value_has_callable(
+            result, 0, &promote_budget, &promote_unverified, 1);
+        if (promote_hit) {
+            scan_hit = 1;
+            scan_unverified = promote_unverified;
+        }
+    }
     if (scan_hit) {
         val_decref(result);
         result = NULL;
@@ -3476,6 +3501,9 @@ Value* builtin_sandbox_run(Value *arg) {
     dict_set(out, "ok", okv);   /* dict_set increfs; drop our ref */
     val_decref(okv);
     if (result) { dict_set(out, "result", result); val_decref(result); }
+    chunk_free(chunk);
+    env_decref(sbox);
+    env_intern_scope_end(intern_scope, saved_intern_scope);
     g_sandbox_error_latched = saved_sb_error_latched;
     g_sandbox_refusal      = saved_sb_refusal;
     g_sandbox_refusal_kind = saved_sb_refusal_kind;

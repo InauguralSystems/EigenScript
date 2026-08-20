@@ -529,8 +529,12 @@ typedef struct {
 typedef struct EnvNameIntern {
     char                 *name;
     uint32_t              hash;
+    uint32_t              sandbox_scope; /* 0 = ordinary; scoped sandbox owner */
     struct EnvNameIntern *next;
+    struct EnvNameIntern *owner_next; /* detached key owned by one Value */
 } EnvNameIntern;
+
+typedef struct EnvInternValueOwner EnvInternValueOwner;
 
 /* Per-interpreter-instance config + shared registry. Transparent for
  * internal TUs (Phase 10's embed.h wraps it behind accessors). */
@@ -775,6 +779,13 @@ struct EigsThread {
     Env                 *env_freelist;
     int                  env_freelist_count;
     EnvNameIntern       *env_name_interns[ENV_NAME_INTERN_BUCKETS];
+    /* Scoped ownership for names created while sandbox bytecode executes.
+     * A nonzero current scope routes newly-created names into a run-owned
+     * lifetime; returned dictionary keys promote their entries before the
+     * scope is released. */
+    uint32_t             sandbox_intern_scope;
+    uint32_t             sandbox_intern_scope_next;
+    EnvInternValueOwner *sandbox_intern_owners;
     /* Recursion-depth guards (parse/tokenize/value_to_string/JSON/native
      * call). Reset per top-level entry; reside here so multiple states
      * sharing an OS thread don't see each other's mid-walk depth. */
@@ -920,6 +931,9 @@ extern __thread EigsThread *eigs_current;
 #define g_env_freelist        (eigs_current->env_freelist)
 #define g_env_freelist_count  (eigs_current->env_freelist_count)
 #define g_env_name_interns    (eigs_current->env_name_interns)
+#define g_sandbox_intern_scope (eigs_current->sandbox_intern_scope)
+#define g_sandbox_intern_scope_next (eigs_current->sandbox_intern_scope_next)
+#define g_sandbox_intern_owners (eigs_current->sandbox_intern_owners)
 #define g_prev_tab            (eigs_current->prev_tab)
 #define g_prev_cap            (eigs_current->prev_cap)
 #define g_prev_count          (eigs_current->prev_count)
@@ -1036,6 +1050,14 @@ void chunk_decref(struct EigsChunk *chunk);
 Value* call_eigs_fn(Value *fn, Value *arg);
 uint32_t env_hash_name(const char *name);
 char    *env_intern_name(const char *name);
+/* Sandbox intern ownership: begin a nested run scope, promote any returned
+ * dictionary key that points at a scoped entry, then release unescaped names.
+ * The previous scope is restored by env_intern_scope_end for nesting. */
+uint32_t env_intern_scope_begin(void);
+void     env_intern_scope_end(uint32_t scope, uint32_t previous);
+char    *env_intern_scope_promote(Value *owner, char *name);
+void     env_intern_release_value(Value *owner);
+void     env_intern_release_all_values(void);
 void free_value(Value *v);
 
 /* ---- Reference counting (atomic for thread safety) ----
