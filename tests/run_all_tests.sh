@@ -2924,6 +2924,195 @@ else
     echo ""
 fi
 
+# [133] gfx argument-type guards (#1007 — probe-gated: needs a gfx build).
+# Three *_open builtins read `.data.num` with no type check, so a string
+# where a number belonged reinterpreted a char* as a double: gfx_open
+# answered 1 for a 0x0 window, audio_open and audio_capture_open answered
+# real device ids and took the audio device with them.
+#
+# TWO PASSES, and the strict one is the load-bearing half. The non-strict
+# stand-in for these guards is 0 — which is ALSO what all three answer when
+# libSDL2 is simply absent, as it is on the CI runners. So the plain pass
+# passes on an unfixed binary in that environment and proves nothing there;
+# the strict pass demands a RAISE, and before #1007 `ext_gfx.c` contained no
+# rt_error call at any line, so it cannot pass on unfixed code anywhere.
+# Measured on this repo with libSDL2 present: unfixed fails 3 rows in each
+# pass (got 1 / 2 / 3, and "none" for each expected raise).
+#
+# COUNTS ARE PINNED, because both the strict block and the sample-coercion
+# block sit behind conditions inside the .eigs file and a skipped block still
+# prints "All tests passed". The expected numbers depend only on whether an
+# audio device came up, which the file reports, so the pin is exact in both
+# environments rather than a floor.
+#
+# WHAT THIS SECTION DOES NOT COVER, so a green line is not misread: only the
+# three *_open type-pun guards and the sample-element coercion. The other
+# ~85 fail-soft returns #1007 enumerates are untouched — in particular the 52
+# `make_null()` sites where gfx_rect/gfx_line/gfx_text answer a wrong-typed
+# argument by silently drawing nothing, which no gate in this repo sees
+# (tools/failsoft_classify_check.sh enumerates only the 0/"" population).
+GA_PROBE_FILE=$(mktemp /tmp/eigs_ga_probe_XXXXXX.eigs)
+cat > "$GA_PROBE_FILE" <<'PROBE'
+print of (gfx_text_width of ["m", 1])
+PROBE
+GA_PROBE_OUT=$(./eigenscript "$GA_PROBE_FILE" 2>&1)
+rm -f "$GA_PROBE_FILE"
+
+if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
+    echo "[133] Gfx Argument-Type Guards (2 passes)"
+    GA_PLAIN=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
+    GA_STRICT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
+
+    # THIRD PASS: the tape. audio_capture_open is trace-recorded, so a guard
+    # placed below TRACE_NONDET_TAKE returns before TRACE_NONDET_RECORD and
+    # writes no record on capture — while replay's TAKE still consumes one,
+    # shifting every later record for that name and replaying the REJECTED
+    # call as a real device id, silently, even under EIGS_STRICT=1. That is
+    # exactly what the first version of #1007's fix did, and neither pass
+    # above could see it because neither runs under EIGS_TRACE/EIGS_REPLAY.
+    # docs/TRACE.md's headline contract is the oracle: capture and replay of
+    # the same program must produce identical output.
+    GA_TDIR=$(mktemp -d /tmp/eigs_ga_tape_XXXXXX)
+    cat > "$GA_TDIR/tape.eigs" <<'TAPEPROG'
+print of (audio_capture_open of ["44100", "1"])
+print of (audio_capture_open of [44100, 1])
+print of (audio_capture_close of null)
+TAPEPROG
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_TDIR/r.tape"         ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/first.out" 2>&1
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_TDIR/r.tape"         ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/second.out" 2>&1
+    if cmp -s "$GA_TDIR/first.out" "$GA_TDIR/second.out"; then GA_TAPE_OK=1; else GA_TAPE_OK=0; fi
+    # A rejected call must consume NO record, so a tape of this program holds
+    # exactly one — the well-typed call. Pinned rather than merely compared,
+    # because two runs that BOTH lost the record would still be identical.
+    # `grep -c` prints 0 AND exits 1 when it matches nothing, so a trailing
+    # `|| echo 0` appends a SECOND line and the diagnostic reads "0\n0".
+    GA_TAPE_N=$(grep -c '^N ' "$GA_TDIR/r.tape" 2>/dev/null); GA_TAPE_N=${GA_TAPE_N:-0}
+    rm -rf "$GA_TDIR"
+    # An audio device adds two rows to each pass. Both counts are derived from
+    # the file's own marker so neither branch is a floor.
+    if echo "$GA_STRICT" | grep -q "audio-device: 1"; then
+        GA_WANT_PLAIN=18; GA_WANT_STRICT=18
+    else
+        GA_WANT_PLAIN=15; GA_WANT_STRICT=16
+    fi
+    GA_GOT_PLAIN=$(echo "$GA_PLAIN"   | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
+    GA_GOT_STRICT=$(echo "$GA_STRICT" | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
+    # `strict-pass` is a second vacuity guard: the strict assertions live behind
+    # an env test inside the .eigs file, so without it the whole block could be
+    # skipped and the pass would still print "All tests passed".
+    if rc_ok "$GA_PLAIN_RC" "$GA_PLAIN" && echo "$GA_PLAIN" | grep -q "All tests passed" \
+       && echo "$GA_PLAIN" | grep -q "strict-pass: 0" \
+       && rc_ok "$GA_STRICT_RC" "$GA_STRICT" && echo "$GA_STRICT" | grep -q "All tests passed" \
+       && echo "$GA_STRICT" | grep -q "strict-pass: 1" \
+       && [ "$GA_GOT_PLAIN" = "$GA_WANT_PLAIN" ] && [ "$GA_GOT_STRICT" = "$GA_WANT_STRICT" ] \
+       && [ "$GA_TAPE_OK" = "1" ] && [ "$GA_TAPE_N" = "1" ]; then
+        TOTAL=$((TOTAL + 3))
+        PASS=$((PASS + 3))
+        echo "  PASS: wrong-typed w/h and freq/channels are refused in both modes ($GA_GOT_PLAIN + $GA_GOT_STRICT checks)"
+        echo "  PASS: a rejected audio_capture_open consumes no tape record; capture == replay"
+        # Say out loud what this environment could NOT exercise, rather than
+        # letting a green line imply full coverage.
+        echo "$GA_PLAIN" | grep -q "sdl-present: 1" \
+            || echo "  NOTE: libSDL2 absent — the non-strict rows are not discriminating here; the strict pass is."
+        echo "$GA_STRICT" | grep -q "audio-device: 1" \
+            || echo "  NOTE: no audio device — the sample-element coercion rows did not run."
+    else
+        TOTAL=$((TOTAL + 3))
+        FAIL=$((FAIL + 3))
+        echo "  FAIL: gfx argument-type guards"
+        echo "    counts: plain $GA_GOT_PLAIN/$GA_WANT_PLAIN, strict $GA_GOT_STRICT/$GA_WANT_STRICT"
+        echo "    tape: capture==replay $GA_TAPE_OK (want 1), N records $GA_TAPE_N (want 1)"
+        echo "$GA_PLAIN"  | grep -iE "assert|error|FAIL" | head -3
+        echo "$GA_STRICT" | grep -iE "assert|error|FAIL" | head -3
+    fi
+    echo ""
+else
+    echo "[133] Gfx argument-type guards SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
+    echo ""
+fi
+
+# [134] Pointer-disclosure oracle (#1007 — probe-gated: needs a gfx build).
+#
+# The sharpest half of #1007 is not a wrong answer, it is an INFORMATION LEAK:
+# several ext_gfx builtins BUILD their returned data out of an unchecked
+# `.data.num`, so a string argument copied a reinterpreted `char *` into a
+# list the script reads back. On the parent binary
+# `audio_sweep of ["100", 200, 0.01, 0.5, 0]` returned samples beginning
+# 3.62e-314 / 3.44e-314 / 3.71e-314 on three consecutive runs — an ASLR
+# pointer, fresh each time.
+#
+# That per-run freshness IS the detector, and it needs no name list: run each
+# probe TWICE and diff. A stable answer is fine whatever it is; a differing
+# one means address-space state reached the program. This is why the check is
+# here and not in the .eigs file — a program cannot compare itself across two
+# processes.
+#
+# The list was DERIVED this way, not read: writing the fix from the six audio
+# generators left `audio_gain` unguarded, and only running the sweep found it.
+#
+# POSITIVE CONTROL. With every site fixed, "nothing differs" is also what an
+# empty probe list, a mistyped path, or a binary that errors on every program
+# prints. So the last row is a genuinely nondeterministic expression that MUST
+# be reported as differing; if it does not, the detector is blind and the
+# section fails regardless of the other rows.
+GD_PROBE_FILE=$(mktemp /tmp/eigs_gd_probe_XXXXXX.eigs)
+cat > "$GD_PROBE_FILE" <<'PROBE'
+print of (gfx_text_width of ["m", 1])
+PROBE
+GD_PROBE_OUT=$(./eigenscript "$GD_PROBE_FILE" 2>&1)
+rm -f "$GD_PROBE_FILE"
+
+if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
+    echo "[134] Pointer-Disclosure Oracle (#1007)"
+    GD_DIR=$(mktemp -d /tmp/eigs_gd_XXXXXX)
+    GD_LEAKS=""; GD_RUN=0; GD_EMPTY=""
+    gd_probe() {   # <name> <program> <expect: same|differ>
+        local nm="$1" prog="$2" want="$3" a b
+        printf '%s\n' "$prog" > "$GD_DIR/p.eigs"
+        a=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        b=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        GD_RUN=$((GD_RUN + 1))
+        # A probe that produced nothing measured nothing — two empty strings
+        # compare equal and would score as "no disclosure".
+        [ -z "$a" ] && GD_EMPTY="$GD_EMPTY $nm"
+        if [ "$want" = "same" ]; then
+            [ "$a" != "$b" ] && GD_LEAKS="$GD_LEAKS $nm"
+        else
+            [ "$a" = "$b" ] && GD_LEAKS="$GD_LEAKS control:$nm"
+        fi
+    }
+    gd_probe audio_gain     'print of (audio_gain of [([1.0]), "2.0"])'                       same
+    gd_probe audio_sine     'print of (audio_sine of ["440", 0.01, 0.5])'                     same
+    gd_probe audio_saw      'print of (audio_saw of ["440", 0.01, 0.5])'                      same
+    gd_probe audio_square   'print of (audio_square of ["440", 0.01, 0.5])'                   same
+    gd_probe audio_sweep    'print of (audio_sweep of ["100", 200, 0.01, 0.5, 0])'            same
+    # Amplitude, not duration: a punned DURATION collapses n to 0 and the
+    # function returns an empty list without ever reading the pointer, so that
+    # spelling is not discriminating.
+    gd_probe audio_noise    'print of (audio_noise of [0.001, "0.5"])'                        same
+    gd_probe audio_envelope 'print of (audio_envelope of [([0.1, 0.2]), "0.01", 0.01, 0.5, 0.01])' same
+    gd_probe audio_mix      'print of (audio_mix of [([1.0]), ([1.0])])'                      same
+    gd_probe gfx_text_width 'print of (gfx_text_width of ["m", "2"])'                         same
+    gd_probe random_control 'print of (random of null)'                                       differ
+    rm -rf "$GD_DIR"
+
+    TOTAL=$((TOTAL + 1))
+    if [ -z "$GD_LEAKS" ] && [ -z "$GD_EMPTY" ] && [ "$GD_RUN" = "10" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: $GD_RUN probes, no per-run value reaches the script; the detector's positive control fired"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: pointer-disclosure oracle"
+        [ -n "$GD_LEAKS" ] && echo "    differing across runs (a disclosure, or a dead control):$GD_LEAKS"
+        [ -n "$GD_EMPTY" ] && echo "    probe produced no output, so it measured nothing:$GD_EMPTY"
+        [ "$GD_RUN" = "10" ] || echo "    ran $GD_RUN probes, expected 10"
+    fi
+    echo ""
+else
+    echo "[134] Pointer-disclosure oracle SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
+    echo ""
+fi
+
 # [132] UI containment render-decode oracle (#823 — probe-gated: needs a
 # gfx build). The stubbed [63] suite proves containment on RECORDED clip
 # state; this section proves it on real pixels: the actual SDL software

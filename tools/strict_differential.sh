@@ -137,6 +137,17 @@ store_update|print of (store_update of [(store_open of "@TMP@/probe.db"), "col",
 stream_open|print of (stream_open of [42, 1])
 write_text|print of (write_text of [42, "x"])
 add/subtract/multiply/divide/pow|print of (add of ["x", 1])
+gfx_open|print of (gfx_open of ["800", "600", "t"])
+audio_open|print of (audio_open of ["44100", "1"])
+audio_capture_open|print of (audio_capture_open of ["44100", "1"])
+audio_stream_open|print of (audio_stream_open of ["44100", "1"])
+audio_sine|print of (len of (audio_sine of ["440", 0.01, 0.5]))
+audio_saw|print of (len of (audio_saw of ["440", 0.01, 0.5]))
+audio_square|print of (len of (audio_square of ["440", 0.01, 0.5]))
+audio_sweep|print of (len of (audio_sweep of ["100", 200, 0.01, 0.5, 0]))
+audio_noise|print of (len of (audio_noise of [0.001, "0.5"]))
+audio_envelope|print of (len of (audio_envelope of [([0.1, 0.2]), "0.01", 0.01, 0.5, 0.01]))
+audio_gain|print of (len of (audio_gain of [([1.0]), "2.0"]))
 EOF
 )
 # A probe that needs a real resource must build it under this run's own $TMP,
@@ -225,7 +236,60 @@ EOF
 #   with ASLR). There is no previous behaviour to preserve: it was
 #   undefined, and its output was not even stable across runs. Filed
 #   separately; the guard makes it 0 like every sibling.
-EXPECTED_DIVERGE="sign_extend"
+#
+#   gfx_open, audio_open, audio_capture_open, audio_stream_open (#1007): the
+#   four are a BUG FIX, not a conversion, so unlike every other row here their
+#   default path is SUPPOSED to change and the "identical when off" claim does
+#   not apply to them. What changed, measured against the parent gfx build:
+#
+#       gfx_open of ["800","600","t"]        1 -> 0   (a 0x0 window, reported open)
+#       audio_open of ["44100","1"]          2 -> 0   (a device id, garbage spec)
+#       audio_capture_open of ["44100","1"]  3 -> 0   (a device id, garbage spec)
+#       audio_stream_open of ["44100","1"]   2 -> 0   (a device id, silently at defaults)
+#
+#   The first three read `.data.num` off a `char *` through Value's union; the
+#   fourth skipped its override and opened at 44100/1 while answering as though
+#   the request had been honoured. In each case the OLD value was a reported
+#   success for an argument the builtin could not honour, so there is no
+#   behaviour worth preserving — and 0 is each one's already-documented
+#   failure answer. Unlike sign_extend these are deterministic, so the
+#   instability proof below does not apply and is not claimed for them.
+#   The two groups make DIFFERENT claims, so each is proven by a check that
+#   matches its own claim rather than by one check applied to both. Running
+#   the instability proof over the deterministic group reported all four as
+#   "WAIVER UNPROVEN — two baseline runs agreed", which is the correct answer
+#   to a question they never asked.
+EXPECTED_DIVERGE_UNSTABLE="sign_extend"
+#   audio_sine / audio_saw / audio_square / audio_sweep / audio_noise /
+#   audio_envelope (#1007, the pointer-disclosure half): all six BUILD their
+#   returned sample list out of unchecked `.data.num` reads, so the pun did
+#   not merely mis-draw — it copied a reinterpreted `char *` into data the
+#   script can read. Executed on the parent binary,
+#   `audio_sweep of ["100", 200, 0.01, 0.5, 0]` returned 441 samples whose
+#   first element was 3.62e-314 / 3.44e-314 / 3.71e-314 on three consecutive
+#   runs: an ASLR pointer value, disclosed per-run.
+#
+#   They sit in the DETERMINISTIC group even so, and the distinction matters:
+#   the probes read `len of (...)`, which is stable (441 -> 0), so the proof
+#   that runs over them is the stable one. Filing them as "unstable" would
+#   apply a check to a quantity that was never unstable and report all six as
+#   UNPROVEN — the same category error one group over. The per-run pointer
+#   value above is executed evidence recorded here, NOT something this tool
+#   re-proves; a probe that printed a sample would be a nondeterministic
+#   fixture and does not belong in a differential as an ordinary row.
+EXPECTED_DIVERGE_FIXED="gfx_open
+audio_open
+audio_capture_open
+audio_stream_open
+audio_sine
+audio_saw
+audio_square
+audio_sweep
+audio_noise
+audio_envelope
+audio_gain"
+EXPECTED_DIVERGE="$EXPECTED_DIVERGE_UNSTABLE
+$EXPECTED_DIVERGE_FIXED"
 
 # Guards that CANNOT be probed, named with the reason. Without this list they
 # would sit in "GUARDED BUT UNPROBED" forever and train the reader to ignore
@@ -264,9 +328,63 @@ n_probe=0 n_ident=0 n_differ=0 n_raise=0 n_silent=0 n_waived=0
 waived_seen=""
 n_pin=0 n_pin_ok=0 n_pin_broke=0 n_misattr=0
 differ_list="" silent_list="" pin_list="" misattr_list=""
+n_skipped=0 skipped_list=""
+
+# Which guarded builtins live in a VARIANT-ONLY translation unit? #1007 put
+# the first ARG_GUARDs in ext_gfx.c, which `make` compiles out entirely, so a
+# probe for one of them in a default build fails as "undefined variable" — a
+# silent guard for a reason that has nothing to do with the guard.
+#
+# The population is derived from the source (same extractor as the
+# cross-check), and PRESENCE is decided by RUNNING the name, not by reading
+# `--api`. `--api` reports the documented surface, not the linked one: a
+# release binary lists `extension gfx gfx_open` while `gfx_open` is an
+# undefined variable at runtime (measured 2026-08-20). Executing costs one
+# process per variant-only name — three today — and cannot disagree with the
+# build.
+variant_only="$(awk '
+    FNR == 1 { variant = (FILENAME ~ /\/ext_(gfx|http|db|net)\.c$/) }
+    !variant { next }
+    /ARG_GUARD\(/ { acc = ""; collecting = 1 }
+    collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
+        collecting = 0
+        n = split(acc, parts, "\"")
+        if (n >= 2) print parts[2]
+    } }
+' src/*.c | sed '/^$/d' | sort -u)"
+
+absent_here=""
+for v in $variant_only; do
+    printf 'print of %s\n' "${v%%/*}" > "$TMP/present.eigs"
+    # Capture, THEN match. Under `set -o pipefail` a pipeline reports the
+    # rightmost nonzero status, and the probe program exits 1 by design when
+    # the name is undefined — so `prog | grep -q` returned 1 on a successful
+    # match and every absent builtin read as present.
+    _present_out="$("$NEW" "$TMP/present.eigs" 2>&1 || true)"
+    case "$_present_out" in
+        *"undefined variable"*) absent_here="$absent_here ${v%%/*}" ;;
+    esac
+done
+
+# A probe is runnable unless its builtin is a variant-only one this build
+# does not contain.
+probe_builtin_present() {
+    local first="${1%%/*}"
+    case " $absent_here " in *" $first "*) return 1 ;; esac
+    return 0
+}
 
 while IFS='|' read -r who prog; do
     [ -z "${who:-}" ] && continue
+    # A probe for a builtin this build does not contain would "not raise" for
+    # the uninteresting reason that the name is undefined, which reads as a
+    # guard that went silent. Skip it, and COUNT the skip — a probe that
+    # quietly stops running is the vacuity this tool exists to prevent.
+    if ! probe_builtin_present "$who"; then
+        n_skipped=$((n_skipped + 1))
+        skipped_list="$skipped_list $who"
+        continue
+    fi
     n_probe=$((n_probe + 1))
     f="$TMP/p.eigs"; printf '%b\n' "$prog" > "$f"
 
@@ -427,7 +545,11 @@ guarded="$(awk '
     } }
 ' src/*.c | sed '/^$/d' | sort -u)"
 probed="$(printf '%s\n' "$PROBES" | cut -d'|' -f1 | sed '/^$/d' | sort -u)"
-missing="$(comm -23 <(printf '%s\n' "$guarded") <(printf '%s\n' "$probed") | grep -vxF -f <(printf '%s\n' $UNPROBEABLE) || true)"
+
+# Names absent from THIS build (computed above by execution) are excused for
+# this run only — never by a waiver anyone maintains.
+missing="$(comm -23 <(printf '%s\n' "$guarded") <(printf '%s\n' "$probed") \
+    | grep -vxF -f <(printf '%s\n' $UNPROBEABLE $absent_here) || true)"
 stale="$(comm -13 <(printf '%s\n' "$guarded") <(printf '%s\n' "$probed"))"
 # A waived-as-unprobeable name that is no longer guarded at all is a stale
 # waiver: the guard it excused is gone.
@@ -438,6 +560,11 @@ done
 
 echo "== #971 strict differential =="
 echo "  probes=$n_probe pins=$n_pin"
+if [ "$n_skipped" -gt 0 ]; then
+    # Not a failure: these guards are compiled out of THIS build. Named, so a
+    # reader can see which are unmeasured here and run the variant build.
+    echo "  probes skipped (builtin not in this build): $n_skipped —$skipped_list"
+fi
 if [ -n "$BASE" ]; then
     echo "  identical-when-off: $n_ident   differing: $n_differ   waived: $n_waived"
 else
@@ -467,8 +594,40 @@ fi
 # re-argued. (This probe is therefore deliberately kept OUT of the identity
 # comparison — a nondeterministic fixture does not belong in a differential
 # as an ordinary row.)
+# The DETERMINISTIC group (#1007) claims the opposite: the old answer was
+# stable and simply wrong — a reported success for an argument the builtin
+# could not honour — and the new one is that builtin's documented failure
+# answer. So its proof is the mirror image: the two baseline runs must AGREE
+# (a wobbling baseline would mean the "stable and wrong" reading is itself
+# wrong), and the NEW binary must answer 0. Neither half is implied by the
+# other, and neither is the instability check.
 if [ -n "$BASE" ]; then
-    for w in $EXPECTED_DIVERGE; do
+    for w in $EXPECTED_DIVERGE_FIXED; do
+        wprog="$(printf '%s\n' "$PROBES" | grep -F "$w|" | head -1 | cut -d'|' -f2-)"
+        [ -z "$wprog" ] && continue
+        printf '%b\n' "$wprog" > "$TMP/w.eigs"
+        probe_builtin_present "$w" || { echo "  waiver not exercised: $w is not in this build"; continue; }
+        d1="$(run_capture "$BASE" - "$TMP/w.eigs")"
+        d2="$(run_capture "$BASE" - "$TMP/w.eigs")"
+        dn="$(run_capture "$NEW" - "$TMP/w.eigs")"
+        if [ "$d1" != "$d2" ]; then
+            echo "  WAIVER UNPROVEN: $w — the baseline is NOT stable across runs"
+            echo "                   ($(printf '%s' "$d1" | tr '\n' ' ') vs $(printf '%s' "$d2" | tr '\n' ' ')),"
+            echo "                   so 'the old answer was deterministic and wrong' does not hold."
+            rc=1
+        elif [ "$dn" != "0
+0" ]; then
+            echo "  WAIVER UNPROVEN: $w — the new answer is not the documented failure value"
+            echo "                   (got $(printf '%s' "$dn" | tr '\n' ' '), want rc 0 and 0)."
+            rc=1
+        else
+            echo "  waiver proven: $w baseline stable at $(printf '%s' "$d1" | tr '\n' ' ' | cut -c1-40), new answers 0"
+        fi
+    done
+fi
+
+if [ -n "$BASE" ]; then
+    for w in $EXPECTED_DIVERGE_UNSTABLE; do
         wprog="$(printf '%s\n' "$PROBES" | grep -F "$w|" | head -1 | cut -d'|' -f2-)"
         if [ -n "$wprog" ]; then
             printf '%b\n' "$wprog" > "$TMP/w.eigs"
@@ -493,12 +652,30 @@ fi
 # the thing it waived changed shape, which is exactly when a stale waiver
 # starts covering something nobody agreed to.
 if [ -n "$BASE" ]; then
-    for w in $EXPECTED_DIVERGE; do
+    for w in $EXPECTED_DIVERGE_UNSTABLE; do
         if ! printf '%s' "$waived_seen" | grep -qw "$w"; then
             echo "  NOTE: $w did not differ on this run. For a waiver proven"
             echo "        run-to-run unstable above, that is a coin landing the"
             echo "        same way twice, not a stale waiver — the instability"
             echo "        assertion is the binding check."
+        fi
+    done
+    # The deterministic group gets no such excuse: its whole claim is that the
+    # baseline answer is STABLE and different from the new one. If such a
+    # waiver stops firing, the divergence it excuses is gone and the waiver is
+    # covering nothing — which is exactly the stale waiver §3 warns about.
+    # (Printing the instability text here talked the detector out of its own
+    # finding: `audio_noise` was waived, did not diverge because its probe
+    # punned the duration and BOTH sides answered 0, and was reported as
+    # "waiver proven" with a footnote explaining why that was fine.)
+    for w in $EXPECTED_DIVERGE_FIXED; do
+        probe_builtin_present "$w" || continue
+        if ! printf '%s' "$waived_seen" | grep -qw "$w"; then
+            echo "  STALE WAIVER: $w is declared divergent but did not differ."
+            echo "                Its claim is a STABLE old answer unequal to the new"
+            echo "                one, so a non-divergence means either the probe does"
+            echo "                not reach the guard or the waiver is obsolete."
+            rc=1
         fi
     done
 fi

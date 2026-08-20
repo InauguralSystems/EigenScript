@@ -641,7 +641,7 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer |
+| `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer. Returns `1` on success, `0` when libSDL2 is unavailable or `width`/`height` are not numbers (#1007 — they used to be read without a type check, so a string opened a `0x0` window and still answered `1`). Under `EIGS_STRICT=1` a non-numeric size raises. |
 | `gfx_close` | `gfx_close of null` | Destroy window and quit SDL |
 | `gfx_clear` | `gfx_clear of [r, g, b]` | Clear backbuffer to color |
 | `gfx_rect` | `gfx_rect of [x, y, w, h, r, g, b]` or `[..., a]` | Filled rectangle |
@@ -809,12 +809,13 @@ receiver.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
+| `audio_open` | `audio_open of [freq, channels]` or `of null` | Open the mixer playback device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007 — they used to be read without a type check, so a string opened the device against a garbage spec and still answered a real id, taking the device with it). |
 | `audio_sweep` | `audio_sweep of [freq_start, freq_end, duration, amplitude, waveform]` | Generate a frequency sweep with continuous phase. `waveform`: 0=sine, 1=sawtooth. Returns sample list. |
-| `audio_play` | `audio_play of samples` | Play a clip once on a free mixer channel (oldest finite channel recycled when all 16 are busy). Returns the channel id, or `0` on bad args / closed device |
+| `audio_play` | `audio_play of samples` | Play a clip once on a free mixer channel (oldest finite channel recycled when all 16 are busy). Returns the channel id, or `0` on bad args / closed device. A non-numeric element in `samples` raises a `type_mismatch` error (#1007 — it used to be coerced to 0, so a wrong-typed list played silence on a real channel id). |
 | `audio_play_loop` | `audio_play_loop of [samples, loops]` | Play `samples` `loops` times on one mixer channel; `loops == -1` loops forever (the mixer rewinds — no memory multiplication). Returns the channel id, or `0` on bad args / closed device. |
 | `audio_volume` | `audio_volume of [channel, vol]` | Live per-channel volume, `0.0`–`4.0`. Returns `1`, or `0` on a bad/inactive channel. |
 | `audio_stop` | `audio_stop of channel` | Stop one mixer channel. Returns `1`, or `0` on a bad/inactive channel. |
-| `audio_capture_open` | `audio_capture_open of [freq, channels]` | Open the recording (microphone) device and start capturing (#579). Defaults `[44100, 1]`; SDL converts to exactly the requested format. Returns the device id, or `0` when SDL/capture is unavailable. Re-opening closes the previous capture device. Trace-recorded — under `EIGS_REPLAY` no real device is opened. |
+| `audio_capture_open` | `audio_capture_open of [freq, channels]` | Open the recording (microphone) device and start capturing (#579). Defaults `[44100, 1]`; SDL converts to exactly the requested format. Returns the device id, or `0` when SDL/capture is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007). Re-opening closes the previous capture device. Trace-recorded — under `EIGS_REPLAY` no real device is opened. |
 | `audio_capture_read` | `audio_capture_read of null` | Drain samples accumulated since the last read as a **buffer** of floats in `[-1, 1]` (interleaved when `channels > 1`). At most 2048 samples per call — loop until the returned buffer is empty to drain fully (keeps each trace record replayable). Empty buffer = nothing new yet; `null` = no capture device open. Trace-recorded — replay serves the recorded samples, never a live microphone. |
 | `audio_capture_close` | `audio_capture_close of null` | Stop and close the recording device, dropping undrained samples. Safe to call twice or with no device open. |
 | `audio_stream_open` | `audio_stream_open of [freq, channels]` | Open the live streaming playback device (queue mode, F-DS-17 — for on-the-fly synthesis like musical typing). Coexists with the `audio_open` mixer device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Re-opening closes the previous stream device. |

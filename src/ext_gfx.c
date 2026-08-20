@@ -391,6 +391,14 @@ static const char* scancode_name(int sc) {
 /* gfx_open of [width, height, title] */
 Value* builtin_gfx_open(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_num(0);  /* fs:TODO #971 guards the [w, h, title] arg-list shape; deferred: gfx is a variant-only build (make gfx) no session test can exercise */
+    /* #1007: width and height were read as `.data.num` with no type check
+     * while the title on the very next line WAS checked. Value's union
+     * overlaps `double num` with `char *str`, so gfx_open of ["800","600",t]
+     * reinterpreted a pointer as a double and int-cast it — in practice a
+     * tiny denormal, so the window opened 0x0 and gfx_open answered 1. */
+    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
+              arg->data.list.items[1]->type != VAL_NUM,
+              "gfx_open", "[number width, number height, title]", make_num(0));
     int w = (int)arg->data.list.items[0]->data.num;
     int h = (int)arg->data.list.items[1]->data.num;
     const char *title = arg->data.list.items[2]->type == VAL_STR ? arg->data.list.items[2]->data.str : "EigenScript";
@@ -1012,7 +1020,29 @@ static int16_t* audio_convert_samples(Value *samples, int *out_n) {
     int16_t *buf = xmalloc_array(n, sizeof(int16_t));
     for (int i = 0; i < n; i++) {
         Value *v = samples->data.list.items[i];
-        double s = (v && v->type == VAL_NUM) ? v->data.num : 0;
+        /* #1007: a non-number used to be COERCED to 0 here, so a wrong-typed
+         * sample list produced a valid buffer of silence and the caller's
+         * `if (!buf)` guard never saw it — audio_play answered with a real
+         * channel id and played nothing. Coercion is the one shape that
+         * cannot be caught downstream, so it is rejected at the element. */
+        if (!v || v->type != VAL_NUM) {
+            /* Raise only under strict, exactly as ARG_GUARD does — this macro
+             * cannot be used here because the function answers int16_t*, not
+             * Value*. An unconditional raise turned a call that used to answer
+             * a channel id into a hard error in the DEFAULT build, which is
+             * the one thing the #971 reform promises not to do.
+             * Rejecting (rather than coercing) is unconditional, because the
+             * coerced result was the defect: the caller then answers 0, which
+             * is what BUILTINS.md already documents for audio_play ("0 on bad
+             * args") and what the old code could not produce. */
+            if (g_strict) {
+                rt_error(EK_TYPE, 0, "audio samples: element %d is %s, expected a number\n",
+                         i, v ? val_type_name(v->type) : "missing");
+            }
+            free(buf);
+            return NULL;
+        }
+        double s = v->data.num;
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
         buf[i] = (int16_t)(s * 32767);
@@ -1068,6 +1098,21 @@ static void audio_free_channels(int lock) {
 
 /* audio_open of [freq, channels] — open the mixer device (callback mode) */
 Value* builtin_audio_open(Value *arg) {
+    /* #1007: argument shape BEFORE the environment check. A type mistake is a
+     * mistake whether or not libSDL2 is present, and checking it first is
+     * also what makes the guard reachable on a machine with no SDL — CI has
+     * none, so a guard placed after the load would never be exercised there.
+     * Non-strict is unaffected: the stand-in is the same 0 the missing-SDL
+     * path already answers. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        /* The same unchecked `.data.num` type-pun as gfx_open. That it is an
+         * oversight rather than a convention is settled 180 lines down:
+         * audio_stream_open guards this identical pair with `type == VAL_NUM`
+         * before reading it. */
+        ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
+                  arg->data.list.items[1]->type != VAL_NUM,
+                  "audio_open", "[number freq, number channels]", make_num(0));
+    }
     if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER 0 is not a device id -- line 1095 returns the real one; libSDL2 unavailable is environment state, not an argument */
     if (!p_SDL_OpenAudioDevice) {
         fprintf(stderr, "audio_open: SDL2 audio symbols not available\n");
@@ -1083,6 +1128,7 @@ Value* builtin_audio_open(Value *arg) {
     want.callback = audio_mix_callback;
 
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        /* Type-checked at the top of the function, before the SDL load. */
         want.freq = (int)arg->data.list.items[0]->data.num;
         want.channels = (int)arg->data.list.items[1]->data.num;
     }
@@ -1162,6 +1208,26 @@ static Value* capture_samples_to_buffer(const int16_t *pcm, int n) {
  * Returns the device id (>= 2), or 0 when SDL/capture is unavailable.
  * Re-opening closes the previous capture device first. */
 Value* builtin_audio_capture_open(Value *arg) {
+    /* #1007 names gfx_open and audio_open. This third site had the identical
+     * unchecked pair and was found by grepping for the shape rather than
+     * working the issue's list — of the three audio *_open builtins, none
+     * guarded it (audio_stream_open only skipped the override).
+     *
+     * ABOVE the replay seam, deliberately. An argument's TYPE is
+     * deterministic, so a rejected call is not a nondeterministic input and
+     * must not touch the tape. Placed below TRACE_NONDET_TAKE it broke the
+     * "exactly one record per call either way" contract in trace.h: the
+     * capture run returned before TRACE_NONDET_RECORD and wrote NO record,
+     * while the replay run's TAKE ran first and CONSUMED one — the next
+     * audio_capture_open's — so every later record for this name shifted by
+     * one and the rejected call replayed as a real device id. Executed:
+     * capture printed `0 2 null` with 1 record on the tape, replay of that
+     * same tape printed `2 2 null`, silently, even under EIGS_STRICT=1. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
+                  arg->data.list.items[1]->type != VAL_NUM,
+                  "audio_capture_open", "[number freq, number channels]", make_num(0));
+    }
     TRACE_NONDET_TAKE("audio_capture_open");
     if (!g_sdl_lib) {
         if (!load_sdl2()) TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
@@ -1180,6 +1246,7 @@ Value* builtin_audio_capture_open(Value *arg) {
     want.callback = NULL;   /* queue mode: drain via SDL_DequeueAudio */
 
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        /* Type-checked at the top of the function, before the SDL load. */
         want.freq = (int)arg->data.list.items[0]->data.num;
         want.channels = (int)arg->data.list.items[1]->data.num;
     }
@@ -1265,6 +1332,18 @@ Value* builtin_audio_stream_open(Value *arg) {
     want.samples = 1024;
     want.callback = NULL;   /* queue mode: feed via SDL_QueueAudio */
 
+    /* This site never type-punned — the checks below are part of the
+     * condition — but it reaches the same silent success by a different
+     * route: a wrong-typed pair simply SKIPS the override, opens the device
+     * at 44100/1 and answers a real id, so a caller that asked for 48000 is
+     * told it got what it asked for. Guarded for the same reason as the
+     * other three (#1007); the type checks stay in the condition so the
+     * non-strict control flow is provably unchanged. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
+                  arg->data.list.items[1]->type != VAL_NUM,
+                  "audio_stream_open", "[number freq, number channels]", make_num(0));
+    }
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
         && arg->data.list.items[0]->type == VAL_NUM
         && arg->data.list.items[1]->type == VAL_NUM) {
@@ -1294,7 +1373,17 @@ Value* builtin_audio_stream_push(Value *arg) {
     if (!g_stream_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_stream_push: "0 on a closed device"; g_stream_device == 0 is device state, not an argument */
     int n = 0;
     int16_t *buf = audio_convert_samples(arg, &n);
-    if (!buf) return make_num(0);  /* fs:TODO #971 guards bad sample shape -- audio_convert_samples returns NULL for a non-list/buffer as well as for empty/>64MB; deferred: variant-only build */
+    if (!buf) {
+        /* Split so each return carries ONE verdict (#1008's lesson): a type
+         * mistake in the sample list has already raised inside
+         * audio_convert_samples, while an empty or over-64MB clip has not and
+         * is a documented "nothing to play". */
+        /* fs:CHANNEL post-raise placeholder for a wrong-typed sample list. */
+        if (g_has_error) return make_num(0);
+        /* fs:ANSWER an empty or over-64MB clip plays nothing, so 0 (no
+         * channel) is the result, not a laundered argument mistake. */
+        return make_num(0);
+    }
     int rc = p_SDL_QueueAudio(g_stream_device, buf,
                               (Uint32)((size_t)n * sizeof(int16_t)));
     free(buf);
@@ -1405,7 +1494,12 @@ Value* builtin_audio_play(Value *arg) {
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_play: "0 on ... closed device"; channel ids are slot+1 >= 1 (line 1057), so 0 is not a channel */
     int n = 0;
     int16_t *buf = audio_convert_samples(arg, &n);
-    if (!buf) return make_num(0);  /* fs:TODO #971 guards bad sample shape -- audio_convert_samples NULLs on a non-list/buffer as well as on empty/>64MB; deferred: variant-only build */
+    if (!buf) {
+        /* fs:CHANNEL post-raise placeholder for a wrong-typed sample list. */
+        if (g_has_error) return make_num(0);
+        /* fs:ANSWER an empty or over-64MB clip queues nothing. */
+        return make_num(0);
+    }
     return make_num(audio_install_channel(buf, n, 1));
 }
 
@@ -1427,7 +1521,12 @@ Value* builtin_audio_play_loop(Value *arg) {
     else loops = (int)loops_d;
     int n = 0;
     int16_t *buf = audio_convert_samples(samples, &n);
-    if (!buf) return make_num(0);  /* fs:TODO #971 guards bad sample shape via audio_convert_samples returning NULL; deferred: variant-only build */
+    if (!buf) {
+        /* fs:CHANNEL post-raise placeholder for a wrong-typed sample list. */
+        if (g_has_error) return make_num(0);
+        /* fs:ANSWER an empty or over-64MB clip queues nothing. */
+        return make_num(0);
+    }
     return make_num(audio_install_channel(buf, n, loops));
 }
 
@@ -1495,6 +1594,20 @@ Value* builtin_audio_clear(Value *arg) {
 /* audio_sine of [freq, duration, amplitude] — generate sine wave samples */
 Value* builtin_audio_sine(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_list(0);
+    /* #1007, pointer-disclosure half. The generators BUILD their returned
+     * samples out of these reads, so a type-pun here does not merely make a
+     * wrong drawing call — it copies a reinterpreted `char *` into a list the
+     * script can print. Executed on the parent binary,
+     * `audio_sweep of ["100", 200, 0.01, 0.5, 0]` returned samples starting
+     * 3.38e-314 / 3.32e-314 / 3.62e-314 on three consecutive runs: an ASLR
+     * pointer value, disclosed into script-visible data and varying per run.
+     * Seven builtins share the shape; the list was derived by running each
+     * candidate twice and diffing (a per-run difference IS the disclosure),
+     * not by reading names — audio_gain was missed by the reading. */
+    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
+              arg->data.list.items[1]->type != VAL_NUM ||
+              arg->data.list.items[2]->type != VAL_NUM,
+              "audio_sine", "[number freq, number duration, number amplitude]", make_list(0));
     double freq = arg->data.list.items[0]->data.num;
     double dur = arg->data.list.items[1]->data.num;
     double amp = arg->data.list.items[2]->data.num;
@@ -1514,6 +1627,19 @@ Value* builtin_audio_sine(Value *arg) {
 /* audio_saw of [freq, duration, amplitude] — sawtooth wave */
 Value* builtin_audio_saw(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_list(0);
+    /* #1007, pointer-disclosure half. The generators BUILD their returned
+     * samples out of these reads, so a type-pun here does not merely make a
+     * wrong drawing call — it copies a reinterpreted `char *` into a list the
+     * script can print. Executed on the parent binary,
+     * `audio_sweep of ["100", 200, 0.01, 0.5, 0]` returned samples starting
+     * 3.38e-314 / 3.32e-314 / 3.62e-314 on three consecutive runs: an ASLR
+     * pointer value, disclosed into script-visible data and varying per run.
+     * All six generators share the shape; guarding one would have left the
+     * class open. */
+    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
+              arg->data.list.items[1]->type != VAL_NUM ||
+              arg->data.list.items[2]->type != VAL_NUM,
+              "audio_saw", "[number freq, number duration, number amplitude]", make_list(0));
     double freq = arg->data.list.items[0]->data.num;
     double dur = arg->data.list.items[1]->data.num;
     double amp = arg->data.list.items[2]->data.num;
@@ -1533,6 +1659,19 @@ Value* builtin_audio_saw(Value *arg) {
 /* audio_square of [freq, duration, amplitude] — square wave */
 Value* builtin_audio_square(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_list(0);
+    /* #1007, pointer-disclosure half. The generators BUILD their returned
+     * samples out of these reads, so a type-pun here does not merely make a
+     * wrong drawing call — it copies a reinterpreted `char *` into a list the
+     * script can print. Executed on the parent binary,
+     * `audio_sweep of ["100", 200, 0.01, 0.5, 0]` returned samples starting
+     * 3.38e-314 / 3.32e-314 / 3.62e-314 on three consecutive runs: an ASLR
+     * pointer value, disclosed into script-visible data and varying per run.
+     * All six generators share the shape; guarding one would have left the
+     * class open. */
+    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
+              arg->data.list.items[1]->type != VAL_NUM ||
+              arg->data.list.items[2]->type != VAL_NUM,
+              "audio_square", "[number freq, number duration, number amplitude]", make_list(0));
     double freq = arg->data.list.items[0]->data.num;
     double dur = arg->data.list.items[1]->data.num;
     double amp = arg->data.list.items[2]->data.num;
@@ -1553,6 +1692,21 @@ Value* builtin_audio_square(Value *arg) {
    waveform: 0=sine, 1=sawtooth.  Continuous phase sweep. */
 Value* builtin_audio_sweep(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) return make_list(0);
+    /* #1007, pointer-disclosure half. The generators BUILD their returned
+     * samples out of these reads, so a type-pun here does not merely make a
+     * wrong drawing call — it copies a reinterpreted `char *` into a list the
+     * script can print. Executed on the parent binary,
+     * `audio_sweep of ["100", 200, 0.01, 0.5, 0]` returned samples starting
+     * 3.38e-314 / 3.32e-314 / 3.62e-314 on three consecutive runs: an ASLR
+     * pointer value, disclosed into script-visible data and varying per run.
+     * All six generators share the shape; guarding one would have left the
+     * class open. */
+    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
+              arg->data.list.items[1]->type != VAL_NUM ||
+              arg->data.list.items[2]->type != VAL_NUM ||
+              arg->data.list.items[3]->type != VAL_NUM ||
+              arg->data.list.items[4]->type != VAL_NUM,
+              "audio_sweep", "[number freq_start, number freq_end, number duration, number amplitude, number waveform]", make_list(0));
     double f0 = arg->data.list.items[0]->data.num;
     double f1 = arg->data.list.items[1]->data.num;
     double dur = arg->data.list.items[2]->data.num;
@@ -1582,6 +1736,18 @@ Value* builtin_audio_sweep(Value *arg) {
 /* audio_noise of [duration, amplitude] — white noise */
 Value* builtin_audio_noise(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
+    /* #1007, pointer-disclosure half. The generators BUILD their returned
+     * samples out of these reads, so a type-pun here does not merely make a
+     * wrong drawing call — it copies a reinterpreted `char *` into a list the
+     * script can print. Executed on the parent binary,
+     * `audio_sweep of ["100", 200, 0.01, 0.5, 0]` returned samples starting
+     * 3.38e-314 / 3.32e-314 / 3.62e-314 on three consecutive runs: an ASLR
+     * pointer value, disclosed into script-visible data and varying per run.
+     * All six generators share the shape; guarding one would have left the
+     * class open. */
+    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
+              arg->data.list.items[1]->type != VAL_NUM,
+              "audio_noise", "[number duration, number amplitude]", make_list(0));
     double dur = arg->data.list.items[0]->data.num;
     double amp = arg->data.list.items[1]->data.num;
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
@@ -1621,6 +1787,15 @@ Value* builtin_audio_gain(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
     Value *samples = arg->data.list.items[0];
     if (samples->type != VAL_LIST) return make_list(0);
+    /* #1007: the SEVENTH member of the disclosure family, and the one that
+     * survived the first pass because the fix was written from the six
+     * generators rather than from a sweep. `vol` multiplies every sample and
+     * lands in the returned list, so a string here put a reinterpreted
+     * `char *` into script-visible data exactly as audio_sweep did. Note the
+     * element read on the next line was ALREADY type-checked — the argument
+     * beside it was not, which is the same next-line asymmetry as gfx_open. */
+    ARG_GUARD(arg->data.list.items[1]->type != VAL_NUM,
+              "audio_gain", "[samples, number volume]", make_list(0));
     double vol = arg->data.list.items[1]->data.num;
     int n = samples->data.list.count;
 
@@ -1638,6 +1813,20 @@ Value* builtin_audio_gain(Value *arg) {
 /* audio_envelope of [samples, attack, decay, sustain_level, release] — ADSR */
 Value* builtin_audio_envelope(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) return make_list(0);
+    /* #1007, pointer-disclosure half. The generators BUILD their returned
+     * samples out of these reads, so a type-pun here does not merely make a
+     * wrong drawing call — it copies a reinterpreted `char *` into a list the
+     * script can print. Executed on the parent binary,
+     * `audio_sweep of ["100", 200, 0.01, 0.5, 0]` returned samples starting
+     * 3.38e-314 / 3.32e-314 / 3.62e-314 on three consecutive runs: an ASLR
+     * pointer value, disclosed into script-visible data and varying per run.
+     * All six generators share the shape; guarding one would have left the
+     * class open. */
+    ARG_GUARD(arg->data.list.items[1]->type != VAL_NUM ||
+              arg->data.list.items[2]->type != VAL_NUM ||
+              arg->data.list.items[3]->type != VAL_NUM ||
+              arg->data.list.items[4]->type != VAL_NUM,
+              "audio_envelope", "[samples, number attack, number decay, number sustain, number release]", make_list(0));
     Value *samples = arg->data.list.items[0];
     if (samples->type != VAL_LIST) return make_list(0);
     double attack = arg->data.list.items[1]->data.num;
