@@ -1589,7 +1589,7 @@ static int w023_grow_branch_vectors(ASTNode ****branches, int **counts, size_t *
     *capacity = next;
     return 1;
 }
-static void w023_proof_failure(W023Names *module, ASTNode ****branches, int ***counts) {
+static void w023_proof_failure(W023Names *module, ASTNode ****branches, int **counts) {
     w023_names_unknown(module);
     free(*branches); *branches = NULL;
     free(*counts); *counts = NULL;
