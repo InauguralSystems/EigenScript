@@ -724,7 +724,7 @@ void *realloc(void *ptr, size_t size) {
     }
     if (!resolving && armed) {
         armed = 0;
-        if (!failed && size == 1024) {
+        if (!failed && ptr == NULL && size == 1024) {
             failed = 1;
             write(STDERR_FILENO, "W023_ALLOC_HOOK_FAILED\n", 24);
             return NULL;
