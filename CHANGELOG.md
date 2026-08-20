@@ -84,6 +84,58 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **A rejected `store_update` no longer destroys the record it was updating
+  (#1006).** `store_update` is delete-then-put, and it discarded the put's
+  result. `store_put` has genuine failure returns — "record too large",
+  "record exceeds page size", a page read that fails mid-scan — and on any of
+  them the old record had *already* been deleted, nothing was re-inserted, and
+  the row was simply gone. Growing a record past the 4089-byte page limit
+  silently destroyed it; a later `store_get` found nothing.
+  The delete half is split into `store_locate` (find the record) and
+  `store_tombstone` (mark it deleted), which is what makes the half-finished
+  replace undoable: deletion is a tombstone that never touches the JSON body,
+  so `store_untombstone` rebuilds the header from the key text plus the two
+  lengths the locate captured and the record comes back **byte-for-byte** —
+  the whole `.db` file is unchanged after a rejected update, which is what the
+  regression test asserts. `store_delete` now shares those primitives rather
+  than carrying its own copy of the scan.
+  Two smaller holes in the same function closed with it: a non-dict record is
+  rejected *before* anything is removed (it used to be caught by `store_put`,
+  after the delete), and a `store_put` failure that raises nothing now raises
+  rather than being reported as an ordinary "no row updated" 0. The record
+  check sits deliberately *after* the locate, not before it, so that an absent
+  key with a bad record still answers a silent 0 exactly as it did — checking
+  earlier would have raised on an argument shape that used to be quiet, which
+  is a behaviour change with the strict flag off.
+  The check that catches the failure tests `put_result->type != VAL_STR`, not
+  `!put_result`: `store_put` signals failure with `make_null()` — a Value *of
+  type* null — so the obvious C-NULL test is true on no path it can take, and
+  the first draft of this fix shipped exactly that vacuous guard until the
+  repro caught it.
+  **`store_put` itself reported success after a failed page write** — it
+  discarded `store_write_page`'s result on both of its writing paths and
+  answered with the key regardless. That is the same defect one layer down,
+  and `store_update` now depends on that answer, so it is fixed here too.
+  It has no reachable oracle, so it is validated by fault injection instead:
+  with the write forced to fail for the replacement record only, the old code
+  answers `store_update -> 1` with the record gone, and the new code raises
+  `io` and reads the record back intact.
+  Validated by five planted faults on the restore path, each caught by its own
+  assertion: the vacuous `!put_result` check, a skipped restore, a gutted
+  `store_untombstone`, a restore that rebuilds the key but not `json_len`, and
+  a removed non-dict check. The regression test's byte-identity assertion is
+  what separates the shipped in-place restore from a plausible alternative
+  that re-*appends* the old record — that alternative passes every other
+  assertion in the file while growing the database on each rejected update —
+  so the fingerprint carries its own self-test proving it can fail.
+  `tools/strict_differential.sh` loses its `store_update` UNPROBEABLE waiver:
+  the waiver's reason was that the guard was unreachable *because* store_update
+  called store_delete first, and this change removes that delegation. The
+  waiver named its own trigger ("if it is ever made reachable it must gain a
+  probe here"); it now has two probes instead. Differential against a build of
+  the parent commit: **63/63 identical with the flag off**, 63/63 raising under
+  strict, 15/15 answer-pins held.
+
 - **A name first bound in a `for` body now escapes the loop, like every other
   block form (#959).** `is` is documented as outward-mutable — a name not
   found in any enclosing scope creates a binding there, with `local` as the

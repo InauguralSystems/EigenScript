@@ -1004,7 +1004,15 @@ static Value* builtin_store_put(Value *arg) {
             off += 4;
             memcpy(page.data + off, json, json_len);
             page.count++;
-            store_write_page(store, pg, &page);
+            if (store_write_page(store, pg, &page) != 0) {
+                /* The record is not on disk. Answering with the key would
+                 * report a write that did not happen — and store_update
+                 * believes that answer, so it would leave the old record
+                 * tombstoned and report 1 (#1006's family). */
+                rt_error(EK_IO, 0, "store_put: page write failed\n");
+                free(json);
+                return make_null();
+            }
             free(json);
             store->dirty = 1;
             store_flush_catalog(store);
@@ -1036,7 +1044,14 @@ static Value* builtin_store_put(Value *arg) {
     new_page.data[off + 3] = (char)((json_len >> 24) & 0xFF);
     off += 4;
     memcpy(new_page.data + off, json, json_len);
-    store_write_page(store, new_pg, &new_page);
+    if (store_write_page(store, new_pg, &new_page) != 0) {
+        /* Same as the in-page branch: the record is not on disk, so the key
+         * must not be answered. The freshly allocated page stays linked and
+         * empty — wasted space, not a lost record. */
+        rt_error(EK_IO, 0, "store_put: page write failed\n");
+        free(json);
+        return make_null();
+    }
 
     free(json);
     store->dirty = 1;
@@ -1100,6 +1115,102 @@ static Value* builtin_store_get(Value *arg) {
     return make_null();
 }
 
+/* ================================================================
+ * Locate / tombstone / restore — the record-level primitives shared by
+ * store_delete and store_update (#1006).
+ *
+ * store_update is delete-then-put, and store_put has genuine failure returns
+ * (record too large, record exceeds page size, a page read that fails). Before
+ * #1006 the delete had already happened when one of those fired, so a rejected
+ * update DESTROYED the record it was updating. Splitting the delete into
+ * "locate" + "tombstone" gives store_update the one thing it needs to undo its
+ * half-finished replace: where the old record's header lives.
+ * ================================================================ */
+
+typedef struct {
+    uint32_t pg;        /* page holding the record */
+    int kl_offset;      /* offset of its key_len field within page.data */
+    uint16_t key_len;
+    uint32_t json_len;
+} StoreLoc;
+
+/* Find the live record carrying key_buf in a collection's page chain.
+ * Returns 1 and fills *loc when found, 0 when no live record carries the key
+ * (which includes a corruption abort — the scan stops having changed nothing). */
+static int store_locate(Store *store, const char *collection,
+                        const char *key_buf, StoreLoc *loc) {
+    Value *col_info = dict_get(store->catalog, collection);
+    if (!col_info || col_info->type != VAL_DICT) return 0;
+    Value *rv = dict_get(col_info, "root");
+    if (!rv) return 0;
+    uint32_t pg = (uint32_t)rv->data.num;
+    size_t target_key_len = strlen(key_buf);
+
+    for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
+        Page page;
+        if (store_read_page(store, pg, &page) != 0) break;
+        if (page.type != PAGE_RECORDS) break;
+
+        int offset = 0;
+        for (int i = 0; i < (int)page.count; i++) {
+            int kl_offset = offset;
+            StoreRecord rec;
+            if (store_record_next(&page, &offset, &rec) != 0) return 0;
+            if (rec.key_len == 0) continue;  /* deleted */
+
+            if (rec.key_len == target_key_len &&
+                memcmp(page.data + rec.key_offset, key_buf, rec.key_len) == 0) {
+                loc->pg = pg;
+                loc->kl_offset = kl_offset;
+                loc->key_len = rec.key_len;
+                loc->json_len = rec.json_len;
+                return 1;
+            }
+        }
+        pg = page.next_page; if (pg >= store->page_count) break;
+    }
+    return 0;
+}
+
+/* Mark a located record deleted: key_len := 0, and the 4 bytes that follow
+ * become the skip length so store_record_next steps over the body. The body
+ * itself is left in place — deletion is a tombstone, not a compaction.
+ * Returns 0 on success, -1 if the page could not be read back or written. */
+static int store_tombstone(Store *store, const StoreLoc *loc) {
+    Page page;
+    if (store_read_page(store, loc->pg, &page) != 0) return -1;
+    uint32_t skip = (uint32_t)loc->key_len + loc->json_len;
+    int o = loc->kl_offset;
+    page.data[o]     = 0;
+    page.data[o + 1] = 0;
+    page.data[o + 2] = (char)(skip & 0xFF);
+    page.data[o + 3] = (char)((skip >> 8) & 0xFF);
+    page.data[o + 4] = (char)((skip >> 16) & 0xFF);
+    page.data[o + 5] = (char)((skip >> 24) & 0xFF);
+    return store_write_page(store, loc->pg, &page);
+}
+
+/* Exact inverse of store_tombstone. The tombstone clobbers the first 4 bytes
+ * after key_len — the head of the key, and for a short key the low bytes of
+ * json_len — but never the JSON body, so the whole record is reconstructible
+ * from the key text plus the two lengths store_locate captured. Returns 0 on
+ * success, -1 if the page could not be read back or written. */
+static int store_untombstone(Store *store, const StoreLoc *loc, const char *key_buf) {
+    Page page;
+    if (store_read_page(store, loc->pg, &page) != 0) return -1;
+    int o = loc->kl_offset;
+    if (o < 0 || o + 2 + (int)loc->key_len + 4 > STORE_PAGE_DATA_SIZE) return -1;
+    page.data[o]     = (char)(loc->key_len & 0xFF);
+    page.data[o + 1] = (char)((loc->key_len >> 8) & 0xFF);
+    memcpy(page.data + o + 2, key_buf, loc->key_len);
+    int j = o + 2 + (int)loc->key_len;
+    page.data[j]     = (char)(loc->json_len & 0xFF);
+    page.data[j + 1] = (char)((loc->json_len >> 8) & 0xFF);
+    page.data[j + 2] = (char)((loc->json_len >> 16) & 0xFF);
+    page.data[j + 3] = (char)((loc->json_len >> 24) & 0xFF);
+    return store_write_page(store, loc->pg, &page);
+}
+
 /* store_delete([handle, collection, key]) -> 1 or 0 */
 static Value* builtin_store_delete(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
@@ -1129,53 +1240,24 @@ static Value* builtin_store_delete(Value *arg) {
         ARG_GUARD(1, "store_delete", "a string or number key", make_num(0));
     }
 
-    Value *col_info = dict_get(store->catalog, collection);
-    /* fs:ANSWER the collection is absent from the catalog, so no record with
-     * that key exists to delete — 0 is store_delete's documented "deleted
-     * nothing", the same value CV2-69 pins for a missing key. */
-    if (!col_info || col_info->type != VAL_DICT) return make_num(0);
-    Value *rv = dict_get(col_info, "root");
-    /* fs:ANSWER a catalog entry with no root page has no record pages, so
-     * nothing was deleted. */
-    if (!rv) return make_num(0);
-    uint32_t pg = (uint32_t)rv->data.num;
-    size_t target_key_len = strlen(key_buf);
+    StoreLoc loc;
+    /* fs:ANSWER the page chain holds no live record carrying this key (an
+     * absent collection, a catalog entry with no root page, a scan that ran
+     * to the end, or on-disk corruption that aborted the scan without having
+     * marked anything deleted) — 0 is store_delete's documented "deleted
+     * nothing", the value CV2-69 pins for a missing key. */
+    if (!store_locate(store, collection, key_buf, &loc)) return make_num(0);
 
-    for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
-        Page page;
-        if (store_read_page(store, pg, &page) != 0) break;
-        if (page.type != PAGE_RECORDS) break;
-
-        int offset = 0;
-        for (int i = 0; i < (int)page.count; i++) {
-            int kl_offset = offset;
-            StoreRecord rec;
-            /* fs:ANSWER on-disk corruption aborts the scan without having
-             * marked any record deleted, so 0 ("deleted nothing") is the
-             * truthful result; nothing about the ARGUMENTS is wrong here. */
-            if (store_record_next(&page, &offset, &rec) != 0) return make_num(0);
-            if (rec.key_len == 0) continue;  /* deleted */
-
-            if (rec.key_len == target_key_len &&
-                memcmp(page.data + rec.key_offset, key_buf, rec.key_len) == 0) {
-                /* Mark deleted: set key_len to 0, write skip_len at offset+2 */
-                uint32_t skip = (uint32_t)rec.key_len + rec.json_len;
-                page.data[kl_offset] = 0;
-                page.data[kl_offset + 1] = 0;
-                page.data[kl_offset + 2] = (char)(skip & 0xFF);
-                page.data[kl_offset + 3] = (char)((skip >> 8) & 0xFF);
-                page.data[kl_offset + 4] = (char)((skip >> 16) & 0xFF);
-                page.data[kl_offset + 5] = (char)((skip >> 24) & 0xFF);
-                store_write_page(store, pg, &page);
-                return make_num(1);
-            }
-        }
-        pg = page.next_page; if (pg >= store->page_count) break;
+    if (store_tombstone(store, &loc) != 0) {
+        /* The record is still live on disk; answering 1 would report a
+         * deletion that did not happen (#1006's family). */
+        rt_error(EK_IO, 0, "store_delete: page write failed\n");
+        /* fs:CHANNEL the IO failure is signalled by the unconditional rt_error
+         * above (EK_IO latch, catchable); this return is the post-raise
+         * placeholder, not "deleted nothing". */
+        return make_num(0);
     }
-    /* fs:ANSWER the whole page chain was scanned and no live record carried
-     * this key — 0 is store_delete's documented "no record matched" (CV2-69
-     * asserts exactly this for a missing key). */
-    return make_num(0);
+    return make_num(1);
 }
 
 /* store_query([handle, collection]) -> list of all records */
@@ -1277,25 +1359,12 @@ static Value* builtin_store_update(Value *arg) {
     Value *key_val = arg->data.list.items[2];
     Value *record = arg->data.list.items[3];
 
-    /* Delete old record. del_args + del_result are owned here (this is a
-     * direct C call, not a VM call, so nothing else frees them). */
-    Value *del_args = make_list(3);
-    list_append(del_args, handle);
-    list_append(del_args, col_val);
-    list_append(del_args, key_val);
-    Value *del_result = builtin_store_delete(del_args);
-    val_decref(del_args);
+    Store *store = get_store(handle);
+    ARG_GUARD(!store || !col_val || col_val->type != VAL_STR,
+              "store_update", "[store handle, string collection, key, record]",
+              make_num(0));
+    const char *collection = col_val->data.str;
 
-    if (!del_result || del_result->data.num == 0) {
-        if (del_result) val_decref(del_result);
-        /* fs:ANSWER store_delete reported that no record carried this key, so
-         * there was nothing to update — 0 is store_update's documented "no row
-         * updated"; 1 is produced only when the replace actually happened. */
-        return make_num(0);
-    }
-    val_decref(del_result);
-
-    /* Set _id on new record */
     char key_buf[STORE_MAX_KEY_LEN];
     if (key_val->type == VAL_STR) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
@@ -1303,12 +1372,49 @@ static Value* builtin_store_update(Value *arg) {
     } else if (key_val->type == VAL_NUM) {
         snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)key_val->data.num);
     } else {
-        /* Defensive only: a key that is neither string nor number was already
-         * rejected by the store_delete call above, which returned 0 and made
-         * this function return at the `del_result` check. Guarded in place
-         * with a constant condition so control flow is provably unchanged. */
+        /* Reaching the else arm IS the rejection: the key is neither a string
+         * nor a number. Guarded in place with a constant condition so the
+         * if/else chain's control flow is provably unchanged. */
         ARG_GUARD(1, "store_update", "a string or number key", make_num(0));
     }
+
+    /* Locate the old record before touching it. #1006: the replace below is
+     * delete-then-put, and the put can legitimately fail (record too large,
+     * exceeds page size, page read failure). Holding the location is what lets
+     * a failed put be undone instead of leaving the record destroyed. */
+    StoreLoc loc;
+    /* fs:ANSWER no live record carries this key, so there was nothing to
+     * update — 0 is store_update's documented "no row updated"; 1 is produced
+     * only when the replacement actually landed. */
+    if (!store_locate(store, collection, key_buf, &loc)) return make_num(0);
+
+    /* Reject a non-dict record BEFORE anything is removed. store_put raises
+     * the same EK_TYPE for it, but by then the old record was already gone
+     * (#1006) — the check has to happen while the store is still untouched.
+     * It sits AFTER the locate deliberately: the pre-#1006 function reached
+     * store_put's version of this check only when the delete had found a
+     * record, so an absent key with a bad record answered a silent 0 and
+     * never looked at the record at all. Checking earlier would raise on an
+     * argument shape that used to be quiet, which is a behaviour change with
+     * the strict flag OFF. */
+    if (!record || record->type != VAL_DICT) {
+        rt_error(EK_TYPE, 0, "store_update: record must be a dict\n");
+        /* fs:CHANNEL the type failure is signalled by the unconditional
+         * rt_error above (EK_TYPE latch, catchable); this return is the
+         * post-raise placeholder, not "no row updated". */
+        return make_num(0);
+    }
+
+    if (store_tombstone(store, &loc) != 0) {
+        rt_error(EK_IO, 0, "store_update: page write failed\n");
+        /* fs:CHANNEL the IO failure is signalled by the unconditional rt_error
+         * above (EK_IO latch, catchable); this return is the post-raise
+         * placeholder, not "no row updated". Nothing was written, so the
+         * record is untouched. */
+        return make_num(0);
+    }
+
+    /* Set _id on new record so store_put reuses the same key. */
     dict_set_owned(record, "_id", make_str(key_buf));
 
     /* Put new record. Free the args list and store_put's returned key. */
@@ -1318,7 +1424,47 @@ static Value* builtin_store_update(Value *arg) {
     list_append(put_args, record);
     Value *put_result = builtin_store_put(put_args);
     val_decref(put_args);
-    if (put_result) val_decref(put_result);
+
+    /* store_put answers with the key it wrote (VAL_STR) and signals every
+     * failure with make_null() — a Value OF TYPE null, never a C NULL. A
+     * `if (!put_result)` test here would be vacuous: it is true on no path
+     * store_put can take. */
+    if (!put_result || put_result->type != VAL_STR) {
+        if (put_result) val_decref(put_result);
+        /* The replacement never landed, so undo the tombstone and the old
+         * record's bytes come back exactly.
+         *
+         * That is sound because of which store_put failures are REACHABLE
+         * from here, not because store_put never writes before failing — it
+         * does: its new-collection branch allocates and writes a root page,
+         * bumps the catalog and `dirty`, and only then reaches the size
+         * checks. That branch cannot run here, because store_locate above
+         * already proved this collection has a catalog entry. What is left —
+         * the two size checks, a page read that fails mid-scan, and the two
+         * page writes — either writes nothing at all or writes only a page
+         * this record was never in. If a future edit gives store_put a
+         * failure path that mutates the record's own page first, this restore
+         * stops being an inverse.
+         *
+         * store_put is a direct C call, not a VM call, so its raise did not
+         * unwind us — this is the only place the failure can be handled. */
+        if (store_untombstone(store, &loc, key_buf) != 0) {
+            rt_error(EK_IO, 0,
+                     "store_update: replacement failed and the old record could not be restored\n");
+        } else if (!g_has_error) {
+            /* store_put has failure returns that raise nothing (a page read
+             * that fails mid-scan). Without this the caller would be told 0
+             * with no error at all, indistinguishable from "no such key". */
+            rt_error(EK_IO, 0,
+                     "store_update: replacement failed; the old record was left unchanged\n");
+        }
+        /* fs:CHANNEL every path into this branch has raised — store_put's own
+         * error, the un-restorable case, or the `!g_has_error` backstop just
+         * above — so this return is the post-raise placeholder. It is
+         * deliberately not 1: the replacement did not land. */
+        return make_num(0);
+    }
+    val_decref(put_result);
     return make_num(1);
 }
 
