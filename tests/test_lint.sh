@@ -590,6 +590,31 @@ check_status "W023 silent: try-region local lint exits 0" "$LINT_STATUS" "0"
 check_not_contains "W023 silent: try-region local" "$OUTPUT" "W023"
 rm -f "$TMPFILE"
 
+# A preceding import emits OP_SET_NAME_LOCAL, so the later bare assignment
+# resolves to that function environment binding rather than module math.  The
+# runtime assertions make this a real ownership check, not a lint-output-only
+# characterization: the import owns the write and the module value stays 5.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+math is 5
+define f(flag) as:
+    import math
+    if flag == 1:
+        local math is 1
+    else:
+        math is 2
+    return math
+print of ("W023 import return is " + (str of (f of 0)))
+print of ("W023 import module math is " + (str of math))
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "W023 import runtime writes the function binding" "$RUN" "W023 import return is 2"
+check_contains "W023 import runtime leaves module binding unchanged" "$RUN" "W023 import module math is 5"
+OUTPUT=$($EIGS --lint --lint-level error "$TMPFILE" 2>&1) && LINT_STATUS=0 || LINT_STATUS=$?
+check_status "W023 silent when preceding import owns bare write" "$LINT_STATUS" "0"
+check_not_contains "W023 silent for current-scope import binder" "$OUTPUT" "W023"
+rm -f "$TMPFILE"
+
 # A nested define binds the name in the current function and likewise
 # dominates the sibling write; the runtime must leave the module binding alone.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
