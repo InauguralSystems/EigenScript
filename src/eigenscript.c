@@ -2430,7 +2430,11 @@ char *env_intern_name(const char *name) {
     uint32_t h = env_hash_name(name);
     int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
     for (EnvNameIntern *it = g_env_name_interns[bucket]; it; it = it->next) {
-        if (it->hash == h && strcmp(it->name, name) == 0)
+        /* A nested sandbox must not borrow an outer run's temporary node:
+         * the inner result may outlive that outer binding and promote it. */
+        if (it->hash == h && strcmp(it->name, name) == 0 &&
+            (g_sandbox_intern_scope == 0 || it->sandbox_scope == 0 ||
+             it->sandbox_scope == g_sandbox_intern_scope))
             return it->name;
     }
     EnvNameIntern *it = xcalloc(1, sizeof(EnvNameIntern));
