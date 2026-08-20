@@ -1479,6 +1479,14 @@ static int w023_special_flags(ASTNode **body, int count, const char *name) {
     int flags = 0;
     for (int i = 0; i < count; i++) w023_walk(body[i], W023_SPECIAL, name, &flags, NULL, NULL, 0, NULL); return flags;
 }
+/* AST_IMPORT is a current-scope binder, not only a name occurrence.  The
+ * compiler emits OP_SET_NAME_LOCAL for it, and the VM stores that binding in
+ * frame->env; a later bare OP_SET_NAME therefore starts at the same binding.
+ * Keep the prefix/enclosing and source-order scans on this shared semantic
+ * rule rather than letting their binder taxonomies drift apart. */
+static void w023_record_current_scope_import(ASTNode *n, W023Names *locals) {
+    if (n && n->type == AST_IMPORT) w023_name_add(n->data.import.module_name, locals);
+}
 static void w023_collect_binders(ASTNode *n, W023Names *locals) {
     if (!n || locals->unknown) return;
     switch (n->type) {
@@ -1533,10 +1541,12 @@ static void w023_collect_binders(ASTNode *n, W023Names *locals) {
     case AST_BREAK:
     case AST_CONTINUE:
     case AST_DOT_ASSIGN:
-    case AST_IMPORT:
     case AST_LAMBDA:
     case AST_INDEX_ASSIGN:
     case AST_SLICE:
+        break;
+    case AST_IMPORT:
+        w023_record_current_scope_import(n, locals);
         break;
     }
 }
@@ -1664,7 +1674,8 @@ static void w023_scan_sequence(ASTNode **stmts, int count, W023Names *bound,
                 if (module->unknown) return;
             }
             break;
-        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BINOP: case AST_UNARY: case AST_RELATION: case AST_RETURN: case AST_LIST: case AST_INDEX: case AST_LISTCOMP: case AST_PROGRAM: case AST_INTERROGATE: case AST_PREDICATE: case AST_DICT: case AST_DOT: case AST_BREAK: case AST_CONTINUE: case AST_DOT_ASSIGN: case AST_IMPORT: case AST_LAMBDA: case AST_INDEX_ASSIGN: case AST_SLICE: break;
+        case AST_IMPORT: w023_record_current_scope_import(n, bound); break;
+        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BINOP: case AST_UNARY: case AST_RELATION: case AST_RETURN: case AST_LIST: case AST_INDEX: case AST_LISTCOMP: case AST_PROGRAM: case AST_INTERROGATE: case AST_PREDICATE: case AST_DICT: case AST_DOT: case AST_BREAK: case AST_CONTINUE: case AST_DOT_ASSIGN: case AST_LAMBDA: case AST_INDEX_ASSIGN: case AST_SLICE: break;
         }
     }
 }
