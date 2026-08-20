@@ -2379,10 +2379,16 @@ char *env_intern_scope_promote(Value *owner, char *name) {
         EnvNameIntern *it = *link;
         if (it->name == name) {
             if (it->sandbox_scope == 0) return it->name;
-            *link = it->next;
-            it->next = NULL;
-            env_intern_owner_add(owner, it);
-            return it->name;
+            /* Keep the run's table node alive until scope teardown. A trace or
+             * history entry may retain the chunk's original constant pointer
+             * even after this dictionary takes ownership of an equal key. A
+             * private copy for the returned Value lets both lifetimes coexist
+             * without changing Value layout or borrowing an outer scope node. */
+            EnvNameIntern *copy = xcalloc(1, sizeof(*copy));
+            copy->name = xstrdup(it->name);
+            copy->hash = it->hash;
+            env_intern_owner_add(owner, copy);
+            return copy->name;
         }
     }
     for (EnvInternValueOwner *it = g_sandbox_intern_owners; it; it = it->next) {
@@ -2397,6 +2403,23 @@ char *env_intern_scope_promote(Value *owner, char *name) {
         }
     }
     return name; /* process-global channel keys and ordinary names are stable */
+}
+
+/* A temporal trace/history table stores the exact interned pointer from a
+ * descriptor chunk. Promote that table entry to the ordinary thread lifetime
+ * before the sandbox scope ends; otherwise a later query would dereference a
+ * freed name. Only the matching scoped entry is changed, so genuine existing
+ * host/global/channel entries are untouched. */
+void env_intern_scope_retain(const char *name) {
+    if (!name) return;
+    uint32_t h = env_hash_name(name);
+    int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
+    for (EnvNameIntern *it = g_env_name_interns[bucket]; it; it = it->next) {
+        if (it->name == name) {
+            it->sandbox_scope = 0;
+            return;
+        }
+    }
 }
 
 /* Release only the entries owned by this run. The caller has already dropped

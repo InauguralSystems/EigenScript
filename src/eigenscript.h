@@ -1056,6 +1056,7 @@ char    *env_intern_name(const char *name);
 uint32_t env_intern_scope_begin(void);
 void     env_intern_scope_end(uint32_t scope, uint32_t previous);
 char    *env_intern_scope_promote(Value *owner, char *name);
+void     env_intern_scope_retain(const char *name);
 void     env_intern_release_value(Value *owner);
 void     env_intern_release_all_values(void);
 void free_value(Value *v);

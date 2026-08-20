@@ -444,6 +444,11 @@ static int occ_index_of(const PrevEntry *e, long long ordinal) {
 
 static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
     if (!eigs_current || !name) return;
+    /* The prev/history table keeps the descriptor's exact interned pointer
+     * beyond sandbox_run. Re-home that one name to the ordinary thread
+     * lifetime before the run scope is released; unused descriptor constants
+     * still remain temporary and are reclaimed at the boundary. */
+    env_intern_scope_retain(name);
     if (g_prev_count * PREV_LOAD_DEN >= g_prev_cap * PREV_LOAD_NUM) {
         prev_grow();
         if (!g_prev_tab) return;

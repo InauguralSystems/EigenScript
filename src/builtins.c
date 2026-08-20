@@ -3269,6 +3269,14 @@ Value* builtin_sandbox_run(Value *arg) {
         arg->data.list.items[2]->data.num > 0)
         max_bytes = (size_t)arg->data.list.items[2]->data.num;
 
+    /* Descriptor values are untrusted input. Start the run-owned intern scope
+     * before validation/assembly: vm_build_chunk_desc interns every string
+     * constant, including unused literals, before the VM itself starts. Keep
+     * the scope active through execution so runtime names share the same
+     * lifetime; output/error wrapper keys are added only after it is restored. */
+    uint32_t saved_intern_scope = g_sandbox_intern_scope;
+    uint32_t intern_scope = env_intern_scope_begin();
+
     /* #704: an ABI-revision mismatch is a build failure like any other, but it
      * gets its own message — a grading ladder must be able to tell "your
      * producer is stale" from "your bytecode is malformed" without re-running. */
@@ -3277,6 +3285,10 @@ Value* builtin_sandbox_run(Value *arg) {
     EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
     Value *out = make_dict(2);
     if (!chunk) {
+        /* Descriptor verification may already have interned constants before
+         * rejecting the graph. Restore the caller's scope before constructing
+         * the host-owned diagnostic dictionary, then release this run's names. */
+        env_intern_scope_end(intern_scope, saved_intern_scope);
         Value *zero = make_num(0);
         dict_set(out, "ok", zero);   /* dict_set increfs; drop our ref */
         val_decref(zero);
@@ -3369,12 +3381,10 @@ Value* builtin_sandbox_run(Value *arg) {
            sizeof saved_sb_refusal_msg);
     size_t saved_sb_used   = g_sandbox_bytes_used;
     size_t saved_sb_max    = g_sandbox_byte_max;
-    /* Names made by the untrusted VM belong to this run until a returned
-     * dictionary key is explicitly promoted. Descriptor construction and the
-     * sealed environment stay outside the scope, so ordinary host/global names
-     * retain their process lifetime and existing pointer identity. */
-    uint32_t saved_intern_scope = g_sandbox_intern_scope;
-    uint32_t intern_scope = env_intern_scope_begin();
+    /* Names made by untrusted descriptor assembly or VM execution belong to
+     * this run until a returned dictionary key is explicitly promoted.
+     * Pre-existing scope-zero host/global names retain their process lifetime
+     * and pointer identity; channel keys live in their separate stable table. */
     g_sandbox_active     = 1;
     g_sandbox_error_latched = 0;
     g_sandbox_refusal    = 0;
