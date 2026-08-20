@@ -4,6 +4,36 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **`EIGS_STRICT=1` now makes a wrong-typed builtin argument raise (#971
+  Phase A).** ~34 builtins answered a wrong type with a soft stand-in, so a
+  type mistake became a plausible value and flowed on indistinguishable from a
+  real one: `cos of "hello"` was `0`, `str_upper of 42` was `""`,
+  `substr of 42` was `""`. That is the fail-soft default the #975 reform
+  exists to remove, and it is exactly what made a grader score a laundered
+  answer instead of catching the mistake.
+  **Default behaviour is byte-identical** — the stand-in is still returned
+  with the flag off. Under `EIGS_STRICT=1` the guard raises a catchable
+  `type` error naming the builtin and what it wanted. Converted via a single
+  `ARG_GUARD` macro so each site keeps its own early return and stays
+  reviewable one guard at a time.
+  The gate is renamed `strict_math` → `strict` (and `g_strict_math` →
+  `g_strict`) in the same change, because it no longer governs only
+  arithmetic domains. `EIGS_STRICT`, the user-facing knob, is unchanged and
+  was always the general name.
+  **The exclusions are the point of the phase.** The issue's "~89 guards" is
+  a grep, not a population: a `sed` over `return make_num(0)` would have
+  broken `try_parse of "!!!"` (whose `0` means *invalid syntax* — the answer)
+  and `task_alive` of an unknown id (whose `0` means *not alive*, four lines
+  below a type guard that DID convert). Both are pinned as tests that strict
+  must leave alone. The 13 JSON-parser paths, which signal failure through
+  their own flag channel, are untouched.
+  Verified by differential against the pre-change binary: **35/35 probes
+  byte-identical with the flag off, 35/35 raising under strict**; suite
+  3985/3985; two planted faults (always-raise, never-raise) each caught by
+  their own assertion.
+
 ### Fixed
 
 - **A name first bound in a `for` body now escapes the loop, like every other

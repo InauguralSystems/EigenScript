@@ -33,7 +33,7 @@ EigsState *eigs_state_new(void) {
      * thresholds below). Any non-empty, non-"0" value enables it. */
     {
         const char *s = getenv("EIGS_STRICT");
-        st->strict_math = (s && s[0] && s[0] != '0') ? 1 : 0;
+        st->strict = (s && s[0] && s[0] != '0') ? 1 : 0;
     }
     /* Filesystem anchor defaults; main/eigenlsp overwrite after attach. */
     st->script_dir[0] = '.'; st->script_dir[1] = '\0';
