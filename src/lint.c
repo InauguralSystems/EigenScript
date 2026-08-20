@@ -1323,7 +1323,7 @@ static void check_outer_mutation(ASTNode *ast, LintContext *ctx) {
  * environment binding.  Model that runtime walk with dominating binders and
  * fail safe to silence; an enclosing binder (including catch) is a deliberate false negative. */
 #define W023_MAX_FUNCTION_DEPTH 64
-enum { W023_MODULE, W023_SPECIAL, W023_FUNCTIONS };
+enum { W023_MODULE, W023_SPECIAL, W023_FUNCTIONS, W023_NAME_SCAN };
 enum { W023_CAPTURED = 1, W023_INTERROGATED = 2, W023_ENV_BOUND = 4, W023_DEFINE = 8 };
 typedef struct { char **names; int count, capacity, unknown; } W023Names;
 static int w023_name_present(const W023Names *set, const char *name) {
@@ -1366,96 +1366,7 @@ static void w023_names_free(W023Names *set) { free(set->names); set->names = NUL
 static void w023_analyse_function(ASTNode *, ASTNode **, int, W023Names *, LintContext *);
 static void w023_scan_sequence(ASTNode **, int, W023Names *, ASTNode *, ASTNode **, int, W023Names *, LintContext *);
 
-static int w023_node_has_name(const ASTNode *n, const char *name) {
-    if (!n || !name) return 0;
-#define W023_HAS(x) w023_node_has_name((x), name)
-    switch (n->type) {
-    case AST_IDENT:
-        return n->data.ident.name && strcmp(n->data.ident.name, name) == 0;
-    case AST_ASSIGN:
-        return (n->data.assign.name && strcmp(n->data.assign.name, name) == 0) || W023_HAS(n->data.assign.expr);
-    case AST_FUNC:
-        if (n->data.func.name && strcmp(n->data.func.name, name) == 0) return 1;
-        for (int i = 0; i < n->data.func.body_count; i++) if (W023_HAS(n->data.func.body[i])) return 1;
-        return 0;
-    case AST_FOR:
-        if (n->data.forloop.var && strcmp(n->data.forloop.var, name) == 0) return 1;
-        if (W023_HAS(n->data.forloop.iter)) return 1;
-        for (int i = 0; i < n->data.forloop.body_count; i++) if (W023_HAS(n->data.forloop.body[i])) return 1;
-        return 0;
-    case AST_TRY:
-        if (n->data.trycatch.err_name && strcmp(n->data.trycatch.err_name, name) == 0) return 1;
-        for (int i = 0; i < n->data.trycatch.try_count; i++) if (W023_HAS(n->data.trycatch.try_body[i])) return 1;
-        for (int i = 0; i < n->data.trycatch.catch_count; i++) if (W023_HAS(n->data.trycatch.catch_body[i])) return 1;
-        return 0;
-    case AST_LIST_PATTERN_ASSIGN:
-        for (int i = 0; i < n->data.list_pattern_assign.name_count; i++)
-            if (n->data.list_pattern_assign.names[i] && strcmp(n->data.list_pattern_assign.names[i], name) == 0) return 1;
-        return W023_HAS(n->data.list_pattern_assign.expr);
-    case AST_IMPORT:
-        return n->data.import.module_name && strcmp(n->data.import.module_name, name) == 0;
-    case AST_IF:
-        if (W023_HAS(n->data.cond.cond)) return 1;
-        for (int i = 0; i < n->data.cond.if_count; i++) if (W023_HAS(n->data.cond.if_body[i])) return 1;
-        for (int i = 0; i < n->data.cond.else_count; i++) if (W023_HAS(n->data.cond.else_body[i])) return 1;
-        return 0;
-    case AST_LOOP:
-        if (W023_HAS(n->data.loop.cond)) return 1;
-        for (int i = 0; i < n->data.loop.body_count; i++) if (W023_HAS(n->data.loop.body[i])) return 1;
-        return 0;
-    case AST_BLOCK:
-    case AST_UNOBSERVED:
-        for (int i = 0; i < n->data.block.count; i++) if (W023_HAS(n->data.block.stmts[i])) return 1;
-        return 0;
-    case AST_MATCH:
-        if (W023_HAS(n->data.match.expr)) return 1;
-        for (int i = 0; i < n->data.match.case_count; i++) {
-            if (W023_HAS(n->data.match.patterns[i])) return 1;
-            for (int j = 0; j < n->data.match.body_counts[i]; j++) if (W023_HAS(n->data.match.bodies[i][j])) return 1;
-        }
-        return 0;
-    case AST_INTERROGATE:
-        return W023_HAS(n->data.interrogate.expr) || W023_HAS(n->data.interrogate.at_expr) ||
-               W023_HAS(n->data.interrogate.when_expr);
-    case AST_LISTCOMP:
-        if (n->data.listcomp.var && strcmp(n->data.listcomp.var, name) == 0) return 1;
-        return W023_HAS(n->data.listcomp.expr) || W023_HAS(n->data.listcomp.iter) || W023_HAS(n->data.listcomp.filter);
-    case AST_BINOP: return W023_HAS(n->data.binop.left) || W023_HAS(n->data.binop.right);
-    case AST_UNARY: return W023_HAS(n->data.unary.operand);
-    case AST_RELATION: return W023_HAS(n->data.relation.left) || W023_HAS(n->data.relation.right);
-    case AST_RETURN: return W023_HAS(n->data.ret.expr);
-    case AST_LIST:
-        for (int i = 0; i < n->data.list.count; i++) if (W023_HAS(n->data.list.elems[i])) return 1;
-        return 0;
-    case AST_INDEX: return W023_HAS(n->data.index.target) || W023_HAS(n->data.index.index);
-    case AST_DICT:
-        for (int i = 0; i < n->data.dict.count; i++) if (W023_HAS(n->data.dict.keys[i]) || W023_HAS(n->data.dict.vals[i])) return 1;
-        return 0;
-    case AST_DOT: return W023_HAS(n->data.dot.target);
-    case AST_DOT_ASSIGN: return W023_HAS(n->data.dot_assign.target) || W023_HAS(n->data.dot_assign.expr);
-    case AST_INDEX_ASSIGN:
-        return W023_HAS(n->data.index_assign.target) || W023_HAS(n->data.index_assign.index) || W023_HAS(n->data.index_assign.expr);
-    case AST_SLICE:
-        return W023_HAS(n->data.slice.target) || W023_HAS(n->data.slice.start) || W023_HAS(n->data.slice.end);
-    case AST_LAMBDA: return W023_HAS(n->data.lambda.body);
-    case AST_PROGRAM:
-        for (int i = 0; i < n->data.program.count; i++) if (W023_HAS(n->data.program.stmts[i])) return 1;
-        return 0;
-    case AST_NUM:
-    case AST_STR:
-    case AST_NULL:
-    case AST_PREDICATE:
-    case AST_BREAK:
-    case AST_CONTINUE:
-        return 0;
-    }
-#undef W023_HAS
-    return 0;
-}
-static int w023_body_has_name(ASTNode **body, int count, const char *name) {
-    for (int i = 0; i < count; i++) if (w023_node_has_name(body[i], name)) return 1;
-    return 0;
-}
+static int w023_body_has_name(ASTNode **body, int count, const char *name);
 
 /* This one exhaustive walk mirrors compiler module-name collection, closure
  * probes, and nested-function discovery.  New AST kinds must be listed. */
@@ -1464,16 +1375,20 @@ static void w023_walk(ASTNode *n, int mode, const char *name, int *flags,
                       LintContext *ctx) {
     if (!n) return;
 #define W(x) w023_walk((x), mode, name, flags, module, ancestors, depth, ctx)
+#define N(x) do { const char *w023_name = (x); if (mode == W023_NAME_SCAN && w023_name && name && strcmp(w023_name, name) == 0) *flags = 1; } while (0)
     switch (n->type) {
     case AST_ASSIGN:
         if (mode == W023_MODULE) w023_name_add(n->data.assign.name, module);
-        else W(n->data.assign.expr);
+        else { N(n->data.assign.name); W(n->data.assign.expr); }
         break;
     case AST_FUNC:
         if (mode == W023_MODULE) w023_name_add(n->data.func.name, module);
         else if (mode == W023_SPECIAL) {
             if (name && strcmp(n->data.func.name, name) == 0) *flags |= W023_DEFINE;
             if (name && w023_body_has_name(n->data.func.body, n->data.func.body_count, name)) *flags |= W023_CAPTURED;
+        } else if (mode == W023_NAME_SCAN) {
+            N(n->data.func.name);
+            for (int i = 0; i < n->data.func.body_count; i++) W(n->data.func.body[i]);
         } else if (depth < W023_MAX_FUNCTION_DEPTH) {
             w023_analyse_function(n, ancestors, depth, module, ctx); ancestors[depth] = n;
             for (int i = 0; i < n->data.func.body_count; i++) w023_walk(n->data.func.body[i], mode, name, flags, module, ancestors, depth + 1, ctx);
@@ -1489,11 +1404,13 @@ static void w023_walk(ASTNode *n, int mode, const char *name, int *flags,
         for (int i = 0; i < n->data.block.count; i++) W(n->data.block.stmts[i]); break;
     case AST_FOR:
         if (mode == W023_SPECIAL && name && strcmp(n->data.forloop.var, name) == 0) *flags |= W023_ENV_BOUND;
+        N(n->data.forloop.var);
         if (mode != W023_MODULE) W(n->data.forloop.iter); for (int i = 0; i < n->data.forloop.body_count; i++) W(n->data.forloop.body[i]); break;
     case AST_TRY:
         for (int i = 0; i < n->data.trycatch.try_count; i++) W(n->data.trycatch.try_body[i]);
         if (mode == W023_MODULE) w023_name_add(n->data.trycatch.err_name, module);
         else if (mode == W023_SPECIAL && name && strcmp(n->data.trycatch.err_name, name) == 0) *flags |= W023_ENV_BOUND;
+        else N(n->data.trycatch.err_name);
         for (int i = 0; i < n->data.trycatch.catch_count; i++) W(n->data.trycatch.catch_body[i]); break;
     case AST_MATCH:
         if (mode != W023_MODULE) W(n->data.match.expr);
@@ -1506,7 +1423,10 @@ static void w023_walk(ASTNode *n, int mode, const char *name, int *flags,
         if (mode == W023_MODULE) {
             for (int i = 0; i < n->data.list_pattern_assign.name_count; i++)
                 w023_name_add(n->data.list_pattern_assign.names[i], module);
-        } else W(n->data.list_pattern_assign.expr);
+        } else {
+            for (int i = 0; i < n->data.list_pattern_assign.name_count; i++) N(n->data.list_pattern_assign.names[i]);
+            W(n->data.list_pattern_assign.expr);
+        }
         break;
     case AST_INTERROGATE:
         if (mode == W023_SPECIAL && name && n->data.interrogate.expr &&
@@ -1518,6 +1438,7 @@ static void w023_walk(ASTNode *n, int mode, const char *name, int *flags,
         break;
     case AST_LISTCOMP:
         if (mode == W023_SPECIAL && name && strcmp(n->data.listcomp.var, name) == 0) *flags |= W023_ENV_BOUND;
+        N(n->data.listcomp.var);
         if (mode != W023_MODULE) {
             W(n->data.listcomp.expr); W(n->data.listcomp.iter); W(n->data.listcomp.filter);
         }
@@ -1535,14 +1456,23 @@ static void w023_walk(ASTNode *n, int mode, const char *name, int *flags,
     case AST_SLICE: W(n->data.slice.target); W(n->data.slice.start); W(n->data.slice.end); break;
     case AST_LAMBDA:
         if (mode == W023_SPECIAL && name && w023_body_has_name(&n->data.lambda.body, 1, name)) *flags |= W023_CAPTURED;
-        else if (mode == W023_FUNCTIONS) W(n->data.lambda.body);
+        else if (mode == W023_FUNCTIONS || mode == W023_NAME_SCAN) W(n->data.lambda.body);
         break;
     case AST_PROGRAM:
         for (int i = 0; i < n->data.program.count; i++) W(n->data.program.stmts[i]);
         break;
-    case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: case AST_IMPORT: break;
+    case AST_IDENT: N(n->data.ident.name); break;
+    case AST_IMPORT: N(n->data.import.module_name); break;
+    case AST_NUM: case AST_STR: case AST_NULL: case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: break;
     }
+#undef N
 #undef W
+}
+
+static int w023_body_has_name(ASTNode **body, int count, const char *name) {
+    int found = 0;
+    for (int i = 0; i < count && !found; i++) w023_walk(body[i], W023_NAME_SCAN, name, &found, NULL, NULL, 0, NULL);
+    return found;
 }
 
 static int w023_special_flags(ASTNode **body, int count, const char *name) {
