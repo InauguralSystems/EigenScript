@@ -132,11 +132,22 @@ join|print of (join of [["a", "b"], 42])
 rename|print of (rename of [42, "b"])
 store_count|print of (store_count of [42, "col"])
 store_drop|print of (store_drop of [42, "col"])
+store_update|print of (store_update of [42, "col", "k", {"a": 1}])
+store_update|print of (store_update of [(store_open of "@TMP@/probe.db"), "col", ([1, 2]), {"a": 1}])
 stream_open|print of (stream_open of [42, 1])
 write_text|print of (write_text of [42, "x"])
 add/subtract/multiply/divide/pow|print of (add of ["x", 1])
 EOF
 )
+# A probe that needs a real resource must build it under this run's own $TMP,
+# which the EXIT trap removes. The heredoc above is quoted (so a program can
+# contain a literal $ safely), hence the placeholder rather than direct
+# expansion. Bought by the store_update key probe: pointed at a fixed
+# /tmp path it left a database behind, and a leftover unreadable file there
+# wedged the gate for every later run — `store_open` refused it, the probe
+# raised from the wrong place, and the tool reported `misattributed: 1`
+# forever with nothing to do with the code under test.
+PROBES="${PROBES//@TMP@/$TMP}"
 
 # fs:ANSWER pins — a 0/"" that is the documented RESULT. Strict must leave
 # these alone. Without this half the reform has no failure mode: converting
@@ -220,13 +231,17 @@ EXPECTED_DIVERGE="sign_extend"
 # would sit in "GUARDED BUT UNPROBED" forever and train the reader to ignore
 # that section — which is how a real gap gets missed.
 #
-#   store_update: its key-type guard is unreachable. store_update calls
-#   store_delete FIRST, with the same [handle, collection, key] triple, and a
-#   bad key is rejected there — so control returns at the del_result check
-#   before the guard is reached. Executed: the raise names store_delete, not
-#   store_update. It is defensive-only, kept because the else-arm needs a
-#   branch; if it is ever made reachable it must gain a probe here.
-UNPROBEABLE="store_update"
+#   (currently empty)
+#
+#   store_update was waived here until #1006. The waiver's reason was that its
+#   key-type guard was unreachable — store_update called store_delete first
+#   with the same [handle, collection, key] triple, so a bad key was rejected
+#   there and the raise named store_delete. #1006 removed that delegation (the
+#   delete had to be split so a failed replace could be undone), which made
+#   both of store_update's guards reachable and self-naming. The waiver named
+#   its own trigger — "if it is ever made reachable it must gain a probe here"
+#   — and this is that: two probes below, no waiver.
+UNPROBEABLE=""
 
 run_capture() {   # <binary> <env-strict|-> <file>  -> prints "rc\nstdout+stderr"
     local bin="$1" strict="$2" f="$3" out rc

@@ -234,6 +234,130 @@ assert_eq of [bn.nhuge, 0 - 1e300, "-1e300 round-trips (#816)"]
 store_close of bdb
 rm of "/tmp/eigs816_bounds.db"
 
+# --- #1006: a REJECTED update must not destroy the record it was updating ---
+# store_update is delete-then-put, and store_put has real failure returns
+# ("record exceeds page size" is the one reachable from EigenScript). Before
+# the fix the delete had already happened when the put was rejected, so the
+# row was gone and a later store_get simply found nothing.
+#
+# The bar is byte-exactness, not merely "the row is readable": the whole .db
+# file must be unchanged, because the tombstone is undone in place and the
+# JSON body is never touched.
+if file_exists of "/tmp/eigs1006_update.db":
+    rm of "/tmp/eigs1006_update.db"
+udb is store_open of "/tmp/eigs1006_update.db"
+# Neighbours on both sides, plus a 1-char key: the tombstone overwrites the
+# 4 bytes after key_len, which for a short key runs into json_len as well, so
+# the restore has to rebuild both fields, not just the key.
+store_put of [udb, "docs", {"_id": "a", "body": "neighbour-before"}]
+store_put of [udb, "docs", {"_id": "doc1", "body": "original", "n": 42}]
+store_put of [udb, "docs", {"_id": "zzz", "body": "neighbour-after"}]
+store_close of udb
+
+# A position-weighted checksum over the raw file: any byte that moves, changes
+# or disappears shifts it. (sha256 takes a string; the .db holds NULs.)
+# `read_bytes` answers a LIST, not a buffer — an earlier draft of this
+# fingerprint reached for buf_len/buf_get, which answer 0 for a list without
+# complaining, so every file fingerprinted to 0 and the byte-identity
+# assertion below compared 0 to 0.
+define db_fingerprint(path) as:
+    b is read_bytes of path
+    n is len of b
+    acc is n
+    for i in range of n:
+        acc is (acc * 31 + b[i] + i) % 1000000007
+    return acc
+
+# The fingerprint is worth nothing unless it can fail, so prove it can before
+# relying on it: a non-zero reading, and one changed byte moving it.
+write_text of ["/tmp/eigs1006_fp_a", "abc"]
+write_text of ["/tmp/eigs1006_fp_b", "abd"]
+write_text of ["/tmp/eigs1006_fp_c", "abcc"]
+assert of [(db_fingerprint of "/tmp/eigs1006_fp_a") != 0, "#1006: db_fingerprint reads a non-empty file as non-zero"]
+assert of [(db_fingerprint of "/tmp/eigs1006_fp_a") != (db_fingerprint of "/tmp/eigs1006_fp_b"), "#1006: db_fingerprint sees one changed byte"]
+assert of [(db_fingerprint of "/tmp/eigs1006_fp_a") != (db_fingerprint of "/tmp/eigs1006_fp_c"), "#1006: db_fingerprint sees an appended byte"]
+rm of "/tmp/eigs1006_fp_a"
+rm of "/tmp/eigs1006_fp_b"
+rm of "/tmp/eigs1006_fp_c"
+
+before_bytes is db_fingerprint of "/tmp/eigs1006_update.db"
+
+udb is store_open of "/tmp/eigs1006_update.db"
+# 4200 bytes of payload — past STORE_PAGE_DATA_SIZE (4089), so store_put
+# rejects it with a `limit` error.
+oversized is ""
+for i in range of 420:
+    oversized is oversized + "xxxxxxxxxx"
+
+u_kind is "none"
+try:
+    store_update of [udb, "docs", "doc1", {"body": oversized}]
+catch e:
+    u_kind is e.kind
+assert_eq of [u_kind, "limit", "#1006: an oversized update raises, catchably"]
+
+# store_update's RETURN value is only observable when nothing raises, because
+# the raise preempts the assignment — `x is store_update of [...]` leaves `x`
+# at its previous value on every failing path, so "a rejected update never
+# reports 1" is not assertable from EigenScript and an assertion that looks
+# like it is true of HEAD too. The 0 that IS observable is the locate miss,
+# which the refactor rewrote, so pin that instead.
+assert_eq of [store_update of [udb, "docs", "no-such-key", {"body": "x"}], 0, "#1006: updating an absent key reports 0 and raises nothing"]
+assert_eq of [store_count of [udb, "docs"], 3, "#1006: an absent-key update inserts nothing"]
+
+# The record and both neighbours are exactly as they were.
+u_after is store_get of [udb, "docs", "doc1"]
+assert of [u_after != null, "#1006: the record survives a rejected update"]
+assert_eq of [u_after.body, "original", "#1006: its body is unchanged"]
+assert_eq of [u_after.n, 42, "#1006: its other fields are unchanged"]
+assert_eq of [(store_get of [udb, "docs", "a"]).body, "neighbour-before", "#1006: short-key neighbour intact"]
+assert_eq of [(store_get of [udb, "docs", "zzz"]).body, "neighbour-after", "#1006: trailing neighbour intact"]
+assert_eq of [store_count of [udb, "docs"], 3, "#1006: no row was lost"]
+
+# Same for a 1-char key, where the tombstone's skip field overlaps json_len.
+u_kind is "none"
+try:
+    store_update of [udb, "docs", "a", {"body": oversized}]
+catch e:
+    u_kind is e.kind
+assert_eq of [u_kind, "limit", "#1006: oversized update on a 1-char key raises"]
+assert_eq of [(store_get of [udb, "docs", "a"]).body, "neighbour-before", "#1006: 1-char-key record survives"]
+
+# A non-dict record is rejected before anything is removed. The restore path
+# would cover it either way, so the assertion that pins the pre-check is the
+# error TEXT: rejected upfront it names store_update, and no page is written
+# at all; rejected downstream it names store_put and the record has already
+# made a round trip through delete-and-restore.
+u_kind is "none"
+u_msg is ""
+try:
+    store_update of [udb, "docs", "doc1", "not-a-dict"]
+catch e:
+    u_kind is e.kind
+    u_msg is e.message
+assert_eq of [u_kind, "type_mismatch", "#1006: a non-dict record raises a type error"]
+assert of [contains of [u_msg, "store_update:"], "#1006: the error names store_update, so nothing was written"]
+
+# ...but only once a record has been FOUND. An absent key answered a silent 0
+# before #1006 without ever inspecting the record, and still must: hoisting the
+# record check above the locate would raise on an argument shape that used to
+# be quiet, with the strict flag off. Nothing else in the suite pins this — a
+# build with the check hoisted passes every other assertion in this file.
+assert_eq of [store_update of [udb, "docs", "no-such-key", "not-a-dict"], 0, "#1006: an absent key with a non-dict record stays a silent 0"]
+assert_eq of [(store_get of [udb, "docs", "doc1"]).body, "original", "#1006: non-dict update leaves the record"]
+
+store_close of udb
+after_bytes is db_fingerprint of "/tmp/eigs1006_update.db"
+assert_eq of [after_bytes, before_bytes, "#1006: rejected updates leave the file byte-identical"]
+
+# The store is not wedged: a legitimate update still replaces the record.
+udb is store_open of "/tmp/eigs1006_update.db"
+assert_eq of [store_update of [udb, "docs", "doc1", {"body": "replaced"}], 1, "#1006: a valid update still reports 1"]
+assert_eq of [(store_get of [udb, "docs", "doc1"]).body, "replaced", "#1006: a valid update still replaces"]
+assert_eq of [store_count of [udb, "docs"], 3, "#1006: a valid update does not duplicate the row"]
+store_close of udb
+rm of "/tmp/eigs1006_update.db"
+
 # Clean up
 rm of "/tmp/test_eigenstore.db"
 
