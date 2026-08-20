@@ -48,11 +48,18 @@ static Value *sandbox_descriptor(int key_number) {
     append_num(code, 0);
     append_num(code, OP_RETURN);
 
-    Value *constants = make_list(4);
+    Value *constants = make_list(5);
     list_append_owned(constants, make_str("str"));
     append_num(constants, key_number);
     list_append_owned(constants, make_str("sandbox-only-key-"));
     append_num(constants, 1);
+    char unused[64];
+    snprintf(unused, sizeof unused, "sandbox-descriptor-unused-%d", key_number);
+    /* Descriptor construction interns every string constant, even when the
+     * bytecode never reads it. Keep one fresh, unused attacker-controlled
+     * string per run so the assertion covers the full intern table rather
+     * than only the runtime-created dictionary-key prefix. */
+    list_append_owned(constants, make_str(unused));
 
     Value *descriptor = make_list(3);
     append_num(descriptor, 1); /* EIGS_BYTECODE_ABI */
@@ -113,7 +120,7 @@ int main(void) {
     fprintf(stderr,
             "sandbox intern growth: baseline=%zu retained=%zu sandbox_only=%zu\n",
             baseline, retained, sandbox_retained);
-    assert(sandbox_retained <= 8);
+    assert(retained <= 8);
 
     val_decref(escaped);
     eigs_close(state);

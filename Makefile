@@ -70,7 +70,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -174,6 +174,18 @@ build: build/release/eigenscript
 	$(call RELINK,release)
 	@echo "EigenScript $(VERSION) built. Binary: $$(du -sh build/release/eigenscript | cut -f1)"
 
+# Focused lifetime regression for sandbox descriptor interns (#964). Link the
+# public embedding/runtime surface without CLI-only translation units so the
+# C test can inspect the internal thread-local intern accounting directly.
+SANDBOX_INTERN_TEST := build/release/test_sandbox_intern_lifetime
+SANDBOX_INTERN_TEST_OBJ := build/release/test_sandbox_intern_lifetime.o
+$(SANDBOX_INTERN_TEST_OBJ): tests/test_sandbox_intern_lifetime.c Makefile VERSION $(wildcard $(SRC_DIR)/*.h) | build/release
+	$(CC) $(FLAGS_release) -I$(SRC_DIR) -MMD -MP -c $< -o $@
+$(SANDBOX_INTERN_TEST): $(SANDBOX_INTERN_TEST_OBJ) $(filter-out build/release/main.o build/release/repl.o build/release/step.o build/release/tape_read.o build/release/bundle.o,$(OBJ_release))
+	$(CC) $(FLAGS_release) -o $@ $^ $(LIBS_release)
+sandbox-intern-test: $(SANDBOX_INTERN_TEST)
+	@echo "Sandbox intern lifetime test built: $(SANDBOX_INTERN_TEST)"
+
 full: build/full/eigenscript
 	$(call RELINK,full)
 	@echo "EigenScript $(VERSION) (full) built. Binary: $$(du -sh build/full/eigenscript | cut -f1)"
@@ -202,7 +214,7 @@ gfx: build/gfx/eigenscript
 	$(call RELINK,gfx)
 	@echo "EigenScript $(VERSION) (gfx) built. Binary: $$(du -sh build/gfx/eigenscript | cut -f1)"
 
-test: build
+test: build sandbox-intern-test
 	$(AUX_REFRESH)
 	cd tests && bash run_all_tests.sh
 
