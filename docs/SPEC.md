@@ -236,12 +236,19 @@ consequences are contracts you can rely on:
   at `±1e308` instead of becoming `Infinity`. Every *defined* operation returns
   a usable finite number; an *undefined* one — division or modulo by zero —
   raises a `value` error rather than inventing a result (above).
-- **Strict math mode (`EIGS_STRICT=1`) makes out-of-domain ops loud.** By
+- **Strict mode (`EIGS_STRICT=1`) makes invalid arguments loud.** By
   default the substitutions above keep a program running (a kernel or grader
   wants the finite stand-in). Set the environment variable `EIGS_STRICT=1` and
   an out-of-domain operation — `sqrt` of a negative, `log` of `≤0`, `asin`/
   `acos` outside `[-1, 1]` — raises a catchable `value` error instead of
   substituting, for callers that need arithmetic invalidity to fail loudly.
+  The same flag governs **argument-type guards**: ~34 builtins answered a
+  wrong-typed argument with a stand-in, so `cos of "hello"` was `0` and
+  `str_upper of 42` was `""` — a type mistake became a plausible value. Under
+  strict those raise a catchable `type` error naming the builtin. A `0` or
+  `""` that is a genuine *answer* is untouched in both modes: `try_parse` of
+  invalid syntax still returns `0`, and `task_alive` of an unknown id still
+  returns `0`.
   Overflow saturation and the `NaN`→`0` collapse are unchanged by the flag for
   now. (Division and modulo by zero raise in *both* modes — no defined value.)
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`

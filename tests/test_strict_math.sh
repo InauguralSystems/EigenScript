@@ -66,5 +66,28 @@ run "SM09 strict valid sqrt(16)=4"    1 0 "4"                          'print of
 # --- Strict covers the elementwise tensor path (tensor_unary) ---
 run "SM10 strict tensor sqrt raises"  1 1 "out of domain"              'print of (sqrt of [4, -1, 9])'
 
+# --- #971 Phase A: argument TYPE guards, same gate ---------------------------
+# ~34 builtins answered a wrong-typed argument with a soft stand-in, so a type
+# mistake became a plausible value: `cos of "hello"` was 0, `str_upper of 42`
+# was "". Off by default that is unchanged (SM11/SM12 pin it); under strict it
+# raises a catchable `type` error naming the builtin.
+run "SM11 default cos(str) still 0"    unset 0 "0"    'print of (cos of "hello")'
+run "SM12 default str_upper(num) is empty" unset 0 "" 'print of (str_upper of 42)'
+run "SM13 strict cos(str) raises"      1 1 "cos: expected a number"        'print of (cos of "hello")'
+run "SM14 strict str_upper(num) raises" 1 1 "str_upper: expected a string" 'print of (str_upper of 42)'
+run "SM15 strict arity guard raises"   1 1 "substr: expected"              'print of (substr of 42)'
+run "SM16 strict type raise is catchable" 1 0 "caught type" \
+'try:
+    x is cos of "hello"
+catch e:
+    print of f"caught {e.kind}"'
+run "SM17 strict leaves valid args alone" 1 0 "1"                          'print of (cos of 0)'
+
+# The exclusions matter as much as the conversions: these 0s are DOCUMENTED
+# RETURN VALUES, not fail-soft guards, so strict must NOT make them raise.
+# A sed over `return make_num(0)` would have broken both.
+run "SM18 strict: try_parse(bad) still answers 0" 1 0 "0"  'print of (try_parse of "!!!")'
+run "SM19 strict: unknown task id still not alive" 1 0 "0" 'print of (task_alive of 99999)'
+
 echo "STRICT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

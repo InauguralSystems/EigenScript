@@ -543,13 +543,17 @@ struct EigsState {
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
-    /* #971: strict math mode. Off by default — arithmetic is finite by
-     * construction (NaN→0, domain clamps substitute, overflow saturates).
-     * On (EIGS_STRICT=1, read once at creation) makes an out-of-domain
-     * operation RAISE an EK_VALUE error instead of substituting a stand-in,
-     * for callers that need arithmetic invalidity to be loud (e.g. grading
-     * generated code). Per-state config, like the observer thresholds. */
-    int             strict_math;
+    /* #971: strict mode. Off by default — a wrong-typed or out-of-domain
+     * argument gets a finite stand-in (NaN→0, domain clamps substitute,
+     * overflow saturates, `cos of "hello"` → 0). On (EIGS_STRICT=1, read
+     * once at creation) the operation RAISES instead of substituting, for
+     * callers that need invalidity to be loud (e.g. grading generated code).
+     * Per-state config, like the observer thresholds.
+     *
+     * Named `strict`, not `strict_math`: since Phase A of #971 it governs
+     * argument-TYPE guards as well as arithmetic domains, and the env var
+     * (EIGS_STRICT) was always the general name. */
+    int             strict;
     /* Global lexical scope for the script + REPL line bodies + sourced
      * modules (load_file). Owned by main/eigenlsp; set after env_new. */
     Env            *global_env;
@@ -877,7 +881,34 @@ extern __thread EigsThread *eigs_current;
 #define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
 #define g_unobserved_depth  (eigs_current->unobserved_depth)
 #define g_math_flags        (eigs_current->math_flags)
-#define g_strict_math       (eigs_current->state->strict_math)
+#define g_strict            (eigs_current->state->strict)
+
+/* #971 Phase A: a builtin's argument-TYPE guard.
+ *
+ * ~50 builtins answered a wrong-typed argument with a soft stand-in —
+ * `cos of "hello"` was 0, `str_upper of 42` was "" — so a type mistake became
+ * a plausible value and flowed on indistinguishable from a real one. That is
+ * the fail-soft default the #975 reform exists to remove.
+ *
+ * Default behaviour is BYTE-IDENTICAL to before: the stand-in is still
+ * returned. Under EIGS_STRICT=1 the guard raises a catchable `type` error
+ * naming the builtin and what it wanted, so a grader running strict sees the
+ * mistake instead of scoring a laundered value.
+ *
+ * `soft` is evaluated only on the non-strict path, so it may allocate.
+ * Deliberately a macro rather than a helper: each call site keeps its own
+ * early `return`, which is what makes the conversion reviewable one guard at
+ * a time instead of a control-flow rewrite. */
+#define ARG_GUARD(cond, who, want, soft)                                      \
+    do {                                                                      \
+        if (cond) {                                                           \
+            if (g_strict) {                                                   \
+                rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
+                return make_null();                                           \
+            }                                                                 \
+            return (soft);                                                    \
+        }                                                                     \
+    } while (0)
 #define g_builtin_call_env  (eigs_current->builtin_call_env)
 #define g_vm                  (*eigs_current->vm)
 #define g_loop_stall_count    (eigs_current->loop_stall_count)

@@ -223,10 +223,10 @@ Value* builtin_screen_render(Value *arg) {
 /* join of [list, separator] — concatenate list elements into a string.
  * C-backed for performance — single allocation instead of O(n²) concat. */
 Value* builtin_join(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "join", "[list, separator]", make_str(""));
     Value *list = arg->data.list.items[0];
     Value *sep_val = arg->data.list.items[1];
-    if (!list || list->type != VAL_LIST) return make_str("");
+    ARG_GUARD(!list || list->type != VAL_LIST, "join", "a list as its first argument", make_str(""));
     const char *sep = (sep_val && sep_val->type == VAL_STR) ? sep_val->data.str : "";
     size_t sep_len = strlen(sep);
 
@@ -358,7 +358,7 @@ Value* builtin_text_builder_extend(Value *arg) {
 }
 
 Value* builtin_text_builder_part_count(Value *arg) {
-    if (!arg || arg->type != VAL_TEXT_BUILDER) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_TEXT_BUILDER, "text_builder_part_count", "a text builder", make_num(0));
     return make_num(arg->data.text_builder.parts);
 }
 
@@ -371,7 +371,7 @@ Value* builtin_text_builder_clear(Value *arg) {
 }
 
 Value* builtin_text_builder_to_string(Value *arg) {
-    if (!arg || arg->type != VAL_TEXT_BUILDER) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_TEXT_BUILDER, "text_builder_to_string", "a text builder", make_str(""));
     /* The final copy duplicates the (charge-bounded) buffer — charge it too. */
     if (!sandbox_charge(arg->data.text_builder.len + 1)) return make_null();
     /* #965: charged just above — take ownership of the duplicate. */
@@ -725,7 +725,7 @@ Value* builtin_values(Value *arg) {
 }
 
 Value* builtin_has_key(Value *arg) {
-    if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    ARG_GUARD(arg->type != VAL_LIST || arg->data.list.count < 2, "has_key", "[dict, key]", make_num(0));
     Value *d = arg->data.list.items[0];
     Value *key = arg->data.list.items[1];
     if (d->type != VAL_DICT || key->type != VAL_STR) return make_num(0);
@@ -1478,7 +1478,7 @@ Value* builtin_json_raw(Value *arg) {
  * ================================================================ */
 
 Value* builtin_str_lower(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_STR, "str_lower", "a string", make_str(""));
     char *s = xstrdup(arg->data.str);
     for (int i = 0; s[i]; i++) s[i] = tolower((unsigned char)s[i]);
     Value *r = make_str(s);
@@ -1490,14 +1490,14 @@ Value* builtin_str_lower(Value *arg) {
  * idiom folded them to "" — and an empty needle/prefix/suffix matches
  * everything, so `contains of [[1,2,3], 2]` reported a spurious hit. */
 Value* builtin_contains(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "contains", "[haystack, needle]", make_num(0));
     Value *h = arg->data.list.items[0], *n = arg->data.list.items[1];
     if (!h || h->type != VAL_STR || !n || n->type != VAL_STR) return make_num(0);
     return make_num(strstr(h->data.str, n->data.str) != NULL ? 1 : 0);
 }
 
 Value* builtin_starts_with(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "starts_with", "[string, prefix]", make_num(0));
     Value *s = arg->data.list.items[0], *p = arg->data.list.items[1];
     if (!s || s->type != VAL_STR || !p || p->type != VAL_STR) return make_num(0);
     return make_num(strncmp(s->data.str, p->data.str, strlen(p->data.str)) == 0 ? 1 : 0);
@@ -1816,7 +1816,7 @@ Value* builtin_scan_int_tokens(Value *arg) {
 }
 
 Value* builtin_trim(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_STR, "trim", "a string", make_str(""));
     const char *s = arg->data.str;
     while (*s && (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r')) s++;
     int len = strlen(s);
@@ -1834,7 +1834,7 @@ Value* builtin_trim(Value *arg) {
 #define STR_REPLACE_MAX ((size_t)256 * 1024 * 1024)
 
 Value* builtin_str_replace(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3, "str_replace", "[string, old, new]", make_str(""));
     const char *str = "", *old_s = "", *new_s = "";
     if (arg->data.list.items[0]->type == VAL_STR) str = arg->data.list.items[0]->data.str;
     if (arg->data.list.items[1]->type == VAL_STR) old_s = arg->data.list.items[1]->data.str;
@@ -1885,7 +1885,7 @@ Value* builtin_str_replace(Value *arg) {
 
 /* ==== BUILTIN: str_upper ==== */
 Value* builtin_str_upper(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_STR, "str_upper", "a string", make_str(""));
     char *s = xstrdup(arg->data.str);
     for (int i = 0; s[i]; i++) s[i] = toupper((unsigned char)s[i]);
     Value *r = make_str(s);
@@ -1897,7 +1897,7 @@ Value* builtin_str_upper(Value *arg) {
 /* char_at of [string, index] → single character as string, or "" if out of range.
  * Negative indices count from the end, matching the [] operator (#312). */
 Value* builtin_char_at(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "char_at", "[string, index]", make_str(""));
     Value *str_val = arg->data.list.items[0];
     Value *idx_val = arg->data.list.items[1];
     if (!str_val || str_val->type != VAL_STR || !idx_val || idx_val->type != VAL_NUM)
@@ -1912,7 +1912,7 @@ Value* builtin_char_at(Value *arg) {
 
 /* ==== BUILTIN: ends_with ==== */
 Value* builtin_ends_with(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "ends_with", "[string, suffix]", make_num(0));
     Value *sv = arg->data.list.items[0], *xv = arg->data.list.items[1];
     if (!sv || sv->type != VAL_STR || !xv || xv->type != VAL_STR) return make_num(0);
     const char *str = sv->data.str, *suffix = xv->data.str;
@@ -1924,7 +1924,7 @@ Value* builtin_ends_with(Value *arg) {
 /* ==== BUILTIN: substr ==== */
 /* substr of [string, start, length] → substring */
 Value* builtin_substr(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3, "substr", "[string, start, length]", make_str(""));
     Value *str_val = arg->data.list.items[0];
     Value *start_val = arg->data.list.items[1];
     Value *len_val = arg->data.list.items[2];
@@ -1971,27 +1971,27 @@ Value* builtin_index_of(Value *arg) {
  * ================================================================ */
 
 Value* builtin_sin(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "sin", "a number", make_num(0));
     return make_num(sin(arg->data.num));
 }
 
 Value* builtin_cos(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "cos", "a number", make_num(0));
     return make_num(cos(arg->data.num));
 }
 
 Value* builtin_tan(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "tan", "a number", make_num(0));
     return make_num(tan(arg->data.num));
 }
 
 Value* builtin_asin(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "asin", "a number", make_num(0));
     double x = arg->data.num;
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
-        if (g_strict_math) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_num(0); }
+        if (g_strict) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_num(0); }
         g_math_flags |= EIGS_MATH_INVALID;
         x = (x < -1.0) ? -1.0 : 1.0;
     }
@@ -1999,12 +1999,12 @@ Value* builtin_asin(Value *arg) {
 }
 
 Value* builtin_acos(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "acos", "a number", make_num(0));
     double x = arg->data.num;
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
-        if (g_strict_math) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_num(0); }
+        if (g_strict) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_num(0); }
         g_math_flags |= EIGS_MATH_INVALID;
         x = (x < -1.0) ? -1.0 : 1.0;
     }
@@ -2012,12 +2012,12 @@ Value* builtin_acos(Value *arg) {
 }
 
 Value* builtin_atan(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "atan", "a number", make_num(0));
     return make_num(atan(arg->data.num));
 }
 
 Value* builtin_atan2(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "atan2", "[y, x]", make_num(0));
     Value *y = arg->data.list.items[0];
     Value *x = arg->data.list.items[1];
     if (!y || y->type != VAL_NUM || !x || x->type != VAL_NUM) return make_num(0);
@@ -2025,22 +2025,22 @@ Value* builtin_atan2(Value *arg) {
 }
 
 Value* builtin_floor(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "floor", "a number", make_num(0));
     return make_num(floor(arg->data.num));
 }
 
 Value* builtin_ceil(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "ceil", "a number", make_num(0));
     return make_num(ceil(arg->data.num));
 }
 
 Value* builtin_round(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "round", "a number", make_num(0));
     return make_num(round(arg->data.num));
 }
 
 Value* builtin_abs(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "abs", "a number", make_num(0));
     return make_num(fabs(arg->data.num));
 }
 
@@ -2205,7 +2205,7 @@ Value* builtin_path_join(Value *arg) {
 
 /* path_dir of "a/b/c.txt" → "a/b" */
 Value* builtin_path_dir(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_STR, "path_dir", "a string", make_str(""));
     const char *s = arg->data.str;
     const char *last = strrchr(s, '/');
     if (!last) return make_str(".");
@@ -2221,7 +2221,7 @@ Value* builtin_path_dir(Value *arg) {
 
 /* path_base of "a/b/c.txt" → "c.txt" */
 Value* builtin_path_base(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_STR, "path_base", "a string", make_str(""));
     const char *s = arg->data.str;
     const char *last = strrchr(s, '/');
     return make_str(last ? last + 1 : s);
@@ -2229,7 +2229,7 @@ Value* builtin_path_base(Value *arg) {
 
 /* path_ext of "a/b/c.txt" → ".txt" */
 Value* builtin_path_ext(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_str("");
+    ARG_GUARD(!arg || arg->type != VAL_STR, "path_ext", "a string", make_str(""));
     const char *base = strrchr(arg->data.str, '/');
     const char *s = base ? base + 1 : arg->data.str;
     const char *dot = strrchr(s, '.');
@@ -2587,10 +2587,10 @@ Value* builtin_state_at(Value *arg) {
  * via timing. (Length is not treated as secret — it is folded in but the
  * loop runs over the longer operand.) */
 Value* builtin_secure_equals(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "secure_equals", "[string, string]", make_num(0));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
-    if (!a || !b || a->type != VAL_STR || b->type != VAL_STR) return make_num(0);
+    ARG_GUARD(!a || !b || a->type != VAL_STR || b->type != VAL_STR, "secure_equals", "two strings", make_num(0));
     const char *sa = a->data.str ? a->data.str : "";
     const char *sb = b->data.str ? b->data.str : "";
     size_t la = strlen(sa), lb = strlen(sb);
@@ -4575,7 +4575,7 @@ Value* builtin_task_kill(Value *arg) {
 /* task_alive of id → 1 while the task is READY/RUNNING/SUSPENDED, else 0
  * (DONE, DEAD, or an unknown id). */
 Value* builtin_task_alive(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "task_alive", "a task id (number)", make_num(0));
     Task *t = (Task*)handle_lookup((int)arg->data.num, HANDLE_TASK);
     if (!t) return make_num(0);
     int alive = (t->state == TASK_READY || t->state == TASK_RUNNING ||
@@ -5153,7 +5153,7 @@ Value* builtin_buf_set(Value *arg) {
 
 /* buf_len of buf — return buffer length */
 Value* builtin_buf_len(Value *arg) {
-    if (!arg || arg->type != VAL_BUFFER) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_BUFFER, "buf_len", "a buffer", make_num(0));
     return make_num(arg->data.buffer.count);
 }
 
@@ -6047,10 +6047,10 @@ Value* builtin_list_index_of(Value *arg) {
  * value (same values_equal scan as list_index_of), else 0. Bad args give 0,
  * mirroring contains. */
 Value* builtin_list_contains(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(0);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "list_contains", "[list, value]", make_num(0));
     Value *list = arg->data.list.items[0];
     Value *needle = arg->data.list.items[1];
-    if (!list || list->type != VAL_LIST) return make_num(0);
+    ARG_GUARD(!list || list->type != VAL_LIST, "list_contains", "a list as its first argument", make_num(0));
     for (int i = 0; i < list->data.list.count; i++) {
         if (values_equal(list->data.list.items[i], needle))
             return make_num(1);
