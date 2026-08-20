@@ -751,7 +751,11 @@ void *realloc(void *ptr, size_t size) {
         armed = 0;
         if (!failed && size == 512) {
             failed = 1;
-            write(STDERR_FILENO, "W023_ALLOC_HOOK_FAILED\n", 24);
+            /* glibc marks write() warn_unused_result, and this helper is
+               compiled -O2 -Wall -Wextra -Werror, so ignoring it is a hard
+               error. Capture and discard explicitly. */
+            ssize_t wr = write(STDERR_FILENO, "W023_ALLOC_HOOK_FAILED\n", 23);
+            (void)wr;
             return NULL;
         }
     }
