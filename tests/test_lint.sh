@@ -684,8 +684,8 @@ check_contains "W023 fires for nested live mutation" "$OUTPUT" "warning\[W023\]:
 rm -f "$TMPFILE"
 
 # Allocation failure is injected at the real branch/count growth boundary.
-# The hook arms after W023's 2,048-byte branch vector succeeds and fails the
-# immediately following 1,024-byte count vector.  RED must be the linter
+# The hook arms after W023's 1,024-byte branch vector succeeds and fails the
+# immediately following 512-byte count vector.  RED must be the linter
 # survival/suppression assertion; a current abort is the defect, never the
 # expected pass condition.  Linux release runners only: LD_PRELOAD is not a
 # portable macOS mechanism, and sanitizer allocators own their interposition.
@@ -717,14 +717,14 @@ void *realloc(void *ptr, size_t size) {
     void *result;
     resolve_realloc();
     if (!real_realloc_fn) _exit(125);
-    if (!resolving && size == 2048) {
+    if (!resolving && size == 1024) {
         result = real_realloc_fn(ptr, size);
         if (result) armed = 1;
         return result;
     }
     if (!resolving && armed) {
         armed = 0;
-        if (!failed && ptr == NULL && size == 1024) {
+        if (!failed && size == 512) {
             failed = 1;
             write(STDERR_FILENO, "W023_ALLOC_HOOK_FAILED\n", 24);
             return NULL;
@@ -742,7 +742,7 @@ define f(flag) as:
         local t is 1
 EIGS
         i=1
-        while [ "$i" -lt 128 ]; do
+        while [ "$i" -lt 64 ]; do
             printf '    elif flag == %s:\n        t is 2\n' "$i" >> "$TMPFILE"
             i=$((i + 1))
         done
