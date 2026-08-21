@@ -82,6 +82,37 @@ All notable changes to EigenScript are documented here.
   3985/3985; two planted faults (always-raise, never-raise) each caught by
   their own assertion.
 
+### Added
+
+- **`make embed-concurrent` — the multi-state embedding promise is now tested,
+  not just asserted (#885).** `docs/EMBEDDING.md` says a process may hold
+  multiple `EigsState` instances *concurrently* and that each is independent.
+  Nothing tested the concurrent half: `pthread_create` appeared nowhere in
+  `src/embed_smoke.c` or any test script, and the one multi-state case that
+  existed is explicitly sequential — it covers SWITCHING, not INDEPENDENCE.
+  Three assertions, two states on two OS threads, 200 interleaved rounds each:
+  per-state **observer thresholds**, per-state **global bindings** (the same
+  name holding a different value in each state), and **error-flag isolation**
+  (an uncaught error in one state leaves the other's flag clear).
+  **It carries its own control row**, and that row is the reason the other
+  three mean anything: a deliberately shared file-scope global that MUST show
+  cross-talk under the same harness. The first version's control reported
+  `A=0 B=0` — the compiler kept the value in a register and the threads never
+  interleaved — which would have made three green rows uninformative. With
+  `volatile` and a yield between write and read it reports ~167/200, and a
+  mutation replacing a per-state read with that shared static is caught.
+  The promise holds today by construction (nearly every `g_*` name is a macro
+  onto `eigs_current->…`), which is exactly why this needed a gate: a future
+  counter added as a file-scope `static` looks correct in every
+  single-threaded test in the repo.
+  Two of the three assertions had to be rewritten after a single-threaded
+  baseline: `observer_set`/`observer_get` do not exist (it is
+  `set_observer_thresholds of [dh_zero, dh_small, h_low]`), and `sandbox_run`
+  takes an ABI-stamped bytecode descriptor rather than a source string and a
+  budget dict — so the issue's suggested per-thread-budget row would have
+  tested descriptor assembly as much as isolation, and per-state globals
+  replace it. Baseline single-threaded before blaming concurrency.
+
 ### Fixed
 
 - **`-Wmisleading-indentation` is an ERROR now, and the four `w023_walk`

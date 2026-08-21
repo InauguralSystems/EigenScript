@@ -70,7 +70,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -314,6 +314,17 @@ lib:
 # Phase 10 embedding API smoke test — the host harness linked against the
 # AMALGAMATION (not the raw source list), so the two-file artifact can never
 # silently rot: if amalgamate.sh drifts, this fails in CI.
+# #885: the CONCURRENT half of the multi-state embedding promise. Sibling of
+# embed-smoke, which covers multi-state SWITCHING on one thread; nothing
+# covered two states running at the same time, and `pthread_create` appeared
+# nowhere in src/embed_smoke.c or any tests/*.sh. Carries its own planted
+# fault — a shared file-scope global — so three green rows cannot mean "the
+# harness never raced".
+embed-concurrent: amalgamation
+	$(CC) $(CFLAGS) -Ibuild -o /tmp/embed_concurrent $(SRC_DIR)/embed_concurrent.c build/eigenscript_all.c \
+		-lm -lpthread
+	/tmp/embed_concurrent
+
 embed-smoke: amalgamation
 	$(CC) $(CFLAGS) -Ibuild -o /tmp/embed_smoke $(SRC_DIR)/embed_smoke.c build/eigenscript_all.c \
 		-lm -lpthread
