@@ -1397,21 +1397,28 @@ static void w023_walk(ASTNode *n, int mode, const char *name, int *flags,
     case AST_IF:
         if (mode != W023_MODULE) W(n->data.cond.cond);
         for (int i = 0; i < n->data.cond.if_count; i++) W(n->data.cond.if_body[i]);
-        for (int i = 0; i < n->data.cond.else_count; i++) W(n->data.cond.else_body[i]); break;
+        for (int i = 0; i < n->data.cond.else_count; i++) W(n->data.cond.else_body[i]);
+        break;
     case AST_LOOP:
-        if (mode != W023_MODULE) W(n->data.loop.cond); for (int i = 0; i < n->data.loop.body_count; i++) W(n->data.loop.body[i]); break;
+        if (mode != W023_MODULE) W(n->data.loop.cond);
+        for (int i = 0; i < n->data.loop.body_count; i++) W(n->data.loop.body[i]);
+        break;
     case AST_BLOCK: case AST_UNOBSERVED:
-        for (int i = 0; i < n->data.block.count; i++) W(n->data.block.stmts[i]); break;
+        for (int i = 0; i < n->data.block.count; i++) W(n->data.block.stmts[i]);
+        break;
     case AST_FOR:
         if (mode == W023_SPECIAL && name && strcmp(n->data.forloop.var, name) == 0) *flags |= W023_ENV_BOUND;
         N(n->data.forloop.var);
-        if (mode != W023_MODULE) W(n->data.forloop.iter); for (int i = 0; i < n->data.forloop.body_count; i++) W(n->data.forloop.body[i]); break;
+        if (mode != W023_MODULE) W(n->data.forloop.iter);
+        for (int i = 0; i < n->data.forloop.body_count; i++) W(n->data.forloop.body[i]);
+        break;
     case AST_TRY:
         for (int i = 0; i < n->data.trycatch.try_count; i++) W(n->data.trycatch.try_body[i]);
         if (mode == W023_MODULE) w023_name_add(n->data.trycatch.err_name, module);
         else if (mode == W023_SPECIAL && name && strcmp(n->data.trycatch.err_name, name) == 0) *flags |= W023_ENV_BOUND;
         else N(n->data.trycatch.err_name);
-        for (int i = 0; i < n->data.trycatch.catch_count; i++) W(n->data.trycatch.catch_body[i]); break;
+        for (int i = 0; i < n->data.trycatch.catch_count; i++) W(n->data.trycatch.catch_body[i]);
+        break;
     case AST_MATCH:
         if (mode != W023_MODULE) W(n->data.match.expr);
         for (int i = 0; i < n->data.match.case_count; i++) {
@@ -1477,7 +1484,8 @@ static int w023_body_has_name(ASTNode **body, int count, const char *name) {
 
 static int w023_special_flags(ASTNode **body, int count, const char *name) {
     int flags = 0;
-    for (int i = 0; i < count; i++) w023_walk(body[i], W023_SPECIAL, name, &flags, NULL, NULL, 0, NULL); return flags;
+    for (int i = 0; i < count; i++) w023_walk(body[i], W023_SPECIAL, name, &flags, NULL, NULL, 0, NULL);
+    return flags;
 }
 /* AST_IMPORT is a current-scope binder, not only a name occurrence.  The
  * compiler emits OP_SET_NAME_LOCAL for it, and the VM stores that binding in
@@ -1623,7 +1631,8 @@ static void w023_check_if(ASTNode *if_node, ASTNode *fn, W023Names *bound,
             } cur = NULL; }
     }
     for (size_t i = 0; i < nb; i++) for (int j = 0; j < counts[i]; j++) { ASTNode *bare = branches[i][j];
-        if (!bare || bare->type != AST_ASSIGN || bare->data.assign.local_only || !bare->data.assign.name) continue; int sibling = 0;
+        if (!bare || bare->type != AST_ASSIGN || bare->data.assign.local_only || !bare->data.assign.name) continue;
+        int sibling = 0;
         for (size_t k = 0; k < nb && !sibling; k++) if (k != i) for (int l = 0; l < counts[k]; l++) { ASTNode *local = branches[k][l]; if (local && local->type == AST_ASSIGN && local->data.assign.local_only && local->data.assign.name && strcmp(local->data.assign.name, bare->data.assign.name) == 0) { sibling = 1; break; } }
         int prefix = sibling ? w023_prefix_binds(branches[i], j, bare->data.assign.name) : 0;
         if (prefix < 0) { w023_proof_failure(module, &branches, &counts); return; }
@@ -1683,7 +1692,11 @@ static void w023_analyse_function(ASTNode *fn, ASTNode **ancestors, int depth, W
     W023Names bound = {0}; w023_scan_sequence(fn->data.func.body, fn->data.func.body_count, &bound, fn, ancestors, depth, module, ctx); w023_names_free(&bound);
 }
 static void check_sibling_outer_mutation(ASTNode *ast, LintContext *ctx) {
-    if (!ast || ast->type != AST_PROGRAM) return; W023Names module = {0}; w023_walk(ast, W023_MODULE, NULL, NULL, &module, NULL, 0, NULL); if (!module.count || module.unknown) { w023_names_free(&module); return; }
+    if (!ast || ast->type != AST_PROGRAM) return;
+    W023Names module = {0};
+    w023_walk(ast, W023_MODULE, NULL, NULL, &module, NULL, 0, NULL);
+    if (!module.count || module.unknown) { w023_names_free(&module); return;
+    }
     ASTNode *ancestors[W023_MAX_FUNCTION_DEPTH] = {0}; w023_walk(ast, W023_FUNCTIONS, NULL, NULL, &module, ancestors, 0, ctx); w023_names_free(&module);
 }
 

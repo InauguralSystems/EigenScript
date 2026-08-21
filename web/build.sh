@@ -38,7 +38,7 @@ VERSION=$(cat VERSION)
 EXPORTED_FUNCTIONS='["_eigs_run_source","_eigs_version","_malloc","_free"]'
 EXPORTED_RUNTIME='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8"]'
 
-emcc -Werror=switch -Werror=comment -O2 \
+emcc -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 \
     -DEIGENSCRIPT_EXT_HTTP=0 \
     -DEIGENSCRIPT_EXT_MODEL=0 \
     -DEIGENSCRIPT_EXT_DB=0 \

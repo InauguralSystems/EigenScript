@@ -86,7 +86,12 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-REQUIRED_FLAGS='-Werror=switch -Werror=comment'
+# #1013 adds -Werror=misleading-indentation. `-Wall` has ALWAYS emitted it,
+# so the four w023_walk warnings the issue reports were in every build of
+# this repo — release, asan, every variant — scrolling past as non-fatal
+# noise. Escalating is what makes the next one impossible to scroll past;
+# requiring it here is what stops one recipe quietly dropping the flag.
+REQUIRED_FLAGS='-Werror=switch -Werror=comment -Werror=misleading-indentation'
 # Global sanity floor, secondary to the per-target zero-line assertion:
 # VARIANTS (release full http zlib net gfx asan asan-http tsan valgrind
 # poison) emit >= 19 `-c` invocations each under -B.
@@ -1105,7 +1110,13 @@ if [ "${1:-}" = "--selftest" ]; then
     # keep its mode intact for the nested script audit.
     chmod +x "$st_fault_tree/build.sh.planted"
     mv "$st_fault_tree/build.sh.planted" "$st_fault_tree/build.sh"
-    if ! grep -qF '"${CC}" -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -O2' \
+    # The verification string must track REQUIRED_FLAGS. The mutation drops
+    # -Werror=comment from the prefix and leaves whatever follows it, so adding
+    # a third required flag (#1013) put -Werror=misleading-indentation between
+    # -Werror=switch and -O2 and this grep stopped matching — reported as "the
+    # mutation was not planted" when the planting was fine and the ASSERTION
+    # about it had gone stale.
+    if ! grep -qF '"${CC}" -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=misleading-indentation -O2' \
         "$st_fault_tree/build.sh"; then
         echo "SELFTEST FAILED: quoted/braced compiler mutation was not planted"
         st_fail=1
@@ -1196,7 +1207,7 @@ EOF
 gcc -Wall -Wextra -O2 -MMD -MP -c src/vm.c -o build/asan/vm.o
 EOF
     expect_clean "variant -c line, flag present" <<'EOF'
-gcc -Wall -Wextra -Werror=switch -Werror=comment -O2 -MMD -MP -c src/vm.c -o build/asan/vm.o
+gcc -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -MMD -MP -c src/vm.c -o build/asan/vm.o
 EOF
 
     # Mechanism 2: hand-written single-command compile+link (jit-smoke shape).
@@ -1228,7 +1239,7 @@ EOF
 clang -g -O1 -fsanitize=fuzzer,address,undefined -o fuzz/fuzz_eigenscript fuzz/fuzz_eigenscript.c src/vm.c -lm
 EOF
     expect_clean "clang compile+link, flag present" <<'EOF'
-clang -g -O1 -fsanitize=fuzzer,address,undefined -Werror=switch -Werror=comment -o fuzz/fuzz_eigenscript fuzz/fuzz_eigenscript.c src/vm.c -lm
+clang -g -O1 -fsanitize=fuzzer,address,undefined -Werror=switch -Werror=comment -Werror=misleading-indentation -o fuzz/fuzz_eigenscript fuzz/fuzz_eigenscript.c src/vm.c -lm
 EOF
 
     # ---- #925: the RECOGNIZER's spellings, one case each ----------------
@@ -1336,7 +1347,7 @@ CLEAN
     # the violation names the unguarded invocation's source.
     EXAMINED=0; VIOLATIONS=0; TARGET_EXAMINED=0
     join_continuations > "$st_joined" <<'EOF'
-    gcc -Werror=switch -Werror=comment -c src/vm.c -o build/vm.o; \
+    gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -c src/vm.c -o build/vm.o; \
     gcc -Werror=switch -c src/jit.c -o build/jit.o
 EOF
     audit_stream "selftest:two-invocations-one-block" > "$st_out" < "$st_joined"
@@ -1353,7 +1364,7 @@ EOF
     # target B, not merely as an unarmed compiler line in the merged stream.
     EXAMINED=0; VIOLATIONS=0; TARGET_EXAMINED=0
     join_continuations > "$st_joined" <<'EOF'
-gcc -Werror=switch -Werror=comment -c src/vm.c -o build/a.o
+gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -c src/vm.c -o build/a.o
 echo __WERROR_TARGET_END__selftest-target-a
 gcc -c src/jit.c -o build/b.o
 echo __WERROR_TARGET_END__selftest-target-b
@@ -1409,7 +1420,7 @@ EOF
 gcc -O2 -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE -Werror=implicit-function-declaration -c "src/$f.c" -o "$BUILD/$f.o"
 EOF
     expect_clean "script compile line, flag present" <<'EOF'
-gcc -O2 -ffreestanding -Werror=implicit-function-declaration -Werror=switch -Werror=comment -c "src/$f.c" -o "$BUILD/$f.o"
+gcc -O2 -ffreestanding -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -c "src/$f.c" -o "$BUILD/$f.o"
 EOF
 
     # A comment quoting a bare compile must not be examined at all.
@@ -1431,7 +1442,7 @@ EOF
 gcc -Wall -Wextra -Werror=switch-enum -O2 -c src/vm.c -o build/vm.o
 EOF
     expect_clean "real flag alongside switch-enum" <<'EOF'
-gcc -Wall -Wextra -Werror=switch-enum -Werror=switch -Werror=comment -O2 -c src/vm.c -o build/vm.o
+gcc -Wall -Wextra -Werror=switch-enum -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -c src/vm.c -o build/vm.o
 EOF
 
     # The two required warning classes are independent: a line carrying
@@ -1448,25 +1459,25 @@ EOF
 $CC -Wall -Wextra -Werror=switch -O2 -o eigenscript $SOURCES
 EOF
     expect_clean "shell source-list variable, flags present" <<'EOF'
-$CC -Wall -Wextra -Werror=switch -Werror=comment -O2 -o eigenscript $SOURCES
+$CC -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -o eigenscript $SOURCES
 EOF
     expect_caught "quoted compiler variable, flag dropped" '"$CC"' <<'EOF'
 "$CC" -Wall -Wextra -Werror=switch -O2 -c src/vm.c -o build/vm.o
 EOF
     expect_clean "quoted compiler variable, flags present" <<'EOF'
-"$CC" -Wall -Wextra -Werror=switch -Werror=comment -O2 -c src/vm.c -o build/vm.o
+"$CC" -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -c src/vm.c -o build/vm.o
 EOF
     expect_caught "braced compiler variable, flag dropped" '"${CC}"' <<'EOF'
 "${CC}" -Wall -Wextra -Werror=switch -O2 -c src/vm.c -o build/vm.o
 EOF
     expect_clean "braced compiler variable, flags present" <<'EOF'
-"${CC}" -Wall -Wextra -Werror=switch -Werror=comment -O2 -c src/vm.c -o build/vm.o
+"${CC}" -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -c src/vm.c -o build/vm.o
 EOF
     expect_caught "emcc source-list array, flag dropped" "SOURCES" <<'EOF'
 emcc -O2 "${SOURCES[@]}" -o web/dist/eigs.js
 EOF
     expect_clean "emcc source-list array, flag present" <<'EOF'
-emcc -Werror=switch -Werror=comment -O2 "${SOURCES[@]}" -o web/dist/eigs.js
+emcc -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 "${SOURCES[@]}" -o web/dist/eigs.js
 EOF
 
     # Non-compile lines must be IGNORED: a pure link (coverage link shape,

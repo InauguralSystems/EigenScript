@@ -28,7 +28,7 @@ ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
 
 # Probe ASan availability
-if ! echo 'int main(void){return 0;}' | gcc -Werror=switch -Werror=comment -fsanitize=address -x c - -o /tmp/eigs_asan_probe 2>/dev/null; then
+if ! echo 'int main(void){return 0;}' | gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -fsanitize=address -x c - -o /tmp/eigs_asan_probe 2>/dev/null; then
     echo "  SKIP: AddressSanitizer not available in this toolchain"
     echo "Leak Guard: 0 passed, 0 failed (skipped)"
     rm -f /tmp/eigs_asan_probe
@@ -53,7 +53,7 @@ if [ -z "$SRCS" ]; then
     exit 0
 fi
 
-if ! gcc -Werror=switch -Werror=comment -O1 -g -fsanitize=address -fno-omit-frame-pointer \
+if ! gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -O1 -g -fsanitize=address -fno-omit-frame-pointer \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
         '-DEIGENSCRIPT_VERSION="leak_guard"' \
         $SRCS -o $ASAN_BIN -lm -lpthread 2>$ASAN_LOG; then
