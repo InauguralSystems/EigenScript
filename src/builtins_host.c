@@ -1044,33 +1044,42 @@ Value* builtin_load_file(Value *arg) {
      * dir). Both were executed and both produced a silently wrong answer —
      * `report of x` read `equilibrium` under the gate and `moving` without it.
      *
-     * The guard is on the OUTCOME, not on the cause. `compile_ast` ORs this
-     * module's verdict into the bit, so a 0 -> 1 transition HERE means exactly
-     * "the gate was closed, and the module that just compiled can read observer
-     * state after all" — i.e. the assignments that already ran were never
-     * recorded and their history is unrecoverable. An earlier draft tried to
-     * enumerate the causes instead and shipped a one-element denylist (`chdir`);
-     * that is the wrong population key (mechanical-gates §60), because
-     * `write_text`, `rename`, `mkdir`, `remove_file` and any subprocess reach
-     * the same state. This check needs no such list and cannot be outrun by a
-     * new one.
+     * ASK THE ACTUAL QUESTION. A first draft compared the observer bit before
+     * and after the module's compile and raised on a 0 -> 1 transition. Two
+     * blind-critic repros killed it:
      *
-     * Raising is the only sound outcome: the bit is monotonic and the missing
-     * history cannot be reconstructed, so late is not recoverable — loud is. */
+     *   - ONE-SHOT. The bit is monotonic, so that first transition leaves it at
+     *     1 and every later load saw "already open" and skipped the check. The
+     *     error is catchable, so a single `try:` around the first load disarmed
+     *     the guard for the rest of the run and restored the exact silent-wrong
+     *     answer the guard was written to stop.
+     *   - OVER-BROAD. The bit flips for any of the eager pass's SIX conservative
+     *     bail-outs, not just for staleness. One of them (`L.count > 0 &&
+     *     g_vm_multithreaded`) is reachable at run time but not at the parent's
+     *     compile time, so `spawn` + a module that itself loads a module became
+     *     a hard error with every clause of the message false. That shape is
+     *     shipped: lib/io.eigs does `load_file of "lib/string.eigs"`.
+     *
+     * So the predicate is the module's OWN verdict — does this chunk read
+     * observer state? — and the precondition is "this program has bindings with
+     * no recorded history", which is sticky rather than derived from a bit that
+     * the detection itself changes. */
     int obs_before_module = g_obs_needed;
     EigsChunk *lf_chunk = compile_ast(ast, target, source);
     g_compile_module_boundary = saved_boundary;
-    if (!obs_before_module && g_obs_needed) {
+    if (lf_chunk && chunk_reads_observer(lf_chunk) &&
+        (!obs_before_module || g_obs_history_gap)) {
+        g_obs_history_gap = 1;
         g_parse_errors = saved_errors;
         chunk_free(lf_chunk);
         free_ast(ast);
         free_tokenlist(&tl);
         free(source);
         rt_error(EK_IO, 0,
-            "load_file: '%s' reads observer state but did not when the observer "
-            "gate scanned it — the file changed, or a different file now resolves "
-            "for that path. Bindings assigned before this load have no recorded "
-            "history. Re-run with EIGS_OBS_FORCE=1 to disable the gate.",
+            "load_file: '%s' reads observer state, but the observer gate was "
+            "closed when this program's earlier assignments ran — they have no "
+            "recorded history, so an observer query about them would answer a "
+            "rest value rather than the truth. Re-run with EIGS_OBS_FORCE=1.",
             arg->data.str);
         return make_null();
     }

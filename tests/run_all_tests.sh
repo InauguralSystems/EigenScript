@@ -3579,7 +3579,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=21
+OBS_GATE_EXPECTED_CHECKS=23
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -3691,7 +3691,7 @@ printf 'y is 1.0\ny is 2.0\ny is 4.0\nlocal ok is chdir of "cdsub"\nload_file of
 # "the guard did not fire" rather than "the probe did not run" (§64: a probe
 # that cannot execute is not a probe). Resolve it to an absolute path first.
 OBS_ABS_BIN=$(cd "$(dirname "$EIGS_BIN")" && pwd)/$(basename "$EIGS_BIN")
-OBS_G12=$( cd "$OBS_GATE_TMP" && "$OBS_ABS_BIN" "$OBS_GATE_TMP/lf_chdir.eigs" 2>&1 | grep -c 'reads observer state but did not when the observer gate scanned it' )
+OBS_G12=$( cd "$OBS_GATE_TMP" && "$OBS_ABS_BIN" "$OBS_GATE_TMP/lf_chdir.eigs" 2>&1 | grep -c 'reads observer state, but the observer gate was closed' )
 check "chdir resolving a literal to an OBSERVING file raises, not answers" "$OBS_G12" "1"
 # 14. TRANSITIVE: the parent's literal load reaches an observer two modules down.
 #    Asserted on the VALUE — the gate's own stats cannot see a wrong answer.
@@ -3758,7 +3758,7 @@ check "a module that fails to compile reports IDENTICALLY under the gate" "$OBS_
 # 18. Route A: the program rewrites the module between the two reads.
 printf 'print of "idle"\n' > "$OBS_GATE_TMP/toc_mod.eigs"
 printf 'x is 1.0\nx is 2.0\nx is 3.0\nwrite_text of ["%s/toc_mod.eigs", "print of (report of x)"]\nload_file of "%s/toc_mod.eigs"\n' "$OBS_GATE_TMP" "$OBS_GATE_TMP" > "$OBS_GATE_TMP/toc_a.eigs"
-OBS_G17=$($EIGS_BIN "$OBS_GATE_TMP/toc_a.eigs" 2>&1 | grep -c 'reads observer state but did not when the observer gate scanned it')
+OBS_G17=$($EIGS_BIN "$OBS_GATE_TMP/toc_a.eigs" 2>&1 | grep -c 'reads observer state, but the observer gate was closed')
 check "a module REWRITTEN between the two reads raises, not answers" "$OBS_G17" "1"
 # 19. And the escape hatch named in that error must actually work — otherwise
 #     the diagnostic sends the reader somewhere that does not help.
@@ -3771,6 +3771,26 @@ printf 'print of "idle"\n' > "$OBS_GATE_TMP/toc_mod2.eigs"
 printf 'x is 1.0\nwrite_text of ["%s/toc_mod2.eigs", "print of 42"]\nload_file of "%s/toc_mod2.eigs"\n' "$OBS_GATE_TMP" "$OBS_GATE_TMP" > "$OBS_GATE_TMP/toc_b.eigs"
 OBS_G19=$($EIGS_BIN "$OBS_GATE_TMP/toc_b.eigs" 2>&1 | tail -1)
 check "a BENIGN rewrite of a loaded module still runs (no false positive)" "$OBS_G19" "42"
+# 21-22. The guard must be PER-LOAD, not one-shot, and must not fire on a
+#     conservative bail elsewhere. A first draft compared the monotonic observer
+#     bit before/after the module compile; a blind critic broke it both ways.
+# 21. ONE-SHOT: the error is catchable, so a `try:` around the first load left
+#     the bit at 1 and every later load skipped the check — restoring the exact
+#     silent-wrong answer the guard exists to stop.
+printf 'print of "stub"\n' > "$OBS_GATE_TMP/dis_a.eigs"
+printf 'print of "stub"\n' > "$OBS_GATE_TMP/dis_b.eigs"
+printf 'x is 1.0\nx is 2.0\nx is 3.0\nwrite_text of ["%s/dis_a.eigs", "print of (report of x)"]\ntry:\n    load_file of "%s/dis_a.eigs"\ncatch e:\n    print of "caught"\nwrite_text of ["%s/dis_b.eigs", "print of (report of x)"]\nload_file of "%s/dis_b.eigs"\n' "$OBS_GATE_TMP" "$OBS_GATE_TMP" "$OBS_GATE_TMP" "$OBS_GATE_TMP" > "$OBS_GATE_TMP/disarm.eigs"
+OBS_G20=$($EIGS_BIN "$OBS_GATE_TMP/disarm.eigs" 2>&1 | grep -c 'reads observer state, but the observer gate was closed')
+check "catching the first raise does NOT disarm the guard for later loads" "$OBS_G20" "1"
+# 22. OVER-BROAD: the eager pass bails conservatively for six reasons, only one
+#     of which is staleness. `spawn` + a module that itself loads a module hit
+#     the multithreaded bail and hard-errored with every clause of the message
+#     false — and that shape is SHIPPED (lib/io.eigs loads lib/string.eigs).
+printf 'print of "inner ok"\n' > "$OBS_GATE_TMP/fp_inner.eigs"
+printf 'load_file of "%s/fp_inner.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/fp_mid.eigs"
+printf 'define w() as:\n    return 1\nlocal t is spawn of w\nprint of (thread_join of t)\nload_file of "%s/fp_mid.eigs"\nprint of "no false positive"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/fp.eigs"
+OBS_G21=$($EIGS_BIN "$OBS_GATE_TMP/fp.eigs" 2>&1 | tail -1)
+check "spawn + a nested literal load does not falsely raise" "$OBS_G21" "no false positive"
 # 21. The sync gate's own mutation train. Without this the gate is a claim: a
 #     blind critic gutted each of its four assertion bodies in turn and it
 #     printed PASS every time on a tree carrying that assertion's fault. The
@@ -3778,10 +3798,17 @@ check "a BENIGN rewrite of a loaded module still runs (no false positive)" "$OBS
 #     when its assertion is gutted, which is what proves the assertion, and not
 #     a neighbouring floor, is doing the work (mechanical-gates §19/§21/§66).
 TOTAL=$((TOTAL + 1))
+OBS_ST_N=0
 if OBS_ST_OUT=$("$TESTS_DIR/../tools/obs_reader_sync_check.sh" --selftest 2>&1); then
-    PASS=$((PASS + 1)); echo "  PASS: observer-reader sync gate self-test (${OBS_ST_OUT##*SELFTEST: })"
+    # rc 0 alone is not enough: shrinking the selftest to one row also exits 0.
+    # Floor the number of rows it actually ran (§37 at the integration point).
+    OBS_ST_N=$(printf '%s\n' "$OBS_ST_OUT" | sed -n 's/^SELFTEST: \([0-9]*\) passed.*/\1/p')
+    : "${OBS_ST_N:=0}"
+fi
+if [ "$OBS_ST_N" -ge 10 ]; then
+    PASS=$((PASS + 1)); echo "  PASS: observer-reader sync gate self-test ($OBS_ST_N rows)"
 else
-    FAIL=$((FAIL + 1)); echo "  FAIL: observer-reader sync gate self-test"
+    FAIL=$((FAIL + 1)); echo "  FAIL: observer-reader sync gate self-test ($OBS_ST_N rows, floor 10)"
     echo "$OBS_ST_OUT" | sed 's/^/    /'
 fi
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero

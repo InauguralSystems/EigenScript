@@ -1115,7 +1115,33 @@ int chunk_reads_observer(const EigsChunk *chunk) {
      * sandbox_run) never went through the compiler, so nothing scanned it and
      * its opcode stream is caller-supplied. Do not gate it. */
     if (!chunk->compiler_scanned) return 1;
+    if (chunk_has_reader_opcode(chunk)) return 1;
+    if (const_pool_names_observer(chunk)) return 1;
+    for (int f = 0; f < chunk->fn_count; f++)
+        if (chunk_reads_observer(chunk->functions[f])) return 1;
+    return 0;
+}
 
+/* The OPCODE half of the scan above, split out so it can be run against a chunk
+ * that never met the compiler.
+ *
+ * `vm_run_bytecode` and `sandbox_run` assemble a chunk from a caller-supplied
+ * descriptor, so `compiler_scanned` is 0 and chunk_reads_observer() answers a
+ * blanket "observes" for them — correct, but useless as a decision, because by
+ * the time such a chunk exists the host program has already run. Both sites
+ * used to answer that with a LATE `g_obs_needed = 1`, which cannot work: the
+ * bit is monotonic and the history of assignments that already executed is
+ * unrecoverable. A blind critic executed the consequence — a geometric runaway
+ * (`x is x * 2.0`, forty times) read back through a hand-assembled
+ * `OP_REPORT_NAME` descriptor answered `equilibrium` under the gate and
+ * `diverging` without it. That is the inversion #861's own comment says must
+ * never happen.
+ *
+ * So the descriptor sites ask this instead, BEFORE running: does the chunk I am
+ * about to execute read observer state while the gate is closed? If so, raise —
+ * the same outcome guard builtin_load_file uses, for the same reason. */
+int chunk_has_reader_opcode(const EigsChunk *chunk) {
+    if (!chunk) return 0;
     int i = 0;
     while (i < chunk->code_len) {
         uint8_t op = chunk->code[i];
@@ -1155,9 +1181,69 @@ int chunk_reads_observer(const EigsChunk *chunk) {
             i += 2 * op_verify_operands(op, roles);
         }
     }
-    if (const_pool_names_observer(chunk)) return 1;
     for (int f = 0; f < chunk->fn_count; f++)
-        if (chunk_reads_observer(chunk->functions[f])) return 1;
+        if (chunk_has_reader_opcode(chunk->functions[f])) return 1;
+    return 0;
+}
+
+/* #915: does this chunk read observer state about a binding that ALREADY
+ * EXISTS in `env`?
+ *
+ * chunk_has_reader_opcode() answers "does it read at all", which is too broad
+ * for the descriptor sites: the self-hosting bridge legitimately assembles
+ * chunks containing reader opcodes over their OWN frame slots, and raising on
+ * those broke 50 assertions in tests/test_vm_run_bytecode.eigs — the same
+ * over-broad mistake made at the load_file site one round earlier, repeated
+ * here.
+ *
+ * The hazard is narrower: a descriptor reading a binding that the HOST already
+ * assigned while the gate was closed, whose history was therefore never
+ * recorded. Those reads are exactly the NAME-operand forms, and the name is
+ * resolvable in the host env at guard time. A SLOT-operand reader addresses the
+ * descriptor's own frame and cannot reach a host binding.
+ *
+ * RESIDUAL, stated rather than implied: the bare OP_PREDICATE form reads the
+ * last-observed binding through an alias with no operand to inspect, so it is
+ * not covered here. With the gate closed there is no last-observed binding to
+ * find, so it answers a rest value — wrong, but not detectable at this seam. */
+static int chunk_step_ip(const EigsChunk *chunk, int i);   /* defined below */
+
+int chunk_reads_named_binding(const EigsChunk *chunk, Env *env) {
+    if (!chunk || !env) return 0;
+    int i = 0;
+    while (i < chunk->code_len) {
+        uint8_t op = chunk->code[i];
+        int is_named_reader = 0;
+        switch ((OpCode)op) {
+            case OP_REPORT_NAME:
+            case OP_REPORT_VALUE_NAME:
+            case OP_TRAJECTORY_NAME:
+            case OP_OBSERVE_VALUE_NAME:
+            case OP_PREDICATE_NAME:
+            case OP_INTERROGATE_NAMED:
+            case OP_INTERROGATE_NAMED_AT:
+            case OP_INTERROGATE_NAMED_WHEN:
+                is_named_reader = 1; break;
+            default: break;
+        }
+        if (is_named_reader) {
+            VerifyRole roles[3];
+            int nops = op_verify_operands(op, roles);
+            if (i + 1 + 2 * nops <= chunk->code_len) {
+                for (int k = 0; k < nops; k++) {
+                    if (roles[k] != VR_NAME) continue;
+                    int off = i + 1 + 2 * k;
+                    int idx = chunk->code[off] | (chunk->code[off + 1] << 8);
+                    if (idx < 0 || idx >= chunk->const_count) continue;
+                    const char *nm = chunk->const_interns ? chunk->const_interns[idx] : NULL;
+                    if (nm && env_get(env, nm)) return 1;
+                }
+            }
+        }
+        i = chunk_step_ip(chunk, i);
+    }
+    for (int f = 0; f < chunk->fn_count; f++)
+        if (chunk_reads_named_binding(chunk->functions[f], env)) return 1;
     return 0;
 }
 
@@ -1204,13 +1290,16 @@ int chunk_reads_observer(const EigsChunk *chunk) {
  * argument, a mention as a dict key — is not this shape and makes the unit
  * opaque. Being wrong here costs a program its gate, never an answer.
  *
- * `chdir` makes the unit opaque too. Compile-time and run-time resolution both
- * go through resolve_eigenscript_file, which is relative to the process cwd, so
- * a program that moves the cwd between the two resolves the SAME literal to a
- * DIFFERENT file. That is the one way this scan could read a module the program
- * never loads, and it is the reason a resolver-parity assumption is written
- * here as a check rather than as a disclaimer (#1008: a disclaimer is an
- * assertion, and must be re-read against every widening).
+ * RESOLVER PARITY IS NOT CHECKED HERE, deliberately. Compile-time and run-time
+ * resolution both go through resolve_eigenscript_file and the whole program runs
+ * between them, so the same literal can resolve to a different file or to
+ * different bytes. This scan cannot see that. An earlier draft opened with a
+ * `chdir` opacity check under the heading "resolver parity is a precondition,
+ * not a footnote"; it was a one-element denylist and the wrong population key
+ * (mechanical-gates §60), and it is gone. The parity requirement is enforced
+ * where it is checkable — at the load, in builtin_load_file, which raises when
+ * a module reads observer state and the gate was closed while this program's
+ * earlier assignments ran.
  */
 
 /* Step past the instruction at `i`, using the SAME operand-layout table the

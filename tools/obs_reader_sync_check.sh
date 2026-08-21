@@ -8,9 +8,15 @@
 #   1. src/vm.h        — the /*obs:READS*/ markers. The AUTHORITATIVE home:
 #                        every opcode carries a hand-reviewed verdict, and
 #                        tools/obs_marker_check.sh proves every opcode has one.
-#   2. src/chunk.c     — the `case OP_...:` arms of chunk_reads_observer(),
-#                        the CONSUMER: the compile-time scan that decides
-#                        whether a program may skip observer bookkeeping.
+#   2. src/chunk.c     — the `case OP_...:` arms of chunk_has_reader_opcode(),
+#                        the CONSUMER: the opcode half of the compile-time scan
+#                        that decides whether a program may skip observer
+#                        bookkeeping. (It was split out of chunk_reads_observer
+#                        so the vm_run_bytecode / sandbox_run descriptor sites
+#                        could run it against a chunk that never met the
+#                        compiler. When it moved, this gate's extraction anchor
+#                        found ZERO opcodes and SWITCH_FLOOR caught it — which
+#                        is precisely why the floor is absolute and not a ratio.)
 #
 # Nothing tied them together, and they had ALREADY diverged when this gate was
 # written: the C switch carries OP_INTERROGATE, which #1024's hand-reading
@@ -93,7 +99,7 @@ EXEMPT="OP_INTERROGATE OP_IMPORT"
 # a scanner that reads prose ABOUT its subject as its subject is the failure
 # that gets worse the better the code is documented.
 switch_reader_ops() {
-    awk -v fn="int chunk_reads_observer(" '
+    awk -v fn="int chunk_has_reader_opcode(" '
         index($0, fn) > 0 { infn = 1 }
         infn == 0 { next }
         {
@@ -174,7 +180,7 @@ run_selftest() {
         cp "$real_chunk" "$tmp/$1.chunk.c"; cp "$real_vm" "$tmp/$1.vm.h"
         case "$1" in
           clean) ;;
-          E) sed -i '/^            case OP_TRAJECTORY_SLOT:$/d' "$tmp/$1.chunk.c" ;;      # reader dropped from switch
+          E) sed -i 's|OP_ADD, /\*obs:NONE\*/|OP_ADD, /*obs:READS*/|' "$tmp/$1.vm.h" ;;   # NEW reader never added to the switch
           B) sed -i 's/^            case OP_PREDICATE:$/            case OP_ADD:\n            case OP_PREDICATE:/' "$tmp/$1.chunk.c" ;;  # stray opcode
           D) sed -i '/^            case OP_IMPORT:$/d' "$tmp/$1.chunk.c" ;;               # exemption dropped
           F) sed -i 's|OP_INTERROGATE,     /\*obs:NONE\*/|OP_INTERROGATE,     /*obs:READS*/|' "$tmp/$1.vm.h" ;;  # exemption spent
@@ -195,7 +201,10 @@ run_selftest() {
         sed -i 's|^if \[ "\$CHECKS" -ne "\$EXPECTED_CHECKS" \]; then|if false; then|' "$tmp/$1.gate.sh"
         # Floors are genuinely redundant with the direction checks for some
         # faults; neutralise them too so a survivor means "no witness", not
-        # "a floor covered for it".
+        # "a floor covered for it". NOTE this is why fault E is planted by
+        # ADDING a marker rather than deleting a case: a deletion also trips
+        # SWITCH_FLOOR, so the FAULTS row passed for the wrong reason (§21) and
+        # the WITNESS claim held only in a configuration that is not production.
         sed -i 's|^READS_FLOOR=.*|READS_FLOOR=0|; s|^SWITCH_FLOOR=.*|SWITCH_FLOOR=0|' "$tmp/$1.gate.sh"
     }
 

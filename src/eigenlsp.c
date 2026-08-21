@@ -792,9 +792,13 @@ static void send_diagnostics(Document *doc) {
             g_compile_module_slots = 1;
             int errors_before = g_parse_errors;
             /* #915: this compile never executes, so the observer gate's eager pass
-         * must not reach out to the filesystem on its behalf — lint's documented
-         * contract is that it touches nothing but the file in front of it, and
-         * the LSP recompiles on every didChange. */
+         * must not COMPILE a file's load targets on its behalf. Note the reason
+         * is cost and surprise, not purity: lint already realpath-resolves and
+         * OPENS literal load_file targets for E003, and did so before this
+         * change — a blind critic checked, and lint_host.c's own "touches
+         * nothing but the file in front of it" comment was already inaccurate.
+         * What the eager pass would add is a full tokenize+parse+compile of each
+         * target, and the LSP runs this on every didChange. */
         int obs_saved = g_obs_gate_scan_enabled;
         g_obs_gate_scan_enabled = 0;
         EigsChunk *chunk = compile_ast(doc->ast, cenv, doc->text);

@@ -52,6 +52,21 @@ BIN="$REPO/src/eigenscript"
 is_denied() {
     case "$1" in
         *gfx*|*paint*|*_game*) return 0 ;;
+        # A fixture whose PURPOSE is nondeterminism does not belong in a
+        # statistical filter at all (mechanical-gates §10 — a rule this very
+        # tool's issue bought, and which this tool then violated). The two-run
+        # self-diff below can only exclude programs that DISAGREE with
+        # themselves in those two samples; a seeded race can easily agree twice
+        # and then diverge in the third capture, which reports as the gate
+        # changing observable behaviour.
+        #
+        # Executed, 2026-08-21: tsan_seeded_race.eigs did exactly that and cost
+        # a real investigation of a regression that did not exist. Measured
+        # afterwards on ONE fixed build: 8 runs of the gated arm produced stderr
+        # of 43/268/43/43/43/43/43/43 bytes, and 8 of the baseline arm
+        # 246/43/43/43/43/43/43/166 — nondeterministic in BOTH arms, and it
+        # SIGSEGVs under the capture ulimit either way.
+        *seeded_race*) return 0 ;;
         *) return 1 ;;
     esac
 }

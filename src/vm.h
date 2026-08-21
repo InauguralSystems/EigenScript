@@ -646,11 +646,18 @@ void       chunk_disassemble(EigsChunk *chunk, const char *label);
  * Conservative in one direction only: every unclear case answers 1. Drives
  * the observer gate, so a wrong 0 is silently-wrong observer results. */
 int        chunk_reads_observer(const EigsChunk *chunk);
+/* #915: the opcode half alone, valid on a chunk that never met the compiler
+ * (vm_run_bytecode / sandbox_run descriptors). Recurses into functions[]. */
+int        chunk_has_reader_opcode(const EigsChunk *chunk);
+/* #915: narrower — does it read observer state about a binding already present
+ * in `env`? Used by the descriptor sites, where a reader over the chunk's OWN
+ * frame slots is legitimate. See the definition for the residual. */
+int        chunk_reads_named_binding(const EigsChunk *chunk, Env *env);
 /* #915: hand every STRING-LITERAL `load_file` target in this chunk to `visit`.
  * Returns 1 if the unit is OPAQUE — it uses the name `load_file` in any shape
- * this scan does not recognize, or it can move the cwd (`chdir`) and so break
- * resolver parity between compile time and run time. An opaque unit must be
- * treated as observing; see the comment on the definition. */
+ * this scan does not recognize. An opaque unit must be treated as observing.
+ * This does NOT check resolver parity between compile time and run time; that
+ * is enforced at the load itself (builtin_load_file). See the definition. */
 int        chunk_scan_static_loads(const EigsChunk *chunk,
                                    void (*visit)(const char *path, void *ud),
                                    void *ud);

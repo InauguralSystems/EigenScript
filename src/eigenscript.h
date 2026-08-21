@@ -559,6 +559,15 @@ struct EigsState {
      * reported "observed" and EIGS_OBS_FORCE=1 could not rescue it.
      */
     int             obs_needed;
+    /* #915: sticky. Set the first time a load is caught reading observer state
+     * while the gate was closed. `obs_needed` is MONOTONIC, so that first
+     * detection also flips it to 1 — which would make the very next check see
+     * "the gate was already open" and skip. The error is catchable, so ONE
+     * `try:` around the first load disarmed the guard for the rest of the run
+     * and the silent-wrong answer came straight back (executed). The missing
+     * history is not restored by the bit flipping, so this flag says "this
+     * program has bindings with no recorded history" and never clears. */
+    int             obs_history_gap;
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
@@ -1028,6 +1037,7 @@ extern __thread EigsThread *eigs_current;
 #define g_obs_gate_scan_enabled (eigs_current->obs_gate_scan_enabled)
 #define g_compile_depth_reported (eigs_current->compile_depth_reported)
 #define g_obs_needed          (eigs_current->state->obs_needed)
+#define g_obs_history_gap     (eigs_current->state->obs_history_gap)
 #define g_tokenize_depth      (eigs_current->tokenize_depth)
 #define g_vts_depth           (eigs_current->vts_depth)
 #define g_json_depth          (eigs_current->json_depth)

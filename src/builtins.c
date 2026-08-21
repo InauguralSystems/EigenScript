@@ -3182,16 +3182,48 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
  * output runs through — reusing the bytecode VM and its JIT. The caller is
  * responsible for a well-formed chunk ending in OP_RETURN, stamped with the
  * bytecode ABI revision it was built against (#704). */
+/* #915: a descriptor chunk never passes through compile_ast, so the observer
+ * gate's compile-time scan never saw it. Setting g_obs_needed here — which is
+ * what this site used to do — cannot fix that: the bit is MONOTONIC, so
+ * flipping it now does nothing for the host assignments that already ran
+ * unrecorded, and it makes the very next descriptor's answer look trustworthy.
+ *
+ * Executed consequence (blind critic, round 2): a geometric runaway
+ *
+ *     x is 1.0 ; loop 40x: x is x * 2.0
+ *     print of (vm_run_bytecode of [1, [83, 0, 0, 40], ["x"]])
+ *
+ * answered `equilibrium` under the gate and `diverging` without it — the exact
+ * inversion #861's comment says must never happen, at rc 0 with nothing to fail
+ * on. The descriptor resolves the HOST's bindings (g_builtin_call_env), so
+ * nothing stands between it and module-scope observer slots.
+ *
+ * So ask the question that is actually answerable, BEFORE running: is the gate
+ * closed AND does this chunk read observer state? Then raise, exactly as
+ * builtin_load_file does for the same ordering hazard. Late is not recoverable;
+ * loud is. */
+static int obs_guard_descriptor(EigsChunk *chunk, const char *what) {
+    if (g_obs_needed) return 0;                    /* gate already open: nothing at risk */
+    /* Narrow: only a read of a binding the HOST already has is at risk. A reader
+     * over the descriptor's own frame slots is legitimate and common in the
+     * self-hosting bridge — guarding on "reads at all" broke 50 assertions in
+     * tests/test_vm_run_bytecode.eigs. */
+    Env *host = g_builtin_call_env ? g_builtin_call_env : g_global_env;
+    if (!chunk_reads_named_binding(chunk, host)) return 0;
+    rt_error(EK_VALUE, 0,
+        "%s: the chunk reads observer state, but the observer gate is closed for "
+        "this program — bindings assigned before this call have no recorded "
+        "history. Re-run with EIGS_OBS_FORCE=1 to disable the gate.", what);
+    return 1;
+}
+
 Value* builtin_vm_run_bytecode(Value *arg) {
-    /* #915: an assembled chunk never passes through compile_ast, so nothing ever
-     * scanned it for reader opcodes — exactly the #831 situation one line below.
-     * Observe unconditionally rather than gate on evidence we do not have. */
-    g_obs_needed = 1;
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(arg, abibuf, sizeof abibuf);
     if (abi_err) { rt_error(EK_VALUE, 0, "%s", abi_err); return make_null(); }
     EigsChunk *chunk = vm_build_chunk_desc(arg, 1, 0);
     if (!chunk) return make_null();
+    if (obs_guard_descriptor(chunk, "vm_run_bytecode")) { chunk_free(chunk); return make_null(); }
     /* #831: the compiler's temporal scan is what turns history recording on,
      * and it never saw this chunk — arm from the verified bytecode instead,
      * or the chunk's own `prev of` / `at` reads answer null whenever the
@@ -3354,7 +3386,11 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
  * are caught (not propagated). Returns {"ok": 1/0, "result": value} — the graded
  * "does it run?" rung for a self-hosted compiler validating generated code. */
 Value* builtin_sandbox_run(Value *arg) {
-    g_obs_needed = 1;             /* #915: assembled chunk — see vm_run_bytecode */
+    /* #915: same descriptor hazard as vm_run_bytecode. Unexploitable TODAY only
+     * because the sandbox env is a sealed root (parent == NULL), so a descriptor
+     * cannot reach a host binding's slot — that is the sandbox's defence, not
+     * the gate's, and it evaporates the day sealing is relaxed. The guard runs
+     * below, once the chunk exists. */
     Value *desc = (arg && arg->type == VAL_LIST && arg->data.list.count >= 1)
                   ? arg->data.list.items[0] : arg;
     int max_iter = 1000000;
@@ -3384,6 +3420,11 @@ Value* builtin_sandbox_run(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
     EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
+    if (chunk && obs_guard_descriptor(chunk, "sandbox_run")) {
+        chunk_free(chunk);
+        chunk = NULL;
+        abi_err = abi_err ? abi_err : "sandbox_run: observer gate closed";
+    }
     Value *out = make_dict(2);
     if (!chunk) {
         /* Descriptor verification may already have interned constants before
