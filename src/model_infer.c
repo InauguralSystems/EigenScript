@@ -611,29 +611,43 @@ Value* builtin_eigen_eval_loss(Value *arg) {
      * checkpoint never mutates it. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         fprintf(stderr, "eigen_eval_loss: requires [prompt_ids, target_id]\n");
-        return make_num(-1.0);
+        /* #1008: guarded in place with a constant condition so the stderr
+         * line above still prints in BOTH modes and the non-strict answer is
+         * provably unchanged. This is a grader: a laundered -1 loss is the
+         * exact shape #975 exists to stop, since a caller cannot tell it from
+         * a real score. */
+        ARG_GUARD(1, "eigen_eval_loss", "[prompt_ids, target_id]", make_num(-1.0));
     }
     Value *prompt_list = arg->data.list.items[0];
     if (prompt_list->type != VAL_LIST) {
         fprintf(stderr, "eigen_eval_loss: prompt_ids must be a list\n");
-        return make_num(-1.0);
+        ARG_GUARD(1, "eigen_eval_loss", "a list of prompt ids", make_num(-1.0));
     }
     if (arg->data.list.items[1]->type != VAL_NUM) {
         fprintf(stderr, "eigen_eval_loss: target_id must be a number\n");
-        return make_num(-1.0);
+        ARG_GUARD(1, "eigen_eval_loss", "a numeric target_id", make_num(-1.0));
     }
     int target_id = (int)arg->data.list.items[1]->data.num;
 
+    /* fs:ANSWER no model is loaded, so there is no loss to compute. Model
+     * state, not an argument mistake — the identical call scores fine once a
+     * checkpoint is loaded. */
     if (!g_model.loaded) return make_num(-1.0);
     int vocab_size = g_model.config.vocab_size;
     if (target_id < 0 || target_id >= vocab_size) {
         fprintf(stderr, "eigen_eval_loss: target_id %d out of range [0,%d)\n", target_id, vocab_size);
+        /* fs:ANSWER the id is a NUMBER (the type guard above passed) that
+         * names no row of this model's vocabulary — a value-domain answer
+         * relative to the loaded checkpoint, so it changes with the model
+         * rather than with the call. */
         return make_num(-1.0);
     }
 
     int prompt_len = prompt_list->data.list.count;
     if (prompt_len <= 0) {
         fprintf(stderr, "eigen_eval_loss: prompt must be non-empty\n");
+        /* fs:EMPTY an empty prompt has no logits to score, so there is no
+         * loss; the list's TYPE was already accepted above. */
         return make_num(-1.0);
     }
 
@@ -659,6 +673,8 @@ Value* builtin_eigen_eval_loss(Value *arg) {
     double loss = -((double)(logits[target_id] - maxl) - log(sum));
     free(logits);
 
+    /* fs:ANSWER the loss computed to NaN/Inf from a degenerate logit row —
+     * a numeric outcome of this model on this input, not a bad argument. */
     if (isnan(loss) || isinf(loss)) return make_num(-1.0);
     return make_num(loss);
 }

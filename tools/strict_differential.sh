@@ -108,6 +108,13 @@ sin|print of (sin of "x")
 sqrt/exp/log/negative|print of (sqrt of "x")
 starts_with|print of (starts_with of [42, "x"])
 store_delete|print of (store_delete of [42, "col", "k"])
+index_of|print of (index_of of [42, "x"])
+list_index_of|print of (list_index_of of [42, 1])
+ord|print of (ord of 42)
+proc_write|print of (proc_write of [42, 99])
+exec_capture|print of (exec_capture of 42)
+proc_wait|print of (proc_wait of "x")
+eigen_eval_loss|print of (eigen_eval_loss of ["x", 1])
 str_from_bytes|print of (str_from_bytes of 42)
 str_lower|print of (str_lower of 42)
 str_replace|print of (str_replace of [42, "a", "b"])
@@ -176,6 +183,9 @@ max of an empty list is 0|print of (max of ([]))
 sum of an empty list is 0 (the identity, not a type mistake)|print of (sum of ([]))
 mean of an empty list is 0|print of (mean of ([]))
 norm of a real vector still computes|print of (norm of [3, 4])
+index_of that finds nothing is -1, not an error|print of (index_of of ["abc", "z"])
+list_index_of that finds nothing is -1|print of (list_index_of of [([1, 2]), 9])
+ord of the empty string is -1 (no first byte)|print of (ord of "")
 sum of a bare number is that number|print of (sum of 7)
 join with a real separator still joins|print of (join of [["a", "b"], "-"])
 json false decodes to 0|print of (json_path of ["{\"a\": false}", "a"])
@@ -315,16 +325,37 @@ n_skipped=0 skipped_list=""
 # undefined variable at runtime (measured 2026-08-20). Executing costs one
 # process per variant-only name — three today — and cannot disagree with the
 # build.
-variant_only="$(awk '
-    FNR == 1 { variant = (FILENAME ~ /\/ext_(gfx|http|db|net)\.c$/) }
-    !variant { next }
+# WHICH FILES ARE VARIANT-ONLY? Ask the build system, not a hand-list. A file
+# the RELEASE variant does not compile is variant-only by definition, and
+# `make print-SRC_V_release` is the Makefile's own post-expansion answer.
+#
+# The first version hard-coded /ext_(gfx|http|db|net)\.c$/ and therefore
+# missed `model_infer.c`, which is just as variant-only (EIGENSCRIPT_EXT_MODEL)
+# — `eigen_eval_loss` reported as "raised by the wrong guard: undefined
+# variable" in a default build. A sibling list of file names drifts from the
+# Makefile exactly the way §1 of mechanical-gates describes.
+release_srcs="$(make print-SRC_V_release 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u)"
+variant_only=""
+if [ -n "$release_srcs" ]; then
+    for f in src/*.c; do
+        printf '%s\n' "$release_srcs" | grep -qxF "$f" && continue
+        variant_only="$variant_only
+$(awk '
     /ARG_GUARD\(/ { acc = ""; collecting = 1 }
     collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
         collecting = 0
         n = split(acc, parts, "\"")
         if (n >= 2) print parts[2]
     } }
-' src/*.c | sed '/^$/d' | sort -u)"
+' "$f")"
+    done
+    variant_only="$(printf '%s\n' "$variant_only" | sed '/^$/d' | sort -u)"
+else
+    # No answer from make: fall back to running every probe rather than
+    # silently skipping the whole variant-only set (a skip that cannot be
+    # justified is worse than a probe that fails loudly).
+    echo "  NOTE: 'make print-SRC_V_release' gave nothing — variant-only detection off"
+fi
 
 absent_here=""
 for v in $variant_only; do

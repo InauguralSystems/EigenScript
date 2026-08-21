@@ -1329,9 +1329,17 @@ static Value* exec_capture_result(int code, const char *text) {
 }
 
 Value* builtin_exec_capture(Value *arg) {
+    /* fs:CHANNEL replay refuses the exec; the refusal belongs to the replay
+     * layer and [-1, ""] is exec_capture's documented "did not run". */
     if (replay_blocks("exec_capture")) return exec_capture_result(-1, "");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1)
-        return exec_capture_result(-1, "");
+    /* #1008: these launder through a HELPER, so no `return make_num(-1)`
+     * appears and the classifier's matcher — which enumerates literal soft
+     * returns — cannot see them at all. ARG_GUARD's soft argument is
+     * evaluated only on the non-strict path, so the helper call is fine
+     * there and the default answer is unchanged. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 1,
+              "exec_capture", "[command, ...] or [[command, ...], timeout]",
+              exec_capture_result(-1, ""));
 
     /* Detect timeout form: [["cmd", ...], timeout_num] */
     double timeout_sec = -1;
@@ -1341,20 +1349,22 @@ Value* builtin_exec_capture(Value *arg) {
         && arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM) {
         cmd_list = arg->data.list.items[0];
         timeout_sec = arg->data.list.items[1]->data.num;
-        if (cmd_list->data.list.count < 1)
-            return exec_capture_result(-1, "");
+        ARG_GUARD(cmd_list->data.list.count < 1,
+                  "exec_capture", "a non-empty command list", exec_capture_result(-1, ""));
     }
 
     int total = cmd_list->data.list.count;
 
     /* Build argv array */
     char **argv = xmalloc_array((size_t)total + 1, sizeof(char*));
+    /* fs:ANSWER the allocation failed, so no command was run — a resource
+     * outcome, not an argument the caller got wrong. */
     if (!argv) return exec_capture_result(-1, "");
     for (int i = 0; i < total; i++) {
         Value *v = cmd_list->data.list.items[i];
         if (!v || v->type != VAL_STR) {
             free(argv);
-            return exec_capture_result(-1, "");
+            ARG_GUARD(1, "exec_capture", "a list of strings", exec_capture_result(-1, ""));
         }
         argv[i] = v->data.str;
     }
@@ -1366,6 +1376,8 @@ Value* builtin_exec_capture(Value *arg) {
      * stdout via dup2, which clears FD_CLOEXEC on the destination, so the
      * child's stdout still survives execvp. */
     int pipefd[2];
+    /* fs:ANSWER pipe() failed (fd exhaustion), so the child was never
+     * started — resource state, not a bad argument. */
     if (pipe(pipefd) != 0) { free(argv); return exec_capture_result(-1, ""); }
     (void)fcntl(pipefd[0], F_SETFD, FD_CLOEXEC);
     (void)fcntl(pipefd[1], F_SETFD, FD_CLOEXEC);
@@ -1374,6 +1386,7 @@ Value* builtin_exec_capture(Value *arg) {
     if (pid < 0) {
         close(pipefd[0]); close(pipefd[1]);
         free(argv);
+        /* fs:ANSWER fork() failed, so nothing ran. Resource state. */
         return exec_capture_result(-1, "");
     }
 
@@ -1416,6 +1429,8 @@ Value* builtin_exec_capture(Value *arg) {
         close(pipefd[0]);
         kill(pid, SIGKILL);
         waitpid(pid, NULL, 0);
+        /* fs:ANSWER the output buffer could not be allocated, so the child
+     * was killed and there is no capture to report. Resource state. */
         return exec_capture_result(-1, "");
     }
 
@@ -1572,14 +1587,21 @@ Value* builtin_proc_spawn(Value *arg) {
 }
 
 Value* builtin_proc_write(Value *arg) {
+    /* fs:CHANNEL replay refuses the write; the refusal is the replay layer's
+     * to report, and -1 is proc_write's documented "wrote nothing". Not an
+     * argument verdict — the same call is fine outside replay. */
     if (replay_blocks("proc_write")) return make_num(-1);
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
-        return make_num(-1);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count != 2,
+              "proc_write", "[fd, string]", make_num(-1));
     Value *fd_v  = arg->data.list.items[0];
     Value *str_v = arg->data.list.items[1];
-    if (!fd_v || fd_v->type != VAL_NUM || !str_v || str_v->type != VAL_STR)
-        return make_num(-1);
+    ARG_GUARD(!fd_v || fd_v->type != VAL_NUM || !str_v || str_v->type != VAL_STR,
+              "proc_write", "[number fd, string]", make_num(-1));
     int fd = (int)fd_v->data.num;
+    /* fs:ANSWER a negative descriptor is not a write that failed on its
+     * arguments' TYPES — it is a descriptor that cannot be written, which is
+     * the same -1 a closed fd produces below. Left soft deliberately: fds
+     * come from proc_open, so a negative one is state, not a typo. */
     if (fd < 0) return make_num(-1);
     const char *buf = str_v->data.str;
     size_t total = strlen(buf);
@@ -1591,6 +1613,11 @@ Value* builtin_proc_write(Value *arg) {
             /* #159: return partial bytes-written instead of -1 so a
              * caller retrying on short-write doesn't double-send the
              * delivered prefix. -1 only when nothing was written. */
+            /* fs:ANSWER a write that delivered nothing. #1008 note: this is a
+             * third spelling the classifier cannot enumerate — the -1 is a
+             * ternary arm, not a literal `return make_num(-1)`. Tagged so a
+             * reader finds a decision here, but the GATE is not what put the
+             * tag on it. */
             return make_num(off > 0 ? (double)off : -1);
         }
         off += (size_t)n;
@@ -1711,15 +1738,23 @@ Value* builtin_proc_close(Value *arg) {
 }
 
 Value* builtin_proc_wait(Value *arg) {
+    /* fs:CHANNEL replay refuses the wait; -1 is the documented "no exit
+     * status", and the refusal belongs to the replay layer. */
     if (replay_blocks("proc_wait")) return make_num(-1);
-    if (!arg || arg->type != VAL_NUM) return make_num(-1);
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "proc_wait", "a numeric pid", make_num(-1));
     pid_t pid = (pid_t)arg->data.num;
+    /* fs:ANSWER a non-positive pid names no process, so there is no exit
+     * status to report. A pid is a runtime value from proc_open, not a
+     * literal, so this is state rather than a type mistake. */
     if (pid <= 0) return make_num(-1);
     int status = 0;
     for (;;) {
         pid_t r = waitpid(pid, &status, 0);
         if (r == pid) break;
         if (r < 0 && errno == EINTR) continue;
+        /* fs:ANSWER waitpid failed for a reason that is not a retryable
+         * interrupt (ECHILD, ESRCH) — there is no exit status, which is what
+         * -1 reports. Nothing about the argument is wrong here. */
         return make_num(-1);
     }
     int code = WIFEXITED(status) ? WEXITSTATUS(status)
