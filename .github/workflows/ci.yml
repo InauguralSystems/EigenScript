@@ -301,6 +301,15 @@ jobs:
         name: Embedding API smoke, gfx variant (one registration seam, #742)
         run: make embed-smoke-gfx
 
+      # #885: embed-smoke covers multi-state SWITCHING on one thread. Nothing
+      # covered two states running AT THE SAME TIME, which is the half
+      # docs/EMBEDDING.md actually promises. Carries its own control row — a
+      # shared file-scope global that MUST cross-talk — so a green result
+      # cannot mean "the harness never raced".
+      - if: needs.scope.outputs.code == 'true'
+        name: Embedding API concurrent multi-state isolation (#885)
+        run: make embed-concurrent
+
       - if: needs.scope.outputs.code == 'true'
         name: Static embed library (make lib)
         run: make lib

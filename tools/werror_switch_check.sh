@@ -103,7 +103,7 @@ MIN_LINES=100
 # are covered by their own targets), test/clean/version/print-%/
 # coverage-clean/fuzz-run (no compiles).
 TARGETS="build full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison \
-         lsp dap jit-smoke lib embed-smoke embed-smoke-gfx pgo coverage \
+         lsp dap jit-smoke lib embed-smoke embed-smoke-gfx embed-concurrent pgo coverage \
          fuzz fuzz-libfuzzer freestanding-libc-diff sandbox-intern-test"
 
 # GNU make emits a shared prerequisite only once when several goals are in
@@ -113,7 +113,7 @@ TARGETS="build full http zlib net gfx asan asan-http asan-gfx tsan valgrind pois
 # target gains a shared prerequisite, keep that dependent goal in its own
 # batch as well.
 TARGET_BATCHES=(
-    "build full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison lsp dap jit-smoke lib embed-smoke pgo coverage fuzz fuzz-libfuzzer freestanding-libc-diff"
+    "build full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison lsp dap jit-smoke lib embed-smoke embed-concurrent pgo coverage fuzz fuzz-libfuzzer freestanding-libc-diff"
     "embed-smoke-gfx"
     "sandbox-intern-test"
 )
@@ -274,6 +274,7 @@ dap 1
 jit-smoke 1
 lib 1
 embed-smoke 1
+embed-concurrent 1
 embed-smoke-gfx 27
 pgo 2
 coverage 1

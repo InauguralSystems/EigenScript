@@ -61,7 +61,13 @@ A host application talks to the runtime through three opaque types:
 | `EigsValue` | A ref-counted runtime value (number, string, list, dict, etc.). Same underlying object as the script's values. |
 
 The runtime is **multi-state**. A single process can hold multiple
-`EigsState` instances concurrently; each one is independent. Inside a
+`EigsState` instances concurrently; each one is independent. That
+independence is tested, not just asserted — `make embed-concurrent`
+(#885) runs two states on two OS threads and checks that observer
+thresholds, global bindings and the error flag each stay with their own
+state. It carries its own control row: a deliberately shared file-scope
+global that MUST show cross-talk under the same harness, so a green run
+cannot mean "the threads never actually raced". Inside a
 state, multiple OS threads can attach (one `EigsThread` each) and share
 the state's global env, but only one of them executes script code at a
 time per state (the VM is not internally re-entrant per state).
