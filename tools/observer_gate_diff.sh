@@ -115,6 +115,23 @@ do_compare() {
         diff "$da/$(slug "$f")" "$db/$(slug "$f")" | head -15 | sed 's/^/        /'
     done
 
+    # ABSOLUTE population floor, not just a ratio. The ratio below divides
+    # `compared` by `total`, and `total` is itself derived from "a capture file
+    # exists in all three dirs" — so a capture run killed partway (OOM, timeout,
+    # thrash: all live hazards on a 2-core/4GB box) drops programs from the
+    # numerator AND the denominator together and leaves the ratio perfect.
+    # Executed by a blind critic: three EMPTY capture dirs produced
+    # `RESULT: PASS — 0 programs byte-identical`, exit 0, and a run truncated
+    # after 3 of 444 produced `PASS — 3`. Neither is distinguishable from a real
+    # 417 by this tool's exit code, which is the whole job of an exit code.
+    # A floor moves only when coverage is REMOVED (mechanical-gates §5/§43).
+    CORPUS_FLOOR="${EIGS_GATE_DIFF_FLOOR:-380}"
+    if [ "$compared" -lt "$CORPUS_FLOOR" ]; then
+        echo "RESULT: FAIL — compared $compared programs, floor is $CORPUS_FLOOR."
+        echo "        A capture is truncated or the corpus shrank; this is not a gate result."
+        exit 2
+    fi
+
     # A corpus gone mostly nondeterministic means the instrument is unreliable
     # (or the box is thrashing) — not that the gate is clean.
     if [ "$compared" -lt $(( total / 2 )) ]; then

@@ -821,6 +821,12 @@ struct EigsThread {
      * here exactly as #496's did at runtime, and hitting the bound sets the
      * observer bit rather than giving up quietly. */
     int                  obs_gate_depth;
+    /* #915: 1 while a compile is allowed to reach the FILESYSTEM on the
+     * observer gate's behalf. The eager pass informs a runtime decision, so
+     * entry points that compile without ever executing — `--lint`, and the LSP
+     * which recompiles on every didChange — clear it. Default 1; only those
+     * entry points set it to 0, and they do so for their whole run. */
+    int                  obs_gate_scan_enabled;
     int                  tokenize_depth;
     int                  vts_depth;
     int                  json_depth;
@@ -1019,6 +1025,7 @@ extern __thread EigsThread *eigs_current;
 #define g_prev_count          (eigs_current->prev_count)
 #define g_parse_depth         (eigs_current->parse_depth)
 #define g_obs_gate_depth      (eigs_current->obs_gate_depth)
+#define g_obs_gate_scan_enabled (eigs_current->obs_gate_scan_enabled)
 #define g_compile_depth_reported (eigs_current->compile_depth_reported)
 #define g_obs_needed          (eigs_current->state->obs_needed)
 #define g_tokenize_depth      (eigs_current->tokenize_depth)

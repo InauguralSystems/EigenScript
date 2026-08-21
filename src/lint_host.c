@@ -1316,7 +1316,14 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
         Env *cenv = env_new(NULL);
         register_builtins(cenv);     /* store/gfx-when-built ride inside (#742) */
         g_compile_module_slots = 1;
+        /* #915: this compile never executes, so the observer gate's eager pass
+         * must not reach out to the filesystem on its behalf — lint's documented
+         * contract is that it touches nothing but the file in front of it, and
+         * the LSP recompiles on every didChange. */
+        int obs_saved = g_obs_gate_scan_enabled;
+        g_obs_gate_scan_enabled = 0;
         EigsChunk *chunk = compile_ast(ast, cenv, source);
+        g_obs_gate_scan_enabled = obs_saved;
         g_compile_module_slots = 0;
         compile_errors = g_parse_errors;
         chunk_free(chunk);

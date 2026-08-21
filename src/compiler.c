@@ -3263,10 +3263,70 @@ static void obs_gate_unmute_stderr(int saved) {
 #endif
 }
 
+/* Memo of resolved paths this top-level compile has already scanned.
+ *
+ * Without it the eager pass is EXPONENTIAL in a module DAG, not linear: it walks
+ * the load graph as a TREE, so a diamond re-compiles the shared leaf once per
+ * distinct path to it. Measured by a blind critic on a synthetic 8-file DAG
+ * (7 levels, fanout 4, all observer-free): 131,072 re-compiles of one 12-byte
+ * leaf, 313,122 file opens, 145,636 fd-2 mute cycles, and 8.5 s wall against
+ * 1.2 s for the same program with the gate off — a 7x REGRESSION delivered by a
+ * feature whose entire purpose is speed. The runtime path has eigs_loading_enter
+ * (#496) as its memo; the eager path had only the depth cap, which bounds depth
+ * and not breadth.
+ *
+ * Thread-local, and it persists for the LIFE OF THE THREAD rather than for one
+ * top-level compile. Clearing per-compile still left the pass re-resolving every
+ * module on every runtime `load_file` — measured on the DAG above at 38,228 leaf
+ * opens against the program's own 16,384, i.e. the pass roughly DOUBLED the file
+ * I/O of module-heavy code. `load_file` has no module cache by design (#496: "it
+ * re-executes every call"), so without a persistent memo the eager pass inherits
+ * that multiplier.
+ *
+ * Staleness is not a soundness question here: skipping a re-scan can only make
+ * the eager pass MISS a module that has since become observing, and that is
+ * exactly the condition builtin_load_file raises on (the bit flipping 0 -> 1 at
+ * the load). The memo can make the gate conservative-late, never silently wrong.
+ * Released by eigs_obs_memo_release() at thread detach. */
+static __thread char **g_obs_memo = NULL;
+static __thread int g_obs_memo_n = 0, g_obs_memo_cap = 0;
+
+static int obs_memo_seen(const char *path) {
+    for (int i = 0; i < g_obs_memo_n; i++)
+        if (strcmp(g_obs_memo[i], path) == 0) return 1;
+    return 0;
+}
+static void obs_memo_add(const char *path) {
+    if (g_obs_memo_n == g_obs_memo_cap) {
+        int nc = g_obs_memo_cap ? g_obs_memo_cap * 2 : 16;
+        char **np = realloc(g_obs_memo, (size_t)nc * sizeof(char *));
+        if (!np) return;                 /* out of memory: lose the memo, not correctness */
+        g_obs_memo = np; g_obs_memo_cap = nc;
+    }
+    g_obs_memo[g_obs_memo_n++] = xstrdup(path);
+}
+void eigs_obs_memo_release(void);
+static void obs_memo_clear(void) {
+    for (int i = 0; i < g_obs_memo_n; i++) free(g_obs_memo[i]);
+    free(g_obs_memo);
+    g_obs_memo = NULL; g_obs_memo_n = 0; g_obs_memo_cap = 0;
+}
+void eigs_obs_memo_release(void) { obs_memo_clear(); }
+
 static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     ObsLoadList L;
     char *slots[OBS_GATE_MAX_LOADS];
+    char *resolved = NULL;
     L.paths = slots; L.count = 0; L.cap = OBS_GATE_MAX_LOADS; L.overflow = 0;
+
+    /* The eager pass informs a RUNTIME decision. Entry points that compile
+     * without ever executing — `--lint` and the LSP, which recompiles on every
+     * didChange — must not reach out to the filesystem on its behalf.
+     * src/lint_host.c documents "import and load_file are executed by the VM,
+     * not resolved here, so lint still touches nothing but the file in front of
+     * it"; a blind critic caught this pass making that false, and an editor
+     * stat/read/compiling a file's load targets on every keystroke with it. */
+    if (!g_obs_gate_scan_enabled) return;
 
     if (g_obs_gate_depth >= OBS_GATE_MAX_DEPTH) { g_obs_needed = 1; return; }
 
@@ -3280,13 +3340,47 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
      * in a process that happens to have spawned a worker. */
     if (L.count > 0 && g_vm_multithreaded) { g_obs_needed = 1; goto done; }
 
+    /* HEAP, not stack. As `char resolved[8192]` inside the loop this frame
+     * measured 8,864 bytes (gcc -fstack-usage) on EVERY compile_ast, and this
+     * function recurses to OBS_GATE_MAX_DEPTH — 8 x 8,864 = 70,912 bytes of
+     * `resolved` alone, more than the whole 64 KiB budget that
+     * tools/embed_stack_soak.sh enforces, before tokenize/parse/compile_node
+     * frames are counted. .claude/rules/c-runtime-memory.md calls >= ~2 KiB in a
+     * recursive path suspect; that rule was bought on exactly this shape. */
+    if (L.count > 0) {
+        resolved = malloc(8192);
+        if (!resolved) { g_obs_needed = 1; goto done; }
+    }
+
     for (int i = 0; i < L.count && !g_obs_needed; i++) {
-        char resolved[8192];
         long size = 0;
         char *source = NULL;
-        if (resolve_eigenscript_file(L.paths[i], resolved, sizeof(resolved)))
-            source = read_file_util(resolved, &size);
+#if !EIGENSCRIPT_FREESTANDING
+        /* Guarded on the VALUE, and the guard must cover the CALLEES, not only
+         * the helpers. builtins_host.c is a whole-TU carve-out in this profile,
+         * so read_file_util does not exist to link against; leaving these two
+         * calls outside the guard broke `make freestanding-check` and
+         * tools/embed_stack_soak.sh at the LINK step. Both are CI-only, which is
+         * why a green release suite and a green ASan suite could not see it —
+         * and it is the same defect class as the #ifdef-vs-#if mistake this file
+         * already records, made a second time while fixing the first. */
+        int resolved_ok = resolve_eigenscript_file(L.paths[i], resolved, 8192);
+#else
+        int resolved_ok = 0;
+#endif
+        if (!resolved_ok) { g_obs_needed = 1; break; }
+
+        /* Memo BEFORE the read. Resolving is an access(2) probe; reading pulls
+         * the whole file and then throws it away. Checking after the read left
+         * 32,772 opens of one leaf on the DAG above against the program's own
+         * 16,384 — the pass still doubled the file I/O even though it compiled
+         * each module exactly once. */
+        if (obs_memo_seen(resolved)) continue;
+#if !EIGENSCRIPT_FREESTANDING
+        source = read_file_util(resolved, &size);
+#endif
         if (!source) { g_obs_needed = 1; break; }
+        obs_memo_add(resolved);
 
         int muted = obs_gate_mute_stderr();
         if (muted < 0) { free(source); g_obs_needed = 1; break; }
@@ -3319,6 +3413,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     }
 
 done:
+    free(resolved);
     for (int i = 0; i < L.count; i++) free(L.paths[i]);
 }
 

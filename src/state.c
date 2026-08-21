@@ -83,6 +83,10 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     }
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
+    /* #915: xcalloc zeroes, and 0 here would mean "never scan", silently
+     * disabling the observer gate's eager pass on every thread. Default ON;
+     * only --lint and the LSP clear it. */
+    th->obs_gate_scan_enabled = 1;
     th->loop_exit_reason = "normal";
     th->last_obs_slot_idx = -1;   /* #262 Phase-2: no observed slot yet */
 
@@ -172,6 +176,7 @@ void eigs_thread_detach(void) {
      * struct itself goes. Must run while eigs_current still points at th
      * so the bridge macros inside free_value/env destructors resolve. */
     eigs_thread_drain_caches(th);
+    { extern void eigs_obs_memo_release(void); eigs_obs_memo_release(); }  /* #915 */
 
     arena_destroy();
     eigs_current = NULL;

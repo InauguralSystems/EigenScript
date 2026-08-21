@@ -1247,8 +1247,24 @@ int chunk_scan_static_loads(const EigsChunk *chunk,
     if (!chunk) return 1;
     if (!chunk->compiler_scanned) return 1;   /* unscanned chunk — see #830 above */
 
-    /* Resolver parity is a precondition, not a footnote. */
-    if (const_pool_index_of(chunk, "chdir") >= 0) return 1;
+    /* NOTE: this scan does NOT try to prove that the file it resolves now is the
+     * file `load_file` will read later. It cannot: the whole program runs in
+     * between. An earlier draft opened with
+     *
+     *     if (const_pool_index_of(chunk, "chdir") >= 0) return 1;
+     *
+     * under the heading "resolver parity is a precondition, not a footnote" —
+     * a one-element denylist, and the wrong population key (mechanical-gates
+     * §60). `chdir` is one way to make a literal resolve elsewhere; a blind
+     * critic executed two others in minutes (`write_text` rewriting the module
+     * between the two reads, and creating a file in the cwd that SHADOWS the
+     * resolved one), and `rename`, `mkdir`, `remove_file` and any subprocess
+     * reach the same state. Widening the list would only postpone the next one.
+     *
+     * The parity requirement is instead enforced where it is checkable, at the
+     * load itself: builtin_load_file raises if compiling the module flips the
+     * observer bit 0 -> 1, which is precisely "the gate closed on stale
+     * evidence". That check is on the OUTCOME and needs no enumeration. */
 
     int lf = const_pool_index_of(chunk, "load_file");
     if (lf >= 0) {

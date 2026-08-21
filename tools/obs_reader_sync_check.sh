@@ -122,8 +122,122 @@ switch_reader_ops() {
     ' "$CHUNK_SRC" | sort -u
 }
 
+
+# ---- --selftest -------------------------------------------------------------
+#
+# WHY THIS EXISTS. The first version of this file advertised --selftest in its
+# Usage block and had no such branch; `--selftest` was silently ignored and the
+# gate printed PASS. The "5-mutation train, all caught" behind it was a one-off
+# run banked nowhere, so nothing re-ran it — and a blind critic then showed that
+# EVERY substantive assertion could be gutted while the gate stayed green on a
+# tree carrying the exact fault that assertion exists to catch. The count pin
+# could not see it, because gutting a body leaves the number of loops unchanged
+# (§45). A gate nobody mutation-tests is a gate nobody has shown to work (§19).
+#
+# TWO TRAINS, because they answer different questions:
+#
+#   FAULTS  — plant a real divergence in COPIES of the two homes and require the
+#             gate to go red. Proves the gate can fail at all.
+#   WITNESS — plant the same fault AND gut one assertion's body in a copy of the
+#             gate. The mutant must go GREEN, which proves that assertion is the
+#             SOLE witness for that fault. If it stays red, some neighbouring
+#             guard is covering for it (§21) and the assertion is untested.
+#
+# §66: the mutants run with ABSOLUTE CHUNK_SRC / MARKER_TOOL, so this file's
+# opening `cd` is inert and a copy placed anywhere still resolves its inputs.
+# The uniform-failure signature (every fixture failing identically) means the
+# harness broke, not the artifact.
+run_selftest() {
+    local tmp; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' RETURN
+    local pass=0 fail=0
+    local real_vm="$PWD/src/vm.h" real_chunk="$PWD/$CHUNK_SRC" real_gate="$PWD/${BASH_SOURCE[0]#./}"
+    [ -f "$real_gate" ] || real_gate="$PWD/tools/obs_reader_sync_check.sh"
+
+    # A marker tool bound to a MUTABLE copy of vm.h.
+    mk_marker() {
+        printf '#!/bin/bash\nVM_HEADER=%s exec %s/tools/obs_marker_check.sh "$@"\n' "$1" "$PWD" > "$tmp/marker.sh"
+        chmod +x "$tmp/marker.sh"
+    }
+    # run_gate <gate> <chunk> <vmh> -> prints rc
+    run_gate() {
+        mk_marker "$3"
+        CHUNK_SRC="$2" MARKER_TOOL="$tmp/marker.sh" bash "$1" >/dev/null 2>&1
+        echo $?
+    }
+    say() { # name expected got
+        if [ "$2" = "$3" ]; then pass=$((pass+1)); echo "  ok   $1 (rc=$3)"
+        else fail=$((fail+1)); echo "  MISS $1 — expected rc=$2, got rc=$3"; fi
+    }
+
+    # Fault fixtures, each in its own pair of copies.
+    plant() { # name -> writes $tmp/<name>.chunk.c and $tmp/<name>.vm.h
+        cp "$real_chunk" "$tmp/$1.chunk.c"; cp "$real_vm" "$tmp/$1.vm.h"
+        case "$1" in
+          clean) ;;
+          E) sed -i '/^            case OP_TRAJECTORY_SLOT:$/d' "$tmp/$1.chunk.c" ;;      # reader dropped from switch
+          B) sed -i 's/^            case OP_PREDICATE:$/            case OP_ADD:\n            case OP_PREDICATE:/' "$tmp/$1.chunk.c" ;;  # stray opcode
+          D) sed -i '/^            case OP_IMPORT:$/d' "$tmp/$1.chunk.c" ;;               # exemption dropped
+          F) sed -i 's|OP_INTERROGATE,     /\*obs:NONE\*/|OP_INTERROGATE,     /*obs:READS*/|' "$tmp/$1.vm.h" ;;  # exemption spent
+        esac
+    }
+    # Assertion gutters, keyed to the fault each one is the sole witness for.
+    gut() { # name -> writes $tmp/<name>.gate.sh
+        cp "$real_gate" "$tmp/$1.gate.sh"
+        case "$1" in
+          E) sed -i 's|\*) note_fail "opcode \$op is marked obs:READS.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
+          B) sed -i 's|\*) note_fail "chunk_reads_observer lists \$op, which is not.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
+          D) sed -i 's|\*) note_fail "pinned exemption \$op is no longer listed.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
+          F) sed -i 's|\*" \$op "\*) note_fail "pinned exemption \$op is now marked.*|*" $op "*) : ;;|' "$tmp/$1.gate.sh" ;;
+        esac
+        # The count pin would catch a gutted body only by accident; neutralise it
+        # so this train measures the ASSERTION, not the pin (§21: know which
+        # check fired). The pin is exercised by its own row below.
+        sed -i 's|^if \[ "\$CHECKS" -ne "\$EXPECTED_CHECKS" \]; then|if false; then|' "$tmp/$1.gate.sh"
+        # Floors are genuinely redundant with the direction checks for some
+        # faults; neutralise them too so a survivor means "no witness", not
+        # "a floor covered for it".
+        sed -i 's|^READS_FLOOR=.*|READS_FLOOR=0|; s|^SWITCH_FLOOR=.*|SWITCH_FLOOR=0|' "$tmp/$1.gate.sh"
+    }
+
+    echo "== control: unmutated copies must PASS =="
+    plant clean; say "clean copies" 0 "$(run_gate "$real_gate" "$tmp/clean.chunk.c" "$tmp/clean.vm.h")"
+
+    echo "== FAULTS: the real gate must go red on each =="
+    for f in E B D F; do
+        plant "$f"
+        say "fault $f caught by the real gate" 1 "$(run_gate "$real_gate" "$tmp/$f.chunk.c" "$tmp/$f.vm.h")"
+    done
+
+    echo "== WITNESS: gutting the sole witness must let its fault SURVIVE =="
+    for f in E B D F; do
+        gut "$f"
+        say "assertion $f is the sole witness" 0 "$(run_gate "$tmp/$f.gate.sh" "$tmp/$f.chunk.c" "$tmp/$f.vm.h")"
+    done
+
+    echo "== the count pin catches a DELETED check =="
+    cp "$real_gate" "$tmp/pin.gate.sh"
+    sed -i 's|^    ck$||' "$tmp/pin.gate.sh"
+    plant clean
+    say "deleting a ck() trips the comparison pin" 1 "$(run_gate "$tmp/pin.gate.sh" "$tmp/clean.chunk.c" "$tmp/clean.vm.h")"
+
+    echo "SELFTEST: $pass passed, $fail failed"
+    [ "$fail" -eq 0 ] || return 1
+    return 0
+}
+
+if [ "${1:-}" = "--selftest" ]; then
+    run_selftest
+    exit $?
+fi
+
 FAILED=0
 CHECKS=0
+# CHECKS counts COMPARISONS PERFORMED, not loops entered. Counting per-loop is
+# invariant under the mutation that matters — gutting a loop's body leaves the
+# count untouched while the gate stops checking anything (mechanical-gates §45:
+# ask what change keeps the number constant while destroying what it counts).
+# The count pin is still not sufficient on its own; --selftest is what proves
+# each assertion body is load-bearing.
 note_fail() { FAILED=$((FAILED + 1)); echo "FAIL: $*"; }
 ck() { CHECKS=$((CHECKS + 1)); }
 
@@ -152,8 +266,8 @@ fi
 
 # 2. THE HARD DIRECTION. A marker-declared reader missing from the switch is the
 #    silent-wrong case: gated off, then reading slots nobody updated.
-ck
 for op in $MARKER_READS; do
+    ck
     case " $SWITCH_OPS " in
         *" $op "*) ;;
         *) note_fail "opcode $op is marked obs:READS in src/vm.h but is NOT listed in chunk_reads_observer" ;;
@@ -161,8 +275,8 @@ for op in $MARKER_READS; do
 done
 
 # 3. THE SOFT DIRECTION, modulo pinned exemptions.
-ck
 for op in $SWITCH_OPS; do
+    ck
     case " $MARKER_READS " in *" $op "*) continue ;; esac
     case " $EXEMPT " in
         *" $op "*) ;;
@@ -186,11 +300,13 @@ for op in $EXEMPT; do
     esac
 done
 
-# 5. Pin the assertion count (§37): deleting a whole check must not quietly
-#    shrink this gate while it keeps printing OK.
-EXPECTED_CHECKS=$((4 + 2 * $(printf '%s\n' $EXEMPT | grep -c .)))
+# 5. Floor the comparisons actually performed (§37/§43). Every marker reader is
+#    compared once, every switch entry once, plus two rows per exemption and the
+#    two non-vacuity checks. A gate that examined fewer items than that has
+#    stopped checking something, whatever it prints.
+EXPECTED_CHECKS=$((2 + MARKER_N + SWITCH_N + 2 * $(printf '%s\n' $EXEMPT | grep -c .)))
 if [ "$CHECKS" -ne "$EXPECTED_CHECKS" ]; then
-    echo "FAIL: ran $CHECKS assertions, expected $EXPECTED_CHECKS (a check was added or deleted)"
+    echo "FAIL: performed $CHECKS comparisons, expected $EXPECTED_CHECKS (a check was added, deleted or gutted)"
     FAILED=$((FAILED + 1))
 fi
 

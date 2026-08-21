@@ -52,6 +52,19 @@ counters_of() {   # strip only elapsed_s; everything else must match
     printf '%s\n' "$1" | grep '^DONE' | sed -E 's/ elapsed_s=[0-9.]+//' | head -1
 }
 
+# A DONE line with no counters on it is not evidence (mechanical-gates §43:
+# `-z` is an emptiness test, not a floor). Executed by a blind critic: a stub
+# emitting a bare `DONE` printed "counters, identical across all 4 runs: DONE"
+# and RESULT: valid. Require the fields the comparison is actually FOR.
+COUNTER_FIELDS="${COUNTER_FIELDS:-conflicts= propagations= decisions= restarts=}"
+counters_are_substantive() {
+    local c="$1" f
+    for f in $COUNTER_FIELDS; do
+        case "$c" in *"$f"*) ;; *) return 1 ;; esac
+    done
+    return 0
+}
+
 OUTF=$(mktemp); trap 'rm -f "$OUTF"' EXIT
 
 # Runs one arm into $OUTF. Deliberately NOT called in a command substitution —
@@ -66,6 +79,9 @@ run_one() {
     local c; c=$(counters_of "$(cat "$OUTF")")
     if [ -z "$c" ]; then
         echo "VOID: no DONE line in a $1 run — the harness measured nothing"
+        VOID=1
+    elif ! counters_are_substantive "$c"; then
+        echo "VOID: a $1 run's DONE line carries no counters to compare: $c"
         VOID=1
     elif [ "$HAVE_COUNTERS" -eq 0 ]; then
         COUNTERS="$c"; HAVE_COUNTERS=1
@@ -94,7 +110,9 @@ if [ "$HAVE_COUNTERS" -eq 0 ]; then
     echo "RESULT: VOID — no counters were ever extracted; the equality check ran on nothing"
     exit 1
 fi
+# Order matters: printing "identical across all N runs" ABOVE a VOID verdict
+# reassures one line before contradicting itself. Verdict first.
+[ "$VOID" -ne 0 ] && { echo "RESULT: VOID — the two arms did not do the same work"; exit 1; }
 echo "counters, identical across all $((2 * N)) runs:"
 echo "  $COUNTERS"
-[ "$VOID" -ne 0 ] && { echo "RESULT: VOID — the two arms did not do the same work"; exit 1; }
 echo "RESULT: valid — same search, same binary, interleaved"

@@ -1034,8 +1034,46 @@ Value* builtin_load_file(Value *arg) {
     Env *target = g_load_env ? g_load_env : g_global_env;
     int saved_boundary = g_compile_module_boundary;
     g_compile_module_boundary = 1;                       /* #373 */
+    /* #915: the observer gate may have CLOSED on evidence gathered when this
+     * unit's parent was compiled — the eager pre-pass resolved this literal
+     * target and compiled it then. The file it read and the file being compiled
+     * now are two separate reads with the whole program running in between, so
+     * they can differ: the program can rewrite the module (`write_text` then
+     * `load_file`), or create a file in the cwd that SHADOWS the one the
+     * pre-pass resolved (resolve_eigenscript_file tries cwd before the script
+     * dir). Both were executed and both produced a silently wrong answer —
+     * `report of x` read `equilibrium` under the gate and `moving` without it.
+     *
+     * The guard is on the OUTCOME, not on the cause. `compile_ast` ORs this
+     * module's verdict into the bit, so a 0 -> 1 transition HERE means exactly
+     * "the gate was closed, and the module that just compiled can read observer
+     * state after all" — i.e. the assignments that already ran were never
+     * recorded and their history is unrecoverable. An earlier draft tried to
+     * enumerate the causes instead and shipped a one-element denylist (`chdir`);
+     * that is the wrong population key (mechanical-gates §60), because
+     * `write_text`, `rename`, `mkdir`, `remove_file` and any subprocess reach
+     * the same state. This check needs no such list and cannot be outrun by a
+     * new one.
+     *
+     * Raising is the only sound outcome: the bit is monotonic and the missing
+     * history cannot be reconstructed, so late is not recoverable — loud is. */
+    int obs_before_module = g_obs_needed;
     EigsChunk *lf_chunk = compile_ast(ast, target, source);
     g_compile_module_boundary = saved_boundary;
+    if (!obs_before_module && g_obs_needed) {
+        g_parse_errors = saved_errors;
+        chunk_free(lf_chunk);
+        free_ast(ast);
+        free_tokenlist(&tl);
+        free(source);
+        rt_error(EK_IO, 0,
+            "load_file: '%s' reads observer state but did not when the observer "
+            "gate scanned it — the file changed, or a different file now resolves "
+            "for that path. Bindings assigned before this load have no recorded "
+            "history. Re-run with EIGS_OBS_FORCE=1 to disable the gate.",
+            arg->data.str);
+        return make_null();
+    }
     if (g_parse_errors > 0) {
         g_parse_errors = saved_errors;
         chunk_free(lf_chunk);
