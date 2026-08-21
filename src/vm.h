@@ -56,120 +56,120 @@ void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
 /* ---- Opcodes ---- */
 typedef enum {
     /* Constants */
-    OP_CONST,           /* [idx:16] push constant pool entry */
-    OP_NULL,            /* push null */
-    OP_NUM_ZERO,        /* push 0.0 */
-    OP_NUM_ONE,         /* push 1.0 */
+    OP_CONST,           /*obs:NONE*/ /* [idx:16] push constant pool entry */
+    OP_NULL,            /*obs:NONE*/ /* push null */
+    OP_NUM_ZERO,        /*obs:NONE*/ /* push 0.0 */
+    OP_NUM_ONE,         /*obs:NONE*/ /* push 1.0 */
 
     /* Arithmetic (pop 2, push 1) */
-    OP_ADD,
-    OP_SUB,
-    OP_MUL,
-    OP_DIV,
-    OP_MOD,
+    OP_ADD, /*obs:NONE*/
+    OP_SUB, /*obs:NONE*/
+    OP_MUL, /*obs:NONE*/
+    OP_DIV, /*obs:NONE*/
+    OP_MOD, /*obs:NONE*/
 
     /* Bitwise (pop 2, push 1) */
-    OP_BAND,
-    OP_BOR,
-    OP_BXOR,
-    OP_SHL,
-    OP_SHR,
+    OP_BAND, /*obs:NONE*/
+    OP_BOR, /*obs:NONE*/
+    OP_BXOR, /*obs:NONE*/
+    OP_SHL, /*obs:NONE*/
+    OP_SHR, /*obs:NONE*/
 
     /* Unary (pop 1, push 1) */
-    OP_NEG,
-    OP_NOT,
-    OP_BNOT,
+    OP_NEG, /*obs:NONE*/
+    OP_NOT, /*obs:NONE*/
+    OP_BNOT, /*obs:NONE*/
 
     /* Comparison (pop 2, push 1) */
-    OP_EQ,
-    OP_NE,
-    OP_LT,
-    OP_GT,
-    OP_LE,
-    OP_GE,
+    OP_EQ, /*obs:NONE*/
+    OP_NE, /*obs:NONE*/
+    OP_LT, /*obs:NONE*/
+    OP_GT, /*obs:NONE*/
+    OP_LE, /*obs:NONE*/
+    OP_GE, /*obs:NONE*/
 
     /* Variables */
-    OP_GET_LOCAL,       /* [slot:16] push local from frame slot */
-    OP_SET_LOCAL,       /* [slot:16] TOS -> local slot (keep on stack) */
-    OP_GET_NAME,        /* [name_idx:16] dynamic lookup by name */
-    OP_SET_NAME,        /* [name_idx:16] outward-assignment by name */
-    OP_SET_NAME_LOCAL,  /* [name_idx:16] set in current scope only */
-    OP_SET_FN_NAME_LOCAL, /* [name_idx:16] set in frame->fn_env (skips intervening loop/scope envs) */
+    OP_GET_LOCAL,       /*obs:NONE*/ /* [slot:16] push local from frame slot */
+    OP_SET_LOCAL,       /*obs:WRITES*/ /* [slot:16] TOS -> local slot (keep on stack) */
+    OP_GET_NAME,        /*obs:NONE*/ /* [name_idx:16] dynamic lookup by name */
+    OP_SET_NAME,        /*obs:WRITES*/ /* [name_idx:16] outward-assignment by name */
+    OP_SET_NAME_LOCAL,  /*obs:WRITES*/ /* [name_idx:16] set in current scope only */
+    OP_SET_FN_NAME_LOCAL, /*obs:WRITES*/ /* [name_idx:16] set in frame->fn_env (skips intervening loop/scope envs) */
 
     /* Control flow */
-    OP_JUMP,            /* [offset:16] unconditional forward jump */
-    OP_JUMP_BACK,       /* [offset:16] unconditional backward jump */
-    OP_JUMP_IF_FALSE,   /* [offset:16] pop, jump if falsy */
-    OP_JUMP_IF_TRUE,    /* [offset:16] pop, jump if truthy */
-    OP_JUMP_IF_FALSE_PEEK, /* [offset:16] peek, jump if falsy (short-circuit and) */
-    OP_JUMP_IF_TRUE_PEEK,  /* [offset:16] peek, jump if truthy (short-circuit or) */
+    OP_JUMP,            /*obs:NONE*/ /* [offset:16] unconditional forward jump */
+    OP_JUMP_BACK,       /*obs:NONE*/ /* [offset:16] unconditional backward jump */
+    OP_JUMP_IF_FALSE,   /*obs:NONE*/ /* [offset:16] pop, jump if falsy */
+    OP_JUMP_IF_TRUE,    /*obs:NONE*/ /* [offset:16] pop, jump if truthy */
+    OP_JUMP_IF_FALSE_PEEK, /*obs:NONE*/ /* [offset:16] peek, jump if falsy (short-circuit and) */
+    OP_JUMP_IF_TRUE_PEEK,  /*obs:NONE*/ /* [offset:16] peek, jump if truthy (short-circuit or) */
 
     /* Stack manipulation */
-    OP_POP,             /* discard TOS */
-    OP_DUP,             /* duplicate TOS */
-    OP_DUP2,            /* duplicate top two: a b → a b a b */
+    OP_POP,             /*obs:NONE*/ /* discard TOS */
+    OP_DUP,             /*obs:NONE*/ /* duplicate TOS */
+    OP_DUP2,            /*obs:NONE*/ /* duplicate top two: a b → a b a b */
 
     /* Functions */
-    OP_CLOSURE,         /* [fn_idx:16] create closure from compiled function */
-    OP_CALL,            /* [argc:16] call function with argc args */
-    OP_RETURN,          /* return TOS */
-    OP_RETURN_NULL,     /* return null (implicit) */
+    OP_CLOSURE,         /*obs:NONE*/ /* [fn_idx:16] create closure from compiled function */
+    OP_CALL,            /*obs:NONE*/ /* [argc:16] call function with argc args */
+    OP_RETURN,          /*obs:NONE*/ /* return TOS */
+    OP_RETURN_NULL,     /*obs:NONE*/ /* return null (implicit) */
 
     /* Data structures */
-    OP_LIST,            /* [count:16] pop count items, push list */
-    OP_DICT,            /* [count:16] pop count key-value pairs, push dict */
-    OP_INDEX_GET,       /* pop index, pop target, push target[index] */
-    OP_INDEX_SET,       /* pop value, pop index, pop target, set, push value */
-    OP_DOT_GET,         /* [name_idx:16] pop target, push target.name */
-    OP_DOT_SET,         /* [name_idx:16] pop value, pop target, set, push value */
+    OP_LIST,            /*obs:NONE*/ /* [count:16] pop count items, push list */
+    OP_DICT,            /*obs:NONE*/ /* [count:16] pop count key-value pairs, push dict */
+    OP_INDEX_GET,       /*obs:NONE*/ /* pop index, pop target, push target[index] */
+    OP_INDEX_SET,       /*obs:NONE*/ /* pop value, pop index, pop target, set, push value */
+    OP_DOT_GET,         /*obs:NONE*/ /* [name_idx:16] pop target, push target.name */
+    OP_DOT_SET,         /*obs:NONE*/ /* [name_idx:16] pop value, pop target, set, push value */
 
     /* Loops and iteration */
-    OP_ITER_SETUP,      /* pop iterable, push iterator state */
-    OP_ITER_NEXT,       /* [exit_offset:16] advance or jump to exit */
-    OP_LOOP_ENV_FRESH,  /* create fresh child env if current was captured by closure */
-    OP_LOOP_ENV_END,    /* restore parent env from loop body env */
-    OP_BREAK,           /* unwind to enclosing loop exit */
-    OP_CONTINUE,        /* jump to enclosing loop header */
+    OP_ITER_SETUP,      /*obs:NONE*/ /* pop iterable, push iterator state */
+    OP_ITER_NEXT,       /*obs:NONE*/ /* [exit_offset:16] advance or jump to exit */
+    OP_LOOP_ENV_FRESH,  /*obs:NONE*/ /* create fresh child env if current was captured by closure */
+    OP_LOOP_ENV_END,    /*obs:NONE*/ /* restore parent env from loop body env */
+    OP_BREAK,           /*obs:NONE*/ /* unwind to enclosing loop exit */
+    OP_CONTINUE,        /*obs:NONE*/ /* jump to enclosing loop header */
 
     /* Error handling */
-    OP_TRY_BEGIN,       /* [catch_offset:16] push exception handler */
-    OP_TRY_END,         /* pop exception handler */
+    OP_TRY_BEGIN,       /*obs:NONE*/ /* [catch_offset:16] push exception handler */
+    OP_TRY_END,         /*obs:NONE*/ /* pop exception handler */
 
     /* Observer system */
-    OP_OBSERVE_ASSIGN,  /* [name_idx:16] observer update for assignment (env walk) */
-    OP_OBSERVE_ASSIGN_LOCAL, /* [slot:16] observer update; prev value lives in fn_env slot */
-    OP_INTERROGATE,     /* [kind:16] pop target, push query result */
-    OP_PREDICATE,       /* [kind:16] push predicate result */
-    OP_UNOBSERVED_BEGIN,/* increment g_unobserved_depth */
-    OP_UNOBSERVED_END,  /* decrement g_unobserved_depth */
-    OP_LOOP_STALL_CHECK,/* [exit_offset:16] observer-stall + iteration cap (observer-based loops) */
-    OP_LOOP_CAP_CHECK,  /* [exit_offset:16] iteration cap ONLY (plain loops; no observer-stall) */
+    OP_OBSERVE_ASSIGN,  /*obs:NONE*/ /* [name_idx:16] observer update for assignment (env walk) */
+    OP_OBSERVE_ASSIGN_LOCAL, /*obs:WRITES*/ /* [slot:16] observer update; prev value lives in fn_env slot */
+    OP_INTERROGATE,     /*obs:NONE*/ /* [kind:16] pop target, push query result */
+    OP_PREDICATE,       /*obs:READS*/ /* [kind:16] push predicate result */
+    OP_UNOBSERVED_BEGIN,/*obs:WRITES*/ /* increment g_unobserved_depth */
+    OP_UNOBSERVED_END,  /*obs:WRITES*/ /* decrement g_unobserved_depth */
+    OP_LOOP_STALL_CHECK,/*obs:READS*/ /* [exit_offset:16] observer-stall + iteration cap (observer-based loops) */
+    OP_LOOP_CAP_CHECK,  /*obs:DIAG*/ /* [exit_offset:16] iteration cap ONLY (plain loops; no observer-stall) */
 
     /* Miscellaneous */
-    OP_IMPORT,          /* [name_idx:16] import module, push dict */
-    OP_MATCH,           /* [case_count:16] pattern match dispatch */
-    OP_LISTCOMP_BEGIN,  /* push empty list accumulator */
-    OP_LISTCOMP_APPEND, /* append TOS to accumulator */
-    OP_LINE,            /* [line:32] update current line number (#630: was 16-bit, wrapped past line 65535) */
-    OP_WIDE,            /* next operand is 32-bit */
-    OP_DISPATCH,        /* pop arg, key, table; call table[key](arg) inline */
+    OP_IMPORT,          /*obs:NONE*/ /* [name_idx:16] import module, push dict */
+    OP_MATCH,           /*obs:NONE*/ /* [case_count:16] pattern match dispatch */
+    OP_LISTCOMP_BEGIN,  /*obs:NONE*/ /* push empty list accumulator */
+    OP_LISTCOMP_APPEND, /*obs:NONE*/ /* append TOS to accumulator */
+    OP_LINE,            /*obs:WRITES*/ /* [line:32] update current line number (#630: was 16-bit, wrapped past line 65535) */
+    OP_WIDE,            /*obs:NONE*/ /* next operand is 32-bit */
+    OP_DISPATCH,        /*obs:NONE*/ /* pop arg, key, table; call table[key](arg) inline */
 
     /* Superinstructions */
-    OP_LOCAL_DOT_GET,   /* [slot:16][name_idx:16] push local[slot].name */
-    OP_LOCAL_DOT_SET,   /* [slot:16][name_idx:16] TOS = local[slot].name = TOS */
-    OP_LOCAL_IDX_GET,   /* [slot:16][idx:16] push local[slot][idx] */
-    OP_LOCAL_IDX_DOT_GET, /* [slot:16][idx:16][name_idx:16] push local[slot][idx].name */
-    OP_LOCAL_IDX_DOT_SET, /* [slot:16][idx:16][name_idx:16] local[slot][idx].name = TOS */
-    OP_INTERROGATE_NAMED, /* [kind:16][name_idx:16] interrogate with known binding name */
-    OP_INTERROGATE_NAMED_AT, /* [kind:16][name_idx:16] interrogate at line (popped from stack) */
+    OP_LOCAL_DOT_GET,   /*obs:NONE*/ /* [slot:16][name_idx:16] push local[slot].name */
+    OP_LOCAL_DOT_SET,   /*obs:NONE*/ /* [slot:16][name_idx:16] TOS = local[slot].name = TOS */
+    OP_LOCAL_IDX_GET,   /*obs:NONE*/ /* [slot:16][idx:16] push local[slot][idx] */
+    OP_LOCAL_IDX_DOT_GET, /*obs:NONE*/ /* [slot:16][idx:16][name_idx:16] push local[slot][idx].name */
+    OP_LOCAL_IDX_DOT_SET, /*obs:NONE*/ /* [slot:16][idx:16][name_idx:16] local[slot][idx].name = TOS */
+    OP_INTERROGATE_NAMED, /*obs:READS*/ /* [kind:16][name_idx:16] interrogate with known binding name */
+    OP_INTERROGATE_NAMED_AT, /*obs:READS*/ /* [kind:16][name_idx:16] interrogate at line (popped from stack) */
 
-    OP_DEFAULT_PARAM,   /* [slot:16][skip_off:16] if frame->call_argc > slot, IP += skip_off
+    OP_DEFAULT_PARAM,   /*obs:NONE*/ /* [slot:16][skip_off:16] if frame->call_argc > slot, IP += skip_off
                          * (skip the default expression); else fall through (default runs
                          * and ends with OP_SET_LOCAL <slot>; OP_POP). */
-    OP_DESTRUCTURE_UNPACK, /* [n:16] pop list, raise if not VAL_LIST or length != n,
+    OP_DESTRUCTURE_UNPACK, /*obs:NONE*/ /* [n:16] pop list, raise if not VAL_LIST or length != n,
                             * else push elements onto stack in reverse so element 0 is TOS.
                             * Pairs with N assignment ops emitted after by the compiler. */
-    OP_SLICE_GET,       /* pop 3 (end, start, target); push the slice of target from
+    OP_SLICE_GET,       /*obs:NONE*/ /* pop 3 (end, start, target); push the slice of target from
                          * start..end (half-open). null in either bound means default
                          * (0 / len). Target must be VAL_LIST / VAL_STR / VAL_BUFFER.
                          * Negatives resolve via +len before the 0<=start<=end<=len
@@ -181,35 +181,35 @@ typedef enum {
      * (e.g. tests/test_vm_run_bytecode.eigs's `loopcode` uses 63 = LOOP_CAP_CHECK),
      * so inserting an opcode anywhere before them shifts those numbers and
      * misaligns the bytecode. New opcodes must always append here. */
-    OP_REPORT_SLOT,     /* [slot:16] report-of-local via slot trajectory (compile-flag gated) */
-    OP_OBSERVE_NAME_POST,/* [name_idx:16] slot-observe a name binding AFTER its SET
+    OP_REPORT_SLOT,     /*obs:READS*/ /* [slot:16] report-of-local via slot trajectory (compile-flag gated) */
+    OP_OBSERVE_NAME_POST,/*obs:WRITES*/ /* [name_idx:16] slot-observe a name binding AFTER its SET
                           * (binding now exists), fixing the first-assignment lag.
                           * Emitted only under compile-time EIGS_OBS_SHADOW; peeks TOS. */
-    OP_REPORT_NAME,     /* [name_idx:16] report of a non-local name: resolve (env,slot),
+    OP_REPORT_NAME,     /*obs:READS*/ /* [name_idx:16] report of a non-local name: resolve (env,slot),
                           * classify its slot. Compile-flag gated. */
-    OP_OBSERVE_VALUE_SLOT, /* [slot:16] `observe of <local>`: [status,entropy,dH,prev_dH]
+    OP_OBSERVE_VALUE_SLOT, /*obs:READS*/ /* [slot:16] `observe of <local>`: [status,entropy,dH,prev_dH]
                             * from the local's slot trajectory. Compile-flag gated. */
-    OP_OBSERVE_VALUE_NAME, /* [name_idx:16] `observe of <name>`: same, resolving the
+    OP_OBSERVE_VALUE_NAME, /*obs:READS*/ /* [name_idx:16] `observe of <name>`: same, resolving the
                             * binding's (env,slot). Compile-flag gated. */
-    OP_LOOP_ENV_CLEAR,  /* reset a persisted loop env's bindings for a new iteration.
+    OP_LOOP_ENV_CLEAR,  /*obs:WRITES*/ /* reset a persisted loop env's bindings for a new iteration.
                          * Appended here (NOT mid-list) per the convention above —
                          * hand-built bytecode hardcodes opcode numbers. */
-    OP_PREDICATE_SLOT,  /* [kind:16][slot:16] `<predicate> of <local>` — classify the
+    OP_PREDICATE_SLOT,  /*obs:READS*/ /* [kind:16][slot:16] `<predicate> of <local>` — classify the
                          * named local's slot trajectory (not the global last-observed
                          * alias the bare OP_PREDICATE reads). Appended, not mid-list. */
-    OP_PREDICATE_NAME,  /* [kind:16][name_idx:16] `<predicate> of <name>` — resolve the
+    OP_PREDICATE_NAME,  /*obs:READS*/ /* [kind:16][name_idx:16] `<predicate> of <name>` — resolve the
                          * binding's (env,slot) and classify its slot trajectory. */
-    OP_REPORT_VALUE_SLOT, /* [slot:16] `report_value of <local>` — classify the local's
+    OP_REPORT_VALUE_SLOT, /*obs:READS*/ /* [slot:16] `report_value of <local>` — classify the local's
                            * VALUE trajectory (#294), not its entropy. Appended, not mid-list. */
-    OP_REPORT_VALUE_NAME, /* [name_idx:16] `report_value of <name>` — resolve the binding's
+    OP_REPORT_VALUE_NAME, /*obs:READS*/ /* [name_idx:16] `report_value of <name>` — resolve the binding's
                            * (env,slot) and classify its value trajectory. */
-    OP_TRAJECTORY_SLOT, /* [slot:16] `trajectory of <local>` (#421) — snapshot the local
+    OP_TRAJECTORY_SLOT, /*obs:READS*/ /* [slot:16] `trajectory of <local>` (#421) — snapshot the local
                          * slot's observer windows into a dict VALUE that survives a call
                          * boundary (the slot itself is binding-identity and cannot).
                          * Appended, not mid-list. */
-    OP_TRAJECTORY_NAME, /* [name_idx:16] `trajectory of <name>` — resolve the binding's
+    OP_TRAJECTORY_NAME, /*obs:READS*/ /* [name_idx:16] `trajectory of <name>` — resolve the binding's
                          * (env,slot) and snapshot it. */
-    OP_INTERROGATE_NAMED_WHEN, /* [kind:16][name_idx:16] `<kw> is x when <N>` (#868) —
+    OP_INTERROGATE_NAMED_WHEN, /*obs:READS*/ /* [kind:16][name_idx:16] `<kw> is x when <N>` (#868) —
                                 * interrogate at the Nth RECORDED assignment (ordinal
                                 * popped from the stack), not at a source line. The `at`
                                 * address space is source lines, which is not injective:

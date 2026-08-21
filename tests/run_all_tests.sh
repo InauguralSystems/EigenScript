@@ -5208,6 +5208,30 @@ else
 fi
 echo ""
 
+# [99t] Observer-classification marker gate (#972).  Every opcode in the OpCode
+# enum must carry exactly one obs:READS / obs:WRITES / obs:DIAG / obs:NONE
+# marker, recorded by a human who read the handler.  Five attempts to DERIVE
+# that classification from the C are on #972 and all five were confidently
+# wrong — twice silently empty, once silently universal — so the gate does not
+# classify anything; it fails on any opcode with no verdict, which is a loud
+# unanswered question at the moment an opcode is added.  This matters because
+# the liveness elision it feeds fails silently and totally: an unlisted reader
+# means a program gates its own bookkeeping off and then answers "equilibrium"
+# forever.  The self-test runs eleven mutations, each witnessed by exactly one
+# fixture (verified by neutering each check in a copy of the gate).
+echo "[99t] Observer-classification marker gate (#972)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/obs_marker_check.sh" && \
+   bash "$TESTS_DIR/../tools/obs_marker_check.sh" --selftest >/dev/null; then
+    PASS=$((PASS + 1))
+    echo "  PASS: every opcode carries an observer classification (gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: an opcode is unclassified, or the marker gate self-test broke"
+    bash "$TESTS_DIR/../tools/obs_marker_check.sh" 2>&1 | sed -n '1,10p'
+fi
+echo ""
+
 # [99m] Lint archive symbol-collision gate (#917, hole closed by #922).
 # The #917 split turned lint's json_escape helper into an external symbol and
 # broke the static-library route for any embedder with its own json_escape.

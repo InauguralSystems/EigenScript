@@ -249,7 +249,12 @@ if [ "${1:-}" = "--selftest" ]; then
         { print }
         END { if (!done) exit 2 }
     ' "$VM_SOURCE" > "$work/vm_shrunk.c" || st_fail=1
-    sed -E 's@^([[:space:]]*OP_INTERROGATE,[[:space:]]*\/\* )\[kind:16\] @\1@' \
+    # `.*` between the comma and the comment opener, not `[[:space:]]*`: the
+    # enum line carries an /*obs:...*/ observer-classification marker between
+    # the two (#972), and anchoring on whitespace alone made this mutation a
+    # no-op — the selftest then failed with "could not remove the comment"
+    # rather than silently passing, which is the only reason it was noticed.
+    sed -E 's@^([[:space:]]*OP_INTERROGATE,.*\/\* )\[kind:16\] @\1@' \
         "$VM_HEADER" > "$work/vm_shrunk.h"
     if cmp -s "$work/vm_shrunk.h" "$VM_HEADER"; then
         echo "SELFTEST FAILED: could not remove the OP_INTERROGATE [kind:16] comment"
