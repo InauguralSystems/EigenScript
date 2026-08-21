@@ -150,6 +150,15 @@ SENTINEL="OP_COUNT"
 # awk portability (mechanical-gates 63): no 3-argument match(), no gensub(), no
 # dynamic regex. The marker is found with index() on the literal "/*obs:" —
 # exact substring, identical semantics in mawk, gawk, busybox awk and macOS awk.
+#
+# VERIFIED, not assumed, by shadowing awk on PATH: mawk, nawk (one-true-awk,
+# which is what macOS ships) and busybox awk all report the identical clean
+# verdict — 94 opcodes, READS=15 WRITES=10 DIAG=1 NONE=68 — AND the identical
+# selftest verdict. Both halves matter: a dialect that silently fails a dynamic
+# regex can still produce a plausible count and turn every comparison false,
+# which looks exactly like a clean pass. The first draft of the applier for
+# these markers used 3-argument match() and died immediately under mawk, which
+# is the cheap version of the same lesson.
 # The literal spelling also keeps prose out of the population: a comment that
 # happens to discuss obs: markers does not carry the "/*obs:" opener.
 enum_records() {
