@@ -428,3 +428,48 @@ interrogation.
 
 `unobserved:` is the only opt-out, and it is a real one: it skips the emission,
 so a hot region inside it pays nothing.
+
+### The classification that a future opt-out rests on (#972)
+
+The obvious improvement is to skip the emission automatically when a program
+provably never reads observer state. That optimisation is not shipped, and the
+reason is worth stating: its failure mode is silent and total. If any opcode
+that reads observer state is missing from the scan that decides "is anything
+reading?", a program gates its own bookkeeping off and then reads slots nobody
+updated — every binding answers `equilibrium` forever, with no crash and no
+failing test.
+
+Completeness therefore has to be pinned against the opcode set, and it **cannot
+be derived from the C**. Five derivations were tried on #972 and all five gave a
+confident wrong answer, in both directions: greps of the read-side API and even
+`objdump -dr` relocations both miss `obs_stall_trajectory()`, which reads
+`s->dH` / `s->entropy` as struct fields and calls no `observer_slot_*` function
+and emits no symbol reference; a scan for struct-field reads false-positives on
+unrelated `->n` reads; and a handler scan written against `case OP_X:` matches
+nothing at all (the VM dispatches through `CASE(NAME)` computed-goto macros)
+while the same scan repaired to `CASE(X)` matches everything, including a scope
+marker and a writer.
+
+So every entry in the `OpCode` enum in `src/vm.h` carries a hand-recorded
+marker instead:
+
+| marker | meaning |
+|---|---|
+| `obs:READS` | answers **from** recorded observer/temporal state — the set the future liveness scan consumes |
+| `obs:WRITES` | records, updates, resets or stamps that state |
+| `obs:DIAG` | reaches it only through the SIGUSR1 diagnostic dump, never through program-visible semantics |
+| `obs:NONE` | none of the above |
+
+`tools/obs_marker_check.sh` enumerates the enum and goes red on any opcode with
+no marker, so a new opcode is a red line at the moment it is added — which is
+when its author knows the answer and nobody else ever will. The gate proves a
+verdict was *recorded*; it cannot prove the verdict is *right*, and it stops at
+the opcode's own handler (`OP_CALL`, the JIT's OSR entry, and assembled chunks
+are excluded by name, each with the mechanism that covers it instead).
+
+Two results from that reading are worth knowing before touching this area, both
+contrary to the opcode names: `OP_OBSERVE_ASSIGN` is a **no-op** (the slot model
+observes at `OP_OBSERVE_NAME_POST` after the SET), and the bare `OP_INTERROGATE`
+reads **no** observer state at all — `when` / `where` / `why` / `how` on a value
+operand return constants, because observer state is binding-keyed and a bare
+value has no binding.

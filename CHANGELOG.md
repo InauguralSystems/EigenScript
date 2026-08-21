@@ -4,6 +4,45 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Every opcode now carries a recorded observer classification, and a gate
+  fails on any that does not (#972).** The optimisation this unblocks — stop
+  emitting observer bookkeeping when a program provably never reads observer
+  state — fails silently and totally when its reader set is incomplete: a
+  program gates its own bookkeeping off, then reads slots nobody updated, and
+  every binding answers `equilibrium` forever with no crash and nothing to fail
+  on. So the reader set has to be pinned against the closed opcode list.
+  **It cannot be derived from the C.** Five derivations were tried and all five
+  gave a confident wrong answer, in both directions: a grep of the read-side API
+  and `objdump -dr` relocations both miss `obs_stall_trajectory()`, which reads
+  `s->dH`/`s->entropy` as struct fields and so calls nothing and references no
+  symbol; a struct-field scan false-positives on unrelated `->n` reads; a
+  handler scan written against `case OP_X:` matches **nothing** (the VM
+  dispatches through `CASE(NAME)` computed-goto macros) and reports a clean
+  empty set; and the same scan repaired to `CASE(X)` matches **everything**,
+  including a scope marker and a writer.
+  So nothing is derived. All 94 opcodes were classified by reading their
+  handlers, and `src/vm.h` records the verdict as `obs:READS` (15),
+  `obs:WRITES` (10), `obs:DIAG` (1) or `obs:NONE` (68).
+  `tools/obs_marker_check.sh` (suite section `[99t]`) enumerates the enum and
+  goes red on any opcode with no marker — so a new opcode is a red line at the
+  moment it is added, which is when its author knows the answer and nobody else
+  ever will. A missing marker produces a loud unanswered question where a
+  derivation produced a confident wrong one.
+  Two verdicts contradict their opcode names and are worth knowing before
+  touching this area: `OP_OBSERVE_ASSIGN` is a **no-op** (the slot model
+  observes at `OP_OBSERVE_NAME_POST`, after the SET), and the bare
+  `OP_INTERROGATE` reads **no** observer state at all — `when`/`where`/`why`/
+  `how` on a value operand return constants, because observer state is
+  binding-keyed and a bare value has no binding. `obs:DIAG` exists for
+  `OP_LOOP_CAP_CHECK`, whose only reach into observer state is the SIGUSR1
+  dump: calling it a reader would pin bookkeeping on for every plain loop in
+  every program and delete the whole win, and calling it `NONE` would silently
+  drop the obligation that the dump must say the gate is closed rather than
+  render every binding as `equilibrium`.
+  No runtime change: the markers are comments and the gate is a test.
+
 ### Changed
 
 - **The strict argument reform now covers the whole builtin surface, and
