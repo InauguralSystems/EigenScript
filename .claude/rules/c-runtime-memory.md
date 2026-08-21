@@ -69,6 +69,23 @@ iteration, or a collector that quietly stops working).
   ~1.4 MB of one-time arena warmup, ~18x the real rate). Add a check there when
   you add a request path that allocates. It **skips on sanitizer builds** by
   design — ASan's redzones/quarantine grow RSS 567 B/req on a leak-free binary.
+- **A builtin's failure signal is a VALUE, not a C NULL — check the type, not
+  the pointer.** `make_null()` returns a perfectly good `Value*` whose `type` is
+  `VAL_NULL`, so `if (!callee_result)` is true on no path most builtins can
+  take. Bought (#1006): `store_update` was fixed to detect a failed
+  `store_put` with `if (!put_result)`, which is vacuous — `store_put` signals
+  every failure with `make_null()` and success with `make_str(key)`. The fix
+  shipped in that state until a repro printed the answer; the correct test is
+  `!put_result || put_result->type != VAL_STR`. When you consume another
+  builtin's return **as a C function call** (not through the VM), read its
+  success value and test for THAT.
+- **A raise does not unwind a direct C call.** `rt_error` sets a latch that
+  `CHECK_ERROR` acts on at the next VM dispatch, so a builtin calling another
+  builtin directly keeps running past the raise. That is why the callee's
+  return value is the only signal available at such a call site, and why
+  dropping it silently loses the error (#1006: `store_update` deleted the
+  record, `store_put` refused to re-insert it, and the caller was told 1).
+
 - **`eigs_json_encode` borrows its argument and `eigs_json_parse_value` returns
   an owned ref.** `eigs_json_encode(make_num(x))` leaks the `make_num`; a parsed
   Value must be decref'd on *every* path including early returns, and the value
