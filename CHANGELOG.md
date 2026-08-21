@@ -84,6 +84,40 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`-Wmisleading-indentation` is an ERROR now, and the four `w023_walk`
+  warnings behind #1013 are gone.** The issue reports them as new with #1012.
+  They were — but the more useful fact is that **`-Wall` has always emitted
+  this warning**, so they appeared in every build of this repo, in every
+  variant, scrolling past as non-fatal noise that nothing escalated:
+
+  ```
+  src/lint.c:1400:9: warning: this 'for' clause does not guard...
+   1400 |  for (...) W(n->data.cond.else_body[i]); break;
+        |                                          ^ not guarded, but indented as if it were
+  ```
+
+  Fixed by putting the trailing statement on its own line at all four reported
+  sites — and at three more the issue does not list, found by sweeping every
+  file under every variant's defines rather than working the four line numbers.
+  Tree total is now **0** with the warning on.
+  The durable half is the escalation: `-Werror=misleading-indentation` joins
+  `-Werror=switch` and `-Werror=comment` in `CFLAGS`, `ASAN_FLAGS`, every
+  variant and `build.sh`, and joins `REQUIRED_FLAGS` in
+  `tools/werror_switch_check.sh` so a recipe cannot quietly drop it. Both
+  halves proven: re-planting the original one-line shape now **fails the
+  build** (`error:`, rc=2, not a warning), and removing the flag from a single
+  recipe makes the gate red naming `MISSING required flag(s) [build]`.
+  Adding a required flag also broke three of that gate's own fixtures, each in
+  a different way, and all three are worth the note: eight `expect_clean`
+  shapes carried only the two old flags and correctly began reading as
+  violations; two *mixed* fixtures (one clean invocation, one violating, in the
+  same block) needed only their clean half updated, or they would have stopped
+  testing attribution; and the integration mutation's VERIFICATION string went
+  stale — the mutation drops `-Werror=comment` and keeps what follows, so a
+  third flag landed between `-Werror=switch` and `-O2` and the grep reported
+  *"the mutation was not planted"* when the planting was fine and the assertion
+  about it was wrong. Widening a required set edits the fixtures too.
+
 - **The fail-soft reform can now SEE the `-1` sentinel family, which it was
   blind to by construction (#1008).** `tools/failsoft_classify_check.sh`
   enumerated `return make_num(0)` and `return make_str("")`, so its population

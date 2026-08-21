@@ -6,7 +6,7 @@ CC      := gcc
 # a corrupted pointer that segfaults at runtime, layout-dependently (this hid
 # a remote-DoS in ext_http through CI; see #239). Make the whole class a hard
 # build error instead of an ignorable warning.
-CFLAGS  := -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+CFLAGS  := -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
 
 # RELRO/BIND_NOW are ELF concepts; macOS's ld64 rejects -z, and PIE is
 # already the default there. Without this split every Makefile link target
@@ -88,7 +88,7 @@ endef
 VERDEF   := -DEIGENSCRIPT_VERSION='"$(VERSION)"'
 DEFS_OFF := -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
 MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
-ASAN_FLAGS := -fsanitize=address,undefined,float-cast-overflow -Werror=switch -Werror=comment -g -O1
+ASAN_FLAGS := -fsanitize=address,undefined,float-cast-overflow -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1
 
 SRC_V_release := $(SOURCES)
 FLAGS_release := $(CFLAGS) $(DEFS_OFF) $(VERDEF)
@@ -127,15 +127,15 @@ FLAGS_asan-http := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODE
 LIBS_asan-http  := -lm -lpthread
 
 SRC_V_tsan := $(SOURCES)
-FLAGS_tsan := -fsanitize=thread -Werror=switch -Werror=comment -g -O1 $(DEFS_OFF) $(VERDEF)
+FLAGS_tsan := -fsanitize=thread -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 $(DEFS_OFF) $(VERDEF)
 LIBS_tsan  := -lm -lpthread
 
 SRC_V_valgrind := $(SOURCES)
-FLAGS_valgrind := -Werror=switch -Werror=comment -g -O1 -DEIGS_VALGRIND $(DEFS_OFF) $(VERDEF)
+FLAGS_valgrind := -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 -DEIGS_VALGRIND $(DEFS_OFF) $(VERDEF)
 LIBS_valgrind  := -lm -lpthread
 
 SRC_V_poison := $(SOURCES)
-FLAGS_poison := -Werror=switch -Werror=comment -g -O1 -DEIGS_POISON $(DEFS_OFF) $(VERDEF)
+FLAGS_poison := -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 -DEIGS_POISON $(DEFS_OFF) $(VERDEF)
 LIBS_poison  := -lm -lpthread
 
 VARIANTS := release full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison
@@ -288,7 +288,7 @@ $(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION
 dap: $(DAP_BINARY)
 
 jit-smoke:
-	$(CC) -Wall -Wextra -Werror=switch -Werror=comment -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
+	$(CC) -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
 	/tmp/jit_smoke
 
 EMBED_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
@@ -431,7 +431,7 @@ coverage-clean:
 coverage: coverage-clean
 	@for src in $(SOURCES); do \
 		obj=$${src%.c}.o; \
-		$(CC) -O0 -g --coverage -Wall -Wextra -Werror=switch -Werror=comment -c $$src -o $$obj \
+		$(CC) -O0 -g --coverage -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation -c $$src -o $$obj \
 			-DEIGENSCRIPT_EXT_HTTP=0 \
 			-DEIGENSCRIPT_EXT_MODEL=0 \
 			-DEIGENSCRIPT_EXT_DB=0 \
@@ -459,7 +459,7 @@ coverage: coverage-clean
 FUZZ_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
 
 fuzz: fuzz/fuzz_stdin.c $(FUZZ_SOURCES)
-	$(CC) -g -fsanitize=address,undefined -Werror=switch -Werror=comment -o fuzz/fuzz_stdin \
+	$(CC) -g -fsanitize=address,undefined -Werror=switch -Werror=comment -Werror=misleading-indentation -o fuzz/fuzz_stdin \
 		fuzz/fuzz_stdin.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
@@ -476,7 +476,7 @@ fuzz-run: fuzz
 # $$LIB_FUZZING_ENGINE provides main(). Locally we just pass everything
 # explicitly so a clean clone can reproduce the OSS-Fuzz build.
 fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
-	clang -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all -Werror=switch -Werror=comment \
+	clang -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all -Werror=switch -Werror=comment -Werror=misleading-indentation \
 		-o fuzz/fuzz_eigenscript \
 		fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
@@ -501,7 +501,7 @@ freestanding-check:
 # for mem/str/ctype/strtol/strtod/qsort/rand48/snprintf and the exact libm
 # subset; ulp-bounded for the transcendentals (bounds pinned in the harness).
 freestanding-libc-diff:
-	$(CC) -O2 -fno-builtin -ffp-contract=off -Wall -Wextra -Werror=switch -Werror=comment \
+	$(CC) -O2 -fno-builtin -ffp-contract=off -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation \
 		-o /tmp/eigs_libc_diff tests/freestanding_libc_diff.c \
 		src/freestanding/mini_libc.c src/freestanding/mini_libm.c \
 		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
