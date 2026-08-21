@@ -1079,25 +1079,26 @@ static int const_pool_names_observer(const EigsChunk *chunk) {
     static const char *OBS_BUILTINS[] = {
         "observe", "report", "report_value", "trajectory", "classify",
         "state_at", "get_observer_thresholds",
-        /* Dynamic code — eval, load_file. Each compiles a NEW unit at runtime,
-         * after this unit's assignments have already executed, so the new
-         * unit's scan cannot arrive in time to have observed them:
-         * `x is 1.0 ... eval of "report of x"` reads equilibrium under the gate
-         * and "moving" without it, and the same shape goes through load_file.
+        /* `eval` compiles a NEW unit at runtime from a string that need not
+         * exist until the moment it runs, after this unit's assignments have
+         * already executed — so the new unit's scan cannot arrive in time to
+         * have observed them: `x is 1.0 ... eval of "report of x"` reads
+         * equilibrium under the gate and "moving" without it. There is nothing
+         * to resolve eagerly, so presence of the construct stays the signal.
          *
-         * An earlier version tried to PROVE the loaded modules observer-free by
-         * resolving string-literal targets and scanning them. Adversarial review
-         * broke it three times — a computed path (`parts[0] + parts[1] + ...`),
-         * one benign literal load disarming the conservative fallback for every
-         * other load in the unit, and the six predicates lexing to their own
-         * token types so the name list never matched them. The approach is
-         * trying to predict what code will exist later, and each fix leaked
-         * somewhere new. Presence of the construct is the signal instead.
+         * `load_file` is deliberately NOT here: a STRING-LITERAL target is
+         * resolved and compiled eagerly by chunk_scan_static_loads below, and
+         * any other use of the name makes the unit opaque there. See that
+         * comment for the three recorded failures that shape the rule.
          *
          * OP_IMPORT is handled in the opcode switch above: it is an opcode with
          * a bare-name operand, so it never appears in the constant pool as a
-         * string and a name list cannot see it at all. */
-        "eval", "load_file", NULL
+         * string and a name list cannot see it at all. Its resolution is
+         * project-first-then-stdlib against a per-module resolve dir (vm.c
+         * CASE(IMPORT)); replicating that here would be a second copy of a
+         * resolver free to drift from the first, which is the #737 failure. So
+         * import stays conservative and #915's `import` half stays open. */
+        "eval", NULL
     };
     for (int i = 0; i < chunk->const_count; i++) {
         const char *s = chunk->const_interns ? chunk->const_interns[i] : NULL;
@@ -1157,5 +1158,142 @@ int chunk_reads_observer(const EigsChunk *chunk) {
     if (const_pool_names_observer(chunk)) return 1;
     for (int f = 0; f < chunk->fn_count; f++)
         if (chunk_reads_observer(chunk->functions[f])) return 1;
+    return 0;
+}
+
+/* ---- #915: statically-resolvable `load_file` targets --------------------
+ *
+ * `load_file` used to sit in OBS_BUILTINS and force the gate off wholesale,
+ * because a module compiled at RUNTIME flips the observer bit only after the
+ * parent's assignments have already run. That rule is sound, and it is exactly
+ * why the gate was parked: EigenMiniSat opens with four `load_file` calls, so
+ * it gated 0 of 6 units and the consumer that motivated #915 got nothing.
+ *
+ * The rule here is narrower. A load whose target is a STRING LITERAL can be
+ * compiled eagerly at the parent's compile time with the REAL compiler, so the
+ * module's own verdict lands BEFORE line 1 of the parent executes and the
+ * ordering hazard is gone. Everything else keeps the old answer.
+ *
+ * THREE RECORDED FAILURES SHAPE THIS. An earlier attempt tried to prove loaded
+ * modules observer-free from TOKENS, and adversarial review broke it three
+ * times: (1) a computed path (`parts[0] + parts[1] + ...`) resolved to nothing
+ * and was silently skipped; (2) the "did anything resolve" flag was an OR
+ * across candidates, so ONE benign literal load disarmed the conservative
+ * fallback for every other load in the same unit — the failure got LESS likely
+ * as the program got simpler, which is why no corpus differential would ever
+ * have caught it; (3) the six predicates lex to their own token types, so
+ * matching them as TOK_IDENT was dead code and a module using the documented
+ * preferred form went unseen.
+ *
+ * This version answers all three BY CONSTRUCTION rather than by patching:
+ *   (1)+(2) the fallback is an AND, not an OR — ONE unrecognized use of the
+ *           name `load_file` anywhere in the unit makes the WHOLE unit opaque,
+ *           and an unresolvable path is such a use;
+ *   (3)     it never inspects tokens. The eager compile produces BYTECODE and
+ *           chunk_reads_observer scans that, so a predicate is a reader opcode
+ *           however it happens to lex.
+ *
+ * THE RECOGNIZED SHAPE — verified against the emitter with EIGS_DUMP_BC rather
+ * than assumed:
+ *
+ *      GET_NAME <"load_file">    CONST <string>    CALL 1
+ *
+ * OP_LINE may be interleaved (a call split across source lines) and is stepped
+ * over; nothing else may be. Any other operand carrying the name `load_file` in
+ * a VR_NAME role — an alias (`local lf is load_file`), a call with a computed
+ * argument, a mention as a dict key — is not this shape and makes the unit
+ * opaque. Being wrong here costs a program its gate, never an answer.
+ *
+ * `chdir` makes the unit opaque too. Compile-time and run-time resolution both
+ * go through resolve_eigenscript_file, which is relative to the process cwd, so
+ * a program that moves the cwd between the two resolves the SAME literal to a
+ * DIFFERENT file. That is the one way this scan could read a module the program
+ * never loads, and it is the reason a resolver-parity assumption is written
+ * here as a check rather than as a disclaimer (#1008: a disclaimer is an
+ * assertion, and must be re-read against every widening).
+ */
+
+/* Step past the instruction at `i`, using the SAME operand-layout table the
+ * verifier and disassembler are driven off (#737). */
+static int chunk_step_ip(const EigsChunk *chunk, int i) {
+    uint8_t op = chunk->code[i];
+    i++;
+    if (op == OP_LINE) {
+        i += 4;                              /* #630: 32-bit operand */
+    } else if (op < OP_COUNT) {
+        VerifyRole roles[3];
+        i += 2 * op_verify_operands(op, roles);
+    }
+    return i;
+}
+
+/* Next instruction offset at or after `i` that is not OP_LINE. */
+static int chunk_skip_lines(const EigsChunk *chunk, int i) {
+    while (i < chunk->code_len && chunk->code[i] == OP_LINE)
+        i = chunk_step_ip(chunk, i);
+    return i;
+}
+
+static int const_pool_index_of(const EigsChunk *chunk, const char *name) {
+    if (!chunk->const_interns) return -1;
+    for (int i = 0; i < chunk->const_count; i++)
+        if (chunk->const_interns[i] && strcmp(chunk->const_interns[i], name) == 0)
+            return i;
+    return -1;
+}
+
+int chunk_scan_static_loads(const EigsChunk *chunk,
+                            void (*visit)(const char *path, void *ud), void *ud) {
+    if (!chunk) return 1;
+    if (!chunk->compiler_scanned) return 1;   /* unscanned chunk — see #830 above */
+
+    /* Resolver parity is a precondition, not a footnote. */
+    if (const_pool_index_of(chunk, "chdir") >= 0) return 1;
+
+    int lf = const_pool_index_of(chunk, "load_file");
+    if (lf >= 0) {
+        int i = 0;
+        while (i < chunk->code_len) {
+            uint8_t op = chunk->code[i];
+            int nops = 0;
+            VerifyRole roles[3];
+            if (op != OP_LINE && op < OP_COUNT) nops = op_verify_operands(op, roles);
+
+            /* Operands are LITTLE-endian (read_u16, vm.c) — the same order the
+             * verifier reads them in above. Getting this backwards reads a
+             * garbage constant index and silently answers "not this shape". */
+            int names_lf = 0;
+            if (i + 1 + 2 * nops <= chunk->code_len) {
+                for (int k = 0; k < nops; k++) {
+                    if (roles[k] != VR_NAME) continue;
+                    int off = i + 1 + 2 * k;
+                    int v = chunk->code[off] | (chunk->code[off + 1] << 8);
+                    if (v == lf) names_lf = 1;
+                }
+            }
+
+            if (names_lf) {
+                /* Only the head of the recognized shape is acceptable. */
+                if (op != OP_GET_NAME) return 1;
+                int j = chunk_skip_lines(chunk, chunk_step_ip(chunk, i));
+                if (j + 2 >= chunk->code_len || chunk->code[j] != OP_CONST) return 1;
+                int sidx = chunk->code[j + 1] | (chunk->code[j + 2] << 8);
+                if (sidx < 0 || sidx >= chunk->const_count) return 1;
+                Value *k = chunk->constants ? chunk->constants[sidx] : NULL;
+                if (!k || k->type != VAL_STR || !k->data.str) return 1;
+                int c = chunk_skip_lines(chunk, chunk_step_ip(chunk, j));
+                if (c + 2 >= chunk->code_len || chunk->code[c] != OP_CALL) return 1;
+                int argc = chunk->code[c + 1] | (chunk->code[c + 2] << 8);
+                if (argc != 1) return 1;
+                if (visit) visit(k->data.str, ud);
+                /* Fall through to the normal step: the CONST/CALL are walked
+                 * again harmlessly (neither names `load_file`). */
+            }
+            i = chunk_step_ip(chunk, i);
+        }
+    }
+
+    for (int f = 0; f < chunk->fn_count; f++)
+        if (chunk_scan_static_loads(chunk->functions[f], visit, ud)) return 1;
     return 0;
 }

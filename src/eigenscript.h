@@ -814,6 +814,13 @@ struct EigsThread {
      * and N copies of the same message is not N pieces of information. Reset
      * beside g_parse_depth at compile_ast entry. */
     int                  compile_depth_reported;
+    /* #915: nesting depth of the observer gate's EAGER module compiles. Its
+     * own counter, not g_parse_depth — compile_ast RESETS that one at entry,
+     * so the nested compile this guard bounds would clear its own guard. Also
+     * the cycle guard: a mutual literal load (a loads b, b loads a) recurses
+     * here exactly as #496's did at runtime, and hitting the bound sets the
+     * observer bit rather than giving up quietly. */
+    int                  obs_gate_depth;
     int                  tokenize_depth;
     int                  vts_depth;
     int                  json_depth;
@@ -1011,6 +1018,7 @@ extern __thread EigsThread *eigs_current;
 #define g_prev_cap            (eigs_current->prev_cap)
 #define g_prev_count          (eigs_current->prev_count)
 #define g_parse_depth         (eigs_current->parse_depth)
+#define g_obs_gate_depth      (eigs_current->obs_gate_depth)
 #define g_compile_depth_reported (eigs_current->compile_depth_reported)
 #define g_obs_needed          (eigs_current->state->obs_needed)
 #define g_tokenize_depth      (eigs_current->tokenize_depth)

@@ -646,6 +646,14 @@ void       chunk_disassemble(EigsChunk *chunk, const char *label);
  * Conservative in one direction only: every unclear case answers 1. Drives
  * the observer gate, so a wrong 0 is silently-wrong observer results. */
 int        chunk_reads_observer(const EigsChunk *chunk);
+/* #915: hand every STRING-LITERAL `load_file` target in this chunk to `visit`.
+ * Returns 1 if the unit is OPAQUE — it uses the name `load_file` in any shape
+ * this scan does not recognize, or it can move the cwd (`chdir`) and so break
+ * resolver parity between compile time and run time. An opaque unit must be
+ * treated as observing; see the comment on the definition. */
+int        chunk_scan_static_loads(const EigsChunk *chunk,
+                                   void (*visit)(const char *path, void *ud),
+                                   void *ud);
 const char *op_name(uint8_t op);
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM
  * runs it. Returns 1 if safe to execute, 0 if it must be rejected. */
