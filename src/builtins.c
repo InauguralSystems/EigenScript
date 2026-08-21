@@ -2005,10 +2005,19 @@ Value* builtin_substr(Value *arg) {
 /* index_of of [haystack, needle] → first index, or -1. Non-string operands
  * are a miss (-1), never a fold-to-"" false positive at index 0 (#316). */
 Value* builtin_index_of(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(-1);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "index_of", "[haystack, needle]", make_num(-1));
     Value *h = arg->data.list.items[0], *n = arg->data.list.items[1];
-    if (!h || h->type != VAL_STR || !n || n->type != VAL_STR) return make_num(-1);
+    /* #1008: the -1 for non-string operands is a deliberate choice (#316 —
+     * folding to "" gave a false positive at index 0), so ARG_GUARD is
+     * exactly the right shape: the answer is preserved with the flag off and
+     * the mistake becomes loud with it on. */
+    ARG_GUARD(!h || h->type != VAL_STR || !n || n->type != VAL_STR,
+              "index_of", "two strings", make_num(-1));
     const char *p = strstr(h->data.str, n->data.str);
+    /* fs:ANSWER the needle is genuinely not in the haystack — -1 is
+     * index_of's documented miss, and the one -1 here that is a RESULT
+     * rather than a rejected argument. */
     if (!p) return make_num(-1);
     return make_num((double)(p - h->data.str));
 }
@@ -2742,8 +2751,17 @@ Value* builtin_hex(Value *arg) {
 /* ==== BUILTIN: ord ==== */
 /* ord of s → first byte of s as integer (0..255), or -1 on empty / non-string */
 Value* builtin_ord(Value *arg) {
-    if (!arg || arg->type != VAL_STR || !arg->data.str || arg->data.str[0] == '\0')
-        return make_num(-1);
+    /* #1008: this was ONE condition carrying two different verdicts — a
+     * non-string argument (a mistake) OR an empty string (the documented
+     * answer). The classifier never revisits a site that carries a decision,
+     * so tagging it either way would have blessed the other half; split, per
+     * the same rule that #1008 applied to sum/mean/norm. Non-strict is
+     * byte-identical: both halves still answer -1. */
+    ARG_GUARD(!arg || arg->type != VAL_STR || !arg->data.str,
+              "ord", "a string", make_num(-1));
+    /* fs:ANSWER an empty string has no first byte, so -1 is ord's documented
+     * result for it, not a rejected argument. */
+    if (arg->data.str[0] == '\0') return make_num(-1);
     return make_num((double)(unsigned char)arg->data.str[0]);
 }
 
@@ -6177,17 +6195,22 @@ Value* builtin_list_insert_at(Value *arg) {
 /* list_index_of of [list, value] — index of the first element structurally
  * equal to value, reusing values_equal (the same comparison `==` uses), so
  * nested lists and dicts match by structure. -1 when absent. Bad args give
- * -1, mirroring index_of's miss (no raise mechanism in the builtin layer;
- * the list builtins return null/-1 rather than erroring). */
+ * -1, mirroring index_of's miss. (That parenthetical used to say there was
+ * "no raise mechanism in the builtin layer"; ARG_GUARD is one, and #1008
+ * wired these guards into it — the -1 still stands with the flag off.) */
 Value* builtin_list_index_of(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_num(-1);
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "list_index_of", "[list, value]", make_num(-1));
     Value *list = arg->data.list.items[0];
     Value *needle = arg->data.list.items[1];
-    if (!list || list->type != VAL_LIST) return make_num(-1);
+    ARG_GUARD(!list || list->type != VAL_LIST,
+              "list_index_of", "a list as its first argument", make_num(-1));
     for (int i = 0; i < list->data.list.count; i++) {
         if (values_equal(list->data.list.items[i], needle))
             return make_num((double)i);
     }
+    /* fs:ANSWER the whole list was scanned and nothing equalled the needle —
+     * -1 is list_index_of's documented miss. */
     return make_num(-1);
 }
 

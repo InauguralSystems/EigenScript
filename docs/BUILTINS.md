@@ -318,7 +318,7 @@ Boolean keywords that check the most recently observed value:
 | `proc_read_line` | `proc_read_line of out_fd` | Read up to the next `\n` from the child's stdout (raw `read(2)`). Returns the line without the trailing newline, or `""` at EOF. Line streaming relies on the child not block-buffering its stdout — wrap with `stdbuf -oL` when in doubt. |
 | `proc_read` | `proc_read of [out_fd, max_bytes]` | Single non-line-oriented `read(2)` of up to `max_bytes`. Returns the bytes (possibly shorter than asked), or `""` at EOF. |
 | `proc_close` | `proc_close of fd` | Idempotent `close(2)`. Returns 1 on success, 0 if already closed / invalid. |
-| `proc_wait` | `proc_wait of pid` | Block on `waitpid(pid, ...)` and return the exit code (or `128 + signum` if killed by a signal). |
+| `proc_wait` | `proc_wait of pid` | Block on `waitpid(pid, ...)` and return the exit code (or `128 + signum` if killed by a signal). Answers `-1` when the pid is not a positive number or `waitpid` reports no such child — there is no exit status to give. |
 | `env_get` | `env_get of "VAR_NAME"` | Get environment variable (empty string if unset) |
 | `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom |
 | `try_parse` | `try_parse of code_string` | 1 if string is valid EigenScript syntax, 0 otherwise |

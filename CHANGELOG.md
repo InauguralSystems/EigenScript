@@ -84,6 +84,74 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The fail-soft reform can now SEE the `-1` sentinel family, which it was
+  blind to by construction (#1008).** `tools/failsoft_classify_check.sh`
+  enumerated `return make_num(0)` and `return make_str("")`, so its population
+  was defined by the stand-in VALUE — and a builtin laundering to a different
+  sentinel was invisible to it however carefully it was run. Executed on the
+  parent, with the flag ON:
+
+  ```
+  EIGS_STRICT=1  list_contains of [42, 1]  -> raises   (converted by #971)
+  EIGS_STRICT=1  index_of of [42, "x"]     -> -1       (silent, four lines away)
+  EIGS_STRICT=1  ord of 42                 -> -1       (silent)
+  ```
+
+  Widening the matcher to `-1` surfaced **22 further sites across 6 builtins in
+  3 files**, ten of them genuine argument guards that had never been counted.
+  **And the widening falsified an exemption written for the narrower
+  population, which is the lesson worth keeping.** This gate's header said a
+  soft return reached through a HELPER was outside it and that *"nothing in
+  this surface does that today"* — true while the population was `0`/`""`, and
+  false the moment `-1` joined it. `exec_capture` had three argument guards
+  spelled `return exec_capture_result(-1, "")`, in the same file this change
+  edits, ~240 lines from a site it did convert, and a text matcher cannot see
+  one of them. They were found by `strict_differential.sh --sweep`, which
+  probes BEHAVIOUR and so has no such blind spot — `QUIET exec_capture ->
+  [-1, ""]` under strict — and are converted now, along with a fourth spelling
+  the matcher also cannot enumerate (`return make_num(off > 0 ? off : -1)`,
+  where the sentinel is a ternary arm). When this matcher grows, every
+  "nothing does that" claim in its header has to be re-read against the new
+  population: they are assertions, not disclaimers.
+  All 124 previously-classified sites were still found — a sequential matcher
+  is not monotone in coverage, so that check runs whenever this population
+  grows.
+  `index_of`, `ord` and `list_index_of` now raise under `EIGS_STRICT=1` for a
+  wrong-typed argument and are byte-identical with the flag off. `ord`'s guard
+  was **one condition carrying two verdicts** — a non-string (a mistake) OR an
+  empty string (the documented `-1`) — and is split, by the same rule #1008
+  itself applied to `sum`/`mean`/`norm`; tagging it either way would have
+  permanently blessed the other half. `index_of`'s `-1` for non-string operands
+  is a deliberate #316 decision (folding to `""` gave a false positive at index
+  0), which is exactly the shape `ARG_GUARD` fits: the answer is preserved with
+  the flag off, the mistake is loud with it on.
+  `proc_write`, `proc_wait` and `eigen_eval_loss` are classified through the
+  same pass. `eigen_eval_loss` is a GRADER — a laundered `-1` loss is
+  indistinguishable from a real score, the exact failure #975 exists to stop —
+  so its three argument checks raise under strict while its `stderr` line and
+  its non-strict answer are unchanged, guarded in place with a constant
+  condition so control flow is provably identical.
+  Three new answer-pins hold the documented misses quiet: `index_of` finding
+  nothing, `list_index_of` finding nothing, and `ord` of the empty string.
+  The gate's self-test gained the two cases that witness the new branch — an
+  unmarked `-1` must be caught, and a *classified* `-1` must be clean — because
+  a branch with no fixture where it is the sole evidence is untested however
+  many fixtures exist. 13/13.
+  `tools/strict_differential.sh` now derives its variant-only file set from
+  `make print-SRC_V_release` instead of a hard-coded `ext_*.c` list, which had
+  missed `model_infer.c` entirely (`eigen_eval_loss` reported as "raised by the
+  wrong guard: undefined variable" in a default build).
+  Differential against a build of the parent commit: **68/68 identical with the
+  flag off, 0 differing, 0 waivers needed**, 68/68 raising under strict, 18/18
+  answer-pins held, 64/64 valid-input rows unchanged in both modes.
+  **Still outside the population, and stated rather than implied:** the
+  builtins that launder through a FALSY path rather than a sentinel —
+  `file_exists`, `is_dir`, `read_text`, `env_get` answer `0`/`""` for a
+  wrong-typed path, so a type mistake reads as "not there". Those returns are
+  in the population and correctly tagged `fs:ANSWER`, because the value IS the
+  documented answer; what is missing is any way to tell it from a rejected
+  argument. That needs a decision on #1008, not a wider matcher.
+
 - **`gfx_open`, `audio_open` and `audio_capture_open` no longer reinterpret a
   string as a number and report success (#1007).** `Value`'s union overlaps
   `double num` with `char *str`, and all three read `.data.num` with no type

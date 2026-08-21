@@ -18,6 +18,23 @@
 # often several lines, and a fixed-size window drops the tag off the top —
 # which presents as "you forgot to classify this").
 #
+# THE POPULATION IS DEFINED BY THE STAND-IN VALUE, WHICH IS ITS BLIND SPOT.
+# It began as `0`/`""` and therefore could not see a builtin that laundered to
+# a DIFFERENT sentinel — `index_of`, `ord` and `list_index_of` answered -1 for
+# a wrong-typed argument and were invisible here while `list_contains`, four
+# lines away and doing the same thing with a 0, was converted (#1008). Widened
+# to `-1` in #1008; 22 further sites appeared, 10 of them genuine argument
+# guards. Nothing was lost by the widening — all 124 previously-classified
+# sites were still found, which is the check to run whenever this matcher
+# grows (a sequential matcher is not monotone in coverage).
+# Still outside it, and stated so nobody reads a green here as "the surface is
+# covered": builtins that launder through a FALSY path rather than a sentinel
+# — `file_exists`, `is_dir`, `read_text`, `env_get` answer 0/"" for a
+# wrong-typed path, so a type mistake reads as "not there". Those returns ARE
+# in the population and are correctly tagged fs:ANSWER, because the value is
+# the documented answer; what is missing is any way to distinguish it from a
+# rejected argument. That needs a decision on this issue, not a wider matcher.
+#
 #   fs:ANSWER   the 0/"" is the documented result; strict must NOT raise
 #   fs:CHANNEL  failure is signalled out-of-band (a flag, an out-param)
 #   fs:LITERAL  not a guard — this IS the value being constructed
@@ -31,13 +48,28 @@
 # WHAT THIS GATE DOES NOT COVER (every exemption is a waiver, so it is
 # written here rather than left to be rediscovered):
 #
-#   - Soft stand-ins that are not zero/empty: `return make_null()`,
-#     `return make_list()`, a sentinel `-1`. Those are a different
-#     population and are NOT enumerated here. Counted and reported as a
-#     residual by --residuals so the number is visible rather than implied.
-#   - A soft return reached through a helper (`return zero_value();`).
-#     Nothing in this surface does that today; if one appears, this gate is
-#     blind to it by construction — it is a text matcher, not a call graph.
+#   - Soft stand-ins that are not zero/empty/-1: `return make_null()`,
+#     `return make_list()`. Those are a different population and are NOT
+#     enumerated here. Counted and reported as a residual by --residuals so
+#     the number is visible rather than implied. (The `-1` sentinel WAS in
+#     this list until #1008 moved it into the population; see below.)
+#   - A soft return reached through a HELPER (`return zero_value();`) or
+#     built by an expression (`return make_num(ok ? n : -1);`). This gate is
+#     a text matcher, not a call graph, so it is blind to both by
+#     construction.
+#     This bullet used to end "Nothing in this surface does that today." That
+#     was true while the population was 0/"" and #1008 FALSIFIED IT by adding
+#     `-1` — `exec_capture` had three argument guards spelled
+#     `return exec_capture_result(-1, "")`, in the same file the change
+#     edited, ~240 lines from a site it did convert, and this gate could not
+#     see one of them. They were found by `strict_differential.sh --sweep`,
+#     which probes BEHAVIOUR and so has no such blind spot, and are converted
+#     now. `builtins_host.c`'s short-write `-1` is the expression form and is
+#     tagged by hand for the same reason.
+#     The general rule, since this cost a round: WIDENING THE POPULATION CAN
+#     FALSIFY AN EXEMPTION WRITTEN FOR THE NARROWER ONE. When this matcher
+#     grows, re-read every "nothing does that" claim in this header against
+#     the new population — they are assertions, not disclaimers.
 #   - Whether an fs:ANSWER classification is CORRECT. That is what the
 #     paired tests in tests/test_strict_math.sh assert; this gate only
 #     proves a decision was recorded. A blind review found three sites whose
@@ -88,7 +120,7 @@ VALID_TAGS='ANSWER|CHANNEL|LITERAL|EMPTY|STRICT|TODO'
 # population for the first time (sha256/md5/hmac_sha256 all have one), with
 # 8 sites that had never been classified. A floor rising because the
 # derivation got wider is the good direction; note it either way.
-FLOOR_SITES=120
+FLOOR_SITES=136
 
 usage_mode="${1:-}"
 
@@ -203,7 +235,7 @@ norm_hits() {   # <file> -> "startline\tnlines\tctxstart"
         if (sn ~ /^return/ && index(sn, ";") == 0) { pending = 1; next }
         pending = 0
         if (sn == "") next
-        if (sn ~ /returnmake_num\(0(\.0*)?\);/ || sn ~ /returnmake_str\(""\);/) {
+        if (sn ~ /returnmake_num\(0(\.0*)?\);/ || sn ~ /returnmake_str\(""\);/ || sn ~ /returnmake_num\(-1(\.0*)?\);/) {
             ctx = (crun_end == start - 1) ? crun_start : start
             printf "%d\t%d\t%d\n", start, NR - start + 1, ctx
         }
@@ -346,6 +378,20 @@ if [ "$usage_mode" = "--selftest" ]; then
     # 1. an unmarked fail-soft return
     printf '\nValue* builtin_planted_a(Value *arg) { (void)arg; return make_num(0); }\n' >> "$root/src/builtins.c"
     expect 1 "planted unmarked return is caught"; restore
+
+    # 1b. the -1 SENTINEL branch (#1008), which needs its own fixture: the
+    #    population was `0`/`""` for its whole life, so a `-1` laundering site
+    #    was invisible here by construction. Case 1 above cannot witness this
+    #    branch — it plants a `0` — and a branch with no fixture where it is
+    #    the SOLE evidence is untested however many fixtures exist.
+    printf '\nValue* builtin_planted_a1(Value *arg) { (void)arg; return make_num(-1); }\n' >> "$root/src/builtins.c"
+    expect 1 "planted unmarked -1 sentinel return is caught"; restore
+
+    # 1c. ...and the widened matcher must not swallow the tag check with it:
+    #    a CLASSIFIED -1 site is clean, so the branch discriminates rather
+    #    than simply flagging every -1 it sees.
+    printf '\nValue* builtin_planted_a2(Value *arg) { (void)arg; return make_num(-1); /* fs:ANSWER documented miss */ }\n' >> "$root/src/builtins.c"
+    expect 0 "a CLASSIFIED -1 sentinel return is clean"; restore
 
     # 2. a misspelled tag must not read as classified, and must not read as
     #    an ordinary un-annotated site either
