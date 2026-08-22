@@ -3868,13 +3868,32 @@ fi
 printf 'print of (str of (prev of x))\n' > "$OBS_GATE_TMP/arm_mod.eigs"
 printf 'x is 1.0\nx is 2.0\nx is 3.0\nlocal m is load_file of "%s/arm_mod.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/arm_lit.eigs"
 printf 'x is 1.0\nx is 2.0\nx is 3.0\nlocal p is "%s/arm_" + "mod.eigs"\nlocal m is load_file of p\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/arm_comp.eigs"
-OBS_G24=$([ "$($EIGS_BIN "$OBS_GATE_TMP/arm_lit.eigs" 2>&1 | head -1)" = "$($EIGS_BIN "$OBS_GATE_TMP/arm_comp.eigs" 2>&1 | head -1)" ] && echo agree || echo differs)
+#     Both arms must carry EVIDENCE before their agreement means anything:
+#     a bare equality is satisfied by two empty strings, so a do-nothing binary
+#     scored "agree" on both of these (executed by a blind critic). The
+#     pre-#915 answer here is `null`; requiring it makes the check discriminate.
+OBS_ARM_LIT=$($EIGS_BIN "$OBS_GATE_TMP/arm_lit.eigs" 2>&1 | head -1)
+OBS_ARM_COMP=$($EIGS_BIN "$OBS_GATE_TMP/arm_comp.eigs" 2>&1 | head -1)
+if [ "$OBS_ARM_LIT" = "null" ] && [ "$OBS_ARM_COMP" = "null" ]; then
+    OBS_G24="agree"
+elif [ -z "$OBS_ARM_LIT" ] || [ -z "$OBS_ARM_COMP" ]; then
+    OBS_G24="arm-produced-nothing"
+else
+    OBS_G24="differs($OBS_ARM_LIT/$OBS_ARM_COMP)"
+fi
 check "a literal and a computed load path give the same temporal answer" "$OBS_G24" "agree"
 # 27. NON-MONOTONE control: adding an observer read must not REMOVE history.
 #     The extra read opens the gate, which skips the eager pass — which used to
 #     un-arm the name the pass had armed.
 printf 'z is 7.0\nlocal r is report of z\nx is 1.0\nx is 2.0\nx is 3.0\nlocal m is load_file of "%s/arm_mod.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/arm_more.eigs"
-OBS_G25=$([ "$($EIGS_BIN "$OBS_GATE_TMP/arm_lit.eigs" 2>&1 | head -1)" = "$($EIGS_BIN "$OBS_GATE_TMP/arm_more.eigs" 2>&1 | head -1)" ] && echo agree || echo differs)
+OBS_ARM_MORE=$($EIGS_BIN "$OBS_GATE_TMP/arm_more.eigs" 2>&1 | head -1)
+if [ "$OBS_ARM_LIT" = "null" ] && [ "$OBS_ARM_MORE" = "null" ]; then
+    OBS_G25="agree"
+elif [ -z "$OBS_ARM_LIT" ] || [ -z "$OBS_ARM_MORE" ]; then
+    OBS_G25="arm-produced-nothing"
+else
+    OBS_G25="differs($OBS_ARM_LIT/$OBS_ARM_MORE)"
+fi
 check "asking the observer MORE does not yield LESS history" "$OBS_G25" "agree"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.

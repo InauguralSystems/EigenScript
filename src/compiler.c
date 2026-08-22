@@ -15,6 +15,7 @@
  * comment on obs_gate_mute_stderr. */
 #include <unistd.h>     /* dup/dup2/close — #915's eager compile must be silent */
 #include <fcntl.h>      /* open(/dev/null) */
+#include <sys/stat.h>  /* stat/S_ISREG — reject a non-regular speculative target */
 #endif
 
 /* ---- Compiler state ---- */
@@ -3209,6 +3210,11 @@ static void compile_block(Compiler *c, ASTNode **stmts, int count) {
  * Nesting is fine: each level saves and restores its own dup of fd 2.
  */
 enum { OBS_GATE_MAX_LOADS = 64, OBS_GATE_MAX_DEPTH = 8 };
+/* Ceiling on a SPECULATIVELY read module. This pass reads on behalf of code that
+ * may never run, so an unbounded read is unbounded cost for no benefit. 8 MiB is
+ * far above any real .eigs module; over it the pass declines and the gate stays
+ * conservatively open. */
+#define OBS_GATE_MAX_MODULE_BYTES (8L * 1024 * 1024)
 typedef struct { char **paths; int count; int cap; int overflow; } ObsLoadList;
 
 static void obs_gate_note_load(const char *path, void *ud) {
@@ -3367,6 +3373,28 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * and it is the same defect class as the #ifdef-vs-#if mistake this file
          * already records, made a second time while fixing the first. */
         int resolved_ok = resolve_eigenscript_file(L.paths[i], resolved, 8192);
+        /* STAT BEFORE OPEN. This pass reads files on behalf of code the program
+         * may never run — a literal load inside an uncalled function or a dead
+         * branch is still scanned, because chunk_scan_static_loads recurses into
+         * chunk->functions. try_resolve_path admits anything access(F_OK)
+         * accepts, including a FIFO, and read_file_util's S_ISREG rejection
+         * happens AFTER fopen, so it cannot prevent the block.
+         *
+         * Executed: `define maybe() as: return load_file of "fifo.eigs"` with
+         * maybe() NEVER CALLED hung the compiler indefinitely (rc 124 under
+         * timeout, nothing printed, dead before vm_execute); the same program
+         * with a computed path ran fine. A 120 MB target referenced only from an
+         * uncalled function took peak RSS from 2.8 MB to 248 MB.
+         *
+         * A real load_file that executes is unaffected — this bounds only the
+         * SPECULATIVE read. Anything rejected here is simply unresolvable to the
+         * pass, which is already its conservative answer. */
+        if (resolved_ok) {
+            struct stat st;
+            if (stat(resolved, &st) != 0 || !S_ISREG(st.st_mode) ||
+                st.st_size > OBS_GATE_MAX_MODULE_BYTES)
+                resolved_ok = 0;
+        }
 #else
         int resolved_ok = 0;
 #endif
@@ -3387,6 +3415,18 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
         int muted = obs_gate_mute_stderr();
         if (muted < 0) { free(source); eigs_obs_enable(); break; }
 
+        /* BEFORE tokenize, not after. lexer.c zeroes all five first_error
+         * fields unconditionally at tokenize depth 0, so a snapshot taken after
+         * it saved the ZEROES and the "restore" then wiped the parent's recorded
+         * error — and the parse-error path below exited without restoring at
+         * all, leaving the MODULE's error installed in the parent. The previous
+         * placement was a fix that did not work; found by enumerating the
+         * compile path, not by a test, because the only readers (lint, LSP)
+         * disable this pass. */
+        int saved_fe_line = g_first_error_line, saved_fe_col = g_first_error_col;
+        int saved_fe_len = g_first_error_len, saved_fe_known = g_first_error_col_known;
+        char saved_fe_msg[256];
+        snprintf(saved_fe_msg, sizeof saved_fe_msg, "%s", g_first_error_msg);
         int saved_errors = g_parse_errors;
         g_parse_errors = 0;
         TokenList tl = tokenize(source);
@@ -3394,6 +3434,10 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
         if (g_parse_errors > 0 || !mast) {
             g_parse_errors = saved_errors;
             free_ast(mast); free_tokenlist(&tl); free(source);
+            g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
+            g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
+            snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
+                     "%s", saved_fe_msg);
             obs_gate_unmute_stderr(muted);   /* every exit from here unmutes */
             eigs_obs_enable(); break;
         }
@@ -3411,15 +3455,6 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * un-armed the name). See trace_arm_snapshot. */
         TraceArmState saved_arm;
         trace_arm_snapshot(&saved_arm);
-        /* Same missing-restore class: a scanned module's compile error would
-         * otherwise clobber the parent's recorded first error. Not observable
-         * on the CLI today (only eigenlsp/lint read these, and both disable the
-         * scan) — restored anyway, because "not currently reachable" is how the
-         * other channels looked before someone reached them. */
-        int saved_fe_line = g_first_error_line, saved_fe_col = g_first_error_col;
-        int saved_fe_len = g_first_error_len, saved_fe_known = g_first_error_col_known;
-        char saved_fe_msg[256];
-        snprintf(saved_fe_msg, sizeof saved_fe_msg, "%s", g_first_error_msg);
         g_obs_gate_depth++;
         EigsChunk *mchunk = compile_ast(mast, scan_env, source);   /* ORs its own verdict */
         g_obs_gate_depth--;
