@@ -3579,7 +3579,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=25
+OBS_GATE_EXPECTED_CHECKS=27
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -3858,6 +3858,24 @@ else
     FAIL=$((FAIL + 1)); echo "  FAIL: observer-reader sync gate self-test ($OBS_ST_N rows, floor 10)"
     echo "$OBS_ST_OUT" | sed 's/^/    /'
 fi
+# 26-27. The eager pre-pass must not WRITE to the program's world. It mutes fd 2
+#     already; it also runs the real compiler, and compile_node ARMS the trace
+#     history channel as a side effect. Unrestored, merely SCANNING a module
+#     switched per-assignment recording on in the parent and changed its
+#     temporal answers — so the SPELLING of a load path became semantically
+#     load-bearing, and the behaviour was non-monotone in observation.
+# 26. Literal and computed spellings of the SAME load must agree.
+printf 'print of (str of (prev of x))\n' > "$OBS_GATE_TMP/arm_mod.eigs"
+printf 'x is 1.0\nx is 2.0\nx is 3.0\nlocal m is load_file of "%s/arm_mod.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/arm_lit.eigs"
+printf 'x is 1.0\nx is 2.0\nx is 3.0\nlocal p is "%s/arm_" + "mod.eigs"\nlocal m is load_file of p\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/arm_comp.eigs"
+OBS_G24=$([ "$($EIGS_BIN "$OBS_GATE_TMP/arm_lit.eigs" 2>&1 | head -1)" = "$($EIGS_BIN "$OBS_GATE_TMP/arm_comp.eigs" 2>&1 | head -1)" ] && echo agree || echo differs)
+check "a literal and a computed load path give the same temporal answer" "$OBS_G24" "agree"
+# 27. NON-MONOTONE control: adding an observer read must not REMOVE history.
+#     The extra read opens the gate, which skips the eager pass — which used to
+#     un-arm the name the pass had armed.
+printf 'z is 7.0\nlocal r is report of z\nx is 1.0\nx is 2.0\nx is 3.0\nlocal m is load_file of "%s/arm_mod.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/arm_more.eigs"
+OBS_G25=$([ "$($EIGS_BIN "$OBS_GATE_TMP/arm_lit.eigs" 2>&1 | head -1)" = "$($EIGS_BIN "$OBS_GATE_TMP/arm_more.eigs" 2>&1 | head -1)" ] && echo agree || echo differs)
+check "asking the observer MORE does not yield LESS history" "$OBS_G25" "agree"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))

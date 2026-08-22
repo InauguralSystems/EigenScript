@@ -18,8 +18,30 @@
 # per variant, so only ONE build is runnable at a time. This script therefore
 # captures one build at a time and diffs the captures afterwards.
 #
+# EIGS_OBS_FORCE IS NOT A FULL BASELINE — read this before trusting a PASS.
+#
+# The force flag is checked in compile_ast ONE LINE BEFORE the eager load-target
+# pre-pass, and arming the gate makes that pass not run. So the FORCE arm
+# executes a DIFFERENT CODE PATH from the arm under test: it never exercises the
+# eager pass at all. A clean diff therefore proves the two arms AGREE, not that
+# the pre-pass is inert — anything the pre-pass does to the program's world
+# (it runs the real compiler, which has side effects on trace arming) is
+# invisible here except as a divergence.
+#
+# Bought (2026-08-21, blind critic round 5): the pre-pass was arming the trace
+# history channel in the PARENT, so a literal `load_file` path and a computed
+# one gave different answers to `prev of x`. This tool was green throughout,
+# correctly — no corpus program has that shape.
+#
+# For a real baseline, capture with a PRE-FEATURE BINARY:
+#   git worktree add /tmp/wt-base <pre-feature-rev> && (cd /tmp/wt-base && make)
+#   EIGS_GATE_DIFF_BIN=/tmp/wt-base/src/eigenscript tools/observer_gate_diff.sh capture truebase
+#   tools/observer_gate_diff.sh compare truebase gated
+# That arm runs the code that shipped before the gate existed, which is the
+# question a user actually has.
+#
 # Usage:
-#   tools/observer_gate_diff.sh capture <label>      # run corpus with src/eigenscript
+#   tools/observer_gate_diff.sh capture <label>      # run corpus with $EIGS_GATE_DIFF_BIN
 #   tools/observer_gate_diff.sh compare <base> <gated>
 #
 # Typical run:
@@ -44,7 +66,7 @@ cd "$REPO" || exit 2
 
 CAPROOT="${EIGS_GATE_DIFF_DIR:-$REPO/.observer_gate_captures}"
 TIMEOUT="${EIGS_GATE_DIFF_TIMEOUT:-25}"
-BIN="$REPO/src/eigenscript"
+BIN="${EIGS_GATE_DIFF_BIN:-$REPO/src/eigenscript}"
 
 # Excluded up front, with the reason. Each entry is a decision, not a
 # convenience. gfx programs open a real window and would hang or flood a

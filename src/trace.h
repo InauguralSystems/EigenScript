@@ -78,6 +78,17 @@ extern int g_trace_hist;
  * point. The narrowing is a per-assign CPU optimization for the
  * single-threaded long-running programs #827 was about; the history is
  * bounded either way. */
+/* #915: compile-time arming state, saved/restored around the observer gate's
+ * eager pre-pass so that merely SCANNING a module cannot arm the parent's
+ * history channel. See the definition for the executed consequence. */
+typedef struct {
+    int      trace_hist, obs_hist;
+    int      arm_all, arm_count;
+    int      occ_all, occ_count;
+} TraceArmState;
+void trace_arm_snapshot(TraceArmState *out);
+void trace_arm_restore(const TraceArmState *in);
+
 void trace_arm_history_all(void);
 void trace_arm_history_all_mt(void);
 void trace_arm_history_name(const char *name);

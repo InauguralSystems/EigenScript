@@ -3179,7 +3179,9 @@ static void compile_block(Compiler *c, ASTNode **stmts, int count) {
  *
  * This runs in a THROWAWAY env (env_new over the global, the same shape
  * CASE(IMPORT) uses for a real module) and the chunk is freed immediately. The
- * only thing kept is the side effect on g_obs_needed. Compiling against the
+ * only thing kept is the side effect on g_obs_needed — fd 2 is muted and the
+ * trace-arming state is snapshotted/restored, which are the pass's two other
+ * output channels. Compiling against the
  * live env instead would let a scan create bindings and perturb the parent's
  * own slot numbering. The throwaway env can change WHICH reader opcode variant
  * is emitted (SLOT vs NAME) but never WHETHER one is — both are readers — so
@@ -3399,9 +3401,33 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
         Env *scan_env = env_new(g_global_env);
         int saved_boundary = g_compile_module_boundary;
         g_compile_module_boundary = 1;                    /* #373, as load_file does */
+        /* The pass has TWO output channels, not one. fd 2 is muted above; this
+         * is the other. compile_node arms the trace-history channel as a side
+         * effect, so scanning a module used to switch per-assignment recording
+         * on in the PARENT and change its temporal answers — making the
+         * SPELLING of a load path semantically load-bearing (a literal armed
+         * `prev of x`, a computed one did not) and the behaviour non-monotone
+         * (adding an observer read opened the gate, skipped the pass, and
+         * un-armed the name). See trace_arm_snapshot. */
+        TraceArmState saved_arm;
+        trace_arm_snapshot(&saved_arm);
+        /* Same missing-restore class: a scanned module's compile error would
+         * otherwise clobber the parent's recorded first error. Not observable
+         * on the CLI today (only eigenlsp/lint read these, and both disable the
+         * scan) — restored anyway, because "not currently reachable" is how the
+         * other channels looked before someone reached them. */
+        int saved_fe_line = g_first_error_line, saved_fe_col = g_first_error_col;
+        int saved_fe_len = g_first_error_len, saved_fe_known = g_first_error_col_known;
+        char saved_fe_msg[256];
+        snprintf(saved_fe_msg, sizeof saved_fe_msg, "%s", g_first_error_msg);
         g_obs_gate_depth++;
         EigsChunk *mchunk = compile_ast(mast, scan_env, source);   /* ORs its own verdict */
         g_obs_gate_depth--;
+        trace_arm_restore(&saved_arm);
+        g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
+        g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
+        snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
+                 "%s", saved_fe_msg);
         g_compile_module_boundary = saved_boundary;
         if (g_parse_errors > 0) eigs_obs_enable();
         g_parse_errors = saved_errors;
