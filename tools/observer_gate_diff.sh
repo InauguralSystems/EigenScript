@@ -104,7 +104,11 @@ do_compare() {
         [ -d "$d" ] || { echo "FAIL: missing capture '$d' (need <base>, <base>2 and <gated>)"; exit 2; }
     done
 
-    local total=0 nondet=0 compared=0 mismatch=0
+    # Programs that emit NOTHING compare "" == "" — true, and no evidence about
+    # the gate. 68 of the 416 in a clean run are silent (63 lib/*.eigs module
+    # definitions + 5 fuzz corpus files), i.e. 16% of the headline. Reported
+    # rather than hidden: a number that is 16% vacuous should say so (§1/§43).
+    local total=0 nondet=0 compared=0 mismatch=0 informative=0 silent=0
     local -a NONDET=() MISMATCH=()
     while IFS= read -r f; do
         is_denied "$f" && continue
@@ -115,6 +119,7 @@ do_compare() {
             nondet=$((nondet+1)); NONDET+=("$f"); continue
         fi
         compared=$((compared+1))
+        if [ "$(wc -c < "$da/$s")" -le 6 ]; then silent=$((silent+1)); else informative=$((informative+1)); fi
         if ! cmp -s "$da/$s" "$db/$s"; then
             mismatch=$((mismatch+1)); MISMATCH+=("$f")
         fi
@@ -123,7 +128,7 @@ do_compare() {
     echo "corpus entries with captures: $total"
     echo "nondeterministic under a FIXED build (excluded): $nondet"
     for f in "${NONDET[@]+"${NONDET[@]}"}"; do echo "    nondet: $f"; done
-    echo "compared: $compared"
+    echo "compared: $compared (informative: $informative, silent: $silent)"
     echo "mismatches: $mismatch"
     for f in "${MISMATCH[@]+"${MISMATCH[@]}"}"; do
         echo "--- MISMATCH: $f"

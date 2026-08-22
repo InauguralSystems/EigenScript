@@ -3209,7 +3209,7 @@ static int obs_guard_descriptor(EigsChunk *chunk, const char *what) {
      * self-hosting bridge — guarding on "reads at all" broke 50 assertions in
      * tests/test_vm_run_bytecode.eigs. */
     Env *host = g_builtin_call_env ? g_builtin_call_env : g_global_env;
-    if (!chunk_reads_named_binding(chunk, host)) return 0;
+    if (!chunk_reads_named_binding(chunk, host)) return 0;   /* top-level aware */
     rt_error(EK_VALUE, 0,
         "%s: the chunk reads observer state, but the observer gate is closed for "
         "this program — bindings assigned before this call have no recorded "
@@ -3224,6 +3224,18 @@ Value* builtin_vm_run_bytecode(Value *arg) {
     EigsChunk *chunk = vm_build_chunk_desc(arg, 1, 0);
     if (!chunk) return make_null();
     if (obs_guard_descriptor(chunk, "vm_run_bytecode")) { chunk_free(chunk); return make_null(); }
+    /* #915: ARM the observer for what this descriptor itself does, exactly as
+     * chunk_arm_temporal two lines below arms the temporal channel (#831: "a
+     * descriptor must turn recording ON itself" — nothing scanned this chunk).
+     *
+     * The guard above and this line answer DIFFERENT questions and an earlier
+     * revision wrongly swapped one for the other: the guard covers host
+     * bindings assigned BEFORE the call, whose history is unrecoverable; this
+     * covers everything the descriptor writes and reads AFTER it. Deleting this
+     * made a descriptor that writes a geometric series into its own frame slot
+     * and reads it back answer `equilibrium` — a regression a blind critic
+     * bisected to the commit that removed it. Both are needed. */
+    g_obs_needed = 1;
     /* #831: the compiler's temporal scan is what turns history recording on,
      * and it never saw this chunk — arm from the verified bytecode instead,
      * or the chunk's own `prev of` / `at` reads answer null whenever the
@@ -3425,6 +3437,7 @@ Value* builtin_sandbox_run(Value *arg) {
         chunk = NULL;
         abi_err = abi_err ? abi_err : "sandbox_run: observer gate closed";
     }
+    if (chunk) g_obs_needed = 1;      /* #915: see vm_run_bytecode */
     Value *out = make_dict(2);
     if (!chunk) {
         /* Descriptor verification may already have interned constants before

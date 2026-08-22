@@ -653,6 +653,9 @@ int        chunk_has_reader_opcode(const EigsChunk *chunk);
  * in `env`? Used by the descriptor sites, where a reader over the chunk's OWN
  * frame slots is legitimate. See the definition for the residual. */
 int        chunk_reads_named_binding(const EigsChunk *chunk, Env *env);
+/* `top`=1 for the chunk vm_execute is handed directly: its frame slots ARE the
+ * host env's slots, so slot readers there are host reads. See the definition. */
+int        chunk_reads_host_observer(const EigsChunk *chunk, Env *env, int top);
 /* #915: hand every STRING-LITERAL `load_file` target in this chunk to `visit`.
  * Returns 1 if the unit is OPAQUE — it uses the name `load_file` in any shape
  * this scan does not recognize. An opaque unit must be treated as observing.

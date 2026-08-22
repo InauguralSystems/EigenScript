@@ -1209,6 +1209,28 @@ int chunk_has_reader_opcode(const EigsChunk *chunk) {
 static int chunk_step_ip(const EigsChunk *chunk, int i);   /* defined below */
 
 int chunk_reads_named_binding(const EigsChunk *chunk, Env *env) {
+    return chunk_reads_host_observer(chunk, env, 1);
+}
+
+/* `top` is 1 for the chunk vm_execute is handed directly, 0 for a nested
+ * function chunk.
+ *
+ * WHY THE DISTINCTION. vm_execute(chunk, host) -> callframe_init sets
+ * `f->fn_env = host` (src/vm.c), so for the TOP-LEVEL descriptor chunk the
+ * "frame slots" ARE the host module env's slots. An earlier version of this
+ * function looked only at NAME operands, on the stated reasoning that "a
+ * SLOT-operand reader addresses the descriptor's own frame and cannot reach a
+ * host binding". That reasoning was false at the top level, and a blind critic
+ * executed the consequence: the same geometric-runaway repro with the NAME
+ * operand swapped for `OP_REPORT_SLOT 252` read the host's `x` and answered
+ * `equilibrium` under the gate, `diverging` without it. A comment is
+ * load-bearing; that one was wrong and cost a soundness hole.
+ *
+ * A NESTED function chunk gets a fresh call env, so its slot readers really do
+ * address its own frame — those stay exempt, and what the descriptor itself
+ * writes is covered by arming the gate before vm_execute (the observer twin of
+ * chunk_arm_temporal, #831). */
+int chunk_reads_host_observer(const EigsChunk *chunk, Env *env, int top) {
     if (!chunk || !env) return 0;
     int i = 0;
     while (i < chunk->code_len) {
@@ -1226,6 +1248,38 @@ int chunk_reads_named_binding(const EigsChunk *chunk, Env *env) {
                 is_named_reader = 1; break;
             default: break;
         }
+        /* Top-level slot readers address the HOST env (see above). Bounded by
+         * the host's binding count so an out-of-range probe slot — which reads
+         * nothing and is what the bridge's own boundary fixtures use — is not
+         * treated as a host read. */
+        if (top && !is_named_reader) {
+            int slot_reader = 0;
+            switch ((OpCode)op) {
+                case OP_REPORT_SLOT: case OP_REPORT_VALUE_SLOT:
+                case OP_TRAJECTORY_SLOT: case OP_OBSERVE_VALUE_SLOT:
+                case OP_PREDICATE_SLOT:
+                    slot_reader = 1; break;
+                /* The bare form reads the last-observed binding through an
+                 * alias with no operand to inspect; at top level that alias can
+                 * only be a host binding. */
+                case OP_PREDICATE:
+                    if (env->count > 0) return 1;
+                    break;
+                default: break;
+            }
+            if (slot_reader) {
+                VerifyRole roles[3];
+                int nops = op_verify_operands(op, roles);
+                if (i + 1 + 2 * nops <= chunk->code_len) {
+                    /* The slot operand is the LAST one for these opcodes
+                     * (PREDICATE_SLOT is [kind][slot]); take the last operand. */
+                    int off = i + 1 + 2 * (nops - 1);
+                    int slot = chunk->code[off] | (chunk->code[off + 1] << 8);
+                    if (slot >= 0 && slot < env->count) return 1;
+                }
+            }
+        }
+
         if (is_named_reader) {
             VerifyRole roles[3];
             int nops = op_verify_operands(op, roles);
@@ -1243,7 +1297,7 @@ int chunk_reads_named_binding(const EigsChunk *chunk, Env *env) {
         i = chunk_step_ip(chunk, i);
     }
     for (int f = 0; f < chunk->fn_count; f++)
-        if (chunk_reads_named_binding(chunk->functions[f], env)) return 1;
+        if (chunk_reads_host_observer(chunk->functions[f], env, 0)) return 1;
     return 0;
 }
 

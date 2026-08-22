@@ -102,7 +102,6 @@ MA=$(med "${A[@]}"); MB=$(med "${B[@]}")
 echo
 printf 'base  median: %s s   (%s)\n' "$MA" "${A[*]}"
 printf 'gated median: %s s   (%s)\n' "$MB" "${B[*]}"
-awk -v a="$MA" -v b="$MB" 'BEGIN{ if (b>0) printf "speedup: %.2fx\n", a/b }'
 
 # Print the counters that were actually compared — an empty line here is the
 # tell that the check above was vacuous, so it is never allowed to be empty.
@@ -115,4 +114,10 @@ fi
 [ "$VOID" -ne 0 ] && { echo "RESULT: VOID — the two arms did not do the same work"; exit 1; }
 echo "counters, identical across all $((2 * N)) runs:"
 echo "  $COUNTERS"
+# The speedup prints LAST, below every verdict gate. The header already made
+# this argument about the counters line; `speedup: 8.60x` is the number that
+# actually gets pasted into a PR, and a blind critic showed it sitting one line
+# above `RESULT: VOID`. A quotable figure printed before its own invalidation is
+# a claim waiting to be made.
+awk -v a="$MA" -v b="$MB" 'BEGIN{ if (b>0) printf "speedup: %.2fx\n", a/b }' 
 echo "RESULT: valid — same search, same binary, interleaved"

@@ -3579,7 +3579,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=23
+OBS_GATE_EXPECTED_CHECKS=25
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -3656,7 +3656,16 @@ printf 'define lf_helper(a) as:\n    return a + 1\n' > "$OBS_GATE_TMP/mfree.eigs
 # 9. The positive case. Without this the whole change is unmeasured: it is the
 #    only check here that fails if the eager compile silently stops gating.
 printf 'load_file of "%s/mfree.eigs"\nprint of (lf_helper of 1)\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/lf_ok.eigs"
-OBS_G8=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$OBS_GATE_TMP/lf_ok.eigs" 2>&1 | grep -q 'obs-gate: observed' && echo open || echo closed)
+# The positive control must prove the program RAN before its "closed" verdict
+# means anything: `grep -q ... || echo closed` is satisfied by silence, so a
+# do-nothing binary passes it (executed by a blind critic). Require the
+# program's own output first.
+OBS_LFOK_OUT=$($EIGS_BIN "$OBS_GATE_TMP/lf_ok.eigs" 2>&1 | tail -1)
+if [ "$OBS_LFOK_OUT" = "2" ]; then
+    OBS_G8=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$OBS_GATE_TMP/lf_ok.eigs" 2>&1 | grep -q 'obs-gate: observed' && echo open || echo closed)
+else
+    OBS_G8="fixture-did-not-run"
+fi
 check "a literal load of an observer-free module still GATES" "$OBS_G8" "closed"
 # 10. A COMPUTED path is not a literal and nothing can resolve it. This is
 #    recorded failure (1) of the token-era pre-scan, which silently skipped it.
@@ -3722,7 +3731,16 @@ EIGS_OBS_FORCE=1 timeout 20 $EIGS_BIN "$OBS_GATE_TMP/lf_a.eigs" > "$OBS_GATE_TMP
 if [ "$OBS_MUT_RC" -eq 124 ]; then
     OBS_G15="hung"
 else
-    OBS_G15=$(cmp -s "$OBS_GATE_TMP/mut_g.out" "$OBS_GATE_TMP/mut_b.out" && echo identical || echo differs)
+    # Both arms degrading to the same nothing is not evidence (the vacuous-
+    # reference trap). The reference arm must carry the circular-dependency
+    # diagnostic this case is about. Check 17 one screen below already had this
+    # guard; the pattern was not applied here until a critic ran both checks
+    # against a do-nothing binary and watched this one pass.
+    if grep -q 'circular dependency' "$OBS_GATE_TMP/mut_b.out"; then
+        OBS_G15=$(cmp -s "$OBS_GATE_TMP/mut_g.out" "$OBS_GATE_TMP/mut_b.out" && echo identical || echo differs)
+    else
+        OBS_G15="reference-arm-vacuous"
+    fi
 fi
 check "a MUTUAL literal load terminates, both arms identical" "$OBS_G15" "identical"
 # 17. The eager compile must be SILENT. Found by measurement, not by the corpus:
@@ -3791,6 +3809,26 @@ printf 'load_file of "%s/fp_inner.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/fp_m
 printf 'define w() as:\n    return 1\nlocal t is spawn of w\nprint of (thread_join of t)\nload_file of "%s/fp_mid.eigs"\nprint of "no false positive"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/fp.eigs"
 OBS_G21=$($EIGS_BIN "$OBS_GATE_TMP/fp.eigs" 2>&1 | tail -1)
 check "spawn + a nested literal load does not falsely raise" "$OBS_G21" "no false positive"
+# 23-24. The DESCRIPTOR seam (vm_run_bytecode / sandbox_run). Two guards that
+#     answer different questions, and a revision once swapped one for the other.
+# 23. A TOP-LEVEL slot reader addresses the HOST env — vm_execute hands the
+#     descriptor the host env and callframe_init makes it the frame's fn_env, so
+#     "the descriptor's own frame" IS the host's slots up there. Reading a host
+#     binding assigned while the gate was closed must raise, not answer. (81 =
+#     OP_REPORT_SLOT, 40 = OP_RETURN.)
+printf 'x is 1.0\ni is 0\nloop while i < 40:\n  x is x * 2.0\n  i is i + 1\nprint of (vm_run_bytecode of [1, [81, 252, 0, 40], []])\n' > "$OBS_GATE_TMP/desc_slot.eigs"
+OBS_G22=$($EIGS_BIN "$OBS_GATE_TMP/desc_slot.eigs" 2>&1 | grep -c 'the chunk reads observer state, but the observer gate is closed')
+check "a descriptor SLOT read of a host binding raises, not answers" "$OBS_G22" "1"
+# 24. GATE-SENSITIVE, deliberately. A descriptor must ARM the observer for what
+#     it does itself — the twin of chunk_arm_temporal (#831). Deleting that
+#     arming made a descriptor's own writes unrecorded and was caught only by
+#     bisection, because tests/test_vm_run_bytecode.eigs is byte-identical under
+#     EIGS_OBS_FORCE=1 and so has ZERO sensitivity to the observer being dead.
+#     This check asserts on observed CONTENT, so it fails if the arming goes.
+printf 'print of (report of y)\n' > "$OBS_GATE_TMP/desc_obs.eigs"
+printf 'y is 1.0\nlocal d is vm_run_bytecode of [1, [40], []]\ny is 2.0\ny is 4.0\ny is 8.0\nload_file of "%s/desc_obs.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/desc_arm.eigs"
+OBS_G23=$($EIGS_BIN "$OBS_GATE_TMP/desc_arm.eigs" 2>&1 | tail -1)
+check "a descriptor ARMS the observer for work after it (gate-sensitive)" "$OBS_G23" "moving"
 # 21. The sync gate's own mutation train. Without this the gate is a claim: a
 #     blind critic gutted each of its four assertion bodies in turn and it
 #     printed PASS every time on a tree carrying that assertion's fault. The

@@ -48,8 +48,9 @@
 #     recorded", and the reading for the initial 94 is on #972.
 #   * It does not see readers reached through the CONSTANT POOL (an aliased
 #     `local r is report` emits no reader opcode at all). That population is
-#     OBS_BUILTINS in the same function and is checked by suite section [99n]
-#     check 4, behaviourally.
+#     OBS_BUILTINS in the same function and is checked by suite section [99u]
+#     check 4, behaviourally. (It said [99n] — that is the VM operand-width
+#     comment-drift gate, #958. A pointer in a waiver is load-bearing, §6.)
 #   * The stronger design is to GENERATE the C set from the markers, the way
 #     tools/gen_lsp_builtin_index.sh generates its header — then the rule has
 #     one home and this gate is unnecessary. Filed rather than implied.
@@ -66,6 +67,27 @@ MARKER_TOOL="${MARKER_TOOL:-tools/obs_marker_check.sh}"
 # Floors, not exact counts (§5/§43). A DERIVED population can shrink silently;
 # `-z` is an emptiness test and only catches losing ALL of them. These move only
 # when coverage is REMOVED, which is always a review event.
+#
+# BOTH FLOORS ARE REDUNDANT WITH THE DIRECTION CHECKS — measured, not assumed
+# (§42: a mutation that survives may mean redundant rather than untested, and
+# the way to tell is differential execution). A blind critic zeroed each with
+# everything still green and could not tell redundant from decorative; these are
+# the two runs that settle it:
+#
+#   derivation broken (anchor -> a function that does not exist), floors zeroed:
+#     still RED — "OP_INTERROGATE_NAMED is marked obs:READS ... but is NOT
+#     listed", i.e. the HARD direction catches an empty switch set on its own.
+#   marker tool emits nothing, floors zeroed:
+#     still RED — "chunk_reads_observer lists OP_INTERROGATE_NAMED, which is not
+#     obs:READS and is not a pinned exemption", i.e. the SOFT direction catches
+#     an empty marker set on its own.
+#
+# They are kept because they name the failure precisely (a floor says "the
+# derivation returned 0", the direction check says "17 opcodes diverged", and
+# the first is the one that sends you to the right file — that is exactly how
+# the extraction anchor breaking when chunk_has_reader_opcode was split out got
+# diagnosed in one read). No self-test row asserts them, deliberately: a row
+# that cannot fail for its own reason is decoration.
 READS_FLOOR="${READS_FLOOR:-15}"
 SWITCH_FLOOR="${SWITCH_FLOOR:-17}"
 
@@ -156,8 +178,15 @@ switch_reader_ops() {
 run_selftest() {
     local tmp; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' RETURN
     local pass=0 fail=0
-    local real_vm="$PWD/src/vm.h" real_chunk="$PWD/$CHUNK_SRC" real_gate="$PWD/${BASH_SOURCE[0]#./}"
-    [ -f "$real_gate" ] || real_gate="$PWD/tools/obs_reader_sync_check.sh"
+    # Resolve the gate under test ONCE, from the path this process was actually
+    # started with (§32). The previous form built "$PWD/${BASH_SOURCE[0]#./}",
+    # which is garbage when invoked by an ABSOLUTE path — the way the suite
+    # invokes it — and then silently fell back to the TRACKED file. That is a
+    # different artifact from the one running, so a copied mutant could never
+    # self-test itself and the substitution was invisible.
+    local real_gate; real_gate=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")
+    local real_vm="$PWD/src/vm.h" real_chunk="$PWD/$CHUNK_SRC"
+    [ -f "$real_gate" ] || { echo "SELFTEST BROKEN: cannot resolve the gate under test"; return 1; }
 
     # A marker tool bound to a MUTABLE copy of vm.h.
     mk_marker() {
@@ -182,13 +211,26 @@ run_selftest() {
           clean) ;;
           E) sed -i 's|OP_ADD, /\*obs:NONE\*/|OP_ADD, /*obs:READS*/|' "$tmp/$1.vm.h" ;;   # NEW reader never added to the switch
           B) sed -i 's/^            case OP_PREDICATE:$/            case OP_ADD:\n            case OP_PREDICATE:/' "$tmp/$1.chunk.c" ;;  # stray opcode
-          D) sed -i '/^            case OP_IMPORT:$/d' "$tmp/$1.chunk.c" ;;               # exemption dropped
+          D) : ;;   # planted in the GATE's EXEMPT list, not the tree — see gut()
           F) sed -i 's|OP_INTERROGATE,     /\*obs:NONE\*/|OP_INTERROGATE,     /*obs:READS*/|' "$tmp/$1.vm.h" ;;  # exemption spent
         esac
     }
     # Assertion gutters, keyed to the fault each one is the sole witness for.
+    # A gate copy can also carry the FAULT itself: fault D is an exemption that
+    # no longer fires, which is a property of the EXEMPT list, not of the tree.
+    # Planting it here instead of deleting a `case` keeps SWITCH_N at 17 so no
+    # floor moves and check 4a is the only thing that can see it.
+    gate_with_fault() { # name -> writes $tmp/<name>.faultgate.sh
+        cp "$real_gate" "$tmp/$1.faultgate.sh"
+        case "$1" in
+          D) sed -i 's|^EXEMPT="OP_INTERROGATE OP_IMPORT"|EXEMPT="OP_INTERROGATE OP_IMPORT OP_ADD"|' "$tmp/$1.faultgate.sh" ;;
+        esac
+    }
     gut() { # name -> writes $tmp/<name>.gate.sh
         cp "$real_gate" "$tmp/$1.gate.sh"
+        case "$1" in
+          D) sed -i 's|^EXEMPT="OP_INTERROGATE OP_IMPORT"|EXEMPT="OP_INTERROGATE OP_IMPORT OP_ADD"|' "$tmp/$1.gate.sh" ;;
+        esac
         case "$1" in
           E) sed -i 's|\*) note_fail "opcode \$op is marked obs:READS.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
           B) sed -i 's|\*) note_fail "chunk_reads_observer lists \$op, which is not.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
@@ -212,10 +254,12 @@ run_selftest() {
     plant clean; say "clean copies" 0 "$(run_gate "$real_gate" "$tmp/clean.chunk.c" "$tmp/clean.vm.h")"
 
     echo "== FAULTS: the real gate must go red on each =="
-    for f in E B D F; do
+    for f in E B F; do
         plant "$f"
         say "fault $f caught by the real gate" 1 "$(run_gate "$real_gate" "$tmp/$f.chunk.c" "$tmp/$f.vm.h")"
     done
+    plant D; gate_with_fault D
+    say "fault D caught by the real gate" 1 "$(run_gate "$tmp/D.faultgate.sh" "$tmp/D.chunk.c" "$tmp/D.vm.h")"
 
     echo "== WITNESS: gutting the sole witness must let its fault SURVIVE =="
     for f in E B D F; do
