@@ -901,6 +901,7 @@ void chunk_verify_self_check(EigsChunk *chunk, const char *unit) {
     if (!chunk) return;
     char why[192] = "";
     if (!chunk_verify_impl(chunk, why, sizeof why)) {
+        eigs_obs_unmute_for_fatal();   /* #915: see arena.c */
         fprintf(stderr,
                 "EIGS_VERIFY_SELF: compiler output failed chunk_verify\n"
                 "  unit:  %s\n  chunk: %s\n  why:   %s\n",

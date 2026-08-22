@@ -6898,6 +6898,28 @@ Value *vm_execute(EigsChunk *chunk, Env *env) {
 }
 
 static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
+    /* #915: user code is now executing, so from here on an eigs_obs_enable()
+     * leaves the bindings already assigned without history — that is what the
+     * sticky obs_history_gap records, and it is the half of the load guard that
+     * survives a mid-run arming.
+     *
+     * SET HERE, not at the call sites. It used to be set in exactly one place
+     * (main.c, immediately before its own vm_execute), which made it a
+     * hand-maintained caller list of one — the drift shape compile_ast
+     * deliberately avoids by OR-ing its verdict at the single choke point every
+     * compilation path funnels through. Every EigsState that main.c did not
+     * create therefore ran with the flag at 0, so a mid-run arming recorded NO
+     * gap and the guard short-circuited: the exact one-shot unsoundness an
+     * earlier round had already fixed once, live again on ext_http `code`
+     * routes and the WASM playground.
+     *
+     * Executed over HTTP before this line existed: a geometrically decaying
+     * value reported `equilibrium` where the truth is `improving`, 3/3, rc 200,
+     * no error — while the identical source on the CLI correctly refused to
+     * answer. Patching the two known entry points would have left the next one
+     * to rediscover it. */
+    g_obs_exec_started = 1;
+
     vm_init();
     /* Only the OUTERMOST vm_execute drives the scheduler; a nested call
      * (eval/dispatch/import/comparator) runs to completion on the C stack and

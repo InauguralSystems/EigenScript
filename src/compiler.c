@@ -3245,6 +3245,24 @@ static void obs_gate_note_load(const char *path, void *ud) {
  * was always open. Exactly one check caught it: the positive control asserting
  * the gate CLOSES on a literal load of an observer-free module. A control with
  * only the negative half is satisfied by a feature that never runs. */
+/* #915: the fd this thread saved while stderr is muted, or -1. A fatal path
+ * inside the muted window (x_oom's abort, chunk_verify_self_check's exit) would
+ * otherwise die with stderr pointed at /dev/null — executed: a 7 MB module
+ * under `ulimit -v` printed "out of memory" when loaded via a COMPUTED path and
+ * printed NOTHING via a literal one, same rc 134. The spelling of a load path
+ * decided whether a fatal error was reported. */
+__thread int g_obs_mute_saved_fd = -1;
+
+void eigs_obs_unmute_for_fatal(void) {
+#if !EIGENSCRIPT_FREESTANDING
+    if (g_obs_mute_saved_fd < 0) return;
+    fflush(stderr);
+    dup2(g_obs_mute_saved_fd, STDERR_FILENO);
+    close(g_obs_mute_saved_fd);
+    g_obs_mute_saved_fd = -1;
+#endif
+}
+
 static int obs_gate_mute_stderr(void) {
 #if EIGENSCRIPT_FREESTANDING
     return -1;
@@ -3256,6 +3274,13 @@ static int obs_gate_mute_stderr(void) {
     fflush(stderr);
     if (dup2(devnull, STDERR_FILENO) < 0) { close(devnull); close(saved); return -1; }
     close(devnull);
+    /* Only the OUTERMOST mute records here: that is the one holding the real
+     * stderr, and it is what a fatal path must restore. Recording every level
+     * meant the inner unmute cleared the flag and the OUTER unmute then saw it
+     * negative and returned WITHOUT restoring — leaking its fd and leaving
+     * stderr pointed at the inner target. Mutual/nested literal loads recurse,
+     * so the suite caught it immediately. */
+    if (g_obs_mute_saved_fd < 0) g_obs_mute_saved_fd = saved;
     return saved;
 #endif
 }
@@ -3265,6 +3290,8 @@ static void obs_gate_unmute_stderr(int saved) {
     if (saved < 0) return;
     fflush(stderr);
     dup2(saved, STDERR_FILENO);
+    /* Clear the fatal-path pointer only when THIS level owned it. */
+    if (g_obs_mute_saved_fd == saved) g_obs_mute_saved_fd = -1;
     close(saved);
 #else
     (void)saved;
@@ -3346,7 +3373,18 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
      * stderr. Placed AFTER the scan deliberately — a unit with no loads has
      * nothing to compile eagerly and must not lose its gate just for running
      * in a process that happens to have spawned a worker. */
-    if (L.count > 0 && g_vm_multithreaded) { eigs_obs_enable(); goto done; }
+    /* PROCESS-wide, not per-state. `g_vm_multithreaded` is
+     * eigs_current->state->multithreaded and cannot see a sibling state;
+     * ext_http runs a fresh EigsState per connection on its own OS thread, so
+     * that flag was 0 on every worker while this pass mutated process-global
+     * memory (trace.c's arming sets) and process-global fd 2. A blind critic
+     * captured a heap-use-after-free on g_arm_names between two connection
+     * threads, and showed the fd-2 mute swallowing other requests' stderr and
+     * then destroying the server's real stderr permanently. See
+     * eigs_process_thread_count. */
+    if (L.count > 0 && (g_vm_multithreaded || eigs_process_thread_count() > 1)) {
+        eigs_obs_enable(); goto done;
+    }
 
     /* HEAP, not stack. As `char resolved[8192]` inside the loop this frame
      * measured 8,864 bytes (gcc -fstack-usage) on EVERY compile_ast, and this

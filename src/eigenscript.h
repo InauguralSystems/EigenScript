@@ -1054,6 +1054,14 @@ extern __thread EigsThread *eigs_current;
  * a loud raise into `equilibrium` on a diverging series. This helper keeps the
  * two answers apart. */
 void eigs_obs_enable(void);
+/* #915: how many EigsThreads are attached PROCESS-WIDE. The eager pre-pass
+ * mutates fd 2 and trace.c's process-global arming sets, so its precondition is
+ * "this process has one thread" — a per-state multithreaded flag cannot see a
+ * sibling state, and ext_http runs one state per connection per thread. */
+int  eigs_process_thread_count(void);
+/* #915: restore real stderr if the observer gate's eager pass has it muted.
+ * Call before printing from any path that will abort/exit. */
+void eigs_obs_unmute_for_fatal(void);
 #define g_tokenize_depth      (eigs_current->tokenize_depth)
 #define g_vts_depth           (eigs_current->vts_depth)
 #define g_json_depth          (eigs_current->json_depth)

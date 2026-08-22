@@ -74,6 +74,41 @@ void eigs_state_destroy(EigsState *st) {
     free(st);
 }
 
+/* #915: PROCESS-GLOBAL count of attached threads.
+ *
+ * The observer gate's eager pre-pass mutates two things that are NOT per-state:
+ * fd 2 (it mutes stderr around a speculative compile) and trace.c's arming sets
+ * (g_arm_names / g_occ_names / g_trace_hist, plain file-scope globals). It
+ * guarded that with `g_vm_multithreaded`, which is eigs_current->state->
+ * multithreaded — a PER-STATE flag. A per-state flag cannot see a sibling
+ * state, and src/ext_http.c runs a fresh EigsState per connection on its own OS
+ * thread, so that flag is 0 on every worker.
+ *
+ * Executed by a blind critic under `make asan-http`, two concurrent `code`
+ * routes each containing a literal load_file:
+ *
+ *   heap-use-after-free READ in arm_set_has (trace.c) <- trace_arm_history_name
+ *   <- compile_ast <- builtin_load_file <- handle_request <- http_conn_thread,
+ *   freed by another connection thread in trace_arm_restore.
+ *
+ * And the fd-2 mute is likewise process-wide: ten /ping requests issued while
+ * one long eager compile held the muted window produced ZERO stderr lines, and
+ * two staggered overlapping compiles left the server's real stderr replaced by
+ * /dev/null for the life of the process — every later runtime error, OOM and
+ * sanitizer report discarded.
+ *
+ * So the precondition is not "this state is single-threaded", it is "this
+ * PROCESS has one thread". */
+static pthread_mutex_t g_attached_lock = PTHREAD_MUTEX_INITIALIZER;
+static int g_attached_threads = 0;
+
+int eigs_process_thread_count(void) {
+    pthread_mutex_lock(&g_attached_lock);
+    int n = g_attached_threads;
+    pthread_mutex_unlock(&g_attached_lock);
+    return n;
+}
+
 EigsThread *eigs_thread_attach(EigsState *st) {
     if (!st) return NULL;
     if (eigs_current) {
@@ -83,6 +118,7 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     }
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
+    pthread_mutex_lock(&g_attached_lock); g_attached_threads++; pthread_mutex_unlock(&g_attached_lock);
     /* #915: xcalloc zeroes, and 0 here would mean "never scan", silently
      * disabling the observer gate's eager pass on every thread. Default ON;
      * only --lint and the LSP clear it. */
@@ -177,6 +213,7 @@ void eigs_thread_detach(void) {
      * so the bridge macros inside free_value/env destructors resolve. */
     eigs_thread_drain_caches(th);
     { extern void eigs_obs_memo_release(void); eigs_obs_memo_release(); }  /* #915 */
+    pthread_mutex_lock(&g_attached_lock); g_attached_threads--; pthread_mutex_unlock(&g_attached_lock);
 
     arena_destroy();
     eigs_current = NULL;

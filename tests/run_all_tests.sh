@@ -3579,7 +3579,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=27
+OBS_GATE_EXPECTED_CHECKS=29
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -3828,16 +3828,44 @@ printf 'x is 1.0\nfor i in range of 40:\n    x is x * 2.0\nlocal warm is vm_run_
 #     `equilibrium` and exited 0.
 OBS_G22=$($EIGS_BIN "$OBS_GATE_TMP/composed.eigs" 2>&1 | grep -c 'reads observer state, but the observer gate was closed')
 check "a mid-run arming does not disarm the load_file guard" "$OBS_G22" "1"
-# 24. GATE-SENSITIVE, deliberately. A descriptor must ARM the observer for what
-#     it does itself — the twin of chunk_arm_temporal (#831). Deleting that
-#     arming made a descriptor's own writes unrecorded and was caught only by
-#     bisection, because tests/test_vm_run_bytecode.eigs is byte-identical under
-#     EIGS_OBS_FORCE=1 and so has ZERO sensitivity to the observer being dead.
-#     This check asserts on observed CONTENT, so it fails if the arming goes.
-printf 'print of (report of y)\n' > "$OBS_GATE_TMP/desc_obs.eigs"
-printf 'y is 1.0\nlocal d is vm_run_bytecode of [1, [40], []]\ny is 2.0\ny is 4.0\ny is 8.0\nload_file of "%s/desc_obs.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/desc_arm.eigs"
+# 24. GATE-SENSITIVE, and DISCRIMINATING — the previous fixture was not.
+#     It ended with a string-literal load of an observing module, which the
+#     eager pass resolves at the PARENT's compile time and opens the gate on
+#     before line 1 runs (2 units already `observed`), so the descriptor's
+#     arming was never load-bearing and BOTH mechanisms it named could be
+#     deleted with the section 27/27 green. A blind critic proved it decoration.
+#     A discriminating fixture needs a descriptor whose OWN assembled bytecode
+#     carries the reader: the host has no observer surface at all (gate closed,
+#     0 observed), and the descriptor writes a geometric ramp into its own frame
+#     slot with OBSERVE_ASSIGN_LOCAL then reads it back with REPORT_SLOT.
+#     Verified against a build with the arming deleted: clean `diverging`,
+#     mutant `equilibrium`.
+#     Opcodes: CONST=0 SET_LOCAL=24 POP=35 RETURN=40 OBSERVE_ASSIGN_LOCAL=57
+#     REPORT_SLOT=81.
+#     The reader must live in a NESTED function chunk. A TOP-LEVEL descriptor
+#     is handed the HOST env (callframe_init sets fn_env to it), so a slot write
+#     there decrefs a live host binding — a heap-use-after-free, filed as a
+#     pre-existing bug. A nested chunk gets a fresh call env, so its writes
+#     address its own frame. Verified ASan-clean, and verified discriminating
+#     against a build with the arming deleted: clean `diverging`, mutant
+#     `equilibrium`.
+#     CONST=0 SET_LOCAL=24 POP=35 CLOSURE=38 CALL=39 RETURN=40
+#     OBSERVE_ASSIGN_LOCAL=57 REPORT_SLOT=81
+{
+  printf 'local fn is [['
+  j=0; while [ $j -lt 24 ]; do printf '0, %d, 0, 57, 0, 0, 24, 0, 0, 35, ' "$j"; j=$((j+1)); done
+  printf '81, 0, 0, 40], ['
+  j=0; v=1; while [ $j -lt 24 ]; do [ $j -gt 0 ] && printf ', '; printf '%d.0' "$v"; v=$((v*2)); j=$((j+1)); done
+  printf '], [], 0, "ramp", ["acc"]]\n'
+  printf 'local mod is [38, 0, 0, 39, 0, 0, 40]\n'
+  printf 'print of (vm_run_bytecode of [1, mod, [], [fn], 0, "<probe>", []])\n'
+} > "$OBS_GATE_TMP/desc_arm.eigs"
+OBS_DESC_GATE=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$OBS_GATE_TMP/desc_arm.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
 OBS_G23=$($EIGS_BIN "$OBS_GATE_TMP/desc_arm.eigs" 2>&1 | tail -1)
-check "a descriptor ARMS the observer for work after it (gate-sensitive)" "$OBS_G23" "moving"
+# The gate must be CLOSED for this to mean anything — if the host opened it,
+# the descriptor's arming is irrelevant and the check is back to decoration.
+[ "$OBS_DESC_GATE" = "0" ] || OBS_G23="host-opened-the-gate($OBS_DESC_GATE)"
+check "a descriptor ARMS the observer for its OWN writes (gate-sensitive)" "$OBS_G23" "diverging"
 # 25. The sync gate's own mutation train. Without this the gate is a claim: a
 #     blind critic gutted each of its four assertion bodies in turn and it
 #     printed PASS every time on a tree carrying that assertion's fault. The
@@ -3895,6 +3923,32 @@ else
     OBS_G25="differs($OBS_ARM_LIT/$OBS_ARM_MORE)"
 fi
 check "asking the observer MORE does not yield LESS history" "$OBS_G25" "agree"
+# 28-29. Two mechanisms that had NO check at all until a blind critic mutated
+#     them away with the section still 27/27 green. (The third, the memo that
+#     fixed a measured 7x DAG regression, is covered by tools/observer_gate_measure.sh
+#     rather than here: distinguishing it needs a timing ratio, and a timing
+#     assertion in this suite would be flaky on a loaded 2-core box. Recorded
+#     rather than faked.)
+# 28. The speculative read is BOUNDED. Without the stat/S_ISREG guard a literal
+#     load in an UNCALLED function blocks forever on a FIFO — the compiler dies
+#     before vm_execute with nothing printed.
+OBS_FIFO_DIR="$OBS_GATE_TMP/fifo"
+mkdir -p "$OBS_FIFO_DIR"
+if mkfifo "$OBS_FIFO_DIR/lazy.eigs" 2>/dev/null; then
+    printf 'define never_called() as:\n    return load_file of "%s/lazy.eigs"\nprint of "alive"\n' "$OBS_FIFO_DIR" > "$OBS_GATE_TMP/fifo_par.eigs"
+    OBS_G26=$(timeout 10 $EIGS_BIN "$OBS_GATE_TMP/fifo_par.eigs" 2>&1 | tail -1)
+else
+    OBS_G26="alive"   # no mkfifo on this platform; not a failure of the runtime
+fi
+check "a speculative load of a FIFO does not block the compiler" "$OBS_G26" "alive"
+# 29. A scanned module's compile error must not clobber the parent's recorded
+#     first error. Observable through --lint, which reads those fields: linting
+#     a file whose literal load target is itself broken must still report the
+#     PARENT's own diagnostic, not the module's.
+printf 'break\n' > "$OBS_GATE_TMP/fe_mod.eigs"
+printf 'load_file of "%s/fe_mod.eigs"\nx is\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/fe_par.eigs"
+OBS_G27=$($EIGS_BIN --lint "$OBS_GATE_TMP/fe_par.eigs" 2>&1 | grep -c "fe_mod")
+check "a scanned module's error does not leak into the parent's diagnostics" "$OBS_G27" "0"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))

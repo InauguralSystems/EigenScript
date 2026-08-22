@@ -127,6 +127,7 @@ capture_manifest() {
     local dir="$1"
     {
         echo "bin=$(realpath "$BIN" 2>/dev/null || echo "$BIN")"
+        echo "force=${EIGS_OBS_FORCE:-0}"
         echo "sha=$( (sha256sum "$BIN" 2>/dev/null || shasum -a 256 "$BIN") | awk '{print $1}')"
         echo "rev=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
     } > "$dir/.MANIFEST"
@@ -170,7 +171,17 @@ do_compare() {
     # diffing a build against itself and PASS means nothing.
     local sha_a sha_ref sha_b
     sha_a=$(manifest_field "$da" sha); sha_ref=$(manifest_field "$dref" sha); sha_b=$(manifest_field "$db" sha)
-    echo "provenance: base=${sha_a:0:12} ref=${sha_ref:0:12} gated=${sha_b:0:12}"
+    local frc_a frc_b
+    frc_a=$(manifest_field "$da" force); frc_b=$(manifest_field "$db" force)
+    echo "provenance: base=${sha_a:0:12}(force=${frc_a:-?}) ref=${sha_ref:0:12} gated=${sha_b:0:12}(force=${frc_b:-?})"
+    # The second half of the claim, now actually implemented: the two arms must
+    # DIFFER in something. Same binary AND same gate setting means the run is
+    # diffing a build against itself, and PASS carries no information.
+    if [ "$sha_a" = "$sha_b" ] && [ "${frc_a:-0}" = "${frc_b:-0}" ]; then
+        echo "FAIL: '$a' and '$b' used the SAME binary AND the same EIGS_OBS_FORCE setting."
+        echo "      Nothing distinguishes the arms; this would pass trivially."
+        exit 2
+    fi
     if [ "$sha_a" != "$sha_ref" ]; then
         echo "FAIL: '$a' and '${a}2' were captured with DIFFERENT binaries."
         echo "      The determinism reference must match the baseline, or every real"
@@ -193,7 +204,19 @@ do_compare() {
             nondet=$((nondet+1)); NONDET+=("$f"); continue
         fi
         compared=$((compared+1))
-        if [ "$(wc -c < "$da/$s")" -le 6 ]; then silent=$((silent+1)); else informative=$((informative+1)); fi
+        # "Informative" means the program EMITTED something, not that its
+        # capture file is large. The file always ends with the appended `rc=N`
+        # line, so a byte threshold measures the width of the exit code:
+        # `rc=0` is 5 bytes (silent) but `rc=124` is 7 (scored informative).
+        # Executed: a binary that only `exit 124` scored 440/440 informative and
+        # PASSED — and 124/134/139 are exactly the timeout/OOM/crash codes this
+        # floor's own comment names as its motivating hazard. Strip the rc line
+        # and ask whether anything else is there.
+        if [ -s "$da/$s" ] && [ -n "$(sed '$d' "$da/$s")" ]; then
+            informative=$((informative+1))
+        else
+            silent=$((silent+1))
+        fi
         if ! cmp -s "$da/$s" "$db/$s"; then
             mismatch=$((mismatch+1)); MISMATCH+=("$f")
         fi
