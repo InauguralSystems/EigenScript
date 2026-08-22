@@ -607,9 +607,17 @@ static inline int eigs_obs_gate_open(void) {
 void observer_slot_update(Env *e, int idx, Value *newval) {
     /* #915: nothing compiled into this state can interrogate the observer, so
      * skip the entropy walk entirely. compute_entropy recurses through every
-     * reachable list item and dict value, which is where the 88% goes. The gate
-     * is monotonic and set at compile time (chunk_reads_observer), so it cannot
-     * flicker mid-loop. */
+     * reachable list item and dict value, which is where the 88% goes.
+     *
+     * `obs_needed` is monotonic — set at compile time by chunk_reads_observer,
+     * and by eigs_obs_enable() at the runtime arming sites, never cleared. The
+     * OTHER half of eigs_obs_gate_open(), the trace-history flag, is NOT:
+     * `record_history of 0` calls trace_history_disable() and closes it again
+     * mid-program. A previous version of this comment claimed the gate "cannot
+     * flicker mid-loop"; that is true of obs_needed and false of the pair, and
+     * a critic executed the flicker. `record_history` is now in OBS_BUILTINS so
+     * a program that names it opens the gate at COMPILE time and the flicker
+     * cannot change an answer. */
     if (!eigs_obs_gate_open()) return;
     observer_slot_update_e(e, idx, compute_entropy(newval));
     /* #294 also fold the raw value into the value-signal channel (numbers only:
@@ -3749,6 +3757,16 @@ Value* env_get_local_hashed(Env *env, const char *name, uint32_t h) {
     }
     env_shared_unlock(env);
     return NULL;
+}
+
+/* #915 — see the declaration in eigenscript.h for why this is not a plain
+ * assignment. Turning recording ON mid-execution does not restore the history
+ * of what already ran; it only stops the bleeding. The gap flag records that
+ * distinction so the guards stay armed. */
+void eigs_obs_enable(void) {
+    if (g_obs_needed) return;
+    if (g_obs_exec_started) g_obs_history_gap = 1;
+    g_obs_needed = 1;
 }
 
 Value* env_get(Env *env, const char *name) {

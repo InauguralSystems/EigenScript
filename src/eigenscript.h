@@ -568,6 +568,11 @@ struct EigsState {
      * history is not restored by the bit flipping, so this flag says "this
      * program has bindings with no recorded history" and never clears. */
     int             obs_history_gap;
+    /* #915: 1 once user code has begun executing. Before that, turning
+     * observer recording ON costs nothing — no assignment has happened yet.
+     * After it, the flip is exactly the unrecoverable case, because the
+     * bindings already assigned have no history and the bit is monotonic. */
+    int             obs_exec_started;
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
@@ -1038,6 +1043,17 @@ extern __thread EigsThread *eigs_current;
 #define g_compile_depth_reported (eigs_current->compile_depth_reported)
 #define g_obs_needed          (eigs_current->state->obs_needed)
 #define g_obs_history_gap     (eigs_current->state->obs_history_gap)
+#define g_obs_exec_started    (eigs_current->state->obs_exec_started)
+/* #915: the ONLY sanctioned way to turn observer recording on. `g_obs_needed`
+ * answers "is recording on?"; the two soundness guards need "is the recorded
+ * history COMPLETE?", and those are different questions. Writing the bit
+ * directly conflated them: a benign runtime flip — a descriptor that reads
+ * nothing, or the multithreaded bail in the eager pass — set the bit and
+ * thereby told both guards "the gate is open, nothing at risk", permanently.
+ * Executed: one `vm_run_bytecode of [1,[0,0,0,40],[7]]` before the read turned
+ * a loud raise into `equilibrium` on a diverging series. This helper keeps the
+ * two answers apart. */
+void eigs_obs_enable(void);
 #define g_tokenize_depth      (eigs_current->tokenize_depth)
 #define g_vts_depth           (eigs_current->vts_depth)
 #define g_json_depth          (eigs_current->json_depth)

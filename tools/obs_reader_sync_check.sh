@@ -8,7 +8,7 @@
 #   1. src/vm.h        — the /*obs:READS*/ markers. The AUTHORITATIVE home:
 #                        every opcode carries a hand-reviewed verdict, and
 #                        tools/obs_marker_check.sh proves every opcode has one.
-#   2. src/chunk.c     — the `case OP_...:` arms of chunk_has_reader_opcode(),
+#   2. src/chunk.c     — the `case OP_...:` arms of opcode_is_observer_reader(),
 #                        the CONSUMER: the opcode half of the compile-time scan
 #                        that decides whether a program may skip observer
 #                        bookkeeping. (It was split out of chunk_reads_observer
@@ -121,7 +121,7 @@ EXEMPT="OP_INTERROGATE OP_IMPORT"
 # a scanner that reads prose ABOUT its subject as its subject is the failure
 # that gets worse the better the code is documented.
 switch_reader_ops() {
-    awk -v fn="int chunk_has_reader_opcode(" '
+    awk -v fn="int opcode_is_observer_reader(" '
         index($0, fn) > 0 { infn = 1 }
         infn == 0 { next }
         {
@@ -210,7 +210,13 @@ run_selftest() {
         case "$1" in
           clean) ;;
           E) sed -i 's|OP_ADD, /\*obs:NONE\*/|OP_ADD, /*obs:READS*/|' "$tmp/$1.vm.h" ;;   # NEW reader never added to the switch
-          B) sed -i 's/^            case OP_PREDICATE:$/            case OP_ADD:\n            case OP_PREDICATE:/' "$tmp/$1.chunk.c" ;;  # stray opcode
+          # Anchored on the reader-set function's OWN indentation. When that
+          # function was extracted and re-indented, this sed silently stopped
+          # matching and the row reported MISS ("could not plant") rather than a
+          # false pass — which is the behaviour a mutation harness must have
+          # (§67: a self-test mutation anchored on line SHAPE breaks when the
+          # shape moves; make it fail loud, and verify the plant landed).
+          B) sed -i 's/^\( *\)case OP_PREDICATE:$/\1case OP_ADD:\n\1case OP_PREDICATE:/' "$tmp/$1.chunk.c" ;;  # stray opcode
           D) : ;;   # planted in the GATE's EXEMPT list, not the tree — see gut()
           F) sed -i 's|OP_INTERROGATE,     /\*obs:NONE\*/|OP_INTERROGATE,     /*obs:READS*/|' "$tmp/$1.vm.h" ;;  # exemption spent
         esac

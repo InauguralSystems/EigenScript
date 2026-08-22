@@ -1073,9 +1073,18 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
  *      be wrong.
  */
 static int const_pool_names_observer(const EigsChunk *chunk) {
-    /* Anchored to the observer-READ builtins registered in builtins.c (the
-     * sandbox allowlist marks them as a group). Names only reachable as
-     * builtins — the opcode forms are covered by the opcode scan above. */
+    /* Names reachable only as BUILTINS; the opcode forms are covered by the
+     * opcode scan above.
+     *
+     * This list is NOT anchored to anything, and a previous comment here
+     * claiming it was "anchored to the observer-READ builtins registered in
+     * builtins.c (the sandbox allowlist marks them as a group)" was false: that
+     * group is five names, this is nine, and `report_value` / `trajectory` are
+     * not builtins at all (absent from `eigenscript --api`; they exist only as
+     * opcodes). The two lists cannot cross-check each other, so this is a
+     * hand-maintained list and should be read as one (mechanical-gates §1). It
+     * is deliberately over-broad: a name here that is not a reader costs a
+     * program its gate, which is the safe direction. */
     static const char *OBS_BUILTINS[] = {
         "observe", "report", "report_value", "trajectory", "classify",
         "state_at", "get_observer_thresholds",
@@ -1098,7 +1107,15 @@ static int const_pool_names_observer(const EigsChunk *chunk) {
          * CASE(IMPORT)); replicating that here would be a second copy of a
          * resolver free to drift from the first, which is the #737 failure. So
          * import stays conservative and #915's `import` half stays open. */
-        "eval", NULL
+        "eval",
+        /* `record_history` sets g_trace_obs_hist — half of what opens the
+         * observer channel — at RUNTIME, and it has NO opcode form, so its name
+         * in the constant pool is its only fingerprint. Executed: adding
+         * `record_history of 1` to a gated program changed its answer while the
+         * compile verdict still read `obs-gate: unobserved`, i.e. the gate was
+         * open at runtime and the diagnostic said closed. `record_history of 0`
+         * then CLOSES it again mid-program, so the channel can flicker. */
+        "record_history", NULL
     };
     for (int i = 0; i < chunk->const_count; i++) {
         const char *s = chunk->const_interns ? chunk->const_interns[i] : NULL;
@@ -1140,167 +1157,77 @@ int chunk_reads_observer(const EigsChunk *chunk) {
  * So the descriptor sites ask this instead, BEFORE running: does the chunk I am
  * about to execute read observer state while the gate is closed? If so, raise —
  * the same outcome guard builtin_load_file uses, for the same reason. */
+static int chunk_step_ip(const EigsChunk *chunk, int i);   /* defined below */
+
+/* THE reader set. One home, and it is the one tools/obs_reader_sync_check.sh
+ * extracts and pins against the obs:READS markers in vm.h. Every consumer
+ * asks this question rather than restating the list — a fourth restatement had
+ * already diverged (OP_LOOP_STALL_CHECK) before anyone noticed. */
+int opcode_is_observer_reader(uint8_t op) {
+    switch ((OpCode)op) {
+        case OP_INTERROGATE:
+        case OP_INTERROGATE_NAMED:
+        case OP_INTERROGATE_NAMED_AT:
+        case OP_INTERROGATE_NAMED_WHEN:
+        case OP_PREDICATE:
+        case OP_PREDICATE_SLOT:
+        case OP_PREDICATE_NAME:
+        case OP_REPORT_SLOT:
+        case OP_REPORT_NAME:
+        case OP_REPORT_VALUE_SLOT:
+        case OP_REPORT_VALUE_NAME:
+        case OP_TRAJECTORY_SLOT:
+        case OP_TRAJECTORY_NAME:
+        case OP_OBSERVE_VALUE_SLOT:
+        case OP_OBSERVE_VALUE_NAME:
+        case OP_LOOP_STALL_CHECK:
+        case OP_IMPORT:
+            return 1;
+        default: return 0;
+    }
+}
+
 int chunk_has_reader_opcode(const EigsChunk *chunk) {
     if (!chunk) return 0;
     int i = 0;
     while (i < chunk->code_len) {
-        uint8_t op = chunk->code[i];
-        switch ((OpCode)op) {
-            /* Direct interrogation forms. */
-            case OP_INTERROGATE:
-            case OP_INTERROGATE_NAMED:
-            case OP_INTERROGATE_NAMED_AT:
-            case OP_INTERROGATE_NAMED_WHEN:
-            case OP_PREDICATE:
-            case OP_PREDICATE_SLOT:
-            case OP_PREDICATE_NAME:
-            case OP_REPORT_SLOT:
-            case OP_REPORT_NAME:
-            case OP_REPORT_VALUE_SLOT:
-            case OP_REPORT_VALUE_NAME:
-            case OP_TRAJECTORY_SLOT:
-            case OP_TRAJECTORY_NAME:
-            case OP_OBSERVE_VALUE_SLOT:
-            case OP_OBSERVE_VALUE_NAME:
-            /* An observer-conditioned loop consults the slot to decide halting
-             * (cond_is_observer_based, compiler.c). A plain loop emits
-             * OP_LOOP_CAP_CHECK instead and does not read the observer. */
-            case OP_LOOP_STALL_CHECK:
-            /* Dynamic module load. Same reason as eval/load_file above, but
-             * reachable ONLY here: import's operand is a bare name, so nothing
-             * about it reaches the constant pool as a string. */
-            case OP_IMPORT:
-                return 1;
-            default: break;
-        }
-        i++;
-        if (op == OP_LINE) {
-            i += 4;                          /* #630: 32-bit operand */
-        } else if (op < OP_COUNT) {
-            VerifyRole roles[3];
-            i += 2 * op_verify_operands(op, roles);
-        }
+        if (opcode_is_observer_reader(chunk->code[i])) return 1;
+        i = chunk_step_ip(chunk, i);
     }
     for (int f = 0; f < chunk->fn_count; f++)
         if (chunk_has_reader_opcode(chunk->functions[f])) return 1;
     return 0;
 }
 
-/* #915: does this chunk read observer state about a binding that ALREADY
- * EXISTS in `env`?
- *
- * chunk_has_reader_opcode() answers "does it read at all", which is too broad
- * for the descriptor sites: the self-hosting bridge legitimately assembles
- * chunks containing reader opcodes over their OWN frame slots, and raising on
- * those broke 50 assertions in tests/test_vm_run_bytecode.eigs — the same
- * over-broad mistake made at the load_file site one round earlier, repeated
- * here.
- *
- * The hazard is narrower: a descriptor reading a binding that the HOST already
- * assigned while the gate was closed, whose history was therefore never
- * recorded. Those reads are exactly the NAME-operand forms, and the name is
- * resolvable in the host env at guard time. A SLOT-operand reader addresses the
- * descriptor's own frame and cannot reach a host binding.
- *
- * RESIDUAL, stated rather than implied: the bare OP_PREDICATE form reads the
- * last-observed binding through an alias with no operand to inspect, so it is
- * not covered here. With the gate closed there is no last-observed binding to
- * find, so it answers a rest value — wrong, but not detectable at this seam. */
-static int chunk_step_ip(const EigsChunk *chunk, int i);   /* defined below */
-
-int chunk_reads_named_binding(const EigsChunk *chunk, Env *env) {
-    return chunk_reads_host_observer(chunk, env, 1);
-}
 
 /* `top` is 1 for the chunk vm_execute is handed directly, 0 for a nested
  * function chunk.
  *
- * WHY THE DISTINCTION. vm_execute(chunk, host) -> callframe_init sets
- * `f->fn_env = host` (src/vm.c), so for the TOP-LEVEL descriptor chunk the
- * "frame slots" ARE the host module env's slots. An earlier version of this
- * function looked only at NAME operands, on the stated reasoning that "a
- * SLOT-operand reader addresses the descriptor's own frame and cannot reach a
- * host binding". That reasoning was false at the top level, and a blind critic
- * executed the consequence: the same geometric-runaway repro with the NAME
- * operand swapped for `OP_REPORT_SLOT 252` read the host's `x` and answered
- * `equilibrium` under the gate, `diverging` without it. A comment is
- * load-bearing; that one was wrong and cost a soundness hole.
+ * ONE READER SET, NOT A FOURTH ONE. This used to carry its own hand-written
+ * lists of "which opcodes read", separate from chunk_has_reader_opcode() above
+ * and invisible to tools/obs_reader_sync_check.sh — a fourth home for a rule
+ * that already had three, in the same change that quotes mechanical-gates §26
+ * at length. It had ALREADY diverged when a critic looked: OP_LOOP_STALL_CHECK
+ * is obs:READS in vm.h and listed above, and was absent from every branch
+ * here. So this asks the shared question — "is this opcode a reader?" — and
+ * only CLASSIFIES the answer by operand shape, which it derives from
+ * op_verify_operands, the same table the verifier and disassembler use.
  *
- * A NESTED function chunk gets a fresh call env, so its slot readers really do
- * address its own frame — those stay exempt, and what the descriptor itself
- * writes is covered by arming the gate before vm_execute (the observer twin of
- * chunk_arm_temporal, #831). */
-int chunk_reads_host_observer(const EigsChunk *chunk, Env *env, int top) {
-    if (!chunk || !env) return 0;
-    int i = 0;
-    while (i < chunk->code_len) {
-        uint8_t op = chunk->code[i];
-        int is_named_reader = 0;
-        switch ((OpCode)op) {
-            case OP_REPORT_NAME:
-            case OP_REPORT_VALUE_NAME:
-            case OP_TRAJECTORY_NAME:
-            case OP_OBSERVE_VALUE_NAME:
-            case OP_PREDICATE_NAME:
-            case OP_INTERROGATE_NAMED:
-            case OP_INTERROGATE_NAMED_AT:
-            case OP_INTERROGATE_NAMED_WHEN:
-                is_named_reader = 1; break;
-            default: break;
-        }
-        /* Top-level slot readers address the HOST env (see above). Bounded by
-         * the host's binding count so an out-of-range probe slot — which reads
-         * nothing and is what the bridge's own boundary fixtures use — is not
-         * treated as a host read. */
-        if (top && !is_named_reader) {
-            int slot_reader = 0;
-            switch ((OpCode)op) {
-                case OP_REPORT_SLOT: case OP_REPORT_VALUE_SLOT:
-                case OP_TRAJECTORY_SLOT: case OP_OBSERVE_VALUE_SLOT:
-                case OP_PREDICATE_SLOT:
-                    slot_reader = 1; break;
-                /* The bare form reads the last-observed binding through an
-                 * alias with no operand to inspect; at top level that alias can
-                 * only be a host binding. */
-                case OP_PREDICATE:
-                    if (env->count > 0) return 1;
-                    break;
-                default: break;
-            }
-            if (slot_reader) {
-                VerifyRole roles[3];
-                int nops = op_verify_operands(op, roles);
-                if (i + 1 + 2 * nops <= chunk->code_len) {
-                    /* The slot operand is the LAST one for these opcodes
-                     * (PREDICATE_SLOT is [kind][slot]); take the last operand. */
-                    int off = i + 1 + 2 * (nops - 1);
-                    int slot = chunk->code[off] | (chunk->code[off + 1] << 8);
-                    if (slot >= 0 && slot < env->count) return 1;
-                }
-            }
-        }
-
-        if (is_named_reader) {
-            VerifyRole roles[3];
-            int nops = op_verify_operands(op, roles);
-            if (i + 1 + 2 * nops <= chunk->code_len) {
-                for (int k = 0; k < nops; k++) {
-                    if (roles[k] != VR_NAME) continue;
-                    int off = i + 1 + 2 * k;
-                    int idx = chunk->code[off] | (chunk->code[off + 1] << 8);
-                    if (idx < 0 || idx >= chunk->const_count) continue;
-                    const char *nm = chunk->const_interns ? chunk->const_interns[idx] : NULL;
-                    if (nm && env_get(env, nm)) return 1;
-                }
-            }
-        }
-        i = chunk_step_ip(chunk, i);
-    }
-    for (int f = 0; f < chunk->fn_count; f++)
-        if (chunk_reads_host_observer(chunk->functions[f], env, 0)) return 1;
-    return 0;
-}
-
+ * WHY THE OPERAND SHAPE MATTERS. vm_execute(chunk, host) -> callframe_init sets
+ * f->fn_env = host, so for the TOP-LEVEL descriptor chunk the "frame slots" ARE
+ * the host env's slots. An earlier version looked only at NAME operands, on the
+ * written reasoning that a slot reader "addresses the descriptor's own frame and
+ * cannot reach a host binding" — false at the top level, and a critic executed
+ * the consequence.
+ *
+ * AND DEPTH IS NOT A DEFENCE FOR THE BARE FORM. A nested function chunk does get
+ * a fresh call env, so its SLOT readers really do address their own frame. The
+ * bare OP_PREDICATE consults no env at all: it reads g_last_obs_slot_env /
+ * g_last_obs_slot_idx, which are EigsThread state set by the host's last
+ * OP_OBSERVE_NAME_POST and untouched by call-frame entry. Confining it to `top`
+ * left the same silent inversion live one recursion level down (executed:
+ * a descriptor whose NESTED chunk holds a bare predicate answered 0 under the
+ * gate and 1 without). It is therefore checked at EVERY depth. */
 /* ---- #915: statically-resolvable `load_file` targets --------------------
  *
  * `load_file` used to sit in OBS_BUILTINS and force the gate off wholesale,

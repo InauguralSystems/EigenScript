@@ -44,6 +44,7 @@ Value* builtin_observe(Value *arg);
  * CASE(LOOP_STALL_CHECK) and jit_helper_loop_stall_check so the two can never
  * disagree on loop classification (the same lockstep invariant the opcode
  * encoding enforces). Returns 1 if (*dH, *ent) were filled. */
+
 static inline int obs_stall_trajectory(double *dH, double *ent) {
     const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
     if (s && s->used) {
@@ -230,7 +231,7 @@ static void eigs_observer_dump(Env *leaf) {
          * programs most worth debugging. Flipping here is safe: the dump runs at
          * a loop safepoint, not in the signal handler, and g_obs_needed is
          * monotonic so this cannot flicker. */
-        g_obs_needed = 1;
+        eigs_obs_enable();
     }
     obs_dump_scope("module", root, 1, NULL);
     Env *fn_env = NULL;

@@ -105,7 +105,7 @@ EigsValue *eigs_eval_string(const char *src) {
      * eigs_eval_string calls accumulate against one global env, so a later call
      * can interrogate a binding an earlier call assigned. The host can also read
      * observer state directly. Nothing here can see the next call, so observe. */
-    g_obs_needed = 1;
+    eigs_obs_enable();   /* #915: via the helper, so a mid-run flip records the gap */
     EigsChunk *chunk = compile_ast(ast, global, src);
 
     Value *result = vm_execute(chunk, global);

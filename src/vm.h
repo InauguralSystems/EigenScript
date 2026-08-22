@@ -646,16 +646,14 @@ void       chunk_disassemble(EigsChunk *chunk, const char *label);
  * Conservative in one direction only: every unclear case answers 1. Drives
  * the observer gate, so a wrong 0 is silently-wrong observer results. */
 int        chunk_reads_observer(const EigsChunk *chunk);
-/* #915: the opcode half alone, valid on a chunk that never met the compiler
- * (vm_run_bytecode / sandbox_run descriptors). Recurses into functions[]. */
+/* #915: the opcode half alone — true if the chunk contains ANY reader opcode,
+ * with no reachability question asked. Recurses into functions[]. Used by
+ * chunk_reads_observer; the descriptor sites want chunk_reads_host_observer,
+ * which also asks whether the read can reach the HOST. */
+/* THE reader set — one home, pinned against vm.h's obs:READS markers by
+ * tools/obs_reader_sync_check.sh. Ask this; never restate the list. */
+int        opcode_is_observer_reader(uint8_t op);
 int        chunk_has_reader_opcode(const EigsChunk *chunk);
-/* #915: narrower — does it read observer state about a binding already present
- * in `env`? Used by the descriptor sites, where a reader over the chunk's OWN
- * frame slots is legitimate. See the definition for the residual. */
-int        chunk_reads_named_binding(const EigsChunk *chunk, Env *env);
-/* `top`=1 for the chunk vm_execute is handed directly: its frame slots ARE the
- * host env's slots, so slot readers there are host reads. See the definition. */
-int        chunk_reads_host_observer(const EigsChunk *chunk, Env *env, int top);
 /* #915: hand every STRING-LITERAL `load_file` target in this chunk to `visit`.
  * Returns 1 if the unit is OPAQUE — it uses the name `load_file` in any shape
  * this scan does not recognize. An opaque unit must be treated as observing.

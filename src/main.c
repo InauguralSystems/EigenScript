@@ -351,6 +351,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     if (getenv("EIGS_DUMP_BC")) chunk_disassemble(script_chunk, "<module>");
+    /* #915: from here on, a 0->1 flip of the observer bit leaves the bindings
+     * assigned before it without history — see eigs_obs_enable(). */
+    g_obs_exec_started = 1;
     Value *result = vm_execute(script_chunk, global);
     if (result) val_decref(result);
     /* #493: capture whether any worker died of an uncaught error without ever

@@ -3328,17 +3328,17 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
      * stat/read/compiling a file's load targets on every keystroke with it. */
     if (!g_obs_gate_scan_enabled) return;
 
-    if (g_obs_gate_depth >= OBS_GATE_MAX_DEPTH) { g_obs_needed = 1; return; }
+    if (g_obs_gate_depth >= OBS_GATE_MAX_DEPTH) { eigs_obs_enable(); return; }
 
-    if (chunk_scan_static_loads(chunk, obs_gate_note_load, &L)) { g_obs_needed = 1; goto done; }
-    if (L.overflow) { g_obs_needed = 1; goto done; }   /* more loads than slots — see above */
+    if (chunk_scan_static_loads(chunk, obs_gate_note_load, &L)) { eigs_obs_enable(); goto done; }
+    if (L.overflow) { eigs_obs_enable(); goto done; }   /* more loads than slots — see above */
 
     /* See the comment above: fd-level suppression is process-global, so the
      * eager compile is not taken at all while another thread could be writing
      * stderr. Placed AFTER the scan deliberately — a unit with no loads has
      * nothing to compile eagerly and must not lose its gate just for running
      * in a process that happens to have spawned a worker. */
-    if (L.count > 0 && g_vm_multithreaded) { g_obs_needed = 1; goto done; }
+    if (L.count > 0 && g_vm_multithreaded) { eigs_obs_enable(); goto done; }
 
     /* HEAP, not stack. As `char resolved[8192]` inside the loop this frame
      * measured 8,864 bytes (gcc -fstack-usage) on EVERY compile_ast, and this
@@ -3349,7 +3349,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
      * recursive path suspect; that rule was bought on exactly this shape. */
     if (L.count > 0) {
         resolved = malloc(8192);
-        if (!resolved) { g_obs_needed = 1; goto done; }
+        if (!resolved) { eigs_obs_enable(); goto done; }
     }
 
     for (int i = 0; i < L.count && !g_obs_needed; i++) {
@@ -3368,7 +3368,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
 #else
         int resolved_ok = 0;
 #endif
-        if (!resolved_ok) { g_obs_needed = 1; break; }
+        if (!resolved_ok) { eigs_obs_enable(); break; }
 
         /* Memo BEFORE the read. Resolving is an access(2) probe; reading pulls
          * the whole file and then throws it away. Checking after the read left
@@ -3379,11 +3379,11 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
 #if !EIGENSCRIPT_FREESTANDING
         source = read_file_util(resolved, &size);
 #endif
-        if (!source) { g_obs_needed = 1; break; }
+        if (!source) { eigs_obs_enable(); break; }
         obs_memo_add(resolved);
 
         int muted = obs_gate_mute_stderr();
-        if (muted < 0) { free(source); g_obs_needed = 1; break; }
+        if (muted < 0) { free(source); eigs_obs_enable(); break; }
 
         int saved_errors = g_parse_errors;
         g_parse_errors = 0;
@@ -3393,7 +3393,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
             g_parse_errors = saved_errors;
             free_ast(mast); free_tokenlist(&tl); free(source);
             obs_gate_unmute_stderr(muted);   /* every exit from here unmutes */
-            g_obs_needed = 1; break;
+            eigs_obs_enable(); break;
         }
 
         Env *scan_env = env_new(g_global_env);
@@ -3403,7 +3403,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
         EigsChunk *mchunk = compile_ast(mast, scan_env, source);   /* ORs its own verdict */
         g_obs_gate_depth--;
         g_compile_module_boundary = saved_boundary;
-        if (g_parse_errors > 0) g_obs_needed = 1;
+        if (g_parse_errors > 0) eigs_obs_enable();
         g_parse_errors = saved_errors;
 
         if (mchunk) chunk_free(mchunk);
@@ -3508,8 +3508,8 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * is what polices this — if any tracked program exhibits it, the diff goes
      * red. Force-on sites cover the cases where it is not merely possible but
      * expected (REPL, embed). */
-    if (!g_obs_needed && getenv("EIGS_OBS_FORCE")) g_obs_needed = 1;  /* #915 escape hatch */
-    if (!g_obs_needed && chunk_reads_observer(chunk)) g_obs_needed = 1;
+    if (!g_obs_needed && getenv("EIGS_OBS_FORCE")) eigs_obs_enable();  /* #915 escape hatch */
+    if (!g_obs_needed && chunk_reads_observer(chunk)) eigs_obs_enable();
     if (!g_obs_needed) obs_gate_resolve_static_loads(chunk);
     if (getenv("EIGS_OBS_GATE_STATS"))
         fprintf(stderr, "obs-gate: %s %s\n",

@@ -3809,16 +3809,25 @@ printf 'load_file of "%s/fp_inner.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/fp_m
 printf 'define w() as:\n    return 1\nlocal t is spawn of w\nprint of (thread_join of t)\nload_file of "%s/fp_mid.eigs"\nprint of "no false positive"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/fp.eigs"
 OBS_G21=$($EIGS_BIN "$OBS_GATE_TMP/fp.eigs" 2>&1 | tail -1)
 check "spawn + a nested literal load does not falsely raise" "$OBS_G21" "no false positive"
-# 23-24. The DESCRIPTOR seam (vm_run_bytecode / sandbox_run). Two guards that
-#     answer different questions, and a revision once swapped one for the other.
-# 23. A TOP-LEVEL slot reader addresses the HOST env — vm_execute hands the
-#     descriptor the host env and callframe_init makes it the frame's fn_env, so
-#     "the descriptor's own frame" IS the host's slots up there. Reading a host
-#     binding assigned while the gate was closed must raise, not answer. (81 =
-#     OP_REPORT_SLOT, 40 = OP_RETURN.)
-printf 'x is 1.0\ni is 0\nloop while i < 40:\n  x is x * 2.0\n  i is i + 1\nprint of (vm_run_bytecode of [1, [81, 252, 0, 40], []])\n' > "$OBS_GATE_TMP/desc_slot.eigs"
-OBS_G22=$($EIGS_BIN "$OBS_GATE_TMP/desc_slot.eigs" 2>&1 | grep -c 'the chunk reads observer state, but the observer gate is closed')
-check "a descriptor SLOT read of a host binding raises, not answers" "$OBS_G22" "1"
+# 23-24. The DESCRIPTOR seam. Note what is NOT here: a check that a descriptor
+#     READING host observer state raises. Three static guards were tried and each
+#     broke either the self-hosting bridge or its own #737 fixture; the residual
+#     is filed rather than half-guarded, so pinning a raise here would pin a
+#     behaviour that does not exist.
+# 23. COMPOSED SEAM — the case every other check misses because each exercises
+#     ONE guard in isolation. A benign descriptor call arms the observer
+#     mid-run; that arming must NOT be readable as "the gate was open all
+#     along", or it disarms the load_file guard for the rest of the process.
+#     Executed before the fix: one `vm_run_bytecode` of a chunk that reads
+#     nothing turned a loud raise into a silent `equilibrium`.
+printf 'print of "benign"\n' > "$OBS_GATE_TMP/comp_m.eigs"
+printf 'x is 1.0\nfor i in range of 40:\n    x is x * 2.0\nlocal warm is vm_run_bytecode of [1, [0,0,0,40], [7]]\nlocal w is write_text of ["%s/comp_m.eigs", "print of (report of x)"]\nload_file of "%s/comp_m.eigs"\n' "$OBS_GATE_TMP" "$OBS_GATE_TMP" > "$OBS_GATE_TMP/composed.eigs"
+#     Assert the RAISE, not byte-equality: a loud raise and a correct answer are
+#     both sound but not identical, and comparing the arms would fail on the
+#     very behaviour this pins. Before the fix this program printed
+#     `equilibrium` and exited 0.
+OBS_G22=$($EIGS_BIN "$OBS_GATE_TMP/composed.eigs" 2>&1 | grep -c 'reads observer state, but the observer gate was closed')
+check "a mid-run arming does not disarm the load_file guard" "$OBS_G22" "1"
 # 24. GATE-SENSITIVE, deliberately. A descriptor must ARM the observer for what
 #     it does itself — the twin of chunk_arm_temporal (#831). Deleting that
 #     arming made a descriptor's own writes unrecorded and was caught only by
@@ -3829,7 +3838,7 @@ printf 'print of (report of y)\n' > "$OBS_GATE_TMP/desc_obs.eigs"
 printf 'y is 1.0\nlocal d is vm_run_bytecode of [1, [40], []]\ny is 2.0\ny is 4.0\ny is 8.0\nload_file of "%s/desc_obs.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/desc_arm.eigs"
 OBS_G23=$($EIGS_BIN "$OBS_GATE_TMP/desc_arm.eigs" 2>&1 | tail -1)
 check "a descriptor ARMS the observer for work after it (gate-sensitive)" "$OBS_G23" "moving"
-# 21. The sync gate's own mutation train. Without this the gate is a claim: a
+# 25. The sync gate's own mutation train. Without this the gate is a claim: a
 #     blind critic gutted each of its four assertion bodies in turn and it
 #     printed PASS every time on a tree carrying that assertion's fault. The
 #     WITNESS half is the part that matters — it requires the fault to SURVIVE
