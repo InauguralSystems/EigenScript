@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-08-23
+
 ### Added
 
 - **The observer gate ships: programs that provably never read observer state
@@ -63,6 +65,55 @@ All notable changes to EigenScript are documented here.
   drop the obligation that the dump must say the gate is closed rather than
   render every binding as `equilibrium`.
   No runtime change: the markers are comments and the gate is a test.
+
+- **`make embed-concurrent` — the multi-state embedding promise is now tested,
+  not just asserted (#885).** `docs/EMBEDDING.md` says a process may hold
+  multiple `EigsState` instances *concurrently* and that each is independent.
+  Nothing tested the concurrent half: `pthread_create` appeared nowhere in
+  `src/embed_smoke.c` or any test script, and the one multi-state case that
+  existed is explicitly sequential — it covers SWITCHING, not INDEPENDENCE.
+  Three assertions, two states on two OS threads, 200 interleaved rounds each:
+  per-state **observer thresholds**, per-state **global bindings** (the same
+  name holding a different value in each state), and **error-flag isolation**
+  (an uncaught error in one state leaves the other's flag clear).
+  **It carries its own control row**, and that row is the reason the other
+  three mean anything: a deliberately shared file-scope global that MUST show
+  cross-talk under the same harness. The first version's control reported
+  `A=0 B=0` — the compiler kept the value in a register and the threads never
+  interleaved — which would have made three green rows uninformative. With
+  `volatile` and a yield between write and read it reports ~167/200, and a
+  mutation replacing a per-state read with that shared static is caught.
+  The promise holds today by construction (nearly every `g_*` name is a macro
+  onto `eigs_current->…`), which is exactly why this needed a gate: a future
+  counter added as a file-scope `static` looks correct in every
+  single-threaded test in the repo.
+  Two of the three assertions had to be rewritten after a single-threaded
+  baseline: `observer_set`/`observer_get` do not exist (it is
+  `set_observer_thresholds of [dh_zero, dh_small, h_low]`), and `sandbox_run`
+  takes an ABI-stamped bytecode descriptor rather than a source string and a
+  budget dict — so the issue's suggested per-thread-budget row would have
+  tested descriptor assembly as much as isolation, and per-state globals
+  replace it. Baseline single-threaded before blaming concurrency.
+
+- **W023 warns about inverted sibling-branch outer mutation (#870).** When
+  sibling `if`/`elif`/`else` branches assign the same name with and without
+  `local`, the linter warns only when the compiler model proves the bare write
+  can reach a module binding; uncertain binder shapes remain silent.
+
+- **Strict math mode (`EIGS_STRICT=1`) — out-of-domain ops raise instead of
+  substituting (#971).** By default arithmetic is finite by construction: `sqrt`
+  of a negative → `0`, `log` of `≤0` → a stand-in, `asin`/`acos` outside
+  `[-1, 1]` → clamped, each recording the sticky `invalid` math-flag. Those
+  substitutions keep kernels/graders running but launder an out-of-domain
+  argument into a plausible finite result. With `EIGS_STRICT=1` (per-`EigsState`,
+  read once at creation) each such op raises a catchable `value` error instead —
+  for callers, e.g. a generated-code grader, that need arithmetic invalidity to
+  be loud. Default behavior is unchanged (zero blast radius); overflow saturation
+  and the `NaN`→`0` collapse are not yet gated by the flag. First cut of the
+  observer-honesty half of the #975 ledger; the reframe (raise-under-strict, not
+  "route invalid values through the observer") is because the collapse target `0`
+  is indistinguishable from a real `0` and the substituted values must stay for
+  kernels.
 
 ### Changed
 
@@ -142,36 +193,65 @@ All notable changes to EigenScript are documented here.
   3985/3985; two planted faults (always-raise, never-raise) each caught by
   their own assertion.
 
-### Added
+- **`sandbox_run` charges every retained allocation and verifies its
+  descriptor under bounded work (#965).** Pure string transforms
+  (`str_lower`/`trim`/`substr`/`json_raw`/`str_from_bytes`, strbuf-backed
+  encoders, `OP_ADD` concat and raw `OP_SLICE_GET` copies) allocated fresh
+  payloads no allocator charged, so a loop re-using one charged input
+  aggregated unbounded memory under an armed byte budget; the payload is now
+  charged once at the constructor/ownership-transfer chokepoint, the first
+  refusal is sticky for the whole run, and every attachable result — not only
+  a successful one — is scanned for callables. Descriptor constant pools are
+  additionally verified data-only under a shared node budget, so an aliased
+  all-data container graph is refused (`{ok:0}`, `invalid chunk descriptor`)
+  instead of driving an exponential walk before the sandbox's own bounds are
+  armed. Programs that stayed inside the budget are unaffected; a program that
+  was silently over it now gets `{ok:0}` with a `sandbox` error.
+  Descriptor verification is now ONE context for the whole recursive graph
+  rather than a bound per constant pool: a single work allowance, an explicit
+  depth/back-edge bound, and the constants themselves are ISOLATED from the
+  host. A per-chunk allowance was not a bound — nested function chunks
+  multiplied it, so a graph whose children were each comfortably inside the
+  limit was still accepted — and a constant retained by reference stayed the
+  same object sandboxed code mutated, letting an allowlisted `append` attach a
+  freshly created sandbox closure to a host-owned list without the value ever
+  appearing in the returned result. The sandbox now runs against its own copy
+  of every mutable constant (list/dict/buffer, cycles refused), and the
+  allowlist copies only the pure C builtin each allowed name actually holds —
+  a host-rebound allowed name gets the blocked stub instead of aliasing host
+  state inward. Ordinary descriptors, including ones carrying nested function
+  chunks and data constants, are unaffected.
 
-- **`make embed-concurrent` — the multi-state embedding promise is now tested,
-  not just asserted (#885).** `docs/EMBEDDING.md` says a process may hold
-  multiple `EigsState` instances *concurrently* and that each is independent.
-  Nothing tested the concurrent half: `pthread_create` appeared nowhere in
-  `src/embed_smoke.c` or any test script, and the one multi-state case that
-  existed is explicitly sequential — it covers SWITCHING, not INDEPENDENCE.
-  Three assertions, two states on two OS threads, 200 interleaved rounds each:
-  per-state **observer thresholds**, per-state **global bindings** (the same
-  name holding a different value in each state), and **error-flag isolation**
-  (an uncaught error in one state leaves the other's flag clear).
-  **It carries its own control row**, and that row is the reason the other
-  three mean anything: a deliberately shared file-scope global that MUST show
-  cross-talk under the same harness. The first version's control reported
-  `A=0 B=0` — the compiler kept the value in a register and the threads never
-  interleaved — which would have made three green rows uninformative. With
-  `volatile` and a yield between write and read it reports ~167/200, and a
-  mutation replacing a per-state read with that shared static is caught.
-  The promise holds today by construction (nearly every `g_*` name is a macro
-  onto `eigs_current->…`), which is exactly why this needed a gate: a future
-  counter added as a file-scope `static` looks correct in every
-  single-threaded test in the repo.
-  Two of the three assertions had to be rewritten after a single-threaded
-  baseline: `observer_set`/`observer_get` do not exist (it is
-  `set_observer_thresholds of [dh_zero, dh_small, h_low]`), and `sandbox_run`
-  takes an ABI-stamped bytecode descriptor rather than a source string and a
-  budget dict — so the issue's suggested per-thread-budget row would have
-  tested descriptor assembly as much as isolation, and per-state globals
-  replace it. Baseline single-threaded before blaming concurrency.
+- **Over-arity calls on multi-parameter functions now raise instead of
+  silently dropping the extra arguments (#974).** With `define two(a, b)`,
+  `two of [1, 2, 99]` used to bind `a = 1, b = 2` and discard `99` with no
+  diagnostic at any stage — and lint `W022` only sees same-file callees, so
+  the cross-module case had no guard at all. The call site now raises a
+  catchable `value` error (`call passes 3 arguments but the callee takes 2`)
+  in the interpreter and the JIT alike (`src/vm.c`), which is cross-file
+  robust where W022 is structurally blind. The arity-1 re-collect carve-out
+  is preserved (`one of [5, 6]` still binds the whole list, keeping
+  `len of [1, 2]` and friends working), and under-arity still null-fills
+  silently — making that loud is deferred follow-up work, not part of this
+  change. The one corpus caller relying on the drop was the contract test
+  itself (`tests/test_call_semantics.eigs`), migrated in the same change.
+
+- **Division and modulo by zero now raise instead of yielding `0`.** `5 / 0`
+  printed an uncatchable `stderr` warning and pushed `0`; `5 % 0` was fully
+  silent and pushed `0` — a wrong *number* that flowed on indistinguishable
+  from a real result, and the observer read the `0` as `converged`. Both now
+  raise a `value` error (`src/vm.c`), catchable via `try`/`catch`, joining the
+  type- and index-error reforms (#499/#680): an operation with no defined
+  result asserts rather than inventing one. Deliberately unconditional (no
+  strict-mode gate) — the `NaN`→`0` / overflow-saturation *collapse* is a
+  defined finite result and is untouched here (it remains observable via the
+  saturation→`diverging` path; making that channel loud is separate follow-up
+  work). First cut of the "finish the fail-soft→loud reform" ledger.
+
+- **Division and modulo by zero now RAISE instead of yielding 0 (#976).**
+  The fail-soft zero was a wrong answer with nothing to fail on; both operators
+  now produce a runtime error naming the operation. (`EIGS_STRICT` is not
+  required — this is the default.)
 
 ### Fixed
 
@@ -492,53 +572,6 @@ All notable changes to EigenScript are documented here.
   fires at the next `EIGS_REF` bump; the case folds back into
   `test/programs/module_name_in_block.eigs` there.
 
-### Documentation
-
-- **The README's observer showcase did not compile (#949).** The example the
-  language is arguably *about* — the five interrogatives on a `signal` — was
-  written as bare statements, which the compiler refuses: an interrogative's
-  result would be discarded, so `what is signal` as a statement raises
-  *"'what is ...' is an interrogative, not an assignment"*. A reader copying
-  it into a `.eigs` file got four compile errors and no hint why. It was not
-  wrong syntax — it was a **REPL session**, where a bare interrogative
-  displays its answer, and nothing said so.
-  Every value it claimed is correct (verified: `15`, `signal`, `3`,
-  `0.3372900666170139`, `-0.016069268404407477`), so the fix is presentation:
-  it now shows the REPL transcript it actually is, and is followed by a
-  **checked** script-form example using `print of (what is signal)`, with a
-  sentence on why the bare form is refused in a script.
-  The opening tour example is now checked too. The README goes from **1
-  checked example to 3**, and the doc gate from 82 to 84 — the block that had
-  been broken was one of the seven the gate could not see, which is the
-  coverage half of #946.
-
-### Documentation
-
-- **`sandbox_run`'s `max_iterations` is bounded by TWO counters with different
-  scopes, and the doc described only one (#948).** `docs/BUILTINS.md` said
-  "Loops are capped at `max_iterations`", which reads as a per-loop cap. Since
-  #940 the bound is really: the compiler-emitted cap check
-  (`OP_LOOP_CAP_CHECK`), which is **per call frame** and exits the loop
-  gracefully as a *partial run*; and the back-edge counter (`OP_JUMP_BACK`),
-  which is a **cumulative total for the whole `sandbox_run`** and raises. The
-  back-edge counter is deliberately not restored per frame — otherwise an
-  assembled chunk could reset its own DoS budget by calling a function — so
-  the same loop called twice within one run can trip it even though each call
-  is individually well inside `max_iterations`. The doc now says that; the
-  behaviour is unchanged.
-  `tests/test_sandbox_backedge_cap.eigs` gains section 6 pinning the crossing:
-  one call trips the per-frame cap check and reports a partial run, two calls
-  trip the cumulative back-edge budget and raise. Both directions are
-  asserted, so neither can pass merely because the two messages coincide.
-  Section 3 already covered the flat-module case; the cross-frame case was the
-  gap.
-  **Open, and deliberately not decided here:** whether the `1000000` default is
-  still right now that it is cumulative across a run rather than per frame — a
-  sandboxed workload doing 1M total iterations across many loops now trips
-  where it previously would not. Left on the issue.
-
-### Fixed
-
 - **Default parameter values now fire wherever a function is ENTERED, not only
   at a call site (#997).** Defaults are not applied by the caller — they are
   bytecode in the callee's own prologue (`OP_DEFAULT_PARAM`), and the VM skips
@@ -647,6 +680,7 @@ All notable changes to EigenScript are documented here.
   the key function had actually raised. The arity-1 re-collect carve-out is
   preserved through the callback path (a 1-parameter key still receives the
   whole element), and under-arity is unchanged.
+
 - **A child `.sh` test that dies no longer reports a passing section (#988).**
   The suite's ~45 child scripts run as `FOO=$(bash "$TESTS_DIR/test_foo.sh")`,
   and a command substitution keeps the child's stdout while **discarding its
@@ -665,6 +699,7 @@ All notable changes to EigenScript are documented here.
   actually fails a section for each of the three modes. Measured on `main`
   before the fix: all 50 child invocations exited 0, so this closed a latent
   hazard rather than an active cover-up.
+
 - **The suite's own vacuity rule no longer cries wolf on a deliberate skip.**
   The first cut of #988's zero-check half failed any `test_*.sh` child that
   exited 0 without printing a `PASS:`/`FAIL:` marker. Ten children have
@@ -674,6 +709,7 @@ All notable changes to EigenScript are documented here.
   children behaving exactly as designed. An explicit `SKIP:` now counts as
   reporting: the disease is *silence*, not *skipping*. `[99p]` also stopped
   describing a vacuous child as having "exited nonzero" — it exited 0.
+
 - **The bench gate's Valgrind install can no longer burn the job cap and
   report as a red gate (#987).** `sudo apt-get update && sudo apt-get install
   -y valgrind` had no timeout, retry, or fallback; a stalled mirror hung until
@@ -704,81 +740,6 @@ All notable changes to EigenScript are documented here.
   stream as `random`/`random_int`, so `seed_random of N` makes a randn tensor
   reproducible. Both were residuals of the v0.40.0 sampler-seedability fix.
 
-### Added
-- **W023 warns about inverted sibling-branch outer mutation (#870).** When
-  sibling `if`/`elif`/`else` branches assign the same name with and without
-  `local`, the linter warns only when the compiler model proves the bare write
-  can reach a module binding; uncertain binder shapes remain silent.
-- **Strict math mode (`EIGS_STRICT=1`) — out-of-domain ops raise instead of
-  substituting (#971).** By default arithmetic is finite by construction: `sqrt`
-  of a negative → `0`, `log` of `≤0` → a stand-in, `asin`/`acos` outside
-  `[-1, 1]` → clamped, each recording the sticky `invalid` math-flag. Those
-  substitutions keep kernels/graders running but launder an out-of-domain
-  argument into a plausible finite result. With `EIGS_STRICT=1` (per-`EigsState`,
-  read once at creation) each such op raises a catchable `value` error instead —
-  for callers, e.g. a generated-code grader, that need arithmetic invalidity to
-  be loud. Default behavior is unchanged (zero blast radius); overflow saturation
-  and the `NaN`→`0` collapse are not yet gated by the flag. First cut of the
-  observer-honesty half of the #975 ledger; the reframe (raise-under-strict, not
-  "route invalid values through the observer") is because the collapse target `0`
-  is indistinguishable from a real `0` and the substituted values must stay for
-  kernels.
-
-### Changed
-- **`sandbox_run` charges every retained allocation and verifies its
-  descriptor under bounded work (#965).** Pure string transforms
-  (`str_lower`/`trim`/`substr`/`json_raw`/`str_from_bytes`, strbuf-backed
-  encoders, `OP_ADD` concat and raw `OP_SLICE_GET` copies) allocated fresh
-  payloads no allocator charged, so a loop re-using one charged input
-  aggregated unbounded memory under an armed byte budget; the payload is now
-  charged once at the constructor/ownership-transfer chokepoint, the first
-  refusal is sticky for the whole run, and every attachable result — not only
-  a successful one — is scanned for callables. Descriptor constant pools are
-  additionally verified data-only under a shared node budget, so an aliased
-  all-data container graph is refused (`{ok:0}`, `invalid chunk descriptor`)
-  instead of driving an exponential walk before the sandbox's own bounds are
-  armed. Programs that stayed inside the budget are unaffected; a program that
-  was silently over it now gets `{ok:0}` with a `sandbox` error.
-  Descriptor verification is now ONE context for the whole recursive graph
-  rather than a bound per constant pool: a single work allowance, an explicit
-  depth/back-edge bound, and the constants themselves are ISOLATED from the
-  host. A per-chunk allowance was not a bound — nested function chunks
-  multiplied it, so a graph whose children were each comfortably inside the
-  limit was still accepted — and a constant retained by reference stayed the
-  same object sandboxed code mutated, letting an allowlisted `append` attach a
-  freshly created sandbox closure to a host-owned list without the value ever
-  appearing in the returned result. The sandbox now runs against its own copy
-  of every mutable constant (list/dict/buffer, cycles refused), and the
-  allowlist copies only the pure C builtin each allowed name actually holds —
-  a host-rebound allowed name gets the blocked stub instead of aliasing host
-  state inward. Ordinary descriptors, including ones carrying nested function
-  chunks and data constants, are unaffected.
-- **Over-arity calls on multi-parameter functions now raise instead of
-  silently dropping the extra arguments (#974).** With `define two(a, b)`,
-  `two of [1, 2, 99]` used to bind `a = 1, b = 2` and discard `99` with no
-  diagnostic at any stage — and lint `W022` only sees same-file callees, so
-  the cross-module case had no guard at all. The call site now raises a
-  catchable `value` error (`call passes 3 arguments but the callee takes 2`)
-  in the interpreter and the JIT alike (`src/vm.c`), which is cross-file
-  robust where W022 is structurally blind. The arity-1 re-collect carve-out
-  is preserved (`one of [5, 6]` still binds the whole list, keeping
-  `len of [1, 2]` and friends working), and under-arity still null-fills
-  silently — making that loud is deferred follow-up work, not part of this
-  change. The one corpus caller relying on the drop was the contract test
-  itself (`tests/test_call_semantics.eigs`), migrated in the same change.
-- **Division and modulo by zero now raise instead of yielding `0`.** `5 / 0`
-  printed an uncatchable `stderr` warning and pushed `0`; `5 % 0` was fully
-  silent and pushed `0` — a wrong *number* that flowed on indistinguishable
-  from a real result, and the observer read the `0` as `converged`. Both now
-  raise a `value` error (`src/vm.c`), catchable via `try`/`catch`, joining the
-  type- and index-error reforms (#499/#680): an operation with no defined
-  result asserts rather than inventing one. Deliberately unconditional (no
-  strict-mode gate) — the `NaN`→`0` / overflow-saturation *collapse* is a
-  defined finite result and is untouched here (it remains observable via the
-  saturation→`diverging` path; making that channel loud is separate follow-up
-  work). First cut of the "finish the fail-soft→loud reform" ledger.
-
-### Fixed
 - **A long `elif` chain no longer exhausts the parser's C stack (#926).** Each
   arm desugars to a nested `if` by recursing in `parse_statement`, so the
   parser now charges the shared depth budget before descending and drains the
@@ -787,6 +748,67 @@ All notable changes to EigenScript are documented here.
   stack crash or noisy cascade; the deliberate arm-depth charge also means
   the diagnostic changes from the compiler-depth error to a parse-depth error
   from around the 253-arm boundary.
+
+- **`sandbox_run` descriptor graphs are bounded, and host constants are
+  isolated per run (#991); per-run interned descriptor names are released
+  (#1010).** A hostile or runaway descriptor can no longer amplify through
+  shared constants or accumulate interned names across runs.
+
+- **`eigen_generate` output is recorded on the trace tape and `random_normal`
+  is seeded (#992)** — programs using either now replay byte-identically.
+
+- **The sanitizer-verdict plumbing is one mutation-proven classifier
+  (#968/#969/#980/#981/#983)**: a hard diagnostic (UAF, UBSan) riding along
+  with a leak report no longer counts as a tolerated leak, and benign
+  default-option LSan summaries no longer read as hard errors.
+
+- **Gate hardening: the VM operand-width gate's population is floored so it
+  cannot shrink quietly (#982/#984), and `strict_differential`'s divergence
+  waivers have a lifecycle — a waiver that stops firing fails the gate
+  instead of silently covering something new (#1016).
+
+### Documentation
+
+- **The README's observer showcase did not compile (#949).** The example the
+  language is arguably *about* — the five interrogatives on a `signal` — was
+  written as bare statements, which the compiler refuses: an interrogative's
+  result would be discarded, so `what is signal` as a statement raises
+  *"'what is ...' is an interrogative, not an assignment"*. A reader copying
+  it into a `.eigs` file got four compile errors and no hint why. It was not
+  wrong syntax — it was a **REPL session**, where a bare interrogative
+  displays its answer, and nothing said so.
+  Every value it claimed is correct (verified: `15`, `signal`, `3`,
+  `0.3372900666170139`, `-0.016069268404407477`), so the fix is presentation:
+  it now shows the REPL transcript it actually is, and is followed by a
+  **checked** script-form example using `print of (what is signal)`, with a
+  sentence on why the bare form is refused in a script.
+  The opening tour example is now checked too. The README goes from **1
+  checked example to 3**, and the doc gate from 82 to 84 — the block that had
+  been broken was one of the seven the gate could not see, which is the
+  coverage half of #946.
+
+- **`sandbox_run`'s `max_iterations` is bounded by TWO counters with different
+  scopes, and the doc described only one (#948).** `docs/BUILTINS.md` said
+  "Loops are capped at `max_iterations`", which reads as a per-loop cap. Since
+  #940 the bound is really: the compiler-emitted cap check
+  (`OP_LOOP_CAP_CHECK`), which is **per call frame** and exits the loop
+  gracefully as a *partial run*; and the back-edge counter (`OP_JUMP_BACK`),
+  which is a **cumulative total for the whole `sandbox_run`** and raises. The
+  back-edge counter is deliberately not restored per frame — otherwise an
+  assembled chunk could reset its own DoS budget by calling a function — so
+  the same loop called twice within one run can trip it even though each call
+  is individually well inside `max_iterations`. The doc now says that; the
+  behaviour is unchanged.
+  `tests/test_sandbox_backedge_cap.eigs` gains section 6 pinning the crossing:
+  one call trips the per-frame cap check and reports a partial run, two calls
+  trip the cumulative back-edge budget and raise. Both directions are
+  asserted, so neither can pass merely because the two messages coincide.
+  Section 3 already covered the flat-module case; the cross-frame case was the
+  gap.
+  **Open, and deliberately not decided here:** whether the `1000000` default is
+  still right now that it is cumulative across a run rather than per frame — a
+  sandboxed workload doing 1M total iterations across many loops now trips
+  where it previously would not. Left on the issue.
 
 ## [0.40.0] - 2026-08-17
 
@@ -1985,7 +2007,6 @@ All notable changes to EigenScript are documented here.
   failing. `add_point` moved from `lib/ui.eigs` to `lib/ui_w_viz.eigs`
   alongside the widget it belongs to.
 
-
 - **`eigenscript --api [--json]`: the machine-readable surface index
   (#734).** One call answers "does X exist, and is it builtin,
   extension, or lib" instead of a text search across 729 lines of
@@ -2022,7 +2043,6 @@ All notable changes to EigenScript are documented here.
   every define has arity ≥ 1. Built on a new `LINT_FOR_EACH_CHILD`
   generic AST child iterator whose switch has no `default:` arm, so
   `-Werror=switch` forces new node kinds to update it.
-
 
 - **`eigsdap`: a DAP server with first-class time travel (#539 v3,
   closing the #418 train).** `make dap` builds `src/eigsdap`, a Debug
@@ -2177,7 +2197,6 @@ All notable changes to EigenScript are documented here.
   is retired is the cross-variant half of the prohibition, not the
   guard.
 
-
 - **Entropy is now the current-state channel — recomputed at query time —
   and dH is the assignment-recorded trajectory (#711).** The stored slot
   entropy was a snapshot taken at the last assignment, so an in-place
@@ -2221,7 +2240,6 @@ All notable changes to EigenScript are documented here.
   PREDICATES.md ("Opaque rule"), OBSERVER.md, COMPARISON.md. Suite
   [127] pins all surfaces plus the not-opaque half (numbers,
   containers, rebind-back).
-
 
 - **`-Werror=switch` was paid for in `CFLAGS` and then opted out of at almost
   every `ASTType` switch, so adding a node type was a silent no-op (#738).**
@@ -2358,7 +2376,6 @@ All notable changes to EigenScript are documented here.
   section [87]'s strict closure-cycle leak gate covers the collector
   half.
 
-
 - **EigenStore round-trips buffers instead of dropping them (#805).**
   `store_json_encode` wrote a `VAL_BUFFER` as JSON `null`, so
   `store_put of [db, "c", {"b": buf}]` followed by `store_get` handed
@@ -2435,7 +2452,6 @@ All notable changes to EigenScript are documented here.
   planted-fault-gated by `test_vm_run_bytecode.eigs` (a jump into
   `OP_TRAJECTORY_SLOT`'s operand: refused now, ran to `7` on the drifted
   table).
-
 
 - **The AI-facing spread-rule docs now state the arity-sensitive rule
   the runtime actually has (#733).** `docs/llms.txt`'s "#1 TRAP"
@@ -2546,7 +2562,6 @@ All notable changes to EigenScript are documented here.
   live model untouched (pinned by test MI5). Loading untrusted weight
   files is in scope per SECURITY.md. Suite [47d]
   (`test_model_incomplete.sh`, 5 checks).
-
 
 - **`json_decode` mangled escaped astral characters and silently truncated at
   an escaped NUL (#724).** Every `\uXXXX` escape was UTF-8-encoded on its own,
@@ -6945,7 +6960,6 @@ Together these dropped the ASan harness leak tally from 13 to 10.
   loose file next to the importer. Stdlib and `eigs_modules/` may
   collide on a name; the future `--pkg add` tool will reject collisions
   at install time per the design.
-
 
 - **`import` now caches the resolved module.** The first import of a
   module executes its body; subsequent imports of the same resolved
