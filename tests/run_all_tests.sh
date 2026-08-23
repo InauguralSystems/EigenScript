@@ -3579,7 +3579,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=38
+OBS_GATE_EXPECTED_CHECKS=40
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -4147,6 +4147,22 @@ awk 'BEGIN{for(j=0;j<1400;j++) printf "define sp_%d(a) as:\n    return a + %d\n"
   printf 'print of "ok"\n'; } > "$OBS_GATE_TMP/spell.eigs"
 OBS_G37=$(obs_gate_closed_verdict "$OBS_GATE_TMP/spell.eigs" ok 60)
 check "24 spellings of ONE file are charged once (identity, not spelling)" "$OBS_G37" "closed"
+# 38-39. The verdict helper's OWN controls (§64: a checker never shown to fail
+#     is decoration). obs_gate_closed_verdict is now the sole judge for four
+#     checks; gutted to `echo closed` it would pass all four and nothing above
+#     catches a gutted helper — the count pin sees deleted checks, not blind
+#     ones. Two planted inputs it MUST refuse to call closed:
+# 38. A program that dies (here: raises, rc nonzero) is died-*, never closed.
+printf 'raise of "boom"\n' > "$OBS_GATE_TMP/vh_die.eigs"
+OBS_VH1=$(obs_gate_closed_verdict "$OBS_GATE_TMP/vh_die.eigs" ok 30)
+case "$OBS_VH1" in died-*) OBS_VH1=died ;; esac
+check "verdict helper: a dying program is never 'closed'" "$OBS_VH1" "died"
+# 39. A program that exits 0 but never prints the required marker is
+#     no-output, never closed — the compiler finishing is not the program
+#     running.
+printf 'x is 1\n' > "$OBS_GATE_TMP/vh_quiet.eigs"
+OBS_VH2=$(obs_gate_closed_verdict "$OBS_GATE_TMP/vh_quiet.eigs" ok 30)
+check "verdict helper: exit-0 without the marker is never 'closed'" "$OBS_VH2" "no-output"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))
