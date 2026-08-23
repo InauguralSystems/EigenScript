@@ -162,8 +162,6 @@ switch_reader_ops() {
             if (index(out, "return 0") > 0 || index(out, "default:") == 1) {
                 npend = 0
             }
-            # The switch ends at the function-closing brace column 0.
-            if (index($0, "^}") == 1) infn = 0
         }
         /^}/ { if (infn) infn = 0 }
     ' "$CHUNK_SRC" | sort -u
