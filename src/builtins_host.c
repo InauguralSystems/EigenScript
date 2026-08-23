@@ -1064,7 +1064,9 @@ Value* builtin_load_file(Value *arg) {
      * observer state? — and the precondition is "this program has bindings with
      * no recorded history", which is sticky rather than derived from a bit that
      * the detection itself changes. */
-    int obs_before_module = g_obs_needed;
+    /* ACQUIRE: this is the one read that pairs with eigs_obs_enable's
+     * store ORDER (gap then needed) — see obs_flag_store in eigenscript.h. */
+    int obs_before_module = obs_flag_load_acquire(obs_needed);
     EigsChunk *lf_chunk = compile_ast(ast, target, source);
     g_compile_module_boundary = saved_boundary;
     if (lf_chunk && chunk_reads_observer(lf_chunk) &&

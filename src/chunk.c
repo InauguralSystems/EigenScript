@@ -947,7 +947,7 @@ void chunk_arm_temporal(const EigsChunk *chunk) {
                 if (op == OP_INTERROGATE_NAMED_WHEN) trace_arm_occurrences_name(nm);
                 else                                 trace_arm_history_name(nm);
                 if (op != OP_INTERROGATE_NAMED && kind >= 3 && kind <= 5)
-                    g_trace_obs_hist = 1;
+                    trace_flag_store(g_trace_obs_hist_storage, 1);
             }
         } else if (op == OP_GET_NAME) {
             int name_idx = code[i + 1] | (code[i + 2] << 8);

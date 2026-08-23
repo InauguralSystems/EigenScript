@@ -49,8 +49,8 @@
 
 int g_trace_enabled = 0;
 int g_replay_enabled = 0;
-int g_trace_obs_hist = 0;
-int g_trace_hist = 0;
+int g_trace_obs_hist_storage = 0;
+int g_trace_hist_storage = 0;
 int g_trace_current_line = 0;
 
 /* ----- Phase 3.0a: prev-value table.
@@ -325,8 +325,8 @@ void trace_arm_restore(const TraceArmState *in) {
     g_arm_count = in->arm_count;
     for (int i = in->occ_count; i < g_occ_count; i++) free(g_occ_names[i]);
     g_occ_count = in->occ_count;
-    g_trace_hist     = in->trace_hist;
-    g_trace_obs_hist = in->obs_hist;
+    trace_flag_store(g_trace_hist_storage, in->trace_hist);
+    trace_flag_store(g_trace_obs_hist_storage, in->obs_hist);
     g_arm_all        = in->arm_all;
     g_occ_all        = in->occ_all;
     g_arm_gen++;                    /* invalidate cached per-entry decisions */
@@ -339,12 +339,12 @@ void trace_arm_history_all_mt(void) {
 }
 
 void trace_arm_history_all(void) {
-    g_trace_hist = 1;
+    trace_flag_store(g_trace_hist_storage, 1);
     trace_arm_history_all_mt();
 }
 
 void trace_arm_history_name(const char *name) {
-    g_trace_hist = 1;
+    trace_flag_store(g_trace_hist_storage, 1);
     if (!name || g_arm_all) return;
     if (arm_set_has(name)) return;
     if (g_arm_count >= g_arm_cap) {
@@ -363,8 +363,8 @@ void trace_arm_history_name(const char *name) {
 }
 
 void trace_history_disable(void) {
-    g_trace_hist = 0;
-    g_trace_obs_hist = 0;
+    trace_flag_store(g_trace_hist_storage, 0);
+    trace_flag_store(g_trace_obs_hist_storage, 0);
 }
 
 /* g_prev_tab / g_prev_cap / g_prev_count are bridge macros onto EigsThread

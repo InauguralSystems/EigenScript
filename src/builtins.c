@@ -3681,7 +3681,7 @@ Value* builtin_record_history(Value *arg) {
     int on = (arg->data.num != 0.0) ? 1 : 0;
     /* #827: no name to narrow on — a self-hosted compiler calling this is
      * standing in for the whole-program arming, so it gets the wildcard. */
-    if (on) { trace_arm_history_all(); g_trace_obs_hist = 1; }
+    if (on) { trace_arm_history_all(); trace_flag_store(g_trace_obs_hist_storage, 1); }
     else    trace_history_disable();
     return make_num((double)prev);
 }

@@ -597,7 +597,7 @@ static void repl_interactive(Env *env) {
     /* #868: same reasoning for the occurrence ring — a `when <n>` query typed
      * after the assignments it asks about must still find them. */
     trace_arm_occurrences_all();
-    g_trace_obs_hist = 1;
+    trace_flag_store(g_trace_obs_hist_storage, 1);
 
     hist_load();
     atexit(raw_off);   /* never leave the terminal raw, whatever the exit path */

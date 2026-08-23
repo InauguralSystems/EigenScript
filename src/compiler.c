@@ -2963,7 +2963,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * Same shape as the AT form below: the operand's value is never
              * needed, only its compile-time name. */
             if (kind >= 3 && kind <= 5)
-                g_trace_obs_hist = 1;   /* enable observer-state capture */
+                trace_flag_store(g_trace_obs_hist_storage, 1);   /* enable observer-state capture */
             compile_node(c, when_expr);
             int name_idx = add_string_constant(c, expr->data.ident.name);
             emit_op_u16_u16(c, OP_INTERROGATE_NAMED_WHEN,
@@ -2975,7 +2975,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             /* `<kw> is x at <expr>` — operand value is not needed; only
              * the name (compile-time known). Push line, emit AT op. */
             if (kind >= 3 && kind <= 5)
-                g_trace_obs_hist = 1;   /* enable observer-state capture */
+                trace_flag_store(g_trace_obs_hist_storage, 1);   /* enable observer-state capture */
             compile_node(c, at_expr);
             int name_idx = add_string_constant(c, expr->data.ident.name);
             emit_op_u16_u16(c, OP_INTERROGATE_NAMED_AT,

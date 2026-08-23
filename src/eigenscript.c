@@ -599,7 +599,8 @@ static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
  * Mirroring would be five hand-maintained copies of one fact, and a sixth arming
  * site added later would silently record a tape full of dead observer snapshots
  * — the same drift shape #921/#925 are open on. One read, no copies. */
-extern int g_trace_obs_hist;    /* trace.h — not included here */
+extern int g_trace_obs_hist_storage;   /* trace.h — not included here */
+#define g_trace_obs_hist __atomic_load_n(&g_trace_obs_hist_storage, __ATOMIC_RELAXED)
 static inline int eigs_obs_gate_open(void) {
     return g_obs_needed || g_trace_obs_hist;
 }

@@ -1048,7 +1048,14 @@ extern __thread EigsThread *eigs_current;
  * see 0; the #297 write-once pattern that fixed obs_exec_started cannot apply).
  * TSan: T1 write in eigs_obs_enable vs T2 read in eigs_obs_gate_open, 3/3,
  * found by a blind critic (round 16) one field over from the fix the previous
- * commit made. Relaxed suffices: no data is published THROUGH these flags —
+ * commit made — and round 17 found the SAME shape a third field over, in
+ * g_trace_obs_hist/g_trace_hist (trace.h), the second operand of the same
+ * deciding expression; those now use the same idiom. This block covers the
+ * three per-STATE obs flags only. The arm NAME SETS (g_arm_*, g_occ_*) remain
+ * plain process globals mutated by chunk_arm_temporal — a wider pre-existing
+ * surface, tracked on #1035, NOT closed by flag atomics. Do not read this
+ * comment as "the class is closed"; it was written that way once and a critic
+ * falsified it within one round. Relaxed suffices: no data is published THROUGH these flags —
  * each consumer's correctness rests on its own thread's sequenced reads plus
  * the sticky obs_history_gap semantics, and a reader seeing a stale 0 for a
  * bounded window is the same "conservative-late" behaviour the memo already
@@ -1059,8 +1066,22 @@ extern __thread EigsThread *eigs_current;
 #define g_obs_needed          __atomic_load_n(&eigs_current->state->obs_needed, __ATOMIC_RELAXED)
 #define g_obs_history_gap     __atomic_load_n(&eigs_current->state->obs_history_gap, __ATOMIC_RELAXED)
 #define g_obs_exec_started    __atomic_load_n(&eigs_current->state->obs_exec_started, __ATOMIC_RELAXED)
+/* RELEASE, not relaxed, on the STORE side. eigs_obs_enable stores gap THEN
+ * needed, and builtin_load_file's guard reads needed THEN gap; with both
+ * relaxed, a weakly-ordered machine (the macOS ARM legs) may show a loader
+ * needed==1 with gap still 0 from a concurrent mid-run arming — a
+ * silence-that-should-raise, i.e. conservative-EARLY, which contradicts the
+ * "conservative-late only" contract above (found by a blind critic, round
+ * 17; window is one full module compile wide, so practically unobservable —
+ * fixed because the sound version is free). Release on a cold store costs
+ * nothing (plain MOV on x86, stlr on ARM); the HOT safepoint loads stay
+ * relaxed — they read one flag in isolation and pair with nothing. The one
+ * read that pairs with the store order is the guard's, which uses the
+ * acquire load below. */
 #define obs_flag_store(field, v) \
-    __atomic_store_n(&eigs_current->state->field, (v), __ATOMIC_RELAXED)
+    __atomic_store_n(&eigs_current->state->field, (v), __ATOMIC_RELEASE)
+#define obs_flag_load_acquire(field) \
+    __atomic_load_n(&eigs_current->state->field, __ATOMIC_ACQUIRE)
 /* #915: the ONLY sanctioned way to turn observer recording on. `g_obs_needed`
  * answers "is recording on?"; the two soundness guards need "is the recorded
  * history COMPLETE?", and those are different questions. Writing the bit

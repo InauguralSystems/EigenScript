@@ -27,7 +27,8 @@
  * hook). Plain global in trace.c — its address is baked as a movabs
  * immediate at compile time. Declared here instead of pulling in
  * trace.h (which drags Value/Env decls the smoke build stubs out). */
-extern int g_trace_hist;
+extern int g_trace_hist_storage;
+#define g_trace_hist __atomic_load_n(&g_trace_hist_storage, __ATOMIC_RELAXED)
 /* Same rationale as g_trace_hist (declared here, not via trace.h, to keep the
  * smoke build free of Value/Env decls): its address is baked as a movabs
  * immediate so OP_LINE can stamp it. The interpreter CASE(LINE) writes it
@@ -2694,8 +2695,14 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             EnvIC *ic = &chunk->env_ic[sidx];
             uint8_t *slow_p[6];
             int slow_n = 0;
-            /* Trace gate: address baked, flag is process-global. */
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_hist);
+            /* Trace gate: address baked, flag is process-global. The STORAGE
+             * symbol, not the macro — the macro is an atomic load expression
+             * (round 17), not an lvalue. The emitted cmp is a plain load,
+             * which at ISA level on x86 is exactly a relaxed atomic load; and
+             * emitted stores/loads are sanitizer-blind anyway (the recorded
+             * JIT rule), so the C-side atomics are the only TSan-visible
+             * accesses either way. */
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_hist_storage);
             w = emit_cmpl_0_mem_rax(w);
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             /* IC identity + starting version. */
