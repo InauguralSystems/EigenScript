@@ -73,3 +73,14 @@ paths:
   `test_sandbox_budget.eigs` printed the marker unconditionally and reported
   green over a genuinely red assert for weeks (caught by a blind review,
   2026-08-17, fixed with a planted-flip proof).
+- **Never poll for the suite with a process-table match — poll the LOG.**
+  `pgrep -f 'run_all_tests'` (and `ps | grep` variants) match the POLLING
+  command's own harness wrapper, in both directions: this produced a false
+  "suite already running" twice (blocking edits that were safe) and a waiter
+  that exited mid-suite once (its own command line matched, then the real
+  check misfired), all in one session (2026-08-22/23). The suite's completion
+  has an unforgeable artifact — the tally line. Wait with
+  `until grep -q 'RESULTS:' "$LOG"; do sleep ...; done`, and if you must ask
+  "is a suite live", require a match that excludes your own invocation
+  (`ps aux | awk '/run_all_tests\.sh/ && !/awk/'`) and treat a bare pgrep hit
+  as unverified.
