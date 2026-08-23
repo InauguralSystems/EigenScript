@@ -536,8 +536,9 @@ A suite check pins that — if a stdlib tree grows past the budget, the check
 fails and the number gets re-picked deliberately instead of the win quietly
 disappearing.
 
-Shared modules are charged once, not once per reference; a module the pass has
-already read is free to reference again.
+Shared modules are charged once, not once per reference, and identity is the
+file itself rather than the path spelling — the same module reached through a
+relative path, an absolute one and a symlink is one charge, not three.
 
 ### Known residual
 

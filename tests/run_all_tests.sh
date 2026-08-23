@@ -3579,7 +3579,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=37
+OBS_GATE_EXPECTED_CHECKS=38
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -4095,6 +4095,31 @@ for OBS_SV in unset 0 EMPTY 1; do
     if [ "$OBS_SR" = "0" ]; then OBS_STATS_V="$OBS_STATS_V$OBS_SV=quiet "; else OBS_STATS_V="$OBS_STATS_V$OBS_SV=prints "; fi
 done
 check "EIGS_OBS_GATE_STATS: only a non-empty non-0 value prints" "$OBS_STATS_V" "unset=quiet 0=quiet EMPTY=quiet 1=prints "
+# 37. The memo keys on FILE IDENTITY, not on the path SPELLING.
+#     resolve_eigenscript_file does not canonicalize (try_resolve_path is
+#     access(2) plus a copy), so a string key gave ONE file N entries for N
+#     spellings and the pass read, compiled and CHARGED it N times. Executed on
+#     one 55,180-byte module written four NATURAL ways (relative, absolute, via
+#     a symlink, ./-prefixed): 4 speculative opens where the oracle is 1; with
+#     enough spellings the budget is spent on referenced rather than unique
+#     bytes and the gate flips open. Same double-charge defect as check 31,
+#     re-entering through the KEY instead of the ORDERING — and check 31 could
+#     not see it, because its diamond writes the identical literal in every
+#     parent. Found by a blind critic. Fixed by keying on (st_dev, st_ino).
+#     This is the EXACT COMPLEMENT of check 30: same statement count, same
+#     referenced bytes, opposite verdict — 30 is N distinct FILES (must open),
+#     37 is N distinct SPELLINGS of ONE file (must close). The pair
+#     discriminates identity from arithmetic.
+OBS_SPELL_DIR="$OBS_GATE_TMP/spell"
+mkdir -p "$OBS_SPELL_DIR"
+awk 'BEGIN{for(j=0;j<1400;j++) printf "define sp_%d(a) as:\n    return a + %d\n", j, j}' > "$OBS_SPELL_DIR/leaf.eigs"
+{ i=0; while [ $i -lt 24 ]; do
+      OBS_PAD=""; k=0; while [ $k -lt $i ]; do OBS_PAD="$OBS_PAD./"; k=$((k+1)); done
+      printf 'load_file of "%s/%sleaf.eigs"\n' "$OBS_SPELL_DIR" "$OBS_PAD"
+      i=$((i+1)); done
+  printf 'print of "ok"\n'; } > "$OBS_GATE_TMP/spell.eigs"
+OBS_G37=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/spell.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
+check "24 spellings of ONE file are charged once (identity, not spelling)" "$OBS_G37" "closed"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))

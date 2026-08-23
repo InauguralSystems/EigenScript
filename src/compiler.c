@@ -3373,29 +3373,49 @@ static void obs_gate_unmute_stderr(int saved) {
  * the eager pass MISS a module that has since become observing, and that is
  * exactly the condition builtin_load_file raises on (the bit flipping 0 -> 1 at
  * the load). The memo can make the gate conservative-late, never silently wrong.
- * Released by eigs_obs_memo_release() at thread detach. */
-static __thread char **g_obs_memo = NULL;
+ * Released by eigs_obs_memo_release() at thread detach.
+ *
+ * KEYED ON (st_dev, st_ino), NOT ON THE PATH SPELLING. resolve_eigenscript_file
+ * does not canonicalize — try_resolve_path is access(2) plus a copy — so a
+ * string key gave one file N entries for N spellings, and the pass then read,
+ * compiled and CHARGED it N times. Executed on one 55,180-byte module written
+ * four natural ways (relative, absolute, through a symlink, and `./`-prefixed):
+ * 4 speculative opens where the oracle is 1; with enough distinct spellings the
+ * budget is spent on referenced rather than unique bytes and the gate flips
+ * open (24 spellings of that one file: 19 speculative opens, gate `observed`).
+ * That is the same double-charge defect fixed one commit earlier, re-entering
+ * through the KEY instead of the ORDERING — and no existing check saw it,
+ * because check 31's diamond writes the identical literal in every parent.
+ *
+ * The inode pair beats realpath() here: it is the true identity (it also folds
+ * hard links, which realpath does not), it needs no PATH_MAX buffer, and it
+ * costs no extra syscall because the budget guard below already stats the file.
+ * Files are stat'd before the memo is consulted for exactly that reason; stat
+ * is cheap and, unlike the read, charges nothing. */
+typedef struct { dev_t dev; ino_t ino; } ObsMemoKey;
+static __thread ObsMemoKey *g_obs_memo = NULL;
 static __thread int g_obs_memo_n = 0, g_obs_memo_cap = 0;
 static __thread long g_obs_spec_bytes = 0;   /* see OBS_GATE_SPECULATIVE_BUDGET */
 
-static int obs_memo_seen(const char *path) {
+static int obs_memo_seen(dev_t dev, ino_t ino) {
     for (int i = 0; i < g_obs_memo_n; i++)
-        if (strcmp(g_obs_memo[i], path) == 0) return 1;
+        if (g_obs_memo[i].dev == dev && g_obs_memo[i].ino == ino) return 1;
     return 0;
 }
-static void obs_memo_add(const char *path) {
+static void obs_memo_add(dev_t dev, ino_t ino) {
     if (g_obs_memo_n == g_obs_memo_cap) {
         int nc = g_obs_memo_cap ? g_obs_memo_cap * 2 : 16;
-        char **np = realloc(g_obs_memo, (size_t)nc * sizeof(char *));
+        ObsMemoKey *np = realloc(g_obs_memo, (size_t)nc * sizeof(ObsMemoKey));
         if (!np) return;                 /* out of memory: lose the memo, not correctness */
         g_obs_memo = np; g_obs_memo_cap = nc;
     }
-    g_obs_memo[g_obs_memo_n++] = xstrdup(path);
+    g_obs_memo[g_obs_memo_n].dev = dev;
+    g_obs_memo[g_obs_memo_n].ino = ino;
+    g_obs_memo_n++;
 }
 void eigs_obs_memo_release(void);
 static void obs_memo_clear(void) {
-    for (int i = 0; i < g_obs_memo_n; i++) free(g_obs_memo[i]);
-    free(g_obs_memo);
+    free(g_obs_memo);                    /* keys are values now, nothing per-entry to free */
     g_obs_memo = NULL; g_obs_memo_n = 0; g_obs_memo_cap = 0;
 }
 void eigs_obs_memo_release(void) { obs_memo_clear(); g_obs_spec_bytes = 0; }
@@ -3468,13 +3488,6 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
 #endif
         if (!resolved_ok) { eigs_obs_enable(); break; }
 
-        /* Memo BEFORE the read. Resolving is an access(2) probe; reading pulls
-         * the whole file and then throws it away. Checking after the read left
-         * 32,772 opens of one leaf on the DAG above against the program's own
-         * 16,384 — the pass still doubled the file I/O even though it compiled
-         * each module exactly once. */
-        if (obs_memo_seen(resolved)) continue;
-
 #if !EIGENSCRIPT_FREESTANDING
         /* STAT BEFORE OPEN. This pass reads files on behalf of code the program
          * may never run — a literal load inside an uncalled function or a dead
@@ -3493,26 +3506,32 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * SPECULATIVE read. Anything rejected here is simply unresolvable to the
          * pass, which is already its conservative answer.
          *
-         * AFTER the memo check, not before. Charging on the way past a memo HIT
+         * The stat runs BEFORE the memo is consulted and the CHARGE runs after
+         * it, and the split is deliberate. Charging on the way past a memo hit
          * bills a shared module once per reference while reading it once, so a
          * DAG exhausts the budget on bytes it never reads — the same defect the
-         * memo above was added to fix, re-committed in the accounting instead
-         * of the I/O. Executed: six thin parents sharing ONE 59 KiB leaf (59 KiB
-         * unique, under a quarter of the budget) opened the gate, while that
-         * leaf loaded once closed it. The budget must count bytes READ. */
-        {
-            struct stat st;
-            if (stat(resolved, &st) != 0 || !S_ISREG(st.st_mode) ||
-                st.st_size > OBS_GATE_MAX_MODULE_BYTES ||
-                g_obs_spec_bytes + st.st_size > OBS_GATE_SPECULATIVE_BUDGET) {
-                eigs_obs_enable(); break;
-            }
-            g_obs_spec_bytes += st.st_size;
+         * memo exists to fix, re-committed in the accounting instead of the I/O.
+         * Executed: six thin parents sharing ONE 59 KiB leaf (59 KiB unique,
+         * a fraction of the budget) opened the gate, while that leaf loaded once
+         * closed it. The budget must count bytes READ. Statting first costs
+         * nothing against the budget and is what yields the identity the memo
+         * keys on — see ObsMemoKey above for why the spelling would not do. */
+        struct stat st;
+        if (stat(resolved, &st) != 0 || !S_ISREG(st.st_mode) ||
+            st.st_size > OBS_GATE_MAX_MODULE_BYTES) {
+            eigs_obs_enable(); break;
         }
+        if (obs_memo_seen(st.st_dev, st.st_ino)) continue;
+        if (g_obs_spec_bytes + st.st_size > OBS_GATE_SPECULATIVE_BUDGET) {
+            eigs_obs_enable(); break;
+        }
+        g_obs_spec_bytes += st.st_size;
         source = read_file_util(resolved, &size);
 #endif
         if (!source) { eigs_obs_enable(); break; }
-        obs_memo_add(resolved);
+#if !EIGENSCRIPT_FREESTANDING
+        obs_memo_add(st.st_dev, st.st_ino);
+#endif
 
         int muted = obs_gate_mute_stderr();
         if (muted < 0) { free(source); eigs_obs_enable(); break; }
