@@ -3579,7 +3579,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=43
+OBS_GATE_EXPECTED_CHECKS=44
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -4232,9 +4232,53 @@ check "control: one budget-fixture module alone proves closed" "$OBS_G41" "close
 #                     and the composite comparison goes red on its own.
 #     Everything else must route through obs_gate_answer / the inline rc
 #     pattern / obs_gate_closed_verdict.
+#     ANCHORED ON THE CAPTURE SHAPE, NOT THE BINARY'S NAME. The first version
+#     grepped for `$EIGS_BIN ... | head -1)` — and the round-12 bug that
+#     motivated this gate was spelled `"$OBS_EIGS_ABS" ... | head -1)`, so the
+#     gate could not catch the very defect it was built for, and the natural
+#     next accidental spelling (copying check 40's cd scaffolding, or a quoted
+#     "$EIGS_BIN", or `head -n1`) evaded identically. Found by a blind critic
+#     (round 13), plant-verified in both directions. The shape that matters is
+#     "merged-stderr program output piped straight into a first/last-line
+#     pick": that is what makes a capture rc-blind, whatever the binary
+#     variable is called.
 OBS_META_N=$(sed -n '/^# \[99u\]/,/^OBS_GATE_RAN=/p' "$TESTS_DIR/run_all_tests.sh" \
-    | grep -cE '\$EIGS_BIN [^|]*\| *(head|tail) -1\)')
+    | grep -cE '2>&1 *(>/dev/null *)?\| *(head|tail) +(-n *)?-?1\)')
 check "no new rc-blind answer capture in [99u] (4 pinned waivers)" "$OBS_META_N" "4"
+# 43. A FATAL ERROR inside the muted window must still reach stderr. The
+#     eager pass mutes fd 2 around its speculative compile; x_oom and
+#     chunk_verify_self_check call eigs_obs_unmute_for_fatal() before their
+#     dying message so an OOM mid-scan is not a SILENT death. That mechanism
+#     had ZERO witnesses — with the unmute deleted, an OOM inside the window
+#     died rc=134 with 0 bytes on stderr and nothing in the suite went red
+#     (found by a blind critic, round 13; plant-verified both directions:
+#     HEAD prints `out of memory`, the mutant prints nothing and the only
+#     stderr is timeout(1)'s own core-dump line — which is why the assertion
+#     is the MESSAGE, not stderr non-emptiness).
+#     The fixture is ~518 KB (under the 1 MiB budget, so the eager pass DOES
+#     read it) behind a literal load, run under ulimit -v 60000.
+#     SKIPS on sanitizer builds: ASan's allocator aborts inside the window on
+#     BOTH arms (its report goes to the muted fd), so the probe cannot
+#     discriminate there; the release lane carries this witness.
+if ASAN_OPTIONS=help=1 $EIGS_BIN --version 2>&1 | grep -q 'AddressSanitizer'; then
+    OBS_G43="oom-message-reaches-stderr"   # sanitizer build: witness carried by the release lane
+    OBS_G43_NOTE=" (SKIP: sanitizer build)"
+else
+    OBS_G43_NOTE=""
+    OBS_OOM_DIR="$OBS_GATE_TMP/oom"
+    mkdir -p "$OBS_OOM_DIR"
+    awk 'BEGIN{for(j=0;j<12000;j++) printf "define oom_%d(a) as:\n    return a + %d\n", j, j}' > "$OBS_OOM_DIR/big.eigs"
+    printf 'load_file of "%s/big.eigs"\nprint of "ok"\n' "$OBS_OOM_DIR" > "$OBS_GATE_TMP/oom_par.eigs"
+    OBS_OOM_ERR=$( (ulimit -v 60000; timeout 30 $EIGS_BIN "$OBS_GATE_TMP/oom_par.eigs") 2>&1 >/dev/null ); OBS_OOM_RC=$?
+    if [ "$OBS_OOM_RC" -eq 0 ]; then
+        OBS_G43="ran-clean-probe-vacuous"   # the rlimit did not bite; the witness measured nothing
+    elif printf '%s' "$OBS_OOM_ERR" | grep -q 'out of memory'; then
+        OBS_G43="oom-message-reaches-stderr"
+    else
+        OBS_G43="died-silently-rc$OBS_OOM_RC"
+    fi
+fi
+check "a fatal OOM inside the muted window still reaches stderr$OBS_G43_NOTE" "$OBS_G43" "oom-message-reaches-stderr"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))

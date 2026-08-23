@@ -60,7 +60,10 @@ COUNTER_FIELDS="${COUNTER_FIELDS:-conflicts= propagations= decisions= restarts=}
 counters_are_substantive() {
     local c="$1" f
     for f in $COUNTER_FIELDS; do
-        case "$c" in *"$f"*) ;; *) return 1 ;; esac
+        # A digit after the = : presence alone scored a stub emitting
+        # `conflicts= propagations=` (empty values) as substantive, and two
+        # arms both emitting empty fields compared "identical" (round 13).
+        case "$c" in *"$f"[0-9]*) ;; *) return 1 ;; esac
     done
     return 0
 }
