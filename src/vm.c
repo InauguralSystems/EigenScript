@@ -6931,7 +6931,7 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
      * has ever executed — impossible: workers exist only downstream of an
      * execute, and every embed/eval entry runs its first execute on the
      * creating thread. */
-    if (!g_obs_exec_started) g_obs_exec_started = 1;
+    if (!g_obs_exec_started) obs_flag_store(obs_exec_started, 1);
 
     vm_init();
     /* Only the OUTERMOST vm_execute drives the scheduler; a nested call

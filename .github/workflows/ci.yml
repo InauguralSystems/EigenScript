@@ -418,7 +418,14 @@ jobs:
     name: asan + ubsan (full suite)
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 45, not 30: the green run before #915's [99u] section landed took 19m57,
+    # and that section legitimately adds minutes under ASan (it launches the
+    # sanitized binary ~60 times; sanitizer process startup dominates) — a slow
+    # runner then hit the old ceiling and the job rendered as CANCELLED at
+    # 30:02 with the suite mid-section. A timeout is not a verdict: the same
+    # tree's local ASan suite was 4117/4117. Headroom target ~2x the observed
+    # green duration, per the suite-runtime-baseline rule.
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: read

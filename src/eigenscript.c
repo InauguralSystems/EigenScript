@@ -3765,8 +3765,8 @@ Value* env_get_local_hashed(Env *env, const char *name, uint32_t h) {
  * distinction so the guards stay armed. */
 void eigs_obs_enable(void) {
     if (g_obs_needed) return;
-    if (g_obs_exec_started) g_obs_history_gap = 1;
-    g_obs_needed = 1;
+    if (g_obs_exec_started) obs_flag_store(obs_history_gap, 1);
+    obs_flag_store(obs_needed, 1);
 }
 
 Value* env_get(Env *env, const char *name) {

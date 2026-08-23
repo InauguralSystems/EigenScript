@@ -1069,7 +1069,7 @@ Value* builtin_load_file(Value *arg) {
     g_compile_module_boundary = saved_boundary;
     if (lf_chunk && chunk_reads_observer(lf_chunk) &&
         (!obs_before_module || g_obs_history_gap)) {
-        g_obs_history_gap = 1;
+        obs_flag_store(obs_history_gap, 1);
         g_parse_errors = saved_errors;
         chunk_free(lf_chunk);
         free_ast(ast);

@@ -1041,9 +1041,26 @@ extern __thread EigsThread *eigs_current;
 #define g_obs_gate_depth      (eigs_current->obs_gate_depth)
 #define g_obs_gate_scan_enabled (eigs_current->obs_gate_scan_enabled)
 #define g_compile_depth_reported (eigs_current->compile_depth_reported)
-#define g_obs_needed          (eigs_current->state->obs_needed)
-#define g_obs_history_gap     (eigs_current->state->obs_history_gap)
-#define g_obs_exec_started    (eigs_current->state->obs_exec_started)
+/* ATOMIC, relaxed. These three are read at every safepoint and STORED from
+ * whichever thread arms the observer — and `sandbox_run` is deliberately not
+ * in OBS_BUILTINS, so a WORKER's call is a legitimate 0->1 store on the shared
+ * state with no happens-before edge to any other thread (two workers can both
+ * see 0; the #297 write-once pattern that fixed obs_exec_started cannot apply).
+ * TSan: T1 write in eigs_obs_enable vs T2 read in eigs_obs_gate_open, 3/3,
+ * found by a blind critic (round 16) one field over from the fix the previous
+ * commit made. Relaxed suffices: no data is published THROUGH these flags —
+ * each consumer's correctness rests on its own thread's sequenced reads plus
+ * the sticky obs_history_gap semantics, and a reader seeing a stale 0 for a
+ * bounded window is the same "conservative-late" behaviour the memo already
+ * documents. A relaxed load is a plain MOV on x86.
+ * The macros are LOADS (not lvalues), so any new assignment through them
+ * fails to compile and must go through obs_flag_store — the write sites stay
+ * enumerable. */
+#define g_obs_needed          __atomic_load_n(&eigs_current->state->obs_needed, __ATOMIC_RELAXED)
+#define g_obs_history_gap     __atomic_load_n(&eigs_current->state->obs_history_gap, __ATOMIC_RELAXED)
+#define g_obs_exec_started    __atomic_load_n(&eigs_current->state->obs_exec_started, __ATOMIC_RELAXED)
+#define obs_flag_store(field, v) \
+    __atomic_store_n(&eigs_current->state->field, (v), __ATOMIC_RELAXED)
 /* #915: the ONLY sanctioned way to turn observer recording on. `g_obs_needed`
  * answers "is recording on?"; the two soundness guards need "is the recorded
  * history COMPLETE?", and those are different questions. Writing the bit
