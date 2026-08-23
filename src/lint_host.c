@@ -1316,7 +1316,18 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
         Env *cenv = env_new(NULL);
         register_builtins(cenv);     /* store/gfx-when-built ride inside (#742) */
         g_compile_module_slots = 1;
+        /* #915: this compile never executes, so the observer gate's eager pass
+         * must not COMPILE a file's load targets on its behalf. Note the reason
+         * is cost and surprise, not purity: lint already realpath-resolves and
+         * OPENS literal load_file targets for E003, and did so before this
+         * change — a blind critic checked, and lint_host.c's own "touches
+         * nothing but the file in front of it" comment was already inaccurate.
+         * What the eager pass would add is a full tokenize+parse+compile of each
+         * target, and the LSP runs this on every didChange. */
+        int obs_saved = g_obs_gate_scan_enabled;
+        g_obs_gate_scan_enabled = 0;
         EigsChunk *chunk = compile_ast(ast, cenv, source);
+        g_obs_gate_scan_enabled = obs_saved;
         g_compile_module_slots = 0;
         compile_errors = g_parse_errors;
         chunk_free(chunk);

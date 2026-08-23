@@ -44,6 +44,7 @@ Value* builtin_observe(Value *arg);
  * CASE(LOOP_STALL_CHECK) and jit_helper_loop_stall_check so the two can never
  * disagree on loop classification (the same lockstep invariant the opcode
  * encoding enforces). Returns 1 if (*dH, *ent) were filled. */
+
 static inline int obs_stall_trajectory(double *dH, double *ent) {
     const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
     if (s && s->used) {
@@ -210,6 +211,28 @@ static void eigs_observer_dump(Env *leaf) {
     Env *root = leaf;
     while (root->parent) root = root->parent;
     fprintf(stderr, "# eigenscript observer dump (SIGUSR1) — module scope + dumping thread's live frame\n");
+    /* #915: the observer gate can be closed for this program, in which case no
+     * assignment ever updated a slot and every binding below would print as
+     * "equilibrium" with an empty trajectory. That reads as "everything is
+     * settled" when the truth is "nothing was ever measured" — the exact silent
+     * lie this gate must not introduce. Say so instead. */
+    if (!g_obs_needed && !g_trace_obs_hist) {
+        fprintf(stderr,
+                "# NOTE: observer gate CLOSED (#915) — nothing in this program can\n"
+                "#       interrogate the observer, so no trajectories were recorded\n"
+                "#       before this signal. The bands below are absence of data,\n"
+                "#       NOT equilibrium.\n"
+                "#       Observation is now ON: send SIGUSR1 again for a populated\n"
+                "#       dump. (EIGS_OBS_FORCE=1 arms it from process start.)\n");
+        /* Arm from here. A SIGUSR1 dump exists to inspect a process that is
+         * ALREADY RUNNING — the one situation where re-running under
+         * EIGS_OBS_FORCE=1 is not available. Leaving the gate closed would trade
+         * a shipped debugging capability (#660) for throughput on exactly the
+         * programs most worth debugging. Flipping here is safe: the dump runs at
+         * a loop safepoint, not in the signal handler, and g_obs_needed is
+         * monotonic so this cannot flicker. */
+        eigs_obs_enable();
+    }
     obs_dump_scope("module", root, 1, NULL);
     Env *fn_env = NULL;
     const EigsChunk *fn_chunk = NULL;
@@ -6875,6 +6898,41 @@ Value *vm_execute(EigsChunk *chunk, Env *env) {
 }
 
 static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
+    /* #915: user code is now executing, so from here on an eigs_obs_enable()
+     * leaves the bindings already assigned without history — that is what the
+     * sticky obs_history_gap records, and it is the half of the load guard that
+     * survives a mid-run arming.
+     *
+     * SET HERE, not at the call sites. It used to be set in exactly one place
+     * (main.c, immediately before its own vm_execute), which made it a
+     * hand-maintained caller list of one — the drift shape compile_ast
+     * deliberately avoids by OR-ing its verdict at the single choke point every
+     * compilation path funnels through. Every EigsState that main.c did not
+     * create therefore ran with the flag at 0, so a mid-run arming recorded NO
+     * gap and the guard short-circuited: the exact one-shot unsoundness an
+     * earlier round had already fixed once, live again on ext_http `code`
+     * routes and the WASM playground.
+     *
+     * Executed over HTTP before this line existed: a geometrically decaying
+     * value reported `equilibrium` where the truth is `improving`, 3/3, rc 200,
+     * no error — while the identical source on the CLI correctly refused to
+     * answer. Patching the two known entry points would have left the next one
+     * to rediscover it.
+     *
+     * GUARDED, per the #297 write-once pattern: an unconditional store here is
+     * a write-write race the moment workers exist — every spawned thread
+     * re-stored 1 into the same per-state field, and the TSan CI lane flagged
+     * it in six programs at this line (a lane no local run covers; the local
+     * suite was 4117/4117 green). The guard removes ALL concurrent writes, not
+     * just narrows them: a worker thread is created BY an executing VM, so by
+     * the time any worker reaches this line the main thread's store already
+     * happened-before it (pthread_create), the read sees 1, and nobody stores.
+     * Two threads can both see 0 only if two VMs execute a state that neither
+     * has ever executed — impossible: workers exist only downstream of an
+     * execute, and every embed/eval entry runs its first execute on the
+     * creating thread. */
+    if (!g_obs_exec_started) obs_flag_store(obs_exec_started, 1);
+
     vm_init();
     /* Only the OUTERMOST vm_execute drives the scheduler; a nested call
      * (eval/dispatch/import/comparator) runs to completion on the C stack and

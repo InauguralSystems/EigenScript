@@ -429,11 +429,16 @@ interrogation.
 `unobserved:` is the only opt-out, and it is a real one: it skips the emission,
 so a hot region inside it pays nothing.
 
-### The classification that a future opt-out rests on (#972)
+### The automatic opt-out — the observer gate (#915/#972)
 
-The obvious improvement is to skip the emission automatically when a program
-provably never reads observer state. That optimisation is not shipped, and the
-reason is worth stating: its failure mode is silent and total. If any opcode
+That improvement IS shipped: the runtime skips the emission automatically when a
+program provably never reads observer state. On a consumer that uses no observer
+features it is worth **8.5x** (EigenMiniSat 4x4 Tseitin, 293 s -> 34 s, n=5 per
+arm interleaved with the solver's counters identical). See "Using the gate"
+below for the controls.
+
+The reason the rest of this section is written so carefully is that the failure
+mode is silent and total. If any opcode
 that reads observer state is missing from the scan that decides "is anything
 reading?", a program gates its own bookkeeping off and then reads slots nobody
 updated — every binding answers `equilibrium` forever, with no crash and no
@@ -455,7 +460,7 @@ marker instead:
 
 | marker | meaning |
 |---|---|
-| `obs:READS` | answers **from** recorded observer/temporal state — the set the future liveness scan consumes |
+| `obs:READS` | answers **from** recorded observer/temporal state — the set the liveness scan consumes |
 | `obs:WRITES` | records, updates, resets or stamps that state |
 | `obs:DIAG` | reaches it only through the SIGUSR1 diagnostic dump, never through program-visible semantics |
 | `obs:NONE` | none of the above |
@@ -473,3 +478,81 @@ observes at `OP_OBSERVE_NAME_POST` after the SET), and the bare `OP_INTERROGATE`
 reads **no** observer state at all — `when` / `where` / `why` / `how` on a value
 operand return constants, because observer state is binding-keyed and a bare
 value has no binding.
+
+## Using the gate
+
+The gate is automatic and needs no source change. A program that never reads
+observer state pays nothing for it; a program that does is unaffected.
+
+| control | effect |
+|---|---|
+| `EIGS_OBS_FORCE=1` | force observer recording ON, whatever the scan decided. The escape hatch, and the baseline arm for any measurement — one byte-identical binary serves both arms. |
+| `EIGS_OBS_GATE_STATS=1` | print one `obs-gate: observed\|unobserved <unit>` line per compiled unit on stderr. |
+
+Both follow the tree's flag convention: any non-empty value that does not
+start with `0` turns the control on, so `=0` and `=` leave it off.
+
+### When the gate refuses instead of answering
+
+The gate decides at COMPILE time, and a few constructs can make that decision
+stale at RUN time. Where the runtime can prove the decision was wrong, it raises
+rather than answering — the recorded history of bindings already assigned cannot
+be reconstructed, so a late discovery is not recoverable and a quiet rest value
+would be a wrong answer with nothing to fail on.
+
+```
+load_file: 'x.eigs' reads observer state, but the observer gate was closed when
+this program's earlier assignments ran — they have no recorded history...
+```
+
+You will see this if a program **rewrites a module between the compile and the
+load**, or creates a file that **shadows** the one the compile-time scan
+resolved (resolution tries the cwd before the script directory), or `chdir`s so
+the same literal path resolves elsewhere. All three are the same shape: the file
+the gate inspected is not the file that ran.
+
+Re-run with `EIGS_OBS_FORCE=1` to disable the gate for that program. That is
+always safe — it restores the pre-gate behaviour exactly.
+
+### When the gate declines to look
+
+To decide before the program runs, the gate compiles literally-loaded modules
+itself — including ones reached only from a function that is never called, since
+a `load_file` inside an uncalled function still contributes to the answer. That
+work is speculative, so it is bounded: a per-thread cumulative ceiling on how
+many bytes the pass may read on the program's behalf, plus a rejection of
+anything that is not a regular file (a FIFO target once hung the compiler
+indefinitely, before `vm_execute`, with nothing printed).
+
+When the ceiling is spent the pass stops looking and the gate stays **open** —
+the conservative answer. Nothing is silently wrong; the program simply pays for
+observer bookkeeping it may not need. `EIGS_OBS_GATE_STATS=1` shows this as
+`observed` lines on a program you expected to gate closed.
+
+The ceiling is picked against the real population rather than chosen round: the
+largest transitive module tree in `lib/` is `ui.eigs` at 287 KiB across 19
+units, the next largest is 69 KiB, and the budget clears the largest by 3.5x.
+A suite check pins that — if a stdlib tree grows past the budget, the check
+fails and the number gets re-picked deliberately instead of the win quietly
+disappearing.
+
+Shared modules are charged once, not once per reference, and identity is the
+file itself rather than the path spelling — the same module reached through a
+relative path, an absolute one and a symlink is one charge, not three.
+
+### Known residual
+
+A chunk run through `vm_run_bytecode` or `sandbox_run` that reads observer state
+about a binding the HOST assigned before the call gets a rest value rather than
+the truth, silently. The descriptor's own work is recorded (both sites arm the
+observer before running, the twin of `chunk_arm_temporal`); only reads of state
+that predates the call are affected. Tracked separately with reproducers and two
+candidate fixes; `EIGS_OBS_FORCE=1` avoids it.
+
+Separately, every literally-loaded module is compiled **twice** — once by the
+gate to learn one bit, once for real by `load_file`, which has no module cache
+by design. Measured on `lib/ui.eigs`: 0.12-0.15s for the literal spelling that
+gates closed against 0.05-0.07s for a computed spelling that skips the pass, so
+a program that loads a large tree and does little work can pay more than it
+saves. The fix is to hand the eagerly-compiled chunk to `load_file` instead of
+discarding it; the budget above bounds the cost meanwhile.

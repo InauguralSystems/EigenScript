@@ -587,7 +587,39 @@ static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
     s->used = 1;
 }
 
+/* #915: the one place the observer gate is decided.
+ *
+ * g_obs_needed is the compile-time half: chunk_reads_observer said some unit in
+ * this state can interrogate. g_trace_obs_hist is the runtime half: a tape is
+ * recording observer snapshots, so the bookkeeping is needed even though the
+ * PROGRAM never asks for it.
+ *
+ * The trace flag is READ here rather than mirrored into g_obs_needed at each of
+ * the five sites that arm it (builtins.c, chunk.c, compiler.c x2, repl.c).
+ * Mirroring would be five hand-maintained copies of one fact, and a sixth arming
+ * site added later would silently record a tape full of dead observer snapshots
+ * — the same drift shape #921/#925 are open on. One read, no copies. */
+extern int g_trace_obs_hist_storage;   /* trace.h — not included here */
+#define g_trace_obs_hist __atomic_load_n(&g_trace_obs_hist_storage, __ATOMIC_RELAXED)
+static inline int eigs_obs_gate_open(void) {
+    return g_obs_needed || g_trace_obs_hist;
+}
+
 void observer_slot_update(Env *e, int idx, Value *newval) {
+    /* #915: nothing compiled into this state can interrogate the observer, so
+     * skip the entropy walk entirely. compute_entropy recurses through every
+     * reachable list item and dict value, which is where the 88% goes.
+     *
+     * `obs_needed` is monotonic — set at compile time by chunk_reads_observer,
+     * and by eigs_obs_enable() at the runtime arming sites, never cleared. The
+     * OTHER half of eigs_obs_gate_open(), the trace-history flag, is NOT:
+     * `record_history of 0` calls trace_history_disable() and closes it again
+     * mid-program. A previous version of this comment claimed the gate "cannot
+     * flicker mid-loop"; that is true of obs_needed and false of the pair, and
+     * a critic executed the flicker. `record_history` is now in OBS_BUILTINS so
+     * a program that names it opens the gate at COMPILE time and the flicker
+     * cannot change an answer. */
+    if (!eigs_obs_gate_open()) return;
     observer_slot_update_e(e, idx, compute_entropy(newval));
     /* #294 also fold the raw value into the value-signal channel (numbers only:
      * the relative-delta step is only defined for a scalar trajectory). */
@@ -608,6 +640,7 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
  * number, so the default path can observe without promoting the num to a
  * tracked Value. Same trajectory math as observer_slot_update. */
 void observer_slot_update_num(Env *e, int idx, double num) {
+    if (!eigs_obs_gate_open()) return;           /* #915 — see observer_slot_update */
     observer_slot_update_e(e, idx, entropy_of_num(num));
     ObserverSlot *vs = env_obs_slot(e, idx);    /* #294 value-signal channel */
     if (vs) observer_slot_record_value(vs, num);
@@ -3725,6 +3758,16 @@ Value* env_get_local_hashed(Env *env, const char *name, uint32_t h) {
     }
     env_shared_unlock(env);
     return NULL;
+}
+
+/* #915 — see the declaration in eigenscript.h for why this is not a plain
+ * assignment. Turning recording ON mid-execution does not restore the history
+ * of what already ran; it only stops the bleeding. The gap flag records that
+ * distinction so the guards stay armed. */
+void eigs_obs_enable(void) {
+    if (g_obs_needed) return;
+    if (g_obs_exec_started) obs_flag_store(obs_history_gap, 1);
+    obs_flag_store(obs_needed, 1);
 }
 
 Value* env_get(Env *env, const char *name) {

@@ -6,6 +6,27 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **The observer gate ships: programs that provably never read observer state
+  skip entropy bookkeeping entirely (#915).** Decided per compiled unit at
+  compile time (opcode scan + observer-builtin name scan + eager compilation of
+  string-literal `load_file` targets, so a clean module tree still gates), per
+  `EigsState` at run time. **8.51x on EigenMiniSat's 4x4 Tseitin workload**
+  (n=5 interleaved, one binary, solver counters identical across arms) — the
+  ungated observer walk was 88% of that workload's runtime. Byte-identical on a
+  416-program corpus against a pre-gate build. Conservative everywhere the
+  scan cannot be sure: computed load paths, aliasing, `eval`, `import`,
+  multithreaded compiles, and anything over the 1 MiB speculative-read budget
+  keep full observation; a module rewritten between scan and load raises
+  loudly rather than answering from a gap. `EIGS_OBS_FORCE=1` restores
+  pre-gate behaviour exactly; `EIGS_OBS_GATE_STATS=1` prints per-unit
+  verdicts. Verified by a nineteen-round adversarial loop plus the full CI
+  matrix; suite section [99u] pins 44 checks over the gate's mechanisms.
+  Residuals are filed, not hidden: #1031 (literal modules compile twice;
+  budget-bounded), #1027 (descriptor pre-call history), #1032/#1033 (minor).
+  The observer arming flags and trace-history flags are now relaxed-atomic —
+  fixing a data race reachable from worker threads (also present, unfixed,
+  in three pre-existing sites now ledgered on #1035/#1036).
+
 - **Every opcode now carries a recorded observer classification, and a gate
   fails on any that does not (#972).** The optimisation this unblocks — stop
   emitting observer bookkeeping when a program provably never reads observer

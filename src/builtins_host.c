@@ -1034,8 +1034,57 @@ Value* builtin_load_file(Value *arg) {
     Env *target = g_load_env ? g_load_env : g_global_env;
     int saved_boundary = g_compile_module_boundary;
     g_compile_module_boundary = 1;                       /* #373 */
+    /* #915: the observer gate may have CLOSED on evidence gathered when this
+     * unit's parent was compiled — the eager pre-pass resolved this literal
+     * target and compiled it then. The file it read and the file being compiled
+     * now are two separate reads with the whole program running in between, so
+     * they can differ: the program can rewrite the module (`write_text` then
+     * `load_file`), or create a file in the cwd that SHADOWS the one the
+     * pre-pass resolved (resolve_eigenscript_file tries cwd before the script
+     * dir). Both were executed and both produced a silently wrong answer —
+     * `report of x` read `equilibrium` under the gate and `moving` without it.
+     *
+     * ASK THE ACTUAL QUESTION. A first draft compared the observer bit before
+     * and after the module's compile and raised on a 0 -> 1 transition. Two
+     * blind-critic repros killed it:
+     *
+     *   - ONE-SHOT. The bit is monotonic, so that first transition leaves it at
+     *     1 and every later load saw "already open" and skipped the check. The
+     *     error is catchable, so a single `try:` around the first load disarmed
+     *     the guard for the rest of the run and restored the exact silent-wrong
+     *     answer the guard was written to stop.
+     *   - OVER-BROAD. The bit flips for any of the eager pass's SIX conservative
+     *     bail-outs, not just for staleness. One of them (`L.count > 0 &&
+     *     g_vm_multithreaded`) is reachable at run time but not at the parent's
+     *     compile time, so `spawn` + a module that itself loads a module became
+     *     a hard error with every clause of the message false. That shape is
+     *     shipped: lib/io.eigs does `load_file of "lib/string.eigs"`.
+     *
+     * So the predicate is the module's OWN verdict — does this chunk read
+     * observer state? — and the precondition is "this program has bindings with
+     * no recorded history", which is sticky rather than derived from a bit that
+     * the detection itself changes. */
+    /* ACQUIRE: this is the one read that pairs with eigs_obs_enable's
+     * store ORDER (gap then needed) — see obs_flag_store in eigenscript.h. */
+    int obs_before_module = obs_flag_load_acquire(obs_needed);
     EigsChunk *lf_chunk = compile_ast(ast, target, source);
     g_compile_module_boundary = saved_boundary;
+    if (lf_chunk && chunk_reads_observer(lf_chunk) &&
+        (!obs_before_module || g_obs_history_gap)) {
+        obs_flag_store(obs_history_gap, 1);
+        g_parse_errors = saved_errors;
+        chunk_free(lf_chunk);
+        free_ast(ast);
+        free_tokenlist(&tl);
+        free(source);
+        rt_error(EK_IO, 0,
+            "load_file: '%s' reads observer state, but the observer gate was "
+            "closed when this program's earlier assignments ran — they have no "
+            "recorded history, so an observer query about them would answer a "
+            "rest value rather than the truth. Re-run with EIGS_OBS_FORCE=1.",
+            arg->data.str);
+        return make_null();
+    }
     if (g_parse_errors > 0) {
         g_parse_errors = saved_errors;
         chunk_free(lf_chunk);

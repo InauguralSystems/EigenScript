@@ -50,7 +50,19 @@ extern int g_trace_enabled;
  * which also record WHICH names a temporal query can reach. Never write
  * `g_trace_hist = 1` directly: an armed flag with no armed name records
  * nothing. */
-extern int g_trace_hist;
+/* ATOMIC, relaxed — same idiom and same reason as the per-state obs flags in
+ * eigenscript.h (round 17): a worker's sandbox_run/vm_run_bytecode reaches
+ * chunk_arm_temporal, which stores these PROCESS globals while every other
+ * thread reads them at per-assignment safepoints (CASE(SET_NAME), and
+ * eigs_obs_gate_open's second operand — the branch made g_trace_obs_hist
+ * load-bearing for the gate verdict). TSan: 2 warnings, 3/3, same repro shape
+ * as the obs-flag race; the INSTANCE pre-exists on main (verified there, same
+ * 2 warnings), but the flags became verdict-carrying here. The macros are
+ * LOADS; writes must use trace_flag_store, so the write sites stay
+ * enumerable by the compiler. The arm NAME SETS (g_arm_*, g_occ_*) are a
+ * separate, wider surface — tracked on #1035, not fixed by flag atomics. */
+extern int g_trace_hist_storage;
+#define g_trace_hist __atomic_load_n(&g_trace_hist_storage, __ATOMIC_RELAXED)
 
 /* #827: turn history recording on.
  *
@@ -78,6 +90,17 @@ extern int g_trace_hist;
  * point. The narrowing is a per-assign CPU optimization for the
  * single-threaded long-running programs #827 was about; the history is
  * bounded either way. */
+/* #915: compile-time arming state, saved/restored around the observer gate's
+ * eager pre-pass so that merely SCANNING a module cannot arm the parent's
+ * history channel. See the definition for the executed consequence. */
+typedef struct {
+    int      trace_hist, obs_hist;
+    int      arm_all, arm_count;
+    int      occ_all, occ_count;
+} TraceArmState;
+void trace_arm_snapshot(TraceArmState *out);
+void trace_arm_restore(const TraceArmState *in);
+
 void trace_arm_history_all(void);
 void trace_arm_history_all_mt(void);
 void trace_arm_history_name(const char *name);
@@ -140,7 +163,9 @@ extern int g_trace_current_line;
  * programs that never ask historical observer questions pay nothing.
  * Set during compile, before execution; code compiled later (eval,
  * load_file, REPL lines) enables capture from that point on. */
-extern int g_trace_obs_hist;
+extern int g_trace_obs_hist_storage;
+#define g_trace_obs_hist __atomic_load_n(&g_trace_obs_hist_storage, __ATOMIC_RELAXED)
+#define trace_flag_store(storage, v) __atomic_store_n(&(storage), (v), __ATOMIC_RELAXED)
 
 /* Called once from main() during startup. Reads EIGS_TRACE; if set,
  * opens the path for writing and flips g_trace_enabled. Safe to call

@@ -227,10 +227,21 @@ static void test_error_isolation(void) {
 
 static volatile double planted_shared_threshold;   /* the mistake, deliberately */
 
+/* START BARRIER. Without one, this control is a race against pthread_create:
+ * thread A can run ALL its rounds before B exists, giving zero overlap, zero
+ * cross-talk, and a FAILED control on a healthy harness — which is exactly
+ * what happened on a CI runner (PR #1034: `control: a shared global DOES
+ * cross-talk` FAILed while all four isolation rows passed; the file is
+ * identical on main, so the flake is the control's, not the branch's). The
+ * barrier guarantees both threads are live before either's first round, which
+ * is the interleaving premise the comment below already claims. */
+static pthread_barrier_t planted_start;
+
 typedef struct { double want; int mismatches; } PlantArg;
 
 static void *planted_worker(void *p) {
     PlantArg *a = (PlantArg *)p;
+    pthread_barrier_wait(&planted_start);
     for (int i = 0; i < ROUNDS; i++) {
         planted_shared_threshold = a->want;
         /* Give the other thread a window between write and read. Without one
@@ -248,10 +259,12 @@ static void *planted_worker(void *p) {
 static void test_planted_fault_is_detectable(void) {
     PlantArg a = { 0.001, 0 }, b = { 0.002, 0 };
     pthread_t ta, tb;
+    pthread_barrier_init(&planted_start, NULL, 2);
     pthread_create(&ta, NULL, planted_worker, &a);
     pthread_create(&tb, NULL, planted_worker, &b);
     pthread_join(ta, NULL);
     pthread_join(tb, NULL);
+    pthread_barrier_destroy(&planted_start);
 
     /* The shared global MUST produce cross-talk. If it does not, the harness is
      * not interleaving and every green row above is uninformative. */

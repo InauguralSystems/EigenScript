@@ -544,6 +544,35 @@ struct EigsState {
     /* Observer-classification thresholds (set_observer_threshold builtin).
      * Per-state because they're interpreter configuration, not execution
      * state; one knob per host application, shared across worker threads. */
+    /* #915 observer gate. 0 = nothing compiled into this STATE can ever
+     * interrogate observer bookkeeping, so observer_slot_update skips the
+     * entropy walk (88% of runtime / 8.70x measured on a consumer using no
+     * observer features). MONOTONIC: compile_ast ORs in each unit's scan and
+     * the force-on sites set it; nothing clears it, since clearing would
+     * strand the history of already-observed bindings.
+     *
+     * Per-state for the same reason as the thresholds above, and it was a real
+     * bug when it was not: on EigsThread this field was zero for every spawned
+     * worker (eigs_thread_attach xcalloc's a fresh thread, and only the
+     * spawning thread ever runs compile_ast), so every assignment executed on
+     * a worker silently skipped observation — while the gate's own stats still
+     * reported "observed" and EIGS_OBS_FORCE=1 could not rescue it.
+     */
+    int             obs_needed;
+    /* #915: sticky. Set the first time a load is caught reading observer state
+     * while the gate was closed. `obs_needed` is MONOTONIC, so that first
+     * detection also flips it to 1 — which would make the very next check see
+     * "the gate was already open" and skip. The error is catchable, so ONE
+     * `try:` around the first load disarmed the guard for the rest of the run
+     * and the silent-wrong answer came straight back (executed). The missing
+     * history is not restored by the bit flipping, so this flag says "this
+     * program has bindings with no recorded history" and never clears. */
+    int             obs_history_gap;
+    /* #915: 1 once user code has begun executing. Before that, turning
+     * observer recording ON costs nothing — no assignment has happened yet.
+     * After it, the flip is exactly the unrecoverable case, because the
+     * bindings already assigned have no history and the bit is monotonic. */
+    int             obs_exec_started;
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
@@ -799,6 +828,19 @@ struct EigsThread {
      * and N copies of the same message is not N pieces of information. Reset
      * beside g_parse_depth at compile_ast entry. */
     int                  compile_depth_reported;
+    /* #915: nesting depth of the observer gate's EAGER module compiles. Its
+     * own counter, not g_parse_depth — compile_ast RESETS that one at entry,
+     * so the nested compile this guard bounds would clear its own guard. Also
+     * the cycle guard: a mutual literal load (a loads b, b loads a) recurses
+     * here exactly as #496's did at runtime, and hitting the bound sets the
+     * observer bit rather than giving up quietly. */
+    int                  obs_gate_depth;
+    /* #915: 1 while a compile is allowed to reach the FILESYSTEM on the
+     * observer gate's behalf. The eager pass informs a runtime decision, so
+     * entry points that compile without ever executing — `--lint`, and the LSP
+     * which recompiles on every didChange — clear it. Default 1; only those
+     * entry points set it to 0, and they do so for their whole run. */
+    int                  obs_gate_scan_enabled;
     int                  tokenize_depth;
     int                  vts_depth;
     int                  json_depth;
@@ -996,7 +1038,68 @@ extern __thread EigsThread *eigs_current;
 #define g_prev_cap            (eigs_current->prev_cap)
 #define g_prev_count          (eigs_current->prev_count)
 #define g_parse_depth         (eigs_current->parse_depth)
+#define g_obs_gate_depth      (eigs_current->obs_gate_depth)
+#define g_obs_gate_scan_enabled (eigs_current->obs_gate_scan_enabled)
 #define g_compile_depth_reported (eigs_current->compile_depth_reported)
+/* ATOMIC, relaxed. These three are read at every safepoint and STORED from
+ * whichever thread arms the observer — and `sandbox_run` is deliberately not
+ * in OBS_BUILTINS, so a WORKER's call is a legitimate 0->1 store on the shared
+ * state with no happens-before edge to any other thread (two workers can both
+ * see 0; the #297 write-once pattern that fixed obs_exec_started cannot apply).
+ * TSan: T1 write in eigs_obs_enable vs T2 read in eigs_obs_gate_open, 3/3,
+ * found by a blind critic (round 16) one field over from the fix the previous
+ * commit made — and round 17 found the SAME shape a third field over, in
+ * g_trace_obs_hist/g_trace_hist (trace.h), the second operand of the same
+ * deciding expression; those now use the same idiom. This block covers the
+ * three per-STATE obs flags only. The arm NAME SETS (g_arm_*, g_occ_*) remain
+ * plain process globals mutated by chunk_arm_temporal — a wider pre-existing
+ * surface, tracked on #1035, NOT closed by flag atomics. Do not read this
+ * comment as "the class is closed"; it was written that way once and a critic
+ * falsified it within one round. Relaxed suffices: no data is published THROUGH these flags —
+ * each consumer's correctness rests on its own thread's sequenced reads plus
+ * the sticky obs_history_gap semantics, and a reader seeing a stale 0 for a
+ * bounded window is the same "conservative-late" behaviour the memo already
+ * documents. A relaxed load is a plain MOV on x86.
+ * The macros are LOADS (not lvalues), so any new assignment through them
+ * fails to compile and must go through obs_flag_store — the write sites stay
+ * enumerable. */
+#define g_obs_needed          __atomic_load_n(&eigs_current->state->obs_needed, __ATOMIC_RELAXED)
+#define g_obs_history_gap     __atomic_load_n(&eigs_current->state->obs_history_gap, __ATOMIC_RELAXED)
+#define g_obs_exec_started    __atomic_load_n(&eigs_current->state->obs_exec_started, __ATOMIC_RELAXED)
+/* RELEASE, not relaxed, on the STORE side. eigs_obs_enable stores gap THEN
+ * needed, and builtin_load_file's guard reads needed THEN gap; with both
+ * relaxed, a weakly-ordered machine (the macOS ARM legs) may show a loader
+ * needed==1 with gap still 0 from a concurrent mid-run arming — a
+ * silence-that-should-raise, i.e. conservative-EARLY, which contradicts the
+ * "conservative-late only" contract above (found by a blind critic, round
+ * 17; window is one full module compile wide, so practically unobservable —
+ * fixed because the sound version is free). Release on a cold store costs
+ * nothing (plain MOV on x86, stlr on ARM); the HOT safepoint loads stay
+ * relaxed — they read one flag in isolation and pair with nothing. The one
+ * read that pairs with the store order is the guard's, which uses the
+ * acquire load below. */
+#define obs_flag_store(field, v) \
+    __atomic_store_n(&eigs_current->state->field, (v), __ATOMIC_RELEASE)
+#define obs_flag_load_acquire(field) \
+    __atomic_load_n(&eigs_current->state->field, __ATOMIC_ACQUIRE)
+/* #915: the ONLY sanctioned way to turn observer recording on. `g_obs_needed`
+ * answers "is recording on?"; the two soundness guards need "is the recorded
+ * history COMPLETE?", and those are different questions. Writing the bit
+ * directly conflated them: a benign runtime flip — a descriptor that reads
+ * nothing, or the multithreaded bail in the eager pass — set the bit and
+ * thereby told both guards "the gate is open, nothing at risk", permanently.
+ * Executed: one `vm_run_bytecode of [1,[0,0,0,40],[7]]` before the read turned
+ * a loud raise into `equilibrium` on a diverging series. This helper keeps the
+ * two answers apart. */
+void eigs_obs_enable(void);
+/* #915: how many EigsThreads are attached PROCESS-WIDE. The eager pre-pass
+ * mutates fd 2 and trace.c's process-global arming sets, so its precondition is
+ * "this process has one thread" — a per-state multithreaded flag cannot see a
+ * sibling state, and ext_http runs one state per connection per thread. */
+int  eigs_process_thread_count(void);
+/* #915: restore real stderr if the observer gate's eager pass has it muted.
+ * Call before printing from any path that will abort/exit. */
+void eigs_obs_unmute_for_fatal(void);
 #define g_tokenize_depth      (eigs_current->tokenize_depth)
 #define g_vts_depth           (eigs_current->vts_depth)
 #define g_json_depth          (eigs_current->json_depth)

@@ -101,6 +101,11 @@ EigsValue *eigs_eval_string(const char *src) {
     /* REPL-style compilation: top-level names land in the global env
      * (not module-export slots), so the host can read them back through
      * eigs_get_global and successive eigs_eval_string calls accumulate. */
+    /* #915: REPL-shaped for the same reason as repl.c — successive
+     * eigs_eval_string calls accumulate against one global env, so a later call
+     * can interrogate a binding an earlier call assigned. The host can also read
+     * observer state directly. Nothing here can see the next call, so observe. */
+    eigs_obs_enable();   /* #915: via the helper, so a mid-run flip records the gap */
     EigsChunk *chunk = compile_ast(ast, global, src);
 
     Value *result = vm_execute(chunk, global);

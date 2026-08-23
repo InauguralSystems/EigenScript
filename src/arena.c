@@ -33,6 +33,10 @@
 #endif
 
 static void x_oom(size_t size) {
+    /* #915: the observer gate's eager pass may have stderr muted; a fatal
+     * message must not be discarded because a module was loaded by one spelling
+     * rather than another. No-op when nothing is muted. */
+    eigs_obs_unmute_for_fatal();
     fprintf(stderr, "eigenscript: out of memory (requested %zu bytes)\n", size);
     abort();
 }

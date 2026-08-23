@@ -8,6 +8,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if !EIGENSCRIPT_FREESTANDING
+/* NB: EIGENSCRIPT_FREESTANDING is always DEFINED (eigenscript.h defaults it to
+ * 0), so this must test its VALUE. `#ifndef` here silently excluded both
+ * headers and turned the muting below into a permanent no-op — see the
+ * comment on obs_gate_mute_stderr. */
+#include <unistd.h>     /* dup/dup2/close — #915's eager compile must be silent */
+#include <fcntl.h>      /* open(/dev/null) */
+#include <sys/stat.h>  /* stat/S_ISREG — reject a non-regular speculative target */
+#endif
 
 /* ---- Compiler state ---- */
 
@@ -2954,7 +2963,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * Same shape as the AT form below: the operand's value is never
              * needed, only its compile-time name. */
             if (kind >= 3 && kind <= 5)
-                g_trace_obs_hist = 1;   /* enable observer-state capture */
+                trace_flag_store(g_trace_obs_hist_storage, 1);   /* enable observer-state capture */
             compile_node(c, when_expr);
             int name_idx = add_string_constant(c, expr->data.ident.name);
             emit_op_u16_u16(c, OP_INTERROGATE_NAMED_WHEN,
@@ -2966,7 +2975,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             /* `<kw> is x at <expr>` — operand value is not needed; only
              * the name (compile-time known). Push line, emit AT op. */
             if (kind >= 3 && kind <= 5)
-                g_trace_obs_hist = 1;   /* enable observer-state capture */
+                trace_flag_store(g_trace_obs_hist_storage, 1);   /* enable observer-state capture */
             compile_node(c, at_expr);
             int name_idx = add_string_constant(c, expr->data.ident.name);
             emit_op_u16_u16(c, OP_INTERROGATE_NAMED_AT,
@@ -3149,6 +3158,452 @@ static void compile_block(Compiler *c, ASTNode **stmts, int count) {
 
 /* ---- Public API ---- */
 
+/* ---- #915: eagerly compile the literal `load_file` targets of a unit ------
+ *
+ * The observer bit is monotonic and set by compile_ast, so a module compiled at
+ * RUNTIME flips it only after the parent's assignments have already executed.
+ * That ordering hazard is the whole reason `load_file` used to force the gate
+ * off, and why EigenMiniSat — four literal loads at the top of the file —
+ * gated 0 of 6 units. Compiling the literal targets HERE, with the real
+ * compiler, lands their verdict before line 1 of the parent runs.
+ *
+ * The recursion is the existing one: compile_ast on the module runs this same
+ * tail, so a module's own literal loads are resolved transitively with no
+ * extra machinery. `depth` bounds it and doubles as the cycle guard — a mutual
+ * load (a loads b, b loads a) would otherwise recurse to a C-stack SIGSEGV,
+ * the same failure #496 fixed for the runtime path. Hitting the bound is not a
+ * silent give-up: it sets the bit, which is the conservative answer.
+ *
+ * EVERY failure path sets the bit. Unresolvable path, unreadable file, parse
+ * error, compile error, depth exceeded — each means "this scan did not get to
+ * see what will run", and the only safe answer to that is "observes".
+ *
+ * This runs in a THROWAWAY env (env_new over the global, the same shape
+ * CASE(IMPORT) uses for a real module) and the chunk is freed immediately. The
+ * only thing kept is the side effect on g_obs_needed — fd 2 is muted and the
+ * trace-arming state is snapshotted/restored, which are the pass's two other
+ * output channels. Compiling against the
+ * live env instead would let a scan create bindings and perturb the parent's
+ * own slot numbering. The throwaway env can change WHICH reader opcode variant
+ * is emitted (SLOT vs NAME) but never WHETHER one is — both are readers — so
+ * the answer this is asked for is env-independent.
+ *
+ * AND IT MUST BE SILENT. A pre-pass that speaks is a pre-pass that changes the
+ * program's output. Measured, not reasoned: a module containing `break` outside
+ * a loop printed "Compile error line 1: 'break' outside a loop" TWICE under the
+ * gate — once here and once when load_file compiled it for real. The 417-program
+ * corpus differential was byte-identical across both arms and could not see it,
+ * because no corpus program load_file's a module that fails to compile. A green
+ * differential is evidence about the corpus, not about the change.
+ *
+ * Suppression is at the FILE DESCRIPTOR, not per-site. The diagnostics reachable
+ * from tokenize/parse/compile_ast are 48 raw fprintf(stderr) calls across three
+ * files with no helper to hook; gating each is exactly the "touch all N sites"
+ * change that silently misses the 49th. Redirecting fd 2 needs no enumeration
+ * and cannot drift as sites are added. Its cost is that it is process-global, so
+ * it is taken ONLY when this is provably safe:
+ *   - hosted profile only (freestanding has no resolver, so no eager compile);
+ *   - single-threaded only. Under g_vm_multithreaded another thread could be
+ *     writing stderr, so the eager compile is skipped entirely and the bit is
+ *     set instead — conservative, and MT+observer is the shape that already
+ *     produced #915's worst silent bug.
+ * Nesting is fine: each level saves and restores its own dup of fd 2.
+ */
+enum { OBS_GATE_MAX_LOADS = 64, OBS_GATE_MAX_DEPTH = 8 };
+/* Ceiling on a SPECULATIVELY read module. This pass reads on behalf of code that
+ * may never run, so an unbounded read is unbounded cost for no benefit. 8 MiB is
+ * far above any real .eigs module; over it the pass declines and the gate stays
+ * conservatively open. */
+#define OBS_GATE_MAX_MODULE_BYTES (8L * 1024 * 1024)
+/* CUMULATIVE ceiling on ALL speculative reading by this thread. The per-file
+ * ceiling above bounds one read; nothing bounded the TREE, and the pass compiles
+ * every literally-loaded module TWICE — once here, once for real (load_file has
+ * no module cache by design, #496).
+ *
+ * Measured by a blind critic: 60 modules loaded from an UNCALLED function took
+ * 0.00s -> 14.2s and 2.9 MB -> 61 MB RSS for a program whose only executed
+ * statement is `print of "hi"`. The existing limits PERMIT 64 loads x 8 MiB at
+ * depth 1 of 8 — roughly nine minutes of startup before the second level. And
+ * on this repo's own stdlib, `load_file of "lib/ui.eigs"` (20 units) measured
+ * 0.12-0.15s gated against 0.05-0.07s for the identical program written with a
+ * computed path, i.e. THE ARM THAT GATES ITSELF CLOSED WAS 2.3x SLOWER. A
+ * perf feature that loses to its own fallback on a real module tree has failed
+ * on its own terms, whatever its answers are.
+ *
+ * Once the budget is spent the pass declines and the gate stays conservatively
+ * open, so the worst case becomes "no win", never "slower than before". The
+ * budget is per-thread and never refills: total speculative work over a
+ * program's life is then bounded absolutely.
+ *
+ * This bounds the damage; it does not recover the win for big trees. That needs
+ * the eagerly-compiled chunk to be REUSED by the real load rather than thrown
+ * away — filed rather than attempted here, because chunk lifetime and the
+ * staleness guard both key off recompiling. */
+/* Cumulative per-thread ceiling on bytes this pass may read SPECULATIVELY, on
+ * behalf of code the program may never run. Once spent the pass declines and
+ * the gate stays conservatively open, so the cost of a hostile or merely huge
+ * module tree is bounded (60 modules behind an UNCALLED function: 14.2s/61MB
+ * unbounded, 0.13s/35MB with this).
+ *
+ * PICKED AGAINST A POPULATION, not chosen round. Transitive literal-load
+ * closures of all 86 multi-unit trees across the 13 ecosystem repos: the
+ * largest is EigenScript/lib/ui.eigs at 287 KiB (19 units), then
+ * DeslanStudio/src/client/studio 252, Tidepool 201, EigenMiniSat 179 — a tight
+ * band, and NOTHING above 1 MiB. The first value tried here was 256 KiB, which
+ * lands INSIDE that band: it bit ui.eigs by 12% (so the repo's own largest tree
+ * paid a quarter-megabyte of speculative compiling AND lost the gate) and
+ * cleared studio.eigs by under 2%. This clears the whole measured population
+ * 3.5x over and still stops the pathological case at ~7% of its work.
+ *
+ * Cost at the ceiling is ~0.6s of startup (measured: the pass costs ~0.6s per
+ * MiB speculatively read, which is issue #1031 — every literally-loaded module
+ * is compiled twice, once here and once for real). That is what bounds the
+ * choice from above; the population bounds it from below.
+ *
+ * The floor is asserted, not just documented: suite [99u] requires lib/ui.eigs
+ * to still gate CLOSED, so a tree growing past this budget fails a check and
+ * forces a deliberate re-pick instead of silently losing the win. That check
+ * covers this repo only — the consumer trees above are why the headroom is
+ * 3.5x rather than the 1.8x that would suffice for lib/ alone. */
+#define OBS_GATE_SPECULATIVE_BUDGET (1024L * 1024)
+typedef struct { char **paths; int count; int cap; int overflow; } ObsLoadList;
+
+static void obs_gate_note_load(const char *path, void *ud) {
+    /* Collect into a bounded, owned list; resolving here would re-enter the
+     * compiler while chunk_scan_static_loads is still walking the chunk. */
+    ObsLoadList *L = ud;
+    if (L->count >= L->cap) { L->overflow = 1; return; }  /* caller treats as opaque */
+    L->paths[L->count++] = xstrdup(path);
+}
+
+/* Silence fd 2 for the duration of one eager compile. Returns the saved dup, or
+ * -1 if suppression could not be established — in which case the caller does NOT
+ * compile, because an eager compile that can speak is worse than no gate.
+ *
+ * TEST THE VALUE, NOT THE DEFINEDNESS. eigenscript.h does
+ * `#ifndef EIGENSCRIPT_FREESTANDING / #define EIGENSCRIPT_FREESTANDING 0`, so the
+ * macro is ALWAYS defined and every other site in the tree tests it with `#if`.
+ * The first draft here used `#ifdef` / `#ifndef`, which made this function an
+ * unconditional `return -1`, made the unmute a no-op, and excluded <unistd.h>
+ * and <fcntl.h> entirely — and it still COMPILED, because nothing in the
+ * surviving branch referenced dup() or open().
+ *
+ * The failure that produced was silent and total: every literal load took the
+ * `muted < 0` path, set the observer bit, and the whole feature reverted to the
+ * conservative pre-#915 behaviour. The 417-program corpus differential passed
+ * byte-identical (conservative IS the baseline), and seven of the eight new
+ * suite probes passed VACUOUSLY, because they assert the gate stays OPEN and it
+ * was always open. Exactly one check caught it: the positive control asserting
+ * the gate CLOSES on a literal load of an observer-free module. A control with
+ * only the negative half is satisfied by a feature that never runs. */
+/* #915: the fd this thread saved while stderr is muted, or -1. A fatal path
+ * inside the muted window (x_oom's abort, chunk_verify_self_check's exit) would
+ * otherwise die with stderr pointed at /dev/null — executed: a 7 MB module
+ * under `ulimit -v` printed "out of memory" when loaded via a COMPUTED path and
+ * printed NOTHING via a literal one, same rc 134. The spelling of a load path
+ * decided whether a fatal error was reported. */
+__thread int g_obs_mute_saved_fd = -1;
+
+void eigs_obs_unmute_for_fatal(void) {
+#if !EIGENSCRIPT_FREESTANDING
+    if (g_obs_mute_saved_fd < 0) return;
+    fflush(stderr);
+    dup2(g_obs_mute_saved_fd, STDERR_FILENO);
+    close(g_obs_mute_saved_fd);
+    g_obs_mute_saved_fd = -1;
+#endif
+}
+
+static int obs_gate_mute_stderr(void) {
+#if EIGENSCRIPT_FREESTANDING
+    return -1;
+#else
+    int saved = dup(STDERR_FILENO);
+    if (saved < 0) return -1;
+    int devnull = open("/dev/null", O_WRONLY);
+    if (devnull < 0) { close(saved); return -1; }
+    fflush(stderr);
+    if (dup2(devnull, STDERR_FILENO) < 0) { close(devnull); close(saved); return -1; }
+    close(devnull);
+    /* Only the OUTERMOST mute records here: that is the one holding the real
+     * stderr, and it is what a fatal path must restore. Recording every level
+     * meant the inner unmute cleared the flag and the OUTER unmute then saw it
+     * negative and returned WITHOUT restoring — leaking its fd and leaving
+     * stderr pointed at the inner target. Mutual/nested literal loads recurse,
+     * so the suite caught it immediately. */
+    if (g_obs_mute_saved_fd < 0) g_obs_mute_saved_fd = saved;
+    return saved;
+#endif
+}
+
+static void obs_gate_unmute_stderr(int saved) {
+#if !EIGENSCRIPT_FREESTANDING
+    if (saved < 0) return;
+    fflush(stderr);
+    dup2(saved, STDERR_FILENO);
+    /* Clear the fatal-path pointer only when THIS level owned it. */
+    if (g_obs_mute_saved_fd == saved) g_obs_mute_saved_fd = -1;
+    close(saved);
+#else
+    (void)saved;
+#endif
+}
+
+/* Memo of resolved paths this top-level compile has already scanned.
+ *
+ * Without it the eager pass is EXPONENTIAL in a module DAG, not linear: it walks
+ * the load graph as a TREE, so a diamond re-compiles the shared leaf once per
+ * distinct path to it. Measured by a blind critic on a synthetic 8-file DAG
+ * (7 levels, fanout 4, all observer-free): 131,072 re-compiles of one 12-byte
+ * leaf, 313,122 file opens, 145,636 fd-2 mute cycles, and 8.5 s wall against
+ * 1.2 s for the same program with the gate off — a 7x REGRESSION delivered by a
+ * feature whose entire purpose is speed. The runtime path has eigs_loading_enter
+ * (#496) as its memo; the eager path had only the depth cap, which bounds depth
+ * and not breadth.
+ *
+ * Thread-local, and it persists for the LIFE OF THE THREAD rather than for one
+ * top-level compile. Clearing per-compile still left the pass re-resolving every
+ * module on every runtime `load_file` — measured on the DAG above at 38,228 leaf
+ * opens against the program's own 16,384, i.e. the pass roughly DOUBLED the file
+ * I/O of module-heavy code. `load_file` has no module cache by design (#496: "it
+ * re-executes every call"), so without a persistent memo the eager pass inherits
+ * that multiplier.
+ *
+ * Staleness is not a soundness question here: skipping a re-scan can only make
+ * the eager pass MISS a module that has since become observing, and that is
+ * exactly the condition builtin_load_file raises on (the bit flipping 0 -> 1 at
+ * the load). The memo can make the gate conservative-late, never silently wrong.
+ * Released by eigs_obs_memo_release() at thread detach.
+ *
+ * KEYED ON (st_dev, st_ino), NOT ON THE PATH SPELLING. resolve_eigenscript_file
+ * does not canonicalize — try_resolve_path is access(2) plus a copy — so a
+ * string key gave one file N entries for N spellings, and the pass then read,
+ * compiled and CHARGED it N times. Executed on one 55,180-byte module written
+ * four natural ways (relative, absolute, through a symlink, and `./`-prefixed):
+ * 4 speculative opens where the oracle is 1; with enough distinct spellings the
+ * budget is spent on referenced rather than unique bytes and the gate flips
+ * open (24 spellings of that one file: 19 speculative opens, gate `observed`).
+ * That is the same double-charge defect fixed one commit earlier, re-entering
+ * through the KEY instead of the ORDERING — and no existing check saw it,
+ * because check 31's diamond writes the identical literal in every parent.
+ *
+ * The inode pair beats realpath() here: it is the true identity (it also folds
+ * hard links, which realpath does not) and it needs no PATH_MAX buffer. The
+ * cost is one stat PER REFERENCE, memo hits included — the string key stat'd
+ * only on misses, so this trades ~one syscall per repeated reference (measured:
+ * 48 newfstatat vs 1 on a 24-reference diamond) for correct identity. That is
+ * the deliberate price of keying on identity: the stat is what YIELDS the key,
+ * it is microseconds against a read+compile, and unlike the read it charges
+ * nothing against the budget. A stat FAILURE on a later reference of an
+ * already-scanned file now takes the conservative reject path rather than the
+ * memo hit, which is also the direction we want. */
+typedef struct { dev_t dev; ino_t ino; } ObsMemoKey;
+static __thread ObsMemoKey *g_obs_memo = NULL;
+static __thread int g_obs_memo_n = 0, g_obs_memo_cap = 0;
+static __thread long g_obs_spec_bytes = 0;   /* see OBS_GATE_SPECULATIVE_BUDGET */
+
+static int obs_memo_seen(dev_t dev, ino_t ino) {
+    for (int i = 0; i < g_obs_memo_n; i++)
+        if (g_obs_memo[i].dev == dev && g_obs_memo[i].ino == ino) return 1;
+    return 0;
+}
+static void obs_memo_add(dev_t dev, ino_t ino) {
+    if (g_obs_memo_n == g_obs_memo_cap) {
+        int nc = g_obs_memo_cap ? g_obs_memo_cap * 2 : 16;
+        ObsMemoKey *np = realloc(g_obs_memo, (size_t)nc * sizeof(ObsMemoKey));
+        if (!np) return;                 /* out of memory: lose the memo, not correctness */
+        g_obs_memo = np; g_obs_memo_cap = nc;
+    }
+    g_obs_memo[g_obs_memo_n].dev = dev;
+    g_obs_memo[g_obs_memo_n].ino = ino;
+    g_obs_memo_n++;
+}
+void eigs_obs_memo_release(void);
+static void obs_memo_clear(void) {
+    free(g_obs_memo);                    /* keys are values now, nothing per-entry to free */
+    g_obs_memo = NULL; g_obs_memo_n = 0; g_obs_memo_cap = 0;
+}
+void eigs_obs_memo_release(void) { obs_memo_clear(); g_obs_spec_bytes = 0; }
+
+static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
+    ObsLoadList L;
+    char *slots[OBS_GATE_MAX_LOADS];
+    char *resolved = NULL;
+    L.paths = slots; L.count = 0; L.cap = OBS_GATE_MAX_LOADS; L.overflow = 0;
+
+    /* The eager pass informs a RUNTIME decision. Entry points that compile
+     * without ever executing — `--lint` and the LSP, which recompiles on every
+     * didChange — must not reach out to the filesystem on its behalf.
+     * src/lint_host.c documents "import and load_file are executed by the VM,
+     * not resolved here, so lint still touches nothing but the file in front of
+     * it"; a blind critic caught this pass making that false, and an editor
+     * stat/read/compiling a file's load targets on every keystroke with it. */
+    if (!g_obs_gate_scan_enabled) return;
+
+    if (g_obs_gate_depth >= OBS_GATE_MAX_DEPTH) { eigs_obs_enable(); return; }
+
+    if (chunk_scan_static_loads(chunk, obs_gate_note_load, &L)) { eigs_obs_enable(); goto done; }
+    if (L.overflow) { eigs_obs_enable(); goto done; }   /* more loads than slots — see above */
+
+    /* See the comment above: fd-level suppression is process-global, so the
+     * eager compile is not taken at all while another thread could be writing
+     * stderr. Placed AFTER the scan deliberately — a unit with no loads has
+     * nothing to compile eagerly and must not lose its gate just for running
+     * in a process that happens to have spawned a worker. */
+    /* PROCESS-wide, not per-state. `g_vm_multithreaded` is
+     * eigs_current->state->multithreaded and cannot see a sibling state;
+     * ext_http runs a fresh EigsState per connection on its own OS thread, so
+     * that flag was 0 on every worker while this pass mutated process-global
+     * memory (trace.c's arming sets) and process-global fd 2. A blind critic
+     * captured a heap-use-after-free on g_arm_names between two connection
+     * threads, and showed the fd-2 mute swallowing other requests' stderr and
+     * then destroying the server's real stderr permanently. See
+     * eigs_process_thread_count. */
+    if (L.count > 0 && (g_vm_multithreaded || eigs_process_thread_count() > 1)) {
+        eigs_obs_enable(); goto done;
+    }
+
+    /* HEAP, not stack. As `char resolved[8192]` inside the loop this frame
+     * measured 8,864 bytes (gcc -fstack-usage) on EVERY compile_ast, and this
+     * function recurses to OBS_GATE_MAX_DEPTH — 8 x 8,864 = 70,912 bytes of
+     * `resolved` alone, more than the whole 64 KiB budget that
+     * tools/embed_stack_soak.sh enforces, before tokenize/parse/compile_node
+     * frames are counted. .claude/rules/c-runtime-memory.md calls >= ~2 KiB in a
+     * recursive path suspect; that rule was bought on exactly this shape. */
+    if (L.count > 0) {
+        resolved = malloc(8192);
+        if (!resolved) { eigs_obs_enable(); goto done; }
+    }
+
+    for (int i = 0; i < L.count && !g_obs_needed; i++) {
+        long size = 0;
+        char *source = NULL;
+#if !EIGENSCRIPT_FREESTANDING
+        /* Guarded on the VALUE, and the guard must cover the CALLEES, not only
+         * the helpers. builtins_host.c is a whole-TU carve-out in this profile,
+         * so read_file_util does not exist to link against; leaving these two
+         * calls outside the guard broke `make freestanding-check` and
+         * tools/embed_stack_soak.sh at the LINK step. Both are CI-only, which is
+         * why a green release suite and a green ASan suite could not see it —
+         * and it is the same defect class as the #ifdef-vs-#if mistake this file
+         * already records, made a second time while fixing the first. */
+        int resolved_ok = resolve_eigenscript_file(L.paths[i], resolved, 8192);
+#else
+        int resolved_ok = 0;
+#endif
+        if (!resolved_ok) { eigs_obs_enable(); break; }
+
+#if !EIGENSCRIPT_FREESTANDING
+        /* STAT BEFORE OPEN. This pass reads files on behalf of code the program
+         * may never run — a literal load inside an uncalled function or a dead
+         * branch is still scanned, because chunk_scan_static_loads recurses into
+         * chunk->functions. try_resolve_path admits anything access(F_OK)
+         * accepts, including a FIFO, and read_file_util's S_ISREG rejection
+         * happens AFTER fopen, so it cannot prevent the block.
+         *
+         * Executed: `define maybe() as: return load_file of "fifo.eigs"` with
+         * maybe() NEVER CALLED hung the compiler indefinitely (rc 124 under
+         * timeout, nothing printed, dead before vm_execute); the same program
+         * with a computed path ran fine. A 120 MB target referenced only from an
+         * uncalled function took peak RSS from 2.8 MB to 248 MB.
+         *
+         * A real load_file that executes is unaffected — this bounds only the
+         * SPECULATIVE read. Anything rejected here is simply unresolvable to the
+         * pass, which is already its conservative answer.
+         *
+         * The stat runs BEFORE the memo is consulted and the CHARGE runs after
+         * it, and the split is deliberate. Charging on the way past a memo hit
+         * bills a shared module once per reference while reading it once, so a
+         * DAG exhausts the budget on bytes it never reads — the same defect the
+         * memo exists to fix, re-committed in the accounting instead of the I/O.
+         * Executed: six thin parents sharing ONE 59 KiB leaf (59 KiB unique,
+         * a fraction of the budget) opened the gate, while that leaf loaded once
+         * closed it. The budget must count bytes READ. Statting first costs
+         * nothing against the budget and is what yields the identity the memo
+         * keys on — see ObsMemoKey above for why the spelling would not do. */
+        struct stat st;
+        if (stat(resolved, &st) != 0 || !S_ISREG(st.st_mode) ||
+            st.st_size > OBS_GATE_MAX_MODULE_BYTES) {
+            eigs_obs_enable(); break;
+        }
+        if (obs_memo_seen(st.st_dev, st.st_ino)) continue;
+        if (g_obs_spec_bytes + st.st_size > OBS_GATE_SPECULATIVE_BUDGET) {
+            eigs_obs_enable(); break;
+        }
+        g_obs_spec_bytes += st.st_size;
+        source = read_file_util(resolved, &size);
+#endif
+        if (!source) { eigs_obs_enable(); break; }
+#if !EIGENSCRIPT_FREESTANDING
+        obs_memo_add(st.st_dev, st.st_ino);
+#endif
+
+        int muted = obs_gate_mute_stderr();
+        if (muted < 0) { free(source); eigs_obs_enable(); break; }
+
+        /* BEFORE tokenize, not after. lexer.c zeroes all five first_error
+         * fields unconditionally at tokenize depth 0, so a snapshot taken after
+         * it saved the ZEROES and the "restore" then wiped the parent's recorded
+         * error — and the parse-error path below exited without restoring at
+         * all, leaving the MODULE's error installed in the parent. The previous
+         * placement was a fix that did not work; found by enumerating the
+         * compile path, not by a test, because the only readers (lint, LSP)
+         * disable this pass. */
+        int saved_fe_line = g_first_error_line, saved_fe_col = g_first_error_col;
+        int saved_fe_len = g_first_error_len, saved_fe_known = g_first_error_col_known;
+        char saved_fe_msg[256];
+        snprintf(saved_fe_msg, sizeof saved_fe_msg, "%s", g_first_error_msg);
+        int saved_errors = g_parse_errors;
+        g_parse_errors = 0;
+        TokenList tl = tokenize(source);
+        ASTNode *mast = parse(&tl);
+        if (g_parse_errors > 0 || !mast) {
+            g_parse_errors = saved_errors;
+            free_ast(mast); free_tokenlist(&tl); free(source);
+            g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
+            g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
+            snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
+                     "%s", saved_fe_msg);
+            obs_gate_unmute_stderr(muted);   /* every exit from here unmutes */
+            eigs_obs_enable(); break;
+        }
+
+        Env *scan_env = env_new(g_global_env);
+        int saved_boundary = g_compile_module_boundary;
+        g_compile_module_boundary = 1;                    /* #373, as load_file does */
+        /* The pass has TWO output channels, not one. fd 2 is muted above; this
+         * is the other. compile_node arms the trace-history channel as a side
+         * effect, so scanning a module used to switch per-assignment recording
+         * on in the PARENT and change its temporal answers — making the
+         * SPELLING of a load path semantically load-bearing (a literal armed
+         * `prev of x`, a computed one did not) and the behaviour non-monotone
+         * (adding an observer read opened the gate, skipped the pass, and
+         * un-armed the name). See trace_arm_snapshot. */
+        TraceArmState saved_arm;
+        trace_arm_snapshot(&saved_arm);
+        g_obs_gate_depth++;
+        EigsChunk *mchunk = compile_ast(mast, scan_env, source);   /* ORs its own verdict */
+        g_obs_gate_depth--;
+        trace_arm_restore(&saved_arm);
+        g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
+        g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
+        snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
+                 "%s", saved_fe_msg);
+        g_compile_module_boundary = saved_boundary;
+        if (g_parse_errors > 0) eigs_obs_enable();
+        g_parse_errors = saved_errors;
+
+        if (mchunk) chunk_free(mchunk);
+        env_decref(scan_env);
+        free_ast(mast); free_tokenlist(&tl); free(source);
+        obs_gate_unmute_stderr(muted);
+    }
+
+done:
+    free(resolved);
+    for (int i = 0; i < L.count; i++) free(L.paths[i]);
+}
+
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     EigsChunk *chunk = chunk_new("<module>");
     /* #830: the arming below is compile-time evidence about THIS chunk, so
@@ -3224,5 +3679,54 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * error path, not the table. */
     if (verify_self && g_parse_errors == 0)
         chunk_verify_self_check(chunk, chunk->name ? chunk->name : "?");
+
+    /* #915 observer gate. compile_ast is the ONE choke point every compilation
+     * path funnels through — the main script (main.c), eval (builtins.c),
+     * load_file (builtins_host.c), import (vm.c), the REPL (repl.c), the embed
+     * API (eigs_embed.c) and ext_http's dynamic handlers — so OR-ing here needs
+     * no hand-maintained caller list, which is the drift failure #921/#925 are
+     * open on. Monotonic: a later unit that reads the observer turns it on for
+     * good; nothing turns it back off.
+     *
+     * Residual, deliberately accepted: a unit compiled AFTER assignments have
+     * already run (a load_file partway through a program, a REPL line) flips
+     * the bit late, so bindings assigned before the flip have no history and
+     * read as unobserved. The full-corpus differential (tools/observer_gate_diff.sh)
+     * is what polices this — if any tracked program exhibits it, the diff goes
+     * red. Force-on sites cover the cases where it is not merely possible but
+     * expected (REPL, embed). */
+    /* #915 escape hatch. Any non-empty, non-"0" value arms it — the same rule
+     * as EIGS_STRICT (state.c) and EIGS_VERIFY_SELF above, and NOT a bare
+     * getenv. A bare getenv made `EIGS_OBS_FORCE=0` and `EIGS_OBS_FORCE=` force
+     * the gate OPEN, i.e. do exactly what `=1` does, inverting a documented
+     * control for anyone who spells "off" the obvious way.
+     *
+     * It also silently laundered the corpus oracle. tools/observer_gate_diff.sh
+     * records `force=${EIGS_OBS_FORCE:-0}` in each capture's manifest, which
+     * collapses "unset" and "=0" — two settings that behaved OPPOSITELY — so a
+     * "gated" arm captured with EIGS_OBS_FORCE=0 actually ran the BASELINE while
+     * the manifest recorded force=0, and compare printed a provenance line
+     * byte-identical to an honest run. Executed on a build with
+     * `case OP_REPORT_NAME:` deleted from opcode_is_observer_reader(): the
+     * honest three-capture run reports 3 mismatches and rc=1; the laundered one
+     * reports `415 programs byte-identical` and rc=0. */
+    {
+        const char *ef = getenv("EIGS_OBS_FORCE");
+        if (!g_obs_needed && ef && ef[0] && ef[0] != '0') eigs_obs_enable();
+    }
+    if (!g_obs_needed && chunk_reads_observer(chunk)) eigs_obs_enable();
+    if (!g_obs_needed) obs_gate_resolve_static_loads(chunk);
+    /* Same convention as EIGS_OBS_FORCE above — these two are documented as
+     * adjacent rows of one table in docs/OBSERVER.md, and read with a bare
+     * getenv this one printed its stats for EIGS_OBS_GATE_STATS=0. Found by
+     * sweeping every getenv site after fixing the FORCE flag, rather than
+     * assuming that defect was isolated. */
+    {
+        const char *gs = getenv("EIGS_OBS_GATE_STATS");
+        if (gs && gs[0] && gs[0] != '0')
+            fprintf(stderr, "obs-gate: %s %s\n",
+                    g_obs_needed ? "observed" : "unobserved", chunk->name);
+    }
+
     return chunk;
 }

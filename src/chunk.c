@@ -901,6 +901,7 @@ void chunk_verify_self_check(EigsChunk *chunk, const char *unit) {
     if (!chunk) return;
     char why[192] = "";
     if (!chunk_verify_impl(chunk, why, sizeof why)) {
+        eigs_obs_unmute_for_fatal();   /* #915: see arena.c */
         fprintf(stderr,
                 "EIGS_VERIFY_SELF: compiler output failed chunk_verify\n"
                 "  unit:  %s\n  chunk: %s\n  why:   %s\n",
@@ -946,7 +947,7 @@ void chunk_arm_temporal(const EigsChunk *chunk) {
                 if (op == OP_INTERROGATE_NAMED_WHEN) trace_arm_occurrences_name(nm);
                 else                                 trace_arm_history_name(nm);
                 if (op != OP_INTERROGATE_NAMED && kind >= 3 && kind <= 5)
-                    g_trace_obs_hist = 1;
+                    trace_flag_store(g_trace_obs_hist_storage, 1);
             }
         } else if (op == OP_GET_NAME) {
             int name_idx = code[i + 1] | (code[i + 2] << 8);
@@ -1037,4 +1038,355 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
         }
         if (depth > LEAF_ACCESSOR_MAX_DEPTH) return;
     }
+}
+
+/* ---- #915: does this chunk READ observer state? ------------------------
+ *
+ * The observer computes the entropy of every assigned value, walking the whole
+ * reachable container graph. On a consumer that never interrogates a binding
+ * that is 88% of wall time (#915: 8.50x ceiling on EigenMiniSat 4x4). The gate
+ * skips that bookkeeping for programs nothing can ever ask.
+ *
+ * The whole risk is SILENT-WRONG: a program that DOES reach the observer, but
+ * is classified here as one that does not, still runs and still prints — with a
+ * dead observer channel and no crash, leak, or failing assert to show for it.
+ * So this scan is built to be conservative in one direction only. Every unclear
+ * case must answer 1 ("observes"), never 0.
+ *
+ * WHY THE BYTECODE AND NOT THE AST. The obvious implementation is an AST walker
+ * like cond_is_observer_based / scan_dispatch_rebind. Those switch over ~30 node
+ * kinds, and a kind the switch forgets falls to the default — which for this
+ * question means "does not observe", the silent-wrong answer. Bytecode is the
+ * ground truth of what will actually execute: a new AST node that compiles down
+ * to a reader opcode is caught here with no change to this function. The
+ * instruction walk is driven off op_verify_operands, the SAME operand-layout
+ * table the verifier and disassembler use — per #737, which was opened because a
+ * hand-written second copy of that table had drifted on 15 opcodes.
+ *
+ * Two populations are checked:
+ *   1. Reader OPCODES — the direct forms (`report of x`, a bare predicate,
+ *      `trajectory of x`, `where is x`, an observer-conditioned loop).
+ *   2. Reader BUILTIN NAMES in the constant pool — the indirect forms. These
+ *      are ordinary bindings, so `local r is report` then `r of x` compiles to
+ *      GET_NAME "report" + CALL and emits no reader opcode at all. Matching the
+ *      name catches the alias. It also matches an unrelated string that merely
+ *      spells "report", which costs a program its gate and is the safe way to
+ *      be wrong.
+ */
+static int const_pool_names_observer(const EigsChunk *chunk) {
+    /* Names reachable only as BUILTINS; the opcode forms are covered by the
+     * opcode scan above.
+     *
+     * This list is NOT anchored to anything, and a previous comment here
+     * claiming it was "anchored to the observer-READ builtins registered in
+     * builtins.c (the sandbox allowlist marks them as a group)" was false: that
+     * group is five names, this is nine, and `report_value` / `trajectory` are
+     * not builtins at all (absent from `eigenscript --api`; they exist only as
+     * opcodes). The two lists cannot cross-check each other, so this is a
+     * hand-maintained list and should be read as one (mechanical-gates §1). It
+     * is deliberately over-broad: a name here that is not a reader costs a
+     * program its gate, which is the safe direction. */
+    static const char *OBS_BUILTINS[] = {
+        "observe", "report", "report_value", "trajectory", "classify",
+        "state_at", "get_observer_thresholds",
+        /* `eval` compiles a NEW unit at runtime from a string that need not
+         * exist until the moment it runs, after this unit's assignments have
+         * already executed — so the new unit's scan cannot arrive in time to
+         * have observed them: `x is 1.0 ... eval of "report of x"` reads
+         * equilibrium under the gate and "moving" without it. There is nothing
+         * to resolve eagerly, so presence of the construct stays the signal.
+         *
+         * `load_file` is deliberately NOT here: a STRING-LITERAL target is
+         * resolved and compiled eagerly by chunk_scan_static_loads below, and
+         * any other use of the name makes the unit opaque there. See that
+         * comment for the three recorded failures that shape the rule.
+         *
+         * OP_IMPORT is handled in the opcode switch above: it is an opcode with
+         * a bare-name operand, so it never appears in the constant pool as a
+         * string and a name list cannot see it at all. Its resolution is
+         * project-first-then-stdlib against a per-module resolve dir (vm.c
+         * CASE(IMPORT)); replicating that here would be a second copy of a
+         * resolver free to drift from the first, which is the #737 failure. So
+         * import stays conservative and #915's `import` half stays open. */
+        "eval",
+        /* `record_history` sets g_trace_obs_hist — half of what opens the
+         * observer channel — at RUNTIME, and it has NO opcode form, so its name
+         * in the constant pool is its only fingerprint. Executed: adding
+         * `record_history of 1` to a gated program changed its answer while the
+         * compile verdict still read `obs-gate: unobserved`, i.e. the gate was
+         * open at runtime and the diagnostic said closed. `record_history of 0`
+         * then CLOSES it again mid-program, so the channel can flicker. */
+        "record_history", NULL
+    };
+    for (int i = 0; i < chunk->const_count; i++) {
+        const char *s = chunk->const_interns ? chunk->const_interns[i] : NULL;
+        if (!s) continue;
+        for (int k = 0; OBS_BUILTINS[k]; k++)
+            if (strcmp(s, OBS_BUILTINS[k]) == 0) return 1;
+    }
+    return 0;
+}
+
+int chunk_reads_observer(const EigsChunk *chunk) {
+    if (!chunk) return 1;            /* unknown -> observe */
+    /* #830's flag: a chunk assembled from a descriptor (vm_run_bytecode /
+     * sandbox_run) never went through the compiler, so nothing scanned it and
+     * its opcode stream is caller-supplied. Do not gate it. */
+    if (!chunk->compiler_scanned) return 1;
+    if (chunk_has_reader_opcode(chunk)) return 1;
+    if (const_pool_names_observer(chunk)) return 1;
+    for (int f = 0; f < chunk->fn_count; f++)
+        if (chunk_reads_observer(chunk->functions[f])) return 1;
+    return 0;
+}
+
+/* The OPCODE half of the scan above, split out so it can be run against a chunk
+ * that never met the compiler.
+ *
+ * `vm_run_bytecode` and `sandbox_run` assemble a chunk from a caller-supplied
+ * descriptor, so `compiler_scanned` is 0 and chunk_reads_observer() answers a
+ * blanket "observes" for them — correct, but useless as a decision, because by
+ * the time such a chunk exists the host program has already run. Both sites
+ * used to answer that with a LATE `g_obs_needed = 1`, which cannot work: the
+ * bit is monotonic and the history of assignments that already executed is
+ * unrecoverable. A blind critic executed the consequence — a geometric runaway
+ * (`x is x * 2.0`, forty times) read back through a hand-assembled
+ * `OP_REPORT_NAME` descriptor answered `equilibrium` under the gate and
+ * `diverging` without it. That is the inversion #861's own comment says must
+ * never happen.
+ *
+ * So the descriptor sites ask this instead, BEFORE running: does the chunk I am
+ * about to execute read observer state while the gate is closed? If so, raise —
+ * the same outcome guard builtin_load_file uses, for the same reason. */
+static int chunk_step_ip(const EigsChunk *chunk, int i);   /* defined below */
+
+/* THE reader set. One home, and it is the one tools/obs_reader_sync_check.sh
+ * extracts and pins against the obs:READS markers in vm.h. Every consumer
+ * asks this question rather than restating the list — a fourth restatement had
+ * already diverged (OP_LOOP_STALL_CHECK) before anyone noticed. */
+int opcode_is_observer_reader(uint8_t op) {
+    switch ((OpCode)op) {
+        case OP_INTERROGATE:
+        case OP_INTERROGATE_NAMED:
+        case OP_INTERROGATE_NAMED_AT:
+        case OP_INTERROGATE_NAMED_WHEN:
+        case OP_PREDICATE:
+        case OP_PREDICATE_SLOT:
+        case OP_PREDICATE_NAME:
+        case OP_REPORT_SLOT:
+        case OP_REPORT_NAME:
+        case OP_REPORT_VALUE_SLOT:
+        case OP_REPORT_VALUE_NAME:
+        case OP_TRAJECTORY_SLOT:
+        case OP_TRAJECTORY_NAME:
+        case OP_OBSERVE_VALUE_SLOT:
+        case OP_OBSERVE_VALUE_NAME:
+        case OP_LOOP_STALL_CHECK:
+        case OP_IMPORT:
+            return 1;
+        default: return 0;
+    }
+}
+
+int chunk_has_reader_opcode(const EigsChunk *chunk) {
+    if (!chunk) return 0;
+    int i = 0;
+    while (i < chunk->code_len) {
+        if (opcode_is_observer_reader(chunk->code[i])) return 1;
+        i = chunk_step_ip(chunk, i);
+    }
+    for (int f = 0; f < chunk->fn_count; f++)
+        if (chunk_has_reader_opcode(chunk->functions[f])) return 1;
+    return 0;
+}
+
+
+/* `top` is 1 for the chunk vm_execute is handed directly, 0 for a nested
+ * function chunk.
+ *
+ * ONE READER SET, NOT A FOURTH ONE. This used to carry its own hand-written
+ * lists of "which opcodes read", separate from chunk_has_reader_opcode() above
+ * and invisible to tools/obs_reader_sync_check.sh — a fourth home for a rule
+ * that already had three, in the same change that quotes mechanical-gates §26
+ * at length. It had ALREADY diverged when a critic looked: OP_LOOP_STALL_CHECK
+ * is obs:READS in vm.h and listed above, and was absent from every branch
+ * here. So this asks the shared question — "is this opcode a reader?" — and
+ * only CLASSIFIES the answer by operand shape, which it derives from
+ * op_verify_operands, the same table the verifier and disassembler use.
+ *
+ * WHY THE OPERAND SHAPE MATTERS. vm_execute(chunk, host) -> callframe_init sets
+ * f->fn_env = host, so for the TOP-LEVEL descriptor chunk the "frame slots" ARE
+ * the host env's slots. An earlier version looked only at NAME operands, on the
+ * written reasoning that a slot reader "addresses the descriptor's own frame and
+ * cannot reach a host binding" — false at the top level, and a critic executed
+ * the consequence.
+ *
+ * AND DEPTH IS NOT A DEFENCE FOR THE BARE FORM. A nested function chunk does get
+ * a fresh call env, so its SLOT readers really do address their own frame. The
+ * bare OP_PREDICATE consults no env at all: it reads g_last_obs_slot_env /
+ * g_last_obs_slot_idx, which are EigsThread state set by the host's last
+ * OP_OBSERVE_NAME_POST and untouched by call-frame entry. Confining it to `top`
+ * left the same silent inversion live one recursion level down (executed:
+ * a descriptor whose NESTED chunk holds a bare predicate answered 0 under the
+ * gate and 1 without). It is therefore checked at EVERY depth. */
+/* ---- #915: statically-resolvable `load_file` targets --------------------
+ *
+ * `load_file` used to sit in OBS_BUILTINS and force the gate off wholesale,
+ * because a module compiled at RUNTIME flips the observer bit only after the
+ * parent's assignments have already run. That rule is sound, and it is exactly
+ * why the gate was parked: EigenMiniSat opens with four `load_file` calls, so
+ * it gated 0 of 6 units and the consumer that motivated #915 got nothing.
+ *
+ * The rule here is narrower. A load whose target is a STRING LITERAL can be
+ * compiled eagerly at the parent's compile time with the REAL compiler, so the
+ * module's own verdict lands BEFORE line 1 of the parent executes and the
+ * ordering hazard is gone. Everything else keeps the old answer.
+ *
+ * THREE RECORDED FAILURES SHAPE THIS. An earlier attempt tried to prove loaded
+ * modules observer-free from TOKENS, and adversarial review broke it three
+ * times: (1) a computed path (`parts[0] + parts[1] + ...`) resolved to nothing
+ * and was silently skipped; (2) the "did anything resolve" flag was an OR
+ * across candidates, so ONE benign literal load disarmed the conservative
+ * fallback for every other load in the same unit — the failure got LESS likely
+ * as the program got simpler, which is why no corpus differential would ever
+ * have caught it; (3) the six predicates lex to their own token types, so
+ * matching them as TOK_IDENT was dead code and a module using the documented
+ * preferred form went unseen.
+ *
+ * This version answers all three BY CONSTRUCTION rather than by patching:
+ *   (1)+(2) the fallback is an AND, not an OR — ONE unrecognized use of the
+ *           name `load_file` anywhere in the unit makes the WHOLE unit opaque,
+ *           and an unresolvable path is such a use;
+ *   (3)     it never inspects tokens. The eager compile produces BYTECODE and
+ *           chunk_reads_observer scans that, so a predicate is a reader opcode
+ *           however it happens to lex.
+ *
+ * THE RECOGNIZED SHAPE — verified against the emitter with EIGS_DUMP_BC rather
+ * than assumed:
+ *
+ *      GET_NAME <"load_file">    CONST <string>    CALL 1
+ *
+ * OP_LINE may be interleaved (a call split across source lines) and is stepped
+ * over; nothing else may be. Any other operand carrying the name `load_file` in
+ * a VR_NAME role — an alias (`local lf is load_file`), a call with a computed
+ * argument — is not this shape and makes the unit opaque. VR_NAME is the
+ * population key: a string constant that merely SPELLS "load_file" without
+ * naming the builtin — a dict key, a printed literal — is not a VR_NAME use
+ * and does not affect the verdict at all (executed: `d is {"load_file": 1.0}`
+ * plus a literal load still gates unobserved, which is correct — a prior
+ * version of this comment claimed the dict key made the unit opaque, and a
+ * blind critic falsified it by running it). Being wrong here costs a program
+ * its gate, never an answer.
+ *
+ * RESOLVER PARITY IS NOT CHECKED HERE, deliberately. Compile-time and run-time
+ * resolution both go through resolve_eigenscript_file and the whole program runs
+ * between them, so the same literal can resolve to a different file or to
+ * different bytes. This scan cannot see that. An earlier draft opened with a
+ * `chdir` opacity check under the heading "resolver parity is a precondition,
+ * not a footnote"; it was a one-element denylist and the wrong population key
+ * (mechanical-gates §60), and it is gone. The parity requirement is enforced
+ * where it is checkable — at the load, in builtin_load_file, which raises when
+ * a module reads observer state and the gate was closed while this program's
+ * earlier assignments ran.
+ */
+
+/* Step past the instruction at `i`, using the SAME operand-layout table the
+ * verifier and disassembler are driven off (#737). */
+static int chunk_step_ip(const EigsChunk *chunk, int i) {
+    uint8_t op = chunk->code[i];
+    i++;
+    if (op == OP_LINE) {
+        i += 4;                              /* #630: 32-bit operand */
+    } else if (op < OP_COUNT) {
+        VerifyRole roles[3];
+        i += 2 * op_verify_operands(op, roles);
+    }
+    return i;
+}
+
+/* Next instruction offset at or after `i` that is not OP_LINE. */
+static int chunk_skip_lines(const EigsChunk *chunk, int i) {
+    while (i < chunk->code_len && chunk->code[i] == OP_LINE)
+        i = chunk_step_ip(chunk, i);
+    return i;
+}
+
+static int const_pool_index_of(const EigsChunk *chunk, const char *name) {
+    if (!chunk->const_interns) return -1;
+    for (int i = 0; i < chunk->const_count; i++)
+        if (chunk->const_interns[i] && strcmp(chunk->const_interns[i], name) == 0)
+            return i;
+    return -1;
+}
+
+int chunk_scan_static_loads(const EigsChunk *chunk,
+                            void (*visit)(const char *path, void *ud), void *ud) {
+    if (!chunk) return 1;
+    if (!chunk->compiler_scanned) return 1;   /* unscanned chunk — see #830 above */
+
+    /* NOTE: this scan does NOT try to prove that the file it resolves now is the
+     * file `load_file` will read later. It cannot: the whole program runs in
+     * between. An earlier draft opened with
+     *
+     *     if (const_pool_index_of(chunk, "chdir") >= 0) return 1;
+     *
+     * under the heading "resolver parity is a precondition, not a footnote" —
+     * a one-element denylist, and the wrong population key (mechanical-gates
+     * §60). `chdir` is one way to make a literal resolve elsewhere; a blind
+     * critic executed two others in minutes (`write_text` rewriting the module
+     * between the two reads, and creating a file in the cwd that SHADOWS the
+     * resolved one), and `rename`, `mkdir`, `remove_file` and any subprocess
+     * reach the same state. Widening the list would only postpone the next one.
+     *
+     * The parity requirement is instead enforced where it is checkable, at the
+     * load itself: builtin_load_file raises if compiling the module flips the
+     * observer bit 0 -> 1, which is precisely "the gate closed on stale
+     * evidence". That check is on the OUTCOME and needs no enumeration. */
+
+    int lf = const_pool_index_of(chunk, "load_file");
+    if (lf >= 0) {
+        int i = 0;
+        while (i < chunk->code_len) {
+            uint8_t op = chunk->code[i];
+            int nops = 0;
+            VerifyRole roles[3];
+            if (op != OP_LINE && op < OP_COUNT) nops = op_verify_operands(op, roles);
+
+            /* Operands are LITTLE-endian (read_u16, vm.c) — the same order the
+             * verifier reads them in above. Getting this backwards reads a
+             * garbage constant index and silently answers "not this shape". */
+            int names_lf = 0;
+            if (i + 1 + 2 * nops <= chunk->code_len) {
+                for (int k = 0; k < nops; k++) {
+                    if (roles[k] != VR_NAME) continue;
+                    int off = i + 1 + 2 * k;
+                    int v = chunk->code[off] | (chunk->code[off + 1] << 8);
+                    if (v == lf) names_lf = 1;
+                }
+            }
+
+            if (names_lf) {
+                /* Only the head of the recognized shape is acceptable. */
+                if (op != OP_GET_NAME) return 1;
+                int j = chunk_skip_lines(chunk, chunk_step_ip(chunk, i));
+                if (j + 2 >= chunk->code_len || chunk->code[j] != OP_CONST) return 1;
+                int sidx = chunk->code[j + 1] | (chunk->code[j + 2] << 8);
+                if (sidx < 0 || sidx >= chunk->const_count) return 1;
+                Value *k = chunk->constants ? chunk->constants[sidx] : NULL;
+                if (!k || k->type != VAL_STR || !k->data.str) return 1;
+                int c = chunk_skip_lines(chunk, chunk_step_ip(chunk, j));
+                if (c + 2 >= chunk->code_len || chunk->code[c] != OP_CALL) return 1;
+                int argc = chunk->code[c + 1] | (chunk->code[c + 2] << 8);
+                if (argc != 1) return 1;
+                if (visit) visit(k->data.str, ud);
+                /* Fall through to the normal step: the CONST/CALL are walked
+                 * again harmlessly (neither names `load_file`). */
+            }
+            i = chunk_step_ip(chunk, i);
+        }
+    }
+
+    for (int f = 0; f < chunk->fn_count; f++)
+        if (chunk_scan_static_loads(chunk->functions[f], visit, ud)) return 1;
+    return 0;
 }

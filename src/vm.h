@@ -640,6 +640,33 @@ void       chunk_patch_jump(EigsChunk *chunk, int offset);
 int        chunk_add_function(EigsChunk *chunk, EigsChunk *fn);
 void       chunk_scan_leaf_accessor(EigsChunk *chunk);  /* #366 */
 void       chunk_disassemble(EigsChunk *chunk, const char *label);
+/* #915: 1 if anything in this chunk (or a nested function chunk) can READ
+ * observer state — a reader opcode, or an observer-read builtin name in the
+ * constant pool (aliasing: `local r is report` emits no reader opcode).
+ * Conservative in one direction only: every unclear case answers 1. Drives
+ * the observer gate, so a wrong 0 is silently-wrong observer results. */
+int        chunk_reads_observer(const EigsChunk *chunk);
+/* #915: the opcode half alone — true if the chunk contains ANY reader opcode,
+ * with no reachability question asked. Recurses into functions[]. Used by
+ * chunk_reads_observer and by the descriptor sites (vm_run_bytecode /
+ * sandbox_run), which ARM the observer before running rather than asking the
+ * finer question "can the read reach the HOST's history" — three static
+ * guards for that were tried and each broke either the self-hosting bridge or
+ * its own fixture; the residual is filed as #1027. (A prior version of this
+ * comment named a chunk_reads_host_observer function that never existed —
+ * a comment is load-bearing, and this one sent a reader hunting a phantom.) */
+/* THE reader set — one home, pinned against vm.h's obs:READS markers by
+ * tools/obs_reader_sync_check.sh. Ask this; never restate the list. */
+int        opcode_is_observer_reader(uint8_t op);
+int        chunk_has_reader_opcode(const EigsChunk *chunk);
+/* #915: hand every STRING-LITERAL `load_file` target in this chunk to `visit`.
+ * Returns 1 if the unit is OPAQUE — it uses the name `load_file` in any shape
+ * this scan does not recognize. An opaque unit must be treated as observing.
+ * This does NOT check resolver parity between compile time and run time; that
+ * is enforced at the load itself (builtin_load_file). See the definition. */
+int        chunk_scan_static_loads(const EigsChunk *chunk,
+                                   void (*visit)(const char *path, void *ud),
+                                   void *ud);
 const char *op_name(uint8_t op);
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM
  * runs it. Returns 1 if safe to execute, 0 if it must be rejected. */

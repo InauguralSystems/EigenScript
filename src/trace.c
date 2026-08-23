@@ -49,8 +49,8 @@
 
 int g_trace_enabled = 0;
 int g_replay_enabled = 0;
-int g_trace_obs_hist = 0;
-int g_trace_hist = 0;
+int g_trace_obs_hist_storage = 0;
+int g_trace_hist_storage = 0;
 int g_trace_current_line = 0;
 
 /* ----- Phase 3.0a: prev-value table.
@@ -285,6 +285,53 @@ void trace_arm_occurrences_name(const char *name) {
 /* Widen to the wildcard WITHOUT enabling recording. Separate from
  * trace_arm_history_all because `spawn` calls it: a program with no temporal
  * query must not start recording just because it made a thread. */
+/* #915: snapshot/restore the compile-time ARMING state.
+ *
+ * The observer gate's eager pre-pass runs the REAL compiler over a module's
+ * source purely to decide whether that module reads observer state. compile_node
+ * arms this channel as a side effect — trace_arm_history_name/_all,
+ * trace_arm_occurrences_name, g_trace_hist, g_trace_obs_hist — so a module that
+ * is only SCANNED used to switch per-assignment history recording on in the
+ * PARENT, and change the parent's temporal answers.
+ *
+ * Executed consequence: with `x is 1.0 / 2.0 / 3.0` then a literal
+ * `load_file of "mod.eigs"` where mod.eigs holds `prev of x`, the parent printed
+ * `2`; spelling the same path as `"mod" + ".eigs"` printed `null`, which is what
+ * the pre-#915 baseline prints. The SPELLING of a path had become semantically
+ * load-bearing. Worse, it was non-monotone: adding an unrelated `report of z`
+ * opened the gate, which skipped the eager pass, which un-armed the name — a
+ * program that asked the observer MORE got LESS history.
+ *
+ * The pre-pass already seals its other output channel (it mutes fd 2, because
+ * "a pre-pass that speaks is a pre-pass that changes the program's output").
+ * This is the same rule applied to the channel that was left open.
+ *
+ * The name sets are append-only, so a count is a sufficient snapshot; the
+ * generation counter is bumped on restore so cached per-entry decisions
+ * recheck. */
+void trace_arm_snapshot(TraceArmState *out) {
+    if (!out) return;
+    out->trace_hist   = g_trace_hist;
+    out->obs_hist     = g_trace_obs_hist;
+    out->arm_all      = g_arm_all;
+    out->arm_count    = g_arm_count;
+    out->occ_all      = g_occ_all;
+    out->occ_count    = g_occ_count;
+}
+
+void trace_arm_restore(const TraceArmState *in) {
+    if (!in) return;
+    for (int i = in->arm_count; i < g_arm_count; i++) free(g_arm_names[i]);
+    g_arm_count = in->arm_count;
+    for (int i = in->occ_count; i < g_occ_count; i++) free(g_occ_names[i]);
+    g_occ_count = in->occ_count;
+    trace_flag_store(g_trace_hist_storage, in->trace_hist);
+    trace_flag_store(g_trace_obs_hist_storage, in->obs_hist);
+    g_arm_all        = in->arm_all;
+    g_occ_all        = in->occ_all;
+    g_arm_gen++;                    /* invalidate cached per-entry decisions */
+}
+
 void trace_arm_history_all_mt(void) {
     if (g_arm_all) return;
     g_arm_all = 1;
@@ -292,12 +339,12 @@ void trace_arm_history_all_mt(void) {
 }
 
 void trace_arm_history_all(void) {
-    g_trace_hist = 1;
+    trace_flag_store(g_trace_hist_storage, 1);
     trace_arm_history_all_mt();
 }
 
 void trace_arm_history_name(const char *name) {
-    g_trace_hist = 1;
+    trace_flag_store(g_trace_hist_storage, 1);
     if (!name || g_arm_all) return;
     if (arm_set_has(name)) return;
     if (g_arm_count >= g_arm_cap) {
@@ -316,8 +363,8 @@ void trace_arm_history_name(const char *name) {
 }
 
 void trace_history_disable(void) {
-    g_trace_hist = 0;
-    g_trace_obs_hist = 0;
+    trace_flag_store(g_trace_hist_storage, 0);
+    trace_flag_store(g_trace_obs_hist_storage, 0);
 }
 
 /* g_prev_tab / g_prev_cap / g_prev_count are bridge macros onto EigsThread

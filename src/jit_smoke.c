@@ -38,7 +38,7 @@ void gc_note_possible_root(Value *v) { (void)v; }
 
 /* Stage 5b references &g_trace_hist as an immediate in the SET-name
  * inline trace gate. Lives in trace.c in the real binary. */
-int g_trace_hist = 0;
+int g_trace_hist_storage = 0;
 /* OP_LINE bakes &g_trace_current_line to stamp the history line. trace.c. */
 int g_trace_current_line = 0;
 /* #410: the back-edge abort poll bakes &g_vm_abort_flag (vm.c). Never NULL

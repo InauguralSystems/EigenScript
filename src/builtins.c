@@ -3182,12 +3182,51 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
  * output runs through — reusing the bytecode VM and its JIT. The caller is
  * responsible for a well-formed chunk ending in OP_RETURN, stamped with the
  * bytecode ABI revision it was built against (#704). */
+/* #915: a descriptor chunk never passes through compile_ast, so the observer
+ * gate's compile-time scan never saw it. Two things follow, and only one of
+ * them is solved here.
+ *
+ * SOLVED — the descriptor's OWN work. eigs_obs_enable() arms recording before
+ * vm_execute, the observer twin of chunk_arm_temporal below (#831: "a
+ * descriptor must turn recording ON itself"). It also records the history gap,
+ * so a mid-run arming cannot disarm the load_file guard — a benign descriptor
+ * call used to do exactly that, silently, for the rest of the process.
+ *
+ * NOT SOLVED, and filed rather than half-guarded — see the issue referenced in
+ * docs: a descriptor that READS observer state about a host binding assigned
+ * before the call gets a rest value, because that history was never recorded.
+ * Three static guards were tried and each traded one wrong answer for another:
+ * "reads at all" broke 57 bridge assertions; "reads a NAME operand" missed the
+ * slot form; "reads a NAME or an in-range assigned slot, or the thread alias"
+ * fires on tests/test_vm_run_bytecode.eigs's own #737 fixture, whose operand
+ * bytes are load-bearing (1,1 == two OP_NULLs, chosen so a drifted operand walk
+ * stays synced) and whose reader is JUMPED OVER. Distinguishing that from a
+ * real host read needs reachability analysis over caller-supplied bytecode,
+ * which is its own change with its own review. Shipping a guard that breaks a
+ * legitimate fixture, or a fourth variant tuned until the suite passes, would
+ * both be worse than a stated residual. */
+
 Value* builtin_vm_run_bytecode(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(arg, abibuf, sizeof abibuf);
     if (abi_err) { rt_error(EK_VALUE, 0, "%s", abi_err); return make_null(); }
     EigsChunk *chunk = vm_build_chunk_desc(arg, 1, 0);
     if (!chunk) return make_null();
+    /* #915: ARM the observer for what this descriptor itself does, exactly as
+     * chunk_arm_temporal two lines below arms the temporal channel (#831: "a
+     * descriptor must turn recording ON itself" — nothing scanned this chunk).
+     *
+     * The guard above and this line answer DIFFERENT questions and an earlier
+     * revision wrongly swapped one for the other: the guard covers host
+     * bindings assigned BEFORE the call, whose history is unrecoverable; this
+     * covers everything the descriptor writes and reads AFTER it. Deleting this
+     * made a descriptor that writes a geometric series into its own frame slot
+     * and reads it back answer `equilibrium` — a regression a blind critic
+     * bisected to the commit that removed it. Both are needed.
+     *
+     * Through eigs_obs_enable, not a bare assignment: this flip happens mid-
+     * execution, so it must also record that earlier bindings have no history. */
+    eigs_obs_enable();
     /* #831: the compiler's temporal scan is what turns history recording on,
      * and it never saw this chunk — arm from the verified bytecode instead,
      * or the chunk's own `prev of` / `at` reads answer null whenever the
@@ -3350,6 +3389,11 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
  * are caught (not propagated). Returns {"ok": 1/0, "result": value} — the graded
  * "does it run?" rung for a self-hosted compiler validating generated code. */
 Value* builtin_sandbox_run(Value *arg) {
+    /* #915: same descriptor hazard as vm_run_bytecode. Unexploitable TODAY only
+     * because the sandbox env is a sealed root (parent == NULL), so a descriptor
+     * cannot reach a host binding's slot — that is the sandbox's defence, not
+     * the gate's, and it evaporates the day sealing is relaxed. The guard runs
+     * below, once the chunk exists. */
     Value *desc = (arg && arg->type == VAL_LIST && arg->data.list.count >= 1)
                   ? arg->data.list.items[0] : arg;
     int max_iter = 1000000;
@@ -3379,6 +3423,7 @@ Value* builtin_sandbox_run(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
     EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
+    if (chunk) eigs_obs_enable();     /* #915: see vm_run_bytecode */
     Value *out = make_dict(2);
     if (!chunk) {
         /* Descriptor verification may already have interned constants before
@@ -3636,7 +3681,7 @@ Value* builtin_record_history(Value *arg) {
     int on = (arg->data.num != 0.0) ? 1 : 0;
     /* #827: no name to narrow on — a self-hosted compiler calling this is
      * standing in for the whole-program arming, so it gets the wildcard. */
-    if (on) { trace_arm_history_all(); g_trace_obs_hist = 1; }
+    if (on) { trace_arm_history_all(); trace_flag_store(g_trace_obs_hist_storage, 1); }
     else    trace_history_disable();
     return make_num((double)prev);
 }
