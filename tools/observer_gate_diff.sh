@@ -127,7 +127,17 @@ capture_manifest() {
     local dir="$1"
     {
         echo "bin=$(realpath "$BIN" 2>/dev/null || echo "$BIN")"
-        echo "force=${EIGS_OBS_FORCE:-0}"
+        # NORMALISED with the runtime's own rule (non-empty and not starting
+        # "0" arms it), not recorded raw. Raw `${EIGS_OBS_FORCE:-0}` recorded
+        # both "unset" and "=0" as force=0 — and while the runtime used a bare
+        # getenv those two behaved OPPOSITELY, so a "gated" arm captured with
+        # EIGS_OBS_FORCE=0 ran the BASELINE and this manifest said force=0. The
+        # runtime is fixed; normalising here also folds the residual (=2 vs =1
+        # are the same arm and must not read as two).
+        case "${EIGS_OBS_FORCE:-}" in
+            ""|0*) echo "force=0" ;;
+            *)     echo "force=1" ;;
+        esac
         echo "sha=$( (sha256sum "$BIN" 2>/dev/null || shasum -a 256 "$BIN") | awk '{print $1}')"
         echo "rev=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
     } > "$dir/.MANIFEST"
@@ -171,9 +181,10 @@ do_compare() {
     # diffing a build against itself and PASS means nothing.
     local sha_a sha_ref sha_b
     sha_a=$(manifest_field "$da" sha); sha_ref=$(manifest_field "$dref" sha); sha_b=$(manifest_field "$db" sha)
-    local frc_a frc_b
+    local frc_a frc_b frc_ref
     frc_a=$(manifest_field "$da" force); frc_b=$(manifest_field "$db" force)
-    echo "provenance: base=${sha_a:0:12}(force=${frc_a:-?}) ref=${sha_ref:0:12} gated=${sha_b:0:12}(force=${frc_b:-?})"
+    frc_ref=$(manifest_field "$dref" force)
+    echo "provenance: base=${sha_a:0:12}(force=${frc_a:-?}) ref=${sha_ref:0:12}(force=${frc_ref:-?}) gated=${sha_b:0:12}(force=${frc_b:-?})"
     # The second half of the claim, now actually implemented: the two arms must
     # DIFFER in something. Same binary AND same gate setting means the run is
     # diffing a build against itself, and PASS carries no information.
@@ -182,10 +193,23 @@ do_compare() {
         echo "      Nothing distinguishes the arms; this would pass trivially."
         exit 2
     fi
-    if [ "$sha_a" != "$sha_ref" ]; then
-        echo "FAIL: '$a' and '${a}2' were captured with DIFFERENT binaries."
-        echo "      The determinism reference must match the baseline, or every real"
-        echo "      divergence is excluded as nondeterminism and this run reports PASS."
+    # An arm's identity is (sha, force) — BOTH axes, for the reference too. This
+    # guard ranged over sha alone: capturing '<base>2' with the force flag off
+    # while '<base>' had it on made the two arms of the SAME binary disagree on
+    # three programs, which the filter then excluded as nondeterministic.
+    # Executed on a build with `case OP_REPORT_NAME:` deleted from
+    # opcode_is_observer_reader(): honest run reports `mismatches: 3` / rc=1,
+    # the reference-swapped run reports `nondet:` x3, `compared: 413`,
+    # `RESULT: PASS`, rc=0 — 413 is far above the 380 floor, so nothing fired.
+    # mechanical-gates §61: the guard was repaired on the narrower axis (sha, on
+    # 2026-08-22) and left open on the other; §45: the bypass is a superset of
+    # the population, so the count barely moves while what it counts is gone.
+    if [ "$sha_a" != "$sha_ref" ] || [ "${frc_a:-0}" != "${frc_ref:-0}" ]; then
+        echo "FAIL: '$a' and '${a}2' were captured with DIFFERENT arms."
+        echo "      base=${sha_a:0:12}(force=${frc_a:-?})  ref=${sha_ref:0:12}(force=${frc_ref:-?})"
+        echo "      The determinism reference must match the baseline on BOTH the"
+        echo "      binary and the gate setting, or every real divergence is excluded"
+        echo "      as nondeterminism and this run reports PASS."
         exit 2
     fi
 

@@ -3215,6 +3215,57 @@ enum { OBS_GATE_MAX_LOADS = 64, OBS_GATE_MAX_DEPTH = 8 };
  * far above any real .eigs module; over it the pass declines and the gate stays
  * conservatively open. */
 #define OBS_GATE_MAX_MODULE_BYTES (8L * 1024 * 1024)
+/* CUMULATIVE ceiling on ALL speculative reading by this thread. The per-file
+ * ceiling above bounds one read; nothing bounded the TREE, and the pass compiles
+ * every literally-loaded module TWICE — once here, once for real (load_file has
+ * no module cache by design, #496).
+ *
+ * Measured by a blind critic: 60 modules loaded from an UNCALLED function took
+ * 0.00s -> 14.2s and 2.9 MB -> 61 MB RSS for a program whose only executed
+ * statement is `print of "hi"`. The existing limits PERMIT 64 loads x 8 MiB at
+ * depth 1 of 8 — roughly nine minutes of startup before the second level. And
+ * on this repo's own stdlib, `load_file of "lib/ui.eigs"` (20 units) measured
+ * 0.12-0.15s gated against 0.05-0.07s for the identical program written with a
+ * computed path, i.e. THE ARM THAT GATES ITSELF CLOSED WAS 2.3x SLOWER. A
+ * perf feature that loses to its own fallback on a real module tree has failed
+ * on its own terms, whatever its answers are.
+ *
+ * Once the budget is spent the pass declines and the gate stays conservatively
+ * open, so the worst case becomes "no win", never "slower than before". The
+ * budget is per-thread and never refills: total speculative work over a
+ * program's life is then bounded absolutely.
+ *
+ * This bounds the damage; it does not recover the win for big trees. That needs
+ * the eagerly-compiled chunk to be REUSED by the real load rather than thrown
+ * away — filed rather than attempted here, because chunk lifetime and the
+ * staleness guard both key off recompiling. */
+/* Cumulative per-thread ceiling on bytes this pass may read SPECULATIVELY, on
+ * behalf of code the program may never run. Once spent the pass declines and
+ * the gate stays conservatively open, so the cost of a hostile or merely huge
+ * module tree is bounded (60 modules behind an UNCALLED function: 14.2s/61MB
+ * unbounded, 0.13s/35MB with this).
+ *
+ * PICKED AGAINST A POPULATION, not chosen round. Transitive literal-load
+ * closures of all 86 multi-unit trees across the 13 ecosystem repos: the
+ * largest is EigenScript/lib/ui.eigs at 287 KiB (19 units), then
+ * DeslanStudio/src/client/studio 252, Tidepool 201, EigenMiniSat 179 — a tight
+ * band, and NOTHING above 1 MiB. The first value tried here was 256 KiB, which
+ * lands INSIDE that band: it bit ui.eigs by 12% (so the repo's own largest tree
+ * paid a quarter-megabyte of speculative compiling AND lost the gate) and
+ * cleared studio.eigs by under 2%. This clears the whole measured population
+ * 3.5x over and still stops the pathological case at ~7% of its work.
+ *
+ * Cost at the ceiling is ~0.6s of startup (measured: the pass costs ~0.6s per
+ * MiB speculatively read, which is issue #1031 — every literally-loaded module
+ * is compiled twice, once here and once for real). That is what bounds the
+ * choice from above; the population bounds it from below.
+ *
+ * The floor is asserted, not just documented: suite [99u] requires lib/ui.eigs
+ * to still gate CLOSED, so a tree growing past this budget fails a check and
+ * forces a deliberate re-pick instead of silently losing the win. That check
+ * covers this repo only — the consumer trees above are why the headroom is
+ * 3.5x rather than the 1.8x that would suffice for lib/ alone. */
+#define OBS_GATE_SPECULATIVE_BUDGET (1024L * 1024)
 typedef struct { char **paths; int count; int cap; int overflow; } ObsLoadList;
 
 static void obs_gate_note_load(const char *path, void *ud) {
@@ -3325,6 +3376,7 @@ static void obs_gate_unmute_stderr(int saved) {
  * Released by eigs_obs_memo_release() at thread detach. */
 static __thread char **g_obs_memo = NULL;
 static __thread int g_obs_memo_n = 0, g_obs_memo_cap = 0;
+static __thread long g_obs_spec_bytes = 0;   /* see OBS_GATE_SPECULATIVE_BUDGET */
 
 static int obs_memo_seen(const char *path) {
     for (int i = 0; i < g_obs_memo_n; i++)
@@ -3346,7 +3398,7 @@ static void obs_memo_clear(void) {
     free(g_obs_memo);
     g_obs_memo = NULL; g_obs_memo_n = 0; g_obs_memo_cap = 0;
 }
-void eigs_obs_memo_release(void) { obs_memo_clear(); }
+void eigs_obs_memo_release(void) { obs_memo_clear(); g_obs_spec_bytes = 0; }
 
 static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     ObsLoadList L;
@@ -3411,6 +3463,19 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * and it is the same defect class as the #ifdef-vs-#if mistake this file
          * already records, made a second time while fixing the first. */
         int resolved_ok = resolve_eigenscript_file(L.paths[i], resolved, 8192);
+#else
+        int resolved_ok = 0;
+#endif
+        if (!resolved_ok) { eigs_obs_enable(); break; }
+
+        /* Memo BEFORE the read. Resolving is an access(2) probe; reading pulls
+         * the whole file and then throws it away. Checking after the read left
+         * 32,772 opens of one leaf on the DAG above against the program's own
+         * 16,384 — the pass still doubled the file I/O even though it compiled
+         * each module exactly once. */
+        if (obs_memo_seen(resolved)) continue;
+
+#if !EIGENSCRIPT_FREESTANDING
         /* STAT BEFORE OPEN. This pass reads files on behalf of code the program
          * may never run — a literal load inside an uncalled function or a dead
          * branch is still scanned, because chunk_scan_static_loads recurses into
@@ -3426,25 +3491,24 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          *
          * A real load_file that executes is unaffected — this bounds only the
          * SPECULATIVE read. Anything rejected here is simply unresolvable to the
-         * pass, which is already its conservative answer. */
-        if (resolved_ok) {
+         * pass, which is already its conservative answer.
+         *
+         * AFTER the memo check, not before. Charging on the way past a memo HIT
+         * bills a shared module once per reference while reading it once, so a
+         * DAG exhausts the budget on bytes it never reads — the same defect the
+         * memo above was added to fix, re-committed in the accounting instead
+         * of the I/O. Executed: six thin parents sharing ONE 59 KiB leaf (59 KiB
+         * unique, under a quarter of the budget) opened the gate, while that
+         * leaf loaded once closed it. The budget must count bytes READ. */
+        {
             struct stat st;
             if (stat(resolved, &st) != 0 || !S_ISREG(st.st_mode) ||
-                st.st_size > OBS_GATE_MAX_MODULE_BYTES)
-                resolved_ok = 0;
+                st.st_size > OBS_GATE_MAX_MODULE_BYTES ||
+                g_obs_spec_bytes + st.st_size > OBS_GATE_SPECULATIVE_BUDGET) {
+                eigs_obs_enable(); break;
+            }
+            g_obs_spec_bytes += st.st_size;
         }
-#else
-        int resolved_ok = 0;
-#endif
-        if (!resolved_ok) { eigs_obs_enable(); break; }
-
-        /* Memo BEFORE the read. Resolving is an access(2) probe; reading pulls
-         * the whole file and then throws it away. Checking after the read left
-         * 32,772 opens of one leaf on the DAG above against the program's own
-         * 16,384 — the pass still doubled the file I/O even though it compiled
-         * each module exactly once. */
-        if (obs_memo_seen(resolved)) continue;
-#if !EIGENSCRIPT_FREESTANDING
         source = read_file_util(resolved, &size);
 #endif
         if (!source) { eigs_obs_enable(); break; }
@@ -3607,7 +3671,25 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * is what polices this — if any tracked program exhibits it, the diff goes
      * red. Force-on sites cover the cases where it is not merely possible but
      * expected (REPL, embed). */
-    if (!g_obs_needed && getenv("EIGS_OBS_FORCE")) eigs_obs_enable();  /* #915 escape hatch */
+    /* #915 escape hatch. Any non-empty, non-"0" value arms it — the same rule
+     * as EIGS_STRICT (state.c) and EIGS_VERIFY_SELF above, and NOT a bare
+     * getenv. A bare getenv made `EIGS_OBS_FORCE=0` and `EIGS_OBS_FORCE=` force
+     * the gate OPEN, i.e. do exactly what `=1` does, inverting a documented
+     * control for anyone who spells "off" the obvious way.
+     *
+     * It also silently laundered the corpus oracle. tools/observer_gate_diff.sh
+     * records `force=${EIGS_OBS_FORCE:-0}` in each capture's manifest, which
+     * collapses "unset" and "=0" — two settings that behaved OPPOSITELY — so a
+     * "gated" arm captured with EIGS_OBS_FORCE=0 actually ran the BASELINE while
+     * the manifest recorded force=0, and compare printed a provenance line
+     * byte-identical to an honest run. Executed on a build with
+     * `case OP_REPORT_NAME:` deleted from opcode_is_observer_reader(): the
+     * honest three-capture run reports 3 mismatches and rc=1; the laundered one
+     * reports `415 programs byte-identical` and rc=0. */
+    {
+        const char *ef = getenv("EIGS_OBS_FORCE");
+        if (!g_obs_needed && ef && ef[0] && ef[0] != '0') eigs_obs_enable();
+    }
     if (!g_obs_needed && chunk_reads_observer(chunk)) eigs_obs_enable();
     if (!g_obs_needed) obs_gate_resolve_static_loads(chunk);
     if (getenv("EIGS_OBS_GATE_STATS"))

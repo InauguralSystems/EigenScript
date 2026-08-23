@@ -3579,7 +3579,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=29
+OBS_GATE_EXPECTED_CHECKS=36
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -3947,8 +3947,136 @@ check "a speculative load of a FIFO does not block the compiler" "$OBS_G26" "ali
 #     PARENT's own diagnostic, not the module's.
 printf 'break\n' > "$OBS_GATE_TMP/fe_mod.eigs"
 printf 'load_file of "%s/fe_mod.eigs"\nx is\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/fe_par.eigs"
-OBS_G27=$($EIGS_BIN --lint "$OBS_GATE_TMP/fe_par.eigs" 2>&1 | grep -c "fe_mod")
-check "a scanned module's error does not leak into the parent's diagnostics" "$OBS_G27" "0"
+#     EVIDENCE REQUIRED, like its neighbours 16/17/26/27. `grep -c fe_mod = 0`
+#     is an absence assertion with nothing behind it: a --lint that prints
+#     NOTHING AT ALL scores 0 and passes, so the check could not tell "the
+#     module's error was suppressed" from "no diagnostic was produced". Found
+#     by a blind critic. The parent's own error is `Parse error line 2:` on
+#     fe_par, and requiring it is what makes the absence mean something.
+OBS_FE_OUT=$($EIGS_BIN --lint "$OBS_GATE_TMP/fe_par.eigs" 2>&1)
+if echo "$OBS_FE_OUT" | grep -q "fe_mod"; then
+    OBS_G27="module-error-leaked"
+elif [ -z "$OBS_FE_OUT" ]; then
+    OBS_G27="lint-produced-nothing"
+elif ! echo "$OBS_FE_OUT" | grep -q "fe_par"; then
+    OBS_G27="no-parent-diagnostic"
+elif ! echo "$OBS_FE_OUT" | grep -q "line 2"; then
+    OBS_G27="parent-error-not-at-its-own-line"
+else
+    OBS_G27="parent-only"
+fi
+check "a scanned module's error does not leak into the parent's diagnostics" "$OBS_G27" "parent-only"
+# 30. The SPECULATIVE BUDGET is live. The eager pass compiles every literal
+#     module twice (once here, once for real), and its per-file ceiling bounded
+#     one read but not the TREE: 60 modules loaded from an UNCALLED function
+#     took 14.2s and 61 MB for a program whose only executed statement is a
+#     print. A cumulative per-thread budget caps that; once spent the pass
+#     declines and the gate stays conservatively OPEN.
+#     Asserted deterministically on the gate DECISION, not on wall time — a
+#     timing assertion here would be flaky on a loaded 2-core box.
+OBS_BUD_DIR="$OBS_GATE_TMP/budget"
+mkdir -p "$OBS_BUD_DIR"
+i=0
+while [ $i -lt 24 ]; do
+    # ~59 KiB apiece: twenty-four of them (1.4 MiB) exceed the 1 MiB budget.
+    # Sized WITH the budget — see check 32 for why the budget is 1 MiB.
+    awk -v n=$i 'BEGIN{for(j=0;j<1400;j++) printf "define pad_%d_%d(a) as:\n    return a + %d\n", n, j, j}' > "$OBS_BUD_DIR/m$i.eigs"
+    i=$((i+1))
+done
+{ i=0; while [ $i -lt 24 ]; do printf 'load_file of "%s/m%d.eigs"\n' "$OBS_BUD_DIR" "$i"; i=$((i+1)); done; printf 'print of "done"\n'; } > "$OBS_GATE_TMP/budget.eigs"
+OBS_G28=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/budget.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
+check "a literal-load tree past the speculative budget leaves the gate open" "$OBS_G28" "open"
+# 31. The budget counts bytes READ, not bytes REFERENCED. Charging on the way
+#     past a memo HIT bills a shared module once per reference, so a DAG
+#     exhausts the budget on files it never opens and the gate opens spuriously
+#     — the defect the memo itself exists to prevent, re-made in the accounting.
+#     Fixture is a DIAMOND: many thin parents sharing ONE ~59 KiB leaf. Unique
+#     bytes stay far under the budget while referenced bytes run well over it,
+#     so the two accountings give OPPOSITE verdicts and this discriminates.
+#     Paired with its own control (the same leaf loaded once) so it cannot be
+#     satisfied by a build that closes the gate unconditionally (§15).
+OBS_DAG_DIR="$OBS_GATE_TMP/diamond"
+mkdir -p "$OBS_DAG_DIR"
+awk 'BEGIN{for(j=0;j<1400;j++) printf "define leaf_%d(a) as:\n    return a + %d\n", j, j}' > "$OBS_DAG_DIR/leaf.eigs"
+i=0
+while [ $i -lt 24 ]; do
+    printf 'load_file of "%s/leaf.eigs"\ndefine p%s(a) as:\n    return a\n' "$OBS_DAG_DIR" "$i" > "$OBS_DAG_DIR/m$i.eigs"
+    i=$((i+1))
+done
+{ i=0; while [ $i -lt 24 ]; do printf 'load_file of "%s/m%d.eigs"\n' "$OBS_DAG_DIR" "$i"; i=$((i+1)); done; printf 'print of "ok"\n'; } > "$OBS_GATE_TMP/diamond.eigs"
+printf 'load_file of "%s/m0.eigs"\nprint of "ok"\n' "$OBS_DAG_DIR" > "$OBS_GATE_TMP/diamond_one.eigs"
+OBS_G31=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/diamond.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
+OBS_G31C=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/diamond_one.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
+check "a shared module is charged once, not once per reference" "$OBS_G31" "closed"
+check "control: that leaf loaded once also closes" "$OBS_G31C" "closed"
+
+# 32. The speculative budget CLEARS THE REAL POPULATION. The budget is a
+#     magic number, and the first value tried (256 KiB) landed INSIDE the
+#     population it was supposed to sit above: lib/ui.eigs's transitive
+#     literal-load closure is 287 KiB across 19 units, so the repo's own
+#     largest module tree paid a quarter-megabyte of speculative compiling and
+#     then lost the gate anyway. This pins the budget to the population rather
+#     than to the number (§60) — if lib/ui grows past it, or someone lowers the
+#     budget, this fails and the value gets re-picked deliberately.
+#     (cwd here is src/, so the stdlib tree is ../lib — ui.eigs's own internal
+#     loads resolve through the exe-relative stdlib mechanism.)
+printf 'load_file of "../lib/ui.eigs"
+print of "ok"
+' > "$OBS_GATE_TMP/uitree.eigs"
+OBS_G32=$(EIGS_OBS_GATE_STATS=1 timeout 120 $EIGS_BIN "$OBS_GATE_TMP/uitree.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
+check "the largest real module tree (lib/ui) still gates closed" "$OBS_G32" "closed"
+# 34. EIGS_OBS_FORCE follows the tree's flag convention: non-empty and not
+#     starting "0" arms it. Read with a BARE getenv, `EIGS_OBS_FORCE=0` and
+#     `EIGS_OBS_FORCE=` forced the gate OPEN — a documented control doing
+#     exactly the opposite of what it says for anyone who spells "off" the
+#     obvious way, while EIGS_STRICT and EIGS_VERIFY_SELF both got it right.
+#     It also laundered the corpus oracle: tools/observer_gate_diff.sh recorded
+#     force=${EIGS_OBS_FORCE:-0}, collapsing "unset" and "=0", so a "gated" arm
+#     captured with EIGS_OBS_FORCE=0 ran the BASELINE and printed a provenance
+#     line byte-identical to an honest run (found by a blind critic, executed
+#     against a build with case OP_REPORT_NAME: deleted: honest 3 mismatches
+#     rc=1, laundered "415 byte-identical" rc=0).
+#     All four spellings asserted in ONE verdict so a half-fix cannot pass.
+OBS_FORCE_V=""
+for OBS_FV in unset 0 EMPTY 1; do
+    case "$OBS_FV" in
+        unset) OBS_FR=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$OBS_GATE_TMP/plain.eigs" 2>&1 >/dev/null | head -1) ;;
+        EMPTY) OBS_FR=$(EIGS_OBS_GATE_STATS=1 EIGS_OBS_FORCE= $EIGS_BIN "$OBS_GATE_TMP/plain.eigs" 2>&1 >/dev/null | head -1) ;;
+        *)     OBS_FR=$(EIGS_OBS_GATE_STATS=1 EIGS_OBS_FORCE="$OBS_FV" $EIGS_BIN "$OBS_GATE_TMP/plain.eigs" 2>&1 >/dev/null | head -1) ;;
+    esac
+    case "$OBS_FR" in
+        *unobserved*) OBS_FORCE_V="$OBS_FORCE_V$OBS_FV=off " ;;
+        *observed*)   OBS_FORCE_V="$OBS_FORCE_V$OBS_FV=on " ;;
+        *)            OBS_FORCE_V="$OBS_FORCE_V$OBS_FV=? " ;;
+    esac
+done
+check "EIGS_OBS_FORCE: only a non-empty non-0 value arms it" "$OBS_FORCE_V" "unset=off 0=off EMPTY=off 1=on "
+
+# 35. WITNESS for the multithreaded precondition. The pass declines when the
+#     process may be running more than one thread, because it walks and mutates
+#     process-global compiler state (round 7: a heap-use-after-free in
+#     arm_set_has under concurrent ext_http routes). That whole mechanism could
+#     be DELETED with this section green — a blind critic mutated it away and
+#     scored 30/30 — so per §37/§64 it was a claim, not a guard.
+#     The observable is the gate DECISION, reachable without a sanitizer: a
+#     module loaded AFTER a spawn is compiled while multithreaded, so scanning
+#     its own literal load must bail and leave the unit `observed`. Verified
+#     discriminating against the critic's mutant: clean 2, mutant 0.
+#     Paired with a no-spawn control that must be 0, so a build that opens the
+#     gate unconditionally fails instead of passing (§15).
+#     RESIDUAL, stated exactly: this pins that the bail FIRES, not that the race
+#     it prevents is absent. The latter needs make asan-http plus two concurrent
+#     literal-load routes, which nothing in-tree runs.
+OBS_MT_DIR="$OBS_GATE_TMP/mt"
+mkdir -p "$OBS_MT_DIR"
+printf 'print of "inner ok"\n' > "$OBS_MT_DIR/inner.eigs"
+printf 'load_file of "%s/inner.eigs"\n' "$OBS_MT_DIR" > "$OBS_MT_DIR/mid.eigs"
+printf 'define w() as:\n    return 1\nlocal t is spawn of w\nlocal j is thread_join of t\nlocal m is load_file of "%s/mid.eigs"\nprint of "done"\n' "$OBS_MT_DIR" > "$OBS_GATE_TMP/mt.eigs"
+printf 'local m is load_file of "%s/mid.eigs"\nprint of "done"\n' "$OBS_MT_DIR" > "$OBS_GATE_TMP/mt_ctl.eigs"
+OBS_G35=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/mt.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
+OBS_G35C=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/mt_ctl.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
+check "a literal load after spawn hits the multithreaded bail" "$OBS_G35" "2"
+check "control: the same load with no spawn does not" "$OBS_G35C" "0"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))

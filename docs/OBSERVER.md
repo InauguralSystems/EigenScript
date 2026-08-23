@@ -511,6 +511,31 @@ the gate inspected is not the file that ran.
 Re-run with `EIGS_OBS_FORCE=1` to disable the gate for that program. That is
 always safe — it restores the pre-gate behaviour exactly.
 
+### When the gate declines to look
+
+To decide before the program runs, the gate compiles literally-loaded modules
+itself — including ones reached only from a function that is never called, since
+a `load_file` inside an uncalled function still contributes to the answer. That
+work is speculative, so it is bounded: a per-thread cumulative ceiling on how
+many bytes the pass may read on the program's behalf, plus a rejection of
+anything that is not a regular file (a FIFO target once hung the compiler
+indefinitely, before `vm_execute`, with nothing printed).
+
+When the ceiling is spent the pass stops looking and the gate stays **open** —
+the conservative answer. Nothing is silently wrong; the program simply pays for
+observer bookkeeping it may not need. `EIGS_OBS_GATE_STATS=1` shows this as
+`observed` lines on a program you expected to gate closed.
+
+The ceiling is picked against the real population rather than chosen round: the
+largest transitive module tree in `lib/` is `ui.eigs` at 287 KiB across 19
+units, the next largest is 69 KiB, and the budget clears the largest by 3.5x.
+A suite check pins that — if a stdlib tree grows past the budget, the check
+fails and the number gets re-picked deliberately instead of the win quietly
+disappearing.
+
+Shared modules are charged once, not once per reference; a module the pass has
+already read is free to reference again.
+
 ### Known residual
 
 A chunk run through `vm_run_bytecode` or `sandbox_run` that reads observer state
@@ -519,3 +544,11 @@ the truth, silently. The descriptor's own work is recorded (both sites arm the
 observer before running, the twin of `chunk_arm_temporal`); only reads of state
 that predates the call are affected. Tracked separately with reproducers and two
 candidate fixes; `EIGS_OBS_FORCE=1` avoids it.
+
+Separately, every literally-loaded module is compiled **twice** — once by the
+gate to learn one bit, once for real by `load_file`, which has no module cache
+by design. Measured on `lib/ui.eigs`: 0.12-0.15s for the literal spelling that
+gates closed against 0.05-0.07s for a computed spelling that skips the pass, so
+a program that loads a large tree and does little work can pay more than it
+saves. The fix is to hand the eagerly-compiled chunk to `load_file` instead of
+discarding it; the budget above bounds the cost meanwhile.
