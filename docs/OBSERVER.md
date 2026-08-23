@@ -489,6 +489,9 @@ observer state pays nothing for it; a program that does is unaffected.
 | `EIGS_OBS_FORCE=1` | force observer recording ON, whatever the scan decided. The escape hatch, and the baseline arm for any measurement — one byte-identical binary serves both arms. |
 | `EIGS_OBS_GATE_STATS=1` | print one `obs-gate: observed\|unobserved <unit>` line per compiled unit on stderr. |
 
+Both follow the tree's flag convention: any non-empty value that does not
+start with `0` turns the control on, so `=0` and `=` leave it off.
+
 ### When the gate refuses instead of answering
 
 The gate decides at COMPILE time, and a few constructs can make that decision

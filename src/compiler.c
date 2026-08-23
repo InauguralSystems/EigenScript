@@ -3692,9 +3692,17 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     }
     if (!g_obs_needed && chunk_reads_observer(chunk)) eigs_obs_enable();
     if (!g_obs_needed) obs_gate_resolve_static_loads(chunk);
-    if (getenv("EIGS_OBS_GATE_STATS"))
-        fprintf(stderr, "obs-gate: %s %s\n",
-                g_obs_needed ? "observed" : "unobserved", chunk->name);
+    /* Same convention as EIGS_OBS_FORCE above — these two are documented as
+     * adjacent rows of one table in docs/OBSERVER.md, and read with a bare
+     * getenv this one printed its stats for EIGS_OBS_GATE_STATS=0. Found by
+     * sweeping every getenv site after fixing the FORCE flag, rather than
+     * assuming that defect was isolated. */
+    {
+        const char *gs = getenv("EIGS_OBS_GATE_STATS");
+        if (gs && gs[0] && gs[0] != '0')
+            fprintf(stderr, "obs-gate: %s %s\n",
+                    g_obs_needed ? "observed" : "unobserved", chunk->name);
+    }
 
     return chunk;
 }

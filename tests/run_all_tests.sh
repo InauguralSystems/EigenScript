@@ -3579,7 +3579,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=36
+OBS_GATE_EXPECTED_CHECKS=37
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -4077,6 +4077,24 @@ OBS_G35=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/mt.eigs" 2>&
 OBS_G35C=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/mt_ctl.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
 check "a literal load after spawn hits the multithreaded bail" "$OBS_G35" "2"
 check "control: the same load with no spawn does not" "$OBS_G35C" "0"
+# 36. The SAME convention for EIGS_OBS_GATE_STATS. Found by sweeping every
+#     getenv site in src/ after fixing EIGS_OBS_FORCE, rather than assuming
+#     that defect was isolated: these two are documented as adjacent rows of
+#     one table in docs/OBSERVER.md and behaved DIFFERENTLY for "=0" — the
+#     stats flag printed its output. (The sweep also found the counter-example
+#     that stops this becoming a blanket rule: EIGS_TRACE=0 is not "tracing
+#     off", it is a tape written to a file named `0`. Presence-only is correct
+#     for value-carrying variables; it is wrong only for booleans.)
+OBS_STATS_V=""
+for OBS_SV in unset 0 EMPTY 1; do
+    case "$OBS_SV" in
+        unset) OBS_SR=$($EIGS_BIN "$OBS_GATE_TMP/plain.eigs" 2>&1 >/dev/null | grep -c 'obs-gate:') ;;
+        EMPTY) OBS_SR=$(EIGS_OBS_GATE_STATS= $EIGS_BIN "$OBS_GATE_TMP/plain.eigs" 2>&1 >/dev/null | grep -c 'obs-gate:') ;;
+        *)     OBS_SR=$(EIGS_OBS_GATE_STATS="$OBS_SV" $EIGS_BIN "$OBS_GATE_TMP/plain.eigs" 2>&1 >/dev/null | grep -c 'obs-gate:') ;;
+    esac
+    if [ "$OBS_SR" = "0" ]; then OBS_STATS_V="$OBS_STATS_V$OBS_SV=quiet "; else OBS_STATS_V="$OBS_STATS_V$OBS_SV=prints "; fi
+done
+check "EIGS_OBS_GATE_STATS: only a non-empty non-0 value prints" "$OBS_STATS_V" "unset=quiet 0=quiet EMPTY=quiet 1=prints "
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))
