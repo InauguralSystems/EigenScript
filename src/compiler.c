@@ -3388,10 +3388,15 @@ static void obs_gate_unmute_stderr(int saved) {
  * because check 31's diamond writes the identical literal in every parent.
  *
  * The inode pair beats realpath() here: it is the true identity (it also folds
- * hard links, which realpath does not), it needs no PATH_MAX buffer, and it
- * costs no extra syscall because the budget guard below already stats the file.
- * Files are stat'd before the memo is consulted for exactly that reason; stat
- * is cheap and, unlike the read, charges nothing. */
+ * hard links, which realpath does not) and it needs no PATH_MAX buffer. The
+ * cost is one stat PER REFERENCE, memo hits included — the string key stat'd
+ * only on misses, so this trades ~one syscall per repeated reference (measured:
+ * 48 newfstatat vs 1 on a 24-reference diamond) for correct identity. That is
+ * the deliberate price of keying on identity: the stat is what YIELDS the key,
+ * it is microseconds against a read+compile, and unlike the read it charges
+ * nothing against the budget. A stat FAILURE on a later reference of an
+ * already-scanned file now takes the conservative reject path rather than the
+ * memo hit, which is also the direction we want. */
 typedef struct { dev_t dev; ino_t ino; } ObsMemoKey;
 static __thread ObsMemoKey *g_obs_memo = NULL;
 static __thread int g_obs_memo_n = 0, g_obs_memo_cap = 0;

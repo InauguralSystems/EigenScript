@@ -3986,6 +3986,29 @@ done
 { i=0; while [ $i -lt 24 ]; do printf 'load_file of "%s/m%d.eigs"\n' "$OBS_BUD_DIR" "$i"; i=$((i+1)); done; printf 'print of "done"\n'; } > "$OBS_GATE_TMP/budget.eigs"
 OBS_G28=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/budget.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
 check "a literal-load tree past the speculative budget leaves the gate open" "$OBS_G28" "open"
+# Verdict helper for the closed-expectation checks below (round 10). "closed"
+# must be PROVEN, never inferred from silence: a planted abort() at 20 memo
+# entries SIGABRT'd (rc=134, core dumped, nothing printed) on check 31's own
+# fixture and the section ran 39/39 GREEN, because `grep -q observed || echo
+# closed` scores any silent death as "closed" — stdout discarded, rc never
+# read (mechanical-gates SS18: a crash rendered as silence). And memo
+# populations >=17 entries exist ONLY in these fixtures, so a crash-at-scale
+# bug in the memo cluster was invisible to the entire bar, ASan lane included
+# (a sanitizer report contains no "observed" line either). Found by a blind
+# critic, executed. "closed" now requires rc=0 AND the program's own marker on
+# stdout AND >=1 `unobserved` line; every other outcome is its own verdict and
+# fails the comparison loudly with the reason in the string.
+obs_gate_closed_verdict() {
+    # $1 = program, $2 = required stdout marker, $3 = timeout seconds
+    local OGV_ERR OGV_OUT OGV_RC
+    OGV_ERR=$(mktemp)
+    OGV_OUT=$(EIGS_OBS_GATE_STATS=1 timeout "${3:-60}" $EIGS_BIN "$1" 2>"$OGV_ERR"); OGV_RC=$?
+    if grep -q 'obs-gate: observed' "$OGV_ERR"; then rm -f "$OGV_ERR"; echo open; return; fi
+    if [ "$OGV_RC" -ne 0 ]; then rm -f "$OGV_ERR"; echo "died-rc$OGV_RC"; return; fi
+    if ! printf '%s' "$OGV_OUT" | grep -q "$2"; then rm -f "$OGV_ERR"; echo no-output; return; fi
+    if ! grep -q 'obs-gate: unobserved' "$OGV_ERR"; then rm -f "$OGV_ERR"; echo no-evidence; return; fi
+    rm -f "$OGV_ERR"; echo closed
+}
 # 31. The budget counts bytes READ, not bytes REFERENCED. Charging on the way
 #     past a memo HIT bills a shared module once per reference, so a DAG
 #     exhausts the budget on files it never opens and the gate opens spuriously
@@ -4005,8 +4028,8 @@ while [ $i -lt 24 ]; do
 done
 { i=0; while [ $i -lt 24 ]; do printf 'load_file of "%s/m%d.eigs"\n' "$OBS_DAG_DIR" "$i"; i=$((i+1)); done; printf 'print of "ok"\n'; } > "$OBS_GATE_TMP/diamond.eigs"
 printf 'load_file of "%s/m0.eigs"\nprint of "ok"\n' "$OBS_DAG_DIR" > "$OBS_GATE_TMP/diamond_one.eigs"
-OBS_G31=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/diamond.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
-OBS_G31C=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/diamond_one.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
+OBS_G31=$(obs_gate_closed_verdict "$OBS_GATE_TMP/diamond.eigs" ok 60)
+OBS_G31C=$(obs_gate_closed_verdict "$OBS_GATE_TMP/diamond_one.eigs" ok 60)
 check "a shared module is charged once, not once per reference" "$OBS_G31" "closed"
 check "control: that leaf loaded once also closes" "$OBS_G31C" "closed"
 
@@ -4023,7 +4046,7 @@ check "control: that leaf loaded once also closes" "$OBS_G31C" "closed"
 printf 'load_file of "../lib/ui.eigs"
 print of "ok"
 ' > "$OBS_GATE_TMP/uitree.eigs"
-OBS_G32=$(EIGS_OBS_GATE_STATS=1 timeout 120 $EIGS_BIN "$OBS_GATE_TMP/uitree.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
+OBS_G32=$(obs_gate_closed_verdict "$OBS_GATE_TMP/uitree.eigs" ok 120)
 check "the largest real module tree (lib/ui) still gates closed" "$OBS_G32" "closed"
 # 34. EIGS_OBS_FORCE follows the tree's flag convention: non-empty and not
 #     starting "0" arms it. Read with a BARE getenv, `EIGS_OBS_FORCE=0` and
@@ -4106,6 +4129,10 @@ check "EIGS_OBS_GATE_STATS: only a non-empty non-0 value prints" "$OBS_STATS_V" 
 #     re-entering through the KEY instead of the ORDERING — and check 31 could
 #     not see it, because its diamond writes the identical literal in every
 #     parent. Found by a blind critic. Fixed by keying on (st_dev, st_ino).
+#     RESIDUAL: the st_dev half of the key is UNTESTED here — dropping the dev
+#     comparison survives this section on a single-filesystem box. Its failure
+#     direction is conservative only (a cross-device false HIT skips a scan,
+#     and a skipped scan's net is the load-time raise), so noted, not fixtured.
 #     This is the EXACT COMPLEMENT of check 30: same statement count, same
 #     referenced bytes, opposite verdict — 30 is N distinct FILES (must open),
 #     37 is N distinct SPELLINGS of ONE file (must close). The pair
@@ -4118,7 +4145,7 @@ awk 'BEGIN{for(j=0;j<1400;j++) printf "define sp_%d(a) as:\n    return a + %d\n"
       printf 'load_file of "%s/%sleaf.eigs"\n' "$OBS_SPELL_DIR" "$OBS_PAD"
       i=$((i+1)); done
   printf 'print of "ok"\n'; } > "$OBS_GATE_TMP/spell.eigs"
-OBS_G37=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/spell.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
+OBS_G37=$(obs_gate_closed_verdict "$OBS_GATE_TMP/spell.eigs" ok 60)
 check "24 spellings of ONE file are charged once (identity, not spelling)" "$OBS_G37" "closed"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
