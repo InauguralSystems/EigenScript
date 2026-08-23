@@ -218,11 +218,27 @@ do_compare() {
     # definitions + 5 fuzz corpus files), i.e. 16% of the headline. Reported
     # rather than hidden: a number that is 16% vacuous should say so (§1/§43).
     local total=0 nondet=0 compared=0 mismatch=0 informative=0 silent=0
-    local -a NONDET=() MISMATCH=()
+    local onesided=0
+    local -a NONDET=() MISMATCH=() ONESIDED=()
     while IFS= read -r f; do
         is_denied "$f" && continue
         local s; s="$(slug "$f")"
-        [ -f "$da/$s" ] && [ -f "$db/$s" ] && [ -f "$dref/$s" ] || continue
+        # MISSING-IN-ONE-ARM is evidence of a broken capture, not a program to
+        # skip. The old `|| continue` treated "absent from one arm" identically
+        # to "absent from all three" (a program added to the corpus after the
+        # captures), so deleting 30 gated-arm files still printed
+        # `compared: 410 ... PASS` — above the 380 floor, nothing fired
+        # (mechanical-gates §45: the bypass is a subset small enough that the
+        # count barely moves). Absent from ALL arms stays a skip; present in
+        # some but not others is a hard FAIL after the loop.
+        local have=0
+        [ -f "$da/$s" ] && have=$((have+1))
+        [ -f "$db/$s" ] && have=$((have+1))
+        [ -f "$dref/$s" ] && have=$((have+1))
+        if [ "$have" -eq 0 ]; then continue; fi
+        if [ "$have" -ne 3 ]; then
+            onesided=$((onesided+1)); ONESIDED+=("$f"); continue
+        fi
         total=$((total+1))
         if ! cmp -s "$da/$s" "$dref/$s"; then
             nondet=$((nondet+1)); NONDET+=("$f"); continue
@@ -249,6 +265,12 @@ do_compare() {
     echo "corpus entries with captures: $total"
     echo "nondeterministic under a FIXED build (excluded): $nondet"
     for f in "${NONDET[@]+"${NONDET[@]}"}"; do echo "    nondet: $f"; done
+    if [ "$onesided" -gt 0 ]; then
+        echo "FAIL: $onesided program(s) have a capture in SOME arms but not all three."
+        for f in "${ONESIDED[@]+"${ONESIDED[@]}"}"; do echo "    one-sided: $f"; done
+        echo "      A partial capture is a broken run, not a skippable program — recapture."
+        exit 2
+    fi
     echo "compared: $compared (informative: $informative, silent: $silent)"
     echo "mismatches: $mismatch"
     for f in "${MISMATCH[@]+"${MISMATCH[@]}"}"; do

@@ -70,12 +70,33 @@ OUTF=$(mktemp); trap 'rm -f "$OUTF"' EXIT
 # Runs one arm into $OUTF. Deliberately NOT called in a command substitution —
 # see the header: the state it updates must survive into the parent shell.
 run_one() {
+    local rc
     if [ "$1" = base ]; then
         { /usr/bin/time -f '%e' env EIGS_OBS_FORCE=1 "$BIN" benchmarks/tseitin_ladder.eigs "$ROWS" "$COLS" 999; } > "$OUTF" 2>&1
+        rc=$?
     else
         { /usr/bin/time -f '%e' "$BIN" benchmarks/tseitin_ladder.eigs "$ROWS" "$COLS" 999; } > "$OUTF" 2>&1
+        rc=$?
+    fi
+    # The exit status IS part of the measurement. This tool never read it, and
+    # `counters_of` head -1'd the FIRST ^DONE line — so a workload that printed
+    # its DONE line and then died (SIGSEGV after output, a raise in teardown)
+    # measured RESULT: valid, exit 0. Executed by a blind critic (round 11)
+    # with a stub whose gated arm printed DONE then segfaulted. A timing of a
+    # run that crashed is not a timing of the work.
+    if [ "$rc" -ne 0 ]; then
+        echo "VOID: a $1 run exited rc=$rc — a crashed run's timing is not a measurement"
+        VOID=1
     fi
     LAST_T=$(tail -1 "$OUTF")
+    # Exactly ONE DONE line: head -1 silently preferred the first of several,
+    # so a workload that printed two different DONE lines compared only the
+    # one it happened to print first.
+    local done_n; done_n=$(grep -c '^DONE' "$OUTF")
+    if [ "$done_n" -ne 1 ]; then
+        echo "VOID: a $1 run printed $done_n DONE lines (want exactly 1)"
+        VOID=1
+    fi
     local c; c=$(counters_of "$(cat "$OUTF")")
     if [ -z "$c" ]; then
         echo "VOID: no DONE line in a $1 run — the harness measured nothing"

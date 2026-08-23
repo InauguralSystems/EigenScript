@@ -138,10 +138,29 @@ switch_reader_ops() {
             }
             # Trim leading whitespace off the surviving CODE.
             sub(/^[ \t]+/, "", out)
+            # BIND each label to its return group, do not merely collect it.
+            # Collecting `case OP_*:` labels alone made this walker blind to a
+            # DEMOTION: `case OP_IMPORT:` moved from the return-1 group to the
+            # return-0 group kept the label count at 17 and this gate printed a
+            # PASS byte-identical to the healthy run — while the runtime was
+            # silent-wrong on a 5-line import program (equilibrium where the
+            # forced arm says diverging). Deletion moved the count and failed;
+            # demotion did not. Found by a blind critic (round 11), executed.
+            # So: labels accumulate as PENDING, and only a `return 1` in the
+            # same fall-through run emits them; `return 0` (or default:) drops
+            # them. A label is a reader because of where it FALLS, not because
+            # it exists.
             if (index(out, "case OP_") == 1) {
                 rest = substr(out, 6)              # drop "case "
                 p = index(rest, ":")
-                if (p > 0) print substr(rest, 1, p - 1)
+                if (p > 0) { pending[++npend] = substr(rest, 1, p - 1) }
+            }
+            if (index(out, "return 1") > 0) {
+                for (k = 1; k <= npend; k++) print pending[k]
+                npend = 0
+            }
+            if (index(out, "return 0") > 0 || index(out, "default:") == 1) {
+                npend = 0
             }
             # The switch ends at the function-closing brace column 0.
             if (index($0, "^}") == 1) infn = 0
@@ -219,6 +238,27 @@ run_selftest() {
           B) sed -i 's/^\( *\)case OP_PREDICATE:$/\1case OP_ADD:\n\1case OP_PREDICATE:/' "$tmp/$1.chunk.c" ;;  # stray opcode
           D) : ;;   # planted in the GATE's EXEMPT list, not the tree — see gut()
           F) sed -i 's|OP_INTERROGATE,     /\*obs:NONE\*/|OP_INTERROGATE,     /*obs:READS*/|' "$tmp/$1.vm.h" ;;  # exemption spent
+          # G: DEMOTION — the round-11 fault verbatim. A case label moved from
+          # the return-1 run into the default/return-0 group keeps the LABEL
+          # COUNT unchanged, so the pre-round-11 walker (which collected labels
+          # without binding them to their return) passed byte-identically while
+          # the runtime was silent-wrong on a 5-line import program. This row
+          # exists so that regression cannot come back: it fails to plant
+          # (loud MISS, §67) if the switch's tail shape moves, and it must be
+          # caught by the direction check, with no floor movement to hide
+          # behind — the demoted label still appears in the file.
+          G) python3 - "$tmp/$1.chunk.c" <<'PYEOF'
+import sys
+p = sys.argv[1]; src = open(p).read()
+old = "        case OP_TRAJECTORY_NAME:\n"
+tail = "            return 1;\n        default: return 0;"
+if old not in src or tail not in src:
+    sys.exit(0)   # plant fails -> row reports MISS loudly
+src = src.replace(old, "", 1)
+src = src.replace(tail, "            return 1;\n        case OP_TRAJECTORY_NAME:\n        default: return 0;", 1)
+open(p, "w").write(src)
+PYEOF
+             ;;
         esac
     }
     # Assertion gutters, keyed to the fault each one is the sole witness for.
@@ -260,7 +300,7 @@ run_selftest() {
     plant clean; say "clean copies" 0 "$(run_gate "$real_gate" "$tmp/clean.chunk.c" "$tmp/clean.vm.h")"
 
     echo "== FAULTS: the real gate must go red on each =="
-    for f in E B F; do
+    for f in E B F G; do
         plant "$f"
         say "fault $f caught by the real gate" 1 "$(run_gate "$real_gate" "$tmp/$f.chunk.c" "$tmp/$f.vm.h")"
     done

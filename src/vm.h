@@ -648,8 +648,13 @@ void       chunk_disassemble(EigsChunk *chunk, const char *label);
 int        chunk_reads_observer(const EigsChunk *chunk);
 /* #915: the opcode half alone — true if the chunk contains ANY reader opcode,
  * with no reachability question asked. Recurses into functions[]. Used by
- * chunk_reads_observer; the descriptor sites want chunk_reads_host_observer,
- * which also asks whether the read can reach the HOST. */
+ * chunk_reads_observer and by the descriptor sites (vm_run_bytecode /
+ * sandbox_run), which ARM the observer before running rather than asking the
+ * finer question "can the read reach the HOST's history" — three static
+ * guards for that were tried and each broke either the self-hosting bridge or
+ * its own fixture; the residual is filed as #1027. (A prior version of this
+ * comment named a chunk_reads_host_observer function that never existed —
+ * a comment is load-bearing, and this one sent a reader hunting a phantom.) */
 /* THE reader set — one home, pinned against vm.h's obs:READS markers by
  * tools/obs_reader_sync_check.sh. Ask this; never restate the list. */
 int        opcode_is_observer_reader(uint8_t op);

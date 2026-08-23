@@ -1269,8 +1269,14 @@ int chunk_has_reader_opcode(const EigsChunk *chunk) {
  * OP_LINE may be interleaved (a call split across source lines) and is stepped
  * over; nothing else may be. Any other operand carrying the name `load_file` in
  * a VR_NAME role — an alias (`local lf is load_file`), a call with a computed
- * argument, a mention as a dict key — is not this shape and makes the unit
- * opaque. Being wrong here costs a program its gate, never an answer.
+ * argument — is not this shape and makes the unit opaque. VR_NAME is the
+ * population key: a string constant that merely SPELLS "load_file" without
+ * naming the builtin — a dict key, a printed literal — is not a VR_NAME use
+ * and does not affect the verdict at all (executed: `d is {"load_file": 1.0}`
+ * plus a literal load still gates unobserved, which is correct — a prior
+ * version of this comment claimed the dict key made the unit opaque, and a
+ * blind critic falsified it by running it). Being wrong here costs a program
+ * its gate, never an answer.
  *
  * RESOLVER PARITY IS NOT CHECKED HERE, deliberately. Compile-time and run-time
  * resolution both go through resolve_eigenscript_file and the whole program runs

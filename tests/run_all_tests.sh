@@ -3579,7 +3579,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=40
+OBS_GATE_EXPECTED_CHECKS=42
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -3880,10 +3880,10 @@ if OBS_ST_OUT=$("$TESTS_DIR/../tools/obs_reader_sync_check.sh" --selftest 2>&1);
     OBS_ST_N=$(printf '%s\n' "$OBS_ST_OUT" | sed -n 's/^SELFTEST: \([0-9]*\) passed.*/\1/p')
     : "${OBS_ST_N:=0}"
 fi
-if [ "$OBS_ST_N" -ge 10 ]; then
+if [ "$OBS_ST_N" -ge 11 ]; then
     PASS=$((PASS + 1)); echo "  PASS: observer-reader sync gate self-test ($OBS_ST_N rows)"
 else
-    FAIL=$((FAIL + 1)); echo "  FAIL: observer-reader sync gate self-test ($OBS_ST_N rows, floor 10)"
+    FAIL=$((FAIL + 1)); echo "  FAIL: observer-reader sync gate self-test ($OBS_ST_N rows, floor 11)"
     echo "$OBS_ST_OUT" | sed 's/^/    /'
 fi
 # 26-27. The eager pre-pass must not WRITE to the program's world. It mutes fd 2
@@ -3984,6 +3984,7 @@ while [ $i -lt 24 ]; do
     i=$((i+1))
 done
 { i=0; while [ $i -lt 24 ]; do printf 'load_file of "%s/m%d.eigs"\n' "$OBS_BUD_DIR" "$i"; i=$((i+1)); done; printf 'print of "done"\n'; } > "$OBS_GATE_TMP/budget.eigs"
+printf 'load_file of "%s/m0.eigs"\nprint of "done"\n' "$OBS_BUD_DIR" > "$OBS_GATE_TMP/budget_ctl.eigs"
 OBS_G28=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/budget.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
 check "a literal-load tree past the speculative budget leaves the gate open" "$OBS_G28" "open"
 # Verdict helper for the closed-expectation checks below (round 10). "closed"
@@ -4163,6 +4164,38 @@ check "verdict helper: a dying program is never 'closed'" "$OBS_VH1" "died"
 printf 'x is 1\n' > "$OBS_GATE_TMP/vh_quiet.eigs"
 OBS_VH2=$(obs_gate_closed_verdict "$OBS_GATE_TMP/vh_quiet.eigs" ok 30)
 check "verdict helper: exit-0 without the marker is never 'closed'" "$OBS_VH2" "no-output"
+# 40. IMPORT gating has a BEHAVIORAL witness. OP_IMPORT's reader-set membership
+#     had none anywhere in the bar: a one-line DEMOTION (case OP_IMPORT: moved
+#     to the return-0 group) was silent-wrong on a five-line program — the
+#     forced arm answers `diverging`, the mutant answered `equilibrium`, rc=0 —
+#     and passed [99u], the 416-program differential (no corpus program
+#     interrogates a binding assigned before its first import), AND the sync
+#     gate (whose walker then counted labels without binding them to their
+#     return group; fixed, with a demotion selftest row). Found by a blind
+#     critic, round 11. This is the #861 inversion the gate's header forbids,
+#     on the exact seam the code marks as "the expected next change" — import
+#     staying conservative is a CLAIM until something holds the line, and this
+#     check is that line: whoever narrows import's rule must arrive with
+#     machinery that keeps this answer right.
+OBS_IMP_DIR="$OBS_GATE_TMP/imp"
+mkdir -p "$OBS_IMP_DIR/lib"
+printf 'print of (report of x)\nverdict is 1.0\n' > "$OBS_IMP_DIR/lib/probe.eigs"
+printf 'x is 1.0\nfor i in range of 40:\n    x is x * 2.0\nimport probe\n' > "$OBS_IMP_DIR/host.eigs"
+#     $EIGS_BIN is RELATIVE to the runner's cwd (src/), so it must be
+#     absolutized before the cd — a relative binary under cd was already a
+#     recorded probe trap this session, and it bit again right here on the
+#     check's first run.
+OBS_EIGS_ABS=$(cd "$(dirname "$EIGS_BIN")" && pwd)/$(basename "$EIGS_BIN")
+OBS_G40=$(cd "$OBS_IMP_DIR" && timeout 60 "$OBS_EIGS_ABS" host.eigs 2>&1 | head -1)
+check "an imported module sees the host's pre-import history (diverging)" "$OBS_G40" "diverging"
+# 41. Check 30's own control (its open-expectation was the vacuity sibling of
+#     the round-10 hole): the gate opened on a PARSE ERROR in a rotted fixture
+#     exactly as it opens on a genuine budget exhaustion, so garbage awk
+#     modules kept check 30 green while its fixture population tested nothing.
+#     One module from the SAME population loaded alone is under budget and must
+#     PROVE closed — if the generator rots, this goes red first.
+OBS_G41=$(obs_gate_closed_verdict "$OBS_GATE_TMP/budget_ctl.eigs" done 60)
+check "control: one budget-fixture module alone proves closed" "$OBS_G41" "closed"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))
