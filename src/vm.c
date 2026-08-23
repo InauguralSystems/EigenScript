@@ -6917,8 +6917,21 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
      * value reported `equilibrium` where the truth is `improving`, 3/3, rc 200,
      * no error — while the identical source on the CLI correctly refused to
      * answer. Patching the two known entry points would have left the next one
-     * to rediscover it. */
-    g_obs_exec_started = 1;
+     * to rediscover it.
+     *
+     * GUARDED, per the #297 write-once pattern: an unconditional store here is
+     * a write-write race the moment workers exist — every spawned thread
+     * re-stored 1 into the same per-state field, and the TSan CI lane flagged
+     * it in six programs at this line (a lane no local run covers; the local
+     * suite was 4117/4117 green). The guard removes ALL concurrent writes, not
+     * just narrows them: a worker thread is created BY an executing VM, so by
+     * the time any worker reaches this line the main thread's store already
+     * happened-before it (pthread_create), the read sees 1, and nobody stores.
+     * Two threads can both see 0 only if two VMs execute a state that neither
+     * has ever executed — impossible: workers exist only downstream of an
+     * execute, and every embed/eval entry runs its first execute on the
+     * creating thread. */
+    if (!g_obs_exec_started) g_obs_exec_started = 1;
 
     vm_init();
     /* Only the OUTERMOST vm_execute drives the scheduler; a nested call

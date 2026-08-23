@@ -205,6 +205,27 @@ run_selftest() {
     local real_vm="$PWD/src/vm.h" real_chunk="$PWD/$CHUNK_SRC"
     [ -f "$real_gate" ] || { echo "SELFTEST BROKEN: cannot resolve the gate under test"; return 1; }
 
+    # Portable in-place sed, VERIFIED. Two defects in one helper (round 15):
+    # (a) suffix-less `sed -i` is GNU-only — BSD sed parses `-i 'script' file`
+    #     as -i <ext='script'> <script=file-path>, errors, and leaves the file
+    #     UNTOUCHED, so on the four macOS CI legs every mutation was inert:
+    #     faults never planted, the selftest exited 1 (6 passed, 5 failed),
+    #     and [99u] check 25 read `0 rows, floor 11`. Loud, but it blocks the
+    #     release matrix. (`sedi ''` is not portable the OTHER way — GNU
+    #     reads '' as the script — hence write-to-temp + mv.)
+    # (b) an INERT edit made the WITNESS rows pass vacuously: unplanted fault
+    #     + ungutted gate both exit 0, which is the row's expected value. So
+    #     this helper cmp-verifies the edit CHANGED the file and returns 1
+    #     otherwise — an inert plant now surfaces as a loud MISS on its row
+    #     (the fault row expects rc=1 and gets the healthy 0), on every
+    #     platform, instead of silently testing nothing.
+    sedi() { # sedi 'script' file
+        local SEDI_T
+        SEDI_T=$(mktemp)
+        sed -e "$1" "$2" > "$SEDI_T" || { rm -f "$SEDI_T"; return 1; }
+        if cmp -s "$SEDI_T" "$2"; then rm -f "$SEDI_T"; return 1; fi
+        mv "$SEDI_T" "$2"
+    }
     # A marker tool bound to a MUTABLE copy of vm.h.
     mk_marker() {
         printf '#!/bin/bash\nVM_HEADER=%s exec %s/tools/obs_marker_check.sh "$@"\n' "$1" "$PWD" > "$tmp/marker.sh"
@@ -226,16 +247,27 @@ run_selftest() {
         cp "$real_chunk" "$tmp/$1.chunk.c"; cp "$real_vm" "$tmp/$1.vm.h"
         case "$1" in
           clean) ;;
-          E) sed -i 's|OP_ADD, /\*obs:NONE\*/|OP_ADD, /*obs:READS*/|' "$tmp/$1.vm.h" ;;   # NEW reader never added to the switch
+          E) sedi 's|OP_ADD, /\*obs:NONE\*/|OP_ADD, /*obs:READS*/|' "$tmp/$1.vm.h" ;;   # NEW reader never added to the switch
           # Anchored on the reader-set function's OWN indentation. When that
           # function was extracted and re-indented, this sed silently stopped
           # matching and the row reported MISS ("could not plant") rather than a
           # false pass — which is the behaviour a mutation harness must have
           # (§67: a self-test mutation anchored on line SHAPE breaks when the
           # shape moves; make it fail loud, and verify the plant landed).
-          B) sed -i 's/^\( *\)case OP_PREDICATE:$/\1case OP_ADD:\n\1case OP_PREDICATE:/' "$tmp/$1.chunk.c" ;;  # stray opcode
+          # B: stray opcode. Python, not sed: the replacement embeds a
+          # newline, which BSD sed rejects even with the -i spelling fixed.
+          # Same contract as fault G — an unmatched anchor leaves the file
+          # unchanged and the row MISSes loudly.
+          B) python3 - "$tmp/$1.chunk.c" <<'PYEOF'
+import sys
+p = sys.argv[1]; src = open(p).read()
+old = "        case OP_PREDICATE:\n"
+if old in src:
+    open(p, "w").write(src.replace(old, "        case OP_ADD:\n" + old, 1))
+PYEOF
+             ;;
           D) : ;;   # planted in the GATE's EXEMPT list, not the tree — see gut()
-          F) sed -i 's|OP_INTERROGATE,     /\*obs:NONE\*/|OP_INTERROGATE,     /*obs:READS*/|' "$tmp/$1.vm.h" ;;  # exemption spent
+          F) sedi 's|OP_INTERROGATE,     /\*obs:NONE\*/|OP_INTERROGATE,     /*obs:READS*/|' "$tmp/$1.vm.h" ;;  # exemption spent
           # G: DEMOTION — the round-11 fault verbatim. A case label moved from
           # the return-1 run into the default/return-0 group keeps the LABEL
           # COUNT unchanged, so the pre-round-11 walker (which collected labels
@@ -267,31 +299,31 @@ PYEOF
     gate_with_fault() { # name -> writes $tmp/<name>.faultgate.sh
         cp "$real_gate" "$tmp/$1.faultgate.sh"
         case "$1" in
-          D) sed -i 's|^EXEMPT="OP_INTERROGATE OP_IMPORT"|EXEMPT="OP_INTERROGATE OP_IMPORT OP_ADD"|' "$tmp/$1.faultgate.sh" ;;
+          D) sedi 's|^EXEMPT="OP_INTERROGATE OP_IMPORT"|EXEMPT="OP_INTERROGATE OP_IMPORT OP_ADD"|' "$tmp/$1.faultgate.sh" ;;
         esac
     }
     gut() { # name -> writes $tmp/<name>.gate.sh
         cp "$real_gate" "$tmp/$1.gate.sh"
         case "$1" in
-          D) sed -i 's|^EXEMPT="OP_INTERROGATE OP_IMPORT"|EXEMPT="OP_INTERROGATE OP_IMPORT OP_ADD"|' "$tmp/$1.gate.sh" ;;
+          D) sedi 's|^EXEMPT="OP_INTERROGATE OP_IMPORT"|EXEMPT="OP_INTERROGATE OP_IMPORT OP_ADD"|' "$tmp/$1.gate.sh" ;;
         esac
         case "$1" in
-          E) sed -i 's|\*) note_fail "opcode \$op is marked obs:READS.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
-          B) sed -i 's|\*) note_fail "chunk_reads_observer lists \$op, which is not.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
-          D) sed -i 's|\*) note_fail "pinned exemption \$op is no longer listed.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
-          F) sed -i 's|\*" \$op "\*) note_fail "pinned exemption \$op is now marked.*|*" $op "*) : ;;|' "$tmp/$1.gate.sh" ;;
+          E) sedi 's|\*) note_fail "opcode \$op is marked obs:READS.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
+          B) sedi 's|\*) note_fail "chunk_reads_observer lists \$op, which is not.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
+          D) sedi 's|\*) note_fail "pinned exemption \$op is no longer listed.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
+          F) sedi 's|\*" \$op "\*) note_fail "pinned exemption \$op is now marked.*|*" $op "*) : ;;|' "$tmp/$1.gate.sh" ;;
         esac
         # The count pin would catch a gutted body only by accident; neutralise it
         # so this train measures the ASSERTION, not the pin (§21: know which
         # check fired). The pin is exercised by its own row below.
-        sed -i 's|^if \[ "\$CHECKS" -ne "\$EXPECTED_CHECKS" \]; then|if false; then|' "$tmp/$1.gate.sh"
+        sedi 's|^if \[ "\$CHECKS" -ne "\$EXPECTED_CHECKS" \]; then|if false; then|' "$tmp/$1.gate.sh"
         # Floors are genuinely redundant with the direction checks for some
         # faults; neutralise them too so a survivor means "no witness", not
         # "a floor covered for it". NOTE this is why fault E is planted by
         # ADDING a marker rather than deleting a case: a deletion also trips
         # SWITCH_FLOOR, so the FAULTS row passed for the wrong reason (§21) and
         # the WITNESS claim held only in a configuration that is not production.
-        sed -i 's|^READS_FLOOR=.*|READS_FLOOR=0|; s|^SWITCH_FLOOR=.*|SWITCH_FLOOR=0|' "$tmp/$1.gate.sh"
+        sedi 's|^READS_FLOOR=.*|READS_FLOOR=0|; s|^SWITCH_FLOOR=.*|SWITCH_FLOOR=0|' "$tmp/$1.gate.sh"
     }
 
     echo "== control: unmutated copies must PASS =="
@@ -313,7 +345,7 @@ PYEOF
 
     echo "== the count pin catches a DELETED check =="
     cp "$real_gate" "$tmp/pin.gate.sh"
-    sed -i 's|^    ck$||' "$tmp/pin.gate.sh"
+    sedi 's|^    ck$||' "$tmp/pin.gate.sh"
     plant clean
     say "deleting a ck() trips the comparison pin" 1 "$(run_gate "$tmp/pin.gate.sh" "$tmp/clean.chunk.c" "$tmp/clean.vm.h")"
 

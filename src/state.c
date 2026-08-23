@@ -7,6 +7,11 @@
 #include "jit.h"
 #include "trace.h"   /* #739: trace_thread_release on detach */
 
+/* #915 (compiler.c): thread-local eager-pass memo + budget release. Declared
+ * here at file scope — the block-scoped extern it replaces was CodeQL
+ * cpp/function-in-block, and the header owning it is not visible to this TU. */
+void eigs_obs_memo_release(void);
+
 #if EIGENSCRIPT_EXT_HTTP
 /* Forward-declared here to avoid pulling ext_http_internal.h (and its
  * pthread/socket includes) into core runtime TUs. Defined in ext_http.c. */
@@ -212,7 +217,7 @@ void eigs_thread_detach(void) {
      * struct itself goes. Must run while eigs_current still points at th
      * so the bridge macros inside free_value/env destructors resolve. */
     eigs_thread_drain_caches(th);
-    { extern void eigs_obs_memo_release(void); eigs_obs_memo_release(); }  /* #915 */
+    eigs_obs_memo_release();  /* #915: memo + speculative budget, thread-local */
     pthread_mutex_lock(&g_attached_lock); g_attached_threads--; pthread_mutex_unlock(&g_attached_lock);
 
     arena_destroy();
