@@ -83,4 +83,8 @@ paths:
   `until grep -q 'RESULTS:' "$LOG"; do sleep ...; done`, and if you must ask
   "is a suite live", require a match that excludes your own invocation
   (`ps aux | awk '/run_all_tests\.sh/ && !/awk/'`) and treat a bare pgrep hit
-  as unverified.
+  as unverified. The KILL direction is worse: `pkill -f <pattern>` matches its
+  own command line and killed the invoking shell mid-compound (exit 144,
+  2026-08-23 — the commit/push/PR after it silently never ran). Kill by PID,
+  never by pattern. Four bites in one day; if it recurs, this graduates to
+  bash_guard.
