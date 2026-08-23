@@ -107,3 +107,24 @@ iteration, or a collector that quietly stops working).
   presented in CI as a GitHub "hosted runner lost communication (CPU/Memory)"
   annotation — that was apport's core-dump handler stalling the runner, NOT
   infra; the suite section that runs `eigenscript --fmt` ([80]) is the gate.
+- **Shared flags read at safepoints use the load-macro atomics idiom — and new
+  flags of that shape must too.** `g_obs_needed`/`g_obs_history_gap`/
+  `g_obs_exec_started` (eigenscript.h) and `g_trace_hist`/`g_trace_obs_hist`
+  (trace.h) are relaxed `__atomic_load_n` MACROS over renamed `_storage`
+  variables; writes go through `obs_flag_store`/`trace_flag_store` (RELEASE on
+  the obs pair — the load_file guard's ACQUIRE read pairs with the
+  gap-then-needed store order). The macro-as-load trick is load-bearing: an
+  assignment through the old name FAILS TO COMPILE, so write sites stay
+  enumerable by the compiler — that is how the JIT's baked `&g_trace_hist`
+  (emitted code takes the flag's ADDRESS) was found, and it now takes
+  `&g_trace_hist_storage` explicitly. Bought across #1034 rounds 16-18
+  (2026-08-23): the same plain read-then-write race was found on three
+  adjacent field groups in three rounds — a worker's `sandbox_run` stores
+  while every thread reads at safepoints, and no happens-before edge exists
+  between two workers — before a one-pass induction over every
+  safepoint-read field closed the class. If you add a flag that safepoints
+  read and any worker-reachable path writes, use this idiom from the start,
+  and extend the round-18 induction table rather than discovering it one
+  TSan report at a time. Known still-unfixed members of the class are
+  ledgered on #1035/#1036 (threshold doubles — TORN reads possible; tape
+  dedup statics; g_no_yield_depth).
