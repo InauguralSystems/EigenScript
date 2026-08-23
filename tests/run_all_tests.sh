@@ -3610,10 +3610,27 @@ fi
 obs_gate_answer() {
     # $1 = program, $2 = head|tail, $3 = timeout seconds (default 60)
     local OGA_OUT OGA_RC
-    OGA_OUT=$(timeout "${3:-60}" $EIGS_BIN "$1" 2>&1); OGA_RC=$?
+    OGA_OUT=$(obs_tmo "${3:-60}" $EIGS_BIN "$1" 2>&1); OGA_RC=$?
     if [ "$OGA_RC" -ne 0 ]; then echo "died-rc$OGA_RC"; return; fi
     if [ "$2" = head ]; then printf '%s\n' "$OGA_OUT" | head -1
     else printf '%s\n' "$OGA_OUT" | tail -1; fi
+}
+# Timeout runner for this section, resolved ONCE from the suite's own
+# detection above (§32). Eight checks here spelled `timeout N` bare, bypassing
+# the $EIGS_TMO convention the suite header defines PRECISELY because macOS
+# has no timeout(1) — so on all four macOS CI legs (two of them the release
+# workflow) those checks died rc=127 and the section went 23/45. Found by a
+# blind critic (round 14) simulating timeout-absence over the extracted
+# section; thirteen all-Linux rounds never saw it — the failure population
+# lives on the machines you did not run (§46). Loud, not silent — the round-12
+# rc-discipline turned every one into died-rc127 — but release-blocking.
+# obs_tmo <seconds> <cmd...>: applies timeout/gtimeout when one exists, runs
+# unbounded otherwise (the suite's standing fallback).
+obs_tmo() {
+    local OBS_TMO_S="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then timeout "$OBS_TMO_S" "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$OBS_TMO_S" "$@"
+    else "$@"; fi
 }
 # 2. The gate must CLOSE on a program with no observer surface. If this ever
 #    reports "observed", the gate has silently stopped paying for itself and
@@ -3743,9 +3760,9 @@ printf 'load_file of "%s/lf_a.eigs"\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/lf_b.eig
 # modules observer-free, CLOSING the gate is the correct answer. Asserting the
 # gate STATE here pinned an implementation detail that legitimately moved; the
 # invariant that actually matters is that it terminates and both arms agree.
-timeout 20 $EIGS_BIN "$OBS_GATE_TMP/lf_a.eigs" > "$OBS_GATE_TMP/mut_g.out" 2>&1
+obs_tmo 20 $EIGS_BIN "$OBS_GATE_TMP/lf_a.eigs" > "$OBS_GATE_TMP/mut_g.out" 2>&1
 OBS_MUT_RC=$?
-EIGS_OBS_FORCE=1 timeout 20 $EIGS_BIN "$OBS_GATE_TMP/lf_a.eigs" > "$OBS_GATE_TMP/mut_b.out" 2>&1
+EIGS_OBS_FORCE=1 obs_tmo 20 $EIGS_BIN "$OBS_GATE_TMP/lf_a.eigs" > "$OBS_GATE_TMP/mut_b.out" 2>&1
 if [ "$OBS_MUT_RC" -eq 124 ]; then
     OBS_G15="hung"
 else
@@ -3799,7 +3816,7 @@ check "a module REWRITTEN between the two reads raises, not answers" "$OBS_G17" 
 # 19. And the escape hatch named in that error must actually work — otherwise
 #     the diagnostic sends the reader somewhere that does not help.
 printf 'print of "idle"\n' > "$OBS_GATE_TMP/toc_mod.eigs"
-OBS_G18_OUT=$(EIGS_OBS_FORCE=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/toc_a.eigs" 2>&1); OBS_G18_RC=$?
+OBS_G18_OUT=$(EIGS_OBS_FORCE=1 obs_tmo 60 $EIGS_BIN "$OBS_GATE_TMP/toc_a.eigs" 2>&1); OBS_G18_RC=$?
 if [ "$OBS_G18_RC" -ne 0 ]; then OBS_G18="died-rc$OBS_G18_RC"; else OBS_G18=$(printf '%s\n' "$OBS_G18_OUT" | tail -1); fi
 check "EIGS_OBS_FORCE=1 (named in the error) runs that program correctly" "$OBS_G18" "moving"
 # 20. NEGATIVE CONTROL. A guard that fires on any rewrite would be its own bug:
@@ -4004,7 +4021,7 @@ while [ $i -lt 24 ]; do
 done
 { i=0; while [ $i -lt 24 ]; do printf 'load_file of "%s/m%d.eigs"\n' "$OBS_BUD_DIR" "$i"; i=$((i+1)); done; printf 'print of "done"\n'; } > "$OBS_GATE_TMP/budget.eigs"
 printf 'load_file of "%s/m0.eigs"\nprint of "done"\n' "$OBS_BUD_DIR" > "$OBS_GATE_TMP/budget_ctl.eigs"
-OBS_G28=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/budget.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
+OBS_G28=$(EIGS_OBS_GATE_STATS=1 obs_tmo 60 $EIGS_BIN "$OBS_GATE_TMP/budget.eigs" 2>&1 >/dev/null | grep -q 'obs-gate: observed' && echo open || echo closed)
 check "a literal-load tree past the speculative budget leaves the gate open" "$OBS_G28" "open"
 # Verdict helper for the closed-expectation checks below (round 10). "closed"
 # must be PROVEN, never inferred from silence: a planted abort() at 20 memo
@@ -4022,7 +4039,7 @@ obs_gate_closed_verdict() {
     # $1 = program, $2 = required stdout marker, $3 = timeout seconds
     local OGV_ERR OGV_OUT OGV_RC
     OGV_ERR=$(mktemp)
-    OGV_OUT=$(EIGS_OBS_GATE_STATS=1 timeout "${3:-60}" $EIGS_BIN "$1" 2>"$OGV_ERR"); OGV_RC=$?
+    OGV_OUT=$(EIGS_OBS_GATE_STATS=1 obs_tmo "${3:-60}" $EIGS_BIN "$1" 2>"$OGV_ERR"); OGV_RC=$?
     if grep -q 'obs-gate: observed' "$OGV_ERR"; then rm -f "$OGV_ERR"; echo open; return; fi
     if [ "$OGV_RC" -ne 0 ]; then rm -f "$OGV_ERR"; echo "died-rc$OGV_RC"; return; fi
     if ! printf '%s' "$OGV_OUT" | grep -q "$2"; then rm -f "$OGV_ERR"; echo no-output; return; fi
@@ -4116,8 +4133,8 @@ printf 'print of "inner ok"\n' > "$OBS_MT_DIR/inner.eigs"
 printf 'load_file of "%s/inner.eigs"\n' "$OBS_MT_DIR" > "$OBS_MT_DIR/mid.eigs"
 printf 'define w() as:\n    return 1\nlocal t is spawn of w\nlocal j is thread_join of t\nlocal m is load_file of "%s/mid.eigs"\nprint of "done"\n' "$OBS_MT_DIR" > "$OBS_GATE_TMP/mt.eigs"
 printf 'local m is load_file of "%s/mid.eigs"\nprint of "done"\n' "$OBS_MT_DIR" > "$OBS_GATE_TMP/mt_ctl.eigs"
-OBS_G35=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/mt.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
-OBS_G35C=$(EIGS_OBS_GATE_STATS=1 timeout 60 $EIGS_BIN "$OBS_GATE_TMP/mt_ctl.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
+OBS_G35=$(EIGS_OBS_GATE_STATS=1 obs_tmo 60 $EIGS_BIN "$OBS_GATE_TMP/mt.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
+OBS_G35C=$(EIGS_OBS_GATE_STATS=1 obs_tmo 60 $EIGS_BIN "$OBS_GATE_TMP/mt_ctl.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
 check "a literal load after spawn hits the multithreaded bail" "$OBS_G35" "2"
 check "control: the same load with no spawn does not" "$OBS_G35C" "0"
 # 36. The SAME convention for EIGS_OBS_GATE_STATS. Found by sweeping every
@@ -4205,7 +4222,7 @@ printf 'x is 1.0\nfor i in range of 40:\n    x is x * 2.0\nimport probe\n' > "$O
 #     recorded probe trap this session, and it bit again right here on the
 #     check's first run.
 OBS_EIGS_ABS=$(cd "$(dirname "$EIGS_BIN")" && pwd)/$(basename "$EIGS_BIN")
-OBS_G40_OUT=$(cd "$OBS_IMP_DIR" && timeout 60 "$OBS_EIGS_ABS" host.eigs 2>&1); OBS_G40_RC=$?
+OBS_G40_OUT=$(cd "$OBS_IMP_DIR" && obs_tmo 60 "$OBS_EIGS_ABS" host.eigs 2>&1); OBS_G40_RC=$?
 if [ "$OBS_G40_RC" -ne 0 ]; then OBS_G40="died-rc$OBS_G40_RC"; else OBS_G40=$(printf '%s\n' "$OBS_G40_OUT" | head -1); fi
 check "an imported module sees the host's pre-import history (diverging)" "$OBS_G40" "diverging"
 # 41. Check 30's own control (its open-expectation was the vacuity sibling of
@@ -4242,8 +4259,14 @@ check "control: one budget-fixture module alone proves closed" "$OBS_G41" "close
 #     "merged-stderr program output piped straight into a first/last-line
 #     pick": that is what makes a capture rc-blind, whatever the binary
 #     variable is called.
+#     RESIDUAL, stated exactly (§45 — full closure is impossible): `2>&1 |
+#     sed -n 1p`, `| awk NR==1`, `|& head -1`, and a pipeline with a second
+#     filter stage all evade this regex. The gate targets the two ACCIDENTAL
+#     spellings that have actually occurred (2>&1 and 2>/dev/null into a
+#     head/tail first/last-line pick); an author actively dodging it is out
+#     of scope — review is the layer for that.
 OBS_META_N=$(sed -n '/^# \[99u\]/,/^OBS_GATE_RAN=/p' "$TESTS_DIR/run_all_tests.sh" \
-    | grep -cE '2>&1 *(>/dev/null *)?\| *(head|tail) +(-n *)?-?1\)')
+    | grep -cE '(2>&1|2>/dev/null) *(>/dev/null *)?\| *(head|tail) +(-n *)?-?1\)')
 check "no new rc-blind answer capture in [99u] (4 pinned waivers)" "$OBS_META_N" "4"
 # 43. A FATAL ERROR inside the muted window must still reach stderr. The
 #     eager pass mutes fd 2 around its speculative compile; x_oom and
@@ -4263,20 +4286,34 @@ check "no new rc-blind answer capture in [99u] (4 pinned waivers)" "$OBS_META_N"
 if ASAN_OPTIONS=help=1 $EIGS_BIN --version 2>&1 | grep -q 'AddressSanitizer'; then
     OBS_G43="oom-message-reaches-stderr"   # sanitizer build: witness carried by the release lane
     OBS_G43_NOTE=" (SKIP: sanitizer build)"
-else
+elif ! ( ulimit -v 60000 2>/dev/null; printf 's is "xxxxxxxxxxxxxxxx"\nfor i in range of 23:\n    s is s + s\nprint of "grew"\n' > "$OBS_GATE_TMP/rl_probe.eigs"; obs_tmo 30 $EIGS_BIN "$OBS_GATE_TMP/rl_probe.eigs" >/dev/null 2>&1 ); then
+    # rlimit BITES here (the 128 MB doubling probe died under it): the real
+    # arm below is meaningful. Fall through by doing nothing in this branch —
+    # bash needs a statement, so:
+    OBS_G43_RLIMIT=bites
     OBS_G43_NOTE=""
     OBS_OOM_DIR="$OBS_GATE_TMP/oom"
     mkdir -p "$OBS_OOM_DIR"
     awk 'BEGIN{for(j=0;j<12000;j++) printf "define oom_%d(a) as:\n    return a + %d\n", j, j}' > "$OBS_OOM_DIR/big.eigs"
     printf 'load_file of "%s/big.eigs"\nprint of "ok"\n' "$OBS_OOM_DIR" > "$OBS_GATE_TMP/oom_par.eigs"
-    OBS_OOM_ERR=$( (ulimit -v 60000; timeout 30 $EIGS_BIN "$OBS_GATE_TMP/oom_par.eigs") 2>&1 >/dev/null ); OBS_OOM_RC=$?
+    OBS_OOM_ERR=$( (ulimit -v 60000; obs_tmo 30 $EIGS_BIN "$OBS_GATE_TMP/oom_par.eigs") 2>&1 >/dev/null ); OBS_OOM_RC=$?
     if [ "$OBS_OOM_RC" -eq 0 ]; then
-        OBS_G43="ran-clean-probe-vacuous"   # the rlimit did not bite; the witness measured nothing
+        OBS_G43="ran-clean-probe-vacuous"   # rlimit PROVABLY bites here, so a clean run means the fixture rotted — loud fail is right
     elif printf '%s' "$OBS_OOM_ERR" | grep -q 'out of memory'; then
         OBS_G43="oom-message-reaches-stderr"
     else
         OBS_G43="died-silently-rc$OBS_OOM_RC"
     fi
+else
+    # ulimit -v (RLIMIT_AS) is not enforced on this platform — macOS most
+    # prominently — so the witness CANNOT discriminate here and a permanent
+    # red would train people to ignore the section (§13). A visible SKIP,
+    # exactly like the sanitizer arm above; the Linux release lane carries
+    # this witness. Found by a blind critic (round 14): thirteen all-Linux
+    # rounds never ran the four macOS CI legs, two of which are the release
+    # workflow (§46).
+    OBS_G43="oom-message-reaches-stderr"
+    OBS_G43_NOTE=" (SKIP: rlimit not enforced on this platform)"
 fi
 check "a fatal OOM inside the muted window still reaches stderr$OBS_G43_NOTE" "$OBS_G43" "oom-message-reaches-stderr"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
