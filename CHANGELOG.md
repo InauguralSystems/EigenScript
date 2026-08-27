@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-08-27
+
 ### Added
 
 - **`lib/complex.eigs` — complex arithmetic, polar form and polynomial roots
