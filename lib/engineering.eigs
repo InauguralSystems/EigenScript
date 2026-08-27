@@ -12,6 +12,8 @@
 #
 # All SI units unless otherwise noted.
 
+import complex
+
 load_file of "lib/math.eigs"
 
 # ============================================================
@@ -117,21 +119,34 @@ define idft(spectrum) as:
     return result
 
 # |X[k]| = sqrt(re^2 + im^2)
+#
+# `dft` returns [re, im] pairs, which is exactly lib/complex.eigs's
+# representation — so these three are the complex modulus, its square, and
+# the argument, applied down the spectrum. They were hand-rolled here
+# before that module existed, which is the duplication EigenScript#1043
+# was raised about: the stdlib was re-rolling the arithmetic too.
 define magnitude_spectrum(dft_result) as:
     result is []
     for i in range of (len of dft_result):
-        re is dft_result[i][0]
-        im is dft_result[i][1]
-        append of [result, sqrt of (re * re + im * im)]
+        append of [result, complex.mag of (dft_result[i])]
     return result
 
-# |X[k]|^2
+# |X[k]|^2 — no sqrt, so it is exact for integer-valued spectra
 define power_spectrum(dft_result) as:
     result is []
     for i in range of (len of dft_result):
-        re is dft_result[i][0]
-        im is dft_result[i][1]
-        append of [result, re * re + im * im]
+        append of [result, complex.mag2 of (dft_result[i])]
+    return result
+
+# arg X[k], the phase of each bin in radians, (-pi, pi]
+#
+# The missing sibling of the two above: a spectrum has a phase as well as
+# a magnitude, and this was absent because the complex arithmetic to
+# express it did not exist. Uses atan2, so all four quadrants are right.
+define phase_spectrum(dft_result) as:
+    result is []
+    for i in range of (len of dft_result):
+        append of [result, complex.arg of (dft_result[i])]
     return result
 
 # Linear convolution

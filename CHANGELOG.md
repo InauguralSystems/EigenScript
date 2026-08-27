@@ -4,6 +4,44 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **`lib/complex.eigs` — complex arithmetic, polar form and polynomial roots
+  (#1043).** Mode analysis, signal processing and root finding are all
+  intrinsically complex-valued, and every consumer was re-rolling the same
+  arithmetic on `[re, im]` pairs — including the stdlib itself, where
+  `engineering.magnitude_spectrum` and `power_spectrum` were hand-rolled
+  moduli. Adds `add`/`sub`/`mul`/`div`/`neg`/`conj`/`scale`/`mag`/`mag2`/
+  `arg`, `to_polar`/`from_polar`, `eq_near`, and `poly_eval`/`poly_roots`
+  (Durand-Kerner). `div` returns `null` on a zero denominator rather than
+  raising, which is what lets `poly_roots` hold an iterate at a repeated root
+  instead of dying on it.
+
+  Its tests are DIRECT unit checks against hand-computed values, deliberately:
+  a differential oracle is structurally blind here — phugoid measured a halved
+  `div` surviving a full root-finding differential, because Durand-Kerner
+  self-corrects under a scaled delta. That exact fault is planted in
+  `tests/test_complex.eigs`.
+
+- **`linalg.charpoly` and `linalg.eigenvalues` — general eigenvalues (#1042).**
+  `linalg` stopped at `eigenvalues_2x2`, which returns `null` for any complex
+  spectrum (a rotation matrix's ±i read as "no answer"), and `numerics` offered
+  only the dominant real eigenvalue. `charpoly` is Faddeev-LeVerrier for any
+  square n; `eigenvalues` returns all n as complex pairs. Graded on a 4x4 with
+  a known complex spectrum by the identities that tie the answer back to the
+  matrix rather than the solver — sum of eigenvalues = `mat_trace`, product =
+  `mat_det` — plus a residual check per eigenvalue.
+
+- **`engineering.phase_spectrum` (#1043).** The missing sibling of
+  `magnitude_spectrum`/`power_spectrum`, which now delegate to `complex.mag`
+  and `complex.mag2` (verified byte-identical to the hand-rolled versions
+  across four signals). A spectrum has a phase as well as a magnitude; it was
+  absent because the arithmetic to express it did not exist.
+
+  `linalg` and `engineering` are the first stdlib modules to import another
+  (`complex`). Every `lib/*.eigs` is installed together, so the dependency
+  travels with them.
+
 ## [0.41.0] - 2026-08-23
 
 ### Added

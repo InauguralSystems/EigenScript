@@ -3,6 +3,7 @@
 # ============================================================
 load_file of "lib/test.eigs"
 import linalg
+import complex
 
 print of "=== LINEAR ALGEBRA TESTS ==="
 
@@ -208,6 +209,68 @@ assert_eq of [r[2], 6, "row 1 [2]"]
 c is linalg.mat_col of [M, 2]
 assert_eq of [c[0], 3, "col 2 [0]"]
 assert_eq of [c[1], 6, "col 2 [1]"]
+
+# ---- Characteristic polynomial and general eigenvalues (#1042) ----
+print of "--- charpoly / eigenvalues ---"
+
+# diag(1,2,3): (L-1)(L-2)(L-3) = L^3 - 6L^2 + 11L - 6
+cp is linalg.charpoly of [[1, 0, 0], [0, 2, 0], [0, 0, 3]]
+assert_eq of [len of cp, 3, "charpoly returns n coefficients"]
+assert_near of [cp[0], -6, 1e-12, "charpoly diag c1"]
+assert_near of [cp[1], 11, 1e-12, "charpoly diag c2"]
+assert_near of [cp[2], -6, 1e-12, "charpoly diag c3"]
+
+# The COMPANION matrix of L^2 + 3L + 2 must give back its own coefficients.
+cc is linalg.charpoly of [[0, 1], [-2, -3]]
+assert_near of [cc[0], 3, 1e-12, "charpoly companion c1"]
+assert_near of [cc[1], 2, 1e-12, "charpoly companion c2"]
+
+# Non-square and empty are refused, not indexed off the end of a row.
+assert_true of [(linalg.charpoly of [[1, 2, 3], [4, 5, 6]]) == null, "charpoly refuses non-square"]
+assert_true of [(linalg.charpoly of []) == null, "charpoly refuses empty"]
+
+# Real spectrum, recovered as complex pairs with zero imaginary part.
+ed is linalg.eigenvalues of [[1, 0, 0], [0, 2, 0], [0, 0, 3]]
+assert_eq of [len of ed, 3, "eigenvalues returns n values"]
+esum is 0
+for k in range of 3:
+    esum is esum + ed[k][0]
+assert_near of [esum, 6, 1e-8, "eigenvalues of diag sum to the trace"]
+
+# THE CASE eigenvalues_2x2 CANNOT EXPRESS. A rotation matrix has
+# eigenvalues +-i; eigenvalues_2x2 returns null for it because the
+# discriminant is negative, and this is why the general path exists.
+assert_true of [(linalg.eigenvalues_2x2 of [[0, -1], [1, 0]]) == null, "eigenvalues_2x2 refuses a complex spectrum"]
+er is linalg.eigenvalues of [[0, -1], [1, 0]]
+assert_near of [er[0][0], 0, 1e-9, "rotation eigenvalue is purely imaginary"]
+assert_near of [(er[0][1]) * (er[1][1]), -1, 1e-9, "rotation eigenvalues are +i and -i"]
+
+# A 4x4 with a KNOWN complex spectrum: block-diagonal with a rotation
+# block (+-i) and a damped block (-1 +- 2i). This is the shape the issue
+# was raised for — a 4x4 state matrix whose modes are conjugate pairs.
+B4 is [[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, -1, -2], [0, 0, 2, -1]]
+e4 is linalg.eigenvalues of B4
+assert_eq of [len of e4, 4, "4x4 returns 4 eigenvalues"]
+
+# Graded by the two identities that tie the spectrum back to the MATRIX
+# rather than to the solver: sum of eigenvalues = trace, product = det.
+# mat_trace and mat_det are tested independently above, so this is a real
+# cross-check and not a restatement of charpoly.
+s4 is [0, 0]
+p4 is [1, 0]
+for k in range of 4:
+    s4 is complex.add of [s4, e4[k]]
+    p4 is complex.mul of [p4, e4[k]]
+assert_near of [s4[0], linalg.mat_trace of B4, 1e-8, "sum of eigenvalues = trace"]
+assert_near of [s4[1], 0, 1e-8, "the spectrum is closed under conjugation (imag sum 0)"]
+assert_near of [p4[0], linalg.mat_det of B4, 1e-7, "product of eigenvalues = determinant"]
+
+# ...and every eigenvalue must actually annihilate the characteristic
+# polynomial, which catches a solver that returns plausible-looking
+# numbers with the right sum.
+cp4 is linalg.charpoly of B4
+for k in range of 4:
+    assert_near of [complex.mag of (complex.poly_eval of [cp4, e4[k]]), 0, 1e-8, "eigenvalue is a root of charpoly"]
 
 print of ""
 test_summary of null

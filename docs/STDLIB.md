@@ -22,7 +22,8 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 | average / median / stddev / quantiles / correlation | `stats.mean`, `stats.median`, `stats.std_dev`, `stats.quantile`, `stats.correlation`, `stats.describe` | `lib/stats.eigs` |
 | tables, CSV, group-by, join, select/where | `data.df_from_csv`, `df_where`, `df_group_by`, `df_join`, `df_select` | `lib/data.eigs` |
 | probability distributions, combinatorics, Bayes | `probability.normal_pdf`, `binomial_pmf`, `combinations`, `bayes` | `lib/probability.eigs` |
-| matrices / vectors / solve Ax=b / eigenvalues | `linalg.mat_mul`, `mat_inverse`, `solve_linear`, `eigenvalues_2x2` | `lib/linalg.eigs` |
+| matrices / vectors / solve Ax=b / eigenvalues | `linalg.mat_mul`, `mat_inverse`, `solve_linear`, `charpoly`, `eigenvalues` | `lib/linalg.eigs` |
+| complex arithmetic, polar form, polynomial roots | `complex.mul`, `complex.div`, `complex.to_polar`, `complex.poly_roots` | `lib/complex.eigs` |
 | element-wise / GPU-style tensor math (matmul, softmax) | `matmul`, `softmax`, `add`, `mean` (**builtins**) | BUILTINS.md → Tensor Math |
 | derivatives / integrals / root-finding / ODEs | `calculus.derivative`, `integrate_simpson`, `newton_raphson`, `rk4_method` | `lib/calculus.eigs` |
 | minimize a function (gradient descent, annealing, GA) | `optimize.gradient_descent`, `simulated_annealing`, `genetic_optimize` | `lib/optimize.eigs` |
@@ -1001,7 +1002,7 @@ functions with **no `# name of args -> type` comment** (or only a section
 banner) above them — signatures in the tables above were reconstructed from
 the `define name(params)` line and should be back-filled in the lib files:
 `bcd`, `checksum`, `format` (`hexdump`), `datetime` (civil-math half),
-`eigen`, `harness`, `observer_slots`, `store`, `queue`, `lab`, `linalg`
+`eigen`, `harness`, `observer_slots`, `store`, `queue`, `lab`, `linalg`, `complex`
 (`mat_inverse`), `engineering` (unit converters), `geometry` (vector/solid
 helpers), and the `ui`/`ui_w_*`/`ui_theme`/`ui_anim`/`ui_draw` widget modules
 (which document widgets in the module header instead). Adding the per-function
@@ -1148,6 +1149,31 @@ Pure-EigenScript matrices (lists of lists) and vectors: transpose/multiply/deter
 | `least_squares` | `least_squares of [A, b]` | Solve overdetermined Ax ~ b via normal equations |
 | `eigenvalues_2x2` | `eigenvalues_2x2 of A` | eigenvalues of 2x2 matrix via characteristic polynomial |
 | `eigenvectors_2x2` | `eigenvectors_2x2 of A` | eigenvectors for each eigenvalue of 2x2 matrix |
+| `charpoly` | `charpoly of A` | characteristic polynomial coefficients of any square A (Faddeev-LeVerrier); monic, leading 1 implied |
+| `eigenvalues` | `eigenvalues of A` | all n eigenvalues of any square A as complex `[re, im]` pairs — handles conjugate pairs, which `eigenvalues_2x2` refuses |
+
+### lib/complex.eigs
+
+Complex numbers as two-element `[re, im]` lists — the shape
+`engineering.dft` already returns.
+
+| Function | Signature | Notes |
+|---|---|---|
+| `add` / `sub` / `mul` | `mul of [a, b]` | complex arithmetic |
+| `div` | `div of [a, b]` | returns `null` when b is zero (division by zero raises in EigenScript) |
+| `neg` / `conj` | `conj of a` | negation flips both components, conjugation only the imaginary one |
+| `scale` | `scale of [a, s]` | multiply by a REAL scalar |
+| `mag` / `mag2` | `mag of a` | modulus, and its square without the `sqrt` |
+| `arg` | `arg of a` | argument in radians, `(-pi, pi]`, via `atan2` |
+| `to_polar` / `from_polar` | `to_polar of a` | `[re, im]` <-> `[modulus, argument]` |
+| `eq_near` | `eq_near of [a, b, tol]` | compares BOTH components — not a modulus test |
+| `poly_eval` | `poly_eval of [coeffs, z]` | Horner on the monic polynomial |
+| `poly_roots` | `poly_roots of coeffs` | all n complex roots (Durand-Kerner) |
+| `poly_roots_tuned` | `poly_roots_tuned of [coeffs, iters, tol]` | same, with the iteration cap and tolerance exposed |
+
+Coefficient convention, shared with `linalg.charpoly`: `[c1 ... cn]` means
+the monic polynomial `z^n + c1 z^(n-1) + ... + cn`, so `[3, 2]` is
+`z^2 + 3z + 2`. The leading 1 is implied and never appears in the list.
 
 ### lib/calculus.eigs
 
@@ -1463,6 +1489,7 @@ Unit conversions, signal processing (DFT/IDFT, convolution, spectrum), control (
 | `dft` | `dft of signal` | Returns list of [real, imaginary] pairs |
 | `idft` | `idft of spectrum` | Inverse DFT |
 | `magnitude_spectrum` | `magnitude_spectrum of dft_result` | \|X[k]\| = sqrt(re^2 + im^2) |
+| `phase_spectrum` | `phase_spectrum of dft_result` | arg X[k] per bin, radians, via atan2 |
 | `power_spectrum` | `power_spectrum of dft_result` | \|X[k]\|^2 |
 | `convolve` | `convolve of [signal, kernel]` | Linear convolution |
 | `moving_average` | `moving_average of [signal, window]` | Moving average filter |

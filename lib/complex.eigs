@@ -1,0 +1,202 @@
+# ============================================================
+# Complex Numbers — arithmetic, polar form, and polynomial roots
+# ============================================================
+#
+# How to use:
+#   import complex
+#
+#   complex.mul of [[3, 4], [1, -2]]      -> [11, -2]
+#   complex.div of [[11, -2], [1, -2]]    -> [3, 4]
+#   complex.mag of [3, 4]                 -> 5
+#   complex.to_polar of [3, 4]            -> [5, 0.9272...]
+#   complex.poly_roots of [3, 2]          -> roots of z^2 + 3z + 2
+#
+# A complex number is a two-element list [re, im]. That is the shape
+# lib/engineering.eigs's `dft` already returns, so its output feeds these
+# functions directly.
+#
+# WHY THIS MODULE EXISTS. Mode analysis, signal processing and root
+# finding are all intrinsically complex-valued, and before this every
+# consumer re-rolled the same five functions on [re, im] pairs
+# (EigenScript#1043, found by the phugoid flight-simulator consumer).
+#
+# AND WHY ITS TESTS ARE DIRECT UNIT CHECKS. A differential oracle is
+# structurally BLIND to this arithmetic: phugoid measured a HALVED `div`
+# surviving a full root-finding differential, because Durand-Kerner
+# self-corrects under a scaled delta — a wrong step size still converges
+# to the right root, just more slowly. Every function here is therefore
+# checked against a hand-computed value in tests/test_complex.eigs, and
+# the halved-div fault is planted there explicitly. Do not replace those
+# with "the consumer still works" checks; that is the exact test which
+# was measured not to work.
+
+# ============================================================
+# ARITHMETIC
+# ============================================================
+
+# add: (a + b)
+define add(a, b) as:
+    return [a[0] + b[0], a[1] + b[1]]
+
+# sub: (a - b)
+define sub(a, b) as:
+    return [a[0] - b[0], a[1] - b[1]]
+
+# mul: (a * b) = (ar*br - ai*bi) + (ar*bi + ai*br)i
+define mul(a, b) as:
+    return [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]]
+
+# div: (a / b), by multiplying through by the conjugate of b.
+#
+# Returns null when b is zero. Division by zero RAISES in EigenScript
+# (measured: "Error line N: division by zero"), so without this guard a
+# zero denominator would kill the caller's program from inside library
+# code. Returning null makes it the caller's decision — and `poly_roots`
+# below DEPENDS on that: at a repeated root every other iterate collides
+# with the current one, the Durand-Kerner denominator is exactly zero, and
+# the step must be skipped rather than raised on. An unguarded `div` makes
+# every polynomial with a repeated root a crash.
+define div(a, b) as:
+    local d is b[0] * b[0] + b[1] * b[1]
+    if d == 0:
+        return null
+    return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]
+
+# neg: -a
+define neg(a) as:
+    return [0 - a[0], 0 - a[1]]
+
+# conj: the complex conjugate, re - im*i
+define conj(a) as:
+    return [a[0], 0 - a[1]]
+
+# scale: a * s for a REAL scalar s
+define scale(a, s) as:
+    return [a[0] * s, a[1] * s]
+
+# mag: |a|, the modulus
+define mag(a) as:
+    return sqrt of (a[0] * a[0] + a[1] * a[1])
+
+# mag2: |a|^2, without the square root — cheaper, and exact for integer
+# inputs where `mag` would round.
+define mag2(a) as:
+    return a[0] * a[0] + a[1] * a[1]
+
+# arg: the argument (phase angle) in radians, via atan2, so the range is
+# [-pi, pi] and all four quadrants are correct. Note the closed lower end:
+# a negative real with a NEGATIVE ZERO imaginary part gives -pi, not +pi.
+# The two denote the same angle and the sign is decided by the sign of a
+# zero, so do not assert one branch of it.
+define arg(a) as:
+    return atan2 of [a[1], a[0]]
+
+# ============================================================
+# POLAR FORM
+# ============================================================
+
+# to_polar: [re, im] -> [modulus, argument]
+define to_polar(a) as:
+    return [mag of a, arg of a]
+
+# from_polar: [modulus, argument] -> [re, im]
+define from_polar(r, theta) as:
+    return [r * (cos of theta), r * (sin of theta)]
+
+# ============================================================
+# COMPARISON
+# ============================================================
+
+# eq_near: within tol on BOTH components. Complex equality has two axes
+# and comparing only the modulus would call 3+4i and 5 equal.
+define eq_near(a, b, tol) as:
+    local dr is a[0] - b[0]
+    local di is a[1] - b[1]
+    if dr < 0:
+        dr is 0 - dr
+    if di < 0:
+        di is 0 - di
+    if dr > tol:
+        return 0
+    if di > tol:
+        return 0
+    return 1
+
+# ============================================================
+# POLYNOMIALS
+# ============================================================
+#
+# COEFFICIENT CONVENTION, used by every function below and by
+# linalg.charpoly: a list of n coefficients describes the MONIC degree-n
+# polynomial
+#
+#     z^n + c[0] z^(n-1) + c[1] z^(n-2) + ... + c[n-1]
+#
+# so [3, 2] is z^2 + 3z + 2, whose roots are -1 and -2. The leading 1 is
+# implied and never appears in the list.
+
+# poly_eval: evaluate the monic polynomial at complex z, by Horner.
+define poly_eval(coeffs, z) as:
+    local n is len of coeffs
+    local p is [1.0, 0.0]
+    local k is 0
+    loop while k < n:
+        p is add of [mul of [p, z], [coeffs[k], 0.0]]
+        k is k + 1
+    return p
+
+# poly_roots: all n complex roots of the monic polynomial, by
+# Durand-Kerner. Returns a list of [re, im] pairs.
+define poly_roots(coeffs) as:
+    return poly_roots_tuned of [coeffs, 200, 1e-14]
+
+# poly_roots_tuned: poly_roots with the iteration cap and convergence
+# tolerance exposed. `iters = 0` returns the untouched starting guesses,
+# which is what lets a test assert that the iteration is doing the work
+# rather than the initialisation.
+define poly_roots_tuned(coeffs, iters, tol) as:
+    local n is len of coeffs
+    if n == 0:
+        return []
+    # The standard (0.4 + 0.9i)^k spiral: off the real axis, so a
+    # polynomial with real coefficients cannot trap every iterate in the
+    # reals and miss a conjugate pair.
+    local base is [0.4, 0.9]
+    local roots is []
+    local cur is [1.0, 0.0]
+    local k is 0
+    loop while k < n:
+        append of [roots, cur]
+        cur is mul of [cur, base]
+        k is k + 1
+    local it is 0
+    local done is 0
+    loop while it < iters and done == 0:
+        local maxd is 0.0
+        local i is 0
+        loop while i < n:
+            local zi is roots[i]
+            local pnum is poly_eval of [coeffs, zi]
+            local den is [1.0, 0.0]
+            local j is 0
+            loop while j < n:
+                if j != i:
+                    den is mul of [den, sub of [zi, roots[j]]]
+                j is j + 1
+            # A REPEATED ROOT drives the denominator to zero: every other
+            # iterate has collided with this one. `div` returns null there
+            # instead of raising, and the step is simply skipped — the
+            # iterate is already AT the multiple root, so holding it is
+            # the correct move, and without the skip the whole call would
+            # die with "division by zero" on any repeated root.
+            local delta is div of [pnum, den]
+            if delta != null:
+                roots[i] is sub of [zi, delta]
+                local dm is mag of delta
+                if dm > maxd:
+                    maxd is dm
+            i is i + 1
+        if maxd < tol:
+            done is 1
+        it is it + 1
+    return roots

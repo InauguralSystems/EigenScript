@@ -4785,6 +4785,7 @@ check_eigs_suite "numerics" test_numerics.eigs "All tests passed." 1
 check_eigs_suite "optimize" test_optimize.eigs "All tests passed." 1
 check_eigs_suite "simulation" test_simulation.eigs "All tests passed." 1
 check_eigs_suite "linalg" test_linalg.eigs "All tests passed." 1
+check_eigs_suite "complex" test_complex.eigs "All tests passed." 1
 check_eigs_suite "probability" test_probability.eigs "All tests passed." 1
 check_eigs_suite "biology" test_biology.eigs "All tests passed." 1
 check_eigs_suite "calculus" test_calculus.eigs "All tests passed." 1
