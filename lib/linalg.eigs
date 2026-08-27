@@ -12,12 +12,19 @@
 #   linalg.vec_cross of [[1,0,0], [0,1,0]]
 #
 # Matrices are lists of lists (row-major). Vectors are flat lists.
+#
+# `charpoly` and `eigenvalues` return complex results, so this module
+# imports lib/complex.eigs. It is the first stdlib module to depend on
+# another; every lib/*.eigs is installed together by the Makefile, so the
+# dependency travels with it.
 
 # ============================================================
 # Matrix Construction
 # ============================================================
 
 # mat_new: create rows x cols matrix filled with fill value
+import complex
+
 define mat_new(rows, cols, fill) as:
     result is []
     for i in range of rows:
@@ -416,6 +423,12 @@ define least_squares(A, b) as:
 
 # eigenvalues_2x2: eigenvalues of 2x2 matrix via characteristic polynomial
 # det(A - lambda*I) = 0  =>  lambda^2 - trace*lambda + det = 0
+#
+# REAL EIGENVALUES ONLY. A negative discriminant means a complex conjugate
+# pair, and this returns `null` for it — so a rotation matrix, whose
+# eigenvalues are the perfectly ordinary +-i, reads here as "no answer".
+# Use `eigenvalues` below for anything that can oscillate; it returns
+# complex pairs and handles the 2x2 case too.
 define eigenvalues_2x2(A) as:
     tr is A[0][0] + A[1][1]
     det is A[0][0] * A[1][1] - A[0][1] * A[1][0]
@@ -454,3 +467,57 @@ define eigenvectors_2x2(A) as:
             else:
                 append of [vecs, [1, 0]]
     return vecs
+
+
+# ============================================================
+# CHARACTERISTIC POLYNOMIAL AND GENERAL EIGENVALUES
+# ============================================================
+#
+# Added for EigenScript#1042, found by the phugoid flight-simulator
+# consumer: extracting flight modes needs the eigenvalues of a 4x4 state
+# matrix, and this module stopped at `eigenvalues_2x2` (real only) while
+# lib/numerics.eigs offered only `power_iteration` (dominant, real only).
+
+# charpoly: coefficients of the characteristic polynomial of A, by the
+# Faddeev-LeVerrier recurrence
+#
+#     M_0 = I,  c_k = -tr(A M_(k-1)) / k,  M_k = A M_(k-1) + c_k I
+#
+# Returns [c1, c2, ... cn] for the MONIC polynomial
+#
+#     lambda^n + c1 lambda^(n-1) + ... + cn
+#
+# i.e. the same convention lib/complex.eigs's poly_eval/poly_roots use, so
+# `complex.poly_roots of (linalg.charpoly of A)` composes directly. The
+# leading 1 is implied and is not in the list.
+#
+# Works for any square n. Returns null for a non-square or empty matrix
+# rather than indexing off the end of a row.
+define charpoly(A) as:
+    local n is len of A
+    if n == 0:
+        return null
+    if (len of A[0]) != n:
+        return null
+    local M is mat_identity of n
+    local coeffs is []
+    local k is 1
+    loop while k <= n:
+        local AM is mat_mul of [A, M]
+        local ck is (0 - (mat_trace of AM)) / k
+        append of [coeffs, ck]
+        M is mat_add of [AM, mat_scale of [mat_identity of n, ck]]
+        k is k + 1
+    return coeffs
+
+# eigenvalues: all n eigenvalues of a square matrix A, as complex
+# [re, im] pairs — the characteristic polynomial's roots.
+#
+# Unlike `eigenvalues_2x2` this does not refuse a complex spectrum, which
+# is the whole point: oscillatory systems have conjugate pairs, and their
+# imaginary parts are the frequencies.
+define eigenvalues(A) as:
+    local coeffs is charpoly of A
+    if coeffs == null:
+        return null
+    return complex.poly_roots of coeffs

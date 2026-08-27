@@ -137,6 +137,28 @@ assert_near of [mag[2], 1, 0.001, "magnitude [1,0,0,0] k=2"]
 pwr is power_spectrum of spec
 assert_near of [pwr[0], 1, 0.001, "power [1,0,0,0] k=0"]
 
+# phase_spectrum (#1043): the missing sibling of the two above, available
+# once lib/complex.eigs made the argument expressible. A real even signal
+# has zero phase in every bin; a shifted impulse does not, which is what
+# separates a real phase calculation from a stub returning zeros.
+ph is phase_spectrum of spec
+assert_near of [ph[0], 0, 1e-9, "phase of [1,0,0,0] k=0 is 0"]
+assert_near of [ph[1], 0, 1e-9, "phase of [1,0,0,0] k=1 is 0"]
+
+# A one-sample shift puts -pi/2 in bin 1: X[k] = e^(-2 pi i k / 4), so
+# k=1 has argument -pi/2. atan2 is what gets the quadrant right here.
+shifted is dft of [0, 1, 0, 0]
+phs is phase_spectrum of shifted
+assert_near of [phs[1], -1.5707963267948966, 1e-9, "phase of a shifted impulse k=1 is -pi/2"]
+# The Nyquist bin is real and negative, so its phase is pi — but its
+# imaginary part is a signed ZERO, and atan2 returns -pi for -0. The sign
+# there is not a meaningful distinction, so grade the magnitude of the
+# angle rather than pretending one branch is correct.
+absph is phs[2]
+if absph < 0:
+    absph is 0 - absph
+assert_near of [absph, 3.141592653589793, 1e-9, "phase of a shifted impulse k=2 is pi up to the sign of zero"]
+
 # IDFT roundtrip: IDFT(DFT([1,0,0,0])) = [1,0,0,0]
 recovered is idft of spec
 assert_near of [recovered[0], 1, 0.001, "IDFT roundtrip x[0]"]

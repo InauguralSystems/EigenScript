@@ -1,0 +1,168 @@
+# ============================================================
+# Complex Number Tests
+# ============================================================
+#
+# EVERY VALUE HERE IS HAND-COMPUTED. That is deliberate and it is the
+# whole design of this file.
+#
+# A differential oracle is structurally BLIND to this arithmetic. The
+# phugoid consumer measured a HALVED `div` surviving a full root-finding
+# differential, because Durand-Kerner self-corrects under a scaled delta:
+# a wrong step size still converges to the right root, just more slowly.
+# So "the root finder still gets the right answer" proves nothing about
+# `div`, and the halved-div fault is planted explicitly below.
+#
+# If you add a function to lib/complex.eigs, add its hand-computed check
+# here. Do not check it by running a consumer.
+load_file of "lib/test.eigs"
+import complex
+
+print of "=== COMPLEX NUMBER TESTS ==="
+
+# ---- Arithmetic, against values computed by hand ----
+print of "--- Arithmetic ---"
+
+# (3+4i) + (1-2i) = 4+2i
+s is complex.add of [[3, 4], [1, -2]]
+assert_eq of [s[0], 4, "add re"]
+assert_eq of [s[1], 2, "add im"]
+
+# (3+4i) - (1-2i) = 2+6i
+d is complex.sub of [[3, 4], [1, -2]]
+assert_eq of [d[0], 2, "sub re"]
+assert_eq of [d[1], 6, "sub im"]
+
+# (3+4i)(1-2i) = 3 - 6i + 4i - 8i^2 = 3 - 2i + 8 = 11 - 2i
+m is complex.mul of [[3, 4], [1, -2]]
+assert_eq of [m[0], 11, "mul re"]
+assert_eq of [m[1], -2, "mul im"]
+
+# i * i = -1 exactly: the sign of the i^2 term, which a dropped minus
+# would silently invert.
+ii is complex.mul of [[0, 1], [0, 1]]
+assert_eq of [ii[0], -1, "i*i re"]
+assert_eq of [ii[1], 0, "i*i im"]
+
+# (11-2i) / (1-2i) = 3+4i  — the inverse of the mul above
+q is complex.div of [[11, -2], [1, -2]]
+assert_near of [q[0], 3, 1e-12, "div re"]
+assert_near of [q[1], 4, 1e-12, "div im"]
+
+# THE PLANTED-FAULT DISCRIMINATOR. (1+i)/(2+0i) = 0.5+0.5i. A `div` whose
+# result is halved returns 0.25+0.25i and still points the same DIRECTION,
+# which is exactly why the root-finding differential could not see it.
+# This check can.
+h is complex.div of [[1, 1], [2, 0]]
+assert_near of [h[0], 0.5, 1e-12, "div magnitude re (halved-div discriminator)"]
+assert_near of [h[1], 0.5, 1e-12, "div magnitude im (halved-div discriminator)"]
+
+# Division by zero returns null rather than saturating at 1e308.
+assert_true of [(complex.div of [[1, 1], [0, 0]]) == null, "div by zero is null"]
+
+# -a and conj(a) differ: negation flips BOTH components, conjugation only
+# the imaginary one. Confusing them survives any magnitude-only check.
+n is complex.neg of [3, 4]
+assert_eq of [n[0], -3, "neg re"]
+assert_eq of [n[1], -4, "neg im"]
+c is complex.conj of [3, 4]
+assert_eq of [c[0], 3, "conj re (unchanged)"]
+assert_eq of [c[1], -4, "conj im (flipped)"]
+
+sc is complex.scale of [[3, 4], 2]
+assert_eq of [sc[0], 6, "scale re"]
+assert_eq of [sc[1], 8, "scale im"]
+
+# ---- Modulus and argument ----
+print of "--- Modulus and argument ---"
+
+# |3+4i| = 5, the 3-4-5 triangle
+assert_eq of [complex.mag of [3, 4], 5, "mag 3-4-5"]
+assert_eq of [complex.mag2 of [3, 4], 25, "mag2 is the square, no sqrt"]
+assert_eq of [complex.mag of [0, 0], 0, "mag of zero"]
+
+# arg(i) = pi/2, arg(-1) = pi, arg(1) = 0 — the quadrants atan alone
+# gets wrong and atan2 gets right.
+assert_near of [complex.arg of [0, 1], 1.5707963267948966, 1e-12, "arg i = pi/2"]
+assert_near of [complex.arg of [-1, 0], 3.141592653589793, 1e-12, "arg -1 = pi"]
+assert_eq of [complex.arg of [1, 0], 0, "arg 1 = 0"]
+
+# ---- Polar form ----
+print of "--- Polar form ---"
+p is complex.to_polar of [3, 4]
+assert_eq of [p[0], 5, "to_polar modulus"]
+assert_near of [p[1], 0.9272952180016122, 1e-12, "to_polar argument"]
+
+# Round trip back to rectangular.
+r is complex.from_polar of [5, 0.9272952180016122]
+assert_near of [r[0], 3, 1e-12, "from_polar re"]
+assert_near of [r[1], 4, 1e-12, "from_polar im"]
+
+# ---- Comparison ----
+print of "--- Comparison ---"
+assert_eq of [complex.eq_near of [[3, 4], [3, 4], 1e-9], 1, "eq_near identical"]
+assert_eq of [complex.eq_near of [[3, 4], [3.0000000001, 4], 1e-6], 1, "eq_near within tol"]
+assert_eq of [complex.eq_near of [[3, 4], [3, 4.1], 1e-6], 0, "eq_near differs in im"]
+# Two axes, not one: 3+4i and 5+0i have the SAME modulus and are not equal.
+assert_eq of [complex.eq_near of [[3, 4], [5, 0], 1e-6], 0, "eq_near is not a modulus comparison"]
+
+# ---- Polynomials ----
+print of "--- Polynomials ---"
+
+# z^2 + 3z + 2 = (z+1)(z+2); evaluate at its roots and at a known point.
+assert_eq of [(complex.poly_eval of [[3, 2], [-1, 0]])[0], 0, "poly_eval at root -1"]
+assert_eq of [(complex.poly_eval of [[3, 2], [-2, 0]])[0], 0, "poly_eval at root -2"]
+# p(1) = 1 + 3 + 2 = 6
+assert_eq of [(complex.poly_eval of [[3, 2], [1, 0]])[0], 6, "poly_eval at 1"]
+
+# Roots of z^2 + 3z + 2: -1 and -2 (order is not guaranteed, so check the
+# SET via the symmetric functions below as well).
+rr is complex.poly_roots of [3, 2]
+assert_eq of [len of rr, 2, "poly_roots returns n roots"]
+
+# VIETA, which checks the whole root set at once rather than one root:
+# for a monic polynomial, sum of roots = -c1 and product = (-1)^n * cn.
+sum is [0, 0]
+prod is [1, 0]
+for k in range of (len of rr):
+    sum is complex.add of [sum, rr[k]]
+    prod is complex.mul of [prod, rr[k]]
+assert_near of [sum[0], -3, 1e-9, "Vieta: sum of roots = -c1"]
+assert_near of [prod[0], 2, 1e-9, "Vieta: product of roots = (-1)^n cn"]
+
+# RESIDUAL: every returned root must actually be a root.
+for k in range of (len of rr):
+    res is complex.poly_eval of [[3, 2], rr[k]]
+    assert_near of [complex.mag of res, 0, 1e-9, "residual at returned root"]
+
+# A COMPLEX conjugate pair, which is the case a real-only solver cannot
+# express at all: z^2 + 1 has roots +i and -i.
+ci is complex.poly_roots of [0, 1]
+assert_near of [complex.mag of ci[0], 1, 1e-9, "z^2+1 root has modulus 1"]
+assert_near of [ci[0][0], 0, 1e-9, "z^2+1 root is purely imaginary"]
+assert_near of [(complex.add of [ci[0], ci[1]])[1], 0, 1e-9, "the two roots are conjugates"]
+
+# A REPEATED root: (z-1)^2 = z^2 - 2z + 1. The Durand-Kerner denominator
+# goes to zero here, and an unguarded division would fling an iterate to
+# 1e308 instead of holding it at the multiple root.
+rep is complex.poly_roots of [-2, 1]
+assert_near of [rep[0][0], 1, 1e-6, "repeated root 0"]
+assert_near of [rep[1][0], 1, 1e-6, "repeated root 1"]
+
+# A CUBIC, so the degree is not hard-coded at 2: z^3 - 6z^2 + 11z - 6 has
+# roots 1, 2, 3.
+cub is complex.poly_roots of [-6, 11, -6]
+assert_eq of [len of cub, 3, "cubic returns 3 roots"]
+csum is [0, 0]
+for k in range of 3:
+    csum is complex.add of [csum, cub[k]]
+assert_near of [csum[0], 6, 1e-8, "cubic Vieta: roots sum to 6"]
+
+# THE ITERATION MUST BE DOING THE WORK. With iters = 0 the starting
+# guesses are returned untouched, and they are NOT the answer — without
+# this, a solver that returned its initial spiral would pass any check
+# loose enough to accept it.
+g0 is complex.poly_roots_tuned of [[3, 2], 0, 1e-14]
+assert_eq of [g0[0][0], 1.0, "iters=0 returns the untouched first guess"]
+assert_true of [(complex.mag of (complex.poly_eval of [[3, 2], g0[1]])) > 0.5, "the starting guesses are not roots"]
+
+test_summary of null
