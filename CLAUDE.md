@@ -172,3 +172,34 @@ model — don't work around a gap, surface it).
 - **Infra**: **eigen-site** (inauguralsystems.com landing + the self-owned HTTP
   attack target), **homebrew-eigenscript** (tap), **eigs-package-template**,
   **awesome-eigenscript** (curated index — a list, not a registry).
+
+## This design is pre-v1 and mostly written by older models — question it
+
+**90% or more of this code was designed by Claude sessions running models
+many generations old.** Newer models keep arriving that are substantially
+stronger, the project is **pre-v1**, and there are no external consumers to
+break. So a decision you find in the tree carries **no authority from
+seniority** — it is a hypothesis an earlier session committed, and it is
+fair game.
+
+The tell is writing, or thinking, *"X must be true because the design does
+Y."* Stop there and ask whether Y is a **law** — language semantics, a
+physical constant, an external contract — or a **decision**. If it is a
+decision, price the alternative before designing around it.
+
+Bought 2026-08-28 (ouroboros#127 / DMG). The AOT compiles the main file to
+C but emits `load_file` as a runtime call, so loaded modules are parsed and
+interpreted by the linked VM. A real bug lived in that seam and was found,
+minimised, fixed and verified. It was also reported as "unlocking the AOT
+multiplier for DMG" — until the design itself was questioned. Measured:
+DMG is 3,288 lines, of which 818 are compiled and 2,470 interpreted,
+including the 837-line, 128-function opcode dispatch. Every emulated
+instruction dispatches into interpreted code, so the fix makes DMG *run*
+and cannot make it meaningfully *faster*.
+
+An entire investigation cycle had treated "loaded modules are interpreted"
+as terrain, including rejecting the alternative as unbuildable. The
+capability to do it the other way already existed elsewhere in the same
+tree (`obs_gate_resolve_static_loads`, used by the #915 observer gate).
+**When a design looks forced, check whether the alternative is already
+implemented somewhere else for another purpose.**
