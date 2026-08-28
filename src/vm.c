@@ -346,6 +346,34 @@ static int vm_slot_value_opaque(Env *e, int idx) {
     return r;
 }
 
+/* Classify a binding's observer slot exactly as the PREDICATE opcodes do:
+ * the #708 opaque band, the #711 query view, and the kind dispatch, in one
+ * place. EXPORTED (eigenscript.h) because the AOT compiler's runtime needs
+ * the same answer and had been carrying a partial COPY of this logic —
+ * ouroboros#119/#122, where a bare predicate inside `unobserved:` returned a
+ * confident `1` from generated code while the VM raised. "The VM is the
+ * byte-exact oracle" only means something if the compiler CALLS the oracle
+ * instead of reimplementing a subset of it.
+ *
+ * `require_used` is the one place the three opcodes genuinely differ: the
+ * bare op does not test `used`, the named ops do. That is preserved here
+ * rather than normalised — this commit is a refactor, and changing which
+ * slots answer is a separate decision with its own evidence. env_obs_slot
+ * bounds-checks but does NOT test `used` (its contract covers range only),
+ * so the distinction is load-bearing on an in-range never-assigned slot.
+ *
+ * The #871 unobserved-depth raise stays in the opcode handlers: it needs the
+ * source line, and a binding assigned inside the block has no `used` slot at
+ * all, so a classifier-level check is never reached on the path that hangs. */
+int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
+    if (vm_slot_value_opaque(e, idx)) return 0;
+    const ObserverSlot *s = env_obs_slot(e, idx);
+    if (!s) return 0;
+    if (require_used && !s->used) return 0;
+    ObserverSlot q = vm_slot_query_view(e, idx, s);
+    return vm_slot_predicate(&q, (uint16_t)kind);
+}
+
 /* Phase 5: VM execution state (g_vm), loop-stall accounting
  * (g_loop_stall_count, g_loop_iterations, g_loop_exit_reason),
  * control-flow / error-state globals (g_return_val, g_returning,
@@ -5456,16 +5484,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push_slot(slot_null());
             DISPATCH();
         }
-        int result = 0;
-        const ObserverSlot *s =
-            vm_slot_value_opaque(g_last_obs_slot_env, g_last_obs_slot_idx)
-                ? NULL   /* #708: fn/builtin binding — nothing claimable */
-                : env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
-        if (s) {
-            ObserverSlot q = vm_slot_query_view(g_last_obs_slot_env,
-                                                g_last_obs_slot_idx, s); /* #711 */
-            result = vm_slot_predicate(&q, kind);
-        }
+        /* #708 opaque band + #711 query view + kind dispatch, shared with the
+         * named ops and with the AOT runtime. require_used=0: the bare op has
+         * never tested `used`, unlike PREDICATE_SLOT/NAME below. */
+        int result = observer_predicate_at(g_last_obs_slot_env,
+                                           g_last_obs_slot_idx, kind, 0);
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
     }
@@ -5481,12 +5504,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         Env *e = frame->fn_env;
-        int result = 0;
-        const ObserverSlot *ps_l = env_obs_slot(e, (int)slot);
-        if (ps_l && ps_l->used && !vm_slot_value_opaque(e, (int)slot)) {
-            ObserverSlot q = vm_slot_query_view(e, (int)slot, ps_l);  /* #711 */
-            result = vm_slot_predicate(&q, kind);            /* #708 */
-        }
+        int result = observer_predicate_at(e, (int)slot, kind, 1);
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
     }
@@ -5510,12 +5528,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push_slot(slot_null());
             DISPATCH();
         }
-        int result = 0;
-        const ObserverSlot *ps_n = env_obs_slot(oe, oidx);
-        if (ps_n && ps_n->used && !vm_slot_value_opaque(oe, oidx)) {
-            ObserverSlot q = vm_slot_query_view(oe, oidx, ps_n);      /* #711 */
-            result = vm_slot_predicate(&q, kind);            /* #708 */
-        }
+        int result = observer_predicate_at(oe, oidx, kind, 1);
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
     }

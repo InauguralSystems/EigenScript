@@ -388,6 +388,11 @@ void env_dump_unlock(struct Env *e);
  * (called from observer_slot_reset so a torn-down env can't be read stale). */
 void vm_obs_slot_dropped(struct Env *e);
 int  observer_slot_converged(const struct ObserverSlot *s);
+/* Classify a binding's observer slot as the VM's PREDICATE opcodes do (opaque
+ * band, query view, kind dispatch). Exported for the AOT runtime, which must
+ * share this implementation rather than copy it (ouroboros#119/#122).
+ * require_used: 0 mirrors the bare op, 1 the named ops. */
+int  observer_predicate_at(struct Env *e, int idx, int kind, int require_used);
 int  observer_slot_equilibrium(const struct ObserverSlot *s);
 int  observer_slot_improving(const struct ObserverSlot *s);
 int  observer_slot_diverging(const struct ObserverSlot *s);
