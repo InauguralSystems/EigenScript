@@ -1377,12 +1377,23 @@ static void scan_for_interrogated(ASTNode *node, NameSet *out) {
     /* Nothing to do for these. Enumerated rather than covered by a `default:`
      * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
      * error here instead of a silent no-op. */
+    case AST_LISTCOMP:
+        /* #1075: an interrogate operand that appears ONLY inside a
+         * comprehension body used to arm nothing (this case was a no-op
+         * beside AST_FUNC), so `[prev of y for v in xs]` answered [null]
+         * while the same query one line outside answered the value. The
+         * comprehension runs in this function's frame, so its operands
+         * arm this function's names like any other expression. */
+        scan_for_interrogated(node->data.listcomp.expr, out);
+        scan_for_interrogated(node->data.listcomp.iter, out);
+        if (node->data.listcomp.filter)   /* absent on a filter-less comprehension */
+            scan_for_interrogated(node->data.listcomp.filter, out);
+        break;
     case AST_NUM:
     case AST_STR:
     case AST_IDENT:
     case AST_NULL:
     case AST_FUNC:
-    case AST_LISTCOMP:
     case AST_PROGRAM:
     case AST_PREDICATE:
     case AST_BREAK:
