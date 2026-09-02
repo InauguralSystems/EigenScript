@@ -22,6 +22,23 @@ All notable changes to EigenScript are documented here.
   runner and fails when a label recurs outside a SKIPPED/stub twin; it also
   fails when it finds fewer than 150 labels (the vacuity case). Planted both
   ways before it was trusted. The six collisions are renamed.
+- **`tools/jit_diff.sh` — the JIT's oracle is the interpreter, and now
+  something runs it.** Measured on 2026-09-02: nothing in the suite or CI had
+  ever diffed a JIT-on run against a JIT-off run; the JIT's tests were
+  hand-written expectations (the one-sided-verifiability class), which is how
+  #1063's JIT half — an inline `SET_LOCAL` that recorded no history — went
+  unnoticed. Every corpus program now runs with the JIT off recording a tape,
+  then replays that tape under the default JIT and under forced OSR
+  (`EIGS_JIT_OSR_THRESHOLD=1`); stdout, stderr and exit code must be
+  byte-identical. A divergence is adjudicated by determinism first (both sides
+  rerun; a stable pair is the JIT's) and by tape replay second (the
+  interpreter records, the JIT arm replays, which pins a `random`-seeded
+  program to the reference run) — in that order, because replay alone
+  laundered a deterministic line-stamp divergence. Divergences that
+  are known and filed live in `tests/jit_diff_expected.txt`, a ledger to work
+  down. Its own CI job. First reading: #1071 (the `at <module>` line in a
+  trace for an error raised inside `sandbox_run` is wrong in every tier and
+  differs by tier).
 
 ### Fixed
 
