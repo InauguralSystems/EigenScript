@@ -4,6 +4,40 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An interrogated parameter was half slot, half name (#1063).** A `for`
+  binder over a parameter, in a function that also says `prev of p` or
+  `what is p at L` anywhere, was sent to a loop env while the body's reads
+  stayed on the parameter's frame slot — `for p in [7, 8]: print of p`
+  printed the incoming argument twice and the binder never persisted. And
+  `SET_LOCAL` recorded history under the chunk's `strdup`'d slot name, a
+  pointer the pointer-keyed `prev` table never matches against a query's
+  interned constant, so `prev of t` after two rebinds of a parameter answered
+  `null`. Slot names are now interned at chunk build (same provenance as the
+  constant table), a name that already has a slot keeps the slot for its
+  binder, and the JIT's `SET_LOCAL` takes an out-of-line helper when history
+  is armed — exactly as its `SET_NAME` arms already did — so the tape keeps
+  filling past the OSR threshold (it froze at 4999 of 199999 before). A slot
+  write records only when the chunk that owns the slot interrogates the name
+  (`local_traced`, the rule name-routing already applied) — the history table
+  is keyed by name across all frames, and recording every function's slot
+  writes let a callee's same-named local rewrite the caller's `prev` (the
+  observer cross-repo corpus caught it: `dynamics__physics`' frame velocity
+  read 0 instead of -0.38). An untraced slot write still lands on the tape as
+  an `A` record — the DAP stepper stops on those, and the suite's DAP section
+  went red when the first cut dropped them — it just enters no history. A
+  function compiled on the main thread keys the same history entry whichever
+  thread runs it (the chunk carries the compiler's interned pointer, not a
+  per-thread re-interning). The other direction — a chunk compiled INSIDE a
+  worker escaping through a channel — is the pre-existing per-thread
+  intern-table lifetime hole, now filed as #1065 (it already bites
+  `const_interns` on main). `tests/test_temporal_param.eigs` pins every
+  parameter row against its `local` twin, including the 200k-iteration OSR
+  rows and a `spawn`ed worker; `test_temporal_producers.eigs` pins the
+  `vm_run_bytecode` descriptor path. Fixture fails 12 checks on the previous
+  release.
+
 ## [0.42.0] - 2026-08-27
 
 ### Added

@@ -617,6 +617,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             }
             i += 3; ops++; non_line_ops++;
             *needs_env_cache = 1;
+            *has_bail_op = 1;   /* #1063: %r14=chunk for the traced slow path */
         } else if (op == OP_DUP) {
             i += 1; ops++; non_line_ops++;
         } else if (op == OP_DUP2) {
@@ -3122,6 +3123,15 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             int32_t off = (int32_t)slot * 8;
             uint8_t *swap_p[5], *plain_p[2], *done_p[2];
             int swap_n = 0, plain_n = 0, done_n = 0;
+            /* #1063: g_trace_hist armed -> out-of-line helper, exactly as
+             * the SET_NAME* arms do. The inline path below cannot record
+             * history, and a slot-bound interrogated name (a parameter, or
+             * a local rebound by its own `for` binder) silently lost every
+             * write after OSR. Same relaxed-load rationale as SET_NAME. */
+            uint8_t *trace_p;
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_hist_storage);
+            w = emit_cmpl_0_mem_rax(w);
+            w = emit_jne_rel32(w, &trace_p);
             /* %rax = stack[sp-1]   (tos, stays on stack) */
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
             /* %rsi = old values[slot] */
@@ -3173,6 +3183,22 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             }
             /* .done: */
             for (int k = 0; k < done_n; k++) patch_rel32(done_p[k], w);
+            uint8_t *over_p;
+            w = emit_jmp_rel32(w, &over_p);
+            /* .traced: jit_helper_set_local(chunk, slot) -- chunk in %rdi
+             * via %r14, slot in %esi, sp synced/reloaded around the call.
+             * TOS stays on the stack on both paths, so the merge at .over
+             * leaves the same value in the same place. */
+            patch_rel32(trace_p, w);
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_mov_r14_rdi(w);
+            w = emit_mov_imm32_esi(w, (uint32_t)slot);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_set_local);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            patch_rel32(over_p, w);
             i += 3;
         } else if (op == OP_MOD) {
             /* fmod-based modulo. Diverges from add/sub/mul/div: a libm

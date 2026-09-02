@@ -3138,9 +3138,13 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         chunk->local_names = xcalloc(lc, sizeof(char *));
         for (int i = 0; i < lc; i++) {
             Value *nm = d[5]->data.list.items[i];
-            chunk->local_names[i] = strdup((nm && nm->type == VAL_STR) ? nm->data.str : "");
+            chunk->local_names[i] = env_intern_name((nm && nm->type == VAL_STR) ? nm->data.str : "");
         }
         chunk->local_count = lc;
+        /* #1063: a descriptor carries no interrogation scan; record every
+         * slot write (the unfiltered trace_assign path applies anyway). */
+        chunk->local_traced = xmalloc((size_t)(lc > 0 ? lc : 1));
+        memset(chunk->local_traced, 1, (size_t)(lc > 0 ? lc : 1));
     }
     /* The VM runs on its global value stack (VM_STACK_MAX), so max_stack is a
      * hint only. */

@@ -338,8 +338,21 @@ typedef struct EigsChunk {
     int      fn_count;
     int      fn_cap;
 
-    char   **local_names;       /* local variable names */
+    char   **local_names;       /* local variable names (INTERNED, not owned -- #1063) */
     int      local_count;
+    uint8_t *local_traced;      /* #1063: per slot, 1 iff THIS chunk interrogates
+                                 * the name (prev of / what is x at / when).
+                                 * The prev/history table is keyed by NAME
+                                 * across all frames, so recording every slot
+                                 * write of every function would let a callee's
+                                 * same-named local rewrite the caller's `prev`
+                                 * (dynamics__physics: frame_velocity's x vs
+                                 * step's x). Name-routing already records a
+                                 * local only in a function that interrogates
+                                 * it; slot writes follow the same rule. NULL
+                                 * (no array) = record all -- non-compiler
+                                 * producers have no scan and use the unfiltered
+                                 * trace_assign anyway. */
 
     char    *name;              /* function name or "<module>" */
     int      param_count;

@@ -223,6 +223,9 @@ void trace_line(int line);
  * When in doubt, call trace_assign. */
 void trace_assign(const char *name, EigsSlot value);
 void trace_assign_filtered(const char *name, EigsSlot value);
+/* #1063: A record on the tape, NO prev-table entry -- for a slot write whose
+ * name the owning chunk does not interrogate (EigsChunk.local_traced). */
+void trace_assign_tape_only(const char *name, EigsSlot value);
 
 /* #262 Phase-3 D2: overwrite the observer snapshot of `name`'s most recent
  * history entry with slot-sourced entropy/dH/last_entropy. Called from

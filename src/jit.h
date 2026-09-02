@@ -229,6 +229,7 @@ int  jit_helper_loop_cap_check(void);
 void jit_helper_set_name(struct EigsChunk *chunk, int idx);
 void jit_helper_set_name_local(struct EigsChunk *chunk, int idx);
 void jit_helper_set_fn_name_local(struct EigsChunk *chunk, int idx);
+void jit_helper_set_local(struct EigsChunk *chunk, int slot);
 
 /* Stage 4r/5f: out-of-line helper for OP_CALL. Returns:
  *   0 — call completed (builtin ran, or a compiled VAL_FN callee ran

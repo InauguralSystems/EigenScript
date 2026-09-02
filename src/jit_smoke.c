@@ -104,6 +104,7 @@ int jit_helper_loop_cap_check(void) { return 1; }
 void jit_helper_set_name(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
 void jit_helper_set_name_local(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
 void jit_helper_set_fn_name_local(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
+void jit_helper_set_local(struct EigsChunk *chunk, int slot) { (void)chunk; (void)slot; }
 void jit_helper_index_get(void) { }
 void jit_helper_local_dot_set(struct EigsChunk *chunk, int slot, int name_idx) {
     (void)chunk; (void)slot; (void)name_idx;

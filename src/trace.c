@@ -1544,11 +1544,16 @@ static void write_slot(EigsSlot s) {
     tp_puts("<unknown>");
 }
 
-static void trace_assign_ex(const char *name, EigsSlot value, int filtered) {
+static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int record_prev) {
     /* Prev-map update runs regardless of EIGS_TRACE — `prev of x` is a
      * language feature, not a tape feature. The tape write below is
-     * still gated on a tape (file or sink) being open. */
-    prev_record_assign(name, value, filtered);
+     * still gated on a tape (file or sink) being open. record_prev == 0 is
+     * the #1063 slot case: a slot write whose name THIS chunk does not
+     * interrogate still belongs on the tape (the DAP stepper stops on A
+     * records; test_dap's breakpoint inside `double` is one) but must not
+     * enter the name-keyed prev table, where a callee's same-named local
+     * would rewrite the caller's `prev`. */
+    if (record_prev) prev_record_assign(name, value, filtered);
 
     if (!trace_out_active()) return;
     if (!name) name = "?";
@@ -1582,7 +1587,12 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered) {
  * chunk) reaches the history through here and needs no arming ritual it has
  * no way to perform. */
 void trace_assign(const char *name, EigsSlot value) {
-    trace_assign_ex(name, value, 0);
+    trace_assign_ex(name, value, 0, 1);
+}
+
+/* #1063: tape record only -- see trace_assign_ex. */
+void trace_assign_tape_only(const char *name, EigsSlot value) {
+    trace_assign_ex(name, value, 1, 0);
 }
 
 /* The narrowed twin, for callers running a chunk the bytecode compiler
@@ -1591,7 +1601,7 @@ void trace_assign(const char *name, EigsSlot value) {
  * it. Retention is bounded by the suffix-minima pruning either way — this is
  * an optimization, never a safety property. */
 void trace_assign_filtered(const char *name, EigsSlot value) {
-    trace_assign_ex(name, value, 1);
+    trace_assign_ex(name, value, 1, 1);
 }
 
 /* ----- Full-fidelity writer for nondet records.
