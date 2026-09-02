@@ -3358,7 +3358,7 @@ static int sandbox_name_allowed(const char *name) {
  * callable there sends the caller hunting for a function that was never in
  * the result. */
 static int sandbox_value_has_callable(Value *v, int depth, long *budget,
-                                      int *unverified, int promote_keys) {
+                                      int *unverified) {
     if (!v) return 0;
     if (v->type == VAL_FN || v->type == VAL_BUILTIN) return 1;
     if (depth > SANDBOX_RESULT_MAX_DEPTH || --(*budget) <= 0) {
@@ -3386,15 +3386,18 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
     if (v->type == VAL_LIST) {
         for (int i = 0; i < v->data.list.count; i++)
             if (sandbox_value_has_callable(v->data.list.items[i], depth + 1,
-                                           budget, unverified, promote_keys))
+                                           budget, unverified))
                 return 1;
     } else if (v->type == VAL_DICT) {
         for (int i = 0; i < v->data.dict.count; i++) {
-            if (promote_keys)
-                v->data.dict.keys[i] = env_intern_scope_promote(
-                    v, v->data.dict.keys[i]);
+            /* #1014: this walk once re-homed escaping dict keys as well
+             * (a promote_keys arm, run as a second pass at the result
+             * boundary). Measured: dict_set_hashed promotes at INSERTION
+             * whenever a sandbox intern scope is open, so that pass
+             * changed 0 of 128 keys -- deleted. One job: callable
+             * detection. */
             if (sandbox_value_has_callable(v->data.dict.vals[i], depth + 1,
-                                           budget, unverified, promote_keys))
+                                           budget, unverified))
                 return 1;
         }
     }
@@ -3508,11 +3511,26 @@ Value* builtin_sandbox_run(Value *arg) {
         env_set_local(sbox, SANDBOX_ALLOW[i],
                       v->type == VAL_BUILTIN ? v : stub);
     }
-    for (int i = 0; i < g_global_env->count; i++) {
-        const char *nm = g_global_env->names[i];
+    /* #1035: the walk reads g_global_env's count/names while pthread
+     * workers may be binding new module names under g_module_env_lock
+     * (env_set_local_pre_interned_slot); TSan caught the unlocked read.
+     * Snapshot the names UNDER the lock, then bind outside it: sbox is a
+     * sealed root env, so env_set_local on it takes the same non-recursive
+     * lock -- binding inside the locked walk deadlocked the first cut
+     * (measured: the program hung at 0% CPU). Interned names are stable
+     * pointers, so the snapshot stays valid after the unlock. The lock
+     * is a no-op until the process goes multithreaded. */
+    env_global_shared_lock();
+    int snap_n = g_global_env->count;
+    const char **snap = xcalloc(snap_n > 0 ? (size_t)snap_n : 1, sizeof(char *));
+    for (int i = 0; i < snap_n; i++) snap[i] = g_global_env->names[i];
+    env_global_shared_unlock();
+    for (int i = 0; i < snap_n; i++) {
+        const char *nm = snap[i];
         if (nm && !sandbox_name_allowed(nm))
             env_set_local(sbox, nm, stub);
     }
+    free(snap);
     val_decref(stub);
 
     int saved_max = g_sandbox_loop_max;
@@ -3542,7 +3560,8 @@ Value* builtin_sandbox_run(Value *arg) {
     size_t saved_sb_used   = g_sandbox_bytes_used;
     size_t saved_sb_max    = g_sandbox_byte_max;
     /* Names made by untrusted descriptor assembly or VM execution belong to
-     * this run until a returned dictionary key is explicitly promoted.
+     * this run until a dictionary insertion promotes them (dict_set_hashed,
+     * at insertion -- the only promotion site since #1014).
      * Pre-existing scope-zero host/global names retain their process lifetime
      * and pointer identity; channel keys live in their separate stable table. */
     g_sandbox_active     = 1;
@@ -3633,21 +3652,12 @@ Value* builtin_sandbox_run(Value *arg) {
     long scan_budget = SANDBOX_RESULT_MAX_NODES;
     int scan_unverified = 0;
     int scan_hit = result &&
-        sandbox_value_has_callable(result, 0, &scan_budget, &scan_unverified, 0);
-    if (result && !scan_hit) {
-        /* The callable scan already proved this graph walkable. Repeat the
-         * same bounded walk to promote dictionary keys in every nested result
-         * container; an escaping key is then owned by its returned Value,
-         * while unreturned scratch entries can be released at the boundary. */
-        long promote_budget = SANDBOX_RESULT_MAX_NODES;
-        int promote_unverified = 0;
-        int promote_hit = sandbox_value_has_callable(
-            result, 0, &promote_budget, &promote_unverified, 1);
-        if (promote_hit) {
-            scan_hit = 1;
-            scan_unverified = promote_unverified;
-        }
-    }
+        sandbox_value_has_callable(result, 0, &scan_budget, &scan_unverified);
+    /* #1014: a second walk once re-homed dictionary keys at this result
+     * boundary. Measured: dict_set_hashed promotes at INSERTION whenever a
+     * sandbox intern scope is open, so that walk changed 0 of 128 keys on
+     * the test that exercises it -- redundant, and deleted with its
+     * promote_keys arm. */
     if (scan_hit) {
         val_decref(result);
         result = NULL;

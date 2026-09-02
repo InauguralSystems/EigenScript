@@ -34,7 +34,7 @@ echo "=== concurrency slice must be race-free ==="
 SLICE="test_concurrent test_spawn_parallel test_chan_dict_xthread test_spawn_gc \
        test_channel_nb test_spawn_channel_exit test_spawn_args \
        test_spawn_arena_return test_spawn_jit test_spawn_jit_warm test_obs_mt_race \
-       tsan_no_yield_race"
+       tsan_no_yield_race tsan_sandbox_snapshot_race"
 for t in $SLICE; do
     f="$TESTS_DIR/$t.eigs"
     [ -f "$f" ] || continue

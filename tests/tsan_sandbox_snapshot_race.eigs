@@ -1,0 +1,21 @@
+# #1035: sandbox_run snapshots the module env's names while another thread
+# writes through it. Main rebinds globals in a loop while two workers call
+# sandbox_run; the snapshot walk must hold the module-env lock (TSan clean
+# in tests/test_tsan.sh) and every sandbox result must be ok.
+define worker(n) as:
+    local i is 0
+    local ok is 0
+    loop while i < 200:
+        local r is sandbox_run of [[1, [0,0,0, 40], [7]], 1000]
+        if r["ok"] == 1:
+            ok is ok + 1
+        i is i + 1
+    return ok
+a is spawn of [worker, 1]
+b is spawn of [worker, 2]
+k is 0
+loop while k < 2000:
+    g1 is k
+    g2 is k + 1
+    k is k + 1
+print of ((thread_join of a) + (thread_join of b))
