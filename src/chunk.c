@@ -107,6 +107,7 @@ void chunk_decref(EigsChunk *chunk) {
      * array. */
     if (chunk->local_names) {
         free(chunk->local_names);
+        free(chunk->local_traced);
     }
     free(chunk->name);
     free(chunk);

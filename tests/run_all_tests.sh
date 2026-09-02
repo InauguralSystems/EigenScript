@@ -3500,7 +3500,7 @@ check_eigs_suite "occurrence-addressed temporal history (#868)" test_temporal_wh
 # the OSR threshold before). Every parameter row is checked against its
 # `local` twin, including two 200k-iteration OSR rows and a spawned worker.
 # Line-number sensitive ONLY in the two `what is ... at` checks.
-check_eigs_suite "interrogated parameter = slot: binder, history, JIT (#1063)" test_temporal_param.eigs "All tests passed" 22
+check_eigs_suite "interrogated parameter = slot: binder, history, JIT (#1063)" test_temporal_param.eigs "All tests passed" 24
 
 # [70d] #827 — and the history must stay BOUNDED. Peak RSS at two iteration
 # counts 8x apart, ceiling + flatness, for a dead-code `prev of`, a live

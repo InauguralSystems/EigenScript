@@ -1125,9 +1125,17 @@ static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
  * strdup'd copy here recorded history no `prev of` could ever present, and an
  * interrogated parameter rebound twice answered null. */
 static inline void vm_trace_local_slot(const EigsChunk *chunk, uint16_t slot) {
-    const char *nm = (slot < (uint16_t)chunk->local_count && chunk->local_names)
-        ? chunk->local_names[slot] : NULL;
-    vm_trace_assign(chunk, nm, g_vm.stack[g_vm.sp - 1]);
+    if (slot >= (uint16_t)chunk->local_count || !chunk->local_names) return;
+    /* Only a slot whose name THIS chunk interrogates records (local_traced);
+     * a same-named local in another function must not rewrite the caller's
+     * history through the name-keyed table. */
+    if (chunk->local_traced && !chunk->local_traced[slot]) {
+        /* Still an A record on the tape (the DAP stepper and replay consumers
+         * see every assignment, as they did before #1063); just no history. */
+        trace_assign_tape_only(chunk->local_names[slot], g_vm.stack[g_vm.sp - 1]);
+        return;
+    }
+    vm_trace_assign(chunk, chunk->local_names[slot], g_vm.stack[g_vm.sp - 1]);
 }
 
 /* #1063: the JIT's SET_LOCAL slow path, taken when g_trace_hist is armed --

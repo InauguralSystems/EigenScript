@@ -1267,6 +1267,16 @@ static int collect_bound_before_loop(ASTNode *root, ASTNode *loop_node, NameSet 
 
 /* Walk a function body collecting names that appear in `who is x` or `when is x`
  * interrogations. These need the slow path so env assign_counts stays consistent. */
+/* #1063: see EigsChunk.local_traced. Called once per function/lambda chunk
+ * after its local_names[] are final and before the compiler's interrogated
+ * set is freed. */
+static void stamp_local_traced(EigsChunk *ch, NameSet *interrogated) {
+    if (ch->local_count <= 0 || !ch->local_names) return;
+    ch->local_traced = xcalloc((size_t)ch->local_count, 1);
+    for (int i = 0; i < ch->local_count; i++)
+        ch->local_traced[i] = ch->local_names[i] && name_set_has(interrogated, ch->local_names[i]) ? 1 : 0;
+}
+
 static void scan_for_interrogated(ASTNode *node, NameSet *out) {
     if (!node) return;
     switch (node->type) {
@@ -2494,6 +2504,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             fn_chunk->local_count = new_total;
         }
 
+        stamp_local_traced(fn_chunk, &fn_compiler.interrogated);
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         name_set_free(&fn_compiler.env_bound);
@@ -2556,6 +2567,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             fn_chunk->local_count = new_total;
         }
 
+        stamp_local_traced(fn_chunk, &fn_compiler.interrogated);
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         name_set_free(&fn_compiler.env_bound);

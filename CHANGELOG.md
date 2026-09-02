@@ -18,7 +18,15 @@ All notable changes to EigenScript are documented here.
   constant table), a name that already has a slot keeps the slot for its
   binder, and the JIT's `SET_LOCAL` takes an out-of-line helper when history
   is armed — exactly as its `SET_NAME` arms already did — so the tape keeps
-  filling past the OSR threshold (it froze at 4999 of 199999 before), and a
+  filling past the OSR threshold (it froze at 4999 of 199999 before). A slot
+  write records only when the chunk that owns the slot interrogates the name
+  (`local_traced`, the rule name-routing already applied) — the history table
+  is keyed by name across all frames, and recording every function's slot
+  writes let a callee's same-named local rewrite the caller's `prev` (the
+  observer cross-repo corpus caught it: `dynamics__physics`' frame velocity
+  read 0 instead of -0.38). An untraced slot write still lands on the tape as
+  an `A` record — the DAP stepper stops on those, and the suite's DAP section
+  went red when the first cut dropped them — it just enters no history. A
   function compiled on the main thread keys the same history entry whichever
   thread runs it (the chunk carries the compiler's interned pointer, not a
   per-thread re-interning). The other direction — a chunk compiled INSIDE a

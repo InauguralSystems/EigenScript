@@ -143,6 +143,37 @@ define hot_bind_local(q) as:
 assert_true of [(hot_bind of 1) == (hot_bind_local of 1), "hot binder over a param == its local twin"]
 assert_true of [(hot_bind of 1) == 19999, "...and the value itself (main froze the tape at OSR: 19998)"]
 
+# ---- (6b) the history table is keyed by NAME across all frames. A callee's
+# same-named SLOT local must not rewrite the caller's `prev` -- only a chunk
+# that interrogates the name records its slot writes (local_traced). Found by
+# the observer cross-repo corpus: dynamics__physics' frame_velocity read 0
+# instead of -0.38 because step() writes an `x` of its own.
+define step_x(st) as:
+    x is st[0] * 0.5
+    return [x, 0.0]
+define frame_v() as:
+    state is [1.0, 0.0]
+    x is state[0]
+    state is step_x of state
+    x is state[0]
+    return (x - (prev of x))
+assert_eq of [frame_v of null, 0 - 0.5, "a callee's same-named slot local does not pollute the caller's prev"]
+# the pre-existing name-routed behaviour, pinned as-is: when the callee ALSO
+# interrogates its x, its writes are recorded and DO reach the caller's prev
+# (main answers 0 here too -- the name-keyed table is the inherited design,
+# not this fix's; #1064/#1065 family).
+define step_xi(st) as:
+    x is st[0] * 0.5
+    local r is prev of x
+    return [x, 0.0]
+define frame_vi() as:
+    state is [1.0, 0.0]
+    x is state[0]
+    state is step_xi of state
+    x is state[0]
+    return (x - (prev of x))
+assert_eq of [frame_vi of null, 0, "...while an interrogating callee's writes are visible (pre-existing, name-keyed)"]
+
 # ---- (7) a worker thread: the key must be the chunk's own interned name, not a
 # per-thread re-interning (the worker's intern table is not the compiler's)
 ch is channel of null
