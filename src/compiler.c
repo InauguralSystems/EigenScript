@@ -2180,7 +2180,19 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             int interrogated = name_set_has(&c->interrogated, loop_var);
             int in_outer     = name_in_enclosing(c, loop_var);
             int in_module    = c->module_names && name_set_has(c->module_names, loop_var);
-            if (!captured && !interrogated && !in_outer && !in_module) {
+            /* #1063: a name that ALREADY has a frame slot -- a parameter,
+             * or a local slotted earlier in this body -- stays a slot for
+             * its writes (the assignment path above resolves the slot
+             * before consulting any of these flags) and for the body's
+             * reads (GET_LOCAL). Sending its `for` binder to a loop env
+             * because the name is interrogated split the storage: the
+             * binder landed in the env, every body read hit the parameter
+             * slot, and `for p in [7, 8]: print of p` printed the incoming
+             * argument twice. An interrogated name with NO slot is a
+             * name-routed local (its assignments go SET_FN_NAME_LOCAL), so
+             * the exclusion is still right for it. */
+            int has_slot = resolve_local(c, loop_var, loop_var_hash) >= 0;
+            if (!captured && (has_slot || (!interrogated && !in_outer && !in_module))) {
                 NameSet captured_here = {0};
                 for (int i = 0; i < node->data.forloop.body_count; i++)
                     scan_for_captures(node->data.forloop.body[i], &captured_here);
@@ -2438,7 +2450,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         fn_chunk->local_names = xcalloc(node->data.func.param_count, sizeof(char *));
         fn_chunk->local_count = node->data.func.param_count;
         for (int i = 0; i < node->data.func.param_count; i++) {
-            fn_chunk->local_names[i] = strdup(node->data.func.params[i]);
+            fn_chunk->local_names[i] = env_intern_name(node->data.func.params[i]);
             uint32_t h = env_hash_name(node->data.func.params[i]);
             add_local(&fn_compiler, node->data.func.params[i], h);
         }
@@ -2478,7 +2490,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             int new_total = fn_compiler.local_count;
             fn_chunk->local_names = realloc(fn_chunk->local_names, new_total * sizeof(char *));
             for (int i = fn_chunk->local_count; i < new_total; i++)
-                fn_chunk->local_names[i] = strdup(fn_compiler.locals[i].name);
+                fn_chunk->local_names[i] = env_intern_name(fn_compiler.locals[i].name);
             fn_chunk->local_count = new_total;
         }
 
@@ -2527,7 +2539,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         fn_chunk->local_names = xcalloc(node->data.lambda.param_count, sizeof(char *));
         fn_chunk->local_count = node->data.lambda.param_count;
         for (int i = 0; i < node->data.lambda.param_count; i++) {
-            fn_chunk->local_names[i] = strdup(node->data.lambda.params[i]);
+            fn_chunk->local_names[i] = env_intern_name(node->data.lambda.params[i]);
             uint32_t h = env_hash_name(node->data.lambda.params[i]);
             add_local(&fn_compiler, node->data.lambda.params[i], h);
         }
@@ -2540,7 +2552,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             int new_total = fn_compiler.local_count;
             fn_chunk->local_names = realloc(fn_chunk->local_names, new_total * sizeof(char *));
             for (int i = fn_chunk->local_count; i < new_total; i++)
-                fn_chunk->local_names[i] = strdup(fn_compiler.locals[i].name);
+                fn_chunk->local_names[i] = env_intern_name(fn_compiler.locals[i].name);
             fn_chunk->local_count = new_total;
         }
 

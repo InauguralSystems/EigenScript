@@ -1,0 +1,163 @@
+# test_temporal_param.eigs — #1063.
+#
+# An interrogated PARAMETER was half slot, half name. Its writes went to the
+# frame slot (SET_LOCAL) like any slotted name, but (1) SET_LOCAL recorded
+# history under the chunk's strdup'd slot name -- a pointer the pointer-keyed
+# prev table never matches against a query's interned constant -- so the
+# history was orphaned and `prev of t` after two rebinds answered null; and
+# (2) a `for` binder over the parameter was sent to a loop env because the
+# name was interrogated, while the body's reads stayed GET_LOCAL of the
+# parameter slot: `for p in [7, 8]: print of p` printed the incoming argument
+# twice, and the binder never persisted.
+#
+# Every check below has a LOCAL twin that already behaved this way; the fix
+# makes the parameter rows equal the local rows. Line-number sensitive ONLY in
+# the `what is ... at` checks, which name their line explicitly.
+
+load_file of "lib/test.eigs"
+
+# ---- (1) history of a rebound parameter reaches `prev of`
+define accum(ta) as:
+    ta is ta + 1
+    ta is ta + 1
+    return prev of ta
+assert_true of [(accum of 1) == 2, "prev of a twice-rebound parameter is the earlier write"]
+
+define accum_local(q) as:
+    local tb is q
+    tb is tb + 1
+    tb is tb + 1
+    return prev of tb
+assert_true of [(accum_local of 1) == 2, "local twin of (1)"]
+
+define once(tc) as:
+    tc is 9
+    return prev of tc
+assert_true of [(once of 1) == null, "one rebind: the argument binding is not an assignment, prev is null"]
+
+# ---- (2) a `for` binder over an interrogated parameter is visible to the body
+seen is []
+define binder_reads(p) as:
+    for p in [7, 8]:
+        append of [seen, p]
+    append of [seen, p]
+    return prev of p
+r is binder_reads of 1
+assert_true of [(seen[0] == 7) and (seen[1] == 8), "body reads the binder, not the argument"]
+assert_true of [seen[2] == 8, "the binder persists past the loop like a local's does"]
+assert_true of [r == 7, "prev of the binder after the loop is the earlier iteration"]
+
+# The twin here is the NON-interrogated local binder, which takes the same
+# slot path a parameter does: body sees 7, 8 and the binder persists (8).
+seen_local is []
+define binder_reads_local(q) as:
+    pl is q
+    for pl in [7, 8]:
+        append of [seen_local, pl]
+    append of [seen_local, pl]
+    return 0
+binder_reads_local of 1
+assert_true of [(seen_local[0] == 7) and (seen_local[1] == 8) and (seen_local[2] == 8), "slot-path twin of (2)"]
+
+# ---- (3) body writes through the binder accumulate on the parameter
+define binder_writes(pw) as:
+    for pw in [7, 8]:
+        pw is pw + 10
+    local r is prev of pw
+    return pw
+assert_true of [(binder_writes of 1) == 18, "binder rebinds in the body: 8 + 10 (interrogated)"]
+
+# ---- (4) a second parameter is unaffected, and `what is ... at` sees the slot writes
+define two(a, p2) as:
+    for p2 in [7, 8]:
+        a is a + p2
+    local r is prev of p2
+    return a
+assert_true of [(two of [100, 1]) == 115, "sibling parameter accumulates the binder values (interrogated)"]
+
+# ---- (2b) `prev of` BEFORE the loop arms the same way
+seen_b is []
+define before(pb) as:
+    local r is prev of pb
+    for pb in [7, 8]:
+        append of [seen_b, pb]
+    append of [seen_b, pb]
+    return r
+rb is before of 1
+assert_true of [rb == null, "prev before the loop: null (the argument binding is not an assignment)"]
+assert_true of [(seen_b[0] == 7) and (seen_b[1] == 8) and (seen_b[2] == 8), "...and the body still reads the binder"]
+
+# ---- (2c) the parameter also shadows a MODULE name / an enclosing name: same slot rule
+pm is 1000
+seen_m is []
+define fm(pm) as:
+    for pm in [7, 8]:
+        append of [seen_m, pm]
+    append of [seen_m, pm]
+    return 0
+fm of 1
+assert_true of [(seen_m[0] == 7) and (seen_m[1] == 8) and (seen_m[2] == 8), "param shadowing a module name: body reads the binder"]
+assert_true of [pm == 1000, "...and the module binding is untouched"]
+
+define stamp(ts) as:
+    ts is 5
+    ts is 6
+    return what is ts at 103
+assert_true of [(stamp of 1) == 5, "what is <param> at <line> reads the slot write on that line"]
+
+# ---- (5) the non-interrogated parameter binder still behaves the same
+define plain(pn) as:
+    for pn in [7, 8]:
+        pn is pn + 10
+    return pn
+assert_true of [(plain of 1) == 18, "no interrogation: unchanged"]
+
+# ---- (6) the JIT/OSR tier: slot writes inside a HOT loop must keep reaching
+# the tape. Before the fix the inline SET_LOCAL recorded nothing, so history
+# froze at the OSR threshold: prev of t answered 4999, not 199999.
+define hot(t) as:
+    for i in range of 200000:
+        t is t + 1
+    return prev of t
+define hot_local(q) as:
+    local t is q
+    for i in range of 200000:
+        t is t + 1
+    return prev of t
+assert_true of [(hot of 0) == 199999, "OSR-compiled slot writes reach the tape (param)"]
+assert_true of [(hot_local of 0) == 199999, "local twin of (6)"]
+define hot_what(t) as:
+    for i in range of 20000:
+        t is t + 1
+    return what is t at 131
+assert_true of [(hot_what of 0) == 20000, "what is <param> at <hot line> reads the LAST write, past OSR"]
+define hot_bind(p) as:
+    for p in range of 20000:
+        p is p + 0
+    return prev of p
+define hot_bind_local(q) as:
+    local p is q
+    for p in range of 20000:
+        p is p + 0
+    return prev of p
+assert_true of [(hot_bind of 1) == (hot_bind_local of 1), "hot binder over a param == its local twin"]
+assert_true of [(hot_bind of 1) == 19999, "...and the value itself (main froze the tape at OSR: 19998)"]
+
+# ---- (7) a worker thread: the key must be the chunk's own interned name, not a
+# per-thread re-interning (the worker's intern table is not the compiler's)
+ch is channel of null
+define w_param(t) as:
+    t is t + 1
+    t is t + 1
+    send of [ch, prev of t]
+define w_local(q) as:
+    local t is q
+    t is t + 1
+    t is t + 1
+    send of [ch, prev of t]
+h1 is spawn of [w_param, 1]
+assert_true of [(recv_timeout of [ch, 5000]) == 2, "worker thread: prev of a rebound parameter"]
+h2 is spawn of [w_local, 1]
+assert_true of [(recv_timeout of [ch, 5000]) == 2, "worker thread: local twin"]
+
+test_summary of null

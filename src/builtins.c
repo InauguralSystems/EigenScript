@@ -3138,7 +3138,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         chunk->local_names = xcalloc(lc, sizeof(char *));
         for (int i = 0; i < lc; i++) {
             Value *nm = d[5]->data.list.items[i];
-            chunk->local_names[i] = strdup((nm && nm->type == VAL_STR) ? nm->data.str : "");
+            chunk->local_names[i] = env_intern_name((nm && nm->type == VAL_STR) ? nm->data.str : "");
         }
         chunk->local_count = lc;
     }

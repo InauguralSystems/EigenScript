@@ -100,9 +100,12 @@ void chunk_decref(EigsChunk *chunk) {
     free(chunk->functions);
     /* Module chunks can carry promoted local slots (local_count > 0)
      * without a local_names array — only fn/lambda chunks build one. */
+    /* #1063: local_names[] entries are INTERNED (env_intern_name at chunk
+     * build), not owned -- they must be pointer-identical to the chunk's
+     * const_interns so a slot write and a `prev of` / `what is x at` query
+     * present the same key to the pointer-keyed history table. Free only the
+     * array. */
     if (chunk->local_names) {
-        for (int i = 0; i < chunk->local_count; i++)
-            free(chunk->local_names[i]);
         free(chunk->local_names);
     }
     free(chunk->name);

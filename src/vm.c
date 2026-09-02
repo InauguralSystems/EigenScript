@@ -1084,6 +1084,66 @@ static Env *env_binding_home(Env *start) {
     return e;
 }
 
+/* #1063: the ONE implementation of "store TOS into fn-local slot", shared by
+ * CASE(SET_LOCAL) and the JIT's out-of-line path (jit_helper_set_local), so
+ * the two can never disagree. The in-place branch is load-bearing beyond
+ * speed: g_last_observer may alias the exclusive VAL_NUM being overwritten,
+ * and a swap+decref would free it under the observer. #873: an arena value is
+ * promoted before it lands in an env slot (module slots are immortal, fn-local
+ * slots can outlive the arena window via parked envs/closures). */
+static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
+    if (slot_is_num(tos)) {
+        EigsSlot ex_s = e->values[slot];
+        if (slot_is_heap(ex_s)) {
+            Value *existing = slot_as_ptr(ex_s);
+            if (existing && existing->type == VAL_NUM &&
+                existing->refcount == 1 && !existing->arena) {
+                existing->data.num = tos.d;
+                return;
+            }
+        }
+    }
+    if (__builtin_expect(slot_is_ptr(tos), 0)) {
+        Value *tv = slot_as_ptr(tos);
+        if (__builtin_expect(tv && tv->arena, 0)) {
+            Value *promoted = promote_if_arena(tv);
+            if (promoted && promoted != tv) {
+                slot_decref(e->values[slot]);
+                e->values[slot] = slot_from_value(promoted);
+                return;
+            }
+        }
+    }
+    slot_incref(tos);
+    slot_decref(e->values[slot]);
+    e->values[slot] = tos;
+}
+
+/* #1063: record a slot write on the prev/history tape. The table is keyed by
+ * POINTER identity and a query presents chunk->const_interns[idx]; local_names
+ * is interned at chunk build (compiler.c) so the two keys coincide -- a
+ * strdup'd copy here recorded history no `prev of` could ever present, and an
+ * interrogated parameter rebound twice answered null. */
+static inline void vm_trace_local_slot(const EigsChunk *chunk, uint16_t slot) {
+    const char *nm = (slot < (uint16_t)chunk->local_count && chunk->local_names)
+        ? chunk->local_names[slot] : NULL;
+    vm_trace_assign(chunk, nm, g_vm.stack[g_vm.sp - 1]);
+}
+
+/* #1063: the JIT's SET_LOCAL slow path, taken when g_trace_hist is armed --
+ * the inline fast path cannot record history, and before this helper existed
+ * an interrogated parameter's slot writes silently stopped reaching the tape
+ * the moment OSR compiled its loop (prev of t == 4999 at the 5000-iteration
+ * threshold, 199999 interpreted). Mirrors CASE(SET_LOCAL) through the shared
+ * store; the scan already refuses slot >= local_count, so no error arm. */
+void jit_helper_set_local(EigsChunk *chunk, int slot) {
+    vm_trace_local_slot(chunk, (uint16_t)slot);
+    CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    Env *e = frame->fn_env;
+    if ((int)slot < e->count)
+        vm_store_local_slot(e, slot, g_vm.stack[g_vm.sp - 1]);
+}
+
 void jit_helper_set_name(EigsChunk *chunk, int idx) {
     if (__builtin_expect(g_trace_hist, 0)) {
         vm_trace_assign(chunk, chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
@@ -3349,48 +3409,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(SET_LOCAL): {
         uint16_t slot = read_u16(ip); ip += 2;
-        if (__builtin_expect(g_trace_hist, 0)) {
-            const char *nm = (slot < (uint16_t)chunk->local_count && chunk->local_names)
-                ? chunk->local_names[slot] : NULL;
-            vm_trace_assign(chunk, nm, g_vm.stack[g_vm.sp - 1]);
-        }
+        if (__builtin_expect(g_trace_hist, 0)) vm_trace_local_slot(chunk, slot);
         Env *e = frame->fn_env;
         if ((int)slot < e->count) {
-            EigsSlot tos = g_vm.stack[g_vm.sp - 1];
-            /* In-place mutation: writing an immediate into a slot that
-             * already holds an exclusive non-observed VAL_NUM rewrites
-             * the existing Value's data.num instead of swapping pointers. */
-            if (slot_is_num(tos)) {
-                EigsSlot ex_s = e->values[slot];
-                if (slot_is_heap(ex_s)) {
-                    Value *existing = slot_as_ptr(ex_s);
-                    if (existing && existing->type == VAL_NUM &&
-                        existing->refcount == 1 && !existing->arena) {
-                        existing->data.num = tos.d;
-                        DISPATCH();
-                    }
-                }
-            }
-            /* #873: promote an arena value before it lands in an env
-             * slot — module-chunk slots are immortal and fn-local slots
-             * can outlive the arena window via parked envs/closures.
-             * Same incref/arena-promotion contract as
-             * env_bind_fresh_param_slot / env_rebind_param_slot. */
-            if (__builtin_expect(slot_is_ptr(tos), 0)) {
-                Value *tv = slot_as_ptr(tos);
-                if (__builtin_expect(tv && tv->arena, 0)) {
-                    Value *promoted = promote_if_arena(tv);
-                    if (promoted && promoted != tv) {
-                        slot_decref(e->values[slot]);
-                        e->values[slot] = slot_from_value(promoted);
-                        goto _set_local_arena_done;
-                    }
-                }
-            }
-            slot_incref(tos);
-            slot_decref(e->values[slot]);
-            e->values[slot] = tos;
-            _set_local_arena_done:;
+            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1]);
         } else {
             /* #348: an out-of-range slot used to DROP the write silently
              * (the assigned variable simply never existed). Compiler-emitted

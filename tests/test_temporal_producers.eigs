@@ -85,4 +85,24 @@ assert_eq of [got_when, 2, "#830: when-at counts descriptor assignments (was 0)"
 # construction, writing the question arms the name. Its gate is the memory
 # bound in tests/test_temporal_memory.sh (suite [70d]), which must stay green.
 
+# ---- #1063: a descriptor with local_names and SLOT writes (SET_LOCAL, not
+# SET_NAME_LOCAL). The deserializer interns local_names[] at chunk build so
+# the slot write's history key is the interned constant the query presents;
+# a strdup'd copy recorded under a key no query could match (answered null).
+# The misspelled-local_names control must stay null: the key is the NAME.
+GET_LOCAL is 23
+SET_LOCAL is 24
+CLOSURE is 38
+CALL is 39
+slotbody is [LINE,10,0,0,0, CONST,0,0, SET_LOCAL,0,0, POP,
+             LINE,20,0,0,0, CONST,1,0, SET_LOCAL,0,0, POP,
+             GET_LOCAL,0,0, INTERROGATE_NAMED,6,0,2,0, RETURN]
+slotfn is [slotbody, [11, 22, "tmp1063"], [], 1, "slotfn", ["tmp1063"]]
+slotmod is [CLOSURE,0,0, CONST,0,0, CALL,1,0, RETURN]
+got_slot is vm_run_bytecode of [ABI, slotmod, [5], [slotfn]]
+assert_eq of [got_slot, 11, "#1063: prev of a SLOT-written descriptor local (was null)"]
+slotfn2 is [slotbody, [11, 22, "tmp1063x"], [], 1, "slotfn2", ["tmp1063"]]
+got_slot2 is vm_run_bytecode of [ABI, slotmod, [5], [slotfn2]]
+assert_eq of [got_slot2, null, "#1063 control: a query naming a different spelling reads nothing"]
+
 test_summary of null

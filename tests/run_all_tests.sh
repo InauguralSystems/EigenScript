@@ -3492,6 +3492,16 @@ check_eigs_suite "temporal history pruning keeps every answer (#827)" test_tempo
 # edit-stable. Deliberately NOT line-number sensitive, unlike [70]/[70f].
 check_eigs_suite "occurrence-addressed temporal history (#868)" test_temporal_when.eigs "All tests passed" 28
 
+# [70h] #1063 — an interrogated PARAMETER is a slot, binder and history
+# included. Its `for` binder stays on the frame slot (the body read the
+# incoming argument twice before), slot names are interned at chunk build so
+# SET_LOCAL's history key is the one `prev of` presents, and the JIT's
+# SET_LOCAL takes the traced helper when history is armed (the tape froze at
+# the OSR threshold before). Every parameter row is checked against its
+# `local` twin, including two 200k-iteration OSR rows and a spawned worker.
+# Line-number sensitive ONLY in the two `what is ... at` checks.
+check_eigs_suite "interrogated parameter = slot: binder, history, JIT (#1063)" test_temporal_param.eigs "All tests passed" 22
+
 # [70d] #827 — and the history must stay BOUNDED. Peak RSS at two iteration
 # counts 8x apart, ceiling + flatness, for a dead-code `prev of`, a live
 # `prev of`, and a live `at` query. Pre-fix this ran 203 MB and climbing; it
@@ -3519,7 +3529,7 @@ echo ""
 # shipped in v0.35.1, and the suite stayed green because this producer class had
 # no coverage anywhere. The C-level twin (the AOT's exact shape) is in
 # src/embed_smoke.c, gated by `make embed-smoke` in CI.
-check_eigs_suite "temporal reads from a non-compiler producer (#830)" test_temporal_producers.eigs "All tests passed" 5
+check_eigs_suite "temporal reads from a non-compiler producer (#830)" test_temporal_producers.eigs "All tests passed" 7
 
 # [70f] #831 — the other half: a descriptor must turn recording ON itself.
 # [70e] proves reads work once recording is on, but its own source contains the
