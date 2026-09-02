@@ -2444,7 +2444,7 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
-    echo "[47d/47] eigen_eval_loss held-out cross-entropy (4 checks)"
+    echo "[47f/47] eigen_eval_loss held-out cross-entropy (4 checks)"
     EL_OUTPUT=$(bash "$TESTS_DIR/test_eval_loss.sh" 2>&1)
     EL_PASS=$(echo "$EL_OUTPUT" | grep -c "PASS:" || true)
     EL_FAIL=$(echo "$EL_OUTPUT" | grep -c "FAIL:" || true)
@@ -2902,7 +2902,7 @@ GT_PROBE_OUT=$(./eigenscript "$GT_PROBE_FILE" 2>&1)
 rm -f "$GT_PROBE_FILE"
 
 if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[120] Gfx Text Metrics (2 runs)"
+    echo "[120b] Gfx Text Metrics (2 runs)"
     GT_FB=$(SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
     GT_DEF=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
     if rc_ok "$GT_FB_RC" "$GT_FB" && echo "$GT_FB" | grep -q "All tests passed" \
@@ -2920,7 +2920,7 @@ if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 else
-    echo "[120] Gfx text metrics SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
+    echo "[120b] Gfx text metrics SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
     echo ""
 fi
 
@@ -3262,7 +3262,7 @@ fi
 echo ""
 
 # [543] list_contains builtin
-echo "[543] List Contains (8 checks)"
+echo "[543b] List Contains (8 checks)"
 LCO_OUTPUT=$(./eigenscript ../tests/test_list_contains.eigs 2>&1); LCO_OUTPUT_RC=$?
 if rc_ok "$LCO_OUTPUT_RC" "$LCO_OUTPUT" && echo "$LCO_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 8))
@@ -3288,7 +3288,7 @@ ZLIB_PROBE_OUT=$(./eigenscript "$ZLIB_PROBE_FILE" 2>&1)
 rm -f "$ZLIB_PROBE_FILE"
 
 if ! echo "$ZLIB_PROBE_OUT" | grep -q "compiled without zlib support"; then
-    echo "[124] DEFLATE Codecs (#684, 24 checks)"
+    echo "[124b] DEFLATE Codecs (#684, 24 checks)"
     INF_OUTPUT=$(./eigenscript ../tests/test_inflate.eigs 2>&1); INF_OUTPUT_RC=$?
     if rc_ok "$INF_OUTPUT_RC" "$INF_OUTPUT" && echo "$INF_OUTPUT" | grep -q "DEFLATE_ALL_PASS"; then
         TOTAL=$((TOTAL + 24))
@@ -3304,7 +3304,7 @@ if ! echo "$ZLIB_PROBE_OUT" | grep -q "compiled without zlib support"; then
 else
     # Minimal build: the four names stay registered but must raise the
     # documented catchable error (the zero-dependency gating contract).
-    echo "[124] DEFLATE Codecs (#684) — minimal build, stub check (1 check)"
+    echo "[124b] DEFLATE Codecs (#684) — minimal build, stub check (1 check)"
     TOTAL=$((TOTAL + 1))
     if echo "$ZLIB_PROBE_OUT" | grep -q "deflate: compiled without zlib support"; then
         PASS=$((PASS + 1))
@@ -4482,7 +4482,7 @@ check_task_exit task_deadlock_worker_try.eigs 1 "deadlock"         # #509: deadl
 # type-rejection, #317 min/max N-ary reduction) + #314: a directory as the
 # script path must take the clean cannot-read-file exit, not xmalloc's
 # fatal-OOM SIGABRT (ftell on a directory reports LONG_MAX).
-echo "[105] Builtin Contracts (#312/#314/#316/#317)"
+echo "[105b] Builtin Contracts (#312/#314/#316/#317)"
 check_eigs_suite "negative indices, predicate rejection, min/max reduction" test_builtin_contracts.eigs "All tests passed" 1
 TOTAL=$((TOTAL + 1))
 DIR_OUT=$(./eigenscript ../tests 2>&1); DIR_RC=$?
@@ -4745,7 +4745,16 @@ check_eigs_suite "error propagation" test_error_propagation.eigs "error propagat
 check_eigs_suite "handle forge" test_handle_forge.eigs "PASS: handle table" 1
 check_eigs_suite "byte<->value builtins (str_from_bytes / f64 bytes)" test_byte_value_builtins.eigs "All tests passed" 19
 check_eigs_suite "write_bytes (binary append/truncate)" test_write_bytes.eigs "All tests passed" 10
-check_eigs_suite "rename / remove_file / is_dir (atomic swap, delete, dir probe)" test_file_rename.eigs "All tests passed" 17
+check_eigs_suite "rename / remove_file / is_dir / is_file (atomic swap, delete, dir + regular-file probes)" test_file_rename.eigs "All tests passed" 23
+
+# #1061 -- the last fail-soft numeric context: a non-number stored into a
+# buffer element was silently DROPPED (old element kept, rc 0). Now it raises
+# on every store shape (opcode path, JIT helper, buf_set, buf_from_list).
+check_eigs_suite "buffer element store rejects non-numbers (#1061)" test_buffer_store_type.eigs "All tests passed" 14
+
+# #1059 -- `observe of <unbound>` was the one read-shaped form that tolerated
+# an unbound operand (silent no-observation tuple); now it dies like any read.
+check_eigs_suite "observe of an unbound name dies (#1059)" test_observe_unbound.eigs "All tests passed" 7
 check_eigs_suite "vm_run_bytecode + sandbox (self-hosting bridge)" test_vm_run_bytecode.eigs "All tests passed" 29
 # Memory-safety gate: an assembled chunk that passes chunk_verify must not be
 # able to underflow the operand stack (the fast paths index the stack directly)
@@ -5444,7 +5453,7 @@ else
 fi
 echo ""
 
-echo "[99] Doc drift (mechanical)"
+echo "[99v] Doc drift (mechanical)"
 TOTAL=$((TOTAL + 1))
 if bash "$TESTS_DIR/../tools/doc_drift_check.sh"; then
     PASS=$((PASS + 1))
@@ -5452,6 +5461,16 @@ if bash "$TESTS_DIR/../tools/doc_drift_check.sh"; then
 else
     FAIL=$((FAIL + 1))
     echo "  FAIL: doc drift detected (see DRIFT lines above)"
+fi
+echo ""
+
+echo "[99w] Suite section labels are unique (#1025)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/suite_label_check.sh"; then
+    PASS=$((PASS + 1))
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: two suite sections print the same [label] (see FAIL lines above) -- rename one"
 fi
 echo ""
 

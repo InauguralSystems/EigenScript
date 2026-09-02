@@ -138,7 +138,7 @@ define argmin(items) as:
 
 # ---- log2: base-2 logarithm ----
 # log2 of value -> number, or element-wise over a list/tensor
-# Domain follows the log builtin: input is floored at 1e-10.
+# Domain follows the log builtin: positive input is exact; x <= 0 takes the ln(1e-10) stand-in (#865/#1041).
 # `divide` rather than `/`: log is element-wise, so a wrapper around it
 # has to be too, or `log2 of [8, 4]` fails where `log of [8, 4]` works.
 # Scalars are identical either way.
@@ -147,6 +147,6 @@ define log2(x) as:
 
 # ---- log10: base-10 logarithm ----
 # log10 of value -> number, or element-wise over a list/tensor
-# Domain follows the log builtin: input is floored at 1e-10.
+# Domain follows the log builtin: positive input is exact; x <= 0 takes the ln(1e-10) stand-in (#865/#1041).
 define log10(x) as:
     return divide of [log of x, 2.302585092994046]

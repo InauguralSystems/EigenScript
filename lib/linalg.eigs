@@ -236,7 +236,8 @@ define mat_inverse(A) as:
                 max_row is r
             r is r + 1
         if max_val < 1e-12:
-            return null
+            # #1047 twin: same pivot test, same silent null, same distant crash.
+            throw of f"mat_inverse: singular matrix -- pivot |{max_val}| < 1e-12 at column {col} (no inverse)"
         if max_row != col:
             tmp is aug[col]
             set_at of [aug, col, aug[max_row]]
@@ -373,7 +374,10 @@ define solve_linear(A, b) as:
                 max_row is r
             r is r + 1
         if max_val < 1e-12:
-            return null
+            # #1047: a null return carried no information and the caller
+            # died "cannot index null" frames away from the cause (phugoid's
+            # trim solver, a plant that zeroed the control derivatives).
+            throw of f"solve_linear: singular system -- pivot |{max_val}| < 1e-12 at column {col} (no unique solution)"
         if max_row != col:
             tmp is aug[col]
             set_at of [aug, col, aug[max_row]]

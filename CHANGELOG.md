@@ -4,6 +4,25 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **`is_file of path` (#1058).** 1 iff the path names a REGULAR file
+  (`S_ISREG`); 0 for a directory, a device/fifo/socket, a missing path, or a
+  non-string. `read_file_util` admits only regular files, and a driver that
+  had to match that contract before reading (the self-host and AOT
+  compilers) had only `file_exists` (an fopen probe: opens `/dev/null`,
+  fifos, directories) and `is_dir` — the non-regular non-directory class
+  passed both and read as `""`, so `/dev/null` compiled to the empty program
+  at rc 0 where the oracle refuses. Trace-recorded like `is_dir`; the replay
+  suite records with the file present, deletes it, and replays the 1.
+- **`tools/suite_label_check.sh`, suite section `[99w]` (#1025).** Five
+  pairs of distinct suite sections printed the same `[NNx]` label (a sixth
+  surfaced while writing the check), so a CI log grepped by section name
+  resolved to the wrong block. The check reads every labelled `echo` in the
+  runner and fails when a label recurs outside a SKIPPED/stub twin; it also
+  fails when it finds fewer than 150 labels (the vacuity case). Planted both
+  ways before it was trusted. The six collisions are renamed.
+
 ### Fixed
 
 - **An interrogated parameter was half slot, half name (#1063).** A `for`
@@ -37,6 +56,36 @@ All notable changes to EigenScript are documented here.
   rows and a `spawn`ed worker; `test_temporal_producers.eigs` pins the
   `vm_run_bytecode` descriptor path. Fixture fails 12 checks on the previous
   release.
+
+- **Storing a non-number into a buffer element now raises (#1061).** It was
+  the last fail-soft numeric context: `b[0] is "hello"` silently DROPPED the
+  store (the old element stayed) at rc 0 while `s * 2` one line later died.
+  `cannot store str in a buffer (buffers hold numbers)` on the opcode path
+  and its JIT helper; `buf_set` checks both operands (they were read through
+  the num union unchecked — the #1007 type-pun class); `buf_from_list` names
+  the offending element instead of leaving 0.0. Booleans are numbers and
+  still store as 1/0. `tests/test_buffer_store_type.eigs`, including the
+  hot-loop shape where the JIT's inline write bails to the helper.
+- **`observe of <never-bound name>` dies like every other read (#1059).** It
+  was the one read-shaped form that tolerated an unbound operand (a silent
+  no-observation tuple). Same `undefined variable 'v'` as `print of v` in the
+  same position; a bound name observes as before. The AOT's carve-out for
+  this case (ouroboros t124) can go at the next pin bump.
+- **`log` no longer floors tiny POSITIVE inputs (#1041).** `log of 1e-15`
+  answered ln(1e-10) with no flag — a silent plateau that a log-domain decay
+  fit rode to a confidently wrong answer inside a written 2% tolerance
+  (phugoid G3). ln of any positive double is finite, so only a non-positive
+  or NaN input takes the #865 stand-in (and sets the `invalid` flag), for the
+  scalar op and the tensor `log` alike. `docs/BUILTINS.md` says so now.
+- **`linalg.solve_linear` raises on a singular system (#1047)** —
+  `solve_linear: singular system -- pivot |0| < 1e-12 at column 2 (no unique
+  solution)` — instead of returning a null the caller indexes three frames
+  later. `mat_inverse` is the same shape and raises the same way (its
+  `singular inverse is null` test row now asserts the raise).
+- **`env_hash_find_dict` is declared in `eigenscript.h` (#1055).** It was
+  exported from `eigenscript.c` with no declaration; the one in-tree caller
+  carried an `extern`, and out-of-tree callers (the AOT's inline caches) got
+  an implicit declaration that GCC 14 rejects.
 
 ## [0.42.0] - 2026-08-27
 

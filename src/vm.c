@@ -392,7 +392,6 @@ int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
  * header, so the extern was inert). These three are the ones with no
  * header declaration to defer to; they stay until they get a home. */
 extern Value* builtin_free_val(Value *arg);                              /* builtins.c */
-extern int env_hash_find_dict(Value *dict, const char *key, uint32_t h); /* eigenscript.c */
 extern int env_get_assign_count(Env *env, const char *name, uint32_t h); /* eigenscript.c */
 
 /* Inline fast-path for binding a single param into a fresh call env.
@@ -2095,6 +2094,10 @@ void jit_helper_index_set(void) {
             rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
         } else if (val->type == VAL_NUM) {
             target->data.buffer.data[i] = val->data.num;
+        } else {
+            /* #1061 -- mirror of CASE(INDEX_SET)'s buffer arm. */
+            rt_error(EK_TYPE, g_vm.current_line, "cannot store %s in a buffer (buffers hold numbers)",
+                     val_type_name(val->type));
         }
     } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
         dict_set(target, idx->data.str, val);
@@ -4424,6 +4427,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
             } else if (val->type == VAL_NUM) {
                 target->data.buffer.data[i] = val->data.num;
+            } else {
+                /* #1061: the last fail-soft numeric context. A non-number
+                 * store was silently DROPPED (the old element stayed), so
+                 * `b[0] is "hello"` left 0 in place at rc 0 while `s * 2`
+                 * one line later died. Loud, like every other numeric
+                 * context. (Mirrored in jit_helper_index_set.) */
+                rt_error(EK_TYPE, current_line, "cannot store %s in a buffer (buffers hold numbers)",
+                         val_type_name(val->type));
             }
         } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
             dict_set(target, idx->data.str, val);
@@ -5093,6 +5104,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+        if (!oe) {
+            /* #1059: observe was the ONE read-shaped form that tolerated an
+             * unbound operand (a silent no-observation tuple). Every other
+             * read of the same name in the same position dies here; so does
+             * this one now. (The AOT carried a carve-out for this case --
+             * ouroboros t124 -- which can be deleted at the next pin bump.) */
+            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
         const ObserverSlot *s = env_obs_slot(oe, oidx);
         if (s && s->used) {
             ObserverSlot q = vm_slot_query_view(oe, oidx, s);         /* #711 */

@@ -77,7 +77,6 @@ Value* make_num_permanent(double n);
 const char* val_type_name(ValType t);
 int dict_has(Value *dict, const char *key);
 void dict_remove(Value *dict, const char *key);
-extern int env_hash_find_dict(Value *dict, const char *key, uint32_t h);
 
 Value* builtin_print(Value *arg) {
     char *s = value_to_string(arg);
@@ -5342,6 +5341,17 @@ Value* builtin_buf_set(Value *arg) {
         rt_error(EK_TYPE, 0, "buf_set: first argument must be a buffer");
         return make_null();
     }
+    /* #1061: both operands were read through the num union member unchecked
+     * -- a string index or value read garbage bits (the #1007 type-pun class).
+     * Loud, like the `b[i] is v` opcode path. */
+    if (arg->data.list.items[1]->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "buf_set: index must be a number, got %s", val_type_name(arg->data.list.items[1]->type));
+        return make_null();
+    }
+    if (arg->data.list.items[2]->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(arg->data.list.items[2]->type));
+        return make_null();
+    }
     int idx = (int)arg->data.list.items[1]->data.num;
     double val = arg->data.list.items[2]->data.num;
     if (idx < 0 || idx >= buf->data.buffer.count) {
@@ -5376,8 +5386,15 @@ Value* builtin_buf_from_list(Value *arg) {
     v->data.buffer.data = xcalloc(n > 0 ? n : 1, sizeof(double));
     v->refcount = 1;
     for (int i = 0; i < n; i++) {
-        if (arg->data.list.items[i]->type == VAL_NUM)
+        if (arg->data.list.items[i]->type == VAL_NUM) {
             v->data.buffer.data[i] = arg->data.list.items[i]->data.num;
+        } else {
+            /* #1061: a non-number element silently stayed 0.0. */
+            const char *tn = val_type_name(arg->data.list.items[i]->type);
+            val_decref(v);
+            rt_error(EK_TYPE, 0, "buf_from_list: element %d is %s (buffers hold numbers)", i, tn);
+            return make_null();
+        }
     }
     return v;
 }

@@ -1686,7 +1686,10 @@ equally reproducible — permutation.
 
 `buffer of count` allocates a flat array of `count` nums (all 0).
 Buffers index, slice, and iterate like lists but hold only numbers —
-they are the fast path for numeric work and the JIT.
+they are the fast path for numeric work and the JIT. Storing anything but
+a number into an element is a runtime error (`cannot store str in a
+buffer`), the same rule every other numeric context follows; it was the
+last one that silently tolerated a non-number (#1061).
 
 ```eigenscript
 b is buffer of 4

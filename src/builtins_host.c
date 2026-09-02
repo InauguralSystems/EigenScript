@@ -1129,6 +1129,19 @@ Value* builtin_is_dir(Value *arg) {
         make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0));
 }
 
+/* #1058: `is_file of path` -- 1 iff the path names a REGULAR file (S_ISREG).
+ * read_file_util admits only regular files (#314), and a driver that must
+ * match that admission contract before reading had only file_exists (an
+ * fopen probe: opens /dev/null, fifos, directories) and is_dir -- the
+ * non-regular non-directory class passed both and read as "", so /dev/null
+ * compiled to the empty program. Taped like is_dir. */
+Value* builtin_is_file(Value *arg) {
+    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("is_file", make_num(0));
+    struct stat st;
+    TRACE_NONDET_RET("is_file",
+        make_num(stat(arg->data.str, &st) == 0 && S_ISREG(st.st_mode) ? 1 : 0));
+}
+
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
  * atomic: a crash leaves either the old file or the new file fully in place,
  * never a torn mix — the basis for crash-safe log compaction (write a new log to
@@ -1914,6 +1927,7 @@ void register_host_builtins(Env *env) {
     env_set_local_owned(env, "load_file", make_builtin(builtin_load_file));
     env_set_local_owned(env, "file_exists", make_builtin(builtin_file_exists));
     env_set_local_owned(env, "is_dir", make_builtin(builtin_is_dir));
+    env_set_local_owned(env, "is_file", make_builtin(builtin_is_file));
     env_set_local_owned(env, "rename", make_builtin(builtin_rename));
     env_set_local_owned(env, "remove_file", make_builtin(builtin_remove_file));
     env_set_local_owned(env, "read_bytes", make_builtin(builtin_read_bytes));

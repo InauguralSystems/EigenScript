@@ -389,9 +389,15 @@ static double op_exp(double x) { return num_guard(exp(x)); }
 /* #865: `log of 0` returns log(1e-10) = -23.025850929940457, an undocumented
  * substitution that is neither of the two clamps the Numbers promise covers.
  * The value stays (kernels depend on it), but the invalid bit now says the
- * argument was out of domain and the answer is a stand-in. */
+ * argument was out of domain and the answer is a stand-in.
+ * #1041: the stand-in applies ONLY to non-positive (or NaN) input. The old
+ * test `!(x > 1e-10)` also swallowed every POSITIVE input below 1e-10 --
+ * log of 1e-15 answered ln(1e-10) with no flag, a silent plateau that a
+ * log-domain decay fit rode to a confidently wrong answer (phugoid G3).
+ * ln of any positive double is finite (ln(5e-324) = -744.44), so there is
+ * nothing to guard there. */
 static double op_log_safe(double x) {
-    if (!(x > 1e-10)) {
+    if (!(x > 0.0)) {
         if (g_strict) { rt_error(EK_VALUE, 0, "log: argument out of domain (must be > 0)"); return 0.0; }
         g_math_flags |= EIGS_MATH_INVALID; return num_guard(log(1e-10));
     }
@@ -511,8 +517,8 @@ Value* builtin_tensor_log_softmax(Value *arg) {
     if (!flat) return make_null();
     ne_softmax_buf(flat, rows, cols);
     for (int i = 0; i < rows * cols; i++) {
-        if (!(flat[i] > 1e-10)) g_math_flags |= EIGS_MATH_INVALID;   /* #865 */
-        flat[i] = log(flat[i] > 1e-10 ? flat[i] : 1e-10);
+        if (!(flat[i] > 0.0)) g_math_flags |= EIGS_MATH_INVALID;   /* #865 / #1041 */
+        flat[i] = log(flat[i] > 0.0 ? flat[i] : 1e-10);
     }
     Value *result;
     if (rows == 1)

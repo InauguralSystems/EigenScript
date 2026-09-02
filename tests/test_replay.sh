@@ -329,6 +329,23 @@ else
     fail "is_dir replay" "rec='$REC_ID' rep='$REP_ID'"
 fi
 
+# ---- #1058: is_file is taped the same way (record with the file present,
+# delete it, replay -- the recorded 1 must win over a live stat's 0).
+cat > "$TMPDIR/p_isfile.eigs" <<EOF
+print of (is_file of "$TMPDIR/probe_file")
+EOF
+: > "$TMPDIR/probe_file"
+TAPE_F="$TMPDIR/isfile.tape"
+REC_IF=$(EIGS_TRACE="$TAPE_F" "$EIGS" "$TMPDIR/p_isfile.eigs" 2>&1)
+rm -f "$TMPDIR/probe_file"
+REP_IF=$(EIGS_REPLAY="$TAPE_F" "$EIGS" "$TMPDIR/p_isfile.eigs" 2>&1)
+LIVE_IF=$("$EIGS" "$TMPDIR/p_isfile.eigs" 2>&1)
+if [ "$REC_IF" = "1" ] && [ "$REP_IF" = "1" ] && [ "$LIVE_IF" = "0" ]; then
+    ok "is_file replay: recorded answer wins after the file is deleted (live says 0)"
+else
+    fail "is_file replay" "rec='$REC_IF' rep='$REP_IF' live='$LIVE_IF'"
+fi
+
 # ---- #585: file_exists / ls / mkdir / getcwd are taped nondeterminism ----
 # Each records with the filesystem in one state, mutates it, then replays;
 # the recorded answer must win (a live probe would now disagree). mkdir also

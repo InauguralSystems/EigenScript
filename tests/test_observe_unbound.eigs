@@ -1,0 +1,66 @@
+# #1059: `observe of v` on a name that has never been bound was the ONE
+# read-shaped form that tolerated an unbound operand (a silent no-observation
+# tuple, rc 0). Every other read in the same position dies "undefined
+# variable". Now observe does too -- and a bound name still observes.
+load_file of "lib/test.eigs"
+
+msg is ""
+try:
+    observe of never_bound_zz
+catch e:
+    msg is str of e
+assert_true of [(index_of of [msg, "undefined variable 'never_bound_zz'"]) >= 0, "observe of an unbound name dies like a read"]
+
+ctrl is ""
+try:
+    print of never_bound_zz
+catch e:
+    ctrl is str of e
+assert_true of [(index_of of [ctrl, "undefined variable 'never_bound_zz'"]) >= 0, "control: a plain read dies with the same message"]
+
+# a bound name observes normally, in the same file
+v is 2
+v is 3
+o is observe of v
+assert_eq of [type of o, "list", "a bound name still answers the observe tuple"]
+
+# inside a function, an unbound observe dies too (the slot-resolving path is
+# for names the compiler can see; this one it cannot)
+define f() as:
+    m is ""
+    try:
+        observe of never_bound_fn_zz
+    catch e:
+        m is str of e
+    return m
+assert_true of [(index_of of [f of null, "undefined variable 'never_bound_fn_zz'"]) >= 0, "unbound observe inside a function dies"]
+
+# the compiler-visible-slot shape: the name IS bound later in the same body,
+# so the compiler resolves it to a slot -- the observe must still die at the
+# read, before the binding, and the JIT'd loop shape must agree.
+define g() as:
+    m is ""
+    try:
+        observe of later_zz
+    catch e:
+        m is str of e
+    later_zz is 1
+    return m
+assert_true of [(index_of of [g of null, "undefined variable 'later_zz'"]) >= 0, "observe before the binding, slot-resolved: dies"]
+define h(n) as:
+    m is ""
+    try:
+        for i in range of n:
+            observe of later_hot_zz
+    catch e:
+        m is str of e
+    later_hot_zz is 1
+    return m
+assert_true of [(index_of of [h of 20000, "undefined variable 'later_hot_zz'"]) >= 0, "...and inside a hot loop (JIT'd)"]
+define k() as:
+    observe of bound_zz
+    return 0
+bound_zz is 5
+assert_eq of [k of null, 0, "control: a module name bound before the call observes fine"]
+
+test_summary of null

@@ -143,8 +143,8 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 | `lcm` | `lcm of [a, b]` | Least common multiple |
 | `argmax` | `argmax of list` | Index of the largest element (first on ties, -1 if empty) |
 | `argmin` | `argmin of list` | Index of the smallest element (first on ties, -1 if empty) |
-| `log2` | `log2 of value` | Base-2 logarithm; element-wise over a list (input floored at 1e-10) |
-| `log10` | `log10 of value` | Base-10 logarithm; element-wise over a list (input floored at 1e-10) |
+| `log2` | `log2 of value` | Base-2 logarithm; element-wise over a list (non-positive input takes the `log` stand-in, #1041) |
+| `log10` | `log10 of value` | Base-10 logarithm; element-wise over a list (non-positive input takes the `log` stand-in, #1041) |
 
 ### lib/list.eigs — Functional List Operations
 
@@ -1145,7 +1145,7 @@ Pure-EigenScript matrices (lists of lists) and vectors: transpose/multiply/deter
 | `vec_normalize` | `vec_normalize of a` | unit vector |
 | `vec_angle` | `vec_angle of [a, b]` | angle between vectors (radians) |
 | `vec_project` | `vec_project of [a, b]` | project a onto b |
-| `solve_linear` | `solve_linear of [A, b]` | Solve Ax = b via Gaussian elimination with partial pivoting |
+| `solve_linear` | `solve_linear of [A, b]` | Solve Ax = b via Gaussian elimination with partial pivoting. A singular system RAISES (`solve_linear: singular system -- pivot ... at column N`) rather than returning null (#1047); `mat_inverse` raises the same way |
 | `least_squares` | `least_squares of [A, b]` | Solve overdetermined Ax ~ b via normal equations |
 | `eigenvalues_2x2` | `eigenvalues_2x2 of A` | eigenvalues of 2x2 matrix via characteristic polynomial |
 | `eigenvectors_2x2` | `eigenvectors_2x2 of A` | eigenvectors for each eigenvalue of 2x2 matrix |
