@@ -9,6 +9,7 @@
  */
 
 #include "eigenscript.h"
+#include "env_flag.h"
 #include "state.h"
 #include "vm.h"
 #include "builtins_internal.h"
@@ -6810,7 +6811,7 @@ void register_builtins(Env *env) {
 
 #if EIGS_BORROW_GUARD
     /* #548 guard self-test hook — see builtin_borrow_guard_selftest. */
-    if (getenv("EIGS_BORROW_GUARD_SELFTEST"))
+    if (eigs_env_flag("EIGS_BORROW_GUARD_SELFTEST"))
         env_set_local_owned(env, "__borrow_guard_selftest", make_builtin(builtin_borrow_guard_selftest));
 #endif
 

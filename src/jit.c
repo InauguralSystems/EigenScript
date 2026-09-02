@@ -1,4 +1,5 @@
 #include "jit.h"
+#include "env_flag.h"
 #include "eigenscript.h"
 #include "vm.h"
 
@@ -218,12 +219,12 @@ void jit_module_shutdown(void) {
 
 void jit_thread_destroy(EigsThread *th) {
     if (!th) return;
-    if (getenv("EIGS_JIT_STATS")) {
+    if (eigs_env_flag("EIGS_JIT_STATS")) {
         fprintf(stderr, "[jit] scanned=%d compiled=%d cache_used=%zu\n",
                 g_jit_scanned_chunks, g_jit_compiled_chunks,
                 g_jit_cache ? jit_cache_used(g_jit_cache) : 0);
     }
-    if (getenv("EIGS_JIT_STOPS")) {
+    if (eigs_env_flag("EIGS_JIT_STOPS")) {
         uint32_t total_stops = 0;
         for (int i = 0; i < 256; i++) total_stops += g_jit_stop_counts[i];
         fprintf(stderr, "=== JIT compile stops ===\n");
@@ -277,7 +278,7 @@ void jit_thread_destroy(EigsThread *th) {
                     c, op_name((uint8_t)op), pct);
         }
     }
-    if (getenv("EIGS_JIT_HOT") && g_chunks_count > 0) {
+    if (eigs_env_flag("EIGS_JIT_HOT") && g_chunks_count > 0) {
         /* Selection sort top-N by exec_count. Small registry (~80 on
          * DMG), one-shot at exit, no need for a real sort. */
         int top = g_chunks_count < 30 ? g_chunks_count : 30;
@@ -2312,7 +2313,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
      * ultimately compiles or not. Compiled chunks also bump
      * g_jit_compiled_count, so total_stops - compiled = bailouts. */
     g_jit_stop_counts[stop_op]++;
-    if (getenv("EIGS_JIT_DUMP_BAIL") && prefix == 0 &&
+    if (eigs_env_flag("EIGS_JIT_DUMP_BAIL") && prefix == 0 &&
         stop_op != OP_COUNT) {
         fprintf(stderr,
                 "JIT bail: chunk='%s' stop_op=%s at offset %d (prefix=0 ops)\n",
@@ -4063,13 +4064,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
     *out_advance = prefix - entry_offset;
     g_jit_compiled_chunks++;
     g_jit_compiled_count++;
-    if (getenv("EIGS_JIT_DEBUG")) {
+    if (eigs_env_flag("EIGS_JIT_DEBUG")) {
         fprintf(stderr, "[jit] compiled %s: entry=%d prefix=%d bytes (",
                 chunk->name ? chunk->name : "?", entry_offset, prefix);
         for (int j = entry_offset; j < prefix; j++)
             fprintf(stderr, " %02x", chunk->code[j]);
         fprintf(stderr, " ) -> %zu bytes native\n", (size_t)(w - code));
-        if (getenv("EIGS_JIT_DUMP_NATIVE")) {
+        if (eigs_env_flag("EIGS_JIT_DUMP_NATIVE")) {
             fprintf(stderr, "[jit] native:");
             for (size_t j = 0; j < (size_t)(w - code); j++) {
                 if (j % 16 == 0) fprintf(stderr, "\n  ");
@@ -4114,7 +4115,7 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
 #endif
     /* EIGS_JIT_OFF: hard-disable native compilation. Useful for bisecting
      * suspected JIT bugs against the interpreter. */
-    if (getenv("EIGS_JIT_OFF")) {
+    if (eigs_env_flag("EIGS_JIT_OFF")) {
         chunk->jit_state = 1;
         chunk->jit_code = NULL;
         return;
@@ -4154,7 +4155,7 @@ void jit_try_compile_chunk_osr(struct EigsChunk *chunk, int entry_offset,
     chunk->jit_osr[slot].code = NULL;
     return;
 #endif
-    if (getenv("EIGS_JIT_OFF") || getenv("EIGS_JIT_OSR_OFF")) {
+    if (eigs_env_flag("EIGS_JIT_OFF") || eigs_env_flag("EIGS_JIT_OSR_OFF")) {
         chunk->jit_osr[slot].state = 1;
         chunk->jit_osr[slot].code = NULL;
         return;

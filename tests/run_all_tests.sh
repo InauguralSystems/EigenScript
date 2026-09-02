@@ -5513,6 +5513,25 @@ else
 fi
 echo ""
 
+# [99y] boolean env flags share one convention (#1032): non-empty and not
+# "0" enables. EIGS_JIT_OFF=0 and EIGS_JIT_OFF= must leave the JIT on,
+# EIGS_JIT_OFF=1 must turn it off, EIGS_JIT_STATS=0 must print nothing --
+# tests/test_env_flags.sh (oracle: the JIT's own compiled= stats line).
+echo "[99y] boolean env-flag convention (#1032)"
+EF_OUTPUT=$(bash "$TESTS_DIR/test_env_flags.sh" 2>&1)
+EF_PASS=$(echo "$EF_OUTPUT" | grep -c "PASS:" || true)
+EF_FAIL=$(echo "$EF_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + EF_PASS + EF_FAIL))
+PASS=$((PASS + EF_PASS))
+FAIL=$((FAIL + EF_FAIL))
+if [ "$EF_FAIL" -gt 0 ]; then
+    echo "  FAIL: $EF_FAIL env-flag check(s) failed"
+    echo "$EF_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $EF_PASS env-flag checks"
+fi
+echo ""
+
 echo "[99b] Stdlib/builtin discoverability (#393)"
 TOTAL=$((TOTAL + 1))
 if bash "$TESTS_DIR/../tools/stdlib_index_check.sh" && bash "$TESTS_DIR/../tools/stdlib_index_check.sh" --selftest >/dev/null; then

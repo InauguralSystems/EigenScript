@@ -3,6 +3,7 @@
  * ================================================================ */
 
 #include "eigenscript.h"
+#include "env_flag.h"
 #include "vm.h"
 #include "trace.h"
 #include <stdio.h>
@@ -3705,8 +3706,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * bar one cached getenv. */
     static int verify_self = -1;
     if (verify_self < 0) {
-        const char *e = getenv("EIGS_VERIFY_SELF");
-        verify_self = (e && *e && strcmp(e, "0") != 0) ? 1 : 0;
+        verify_self = eigs_env_flag("EIGS_VERIFY_SELF");
     }
     /* Only assert on a CLEAN compile: a unit that already failed to parse or
      * compile can carry a patched-to-0 jump or a truncated tail by design, and
@@ -3745,10 +3745,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * `case OP_REPORT_NAME:` deleted from opcode_is_observer_reader(): the
      * honest three-capture run reports 3 mismatches and rc=1; the laundered one
      * reports `415 programs byte-identical` and rc=0. */
-    {
-        const char *ef = getenv("EIGS_OBS_FORCE");
-        if (!g_obs_needed && ef && ef[0] && ef[0] != '0') eigs_obs_enable();
-    }
+    if (!g_obs_needed && eigs_env_flag("EIGS_OBS_FORCE")) eigs_obs_enable();
     if (!g_obs_needed && chunk_reads_observer(chunk)) eigs_obs_enable();
     if (!g_obs_needed) obs_gate_resolve_static_loads(chunk);
     /* Same convention as EIGS_OBS_FORCE above — these two are documented as
@@ -3757,8 +3754,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * sweeping every getenv site after fixing the FORCE flag, rather than
      * assuming that defect was isolated. */
     {
-        const char *gs = getenv("EIGS_OBS_GATE_STATS");
-        if (gs && gs[0] && gs[0] != '0')
+        if (eigs_env_flag("EIGS_OBS_GATE_STATS"))
             fprintf(stderr, "obs-gate: %s %s\n",
                     g_obs_needed ? "observed" : "unobserved", chunk->name);
     }

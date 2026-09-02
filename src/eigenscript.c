@@ -5,6 +5,7 @@
  */
 
 #include <float.h>   /* DBL_EPSILON — the #422 raw-step fp-noise floor */
+#include "env_flag.h"
 #include "eigenscript.h"
 #include "vm.h"   /* EigsChunk layout: the cycle collector traverses
                    * fn -> chunk -> env_cache / functions[] edges */
@@ -3413,7 +3414,7 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
         }
     }
     if (bad) {
-        if (getenv("EIGS_GC_DEBUG"))
+        if (eigs_env_flag("EIGS_GC_DEBUG"))
             fprintf(stderr, "[gc] accounting mismatch — collection aborted\n");
         free(stack);
         free(u.table); free(u.objs); free(u.kind);
@@ -3458,7 +3459,7 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
             else                                 val_decref((Value *)u.objs[n]);
         }
     }
-    if (getenv("EIGS_GC_DEBUG"))
+    if (eigs_env_flag("EIGS_GC_DEBUG"))
         fprintf(stderr, "[gc] universe %d, freed %d, live captured %d\n",
                 u.count, garbage, g_gc_captured_live);
 

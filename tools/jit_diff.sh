@@ -28,11 +28,13 @@ BASE="$ROOT/tests/jit_diff_expected.txt"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 got="$T/got"; : > "$got"; n=0; adjudicated=0
 norm() { sed -E 's/0x[0-9a-f]+/0xADDR/g' "$1"; }
-# Arm environments. NOTE: `EIGS_JIT_OFF=` (empty) still DISABLES the JIT --
-# jit.c tests getenv() for presence, not value -- so the JIT arms must UNSET
-# it, never assign it empty. The first version assigned it empty and the
-# "JIT" arm was the interpreter comparing itself to itself: a clean ledger
-# with a known deterministic divergence (#1071) missing from it.
+# Arm environments. Since #1032 every boolean flag reads through
+# eigs_env_flag (non-empty and not "0" = on), so `EIGS_JIT_OFF=` and
+# `EIGS_JIT_OFF=0` both leave the JIT ON. The arms still UNSET it rather
+# than rely on that: before #1032 jit.c tested getenv() for PRESENCE, the
+# first version assigned it empty, and the "JIT" arm was the interpreter
+# comparing itself to itself -- a clean ledger with a known deterministic
+# divergence (#1071) missing from it. Section [99y] now pins the =0 form.
 # GNU env takes its OPTIONS (-u NAME) only BEFORE the first assignment; an
 # assignment-first list makes `-u` the command name, every run dies rc 127,
 # and every arm "diverges" (442 rows on one reading). Options first, always.

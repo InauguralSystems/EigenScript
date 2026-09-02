@@ -25,6 +25,7 @@
  */
 
 #include "eigenscript.h"
+#include "env_flag.h"
 #include "trace.h"
 #include "vm.h"   /* #539 v2: CallFrame/g_vm for scope-transition S records */
 
@@ -1042,8 +1043,7 @@ static void trace_replay_init(void) {
          * most common operator error (typo'd/deleted tape path). */
         _exit(3);
     }
-    const char *strict = getenv("EIGS_REPLAY_STRICT");
-    g_replay_strict = (strict && strict[0] && strcmp(strict, "0") != 0);
+    g_replay_strict = eigs_env_flag("EIGS_REPLAY_STRICT");
     if (!replay_check_header()) {
         /* Version-and-reject (#411): falling back to a live run would be
          * the exact silent divergence the header exists to prevent — the

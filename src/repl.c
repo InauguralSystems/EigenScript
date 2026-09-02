@@ -19,6 +19,7 @@
  */
 
 #include "eigenscript.h"
+#include "env_flag.h"
 #include "state.h"
 #include "vm.h"
 #include "trace.h"
@@ -667,7 +668,7 @@ static void repl_interactive(Env *env) {
 
 static int repl_use_editor(void) {
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) return 0;
-    if (getenv("EIGS_REPL_PLAIN")) return 0;   /* escape hatch / test hook */
+    if (eigs_env_flag("EIGS_REPL_PLAIN")) return 0;   /* escape hatch / test hook */
     const char *t = getenv("TERM");
     if (!t || strcmp(t, "dumb") == 0 || strcmp(t, "cons25") == 0 ||
         strcmp(t, "emacs") == 0) return 0;
