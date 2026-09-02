@@ -768,19 +768,40 @@ int trace_name_is_internal(const char *n) {
             n[len - 1] == '_' && n[len - 2] == '_') ? 1 : 0;
 }
 
+/* #1029: the prev table is bucketed by the interned name's ADDRESS, so a
+ * bucket-order walk printed the keys in an ASLR-dependent order -- seven
+ * orders in eight runs of one program, and a --trace tape did not pin it
+ * (ordering is output, not a nondeterminism record), so EIGS_REPLAY
+ * diverged from its own recording. Emit in NAME order: deterministic
+ * across processes and independent of the table's layout. */
+static int state_at_name_cmp(const void *a, const void *b) {
+    const PrevEntry *ea = *(const PrevEntry *const *)a;
+    const PrevEntry *eb = *(const PrevEntry *const *)b;
+    return strcmp(ea->name, eb->name);
+}
+
 Value *trace_state_at(int line) {
     Value *out = make_dict(g_prev_count > 0 ? g_prev_count : 8);
     if (!out || !g_prev_tab) return out;
+    PrevEntry **live = (PrevEntry **)malloc(sizeof(PrevEntry *) * (size_t)(g_prev_cap > 0 ? g_prev_cap : 1));
+    if (!live) return out;
+    int n = 0;
     for (int i = 0; i < g_prev_cap; i++) {
         PrevEntry *e = &g_prev_tab[i];
         if (!e->name || e->hist_count == 0) continue;
         if (trace_name_is_internal(e->name)) continue;
+        if (find_hist_idx_at_or_before(e, line) < 0) continue;
+        live[n++] = e;
+    }
+    qsort(live, (size_t)n, sizeof(PrevEntry *), state_at_name_cmp);
+    for (int k = 0; k < n; k++) {
+        PrevEntry *e = live[k];
         int idx = find_hist_idx_at_or_before(e, line);
-        if (idx < 0) continue;
         Value *v = slot_to_value(e->history[idx].value);
         dict_set(out, e->name, v);
         val_decref(v);
     }
+    free(live);
     return out;
 }
 
