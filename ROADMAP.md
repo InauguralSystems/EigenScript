@@ -1,6 +1,6 @@
 # Roadmap
 
-Current version: **0.40.0**
+Current version: see the "Latest release" line in CLAUDE.md (gated by `tools/doc_drift_check.sh`) and CHANGELOG.md — this file does not repeat the number, so it cannot fall behind it
 
 Recently shipped (0.34.0 → 0.40.0, 2026-07-31 → 08-17):
 
