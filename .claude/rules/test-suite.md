@@ -40,6 +40,15 @@ paths:
   detects a changed BINARY and aborts loudly; nothing detects a changed
   RUNNER. Queue the edit and apply it after the run (2026-08-19, PR #996 —
   two comment additions had to be deferred for exactly this reason).
+- **A child `.sh` must not call `timeout` bare.** The macOS CI runners do
+  not ship coreutils' `timeout`, so a child that uses it dies rc 127 there
+  on its first bounded run — `tests/test_file_exists_fifo.sh`'s first
+  version (PR #1077, 2026-09-01) did exactly that and the section went red
+  only on the macOS leg. Either bound with pure shell (background the
+  child, poll, kill by PID — what that test does now) or copy the runner's
+  own probe (`command -v timeout`, else `gtimeout`, else no bound —
+  `EIGS_TMO`, run_all_tests.sh:39). `tools/jit_diff.sh` may call `timeout`
+  only because its CI job is ubuntu-only.
 - **A child `.sh` runs with cwd `src/`, not the repo root** (the runner does
   `cd "$(dirname "$0")/../src"`). Invoking one from the repo root to reproduce
   a failure gives `check ./eigenscript` errors that look like a real failure

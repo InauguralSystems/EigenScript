@@ -42,6 +42,15 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`state_at` keys come out in name order (#1029).** The prev table is
+  bucketed by the interned name's ADDRESS, so the dump's key order moved
+  with ASLR (seven orders in eight runs of one program) and `EIGS_REPLAY`
+  diverged from its own recording — ordering is output, not a
+  nondeterminism record, so the tape could not pin it. The walk now sorts
+  the live entries by name before building the dict. Suite section [99x]
+  runs eight fresh processes, requires one distinct output in name order,
+  and requires a recording to equal its replay.
+
 - **`file_exists` never blocks (#1070).** It was an `fopen` probe, and `fopen`
   on a reader-less fifo (or a device that blocks on open) never returned — the
   program hung with no diagnostic while `is_file` on the same path answered 0

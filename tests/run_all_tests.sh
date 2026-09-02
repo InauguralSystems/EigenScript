@@ -5493,6 +5493,26 @@ else
 fi
 echo ""
 
+# [99x] state_at key order is deterministic (#1029): the prev table is
+# bucketed by interned-name ADDRESS, so the old bucket-order walk printed
+# an ASLR-dependent key order and EIGS_REPLAY diverged from its own
+# recording. Eight fresh processes must agree, the order must be NAME
+# order, and a recording must equal its replay — tests/test_state_at_order.sh.
+echo "[99x] state_at key order (#1029)"
+SO_OUTPUT=$(bash "$TESTS_DIR/test_state_at_order.sh" 2>&1)
+SO_PASS=$(echo "$SO_OUTPUT" | grep -c "PASS:" || true)
+SO_FAIL=$(echo "$SO_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + SO_PASS + SO_FAIL))
+PASS=$((PASS + SO_PASS))
+FAIL=$((FAIL + SO_FAIL))
+if [ "$SO_FAIL" -gt 0 ]; then
+    echo "  FAIL: $SO_FAIL state_at order check(s) failed"
+    echo "$SO_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $SO_PASS state_at order checks"
+fi
+echo ""
+
 echo "[99b] Stdlib/builtin discoverability (#393)"
 TOTAL=$((TOTAL + 1))
 if bash "$TESTS_DIR/../tools/stdlib_index_check.sh" && bash "$TESTS_DIR/../tools/stdlib_index_check.sh" --selftest >/dev/null; then

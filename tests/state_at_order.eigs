@@ -1,0 +1,11 @@
+# #1029 fixture: eight bindings whose interned names land in address-
+# dependent buckets; the dump must come out in name order every process.
+hh is 8
+cc is 3
+aa is 1
+ff is 6
+dd is 4
+bb is 2
+gg is 7
+ee is 5
+print of (state_at of 10)
