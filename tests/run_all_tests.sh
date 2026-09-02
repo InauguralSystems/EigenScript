@@ -4756,6 +4756,21 @@ check_eigs_suite "rename / remove_file / is_dir / is_file (atomic swap, delete, 
 # on every store shape (opcode path, JIT helper, buf_set, buf_from_list).
 check_eigs_suite "buffer element store rejects non-numbers (#1061)" test_buffer_store_type.eigs "All tests passed" 14
 
+# #1069 -- copy_into returned null silently on every failure (incl. the doc's
+# own argument order); loud now, and a buffer destination is supported.
+check_eigs_suite "copy_into: loud failures, buffer destination (#1069)" test_copy_into_buffer.eigs "All tests passed" 12
+
+# #1070 -- file_exists was an fopen probe that BLOCKED on a reader-less fifo;
+# a stat probe now. Child script (needs mkfifo), PASS:/FAIL: lines.
+echo "[105c] file_exists does not block on a fifo (#1070)"
+FE_OUTPUT=$(bash "$TESTS_DIR/test_file_exists_fifo.sh" 2>&1); FE_RC=$?
+FE_PASS=$(echo "$FE_OUTPUT" | grep -c "PASS:" || true)
+FE_FAIL=$(echo "$FE_OUTPUT" | grep -c "FAIL:" || true)
+[ "$FE_RC" -ne 0 ] && [ "$FE_FAIL" -eq 0 ] && FE_FAIL=1
+TOTAL=$((TOTAL + FE_PASS + FE_FAIL)); PASS=$((PASS + FE_PASS)); FAIL=$((FAIL + FE_FAIL))
+if [ "$FE_FAIL" -gt 0 ]; then echo "  FAIL: file_exists fifo probe"; echo "$FE_OUTPUT" | grep "FAIL:" | head -3; else echo "  PASS: file_exists fifo probe (stat, never blocks)"; fi
+echo ""
+
 # #1059 -- `observe of <unbound>` was the one read-shaped form that tolerated
 # an unbound operand (silent no-observation tuple); now it dies like any read.
 check_eigs_suite "observe of an unbound name dies (#1059)" test_observe_unbound.eigs "All tests passed" 7

@@ -1110,9 +1110,13 @@ Value* builtin_file_exists(Value *arg) {
     /* #585: fs-dependent read — taped so replay serves the recorded answer.
      * TAKE short-circuits before the fopen probe under EIGS_REPLAY. */
     TRACE_NONDET_TAKE("file_exists");
-    FILE *f = fopen(arg->data.str, "r");
-    int ex = (f != NULL);
-    if (f) fclose(f);
+    /* #1070: a stat() probe, not fopen(). fopen on a reader-less fifo (or a
+     * device that blocks on open) never returned -- the program hung with no
+     * diagnostic, while is_file on the same path answered 0 at once. stat
+     * answers the question the name asks and never blocks; directories and
+     * devices stay 1 as before. */
+    struct stat st;
+    int ex = (stat(arg->data.str, &st) == 0);
     TRACE_NONDET_RECORD("file_exists", make_num(ex));
 }
 

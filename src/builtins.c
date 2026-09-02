@@ -3697,15 +3697,57 @@ Value* builtin_record_history(Value *arg) {
  * flags bit 0 = has observer state */
 /* ==== BUILTIN: copy_into ==== */
 /* copy_into of [dest, dest_offset, src]
- * Copies elements from src into dest starting at dest_offset.
- * Both must be 1D lists. Mutates dest in-place, returns dest. */
+ * Copies elements from src into dest starting at dest_offset:
+ * `copy_into of [dest, offset, src]`. Lists into a list; a buffer or a list
+ * of numbers into a buffer. Mutates dest in-place, returns dest.
+ * #1069: every failure used to `return make_null()` silently -- a wrong arity,
+ * a non-list dest, a swapped argument order (docs/BUILTINS.md listed
+ * [dest, src, offset] while this read [dest, offset, src]) -- and a buffer
+ * destination was one of them. Loud now, like the rest of the numeric
+ * contexts; the doc row states the order this code reads. */
 Value* builtin_copy_into(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        rt_error(EK_TYPE, 0, "copy_into requires [dest, offset, src]");
+        return make_null();
+    }
     Value *dest = arg->data.list.items[0];
-    int offset = (arg->data.list.items[1]->type == VAL_NUM) ? (int)arg->data.list.items[1]->data.num : 0;
+    Value *offv = arg->data.list.items[1];
     Value *src = arg->data.list.items[2];
-    if (!dest || dest->type != VAL_LIST || !src || src->type != VAL_LIST) return make_null();
-    if (offset < 0) return make_null();
+    if (!offv || offv->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "copy_into: offset must be a number, got %s (the order is [dest, offset, src])",
+                 offv ? val_type_name(offv->type) : "null");
+        return make_null();
+    }
+    int offset = (int)offv->data.num;
+    if (offset < 0) { rt_error(EK_INDEX, 0, "copy_into: offset %d is negative", offset); return make_null(); }
+    if (dest && dest->type == VAL_BUFFER) {
+        /* buffer destination: numbers from a buffer or a list of numbers */
+        if (src && src->type == VAL_BUFFER) {
+            for (int i = 0; i < src->data.buffer.count && offset + i < dest->data.buffer.count; i++)
+                dest->data.buffer.data[offset + i] = src->data.buffer.data[i];
+            return dest;   /* borrowed, like the list path below */
+        }
+        if (src && src->type == VAL_LIST) {
+            for (int i = 0; i < src->data.list.count && offset + i < dest->data.buffer.count; i++) {
+                Value *it = src->data.list.items[i];
+                if (!it || it->type != VAL_NUM) {
+                    rt_error(EK_TYPE, 0, "cannot store %s in a buffer (copy_into element %d; buffers hold numbers)",
+                             it ? val_type_name(it->type) : "null", i);
+                    return make_null();
+                }
+                dest->data.buffer.data[offset + i] = it->data.num;
+            }
+            return dest;   /* borrowed, like the list path below */
+        }
+        rt_error(EK_TYPE, 0, "copy_into: a buffer destination takes a buffer or a list source, got %s",
+                 src ? val_type_name(src->type) : "null");
+        return make_null();
+    }
+    if (!dest || dest->type != VAL_LIST || !src || src->type != VAL_LIST) {
+        rt_error(EK_TYPE, 0, "copy_into: dest and src must be lists (or a buffer dest), got %s and %s",
+                 dest ? val_type_name(dest->type) : "null", src ? val_type_name(src->type) : "null");
+        return make_null();
+    }
     for (int i = 0; i < src->data.list.count && offset + i < dest->data.list.count; i++) {
         Value *item = src->data.list.items[i];
         /* #873: promote arena items landing in a heap destination. */
