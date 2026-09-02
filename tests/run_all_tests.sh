@@ -3502,6 +3502,10 @@ check_eigs_suite "occurrence-addressed temporal history (#868)" test_temporal_wh
 # Line-number sensitive ONLY in the two `what is ... at` checks.
 check_eigs_suite "interrogated parameter = slot: binder, history, JIT (#1063)" test_temporal_param.eigs "All tests passed" 24
 
+# [70i] #1075 -- an interrogate operand inside a list comprehension arms the
+# name like any other expression (the scan's LISTCOMP case was a no-op).
+check_eigs_suite "interrogatives inside a comprehension arm the name (#1075)" test_listcomp_interrogate.eigs "All tests passed" 4
+
 # [70d] #827 — and the history must stay BOUNDED. Peak RSS at two iteration
 # counts 8x apart, ceiling + flatness, for a dead-code `prev of`, a live
 # `prev of`, and a live `at` query. Pre-fix this ran 203 MB and climbing; it

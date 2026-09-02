@@ -42,6 +42,14 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **An interrogative inside a list comprehension arms the name (#1075).**
+  `scan_for_interrogated` treated `AST_LISTCOMP` as a no-op, so
+  `[prev of y for v in xs]` answered `[null]` while `prev of y` one line
+  outside answered the value. Found by ouroboros's self-host parity tier at
+  the pin bump onto #1063: the self-hosted compiler's chunks (a non-compiler
+  producer, every slot recorded) answered `[1]` and the C compiler `[null]`.
+  The comprehension runs in the enclosing frame, so its operands arm that
+  frame's names. `tests/test_listcomp_interrogate.eigs`.
 - **An interrogated parameter was half slot, half name (#1063).** A `for`
   binder over a parameter, in a function that also says `prev of p` or
   `what is p at L` anywhere, was sent to a loop env while the body's reads

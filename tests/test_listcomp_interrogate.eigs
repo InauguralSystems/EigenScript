@@ -1,0 +1,41 @@
+# #1075: an interrogate operand that appears ONLY inside a list comprehension
+# body armed nothing, so `[prev of y for v in xs]` answered [null] while the
+# same query one line outside the comprehension answered the value. Pinned as
+# "odd but the oracle" by ouroboros's self-host tier; the self-hosted
+# compiler's chunks (a non-compiler producer, every slot recorded since
+# #1063) answered [1], and the two tiers disagreed on one program.
+load_file of "lib/test.eigs"
+
+define f() as:
+    y is 1
+    y is 2
+    zs is [prev of y for v in [10]]
+    return zs
+assert_eq of [f of null, [1], "prev of an outer local inside a comprehension body answers the value"]
+
+define g() as:
+    y is 1
+    y is 2
+    zs is [prev of y for v in [10]]
+    p is prev of y
+    return [zs, p]
+assert_eq of [g of null, [[1], 1], "...and agrees with the same query outside the comprehension"]
+
+define h() as:
+    y is 1
+    y is 2
+    y is 3
+    zs is [(what is y when 2) for v in [10, 20]]
+    return zs
+assert_eq of [h of null, [2, 2], "when-addressed history inside a comprehension body"]
+
+# (its own name: history is keyed by NAME across functions, so a `y` here
+# would read the functions above -- #1064/#1065 family, not this fix)
+define k() as:
+    yk is 1
+    yk is 2
+    zs is [v for v in [1, 2, 3] if v > (prev of yk)]
+    return zs
+assert_eq of [k of null, [2, 3], "an interrogate in the FILTER arms too (prev of yk is 1; 2 and 3 pass)"]
+
+test_summary of null
