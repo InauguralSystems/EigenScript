@@ -42,6 +42,22 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`sandbox_run` snapshots the module env under its lock (#1035).** The
+  allowlist walk read `g_global_env`'s names/count without the module-env
+  lock while pthread workers bound new names under it (TSan, ~1 in 6 runs);
+  the names are now snapshotted under `g_module_env_lock` (an exported pair,
+  `env_global_shared_lock/unlock`, a no-op until the process goes
+  multithreaded) and bound into the sandbox env outside it — the sandbox
+  env is a sealed root, so binding under the lock re-took it and deadlocked.
+  `tsan_sandbox_snapshot_race.eigs` joins the TSan slice.
+- **The sandbox result walk's dead key promotion is deleted (#1014).**
+  `sandbox_value_has_callable`'s `promote_keys` branch re-homed escaping
+  dict keys in a second pass at the result boundary, but `dict_set_hashed`
+  promotes at insertion whenever a sandbox intern scope is open, so that
+  pass changed 0 of 128 keys (measured in the issue). The walk keeps its one
+  job, callable detection; the mutation that survived the suite no longer
+  exists to survive.
+
 - **`vm_run_bytecode`: a descriptor that declares local slots runs in its
   own frame env (#1030).** A top-level descriptor was executed in the
   caller's env, and `OP_SET_LOCAL 0` wrote the HOST's slot 0 — decref'ing

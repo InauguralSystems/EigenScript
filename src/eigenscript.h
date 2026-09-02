@@ -1367,6 +1367,8 @@ static inline struct ObserverSlot *env_obs_slot(Env *e, int idx) {
 }
 
 Env* env_new(Env *parent);
+void env_global_shared_lock(void);    /* #1035: module-env lock for external readers */
+void env_global_shared_unlock(void);
 void env_set(Env *env, const char *name, Value *val);
 Value* env_get(Env *env, const char *name);
 void env_set_local(Env *env, const char *name, Value *val);

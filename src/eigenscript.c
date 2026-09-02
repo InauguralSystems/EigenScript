@@ -2231,6 +2231,10 @@ static inline void env_shared_lock(const Env *e) {
 static inline void env_shared_unlock(const Env *e) {
     if (env_mt_shared(e)) pthread_mutex_unlock(&g_module_env_lock);
 }
+/* Exported form for readers outside this file that walk g_global_env's
+ * names/count (builtin_sandbox_run's snapshot, #1035). */
+void env_global_shared_lock(void)   { env_shared_lock(g_global_env); }
+void env_global_shared_unlock(void) { env_shared_unlock(g_global_env); }
 
 /* #660: exported for the SIGUSR1 observer dump (vm.c) — the dump's
  * module-scope walk holds the existing #607 module-env lock under MT
