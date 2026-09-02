@@ -2,6 +2,7 @@
  * EigsState / EigsThread implementation — see state.h.
  */
 #include "eigenscript.h"
+#include "env_flag.h"
 #include "state.h"
 #include "vm.h"
 #include "jit.h"
@@ -36,10 +37,7 @@ EigsState *eigs_state_new(void) {
     st->obs_h_low    = 0.1;
     /* #971: strict math mode, read once from env at creation (like the JIT
      * thresholds below). Any non-empty, non-"0" value enables it. */
-    {
-        const char *s = getenv("EIGS_STRICT");
-        st->strict = (s && s[0] && s[0] != '0') ? 1 : 0;
-    }
+    st->strict = eigs_env_flag("EIGS_STRICT");
     /* Filesystem anchor defaults; main/eigenlsp overwrite after attach. */
     st->script_dir[0] = '.'; st->script_dir[1] = '\0';
     st->exe_dir[0]    = '.'; st->exe_dir[1]    = '\0';

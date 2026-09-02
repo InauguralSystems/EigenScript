@@ -16,6 +16,7 @@
  */
 
 #include "eigenscript.h"
+#include "env_flag.h"
 #include "state.h"
 #include "vm.h"
 #include "builtins_internal.h"
@@ -1004,7 +1005,7 @@ Value* builtin_load_file(Value *arg) {
     /* #560: silent by default — no other successful builtin announces
      * itself, and shipped CLI tools built on load_file must be able to keep
      * stderr clean. Set EIGS_VERBOSE_LOAD=1 for the development banner. */
-    if (getenv("EIGS_VERBOSE_LOAD"))
+    if (eigs_env_flag("EIGS_VERBOSE_LOAD"))
         fprintf(stderr, "[load_file] Loading %s (%ld bytes)\n", path, size);
 
     /* A parse error in the loaded file must surface, not be silently run as a

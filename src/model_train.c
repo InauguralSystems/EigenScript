@@ -4,6 +4,7 @@
  */
 
 #include "model_internal.h"
+#include "env_flag.h"
 #include "ext_names.h"
 
 /* ================================================================
@@ -28,7 +29,7 @@
 static int64_t g_tern_flips = 0, g_tern_total = 0;
 static int tern_count_enabled(void) {
     static int v = -1;
-    if (v < 0) v = getenv("EIGS_TERNARY_FLIPS") ? 1 : 0;
+    if (v < 0) v = eigs_env_flag("EIGS_TERNARY_FLIPS") ? 1 : 0;
     return v;
 }
 void eigs_tern_report(int step) {
@@ -494,7 +495,7 @@ static float observer_matrix_scale(double *obs, int start, int count) {
      * really a hidden constant 0.5x on the whole model's LR, and it is
      * self-reinforcing: halved LR -> smaller deltas -> still "stable". */
     static int scale_off = -1;
-    if (scale_off < 0) scale_off = getenv("EIGS_OBS_SCALE_OFF") ? 1 : 0;
+    if (scale_off < 0) scale_off = eigs_env_flag("EIGS_OBS_SCALE_OFF") ? 1 : 0;
     if (scale_off) return 1.0f;
     if (!obs || count <= 0) return 1.0f;  /* no observer data → full rate */
 
@@ -782,7 +783,7 @@ static float matrix_rel_drift(const float *grad, const float *w, int64_t n) {
  * single-channel behavior for A/B; EIGS_OBS_SCALE_OFF=1 disables gating entirely. */
 static int obs_2ch_enabled(void) {
     static int v = -1;
-    if (v < 0) v = getenv("EIGS_OBS_ENTROPY_ONLY") ? 0 : 1;
+    if (v < 0) v = eigs_env_flag("EIGS_OBS_ENTROPY_ONLY") ? 0 : 1;
     return v;
 }
 
@@ -843,7 +844,7 @@ static long   _mt_calls = 0, _mt_pos = 0;
  * activation prefix-length-independent), ~seq times less compute. */
 static int native_train_step_impl(int *input_ids, int input_len, int *output_ids, int output_len, float learning_rate, float *loss_out, int *tokens_trained_out, int batched) {
     if (!g_model.loaded) return -1;
-    if (_mt_prof < 0) _mt_prof = getenv("EIGS_TRAIN_PROFILE") ? 1 : 0;
+    if (_mt_prof < 0) _mt_prof = eigs_env_flag("EIGS_TRAIN_PROFILE") ? 1 : 0;
     double _mt_t0 = _mt_prof ? _mt_prof_ns() : 0.0;
 
     int vocab_size = g_model.config.vocab_size;
@@ -1585,7 +1586,7 @@ static int native_train_step_impl(int *input_ids, int input_len, int *output_ids
  * per-position oracle for re-running that gradient-check. */
 static int native_train_step(int *input_ids, int input_len, int *output_ids, int output_len, float learning_rate, float *loss_out, int *tokens_trained_out) {
     static int use_batched = -1;
-    if (use_batched < 0) use_batched = getenv("EIGS_TRAIN_PERPOS") ? 0 : 1;
+    if (use_batched < 0) use_batched = eigs_env_flag("EIGS_TRAIN_PERPOS") ? 0 : 1;
     return native_train_step_impl(input_ids, input_len, output_ids, output_len, learning_rate, loss_out, tokens_trained_out, use_batched);
 }
 

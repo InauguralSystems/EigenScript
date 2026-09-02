@@ -3,6 +3,7 @@
  */
 
 #include "eigenscript.h"
+#include "env_flag.h"
 #include "state.h"
 #include "vm.h"
 #include "trace.h"
@@ -350,7 +351,7 @@ int main(int argc, char **argv) {
         eigs_state_destroy(eigs_st);
         return 1;
     }
-    if (getenv("EIGS_DUMP_BC")) chunk_disassemble(script_chunk, "<module>");
+    if (eigs_env_flag("EIGS_DUMP_BC")) chunk_disassemble(script_chunk, "<module>");
     Value *result = vm_execute(script_chunk, global);
     if (result) val_decref(result);
     /* #493: capture whether any worker died of an uncaught error without ever

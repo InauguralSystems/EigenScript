@@ -42,6 +42,18 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Boolean env flags share one convention (#1032).** Half the tree read
+  booleans by PRESENCE (`if (getenv(...))`), so `EIGS_JIT_OFF=0` turned the
+  JIT off and `EIGS_OBS_FORCE=0` forced the observer gate open (#915). One
+  helper, `eigs_env_flag` (`src/env_flag.h`: non-empty and not `"0"` = on),
+  now serves every boolean site — the 18 presence-tested flags (20 sites) across
+  jit.c, eigenscript.c, main.c, repl.c, builtins*.c and model_train.c, and
+  the three hand-written convention-A sites (`EIGS_STRICT`,
+  `EIGS_VERIFY_SELF`, `EIGS_REPLAY_STRICT`, `EIGS_OBS_FORCE`, `EIGS_OBS_GATE_STATS`).
+  Value-carrying variables (paths, thresholds, prefixes) keep `getenv`.
+  Suite section [99y] pins `EIGS_JIT_OFF=0` / `=` / `=1` and
+  `EIGS_JIT_STATS=0` against the JIT's own stats line.
+
 - **`state_at` keys come out in name order (#1029).** The prev table is
   bucketed by the interned name's ADDRESS, so the dump's key order moved
   with ASLR (seven orders in eight runs of one program) and `EIGS_REPLAY`
