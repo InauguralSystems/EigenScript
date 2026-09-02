@@ -1,0 +1,59 @@
+# #1069: copy_into returned null silently on EVERY failure -- wrong arity, a
+# non-number offset (the doc listed [dest, src, offset] while the code read
+# [dest, offset, src]), a buffer destination. Loud now, and a buffer
+# destination is supported (from a buffer or a list of numbers).
+load_file of "lib/test.eigs"
+
+# list -> list, the path that always worked
+d is [0, 0, 0, 0]
+r is copy_into of [d, 1, [7, 8]]
+assert_eq of [d, [0, 7, 8, 0], "list into list at offset 1"]
+assert_eq of [r, d, "returns dest"]
+
+# buffer <- list of numbers
+b is buffer of 4
+copy_into of [b, 1, [7, 8]]
+assert_eq of [b[1], 7, "buffer from a list: element 1"]
+assert_eq of [b[2], 8, "buffer from a list: element 2"]
+assert_eq of [b[0], 0, "...untouched before the offset"]
+
+# buffer <- buffer
+b2 is buffer of 3
+b2[0] is 5
+b2[1] is 6
+b3 is buffer of 4
+copy_into of [b3, 2, b2]
+assert_eq of [b3[2], 5, "buffer from a buffer: element 2"]
+assert_eq of [b3[3], 6, "buffer from a buffer: element 3 (clamped at the end)"]
+
+# the doc's old order [dest, src, offset] now raises instead of returning null
+msg is ""
+try:
+    copy_into of [b, [7, 8], 0]
+catch e:
+    msg is str of e
+assert_true of [(index_of of [msg, "offset must be a number"]) >= 0, "swapped argument order raises, naming the order"]
+
+# a non-number element bound for a buffer raises (the #1061 rule)
+msg is ""
+try:
+    copy_into of [b, 0, [1, "two"]]
+catch e:
+    msg is str of e
+assert_true of [(index_of of [msg, "cannot store str in a buffer"]) >= 0, "non-number element into a buffer raises"]
+
+# wrong arity / wrong types raise
+msg is ""
+try:
+    copy_into of [b, 0]
+catch e:
+    msg is str of e
+assert_true of [(index_of of [msg, "copy_into requires"]) >= 0, "wrong arity raises"]
+msg is ""
+try:
+    copy_into of [7, 0, [1]]
+catch e:
+    msg is str of e
+assert_true of [(index_of of [msg, "dest and src must be lists"]) >= 0, "a number destination raises"]
+
+test_summary of null

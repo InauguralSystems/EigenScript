@@ -1,6 +1,15 @@
+# copy_into with a negative offset. It returned null silently (this file
+# pinned that); since #1069 every copy_into failure raises, and the
+# fail-soft->loud reform (#975) is the rule. The zero-offset control stays.
 dest is [1, 2, 3, 4, 5]
-result is copy_into of [dest, -1, [9]]
-assert of [type of result == "none", "negative offset returns null"]
+msg is ""
+try:
+    copy_into of [dest, -1, [9]]
+catch e:
+    msg is str of e
+assert of [(index_of of [msg, "offset -1 is negative"]) >= 0, "negative offset raises, naming the offset"]
+assert of [dest[0] == 1, "...and dest is untouched"]
 result2 is copy_into of [dest, 0, [9]]
 assert of [result2 != null, "zero offset works"]
+assert of [dest[0] == 9, "zero offset wrote element 0"]
 print of "PASS: copy_into negative offset"

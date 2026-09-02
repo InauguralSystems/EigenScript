@@ -71,7 +71,7 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `range` | `range of n` or `range of [start, end]` | Generate integer list [0..n) or [start..end) |
 | `set_at` | `set_at of [list, index, value]` | Set element at index (mutates list); negative indices count from the end, like `[]` |
 | `get_at` | `get_at of [list, index]` | Get element at index; negative indices count from the end, like `[]` |
-| `copy_into` | `copy_into of [dest, src, offset]` | Copy src elements into dest starting at offset |
+| `copy_into` | `copy_into of [dest, offset, src]` | Copy src elements into dest starting at offset — a list into a list, or a buffer / list of numbers into a buffer. Returns dest. Wrong arity, a non-number offset (the doc used to list `[dest, src, offset]`, the code has always read `[dest, offset, src]`), a bad type, or a non-number element bound for a buffer RAISES (#1069; it silently returned null) |
 | `list_slice` | `list_slice of [list, start, end]` | New list with the elements of [start, end) — dual of `copy_into`. Negative indices count from the end, like `[]`; bounds then clamp to [0, len]. `start >= end` gives `[]`. Never raises on bounds |
 | `num_copy` | `num_copy of value` | Create independent copy of numeric value |
 | `hex` | `hex of n` or `hex of [n, nibbles]` | Uppercase hex string of a non-negative integer, zero-padded to `nibbles` (never truncated). Raises on negatives, fractions, non-numbers |
@@ -305,7 +305,7 @@ Boolean keywords that check the most recently observed value:
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `load_file` | `load_file of "path.eigs"` | Load and execute EigenScript file. A missing/unreadable path raises a catchable `io` error (matching `import`); a parse/compile failure in the file raises `parse`. |
-| `file_exists` | `file_exists of "path"` | 1 if file exists, 0 otherwise. Trace-recorded, so replay is deterministic (#585) |
+| `file_exists` | `file_exists of "path"` | 1 if the path exists (any kind: file, directory, device, fifo), 0 otherwise. A `stat` probe — never blocks (#1070: the old `fopen` probe hung on a reader-less fifo). Trace-recorded, so replay is deterministic (#585) |
 | `is_dir` | `is_dir of "path"` | 1 if the path names a directory, 0 for a plain file / missing path (#576 — replaces the `file_exists of "path/."` probe). Trace-recorded, so replay is deterministic |
 | `is_file` | `is_file of "path"` | 1 iff the path names a REGULAR file (`S_ISREG`); 0 for a directory, a device/fifo/socket, a missing path, or a non-string. `read_file_util` admits only regular files, so this is the probe a driver uses to match that contract (#1058). Trace-recorded, so replay is deterministic |
 | `read_text` | `read_text of "path"` | Read file contents as string ("" on failure, 10 MB cap) |

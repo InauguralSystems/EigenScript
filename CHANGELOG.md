@@ -42,6 +42,21 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`file_exists` never blocks (#1070).** It was an `fopen` probe, and `fopen`
+  on a reader-less fifo (or a device that blocks on open) never returned — the
+  program hung with no diagnostic while `is_file` on the same path answered 0
+  at once. A `stat` probe now; directories and devices still read 1.
+  `tests/test_file_exists_fifo.sh` opens a fifo under a 5-second timeout.
+- **`copy_into` is loud, and takes a buffer destination (#1069).** Every
+  failure returned null silently — wrong arity, a non-number offset, a bad
+  type — including the argument order `docs/BUILTINS.md` itself listed
+  (`[dest, src, offset]`; the code has always read `[dest, offset, src]`, and
+  the doc now says so). A buffer destination copies numbers from a buffer or
+  a list of numbers, and a non-number element raises the #1061 message. A
+  negative offset raises too (`tests/test_copy_into_neg.eigs` pinned the old
+  silent null and now pins the raise). `log`/`sqrt` of a buffer (the other
+  half of #1069) is the #971 `ARG_GUARD` flip-to-default question, not a new
+  hole, and is left to it.
 - **An interrogative inside a list comprehension arms the name (#1075).**
   `scan_for_interrogated` treated `AST_LISTCOMP` as a no-op, so
   `[prev of y for v in xs]` answered `[null]` while `prev of y` one line
