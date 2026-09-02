@@ -159,6 +159,13 @@ assert of [(math_flags of null).invalid + (math_flags of null).overflow == 0, "N
 # The domain clamps are substitutions, not the two clamps the contract named.
 # Each keeps its value and each now says so.
 clear_math_flags of null
+# #1041: positive inputs below the old 1e-10 floor are EXACT; only x <= 0
+# takes the stand-in. log of 1e-15 answered ln(1e-10) before (silent plateau).
+lt is log of 1e-15
+assert of [(abs of (lt - (0 - 34.538776394910684))) < 1e-9, "NG27a log of 1e-15 is exact, not floored"]
+l10 is log of 1e-10
+assert of [(abs of (l10 - (0 - 23.025850929940457))) < 1e-9, "NG27b log of 1e-10 is exact"]
+assert of [(math_flags of null).invalid == 0, "NG27c a tiny positive input does not flag invalid"]
 l0 is log of 0
 assert of [(math_flags of null).invalid == 1, "NG27 log of 0 flags invalid"]
 clear_math_flags of null

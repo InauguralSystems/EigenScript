@@ -1392,6 +1392,9 @@ void env_bind_fresh_param_slot(Env *env, const char *interned,
                                uint32_t h, EigsSlot s);
 /* Raw insert into env hash (exposed for vm.c inline call-site fast paths). */
 void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
+/* #1055: slot index of `key` in a dict's hash, or -1. Consumers outside this
+ * TU (the AOT's inline caches) were relying on an implicit declaration. */
+int      env_hash_find_dict(Value *dict, const char *key, uint32_t h);
 EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found);
 /* Direct slot store with arena promotion; used by VM inline-cache fast paths
  * after the slot index has been resolved out-of-band. Caller must update

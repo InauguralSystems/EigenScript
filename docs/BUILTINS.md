@@ -307,6 +307,7 @@ Boolean keywords that check the most recently observed value:
 | `load_file` | `load_file of "path.eigs"` | Load and execute EigenScript file. A missing/unreadable path raises a catchable `io` error (matching `import`); a parse/compile failure in the file raises `parse`. |
 | `file_exists` | `file_exists of "path"` | 1 if file exists, 0 otherwise. Trace-recorded, so replay is deterministic (#585) |
 | `is_dir` | `is_dir of "path"` | 1 if the path names a directory, 0 for a plain file / missing path (#576 — replaces the `file_exists of "path/."` probe). Trace-recorded, so replay is deterministic |
+| `is_file` | `is_file of "path"` | 1 iff the path names a REGULAR file (`S_ISREG`); 0 for a directory, a device/fifo/socket, a missing path, or a non-string. `read_file_util` admits only regular files, so this is the probe a driver uses to match that contract (#1058). Trace-recorded, so replay is deterministic |
 | `read_text` | `read_text of "path"` | Read file contents as string ("" on failure, 10 MB cap) |
 | `read_line` | `read_line of null` | Blocking line read from **stdin**: next line without its trailing newline (`\r\n` stripped as one unit), `null` at EOF; an empty line is `""`. Works on pipes — the stream-safe primitive `read_text of "/dev/stdin"` can't be (fseek fails on unseekable fds, #558). Trace-recorded, so replay is deterministic |
 | `read_bytes` | `read_bytes of "path"` | Read a file's raw bytes as a list of integers 0–255 (`null` on failure, 10 MB cap). Trace-recorded, so replay is deterministic |
@@ -435,7 +436,7 @@ automatically at exit.
 |------|-----------|-------------|
 | `sqrt` | `sqrt of t` | Element-wise square root; negative input returns 0 |
 | `exp` | `exp of t` | Element-wise e^x; overflow saturates |
-| `log` | `log of t` | Element-wise natural log; input is floored at 1e-10 |
+| `log` | `log of t` | Element-wise natural log. Positive input, however small, is exact (`log of 1e-15` = -34.538…); a non-positive or NaN element sets the `invalid` math flag and stands in for ln(1e-10) = -23.025… (#865, #1041) — never -inf |
 | `softmax` | `softmax of t` | Row-wise softmax normalization (a scalar is the one-element case → `1.0`) |
 | `log_softmax` | `log_softmax of t` | Row-wise log(softmax) (a scalar → `log(1)` = `0.0`) |
 | `relu` | `relu of t` | Element-wise max(0, x) (accepts a scalar) |

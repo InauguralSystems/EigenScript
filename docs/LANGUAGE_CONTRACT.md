@@ -118,7 +118,7 @@ examples (executed by the suite).
   ```
 
   `overflow` is set by the ±1e308 clamp. `invalid` is set by the
-  out-of-domain substitutions: `log of x` for `x <= 1e-10` (which
+  out-of-domain substitutions: `log of x` for `x <= 0` (which
   returns `log(1e-10)`, i.e. `-23.025850929940457`), `sqrt of x` for
   negative `x` (returns 0, otherwise indistinguishable from
   `sqrt of 0`), and `asin`/`acos` outside [-1, 1] (argument clamped).

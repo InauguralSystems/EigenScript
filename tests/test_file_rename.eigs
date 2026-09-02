@@ -43,6 +43,14 @@ assert_eq of [is_dir of D, 1, "is_dir: nested directory -> 1"]
 assert_eq of [is_dir of F, 0, "is_dir: plain file -> 0"]
 assert_eq of [is_dir of "/tmp/eigs_no_such_dir_zzz", 0, "is_dir: missing path -> 0"]
 assert_eq of [is_dir of 42, 0, "is_dir: non-string -> 0"]
+# #1058: is_file is the S_ISREG probe -- the admission contract read_file_util
+# enforces. A device passes file_exists AND fails is_dir; only is_file says no.
+assert_eq of [is_file of F, 1, "is_file: plain file -> 1"]
+assert_eq of [is_file of "/tmp/eigs_isdir_probe", 0, "is_file: directory -> 0"]
+assert_eq of [is_file of "/dev/null", 0, "is_file: device -> 0 (file_exists says 1)"]
+assert_eq of [file_exists of "/dev/null", 1, "control: file_exists admits the device"]
+assert_eq of [is_file of "/tmp/eigs_no_such_file_zzz", 0, "is_file: missing path -> 0"]
+assert_eq of [is_file of 42, 0, "is_file: non-string -> 0"]
 remove_file of F
 
 test_summary of null

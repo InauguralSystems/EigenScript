@@ -1,0 +1,76 @@
+# #1061: storing a non-number into a buffer element RAISES, like every other
+# numeric context. Before: the store was silently dropped (the old element
+# stayed) at rc 0, and the same value died one line later in arithmetic.
+# Every store shape -- the opcode path (b[i] is v), buf_set, buf_from_list --
+# and every non-number kind; booleans are numbers and stay accepted.
+load_file of "lib/test.eigs"
+
+define store_fails(v) as:
+    b is buffer of 2
+    b[1] is 7
+    msg is ""
+    try:
+        b[0] is v
+    catch e:
+        msg is str of e
+    return [msg, b[1]]
+
+r is store_fails of "hello"
+assert_true of [(index_of of [r[0], "cannot store str in a buffer"]) >= 0, "b[i] is str raises, naming the type"]
+assert_eq of [r[1], 7, "...and the buffer is untouched"]
+r is store_fails of [1, 2]
+assert_true of [(index_of of [r[0], "cannot store list in a buffer"]) >= 0, "b[i] is list raises"]
+r is store_fails of {"k": 1}
+assert_true of [(index_of of [r[0], "cannot store dict in a buffer"]) >= 0, "b[i] is dict raises"]
+r is store_fails of null
+assert_true of [(index_of of [r[0], "cannot store null in a buffer"]) >= 0, "b[i] is null raises"]
+
+b is buffer of 3
+b[0] is (1 == 1)
+b[1] is (1 == 2)
+b[2] is 2.5
+assert_eq of [b[0], 1, "a true comparison stores 1 (booleans are numbers)"]
+assert_eq of [b[1], 0, "a false comparison stores 0"]
+assert_eq of [b[2], 2.5, "a number stores as itself"]
+
+# the hot-loop shape: the JIT's inline buffer write bails to its helper on a
+# non-number value, and the helper raises the same way.
+define hot(v, n) as:
+    b is buffer of 4
+    msg is ""
+    try:
+        for i in range of n:
+            b[i % 4] is i
+        b[0] is v
+    catch e:
+        msg is str of e
+    return [msg, b[3]]
+r is hot of ["s", 20000]
+assert_true of [(index_of of [r[0], "cannot store str in a buffer"]) >= 0, "after 20000 JIT'd stores, a str store still raises"]
+assert_eq of [r[1], 19999, "...and the earlier numeric stores landed"]
+
+# buf_set: both operands were read through the num union unchecked.
+msg is ""
+try:
+    buf_set of [b, 0, "x"]
+catch e:
+    msg is str of e
+assert_true of [(index_of of [msg, "cannot store str in a buffer"]) >= 0, "buf_set with a str value raises"]
+msg is ""
+try:
+    buf_set of [b, "0", 1]
+catch e:
+    msg is str of e
+assert_true of [(index_of of [msg, "buf_set: index must be a number"]) >= 0, "buf_set with a str index raises"]
+
+# buf_from_list: a non-number element silently stayed 0.0.
+msg is ""
+try:
+    buf_from_list of ([1, "two", 3])
+catch e:
+    msg is str of e
+assert_true of [(index_of of [msg, "buf_from_list: element 1 is str"]) >= 0, "buf_from_list names the offending element"]
+ok is buf_from_list of ([1, 2, 3])
+assert_eq of [ok[2], 3, "control: an all-number list converts"]
+
+test_summary of null
