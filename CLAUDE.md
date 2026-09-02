@@ -38,6 +38,7 @@ make asan-http  # ASan+UBSan *with* ext_http+model (CI gate; leaks still need RS
 make http       # http+model variant — run tests/test_http_server.sh
 make zlib       # DEFLATE codecs (inflate/deflate builtins) via system zlib (-lz)
 make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
+bash tools/jit_diff.sh  # JIT vs INTERPRETER differential over the corpus (tape-replayed; CI job)
 make freestanding-check  # 2-stage symbol gate for the EigenOS profile (docs/FREESTANDING.md)
 make freestanding-libc-diff  # mini-libc/libm vs glibc oracle (src/freestanding/)
 make poison     # 0xAA uninit-read hunter build; run the suite with MALLOC_PERTURB_=170

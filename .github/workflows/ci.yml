@@ -193,6 +193,35 @@ jobs:
           path: failure-tapes/
           if-no-files-found: ignore
 
+  # JIT differential oracle: the interpreter IS the JIT's oracle. Every corpus
+  # program runs with the JIT off (recording a tape), then replays that tape
+  # under the default JIT and under forced OSR; stdout+stderr+rc must be
+  # byte-identical or listed in tests/jit_diff_expected.txt (a ledger of
+  # filed divergences, never an amnesty). Measured 2026-09-02: nothing in the
+  # suite or CI had ever diffed JIT-on against JIT-off; the JIT's own tests
+  # were hand-written expectations. Its own job because the three-way run is
+  # ~3x the suite's interpreter time.
+  jit-differential:
+    name: jit differential (interpreter oracle, tape-replayed)
+    needs: [dev-image, scope]
+    if: needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Build
+        run: ./build.sh
+      - name: JIT vs interpreter differential
+        run: bash tools/jit_diff.sh
+
   # Freestanding symbol gate: compiles the runtime with the freestanding
   # profile (-DEIGENSCRIPT_FREESTANDING=1) and asserts its undefined-symbol
   # set stays within tools/freestanding_allowlist.txt — the HAL roots +
