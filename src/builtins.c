@@ -3237,7 +3237,22 @@ Value* builtin_vm_run_bytecode(Value *arg) {
      * host program happens to contain no temporal query. */
     chunk_arm_temporal(chunk);
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
-    Value *result = vm_execute(chunk, target);
+    /* #1030: a descriptor that DECLARES local slots gets its own frame env.
+     * vm_run reserves the chunk's slots in whatever env it is handed and
+     * OP_SET_LOCAL writes them by index, so a top-level descriptor run in
+     * the caller's env wrote the CALLER's slot 0 -- decref'ing the host's
+     * own first binding, which the host then read after the builtin
+     * returned (heap-use-after-free under ASan, a clobbered value without
+     * it). A child env keeps name resolution (GET_NAME walks the parent
+     * chain) and isolates the slots. */
+    /* EVERY descriptor, slot-declaring or not: a slot-less descriptor's
+     * `SET_LOCAL 0` passed the #348 range check against the HOST env's
+     * slot count and clobbered the global env's slot 0 -- `print` became
+     * the number 7 ("cannot call num" on the next print). In a fresh child
+     * env that write is out of range and raises, as #348 specifies. */
+    Env *fenv = env_new(target);
+    Value *result = vm_execute(chunk, fenv);
+    env_decref(fenv);
     chunk_free(chunk);
     return result ? result : make_null();
 }
@@ -4670,9 +4685,14 @@ Value* builtin_task_spawn(Value *arg) {
  * yields internally) broke atomicity silently. While this depth is nonzero,
  * any task builtin that would actually SUSPEND raises instead, so the mistake
  * fails loudly. Only nonzero for the running task — a yield cannot happen
- * inside, so no task switch occurs while it is set, and a plain counter is
- * safe. */
-static int g_no_yield_depth = 0;
+ * inside, so no cooperative task switch occurs while it is set. PER THREAD
+ * (#1036): the old process-global counter predated pthread workers; two
+ * workers' non-atomic ++/-- raced (TSan 3/3), and a lost decrement left the
+ * counter stuck nonzero for the whole process, poisoning every later
+ * guarded operation with spurious raises. A region belongs to the thread
+ * that entered it, so thread-local storage is the exact scope: no race, and
+ * one worker's region never forbids another's yields. */
+static __thread int g_no_yield_depth = 0;
 
 static int no_yield_forbidden(const char *what) {
     if (g_no_yield_depth > 0) {
