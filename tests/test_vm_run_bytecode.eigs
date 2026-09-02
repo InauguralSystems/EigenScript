@@ -343,4 +343,29 @@ assert_eq of [vm_run_bytecode of [ABI, iter_neg, [[10, 20, 30], 1, "EXITED"]], 2
 try9 is [TRY_BEGIN,27,0, TRY_BEGIN,24,0, TRY_BEGIN,21,0, TRY_BEGIN,18,0, TRY_BEGIN,15,0, TRY_BEGIN,12,0, TRY_BEGIN,9,0, TRY_BEGIN,6,0, TRY_BEGIN,3,0, JUMP,4,0, CONST,1,0, RETURN, CONST,0,0, RETURN]
 assert_eq of [vm_run_bytecode of [ABI, try9, ["NOERR", "CAUGHT8"]], "CAUGHT8", "#726: the 9th TRY_BEGIN raises instead of silently mis-pairing"]
 
+# --- #1030: a descriptor that declares local slots must not write the HOST's slots ---
+# `ABI` is this file's first module binding (slot 0). A descriptor with
+# local_names ["acc"] that SET_LOCALs slot 0 used to write the host's slot 0
+# (decref'ing ABI's value: heap-use-after-free under ASan, a clobbered ABI
+# without it). It now runs in its own child env; ABI must survive intact.
+OBSERVE_ASSIGN_LOCAL is 57
+POP is 35
+REPORT_SLOT is 81
+# (element layout after the ABI stamp: code, constants, functions, name,
+# local_names -- so the names list is the SEVENTH element of the stamped list)
+r1030 is vm_run_bytecode of [ABI, [CONST,0,0, OBSERVE_ASSIGN_LOCAL,0,0, SET_LOCAL,0,0, POP, GET_LOCAL,0,0, RETURN], [7], [], [], [], ["acc"]]
+assert_eq of [r1030, 7, "descriptor local slot round-trips inside its own frame (#1030)"]
+assert_eq of [ABI, 1, "host slot 0 survives a descriptor's SET_LOCAL 0 (#1030)"]
+assert_eq of [len of "still-a-builtin", 15, "the global env's slot 0 (a builtin) survives too (#1030)"]
+# a descriptor that declares NO slots and writes slot 0: out of range in its
+# own (empty) frame env, so it raises (#348) instead of writing the host's
+# slot 0 -- which used to turn `print` into the number 7.
+sl1030 is 0
+try:
+    rs1030 is vm_run_bytecode of [ABI, [CONST,0,0, SET_LOCAL,0,0, POP, CONST,0,0, RETURN], [7]]
+catch es1030:
+    sl1030 is 1
+assert_eq of [sl1030, 1, "slot-less descriptor's SET_LOCAL 0 raises instead of clobbering the host (#1030)"]
+print of "print survives"
+
 test_summary of null

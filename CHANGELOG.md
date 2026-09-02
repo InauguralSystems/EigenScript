@@ -42,6 +42,23 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`vm_run_bytecode`: a descriptor that declares local slots runs in its
+  own frame env (#1030).** A top-level descriptor was executed in the
+  caller's env, and `OP_SET_LOCAL 0` wrote the HOST's slot 0 — decref'ing
+  the host's own first binding, which the host then read (heap-use-after-free
+  under ASan, a clobbered value without it). Every descriptor now runs in a
+  fresh child env (name resolution still walks to the host): a
+  slot-declaring one gets its own slots, and a slot-less one's `SET_LOCAL 0`
+  is out of range there and raises (#348) instead of writing the global
+  env's slot 0 — measured on the pinned binary, that write turned `print`
+  into the number 7. The ABI test pins both shapes.
+- **`must_not_yield`'s region counter is per thread (#1036).** It was a
+  process-global int with non-atomic `++`/`--`; two pthread workers raced
+  (TSan 3/3) and a lost decrement left it stuck nonzero, poisoning every
+  later guarded operation process-wide. Thread-local storage is the exact
+  scope (a region belongs to the thread that entered it). The TSan CI slice
+  gains `tsan_no_yield_race.eigs` (two workers, 1000 regions each).
+
 - **Boolean env flags share one convention (#1032).** Half the tree read
   booleans by PRESENCE (`if (getenv(...))`), so `EIGS_JIT_OFF=0` turned the
   JIT off and `EIGS_OBS_FORCE=0` forced the observer gate open (#915). One

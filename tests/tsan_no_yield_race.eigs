@@ -1,0 +1,18 @@
+# #1036: two pthread workers entering must_not_yield regions concurrently.
+# The region counter was a process-global int with non-atomic ++/--; it is
+# thread-local now. Under ThreadSanitizer this program must produce zero
+# warnings (tests/test_tsan.sh), and its result must be exactly 2000 --
+# a lost decrement would leave the counter stuck and a later guarded
+# operation would raise.
+define quiet() as:
+    return 1
+define worker(n) as:
+    local i is 0
+    local acc is 0
+    loop while i < 1000:
+        acc is acc + (must_not_yield of quiet)
+        i is i + 1
+    return acc
+a is spawn of [worker, 1]
+b is spawn of [worker, 2]
+print of ((thread_join of a) + (thread_join of b))
