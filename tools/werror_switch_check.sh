@@ -104,7 +104,7 @@ MIN_LINES=100
 # coverage-clean/fuzz-run (no compiles).
 TARGETS="build full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison \
          lsp dap jit-smoke lib embed-smoke embed-smoke-gfx embed-concurrent pgo coverage \
-         fuzz fuzz-libfuzzer freestanding-libc-diff sandbox-intern-test errline-test"
+         fuzz fuzz-libfuzzer freestanding-libc-diff sandbox-intern-test errline-test nativefn-test"
 
 # GNU make emits a shared prerequisite only once when several goals are in
 # one invocation. `embed-smoke-gfx` depends on `gfx`, so keeping that goal in
@@ -117,6 +117,7 @@ TARGET_BATCHES=(
     "embed-smoke-gfx"
     "sandbox-intern-test"
     "errline-test"
+    "nativefn-test"
 )
 
 # TARGET_BATCHES must cover TARGETS exactly.  Keep the hand-written batches
@@ -284,6 +285,7 @@ fuzz-libfuzzer 1
 freestanding-libc-diff 1
 sandbox-intern-test 1
 errline-test 1
+nativefn-test 1
 script:build.sh 3
 script:tools/freestanding_check.sh 2
 script:tools/freestanding_smoke.sh 1

@@ -70,7 +70,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx nativefn-test print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -199,6 +199,18 @@ $(ERRLINE_TEST): $(ERRLINE_TEST_OBJ) $(filter-out build/release/main.o build/rel
 	$(CC) $(FLAGS_release) -o $@ $^ $(LIBS_release)
 errline-test: $(ERRLINE_TEST)
 	@echo "Error-line fallback test built: $(ERRLINE_TEST)"
+
+# #1060: a native function registered with a name reports as a user fn
+# (`type of` -> "fn", printing -> `<fn NAME>`); C-level because only a linked
+# runtime (the AOT) can make one.
+NATIVEFN_TEST := build/release/test_native_fn
+NATIVEFN_TEST_OBJ := build/release/test_native_fn.o
+$(NATIVEFN_TEST_OBJ): tests/test_native_fn.c Makefile VERSION $(wildcard $(SRC_DIR)/*.h) | build/release
+	$(CC) $(FLAGS_release) -I$(SRC_DIR) -MMD -MP -c $< -o $@
+$(NATIVEFN_TEST): $(NATIVEFN_TEST_OBJ) $(filter-out build/release/main.o build/release/repl.o build/release/step.o build/release/tape_read.o build/release/bundle.o,$(OBJ_release))
+	$(CC) $(FLAGS_release) -o $@ $^ $(LIBS_release)
+nativefn-test: $(NATIVEFN_TEST)
+	@echo "Native-fn identity test built: $(NATIVEFN_TEST)"
 
 full: build/full/eigenscript
 	$(call RELINK,full)

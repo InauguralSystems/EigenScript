@@ -458,6 +458,34 @@ else
 fi
 echo ""
 
+# #1060: a native function registered with a name reports as a user fn.
+# C-level for the same reason as [0b]: only a linked runtime makes one.
+echo "[0c] Native-fn identity (#1060)"
+check_binary_fingerprint
+NATIVEFN_BUILD=$(make --no-print-directory -C .. nativefn-test 2>&1)
+NATIVEFN_BUILD_RC=$?
+if [ "$NATIVEFN_BUILD_RC" -ne 0 ]; then
+    TOTAL=$((TOTAL + 1))
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: native-fn identity test build (rc=$NATIVEFN_BUILD_RC)"
+    echo "$NATIVEFN_BUILD" | tail -12
+else
+    NATIVEFN_OUT=$(../build/release/test_native_fn 2>&1)
+    NATIVEFN_RC=$?
+    NF_PASS=$(echo "$NATIVEFN_OUT" | grep -c "^PASS:" || true)
+    NF_FAIL=$(echo "$NATIVEFN_OUT" | grep -c "^FAIL:" || true)
+    TOTAL=$((TOTAL + NF_PASS + NF_FAIL))
+    PASS=$((PASS + NF_PASS))
+    FAIL=$((FAIL + NF_FAIL))
+    if [ "$NATIVEFN_RC" -eq 0 ] && [ "$NF_FAIL" -eq 0 ]; then
+        echo "  PASS: all $NF_PASS native-fn identity checks"
+    else
+        echo "  FAIL: native-fn identity (rc=$NATIVEFN_RC)"
+        echo "$NATIVEFN_OUT" | grep "^FAIL:"
+    fi
+fi
+echo ""
+
 # Sanitizer-classifier gate (#969/#968). This runs BEFORE the first test block
 # on purpose: rc_ok() decides, 72 times below, whether a nonzero exit is a
 # tolerable leak or a real failure. When that classification was wrong it was

@@ -1197,6 +1197,14 @@ Value* make_list_heap(int capacity);
 Value* make_text_builder(void);
 Value* make_fn(const char *name, char **params, int param_count, Env *closure);
 Value* make_builtin(BuiltinFn fn);
+/* #1060: a NATIVE function that reports as a user function. The Value is a
+ * VAL_BUILTIN (every call path stays byte-identical), but the function
+ * pointer is registered with a name, so `type of` answers "fn", printing
+ * shows `<fn NAME>` and `str of` agrees -- the observable identity a VAL_FN
+ * has, for a function the AOT compiled to C. Registration is process-wide
+ * and append-only (a compiled program registers each function once). */
+Value* make_native_fn(BuiltinFn fn, const char *name);
+const char* eigs_native_fn_name(BuiltinFn fn);   /* NULL for a plain builtin */
 Value* make_dict(int capacity);
 void dict_set(Value *dict, const char *key, Value *val);
 void dict_set_owned(Value *dict, const char *key, Value *val);
