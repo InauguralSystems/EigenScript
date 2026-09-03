@@ -2629,13 +2629,9 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
         } else if (env_mt_shared(env)) {
             env_grow_retire(env, new_cap);   /* #607: publish + retire */
         } else {
-            env->names  = realloc(env->names, nsz);
-            env->values = realloc(env->values, vsz);
-            env->assign_counts = realloc(env->assign_counts, new_cap * sizeof(int));
-            if (!env->names || !env->values) {
-                fprintf(stderr, "Out of memory growing env\n");
-                exit(1);
-            }
+            env->names  = xrealloc(env->names, nsz);
+            env->values = xrealloc(env->values, vsz);
+            env->assign_counts = xrealloc(env->assign_counts, new_cap * sizeof(int));
         }
         env->capacity = new_cap;
     }
@@ -2732,13 +2728,9 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
         } else if (env_mt_shared(env)) {
             env_grow_retire(env, new_cap);   /* #607: publish + retire */
         } else {
-            env->names = realloc(env->names, nsz);
-            env->values = realloc(env->values, vsz);
-            env->assign_counts = realloc(env->assign_counts, new_cap * sizeof(int));
-            if (!env->names || !env->values) {
-                fprintf(stderr, "Out of memory growing env\n");
-                exit(1);
-            }
+            env->names = xrealloc(env->names, nsz);
+            env->values = xrealloc(env->values, vsz);
+            env->assign_counts = xrealloc(env->assign_counts, new_cap * sizeof(int));
         }
         env->capacity = new_cap;
     }
@@ -2786,13 +2778,9 @@ void env_bind_fresh_param_slot(Env *env, const char *interned,
         int new_cap = env->capacity * 2;
         size_t nsz = new_cap * sizeof(char *);
         size_t vsz = new_cap * sizeof(EigsSlot);
-        env->names = realloc(env->names, nsz);
-        env->values = realloc(env->values, vsz);
-        env->assign_counts = realloc(env->assign_counts, new_cap * sizeof(int));
-        if (!env->names || !env->values) {
-            fprintf(stderr, "Out of memory growing env\n");
-            exit(1);
-        }
+        env->names = xrealloc(env->names, nsz);
+        env->values = xrealloc(env->values, vsz);
+        env->assign_counts = xrealloc(env->assign_counts, new_cap * sizeof(int));
         env->capacity = new_cap;
     }
     env->names[env->count] = (char*)interned;
@@ -3681,13 +3669,9 @@ void env_reserve_slots(Env *env, int total) {
         size_t nsz = new_cap * sizeof(char *);
         size_t vsz = new_cap * sizeof(EigsSlot);
         if (env->heap_allocated) {
-            env->names  = realloc(env->names,  nsz);
-            env->values = realloc(env->values, vsz);
-            env->assign_counts = realloc(env->assign_counts, new_cap * sizeof(int));
-            if (!env->names || !env->values || !env->assign_counts) {
-                fprintf(stderr, "Out of memory growing env\n");
-                exit(1);
-            }
+            env->names  = xrealloc(env->names,  nsz);
+            env->values = xrealloc(env->values, vsz);
+            env->assign_counts = xrealloc(env->assign_counts, new_cap * sizeof(int));
         } else {
             char **nn  = arena_alloc(nsz);
             EigsSlot *nv = arena_alloc(vsz);

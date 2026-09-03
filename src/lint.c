@@ -2191,7 +2191,7 @@ static void w022_collect_defines(ASTNode *n, W022Table *t) {
         } else {
             if (t->count == t->cap) {
                 t->cap = t->cap ? t->cap * 2 : 16;
-                t->fns = realloc(t->fns, (size_t)t->cap * sizeof(W022Fn));
+                t->fns = xrealloc(t->fns, (size_t)t->cap * sizeof(W022Fn));
             }
             t->fns[t->count].name = strdup(n->data.func.name);
             t->fns[t->count].param_count = n->data.func.param_count;

@@ -42,6 +42,16 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Env growth allocations are checked (`xrealloc`, #1085).** The four
+  env-growth blocks in eigenscript.c (`names`/`values`/`assign_counts`,
+  twelve `p = realloc(p, n)` sites) and lint's W022 function table were the
+  unchecked remainder of the bare-realloc sweep: three of the four blocks
+  never tested `assign_counts` at all, and every one overwrote the old
+  pointer before testing it. They go through `xrealloc` now, and their
+  hand-written "Out of memory growing env" checks are gone with the NULL
+  they guarded. The remaining bare `realloc`s (jit chunk registry, tape
+  reader, trace rings, lint sets) each test the result and degrade on
+  purpose, and are left as they are.
 - **Chunk growth allocations are checked (`xrealloc`).** Eight bare
   `realloc`s in chunk.c (constant pool, code, line/column tables, inline
   caches, function table) returned NULL into a `memset` under a 60 MB
