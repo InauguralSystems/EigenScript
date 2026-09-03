@@ -1682,6 +1682,34 @@ Value* make_builtin(BuiltinFn fn) {
     return v;
 }
 
+/* #1060: native-function names, keyed by function pointer. A small
+ * append-only table: the population is the compiled functions of one
+ * program (hundreds at most), looked up only by `type of`, printing and
+ * `str of` -- never on a call. */
+typedef struct { BuiltinFn fn; const char *name; } NativeFnName;
+static NativeFnName *g_native_fn_names = NULL;
+static int g_native_fn_count = 0, g_native_fn_cap = 0;
+
+const char* eigs_native_fn_name(BuiltinFn fn) {
+    for (int i = 0; i < g_native_fn_count; i++)
+        if (g_native_fn_names[i].fn == fn) return g_native_fn_names[i].name;
+    return NULL;
+}
+
+Value* make_native_fn(BuiltinFn fn, const char *name) {
+    if (name && !eigs_native_fn_name(fn)) {
+        if (g_native_fn_count == g_native_fn_cap) {
+            g_native_fn_cap = g_native_fn_cap ? g_native_fn_cap * 2 : 32;
+            g_native_fn_names = xrealloc(g_native_fn_names,
+                                         (size_t)g_native_fn_cap * sizeof(NativeFnName));
+        }
+        g_native_fn_names[g_native_fn_count].fn = fn;
+        g_native_fn_names[g_native_fn_count].name = xstrdup(name);
+        g_native_fn_count++;
+    }
+    return make_builtin(fn);
+}
+
 Value* make_dict(int capacity) {
     if (capacity < 8) capacity = 8;
     /* Charged at birth like make_list — JSON objects of <=8 keys were fully
@@ -2101,7 +2129,11 @@ char* value_to_string(Value *v) {
             strbuf_append_char(&out, '}');
             return strbuf_finish(&out);
         }
-        case VAL_BUILTIN: return xstrdup("<builtin>");
+        case VAL_BUILTIN: {
+            const char *nn = eigs_native_fn_name(v->data.builtin);   /* #1060 */
+            if (nn) { snprintf(buf, sizeof(buf), "<fn %s>", nn); return xstrdup(buf); }
+            return xstrdup("<builtin>");
+        }
         case VAL_JSON_RAW: return xstrdup(v->data.str);
         case VAL_BUFFER:
             snprintf(buf, sizeof(buf), "<buffer:%d>", v->data.buffer.count);

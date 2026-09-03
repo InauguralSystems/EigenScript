@@ -110,7 +110,11 @@ static void obs_dump_value(EigsSlot s, char *buf, size_t nbuf) {
             case VAL_LIST:   snprintf(buf, nbuf, "<list:%d>", v->data.list.count); break;
             case VAL_DICT:   snprintf(buf, nbuf, "<dict:%d>", v->data.dict.count); break;
             case VAL_FN:     snprintf(buf, nbuf, "<fn %s>", v->data.fn.name); break;
-            case VAL_BUILTIN: snprintf(buf, nbuf, "<builtin>"); break;
+            case VAL_BUILTIN: {
+                const char *nn = eigs_native_fn_name(v->data.builtin);   /* #1060 */
+                if (nn) snprintf(buf, nbuf, "<fn %s>", nn); else snprintf(buf, nbuf, "<builtin>");
+                break;
+            }
             case VAL_BUFFER: snprintf(buf, nbuf, "<buffer:%d>", v->data.buffer.count); break;
             case VAL_TEXT_BUILDER:
                 snprintf(buf, nbuf, "<text-builder:%zu>", v->data.text_builder.len); break;

@@ -879,7 +879,8 @@ Value* builtin_type(Value *arg) {
         case VAL_STR: return make_str("str");
         case VAL_LIST: return make_str("list");
         case VAL_FN: return make_str("fn");
-        case VAL_BUILTIN: return make_str("builtin");
+        case VAL_BUILTIN:   /* #1060: a named native function reports as a user fn */
+            return make_str(eigs_native_fn_name(arg->data.builtin) ? "fn" : "builtin");
         case VAL_NULL: return make_str("none");
         case VAL_JSON_RAW: return make_str("json_raw");
         case VAL_DICT: return make_str("dict");

@@ -61,6 +61,16 @@ All notable changes to EigenScript are documented here.
   operands now sets the flag there too; `tests/test_math_underflow.eigs`
   pins both shapes (plant-verified: the leaf case goes red with the fix
   reverted).
+- **A native function can carry a name and report as `fn` (#1060).**
+  `make_native_fn(fn, "NAME")` boxes a C function as a `VAL_BUILTIN` whose
+  pointer is registered with a name: `type of` answers `fn`, printing and
+  `str of` show `<fn NAME>`, every call path is unchanged, and an
+  unregistered builtin keeps `builtin` / `<builtin>`. Only a linked runtime
+  makes one -- the AOT, which compiles user functions to C and until now
+  could only present them as `<builtin>` (ouroboros#174, silent-wrong on
+  `type of X == "builtin"` discriminators). `eigs_native_fn_name(fn)`
+  answers the registry; `tests/test_native_fn.c` (suite [0c], `make
+  nativefn-test`) pins both identities and the call-through.
 - **Chunk growth allocations are checked (`xrealloc`).** Eight bare
   `realloc`s in chunk.c (constant pool, code, line/column tables, inline
   caches, function table) returned NULL into a `memset` under a 60 MB
