@@ -61,11 +61,63 @@ eigs_binary_fingerprint() {
     printf '%s %s %s\n' "$cksum" "$size" "$mtime"
 }
 
+# #1089: the alias must be CURRENT before the fingerprint is recorded. A
+# `make` that fails partway leaves the previous binary linked, and a suite
+# launched afterwards measures that binary against the current sources and
+# tests (bought 2026-09-03: 25 failures from a debug print whose source had
+# already been reverted; `grep` on the tree answered 0). The #681 guard
+# cannot see it -- it detects a binary that CHANGES during the run, not one
+# stale at the start. Same answer as tests/aux_binary.sh for eigenlsp/eigsdap:
+# ask the build system (`make -q <target>`, the real post-expansion
+# dependency graph), never an mtime glob. The variant is whichever
+# build/<variant>/eigenscript the alias is hard-linked to, and that FILE is
+# the make target queried (the phony goals always answer "remake"). No matching variant (a binary carried
+# in from elsewhere) or a `make -q` error is reported and NOT gated on --
+# the suite cannot decide, so it says so instead of pretending.
+ensure_binary_current() {
+    local ino variant target rc
+    ino=$(stat -c %i "$EIGS_BIN" 2>/dev/null) || return 0
+    variant=""
+    for cand in ../build/*/eigenscript; do
+        [ -f "$cand" ] || continue
+        if [ "$(stat -c %i "$cand" 2>/dev/null)" = "$ino" ]; then
+            variant=$(basename "$(dirname "$cand")"); break
+        fi
+    done
+    if [ -z "$variant" ]; then
+        echo "  NOTE: src/eigenscript is not hard-linked to any build/<variant>/eigenscript -- freshness not checked (#1089)"
+        return 0
+    fi
+    # The FILE target, not the phony goal: `make -q build` is always
+    # "needs remaking" because `build` is .PHONY.
+    target="build/$variant/eigenscript"
+    make -q --no-print-directory -C .. "$target" >/dev/null 2>&1; rc=$?
+    if [ "$rc" -eq 0 ]; then return 0; fi
+    if [ "$rc" -ne 1 ]; then
+        echo "  NOTE: make -q $target answered rc=$rc -- freshness not checked (#1089)"
+        return 0
+    fi
+    # Rebuild through the variant's GOAL, not the file: only the goal
+    # re-points the src/eigenscript hard link (RELINK); rebuilding the file
+    # alone left the alias on the old inode (found by the plant).
+    local goal="$variant"; [ "$variant" = "release" ] && goal="build"
+    echo "  NOTE: src/eigenscript ($variant) is older than its sources -- rebuilding (make $goal) (#1089)"
+    if ! make --no-print-directory -C .. "$goal" >/dev/null 2>&1; then
+        echo "ERROR: rebuild of src/eigenscript ($goal) FAILED -- the linked binary is stale and the suite will not run it (#1089)"
+        exit 1
+    fi
+    if [ "$(stat -c %i "$EIGS_BIN")" = "$ino" ] && ! make -q --no-print-directory -C .. "$target" >/dev/null 2>&1; then
+        echo "ERROR: src/eigenscript is still stale after the rebuild (#1089)"
+        exit 1
+    fi
+}
+
 record_binary_fingerprint() {
     if [ ! -f "$EIGS_BIN" ]; then
         echo "ERROR: $EIGS_BIN not found — cannot run suite"
         exit 1
     fi
+    ensure_binary_current
     EIGS_BIN_FINGERPRINT=$(eigs_binary_fingerprint)
 }
 
