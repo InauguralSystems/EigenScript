@@ -2724,7 +2724,14 @@ static Value *vm_take_error_value(void) {
 /* Live source line for error stamping — rt_error uses this when a raise
  * site (a builtin) has no line of its own. 0 when no VM is running. */
 int vm_current_line(void) {
-    if (!eigs_current || !eigs_current->vm) return 0;
+    /* #1082: a builtin raises with line 0 and rt_error asks here for the
+     * live line. With no VM attached, or a VM with no live frame (a native
+     * AOT binary calling the linked builtins directly), the interpreter's
+     * line is meaningless -- answer the trace stamp instead, which the AOT
+     * keeps current per statement and which inside the VM is the OP_LINE
+     * value anyway. */
+    if (!eigs_current || !eigs_current->vm || g_vm.frame_count <= 0)
+        return g_trace_current_line;
     return g_vm.current_line;
 }
 
