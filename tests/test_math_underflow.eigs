@@ -79,6 +79,30 @@ if not (fl["overflow"] == 0):
 if not (fl["invalid"] == 0):
     fail of "underflow set the invalid flag"
 
+# #1079: a product in RETURN position of a leaf callee. `return x * y` is
+# a #366 frameless leaf-accessor call, which multiplied in its own
+# mini-evaluator without the underflow rule -- the flag stayed 0 while the
+# same product bound to a local in the callee (generic path) set it.
+define uf_leaf(x, y) as:
+    return x * y
+define uf_local(x, y) as:
+    local p is x * y
+    return p
+clear_math_flags of null
+r is uf_leaf of [1e-200, 1e-200]
+if not ((math_flags of null)["underflow"] == 1):
+    fail of "return x * y in a leaf callee did not set underflow (#1079)"
+clear_math_flags of null
+r is uf_local of [1e-200, 1e-200]
+if not ((math_flags of null)["underflow"] == 1):
+    fail of "local product in a callee did not set underflow"
+clear_math_flags of null
+r is uf_leaf of [2, 3]
+if not ((math_flags of null)["underflow"] == 0):
+    fail of "a normal leaf product set underflow"
+if not (r == 6):
+    fail of "leaf product value wrong"
+
 if pass == 1:
     print of "MATH_UNDERFLOW_ALL_PASS"
 else:
