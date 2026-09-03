@@ -402,7 +402,12 @@ static double compute_entropy_impl(Value *v) {
             return sum / v->data.dict.count + log2((double)v->data.dict.count + 1.0);
         }
         case VAL_FN: return 1.0;          /* #708: a constant, so dH never moves */
-        case VAL_BUILTIN: return 0.0;
+        case VAL_BUILTIN:
+            /* #1060 follow-up (ouroboros#193): a NAMED native function is a
+             * user function to the observer too -- the AOT's compiled `h`
+             * bound to a name must observe like the VM's VAL_FN (entropy 1.0),
+             * not like a runtime builtin. The constants are unchanged. */
+            return eigs_native_fn_name(v->data.builtin) ? 1.0 : 0.0;
         case VAL_BUFFER: return log2((double)v->data.buffer.count + 1.0);
         case VAL_TEXT_BUILDER: return log2((double)v->data.text_builder.len + 1.0);
     }
