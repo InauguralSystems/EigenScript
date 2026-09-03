@@ -128,3 +128,12 @@ iteration, or a collector that quietly stops working).
   TSan report at a time. Known still-unfixed members of the class are
   ledgered on #1035/#1036 (threshold doubles — TORN reads possible; tape
   dedup statics; g_no_yield_depth).
+
+- **A sealed ROOT env (parent NULL) takes `g_module_env_lock` on every
+  `env_set_local` once the process is multithreaded, and the lock is not
+  recursive.** Wrapping a walk of `g_global_env` in `env_global_shared_lock`
+  and binding into the sandbox env INSIDE that region deadlocked at 0% CPU
+  (#1035, 2026-09-02): the sandbox env is a sealed root, so the bind re-took
+  the same mutex. Snapshot under the lock, mutate outside it; before adding
+  a lock around existing code, list every callee in the region that can
+  reach `env_shared_lock` -- root envs are where it hides.

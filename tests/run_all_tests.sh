@@ -429,6 +429,35 @@ else
 fi
 echo ""
 
+# #1082: a builtin's line-0 raise with no live VM frame must report the trace
+# stamp (the AOT's per-statement line), not 0. C-level because the shape --
+# rt_error outside any interpreter frame -- has no .eigs spelling.
+echo "[0b] Error line fallback outside a VM frame (#1082)"
+check_binary_fingerprint
+ERRLINE_BUILD=$(make --no-print-directory -C .. errline-test 2>&1)
+ERRLINE_BUILD_RC=$?
+if [ "$ERRLINE_BUILD_RC" -ne 0 ]; then
+    TOTAL=$((TOTAL + 1))
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: error-line fallback test build (rc=$ERRLINE_BUILD_RC)"
+    echo "$ERRLINE_BUILD" | tail -12
+else
+    ERRLINE_OUT=$(../build/release/test_error_line_fallback 2>&1)
+    ERRLINE_RC=$?
+    EL_PASS=$(echo "$ERRLINE_OUT" | grep -c "^PASS:" || true)
+    EL_FAIL=$(echo "$ERRLINE_OUT" | grep -c "^FAIL:" || true)
+    TOTAL=$((TOTAL + EL_PASS + EL_FAIL))
+    PASS=$((PASS + EL_PASS))
+    FAIL=$((FAIL + EL_FAIL))
+    if [ "$ERRLINE_RC" -eq 0 ] && [ "$EL_FAIL" -eq 0 ]; then
+        echo "  PASS: all $EL_PASS error-line fallback checks"
+    else
+        echo "  FAIL: error-line fallback (rc=$ERRLINE_RC)"
+        echo "$ERRLINE_OUT" | grep "^FAIL:"
+    fi
+fi
+echo ""
+
 # Sanitizer-classifier gate (#969/#968). This runs BEFORE the first test block
 # on purpose: rc_ok() decides, 72 times below, whether a nonzero exit is a
 # tolerable leak or a real failure. When that classification was wrong it was

@@ -190,6 +190,16 @@ $(SANDBOX_INTERN_TEST): $(SANDBOX_INTERN_TEST_OBJ) $(filter-out build/release/ma
 sandbox-intern-test: $(SANDBOX_INTERN_TEST)
 	@echo "Sandbox intern lifetime test built: $(SANDBOX_INTERN_TEST)"
 
+# #1082: a builtin's line-0 raise with no live VM frame reports the trace stamp
+ERRLINE_TEST := build/release/test_error_line_fallback
+ERRLINE_TEST_OBJ := build/release/test_error_line_fallback.o
+$(ERRLINE_TEST_OBJ): tests/test_error_line_fallback.c Makefile VERSION $(wildcard $(SRC_DIR)/*.h) | build/release
+	$(CC) $(FLAGS_release) -I$(SRC_DIR) -MMD -MP -c $< -o $@
+$(ERRLINE_TEST): $(ERRLINE_TEST_OBJ) $(filter-out build/release/main.o build/release/repl.o build/release/step.o build/release/tape_read.o build/release/bundle.o,$(OBJ_release))
+	$(CC) $(FLAGS_release) -o $@ $^ $(LIBS_release)
+errline-test: $(ERRLINE_TEST)
+	@echo "Error-line fallback test built: $(ERRLINE_TEST)"
+
 full: build/full/eigenscript
 	$(call RELINK,full)
 	@echo "EigenScript $(VERSION) (full) built. Binary: $$(du -sh build/full/eigenscript | cut -f1)"

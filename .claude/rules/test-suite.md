@@ -40,6 +40,13 @@ paths:
   detects a changed BINARY and aborts loudly; nothing detects a changed
   RUNNER. Queue the edit and apply it after the run (2026-08-19, PR #996 —
   two comment additions had to be deferred for exactly this reason).
+- **A new Makefile target that compiles anything must be enrolled in
+  `tools/werror_switch_check.sh`** -- in `TARGETS`, its own line in
+  `TARGET_BATCHES`, and a row in `TARGET_FLOORS` -- or section [99i] fails
+  with "target 'X' is not in TARGETS and emits a compile invocation that NO
+  audited target emits". Bought on PR #1084 (2026-09-03): `errline-test`, a
+  copy of the `sandbox-intern-test` recipe, passed its own section locally
+  and went red only on the CI werror leg.
 - **A child `.sh` must not call `timeout` bare.** The macOS CI runners do
   not ship coreutils' `timeout`, so a child that uses it dies rc 127 there
   on its first bounded run — `tests/test_file_exists_fifo.sh`'s first

@@ -42,6 +42,16 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **A builtin's line-0 raise with no live VM frame reports the trace stamp
+  (#1082).** `vm_current_line` answered 0 whenever no interpreter frame was
+  live, so a native (AOT) binary calling the linked builtins printed
+  `Error line 0:` for every builtin-raised error while its own helpers,
+  which pass `g_trace_current_line`, printed the right line. With no VM or
+  no live frame it now answers the trace stamp; inside the interpreter
+  nothing changes (the stamp is the OP_LINE value there). Suite section
+  [0b] (`tests/test_error_line_fallback.c`) raises from outside any frame
+  with the stamp set, cleared, and with an explicit line.
+
 - **`sandbox_run` snapshots the module env under its lock (#1035).** The
   allowlist walk read `g_global_env`'s names/count without the module-env
   lock while pthread workers bound new names under it (TSan, ~1 in 6 runs);
