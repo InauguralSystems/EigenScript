@@ -42,6 +42,29 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Chunk growth allocations are checked (`xrealloc`).** Eight bare
+  `realloc`s in chunk.c (constant pool, code, line/column tables, inline
+  caches, function table) returned NULL into a `memset` under a 60 MB
+  address-space limit: SIGSEGV where every other growth path prints
+  "out of memory" and aborts. Found by the observer-gate OOM probe once
+  #1031 moved the first out-of-memory allocation from the eager pass's
+  compile into `load_file`'s own.
+
+- **The observer gate's eager pass no longer compiles each literal module
+  (#1031).** It tokenized, parsed and `compile_ast`'d every literally-loaded
+  module just to learn whether it reads the observer, then freed the chunk;
+  `load_file` compiled the same file again (no module cache, by design).
+  The compiled chunk was never reusable (`compile_ast` numbers module slots
+  from the env it is given), so the pass now answers from the AST: an
+  interrogative, a predicate, an import, or any observer builtin's name arms
+  it; `load_file` may appear only as an `of` call on a string literal, whose
+  path joins the scan, and any other use is opaque — the same two rules the
+  chunk scan applied to bytecode. Measured on `load_file of "lib/ui.eigs"`
+  (20 units): 0.11 s before, 0.08 s after, against 0.05 s for the computed
+  spelling that skips the pass — the compile half of the double work is
+  gone; the second tokenize+parse remains. Gate verdicts are unchanged
+  (20 unobserved units on both builds; the corpus oracle agrees).
+
 - **A builtin's line-0 raise with no live VM frame reports the trace stamp
   (#1082).** `vm_current_line` answered 0 whenever no interpreter frame was
   live, so a native (AOT) binary calling the linked builtins printed

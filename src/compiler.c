@@ -3461,6 +3461,119 @@ static void obs_memo_clear(void) {
 }
 void eigs_obs_memo_release(void) { obs_memo_clear(); g_obs_spec_bytes = 0; }
 
+/* #1031: the eager pass answered "does this literally-loaded module read the
+ * observer?" by tokenize + parse + compile_ast + chunk_reads_observer, then
+ * chunk_free -- and builtin_load_file compiled the same file again (load_file
+ * has no module cache by design, #496). Every literal module was compiled
+ * twice at startup: `load_file of "lib/ui.eigs"` 0.11 s vs 0.06 s for the
+ * computed spelling that skips the pass. The compiled chunk cannot be handed
+ * to load_file (compile_ast numbers module slots from the env it is given,
+ * and the scan env is not load_file's), so the pass answers from the AST
+ * alone. Two rules, each the AST form of the chunk rule it replaces:
+ *   reader  -- chunk_reads_observer: an interrogative, a predicate, an
+ *              import, or ANY occurrence of an observer builtin's name
+ *              (OBS_BUILTINS in chunk.c, mirrored here by name); a loop whose
+ *              condition reads a predicate is covered by the predicate node.
+ *   loads   -- chunk_scan_static_loads: `load_file` may appear ONLY as the
+ *              callee of a call (an AST_RELATION node -- the parser's spelling
+ *              of `f of arg`) whose argument is a string literal (or
+ *              an unparenthesised one-element list holding one); that path is
+ *              appended to the load list. Any other occurrence of the name
+ *              makes the unit opaque, exactly as the chunk scan does.
+ * Both are conservative in the safe direction: a stray name arms the gate
+ * (observed, slower), never the reverse. Returns 1 when the module must arm. */
+static int obs_ast_name_is_observer_builtin(const char *nm) {
+    static const char *OBS_NAMES[] = {
+        "observe", "report", "report_value", "trajectory", "classify",
+        "state_at", "get_observer_thresholds", "eval", "record_history", NULL };
+    for (int i = 0; OBS_NAMES[i]; i++) if (strcmp(nm, OBS_NAMES[i]) == 0) return 1;
+    return 0;
+}
+static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth);
+static int obs_ast_scan(ASTNode *n, ObsLoadList *L) { return obs_ast_scan_d(n, L, 0); }
+static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth) {
+    if (!n) return 0;
+    /* the compiler refuses nesting past COMPILE_MAX_DEPTH; a walk with no
+     * such guard segfaulted on the suite's deep-module OOM probe (rc 139
+     * inside the muted window). Past the limit the unit is opaque. */
+    if (depth > COMPILE_MAX_DEPTH) return 1;
+    switch (n->type) {
+    case AST_INTERROGATE: case AST_PREDICATE: case AST_IMPORT: return 1;
+    case AST_IDENT:
+        if (strcmp(n->data.ident.name, "load_file") == 0) return 1;   /* not the call shape below */
+        return obs_ast_name_is_observer_builtin(n->data.ident.name);
+    case AST_BINOP: return obs_ast_scan_d(n->data.binop.left, L, depth + 1) || obs_ast_scan_d(n->data.binop.right, L, depth + 1);
+    case AST_RELATION: {   /* a call: `f of arg` (the compiler's AST_RELATION arm) */
+        ASTNode *fn = n->data.relation.left, *arg = n->data.relation.right;
+        if (fn && fn->type == AST_IDENT && strcmp(fn->data.ident.name, "load_file") == 0) {
+            ASTNode *lit = NULL;
+            if (arg && arg->type == AST_STR) lit = arg;
+            else if (arg && arg->type == AST_LIST && !arg->parenthesized &&
+                     arg->data.list.count == 1 && arg->data.list.elems[0] &&
+                     arg->data.list.elems[0]->type == AST_STR)
+                lit = arg->data.list.elems[0];
+            if (!lit || !lit->data.str) return 1;
+            obs_gate_note_load(lit->data.str, L);
+            return 0;
+        }
+        return obs_ast_scan_d(fn, L, depth + 1) || obs_ast_scan_d(arg, L, depth + 1);
+    }
+    case AST_ASSIGN: return obs_ast_scan_d(n->data.assign.expr, L, depth + 1);
+    case AST_UNARY: return obs_ast_scan_d(n->data.unary.operand, L, depth + 1);
+    case AST_IF:
+        if (obs_ast_scan_d(n->data.cond.cond, L, depth + 1)) return 1;
+        for (int i = 0; i < n->data.cond.if_count; i++) if (obs_ast_scan_d(n->data.cond.if_body[i], L, depth + 1)) return 1;
+        for (int i = 0; i < n->data.cond.else_count; i++) if (obs_ast_scan_d(n->data.cond.else_body[i], L, depth + 1)) return 1;
+        return 0;
+    case AST_LOOP:
+        if (obs_ast_scan_d(n->data.loop.cond, L, depth + 1)) return 1;
+        for (int i = 0; i < n->data.loop.body_count; i++) if (obs_ast_scan_d(n->data.loop.body[i], L, depth + 1)) return 1;
+        return 0;
+    case AST_RETURN: return obs_ast_scan_d(n->data.ret.expr, L, depth + 1);
+    case AST_BLOCK: case AST_UNOBSERVED:
+        for (int i = 0; i < n->data.block.count; i++) if (obs_ast_scan_d(n->data.block.stmts[i], L, depth + 1)) return 1;
+        return 0;
+    case AST_PROGRAM:
+        for (int i = 0; i < n->data.program.count; i++) if (obs_ast_scan_d(n->data.program.stmts[i], L, depth + 1)) return 1;
+        return 0;
+    case AST_LIST:
+        for (int i = 0; i < n->data.list.count; i++) if (obs_ast_scan_d(n->data.list.elems[i], L, depth + 1)) return 1;
+        return 0;
+    case AST_INDEX: return obs_ast_scan_d(n->data.index.target, L, depth + 1) || obs_ast_scan_d(n->data.index.index, L, depth + 1);
+    case AST_LISTCOMP: return obs_ast_scan_d(n->data.listcomp.expr, L, depth + 1) || obs_ast_scan_d(n->data.listcomp.iter, L, depth + 1) || obs_ast_scan_d(n->data.listcomp.filter, L, depth + 1);
+    case AST_FOR:
+        if (obs_ast_scan_d(n->data.forloop.iter, L, depth + 1)) return 1;
+        for (int i = 0; i < n->data.forloop.body_count; i++) if (obs_ast_scan_d(n->data.forloop.body[i], L, depth + 1)) return 1;
+        return 0;
+    case AST_FUNC:
+        for (int i = 0; i < n->data.func.body_count; i++) if (obs_ast_scan_d(n->data.func.body[i], L, depth + 1)) return 1;
+        return 0;
+    case AST_LAMBDA: return obs_ast_scan_d(n->data.lambda.body, L, depth + 1);
+    case AST_TRY:
+        for (int i = 0; i < n->data.trycatch.try_count; i++) if (obs_ast_scan_d(n->data.trycatch.try_body[i], L, depth + 1)) return 1;
+        for (int i = 0; i < n->data.trycatch.catch_count; i++) if (obs_ast_scan_d(n->data.trycatch.catch_body[i], L, depth + 1)) return 1;
+        return 0;
+    case AST_DICT:
+        for (int i = 0; i < n->data.dict.count; i++)
+            if (obs_ast_scan_d(n->data.dict.keys[i], L, depth + 1) || obs_ast_scan_d(n->data.dict.vals[i], L, depth + 1)) return 1;
+        return 0;
+    case AST_DOT: return obs_ast_scan_d(n->data.dot.target, L, depth + 1);
+    case AST_DOT_ASSIGN: return obs_ast_scan_d(n->data.dot_assign.target, L, depth + 1) || obs_ast_scan_d(n->data.dot_assign.expr, L, depth + 1);
+    case AST_INDEX_ASSIGN: return obs_ast_scan_d(n->data.index_assign.target, L, depth + 1) || obs_ast_scan_d(n->data.index_assign.index, L, depth + 1) || obs_ast_scan_d(n->data.index_assign.expr, L, depth + 1);
+    case AST_LIST_PATTERN_ASSIGN: return obs_ast_scan_d(n->data.list_pattern_assign.expr, L, depth + 1);
+    case AST_SLICE: return obs_ast_scan_d(n->data.slice.target, L, depth + 1) || obs_ast_scan_d(n->data.slice.start, L, depth + 1) || obs_ast_scan_d(n->data.slice.end, L, depth + 1);
+    case AST_MATCH:
+        if (obs_ast_scan_d(n->data.match.expr, L, depth + 1)) return 1;
+        for (int i = 0; i < n->data.match.case_count; i++) {
+            if (obs_ast_scan_d(n->data.match.patterns[i], L, depth + 1)) return 1;
+            for (int j = 0; j < n->data.match.body_counts[i]; j++) if (obs_ast_scan_d(n->data.match.bodies[i][j], L, depth + 1)) return 1;
+        }
+        return 0;
+    case AST_NUM: case AST_STR: case AST_NULL: case AST_BREAK: case AST_CONTINUE: return 0;
+    }
+    return 1;   /* an unknown node kind arms the gate, never the reverse */
+}
+
 static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     ObsLoadList L;
     char *slots[OBS_GATE_MAX_LOADS];
@@ -3604,33 +3717,23 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
             eigs_obs_enable(); break;
         }
 
-        Env *scan_env = env_new(g_global_env);
-        int saved_boundary = g_compile_module_boundary;
-        g_compile_module_boundary = 1;                    /* #373, as load_file does */
-        /* The pass has TWO output channels, not one. fd 2 is muted above; this
-         * is the other. compile_node arms the trace-history channel as a side
-         * effect, so scanning a module used to switch per-assignment recording
-         * on in the PARENT and change its temporal answers — making the
-         * SPELLING of a load path semantically load-bearing (a literal armed
-         * `prev of x`, a computed one did not) and the behaviour non-monotone
-         * (adding an observer read opened the gate, skipped the pass, and
-         * un-armed the name). See trace_arm_snapshot. */
-        TraceArmState saved_arm;
-        trace_arm_snapshot(&saved_arm);
-        g_obs_gate_depth++;
-        EigsChunk *mchunk = compile_ast(mast, scan_env, source);   /* ORs its own verdict */
-        g_obs_gate_depth--;
-        trace_arm_restore(&saved_arm);
+        /* #1031: answer from the AST -- no compile_ast here any more. The
+         * compiled chunk was never reusable by load_file (compile_ast numbers
+         * module slots from the env it is given, and the scan env is not
+         * load_file's), so every literal module was compiled twice at
+         * startup. obs_ast_scan mirrors chunk_reads_observer and
+         * chunk_scan_static_loads at the AST level; nested literal loads are
+         * appended to L and visited by this same loop (its bound re-reads
+         * L.count), and an overflow of L is opaque as it is for the host
+         * chunk's own list. Nothing compiles, so nothing arms trace recording
+         * in the parent (the trace_arm_snapshot dance is gone with it). */
+        if (obs_ast_scan(mast, &L) || L.overflow) eigs_obs_enable();
         g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
         g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
         snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
                  "%s", saved_fe_msg);
-        g_compile_module_boundary = saved_boundary;
         if (g_parse_errors > 0) eigs_obs_enable();
         g_parse_errors = saved_errors;
-
-        if (mchunk) chunk_free(mchunk);
-        env_decref(scan_env);
         free_ast(mast); free_tokenlist(&tl); free(source);
         obs_gate_unmute_stderr(muted);
     }
