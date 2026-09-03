@@ -69,6 +69,11 @@ All notable changes to EigenScript are documented here.
   operands now sets the flag there too; `tests/test_math_underflow.eigs`
   pins both shapes (plant-verified: the leaf case goes red with the fix
   reverted).
+- **A named native function observes like a user function.** `compute_entropy`
+  answers 1.0 for a `make_native_fn` value (as for `VAL_FN`) and 0.0 for a
+  plain builtin, so a number rebound to an AOT-compiled function carries the
+  same observe tuple as on the VM (ouroboros#193: `["opaque", 0, ...]` vs
+  the VM's `["opaque", 1, ...]`). Pinned in `tests/test_native_fn.c`.
 - **A native function can carry a name and report as `fn` (#1060).**
   `make_native_fn(fn, "NAME")` boxes a C function as a `VAL_BUILTIN` whose
   pointer is registered with a name: `type of` answers `fn`, printing and

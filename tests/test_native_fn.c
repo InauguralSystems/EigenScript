@@ -46,6 +46,13 @@ int main(void) {
     check(strcmp(s, "<builtin>") == 0, "a plain builtin still prints <builtin>"); free(s);
     check(strcmp(eigs_native_fn_name(probe_add1), "g") == 0, "the registry answers the name by pointer");
     check(eigs_native_fn_name(probe_plain) == NULL, "an unregistered pointer has no name");
+    {
+        Value *ng = make_native_fn(probe_add1, "g");
+        Value *pb = make_builtin(probe_plain);
+        check(compute_entropy(ng) == 1.0, "a named native fn has VAL_FN's entropy (1.0, ouroboros#193)");
+        check(compute_entropy(pb) == 0.0, "a plain builtin keeps entropy 0.0");
+        val_decref(ng); val_decref(pb);
+    }
     Value *again = make_native_fn(probe_add1, "g_again");
     check(strcmp(eigs_native_fn_name(probe_add1), "g") == 0, "re-registering a pointer keeps the first name");
     val_decref(again);
