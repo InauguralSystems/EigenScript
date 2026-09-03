@@ -123,12 +123,12 @@ void chunk_free(EigsChunk *chunk) {
 void chunk_emit(EigsChunk *chunk, uint8_t byte, int line) {
     if (chunk->code_len >= chunk->code_cap) {
         chunk->code_cap *= 2;
-        chunk->code = realloc(chunk->code, chunk->code_cap);
+        chunk->code = xrealloc(chunk->code, chunk->code_cap);
     }
     if (chunk->lines_len >= chunk->lines_cap) {
         chunk->lines_cap *= 2;
-        chunk->lines = realloc(chunk->lines, chunk->lines_cap * sizeof(int));
-        chunk->cols  = realloc(chunk->cols,  chunk->lines_cap * sizeof(int));
+        chunk->lines = xrealloc(chunk->lines, chunk->lines_cap * sizeof(int));
+        chunk->cols  = xrealloc(chunk->cols,  chunk->lines_cap * sizeof(int));
     }
     chunk->code[chunk->code_len] = byte;
     chunk->lines[chunk->lines_len] = line;
@@ -252,13 +252,19 @@ static int chunk_add_constant_ex(EigsChunk *chunk, Value *val, int dedup) {
     if (chunk->const_count >= chunk->const_cap) {
         int old_cap = chunk->const_cap;
         chunk->const_cap *= 2;
-        chunk->constants = realloc(chunk->constants,
+        /* #1031 follow-on: these were bare reallocs, and under a 60 MB
+         * address-space limit the pool's growth returned NULL into a
+         * memset (SIGSEGV, rc 139) once the eager pass stopped compiling
+         * modules and the OOM landed here instead of in an xcalloc. The
+         * checked allocator prints "out of memory" and aborts, as every
+         * other growth path does. */
+        chunk->constants = xrealloc(chunk->constants,
                                    chunk->const_cap * sizeof(Value *));
-        chunk->const_hashes = realloc(chunk->const_hashes,
+        chunk->const_hashes = xrealloc(chunk->const_hashes,
                                       chunk->const_cap * sizeof(uint32_t));
-        chunk->const_interns = realloc(chunk->const_interns,
+        chunk->const_interns = xrealloc(chunk->const_interns,
                                        chunk->const_cap * sizeof(char *));
-        chunk->env_ic = realloc(chunk->env_ic,
+        chunk->env_ic = xrealloc(chunk->env_ic,
                                 chunk->const_cap * sizeof(EnvIC));
         memset(chunk->const_hashes + old_cap, 0,
                (chunk->const_cap - old_cap) * sizeof(uint32_t));
@@ -305,7 +311,7 @@ int chunk_add_constant_positional(EigsChunk *chunk, Value *val) {
 int chunk_add_function(EigsChunk *chunk, EigsChunk *fn) {
     if (chunk->fn_count >= chunk->fn_cap) {
         chunk->fn_cap *= 2;
-        chunk->functions = realloc(chunk->functions,
+        chunk->functions = xrealloc(chunk->functions,
                                    chunk->fn_cap * sizeof(EigsChunk *));
     }
     chunk->functions[chunk->fn_count] = fn;
