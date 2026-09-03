@@ -52,6 +52,15 @@ All notable changes to EigenScript are documented here.
   they guarded. The remaining bare `realloc`s (jit chunk registry, tape
   reader, trace rings, lint sets) each test the result and degrade on
   purpose, and are left as they are.
+- **`return x * y` in a leaf callee sets the underflow flag (#1079).** The
+  #366 frameless leaf-accessor path evaluates a single-expression callee in
+  its own mini-evaluator, and its multiply lacked the underflow rule that
+  `NUM_BINOP(MUL)` applies: `scale of [1e-200, 1e-200]` returned 0 with
+  `math_flags["underflow"]` still 0, while binding the same product to a
+  local inside the callee (generic path) set it. Zero from two nonzero
+  operands now sets the flag there too; `tests/test_math_underflow.eigs`
+  pins both shapes (plant-verified: the leaf case goes red with the fix
+  reverted).
 - **Chunk growth allocations are checked (`xrealloc`).** Eight bare
   `realloc`s in chunk.c (constant pool, code, line/column tables, inline
   caches, function table) returned NULL into a `memset` under a 60 MB

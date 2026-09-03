@@ -1824,7 +1824,16 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
             switch (ip[-1]) {
             case OP_ADD: r = a + b; break;
             case OP_SUB: r = a - b; break;
-            default:     r = a * b; break;
+            default:
+                r = a * b;
+                /* #1079: the same underflow rule as NUM_BINOP(MUL, ..., 1)
+                 * -- this path ran `return x * y` for a leaf callee and
+                 * never set the flag (`local p is x * y` in the callee took
+                 * the generic path and did). Zero from two nonzero
+                 * operands is underflow; num_guard below is identity on 0. */
+                if (r == 0.0 && a != 0.0 && b != 0.0)
+                    g_math_flags |= EIGS_MATH_UNDERFLOW;
+                break;
             }
             msp--;
             mini[msp - 1] = slot_from_num(num_guard(r));
