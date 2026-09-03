@@ -165,7 +165,7 @@ static void name_set_add(NameSet *s, const char *name) {
     if (name_set_has(s, name)) return;
     if (s->count >= s->cap) {
         s->cap = s->cap ? s->cap * 2 : 8;
-        s->names = realloc(s->names, s->cap * sizeof(const char *));
+        s->names = xrealloc(s->names, s->cap * sizeof(const char *));
     }
     name_set_index_insert(s, name_set_hash(name), s->count);
     s->names[s->count++] = name;
@@ -2510,7 +2510,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
          * this to pre-allocate env slots at call time so OP_SET_LOCAL writes land. */
         if (fn_compiler.local_count > fn_chunk->local_count) {
             int new_total = fn_compiler.local_count;
-            fn_chunk->local_names = realloc(fn_chunk->local_names, new_total * sizeof(char *));
+            fn_chunk->local_names = xrealloc(fn_chunk->local_names, new_total * sizeof(char *));
             for (int i = fn_chunk->local_count; i < new_total; i++)
                 fn_chunk->local_names[i] = env_intern_name(fn_compiler.locals[i].name);
             fn_chunk->local_count = new_total;
@@ -2573,7 +2573,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         if (fn_compiler.local_count > fn_chunk->local_count) {
             int new_total = fn_compiler.local_count;
-            fn_chunk->local_names = realloc(fn_chunk->local_names, new_total * sizeof(char *));
+            fn_chunk->local_names = xrealloc(fn_chunk->local_names, new_total * sizeof(char *));
             for (int i = fn_chunk->local_count; i < new_total; i++)
                 fn_chunk->local_names[i] = env_intern_name(fn_compiler.locals[i].name);
             fn_chunk->local_count = new_total;

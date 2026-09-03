@@ -49,6 +49,12 @@ All notable changes to EigenScript are documented here.
   "out of memory" and aborts. Found by the observer-gate OOM probe once
   #1031 moved the first out-of-memory allocation from the eager pass's
   compile into `load_file`'s own.
+  The same probe on the `full` (postgres) CI lane then segfaulted inside
+  `name_set_add`: the layout there put the first failing allocation in the
+  compiler's name-set growth (`ulimit -v 65000` reproduces it locally on a
+  `make full` build). Its three bare `realloc`s (name sets, two
+  `local_names` growths) are `xrealloc` too; the sweep of the remaining
+  bare sites outside chunk.c is #1085.
 
 - **The observer gate's eager pass no longer compiles each literal module
   (#1031).** It tokenized, parsed and `compile_ast`'d every literally-loaded
