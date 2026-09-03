@@ -42,6 +42,14 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The suite refuses a stale `src/eigenscript` (#1089).** `run_all_tests.sh`
+  now asks the build system (`make -q build/<variant>/eigenscript`, the
+  variant being whatever the alias is hard-linked to) before recording the
+  #681 fingerprint, rebuilds through the variant's goal with a visible NOTE
+  when the binary is older than its sources, and refuses to run if that
+  rebuild fails. Bought when a `make` that died on a compile error left a
+  debug build linked and the suite reported 25 failures against sources
+  that no longer contained the debug print.
 - **Env growth allocations are checked (`xrealloc`, #1085).** The four
   env-growth blocks in eigenscript.c (`names`/`values`/`assign_counts`,
   twelve `p = realloc(p, n)` sites) and lint's W022 function table were the

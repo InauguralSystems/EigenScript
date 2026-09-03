@@ -66,6 +66,17 @@ paths:
 - Adding a doc example? `tests/test_doc_examples.py` runs `docs/SPEC.md` and
   `docs/COMPARISON.md` example/output pairs byte-for-byte (suite [89]/[90]).
   The always-on rule in CLAUDE.md is the merge gate; this is where it lands.
+- **The suite asks the build system whether `src/eigenscript` is current
+  before it records the #681 fingerprint (#1089).** A `make` that fails
+  partway leaves the PREVIOUS binary linked; a suite launched afterwards
+  measured a debug build whose source had already been reverted (25
+  failures, `grep` on the tree answering 0, 2026-09-03). `ensure_binary_current`
+  finds the variant the alias is hard-linked to, runs `make -q
+  build/<variant>/eigenscript` (the FILE target -- the phony goals always
+  answer "remake"), and rebuilds through the variant's GOAL (only the goal
+  re-points the hard link) with a visible NOTE; a failed rebuild refuses to
+  run. It cannot decide for a binary carried in from outside the tree and
+  says so instead of gating.
 - **`make` does NOT build `src/eigenlsp` or `src/eigsdap`** — only `make lsp`
   and `make dap` do, so the documented local loop (`make && cd tests &&
   ./run_all_tests.sh`) can drive an auxiliary binary from an *earlier tree*
