@@ -44,8 +44,8 @@ define binder_reads(p) as:
     return prev of p
 r is binder_reads of 1
 assert_true of [(seen[0] == 7) and (seen[1] == 8), "body reads the binder, not the argument"]
-assert_true of [seen[2] == 8, "the binder persists past the loop like a local's does"]
-assert_true of [r == 7, "prev of the binder after the loop is the earlier iteration"]
+assert_true of [seen[2] == 1, "the binder does not leak past the loop: the argument is back (#1064)"]
+assert_true of [r == 8, "prev after the loop: the restore is the latest write, so prev is the last iteration (#1064)"]
 
 # The twin here is the NON-interrogated local binder, which takes the same
 # slot path a parameter does: body sees 7, 8 and the binder persists (8).
@@ -57,7 +57,7 @@ define binder_reads_local(q) as:
     append of [seen_local, pl]
     return 0
 binder_reads_local of 1
-assert_true of [(seen_local[0] == 7) and (seen_local[1] == 8) and (seen_local[2] == 8), "slot-path twin of (2)"]
+assert_true of [(seen_local[0] == 7) and (seen_local[1] == 8) and (seen_local[2] == 1), "slot-path twin of (2): restored too (#1064)"]
 
 # ---- (3) body writes through the binder accumulate on the parameter
 define binder_writes(pw) as:
@@ -65,7 +65,7 @@ define binder_writes(pw) as:
         pw is pw + 10
     local r is prev of pw
     return pw
-assert_true of [(binder_writes of 1) == 18, "binder rebinds in the body: 8 + 10 (interrogated)"]
+assert_true of [(binder_writes of 1) == 1, "binder rebinds in the body, but the parameter is restored after the loop (#1064)"]
 
 # ---- (4) a second parameter is unaffected, and `what is ... at` sees the slot writes
 define two(a, p2) as:
@@ -85,7 +85,7 @@ define before(pb) as:
     return r
 rb is before of 1
 assert_true of [rb == null, "prev before the loop: null (the argument binding is not an assignment)"]
-assert_true of [(seen_b[0] == 7) and (seen_b[1] == 8) and (seen_b[2] == 8), "...and the body still reads the binder"]
+assert_true of [(seen_b[0] == 7) and (seen_b[1] == 8) and (seen_b[2] == 1), "...and the body still reads the binder; restored after (#1064)"]
 
 # ---- (2c) the parameter also shadows a MODULE name / an enclosing name: same slot rule
 pm is 1000
@@ -96,7 +96,7 @@ define fm(pm) as:
     append of [seen_m, pm]
     return 0
 fm of 1
-assert_true of [(seen_m[0] == 7) and (seen_m[1] == 8) and (seen_m[2] == 8), "param shadowing a module name: body reads the binder"]
+assert_true of [(seen_m[0] == 7) and (seen_m[1] == 8) and (seen_m[2] == 1), "param shadowing a module name: body reads the binder; restored after (#1064)"]
 assert_true of [pm == 1000, "...and the module binding is untouched"]
 
 define stamp(ts) as:
@@ -110,7 +110,7 @@ define plain(pn) as:
     for pn in [7, 8]:
         pn is pn + 10
     return pn
-assert_true of [(plain of 1) == 18, "no interrogation: unchanged"]
+assert_true of [(plain of 1) == 1, "no interrogation: same restore (#1064)"]
 
 # ---- (6) the JIT/OSR tier: slot writes inside a HOT loop must keep reaching
 # the tape. Before the fix the inline SET_LOCAL recorded nothing, so history

@@ -42,6 +42,15 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **A `for` binder over an existing frame slot is restored after the loop (#1064).**
+  Inside a function, a binder whose name already had a slot (a parameter, a
+  `local`, an earlier assignment) reused it and the loop's last value leaked:
+  `define f(p): for p in [7, 8]: p is p + 10` returned 18 for `p`. The
+  compiler saves the pre-loop value in a hidden slot and restores it at loop
+  exit (exhausted and break paths), so LANGUAGE_CONTRACT's "does not leak"
+  holds inside functions; a binder with no prior binding keeps its
+  function-scoped slot, now stated in the contract. Test
+  `tests/test_for_binder_scoped_in_function.eigs` (9 rows).
 - **A `for` binder in a loop env is written where its body reads it (#1074).**
   An interrogated binder, or one shadowing a module/outer name, lives in a
   per-iteration loop env; the body's write of that name was routed to the
