@@ -90,6 +90,18 @@ typedef struct Compiler {
                                      * env by name (OP_SET_NAME_LOCAL) in this scope. A same-named
                                      * plain `x is ...` must NOT slot-promote, or the slot and the
                                      * env binding diverge and a slot read returns a stale value. */
+    /* #1074: names bound by an ACTIVE loop env in this function (a `for`
+     * binder on the LOOP_ENV_FRESH/persist path, i.e. interrogated or
+     * shadowing an outer/module name). A body write of such a name must
+     * land in that loop env (OP_SET_NAME_LOCAL binds in frame->env, the
+     * loop env while the body runs); routing it to the function env by
+     * name (SET_FN_NAME_LOCAL) split the storage -- the body's next read
+     * walked the chain, met the binder in the loop env first, and never
+     * saw the write (`7 8` instead of `17 18`), while the post-loop read
+     * saw it. A stack, not a set: the same name can bind nested loop envs. */
+    const char      **lev_names;
+    int               lev_count;
+    int               lev_cap;
     NameSet          *module_names; /* root-compiler-owned: names defined at module scope */
     NameSet           module_slot_names; /* root-compiler-owned: names promoted to module slots */
     ASTNode          *root_ast;     /* root-compiler-owned: full AST for escape analysis */
@@ -193,6 +205,19 @@ static void name_set_remove(NameSet *s, const char *name) {
             return;
         }
     }
+}
+
+static int lev_has(const Compiler *c, const char *name) {
+    for (int i = c->lev_count - 1; i >= 0; i--)
+        if (strcmp(c->lev_names[i], name) == 0) return 1;
+    return 0;
+}
+static void lev_push(Compiler *c, const char *name) {
+    if (c->lev_count == c->lev_cap) {
+        c->lev_cap = c->lev_cap ? c->lev_cap * 2 : 4;
+        c->lev_names = xrealloc(c->lev_names, (size_t)c->lev_cap * sizeof(const char *));
+    }
+    c->lev_names[c->lev_count++] = name;
 }
 
 /* ---- Forward declarations ---- */
@@ -1770,6 +1795,12 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
         if (slot >= 0) {
             set_op = OP_SET_LOCAL; set_arg = (uint16_t)slot;
             obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)slot;
+        } else if (lev_has(c, name)) {
+            /* #1074: the name is this function's active `for` binder in a
+             * loop env -- write where the body reads. */
+            int idx = add_string_constant(c, name);
+            set_op = OP_SET_NAME_LOCAL; set_arg = (uint16_t)idx;
+            obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
         } else {
             int captured     = name_set_has(&c->captured, name);
             int interrogated = name_set_has(&c->interrogated, name);
@@ -2317,7 +2348,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             emit(c, OP_POP, node->line);
         }
 
+        int lev_pushed = 0;
+        if (c->enclosing && !can_skip_env) { lev_push(c, loop_var); lev_pushed = 1; }   /* #1074 */
         compile_block(c, node->data.forloop.body, node->data.forloop.body_count);
+        if (lev_pushed) c->lev_count--;
         emit(c, OP_POP, node->line); /* discard body result */
 
         if (!can_skip_env && !can_persist_env)
@@ -2517,6 +2551,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         }
 
         stamp_local_traced(fn_chunk, &fn_compiler.interrogated);
+        free(fn_compiler.lev_names);
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         name_set_free(&fn_compiler.env_bound);
@@ -2580,6 +2615,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         }
 
         stamp_local_traced(fn_chunk, &fn_compiler.interrogated);
+        free(fn_compiler.lev_names);
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         name_set_free(&fn_compiler.env_bound);

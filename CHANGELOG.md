@@ -42,6 +42,15 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **A `for` binder in a loop env is written where its body reads it (#1074).**
+  An interrogated binder, or one shadowing a module/outer name, lives in a
+  per-iteration loop env; the body's write of that name was routed to the
+  function env by name, so `for p in [7, 8]: p is p + 10; print of p` printed
+  7 8 (the binder) and the read after the loop printed 18. The compiler keeps
+  a stack of the function's active loop-env binders and emits
+  OP_SET_NAME_LOCAL for their writes; the body sees 17 18, the binder stays
+  loop-scoped, and the module `p` is untouched. Test
+  `tests/test_for_binder_loopenv_write.eigs` (9 rows, 4 failed before).
 - **The suite refuses a stale `src/eigenscript` (#1089).** `run_all_tests.sh`
   now asks the build system (`make -q build/<variant>/eigenscript`, the
   variant being whatever the alias is hard-linked to) before recording the
