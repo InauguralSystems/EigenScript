@@ -2228,6 +2228,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         uint32_t loop_var_hash = env_hash_name(loop_var);
         int can_skip_env = 0;
         int loop_var_slot = -1;
+        int prior_slot = -1, save_slot = -1;   /* #1064 */
         if (c->enclosing) {
             int captured     = name_set_has(&c->captured, loop_var);
             int interrogated = name_set_has(&c->interrogated, loop_var);
@@ -2258,12 +2259,33 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                      * If we used LOOP_ENV_FRESH+SET_NAME_LOCAL here instead,
                      * the body would still GET_LOCAL the stale outer slot. */
                     loop_var_slot = resolve_local(c, loop_var, loop_var_hash);
-                    if (loop_var_slot < 0)
+                    if (loop_var_slot >= 0) {
+                        /* #1064: the binder reuses a slot the name already
+                         * has (a parameter, a `local`, an earlier plain
+                         * assignment). LANGUAGE_CONTRACT promises a for
+                         * binder does not leak past its loop, and module
+                         * scope keeps that promise; the slot path made the
+                         * binder's last value the name's value after the
+                         * loop (`define f(p): for p in [7, 8]: ...` returned
+                         * 8 for p). Save the pre-loop value in a hidden slot
+                         * and restore it at the loop exit (both the exhausted
+                         * and the break paths converge there). A name with
+                         * NO prior binding keeps its fresh slot (see the
+                         * contract's function-scope note). */
+                        prior_slot = loop_var_slot;
+                        save_slot = add_local(c, "__for_save", env_hash_name("__for_save"));
+                    } else
                         loop_var_slot = add_local(c, loop_var, loop_var_hash);
                     if (loop_var_slot >= 0) can_skip_env = 1;
                 }
                 name_set_free(&captured_here);
             }
+        }
+
+        if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: save */
+            emit_op_u16(c, OP_GET_LOCAL, (uint16_t)prior_slot, node->line);
+            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)save_slot, node->line);
+            emit(c, OP_POP, node->line);
         }
 
         /* Persisted-loop-env optimization: for any for-loop that still needs a
@@ -2376,6 +2398,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
          * once. */
         if (can_persist_env) emit(c, OP_LOOP_ENV_END, node->line);
         emit(c, OP_POP, node->line); /* pop iterator state */
+        if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: restore */
+            emit_op_u16(c, OP_GET_LOCAL, (uint16_t)save_slot, node->line);
+            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)prior_slot, node->line);
+            emit(c, OP_POP, node->line);
+        }
         emit(c, OP_NULL, node->line); /* for-loop result */
 
         loop_pop(c);

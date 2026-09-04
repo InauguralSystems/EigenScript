@@ -1,0 +1,82 @@
+# test_for_binder_scoped_in_function.eigs — #1064.
+#
+# LANGUAGE_CONTRACT: a for binder does not leak past its loop. Module scope
+# kept it (the binder lives in a loop env); inside a function a binder whose
+# name already had a frame slot -- a parameter, a `local`, an earlier plain
+# assignment -- reused the slot and the loop's last value became the name's
+# value afterwards (`define f(p): for p in [7, 8]: p is p + 10` returned 18).
+# The compiler now saves the pre-loop value and restores it at loop exit, on
+# both the exhausted and the break path. A name with NO prior binding keeps
+# its function-scoped slot (documented function-scope note).
+
+load_file of "lib/test.eigs"
+
+define f_param(p) as:
+    for p in [7, 8]:
+        p is p + 10
+    return p
+assert_true of [(f_param of 1) == 1, "parameter binder: value restored after the loop"]
+
+define f_local(q) as:
+    local p is q
+    for p in [7, 8]:
+        p is p + 10
+    return p
+assert_true of [(f_local of 1) == 1, "local binder: value restored"]
+
+define f_plain(q) as:
+    p is q
+    for p in [7, 8]:
+        p is p + 10
+    return p
+assert_true of [(f_plain of 1) == 1, "plain-assigned binder: value restored"]
+
+define f_break(q) as:
+    local p is q
+    for p in [7, 8, 9]:
+        if p == 8:
+            break
+    return p
+assert_true of [(f_break of 1) == 1, "break path restores too"]
+
+define f_body_sees(q) as:
+    local p is q
+    local seen is []
+    for p in [7, 8]:
+        p is p + 10
+        append of [seen, p]
+    append of [seen, p]
+    return seen
+assert_true of [(str of (f_body_sees of 1)) == "[17, 18, 1]", "body reads its own binder; the restore is after the loop"]
+
+define f_nested(q) as:
+    local i is q
+    local out is []
+    for i in [1, 2]:
+        for i in [10]:
+            append of [out, i]
+        append of [out, i]
+    append of [out, i]
+    return out
+assert_true of [(str of (f_nested of 0)) == "[10, 1, 10, 2, 0]", "nested same-name binders: inner restores the outer binder, outer restores the local"]
+
+define f_fresh(q) as:
+    for k in [1, 2]:
+        k is k * 3
+    return k
+assert_true of [(f_fresh of 0) == 6, "fresh name (no prior binding): function-scoped slot, documented"]
+
+define f_range(n) as:
+    local i is 99
+    local s is 0
+    for i in range of n:
+        s is s + i
+    return s * 1000 + i
+assert_true of [(f_range of 4) == 6099, "hot for-range loop over an existing local: sum right, local restored"]
+
+p is 1
+for p in [7, 8]:
+    p is p + 10
+assert_true of [p == 1, "module scope control: loop-scoped as before"]
+
+test_summary of null

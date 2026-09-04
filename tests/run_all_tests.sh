@@ -3616,6 +3616,12 @@ check_eigs_suite "interrogated parameter = slot: binder, history, JIT (#1063)" t
 # write went to the function env by name and `p is p + 10; print of p` printed
 # the binder (7 8) while the post-loop read printed 18. Binder stays loop-scoped.
 check_eigs_suite "for binder in a loop env: body write lands in the loop env (#1074)" test_for_binder_loopenv_write.eigs "All tests passed" 9
+# [70j] #1064 — a for binder that reuses an existing frame slot (parameter,
+# `local`, earlier assignment) is restored to its pre-loop value at loop exit
+# (exhausted and break paths), so the contract's "does not leak" holds inside
+# functions too. A binder with no prior binding keeps its function-scoped slot
+# (contract note).
+check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 9
 
 # [70i] #1075 -- an interrogate operand inside a list comprehension arms the
 # name like any other expression (the scan's LISTCOMP case was a no-op).

@@ -207,7 +207,12 @@ else is truthy (including functions).
 - Lexical scope. Functions capture their defining environment (closures).
 - For-loop variables are block-scoped — they do not leak after the loop,
   and each iteration binds a fresh variable (so closures created in a loop
-  capture distinct values).
+  capture distinct values). Inside a function, a binder whose name was
+  already bound (a parameter, a `local`, an earlier assignment) has that
+  earlier value again after the loop (#1064). Function-scope note: a binder
+  whose name had NO prior binding in the function stays readable after the
+  loop with its last value — the loop var lives in a frame slot there, and
+  the unbound case is not diagnosed the way module scope diagnoses it.
 - Name resolution walks the scope chain; an unresolved name is a fatal
   runtime error.
 - Functions resolve referenced names at call time (late binding), so
