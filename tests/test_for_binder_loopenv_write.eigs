@@ -1,0 +1,81 @@
+# test_for_binder_loopenv_write.eigs — #1074.
+#
+# A `for` binder that is interrogated (or shadows a module/outer name) lives
+# in a per-iteration loop env. The body's WRITE of that name went to the
+# function env by name (SET_FN_NAME_LOCAL), so the body's next read -- a
+# chain walk that meets the binder in the loop env first -- never saw it:
+# `for p in [7, 8]: p is p + 10; print of p` printed 7 8, while the read
+# after the loop printed 18. The write now lands in the loop env the binder
+# lives in, and the binder stays loop-scoped as LANGUAGE_CONTRACT promises.
+# Every interrogated row has a NON-interrogated twin that already behaved.
+
+load_file of "lib/test.eigs"
+
+# ---- (1) body reads see body writes; the module name is untouched
+p is 5
+define f_interrogated(q) as:
+    local seen is []
+    for p in [7, 8]:
+        p is p + 10
+        append of [seen, p]
+    local h is prev of p
+    return seen
+assert_true of [(str of (f_interrogated of 1)) == "[17, 18]", "interrogated binder: body read sees the body write"]
+assert_true of [p == 5, "module p untouched by the body writes"]
+
+define f_plain(q) as:
+    local seen is []
+    for p in [7, 8]:
+        p is p + 10
+        append of [seen, p]
+    return seen
+assert_true of [(str of (f_plain of 1)) == "[17, 18]", "non-interrogated twin"]
+assert_true of [p == 5, "module p untouched (twin)"]
+
+# ---- (2) after the loop the name resolves to the module binding again
+define f_after(q) as:
+    for p in [7, 8]:
+        p is p + 10
+    local h is prev of p
+    return p
+assert_true of [(f_after of 1) == 5, "post-loop read is the module p, not the last iteration"]
+
+# ---- (3) a FRESH name (no module binding) does not leak past the loop
+define g_fresh(q) as:
+    local seen is []
+    for zq in [1, 2]:
+        zq is zq * 100
+        append of [seen, zq]
+    local leaked is 0
+    try:
+        local h is prev of zq
+        local v is zq
+        leaked is 1
+    catch e:
+        leaked is 0
+    append of [seen, leaked]
+    return seen
+assert_true of [(str of (g_fresh of 1)) == "[100, 200, 0]", "fresh interrogated binder: writes visible, nothing leaks"]
+
+# ---- (4) nested loops binding the same name: each body writes its own env
+define nested(q) as:
+    local out is []
+    for p in [1, 2]:
+        p is p * 10
+        for p in [3]:
+            p is p + 1
+            append of [out, p]
+        append of [out, p]
+    local h is prev of p
+    return out
+assert_true of [(str of (nested of 1)) == "[4, 10, 4, 20]", "nested same-name binders: inner write stays inner"]
+
+# ---- (5) module-scope loop unchanged: binder scoped, writes visible in body
+acc is []
+for p in [7, 8]:
+    p is p + 10
+    append of [acc, p]
+assert_true of [(str of acc) == "[17, 18]", "module-scope body write visible"]
+assert_true of [p == 5, "module-scope binder does not leak into module p"]
+
+test_summary of null

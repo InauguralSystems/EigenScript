@@ -3610,6 +3610,12 @@ check_eigs_suite "occurrence-addressed temporal history (#868)" test_temporal_wh
 # `local` twin, including two 200k-iteration OSR rows and a spawned worker.
 # Line-number sensitive ONLY in the two `what is ... at` checks.
 check_eigs_suite "interrogated parameter = slot: binder, history, JIT (#1063)" test_temporal_param.eigs "All tests passed" 24
+# [70i] #1074 — a `for` binder on the loop-env path (interrogated, or shadowing
+# a module/outer name) is written by its body into the SAME loop env it lives
+# in (OP_SET_NAME_LOCAL), so the body's next read sees the write; before, the
+# write went to the function env by name and `p is p + 10; print of p` printed
+# the binder (7 8) while the post-loop read printed 18. Binder stays loop-scoped.
+check_eigs_suite "for binder in a loop env: body write lands in the loop env (#1074)" test_for_binder_loopenv_write.eigs "All tests passed" 9
 
 # [70i] #1075 -- an interrogate operand inside a list comprehension arms the
 # name like any other expression (the scan's LISTCOMP case was a no-op).
