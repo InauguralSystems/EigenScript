@@ -1304,17 +1304,39 @@ void eigs_thread_drain_caches(EigsThread *th) {
      * but drain defensively before freeing the table itself. */
     env_intern_release_all_values();
 
-    /* env_name_interns: bucket heads + linked-list nodes own ->name. */
+    /* env_name_interns (#1065): release the THREAD's ref on its intern
+     * table. Chunks created on this thread hold their own refs (they carry
+     * pointers into the table and may outlive the thread as function values
+     * sent through a channel), so the table -- bucket heads + nodes owning
+     * ->name -- frees on the last release, not here. */
+    env_intern_table_unref(th->intern_tbl);
+    th->intern_tbl = NULL;
+}
+
+EnvInternTable *env_intern_table_new(void) {
+    EnvInternTable *t = xcalloc(1, sizeof *t);
+    t->refcount = 1;
+    return t;
+}
+
+void env_intern_table_ref(EnvInternTable *t) {
+    if (!t) return;
+    __atomic_add_fetch(&t->refcount, 1, __ATOMIC_RELAXED);
+}
+
+void env_intern_table_unref(EnvInternTable *t) {
+    if (!t) return;
+    if (__atomic_sub_fetch(&t->refcount, 1, __ATOMIC_ACQ_REL) > 0) return;
     for (int i = 0; i < ENV_NAME_INTERN_BUCKETS; i++) {
-        EnvNameIntern *it = th->env_name_interns[i];
+        EnvNameIntern *it = t->buckets[i];
         while (it) {
             EnvNameIntern *next = it->next;
             free(it->name);
             free(it);
             it = next;
         }
-        th->env_name_interns[i] = NULL;
     }
+    free(t);
 }
 
 void free_value(Value *v) {

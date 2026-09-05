@@ -42,6 +42,23 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Heap-use-after-free: a chunk compiled on a worker escaped through a
+  channel and outlived the worker's intern table (#1065).** `env_intern_name`
+  interns into a PER-THREAD table that `eigs_thread_drain_caches` freed at
+  detach; a chunk compiled on the worker (`eval` inside the worker body)
+  carries pointers into it (`const_interns[]`, and since #1063 `local_names[]`)
+  and can escape as a function value. Every later call on main read freed
+  memory (ASan: heap-use-after-free in `env_hash_find` under `GET_NAME`; the
+  release binary printed `undefined variable '<garbage>'` once the bytes were
+  reused). The table is now a REFCOUNTED object (`EnvInternTable`): the thread
+  holds one ref, every chunk created on the thread holds one (`chunk_new` /
+  `chunk_decref`), and the table frees on the last release — exactly as long
+  as any pointer into it can be used, no longer. (The first cut parked every
+  detaching thread's table on an orphan list; the HTTP RSS-growth gate caught
+  it at ~22 KB per request, because a connection worker compiles the request
+  payload and detaches 2000 times.) Pinned by `tests/test_worker_intern_escape.eigs`
+  (release half; the suite's ASan lane is the real check — red on the pre-fix
+  build) and by the RSS-growth gate staying at 0 kB.
 - **Falsy-path family: a wrong-typed path argument raises under `EIGS_STRICT`
   (#1008, the remaining half).** `file_exists`, `is_dir`, `is_file`,
   `read_text`, `read_bytes`, `ls`, `mkdir` and `env_get` answered `0` / `""` /

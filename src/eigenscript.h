@@ -541,6 +541,15 @@ typedef struct EnvNameIntern {
 
 typedef struct EnvInternValueOwner EnvInternValueOwner;
 
+/* #1065: see EigsThread.intern_tbl. */
+typedef struct EnvInternTable {
+    int            refcount;                       /* atomic */
+    EnvNameIntern *buckets[ENV_NAME_INTERN_BUCKETS];
+} EnvInternTable;
+EnvInternTable *env_intern_table_new(void);
+void            env_intern_table_ref(EnvInternTable *t);
+void            env_intern_table_unref(EnvInternTable *t);
+
 /* Per-interpreter-instance config + shared registry. Transparent for
  * internal TUs (Phase 10's embed.h wraps it behind accessors). */
 struct EigsState {
@@ -817,7 +826,16 @@ struct EigsThread {
     int                  num_freelist_count;
     Env                 *env_freelist;
     int                  env_freelist_count;
-    EnvNameIntern       *env_name_interns[ENV_NAME_INTERN_BUCKETS];
+    /* #1065: the per-thread intern table is a REFCOUNTED heap object. The
+     * thread holds one ref; every chunk created on the thread holds one
+     * (chunk_new / chunk_decref), because a chunk carries pointers into the
+     * table (const_interns[], local_names[]) and can outlive the thread as a
+     * function value sent through a channel -- freeing the table at detach
+     * was a heap-use-after-free on every later call of such a function. The
+     * table frees on the last release: exactly as long as needed, no longer
+     * (parking every detaching worker's table instead leaked ~22 KB per
+     * request on the HTTP RSS-growth gate). */
+    EnvInternTable      *intern_tbl;
     /* Scoped ownership for names created while sandbox bytecode executes.
      * A nonzero current scope routes newly-created names into a run-owned
      * lifetime; returned dictionary keys promote their entries before the
@@ -1072,7 +1090,7 @@ extern __thread EigsThread *eigs_current;
 #define g_num_freelist_count  (eigs_current->num_freelist_count)
 #define g_env_freelist        (eigs_current->env_freelist)
 #define g_env_freelist_count  (eigs_current->env_freelist_count)
-#define g_env_name_interns    (eigs_current->env_name_interns)
+#define g_env_name_interns    (eigs_current->intern_tbl->buckets)
 #define g_sandbox_intern_scope (eigs_current->sandbox_intern_scope)
 #define g_sandbox_intern_scope_next (eigs_current->sandbox_intern_scope_next)
 #define g_sandbox_intern_owners (eigs_current->sandbox_intern_owners)

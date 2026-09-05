@@ -121,6 +121,7 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     }
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
+    th->intern_tbl = env_intern_table_new();   /* #1065: thread's ref */
     pthread_mutex_lock(&g_attached_lock); g_attached_threads++; pthread_mutex_unlock(&g_attached_lock);
     /* #915: xcalloc zeroes, and 0 here would mean "never scan", silently
      * disabling the observer gate's eager pass on every thread. Default ON;
