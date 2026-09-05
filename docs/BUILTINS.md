@@ -304,7 +304,7 @@ Boolean keywords that check the most recently observed value:
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `load_file` | `load_file of "path.eigs"` | Load and execute EigenScript file. A missing/unreadable path raises a catchable `io` error (matching `import`); a parse/compile failure in the file raises `parse`. |
+| `load_file` | `load_file of "path.eigs"` | Execute a file in the current scope, yielding its top-level return value. Uses the same file-based resolution chain as `import` (below). A missing/unreadable path raises a catchable `io` error naming the roots tried; a parse/compile failure raises `parse`. |
 | `file_exists` | `file_exists of "path"` | 1 if the path exists (any kind: file, directory, device, fifo), 0 otherwise. A `stat` probe — never blocks (#1070: the old `fopen` probe hung on a reader-less fifo). Trace-recorded, so replay is deterministic (#585) |
 | `is_dir` | `is_dir of "path"` | 1 if the path names a directory, 0 for a plain file / missing path (#576 — replaces the `file_exists of "path/."` probe). Trace-recorded, so replay is deterministic |
 | `is_file` | `is_file of "path"` | 1 iff the path names a REGULAR file (`S_ISREG`); 0 for a directory, a device/fifo/socket, a missing path, or a non-string. `read_file_util` admits only regular files, so this is the probe a driver uses to match that contract (#1058). Trace-recorded, so replay is deterministic |
@@ -343,6 +343,19 @@ producing tensors too large to materialise in memory.
 | `stream_open` | `stream_open of ["path", count]` | Open file, write header for `count` float64 values. 1 on success, 0 on failure. One stream per **thread**: opening a second closes the first, and an unclosed stream is flushed and closed when the thread ends (#739) |
 | `stream_write` | `stream_write of value` | Append one float64 to the open stream. 1 on success, 0 on failure |
 | `stream_close` | `stream_close of null` | Close the stream. 1 on success, 0 on failure |
+
+`load_file` and `import` resolve an absolute path as-is; otherwise they try the
+containing file's directory, the `eigs_modules` walk (stopping at `eigs.json`),
+the nearest `eigs.json` project root, then `<exe>/../<path>`,
+`<exe>/../lib/eigenscript/<path>` and its leading-`lib/`-stripped form, then
+`$HOME/.local/lib/eigenscript/<path>` and its leading-`lib/`-stripped form.
+`<exe>` is the executable's directory. There is no process cwd lookup or
+one-parent fallback. Only code without a file (REPL, `-e`, stdin, embed without
+a path) uses its working directory as its containing directory. Loaded files
+and their functions retain their own directory. Consumers using root-relative
+paths from subdirectory files need an `eigs.json` at their root. Errors name
+the containing directory, project root (or `no eigs.json above <dir>`), and
+stdlib roots. See [Modules](SPEC.md#modules) for import collision handling.
 
 ## Path Manipulation
 

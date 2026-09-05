@@ -95,13 +95,26 @@ load_file of "lib/math.eigs"
 load_file of "lib/list.eigs"
 ```
 
-Path resolution order:
-1. Relative to the **current working directory**
-2. Relative to the **script file's directory**
-3. Relative to the **script file's parent directory**
-4. Relative to the **EigenScript executable's parent directory**
-5. Relative to the installed stdlib beside the executable
-6. Relative to `~/.local/lib/eigenscript`
+`load_file` and `import` share this path resolution order:
+
+1. Absolute paths are used as-is.
+2. Relative to the **containing file's directory**, including nested loaded
+   files and functions called later. Symlinks and `..` are canonicalized.
+3. Walk upward for `eigs_modules/<name>/<name>.eigs` (bare module names),
+   stopping after checking the nearest directory containing `eigs.json`.
+4. Relative to that **project root**, if there is one: the nearest ancestor
+   (including the containing directory) with an `eigs.json`.
+5. `<exe>/../<path>`, then `<exe>/../lib/eigenscript/<path>`, then the latter
+   with a leading `lib/` stripped; `<exe>` means the executable's directory.
+6. `$HOME/.local/lib/eigenscript/<path>`, then with leading `lib/` stripped.
+
+There is no process cwd lookup and no containing-file-parent fallback. Code
+without a file (REPL, `-e`, stdin, or embed without a path) uses its working
+directory as the containing directory. Add an `eigs.json` at the root of a
+project whose subdirectory files use root-relative paths. Failure raises an
+`io` error listing the containing directory, project root (or its absence),
+and stdlib roots tried. Import tries `name.eigs` before `lib/name.eigs` and
+warns when a project file shadows a stdlib module.
 
 This means `load_file of "lib/math.eigs"` works whether you run the
 script from the project root, from an external project while using a source

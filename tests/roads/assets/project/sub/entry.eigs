@@ -1,0 +1,7 @@
+load_file of "peer.eigs"
+load_file of "root/target.eigs"
+define delayed() as:
+    return load_file of "value.eigs"
+define delayed_import() as:
+    import peer_module
+    return peer_module.value

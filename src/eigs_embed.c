@@ -128,20 +128,20 @@ EigsValue *eigs_eval_file(const char *path) {
     if (!path || !eigs_current) return NULL;
     /* Update script_dir so `import` / `load_file` inside the source can
      * resolve relative paths the same way the CLI does. */
-    const char *last_slash = strrchr(path, '/');
-    if (last_slash) {
-        size_t dir_len = (size_t)(last_slash - path);
-        if (dir_len >= sizeof(g_script_dir)) dir_len = sizeof(g_script_dir) - 1;
-        memcpy(g_script_dir, path, dir_len);
-        g_script_dir[dir_len] = '\0';
-    } else {
-        memcpy(g_script_dir, ".", 2);
-    }
-
     long size = 0;
     char *src = read_file_util(path, &size);
     if (!src) return NULL;
+    char *saved_dir = xstrdup(g_script_dir);
+    char *saved_compile_dir = xstrdup(g_import_resolve_dir);
+    char *dir = eigs_file_directory(path);
+    snprintf(g_script_dir, sizeof(g_script_dir), "%s", dir);
+    snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", dir);
+    free(dir);
     EigsValue *r = eigs_eval_string(src);
+    snprintf(g_script_dir, sizeof(g_script_dir), "%s", saved_dir);
+    snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", saved_compile_dir);
+    free(saved_dir);
+    free(saved_compile_dir);
     free(src);
     return r;
 #endif /* !EIGENSCRIPT_FREESTANDING */

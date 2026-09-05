@@ -1,0 +1,6 @@
+blocks body
+["from_if", 2]
+["from_loop", 2]
+["from_try", 3]
+["from_for", 4]
+["from_fn", 1]

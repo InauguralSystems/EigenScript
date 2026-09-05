@@ -1,0 +1,8 @@
+# road-bind: created accumulator kept j
+accumulator is 0
+kept is 100
+for kept in [1, 2]:
+    for j in [3, 4]:
+        created is kept + j
+        accumulator is accumulator + 1
+        kept is kept + 10

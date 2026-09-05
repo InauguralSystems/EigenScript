@@ -4,6 +4,19 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **File resolution is independent of the process working directory (#1056).**
+  `load_file` and `import` search the containing file's directory, the existing
+  `eigs_modules` walk, the nearest `eigs.json` project root, then the stdlib
+  locations. Absolute paths remain as-is. The bare cwd step and one-parent
+  fallback are removed; consumers using root-relative paths from subdirectory
+  files need an `eigs.json` at their project root. Nested loads and functions
+  retain the containing file's directory. Errors identify the roots tried.
+  Imported top-level `for` bodies now retain their plain `is` bindings in the
+  module, matching main and load_file; the loop binder remains loop-scoped.
+  `tools/road_diff.sh` gates all three roads and proves its own failure paths.
+
 ### Added
 
 - **`is_file of path` (#1058).** 1 iff the path names a REGULAR file

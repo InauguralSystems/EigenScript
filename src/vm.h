@@ -275,6 +275,8 @@ typedef struct {
 typedef struct EigsSrcBuf {
     int   refcount;
     char *text;
+    char *resolve_dir;         /* owned canonical containing-file directory;
+                               * shared with nested functions, not a GC edge */
 } EigsSrcBuf;
 
 EigsSrcBuf *srcbuf_new(const char *text);

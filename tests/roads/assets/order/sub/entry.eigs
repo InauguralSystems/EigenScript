@@ -1,0 +1,8 @@
+nearby is load_file of "nearby.eigs"
+package is load_file of "package.eigs"
+root_relative is load_file of "root_relative.eigs"
+root_error is 0
+try:
+    load_file of "roads_missing_1056.eigs"
+catch err:
+    root_error is (contains of [err.message, "project root"]) and not (contains of [err.message, "no eigs.json above"])

@@ -1,0 +1,20 @@
+no_parent is 0
+try:
+    load_file of "parent.eigs"
+catch err:
+    no_parent is (type of err) == "dict" and err.kind == "io"
+no_cwd is 0
+try:
+    load_file of "cwd_only.eigs"
+catch err:
+    no_cwd is (type of err) == "dict" and err.kind == "io"
+loaded_error is 0
+try:
+    load_file of "roads_missing_1056.eigs"
+catch err:
+    loaded_error is (contains of [err.message, "containing directory"]) and (contains of [err.message, "no eigs.json above"]) and (contains of [err.message, "stdlib roots"])
+import_error is 0
+try:
+    import roads_missing_1056
+catch err:
+    import_error is (contains of [err.message, "containing directory"]) and (contains of [err.message, "no eigs.json above"]) and (contains of [err.message, "stdlib roots"])

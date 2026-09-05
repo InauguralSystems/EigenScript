@@ -1602,9 +1602,12 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
 char* read_file_util(const char *path, long *out_size);
 int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap);
-/* Same chain, but the "script-relative" and "../" steps anchor at
- * `base` instead of `g_script_dir`. Used by OP_IMPORT to resolve a
- * module's own imports relative to that module's directory. */
+/* File provenance is retained by the executing chunk, including closures. */
+const char *eigs_current_file_dir(void);
+char *eigs_file_directory(const char *path); /* hosted; caller frees */
+void eigs_file_resolve_error(const char *operation, const char *base,
+                            const char *path, int line); /* hosted */
+/* One chain for import/load_file; base is the containing file's directory. */
 int resolve_eigenscript_file_from(const char *base, const char *path,
                                    char *resolved, size_t resolved_cap);
 /* #904: which half of the chain answered. The chain's tail steps are the

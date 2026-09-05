@@ -1,0 +1,5 @@
+# road-bind: sibling_result project_result delayed_result imported_result restored_result
+load_file of "assets/project/sub/entry.eigs"
+delayed_result is delayed of []
+imported_result is delayed_import of []
+load_file of "assets/restore.eigs"

@@ -1,0 +1,4 @@
+# road-bind: metric
+metric is 0
+metric is 10
+load_file of "assets/observer/entry.eigs"

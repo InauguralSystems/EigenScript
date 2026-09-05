@@ -5819,13 +5819,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
             extern char *read_file_util(const char *path, long *size);
 
-            /* Per-file resolution base (Phase 0b): an `import` inside a
-             * module anchors at *that* module's directory, not the main
-             * script's. `g_import_resolve_dir` is empty at the main-script
-             * level, in which case the chain falls back to g_script_dir. */
-            const char *resolve_base = g_import_resolve_dir[0]
-                                           ? g_import_resolve_dir
-                                           : g_script_dir;
+            /* #1056: functions retain their containing file's directory
+             * even when called after the importing/loading frame returns. */
+            const char *resolve_base = eigs_current_file_dir();
 
             /* #821: PROJECT-FIRST resolution. The user module `<name>.eigs`
              * (script-relative, plus the chain's other locations and the
@@ -5859,8 +5855,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 user_hit = 0;
 
             if (!user_hit && !stdlib_hit) {
-                rt_error(EK_IO, current_line, "import: module '%s' not found "
-                              "(tried %s.eigs and lib/%s.eigs)", name, name, name);
+                snprintf(request, sizeof(request), "%.1024s.eigs and lib/%.1024s.eigs", name, name);
+                eigs_file_resolve_error("import", resolve_base, request, current_line);
                 vm_push(make_null());
                 DISPATCH();
             }

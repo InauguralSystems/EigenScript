@@ -352,6 +352,14 @@ define double as:                        # functions take one argument, n
 doubled is map of [[1, 2, 3], double]    # [2, 4, 6]
 ```
 
+File loading is relative to the containing file, then the `eigs_modules` walk,
+then the nearest `eigs.json` project root, then stdlib locations; absolute paths
+are used as-is. There is no process cwd search (code without a file uses its
+working directory as its containing directory). Add `eigs.json` at the root
+when subdirectory files use root-relative paths. See the exact
+[shared import/load_file resolution chain](docs/SPEC.md#modules).
+
+
 See [docs/STDLIB.md](docs/STDLIB.md) for the full library guide — start at
 its **"Finding Things"** index ("I need to..." → module) so you reach for
 `stats.median` or `data.df_group_by` instead of hand-rolling it.

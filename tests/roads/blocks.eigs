@@ -1,0 +1,18 @@
+# road-bind: from_if from_loop from_try from_for from_fn
+if 1 > 0:
+    from_if is 1
+loop while from_if < 2:
+    from_loop is 2
+    from_if is from_if + 1
+try:
+    from_try is 3
+catch e:
+    from_try is -3
+for k in range of 1:
+    from_for is 4
+define fn() as:
+    for j in range of 2:
+        fin is j
+    return fin
+from_fn is fn of []
+print of "blocks body"

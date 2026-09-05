@@ -38,6 +38,7 @@ void srcbuf_decref(EigsSrcBuf *sb) {
         rc = --sb->refcount;
     if (rc > 0) return;
     free(sb->text);
+    free(sb->resolve_dir);
     free(sb);
 }
 

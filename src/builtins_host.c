@@ -859,6 +859,58 @@ static int try_resolve_path(const char *candidate, char *resolved, size_t resolv
     return 1;
 }
 
+/* Canonical file provenance: symlink entry points and nested loads agree with
+ * import. Heap-owned because this helper also runs on compiler paths. */
+char *eigs_file_directory(const char *path) {
+    char *dir = realpath(path, NULL);
+    if (!dir) dir = xstrdup(path);
+    char *slash = strrchr(dir, '/');
+    if (slash == dir) dir[1] = '\0';
+    else if (slash) *slash = '\0';
+    else { free(dir); dir = xstrdup("."); }
+    return dir;
+}
+
+static int parent_directory(char *dir) {
+    char *slash = strrchr(dir, '/');
+    if (!slash || strcmp(dir, "/") == 0) return 0;
+    if (slash == dir) dir[1] = '\0';
+    else *slash = '\0';
+    return 1;
+}
+
+/* The nearest eigs.json is the project boundary, for both package lookup
+ * and root-relative paths. No cwd or one-parent fallback participates. */
+static char *project_directory(const char *base) {
+    char *dir = realpath(base, NULL);
+    if (!dir) return NULL;
+    char *marker = xmalloc(strlen(dir) + sizeof("/eigs.json"));
+    do {
+        size_t dir_len = strlen(dir);
+        memcpy(marker, dir, dir_len);
+        memcpy(marker + dir_len, "/eigs.json", sizeof("/eigs.json"));
+        if (access(marker, F_OK) == 0) { free(marker); return dir; }
+    } while (parent_directory(dir));
+    free(marker);
+    free(dir);
+    return NULL;
+}
+
+void eigs_file_resolve_error(const char *operation, const char *base,
+                            const char *path, int line) {
+    char *project = project_directory(base);
+    const char *home = getenv("HOME");
+    rt_error(EK_IO, line,
+        "%s: cannot read '%s' (not found or unreadable); tried containing directory '%s', "
+        "eigs_modules walk, %s%s; stdlib roots '%s/../<path>', "
+        "'%s/../lib/eigenscript', '%s/.local/lib/eigenscript' "
+        "(also stripping lib/; absolute paths are used as-is)",
+        operation, path, base, project ? "project root " : "no eigs.json above ",
+        project ? project : base, g_exe_dir, g_exe_dir,
+        home ? home : "<HOME unset>");
+    free(project);
+}
+
 /* Phase 0c: walk from `base` upward looking for
  *   <dir>/eigs_modules/<name>/<name>.eigs
  * at each level. Stop at the project root (a directory containing
@@ -892,9 +944,7 @@ static int try_eigs_modules_walk(const char *base, const char *path,
         snprintf(marker, sizeof(marker), "%.4000s/eigs.json", cur);
         if (access(marker, F_OK) == 0) return 0;
 
-        char *slash = strrchr(cur, '/');
-        if (!slash || slash == cur) return 0;
-        *slash = '\0';
+        if (!parent_directory(cur)) return 0;
     }
     return 0;
 }
@@ -915,21 +965,23 @@ int resolve_eigenscript_file_from_ex(const char *base, const char *path,
 
     if (origin) *origin = EIGS_RESOLVE_PROJECT;
     if (!path || !resolved || resolved_cap == 0) return 0;
-    if (!base || !base[0]) base = g_script_dir;
+    if (!base || !base[0]) base = eigs_current_file_dir();
 
     if (path[0] == '/') {
         return try_resolve_path(path, resolved, resolved_cap);
     }
 
-    if (try_resolve_path(path, resolved, resolved_cap)) return 1;
-
-    if (try_eigs_modules_walk(base, path, resolved, resolved_cap)) return 1;
-
     snprintf(candidate, sizeof(candidate), "%.4000s/%.4000s", base, path);
     if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
 
-    snprintf(candidate, sizeof(candidate), "%.4000s/../%.4000s", base, path);
-    if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+    if (try_eigs_modules_walk(base, path, resolved, resolved_cap)) return 1;
+
+    char *project = project_directory(base);
+    if (project) {
+        snprintf(candidate, sizeof(candidate), "%.4000s/%.4000s", project, path);
+        free(project);
+        if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+    }
 
     snprintf(candidate, sizeof(candidate), "%.4000s/../%.4000s", g_exe_dir, path);
     if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
@@ -981,7 +1033,7 @@ Value* builtin_load_file(Value *arg) {
         /* #490: match import's severity — a missing path is a catchable io
          * error, not a stderr-warn + silent null (rc=0). Callers that ignore
          * the return otherwise run on half-initialized state. */
-        rt_error(EK_IO, 0, "load_file: cannot read '%s'", arg->data.str);
+        eigs_file_resolve_error("load_file", eigs_current_file_dir(), arg->data.str, 0);
         return make_null();
     }
 
@@ -1040,9 +1092,8 @@ Value* builtin_load_file(Value *arg) {
      * target and compiled it then. The file it read and the file being compiled
      * now are two separate reads with the whole program running in between, so
      * they can differ: the program can rewrite the module (`write_text` then
-     * `load_file`), or create a file in the cwd that SHADOWS the one the
-     * pre-pass resolved (resolve_eigenscript_file tries cwd before the script
-     * dir). Both were executed and both produced a silently wrong answer —
+     * `load_file`), or create a nearer file that shadows the resolved target.
+     * Both shapes can otherwise produce a silently wrong answer —
      * `report of x` read `equilibrium` under the gate and `moving` without it.
      *
      * ASK THE ACTUAL QUESTION. A first draft compared the observer bit before
@@ -1068,7 +1119,13 @@ Value* builtin_load_file(Value *arg) {
     /* ACQUIRE: this is the one read that pairs with eigs_obs_enable's
      * store ORDER (gap then needed) — see obs_flag_store in eigenscript.h. */
     int obs_before_module = obs_flag_load_acquire(obs_needed);
+    char *saved_resolve_dir = xstrdup(g_import_resolve_dir);
+    char *loaded_dir = eigs_file_directory(abs_key);
+    snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", loaded_dir);
+    free(loaded_dir);
     EigsChunk *lf_chunk = compile_ast(ast, target, source);
+    snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", saved_resolve_dir);
+    free(saved_resolve_dir);
     g_compile_module_boundary = saved_boundary;
     if (lf_chunk && chunk_reads_observer(lf_chunk) &&
         (!obs_before_module || g_obs_history_gap)) {

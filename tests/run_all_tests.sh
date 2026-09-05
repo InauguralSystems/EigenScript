@@ -3898,14 +3898,8 @@ check "one computed load poisons a unit that also has a literal one" "$OBS_G10" 
 printf 'local lf is load_file\nlf of "%s/mfree.eigs"\nprint of (lf_helper of 1)\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/lf_alias.eigs"
 OBS_G11=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$OBS_GATE_TMP/lf_alias.eigs" 2>&1 | grep -q 'obs-gate: observed' && echo open || echo closed)
 check "an ALIASED load_file keeps the gate open" "$OBS_G11" "open"
-# 13. Resolver parity, via chdir — the THIRD route into the time-of-check /
-#    time-of-use family checked at 18-20. `chdir` used to be a one-element
-#    denylist in chunk_scan_static_loads that forced the gate open; that was the
-#    wrong population key (the same state is reachable by write_text, rename,
-#    mkdir, remove_file or a subprocess), so the denylist is gone and the
-#    outcome check at the load covers all of them. This asserts the ROUTE still
-#    ends soundly: cwd moves, the literal resolves to a DIFFERENT file, and that
-#    file observes -> raise, never a quiet `equilibrium`.
+# 13. #1056: chdir cannot redirect a file's literal load. The observer-free
+# containing-file copy must run, even with an observing copy in the new cwd.
 mkdir -p "$OBS_GATE_TMP/cdsub"
 printf 'print of "outer"\n' > "$OBS_GATE_TMP/cd_m.eigs"
 printf 'print of (report of y)\n' > "$OBS_GATE_TMP/cdsub/cd_m.eigs"
@@ -3915,8 +3909,9 @@ printf 'y is 1.0\ny is 2.0\ny is 4.0\nlocal ok is chdir of "cdsub"\nload_file of
 # "the guard did not fire" rather than "the probe did not run" (§64: a probe
 # that cannot execute is not a probe). Resolve it to an absolute path first.
 OBS_ABS_BIN=$(cd "$(dirname "$EIGS_BIN")" && pwd)/$(basename "$EIGS_BIN")
-OBS_G12=$( cd "$OBS_GATE_TMP" && "$OBS_ABS_BIN" "$OBS_GATE_TMP/lf_chdir.eigs" 2>&1 | grep -c 'reads observer state, but the observer gate was closed' )
-check "chdir resolving a literal to an OBSERVING file raises, not answers" "$OBS_G12" "1"
+OBS_G12=$( cd "$OBS_GATE_TMP" && "$OBS_ABS_BIN" "$OBS_GATE_TMP/lf_chdir.eigs" 2>&1 ); OBS_G12_RC=$?
+if ! rc_ok "$OBS_G12_RC" "$OBS_G12"; then OBS_G12="died-rc$OBS_G12_RC"; fi
+check "chdir cannot redirect a file-relative literal load" "$OBS_G12" "outer"
 # 14. TRANSITIVE: the parent's literal load reaches an observer two modules down.
 #    Asserted on the VALUE — the gate's own stats cannot see a wrong answer.
 printf 'print of (report of q)\n' > "$OBS_GATE_TMP/lf_inner.eigs"
@@ -3984,7 +3979,7 @@ check "a module that fails to compile reports IDENTICALLY under the gate" "$OBS_
 #     when the parent COMPILES; load_file reads it again when the call RUNS, and
 #     the whole program runs in between. Found by a blind critic with two
 #     executed repros, both silently wrong (`equilibrium` under the gate,
-#     `moving` without it) — a rewrite of the module, and a cwd file SHADOWING
+#     `moving` without it) — a rewrite of the module, and a nearer file SHADOWING
 #     the resolved one. An earlier draft tried to enumerate the causes and
 #     shipped a one-element `chdir` denylist; the guard is now on the OUTCOME
 #     (the observer bit flipping 0->1 at the load) and needs no such list.
@@ -4258,9 +4253,9 @@ check "control: that leaf loaded once also closes" "$OBS_G31C" "closed"
 #     then lost the gate anyway. This pins the budget to the population rather
 #     than to the number (§60) — if lib/ui grows past it, or someone lowers the
 #     budget, this fails and the value gets re-picked deliberately.
-#     (cwd here is src/, so the stdlib tree is ../lib — ui.eigs's own internal
-#     loads resolve through the exe-relative stdlib mechanism.)
-printf 'load_file of "../lib/ui.eigs"
+#     #1056: use a stdlib request, not a cwd-relative path from the temporary
+#     program. ui.eigs's internal loads use the same resolver.
+printf 'load_file of "lib/ui.eigs"
 print of "ok"
 ' > "$OBS_GATE_TMP/uitree.eigs"
 OBS_G32=$(obs_gate_closed_verdict "$OBS_GATE_TMP/uitree.eigs" ok 120)
@@ -5698,6 +5693,21 @@ if [ "$EF_FAIL" -gt 0 ]; then
     echo "$EF_OUTPUT" | grep "FAIL:" | head -5
 else
     echo "  PASS: all $EF_PASS env-flag checks"
+fi
+echo ""
+
+# The road gate enumerates disk fixtures and checks each road against a golden
+# stdout as well as its peers. Its selftest must prove both divergence and
+# empty enumeration fail. A selected-fixture diagnostic run is never used here.
+echo "[99z] File semantics across main/load_file/import (#1056)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/road_diff.sh" && \
+   bash "$TESTS_DIR/../tools/road_diff.sh" --selftest; then
+    PASS=$((PASS + 1))
+    echo "  PASS: road differential and planted faults"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: road differential or planted faults"
 fi
 echo ""
 
