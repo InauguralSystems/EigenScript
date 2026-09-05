@@ -337,7 +337,7 @@ Value* builtin_stream_close(Value *arg) {
  * rule as the proc-star / audio-capture boundary. Its return IS pinnable by
  * the tape (unlike a proc fd), so it is Recorded, not #148-non-replayable. */
 Value* builtin_mkdir(Value *arg) {
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("mkdir", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "mkdir", "a string path", make_num(0));
     TRACE_NONDET_TAKE("mkdir");
     /* Simple recursive mkdir */
     char *path = xstrdup(arg->data.str);
@@ -359,7 +359,7 @@ Value* builtin_mkdir(Value *arg) {
 /* ls of "path" → list of filenames in directory, or [] on failure.
  * Matches `ls -1` default behavior: hidden entries (starting with '.') are excluded. */
 Value* builtin_ls(Value *arg) {
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("ls", make_list(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "ls", "a string path", make_list(0));
     /* #585: builds its return (a list) via readdir, so under EIGS_REPLAY the
      * TAKE short-circuits before opendir — the recorded listing is served and
      * the live directory is never read. */
@@ -1107,7 +1107,7 @@ Value* builtin_load_file(Value *arg) {
 }
 
 Value* builtin_file_exists(Value *arg) {
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("file_exists", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "file_exists", "a string path", make_num(0));
     /* #585: fs-dependent read — taped so replay serves the recorded answer.
      * TAKE short-circuits before the fopen probe under EIGS_REPLAY. */
     TRACE_NONDET_TAKE("file_exists");
@@ -1128,7 +1128,7 @@ Value* builtin_file_exists(Value *arg) {
  * file_exists, ls, mkdir, getcwd — predate the tape and are untraced;
  * that inconsistency is flagged on the PR, not silently copied here). */
 Value* builtin_is_dir(Value *arg) {
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("is_dir", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "is_dir", "a string path", make_num(0));
     struct stat st;
     TRACE_NONDET_RET("is_dir",
         make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0));
@@ -1141,7 +1141,7 @@ Value* builtin_is_dir(Value *arg) {
  * non-regular non-directory class passed both and read as "", so /dev/null
  * compiled to the empty program. Taped like is_dir. */
 Value* builtin_is_file(Value *arg) {
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("is_file", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "is_file", "a string path", make_num(0));
     struct stat st;
     TRACE_NONDET_RET("is_file",
         make_num(stat(arg->data.str, &st) == 0 && S_ISREG(st.st_mode) ? 1 : 0));
@@ -1171,8 +1171,9 @@ Value* builtin_remove_file(Value *arg) {
 /* read_text of "path" → file contents as string, or "" on failure. */
 /* read_bytes of path — read binary file, return list of byte values (0-255) */
 Value* builtin_read_bytes(Value *arg) {
+    /* #1008: the type check sits BEFORE the tape take (see ARG_GUARD_PRETAKE). */
+    ARG_GUARD_PRETAKE(!arg || arg->type != VAL_STR, "read_bytes", "a string path", make_null());
     TRACE_NONDET_TAKE("read_bytes");
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RECORD("read_bytes", make_null());
     FILE *f = fopen(arg->data.str, "rb");
     if (!f) TRACE_NONDET_RECORD("read_bytes", make_null());
     fseek(f, 0, SEEK_END);
@@ -1305,8 +1306,9 @@ Value* builtin_read_bytes_buf(Value *arg) {
 }
 
 Value* builtin_read_text(Value *arg) {
+    /* #1008: the type check sits BEFORE the tape take (see ARG_GUARD_PRETAKE). */
+    ARG_GUARD_PRETAKE(!arg || arg->type != VAL_STR, "read_text", "a string path", make_str(""));
     TRACE_NONDET_TAKE("read_text");
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RECORD("read_text", make_str(""));
     FILE *f = fopen(arg->data.str, "r");
     if (!f) TRACE_NONDET_RECORD("read_text", make_str(""));
     fseek(f, 0, SEEK_END);

@@ -969,6 +969,41 @@ extern __thread EigsThread *eigs_current;
         }                                                                     \
     } while (0)
 
+/* #1008: ARG_GUARD for a TAPED builtin. The soft half must stay a
+ * TRACE_NONDET_RET so the recorded answer is served under EIGS_REPLAY
+ * exactly as before; the strict half raises BEFORE the tape is touched, so
+ * record and replay agree in either mode (a strict run never records the
+ * wrong-typed call). Used by the falsy-path family -- file_exists, is_dir,
+ * is_file, read_text, read_bytes, ls, mkdir, env_get -- where a wrong-typed
+ * path read as "not there": `file_exists of 42` was 0 in both modes and
+ * indistinguishable from an absent path. Non-strict is byte-identical. */
+#define ARG_GUARD_TAPED(cond, who, want, soft)                                \
+    do {                                                                      \
+        if (cond) {                                                           \
+            if (g_strict) {                                                   \
+                rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
+                return make_null();                                           \
+            }                                                                 \
+            TRACE_NONDET_RET(who, soft);                                      \
+        }                                                                     \
+    } while (0)
+
+/* #1008, the early-take shape: read_text / read_bytes TAKE before doing real
+ * work, so the type check must sit before the take (a strict raise neither
+ * consumes nor records a tape entry) and the soft half must still take-then-
+ * record exactly as the original TAKE/RECORD pair did. */
+#define ARG_GUARD_PRETAKE(cond, who, want, soft)                              \
+    do {                                                                      \
+        if (cond) {                                                           \
+            if (g_strict) {                                                   \
+                rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
+                return make_null();                                           \
+            }                                                                 \
+            TRACE_NONDET_TAKE(who);                                           \
+            TRACE_NONDET_RECORD(who, soft);                                   \
+        }                                                                     \
+    } while (0)
+
 /* #971 Phase B: the COERCION shape, which ARG_GUARD cannot express.
  *
  * ARG_GUARD fits a guard that answers a wrong argument with one stand-in.

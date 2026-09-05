@@ -123,6 +123,14 @@ stream_write|print of (stream_write of "x")
 substr|print of (substr of [42, 0, 1])
 tan|print of (tan of "x")
 task_alive|print of (task_alive of "x")
+file_exists|print of (file_exists of 42)
+is_dir|print of (is_dir of 42)
+is_file|print of (is_file of 42)
+read_text|print of (read_text of 42)
+read_bytes|print of (read_bytes of 42)
+ls|print of (ls of 42)
+mkdir|print of (mkdir of 42)
+env_get|print of (env_get of 42)
 task_kill|print of (task_kill of "x")
 task_send|print of (task_send of ["x", 1])
 tensor_save|print of (tensor_save of 42)
@@ -205,6 +213,12 @@ print of (mean of [2, 4, 6])
 print of (norm of [3, 4])
 print of (sum of 7)
 print of (max of [1, 5, 3])
+print of (file_exists of "..")
+print of (is_dir of ".")
+print of (is_file of ".")
+print of (read_text of "/nonexistent/eigs_1008_probe")
+print of (read_bytes of "/nonexistent/eigs_1008_probe")
+print of (env_get of "EIGS_1008_UNSET_PROBE")
 print of (min of [1, 5, 3])
 print of (max of 9)
 print of (contains of ["hello", "ell"])
@@ -341,7 +355,7 @@ if [ -n "$release_srcs" ]; then
         printf '%s\n' "$release_srcs" | grep -qxF "$f" && continue
         variant_only="$variant_only
 $(awk '
-    /ARG_GUARD\(/ { acc = ""; collecting = 1 }
+    /ARG_GUARD(_TAPED|_PRETAKE)?\(/ { acc = ""; collecting = 1 }
     collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
         collecting = 0
         n = split(acc, parts, "\"")
@@ -541,7 +555,7 @@ fi
 # the cross-check. Caught when three freshly added guards reported as STALE
 # PROBES rather than as newly covered ones.
 guarded="$(awk '
-    /ARG_GUARD\(/ { acc = ""; collecting = 1 }
+    /ARG_GUARD(_TAPED|_PRETAKE)?\(/ { acc = ""; collecting = 1 }
     collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
         collecting = 0
         n = split(acc, parts, "\"")

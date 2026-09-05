@@ -2466,7 +2466,7 @@ int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_c
 
 
 Value* builtin_env_get(Value *arg) {
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("env_get", make_str(""));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "env_get", "a string name", make_str(""));
     const char *val = getenv(arg->data.str);
     TRACE_NONDET_RET("env_get", make_str(val ? val : ""));
 }
