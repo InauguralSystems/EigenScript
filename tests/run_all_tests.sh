@@ -3622,6 +3622,11 @@ check_eigs_suite "for binder in a loop env: body write lands in the loop env (#1
 # functions too. A binder with no prior binding keeps its function-scoped slot
 # (contract note).
 check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 9
+# [70k] #1062 — a module-scope `for` whose body reads the observer stays on the
+# CLEAR tier (the overwrite tier skipped the per-iteration reset of the binder's
+# observer slot, so `observe of i` accumulated across iterations for a
+# pre-bound name and reset for a fresh one -- an optimisation tier observable).
+check_eigs_suite "for binder observer history is per iteration on every tier (#1062)" test_for_binder_observer_tier.eigs "All tests passed" 5
 
 # [70i] #1075 -- an interrogate operand inside a list comprehension arms the
 # name like any other expression (the scan's LISTCOMP case was a no-op).

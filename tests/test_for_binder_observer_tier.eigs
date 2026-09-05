@@ -1,0 +1,36 @@
+# test_for_binder_observer_tier.eigs — #1062.
+#
+# Two module-scope loops with IDENTICAL bodies answered `observe of i`
+# differently: a binder bound BEFORE its loop took the persist-overwrite tier
+# (no per-iteration LOOP_ENV_CLEAR, so the observer slot accumulated across
+# iterations: "moving"), a fresh binder took the CLEAR tier (slot reset each
+# iteration: "equilibrium"). An optimisation tier was observable. The contract
+# says each iteration binds a fresh variable, so a loop whose body reads the
+# observer now stays on the CLEAR tier and the two loops agree.
+
+load_file of "lib/test.eigs"
+
+i is 0
+seen_i is []
+for i in [1, 2, 3]:
+    i is i + 10
+    append of [seen_i, (observe of i)[0]]
+seen_j is []
+for j in [1, 2, 3]:
+    j is j + 10
+    append of [seen_j, (observe of j)[0]]
+assert_true of [(str of seen_i) == (str of seen_j), "pre-bound and fresh binders report alike inside the loop"]
+assert_true of [(str of seen_j) == "[\"equilibrium\", \"equilibrium\", \"equilibrium\"]", "each iteration is a fresh binding: no accumulated trajectory"]
+assert_true of [i == 0, "module i untouched after the loop"]
+
+# a loop whose body does NOT read the observer keeps the overwrite tier and
+# the same values (the tier is unobservable without an observer read)
+acc is []
+k is 0
+for k in [1, 2, 3]:
+    k is k + 10
+    append of [acc, k]
+assert_true of [(str of acc) == "[11, 12, 13]", "unobserved loop: values unchanged"]
+assert_true of [k == 0, "module k untouched"]
+
+test_summary of null
