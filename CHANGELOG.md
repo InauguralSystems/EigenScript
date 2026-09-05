@@ -42,6 +42,17 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`sandbox_run`: a bare `OP_PREDICATE` read the HOST's last observed binding
+  (#1026).** The bare form consults no env: it reads the thread's
+  last-observed-slot tracker, which the host's last `OP_OBSERVE_NAME_POST`
+  set, so a descriptor with no operands and no host reference answered
+  questions about a host value from inside the sealed env (measured: a flat
+  host value read `equilibrium` = 1; six kinds, six bits per probe). The
+  tracker is cleared for the run and restored after it, so every bare
+  predicate in the sandbox answers 0 and the host's next bare predicate still
+  reads the host. Pinned by `tests/test_sandbox_predicate_isolation.eigs`,
+  whose probes sit at module level on purpose (through a helper function the
+  tracker already points elsewhere and the leak does not show).
 - **Stack traces from a chunk a builtin runs printed the host frame at a
   stale line (#1071).** `CASE(CALL)`, `CASE(DISPATCH)` and the JIT call helper never
   published the resume ip before invoking a builtin, so when `sandbox_run`,
