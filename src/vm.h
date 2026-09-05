@@ -308,6 +308,9 @@ typedef struct EigsChunk {
     Value  **constants;         /* constant pool */
     uint32_t *const_hashes;     /* cached hashes for string constants */
     char    **const_interns;    /* interned pointers for string constants (NULL for non-str) */
+    /* #1065: the intern table those pointers (and local_names[]) point into;
+     * one ref held for the chunk's lifetime, taken in chunk_new. */
+    struct EnvInternTable *intern_tbl;
     EnvIC   *env_ic;            /* IC entry per string constant (zeroed = empty) */
     int      const_count;
     int      const_cap;

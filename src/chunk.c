@@ -60,6 +60,9 @@ EigsChunk *chunk_new(const char *name) {
     for (int k = 0; k < JIT_OSR_SLOTS; k++)
         c->jit_osr[k].stop_op = OP_COUNT;
     c->refcount = 1;            /* creator's ref */
+    /* #1065: pin the creating thread's intern table for this chunk's life. */
+    c->intern_tbl = eigs_current ? eigs_current->intern_tbl : NULL;
+    env_intern_table_ref(c->intern_tbl);
     return c;
 }
 
@@ -110,6 +113,7 @@ void chunk_decref(EigsChunk *chunk) {
         free(chunk->local_traced);
     }
     free(chunk->name);
+    env_intern_table_unref(chunk->intern_tbl);   /* #1065 */
     free(chunk);
 }
 

@@ -1,0 +1,38 @@
+# #1065: a chunk compiled ON a worker (eval inside the worker body) carries
+# pointers into the worker's per-thread intern table (const_interns, and since
+# #1063 local_names). The chunk escapes as a function VALUE through a channel;
+# the worker detaches and its table was freed; every later use on main read
+# freed memory (ASan: heap-use-after-free in env_hash_find <- GET_NAME; release
+# printed the right numbers because the bytes were usually still intact). The
+# worker's intern nodes are now parked on a process-global orphan list at
+# detach instead of freed, and released at process teardown. This test's
+# assertions are the release-mode half; the ASan lane of the suite is the
+# real check.
+fails is 0
+ch is channel of null
+gname is 41
+define worker(x) as:
+    eval of "define inner(tt) as:\n    local acc is tt\n    acc is acc + gname\n    return acc\n"
+    send of [ch, inner]
+    return 1
+h is spawn of [worker, 0]
+f is recv_timeout of [ch, 5000]
+j is thread_join of h
+if j != 1:
+    print of ("  FAIL: worker join (got " + (str of j) + ")")
+    fails is fails + 1
+r1 is f of 1
+r2 is f of 2
+if r1 != 42:
+    print of ("  FAIL: escaped chunk first call (got " + (str of r1) + ")")
+    fails is fails + 1
+if r2 != 43:
+    print of ("  FAIL: escaped chunk second call (got " + (str of r2) + ")")
+    fails is fails + 1
+zz is 1
+zz is 2
+p is prev of zz
+if fails == 0:
+    print of "WORKER_INTERN_ESCAPE_ALL_PASS"
+else:
+    print of ((str of fails) + " FAILURES")
