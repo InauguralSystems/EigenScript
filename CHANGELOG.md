@@ -42,6 +42,14 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **A `for` binder's observer history is per iteration on every loop-env tier (#1062).**
+  The persist-overwrite tier skipped the per-iteration LOOP_ENV_CLEAR, which is
+  what resets the binder's observer slot, so `observe of i` inside a loop
+  accumulated across iterations when `i` was bound before the loop and reset
+  when it was not: identical bodies, different classifications. A loop whose
+  body or iterable reads the observer now stays on the CLEAR tier; unobserved
+  loops keep the overwrite tier and its inline-cache win. Test
+  `tests/test_for_binder_observer_tier.eigs`.
 - **GC: both cycle-collection triggers are cost-aware (#1096).** A collection
   walks everything reachable from its seeds, but the possible-root buffer
   collected at a fixed 1024 registrations and the captured-env trigger

@@ -221,6 +221,7 @@ static void lev_push(Compiler *c, const char *name) {
 }
 
 /* ---- Forward declarations ---- */
+static int for_loop_reads_observer(ASTNode *node);   /* #1062, defined after obs_ast_scan */
 static void compile_node(Compiler *c, ASTNode *node);
 static void compile_node_inner(Compiler *c, ASTNode *node);
 static void compile_block(Compiler *c, ASTNode **stmts, int count);
@@ -2323,6 +2324,14 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 for (int i = 0; i < node->data.forloop.body_count && safe; i++)
                     if (!subtree_overwrite_safe(node->data.forloop.body[i], &bound, c->env))
                         safe = 0;
+                /* #1062: the overwrite tier skips the per-iteration CLEAR, and
+                 * CLEAR is what resets the binder's observer slot -- so a
+                 * `report of i` inside the loop saw history ACCUMULATE across
+                 * iterations for a pre-bound name and RESET for a fresh one,
+                 * identical bodies answering differently. LANGUAGE_CONTRACT
+                 * says each iteration binds a fresh variable; a body that
+                 * reads the observer therefore stays on the CLEAR tier. */
+                if (safe && for_loop_reads_observer(node)) safe = 0;
                 persist_overwrite = safe;
             }
             name_set_free(&bound);
@@ -3554,6 +3563,20 @@ static int obs_ast_name_is_observer_builtin(const char *nm) {
 }
 static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth);
 static int obs_ast_scan(ASTNode *n, ObsLoadList *L) { return obs_ast_scan_d(n, L, 0); }
+/* #1062: does a `for` loop's body or iterable read the observer? The
+ * persist-overwrite tier skips the per-iteration LOOP_ENV_CLEAR, which is
+ * what resets the binder's observer slot, so such a loop stays on the CLEAR
+ * tier and every tier answers `report of i` per iteration alike. */
+static int for_loop_reads_observer(ASTNode *node) {
+    ObsLoadList L = {0};
+    int r = 0;
+    for (int i = 0; i < node->data.forloop.body_count && !r; i++)
+        if (obs_ast_scan(node->data.forloop.body[i], &L)) r = 1;
+    if (!r && node->data.forloop.iter && obs_ast_scan(node->data.forloop.iter, &L)) r = 1;
+    for (int i = 0; i < L.count; i++) free(L.paths[i]);
+    free(L.paths);
+    return r;
+}
 static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth) {
     if (!n) return 0;
     /* the compiler refuses nesting past COMPILE_MAX_DEPTH; a walk with no
