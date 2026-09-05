@@ -42,6 +42,29 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Tape replay fidelity (#1072): arguments are validated before the replay
+  boundary, the history table promotes arena values, and a same-binary
+  record-vs-replay gate exists.** `recv`/`try_recv`/`recv_timeout`/
+  `exec_capture`/`proc_spawn` checked `replay_blocks()` before validating their
+  arguments, so a deterministic type error (`try_recv of 42`: value kind,
+  "invalid channel") replayed as an io "not replayable" error — a same-binary
+  tape that did not reproduce its own recording on a program with no
+  concurrency in it (`test_builtin_errors` BE07). The five now validate first.
+  (`tests/test_replay.sh`'s boundary probe `proc_spawn of ["true"]` passed the
+  STRING "true" under the #405 call convention and only "refused" because the
+  block ran first; it now passes `[["true"]]`, a well-formed call.)
+  Separately, `EIGS_TRACE` on `test_arena_escape` crashed at shutdown: the
+  prev/history table retained ARENA-allocated slots without promoting them
+  (the #873 rule), `arena_reset` reclaimed them, and `trace_thread_release`
+  freed reclaimed memory; `prev_record_assign` now promotes before retaining.
+  `tools/replay_diff.sh` (CI lane `replay differential`, twin of `jit_diff.sh`)
+  records and replays every corpus program with the JIT off on both sides;
+  divergences at the documented subprocess/concurrency boundary are counted,
+  not rows; a program that is not deterministic against itself is NONDET;
+  anything else is ledgered in `tests/replay_diff_expected.txt` (a ledger to
+  work down, never an amnesty). Suite section `[0e]` runs `test_arena_escape`
+  under `EIGS_TRACE` so the record-mode crash class stays caught in the plain
+  lane too.
 - **Heap-use-after-free: a chunk compiled on a worker escaped through a
   channel and outlived the worker's intern table (#1065).** `env_intern_name`
   interns into a PER-THREAD table that `eigs_thread_drain_caches` freed at

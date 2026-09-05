@@ -531,6 +531,24 @@ else
 fi
 echo ""
 
+echo "[0e] Recording a tape must not change a program's exit (#1072 arena/history)"
+check_binary_fingerprint
+# EIGS_TRACE on the arena-escape program crashed at shutdown: the prev/history
+# table retained arena-allocated slots, arena_reset reclaimed them, and the
+# release path freed reclaimed memory (rc 139; the plain and replay runs both
+# passed). Planted (fix reverted): rc 139 here.
+AR_TAPE=$(mktemp /tmp/eigs_arena_XXXXXX.tape); rm -f "$AR_TAPE"
+AR_OUT=$($EIGS_TMO env EIGS_JIT_OFF=1 EIGS_TRACE="$AR_TAPE" ./eigenscript ../tests/test_arena_escape.eigs </dev/null 2>&1); AR_RC=$?
+rm -f "$AR_TAPE"
+TOTAL=$((TOTAL + 1))
+if [ "$AR_RC" -eq 0 ] && echo "$AR_OUT" | grep -q "All tests passed"; then
+    PASS=$((PASS + 1)); echo "  PASS: test_arena_escape records a tape and exits 0"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: test_arena_escape under EIGS_TRACE (rc=$AR_RC): $(echo "$AR_OUT" | tail -1 | cut -c1-100)"
+fi
+echo ""
+
+
 
 # #1060: a native function registered with a name reports as a user fn.
 # C-level for the same reason as [0b]: only a linked runtime makes one.

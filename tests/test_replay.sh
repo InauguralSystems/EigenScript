@@ -157,6 +157,11 @@ fi
 # Each of the seven builtins below must refuse to run under EIGS_REPLAY and
 # raise a catchable runtime error rather than silently re-executing real
 # side effects against a tape that has no host-side causal structure.
+# #1072: the boundary check runs AFTER argument validation now (a wrong-typed
+# call must be the same error in both modes), so every probe passes a
+# WELL-FORMED argument. `proc_spawn of ["true"]` hands the STRING "true" (#405:
+# a bare literal list after `of` is the argument list), which the old order
+# refused only because the block ran first; `[["true"]]` is the one-list call.
 cat > "$TMPDIR/p_block.eigs" <<'EOF'
 caught is 0
 try:
@@ -164,7 +169,7 @@ try:
 catch e:
     caught is caught + 1
 try:
-    r is proc_spawn of ["true"]
+    r is proc_spawn of [["true"]]
 catch e:
     caught is caught + 1
 try:
@@ -217,7 +222,7 @@ fi
 # And the error text identifies the boundary so the user can find docs/TRACE.md.
 cat > "$TMPDIR/p_block_msg.eigs" <<'EOF'
 try:
-    r is proc_spawn of ["true"]
+    r is proc_spawn of [["true"]]
 catch e:
     print of e
 EOF

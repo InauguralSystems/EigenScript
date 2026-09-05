@@ -222,6 +222,35 @@ jobs:
       - name: JIT vs interpreter differential
         run: bash tools/jit_diff.sh
 
+  # Tape replay fidelity (#1072): the tape's own contract is that a recording
+  # replayed by the same binary reproduces stdout+stderr+rc, and jit_diff leans
+  # on it to adjudicate nondeterministic programs. Every corpus program is
+  # recorded and replayed with the JIT off on both sides; a divergence is either
+  # the documented subprocess/concurrency boundary (counted, not a row) or a
+  # fidelity hole ledgered in tests/replay_diff_expected.txt -- a ledger to work
+  # down, never an amnesty. Measured 2026-09-02: 13 corpus programs did not
+  # replay their own recording and nothing gated it.
+  replay-differential:
+    name: replay differential (same-binary tape fidelity)
+    needs: [dev-image, scope]
+    if: needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Build
+        run: ./build.sh
+      - name: Record-vs-replay differential
+        run: bash tools/replay_diff.sh
+
   # Freestanding symbol gate: compiles the runtime with the freestanding
   # profile (-DEIGENSCRIPT_FREESTANDING=1) and asserts its undefined-symbol
   # set stays within tools/freestanding_allowlist.txt — the HAL roots +

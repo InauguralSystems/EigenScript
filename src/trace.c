@@ -492,6 +492,22 @@ static int occ_index_of(const PrevEntry *e, long long ordinal) {
 
 static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
     if (!eigs_current || !name) return;
+    /* #1072 (via #873): the history table is a HEAP structure that outlives
+     * any arena window, so an arena-allocated value must be PROMOTED before
+     * it is retained here -- exactly as OP_INDEX_SET / set_at / list_append
+     * promote. Without it, EIGS_TRACE on test_arena_escape retained arena
+     * slots in e->current / the occurrence ring / the line history,
+     * arena_reset reclaimed them, and trace_thread_release's slot_decref at
+     * shutdown freed reclaimed memory (SIGSEGV; the plain and replay runs
+     * pass because nothing records). promote_if_arena returns a FRESH heap
+     * ref when it promotes; every retain below takes its own ref, so that
+     * extra one is dropped at the end. */
+    int promoted = 0;
+    if (slot_is_heap(value)) {
+        Value *v = slot_as_ptr(value);
+        Value *pv = promote_if_arena(v);
+        if (pv != v) { value = slot_from_heap(pv); promoted = 1; }
+    }
     /* The prev/history table keeps the descriptor's exact interned pointer
      * beyond sandbox_run. Re-home that one name to the ordinary thread
      * lifetime before the run scope is released; unused descriptor constants
@@ -499,7 +515,7 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
     env_intern_scope_retain(name);
     if (g_prev_count * PREV_LOAD_DEN >= g_prev_cap * PREV_LOAD_NUM) {
         prev_grow();
-        if (!g_prev_tab) return;
+        if (!g_prev_tab) { if (promoted) slot_decref(value); return; }
     }
     PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, name);
     if (!e->name) {
@@ -516,7 +532,7 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
             e->armed_gen = g_arm_gen;
             e->armed = (uint8_t)(g_arm_all || arm_set_has(name));
         }
-        if (!e->armed) return;
+        if (!e->armed) { if (promoted) slot_decref(value); return; }
     }
 
     if (e->has_current) {
@@ -553,7 +569,7 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
     if (e->hist_count >= e->hist_cap) {
         int new_cap = e->hist_cap ? e->hist_cap * 2 : 8;
         HistoryEntry *nh = realloc(e->history, (size_t)new_cap * sizeof(HistoryEntry));
-        if (!nh) return;
+        if (!nh) { if (promoted) slot_decref(value); return; }
         e->history = nh;
         e->hist_cap = new_cap;
     }
@@ -582,6 +598,7 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
      * fresh slot via trace_record_obs (runs after the SET that created this
      * entry), which is why the newest entry must stay live. */
     h->obs_valid = 0;
+    if (promoted) slot_decref(value);
 }
 
 /* #262 Phase-3 D2: patch the observer snapshot for `name`'s most recent

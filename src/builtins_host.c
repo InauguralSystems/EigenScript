@@ -1400,7 +1400,6 @@ static Value* exec_capture_result(int code, const char *text) {
 Value* builtin_exec_capture(Value *arg) {
     /* fs:CHANNEL replay refuses the exec; the refusal belongs to the replay
      * layer and [-1, ""] is exec_capture's documented "did not run". */
-    if (replay_blocks("exec_capture")) return exec_capture_result(-1, "");
     /* #1008: these launder through a HELPER, so no `return make_num(-1)`
      * appears and the classifier's matcher — which enumerates literal soft
      * returns — cannot see them at all. ARG_GUARD's soft argument is
@@ -1409,6 +1408,11 @@ Value* builtin_exec_capture(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 1,
               "exec_capture", "[command, ...] or [[command, ...], timeout]",
               exec_capture_result(-1, ""));
+    /* fs:CHANNEL replay refuses the exec; the refusal belongs to the replay
+     * layer and [-1, ""] is exec_capture's documented "did not run". #1072:
+     * after the argument guard, so a wrong-typed call errs the same way in
+     * both modes. */
+    if (replay_blocks("exec_capture")) return exec_capture_result(-1, "");
 
     /* Detect timeout form: [["cmd", ...], timeout_num] */
     double timeout_sec = -1;
@@ -1591,9 +1595,9 @@ static Value* proc_spawn_fail(void) {
 }
 
 Value* builtin_proc_spawn(Value *arg) {
-    if (replay_blocks("proc_spawn")) return proc_spawn_fail();
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1)
         return proc_spawn_fail();
+    if (replay_blocks("proc_spawn")) return proc_spawn_fail();   /* #1072: after validation */
 
     int total = arg->data.list.count;
     char **argv = xmalloc_array((size_t)total + 1, sizeof(char*));
