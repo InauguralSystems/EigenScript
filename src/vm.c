@@ -2547,11 +2547,21 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
     slot_decref(g_vm.stack[--g_vm.sp]); /* fn */
 
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
+    /* Host-frame line for traces from a chunk the builtin runs, as
+     * CASE(CALL) -- but only for the DURATION of the call. A thunk's
+     * exit adds its relative jit_advance to the frame ip the interpreter
+     * stored at thunk entry (OSR: `frame->ip += advance`); leaving the
+     * call site's ip here moved that base, and the interpreter resumed
+     * misaligned (test_checksum read constants[-1] after an OSR'd loop
+     * called adler32). */
+    uint8_t *thunk_entry_ip = frame->ip;
+    frame->ip = caller_chunk->code + resume_off;
     Env *saved = g_builtin_call_env;
     g_builtin_call_env = frame->env;
     int consumes_arg = (fn_val->data.builtin == builtin_free_val);
     Value *result = fn_val->data.builtin(arg);
     g_builtin_call_env = saved;
+    frame->ip = thunk_entry_ip;
 
     if (!result) {
         result = make_null();
@@ -3905,6 +3915,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 slot_decref(g_vm.stack[--g_vm.sp]);
             slot_decref(g_vm.stack[--g_vm.sp]); /* fn */
 
+            /* Publish the resume ip before the builtin runs: a builtin
+             * that executes a chunk (sandbox_run, vm_run_bytecode, eval,
+             * dispatch, a sort comparator) pushes frames above this one,
+             * and vm_print_stack_trace reads THIS frame's line from its
+             * saved ip -- which was whatever the last frame push left,
+             * so an uncaught error in the child printed the host frame
+             * at a stale line (test_vm_run_bytecode: `at <module> (line
+             * 100)` for a sandbox_run on line 106). Same store the
+             * suspend path below makes. */
+            frame->ip = ip;
             Env *saved = g_builtin_call_env;
             g_builtin_call_env = frame->env;
             int consumes_arg = (fn_val->data.builtin == builtin_free_val);
@@ -6061,6 +6081,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (fn && fn->type == VAL_BUILTIN) {
             Value *arg = slot_to_value(arg_s);
             slot_decref(arg_s);
+            frame->ip = ip;   /* host-frame line for traces, as CASE(CALL) */
             Env *saved = g_builtin_call_env;
             g_builtin_call_env = frame->env;
             int consumes_arg = (fn->data.builtin == builtin_free_val);

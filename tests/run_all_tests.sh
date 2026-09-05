@@ -510,6 +510,28 @@ else
 fi
 echo ""
 
+echo "[0d] Host frame line in traces from a builtin-run chunk"
+check_binary_fingerprint
+HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>&1); HFL_RC=$?
+TOTAL=$((TOTAL + 2))
+# The second sandbox_run sits on line 12, the first on line 8. Planted (pre-fix
+# vm.c) both traces printed the same stale line (14, past the end of the file),
+# so both rows below went red; test_vm_run_bytecode showed the previous call's
+# line instead -- the stale value is whatever the frame's ip happened to hold.
+if [ "$HFL_RC" -eq 0 ] && echo "$HFL_OUT" | grep -q "at <module> (line 12)"; then
+    PASS=$((PASS + 1)); echo "  PASS: host frame line is the call's own line"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: host frame line (rc=$HFL_RC): $(echo "$HFL_OUT" | grep 'at <module>' | tr '\n' ' ')"
+fi
+HFL_N=$(echo "$HFL_OUT" | grep -c "at <module> (line 8)")
+if [ "$HFL_N" -eq 1 ]; then
+    PASS=$((PASS + 1)); echo "  PASS: the first call's line appears once, not for both traces"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: line 8 appeared $HFL_N times (want 1)"
+fi
+echo ""
+
+
 # #1060: a native function registered with a name reports as a user fn.
 # C-level for the same reason as [0b]: only a linked runtime makes one.
 echo "[0c] Native-fn identity (#1060)"
