@@ -1,0 +1,43 @@
+# #1026: a sandboxed descriptor holding a bare OP_PREDICATE (59) read the
+# HOST's last observed binding through the thread's last-observed-slot
+# tracker -- no operand, no env, so the sealed root and the name shadowing
+# never saw it. Six predicate kinds gave six bits per probe: a host value on
+# a x2 ramp read div=1, a flat one read conv=1 stab=1 eq=1. sandbox_run now
+# clears the tracker for the run and restores it after, so every bare
+# predicate inside the sandbox answers 0 whatever the host is doing, and the
+# host's own bare predicate still reads the host's last observation.
+fails is 0
+define check(name, got, want) as:
+    if got == want:
+        print of ("  PASS: " + name)
+    else:
+        print of ("  FAIL: " + name + " (got " + (str of got) + ", want " + (str of want) + ")")
+        fails is fails + 1
+
+# The probes sit at MODULE level on purpose: routed through a helper function
+# the tracker points elsewhere by the time the descriptor runs and the leak
+# does not show (measured while writing this test); inline, the pre-fix binary
+# answered 1 for the flat host's `equilibrium` probe (kind 5).
+secret is 1.0
+for i in range of 12:
+    secret is secret * 2.0
+    r is report of secret
+for k in range of 6:
+    res is sandbox_run of [[1, [59, k, 0, 40], []], 100000]
+    check of ["ramping host: bare predicate kind " + (str of k) + " reads 0 in the sandbox", res["result"], 0]
+
+flat is 5.0
+for i in range of 12:
+    flat is 5.0
+    r is report of flat
+for k in range of 6:
+    res is sandbox_run of [[1, [59, k, 0, 40], []], 100000]
+    check of ["flat host: bare predicate kind " + (str of k) + " reads 0 in the sandbox", res["result"], 0]
+
+# the host's tracker survives the run: its own view of `flat` is unchanged
+check of ["host report after the sandbox runs still names the host binding", report of flat, "converged"]
+
+if fails == 0:
+    print of "SANDBOX_PRED_ISOLATION_ALL_PASS"
+else:
+    print of ((str of fails) + " FAILURES")

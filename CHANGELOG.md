@@ -42,6 +42,31 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Falsy-path family: a wrong-typed path argument raises under `EIGS_STRICT`
+  (#1008, the remaining half).** `file_exists`, `is_dir`, `is_file`,
+  `read_text`, `read_bytes`, `ls`, `mkdir` and `env_get` answered `0` / `""` /
+  `[]` / `null` for a non-string argument, so a type mistake read as "not
+  there" and nothing distinguished it from an absent path. Decided as the
+  reform's other guards were: the documented answer stays for a real path
+  that is absent; a non-string is a type error under strict and byte-identical
+  otherwise. Two macro shapes carry it because these builtins are TAPED:
+  `ARG_GUARD_TAPED` (the soft half is still a `TRACE_NONDET_RET`, so replay
+  serves the recorded answer) and `ARG_GUARD_PRETAKE` for the early-take pair
+  in `read_text`/`read_bytes` (the check moves before the take, so a strict
+  raise neither consumes nor records a tape entry). `tools/strict_differential.sh`
+  derives guarded names from all three macro spellings and carries a probe
+  and a valid-input row per builtin.
+- **`sandbox_run`: a bare `OP_PREDICATE` read the HOST's last observed binding
+  (#1026).** The bare form consults no env: it reads the thread's
+  last-observed-slot tracker, which the host's last `OP_OBSERVE_NAME_POST`
+  set, so a descriptor with no operands and no host reference answered
+  questions about a host value from inside the sealed env (measured: a flat
+  host value read `equilibrium` = 1; six kinds, six bits per probe). The
+  tracker is cleared for the run and restored after it, so every bare
+  predicate in the sandbox answers 0 and the host's next bare predicate still
+  reads the host. Pinned by `tests/test_sandbox_predicate_isolation.eigs`,
+  whose probes sit at module level on purpose (through a helper function the
+  tracker already points elsewhere and the leak does not show).
 - **Stack traces from a chunk a builtin runs printed the host frame at a
   stale line (#1071).** `CASE(CALL)`, `CASE(DISPATCH)` and the JIT call helper never
   published the resume ip before invoking a builtin, so when `sandbox_run`,

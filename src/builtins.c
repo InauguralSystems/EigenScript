@@ -2466,7 +2466,7 @@ int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_c
 
 
 Value* builtin_env_get(Value *arg) {
-    if (!arg || arg->type != VAL_STR) TRACE_NONDET_RET("env_get", make_str(""));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "env_get", "a string name", make_str(""));
     const char *val = getenv(arg->data.str);
     TRACE_NONDET_RET("env_get", make_str(val ? val : ""));
 }
@@ -3570,8 +3570,23 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_refusal    = 0;
     g_sandbox_bytes_used = 0;
     g_sandbox_byte_max   = max_bytes;
+    /* #1026: the bare OP_PREDICATE reads the thread's last-observed-slot
+     * tracker (g_last_obs_slot_env/idx), not an env, so a descriptor with no
+     * operands and no host reference read the HOST's last observed binding
+     * through it -- six predicate kinds, six bits per probe, and a flat vs
+     * ramping host value told apart from inside the sealed env. Clear the
+     * tracker for the run (the descriptor's own observations set it afresh)
+     * and restore the host's afterwards, so the host's next bare predicate
+     * still reads the host's last observation. */
+    Env *saved_last_obs_env = g_last_obs_slot_env;
+    int  saved_last_obs_idx = g_last_obs_slot_idx;
+    g_last_obs_slot_env = NULL;
+    g_last_obs_slot_idx = -1;
 
     Value *result = vm_execute(chunk, sbox);
+
+    g_last_obs_slot_env = saved_last_obs_env;
+    g_last_obs_slot_idx = saved_last_obs_idx;
 
     /* #965 (fix5): the run fails on the sticky policy-refusal record too, not
      * only on the catch-clearable g_has_error — a byte-budget refusal the
