@@ -2764,6 +2764,26 @@ int vm_current_line(void) {
  * Frame lines come from the per-offset line table at each frame's
  * saved ip; the innermost frame uses g_vm.current_line, which the
  * dispatch loop keeps fresh. */
+/* #1027: a DESCRIPTOR chunk (vm_run_bytecode / sandbox_run; never scanned by
+ * the bytecode compiler, so compiler_scanned == 0) reading observer state of
+ * a binding that has NO recorded history, in a state whose recording was
+ * switched on only after execution began (g_obs_history_gap -- the #915
+ * gate was closed for the host program because nothing compiled into it
+ * reads the observer). The rest value the reader would answer
+ * ("equilibrium" / 0 / an empty trajectory) is then not the truth but the
+ * absence of a recording: the host's assignments happened while the gate
+ * was closed. Raise instead. A binding the descriptor itself observed has
+ * `used` set and never reaches here; a state whose gate was open from the
+ * start (a compiled reader exists, EIGS_OBS_FORCE=1, or the AOT's boot
+ * arming) has no gap and never reaches here either. */
+static int vm_desc_unrecorded(EigsChunk *chunk, int line, const char *what) {
+    if (chunk->compiler_scanned || !g_obs_history_gap) return 0;
+    rt_error(EK_VALUE, line,
+             "observer state of %s is unrecorded: the observer gate was closed while the host program ran (no compiled predicate/report reads it), so a descriptor read has no history to answer from -- read it from compiled code, or run with EIGS_OBS_FORCE=1 (#1027)",
+             what);
+    return 1;
+}
+
 void vm_print_stack_trace(FILE *out) {
     if (g_vm.frame_count <= 0) return;
     for (int i = g_vm.frame_count - 1; i >= 0; i--) {
@@ -4988,6 +5008,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             ObserverSlot q = vm_slot_query_view(e, (int)slot, os_l);  /* #711 */
             result = make_str(observer_slot_report(&q));
         } else {
+            if (vm_desc_unrecorded(chunk, current_line, "slot")) { vm_push_slot(slot_null()); DISPATCH(); }
             result = make_str("equilibrium");  /* unobserved binding */
         }
         vm_push(result);
@@ -5017,6 +5038,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             ObserverSlot q = vm_slot_query_view(oe, oidx, os_n);      /* #711 */
             result = make_str(observer_slot_report(&q));
         } else {
+            if (vm_desc_unrecorded(chunk, current_line, name)) { vm_push_slot(slot_null()); DISPATCH(); }
             result = make_str("equilibrium");  /* unobserved binding */
         }
         vm_push(result);
@@ -5031,6 +5053,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *e = frame->fn_env;
         Value *result;
         const ObserverSlot *vs_l = env_obs_slot(e, (int)slot);
+        if (!(vs_l && vs_l->used) && !vm_slot_value_opaque(e, (int)slot) &&
+            vm_desc_unrecorded(chunk, current_line, "slot")) { vm_push_slot(slot_null()); DISPATCH(); }
         if (vm_slot_value_opaque(e, (int)slot))
             result = make_str("opaque");       /* #708 */
         else if (vs_l)
@@ -5057,6 +5081,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         Value *result;
         const ObserverSlot *vs_n = env_obs_slot(oe, oidx);
+        {
+            const ObserverSlot *vs_n = env_obs_slot(oe, oidx);
+            if (!(vs_n && vs_n->used) && !vm_slot_value_opaque(oe, oidx) &&
+                vm_desc_unrecorded(chunk, current_line, name)) { vm_push_slot(slot_null()); DISPATCH(); }
+        }
         if (vm_slot_value_opaque(oe, oidx))
             result = make_str("opaque");       /* #708 */
         else if (vs_n)
@@ -5075,6 +5104,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         const ObserverSlot *s = env_obs_slot(e, (int)slot);
+        if (!(s && s->used) && vm_desc_unrecorded(chunk, current_line, "slot")) { vm_push_slot(slot_null()); DISPATCH(); }
         if (s) {
             /* #711: snapshot the query-time view — the snapshot IS a
              * query, so its entropy field reflects the current value. */
@@ -5101,6 +5131,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         const ObserverSlot *s = env_obs_slot(oe, oidx);
+        if (!(s && s->used) && vm_desc_unrecorded(chunk, current_line, name)) { vm_push_slot(slot_null()); DISPATCH(); }
         if (s) {
             ObserverSlot q = vm_slot_query_view(oe, oidx, s);         /* #711 */
             vm_push(observer_slot_trajectory(&q));
@@ -5578,6 +5609,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         /* #708 opaque band + #711 query view + kind dispatch, shared with the
          * named ops and with the AOT runtime. require_used=0: the bare op has
          * never tested `used`, unlike PREDICATE_SLOT/NAME below. */
+        {
+            const ObserverSlot *bs = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
+            if (!(bs && bs->used) && vm_desc_unrecorded(chunk, current_line, "<last observed>")) { vm_push_slot(slot_null()); DISPATCH(); }
+        }
         int result = observer_predicate_at(g_last_obs_slot_env,
                                            g_last_obs_slot_idx, kind, 0);
         vm_push(make_num(result ? 1.0 : 0.0));
@@ -5595,6 +5630,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         Env *e = frame->fn_env;
+        {
+            const ObserverSlot *ps = env_obs_slot(e, (int)slot);
+            if (!(ps && ps->used) && !vm_slot_value_opaque(e, (int)slot) &&
+                vm_desc_unrecorded(chunk, current_line, "slot")) { vm_push_slot(slot_null()); DISPATCH(); }
+        }
         int result = observer_predicate_at(e, (int)slot, kind, 1);
         vm_push(make_num(result ? 1.0 : 0.0));
         DISPATCH();
@@ -5618,6 +5658,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
             vm_push_slot(slot_null());
             DISPATCH();
+        }
+        {
+            const ObserverSlot *pn = env_obs_slot(oe, oidx);
+            if (!(pn && pn->used) && !vm_slot_value_opaque(oe, oidx) &&
+                vm_desc_unrecorded(chunk, current_line, name)) { vm_push_slot(slot_null()); DISPATCH(); }
         }
         int result = observer_predicate_at(oe, oidx, kind, 1);
         vm_push(make_num(result ? 1.0 : 0.0));

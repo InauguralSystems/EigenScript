@@ -1,0 +1,48 @@
+# #1027: a descriptor (vm_run_bytecode / sandbox_run) that READS observer state
+# of a HOST binding in a program whose observer gate was closed (nothing
+# compiled into it reads the observer) used to get the rest value --
+# "equilibrium" -- silently. The host's assignments were never recorded, so
+# there is no history to answer from; the read now raises a value error.
+# This file deliberately contains NO compiled predicate/report/interrogative,
+# so the gate stays closed until the descriptor arms it (a history gap).
+fails is 0
+x is 1.0
+for i in range of 40:
+    x is x * 2.0
+# ORDER MATTERS: the first descriptor's arming opens the gate, and every host
+# assignment after it IS recorded -- so a bare predicate probed second reads
+# the (recorded, used) slot of whatever the host assigned last (the catch
+# variable) and legitimately answers. The bare read goes first, on the
+# never-recorded last-observed tracker.
+caught2 is ""
+try:
+    r2 is vm_run_bytecode of [1, [59, 4, 0, 40], []]
+catch e:
+    caught2 is e.kind
+if caught2 != "value":
+    print of ("  FAIL: bare predicate on the unrecorded last-observed slot should raise value, got '" + caught2 + "'")
+    fails is fails + 1
+caught is ""
+try:
+    r is vm_run_bytecode of [1, [83, 0, 0, 40], ["x"]]
+catch e:
+    caught is e.kind
+if caught != "value":
+    print of ("  FAIL: REPORT_NAME on an unrecorded host binding should raise value, got '" + caught + "'")
+    fails is fails + 1
+# the descriptor's OWN work is recorded (both sites arm before running):
+# assign `d` twice inside the descriptor (CONST 0; SET_NAME 1; OBSERVE_NAME_POST 1;
+# POP -- twice), then REPORT_NAME 1 -- answers a verdict, no raise.
+caught3 is ""
+own is null
+try:
+    own is vm_run_bytecode of [1, [0, 0, 0, 26, 1, 0, 82, 1, 0, 35, 0, 0, 0, 26, 1, 0, 82, 1, 0, 35, 83, 1, 0, 40], [5, "d"]]
+catch e:
+    caught3 is e.kind
+if (caught3 != "") or (own == null):
+    print of ("  FAIL: a descriptor's own observed binding must still report (kind '" + caught3 + "', got " + (str of own) + ")")
+    fails is fails + 1
+if fails == 0:
+    print of "DESC_UNRECORDED_ALL_PASS"
+else:
+    print of ((str of fails) + " FAILURES")

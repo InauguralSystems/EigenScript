@@ -42,6 +42,23 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **A descriptor reading observer state of an unrecorded host binding raises
+  instead of answering a rest value (#1027).** With the #915 gate closed for
+  the host program (nothing compiled into it reads the observer), a chunk run
+  through `vm_run_bytecode` / `sandbox_run` that reported, predicated or
+  snapshotted a HOST binding got `equilibrium` / 0 / an empty trajectory —
+  silently, rc 0 — because the host's assignments were never recorded. The
+  reader opcodes (`REPORT_*`, `REPORT_VALUE_*`, `TRAJECTORY_*`,
+  `PREDICATE_*`, the bare `OP_PREDICATE`) now raise a value error when the
+  chunk is descriptor-origin (`compiler_scanned == 0`), the slot has no
+  recorded history, and the state has a recording gap (`obs_history_gap`:
+  recording switched on after execution began, which is exactly what the
+  descriptor's own arming does in a closed-gate program). A binding the
+  descriptor itself observed, a state whose gate was open from the start
+  (a compiled reader, `EIGS_OBS_FORCE=1`, the AOT's boot arming) and every
+  unreachable reader are untouched — the three static guards the issue
+  tried could not make that distinction. Pinned by
+  `tests/test_desc_unrecorded_read.eigs`.
 - **Tape replay fidelity (#1072): arguments are validated before the replay
   boundary, the history table promotes arena values, and a same-binary
   record-vs-replay gate exists.** `recv`/`try_recv`/`recv_timeout`/

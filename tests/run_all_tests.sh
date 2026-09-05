@@ -5019,6 +5019,7 @@ check_eigs_suite "observer coherence (#412)" test_observer_coherence.eigs "All t
 check_eigs_suite "observer saturation ceiling (#861)" test_observer_saturation.eigs "OBSERVER_SATURATION_ALL_PASS" 1
 check_eigs_suite "sandbox: bare predicate cannot read the host tracker (#1026)" test_sandbox_predicate_isolation.eigs "SANDBOX_PRED_ISOLATION_ALL_PASS" 1
 check_eigs_suite "worker-compiled chunk escaping through a channel outlives the worker intern table (#1065)" test_worker_intern_escape.eigs "WORKER_INTERN_ESCAPE_ALL_PASS" 1
+check_eigs_suite "descriptor read of an unrecorded host observer binding raises (#1027)" test_desc_unrecorded_read.eigs "DESC_UNRECORDED_ALL_PASS" 1
 # #971 item 3: underflow-to-zero is flagged, and ONLY for * and / — reaching
 # zero by +/- is exact cancellation, which the file's controls pin.
 check_eigs_suite "math underflow flag (#971)" test_math_underflow.eigs "MATH_UNDERFLOW_ALL_PASS" 1
