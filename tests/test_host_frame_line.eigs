@@ -1,0 +1,13 @@
+# Traces from a chunk a BUILTIN runs (sandbox_run, vm_run_bytecode, eval,
+# dispatch, comparators) print the host frame's line from its saved ip, and
+# CASE(CALL) never published it before a builtin ran: planted (pre-fix vm.c),
+# both traces below said `at <module> (line 14)`, past the end of this file;
+# test_vm_run_bytecode showed the PREVIOUS call's line. The suite greps stderr
+# for line 12 and exactly one line 8 -- so keep `desc` on line 7 (no new lines).
+desc is [1, [25,0,0, 0,1,0, 39,1,0, 40], ["write_text", "/tmp/eigs_host_frame_line_never"]]
+r1 is sandbox_run of [desc, 100000]
+x is 1
+y is 2
+z is 3
+r2 is sandbox_run of [desc, 100000]
+print of (r1["ok"] + r2["ok"])

@@ -42,6 +42,23 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Stack traces from a chunk a builtin runs printed the host frame at a
+  stale line (#1071).** `CASE(CALL)`, `CASE(DISPATCH)` and the JIT call helper never
+  published the resume ip before invoking a builtin, so when `sandbox_run`,
+  `vm_run_bytecode`, `eval`, `dispatch` or a comparator pushed frames and the
+  child's uncaught error printed a trace, `vm_print_stack_trace` read the host
+  frame's line from whatever ip the last frame push had left (`test_vm_run_bytecode`:
+  `at <module> (line 100)` for a `sandbox_run` on line 106). The three sites
+  store the resume ip first; the JIT helper restores the thunk-entry ip after
+  the call, because a thunk's exit adds its relative advance to that base
+  (leaving the call-site ip there resumed the interpreter misaligned — a
+  constants[-1] read after an OSR'd loop called `adler32`). Pinned by
+  `tests/test_host_frame_line.eigs`. #1071 was the same stale read seen from
+  the JIT side (interpreter, JIT and forced-OSR each printed a different wrong
+  host line for `test_sandbox_budget`); the three tiers now agree, and its row
+  leaves `tests/jit_diff_expected.txt`, which is empty. Found by the AOT's
+  byte-exact corpus: the compiled program printed the correct line and the VM
+  did not.
 - **A `for` binder's observer history is per iteration on every loop-env tier (#1062).**
   The persist-overwrite tier skipped the per-iteration LOOP_ENV_CLEAR, which is
   what resets the binder's observer slot, so `observe of i` inside a loop
