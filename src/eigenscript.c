@@ -3390,6 +3390,39 @@ static void gc_clear_node(void *obj, int kind) {
  * caller holds exactly one pinning ref on apiece (exit-time snapshot of
  * the global scope); their pins are accounted so a seed kept alive only
  * by its pin + in-universe edges still counts as garbage. */
+/* #1096: cost-aware trigger. A collection walks the WHOLE universe (every
+ * container, env and chunk), so its cost is O(heap), while the trigger
+ * counts captured envs. With `threshold = 2 * live` a program whose live
+ * capture count stays small under a large heap -- the AOT compiler: a few
+ * hundred closures over an AST of hundreds of thousands of containers --
+ * collected every few hundred capture events at O(heap) each: 62-70% of an
+ * 82-second compile, quadratic in program size. Requiring the capture count
+ * to grow by a fraction of the last universe before the next collection
+ * makes the amortised scan cost O(1) per capture event; when the heap is
+ * mostly captured envs (last universe ~ live) this is the old 2x rule. */
+/* #1096, the possible-root side: a collection seeded by N buffered candidates
+ * walks everything reachable from them (the AOT compiler: 990 collections in
+ * a 6-second compile, each over ~2800 objects, live captured envs 0). A fixed
+ * GC_VAL_THRESHOLD made the cadence proportional to allocations while the
+ * walk grew with the heap. Require the candidate count to reach a fraction of
+ * the last universe before collecting again (as many candidates as objects the
+ * last walk touched, so the amortised walk cost per candidate is O(1); garbage
+ * cycles wait for at most that many registrations). */
+static int gc_val_next_threshold(int last_universe) {
+    long t = last_universe;   /* one candidate per object the last walk touched: O(1) amortised */
+    if (t < GC_VAL_THRESHOLD) t = GC_VAL_THRESHOLD;
+    if (t > 100000000L) t = 100000000L;
+    return (int)t;
+}
+static int gc_next_threshold(int live, int last_universe) {
+    int grow = live;
+    if (last_universe / 16 > grow) grow = last_universe / 16;
+    long t = (long)live + grow;
+    if (t < GC_THRESHOLD_MIN) t = GC_THRESHOLD_MIN;
+    if (t > 1000000000L) t = 1000000000L;
+    return (int)t;
+}
+
 static void gc_collect_impl(Value **seeds, int seed_count) {
     if (g_in_gc || g_vm_multithreaded) return;
     if (!g_gc_envs && seed_count == 0) {
@@ -3448,8 +3481,8 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
         free(stack);
         free(u.table); free(u.objs); free(u.kind);
         free(u.internal); free(u.pinned); free(u.mark);
-        g_gc_threshold = g_gc_captured_live * 2;
-        if (g_gc_threshold < GC_THRESHOLD_MIN) g_gc_threshold = GC_THRESHOLD_MIN;
+        g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
+        g_gc_val_threshold = gc_val_next_threshold(u.count);
         g_in_gc = 0;
         return;
     }
@@ -3494,8 +3527,8 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
 
     free(u.table); free(u.objs); free(u.kind);
     free(u.internal); free(u.pinned); free(u.mark);
-    g_gc_threshold = g_gc_captured_live * 2;
-    if (g_gc_threshold < GC_THRESHOLD_MIN) g_gc_threshold = GC_THRESHOLD_MIN;
+    g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
+    g_gc_val_threshold = gc_val_next_threshold(u.count);
     g_in_gc = 0;
 }
 
@@ -3521,7 +3554,9 @@ void gc_note_possible_root(Value *v) {
         g_gc_val_buf = xrealloc_array(g_gc_val_buf, g_gc_val_cap, sizeof(Value *));
     }
     g_gc_val_buf[g_gc_val_count++] = v;
-    if (__builtin_expect(g_gc_val_count >= GC_VAL_THRESHOLD, 0))
+    /* #1096: the possible-root trigger is cost-aware -- see gc_val_next_threshold. */
+    if (!g_gc_val_threshold) g_gc_val_threshold = GC_VAL_THRESHOLD;
+    if (__builtin_expect(g_gc_val_count >= g_gc_val_threshold, 0))
         gc_collect_cycles();
 }
 
