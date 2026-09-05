@@ -4465,12 +4465,16 @@ Value* builtin_send(Value *arg) {
 }
 
 Value* builtin_recv(Value *arg) {
-    if (replay_blocks("recv")) return make_null();
+    /* #1072: validate BEFORE the replay block -- a wrong-typed argument is a
+     * deterministic value error in both modes; refusing it as "not
+     * replayable" turned a recorded `invalid channel` into an io error on
+     * replay (test_builtin_errors BE07 under EIGS_REPLAY). */
     Channel *ch = get_channel(arg);
     if (!ch) {
         rt_error(EK_VALUE, 0, "recv: invalid channel");
         return make_null();
     }
+    if (replay_blocks("recv")) return make_null();
     pthread_mutex_lock(&ch->mutex);
     while (ch->count == 0 && !ch->closed)
         pthread_cond_wait(&ch->not_empty, &ch->mutex);
@@ -4487,12 +4491,12 @@ Value* builtin_recv(Value *arg) {
 
 /* try_recv of channel — non-blocking receive, returns null if empty */
 Value* builtin_try_recv(Value *arg) {
-    if (replay_blocks("try_recv")) return make_null();
-    Channel *ch = get_channel(arg);
+    Channel *ch = get_channel(arg);           /* #1072: validate before the replay block */
     if (!ch) {
         rt_error(EK_VALUE, 0, "try_recv: invalid channel");
         return make_null();
     }
+    if (replay_blocks("try_recv")) return make_null();
     pthread_mutex_lock(&ch->mutex);
     Value *val = NULL;
     if (ch->count > 0) {
@@ -4510,7 +4514,6 @@ Value* builtin_try_recv(Value *arg) {
  * interpreted as milliseconds; fractional values are honored (ns precision
  * on Linux). Negative ms degenerates to a try_recv. */
 Value* builtin_recv_timeout(Value *arg) {
-    if (replay_blocks("recv_timeout")) return make_null();
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "recv_timeout requires [channel, ms]");
         return make_null();
@@ -4520,6 +4523,7 @@ Value* builtin_recv_timeout(Value *arg) {
         rt_error(EK_VALUE, 0, "recv_timeout: invalid channel");
         return make_null();
     }
+    if (replay_blocks("recv_timeout")) return make_null();   /* #1072: after validation */
     Value *ms_v = arg->data.list.items[1];
     if (ms_v->type != VAL_NUM) {
         rt_error(EK_TYPE, 0, "recv_timeout: ms must be a number");
