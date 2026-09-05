@@ -42,6 +42,17 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **GC: both cycle-collection triggers are cost-aware (#1096).** A collection
+  walks everything reachable from its seeds, but the possible-root buffer
+  collected at a fixed 1024 registrations and the captured-env trigger
+  re-armed at `2 * live`, neither knowing the size of the walk. The AOT
+  compiler on a 400-statement input ran 990 collections in 6 s (each over
+  ~2800 objects, 0 live captured envs); at 1600 statements the collector was
+  62-70% of an 82-second compile, quadratic in program size. Both thresholds
+  now re-arm from the size of the last universe walked (the possible-root
+  threshold to that size, floor 1024; the captured-env threshold by at least
+  a sixteenth of it), so amortised collection cost per registration is O(1).
+  Programs whose heap is mostly captured envs keep the old cadence.
 - **A `for` binder over an existing frame slot is restored after the loop (#1064).**
   Inside a function, a binder whose name already had a slot (a parameter, a
   `local`, an earlier assignment) reused it and the loop's last value leaked:

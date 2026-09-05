@@ -652,6 +652,7 @@ struct EigsState {
     Value         **gc_val_buf;
     int             gc_val_count;
     int             gc_val_cap;
+    int                  gc_val_threshold; /* #1096: adaptive possible-root trigger */
     /* JIT tuning thresholds (entry / per-iter / OSR). Each state
      * reads its own copy from EIGS_JIT_ENTRY_THRESHOLD /
      * EIGS_JIT_ITER_THRESHOLD / EIGS_JIT_OSR_THRESHOLD at state_new,
@@ -1028,6 +1029,7 @@ extern __thread EigsThread *eigs_current;
 #define g_gc_val_buf          (eigs_current->state->gc_val_buf)
 #define g_gc_val_count        (eigs_current->state->gc_val_count)
 #define g_gc_val_cap          (eigs_current->state->gc_val_cap)
+#define g_gc_val_threshold    (eigs_current->state->gc_val_threshold)
 #define g_gc_threshold        (eigs_current->gc_threshold)
 #define g_gc_enabled          (eigs_current->gc_enabled)
 #define g_in_gc               (eigs_current->in_gc)
