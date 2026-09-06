@@ -6293,6 +6293,35 @@ else
 fi
 echo ""
 
+# [99q] Observer-gate corpus diff: location normalisation self-test (#1115).
+# tools/observer_gate_diff.sh compares full-corpus captures byte-for-byte, and
+# an out-of-tree baseline binary echoes its own exe-dir into two shapes of
+# text (the stdlib-roots list in every "cannot read" error, and the project-
+# vs-stdlib import-shadow warning that fires only out of tree). Seven programs
+# mismatched on exactly those shapes across three critic rounds on #1038 and a
+# clean run read as a regression. The tool now canonicalises ONLY those two
+# shapes; this self-test drives the real `compare` entry point over synthetic
+# captures (no corpus run) and pins that (1) both shapes are absorbed and named,
+# (2) a different error message, a differently-named shadow, a project-file
+# shadow, a corpus-path difference and the root-exe-dir guard each still FAIL,
+# (3) the same-build-same-path and path-mismatched-reference refusals still
+# fire, (4) genuinely different builds still get PASS. The case count is
+# pinned (mechanical-gates §37): a self-test shrunk to one case also exits 0.
+echo "[99q] Observer-gate corpus diff location normalisation (#1115)"
+TOTAL=$((TOTAL + 1))
+OGD_EXPECTED=9
+OGD_OUT=$(bash "$TESTS_DIR/../tools/observer_gate_diff.sh" selftest 2>&1); OGD_RC=$?
+OGD_TALLY=$(printf '%s\n' "$OGD_OUT" | sed -n 's/^SELFTEST: \([0-9]*\) ok, \([0-9]*\) failed (of \([0-9]*\))$/\1 \2 \3/p')
+if [ "$OGD_RC" -eq 0 ] && [ "$OGD_TALLY" = "$OGD_EXPECTED 0 $OGD_EXPECTED" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: exe-dir + import-shadow normalisation absorbs only the location shapes ($OGD_EXPECTED/$OGD_EXPECTED self-test cases)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: observer_gate_diff.sh self-test broke or shrank (rc=$OGD_RC, tally='${OGD_TALLY:-none}', expected '$OGD_EXPECTED 0 $OGD_EXPECTED')"
+    printf '%s\n' "$OGD_OUT" | grep -E '^  FAIL|^SELFTEST|^FAIL' | head -8 | sed 's/^/      /'
+fi
+echo ""
+
 # [99m] Lint archive symbol-collision gate (#917, hole closed by #922).
 # The #917 split turned lint's json_escape helper into an external symbol and
 # broke the static-library route for any embedder with its own json_escape.
