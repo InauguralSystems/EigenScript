@@ -139,10 +139,19 @@ usage_mode="${1:-}"
 # Covered set = (b); (b) must be a subset of (a). A builtin-defining file
 # outside every variant is reported as an ORPHAN, not silently skipped.
 compiled_union() {
-    local root="$1" v
+    # Expand each SRC_V_<variant> Makefile variable to its source list. `make
+    # --eval` (used originally) needs GNU Make 3.82+; macOS ships 3.81, where
+    # the flag is unknown and the output is empty, so every builtin file reads
+    # as an ORPHAN. A temp makefile that includes the real one and carries the
+    # print rule is 3.81-compatible.
+    local root="$1" v tmpmk
+    tmpmk="$(mktemp)"
+    { printf 'include %s/Makefile\n' "$root"
+      printf '__fsp-%%:\n\t@echo $($*)\n'; } > "$tmpmk"
     for v in $(grep -oE '^SRC_V_[a-z-]+' "$root/Makefile" | sed 's/^SRC_V_//'); do
-        make -C "$root" --eval='__fsp-%: ; @echo $($*)' -s "__fsp-SRC_V_$v" 2>/dev/null
+        make -C "$root" -f "$tmpmk" -s "__fsp-SRC_V_$v" 2>/dev/null
     done | tr ' ' '\n' | sed '/^$/d' | sort -u
+    rm -f "$tmpmk"
 }
 
 builtin_files() {
@@ -250,7 +259,11 @@ run_check() {   # <root>  -> 0 clean / 1 finding ; prints a summary
     covered="$(builtin_files "$root")"
 
     local n_files=0 n_hits=0 n_bad=0 n_tagged=0 orphan=0 splits=0
-    declare -A tally=()
+    # Per-tag counters as plain variables, not an associative array: macOS
+    # ships bash 3.2, where `declare -A` is a syntax error and `tally[$tag]`
+    # with a string key is parsed as arithmetic on an unbound name (release
+    # build failed here — the [99p] child-exit ledger surfaced it).
+    local t_ANSWER=0 t_CHANNEL=0 t_LITERAL=0 t_EMPTY=0 t_STRICT=0 t_TODO=0
     local c
     for c in $covered; do
         if ! grep -qxF "$c" <<<"$compiled"; then
@@ -293,7 +306,14 @@ run_check() {   # <root>  -> 0 clean / 1 finding ; prints a summary
                 continue
             fi
             n_tagged=$((n_tagged + 1))
-            tally[$tag]=$(( ${tally[$tag]:-0} + 1 ))
+            case "$tag" in
+                ANSWER)  t_ANSWER=$((t_ANSWER + 1)) ;;
+                CHANNEL) t_CHANNEL=$((t_CHANNEL + 1)) ;;
+                LITERAL) t_LITERAL=$((t_LITERAL + 1)) ;;
+                EMPTY)   t_EMPTY=$((t_EMPTY + 1)) ;;
+                STRICT)  t_STRICT=$((t_STRICT + 1)) ;;
+                TODO)    t_TODO=$((t_TODO + 1)) ;;
+            esac
             [ "$usage_mode" = "--verbose" ] && printf '  %-8s %s:%s\n' "$tag" "$f" "$ln"
         done < <(norm_hits "$root/$f")
     done
@@ -315,9 +335,17 @@ run_check() {   # <root>  -> 0 clean / 1 finding ; prints a summary
 
     printf '  files=%d sites=%d classified=%d unclassified=%d floor=%d\n' \
         "$n_files" "$n_hits" "$n_tagged" "$n_bad" "$FLOOR_SITES"
-    local t out=""
+    local t c out=""
     for t in ANSWER CHANNEL LITERAL EMPTY STRICT TODO; do
-        out="$out $t=${tally[$t]:-0}"
+        case "$t" in
+            ANSWER)  c=$t_ANSWER ;;
+            CHANNEL) c=$t_CHANNEL ;;
+            LITERAL) c=$t_LITERAL ;;
+            EMPTY)   c=$t_EMPTY ;;
+            STRICT)  c=$t_STRICT ;;
+            TODO)    c=$t_TODO ;;
+        esac
+        out="$out $t=$c"
     done
     echo " $out"
 
