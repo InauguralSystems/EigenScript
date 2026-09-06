@@ -13,8 +13,10 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
+import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -23,7 +25,18 @@ def metadata(source, tag):
     return re.findall(r"^# road-" + tag + r": (.*)$", source, re.M)
 
 
-def snapshot(names, module=None):
+def driver_context():
+    # Every generated binding gets a fresh, private name, including temporaries.
+    # Capture all driver builtins BEFORE the fixture can rebind their names.
+    prefix = "_road_" + uuid.uuid4().hex + "_"
+    captures = {name: prefix + name for name in
+                ("print", "has_key", "load_file", "throw", "result", "error")}
+    prelude = "".join(f"{captures[name]} is {name}\n" for name in
+                      ("print", "has_key", "load_file", "throw"))
+    return captures, prelude
+
+
+def snapshot(names, captures, module=None):
     lines = []
     for name in names:
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
@@ -32,12 +45,12 @@ def snapshot(names, module=None):
         # Presence is a separate field, never a value-domain sentinel. A
         # present value (including null or "<missing>") occupies a third field.
         if module:
-            lines += [f'if has_key of [{module}, "{name}"]:',
-                      f'    print of ["{name}", 1, {module}.{name}]',
-                      'else:', f'    print of ["{name}", 0]']
+            lines += [f'if {captures["has_key"]} of [{module}, "{name}"]:',
+                      f'    {captures["print"]} of ["{name}", 1, {module}.{name}]',
+                      'else:', f'    {captures["print"]} of ["{name}", 0]']
         else:
-            lines += ['try:', f'    print of ["{name}", 1, {name}]',
-                      'catch _road_error:', f'    print of ["{name}", 0]']
+            lines += ['try:', f'    {captures["print"]} of ["{name}", 1, {name}]',
+                      f'catch {captures["error"]}:', f'    {captures["print"]} of ["{name}", 0]']
     return "\n".join(lines) + "\n"
 
 
@@ -76,24 +89,25 @@ def run_gate(binary, fixtures, only=None):
                         (tree / dst).unlink()
                         os.link(tree / src, tree / dst)
                     own = tree / fixture.name
-                    report = snapshot(names, fixture.stem if road == "import" else None)
+                    captures, prelude = driver_context()
+                    report = snapshot(names, captures, fixture.stem if road == "import" else None)
                     if road == "main":
                         # A top-level return bypasses a suffix. Snapshot just before
                         # each unindented return, and at normal end of the file.
                         body = re.sub(r"(?m)^(return(?:\s.*)?)$", lambda m: report + m[0], source)
-                        own.write_text(body + "\n" + report)
+                        own.write_text(prelude + body + "\n" + report)
                         entry = own
                     else:
                         entry = tree / "_road_driver.eigs"
                         if road == "import":
                             body = f"import {fixture.stem}\n"
                         else:
-                            body = f'_road_result is load_file of "{fixture.name}"\n'
+                            body = f'{captures["result"]} is {captures["load_file"]} of "{fixture.name}"\n'
                             returns = metadata(source, "return")
                             if returns:
-                                body += (f'if _road_result != ({returns[0]}):\n'
-                                         '    throw of "road return value mismatch"\n')
-                        entry.write_text(body + report)
+                                body += (f'if {captures["result"]} != ({returns[0]}):\n'
+                                         f'    {captures["throw"]} of "road return value mismatch"\n')
+                        entry.write_text(prelude + body + report)
                     workdir = tree / cwd
                     workdir.mkdir(parents=True, exist_ok=True)
                     if ci == 1:
@@ -137,10 +151,24 @@ def run_gate(binary, fixtures, only=None):
 
 
 def selftest(binary, bad_binary=None):
+    controls = plants = 0
     with tempfile.TemporaryDirectory(prefix="eigs-road-plants-") as tmp:
         tree = Path(tmp)
 
-        def require_red(label, fixture_name, missing=None, runner=binary):
+        def require_green(label):
+            nonlocal controls
+            if run_gate(binary, tree):
+                print(f"road_diff selftest: FAIL: {label}")
+                return False
+            controls += 1
+            print(f"road_diff selftest: GREEN: {label}")
+            return True
+
+        def require_red(label, fixture_name, missing=None, runner=binary, *,
+                        roads=("main", "load_file", "import"), rc=0,
+                        divergence=False, actual_line=None, stdout_matches=False,
+                        diagnostic=None):
+            nonlocal plants
             captured = io.StringIO()
             with contextlib.redirect_stdout(captured):
                 status = run_gate(runner, tree)
@@ -148,44 +176,47 @@ def selftest(binary, bad_binary=None):
             rows = re.findall(r"^road_diff: FAIL: " + re.escape(fixture_name) +
                               r" (main|load_file|import) cwd=.* rc=(-?\d+)$",
                               output, re.M)
-            # Prove the intended missing-value/road disagreement, not a dead
-            # binary, timeout, or parse failure that happens to exit nonzero.
-            external = runner != binary
-            expected_runs = 2 if external else 6
-            valid = status != 0 and len(rows) == expected_runs and all(rc == "0" for _, rc in rows)
-            if external:
-                valid = valid and all(road == "import" for road, _ in rows)
+            # Require the exact road/status/diagnostic pattern of the plant,
+            # not a dead binary, timeout, or unrelated parse failure.
+            expected_rows = sorted((road, str(rc)) for road in roads for _ in range(2))
+            expected_runs = len(expected_rows)
+            valid = status != 0 and sorted(rows) == expected_rows
             if missing:
-                valid = valid and output.count(f'+["{missing}", 0]\n') == expected_runs
-            else:
+                actual_line = f'["{missing}", 0]'
+            if actual_line:
+                valid = valid and output.count(f'+{actual_line}\n') == expected_runs
+            if divergence:
                 valid = valid and f"{fixture_name}: roads/cwds diverge" in output
+            if stdout_matches:
+                valid = valid and "--- expected\n" not in output
+                valid = valid and "roads/cwds diverge" not in output
+            if diagnostic:
+                valid = valid and output.count(diagnostic + "\n") == expected_runs
             if not valid:
                 print(f"road_diff selftest: FAIL: {label}\n{output}")
                 return False
             print(f"road_diff selftest: RED: {label}")
+            plants += 1
             return True
 
         fixture = tree / "planted.eigs"
         fixture.write_text('# road-bind: value\nvalue is 7\n')
         fixture.with_suffix('.out').write_text('["value", 1, 7]\n')
-        if run_gate(binary, tree):
-            print("road_diff selftest: FAIL: positive control")
+        if not require_green("numeric binding"):
             return 1
         # Each road runs in an isolated directory. A cwd-printing fixture is
         # deliberately outside the deterministic fixture contract and MUST
         # produce a named cross-road disagreement (not merely a golden diff).
         fixture.write_text('# road-bind: value\nvalue is getcwd of null\n')
-        if not require_red("planted.eigs: roads/cwds diverge", fixture.name):
+        if not require_red("planted.eigs: roads/cwds diverge", fixture.name, divergence=True):
             return 1
         fixture.unlink()
 
         fixture = tree / "sentinel.eigs"
         fixture.write_text('# road-bind: from_for\nfor k in range of 1:\n    from_for is "<missing>"\n')
         fixture.with_suffix('.out').write_text('["from_for", 1, "<missing>"]\n')
-        if run_gate(binary, tree):
-            print('road_diff selftest: FAIL: literal "<missing>" positive control')
+        if not require_green('literal "<missing>" is present'):
             return 1
-        print('road_diff selftest: GREEN: literal "<missing>" is present')
         # Default: delete the assignment, retaining the present-value golden.
         # For an actual compiler regression proof, --bad-binary runs the same
         # unmodified fixture against a binary that drops the import binding.
@@ -193,8 +224,64 @@ def selftest(binary, bad_binary=None):
         if not bad_binary:
             fixture.write_text('# road-bind: from_for\nfor k in range of 1:\n    0\n')
         plant = "known-bad binary, import only" if bad_binary else "assignment deleted"
+        bad_roads = ("import",) if bad_binary else ("main", "load_file", "import")
         if not require_red(f'literal "<missing>" binding dropped ({plant})',
-                           fixture.name, "from_for", bad_binary or binary):
+                           fixture.name, "from_for", bad_binary or binary, roads=bad_roads):
+            return 1
+        fixture.unlink()
+
+        fixture = tree / "rebind_print.eigs"
+        fixture.write_text('# road-bind: print\nemit is print\nfor k in range of 1:\n'
+                           '    print is (args) => emit of ["print", 0]\n')
+        fixture.with_suffix('.out').write_text('["print", 1, <fn <lambda>>]\n')
+        if not require_green("rebinding print cannot forge readback"):
+            return 1
+        if bad_binary:
+            valid = require_red("print rebinding: dropped import binding (known-bad binary)",
+                                fixture.name, "print", bad_binary, roads=("import",))
+        else:
+            fixture.with_suffix('.out').write_text('["print", 0]\n')
+            valid = require_red("print rebinding: forged absence golden", fixture.name,
+                                actual_line='["print", 1, <fn <lambda>>]')
+        if not valid:
+            return 1
+        fixture.unlink()
+
+        fixture = tree / "rebind_membership.eigs"
+        captures, prelude = driver_context()
+        # Exercise the SAME namespace-readback emitter in a scope where the
+        # fixture owns has_key/keys. Import isolation itself must not be what
+        # makes this control green: reverting the has_key capture must fail.
+        fixture.write_text('# road-bind: marker\n' + prelude +
+                           'subject is {"bound": 7}\n'
+                           'has_key is (args) => 0\nkeys is (args) => []\n'
+                           'for k in range of 1:\n    marker is 7\n' +
+                           snapshot(["bound"], captures, "subject"))
+        fixture.with_suffix('.out').write_text('["bound", 1, 7]\n["marker", 1, 7]\n')
+        if not require_green("rebinding has_key/keys cannot forge readback"):
+            return 1
+        if bad_binary:
+            valid = require_red("has_key/keys rebinding: dropped import binding (known-bad binary)",
+                                fixture.name, "marker", bad_binary, roads=("import",))
+        else:
+            fixture.with_suffix('.out').write_text('["bound", 1, 7]\n["marker", 0]\n')
+            valid = require_red("has_key/keys rebinding: forged absence golden", fixture.name,
+                                actual_line='["marker", 1, 7]')
+        if not valid:
+            return 1
+        fixture.unlink()
+
+        fixture = tree / "rebind_throw.eigs"
+        source = ('# road-bind: value\n# road-return: 8\nvalue is 7\n'
+                  'throw is (args) => 0\nreturn 8\n')
+        fixture.write_text(source)
+        fixture.with_suffix('.out').write_text('["value", 1, 7]\n')
+        if not require_green("rebinding throw preserves return validation"):
+            return 1
+        fixture.write_text(source.replace('# road-return: 8', '# road-return: 9'))
+        if not require_red("throw rebinding cannot suppress a return mismatch", fixture.name,
+                           roads=("load_file",), rc=1, divergence=True,
+                           diagnostic="road return value mismatch"):
             return 1
         fixture.unlink()
 
@@ -206,11 +293,39 @@ def selftest(binary, bad_binary=None):
             return 1
         fixture.unlink()
 
+        fixture = tree / "process_status.eigs"
+        fixture.write_text('# road-bind: value\nvalue is 7\n')
+        fixture.with_suffix('.out').write_text('["value", 1, 7]\n')
+        # Run a real successful child, then perturb ONLY its process envelope.
+        # All six rc-plant exits are identical, so cross-road comparison cannot
+        # conceal a deleted absolute rc check. No mock of run_gate is involved.
+        for symptom in ("returncode", "stderr"):
+            wrapper = tree / f"plant_{symptom}"
+            warning = "road selftest planted stderr warning"
+            wrapper.write_text(f'#!{sys.executable}\n'
+                               'import subprocess, sys\n'
+                               f'r = subprocess.run([{str(binary)!r}, *sys.argv[1:]], capture_output=True, timeout=20)\n'
+                               'sys.stdout.buffer.write(r.stdout)\n'
+                               'sys.stderr.buffer.write(r.stderr)\n'
+                               'if r.returncode or r.stderr:\n'
+                               '    raise SystemExit(99)\n' +
+                               ('raise SystemExit(17)\n' if symptom == "returncode" else
+                                f'sys.stderr.write({warning!r} + "\\n")\n'))
+            wrapper.chmod(0o755)
+            if not require_red("nonzero rc with matching stdout" if symptom == "returncode" else
+                               "stderr only with matching stdout and rc=0", fixture.name,
+                               runner=wrapper, rc=17 if symptom == "returncode" else 0,
+                               stdout_matches=True,
+                               diagnostic=warning if symptom == "stderr" else None):
+                return 1
+        fixture.unlink()
+
         if run_gate(binary, tree) == 0:
             print("road_diff selftest: FAIL: zero-fixture plant survived")
             return 1
         print("road_diff selftest: RED: zero fixtures")
-    print("road_diff selftest: controls=2 plants=4 failures=0")
+        plants += 1
+    print(f"road_diff selftest: controls={controls} plants={plants} failures=0")
     return 0
 
 

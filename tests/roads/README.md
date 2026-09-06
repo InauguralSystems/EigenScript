@@ -2,7 +2,7 @@
 
 `bash tools/road_diff.sh` enumerates every `*.eigs` directly in this directory.
 Each fixture runs as main, through `load_file`, and through `import`, from two
-working directories. Support files live under `assets/` and are reached by the
+working directories. Support files live under `assets/` and `eigs_modules/`, reached by the
 fixtures; they are not independent oracle programs. Each run gets a private copy
 of the fixture tree and an empty HOME. Children are bounded to 30 seconds.
 The second run invokes the entry point through a symlink in a third directory,
@@ -16,6 +16,14 @@ wrapper appends snapshots; the load wrapper snapshots after the call returns;
 the import wrapper reads those names back from the namespace, checking `has_key`
 before access. The golden decides whether a particular binding may be absent.
 Functions can be checked through their results instead of printing identities.
+
+Each driver captures `print`, `has_key`, `load_file` and `throw` before any
+fixture code runs, including before the main-road source splice. Captures and
+temporary bindings use a fresh UUID prefix. Readback calls only the captured
+builtins; it never consults fixture-rebindable `print` or `has_key`, and uses no
+`keys` call. The UUID is driver hygiene, not part of the output or runtime
+semantics; this is an oracle for fixtures, not a sandbox against malicious code
+that reads and rewrites its generated driver.
 
 For a top-level return, the main wrapper inserts snapshots immediately before
 each unindented `return`; `# road-return: expression` also checks the load's
@@ -34,18 +42,36 @@ sanitizers). An error on all three roads cannot masquerade as agreement. Missing
 metadata, missing expected files, timeouts and zero fixtures fail. `--fixture
 blocks` selects a single diagnostic repro; the suite always runs the whole set.
 
-`--selftest` runs two green controls (a numeric value and a literal `"<missing>"`
-created in a `for` body), then requires red for four faults: cwd divergence,
-deleting the sentinel fixture's assignment while retaining its present-value
-golden, a genuinely absent binding where present `null` is expected, and zero
-fixtures. The suite runs the ordinary gate and selftest.
+`--selftest` runs five green controls: a numeric value, a literal `"<missing>"`
+created in a `for` body, and fixtures rebinding `print`, `has_key`/`keys`, and
+`throw`. Nine faults must go red: cwd divergence; deletion of the sentinel
+assignment; forged absence goldens for both readback-rebinding fixtures;
+incorrect return metadata despite a rebound `throw`; genuine absence where
+present `null` is expected; a nonzero exit alone; stderr alone; and zero fixtures.
+The membership control also calls the shared namespace-snapshot emitter from
+within a scope that rebinds `has_key`/`keys`, so module isolation cannot conceal
+a missing capture. The suite runs the ordinary gate and selftest.
 
 `--selftest --bad-binary /path/to/known-bad/eigenscript` replaces the assignment
-deletion with execution of the unchanged sentinel fixture on a runtime that
-drops imported `for`-body bindings. That plant must have clean child exits and
-exactly two import-only presence mismatches, so an unavailable or crashing
-binary is not accepted as a detected regression. The default selftest uses no
-external checkout or compiler build.
+deletion and two forged goldens with execution of the unchanged sentinel,
+print-rebinding and membership-rebinding fixtures on a runtime that drops
+imported `for`-body bindings. Each plant must have clean child exits and exactly
+two import-only presence mismatches, so an unavailable or crashing binary is
+not accepted as a detected regression. The default selftest uses no external
+checkout or compiler build.
+
+The exit/stderr plants run the real binary through a bounded Python wrapper
+that changes only its process status or stderr after successful evaluation.
+Stdout must still match exactly. All six exit-plant runs return the same 17:
+cross-road status comparison must not hide a missing absolute exit check.
+
+Bought in #1056 round 3: rebinding `print` forged an absent-binding snapshot on
+the known-bad runtime, and deleting either the exit or stderr check survived
+the old selftest. The driver captures and independent process-result plants
+close those holes. Reverting the print or membership capture, delaying main's
+captures until after the fixture, using the rebound `throw`, or removing either
+process-result check now fails selftest. Existing fixture goldens are unchanged
+in this round.
 
 Bought in #1056 round 2: the old `[name, "<missing>"]` representation gave a
 false green on the known-bad runtime when the actual value was that same string.
@@ -58,6 +84,14 @@ and load_file expose 4. `shadow` exercises the same A/prog.eigs from directories
 A and B; only A/inc.eigs may run. `nested_load` checks sibling and project-root
 loads, calls functions after the loaded file returns, and checks restored caller
 provenance. `eigs.json` in that support tree is the project-root marker.
+
+`importer_scope` gives the importer an `outer` binding before importing a helper
+whose `for` body assigns that same name. It requires the importer to retain 1
+and the helper to export its own binding. Replacing the compiler's imported
+block assignment with `OP_SET_NAME` passed all 11 older fixtures but clobbered
+the main/load importer's `outer` to 2 and omitted the helper's key; this fixture
+rejects that plant. It also rejects c1684bc's loop-local assignment, which keeps
+the importer at 1 but still omits the helper's key.
 
 `resolution_order` pins sibling > package > project-root precedence;
 `resolution_errors` rejects the removed cwd and one-parent steps and checks
