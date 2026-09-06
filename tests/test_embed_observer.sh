@@ -11,8 +11,14 @@ for candidate in "$ROOT"/build/*/eigenscript; do
     fi
 done
 if [[ -z "$variant" ]]; then
-    echo 'FAIL: observer contract cannot identify the CLI build variant'
-    exit 1
+    # No build/<variant>/eigenscript hard-links to src/eigenscript: this is the
+    # build.sh layout (the linux/macos CI lanes), which compiles src/eigenscript
+    # as a real file. The observer contract is variant-independent (no sanitizer
+    # semantics), so build and test the release objects. On the sanitizer suite
+    # the hard link above resolves to "asan" and is used instead. (#1038, mirrors
+    # the embed_roads build-layout fix.)
+    variant=release
+    echo "observer contract: no matching CLI variant (build.sh layout); using release"
 fi
 make --no-print-directory -C "$ROOT" embed-observer-test "EMBED_OBSERVER_VARIANT=$variant"
 unset EIGS_OBS_FORCE EIGS_TRACE EIGS_REPLAY
