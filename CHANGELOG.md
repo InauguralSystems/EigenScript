@@ -6,6 +6,24 @@ All notable changes to EigenScript are documented here.
 
 ### Breaking changes
 
+- **`report` and `report_value` are reserved observer forms (#1102): they
+  cannot be bound or used as values, and `report of name` / `report_value of name`
+  require an identifier operand (parentheses around the identifier are allowed).**
+  Every binding position now fails before the source unit runs, with parse
+  diagnostic `E005`, including parameters, loops, comprehensions, destructuring,
+  catches, and imports. Non-identifier operands also fail with `E005`; assign an
+  expression to a variable before reporting its trajectory. Name/slot observer
+  behavior is unchanged, and dict keys may still use these words. The shared
+  parser enforces the rule for files, REPL units, dynamic loads/eval, and hosts;
+  lint and LSP carry the same code. CLI `-e <source> [args...]` now accepts a
+  source string through the file execution path.
+  The builtin reference table and LSP Function completions omit both forms.
+  Two new token kinds (`TOK_REPORT`, `TOK_REPORT_VALUE`) shift the tokenizer's
+  identifier vocabulary ids by +2, visible in `tests/test_corpus.eigs` output;
+  consumers that key corpora on raw token ids (iLambdaAi) must rebuild them.
+  The VM retains the `report` builtin for existing bytecode that resolves
+  its name through `vm_run_bytecode`; its value-only behavior is unchanged.
+
 - **File resolution is independent of the process working directory (#1056).**
   `load_file` and `import` search the containing file's directory, the existing
   `eigs_modules` walk, the nearest `eigs.json` project root, then the stdlib

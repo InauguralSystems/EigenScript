@@ -161,8 +161,34 @@ static void p_end_statement(Parser *p) {
     p_match(p, TOK_NEWLINE);
 }
 
+/* #1102: one reservation rule for every parser entry point. These word
+ * tokens are never identifiers; only the observer-call and dot-key grammar
+ * consume them successfully. Keep the diagnostic on the name token, including
+ * multiline parameter lists and patterns. */
+static int tok_is_report(TokType type) {
+    return type == TOK_REPORT || type == TOK_REPORT_VALUE;
+}
+
+static int p_report_error(Token *t, int operand) {
+    if (!tok_is_report(t->type)) return 0;
+    char msg[192];
+    snprintf(msg, sizeof(msg), "'%s' is a reserved observer form; %s",
+        t->str_val, operand ? "requires a variable name operand"
+                             : "use it with 'of variable', never as a binding");
+    fprintf(stderr, "Parse error line %d:%d: %s [E005]\n",
+            t->line, t->col + 1, msg);
+    eigs_record_first_error_code_at(t->line, t->col, t->len, "E005", msg);
+    p_print_caret(t->line, t->col);
+    g_parse_errors++;
+    return 1;
+}
+
 static void p_expect(Parser *p, TokType type) {
     if (p_cur(p)->type != type) {
+        if (p_report_error(p_cur(p), 0)) {
+            p_advance(p);
+            return;
+        }
         fprintf(stderr, "Parse error line %d:%d: expected %s, got %s",
                 p_cur(p)->line, p_cur(p)->col + 1, tok_type_name(type), tok_type_name(p_cur(p)->type));
         if (p_cur(p)->str_val) fprintf(stderr, " ('%s')", p_cur(p)->str_val);
@@ -912,6 +938,15 @@ static ASTNode* parse_primary(Parser *p) {
         return make_node(AST_NULL, p_cur(p)->line);
     }
 
+    if (tok_is_report(t->type)) {
+        p_advance(p);
+        if (p_cur(p)->type != TOK_OF) p_report_error(t, 0);
+        ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
+        n->data.ident.name = xstrdup(t->str_val);
+        set_name_hash(n, n->data.ident.name);
+        return n;
+    }
+
     if (t->type == TOK_IDENT) {
         p_advance(p);
         ASTNode *n = make_node_col(AST_IDENT, t->line, t->col);
@@ -926,10 +961,10 @@ static ASTNode* parse_primary(Parser *p) {
         int is_lambda = 0;
         p_advance(p); /* skip ( */
         /* Scan forward: if we see IDENT [, IDENT]* ) => then it's a lambda */
-        if (tok_is_ident_like(p_cur(p)->type) || p_cur(p)->type == TOK_RPAREN) {
+        if (tok_is_ident_like(p_cur(p)->type) || tok_is_report(p_cur(p)->type) || p_cur(p)->type == TOK_RPAREN) {
             int scan = p->pos;
             while (scan < p->tl->count &&
-                   (tok_is_ident_like(p->tl->tokens[scan].type) || p->tl->tokens[scan].type == TOK_COMMA))
+                   (tok_is_ident_like(p->tl->tokens[scan].type) || tok_is_report(p->tl->tokens[scan].type) || p->tl->tokens[scan].type == TOK_COMMA))
                 scan++;
             if (scan + 1 < p->tl->count &&
                 p->tl->tokens[scan].type == TOK_RPAREN && p->tl->tokens[scan+1].type == TOK_ARROW)
@@ -942,7 +977,8 @@ static ASTNode* parse_primary(Parser *p) {
             char **params = xmalloc_array(MAX_PARAMS, sizeof(char*));
             int param_count = 0;
             int lambda_cap_reported = 0;
-            while (tok_is_ident_like(p_cur(p)->type)) {
+            while (tok_is_ident_like(p_cur(p)->type) || tok_is_report(p_cur(p)->type)) {
+                p_report_error(p_cur(p), 0);
                 if (param_count >= MAX_PARAMS) {
                     /* #354: one loud diagnostic, then drain (see match). */
                     if (!lambda_cap_reported) {
@@ -1158,6 +1194,7 @@ static int chain_too_deep(Parser *p) {
 }
 
 static ASTNode* parse_relation(Parser *p) {
+    Token *callee = p_cur(p);
     ASTNode *left = parse_primary(p);
 
     if (p_cur(p)->type == TOK_OF) {
@@ -1168,6 +1205,8 @@ static ASTNode* parse_relation(Parser *p) {
          * absorbing trailing infix arithmetic: `len of xs - 1` now
          * parses as `(len of xs) - 1`, not `len of (xs - 1)`. */
         ASTNode *right = parse_unary(p);
+        if (tok_is_report(callee->type) && right && right->type != AST_IDENT)
+            p_report_error(callee, 1);
         ASTNode *n = make_node_col(AST_RELATION, op_tok->line, op_tok->col);
         n->data.relation.left = left;
         n->data.relation.right = right;
@@ -1448,7 +1487,8 @@ static ASTNode* parse_statement_inner(Parser *p) {
             params = xmalloc_array(MAX_PARAMS, sizeof(char*));
             defaults = xcalloc(MAX_PARAMS, sizeof(ASTNode*));
             int param_cap_reported = 0;
-            while (tok_is_ident_like(p_cur(p)->type)) {
+            while (tok_is_ident_like(p_cur(p)->type) || tok_is_report(p_cur(p)->type)) {
+                p_report_error(p_cur(p), 0);
                 if (param_count >= MAX_PARAMS) {
                     /* #354: one loud diagnostic, then drain (see match). */
                     if (!param_cap_reported) {
@@ -1790,11 +1830,13 @@ static ASTNode* parse_statement_inner(Parser *p) {
             char *names_tmp[64];
             for (;;) {
                 if (p_cur(p)->type != TOK_IDENT) {
-                    fprintf(stderr,
-                        "Parse error line %d: destructuring pattern requires "
-                        "identifiers (index/field targets like a[0] or a.x "
-                        "are not supported)\n", p_cur(p)->line);
-                    g_parse_errors++;
+                    if (!p_report_error(p_cur(p), 0)) {
+                        fprintf(stderr,
+                            "Parse error line %d: destructuring pattern requires "
+                            "identifiers (index/field targets like a[0] or a.x "
+                            "are not supported)\n", p_cur(p)->line);
+                        g_parse_errors++;
+                    }
                     for (int k = 0; k < n; k++) free(names_tmp[k]);
                     while (p_cur(p)->type != TOK_NEWLINE &&
                            p_cur(p)->type != TOK_EOF) p_advance(p);

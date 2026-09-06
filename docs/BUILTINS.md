@@ -269,21 +269,33 @@ Query a binding's assignment history. Always on for top-level bindings;
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `report` | `report of value` | Classify change trajectory: "improving", "diverging", "stable", "equilibrium", "oscillating", "converged" — or "moving" when a full window matches none of them (#735) |
 | `observe` | `observe of value` | Return [status, entropy, dH, prev_dH] snapshot |
 | `classify` | `classify of t` or `classify of [t, "entropy"]` | Classify a trajectory snapshot (from `trajectory of x`, #421): value-channel label by default, entropy-channel with `"entropy"`. Raises `type_mismatch` on a non-snapshot — a bare value never silently classifies |
+
+**`report` and `report_value` are reserved** (#1102). They cannot be bound or
+used as first-class values. Non-identifier operands, including `report of 5`
+and `report_value of (x + 0.0)`, are compile-time `E005` errors; assign the
+expression to a variable first. Dict keys such as `d.report` remain legal.
+See [OBSERVER.md](OBSERVER.md) for their trajectory classifications.
+
+The VM retains the old `report` registry entry for bytecode compatibility:
+`vm_run_bytecode` can still resolve the string `"report"` with `GET_NAME`
+and `CALL` it, returning `"equilibrium"` for data or `"opaque"` for a callable.
+This entry is absent from the source builtin table and LSP Function completions;
+it does not make `report` a callable name in source. `report_value` has no
+runtime builtin registration.
 
 **`report`, `report_value`, `observe`, and `trajectory` on a plain variable
 are observer special forms** (decided in #459): like the predicates and
 interrogatives, `report of x` / `report_value of x` / `observe of x` /
 `trajectory of x` are resolved by the compiler to the named *binding's* slot
-trajectory — an operation on the name, not the value — so a user rebinding of
-these names does not change them (`--lint` W013 warns on the shadowing
-attempt). `trajectory of x` (#421) snapshots the slot's observer windows into
+trajectory — an operation on the name, not the value. The report words are
+reserved; a user rebinding of `observe` or `trajectory` does not change their
+name-keyed forms (`--lint` W013 warns on those shadowing attempts). `trajectory of x` (#421) snapshots the slot's observer windows into
 a plain dict (`kind`/`rel`/`raw`/`dh`/`entropy`/…) that survives a call
 boundary, for `classify` to read on the other side — the binding slot itself
 is binding-identity and a passed value arrives with no history. The non-ident
-forms (`report of (x + 0.0)`, `observe of expr`) are ordinary calls to the
+forms of `observe` / `trajectory` (`observe of expr`) are ordinary calls to the
 value-path builtins. `dispatch` is deliberately NOT in this set — it is a
 plain builtin and a user rebinding wins (see Lists above).
 

@@ -738,8 +738,9 @@ static void send_diagnostics(Document *doc) {
         strbuf_append_fmt(&sb, "%d", err_col);
         strbuf_append(&sb, "},\"end\":{\"line\":");
         strbuf_append_fmt(&sb, "%d", err_line);
-        strbuf_append_fmt(&sb, ",\"character\":%d}},\"severity\":1,\"code\":\"E002\","
-                            "\"source\":\"eigenscript\",\"message\":", err_end);
+        strbuf_append_fmt(&sb, ",\"character\":%d}},\"severity\":1,\"code\":\"%s\","
+                            "\"source\":\"eigenscript\",\"message\":", err_end,
+                            g_first_error_code ? g_first_error_code : "E002");
         json_escape_to(&sb, full);
         strbuf_append_char(&sb, '}');
     } else if (doc->ast) {

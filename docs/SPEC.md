@@ -1292,6 +1292,29 @@ iterations pass without certification (a runaway pinned at the
 saturation ceiling, sub-deadband drift); `__loop_exit__` records which
 one happened.
 
+`report` and `report_value` are **reserved observer forms**, like the
+predicate keywords: neither may be a binding name (including function names,
+parameters, `local`, loop/comprehension variables, destructuring targets,
+`catch` names, or an `import` module name). They are not first-class values.
+Misuse is a compile-time parse error **`E005`**, before any statement in that
+source unit executes. The rule also applies to REPL input, `eval`, `load_file`,
+`import`, the embedding API, and `--lint`; the CLI accepts source strings with
+`eigenscript -e '<source>'`.
+
+Both forms require an **identifier operand**, optionally parenthesized:
+`report of x`, `report of (x)`, and `report_value of ((x))` query the same
+binding history as before. Literals, arithmetic expressions, calls, indexing,
+field access, and literal argument lists (`[]`, `[x]`, `[x, y]`) are rejected
+with `E005` and “requires a variable name operand”. Assign an expression to a
+variable first; a temporary value has no named assignment history. This also
+replaces `report`'s old non-identifier fallback (`equilibrium`, or `opaque` for
+a function) and `report_value`'s undefined-name error. `of` precedence is
+unchanged: `report of x + "!"` appends to the report of `x`.
+
+As with other keywords, quoted dict keys and dot fields remain legal:
+`d.report` and `d.report_value` are data fields, not bindings of reserved names.
+`match` cases compare expressions; they do not introduce binders.
+
 **`report of x`** names the most specific band true of the same
 trajectory the predicates read (value channel for numerics, entropy
 otherwise — #861), resolving `oscillating` → `diverging` → `improving` →

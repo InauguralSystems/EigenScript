@@ -964,6 +964,12 @@ print of msg   # "World is running v0.5"
 
 ### lib/eigen.eigs — Meta-Circular Interpreter
 
+The meta-interpreter's `report` bridge classifies values without the host's
+binding trajectories: it returns `equilibrium` for ordinary values and `opaque`
+for functions. Since #1102 a fresh-parameter wrapper uses the reserved host
+syntax to preserve that existing fallback; the meta-interpreter remains a
+separate, partial implementation of the language.
+
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `eigen_tokenize` | `eigen_tokenize of source` | Tokenize source string into token list |

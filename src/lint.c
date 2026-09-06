@@ -756,9 +756,10 @@ static void check_builtin_shadow(ASTNode *node, LintContext *ctx) {
  * printing nothing and raising nothing. That is the worst affordance the
  * observer has: silence is indistinguishable from "nothing to say", and the
  * bare form is what issue bodies and READMEs reach for. Zero false positives by
- * construction: over an ident these names never reach a user function even when
- * one shadows them (#459, see W013), and a non-ident argument (`report of (x +
- * 0.0)`) is an ordinary call this check never sees. */
+ * construction: over an ident these names never reach a user function. The
+ * report words are reserved (#1102); observe/trajectory retain their special
+ * forms even when shadowed (#459, W013). Non-ident report operands are parse
+ * errors; non-ident observe/trajectory operands are calls this check never sees. */
 static const char *disc_observer_query(ASTNode *node) {
     static const char *names[] = {"report", "report_value", "observe",
                                   "trajectory"};

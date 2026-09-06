@@ -136,6 +136,16 @@ you put the thresholds — see [Resolution](#resolution).
   coverage, not the value's motion — the same visible-gap rule as
   `moving`.
 
+### Reserved report forms
+
+`report` and `report_value` are reserved words, never binding names or
+first-class functions. Use `report of x` / `report_value of x` with a named
+variable; parentheses around that name are allowed. Any binding of either word,
+or a non-identifier operand (literal, arithmetic, call, index, field, or argument
+list), is rejected at compile time with `E005`. Assign an expression to a
+variable first so there is a binding history to inspect. Dict fields such as
+`d.report` remain legal. See [SPEC](SPEC.md#observer-semantics-and-predicates) for the language rule.
+
 ### Two signals: entropy vs. value (`report` vs. `report_value`)
 
 **Since #861 the predicate words and `report` ROUTE: numeric bindings

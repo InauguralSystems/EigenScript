@@ -2045,6 +2045,23 @@ else
 fi
 echo ""
 
+# #1102: reserved observer forms. Require the complete fixture population as
+# well as its exit status; a partial run cannot silently reduce this section.
+echo "[42a] Reserved observer forms (#1102)"
+REPORT_OUT=$(bash "$TESTS_DIR/test_report_reserved.sh" 2>&1); REPORT_RC=$?
+REPORT_PASS=$(echo "$REPORT_OUT" | grep -c "^PASS:" || true)
+REPORT_FAIL=$(echo "$REPORT_OUT" | grep -c "^FAIL:" || true)
+TOTAL=$((TOTAL + 1))
+if [ "$REPORT_RC" -eq 0 ] && [ "$REPORT_PASS" -eq 209 ] && [ "$REPORT_FAIL" -eq 0 ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: all $REPORT_PASS reserved observer checks"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: reserved observer forms (rc=$REPORT_RC, $REPORT_PASS/209 checks passed)"
+    echo "$REPORT_OUT" | tail -20
+fi
+echo ""
+
 # #971: strict math mode (EIGS_STRICT) — domain ops raise instead of clamping.
 echo "Strict math mode (EIGS_STRICT domain-op raises)"
 SM_OUTPUT=$(bash "$TESTS_DIR/test_strict_math.sh" 2>&1)
@@ -3822,13 +3839,14 @@ check "gate CLOSES on a program with no observer surface" "$OBS_G1" "1"
 # 3. And OPEN on a direct observer surface.
 OBS_G2=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$TESTS_DIR/test_observer_level_set.eigs" 2>&1 | grep -c 'obs-gate: observed')
 check "gate OPENS on a direct observer surface" "$OBS_G2" "1"
-# 4. And OPEN on the INDIRECT form. `local r is report` emits NO reader opcode —
+# 4. And OPEN on the INDIRECT form. `local r is observe` emits NO reader opcode —
 #    it compiles to GET_NAME + CALL — so this passes only because the scan also
 #    matches observer-read builtin names in the constant pool. An opcode-only
-#    scan reports "unobserved" here and silently breaks every aliased report.
-printf 'x is 1.0\nlocal r is report\nx is 2.0\nprint of (r of x)\n' > "$OBS_GATE_TMP/alias.eigs"
+#    scan reports "unobserved" here and silently breaks aliased observer reads.
+#    #1102: report is now reserved; observe still exercises the same mechanism.
+printf 'x is 1.0\nlocal r is observe\nx is 2.0\nprint of (r of x)\n' > "$OBS_GATE_TMP/alias.eigs"
 OBS_G3=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$OBS_GATE_TMP/alias.eigs" 2>&1 | grep -c 'obs-gate: observed')
-check "gate OPENS on an aliased report (no reader opcode emitted)" "$OBS_G3" "1"
+check "gate OPENS on an aliased observe (no reader opcode emitted)" "$OBS_G3" "1"
 # 5. The escape hatch, which is also the baseline arm for perf work: ONE
 #    byte-identical binary serves both arms, so a measurement cannot be
 #    confounded by a second build.

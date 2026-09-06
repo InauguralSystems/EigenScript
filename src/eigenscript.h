@@ -132,6 +132,7 @@ typedef enum {
     TOK_TRY, TOK_CATCH, TOK_BREAK, TOK_CONTINUE, TOK_IMPORT,
     TOK_MATCH, TOK_CASE,
     TOK_UNOBSERVED,
+    TOK_REPORT, TOK_REPORT_VALUE,
     TOK_LOCAL,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT,
     TOK_LT, TOK_GT, TOK_LE, TOK_GE, TOK_EQ, TOK_NE, TOK_ASSIGN,
@@ -727,6 +728,7 @@ struct EigsThread {
      * set this instead of printing when the VM is live. */
     int          error_print_pending;
     char         error_msg[4096];
+    const char  *first_error_code; /* stable parse diagnostic, normally E002 */
     char         first_error_msg[256];
     struct Value *error_value;      /* thrown payload for structured catch */
     /* #406: structured runtime errors. Kind (ErrKind), 1-based line, and
@@ -947,6 +949,7 @@ extern __thread EigsThread *eigs_current;
 #define g_first_error_col_known (eigs_current->first_error_col_known)
 #define g_error_print_pending (eigs_current->error_print_pending)
 #define g_error_msg         (eigs_current->error_msg)
+#define g_first_error_code  (eigs_current->first_error_code)
 #define g_first_error_msg   (eigs_current->first_error_msg)
 #define g_error_value       (eigs_current->error_value)
 #define g_error_kind        (eigs_current->error_kind)
@@ -1640,6 +1643,8 @@ void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-o
 int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
 void eigs_record_first_error(int line, const char *msg);
 void eigs_record_first_error_at(int line, int col, int len, const char *msg);
+void eigs_record_first_error_code_at(int line, int col, int len,
+                                     const char *code, const char *msg);
 /* #407: one-line source excerpt + `^` caret under `col` (0-based), the
  * shared format for parse-time and runtime diagnostics. No-op when src is
  * NULL or the position is out of range. */

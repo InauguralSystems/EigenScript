@@ -2715,6 +2715,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 emit_op_u16_u16(c, OP_PREDICATE_NAME, pkind, (uint16_t)pnidx, node->line);
                 break;
             }
+            /* #1102: the parser reserves the report words and validates
+             * their identifier operand before any unit reaches compilation.
+             * Keep these name/slot emissions and runtime semantics unchanged. */
             if (fn_node && fn_node->type == AST_IDENT &&
                 strcmp(fn_node->data.ident.name, "report") == 0 &&
                 arg_node && arg_node->type == AST_IDENT) {
