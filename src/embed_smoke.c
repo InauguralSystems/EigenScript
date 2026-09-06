@@ -196,6 +196,35 @@ int main(void) {
     CHECK(r != NULL && eigs_value_as_num(r) == 100.0, "eval still works after error");
     eigs_value_release(r);
 
+    /* #1102: source reservation is shared by the embedding parser. A
+     * rejected unit must not execute its earlier assignment, and another
+     * eval must recover with no stale diagnostic code. */
+    {
+        const char *names[] = {"report", "report_value"};
+        for (int i = 0; i < 2; i++) {
+            char source[192];
+            snprintf(source, sizeof(source),
+                     "embed_reserved_ran is 1\ndefine f(\n  %s\n) as:\n    return 0\n",
+                     names[i]);
+            r = eigs_eval_string(source);
+            CHECK(r == NULL && g_parse_errors > 0,
+                  "reserved observer parameter rejected by embed eval");
+            CHECK(g_first_error_line == 3 && g_first_error_code &&
+                  strcmp(g_first_error_code, "E005") == 0 &&
+                  strstr(g_first_error_msg, "reserved observer form"),
+                  "embed reserved diagnostic code and offending line");
+            eigs_value_release(r);
+            EigsValue *ran = eigs_get_global("embed_reserved_ran");
+            CHECK(!ran || eigs_value_type(ran) == EIGS_TYPE_NULL,
+                  "embed rejected unit executes no earlier statement");
+            eigs_value_release(ran);
+            r = eigs_eval_string("1 + 2");
+            CHECK(r && eigs_value_as_num(r) == 3.0 && g_first_error_line == 0,
+                  "embed recovers after reserved observer error");
+            eigs_value_release(r);
+        }
+    }
+
     /* --- FFI: register a C function, call from script. --------------- */
     eigs_register_function("host_add", host_add);
     r = eigs_eval_string("host_add of [3, 4]");

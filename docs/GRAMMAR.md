@@ -78,6 +78,18 @@ ordinary identifiers everywhere else. The six question words above are
 soft in the same way — `what` not followed by `is` parses as an
 identifier.
 
+### Reserved Observer Forms
+
+```
+report  report_value
+```
+
+These words cannot be identifiers or binding names (`E005`). Their expression
+form is `('report' | 'report_value') 'of' identifier_operand`, where
+`identifier_operand = IDENT | '(' identifier_operand ')'`. Other operand shapes
+are `E005` errors; `of` retains normal precedence. Like every word keyword,
+these words are allowed as dict keys after a dot.
+
 ### Observer Predicates
 
 ```

@@ -86,6 +86,7 @@ int main(int argc, char **argv) {
             "\n"
             "Usage:\n"
             "  eigenscript <file.eigs> [args...]   run a script (args readable via `args of null`)\n"
+            "  eigenscript -e <source> [args...]   run a source string\n"
             "  eigenscript                         start the REPL\n"
             "  eigenscript --fmt [--write] <file>  format a source file (stdout, or rewrite with --write)\n"
             "  eigenscript --lint [--json] [--lint-level error|warning] <file>\n"
@@ -292,6 +293,17 @@ int main(int argc, char **argv) {
         return repl_exit_code;
     }
 
+    /* Source strings use the same parse/compile/execute path as files.
+     * Keep argv[1] as the source identity and strip only the source argument
+     * from the script-visible args; relative loads start at the caller cwd. */
+    int source_string = strcmp(argv[1], "-e") == 0;
+    if (source_string && argc < 3) {
+        fprintf(stderr, "Usage: eigenscript -e <source> [args...]\n");
+        eigs_thread_detach();
+        eigs_state_destroy(eigs_st);
+        return 1;
+    }
+
     /* Extract script directory for load_file resolution. g_script_dir
      * is an EigsState bridge macro — state is already attached above. */
     {
@@ -301,7 +313,8 @@ int main(int argc, char **argv) {
     }
 
     long src_size = 0;
-    char *source = read_file_util(argv[1], &src_size);
+    char *source = source_string ? xstrdup(argv[2])
+                                 : read_file_util(argv[1], &src_size);
     if (!source) {
         fprintf(stderr, "Error: cannot read file '%s'\n", argv[1]);
         eigs_thread_detach();
@@ -309,6 +322,10 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    if (source_string) {
+        for (int i = 2; i + 1 < argc; i++) argv[i] = argv[i + 1];
+        argv[--argc] = NULL;
+    }
     srand(time(NULL));
     eigenscript_set_args(argc, argv);
 

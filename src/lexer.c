@@ -84,6 +84,8 @@ static TokType keyword_type(const char *word) {
         if (strcmp(word, "prev") == 0) return TOK_PREV;
         break;
     case 'r':
+        if (strcmp(word, "report") == 0) return TOK_REPORT;
+        if (strcmp(word, "report_value") == 0) return TOK_REPORT_VALUE;
         if (strcmp(word, "return") == 0) return TOK_RETURN;
         break;
     case 's':
@@ -158,6 +160,8 @@ const char* tok_base_string(TokType t) {
         case TOK_MATCH:      return "match ";
         case TOK_CASE:       return "case ";
         case TOK_UNOBSERVED: return "unobserved ";
+        case TOK_REPORT:     return "report ";
+        case TOK_REPORT_VALUE:return "report_value ";
         case TOK_LOCAL:      return "local ";
         case TOK_PLUS:       return "+ ";
         case TOK_MINUS:      return "- ";
@@ -217,6 +221,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
      * this document's diagnostic. Nested f-string tokenization bumps
      * g_tokenize_depth, so only reset at the outermost pass. */
     if (g_tokenize_depth == 0) {
+        g_first_error_code = "E002";
         g_first_error_line = 0;
         g_first_error_col = 0;
         g_first_error_len = 0;

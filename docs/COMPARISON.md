@@ -439,6 +439,11 @@ stops moving, which would make a runaway look like the calmest possible
 trajectory — so the observer treats the ceiling as evidence of divergence,
 not of rest (#861). Keep the runaway above going and the verdict holds:
 
+`report` and `report_value` are reserved observer forms: unlike ordinary
+functions in Python or JavaScript, they cannot be rebound or passed as values.
+Their `of` operand must be a variable name (parentheses allowed); other operands
+and all binding attempts fail before the source unit runs with `E005`.
+
 ```eigenscript
 r is 1.0
 i is 0

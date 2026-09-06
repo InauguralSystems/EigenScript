@@ -1262,12 +1262,14 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
             lint_json_escape(g_first_error_msg[0] ? g_first_error_msg : "parse error",
                         esc, sizeof(esc));
             lint_json_escape(path, pesc, sizeof(pesc));
-            printf("[{\"code\":\"E002\",\"severity\":\"error\",\"line\":%d,"
+            printf("[{\"code\":\"%s\",\"severity\":\"error\",\"line\":%d,"
                    "\"column\":%d,\"file\":\"%s\",\"message\":\"%s\"}]\n",
+                   g_first_error_code ? g_first_error_code : "E002",
                    g_first_error_line, g_first_error_col + 1, pesc, esc);
         } else {
-            fprintf(stderr, "%s: %d parse error(s) [E002] — cannot lint\n",
-                    path, g_parse_errors);
+            fprintf(stderr, "%s: %d parse error(s) [%s] — cannot lint\n",
+                    path, g_parse_errors,
+                    g_first_error_code ? g_first_error_code : "E002");
         }
         free_ast(ast);
         free_tokenlist(&tl);

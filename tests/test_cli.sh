@@ -180,6 +180,36 @@ else
     fail "CLI15 div-zero raises" "rc=$RC out='$OUT'"
 fi
 
+# ---- #1102: source-string execution shares the file compilation path ----
+OUT=$("$EIGS" -e 'print of (1 + 2)' 2>&1)
+RC=$?
+if [ "$RC" -eq 0 ] && [ "$OUT" = "3" ]; then
+    ok "CLI16 -e executes a source string"
+else
+    fail "CLI16 -e executes" "rc=$RC out='$OUT'"
+fi
+OUT=$("$EIGS" -e 'print of (len of (args of null))' first second 2>&1)
+RC=$?
+if [ "$RC" -eq 0 ] && [ "$OUT" = "2" ]; then
+    ok "CLI17 -e passes script args without source text"
+else
+    fail "CLI17 -e args" "rc=$RC out='$OUT'"
+fi
+OUT=$("$EIGS" -e 'exit of 7' 2>&1)
+RC=$?
+if [ "$RC" -eq 7 ] && [ -z "$OUT" ]; then
+    ok "CLI18 -e preserves explicit exit status"
+else
+    fail "CLI18 -e exit" "rc=$RC out='$OUT'"
+fi
+OUT=$("$EIGS" -e 2>&1)
+RC=$?
+if [ "$RC" -eq 1 ] && [ "$OUT" = "Usage: eigenscript -e <source> [args...]" ]; then
+    ok "CLI19 -e missing source is a usage error"
+else
+    fail "CLI19 -e missing source" "rc=$RC out='$OUT'"
+fi
+
 # ---- Summary ----
 echo ""
 echo "CLI: $PASS passed, $FAIL failed"

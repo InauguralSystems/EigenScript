@@ -174,6 +174,16 @@ def main():
     check("diagnostic severity is error (1)", bool(d) and d[0]["severity"] == 1)
     check("diagnostic mentions expected colon", bool(d) and "expected ':'" in d[0]["message"])
 
+    # #1102: parser code and exact offending token survive LSP transport.
+    for name in ("report", "report_value"):
+        source = "define f(\n    " + name + "\n) as:\n    return 0\n"
+        d = diagnostics(converse([INIT, did_open(source), SHUTDOWN, EXIT]))
+        check(name + " reserved observer error code/range (#1102)",
+              bool(d) and d[0].get("code") == "E005" and d[0]["severity"] == 1
+              and "reserved observer form" in d[0]["message"]
+              and d[0]["range"]["start"] == {"line": 1, "character": 4}
+              and d[0]["range"]["end"] == {"line": 1, "character": 4 + len(name)})
+
     # --- unexpected character → diagnostic naming the char ---
     r = converse([INIT, did_open("x is @\n"), SHUTDOWN, EXIT])
     d = diagnostics(r)

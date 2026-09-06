@@ -77,7 +77,11 @@ not any outer `n`.
 ## Reserved and soft keywords (cannot be plain variable names)
 
 - **Reserved** (never identifiers): `in`, and the observer predicates
-  `converged`, `stable`, `improving`, `diverging`, `oscillating`, `equilibrium`.
+  `converged`, `stable`, `improving`, `diverging`, `oscillating`, `equilibrium`,
+  plus `report` and `report_value`. Never bind either report name, even as a
+  parameter or loop variable (`E005`). Use `report of x` / `report_value of x`
+  with an identifier (parentheses allowed); expressions/arg lists are `E005`
+  errors, so bind the expression first. Dict fields `d.report` remain legal.
 - **Soft** (`prev`, `at`, and the six question words `what who when where why
   how`): usable as params/loop-vars/catch-names, but you can NEVER bind one with
   plain `is` (`what is e` is the interrogative form, a silent no-op as an
@@ -104,9 +108,9 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.4142135623
 - `loop while not converged` uses the **bare** predicate reading the loop's
   last-assigned value. Put it **inside a function** so the loop gets a fresh
   binding to watch (a module-scope version can loop forever).
-- `report of x` returns the entropy-channel state string; `report_value of x`
-  the value-channel state (use the value channel for convergence vs divergence —
-  the entropy channel calls a monotonically exploding value `converged`).
+- `report of x` returns the routed state string (value channel for numeric
+  bindings, entropy channel otherwise); `report_value of x` uses the value
+  channel explicitly. Both read the named binding's trajectory.
 - `converged` needs LOW absolute entropy on top of a settled window: a value
   pinned at `5.0` reports `stable`, never `converged`; pinned at `0.0`/`1.0` it
   converges. Don't guess the predicate — see docs/PREDICATES.md.

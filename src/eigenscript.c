@@ -50,7 +50,8 @@
  * four siblings (#955) — per-context, so two EigsStates on one thread
  * cannot cross-read known-ness. */
 
-void eigs_record_first_error_at(int line, int col, int len, const char *msg) {
+void eigs_record_first_error_code_at(int line, int col, int len,
+                                     const char *code, const char *msg) {
     int candidate_col_known = col >= 0 && len > 0;
     if (g_first_error_line > 0) {
         if (line <= 0 || line > g_first_error_line) return;
@@ -59,11 +60,16 @@ void eigs_record_first_error_at(int line, int col, int len, const char *msg) {
                 col >= g_first_error_col) return;
         }
     }
+    g_first_error_code = code;
     g_first_error_line = line;
     g_first_error_col = candidate_col_known ? col : 0;
     g_first_error_len = len;
     g_first_error_col_known = candidate_col_known;
     snprintf(g_first_error_msg, sizeof(g_first_error_msg), "%s", msg ? msg : "syntax error");
+}
+
+void eigs_record_first_error_at(int line, int col, int len, const char *msg) {
+    eigs_record_first_error_code_at(line, col, len, "E002", msg);
 }
 
 void eigs_record_first_error(int line, const char *msg) {
@@ -191,6 +197,8 @@ const char* tok_type_name(TokType t) {
         case TOK_IN: return "'in'";
         case TOK_NULL: return "'null'";
         case TOK_UNOBSERVED: return "'unobserved'";
+        case TOK_REPORT: return "'report'";
+        case TOK_REPORT_VALUE: return "'report_value'";
         case TOK_LOCAL: return "'local'";
         case TOK_PLUS: return "'+'";
         case TOK_MINUS: return "'-'";

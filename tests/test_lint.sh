@@ -468,14 +468,14 @@ TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'
 define dispatch(a, b, c) as:
     return 999
-define report(v) as:
+define observe(v) as:
     return v
 chr is 7
 print of "hi"
 EIGS
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "W013 fires on define dispatch (#459)" "$OUTPUT" "W013.*'dispatch'"
-check_contains "W013 fires on define report (observer special form)" "$OUTPUT" "W013.*'report'"
+check_contains "W013 fires on define observe (observer special form)" "$OUTPUT" "W013.*'observe'"
 check_contains "W012 fires on a registry-only builtin (chr)" "$OUTPUT" "W012.*'chr'"
 rm -f "$TMPFILE"
 

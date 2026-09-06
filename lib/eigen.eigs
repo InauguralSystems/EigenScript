@@ -1696,9 +1696,9 @@ define _eval_block(stmts, env) as:
 
 define _make_default_env as:
     env is _env_new of null
-    # Bridge ALL C builtins into the meta-interpreter's environment.
+    # Bridge the C builtins into the meta-interpreter's environment.
     # Since we're running inside the C runtime, these names resolve to
-    # VAL_BUILTIN values. The evaluator's "call" handler calls them
+    # VAL_BUILTIN values (report uses the wrapper below). The "call" handler calls them
     # with `fn of arg` which the C runtime handles natively.
     _env_set_local of [env, "print", print]
     _env_set_local of [env, "write", write]
@@ -1708,7 +1708,11 @@ define _make_default_env as:
     _env_set_local of [env, "num", num]
     _env_set_local of [env, "append", append]
     _env_set_local of [env, "type", type]
-    _env_set_local of [env, "report", report]
+    # #1102: report is reserved syntax, so it cannot be stored as a value.
+    # This fresh-parameter wrapper preserves this interpreter's existing
+    # value-only bridge: no trajectory -> equilibrium, functions -> opaque.
+    # It does not expose the host's named binding history to the meta env.
+    _env_set_local of [env, "report", (v) => report of v]
     _env_set_local of [env, "assert", assert]
     _env_set_local of [env, "throw", throw]
     _env_set_local of [env, "keys", keys]
