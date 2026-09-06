@@ -529,10 +529,25 @@ stops at the module boundary, preserving the importer's bindings. Top-level `ret
 load_file yields its value, import finishes its namespace, and main discards
 its value.
 
-The existing function-slot exception remains: a binder with no prior binding
-inside a function retains its final value after the loop on every road. A
-pre-existing parameter or local is restored. This change preserves that
-exception; see the scope notes in LANGUAGE_CONTRACT.md.
+There is no function-scope exception (#1105): a binder with no prior binding
+inside a function is loop-scoped like any other, so reading it after the loop
+raises `undefined variable` on every road (Python, by contrast, leaks the
+loop variable into the enclosing function). A pre-existing parameter, `local`
+or module binding is restored after the loop.
+
+```eigenscript
+define probe() as:
+    for z in [7, 8]:
+        0
+    return z
+try:
+    print of (probe of [])
+catch e:
+    print of e.message
+```
+```output
+undefined variable 'z'
+```
 
 <!-- Embed contract: #1038/#1028; language-level observer semantics unchanged. -->
 The C embedding API starts observer recording open. Source evals retain

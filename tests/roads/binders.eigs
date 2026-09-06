@@ -1,4 +1,4 @@
-# road-bind: y x module_result function_result parameter_result local_result nested_result fresh_result k
+# road-bind: y x module_result function_result parameter_result local_result nested_result fresh_result shadow_result rebind_result k
 y is 100
 for y in [1, 2, 3]:
     y is y + 10
@@ -31,7 +31,21 @@ nested_result is nested of []
 define fresh() as:
     for z in [7, 8]:
         0
-    return z
+    try:
+        return z
+    catch e:
+        return e.message
 fresh_result is fresh of []
+define shadow() as:
+    for x in [7, 8]:
+        0
+    return x
+shadow_result is shadow of []
+define rebind() as:
+    for z in [7, 8]:
+        0
+    z is 5
+    return z
+rebind_result is rebind of []
 for k in [1, 2]:
     print of k

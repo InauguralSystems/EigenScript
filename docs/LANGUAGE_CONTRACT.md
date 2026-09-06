@@ -113,10 +113,10 @@ partial AST — consistent with the **Errors** promise.
   continues; import finishes the module; the main program discards the value
   and exits successfully.
 
-The existing function-slot exception remains: a binder with no prior binding
-inside a function retains its final value after the loop on every road. A
-pre-existing parameter or local is restored. This change preserves that
-exception; see the scope notes in LANGUAGE_CONTRACT.md.
+There is no function-scope exception (#1105): a binder with no prior binding
+inside a function is loop-scoped like any other, and reading it after the loop
+raises `undefined variable` on every road. A pre-existing parameter, `local`
+or module binding is restored. See the scope notes below.
 
 **Status:** Enforced — `tools/road_diff.sh` and `tests/roads/`, `tests/test_import.eigs`,
 `tests/test_import_errors.eigs` (parse-error surfacing for `import` /
@@ -235,10 +235,11 @@ else is truthy (including functions).
   and each iteration binds a fresh variable (so closures created in a loop
   capture distinct values). Inside a function, a binder whose name was
   already bound (a parameter, a `local`, an earlier assignment) has that
-  earlier value again after the loop (#1064). Function-scope note: a binder
-  whose name had NO prior binding in the function stays readable after the
-  loop with its last value — the loop var lives in a frame slot there, and
-  the unbound case is not diagnosed the way module scope diagnoses it.
+  earlier value again after the loop (#1064). A binder whose name had NO
+  prior binding is loop-scoped in a function exactly as at module scope:
+  reading it after the loop is an `undefined variable` error (#1105), and a
+  later plain assignment to the name creates a fresh binding. One rule,
+  every scope, every road (main, `load_file`, `import`).
 - Name resolution walks the scope chain; an unresolved name is a fatal
   runtime error.
 - Functions resolve referenced names at call time (late binding), so

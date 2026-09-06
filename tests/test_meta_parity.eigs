@@ -192,6 +192,40 @@ check of ["meta: host function operand is opaque", eigen_run of "report of print
 check of ["meta: dict fields named report/report_value stay data keys", eigen_run of "rdk is {\"report\": 7, \"report_value\": 8}\nrdk.report is 9\nrdk.report + rdk.report_value", 17]
 check of ["native: dict fields named report/report_value stay data keys", eval of "rdn is {\"report\": 7, \"report_value\": 8}\nrdn.report is 9\nrdn.report + rdn.report_value", 17]
 
+# --- #1105: a fresh `for` binder is loop-scoped in a function too (both raise) ---
+define meta_probe(src) as:
+    try:
+        return ["ok", eigen_run of src]
+    catch pe:
+        return ["err"]
+check of ["fresh function binder: meta raises after the loop",
+    meta_probe of "define probe() as:\n    for z in [7, 8]:\n        0\n    return z\nprobe of []",
+    ["err"]]
+check of ["fresh module binder: meta raises after the loop",
+    meta_probe of "for m in [7, 8]:\n    0\nm",
+    ["err"]]
+check of ["parameter binder: restored after the loop",
+    meta_probe of "define f(p) as:\n    for p in [7, 8]:\n        p is p + 10\n    return p\nf of 1",
+    ["ok", 1]]
+check of ["fresh binder over a module name: module value after the loop",
+    meta_probe of "x is 5\ndefine g() as:\n    for x in [7, 8]:\n        0\n    return x\ng of []",
+    ["ok", 5]]
+check of ["post-loop write is a fresh binding",
+    meta_probe of "define h() as:\n    for z in [7, 8]:\n        0\n    z is 5\n    return z\nh of []",
+    ["ok", 5]]
+# The C VM answers the same five programs (the oracle side of the parity).
+define vm_probe(src) as:
+    try:
+        return ["ok", eval of src]
+    catch ve:
+        return ["err"]
+check of ["VM: fresh function binder raises",
+    vm_probe of "define probe1105() as:\n    for z in [7, 8]:\n        0\n    return z\nprobe1105 of []",
+    ["err"]]
+check of ["VM: parameter binder restored",
+    vm_probe of "define f1105(p) as:\n    for p in [7, 8]:\n        p is p + 10\n    return p\nf1105 of 1",
+    ["ok", 1]]
+
 if checks == passed:
     print of "All tests passed"
 else:

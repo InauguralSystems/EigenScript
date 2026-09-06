@@ -692,8 +692,11 @@ void check_stdlib_shadow(ASTNode *ast, const char *path,
  *   - module-level names are order-insensitive (a function body may read
  *     a module name bound after the definition);
  *   - a nested `define` binds its name in the ENCLOSING function only;
- *   - a module-level `for` LOOP-SCOPES its variable (reading it after
- *     the loop is a runtime error) — a function-level `for` does not;
+ *   - a `for` LOOP-SCOPES its variable at every level (#1105: reading
+ *     it after the loop is a runtime error inside a function too); a
+ *     body's plain `is` binds in the enclosing function/module scope,
+ *     not the loop (#1056), so a post-loop read of a body-assigned
+ *     name stays silent;
  *   - listcomp vars and catch vars bind in the containing scope.
  * Within a scope the binder set is still an over-approximation across
  * paths ("bound on some path" suppresses — the sibling-branch
@@ -730,9 +733,14 @@ void check_stdlib_shadow(ASTNode *ast, const char *path,
 typedef struct {
     Env *bind;                      /* base: builtins + flat external binders */
     Env *module_scope;              /* the linted file's top-level scope */
-    Env *scope;                     /* current scope (chains to bind via parents) */
+    Env *scope;                     /* current LOOKUP scope (chains to bind via parents) */
+    Env *bind_scope;                /* nearest function/module scope: where a
+                                     * plain `is`, a listcomp/catch var and a
+                                     * nested define's name bind. Differs from
+                                     * `scope` inside a `for`, whose pushed
+                                     * scope holds only the binder (#1105). */
     /* Scope registry: COLLECT creates one Env per scope-introducing node
-     * (function, lambda, module-level for) in walk order; FLAG re-enters
+     * (function, lambda, for) in walk order; FLAG re-enters
      * the same Envs by replaying the counter. Both walks visit the same
      * nodes in the same order, so the indices agree by construction. */
     Env *scopes[E003_MAX_SCOPES];
@@ -754,9 +762,14 @@ static void e003_bind_in(Env *env, const char *name) {
         env_set_local_owned(env, name, make_null());
 }
 
-/* Bind in the CURRENT scope — external (loaded-file) collection routes
- * flat to the base env instead. */
+/* Bind in the nearest function/module scope — external (loaded-file)
+ * collection routes flat to the base env instead. */
 static void e003_bind_name(E003 *e, const char *name) {
+    e003_bind_in(e->external ? e->bind : e->bind_scope, name);
+}
+
+/* #1105: a `for` binder lives in the loop's own lookup scope only. */
+static void e003_bind_loop_var(E003 *e, const char *name) {
     e003_bind_in(e->external ? e->bind : e->scope, name);
 }
 
@@ -922,6 +935,8 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
              * params and body binders live in the function's own scope. */
             if (mode == E003_COLLECT) e003_bind_name(e, n->data.func.name);
             Env *prev = e003_scope_push(e, mode);
+            Env *prev_bind = e->bind_scope;
+            e->bind_scope = e->scope;
             if (mode == E003_COLLECT)
                 for (int i = 0; i < n->data.func.param_count; i++)
                     e003_bind_name(e, n->data.func.params[i]);
@@ -931,28 +946,33 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
             for (int i = 0; i < n->data.func.body_count; i++)
                 e003_walk(n->data.func.body[i], e, ctx, mode);
             e->scope = prev;
+            e->bind_scope = prev_bind;
             break;
         }
         case AST_LAMBDA: {
             Env *prev = e003_scope_push(e, mode);
+            Env *prev_bind = e->bind_scope;
+            e->bind_scope = e->scope;
             if (mode == E003_COLLECT)
                 for (int i = 0; i < n->data.lambda.param_count; i++)
                     e003_bind_name(e, n->data.lambda.params[i]);
             e003_walk(n->data.lambda.body, e, ctx, mode);
             e->scope = prev;
+            e->bind_scope = prev_bind;
             break;
         }
         case AST_FOR: {
-            /* Module-level `for` LOOP-SCOPES its variable (the VM drops
-             * it at loop exit — reading it after the loop is a runtime
-             * error); a function-level `for` var is an ordinary local.
-             * The iterable is evaluated before the var exists, so it
-             * walks in the outer scope. */
+            /* A `for` LOOP-SCOPES its variable at every level (#1105: the
+             * VM drops a module binder at loop exit and retires a function
+             * binder's slot -- reading it after the loop is a runtime
+             * error either way). Only the binder lives in the pushed
+             * scope: a body's plain `is` binds in the enclosing
+             * function/module scope (#1056), through bind_scope. The
+             * iterable is evaluated before the var exists, so it walks in
+             * the outer scope. */
             e003_walk(n->data.forloop.iter, e, ctx, mode);
-            int module_level = (!e->external && e->scope == e->module_scope);
-            Env *prev = e->scope;
-            if (module_level) prev = e003_scope_push(e, mode);
-            if (mode == E003_COLLECT) e003_bind_name(e, n->data.forloop.var);
+            Env *prev = e003_scope_push(e, mode);
+            if (mode == E003_COLLECT) e003_bind_loop_var(e, n->data.forloop.var);
             for (int i = 0; i < n->data.forloop.body_count; i++)
                 e003_walk(n->data.forloop.body[i], e, ctx, mode);
             e->scope = prev;
@@ -1073,6 +1093,7 @@ void check_undefined_names(ASTNode *ast, const char *path,
     e.bind = env_new(NULL);
     e.module_scope = env_new(e.bind);
     e.scope = e.module_scope;
+    e.bind_scope = e.module_scope;
     register_builtins(e.bind);   /* store/gfx-when-built ride inside (#742) */
     /* Extension builtins bind by NAME regardless of this binary's build
      * flags (ext_names.h, the same lists their registrars expand): the lint
@@ -1138,6 +1159,7 @@ void check_undefined_names(ASTNode *ast, const char *path,
     e003_walk(ast, &e, NULL, E003_COLLECT);
     if (!e.dynamic) {
         e.scope = e.module_scope;   /* replay from the top */
+        e.bind_scope = e.module_scope;
         e.scope_idx = 0;
         e003_walk(ast, &e, ctx, E003_FLAG);
     }

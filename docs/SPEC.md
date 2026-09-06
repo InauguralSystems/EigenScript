@@ -1180,10 +1180,32 @@ A top-level `return value` ends the current file, skipping all later statements:
 `load_file` yields the value to its caller; import finishes its namespace;
 the main program discards the value and exits successfully.
 
-The existing function-slot exception remains: a binder with no prior binding
-inside a function retains its final value after the loop on every road. A
-pre-existing parameter or local is restored. This change preserves that
-exception; see the scope notes in LANGUAGE_CONTRACT.md.
+There is no function-scope exception (#1105): a binder with no prior binding
+inside a function is loop-scoped like any other, so reading it after the loop
+raises `undefined variable` on every road. A pre-existing parameter, `local`
+or module binding is restored after the loop; a post-loop plain assignment to
+the name creates a fresh binding.
+
+```eigenscript
+define probe() as:
+    for z in [7, 8]:
+        0
+    return z
+try:
+    print of (probe of [])
+catch e:
+    print of e.message
+x is 5
+define over_module() as:
+    for x in [7, 8]:
+        0
+    return x
+print of (over_module of [])
+```
+```output
+undefined variable 'z'
+5
+```
 
 **Module write boundary.** A loaded (or imported) module's *functions*
 can read the loader's globals and call its functions, but they can

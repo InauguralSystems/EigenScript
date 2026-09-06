@@ -7,5 +7,7 @@
 ["parameter_result", 1, 1]
 ["local_result", 1, 42]
 ["nested_result", 1, 30]
-["fresh_result", 1, 8]
+["fresh_result", 1, "undefined variable 'z'"]
+["shadow_result", 1, 5]
+["rebind_result", 1, 5]
 ["k", 0]

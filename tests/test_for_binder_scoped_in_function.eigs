@@ -6,8 +6,9 @@
 # assignment -- reused the slot and the loop's last value became the name's
 # value afterwards (`define f(p): for p in [7, 8]: p is p + 10` returned 18).
 # The compiler now saves the pre-loop value and restores it at loop exit, on
-# both the exhausted and the break path. A name with NO prior binding keeps
-# its function-scoped slot (documented function-scope note).
+# both the exhausted and the break path. A name with NO prior binding is
+# loop-scoped too (#1105): its slot is retired at the loop exit, so a
+# post-loop read raises `undefined variable` exactly as module scope does.
 
 load_file of "lib/test.eigs"
 
@@ -63,8 +64,11 @@ assert_true of [(str of (f_nested of 0)) == "[10, 1, 10, 2, 0]", "nested same-na
 define f_fresh(q) as:
     for k in [1, 2]:
         k is k * 3
-    return k
-assert_true of [(f_fresh of 0) == 6, "fresh name (no prior binding): function-scoped slot, documented"]
+    try:
+        return k
+    catch e:
+        return e.kind
+assert_true of [(f_fresh of 0) == "undefined_name", "fresh name (no prior binding): loop-scoped, post-loop read raises (#1105)"]
 
 define f_range(n) as:
     local i is 99

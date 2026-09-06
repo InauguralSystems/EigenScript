@@ -1,0 +1,158 @@
+# test_for_binder_fresh_loop_scoped.eigs — #1105.
+#
+# LANGUAGE_CONTRACT: a `for` binder is loop-scoped everywhere. Module scope
+# always kept that promise (the binder lives in a loop env); inside a function
+# a binder with NO prior binding took the env-skip fast path, got a fresh
+# frame slot, and stayed readable after the loop with its last value
+# (`define f(): for z in [7, 8]: ...; return z` returned 8). The compiler now
+# retires that slot at the loop exit, so the post-loop read compiles to a
+# name lookup and raises `undefined variable` exactly as module scope does.
+# Every other tier (loop env for captured/interrogated/shadowing binders) and
+# the #1064 restore of a pre-existing binding are asserted unchanged here.
+# `--lint` reports E003 on the deliberate post-loop reads below: that is the
+# static form of the same rule (lint_host.c's E003 model was aligned in the
+# same change), so this file is intentionally not lint-clean.
+
+load_file of "lib/test.eigs"
+
+define kind_of(thunk) as:
+    try:
+        return ["ok", thunk of []]
+    catch e:
+        return ["err", e.kind]
+
+# (1) the issue: fresh binder, slot path -> loud after the loop
+define fresh() as:
+    for z in [7, 8]:
+        0
+    return z
+r1 is kind_of of fresh
+assert_true of [(r1[0] == "err") and (r1[1] == "undefined_name"), "fresh binder: post-loop read raises undefined_name (#1105)"]
+
+# (2) the body still sees its binder; only the post-loop read is gone
+define body_reads() as:
+    local seen is []
+    for z in [7, 8]:
+        append of [seen, z * 2]
+    return seen
+assert_true of [(str of (body_reads of [])) == "[14, 16]", "body reads the binder normally"]
+
+# (3) break path is loop-scoped too
+define brk() as:
+    for z in [1, 2, 3]:
+        if z == 2:
+            break
+    return z
+r3 is kind_of of brk
+assert_true of [(r3[0] == "err") and (r3[1] == "undefined_name"), "break path: binder still loop-scoped"]
+
+# (4) a post-loop plain write is a fresh binding, not an error
+define rebind() as:
+    for z in [7, 8]:
+        0
+    z is 5
+    return z
+assert_true of [(rebind of []) == 5, "post-loop write creates a fresh binding"]
+
+# (5) a compound write reads first, so it is loud
+define compound() as:
+    for z in [7, 8]:
+        0
+    z += 1
+    return z
+r5 is kind_of of compound
+assert_true of [(r5[0] == "err") and (r5[1] == "undefined_name"), "post-loop compound assign reads the dead binder: loud"]
+
+# (6) sequential loops over the same fresh name each get their own binder
+define twice() as:
+    local out is []
+    for z in [1, 2]:
+        append of [out, z]
+    for z in [30, 40]:
+        append of [out, z]
+    return out
+assert_true of [(str of (twice of [])) == "[1, 2, 30, 40]", "sequential same-name loops: each a fresh binder"]
+
+# (7) nested: the inner fresh binder is gone in the outer body
+define nested() as:
+    local out is []
+    for a in [1, 2]:
+        for b in [10]:
+            append of [out, a * b]
+        try:
+            append of [out, b]
+        catch e2:
+            append of [out, "no b"]
+    return out
+assert_true of [(str of (nested of [])) == "[10, \"no b\", 20, \"no b\"]", "inner fresh binder is not visible in the outer body"]
+
+# (8) a fresh binder that shadows a module name: the module value is back
+shadowed is 99
+define shadow() as:
+    for shadowed in [7, 8]:
+        0
+    return shadowed
+assert_true of [(shadow of []) == 99, "binder over a module name (loop-env tier): module value after the loop"]
+
+# (9) captured binder (loop-env tier because a closure reads it): loud too
+define captured() as:
+    local fns is []
+    for z in [1, 2]:
+        append of [fns, (q) => q + z]
+    return z
+r9 is kind_of of captured
+assert_true of [(r9[0] == "err") and (r9[1] == "undefined_name"), "captured binder (loop-env tier): post-loop read raises"]
+
+# (10) interrogated binder (loop-env tier): loud too
+define interrogated() as:
+    for z in [1, 2]:
+        w is who is z
+    return z
+r10 is kind_of of interrogated
+assert_true of [(r10[0] == "err") and (r10[1] == "undefined_name"), "interrogated binder (loop-env tier): post-loop read raises"]
+
+# (11) positive controls, #1064 unchanged: parameter / local / plain-assigned
+define f_param(p) as:
+    for p in [7, 8]:
+        p is p + 10
+    return p
+assert_true of [(f_param of 1) == 1, "parameter binder: restored (#1064 unchanged)"]
+define f_local() as:
+    local q is 42
+    for q in [7, 8]:
+        q is q + 10
+    return q
+assert_true of [(f_local of []) == 42, "local binder: restored (#1064 unchanged)"]
+define f_plain() as:
+    q is 20
+    for q in [7, 8]:
+        q is q + 10
+    return q
+assert_true of [(f_plain of []) == 20, "plain-assigned binder: restored (#1064 unchanged)"]
+
+# (12) body-fresh assignments (not the binder) still bind in the function scope
+define body_fresh() as:
+    for j in range of 3:
+        fin is j
+    return fin
+assert_true of [(body_fresh of []) == 2, "a body-fresh name is function-scoped (#1056 unchanged); only the binder is loop-scoped"]
+
+# (13) hot for-range over a fresh binder: the fast path still runs (value right)
+define hot(n) as:
+    local s is 0
+    for i in range of n:
+        s is s + i
+    return s
+assert_true of [(hot of 100000) == 4999950000, "hot for-range over a fresh binder: sum right"]
+
+# (14) module scope control: unchanged
+for m in [7, 8]:
+    0
+try:
+    print of m
+    mod_kind is "leaked"
+catch e3:
+    mod_kind is e3.kind
+assert_true of [mod_kind == "undefined_name", "module scope: still loop-scoped"]
+
+test_summary of null

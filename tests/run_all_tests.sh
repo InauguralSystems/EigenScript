@@ -3691,9 +3691,17 @@ check_eigs_suite "for binder in a loop env: body write lands in the loop env (#1
 # [70j] #1064 — a for binder that reuses an existing frame slot (parameter,
 # `local`, earlier assignment) is restored to its pre-loop value at loop exit
 # (exhausted and break paths), so the contract's "does not leak" holds inside
-# functions too. A binder with no prior binding keeps its function-scoped slot
-# (contract note).
+# functions too. A binder with no prior binding is loop-scoped as well since
+# #1105 (next block).
 check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 9
+# [70j2] #1105 -- a `for` binder with NO prior binding is loop-scoped inside a
+# function exactly as at module scope: the env-skip fast path's fresh frame
+# slot is retired at the loop exit, so a post-loop read raises
+# `undefined variable` (it returned the last element). Run on both tiers: the
+# hot for-range loop is JIT-compiled, and the post-loop read must be loud
+# whether or not the loop body went native.
+check_eigs_suite "fresh for binder is loop-scoped in a function too (#1105)" test_for_binder_fresh_loop_scoped.eigs "All tests passed" 16
+EIGS_JIT_OFF=1 check_eigs_suite "fresh for binder is loop-scoped in a function too, interpreter tier (#1105)" test_for_binder_fresh_loop_scoped.eigs "All tests passed" 16
 # [70k] #1062 — a module-scope `for` whose body reads the observer stays on the
 # CLEAR tier (the overwrite tier skipped the per-iteration reset of the binder's
 # observer slot, so `observe of i` accumulated across iterations for a

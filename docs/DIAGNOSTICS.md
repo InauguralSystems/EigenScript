@@ -413,8 +413,10 @@ two) — ROADMAP's sanctioned alternative to a type system. Its model:
   closures read enclosing function scopes; module names are
   order-insensitive (a body may read a module name bound after the
   definition); a nested `define` binds its name in the enclosing
-  function only; a **module-level `for` loop-scopes its variable** (the
-  VM drops it at loop exit — a function-level `for` var survives);
+  function only; a **`for` loop-scopes its variable at every level** (the
+  VM drops a module binder at loop exit and retires a function binder's
+  slot, #1105 — a post-loop read is a runtime error either way), while a
+  body's plain `is` binds in the enclosing function/module scope (#1056);
   listcomp and `catch` vars bind in the containing scope. Within a
   scope, "bound on some path" still suppresses (sibling-branch first
   assignments stay silent) — path-precise analysis is the remaining

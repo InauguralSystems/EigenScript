@@ -1256,6 +1256,39 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "E003 fires on post-loop read of module for-var" "$OUTPUT" "undefined name 'item'"
 rm -f "$TMPFILE"
 
+# Fires (#1105): a FUNCTION-level `for` loop-scopes its variable too — the
+# VM retires the binder's frame slot at loop exit, so a post-loop read is
+# `undefined variable` inside a function exactly as at module scope.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define probe() as:
+    for z in [7, 8]:
+        0
+    return z
+print of (probe of null)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "E003 fires on post-loop read of function for-var (#1105)" "$OUTPUT" "undefined name 'z'"
+rm -f "$TMPFILE"
+
+# Silent (#1056 rule, #1105 lint model): a body's plain `is` binds in the
+# enclosing function/module scope, not the loop — only the BINDER is
+# loop-scoped. Both levels; the module case was a false positive before.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+for k in range of 1:
+    from_for is 4
+print of from_for
+define fn() as:
+    for j in range of 2:
+        fin is j
+    return fin
+print of (fn of null)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "E003 silent on post-loop read of a body-assigned name (module + function)" "$OUTPUT" "E003"
+rm -f "$TMPFILE"
+
 # Near-miss suggestion: edit-distance-1 against the visible binding set.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'
@@ -1268,7 +1301,8 @@ rm -f "$TMPFILE"
 
 # Silent: the scope rules the runtime actually has — closures read
 # enclosing function locals; a function body reads a module name bound
-# after the definition; a FUNCTION-level for-var survives its loop;
+# after the definition; a parameter rebound by a `for` is restored after
+# the loop (#1064) and a body-assigned name is function-scoped (#1056);
 # a listcomp var leaks to the containing scope; a closure defined in a
 # module loop body reads the loop var.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
@@ -1280,10 +1314,10 @@ define outer() as:
     return inner of null
 define late_reader() as:
     return bound_later
-define fn_for() as:
+define fn_for(j) as:
     for j in [1, 2]:
         x is j
-    return j
+    return j + x
 bound_later is 5
 squares is [v * v for v in [1, 2]]
 last_v is v

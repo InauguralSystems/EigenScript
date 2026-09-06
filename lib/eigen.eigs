@@ -1189,6 +1189,23 @@ define _env_set_local(env, name, val) as:
     append of [bindings, [name, val]]
     return null
 
+# #1105: the current env's OWN bindings only (no chain walk) -- a `for`
+# binder saves and restores exactly the scope it binds into.
+define _env_has_local(env, name) as:
+    bindings is env[0]
+    for i in range of (len of bindings):
+        if bindings[i][0] == name:
+            return 1
+    return 0
+
+define _env_unset_local(env, name) as:
+    bindings is env[0]
+    for i in range of (len of bindings):
+        if bindings[i][0] == name:
+            list_remove_at of [bindings, i]
+            return null
+    return null
+
 # Return / break / continue mechanism — global flags
 _eigen_returning is 0
 _eigen_return_val is null
@@ -1524,16 +1541,30 @@ define eigen_eval(node, env) as:
         var_name is node[1]
         iter is eigen_eval of [node[2], env]
         result is null
+        # #1105: the binder is loop-scoped. The C VM restores a binding the
+        # name already had (parameter, local, module name) and raises
+        # `undefined variable` on a post-loop read of a fresh one, in every
+        # scope and on every road. This evaluator binds the loop var straight
+        # into the current env, so mirror that by saving the current env's
+        # own binding (if any) and restoring or removing it on every exit.
+        had_prior is _env_has_local of [env, var_name]
+        prior_val is null
+        if had_prior == 1:
+            prior_val is _env_get of [env, var_name]
         for i in range of (len of iter):
             _env_set_local of [env, var_name, iter[i]]
             result is _eval_block of [node[3], env]
             if _eigen_returning == 1:
-                return result
+                break
             if _eigen_breaking == 1:
                 _eigen_breaking is 0
                 break
             if _eigen_continuing == 1:
                 _eigen_continuing is 0
+        if had_prior == 1:
+            _env_set_local of [env, var_name, prior_val]
+        else:
+            _env_unset_local of [env, var_name]
         return result
 
     if ntype == "func":

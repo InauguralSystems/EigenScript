@@ -29,6 +29,11 @@ typedef struct {
     int      depth;     /* scope depth (0 = function-level) */
     int      slot;
     int      captured;
+    int      retired;   /* #1105: a fresh `for` binder's slot after its loop.
+                         * Still owned by the frame (the slot index stays
+                         * allocated) but invisible to name resolution, so a
+                         * post-loop read compiles to OP_GET_NAME and raises
+                         * `undefined variable` like module scope does. */
 } Local;
 
 typedef struct {
@@ -570,6 +575,7 @@ static int add_num_constant(Compiler *c, double num) {
 
 static int resolve_local(Compiler *c, const char *name, uint32_t hash) {
     for (int i = c->local_count - 1; i >= 0; i--) {
+        if (c->locals[i].retired) continue;   /* #1105 */
         if (c->locals[i].hash == hash && strcmp(c->locals[i].name, name) == 0)
             return c->locals[i].slot;
     }
@@ -601,6 +607,7 @@ static int add_local(Compiler *c, const char *name, uint32_t hash) {
     c->locals[slot].depth = c->scope_depth;
     c->locals[slot].slot = slot;
     c->locals[slot].captured = 0;
+    c->locals[slot].retired = 0;
     c->local_count++;
     return slot;
 }
@@ -1771,7 +1778,7 @@ static int scan_dispatch_rebind_block(ASTNode **stmts, int count) {
 static int name_in_enclosing(Compiler *c, const char *name) {
     for (Compiler *e = c->enclosing; e && e->enclosing; e = e->enclosing) {
         for (int i = 0; i < e->local_count; i++)
-            if (strcmp(e->locals[i].name, name) == 0) return 1;
+            if (!e->locals[i].retired && strcmp(e->locals[i].name, name) == 0) return 1;
         if (name_set_has(&e->captured, name)) return 1;
         if (name_set_has(&e->interrogated, name)) return 1;
     }
@@ -2282,8 +2289,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                          * 8 for p). Save the pre-loop value in a hidden slot
                          * and restore it at the loop exit (both the exhausted
                          * and the break paths converge there). A name with
-                         * NO prior binding keeps its fresh slot (see the
-                         * contract's function-scope note). */
+                         * NO prior binding gets a fresh slot that is
+                         * retired at the loop exit (#1105, below). */
                         prior_slot = loop_var_slot;
                         save_slot = add_local(c, "__for_save", env_hash_name("__for_save"));
                     } else
@@ -2422,6 +2429,20 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             emit_op_u16(c, OP_GET_LOCAL, (uint16_t)save_slot, node->line);
             emit_op_u16(c, OP_SET_LOCAL, (uint16_t)prior_slot, node->line);
             emit(c, OP_POP, node->line);
+        } else if (can_skip_env && prior_slot < 0) {
+            /* #1105: a binder with NO prior binding is loop-scoped here
+             * exactly as at module scope. The slot was the loop's storage;
+             * once the loop is over, no later statement may resolve the
+             * name to it. Retiring it (rather than reusing it) keeps every
+             * GET_LOCAL/SET_LOCAL already emitted for the body valid and
+             * routes a post-loop read through OP_GET_NAME, which raises
+             * `undefined variable` unless an outer binding exists -- the
+             * same answer module scope gives. A post-loop write or a later
+             * `for` over the same name allocates a new slot. (A binder over
+             * an EXISTING slot whose #1064 save slot could not be allocated
+             * at MAX_LOCALS reaches here with prior_slot >= 0: that slot is
+             * the parameter/local itself and must never be retired.) */
+            c->locals[loop_var_slot].retired = 1;
         }
         emit(c, OP_NULL, node->line); /* for-loop result */
 
