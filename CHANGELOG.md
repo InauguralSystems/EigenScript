@@ -18,6 +18,9 @@ All notable changes to EigenScript are documented here.
   lint and LSP carry the same code. CLI `-e <source> [args...]` now accepts a
   source string through the file execution path.
   The builtin reference table and LSP Function completions omit both forms.
+  Two new token kinds (`TOK_REPORT`, `TOK_REPORT_VALUE`) shift the tokenizer's
+  identifier vocabulary ids by +2, visible in `tests/test_corpus.eigs` output;
+  consumers that key corpora on raw token ids (iLambdaAi) must rebuild them.
   The VM retains the `report` builtin for existing bytecode that resolves
   its name through `vm_run_bytecode`; its value-only behavior is unchanged.
 

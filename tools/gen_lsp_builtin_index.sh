@@ -53,7 +53,7 @@ TMP_OUT=$(mktemp)
 trap 'rm -f "$TMP_NAMES" "$TMP_OUT"' EXIT
 
 # Use the language's reservation site, not another hand-maintained word list.
-RESERVED_REPORT_NAMES=$(sed -nE 's/.*strcmp\(word, "([^"]+)"\).*return TOK_REPORT(_VALUE)?;.*/\1/p' src/lexer.c)
+RESERVED_REPORT_NAMES=$(sed -nE 's/.*strcmp\(word, "([^"]+)"\).*return TOK_REPORT(_VALUE)?;.*/\1/p' src/lexer.c | tr '\n' ' ')
 if [ "$(printf '%s\n' "$RESERVED_REPORT_NAMES" | wc -w)" -ne 2 ]; then
     echo "gen_lsp_builtin_index: expected two reserved observer words from lexer" >&2
     exit 1
