@@ -1,0 +1,4 @@
+# road-bind: outer helper_has_outer
+outer is 1
+import clobber_helper
+helper_has_outer is has_key of [clobber_helper, "outer"]

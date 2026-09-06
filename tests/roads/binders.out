@@ -1,0 +1,11 @@
+1
+2
+["y", 1, 100]
+["x", 1, 5]
+["module_result", 1, 100]
+["function_result", 1, 20]
+["parameter_result", 1, 1]
+["local_result", 1, 42]
+["nested_result", 1, 30]
+["fresh_result", 1, 8]
+["k", 0]

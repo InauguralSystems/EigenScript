@@ -1234,13 +1234,32 @@ void jit_helper_set_name_local(EigsChunk *chunk, int idx) {
     }
 }
 
+/* Imported entry chunks must respect explicit locals in active loop envs,
+ * while never writing through the module boundary into the importer. Compute
+ * this before consulting the IC: a newly introduced nearer binding must beat
+ * a previously cached module target. Function chunks keep their pinned target.
+ * Shared by the interpreter and JIT; the borrowed env needs no ownership edge. */
+static Env *fn_name_write_target(EigsChunk *chunk, CallFrame *frame, int idx) {
+    Env *home = frame->fn_env;
+    if (chunk->module_scope_writes && frame->env != home) {
+        const char *name = chunk->const_interns[idx];
+        uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
+        if (!h) h = env_hash_name(name);
+        int slot_idx, depth;
+        Env *found = env_resolve_chain(frame->env, name, h, &slot_idx, &depth);
+        for (Env *e = frame->env; e && e != home; e = e->parent)
+            if (e == found) return e;
+    }
+    return home;
+}
+
 void jit_helper_set_fn_name_local(EigsChunk *chunk, int idx) {
     if (__builtin_expect(g_trace_hist, 0)) {
         vm_trace_assign(chunk, chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
     }
     EnvIC *ic = &chunk->env_ic[idx];
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
-    Env *target = frame->fn_env;
+    Env *target = fn_name_write_target(chunk, frame, idx);
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
     if (__builtin_expect(ic->starting_env == target &&
                          ic->starting_ver == target->binding_version &&
@@ -3629,13 +3648,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * local_only names inside a function so that assignments from nested
          * loop or scope envs still update the function's binding (see #129b:
          * unobserved+for+interrogated accumulator otherwise wrote to the
-         * per-iteration loop env and the outer binding never moved). */
+         * per-iteration loop env and the outer binding never moved).
+         * Imported entry chunks instead honor nearer loop-local bindings;
+         * their bounded lookup still cannot escape into the importer. */
         uint16_t idx = read_u16(ip); ip += 2;
         if (__builtin_expect(g_trace_hist, 0)) {
             vm_trace_assign(chunk, chunk->const_interns[idx], g_vm.stack[g_vm.sp - 1]);
         }
         EnvIC *ic = &chunk->env_ic[idx];
-        Env *target = frame->fn_env;
+        Env *target = fn_name_write_target(chunk, frame, idx);
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
         if (__builtin_expect(ic->starting_env == target &&
                              ic->starting_ver == target->binding_version &&
@@ -5819,13 +5840,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
             extern char *read_file_util(const char *path, long *size);
 
-            /* Per-file resolution base (Phase 0b): an `import` inside a
-             * module anchors at *that* module's directory, not the main
-             * script's. `g_import_resolve_dir` is empty at the main-script
-             * level, in which case the chain falls back to g_script_dir. */
-            const char *resolve_base = g_import_resolve_dir[0]
-                                           ? g_import_resolve_dir
-                                           : g_script_dir;
+            /* #1056: functions retain their containing file's directory
+             * even when called after the importing/loading frame returns. */
+            const char *resolve_base = eigs_current_file_dir();
 
             /* #821: PROJECT-FIRST resolution. The user module `<name>.eigs`
              * (script-relative, plus the chain's other locations and the
@@ -5859,8 +5876,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 user_hit = 0;
 
             if (!user_hit && !stdlib_hit) {
-                rt_error(EK_IO, current_line, "import: module '%s' not found "
-                              "(tried %s.eigs and lib/%s.eigs)", name, name, name);
+                snprintf(request, sizeof(request), "%.1024s.eigs and lib/%.1024s.eigs", name, name);
+                eigs_file_resolve_error("import", resolve_base, request, current_line);
                 vm_push(make_null());
                 DISPATCH();
             }
@@ -5979,11 +5996,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsChunk *mod_chunk = compile_ast(ast, mod_env, source);
         g_compile_module_boundary = saved_boundary;
         g_compile_import_toplevel = saved_import_toplevel;
+        /* The override belongs to compilation, not module execution. Runtime
+         * eval must inherit its executing function's retained source directory,
+         * even when that function is called by this imported module. */
+        memcpy(g_import_resolve_dir, saved_resolve_dir, sizeof(saved_resolve_dir));
         if (g_parse_errors > 0) {
             g_parse_errors = saved_errors;
             chunk_free(mod_chunk);
             g_load_env = saved_load;
-            memcpy(g_import_resolve_dir, saved_resolve_dir, sizeof(saved_resolve_dir));
             free_ast(ast);
             free_tokenlist(&tl);
             free(source);
@@ -5999,7 +6019,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (mod_result) val_decref(mod_result);
         chunk_free(mod_chunk);   /* creator ref; module fns hold their own */
         g_load_env = saved_load;
-        memcpy(g_import_resolve_dir, saved_resolve_dir, sizeof(saved_resolve_dir));
         free_ast(ast);
         free_tokenlist(&tl);
         free(source);

@@ -1,0 +1,3 @@
+# The eager scan must anchor this path here too. Resolving from the parent
+# program finds the observer-free decoy, closes the gate, and loses history.
+load_file of "assets/observer/target.eigs"

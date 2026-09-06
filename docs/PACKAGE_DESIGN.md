@@ -31,26 +31,22 @@ namespace), native/C extensions in packages, build steps, and version
 constraint *solving* (pin exact versions; a solver can come later if
 real projects demand ranges).
 
-## Current state (as-built, 0.13.0)
+## Runtime resolution (shipped, #1056)
 
-- `import name` tries `lib/name.eigs` (the stdlib), then `name.eigs`,
-  each through the full resolution chain in `resolve_eigenscript_file`
-  (builtins.c): cwd → `$script_dir` → `$script_dir/..` → `$exe_dir/..`
-  → `$exe_dir/../lib/eigenscript` → `~/.local/lib/eigenscript`.
-  Public top-level names bind into a dict named `name`; `_`-prefixed
-  names stay private ([SPEC.md — Modules](SPEC.md#modules)).
-- **Every `import` re-executes the module.** There is no module cache:
-  two importers get two copies of the module's state, and a diamond
-  (app → a → c, app → b → c) would run `c` twice with divergent state.
-- Resolution is anchored to the **main script's** directory
-  (`g_script_dir` is global). A module imported from another directory
-  resolves *its* imports relative to the app, not itself — harmless
-  today (modules sit next to the script), wrong for packages.
-- `lib/name.eigs` is tried before `name.eigs`, so the stdlib shadows
-  user modules of the same name — but a project-local `lib/` directory
-  shadows the *installed* stdlib (the chain hits `cwd/lib/` first).
-  This is how the repo runs its own tests; it's also an existing
-  footgun the package design must not widen.
+- `import name` requests `name.eigs`, then `lib/name.eigs`; project modules
+  take precedence over stdlib matches and collisions warn. Public names bind
+  into the module namespace. Import caching is described in
+  [SPEC.md — Modules](SPEC.md#modules).
+- `import` and `load_file` share `resolve_eigenscript_file_from_ex`
+  (`builtins_host.c`). Absolute paths are used as-is. Relative paths search
+  the containing file's directory → the `eigs_modules` walk → the nearest
+  `eigs.json` project root → executable-relative and HOME stdlib roots.
+  There is no process cwd or one-parent fallback. A project-local `lib/`
+  can answer through the containing-directory or project-root steps before
+  the installed stdlib; it does not depend on where the process was launched.
+- Nested loaded files and functions called after loading retain their own
+  containing directory. The REPL (including piped input) and the embed API
+  without a file path use their working directory as the base.
 
 ## Design
 
@@ -95,42 +91,27 @@ dependencies are resolved by the tool into the **app's** flat
 `eigs_modules/` — one version of a name per project; two pins that
 disagree are an error naming both requirers, not a silent pick.
 
-### Runtime change 1: one resolver step
+### Runtime resolver: implemented order
 
-`import name` gains one step. Proposed order:
+Both loaders use the same chain, documented in full in
+[SPEC.md — Modules](SPEC.md#modules): absolute path as-is; containing file's
+canonical directory; `eigs_modules/<name>/<name>.eigs` walking upward through
+the nearest `eigs.json` directory; that project root; then
+`<exe>/../<path>`, `<exe>/../lib/eigenscript/<path>` and its leading-`lib/`-stripped
+form, followed by `$HOME/.local/lib/eigenscript/<path>` and its stripped form.
+The package walk stops at the project root. A project without an `eigs.json`
+has no project-root-relative fallback. Project/package matches precede stdlib
+roots; import collisions produce a warning.
 
-1. `lib/name.eigs` — stdlib first, **unchanged**
-2. `eigs_modules/name/name.eigs` — searched from the importing file's
-   directory upward to the project root (so packages find *their*
-   dependencies in the app's flat `eigs_modules/`)
-3. `name.eigs` script-relative — unchanged
+### Runtime cache and containing-file context
 
-Stdlib-first means a future stdlib module can collide with an existing
-package name; the tool errors at `add` time when a dep name matches a
-stdlib module, and package naming guidance is "prefix it" (`alice_vec`,
-not `vec`). The alternative (packages shadow stdlib) trades that
-papercut for a supply-chain hole — a dep silently becoming your `math`
-— and loses.
-
-### Runtime change 2: import becomes cached and module-relative
-
-Two prerequisites that are worth doing even if nothing else ships:
-
-- **Module cache**: first `import` of a resolved real path executes
-  the module; subsequent imports bind the same dict. Diamond deps
-  share one instance of module state. The cache holds counted refs
-  (Value dict + module Env) released at teardown — the closure-cycle
-  collector's ownership rules apply (every edge counted, walker +
-  `gc_clear_node` updated in lockstep).
-- **Per-file resolution base**: an import executing inside a module
-  resolves relative paths against *that module's* directory, not the
-  main script's. `g_script_dir` becomes a stack (or a parameter
-  threaded through the import path), with `load_file` keeping its
-  current main-script-relative behavior for back-compat.
-
-Both are observable behavior changes (re-import today re-executes;
-side-effecting modules can tell) — minor-version territory with
-CHANGELOG + SPEC.md updates per the stability contract.
+- **Module cache**: first `import` of a resolved canonical path executes
+  the module; subsequent imports bind the same dict. Diamond dependencies
+  share one instance of module state.
+- **Per-file resolution base**: imports and loads inside a module resolve
+  from that module's directory. The compiled source retains this directory
+  for nested files and functions called later. `load_file` follows the same
+  resolver as `import` while executing the file in the caller's scope.
 
 ### The tool: `eigenscript --pkg`
 

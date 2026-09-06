@@ -1855,8 +1855,19 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
              * doesn't set g_compile_import_toplevel, so its top-level
              * writes keep walking the chain into the caller's scope,
              * per its documented "current scope" contract. */
-            if (local_only || g_compile_import_toplevel) {
+            if (local_only) {
                 set_op = OP_SET_NAME_LOCAL; set_arg = (uint16_t)idx;
+            } else if (lev_has(c, name)) {
+                /* An outer loop's binder may be written inside an inner
+                 * loop: follow the binding, rather than creating a shadow
+                 * in the innermost loop env. It cannot escape the file. */
+                set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
+            } else if (g_compile_import_toplevel) {
+                /* #1056: update the nearest binding within this module,
+                 * including an existing loop-local; create in the module
+                 * entry env only when no nearer binding exists. The entry
+                 * chunk's module_scope_writes tag bounds the VM lookup. */
+                set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
             } else {
                 set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
             }
@@ -2380,7 +2391,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         }
 
         int lev_pushed = 0;
-        if (c->enclosing && !can_skip_env) { lev_push(c, loop_var); lev_pushed = 1; }   /* #1074 */
+        if (!can_skip_env) { lev_push(c, loop_var); lev_pushed = 1; }   /* #1074, #1056 */
         compile_block(c, node->data.forloop.body, node->data.forloop.body_count);
         if (lev_pushed) c->lev_count--;
         emit(c, OP_POP, node->line); /* discard body result */
@@ -3374,13 +3385,19 @@ enum { OBS_GATE_MAX_LOADS = 64, OBS_GATE_MAX_DEPTH = 8 };
  * covers this repo only — the consumer trees above are why the headroom is
  * 3.5x rather than the 1.8x that would suffice for lib/ alone. */
 #define OBS_GATE_SPECULATIVE_BUDGET (1024L * 1024)
-typedef struct { char **paths; int count; int cap; int overflow; } ObsLoadList;
+typedef struct {
+    char **paths;
+    char **bases;              /* directory of the file containing each load */
+    const char *base;          /* borrowed while collecting one file */
+    int count, cap, overflow;
+} ObsLoadList;
 
 static void obs_gate_note_load(const char *path, void *ud) {
     /* Collect into a bounded, owned list; resolving here would re-enter the
      * compiler while chunk_scan_static_loads is still walking the chunk. */
     ObsLoadList *L = ud;
     if (L->count >= L->cap) { L->overflow = 1; return; }  /* caller treats as opaque */
+    if (L->bases) L->bases[L->count] = xstrdup(L->base);
     L->paths[L->count++] = xstrdup(path);
 }
 
@@ -3483,7 +3500,7 @@ static void obs_gate_unmute_stderr(int saved) {
  * the load). The memo can make the gate conservative-late, never silently wrong.
  * Released by eigs_obs_memo_release() at thread detach.
  *
- * KEYED ON (st_dev, st_ino), NOT ON THE PATH SPELLING. resolve_eigenscript_file
+ * FILE IDENTITY (st_dev, st_ino), NOT PATH SPELLING. resolve_eigenscript_file
  * does not canonicalize — try_resolve_path is access(2) plus a copy — so a
  * string key gave one file N entries for N spellings, and the pass then read,
  * compiled and CHARGED it N times. Executed on one 55,180-byte module written
@@ -3495,27 +3512,33 @@ static void obs_gate_unmute_stderr(int saved) {
  * through the KEY instead of the ORDERING — and no existing check saw it,
  * because check 31's diamond writes the identical literal in every parent.
  *
- * The inode pair beats realpath() here: it is the true identity (it also folds
- * hard links, which realpath does not) and it needs no PATH_MAX buffer. The
- * cost is one stat PER REFERENCE, memo hits included — the string key stat'd
- * only on misses, so this trades ~one syscall per repeated reference (measured:
- * 48 newfstatat vs 1 on a 24-reference diamond) for correct identity. That is
+ * The inode pair identifies the source bytes, including hard links. Since
+ * #1056 the key ALSO includes the containing directory's identity: hard links
+ * in different directories can reach different children, while symlink and
+ * ./ aliases of the same file still share its canonical directory. The
+ * current cost includes a file stat and a directory stat PER REFERENCE, memo
+ * hits included; the old string key stat'd only on misses. This trades extra
+ * metadata queries on repeated references for correct identity. That is
  * the deliberate price of keying on identity: the stat is what YIELDS the key,
  * it is microseconds against a read+compile, and unlike the read it charges
  * nothing against the budget. A stat FAILURE on a later reference of an
  * already-scanned file now takes the conservative reject path rather than the
  * memo hit, which is also the direction we want. */
-typedef struct { dev_t dev; ino_t ino; } ObsMemoKey;
+/* #1056: hard links share bytes but can resolve different relative children.
+ * Keep alias deduplication within a canonical containing directory; include
+ * that directory's identity when memoizing a transitive scan. */
+typedef struct { dev_t dev, dir_dev; ino_t ino, dir_ino; } ObsMemoKey;
 static __thread ObsMemoKey *g_obs_memo = NULL;
 static __thread int g_obs_memo_n = 0, g_obs_memo_cap = 0;
 static __thread long g_obs_spec_bytes = 0;   /* see OBS_GATE_SPECULATIVE_BUDGET */
 
-static int obs_memo_seen(dev_t dev, ino_t ino) {
+static int obs_memo_seen(dev_t dev, ino_t ino, dev_t dir_dev, ino_t dir_ino) {
     for (int i = 0; i < g_obs_memo_n; i++)
-        if (g_obs_memo[i].dev == dev && g_obs_memo[i].ino == ino) return 1;
+        if (g_obs_memo[i].dev == dev && g_obs_memo[i].ino == ino &&
+            g_obs_memo[i].dir_dev == dir_dev && g_obs_memo[i].dir_ino == dir_ino) return 1;
     return 0;
 }
-static void obs_memo_add(dev_t dev, ino_t ino) {
+static void obs_memo_add(dev_t dev, ino_t ino, dev_t dir_dev, ino_t dir_ino) {
     if (g_obs_memo_n == g_obs_memo_cap) {
         int nc = g_obs_memo_cap ? g_obs_memo_cap * 2 : 16;
         ObsMemoKey *np = realloc(g_obs_memo, (size_t)nc * sizeof(ObsMemoKey));
@@ -3524,6 +3547,8 @@ static void obs_memo_add(dev_t dev, ino_t ino) {
     }
     g_obs_memo[g_obs_memo_n].dev = dev;
     g_obs_memo[g_obs_memo_n].ino = ino;
+    g_obs_memo[g_obs_memo_n].dir_dev = dir_dev;
+    g_obs_memo[g_obs_memo_n].dir_ino = dir_ino;
     g_obs_memo_n++;
 }
 void eigs_obs_memo_release(void);
@@ -3661,9 +3686,10 @@ static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth) {
 }
 
 static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
-    ObsLoadList L;
+    ObsLoadList L = {0};
     char *slots[OBS_GATE_MAX_LOADS];
     char *resolved = NULL;
+    char *module_dir = NULL;
     L.paths = slots; L.count = 0; L.cap = OBS_GATE_MAX_LOADS; L.overflow = 0;
 
     /* The eager pass informs a RUNTIME decision. Entry points that compile
@@ -3676,6 +3702,10 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     if (!g_obs_gate_scan_enabled) return;
 
     if (g_obs_gate_depth >= OBS_GATE_MAX_DEPTH) { eigs_obs_enable(); return; }
+
+    L.bases = xcalloc_array(OBS_GATE_MAX_LOADS, sizeof(char *));
+    L.base = chunk->src && chunk->src->resolve_dir
+                 ? chunk->src->resolve_dir : eigs_current_file_dir();
 
     if (chunk_scan_static_loads(chunk, obs_gate_note_load, &L)) { eigs_obs_enable(); goto done; }
     if (L.overflow) { eigs_obs_enable(); goto done; }   /* more loads than slots — see above */
@@ -3713,6 +3743,8 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     for (int i = 0; i < L.count && !g_obs_needed; i++) {
         long size = 0;
         char *source = NULL;
+        free(module_dir);
+        module_dir = NULL;
 #if !EIGENSCRIPT_FREESTANDING
         /* Guarded on the VALUE, and the guard must cover the CALLEES, not only
          * the helpers. builtins_host.c is a whole-TU carve-out in this profile,
@@ -3722,7 +3754,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * why a green release suite and a green ASan suite could not see it —
          * and it is the same defect class as the #ifdef-vs-#if mistake this file
          * already records, made a second time while fixing the first. */
-        int resolved_ok = resolve_eigenscript_file(L.paths[i], resolved, 8192);
+        int resolved_ok = resolve_eigenscript_file_from(L.bases[i], L.paths[i], resolved, 8192);
 #else
         int resolved_ok = 0;
 #endif
@@ -3761,7 +3793,10 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
             st.st_size > OBS_GATE_MAX_MODULE_BYTES) {
             eigs_obs_enable(); break;
         }
-        if (obs_memo_seen(st.st_dev, st.st_ino)) continue;
+        module_dir = eigs_file_directory(resolved);
+        struct stat dir_st;
+        if (stat(module_dir, &dir_st) != 0) { eigs_obs_enable(); break; }
+        if (obs_memo_seen(st.st_dev, st.st_ino, dir_st.st_dev, dir_st.st_ino)) continue;
         if (g_obs_spec_bytes + st.st_size > OBS_GATE_SPECULATIVE_BUDGET) {
             eigs_obs_enable(); break;
         }
@@ -3770,7 +3805,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
 #endif
         if (!source) { eigs_obs_enable(); break; }
 #if !EIGENSCRIPT_FREESTANDING
-        obs_memo_add(st.st_dev, st.st_ino);
+        obs_memo_add(st.st_dev, st.st_ino, dir_st.st_dev, dir_st.st_ino);
 #endif
 
         int muted = obs_gate_mute_stderr();
@@ -3813,6 +3848,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * L.count), and an overflow of L is opaque as it is for the host
          * chunk's own list. Nothing compiles, so nothing arms trace recording
          * in the parent (the trace_arm_snapshot dance is gone with it). */
+        L.base = module_dir;
         if (obs_ast_scan(mast, &L) || L.overflow) eigs_obs_enable();
         g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
         g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
@@ -3825,12 +3861,18 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     }
 
 done:
+    free(module_dir);
     free(resolved);
-    for (int i = 0; i < L.count; i++) free(L.paths[i]);
+    for (int i = 0; i < L.count; i++) {
+        free(L.paths[i]);
+        free(L.bases[i]);
+    }
+    free(L.bases);
 }
 
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     EigsChunk *chunk = chunk_new("<module>");
+    chunk->module_scope_writes = g_compile_import_toplevel != 0;
     /* #830: the arming below is compile-time evidence about THIS chunk, so
      * only this chunk (and the fn chunks compiled under it) may use the
      * armed-name filter. See EigsChunk.compiler_scanned in vm.h. */
@@ -3839,6 +3881,16 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * Owned copy — callers free their buffers while closures can keep
      * chunks alive indefinitely. Nested fn chunks share the blob. */
     chunk->src = srcbuf_new(src);
+    if (chunk->src) {
+        /* Compile context wins over the still-running loader's frame.
+         * Nested functions share this owned blob after the loader returns. */
+        const char *base = g_import_resolve_dir[0] ? g_import_resolve_dir
+                                                 : eigs_current_file_dir();
+#if !EIGENSCRIPT_FREESTANDING
+        chunk->src->resolve_dir = realpath(base, NULL);
+#endif
+        if (!chunk->src->resolve_dir) chunk->src->resolve_dir = xstrdup(base);
+    }
 
     Compiler compiler;
     memset(&compiler, 0, sizeof(compiler));
@@ -3888,6 +3940,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     name_set_free(&module_names);
     name_set_free(&compiler.module_slot_names);
     free(compiler.locals);
+    free(compiler.lev_names);
 
     /* Opt-in self-check: every chunk this compiler emits must satisfy the
      * verifier that gates untrusted chunks. Off unless EIGS_VERIFY_SELF=1 (the

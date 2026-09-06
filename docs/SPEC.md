@@ -1109,12 +1109,33 @@ rm of "spec_shapes.eigs"
 (In a project, the idiom is simply `import shapes` with `shapes.eigs`
 sitting next to `app.eigs`.)
 
-An `import` inside a module resolves relative to *that module's* own
-directory, not the main script's. A submodule can safely
-`import its_peer` and the peer is looked up next to the importer,
-flattening symlinks and `..` segments. The other steps in the resolver
-chain (cwd, exe-relative, `$HOME/.local/lib/eigenscript`) are
-unchanged.
+`import` and `load_file` use one resolution chain. `import name` first
+requests `name.eigs`, then `lib/name.eigs`; a project/stdlib collision warns
+and uses the project file. For each request, the order is:
+
+1. An absolute path is used as-is.
+2. Relative to the directory of the **file containing the call**, with
+   symlinks and `..` canonicalized. This is the loaded file's directory for
+   nested loads, and remains the defining file's directory inside a function,
+   including `eval` in that function while its caller is running through
+   `import`, `load_file`, or an embedding host's `eigs_eval_file` call. The entry
+   file's compile directory does not override a helper's runtime `eval`.
+3. The `eigs_modules` walk described below.
+4. Relative to the **project root**: the nearest ancestor of that containing
+   directory with an `eigs.json`, including the containing directory itself.
+   If none exists, this step is skipped.
+5. The existing stdlib locations, in order: `<exe>/../<path>`,
+   `<exe>/../lib/eigenscript/<path>`, the latter again with a leading `lib/`
+   stripped, then `$HOME/.local/lib/eigenscript/<path>` and its `lib/`-stripped
+   form. Here `<exe>` is the executable's directory.
+
+There is **no process cwd search step**, and no containing-directory-parent
+fallback. The REPL (including piped input) and the embed API without a file
+path use their working directory as the containing directory; this is the
+only way the working directory enters resolution. Files using project-root
+paths from subdirectories need an `eigs.json` at their root. Failed resolution
+raises an `io` error naming the containing directory, project root (or
+`no eigs.json above <dir>`), and stdlib roots tried.
 
 Project-local dependencies live under `eigs_modules/<name>/<name>.eigs`
 at the project root (any directory containing `eigs.json`). The
@@ -1146,6 +1167,23 @@ side effect
 executes a file directly **in the current scope**. The standard
 library's helper modules (`lib/test.eigs`'s `assert_eq`, ...) are
 conventionally loaded this way.
+
+The same file has the same block and return rules on all three roads (main,
+`load_file`, `import`). A `for` binder is loop-scoped and never writes a
+same-named outer binding. A `for` body's plain `is` updates the nearest existing
+binding, including a `local` in the current or an enclosing loop. Otherwise it
+creates a binding in the enclosing scope, like `if`, `loop while`, and `try`.
+At an imported module's top level the search stops at the module boundary;
+fresh bindings belong to the module and are exported normally, without writing
+to the importer.
+A top-level `return value` ends the current file, skipping all later statements:
+`load_file` yields the value to its caller; import finishes its namespace;
+the main program discards the value and exits successfully.
+
+The existing function-slot exception remains: a binder with no prior binding
+inside a function retains its final value after the loop on every road. A
+pre-existing parameter or local is restored. This change preserves that
+exception; see the scope notes in LANGUAGE_CONTRACT.md.
 
 **Module write boundary.** A loaded (or imported) module's *functions*
 can read the loader's globals and call its functions, but they can

@@ -256,10 +256,13 @@ The minimal build (`make build`) sets all flags to 0. The full build
 ## Standard Library
 
 The 77 modules in `lib/` are pure EigenScript — no C code. They are loaded at
-runtime via `load_file of "lib/module.eigs"`. Path resolution searches in
-order: the current working directory, the script file's directory, the script's
-parent directory, directories relative to the executable (`exe_dir/..` and the
-installed stdlib beside it), then `~/.local/lib/eigenscript`.
+runtime via `load_file of "lib/module.eigs"`. Both loaders use absolute paths
+as-is; relative paths search the containing file's directory, the `eigs_modules`
+walk, the nearest `eigs.json` project root, then the executable-relative and
+HOME stdlib roots. Nested loads and deferred functions retain their own file's
+directory. There is no process cwd or one-parent fallback; only the REPL
+(including piped input) and embedding without a file path use their working
+directory as the base. See [the ordered chain](SPEC.md#modules).
 
 The meta-circular interpreter (`lib/eigen.eigs`) implements tokenization,
 parsing, and evaluation of EigenScript source code in EigenScript itself.

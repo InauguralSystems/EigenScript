@@ -1,0 +1,3 @@
+host_scope_clean of "imported wrapper"
+load_file of "../../helper/functions.eigs"
+result is [go of [], direct of []]

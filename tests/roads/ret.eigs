@@ -1,0 +1,7 @@
+# road-bind: before after
+# road-return: 42
+before is 7
+print of "before return"
+return 42
+after is 99
+print of "unreachable"

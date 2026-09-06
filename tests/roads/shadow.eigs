@@ -1,0 +1,5 @@
+# road-bind: loaded
+# road-cwd: assets/shadow/A
+# road-cwd: assets/shadow/B
+load_file of "assets/shadow/A/prog.eigs"
+loaded is 1

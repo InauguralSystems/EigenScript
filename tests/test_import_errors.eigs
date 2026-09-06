@@ -1,9 +1,15 @@
 # Import error-path coverage tests
-# Exercises eval.c lines 539-562: fallback not-found, cannot-read, parse-errors
+# Exercises import/load_file not-found and parse-error paths.
+# The runners provide the canonical source directory, including for symlinked
+# installed-layout tests. Standalone invocation from src/ keeps the same path.
+_module_test_dir is env_get of "EIGS_TEST_DIR"
+if _module_test_dir == "":
+    _module_test_dir is (getcwd of null) + "/../tests"
+
 load_file of "lib/test.eigs"
 
 # ---- Test 1: Import a module that does not exist anywhere ----
-# Searches lib/, script_dir/lib/, script_dir/../lib/, ~/.local/lib/eigenscript/
+# Searches the containing directory, eigs_modules, project root, and stdlib roots.
 # All will fail for a nonsense module name.
 err1 is ""
 try:
@@ -13,9 +19,8 @@ catch e:
 assert_true of [contains of [err1.message, "not found"], "import nonexistent triggers 'not found' error"]
 
 # ---- Test 2: Import module with parse errors ----
-# Write a file with invalid syntax into script_dir/../lib/ which is where
-# the runtime finds stdlib modules. Clean up after.
-bad_path is "../lib/_test_bad_syntax_tmp.eigs"
+# Write invalid syntax beside this test file. Clean up after.
+bad_path is (_module_test_dir + "/_test_bad_syntax_tmp.eigs")
 write_text of [bad_path, "this is not valid eigenscript @@@"]
 err2 is ""
 try:
@@ -40,7 +45,7 @@ import math
 assert_eq of [type of math, "dict", "import valid module returns dict"]
 
 # ---- Test 5: Import module that is empty (no exports) ----
-empty_path is "../lib/_test_empty_tmp.eigs"
+empty_path is (_module_test_dir + "/_test_empty_tmp.eigs")
 write_text of [empty_path, "# empty module\n_private is 42"]
 import _test_empty_tmp
 rm of empty_path
@@ -51,7 +56,7 @@ assert_eq of [type of _test_empty_tmp, "dict", "import empty module returns dict
 # parse — here an expression-rooted lvalue `(call).field is x`, which direct
 # execution rejects — was silently accepted under load_file and its effect
 # dropped. load_file now raises a catchable parse error, like eval and import.
-bad_lf_path is "../lib/_test_bad_loadfile_tmp.eigs"
+bad_lf_path is (_module_test_dir + "/_test_bad_loadfile_tmp.eigs")
 write_text of [bad_lf_path, "define mk as:\n    return {\"x\": 1}\n(mk of null).x is 99\n"]
 err_lf is ""
 try:
@@ -63,7 +68,7 @@ assert_true of [(len of err_lf) > 0, "load_file parse-error raises (not a silent
 assert_true of [contains of [err_lf.message, "parse error"], "load_file parse-error message contains 'parse error'"]
 
 # ---- Test 7: a clean load_file is unaffected ----
-ok_lf_path is "../lib/_test_ok_loadfile_tmp.eigs"
+ok_lf_path is (_module_test_dir + "/_test_ok_loadfile_tmp.eigs")
 write_text of [ok_lf_path, "_lf_ok_marker is 1234\n"]
 load_file of ok_lf_path
 rm of ok_lf_path

@@ -275,6 +275,8 @@ typedef struct {
 typedef struct EigsSrcBuf {
     int   refcount;
     char *text;
+    char *resolve_dir;         /* owned canonical containing-file directory;
+                               * shared with nested functions, not a GC edge */
 } EigsSrcBuf;
 
 EigsSrcBuf *srcbuf_new(const char *text);
@@ -358,6 +360,10 @@ typedef struct EigsChunk {
                                  * trace_assign anyway. */
 
     char    *name;              /* function name or "<module>" */
+    uint8_t  module_scope_writes; /* imported entry chunk only: SET_FN_NAME_LOCAL
+                                  * updates a nearer loop binding if present,
+                                  * otherwise binds in the module entry env.
+                                  * Nested functions retain function-local rules. */
     int      param_count;
     int      first_default;     /* slot index of first param with a default; ==
                                  * param_count when no defaults. Calls with

@@ -1,0 +1,3 @@
+host_scope_clean of "import entry"
+import entrywrapper
+return entrywrapper.result

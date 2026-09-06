@@ -1,0 +1,4 @@
+# road-bind: no_parent no_cwd loaded_error import_error
+# road-cwd: assets/no_project
+# road-cwd: __unrelated_cwd
+load_file of "assets/no_project/child/entry.eigs"

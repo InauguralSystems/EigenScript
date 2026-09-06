@@ -1,0 +1,2 @@
+# road-bind: nearby package root_relative root_error
+load_file of "assets/order/sub/entry.eigs"

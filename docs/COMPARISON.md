@@ -503,3 +503,28 @@ make the argument a single value, so the literal list arrives whole. A
 bare `of ["ada", "grace"]` would also work here — two arguments to a
 one-parameter function pack back into a list — but the parenthesised
 form says "one list" directly and works for any arity.)
+
+## File loading and block scope
+
+Unlike a working-directory-based include path, EigenScript resolves imports
+and loads from the file containing the call, then the `eigs_modules` walk,
+then the nearest `eigs.json` project root, then stdlib locations. Absolute
+paths are used as-is. There is no process cwd search; the REPL (including piped
+input) and the embed API without a file path use their working directory as the
+containing directory. A function retains its defining file's directory through
+`eval`, including calls made while another module is being imported or an
+embedding host is executing `eigs_eval_file`. The complete chain is in
+[SPEC, Modules](SPEC.md#modules).
+
+Main, import and load_file share these rules: a `for` binder is loop-scoped
+and never writes an outer binding. Plain `is` in its body updates the nearest
+existing binding, including a loop-local; otherwise it creates a binding in
+the enclosing scope, like other blocks. In an imported module this search
+stops at the module boundary, preserving the importer's bindings. Top-level `return` ends the file:
+load_file yields its value, import finishes its namespace, and main discards
+its value.
+
+The existing function-slot exception remains: a binder with no prior binding
+inside a function retains its final value after the loop on every road. A
+pre-existing parameter or local is restored. This change preserves that
+exception; see the scope notes in LANGUAGE_CONTRACT.md.

@@ -1,0 +1,6 @@
+# road-bind: value
+# road-cwd: .
+# road-cwd: .
+chdir of "assets/shadow/B"
+load_file of "assets/shadow/A/prog.eigs"
+value is 1

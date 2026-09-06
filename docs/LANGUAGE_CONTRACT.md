@@ -76,10 +76,9 @@ bound only its message string.)
 **Promise:** `import name` executes the module once and binds its
 top-level definitions as a **dict named `name`** — nothing enters the
 importing scope besides that one binding, and module names starting
-with `_` are private (omitted from the dict). Resolution order:
-`lib/name.eigs` (the standard library) first, then `name.eigs`
-script-relative and the other standard locations; the not-found error
-names both tried paths. `load_file of "path.eigs"` is the
+with `_` are private (omitted from the dict). Import tries `name.eigs`
+before `lib/name.eigs`, warns on a project/stdlib collision, and chooses
+the project file. `load_file of "path.eigs"` is the
 non-namespaced form: it executes the file directly in the current
 scope. **Module functions never write the loader's bindings** (issue
 #373): a module function's bare assignment to a name that isn't its
@@ -92,7 +91,34 @@ fields. A **parse error** in a loaded file (via `import`, `load_file`, or
 `eval`) raises a catchable runtime error rather than silently executing a
 partial AST — consistent with the **Errors** promise.
 
-**Status:** Enforced — `tests/test_import.eigs`,
+**One file, three roads (main / import / load_file, #1056):**
+
+- Resolution belongs to the file containing the call, including nested loads
+  and `eval` inside functions, even when called during another module's
+  import, load, or `eigs_eval_file`. The defining file remains the base. The shared chain is: absolute
+  path as-is; containing directory; the `eigs_modules` walk; project root
+  (nearest ancestor, including that directory, with `eigs.json`); executable
+  and HOME stdlib locations. There is no process cwd search or one-parent
+  fallback. The REPL (including piped input) and the embed API without a file
+  path use their working directory as the containing directory. The full ordered
+  stdlib chain and error contract are in [SPEC, Modules](SPEC.md#modules).
+- A `for` binder is loop-scoped everywhere and never writes a same-named
+  outer binding. A `for` body's plain `is` updates the nearest existing
+  binding, including a loop-local; otherwise it creates in the enclosing scope
+  like `if`, `loop while`, and `try`, on every road. An imported module's
+  search stops at its boundary, so fresh names appear in its namespace and
+  never write through to the importer. No function write boundary changes.
+- A top-level `return value` ends the current file and yields its value,
+  skipping later statements. `load_file` returns it to the caller, who
+  continues; import finishes the module; the main program discards the value
+  and exits successfully.
+
+The existing function-slot exception remains: a binder with no prior binding
+inside a function retains its final value after the loop on every road. A
+pre-existing parameter or local is restored. This change preserves that
+exception; see the scope notes in LANGUAGE_CONTRACT.md.
+
+**Status:** Enforced — `tools/road_diff.sh` and `tests/roads/`, `tests/test_import.eigs`,
 `tests/test_import_errors.eigs` (parse-error surfacing for `import` /
 `load_file` / `eval`) (stdlib + user modules,
 namespacing, `_` privacy, missing-module error), docs/SPEC.md Modules

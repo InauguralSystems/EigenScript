@@ -1,0 +1,37 @@
+# road-bind: y x module_result function_result parameter_result local_result nested_result fresh_result k
+y is 100
+for y in [1, 2, 3]:
+    y is y + 10
+module_result is y
+x is 5
+define over_module(x) as:
+    for x in [7, 8]:
+        x is x + 10
+    return x
+parameter_result is over_module of 1
+define over_local() as:
+    local x is 42
+    for x in [7, 8]:
+        x is x + 10
+    return x
+local_result is over_local of []
+define ordinary() as:
+    i is 20
+    for i in [7, 8]:
+        i is i + 10
+    return i
+function_result is ordinary of []
+define nested() as:
+    p is 30
+    for p in [7, 8]:
+        for p in [9, 10]:
+            p is p + 10
+    return p
+nested_result is nested of []
+define fresh() as:
+    for z in [7, 8]:
+        0
+    return z
+fresh_result is fresh of []
+for k in [1, 2]:
+    print of k

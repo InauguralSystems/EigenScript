@@ -1,0 +1,13 @@
+# road-bind: v total
+# road-native: required
+v is 100
+total is 0
+for i in range of 1200:
+    if i > 500:
+        local v is 10
+    j is 0
+    loop while j < 12:
+        v is v + 1
+        total is total + v
+        j is j + 1
+print of [v, total]

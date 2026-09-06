@@ -2450,8 +2450,16 @@ Value* builtin_json_path(Value *arg) {
 }
 
 
+const char *eigs_current_file_dir(void) {
+    if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {
+        EigsChunk *chunk = g_vm.frames[g_vm.frame_count - 1].chunk;
+        if (chunk->src && chunk->src->resolve_dir) return chunk->src->resolve_dir;
+    }
+    return g_import_resolve_dir[0] ? g_import_resolve_dir : g_script_dir;
+}
+
 int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap) {
-    return resolve_eigenscript_file_from(g_script_dir, path, resolved, resolved_cap);
+    return resolve_eigenscript_file_from(eigs_current_file_dir(), path, resolved, resolved_cap);
 }
 
 

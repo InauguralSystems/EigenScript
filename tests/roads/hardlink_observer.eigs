@@ -1,0 +1,6 @@
+# road-bind: metric
+# road-hardlink: assets/hardlinks/a/entry.eigs assets/hardlinks/b/entry.eigs
+metric is 0
+metric is 10
+load_file of "assets/hardlinks/a/entry.eigs"
+load_file of "assets/hardlinks/b/entry.eigs"

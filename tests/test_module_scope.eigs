@@ -5,7 +5,14 @@
 # statements still execute in the current scope, and same-file outward
 # mutation is unchanged.
 
-fixture is "tmp_mod_373.eigs"
+# Generated modules live beside this source file (#1056).
+# The runners provide the canonical source directory, including for symlinked
+# installed-layout tests. Standalone invocation from src/ keeps the same path.
+_module_test_dir is env_get of "EIGS_TEST_DIR"
+if _module_test_dir == "":
+    _module_test_dir is (getcwd of null) + "/../tests"
+
+fixture is (_module_test_dir + "/tmp_mod_373.eigs")
 write_text of [fixture, "define mod_touch() as:\n    y373 is 777\n    pos373 is 777\ndefine mod_read() as:\n    return cfg373\ndefine mod_call() as:\n    return helper373 of null\nmod_count is 0\ndefine mod_bump() as:\n    mod_count is mod_count + 1\n    return mod_count\ndefine mod_poke(xs) as:\n    xs[0] is 99\n"]
 
 # Case 1: caller globals declared BEFORE the load — the order that used to
@@ -45,12 +52,12 @@ samefile_touch of null
 assert of [x373 == 99, "M8 same-file outward mutation still works"]
 
 # import direction: an imported module's fn is insulated the same way
-write_text of ["tmp_mod_373i.eigs", "define imp_touch() as:\n    z373 is 888\n"]
+write_text of [(_module_test_dir + "/tmp_mod_373i.eigs"), "define imp_touch() as:\n    z373 is 888\n"]
 z373 is 7
 import tmp_mod_373i
 tmp_mod_373i.imp_touch of null
 assert of [z373 == 7, "M9 imported module fn cannot clobber caller global"]
 
 remove_file of fixture
-remove_file of "tmp_mod_373i.eigs"
+remove_file of (_module_test_dir + "/tmp_mod_373i.eigs")
 print of "All module-scope tests passed"

@@ -295,15 +295,9 @@ int main(int argc, char **argv) {
     /* Extract script directory for load_file resolution. g_script_dir
      * is an EigsState bridge macro — state is already attached above. */
     {
-        const char *last_slash = strrchr(argv[1], '/');
-        if (last_slash) {
-            int dir_len = (int)(last_slash - argv[1]);
-            if (dir_len >= (int)sizeof(g_script_dir)) dir_len = sizeof(g_script_dir) - 1;
-            memcpy(g_script_dir, argv[1], dir_len);
-            g_script_dir[dir_len] = '\0';
-        } else {
-            memcpy(g_script_dir, ".", 2);
-        }
+        char *dir = eigs_file_directory(argv[1]);
+        snprintf(g_script_dir, sizeof(g_script_dir), "%s", dir);
+        free(dir);
     }
 
     long src_size = 0;

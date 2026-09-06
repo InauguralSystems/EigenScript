@@ -1,0 +1,4 @@
+define go() as:
+    return eval of "load_file of \"peer.eigs\""
+define direct() as:
+    return load_file of "peer.eigs"

@@ -68,8 +68,10 @@ not any outer `n`.
 - Two `local` traps: each **sibling `if`/`elif`/`else` branch** needs its own
   `local` for a first assignment (a `local` in one branch doesn't run for
   another), and a first assignment inside a `loop while` body needs `local`.
-- `if` blocks do NOT create a scope (assignments leak out). `for` loops DO
-  (body-only names and the loop variable stay local). Comprehension variables
+- `if` blocks do NOT create a scope (assignments leak out). a `for` binder is loop-scoped
+  and never writes an outer binding; plain `is` in its body binds in the
+  enclosing scope, including an imported module. A fresh function-local
+  binder currently retains its slot after the loop (the existing exception). Comprehension variables
   DO leak.
 
 ## Reserved and soft keywords (cannot be plain variable names)

@@ -104,7 +104,7 @@ MIN_LINES=100
 # coverage-clean/fuzz-run (no compiles).
 TARGETS="build full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison \
          lsp dap jit-smoke lib embed-smoke embed-smoke-gfx embed-concurrent pgo coverage \
-         fuzz fuzz-libfuzzer freestanding-libc-diff sandbox-intern-test errline-test nativefn-test"
+         fuzz fuzz-libfuzzer freestanding-libc-diff sandbox-intern-test errline-test nativefn-test embed-roads"
 
 # GNU make emits a shared prerequisite only once when several goals are in
 # one invocation. `embed-smoke-gfx` depends on `gfx`, so keeping that goal in
@@ -118,6 +118,7 @@ TARGET_BATCHES=(
     "sandbox-intern-test"
     "errline-test"
     "nativefn-test"
+    "embed-roads"
 )
 
 # TARGET_BATCHES must cover TARGETS exactly.  Keep the hand-written batches
@@ -276,6 +277,7 @@ dap 1
 jit-smoke 1
 lib 1
 embed-smoke 1
+embed-roads 25
 embed-concurrent 1
 embed-smoke-gfx 27
 pgo 2
@@ -1075,6 +1077,21 @@ if [ "${1:-}" = "--selftest" ]; then
         # which is what the failure actually reported (#1007, adding asan-gfx).
         # The check must be keyed to the tree under test, not to HEAD.
         cp Makefile "$root/Makefile"
+        # New auxiliary targets can also depend on not-yet-committed C inputs.
+        # Copying only their recipe/enrollment left `embed-roads` without its
+        # source and aborted the dry run before the planted header (#1056).
+        # Overlay tracked and nonignored C/header inputs, including deletions;
+        # never carry the working tree's binaries into the scratch tree.
+        local input
+        while IFS= read -r -d '' input; do
+            if [ -e "$input" ] || [ -L "$input" ]; then
+                mkdir -p "$root/$(dirname "$input")"
+                cp -P "$input" "$root/$input"
+            else
+                rm -f "$root/$input"
+            fi
+        done < <(git -c safe.directory="$PWD" ls-files -z --cached --others \
+                    --exclude-standard -- '*.c' '*.h')
     }
 
     # Generated-header family: prove that the planted generator source really

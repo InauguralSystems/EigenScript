@@ -1,0 +1,5 @@
+try:
+    loaded_eval is evalhelper.go of []
+catch err:
+    loaded_eval is "WRONG-DIR-ERROR"
+loaded_direct is evalhelper.direct of []
