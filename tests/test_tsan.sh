@@ -54,6 +54,14 @@ for t in $SLICE; do
     fi
 done
 
+echo "=== C embed observer contract (raw state and worker arming) ==="
+if TSAN_OPTIONS="halt_on_error=1 exitcode=66" setarch -R \
+        bash "$TESTS_DIR/test_embed_observer.sh"; then
+    echo "  PASS: C embed observer contract"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: C embed observer contract"; FAIL=$((FAIL + 1))
+fi
+
 echo "=== gate self-validation: a seeded race MUST be caught ==="
 tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
 w=$WARNINGS

@@ -559,35 +559,38 @@ struct EigsState {
     /* Observer-classification thresholds (set_observer_threshold builtin).
      * Per-state because they're interpreter configuration, not execution
      * state; one knob per host application, shared across worker threads. */
-    /* #915 observer gate. 0 = nothing compiled into this STATE can ever
-     * interrogate observer bookkeeping, so observer_slot_update skips the
-     * entropy walk (88% of runtime / 8.70x measured on a consumer using no
-     * observer features). MONOTONIC: compile_ast ORs in each unit's scan and
-     * the force-on sites set it; nothing clears it, since clearing would
-     * strand the history of already-observed bindings.
-     *
-     * Per-state for the same reason as the thresholds above, and it was a real
-     * bug when it was not: on EigsThread this field was zero for every spawned
-     * worker (eigs_thread_attach xcalloc's a fresh thread, and only the
-     * spawning thread ever runs compile_ast), so every assignment executed on
-     * a worker silently skipped observation — while the gate's own stats still
-     * reported "observed" and EIGS_OBS_FORCE=1 could not rescue it.
-     */
+    /* #915/#1038 observer gate: OPEN at state creation, including hosts that
+     * execute native or assembled code without compile_ast. Only the first
+     * compile verdict may close it; embed initialization/eigs_obs_enable pin
+     * that unit open.
+     * MONOTONIC within an execution unit. An explicitly isolated embed eval
+     * may start a new unit while the host has exclusive use of the state.
+     * Per-state so spawned workers inherit the compiling thread's verdict. */
     int             obs_needed;
-    /* #915: sticky. Set the first time a load is caught reading observer state
-     * while the gate was closed. `obs_needed` is MONOTONIC, so that first
-     * detection also flips it to 1 — which would make the very next check see
-     * "the gate was already open" and skip. The error is catchable, so ONE
-     * `try:` around the first load disarmed the guard for the rest of the run
-     * and the silent-wrong answer came straight back (executed). The missing
-     * history is not restored by the bit flipping, so this flag says "this
-     * program has bindings with no recorded history" and never clears. */
+    /* First compile may choose the closed path, before any user execution.
+     * Embed initialization and explicit arming consume this permission.
+     * Accessed atomically because
+     * worker-reachable arming sites also consume it. */
+    int             obs_compile_pending;
+    /* Explicit public arming pins the next embed eval boundary too. Internal
+     * compiler/runtime arming must not set this one-unit host request. */
+    int             obs_host_arm_pending;
+    /* Sticky missing-history evidence. Opening the gate cannot reconstruct
+     * prior assignments; catching an error must never clear this flag. */
     int             obs_history_gap;
-    /* #915: 1 once user code has begun executing. Before that, turning
-     * observer recording ON costs nothing — no assignment has happened yet.
-     * After it, the flip is exactly the unrecoverable case, because the
-     * bindings already assigned have no history and the bit is monotonic. */
+    /* 1 once user code in this unit has begun executing. Late arming records
+     * a history gap. Reset only at a serialized, opted-in embed boundary. */
     int             obs_exec_started;
+    /* Host configuration, changed only between evals with exclusive state
+     * access (never from a worker): permit per-unit compile verdicts. */
+    int             eval_observer_isolated;
+    /* Host callbacks have no source verdict. Registration pins evals open;
+     * registration and eval must be serialized by the host. */
+    int             eval_host_callbacks;
+    /* Compiled functions can outlive their defining eval. Once an eval has
+     * compiled any functions, retain the gate across later evals: their call
+     * sites cannot prove what previously compiled code will read. */
+    int             obs_eval_retains_code;
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
@@ -1104,7 +1107,8 @@ extern __thread EigsThread *eigs_current;
 #define g_obs_gate_depth      (eigs_current->obs_gate_depth)
 #define g_obs_gate_scan_enabled (eigs_current->obs_gate_scan_enabled)
 #define g_compile_depth_reported (eigs_current->compile_depth_reported)
-/* ATOMIC, relaxed. These three are read at every safepoint and STORED from
+/* ATOMIC, relaxed. Execution flags are read at every safepoint; the other
+ * observer flags also cross threads. They are STORED from
  * whichever thread arms the observer — and `sandbox_run` is deliberately not
  * in OBS_BUILTINS, so a WORKER's call is a legitimate 0->1 store on the shared
  * state with no happens-before edge to any other thread (two workers can both
@@ -1114,7 +1118,7 @@ extern __thread EigsThread *eigs_current;
  * commit made — and round 17 found the SAME shape a third field over, in
  * g_trace_obs_hist/g_trace_hist (trace.h), the second operand of the same
  * deciding expression; those now use the same idiom. This block covers the
- * three per-STATE obs flags only. The arm NAME SETS (g_arm_*, g_occ_*) remain
+ * per-STATE obs flags only. The arm NAME SETS (g_arm_*, g_occ_*) remain
  * plain process globals mutated by chunk_arm_temporal — a wider pre-existing
  * surface, tracked on #1035, NOT closed by flag atomics. Do not read this
  * comment as "the class is closed"; it was written that way once and a critic
@@ -1126,6 +1130,10 @@ extern __thread EigsThread *eigs_current;
  * The macros are LOADS (not lvalues), so any new assignment through them
  * fails to compile and must go through obs_flag_store — the write sites stay
  * enumerable. */
+#define g_obs_compile_pending __atomic_load_n(&eigs_current->state->obs_compile_pending, __ATOMIC_RELAXED)
+#define g_obs_host_arm_pending __atomic_load_n(&eigs_current->state->obs_host_arm_pending, __ATOMIC_RELAXED)
+#define g_obs_eval_host_callbacks __atomic_load_n(&eigs_current->state->eval_host_callbacks, __ATOMIC_RELAXED)
+#define g_obs_eval_retains_code __atomic_load_n(&eigs_current->state->obs_eval_retains_code, __ATOMIC_RELAXED)
 #define g_obs_needed          __atomic_load_n(&eigs_current->state->obs_needed, __ATOMIC_RELAXED)
 #define g_obs_history_gap     __atomic_load_n(&eigs_current->state->obs_history_gap, __ATOMIC_RELAXED)
 #define g_obs_exec_started    __atomic_load_n(&eigs_current->state->obs_exec_started, __ATOMIC_RELAXED)
@@ -1145,8 +1153,8 @@ extern __thread EigsThread *eigs_current;
     __atomic_store_n(&eigs_current->state->field, (v), __ATOMIC_RELEASE)
 #define obs_flag_load_acquire(field) \
     __atomic_load_n(&eigs_current->state->field, __ATOMIC_ACQUIRE)
-/* #915: the ONLY sanctioned way to turn observer recording on. `g_obs_needed`
- * answers "is recording on?"; the two soundness guards need "is the recorded
+/* #915: the runtime helper for arming recording mid-unit. `g_obs_needed`
+ * answers "is recording on?"; the soundness guards need "is the recorded
  * history COMPLETE?", and those are different questions. Writing the bit
  * directly conflated them: a benign runtime flip — a descriptor that reads
  * nothing, or the multithreaded bail in the eager pass — set the bit and
@@ -1154,6 +1162,9 @@ extern __thread EigsThread *eigs_current;
  * Executed: one `vm_run_bytecode of [1,[0,0,0,40],[7]]` before the read turned
  * a loud raise into `equilibrium` on a diverging series. This helper keeps the
  * two answers apart. */
+void eigs_obs_enable_runtime(void);
+/* Public host arming also pins the next embed eval boundary; internal source
+ * scan/runtime evidence uses the helper above, without a future host pin. */
 void eigs_obs_enable(void);
 /* #915: how many EigsThreads are attached PROCESS-WIDE. The eager pre-pass
  * mutates fd 2 and trace.c's process-global arming sets, so its precondition is

@@ -235,7 +235,7 @@ static void eigs_observer_dump(Env *leaf) {
          * programs most worth debugging. Flipping here is safe: the dump runs at
          * a loop safepoint, not in the signal handler, and g_obs_needed is
          * monotonic so this cannot flicker. */
-        eigs_obs_enable();
+        eigs_obs_enable_runtime();
     }
     obs_dump_scope("module", root, 1, NULL);
     Env *fn_env = NULL;
@@ -7067,7 +7067,7 @@ Value *vm_execute(EigsChunk *chunk, Env *env) {
 }
 
 static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
-    /* #915: user code is now executing, so from here on an eigs_obs_enable()
+    /* #915: user code is now executing, so from here on an eigs_obs_enable_runtime()
      * leaves the bindings already assigned without history — that is what the
      * sticky obs_history_gap records, and it is the half of the load guard that
      * survives a mid-run arming.

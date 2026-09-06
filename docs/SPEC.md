@@ -1880,3 +1880,10 @@ The facts that govern every program, in one place:
 8. **Observation**: every assignment outside `unobserved` updates the
    observer; predicates and interrogatives read it. Temporal queries
    additionally record history.
+
+<!-- Embed contract: #1038/#1028; language-level observer semantics unchanged. -->
+The C embedding API starts observer recording open. Source evals retain
+cross-unit history by default; hosts may explicitly promise isolated observer
+use with `eigs_set_eval_observer_isolated`. Missing history then raises
+conservatively instead of answering a rest value. See the
+[embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).

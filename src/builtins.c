@@ -3197,7 +3197,7 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
  * gate's compile-time scan never saw it. Two things follow, and only one of
  * them is solved here.
  *
- * SOLVED — the descriptor's OWN work. eigs_obs_enable() arms recording before
+ * SOLVED — the descriptor's OWN work. eigs_obs_enable_runtime() arms recording before
  * vm_execute, the observer twin of chunk_arm_temporal below (#831: "a
  * descriptor must turn recording ON itself"). It also records the history gap,
  * so a mid-run arming cannot disarm the load_file guard — a benign descriptor
@@ -3235,9 +3235,9 @@ Value* builtin_vm_run_bytecode(Value *arg) {
      * and reads it back answer `equilibrium` — a regression a blind critic
      * bisected to the commit that removed it. Both are needed.
      *
-     * Through eigs_obs_enable, not a bare assignment: this flip happens mid-
+     * Through eigs_obs_enable_runtime, not a bare assignment: this flip happens mid-
      * execution, so it must also record that earlier bindings have no history. */
-    eigs_obs_enable();
+    eigs_obs_enable_runtime();
     /* #831: the compiler's temporal scan is what turns history recording on,
      * and it never saw this chunk — arm from the verified bytecode instead,
      * or the chunk's own `prev of` / `at` reads answer null whenever the
@@ -3452,7 +3452,7 @@ Value* builtin_sandbox_run(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
     EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
-    if (chunk) eigs_obs_enable();     /* #915: see vm_run_bytecode */
+    if (chunk) eigs_obs_enable_runtime();     /* #915: see vm_run_bytecode */
     Value *out = make_dict(2);
     if (!chunk) {
         /* Descriptor verification may already have interned constants before
