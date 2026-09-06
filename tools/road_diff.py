@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Compare a file's prints and declared final bindings on all three roads.
 
-See tests/roads/README.md for the wrapper/fixture contract. No stdout filtering,
-no tolerated child errors, no fixture allowlist. All children have a deadline.
+See tests/roads/README.md for the wrapper/fixture contract. Only the driver's
+completion marker is removed from stdout. No tolerated child errors or fixture
+allowlist. All children have a deadline.
 """
 import argparse
 import contextlib
@@ -19,6 +20,7 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
+BINDING_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
 
 def metadata(source, tag):
@@ -39,7 +41,7 @@ def driver_context():
 def snapshot(names, captures, module=None):
     lines = []
     for name in names:
-        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
+        if not BINDING_NAME.fullmatch(name):
             raise ValueError(f"invalid snapshot name: {name}")
         # An absent namespace key is null; a missing bare binding raises.
         # Presence is a separate field, never a value-domain sentinel. A
@@ -73,6 +75,11 @@ def run_gate(binary, fixtures, only=None):
                 failures += 1
                 continue
             names = bindings[0].split()
+            invalid = next((name for name in names if not BINDING_NAME.fullmatch(name)), None)
+            if invalid is not None:
+                print(f"road_diff: FAIL: {fixture.name}: invalid snapshot name: {invalid}")
+                failures += 1
+                continue
             expected = fixture.with_suffix(".out")
             if not expected.is_file() or not expected.read_bytes():
                 print(f"road_diff: FAIL: {fixture.name}: missing/empty expected stdout")
@@ -91,6 +98,9 @@ def run_gate(binary, fixtures, only=None):
                     own = tree / fixture.name
                     captures, prelude = driver_context()
                     report = snapshot(names, captures, fixture.stem if road == "import" else None)
+                    marker = "__road_complete_" + uuid.uuid4().hex + "__"
+                    marker_bytes = (marker + "\n").encode()
+                    report += f'{captures["print"]} of "{marker}"\n'
                     if road == "main":
                         # A top-level return bypasses a suffix. Snapshot just before
                         # each unindented return, and at normal end of the file.
@@ -129,16 +139,21 @@ def run_gate(binary, fixtures, only=None):
                         print(f"road_diff: FAIL: {fixture.name} {road} cwd={cwd}: {err}")
                         failures += 1
                         continue
-                    outputs.append((road, cwd, result.returncode, result.stdout))
+                    complete = (result.stdout.endswith(marker_bytes) and
+                                result.stdout.count(marker_bytes) == 1)
+                    stdout = result.stdout[:-len(marker_bytes)] if complete else result.stdout
+                    outputs.append((road, cwd, result.returncode, stdout))
                     # Strictly require clean stderr as well: an ASan/UBSan warning
                     # at exit 0 must never get hidden behind a matching stdout.
-                    if result.returncode or result.stderr or result.stdout != expected.read_bytes():
+                    if result.returncode or result.stderr or not complete or stdout != expected.read_bytes():
                         failures += 1
                         print(f"road_diff: FAIL: {fixture.name} {road} cwd={cwd} rc={result.returncode}")
+                        if not complete:
+                            print("missing driver completion marker")
                         print(result.stderr.decode(errors="replace"), end="")
                         print("".join(difflib.unified_diff(
                             expected.read_text().splitlines(True),
-                            result.stdout.decode(errors="replace").splitlines(True),
+                            stdout.decode(errors="replace").splitlines(True),
                             fromfile="expected", tofile=f"{road} stdout")), end="")
             if outputs and any(row[2:] != outputs[0][2:] for row in outputs[1:]):
                 failures += 1
@@ -318,6 +333,30 @@ def selftest(binary, bad_binary=None):
                                stdout_matches=True,
                                diagnostic=warning if symptom == "stderr" else None):
                 return 1
+        fixture.unlink()
+
+        fixture = tree / "exit_forge.eigs"
+        fixture.write_text('# road-bind: value\nprint of ["value", 1, 7]\nexit of 0\n')
+        fixture.with_suffix('.out').write_text('["value", 1, 7]\n')
+        if not require_red("exit before readback cannot forge completion", fixture.name,
+                           stdout_matches=True, diagnostic="missing driver completion marker"):
+            return 1
+        fixture.unlink()
+
+        fixture = tree / "invalid_name.eigs"
+        fixture.write_text('# road-bind: x.y\nvalue is 7\n')
+        fixture.with_suffix('.out').write_text('["value", 1, 7]\n')
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            status = run_gate(binary, tree)
+        output = captured.getvalue()
+        if (status == 0 or
+                "road_diff: FAIL: invalid_name.eigs: invalid snapshot name: x.y\n" not in output or
+                "fixtures=1 runs=0 failures=1 " not in output or "Traceback" in output):
+            print(f"road_diff selftest: FAIL: invalid binding name is a named failure\n{output}")
+            return 1
+        print("road_diff selftest: RED: invalid binding name is a named failure")
+        plants += 1
         fixture.unlink()
 
         if run_gate(binary, tree) == 0:

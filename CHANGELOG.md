@@ -55,6 +55,16 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Imported loop locals and runtime `eval` keep their scope and file (#1056).**
+  A plain `is` inside an imported module's `for` first updates an existing
+  loop-local, while fresh bindings remain in the module. This lookup also
+  applies to JIT writes when a nearer local appears between iterations.
+  Runtime `eval` in a function retains the function's defining directory
+  during another module's import. Road fixtures cover both regressions.
+  The oracle requires completion after readback and names malformed metadata;
+  its selftest rejects early-exit snapshot forgery. Generated test modules use
+  their test file's canonical directory in both in-tree and installed layouts.
+
 - **A descriptor reading observer state of an unrecorded host binding raises
   instead of answering a rest value (#1027).** With the #915 gate closed for
   the host program (nothing compiled into it reads the observer), a chunk run

@@ -1,0 +1,3 @@
+import evalhelper
+print of (evalhelper.go of [])
+print of (evalhelper.direct of [])

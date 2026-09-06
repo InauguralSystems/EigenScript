@@ -1116,8 +1116,9 @@ and uses the project file. For each request, the order is:
 1. An absolute path is used as-is.
 2. Relative to the directory of the **file containing the call**, with
    symlinks and `..` canonicalized. This is the loaded file's directory for
-   nested loads, and remains the defining file's directory inside a function
-   called after loading/importing has finished.
+   nested loads, and remains the defining file's directory inside a function,
+   including `eval` in that function while another module is executing an
+   import or load.
 3. The `eigs_modules` walk described below.
 4. Relative to the **project root**: the nearest ancestor of that containing
    directory with an `eigs.json`, including the containing directory itself.
@@ -1168,9 +1169,12 @@ conventionally loaded this way.
 
 The same file has the same block and return rules on all three roads (main,
 `load_file`, `import`). A `for` binder is loop-scoped and never writes a
-same-named outer binding; a `for` body's plain `is` binding belongs to the
-enclosing scope, like `if`, `loop while`, and `try`. At an imported module's
-top level that scope is the module, so such bindings are exported normally.
+same-named outer binding. A `for` body's plain `is` updates the nearest existing
+binding, including a `local` in the current or an enclosing loop. Otherwise it
+creates a binding in the enclosing scope, like `if`, `loop while`, and `try`.
+At an imported module's top level the search stops at the module boundary;
+fresh bindings belong to the module and are exported normally, without writing
+to the importer.
 A top-level `return value` ends the current file, skipping all later statements:
 `load_file` yields the value to its caller; import finishes its namespace;
 the main program discards the value and exits successfully.

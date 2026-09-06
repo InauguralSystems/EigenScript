@@ -1863,9 +1863,10 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
                  * in the innermost loop env. It cannot escape the file. */
                 set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
             } else if (g_compile_import_toplevel) {
-                /* #1056: a block's new binding belongs to the module,
-                 * not the temporary for-binder env. fn_env is also the
-                 * file's entry env at module top level. */
+                /* #1056: update the nearest binding within this module,
+                 * including an existing loop-local; create in the module
+                 * entry env only when no nearer binding exists. The entry
+                 * chunk's module_scope_writes tag bounds the VM lookup. */
                 set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
             } else {
                 set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
@@ -3871,6 +3872,7 @@ done:
 
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     EigsChunk *chunk = chunk_new("<module>");
+    chunk->module_scope_writes = g_compile_import_toplevel != 0;
     /* #830: the arming below is compile-time evidence about THIS chunk, so
      * only this chunk (and the fn chunks compiled under it) may use the
      * armed-name filter. See EigsChunk.compiler_scanned in vm.h. */

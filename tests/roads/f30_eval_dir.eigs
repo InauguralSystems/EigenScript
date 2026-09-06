@@ -1,0 +1,12 @@
+# road-bind: main_eval main_direct loaded_eval loaded_direct nested_eval nested_direct
+import evalhelper
+import evalwrapper
+import evalnested
+try:
+    main_eval is evalhelper.go of []
+catch err:
+    main_eval is "WRONG-DIR-ERROR"
+main_direct is evalhelper.direct of []
+load_file of "assets/eval_loaded/caller.eigs"
+nested_eval is evalnested.eval_value
+nested_direct is evalnested.direct_value

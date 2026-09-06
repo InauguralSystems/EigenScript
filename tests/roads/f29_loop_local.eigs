@@ -1,0 +1,21 @@
+# road-bind: direct nested from_if from_while
+for k in [1]:
+    local value is 10
+    value is value + 1
+    print of value
+    direct is value
+for outer in [1]:
+    if 1:
+        local held is 20
+        for inner in [1]:
+            held is held + 1
+        nested is held
+if 1:
+    local from_if is 30
+    for k in [1]:
+        from_if is from_if + 1
+loop while 1:
+    local from_while is 40
+    for k in [1]:
+        from_while is from_while + 1
+    break

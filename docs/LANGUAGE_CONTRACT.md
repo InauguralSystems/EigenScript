@@ -94,7 +94,8 @@ partial AST — consistent with the **Errors** promise.
 **One file, three roads (main / import / load_file, #1056):**
 
 - Resolution belongs to the file containing the call, including nested loads
-  and functions called after a module finishes. The shared chain is: absolute
+  and `eval` inside functions, even when called during another module's
+  import or load. The defining file remains the base. The shared chain is: absolute
   path as-is; containing directory; the `eigs_modules` walk; project root
   (nearest ancestor, including that directory, with `eigs.json`); executable
   and HOME stdlib locations. There is no process cwd search or one-parent
@@ -102,9 +103,11 @@ partial AST — consistent with the **Errors** promise.
   path use their working directory as the containing directory. The full ordered
   stdlib chain and error contract are in [SPEC, Modules](SPEC.md#modules).
 - A `for` binder is loop-scoped everywhere and never writes a same-named
-  outer binding. A `for` body's plain `is` binds in the enclosing scope like
-  `if`, `loop while`, and `try`, on every road; module-level bindings appear
-  in the imported namespace. No function write boundary changes.
+  outer binding. A `for` body's plain `is` updates the nearest existing
+  binding, including a loop-local; otherwise it creates in the enclosing scope
+  like `if`, `loop while`, and `try`, on every road. An imported module's
+  search stops at its boundary, so fresh names appear in its namespace and
+  never write through to the importer. No function write boundary changes.
 - A top-level `return value` ends the current file and yields its value,
   skipping later statements. `load_file` returns it to the caller, who
   continues; import finishes the module; the main program discards the value

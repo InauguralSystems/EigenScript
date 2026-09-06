@@ -1,0 +1,9 @@
+# road-bind: item seen
+item is 100
+seen is []
+for turn in range of 80:
+    if turn % 2 == 0:
+        local item is 10
+    item is item + 1
+    if turn < 4:
+        append of [seen, item]

@@ -5,6 +5,7 @@
 # intentionally hits a missing builtin in the minimal build) would abort the
 # whole suite.
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+export EIGS_TEST_DIR="$TESTS_DIR"
 cd "$(dirname "$0")/../src" || { echo "cannot cd to src"; exit 1; }
 
 PASS=0

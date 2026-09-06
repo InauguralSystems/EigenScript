@@ -5,6 +5,7 @@
 set -euo pipefail
 
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+export EIGS_TEST_DIR="$TESTS_DIR"
 EIGS="${EIGENSCRIPT:-$HOME/.local/bin/eigenscript}"
 SUITE_ROOT=$(mktemp -d /tmp/eigs_install_subset_suite.XXXXXX)
 external_home=""

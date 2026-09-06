@@ -36,6 +36,12 @@ override the default fixture-directory/unrelated-directory pair.
 `# road-hardlink: source target` recreates a hard link in each private tree
 (Git stores file contents, not hard-link relationships).
 
+After the snapshots, the captured `print` emits a fresh UUID completion marker.
+Each run must contain that marker exactly once, at the end of stdout. The gate
+removes only that marker before comparing fixture output. Early `exit of 0`
+cannot skip readback and substitute forged snapshot lines. Invalid binding
+identifiers produce named failures before any child runs.
+
 Stdout is compared byte for byte against the expected file AND between roads and
 directories; every child must exit zero and have empty stderr (including under
 sanitizers). An error on all three roads cannot masquerade as agreement. Missing
@@ -44,10 +50,11 @@ blocks` selects a single diagnostic repro; the suite always runs the whole set.
 
 `--selftest` runs five green controls: a numeric value, a literal `"<missing>"`
 created in a `for` body, and fixtures rebinding `print`, `has_key`/`keys`, and
-`throw`. Nine faults must go red: cwd divergence; deletion of the sentinel
+`throw`. Eleven faults must go red: cwd divergence; deletion of the sentinel
 assignment; forged absence goldens for both readback-rebinding fixtures;
 incorrect return metadata despite a rebound `throw`; genuine absence where
-present `null` is expected; a nonzero exit alone; stderr alone; and zero fixtures.
+present `null` is expected; a nonzero exit alone; stderr alone; exit before readback; an invalid binding
+identifier; and zero fixtures.
 The membership control also calls the shared namespace-snapshot emitter from
 within a scope that rebinds `has_key`/`keys`, so module isolation cannot conceal
 a missing capture. The suite runs the ordinary gate and selftest.
@@ -114,3 +121,27 @@ tracking from functions to modules requires freeing the root compiler's
 `lev_names` array. Before that cleanup, `blocks` produced correct stdout but
 all six executions failed with a 32-byte leak. The gate rejects those exits
 instead of accepting matching output from leaking children.
+
+`f29_loop_local` pins writes to a current loop-local, an enclosing loop-local,
+and locals in module-level `if`/`loop while` bodies. `f29_loop_local_cache`
+alternates between a nearer local and module state over 80 iterations: the
+inline cache must not bypass a newly created local, including under forced OSR.
+`f30_eval_dir` calls a helper's eval and direct load from main, a loaded file,
+an imported wrapper, and a nested import; every call must load the helper's peer.
+
+Bought in #1056 round 4: pinning every imported block write to the module
+repaired missing exports but skipped existing loop locals. Check both sides
+of a scope boundary: stop outward writes at it, and preserve nearer bindings
+inside it. Import's compile-only directory override also leaked into execution
+and redirected another file's eval. Its lifetime must end before module code
+runs. The new fixtures fail with either respective fix removed.
+
+The installed-layout subset symlinks test sources, so their canonical containing
+directory differs from the temporary runner's cwd. Both suite runners export
+`EIGS_TEST_DIR`; generated module writers use it for writes, loads, and cleanup.
+The standalone fallback assumes the documented `src/` cwd. To reproduce the
+actual installed layout without modifying the normal installation, set
+`EIGENSCRIPT_INSTALL_PREFIX` when running `install.sh`, then put its `bin` on PATH
+and pass its interpreter as `EIGENSCRIPT` to `tests/run_install_smoke_subset.sh`.
+That lane failed two sections before the canonical-directory migration.
+Existing fixture goldens are unchanged in this round.

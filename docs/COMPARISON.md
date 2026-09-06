@@ -511,12 +511,15 @@ and loads from the file containing the call, then the `eigs_modules` walk,
 then the nearest `eigs.json` project root, then stdlib locations. Absolute
 paths are used as-is. There is no process cwd search; the REPL (including piped
 input) and the embed API without a file path use their working directory as the
-containing directory. The complete chain is in
+containing directory. A function retains its defining file's directory through
+`eval`, including calls made while another module is being imported. The complete chain is in
 [SPEC, Modules](SPEC.md#modules).
 
 Main, import and load_file share these rules: a `for` binder is loop-scoped
-and never writes an outer binding; plain `is` bindings in its body belong to
-the enclosing scope, like other blocks. Top-level `return` ends the file:
+and never writes an outer binding. Plain `is` in its body updates the nearest
+existing binding, including a loop-local; otherwise it creates a binding in
+the enclosing scope, like other blocks. In an imported module this search
+stops at the module boundary, preserving the importer's bindings. Top-level `return` ends the file:
 load_file yields its value, import finishes its namespace, and main discards
 its value.
 
