@@ -1,8 +1,10 @@
 # Embed observer contract: validation (#1038 / #1028)
 
-The original measurements below are from round 1; the
+The first sections record round 1. The
 [round-2 record](#round-2-raw-host-coverage) distinguishes state creation from
-the separate embed-initialization pin.
+the separate embed-initialization pin; the
+[round-3 record](#round-3-explicit-host-arming-across-an-isolated-eval-boundary)
+corrects the explicit-host-arm recipe across an isolated eval boundary.
 
 Baseline: `origin/main` at `cd99388163c3ff6478851de1f5be906f7626341a`.
 The baseline runtime was built in this worktree before the runtime edits.
@@ -296,3 +298,113 @@ EIGS_OBS_GATE_STATS=1 src/eigenscript -e $'x is 41\nprint of (x + 1)'
 ```
 
 It exited 0 with `obs-gate: unobserved <module>` and output `42`.
+
+## Round 3: explicit host arming across an isolated eval boundary
+
+Starting tree: clean `fix-1038` at `babd15f`. The round-2 direct-host recipe
+was wrong: an isolated eval renewed compile permission after the host armed,
+so its read-free verdict discarded the assignments that C would interrogate.
+This round makes the recipe work rather than replacing it with an opt-out.
+
+The public `eigs_obs_enable()` now sets a separate atomic host request and
+arms the current unit through the existing recording helper. At the next eval
+compilation boundary, an atomic exchange consumes that request and suppresses
+permission to close that unit. Internal compiler/runtime calls use
+`eigs_obs_enable_runtime()` without creating a future host request. Its
+gap-before-needed release stores are unchanged, as is the compile scan's
+verdict logic. A subsequent read-free unit can gate again. The new flag owns
+no runtime objects and adds no tape record or per-assignment work.
+
+The C regression's `--isolated-host` arm follows the actual host recipe:
+`eigs_open`, isolation on, explicit arm twice (idempotence), read-free eval,
+then a direct `observer_predicate_at` on `x`. No compiled predicate can rescue
+the eval. The arm also executes another read-free unit and requires its gate
+to close, proving the host request is consumed once.
+
+Before changing runtime code, built the fixture with
+`make embed-observer-test` against `babd15f`:
+
+```text
+isolated host: DIRECT improving=0 obs_needed=0 gap=0
+FAIL: isolated host: explicit arming survives the eval boundary
+embed observer: 3 passed, 1 failed
+```
+
+`build/release/test_embed_observer --isolated-host` exited 1, and the complete
+`bash tests/test_embed_observer.sh` exited 1 with **34 passed, 1 failed**.
+After the fix and a release rebuild:
+
+```text
+isolated host: DIRECT improving=1 obs_needed=1 gap=0
+PASS: isolated host: explicit arming survives the eval boundary
+embed observer: 4 passed, 0 failed
+```
+
+The isolated arm exited 0; the complete C runner reported **35 passed,
+0 failed**. Existing raw-host and cross-unit history-gap arms remain enrolled.
+The worker-arming test now reads the new atomic host-request flag concurrently
+and checks it after joining the worker; the TSan lane runs this C fixture.
+
+F5 is resolved by documenting the supported host serialization contract in
+`EMBEDDING.md`: a raw host must serialize its first compilation against worker
+arming/execution. Atomic flag stores do not make that multi-flag decision a
+transaction. Opted-in eval boundaries already require exclusive state access.
+F6 removes the stale numeric flag count from the atomic-access comment.
+
+Round-3 gates, run sequentially (each full suite once):
+
+| Command | Measured result |
+|---|---|
+| `make && (cd tests && bash run_all_tests.sh)` | 4259/4259 passed, 0 failed; every child completed, 0 nonzero exits. |
+| `make asan && (cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh)` | 4248/4248 passed, 0 failed; every child completed, 0 nonzero exits; no ASan/UBSan/leak reports. |
+| `make tsan && bash tests/test_tsan.sh` | 15 passed, 0 failed: 13 clean programs, the C contract (35/35), and the seeded race (16 warnings detected). |
+
+Both full suites ran the C contract (35/35), audited **481 compile invocations
+across 29 targets and seven scripts**, and recognized **89 scripts with six
+shape waivers**. The ASan C preflight also passed 35/35 with leak detection on.
+
+After restoring release with `make`, the read-free probe
+`EIGS_OBS_GATE_STATS=1 src/eigenscript -e $'x is 41\nprint of (x + 1)'`
+exited 0 with `obs-gate: unobserved <module>` and `42`. Release binary SHA-256:
+`11310dc5efbab32e4a3d1a4b66168de50ed923173990613790709ea69ad7bf19`.
+
+For the round-3 differential, copied the worktree with `cp -a` to
+`/tmp/es1038-r3-oracle`, reversed `git diff origin/main -- src` with `patch -R`,
+and verified all **nine** affected runtime files against
+`git show origin/main:<path>`. Ran `make clean` and plain `make` in the copy.
+Baseline source: `cd99388163c3ff6478851de1f5be906f7626341a`; fresh binary SHA-256:
+`305b8c73a74e5d6478d48f0c3c20f872e97b9aec41ad4f40f8c125a2a5f83be5`.
+
+Captured `main` and `main2` with that binary, then reapplied the runtime patch
+and rebuilt the branch in the **same scratch directory**. All nine runtime
+files matched the validated worktree, and the resulting binary matched its
+release SHA-256 above. The capture manifest's `rev` identifies the calling
+worktree (`babd15f`); the source comparison and binary SHA identify the actual
+baseline executable. The canonical checkout was not built or used.
+
+From the original worktree, with
+`EIGS_GATE_DIFF_DIR="$PWD/build/observer-r3-captures"` and
+`EIGS_GATE_DIFF_BIN=/tmp/es1038-r3-oracle/src/eigenscript`, ran
+`bash tools/observer_gate_diff.sh capture main`, `capture main2`, then after
+the branch rebuild, `capture branch` and `compare main branch`. Captures unset
+`EIGS_OBS_FORCE`, `EIGS_OBS_GATE_STATS`, `EIGS_TRACE`, `EIGS_REPLAY` and
+`EIGS_JIT_OFF`; both baseline captures reported **521 programs, 5 denied**.
+
+The branch capture also reported **521 programs, 5 denied**. Comparison exited
+0 with the following totals:
+
+```text
+provenance: base=305b8c73a74e(force=0) ref=305b8c73a74e(force=0) gated=11310dc5efba(force=0)
+corpus entries with captures: 520
+nondeterministic under a FIXED build (excluded): 23
+compared: 497 (informative: 401, silent: 96)
+mismatches: 0
+RESULT: PASS — 497 programs byte-identical
+```
+
+The round-2 capture limitation remains: the terminal fixture consumes corpus
+stdin, leaving `ts/test_throw_unwind.eigs` instead of the real next path in
+all three captures. `tests/test_throw_unwind.eigs` is therefore outside the
+497-program comparison. No differential-tool normalization, exclusion rule
+or coverage floor was changed. No new measurement contradicted the round-3
+brief; the reported F4 silent-wrong recipe was reproduced and repaired.

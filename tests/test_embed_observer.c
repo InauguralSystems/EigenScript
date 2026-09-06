@@ -119,11 +119,12 @@ static void raw_compile_then_arm(void) {
         for (int i = 0; i < 10000; i++) {
             (void)g_obs_needed;
             (void)g_obs_compile_pending;
+            (void)g_obs_host_arm_pending;
         }
         rc = pthread_join(worker, &result);
     }
     check(rc == 0 && result == st && g_obs_needed &&
-          !g_obs_compile_pending && !g_obs_history_gap,
+          !g_obs_compile_pending && g_obs_host_arm_pending && !g_obs_history_gap,
           "raw compile: worker arming preserves the open verdict");
     chunk_free(chunk);
     free_ast(ast);
@@ -171,6 +172,27 @@ static EigsValue *host_reader(EigsValue *arg) {
     int answer = observer_predicate_at(env, 0, 2 /* improving */, 1);
     env_decref(env);
     return make_num(answer);
+}
+/* Execute the documented explicit-host-arm recipe. No compiled predicate
+ * may rescue the read-free unit: interrogate its slot directly from C. */
+static void isolated_host(void) {
+    EigsState *st = eigs_open();
+    if (!st) { check(0, "isolated host: open state"); return; }
+    eigs_set_eval_observer_isolated(1);
+    eigs_obs_enable();
+    eigs_obs_enable();  /* idempotent, including the next-boundary pin */
+    eval_ok(series, "isolated host: explicitly armed read-free unit executes");
+    int slot = -1;
+    for (int i = 0; i < g_global_env->count; i++)
+        if (!strcmp(g_global_env->names[i], "x")) { slot = i; break; }
+    int answer = slot < 0 ? -1 : observer_predicate_at(g_global_env, slot, 2, 1);
+    printf("isolated host: DIRECT improving=%d obs_needed=%d gap=%d\n",
+           answer, g_obs_needed, g_obs_history_gap);
+    check(answer == 1 && g_obs_needed && !g_obs_history_gap && !eigs_has_error(),
+          "isolated host: explicit arming survives the eval boundary");
+    eval_ok("fresh is 42\nfresh\n", "isolated host: following unit executes");
+    check(!g_obs_needed, "isolated host: explicit pin is consumed by one unit");
+    eigs_close(st);
 }
 static void eval_contract(void) {
     /* A native host can load/compile a module without routing through the
@@ -259,12 +281,15 @@ static void eval_contract(void) {
 int main(int argc, char **argv) {
     int raw_only = argc == 2 && strcmp(argv[1], "--raw-host") == 0;
     int direct_only = argc == 2 && strcmp(argv[1], "--direct") == 0;
-    if (!direct_only) raw_host();
-    if (!raw_only) direct();
+    int isolated_only = argc == 2 && strcmp(argv[1], "--isolated-host") == 0;
+    if (!direct_only && !isolated_only) raw_host();
+    if (!raw_only && !isolated_only) direct();
 #ifndef EIGS_OBS_BASELINE_ONLY
-    if (!raw_only && !direct_only) {
+    if (isolated_only) isolated_host();
+    else if (!raw_only && !direct_only) {
         raw_compile_then_arm();
         eval_contract();
+        isolated_host();
     }
 #endif
     printf("embed observer: %d passed, %d failed\n", passed, failed);

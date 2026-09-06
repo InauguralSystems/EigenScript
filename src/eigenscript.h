@@ -572,6 +572,9 @@ struct EigsState {
      * Accessed atomically because
      * worker-reachable arming sites also consume it. */
     int             obs_compile_pending;
+    /* Explicit public arming pins the next embed eval boundary too. Internal
+     * compiler/runtime arming must not set this one-unit host request. */
+    int             obs_host_arm_pending;
     /* Sticky missing-history evidence. Opening the gate cannot reconstruct
      * prior assignments; catching an error must never clear this flag. */
     int             obs_history_gap;
@@ -1104,8 +1107,8 @@ extern __thread EigsThread *eigs_current;
 #define g_obs_gate_depth      (eigs_current->obs_gate_depth)
 #define g_obs_gate_scan_enabled (eigs_current->obs_gate_scan_enabled)
 #define g_compile_depth_reported (eigs_current->compile_depth_reported)
-/* ATOMIC, relaxed. The three execution flags are read at every safepoint
- * and STORED from
+/* ATOMIC, relaxed. Execution flags are read at every safepoint; the other
+ * observer flags also cross threads. They are STORED from
  * whichever thread arms the observer — and `sandbox_run` is deliberately not
  * in OBS_BUILTINS, so a WORKER's call is a legitimate 0->1 store on the shared
  * state with no happens-before edge to any other thread (two workers can both
@@ -1128,6 +1131,7 @@ extern __thread EigsThread *eigs_current;
  * fails to compile and must go through obs_flag_store — the write sites stay
  * enumerable. */
 #define g_obs_compile_pending __atomic_load_n(&eigs_current->state->obs_compile_pending, __ATOMIC_RELAXED)
+#define g_obs_host_arm_pending __atomic_load_n(&eigs_current->state->obs_host_arm_pending, __ATOMIC_RELAXED)
 #define g_obs_eval_host_callbacks __atomic_load_n(&eigs_current->state->eval_host_callbacks, __ATOMIC_RELAXED)
 #define g_obs_eval_retains_code __atomic_load_n(&eigs_current->state->obs_eval_retains_code, __ATOMIC_RELAXED)
 #define g_obs_needed          __atomic_load_n(&eigs_current->state->obs_needed, __ATOMIC_RELAXED)
@@ -1149,7 +1153,7 @@ extern __thread EigsThread *eigs_current;
     __atomic_store_n(&eigs_current->state->field, (v), __ATOMIC_RELEASE)
 #define obs_flag_load_acquire(field) \
     __atomic_load_n(&eigs_current->state->field, __ATOMIC_ACQUIRE)
-/* #915: the ONLY sanctioned way to arm recording mid-unit. `g_obs_needed`
+/* #915: the runtime helper for arming recording mid-unit. `g_obs_needed`
  * answers "is recording on?"; the soundness guards need "is the recorded
  * history COMPLETE?", and those are different questions. Writing the bit
  * directly conflated them: a benign runtime flip — a descriptor that reads
@@ -1158,6 +1162,9 @@ extern __thread EigsThread *eigs_current;
  * Executed: one `vm_run_bytecode of [1,[0,0,0,40],[7]]` before the read turned
  * a loud raise into `equilibrium` on a diverging series. This helper keeps the
  * two answers apart. */
+void eigs_obs_enable_runtime(void);
+/* Public host arming also pins the next embed eval boundary; internal source
+ * scan/runtime evidence uses the helper above, without a future host pin. */
 void eigs_obs_enable(void);
 /* #915: how many EigsThreads are attached PROCESS-WIDE. The eager pre-pass
  * mutates fd 2 and trace.c's process-global arming sets, so its precondition is

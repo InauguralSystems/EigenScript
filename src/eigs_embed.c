@@ -26,7 +26,7 @@ int eigs_state_init_runtime(EigsState *st) {
     /* #1038: a module compiled later cannot classify the surrounding native
      * host. Pin default embedding open; only the explicit eval opt-in may
      * renew permission for a compile verdict. CLI state setup is separate. */
-    eigs_obs_enable();
+    eigs_obs_enable_runtime();
     return 0;
 }
 
@@ -115,6 +115,8 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
      * A retained function may be invoked without a reader in the new source,
      * so in that case keep the accumulated verdict instead. All boundary
      * resets require exclusive state access; worker arming stays atomic. */
+    int host_armed = __atomic_exchange_n(
+        &eigs_current->state->obs_host_arm_pending, 0, __ATOMIC_ACQ_REL);
     if (eigs_current->state->eval_observer_isolated &&
         !g_obs_eval_host_callbacks) {
         if (!g_obs_needed && g_obs_exec_started)
@@ -122,10 +124,12 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
         if (!g_obs_eval_retains_code) {
             obs_flag_store(obs_exec_started, 0);
             obs_flag_store(obs_needed, 1);
-            obs_flag_store(obs_compile_pending, 1);
+            /* A public host arm applies across this boundary. The compiler's
+             * own previous verdict does not carry such a one-unit request. */
+            obs_flag_store(obs_compile_pending, !host_armed);
         }
     } else {
-        eigs_obs_enable();
+        eigs_obs_enable_runtime();
     }
     /* A file's explicit base must beat a caller frame while compiling, but
      * must never outlive compilation: runtime eval belongs to its own frame.
@@ -365,7 +369,7 @@ void eigs_register_function(const char *name, EigsHostFn fn) {
      * after registration. Late registration records the gap; eval's guard
      * refuses to enter opaque host code with incomplete history. */
     obs_flag_store(eval_host_callbacks, 1);
-    eigs_obs_enable();
+    eigs_obs_enable_runtime();
     Value *bv = make_builtin((BuiltinFn)fn);
     env_set_local_owned(g_global_env, name, bv);
 }

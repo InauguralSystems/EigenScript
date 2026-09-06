@@ -88,8 +88,10 @@ EigsValue *eigs_eval_file(const char *path);
  * makes subsequent evals fail before entering opaque host code.
  * Disabling the opt-in records future work; it cannot repair missing history. */
 void eigs_set_eval_observer_isolated(int enabled);
-/* Recording starts open. Optional explicit arming pins the current unit open
- * before compilation; idempotent, and never repairs missing history. */
+/* Recording starts open. Explicit host arming pins the current unit and the
+ * next eval that reaches compilation open, including an isolated eval. The
+ * next-boundary request is consumed once; arm before each unit whose writes
+ * a direct host predicate needs. Idempotent; never repairs missing history. */
 void eigs_obs_enable(void);
 
 /* ---- Errors ------------------------------------------------------- */

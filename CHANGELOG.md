@@ -45,8 +45,11 @@ All notable changes to EigenScript are documented here.
   skip observation; default evals retain cross-unit history. Missing history
   rejects later reader units with `EIGS_OBS_FORCE=1` guidance, conservatively
   even for independent bindings. Escaped compiled functions retain the gate's
-  accumulated verdict; registered C callbacks keep eval recording open. A C
-  regression runs under the suite's build variant.
+  accumulated verdict; registered C callbacks keep eval recording open.
+  Explicit host `eigs_obs_enable()` also pins the next isolated eval open,
+  so direct host predicates can read that unit's recorded assignments; the
+  request is consumed at one eval boundary. A C regression runs under the
+  suite's build variant.
 
 - **`is_file of path` (#1058).** 1 iff the path names a REGULAR file
   (`S_ISREG`); 0 for a directory, a device/fifo/socket, a missing path, or a

@@ -625,7 +625,7 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
      * reachable list item and dict value, which is where the 88% goes.
      *
      * `obs_needed` is monotonic — set at compile time by chunk_reads_observer,
-     * and by eigs_obs_enable() at runtime, never cleared within a unit. The
+     * and by eigs_obs_enable_runtime() at runtime, never cleared within a unit. The
      * OTHER half of eigs_obs_gate_open(), the trace-history flag, is NOT:
      * `record_history of 0` calls trace_history_disable() and closes it again
      * mid-program. A previous version of this comment claimed the gate "cannot
@@ -3855,12 +3855,18 @@ Value* env_get_local_hashed(Env *env, const char *name, uint32_t h) {
  * assignment. Turning recording ON mid-execution does not restore the history
  * of what already ran; it only stops the bleeding. The gap flag records that
  * distinction so the guards stay armed. */
-void eigs_obs_enable(void) {
+void eigs_obs_enable_runtime(void) {
     if (!eigs_current) return;
     obs_flag_store(obs_compile_pending, 0);
     if (g_obs_needed) return;
     if (g_obs_exec_started) obs_flag_store(obs_history_gap, 1);
     obs_flag_store(obs_needed, 1);
+}
+
+void eigs_obs_enable(void) {
+    if (!eigs_current) return;
+    obs_flag_store(obs_host_arm_pending, 1);
+    eigs_obs_enable_runtime();
 }
 
 Value* env_get(Env *env, const char *name) {

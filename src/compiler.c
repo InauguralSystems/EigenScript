@@ -3704,14 +3704,14 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
      * stat/read/compiling a file's load targets on every keystroke with it. */
     if (!g_obs_gate_scan_enabled) return;
 
-    if (g_obs_gate_depth >= OBS_GATE_MAX_DEPTH) { eigs_obs_enable(); return; }
+    if (g_obs_gate_depth >= OBS_GATE_MAX_DEPTH) { eigs_obs_enable_runtime(); return; }
 
     L.bases = xcalloc_array(OBS_GATE_MAX_LOADS, sizeof(char *));
     L.base = chunk->src && chunk->src->resolve_dir
                  ? chunk->src->resolve_dir : eigs_current_file_dir();
 
-    if (chunk_scan_static_loads(chunk, obs_gate_note_load, &L)) { eigs_obs_enable(); goto done; }
-    if (L.overflow) { eigs_obs_enable(); goto done; }   /* more loads than slots — see above */
+    if (chunk_scan_static_loads(chunk, obs_gate_note_load, &L)) { eigs_obs_enable_runtime(); goto done; }
+    if (L.overflow) { eigs_obs_enable_runtime(); goto done; }   /* more loads than slots — see above */
 
     /* See the comment above: fd-level suppression is process-global, so the
      * eager compile is not taken at all while another thread could be writing
@@ -3728,7 +3728,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
      * then destroying the server's real stderr permanently. See
      * eigs_process_thread_count. */
     if (L.count > 0 && (g_vm_multithreaded || eigs_process_thread_count() > 1)) {
-        eigs_obs_enable(); goto done;
+        eigs_obs_enable_runtime(); goto done;
     }
 
     /* HEAP, not stack. As `char resolved[8192]` inside the loop this frame
@@ -3740,7 +3740,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
      * recursive path suspect; that rule was bought on exactly this shape. */
     if (L.count > 0) {
         resolved = malloc(8192);
-        if (!resolved) { eigs_obs_enable(); goto done; }
+        if (!resolved) { eigs_obs_enable_runtime(); goto done; }
     }
 
     for (int i = 0; i < L.count && !g_obs_needed; i++) {
@@ -3761,7 +3761,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
 #else
         int resolved_ok = 0;
 #endif
-        if (!resolved_ok) { eigs_obs_enable(); break; }
+        if (!resolved_ok) { eigs_obs_enable_runtime(); break; }
 
 #if !EIGENSCRIPT_FREESTANDING
         /* STAT BEFORE OPEN. This pass reads files on behalf of code the program
@@ -3794,25 +3794,25 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
         struct stat st;
         if (stat(resolved, &st) != 0 || !S_ISREG(st.st_mode) ||
             st.st_size > OBS_GATE_MAX_MODULE_BYTES) {
-            eigs_obs_enable(); break;
+            eigs_obs_enable_runtime(); break;
         }
         module_dir = eigs_file_directory(resolved);
         struct stat dir_st;
-        if (stat(module_dir, &dir_st) != 0) { eigs_obs_enable(); break; }
+        if (stat(module_dir, &dir_st) != 0) { eigs_obs_enable_runtime(); break; }
         if (obs_memo_seen(st.st_dev, st.st_ino, dir_st.st_dev, dir_st.st_ino)) continue;
         if (g_obs_spec_bytes + st.st_size > OBS_GATE_SPECULATIVE_BUDGET) {
-            eigs_obs_enable(); break;
+            eigs_obs_enable_runtime(); break;
         }
         g_obs_spec_bytes += st.st_size;
         source = read_file_util(resolved, &size);
 #endif
-        if (!source) { eigs_obs_enable(); break; }
+        if (!source) { eigs_obs_enable_runtime(); break; }
 #if !EIGENSCRIPT_FREESTANDING
         obs_memo_add(st.st_dev, st.st_ino, dir_st.st_dev, dir_st.st_ino);
 #endif
 
         int muted = obs_gate_mute_stderr();
-        if (muted < 0) { free(source); eigs_obs_enable(); break; }
+        if (muted < 0) { free(source); eigs_obs_enable_runtime(); break; }
 
         /* BEFORE tokenize, not after. lexer.c zeroes all five first_error
          * fields unconditionally at tokenize depth 0, so a snapshot taken after
@@ -3838,7 +3838,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
             snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
                      "%s", saved_fe_msg);
             obs_gate_unmute_stderr(muted);   /* every exit from here unmutes */
-            eigs_obs_enable(); break;
+            eigs_obs_enable_runtime(); break;
         }
 
         /* #1031: answer from the AST -- no compile_ast here any more. The
@@ -3852,12 +3852,12 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * chunk's own list. Nothing compiles, so nothing arms trace recording
          * in the parent (the trace_arm_snapshot dance is gone with it). */
         L.base = module_dir;
-        if (obs_ast_scan(mast, &L) || L.overflow) eigs_obs_enable();
+        if (obs_ast_scan(mast, &L) || L.overflow) eigs_obs_enable_runtime();
         g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
         g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
         snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
                  "%s", saved_fe_msg);
-        if (g_parse_errors > 0) eigs_obs_enable();
+        if (g_parse_errors > 0) eigs_obs_enable_runtime();
         g_parse_errors = saved_errors;
         free_ast(mast); free_tokenlist(&tl); free(source);
         obs_gate_unmute_stderr(muted);
@@ -3994,8 +3994,8 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * `case OP_REPORT_NAME:` deleted from opcode_is_observer_reader(): the
      * honest three-capture run reports 3 mismatches and rc=1; the laundered one
      * reports `415 programs byte-identical` and rc=0. */
-    if (!g_obs_needed && eigs_env_flag("EIGS_OBS_FORCE")) eigs_obs_enable();
-    if (!g_obs_needed && chunk_reads_observer(chunk)) eigs_obs_enable();
+    if (!g_obs_needed && eigs_env_flag("EIGS_OBS_FORCE")) eigs_obs_enable_runtime();
+    if (!g_obs_needed && chunk_reads_observer(chunk)) eigs_obs_enable_runtime();
     if (!g_obs_needed) obs_gate_resolve_static_loads(chunk);
     /* Same convention as EIGS_OBS_FORCE above — these two are documented as
      * adjacent rows of one table in docs/OBSERVER.md, and read with a bare

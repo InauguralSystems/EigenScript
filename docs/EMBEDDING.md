@@ -143,12 +143,21 @@ A newly opened state records observer updates by default. This also applies to
 `eigs_state_new` plus attach/init: a native or assembled-code host that never
 calls `compile_ast` has a live observer. Calling `eigs_obs_enable()` at startup
 is **no longer required**. The call remains idempotent and can pin the current
-unit open before compilation. Embed initialization pins recording open because
+unit open before compilation; an explicit host call also pins the next embed
+eval that reaches compilation, including an isolated eval. Embed initialization
+pins recording open because
 a subsequently compiled module cannot classify its surrounding native caller.
 The explicit eval opt-in below renews permission to choose a compile verdict.
 Only a compile verdict proving no observer reads
 may close the gate; recording stays monotonic within that execution unit.
 The CLI's read-free programs still compile as `unobserved`.
+
+A raw host using `compile_ast` before runtime initialization must serialize
+the first compilation against worker arming and execution: no worker may call
+`eigs_obs_enable()` until that compile returns. Atomic flag accesses do not
+make the compiler's check-then-clear decision a transaction. Subsequent arming
+and flag reads may be concurrent within the established execution unit;
+isolated eval boundaries still require exclusive state access.
 
 By default, `eigs_eval_string` and `eigs_eval_file` keep recording across calls.
 A later unit may interrogate a binding an earlier unit assigned, with its full
@@ -168,17 +177,30 @@ Call the setter only between evals while the host has exclusive use of the
 state, as required for eval itself. Globals still accumulate normally.
 This promise covers eval-unit cross-reads; a host calling predicates directly
 between isolated units must arrange recording before the relevant assignments
-(`eigs_obs_enable` for direct host work, or `EIGS_OBS_FORCE=1` before the first
-eval), because direct predicate calls bypass the eval guard and arming after
+(`eigs_obs_enable()` before the eval that makes those assignments, or
+`EIGS_OBS_FORCE=1` before the first eval), because direct predicate calls bypass
+the eval guard and arming after
 the assignments cannot recover their missing history.
+An explicit arm is consumed at one eval compilation boundary; call it again
+before each unit whose assignments the host will interrogate directly. Arming
+by a source scan or by internal runtime code does not create that host request.
+
+```c
+eigs_set_eval_observer_isolated(1);
+eigs_obs_enable();
+EigsValue *r = eigs_eval_string(assignments); /* this unit stays observed */
+eigs_value_release(r);
+/* Direct observer_predicate_at calls can now read this unit's history. */
+```
 
 | API | Contract |
 |---|---|
 | `eigs_set_eval_observer_isolated(int enabled)` | Nonzero opts in to the promise above; zero restores recording for subsequent work. |
-| `eigs_obs_enable(void)` | Idempotently arms the current unit; does not reconstruct missing history. |
+| `eigs_obs_enable(void)` | Idempotently arms the current unit and pins the next eval compilation boundary open; does not reconstruct missing history. |
 
-An opted-in eval starts a new unit and may choose a new verdict. Use default
-eval mode or `EIGS_OBS_FORCE=1` to keep subsequent units observed.
+An opted-in eval starts a new unit and may choose a new verdict unless the
+host explicitly armed it. Use default eval mode or `EIGS_OBS_FORCE=1` to keep
+all subsequent units observed.
 
 With the opt-in, a read-free unit can run `unobserved`, visible through
 `EIGS_OBS_GATE_STATS=1`. The existing source scan supplies each verdict. Functions

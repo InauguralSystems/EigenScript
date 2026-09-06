@@ -35,7 +35,8 @@ lsan_classify "$(cat "$out")" || classification=$?
 if [[ "$rc" -ne 0 || "$classification" -ne 2 ]]; then
     exit 1
 fi
-grep -q '^embed observer: 31 passed, 0 failed$' "$out"
+grep -q '^embed observer: 35 passed, 0 failed$' "$out"
 grep -q '^raw host: obs_needed=1 improving=1$' "$out"
+grep -q '^isolated host: DIRECT improving=1 obs_needed=1 gap=0$' "$out"
 grep -q '^embed obs-gate: unobserved$' "$out"
 grep -q '^obs-gate: unobserved ' "$out"
