@@ -1,5 +1,9 @@
 # Embed observer contract: validation (#1038 / #1028)
 
+The original measurements below are from round 1; the
+[round-2 record](#round-2-raw-host-coverage) distinguishes state creation from
+the separate embed-initialization pin.
+
 Baseline: `origin/main` at `cd99388163c3ff6478851de1f5be906f7626341a`.
 The baseline runtime was built in this worktree before the runtime edits.
 The regression is `tests/test_embed_observer.c`; its normal runner is
@@ -183,3 +187,112 @@ EIGS_JIT_OFF=1 EIGS_REPLAY=/tmp/spawn-exit.tape src/eigenscript tests/test_spawn
 
 The record exits 0; replay exits 139. This pre-existing failure must not be
 read as a clean replay result merely because the harness exits 0.
+
+## Round 2: raw-host coverage
+
+Starting tree: clean `fix-1038` at `7c7a11d`. Both critics found that the
+round-1 test's `eigs_open` path always armed through `eigs_state_init_runtime`,
+so it could not detect reverting the separate `eigs_state_new` default.
+The shipped test now also has `--raw-host`: create and attach a raw state,
+allocate an environment, record twelve descending updates, and interrogate
+the resulting trajectory. It never initializes the runtime, compiles source
+or explicitly arms recording. The original `eigs_open` checks remain.
+
+`make embed-observer-test` and `bash tests/test_embed_observer.sh`:
+**31 passed, 0 failed**, exit 0. Isolated witness:
+
+```text
+raw host: obs_needed=1 improving=1
+PASS: raw host: state creation records without init_runtime
+embed observer: 1 passed, 0 failed
+```
+
+Copied the worktree with `cp -a` to `/tmp/es1038-r2-plant`, changed only
+`src/state.c`'s `st->obs_needed = 1;` to `0`, and ran plain `make` followed by
+the same C runner. It exited 1 with **30 passed, 1 failed**. Its isolated
+`build/release/test_embed_observer --raw-host` also exited 1:
+
+```text
+raw host: obs_needed=0 improving=0
+FAIL: raw host: state creation records without init_runtime
+embed observer: 0 passed, 1 failed
+```
+
+F2's clear already uses `obs_flag_store`, whose implementation is
+`__atomic_store_n(..., __ATOMIC_RELEASE)`; preprocessing `src/compiler.c`
+confirmed that exact expansion. No runtime store was changed. The CLI's first
+compile precedes execution/spawn; normal embedding consumes the first-compile
+permission at initialization; isolated eval boundaries require exclusive state
+access. A raw host must likewise serialize its first compile against native
+arming/execution. An exchange of `obs_needed` alone would not serialize the
+surrounding check-then-clear decision. The source comment now names that limit,
+and the C test covers a raw first compile followed by concurrent worker arming
+and atomic flag reads. The TSan lane now runs the C contract with failures and
+sanitizer reports fatal, in addition to its existing concurrency slice.
+
+F3 documents that direct host predicates between isolated eval units bypass
+the eval guard: recording must be arranged before the relevant assignments,
+and late arming cannot recover missing history.
+
+Round-2 gates, run sequentially (each full suite once):
+
+| Command | Measured result |
+|---|---|
+| `make && (cd tests && bash run_all_tests.sh)` | 4259/4259 passed, 0 failed. |
+| `make asan && (cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh)` | 4248/4248 passed, 0 failed; no leak reports; C contract 31/31. |
+| `make tsan && bash tests/test_tsan.sh` | 15 passed, 0 failed: 13 clean programs, the C contract (31/31), and the seeded race (14 warnings before its 120-second timeout). |
+
+Both full suites audited 481 compile invocations across 29 targets and seven
+scripts. After restoring release, the CLI probe still printed
+`obs-gate: unobserved <module>` and `42`; its SHA-256 remained
+`7260633c29791dd5bac01b2884b8203ffc601d2b2bc29a91c5718a3d9528384f`.
+
+Fresh differential baseline: copied the worktree with `cp -a` to
+`/tmp/es1038-r2-main`, reversed `git diff origin/main -- src` with `patch -R`,
+then ran `make clean` and plain `make` in that copy. All six changed runtime
+files were compared byte-for-byte with `git show origin/main:<path>` before
+using the binary. Source revision:
+`cd99388163c3ff6478851de1f5be906f7626341a`; rebuilt binary SHA-256:
+`305b8c73a74e5d6478d48f0c3c20f872e97b9aec41ad4f40f8c125a2a5f83be5`.
+The canonical checkout's binary was not used.
+
+Captured this fresh baseline twice (`main`, `main2`), then reapplied the runtime
+patch and rebuilt the branch **in that same scratch directory**. Its binary
+SHA-256 matched the validated worktree release binary above. Holding the
+executable path constant matters: an initial comparison with the branch binary
+in the original worktree reported seven differences, all executable-relative
+import diagnostics (two shadow warnings and five missing-file diagnostics).
+No output normalization or exclusion rule was changed to remove those
+differences.
+
+With `EIGS_GATE_DIFF_DIR="$PWD/build/observer-r2-captures"` and
+`EIGS_GATE_DIFF_BIN=/tmp/es1038-r2-main/src/eigenscript`, ran
+`bash tools/observer_gate_diff.sh capture main`, `capture main2`, then, after
+the in-place branch rebuild, `capture branch_samepath` and
+`compare main branch_samepath`. Each capture reported **521 programs, 5 denied**.
+The comparison exited 0:
+
+```text
+provenance: base=305b8c73a74e(force=0) ref=305b8c73a74e(force=0) gated=7260633c2979(force=0)
+corpus entries with captures: 520
+nondeterministic under a FIXED build (excluded): 23
+compared: 497 (informative: 401, silent: 96)
+mismatches: 0
+RESULT: PASS — 497 programs byte-identical
+```
+
+The attempt/entry count difference exposed an existing capture limitation:
+`test_terminal.eigs` reads from the corpus loop's stdin, truncating the next
+path to `ts/test_throw_unwind.eigs`. All three captures contain that invalid
+path's error, while the actual `tests/test_throw_unwind.eigs` capture is absent
+from all three and therefore skipped by comparison. The 497-program claim
+does **not** include that test. This is recorded as a separate harness gap;
+the observer differential tool was unchanged in this round.
+
+The independent read-free probe, run after restoring release:
+
+```bash
+EIGS_OBS_GATE_STATS=1 src/eigenscript -e $'x is 41\nprint of (x + 1)'
+```
+
+It exited 0 with `obs-gate: unobserved <module>` and output `42`.

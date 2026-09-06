@@ -3967,6 +3967,9 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * compilations OR their evidence into this unit, never close its gate. */
     if (g_obs_compile_pending) {
         obs_flag_store(obs_compile_pending, 0);
+        /* Already a RELEASE atomic store. The surrounding decision requires
+         * serialized first compilation; exchanging this one flag would not
+         * make check-then-clear atomic against concurrent native arming. */
         if (!g_obs_exec_started)
             obs_flag_store(obs_needed, 0);
     }

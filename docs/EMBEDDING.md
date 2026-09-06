@@ -166,6 +166,11 @@ reports and temporal queries. The setting belongs to the attached `EigsState`,
 applies to both string and file evals, and defaults off on every new state.
 Call the setter only between evals while the host has exclusive use of the
 state, as required for eval itself. Globals still accumulate normally.
+This promise covers eval-unit cross-reads; a host calling predicates directly
+between isolated units must arrange recording before the relevant assignments
+(`eigs_obs_enable` for direct host work, or `EIGS_OBS_FORCE=1` before the first
+eval), because direct predicate calls bypass the eval guard and arming after
+the assignments cannot recover their missing history.
 
 | API | Contract |
 |---|---|

@@ -1,7 +1,9 @@
 /* #1038/#1028: the host observer contract. --direct is intentionally usable
  * with origin/main's runtime: compile with -DEIGS_OBS_BASELINE_ONLY to omit
- * tests of the additive API. No compile_ast/eigs_obs_enable in the direct arm. */
+ * tests of the additive API. No compile_ast/eigs_obs_enable in the direct arm.
+ * --raw-host also bypasses init_runtime, independently pinning state creation. */
 #include <stdio.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include "eigs_embed.h"
@@ -21,6 +23,31 @@ static int constant(EigsChunk *c, Value *v) {
     int idx = chunk_add_constant(c, v);
     val_decref(v);
     return idx;
+}
+/* Pin state.c's default independently of the eigs_open/init_runtime pin.
+ * No runtime initialization, compilation or explicit arming on this path. */
+static void raw_host(void) {
+    EigsState *st = eigs_state_new();
+    if (!st || !eigs_thread_attach(st)) {
+        check(0, "raw host: attach state");
+        eigs_state_destroy(st);
+        return;
+    }
+    Env *env = env_new(NULL);
+    env_set_local_owned(env, "raw_x", make_num(100));
+    double x = 100;
+    for (int i = 0; i < 12; i++) {
+        x *= 0.5;
+        env_set_local_owned(env, "raw_x", make_num(x));
+        observer_slot_update_num(env, 0, x);
+    }
+    int answer = observer_predicate_at(env, 0, 2 /* improving */, 1);
+    printf("raw host: obs_needed=%d improving=%d\n", g_obs_needed, answer);
+    check(g_obs_needed && answer == 1,
+          "raw host: state creation records without init_runtime");
+    env_decref(env);
+    eigs_thread_detach();
+    eigs_state_destroy(st);
 }
 static void direct(void) {
     EigsState *st = eigs_open();
@@ -61,6 +88,50 @@ static void direct(void) {
 }
 
 #ifndef EIGS_OBS_BASELINE_ONLY
+static void *arm_from_worker(void *arg) {
+    EigsState *st = arg;
+    if (!eigs_thread_attach(st)) return NULL;
+    for (int i = 0; i < 10000; i++) eigs_obs_enable();
+    eigs_thread_detach();
+    return st;
+}
+/* The first compile is serialized BEFORE a worker can arm. Atomic flag
+ * accesses then allow concurrent arming/readers; they do not make a whole
+ * compile-and-clear transaction safe against arbitrary concurrent host code. */
+static void raw_compile_then_arm(void) {
+    EigsState *st = eigs_state_new();
+    if (!st || !eigs_thread_attach(st)) {
+        check(0, "raw compile: attach state");
+        eigs_state_destroy(st);
+        return;
+    }
+    Env *env = env_new(NULL);
+    const char *source = "42\n";
+    TokenList tl = tokenize(source);
+    ASTNode *ast = parse(&tl);
+    EigsChunk *chunk = compile_ast(ast, env, source);
+    check(chunk && !g_parse_errors && !g_has_error && !g_obs_needed,
+          "raw compile: first read-free verdict closes before workers");
+    pthread_t worker;
+    int rc = pthread_create(&worker, NULL, arm_from_worker, st);
+    void *result = NULL;
+    if (rc == 0) {
+        for (int i = 0; i < 10000; i++) {
+            (void)g_obs_needed;
+            (void)g_obs_compile_pending;
+        }
+        rc = pthread_join(worker, &result);
+    }
+    check(rc == 0 && result == st && g_obs_needed &&
+          !g_obs_compile_pending && !g_obs_history_gap,
+          "raw compile: worker arming preserves the open verdict");
+    chunk_free(chunk);
+    free_ast(ast);
+    free_tokenlist(&tl);
+    env_decref(env);
+    eigs_thread_detach();
+    eigs_state_destroy(st);
+}
 /* Each assignment changes x last, so both named and bare predicates can be
  * compared with the VM. The final step is still well outside the deadband. */
 static const char *series =
@@ -186,11 +257,15 @@ static void eval_contract(void) {
 }
 #endif
 int main(int argc, char **argv) {
-    direct();
+    int raw_only = argc == 2 && strcmp(argv[1], "--raw-host") == 0;
+    int direct_only = argc == 2 && strcmp(argv[1], "--direct") == 0;
+    if (!direct_only) raw_host();
+    if (!raw_only) direct();
 #ifndef EIGS_OBS_BASELINE_ONLY
-    if (!(argc == 2 && strcmp(argv[1], "--direct") == 0)) eval_contract();
-#else
-    (void)argc; (void)argv;
+    if (!raw_only && !direct_only) {
+        raw_compile_then_arm();
+        eval_contract();
+    }
 #endif
     printf("embed observer: %d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;
