@@ -1624,6 +1624,11 @@ static uint8_t *emit_cmp_rdx_disp32_rax(uint8_t *w, int32_t disp) {
     *w++ = 0x48; *w++ = 0x39; *w++ = 0x90;
     return emit_u32(w, (uint32_t)disp);
 }
+/* cmp %rdx, disp32(%r15) — active env versus the cached function/module home. */
+static uint8_t *emit_cmp_rdx_disp32_r15(uint8_t *w, int32_t disp) {
+    *w++ = 0x49; *w++ = 0x39; *w++ = 0x97;
+    return emit_u32(w, (uint32_t)disp);
+}
 /* mov disp32(%rdx), %esi  (6 bytes) — env->binding_version load. */
 static uint8_t *emit_mov_disp32_rdx_to_esi(uint8_t *w, int32_t disp) {
     *w++ = 0x8B; *w++ = 0xB2;
@@ -2695,7 +2700,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 ? (int)offsetof(CallFrame, fn_env)
                 : (int)offsetof(CallFrame, env);
             EnvIC *ic = &chunk->env_ic[sidx];
-            uint8_t *slow_p[6];
+            uint8_t *slow_p[7];
             int slow_n = 0;
             /* Trace gate: address baked, flag is process-global. The STORAGE
              * symbol, not the macro — the macro is an atomic load expression
@@ -2709,6 +2714,14 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             /* IC identity + starting version. */
             w = emit_mov_disp32_r15_to_rdx(w, frame_env_off);
+            /* #1056: an imported entry can acquire a nearer local without
+             * changing fn_env's version (e.g. eval creates it mid-thunk).
+             * Inline only when there is no intervening env. Otherwise the
+             * shared bounded lookup in the helper decides the write target. */
+            if (op == OP_SET_FN_NAME_LOCAL && chunk->module_scope_writes) {
+                w = emit_cmp_rdx_disp32_r15(w, (int32_t)offsetof(CallFrame, env));
+                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
+            }
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)ic);
             w = emit_cmp_rdx_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_env));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;

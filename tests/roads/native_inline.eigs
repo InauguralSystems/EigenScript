@@ -1,0 +1,11 @@
+# road-bind: v
+# road-native: required
+v is 100
+for i in [1]:
+    j is 0
+    loop while j < 20000:
+        if j == 15000:
+            eval of "local v is 10"
+        v is j
+        j is j + 1
+print of v

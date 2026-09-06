@@ -512,7 +512,8 @@ then the nearest `eigs.json` project root, then stdlib locations. Absolute
 paths are used as-is. There is no process cwd search; the REPL (including piped
 input) and the embed API without a file path use their working directory as the
 containing directory. A function retains its defining file's directory through
-`eval`, including calls made while another module is being imported. The complete chain is in
+`eval`, including calls made while another module is being imported or an
+embedding host is executing `eigs_eval_file`. The complete chain is in
 [SPEC, Modules](SPEC.md#modules).
 
 Main, import and load_file share these rules: a `for` binder is loop-scoped

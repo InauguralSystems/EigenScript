@@ -70,7 +70,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx nativefn-test print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx nativefn-test embed-roads print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -211,6 +211,14 @@ $(NATIVEFN_TEST): $(NATIVEFN_TEST_OBJ) $(filter-out build/release/main.o build/r
 	$(CC) $(FLAGS_release) -o $@ $^ $(LIBS_release)
 nativefn-test: $(NATIVEFN_TEST)
 	@echo "Native-fn identity test built: $(NATIVEFN_TEST)"
+
+# #1056: use the same variant as the CLI under test, without relinking it.
+ROAD_VARIANT ?= release
+EMBED_ROADS_OBJ := $(filter-out build/$(ROAD_VARIANT)/main.o,$(OBJ_$(ROAD_VARIANT)))
+build/$(ROAD_VARIANT)/embed_roads: $(SRC_DIR)/embed_roads.c $(EMBED_ROADS_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile
+	$(CC) $(FLAGS_$(ROAD_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_ROADS_OBJ) $(LIBS_$(ROAD_VARIANT))
+embed-roads: build/$(ROAD_VARIANT)/embed_roads
+	@echo "Embed road test built: $<"
 
 full: build/full/eigenscript
 	$(call RELINK,full)

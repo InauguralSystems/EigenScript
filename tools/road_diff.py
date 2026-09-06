@@ -10,6 +10,7 @@ import contextlib
 import difflib
 import io
 import os
+import platform
 from pathlib import Path
 import re
 import shutil
@@ -56,7 +57,9 @@ def snapshot(names, captures, module=None):
     return "\n".join(lines) + "\n"
 
 
-def run_gate(binary, fixtures, only=None):
+def run_gate(binary, fixtures, only=None, *, architecture=None):
+    # Explicit architecture is for the selftest of the ARM64 CI policy.
+    architecture = architecture or platform.machine().lower()
     paths = sorted(fixtures.glob("*.eigs"))
     if only:
         paths = [p for p in paths if p.stem == only]
@@ -85,80 +88,116 @@ def run_gate(binary, fixtures, only=None):
                 print(f"road_diff: FAIL: {fixture.name}: missing/empty expected stdout")
                 failures += 1
                 continue
+            native_tags = metadata(source, "native")
+            if native_tags and native_tags != ["required"]:
+                print(f"road_diff: FAIL: {fixture.name}: invalid road-native metadata")
+                failures += 1
+                continue
+            native = bool(native_tags)
             outputs = []
             cwds = metadata(source, "cwd") or [".", "__unrelated_cwd"]
-            for road in ("main", "load_file", "import"):
-                for ci, cwd in enumerate(cwds):
-                    tree = scratch / f"{fixture.stem}-{road}-{ci}"
-                    shutil.copytree(fixtures, tree)
-                    for pair in metadata(source, "hardlink"):
-                        src, dst = pair.split()
-                        (tree / dst).unlink()
-                        os.link(tree / src, tree / dst)
-                    own = tree / fixture.name
-                    captures, prelude = driver_context()
-                    report = snapshot(names, captures, fixture.stem if road == "import" else None)
-                    marker = "__road_complete_" + uuid.uuid4().hex + "__"
-                    marker_bytes = (marker + "\n").encode()
-                    report += f'{captures["print"]} of "{marker}"\n'
-                    if road == "main":
-                        # A top-level return bypasses a suffix. Snapshot just before
-                        # each unindented return, and at normal end of the file.
-                        body = re.sub(r"(?m)^(return(?:\s.*)?)$", lambda m: report + m[0], source)
-                        own.write_text(prelude + body + "\n" + report)
-                        entry = own
-                    else:
-                        entry = tree / "_road_driver.eigs"
-                        if road == "import":
-                            body = f"import {fixture.stem}\n"
+            tiers = ("ref", "jit", "osr") if native else ("ambient",)
+            if native and architecture in ("arm64", "aarch64"):
+                # jit.h has no ARM64 emitter. Still run all roads, explicitly
+                # interpreter-only; no non-running native arm is called green.
+                tiers = ("ref",)
+                print(f"road_diff: {fixture.name}: native tiers unavailable on ARM64; interpreter only")
+            for tier in tiers:
+                for road in ("main", "load_file", "import"):
+                    for ci, cwd in enumerate(cwds):
+                        tree = scratch / f"{fixture.stem}-{tier}-{road}-{ci}"
+                        shutil.copytree(fixtures, tree)
+                        for pair in metadata(source, "hardlink"):
+                            src, dst = pair.split()
+                            (tree / dst).unlink()
+                            os.link(tree / src, tree / dst)
+                        own = tree / fixture.name
+                        captures, prelude = driver_context()
+                        report = snapshot(names, captures, fixture.stem if road == "import" else None)
+                        marker = "__road_complete_" + uuid.uuid4().hex + "__"
+                        marker_bytes = (marker + "\n").encode()
+                        report += f'{captures["print"]} of "{marker}"\n'
+                        if road == "main":
+                            # A top-level return bypasses a suffix. Snapshot just before
+                            # each unindented return, and at normal end of the file.
+                            body = re.sub(r"(?m)^(return(?:\s.*)?)$", lambda m: report + m[0], source)
+                            own.write_text(prelude + body + "\n" + report)
+                            entry = own
                         else:
-                            body = f'{captures["result"]} is {captures["load_file"]} of "{fixture.name}"\n'
-                            returns = metadata(source, "return")
-                            if returns:
-                                body += (f'if {captures["result"]} != ({returns[0]}):\n'
-                                         f'    {captures["throw"]} of "road return value mismatch"\n')
-                        entry.write_text(prelude + body + report)
-                    workdir = tree / cwd
-                    workdir.mkdir(parents=True, exist_ok=True)
-                    if ci == 1:
-                        alias = tree / "__entry_alias" / "entry.eigs"
-                        alias.parent.mkdir()
-                        alias.symlink_to(entry)
-                        entry = alias
-                    env = os.environ.copy()
-                    # Do not inherit a tape from the caller. These are deterministic
-                    # fixtures; sanitizers and execution-tier flags remain enabled.
-                    for key in ("EIGS_TRACE", "EIGS_REPLAY"):
-                        env.pop(key, None)
-                    env["HOME"] = str(scratch / "empty-home")
-                    runs += 1
-                    try:
-                        result = subprocess.run([str(binary), str(entry)], cwd=workdir,
-                                                env=env, capture_output=True, timeout=30)
-                    except (OSError, subprocess.TimeoutExpired) as err:
-                        print(f"road_diff: FAIL: {fixture.name} {road} cwd={cwd}: {err}")
-                        failures += 1
-                        continue
-                    complete = (result.stdout.endswith(marker_bytes) and
-                                result.stdout.count(marker_bytes) == 1)
-                    stdout = result.stdout[:-len(marker_bytes)] if complete else result.stdout
-                    outputs.append((road, cwd, result.returncode, stdout))
-                    # Strictly require clean stderr as well: an ASan/UBSan warning
-                    # at exit 0 must never get hidden behind a matching stdout.
-                    if result.returncode or result.stderr or not complete or stdout != expected.read_bytes():
-                        failures += 1
-                        print(f"road_diff: FAIL: {fixture.name} {road} cwd={cwd} rc={result.returncode}")
-                        if not complete:
-                            print("missing driver completion marker")
-                        print(result.stderr.decode(errors="replace"), end="")
-                        print("".join(difflib.unified_diff(
-                            expected.read_text().splitlines(True),
-                            stdout.decode(errors="replace").splitlines(True),
-                            fromfile="expected", tofile=f"{road} stdout")), end="")
+                            entry = tree / "_road_driver.eigs"
+                            if road == "import":
+                                body = f"import {fixture.stem}\n"
+                            else:
+                                body = f'{captures["result"]} is {captures["load_file"]} of "{fixture.name}"\n'
+                                returns = metadata(source, "return")
+                                if returns:
+                                    body += (f'if {captures["result"]} != ({returns[0]}):\n'
+                                             f'    {captures["throw"]} of "road return value mismatch"\n')
+                            entry.write_text(prelude + body + report)
+                        workdir = tree / cwd
+                        workdir.mkdir(parents=True, exist_ok=True)
+                        if ci == 1:
+                            alias = tree / "__entry_alias" / "entry.eigs"
+                            alias.parent.mkdir()
+                            alias.symlink_to(entry)
+                            entry = alias
+                        env = os.environ.copy()
+                        # Do not inherit a tape from the caller. These are deterministic
+                        # fixtures; sanitizers and execution-tier flags remain enabled.
+                        for key in ("EIGS_TRACE", "EIGS_REPLAY"):
+                            env.pop(key, None)
+                        env["HOME"] = str(scratch / "empty-home")
+                        if native:
+                            for key in ("EIGS_JIT_OFF", "EIGENSCRIPT_JIT_FORCE_OFF",
+                                        "EIGS_JIT_OSR_THRESHOLD", "EIGS_JIT_OSR_OFF", "EIGS_JIT_STATS", "EIGS_JIT_STOPS"):
+                                env.pop(key, None)
+                            env["EIGS_JIT_STATS"] = "1"
+                            if tier == "ref":
+                                env["EIGS_JIT_OFF"] = "1"
+                            elif tier == "osr":
+                                env["EIGS_JIT_OSR_THRESHOLD"] = "1"
+                        runs += 1
+                        try:
+                            result = subprocess.run([str(binary), str(entry)], cwd=workdir,
+                                                    env=env, capture_output=True, timeout=30)
+                        except (OSError, subprocess.TimeoutExpired) as err:
+                            print(f"road_diff: FAIL: {fixture.name} {road} cwd={cwd}: {err}")
+                            failures += 1
+                            continue
+                        stderr = result.stderr
+                        tier_ok = True
+                        if native:
+                            stats = re.findall(rb"(?m)^\[jit\] scanned=(\d+) compiled=(\d+) cache_used=(\d+)\n", stderr)
+                            tier_ok = len(stats) == 1 and (int(stats[0][1]) == 0 if tier == "ref" else int(stats[0][1]) > 0)
+                            if len(stats) == 1:
+                                stats_line = b"[jit] scanned=%s compiled=%s cache_used=%s\n" % stats[0]
+                                stderr = stderr.replace(stats_line, b"", 1)
+                                print(f"road_diff: native {fixture.name} {road} tier={tier} cwd={cwd}: " +
+                                      stats_line.decode().strip())
+                            if not tier_ok:
+                                print(f"road_diff: FAIL: {fixture.name} {road} tier={tier} cwd={cwd}: "
+                                      "missing/wrong native mechanism (ref requires compiled=0; jit/osr require compiled>0)")
+                        complete = (result.stdout.endswith(marker_bytes) and
+                                    result.stdout.count(marker_bytes) == 1)
+                        stdout = result.stdout[:-len(marker_bytes)] if complete else result.stdout
+                        outputs.append((road, cwd, result.returncode, stdout))
+                        # Strictly require clean stderr as well: an ASan/UBSan warning
+                        # at exit 0 must never get hidden behind a matching stdout.
+                        if result.returncode or stderr or not complete or not tier_ok or stdout != expected.read_bytes():
+                            failures += 1
+                            print(f"road_diff: FAIL: {fixture.name} {road} cwd={cwd} rc={result.returncode}" +
+                                  (f" tier={tier}" if native else ""))
+                            if not complete:
+                                print("missing driver completion marker")
+                            print(stderr.decode(errors="replace"), end="")
+                            print("".join(difflib.unified_diff(
+                                expected.read_text().splitlines(True),
+                                stdout.decode(errors="replace").splitlines(True),
+                                fromfile="expected", tofile=f"{road} stdout")), end="")
             if outputs and any(row[2:] != outputs[0][2:] for row in outputs[1:]):
                 failures += 1
                 print(f"road_diff: FAIL: {fixture.name}: roads/cwds diverge")
-            elif len(outputs) == 3 * len(cwds):
+            elif len(outputs) == len(tiers) * 3 * len(cwds):
                 print(f"road_diff: compared {fixture.name} ({len(outputs)} runs)")
     print(f"road_diff: fixtures={len(paths)} runs={runs} failures={failures} "
           f"seconds={time.monotonic() - started:.2f}", flush=True)
@@ -333,6 +372,63 @@ def selftest(binary, bad_binary=None):
                                stdout_matches=True,
                                diagnostic=warning if symptom == "stderr" else None):
                 return 1
+        fixture.unlink()
+
+        fixture = tree / "native_control.eigs"
+        fixture.write_text('# road-bind: count\n# road-native: required\n'
+                           'count is 0\nloop while count < 20000:\n    count is count + 1\n')
+        fixture.with_suffix('.out').write_text('["count", 1, 20000]\n')
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            status = run_gate(binary, tree)
+        output = captured.getvalue()
+        supported = platform.machine().lower() not in ("arm64", "aarch64")
+        tier_names = ('ref', 'jit', 'osr') if supported else ('ref',)
+        if (status or f'fixtures=1 runs={6 * len(tier_names)} failures=0 ' not in output or
+                any(output.count(f' tier={tier} ') != 6 for tier in tier_names)):
+            print('road_diff selftest: FAIL: three measured tier arms\n' + output)
+            return 1
+        controls += 1
+        print('road_diff selftest: GREEN: ' + ('three measured tier arms (18 runs)' if supported
+                                              else 'ARM64 interpreter arm (6 runs; no native emitter)'))
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            status = run_gate(binary, tree, architecture="arm64")
+        output = captured.getvalue()
+        if (status or 'fixtures=1 runs=6 failures=0 ' not in output or
+                'native tiers unavailable on ARM64; interpreter only' not in output or
+                output.count(' tier=ref ') != 6):
+            print('road_diff selftest: FAIL: ARM64 policy\n' + output)
+            return 1
+        controls += 1
+        print('road_diff selftest: GREEN: ARM64 policy explicitly runs only the interpreter')
+        for symptom in (('force_off', 'drop_stats') if supported else ('drop_stats',)):
+
+            wrapper = tree / symptom
+            wrapper.write_text(f'#!{sys.executable}\n'
+                               'import os, re, subprocess, sys\n'
+                               'env = os.environ.copy()\n' +
+                               ('env["EIGS_JIT_OFF"] = "1"\n' if symptom == 'force_off' else '') +
+                               f'r = subprocess.run([{str(binary)!r}, *sys.argv[1:]], env=env, capture_output=True, timeout=20)\n'
+                               'sys.stdout.buffer.write(r.stdout)\n' +
+                               ('sys.stderr.buffer.write(re.sub(rb"(?m)^\\[jit\\] scanned=.*\\n", b"", r.stderr))\n'
+                                if symptom == 'drop_stats' else 'sys.stderr.buffer.write(r.stderr)\n') +
+                               'raise SystemExit(r.returncode)\n')
+            wrapper.chmod(0o755)
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                status = run_gate(wrapper, tree)
+            output = captured.getvalue()
+            expected_failures = 12 if symptom == 'force_off' else 6 * len(tier_names)
+            if (status == 0 or
+                    f'fixtures=1 runs={6 * len(tier_names)} failures={expected_failures} ' not in output or
+                    output.count('missing/wrong native mechanism') != expected_failures or
+                    '--- expected' in output or 'roads/cwds diverge' in output):
+                print(f'road_diff selftest: FAIL: native {symptom} plant\n' + output)
+                return 1
+            plants += 1
+            print('road_diff selftest: RED: ' + ('native tiers compiled nothing' if symptom == 'force_off'
+                                              else 'native mechanism statistics missing'))
         fixture.unlink()
 
         fixture = tree / "exit_forge.eigs"

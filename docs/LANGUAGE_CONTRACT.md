@@ -95,7 +95,7 @@ partial AST — consistent with the **Errors** promise.
 
 - Resolution belongs to the file containing the call, including nested loads
   and `eval` inside functions, even when called during another module's
-  import or load. The defining file remains the base. The shared chain is: absolute
+  import, load, or `eigs_eval_file`. The defining file remains the base. The shared chain is: absolute
   path as-is; containing directory; the `eigs_modules` walk; project root
   (nearest ancestor, including that directory, with `eigs.json`); executable
   and HOME stdlib locations. There is no process cwd search or one-parent

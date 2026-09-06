@@ -121,9 +121,13 @@ accumulate across calls and are visible to `eigs_get_global`.
 
 Returns a counted ref to the script's last expression value, or `NULL`
 on parse / runtime error. On error, `eigs_last_error_message()` returns
-the most recent message. `eigs_eval_file` also updates `script_dir` so
-`import` / `load_file` inside the source resolves relative paths against
-the file's directory.
+the most recent message. `eigs_eval_file` compiles with the named file's
+canonical containing directory.
+The override ends before execution; each helper, including a helper that calls
+`eval`, retains its own defining file's directory. Subsequent `eigs_eval_string`
+calls without a file use the working directory, and can call previously loaded
+functions without changing those functions' provenance. The shared search chain
+is documented in [SPEC, Modules](SPEC.md#modules).
 
 ```c
 EigsValue *r = eigs_eval_string("greeting is \"hi\"\n3 * 14");

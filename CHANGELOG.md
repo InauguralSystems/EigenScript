@@ -57,10 +57,19 @@ All notable changes to EigenScript are documented here.
 
 - **Imported loop locals and runtime `eval` keep their scope and file (#1056).**
   A plain `is` inside an imported module's `for` first updates an existing
-  loop-local, while fresh bindings remain in the module. This lookup also
-  applies to JIT writes when a nearer local appears between iterations.
+  loop-local, while fresh bindings remain in the module. The original f29
+  fixtures stopped native compilation at `LOOP_ENV_CLEAR`; their forced-OSR
+  runs did not test native writes. Six new `native_*` road fixtures now run
+  under interpreter, default JIT, and forced OSR on x86-64 with measured tier checks.
+  For `native_inline` on x86-64: interpreter `scanned=0 compiled=0`, both
+  native tiers `scanned=2 compiled=1`. Creating a local mid-thunk previously
+  yielded 19999 instead of 14999; imported inline stores now use the helper
+  whenever an intervening scope can hold a nearer binding.
   Runtime `eval` in a function retains the function's defining directory
-  during another module's import. Road fixtures cover both regressions.
+  during another module's import and `eigs_eval_file`. The embed API now
+  scopes its directory override to compilation, matching import and load_file.
+  `tools/embed_roads.py` checks both embed eval APIs and the override during
+  execution; its C test is linked to the same variant as the suite binary.
   The oracle requires completion after readback and names malformed metadata;
   its selftest rejects early-exit snapshot forgery. Generated test modules use
   their test file's canonical directory in both in-tree and installed layouts.

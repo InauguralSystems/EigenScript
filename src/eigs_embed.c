@@ -66,7 +66,7 @@ void eigs_close(EigsState *st) {
 
 /* ---- Eval --------------------------------------------------------- */
 
-EigsValue *eigs_eval_string(const char *src) {
+static EigsValue *eval_source(const char *src, const char *file_dir) {
     if (!src || !eigs_current || !g_global_env) return NULL;
     Env *global = g_global_env;
 
@@ -106,7 +106,17 @@ EigsValue *eigs_eval_string(const char *src) {
      * can interrogate a binding an earlier call assigned. The host can also read
      * observer state directly. Nothing here can see the next call, so observe. */
     eigs_obs_enable();   /* #915: via the helper, so a mid-run flip records the gap */
+    /* A file's explicit base must beat a caller frame while compiling, but
+     * must never outlive compilation: runtime eval belongs to its own frame.
+     * Keep this pair at the compile boundary for both embed entry points. */
+    char *saved_dir = file_dir ? xstrdup(g_import_resolve_dir) : NULL;
+    if (file_dir)
+        snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", file_dir);
     EigsChunk *chunk = compile_ast(ast, global, src);
+    if (saved_dir) {
+        snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", saved_dir);
+        free(saved_dir);
+    }
 
     Value *result = vm_execute(chunk, global);
     chunk_free(chunk);
@@ -120,28 +130,22 @@ EigsValue *eigs_eval_string(const char *src) {
     return result;
 }
 
+EigsValue *eigs_eval_string(const char *src) {
+    return eval_source(src, NULL);
+}
+
 EigsValue *eigs_eval_file(const char *path) {
 #if EIGENSCRIPT_FREESTANDING
     (void)path;
     return NULL;   /* no filesystem — embed callers pass source strings */
 #else
     if (!path || !eigs_current) return NULL;
-    /* Update script_dir so `import` / `load_file` inside the source can
-     * resolve relative paths the same way the CLI does. */
     long size = 0;
     char *src = read_file_util(path, &size);
     if (!src) return NULL;
-    char *saved_dir = xstrdup(g_script_dir);
-    char *saved_compile_dir = xstrdup(g_import_resolve_dir);
     char *dir = eigs_file_directory(path);
-    snprintf(g_script_dir, sizeof(g_script_dir), "%s", dir);
-    snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", dir);
+    EigsValue *r = eval_source(src, dir);
     free(dir);
-    EigsValue *r = eigs_eval_string(src);
-    snprintf(g_script_dir, sizeof(g_script_dir), "%s", saved_dir);
-    snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", saved_compile_dir);
-    free(saved_dir);
-    free(saved_compile_dir);
     free(src);
     return r;
 #endif /* !EIGENSCRIPT_FREESTANDING */

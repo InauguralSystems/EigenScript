@@ -1117,8 +1117,9 @@ and uses the project file. For each request, the order is:
 2. Relative to the directory of the **file containing the call**, with
    symlinks and `..` canonicalized. This is the loaded file's directory for
    nested loads, and remains the defining file's directory inside a function,
-   including `eval` in that function while another module is executing an
-   import or load.
+   including `eval` in that function while its caller is running through
+   `import`, `load_file`, or an embedding host's `eigs_eval_file` call. The entry
+   file's compile directory does not override a helper's runtime `eval`.
 3. The `eigs_modules` walk described below.
 4. Relative to the **project root**: the nearest ancestor of that containing
    directory with an `eigs.json`, including the containing directory itself.

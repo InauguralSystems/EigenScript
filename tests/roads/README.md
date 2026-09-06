@@ -5,7 +5,7 @@ Each fixture runs as main, through `load_file`, and through `import`, from two
 working directories. Support files live under `assets/` and `eigs_modules/`, reached by the
 fixtures; they are not independent oracle programs. Each run gets a private copy
 of the fixture tree and an empty HOME. Children are bounded to 30 seconds.
-The second run invokes the entry point through a symlink in a third directory,
+The second cwd run invokes the entry point through a symlink in a third directory,
 so main-program provenance must agree with import's canonical-file rule.
 
 Every fixture declares `# road-bind: name ...` and has a nonempty `.out` file
@@ -21,7 +21,7 @@ Each driver captures `print`, `has_key`, `load_file` and `throw` before any
 fixture code runs, including before the main-road source splice. Captures and
 temporary bindings use a fresh UUID prefix. Readback calls only the captured
 builtins; it never consults fixture-rebindable `print` or `has_key`, and uses no
-`keys` call. The UUID is driver hygiene, not part of the output or runtime
+`keys` call. The UUID is driver hygiene, not part of the compared output or runtime
 semantics; this is an oracle for fixtures, not a sandbox against malicious code
 that reads and rewrites its generated driver.
 
@@ -48,13 +48,13 @@ sanitizers). An error on all three roads cannot masquerade as agreement. Missing
 metadata, missing expected files, timeouts and zero fixtures fail. `--fixture
 blocks` selects a single diagnostic repro; the suite always runs the whole set.
 
-`--selftest` runs five green controls: a numeric value, a literal `"<missing>"`
+`--selftest` starts with five green controls: a numeric value, a literal `"<missing>"`
 created in a `for` body, and fixtures rebinding `print`, `has_key`/`keys`, and
-`throw`. Eleven faults must go red: cwd divergence; deletion of the sentinel
+`throw`, plus a native loop with measured tier arms and an ARM64-policy control. On x86-64, thirteen faults must go red: cwd divergence; deletion of the sentinel
 assignment; forged absence goldens for both readback-rebinding fixtures;
 incorrect return metadata despite a rebound `throw`; genuine absence where
 present `null` is expected; a nonzero exit alone; stderr alone; exit before readback; an invalid binding
-identifier; and zero fixtures.
+identifier; forced-off native tiers; missing JIT statistics; and zero fixtures.
 The membership control also calls the shared namespace-snapshot emitter from
 within a scope that rebinds `has_key`/`keys`, so module isolation cannot conceal
 a missing capture. The suite runs the ordinary gate and selftest.
@@ -124,8 +124,11 @@ instead of accepting matching output from leaking children.
 
 `f29_loop_local` pins writes to a current loop-local, an enclosing loop-local,
 and locals in module-level `if`/`loop while` bodies. `f29_loop_local_cache`
-alternates between a nearer local and module state over 80 iterations: the
-inline cache must not bypass a newly created local, including under forced OSR.
+alternates between a nearer local and module state over 80 iterations. These
+f29 fixtures test interpreter scope behavior: `LOOP_ENV_CLEAR` prevents native
+compilation, even with `EIGS_JIT_OSR_THRESHOLD=1`. A direct cache-fixture run
+reports `[jit] scanned=1 compiled=0 cache_used=0`, with `LOOP_ENV_CLEAR` as its
+only bailout. The earlier claim that this demonstrated native stores was wrong.
 `f30_eval_dir` calls a helper's eval and direct load from main, a loaded file,
 an imported wrapper, and a nested import; every call must load the helper's peer.
 
@@ -145,3 +148,62 @@ actual installed layout without modifying the normal installation, set
 and pass its interpreter as `EIGENSCRIPT` to `tests/run_install_smoke_subset.sh`.
 That lane failed two sections before the canonical-directory migration.
 Existing fixture goldens are unchanged in this round.
+
+## Native scope coverage (#1056 round 5)
+
+`# road-native: required` fixtures run on all three roads and both cwds under
+`EIGS_JIT_OFF=1`, default JIT, and `EIGS_JIT_OSR_THRESHOLD=1`. Each run must emit
+exactly one JIT statistics line. The reference requires `compiled=0`; each
+native arm requires `compiled>0`. On ARM64, which has no JIT emitter, the gate
+prints an explicit notice and runs only the reference tier (still requiring
+its stats and `compiled=0`) on all roads/cwds. This does not waive a zero-compilation
+native arm on x86-64. A separate selftest simulates this ARM64 policy.
+The gate strips only that recognized stats
+line from stderr; every other diagnostic still fails. The selftest runs a
+known native loop, then forces JIT off or removes its stats through child
+wrappers and requires named failures with matching stdout.
+
+`native_alternate`, `native_late`, `native_outer`, `native_match`, and
+`native_catch` use the critic's compilable inner loops to exercise the helper
+lookup through alternating, late, nested, match, and catch locals.
+`native_inline` creates a local with eval after a native inner loop has cached
+a module target. It writes without reading that name first, so a GET_NAME
+cannot refresh the caller's IC and conceal a stale inline store.
+For `native_inline` on x86-64, the measured import-road lines are:
+
+```text
+ref: [jit] scanned=0 compiled=0 cache_used=0
+jit: [jit] scanned=2 compiled=1 cache_used=19878
+osr: [jit] scanned=2 compiled=1 cache_used=19878
+```
+
+All three return 14999. Without the inline scope guard, the native arms
+return 19999. Removing only the JIT helper's bounded lookup instead breaks
+`native_alternate` (and the other helper probes). The interpreter is the
+independent value oracle; existing goldens are unchanged.
+
+## Embed provenance and override audit
+
+`python3 tools/embed_roads.py --selftest` builds `make embed-roads` against
+the CLI's actual object variant, including ASan, without relinking the CLI.
+Its C harness checks `eigs_eval_file`, successive `eigs_eval_string` calls,
+loaded helpers, imported wrappers, and restoration to no-file string eval.
+A registered host probe checks the compile override while each file executes.
+A wrong helper peer, a missing fixture tree, a nonzero exit, stderr, and zero
+checks must fail its selftest. Process plants must retain the healthy C result
+and produce exactly their intended symptom.
+
+| Directory state | Lifetime and regression coverage |
+|---|---|
+| `builtins_host.c` load_file override | Saved/set/restored around compile_ast; embed loaded-helper probes and f30_eval_dir. |
+| `vm.c` import override | Restored before vm_execute; embed imported-wrapper probe and f30_eval_dir's nested import. |
+| `eigs_embed.c` file override | Shared eval_source scopes it around compile_ast; embed file/string and execution probes. No script_dir mutation remains. |
+| `main.c` script_dir | Entry-file base for the state, with canonical file provenance captured in chunks; shadow/chdir/nested_load and the native fixtures. |
+| `state.c` initial script_dir | No-file `.` base; embed string eval before and after file eval checks its cwd peer. |
+| `lint_host.c` E003.base_dir | Private lint traversal context, not a runtime global override. |
+| `bundle.c` | Rewrites argv to the extracted entry; main establishes its base. No resolver-global writes. Existing bundle suite covers execution. |
+
+Bought in round 5: a forced-OSR flag was mistaken for evidence of compilation,
+and the embed setter retained the same override lifetime import had just fixed.
+The measured tier assertions and execution-time embed probes now enforce both
+claims at their actual boundaries.
