@@ -44,6 +44,11 @@ assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, GT, RETURN], [10, 
 # builtin call: len of "hello" -> 5  (GET_NAME resolves "len" in the global env)
 assert_eq of [vm_run_bytecode of [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["len", "hello"]], 5, "builtin call via GET_NAME+CALL"]
 
+# #1102: report is reserved in source, but existing bytecode can still call
+# its value-only compatibility entry. Neither path reads a binding trajectory.
+assert_eq of [vm_run_bytecode of [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["report", 5]], "equilibrium", "report compatibility builtin remains reachable from bytecode"]
+assert_eq of [vm_run_bytecode of [ABI, [GET_NAME,0,0, GET_NAME,1,0, CALL,1,0, RETURN], ["report", "print"]], "opaque", "report compatibility builtin still classifies callable values"]
+
 # control flow: max(a, b) via JUMP_IF_FALSE (relative forward offset)
 #   CONST a; CONST b; GT; JUMP_IF_FALSE +4; CONST a; RETURN; CONST b; RETURN
 maxcode is [CONST,0,0, CONST,1,0, GT, JUMP_IF_FALSE,4,0, CONST,0,0, RETURN, CONST,1,0, RETURN]

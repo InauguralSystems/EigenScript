@@ -48,7 +48,6 @@ tests/tmp_mod_373*.eigs
 build/
 # Generated LSP stdlib index (make lsp / build.sh lsp, #590)
 src/lsp_stdlib_index.h
-src/lsp_builtin_index.h
 src/eigsdap
 
 # Python bytecode caches. tests/test_doc_examples.py is IMPORTED (not just

@@ -17,6 +17,9 @@ All notable changes to EigenScript are documented here.
   parser enforces the rule for files, REPL units, dynamic loads/eval, and hosts;
   lint and LSP carry the same code. CLI `-e <source> [args...]` now accepts a
   source string through the file execution path.
+  The builtin reference table and LSP Function completions omit both forms.
+  The VM retains the `report` builtin for existing bytecode that resolves
+  its name through `vm_run_bytecode`; its value-only behavior is unchanged.
 
 - **File resolution is independent of the process working directory (#1056).**
   `load_file` and `import` search the containing file's directory, the existing

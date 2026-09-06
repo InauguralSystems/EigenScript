@@ -269,7 +269,6 @@ Query a binding's assignment history. Always on for top-level bindings;
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `report` | `report of name` | Reserved observer form; requires an identifier (parentheses allowed). Classify change trajectory: "improving", "diverging", "stable", "equilibrium", "oscillating", "converged" — or "moving" when a full window matches none of them (#735) |
 | `observe` | `observe of value` | Return [status, entropy, dH, prev_dH] snapshot |
 | `classify` | `classify of t` or `classify of [t, "entropy"]` | Classify a trajectory snapshot (from `trajectory of x`, #421): value-channel label by default, entropy-channel with `"entropy"`. Raises `type_mismatch` on a non-snapshot — a bare value never silently classifies |
 
@@ -277,6 +276,14 @@ Query a binding's assignment history. Always on for top-level bindings;
 used as first-class values. Non-identifier operands, including `report of 5`
 and `report_value of (x + 0.0)`, are compile-time `E005` errors; assign the
 expression to a variable first. Dict keys such as `d.report` remain legal.
+See [OBSERVER.md](OBSERVER.md) for their trajectory classifications.
+
+The VM retains the old `report` registry entry for bytecode compatibility:
+`vm_run_bytecode` can still resolve the string `"report"` with `GET_NAME`
+and `CALL` it, returning `"equilibrium"` for data or `"opaque"` for a callable.
+This entry is absent from the source builtin table and LSP Function completions;
+it does not make `report` a callable name in source. `report_value` has no
+runtime builtin registration.
 
 **`report`, `report_value`, `observe`, and `trajectory` on a plain variable
 are observer special forms** (decided in #459): like the predicates and

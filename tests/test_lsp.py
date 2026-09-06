@@ -247,6 +247,16 @@ def main():
     # `undefined variable: input` at runtime.
     check("completion does not advertise a phantom 'input' builtin",
           isinstance(items, list) and not any(it.get("label") == "input" for it in items))
+    # #1102: the runtime's bytecode compatibility registry is broader than
+    # the source builtin surface. Check the actual editor response, including
+    # a callable control so dropping all builtins cannot pass these checks.
+    check("completion still offers the callable print builtin",
+          isinstance(items, list) and any(it.get("label") == "print" and
+                                         it.get("kind") == 3 for it in items))
+    for name in ("report", "report_value"):
+        check("completion excludes reserved observer form '" + name + "'",
+              isinstance(items, list) and not any(it.get("label") == name
+                                                 for it in items))
 
     # --- #590: stdlib (lib/) completion + hover from the generated index ---
     # Completion is import-aware: the document's own `import`s scope which

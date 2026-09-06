@@ -584,13 +584,11 @@ Value* builtin_append(Value *arg) {
 
 
 Value* builtin_report(Value *arg) {
-    /* #262 Step E: observer trajectories live on the Env slot, never on the
-     * Value. `report of <ident>` is a slot-keyed special form (REPORT_SLOT/
-     * REPORT_NAME); this builtin is reached only for a value-based operand with
-     * no binding (a computed expr, or an unobserved param), which has no
-     * trajectory → the no-observation band, "equilibrium".
-     * #708: a function/builtin operand answers "opaque" here too, matching
-     * the slot-keyed forms — a fn has no content the observer can sample. */
+    /* #1102: source report forms are reserved and always slot-keyed. Retain
+     * this registry entry for vm_run_bytecode's GET_NAME("report") + CALL;
+     * tests/test_vm_run_bytecode.eigs pins that compatibility path. Values
+     * have no binding trajectory (#262), hence "equilibrium"; callables
+     * remain "opaque" (#708). The LSP excludes this entry from completions. */
     if (arg && (arg->type == VAL_FN || arg->type == VAL_BUILTIN))
         return make_str("opaque");
     return make_str("equilibrium");

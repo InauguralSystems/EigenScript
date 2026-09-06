@@ -4,7 +4,8 @@
 # executed statements. Controls ensure the source templates are valid programs.
 set -eu
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-python3 - "$TESTS_DIR/../src/eigenscript" <<'PY'
+EIGS="${EIGS:-$TESTS_DIR/../src/eigenscript}"
+python3 - "$EIGS" <<'PY'
 import json
 import pathlib
 import re
