@@ -3960,21 +3960,22 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     if (verify_self && g_parse_errors == 0)
         chunk_verify_self_check(chunk, chunk->name ? chunk->name : "?");
 
-    /* #915 observer gate. compile_ast is the ONE choke point every compilation
-     * path funnels through — the main script (main.c), eval (builtins.c),
-     * load_file (builtins_host.c), import (vm.c), the REPL (repl.c), the embed
-     * API (eigs_embed.c) and ext_http's dynamic handlers — so OR-ing here needs
-     * no hand-maintained caller list, which is the drift failure #921/#925 are
-     * open on. Monotonic: a later unit that reads the observer turns it on for
-     * good; nothing turns it back off.
-     *
-     * Residual, deliberately accepted: a unit compiled AFTER assignments have
-     * already run (a load_file partway through a program, a REPL line) flips
-     * the bit late, so bindings assigned before the flip have no history and
-     * read as unobserved. The full-corpus differential (tools/observer_gate_diff.sh)
-     * is what polices this — if any tracked program exhibits it, the diff goes
-     * red. Force-on sites cover the cases where it is not merely possible but
-     * expected (REPL, embed). */
+    /* #1038: an uncompiled state starts OPEN. Consume the first-compile
+     * permission only before execution (hosts serialize compile/eval per state);
+     * explicit arming (REPL/default embed/native host) already consumed it.
+     * The existing scan below still decides the verdict, unchanged. Later
+     * compilations OR their evidence into this unit, never close its gate. */
+    if (g_obs_compile_pending) {
+        obs_flag_store(obs_compile_pending, 0);
+        if (!g_obs_exec_started)
+            obs_flag_store(obs_needed, 0);
+    }
+    /* #1028: functions may escape through globals, module exports, containers
+     * or callbacks. Their later call sites have no source to scan. Preserve
+     * the unit's accumulated verdict across future embed evals once any
+     * compilation has emitted a function (including runtime module loads). */
+    if (chunk->fn_count > 0) obs_flag_store(obs_eval_retains_code, 1);
+
     /* #915 escape hatch. Any non-empty, non-"0" value arms it — the same rule
      * as EIGS_STRICT (state.c) and EIGS_VERIFY_SELF above, and NOT a bare
      * getenv. A bare getenv made `EIGS_OBS_FORCE=0` and `EIGS_OBS_FORCE=` force

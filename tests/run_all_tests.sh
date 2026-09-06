@@ -511,6 +511,18 @@ else
 fi
 echo ""
 
+echo "[0f] Embed observer contract (#1038/#1028)"
+check_binary_fingerprint
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/test_embed_observer.sh"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: embed observer contract"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: embed observer contract"
+fi
+echo ""
+
 echo "[0d] Host frame line in traces from a builtin-run chunk"
 check_binary_fingerprint
 HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>&1); HFL_RC=$?

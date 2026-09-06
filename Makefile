@@ -212,6 +212,15 @@ $(NATIVEFN_TEST): $(NATIVEFN_TEST_OBJ) $(filter-out build/release/main.o build/r
 nativefn-test: $(NATIVEFN_TEST)
 	@echo "Native-fn identity test built: $(NATIVEFN_TEST)"
 
+# #1038/#1028: same runtime variant as the suite; never repoint the CLI alias.
+EMBED_OBSERVER_VARIANT ?= release
+EMBED_OBSERVER_OBJ := $(filter-out build/$(EMBED_OBSERVER_VARIANT)/main.o,$(OBJ_$(EMBED_OBSERVER_VARIANT)))
+build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c $(EMBED_OBSERVER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile
+	$(CC) $(FLAGS_$(EMBED_OBSERVER_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_OBSERVER_OBJ) $(LIBS_$(EMBED_OBSERVER_VARIANT))
+.PHONY: embed-observer-test
+embed-observer-test: build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer
+	@echo "Embed observer test built: $<"
+
 # #1056: use the same variant as the CLI under test, without relinking it.
 ROAD_VARIANT ?= release
 EMBED_ROADS_OBJ := $(filter-out build/$(ROAD_VARIANT)/main.o,$(OBJ_$(ROAD_VARIANT)))

@@ -556,12 +556,16 @@ relative path, an absolute one and a symlink is one charge, not three.
 
 ### Known residual
 
-A chunk run through `vm_run_bytecode` or `sandbox_run` that reads observer state
-about a binding the HOST assigned before the call gets a rest value rather than
-the truth, silently. The descriptor's own work is recorded (both sites arm the
-observer before running, the twin of `chunk_arm_temporal`); only reads of state
-that predates the call are affected. Tracked separately with reproducers and two
-candidate fixes; `EIGS_OBS_FORCE=1` avoids it.
+The native embedder instance of the #1027 family is closed by #1038: states
+start with recording **open**, so a host that never compiles still records its
+slot updates. The startup `eigs_obs_enable()` workaround is no longer required.
+A descriptor (`vm_run_bytecode` / `sandbox_run`) reading an unrecorded binding
+after a compiled host closed the gate raises through the #1027 guard; it cannot
+recover the lost history. See the [embed observer contract](EMBEDDING.md#observer-contract-1038--1028)
+for the default and the explicit #1028 eval opt-in. Default evals retain history
+across calls; opted-in evals reject later observer-reading units conservatively
+when an earlier unit ran unobserved. `EIGS_OBS_FORCE=1` from the start avoids
+that gap. Retained compiled functions can keep the eval gate open.
 
 Separately, every literally-loaded module is compiled **twice** — once by the
 gate to learn one bit, once for real by `load_file`, which has no module cache

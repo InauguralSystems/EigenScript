@@ -37,6 +37,17 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **Embed observer contract (#1038/#1028).** States start with recording open,
+  so native/assembled hosts need no startup `eigs_obs_enable()` workaround.
+  Embed initialization keeps later module compilations from closing recording
+  behind a native caller. Compile verdicts still close the CLI gate for read-free programs. The additive
+  `eigs_set_eval_observer_isolated` host opt-in allows read-free eval units to
+  skip observation; default evals retain cross-unit history. Missing history
+  rejects later reader units with `EIGS_OBS_FORCE=1` guidance, conservatively
+  even for independent bindings. Escaped compiled functions retain the gate's
+  accumulated verdict; registered C callbacks keep eval recording open. A C
+  regression runs under the suite's build variant.
+
 - **`is_file of path` (#1058).** 1 iff the path names a REGULAR file
   (`S_ISREG`); 0 for a directory, a device/fifo/socket, a missing path, or a
   non-string. `read_file_util` admits only regular files, and a driver that

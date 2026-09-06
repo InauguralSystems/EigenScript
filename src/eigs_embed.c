@@ -23,6 +23,10 @@ int eigs_state_init_runtime(EigsState *st) {
     if (!global) return -1;
     register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
     g_global_env = global;
+    /* #1038: a module compiled later cannot classify the surrounding native
+     * host. Pin default embedding open; only the explicit eval opt-in may
+     * renew permission for a compile verdict. CLI state setup is separate. */
+    eigs_obs_enable();
     return 0;
 }
 
@@ -66,6 +70,11 @@ void eigs_close(EigsState *st) {
 
 /* ---- Eval --------------------------------------------------------- */
 
+void eigs_set_eval_observer_isolated(int enabled) {
+    if (eigs_current)
+        eigs_current->state->eval_observer_isolated = enabled != 0;
+}
+
 static EigsValue *eval_source(const char *src, const char *file_dir) {
     if (!src || !eigs_current || !g_global_env) return NULL;
     Env *global = g_global_env;
@@ -101,11 +110,23 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
     /* REPL-style compilation: top-level names land in the global env
      * (not module-export slots), so the host can read them back through
      * eigs_get_global and successive eigs_eval_string calls accumulate. */
-    /* #915: REPL-shaped for the same reason as repl.c — successive
-     * eigs_eval_string calls accumulate against one global env, so a later call
-     * can interrogate a binding an earlier call assigned. The host can also read
-     * observer state directly. Nothing here can see the next call, so observe. */
-    eigs_obs_enable();   /* #915: via the helper, so a mid-run flip records the gap */
+    /* #1028: only an explicit host promise permits a new compile verdict.
+     * Snapshot missing history before resetting this unit's execution latch.
+     * A retained function may be invoked without a reader in the new source,
+     * so in that case keep the accumulated verdict instead. All boundary
+     * resets require exclusive state access; worker arming stays atomic. */
+    if (eigs_current->state->eval_observer_isolated &&
+        !g_obs_eval_host_callbacks) {
+        if (!g_obs_needed && g_obs_exec_started)
+            obs_flag_store(obs_history_gap, 1);
+        if (!g_obs_eval_retains_code) {
+            obs_flag_store(obs_exec_started, 0);
+            obs_flag_store(obs_needed, 1);
+            obs_flag_store(obs_compile_pending, 1);
+        }
+    } else {
+        eigs_obs_enable();
+    }
     /* A file's explicit base must beat a caller frame while compiling, but
      * must never outlive compilation: runtime eval belongs to its own frame.
      * Keep this pair at the compile boundary for both embed entry points. */
@@ -118,7 +139,19 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
         free(saved_dir);
     }
 
-    Value *result = vm_execute(chunk, global);
+    /* Like load_file, reject conservatively at the compile boundary. The
+     * source scan cannot prove which binding a future read will reach. Keep
+     * this guard after opt-out as well: arming does not repair past history. */
+    int obs_after_compile = obs_flag_load_acquire(obs_needed);
+    if (chunk && (chunk_reads_observer(chunk) ||
+                  g_obs_eval_host_callbacks) &&
+        (!obs_after_compile || g_obs_history_gap)) {
+        rt_error(EK_VALUE, 1,
+            "embed eval reads observer state, but the observer gate was closed "
+            "during an earlier unit; its assignments have no recorded history. "
+            "Restart the state with EIGS_OBS_FORCE=1 before the first eval.");
+    }
+    Value *result = g_has_error || g_parse_errors ? NULL : vm_execute(chunk, global);
     chunk_free(chunk);
     free_ast(ast);
     free_tokenlist(&tl);
@@ -327,6 +360,12 @@ void eigs_set_abort_flag(volatile int *flag) {
 
 void eigs_register_function(const char *name, EigsHostFn fn) {
     if (!name || !fn || !eigs_current || !g_global_env) return;
+    /* #1028: a C callback can observe its own assignments, but has no source
+     * the compile verdict can inspect. This pin survives enabling isolation
+     * after registration. Late registration records the gap; eval's guard
+     * refuses to enter opaque host code with incomplete history. */
+    obs_flag_store(eval_host_callbacks, 1);
+    eigs_obs_enable();
     Value *bv = make_builtin((BuiltinFn)fn);
     env_set_local_owned(g_global_env, name, bv);
 }

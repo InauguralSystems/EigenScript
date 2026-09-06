@@ -137,6 +137,72 @@ if (!r) {
 }
 ```
 
+## Observer contract (#1038 / #1028)
+
+A newly opened state records observer updates by default. This also applies to
+`eigs_state_new` plus attach/init: a native or assembled-code host that never
+calls `compile_ast` has a live observer. Calling `eigs_obs_enable()` at startup
+is **no longer required**. The call remains idempotent and can pin the current
+unit open before compilation. Embed initialization pins recording open because
+a subsequently compiled module cannot classify its surrounding native caller.
+The explicit eval opt-in below renews permission to choose a compile verdict.
+Only a compile verdict proving no observer reads
+may close the gate; recording stays monotonic within that execution unit.
+The CLI's read-free programs still compile as `unobserved`.
+
+By default, `eigs_eval_string` and `eigs_eval_file` keep recording across calls.
+A later unit may interrogate a binding an earlier unit assigned, with its full
+history available. Hosts can explicitly opt in to compile-time gating:
+
+```c
+EigsState *st = eigs_open();
+eigs_set_eval_observer_isolated(1);
+/* Each eval unit obeys the promise below. */
+```
+
+**The host promises: no eval unit interrogates a binding assigned by an earlier
+unit, directly or through called code.** This covers observer predicates,
+reports and temporal queries. The setting belongs to the attached `EigsState`,
+applies to both string and file evals, and defaults off on every new state.
+Call the setter only between evals while the host has exclusive use of the
+state, as required for eval itself. Globals still accumulate normally.
+
+| API | Contract |
+|---|---|
+| `eigs_set_eval_observer_isolated(int enabled)` | Nonzero opts in to the promise above; zero restores recording for subsequent work. |
+| `eigs_obs_enable(void)` | Idempotently arms the current unit; does not reconstruct missing history. |
+
+An opted-in eval starts a new unit and may choose a new verdict. Use default
+eval mode or `EIGS_OBS_FORCE=1` to keep subsequent units observed.
+
+With the opt-in, a read-free unit can run `unobserved`, visible through
+`EIGS_OBS_GATE_STATS=1`. The existing source scan supplies each verdict. Functions
+can escape through globals, module exports, containers and callbacks, so once
+any functions have been compiled the state conservatively retains its accumulated
+gate verdict across later evals; a later call site cannot rescan their source.
+Registered C callbacks have no scannable source at all, so
+`eigs_register_function` pins subsequent evals open, even if the host enables
+the opt-in after registration. Registering a callback after a history gap causes
+subsequent evals to raise conservatively before entering opaque host code.
+
+**Missing history is a sticky error, never a rest-value answer.** After an
+unobserved unit executes, a subsequent unit whose scan reads observer state is
+rejected before execution, with an error naming `EIGS_OBS_FORCE=1`. This is
+conservative, like `load_file`: it can reject a unit even if that unit would
+observe only independent bindings. Catching/clearing the error, calling
+`eigs_obs_enable`, or disabling the opt-in does not restore the missing history.
+Restart the state with `EIGS_OBS_FORCE=1` set **before the first eval**, or restart
+without the opt-in, when cross-unit observation is needed. Force-on preserves
+correct cross-unit queries even with the opt-in enabled.
+
+The regression instrument is `bash tests/test_embed_observer.sh`: native slot
+updates and assembled bytecode without compilation, default cross-unit history,
+isolated read-free units, a rejected cross-unit read, retained functions and the
+force-on recovery path, plus C callback observation and late registration. It uses the same build variant as `src/eigenscript`,
+including ASan, and is enrolled in the full suite.
+The [validation record](EMBED_OBSERVER_VALIDATION.md) contains the baseline
+reproducer, planted-fault output and measurement setup.
+
 ## Error retrieval
 
 ```c

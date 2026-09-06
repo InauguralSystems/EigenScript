@@ -533,3 +533,10 @@ The existing function-slot exception remains: a binder with no prior binding
 inside a function retains its final value after the loop on every road. A
 pre-existing parameter or local is restored. This change preserves that
 exception; see the scope notes in LANGUAGE_CONTRACT.md.
+
+<!-- Embed contract: #1038/#1028; language-level observer semantics unchanged. -->
+The C embedding API starts observer recording open. Source evals retain
+cross-unit history by default; hosts may explicitly promise isolated observer
+use with `eigs_set_eval_observer_isolated`. Missing history then raises
+conservatively instead of answering a rest value. See the
+[embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).

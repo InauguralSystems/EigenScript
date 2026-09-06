@@ -62,7 +62,7 @@ EigsThread *eigs_thread_attach(EigsState *st);
 EigsThread *eigs_thread_switch(EigsState *st);
 void        eigs_thread_detach(void);
 /* Set up the global env + register stdlib builtins on the calling thread's
- * state. Idempotent: returns 0 if already initialized. -1 if not attached. */
+ * state, pinning default observer recording open for native callers. Idempotent: returns 0 if already initialized. -1 if not attached. */
 int         eigs_state_init_runtime(EigsState *st);
 
 /* ---- Eval --------------------------------------------------------- */
@@ -75,6 +75,22 @@ EigsValue *eigs_eval_string(const char *src);
 /* Read `path` and eval its contents. Sets script_dir for `import`/
  * `load_file` resolution to the file's directory. */
 EigsValue *eigs_eval_file(const char *path);
+
+/* Opt in (enabled != 0) to per-unit observer gating on this attached state.
+ * Host promise: no eval unit interrogates a binding assigned by an earlier
+ * unit, directly or through called code. Default off: evals record all units.
+ * Call only between evals, with exclusive state access. Applies to string and
+ * file evals. Missing history is sticky: subsequent observer-reading units
+ * conservatively fail with an error naming EIGS_OBS_FORCE=1, even if their
+ * bindings are independent. Restart with FORCE set before the first eval to
+ * recover. Retained compiled functions keep their accumulated gate verdict.
+ * Registered C callbacks pin evals open; registering after a history gap
+ * makes subsequent evals fail before entering opaque host code.
+ * Disabling the opt-in records future work; it cannot repair missing history. */
+void eigs_set_eval_observer_isolated(int enabled);
+/* Recording starts open. Optional explicit arming pins the current unit open
+ * before compilation; idempotent, and never repairs missing history. */
+void eigs_obs_enable(void);
 
 /* ---- Errors ------------------------------------------------------- */
 

@@ -31,6 +31,9 @@ EigsState *eigs_state_new(void) {
     pthread_mutex_init(&st->handle_mutex, NULL);
     pthread_mutex_init(&st->gc_lock, NULL);   /* cycle-collector registry */
     st->handle_next = 1;  /* 0 reserved as invalid */
+    /* #1038: absence of a compiler verdict means record, not discard. */
+    st->obs_needed = 1;
+    st->obs_compile_pending = 1;
     /* Observer thresholds — same defaults as the legacy TLS globals. */
     st->obs_dh_zero  = 0.001;
     st->obs_dh_small = 0.01;
