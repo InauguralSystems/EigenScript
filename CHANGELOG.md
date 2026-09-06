@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-09-06
+
 ### Breaking changes
 
 - **`report` and `report_value` are reserved observer forms (#1102): they
