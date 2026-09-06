@@ -25,6 +25,7 @@
  */
 #include "eigs_embed.h"
 #include <pthread.h>
+#include <stdatomic.h>
 #include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -237,12 +238,27 @@ static volatile double planted_shared_threshold;   /* the mistake, deliberately 
  * is the interleaving premise the comment below already claims. */
 static pthread_barrier_t planted_start;
 
-typedef struct { double want; int mismatches; } PlantArg;
+typedef struct { double want; int mismatches; int rounds_run; } PlantArg;
+
+/* The control must OBSERVE the race, not merely give it 200 chances. A fixed
+ * round count is a bet on the scheduler: on a runner slot where one thread's
+ * write-yield-read triple stays adjacent, 200 rounds can pass with zero
+ * cross-talk (CI on 07a0ac3, 2026-09-06: `A=0 B=0 over 200 rounds each`, the
+ * file identical on main; PR #1034 hit the same shape before the barrier was
+ * added). So each worker runs at least ROUNDS rounds and then keeps racing
+ * until BOTH sides have seen at least one mismatch or PLANT_BUDGET rounds have
+ * elapsed. A harness that truly never interleaves still exhausts the budget
+ * and FAILS the control — the property being checked is unchanged; only the
+ * sample size adapts to the scheduler. */
+#define PLANT_BUDGET 200000
+static _Atomic int planted_seen;           /* number of workers that observed a mismatch */
 
 static void *planted_worker(void *p) {
     PlantArg *a = (PlantArg *)p;
+    int counted = 0;
     pthread_barrier_wait(&planted_start);
-    for (int i = 0; i < ROUNDS; i++) {
+    for (int i = 0; i < PLANT_BUDGET; i++) {
+        if (i >= ROUNDS && atomic_load(&planted_seen) >= 2) break;
         planted_shared_threshold = a->want;
         /* Give the other thread a window between write and read. Without one
          * the compiler and the scheduler can keep the pair adjacent and the
@@ -251,13 +267,18 @@ static void *planted_worker(void *p) {
          * value being kept in a register; the yield supplies the interleaving. */
         sched_yield();
         double got = planted_shared_threshold;
-        if (got < a->want - 1e-9 || got > a->want + 1e-9) a->mismatches++;
+        a->rounds_run++;
+        if (got < a->want - 1e-9 || got > a->want + 1e-9) {
+            a->mismatches++;
+            if (!counted) { counted = 1; atomic_fetch_add(&planted_seen, 1); }
+        }
     }
     return NULL;
 }
 
 static void test_planted_fault_is_detectable(void) {
-    PlantArg a = { 0.001, 0 }, b = { 0.002, 0 };
+    PlantArg a = { 0.001, 0, 0 }, b = { 0.002, 0, 0 };
+    atomic_store(&planted_seen, 0);
     pthread_t ta, tb;
     pthread_barrier_init(&planted_start, NULL, 2);
     pthread_create(&ta, NULL, planted_worker, &a);
@@ -268,10 +289,10 @@ static void test_planted_fault_is_detectable(void) {
 
     /* The shared global MUST produce cross-talk. If it does not, the harness is
      * not interleaving and every green row above is uninformative. */
-    check(a.mismatches + b.mismatches > 0,
+    check(a.mismatches > 0 && b.mismatches > 0,
           "control: a shared global DOES cross-talk under this harness");
-    printf("        control cross-talk: A=%d B=%d over %d rounds each\n",
-           a.mismatches, b.mismatches, ROUNDS);
+    printf("        control cross-talk: A=%d/%d B=%d/%d rounds (min %d, budget %d)\n",
+           a.mismatches, a.rounds_run, b.mismatches, b.rounds_run, ROUNDS, PLANT_BUDGET);
 }
 
 int main(void) {
