@@ -108,9 +108,9 @@ load_file of "lib/list.eigs"
    with a leading `lib/` stripped; `<exe>` means the executable's directory.
 6. `$HOME/.local/lib/eigenscript/<path>`, then with leading `lib/` stripped.
 
-There is no process cwd lookup and no containing-file-parent fallback. Code
-without a file (REPL, `-e`, stdin, or embed without a path) uses its working
-directory as the containing directory. Add an `eigs.json` at the root of a
+There is no process cwd lookup and no containing-file-parent fallback. The
+REPL (including piped input) and the embed API without a file path use their
+working directory as the containing directory. Add an `eigs.json` at the root of a
 project whose subdirectory files use root-relative paths. Failure raises an
 `io` error listing the containing directory, project root (or its absence),
 and stdlib roots tried. Import tries `name.eigs` before `lib/name.eigs` and

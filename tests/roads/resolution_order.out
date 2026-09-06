@@ -1,4 +1,4 @@
-["nearby", 1]
-["package", 2]
-["root_relative", 3]
-["root_error", 1]
+["nearby", 1, 1]
+["package", 1, 2]
+["root_relative", 1, 3]
+["root_error", 1, 1]

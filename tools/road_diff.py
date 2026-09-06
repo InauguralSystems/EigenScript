@@ -5,7 +5,9 @@ See tests/roads/README.md for the wrapper/fixture contract. No stdout filtering,
 no tolerated child errors, no fixture allowlist. All children have a deadline.
 """
 import argparse
+import contextlib
 import difflib
+import io
 import os
 from pathlib import Path
 import re
@@ -27,14 +29,15 @@ def snapshot(names, module=None):
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
             raise ValueError(f"invalid snapshot name: {name}")
         # An absent namespace key is null; a missing bare binding raises.
-        # Preserve that distinction by checking membership before reading.
+        # Presence is a separate field, never a value-domain sentinel. A
+        # present value (including null or "<missing>") occupies a third field.
         if module:
             lines += [f'if has_key of [{module}, "{name}"]:',
-                      f'    print of ["{name}", {module}.{name}]',
-                      'else:', f'    print of ["{name}", "<missing>"]']
+                      f'    print of ["{name}", 1, {module}.{name}]',
+                      'else:', f'    print of ["{name}", 0]']
         else:
-            lines += ['try:', f'    print of ["{name}", {name}]',
-                      'catch _road_error:', f'    print of ["{name}", "<missing>"]']
+            lines += ['try:', f'    print of ["{name}", 1, {name}]',
+                      'catch _road_error:', f'    print of ["{name}", 0]']
     return "\n".join(lines) + "\n"
 
 
@@ -133,12 +136,38 @@ def run_gate(binary, fixtures, only=None):
     return int(failures != 0)
 
 
-def selftest(binary):
+def selftest(binary, bad_binary=None):
     with tempfile.TemporaryDirectory(prefix="eigs-road-plants-") as tmp:
         tree = Path(tmp)
+
+        def require_red(label, fixture_name, missing=None, runner=binary):
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                status = run_gate(runner, tree)
+            output = captured.getvalue()
+            rows = re.findall(r"^road_diff: FAIL: " + re.escape(fixture_name) +
+                              r" (main|load_file|import) cwd=.* rc=(-?\d+)$",
+                              output, re.M)
+            # Prove the intended missing-value/road disagreement, not a dead
+            # binary, timeout, or parse failure that happens to exit nonzero.
+            external = runner != binary
+            expected_runs = 2 if external else 6
+            valid = status != 0 and len(rows) == expected_runs and all(rc == "0" for _, rc in rows)
+            if external:
+                valid = valid and all(road == "import" for road, _ in rows)
+            if missing:
+                valid = valid and output.count(f'+["{missing}", 0]\n') == expected_runs
+            else:
+                valid = valid and f"{fixture_name}: roads/cwds diverge" in output
+            if not valid:
+                print(f"road_diff selftest: FAIL: {label}\n{output}")
+                return False
+            print(f"road_diff selftest: RED: {label}")
+            return True
+
         fixture = tree / "planted.eigs"
         fixture.write_text('# road-bind: value\nvalue is 7\n')
-        (tree / "planted.out").write_text('["value", 7]\n')
+        fixture.with_suffix('.out').write_text('["value", 1, 7]\n')
         if run_gate(binary, tree):
             print("road_diff selftest: FAIL: positive control")
             return 1
@@ -146,21 +175,42 @@ def selftest(binary):
         # deliberately outside the deterministic fixture contract and MUST
         # produce a named cross-road disagreement (not merely a golden diff).
         fixture.write_text('# road-bind: value\nvalue is getcwd of null\n')
-        import contextlib
-        import io
-        captured = io.StringIO()
-        with contextlib.redirect_stdout(captured):
-            status = run_gate(binary, tree)
-        if status == 0 or "planted.eigs: roads/cwds diverge" not in captured.getvalue():
-            print("road_diff selftest: FAIL: divergence plant was not detected\n" + captured.getvalue())
+        if not require_red("planted.eigs: roads/cwds diverge", fixture.name):
             return 1
-        print("road_diff selftest: RED: planted.eigs: roads/cwds diverge")
         fixture.unlink()
+
+        fixture = tree / "sentinel.eigs"
+        fixture.write_text('# road-bind: from_for\nfor k in range of 1:\n    from_for is "<missing>"\n')
+        fixture.with_suffix('.out').write_text('["from_for", 1, "<missing>"]\n')
+        if run_gate(binary, tree):
+            print('road_diff selftest: FAIL: literal "<missing>" positive control')
+            return 1
+        print('road_diff selftest: GREEN: literal "<missing>" is present')
+        # Default: delete the assignment, retaining the present-value golden.
+        # For an actual compiler regression proof, --bad-binary runs the same
+        # unmodified fixture against a binary that drops the import binding.
+        # The default stays portable and does not depend on a stale checkout.
+        if not bad_binary:
+            fixture.write_text('# road-bind: from_for\nfor k in range of 1:\n    0\n')
+        plant = "known-bad binary, import only" if bad_binary else "assignment deleted"
+        if not require_red(f'literal "<missing>" binding dropped ({plant})',
+                           fixture.name, "from_for", bad_binary or binary):
+            return 1
+        fixture.unlink()
+
+        fixture = tree / "missing.eigs"
+        fixture.write_text('# road-bind: absent\npresent is 1\n')
+        fixture.with_suffix('.out').write_text('["absent", 1, null]\n')
+        if not require_red("genuinely missing binding cannot impersonate present null",
+                           fixture.name, "absent"):
+            return 1
+        fixture.unlink()
+
         if run_gate(binary, tree) == 0:
             print("road_diff selftest: FAIL: zero-fixture plant survived")
             return 1
         print("road_diff selftest: RED: zero fixtures")
-    print("road_diff selftest: controls=1 plants=2 failures=0")
+    print("road_diff selftest: controls=2 plants=4 failures=0")
     return 0
 
 
@@ -170,6 +220,11 @@ if __name__ == "__main__":
     parser.add_argument("--fixtures", type=Path, default=ROOT / "tests/roads")
     parser.add_argument("--fixture", help="run one named fixture (diagnostic only)")
     parser.add_argument("--selftest", action="store_true")
+    parser.add_argument("--bad-binary", type=Path,
+                        help="with --selftest: prove sentinel detection against an import-binding regression")
     args = parser.parse_args()
+    if args.bad_binary and not args.selftest:
+        parser.error("--bad-binary requires --selftest")
     binary = args.binary.absolute()
-    raise SystemExit(selftest(binary) if args.selftest else run_gate(binary, args.fixtures.resolve(), args.fixture))
+    bad_binary = args.bad_binary.absolute() if args.bad_binary else None
+    raise SystemExit(selftest(binary, bad_binary) if args.selftest else run_gate(binary, args.fixtures.resolve(), args.fixture))

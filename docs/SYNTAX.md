@@ -373,19 +373,21 @@ The loaded file's definitions are added to the global environment.
 
 ### Path resolution
 
-For non-absolute paths, `load_file` searches (in order):
+For non-absolute paths, `load_file` and `import` search (in order):
 
-1. The path as given, relative to the current working directory.
-2. `<script_dir>/<path>` — relative to the script being executed.
-3. `<script_dir>/../<path>` — relative to the script's parent directory.
+1. The directory of the file containing the call, including nested loaded
+   files and functions called later.
+2. The `eigs_modules` walk, stopping at the nearest `eigs.json` directory.
+3. That project root, if present, for project-root-relative paths.
 4. `<executable_dir>/../<path>` — relative to the EigenScript binary.
-5. `<executable_dir>/../lib/eigenscript/<path>` — installed stdlib layout.
-6. `~/.local/lib/eigenscript/<path>` — user-local stdlib fallback.
+5. `<executable_dir>/../lib/eigenscript/<path>`, then with leading `lib/` stripped.
+6. `$HOME/.local/lib/eigenscript/<path>`, then with leading `lib/` stripped.
 
-The third step is what lets a script in `examples/` pick up `lib/foo.eigs`
-without the caller having to `cd` to the repository root. The executable
-relative steps let external projects use the source-tree or installed stdlib
-without copying `lib/*.eigs` into each project. `..` segments
+There is no process cwd search or one-parent fallback. The REPL (including
+piped input) and the embed API without a file path use their working directory
+as the base. An `eigs.json` at the project root lets a subdirectory file use
+project-root-relative paths. The executable-relative steps let external
+projects use the source-tree or installed stdlib without copying it. `..` segments
 embedded in the `load_file` argument itself are resolved by the OS
 normally — there is no sandbox, so a script can read any file the
 invoking user can read.

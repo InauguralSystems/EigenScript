@@ -506,10 +506,14 @@ this program's earlier assignments ran — they have no recorded history...
 ```
 
 You will see this if a program **rewrites a module between the compile and the
-load**, or creates a file that **shadows** the one the compile-time scan
-resolved (resolution tries the cwd before the script directory), or `chdir`s so
-the same literal path resolves elsewhere. All three are the same shape: the file
-the gate inspected is not the file that ran.
+load**, or creates a nearer file that **shadows** the one the compile-time scan
+resolved. Both loaders search the containing file's directory, the
+`eigs_modules` walk, the nearest `eigs.json` project root, then the executable
+and HOME stdlib roots (absolute paths are used as-is). For example, a newly
+created sibling can replace a project-root or stdlib target. Changing the
+process working directory does not redirect a file's loads. The failure is
+that the file the gate inspected is not the file that ran; see the
+[shared resolution chain](SPEC.md#modules).
 
 Re-run with `EIGS_OBS_FORCE=1` to disable the gate for that program. That is
 always safe — it restores the pre-gate behaviour exactly.

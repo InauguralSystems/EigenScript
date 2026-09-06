@@ -509,8 +509,9 @@ form says "one list" directly and works for any arity.)
 Unlike a working-directory-based include path, EigenScript resolves imports
 and loads from the file containing the call, then the `eigs_modules` walk,
 then the nearest `eigs.json` project root, then stdlib locations. Absolute
-paths are used as-is. There is no process cwd search; code without a file uses
-its working directory as its containing directory. The complete chain is in
+paths are used as-is. There is no process cwd search; the REPL (including piped
+input) and the embed API without a file path use their working directory as the
+containing directory. The complete chain is in
 [SPEC, Modules](SPEC.md#modules).
 
 Main, import and load_file share these rules: a `for` binder is loop-scoped

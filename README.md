@@ -354,8 +354,9 @@ doubled is map of [[1, 2, 3], double]    # [2, 4, 6]
 
 File loading is relative to the containing file, then the `eigs_modules` walk,
 then the nearest `eigs.json` project root, then stdlib locations; absolute paths
-are used as-is. There is no process cwd search (code without a file uses its
-working directory as its containing directory). Add `eigs.json` at the root
+are used as-is. There is no process cwd search. The REPL (including piped input)
+and the embed API without a file path use their working directory as the base.
+Add `eigs.json` at the root
 when subdirectory files use root-relative paths. See the exact
 [shared import/load_file resolution chain](docs/SPEC.md#modules).
 

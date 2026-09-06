@@ -98,8 +98,8 @@ partial AST — consistent with the **Errors** promise.
   path as-is; containing directory; the `eigs_modules` walk; project root
   (nearest ancestor, including that directory, with `eigs.json`); executable
   and HOME stdlib locations. There is no process cwd search or one-parent
-  fallback. Only code without a file (REPL, `-e`, stdin, embed without a path)
-  uses its working directory as its containing directory. The full ordered
+  fallback. The REPL (including piped input) and the embed API without a file
+  path use their working directory as the containing directory. The full ordered
   stdlib chain and error contract are in [SPEC, Modules](SPEC.md#modules).
 - A `for` binder is loop-scoped everywhere and never writes a same-named
   outer binding. A `for` body's plain `is` binds in the enclosing scope like

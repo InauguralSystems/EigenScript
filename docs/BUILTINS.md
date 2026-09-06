@@ -350,8 +350,8 @@ the nearest `eigs.json` project root, then `<exe>/../<path>`,
 `<exe>/../lib/eigenscript/<path>` and its leading-`lib/`-stripped form, then
 `$HOME/.local/lib/eigenscript/<path>` and its leading-`lib/`-stripped form.
 `<exe>` is the executable's directory. There is no process cwd lookup or
-one-parent fallback. Only code without a file (REPL, `-e`, stdin, embed without
-a path) uses its working directory as its containing directory. Loaded files
+one-parent fallback. The REPL (including piped input) and the embed API without
+a file path use their working directory as the containing directory. Loaded files
 and their functions retain their own directory. Consumers using root-relative
 paths from subdirectory files need an `eigs.json` at their root. Errors name
 the containing directory, project root (or `no eigs.json above <dir>`), and

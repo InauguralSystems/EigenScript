@@ -1128,8 +1128,8 @@ and uses the project file. For each request, the order is:
    form. Here `<exe>` is the executable's directory.
 
 There is **no process cwd search step**, and no containing-directory-parent
-fallback. Code without a file (REPL, `-e`, stdin, or an embed call without a
-path) uses its working directory as its containing directory; this is the
+fallback. The REPL (including piped input) and the embed API without a file
+path use their working directory as the containing directory; this is the
 only way the working directory enters resolution. Files using project-root
 paths from subdirectories need an `eigs.json` at their root. Failed resolution
 raises an `io` error naming the containing directory, project root (or

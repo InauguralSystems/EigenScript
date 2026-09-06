@@ -9,10 +9,12 @@ The second run invokes the entry point through a symlink in a third directory,
 so main-program provenance must agree with import's canonical-file rule.
 
 Every fixture declares `# road-bind: name ...` and has a nonempty `.out` file
-containing its expected prints followed by `[name, value]` snapshots. The main
+containing its expected prints followed by `[name, 1, value]` snapshots for
+present bindings, or `[name, 0]` for absent bindings. Presence is structural:
+neither `null` nor the literal string `"<missing>"` can impersonate absence. The main
 wrapper appends snapshots; the load wrapper snapshots after the call returns;
 the import wrapper reads those names back from the namespace, checking `has_key`
-before access. Missing bindings print `<missing>`, distinct from `null`.
+before access. The golden decides whether a particular binding may be absent.
 Functions can be checked through their results instead of printing identities.
 
 For a top-level return, the main wrapper inserts snapshots immediately before
@@ -32,9 +34,24 @@ sanitizers). An error on all three roads cannot masquerade as agreement. Missing
 metadata, missing expected files, timeouts and zero fixtures fail. `--fixture
 blocks` selects a single diagnostic repro; the suite always runs the whole set.
 
-`--selftest` first runs a clean fixture through the actual gate, then plants a
-cwd-printing fixture whose isolated runs must diverge, and finally removes all
-fixtures. Both faults must go red. The suite runs the ordinary gate and selftest.
+`--selftest` runs two green controls (a numeric value and a literal `"<missing>"`
+created in a `for` body), then requires red for four faults: cwd divergence,
+deleting the sentinel fixture's assignment while retaining its present-value
+golden, a genuinely absent binding where present `null` is expected, and zero
+fixtures. The suite runs the ordinary gate and selftest.
+
+`--selftest --bad-binary /path/to/known-bad/eigenscript` replaces the assignment
+deletion with execution of the unchanged sentinel fixture on a runtime that
+drops imported `for`-body bindings. That plant must have clean child exits and
+exactly two import-only presence mismatches, so an unavailable or crashing
+binary is not accepted as a detected regression. The default selftest uses no
+external checkout or compiler build.
+
+Bought in #1056 round 2: the old `[name, "<missing>"]` representation gave a
+false green on the known-bad runtime when the actual value was that same string.
+The structural presence field and both missing-value plants close that hole.
+The 11 existing goldens changed only their snapshot encoding (37 rows); their
+fixture prints and value expectations were retained.
 
 The `blocks` fixture is red on c1684bc: import has no `from_for` key while main
 and load_file expose 4. `shadow` exercises the same A/prog.eigs from directories
