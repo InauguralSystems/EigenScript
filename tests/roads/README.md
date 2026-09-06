@@ -50,11 +50,14 @@ blocks` selects a single diagnostic repro; the suite always runs the whole set.
 
 `--selftest` starts with five green controls: a numeric value, a literal `"<missing>"`
 created in a `for` body, and fixtures rebinding `print`, `has_key`/`keys`, and
-`throw`, plus a native loop with measured tier arms and an ARM64-policy control. On x86-64, thirteen faults must go red: cwd divergence; deletion of the sentinel
+`throw`, plus a native loop with compilation statistics, an ARM64-policy control,
+and a check that the lowered threshold reaches the child. On x86-64, sixteen
+faults must go red: cwd divergence; deletion of the sentinel
 assignment; forged absence goldens for both readback-rebinding fixtures;
 incorrect return metadata despite a rebound `throw`; genuine absence where
 present `null` is expected; a nonzero exit alone; stderr alone; exit before readback; an invalid binding
-identifier; forced-off native tiers; missing JIT statistics; and zero fixtures.
+identifier; forced-off native arms; missing JIT statistics; a removed lowered
+threshold; an invalid native-header value; duplicate native headers; and zero fixtures.
 The membership control also calls the shared namespace-snapshot emitter from
 within a scope that rebinds `has_key`/`keys`, so module isolation cannot conceal
 a missing capture. The suite runs the ordinary gate and selftest.
@@ -153,7 +156,11 @@ Existing fixture goldens are unchanged in this round.
 
 `# road-native: required` fixtures run on all three roads and both cwds under
 `EIGS_JIT_OFF=1`, default JIT, and `EIGS_JIT_OSR_THRESHOLD=1`. Each run must emit
-exactly one JIT statistics line. The reference requires `compiled=0`; each
+exactly one JIT statistics line. These are configurations, not three measured
+entry mechanisms: the same compiled chunk is exercised with the OSR threshold
+lowered in the `osr` arm. Both native arms compile code and must agree. The
+statistics count compiled chunks, not OSR entries; default JIT may already use
+OSR. The reference requires `compiled=0`; each
 native arm requires `compiled>0`. On ARM64, which has no JIT emitter, the gate
 prints an explicit notice and runs only the reference tier (still requiring
 its stats and `compiled=0`) on all roads/cwds. This does not waive a zero-compilation
@@ -161,7 +168,9 @@ native arm on x86-64. A separate selftest simulates this ARM64 policy.
 The gate strips only that recognized stats
 line from stderr; every other diagnostic still fails. The selftest runs a
 known native loop, then forces JIT off or removes its stats through child
-wrappers and requires named failures with matching stdout.
+wrappers and requires named failures with matching stdout. Another wrapper
+checks the child environment for the lowered threshold; removing that setting
+must fail even when compilation statistics and stdout stay identical.
 
 `native_alternate`, `native_late`, `native_outer`, `native_match`, and
 `native_catch` use the critic's compilable inner loops to exercise the helper
@@ -184,13 +193,20 @@ independent value oracle; existing goldens are unchanged.
 
 ## Embed provenance and override audit
 
-`python3 tools/embed_roads.py --selftest` builds `make embed-roads` against
-the CLI's actual object variant, including ASan, without relinking the CLI.
+`python3 tools/embed_roads.py --selftest` builds `make embed-roads` without
+relinking the CLI. A unique objdir inode match reuses that build variant.
+A standalone `build.sh` CLI or ambiguous match uses the plain SOURCES list
+through the release objects, or ASan objects when ASAN_OPTIONS is set.
+The test covers provenance semantics with either layout; it does not infer
+an unidentified CLI's compiler flags. Four metadata controls exercise zero,
+one, and multiple matches, including the sanitizer fallback.
 Its C harness checks `eigs_eval_file`, successive `eigs_eval_string` calls,
 loaded helpers, imported wrappers, and restoration to no-file string eval.
 A registered host probe checks the compile override while each file executes.
-A wrong helper peer, a missing fixture tree, a nonzero exit, stderr, and zero
-checks must fail its selftest. Process plants must retain the healthy C result
+A wrong helper peer, a missing fixture tree, a nonzero exit, stderr, zero
+checks, and a compile override planted only during a host probe must fail its
+selftest. The scope plant leaves file lookup and ordinary values untouched,
+so gutting host_scope_clean makes the selftest fail. Process plants must retain the healthy C result
 and produce exactly their intended symptom.
 
 | Directory state | Lifetime and regression coverage |
@@ -203,7 +219,9 @@ and produce exactly their intended symptom.
 | `lint_host.c` E003.base_dir | Private lint traversal context, not a runtime global override. |
 | `bundle.c` | Rewrites argv to the extracted entry; main establishes its base. No resolver-global writes. Existing bundle suite covers execution. |
 
-Bought in round 5: a forced-OSR flag was mistaken for evidence of compilation,
+Bought in round 5: a lowered OSR threshold was mistaken for evidence of compilation,
 and the embed setter retained the same override lifetime import had just fixed.
-The measured tier assertions and execution-time embed probes now enforce both
-claims at their actual boundaries.
+The compilation assertions and execution-time embed probes enforce those
+claims. Round 6 corrects the narrower overstatement: compiled>0 does not
+distinguish default JIT entry from OSR entry. No runtime semantics change is
+needed to describe the measured configurations accurately.

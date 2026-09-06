@@ -125,8 +125,8 @@ the most recent message. `eigs_eval_file` compiles with the named file's
 canonical containing directory.
 The override ends before execution; each helper, including a helper that calls
 `eval`, retains its own defining file's directory. Subsequent `eigs_eval_string`
-calls without a file use the working directory, and can call previously loaded
-functions without changing those functions' provenance. The shared search chain
+calls without a file use the working directory when no script frame is
+executing, and can call previously loaded functions without changing those functions' provenance. The shared search chain
 is documented in [SPEC, Modules](SPEC.md#modules).
 
 ```c

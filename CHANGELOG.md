@@ -41,7 +41,7 @@ All notable changes to EigenScript are documented here.
   hand-written expectations (the one-sided-verifiability class), which is how
   #1063's JIT half — an inline `SET_LOCAL` that recorded no history — went
   unnoticed. Every corpus program now runs with the JIT off recording a tape,
-  then replays that tape under the default JIT and under forced OSR
+  then replays that tape under the default JIT and with the OSR threshold lowered
   (`EIGS_JIT_OSR_THRESHOLD=1`); stdout, stderr and exit code must be
   byte-identical. A divergence is adjudicated by determinism first (both sides
   rerun; a stable pair is the JIT's) and by tape replay second (the
@@ -58,9 +58,12 @@ All notable changes to EigenScript are documented here.
 - **Imported loop locals and runtime `eval` keep their scope and file (#1056).**
   A plain `is` inside an imported module's `for` first updates an existing
   loop-local, while fresh bindings remain in the module. The original f29
-  fixtures stopped native compilation at `LOOP_ENV_CLEAR`; their forced-OSR
+  fixtures stopped native compilation at `LOOP_ENV_CLEAR`; their lowered-threshold
   runs did not test native writes. Six new `native_*` road fixtures now run
-  under interpreter, default JIT, and forced OSR on x86-64 with measured tier checks.
+  under interpreter, default JIT, and a lowered OSR threshold on x86-64.
+  The same compiled chunk is exercised with the OSR threshold lowered; both
+  native arms compile code and must agree. Statistics do not count OSR entries
+  or prove that the two native arms use distinct entry mechanisms.
   For `native_inline` on x86-64: interpreter `scanned=0 compiled=0`, both
   native tiers `scanned=2 compiled=1`. Creating a local mid-thunk previously
   yielded 19999 instead of 14999; imported inline stores now use the helper
@@ -69,7 +72,11 @@ All notable changes to EigenScript are documented here.
   during another module's import and `eigs_eval_file`. The embed API now
   scopes its directory override to compilation, matching import and load_file.
   `tools/embed_roads.py` checks both embed eval APIs and the override during
-  execution; its C test is linked to the same variant as the suite binary.
+  execution. Its C test reuses a uniquely identified make variant, or builds
+  from the plain source list when the CLI is standalone (build.sh) or its
+  variant is ambiguous; ASAN_OPTIONS requests an ASan fallback. It never
+  relinks the CLI. Selftests cover these layouts, an execution-scope override,
+  invalid/duplicate native headers, and the lowered threshold reaching the child.
   The oracle requires completion after readback and names malformed metadata;
   its selftest rejects early-exit snapshot forgery. Generated test modules use
   their test file's canonical directory in both in-tree and installed layouts.
@@ -168,7 +175,7 @@ All notable changes to EigenScript are documented here.
   (leaving the call-site ip there resumed the interpreter misaligned — a
   constants[-1] read after an OSR'd loop called `adler32`). Pinned by
   `tests/test_host_frame_line.eigs`. #1071 was the same stale read seen from
-  the JIT side (interpreter, JIT and forced-OSR each printed a different wrong
+  the JIT side (interpreter, default JIT and lowered-threshold JIT each printed a different wrong
   host line for `test_sandbox_budget`); the three tiers now agree, and its row
   leaves `tests/jit_diff_expected.txt`, which is empty. Found by the AOT's
   byte-exact corpus: the compiled program printed the correct line and the VM
@@ -6511,7 +6518,7 @@ that don't shadow your model, and a `menu_bar` that owns its own z-order.
   the *enclosing* loop's body, compiled against the enclosing loop's stack
   frame — but the thunk had entered mid-nest at the inner header, so running
   that code natively read the wrong (reserved-null / stale) stack slots and
-  corrupted execution. It surfaced only under forced OSR
+  corrupted execution. It surfaced only with the OSR threshold lowered
   (`EIGS_JIT_OSR_THRESHOLD=1`) on nested-loop, index-heavy programs (e.g. the
   dynamics lab's Gauss–Seidel solver) as a nondeterministic `cannot index
   num` (a null `INDEX_GET` target), `index must be an integer`, or double

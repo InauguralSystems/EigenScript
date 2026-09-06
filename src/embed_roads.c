@@ -57,7 +57,8 @@ static void string_peer(const char *label) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2) return 2;
+    int plant_override = argc == 3 && strcmp(argv[2], "--plant-override") == 0;
+    if (argc != 2 && !plant_override) return 2;
     char *root = realpath(argv[1], NULL);
     if (!root) { puts("embed_roads: FAIL: missing fixture tree"); return 1; }
     char *entry = malloc(strlen(root) + 32);
@@ -93,6 +94,14 @@ int main(int argc, char **argv) {
     string_peer("no-file string after missing file");
     checks++;
     if (scope_checks < 12) { failures++; puts("embed_roads: FAIL: too few execution scope probes"); }
+    if (plant_override) {
+        /* Only the registered execution probe can see this fault: no file
+         * lookup runs while the override is set, and ordinary results match. */
+        snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "planted-override");
+        EigsValue *probe = eigs_eval_string("host_scope_clean of \"planted execution\"");
+        g_import_resolve_dir[0] = '\0';
+        eigs_value_release(probe);
+    }
     eigs_close(state);
     free(entry);
     free(root);

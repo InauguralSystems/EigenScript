@@ -386,10 +386,10 @@ def selftest(binary, bad_binary=None):
         tier_names = ('ref', 'jit', 'osr') if supported else ('ref',)
         if (status or f'fixtures=1 runs={6 * len(tier_names)} failures=0 ' not in output or
                 any(output.count(f' tier={tier} ') != 6 for tier in tier_names)):
-            print('road_diff selftest: FAIL: three measured tier arms\n' + output)
+            print('road_diff selftest: FAIL: reference and native configurations\n' + output)
             return 1
         controls += 1
-        print('road_diff selftest: GREEN: ' + ('three measured tier arms (18 runs)' if supported
+        print('road_diff selftest: GREEN: ' + ('reference and two native configurations (18 runs)' if supported
                                               else 'ARM64 interpreter arm (6 runs; no native emitter)'))
         captured = io.StringIO()
         with contextlib.redirect_stdout(captured):
@@ -402,6 +402,45 @@ def selftest(binary, bad_binary=None):
             return 1
         controls += 1
         print('road_diff selftest: GREEN: ARM64 policy explicitly runs only the interpreter')
+        if supported:
+            # Measure the configuration, not an OSR-entry count. The default
+            # JIT can already enter the same chunk through OSR; stats do not
+            # distinguish that from the lowered-threshold configuration.
+            for drop in (False, True):
+                wrapper = tree / 'threshold_guard'
+                wrapper.write_text(f'#!{sys.executable}\n'
+                                   'import os, pathlib, subprocess, sys\n'
+                                   'env = os.environ.copy()\n' +
+                                   ('env.pop("EIGS_JIT_OSR_THRESHOLD", None)\n' if drop else '') +
+                                   f'r = subprocess.run([{str(binary)!r}, *sys.argv[1:]], env=env, capture_output=True, timeout=20)\n'
+                                   'sys.stdout.buffer.write(r.stdout)\n'
+                                   'sys.stderr.buffer.write(r.stderr)\n'
+                                   'lowered = any(p.startswith("native_control-osr-") for p in pathlib.Path(sys.argv[1]).parts)\n'
+                                   'if lowered and env.get("EIGS_JIT_OSR_THRESHOLD") != "1":\n'
+                                   '    sys.stderr.write("missing lowered OSR threshold\\n")\n'
+                                   '    raise SystemExit(19)\n'
+                                   'raise SystemExit(r.returncode)\n')
+                wrapper.chmod(0o755)
+                captured = io.StringIO()
+                with contextlib.redirect_stdout(captured):
+                    status = run_gate(wrapper, tree)
+                output = captured.getvalue()
+                if not drop:
+                    valid = status == 0 and 'fixtures=1 runs=18 failures=0 ' in output
+                else:
+                    valid = (status != 0 and 'fixtures=1 runs=18 failures=7 ' in output and
+                             output.count('missing lowered OSR threshold') == 6 and
+                             output.count('rc=19 tier=osr') == 6 and '--- expected' not in output and
+                             'missing/wrong native mechanism' not in output)
+                if not valid:
+                    print('road_diff selftest: FAIL: lowered-threshold configuration\n' + output)
+                    return 1
+                if drop:
+                    plants += 1
+                    print('road_diff selftest: RED: lowered OSR threshold removed (stdout still matches)')
+                else:
+                    controls += 1
+                    print('road_diff selftest: GREEN: lowered OSR threshold reaches the child')
         for symptom in (('force_off', 'drop_stats') if supported else ('drop_stats',)):
 
             wrapper = tree / symptom
@@ -429,6 +468,20 @@ def selftest(binary, bad_binary=None):
             plants += 1
             print('road_diff selftest: RED: ' + ('native tiers compiled nothing' if symptom == 'force_off'
                                               else 'native mechanism statistics missing'))
+        healthy_native = fixture.read_text()
+        for label, header in (('invalid value', 'maybe'),
+                              ('duplicate header', 'required\n# road-native: required')):
+            fixture.write_text(healthy_native.replace('# road-native: required', '# road-native: ' + header))
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                status = run_gate(binary, tree)
+            output = captured.getvalue()
+            if (status == 0 or 'FAIL: native_control.eigs: invalid road-native metadata' not in output or
+                    'fixtures=1 runs=0 failures=1 ' not in output or 'Traceback' in output):
+                print(f'road_diff selftest: FAIL: native metadata {label}\n' + output)
+                return 1
+            plants += 1
+            print(f'road_diff selftest: RED: native metadata {label}')
         fixture.unlink()
 
         fixture = tree / "exit_forge.eigs"
