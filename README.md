@@ -272,6 +272,11 @@ Builtins: `matmul`, `add`, `subtract`, `multiply`, `divide`, `softmax`,
 `log_softmax`, `relu`, `leaky_relu`, `zeros`, `random_normal`, `shape`,
 `numerical_grad`, `sgd_update`, `tensor_save`, `tensor_load`.
 
+Each of them takes a nested list, a flat list, or a flat numeric **`buffer`**,
+and returns a buffer when every tensor operand was one. `zeros of n` returns a
+buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
+wants the flat container, and that is the name it reaches for.
+
 EigenScript numbers are finite by construction. Operations that would create
 `NaN` return `0`; operations that would overflow to infinity saturate at
 `+/-1e308`; domain-limited functions clamp their inputs where appropriate

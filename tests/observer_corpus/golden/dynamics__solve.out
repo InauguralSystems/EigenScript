@@ -2,13 +2,13 @@
 every loop runs until `report of change` is settled and HOLDs — the observer,
 not a magnitude tolerance, decides when to stop. (iters include the hold)
 
-Jacobi        Ax=b -> [0.9999999981373549, 0.9999999962747097, 0.9999999981373549]
+Jacobi        Ax=b -> <buffer:3>
               19 iters
-Gauss-Seidel  Ax=b -> [0.9999999999999978, 0.9999999999999989, 0.9999999999999998]
+Gauss-Seidel  Ax=b -> <buffer:3>
               17 iters  (fresh values -> fewer than Jacobi)
 
 Power iteration dominant eigenvalue -> 2  (14 iters, expect ~2)
 
-PageRank stationary distribution -> [0.39998372395833337, 0.20003255208333334, 0.39998372395833337]  (24 iters)
+PageRank stationary distribution -> <buffer:3>  (24 iters)
 
 DONE

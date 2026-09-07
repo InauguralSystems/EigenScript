@@ -163,6 +163,47 @@ print of (map of [xs, (v) => v * 10])
 [10, 20, 30, 40, 50]
 ```
 
+## Numeric arrays: the list is not the fast container
+
+Python separates a `list` of boxed objects from a NumPy array of raw doubles,
+and you pick one per use. EigenScript draws the same line between `list` and
+`buffer` — and `zeros of n` hands you the flat one, because numeric code
+reaches for that name first (#1093).
+
+Python:
+
+```python
+import numpy as np
+z = np.zeros(4)              # flat float64 array
+z[1] = 2.5
+print(type(z).__name__, z.sum())
+xs = [0] * 4                 # a boxed list, when you want one
+print(type(xs).__name__, sum(xs))
+```
+
+EigenScript — no import, and every tensor builtin takes either container:
+
+```eigenscript
+z is zeros of 4
+z[1] is 2.5
+print of (type of z)
+print of (sum of z)
+xs is [0 for i in range of 4]
+print of (type of xs)
+print of (sum of xs)
+```
+```output
+buffer
+2.5
+list
+0
+```
+
+`zeros of [rows, cols]` still builds the nested list (the 2-D tensor form);
+`buffer of [rows, cols]` and `reshape of [buf, rows, cols]` build the
+flat-backed matrix. `matmul`, `softmax`, `sum`, `mean`, `norm`, `gather` and
+the rest accept either, and hand back a buffer when every operand was one.
+
 ## Dictionaries / objects
 
 JavaScript:

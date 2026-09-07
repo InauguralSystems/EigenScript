@@ -134,6 +134,16 @@ static Value* make_buffer_like(Value *a) {   /* same count + shape as a */
 
 /* --- Tensor helper: detect dimensions --- */
 static int tensor_dims(Value *v, int *rows, int *cols) {
+    /* #1093: a VAL_BUFFER is a flat numeric tensor — shaped (rows>0) reads as
+     * a rows x cols 2-D tensor, unshaped as a 1-D row vector. Same reading
+     * buf_dims uses, so the buffer fast paths and this generic path agree. */
+    if (v && v->type == VAL_BUFFER) {
+        if (v->data.buffer.count == 0) return 0;
+        if (v->data.buffer.rows > 0) {
+            *rows = v->data.buffer.rows; *cols = v->data.buffer.cols; return 2;
+        }
+        *rows = 1; *cols = v->data.buffer.count; return 1;
+    }
     if (!v || v->type != VAL_LIST || v->data.list.count == 0) return 0;
     Value *first = v->data.list.items[0];
     if (first->type == VAL_NUM) {
@@ -161,6 +171,10 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols) {
         return NULL;
     }
     double *out = xcalloc_array(total, sizeof(double));
+    if (v->type == VAL_BUFFER) {          /* #1093: already flat */
+        memcpy(out, v->data.buffer.data, total * sizeof(double));
+        return out;
+    }
     if (ndim == 1) {
         for (int i = 0; i < *cols; i++)
             out[i] = (v->data.list.items[i]->type == VAL_NUM) ? v->data.list.items[i]->data.num : 0.0;
@@ -195,10 +209,30 @@ static Value* flat_to_tensor_1d(double *data, int len) {
     return out;
 }
 
+/* --- Tensor helper (#1093): rebuild a shape-preserving result in the SAME
+ * container the input arrived in. A buffer input yields a buffer (1-D stays
+ * 1-D, shaped stays shaped); anything else yields the nested-list tensor the
+ * builtins have always produced. Returns NULL only when the sandbox refuses
+ * the buffer allocation (callers hand back make_null). --- */
+static Value* flat_to_like(Value *src, double *data, int rows, int cols) {
+    if (src && src->type == VAL_BUFFER) {
+        Value *out = (src->data.buffer.rows > 0) ? make_shaped_buffer(rows, cols)
+                                                 : make_shaped_buffer(0, cols);
+        if (!out) return NULL;
+        int n = out->data.buffer.count;
+        if (n > rows * cols) n = rows * cols;
+        memcpy(out->data.buffer.data, data, (size_t)n * sizeof(double));
+        return out;
+    }
+    return (rows == 1) ? flat_to_tensor_1d(data, cols)
+                       : flat_to_tensor_2d(data, rows, cols);
+}
+
 /* --- Tensor helper: count total elements recursively --- */
 static int tensor_total(Value *v) {
     if (!v) return 0;
     if (v->type == VAL_NUM) return 1;
+    if (v->type == VAL_BUFFER) return v->data.buffer.count;   /* #1093 */
     if (v->type != VAL_LIST) return 0;
     int total = 0;
     for (int i = 0; i < v->data.list.count; i++)
@@ -210,6 +244,11 @@ static int tensor_total(Value *v) {
 static void tensor_flatten_recursive(Value *v, double *out, int *idx) {
     if (!v) return;
     if (v->type == VAL_NUM) { out[(*idx)++] = v->data.num; return; }
+    if (v->type == VAL_BUFFER) {                              /* #1093 */
+        for (int i = 0; i < v->data.buffer.count; i++)
+            out[(*idx)++] = v->data.buffer.data[i];
+        return;
+    }
     if (v->type != VAL_LIST) return;
     for (int i = 0; i < v->data.list.count; i++)
         tensor_flatten_recursive(v->data.list.items[i], out, idx);
@@ -223,6 +262,73 @@ static double op_mul(double a, double b) { return num_guard(a * b); }
 static double op_div(double a, double b) { return (b == 0.0) ? 0.0 : num_guard(a / b); }
 static double op_pow(double a, double b) { return num_guard(pow(a, b)); }
 
+/* #1093: materialise a buffer as the nested-list tensor of the same shape, so
+ * a MIXED buffer/list pair falls back to the list path (and yields a list). */
+static Value* buf_as_tensor_list(Value *b) {
+    if (b->data.buffer.rows > 0)
+        return flat_to_tensor_2d(b->data.buffer.data,
+                                 b->data.buffer.rows, b->data.buffer.cols);
+    return flat_to_tensor_1d(b->data.buffer.data, b->data.buffer.count);
+}
+
+/* #1093: elementwise over two buffers. The broadcast cases and their
+ * precedence mirror the nested-list branch below (a row vector matching cols
+ * wins over one matching rows), so a shaped buffer and the equivalent nested
+ * list produce byte-identical numbers. */
+static Value* buf_elementwise(Value *a, Value *b, BinOpFn fn) {
+    double *ad = a->data.buffer.data, *bd = b->data.buffer.data;
+    int an = a->data.buffer.count, bn = b->data.buffer.count;
+    int a_mat = a->data.buffer.rows > 0, b_mat = b->data.buffer.rows > 0;
+
+    if (a_mat && !b_mat) {
+        int rows = a->data.buffer.rows, cols = a->data.buffer.cols;
+        if ((int64_t)rows * cols > 10000000) return make_null();
+        if (bn == cols || bn == rows) {
+            Value *out = make_shaped_buffer(rows, cols);
+            if (!out) return make_null();
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                    out->data.buffer.data[r * cols + c] =
+                        fn(ad[r * cols + c], (bn == cols) ? bd[c] : bd[r]);
+            return out;
+        }
+    }
+    if (!a_mat && b_mat) {
+        int rows = b->data.buffer.rows, cols = b->data.buffer.cols;
+        if ((int64_t)rows * cols > 10000000) return make_null();
+        if (an == cols || an == rows) {
+            Value *out = make_shaped_buffer(rows, cols);
+            if (!out) return make_null();
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                    out->data.buffer.data[r * cols + c] =
+                        fn((an == cols) ? ad[c] : ad[r], bd[r * cols + c]);
+            return out;
+        }
+    }
+    if (an == bn) {                      /* same length: keep a's shape */
+        Value *out = make_buffer_like(a);
+        if (!out) return make_null();
+        for (int i = 0; i < an; i++) out->data.buffer.data[i] = fn(ad[i], bd[i]);
+        return out;
+    }
+    /* Mismatched lengths truncate to the shorter operand, as the list path does. */
+    int n = an < bn ? an : bn;
+    Value *out = make_shaped_buffer(0, n);
+    if (!out) return make_null();
+    for (int i = 0; i < n; i++) out->data.buffer.data[i] = fn(ad[i], bd[i]);
+    return out;
+}
+
+static Value* buf_scalar_elementwise(Value *buf, double sc, BinOpFn fn, int buf_left) {
+    Value *out = make_buffer_like(buf);
+    if (!out) return make_null();
+    for (int i = 0; i < buf->data.buffer.count; i++)
+        out->data.buffer.data[i] = buf_left ? fn(buf->data.buffer.data[i], sc)
+                                            : fn(sc, buf->data.buffer.data[i]);
+    return out;
+}
+
 static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     /* Shared by add/subtract/multiply/divide/pow (and by its own recursion on
      * nested elements), so the guard names that surface rather than one call. */
@@ -232,6 +338,29 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     /* scalar op scalar */
     if (a->type == VAL_NUM && b->type == VAL_NUM)
         return make_num(fn(a->data.num, b->data.num));
+
+    /* #1093 buffers are flat numeric tensors. Buffer-only operands compute on
+     * the flat doubles and return a buffer; a buffer MIXED with a list is
+     * materialised as a list first, so the result follows the list container
+     * (the rule: a buffer out iff every tensor operand was a buffer). */
+    if (a->type == VAL_BUFFER && b->type == VAL_BUFFER)
+        return buf_elementwise(a, b, fn);
+    if (a->type == VAL_BUFFER && b->type == VAL_NUM)
+        return buf_scalar_elementwise(a, b->data.num, fn, 1);
+    if (a->type == VAL_NUM && b->type == VAL_BUFFER)
+        return buf_scalar_elementwise(b, a->data.num, fn, 0);
+    if (a->type == VAL_BUFFER && b->type == VAL_LIST) {
+        Value *al = buf_as_tensor_list(a);
+        Value *res = tensor_elementwise(al, b, fn);
+        val_decref(al);
+        return res;
+    }
+    if (a->type == VAL_LIST && b->type == VAL_BUFFER) {
+        Value *bl = buf_as_tensor_list(b);
+        Value *res = tensor_elementwise(a, bl, fn);
+        val_decref(bl);
+        return res;
+    }
 
     /* scalar broadcast to list */
     if (a->type == VAL_NUM && b->type == VAL_LIST) {
@@ -310,28 +439,19 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
         return out;
     }
     /* Every NUM/LIST combination exits above, so reaching here means an
-     * operand is neither a number nor a list — a string, a dict, a buffer
-     * (`add of [buffer, list]` lands here). That is the wrong-type case, and
-     * 0.0 was indistinguishable from a real elementwise result. */
+     * operand is neither a number, a list nor a buffer — a string, a dict, a
+     * function. That is the wrong-type case, and 0.0 was indistinguishable
+     * from a real elementwise result. */
     ARG_GUARD(1, "add/subtract/multiply/divide/pow",
-              "numbers or lists as operands", make_num(0.0));
+              "numbers, lists or buffers as operands", make_num(0.0));
 }
 
 /* ==== BUILTIN: add ==== */
 Value* builtin_tensor_add(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *a = arg->data.list.items[0];
-    Value *b = arg->data.list.items[1];
-    /* flat-buffer fast path: same-shape elementwise, in place */
-    if (a->type == VAL_BUFFER && b->type == VAL_BUFFER &&
-        a->data.buffer.count == b->data.buffer.count) {
-        Value *res = make_buffer_like(a);
-        if (!res) return make_null();
-        for (int i = 0; i < a->data.buffer.count; i++)
-            res->data.buffer.data[i] = op_add(a->data.buffer.data[i], b->data.buffer.data[i]);
-        return res;
-    }
-    return tensor_elementwise(a, b, op_add);
+    /* #1093: the buffer fast path moved into tensor_elementwise, so all five
+     * elementwise builtins share one implementation. */
+    return tensor_elementwise(arg->data.list.items[0], arg->data.list.items[1], op_add);
 }
 
 /* ==== BUILTIN: subtract ==== */
@@ -362,6 +482,14 @@ Value* builtin_tensor_pow(Value *arg) {
 typedef double (*UnaryOpFn)(double);
 static Value* tensor_unary(Value *v, UnaryOpFn fn) {
     if (v->type == VAL_NUM) return make_num(fn(v->data.num));
+    /* #1093: a buffer is a flat numeric tensor — same kernel, buffer out. */
+    if (v->type == VAL_BUFFER) {
+        Value *out = make_buffer_like(v);
+        if (!out) return make_null();
+        for (int i = 0; i < v->data.buffer.count; i++)
+            out->data.buffer.data[i] = fn(v->data.buffer.data[i]);
+        return out;
+    }
     if (v->type == VAL_LIST) {
         Value *out = make_list(v->data.list.count);
         for (int i = 0; i < v->data.list.count; i++)
@@ -372,7 +500,8 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
      * list — `sqrt of "hello"` was 0, the exact laundering #971 names. Shared
      * by sqrt/exp/log/negative and by its own recursion, so the guard names
      * that surface rather than one call. */
-    ARG_GUARD(1, "sqrt/exp/log/negative", "a number or a list", make_num(0.0));
+    ARG_GUARD(1, "sqrt/exp/log/negative", "a number, a list or a buffer",
+              make_num(0.0));
 }
 
 /* #865: `sqrt of -1` returns 0, which is indistinguishable from `sqrt of 0`.
@@ -490,13 +619,9 @@ Value* builtin_tensor_softmax(Value *arg) {
     double *flat = tensor_to_flat(arg, &rows, &cols);
     if (!flat) return make_null();
     ne_softmax_buf(flat, rows, cols);
-    Value *result;
-    if (rows == 1)
-        result = flat_to_tensor_1d(flat, cols);
-    else
-        result = flat_to_tensor_2d(flat, rows, cols);
+    Value *result = flat_to_like(arg, flat, rows, cols);   /* #1093 */
     free(flat);
-    return result;
+    return result ? result : make_null();
 }
 
 /* ==== BUILTIN: log_softmax ==== */
@@ -520,13 +645,9 @@ Value* builtin_tensor_log_softmax(Value *arg) {
         if (!(flat[i] > 0.0)) g_math_flags |= EIGS_MATH_INVALID;   /* #865 / #1041 */
         flat[i] = log(flat[i] > 0.0 ? flat[i] : 1e-10);
     }
-    Value *result;
-    if (rows == 1)
-        result = flat_to_tensor_1d(flat, cols);
-    else
-        result = flat_to_tensor_2d(flat, rows, cols);
+    Value *result = flat_to_like(tensor, flat, rows, cols);   /* #1093 */
     free(flat);
-    return result;
+    return result ? result : make_null();
 }
 
 /* ==== BUILTIN: relu ==== */
@@ -537,28 +658,16 @@ Value* builtin_tensor_relu(Value *arg) {
         double x = arg->data.num;
         return make_num(x < 0.0 ? 0.0 : x);
     }
-    /* flat-buffer fast path: in-place clamp, shape preserved */
-    if (arg && arg->type == VAL_BUFFER) {
-        Value *res = make_buffer_like(arg);
-        if (!res) return make_null();
-        for (int i = 0; i < arg->data.buffer.count; i++) {
-            double x = arg->data.buffer.data[i];
-            res->data.buffer.data[i] = (x < 0.0) ? 0.0 : x;
-        }
-        return res;
-    }
+    /* #1093: buffers go through the same flatten path and come back as
+     * buffers via flat_to_like — one implementation, not two. */
     int rows, cols;
     double *flat = tensor_to_flat(arg, &rows, &cols);
     if (!flat) return make_null();
     for (int i = 0; i < rows * cols; i++)
         if (flat[i] < 0.0) flat[i] = 0.0;
-    Value *result;
-    if (rows == 1)
-        result = flat_to_tensor_1d(flat, cols);
-    else
-        result = flat_to_tensor_2d(flat, rows, cols);
+    Value *result = flat_to_like(arg, flat, rows, cols);
     free(flat);
-    return result;
+    return result ? result : make_null();
 }
 
 /* ==== BUILTIN: leaky_relu ==== */
@@ -574,13 +683,9 @@ Value* builtin_tensor_leaky_relu(Value *arg) {
     if (!flat) return make_null();
     for (int i = 0; i < rows * cols; i++)
         if (flat[i] < 0.0) flat[i] *= 0.01;
-    Value *result;
-    if (rows == 1)
-        result = flat_to_tensor_1d(flat, cols);
-    else
-        result = flat_to_tensor_2d(flat, rows, cols);
+    Value *result = flat_to_like(arg, flat, rows, cols);   /* #1093 */
     free(flat);
-    return result;
+    return result ? result : make_null();
 }
 
 /* ==== BUILTIN: mean ==== */
@@ -593,8 +698,9 @@ Value* builtin_tensor_mean(Value *arg) {
      * tagged fs:EMPTY, which would have blessed the laundering permanently),
      * so the type half is hoisted out. Non-strict is byte-identical: both
      * halves still answer 0.0. Closes the main half of #1008. */
-    ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST,
-              "mean", "a number or a list of numbers", make_num(0.0));
+    ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST
+              && arg->type != VAL_BUFFER,   /* #1093 */
+              "mean", "a number, a list of numbers or a buffer", make_num(0.0));
     int total = tensor_total(arg);
     /* fs:EMPTY nothing to average, and the division below would be 0/0. The
      * non-tensor case is gone (guarded above), so this line now carries one
@@ -629,8 +735,9 @@ Value* builtin_tensor_sum(Value *arg) {
      * tagged fs:EMPTY, which would have blessed the laundering permanently),
      * so the type half is hoisted out. Non-strict is byte-identical: both
      * halves still answer 0.0. Closes the main half of #1008. */
-    ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST,
-              "sum", "a number or a list of numbers", make_num(0.0));
+    ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST
+              && arg->type != VAL_BUFFER,   /* #1093 */
+              "sum", "a number, a list of numbers or a buffer", make_num(0.0));
     int total = tensor_total(arg);
     /* fs:EMPTY 0.0 is the additive identity this loop would accumulate over
      * zero elements. The non-tensor case is guarded above, so `sum of []` is
@@ -662,8 +769,9 @@ Value* builtin_tensor_norm(Value *arg) {
      * tagged fs:EMPTY, which would have blessed the laundering permanently),
      * so the type half is hoisted out. Non-strict is byte-identical: both
      * halves still answer 0.0. Closes the main half of #1008. */
-    ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST,
-              "norm", "a number or a list of numbers", make_num(0.0));
+    ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST
+              && arg->type != VAL_BUFFER,   /* #1093 */
+              "norm", "a number, a list of numbers or a buffer", make_num(0.0));
     int total = tensor_total(arg);
     /* fs:EMPTY the L2 norm over zero elements is sqrt(0) = 0, exactly what the
      * loop below would produce. The non-tensor case is guarded above. */
@@ -682,18 +790,23 @@ Value* builtin_tensor_norm(Value *arg) {
 #define TENSOR_LIST_ELEM_BYTES (sizeof(Value) + sizeof(Value *))
 
 /* ==== BUILTIN: zeros ==== */
+/* zeros of n → a BUFFER of n zeros (#1093); zeros of [rows, cols] → 2D list */
 Value* builtin_tensor_zeros(Value *arg) {
     if (!arg) return make_null();
-    /* zeros of n → 1D list of n zeros */
+    /* #1093 (breaking, documented): `zeros of n` is the FLAT numeric
+     * container — a VAL_BUFFER of n doubles, not a list of n boxed numbers.
+     * `zeros of [rows, cols]` below is unchanged and still builds the nested
+     * list tensor. Consumers reach for `zeros` because it is the natural name
+     * (dynamics' `x is zeros of n`, iLambdaAi's `b is zeros of (w * w)`), and
+     * the list cost a Value per element on the VM and 12.4x on the AOT
+     * (ouroboros#170). make_shaped_buffer carries the sandbox charge, which
+     * is now 8 bytes/element instead of TENSOR_LIST_ELEM_BYTES. */
     if (arg->type == VAL_NUM) {
         int64_t n64 = (int64_t)arg->data.num;
         if (n64 < 0) n64 = 0;
         if (n64 > 10000000) n64 = 10000000;  /* #292: cap like fill/buffer (was uncapped → x_oom/abort) */
-        int n = (int)n64;
-        if (!sandbox_charge((size_t)n * TENSOR_LIST_ELEM_BYTES)) return make_null();
-        Value *out = make_list(n);
-        for (int i = 0; i < n; i++) list_append_owned(out, make_num(0.0));
-        return out;
+        Value *out = make_shaped_buffer(0, (int)n64);
+        return out ? out : make_null();
     }
     /* zeros of [rows, cols] → 2D */
     if (arg->type == VAL_LIST && arg->data.list.count >= 2
@@ -722,6 +835,7 @@ Value* builtin_tensor_zeros(Value *arg) {
 }
 
 /* ==== BUILTIN: zeros_like ==== */
+/* zeros_like of t → zeros matching t's shape AND container (buffer→buffer) */
 Value* builtin_tensor_zeros_like(Value *arg) {
     if (!arg) return make_null();
     /* fs:LITERAL a number is a valid argument and this IS the value being
@@ -734,10 +848,34 @@ Value* builtin_tensor_zeros_like(Value *arg) {
             list_append_owned(out, builtin_tensor_zeros_like(arg->data.list.items[i]));
         return out;
     }
-    /* Both shapes zeros_like can mirror exit above, so `arg` is neither a
-     * number nor a list (a string, a dict — or a BUFFER, whose zero should be
-     * a zero buffer, not the scalar 0.0 this used to hand back). */
-    ARG_GUARD(1, "zeros_like", "a number or a list", make_num(0.0));
+    /* #1093: a buffer's zero is a zero BUFFER of the same shape, not the
+     * scalar 0.0 the guard below used to hand back. */
+    if (arg->type == VAL_BUFFER) {
+        Value *out = make_buffer_like(arg);
+        return out ? out : make_null();
+    }
+    /* Every shape zeros_like can mirror exits above, so `arg` is none of them
+     * (a string, a dict, a function). */
+    ARG_GUARD(1, "zeros_like", "a number, a list or a buffer", make_num(0.0));
+}
+
+/* #1093: an index vector is a flat numeric tensor, so it may be a list or a
+ * buffer. A non-numeric list element reads as -1, the out-of-range sentinel
+ * the index loops already skip on. */
+static int flat_count(Value *v) {
+    if (!v) return 0;
+    if (v->type == VAL_LIST) return v->data.list.count;
+    if (v->type == VAL_BUFFER) return v->data.buffer.count;
+    return 0;
+}
+static int flat_is_vector(Value *v) {
+    return v && (v->type == VAL_LIST || v->type == VAL_BUFFER);
+}
+static int flat_index_at(Value *v, int i) {
+    if (v->type == VAL_LIST)
+        return (v->data.list.items[i]->type == VAL_NUM)
+             ? (int)v->data.list.items[i]->data.num : -1;
+    return (int)v->data.buffer.data[i];
 }
 
 /* ==== BUILTIN: gather ==== */
@@ -746,6 +884,33 @@ Value* builtin_tensor_gather(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *tensor = arg->data.list.items[0];
     Value *indices = arg->data.list.items[1];
+    /* #1093: a buffer tensor. A shaped (2-D) buffer with one index per row
+     * selects one element per row and yields a buffer; an unshaped (1-D)
+     * buffer with a scalar index yields that element. Out-of-range and
+     * wrong-shape readings mirror the list branches below: 0.0 per row for a
+     * bad index, and the trailing 0.0 for a scalar index off the end. */
+    if (tensor->type == VAL_BUFFER) {
+        if (indices->type == VAL_NUM && tensor->data.buffer.rows == 0) {
+            int idx = (int)indices->data.num;
+            if (idx >= 0 && idx < tensor->data.buffer.count)
+                return make_num(tensor->data.buffer.data[idx]);
+        } else if (flat_is_vector(indices)) {
+            int shaped = tensor->data.buffer.rows > 0;
+            int rows = shaped ? tensor->data.buffer.rows : tensor->data.buffer.count;
+            int cols = shaped ? tensor->data.buffer.cols : 0;
+            int icount = flat_count(indices);
+            int n = rows < icount ? rows : icount;
+            Value *out = make_shaped_buffer(0, n);
+            if (!out) return make_null();
+            for (int i = 0; i < n; i++) {
+                int idx = flat_index_at(indices, i);
+                out->data.buffer.data[i] =
+                    (shaped && idx >= 0 && idx < cols)
+                    ? tensor->data.buffer.data[(int64_t)i * cols + idx] : 0.0;
+            }
+            return out;
+        }
+    }
     /* Simple case: 2D tensor, 1D indices → select one element per row */
     if (tensor->type == VAL_LIST && indices->type == VAL_LIST) {
         int n = tensor->data.list.count < indices->data.list.count
@@ -970,6 +1135,28 @@ Value* builtin_numerical_grad(Value *arg) {
     double eps = (arg->data.list.items[2]->type == VAL_NUM) ? arg->data.list.items[2]->data.num : 0.001;
     if (eps <= 0) eps = 0.001;
 
+    /* #1093: a buffer param is a flat numeric tensor — perturb the doubles in
+     * place and return a gradient buffer of the same shape. */
+    if (param->type == VAL_BUFFER) {
+        Value *grad = make_buffer_like(param);
+        if (!grad) return make_null();
+        Value *bnul = make_null();
+        for (int i = 0; i < param->data.buffer.count; i++) {
+            double old_val = param->data.buffer.data[i];
+            param->data.buffer.data[i] = old_val + eps;
+            Value *lp = call_eigs_fn(loss_fn, bnul);
+            double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
+            if (lp) val_decref(lp);
+            param->data.buffer.data[i] = old_val - eps;
+            Value *lm = call_eigs_fn(loss_fn, bnul);
+            double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
+            if (lm) val_decref(lm);
+            param->data.buffer.data[i] = old_val;
+            grad->data.buffer.data[i] = (loss_plus - loss_minus) / (2.0 * eps);
+        }
+        val_decref(bnul);
+        return grad;
+    }
     if (param->type != VAL_LIST) return make_null();
     Value *nul = make_null();   /* shared arg for loss_fn calls */
 
@@ -1047,6 +1234,14 @@ Value* builtin_sgd_update(Value *arg) {
     Value *grad = arg->data.list.items[1];
     double lr = (arg->data.list.items[2]->type == VAL_NUM) ? arg->data.list.items[2]->data.num : 0.01;
 
+    /* #1093: both operands flat buffers — update the doubles in place. */
+    if (param->type == VAL_BUFFER && grad->type == VAL_BUFFER) {
+        int len = param->data.buffer.count < grad->data.buffer.count
+                ? param->data.buffer.count : grad->data.buffer.count;
+        for (int i = 0; i < len; i++)
+            param->data.buffer.data[i] -= lr * grad->data.buffer.data[i];
+        return param;
+    }
     if (param->type != VAL_LIST || grad->type != VAL_LIST) return param;
 
     int is_2d = (param->data.list.count > 0 && param->data.list.items[0]->type == VAL_LIST);
@@ -1097,7 +1292,38 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     double eps = (arg->data.list.items[3]->type == VAL_NUM) ? arg->data.list.items[3]->data.num : 0.001;
     if (eps <= 0) eps = 0.001;
 
-    if (matrix->type != VAL_LIST || row_indices->type != VAL_LIST) return make_null();
+    /* #1093: a shaped buffer is the flat 2-D matrix and the index vector may
+     * be a list or a buffer. The gradient comes back in the same container,
+     * zero for every row not named. */
+    if (matrix->type == VAL_BUFFER && matrix->data.buffer.rows > 0
+        && flat_is_vector(row_indices)) {
+        int brows = matrix->data.buffer.rows, bcols = matrix->data.buffer.cols;
+        Value *bgrad = make_buffer_like(matrix);
+        if (!bgrad) return make_null();
+        Value *bnul = make_null();
+        int nidx = flat_count(row_indices);
+        for (int ri = 0; ri < nidx; ri++) {
+            int r = flat_index_at(row_indices, ri);
+            if (r < 0 || r >= brows) continue;
+            for (int c = 0; c < bcols; c++) {
+                int64_t k = (int64_t)r * bcols + c;
+                double old_val = matrix->data.buffer.data[k];
+                matrix->data.buffer.data[k] = old_val + eps;
+                Value *lp = call_eigs_fn(loss_fn, bnul);
+                double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
+                if (lp) val_decref(lp);
+                matrix->data.buffer.data[k] = old_val - eps;
+                Value *lm = call_eigs_fn(loss_fn, bnul);
+                double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
+                if (lm) val_decref(lm);
+                matrix->data.buffer.data[k] = old_val;
+                bgrad->data.buffer.data[k] = (loss_plus - loss_minus) / (2.0 * eps);
+            }
+        }
+        val_decref(bnul);
+        return bgrad;
+    }
+    if (matrix->type != VAL_LIST || !flat_is_vector(row_indices)) return make_null();
 
     int rows = matrix->data.list.count;
     if (rows == 0 || matrix->data.list.items[0]->type != VAL_LIST) return make_null();
@@ -1114,9 +1340,8 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     }
 
     /* Only compute gradients for specified rows */
-    for (int ri = 0; ri < row_indices->data.list.count; ri++) {
-        int r = (row_indices->data.list.items[ri]->type == VAL_NUM)
-              ? (int)row_indices->data.list.items[ri]->data.num : -1;
+    for (int ri = 0; ri < flat_count(row_indices); ri++) {
+        int r = flat_index_at(row_indices, ri);
         if (r < 0 || r >= rows) continue;
 
         Value *row = matrix->data.list.items[r];
@@ -1154,12 +1379,28 @@ Value* builtin_sgd_update_rows(Value *arg) {
     Value *row_indices = arg->data.list.items[2];
     double lr = (arg->data.list.items[3]->type == VAL_NUM) ? arg->data.list.items[3]->data.num : 0.01;
 
-    if (matrix->type != VAL_LIST || grad->type != VAL_LIST || row_indices->type != VAL_LIST)
+    /* #1093: shaped-buffer matrix + shaped-buffer gradient, index vector as a
+     * list or a buffer — update the named rows' doubles in place. */
+    if (matrix->type == VAL_BUFFER && grad->type == VAL_BUFFER
+        && matrix->data.buffer.rows > 0 && flat_is_vector(row_indices)) {
+        int brows = matrix->data.buffer.rows, bcols = matrix->data.buffer.cols;
+        if (grad->data.buffer.rows < brows) brows = grad->data.buffer.rows;
+        if (grad->data.buffer.cols < bcols) bcols = grad->data.buffer.cols;
+        int nidx = flat_count(row_indices);
+        for (int ri = 0; ri < nidx; ri++) {
+            int r = flat_index_at(row_indices, ri);
+            if (r < 0 || r >= brows) continue;
+            for (int c = 0; c < bcols; c++)
+                matrix->data.buffer.data[(int64_t)r * matrix->data.buffer.cols + c] -=
+                    lr * grad->data.buffer.data[(int64_t)r * grad->data.buffer.cols + c];
+        }
+        return matrix;
+    }
+    if (matrix->type != VAL_LIST || grad->type != VAL_LIST || !flat_is_vector(row_indices))
         return matrix;
 
-    for (int ri = 0; ri < row_indices->data.list.count; ri++) {
-        int r = (row_indices->data.list.items[ri]->type == VAL_NUM)
-              ? (int)row_indices->data.list.items[ri]->data.num : -1;
+    for (int ri = 0; ri < flat_count(row_indices); ri++) {
+        int r = flat_index_at(row_indices, ri);
         if (r < 0 || r >= matrix->data.list.count || r >= grad->data.list.count) continue;
 
         Value *mrow = matrix->data.list.items[r];
@@ -1192,7 +1433,36 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     double eps = (arg->data.list.items[3]->type == VAL_NUM) ? arg->data.list.items[3]->data.num : 0.001;
     if (eps <= 0) eps = 0.001;
 
-    if (matrix->type != VAL_LIST || col_indices->type != VAL_LIST) return make_null();
+    /* #1093: shaped-buffer matrix, list-or-buffer index vector. */
+    if (matrix->type == VAL_BUFFER && matrix->data.buffer.rows > 0
+        && flat_is_vector(col_indices)) {
+        int brows = matrix->data.buffer.rows, bcols = matrix->data.buffer.cols;
+        Value *bgrad = make_buffer_like(matrix);
+        if (!bgrad) return make_null();
+        Value *bnul = make_null();
+        int nidx = flat_count(col_indices);
+        for (int ci = 0; ci < nidx; ci++) {
+            int col = flat_index_at(col_indices, ci);
+            if (col < 0 || col >= bcols) continue;
+            for (int r = 0; r < brows; r++) {
+                int64_t k = (int64_t)r * bcols + col;
+                double old_val = matrix->data.buffer.data[k];
+                matrix->data.buffer.data[k] = old_val + eps;
+                Value *lp = call_eigs_fn(loss_fn, bnul);
+                double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
+                if (lp) val_decref(lp);
+                matrix->data.buffer.data[k] = old_val - eps;
+                Value *lm = call_eigs_fn(loss_fn, bnul);
+                double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
+                if (lm) val_decref(lm);
+                matrix->data.buffer.data[k] = old_val;
+                bgrad->data.buffer.data[k] = (loss_plus - loss_minus) / (2.0 * eps);
+            }
+        }
+        val_decref(bnul);
+        return bgrad;
+    }
+    if (matrix->type != VAL_LIST || !flat_is_vector(col_indices)) return make_null();
 
     int rows = matrix->data.list.count;
     if (rows == 0 || matrix->data.list.items[0]->type != VAL_LIST) return make_null();
@@ -1209,9 +1479,8 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     }
 
     /* Only compute gradients for specified columns, across all rows */
-    for (int ci = 0; ci < col_indices->data.list.count; ci++) {
-        int col = (col_indices->data.list.items[ci]->type == VAL_NUM)
-                ? (int)col_indices->data.list.items[ci]->data.num : -1;
+    for (int ci = 0; ci < flat_count(col_indices); ci++) {
+        int col = flat_index_at(col_indices, ci);
         if (col < 0 || col >= cols) continue;
 
         for (int r = 0; r < rows; r++) {
@@ -1257,15 +1526,30 @@ Value* builtin_sgd_update_cols(Value *arg) {
     Value *col_indices = arg->data.list.items[2];
     double lr = (arg->data.list.items[3]->type == VAL_NUM) ? arg->data.list.items[3]->data.num : 0.01;
 
-    if (matrix->type != VAL_LIST || grad->type != VAL_LIST || col_indices->type != VAL_LIST)
+    /* #1093: shaped-buffer matrix + gradient, list-or-buffer index vector. */
+    if (matrix->type == VAL_BUFFER && grad->type == VAL_BUFFER
+        && matrix->data.buffer.rows > 0 && flat_is_vector(col_indices)) {
+        int brows = matrix->data.buffer.rows;
+        if (grad->data.buffer.rows < brows) brows = grad->data.buffer.rows;
+        int nidx = flat_count(col_indices);
+        for (int ci = 0; ci < nidx; ci++) {
+            int col = flat_index_at(col_indices, ci);
+            if (col < 0 || col >= matrix->data.buffer.cols
+                || col >= grad->data.buffer.cols) continue;
+            for (int r = 0; r < brows; r++)
+                matrix->data.buffer.data[(int64_t)r * matrix->data.buffer.cols + col] -=
+                    lr * grad->data.buffer.data[(int64_t)r * grad->data.buffer.cols + col];
+        }
+        return matrix;
+    }
+    if (matrix->type != VAL_LIST || grad->type != VAL_LIST || !flat_is_vector(col_indices))
         return matrix;
 
     int rows = matrix->data.list.count < grad->data.list.count
              ? matrix->data.list.count : grad->data.list.count;
 
-    for (int ci = 0; ci < col_indices->data.list.count; ci++) {
-        int col = (col_indices->data.list.items[ci]->type == VAL_NUM)
-                ? (int)col_indices->data.list.items[ci]->data.num : -1;
+    for (int ci = 0; ci < flat_count(col_indices); ci++) {
+        int col = flat_index_at(col_indices, ci);
         if (col < 0) continue;
 
         for (int r = 0; r < rows; r++) {
@@ -1289,8 +1573,9 @@ Value* builtin_tensor_save(Value *arg) {
               "tensor_save", "[tensor, path]", make_num(0));
     Value *tensor = arg->data.list.items[0];
     Value *path_val = arg->data.list.items[1];
-    ARG_GUARD(!tensor || tensor->type != VAL_LIST || !path_val || path_val->type != VAL_STR,
-              "tensor_save", "[a list tensor, a string path]", make_num(0));
+    ARG_GUARD(!tensor || (tensor->type != VAL_LIST && tensor->type != VAL_BUFFER)
+              || !path_val || path_val->type != VAL_STR,   /* #1093 */
+              "tensor_save", "[a list or buffer tensor, a string path]", make_num(0));
 
     int rows, cols;
     int ndim = tensor_dims(tensor, &rows, &cols);

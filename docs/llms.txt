@@ -136,6 +136,17 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.4142135623
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
 - f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`.
 
+## Numeric vectors: `buffer`, not `list`
+
+- `buffer of n` (and `zeros of n`, which returns a **buffer**) is the flat
+  `double[]` container: index/slice/iterate like a list, numbers only, and the
+  fast path for the JIT and the AOT. `str of` a buffer is `<buffer:n>`.
+- `zeros of [rows, cols]` still builds the nested LIST tensor; `buffer of
+  [r, c]` / `reshape of [buf, r, c]` build the flat-backed matrix.
+- Every tensor builtin (`add` … `pow`, `sqrt`/`exp`/`log`/`negative`, `matmul`,
+  `softmax`, `relu`, `sum`/`mean`/`norm`, `gather`, `zeros_like`) takes either
+  container and returns a buffer iff every tensor operand was one.
+
 ## Lists, dicts, control flow (quick shapes)
 
 ```eigenscript

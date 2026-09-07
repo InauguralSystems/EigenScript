@@ -5621,6 +5621,16 @@ else
 fi
 echo ""
 
+echo "[93b] Tensor builtins on buffers (#1093)"
+# #1093: every tensor builtin that accepts a flat numeric list accepts a
+# VAL_BUFFER in the same position, and returns a buffer where the input was a
+# buffer. Each check is a list/buffer PAIR whose numeric output must be
+# byte-identical, so reverting any one converted guard turns that pair red.
+# Also pins Part 2: `zeros of n` is a buffer, `zeros of [r, c]` stays a list.
+check_eigs_suite "tensor builtins accept buffers; zeros of n is a buffer" \
+    "test_tensor_buffer_inputs.eigs" "TENSOR_BUFFER_INPUTS_ALL_PASS" 99
+echo ""
+
 echo "[94] --pkg dispatcher (7 checks)"
 # Phase 1a of the package design: --pkg dispatcher, manifest read/write,
 # help, list, add (manifest-only — git fetch is Phase 1b), unknown

@@ -93,7 +93,7 @@ EigenScript is dynamically typed. The runtime types are:
 | `str` | immutable byte string | `"text"` |
 | `list` | mutable ordered sequence | `[1, 2, 3]` |
 | `dict` | mutable string-keyed map | `{"k": 1}` |
-| `buffer` | flat mutable array of nums | `buffer of 8` |
+| `buffer` | flat mutable array of nums | `buffer of 8`, `zeros of 8` |
 | `fn` | user-defined function / closure | `define` / `(x) => x` |
 | `builtin` | native function | `print` |
 | `none` | the null value | `null` |
@@ -1886,6 +1886,41 @@ print of s
 5.5
 ```
 
+### `zeros of n` is a buffer
+
+`zeros of n` is the same flat container under the name numeric code reaches
+for first: it returns a **buffer** of `n` zeros, not a list of `n` boxed
+numbers. `zeros of [rows, cols]` is unchanged — that spelling still builds the
+nested-list tensor, because 2-D list code indexes rows. `zeros_like of t`
+mirrors its argument's container: a buffer in gives a buffer out, a list in
+gives a list out.
+
+```eigenscript
+z is zeros of 4
+print of (type of z)
+print of z
+z[1] is 2.5
+print of (sum of z)
+m is zeros of [2, 3]
+print of (type of m)
+print of m
+print of (type of (zeros_like of z))
+```
+```output
+buffer
+<buffer:4>
+2.5
+list
+[[0, 0, 0], [0, 0, 0]]
+buffer
+```
+
+This is a **breaking change** (#1093). Before it, `zeros of n` answered a list:
+`type of (zeros of 4)` was `list` and `print of` showed `[0, 0, 0, 0]`. Code
+that genuinely needs the list form spells it out — `[0 for i in range of n]` —
+and code that only indexes, assigns, iterates, reduces or passes the vector to
+a tensor builtin needs no change, because a buffer supports all of those.
+
 ### Reductions
 
 `sum of a` returns the total of a buffer's (or tensor's) elements, and
@@ -1946,6 +1981,34 @@ The tensor builtins operate directly on the flat data — no per-call conversion
 so `matmul of [vec, mat]` returns a 1-D result); `add` and `relu` are
 elementwise. The result is identical to the nested-list tensor form, so storing
 weights as shaped buffers is purely a performance choice.
+
+Every tensor builtin that accepts a flat numeric list accepts a buffer in the
+same position, and returns a buffer when **every** tensor operand was a buffer:
+`add`/`subtract`/`multiply`/`divide`/`pow`, `sqrt`/`exp`/`log`/`negative`,
+`matmul`, `softmax`/`log_softmax`/`relu`/`leaky_relu`, `gather`, `shape`,
+`zeros_like`, `tensor_save`, and the `numerical_grad`/`sgd_update` family
+(including the `_rows`/`_cols` variants, whose index vector may also be a
+buffer). Mixing a buffer with a list yields a list. The reductions
+(`sum`, `mean`, `norm`) return a number from either container. A 1-D buffer
+reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
+the numbers agree element for element with the equivalent list.
+
+```eigenscript
+l is [1.0, 4.0, 9.0]
+b is buf_from_list of l
+print of (sqrt of l)
+print of ((sqrt of b)[2])
+print of (type of (sqrt of b))
+print of (type of (add of [b, l]))
+print of (mean of b)
+```
+```output
+[1, 2, 3]
+3
+buffer
+list
+4.666666666666667
+```
 
 ```eigenscript
 w is buffer of [2, 2]

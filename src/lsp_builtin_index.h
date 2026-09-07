@@ -344,8 +344,8 @@ static const char *builtin_docs[][2] = {
     {"write", "write of value — output without trailing newline"},
     {"write_bytes", "write_bytes of [path, data, append?] — write raw bytes to a file."},
     {"write_text", "write_text of [\"path\", text] → 1 on success, 0 on failure."},
-    {"zeros", "zeros of n → 1D list of n zeros"},
-    {"zeros_like", "zeros_like — builtin; see docs/BUILTINS.md"},
+    {"zeros", "zeros of n → a BUFFER of n zeros (#1093); zeros of [rows, cols] → 2D list"},
+    {"zeros_like", "zeros_like of t → zeros matching t's shape AND container (buffer→buffer)"},
     {"zlib_deflate", "zlib_deflate — builtin; see docs/BUILTINS.md"},
     {"zlib_inflate", "zlib_inflate — builtin; see docs/BUILTINS.md"},
     {0, 0}

@@ -71,8 +71,8 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `append` | `append of [list, item]` | Append item to list (mutates list) |
 | `concat` | `concat of [a, b]` | Concatenate two lists into new list |
 | `range` | `range of n` or `range of [start, end]` | Generate integer list [0..n) or [start..end) |
-| `set_at` | `set_at of [list, index, value]` | Set element at index (mutates list); negative indices count from the end, like `[]` |
-| `get_at` | `get_at of [list, index]` | Get element at index; negative indices count from the end, like `[]` |
+| `set_at` | `set_at of [list, index, value]` | Set element at index (mutates list); negative indices count from the end, like `[]`. Also takes a **buffer** in the first position — `set_at of [buf, i, v]`, or `set_at of [shaped_buf, row, col, v]` — where a non-number value is refused (`cannot store str in a buffer`) |
+| `get_at` | `get_at of [list, index]` | Get element at index; negative indices count from the end, like `[]`. Also takes a **buffer**: `get_at of [buf, i]`, or `get_at of [shaped_buf, row, col]` |
 | `copy_into` | `copy_into of [dest, offset, src]` | Copy src elements into dest starting at offset — a list into a list, or a buffer / list of numbers into a buffer. Returns dest. Wrong arity, a non-number offset (the doc used to list `[dest, src, offset]`, the code has always read `[dest, offset, src]`), a bad type, or a non-number element bound for a buffer RAISES (#1069; it silently returned null) |
 | `list_slice` | `list_slice of [list, start, end]` | New list with the elements of [start, end) — dual of `copy_into`. Negative indices count from the end, like `[]`; bounds then clamp to [0, len]. `start >= end` gives `[]`. Never raises on bounds |
 | `num_copy` | `num_copy of value` | Create independent copy of numeric value |
@@ -453,6 +453,25 @@ automatically at exit.
 
 ## Tensor Math
 
+**Numeric work wants a `buffer`.** A tensor argument (`t`, `a`, `b`, `matrix`)
+is any of: a number, a flat list of numbers, a nested list of lists (the 2-D
+tensor), or a **`buffer`** — flat `double[]`, one 8-byte element instead of a
+boxed `Value` per number, and the container the JIT and the AOT compile
+against. Every builtin in this section that accepts a flat numeric list accepts
+a buffer in the same position; a 1-D buffer reads as a 1-D tensor and a shaped
+buffer (`buffer of [r, c]`, `reshape of [buf, r, c]`) as its `r x c` 2-D
+tensor. The numbers are identical either way.
+
+**Container of the result**: a builtin that returns a tensor returns a
+*buffer* when **every** tensor operand was a buffer, and a *list* otherwise
+(so mixing a buffer with a list yields a list). Reductions (`sum`, `mean`,
+`norm`) return a number from either. `shape` always returns a list.
+
+**`zeros of n` returns a buffer** (#1093, breaking — it used to return a list);
+`zeros of [rows, cols]` still returns the nested list. Reach for
+`zeros of n` / `buffer of n` for numeric vectors and keep lists for
+heterogeneous or nested data.
+
 ### Arithmetic
 
 | Name | Signature | Description |
@@ -480,22 +499,22 @@ automatically at exit.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `matmul` | `matmul of [a, b]` | Matrix multiplication |
-| `gather` | `gather of [matrix, indices, dim]` | Gather rows/columns by index |
+| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list |
+| `gather` | `gather of [matrix, indices, dim]` | Gather one element per row by index. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i` |
 
 ### Reductions
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `mean` | `mean of t` | Average of all elements |
-| `sum` | `sum of t` | Sum of all elements |
+| `mean` | `mean of t` | Average of all elements (list, nested list or buffer) |
+| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer) |
 
 ### Construction
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `zeros` | `zeros of [rows, cols]` or `zeros of n` | Create zero tensor |
-| `zeros_like` | `zeros_like of t` | Create zero tensor matching shape |
+| `zeros` | `zeros of n` or `zeros of [rows, cols]` | `zeros of n` returns a **buffer** of `n` zeros (`type of` is `buffer`, `print of` shows `<buffer:n>`); `zeros of [rows, cols]` returns the nested-list 2-D tensor. Breaking change in #1093 — `zeros of n` used to return a list; write `[0 for i in range of n]` if you need that. Both spellings cap at 10,000,000 elements and charge the sandbox budget |
+| `zeros_like` | `zeros_like of t` | Zero tensor matching `t`'s shape **and container**: a buffer gives a buffer (shape preserved), a list gives a list, a number gives `0.0` |
 | `random_normal` | `random_normal of [rows, cols, scale]` | Gaussian random tensor |
 | `shape` | `shape of t` | Return dimensions as list |
 | `reshape` | `reshape of [buffer, rows, cols]` | New numeric buffer with the same data reinterpreted as `rows`×`cols` (requires `rows*cols == count`; `null` otherwise) |
@@ -504,7 +523,7 @@ automatically at exit.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `tensor_save` | `tensor_save of [tensor, "path"]` | Save tensor to binary file (preserves observer state) |
+| `tensor_save` | `tensor_save of [tensor, "path"]` | Save a list or buffer tensor to a binary file (preserves observer state) |
 | `tensor_load` | `tensor_load of "path"` | Load tensor from binary file (restores observer state) |
 
 ### Gradients & SGD

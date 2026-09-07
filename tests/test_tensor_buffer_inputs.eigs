@@ -1,0 +1,248 @@
+# #1093 Part 1 — tensor builtins accept VAL_BUFFER wherever they accept a flat
+# numeric list, and return a buffer where the input was a buffer.
+#
+# Every check is a PAIR: the same call run on a list tensor and on the
+# equivalent buffer tensor. The numeric output must be byte-identical (both
+# sides are flattened to the same ";"-joined decimal string), and where the
+# issue says a buffer input yields a buffer output, the container is asserted
+# too. Nested (2-D) LIST inputs keep their list semantics — the 2-D pairs use a
+# shaped buffer (`reshape of [buf, r, c]`) against a nested list.
+#
+# Before this change the buffer half of each pair answered 0, null, or the
+# scalar 0.0 (see the issue's 38-guard census); reverting any one guard turns
+# that pair's "numbers match" assertion red.
+
+load_file of "lib/test.eigs"
+
+# ---- flatten either container to one comparable string ----
+define flat_str(v) as:
+    s is ""
+    if (type of v) == "buffer":
+        for i in range of (len of v):
+            s is s + (str of v[i]) + ";"
+        return s
+    if (type of v) == "list":
+        for i in range of (len of v):
+            e is v[i]
+            if (type of e) == "list":
+                for j in range of (len of e):
+                    s is s + (str of e[j]) + ";"
+            else:
+                s is s + (str of e) + ";"
+        return s
+    return "scalar:" + (str of v)
+
+# name, list-side result, buffer-side result, want_buffer (1/0)
+define pair(name, lres, bres, want_buffer) as:
+    assert_eq of [(flat_str of bres), (flat_str of lres), name + ": list/buffer numbers identical"]
+    if want_buffer == 1:
+        assert_eq of [(type of bres), "buffer", name + ": buffer in -> buffer out"]
+    else:
+        assert_eq of [(type of bres), (type of lres), name + ": container matches the list side"]
+
+# ---- operands: 1-D ----
+la is [1.0, 2.0, 3.0, 4.0]
+lb is [0.5, 1.0, 1.5, 2.0]
+ba is buf_from_list of la
+bb is buf_from_list of lb
+
+# ---- operands: 2-D (nested list vs shaped buffer) ----
+l2 is [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+b2 is reshape of [buf_from_list of [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2, 3]
+l3 is [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+b3 is reshape of [buf_from_list of [1.0, 0.0, 0.0, 1.0, 1.0, 1.0], 3, 2]
+
+# ============ elementwise binaries (5 builtins) ============
+pair of ["add",      (add of [la, lb]),      (add of [ba, bb]),      1]
+pair of ["subtract", (subtract of [la, lb]), (subtract of [ba, bb]), 1]
+pair of ["multiply", (multiply of [la, lb]), (multiply of [ba, bb]), 1]
+pair of ["divide",   (divide of [la, lb]),   (divide of [ba, bb]),   1]
+pair of ["pow",      (pow of [la, lb]),      (pow of [ba, bb]),      1]
+
+# scalar broadcast, both operand orders
+pair of ["add scalar-right", (add of [la, 10.0]), (add of [ba, 10.0]), 1]
+pair of ["divide scalar-left", (divide of [100.0, la]), (divide of [100.0, ba]), 1]
+
+# 2-D row-vector broadcast (the neural bias shape): matrix + row vector
+pair of ["add 2-D + row bias", (add of [l2, [10.0, 20.0, 30.0]]),
+         (add of [b2, (buf_from_list of [10.0, 20.0, 30.0])]), 1]
+
+# MIXED buffer/list: every tensor operand must be a buffer for a buffer out,
+# so this one deliberately yields a LIST and still matches numerically.
+mixed is add of [ba, lb]
+assert_eq of [(flat_str of mixed), (flat_str of (add of [la, lb])), "add mixed buffer/list: numbers identical"]
+assert_eq of [(type of mixed), "list", "add mixed buffer/list: list container wins"]
+
+# ============ elementwise unaries (4 builtins) ============
+pair of ["sqrt",     (sqrt of la),     (sqrt of ba),     1]
+pair of ["exp",      (exp of la),      (exp of ba),      1]
+pair of ["log",      (log of la),      (log of ba),      1]
+pair of ["negative", (negative of la), (negative of ba), 1]
+
+# ============ matmul ============
+pair of ["matmul 2-D", (matmul of [l2, l3]), (matmul of [b2, b3]), 1]
+# 1-D left operand keeps the 1-D result shape on both sides
+pair of ["matmul 1-D x 2-D", (matmul of [[1.0, 2.0, 3.0], l3]),
+         (matmul of [(buf_from_list of [1.0, 2.0, 3.0]), b3]), 1]
+
+# ============ shape-preserving activations (4 builtins) ============
+pair of ["softmax 1-D",     (softmax of la),     (softmax of ba),     1]
+pair of ["softmax 2-D",     (softmax of l2),     (softmax of b2),     1]
+pair of ["log_softmax",     (log_softmax of la), (log_softmax of ba), 1]
+sgn is [-2.0, -0.5, 0.0, 3.0]
+bsgn is buf_from_list of sgn
+pair of ["relu",            (relu of sgn),       (relu of bsgn),      1]
+pair of ["leaky_relu",      (leaky_relu of sgn), (leaky_relu of bsgn), 1]
+
+# ============ reductions to a scalar (3 builtins) ============
+assert_eq of [(sum of ba),  (sum of la),  "sum: list/buffer identical"]
+assert_eq of [(mean of ba), (mean of la), "mean: list/buffer identical"]
+assert_eq of [(norm of ba), (norm of la), "norm: list/buffer identical"]
+assert_eq of [(sum of b2),  (sum of l2),  "sum 2-D: list/buffer identical"]
+assert_eq of [(mean of b2), (mean of l2), "mean 2-D: list/buffer identical"]
+
+# ============ shape ============
+pair of ["shape 1-D", (shape of la), (shape of ba), 0]
+pair of ["shape 2-D", (shape of l2), (shape of b2), 0]
+
+# ============ zeros_like ============
+pair of ["zeros_like 1-D", (zeros_like of la), (zeros_like of ba), 1]
+pair of ["zeros_like 2-D", (zeros_like of l2), (zeros_like of b2), 1]
+
+# ============ gather ============
+# 2-D tensor + one index per row
+pair of ["gather 2-D", (gather of [l2, [2, 0]]), (gather of [b2, [2, 0]]), 1]
+# index vector may itself be a buffer
+pair of ["gather 2-D buffer indices", (gather of [l2, [2, 0]]),
+         (gather of [b2, (buf_from_list of [2, 0])]), 1]
+# 1-D tensor + scalar index -> the element
+assert_eq of [(gather of [ba, 2]), (gather of [la, 2]), "gather 1-D scalar index"]
+
+# ============ reshape (buffer-native) ============
+rs is reshape of [ba, 2, 2]
+assert_eq of [(type of rs), "buffer", "reshape: buffer stays a buffer"]
+assert_eq of [(flat_str of rs), (flat_str of ba), "reshape: payload preserved"]
+assert_eq of [(str of (shape of rs)), "[2, 2]", "reshape: shape applied"]
+
+# ============ tensor_save / tensor_load ============
+tpath is "/tmp/eigs_1093_tensor_buffer.bin"
+assert_eq of [(tensor_save of [ba, tpath]), 1, "tensor_save accepts a buffer"]
+reloaded is tensor_load of tpath
+assert_eq of [(flat_str of reloaded), (flat_str of la), "tensor_save/load buffer round trip"]
+remove_file of tpath
+
+# ============ numerical_grad / sgd_update ============
+gl is [1.0, 2.0, 3.0]
+gb is buf_from_list of [1.0, 2.0, 3.0]
+define loss_l as:
+    return sum of (multiply of [gl, gl])
+define loss_b as:
+    return sum of (multiply of [gb, gb])
+pair of ["numerical_grad 1-D", (numerical_grad of [loss_l, gl, 0.001]),
+         (numerical_grad of [loss_b, gb, 0.001]), 1]
+
+ul is [1.0, 2.0, 3.0]
+ub is buf_from_list of [1.0, 2.0, 3.0]
+gradl is [0.5, 0.5, 0.5]
+gradb is buf_from_list of [0.5, 0.5, 0.5]
+pair of ["sgd_update 1-D", (sgd_update of [ul, gradl, 0.1]),
+         (sgd_update of [ub, gradb, 0.1]), 1]
+
+# ============ numerical_grad_rows / sgd_update_rows ============
+ml is [[1.0, 2.0], [3.0, 4.0]]
+mb is reshape of [buf_from_list of [1.0, 2.0, 3.0, 4.0], 2, 2]
+define mloss_l as:
+    return sum of (multiply of [ml, ml])
+define mloss_b as:
+    return sum of (multiply of [mb, mb])
+pair of ["numerical_grad_rows", (numerical_grad_rows of [mloss_l, ml, [0], 0.001]),
+         (numerical_grad_rows of [mloss_b, mb, [0], 0.001]), 1]
+pair of ["numerical_grad_cols", (numerical_grad_cols of [mloss_l, ml, [1], 0.001]),
+         (numerical_grad_cols of [mloss_b, mb, [1], 0.001]), 1]
+
+srl is [[1.0, 2.0], [3.0, 4.0]]
+srb is reshape of [buf_from_list of [1.0, 2.0, 3.0, 4.0], 2, 2]
+sgl is [[0.5, 0.5], [0.5, 0.5]]
+sgb is reshape of [buf_from_list of [0.5, 0.5, 0.5, 0.5], 2, 2]
+pair of ["sgd_update_rows", (sgd_update_rows of [srl, sgl, [1], 0.1]),
+         (sgd_update_rows of [srb, sgb, [1], 0.1]), 1]
+
+scl is [[1.0, 2.0], [3.0, 4.0]]
+scb is reshape of [buf_from_list of [1.0, 2.0, 3.0, 4.0], 2, 2]
+scgl is [[0.25, 0.25], [0.25, 0.25]]
+scgb is reshape of [buf_from_list of [0.25, 0.25, 0.25, 0.25], 2, 2]
+pair of ["sgd_update_cols", (sgd_update_cols of [scl, scgl, [0], 0.1]),
+         (sgd_update_cols of [scb, scgb, [0], 0.1]), 1]
+
+# ============ set_at / get_at on buffers (#1093) ============
+# `zeros of n` is a buffer now, so the indexed accessors must take one — and
+# must report a bad index the way the `[]` operator already does, not with a
+# second wording for the same fault.
+sa is buffer of 3
+set_at of [sa, 0, 1.5]
+assert_eq of [(get_at of [sa, 0]), 1.5, "set_at/get_at on a 1-D buffer"]
+set_at of [sa, 0 - 1, 3.5]
+assert_eq of [(get_at of [sa, 0 - 1]), 3.5, "set_at/get_at negative index counts from the end"]
+ss is reshape of [buf_from_list of [1.0, 2.0, 3.0, 4.0], 2, 2]
+set_at of [ss, 1, 0, 9.0]
+assert_eq of [(get_at of [ss, 1, 0]), 9.0, "set_at/get_at [row, col] on a shaped buffer"]
+assert_eq of [(get_at of [ss, 0, 1]), 2.0, "get_at [row, col] reads row-major"]
+caught1 is ""
+try:
+    set_at of [sa, 0, "x"]
+catch e1:
+    caught1 is e1.message
+assert_eq of [caught1, "cannot store str in a buffer (buffers hold numbers)",
+              "set_at refuses a non-number loudly"]
+caught2 is ""
+try:
+    print of (get_at of [sa, 9])
+catch e2:
+    caught2 is e2.message
+caught3 is ""
+try:
+    print of sa[9]
+catch e3:
+    caught3 is e3.message
+assert_eq of [caught2, "buffer index 9 out of range (length 3)", "get_at out of range is loud"]
+assert_eq of [caught3, caught2, "get_at and [] report the same out-of-range fault identically"]
+
+# ============ #1093 Part 2: zeros of n IS a buffer ============
+z is zeros of 4
+assert_eq of [(type of z), "buffer", "zeros of n returns a buffer"]
+assert_eq of [(str of z), "<buffer:4>", "zeros of n prints as <buffer:N>"]
+assert_eq of [(len of z), 4, "zeros of n has n elements"]
+assert_eq of [z[0], 0.0, "zeros of n is zero-filled"]
+z2 is zeros of [2, 3]
+assert_eq of [(type of z2), "list", "zeros of [r, c] stays a nested list"]
+assert_eq of [(type of z2[0]), "list", "zeros of [r, c] rows are lists"]
+assert_eq of [(len of z2[0]), 3, "zeros of [r, c] column count"]
+assert_eq of [(type of (zeros_like of (zeros of 4))), "buffer", "zeros_like of a buffer is a buffer"]
+assert_eq of [(type of (zeros_like of (zeros of [2, 2]))), "list", "zeros_like of a list is a list"]
+
+# The bar's chained cases: these were errors while zeros returned a list only
+# for the list side and buffers were rejected by the tensor layer.
+assert_eq of [(sum of (zeros of 5)), 0.0, "sum of (zeros of n)"]
+assert_eq of [(mean of (zeros of 5)), 0.0, "mean of (zeros of n)"]
+assert_eq of [(norm of (zeros of 5)), 0.0, "norm of (zeros of n)"]
+assert_eq of [(type of (reshape of [(zeros of 6), 2, 3])), "buffer", "reshape of (zeros of n)"]
+zm is matmul of [(reshape of [(zeros of 6), 2, 3]), (reshape of [(zeros of 6), 3, 2])]
+assert_eq of [(str of (shape of zm)), "[2, 2]", "matmul of reshaped zeros"]
+
+# ============ ouroboros#170's motivating case ============
+# A 200k-element numeric map. `zeros of n` and `buffer of n` must now agree
+# element for element — that equality is what makes `zeros` safe to make fast.
+N is 200000
+zv is zeros of N
+bv is buffer of N
+i is 0
+loop while i < N:
+    zv[i] is i * 0.5
+    bv[i] is i * 0.5
+    i is i + 1
+assert_eq of [(type of zv), "buffer", "200k map: zeros of n is a buffer"]
+assert_eq of [(sum of zv), (sum of bv), "200k map: zeros of n == buffer of n"]
+assert_eq of [(norm of zv), (norm of bv), "200k map: norm agrees"]
+
+test_summary of null
+print of "TENSOR_BUFFER_INPUTS_ALL_PASS"

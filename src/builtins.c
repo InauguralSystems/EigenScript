@@ -4123,6 +4123,26 @@ static int at_index(Value *idx_val, int count, const char *what,
     return 1;
 }
 
+/* #1093: the buffer twin of at_index — same negative-from-the-end rule, but
+ * the diagnostic `b[i]` and `buf_get` already use for a buffer, so `set_at of
+ * [buf, 9, v]` and `buf[9]` do not report the same fault two different ways. */
+static int buf_at_index(Value *idx_val, int count, int *out) {
+    if (!idx_val || idx_val->type != VAL_NUM) {
+        rt_error(EK_VALUE, 0, "buffer index must be a number, got %s",
+                 val_type_name(idx_val ? idx_val->type : VAL_NULL));
+        return 0;
+    }
+    int idx = (int)idx_val->data.num;
+    if (idx < 0) idx += count;
+    if (idx < 0 || idx >= count) {
+        rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
+                 (int)idx_val->data.num, count);
+        return 0;
+    }
+    *out = idx;
+    return 1;
+}
+
 Value* builtin_set_at(Value *arg) {
     if (!arg || arg->type != VAL_LIST) {
         rt_error(EK_TYPE, 0, "set_at requires [list, index, value] or "
@@ -4130,6 +4150,44 @@ Value* builtin_set_at(Value *arg) {
         return make_null();
     }
     int argc = arg->data.list.count;
+    /* #1093: `zeros of n` is a buffer now, so the indexed accessors take one
+     * in the container position — 1-D on any buffer, [row, col] on a shaped
+     * one. A non-number value is refused with buf_set's message rather than
+     * silently type-punned. `at_index`'s negative-from-the-end rule applies
+     * to buffers too. */
+    if ((argc == 3 || argc == 4) && arg->data.list.items[0]
+        && arg->data.list.items[0]->type == VAL_BUFFER) {
+        Value *buf = arg->data.list.items[0];
+        Value *val = arg->data.list.items[argc == 3 ? 2 : 3];
+        int64_t off;
+        if (argc == 3) {
+            int idx;
+            if (!buf_at_index(arg->data.list.items[1], buf->data.buffer.count,
+                              &idx)) return make_null();
+            off = idx;
+        } else if (argc == 4 && buf->data.buffer.rows > 0) {
+            int row, col;
+            if (!buf_at_index(arg->data.list.items[1], buf->data.buffer.rows,
+                              &row)) return make_null();
+            if (!buf_at_index(arg->data.list.items[2], buf->data.buffer.cols,
+                              &col)) return make_null();
+            off = (int64_t)row * buf->data.buffer.cols + col;
+        } else {
+            rt_error(EK_TYPE, 0, "set_at: [buffer, row, col, value] needs a "
+                     "shaped buffer (see reshape)");
+            return make_null();
+        }
+        if (!val || val->type != VAL_NUM) {
+            rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)",
+                     val_type_name(val ? val->type : VAL_NULL));
+            return make_null();
+        }
+        buf->data.buffer.data[off] = val->data.num;
+        /* Direct child of the arg vector — the borrow protocol (#720,
+         * vm_borrow_compensate) compensates at the call site, exactly as for
+         * the list path's `return list`. */
+        return buf;
+    }
     if (argc == 3) {
         /* 1D: set_at of [list, index, value] */
         Value *list = arg->data.list.items[0];
@@ -4201,6 +4259,28 @@ Value* builtin_get_at(Value *arg) {
         return make_null();
     }
     int argc = arg->data.list.count;
+    /* #1093: same buffer reading as set_at above. */
+    if ((argc == 2 || argc == 3) && arg->data.list.items[0]
+        && arg->data.list.items[0]->type == VAL_BUFFER) {
+        Value *buf = arg->data.list.items[0];
+        if (argc == 2) {
+            int idx;
+            if (!buf_at_index(arg->data.list.items[1], buf->data.buffer.count,
+                              &idx)) return make_null();
+            return make_num(buf->data.buffer.data[idx]);
+        }
+        if (argc == 3 && buf->data.buffer.rows > 0) {
+            int row, col;
+            if (!buf_at_index(arg->data.list.items[1], buf->data.buffer.rows,
+                              &row)) return make_null();
+            if (!buf_at_index(arg->data.list.items[2], buf->data.buffer.cols,
+                              &col)) return make_null();
+            return make_num(buf->data.buffer.data[(int64_t)row * buf->data.buffer.cols + col]);
+        }
+        rt_error(EK_TYPE, 0, "get_at: [buffer, row, col] needs a shaped buffer "
+                 "(see reshape)");
+        return make_null();
+    }
     if (argc == 2) {
         Value *list = arg->data.list.items[0];
         if (!list || list->type != VAL_LIST) {
