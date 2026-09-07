@@ -6419,6 +6419,13 @@ static Value *vm_run(EigsChunk *chunk, Env *env, int call_argc) {
 
 #define TASK_READY_MAX HANDLE_TABLE_SIZE
 
+/* #846: one scheduler-trace entry — a resume. `seq` is the entry's index. */
+typedef struct {
+    double  tick;    /* virtual clock (task_now) at the resume */
+    int     task;    /* resumed task id (0 = main) */
+    uint8_t cause;   /* SCAUSE_* below */
+} SchedTraceEntry;
+
 typedef struct {
     int   ready[TASK_READY_MAX];  /* circular FIFO of runnable task ids (0=main) */
     int   rhead, rcount;
@@ -6431,8 +6438,40 @@ typedef struct {
     double now;                   /* inc 3: virtual clock (logical, starts 0) */
     int   seeded;                 /* inc 4: 1 once task_sched_seed installs a seed */
     uint64_t rng_state;           /* inc 4: splitmix64 state for the seeded pick */
+    /* #846: WHY each ready entry became runnable, kept in lockstep with
+     * `ready` (same index, moved by the same compaction). A property of the
+     * queue entry, not of the task: the cause is fixed at enqueue time and
+     * consumed by the pop that resumes the task. Always maintained — it is
+     * one byte store per enqueue — so arming the trace mid-run changes
+     * nothing about the schedule, only whether a pop is written down. */
+    uint8_t ready_cause[TASK_READY_MAX];
+    int   pop_cause;              /* #846: cause of the most recent sched_ready_pop */
+    /* #846: the recorded history — one entry per trampoline resume while
+     * g_task_trace_on. Freed in task_sched_thread_free. Unbounded by design:
+     * a silent cap would make a long run's trace lie about its tail. */
+    SchedTraceEntry *trace;
+    int   trace_count, trace_cap;
     Task  main_task;              /* task 0 — save-buffer only, never "started" */
 } TaskScheduler;
+
+/* #846: the cause vocabulary, enumerated from the enqueue sites below — every
+ * sched_ready_push names one. A resumed task was enqueued by exactly one of:
+ *   spawn         task_sched_on_spawn — its first run (task_start)
+ *   yield         a task_yield re-enqueue (trampoline / main's first suspend)
+ *   sleep-wake    sched_wake_sleepers advanced the virtual clock to its wake_at
+ *   join-release  the task it was joined on finished (sched_finish)
+ *   kill-release  the task it was joined on was task_kill'ed (task_do_kill)
+ *   recv-wake     task_send delivered to its empty mailbox (task_deliver)
+ *   deadlock      main re-enqueued to receive the catchable deadlock (#509)
+ * Names are the .eigs-visible contract (docs/CONCURRENCY.md). */
+enum {
+    SCAUSE_SPAWN = 0, SCAUSE_YIELD, SCAUSE_SLEEP_WAKE, SCAUSE_JOIN_RELEASE,
+    SCAUSE_KILL_RELEASE, SCAUSE_RECV_WAKE, SCAUSE_DEADLOCK, SCAUSE__COUNT
+};
+static const char *const sched_cause_name[SCAUSE__COUNT] = {
+    "spawn", "yield", "sleep-wake", "join-release", "kill-release",
+    "recv-wake", "deadlock"
+};
 
 static TaskScheduler *sched_get(void) { return (TaskScheduler *)g_task_sched; }
 
@@ -6476,6 +6515,7 @@ void task_sched_thread_free(void) {
     }
     if (m->result) val_decref(m->result);
     if (m->error_value) val_decref(m->error_value);
+    free(s->trace);   /* #846 */
     free(s);
     g_task_sched = NULL;
 }
@@ -6505,9 +6545,11 @@ static Task *task_current_running(void) {
     return s ? sched_lookup(s, s->current) : NULL;
 }
 
-static void sched_ready_push(TaskScheduler *s, int id) {
+static void sched_ready_push(TaskScheduler *s, int id, int cause) {
     if (s->rcount >= TASK_READY_MAX) return;   /* ids are table-bounded; can't overflow */
-    s->ready[(s->rhead + s->rcount) % TASK_READY_MAX] = id;
+    int slot = (s->rhead + s->rcount) % TASK_READY_MAX;
+    s->ready[slot] = id;
+    s->ready_cause[slot] = (uint8_t)cause;   /* #846: rides with the entry */
     s->rcount++;
 }
 
@@ -6520,9 +6562,12 @@ static void sched_ready_push(TaskScheduler *s, int id) {
 static void sched_ready_remove(TaskScheduler *s, int tid) {
     int w = 0;
     for (int k = 0; k < s->rcount; k++) {
-        int id = s->ready[(s->rhead + k) % TASK_READY_MAX];
+        int from = (s->rhead + k) % TASK_READY_MAX;
+        int id = s->ready[from];
         if (id != tid) {
-            s->ready[(s->rhead + w) % TASK_READY_MAX] = id;
+            int to = (s->rhead + w) % TASK_READY_MAX;
+            s->ready[to] = id;
+            s->ready_cause[to] = s->ready_cause[from];   /* #846: lockstep */
             w++;
         }
     }
@@ -6557,6 +6602,7 @@ static int sched_ready_pop(TaskScheduler *s) {
     if (!s->seeded || s->rcount == 1) {
         /* Default FIFO: O(1) head pop — the fast path, unchanged. */
         int id = s->ready[s->rhead];
+        s->pop_cause = s->ready_cause[s->rhead];   /* #846 */
         s->rhead = (s->rhead + 1) % TASK_READY_MAX;
         s->rcount--;
         return id;
@@ -6566,12 +6612,54 @@ static int sched_ready_pop(TaskScheduler *s) {
      * in the ready count, which is tiny and only paid in DST/seeded mode. */
     int idx = (int)(sched_rng_next(s) % (uint64_t)s->rcount);
     int id  = s->ready[(s->rhead + idx) % TASK_READY_MAX];
+    s->pop_cause = s->ready_cause[(s->rhead + idx) % TASK_READY_MAX];   /* #846 */
     for (int k = idx; k < s->rcount - 1; k++) {
-        s->ready[(s->rhead + k) % TASK_READY_MAX] =
-            s->ready[(s->rhead + k + 1) % TASK_READY_MAX];
+        int to = (s->rhead + k) % TASK_READY_MAX, from = (s->rhead + k + 1) % TASK_READY_MAX;
+        s->ready[to] = s->ready[from];
+        s->ready_cause[to] = s->ready_cause[from];   /* #846: lockstep */
     }
     s->rcount--;
     return id;
+}
+
+/* ---- #846: the scheduler trace ------------------------------------------
+ * Pure reader: called from the trampoline AFTER the pick is made and BEFORE
+ * the task runs, with nothing but scheduler state as input. No tape record —
+ * the schedule is a pure function of program order (+ seed), so a replayed
+ * run re-derives the identical history; a tape-recorded trace would be a
+ * second, redundant source of truth that could disagree with the first. */
+static void sched_trace_record(TaskScheduler *s, int id, int cause) {
+    if (s->trace_count == s->trace_cap) {
+        int nc = s->trace_cap ? s->trace_cap * 2 : 64;
+        s->trace = xrealloc(s->trace, sizeof(SchedTraceEntry) * (size_t)nc);
+        s->trace_cap = nc;
+    }
+    SchedTraceEntry *e = &s->trace[s->trace_count++];
+    e->tick  = s->now;
+    e->task  = id;
+    e->cause = (uint8_t)cause;
+}
+
+Value *task_sched_trace_read(void) {
+    TaskScheduler *s = sched_get();
+    if (!s) return make_list(0);
+    Value *out = make_list(s->trace_count);
+    for (int i = 0; i < s->trace_count; i++) {
+        const SchedTraceEntry *e = &s->trace[i];
+        Value *d = make_dict(4);
+        dict_set_owned(d, "seq",   make_num((double)i));
+        dict_set_owned(d, "tick",  make_num(e->tick));
+        dict_set_owned(d, "task",  make_num((double)e->task));
+        dict_set_owned(d, "cause", make_str(e->cause < SCAUSE__COUNT
+                                            ? sched_cause_name[e->cause] : "?"));
+        list_append_owned(out, d);
+    }
+    return out;
+}
+
+void task_sched_trace_clear(void) {
+    TaskScheduler *s = sched_get();
+    if (s) s->trace_count = 0;   /* keep the buffer; re-arming reuses it */
 }
 
 /* Copying-stack save: memcpy the running task's live slice [0,fc)/[0,sp) into
@@ -6622,7 +6710,7 @@ void task_sched_on_spawn(int id) {
      * pure function of the run. Main is 0 (spawn_counter starts at 1). */
     Task *t = sched_lookup(s, id);
     if (t) t->spawn_seq = ++s->spawn_counter;
-    sched_ready_push(s, id);
+    sched_ready_push(s, id, SCAUSE_SPAWN);
 }
 
 /* task_yield: mark the current task for suspension; the trampoline re-enqueues
@@ -6675,7 +6763,7 @@ int task_deliver(int tid, Value *msg_owned) {
      * second send before the receiver resumes finds count>1 and does not
      * re-enqueue (which would put the task in the ready queue twice). */
     if (t->recv_blocked && t->state == TASK_SUSPENDED && t->mbox_count == 1)
-        sched_ready_push(s, tid);
+        sched_ready_push(s, tid, SCAUSE_RECV_WAKE);
     return 1;
 }
 
@@ -6759,7 +6847,7 @@ static int sched_wake_sleepers(TaskScheduler *s) {
     if (s->main_task.state == TASK_SUSPENDED && s->main_task.sleeping &&
         s->main_task.wake_at <= s->now) {
         s->main_task.sleeping = 0;
-        sched_ready_push(s, 0);
+        sched_ready_push(s, 0, SCAUSE_SLEEP_WAKE);
     }
     for (;;) {
         Task *next = NULL;
@@ -6771,7 +6859,7 @@ static int sched_wake_sleepers(TaskScheduler *s) {
         }
         if (!next) break;
         next->sleeping = 0;
-        sched_ready_push(s, next->id);
+        sched_ready_push(s, next->id, SCAUSE_SLEEP_WAKE);
     }
     return 1;
 }
@@ -6831,10 +6919,10 @@ int task_do_kill(int tid) {
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
         Task *w = (Task *)handle_lookup(i, HANDLE_TASK);
         if (w && w->state == TASK_SUSPENDED && w->join_target == tid)
-            sched_ready_push(s, w->id);
+            sched_ready_push(s, w->id, SCAUSE_KILL_RELEASE);
     }
     if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == tid)
-        sched_ready_push(s, 0);
+        sched_ready_push(s, 0, SCAUSE_KILL_RELEASE);
     /* #530: kill of a detached task is an explicit discard — reap now. (Kill
      * is a deliberate teardown, never an uncaught error: no #493 counting.) */
     if (t->detached) task_reap(t);
@@ -6964,10 +7052,10 @@ static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
         Task *w = (Task *)handle_lookup(i, HANDLE_TASK);
         if (w && w->state == TASK_SUSPENDED && w->join_target == t->id)
-            sched_ready_push(s, w->id);
+            sched_ready_push(s, w->id, SCAUSE_JOIN_RELEASE);
     }
     if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == t->id)
-        sched_ready_push(s, 0);
+        sched_ready_push(s, 0, SCAUSE_JOIN_RELEASE);
     /* #530: a detached task's outcome is nobody's to consume — reap the slot
      * now so task-per-message workloads aren't bounded by lifetime spawns.
      * An uncaught death still fails the process: the #493 flag moves to the
@@ -7065,7 +7153,7 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
                 m->join_target = 0;
                 m->recv_blocked = 0;
                 m->sleeping = 0;
-                sched_ready_push(s, 0);
+                sched_ready_push(s, 0, SCAUSE_DEADLOCK);
                 continue;
             }
             /* No handler in main → terminal: print loudly, exit non-zero. (No
@@ -7076,6 +7164,9 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
         Task *t = sched_lookup(s, id);
         if (!t || t->state == TASK_DONE || t->state == TASK_DEAD) continue;
         s->current = id;
+        /* #846: one entry per resume, written AFTER the pick (the pick is
+         * untouched) and only while armed — off, this is one load + branch. */
+        if (g_task_trace_on) sched_trace_record(s, id, s->pop_cause);
 
         Value *r;
         if (t->state == TASK_SUSPENDED) {
@@ -7092,7 +7183,7 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
              * stay blocked (woken by task_deliver); task_sleep → stay blocked
              * (woken by sched_wake_sleepers when the clock reaches wake_at). */
             if (t->join_target == 0 && !t->recv_blocked && !t->sleeping)
-                sched_ready_push(s, id);
+                sched_ready_push(s, id, SCAUSE_YIELD);
         } else {
             sched_finish(s, t, r);
             /* kill-outstanding: main ending tears the rest down deterministically. */
@@ -7186,7 +7277,7 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
          * trampoline's re-enqueue guard. */
         if (s->main_task.join_target == 0 && !s->main_task.recv_blocked &&
             !s->main_task.sleeping)
-            sched_ready_push(s, 0);
+            sched_ready_push(s, 0, SCAUSE_YIELD);
         return scheduler_trampoline(s);
     }
     /* main ran to completion without ever suspending. Record its result and,

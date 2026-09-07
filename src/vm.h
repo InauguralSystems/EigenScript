@@ -642,6 +642,12 @@ int   task_do_detach(int tid);       /* #530: mark fire-and-forget (reap at fini
 void   task_request_sleep(double ticks); /* current task sleeps until virtual now + ticks */
 double task_virtual_now(void);           /* current virtual-clock value (0 with no scheduler) */
 int    task_current_id(void);            /* running task id; 0 = main (incl. no scheduler) — task_self (#526) */
+/* #846 scheduler trace (builtins.c task_sched_trace). The trace is a PURE
+ * READER of the schedule: recording never touches the ready queue, the
+ * seeded PRNG, or the clock, and its entries are derived from the
+ * deterministic schedule, so they are not tape records. */
+Value *task_sched_trace_read(void);   /* list of {seq, tick, task, cause} dicts; [] when off / no scheduler */
+void   task_sched_trace_clear(void);  /* discard the recorded history (no-op without a scheduler) */
 /* Inc 4 seeded scheduling strategy (builtins.c task_sched_seed). */
 void   task_sched_set_seed(double seed); /* install a seed → seeded pick; ensures the scheduler */
 

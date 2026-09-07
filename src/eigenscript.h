@@ -925,6 +925,15 @@ struct EigsThread {
      * Lives here rather than inside TaskScheduler so the CASE(CALL) poll stays
      * one load off the already-hot eigs_current, with no NULL check. */
     int                  task_suspend_request;
+    /* #846: the scheduler trace is ARMED here, on the thread, never on the
+     * TaskScheduler — arming must not create a scheduler. A scheduler that
+     * exists but was never armed by a spawn (task_sched_seed creates one) is
+     * a live hazard: task_yield suspends main against it and
+     * vm_execute_common returns the suspend's NULL, truncating the program
+     * silently (exit 0, no output). Reading this flag costs the trampoline
+     * one load per resume; the history itself lives in the scheduler and is
+     * freed with it. Seeded from EIGS_TASK_TRACE at thread attach. */
+    int                  task_trace_on;
     /* #739: sandbox_run's caps and budget. Per-OS-thread: the save/restore in
      * builtin_sandbox_run is correct for one thread's nesting, but the
      * premise it documented — "sandbox_run is synchronous / single-threaded" —
@@ -1220,6 +1229,7 @@ void eigs_obs_unmute_for_fatal(void);
 #define g_native_call_depth   (eigs_current->native_call_depth)
 #define g_task_sched          (eigs_current->task_sched)
 #define g_task_suspend_request (eigs_current->task_suspend_request)
+#define g_task_trace_on       (eigs_current->task_trace_on)
 #define g_sandbox_loop_max    (eigs_current->sandbox_loop_max)
 #define g_sandbox_cap_hit     (eigs_current->sandbox_cap_hit)
 #define g_sandbox_active      (eigs_current->sandbox_active)

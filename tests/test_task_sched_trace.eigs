@@ -1,0 +1,230 @@
+# #846: the gated cooperative-scheduler trace. `task_sched_trace of 1` arms
+# it, `task_sched_trace of null` reads one {seq, tick, task, cause} entry per
+# task RESUME, `task_sched_trace of 0` disarms and clears. Every expectation
+# below was written from READING src/vm.c's scheduler (sched_ready_pop,
+# sched_wake_sleepers, sched_finish, task_do_kill, task_deliver, the
+# trampoline) before the binary ran — the FIFO cases by hand, the seeded case
+# through an independent splitmix64 model of the pick (the derivation is in
+# the seeded block's comment). The trace is a pure reader: nothing here
+# changes an interleaving, and tests/test_task_sched_trace.sh proves that
+# across whole programs (armed vs unarmed byte-identical, replay-identical,
+# zero tape records).
+# Run with EIGS_TASK_TRACE unset (the suite's environment): the first block
+# asserts the OFF-BY-DEFAULT behaviour, which that variable exists to override,
+# so a pre-armed environment turns those rows red by design, not by defect.
+load_file of "lib/test.eigs"
+
+# Render entries as "tick:name:cause" relative to `base` (the virtual clock
+# carries across cases) with task ids mapped through `names` (ids come from a
+# rotating handle cursor, so the expectations never mention a literal id).
+define fmt_trace(entries, names, base) as:
+    local out is []
+    for e in entries:
+        local nm is str of e.task
+        if has_key of [names, nm]:
+            nm is names[nm]
+        out is append of [out, f"{e.tick - base}:{nm}:{e.cause}"]
+    return out
+
+define same_trace(actual, expected, desc) as:
+    assert_eq of [str of actual, str of expected, desc]
+
+# ---- off by default: nothing is recorded, before or after tasks run ----
+assert_eq of [len of (task_sched_trace of null), 0, "unarmed: empty before any task"]
+define t0_w() as:
+    task_yield of null
+    return 1
+assert_eq of [task_join of (task_spawn of t0_w), 1, "unarmed worker runs normally"]
+assert_eq of [len of (task_sched_trace of null), 0, "unarmed: still empty after tasks ran"]
+
+# ---- FIFO (no seed): 3 tasks yield, sleep 30/10/20, main joins a, b, c ----
+# Hand derivation (ready queue in brackets, main blocked on a throughout):
+#   [a b c]  pop a  spawn  -> a yields          [b c a]
+#            pop b  spawn  -> b yields          [c a b]
+#            pop c  spawn  -> c yields          [a b c]
+#            pop a  yield  -> a sleeps 30       [b c]
+#            pop b  yield  -> b sleeps 10       [c]
+#            pop c  yield  -> c sleeps 20       []
+#   idle: clock -> 10, wake b   pop b  sleep-wake -> b done (main waits on a)
+#   idle: clock -> 20, wake c   pop c  sleep-wake -> c done
+#   idle: clock -> 30, wake a   pop a  sleep-wake -> a done -> main enqueued
+#            pop main join-release -> joins of b, c return at once; program ends
+define w3(tag, ticks) as:
+    task_yield of null
+    task_sleep of ticks
+    return tag
+task_sched_trace of 1
+base is task_now of null
+a is task_spawn of [w3, "a", 30]
+b is task_spawn of [w3, "b", 10]
+c is task_spawn of [w3, "c", 20]
+names is {"0": "main"}
+dict_set of [names, str of a, "a"]
+dict_set of [names, str of b, "b"]
+dict_set of [names, str of c, "c"]
+assert_eq of [task_join of a, "a", "fifo: a joins"]
+assert_eq of [task_join of b, "b", "fifo: b joins"]
+assert_eq of [task_join of c, "c", "fifo: c joins"]
+fifo_expected is ["0:a:spawn", "0:b:spawn", "0:c:spawn",
+                  "0:a:yield", "0:b:yield", "0:c:yield",
+                  "10:b:sleep-wake", "20:c:sleep-wake", "30:a:sleep-wake",
+                  "30:main:join-release"]
+same_trace of [fmt_trace of [task_sched_trace of null, names, base], fifo_expected,
+               "fifo yield/sleep/join history matches the hand derivation"]
+first is (task_sched_trace of null)[0]
+assert_eq of [first.seq, 0, "entries carry a 0-based seq"]
+assert_eq of [(task_sched_trace of null)[9].seq, 9, "seq is the entry index"]
+assert_eq of [first.tick, base, "tick is the virtual clock at the resume"]
+assert_eq of [first.task, a, "task is the id task_spawn returned"]
+assert_eq of [first.cause, "spawn", "cause is a string"]
+
+# ---- recv-wake: a receiver blocked on an empty mailbox, woken by task_send ----
+#   main yields -> [r main]; pop r spawn -> r blocks in task_recv (not queued)
+#   pop main yield -> task_send wakes r [r]; main joins r (blocks)
+#   pop r recv-wake -> r returns -> main enqueued; pop main join-release
+task_sched_trace of 0
+task_sched_trace of 1
+base is task_now of null
+define receiver() as:
+    local m is task_recv of null
+    return m
+r is task_spawn of receiver
+dict_set of [names, str of r, "r"]
+task_yield of null
+assert_eq of [task_send of [r, "hi"], 1, "recv-wake: message delivered"]
+assert_eq of [task_join of r, "hi", "recv-wake: receiver returns the message"]
+same_trace of [fmt_trace of [task_sched_trace of null, names, base],
+               ["0:r:spawn", "0:main:yield", "0:r:recv-wake", "0:main:join-release"],
+               "recv-wake history"]
+
+# ---- kill-release: main joins a sleeper that a sibling kills ----
+#   main joins v -> [v k]; pop v spawn -> v sleeps 100 (not queued)
+#   pop k spawn -> task_kill of v wakes the joiner (main) with an interrupt [main]
+#   -> k returns (nobody joins it yet); pop main kill-release -> join re-raises
+task_sched_trace of 0
+task_sched_trace of 1
+base is task_now of null
+define sleeper() as:
+    task_sleep of 100
+    return 1
+define killer(victim) as:
+    task_kill of victim
+    return 2
+v is task_spawn of sleeper
+k is task_spawn of [killer, v]
+dict_set of [names, str of v, "v"]
+dict_set of [names, str of k, "k"]
+kill_kind is ""
+try:
+    task_join of v
+catch e:
+    kill_kind is e.kind
+assert_eq of [kill_kind, "interrupt", "kill-release: the joiner sees the interrupt"]
+assert_eq of [task_join of k, 2, "kill-release: the killer finished"]
+same_trace of [fmt_trace of [task_sched_trace of null, names, base],
+               ["0:v:spawn", "0:k:spawn", "0:main:kill-release"],
+               "kill-release history"]
+assert_eq of [task_now of null, base, "the killed sleeper never advanced the clock"]
+
+# ---- seeded (seed 42): the same yield/sleep/join program under the PRNG pick ----
+# Derived by modelling sched_ready_pop exactly: splitmix64 state = 42, one
+# draw per pop while more than one task is ready, pick = draw % count, hole
+# compacted order-preserving (a single ready task pops FIFO with no draw), and
+# sleepers woken in spawn order when nothing is runnable. The model
+# (scratch: sched_model.py, reproduced in the commit message) gives the
+# picks b, c, a for [a b c] at seed 42 — the same permutation docs/SPEC.md's
+# seeded example prints — and every later pop happens with one task ready.
+task_sched_trace of 0
+task_sched_seed of 42
+task_sched_trace of 1
+base is task_now of null
+sa is task_spawn of [w3, "a", 30]
+sb is task_spawn of [w3, "b", 10]
+sc is task_spawn of [w3, "c", 20]
+dict_set of [names, str of sa, "a"]
+dict_set of [names, str of sb, "b"]
+dict_set of [names, str of sc, "c"]
+assert_eq of [task_join of sa, "a", "seeded: a joins"]
+assert_eq of [task_join of sb, "b", "seeded: b joins"]
+assert_eq of [task_join of sc, "c", "seeded: c joins"]
+seeded_expected is ["0:b:spawn", "0:c:spawn", "0:a:spawn",
+                    "0:b:yield", "0:c:yield", "0:a:yield",
+                    "10:b:sleep-wake", "20:c:sleep-wake", "30:a:sleep-wake",
+                    "30:main:join-release"]
+same_trace of [fmt_trace of [task_sched_trace of null, names, base], seeded_expected,
+               "seeded (42) history matches the splitmix64 model"]
+
+# ---- disarm clears; re-arm records fresh (one task ready throughout: FIFO) ----
+task_sched_trace of 0
+assert_eq of [len of (task_sched_trace of null), 0, "disarm discards the history"]
+define lone() as:
+    task_yield of null
+    return 3
+lo is task_spawn of lone
+assert_eq of [task_join of lo, 3, "disarmed worker runs"]
+assert_eq of [len of (task_sched_trace of null), 0, "disarmed: nothing recorded"]
+task_sched_trace of 1
+base is task_now of null
+lo2 is task_spawn of lone
+dict_set of [names, str of lo2, "w"]
+assert_eq of [task_join of lo2, 3, "re-armed worker runs"]
+same_trace of [fmt_trace of [task_sched_trace of null, names, base],
+               ["0:w:spawn", "0:w:yield", "0:main:join-release"],
+               "re-armed: fresh history from the re-arm point"]
+
+# ---- the argument contract ----
+bad_kind is ""
+try:
+    task_sched_trace of "on"
+catch e:
+    bad_kind is e.kind
+assert_eq of [bad_kind, "type_mismatch", "a non-number, non-null argument raises"]
+assert_eq of [type of (task_sched_trace of 1), "none", "arming returns null"]
+
+# ---- the sandbox cannot reach the host thread's trace ----
+# SANDBOX_ALLOW is a fail-CLOSED name allowlist and this builtin is not on it,
+# so a sandboxed chunk calling it is denied. That posture is what keeps the
+# arm flag — per-thread state of the HOST — out of untrusted bytecode's reach.
+# Descriptor shape and opcode numbers per tests/test_sandbox_allow.eigs.
+task_sched_trace of 0
+SB_ABI is 1
+SB_GET_NAME is 25
+SB_CONST is 0
+SB_CALL is 39
+SB_RETURN is 40
+sb is sandbox_run of [[SB_ABI, [SB_GET_NAME, 0, 0, SB_CONST, 1, 0, SB_CALL, 1, 0, SB_RETURN],
+                       ["task_sched_trace", 1]], 1000]
+assert_eq of [sb["ok"], 0, "sandbox: task_sched_trace is denied inside sandbox_run"]
+lo3 is task_spawn of lone
+assert_eq of [task_join of lo3, 3, "sandbox: the host keeps running normally"]
+assert_eq of [len of (task_sched_trace of null), 0,
+              "sandbox: the denied call did not arm the host's trace"]
+
+# ---- deadlock: main is re-enqueued to receive the catchable error (#509) ----
+# Placed last: the two mutually-blocked workers stay suspended forever. The
+# seeded pick decides which of them runs first, so this asserts the causes
+# and the final entry, not the order of the two spawns.
+task_sched_trace of 0
+task_sched_trace of 1
+dla is 0
+dlb is 0
+define dl_a as:
+    return task_join of dlb
+define dl_b as:
+    return task_join of dla
+dla is task_spawn of dl_a
+dlb is task_spawn of dl_b
+dl_kind is ""
+try:
+    task_join of dla
+catch e:
+    dl_kind is e.kind
+assert_eq of [dl_kind, "deadlock", "deadlock is delivered to main"]
+dl is task_sched_trace of null
+assert_eq of [len of dl, 3, "deadlock: two spawns then main's re-enqueue"]
+assert_eq of [dl[0].cause, "spawn", "deadlock: first entry is a spawn"]
+assert_eq of [dl[1].cause, "spawn", "deadlock: second entry is a spawn"]
+assert_eq of [dl[2].task, 0, "deadlock: main is the resumed task"]
+assert_eq of [dl[2].cause, "deadlock", "deadlock: cause names the #509 re-enqueue"]
+
+test_summary of null

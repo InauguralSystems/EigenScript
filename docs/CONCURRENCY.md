@@ -77,6 +77,35 @@ parallelism: use threads for genuinely parallel work, not to speed up a tight
 serial loop. (A quantified before/after number lands with the replay-pinned
 benchmark harness, #398.)
 
+## The scheduler trace is a reader, not a source (#846)
+
+A schedule visualizer or a DST wants "who ran when" without instrumenting
+every yield site. `task_sched_trace of 1` (or `EIGS_TASK_TRACE=1`) arms a
+per-thread trace of the cooperative scheduler: one `{seq, tick, task, cause}`
+entry per task **resume**, read back with `task_sched_trace of null`. The
+cause vocabulary is enumerated from the scheduler's enqueue sites, so every
+value names a mechanism: `spawn`, `yield`, `sleep-wake`, `join-release`,
+`kill-release`, `recv-wake`, `deadlock` (the #509 re-enqueue of main).
+
+Two properties are load-bearing and gated by `tests/test_task_sched_trace.sh`:
+
+- **Pure reader.** The cause of each ready-queue entry is stamped at enqueue
+  time whether or not the trace is armed (one byte, moved in lockstep with the
+  queue), and arming only decides whether a pop is written down — after the
+  pick, never before it. So the seeded PRNG draws, the clock and the queue
+  order are untouched: a run with the trace armed is byte-identical (stdout,
+  stderr, exit code) to the same seed with it off.
+- **Derived, not taped.** The interleaving is a pure function of program
+  order and the seed, so the trace is re-derived on replay rather than
+  recorded: it adds no `N` records to the tape, and a tape recorded with the
+  trace armed replays to the identical history. A taped copy would be a
+  second source of truth that could disagree with the first.
+
+Arming never creates a scheduler (the flag lives on the thread, the history on
+the scheduler and is freed with it); the main task's initial run precedes the
+first entry and is implicit. The history is unbounded while armed — disarm
+(`task_sched_trace of 0`) to discard it.
+
 ## Replay boundary (#148)
 
 Thread scheduling is nondeterministic, so it cannot be recorded onto the trace

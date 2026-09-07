@@ -313,6 +313,7 @@ static const char *builtin_docs[][2] = {
     {"task_now", "task_now of null → the current virtual-clock value (a number, 0 before any"},
     {"task_recv", "task_recv of null — return the next message from this task's mailbox, or"},
     {"task_sched_seed", "task_sched_seed of n — install a scheduling seed. By default tasks run FIFO"},
+    {"task_sched_trace", "task_sched_trace of null — the cooperative scheduler's decision history"},
     {"task_self", "task_self of null → the running task's id (a number, in the same integer"},
     {"task_send", "task_send of [id, value] — append a deep-copied message to task `id`'s"},
     {"task_sleep", "task_sleep of ticks — suspend the current task until the virtual clock"},

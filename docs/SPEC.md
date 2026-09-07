@@ -1819,6 +1819,47 @@ The same program with no seed prints the round-robin order
 `["a", "b", "c", "a", "b", "c"]`; a different seed prints a different — but
 equally reproducible — permutation.
 
+### Scheduler trace
+
+`task_sched_trace of 1` arms a trace of the scheduler's decisions (off by
+default; `EIGS_TASK_TRACE=1` arms it from the environment). While armed, every
+task **resume** appends one entry — `{seq, tick, task, cause}`: the entry's
+index, the virtual clock, the resumed task's id (`0` is the main task), and
+why it became runnable: `spawn` (its first run), `yield` (a `task_yield`
+re-enqueue), `sleep-wake` (the clock reached its `task_sleep` deadline),
+`join-release` (the task it joined finished), `kill-release` (the task it
+joined was killed), `recv-wake` (a message reached its empty mailbox), or
+`deadlock` (main re-enqueued to receive the catchable deadlock error).
+`task_sched_trace of null` reads the history; `task_sched_trace of 0` disarms
+it and discards it. The trace is a **pure reader**: arming it changes no pick,
+no clock and no seed — a traced run is byte-identical to the untraced one —
+and its entries are derived from the deterministic schedule rather than
+recorded on the trace tape, so a replayed run reproduces the same history.
+
+```eigenscript
+task_sched_trace of 1
+define step(tag) as:
+    task_yield of null
+    task_sleep of 10
+    return tag
+
+a is task_spawn of [step, "a"]
+b is task_spawn of [step, "b"]
+task_join of a
+task_join of b
+for e in task_sched_trace of null:
+    print of f"{e.seq} t={e.tick} task={e.task} {e.cause}"
+```
+```output
+0 t=0 task=1 spawn
+1 t=0 task=2 spawn
+2 t=0 task=1 yield
+3 t=0 task=2 yield
+4 t=10 task=1 sleep-wake
+5 t=10 task=2 sleep-wake
+6 t=10 task=0 join-release
+```
+
 ## Buffers
 
 `buffer of count` allocates a flat array of `count` nums (all 0).

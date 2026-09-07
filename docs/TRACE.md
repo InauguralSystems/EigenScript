@@ -49,6 +49,17 @@ into real values on replay:
   visually parseable (truncated records are not replayable; the builtin
   falls back to its live source).
 
+## Derived, Not Recorded: The Scheduler Trace (#846)
+
+The cooperative task scheduler's decision history (`task_sched_trace`, see
+docs/CONCURRENCY.md) is **not** an `N` record. The interleaving is a pure
+function of program order and `task_sched_seed`, so a replayed run
+re-derives the identical history from the same schedule; recording it would
+create a second source of truth that could disagree with the first.
+`tests/test_task_sched_trace.sh` asserts the tape's `N`-record count is
+unchanged by arming the trace and that record → replay yields the same
+history on both tiers.
+
 ## Recorded Builtins
 
 Every builtin whose return value is nondeterministic from the script's

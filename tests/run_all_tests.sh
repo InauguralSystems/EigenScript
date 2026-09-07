@@ -4792,6 +4792,30 @@ check_task_exit task_exit_detached_death.eigs 1 "MARK_END"         # #530: a DET
 check_task_exit task_deadlock.eigs            1 "deadlock"         # #483 leak-clean (main's suspended slice) + #509 uncaught loud
 check_task_exit task_deadlock_worker_try.eigs 1 "deadlock"         # #509: deadlock goes to MAIN; a worker's try doesn't catch it
 
+# #846 scheduler trace: a gated, off-by-default history of every task resume
+# ({seq, tick, task, cause}). The fixture pins the cause vocabulary, the FIFO
+# and seeded histories (derivations written from the scheduler's source) and
+# the sandbox fail-closed posture; the child .sh pins the two DST constraints
+# — arming it perturbs nothing (byte-identical stdout/stderr/rc across all 12
+# task programs in the tree, error paths included) and it is derived, not
+# taped (replay reproduces it, plain and under EIGS_REPLAY_STRICT=1; the
+# N-record count is unchanged and no N record names the trace). Replay is
+# checked JIT-on and EIGS_JIT_OFF=1.
+echo "[104b] Scheduler Trace (task_sched_trace, #846)"
+check_eigs_suite "task_sched_trace: causes, fifo + seeded histories, arm/disarm (#846)" test_task_sched_trace.eigs "All tests passed" 1
+ST_OUTPUT=$(bash "$TESTS_DIR/test_task_sched_trace.sh" 2>&1)
+ST_PASS=$(echo "$ST_OUTPUT" | grep -c "PASS:" || true)
+ST_FAIL=$(echo "$ST_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + ST_PASS + ST_FAIL))
+PASS=$((PASS + ST_PASS))
+FAIL=$((FAIL + ST_FAIL))
+if [ "$ST_FAIL" -gt 0 ] || [ "$ST_PASS" -eq 0 ]; then
+    echo "  FAIL: scheduler-trace purity/replay/tape checks ($ST_PASS passed, $ST_FAIL failed)"
+    echo "$ST_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $ST_PASS scheduler-trace purity/replay/tape checks"
+fi
+
 # [105] Builtin contract fixes (#312 negative indices, #316 predicate
 # type-rejection, #317 min/max N-ary reduction) + #314: a directory as the
 # script path must take the clean cannot-read-file exit, not xmalloc's

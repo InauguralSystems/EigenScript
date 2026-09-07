@@ -5098,6 +5098,30 @@ Value* builtin_task_sched_seed(Value *arg) {
     return make_null();
 }
 
+/* task_sched_trace of null — the cooperative scheduler's decision history
+ * (#846): a list of {seq, tick, task, cause} dicts, one per task RESUME since
+ * the trace was armed, in schedule order. `task_sched_trace of 1` arms it,
+ * `task_sched_trace of 0` disarms it and discards the history; EIGS_TASK_TRACE=1
+ * arms it from the environment. Off by default. A PURE READER of the schedule:
+ * arming changes no pick, no clock, no seed — a traced run is byte-identical
+ * to the untraced one — and the entries derive from the deterministic
+ * schedule, so they are not tape records and replay reproduces them. Arming
+ * never creates a scheduler (see EigsThread.task_trace_on). */
+Value* builtin_task_sched_trace(Value *arg) {
+    if (!arg || arg->type == VAL_NULL) return task_sched_trace_read();
+    if (arg->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "task_sched_trace takes null (read), 1 (arm) or 0 (disarm + clear)");
+        return make_null();
+    }
+    if (arg->data.num != 0) {
+        g_task_trace_on = 1;
+    } else {
+        g_task_trace_on = 0;
+        task_sched_trace_clear();
+    }
+    return make_null();
+}
+
 /* Deterministic teardown of OS-resource handles, run once the program has
  * finished executing (the full value world is still alive, so buffered-message
  * decrefs are safe). Channels and thread handles live in the process handle
@@ -6915,6 +6939,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "task_sleep", make_builtin(builtin_task_sleep));
     env_set_local_owned(env, "task_now", make_builtin(builtin_task_now));
     env_set_local_owned(env, "task_sched_seed", make_builtin(builtin_task_sched_seed));
+    env_set_local_owned(env, "task_sched_trace", make_builtin(builtin_task_sched_trace));
     env_set_local_owned(env, "thread_join", make_builtin(builtin_thread_join));
     env_set_local_owned(env, "channel", make_builtin(builtin_channel));
     env_set_local_owned(env, "send", make_builtin(builtin_send));
