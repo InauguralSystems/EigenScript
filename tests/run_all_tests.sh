@@ -5187,6 +5187,17 @@ check_eigs_suite "flat-buffer tensors" test_flat_buffer_tensor.eigs "PASS: flat-
 # #932: a 65x65 by 65x67 matmul so the i and j tile bounds run multi-tile with
 # a partial remainder in every dimension, not only their single-tile path.
 check_eigs_suite "tiled tensor kernels (#745, #932)" test_tensor_kernel_tiling.eigs "TENSOR_KERNEL_TILING_OK" 1
+# #973: the flat-buffer surface the autograd tape runs on — matmul_at/matmul_bt
+# byte-identical to matmul of the transposed list operand, scatter_add vs the
+# list loop (and gather's dual), the buffer elementwise/softmax/leaky_relu/mean
+# paths vs the list path, numerical_grad on a buffer parameter; loud raises.
+check_eigs_suite "flat-buffer tensor ops for autograd: matmul_at/bt, scatter_add, buffer paths (#973)" \
+    test_tensor_buffer_ops.eigs "All tests passed." 78
+# #973: lib/autograd.eigs — every vjp rule vs the numerical_grad oracle (1e-4
+# relative + 1e-6 absolute), a 2-layer softmax-CE MLP trained by the tape, and
+# the Tidepool DQN shape (433->64->32->6, batch 32) through one backward.
+check_eigs_suite "lib/autograd: vjp rules vs numerical_grad, MLP trains, DQN shape backward (#973)" \
+    test_autograd.eigs "All tests passed." 101
 # #597: vectorized buffer kernels (buf_mix/buf_scale_range/buf_fill/buf_peak/
 # buf_dot + buf_copy loud bounds) — correctness, raise-on-bad-window, and the
 # differential leg (builtin exactly equals the interpreted per-sample loop on

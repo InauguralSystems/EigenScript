@@ -256,7 +256,7 @@ The minimal build (`make build`) sets all flags to 0. The full build
 
 ## Standard Library
 
-The 77 modules in `lib/` are pure EigenScript — no C code. They are loaded at
+The 78 modules in `lib/` are pure EigenScript — no C code. They are loaded at
 runtime via `load_file of "lib/module.eigs"`. Both loaders use absolute paths
 as-is; relative paths search the containing file's directory, the `eigs_modules`
 walk, the nearest `eigs.json` project root, then the executable-relative and

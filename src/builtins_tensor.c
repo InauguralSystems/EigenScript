@@ -75,6 +75,66 @@ void ne_matmul_buf(
     }
 }
 
+/* Transposed-operand kernels for the autograd vjp rules (#973): the two
+ * matmul gradients are dA = dY.B^T and dB = A^T.dY, and materialising the
+ * transpose costs a copy per backward step. Same i-k-j tiling as
+ * ne_matmul_buf, so out[i][j] accumulates over kk in the same ascending
+ * order — byte-identical to `matmul` of the explicitly transposed operand
+ * (pinned by tests/test_autograd.eigs). model_train.c carries the f32
+ * twins of these for the transformer; these are the f64 buffer path. */
+
+/* out(k x n) = a^T . b  where a is (m x k), b is (m x n) */
+void ne_matmul_at_buf(
+    double *a, int64_t m, int64_t k,
+    double *b, int64_t n,
+    double *out
+) {
+    memset(out, 0, k * n * sizeof(double));
+    for (int64_t i0 = 0; i0 < k; i0 += NE_TENSOR_TILE_SIZE) {
+        for (int64_t j0 = 0; j0 < n; j0 += NE_TENSOR_TILE_SIZE) {
+            for (int64_t k0 = 0; k0 < m; k0 += NE_TENSOR_TILE_SIZE) {
+                int64_t i_end = i0 + NE_TENSOR_TILE_SIZE < k ? i0 + NE_TENSOR_TILE_SIZE : k;
+                int64_t j_end = j0 + NE_TENSOR_TILE_SIZE < n ? j0 + NE_TENSOR_TILE_SIZE : n;
+                int64_t k_end = k0 + NE_TENSOR_TILE_SIZE < m ? k0 + NE_TENSOR_TILE_SIZE : m;
+                for (int64_t i = i0; i < i_end; i++) {
+                    for (int64_t kk = k0; kk < k_end; kk++) {
+                        double a_ki = a[kk * k + i];
+                        for (int64_t j = j0; j < j_end; j++) {
+                            out[i * n + j] += a_ki * b[kk * n + j];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* out(m x n) = a . b^T  where a is (m x k), b is (n x k) */
+void ne_matmul_bt_buf(
+    double *a, int64_t m, int64_t k,
+    double *b, int64_t n,
+    double *out
+) {
+    memset(out, 0, m * n * sizeof(double));
+    for (int64_t i0 = 0; i0 < m; i0 += NE_TENSOR_TILE_SIZE) {
+        for (int64_t j0 = 0; j0 < n; j0 += NE_TENSOR_TILE_SIZE) {
+            for (int64_t k0 = 0; k0 < k; k0 += NE_TENSOR_TILE_SIZE) {
+                int64_t i_end = i0 + NE_TENSOR_TILE_SIZE < m ? i0 + NE_TENSOR_TILE_SIZE : m;
+                int64_t j_end = j0 + NE_TENSOR_TILE_SIZE < n ? j0 + NE_TENSOR_TILE_SIZE : n;
+                int64_t k_end = k0 + NE_TENSOR_TILE_SIZE < k ? k0 + NE_TENSOR_TILE_SIZE : k;
+                for (int64_t i = i0; i < i_end; i++) {
+                    for (int64_t kk = k0; kk < k_end; kk++) {
+                        double a_ik = a[i * k + kk];
+                        for (int64_t j = j0; j < j_end; j++) {
+                            out[i * n + j] += a_ik * b[j * k + kk];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /* ---- flat-buffer tensors -------------------------------------------------
  * A VAL_BUFFER carries an optional 2-D shape (rows/cols; rows==0 => 1-D, length
  * = count). The tensor builtins gain a fast path that computes directly on the
@@ -450,7 +510,11 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
 Value* builtin_tensor_add(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     /* #1093: the buffer fast path moved into tensor_elementwise, so all five
-     * elementwise builtins share one implementation. */
+     * elementwise builtins share one implementation. #973 arrived with a
+     * second one (`buffer_elementwise`, called ahead of this); reconciled at
+     * integration by keeping THIS one — a builtin must not have two buffer
+     * paths, and this is the one whose shape rules are the list path's,
+     * container for container. */
     return tensor_elementwise(arg->data.list.items[0], arg->data.list.items[1], op_add);
 }
 
@@ -611,10 +675,237 @@ Value* builtin_tensor_matmul(Value *arg) {
     return result;
 }
 
+/* ---- transposed-operand matmuls (#973) -------------------------------------
+ * Shared argument discipline with `matmul` (#512): raise on non-matrix
+ * operands (type), incompatible shapes (value), oversized results (limit).
+ * Buffers compute on the flat data; nested lists go through the same flat
+ * kernels, so both forms agree byte-for-byte with `matmul` of the
+ * explicitly transposed operand. */
+
+/* matmul_at of [a, b] → aᵀ·b: a is (m x k), b is (m x n), result (k x n).
+ * The weight gradient dW = Xᵀ·dY of a linear layer, without materialising Xᵀ. */
+Value* builtin_tensor_matmul_at(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "matmul_at requires [A, B]");
+        return make_null();
+    }
+    Value *a = arg->data.list.items[0];
+    Value *b = arg->data.list.items[1];
+    if (a->type == VAL_BUFFER && b->type == VAL_BUFFER) {
+        int ar, ac, br, bc;
+        buf_dims(a, &ar, &ac); buf_dims(b, &br, &bc);
+        if (ar != br) {
+            rt_error(EK_VALUE, 0, "matmul_at: incompatible shapes "
+                     "(%dx%d transposed · %dx%d)", ar, ac, br, bc);
+            return make_null();
+        }
+        if ((int64_t)ac * bc > 10000000) {
+            rt_error(EK_LIMIT, 0, "matmul_at: result too large (%dx%d)", ac, bc);
+            return make_null();
+        }
+        /* The result is aᵀ·b = (k x n): always 2-D, since k is the column
+         * count of `a` (its length when 1-D) — the shape of a weight matrix. */
+        Value *res = make_shaped_buffer(ac, bc);
+        if (!res) return make_null();
+        ne_matmul_at_buf(a->data.buffer.data, ar, ac, b->data.buffer.data, bc, res->data.buffer.data);
+        return res;
+    }
+    int ar, ac, br, bc;
+    double *af = tensor_to_flat(a, &ar, &ac);
+    double *bf = tensor_to_flat(b, &br, &bc);
+    if (!af || !bf) {
+        free(af); free(bf);
+        rt_error(EK_TYPE, 0, "matmul_at: expected matrices (got %s, %s)",
+                 val_type_name(a->type), val_type_name(b->type));
+        return make_null();
+    }
+    if (ar != br) {
+        free(af); free(bf);
+        rt_error(EK_VALUE, 0, "matmul_at: incompatible shapes "
+                 "(%dx%d transposed · %dx%d)", ar, ac, br, bc);
+        return make_null();
+    }
+    if ((int64_t)ac * bc > 10000000) {
+        free(af); free(bf);
+        rt_error(EK_LIMIT, 0, "matmul_at: result too large (%dx%d)", ac, bc);
+        return make_null();
+    }
+    double *out = xcalloc((size_t)ac * bc, sizeof(double));
+    ne_matmul_at_buf(af, ar, ac, bf, bc, out);
+    Value *result = flat_to_tensor_2d(out, ac, bc);
+    free(af); free(bf); free(out);
+    return result;
+}
+
+/* matmul_bt of [a, b] → a·bᵀ: a is (m x k), b is (n x k), result (m x n).
+ * The input gradient dX = dY·Wᵀ of a linear layer, without materialising Wᵀ.
+ * Like `matmul`, a 1-D left operand is a row vector and yields a 1-D result. */
+Value* builtin_tensor_matmul_bt(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "matmul_bt requires [A, B]");
+        return make_null();
+    }
+    Value *a = arg->data.list.items[0];
+    Value *b = arg->data.list.items[1];
+    if (a->type == VAL_BUFFER && b->type == VAL_BUFFER) {
+        int ar, ac, br, bc;
+        buf_dims(a, &ar, &ac); buf_dims(b, &br, &bc);
+        if (ac != bc) {
+            rt_error(EK_VALUE, 0, "matmul_bt: incompatible shapes "
+                     "(%dx%d · %dx%d transposed)", ar, ac, br, bc);
+            return make_null();
+        }
+        if ((int64_t)ar * br > 10000000) {
+            rt_error(EK_LIMIT, 0, "matmul_bt: result too large (%dx%d)", ar, br);
+            return make_null();
+        }
+        Value *res = (a->data.buffer.rows == 0) ? make_shaped_buffer(0, br)
+                                                : make_shaped_buffer(ar, br);
+        if (!res) return make_null();
+        ne_matmul_bt_buf(a->data.buffer.data, ar, ac, b->data.buffer.data, br, res->data.buffer.data);
+        return res;
+    }
+    int ar, ac, br, bc;
+    double *af = tensor_to_flat(a, &ar, &ac);
+    double *bf = tensor_to_flat(b, &br, &bc);
+    if (!af || !bf) {
+        free(af); free(bf);
+        rt_error(EK_TYPE, 0, "matmul_bt: expected matrices (got %s, %s)",
+                 val_type_name(a->type), val_type_name(b->type));
+        return make_null();
+    }
+    if (ac != bc) {
+        free(af); free(bf);
+        rt_error(EK_VALUE, 0, "matmul_bt: incompatible shapes "
+                 "(%dx%d · %dx%d transposed)", ar, ac, br, bc);
+        return make_null();
+    }
+    if ((int64_t)ar * br > 10000000) {
+        free(af); free(bf);
+        rt_error(EK_LIMIT, 0, "matmul_bt: result too large (%dx%d)", ar, br);
+        return make_null();
+    }
+    double *out = xcalloc((size_t)ar * br, sizeof(double));
+    ne_matmul_bt_buf(af, ar, ac, bf, br, out);
+    Value *result = (ar == 1) ? flat_to_tensor_1d(out, br) : flat_to_tensor_2d(out, ar, br);
+    free(af); free(bf); free(out);
+    return result;
+}
+
+/* scatter_add of [dst, indices, values] → dst, accumulated IN PLACE (#973).
+ * The gradient of `gather`. Two forms, keyed on dst's shape:
+ *   dst [rows x cols] (shaped): dst[i][indices[i]] += values[i]  (per row)
+ *   dst 1-D (unshaped):        dst[indices[j]]    += values[j]  (flat)
+ * `indices` is a list or buffer of integers; `values` a buffer, a list of
+ * numbers, or one number broadcast to every index. Repeated indices
+ * accumulate. An out-of-range index RAISES (index_range) — a dropped
+ * gradient is a silent wrong number — and so does a length mismatch
+ * (value): indices/values counts must be equal, and the per-row form needs
+ * one index per row. Wrong types raise (type). */
+Value* builtin_tensor_scatter_add(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        rt_error(EK_TYPE, 0, "scatter_add requires [dst, indices, values]");
+        return make_null();
+    }
+    Value *dst = arg->data.list.items[0];
+    Value *indices = arg->data.list.items[1];
+    Value *values = arg->data.list.items[2];
+    if (dst->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "scatter_add: dst must be a buffer, got %s", val_type_name(dst->type));
+        return make_null();
+    }
+    if (indices->type != VAL_LIST && indices->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "scatter_add: indices must be a list or buffer, got %s", val_type_name(indices->type));
+        return make_null();
+    }
+    if (values->type != VAL_LIST && values->type != VAL_BUFFER && values->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "scatter_add: values must be a buffer, a list of numbers, or a number, got %s", val_type_name(values->type));
+        return make_null();
+    }
+    int ni = (indices->type == VAL_LIST) ? indices->data.list.count : indices->data.buffer.count;
+    int nv = (values->type == VAL_LIST) ? values->data.list.count
+           : (values->type == VAL_BUFFER) ? values->data.buffer.count : ni;
+    /* Lengths must line up exactly. Truncating to the shorter side would drop
+     * gradient entries with no diagnostic — the same silent-wrong-number that
+     * makes an out-of-range index raise below (#973). A scalar `values` is the
+     * one broadcast form, and it is explicit. */
+    if (nv != ni) {
+        rt_error(EK_VALUE, 0, "scatter_add: %d indices but %d values", ni, nv);
+        return make_null();
+    }
+    int n = ni;
+    int per_row = dst->data.buffer.rows > 0;
+    int rows = per_row ? dst->data.buffer.rows : 0;
+    int cols = per_row ? dst->data.buffer.cols : 0;
+    if (per_row && rows != n) {
+        rt_error(EK_VALUE, 0, "scatter_add: dst has %d rows but %d indices", rows, n);
+        return make_null();
+    }
+    double *d = dst->data.buffer.data;
+    /* Two passes: validate every index and value first, then accumulate —
+     * so a raise leaves dst untouched instead of half-updated. */
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < n; i++) {
+            double di, v;
+            if (indices->type == VAL_LIST) {
+                Value *iv = indices->data.list.items[i];
+                if (iv->type != VAL_NUM) {
+                    rt_error(EK_TYPE, 0, "scatter_add: index %d is %s (expected a number)", i, val_type_name(iv->type));
+                    return make_null();
+                }
+                di = iv->data.num;
+            } else {
+                di = indices->data.buffer.data[i];
+            }
+            if (values->type == VAL_LIST) {
+                Value *vv = values->data.list.items[i];
+                if (vv->type != VAL_NUM) {
+                    rt_error(EK_TYPE, 0, "scatter_add: value %d is %s (expected a number)", i, val_type_name(vv->type));
+                    return make_null();
+                }
+                v = vv->data.num;
+            } else if (values->type == VAL_BUFFER) {
+                v = values->data.buffer.data[i];
+            } else {
+                v = values->data.num;
+            }
+            int idx = (int)di;
+            if (per_row) {
+                if (idx < 0 || idx >= cols) {
+                    rt_error(EK_INDEX, 0, "scatter_add: column index %d out of range for row %d (cols %d)", idx, i, cols);
+                    return make_null();
+                }
+                if (pass) {
+                    int64_t at = (int64_t)i * cols + idx;
+                    d[at] = num_guard(d[at] + v);
+                }
+            } else {
+                if (idx < 0 || idx >= dst->data.buffer.count) {
+                    rt_error(EK_INDEX, 0, "scatter_add: index %d out of range (length %d)", idx, dst->data.buffer.count);
+                    return make_null();
+                }
+                if (pass) d[idx] = num_guard(d[idx] + v);
+            }
+        }
+    }
+    return dst;   /* borrowed, like copy_into — the VM's borrow scan compensates */
+}
+
 /* ==== BUILTIN: softmax ==== */
 Value* builtin_tensor_softmax(Value *arg) {
     /* #632: softmax of a single element normalizes to 1.0. */
     if (arg && arg->type == VAL_NUM) return make_num(1.0);
+    /* flat-buffer fast path (#973): row-wise on the shape, 1-D is one row;
+     * same ne_softmax_buf kernel as the list path, so byte-identical. */
+    if (arg && arg->type == VAL_BUFFER) {
+        Value *res = make_buffer_like(arg);
+        if (!res) return make_null();
+        int br, bc;
+        buf_dims(arg, &br, &bc);
+        memcpy(res->data.buffer.data, arg->data.buffer.data, (size_t)arg->data.buffer.count * sizeof(double));
+        ne_softmax_buf(res->data.buffer.data, br, bc);
+        return res;
+    }
     int rows, cols;
     double *flat = tensor_to_flat(arg, &rows, &cols);
     if (!flat) return make_null();
@@ -626,17 +917,38 @@ Value* builtin_tensor_softmax(Value *arg) {
 
 /* ==== BUILTIN: log_softmax ==== */
 Value* builtin_tensor_log_softmax(Value *arg) {
-    /* Accept: log_softmax of tensor  OR  log_softmax of [tensor, dim] */
+    /* Accept: log_softmax of tensor  OR  log_softmax of [tensor, dim].
+     * #973: the [tensor, dim] form is recognised only as exactly [list, num].
+     * The old test ("first element is a list") was satisfied by EVERY 2-D
+     * tensor, so `log_softmax of [[1, 2], [3, 4]]` silently answered for row
+     * 0 alone (a 1-D result of 2) — caught by the buffer/list differential
+     * in tests/test_tensor_buffer_ops.eigs. A 2-D tensor's second element is
+     * a row (a list), never a number, so the two forms no longer collide. */
     Value *tensor = arg;
-    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        Value *first = arg->data.list.items[0];
-        if (first->type == VAL_LIST) tensor = first; /* [tensor, dim] form */
-    }
+    if (arg && arg->type == VAL_LIST && arg->data.list.count == 2 &&
+        arg->data.list.items[0]->type == VAL_LIST &&
+        arg->data.list.items[1]->type == VAL_NUM)
+        tensor = arg->data.list.items[0];   /* [tensor, dim] form */
     /* #632: log(softmax(scalar)) = log(1) = 0. */
     /* fs:ANSWER softmax of a single element is 1 and log(1) is 0, so 0.0 is
      * the arithmetic result for a scalar argument — a NUMBER is a valid
      * argument here, which is what makes this not a type guard (#632). */
     if (tensor && tensor->type == VAL_NUM) return make_num(0.0);
+    /* flat-buffer fast path (#973): same kernel + the same #865 clamp. */
+    if (tensor && tensor->type == VAL_BUFFER) {
+        Value *res = make_buffer_like(tensor);
+        if (!res) return make_null();
+        int br, bc;
+        buf_dims(tensor, &br, &bc);
+        double *d = res->data.buffer.data;
+        memcpy(d, tensor->data.buffer.data, (size_t)tensor->data.buffer.count * sizeof(double));
+        ne_softmax_buf(d, br, bc);
+        for (int i = 0; i < tensor->data.buffer.count; i++) {
+            if (!(d[i] > 0.0)) g_math_flags |= EIGS_MATH_INVALID;
+            d[i] = log(d[i] > 0.0 ? d[i] : 1e-10);
+        }
+        return res;
+    }
     int rows, cols;
     double *flat = tensor_to_flat(tensor, &rows, &cols);
     if (!flat) return make_null();
@@ -678,6 +990,16 @@ Value* builtin_tensor_leaky_relu(Value *arg) {
         double x = arg->data.num;
         return make_num(x < 0.0 ? 0.01 * x : x);
     }
+    /* flat-buffer fast path (#973), the twin of relu's. */
+    if (arg && arg->type == VAL_BUFFER) {
+        Value *res = make_buffer_like(arg);
+        if (!res) return make_null();
+        for (int i = 0; i < arg->data.buffer.count; i++) {
+            double x = arg->data.buffer.data[i];
+            res->data.buffer.data[i] = (x < 0.0) ? 0.01 * x : x;
+        }
+        return res;
+    }
     int rows, cols;
     double *flat = tensor_to_flat(arg, &rows, &cols);
     if (!flat) return make_null();
@@ -690,6 +1012,19 @@ Value* builtin_tensor_leaky_relu(Value *arg) {
 
 /* ==== BUILTIN: mean ==== */
 Value* builtin_tensor_mean(Value *arg) {
+    /* flat-buffer path (#973): the twin of sum's. An empty buffer averages
+     * to 0.0 like an empty list (no 0/0). */
+    if (arg && arg->type == VAL_BUFFER) {
+        double *d = arg->data.buffer.data;
+        int n = arg->data.buffer.count;
+        /* fs:EMPTY the mean over zero elements, as for `mean of []` below;
+         * the division would be 0/0. A buffer is a valid argument, so this
+         * is not a type guard and strict must not raise. */
+        if (n == 0) return make_num(0.0);
+        double s = 0.0;
+        for (int i = 0; i < n; i++) s = num_guard(s + d[i]);
+        return make_num(s / n);
+    }
     /* Split from the empty case below. `tensor_total` answers 0 for an empty
      * list AND for any non-tensor — a string, a dict, a function — so one
      * `total == 0` line was carrying two opposite verdicts: `mean of []`
@@ -877,23 +1212,58 @@ static int flat_index_at(Value *v, int i) {
              ? (int)v->data.list.items[i]->data.num : -1;
     return (int)v->data.buffer.data[i];
 }
+/* #973: a non-numeric element of an index LIST has no index, and reporting it
+ * as "index -1 out of range" would name the wrong fault. Buffers hold doubles,
+ * so every element is a number by construction. */
+static int flat_index_is_num(Value *v, int i) {
+    return v->type != VAL_LIST || v->data.list.items[i]->type == VAL_NUM;
+}
 
 /* ==== BUILTIN: gather ==== */
-/* gather of [tensor, indices, dim] → select elements at indices along last dim */
+/* gather of [tensor, indices, dim] -> select one element per row by index.
+ *
+ * An out-of-range index RAISES `index_range`, in EVERY form: list or buffer,
+ * per-row vector of indices or a scalar index into a 1-D tensor.
+ *
+ * Reconciled at integration (#973 vs #1093). #1093 folded an out-of-range
+ * index on the new buffer path to 0.0 because the list path did; #973 raised
+ * on it, because "a 0 in a Q-value or a log-prob is indistinguishable from a
+ * real 0". Both cannot be true of one builtin, and the answer must not depend
+ * on the container — #1093's whole contract is that a buffer is accepted
+ * WHEREVER a flat numeric list is, so one logical input has one answer.
+ * Settled on the raise, and the list path moves with it:
+ *   - there is no element at an out-of-range index, so 0.0 is a stand-in for
+ *     a rejected input, which is the fail-soft class #971/#975 are removing;
+ *   - `gather`'s own dual `scatter_add` (#973) raises on exactly this index,
+ *     so folding here would make the forward pass quiet and the backward pass
+ *     loud for the same bad index;
+ *   - the `[]` operator and `matmul`'s #512 discipline already raise.
+ * A per-row raise is unconditional, not strict-gated, for the same reason
+ * matmul's shape refusal is: it reports an argument that has no answer, not
+ * a documented soft answer.
+ *
+ * What did NOT move, so the two containers still agree: a tensor that is not
+ * a matrix in the per-row form (a 1-D buffer, or a list row that is not a
+ * list) still answers 0.0 for that row, as it always has — that is the
+ * wrong-SHAPE reading, a separate class from the index, and converting it is
+ * its own change (recorded as a residual on the integration commit). A short
+ * index vector still truncates to the row count. */
 Value* builtin_tensor_gather(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *tensor = arg->data.list.items[0];
     Value *indices = arg->data.list.items[1];
-    /* #1093: a buffer tensor. A shaped (2-D) buffer with one index per row
-     * selects one element per row and yields a buffer; an unshaped (1-D)
-     * buffer with a scalar index yields that element. Out-of-range and
-     * wrong-shape readings mirror the list branches below: 0.0 per row for a
-     * bad index, and the trailing 0.0 for a scalar index off the end. */
+    /* #1093 + #973: a buffer tensor. A shaped (2-D) buffer with one index per
+     * row selects one element per row and yields a buffer; an unshaped (1-D)
+     * buffer with a scalar index yields that element. */
     if (tensor->type == VAL_BUFFER) {
         if (indices->type == VAL_NUM && tensor->data.buffer.rows == 0) {
             int idx = (int)indices->data.num;
-            if (idx >= 0 && idx < tensor->data.buffer.count)
-                return make_num(tensor->data.buffer.data[idx]);
+            if (idx < 0 || idx >= tensor->data.buffer.count) {
+                rt_error(EK_INDEX, 0, "gather: index %d out of range (length %d)",
+                         idx, tensor->data.buffer.count);
+                return make_null();
+            }
+            return make_num(tensor->data.buffer.data[idx]);
         } else if (flat_is_vector(indices)) {
             int shaped = tensor->data.buffer.rows > 0;
             int rows = shaped ? tensor->data.buffer.rows : tensor->data.buffer.count;
@@ -903,10 +1273,22 @@ Value* builtin_tensor_gather(Value *arg) {
             Value *out = make_shaped_buffer(0, n);
             if (!out) return make_null();
             for (int i = 0; i < n; i++) {
+                if (!shaped) { out->data.buffer.data[i] = 0.0; continue; }
+                if (!flat_index_is_num(indices, i)) {
+                    val_decref(out);
+                    rt_error(EK_TYPE, 0, "gather: index %d is %s (expected a number)",
+                             i, val_type_name(indices->data.list.items[i]->type));
+                    return make_null();
+                }
                 int idx = flat_index_at(indices, i);
-                out->data.buffer.data[i] =
-                    (shaped && idx >= 0 && idx < cols)
-                    ? tensor->data.buffer.data[(int64_t)i * cols + idx] : 0.0;
+                if (idx < 0 || idx >= cols) {
+                    val_decref(out);
+                    rt_error(EK_INDEX, 0,
+                             "gather: column index %d out of range for row %d (cols %d)",
+                             idx, i, cols);
+                    return make_null();
+                }
+                out->data.buffer.data[i] = tensor->data.buffer.data[(int64_t)i * cols + idx];
             }
             return out;
         }
@@ -918,33 +1300,47 @@ Value* builtin_tensor_gather(Value *arg) {
         Value *out = make_list(n);
         for (int i = 0; i < n; i++) {
             Value *row = tensor->data.list.items[i];
-            int idx = 0;
-            if (indices->data.list.items[i]->type == VAL_NUM)
-                idx = (int)indices->data.list.items[i]->data.num;
-            if (row->type == VAL_LIST && idx >= 0 && idx < row->data.list.count)
-                list_append_owned(out, make_num(row->data.list.items[idx]->type == VAL_NUM
-                    ? row->data.list.items[idx]->data.num : 0.0));
-            else
+            if (row->type != VAL_LIST) {   /* not a matrix row — shape, not index */
                 list_append_owned(out, make_num(0.0));
+                continue;
+            }
+            if (indices->data.list.items[i]->type != VAL_NUM) {
+                val_decref(out);
+                rt_error(EK_TYPE, 0, "gather: index %d is %s (expected a number)",
+                         i, val_type_name(indices->data.list.items[i]->type));
+                return make_null();
+            }
+            int idx = (int)indices->data.list.items[i]->data.num;
+            if (idx < 0 || idx >= row->data.list.count) {
+                val_decref(out);
+                rt_error(EK_INDEX, 0,
+                         "gather: column index %d out of range for row %d (cols %d)",
+                         idx, i, row->data.list.count);
+                return make_null();
+            }
+            list_append_owned(out, make_num(row->data.list.items[idx]->type == VAL_NUM
+                ? row->data.list.items[idx]->data.num : 0.0));
         }
         return out;
     }
     /* 1D tensor, scalar index */
     if (tensor->type == VAL_LIST && indices->type == VAL_NUM) {
         int idx = (int)indices->data.num;
-        if (idx >= 0 && idx < tensor->data.list.count)
-            return make_num(tensor->data.list.items[idx]->type == VAL_NUM
-                ? tensor->data.list.items[idx]->data.num : 0.0);
+        if (idx < 0 || idx >= tensor->data.list.count) {
+            rt_error(EK_INDEX, 0, "gather: index %d out of range (length %d)",
+                     idx, tensor->data.list.count);
+            return make_null();
+        }
+        return make_num(tensor->data.list.items[idx]->type == VAL_NUM
+            ? tensor->data.list.items[idx]->data.num : 0.0);
     }
-    /* fs:TODO #971 two readings share this one line and cannot be separated
-     * without splitting it. (a) GUARD: `tensor` is not a list, or `indices` is
-     * neither a list nor a number — the wrong-type case, which should raise.
-     * (b) ANSWER: the 1D branch just above fell through because `idx` was out
-     * of range, and out-of-range → 0.0 is this builtin's established behaviour
-     * (the 2D branch above appends make_num(0.0) for the same condition), so
-     * strict must NOT raise on it. Converting as written would turn (b) into a
-     * type error; deferred rather than guessed. */
-    return make_num(0.0);
+    /* The fs:TODO #971 left here is resolved by the raise above: the two
+     * readings that shared this line are separated. Out-of-range no longer
+     * falls through (it raises at its branch), so what is left is only the
+     * GUARD reading — `tensor` is not a list or buffer, or `indices` is
+     * neither a vector nor a number — and it converts to ARG_GUARD like every
+     * other wrong-type case: 0.0 by default, a raise under EIGS_STRICT. */
+    ARG_GUARD(1, "gather", "a tensor and an index or index vector", make_num(0.0));
 }
 
 /* ==== Helper: call a user-defined EigenScript function from C ====

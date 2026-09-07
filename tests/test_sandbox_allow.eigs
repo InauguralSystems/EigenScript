@@ -37,6 +37,19 @@ rbb_blk    is (sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN]
 r_len is sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["len", "hello"]], 1000]
 allow_ok is (r_len["ok"] == 1) and (r_len["result"] == 5)
 
+# (c2) #973: the autograd tape's pure-compute kernels are allowlisted —
+# matmul_at/matmul_bt/scatter_add compute on the arguments handed in (a
+# deep-copied constant here) and touch no host state.
+r_at is sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["matmul_at", [[[1.0, 2.0]], [[3.0, 4.0]]]]], 1000]
+at_ok is (r_at["ok"] == 1) and (r_at["result"] == [[3.0, 4.0], [6.0, 8.0]])
+r_bt is sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["matmul_bt", [[[1.0, 2.0]], [[3.0, 4.0]]]]], 1000]
+bt_ok is (r_bt["ok"] == 1) and (r_bt["result"] == [11.0])
+r_sc is sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["scatter_add", [[0.0, 0.0], [1], 5.0]]], 1000]
+# dst is a list here, not a buffer: the call is REACHABLE (a type error from the
+# builtin itself, not the sandbox's blocked-stub denial).
+sc_ok is (r_sc["ok"] == 0) and (r_sc["error"]["kind"] == "type_mismatch")
+allow_973 is at_ok and bt_ok and sc_ok
+
 # ---- Containment of the SANDBOX ENV ITSELF, not just the name policy ----
 # The allowlist is a filter over NAMES. These three cover the ways a sandboxed
 # chunk reached past it while every "blocked builtin" check above still passed.
@@ -88,7 +101,7 @@ r_fn is sandbox_run of [[ABI, [GET_NAME,0,0, RETURN], ["len"]], 1000]
 fn_msg is r_fn["error"]["message"]
 fn_named is (r_fn["ok"] == 0) and ((index_of of [fn_msg, "contains a callable"]) >= 0)
 
-if escape_blocked and screen_blk and exit_blk and seed_blk and close_blk and rbb_blk and allow_ok and no_writethrough and no_fn_escape and no_import and big_unscannable and fn_named:
+if escape_blocked and screen_blk and exit_blk and seed_blk and close_blk and rbb_blk and allow_ok and allow_973 and no_writethrough and no_fn_escape and no_import and big_unscannable and fn_named:
     print of "SANDBOX_ALLOW_OK"
 else:
     print of "SANDBOX_ALLOW_FAIL"
@@ -102,6 +115,8 @@ else:
     print of rbb_blk
     print of "allow_ok="
     print of allow_ok
+    print of "allow_973 (matmul_at/matmul_bt/scatter_add reachable)="
+    print of allow_973
     print of "no_writethrough/no_fn_escape/no_import="
     print of no_writethrough
     print of no_fn_escape

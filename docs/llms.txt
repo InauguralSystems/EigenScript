@@ -193,8 +193,10 @@ The runtime has ~255 builtins and `lib/` covers a lot. `ord`/`chr`/`str_lower`/
 (there is no bare `lower` — it's `str_lower`; `sort_by of [items, key_fn]` is
 the record-shaped sort and needs no import). `lib/` has `string.pad_left`,
 `format.fmt_*`, `checksum.crc32`, civil-date math in `datetime`, and
-`list.filter`/`list.reduce`. **`lib/` functions are NOT ambient** — reach them
-one of two ways:
+`list.filter`/`list.reduce`, and reverse-mode autograd on shaped buffers in
+`autograd` (`ag_tape`/`ag_leaf`/`ag_matmul`…/`ag_backward`/`ag_grad` — never
+hand-roll backprop or train with `numerical_grad`). **`lib/` functions are NOT
+ambient** — reach them one of two ways:
 
 ```eigenscript
 import list                              # namespaced: list.filter of [xs, fn]

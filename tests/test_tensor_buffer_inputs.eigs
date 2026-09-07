@@ -117,6 +117,29 @@ pair of ["gather 2-D buffer indices", (gather of [l2, [2, 0]]),
          (gather of [b2, (buf_from_list of [2, 0])]), 1]
 # 1-D tensor + scalar index -> the element
 assert_eq of [(gather of [ba, 2]), (gather of [la, 2]), "gather 1-D scalar index"]
+# Out-of-range: this fixture's original claim was that the buffer path FOLDS to
+# 0.0 "to mirror the list branches". It was never asserted, and #973 arrived
+# raising `index_range` on the same input. Settled at integration on the raise,
+# for BOTH containers — the container must not change the answer (this file's
+# whole thesis), and there is no element at that index, so a 0 there is a
+# stand-in for a rejected input. Asserted now, as a pair, in both directions.
+define gather_kind(fn) as:
+    local got is "no-raise"
+    try:
+        fn of null
+    catch e:
+        got is e["kind"]
+    return got
+assert_eq of [(gather_kind of ((n) => gather of [l2, [2, 9]])),
+              (gather_kind of ((n) => gather of [b2, [2, 9]])),
+              "gather out-of-range: list and buffer agree"]
+assert_eq of [(gather_kind of ((n) => gather of [b2, [2, 9]])), "index_range",
+              "gather out-of-range raises index_range (it does not fold to 0.0)"]
+assert_eq of [(gather_kind of ((n) => gather of [la, 99])),
+              (gather_kind of ((n) => gather of [ba, 99])),
+              "gather 1-D scalar out-of-range: list and buffer agree"]
+assert_eq of [(gather_kind of ((n) => gather of [ba, 99])), "index_range",
+              "gather 1-D scalar out-of-range raises index_range"]
 
 # ============ reshape (buffer-native) ============
 rs is reshape of [ba, 2, 2]

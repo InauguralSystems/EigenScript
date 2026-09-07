@@ -204,6 +204,12 @@ list
 flat-backed matrix. `matmul`, `softmax`, `sum`, `mean`, `norm`, `gather` and
 the rest accept either, and hand back a buffer when every operand was one.
 
+One place EigenScript is louder than NumPy: an out-of-range index in `gather`
+**raises** rather than answering a stand-in, on both containers — NumPy's
+`np.take` raises too, while a fancy-indexed read with an out-of-range entry is
+an `IndexError` there as well, so this matches. It is `gather`'s own history
+that changed: the list form used to answer `0.0` (#973/#1093).
+
 ## Dictionaries / objects
 
 JavaScript:

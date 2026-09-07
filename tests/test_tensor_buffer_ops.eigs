@@ -1,0 +1,241 @@
+# Flat-buffer tensor surface added for the autograd tape (#973):
+#   matmul_at / matmul_bt   — transposed-operand matmuls, BYTE-IDENTICAL to
+#                             `matmul` of the explicitly transposed list operand
+#   scatter_add             — gather's dual, vs the hand-written list loop
+#   gather on buffers       — vs the list path
+#   subtract/multiply/divide on buffers, scalar + bias broadcast — vs the list
+#                             path (same num_guard elementwise kernels)
+#   softmax/log_softmax/leaky_relu/mean on buffers — vs the list path
+#   numerical_grad on a buffer parameter — vs the list parameter
+# plus the loud failure modes (shape/type/index errors raise, never fold to 0).
+# Marker: "All tests passed." (lib/test.eigs).
+
+load_file of "lib/test.eigs"
+load_file of "lib/linalg.eigs"
+
+seed_random of 4242
+
+define rnd_list(r, c) as:
+    local m is []
+    for i in range of r:
+        local row is []
+        for j in range of c:
+            append of [row, (random of null) * 2.0 - 1.0]
+        append of [m, row]
+    return m
+
+define to_buf(m) as:
+    local r is len of m
+    local c is len of m[0]
+    local b is buffer of [r, c]
+    for i in range of r:
+        for j in range of c:
+            b[i * c + j] is m[i][j]
+    return b
+
+define vec_buf(v) as:
+    local b is buffer of (len of v)
+    for i in range of (len of v):
+        b[i] is v[i]
+    return b
+
+# same_2d of [tag, list2d, buf]: every element `==` (exact), plus shape.
+define same_2d(tag, m, b) as:
+    local r is len of m
+    local c is len of m[0]
+    assert_eq of [shape of b, [r, c], tag + ": shape"]
+    local mism is 0
+    for i in range of r:
+        for j in range of c:
+            if m[i][j] != b[i * c + j]:
+                mism is mism + 1
+    assert_eq of [mism, 0, tag + ": byte-identical to the list formulation"]
+    return null
+
+define same_1d(tag, v, b) as:
+    assert_eq of [len of b, len of v, tag + ": length"]
+    local mism is 0
+    for i in range of (len of v):
+        if v[i] != b[i]:
+            mism is mism + 1
+    assert_eq of [mism, 0, tag + ": byte-identical to the list formulation"]
+    return null
+
+define raises(tag, fn, kind) as:
+    local got is "no-raise"
+    try:
+        fn of null
+    catch e:
+        got is e["kind"]
+    assert_eq of [got, kind, tag + ": raises " + kind]
+    return null
+
+print of "=== matmul_at / matmul_bt vs matmul of the transposed operand ==="
+# Sizes cross the 32-wide kernel tile so the tiled accumulation order is
+# exercised in every dimension (m=35 rows shared, k=33, n=34).
+A is rnd_list of [35, 33]
+B is rnd_list of [35, 34]
+C is rnd_list of [34, 33]
+at_ref is matmul of [(mat_transpose of A), B]
+same_2d of ["matmul_at buffers (35x33)ᵀ·(35x34)", at_ref, matmul_at of [(to_buf of A), (to_buf of B)]]
+at_list is matmul_at of [A, B]
+assert_eq of [at_list, at_ref, "matmul_at on nested lists equals matmul of the transpose"]
+bt_ref is matmul of [A, (mat_transpose of C)]
+same_2d of ["matmul_bt buffers (35x33)·(34x33)ᵀ", bt_ref, matmul_bt of [(to_buf of A), (to_buf of C)]]
+bt_list is matmul_bt of [A, C]
+assert_eq of [bt_list, bt_ref, "matmul_bt on nested lists equals matmul of the transpose"]
+# A 1-D left operand is a row vector (as for matmul): result is 1-D.
+x is rnd_list of [1, 33]
+xb is vec_buf of x[0]
+bt_vec is matmul_bt of [xb, (to_buf of C)]
+assert_eq of [shape of bt_vec, [34], "matmul_bt of a 1-D left operand is 1-D"]
+same_1d of ["matmul_bt 1-D left operand", (matmul of [x[0], (mat_transpose of C)]), bt_vec]
+# matmul_at of two 1-D operands is the outer product (k x n), the dW of a
+# single-observation linear layer.
+y is rnd_list of [1, 5]
+at_outer is matmul_at of [xb, (vec_buf of y[0])]
+assert_eq of [shape of at_outer, [33, 5], "matmul_at of two 1-D operands is the (k x n) outer product"]
+same_2d of ["matmul_at outer product", (matmul of [(mat_transpose of x), y]), at_outer]
+# Loud failures, the #512 discipline shared with matmul.
+raises of ["matmul_at shape mismatch", (nul) => matmul_at of [(buffer of [3, 2]), (buffer of [4, 2])], "value"]
+raises of ["matmul_bt shape mismatch", (nul) => matmul_bt of [(buffer of [3, 2]), (buffer of [4, 3])], "value"]
+raises of ["matmul_at non-matrix", (nul) => matmul_at of ["a", (buffer of [4, 3])], "type_mismatch"]
+raises of ["matmul_bt non-matrix", (nul) => matmul_bt of [(buffer of [4, 3]), 7], "type_mismatch"]
+
+print of "=== scatter_add vs the list loop; gather on buffers ==="
+Q is rnd_list of [7, 4]
+idx is [3, 0, 2, 2, 1, 3, 0]
+vals is rnd_list of [1, 7]
+# per-row form: dst[i][idx[i]] += vals[i]
+ref is []
+for i in range of 7:
+    row is [0.0, 0.0, 0.0, 0.0]
+    row[idx[i]] is row[idx[i]] + vals[0][i]
+    append of [ref, row]
+dst is buffer of [7, 4]
+ret is scatter_add of [dst, idx, (vec_buf of vals[0])]
+same_2d of ["scatter_add per-row", ref, dst]
+assert_true of [ret == dst, "scatter_add returns dst (in place)"]
+# repeated indices accumulate; values may be a list or a broadcast number
+dst2 is buffer of [2, 3]
+scatter_add of [dst2, [1, 1], [2.0, 3.0]]
+scatter_add of [dst2, [1, 1], 0.5]
+assert_eq of [dst2[1], 2.5, "scatter_add accumulates (2.0 + 0.5) at row 0"]
+assert_eq of [dst2[4], 3.5, "scatter_add accumulates (3.0 + 0.5) at row 1"]
+# flat form on a 1-D dst: dst[idx[j]] += vals[j], repeats accumulate
+flat is buffer of 5
+scatter_add of [flat, [4, 0, 4, 2], [1.0, 2.0, 3.0, 4.0]]
+same_1d of ["scatter_add flat", [2.0, 0.0, 4.0, 0.0, 4.0], flat]
+# gather on a buffer equals gather on the list, and is scatter_add's dual
+g_list is gather of [Q, idx]
+g_buf is gather of [(to_buf of Q), idx]
+same_1d of ["gather buffer vs list", g_list, g_buf]
+g_bufidx is gather of [(to_buf of Q), (vec_buf of idx)]
+same_1d of ["gather with buffer indices", g_list, g_bufidx]
+# duality: scatter_add(zeros, idx, gather(Q, idx)) puts each pick back in place
+back is buffer of [7, 4]
+scatter_add of [back, idx, g_buf]
+dual_ok is 1
+for i in range of 7:
+    for j in range of 4:
+        want is 0.0
+        if j == idx[i]:
+            want is Q[i][j]
+        if back[i * 4 + j] != want:
+            dual_ok is 0
+assert_true of [dual_ok, "scatter_add(zeros, idx, gather(Q, idx)) restores exactly the picked entries"]
+# loud failures — and a raise leaves dst UNTOUCHED (validated before written)
+guard is buffer of [3, 4]
+raises of ["scatter_add column out of range", (nul) => scatter_add of [guard, [1, 4, 1], [1.0, 2.0, 3.0]], "index_range"]
+assert_eq of [sum of guard, 0.0, "scatter_add: a raise leaves dst untouched (no partial row 0 write)"]
+raises of ["scatter_add flat out of range", (nul) => scatter_add of [(buffer of 3), [3], 1.0], "index_range"]
+raises of ["scatter_add non-buffer dst", (nul) => scatter_add of [[0.0, 0.0], [0], 1.0], "type_mismatch"]
+# length mismatches are LOUD, not truncated — a dropped gradient entry is a
+# silent wrong number, the same reason an out-of-range index raises
+raises of ["scatter_add values shorter than indices", (nul) => scatter_add of [(buffer of 8), [0, 1, 2], [5.0]], "value"]
+raises of ["scatter_add per-row index count != rows", (nul) => scatter_add of [(buffer of [3, 4]), [0, 1, 2, 0], [1.0, 2.0, 3.0, 4.0]], "value"]
+raises of ["scatter_add string index", (nul) => scatter_add of [(buffer of 3), ["x"], 1.0], "type_mismatch"]
+# gather's out-of-range raise is the SETTLED semantics of the builtin, not of
+# its buffer path: #1093 folded to 0.0 here to mirror the list path, #973
+# raised; the answer must not depend on the container, so the list path moved
+# to the raise too (there is no element at that index, and `scatter_add` — the
+# same index, the backward direction — already raised). Pinned as a pair.
+raises of ["gather buffer column out of range", (nul) => gather of [(buffer of [2, 3]), [0, 3]], "index_range"]
+raises of ["gather LIST column out of range (same rule, other container)", (nul) => gather of [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [0, 3]], "index_range"]
+raises of ["gather buffer 1-D scalar index out of range", (nul) => gather of [(buffer of 3), 7], "index_range"]
+raises of ["gather LIST 1-D scalar index out of range", (nul) => gather of [[1.0, 2.0, 3.0], 7], "index_range"]
+raises of ["gather negative index", (nul) => gather of [[[1.0, 2.0]], [-1]], "index_range"]
+raises of ["gather non-numeric index", (nul) => gather of [[[1.0, 2.0]], ["x"]], "type_mismatch"]
+# in-range gather is untouched, in both containers
+assert_eq of [gather of [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [2, 0]], [3.0, 4.0], "gather list in range unchanged"]
+
+print of "=== elementwise buffer paths vs the list path ==="
+M is rnd_list of [6, 5]
+N is rnd_list of [6, 5]
+v is rnd_list of [1, 5]
+Mb is to_buf of M
+Nb is to_buf of N
+vb is vec_buf of v[0]
+same_2d of ["subtract buf-buf", (subtract of [M, N]), subtract of [Mb, Nb]]
+same_2d of ["multiply buf-buf", (multiply of [M, N]), multiply of [Mb, Nb]]
+same_2d of ["divide buf-buf", (divide of [M, N]), divide of [Mb, Nb]]
+same_2d of ["add bias broadcast [6x5]+[5]", (add of [M, v[0]]), add of [Mb, vb]]
+same_2d of ["subtract bias broadcast [6x5]-[5]", (subtract of [M, v[0]]), subtract of [Mb, vb]]
+same_2d of ["subtract bias broadcast [5]-[6x5]", (subtract of [v[0], M]), subtract of [vb, Mb]]
+same_2d of ["multiply bias broadcast", (multiply of [M, v[0]]), multiply of [Mb, vb]]
+same_2d of ["multiply buf-scalar", (multiply of [M, 2.5]), multiply of [Mb, 2.5]]
+same_2d of ["add scalar-buf", (add of [0.25, M]), add of [0.25, Mb]]
+same_2d of ["divide scalar-buf", (divide of [1.0, M]), divide of [1.0, Mb]]
+# divide by a zero element folds to 0 on both paths (the documented rule)
+z is buffer of 2
+z[0] is 3.0
+same_1d of ["divide by zero element folds to 0", (divide of [[1.0, 1.0], [3.0, 0.0]]), divide of [(vec_buf of [1.0, 1.0]), z]]
+# Settled at integration (#973 vs #1093): the four arithmetic builtins have
+# ONE buffer path, and it is the shared `tensor_elementwise` algebra — so the
+# answers below are the LIST answers, container for container, rather than the
+# buffer-only raises #973 proposed. Both modes are pinned: default is the
+# release answer, EIGS_STRICT=1 is where the wrong-type case goes loud.
+assert_eq of [shape of (add of [(buffer of [2, 3]), (buffer of 4)]), [4],
+              "non-broadcastable buffer pair truncates to the shorter (the list rule), it does not raise"]
+assert_eq of [shape of (add of [[1.0, 2.0, 3.0], [1.0, 2.0]]), [2],
+              "the list pair it mirrors truncates the same way"]
+assert_eq of [multiply of [(buffer of 3), "x"], 0.0,
+              "buffer op string answers 0 by default, exactly as list op string does"]
+assert_eq of [multiply of [[1.0, 2.0, 3.0], "x"], 0.0,
+              "list op string answers 0 by default (the answer the buffer path now shares)"]
+
+print of "=== softmax / log_softmax / leaky_relu / mean on buffers ==="
+S is rnd_list of [3, 40]
+Sb is to_buf of S
+same_2d of ["softmax buffer (40-wide rows)", (softmax of S), softmax of Sb]
+same_2d of ["log_softmax buffer", (log_softmax of S), log_softmax of Sb]
+same_2d of ["leaky_relu buffer", (leaky_relu of S), leaky_relu of Sb]
+assert_eq of [mean of Sb, mean of S, "mean of a buffer equals mean of the list"]
+assert_eq of [mean of (buffer of 0), 0.0, "mean of an empty buffer is 0 (no 0/0)"]
+# #973 found while writing this differential: `log_softmax` of a 2-D LIST used
+# to answer for row 0 only (a 1-D result), because its `[tensor, dim]` form was
+# detected by "first element is a list" — true of every 2-D tensor. Pinned:
+# the 2-D list keeps its rank and matches softmax row-for-row; the explicit
+# [tensor, dim] form still works.
+ls2 is log_softmax of [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+assert_eq of [shape of ls2, [3, 2], "log_softmax of a 2-D list is 2-D (was row 0 only)"]
+assert_eq of [ls2[2][1], (log_softmax of [5.0, 6.0])[1], "log_softmax of a 2-D list: row 2 is its own row's log-softmax"]
+assert_eq of [shape of (log_softmax of [[[1.0, 2.0], [3.0, 4.0]], 1]), [2, 2], "log_softmax [tensor, dim] form still accepted"]
+s1 is vec_buf of [1.0, 2.0, 3.0]
+same_1d of ["softmax of a 1-D buffer is one row", (softmax of [1.0, 2.0, 3.0]), softmax of s1]
+assert_eq of [shape of (softmax of s1), [3], "softmax of a 1-D buffer stays 1-D"]
+
+print of "=== numerical_grad on a buffer parameter ==="
+wl is [[1.0, -2.0], [0.5, 3.0]]
+wb is to_buf of wl
+define loss_list() as:
+    return sum of (multiply of [wl, wl])
+define loss_buf() as:
+    return sum of (multiply of [wb, wb])
+gl is numerical_grad of [loss_list, wl, 0.00001]
+gb is numerical_grad of [loss_buf, wb, 0.00001]
+assert_eq of [shape of gb, [2, 2], "numerical_grad of a shaped buffer keeps the shape"]
+same_2d of ["numerical_grad buffer vs list parameter", gl, gb]
+assert_eq of [wb[1], -2.0, "numerical_grad restores the perturbed buffer element"]
+
+test_summary of null

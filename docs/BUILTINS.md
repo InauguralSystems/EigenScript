@@ -483,6 +483,23 @@ heterogeneous or nested data.
 | `pow` | `pow of [base, exp]` | Element-wise exponentiation; overflow saturates |
 | `negative` | `negative of t` | Element-wise negation |
 
+All five arithmetic builtins take shaped **buffers** wherever they take a flat
+numeric list (#1093/#973), through **one** implementation — the same
+`tensor_elementwise` shape algebra, container for container, so every rule
+below reads the same for buffers and lists: two operands of equal count are
+combined elementwise (keeping the first's shape); a `[rows × cols]` operand
+with a `[cols]` one broadcasts the vector over every row and with a `[rows]`
+one applies it per row, in either operand order (the bias shape
+`add of [x @ W, b]`); a number broadcasts over every element; operands of
+unequal, non-broadcastable length **truncate to the shorter** as they always
+have (the one place the two containers still differ: buffers truncate flat, so
+`add of [buf[5×4], buf[3]]` is `[3]` where the same shapes as lists are
+`[3, 4]` — neither is a meaningful answer, both are pinned in
+`tests/test_autograd.eigs`); a non-numeric partner (a string, a dict) answers
+`0` and raises under `EIGS_STRICT=1`. Before #1093 only equal-count `add` had a buffer path and
+every other buffer case answered a silent `0`. Same `num_guard` kernels
+either way, so the numbers are byte-identical.
+
 ### Functions
 
 | Name | Signature | Description |
@@ -490,23 +507,26 @@ heterogeneous or nested data.
 | `sqrt` | `sqrt of t` | Element-wise square root; negative input returns 0 |
 | `exp` | `exp of t` | Element-wise e^x; overflow saturates |
 | `log` | `log of t` | Element-wise natural log. Positive input, however small, is exact (`log of 1e-15` = -34.538…); a non-positive or NaN element sets the `invalid` math flag and stands in for ln(1e-10) = -23.025… (#865, #1041) — never -inf |
-| `softmax` | `softmax of t` | Row-wise softmax normalization (a scalar is the one-element case → `1.0`) |
-| `log_softmax` | `log_softmax of t` | Row-wise log(softmax) (a scalar → `log(1)` = `0.0`) |
-| `relu` | `relu of t` | Element-wise max(0, x) (accepts a scalar) |
-| `leaky_relu` | `leaky_relu of t` | Element-wise max(0.01x, x) (accepts a scalar) |
+| `softmax` | `softmax of t` | Row-wise softmax normalization (a scalar is the one-element case → `1.0`). A shaped buffer computes row-wise on its shape and returns a buffer of the same shape (a 1-D buffer is one row) — #973 |
+| `log_softmax` | `log_softmax of t` | Row-wise log(softmax) (a scalar → `log(1)` = `0.0`); buffers as for `softmax`. The `[tensor, dim]` form is recognised only as exactly `[list, number]` — it used to fire on every 2-D list and answer for row 0 alone (#973) |
+| `relu` | `relu of t` | Element-wise max(0, x) (accepts a scalar; buffers keep their shape) |
+| `leaky_relu` | `leaky_relu of t` | Element-wise max(0.01x, x) (accepts a scalar; buffers keep their shape — #973) |
 
 ### Linear Algebra
 
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list |
-| `gather` | `gather of [matrix, indices, dim]` | Gather one element per row by index. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i` |
+| `matmul_at` | `matmul_at of [a, b]` | `aᵀ·b` without materialising the transpose: `a` is `(m × k)`, `b` is `(m × n)`, result `(k × n)` — the weight gradient `dW = Xᵀ·dY` of a linear layer. Buffers and nested lists; byte-identical to `matmul` of the explicitly transposed operand (same tiled kernel order). Two 1-D operands give their `(k × n)` outer product. Shape/type/size errors raise like `matmul` (#973) |
+| `matmul_bt` | `matmul_bt of [a, b]` | `a·bᵀ`: `a` is `(m × k)`, `b` is `(n × k)`, result `(m × n)` — the input gradient `dX = dY·Wᵀ`. A 1-D left operand is a row vector and yields a 1-D result, as for `matmul` (#973) |
+| `gather` | `gather of [matrix, indices, dim]` | Gather one element per row: `out[i] = matrix[i][indices[i]]`. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i`. An **out-of-range index raises `index_range`** — in every form, list or buffer (#973/#1093, settled at integration: there is no element there, and `scatter_add` raises on the same index). A row that is not a row (a 1-D tensor in the per-row form) still answers `0.0` for that row |
+| `scatter_add` | `scatter_add of [dst, indices, values]` | The gradient of `gather`, accumulated **in place** into the buffer `dst` (returned). A shaped `[rows × cols]` dst does `dst[i][indices[i]] += values[i]` per row; a 1-D dst does the flat `dst[indices[j]] += values[j]`. `values` is a buffer, a list of numbers, or one number broadcast to every index; repeats accumulate. Lengths must line up exactly — a non-scalar `values` shorter or longer than `indices`, or a per-row `dst` whose row count differs from the index count, raises `value` rather than truncating (a dropped gradient entry is a silent wrong number). Every index is validated **before** anything is written, so a raise (`index_range`, `value`, or `type_mismatch` for a non-buffer dst / non-numeric index or value) leaves `dst` untouched (#973) |
 
 ### Reductions
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `mean` | `mean of t` | Average of all elements (list, nested list or buffer) |
+| `mean` | `mean of t` | Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) |
 | `sum` | `sum of t` | Sum of all elements (list, nested list or buffer) |
 
 ### Construction
@@ -530,7 +550,7 @@ heterogeneous or nested data.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `numerical_grad` | `numerical_grad of [loss_fn, params, eps]` | Finite-difference gradient |
+| `numerical_grad` | `numerical_grad of [loss_fn, params, eps]` | Central finite-difference gradient. `params` is a 1-D/2-D list **or a shaped buffer** (#973: each element is perturbed in place and restored; the gradient comes back with the parameter's shape). O(params) forward passes — the gradient-check oracle for `lib/autograd.eigs`, not a training path |
 | `numerical_grad_rows` | `numerical_grad_rows of [loss_fn, params, eps, rows]` | Gradient for specific rows |
 | `numerical_grad_cols` | `numerical_grad_cols of [loss_fn, params, eps, cols]` | Gradient for specific columns |
 | `sgd_update` | `sgd_update of [params, grad, lr]` | In-place SGD: params -= lr * grad |

@@ -1,0 +1,468 @@
+# ============================================================
+# Autograd Library — reverse-mode automatic differentiation on a tape
+# ============================================================
+#
+# A Wengert list (tape) over the f64 tensor builtins on shaped buffers.
+# Every op records a node {value, parents, op, saved}; `ag_backward` seeds
+# the loss node with 1 and sweeps the tape in reverse, applying each op's
+# vector-Jacobian product (vjp) rule and accumulating into `node.grad`.
+# One forward + one backward per step — no finite differences.
+# `numerical_grad` remains the gradient-check ORACLE (tests/test_autograd.eigs
+# pins every rule here against it); it is not a training path.
+#
+# How to use:
+#   import autograd
+#   t is autograd.ag_tape of []
+#   w is autograd.ag_leaf of [t, w_buf]         # parameter: gradient tracked
+#   b is autograd.ag_leaf of [t, b_buf]
+#   x is autograd.ag_const of [t, x_buf]        # data: no gradient
+#   h is autograd.ag_relu of [t, (autograd.ag_add of [t, (autograd.ag_matmul of [t, x, w]), b])]
+#   loss is autograd.ag_mean of [t, h]          # scalar node (value is a num)
+#   autograd.ag_backward of [t, loss]
+#   gw is autograd.ag_grad of w                 # buffer shaped like w_buf
+#   autograd.ag_sgd_step of [w, 0.01]           # w_buf -= lr * gw, in place
+#
+# Node handles are dicts; the tape holds them in creation order. Leaf values
+# are the caller's own buffers (shared, not copied), so `ag_sgd_step` updates
+# the caller's parameters in place. Build a fresh tape per training step.
+#
+# BROADCASTING. The elementwise ops (ag_add / ag_sub / ag_mul) inherit the
+# builtins' broadcast rules: [rows x cols] against [cols] (either operand),
+# and a tensor against a scalar node. A broadcast operand contributed to
+# every row of the result, so its gradient is the SUM of the result's
+# gradient over the broadcast axis — `_ag_reduce_to` does that reduction for
+# every elementwise rule, so `ag_grad` always has its parameter's shape and
+# `ag_sgd_step` always steps the parameter it was handed. A shape combination
+# that is not one of the builtins' broadcast forms THROWS from the backward
+# pass rather than producing a differently-shaped gradient.
+#
+# Ops (each returns a node; shapes as for the underlying builtin):
+#   ag_matmul of [t, a, b]        a (m x k) . b (k x n)           vjp: dA = dY·Bᵀ, dB = Aᵀ·dY (matmul_bt / matmul_at)
+#   ag_add of [t, a, b]           same shape, or a broadcast operand          vjp: pass-through, reduced over the broadcast axis
+#   ag_sub of [t, a, b]           a - b (same broadcast rule as ag_add)
+#   ag_mul of [t, a, b]           elementwise, same broadcast rule  vjp: dA = reduce(dY*B), dB = reduce(dY*A)
+#   ag_scale of [t, a, k]         a * k for a NUMBER k (a tensor k throws — use ag_mul)
+#   ag_relu of [t, a]                                              vjp: mask by pre-activation sign
+#   ag_leaky_relu of [t, a]                                        vjp: 1 where a > 0, 0.01 elsewhere
+#   ag_softmax of [t, a]          row-wise                         vjp: p * (dY - rowsum(dY * p))
+#   ag_log_softmax of [t, a]      row-wise                         vjp: dY - p * rowsum(dY)
+#   ag_gather of [t, a, idx]      out[i] = a[i][idx[i]] (1-D)      vjp: scatter_add
+#   ag_norm of [t, a]             L2 norm -> scalar node           vjp: dY * a / |a|
+#   ag_sum of [t, a]              -> scalar node
+#   ag_mean of [t, a]             -> scalar node
+#   ag_softmax_ce of [t, logits, targets]  mean cross-entropy from logits -> scalar node   vjp: (p - onehot) / rows
+#
+# Read-out:
+#   ag_value of node, ag_grad of node (null until backward reached it),
+#   ag_backward of [t, node], ag_sgd_step of [node, lr],
+#   ag_sgd_step_clipped of [node, lr, clip]  (elementwise clip of the gradient to ±clip first)
+#
+# Both step functions THROW if the gradient's element count does not match the
+# parameter's: stepping a parameter with a differently-shaped gradient is a
+# silent wrong number, and this module exists to remove that class.
+
+# ---- internal: shape helpers ----
+
+# _ag_dims of buf -> [rows, cols] (a 1-D buffer is one row)
+define _ag_dims(b) as:
+    local s is shape of b
+    if (len of s) == 2:
+        return [s[0], s[1]]
+    return [1, s[0]]
+
+# _ag_alloc_like of buf -> zero buffer with the same shape
+define _ag_alloc_like(b) as:
+    local s is shape of b
+    if (len of s) == 2:
+        return buffer of [s[0], s[1]]
+    return buffer of s[0]
+
+# _ag_clone of buf -> copy with the same shape
+define _ag_clone(b) as:
+    local out is _ag_alloc_like of b
+    local n is len of b
+    if n > 0:
+        buf_copy of [b, 0, out, 0, n]
+    return out
+
+# _ag_fill_like of [buf, v] -> buffer shaped like buf, every element v
+define _ag_fill_like(b, v) as:
+    local out is _ag_alloc_like of b
+    local n is len of out
+    if n > 0:
+        buf_fill of [out, 0, n, v]
+    return out
+
+# _ag_col_sum of [buf2d] -> 1-D buffer of column sums (the bias reduction)
+define _ag_col_sum(b) as:
+    local d is _ag_dims of b
+    local rows is d[0]
+    local cols is d[1]
+    local out is buffer of cols
+    for i in range of rows:
+        local ib is i * cols
+        for j in range of cols:
+            out[j] is out[j] + b[ib + j]
+    return out
+
+# _ag_reduce_to of [who, pv, g] -> `g` reduced to operand `pv`'s shape.
+#
+# The four elementwise builtins broadcast (buffer op number, and
+# [rows x cols] op [cols] either way), so an operand can be SMALLER than the
+# result. Its gradient is then the sum of `g` over the broadcast axis — the
+# operand contributed to every row, so every row's gradient flows back to it.
+# Cases, mirroring buffer_elementwise's shape rules exactly:
+#   pv a number                    -> sum of g          (scalar broadcast)
+#   same element count             -> g, reshaped to pv if the ranks differ
+#                                     (elementwise is flat, so the values are
+#                                      already right — only the shape moves)
+#   pv one row, cols matching      -> column sums        (the bias reduction)
+#   anything else                  -> THROW. A gradient whose shape does not
+#                                     match its parameter is a wrong number
+#                                     that `ag_sgd_step` would train on.
+define _ag_reduce_to(who, pv, g) as:
+    if (type of pv) == "num":
+        if (type of g) == "num":
+            return g
+        return sum of g
+    if (type of g) == "num":
+        return _ag_fill_like of [pv, g]
+    local np is len of pv
+    local ng is len of g
+    local dp is _ag_dims of pv
+    local dg is _ag_dims of g
+    if np == ng:
+        if dp[0] == dg[0] and dp[1] == dg[1] and (len of (shape of pv)) == (len of (shape of g)):
+            return g
+        local same is _ag_alloc_like of pv
+        if np > 0:
+            buf_copy of [g, 0, same, 0, np]
+        return same
+    if dp[0] == 1 and dp[1] == dg[1]:
+        local red is _ag_col_sum of g
+        local out2 is _ag_alloc_like of pv
+        buf_copy of [red, 0, out2, 0, dp[1]]
+        return out2
+    throw of (who + ": cannot reduce a " + (str of dg[0]) + "x" + (str of dg[1]) + " gradient to the operand's " + (str of dp[0]) + "x" + (str of dp[1]) + " shape (unsupported broadcast)")
+
+# _ag_reducible of [pv, g] -> 1 when `_ag_reduce_to` can carry a gradient of
+# `g`'s shape back to an operand of `pv`'s shape, 0 when it would throw. The
+# same four cases, asked BEFORE the node is pushed.
+define _ag_reducible(pv, g) as:
+    if (type of pv) == "num":
+        return 1
+    if (type of g) == "num":
+        return 1
+    if (len of pv) == (len of g):
+        return 1
+    local dp is _ag_dims of pv
+    local dg is _ag_dims of g
+    if dp[0] == 1:
+        if dp[1] == dg[1]:
+            return 1
+    return 0
+
+# _ag_check_bin of [who, av, bv, v]: the forward guard for the elementwise
+# rules. The four arithmetic BUILTINS share the list path's shape algebra, so
+# operands that do not broadcast TRUNCATE to the shorter one rather than
+# raising (#1093/#973, settled at integration: the builtin's answer must not
+# depend on whether its operands are buffers or lists). That truncation is a
+# differently-shaped value, and the tape must not build a node on it: its
+# gradient could not be reduced back to either operand and `ag_sgd_step` would
+# train on a wrong number. So the refusal that used to come from the C layer
+# lives here, one level up, where it is a statement about the TAPE.
+define _ag_check_bin(who, av, bv, v) as:
+    local oka is _ag_reducible of [av, v]
+    local okb is _ag_reducible of [bv, v]
+    if oka == 0 or okb == 0:
+        local sa is str of (shape of av)
+        local sb is str of (shape of bv)
+        local sv is str of (shape of v)
+        throw of (who + ": operands " + sa + " and " + sb + " do not broadcast (the builtin answered " + sv + ", whose gradient fits neither operand)")
+    return null
+
+# ---- internal: node bookkeeping ----
+
+define _ag_push(t, value, op, parents, saved, track) as:
+    local node is {"id": (len of t.nodes), "value": value, "grad": null, "op": op, "parents": parents, "saved": saved, "track": track}
+    append of [t.nodes, node]
+    return node
+
+define _ag_tracked(a, b) as:
+    if a.track or b.track:
+        return 1
+    return 0
+
+# Accumulate `delta` into node `id`'s gradient. Copies on first arrival so a
+# gradient passed through unchanged (ag_add's vjp) is never shared between two
+# parents and then mutated by one of them.
+define _ag_accum(t, id, delta) as:
+    local node is t.nodes[id]
+    if not node.track:
+        return null
+    if (type of node.grad) == "none":
+        if (type of delta) == "num":
+            node.grad is delta
+        else:
+            node.grad is _ag_clone of delta
+    else:
+        node.grad is add of [node.grad, delta]
+    return null
+
+# ---- public: tape + leaves ----
+
+# ag_tape of [] -> a new empty tape
+define ag_tape() as:
+    return {"nodes": []}
+
+# ag_leaf of [t, buf] -> node whose gradient is tracked (a parameter)
+define ag_leaf(t, value) as:
+    return _ag_push of [t, value, "leaf", [], null, 1]
+
+# ag_const of [t, buf] -> node with no gradient (data, targets, constants)
+define ag_const(t, value) as:
+    return _ag_push of [t, value, "const", [], null, 0]
+
+define ag_value(node) as:
+    return node.value
+
+define ag_grad(node) as:
+    return node.grad
+
+# ---- public: ops ----
+
+define ag_matmul(t, a, b) as:
+    local v is matmul of [a.value, b.value]
+    return _ag_push of [t, v, "matmul", [a.id, b.id], null, _ag_tracked of [a, b]]
+
+define ag_add(t, a, b) as:
+    local v is add of [a.value, b.value]
+    _ag_check_bin of ["ag_add", a.value, b.value, v]
+    return _ag_push of [t, v, "add", [a.id, b.id], null, _ag_tracked of [a, b]]
+
+define ag_sub(t, a, b) as:
+    local v is subtract of [a.value, b.value]
+    _ag_check_bin of ["ag_sub", a.value, b.value, v]
+    return _ag_push of [t, v, "sub", [a.id, b.id], null, _ag_tracked of [a, b]]
+
+define ag_mul(t, a, b) as:
+    local v is multiply of [a.value, b.value]
+    _ag_check_bin of ["ag_mul", a.value, b.value, v]
+    return _ag_push of [t, v, "mul", [a.id, b.id], null, _ag_tracked of [a, b]]
+
+# ag_scale of [t, a, k]: k is a NUMBER. A buffer k would broadcast in the
+# forward pass and could make the result a different shape from `a`, and the
+# vjp (dy * k) would then be the result's shape, not the parameter's — the
+# same wrong-shape class the elementwise rules reduce away. Use ag_mul with a
+# node for an elementwise or broadcast factor.
+define ag_scale(t, a, k) as:
+    if (type of k) != "num":
+        throw of ("ag_scale: k must be a number, got " + (type of k) + " — use ag_mul with a node for a tensor factor")
+    local v is multiply of [a.value, k]
+    return _ag_push of [t, v, "scale", [a.id], k, a.track]
+
+define ag_relu(t, a) as:
+    local v is relu of a.value
+    return _ag_push of [t, v, "relu", [a.id], null, a.track]
+
+define ag_leaky_relu(t, a) as:
+    local v is leaky_relu of a.value
+    return _ag_push of [t, v, "leaky_relu", [a.id], null, a.track]
+
+define ag_softmax(t, a) as:
+    local v is softmax of a.value
+    return _ag_push of [t, v, "softmax", [a.id], null, a.track]
+
+define ag_log_softmax(t, a) as:
+    local v is log_softmax of a.value
+    local p is softmax of a.value
+    return _ag_push of [t, v, "log_softmax", [a.id], p, a.track]
+
+# ag_gather of [t, a, idx]: a is [rows x cols], idx a list/buffer of one
+# column per row -> 1-D node of `rows` picks.
+define ag_gather(t, a, idx) as:
+    local v is gather of [a.value, idx]
+    return _ag_push of [t, v, "gather", [a.id], idx, a.track]
+
+define ag_norm(t, a) as:
+    local v is norm of a.value
+    return _ag_push of [t, v, "norm", [a.id], null, a.track]
+
+define ag_sum(t, a) as:
+    local v is sum of a.value
+    return _ag_push of [t, v, "sum", [a.id], null, a.track]
+
+define ag_mean(t, a) as:
+    local v is mean of a.value
+    return _ag_push of [t, v, "mean", [a.id], null, a.track]
+
+# ag_softmax_ce of [t, logits, targets]: logits [rows x cols], targets a
+# list/buffer of class indices (one per row). Value is the MEAN over rows of
+# -log softmax(logits)[i][targets[i]] (the same 1e-10 floor as log_softmax).
+define ag_softmax_ce(t, logits, targets) as:
+    local p is softmax of logits.value
+    local d is _ag_dims of logits.value
+    local rows is d[0]
+    local cols is d[1]
+    local total is 0.0
+    for i in range of rows:
+        local pt is p[i * cols + (floor of targets[i])]
+        if pt < 0.0000000001:
+            pt is 0.0000000001
+        total is total - (log of pt)
+    return _ag_push of [t, total / rows, "softmax_ce", [logits.id], [p, targets], logits.track]
+
+# ---- public: backward ----
+
+# One node's vjp: `dy` is its incoming gradient (a buffer, or a num for a
+# scalar node); each parent receives its contribution via _ag_accum.
+define _ag_vjp(t, node, dy) as:
+    local op is node.op
+    local ps is node.parents
+    if op == "matmul":
+        local av is t.nodes[ps[0]].value
+        local bv is t.nodes[ps[1]].value
+        _ag_accum of [t, ps[0], matmul_bt of [dy, bv]]
+        _ag_accum of [t, ps[1], matmul_at of [av, dy]]
+    elif op == "add" or op == "sub":
+        local pa is t.nodes[ps[0]].value
+        local pb is t.nodes[ps[1]].value
+        _ag_accum of [t, ps[0], _ag_reduce_to of ["ag_" + op, pa, dy]]
+        local db is _ag_reduce_to of ["ag_" + op, pb, dy]
+        if op == "sub":
+            db is multiply of [db, -1.0]
+        _ag_accum of [t, ps[1], db]
+    elif op == "mul":
+        local av is t.nodes[ps[0]].value
+        local bv is t.nodes[ps[1]].value
+        _ag_accum of [t, ps[0], _ag_reduce_to of ["ag_mul", av, (multiply of [dy, bv])]]
+        _ag_accum of [t, ps[1], _ag_reduce_to of ["ag_mul", bv, (multiply of [dy, av])]]
+    elif op == "scale":
+        _ag_accum of [t, ps[0], multiply of [dy, node.saved]]
+    elif op == "relu":
+        local x is t.nodes[ps[0]].value
+        local dx is _ag_alloc_like of x
+        for i in range of (len of x):
+            if x[i] > 0.0:
+                dx[i] is dy[i]
+        _ag_accum of [t, ps[0], dx]
+    elif op == "leaky_relu":
+        local x is t.nodes[ps[0]].value
+        local dx is _ag_alloc_like of x
+        for i in range of (len of x):
+            if x[i] > 0.0:
+                dx[i] is dy[i]
+            else:
+                dx[i] is dy[i] * 0.01
+        _ag_accum of [t, ps[0], dx]
+    elif op == "softmax":
+        local p is node.value
+        local d is _ag_dims of p
+        local rows is d[0]
+        local cols is d[1]
+        local dx is _ag_alloc_like of p
+        for i in range of rows:
+            local ib is i * cols
+            local s is 0.0
+            for j in range of cols:
+                s is s + dy[ib + j] * p[ib + j]
+            for j in range of cols:
+                dx[ib + j] is p[ib + j] * (dy[ib + j] - s)
+        _ag_accum of [t, ps[0], dx]
+    elif op == "log_softmax":
+        local p is node.saved
+        local d is _ag_dims of p
+        local rows is d[0]
+        local cols is d[1]
+        local dx is _ag_alloc_like of p
+        for i in range of rows:
+            local ib is i * cols
+            local s is 0.0
+            for j in range of cols:
+                s is s + dy[ib + j]
+            for j in range of cols:
+                dx[ib + j] is dy[ib + j] - p[ib + j] * s
+        _ag_accum of [t, ps[0], dx]
+    elif op == "gather":
+        local x is t.nodes[ps[0]].value
+        local dx is _ag_alloc_like of x
+        scatter_add of [dx, node.saved, dy]
+        _ag_accum of [t, ps[0], dx]
+    elif op == "norm":
+        local x is t.nodes[ps[0]].value
+        local y is node.value
+        if y > 0.0:
+            _ag_accum of [t, ps[0], multiply of [x, dy / y]]
+        else:
+            _ag_accum of [t, ps[0], _ag_alloc_like of x]
+    elif op == "sum":
+        local x is t.nodes[ps[0]].value
+        _ag_accum of [t, ps[0], _ag_fill_like of [x, dy]]
+    elif op == "mean":
+        local x is t.nodes[ps[0]].value
+        local n is len of x
+        if n > 0:
+            _ag_accum of [t, ps[0], _ag_fill_like of [x, dy / n]]
+    elif op == "softmax_ce":
+        local p is node.saved[0]
+        local targets is node.saved[1]
+        local d is _ag_dims of p
+        local rows is d[0]
+        local cols is d[1]
+        local dx is multiply of [p, dy / rows]
+        for i in range of rows:
+            local at is i * cols + (floor of targets[i])
+            dx[at] is dx[at] - dy / rows
+        _ag_accum of [t, ps[0], dx]
+    return null
+
+# ag_backward of [t, node]: seed `node` with 1 (a num for a scalar node, a
+# ones-buffer otherwise) and sweep the tape in reverse creation order.
+# Gradients land in each tracked node's `.grad`; read with ag_grad.
+define ag_backward(t, node) as:
+    if (type of node.value) == "num":
+        node.grad is 1.0
+    else:
+        node.grad is _ag_fill_like of [node.value, 1.0]
+    local i is node.id
+    loop while i >= 0:
+        local n is t.nodes[i]
+        if n.track and (type of n.grad) != "none" and (len of n.parents) > 0:
+            _ag_vjp of [t, n, n.grad]
+        i is i - 1
+    return null
+
+# ag_sgd_step of [node, lr]: node.value -= lr * node.grad, in place on the
+# caller's buffer. A leaf backward never reached (grad null) is left alone.
+define ag_sgd_step(node, lr) as:
+    if (type of node.grad) == "none":
+        return null
+    local v is node.value
+    local g is node.grad
+    if (type of v) != "buffer":
+        throw of ("ag_sgd_step: leaf value is a " + (type of v) + ", not a buffer — a scalar leaf cannot be updated in place")
+    if (len of g) != (len of v):
+        throw of ("ag_sgd_step: gradient has " + (str of (len of g)) + " elements but the parameter has " + (str of (len of v)) + " — the vjp did not reduce it to the parameter's shape")
+    for i in range of (len of v):
+        v[i] is v[i] - lr * g[i]
+    return null
+
+# ag_sgd_step_clipped of [node, lr, clip]: as ag_sgd_step, with each
+# gradient element clipped to [-clip, clip] first (the DQN's update rule).
+define ag_sgd_step_clipped(node, lr, clip) as:
+    if (type of node.grad) == "none":
+        return null
+    local v is node.value
+    local g is node.grad
+    if (type of v) != "buffer":
+        throw of ("ag_sgd_step_clipped: leaf value is a " + (type of v) + ", not a buffer — a scalar leaf cannot be updated in place")
+    if (len of g) != (len of v):
+        throw of ("ag_sgd_step_clipped: gradient has " + (str of (len of g)) + " elements but the parameter has " + (str of (len of v)) + " — the vjp did not reduce it to the parameter's shape")
+    for i in range of (len of v):
+        local gi is g[i]
+        if gi > clip:
+            gi is clip
+        elif gi < 0.0 - clip:
+            gi is 0.0 - clip
+        v[i] is v[i] - lr * gi
+    return null

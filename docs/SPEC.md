@@ -1978,9 +1978,46 @@ when unshaped. Indexing stays flat (`buf[r*cols + c]`).
 
 The tensor builtins operate directly on the flat data — no per-call conversion.
 `matmul of [a, b]` multiplies two shaped buffers (a 1-D buffer is a row vector,
-so `matmul of [vec, mat]` returns a 1-D result); `add` and `relu` are
-elementwise. The result is identical to the nested-list tensor form, so storing
-weights as shaped buffers is purely a performance choice.
+so `matmul of [vec, mat]` returns a 1-D result); `matmul_at` / `matmul_bt`
+multiply with the first / second operand transposed (`aᵀ·b`, `a·bᵀ`) without
+materialising the transpose; `add`, `subtract`, `multiply`, `divide` are
+elementwise, with a `[cols]` buffer broadcast over the rows of a
+`[rows × cols]` buffer and a number broadcast over every element; `relu`,
+`leaky_relu`, `softmax`, `log_softmax`, `sum`, `mean`, `norm`, `gather`
+compute on the shape, and `scatter_add` is `gather`'s in-place dual. The
+result is identical to the nested-list tensor form, so storing weights as
+shaped buffers is purely a performance choice — and it is the substrate the
+reverse-mode autograd tape in `lib/autograd.eigs` runs on.
+
+### `gather` and an out-of-range index
+
+`gather of [matrix, indices]` selects `matrix[i][indices[i]]` for each row.
+An index outside the row **raises** `index_range` — in every form, on a list
+tensor and on a shaped buffer alike. There is no element at that index, so an
+answer of `0.0` would be a stand-in the caller cannot tell from a real `0`
+(a Q-value, a log-probability); `scatter_add`, which is `gather`'s gradient and
+takes the same index, raises on it too.
+
+```eigenscript
+q is [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+print of (gather of [q, [2, 0]])
+try:
+    print of (gather of [q, [2, 3]])
+catch e:
+    print of e["kind"]
+    print of e["message"]
+```
+```output
+[3, 4]
+index_range
+gather: column index 3 out of range for row 1 (cols 3)
+```
+
+Changed in this release (#973/#1093): the list form used to answer `0.0` for
+an out-of-range index and the buffer form was added folding the same way. A
+tensor that is not a matrix in the per-row form still answers `0.0` for that
+row — that is the shape reading, not the index one — and a wrong-typed
+argument still answers `0.0` unless `EIGS_STRICT=1` is set.
 
 Every tensor builtin that accepts a flat numeric list accepts a buffer in the
 same position, and returns a buffer when **every** tensor operand was a buffer:

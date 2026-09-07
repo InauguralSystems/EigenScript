@@ -3413,6 +3413,7 @@ static const char *SANDBOX_ALLOW[] = {
     "exp", "floor", "log", "max", "mean", "min", "multiply", "negative",
     "norm", "num", "pi", "pow", "round", "sign_extend", "sin", "sqrt",
     "subtract", "sum", "tan", "gather", "matmul", "reshape", "shape", "zeros",
+    "matmul_at", "matmul_bt", "scatter_add",
     "zeros_like", "fill", "leaky_relu", "relu", "softmax", "log_softmax",
     "sgd_update", "sgd_update_cols", "sgd_update_rows", "numerical_grad",
     "numerical_grad_cols", "numerical_grad_rows",
@@ -6956,6 +6957,9 @@ void register_builtins(Env *env) {
     /* ---- Tensor / math stdlib (always available) ---- */
     env_set_local_owned(env, "dot", make_builtin(builtin_dot));
     env_set_local_owned(env, "matmul", make_builtin(builtin_tensor_matmul));
+    env_set_local_owned(env, "matmul_at", make_builtin(builtin_tensor_matmul_at));
+    env_set_local_owned(env, "matmul_bt", make_builtin(builtin_tensor_matmul_bt));
+    env_set_local_owned(env, "scatter_add", make_builtin(builtin_tensor_scatter_add));
     env_set_local_owned(env, "add", make_builtin(builtin_tensor_add));
     env_set_local_owned(env, "subtract", make_builtin(builtin_tensor_subtract));
     env_set_local_owned(env, "multiply", make_builtin(builtin_tensor_multiply));

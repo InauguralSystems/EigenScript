@@ -21,10 +21,24 @@ neg is negative of [1, 2, 3]
 assert_eq of [neg[0], -1, "negative[0]"]
 assert_eq of [neg[2], -3, "negative[2]"]
 
-# gather — gather rows by index
+# gather — ONE ELEMENT PER ROW, indexed by column (not "gather rows by index",
+# which is what the comment here used to say). The call was
+# `gather of [matrix, [0, 2], 0]` against 2-column rows, so column 2 did not
+# exist and row 1 answered a stand-in 0; only `len` was asserted, so the wrong
+# number was invisible. Found when an out-of-range index started raising
+# (#973/#1093). Now the values are asserted, and the raise has its own check.
 matrix is [[10, 20], [30, 40], [50, 60]]
-gathered is gather of [matrix, [0, 2], 0]
-assert_eq of [len of gathered, 2, "gather row count"]
+gathered is gather of [matrix, [0, 1, 0]]
+assert_eq of [len of gathered, 3, "gather row count"]
+assert_eq of [gathered[0], 10, "gather row 0 column 0"]
+assert_eq of [gathered[1], 40, "gather row 1 column 1"]
+assert_eq of [gathered[2], 50, "gather row 2 column 0"]
+gather_raised is 0
+try:
+    gather of [matrix, [0, 2]]
+catch gather_e:
+    gather_raised is 1
+assert_eq of [gather_raised, 1, "gather: an out-of-range column raises, it does not fold to 0"]
 
 # num_copy — independent copy of numeric value
 x is 42

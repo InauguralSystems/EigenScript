@@ -1,0 +1,680 @@
+# lib/autograd.eigs — reverse-mode autograd on a tape (#973).
+#
+# Three parts:
+#   1. Every vjp rule against the finite-difference ORACLE `numerical_grad`
+#      on small seeded-random shaped buffers (a batch axis everywhere a rule
+#      reduces over one).
+#   2. End-to-end: a 2-layer MLP (matmul → bias → relu → matmul → bias →
+#      softmax-CE) trained by the tape on a toy 3-class problem; and the
+#      Tidepool DQN shape (433 → 64 → 32 → 6, batch 32) through one backward.
+#   3. Bookkeeping: constants get no gradient, a node used twice accumulates,
+#      a leaf the loss never reached stays null.
+#
+# TOLERANCE: |tape − numerical| <= 1e-4·|numerical| + 1e-6, per element.
+# Why: central differences with eps = 1e-5 in f64 carry a truncation error of
+# O(eps²·f''') ≈ 1e-10 and a roundoff error of ≈ ulp(|f|)/eps ≈ 1e-11 for
+# the O(1..10) losses here — both orders of magnitude under the 1e-6 absolute
+# floor, which exists so that entries whose true gradient is exactly 0 (a
+# masked relu unit) are judged absolutely rather than relatively. Any wrong
+# rule is a gross miss: a sign error is 200% off, a dropped factor >= 100%
+# (the planted-fault run flips one sign and this file goes red).
+#
+# Marker: "All tests passed." (lib/test.eigs); `Tests: N` drives the tally.
+
+load_file of "lib/test.eigs"
+import autograd
+
+EPS is 0.00001
+REL is 0.0001
+ABS is 0.000001
+
+seed_random of 973
+
+# ---- helpers ----
+
+define rnd_buf(rows, cols, lo, hi) as:
+    local b is buffer of [rows, cols]
+    for i in range of (rows * cols):
+        b[i] is lo + (random of null) * (hi - lo)
+    return b
+
+define rnd_vec(n, lo, hi) as:
+    local b is buffer of n
+    for i in range of n:
+        b[i] is lo + (random of null) * (hi - lo)
+    return b
+
+# check_grad of [tag, param, loss_fn, tape_grad]: every element of the tape
+# gradient within tolerance of the central-difference oracle. Prints the
+# worst relative miss so the margin is visible in the log.
+define check_grad(tag, param, loss_fn, tape_grad) as:
+    local ng is numerical_grad of [loss_fn, param, EPS]
+    assert_true of [(type of tape_grad) == "buffer", tag + ": tape gradient is a buffer"]
+    if (type of tape_grad) != "buffer":
+        return null
+    assert_eq of [len of tape_grad, len of param, tag + ": gradient has the parameter's element count"]
+    local ps is shape of param
+    local gs is shape of tape_grad
+    assert_eq of [len of gs, len of ps, tag + ": gradient has the parameter's rank"]
+    local worst is 0.0
+    local bad is 0
+    for i in range of (len of param):
+        local d is tape_grad[i] - ng[i]
+        if d < 0.0:
+            d is 0.0 - d
+        local mag is ng[i]
+        if mag < 0.0:
+            mag is 0.0 - mag
+        local tol is REL * mag + ABS
+        if d > tol:
+            bad is bad + 1
+            print of f"  {tag}[{i}]: tape={tape_grad[i]} numerical={ng[i]} |diff|={d} > tol {tol}"
+        local rel is d / (mag + ABS)
+        if rel > worst:
+            worst is rel
+    assert_eq of [bad, 0, tag + ": every element within 1e-4 relative + 1e-6 absolute of numerical_grad"]
+    print of f"  {tag}: {len of param} elements, worst |diff|/(|g|+1e-6) = {worst}"
+    return null
+
+# ============================================================
+# 1. vjp rules vs numerical_grad
+# ============================================================
+print of "=== vjp rules vs numerical_grad ==="
+
+# --- matmul (both operands) + mul with the SAME node twice (accumulation) ---
+mmA is rnd_buf of [4, 3, -1.0, 1.0]
+mmB is rnd_buf of [3, 2, -1.0, 1.0]
+define loss_matmul() as:
+    local t is autograd.ag_tape of []
+    local y is autograd.ag_matmul of [t, (autograd.ag_leaf of [t, mmA]), (autograd.ag_leaf of [t, mmB])]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, y, y])])
+t1 is autograd.ag_tape of []
+n_a is autograd.ag_leaf of [t1, mmA]
+n_b is autograd.ag_leaf of [t1, mmB]
+n_y is autograd.ag_matmul of [t1, n_a, n_b]
+n_l is autograd.ag_sum of [t1, (autograd.ag_mul of [t1, n_y, n_y])]
+autograd.ag_backward of [t1, n_l]
+assert_near of [autograd.ag_value of n_l, loss_matmul of [], 0.000000000001, "matmul: forward value is the plain-builtin forward"]
+check_grad of ["matmul dA", mmA, loss_matmul, autograd.ag_grad of n_a]
+check_grad of ["matmul dB", mmB, loss_matmul, autograd.ag_grad of n_b]
+
+# --- matmul with a 1-D (row-vector) left operand: the DQN's single-obs forward ---
+mvX is rnd_vec of [3, -1.0, 1.0]
+define loss_matmul_vec() as:
+    local t is autograd.ag_tape of []
+    local y is autograd.ag_matmul of [t, (autograd.ag_leaf of [t, mvX]), (autograd.ag_leaf of [t, mmB])]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, y, y])])
+t1v is autograd.ag_tape of []
+nv_x is autograd.ag_leaf of [t1v, mvX]
+nv_b is autograd.ag_leaf of [t1v, mmB]
+nv_y is autograd.ag_matmul of [t1v, nv_x, nv_b]
+autograd.ag_backward of [t1v, (autograd.ag_sum of [t1v, (autograd.ag_mul of [t1v, nv_y, nv_y])])]
+check_grad of ["matmul(1-D x) dx", mvX, loss_matmul_vec, autograd.ag_grad of nv_x]
+check_grad of ["matmul(1-D x) dW", mmB, loss_matmul_vec, autograd.ag_grad of nv_b]
+
+# --- add with a bias broadcast over the batch axis, then relu ---
+# X [5 x 3] batch, W [3 x 4], b [4]: loss = sum(relu(X.W + b)^2)
+bX is rnd_buf of [5, 3, -1.0, 1.0]
+bW is rnd_buf of [3, 4, -1.0, 1.0]
+bb is rnd_vec of [4, -0.5, 0.5]
+define loss_bias_relu() as:
+    local t is autograd.ag_tape of []
+    local z is autograd.ag_add of [t, (autograd.ag_matmul of [t, (autograd.ag_const of [t, bX]), (autograd.ag_leaf of [t, bW])]), (autograd.ag_leaf of [t, bb])]
+    local h is autograd.ag_relu of [t, z]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, h, h])])
+t2 is autograd.ag_tape of []
+n2_x is autograd.ag_const of [t2, bX]
+n2_w is autograd.ag_leaf of [t2, bW]
+n2_b is autograd.ag_leaf of [t2, bb]
+n2_z is autograd.ag_add of [t2, (autograd.ag_matmul of [t2, n2_x, n2_w]), n2_b]
+n2_h is autograd.ag_relu of [t2, n2_z]
+autograd.ag_backward of [t2, (autograd.ag_sum of [t2, (autograd.ag_mul of [t2, n2_h, n2_h])])]
+# The relu kink: finite differences straddle it when |z| < eps. Assert the
+# seeded inputs keep every pre-activation clear of it, so a miss below would
+# be the rule, not the oracle.
+kink_clear is 1
+n2_zv is autograd.ag_value of n2_z
+for i in range of (len of n2_zv):
+    zi is n2_zv[i]
+    if zi < 0.0:
+        zi is 0.0 - zi
+    if zi < 0.001:
+        kink_clear is 0
+assert_true of [kink_clear, "relu: no pre-activation within 1e-3 of the kink (seeded)"]
+assert_true of [(len of (shape of (autograd.ag_grad of n2_b))) == 1 and (len of (autograd.ag_grad of n2_b)) == 4, "bias gradient is 1-D [4] (reduced over the batch axis of 5)"]
+check_grad of ["bias(add) db", bb, loss_bias_relu, autograd.ag_grad of n2_b]
+check_grad of ["relu∘add dW", bW, loss_bias_relu, autograd.ag_grad of n2_w]
+assert_true of [(type of (autograd.ag_grad of n2_x)) == "none", "const input gets no gradient"]
+
+# --- same-shape add, and sub (mean-squared error), both operands ---
+sA is rnd_buf of [3, 4, -1.0, 1.0]
+sB is rnd_buf of [3, 4, -1.0, 1.0]
+sC is rnd_buf of [3, 4, -1.0, 1.0]
+define loss_add_sub() as:
+    local t is autograd.ag_tape of []
+    local d is autograd.ag_sub of [t, (autograd.ag_add of [t, (autograd.ag_leaf of [t, sA]), (autograd.ag_const of [t, sC])]), (autograd.ag_leaf of [t, sB])]
+    return autograd.ag_value of (autograd.ag_mean of [t, (autograd.ag_mul of [t, d, d])])
+t3 is autograd.ag_tape of []
+n3_a is autograd.ag_leaf of [t3, sA]
+n3_b is autograd.ag_leaf of [t3, sB]
+n3_d is autograd.ag_sub of [t3, (autograd.ag_add of [t3, n3_a, (autograd.ag_const of [t3, sC])]), n3_b]
+autograd.ag_backward of [t3, (autograd.ag_mean of [t3, (autograd.ag_mul of [t3, n3_d, n3_d])])]
+check_grad of ["add/sub/mean dA", sA, loss_add_sub, autograd.ag_grad of n3_a]
+check_grad of ["add/sub/mean dB (negated)", sB, loss_add_sub, autograd.ag_grad of n3_b]
+
+# --- sub with a bias broadcast: [4 x 3] - [3] ---
+subM is rnd_buf of [4, 3, -1.0, 1.0]
+subv is rnd_vec of [3, -1.0, 1.0]
+define loss_sub_bias() as:
+    local t is autograd.ag_tape of []
+    local d is autograd.ag_sub of [t, (autograd.ag_const of [t, subM]), (autograd.ag_leaf of [t, subv])]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, d, d])])
+t3b is autograd.ag_tape of []
+n3b_v is autograd.ag_leaf of [t3b, subv]
+n3b_d is autograd.ag_sub of [t3b, (autograd.ag_const of [t3b, subM]), n3b_v]
+autograd.ag_backward of [t3b, (autograd.ag_sum of [t3b, (autograd.ag_mul of [t3b, n3b_d, n3b_d])])]
+check_grad of ["sub(bias broadcast) dv", subv, loss_sub_bias, autograd.ag_grad of n3b_v]
+
+# --- mul (distinct operands) + scale ---
+muA is rnd_buf of [2, 5, -1.0, 1.0]
+muB is rnd_buf of [2, 5, -1.0, 1.0]
+define loss_mul_scale() as:
+    local t is autograd.ag_tape of []
+    local p is autograd.ag_mul of [t, (autograd.ag_leaf of [t, muA]), (autograd.ag_leaf of [t, muB])]
+    local q is autograd.ag_scale of [t, p, 2.5]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, q, q])])
+t4 is autograd.ag_tape of []
+n4_a is autograd.ag_leaf of [t4, muA]
+n4_b is autograd.ag_leaf of [t4, muB]
+n4_q is autograd.ag_scale of [t4, (autograd.ag_mul of [t4, n4_a, n4_b]), 2.5]
+autograd.ag_backward of [t4, (autograd.ag_sum of [t4, (autograd.ag_mul of [t4, n4_q, n4_q])])]
+check_grad of ["mul/scale dA", muA, loss_mul_scale, autograd.ag_grad of n4_a]
+check_grad of ["mul/scale dB", muB, loss_mul_scale, autograd.ag_grad of n4_b]
+
+# --- leaky_relu ---
+lrA is rnd_buf of [3, 4, -1.0, 1.0]
+lrC is rnd_buf of [3, 4, -1.0, 1.0]
+define loss_leaky() as:
+    local t is autograd.ag_tape of []
+    local h is autograd.ag_leaky_relu of [t, (autograd.ag_leaf of [t, lrA])]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, h, (autograd.ag_const of [t, lrC])])])
+t5 is autograd.ag_tape of []
+n5_a is autograd.ag_leaf of [t5, lrA]
+n5_h is autograd.ag_leaky_relu of [t5, n5_a]
+autograd.ag_backward of [t5, (autograd.ag_sum of [t5, (autograd.ag_mul of [t5, n5_h, (autograd.ag_const of [t5, lrC])])])]
+neg_seen is 0
+for i in range of (len of lrA):
+    if lrA[i] < 0.0:
+        neg_seen is 1
+assert_true of [neg_seen, "leaky_relu: the seeded input has negative entries (the 0.01 branch is exercised)"]
+check_grad of ["leaky_relu dA", lrA, loss_leaky, autograd.ag_grad of n5_a]
+
+# --- softmax (row-wise, 3 rows of 4) ---
+smA is rnd_buf of [3, 4, -2.0, 2.0]
+smC is rnd_buf of [3, 4, -1.0, 1.0]
+define loss_softmax() as:
+    local t is autograd.ag_tape of []
+    local p is autograd.ag_softmax of [t, (autograd.ag_leaf of [t, smA])]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, p, (autograd.ag_const of [t, smC])])])
+t6 is autograd.ag_tape of []
+n6_a is autograd.ag_leaf of [t6, smA]
+n6_p is autograd.ag_softmax of [t6, n6_a]
+autograd.ag_backward of [t6, (autograd.ag_sum of [t6, (autograd.ag_mul of [t6, n6_p, (autograd.ag_const of [t6, smC])])])]
+check_grad of ["softmax dA", smA, loss_softmax, autograd.ag_grad of n6_a]
+
+# --- log_softmax ---
+define loss_log_softmax() as:
+    local t is autograd.ag_tape of []
+    local p is autograd.ag_log_softmax of [t, (autograd.ag_leaf of [t, smA])]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, p, (autograd.ag_const of [t, smC])])])
+t7 is autograd.ag_tape of []
+n7_a is autograd.ag_leaf of [t7, smA]
+n7_p is autograd.ag_log_softmax of [t7, n7_a]
+autograd.ag_backward of [t7, (autograd.ag_sum of [t7, (autograd.ag_mul of [t7, n7_p, (autograd.ag_const of [t7, smC])])])]
+check_grad of ["log_softmax dA", smA, loss_log_softmax, autograd.ag_grad of n7_a]
+
+# --- softmax + cross-entropy (p − onehot), through a linear layer with bias ---
+ceX is rnd_buf of [6, 3, -1.0, 1.0]
+ceW is rnd_buf of [3, 4, -1.0, 1.0]
+ceb is rnd_vec of [4, -0.5, 0.5]
+ceT is [2, 0, 3, 1, 2, 0]
+define loss_ce() as:
+    local t is autograd.ag_tape of []
+    local z is autograd.ag_add of [t, (autograd.ag_matmul of [t, (autograd.ag_const of [t, ceX]), (autograd.ag_leaf of [t, ceW])]), (autograd.ag_leaf of [t, ceb])]
+    return autograd.ag_value of (autograd.ag_softmax_ce of [t, z, ceT])
+t8 is autograd.ag_tape of []
+n8_w is autograd.ag_leaf of [t8, ceW]
+n8_b is autograd.ag_leaf of [t8, ceb]
+n8_z is autograd.ag_add of [t8, (autograd.ag_matmul of [t8, (autograd.ag_const of [t8, ceX]), n8_w]), n8_b]
+n8_l is autograd.ag_softmax_ce of [t8, n8_z, ceT]
+autograd.ag_backward of [t8, n8_l]
+# The value itself: mean of -log softmax(z)[i][t_i], recomputed with the builtins.
+ce_ref is 0.0
+ce_lsm is log_softmax of (autograd.ag_value of n8_z)
+for i in range of 6:
+    ce_ref is ce_ref - ce_lsm[i * 4 + ceT[i]]
+assert_near of [autograd.ag_value of n8_l, ce_ref / 6, 0.000000000001, "softmax_ce value = mean(-log_softmax[target])"]
+check_grad of ["softmax_ce dW", ceW, loss_ce, autograd.ag_grad of n8_w]
+check_grad of ["softmax_ce db", ceb, loss_ce, autograd.ag_grad of n8_b]
+
+# --- gather (scatter-add vjp): Q [5 x 3], one action per row, MSE to a target ---
+gX is rnd_buf of [5, 2, -1.0, 1.0]
+gW is rnd_buf of [2, 3, -1.0, 1.0]
+gIdx is [2, 0, 1, 2, 2]
+gTarget is rnd_vec of [5, -1.0, 1.0]
+define loss_gather() as:
+    local t is autograd.ag_tape of []
+    local q is autograd.ag_matmul of [t, (autograd.ag_const of [t, gX]), (autograd.ag_leaf of [t, gW])]
+    local picked is autograd.ag_gather of [t, q, gIdx]
+    local d is autograd.ag_sub of [t, picked, (autograd.ag_const of [t, gTarget])]
+    return autograd.ag_value of (autograd.ag_mean of [t, (autograd.ag_mul of [t, d, d])])
+t9 is autograd.ag_tape of []
+n9_w is autograd.ag_leaf of [t9, gW]
+n9_q is autograd.ag_matmul of [t9, (autograd.ag_const of [t9, gX]), n9_w]
+n9_p is autograd.ag_gather of [t9, n9_q, gIdx]
+n9_d is autograd.ag_sub of [t9, n9_p, (autograd.ag_const of [t9, gTarget])]
+autograd.ag_backward of [t9, (autograd.ag_mean of [t9, (autograd.ag_mul of [t9, n9_d, n9_d])])]
+assert_eq of [len of (autograd.ag_value of n9_p), 5, "gather: one pick per row"]
+# Unpicked Q entries must get exactly zero (scatter_add only touches indexed slots).
+gq is autograd.ag_grad of n9_q
+zero_unpicked is 1
+for i in range of 5:
+    for j in range of 3:
+        if j != gIdx[i] and gq[i * 3 + j] != 0.0:
+            zero_unpicked is 0
+assert_true of [zero_unpicked, "gather vjp: unpicked entries receive exactly 0"]
+check_grad of ["gather∘matmul dW", gW, loss_gather, autograd.ag_grad of n9_w]
+
+# --- norm (scalar node) ---
+nmX is rnd_buf of [3, 3, -1.0, 1.0]
+nmW is rnd_buf of [3, 2, -1.0, 1.0]
+define loss_norm() as:
+    local t is autograd.ag_tape of []
+    local y is autograd.ag_matmul of [t, (autograd.ag_const of [t, nmX]), (autograd.ag_leaf of [t, nmW])]
+    return autograd.ag_value of (autograd.ag_norm of [t, y])
+t10 is autograd.ag_tape of []
+n10_w is autograd.ag_leaf of [t10, nmW]
+n10_n is autograd.ag_norm of [t10, (autograd.ag_matmul of [t10, (autograd.ag_const of [t10, nmX]), n10_w])]
+autograd.ag_backward of [t10, n10_n]
+assert_near of [autograd.ag_value of n10_n, norm of (matmul of [nmX, nmW]), 0.000000000001, "norm value is the builtin norm"]
+check_grad of ["norm dW", nmW, loss_norm, autograd.ag_grad of n10_w]
+
+# --- sum over a 1-D leaf (the seed is a num, the gradient a ones-buffer) ---
+suV is rnd_vec of [6, -1.0, 1.0]
+define loss_sum() as:
+    local t is autograd.ag_tape of []
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_leaf of [t, suV])])
+t11 is autograd.ag_tape of []
+n11_v is autograd.ag_leaf of [t11, suV]
+autograd.ag_backward of [t11, (autograd.ag_sum of [t11, n11_v])]
+check_grad of ["sum dv", suV, loss_sum, autograd.ag_grad of n11_v]
+
+# --- backward on a non-scalar node seeds a ones-buffer; a leaf off the path stays null ---
+t12 is autograd.ag_tape of []
+n12_a is autograd.ag_leaf of [t12, sA]
+n12_off is autograd.ag_leaf of [t12, sB]
+n12_h is autograd.ag_relu of [t12, n12_a]
+autograd.ag_backward of [t12, n12_h]
+g12 is autograd.ag_grad of n12_a
+ones_where_pos is 1
+for i in range of (len of sA):
+    want is 0.0
+    if sA[i] > 0.0:
+        want is 1.0
+    if g12[i] != want:
+        ones_where_pos is 0
+assert_true of [ones_where_pos, "backward on a tensor node seeds ones; relu vjp masks them"]
+assert_true of [(type of (autograd.ag_grad of n12_off)) == "none", "a leaf the loss never reached keeps grad = null"]
+
+# ============================================================
+# 2. End-to-end: 2-layer MLP trained by the tape on a toy 3-class problem
+# ============================================================
+print of "=== 2-layer MLP, softmax-CE, trained by the tape ==="
+
+# 30 points in the plane, class = nearest of three centres.
+N_PTS is 30
+centres is [[2.0, 0.0], [-1.0, 1.7], [-1.0, -1.7]]
+mlp_x is buffer of [N_PTS, 2]
+mlp_t is []
+for i in range of N_PTS:
+    c is i % 3
+    mlp_x[i * 2] is centres[c][0] + ((random of null) - 0.5) * 1.2
+    mlp_x[i * 2 + 1] is centres[c][1] + ((random of null) - 0.5) * 1.2
+    append of [mlp_t, c]
+H is 8
+w1 is rnd_buf of [2, H, -0.5, 0.5]
+b1 is buffer of H
+w2 is rnd_buf of [H, 3, -0.5, 0.5]
+b2 is buffer of 3
+
+define mlp_step(lr) as:
+    local t is autograd.ag_tape of []
+    local x is autograd.ag_const of [t, mlp_x]
+    local nw1 is autograd.ag_leaf of [t, w1]
+    local nb1 is autograd.ag_leaf of [t, b1]
+    local nw2 is autograd.ag_leaf of [t, w2]
+    local nb2 is autograd.ag_leaf of [t, b2]
+    local h is autograd.ag_relu of [t, (autograd.ag_add of [t, (autograd.ag_matmul of [t, x, nw1]), nb1])]
+    local z is autograd.ag_add of [t, (autograd.ag_matmul of [t, h, nw2]), nb2]
+    local loss is autograd.ag_softmax_ce of [t, z, mlp_t]
+    autograd.ag_backward of [t, loss]
+    autograd.ag_sgd_step of [nw1, lr]
+    autograd.ag_sgd_step of [nb1, lr]
+    autograd.ag_sgd_step of [nw2, lr]
+    autograd.ag_sgd_step of [nb2, lr]
+    return autograd.ag_value of loss
+
+STEPS is 150
+losses is []
+for s in range of STEPS:
+    append of [losses, mlp_step of 0.3]
+initial_loss is losses[0]
+final_loss is losses[STEPS - 1]
+# "monotonically-ish": compare 10-step window means; count the windows that
+# decrease versus their predecessor.
+windows is []
+for k in range of (STEPS / 10):
+    acc is 0.0
+    for j in range of 10:
+        acc is acc + losses[k * 10 + j]
+    append of [windows, acc / 10]
+down is 0
+for k in range of ((len of windows) - 1):
+    if windows[k + 1] < windows[k]:
+        down is down + 1
+print of f"  loss: initial {initial_loss} -> final {final_loss} ({down}/{(len of windows) - 1} windows decreasing)"
+assert_true of [initial_loss > 0.9, "MLP: initial loss near ln(3) = 1.0986 for 3 classes (sanity of the CE value)"]
+assert_true of [final_loss < initial_loss * 0.25, "MLP: final loss < 25% of initial after 150 tape steps"]
+assert_true of [down >= ((len of windows) - 1) - 1, "MLP: at most one 10-step window fails to decrease"]
+# Accuracy on the training points after training.
+define mlp_accuracy() as:
+    local h is relu of (add of [(matmul of [mlp_x, w1]), b1])
+    local z is add of [(matmul of [h, w2]), b2]
+    local correct is 0
+    for i in range of N_PTS:
+        local best is 0
+        for c in range of 3:
+            if z[i * 3 + c] > z[i * 3 + best]:
+                best is c
+        if best == mlp_t[i]:
+            correct is correct + 1
+    return correct / N_PTS
+acc_final is mlp_accuracy of []
+print of f"  training accuracy after {STEPS} steps: {acc_final}"
+assert_true of [acc_final >= 0.9, "MLP: >= 90% training accuracy on the toy problem"]
+
+# ============================================================
+# 2b. The Tidepool DQN shape: 433 -> 64 -> 32 -> 6, batch 32, one backward
+# ============================================================
+print of "=== Tidepool DQN shape (433 -> 64 -> 32 -> 6, batch 32) ==="
+DQ_IN is 433
+DQ_H1 is 64
+DQ_H2 is 32
+DQ_ACT is 6
+DQ_BS is 32
+dq_x is rnd_buf of [DQ_BS, DQ_IN, -1.0, 1.0]
+dq_w1 is rnd_buf of [DQ_IN, DQ_H1, -0.07, 0.07]
+dq_b1 is buffer of DQ_H1
+dq_w2 is rnd_buf of [DQ_H1, DQ_H2, -0.2, 0.2]
+dq_b2 is buffer of DQ_H2
+dq_w3 is rnd_buf of [DQ_H2, DQ_ACT, -0.3, 0.3]
+dq_b3 is buffer of DQ_ACT
+dq_actions is []
+dq_target is buffer of DQ_BS
+for i in range of DQ_BS:
+    append of [dq_actions, i % DQ_ACT]
+    dq_target[i] is (random of null) * 2.0 - 1.0
+td is autograd.ag_tape of []
+dn_x is autograd.ag_const of [td, dq_x]
+dn_w1 is autograd.ag_leaf of [td, dq_w1]
+dn_b1 is autograd.ag_leaf of [td, dq_b1]
+dn_w2 is autograd.ag_leaf of [td, dq_w2]
+dn_b2 is autograd.ag_leaf of [td, dq_b2]
+dn_w3 is autograd.ag_leaf of [td, dq_w3]
+dn_b3 is autograd.ag_leaf of [td, dq_b3]
+dn_h1 is autograd.ag_relu of [td, (autograd.ag_add of [td, (autograd.ag_matmul of [td, dn_x, dn_w1]), dn_b1])]
+dn_h2 is autograd.ag_relu of [td, (autograd.ag_add of [td, (autograd.ag_matmul of [td, dn_h1, dn_w2]), dn_b2])]
+dn_q is autograd.ag_add of [td, (autograd.ag_matmul of [td, dn_h2, dn_w3]), dn_b3]
+dn_pick is autograd.ag_gather of [td, dn_q, dq_actions]
+dn_err is autograd.ag_sub of [td, dn_pick, (autograd.ag_const of [td, dq_target])]
+dn_loss is autograd.ag_mean of [td, (autograd.ag_mul of [td, dn_err, dn_err])]
+autograd.ag_backward of [td, dn_loss]
+assert_eq of [shape of (autograd.ag_value of dn_q), [DQ_BS, DQ_ACT], "DQN: Q is [32 x 6]"]
+assert_eq of [shape of (autograd.ag_grad of dn_w1), [DQ_IN, DQ_H1], "DQN: dW1 is [433 x 64]"]
+assert_eq of [shape of (autograd.ag_grad of dn_b1), [DQ_H1], "DQN: db1 is [64]"]
+assert_eq of [shape of (autograd.ag_grad of dn_w2), [DQ_H1, DQ_H2], "DQN: dW2 is [64 x 32]"]
+assert_eq of [shape of (autograd.ag_grad of dn_b2), [DQ_H2], "DQN: db2 is [32]"]
+assert_eq of [shape of (autograd.ag_grad of dn_w3), [DQ_H2, DQ_ACT], "DQN: dW3 is [32 x 6]"]
+assert_eq of [shape of (autograd.ag_grad of dn_b3), [DQ_ACT], "DQN: db3 is [6]"]
+# db3 is the column-sum of the gathered TD error: only the taken actions' columns.
+db3 is autograd.ag_grad of dn_b3
+db3_ref is buffer of DQ_ACT
+dn_errv is autograd.ag_value of dn_err
+for i in range of DQ_BS:
+    db3_ref[dq_actions[i]] is db3_ref[dq_actions[i]] + 2.0 * dn_errv[i] / DQ_BS
+db3_ok is 1
+for a in range of DQ_ACT:
+    dd is db3[a] - db3_ref[a]
+    if dd < 0.0:
+        dd is 0.0 - dd
+    if dd > 0.000000000001:
+        db3_ok is 0
+assert_true of [db3_ok, "DQN: db3 equals the hand-rolled per-action TD-error reduction (train.eigs:299-303 shape)"]
+# One clipped SGD step moves the parameters in place (the caller's buffers).
+w1_before is dq_w1[0]
+autograd.ag_sgd_step_clipped of [dn_w1, 0.01, 1.0]
+assert_true of [dq_w1[0] != w1_before or (autograd.ag_grad of dn_w1)[0] == 0.0, "DQN: ag_sgd_step_clipped updates the caller's w1 buffer in place"]
+dn2_h1 is relu of (add of [(matmul of [dq_x, dq_w1]), dq_b1])
+dn2_h2 is relu of (add of [(matmul of [dn2_h1, dq_w2]), dq_b2])
+dn2_q is add of [(matmul of [dn2_h2, dq_w3]), dq_b3]
+dn2_pick is gather of [dn2_q, dq_actions]
+dn2_err is subtract of [dn2_pick, dq_target]
+dq_loss_after is mean of (multiply of [dn2_err, dn2_err])
+assert_true of [dq_loss_after < (autograd.ag_value of dn_loss), "DQN: one clipped step on w1 alone lowers the TD loss"]
+
+# ============================================================
+# 4. Broadcast operands (#973 round 2)
+# ============================================================
+# The elementwise builtins broadcast ([rows x cols] against [cols] either way,
+# and a tensor against a scalar), so an operand can be SMALLER than the result
+# and its gradient must be summed over the broadcast axis. ag_add/ag_sub did
+# that; ag_mul did not — it returned an unreduced [rows x cols] gradient for a
+# [cols] parameter, and ag_sgd_step then stepped the parameter with the first
+# `cols` entries of it. Every elementwise rule is now checked in BOTH
+# orientations with BOTH operands against numerical_grad; the matched-shape
+# halves of the same rules are section 1 above (add/sub/mul dA and dB).
+# It runs last so that sections 1-3 draw the same seeded random stream they
+# did before this section existed.
+print of "=== broadcast operands vs numerical_grad ==="
+
+BC_MODE is 0
+BC_NAMES is ["add [M,v]", "add [v,M]", "sub [M,v]", "sub [v,M]", "mul [M,v]", "mul [v,M]"]
+bcM is rnd_buf of [5, 4, -1.0, 1.0]
+bcV is rnd_vec of [4, -1.0, 1.0]
+bcC is rnd_buf of [5, 4, -1.0, 1.0]
+
+# bc_forward of t -> [M-node, v-node, loss-node]; BC_MODE picks the rule and
+# the operand order. The loss is sum((M op v) * C) with C constant, so the
+# gradient of the broadcast operand is a genuine column sum over the 5-row
+# batch axis (not a value an unreduced gradient could accidentally match).
+define bc_forward(t) as:
+    local mn is autograd.ag_leaf of [t, bcM]
+    local vn is autograd.ag_leaf of [t, bcV]
+    local y is null
+    if BC_MODE == 0:
+        y is autograd.ag_add of [t, mn, vn]
+    elif BC_MODE == 1:
+        y is autograd.ag_add of [t, vn, mn]
+    elif BC_MODE == 2:
+        y is autograd.ag_sub of [t, mn, vn]
+    elif BC_MODE == 3:
+        y is autograd.ag_sub of [t, vn, mn]
+    elif BC_MODE == 4:
+        y is autograd.ag_mul of [t, mn, vn]
+    else:
+        y is autograd.ag_mul of [t, vn, mn]
+    local l is autograd.ag_sum of [t, (autograd.ag_mul of [t, y, (autograd.ag_const of [t, bcC])])]
+    return [mn, vn, l]
+
+define bc_loss() as:
+    local t is autograd.ag_tape of []
+    local r is bc_forward of t
+    return autograd.ag_value of r[2]
+
+for bc_m in range of 6:
+    BC_MODE is bc_m
+    bc_t is autograd.ag_tape of []
+    bc_r is bc_forward of bc_t
+    autograd.ag_backward of [bc_t, bc_r[2]]
+    check_grad of [BC_NAMES[bc_m] + " dM (full shape)", bcM, bc_loss, autograd.ag_grad of bc_r[0]]
+    check_grad of [BC_NAMES[bc_m] + " dv (broadcast operand)", bcV, bc_loss, autograd.ag_grad of bc_r[1]]
+
+# --- scalar-node operand: a learned scalar scaling a matrix ---
+# `multiply of [buffer, number]` is the builtins' other broadcast form, and a
+# node's value is a number whenever it came from ag_sum/ag_mean/ag_norm/
+# ag_softmax_ce. The scalar's gradient is the sum of the whole result's.
+scM is rnd_buf of [3, 4, -1.0, 1.0]
+scK is rnd_vec of [2, 0.5, 1.5]
+define loss_scalar_mul() as:
+    local t is autograd.ag_tape of []
+    local kn is autograd.ag_mean of [t, (autograd.ag_leaf of [t, scK])]
+    local y is autograd.ag_mul of [t, (autograd.ag_const of [t, scM]), kn]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, y, y])])
+t1b is autograd.ag_tape of []
+n1b_k is autograd.ag_leaf of [t1b, scK]
+n1b_y is autograd.ag_mul of [t1b, (autograd.ag_const of [t1b, scM]), (autograd.ag_mean of [t1b, n1b_k])]
+autograd.ag_backward of [t1b, (autograd.ag_sum of [t1b, (autograd.ag_mul of [t1b, n1b_y, n1b_y])])]
+check_grad of ["mul [M, scalar node] dk", scK, loss_scalar_mul, autograd.ag_grad of n1b_k]
+
+define loss_scalar_add() as:
+    local t is autograd.ag_tape of []
+    local kn is autograd.ag_mean of [t, (autograd.ag_leaf of [t, scK])]
+    local y is autograd.ag_add of [t, (autograd.ag_const of [t, scM]), kn]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, y, y])])
+t1c is autograd.ag_tape of []
+n1c_k is autograd.ag_leaf of [t1c, scK]
+n1c_y is autograd.ag_add of [t1c, (autograd.ag_const of [t1c, scM]), (autograd.ag_mean of [t1c, n1c_k])]
+autograd.ag_backward of [t1c, (autograd.ag_sum of [t1c, (autograd.ag_mul of [t1c, n1c_y, n1c_y])])]
+check_grad of ["add [M, scalar node] dk", scK, loss_scalar_add, autograd.ag_grad of n1c_k]
+
+# --- SGD on a broadcast parameter lowers the loss ---
+# The half the shape bug reached: ag_sgd_step steps the buffer it was handed,
+# so an unreduced gradient trains the parameter on the wrong numbers.
+sgD is rnd_buf of [6, 4, -1.0, 1.0]
+sgT is rnd_buf of [6, 4, -1.0, 1.0]
+sgV is rnd_vec of [4, -1.0, 1.0]
+define sg_loss() as:
+    local t is autograd.ag_tape of []
+    local y is autograd.ag_add of [t, (autograd.ag_const of [t, sgD]), (autograd.ag_leaf of [t, sgV])]
+    local e is autograd.ag_sub of [t, y, (autograd.ag_const of [t, sgT])]
+    return autograd.ag_value of (autograd.ag_mean of [t, (autograd.ag_mul of [t, e, e])])
+sg_first is sg_loss of null
+sg_prev is sg_first
+sg_monotone is 1
+for sg_step in range of 20:
+    sg_t is autograd.ag_tape of []
+    sg_vn is autograd.ag_leaf of [sg_t, sgV]
+    sg_y is autograd.ag_add of [sg_t, (autograd.ag_const of [sg_t, sgD]), sg_vn]
+    sg_e is autograd.ag_sub of [sg_t, sg_y, (autograd.ag_const of [sg_t, sgT])]
+    autograd.ag_backward of [sg_t, (autograd.ag_mean of [sg_t, (autograd.ag_mul of [sg_t, sg_e, sg_e])])]
+    assert_eq of [len of (autograd.ag_grad of sg_vn), 4, "sgd(broadcast): gradient stays the parameter's 4 elements"]
+    autograd.ag_sgd_step of [sg_vn, 0.5]
+    sg_now is sg_loss of null
+    if sg_now >= sg_prev:
+        sg_monotone is 0
+    sg_prev is sg_now
+# The reachable optimum: with D and T fixed, L(v) is minimised at
+# v[j] = mean_i (T - D)[i][j], and the residual is the column variance. A
+# gradient that is not column-summed cannot find it.
+sgOpt is 0.0
+for sg_j in range of 4:
+    sg_mu is 0.0
+    for sg_i in range of 6:
+        sg_mu is sg_mu + (sgT[sg_i * 4 + sg_j] - sgD[sg_i * 4 + sg_j])
+    sg_mu is sg_mu / 6
+    for sg_i2 in range of 6:
+        sg_r is (sgD[sg_i2 * 4 + sg_j] + sg_mu) - sgT[sg_i2 * 4 + sg_j]
+        sgOpt is sgOpt + sg_r * sg_r
+sgOpt is sgOpt / 24
+assert_true of [sg_monotone, "sgd(broadcast): 20 steps on the [4] bias each lower the loss"]
+assert_true of [sg_prev >= sgOpt, "sgd(broadcast): the trained loss does not beat the analytic optimum"]
+assert_true of [sg_prev <= sgOpt * 1.001 + 0.000000001, "sgd(broadcast): 20 steps reach the analytic optimum (within 0.1%)"]
+print of f"  sgd(broadcast): loss {sg_first} -> {sg_prev} (optimum {sgOpt})"
+
+# --- rules that cannot take a broadcast operand REFUSE, they do not guess ---
+mmRefused is 0
+mmWhy is ""
+try:
+    mmWhy is "no raise, answered shape " + (str of (shape of (matmul of [bcM, bcV])))
+catch mm_e:
+    mmRefused is 1
+    mmWhy is mm_e.message
+assert_true of [mmRefused, "matmul of a [5x4] and a [4] refuses (no bias-shaped broadcast) instead of guessing: " + mmWhy]
+
+# The elementwise BUILTIN does not refuse a non-broadcastable pair: `add`,
+# `subtract`, `multiply`, `divide` share ONE implementation with the list path
+# (#1093/#973, settled at integration), and that algebra truncates to the
+# shorter operand — for buffers exactly as it always has for lists. Pinned in
+# both containers here so the parity is what this asserts, not an accident:
+# Both answers are pinned because they DIVERGE, and a pinned divergence is
+# visible where an unpinned one drifts: the buffer path truncates flat to the
+# shorter operand ([3]) while the list path recurses per row and broadcasts the
+# scalar ([3, 4]). Neither is a meaningful answer — the operands do not
+# broadcast — and unifying them means deciding whether this whole class should
+# raise, which is a change to the five arithmetic builtins' LIST algebra and
+# its own differential. Recorded as a residual, gated here.
+ewShapeBuf is str of (shape of (add of [bcM, (buffer of 3)]))
+ewLst is [[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]]
+ewShapeList is str of (shape of (add of [ewLst, [1.0, 1.0, 1.0]]))
+assert_eq of [ewShapeBuf, "[3]", "add of a [5x4] buffer and a [3] buffer truncates flat to [3]"]
+assert_eq of [ewShapeList, "[3, 4]", "add of the same shapes as LISTS answers [3, 4] — the one container divergence left in the elementwise algebra"]
+
+# The TAPE refuses it, one level up: a truncated value's gradient fits neither
+# operand, so `ag_add` throws instead of pushing a node `ag_sgd_step` would
+# train on. (This refusal used to live in the C layer as a buffer-only raise.)
+ewRefused is 0
+ewWhy is ""
+et is autograd.ag_tape of []
+eA is autograd.ag_leaf of [et, bcM]
+eB is autograd.ag_leaf of [et, (buffer of 3)]
+try:
+    ewWhy is "no raise, answered shape " + (str of (shape of (autograd.ag_add of [et, eA, eB]).value))
+catch ew_e:
+    ewRefused is 1
+    ewWhy is str of ew_e
+assert_true of [ewRefused, "ag_add of a [5x4] and a [3] refuses, so no tape node is ever built: " + ewWhy]
+
+# ag_sgd_step is the last line of defence: a gradient whose element count does
+# not match its parameter's throws instead of stepping the first `n` entries.
+gt is autograd.ag_tape of []
+gn is autograd.ag_leaf of [gt, (buffer of 4)]
+gn.grad is buffer of [5, 4]
+sgdRefused is 0
+sgdWhy is "no raise"
+try:
+    autograd.ag_sgd_step of [gn, 0.1]
+catch sgd_e:
+    sgdRefused is 1
+    sgdWhy is str of sgd_e
+assert_true of [sgdRefused, "ag_sgd_step throws on a gradient whose element count is not the parameter's: " + sgdWhy]
+scaleRefused is 0
+scaleWhy is ""
+try:
+    scaleWhy is "no raise, answered shape " + (str of (shape of (autograd.ag_value of (autograd.ag_scale of [gt, (autograd.ag_leaf of [gt, bcV]), bcM]))))
+catch scale_e:
+    scaleRefused is 1
+    scaleWhy is str of scale_e
+assert_true of [scaleRefused, "ag_scale refuses a tensor k (it would broadcast and reshape the result): " + scaleWhy]
+
+gn2 is autograd.ag_leaf of [gt, (buffer of 4)]
+gn2.grad is buffer of [5, 4]
+sgdcRefused is 0
+sgdcWhy is "no raise"
+try:
+    autograd.ag_sgd_step_clipped of [gn2, 0.1, 1.0]
+catch sgdc_e:
+    sgdcRefused is 1
+    sgdcWhy is str of sgdc_e
+assert_true of [sgdcRefused, "ag_sgd_step_clipped throws on a mis-shaped gradient too: " + sgdcWhy]
+
+test_summary of null
