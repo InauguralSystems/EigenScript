@@ -113,5 +113,15 @@ paths:
   as unverified. The KILL direction is worse: `pkill -f <pattern>` matches its
   own command line and killed the invoking shell mid-compound (exit 144,
   2026-08-23 — the commit/push/PR after it silently never ran). Kill by PID,
-  never by pattern. Four bites in one day; if it recurs, this graduates to
-  bash_guard.
+  never by pattern:
+
+      ps -eo pid,cmd | awk '/<pattern>/ && !/awk/ {print $1}' | while read p; do kill "$p"; done
+
+  **This has GRADUATED to enforcement** (2026-09-07). It recurred a fifth time —
+  the same agent that had written the rule into its own brief still reached for
+  `pkill -f` and lost its shell mid-cleanup — so `bash_guard` now denies
+  `pkill`/`killall` at command position and names the PID recipe in the refusal.
+  `pkill -P <pid>` is anchored to a known parent and passes. The prose stays
+  here for the READ direction (polling with a process-table match), which no hook
+  covers; the kill direction is the hook's now, and this note should not grow a
+  second copy of it.
