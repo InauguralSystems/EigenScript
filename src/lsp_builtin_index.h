@@ -112,7 +112,7 @@ static const char *builtin_docs[][2] = {
     {"floor", "floor — builtin; see docs/BUILTINS.md"},
     {"flush", "flush of null — flush stdout"},
     {"free_val", "free_val of value → frees a heap-allocated Value tree. Returns null."},
-    {"gather", "gather of [tensor, indices, dim] → select elements at indices along last dim"},
+    {"gather", "gather of [tensor, indices, dim] -> select one element per row by index."},
     {"get_at", "get_at of [list, index] or get_at of [list, row, col]"},
     {"get_observer_scale", "get_observer_scale of null — the value channel's characteristic scale."},
     {"get_observer_thresholds", "get_observer_thresholds — builtin; see docs/BUILTINS.md"},

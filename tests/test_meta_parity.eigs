@@ -226,6 +226,21 @@ check of ["VM: parameter binder restored",
     vm_probe of "define f1105(p) as:\n    for p in [7, 8]:\n        p is p + 10\n    return p\nf1105 of 1",
     ["ok", 1]]
 
+# --- #1057: the live-module-view rule, and why it has no parity row ---
+#
+# The C evaluator makes a namespace a LIVE VIEW of the module env (`M.x` reads
+# M's current binding, `M.x is v` writes it), and lib/eigen.eigs carries the
+# mirror (`_eigen_module_envs`). That mirror cannot be asserted, because the
+# meta-interpreter's `import` does not resolve a module at all: it reads
+# `"lib/" + name + ".eigs"` with `read_text`, which answers "" for a path it
+# cannot open, so every meta-interpreted import produces an EMPTY namespace.
+# This is a MATCHED-BUG CANARY, not a specification: it pins the gap so that
+# the day `import` starts working here, this row goes red and whoever fixed it
+# adds the real live-view parity rows next to it (as #1111 and #1105 have).
+check of ["#1057 canary: meta-interpreted import is still an empty namespace",
+    eigen_run of "import math\nkeys of math",
+    []]
+
 if checks == passed:
     print of "All tests passed"
 else:
