@@ -46,12 +46,12 @@ static void show_stop(const Tape *t, int pos) {
     }
 }
 
-static void print_binding(int pos, const NameHist *h,
+static void print_binding(const Tape *t, int pos, const NameHist *h,
                           const char *scope_note) {
     const Assign *last = tape_latest_at(h, pos);
     int count = 0;
     for (int k = 0; k < h->n && h->a[k].step <= pos; k++) count++;
-    const char *label = tape_classify_at(h, pos, NULL);
+    const char *label = tape_classify_at(t, h, pos, NULL);
     printf("%s = %s", h->name, last->value);
     if (label) printf("  [%s]", label);
     printf("  (%d assign%s)", count, count == 1 ? "" : "s");
@@ -72,7 +72,7 @@ static void show_bindings(const Tape *t, int pos, const char *only) {
             char note[160] = "";
             if (si && si->depth > 0)
                 snprintf(note, sizeof note, "in %s", si->name);
-            print_binding(pos, h, note[0] ? note : NULL);
+            print_binding(t, pos, h, note[0] ? note : NULL);
             shown = 1;
         }
         if (!shown) printf("no binding '%s' at this point\n", only);
@@ -100,7 +100,7 @@ static void show_bindings(const Tape *t, int pos, const char *only) {
             if (shadowed) continue;
             if (nseen < (int)(sizeof(seen)/sizeof(seen[0])))
                 seen[nseen++] = h->name;
-            print_binding(pos, h, note[0] ? note : NULL);
+            print_binding(t, pos, h, note[0] ? note : NULL);
             shown++;
         }
         if (sc == 0) break;
@@ -123,31 +123,33 @@ static void show_trajectory(const Tape *t, int pos, const char *name) {
     int total = 0;
     for (int i = 0; i < h->n && h->a[i].step <= pos; i++) total++;
     printf("%s: %d assign%s\n", name, total, total == 1 ? "" : "s");
-    /* One slot fed incrementally: the label after the k-th numeric value
-     * is exactly what report_value would have said at that moment. */
-    ObserverSlot s;
-    memset(&s, 0, sizeof s);
-    int fed = 0;
+    /* One slot fed incrementally under the tape's recorded observer
+     * configuration: the label after the k-th numeric value is exactly what
+     * report_value would have said at that moment in the live run. */
+    TapeTraj tr;
+    tape_traj_begin(&tr, t, h);
     const int SHOW = 20;   /* print at most the last SHOW entries */
     int start = total > SHOW ? total - SHOW : 0;
     if (start > 0) printf("  … %d earlier assign(s) elided\n", start);
+    const char *last = NULL;
     for (int i = 0, k = 0; i < h->n && h->a[i].step <= pos; i++, k++) {
-        const char *label = NULL;
-        if (h->a[i].is_num) {
-            observer_slot_record_value(&s, h->a[i].num);
-            fed++;
-            label = observer_slot_report_value(&s);
-        }
+        const char *label = tape_traj_feed(&tr, &h->a[i]);
+        if (label) last = label;
         if (k < start) continue;
         printf("  #%-3d line %-5d %s", k + 1,
                t->recs[t->steps[h->a[i].step]].line, h->a[i].value);
         if (label) printf("   [%s]", label);
         printf("\n");
     }
-    free(s.v_window);
-    free(s.vr_window);
-    free(s.dh_window);
-    (void)fed;
+    /* Each row is the label at THAT moment. A knob moved after the last
+     * assign changes what the verdict is HERE without adding a row, so say
+     * so rather than letting the last row stand in for the present — the
+     * `p` view and the DAP already report the settled label. */
+    const char *now = tape_traj_settle(&tr, pos);
+    if (now && last && strcmp(now, last) != 0)
+        printf("  observer configuration changed after the last assign — "
+               "at this stop: [%s]\n", now);
+    tape_traj_end(&tr);
 }
 
 static void show_help(void) {

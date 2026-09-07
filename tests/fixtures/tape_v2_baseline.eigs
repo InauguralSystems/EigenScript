@@ -1,0 +1,9 @@
+set_observer_thresholds of [0.01, 0.02, 0.1]
+x is 1000.0
+d is 5.0
+i is 0
+loop while i < 30:
+    x is x + d
+    d is d * 0.99
+    i is i + 1
+print of ("x=" + (report of x))

@@ -377,6 +377,14 @@ struct Value {
  * samples per half-window (4), and the ring counters are 8-bit. */
 #define OBSERVER_WINDOW_MIN 4
 #define OBSERVER_WINDOW_MAX 64
+/* Start-of-state values of the four scalar observer knobs. Named because the
+ * tape reader has to install exactly this configuration before replaying the
+ * tape's `O` records (docs/TRACE.md) — a second hand-written copy of the
+ * numbers in tape_read.c would be a silent divergence waiting to happen. */
+#define OBSERVER_DH_ZERO_DEFAULT  0.001
+#define OBSERVER_DH_SMALL_DEFAULT 0.01
+#define OBSERVER_H_LOW_DEFAULT    0.1
+#define OBSERVER_SCALE_DEFAULT    0.001
 /* Effective window depth of a slot (see the ObserverSlot comment). */
 int observer_slot_window(const struct ObserverSlot *s);
 /* Set / clear a binding's per-slot override (n == 0 clears). Grows the env's

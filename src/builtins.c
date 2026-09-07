@@ -700,6 +700,11 @@ Value* builtin_set_observer_window(Value *arg) {
             rt_error(EK_LIMIT, 0, "set_observer_window: observer slot table full");
             return make_null();
         }
+        /* The override lives on an Env slot, so the tape writer's
+         * state-configuration diff cannot see it — record it explicitly, or a
+         * stepped tape classifies this binding at the default depth and
+         * prints a verdict the live run never gave (docs/TRACE.md). */
+        trace_obs_window_binding(name, n);
         return make_null();
     }
     int n = obs_window_arg(arg, "set_observer_window");

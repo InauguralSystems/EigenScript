@@ -2216,6 +2216,27 @@ else
 fi
 echo ""
 
+# [42f2] Observer configuration on the tape (#1044/#1045 follow-up): the
+# knobs that decide a verdict — thresholds, window depth (state + per
+# binding), scale — ride the tape as O records, so --step and EIGS_REPLAY
+# classify exactly as the live run did. Includes the v2-tape refusal and the
+# cross-scope cases: an `O win` record governs the one BINDING it resolves
+# to, never every binding that shares its name.
+echo "[42f2] Tape Observer Configuration (68 checks)"
+OC_OUTPUT=$(bash "$TESTS_DIR/test_tape_observer_config.sh" 2>&1)
+OC_PASS=$(echo "$OC_OUTPUT" | grep -c "PASS:" || true)
+OC_FAIL=$(echo "$OC_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + OC_PASS + OC_FAIL))
+PASS=$((PASS + OC_PASS))
+FAIL=$((FAIL + OC_FAIL))
+if [ "$OC_FAIL" -gt 0 ]; then
+    echo "  FAIL: $OC_FAIL observer-configuration check(s) failed"
+    echo "$OC_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $OC_PASS observer-configuration checks"
+fi
+echo ""
+
 # [42g] --bundle (#413): single-file distribution — script + eigs_modules +
 # stdlib in one executable; tape-attached bundles replay byte-identically.
 echo "[42g] Bundle (16 checks)"

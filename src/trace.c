@@ -6,6 +6,9 @@
  *   L <line>                    source-line event
  *   A <name>=<value>            name-keyed assignment delta
  *   N <fn>=<value>              nondeterministic builtin return
+ *   O cfg <dh_zero> <dh_small> <h_low> <window> <scale>
+ *                               observer configuration in force (v3)
+ *   O win <name> <n>            per-binding observer window override (v3)
  *
  * Value encoding:
  *   <num>          numeric (immediate, tracked, or heap VAL_NUM)
@@ -891,12 +894,116 @@ static void tp_printf(const char *fmt, ...) {
  * scope. */
 static uint32_t g_last_scope_serial = 0;
 
+/* Stamp `S <fn> <depth> <serial>` when the innermost frame differs from the
+ * one the last S record named (by frame-instance serial, so two invocations
+ * of the same function never merge). Dedup mirrors the L-record discipline:
+ * scope transitions only cost tape bytes where a record actually needs them.
+ * Callers must already have checked trace_out_active().
+ *
+ * Two callers: every A record (a binding belongs to the frame that wrote it),
+ * and every per-binding `O win` record (an override belongs to the frame that
+ * RESOLVED the name — and that frame may not have assigned anything yet, e.g.
+ * when the call widens a parameter's window before the body writes it, so the
+ * transition cannot be left to the next A). */
+static void emit_scope_transition(void) {
+    if (!eigs_current || !eigs_current->vm || g_vm.frame_count == 0) return;
+    CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+    if (f->call_serial == g_last_scope_serial) return;
+    g_last_scope_serial = f->call_serial;
+    tp_printf("S %s %d %u\n",
+              (f->chunk && f->chunk->name) ? f->chunk->name : "?",
+              g_vm.frame_count - 1, f->call_serial);
+}
+
+/* ---- #1044/#1045 follow-up: the observer CONFIGURATION on the tape.
+ *
+ * Every verdict the runtime prints (`report of x`, the predicates, the
+ * `--step`/DAP trajectory labels) is a function of the A records AND of five
+ * knobs — three thresholds, the window depth, the characteristic scale — plus
+ * a per-binding window override. The tape carried the assignments and not the
+ * knobs, so a stepped tape classified at the state defaults and printed a
+ * verdict the live run never gave (the phugoid `oscillating` vs `diverging`
+ * case, and the older `set_observer_thresholds` instance of the same class).
+ *
+ * Shape chosen: record the configuration AS AN EVENT at the point it takes
+ * effect, so a mid-run change replays in the right order — not a
+ * header/snapshot stamp, which would have had to refuse mid-run changes.
+ *
+ * The state-level scalars are emitted by DIFF rather than from the knob
+ * builtins: obs_cfg_sync compares the state's live configuration against what
+ * the tape last said and emits an `O cfg` record when they differ, immediately
+ * before the next L or A record. That makes the tape carry the configuration
+ * IN FORCE by construction — a configuration set by an embedder, by a second
+ * EigsState, or by a knob nobody remembered to instrument still lands on the
+ * tape. The per-binding window override (`set_observer_window of ["x", n]`)
+ * lives on an Env slot, not on the state, so it has no cheap diff and is
+ * emitted from its builtin through trace_obs_window_binding.
+ *
+ * Cost when no tape is open: nothing (both entry points return on
+ * trace_out_active). With a tape open: five compares per L/A record. */
+static double g_cfg_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
+static double g_cfg_dh_small = OBSERVER_DH_SMALL_DEFAULT;
+static double g_cfg_h_low    = OBSERVER_H_LOW_DEFAULT;
+static double g_cfg_scale    = OBSERVER_SCALE_DEFAULT;
+static int    g_cfg_window   = OBSERVER_WINDOW_N;
+
+/* Reset to the values a fresh EigsState starts with — what a reader installs
+ * before applying the tape's O records, so "no O record" means "defaults". */
+static void obs_cfg_reset(void) {
+    g_cfg_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
+    g_cfg_dh_small = OBSERVER_DH_SMALL_DEFAULT;
+    g_cfg_h_low    = OBSERVER_H_LOW_DEFAULT;
+    g_cfg_scale    = OBSERVER_SCALE_DEFAULT;
+    g_cfg_window   = OBSERVER_WINDOW_N;
+}
+
+/* Emit `O cfg` when the state's observer configuration has moved since the
+ * last one. Callers must already have checked trace_out_active(). */
+static void obs_cfg_sync(void) {
+    if (!eigs_current || !eigs_current->state) return;
+    const EigsState *st = eigs_current->state;
+    if (st->obs_dh_zero  == g_cfg_dh_zero  &&
+        st->obs_dh_small == g_cfg_dh_small &&
+        st->obs_h_low    == g_cfg_h_low    &&
+        st->obs_scale    == g_cfg_scale    &&
+        st->obs_window   == g_cfg_window) return;
+    g_cfg_dh_zero  = st->obs_dh_zero;
+    g_cfg_dh_small = st->obs_dh_small;
+    g_cfg_h_low    = st->obs_h_low;
+    g_cfg_scale    = st->obs_scale;
+    g_cfg_window   = st->obs_window;
+    /* One field per tp_printf: its staging buffer is 128 bytes and five
+     * %.17g fields in one call could silently truncate the record. */
+    tp_puts("O cfg ");
+    tp_printf("%.17g ", g_cfg_dh_zero);
+    tp_printf("%.17g ", g_cfg_dh_small);
+    tp_printf("%.17g ", g_cfg_h_low);
+    tp_printf("%d ",    g_cfg_window);
+    tp_printf("%.17g\n", g_cfg_scale);
+}
+
+/* `set_observer_window of ["x", n]` — the per-binding override, recorded at
+ * the point of the call (n == 0 clears it back to the default). The name is
+ * the one the call site resolved; a reader re-resolves it with the same
+ * innermost-first scope walk it uses for every other binding. */
+void trace_obs_window_binding(const char *name, int n) {
+    if (!trace_out_active() || !name) return;
+    obs_cfg_sync();
+    emit_scope_transition();
+    tp_puts("O win ");
+    tp_puts(name);
+    tp_printf(" %d\n", n);
+}
+
 /* #411: stamp the version header. Called once per tape-open (EIGS_TRACE
  * fopen, sink install) — a journal appended across several installs
  * carries one V record per session; replay verifies each. */
 static void emit_header(void) {
     tp_printf("V %d %s\n", TRACE_FORMAT_VERSION, EIGENSCRIPT_VERSION);
     g_last_scope_serial = 0;
+    /* A session starts from the defaults on the tape: obs_cfg_sync emits an
+     * `O cfg` for whatever the state already carries before the first L/A. */
+    obs_cfg_reset();
 }
 
 void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
@@ -1530,6 +1637,7 @@ void trace_line(int line) {
     /* OP_LINE stores g_trace_current_line directly; this function is
      * only called when a tape is open (g_trace_enabled). */
     if (!trace_out_active()) return;
+    obs_cfg_sync();
     if (line == g_last_line && !g_line_dirty) return;
     tp_printf("L %d\n", line);
     g_last_line  = line;
@@ -1594,6 +1702,7 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int 
     if (record_prev) prev_record_assign(name, value, filtered);
 
     if (!trace_out_active()) return;
+    obs_cfg_sync();
     if (!name) name = "?";
     /* #539 v2: scope-transition record. When the innermost frame differs
      * from the one the last S record named (by frame-instance serial, so
@@ -1602,15 +1711,7 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int 
      * before the A record. Dedup mirrors the L-record discipline: scope
      * transitions only cost tape bytes at call boundaries that actually
      * assign. Replay skips S like A; only the stepper folds them. */
-    if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {
-        CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
-        if (f->call_serial != g_last_scope_serial) {
-            g_last_scope_serial = f->call_serial;
-            tp_printf("S %s %d %u\n",
-                      (f->chunk && f->chunk->name) ? f->chunk->name : "?",
-                      g_vm.frame_count - 1, f->call_serial);
-        }
-    }
+    emit_scope_transition();
     tp_puts("A ");
     tp_puts(name);
     tp_putc('=');

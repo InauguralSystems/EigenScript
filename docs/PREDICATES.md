@@ -263,6 +263,42 @@ first sample — the default depth allocates exactly what it did before
 #1044 — and the folding/variance tests are `O(N)` per verdict asked, not
 per assignment.
 
+## Configuration and the tape
+
+Every knob on this page — the three thresholds, the window depth in both
+its forms, and the scale — **rides the trace tape**, so a recorded run
+replayed or stepped classifies exactly as the live run did. It is carried
+as an event at the point the knob takes effect (`O cfg` / `O win` records,
+tape format v3), which is what makes a **mid-run** change reconstruct
+correctly: a binding that reads `moving` before a `set_observer_scale` and
+`converged` after reads exactly that at both stops under `--step` and in
+the DAP server. `EIGS_REPLAY` re-executes the program, so its knob calls
+run again by themselves.
+
+The reader folds the configuration up to the **stop position**, not up to the
+binding's last assignment, because the thresholds (and the window's
+full-window certifications) are consumed when a verdict is *reported*: a knob
+moved after the last assignment and before the stop changes the live verdict
+and therefore changes the stepped one too. The stepper's `p` view and the DAP
+binding cell answer "what would `report of x` say here"; the `t` trajectory
+rows stay per-moment, and name the settled label on a line of their own when
+it differs.
+
+A per-binding `O win` record names one **binding**, not a name: the reader
+resolves it along the recorded call chain and applies it to that history by
+identity, so two invocations of one function — or a function-local and a
+module-level global sharing a name — keep their own window depths.
+
+Two caveats remain, both narrow, both stated rather than papered over. (1) A
+binding the recorded call chain cannot reach — a closure over a captured
+name, whose environment parent is its definition site — resolves to nothing;
+the override is then applied only if that name is unique on the whole tape,
+and otherwise dropped, so the stepped verdict is the default-window one and
+never another binding's. (2) A tape recorded by a pre-v3 binary cannot carry
+any of this, so it is refused outright (exit 3), never classified at the
+defaults and presented as the recorded run. Both are written up in
+[TRACE.md](TRACE.md#observer-configuration-1044-1045).
+
 ## Partial-window rule (applies to all six)
 
 If the window does not yet hold enough samples, **every predicate returns

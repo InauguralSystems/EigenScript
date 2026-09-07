@@ -35,11 +35,11 @@ EigsState *eigs_state_new(void) {
     st->obs_needed = 1;
     st->obs_compile_pending = 1;
     /* Observer thresholds — same defaults as the legacy TLS globals. */
-    st->obs_dh_zero  = 0.001;
-    st->obs_dh_small = 0.01;
-    st->obs_h_low    = 0.1;
-    st->obs_window   = OBSERVER_WINDOW_N;   /* #1044 */
-    st->obs_scale    = 0.001;               /* #1045 */
+    st->obs_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
+    st->obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
+    st->obs_h_low    = OBSERVER_H_LOW_DEFAULT;
+    st->obs_window   = OBSERVER_WINDOW_N;        /* #1044 */
+    st->obs_scale    = OBSERVER_SCALE_DEFAULT;   /* #1045 */
     /* #971: strict math mode, read once from env at creation (like the JIT
      * thresholds below). Any non-empty, non-"0" value enables it. */
     st->strict = eigs_env_flag("EIGS_STRICT");

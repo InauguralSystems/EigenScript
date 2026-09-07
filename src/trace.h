@@ -28,7 +28,7 @@ typedef union { double d; uint64_t u; } EigsSlot;
  * value serialization, escaping, truncation markers, the header itself.
  * Replay refuses a tape whose format or runtime version differs from the
  * running binary: version-and-reject, never migrate (docs/TRACE.md). */
-#define TRACE_FORMAT_VERSION 2   /* v2 (#539): scope-transition S records */
+#define TRACE_FORMAT_VERSION 3   /* v3 (#1044/#1045 follow-up): observer-config O records */
 
 /* 1 when EIGS_TRACE was set and a tape was successfully opened.
  * Hook sites in vm.c gate on this directly so the disabled case
@@ -199,6 +199,13 @@ int  trace_set_replay_mem(const char *bytes, size_t len, int strict);
 
 /* Record a source-line event. Emitted by OP_LINE. */
 void trace_line(int line);
+
+/* #1044/#1045 follow-up: record a per-binding observer window override
+ * (`set_observer_window of ["x", n]`; n == 0 clears it) as an `O win` record
+ * at the point of the call. The state-level knobs need no hook — the tape
+ * writer diffs them against the state before every L/A record — but this one
+ * lives on an Env slot and has no cheap diff. No-op when no tape is open. */
+void trace_obs_window_binding(const char *name, int n);
 
 /* Record a name-keyed assignment. The slot is captured by value
  * (NaN-boxed union, POD), so this is safe to call from any opcode
