@@ -4,6 +4,151 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **`gather` raises `index_range` on an out-of-range index, in every form
+  (#973/#1093).** Previously it folded to `0.0` — a per-row vector of indices
+  answered `[1, 0]`, a scalar index into a 1-D tensor answered `0`. A zero in a
+  Q-value or a log-prob is indistinguishable from a real zero, `gather`'s own
+  dual `scatter_add` already raised on exactly that index, and #1093's contract
+  is that a buffer is accepted wherever a flat numeric list is — so the answer
+  must not depend on the container. The list path moved with the buffer path;
+  the raise is unconditional, not `EIGS_STRICT`-gated, because it reports an
+  argument that has no answer rather than a documented soft answer. The
+  rationale is recorded at the definition in `src/builtins_tensor.c`.
+
+- **A module namespace is a LIVE VIEW of the module env, not a snapshot
+  (#1057).** `import M` bound a shallow copy of M's top-level bindings, so
+  whether an importer saw live state depended on the value's TYPE: a dict or
+  list was shared by reference, a number or string froze at import time and
+  went silently stale, and `M.x is v` reached only the copy. Reading a scalar
+  module global now answers its current value, and writing one reaches the
+  module. Nine stdlib modules were in the affected shape. `type of M` is still
+  `"dict"`, `keys`/`values`/`len`/`str`/`json_encode` are unchanged, and
+  `_`-prefixed module bindings stay private. `sizeof(Value)` is unchanged at
+  72 bytes: the flag rides existing tail padding and the owning `Env*` lives in
+  a side table.
+
+### Added
+
+- **`unobserved:` keeps the value window complete (#1049).** An elided
+  assignment was absent from the observer's 10-deep value window, so every
+  value-channel verdict differed from the unelided program until the missing
+  sample aged out. Elision now suppresses the verdict, not the sample.
+
+- **Configurable observer window depth and a scale-free relative step
+  (#1044, #1045).** Both were found by phugoid grading verdicts against a
+  physical oracle: a fixed 10-deep window called an oscillation `stable`, and
+  the same trajectory in radians, degrees and milliradians produced three
+  different verdicts. The window depth is settable per state and per binding,
+  and the value channel has a characteristic scale.
+
+- **The trace tape carries the observer configuration (#1044, #1045).** A
+  verdict is a function of the assignments AND of the thresholds, window depth
+  and scale. The tape carried only the assignments, so a reader rebuilt every
+  slot at the compiled-in defaults and printed a verdict the live run never
+  gave. `--step`, the DAP server and deterministic replay now agree with the
+  recording run.
+
+- **Buffers are accepted wherever a flat numeric list is (#1093).** Every
+  tensor builtin taking a flat numeric list now takes a `VAL_BUFFER` in the
+  same position and returns a buffer when every tensor operand was one. Nested
+  2-D list inputs keep list semantics; a shaped buffer is the buffer form of a
+  2-D tensor. `zeros of n` returns a buffer.
+
+- **Reverse-mode autograd on shaped buffers (#973)**, plus `matmul_at`,
+  `matmul_bt` and `scatter_add`. Three new core builtins.
+
+- **W024: an observer read on a binding rebound from a container element
+  (#1048).** Observer trajectory is keyed to an environment slot, never to a
+  Value, so a dict field or list element carries no history and the obvious
+  per-entity read judges the round-robin interleave of every element the
+  binding visits. `docs/PREDICATES.md` gains "What carries a trajectory" with
+  the closure-per-entity recipe, extracted and executed by the test rather than
+  copied.
+
+- **Every diagnostic is UTF-8 safe at the chokepoint (#1048).** Sweeping
+  identifier length 1..250 against v0.43.0 found three shipped rules already
+  emitting invalid UTF-8 on both the `--json` and language-server channels
+  (W015 at 74 characters, W023 at 161-162, W018 at 198-199), and any non-ASCII
+  byte in a source file or filename made 512 of 1524 shape/length combinations
+  undecodable. `eigs_utf8_step` / `eigs_utf8_sanitize` now sit under everything
+  that truncates a message; the lexer spells an unexpected byte as `\xNN`; the
+  parser's caret line counts characters. Gated by
+  `tools/lint_source_byte_sweep.py` with a STRICT decoder — `jq` substitutes
+  U+FFFD and reports success, which is how this reached a release.
+
+- **`EIGS_STRICT=1` phases C and D (#971, #1008).** JSON parse failure in
+  `json_path` (a malformed document was walked leniently and answered the same
+  `""` an absent key does), the enumerated NaN sources, and the `-1`/falsy
+  wrong-type launderers. With the flag off every one is byte-identical to
+  v0.43.0, proven by `tools/strict_differential.sh` against a build of the
+  parent commit: 98 identical-when-off, 0 differing, 0 waived, 122/122
+  valid-input rows unchanged in both modes.
+
+- **Gated `task_sched_trace` (#846)** — a pure-reader scheduler decision
+  history, so a schedule visualizer or a deterministic simulation tester can
+  ask "who ran when" without instrumenting every yield site.
+
+- **Dropdown and combobox open lists render in the overlay pass (#859)**, on
+  the `_render_popups` path #565 built for menu-bar pull-downs, and grid's
+  row-label gutter is folded into its own rect. Two of the #823 containment
+  clip's four registry opt-outs are gone.
+
+### Fixed
+
+- **The observer write-path gate no longer arms on the mere presence of an
+  import or of an observer name in the constant pool (#1046, #915).** Literal
+  imports are resolved at compile time and names are matched on `OP_GET_NAME`
+  rather than against the whole pool. Both stand-ins cost read-free programs
+  their gate.
+
+- **A fresh `for` binder is loop-scoped inside a function too (#1105).** With
+  no pre-existing binding it was loop-scoped at module scope but persisted in a
+  function, so a post-loop read silently answered the last element.
+
+- **The REPL no longer swallows the line that closed a failed multi-line unit
+  (#1109).** An unindented non-blank line is both the terminator of an open
+  block and part of the same compiled unit; on a tokenize, parse or compile
+  failure the whole buffer was discarded, taking a statement the user typed and
+  that never ran.
+
+- **Replay: a boundary refusal on a VM-less worker is a clean exit (#1112).**
+  It printed the #148 diagnostic and then died by `SIGSEGV`.
+  `tools/replay_diff.sh` now fails on any signal.
+
+- **Embed: `obs_history_gap` is stored at the end of a closed isolated eval
+  unit (#1114).** It was stored only at the next eval boundary, so a host
+  reading `observer_predicate_at` directly between units was told history was
+  complete for exactly one boundary while the answer came from the stale
+  window.
+
+- **The meta-interpreter honours the `report`/`report_value` reservation
+  (#1111).** `lib/eigen.eigs` still let both be bound and accepted
+  non-identifier operands, reproducing the shadowing #1102 removed from the
+  runtime.
+
+- **`tools/observer_gate_diff.sh` normalises the executable directory and the
+  out-of-tree import-shadow warning before diffing (#1115)**, so two
+  byte-identical trees at different paths no longer compare unequal.
+
+### Changed
+
+- **The observer gate is hoisted ahead of the observe helpers, in both the
+  interpreter and the JIT (#972).** With the gate closed, every assignment
+  still dispatched into a helper, decoded the top of stack and resolved a slot
+  or hashed name, only to return at the helper's own gate test one frame later.
+
+- **The builtin counts in `README.md` and `docs/BUILTINS.md` are derived from
+  `eigenscript --api` and gated (#1118).** Both claimed "250+ builtin functions
+  (199 core + ~60 extensions)"; the parenthetical was wrong on both terms and a
+  hand-maintained count re-drifts on the next addition — the issue measured 253
+  core and the tree already read 258 by the time the fix was written. Now 348
+  (261 core + 87 extensions), checked by `tools/doc_drift_check.sh`.
+
+- **`ext_net` raw TCP/UDP sockets are ticked as shipped in `ROADMAP.md`
+  (#1119).**
+
 ## [0.43.0] - 2026-09-06
 
 ### Breaking changes
