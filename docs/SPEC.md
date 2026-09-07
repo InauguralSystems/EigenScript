@@ -257,8 +257,38 @@ consequences are contracts you can rely on:
   documented answer. Every site in the surface therefore carries a written
   classification, mechanically enforced by
   `tools/failsoft_classify_check.sh`.
-  Overflow saturation and the `NaN`→`0` collapse are unchanged by the flag for
-  now. (Division and modulo by zero raise in *both* modes — no defined value.)
+  Three further classes are loud under the same flag and unchanged without it:
+  - **The `NaN`→`0` collapse.** With the flag off a `NaN` still collapses to
+    `0` and sets `math_flags.invalid`. Under strict every reachable `NaN`
+    source raises a catchable `value` error naming the builtin: `pow` of a
+    negative base with a fractional exponent, `num of "nan"`,
+    `f64_from_bytes` of a `NaN` bit pattern, `matmul` when its accumulation
+    reaches `inf - inf`, `tensor_load` of a file carrying `NaN` bytes — and
+    the elementwise `divide` by zero, which answers `0` by default where the
+    `/` operator raises. The arithmetic operators themselves cannot reach a
+    `NaN` from finite operands (`0 / 0` and `x % 0` raise first, and no
+    operand can hold an infinity), so any other source hits a backstop that
+    raises as `arithmetic`. The JIT bails to the interpreter on a non-finite
+    result, so both tiers raise from the same guard. One default-path
+    asymmetry is older than strict mode and is left alone by it: a `matmul`
+    whose result is a **buffer** keeps the raw `NaN` the kernel wrote (it
+    reads back as `null`, and `math_flags` is not set), where a list result
+    collapses to `0` — strict raises on both.
+  - **JSON parse failure in `json_path`.** With the flag off a malformed
+    document is walked leniently and a parse failure answers the same `""`
+    an absent key does. Under strict `json_path` applies `json_decode`'s
+    acceptance test and raises a catchable `value` error naming the position;
+    JSON `false`, `null` and an absent key are answers and stay quiet.
+  - **The sentinel and falsy families.** `index_of`/`list_index_of`/`ord`
+    (`-1`), `file_exists`/`is_dir`/`is_file`/`read_text`/`read_bytes`/`ls`/
+    `mkdir`/`env_get` (`0`/`""`), and the wrong-type launderers the sweep
+    found (`split`, `scan_ints`, `buffer`, `channel_closed`, `f64_to_bytes`,
+    `json_build`, `sort`, `random_int`, `random_hex`, `token_name`,
+    `tokenize_ids`...) raise on a wrong-typed argument; the documented
+    sentinel for a valid-but-absent input — `index_of` miss `-1`,
+    `file_exists` of a missing path `0` — is unchanged in both modes.
+  Overflow saturation is unchanged by the flag. (Division and modulo by zero
+  raise in *both* modes — no defined value.)
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
   `>>` and their `bit_*` builtin forms interpret operands as 64-bit integers, so
   `1 << 40` is exact where an f64 mantissa alone would not help. This is the

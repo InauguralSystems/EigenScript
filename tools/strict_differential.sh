@@ -40,15 +40,43 @@
 #   - --sweep is discovery, not a gate: it has no allowlist, so nothing
 #     fails when a new laundering builtin appears. Making it a gate needs a
 #     pinned expected-quiet list, which nobody has written.
+# UNDER LOAD. Every measurement here is one short child process, and the tool
+# makes no timing assumption: nothing is backgrounded, nothing polls, no probe
+# depends on scheduling order, and a probe that hangs hangs (it is not raced
+# against a timer, so a slow box cannot turn a pass into a fail). What a loaded
+# box CAN do is stop a child from running at all — a fork that fails, a kill, a
+# binary relinked underneath the run — and until 2026-09-07 that arrived as a
+# finding ABOUT THE CODE: a probe killed by a signal exits nonzero, so it was
+# scored "raised, but not by its own guard", and a harness that died mid-run
+# printed no verdict at all while still exiting nonzero. Both now say what they
+# are: `probes that did not run` is its own bucket, naming the exit status, and
+# the EXIT trap prints ABORTED when the script exits before its verdict line.
+# A red from either is still a red — nothing is retried, and a crash (signal)
+# is reported as a crash — but it names the environment instead of the table.
+#
+#   - The probe row's THIRD field (#971 Phase C/D + NaN) is the substring
+#     the strict raise must carry; it defaults to "<who>: expected", the
+#     shape ARG_GUARD/STRICT_REQUIRE emit. A NaN source (num_guard_named)
+#     raises "<who>: result is not a number"; a STRICT_DOMAIN site raises
+#     "<who>: <what>"; json_path raises "json_path: invalid JSON". The
+#     cross-check derives its name set from ALL of those spellings, so a
+#     guard of any kind without a probe row still goes red — but a row
+#     whose expect field is too loose (a bare builtin name) is the same
+#     vacuity the "<name>: expected" rule closed, and nothing here
+#     catches it beyond review.
 
 set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
 # EIGS_DIFF_NEW lets the harness be pointed at another build, which is how
-# it is validated: run it with NEW := the BASELINE binary and both
-# detectors must fire (the baseline lacks these guards, so probes go
-# silent under strict; and the waived divergence vanishes, so the
-# stale-waiver check speaks). A harness that has never failed has not been
+# it is validated: run it with NEW := the previous release's binary and the
+# loudness detector must fire, because that binary lacks the guards this
+# tree added. Measured 2026-09-07 against the v0.43.0 build:
+# `raises-under-strict: 77 silent: 21` and FAIL, where this tree scores
+# 98/0 and OK. (The stale-waiver check is not exercised that way while both
+# waiver lists are empty, which they are — see the waiver block below. It is
+# exercised by ADDING a waiver for a probe that does not diverge, which is
+# what it exists to catch.) A harness that has never failed has not been
 # shown to work.
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
 BASE="${1:-}"
@@ -66,13 +94,46 @@ if [ "$BASE" = "--no-baseline" ]; then NO_BASELINE=1; BASE=""; fi
 [ -x "$NEW" ] || { echo "FAIL: no built binary at $NEW"; exit 1; }
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+# ONE trap (a second EXIT trap would silently replace this one). It cleans up
+# and then answers the question a bare nonzero exit cannot: did this script
+# reach its verdict? A run killed mid-way, or aborted by `set -u` on an unbound
+# name, exits nonzero having printed no finding — which reads downstream as
+# "the gate found something" and sends the next person hunting a guard that is
+# fine. Seen once in a full-suite run (2026-09-06): [99s] printed FAIL and its
+# diagnostic re-run printed a completely clean report, because the failing run
+# was discarded rather than shown. If that happens again this line says so.
+verdict_printed=0
+_sd_main_pid=$BASHPID
+_sd_exit() {
+    local es=$?
+    # ONLY the top-level shell. bash runs an EXIT trap in a subshell that is
+    # killed by a signal too, and this trap both deletes $TMP and speaks: a
+    # signalled command substitution would otherwise remove the temp dir out
+    # from under the still-running parent and print ABORTED before the parent
+    # reaches its verdict. $BASHPID is per-subshell where $$ is not.
+    [ "$BASHPID" = "${_sd_main_pid:-}" ] || return 0
+    rm -rf "${TMP:-}"
+    if [ "${verdict_printed:-0}" != "1" ]; then
+        if [ "$es" = "0" ]; then
+            echo "  ABORTED: this differential was terminated before printing a verdict."
+        else
+            echo "  ABORTED: this differential exited (rc=$es) before printing a verdict."
+        fi
+        echo "           Nothing above is a finding about the code under test —"
+        echo "           the harness itself did not finish (killed, or an unbound"
+        echo "           name under 'set -u'). Re-run it; if it aborts again, the"
+        echo "           abort is the bug."
+    fi
+}
+trap _sd_exit EXIT
 
 # ---------------------------------------------------------------- probes
-# name|program
+# name|program[|expect]
 # Each program calls the builtin with a WRONG-TYPED argument at the right
 # arity, so the guard under test is the one that fires. `who` is the name
-# ARG_GUARD reports, which is what the cross-check below matches on.
+# ARG_GUARD reports, which is what the cross-check below matches on. The
+# optional third field is the message substring the raise must carry when
+# it is not ARG_GUARD's "<who>: expected" (the NaN and domain rows).
 PROBES=$(cat <<'EOF'
 abs|print of (abs of "x")
 acos|print of (acos of "x")
@@ -89,6 +150,7 @@ dot|print of (dot of [1, 2])
 ends_with|print of (ends_with of [42, "x"])
 f64_from_bytes|print of (f64_from_bytes of "x")
 floor|print of (floor of "x")
+gather|print of (gather of ["hello", [0]])
 has_key|print of (has_key of [42, "k"])
 join|print of (join of [42, ","])
 json_path|print of (json_path of 42)
@@ -163,6 +225,27 @@ audio_sweep|print of (len of (audio_sweep of ["100", 200, 0.01, 0.5, 0]))
 audio_noise|print of (len of (audio_noise of [0.001, "0.5"]))
 audio_envelope|print of (len of (audio_envelope of [([0.1, 0.2]), "0.01", 0.01, 0.5, 0.01]))
 audio_gain|print of (len of (audio_gain of [([1.0]), "2.0"]))
+json_path|print of (json_path of ["{\"a\": 1e", "a"])|json_path: invalid JSON at position
+pow|print of (pow of [0 - 8, 0.5])|pow: result is not a number
+num|print of (num of "nan")|num: result is not a number
+f64_from_bytes|print of (f64_from_bytes of ([127, 248, 0, 0, 0, 0, 0, 0]))|f64_from_bytes: result is not a number
+matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 0 - 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0])|matmul: result is not a number
+tensor_load|write_bytes of ["@TMP@/nan.tensor", [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 127, 0, 0, 0, 0, 0, 0, 4, 64]]\nprint of (tensor_load of "@TMP@/nan.tensor")|tensor_load: result is not a number
+divide|print of (divide of [[1], [0]])|divide: division by zero
+split|print of (split of 42)
+scan_ints|print of (scan_ints of ({"k": 1}))
+scan_tokens|print of (scan_tokens of ({"k": 1}))
+scan_int_tokens|print of (scan_int_tokens of ({"k": 1}))
+tokenize_ids|print of (tokenize_ids of 42)
+tokenize_with_names|print of (tokenize_with_names of 42)
+token_name|print of (token_name of "x")
+channel_closed|print of (channel_closed of 42)
+f64_to_bytes|print of (f64_to_bytes of "x")
+buffer|print of (buffer of "x")
+json_build|print of (json_build of ({"a": 1}))
+sort|print of (sort of ({"a": 1}))
+random_int|print of (random_int of ["a", 3])
+random_hex|print of (random_hex of "x")
 EOF
 )
 # A probe that needs a real resource must build it under this run's own $TMP,
@@ -190,6 +273,7 @@ try_parse of invalid syntax is 0|print of (try_parse of "!!!")
 max of an empty list is 0|print of (max of ([]))
 sum of an empty list is 0 (the identity, not a type mistake)|print of (sum of ([]))
 mean of an empty list is 0|print of (mean of ([]))
+gather of a 1-D tensor in the per-row form is 0 per row (shape, not index)|print of (gather of [[1, 2], [0, 0]])
 norm of a real vector still computes|print of (norm of [3, 4])
 index_of that finds nothing is -1, not an error|print of (index_of of ["abc", "z"])
 list_index_of that finds nothing is -1|print of (list_index_of of [([1, 2]), 9])
@@ -197,6 +281,18 @@ ord of the empty string is -1 (no first byte)|print of (ord of "")
 sum of a bare number is that number|print of (sum of 7)
 join with a real separator still joins|print of (join of [["a", "b"], "-"])
 json false decodes to 0|print of (json_path of ["{\"a\": false}", "a"])
+json_path of an absent key is "" (no value at that path)|print of f"[{json_path of ["{\"a\": 1}", "b"]}]"
+json_path of a JSON null renders as ""|print of f"[{json_path of ["{\"a\": null}", "a"]}]"
+file_exists of a real absent path is 0 (#1008 Phase D)|print of (file_exists of "/nonexistent/eigs_971_probe")
+is_dir of a real absent path is 0|print of (is_dir of "/nonexistent/eigs_971_probe")
+read_text of a real absent path is ""|print of f"[{read_text of "/nonexistent/eigs_971_probe"}]"
+index_of miss is -1 even with the flag on|print of (index_of of ["abc", "z"])
+num of "inf" saturates (overflow, not NaN)|print of (num of "inf")
+pow of a negative base with an INTEGER exponent is defined|print of (pow of [0 - 2, 3])
+token_name of an unknown id is "?"|print of (token_name of 9999)
+channel_closed of a reclaimed/unknown channel is 1|print of (channel_closed of ({"_channel_id": 99999}))
+json_build of null is the empty object|print of (json_build of null)
+random_hex of 0 is ""|print of f"[{random_hex of 0}]"
 EOF
 )
 
@@ -233,6 +329,7 @@ print of (has_key of [{"k": 1}, "k"])
 print of (path_join of ["a", "b"])
 print of (atan2 of [1, 1])
 print of (list_contains of [[1, 2, 3], 2])
+print of (gather of [[[1, 2], [3, 4]], [0, 1]])
 print of (str_replace of ["banana", "an", "X"])
 print of (add of [[1, 2], [3, 4]])
 print of (sqrt of [4, 9])
@@ -246,6 +343,29 @@ print of (task_alive of 1)
 print of (str_upper of "abc")
 print of (cos of 0)
 print of (len of [1, 2, 3])
+print of (json_path of ["{\"a\": [1, {\"b\": \"x\"}]}", "a.1.b"])
+print of (pow of [2, 10])
+print of (pow of [[1, 2, 3], 2])
+print of (num of "3.5e2")
+print of (f64_from_bytes of (f64_to_bytes of 42.5))
+print of (matmul of [[[1, 2]], [[3], [4]]])
+local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0] > 1e308)
+print of (divide of [[6, 8], [2, 4]])
+print of (split of ["a,b,c", ","])
+print of (split of "x y")
+print of (scan_ints of "1 2 -3")
+print of (len of (scan_tokens of "a b"))
+print of (len of (scan_int_tokens of "1 x"))
+print of (len of (tokenize_ids of "x is 1"))
+print of (token_name of 0)
+print of (channel_closed of (channel of null))
+print of (f64_to_bytes of 1)
+print of (len of (buffer of 4))
+print of (len of (buffer of [2, 3]))
+print of (json_build of ["k", 1])
+print of (sort of [3, 1, 2])
+seed_random of 7\nprint of (random_int of [1, 1])
+print of (len of (random_hex of 4))
 EOF
 )
 
@@ -283,6 +403,18 @@ EOF
 #     stable across runs" (proof: two baseline runs must DIFFER)
 #   EXPECTED_DIVERGE_FIXED    — "the old answer was stable and wrong"
 #     (proof: two baseline runs must AGREE, and the new answer must be 0)
+# #971 (NaN enumeration) ALMOST added one, and the second look is the reason
+# both lists are empty. matmul's BUFFER path stores the kernel's raw inf-inf
+# NaN, and a raw NaN in a buffer is not a number the program can see — its bit
+# pattern is a NaN-boxed slot tag, so `r[0]` reads back as `null` (0xFFF8...
+# is SLOT_NULL_BITS). Collapsing it to 0 the way the list path does looked
+# like a free fix, and it was written, waived here as EXPECTED_DIVERGE_FIXED,
+# and proven. But a proven waiver is still a hole in the ONE claim this whole
+# tool exists to make — "with the flag off, nothing changed" — and that claim
+# is worth more than the incidental fix. The strict half now raises through
+# STRICT_DOMAIN, which cannot touch the soft path, `r[0]` still reads `null`
+# with the flag off, and the pre-existing `null` read is recorded in
+# ROADMAP.md as its own change with its own differential. Nothing is waived.
 EXPECTED_DIVERGE_UNSTABLE=""
 EXPECTED_DIVERGE_FIXED=""
 EXPECTED_DIVERGE="$EXPECTED_DIVERGE_UNSTABLE
@@ -314,6 +446,19 @@ run_capture() {   # <binary> <env-strict|-> <file>  -> prints "rc\nstdout+stderr
     printf '%s\n%s' "$rc" "$out"
 }
 
+# Did this run MEASURE anything? A guard raise exits 1. Exit 126/127 means the
+# process could not be executed, and >= 128 means it was killed by a signal —
+# neither is a statement about a guard, and scoring them as one is how a loaded
+# box produces a finding about code that is fine. Returns the reason, or "" when
+# the run is a legitimate measurement.
+run_did_not_measure() {   # <rc>
+    case "$1" in
+        126|127) printf 'the process could not be executed (exit %s)' "$1" ;;
+        1[3-9][0-9]|12[89]) printf 'killed by signal %s — a crash, not a guard' "$(( $1 - 128 ))" ;;
+        *) printf '' ;;
+    esac
+}
+
 # rc is initialised ONCE, here, before any check can run. It used to be
 # assigned rc=0 down in the summary block — AFTER the cross-check section had
 # already set rc=1 — so a STALE UNPROBEABLE WAIVER finding printed and the
@@ -324,6 +469,7 @@ rc=0
 n_probe=0 n_ident=0 n_differ=0 n_raise=0 n_silent=0 n_waived=0
 waived_seen=""
 n_pin=0 n_pin_ok=0 n_pin_broke=0 n_misattr=0
+n_unrun=0 unrun_list=""
 differ_list="" silent_list="" pin_list="" misattr_list=""
 n_skipped=0 skipped_list=""
 
@@ -348,20 +494,30 @@ n_skipped=0 skipped_list=""
 # — `eigen_eval_loss` reported as "raised by the wrong guard: undefined
 # variable" in a default build. A sibling list of file names drifts from the
 # Makefile exactly the way §1 of mechanical-gates describes.
+# The guarded-name extractor, shared by the variant-only scan and the
+# cross-check so the two cannot disagree about what a guard looks like.
+# Every strict spelling counts: ARG_GUARD and its taped forms, the coercion
+# shape STRICT_REQUIRE (#971 Phase B — sites the classifier cannot see), the
+# domain shape STRICT_DOMAIN and the NaN sources num_guard_named (#971
+# NaN enumeration). The first quoted string in the call is the name.
+extract_guard_names() {
+    awk '
+    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named)\(/ { acc = ""; collecting = 1 }
+    collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
+        collecting = 0
+        n = split(acc, parts, "\"")
+        if (n >= 2) print parts[2]
+    } }
+    ' "$@"
+}
+
 release_srcs="$(make print-SRC_V_release 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u)"
 variant_only=""
 if [ -n "$release_srcs" ]; then
     for f in src/*.c; do
         printf '%s\n' "$release_srcs" | grep -qxF "$f" && continue
         variant_only="$variant_only
-$(awk '
-    /ARG_GUARD(_TAPED|_PRETAKE)?\(/ { acc = ""; collecting = 1 }
-    collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
-        collecting = 0
-        n = split(acc, parts, "\"")
-        if (n >= 2) print parts[2]
-    } }
-' "$f")"
+$(extract_guard_names "$f")"
     done
     variant_only="$(printf '%s\n' "$variant_only" | sed '/^$/d' | sort -u)"
 else
@@ -392,8 +548,9 @@ probe_builtin_present() {
     return 0
 }
 
-while IFS='|' read -r who prog; do
+while IFS='|' read -r who prog expect; do
     [ -z "${who:-}" ] && continue
+    expect="${expect:-$who: expected}"
     # A probe for a builtin this build does not contain would "not raise" for
     # the uninteresting reason that the name is undefined, which reads as a
     # guard that went silent. Skip it, and COUNT the skip — a probe that
@@ -430,7 +587,12 @@ while IFS='|' read -r who prog; do
 
     s="$(run_capture "$NEW" 1 "$f")"
     s_rc="${s%%$'\n'*}"
-    if [ "$s_rc" != "0" ]; then
+    why="$(run_did_not_measure "$s_rc")"
+    if [ -n "$why" ]; then
+        n_unrun=$((n_unrun + 1))
+        unrun_list="$unrun_list
+    $who — $why: $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-70)"
+    elif [ "$s_rc" != "0" ]; then
         # A nonzero exit is NOT enough. A probe that raises somewhere else
         # entirely — an arity error before the type guard, an unconditional
         # rt_error higher up — scores as coverage while testing nothing. So
@@ -447,13 +609,21 @@ while IFS='|' read -r who prog; do
         # The FULL who, not its first component: the shared tensor helpers
         # are registered as "sqrt/exp/log/negative" and emit that verbatim,
         # so trimming at the slash made the matcher miss its own message.
-        if printf '%s' "$s" | grep -qF "$who: expected"; then
-            n_raise=$((n_raise + 1))
-        else
+        # A shell substring match, NOT `printf ... | grep -q`: under
+        # `set -o pipefail` that pipe is a race — grep -q exits on its first
+        # match and closes the pipe, and if the multi-line error text (message
+        # + source excerpt + caret) is still being written the writer takes
+        # SIGPIPE, the pipeline reports failure, and a correctly attributed
+        # raise is scored MISATTRIBUTED. Fired once in 6 runs under load
+        # (text_builder_to_string, 2026-09-06) and made [99s] flake red.
+        case "$s" in
+            *"$expect"*) n_raise=$((n_raise + 1)) ;;
+            *)
             n_misattr=$((n_misattr + 1))
             misattr_list="$misattr_list
     $who — raised, but not by its own guard: $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-70)"
-        fi
+            ;;
+        esac
     else
         n_silent=$((n_silent + 1))
         silent_list="$silent_list
@@ -466,7 +636,12 @@ while IFS='|' read -r label prog; do
     n_pin=$((n_pin + 1))
     f="$TMP/pin.eigs"; printf '%s\n' "$prog" > "$f"
     s="$(run_capture "$NEW" 1 "$f")"
-    if [ "${s%%$'\n'*}" = "0" ]; then
+    why="$(run_did_not_measure "${s%%$'\n'*}")"
+    if [ -n "$why" ]; then
+        n_unrun=$((n_unrun + 1))
+        unrun_list="$unrun_list
+    pin: $label — $why"
+    elif [ "${s%%$'\n'*}" = "0" ]; then
         n_pin_ok=$((n_pin_ok + 1))
     else
         n_pin_broke=$((n_pin_broke + 1))
@@ -519,6 +694,7 @@ if [ "${1:-}" = "--sweep" ] || [ "${2:-}" = "--sweep" ]; then
     done
     echo "  quiet=$quiet loud=$loud skipped=$skipped (skipped = side-effecting/blocking, see SKIP above)"
     echo "  A QUIET row is a CANDIDATE, not a defect: read the function before acting."
+    verdict_printed=1   # the sweep's verdict IS its listing; it is not a gate
     exit 0
 fi
 
@@ -554,14 +730,7 @@ fi
 # "guarded but unprobed" hole this cross-check exists to detect, living inside
 # the cross-check. Caught when three freshly added guards reported as STALE
 # PROBES rather than as newly covered ones.
-guarded="$(awk '
-    /ARG_GUARD(_TAPED|_PRETAKE)?\(/ { acc = ""; collecting = 1 }
-    collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
-        collecting = 0
-        n = split(acc, parts, "\"")
-        if (n >= 2) print parts[2]
-    } }
-' src/*.c | sed '/^$/d' | sort -u)"
+guarded="$(extract_guard_names src/*.c | sed '/^$/d' | sort -u)"
 probed="$(printf '%s\n' "$PROBES" | cut -d'|' -f1 | sed '/^$/d' | sort -u)"
 
 # Names absent from THIS build (computed above by execution) are excused for
@@ -589,6 +758,7 @@ else
     echo "  identical-when-off: SKIPPED (no baseline binary given)"
 fi
 echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_misattr"
+[ "$n_unrun" -gt 0 ] && echo "  probes that did not run: $n_unrun"
 echo "  answer-pins held: $n_pin_ok   broken: $n_pin_broke"
 if [ -n "$BASE" ]; then
     echo "  valid-input rows unchanged in BOTH modes: $((n_valid * 2 - $(printf '%s' "$valid_list" | grep -c '\[strict=' || true))) / $((n_valid * 2))"
@@ -599,6 +769,10 @@ fi
 [ -n "$differ_list" ] && { echo "  DIFFERING (the default path was NOT preserved):$differ_list"; rc=1; }
 [ -n "$silent_list" ] && { echo "  SILENT UNDER STRICT:$silent_list"; rc=1; }
 [ -n "$misattr_list" ] && { echo "  RAISED BY THE WRONG GUARD (probe does not reach its target):$misattr_list"; rc=1; }
+# NOT a finding about a guard, and said in those words so the reader goes to the
+# machine and not to the probe table. Still red: an unmeasured probe leaves the
+# invariant unproven, and this tool does not go green on unmeasured population.
+[ -n "$unrun_list" ]  && { echo "  DID NOT RUN (the environment, not a guard — nothing is retried):$unrun_list"; rc=1; }
 [ -n "$valid_list" ]  && { echo "  VALID INPUT CHANGED (a guard is too broad, or a split reordered a real branch):$valid_list"; rc=1; }
 [ -n "$pin_list" ]    && { echo "  PIN BROKEN (the reform overshot into a documented answer):$pin_list"; rc=1; }
 [ -n "$missing" ]     && { echo "  GUARDED BUT UNPROBED:"; printf '    %s\n' $missing; rc=1; }
@@ -621,7 +795,7 @@ fi
 # other, and neither is the instability check.
 if [ -n "$BASE" ]; then
     for w in $EXPECTED_DIVERGE_FIXED; do
-        wprog="$(printf '%s\n' "$PROBES" | grep -F "$w|" | head -1 | cut -d'|' -f2-)"
+        wprog="$(printf '%s\n' "$PROBES" | grep -F "$w|" | head -1 | cut -d'|' -f2)"
         [ -z "$wprog" ] && continue
         printf '%b\n' "$wprog" > "$TMP/w.eigs"
         probe_builtin_present "$w" || { echo "  waiver not exercised: $w is not in this build"; continue; }
@@ -646,7 +820,7 @@ fi
 
 if [ -n "$BASE" ]; then
     for w in $EXPECTED_DIVERGE_UNSTABLE; do
-        wprog="$(printf '%s\n' "$PROBES" | grep -F "$w|" | head -1 | cut -d'|' -f2-)"
+        wprog="$(printf '%s\n' "$PROBES" | grep -F "$w|" | head -1 | cut -d'|' -f2)"
         if [ -n "$wprog" ]; then
             printf '%b\n' "$wprog" > "$TMP/w.eigs"
             r1="$(run_capture "$BASE" - "$TMP/w.eigs")"
@@ -713,5 +887,6 @@ if [ "$NO_BASELINE" = 1 ]; then
     echo "        of the parent commit — that half is the safety claim."
 fi
 
+verdict_printed=1
 [ "$rc" = 0 ] && echo "OK" || echo "FAIL"
 exit $rc

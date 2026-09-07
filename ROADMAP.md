@@ -150,6 +150,96 @@ observer/deterministic-replay niche instead of diluting it.**
       "num IS f64" so a future wider kind stays possible
       ([#417](https://github.com/InauguralSystems/EigenScript/issues/417))
 
+- [ ] **Value-level invalidity taint for the observer** — **DEFERRED, by
+      evidence, not omission.** #971 item 1 proposed threading
+      `math_flags & INVALID` into the `ObserverSlot` so a binding produced by
+      an invalid op refuses the rest bands the way saturation does. It was
+      built (a consumed per-state `math_invalid_pending` edge, a
+      `v_invalid` slot bit OR'd into the five band functions) and
+      **reverted**: attribution is positional — "the next binding observed
+      after an invalid op" — and holds only when the invalid op is lexically
+      the last thing evaluated before the observed assignment. Executed:
+      `a is sqrt of (0 - 1.0)` reads `diverging`, but `local t is sqrt of
+      (0 - 1.0)` / `a is t` and a `safe_sqrt` wrapper both certify
+      **`converged`** on the fabricated 0 (false negatives), and the mirror
+      false positive — a discarded invalid op tainting an honestly converged
+      neighbour — is equally reachable. Saturation needs no state because it
+      is derivable from `last_value` alone; a clamped NaN lands mid-band and
+      is not. So the bit must **travel with the value**: a taint on `Value`
+      propagated through copies, returns and the NaN-boxed `EigsSlot`
+      immediates, **and carried on the tape** — `tape_read.c`/`step.c`/
+      `eigsdap.c` rebuild slots from recorded values, so the live runtime
+      reported `diverging` where `--step` reported `[converged]` on the same
+      program (a missing key in an old dump must not read as "valid"). That
+      is a design pass of its own, not a sub-bullet. What shipped instead:
+      under `EIGS_STRICT=1` every reachable NaN source raises (item 3 of the
+      strict ladder), so a grader that needs invalidity loud has it without
+      the taint.
+      ([#971](https://github.com/InauguralSystems/EigenScript/issues/971))
+- [ ] **A `matmul` BUFFER result is stored raw — `inf` reads back above
+      `1e308`, and a `NaN` reads back as `null`.** The boxed roads go
+      through `make_num`, whose `num_guard` saturates an
+      infinity and collapses a `NaN` to `0` + `math_flags.invalid`. The
+      buffer fast path writes the kernel's accumulator straight into the
+      result buffer instead, so both survive: `r[0] > 1e308` is `1`, and a
+      `NaN` element is not a number the program can even see — its bit
+      pattern IS the boxed-slot tag for null (0xFFF8… == `SLOT_NULL_BITS`),
+      so `r[0]` reads `null` out of a buffer of numbers, and
+      `math_flags.invalid` stays `0`.
+      **#971 built the NaN half of the fix and then reverted it, on
+      purpose.** Collapsing NaN there is two lines and passed every test,
+      but it changes the DEFAULT path (`null` -> `0`, `invalid` 0 -> 1), and
+      the one claim the strict reform makes is that with the flag off
+      nothing changed — proven by `tools/strict_differential.sh` against the
+      previous release binary. Shipping it meant carrying a waived
+      divergence in that tool, i.e. the proof with a hole in it, for an
+      incidental fix that was never what #971 was about. So strict raises on
+      both paths (`STRICT_DOMAIN`, which cannot touch the soft path) and the
+      default answer is byte-identical to v0.43.0; `tests/test_strict_math.sh`
+      SM49a/SM49b pin both halves so neither moves by accident.
+      **The writer is not the place to fix it.** `matmul` is not the only
+      road to a `NaN` buffer element: `ext_store` round-trips one on
+      purpose (`store_nonfinite_sentinel` encodes `"nan"`/`"inf"`/`"-inf"`
+      because JSON has no literal for them), and the embed API's
+      `eigs_value_buffer_set` takes a raw `double` from the host. Whatever
+      is decided has to be decided at the READ, where every road meets.
+      Doing it properly is its own change: decide the buffer contract for
+      BOTH non-finites together (saturate the `inf` too, or keep both raw and
+      make the buffer read report a NaN as a number rather than as `null`),
+      mirror it in the AOT — ouroboros `aot_rt.h`'s `aot_tensor_matmul`
+      reads the same raw buffer and its round-187 fixture PINS the `inf`
+      read — and run the differential over both.
+      ([#971](https://github.com/InauguralSystems/EigenScript/issues/971))
+- [ ] **Flip `EIGS_STRICT` to the default?** — **DEFERRED; the evidence
+      says it is now cheap, the decision is still open.** Measured
+      2026-09-06 on the v0.43.0 tree with the #971 Phase C/D + NaN work
+      applied: **94 consumer entry points** (DMG `test_cpu`/`test_memory` +
+      the 500K-cycle canary, EigenMiniSat DPLL/CDCL solves, EigenRegex S1–S12
+      + smoke, EigenGauntlet's 11 labs at size 1, Tidepool, dynamics,
+      liferaft, tidelog, phugoid, polymethod, DeslanStudio's 24 headless
+      tests, iLambdaAi, eddy) run twice on the same binary, flag off and
+      `EIGS_STRICT=1`: **0 of 94 change exit status under strict**; the six
+      that fail do so identically in both modes for load-path reasons
+      unrelated to the flag. (Re-spot-checked 2026-09-07 on the final
+      binary — DMG `test_cpu`, EigenMiniSat `test_solver`, EigenGauntlet
+      `tensor`/`io`, Tidepool `test_game`, dynamics `solve`, liferaft
+      `test_prng`, EigenRegex `test_smoke`: 8 of 8 unchanged.) The runtime's own suite is a different story —
+      it PINS the soft answers (`sqrt of -1` is `0`, `cos of "hello"` is
+      `0`, the `fs:ANSWER` pins) in dozens of sections, so flipping the
+      default means rewriting those pins as `EIGS_STRICT=0` rows and
+      re-deciding which stand-ins survive as documented answers (the
+      classification ledger in `tools/failsoft_classify_check.sh` is the
+      input). Two things must land first: the AOT mirror (ouroboros
+      `aot_rt.h` carries its own inlined `num_guard`, `op_div`-shaped
+      `aot_ddiv` and a raw-`inf` matmul read pinned by its round-187
+      fixture — a default flip without the mirror flipping recreates the
+      #975 div0 fossil), and a decision on the **raw non-finite in a
+      `matmul` buffer result** (the entry below). Until then:
+      strict stays opt-in, graders and CI lanes turn it on, and the
+      differential (`tools/strict_differential.sh <parent-build>`) keeps
+      the default path byte-identical.
+      ([#971](https://github.com/InauguralSystems/EigenScript/issues/971))
+
 ### AOT (ouroboros — the native-perf path; not the JIT)
 
 - [x] Close the F-OURO-23 envelope via `lib/checksum.eigs` (CRC-32) as

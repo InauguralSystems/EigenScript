@@ -319,8 +319,17 @@ typedef double (*BinOpFn)(double, double);
 static double op_add(double a, double b) { return num_guard(a + b); }
 static double op_sub(double a, double b) { return num_guard(a - b); }
 static double op_mul(double a, double b) { return num_guard(a * b); }
-static double op_div(double a, double b) { return (b == 0.0) ? 0.0 : num_guard(a / b); }
-static double op_pow(double a, double b) { return num_guard(pow(a, b)); }
+/* #971: the elementwise zero-denominator stand-in. The `/` operator raises
+ * on a zero divisor in both modes; this helper answered 0 instead (the
+ * IEEE result would be inf or NaN, so the 0 is a pre-collapse). Default
+ * unchanged; under strict it is the same undefined operation and raises. */
+static double op_div(double a, double b) {
+    if (b == 0.0) { STRICT_DOMAIN(1, "divide", "division by zero"); return 0.0; }
+    return num_guard(a / b);
+}
+/* #971: pow(negative, non-integer) is NaN — the one arithmetic builtin whose
+ * finite inputs reach a NaN. Named so the strict raise says `pow`. */
+static double op_pow(double a, double b) { return num_guard_named(pow(a, b), "pow"); }
 
 /* #1093: materialise a buffer as the nested-list tensor of the same shape, so
  * a MIXED buffer/list pair falls back to the list path (and yields a list). */
@@ -642,6 +651,38 @@ Value* builtin_tensor_matmul(Value *arg) {
                                                 : make_shaped_buffer(ar, bc);
         if (!res) return make_null();
         ne_matmul_buf(a->data.buffer.data, ar, ac, b->data.buffer.data, bc, res->data.buffer.data);
+        /* #971: the kernel accumulates raw, so inf - inf leaves a NaN in the
+         * result buffer. The boxed roads collapse a NaN in make_num's
+         * num_guard; this path stores it verbatim, and a raw
+         * NaN in a buffer is not a number the program can see — its bit
+         * pattern is a NaN-boxed slot tag, so `r[i]` reads back as `null`
+         * (0xFFF8... is SLOT_NULL_BITS).
+         *
+         * Under strict that undefined result RAISES, named, like every
+         * other enumerated NaN source. With the flag OFF the buffer is
+         * left exactly as the kernel wrote it, INCLUDING that NaN: this
+         * reform's whole safety claim is that the default path is
+         * byte-identical to the previous release, and collapsing here
+         * would change `r[0]` from `null` to 0 and set EIGS_MATH_INVALID
+         * where the release set nothing (measured against the v0.43.0
+         * binary). The `null` read is a real defect — it is a buffer
+         * element that is neither a number nor a program-made null — but
+         * it is a PRE-EXISTING one, it is not unique to this writer
+         * (ext_store round-trips a NaN buffer element deliberately —
+         * store_nonfinite_sentinel), and fixing it means fixing the READ
+         * for every road at once. That is its own change with its own
+         * differential; it is recorded in ROADMAP.md, not smuggled in
+         * under a strict-mode flag. STRICT_DOMAIN is the shape for that:
+         * it raises under strict and does nothing otherwise, so the soft
+         * path cannot drift. */
+        if (g_strict) {
+            for (int i = 0; i < res->data.buffer.count; i++)
+                if (res->data.buffer.data[i] != res->data.buffer.data[i]) {
+                    STRICT_DOMAIN(1, "matmul",
+                                  "result is not a number (NaN has no defined value)");
+                    break;
+                }
+        }
         return res;
     }
     int ar, ac, br, bc;
@@ -666,6 +707,10 @@ Value* builtin_tensor_matmul(Value *arg) {
     }
     double *out = xcalloc((size_t)ar * bc, sizeof(double));
     ne_matmul_buf(af, ar, ac, bf, bc, out);
+    /* #971: same NaN collapse as the buffer path, so the strict raise names
+     * matmul instead of the bare num_guard backstop inside make_num. */
+    for (int64_t i = 0; i < (int64_t)ar * bc; i++)
+        if (out[i] != out[i]) out[i] = num_guard_named(out[i], "matmul");
     Value *result;
     if (ar == 1)
         result = flat_to_tensor_1d(out, bc);
@@ -2067,6 +2112,12 @@ Value* builtin_tensor_load(Value *arg) {
     double *data = xmalloc_array((size_t)total, sizeof(double));
     if (!data) { fclose(f); return make_null(); }
     if ((int)fread(data, sizeof(double), total, f) != total) { free(data); fclose(f); return make_null(); }
+    /* #971: the file is untrusted bytes, so a NaN pattern is reachable
+     * here. flat_to_tensor_* would collapse it through make_num anyway
+     * (same 0 + EIGS_MATH_INVALID); guarding first lets the strict raise
+     * name tensor_load. */
+    for (int i = 0; i < total; i++)
+        if (data[i] != data[i]) data[i] = num_guard_named(data[i], "tensor_load");
 
     /* Read observer state if present */
     double *obs_data = NULL;

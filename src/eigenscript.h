@@ -1404,14 +1404,53 @@ void free_value(Value *v);
                                  * there. Detection has to sit where the operands
                                  * are still live — the arithmetic dispatch. */
 
+/* #971: under EIGS_STRICT a NaN does not collapse — it RAISES a catchable
+ * `value` error. `who` names the builtin whose result was undefined (the
+ * enumerated sources call num_guard_named); NULL is the backstop from
+ * num_guard itself for a source nobody enumerated. Out of line so the NaN
+ * branch stays one call on a path a finite program never takes. */
+void eigs_strict_nan_raise(const char *who);
+
 static inline double num_guard(double x) {
     /* Fast path unchanged: the flag writes live only on the clamp branches,
      * which a program that does not overflow never takes. */
-    if (x != x) { g_math_flags |= EIGS_MATH_INVALID; return 0.0; }        /* NaN */
+    if (x != x) {                                                            /* NaN */
+        g_math_flags |= EIGS_MATH_INVALID;
+        if (g_strict) eigs_strict_nan_raise(NULL);
+        return 0.0;
+    }
     if (x > EIGS_NUM_MAX)  { g_math_flags |= EIGS_MATH_OVERFLOW; return EIGS_NUM_MAX; }
     if (x < -EIGS_NUM_MAX) { g_math_flags |= EIGS_MATH_OVERFLOW; return -EIGS_NUM_MAX; }
     return x;
 }
+
+/* #971: num_guard for a builtin whose result CAN be NaN on the current tree
+ * (`pow` of a negative base with a fractional exponent, `num of "nan"`,
+ * `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation,
+ * `tensor_load` of a file carrying NaN bytes). Default path identical to
+ * num_guard — collapse to 0, set EIGS_MATH_INVALID — but under strict the
+ * raise NAMES the builtin, which the bare backstop cannot. The string is the
+ * cross-check key tools/strict_differential.sh derives its probe set from,
+ * so a new caller here without a probe row goes red there. */
+static inline double num_guard_named(double x, const char *who) {
+    if (x != x) {
+        g_math_flags |= EIGS_MATH_INVALID;
+        if (g_strict) eigs_strict_nan_raise(who);
+        return 0.0;
+    }
+    return num_guard(x);
+}
+
+/* #971: a value-domain raise inside a double-returning helper, where
+ * ARG_GUARD's `return make_null()` does not fit. Raises under strict and
+ * does nothing otherwise, so the soft path is byte-identical by
+ * construction (the caller keeps returning its stand-in). `who` is the
+ * cross-check key, like ARG_GUARD's. */
+#define STRICT_DOMAIN(cond, who, what)                                       \
+    do {                                                                      \
+        if (g_strict && (cond))                                               \
+            rt_error(EK_VALUE, 0, "%s: %s", (who), (what));                   \
+    } while (0)
 
 /* The g_vm_multithreaded flag (state->multithreaded, bridge macro above)
  * is set to 1 by builtin_spawn before pthread_create, then stays 1.

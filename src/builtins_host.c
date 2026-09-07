@@ -1962,6 +1962,9 @@ Value* builtin_proc_wait(Value *arg) {
 /* random_hex of n → string of n random hex characters from /dev/urandom.
  * Capability builtin: provides randomness so .eigs libraries can generate tokens. */
 Value* builtin_random_hex(Value *arg) {
+    /* #971 Phase D: a non-number length answered "" (as does a length of 0,
+     * which stays the answer). Taped: the soft half records as before. */
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_NUM, "random_hex", "a number of hex digits", make_str(""));
     int n = (arg && arg->type == VAL_NUM) ? (int)arg->data.num : 0;
     if (n <= 0 || n > 256) TRACE_NONDET_RET("random_hex", make_str(""));
     int bytes_needed = (n + 1) / 2;

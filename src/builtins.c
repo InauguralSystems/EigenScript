@@ -554,7 +554,9 @@ Value* builtin_num(Value *arg) {
             }
             return make_num(neg ? -v : v);
         }
-        return make_num(strtod(arg->data.str, NULL));
+        /* #971: strtod reads "nan"/"inf" — the in-language route to a NaN.
+         * Default collapses to 0 (+ EIGS_MATH_INVALID); strict raises, named. */
+        return make_num(num_guard_named(strtod(arg->data.str, NULL), "num"));
     }
     if (arg->type == VAL_NULL) return make_num(0);   /* fs:ANSWER coercion contract */
     return make_num(0);                              /* fs:ANSWER coercion contract */
@@ -1579,7 +1581,11 @@ void eigs_json_escape_string(strbuf *out, const char *s) {
 
 Value* builtin_json_build(Value *arg) {
     /* json_build of [key1, val1, key2, val2, ...] — properly escaped JSON object */
-    if (!arg || arg->type != VAL_LIST) return make_str("{}");
+    /* #971 Phase D: a non-list (a dict, a string) built an empty object.
+     * `json_build of null` stays the empty-object idiom in both modes. */
+    ARG_GUARD(arg && arg->type != VAL_NULL && arg->type != VAL_LIST,
+              "json_build", "a list of alternating keys and values", make_str("{}"));
+    if (!arg || arg->type == VAL_NULL) return make_str("{}");   /* fs:ANSWER no pairs — the empty object */
     int count = arg->data.list.count;
     strbuf out;
     strbuf_init(&out);
@@ -1655,6 +1661,17 @@ Value* builtin_starts_with(Value *arg) {
 
 Value* builtin_split(Value *arg) {
     const char *str = "", *delim = " ";
+    /* #971 Phase D: a non-string subject coerced to "" (so `split of 42` was
+     * [""], a plausible one-part answer) and a non-string delimiter fell
+     * back to " " silently. Coercion shape — no single stand-in to name —
+     * so STRICT_REQUIRE: raise under strict, byte-identical otherwise. */
+    STRICT_REQUIRE(!arg || !(arg->type == VAL_STR ||
+                             (arg->type == VAL_LIST && arg->data.list.count >= 1 &&
+                              arg->data.list.items[0]->type == VAL_STR)),
+                   "split", "a string or [string, delimiter]");
+    STRICT_REQUIRE(arg->type == VAL_LIST && arg->data.list.count >= 2 &&
+                   arg->data.list.items[1]->type != VAL_STR,
+                   "split", "a string delimiter");
     if (arg && arg->type == VAL_STR) {
         str = arg->data.str;
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
@@ -1723,6 +1740,9 @@ Value* builtin_scan_ints(Value *arg) {
     }
 
     Value *out = make_list(128);
+    /* #971 Phase D: no string in the argument — a wrong type read as
+     * "no tokens". Coercion shape: raise under strict, unchanged otherwise. */
+    STRICT_REQUIRE(!str, "scan_ints", "a string or [string, comment_marker]");
     if (!str) return out;
 
     const char *p = str;
@@ -1821,6 +1841,9 @@ Value* builtin_scan_tokens(Value *arg) {
     }
 
     Value *out = make_list(128);
+    /* #971 Phase D: no string in the argument — a wrong type read as
+     * "no tokens". Coercion shape: raise under strict, unchanged otherwise. */
+    STRICT_REQUIRE(!str, "scan_tokens", "a string or [string, comment_marker]");
     if (!str) return out;
 
     const char *base = str;
@@ -1903,6 +1926,9 @@ Value* builtin_scan_int_tokens(Value *arg) {
     }
 
     Value *out = make_list(128);
+    /* #971 Phase D: no string in the argument — a wrong type read as
+     * "no tokens". Coercion shape: raise under strict, unchanged otherwise. */
+    STRICT_REQUIRE(!str, "scan_int_tokens", "a string or [string, comment_marker]");
     if (!str) return out;
 
     const char *base = str;
@@ -2283,12 +2309,14 @@ Value* builtin_random(Value *arg) {
 
 /* random_int of [lo, hi] → integer in [lo, hi] inclusive */
 Value* builtin_random_int(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        TRACE_NONDET_RET("random_int", make_num(0));
+    /* #971 Phase D: a malformed range answered 0 — a number in nobody's
+     * range. Taped shape: the soft half still records/replays as before. */
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+                    "random_int", "[lo, hi]", make_num(0));
     Value *lo = arg->data.list.items[0];
     Value *hi = arg->data.list.items[1];
-    if (!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM)
-        TRACE_NONDET_RET("random_int", make_num(0));
+    ARG_GUARD_TAPED(!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM,
+                    "random_int", "numeric bounds", make_num(0));
     eigs_ensure_random_seeded();
     /* Range-check as doubles before any integer cast — a double outside the
      * int64_t range (or non-finite) makes the cast itself UB (#698 fixed the
@@ -2486,13 +2514,30 @@ Value* builtin_json_path(Value *arg) {
 
     int pos = 0;
     Value *root = eigs_json_parse_root(json_str, &pos);   /* #777: fresh parse */
-    /* fs:TODO #971 PHASE C. This is NOT "no value at that path" — the
-     * DOCUMENT failed to parse, and that input error is laundered into the
-     * same "" that a legitimately-absent key returns, so a caller cannot
-     * tell malformed JSON from a missing field. Converting it means deciding
-     * whether JSON parse failure raises at all, which is a contract change
-     * with its own consumers (the flag channel below, ext_http, tidelog).
-     * Deliberately left soft here and recorded as the Phase C decision. */
+    /* #971 Phase C. A DOCUMENT that failed to parse is not "no value at that
+     * path", yet the lenient walk below answers the same "" an absent key
+     * returns, so a caller cannot tell malformed JSON from a missing field.
+     * Decided: under EIGS_STRICT the parse failure raises — a catchable
+     * `value` error naming the position, on exactly the acceptance test
+     * json_decode applies (structural error, a repaired scalar, or trailing
+     * garbage after the value). With the flag off nothing changes: the
+     * partial document is walked as before, which the flag channel's other
+     * consumers (ext_http's shared store and header parsing, the store's
+     * catalog) rely on and which this raise does not touch — they never
+     * pass through json_path. JSON `false`/`null`/literals are answers and
+     * stay quiet in both modes. */
+    if (g_strict) {
+        int end = pos;
+        eigs_json_skip_ws(json_str, &end);
+        if (!root || g_json_parse_err || g_json_parse_recoverable ||
+            json_str[end] != '\0') {
+            if (root) val_decref(root);
+            rt_error(EK_VALUE, 0, "json_path: invalid JSON at position %d", end);
+            return make_null();
+        }
+    }
+    /* fs:STRICT the g_strict block above raised on a parse failure; the soft
+     * "" is the flag-off path (unchanged since before #971 Phase C). */
     if (!root) return make_str("");
     Value *current = root;   /* walks borrowed children of root */
 
@@ -2690,7 +2735,7 @@ void free_tokenlist(TokenList *tl) {
  * Exposes the runtime's own tokenizer to .eigs code.
  * The learner sees its world the way the runtime does. */
 Value* builtin_tokenize_ids(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_list(0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "tokenize_ids", "a source string", make_list(0));  /* #971 Phase D */
     const char *src = arg->data.str;
     if (!src || !src[0]) return make_list(0);
 
@@ -2710,7 +2755,7 @@ Value* builtin_tokenize_ids(Value *arg) {
  * token types get an empty string. Used by corpus builders that need
  * per-identifier information for vocabulary enrichment. */
 Value* builtin_tokenize_with_names(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_list(0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "tokenize_with_names", "a source string", make_list(0));  /* #971 Phase D */
     const char *src = arg->data.str;
     if (!src || !src[0]) return make_list(0);
 
@@ -2744,7 +2789,9 @@ Value* builtin_tokenize_with_names(Value *arg) {
 /* ==== BUILTIN: token_name ==== */
 /* token_name of id → string name of token type (for display) */
 Value* builtin_token_name(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_str("?");
+    /* #971 Phase D: "?" is the documented answer for an UNKNOWN id (below);
+     * for a non-number it was laundering a type mistake into that answer. */
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "token_name", "a token id", make_str("?"));
     int id = (int)arg->data.num;
     static const char *names[] = {
         "NUM", "STR", "IDENT",
@@ -4797,8 +4844,13 @@ Value* builtin_close_channel(Value *arg) {
 }
 
 Value* builtin_channel_closed(Value *arg) {
+    /* #971 Phase D: get_channel folds "not a channel handle" into "no such
+     * channel". The second is the documented answer (a reclaimed channel is
+     * closed); the first is a type mistake reading as closed. Split. */
+    int not_a_handle = !arg || arg->type != VAL_DICT || !dict_get(arg, "_channel_id");
+    ARG_GUARD(not_a_handle, "channel_closed", "a channel", make_num(1));
     Channel *ch = get_channel(arg);
-    if (!ch) return make_num(1);
+    if (!ch) return make_num(1);   /* fs:ANSWER an unknown/reclaimed channel is closed */
     /* Read ch->closed under the mutex: close_channel writes it while holding
      * the lock, so a bare read here is a data race (caught by the #401 TSan
      * gate — it fired in CI where two workers polled channel_closed against a
@@ -5600,6 +5652,9 @@ Value* builtin_buffer(Value *arg) {
         return v;
     }
     int count = 0;
+    /* #971 Phase D: a non-number size (or a malformed [rows, cols]) made an
+     * EMPTY buffer — a plausible object with nothing in it. */
+    STRICT_REQUIRE(!arg || arg->type != VAL_NUM, "buffer", "a size or [rows, cols]");
     if (arg && arg->type == VAL_NUM) count = (int)arg->data.num;
     if (count < 0) count = 0;
     if (count > 10000000) count = 10000000;
@@ -5772,6 +5827,8 @@ Value* builtin_str_from_bytes(Value *arg) {
  * the host bit pattern is captured via memcpy, then bytes are extracted with
  * explicit shifts, yielding the standard IEEE-754 layout on any platform. */
 Value* builtin_f64_to_bytes(Value *arg) {
+    /* #971 Phase D: a non-number encoded as 0.0's eight bytes. */
+    STRICT_REQUIRE(!arg || arg->type != VAL_NUM, "f64_to_bytes", "a number");
     double d = (arg && arg->type == VAL_NUM) ? arg->data.num : 0.0;
     uint64_t bits;
     memcpy(&bits, &d, sizeof(bits));
@@ -5804,7 +5861,9 @@ Value* builtin_f64_from_bytes(Value *arg) {
         bits = (bits << 8) | (uint64_t)((int)bytes_in[i] & 0xFF);
     double d;
     memcpy(&d, &bits, sizeof(d));
-    return make_num(d);
+    /* #971: eight arbitrary bytes can spell a NaN; collapse (default) or
+     * raise (strict) under this builtin's own name. */
+    return make_num(num_guard_named(d, "f64_from_bytes"));
 }
 
 /* ---- DEFLATE codecs (inflate/deflate, #684) ----
@@ -6702,6 +6761,8 @@ static int sort_cmp_str(const void *a, const void *b) {
 }
 
 Value* builtin_sort(Value *arg) {
+    /* #971 Phase D: a non-list was handed back unchanged, as if sorted. */
+    STRICT_REQUIRE(arg && arg->type != VAL_LIST, "sort", "a list");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return arg ? arg : make_null();
     ValType t = arg->data.list.items[0] ? arg->data.list.items[0]->type

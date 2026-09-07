@@ -148,13 +148,20 @@ examples (executed by the suite).
   returns `log(1e-10)`, i.e. `-23.025850929940457`), `sqrt of x` for
   negative `x` (returns 0, otherwise indistinguishable from
   `sqrt of 0`), and `asin`/`acos` outside [-1, 1] (argument clamped).
-  `invalid` is also set when a NaN is collapsed, which arithmetic
-  cannot produce (there is no way to obtain an Inf to combine) but
-  string conversion can: `num of "nan"` is `0` and `num of "inf"` is
+  `invalid` is also set when a NaN is collapsed, which the arithmetic
+  operators cannot produce (there is no way to obtain an Inf to combine)
+  but a few builtins can: `num of "nan"` is `0` and `num of "inf"` is
   `1e308`, so a data column containing either used to parse to a
-  plausible number with nothing to check. Both bits are sticky until
+  plausible number with nothing to check; `pow` of a negative base with
+  a fractional exponent, `f64_from_bytes` of a NaN bit pattern,
+  `matmul` reaching `inf - inf` (on its list result — a `matmul` whose
+  result is a *buffer* keeps the raw NaN instead, and reads back as
+  `null`; ROADMAP.md), and `tensor_load` of a file carrying
+  NaN bytes collapse the same way. Both bits are sticky until
   `clear_math_flags`, so bracket a computation the way you would on an
-  FPU.
+  FPU. Under `EIGS_STRICT=1` every one of those NaN sources raises a
+  catchable `value` error naming the builtin instead of collapsing
+  (SPEC.md, *Strict mode*).
 - **Saturation is not associative, and that is not detectable from the
   value alone.** `(1e300 * 1e300) / 1e300` is `1e8`; `1e300 * (1e300 /
   1e300)` is `1e300`. The first overflowed and came back down, and

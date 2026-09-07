@@ -131,7 +131,9 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.4142135623
   (in place) or a comprehension — `xs + ys` is a runtime error.
 - Numbers are f64 and finite by construction: `NaN` collapses to `0`, overflow
   saturates at ±1e308, `sqrt of -1` is `0`. Integer bit ops are `bit_and`/`&`
-  etc. on int64; exactness ends at 2^53.
+  etc. on int64; exactness ends at 2^53. `EIGS_STRICT=1` makes the stand-ins
+  loud: out-of-domain math, a NaN result, a wrong-typed builtin argument and a
+  malformed `json_path` document raise catchable errors instead.
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
 - f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`.

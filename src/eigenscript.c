@@ -175,6 +175,18 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     }
 }
 
+/* #971: the strict half of the NaN collapse. Off, num_guard folds a NaN to
+ * 0 and sets EIGS_MATH_INVALID — a plausible number nothing downstream can
+ * tell from a real zero. On, the operation has no honest value, so it joins
+ * div0/mod0 and the domain raises: a catchable EK_VALUE. `who` is NULL when
+ * the backstop in num_guard fired for a source the enumerated callers of
+ * num_guard_named do not cover; the message then names the arithmetic
+ * rather than a builtin, which is still louder than a silent 0. */
+void eigs_strict_nan_raise(const char *who) {
+    rt_error(EK_VALUE, 0, "%s: result is not a number (NaN has no defined value)",
+             who ? who : "arithmetic");
+}
+
 const char* tok_type_name(TokType t) {
     switch (t) {
         case TOK_NUM: return "number";

@@ -6020,16 +6020,27 @@ echo ""
 # existed — one probe named a builtin that does not exist and passed on
 # "undefined variable"), every documented ANSWER must stay quiet, and every
 # guard must have a probe.
+# RUN ONCE, REPORT THAT RUN. The first version threw the failing run's output
+# away (`>/dev/null`) and re-ran the tool to produce a diagnostic — so the
+# evidence printed under a FAIL banner came from a DIFFERENT run, and if the
+# failure was not deterministic the diagnostic was green. That is not a
+# hypothetical: a full-suite log from 2026-09-06 shows this section printing
+# "FAIL: a guard went silent..." followed by a completely clean report ending
+# in "OK", which is unreadable and untriageable — the one run that knew what
+# happened was discarded. Capture once; print what THAT run said.
 echo "[99s] Strict argument-guard differential (#971, no-baseline half)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline >/dev/null 2>&1; then
+STRICT_DIFF_OUT="$(bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline 2>&1)"
+STRICT_DIFF_RC=$?
+if [ "$STRICT_DIFF_RC" = 0 ]; then
     PASS=$((PASS + 1))
     echo "  PASS: every guard raises from its own guard; every answer stays quiet"
 else
     FAIL=$((FAIL + 1))
     echo "  FAIL: a guard went silent, raised from the wrong place, a pin broke,"
-    echo "        or a guard has no probe"
-    bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline 2>&1 | sed -n '1,14p'
+    echo "        a guard has no probe, or a probe did not run (exit $STRICT_DIFF_RC)"
+    echo "  --- output of the run that failed (not a re-run) ---"
+    printf '%s\n' "$STRICT_DIFF_OUT" | sed -n '1,24p'
 fi
 echo ""
 
