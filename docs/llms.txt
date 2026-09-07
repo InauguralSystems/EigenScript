@@ -118,7 +118,13 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.4142135623
   zero reads `improving` until inside the scale. A mode slower than N samples
   of your cadence cannot fold in the window — `set_observer_window of ["x", n]`
   (4..64; default 10, `set_observer_window of n`) so N >= period/step.
-  Don't guess the predicate — see docs/PREDICATES.md.
+- Trajectory is keyed to a binding's env slot, never to a value: a dict field,
+  list element, parameter or `for` binder has none, and ONE binding rebound
+  from `fleet[i][2]` in a loop carries the interleave of every entity (lint
+  `W024`) — give each entity its own named binding or a closure per entity.
+- `converged` needs LOW absolute entropy on top of a settled window: a value
+  pinned at `5.0` reports `stable`, never `converged`; pinned at `0.0`/`1.0` it
+  converges. Don't guess the predicate — see docs/PREDICATES.md.
 - Temporal reads: `prev of x` (value before the last assignment),
   `what is x at 12` / `state_at of 12` (past-line state). Bare `x at 12` is a
   parse error. Wrap hot loops in `unobserved:` to skip the observer's entropy

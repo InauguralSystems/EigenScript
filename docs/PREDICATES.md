@@ -845,6 +845,76 @@ loop while not (converged of x):
   deadband (`dh_zero`, default 0.1% relative). For a tighter answer,
   lower it first: `set_observer_thresholds of [1e-6, 1e-5, 0.1]`.
 
+## What carries a trajectory
+
+Observer trajectory is keyed to an **environment slot** — `env_obs_slot(Env *e,
+int idx)` returns `e->obs[idx]`, and the Value itself carries no observer
+state. So every predicate, `report`, `report_value`, `observe` and
+`trajectory of x` answer about a *binding*, and only a binding that persists
+across the observations has a history to classify (#1048). Every case
+follows from that one rule:
+
+| form | persistent env slot? | trajectory |
+|---|---|---|
+| a named local (`q is v`, `local q is v`) | yes | **carries** |
+| a closure-captured local (one factory call per entity) | yes — each call is its own `Env` | **carries**, N chosen at runtime |
+| an `eval`-generated name | yes | carries, N chosen at runtime (loses lint and the AOT — prefer the closure) |
+| a dict field `ch.a` | no — a Value in a container | none: `equilibrium`, no history |
+| a list element `xs[0]` | no — a Value in a container | none |
+| a function parameter | the frame dies each call | none: one observation per call |
+| a `for` binder `for x in xs:` | fresh each iteration (#1062) | none |
+| a `for`-body `local` **at module level** | the loop env is cleared each iteration | none: one observation, every read answers `equilibrium` |
+| a `for`-body `local` **inside a function** | a frame slot that persists for the loop | carries — and **interleaves** if fed several entities |
+| a `for`-body plain `q is …` | creates in the enclosing scope, persists | carries — and interleaves |
+| a `loop while`-body binding (plain or `local`) | one env, persists | carries — and interleaves |
+
+The last three rows are the sharp edge. The obvious per-entity read
+
+```eigenscript
+loop while i < n:
+    local q is fleet[i][2]        # ONE binding, rebound n times
+    if diverging of q: ...
+```
+
+does not lose resolution — it **manufactures verdicts**: the slot's window is
+the round-robin interleave of every entity it visits, so a monotonically
+decaying entity reads `oscillating`. Lint `W024` names this shape — including
+the common `local q is fleet[i][2] + 0.0` spelling, where the projection sits
+under arithmetic — and the module-level `for` variant, whose reads always
+answer `equilibrium`. The
+mirror form is fine: a *fixed* field or element copied into a binding each
+tick (`local e is game.energy`) is exactly how a container field is given a
+trajectory.
+
+**The recommended per-entity form is a closure per entity** — one `Env`, and
+so one slot, per factory call, in ordinary static source that lints and
+compiles like anything else:
+
+```eigenscript
+define make_ch as:
+    local q is 0.0
+    define step(v) as:
+        q is v
+        return report_value of q
+    return step
+
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+chans is [make_ch of [], make_ch of []]
+t is 0
+loop while t < 40:
+    fleet[0][2] is fleet[0][2] * 0.9      # decaying
+    fleet[1][2] is 0.0 - fleet[1][2]      # sign-flipping
+    a is (chans[0]) of fleet[0][2]
+    b is (chans[1]) of fleet[1][2]
+    t is t + 1
+print of (a + " " + b)                    # improving oscillating
+```
+
+A named binding per entity (`qa is fleet[0][2]`, `qb is fleet[1][2]`) is the
+same thing when N is fixed at authoring time. Container-keyed trajectory
+(dict fields and list elements carrying their own slot) is a ROADMAP item,
+not a current capability.
+
 ## Cost
 
 The `dh_window` costs one `xcalloc(N * sizeof(double))` (80 bytes at the

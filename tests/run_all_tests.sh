@@ -5058,6 +5058,27 @@ else
 fi
 echo ""
 
+# [81u] Lint diagnostic UTF-8 gate (#1048). A lint message is built in a
+# 256-byte buffer and shipped through --lint --json and the LSP; W024 was the
+# first rule to interpolate an unbounded identifier twice, and a ~37-character
+# name truncated it inside an em dash, emitting a lone 0xE2 that Python's
+# decoder rejects and jq hides behind U+FFFD. The gate drives every registered
+# code with a 200-character identifier, decodes strictly, checks the registry
+# both ways, and re-verifies each pinned exemption; --selftest plants five
+# faults (including a new rule with no doc row) and requires each to be caught.
+echo "[81u] lint diagnostic UTF-8 gate (#1048)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" >/dev/null 2>&1 && \
+   bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" --selftest >/dev/null 2>&1; then
+    PASS=$((PASS + 1))
+    echo "  PASS: no lint rule can emit a message truncated mid-UTF-8 (gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: a lint diagnostic is malformed UTF-8, or the gate self-test broke"
+    bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" 2>&1 | grep -E "^FAIL|SELFTEST-FAIL" | head -10
+fi
+echo ""
+
 # [81b] Test runner (--test) + exe_path builtin — runs test_*.eigs files
 # in their own processes and reports pass/fail (human + --json).
 echo "[81b] Test runner (--test)"

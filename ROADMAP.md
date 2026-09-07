@@ -134,6 +134,36 @@ observer/deterministic-replay niche instead of diluting it.**
 - [x] `ext_net` raw TCP/UDP sockets as tape-recorded nondet inputs —
       record/replay networking no incumbent stdlib has
       ([#414](https://github.com/InauguralSystems/EigenScript/issues/414))
+- [ ] **Container-keyed observer trajectory** — dict fields and list
+      elements carrying their own observer slot, keyed by (container
+      identity, key) ([#1048](https://github.com/InauguralSystems/EigenScript/issues/1048)).
+      *Mechanism today:* trajectory lives on an environment slot
+      (`env_obs_slot(Env *e, int idx)` → `e->obs[idx]`; the Value carries no
+      observer state), so per-entity observation needs one persistent
+      binding per entity — a named local or a closure per entity (the
+      recommended form; docs/PREDICATES.md "What carries a trajectory").
+      *The ask:* let `fleet[i][2] is v` / `ch.a is v` update a slot owned by
+      the container entry, so `diverging of fleet[i][2]` answers about that
+      entity — the form a consumer reaches for first (phugoid rung 4), whose
+      current failure is silent: one binding rebound per entity carries the
+      round-robin interleave and manufactures verdicts (lint `W024` now
+      names it; the module-level `for`-body `local` answers `equilibrium`
+      instead, the same rule from the other side). *Layers it touches:* the
+      compiler (new predicate/`report`/`trajectory` operand forms over
+      index/field expressions, today `E005` for the report words), the VM
+      (`OP_INDEX_SET`/`OP_DOT_SET` observer update + reader opcodes and the
+      observer gate's reader scan, #915), the JIT inline caches on dict
+      fields and indexed stores, `trajectory of` snapshots, the tape /
+      `--step` / DAP / SIGUSR1 dump (a slot per entry to record and
+      replay), and the AOT mirror in ouroboros. *Open design questions:*
+      list insert/remove shifts identities (is the slot keyed by position
+      or by the element's identity, and what does `sort` do to a history?);
+      lazy slot allocation keyed by statically-named fields only (`ch.a`)
+      versus every dynamic key (memory: a slot per entry of every observed
+      container, or an opt-in `observed` container); whether the container
+      or the entry owns the slot when the entry is itself a container; and
+      the tape format for per-entry observer records. Deliberately not
+      built in the same round as `W024` — needs its own design pass.
 
 ### Design decisions (cheap to decide, expensive to defer)
 

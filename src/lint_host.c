@@ -21,6 +21,12 @@
 /* Escape a string for embedding in a JSON string literal (into a caller
  * buffer). This helper is host-only now that every JSON-producing lint path
  * lives in this TU; keeping it static prevents a generic host symbol leak. */
+/* JSON string escaping. The output buffer is the SECOND place a diagnostic
+ * can be cut (the first is lint_vdiag's message buffer), so it clips whole
+ * UTF-8 characters only: emitting half a sequence produces a payload a
+ * strict decoder rejects, and `jq` hides that by substituting U+FFFD
+ * (#1048). Bytes >= 0x80 are passed through raw — the input is UTF-8 and
+ * JSON accepts it as-is. */
 static void lint_json_escape(const char *s, char *out, size_t outsz) {
     size_t o = 0;
     for (size_t i = 0; s[i] && o + 2 < outsz; i++) {
@@ -32,6 +38,9 @@ static void lint_json_escape(const char *s, char *out, size_t outsz) {
         /* other control chars are dropped */
     }
     out[o] = '\0';
+    /* The loop can stop inside a multi-byte character (the capacity test is
+     * per byte); drop the partial tail rather than emit it. */
+    out[lint_utf8_prefix(out, o)] = '\0';
 }
 
 /* Known builtin names — the registry itself, never a hand list (#459: the

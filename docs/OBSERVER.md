@@ -85,6 +85,22 @@ Two of these are the load-bearing pair:
 Everything the observer "experiences" is one continuous quantity (`why`)
 and its sign. It has no words. The words come from the oracle.
 
+### What carries a trajectory
+
+Everything above is keyed to an **environment slot** (`env_obs_slot`) — the
+Value carries no observer state. A binding has a history; a container
+element does not (#1048):
+
+| carries a trajectory | does not |
+|---|---|
+| a named local; a closure-captured local (one factory call per entity); an `eval`-generated name | a dict field `ch.a`; a list element `xs[0]`; a function parameter; a `for` binder; a `for`-body `local` at module level (cleared each iteration) |
+
+And one binding rebound from a *different* element each iteration
+(`loop while i < n: local q is fleet[i][2]`) carries the interleave of all of
+them — a verdict about nothing. Lint `W024` flags that shape; the full table,
+the module-level-`for` asymmetry and the closure-per-entity recipe are in
+[PREDICATES, What carries a trajectory](PREDICATES.md#what-carries-a-trajectory).
+
 ## The oracle: where names come from
 
 The observer's experience is a smooth, continuous signal. Turning that

@@ -1,0 +1,3 @@
+define len as:
+    return 1
+print of (len of [])

@@ -33,6 +33,13 @@ typedef struct {
     int builtin_count;
 } LintContext;
 
+/* Length of the longest prefix of `s` at most `max` bytes that ends on a
+ * UTF-8 character boundary (src/lint.c). Every place a diagnostic string is
+ * truncated must go through it: a cut inside a multi-byte sequence makes
+ * `--lint --json` undecodable and puts a malformed byte in the LSP's
+ * JSON-RPC stream (#1048). */
+size_t lint_utf8_prefix(const char *s, size_t max);
+
 /* Diagnostic helpers shared by lint.c and the host-only walkers. */
 void lint_hint(LintContext *ctx, int line, const char *code,
                const char *fmt, ...);
