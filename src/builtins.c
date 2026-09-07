@@ -481,8 +481,10 @@ Value* builtin_len(Value *arg) {
         return make_num(arg->data.list.count);
     if (arg->type == VAL_STR)
         return make_num(strlen(arg->data.str));
-    if (arg->type == VAL_DICT)
+    if (arg->type == VAL_DICT) {
+        eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         return make_num(arg->data.dict.count);
+    }
     if (arg->type == VAL_BUFFER)
         return make_num(arg->data.buffer.count);
     if (arg->type == VAL_TEXT_BUILDER)
@@ -851,6 +853,7 @@ Value* builtin_throw(Value *arg) {
 
 Value* builtin_keys(Value *arg) {
     if (arg->type == VAL_DICT) {
+        eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
         for (int i = 0; i < arg->data.dict.count; i++)
             list_append_owned(list, make_str(arg->data.dict.keys[i]));
@@ -861,6 +864,7 @@ Value* builtin_keys(Value *arg) {
 
 Value* builtin_values(Value *arg) {
     if (arg->type == VAL_DICT) {
+        eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
         for (int i = 0; i < arg->data.dict.count; i++)
             list_append(list, arg->data.dict.vals[i]);
@@ -1088,6 +1092,7 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
             break;
         }
         case VAL_DICT: {
+            eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             strbuf_append_char(out, '{');
             for (int i = 0; i < v->data.dict.count; i++) {
                 if (i > 0) strbuf_append_char(out, ',');

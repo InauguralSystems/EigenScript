@@ -1,0 +1,5 @@
+# #1057 fixture: a write THROUGH the namespace must reach the module.
+v is 1
+
+define peek() as:
+    return v

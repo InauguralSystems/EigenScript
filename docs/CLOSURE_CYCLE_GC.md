@@ -98,7 +98,10 @@ as a force-destroy escape hatch (no current callers in main).
 - **Universe.** Everything reachable from registered envs over **owned
   edges only**: env value slots, `env->parent`, `fn->closure`,
   `fn->chunk` (the OP_CLOSURE ref), `chunk->functions[]`,
-  `chunk->env_cache`, list items, dict values. Three node kinds: values
+  `chunk->env_cache`, list items, dict values, and a module namespace's
+  backref to its module env (#1057 — `import M`'s dict is a live view of
+  M's `Env` and holds an owning ref on it; the pointer lives in a side
+  table keyed by the dict, so the `Value` does not grow). Three node kinds: values
   (LIST/DICT/FN — everything else is a leaf), envs, chunks. Chunks are
   on real cycles: `fn → chunk → env_cache → parent → E → fn` is exactly
   the shape a recycled call env creates. `g_global_env` is a stop node —

@@ -606,6 +606,27 @@ catch e:
 undefined variable 'z'
 ```
 
+An imported module's namespace is a **live view** of that module's
+bindings, the way Python's module objects are — `m.x` reads the current
+binding and `m.x is v` writes it, for a number or string exactly as for
+a dict. It is not a copy taken at import time, so no "box your module
+state in a container or importers go stale" rule exists (#1057):
+
+```eigenscript
+write_text of ["cmp_live.eigs", "seen is 0\ndefine tick() as:\n    seen is seen + 1\n"]
+import cmp_live
+cmp_live.tick of null
+print of cmp_live.seen
+rm of "cmp_live.eigs"
+```
+```output
+1
+```
+
+The namespace is still an ordinary dict, so `keys`, `values`, `len` and
+indexing work on it — closer to a Lua module table than to a Rust `mod`,
+which has no runtime value at all.
+
 <!-- Embed contract: #1038/#1028; language-level observer semantics unchanged. -->
 The C embedding API starts observer recording open. Source evals retain
 cross-unit history by default; hosts may explicitly promise isolated observer

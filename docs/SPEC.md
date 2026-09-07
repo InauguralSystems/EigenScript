@@ -1193,6 +1193,41 @@ side effect
 1
 ```
 
+**A namespace is a live view, not a snapshot** (#1057). `name.x` reads
+the module's *current* binding `x`, and `name.x is v` writes that
+binding — the module and its importers see one state, whatever the
+value's type:
+
+```eigenscript
+write_text of ["spec_live.eigs", "hits is 0\ndefine record() as:\n    hits is hits + 1\ndefine total() as:\n    return hits\n"]
+import spec_live
+spec_live.record of null
+spec_live.record of null
+print of spec_live.hits
+spec_live.hits is 10
+print of (spec_live.total of null)
+rm of "spec_live.eigs"
+```
+```output
+2
+10
+```
+
+Before this, the namespace was a *shallow copy* of the module's
+bindings taken at import time, so whether an importer saw live state
+depended on the value's TYPE: a dict or list was shared by reference
+and tracked, a number or string was frozen and went silently stale, and
+a write through the namespace reached only the copy. The failure mode
+was a wrong number rather than an error. Values read *out* of a
+namespace are ordinary values — `n is name.hits` binds the number, not
+a live alias.
+
+`_`-private bindings are not part of the namespace and are not
+projected; everything else about a namespace is unchanged — it is still
+a dict (`type of name` is `"dict"`), still enumerable with `keys` /
+`values` / `len`, and its functions are still callable as `name.f of x`
+or extractable as values.
+
 `load_file of "path.eigs"` is the older, non-namespaced form: it
 executes a file directly **in the current scope**. The standard
 library's helper modules (`lib/test.eigs`'s `assert_eq`, ...) are
@@ -1250,11 +1285,15 @@ happens to already have — `counter is 0` at a module's top level can
 never rebind an importer's pre-existing `counter`. `load_file` is the
 one exception, per its older, documented contract above: its top-level
 statements still execute directly in the current (caller's) scope, so
-a same-named top-level assignment there *does* bind through. To share
-mutable state across files, put it in a dict or list and mutate fields
-— reads cross the boundary and field/index writes are value mutations,
-not bindings. The standard library's UI toolkit (`lib/ui.eigs`'s `_ui`
-state dict, shared by 17 sub-modules) is the reference pattern.
+a same-named top-level assignment there *does* bind through.
+
+Mutable state shared across files can live in a plain top-level binding
+— an importer reads and writes it through the live namespace (#1057) —
+or in a dict or list whose fields are mutated. Boxing state in a dict
+is now a **style** choice, not a correctness requirement; the standard
+library's UI toolkit (`lib/ui.eigs`'s `_ui` state dict, shared by 17
+sub-modules) remains the reference pattern for grouping related state
+under one private name.
 
 ```eigenscript skip
 load_file of "lib/test.eigs"     # assert_eq, test_summary, ...

@@ -1,0 +1,11 @@
+# #1057 fixture: nested import — this module imports another and both
+# namespaces must stay live through the outer one.
+import modlive_counter
+
+depth is 2
+
+define bump_inner() as:
+    modlive_counter.bump of null
+
+define inner_ctr() as:
+    return modlive_counter.ctr

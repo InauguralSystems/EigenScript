@@ -1,0 +1,10 @@
+# #1057 fixture: the dict-of-state idiom the language grew around the bug.
+# It worked before and must keep working byte-for-byte (containers are
+# still shared by reference).
+state is {"n": 0}
+
+define bump() as:
+    state.n is (state.n) + 1
+
+define peek() as:
+    return state.n

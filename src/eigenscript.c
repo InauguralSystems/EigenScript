@@ -415,6 +415,7 @@ static double compute_entropy_impl(Value *v) {
             return sum / v->data.list.count + log2((double)v->data.list.count + 1.0);
         }
         case VAL_DICT: {
+            eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             if (v->data.dict.count == 0) return 0.0;
             double sum = 0.0;
             for (int i = 0; i < v->data.dict.count; i++)
@@ -1576,6 +1577,13 @@ void free_value(Value *v) {
                 free(v->data.list.items);
             break;
         case VAL_DICT:
+            if (v->module_ns) {
+                /* #1057: the non-cycle mirror of the module-namespace row of
+                 * GC_EDGE_TABLE — a namespace that dies by ordinary
+                 * refcounting drops its owning ref on the module env here. */
+                Env *me = eigs_module_ns_detach(v);
+                if (me) env_decref(me);
+            }
             for (int i = 0; i < v->data.dict.count; i++) {
                 /* keys are interned (env_intern_name) — do not free */
                 val_decref(v->data.dict.vals[i]);
@@ -1964,10 +1972,175 @@ Value* make_dict(int capacity) {
     env_hash_init(&v->data.dict.hash, ENV_HASH_INIT_CAP);
     v->refcount = 1;
     v->arena = 0;
+    v->module_ns = 0;      /* #1057: a plain dict is never a module namespace */
     return v;
 }
 
-void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
+/* ==== Module namespaces: a LIVE VIEW of the module env (#1057) ========
+ *
+ * `import M` used to bind a SHALLOW SNAPSHOT of M's top-level bindings, so
+ * whether an importer saw live state depended on the VALUE'S TYPE: a dict
+ * or list was shared by reference and tracked, a number or string was
+ * copied at import time and went silently stale, and `M.x is v` reached
+ * only the copy. The rule a user had to learn — "module state must be
+ * boxed in a container or it will go stale in your importer" — had no
+ * principle behind it and failed as a wrong number rather than an error.
+ *
+ * A namespace dict is now FLAGGED (Value::module_ns) and carries an OWNING
+ * backref to the module's Env. Field reads project the module's CURRENT
+ * binding into the dict slot and return it; field writes go through to the
+ * module binding. The dict's own storage is kept as a mirror so every
+ * whole-dict reader (keys / values / len / printing / json / iteration /
+ * equality) still works — those call eigs_module_ns_sync first.
+ *
+ * The Env* lives in this side table rather than in `struct Value` so the
+ * Value stays 72 bytes: the flag byte fits in the struct's existing tail
+ * padding, and only a flagged dict ever pays for the lookup.
+ *
+ * Ownership: attach takes env_incref; the edge is one GC_EDGE_TABLE row
+ * (dict -> env), cleared by gc_clear_node and by free_value. Module
+ * PRIVATE bindings (`_`-prefixed) are not part of the namespace and are
+ * never projected — the namespace's public surface is unchanged.
+ *
+ * Concurrency: written only by `import`, which — like the module cache
+ * this parallels — is a startup/main-thread operation and is not guarded.
+ */
+static inline void env_shared_lock(const Env *e);      /* #607, defined below */
+static inline void env_shared_unlock(const Env *e);
+
+typedef struct { Value *dict; Env *env; } ModuleNsEntry;
+static ModuleNsEntry *g_module_ns_tab = NULL;
+static size_t g_module_ns_cap = 0;     /* power of two; 0 = unallocated */
+static size_t g_module_ns_count = 0;
+
+static int module_ns_public(const char *name) {
+    return name && name[0] != '_';
+}
+
+/* Probe slot for `d`: the matching entry, or the first empty one. The load
+ * factor is held <= 70% and deletion rehashes, so an empty slot always
+ * exists and the probe terminates. */
+static size_t module_ns_slot(ModuleNsEntry *tab, size_t cap, Value *d) {
+    size_t i = ((uintptr_t)d >> 4) & (cap - 1);
+    while (tab[i].dict && tab[i].dict != d) i = (i + 1) & (cap - 1);
+    return i;
+}
+
+static void module_ns_rebuild(size_t ncap) {
+    ModuleNsEntry *nt = xcalloc(ncap, sizeof(ModuleNsEntry));
+    for (size_t i = 0; i < g_module_ns_cap; i++) {
+        if (!g_module_ns_tab[i].dict) continue;
+        size_t j = module_ns_slot(nt, ncap, g_module_ns_tab[i].dict);
+        nt[j] = g_module_ns_tab[i];
+    }
+    free(g_module_ns_tab);
+    g_module_ns_tab = nt;
+    g_module_ns_cap = ncap;
+}
+
+Env *eigs_module_ns_env(Value *dict) {
+    if (!dict || dict->type != VAL_DICT || !dict->module_ns) return NULL;
+    if (!g_module_ns_cap) return NULL;
+    size_t i = module_ns_slot(g_module_ns_tab, g_module_ns_cap, dict);
+    return g_module_ns_tab[i].dict ? g_module_ns_tab[i].env : NULL;
+}
+
+void eigs_module_ns_attach(Value *dict, Env *env) {
+    if (!dict || dict->type != VAL_DICT || !env) return;
+    if (dict->module_ns) return;                    /* already a namespace */
+    if ((g_module_ns_count + 1) * 10 > g_module_ns_cap * 7)
+        module_ns_rebuild(g_module_ns_cap ? g_module_ns_cap * 2 : 16);
+    size_t i = module_ns_slot(g_module_ns_tab, g_module_ns_cap, dict);
+    g_module_ns_tab[i].dict = dict;
+    g_module_ns_tab[i].env = env;
+    g_module_ns_count++;
+    env_incref(env);              /* OWNING edge — GC_EDGE_TABLE row below */
+    dict->module_ns = 1;
+}
+
+Env *eigs_module_ns_detach(Value *dict) {
+    if (!dict || !dict->module_ns) return NULL;
+    Env *e = NULL;
+    if (g_module_ns_cap) {
+        size_t i = module_ns_slot(g_module_ns_tab, g_module_ns_cap, dict);
+        if (g_module_ns_tab[i].dict == dict) {
+            e = g_module_ns_tab[i].env;
+            g_module_ns_tab[i].dict = NULL;
+            g_module_ns_tab[i].env  = NULL;
+            g_module_ns_count--;
+            /* Linear probing: removing an entry can orphan the rest of its
+             * cluster. Rehash at the same capacity rather than tombstone. */
+            module_ns_rebuild(g_module_ns_cap);
+        }
+    }
+    dict->module_ns = 0;
+    return e;                     /* caller owns the returned ref */
+}
+
+/* Project module binding `key` into the namespace's own slot and return it
+ * (borrowed, exactly like a plain dict_get). Falls back to the dict's own
+ * entry when the module has no such binding — a key written onto the
+ * namespace that the module does not define stays readable. */
+static Value *module_ns_project(Value *d, Env *e, const char *key, uint32_t h) {
+    /* #607: find + load under one hold, exactly as env_get_hashed_slot does —
+     * a concurrent module-env grow republishes names/values. No-op when the
+     * process is single-threaded. Nothing else here touches the env, so the
+     * hold is released before the (non-recursive) dict store below. */
+    env_shared_lock(e);
+    int ei = env_hash_find(&e->hash, key, h, e->names);
+    EigsSlot s = (ei >= 0) ? e->values[ei] : slot_null();
+    if (ei >= 0) slot_incref(s);       /* pin across the unlock */
+    env_shared_unlock(e);
+    int di = env_hash_find(&d->data.dict.hash, key, h, d->data.dict.keys);
+    if (ei < 0)
+        return (di >= 0) ? d->data.dict.vals[di] : NULL;
+    if (di >= 0) {
+        Value *cur = d->data.dict.vals[di];
+        if (slot_is_ptr(s)) {
+            /* Container/fn bindings were already shared by reference. */
+            if (slot_as_ptr(s) == cur) { slot_decref(s); return cur; }
+        } else if (slot_is_num(s) && cur && cur->type == VAL_NUM &&
+                   cur->refcount == 1 && !cur->arena) {
+            /* Exclusive untracked mirror — refresh in place, no allocation.
+             * Same exclusivity test as dict_set_cached_immediate: a mirror
+             * anyone else holds a ref to must not be mutated under them. */
+            cur->data.num = s.d;
+            slot_decref(s);
+            return cur;
+        }
+    }
+    Value *mv = slot_to_value(s);            /* owned */
+    slot_decref(s);                          /* drop the pin */
+    dict_set_hashed_raw(d, key, h, mv);
+    val_decref(mv);
+    di = env_hash_find(&d->data.dict.hash, key, h, d->data.dict.keys);
+    return (di >= 0) ? d->data.dict.vals[di] : NULL;
+}
+
+/* Refresh every projected entry. Whole-dict readers (keys / values / len /
+ * value_to_string / json / `for k in M` / equality) call this first; a
+ * single-field read does not need it (dict_get_hashed projects that one
+ * key). Also picks up module bindings created after the import. */
+void eigs_module_ns_sync(Value *dict) {
+    if (!dict || !dict->module_ns) return;
+    Env *e = eigs_module_ns_env(dict);
+    if (!e) return;
+    env_shared_lock(e);
+    int n = e->count;
+    env_shared_unlock(e);
+    for (int i = 0; i < n; i++) {
+        /* Names are interned and never freed while the env lives, so the
+         * pointer is stable once read; only the ARRAY can be republished
+         * under MT (#607), hence the hold across the load. */
+        env_shared_lock(e);
+        const char *nm = (i < e->count) ? e->names[i] : NULL;
+        env_shared_unlock(e);
+        if (!module_ns_public(nm)) continue;
+        module_ns_project(dict, e, nm, env_hash_name(nm));
+    }
+}
+
+void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
     if (!dict || dict->type != VAL_DICT) return;
     if (h == 0) h = env_hash_name(key);
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
@@ -2009,6 +2182,30 @@ void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
         env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dict->data.dict.count);
     else
         env_hash_insert(&dict->data.dict.hash, h, dict->data.dict.count - 1);
+}
+
+/* Routed store: a module namespace (#1057) writes THROUGH to the module's
+ * binding, then mirrors into its own slot so whole-dict readers stay
+ * consistent. Everything else is the raw store. */
+void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
+    if (!dict || dict->type != VAL_DICT) return;
+    if (h == 0) h = env_hash_name(key);
+    if (__builtin_expect(dict->module_ns != 0, 0)) {
+        Env *me = eigs_module_ns_env(dict);
+        if (me && module_ns_public(key))
+            /* env_set_local_hashed bumps the binding's assign_counts, so
+             * `when is x` inside the module counts a namespace write. It does
+             * NOT record assignment HISTORY: the tape's trace_assign calls
+             * live on the VM's SET_NAME/SET_LOCAL paths, keyed by the writing
+             * chunk's scan set, and there is no chunk here. So after
+             * `M.v is 50` the module's own `prev of v` still answers the
+             * value before its last INTERNAL write. Known, narrow (needs a
+             * temporal query and a scalar namespace write in the same
+             * program) and ledgered on #1057; a fix belongs with the tape,
+             * not here. */
+            env_set_local_hashed(me, key, h, val);
+    }
+    dict_set_hashed_raw(dict, key, h, val);
 }
 
 void dict_set(Value *dict, const char *key, Value *val) {
@@ -2080,6 +2277,10 @@ static Value *chan_clone_rec(Value *v, int depth) {
             return out;
         }
         case VAL_DICT: {
+            /* #1057: a namespace crossing a channel is snapshotted (the
+             * module env is not shared across the transfer) — refresh it
+             * first so the snapshot is the module's CURRENT state. */
+            eigs_module_ns_sync(v);
             int n = v->data.dict.count;
             Value *out = make_dict(n > 0 ? n : 8);
             for (int i = 0; i < n; i++) {
@@ -2122,6 +2323,11 @@ Value *val_clone_for_send(Value *v) {
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h) {
     if (!dict || dict->type != VAL_DICT) return NULL;
     if (h == 0) h = env_hash_name(key);
+    if (__builtin_expect(dict->module_ns != 0, 0)) {
+        Env *me = eigs_module_ns_env(dict);
+        if (me && module_ns_public(key))
+            return module_ns_project(dict, me, key, h);
+    }
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     return (idx >= 0) ? dict->data.dict.vals[idx] : NULL;
 }
@@ -2220,7 +2426,7 @@ int is_truthy(Value *v) {
         case VAL_FN: return 1;
         case VAL_BUILTIN: return 1;
         case VAL_JSON_RAW: return v->data.str && v->data.str[0] != '\0';
-        case VAL_DICT: return v->data.dict.count > 0;
+        case VAL_DICT: eigs_module_ns_sync(v); return v->data.dict.count > 0;
         case VAL_BUFFER: return v->data.buffer.count > 0;
         case VAL_TEXT_BUILDER: return v->data.text_builder.len > 0;
     }
@@ -2253,6 +2459,8 @@ static int values_equal_impl(Value *a, Value *b, int depth) {
             return 1;
         }
         case VAL_DICT: {
+            eigs_module_ns_sync(a);      /* #1057 whole-dict reader */
+            eigs_module_ns_sync(b);
             if (a->data.dict.count != b->data.dict.count) return 0;
             for (int i = 0; i < a->data.dict.count; i++) {
                 Value *bv = dict_get(b, a->data.dict.keys[i]);
@@ -2348,6 +2556,7 @@ char* value_to_string(Value *v) {
         case VAL_FN: snprintf(buf, sizeof(buf), "<fn %s>", v->data.fn.name); return xstrdup(buf);
         case VAL_DICT: {
             strbuf out;
+            eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             strbuf_init(&out);
             strbuf_append_char(&out, '{');
             g_vts_depth++;
@@ -3562,7 +3771,17 @@ static int gc_env_is_node(Env *e) {
       gc_value_is_node(_v->data.dict.vals[_i]),                               \
       { Value *_o = _v->data.dict.vals[_i];                                   \
         _v->data.dict.vals[_i] = NULL;                                        \
-        val_decref(_o); }, __VA_ARGS__)
+        val_decref(_o); }, __VA_ARGS__)                                       \
+    /* #1057 module namespace: the owning backref to the module Env taken   \
+     * by eigs_module_ns_attach. Without this row a garbage                 \
+     * namespace <-> module-env cycle would look externally referenced and  \
+     * leak (and gc_clear_node would leave the edge dangling). free_value   \
+     * is the non-cycle mirror. */                                          \
+    X((_k == GC_KIND_VAL && _v->type == VAL_DICT && _v->module_ns), 1,        \
+      eigs_module_ns_env(_v), GC_KIND_ENV,                                    \
+      gc_env_is_node(eigs_module_ns_env(_v)),                                 \
+      { Env *_o = eigs_module_ns_detach(_v);                                  \
+        if (_o) env_decref(_o); }, __VA_ARGS__)
 
 #define GC_EDGE_WALK(GUARD, COUNT, CHILD, CHILD_KIND, IS_NODE, CLEAR,         \
                      OUT_OBJ, OUT_KIND, BODY)                                 \

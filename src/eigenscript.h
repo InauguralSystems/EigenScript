@@ -365,6 +365,14 @@ struct Value {
      * struct's tail padding (no size change) and is zero-initialized by every
      * Value allocator (xcalloc / arena_alloc memset / freelist reuse memset). */
     unsigned char gc_buffered;
+    /* #1057: 1 iff this VAL_DICT is a module NAMESPACE — the value `import M`
+     * binds. Such a dict is a LIVE VIEW of the module's Env: field reads
+     * refresh from the module binding, field writes go through to it. The
+     * Env* backref lives in a side table (eigs_module_ns_env) so struct Value
+     * does not grow; this byte sits in the struct's existing tail padding and
+     * is what makes the common (non-namespace) dict path a single byte test —
+     * including in the JIT's inline dict-cache probe, which bails on it. */
+    unsigned char module_ns;
 };
 
 /* Window length for the per-Value dH ring buffer. Predicates require
@@ -1609,6 +1617,21 @@ Env *env_resolve_chain(Env *start, const char *name, uint32_t h,
                        int *out_slot, int *out_depth);
 void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h);
+/* #1057 module namespaces. `import M` binds a dict that is a LIVE VIEW of the
+ * module's top-level Env: `M.x` reads the module's CURRENT binding and
+ * `M.x is v` writes it. attach flags the dict and takes an OWNING ref on the
+ * env (one GC_EDGE_TABLE row); detach hands that ref back to the caller and
+ * clears the flag; sync refreshes every entry (for whole-dict readers —
+ * `keys`, `values`, `len`, printing, json, iteration, equality). Private
+ * (`_`-prefixed) module bindings are not part of the namespace and are never
+ * projected. Not guarded for concurrent import, same as the module cache. */
+void eigs_module_ns_attach(Value *dict, Env *env);
+Env *eigs_module_ns_env(Value *dict);
+Env *eigs_module_ns_detach(Value *dict);
+void eigs_module_ns_sync(Value *dict);
+/* Raw (non-routed) dict store — writes the dict's own slot without going
+ * through a module namespace's env. The namespace projection uses it. */
+void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val);
 /* Env lifetime is a real refcount: env_new returns with refcount 1 (the
  * creator's ref — adopted by the call frame or the C caller) and an owned
  * ref on its parent. env_decref destroys at 0: drops every binding, drops

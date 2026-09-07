@@ -1141,6 +1141,23 @@ define eigen_parse(tokens) as:
 # Evaluator
 # ============================================================
 
+# #1057: the module env behind a `M.x` target node, or null when the target is
+# not a bare imported-module name or `x` is module-private (`_`-prefixed names
+# are not part of a namespace and are never projected through it).
+define _ns_env_for(target_node, key) as:
+    if (type of target_node) != "list":
+        return null
+    if (len of target_node) < 2:
+        return null
+    if target_node[0] != "ident":
+        return null
+    if (len of key) > 0:
+        if (char_at of [key, 0]) == "_":
+            return null
+    if (has_key of [_eigen_module_envs, target_node[1]]) == 0:
+        return null
+    return _eigen_module_envs[target_node[1]]
+
 define _env_new(parent) as:
     return [[], parent]
 
@@ -1205,6 +1222,22 @@ define _env_unset_local(env, name) as:
             list_remove_at of [bindings, i]
             return null
     return null
+
+# #1057: a module namespace is a LIVE VIEW of the module's bindings, not a
+# snapshot — `M.x` reads M's CURRENT binding and `M.x is v` writes it. The
+# C evaluator carries the module Env on the namespace value itself; here the
+# namespace is a plain dict with no identity to hang it on, so the module env
+# is registered under the imported NAME and `dot`/`dot_assign` consult it when
+# the target is that bare name (the `M.x` form). Keeping it out of the dict is
+# deliberate: `keys of M` must list the module's bindings and nothing else.
+#
+# NOTE: this path is not currently reachable. eigen.eigs's `import` reads its
+# module with `read_text of ("lib/" + name + ".eigs")`, which resolves to ""
+# rather than raising, so EVERY meta-interpreted import has produced an empty
+# namespace since long before #1057 (`eigen_run of "import math\nkeys of math"`
+# -> []). That is a separate meta-interpreter gap; test_meta_parity.eigs covers
+# no import case for the same reason.
+_eigen_module_envs is {}
 
 # Return / break / continue mechanism — global flags
 _eigen_returning is 0
@@ -1474,6 +1507,13 @@ define eigen_eval(node, env) as:
         target is eigen_eval of [node[1], env]
         key is node[2]
         if (type of target) == "dict":
+            # #1057: `M.x` on a module namespace reads M's CURRENT binding.
+            ns_env is _ns_env_for of [node[1], key]
+            if ns_env != null:
+                mbind is ns_env[0]
+                for mi in range of (len of mbind):
+                    if mbind[mi][0] == key:
+                        return mbind[mi][1]
             if (has_key of [target, key]) == 1:
                 return target[key]
             return null
@@ -1484,6 +1524,10 @@ define eigen_eval(node, env) as:
         key is node[2]
         val is eigen_eval of [node[3], env]
         if (type of target) == "dict":
+            # #1057: `M.x is v` on a module namespace writes M's binding.
+            ns_env is _ns_env_for of [node[1], key]
+            if ns_env != null:
+                _env_set_local of [ns_env, key, val]
             dict_set of [target, key, val]
             return val
         throw of f"cannot assign .{key} on {type of target}"
@@ -1647,6 +1691,8 @@ define eigen_eval(node, env) as:
                 first_char is char_at of [bname, 0]
                 if first_char != "_":
                     dict_set of [mod_dict, bname, bval]
+        # #1057: register the module env so the namespace reads/writes live.
+        dict_set of [_eigen_module_envs, mod_name, mod_env]
         _env_set of [env, mod_name, mod_dict]
         return mod_dict
 

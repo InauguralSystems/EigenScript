@@ -2019,7 +2019,7 @@ static uint8_t *emit_mov_disp32_r12_to_rdi(uint8_t *w, int32_t disp) {
  *
  * On success: %rdi = dict Value*, %rdx = entry index, %rax =
  * vals[index]. `h` and `key` are compile-time constants. Guard-failure
- * jumps append to slow_p[] (7 entries). The dict cache is TLS in vm.c;
+ * jumps append to slow_p[] (8 entries). The dict cache is TLS in vm.c;
  * Phase 5: %rbx now holds &EigsThread.vm (heap), so the probe loads
  * tls_base into %rsi via `mov %fs:0, %rsi` and addresses
  * g_dict_cache_tpoff off that. */
@@ -2035,6 +2035,9 @@ static uint8_t *emit_dict_cache_probe(uint8_t *w, uint16_t slot,
     w = emit_shr_16_rdi(w);
     w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, type),
                                    (uint32_t)VAL_DICT);
+    w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+    /* #1057: bail on a module namespace — see the header comment. */
+    w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, module_ns));
     w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
     w = emit_mov_edi_eax(w);
     w = emit_xor_imm32_eax(w, h);

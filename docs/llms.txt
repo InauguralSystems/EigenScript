@@ -211,6 +211,12 @@ import list                              # namespaced: list.filter of [xs, fn]
 load_file of "lib/list.eigs"             # bare names: filter of [xs, fn]
 ```
 
+A module namespace is a **live view** of that module's bindings, not a
+snapshot (#1057): `m.x` reads the module's current `x` and `m.x is v`
+writes it, for a number or string exactly as for a dict or list. There is
+no "box module state in a container or importers go stale" rule. Names
+starting with `_` stay private to the module.
+
 See docs/BUILTINS.md and docs/STDLIB.md before writing your own — or resolve
 a name mechanically: `eigenscript --api --json` dumps every builtin,
 extension (by group), and lib function with its parameter list in one call.

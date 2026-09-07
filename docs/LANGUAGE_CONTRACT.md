@@ -76,7 +76,12 @@ bound only its message string.)
 **Promise:** `import name` executes the module once and binds its
 top-level definitions as a **dict named `name`** — nothing enters the
 importing scope besides that one binding, and module names starting
-with `_` are private (omitted from the dict). Import tries `name.eigs`
+with `_` are private (omitted from the dict). That dict is a **live
+view** of the module's bindings, not a snapshot (#1057): `name.x`
+reads the module's current binding and `name.x is v` writes it, for a
+number or string exactly as for a dict or list. Values read *out* of a
+namespace are ordinary values, not aliases. Boxing module state in a
+container is therefore a style choice, not a correctness requirement. Import tries `name.eigs`
 before `lib/name.eigs`, warns on a project/stdlib collision, and chooses
 the project file. `load_file of "path.eigs"` is the
 non-namespaced form: it executes the file directly in the current
@@ -121,7 +126,10 @@ or module binding is restored. See the scope notes below.
 **Status:** Enforced — `tools/road_diff.sh` and `tests/roads/`, `tests/test_import.eigs`,
 `tests/test_import_errors.eigs` (parse-error surfacing for `import` /
 `load_file` / `eval`) (stdlib + user modules,
-namespacing, `_` privacy, missing-module error), docs/SPEC.md Modules
+namespacing, `_` privacy, missing-module error),
+`tests/test_module_live_view.eigs` (#1057: live-view reads and writes,
+container state unchanged, privacy, enumeration, module cache, nested
+imports, load_file/eval roads unchanged), docs/SPEC.md Modules
 examples (executed by the suite).
 
 ## Numbers

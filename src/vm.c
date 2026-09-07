@@ -619,6 +619,12 @@ static inline void dict_cache_insert(Value *dict, uint32_t h, int idx) {
 }
 
 static inline Value *dict_get_cached(Value *dict, const char *key, uint32_t h) {
+    /* #1057: a module namespace is a LIVE VIEW of the module env, so its
+     * own slots are only a mirror — the inline cache must not answer from
+     * them. Route to dict_get_hashed, which projects the current binding.
+     * The JIT's inline probe carries the same guard (emit_dict_cache_probe). */
+    if (__builtin_expect(dict->module_ns != 0, 0))
+        return dict_get_hashed(dict, key, h);
     DictCacheEntry *ce = dict_cache_probe(dict, h);
     if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
@@ -634,6 +640,10 @@ static inline Value *dict_get_cached(Value *dict, const char *key, uint32_t h) {
 }
 
 static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Value *val) {
+    if (__builtin_expect(dict->module_ns != 0, 0)) {   /* #1057: write through */
+        dict_set_hashed(dict, key, h, val);
+        return;
+    }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
     if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
@@ -661,6 +671,8 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
  * 1 if the in-place fast path fired; 0 means the caller must materialize
  * and call dict_set_cached. */
 static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) {
+    if (__builtin_expect(dict->module_ns != 0, 0))
+        return 0;                     /* #1057: never in-place on a mirror */
     DictCacheEntry *ce = dict_cache_probe(dict, h);
     if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
@@ -6098,6 +6110,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * (a fn-free module would otherwise be reclaimed immediately,
          * which is fine, but caching the env keeps observer-trace
          * identity stable across re-imports). */
+        /* #1057: the dict is a LIVE VIEW of mod_env, not a snapshot —
+         * `M.x` reads the module's current binding and `M.x is v` writes
+         * it. attach takes an owning ref on mod_env. */
+        eigs_module_ns_attach(mod_dict, mod_env);
         eigs_module_cache_put(abs_path, mod_dict, mod_env);
         env_decref(mod_env);
         vm_push(mod_dict);
