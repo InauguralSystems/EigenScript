@@ -14,6 +14,15 @@
 # error instead of silently lexing to wrong values (`<<`/`>>` lex as two
 # comparisons and raise at parse time). (Slices, destructuring, and
 # parameter defaults also raise, at parse time — #339.)
+# RESERVED OBSERVER FORMS (#1102/#1111): `report` and `report_value` are
+# reserved words here exactly as in the C parser — never a binding
+# (assignment, define name, parameter, loop/comprehension/catch/lambda
+# variable, bare value use), and `report of x` / `report_value of x` require
+# an identifier operand (parentheses around the identifier are fine; dict
+# fields such as `d.report` stay legal data keys). A violation raises a parse
+# error whose text mirrors the runtime's E005 diagnostic, e.g.
+# "parse error line 1: 'report' is a reserved observer form; use it with
+# 'of variable', never as a binding [E005]".
 # DIAGNOSTICS are best-effort and intentionally differ (issue #306): raised
 # errors carry no "line N" prefix (eval-time AST nodes don't track source
 # lines), and divide-or-modulo-by-zero raises in both (the C VM raises a
@@ -37,6 +46,7 @@ load_file of "lib/math.eigs"
 
 # Token types (strings for readability):
 # "num", "str", "ident", "op", "kw", "newline", "indent", "dedent", "eof"
+# "report" (the reserved observer forms `report` / `report_value`, #1102)
 # "lparen", "rparen", "lbracket", "rbracket", "lbrace", "rbrace"
 # "comma", "colon", "dot", "arrow", "pipe", "null", "true", "false"
 
@@ -67,6 +77,10 @@ _interrogatives is ["what", "who", "when", "where", "why", "how"]
 # Predicate keywords
 _predicates is ["converged", "stable", "improving", "oscillating", "diverging", "equilibrium"]
 
+# Reserved observer forms (#1102/#1111): their own token kind, so the parser
+# can reject every binding position exactly where the C parser does.
+_reserved_forms is ["report", "report_value"]
+
 define _is_keyword(word) as:
     for i in range of (len of _keywords):
         if word == _keywords[i]:
@@ -82,6 +96,12 @@ define _is_interrogative(word) as:
 define _is_predicate(word) as:
     for i in range of (len of _predicates):
         if word == _predicates[i]:
+            return 1
+    return 0
+
+define _is_reserved_form(word) as:
+    for i in range of (len of _reserved_forms):
+        if word == _reserved_forms[i]:
             return 1
     return 0
 
@@ -342,6 +362,8 @@ define eigen_tokenize(source) as:
                     append of [tokens, ["interrogative", buf, line]]
                 elif (_is_predicate of buf) == 1:
                     append of [tokens, ["predicate", buf, line]]
+                elif (_is_reserved_form of buf) == 1:
+                    append of [tokens, ["report", buf, line]]
                 elif (_is_keyword of buf) == 1:
                     append of [tokens, ["kw", buf, line]]
                 else:
@@ -460,6 +482,7 @@ define eigen_tokenize(source) as:
 #   ["assign", "x", expr]
 #   ["binop", "+", left, right]
 #   ["call", fn_expr, arg_expr]
+#   ["report", "report" | "report_value", "x"]   (#1102: `report of x`)
 #   ["if", cond, if_body, else_body]
 #   ["loop", cond, body]
 #   ["for", var, iter, body]
@@ -512,8 +535,28 @@ define _p_peek_at(p, offset) as:
         return ["eof", null, 0]
     return p[0][idx]
 
+# #1102/#1111 parity: one reservation rule for every parser entry point. A
+# "report" token is never an identifier; only `report of <ident>` and a dot
+# key consume it. The message mirrors the C parser's E005 diagnostic (line
+# only — eigen tokens carry no column).
+define _p_report_error(tok, operand) as:
+    if operand == 1:
+        throw of f"parse error line {tok[2]}: '{tok[1]}' is a reserved observer form; requires a variable name operand [E005]"
+    throw of f"parse error line {tok[2]}: '{tok[1]}' is a reserved observer form; use it with 'of variable', never as a binding [E005]"
+
+# A dot key may be any word, including a reserved observer form (#1102:
+# `d.report` is a data key, never a binding).
+define _p_expect_key(p) as:
+    tok is _p_cur of p
+    if tok[0] == "report":
+        _p_advance of p
+        return tok
+    return _p_expect of [p, "ident"]
+
 define _p_expect(p, ttype) as:
     tok is _p_cur of p
+    if tok[0] == "report":
+        _p_report_error of [tok, 0]
     if tok[0] != ttype:
         throw of f"parse error: expected {ttype}, got {tok[0]} ('{tok[1]}') at line {tok[2]}"
     _p_advance of p
@@ -774,7 +817,7 @@ define _p_parse_postfix(p) as:
     loop while ((_p_peek_type of p) == "dot") or ((_p_peek_type of p) == "lbracket"):
         if (_p_peek_type of p) == "dot":
             _p_advance of p
-            key_tok is _p_expect of [p, "ident"]
+            key_tok is _p_expect_key of p
             node is ["dot", node, key_tok[1]]
         else:
             _p_advance of p
@@ -908,7 +951,7 @@ define _p_parse_call(p) as:
             left is ["index", left, idx]
         elif (_p_peek_type of p) == "dot":
             _p_advance of p
-            key_tok is _p_expect of [p, "ident"]
+            key_tok is _p_expect_key of p
             left is ["dot", left, key_tok[1]]
         else:
             parsing is 0
@@ -965,6 +1008,24 @@ define _p_parse_primary(p) as:
         _p_advance of p
         return ["ident", tok[1]]
 
+    # #1102/#1111: reserved observer forms. `report of <ident>` is the only
+    # value-producing shape (C parser: parse_primary + parse_relation);
+    # anything else is E005. The operand is parsed at unary precedence,
+    # mirroring the C parser's `of` RHS, so `report of x + "!"` is
+    # `(report of x) + "!"` and `report of (x)` is the identifier `x`.
+    if tt == "report":
+        tok is _p_cur of p
+        _p_advance of p
+        if (_p_peek_type of p) != "kw":
+            _p_report_error of [tok, 0]
+        if (_p_peek_val of p) != "of":
+            _p_report_error of [tok, 0]
+        _p_advance of p
+        operand is _p_parse_unary of p
+        if operand[0] != "ident":
+            _p_report_error of [tok, 1]
+        return ["report", tok[1], operand[1]]
+
     if tt == "lparen":
         # Check for lambda: (params) => expr
         saved_pos is p[1]
@@ -978,7 +1039,7 @@ define _p_parse_primary(p) as:
                 scan_ok is 0
             else:
                 stok is p[0][scan_pos]
-                if (stok[0] == "ident") or (stok[0] == "comma"):
+                if (stok[0] == "ident") or (stok[0] == "comma") or (stok[0] == "report"):
                     scan_pos is scan_pos + 1
                 elif stok[0] == "rparen":
                     # Check if next is arrow
@@ -1217,6 +1278,18 @@ define eigen_eval(node, env) as:
         if (_env_has of [env, node[1]]) == 0:
             throw of f"undefined variable '{node[1]}'"
         return _env_get of [env, node[1]]
+
+    if ntype == "report":
+        # #1102/#1111: `report of x` / `report_value of x` over a bound name.
+        # The operand must be bound (the C VM raises undefined_name at run
+        # time); the classification is this interpreter's documented
+        # value-only bridge (no host trajectory: equilibrium / opaque).
+        if (_env_has of [env, node[2]]) == 0:
+            throw of f"undefined variable '{node[2]}'"
+        val is _env_get of [env, node[2]]
+        if node[1] == "report_value":
+            return _report_value_bridge of val
+        return _report_bridge of val
 
     if ntype == "assign":
         val is eigen_eval of [node[2], env]
@@ -1694,11 +1767,19 @@ define _eval_block(stmts, env) as:
 # Built-in functions for the meta-circular environment
 # ============================================================
 
+# #1102/#1111: the reserved forms are parser syntax, never values in the meta
+# environment. `report of x` / `report_value of x` in meta source evaluate
+# through these fresh-parameter wrappers — this interpreter's documented
+# value-only bridge (no host trajectory -> equilibrium; host functions ->
+# opaque) — without exposing the host's named binding history to the meta env.
+_report_bridge is (v) => report of v
+_report_value_bridge is (v) => report_value of v
+
 define _make_default_env as:
     env is _env_new of null
     # Bridge the C builtins into the meta-interpreter's environment.
     # Since we're running inside the C runtime, these names resolve to
-    # VAL_BUILTIN values (report uses the wrapper below). The "call" handler calls them
+    # VAL_BUILTIN values. The "call" handler calls them
     # with `fn of arg` which the C runtime handles natively.
     _env_set_local of [env, "print", print]
     _env_set_local of [env, "write", write]
@@ -1708,11 +1789,6 @@ define _make_default_env as:
     _env_set_local of [env, "num", num]
     _env_set_local of [env, "append", append]
     _env_set_local of [env, "type", type]
-    # #1102: report is reserved syntax, so it cannot be stored as a value.
-    # This fresh-parameter wrapper preserves this interpreter's existing
-    # value-only bridge: no trajectory -> equilibrium, functions -> opaque.
-    # It does not expose the host's named binding history to the meta env.
-    _env_set_local of [env, "report", (v) => report of v]
     _env_set_local of [env, "assert", assert]
     _env_set_local of [env, "throw", throw]
     _env_set_local of [env, "keys", keys]

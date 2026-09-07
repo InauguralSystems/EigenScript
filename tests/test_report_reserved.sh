@@ -155,7 +155,7 @@ print of d.report
 print of d.report_value
 print of f"{report of x}:{report_value of x}"
 load_file of "lib/eigen.eigs"
-print of (eigen_run of "report of 5")
+print of (eigen_run of "x is 5\\nreport of x")
 print of (eigen_run of "report of print")
 '''
     expected = 'moving\nmoving\nmoving\nmoving\nmoving!\nmoving\nmoving\nopaque\nopaque\n7\n8\n9\n10\nmoving:moving\nequilibrium\nopaque\n'

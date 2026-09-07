@@ -964,11 +964,22 @@ print of msg   # "World is running v0.5"
 
 ### lib/eigen.eigs — Meta-Circular Interpreter
 
-The meta-interpreter's `report` bridge classifies values without the host's
-binding trajectories: it returns `equilibrium` for ordinary values and `opaque`
-for functions. Since #1102 a fresh-parameter wrapper uses the reserved host
-syntax to preserve that existing fallback; the meta-interpreter remains a
-separate, partial implementation of the language.
+The meta-interpreter honours the `report` / `report_value` reservation
+(#1102, mirrored here by #1111) at the same stage as the runtime — its
+tokenizer lexes both words as a reserved token and its parser rejects every
+binding position (assignment, `define` name, parameter, loop/comprehension/
+catch/lambda variable, bare value use) and every non-identifier operand
+(`report of 5`, `report_value of (x + 1)`) with a parse error carrying the
+runtime's E005 text: `parse error line N: 'report' is a reserved observer
+form; use it with 'of variable', never as a binding [E005]` (operands:
+`... requires a variable name operand [E005]`). `report of x` /
+`report_value of x` over a bound identifier (parentheses allowed) and dict
+fields such as `d.report` work as in the runtime. The classification itself
+is the meta-interpreter's value-only bridge, without the host's binding
+trajectories: `equilibrium` for ordinary values and `opaque` for host
+functions. `tests/test_meta_parity.eigs` pins that native and meta agree on
+each of these probes. The meta-interpreter remains a separate, partial
+implementation of the language.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|

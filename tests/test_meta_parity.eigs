@@ -123,6 +123,75 @@ check of ["paren'd 1-elem literal binds whole list (#355)", eigen_run of spread_
 spread_src_fill is "define f3(a, b, c) as:\n    if c == null:\n        return a + b\n    return 0\nf3 of [1, 2]"
 check of ["short spread null-fills trailing params", eigen_run of spread_src_fill, 3]
 
+# --- #1102/#1111: `report` / `report_value` are reserved observer forms ---
+# Native: the shared parser rejects every binding position and every
+# non-identifier operand with E005 before the unit runs (`eval` raises kind
+# "parse"). Meta: lib/eigen.eigs's tokenizer/parser must reject the same
+# programs, with a message that carries the runtime's E005 shape. Each probe
+# asserts BOTH sides raise (the div-by-zero pattern above, on both oracles).
+define both_reject(label, src) as:
+    local native_kind is "did not raise"
+    try:
+        eval of src
+    catch ne:
+        native_kind is ne.kind
+    check of [f"native E005 (parse) rejects: {label}", native_kind, "parse"]
+    local meta_msg is "did not raise"
+    try:
+        eigen_run of src
+    catch me:
+        meta_msg is me
+    check of [f"meta rejects: {label}", contains of [meta_msg, "is a reserved observer form"], 1]
+    check of [f"meta names E005: {label}", contains of [meta_msg, "[E005]"], 1]
+
+# binding positions (the issue's two probes first)
+both_reject of ["report is 4 / print of report", "report is 4\nprint of report"]
+both_reject of ["define report(v) shadows the form", "define report(v) as:\n    return \"mine\"\nrx is 1\nrx is 2\nprint of (report of rx)"]
+both_reject of ["report_value is 4 / print of report_value", "report_value is 4\nprint of report_value"]
+both_reject of ["define report_value(v)", "define report_value(v) as:\n    return 1"]
+both_reject of ["bare report as a value", "rb is 1\nprint of report"]
+both_reject of ["report as a parameter", "define rf(a, report) as:\n    return a"]
+both_reject of ["report_value as a lambda parameter", "rg is (a, report_value) => a"]
+both_reject of ["report as a for variable", "for report in [1]:\n    print of 1"]
+both_reject of ["report as a comprehension variable", "rys is [1 for report in [1]]"]
+both_reject of ["report_value as a catch name", "try:\n    rt is 1\ncatch report_value:\n    rt is 2"]
+# non-identifier operands (replaces the old `report of 5` == "equilibrium" pin)
+both_reject of ["report of 5", "report of 5"]
+both_reject of ["report_value of (x + 1)", "rq is 1\nreport_value of (rq + 1)"]
+both_reject of ["report of -x", "ru is 1\nreport of -ru"]
+both_reject of ["report of d.field", "rd is {\"a\": 1}\nreport of rd.a"]
+both_reject of ["report of ([1])", "report of ([1])"]
+
+# an UNBOUND identifier operand is a run-time error on both sides
+unb_native is "did not raise"
+try:
+    eval of "report of nope_report_operand"
+catch une:
+    unb_native is une.kind
+check of ["native: report of unbound raises undefined_name", unb_native, "undefined_name"]
+unb_meta is "did not raise"
+try:
+    eigen_run of "report of nope_report_operand"
+catch ume:
+    unb_meta is ume
+check of ["meta: report of unbound raises", contains of [unb_meta, "undefined variable"], 1]
+
+# positive controls: a bound identifier operand still works on both sides.
+# Values are the documented divergence (the meta bridge classifies the VALUE
+# with no host trajectory -> "equilibrium"; host functions -> "opaque"), so
+# the native side is pinned as "does not raise, returns a string".
+pv_native is eval of "pv1 is 1\npv1 is 2\nreport of pv1"
+check of ["native: report of bound ident returns a label", type of pv_native, "str"]
+check of ["meta: report of bound ident (bridge fallback)", eigen_run of "pv2 is 1\npv2 is 2\nreport of pv2", "equilibrium"]
+check of ["meta: report_value of bound ident (bridge fallback)", eigen_run of "pv3 is 1\npv3 is 2\nreport_value of pv3", "equilibrium"]
+check of ["meta: parenthesised identifier operand", eigen_run of "pv4 is 1\nreport of (pv4)", "equilibrium"]
+check of ["meta: report_value of ((x))", eigen_run of "pv5 is 1\nreport_value of ((pv5))", "equilibrium"]
+check of ["meta: `of` binds the identifier only (report of x + \"!\")", eigen_run of "pv6 is 1\nreport of pv6 + \"!\"", "equilibrium!"]
+check of ["native: `of` binds the identifier only", ends_with of [eval of "pv7 is 1\nreport of pv7 + \"!\"", "!"], 1]
+check of ["meta: host function operand is opaque", eigen_run of "report of print", "opaque"]
+check of ["meta: dict fields named report/report_value stay data keys", eigen_run of "rdk is {\"report\": 7, \"report_value\": 8}\nrdk.report is 9\nrdk.report + rdk.report_value", 17]
+check of ["native: dict fields named report/report_value stay data keys", eval of "rdn is {\"report\": 7, \"report_value\": 8}\nrdn.report is 9\nrdn.report + rdn.report_value", 17]
+
 if checks == passed:
     print of "All tests passed"
 else:
