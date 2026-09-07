@@ -7,9 +7,21 @@
 # spin loop only hopes the child was scheduled in time): the child prints a
 # READY marker to stdout (builtin_print fflushes) once inside its long loop;
 # we poll for that line, then `kill -USR1`. The dump's own "# end dump"
-# trailer on stderr acknowledges the safepoint fired. Then we wait for the
-# child to finish ON ITS OWN (bounded — a hung child is a FAIL, never a hung
-# suite) and require the DONE marker + exit 0.
+# trailer on stderr acknowledges the safepoint fired. Then we release the
+# child through a SENTINEL FILE and require the DONE marker + exit 0.
+#
+# The sentinel is load-bearing, and the reason is worth keeping. The child's
+# loop used to be bounded by a fixed iteration count (2,000,000) chosen so the
+# child would still be alive when the signal landed — an iteration count is a
+# TIME assumption wearing a counter's clothes, and it contradicted the
+# observable-state rule this header states. #972 (hoisting the observer gate
+# ahead of the observe helpers) made this exact loop 1.9x faster — measured
+# 244ms -> 131ms for the whole fixture — and the child began exiting before
+# the harness could signal it: 5 checks failed in the integrated tree while
+# every branch was green on its own, and it still passed 5/5 standalone at
+# low load. The loop is now bounded by a file the HARNESS creates once it has
+# what it needs, with a large finite cap so a dead harness cannot hang the
+# suite. A future speedup cannot re-introduce the race.
 #
 # Subtest 1 (single thread): the entire wait runs INSIDE one train() call,
 # so the dump deterministically catches a live frame: module-scope
@@ -31,6 +43,10 @@ EIGS="$TESTS_DIR/../src/eigenscript"
 
 FIX1=/tmp/eigs_sigusr1_a_$$.eigs
 FIX2=/tmp/eigs_sigusr1_b_$$.eigs
+# Release files: the child polls for these and winds down once the harness has
+# collected its dumps (see the header).
+SENT1=/tmp/eigs_sigusr1_a_$$.go
+SENT2=/tmp/eigs_sigusr1_b_$$.go
 OUT1=/tmp/eigs_sigusr1_a_$$.out
 ERR1=/tmp/eigs_sigusr1_a_$$.err
 OUT2=/tmp/eigs_sigusr1_b_$$.out
@@ -42,7 +58,7 @@ cleanup() {
         kill "$p" 2>/dev/null || true
         wait "$p" 2>/dev/null || true
     done
-    rm -f "$FIX1" "$FIX2" "$OUT1" "$ERR1" "$OUT2" "$ERR2"
+    rm -f "$FIX1" "$FIX2" "$OUT1" "$ERR1" "$OUT2" "$ERR2" "$SENT1" "$SENT2"
 }
 trap cleanup EXIT
 
@@ -72,10 +88,14 @@ define train(n) as:
         epsilon is epsilon * 0.99999
         if step_count == 5000:
             print of "READY"
+        if step_count % 200000 == 0:
+            if file_exists of "@SENT1@":
+                return loss
     return loss
-r is train of 2000000
+r is train of 2000000000
 print of "DONE"
 EOF
+sed -i "s|@SENT1@|$SENT1|" "$FIX1"
 
 # ---- Subtest 1: single-thread dump shape -------------------------------
 
@@ -137,7 +157,7 @@ fi
 # The when=1 counterproof: the live frame's parameter n was bound once this
 # call — it must NOT read as settled.
 if grep -qE '^# scope=frame$' "$ERR1" \
-   && grep -qE '^n \| 2000000 \| when=1 \| entropy=- \| dH=- \| unobserved$' "$ERR1"; then
+   && grep -qE '^n \| 2000000000 \| when=1 \| entropy=- \| dH=- \| unobserved$' "$ERR1"; then
     pass "sigusr1: live-frame row with fresh when=1 binding (distinguishable from settled)"
 else
     fail "sigusr1: live-frame when=1 row for parameter n missing"
@@ -148,6 +168,11 @@ if grep -qE '^loss \| [0-9.]+ \| when=[0-9]{4,} \| entropy=[^ ]+ \| dH=[^ ]+ \| 
 else
     fail "sigusr1: fn-local loss row missing/misshaped"
 fi
+
+# RELEASE the child: every dump this subtest needs has been collected, so let
+# the loop wind down (see the header — the child is bounded by this file, not
+# by an iteration count that a runtime speedup can outrun).
+: > "$SENT1"
 
 # The program must continue correctly after the dump: DONE marker, then a
 # clean exit on its own. DONE is the observable barrier; the wait below only
@@ -182,8 +207,11 @@ define churn(n) as:
     loop while i < n:
         i is i + 1
         probe is step_count
+        if i % 200000 == 0:
+            if file_exists of "@SENT2@":
+                return probe
     return probe
-t is spawn of [churn, 2500000]
+t is spawn of [churn, 2500000000]
 define train(n) as:
     loss is 5.0
     loop while step_count < n:
@@ -191,11 +219,15 @@ define train(n) as:
         loss is loss * 0.999 + 0.001
         if step_count == 5000:
             print of "READY"
+        if step_count % 200000 == 0:
+            if file_exists of "@SENT2@":
+                return loss
     return loss
-r is train of 2000000
+r is train of 2000000000
 thread_join of t
 print of "DONE"
 EOF
+sed -i "s|@SENT2@|$SENT2|" "$FIX2"
 
 "$EIGS" "$FIX2" > "$OUT2" 2> "$ERR2" &
 PID=$!
@@ -224,6 +256,9 @@ if grep -qE '^step_count \| [0-9]+ \| when=[0-9]{4,} \| entropy=[^ ]+ \| dH=[^ ]
 else
     fail "sigusr1-mt: module step_count row missing/misshaped"
 fi
+
+# RELEASE the worker and the main loop (same rule as subtest 1).
+: > "$SENT2"
 
 if poll_file "$OUT2" "^DONE$" 1200; then
     pass "sigusr1-mt: program completed (DONE) after the dump"
