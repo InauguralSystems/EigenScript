@@ -120,4 +120,52 @@ if [ "${lexer_parse_errors:-0}" -lt 6 ]; then
     drift=1
 fi
 
+# 8. The builtin/extension counts in README.md and docs/BUILTINS.md match the
+# binary's own index. These were hand-maintained prose and drifted silently for
+# several releases (#1118: the parenthetical said "199 core + ~60 extensions"
+# while `--api` reported 253 + 87), because no check derived them from anything.
+# The authoritative source is the binary, per mechanical-gates §1 — ask the tool,
+# do not re-count the source.
+#
+# Exact, not a floor: the failure this closes is UNDERSTATEMENT, which a floor
+# tolerates by construction. The cost is that adding a builtin updates one number
+# in two files, and the gate prints the numbers to use.
+#
+# Residual: it checks the two "N core + M extensions" prose lines and nothing
+# else — a doc that states a count in different words is not covered. If the
+# binary is missing the check FAILS rather than skipping: an instrument that
+# cannot run must not report success (the same lesson as check 2's empty `git tag`).
+api_bin=""
+for cand in "src/eigenscript" "build/release/eigenscript"; do
+    [ -x "$cand" ] && { api_bin="$cand"; break; }
+done
+if [ -z "$api_bin" ]; then
+    echo "DRIFT: builtin-count check cannot run — no eigenscript binary at src/ or build/release/"
+    drift=1
+else
+    api_core=$("$api_bin" --api | awk '$1 == "builtin"' | wc -l | tr -d ' ')
+    api_ext=$("$api_bin" --api | awk '$1 == "extension"' | wc -l | tr -d ' ')
+    api_total=$((api_core + api_ext))
+    if [ "$api_core" -lt 100 ] || [ "$api_ext" -lt 10 ]; then
+        echo "DRIFT: builtin-count check read an implausible --api surface (core=$api_core ext=$api_ext) — instrument broken, not a clean tree"
+        drift=1
+    else
+        for f in README.md docs/BUILTINS.md; do
+            line=$(grep -nE '[0-9]+ (builtin functions|builtins organized by module) \([0-9]+ core \+ [0-9]+ extensions' "$f" | head -1)
+            if [ -z "$line" ]; then
+                echo "DRIFT: $(basename "$f") has no 'N core + M extensions' count line for the builtin-count gate to check"
+                drift=1
+                continue
+            fi
+            doc_total=$(printf '%s' "$line" | sed -E 's/.*[^0-9]([0-9]+) (builtin functions|builtins organized by module).*/\1/')
+            doc_core=$(printf '%s' "$line" | sed -E 's/.*\(([0-9]+) core.*/\1/')
+            doc_ext=$(printf '%s'  "$line" | sed -E 's/.*\+ ([0-9]+) extensions.*/\1/')
+            if [ "$doc_core" != "$api_core" ] || [ "$doc_ext" != "$api_ext" ] || [ "$doc_total" != "$api_total" ]; then
+                echo "DRIFT: $(basename "$f") says $doc_total ($doc_core core + $doc_ext extensions); --api says $api_total ($api_core core + $api_ext extensions)"
+                drift=1
+            fi
+        done
+    fi
+fi
+
 exit $drift

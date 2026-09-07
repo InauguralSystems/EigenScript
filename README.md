@@ -511,7 +511,7 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/SYNTAX.md](docs/SYNTAX.md) — tutorial-style language guide
 - [docs/GRAMMAR.md](docs/GRAMMAR.md) — formal EBNF grammar
 - [docs/LANGUAGE_CONTRACT.md](docs/LANGUAGE_CONTRACT.md) — edge-case promises
-- [docs/BUILTINS.md](docs/BUILTINS.md) — 250+ builtin functions (199 core + ~60 extensions)
+- [docs/BUILTINS.md](docs/BUILTINS.md) — 345 builtin functions (258 core + 87 extensions; `eigenscript --api` prints the live index)
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
 - [docs/TRACE.md](docs/TRACE.md) — execution trace, deterministic replay, temporal interrogatives

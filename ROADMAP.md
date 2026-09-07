@@ -131,7 +131,7 @@ observer/deterministic-replay niche instead of diluting it.**
 - [x] `--bundle` single-file distribution, optional attached tape =
       a self-replaying bug report — shipped 0.30.0
       ([#413](https://github.com/InauguralSystems/EigenScript/issues/413))
-- [ ] `ext_net` raw TCP/UDP sockets as tape-recorded nondet inputs —
+- [x] `ext_net` raw TCP/UDP sockets as tape-recorded nondet inputs —
       record/replay networking no incumbent stdlib has
       ([#414](https://github.com/InauguralSystems/EigenScript/issues/414))
 
@@ -248,7 +248,7 @@ when picked up:
       TLS) — **deliberately deferred** per the 2026-07 survey critic:
       vendored crypto is a solo-maintainer security liability with zero
       consumers needing AEAD; revisit when one does.
-- [ ] Raw TCP/UDP sockets — now specced as tape-recorded nondet inputs,
+- [x] Raw TCP/UDP sockets — tape-recorded nondet inputs,
       liferaft as forcing function
       ([#414](https://github.com/InauguralSystems/EigenScript/issues/414))
 - [ ] Additional DB drivers (MySQL, NoSQL; SQLite folds into the #415
