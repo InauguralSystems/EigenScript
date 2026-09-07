@@ -225,10 +225,14 @@ unobserved:
         i is i + 1
 ```
 
-Inside the block, assignments to plain variables skip the observer and
-mutate the existing `Value` in place. Outside, normal behavior resumes.
-Measured 2.7x on a 2M-iteration accumulator loop (834ms → 307ms, n=5
-medians); iLambdaAi saw ~22% end-to-end on an 18-hour training run.
+Inside the block, assignments to plain variables skip the observer's
+entropy walk and mutate the existing `Value` in place. Outside, normal
+behavior resumes. Measured 2.7x on a 2M-iteration accumulator loop
+(834ms → 307ms, n=5 medians); iLambdaAi saw ~22% end-to-end on an
+18-hour training run. A scalar assignment inside the block still drops its
+O(1) sample into the value window (#1049), so the verdicts `report` and the
+predicates give a numeric binding are the same with the block as without
+it — only the entropy channel (`why`/`how`, the dH window) is elided.
 
 The block only helps **plain variables** — `x is ...`. A dict field or
 list element (`d.k is ...`, `xs[i] is ...`) is never observed in the

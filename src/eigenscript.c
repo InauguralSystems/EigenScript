@@ -601,23 +601,21 @@ static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
     s->used = 1;
 }
 
-/* #915: the one place the observer gate is decided.
+/* #915: the one place the observer gate is decided — eigs_obs_gate_open,
+ * a static inline in eigenscript.h (#1049 moved it there so the observe ops
+ * in vm.c can ask it too).
  *
  * g_obs_needed is the compile-time half: chunk_reads_observer said some unit in
  * this state can interrogate. g_trace_obs_hist is the runtime half: a tape is
  * recording observer snapshots, so the bookkeeping is needed even though the
  * PROGRAM never asks for it.
  *
- * The trace flag is READ here rather than mirrored into g_obs_needed at each of
+ * The trace flag is READ there rather than mirrored into g_obs_needed at each of
  * the five sites that arm it (builtins.c, chunk.c, compiler.c x2, repl.c).
  * Mirroring would be five hand-maintained copies of one fact, and a sixth arming
  * site added later would silently record a tape full of dead observer snapshots
  * — the same drift shape #921/#925 are open on. One read, no copies. */
-extern int g_trace_obs_hist_storage;   /* trace.h — not included here */
 #define g_trace_obs_hist __atomic_load_n(&g_trace_obs_hist_storage, __ATOMIC_RELAXED)
-static inline int eigs_obs_gate_open(void) {
-    return g_obs_needed || g_trace_obs_hist;
-}
 
 void observer_slot_update(Env *e, int idx, Value *newval) {
     /* #915: nothing compiled into this state can interrogate the observer, so
@@ -658,6 +656,58 @@ void observer_slot_update_num(Env *e, int idx, double num) {
     observer_slot_update_e(e, idx, entropy_of_num(num));
     ObserverSlot *vs = env_obs_slot(e, idx);    /* #294 value-signal channel */
     if (vs) observer_slot_record_value(vs, num);
+}
+
+/* #1049: the ELIDED assignment — what an `unobserved:` block still records.
+ *
+ * The block exists to skip the expensive half of an observation: the entropy
+ * walk (entropy_of_num's two log2s for a scalar, compute_entropy's
+ * O(children) pass for a container) and the dH bookkeeping built on it. It
+ * used to skip the whole update, so an elided assignment was ABSENT from the
+ * value window, and every value-channel verdict (`report`, the six predicates
+ * on a numeric binding, `report_value`, a trajectory snapshot's rel/raw
+ * lists) differed from the unelided program until the missing sample would
+ * have aged out of the 10-deep window: an elided `b is 0.0` initialiser
+ * moved the window-fill boundary by one read, a mid-stream elision merged two
+ * steps into one. A performance annotation was changing answers.
+ *
+ * So the O(1) half still runs here: a scalar's sample enters the value ring
+ * (observer_slot_record_value — one subtraction, one division, two ring
+ * writes, no log2), and the slot counts as having a trajectory (`used`,
+ * with obs_age untouched so the next OBSERVED assignment still seeds the
+ * entropy channel as a first observation). A non-numeric value only flips
+ * the route bit (v_last) the way an observed one would, so a binding rebound
+ * from number to container inside the block routes to the entropy channel
+ * exactly as it does outside — nothing is walked. What is NOT recorded:
+ * entropy, dH, the dH window, obs_age, the tape's observer snapshot, and the
+ * bare-predicate alias (g_last_obs_slot_*) — that alias is deliberately left
+ * on the last OBSERVED binding, because shielding a bare `loop while not
+ * converged` from scratch work is one of the block's documented uses. The
+ * entropy-channel readers (`why`/`how`, `observe`'s dH pair, a snapshot's
+ * `dh` list, `classify of [t, "entropy"]`, and `report`/predicates on a
+ * NON-numeric binding) therefore remain elision-sensitive; PREDICATES.md
+ * says so. Gated by the same #915 observer gate as the full update: a
+ * program nothing in which reads the observer still pays nothing. */
+void observer_slot_sample_num(Env *e, int idx, double num) {
+    if (!eigs_obs_gate_open()) return;
+    if (!e || idx < 0) return;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (!s) return;
+    observer_slot_record_value(s, num);
+    s->used = 1;
+}
+
+void observer_slot_sample(Env *e, int idx, Value *newval) {
+    if (!eigs_obs_gate_open()) return;
+    if (newval && newval->type == VAL_NUM) {
+        observer_slot_sample_num(e, idx, newval->data.num);
+        return;
+    }
+    if (!e || idx < 0) return;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (s) s->v_last = 0;   /* #861 route bit only — no walk, no `used` */
 }
 
 void observer_slot_reset(Env *e) {

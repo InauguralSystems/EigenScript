@@ -2845,6 +2845,16 @@ else
 fi
 echo ""
 
+# [51a] #1049: `unobserved:` is verdict-neutral for the value channel. An
+# elided scalar assignment still lands in the value window (O(1)); only the
+# entropy walk is skipped. Both issue measurements (elided initialiser at the
+# window-fill boundary; one mid-stream elision) compare whole verdict streams,
+# on the fn-local slot path, the name path and the JIT-hot path.
+echo "[51a] Unobserved Verdict Neutrality (#1049)"
+check_eigs_suite "unobserved: elided samples still enter the value window; entropy channel still elided (#1049)" \
+    test_unobserved_neutral.eigs "All tests passed" 26
+echo ""
+
 # [52] Stream I/O
 echo "[52] Stream Tensor I/O"
 SI_OUTPUT=$(./eigenscript ../tests/test_stream_io.eigs 2>&1); SI_OUTPUT_RC=$?

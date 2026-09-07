@@ -242,7 +242,8 @@ sandbox allowlist can name them) but every call raises `value`:
 
 Six keywords for querying a value's observer state. Asking is cheap — the
 state is already there — but note that maintaining it is not free: every
-assignment outside `unobserved:` is sampled whether or not you ever ask. See
+assignment outside `unobserved:` is sampled whether or not you ever ask, and
+inside one a scalar still pays the O(1) value-window sample (#1049). See
 [OBSERVER.md](OBSERVER.md#cost).
 
 | Name | Syntax | Returns |

@@ -117,7 +117,9 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.4142135623
   converges. Don't guess the predicate — see docs/PREDICATES.md.
 - Temporal reads: `prev of x` (value before the last assignment),
   `what is x at 12` / `state_at of 12` (past-line state). Bare `x at 12` is a
-  parse error. Wrap hot loops in `unobserved:` to skip observer bookkeeping.
+  parse error. Wrap hot loops in `unobserved:` to skip the observer's entropy
+  walk (a scalar's value-window sample still lands, so numeric verdicts do not
+  change; `why`/`how` and non-numeric bindings' verdicts can).
 
 ## Values and strings
 

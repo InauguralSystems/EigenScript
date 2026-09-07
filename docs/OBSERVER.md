@@ -409,9 +409,13 @@ One observation stands (not a defect — a property to know):
   time — has its window pushed on **every** assignment, with entropy and dH
   computed then and there. So `report of x` after a batch of writes reflects the
   whole window, not just the last value, and `loop while not converged` sees
-  each step because each `x is …` sampled it. `unobserved:` is the only thing
-  that skips the push — and the only thing that does. A binding you never
-  interrogate anywhere is still sampled on every assignment; see **Cost**.
+  each step because each `x is …` sampled it. `unobserved:` skips the
+  *entropy* push only (#1049): a scalar assignment inside the block still
+  lands in the value window the numeric predicates read, so their verdicts
+  do not change; `dH` and its window do not move — see
+  [PREDICATES.md](PREDICATES.md#inputs) for the readers that can differ. A
+  binding you never interrogate anywhere is still sampled on every
+  assignment; see **Cost**.
 
 ## Cost
 
@@ -436,8 +440,15 @@ everything it can reach; that distinction is what #685 was. The dH ring buffer
 is allocated lazily on a binding's **second** observation — again regardless of
 interrogation.
 
-`unobserved:` is the only opt-out, and it is a real one: it skips the emission,
-so a hot region inside it pays nothing.
+`unobserved:` is the only opt-out, and it is a real one: everything in the
+table above is skipped inside it. What it does *not* skip (#1049) is the O(1)
+value-window sample of a scalar assignment — one subtraction, one division,
+two ring stores — so that the block cannot change a numeric verdict.
+Measured on a 4M-iteration two-assignment loop with the gate open: observed
+~445 ms, inside `unobserved:` ~227 ms (was ~158 ms when the block also
+dropped the sample); a container-assignment loop inside the block is
+unchanged (the walk is what it elides). With the gate closed (below) the
+sample is skipped too and the block costs nothing.
 
 ### The automatic opt-out — the observer gate (#915/#972)
 

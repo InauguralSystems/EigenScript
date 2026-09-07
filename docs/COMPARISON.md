@@ -346,9 +346,12 @@ contributes only its size term, #685). The boundary is explicit too: a
 binding holding a function classifies `opaque` — a function has no content
 to sample, and the observer names its blind spots (#708) rather than
 reporting a band it cannot defend. (The `unobserved` boundary is about
-observation only — assignments inside such a block are still counted by
-`when is x` and still addressable by ordinal, because a performance
-annotation must not change an answer, #908.) You can ask a variable about
+the entropy walk only — assignments inside such a block are still counted
+by `when is x` and still addressable by ordinal, #908, and a scalar's
+sample still enters the value window the numeric predicates read, #1049,
+because a performance annotation must not change an answer; what stays
+elided is entropy/dH, so `why`/`how` and the non-numeric route can still
+differ.) You can ask a variable about
 itself, terminate loops on *convergence* instead of a hand-written
 epsilon test, and read a variable's past:
 

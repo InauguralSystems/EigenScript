@@ -102,6 +102,49 @@ unconditionally (see [OBSERVER.md](OBSERVER.md#cost)). `unobserved:` is what
 avoids it. Arena values skip the buffer entirely —
 they cannot be tracked across resets.
 
+**What `unobserved:` elides, precisely (#1049).** An assignment inside the
+block still records its **value-channel** sample: a scalar's relative and
+raw step enter `v_window`/`vr_window` and `last_value` moves (O(1) — one
+subtraction, one division, two ring writes), and a non-numeric value flips
+the route bit exactly as an observed one would. So the window the numeric
+route reads is complete, and every verdict on that route — the six
+predicates on a numeric binding, `report`, `report_value`, a `trajectory`
+snapshot's `rel`/`raw` — is **identical with and without the block**
+(an elided `b is 0.0` initialiser no longer moves the window-fill
+boundary by one read; one elided step mid-stream no longer perturbs the
+next ten verdicts). What the block does not compute is the entropy walk
+and everything built on it, so these remain **elision-sensitive**:
+
+| Reader | Why it can differ under `unobserved:` |
+|---|---|
+| `why is x`, `how is x` | read `dH`, which the block never updates |
+| `observe of x` | its `dH`/`prev_dH` elements; the band is routed like `report` |
+| `trajectory of x` | the `dh` list, `dH`, `last_entropy` (`rel`/`raw`/`last_value` are complete) |
+| `classify of [t, "entropy"]` | the explicit entropy channel |
+| `report` / the six predicates on a **non-numeric** binding | the entropy route — its `dh_window` is missing the elided steps |
+| the loop stall backstop | reads the last observed slot's `dH` |
+| a **bare** predicate | reads the last **observed** binding — the alias is deliberately not moved by an elided assignment, so scratch work inside the block cannot hijack a `loop while not converged` |
+
+`where is x` is unaffected: it is recomputed from the current value at
+ask time (#711). A predicate asked *inside* the block still raises (#871).
+
+One consequence: `unobserved:` is no longer a way to **declare** a numeric
+binding without putting a sample in its window (the pre-#1049 idiom in
+`lib/experiment.eigs`, which seeded `tracker is 0` inside a block so the
+seed-to-first-reading jump would not sit at the head of the trajectory).
+Seed with `null` instead — null and boolean assignments are never sampled,
+on either path — and the first real reading is the first observation:
+
+```eigenscript
+define first_stable(values) as:
+    tracker is null            # declares the binding; not a sample
+    for v in values:
+        tracker is v
+        if stable of tracker:
+            return v
+    return null
+```
+
 `window` below means the `dh_window` contents oldest→newest;
 `count = window_size(v)` is how many real samples it holds (≤ N).
 

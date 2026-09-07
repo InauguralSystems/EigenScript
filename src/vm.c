@@ -1579,13 +1579,18 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
 }
 
 void jit_helper_observe_assign_local(int slot) {
-    if (g_unobserved_depth != 0) return;
     /* #262 Phase-3/E — slot model: observe the persistent (fn_env, slot)
      * trajectory directly from TOS. No promotion, no Value-side state, no window
      * migration (the slot persists across assigns). */
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
     Env *e = frame->fn_env;
+    if (g_unobserved_depth != 0) {
+        /* #1049: elided — value-window sample only (mirrors the CASE body). */
+        if (slot_is_num(s))      observer_slot_sample_num(e, slot, s.d);
+        else if (slot_is_ptr(s)) observer_slot_sample(e, slot, slot_as_ptr(s));
+        return;
+    }
     if (slot_is_num(s)) {
         observer_slot_update_num(e, slot, s.d);
         g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
@@ -1622,7 +1627,10 @@ void jit_helper_report_slot(int slot) {
 /* OP_OBSERVE_NAME_POST [name_idx] — observe a name binding's slot from TOS
  * after its SET. Peeks TOS; no stack change. Mirrors CASE(OBSERVE_NAME_POST). */
 void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
-    if (g_unobserved_depth != 0) return;
+    /* #1049: inside `unobserved:` the name is still resolved (when the #915
+     * gate is open) so the elided assignment's sample reaches the value
+     * window; only the entropy update, alias and tape snapshot are skipped. */
+    if (g_unobserved_depth != 0 && !eigs_obs_gate_open()) return;
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
     /* #262 Phase-3 D: TOS may be an immediate num (the default path no longer
@@ -1634,6 +1642,11 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
     int oidx = -1, odepth = 0;
     Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+    if (oe && oidx >= 0 && g_unobserved_depth != 0) {
+        if (slot_is_num(s)) observer_slot_sample_num(oe, oidx, s.d);
+        else                observer_slot_sample(oe, oidx, slot_as_ptr(s));
+        return;
+    }
     if (oe && oidx >= 0) {
         if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
         else observer_slot_update(oe, oidx, slot_as_ptr(s));
@@ -5014,6 +5027,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 observer_slot_update(e, (int)slot, slot_as_ptr(s));
                 g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
             }
+        } else {
+            /* #1049: elided assignment — the sample still enters the value
+             * window (O(1)); the entropy walk, the bare-predicate alias and
+             * the tape snapshot are what the block skips. See
+             * observer_slot_sample_num (eigenscript.c). */
+            EigsSlot s = g_vm.stack[g_vm.sp - 1];
+            Env *e = frame->fn_env;
+            if (slot_is_num(s))      observer_slot_sample_num(e, (int)slot, s.d);
+            else if (slot_is_ptr(s)) observer_slot_sample(e, (int)slot, slot_as_ptr(s));
         }
         DISPATCH();
     }
@@ -5229,7 +5251,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * still on TOS (SET peeked, didn't pop). Fixes the first-assignment
          * lag for name bindings. Emitted only under the compile-time flag. */
         uint16_t name_idx = read_u16(ip); ip += 2;
-        if (g_unobserved_depth == 0) {
+        /* #1049: inside `unobserved:` the binding is still resolved (when the
+         * #915 gate is open) so the elided assignment's sample reaches the
+         * value window; the entropy update, the alias and the tape snapshot
+         * are what the block skips. Mirrors jit_helper_observe_name_post. */
+        if (g_unobserved_depth == 0 || eigs_obs_gate_open()) {
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             /* #262 Phase-3 D: TOS is now an immediate num for an observed name
              * (default path no longer promotes), or a heap value. Observe the
@@ -5240,7 +5266,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
                 int oidx = -1, odepth = 0;
                 Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
-                if (oe && oidx >= 0) {
+                if (oe && oidx >= 0 && g_unobserved_depth != 0) {
+                    if (slot_is_num(s)) observer_slot_sample_num(oe, oidx, s.d);
+                    else                observer_slot_sample(oe, oidx, slot_as_ptr(s));
+                } else if (oe && oidx >= 0) {
                     if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
                     else observer_slot_update(oe, oidx, slot_as_ptr(s));
                     g_last_obs_slot_env = oe;

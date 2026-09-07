@@ -188,13 +188,24 @@ assert of [(nested_return of 0) == 7, "UO-871L nested return still returns"]
 assert of [(moving_probe of 0) == "moving", "UO-871L nested return restores every level"]
 
 # 6. and the block still WORKS after all that — it is not stuck off either.
+# What "works" means changed with #1049: the block elides the ENTROPY half of
+# an observation (the walk, dH, the dH window), while a scalar sample still
+# enters the value window so verdicts stay identical with and without the
+# block. This used to assert `report of m == "equilibrium"` — i.e. that the
+# two elided samples were ABSENT — which pinned the very behaviour #1049
+# removed. The property is: value samples land, the entropy channel does not
+# move.
 seen_inside is ""
 m is 9.0
 unobserved:  # lint: allow W020 -- checking the block is still functional
     m is m * 0.5
     m is m * 0.5
     seen_inside is report of m
-assert of [seen_inside == "equilibrium", "UO-871L the block still suppresses observation"]
+    traj_inside is trajectory of m
+assert of [seen_inside == "moving", "UO-871L/1049 the elided samples are in the value window"]
+assert of [(len of traj_inside.rel) == 2, "UO-871L/1049 both elided steps were recorded"]
+assert of [(len of traj_inside.dh) == 0, "UO-871L/1049 the block still elides the entropy channel (no dH window)"]
+assert of [(why is m) == 0, "UO-871L/1049 dH was never computed for the elided steps"]
 assert of [(moving_probe of 0) == "moving", "UO-871L and normal observation resumes after it"]
 
 # ---- #908: `when is x` counts assignments made inside the block ----

@@ -1,0 +1,212 @@
+# #1049: `unobserved:` is verdict-neutral for the value channel.
+#
+# The block exists to elide the EXPENSIVE half of an observation — the entropy
+# walk. It used to elide the whole update, so an elided assignment was absent
+# from the 10-deep value window and every value-channel verdict (`report`, the
+# six predicates on a numeric binding, `report_value`, a snapshot's rel/raw
+# lists) differed from the unelided program until the missing sample would
+# have aged out. A performance annotation was changing answers.
+#
+# Now a scalar assignment inside the block still records its sample into the
+# value window (O(1)); entropy / dH / the dH window are what is not computed.
+# These checks compare whole verdict STREAMS (per read), not counts — the
+# issue's second measurement had equal totals and four differing reads.
+load_file of "lib/test.eigs"
+
+# ---- Probe 1 (issue measurement 1): an elided initialiser used to shift the
+# window-fill boundary. `converged` needs a full 10-step value window, so the
+# first hit lands on the read where the window fills — one read later when the
+# initialiser's sample is missing. fn-local slot path (OBSERVE_ASSIGN_LOCAL).
+define run1(elide_init) as:
+    if elide_init == 1:
+        unobserved:  # lint: allow W020 -- the elided initialiser is the point
+            b is 0.0
+    else:
+        b is 0.0
+    hits is []
+    verdicts is []
+    amp is 0.0004
+    k is 0
+    loop while k < 40:
+        b is amp * (k % 2)             # settled: a decaying sub-deadband wobble
+        amp is amp * 0.9
+        append of [verdicts, report of b]
+        if converged of b:
+            append of [hits, k]
+        k is k + 1
+    return [hits, verdicts]
+
+o1 is run1 of 0
+u1 is run1 of 1
+assert_eq of [str of (o1[0][0:3]), "[9, 10, 11]", "P1 control: the observed-init window fills at read 9"]
+assert_eq of [str of u1[0], str of o1[0], "P1 hit INDICES identical with the initialiser elided"]
+assert_eq of [str of u1[1], str of o1[1], "P1 verdict stream identical with the initialiser elided"]
+assert_eq of [len of u1[0], len of o1[0], "P1 hit count identical"]
+
+# ---- Probe 2 (issue measurement 2): one mid-stream elided assignment (read
+# 50 of 80) used to merge two steps into one and perturb the verdicts until it
+# aged out of the window (reads 50..59), with the COUNT unchanged.
+define run2(elide_at) as:
+    b is 0.0
+    hits is []
+    verdicts is []
+    k is 0
+    loop while k < 80:
+        nb is b + (1.0 - b) * 0.3
+        if k % 7 == 0:
+            nb is nb - 0.02
+        if k == elide_at:
+            unobserved:  # lint: allow W020 -- the one elided sample is the point
+                b is nb
+        else:
+            b is nb
+        append of [verdicts, report of b]
+        if stable of b:
+            append of [hits, k]
+        k is k + 1
+    return [hits, verdicts]
+
+o2 is run2 of (0 - 1)
+u2 is run2 of 50
+distinct2 is []
+for v2 in o2[1]:
+    if not (contains of [distinct2, v2]):
+        append of [distinct2, v2]
+assert_true of [(len of distinct2) >= 2, "P2 control: the stream is not one constant verdict"]
+assert_eq of [str of u2[1], str of o2[1], "P2 verdict stream identical with read 50 elided"]
+assert_eq of [str of u2[0], str of o2[0], "P2 hit indices identical with read 50 elided"]
+
+# ---- Name path (OBSERVE_NAME_POST): the same two probes at module scope,
+# where the binding is an env name rather than a frame slot.
+unobserved:  # lint: allow W020 -- elided initialiser, name path
+    nu is 0.0
+no is 0.0
+namp is 0.0004
+nk is 0
+n_hits_o is []
+n_hits_u is []
+n_verd_o is []
+n_verd_u is []
+loop while nk < 40:
+    nu is namp * (nk % 2)
+    no is namp * (nk % 2)
+    namp is namp * 0.9
+    append of [n_verd_o, report of no]
+    append of [n_verd_u, report of nu]
+    if converged of no:
+        append of [n_hits_o, nk]
+    if converged of nu:
+        append of [n_hits_u, nk]
+    nk is nk + 1
+assert_eq of [str of (n_hits_o[0:3]), "[9, 10, 11]", "N1 control: the name-path window fills at read 9"]
+assert_eq of [str of n_hits_u, str of n_hits_o, "N1 name path: hit indices identical with the initialiser elided"]
+assert_eq of [str of n_verd_u, str of n_verd_o, "N1 name path: verdict stream identical"]
+
+mo is 0.0
+mu is 0.0
+mk is 0
+m_verd_o is []
+m_verd_u is []
+loop while mk < 80:
+    mno is mo + (1.0 - mo) * 0.3
+    mnu is mu + (1.0 - mu) * 0.3
+    if mk % 7 == 0:
+        mno is mno - 0.02
+        mnu is mnu - 0.02
+    mo is mno
+    if mk == 50:
+        unobserved:  # lint: allow W020 -- the one elided sample, name path
+            mu is mnu
+    else:
+        mu is mnu
+    append of [m_verd_o, report of mo]
+    append of [m_verd_u, report of mu]
+    mk is mk + 1
+assert_eq of [str of m_verd_u, str of m_verd_o, "N2 name path: verdict stream identical with read 50 elided"]
+
+# ---- JIT-hot path: a 20000-iteration loop with the assignment inside the
+# block on every iteration, so the JIT thunk's helper (jit_helper_observe_
+# assign_local) is what records. The value windows must be byte-identical to
+# the observed run; the entropy channel must still be empty.
+define hot(elide) as:
+    x is 0.0
+    k is 0
+    loop while k < 20000:
+        nx is 1.0 + ((k % 3) - 1) * 0.001
+        if elide == 1:
+            unobserved:
+                x is nx
+        else:
+            x is nx
+        k is k + 1
+    return trajectory of x
+
+th_o is hot of 0
+th_u is hot of 1
+assert_eq of [len of th_o.rel, 10, "J control: the observed window is full"]
+assert_eq of [str of th_u.rel, str of th_o.rel, "J hot loop: rel window identical"]
+assert_eq of [str of th_u.raw, str of th_o.raw, "J hot loop: raw window identical"]
+assert_eq of [th_u.last_value, th_o.last_value, "J hot loop: last value identical"]
+assert_eq of [classify of th_u, classify of th_o, "J hot loop: snapshot classifies identically"]
+assert_eq of [th_u.observed, 1, "J the sampled binding counts as observed"]
+assert_eq of [len of th_o.dh, 10, "J control: the observed dH window is full"]
+assert_eq of [len of th_u.dh, 0, "J the ENTROPY channel is still elided: no dH window"]
+assert_eq of [th_u.dH, 0, "J the ENTROPY channel is still elided: dH never computed"]
+
+# ---- Route bit: a non-numeric elided assignment ends the numeric route
+# exactly as an observed one does (O(1), no walk), so `report` does not answer
+# from a stale numeric trajectory after the block.
+define route(elide) as:
+    y is 1.0
+    y is 1.5
+    y is 2.0
+    if elide == 1:
+        unobserved:  # lint: allow W020 -- the route flip is the point
+            y is [1, 2]
+    else:
+        y is [1, 2]
+    return [report of y, report_value of y]
+
+ro is route of 0
+ru is route of 1
+assert_true of [ro[0] != "moving", "R control: the observed container routes to the entropy channel"]
+assert_true of [ru[0] != "moving", "R an elided container also leaves the numeric route"]
+assert_eq of [ru[1], ro[1], "R the explicit value channel is identical either way"]
+
+# ---- What the block still skips is documented, and pinned here so the
+# elision stays real: dH/why is not computed for an elided assignment.
+define why_probe(elide) as:
+    w is 4.0
+    w is 2.0
+    if elide == 1:
+        unobserved:  # lint: allow W020 -- dH elision is the point
+            w is 1.0
+    else:
+        w is 1.0
+    return why is w
+
+define why_before() as:
+    w is 4.0
+    w is 2.0
+    return why is w
+
+assert_true of [(why_probe of 0) != (why_before of 0), "W control: an observed assignment moves dH"]
+assert_eq of [why_probe of 1, why_before of 0, "W an elided assignment leaves dH at the previous OBSERVED step's"]
+
+# ---- The bare-predicate alias (the last OBSERVED binding) is not moved by an
+# elided assignment: shielding a bare `loop while not converged` from scratch
+# work inside the block is one of its documented uses.
+define alias_probe() as:
+    a is 1.0
+    i is 0
+    loop while i < 12:
+        i is i + 1
+        a is 1.0                       # last OBSERVED assignment: the alias points at `a`
+    unobserved:  # lint: allow W020 -- the alias is the point
+        scratch is 5.0
+        scratch is 50.0
+    return converged  # lint: allow W016 -- the bare alias is exactly what is under test
+
+assert_eq of [alias_probe of 0, 1, "A bare predicate still reads the last OBSERVED binding after the block"]
+
+test_summary of null

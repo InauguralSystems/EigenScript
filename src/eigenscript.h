@@ -367,6 +367,11 @@ size_t observer_window_size(const Value *v);
 void observer_slot_update(struct Env *e, int idx, Value *newval);
 /* #262 Phase-3 D: slot update from a raw immediate number (no Value needed). */
 void observer_slot_update_num(struct Env *e, int idx, double num);
+/* #1049: the elided (`unobserved:`) assignment — value-window sample only,
+ * no entropy walk. What the observe ops call when g_unobserved_depth != 0;
+ * exported so the AOT runtime can call the same thing instead of skipping. */
+void observer_slot_sample(struct Env *e, int idx, Value *newval);
+void observer_slot_sample_num(struct Env *e, int idx, double num);
 void observer_slot_reset(struct Env *e);
 /* Observed-loop halting on an explicit env (no VM-frame dependency): one
  * iteration of OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK. Returns 1 when the loop
@@ -1441,6 +1446,16 @@ static inline struct ObserverSlot *env_obs_slot(Env *e, int idx) {
     }
     if (idx >= e->obs_cap || !e->obs) return NULL;
     return &e->obs[idx];
+}
+
+/* #915/#1049: the observer gate as every TU sees it — g_obs_needed is the
+ * compile-time half, the trace-history flag the runtime half. The full
+ * rationale is on observer_slot_update (eigenscript.c). Lives here so the
+ * observe ops in vm.c can ask it before resolving a name they will only
+ * sample (#1049). */
+extern int g_trace_obs_hist_storage;   /* trace.h — the relaxed-load idiom */
+static inline int eigs_obs_gate_open(void) {
+    return g_obs_needed || __atomic_load_n(&g_trace_obs_hist_storage, __ATOMIC_RELAXED);
 }
 
 Env* env_new(Env *parent);

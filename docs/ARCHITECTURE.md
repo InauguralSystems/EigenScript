@@ -186,7 +186,8 @@ and drives `loop while not converged` termination.
 Observation uses lazy evaluation: `OP_OBSERVE_ASSIGN` marks values dirty
 (O(1)), and entropy is computed on demand when observer state is read.
 The last observed value is tracked via a thread-local pointer
-(`g_last_observer`). `unobserved` blocks skip observer marking entirely.
+(`g_last_observer`). `unobserved` blocks skip the entropy update; a scalar
+assignment inside one still records its value-window sample (#1049).
 
 Loop stall detection (`OP_LOOP_STALL_CHECK`) exits while-loops after 100
 consecutive iterations with `|dH| < threshold`, setting `__loop_exit__`

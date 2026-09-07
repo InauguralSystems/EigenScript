@@ -1467,9 +1467,9 @@ diverging
 diverging
 ```
 
-`unobserved:` blocks (and `loop` bodies inside them) skip observer
-updates entirely — use them for hot numeric loops. The depth is
-dynamic, so it covers functions called from inside the block; an
+`unobserved:` blocks (and `loop` bodies inside them) skip the
+**entropy** half of observation — use them for hot numeric loops. The
+depth is dynamic, so it covers functions called from inside the block; an
 observer predicate asked anywhere under one **raises**, because there is
 no trajectory for it to classify (a performance annotation must not
 change an answer):
@@ -1487,13 +1487,48 @@ print of total
 4999950000
 ```
 
-What the block suppresses is **observation**, not assignment. The writes
-still happen, still land in the history, and are still counted and
+What the block suppresses is the **entropy walk**, not assignment. The
+writes still happen, still land in the history, and are still counted and
 addressed like any other: `when is x` includes them, and each one takes
 an ordinal that `<kw> is x when <n>` can address (#908). The same rule
 that makes a predicate raise rather than answer from a dead trajectory
 is why the counter does not quietly shrink — a performance annotation
 must not change an answer.
+
+For the same reason a scalar assignment inside the block still records
+its **sample into the value window** (#1049): the relative and raw step
+enter the 10-deep ring the numeric predicates, `report` and
+`report_value` read, at O(1) per assignment. So the window is complete,
+and the verdicts a numeric binding gives after (or inside) the block are
+identical to the ones it gives without it — an elided initialiser no
+longer shifts the window-fill boundary, and a mid-stream elided step no
+longer merges two steps into one. What is *not* computed for an elided
+assignment is the entropy and everything built on it: `where`'s stored
+entropy (the query-time read is unaffected), `dH` and its window
+(`why`/`how`, `observe`'s dH pair, a `trajectory` snapshot's `dh`/`dH`),
+the tape's observer snapshot, and the bare-predicate alias (a bare
+`converged` keeps reading the last **observed** binding, so scratch work
+inside the block cannot hijack it). Those entropy-channel readers — and
+`report`/the predicates on a **non-numeric** binding, which route
+through the entropy channel — therefore remain sensitive to elision;
+[PREDICATES.md](PREDICATES.md#inputs) lists them. (It follows that the
+block is not a way to declare a numeric binding without a sample; seed
+with `null`, which is never sampled.)
+
+```eigenscript
+x is 9.0
+unobserved:
+    x is x * 0.5
+    x is x * 0.5
+print of (report of x)
+print of (len of (trajectory of x).rel)
+print of (why is x)
+```
+```output
+moving
+2
+0
+```
 
 ```eigenscript
 c is 0
