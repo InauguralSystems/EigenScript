@@ -20,27 +20,45 @@
 
 /* Escape a string for embedding in a JSON string literal (into a caller
  * buffer). This helper is host-only now that every JSON-producing lint path
- * lives in this TU; keeping it static prevents a generic host symbol leak. */
-/* JSON string escaping. The output buffer is the SECOND place a diagnostic
- * can be cut (the first is lint_vdiag's message buffer), so it clips whole
- * UTF-8 characters only: emitting half a sequence produces a payload a
- * strict decoder rejects, and `jq` hides that by substituting U+FFFD
- * (#1048). Bytes >= 0x80 are passed through raw — the input is UTF-8 and
- * JSON accepts it as-is. */
+ * lives in this TU; keeping it static prevents a generic host symbol leak.
+ *
+ * The output buffer is the SECOND place a diagnostic can be cut (the first is
+ * lint_vdiag's message buffer) and the ONLY place strings the linter never
+ * assembled itself — a file path, the parser's first-error message — reach a
+ * consumer. So it does what lint_copy_utf8 does: copy whole UTF-8 characters,
+ * replace any byte that is not part of a well-formed one with U+FFFD, and drop
+ * an incomplete sequence at the end rather than emit half of it. Emitting half
+ * produces a payload strict decoders reject, and `jq` hides that by
+ * substituting U+FFFD itself (#1048). Well-formed bytes >= 0x80 pass through
+ * raw — JSON accepts UTF-8 as-is. */
 static void lint_json_escape(const char *s, char *out, size_t outsz) {
-    size_t o = 0;
-    for (size_t i = 0; s[i] && o + 2 < outsz; i++) {
+    size_t o = 0, i = 0, n = s ? strlen(s) : 0;
+    if (outsz == 0) return;
+    while (i < n) {
         unsigned char c = (unsigned char)s[i];
-        if (c == '"' || c == '\\') { out[o++] = '\\'; out[o++] = (char)c; }
-        else if (c == '\n') { out[o++] = '\\'; out[o++] = 'n'; }
-        else if (c == '\t') { out[o++] = '\\'; out[o++] = 't'; }
-        else if (c >= 0x20) { out[o++] = (char)c; }
-        /* other control chars are dropped */
+        if (c < 0x80) {
+            const char *esc = NULL;
+            if (c == '"')       esc = "\\\"";
+            else if (c == '\\') esc = "\\\\";
+            else if (c == '\n') esc = "\\n";
+            else if (c == '\t') esc = "\\t";
+            else if (c < 0x20)  { i++; continue; }   /* other controls dropped */
+            size_t w = esc ? 2 : 1;
+            if (o + w + 1 > outsz) break;
+            if (esc) { out[o++] = esc[0]; out[o++] = esc[1]; }
+            else     { out[o++] = (char)c; }
+            i++;
+            continue;
+        }
+        int step = eigs_utf8_step((const unsigned char *)s + i, n - i);
+        if (step < 0) break;                          /* cut tail: drop it */
+        size_t w = step > 0 ? (size_t)step : 3;
+        if (o + w + 1 > outsz) break;
+        if (step > 0) { memcpy(out + o, s + i, w); i += w; }
+        else          { memcpy(out + o, "\xEF\xBF\xBD", 3); i += 1; }
+        o += w;
     }
     out[o] = '\0';
-    /* The loop can stop inside a multi-byte character (the capacity test is
-     * per byte); drop the partial tail rather than emit it. */
-    out[lint_utf8_prefix(out, o)] = '\0';
 }
 
 /* Known builtin names — the registry itself, never a hand list (#459: the
@@ -1264,6 +1282,12 @@ static int eigs_json_allows(Value *codes, const char *code) {
 
 int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     long src_size = 0;
+    /* The human channel prints the path raw, and a path is a byte string from
+     * the command line — on the JSON side lint_json_escape sanitizes it, so
+     * without this the two channels disagreed about a file whose name is not
+     * valid UTF-8 and only the human one was undecodable (#1048). */
+    char dpath[1024];
+    eigs_utf8_sanitize(dpath, sizeof(dpath), path);
     char *source = read_file_util(path, &src_size);
     if (!source) {
         if (json_mode) {
@@ -1273,7 +1297,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
             printf("[{\"code\":\"E000\",\"severity\":\"error\",\"line\":0,"
                    "\"file\":\"%s\",\"message\":\"%s '%s'\"}]\n", pesc, esc, pesc);
         } else {
-            fprintf(stderr, "Error: cannot read file '%s'\n", path);
+            fprintf(stderr, "Error: cannot read file '%s'\n", dpath);
         }
         return 1;
     }
@@ -1299,7 +1323,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
                    g_first_error_line, g_first_error_col + 1, pesc, esc);
         } else {
             fprintf(stderr, "%s: %d parse error(s) [%s] — cannot lint\n",
-                    path, g_parse_errors,
+                    dpath, g_parse_errors,
                     g_first_error_code ? g_first_error_code : "E002");
         }
         free_ast(ast);
@@ -1391,7 +1415,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
         printf("]\n");
     } else {
         for (int i = 0; i < ctx.warning_count; i++) {
-            fprintf(stderr, "%s:%d: %s[%s]: %s\n", path,
+            fprintf(stderr, "%s:%d: %s[%s]: %s\n", dpath,
                     ctx.warnings[i].line, ctx.warnings[i].level,
                     ctx.warnings[i].code, ctx.warnings[i].message);
         }
@@ -1399,9 +1423,9 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
             /* The compiler printed each diagnostic itself; this is the
              * summary line, shaped like the parse-error one above. */
             fprintf(stderr, "%s: %d compile error(s) [E004]\n",
-                    path, compile_errors);
+                    dpath, compile_errors);
         } else if (ctx.warning_count == 0) {
-            fprintf(stderr, "%s: no issues found\n", path);
+            fprintf(stderr, "%s: no issues found\n", dpath);
         }
     }
 

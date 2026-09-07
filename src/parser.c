@@ -69,7 +69,29 @@ void eigs_print_caret_src(FILE *out, const char *src, int line, int col) {
     size_t len = e ? (size_t)(e - s) : strlen(s);
     if (len > 200) len = 200;              /* pathological lines stay sane */
     if ((size_t)col > len) return;
-    fprintf(out, "  %4d | %.*s\n", line, (int)len, s);
+    /* #1048: the excerpt is raw SOURCE, so a file that is not valid UTF-8
+     * would put a malformed byte on stderr (and, for `--lint`, into output a
+     * consumer decodes). Show each such byte as `?` — one byte in, one byte
+     * out, so the caret below still lines up with the column the parser
+     * reported. Well-formed characters, multi-byte ones included, pass
+     * through untouched, so every excerpt of a valid source is unchanged. */
+    char shown[201];
+    {
+        size_t o = 0, i = 0;
+        while (i < len) {
+            int step = eigs_utf8_step((const unsigned char *)s + i, len - i);
+            if (step > 0) {
+                memcpy(shown + o, s + i, (size_t)step);
+                o += (size_t)step; i += (size_t)step;
+            } else {
+                shown[o++] = '?';   /* invalid byte, or a sequence the line cuts */
+                i++;
+            }
+        }
+        shown[o] = '\0';
+        len = o;
+    }
+    fprintf(out, "  %4d | %.*s\n", line, (int)len, shown);
     /* pad buffer, not fputc: the freestanding mini-libc has fprintf but no
      * fputc (the symbol gate rejects it). col <= len <= 200 by the guards. */
     char pad[201];

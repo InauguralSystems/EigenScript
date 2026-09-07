@@ -2366,14 +2366,66 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "#1048 W024 for-body message keeps its remedy clause at 200 chars" "$OUTPUT" "use one named binding or one closure per entity"
 rm -f "$TMPFILE"
 
-# Why the fixtures above are all ASCII: the lexer admits no other identifier.
-# tools/lint_message_utf8_check.sh states that as its reason for not driving a
-# multi-byte name, so it is pinned here rather than assumed.
+# Why the identifier fixtures above are all ASCII: the lexer admits no other
+# identifier. tools/lint_message_utf8_check.sh states that as its reason for
+# not driving a multi-byte NAME, so it is pinned here rather than assumed —
+# and the same file is then decoded strictly, because "the lexer rejects it"
+# was the whole of the old assertion and rejecting it is exactly when the
+# diagnostic quotes the byte.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 printf 'q\xc3\xa9nergie is 2\nprint of q\xc3\xa9nergie\n' > "$TMPFILE"
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "#1048 the lexer rejects a non-ASCII identifier (so fixtures are ASCII)" "$OUTPUT" "parse error"
+# The rejection message used to quote the offending BYTE with %c — half of the
+# two-byte `é` — so `--lint --json`, the human line and the LSP frame all
+# carried a payload a strict decoder rejects (v0.43.0 does; this is not a
+# W024 defect, it is the same class arriving from the source side).
+check_json_utf8 "#1048 a non-ASCII source decodes strictly on both channels" "$TMPFILE"
+check_contains "#1048 the lexer spells the byte it cannot tokenize" "$OUTPUT" "unexpected character '.xc3'"
 rm -f "$TMPFILE"
+
+# An INVALID byte (0xff is part of no UTF-8 character at all), which also
+# reaches the parse-error caret excerpt — the excerpt echoes the raw source
+# line, so it is a third place a bad byte could leave the tool.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'q\xffnergie is 2\nprint of q\xffnergie\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_json_utf8 "#1048 an invalid-byte source decodes strictly on both channels" "$TMPFILE"
+check_contains "#1048 the caret excerpt shows an undecodable byte as '?'" "$OUTPUT" "| q?nergie is 2"
+rm -f "$TMPFILE"
+
+# A LINT RULE (not the lexer) interpolating source text: W010 quotes the
+# duplicated dict key. Invalid bytes in it become U+FFFD; a well-formed
+# character must survive byte-for-byte, or the fix would be over-sanitizing.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'd is {"k\xffy": 1, "k\xffy": 2}\nprint of d\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_json_utf8 "#1048 W010 quoting an invalid source byte decodes strictly" "$TMPFILE"
+check_contains "#1048 W010 still names the duplicate key it quoted" "$OUTPUT" "duplicate dict key"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'd is {"k\xc3\xa9y": 1, "k\xc3\xa9y": 2}\nprint of d\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+check_json_utf8 "#1048 W010 quoting a well-formed multi-byte key decodes strictly" "$TMPFILE"
+check_contains "#1048 a well-formed multi-byte key survives byte-for-byte" "$OUTPUT" "$(printf "duplicate dict key 'k\xc3\xa9y'")"
+rm -f "$TMPFILE"
+
+# The file PATH is the fourth piece of text the tool renders and never chose,
+# and it reaches the two channels through different code (the JSON escaper vs a
+# plain fprintf). A path is a byte string on POSIX, so both must sanitize it.
+PATHDIR=$(mktemp -d /tmp/lint_test_path_XXXXXX)
+BADPATH="$PATHDIR/$(printf 'w\xffname').eigs"
+printf 'unused_local is 42\nprint of 1\n' > "$BADPATH"
+check_json_utf8 "#1048 a file whose NAME is not valid UTF-8 decodes strictly" "$BADPATH"
+OUTPUT=$($EIGS --lint "$BADPATH" 2>&1 || true)
+check_contains "#1048 the diagnostic still names the file it linted" "$OUTPUT" "w.*name.eigs:1: warning\[W001\]"
+OUTPUT=$($EIGS --lint --json "${BADPATH}.missing" 2>/dev/null || true)
+check_contains "#1048 the unreadable-file payload (E000) still names the path" "$OUTPUT" '"code":"E000"'
+printf '%s' "$OUTPUT" | python3 -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' 2>/dev/null \
+    && check_contains "#1048 E000 on an invalid path decodes strictly" "ok" "ok" \
+    || check_contains "#1048 E000 on an invalid path decodes strictly" "not-utf8" "ok"
+rm -rf "$PATHDIR"
 
 # Deliberate sites carry the allow comment like every other code.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)

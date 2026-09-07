@@ -22,27 +22,43 @@
 #   4. each pinned exemption must still be TRUE: the codes marked unreachable
 #      are re-driven and must still come back as a parse error (E002). If a
 #      future parser accepts an empty block, this goes red and asks for the
-#      real fixture instead of quietly waiving it.
+#      real fixture instead of quietly waiving it;
+#   5. the bytes a diagnostic did NOT choose are swept too. A message can carry
+#      text straight out of the file being linted — the byte the lexer could
+#      not tokenize (E002), a duplicate dict key (W010) — so a file that is not
+#      valid UTF-8 could put half a character into the payload however short
+#      the message was. tools/lint_source_byte_sweep.py drives every byte
+#      >= 0x80, truncated/overlong/surrogate sequences, and well-formed 2/3/4-
+#      byte characters through four source shapes on both channels: the invalid
+#      ones must come back replaced (U+FFFD, or the lexer's \xNN spelling), the
+#      well-formed ones must come back BYTE-FOR-BYTE.
 #
 # WHAT IT DOES NOT COVER (residuals, stated so the green means something):
 #   - It exercises each code ONCE, with one pathological shape. A rule whose
 #     message interpolates something else unbounded (a string literal, a path)
 #     can still be long in a way no fixture here reaches. The structural half
 #     below is what backs that up: every diagnostic in the tree is assembled by
-#     lint_vdiag, which truncates through lint_utf8_prefix, so a message can be
-#     clipped but never halved mid-character. This script asserts that the
-#     chokepoint is still the only writer.
+#     lint_vdiag, which copies through lint_copy_utf8 (whole characters only,
+#     invalid bytes replaced), and every string that reaches `--lint --json`
+#     goes through lint_json_escape, which does the same. This script asserts
+#     that those are still the only writers.
 #   - It says nothing about whether a truncated message is still USEFUL. That
 #     is the rule author's job (W024 shrinks its identifiers instead, so its
 #     remedy clause always survives); tests/test_lint.sh pins it for W024.
-#   - The identifier is ASCII because the lexer admits no other kind (isalpha,
-#     C locale — verified: a UTF-8 identifier is a syntax error). The multi-byte
-#     bytes in play are the ones the MESSAGES themselves carry (em dash,
-#     arrows), which is exactly where the bug was.
+#   - Lint IDENTIFIERS are ASCII because the lexer admits no other kind
+#     (isalpha, C locale — verified: a UTF-8 identifier is a syntax error), so
+#     the length sweep is ASCII-named. Non-ASCII input reaches the diagnostics
+#     the other way, as source bytes, which is what check 5 sweeps.
+#   - It covers the LINT channels (human stderr, `--lint --json`, and through
+#     LintDiag the LSP's diagnostics). Other LSP responses that echo document
+#     text (hover, formatting) escape through eigenlsp's own json_escape_to and
+#     are not swept here.
 #
-# Cost: ~35 binary invocations for the per-code half plus the sweep's 2000
-# (four shapes x 250 lengths x 2 channels) — about 20s on the dev box under
-# load, which is the price of a length band one or two values wide.
+# Cost: ~35 binary invocations for the per-code half, 2000 for the length sweep
+# (four shapes x 250 lengths x 2 channels) and 1125 for the source-byte sweep
+# — measured 12.6s on the dev box at load average 4.2 (provisional: this box
+# runs several agents), which is the price of a length band one or two values
+# wide and of a byte that only breaks on non-ASCII input.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 EIGS="${EIGENSCRIPT_BIN:-$ROOT/src/eigenscript}"
@@ -124,9 +140,9 @@ json.dump([{'code':'W024','severity':'warning','line':1,'file':'f','message':'x'
 "
     decode "$TMP/st3.json" W024 >/dev/null 2>&1; st "message longer than the 255-byte buffer" $?
     # 4. the structural check: a lint.c whose chokepoint copy is gone
-    sed 's/lint_copy_utf8(w->message, sizeof(w->message), rendered);/vsnprintf(w->message, sizeof(w->message), fmt, ap);/' \
+    sed 's/eigs_utf8_sanitize(w->message, sizeof(w->message), rendered);/vsnprintf(w->message, sizeof(w->message), fmt, ap);/' \
         "$ROOT/src/lint.c" > "$TMP/lint_planted.c"
-    grep -q 'lint_copy_utf8(w->message, sizeof(w->message), rendered);' "$TMP/lint_planted.c"; st "chokepoint removed from lint_vdiag" $?
+    grep -q 'eigs_utf8_sanitize(w->message, sizeof(w->message), rendered);' "$TMP/lint_planted.c"; st "chokepoint removed from lint_vdiag" $?
     # 5. a NEW rule added to a lint TU with no row in docs/DIAGNOSTICS.md —
     #    the direction that makes this gate cover rules that do not exist yet.
     printf 'lint_warn(ctx, 1, "W099", "a new rule");\n' > "$TMP/newrule.c"
@@ -139,6 +155,30 @@ json.dump([{'code':'W024','severity':'warning','line':1,'file':'f','message':'x'
     # 6. an empty fixture dir (the whole corpus deleted) must not read as clean
     mkdir -p "$TMP/emptyfix"
     ls "$TMP/emptyfix"/*.eigs >/dev/null 2>&1; st "empty fixture directory" $?
+    # 7/8. the SOURCE-BYTE half, tested on its own instrument: drive the sweep
+    #      against a stub "binary" that emits a raw 0x80 (must read MALFORMED)
+    #      and against one that emits a clean but empty payload (must read
+    #      VACUOUS — a lexer that stopped naming the byte proves nothing).
+    cat > "$TMP/stub_bad.sh" <<'STUB'
+#!/bin/sh
+printf '[{"code":"E002","severity":"error","line":1,"file":"f","message":"unexpected character \200"}]\n'
+STUB
+    chmod +x "$TMP/stub_bad.sh"
+    python3 "$ROOT/tools/lint_source_byte_sweep.py" "$TMP/stub_bad.sh" >/dev/null 2>&1
+    st "source-byte sweep on an emitter that leaks a raw byte" $?
+    cat > "$TMP/stub_quiet.sh" <<'STUB'
+#!/bin/sh
+printf '[]\n'
+STUB
+    chmod +x "$TMP/stub_quiet.sh"
+    python3 "$ROOT/tools/lint_source_byte_sweep.py" "$TMP/stub_quiet.sh" >/dev/null 2>&1
+    st "source-byte sweep on an emitter that names no byte (vacuous)" $?
+    # 9. the second chokepoint: lint_json_escape must sanitize, not pass raw
+    grep -q 'eigs_utf8_step' "$ROOT/src/lint_host.c"; probe=$?
+    sed 's/int step = eigs_utf8_step((const unsigned char \*)s + i, n - i);/int step = 1;/' \
+        "$ROOT/src/lint_host.c" | grep -q 'int step = eigs_utf8_step((const unsigned char \*)s + i, n - i);'
+    st "json escaper sanitizer removed" $?
+    [ "$probe" -eq 0 ] || { echo "SELFTEST-FAIL: lint_host.c has no sanitizer to plant against"; st_fail=1; }
     [ "$st_fail" -eq 0 ] && { echo "OK: gate self-test — planted faults all caught"; exit 0; }
     echo "FAILED: the gate no longer catches a planted fault"; exit 1
 fi
@@ -264,26 +304,68 @@ if x is 1:
 sweep_out="$(python3 "$ROOT/tools/lint_message_sweep.py" "$EIGS")"
 if [ $? -ne 0 ]; then bad "identifier-length sweep: $sweep_out"; else note "  ok   sweep ($sweep_out)"; checked=$((checked + 1)); fi
 
-# --- structural half: the chokepoint is still the only writer --------------
-# Every diagnostic is assembled by lint_vdiag, which renders into a scratch
-# and copies through lint_copy_utf8/lint_utf8_prefix. A rule that formats
-# straight into a message buffer would bypass the boundary check, so no other
-# writer may exist. (Matcher residual: it looks for the assembly spellings
-# below, not for aliasing through a pointer.)
+# --- source-byte sweep: bytes the DIAGNOSTIC did not choose ----------------
+# The length sweep above varies text the tool picks. This one varies text the
+# tool is handed: the byte the lexer cannot tokenize, a dict key a rule quotes,
+# a source line the caret excerpt echoes. On v0.43.0, 512 of 1524 byte/shape/
+# channel combinations were malformed while every message was comfortably
+# short — which is why a length-only fix left the class open.
+byte_out="$(python3 "$ROOT/tools/lint_source_byte_sweep.py" "$EIGS")"
+if [ $? -ne 0 ]; then bad "source-byte sweep: $byte_out"; else note "  ok   bytes ($byte_out)"; checked=$((checked + 1)); fi
+
+# --- structural half: the chokepoints are still the only writers -----------
+# Every diagnostic is assembled by lint_vdiag, which renders into a scratch and
+# copies through lint_copy_utf8; every string that reaches `--lint --json`
+# (including ones the linter never assembled — a path, the parser's first-error
+# message) goes through lint_json_escape; and the parse-error excerpt renders
+# raw source through the same stepper. Each copies whole UTF-8 characters and
+# replaces invalid bytes, so a rule that formatted straight into a message
+# buffer, or a printer that echoed source bytes, would bypass the guarantee.
+# (Matcher residual: it looks for the assembly spellings below, not for
+# aliasing through a pointer.)
 LINTC="$ROOT/src/lint.c"
-if ! grep -q 'lint_copy_utf8(w->message, sizeof(w->message), rendered);' "$LINTC"; then
-    bad "lint_vdiag no longer copies the message through lint_copy_utf8"
+if ! grep -q 'eigs_utf8_sanitize(w->message, sizeof(w->message), rendered);' "$LINTC"; then
+    bad "lint_vdiag no longer copies the message through eigs_utf8_sanitize"
 else
     checked=$((checked + 1))
 fi
-strays="$(grep -nE '(vs|s)?n?printf\([^)]*->message' "$LINTC" "$ROOT/src/lint_host.c" | grep -v 'lint_copy_utf8' || true)"
+if ! grep -q 'int step = eigs_utf8_step(s + i, n - i);' "$ROOT/src/strbuf.c"; then
+    bad "eigs_utf8_sanitize no longer validates through eigs_utf8_step"
+else
+    checked=$((checked + 1))
+fi
+# Both message buffers, not just the one with the `->` spelling: lint_collect
+# copies LintWarning.message into LintDiag.message (what eigenlsp publishes),
+# and that copy is a truncation point too. It must use the same copier.
+strays="$(grep -nE '(vs|s)?n?printf\([^)]*(->|\.)message' "$LINTC" "$ROOT/src/lint_host.c" | grep -v 'eigs_utf8_sanitize' || true)"
 if [ -n "$strays" ]; then
     bad "a diagnostic message is formatted outside lint_vdiag: $strays"
 else
     checked=$((checked + 1))
 fi
-if ! grep -q 'lint_utf8_prefix(out, o)' "$ROOT/src/lint_host.c"; then
-    bad "lint_json_escape no longer clips on a UTF-8 boundary"
+if ! grep -q 'eigs_utf8_sanitize(out\[i\].message' "$LINTC"; then
+    bad "lint_collect no longer copies into LintDiag through eigs_utf8_sanitize"
+else
+    checked=$((checked + 1))
+fi
+# The human channel prints the PATH, which no message chokepoint touches.
+if ! grep -q 'eigs_utf8_sanitize(dpath, sizeof(dpath), path);' "$ROOT/src/lint_host.c"; then
+    bad "the human lint channel no longer sanitizes the file path"
+else
+    checked=$((checked + 1))
+fi
+if grep -nE 'fprintf\(stderr, "[^"]*%s[^"]*", *path[,)]' "$ROOT/src/lint_host.c" >/dev/null; then
+    bad "a human lint line prints the raw path: $(grep -nE 'fprintf\(stderr, "[^"]*%s[^"]*", *path[,)]' "$ROOT/src/lint_host.c" | head -2)"
+else
+    checked=$((checked + 1))
+fi
+if ! grep -q 'eigs_utf8_step' "$ROOT/src/lint_host.c"; then
+    bad "lint_json_escape no longer validates through eigs_utf8_step"
+else
+    checked=$((checked + 1))
+fi
+if ! grep -q 'eigs_utf8_step' "$ROOT/src/parser.c"; then
+    bad "the parse-error caret excerpt no longer sanitizes the source line"
 else
     checked=$((checked + 1))
 fi
@@ -291,7 +373,7 @@ fi
 # --- verdict ---------------------------------------------------------------
 # Floor, not an exact count: adding a rule (and its fixture) raises it, and
 # only REMOVING coverage needs an edit here.
-FLOOR=33
+FLOOR=39
 if [ "$checked" -lt "$FLOOR" ]; then
     bad "only $checked checks ran, floor is $FLOOR — coverage was removed"
 fi

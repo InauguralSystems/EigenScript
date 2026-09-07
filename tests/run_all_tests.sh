@@ -5060,19 +5060,25 @@ fi
 echo ""
 
 # [81u] Lint diagnostic UTF-8 gate (#1048). A lint message is built in a
-# 256-byte buffer and shipped through --lint --json and the LSP; W024 was the
-# first rule to interpolate an unbounded identifier twice, and a ~37-character
-# name truncated it inside an em dash, emitting a lone 0xE2 that Python's
-# decoder rejects and jq hides behind U+FFFD. The gate drives every registered
-# code with a 200-character identifier, decodes strictly, checks the registry
-# both ways, and re-verifies each pinned exemption; --selftest plants five
-# faults (including a new rule with no doc row) and requires each to be caught.
+# 256-byte buffer and shipped through --lint --json and the LSP, and it can
+# carry two kinds of text: what the RULE chose (W024 was the first to
+# interpolate an unbounded identifier twice — a ~37-character name truncated it
+# inside an em dash, emitting a lone 0xE2 that Python's decoder rejects and jq
+# hides behind U+FFFD) and what the SOURCE handed it (the byte the lexer could
+# not tokenize, a dict key a rule quotes — malformed on 512 of 1524 swept
+# byte/shape/channel combinations on v0.43.0). The gate drives every registered
+# code with a 200-character identifier, sweeps identifier length 1..250 and
+# every source byte >= 0x80, decodes strictly (python3, never jq), checks the
+# registry three ways, re-verifies each pinned exemption, and asserts the
+# chokepoints are still the only writers; --selftest plants nine faults
+# (including a new rule with no doc row and an emitter that leaks a raw byte)
+# and requires each to be caught.
 echo "[81u] lint diagnostic UTF-8 gate (#1048)"
 TOTAL=$((TOTAL + 1))
 if bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" >/dev/null 2>&1 && \
    bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" --selftest >/dev/null 2>&1; then
     PASS=$((PASS + 1))
-    echo "  PASS: no lint rule can emit a message truncated mid-UTF-8 (gate self-test green)"
+    echo "  PASS: no lint diagnostic can be malformed UTF-8, whatever its rule or its source interpolates (gate self-test green)"
 else
     FAIL=$((FAIL + 1))
     echo "  FAIL: a lint diagnostic is malformed UTF-8, or the gate self-test broke"

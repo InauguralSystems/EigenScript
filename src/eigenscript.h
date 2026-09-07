@@ -1815,6 +1815,18 @@ void eigs_record_first_error_code_at(int line, int col, int len,
  * shared format for parse-time and runtime diagnostics. No-op when src is
  * NULL or the position is out of range. */
 void eigs_print_caret_src(FILE *out, const char *src, int line, int col);
+/* #1048: decode one UTF-8 character — length 1..4 if well-formed, 0 if the
+ * bytes cannot start one (stray continuation, overlong, surrogate, > U+10FFFF,
+ * bad continuation), -1 if the input ends inside a well-formed prefix. Every
+ * diagnostic that renders bytes from the source funnels through it, so no
+ * channel (stderr, `--lint --json`, the LSP's JSON-RPC) can emit half a
+ * character. Defined in strbuf.c. */
+int eigs_utf8_step(const unsigned char *s, size_t avail);
+/* #1048: copy `src` into `dst` (`cap` bytes) as valid UTF-8 — whole characters
+ * only, a byte that is not part of a well-formed one replaced with U+FFFD, an
+ * incomplete tail dropped, and a copy that does not fit truncated on a
+ * character boundary and marked "...". Defined in strbuf.c. */
+void eigs_utf8_sanitize(char *dst, size_t cap, const char *src);
 /* #407: register the compilation unit's raw source so column-carrying parse
  * errors print a one-line excerpt + caret. NULL = no excerpt (unchanged
  * output). Set before parse, clear after — the parser never reads it outside

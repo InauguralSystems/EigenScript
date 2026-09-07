@@ -306,18 +306,38 @@ so `--lint --json 2>/dev/null` is pure JSON). Each element is:
 - Exit code follows `--lint-level` (see below); the default fails on any
   surviving warning.
 
-- **Every `message` is valid UTF-8, whatever it interpolates.** Messages are
-  assembled in a fixed 256-byte buffer, so a rule that interpolates a long
-  identifier can have its message clipped — but the clip always lands on a
-  character boundary and is marked with a trailing `...`, never inside a
-  multi-byte sequence. This is a consumer-visible contract: a byte-level cut
-  produced a payload strict decoders reject while `jq` silently substituted
-  U+FFFD (#1048), and `eigenlsp` publishes the same strings over JSON-RPC.
-  Rules that interpolate unbounded text are expected to budget it themselves
-  so the actionable half of the message survives — `W024` shrinks the
-  identifiers it quotes (middle ellipsis) rather than let the remedy be cut.
+- **Every string in the payload is valid UTF-8 — the `message`, the `file`
+  path — whatever a rule interpolates and whatever the linted file contains.**
+  Two things could break that, and both are handled at a chokepoint rather than
+  per rule (#1048):
+  - **Length.** Messages are assembled in a fixed 256-byte buffer, so a rule
+    that interpolates a long identifier can have its message clipped — but the
+    clip lands on a character boundary and is marked with a trailing `...`,
+    never inside a multi-byte sequence. Rules that interpolate unbounded text
+    are expected to budget it themselves so the actionable half survives:
+    `W024` shrinks the identifiers it quotes (middle ellipsis) rather than let
+    its remedy be cut.
+  - **Source bytes.** A message can quote text the linter did not choose — the
+    byte the lexer could not tokenize (`E002`), a duplicate dict key (`W010`),
+    a path. A file is a byte string and need not be valid UTF-8, so those
+    quotes are sanitized: a byte that is not part of a well-formed character is
+    replaced with `U+FFFD` (`duplicate dict key 'k�y'`), an incomplete
+    sequence at the end is dropped, and a byte the lexer cannot tokenize is
+    spelled rather than echoed — `unexpected character '\xc3'`, not half of an
+    `é`. Well-formed characters, multi-byte ones included, pass through
+    **byte-for-byte**.
+
+  This is a consumer-visible contract: a byte-level cut produced a payload
+  strict decoders reject while `jq` silently substituted U+FFFD, and
+  `eigenlsp` publishes the same strings over JSON-RPC.
   `tools/lint_message_utf8_check.sh` drives every code above with a
-  200-character identifier and decodes the result strictly.
+  200-character identifier, sweeps identifier length 1..250 and every source
+  byte `>= 0x80` through four source shapes, and decodes both channels
+  strictly with `python3` (never `jq`, which is lenient exactly here).
+  The same sanitizing applies to the human `--lint` line and to the
+  parse-error source excerpt, where a byte that cannot be decoded prints as
+  `?` so the caret below it still lines up. It covers the lint channels; other
+  LSP responses that echo document text (hover, formatting) are outside it.
 
 The `--json` flag may appear before or after the path. Runtime errors are
 not part of `--lint` — it compiles the program but never runs it.

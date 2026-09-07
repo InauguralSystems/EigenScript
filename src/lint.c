@@ -29,24 +29,6 @@ size_t lint_utf8_prefix(const char *s, size_t max) {
     return (i - 1 + need == n) ? n : i - 1;    /* complete: keep. cut: drop it */
 }
 
-/* Copy `src` into `dst` (`cap` bytes), truncating on a UTF-8 boundary and
- * marking the cut with "..." so a clipped message says so. Every diagnostic
- * in the tree funnels through lint_vdiag, so this is the whole-class
- * guarantee: no lint rule, present or future, can emit malformed UTF-8 no
- * matter what it interpolates. Individual rules must still keep their
- * ACTIONABLE half inside the budget — a truncation here is valid output but
- * a worse message (see w024_emit's shrink-to-fit). */
-static void lint_copy_utf8(char *dst, size_t cap, const char *src) {
-    if (!dst || cap == 0) return;
-    if (!src) { dst[0] = '\0'; return; }
-    size_t keep = lint_utf8_prefix(src, cap - 1);
-    if (keep == strlen(src)) { memcpy(dst, src, keep); dst[keep] = '\0'; return; }
-    if (cap < 5) { dst[0] = '\0'; return; }
-    keep = lint_utf8_prefix(src, cap - 4);
-    memcpy(dst, src, keep);
-    memcpy(dst + keep, "...", 4);
-}
-
 static void lint_vdiag(LintContext *ctx, int line, int col, int len,
                        const char *level,
                        const char *code, const char *fmt, va_list ap) {
@@ -59,10 +41,10 @@ static void lint_vdiag(LintContext *ctx, int line, int col, int len,
     snprintf(w->code, sizeof(w->code), "%s", code);
     /* Render first, then copy on a character boundary: vsnprintf straight
      * into w->message would cut mid-sequence (#1048). The scratch can itself
-     * clip a pathological message; lint_copy_utf8 repairs either cut. */
+     * clip a pathological message; eigs_utf8_sanitize repairs either cut. */
     char rendered[1024];
     vsnprintf(rendered, sizeof(rendered), fmt, ap);
-    lint_copy_utf8(w->message, sizeof(w->message), rendered);
+    eigs_utf8_sanitize(w->message, sizeof(w->message), rendered);
 }
 
 static void lint_warn(LintContext *ctx, int line, const char *code,
@@ -3629,7 +3611,11 @@ int lint_collect(ASTNode *ast, const char *path, const char *source,
         out[i].len  = ctx.warnings[i].len;
         snprintf(out[i].code, sizeof(out[i].code), "%s", ctx.warnings[i].code);
         snprintf(out[i].severity, sizeof(out[i].severity), "%s", ctx.warnings[i].level);
-        snprintf(out[i].message, sizeof(out[i].message), "%s", ctx.warnings[i].message);
+        /* The message crosses into a SECOND fixed buffer here (LintDiag is
+         * what eigenlsp publishes). Copy it the same way lint_vdiag filled
+         * the first: snprintf would cut mid-character the day the two
+         * buffers stop being the same size (#1048). */
+        eigs_utf8_sanitize(out[i].message, sizeof(out[i].message), ctx.warnings[i].message);
     }
     builtin_name_env_free();
     return n;

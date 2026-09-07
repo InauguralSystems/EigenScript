@@ -648,11 +648,24 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             case '~': tok_add(&tl, TOK_TILDE, 0, NULL, line, tok_col); p++; col++; break;
             default:
                 {
+                    /* Spell the offending byte, never echo it (#1048). A byte
+                     * >= 0x80 is one piece of a multi-byte character, so
+                     * quoting it raw put half a UTF-8 sequence into the error
+                     * message — which `--lint --json` and the LSP then publish
+                     * as a payload strict decoders reject. `\xNN` says which
+                     * byte it was and is ASCII on every channel. */
+                    unsigned char bad = (unsigned char)*p;
+                    char shown[8];
+                    if (bad >= 0x20 && bad < 0x7F) {
+                        shown[0] = (char)bad; shown[1] = '\0';
+                    } else {
+                        snprintf(shown, sizeof(shown), "\\x%02x", bad);
+                    }
                     char m[64];
-                    snprintf(m, sizeof(m), "unexpected character '%c'", *p);
+                    snprintf(m, sizeof(m), "unexpected character '%s'", shown);
                     eigs_record_first_error_at(line, tok_col, 1, m);
+                    fprintf(stderr, "Syntax error line %d: unexpected character '%s'\n", line, shown);
                 }
-                fprintf(stderr, "Syntax error line %d: unexpected character '%c'\n", line, *p);
                 g_parse_errors++;
                 p++; col++;
                 break;
