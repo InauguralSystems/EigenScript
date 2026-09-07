@@ -159,7 +159,32 @@ eigs> double of 21
 ```
 
 Multi-line input (functions, loops, conditionals) is detected automatically
-when a line ends with `:`. A blank line ends the block.
+when a line ends with `:`. A blank line ends the block. So does an unindented
+non-blank line — that line is part of the same unit and runs with the block:
+
+```
+eigs> if 2 > 1:
+...       total is 51 + 6
+... total + 1
+=> 58
+```
+
+If such a unit fails to tokenize, parse or compile, nothing in it ran, so the
+unindented line that closed it is **re-fed as the start of the next unit**
+rather than discarded with the block (#1109). It goes back through the same
+rules, so it may open a block of its own:
+
+```
+eigs> define f(@) as:
+... x is 1
+Syntax error line 1: unexpected character '@'
+=> 1
+eigs> print of x
+1
+```
+
+The same rules apply to piped (non-tty) input, which is the REPL path the
+test suite drives.
 
 ## Conditionals
 

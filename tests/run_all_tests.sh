@@ -2255,7 +2255,7 @@ fi
 echo ""
 
 # [42c] REPL (#392): piped transcript byte-exact + pty-driven line editor
-echo "[42c] REPL editor & piped transcript (16 checks)"
+echo "[42c] REPL editor & piped transcript (24 checks)"
 RE_OUTPUT=$(bash "$TESTS_DIR/test_repl.sh" 2>&1)
 RE_PASS=$(echo "$RE_OUTPUT" | grep -c "PASS:" || true)
 RE_FAIL=$(echo "$RE_OUTPUT" | grep -c "FAIL:" || true)
