@@ -97,6 +97,17 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`--lint` leaked the parsed `eigs.json` on every run inside a project whose
+  manifest has any nested value (#1121).** `"deps": {}` is enough, and it is in
+  the manifest every repo in the fleet ships. Dropping a reference to a list or
+  dict registers a cycle-collector candidate rather than freeing it, and the
+  eight pre-global `--<mode>` returns skipped the exit sweep the run path
+  performs. All eight now drain, not just the one that leaked. Found because
+  the suite's own `eigs.json` allow-list test had been running the leaking
+  shape five times per run since it was written, capturing the linter's text
+  and discarding its exit status; `tests/test_lint.sh` now routes sanitizer
+  output to a log directory and fails on any diagnostic from any child.
+
 - **The observer write-path gate no longer arms on the mere presence of an
   import or of an observer name in the constant pool (#1046, #915).** Literal
   imports are resolved at compile time and names are matched on `OP_GET_NAME`
