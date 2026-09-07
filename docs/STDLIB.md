@@ -514,10 +514,17 @@ its own rect, so **widget drawing is contained**: a `canvas` `on_paint`
 cannot spill over surrounding chrome, and a child wider than its parent
 (the classic overflowing side-panel label) crops at the parent's edge.
 A custom paint routine that needs a tighter clip pushes its own — it
-composes with the widget clip automatically. Widgets whose render
-legitimately leaves the rect (`dropdown`/`combobox` open lists, `menu`,
-`dialog`'s dim overlay, `grid`'s row-label gutter) opt out via their
-registry entry (`"clip": 0`).
+composes with the widget clip automatically. Exactly two widgets opt out
+via their registry entry (`"clip": 0`), and both are positioned in window
+coordinates rather than inside a parent: `menu` (a floating popup placed
+by `show_menu`) and `dialog` (a full-screen dim behind a centred panel).
+Everything else is contained. A widget that must paint past its own rect
+draws in the **overlay pass** instead of opting out — `_render_popups`
+runs after the whole tree walk, with no clip active, so an open
+`dropdown`/`combobox` list and a `menu_bar` pull-down sit above later
+siblings and past a clipped ancestor's edge (#565, #859). `app_loop` runs
+that pass for the root and for each visible modal; a hand-rolled render
+loop must call `_render_popups` itself or open lists will not appear.
 
 **Widget constructors, by family** (each returns a plain dict; see the
 module header for the full argument list):
@@ -563,7 +570,10 @@ opens inward), and the open/close state, including hovering across
 titles while open. Its pull-down is drawn by an overlay pass *after* the
 tree walk and hit-tested before it, so it sits above whatever it covers
 no matter where the bar lives in the tree — the z-order a shell used to
-hand-roll by adding every `menu` last to the root.
+hand-roll by adding every `menu` last to the root. `dropdown` and
+`combobox` open lists ride the same pass (#859), so a list opened inside
+a `scroll_panel` or a dock region is no longer cropped at that
+ancestor's edge and no longer painted over by a later sibling.
 
 **`chart(id, x, y, w, h)` is an x-y plot** (#819) — data coordinates on
 both axes, not y-vs-index. Everything else is set on the returned dict.
@@ -701,8 +711,19 @@ Notes on widget state, where the toolkit could otherwise shadow yours:
   it 0 and mouse/keyboard report `(row, col)` without touching `cells` —
   for an app whose model is the source of truth (undo history, pattern
   switching, randomize), so both sides don't keep copies that drift.
-  `row_label_w` (60) and `row_label_scale` (1) size the row-label gutter,
-  which is drawn to the *left* of the grid's `x`, outside its own bounds.
+  `row_label_w` (60) and `row_label_scale` (1) size the row-label gutter.
+  The gutter is **inside** the widget rect (#859): set `row_labels` and
+  the grid's `w` grows by `row_label_w` the next time it is laid out or
+  drawn, cell
+  (0, 0) starts at `x + row_label_w`, and nothing is ever drawn left of
+  `x`. With `row_labels` unset the gutter is 0 and the geometry is the
+  historical `cols * cell_w`. A click in the gutter is not a cell click.
+  `grid_cell_origin of widget` returns the absolute `[x, y]` of cell
+  (0, 0) — use it instead of assuming the cells start at the widget's
+  `_ax` (they do not once row labels are set). The widening runs through
+  the registry's `measure` hook, which `render` calls before pushing the
+  containment clip and `_layout` calls on its own pass, so a box derived
+  from content is never clipped to a rect it has outgrown.
 - **`piano_keyboard` is a horizontal trigger strip**, not a piano-roll
   pitch sidebar: a click fires `on_note(w, note, 1)` and the release
   fires `on_note(w, note, 0)` — including when the pointer leaves the key

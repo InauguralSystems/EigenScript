@@ -120,6 +120,13 @@ define tabs(id, x, y, w, h, tab_names, on_tab) as:
 # ---- Render functions ----
 
 define _render_dropdown(widget, ax, ay) as:
+    # The overlay pass draws the open list from _ax/_ay (#859), so stamp
+    # them from the render walk itself rather than trusting the last
+    # _layout: app_loop lays out every frame, but a hand-rolled render
+    # need not, and a list that silently stopped drawing would be a worse
+    # failure than the z-order bug this replaced.
+    widget._ax is ax
+    widget._ay is ay
     if widget.hover == 1:
         dbg is _theme.dropdown_hover
     else:
@@ -136,16 +143,36 @@ define _render_dropdown(widget, ax, ay) as:
     arrow_y is ay + 8
     gfx_line of [arrow_x, arrow_y, arrow_x + 4, arrow_y + 6, _theme.dropdown_arrow[0], _theme.dropdown_arrow[1], _theme.dropdown_arrow[2]]
     gfx_line of [arrow_x + 8, arrow_y, arrow_x + 4, arrow_y + 6, _theme.dropdown_arrow[0], _theme.dropdown_arrow[1], _theme.dropdown_arrow[2]]
-    # Open menu
-    if widget.open == 1:
-        item_h is 24
-        menu_h is (len of widget.items) * item_h
-        gfx_rrect of [ax, ay + widget.h + 2, widget.w, menu_h, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]]
-        for i in range of (len of widget.items):
-            iy is ay + widget.h + 2 + i * item_h
-            if i == widget.hover_index:
-                gfx_rrect of [ax + 2, iy, widget.w - 4, item_h, _theme.radius_sm, _theme.menu_hover[0], _theme.menu_hover[1], _theme.menu_hover[2]]
-            _draw_text_clipped of [ax + 8, iy + 5, widget.w - 16, widget.items[i], _theme.text_color, _theme.font_scale]
+    # The OPEN LIST is not drawn here (#859). It is an overlay:
+    # _render_popups paints it after the whole tree walk, so it sits above
+    # later siblings and escapes a clipped ancestor's edge (scroll_panel,
+    # dock region) — the same move #565 made for menu_bar pull-downs. What
+    # is left is the closed box, which is clipped like every other widget.
+
+# Absolute rect of the open list — [x, y, w, h]. The overlay pass runs
+# outside the tree walk, so there is no ox/oy to add: it reads the cached
+# absolute origin, exactly as menu_bar's popup does (#565).
+
+define _dropdown_popup_rect(widget) as:
+    return [widget._ax, widget._ay + widget.h + 2, widget.w, (len of widget.items) * 24]
+
+define _render_dropdown_popup(widget) as:
+    if widget.open != 1:
+        return null
+    if widget._ax == null:
+        return null
+    if (len of widget.items) == 0:
+        return null
+    r is _dropdown_popup_rect of widget
+    px is r[0]
+    py is r[1]
+    item_h is 24
+    gfx_rrect of [px, py, r[2], r[3], _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]]
+    for i in range of (len of widget.items):
+        iy is py + i * item_h
+        if i == widget.hover_index:
+            gfx_rrect of [px + 2, iy, r[2] - 4, item_h, _theme.radius_sm, _theme.menu_hover[0], _theme.menu_hover[1], _theme.menu_hover[2]]
+        _draw_text_clipped of [px + 8, iy + 5, r[2] - 16, widget.items[i], _theme.text_color, _theme.font_scale]
 
 define _render_menu(widget, ax, ay) as:
     if widget.visible == 1:
@@ -338,11 +365,13 @@ define _render_tabs(widget, ax, ay) as:
 
 # ---- Hit test functions ----
 
+# Only the closed box (#859). The open list is an overlay, so it is
+# hit-tested by _find_open_popup_at ABOVE the tree walk — extending the
+# widget's in-tree bounds here would hand the click to whatever later
+# sibling the list is painted over.
+
 define _hit_test_dropdown(widget, ax, ay, mx, my) as:
-    total_h is widget.h
-    if widget.open == 1:
-        total_h is widget.h + (len of widget.items) * 24 + 2
-    if _point_in_rect of [mx, my, ax, ay, widget.w, total_h]:
+    if _point_in_rect of [mx, my, ax, ay, widget.w, widget.h]:
         return widget
     return null
 
@@ -368,14 +397,24 @@ define _hit_test_menu(widget, ax, ay, mx, my) as:
 
 # ---- Mousemove functions ----
 
+# Which open-list item sits under my — -1 for none. Shared by the hover
+# and mousedown paths so a mouse-only click selects the item it landed on
+# rather than whatever hover_index happened to hold, the way combobox's
+# _combobox_item_at already does (#577). The list starts 2px below the
+# box, which the old inline math forgot.
+
+define _dropdown_item_at(widget, my) as:
+    rel_y is my - widget._ay - widget.h - 2
+    if rel_y < 0:
+        return 0 - 1
+    idx is floor of (rel_y / 24)
+    if idx >= (len of widget.items):
+        return 0 - 1
+    return idx
+
 define _mousemove_dropdown(hit, root, mx, my) as:
     if hit.open == 1:
-        abs_y is hit._ay
-        rel_y is my - abs_y - hit.h
-        if rel_y >= 0:
-            hit.hover_index is floor of (rel_y / 24)
-        else:
-            hit.hover_index is -1
+        hit.hover_index is _dropdown_item_at of [hit, my]
 
 define _mousemove_menu(hit, root, mx, my) as:
     abs_y is hit._ay
@@ -394,9 +433,13 @@ define _mousemove_tabs(hit, root, mx, my) as:
 define _mousedown_dropdown(hit, root, mx, my, ev) as:
     if hit.enabled == 1:
         if hit.open == 1:
-            # Click on open menu — select item
-            if hit.hover_index >= 0 and hit.hover_index < (len of hit.items):
-                hit.selected is hit.hover_index
+            # Select the item the click actually landed on (#577/#859) —
+            # under plain dispatch no mousemove need precede the click, so
+            # hover_index cannot be trusted as the selection.
+            idx is _dropdown_item_at of [hit, my]
+            if idx >= 0:
+                hit.hover_index is idx
+                hit.selected is idx
                 if hit.on_change != null:
                     hit.on_change of hit
             hit.open is 0
@@ -550,15 +593,33 @@ define _find_open_popup_at(widget, mx, my) as:
             if _point_in_rect of [mx, my, pos[0], pos[1], p.w, menu_h]:
                 return widget
         return null
+    # An open dropdown / combobox list is painted by the same overlay
+    # pass (#859), so it takes the pointer above the whole tree too.
+    if widget.type == "dropdown":
+        if widget.open == 1 and widget._ax != null:
+            dr is _dropdown_popup_rect of widget
+            if _point_in_rect of [mx, my, dr[0], dr[1], dr[2], dr[3]]:
+                return widget
+        return null
+    if widget.type == "combobox":
+        if widget.open == 1 and widget._ax != null:
+            cr is _combobox_popup_rect of widget
+            if _point_in_rect of [mx, my, cr[0], cr[1], cr[2], cr[3]]:
+                return widget
+        return null
     if _is_container of widget.type:
         for i in range of (len of widget.children):
             r is _find_open_popup_at of [widget.children[i], mx, my]
             if r != null:
                 return r
     if widget.type == "tabs":
-        for i in range of (len of widget.tab_panels):
-            if widget.tab_panels[i] != null:
-                r is _find_open_popup_at of [widget.tab_panels[i], mx, my]
+        # ACTIVE panel only — render and _hit_test both show just that one,
+        # so an overlay from a hidden tab would be a popup with nothing
+        # behind it (#859).
+        if widget.active < (len of widget.tab_panels):
+            tp is widget.tab_panels[widget.active]
+            if tp != null:
+                r is _find_open_popup_at of [tp, mx, my]
                 if r != null:
                     return r
     if widget.type == "splitter":
@@ -577,13 +638,19 @@ define _render_popups(widget) as:
         return null
     if widget.type == "menu_bar":
         _render_menu_bar_popup of widget
+    elif widget.type == "dropdown":
+        _render_dropdown_popup of widget
+    elif widget.type == "combobox":
+        _render_combobox_popup of widget
     elif _is_container of widget.type:
         for i in range of (len of widget.children):
             _render_popups of widget.children[i]
     elif widget.type == "tabs":
-        for i in range of (len of widget.tab_panels):
-            if widget.tab_panels[i] != null:
-                _render_popups of widget.tab_panels[i]
+        # Only the ACTIVE panel is on screen, so only its popups are
+        # (#859) — the tree walk in render() shows no other panel.
+        if widget.active < (len of widget.tab_panels):
+            if widget.tab_panels[widget.active] != null:
+                _render_popups of widget.tab_panels[widget.active]
     elif widget.type == "splitter":
         if widget.panel_a != null:
             _render_popups of widget.panel_a
@@ -609,7 +676,6 @@ define _close_menus(widget) as:
 # ---- Registration ----
 
 _register_widget of ["dropdown", {
-    "clip": 0,
     "render": _render_dropdown,
     "hit_test": _hit_test_dropdown,
     "on_mousedown": _mousedown_dropdown,

@@ -279,7 +279,8 @@ ui.add_child of [mix, master]
 drums is ui.panel of ["drums_tab", 0, 0, WINDOW_W, tab_h - 28]
 drums.border is null
 
-drum_grid is ui.grid of ["dg", 80, 50, 16, 8, 36, 30, on_drum_cell]
+# x accounts for the row-label gutter, inside the grid rect since #859.
+drum_grid is ui.grid of ["dg", 20, 50, 16, 8, 36, 30, on_drum_cell]
 drum_grid.row_labels is ["Kick", "Snare", "HiHat", "Clap", "808", "Perc", "Rim", "Clave"]
 
 # Default pattern

@@ -2726,14 +2726,303 @@ render of [cc823, 0, 0]
 _gfx_rec is 0
 assert_true of [(_rect823_eq of [(_clip823_at of [7, 8, 9]), 20, 30, 100, 80]) == 1, "#823 restoring the registration restores containment"]
 
-# ---- opt-outs stay opt-outs: dropdown's open list is unclipped ----
+# ---- the anchor widget IS clipped now (#859) ----
+# dropdown used to opt out of containment because its open list drew
+# in-tree, below the widget rect. The list moved to the overlay pass, so
+# the box is contained like everything else.
 dd823 is dropdown of ["dd823", 5, 5, 120, ["alpha", "beta"], 0, null]
 dd823.open is 1
 _gfx_log is []
 _gfx_rec is 1
 render of [dd823, 0, 0]
 _gfx_rec is 0
-assert_eq of [_count_kind of "clip", 0, "#823 dropdown renders its open list without a widget clip (registry opt-out)"]
+assert_eq of [_count_kind of "clip", 2, "#859 an OPEN dropdown still renders its box under a widget clip (push + pop)"]
+
+# ============================================================
+# #859 — dropdown / combobox open lists render in the overlay pass
+# ============================================================
+# #565 moved menu_bar pull-downs out of the tree walk into
+# _render_popups; #859 does the same for the dropdown and combobox open
+# lists. Two things follow and both are asserted below: the list is
+# painted AFTER every later sibling (z-order), and it is painted with no
+# ancestor clip active, so it escapes the panel edge that used to crop
+# it. The anchor widgets lose their "clip": 0 opt-out, and grid loses
+# its own by folding the row-label gutter inside its rect.
+print of "--- #859 overlay pass: dropdown/combobox lists, grid gutter ---"
+
+# Section 18 (#594) rebound gfx_rrect to a shade-capturing stub and never
+# put it back, so from there on the log carries no rrect entries — and
+# every widget box in this section is an rrect. Restore the recorder.
+define gfx_rrect(args) as:
+    _gfx_note of ["rrect", args]
+    return null
+
+# First recorded rect/rrect whose ORIGIN lies in [x0,y0)..[x1,y1), with
+# the clip active at that moment. i = -1 when nothing matched.
+define _find859(x0, y0, x1, y1) as:
+    local act is null
+    for i in range of (len of _gfx_log):
+        local e is _gfx_log[i]
+        if e[0] == "clip":
+            act is e[1]
+        elif e[0] == "rrect" or e[0] == "rect":
+            local a is e[1]
+            if a[0] >= x0 and a[0] < x1 and a[1] >= y0 and a[1] < y1:
+                return {"i": i, "clip": act, "args": a}
+    return {"i": 0 - 1, "clip": act, "args": null}
+
+# Smallest x any primitive of any kind recorded (x is arg 0 for rect,
+# rrect, line and text alike).
+define _minx859() as:
+    local best is 1000000
+    for i in range of (len of _gfx_log):
+        local e is _gfx_log[i]
+        if e[0] != "clip":
+            if e[1][0] < best:
+                best is e[1][0]
+    return best
+
+# ---- the containment opt-outs are exactly menu + dialog ----
+opt859 is []
+for k859 in keys of _widget_registry:
+    e859 is _widget_registry[k859]
+    if e859.clip != null and e859.clip == 0:
+        append of [opt859, k859]
+sort of opt859
+assert_eq of [len of opt859, 2, "#859 exactly two registry entries opt out of the containment clip"]
+assert_eq of [opt859[0], "dialog", "#859 dialog keeps its opt-out (full-screen dim)"]
+assert_eq of [opt859[1], "menu", "#859 menu keeps its opt-out (floating popup)"]
+
+# ---- dropdown: z-order and escape from the ancestor clip ----
+# panel (10,10,200x60) holds the dropdown at (5,5); the open list spans
+# y 41..113, so it runs past the panel's bottom edge at y=70 AND under a
+# later sibling that starts at y=60.
+r859 is panel of ["r859", 0, 0, 400, 300]
+p859 is panel of ["p859", 10, 10, 200, 60]
+dd859 is dropdown of ["dd859", 5, 5, 120, ["alpha", "beta", "gamma"], 0, null]
+add_child of [p859, dd859]
+sib859 is panel of ["sib859", 10, 60, 200, 120]
+add_child of [r859, p859]
+add_child of [r859, sib859]
+_layout of [r859, 0, 0]
+dd859.open is 1
+
+_gfx_log is []
+_gfx_rec is 1
+render of [r859, 0, 0]
+_render_popups of r859
+_gfx_rec is 0
+
+dlist859 is _find859 of [15, 41, 16, 42]
+dsib859 is _find859 of [10, 60, 11, 61]
+dbox859 is _find859 of [15, 15, 16, 16]
+assert_true of [dlist859.i >= 0, "#859 the open dropdown list is drawn"]
+assert_true of [dsib859.i >= 0, "#859 the later sibling is drawn"]
+assert_true of [dsib859.i < dlist859.i, "#859 the later sibling's draws PRECEDE the open list's (overlay z-order)"]
+assert_eq of [dlist859.clip, null, "#859 the open list draws with no ancestor clip active"]
+assert_true of [dlist859.args[1] + dlist859.args[3] > 70, "#859 the list rect extends past the panel's bottom edge"]
+assert_true of [(_rect823_eq of [dbox859.clip, 15, 15, 120, 24]) == 1, "#859 the dropdown BOX draws under a clip of its own rect (opt-out gone)"]
+
+# Vacuity control: the list exists ONLY because of the overlay pass.
+_gfx_log is []
+_gfx_rec is 1
+render of [r859, 0, 0]
+_gfx_rec is 0
+assert_eq of [(_find859 of [15, 41, 16, 42]).i, 0 - 1, "#859 without _render_popups the tree walk draws no list at all"]
+
+# The overlay reads the absolute origin the RENDER stamped, so a
+# hand-rolled loop that never calls _layout still gets its list.
+nl859 is panel of ["nl859", 0, 0, 400, 300]
+ndd859 is dropdown of ["ndd859", 15, 15, 120, ["a", "b"], 0, null]
+add_child of [nl859, ndd859]
+ndd859.open is 1
+_gfx_log is []
+_gfx_rec is 1
+render of [nl859, 0, 0]
+_render_popups of nl859
+_gfx_rec is 0
+assert_true of [(_find859 of [15, 41, 16, 42]).i >= 0, "#859 the overlay works with no _layout pass — render stamps the origin"]
+
+# An open list in a NON-ACTIVE tab panel is not on screen, so it must not
+# be painted over the active one either.
+tb859 is tabs of ["tb859", 0, 0, 300, 200, ["one", "two"], null]
+tp859a is panel of ["tp859a", 0, 0, 300, 170]
+tp859b is panel of ["tp859b", 0, 0, 300, 170]
+hdd859 is dropdown of ["hdd859", 15, 15, 120, ["a", "b"], 0, null]
+add_child of [tp859b, hdd859]
+append of [tb859.tab_panels, tp859a]
+append of [tb859.tab_panels, tp859b]
+tb859.active is 0
+_layout of [tb859, 0, 0]
+hdd859.open is 1
+_gfx_log is []
+_gfx_rec is 1
+render of [tb859, 0, 0]
+_render_popups of tb859
+_gfx_rec is 0
+assert_eq of [(_find859 of [15, 69, 16, 70]).i, 0 - 1, "#859 a hidden tab's open list is not painted over the active tab"]
+assert_eq of [_find_open_popup_at of [tb859, 40, 80], null, "#859 ... and it does not steal the pointer either"]
+# Control: the same list IS painted and IS hit-testable once its tab is
+# the active one — otherwise the two assertions above are vacuous.
+tb859.active is 1
+_layout of [tb859, 0, 0]
+_gfx_log is []
+_gfx_rec is 1
+render of [tb859, 0, 0]
+_render_popups of tb859
+_gfx_rec is 0
+assert_true of [(_find859 of [15, 69, 16, 70]).i >= 0, "#859 control: the list IS painted when its tab is active"]
+assert_true of [(_find_open_popup_at of [tb859, 40, 80]) != null, "#859 control: and it IS hit-tested when its tab is active"]
+
+# ---- combobox: same two properties ----
+c859 is panel of ["c859", 0, 0, 400, 300]
+cp859 is panel of ["cp859", 10, 10, 200, 60]
+cb859 is combobox of ["cb859", 5, 5, 120, ["alpha", "beta", "gamma"], null]
+add_child of [cp859, cb859]
+csib859 is panel of ["csib859", 10, 60, 200, 120]
+add_child of [c859, cp859]
+add_child of [c859, csib859]
+_layout of [c859, 0, 0]
+cb859.open is 1
+cb859.filtered is cb859.items
+
+_gfx_log is []
+_gfx_rec is 1
+render of [c859, 0, 0]
+_render_popups of c859
+_gfx_rec is 0
+
+clist859 is _find859 of [15, 41, 16, 42]
+csibr859 is _find859 of [10, 60, 11, 61]
+cbox859 is _find859 of [15, 15, 16, 16]
+assert_true of [clist859.i >= 0, "#859 the open combobox list is drawn"]
+assert_true of [csibr859.i < clist859.i, "#859 combobox: the later sibling's draws precede the list's"]
+assert_eq of [clist859.clip, null, "#859 combobox: the open list draws with no ancestor clip active"]
+assert_true of [clist859.args[1] + clist859.args[3] > 70, "#859 combobox: the list rect extends past the panel's bottom edge"]
+assert_true of [(_rect823_eq of [cbox859.clip, 15, 15, 120, 24]) == 1, "#859 the combobox BOX draws under a clip of its own rect (opt-out gone)"]
+
+# ---- interaction: the click lands on the DROPDOWN, not the sibling ----
+# The button sits under the open list. A click at (40, 90) is inside
+# BOTH; the overlay must win, and the button must not even see it.
+i859 is panel of ["i859", 0, 0, 400, 300]
+ip859 is panel of ["ip859", 10, 10, 200, 60]
+idd859 is dropdown of ["idd859", 5, 5, 120, ["alpha", "beta", "gamma"], 0, null]
+add_child of [ip859, idd859]
+ibtn_clicks is [0]
+define i859_click(w) as:
+    ibtn_clicks[0] is ibtn_clicks[0] + 1
+ibtn859 is button of ["ibtn859", 10, 60, 200, 40, "under", i859_click]
+add_child of [i859, ip859]
+add_child of [i859, ibtn859]
+_layout of [i859, 0, 0]
+
+# Control first: with the list CLOSED the very same click DOES reach the
+# button — otherwise the assertion below would pass over an empty scene.
+_ui.last_click_id is ""
+dispatch of [i859, {"type": "mousedown", "x": 40, "y": 90, "button": 1}]
+assert_eq of [ibtn859.pressed, 1, "#859 control: with the list closed the click reaches the button underneath"]
+dispatch of [i859, {"type": "mouseup", "x": 40, "y": 90, "button": 1}]
+assert_eq of [ibtn_clicks[0], 1, "#859 control: and the button fires"]
+
+_ui.last_click_id is ""
+dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
+assert_eq of [idd859.open, 1, "#859 clicking the closed box opens the list"]
+# Hover follows the overlay too: item 2 spans y 89..112.
+dispatch of [i859, {"type": "mousemove", "x": 40, "y": 90}]
+assert_eq of [idd859.hover_index, 2, "#859 mousemove over the overlaid list hovers the dropdown item"]
+assert_eq of [ibtn859.hover, 0, "#859 the sibling under the list gets no hover"]
+_ui.last_click_id is ""
+dispatch of [i859, {"type": "mousedown", "x": 40, "y": 90, "button": 1}]
+assert_eq of [idd859.selected, 2, "#859 the click selects on the DROPDOWN, not the sibling"]
+assert_eq of [idd859.open, 0, "#859 selecting closes the list"]
+assert_eq of [ibtn859.pressed, 0, "#859 the sibling under the open list never saw the click"]
+assert_eq of [ibtn_clicks[0], 1, "#859 the sibling's on_click did not fire"]
+
+# Selection by the click's own y, with no mousemove first (the #577 rule,
+# which dropdown never had): reopen and click item 0 directly.
+_ui.last_click_id is ""
+dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
+idd859.hover_index is 0 - 1
+_ui.last_click_id is ""
+dispatch of [i859, {"type": "mousedown", "x": 40, "y": 45, "button": 1}]
+assert_eq of [idd859.selected, 0, "#859 a mouse-only click selects the item it landed on"]
+
+# Outside-click still closes without selecting.
+_ui.last_click_id is ""
+dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
+assert_eq of [idd859.open, 1, "#859 the list reopens"]
+_ui.last_click_id is ""
+dispatch of [i859, {"type": "mousedown", "x": 350, "y": 260, "button": 1}]
+assert_eq of [idd859.open, 0, "#859 a click outside the overlay closes the list"]
+assert_eq of [idd859.selected, 0, "#859 the outside click changed no selection"]
+
+# Escape closes it through the keyboard route.
+_ui.last_click_id is ""
+dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
+assert_eq of [idd859.open, 1, "#859 the list reopens for the keyboard case"]
+handle_key of [i859, {"type": "keydown", "key": "escape", "shift": 0, "ctrl": 0, "alt": 0}]
+assert_eq of [idd859.open, 0, "#859 escape closes the open list"]
+
+# ---- grid: the row-label gutter is INSIDE the widget rect ----
+g859 is grid of ["g859", 30, 20, 4, 3, 20, 20, null]
+gp859 is panel of ["gp859", 0, 0, 400, 300]
+add_child of [gp859, g859]
+_layout of [gp859, 0, 0]
+assert_eq of [g859.w, 80, "#859 with no row labels the grid keeps its historical width"]
+g859.row_labels is ["a", "b", "c"]
+_layout of [gp859, 0, 0]
+assert_eq of [g859.w, 140, "#859 the grid rect widens to hold its row-label gutter"]
+
+_gfx_log is []
+_gfx_rec is 1
+render of [g859, 0, 0]
+_gfx_rec is 0
+# cell (0,0) is drawn inset by 1px from its origin, so origin x = 90 is
+# widget.x (30) + row_label_w (60).
+cell859 is _find859 of [91, 21, 92, 22]
+assert_true of [cell859.i >= 0, "#859 cell (0,0) origin is the widget's x + row_label_w"]
+assert_true of [(_rect823_eq of [cell859.clip, 30, 20, 140, 60]) == 1, "#859 the grid draws under a clip of its own rect (opt-out gone)"]
+assert_eq of [_minx859 of null, 30, "#859 nothing is drawn left of the grid's x — the labels live in the gutter"]
+
+# The measure hook runs inside render(), so a grid that gains row labels
+# and is drawn WITHOUT a layout pass still gets a clip wide enough for
+# its cells — the frame does not silently lose them.
+nm859 is grid of ["nm859", 30, 20, 4, 3, 20, 20, null]
+nm859._ax is 30
+nm859._ay is 20
+nm859.row_labels is ["a", "b", "c"]
+_gfx_log is []
+_gfx_rec is 1
+render of [nm859, 0, 0]
+_gfx_rec is 0
+assert_eq of [nm859.w, 140, "#859 render() restamps the grid box before clipping it"]
+nmc859 is _find859 of [91, 21, 92, 22]
+assert_true of [(_rect823_eq of [nmc859.clip, 30, 20, 140, 60]) == 1, "#859 the clip covers the widened rect on the very first frame"]
+
+# The mouse follows the gutter: a click left of the first column is not a
+# cell click, and cell (0,0) starts at x + row_label_w.
+groot859 is panel of ["groot859", 0, 0, 400, 300]
+gm859 is grid of ["gm859", 30, 20, 4, 3, 20, 20, null]
+gm859.row_labels is ["a", "b", "c"]
+add_child of [groot859, gm859]
+_layout of [groot859, 0, 0]
+_ui.last_click_id is ""
+dispatch of [groot859, {"type": "mousedown", "x": 40, "y": 25, "button": 1}]
+assert_eq of [gm859.cells[0][0], 0, "#859 a click in the row-label gutter toggles no cell"]
+_ui.last_click_id is ""
+dispatch of [groot859, {"type": "mousedown", "x": 95, "y": 25, "button": 1}]
+assert_eq of [gm859.cells[0][0], 1, "#859 a click at x + row_label_w toggles cell (0,0)"]
+
+# The public accessor an app maps pixels through, so nothing has to
+# re-derive the gutter offset.
+gco859 is grid_cell_origin of gm859
+assert_eq of [gco859[0], 90, "#859 grid_cell_origin x is the widget x plus the gutter"]
+assert_eq of [gco859[1], 20, "#859 grid_cell_origin y is the widget y"]
+gm859.row_labels is null
+_layout of [groot859, 0, 0]
+gco859b is grid_cell_origin of gm859
+assert_eq of [gco859b[0], 30, "#859 with no row labels the cell origin is the widget x"]
+assert_eq of [gm859.w, 80, "#859 dropping the row labels narrows the rect back"]
 
 # ============================================================
 # Summary

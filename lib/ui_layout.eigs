@@ -25,6 +25,12 @@ define _layout(widget, ox, oy) as:
         # stamped itself, and remeasuring would silently overwrite it.
         if widget.auto_size != 0:
             _label_measure of widget
+    if widget.type == "grid":
+        # The row-label gutter lives INSIDE the grid's rect (#859), so the
+        # box a container lays out against — and the containment clip
+        # render() pushes — must include it. Restamped every pass because
+        # apps assign row_labels after construction.
+        _grid_measure of widget
     if widget.type == "hbox":
         _layout_box of [widget, 1]
     elif widget.type == "vbox":

@@ -81,9 +81,14 @@ define grid(id, x, y, cols, rows, cell_w, cell_h, on_cell) as:
         # instead of both sides keeping a copy that can drift.
         "owns_cells": 1,
         "row_labels": null,
-        # The row-label gutter is drawn to the LEFT of the widget's x, so
-        # it sits outside the widget's own bounds; these make its width
-        # and text scale configurable rather than hardcoded (#572).
+        # The row-label gutter is INSIDE the widget rect (#859): when
+        # row_labels is set the widget is row_label_w wider and cell (0,0)
+        # starts at x + row_label_w, so nothing is ever drawn left of x
+        # and the grid is contained like every other widget. With no row
+        # labels the gutter is 0 and the geometry is unchanged. `w` is
+        # restamped by _grid_measure on each layout pass — assigning
+        # row_labels after construction takes effect on the next frame,
+        # the same rule label's auto-measure follows (#561).
         "row_label_w": 60,
         "row_label_scale": 1,
         "col_highlight": -1,
@@ -240,10 +245,38 @@ define _render_item_list(widget, ax, ay) as:
         sb_y is ay + floor of (widget.scroll_y * (widget.h - sb_h) / (total_h - widget.h))
         gfx_rrect of [ax + widget.w - 6, sb_y, 4, sb_h, 2, 80, 80, 100]
 
+# Width of the row-label gutter carved out of the LEFT of the widget rect
+# — 0 when the grid has no row labels (#859).
+
+define _grid_gutter(widget) as:
+    if widget.row_labels == null:
+        return 0
+    return widget.row_label_w
+
+# The widget's own width follows its gutter. Registered as the grid's
+# `measure` hook, so render() restamps it BEFORE pushing the containment
+# clip, and _layout restamps it for the containers that lay out against
+# it — a grid that gains row labels at runtime widens instead of having
+# its cells clipped away by a rect it has outgrown.
+
+define _grid_measure(widget) as:
+    widget.w is (_grid_gutter of widget) + widget.cols * widget.cell_w
+    return null
+
+# Public: absolute [x, y] of cell (0, 0) — the widget origin plus the
+# row-label gutter (#859). An app that maps its own pixel coordinates to
+# cells (a headless driver, a custom overlay) reads this instead of
+# assuming the cells start at the widget's x, which stopped being true
+# when the gutter moved inside the rect.
+
+define grid_cell_origin(widget) as:
+    return [widget._ax + (_grid_gutter of widget), widget._ay]
+
 define _render_grid(widget, ax, ay) as:
+    gut is _grid_gutter of widget
     for r in range of widget.rows:
         for c in range of widget.cols:
-            cx is ax + c * widget.cell_w
+            cx is ax + gut + c * widget.cell_w
             cy is ay + r * widget.cell_h
             # Cell color
             cell_val is widget.cells[r][c]
@@ -262,15 +295,15 @@ define _render_grid(widget, ax, ay) as:
                 else:
                     gc is [35, 35, 48]
             gfx_rrect of [cx + 1, cy + 1, widget.cell_w - 2, widget.cell_h - 2, 2, gc[0], gc[1], gc[2]]
-    # Row labels — drawn in a gutter left of the widget's x (#572)
+    # Row labels — drawn in the gutter at the LEFT of the widget rect
+    # (#572 sized it; #859 folded it inside the rect)
     if widget.row_labels != null:
         lscale is widget.row_label_scale
-        lgw is widget.row_label_w
         lh is text_height of lscale
         for r in range of widget.rows:
             if r < (len of widget.row_labels):
                 ly is ay + r * widget.cell_h + floor of ((widget.cell_h - lh) / 2)
-                gfx_text of [ax - lgw, ly, widget.row_labels[r], _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], lscale]
+                gfx_text of [ax, ly, widget.row_labels[r], _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], lscale]
 
 # ---- Mousemove functions ----
 
@@ -298,8 +331,13 @@ define _mousemove_item_list(hit, root, mx, my) as:
     hit.hover_index is floor of ((my - abs_y + hit.scroll_y) / hit.item_h)
 
 define _mousemove_grid(hit, root, mx, my) as:
-    abs_x is hit._ax
+    abs_x is hit._ax + (_grid_gutter of hit)
     abs_y is hit._ay
+    if mx < abs_x:
+        # In the row-label gutter — no cell under the pointer (#859)
+        hit.hover_col is 0 - 1
+        hit.hover_row is 0 - 1
+        return null
     hit.hover_col is floor of ((mx - abs_x) / hit.cell_w)
     hit.hover_row is floor of ((my - abs_y) / hit.cell_h)
 
@@ -377,8 +415,11 @@ define _mousedown_item_list(hit, root, mx, my, ev) as:
                 hit.on_select of hit
 
 define _mousedown_grid(hit, root, mx, my, ev) as:
-    abs_x is hit._ax
+    abs_x is hit._ax + (_grid_gutter of hit)
     abs_y is hit._ay
+    if mx < abs_x:
+        # A click in the row-label gutter is not a cell click (#859)
+        return null
     gc is floor of ((mx - abs_x) / hit.cell_w)
     gr is floor of ((my - abs_y) / hit.cell_h)
     if gc >= 0 and gc < hit.cols and gr >= 0 and gr < hit.rows:
@@ -484,11 +525,7 @@ _register_widget of ["item_list", {
 }]
 
 _register_widget of ["grid", {
-    # clip 0: the row-label gutter is documented to draw LEFT of the
-    # grid's x, outside its own bounds (docs/STDLIB.md) — the #823
-    # containment clip would erase it. Fold the gutter into the rect
-    # before removing this opt-out.
-    "clip": 0,
+    "measure": _grid_measure,
     "render": _render_grid,
     "hit_test": null,
     "on_mousedown": _mousedown_grid,

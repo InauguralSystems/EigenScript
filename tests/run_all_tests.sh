@@ -3375,12 +3375,16 @@ else
 fi
 echo ""
 
-# [132] UI containment render-decode oracle (#823 — probe-gated: needs a
-# gfx build). The stubbed [63] suite proves containment on RECORDED clip
-# state; this section proves it on real pixels: the actual SDL software
-# renderer (dummy video driver) draws an escaping canvas on_paint and an
-# overflowing label, and gfx_read decodes the back buffer. Includes its
-# own planted fault (registry clip opt-out must turn the probe red).
+# [132] UI containment render-decode oracle (#823/#859 — probe-gated:
+# needs a gfx build). The stubbed [63] suite proves containment and the
+# overlay z-order on RECORDED clip/draw state; this section proves them on
+# real pixels: the actual SDL software renderer (dummy video driver) draws
+# an escaping canvas on_paint, an overflowing label, an open dropdown list
+# over a later sibling and past its panel's edge, and a grid whose
+# row-label gutter is inside its rect — and gfx_read decodes the back
+# buffer. Includes its own planted faults (the registry clip opt-out, and
+# re-registering the pre-#859 in-tree list render, must turn the probes
+# red).
 UC_PROBE_FILE=$(mktemp /tmp/eigs_uc_probe_XXXXXX.eigs)
 cat > "$UC_PROBE_FILE" <<'PROBE'
 print of (gfx_text_width of ["m", 1])
@@ -3389,17 +3393,18 @@ UC_PROBE_OUT=$(./eigenscript "$UC_PROBE_FILE" 2>&1)
 rm -f "$UC_PROBE_FILE"
 
 if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[132] UI Containment Render-Decode Oracle (9 checks)"
+    echo "[132] UI Containment Render-Decode Oracle"
     UC_OUTPUT=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_ui_containment_gfx.eigs 2>&1); UC_RC=$?
+    UC_N=$(derive_count "$UC_OUTPUT" 25 "[132] UI Containment Render-Decode Oracle")
     if rc_ok "$UC_RC" "$UC_OUTPUT" && echo "$UC_OUTPUT" | grep -q "All tests passed"; then
-        TOTAL=$((TOTAL + 9))
-        PASS=$((PASS + 9))
-        echo "  PASS: real-pixel containment + planted fault"
+        TOTAL=$((TOTAL + UC_N))
+        PASS=$((PASS + UC_N))
+        echo "  PASS: real-pixel containment + overlay z-order + planted faults ($UC_N checks)"
     elif echo "$UC_OUTPUT" | grep -q "^SKIP:"; then
         echo "  SKIP: $(echo "$UC_OUTPUT" | grep "^SKIP:" | head -1)"
     else
-        TOTAL=$((TOTAL + 9))
-        FAIL=$((FAIL + 9))
+        TOTAL=$((TOTAL + UC_N))
+        FAIL=$((FAIL + UC_N))
         echo "  FAIL: ui containment oracle"
         echo "$UC_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
     fi

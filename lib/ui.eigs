@@ -190,17 +190,28 @@ define render(widget, ox, oy) as:
     ax is ox + widget.x
     ay is oy + widget.y
     entry is _widget_registry[widget.type]
+    if entry != null and entry.measure != null:
+        # A widget whose own box is derived from its content restamps it
+        # HERE, before the containment clip is pushed from widget.w
+        # (#859). _layout does the same on its pass, which is what a
+        # container lays out against; this covers the frame in which the
+        # content changed, and a hand-rolled loop that never calls
+        # _layout at all — otherwise the clip would be a rect the render
+        # has already outgrown, and the overflow is silently erased.
+        entry.measure of widget
     if entry != null and entry.render != null:
         # Containment (#823): every widget draws under a clip of its own
         # rect, intersected with its ancestors' via the ui_draw clip
         # stack — canvas on_paint included, so a paint callback cannot
         # spill over surrounding chrome, and a child wider than its
         # parent (the dynamics side-panel label) crops at the parent
-        # edge. A registry entry opts out with "clip": 0 — reserved for
-        # widgets whose render legitimately leaves the rect (dropdown /
-        # combobox open lists, the floating menu, dialog's full-screen
-        # dim). Their escape from ANCESTOR clips still ends at whatever
-        # clip is active when they render.
+        # edge. A registry entry opts out with "clip": 0 — since #859
+        # exactly TWO do: `menu` (a floating popup positioned in window
+        # coordinates by show_menu) and `dialog` (a full-screen dim behind
+        # a centred panel). Everything else, dropdown and combobox and
+        # grid included, is contained; a widget that needs to paint past
+        # its own rect draws in the _render_popups overlay pass instead of
+        # opting out of containment.
         if entry.clip != null and entry.clip == 0:
             entry.render of [widget, ax, ay]
         else:
@@ -917,6 +928,10 @@ define app_loop(root, on_key, on_tick) as:
             if mdlg.visible == 1:
                 _layout of [mdlg, 0, 0]
                 render of [mdlg, 0, 0]
+                # A dropdown hosted by a dialog draws its open list in the
+                # overlay pass like any other (#859), so the modal subtree
+                # needs its own pass — root's does not reach it.
+                _render_popups of mdlg
         _render_tooltip of null
         _render_toasts of null
         _render_dnd of null

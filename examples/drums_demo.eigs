@@ -91,7 +91,9 @@ ui.add_child of [toolbar, ui.radio_group of ["pattern", 514, 12, ["1", "2", "3",
 ui.add_child of [toolbar, ui.editable_label of ["pat_name", 630, 15, "My Pattern", on_name_commit]]
 
 # Grid
-drum_grid is ui.grid of ["drum_grid", 70, 60, 16, 8, 38, 32, on_cell]
+# x accounts for the row-label gutter, which lives INSIDE the grid rect
+# since #859 (the grid is row_label_w wider and the cells start there).
+drum_grid is ui.grid of ["drum_grid", 10, 60, 16, 8, 38, 32, on_cell]
 drum_grid.row_labels is ["Kick", "Snare", "HiHat", "Clap", "808", "Perc", "Rim", "Clave"]
 
 # Set some default pattern

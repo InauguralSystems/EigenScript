@@ -90,5 +90,133 @@ _widget_registry["canvas"].clip is null
 _draw_scene of null
 assert_true of [(_is_rogue of (gfx_read of [30, 30])) == 0, "#823 restoring the registration restores containment"]
 
+# ============================================================
+# #859 — the open list is an OVERLAY, on real pixels
+# ============================================================
+# [63] proves the z-order and the missing ancestor clip on the RECORDED
+# draw stream. Here the real SDL renderer paints the scene and gfx_read
+# decodes the back buffer: the list must survive being painted after a
+# sibling that covers it, and must survive past the edge of the panel
+# whose clip used to crop it. Planted fault at the end: re-registering a
+# render that draws the list IN-TREE (the pre-#859 body) must turn both
+# probes red.
+
+define _is_col(px, c) as:
+    if px == null:
+        return 0
+    if px[0] == c[0] and px[1] == c[1] and px[2] == c[2]:
+        return 1
+    return 0
+
+_sib_col is [200, 30, 30]
+
+define _sib_paint(w, ax, ay) as:
+    gfx_rect of [ax, ay, w.w, w.h, 200, 30, 30]
+
+# panel (20,20,200x40): its clip ends at y = 60. The dropdown sits at
+# (25,25); its open list spans y 51..123 and x 25..145 — past the panel
+# edge, and under a canvas sibling added AFTER it that spans y 80..180.
+root859 is panel of ["root859", 0, 0, 400, 300]
+p859 is panel of ["p859", 20, 20, 200, 40]
+dd859 is dropdown of ["dd859", 5, 5, 120, ["a", "b", "c"], 0, null]
+add_child of [p859, dd859]
+sib859 is canvas of ["sib859", 20, 80, 200, 100, _sib_paint, null]
+add_child of [root859, p859]
+add_child of [root859, sib859]
+_layout of [root859, 0, 0]
+dd859.open is 1
+dd859.hover_index is 0 - 1
+
+define _scene859(with_overlay) as:
+    gfx_clear of [9, 9, 9]
+    render of [root859, 0, 0]
+    if with_overlay == 1:
+        _render_popups of root859
+
+_scene859 of 1
+# The scene is not vacuous: the sibling really did paint where the list
+# does NOT reach (the list's right edge is x = 145).
+assert_true of [(_is_col of [(gfx_read of [180, 100]), _sib_col]) == 1, "#859 the sibling canvas IS painted beside the list"]
+assert_true of [(_is_col of [(gfx_read of [100, 100]), _theme.menu_bg]) == 1, "#859 the open list is painted OVER the later sibling"]
+assert_true of [(_is_col of [(gfx_read of [100, 70]), _theme.menu_bg]) == 1, "#859 the open list is painted PAST the panel's bottom edge"]
+
+# Control: without the overlay pass the tree walk paints no list at all.
+_scene859 of 0
+assert_true of [(_is_col of [(gfx_read of [100, 100]), _theme.menu_bg]) == 0, "#859 with no overlay pass those pixels are not the list's"]
+
+# ---- planted fault: draw the list IN-TREE again (the pre-#859 body) ----
+define _render_dropdown_intree(widget, ax, ay) as:
+    _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, _theme.dropdown_bg, _theme.panel_border]
+    if widget.open == 1:
+        item_h is 24
+        menu_h is (len of widget.items) * item_h
+        gfx_rrect of [ax, ay + widget.h + 2, widget.w, menu_h, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]]
+
+_prev859 is _widget_registry["dropdown"].render
+_widget_registry["dropdown"].render is _render_dropdown_intree
+_widget_registry["dropdown"].clip is 0
+_scene859 of 0
+assert_true of [(_is_col of [(gfx_read of [100, 100]), _theme.menu_bg]) == 0, "#859 planted fault: drawn in-tree, the sibling COVERS the list (z-order probe red)"]
+assert_true of [(_is_col of [(gfx_read of [100, 70]), _theme.menu_bg]) == 0, "#859 planted fault: drawn in-tree, the panel clip CROPS the list (escape probe red)"]
+_widget_registry["dropdown"].render is _prev859
+_widget_registry["dropdown"].clip is null
+_scene859 of 1
+assert_true of [(_is_col of [(gfx_read of [100, 100]), _theme.menu_bg]) == 1, "#859 restoring the overlay render restores both properties"]
+
+# ---- the click lands on the DROPDOWN, not the sibling it covers ----
+# Same scene, driven headlessly through dispatch while the real renderer
+# is live: the pointer is over pixels the list owns, so the dropdown must
+# take the click and the canvas underneath must not see it.
+sib_clicks859 is [0]
+define _sib_mouse(w, ev) as:
+    sib_clicks859[0] is sib_clicks859[0] + 1
+sib859.on_mouse is _sib_mouse
+_ui.last_click_id is ""
+dd859.open is 1
+dd859.hover_index is 0 - 1
+_scene859 of 1
+# item 2 ("c") spans y 99..122 — inside the sibling canvas (y 80..180).
+dispatch of [root859, {"type": "mousedown", "x": 100, "y": 105, "button": 1}]
+assert_eq of [dd859.selected, 2, "#859 the click on the overlaid list selects on the DROPDOWN"]
+assert_eq of [sib_clicks859[0], 0, "#859 the canvas under the open list never saw the click"]
+assert_eq of [dd859.open, 0, "#859 selecting closes the list"]
+_scene859 of 1
+assert_true of [(_is_col of [(gfx_read of [100, 105]), _sib_col]) == 1, "#859 with the list closed those pixels are the sibling's again"]
+# Control: the canvas really is under that point and really does take a
+# click when nothing is drawn over it.
+_ui.last_click_id is ""
+dispatch of [root859, {"type": "mousedown", "x": 100, "y": 105, "button": 1}]
+dispatch of [root859, {"type": "mouseup", "x": 100, "y": 105, "button": 1}]
+assert_true of [sib_clicks859[0] > 0, "#859 control: with no list over it the canvas DOES see the click"]
+sib859.on_mouse is null
+
+# ---- grid: the row-label gutter is inside the rect, on real pixels ----
+g859 is grid of ["g859", 240, 20, 3, 3, 20, 20, null]
+g859.row_labels is ["a", "b", "c"]
+gr859 is panel of ["gr859", 0, 0, 400, 300]
+add_child of [gr859, g859]
+_layout of [gr859, 0, 0]
+assert_eq of [g859.w, 120, "#859 the grid rect holds gutter + cells"]
+
+define _count_nonbg(x0, y0, x1, y1) as:
+    local n is 0
+    local yy is y0
+    loop while yy < y1:
+        local xx is x0
+        loop while xx < x1:
+            local px is gfx_read of [xx, yy]
+            if px != null:
+                if px[0] != 9 or px[1] != 9 or px[2] != 9:
+                    n is n + 1
+            xx is xx + 1
+        yy is yy + 1
+    return n
+
+gfx_clear of [9, 9, 9]
+render of [g859, 0, 0]
+assert_true of [(_is_col of [(gfx_read of [305, 25]), g859.color_off]) == 1, "#859 cell (0,0) is painted at x + row_label_w"]
+assert_eq of [_count_nonbg of [180, 20, 240, 80], 0, "#859 nothing is painted left of the grid's x"]
+assert_true of [(_count_nonbg of [240, 20, 300, 80]) > 0, "#859 the row labels are painted inside the gutter"]
+
 gfx_close of null
 test_summary of null
