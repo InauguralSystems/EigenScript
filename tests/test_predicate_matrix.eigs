@@ -215,8 +215,20 @@ mi is 0
 loop while mi < 20:
     m is m * 0.5
     mi is mi + 1
+pm20 is [converged of m, stable of m, improving of m, diverging of m, oscillating of m, equilibrium of m, report of m]
+# #1045: after 20 halvings m is 8.6e-7 — inside the characteristic scale
+# (1e-3), but its steps are still 50% of its own size per step and only the
+# last one is under the absolute floor dh_zero*scale = 1e-6: a decay still in
+# progress reads `improving` (the (c) property of the scale-free step — a
+# geometric decay is never certified merely for being small). The old
+# Δv/(1+|v|) certified it here because 8.8e-4 < dh_zero in ABSOLUTE terms —
+# the same decay stored in millis would have read improving.
+expect of ["mid-decay toward zero (#1045)", pm20, 0, 0, 1, 0, 0, 0, "improving"]
+loop while mi < 30:
+    m is m * 0.5
+    mi is mi + 1
 pm is [converged of m, stable of m, improving of m, diverging of m, oscillating of m, equilibrium of m, report of m]
-# #861: the value route CERTIFIES this settle — a decay toward zero is exactly what converged should claim. The #735 no-band gray state remains constructible only on the entropy channel (non-numeric bindings)
+# #861: the value route CERTIFIES this settle — a decay toward zero is exactly what converged should claim once a full window of steps sits under the floor (ten more halvings: steps 4e-7 .. 8e-10). The #735 no-band gray state remains constructible only on the entropy channel (non-numeric bindings)
 expect of ["full-window residual drift (#735)", pm, 1, 1, 0, 0, 0, 1, "converged"]
 
 # --- The full-window agreement guarantee (PREDICATES.md "The report builtin"),

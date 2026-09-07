@@ -33,10 +33,13 @@ print of (report of b)
 print of ""
 
 # RA3: converged — a settled decay (full window under the deadband).
+# #1045: the deadband is absolute only inside the characteristic scale, at
+# dh_zero*scale = 1e-6; 30 halvings of 100 (9e-8, steps 7e-7..9e-8 over the
+# last four) were still `improving`, 40 sit a full window under the floor.
 print of "--- RA3: Converged (settled decay) ---"
 c is 100.0
 i is 0
-loop while i < 30:
+loop while i < 40:
     c is c * 0.5
     i is i + 1
 print of (str of (converged of c))

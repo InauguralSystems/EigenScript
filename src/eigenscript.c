@@ -443,22 +443,66 @@ double compute_entropy(Value *v) {
  * aliasing temps tracks correctly. This is what fixed #262 — the value-path
  * observer model (state on the Value) was removed in Step E. */
 
-static void observer_slot_window_push(ObserverSlot *s, double dh) {
-    if (!s->dh_window) {
-        s->dh_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
-        s->dh_window_head = 0;
-        s->dh_window_count = 0;
-    }
-    s->dh_window[s->dh_window_head] = dh;
-    s->dh_window_head = (uint8_t)((s->dh_window_head + 1) % OBSERVER_WINDOW_N);
-    if (s->dh_window_count < OBSERVER_WINDOW_N) s->dh_window_count++;
+/* #1044: the window depth a slot classifies over. A per-binding override
+ * (set_observer_window of ["x", n]) wins; otherwise the state default
+ * (set_observer_window of n), read LIVE — like the thresholds, changing the
+ * default changes every subsequent verdict, not only bindings first seen
+ * after the call. The tape/step/DAP surfaces build slots without an env and
+ * get the default through the same read. */
+static inline int obs_win(const ObserverSlot *s) {
+    if (s && s->win_override) return s->win_override;
+    /* g_obs_window is validated at the seam (builtin_set_observer_window
+     * clamps to [MIN, MAX]) and seeded at OBSERVER_WINDOW_N, so the hot
+     * path re-checks nothing: this read is one branch and two loads per
+     * observed assignment. */
+    return eigs_current ? eigs_current->state->obs_window : OBSERVER_WINDOW_N;
+}
+int observer_slot_window(const ObserverSlot *s) { return obs_win(s); }
+
+/* The sample counts the classifiers read: the ring may hold MORE than the
+ * depth in force (the default was lowered, or an override shrank it), and
+ * then only the newest `depth` samples are the window. */
+static inline size_t obs_dh_count(const ObserverSlot *s) {
+    size_t n = (size_t)obs_win(s);
+    return s->dh_window_count < n ? s->dh_window_count : n;
+}
+static inline size_t obs_v_count(const ObserverSlot *s) {
+    size_t n = (size_t)obs_win(s);
+    return s->v_window_count < n ? s->v_window_count : n;
 }
 
 static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back) {
     if (!s->dh_window || offset_back >= s->dh_window_count) return 0.0;
     int idx = (int)s->dh_window_head - 1 - (int)offset_back;
-    while (idx < 0) idx += OBSERVER_WINDOW_N;
+    while (idx < 0) idx += s->dh_cap;
     return s->dh_window[idx];
+}
+
+/* Make the dH ring at least `n` deep, keeping the samples it holds (newest
+ * min(count, n) of them, re-laid oldest-first). Allocation is the one cost
+ * #1044 adds to the common path, and only when the depth in force exceeds
+ * the capacity — at the default depth this is the same single xcalloc the
+ * ring always paid. */
+static void observer_slot_dh_ensure(ObserverSlot *s, int n) {
+    if (s->dh_window && s->dh_cap >= n) return;
+    double *nw = xcalloc((size_t)n, sizeof(double));
+    int cnt = s->dh_window ? s->dh_window_count : 0;
+    if (cnt > n) cnt = n;
+    for (int i = 0; i < cnt; i++)
+        nw[i] = observer_slot_window_get(s, (size_t)(cnt - 1 - i));
+    free(s->dh_window);
+    s->dh_window = nw;
+    s->dh_cap = (uint8_t)n;
+    s->dh_window_count = (uint8_t)cnt;
+    s->dh_window_head = (uint8_t)(cnt % n);
+}
+
+static void observer_slot_window_push(ObserverSlot *s, double dh) {
+    int n = obs_win(s);
+    if (!s->dh_window || s->dh_cap < n) observer_slot_dh_ensure(s, n);
+    s->dh_window[s->dh_window_head] = dh;
+    if (++s->dh_window_head >= s->dh_cap) s->dh_window_head = 0;
+    if (s->dh_window_count < s->dh_cap) s->dh_window_count++;
 }
 
 /* #294 value-signal channel: same ring buffer as the entropy window, but the
@@ -468,31 +512,48 @@ static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back
  * two classes — additive/polynomial runaway (Δv/|v| → 0 while Δv doesn't)
  * and oscillation below the deadband — and both are recoverable from the
  * raw step's sign/decay structure alone. */
-static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_delta) {
-    if (!s->v_window) {
-        s->v_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
-        s->vr_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
-        s->v_window_head = 0;
-        s->v_window_count = 0;
-    }
-    s->v_window[s->v_window_head] = rel_delta;
-    if (s->vr_window) s->vr_window[s->v_window_head] = raw_delta;
-    s->v_window_head = (uint8_t)((s->v_window_head + 1) % OBSERVER_WINDOW_N);
-    if (s->v_window_count < OBSERVER_WINDOW_N) s->v_window_count++;
-}
-
 static double observer_slot_v_get(const ObserverSlot *s, size_t offset_back) {
     if (!s->v_window || offset_back >= s->v_window_count) return 0.0;
     int idx = (int)s->v_window_head - 1 - (int)offset_back;
-    while (idx < 0) idx += OBSERVER_WINDOW_N;
+    while (idx < 0) idx += s->v_cap;
     return s->v_window[idx];
 }
 
 static double observer_slot_vr_get(const ObserverSlot *s, size_t offset_back) {
     if (!s->vr_window || offset_back >= s->v_window_count) return 0.0;
     int idx = (int)s->v_window_head - 1 - (int)offset_back;
-    while (idx < 0) idx += OBSERVER_WINDOW_N;
+    while (idx < 0) idx += s->v_cap;
     return s->vr_window[idx];
+}
+
+/* #1044: value-channel twin of observer_slot_dh_ensure (both rings share
+ * head/count, so they grow together). */
+static void observer_slot_v_ensure(ObserverSlot *s, int n) {
+    if (s->v_window && s->v_cap >= n) return;
+    double *nv = xcalloc((size_t)n, sizeof(double));
+    double *nr = xcalloc((size_t)n, sizeof(double));
+    int cnt = s->v_window ? s->v_window_count : 0;
+    if (cnt > n) cnt = n;
+    for (int i = 0; i < cnt; i++) {
+        nv[i] = observer_slot_v_get(s, (size_t)(cnt - 1 - i));
+        nr[i] = observer_slot_vr_get(s, (size_t)(cnt - 1 - i));
+    }
+    free(s->v_window);
+    free(s->vr_window);
+    s->v_window = nv;
+    s->vr_window = nr;
+    s->v_cap = (uint8_t)n;
+    s->v_window_count = (uint8_t)cnt;
+    s->v_window_head = (uint8_t)(cnt % n);
+}
+
+static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_delta) {
+    int n = obs_win(s);
+    if (!s->v_window || s->v_cap < n) observer_slot_v_ensure(s, n);
+    s->v_window[s->v_window_head] = rel_delta;
+    s->vr_window[s->v_window_head] = raw_delta;
+    if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
+    if (s->v_window_count < s->v_cap) s->v_window_count++;
 }
 
 /* #422 raw-step structure tests. Both require a FULL window and steps above
@@ -521,7 +582,7 @@ static double observer_slot_vr_get(const ObserverSlot *s, size_t offset_back) {
  * false where the old semantics said true. The full-window requirement
  * stays where it belongs: on the REST bands, which certify. */
 static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     if (cnt < 4) return 0;
     double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
     size_t half = cnt / 2;
@@ -536,7 +597,7 @@ static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
 
 static int observer_slot_raw_diverging(const ObserverSlot *s) {
     if (!observer_slot_raw_nonvanishing(s)) return 0;
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     double first = observer_slot_vr_get(s, 0);
     for (size_t i = 1; i < cnt; i++)
         if (observer_slot_vr_get(s, i) * first <= 0.0) return 0;
@@ -545,8 +606,8 @@ static int observer_slot_raw_diverging(const ObserverSlot *s) {
 
 static int observer_slot_raw_oscillating(const ObserverSlot *s) {
     if (!observer_slot_raw_nonvanishing(s)) return 0;
-    size_t cnt = s->v_window_count;
-    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
+    size_t cnt = obs_v_count(s);
+    const int FLIPS = (observer_slot_window(s) + 2) / 3;
     double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
     int flips = 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
@@ -558,13 +619,40 @@ static int observer_slot_raw_oscillating(const ObserverSlot *s) {
 }
 
 /* Fold one observed numeric value into the slot's value channel. The stored
- * step is RELATIVE (Δv/(1+|v|)) so the thresholds carry the same meaning across
- * value scales: a ±0.6 swing around 5 reads "moving" (~12% steps), the same
- * swing around 1e6 is effectively settled. First value seeds last_value only. */
+ * step is RELATIVE so the thresholds carry the same meaning across value
+ * scales: a ±0.6 swing around 5 reads "moving" (~12% steps), the same swing
+ * around 1e6 is effectively settled. First value seeds last_value only.
+ *
+ * #1045: rel = Δv / max(|v|, |v_prev|, scale). The old Δv/(1+|v|) was the
+ * entropy formula's normalisation borrowed as a step: below |v| ~ 1 the
+ * denominator is ~1 and rel is just Δv — an ABSOLUTE deadband — so one
+ * physical trajectory read `converged` stored in radians and `moving` in
+ * degrees (phugoid's spiral mode, 0.0124 rad = 0.71 deg). The step's own
+ * local scale, max(|v|, |v_prev|), is the textbook relative step |Δx|/|x|
+ * symmetrised so it is bounded (|rel| <= 2) and defined across a zero
+ * crossing; `scale` (set_observer_scale, default 1e-3) is the magnitude
+ * below which a value counts as "at zero" and the tolerance turns absolute
+ * — so float noise around an exact zero (Δv ~ 1e-16) reads 1e-13, not O(1).
+ * Above the scale the verdict is unit-free: `converged` means every recent
+ * step under dh_zero of the value's own size, i.e. |Δx| <= rtol·|x| with
+ * an absolute floor of rtol·scale (1e-6 by default), and a geometric decay
+ * toward zero keeps rel = (1 - r) — `improving`, never `converged` — until
+ * it is inside the scale.
+ *
+ * Not the window's running max |v| (the design first proposed): for a
+ * monotone decay that max is the OLDEST sample, so rel = (1 - r)·r^(N-1)
+ * and any ratio r < ~0.5 reads `converged` at the first full window no
+ * matter how far from its limit the value still is (1e6·0.3^k certifies at
+ * x ~= 1.8) — and widening the window (#1044) makes it worse, r^49 at
+ * N = 50. The local scale keeps the two knobs independent. */
 void observer_slot_record_value(ObserverSlot *s, double v) {
     if (s->v_used) {
         double raw = v - s->last_value;
-        double rel = raw / (1.0 + fabs(v));
+        double a = fabs(v), b = fabs(s->last_value);
+        if (b > a) a = b;
+        double fl = eigs_current ? eigs_current->state->obs_scale : 0.001;
+        if (fl > a) a = fl;
+        double rel = raw / a;
         observer_slot_v_push(s, rel, raw);
     }
     s->last_value = v;
@@ -710,6 +798,19 @@ void observer_slot_sample(Env *e, int idx, Value *newval) {
     if (s) s->v_last = 0;   /* #861 route bit only — no walk, no `used` */
 }
 
+/* #1044: per-binding window override. Only the OVERRIDE is written — the
+ * rings grow on the next push if the new depth exceeds their capacity, and
+ * a smaller depth simply reads fewer samples — so the call is O(1) and
+ * touches no sample. n == 0 restores the state default. */
+int observer_slot_set_window(Env *e, int idx, int n) {
+    if (!e || idx < 0) return 0;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return 0;
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (!s) return 0;
+    s->win_override = (uint8_t)n;
+    return 1;
+}
+
 void observer_slot_reset(Env *e) {
     if (!e || !e->obs) return;
     vm_obs_slot_dropped(e);   /* invalidate the VM's last-observed-slot tracker */
@@ -787,7 +888,7 @@ static int observer_slot_saturated(const ObserverSlot *s) {
 
 /* Window flags: every |rel step| under dh_zero / dh_small. */
 static void obs_num_flags(const ObserverSlot *s, int *all_zero, int *all_small) {
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     *all_zero = 1; *all_small = 1;
     for (size_t i = 0; i < cnt; i++) {
         double w = fabs(observer_slot_v_get(s, i));
@@ -799,9 +900,9 @@ static void obs_num_flags(const ObserverSlot *s, int *all_zero, int *all_small) 
 /* Relative-step sign-flip oscillation — the head test report_value has
  * always run (flips above the deadband, >= FLIPS of them). */
 static int obs_num_rel_oscillating(const ObserverSlot *s) {
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     if (cnt < 3) return 0;
-    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
+    const int FLIPS = (observer_slot_window(s) + 2) / 3;
     int flips = 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
         double a = observer_slot_v_get(s, i);
@@ -822,8 +923,8 @@ static int obs_num_rel_oscillating(const ObserverSlot *s) {
  * a pure sampled sinusoid nets ~0 over any full window; a drift-with-
  * wiggle nets ~its path and stays out. */
 static int obs_num_bounded_oscillating(const ObserverSlot *s) {
-    size_t cnt = s->v_window_count;
-    if (cnt < OBSERVER_WINDOW_N) return 0;
+    size_t cnt = obs_v_count(s);
+    if (cnt < (size_t)observer_slot_window(s)) return 0;
     /* No non-vanishing gate here, deliberately: an underdamped oscillator's
      * x DECAYS while oscillating, and its oscillation is the fact worth
      * reporting mid-flight. The handoff to the settle bands is the all-under-
@@ -877,7 +978,7 @@ static int obs_num_diverging(const ObserverSlot *s) {
  * the band instead of being promised a limit it does not have. */
 static int obs_num_improving(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     if (cnt < 4) return 0;                       /* early-warning band: same
                                                   * 4-sample floor as the raw
                                                   * tests, not the rest bands'
@@ -932,7 +1033,7 @@ static int obs_num_improving(const ObserverSlot *s) {
  * its raw steps do not). */
 static int obs_num_converged(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
-    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    if (obs_v_count(s) < (size_t)observer_slot_window(s)) return 0;
     int all_zero, all_small;
     obs_num_flags(s, &all_zero, &all_small);
     if (!all_zero) return 0;
@@ -945,18 +1046,19 @@ static int obs_num_converged(const ObserverSlot *s) {
  * (all-under-deadband forces both), preserving the quiescent lattice. */
 static int obs_num_equilibrium(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
-    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    size_t N = (size_t)observer_slot_window(s);
+    if (obs_v_count(s) < N) return 0;
     if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
     double sum = 0.0;
-    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) sum += observer_slot_v_get(s, i);
-    double mean = sum / (double)OBSERVER_WINDOW_N;
+    for (size_t i = 0; i < N; i++) sum += observer_slot_v_get(s, i);
+    double mean = sum / (double)N;
     if (fabs(mean) >= g_obs_dh_zero) return 0;
     double var = 0.0;
-    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
+    for (size_t i = 0; i < N; i++) {
         double d = observer_slot_v_get(s, i) - mean;
         var += d * d;
     }
-    var /= (double)OBSERVER_WINDOW_N;
+    var /= (double)N;
     return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
 }
 
@@ -965,12 +1067,13 @@ static int obs_num_equilibrium(const ObserverSlot *s) {
  * steps live here: real motion, no certified limit). converged => stable. */
 static int obs_num_stable(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
-    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    size_t N = (size_t)observer_slot_window(s);
+    if (obs_v_count(s) < N) return 0;
     if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
     int all_zero, all_small;
     obs_num_flags(s, &all_zero, &all_small);
     if (!all_small) return 0;
-    for (size_t i = 0; i + 1 < OBSERVER_WINDOW_N; i++) {
+    for (size_t i = 0; i + 1 < N; i++) {
         double a = observer_slot_v_get(s, i);
         double b = observer_slot_v_get(s, i + 1);
         if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
@@ -983,13 +1086,13 @@ static int obs_num_stable(const ObserverSlot *s) {
  * partial-window fallback preserved verbatim. */
 static const char *obs_num_report(const ObserverSlot *s) {
     if (!s || !s->v_used) return "equilibrium";   /* no numeric trajectory */
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     if (cnt == 0) return "equilibrium";           /* one value seen, no step yet */
     if (obs_num_oscillating(s)) return "oscillating";
     if (obs_num_diverging(s))   return "diverging";
     if (obs_num_improving(s))   return "improving";   /* partial-capable, like
                                                        * the two bands above */
-    if (cnt >= OBSERVER_WINDOW_N) {
+    if (cnt >= (size_t)observer_slot_window(s)) {
         if (obs_num_converged(s))   return "converged";
         if (obs_num_equilibrium(s)) return "equilibrium";
         if (obs_num_stable(s))      return "stable";
@@ -1014,25 +1117,29 @@ static int obs_route_num(const ObserverSlot *s) {
  * handles saturation itself, so the entropy route can no longer see one. */
 int observer_slot_converged(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_converged(s);
-    if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
-    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++)
+    if (!s) return 0;
+    size_t N = (size_t)observer_slot_window(s);
+    if (obs_dh_count(s) < N) return 0;
+    for (size_t i = 0; i < N; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
     return (s->entropy < g_obs_h_low) ? 1 : 0;
 }
 
 int observer_slot_equilibrium(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_equilibrium(s);
-    if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
+    if (!s) return 0;
+    size_t N = (size_t)observer_slot_window(s);
+    if (obs_dh_count(s) < N) return 0;
     double sum = 0.0;
-    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) sum += observer_slot_window_get(s, i);
-    double mean = sum / (double)OBSERVER_WINDOW_N;
+    for (size_t i = 0; i < N; i++) sum += observer_slot_window_get(s, i);
+    double mean = sum / (double)N;
     if (fabs(mean) >= g_obs_dh_zero) return 0;
     double var = 0.0;
-    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
+    for (size_t i = 0; i < N; i++) {
         double d = observer_slot_window_get(s, i) - mean;
         var += d * d;
     }
-    var /= (double)OBSERVER_WINDOW_N;
+    var /= (double)N;
     return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
 }
 
@@ -1040,7 +1147,7 @@ int observer_slot_equilibrium(const ObserverSlot *s) {
  * the observer_*(Value*) versions above, reading the slot's window/entropy. */
 int observer_slot_improving(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_improving(s);
-    size_t cnt = s ? s->dh_window_count : 0;
+    size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < 3) return 0;
     double sum = 0.0; int down = 0;
     for (size_t i = 0; i < cnt; i++) {
@@ -1053,7 +1160,7 @@ int observer_slot_improving(const ObserverSlot *s) {
 
 int observer_slot_diverging(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_diverging(s);
-    size_t cnt = s ? s->dh_window_count : 0;
+    size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < 3) return 0;
     double sum = 0.0; int up = 0;
     for (size_t i = 0; i < cnt; i++) {
@@ -1066,9 +1173,9 @@ int observer_slot_diverging(const ObserverSlot *s) {
 
 int observer_slot_oscillating(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_oscillating(s);
-    size_t cnt = s ? s->dh_window_count : 0;
+    size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < 3) return 0;
-    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
+    const int FLIPS = (observer_slot_window(s) + 2) / 3;
     int flips = 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
         double a = observer_slot_window_get(s, i);
@@ -1080,8 +1187,8 @@ int observer_slot_oscillating(const ObserverSlot *s) {
 
 int observer_slot_stable(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_stable(s);
-    size_t cnt = s ? s->dh_window_count : 0;
-    if (cnt < OBSERVER_WINDOW_N) return 0;
+    size_t cnt = s ? obs_dh_count(s) : 0;
+    if (cnt < (size_t)observer_slot_window(s)) return 0;
     if (s->entropy < g_obs_h_low) return 0;
     for (size_t i = 0; i < cnt; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_small) return 0;
@@ -1129,7 +1236,7 @@ const char *observer_slot_report_entropy(const ObserverSlot *s) {
      * band, "moving" — the same label the value channel uses for exactly this
      * state. Reporting a still-moving value as settled is what broke the
      * documented settled-plus-hold recipe. */
-    if (s->dh_window_count >= OBSERVER_WINDOW_N) return "moving";
+    if (obs_dh_count(s) >= (size_t)observer_slot_window(s)) return "moving";
     /* Partial-window best-effort label (mirrors builtin_report's tail). */
     if (fabs(s->dH) < g_obs_dh_zero) return "equilibrium";
     if (fabs(s->dH) < g_obs_dh_small && s->entropy >= g_obs_h_low) return "stable";
@@ -1226,8 +1333,8 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     Value *out = make_dict(10);
     if (!out) return NULL;
     dict_set_owned(out, "kind", make_str("trajectory"));
-    int vcnt = (s && s->v_window)  ? s->v_window_count  : 0;
-    int dcnt = (s && s->dh_window) ? s->dh_window_count : 0;
+    int vcnt = (s && s->v_window)  ? (int)obs_v_count(s)  : 0;
+    int dcnt = (s && s->dh_window) ? (int)obs_dh_count(s) : 0;
     Value *rel = make_list_heap(vcnt > 0 ? vcnt : 1);
     Value *raw = make_list_heap(vcnt > 0 ? vcnt : 1);
     Value *dh  = make_list_heap(dcnt > 0 ? dcnt : 1);
@@ -1248,6 +1355,10 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     dict_set_owned(out, "last_value",   make_num((s && s->v_used) ? s->last_value : 0.0));
     dict_set_owned(out, "observed",     make_num(s ? (s->used != 0) : 0));
     dict_set_owned(out, "numeric",      make_num(s ? (s->v_used != 0) : 0));
+    /* #1044: the depth this slot classifies over travels with the snapshot,
+     * so `classify of (trajectory of x)` agrees with `report of x` for a
+     * binding carrying a per-binding override. */
+    dict_set_owned(out, "window",       make_num((double)observer_slot_window(s)));
     return out;
 }
 
@@ -1267,13 +1378,27 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     if (!rel || rel->type != VAL_LIST || !raw || raw->type != VAL_LIST ||
         !dh || dh->type != VAL_LIST)
         return 0;
-    /* Only the most recent OBSERVER_WINDOW_N entries matter — a hand-built
-     * longer list classifies identically to its tail, same ring semantics. */
+    /* #1044: a snapshot carries the depth it was taken at (a hand-built dict
+     * may omit it — the state default then applies). Out of range means a
+     * malformed snapshot, refused like any other wrong shape. */
+    {
+        Value *w = dict_get(dict, "window");
+        if (w) {
+            if (w->type != VAL_NUM || w->data.num < OBSERVER_WINDOW_MIN ||
+                w->data.num > OBSERVER_WINDOW_MAX || w->data.num != (int)w->data.num)
+                return 0;
+            out->win_override = (uint8_t)(int)w->data.num;
+        }
+    }
+    const int N = observer_slot_window(out);
+    /* Only the most recent N entries matter — a hand-built longer list
+     * classifies identically to its tail, same ring semantics. */
     int vcnt = rel->data.list.count;
     if (raw->data.list.count < vcnt) vcnt = raw->data.list.count;
-    int vstart = vcnt > OBSERVER_WINDOW_N ? vcnt - OBSERVER_WINDOW_N : 0;
-    out->v_window  = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
-    out->vr_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+    int vstart = vcnt > N ? vcnt - N : 0;
+    out->v_window  = xcalloc((size_t)N, sizeof(double));
+    out->vr_window = xcalloc((size_t)N, sizeof(double));
+    out->v_cap = out->dh_cap = (uint8_t)N;
     for (int i = vstart; i < vcnt; i++) {
         Value *a = rel->data.list.items[i], *b = raw->data.list.items[i];
         if (!a || a->type != VAL_NUM || !b || b->type != VAL_NUM) {
@@ -1285,10 +1410,10 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         out->vr_window[out->v_window_count] = b->data.num;
         out->v_window_count++;
     }
-    out->v_window_head = (uint8_t)(out->v_window_count % OBSERVER_WINDOW_N);
+    out->v_window_head = (uint8_t)(out->v_window_count % N);
     int dcnt = dh->data.list.count;
-    int dstart = dcnt > OBSERVER_WINDOW_N ? dcnt - OBSERVER_WINDOW_N : 0;
-    out->dh_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+    int dstart = dcnt > N ? dcnt - N : 0;
+    out->dh_window = xcalloc((size_t)N, sizeof(double));
     for (int i = dstart; i < dcnt; i++) {
         Value *a = dh->data.list.items[i];
         if (!a || a->type != VAL_NUM) {
@@ -1298,7 +1423,7 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         }
         out->dh_window[out->dh_window_count++] = a->data.num;
     }
-    out->dh_window_head = (uint8_t)(out->dh_window_count % OBSERVER_WINDOW_N);
+    out->dh_window_head = (uint8_t)(out->dh_window_count % N);
     Value *v;
     if ((v = dict_get(dict, "entropy"))      && v->type == VAL_NUM) out->entropy = v->data.num;
     if ((v = dict_get(dict, "dH"))           && v->type == VAL_NUM) out->dH = v->data.num;

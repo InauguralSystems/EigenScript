@@ -112,9 +112,13 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.4142135623
 - `report of x` returns the routed state string (value channel for numeric
   bindings, entropy channel otherwise); `report_value of x` uses the value
   channel explicitly. Both read the named binding's trajectory.
-- `converged` needs LOW absolute entropy on top of a settled window: a value
-  pinned at `5.0` reports `stable`, never `converged`; pinned at `0.0`/`1.0` it
-  converges. Don't guess the predicate — see docs/PREDICATES.md.
+- Numeric verdicts are over the value's RELATIVE step, `Δv / max(|v|, |v_prev|,
+  scale)`, N samples deep: unit-free above `scale` (`set_observer_scale`,
+  default 1e-3), an absolute floor `dh_zero*scale` below it; a decay toward
+  zero reads `improving` until inside the scale. A mode slower than N samples
+  of your cadence cannot fold in the window — `set_observer_window of ["x", n]`
+  (4..64; default 10, `set_observer_window of n`) so N >= period/step.
+  Don't guess the predicate — see docs/PREDICATES.md.
 - Temporal reads: `prev of x` (value before the last assignment),
   `what is x at 12` / `state_at of 12` (past-line state). Bare `x at 12` is a
   parse error. Wrap hot loops in `unobserved:` to skip the observer's entropy

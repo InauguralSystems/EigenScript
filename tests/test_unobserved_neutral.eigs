@@ -25,7 +25,10 @@ define run1(elide_init) as:
         b is 0.0
     hits is []
     verdicts is []
-    amp is 0.0004
+    amp is 0.0000004                   # #1045: "sub-deadband" is now under the
+                                       # ABSOLUTE floor dh_zero*scale = 1e-6 (a
+                                       # 4e-4 wobble around zero is 40% of the
+                                       # scale — real motion, not settled)
     k is 0
     loop while k < 40:
         b is amp * (k % 2)             # settled: a decaying sub-deadband wobble
@@ -81,7 +84,7 @@ assert_eq of [str of u2[0], str of o2[0], "P2 hit indices identical with read 50
 unobserved:  # lint: allow W020 -- elided initialiser, name path
     nu is 0.0
 no is 0.0
-namp is 0.0004
+namp is 0.0000004                      # #1045: under the absolute floor (see P1)
 nk is 0
 n_hits_o is []
 n_hits_u is []

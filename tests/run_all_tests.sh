@@ -2855,6 +2855,17 @@ check_eigs_suite "unobserved: elided samples still enter the value window; entro
     test_unobserved_neutral.eigs "All tests passed" 26
 echo ""
 
+# [51b] #1044/#1045: the value channel's window depth (set_observer_window,
+# per state and per binding) and characteristic scale (set_observer_scale).
+# Closed-form stand-ins for phugoid's oracle: the rad/deg/mrad triplet gives
+# one verdict, rounding noise around zero certifies, a geometric decay is
+# `improving` until inside the scale, and the 1 Hz phugoid reads oscillating
+# (never diverging) once its binding's window covers a period.
+echo "[51b] Observer Window Depth + Characteristic Scale (#1044, #1045)"
+check_eigs_suite "scale-free relative step; per-state/per-binding window depth" \
+    test_observer_window_scale.eigs "All tests passed" 34
+echo ""
+
 # [52] Stream I/O
 echo "[52] Stream Tensor I/O"
 SI_OUTPUT=$(./eigenscript ../tests/test_stream_io.eigs 2>&1); SI_OUTPUT_RC=$?

@@ -95,6 +95,10 @@ lines are the three thresholds:
 ```eigenscript
 set_observer_thresholds of [dh_zero, dh_small, h_low]
 # defaults: 0.001, 0.01, 0.1
+set_observer_scale of scale      # the value channel's "what counts as zero" (#1045)
+# default: 0.001
+set_observer_window of n         # how many samples a verdict spans (#1044)
+# default: 10; per binding: set_observer_window of ["x", n]
 ```
 
 So `set_observer_thresholds` is not a minor tuning footnote. **It is the
@@ -169,8 +173,15 @@ in the flat-entropy plateau around 5 — see #294.)
 
 `report_value of x` classifies the **value's own trajectory** instead, using
 the identical windowed logic and thresholds on the value's relative step
-`Δv/(1+|x|)` (relative, so the bands mean the same across value scales). On the
+`Δv / max(|x|, |x_prev|, scale)` (#1045 — relative to the step's own local
+scale, so the bands mean the same across value scales *and units*; `scale`,
+`set_observer_scale`, default `0.001`, is the magnitude below which a value
+counts as zero and the deadband turns absolute). On the
 same oracle it answers `moving`/`oscillating` — correctly never `converged`.
+The window the bands read is `N` samples deep — 10 by default,
+`set_observer_window` per state or per binding (#1044): a mode slower than
+`N` samples of the observation cadence cannot fold inside it, so size the
+window to the slowest mode you expect (PREDICATES.md "The window").
 Its vocabulary is `oscillating` (sign of `Δv` keeps flipping), `diverging`
 (non-vanishing same-sign steps — see below), `converged` (a full window of
 ~zero relative steps), `stable` (small relative steps, no flips), `moving`

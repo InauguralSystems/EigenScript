@@ -1,0 +1,245 @@
+# #1044 / #1045 — the value channel's window depth and characteristic scale.
+#
+# Both were found by phugoid grading observer verdicts against a physical
+# oracle (its tests/observer_check.eigs, tests/observer_lat_check.eigs):
+#
+#   #1045  rel = Δv/(1+|v|) was an ABSOLUTE deadband below |v| ~ 1, so one
+#          physical trajectory read `converged` stored in radians and `moving`
+#          in degrees. Now rel = Δv / max(|v|, |v_prev|, scale): unit-free above
+#          the characteristic scale (set_observer_scale, default 1e-3), an
+#          absolute floor dh_zero*scale below it.
+#   #1044  the window was a fixed 10 SAMPLES, so a mode slower than ~10 samples
+#          of the consumer's cadence could not fold inside it and read
+#          `diverging` on its rising quarter-cycles. set_observer_window of n
+#          (state default) and set_observer_window of ["x", n] (one binding)
+#          make the depth configurable, 4..64.
+#
+# The trajectories are closed-form stand-ins for the phugoid oracle's
+# (period, damping and magnitudes taken from the B747 approach data), so the
+# fixture is self-contained; the oracle programs themselves were rerun against
+# this build and flip exactly as the issues predicted (commit body).
+load_file of "lib/test.eigs"
+
+# ---------------------------------------------------------------- helpers
+# Verdict census over a replay: feed `chan` into a fresh binding, classify
+# after `warm` samples (a full window), return {verdict: count}.
+define census(chan, warm, win) as:
+    local z is 0.0
+    if win > 0:
+        set_observer_window of ["z", win]
+    local counts is {}
+    local i is 0
+    loop while i < (len of chan):
+        z is chan[i] + 0.0
+        if i >= warm:
+            local r is report of z
+            if has_key of [counts, r]:
+                counts[r] is counts[r] + 1
+            else:
+                counts[r] is 1
+        i is i + 1
+    return counts
+
+define count_of(counts, key) as:
+    if has_key of [counts, key]:
+        return counts[key]
+    return 0
+
+# ================================================================ #1045
+# --- (a) the unit triplet: the 747 spiral mode, bank angle 0.05 rad decaying
+# with t-half 14.9 s, replayed at 1 Hz in radians, degrees and milliradians.
+# Same physics, ONE verdict — and not `converged`: at t = 30 s the state is
+# still halving every 15 s (a ~4.6% step per sample).
+spiral is []
+t is 0
+loop while t <= 40:
+    append of [spiral, 0.05 * (pow of [2.0, 0.0 - t / 14.9])]
+    t is t + 1
+urad is 0.0
+udeg is 0.0
+umr is 0.0
+i is 0
+v_rad is ""
+v_deg is ""
+v_mr is ""
+loop while i < (len of spiral):
+    local s is spiral[i]
+    urad is s + 0.0
+    udeg is s * 57.29577951308232 + 0.0
+    umr is s * 1000.0 + 0.0
+    if i == 30:
+        v_rad is report of urad
+        v_deg is report of udeg
+        v_mr is report of umr
+    i is i + 1
+print of f"units: rad={v_rad} deg={v_deg} mrad={v_mr}"
+assert_eq of [v_deg, v_rad, "U1 radians and degrees give one verdict"]
+assert_eq of [v_mr, v_rad, "U2 radians and milliradians give one verdict"]
+assert_true of [v_rad != "converged", "U3 a state halving every 15 s is not converged (was `converged` in radians only)"]
+# the relative steps themselves agree across units (the scale is not reached)
+tr_rad is trajectory of urad
+tr_deg is trajectory of udeg
+assert_near of [tr_rad.rel[9], tr_deg.rel[9], 1e-12, "U4 the stored relative step is unit-free"]
+assert_near of [tr_rad.rel[9], 0.0 - 0.04545, 1e-3, "U5 rel is Δv over the step's own scale (~ -4.5% per sample at t-half 14.9 s)"]
+
+# --- (b) float noise around an exact zero is not motion: a value that is
+# analytically 0 but computed with rounding jitter must certify.
+nz is 0.0
+k is 0
+loop while k < 24:
+    nz is ((sin of (k * 1.0)) + (sin of (k * 1.0 + 3.141592653589793))) * 1e-1
+    k is k + 1
+assert_true of [(abs of nz) < 1e-15, "Z0 the probe really is rounding noise"]
+print of f"noise-around-zero: {report of nz}"
+assert_eq of [report of nz, "converged", "Z1 rounding noise around an exact zero reads converged"]
+assert_true of [converged of nz, "Z2 the converged predicate agrees"]
+
+# --- (c) a geometric decay toward zero reads improving, never converged, until
+# it is inside the scale — at ANY ratio, from any magnitude. The window-max
+# normalisation first proposed for #1045 fails exactly here (rel = (1-r)·r^9
+# certifies r = 0.3 at the first full window, 1e6·0.3^11 ≈ 1.8).
+define first_certified(x0, r, steps) as:
+    local x is x0
+    local k is 0
+    local hit_k is 0 - 1
+    local hit_x is 0.0
+    local mid is ""
+    loop while k < steps:
+        x is x * r
+        k is k + 1
+        if k == 15:
+            mid is report of x
+        if hit_k < 0:
+            if converged of x:
+                hit_k is k
+                hit_x is x
+    return [hit_k, hit_x, mid, x]
+
+d1 is first_certified of [1000000.0, 0.3, 60]
+print of f"decay 1e6*0.3^k: report@15={d1[2]} first converged at k={d1[0]} x={d1[1]}"
+assert_eq of [d1[2], "improving", "D1 1e6*0.3^15 = 14.3: still decaying -> improving (window-max would say converged)"]
+assert_true of [d1[0] > 0, "D2 the decay does certify eventually"]
+assert_true of [(abs of d1[1]) < (get_observer_scale of null), "D3 ... only once inside the characteristic scale"]
+d2 is first_certified of [8.0, 0.5, 60]
+print of f"decay 8*0.5^k: report@15={d2[2]} first converged at k={d2[0]} x={d2[1]}"
+assert_eq of [d2[2], "improving", "D4 8*0.5^15 = 2.4e-4: inside the scale but steps still 50% of |x| -> improving"]
+assert_true of [(abs of d2[1]) < 1e-6, "D5 certifies when a full window of steps sits under dh_zero*scale = 1e-6"]
+
+# --- the scale knob: raising it to 1 restores an absolute deadband of dh_zero
+# (the pre-#1045 shape) — the radians reading certifies while degrees move.
+set_observer_scale of 1.0
+assert_eq of [get_observer_scale of null, 1, "S0 get_observer_scale reads the knob"]
+srad is 0.0
+sdeg is 0.0
+i is 0
+loop while i < (len of spiral):
+    local s2 is spiral[i]
+    srad is s2 + 0.0
+    sdeg is s2 * 57.29577951308232 + 0.0
+    i is i + 1
+print of f"scale=1: rad={report of srad} deg={report of sdeg}"
+assert_eq of [report of srad, "converged", "S1 scale 1: sub-unit radians fall under the absolute deadband"]
+assert_true of [(report of sdeg) != "converged", "S2 scale 1: the same physics in degrees does not (the #1045 defect, now opt-in)"]
+set_observer_scale of 0.001
+
+# ================================================================ #1044
+# --- the 747 phugoid at 1 Hz: T = 46.9 s, lightly damped, riding on the trim
+# airspeed (~272 m/s, amplitude ~10 m/s — a 3.7% swing whose per-sample steps
+# stay above the deadband for the whole replay). Physics truth throughout:
+# oscillating.
+phug is []
+t is 0
+loop while t < 240:
+    local env_ is 10.0 * (exp of (0.0 - 0.003 * t))
+    append of [phug, 272.4 + env_ * (cos of (6.283185307179586 * t / 46.9))]
+    t is t + 1
+
+# control: at the default 10-sample window the fold is invisible — the census
+# over every full-window sample contains the alarm verdict `diverging`.
+c10 is census of [phug, 10, 0]
+print of f"phugoid @ N=10: {c10}"
+assert_true of [(count_of of [c10, "diverging"]) > 0, "P0 control: N=10 reads diverging on rising quarter-cycles (the #1044 defect)"]
+
+# fix: widen the binding's window to cover a period (50 >= 46.9 samples).
+c50 is census of [phug, 50, 50]
+print of f"phugoid @ N=50: {c50}"
+assert_eq of [count_of of [c50, "diverging"], 0, "P1 N=50: diverging never appears at a full window"]
+assert_eq of [count_of of [c50, "oscillating"], 240 - 50, "P2 N=50: every full-window sample reads oscillating"]
+
+# the three probe points, the oracle's shape (w1 widened, its sibling not)
+w1 is 0.0
+w10 is 0.0
+set_observer_window of ["w1", 50]
+assert_eq of [get_observer_window of "w1", 50, "P3 get_observer_window reads the override"]
+assert_eq of [get_observer_window of "w10", 10, "P4 the sibling binding keeps the default"]
+p1 is []
+p10 is []
+i is 0
+loop while i < (len of phug):
+    w1 is phug[i] + 0.0
+    w10 is phug[i] + 0.0
+    if i == 75 or i == 155 or i == 235:
+        append of [p1, report of w1]
+        append of [p10, report of w10]
+    i is i + 1
+print of f"probes N=50: {p1}   N=10: {p10}"
+assert_eq of [str of p1, "[\"oscillating\", \"oscillating\", \"oscillating\"]", "P5 the three probe points read oscillating"]
+assert_true of [(str of p10) != (str of p1), "P6 the override affected only its binding (the sibling still misreads)"]
+assert_true of [oscillating of w1, "P7 the named predicate agrees"]
+
+# the snapshot carries the depth: classify of (trajectory of w1) == report of w1
+tw is trajectory of w1
+assert_eq of [tw.window, 50, "P8 a trajectory snapshot records its window depth"]
+assert_eq of [len of tw.rel, 50, "P9 ... and holds that many steps"]
+assert_eq of [classify of tw, report of w1, "P10 classify of a snapshot agrees with the live verdict"]
+
+# clearing the override returns the binding to the default
+set_observer_window of ["w1", 0]
+assert_eq of [get_observer_window of "w1", 10, "P11 [name, 0] clears the override"]
+
+# the state default: applies to bindings that never set an override, live
+set_observer_window of 50
+assert_eq of [get_observer_window of null, 50, "P12 get_observer_window of null reads the default"]
+cdef is census of [phug, 50, 0]
+assert_eq of [count_of of [cdef, "diverging"], 0, "P13 the default depth governs an unoverridden binding"]
+set_observer_window of 10
+
+# a narrower window certifies sooner (four quiet steps)
+q is 5.0
+set_observer_window of ["q", 4]
+for j in range of 4:
+    q is 5.0
+assert_true of [converged of q, "P14 a 4-deep window certifies after four quiet steps"]
+q2 is 5.0
+for j in range of 4:
+    q2 is 5.0
+assert_false of [converged of q2, "P15 ... while the default 10-deep window does not yet"]
+
+# a fn-local reached by name (the string operand marks the local interrogated)
+define widen_local() as:
+    local zz is 0.0
+    set_observer_window of ["zz", 20]
+    return get_observer_window of "zz"
+assert_eq of [widen_local of null, 20, "P16 the per-binding form reaches a function local"]
+
+# the range is enforced loudly
+bad is 0
+try:
+    set_observer_window of 3
+catch e:
+    bad is bad + 1
+try:
+    set_observer_window of 65
+catch e:
+    bad is bad + 1
+try:
+    set_observer_window of ["no_such_binding", 12]
+catch e:
+    bad is bad + 1
+try:
+    set_observer_scale of 0
+catch e:
+    bad is bad + 1
+assert_eq of [bad, 4, "E1 out-of-range depth, unbound name and non-positive scale all raise"]
+
+test_summary of null

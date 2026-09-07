@@ -259,22 +259,34 @@ typedef struct {
 typedef struct ObserverSlot {
     double  entropy, last_entropy, dH, prev_dH;
     int     obs_age;
-    double *dh_window;          /* lazily allocated, OBSERVER_WINDOW_N doubles */
+    double *dh_window;          /* lazily allocated ring of dH values; dh_cap deep */
     uint8_t dh_window_head, dh_window_count;
     uint8_t used;               /* 1 once this slot has been observed */
     /* #294 value-signal channel: the entropy window above tracks
      * entropy(value) — a lossy proxy that goes flat in mid-magnitude regions
      * (so a real value-oscillation reads "stable"). This parallel window tracks
-     * the value's OWN relative step Δv/(1+|v|), so `report_value of x`
-     * classifies the value trajectory directly. Same windowed logic/thresholds
-     * as the entropy channel; only the observed signal differs. */
+     * the value's OWN relative step (#1045: Δv / max(|v|, |v_prev|, scale)),
+     * so `report_value of x` classifies the value trajectory directly. Same
+     * windowed logic/thresholds as the entropy channel; only the observed
+     * signal differs. */
     double  last_value;         /* last observed numeric value (Δv source) */
-    double *v_window;           /* lazily allocated, OBSERVER_WINDOW_N relative-deltas */
+    double *v_window;           /* lazily allocated ring of relative steps; v_cap deep */
     double *vr_window;          /* #422 raw deltas (Δv un-normalized), same head/count:
                                  * the non-vanishing-step signal that catches additive
                                  * runaway and sub-deadband oscillation, both of which
                                  * relative normalization erases */
     uint8_t v_window_head, v_window_count;
+    /* #1044: ring CAPACITIES (what is allocated) and the per-binding window
+     * OVERRIDE (what the classifiers read). The depth a slot classifies over
+     * is observer_slot_window(s): win_override when nonzero, else the
+     * state's default (set_observer_window of n, OBSERVER_WINDOW_N at
+     * start). A ring is allocated at that depth on first push and re-grown
+     * (samples preserved, oldest first) when the depth in force exceeds the
+     * capacity; a depth SMALLER than the capacity simply reads the newest
+     * `depth` samples. So the common case — default depth, never touched —
+     * allocates exactly what it did before #1044. */
+    uint8_t v_cap, dh_cap;
+    uint8_t win_override;       /* 0 = follow the state default */
     uint8_t v_used;             /* 1 once a numeric value has been recorded */
     uint8_t v_last;             /* #861: 1 iff the MOST RECENT observed
                                  * assignment was numeric. The predicates and
@@ -359,6 +371,17 @@ struct Value {
  * a full window (count == OBSERVER_WINDOW_N) for "converged"-class
  * checks and a partial window (count >= 3) for trend-class checks. */
 #define OBSERVER_WINDOW_N 10
+/* #1044: the per-state default is set_observer_window of n; the per-binding
+ * form set_observer_window of ["x", n] overrides one slot. Both are clamped
+ * to [OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX]: the motion bands need two
+ * samples per half-window (4), and the ring counters are 8-bit. */
+#define OBSERVER_WINDOW_MIN 4
+#define OBSERVER_WINDOW_MAX 64
+/* Effective window depth of a slot (see the ObserverSlot comment). */
+int observer_slot_window(const struct ObserverSlot *s);
+/* Set / clear a binding's per-slot override (n == 0 clears). Grows the env's
+ * slot table if needed; returns 0 on OOM. */
+int observer_slot_set_window(struct Env *e, int idx, int n);
 
 /* Returns the current fill of v's dH window (0..OBSERVER_WINDOW_N). */
 size_t observer_window_size(const Value *v);
@@ -599,6 +622,8 @@ struct EigsState {
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
+    int             obs_window;     /* #1044 default value/dH window depth (default OBSERVER_WINDOW_N) */
+    double          obs_scale;      /* #1045 characteristic scale: rel = Δv / max(|v|, |v_prev|, obs_scale) (default 0.001) */
     /* #971: strict mode. Off by default — a wrong-typed or out-of-domain
      * argument gets a finite stand-in (NaN→0, domain clamps substitute,
      * overflow saturates, `cos of "hello"` → 0). On (EIGS_STRICT=1, read
@@ -1078,6 +1103,8 @@ extern __thread EigsThread *eigs_current;
 #define g_obs_dh_zero       (eigs_current->state->obs_dh_zero)
 #define g_obs_dh_small      (eigs_current->state->obs_dh_small)
 #define g_obs_h_low         (eigs_current->state->obs_h_low)
+#define g_obs_window        (eigs_current->state->obs_window)
+#define g_obs_scale         (eigs_current->state->obs_scale)
 #define g_global_env          (eigs_current->state->global_env)
 #define g_script_dir          (eigs_current->state->script_dir)
 #define g_exe_dir             (eigs_current->state->exe_dir)

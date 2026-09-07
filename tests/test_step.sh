@@ -28,16 +28,19 @@ if [ ! -x "$EIGS" ]; then
 fi
 
 # ---- fixture: an oscillator, a halving (converging) binding, a string,
-# and one nondet call. 30 halvings of 1024 push the relative step below
-# dh_zero (0.001) with a full 10-wide window to spare -> [converged];
-# the +1/-1 alternation sign-flips every step -> [oscillating].
+# and one nondet call. 40 halvings of 1024 push the step below the absolute
+# settle floor dh_zero*scale (1e-3 * 1e-3 = 1e-6, #1045 — a value inside the
+# characteristic scale settles on |dv|, above it on dv/|v|) with a full
+# 10-wide window to spare -> [converged]; 30 halvings only reached 9.5e-7
+# on the LAST step, one under the floor, so the window still read
+# [improving]. The +1/-1 alternation sign-flips every step -> [oscillating].
 FIX="$TMPDIR/fix.eigs"
 cat > "$FIX" <<'EOF'
 osc is 1
 conv is 1024
 msg is "hello"
 seed is random of null
-for i in range of 30:
+for i in range of 40:
     osc is 0 - osc
     conv is conv / 2
 print of conv
@@ -116,7 +119,7 @@ echo "$OUT" | grep -q "line 8" && echo "$OUT" | grep -q "line 1" \
 
 # ---- 8. trajectory view: per-assign running labels
 OUT=$(drive "s 200" "t conv" q)
-echo "$OUT" | grep -q "^conv: 31 assigns" \
+echo "$OUT" | grep -q "^conv: 41 assigns" \
     && echo "$OUT" | grep -q "earlier assign(s) elided" \
     && echo "$OUT" | grep -Eq "\[improving\]" \
     && echo "$OUT" | grep -Eq "\[converged\]" \

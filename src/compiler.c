@@ -1311,6 +1311,27 @@ static void stamp_local_traced(EigsChunk *ch, NameSet *interrogated) {
         ch->local_traced[i] = ch->local_names[i] && name_set_has(interrogated, ch->local_names[i]) ? 1 : 0;
 }
 
+/* #1044: `set_observer_window of ["x", n]` / `get_observer_window of "x"`
+ * name a binding by STRING at runtime, so the builtin resolves it through
+ * the env chain exactly as `eval` would — and a plain fn-local is a bare
+ * slot with no env name unless something interrogates it. A string-literal
+ * operand is therefore treated as an interrogation of that name (the same
+ * slow path `when is x` buys), so the per-binding knob reaches locals. A
+ * computed name (a variable holding "x") cannot be scanned and only
+ * reaches name-resolvable bindings; the builtin raises on a miss. */
+static void scan_window_name_arg(ASTNode *node, NameSet *out) {
+    ASTNode *fn = node->data.relation.left, *arg = node->data.relation.right;
+    if (!fn || fn->type != AST_IDENT || !arg) return;
+    if (strcmp(fn->data.ident.name, "set_observer_window") != 0 &&
+        strcmp(fn->data.ident.name, "get_observer_window") != 0) return;
+    ASTNode *lit = NULL;
+    if (arg->type == AST_STR) lit = arg;
+    else if (arg->type == AST_LIST && arg->data.list.count >= 1 &&
+             arg->data.list.elems[0] && arg->data.list.elems[0]->type == AST_STR)
+        lit = arg->data.list.elems[0];
+    if (lit && lit->data.str) name_set_add(out, lit->data.str);
+}
+
 static void scan_for_interrogated(ASTNode *node, NameSet *out) {
     if (!node) return;
     switch (node->type) {
@@ -1331,6 +1352,7 @@ static void scan_for_interrogated(ASTNode *node, NameSet *out) {
         scan_for_interrogated(node->data.unary.operand, out);
         break;
     case AST_RELATION:
+        scan_window_name_arg(node, out);
         scan_for_interrogated(node->data.relation.left, out);
         scan_for_interrogated(node->data.relation.right, out);
         break;

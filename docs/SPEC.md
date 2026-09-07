@@ -1290,10 +1290,13 @@ print of converged
 
 For a **numeric** binding the predicates classify the value's own
 trajectory (#861): the observed signal is the relative step
-`Δv/(1+|v|)` — the standard mixed-tolerance stopping criterion, with
-the settle deadband as the tolerance — so the starting value and the
-limit's magnitude do not matter. A loop converging to `5`, `5000` or
-`0.005` certifies identically. Non-numeric bindings (strings,
+`Δv / max(|v|, |v_prev|, scale)` (#1045) — the standard mixed-tolerance
+stopping criterion `|Δx| ≤ rtol·|x|` with the settle deadband as `rtol`
+and `dh_zero · scale` as the absolute floor (`scale` is
+`set_observer_scale`, default `0.001`) — so the starting value, the
+limit's magnitude and the **unit** the value is stored in do not matter.
+A loop converging to `5`, `5000` or `0.005` certifies identically, and a
+bank angle reads the same in radians and degrees. Non-numeric bindings (strings,
 containers) classify their entropy trajectory as before; the entropy
 MEASUREMENT (`where is x`) is unchanged for everything.
 
@@ -1425,8 +1428,12 @@ diverging
 
 **The value channel** (`report_value of x`) is, since #861, the same
 classifier the predicate words and `report` use on numeric bindings —
-the two surfaces cannot disagree about one trajectory. Over a 10-sample
-window of relative steps `Δv/(1+|v|)`: `converged` is a full window all
+the two surfaces cannot disagree about one trajectory. Over a window of
+relative steps `Δv / max(|v|, |v_prev|, scale)` — `N` samples deep, 10
+by default, `set_observer_window of n` per state or
+`set_observer_window of ["x", n]` per binding (#1044; a mode slower than
+`N` samples of the observation cadence cannot fold inside the window) —
+`converged` is a full window all
 under the settle deadband; `stable` all under the small-motion band;
 `equilibrium` zero-mean, variance under deadband²; `improving` monotone
 steps contracting geometrically (a summable tail — genuinely closing on
@@ -1440,8 +1447,10 @@ path length — a sinusoid sampled slower than its half-period).
 not imply a limit (the harmonic series' steps vanish; its sum does not
 converge), so it means *settled at the deadband* — the strongest claim a
 finite window supports. The deadband is the tolerance knob
-(`set_observer_thresholds`); the structure rules are deliberately
-threshold-free.
+(`set_observer_thresholds`), the characteristic scale
+(`set_observer_scale`) is where the tolerance turns absolute, and the
+window depth (`set_observer_window`) is how many samples a verdict
+spans; the structure rules are deliberately threshold-free.
 
 **Trajectories cross call boundaries as snapshots** (#421). Observer state
 is binding-identity — a value passed to a function arrives with no history —

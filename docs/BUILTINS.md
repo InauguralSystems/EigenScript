@@ -28,7 +28,9 @@ streaming subprocess I/O (`proc_spawn`, `proc_write`, `proc_read_line`,
 `sha256_file`, `md5_file`, `hmac_sha256`), EigenStore (`store_open`,
 `store_close`, `store_put`, `store_get`, `store_delete`, `store_query`,
 `store_count`, `store_update`, `store_collections`, `store_drop`),
-observer tuning (`set_observer_thresholds`, `get_observer_thresholds`),
+observer tuning (`set_observer_thresholds`, `get_observer_thresholds`,
+`set_observer_scale`, `get_observer_scale`, `set_observer_window`,
+`get_observer_window`),
 audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 `audio_play_loop`, `audio_volume`, `audio_stop`, `audio_queue_size`, `audio_clear`, `audio_sine`,
 `audio_saw`, `audio_sweep`,
@@ -271,6 +273,12 @@ Query a binding's assignment history. Always on for top-level bindings;
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `observe` | `observe of value` | Return [status, entropy, dH, prev_dH] snapshot |
+| `set_observer_thresholds` | `set_observer_thresholds of [dh_zero, dh_small, h_low]` | Set the classification thresholds (defaults 0.001 / 0.01 / 0.1); `dh_zero < dh_small`, all positive, else raises. Process-global for the state; blocked in the sandbox |
+| `get_observer_thresholds` | `get_observer_thresholds of null` | `[dh_zero, dh_small, h_low]` |
+| `set_observer_scale` | `set_observer_scale of s` | #1045: the value channel's characteristic scale — the magnitude below which a value counts as zero. The relative step is `Δv / max(\|v\|, \|v_prev\|, s)`: unit-free above `s`, an absolute deadband `dh_zero·s` below it. Default `0.001`; choose it in the unit the binding is stored in. Non-positive raises |
+| `get_observer_scale` | `get_observer_scale of null` | The characteristic scale |
+| `set_observer_window` | `set_observer_window of n` / `set_observer_window of ["x", n]` | #1044: the window depth (samples) every verdict classifies over, `4..64`. The bare form sets the state default (10 at start), live; the list form overrides one binding, resolved by name from the call site (a string literal also marks a function local interrogated so plain locals are reachable), `n = 0` clears it. A mode slower than `n` samples of the observation cadence cannot fold inside the window — size it to the slowest mode. Unbound name / out-of-range depth raise |
+| `get_observer_window` | `get_observer_window of null` / `get_observer_window of "x"` | The default depth, or the depth in force on binding `x` |
 | `classify` | `classify of t` or `classify of [t, "entropy"]` | Classify a trajectory snapshot (from `trajectory of x`, #421): value-channel label by default, entropy-channel with `"entropy"`. Raises `type_mismatch` on a non-snapshot — a bare value never silently classifies |
 
 **`report` and `report_value` are reserved** (#1102). They cannot be bound or

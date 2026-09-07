@@ -327,8 +327,10 @@ sqrt(2) = 1.414213562373095
 ```
 
 `converged` reads the loop's last-assigned value and fires once a full
-window of its relative steps sits under the settle deadband — the standard
-mixed-tolerance stopping criterion, built in (#861). This run exits
+window of its relative steps (`Δv` over the step's own scale, #1045 — so
+the unit the value is stored in does not matter) sits under the settle
+deadband — the standard mixed-tolerance stopping criterion, built in
+(#861). This run exits
 through the predicate itself in 13 iterations; the deadband is the
 tolerance (`set_observer_thresholds`), and an input that genuinely
 diverges ends via the observer's stall backstop with

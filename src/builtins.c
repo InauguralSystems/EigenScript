@@ -639,6 +639,121 @@ Value* builtin_get_observer_thresholds(Value *arg) {
     return result;
 }
 
+/* #1044: the observer window depth.
+ *
+ * The bare form (a number) sets the per-state DEFAULT depth in samples
+ * that every value-channel and entropy-channel verdict classifies over:
+ * 4..64, 10 at start. Read live, like the thresholds: a binding already
+ * carrying a trajectory classifies over the new depth at its next verdict
+ * (its ring grows on the next sample; a smaller depth reads fewer
+ * samples). The list form (["x", n]) is a per-BINDING override on the
+ * binding `x` visible from the call site (the same scope walk `report of
+ * x` does), affecting only that slot; n == 0 clears it back to the
+ * default. An unbound name raises — there is no slot to widen. Both
+ * return null.
+ *
+ * Why a depth knob: the window is in SAMPLES, and a mode slower than ~N
+ * samples of the consumer's cadence cannot fold inside it — the phugoid
+ * (T = 46.9 s) observed at 1 Hz read `diverging` on its rising quarter
+ * cycles with the fixed 10. Widening the binding's window to cover a
+ * period lets the folding rule see the fold. The ceiling is the ring
+ * counters' width; the floor is the motion bands' two-samples-per-half. */
+static int obs_window_arg(Value *v, const char *who) {
+    if (!v || v->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "%s: window depth must be a number", who);
+        return -1;
+    }
+    double d = v->data.num;
+    if (d != (int)d || d < OBSERVER_WINDOW_MIN || d > OBSERVER_WINDOW_MAX) {
+        rt_error(EK_VALUE, 0, "%s: window depth must be an integer in [%d, %d], got %g",
+                 who, OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX, d);
+        return -1;
+    }
+    return (int)d;
+}
+
+/* set_observer_window of n | ["x", n] — set the default (n) or one binding's (["x", n]) observer window depth, 4..64 samples. */
+Value* builtin_set_observer_window(Value *arg) {
+    if (arg && arg->type == VAL_LIST) {
+        if (arg->data.list.count != 2 || !arg->data.list.items[0] ||
+            arg->data.list.items[0]->type != VAL_STR) {
+            rt_error(EK_TYPE, 0, "set_observer_window requires n or [\"name\", n]");
+            return make_null();
+        }
+        const char *name = arg->data.list.items[0]->data.str;
+        Value *nv = arg->data.list.items[1];
+        int n;
+        if (nv && nv->type == VAL_NUM && nv->data.num == 0.0) {
+            n = 0;   /* clear the override */
+        } else {
+            n = obs_window_arg(nv, "set_observer_window");
+            if (n < 0) return make_null();
+        }
+        Env *start = g_builtin_call_env ? g_builtin_call_env : g_global_env;
+        int slot = -1, depth = 0;
+        Env *target = env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
+        if (!target || slot < 0) {
+            rt_error(EK_UNDEFINED_NAME, 0, "set_observer_window: no binding named '%s'", name);
+            return make_null();
+        }
+        if (!observer_slot_set_window(target, slot, n)) {
+            rt_error(EK_LIMIT, 0, "set_observer_window: observer slot table full");
+            return make_null();
+        }
+        return make_null();
+    }
+    int n = obs_window_arg(arg, "set_observer_window");
+    if (n < 0) return make_null();
+    g_obs_window = n;
+    return make_null();
+}
+
+/* get_observer_window of null | "x" — the default window depth, or the depth in force on binding "x". */
+Value* builtin_get_observer_window(Value *arg) {
+    if (arg && arg->type == VAL_STR) {
+        const char *name = arg->data.str;
+        Env *start = g_builtin_call_env ? g_builtin_call_env : g_global_env;
+        int slot = -1, depth = 0;
+        Env *target = env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
+        if (!target || slot < 0) {
+            rt_error(EK_UNDEFINED_NAME, 0, "get_observer_window: no binding named '%s'", name);
+            return make_null();
+        }
+        const ObserverSlot *s = (slot < target->obs_cap) ? env_obs_slot(target, slot) : NULL;
+        return make_num((double)observer_slot_window(s));
+    }
+    return make_num((double)observer_slot_window(NULL));
+}
+
+/* #1045: the characteristic scale of the value channel — the magnitude
+ * below which a value counts as "at zero". The relative step is
+ * Δv / max(|v|, |v_prev|, scale): above the scale a verdict is unit-free
+ * (the same physics stored in radians, degrees or milliradians reads the
+ * same); below it the deadband turns absolute (|Δv| < dh_zero·scale), so
+ * float noise around an exact zero is not motion. Default 0.001. Choose it
+ * in the unit the binding is stored in — it is the one number a unit
+ * choice still touches. */
+/* set_observer_scale of s — set the value channel's characteristic scale (the |v| below which a value counts as zero), s > 0. */
+Value* builtin_set_observer_scale(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "set_observer_scale requires a number");
+        return make_null();
+    }
+    double sc = arg->data.num;
+    if (!(sc > 0.0) || sc > 1e300) {
+        rt_error(EK_VALUE, 0, "observer scale must be positive and finite, got %g", sc);
+        return make_null();
+    }
+    g_obs_scale = sc;
+    return make_null();
+}
+
+/* get_observer_scale of null — the value channel's characteristic scale. */
+Value* builtin_get_observer_scale(Value *arg) {
+    (void)arg;
+    return make_num(g_obs_scale);
+}
+
 /* exit of N — request a clean process exit with code N (default 0). Sets the
  * unwind flag (g_has_error) so vm_run returns to main, plus g_exit_requested so
  * the unwind is UNCATCHABLE (a `try` must not swallow `exit`) and main exits
@@ -6659,6 +6774,10 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "report", make_builtin(builtin_report));
     env_set_local_owned(env, "set_observer_thresholds", make_builtin(builtin_set_observer_thresholds));
     env_set_local_owned(env, "get_observer_thresholds", make_builtin(builtin_get_observer_thresholds));
+    env_set_local_owned(env, "set_observer_window", make_builtin(builtin_set_observer_window));
+    env_set_local_owned(env, "get_observer_window", make_builtin(builtin_get_observer_window));
+    env_set_local_owned(env, "set_observer_scale", make_builtin(builtin_set_observer_scale));
+    env_set_local_owned(env, "get_observer_scale", make_builtin(builtin_get_observer_scale));
     env_set_local_owned(env, "assert", make_builtin(builtin_assert));
     env_set_local_owned(env, "exit", make_builtin(builtin_exit));
     env_set_local_owned(env, "throw", make_builtin(builtin_throw));
