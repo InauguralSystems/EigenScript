@@ -185,6 +185,17 @@ An explicit arm is consumed at one eval compilation boundary; call it again
 before each unit whose assignments the host will interrogate directly. Arming
 by a source scan or by internal runtime code does not create that host request.
 
+**The gap flag is truthful immediately (#1114).** When an isolated unit
+executes with the gate closed, `obs_history_gap` is set before that
+`eigs_eval_string`/`eigs_eval_file` call returns -- not at the next eval
+boundary. A host that consults the flag as a secondary trust check around a
+direct `observer_predicate_at` call between units is therefore never told
+"history complete" for a unit that ran unrecorded. The predicate *answer*
+itself is still computed from whatever window was recorded (direct reads
+bypass the eval guard, as above); the flag, not the answer, is the host's
+signal to distrust it. The armed recipe is unchanged: an explicitly armed unit
+records, and the flag stays 0 after it.
+
 ```c
 eigs_set_eval_observer_isolated(1);
 eigs_obs_enable();
@@ -225,7 +236,8 @@ correct cross-unit queries even with the opt-in enabled.
 The regression instrument is `bash tests/test_embed_observer.sh`: native slot
 updates and assembled bytecode without compilation, default cross-unit history,
 isolated read-free units, a rejected cross-unit read, retained functions and the
-force-on recovery path, plus C callback observation and late registration. It uses the same build variant as `src/eigenscript`,
+force-on recovery path, plus C callback observation and late registration, and
+the immediate gap flag at a direct read after a closed unit (#1114). It uses the same build variant as `src/eigenscript`,
 including ASan, and is enrolled in the full suite.
 The [validation record](EMBED_OBSERVER_VALIDATION.md) contains the baseline
 reproducer, planted-fault output and measurement setup.

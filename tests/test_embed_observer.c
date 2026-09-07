@@ -194,6 +194,33 @@ static void isolated_host(void) {
     check(!g_obs_needed, "isolated host: explicit pin is consumed by one unit");
     eigs_close(st);
 }
+/* #1114: the gap flag must be truthful the moment a closed unit finishes,
+ * not one eval boundary later. Armed unit, then an UN-armed read-free unit
+ * that reassigns x (runs closed), then a DIRECT predicate read from C. The
+ * answer itself is computed from the stale window (documented: direct reads
+ * bypass the eval guard); the flag is what tells the host not to trust it. */
+static void isolated_gap_truth(void) {
+    EigsState *st = eigs_open();
+    if (!st) { check(0, "isolated gap: open state"); return; }
+    eigs_set_eval_observer_isolated(1);
+    eigs_obs_enable();
+    eval_ok(series, "isolated gap: armed unit executes");
+    check(g_obs_needed && !g_obs_history_gap,
+          "isolated gap: armed unit leaves no gap");
+    eval_ok("x is 1000\nx is 2000\nx\n",
+            "isolated gap: un-armed reassigning unit executes");
+    check(!g_obs_needed, "isolated gap: un-armed unit ran closed");
+    int slot = -1;
+    for (int i = 0; i < g_global_env->count; i++)
+        if (!strcmp(g_global_env->names[i], "x")) { slot = i; break; }
+    int answer = slot < 0 ? -1 : observer_predicate_at(g_global_env, slot, 2, 1);
+    printf("isolated gap: DIRECT improving=%d obs_needed=%d gap=%d\n",
+           answer, g_obs_needed, g_obs_history_gap);
+    check(g_obs_history_gap,
+          "isolated gap: flag is set before the next eval boundary");
+    gap("improving of x", "isolated gap: eval-unit read after the direct read still raises");
+    eigs_close(st);
+}
 static void eval_contract(void) {
     /* A native host can load/compile a module without routing through the
      * eval API. That module's verdict says nothing about the C caller. */
@@ -285,11 +312,12 @@ int main(int argc, char **argv) {
     if (!direct_only && !isolated_only) raw_host();
     if (!raw_only && !isolated_only) direct();
 #ifndef EIGS_OBS_BASELINE_ONLY
-    if (isolated_only) isolated_host();
+    if (isolated_only) { isolated_host(); isolated_gap_truth(); }
     else if (!raw_only && !direct_only) {
         raw_compile_then_arm();
         eval_contract();
         isolated_host();
+        isolated_gap_truth();
     }
 #endif
     printf("embed observer: %d passed, %d failed\n", passed, failed);
