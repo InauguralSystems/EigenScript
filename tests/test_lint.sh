@@ -4,6 +4,28 @@ set -e
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="$TESTS_DIR/../src/eigenscript"
 
+# --- #1121: make a sanitizer diagnostic from ANY child visible to this file ---
+# Almost every assertion below captures the linter's text with `2>&1` and drops
+# its exit status with `|| true`, because the question being asked is about the
+# text. That is right for the text and blind to the process. #1121 leaked 1440
+# bytes on the #455 allow-list shape for as long as that block has existed: the
+# linter exited 1 under ASan on all five of its runs, and
+# `check_not_contains ... "W017"` was satisfied every time, because a
+# LeakSanitizer report does not contain the string "W017".
+#
+# Rewriting 151 call sites to capture rc would churn every assertion in the file
+# and still only cover the calls that exist today. Instead, point the sanitizer
+# runtime at a log DIRECTORY: with log_path set, a report is written to
+# "<prefix>.<pid>" instead of stderr, so a diagnostic from any child — present
+# or future, --lint or not — leaves a file behind. The ledger at the bottom of
+# this file turns any such file into a FAIL naming it.
+#
+# Appended, never assigned: run_all_tests.sh sets detect_leaks=1 and that must
+# survive. Harmless in a release build, where nothing writes these files.
+SAN_LOG_DIR=$(mktemp -d /tmp/lint_san_XXXXXX)
+export ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}log_path=$SAN_LOG_DIR/asan"
+export UBSAN_OPTIONS="${UBSAN_OPTIONS:+$UBSAN_OPTIONS:}log_path=$SAN_LOG_DIR/ubsan"
+
 PASS=0
 FAIL=0
 TOTAL=0
@@ -2441,6 +2463,25 @@ EIGS
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "#1048 '# lint: allow W024' suppresses it" "$OUTPUT" "W024"
 rm -f "$TMPFILE"
+
+# --- #1121 ledger: no child of this file may have tripped a sanitizer ---
+# One check, covering every linter invocation above rather than a sample. In a
+# release build no file is ever written and this passes trivially, which is
+# correct: it is the ASan leg that has the instrument.
+TOTAL=$((TOTAL + 1))
+SAN_FILES=$(ls "$SAN_LOG_DIR" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$SAN_FILES" = "0" ]; then
+    echo "  PASS: #1121 no sanitizer diagnostic from any linter invocation in this file"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: #1121 $SAN_FILES sanitizer diagnostic(s) from linter invocations in this file"
+    for f in "$SAN_LOG_DIR"/*; do
+        echo "    --- $(basename "$f") ---"
+        grep -E "SUMMARY:|runtime error:" "$f" 2>/dev/null | head -3 | sed 's/^/    /'
+    done
+    FAIL=$((FAIL + 1))
+fi
+rm -rf "$SAN_LOG_DIR"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
