@@ -5895,7 +5895,7 @@ echo ""
 # nonzero rc (124/127) still diffs into a row. The full corpus run stays a
 # CI job, not a suite section. The case count is pinned, not ">0": a gate
 # reduced to one echo satisfies "at least one case passed".
-echo "[99q] replay_diff crash gate: a signal exit is never a boundary (#1112)"
+echo "[136] replay_diff crash gate: a signal exit is never a boundary (#1112)"
 TOTAL=$((TOTAL + 1))
 RDS_OUTPUT=$(bash "$TESTS_DIR/../tools/replay_diff.sh" --selftest 2>&1); RDS_RC=$?
 RDS_OK=$(printf '%s\n' "$RDS_OUTPUT" | grep -c "  selftest ok:" || true)
@@ -5925,7 +5925,7 @@ echo ""
 # because the distinction between a fail-soft guard and a documented ANSWER is
 # not derivable from the code — `task_alive` has one of each, four lines apart.
 # The gate proves a DECISION WAS RECORDED, nothing more; whether the decision
-# is right is what [99q]'s pins assert.
+# is right is what [99s]'s pins assert.
 echo "[99r] Fail-soft classification gate (#971)"
 TOTAL=$((TOTAL + 1))
 if bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" >/dev/null && \
