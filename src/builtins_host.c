@@ -43,6 +43,14 @@ int resolve_eigenscript_file_from_ex(const char *base, const char *path,
     return 0;
 }
 
+int eigs_import_resolve(const char *base, const char *name,
+                        char *resolved, size_t resolved_cap,
+                        char *shadowed, size_t shadowed_cap) {
+    (void)base; (void)name; (void)resolved; (void)resolved_cap;
+    if (shadowed && shadowed_cap) shadowed[0] = '\0';
+    return 0;   /* nothing resolves without a filesystem */
+}
+
 #else /* host profile */
 
 #include <termios.h>
@@ -1012,6 +1020,63 @@ int resolve_eigenscript_file_from_ex(const char *base, const char *path,
 int resolve_eigenscript_file_from(const char *base, const char *path,
                                    char *resolved, size_t resolved_cap) {
     return resolve_eigenscript_file_from_ex(base, path, resolved, resolved_cap, NULL);
+}
+
+/* #1046: THE import resolver. `import NAME` used to be resolved INLINE in the
+ * OP_IMPORT handler (vm.c), which is why #915 shipped with the import half of
+ * the observer gate open: the gate's compile-time pass needed to find the
+ * module an import will run, and a second copy of that logic would have been
+ * a resolver free to drift from the first (#737). Now both callers ask this
+ * one function, so the file the gate inspects is the file the import runs.
+ *
+ * The chain (#821/#904/#1056): the PROJECT request `<name>.eigs` and the
+ * STDLIB request `lib/<name>.eigs` are both probed through
+ * resolve_eigenscript_file_from_ex; a project hit that came from an installed
+ * stdlib root is the stdlib wearing a project-shaped request and is demoted;
+ * project wins over stdlib. Returns 1 with `resolved` filled. `shadowed`
+ * (optional) receives the realpath of a stdlib module that a GENUINELY
+ * distinct project file shadows, else "" -- the caller decides whether to
+ * warn (the VM does, once per name; the gate's pass never does). */
+int eigs_import_resolve(const char *base, const char *name,
+                        char *resolved, size_t resolved_cap,
+                        char *shadowed, size_t shadowed_cap) {
+    /* HEAP, not stack. This runs inside vm_execute's OP_IMPORT handler, and
+     * vm_execute recurses on nested imports; ~28 KiB of path scratch per
+     * level is the shape .claude/rules/c-runtime-memory.md's C-stack rule
+     * (and tools/embed_stack_soak.sh's 64 KiB rlimit) exists to catch. */
+    struct { char request[4096]; char stdlib_buf[8192]; char ureal[8192]; char sreal[8192]; } *b;
+    int user_origin = EIGS_RESOLVE_PROJECT;
+    int rc = 0;
+    if (shadowed && shadowed_cap) shadowed[0] = '\0';
+    if (!name || !resolved || resolved_cap == 0) return 0;
+    b = malloc(sizeof *b);
+    if (!b) return 0;   /* unresolvable is the conservative answer everywhere this is asked */
+
+    snprintf(b->request, sizeof(b->request), "%.1024s.eigs", name);
+    int user_hit = resolve_eigenscript_file_from_ex(base, b->request, resolved, resolved_cap,
+                                                     &user_origin);
+    snprintf(b->request, sizeof(b->request), "lib/%.1024s.eigs", name);
+    int stdlib_hit = resolve_eigenscript_file_from_ex(base, b->request, b->stdlib_buf,
+                                                       sizeof(b->stdlib_buf), NULL);
+    if (user_hit && stdlib_hit && user_origin == EIGS_RESOLVE_STDLIB_ROOT)
+        user_hit = 0;
+    if (!user_hit && !stdlib_hit) goto done;
+    rc = 1;
+    if (!user_hit) {
+        snprintf(resolved, resolved_cap, "%s", b->stdlib_buf);
+        goto done;
+    }
+    if (stdlib_hit && shadowed && shadowed_cap) {
+        /* Same-file double hit is possible (a chain step that resolves both
+         * request shapes to one path after symlinks) -- only a genuinely
+         * forked resolution is a collision. */
+        if (!realpath(resolved, b->ureal)) snprintf(b->ureal, sizeof(b->ureal), "%s", resolved);
+        if (!realpath(b->stdlib_buf, b->sreal)) snprintf(b->sreal, sizeof(b->sreal), "%s", b->stdlib_buf);
+        if (strcmp(b->ureal, b->sreal) != 0) snprintf(shadowed, shadowed_cap, "%s", b->sreal);
+    }
+done:
+    free(b);
+    return rc;
 }
 
 Value* builtin_load_file(Value *arg) {

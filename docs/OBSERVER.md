@@ -570,6 +570,56 @@ observer state pays nothing for it; a program that does is unaffected.
 Both follow the tree's flag convention: any non-empty value that does not
 start with `0` turns the control on, so `=0` and `=` leave it off.
 
+### What arms the gate — the rule, precisely
+
+The decision is made once per compiled unit, in `compile_ast`, and is
+monotonic per interpreter state: once any unit arms it, every later unit in
+that state records. A unit arms the gate when **any** of the following holds;
+otherwise it does not, and nothing else does.
+
+1. **A reader opcode** anywhere in the unit, including in functions that are
+   never called: the interrogatives (`report of x`, `report_value`,
+   `trajectory of x`, `where is x`, ...), a predicate (`converged`,
+   `diverging of x`, ...), an observer-conditioned loop. The set is
+   `opcode_is_observer_reader()` in `src/chunk.c`, pinned against the
+   `obs:READS` markers by `tools/obs_reader_sync_check.sh`.
+2. **A binding-load of an observer builtin's name** — `OP_GET_NAME` whose
+   operand is `observe`, `classify`, `state_at`, `get_observer_thresholds`,
+   `eval` or `record_history` (`report`, `report_value` and `trajectory` are
+   listed for symmetry but cannot be loaded as values). This is the aliased
+   form: `local r is observe` then `r of x` emits no reader opcode. `eval`
+   and `record_history` are here because they open the channel at run time
+   from a string or a call, so their presence is the only signal.
+   **String data never arms** (#1046): `msg is "report"`, a keyword table
+   `["converged", "report", ...]`, a dict key `{"observe": 1}`, a printed
+   literal are all `OP_CONST` and are not consulted; neither is a field
+   access spelled like a builtin (`tbl.eval` is a `DOT_GET` on a user value)
+   nor a user `define observe(...)` (a binder). Until v0.43.0 the scan matched
+   the whole constant pool, so the string forms cost a program its gate.
+3. **A literal load target the unit cannot clear.** `load_file of "<literal>"`
+   and `import NAME` are resolved *at the importer's compile time* with the
+   same resolver the runtime uses (`resolve_eigenscript_file_from` and
+   `eigs_import_resolve` respectively — project-first, then stdlib, anchored
+   at the containing file's directory and the `eigs.json` project root), then
+   parsed and scanned by rules 1-3 transitively. The unit arms if any module
+   it reaches would, or if a target cannot be resolved, cannot be read, is
+   not a regular file, exceeds the speculative budget, or nests past the
+   depth cap. Until v0.43.0 the *presence* of an `import` armed the unit
+   unconditionally (`+49..84%` for one unused `import linalg`); the import
+   half of #915 is closed by #1046.
+4. **A non-literal load** — `load_file of (computed)`, an alias of
+   `load_file`, an `import` served by an embedder's source provider — makes
+   the unit opaque and arms it.
+5. **A forced or unknowable context**: `EIGS_OBS_FORCE=1`; a chunk assembled
+   from a descriptor rather than compiled; the REPL, where line N+1 can read a
+   binding from line N; more than one live thread during the eager pass.
+
+The two literal loaders carry the same run-time guard: if the module compiled
+at the load or import reads observer state and the gate was closed while the
+program's earlier assignments ran, the load raises (see the next section)
+rather than answering a rest value. A module scanned clean at compile time
+and rewritten before it runs is the case that guard exists for.
+
 ### When the gate refuses instead of answering
 
 The gate decides at COMPILE time, and a few constructs can make that decision
@@ -583,9 +633,10 @@ load_file: 'x.eigs' reads observer state, but the observer gate was closed when
 this program's earlier assignments ran — they have no recorded history...
 ```
 
-You will see this if a program **rewrites a module between the compile and the
-load**, or creates a nearer file that **shadows** the one the compile-time scan
-resolved. Both loaders search the containing file's directory, the
+(`import` raises the same way, naming the module.) You will see this if a
+program **rewrites a module between the compile and the load**, or creates a
+nearer file that **shadows** the one the compile-time scan resolved. Both
+loaders search the containing file's directory, the
 `eigs_modules` walk, the nearest `eigs.json` project root, then the executable
 and HOME stdlib roots (absolute paths are used as-is). For example, a newly
 created sibling can replace a project-root or stdlib target. Changing the
@@ -598,9 +649,10 @@ always safe — it restores the pre-gate behaviour exactly.
 
 ### When the gate declines to look
 
-To decide before the program runs, the gate compiles literally-loaded modules
-itself — including ones reached only from a function that is never called, since
-a `load_file` inside an uncalled function still contributes to the answer. That
+To decide before the program runs, the gate parses and scans literally-loaded
+and literally-imported modules itself — including ones reached only from a
+function that is never called, since a `load_file` or `import` inside an
+uncalled function still contributes to the answer. That
 work is speculative, so it is bounded: a per-thread cumulative ceiling on how
 many bytes the pass may read on the program's behalf, plus a rejection of
 anything that is not a regular file (a FIFO target once hung the compiler
@@ -635,10 +687,9 @@ across calls; opted-in evals reject later observer-reading units conservatively
 when an earlier unit ran unobserved. `EIGS_OBS_FORCE=1` from the start avoids
 that gap. Retained compiled functions can keep the eval gate open.
 
-Separately, every literally-loaded module is compiled **twice** — once by the
-gate to learn one bit, once for real by `load_file`, which has no module cache
-by design. Measured on `lib/ui.eigs`: 0.12-0.15s for the literal spelling that
-gates closed against 0.05-0.07s for a computed spelling that skips the pass, so
-a program that loads a large tree and does little work can pay more than it
-saves. The fix is to hand the eagerly-compiled chunk to `load_file` instead of
-discarding it; the budget above bounds the cost meanwhile.
+Separately, every literally-loaded or literally-imported module is **parsed
+twice** — once by the gate's pass (which since #1031 answers from the AST and
+compiles nothing), once for real by `load_file` (no module cache by design) or
+by the first `import` (cached thereafter). The pass hands nothing to the
+loader: the AST it scans is freed, and the runtime parse is the one that
+runs. The speculative budget above bounds the cost.

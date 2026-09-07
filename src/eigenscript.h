@@ -1719,6 +1719,14 @@ int resolve_eigenscript_file_from(const char *base, const char *path,
 int resolve_eigenscript_file_from_ex(const char *base, const char *path,
                                       char *resolved, size_t resolved_cap,
                                       int *origin);
+/* #1046: the ONE `import NAME` resolver -- project-first, then stdlib --
+ * shared by OP_IMPORT (vm.c) and the observer gate's compile-time pass
+ * (compiler.c). `shadowed` (optional) receives the stdlib path a distinct
+ * project file shadows, else "". Hosted; the freestanding stub resolves
+ * nothing. */
+int eigs_import_resolve(const char *base, const char *name,
+                        char *resolved, size_t resolved_cap,
+                        char *shadowed, size_t shadowed_cap);
 Value* eigs_json_parse_value(const char *s, int *pos);
 /* #777: the ONLY entry point for a top-level (non-recursive) JSON parse.
  * Clears both thread-local parse flags (g_json_parse_err,

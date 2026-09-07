@@ -687,13 +687,16 @@ int        chunk_reads_observer(const EigsChunk *chunk);
  * tools/obs_reader_sync_check.sh. Ask this; never restate the list. */
 int        opcode_is_observer_reader(uint8_t op);
 int        chunk_has_reader_opcode(const EigsChunk *chunk);
-/* #915: hand every STRING-LITERAL `load_file` target in this chunk to `visit`.
+/* #915: hand every STRING-LITERAL `load_file` target (is_import=0) and every
+ * `import NAME` target (is_import=1, #1046) in this chunk to `visit`.
  * Returns 1 if the unit is OPAQUE — it uses the name `load_file` in any shape
  * this scan does not recognize. An opaque unit must be treated as observing.
  * This does NOT check resolver parity between compile time and run time; that
- * is enforced at the load itself (builtin_load_file). See the definition. */
+ * is enforced at the load itself (builtin_load_file / OP_IMPORT). See the
+ * definition. */
 int        chunk_scan_static_loads(const EigsChunk *chunk,
-                                   void (*visit)(const char *path, void *ud),
+                                   void (*visit)(const char *path, int is_import,
+                                                 void *ud),
                                    void *ud);
 const char *op_name(uint8_t op);
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM

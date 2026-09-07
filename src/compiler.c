@@ -3434,16 +3434,20 @@ enum { OBS_GATE_MAX_LOADS = 64, OBS_GATE_MAX_DEPTH = 8 };
 typedef struct {
     char **paths;
     char **bases;              /* directory of the file containing each load */
+    unsigned char *kinds;      /* #1046: 1 = `import NAME`, 0 = literal load_file */
     const char *base;          /* borrowed while collecting one file */
     int count, cap, overflow;
+    int import_seen;           /* any import noted, even past the cap */
 } ObsLoadList;
 
-static void obs_gate_note_load(const char *path, void *ud) {
+static void obs_gate_note_load(const char *path, int is_import, void *ud) {
     /* Collect into a bounded, owned list; resolving here would re-enter the
      * compiler while chunk_scan_static_loads is still walking the chunk. */
     ObsLoadList *L = ud;
+    if (is_import) L->import_seen = 1;
     if (L->count >= L->cap) { L->overflow = 1; return; }  /* caller treats as opaque */
     if (L->bases) L->bases[L->count] = xstrdup(L->base);
+    if (L->kinds) L->kinds[L->count] = (unsigned char)(is_import != 0);
     L->paths[L->count++] = xstrdup(path);
 }
 
@@ -3613,19 +3617,30 @@ void eigs_obs_memo_release(void) { obs_memo_clear(); g_obs_spec_bytes = 0; }
  * to load_file (compile_ast numbers module slots from the env it is given,
  * and the scan env is not load_file's), so the pass answers from the AST
  * alone. Two rules, each the AST form of the chunk rule it replaces:
- *   reader  -- chunk_reads_observer: an interrogative, a predicate, an
- *              import, or ANY occurrence of an observer builtin's name
- *              (OBS_BUILTINS in chunk.c, mirrored here by name); a loop whose
- *              condition reads a predicate is covered by the predicate node.
+ *   reader  -- chunk_reads_observer: an interrogative, a predicate, or an
+ *              observer builtin's name used AS A NAME (an AST_IDENT --
+ *              OBS_BUILTINS in chunk.c, mirrored here by name; a string
+ *              literal spelling one is AST_STR and never arms, #1046); a loop
+ *              whose condition reads a predicate is covered by the predicate
+ *              node.
  *   loads   -- chunk_scan_static_loads: `load_file` may appear ONLY as the
  *              callee of a call (an AST_RELATION node -- the parser's spelling
  *              of `f of arg`) whose argument is a string literal (or
  *              an unparenthesised one-element list holding one); that path is
  *              appended to the load list. Any other occurrence of the name
- *              makes the unit opaque, exactly as the chunk scan does.
+ *              makes the unit opaque, exactly as the chunk scan does. An
+ *              `import NAME` (AST_IMPORT) is appended as an import-kind entry
+ *              (#1046) -- its target is a bare name, literal by construction.
  * Both are conservative in the safe direction: a stray name arms the gate
  * (observed, slower), never the reverse. Returns 1 when the module must arm. */
 static int obs_ast_name_is_observer_builtin(const char *nm) {
+    /* Mirrors OBS_BUILTINS in chunk.c, name for name. `report` / `report_value`
+     * are load-bearing HERE even though they are reserved forms (#1102): the
+     * parser spells `report of x` as an AST_RELATION whose callee is the
+     * IDENT "report" (compile_node then emits OP_REPORT_NAME), so this list is
+     * how the AST scan sees an interrogation. Executed: with the two names
+     * dropped, a host importing a module whose only read was `report of x`
+     * compiled `unobserved` and the import-time guard had to raise. */
     static const char *OBS_NAMES[] = {
         "observe", "report", "report_value", "trajectory", "classify",
         "state_at", "get_observer_thresholds", "eval", "record_history", NULL };
@@ -3644,6 +3659,11 @@ static int for_loop_reads_observer(ASTNode *node) {
     for (int i = 0; i < node->data.forloop.body_count && !r; i++)
         if (obs_ast_scan(node->data.forloop.body[i], &L)) r = 1;
     if (!r && node->data.forloop.iter && obs_ast_scan(node->data.forloop.iter, &L)) r = 1;
+    /* #1046: an `import` in the body no longer arms the scan by itself, but
+     * for THIS question it keeps its pre-#1046 answer -- a module imported
+     * from a top-level loop body shares the host's scope and could read the
+     * binder, so the loop stays on the CLEAR tier as before. */
+    if (!r && L.import_seen) r = 1;
     for (int i = 0; i < L.count; i++) free(L.paths[i]);
     free(L.paths);
     return r;
@@ -3655,7 +3675,10 @@ static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth) {
      * inside the muted window). Past the limit the unit is opaque. */
     if (depth > COMPILE_MAX_DEPTH) return 1;
     switch (n->type) {
-    case AST_INTERROGATE: case AST_PREDICATE: case AST_IMPORT: return 1;
+    case AST_INTERROGATE: case AST_PREDICATE: return 1;
+    case AST_IMPORT:   /* #1046: resolved and scanned by the caller's loop, like a literal load */
+        obs_gate_note_load(n->data.import.module_name, 1, L);
+        return 0;
     case AST_IDENT:
         if (strcmp(n->data.ident.name, "load_file") == 0) return 1;   /* not the call shape below */
         return obs_ast_name_is_observer_builtin(n->data.ident.name);
@@ -3670,7 +3693,7 @@ static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth) {
                      arg->data.list.elems[0]->type == AST_STR)
                 lit = arg->data.list.elems[0];
             if (!lit || !lit->data.str) return 1;
-            obs_gate_note_load(lit->data.str, L);
+            obs_gate_note_load(lit->data.str, 0, L);
             return 0;
         }
         return obs_ast_scan_d(fn, L, depth + 1) || obs_ast_scan_d(arg, L, depth + 1);
@@ -3750,6 +3773,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     if (g_obs_gate_depth >= OBS_GATE_MAX_DEPTH) { eigs_obs_enable_runtime(); return; }
 
     L.bases = xcalloc_array(OBS_GATE_MAX_LOADS, sizeof(char *));
+    L.kinds = xcalloc_array(OBS_GATE_MAX_LOADS, sizeof(unsigned char));
     L.base = chunk->src && chunk->src->resolve_dir
                  ? chunk->src->resolve_dir : eigs_current_file_dir();
 
@@ -3800,7 +3824,20 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * why a green release suite and a green ASan suite could not see it —
          * and it is the same defect class as the #ifdef-vs-#if mistake this file
          * already records, made a second time while fixing the first. */
-        int resolved_ok = resolve_eigenscript_file_from(L.bases[i], L.paths[i], resolved, 8192);
+        int resolved_ok;
+        if (L.kinds[i]) {
+            /* #1046: `import NAME`. An embedder's source provider is consulted
+             * FIRST by OP_IMPORT and serves source that is not a file; a
+             * provider-served module is not scanned here and arms the unit
+             * (conservative, and the shape that has no stat identity for the
+             * memo or budget anyway). Otherwise resolve through
+             * eigs_import_resolve -- THE resolver the OP_IMPORT handler calls,
+             * project-first then stdlib -- so what is scanned is what runs. */
+            if (eigs_source_lookup(L.paths[i])) { eigs_obs_enable_runtime(); break; }
+            resolved_ok = eigs_import_resolve(L.bases[i], L.paths[i], resolved, 8192, NULL, 0);
+        } else {
+            resolved_ok = resolve_eigenscript_file_from(L.bases[i], L.paths[i], resolved, 8192);
+        }
 #else
         int resolved_ok = 0;
 #endif
@@ -3914,6 +3951,7 @@ done:
         free(L.bases[i]);
     }
     free(L.bases);
+    free(L.kinds);
 }
 
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {

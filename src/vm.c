@@ -5900,6 +5900,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (!source) {
             char request[4096];
             char path_buf[8192];
+            char shadowed[8192];
 
             extern char *read_file_util(const char *path, long *size);
 
@@ -5907,62 +5908,30 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * even when called after the importing/loading frame returns. */
             const char *resolve_base = eigs_current_file_dir();
 
-            /* #821: PROJECT-FIRST resolution. The user module `<name>.eigs`
-             * (script-relative, plus the chain's other locations and the
-             * eigs_modules walk) is tried BEFORE the stdlib's
-             * `lib/<name>.eigs`. The stdlib namespace grows over time, so
-             * under stdlib-first a new stdlib module could silently capture
-             * an existing project's import (dynamics' physics.eigs,
-             * F-DYN-8). Both requests are always probed: a name matching
-             * both is a collision worth a diagnostic whichever way
-             * resolution goes. */
-            char stdlib_buf[8192];
-            int user_origin = EIGS_RESOLVE_PROJECT;
-            snprintf(request, sizeof(request), "%.1024s.eigs", name);
-            int user_hit = resolve_eigenscript_file_from_ex(resolve_base, request,
-                                                             path_buf, sizeof(path_buf),
-                                                             &user_origin);
-            snprintf(request, sizeof(request), "lib/%.1024s.eigs", name);
-            int stdlib_hit = resolve_eigenscript_file_from_ex(resolve_base, request,
-                                                               stdlib_buf, sizeof(stdlib_buf),
-                                                               NULL);
-
-            /* #904: the bare `<name>.eigs` request also probes the installed
-             * stdlib roots, so on a machine that has run `make install` EVERY
-             * stdlib import came back with a "project" hit at
-             * `~/.local/lib/eigenscript/<name>.eigs` — a phantom collision
-             * (spurious warning on every import) AND a resolution bug: the
-             * installed copy won over the stdlib shipped with the binary
-             * being run, and over a bundle's own extracted lib/. A stdlib-root
-             * hit is the stdlib arm; it is never the project arm. */
-            if (user_hit && stdlib_hit && user_origin == EIGS_RESOLVE_STDLIB_ROOT)
-                user_hit = 0;
-
-            if (!user_hit && !stdlib_hit) {
+            /* #821: PROJECT-FIRST resolution, #904: a stdlib-root hit on the
+             * bare request is the stdlib arm. Both live in eigs_import_resolve
+             * (#1046) -- the ONE resolver, shared with the observer gate's
+             * compile-time pass in compiler.c, so the module the gate scanned
+             * before line 1 ran is the module compiled here. Resolving inline
+             * in this handler is what kept #915's import half open: a second
+             * copy would drift (#737). Do not re-inline it. */
+            if (!eigs_import_resolve(resolve_base, name, path_buf, sizeof(path_buf),
+                                     shadowed, sizeof(shadowed))) {
                 snprintf(request, sizeof(request), "%.1024s.eigs and lib/%.1024s.eigs", name, name);
                 eigs_file_resolve_error("import", resolve_base, request, current_line);
                 vm_push(make_null());
                 DISPATCH();
             }
-            if (user_hit && stdlib_hit &&
-                import_collision_first_report(name)) {
-                /* Same-file double hit is possible (e.g. a chain step that
-                 * resolves both request shapes to one path after symlinks) —
-                 * only a genuinely forked resolution is a collision. */
-                char ureal[8192], sreal[8192];
+            if (shadowed[0] && import_collision_first_report(name)) {
+                char ureal[8192];
                 if (!realpath(path_buf, ureal))
                     snprintf(ureal, sizeof(ureal), "%s", path_buf);
-                if (!realpath(stdlib_buf, sreal))
-                    snprintf(sreal, sizeof(sreal), "%s", stdlib_buf);
-                if (strcmp(ureal, sreal) != 0)
-                    fprintf(stderr, "Warning: import '%s' matches both a "
-                            "project file and a stdlib module — using '%s', "
-                            "shadowing '%s' (project-first; rename the file "
-                            "to use the stdlib module)\n",
-                            name, ureal, sreal);
+                fprintf(stderr, "Warning: import '%s' matches both a "
+                        "project file and a stdlib module — using '%s', "
+                        "shadowing '%s' (project-first; rename the file "
+                        "to use the stdlib module)\n",
+                        name, ureal, shadowed);
             }
-            if (!user_hit)
-                memcpy(path_buf, stdlib_buf, sizeof(path_buf));
 
             /* Module cache: canonicalize to absolute path so two different
              * importers (different cwds, different relative paths) hash to
@@ -6056,6 +6025,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * keeps top-level writes in the caller's current scope). */
         int saved_import_toplevel = g_compile_import_toplevel;
         g_compile_import_toplevel = 1;
+        /* #1046: the observer gate may have CLOSED on evidence gathered when
+         * the importing unit was compiled -- its eager pass resolved this
+         * literal import through the same resolver and scanned the module
+         * then. The module scanned and the module compiled now are two reads
+         * with the whole program in between; see builtin_load_file for the
+         * two shapes (rewrite, shadow) and for why the predicate is the
+         * module's OWN verdict against the sticky history-gap flag rather
+         * than a one-shot bit transition. ACQUIRE pairs with
+         * eigs_obs_enable's store order. */
+        int obs_before_module = obs_flag_load_acquire(obs_needed);
         EigsChunk *mod_chunk = compile_ast(ast, mod_env, source);
         g_compile_module_boundary = saved_boundary;
         g_compile_import_toplevel = saved_import_toplevel;
@@ -6063,6 +6042,25 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * eval must inherit its executing function's retained source directory,
          * even when that function is called by this imported module. */
         memcpy(g_import_resolve_dir, saved_resolve_dir, sizeof(saved_resolve_dir));
+        if (mod_chunk && chunk_reads_observer(mod_chunk) &&
+            (!obs_before_module || g_obs_history_gap)) {
+            obs_flag_store(obs_history_gap, 1);
+            g_parse_errors = saved_errors;
+            chunk_free(mod_chunk);
+            g_load_env = saved_load;
+            free_ast(ast);
+            free_tokenlist(&tl);
+            free(source);
+            env_decref(mod_env);
+            rt_error(EK_IO, current_line,
+                "import: '%s' reads observer state, but the observer gate was "
+                "closed when this program's earlier assignments ran — they have no "
+                "recorded history, so an observer query about them would answer a "
+                "rest value rather than the truth. Re-run with EIGS_OBS_FORCE=1.",
+                name);
+            vm_push(make_null());
+            DISPATCH();
+        }
         if (g_parse_errors > 0) {
             g_parse_errors = saved_errors;
             chunk_free(mod_chunk);

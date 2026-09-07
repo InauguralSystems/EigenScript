@@ -4655,6 +4655,31 @@ fi
 rm -rf "$OBS_GATE_TMP"
 echo ""
 
+# [99u+] Observer gate, the `import` half (#1046 / #915). OP_IMPORT left the
+# reader set: a literal import target is resolved at the importer's compile
+# time through eigs_import_resolve (the ONE resolver OP_IMPORT calls) and
+# scanned like a literal load_file target, and the constant-pool string
+# match became a match on OP_GET_NAME operands, so string DATA never arms.
+# The fixture pins both halves AND the invariant #915's last comment names:
+# a host's pre-import history stays visible to an imported reader, asserted
+# on the VALUE (diverging), plus the import-time raise for a module rewritten
+# between scan and import. Count pinned like [42a]: a check added or deleted
+# without moving the number goes red here.
+echo "[99u+] Observer gate: import half + string data (#1046)"
+OBSIMP_OUT=$(bash "$TESTS_DIR/test_obs_gate_import.sh" 2>&1); OBSIMP_RC=$?
+OBSIMP_PASS=$(echo "$OBSIMP_OUT" | grep -c "^PASS:" || true)
+OBSIMP_FAIL=$(echo "$OBSIMP_OUT" | grep -c "^FAIL:" || true)
+TOTAL=$((TOTAL + 1))
+if [ "$OBSIMP_RC" -eq 0 ] && [ "$OBSIMP_PASS" -eq 19 ] && [ "$OBSIMP_FAIL" -eq 0 ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: all $OBSIMP_PASS import-gate checks"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: observer gate import half (rc=$OBSIMP_RC, $OBSIMP_PASS/19 checks passed)"
+    echo "$OBSIMP_OUT" | grep -E "^FAIL:|SUMMARY" | sed 's/^/    /'
+fi
+echo ""
+
 # [100] Worker-thread JIT lifetime (#296). A shared chunk that gets hot and
 # JIT-compiles ON a worker must not leave chunk->jit_code dangling when that
 # worker exits (its per-thread JIT code arena is munmap'd at detach). Crashed

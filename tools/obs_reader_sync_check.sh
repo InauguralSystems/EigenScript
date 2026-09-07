@@ -46,11 +46,13 @@
 #   * It does not check that a marker's verdict is CORRECT. That rests on the
 #     handler having been read; obs_marker_check.sh owns "was a verdict
 #     recorded", and the reading for the initial 94 is on #972.
-#   * It does not see readers reached through the CONSTANT POOL (an aliased
-#     `local r is report` emits no reader opcode at all). That population is
-#     OBS_BUILTINS in the same function and is checked by suite section [99u]
-#     check 4, behaviourally. (It said [99n] — that is the VM operand-width
-#     comment-drift gate, #958. A pointer in a waiver is load-bearing, §6.)
+#   * It does not see readers reached through a NAME-LOAD operand (an aliased
+#     `local r is observe` emits no reader opcode at all). That population is
+#     OBS_BUILTINS in the same file (matched on VR_NAME operands since #1046,
+#     never on string data) and is checked by suite section [99u] check 4 and
+#     tests/test_obs_gate_import.sh, behaviourally. (It said [99n] — that is
+#     the VM operand-width comment-drift gate, #958. A pointer in a waiver is
+#     load-bearing, §6.)
 #   * The stronger design is to GENERATE the C set from the markers, the way
 #     tools/gen_lsp_builtin_index.sh generates its header — then the rule has
 #     one home and this gate is unnecessary. Filed rather than implied.
@@ -89,7 +91,7 @@ MARKER_TOOL="${MARKER_TOOL:-tools/obs_marker_check.sh}"
 # diagnosed in one read). No self-test row asserts them, deliberately: a row
 # that cannot fail for its own reason is decoration.
 READS_FLOOR="${READS_FLOOR:-15}"
-SWITCH_FLOOR="${SWITCH_FLOOR:-17}"
+SWITCH_FLOOR="${SWITCH_FLOOR:-16}"
 
 # The pinned exemptions: opcodes the C switch treats as readers although the
 # markers do not. Each must be PRESENT in the switch and ABSENT from the marker
@@ -100,15 +102,15 @@ SWITCH_FLOOR="${SWITCH_FLOOR:-17}"
 #                   since #262 Step E observer state is binding-keyed and a bare
 #                   value has no binding. Kept in the switch anyway: it costs a
 #                   program its gate and being wrong in that direction is safe.
-#   OP_IMPORT       not an observer reader at all. It is in the switch because
-#                   it compiles a NEW unit at runtime whose own scan arrives too
-#                   late to have observed this unit's earlier assignments — the
-#                   ordering hazard, not a read. Its literal-target sibling
-#                   `load_file` is handled by chunk_scan_static_loads instead;
-#                   import's resolution is project-first-then-stdlib against a
-#                   per-module dir and replicating it would be a second resolver
-#                   free to drift (#737), so it stays conservative.
-EXEMPT="OP_INTERROGATE OP_IMPORT"
+#   (OP_IMPORT was the second exemption from #915 to v0.43.0: not a reader,
+#   listed because a module compiled at runtime arms too late to have observed
+#   the importer's earlier assignments. #1046 resolves literal import targets
+#   at the importer's compile time through eigs_import_resolve — the ONE
+#   resolver the OP_IMPORT handler also calls — and scans them like literal
+#   `load_file` targets, so the exemption is spent and removed. The line it
+#   held is still held: suite check 40 and tests/test_obs_gate_import.sh
+#   assert the host's pre-import history stays visible to an imported reader.)
+EXEMPT="OP_INTERROGATE"
 
 # ---- extraction -------------------------------------------------------------
 #
@@ -299,13 +301,13 @@ PYEOF
     gate_with_fault() { # name -> writes $tmp/<name>.faultgate.sh
         cp "$real_gate" "$tmp/$1.faultgate.sh"
         case "$1" in
-          D) sedi 's|^EXEMPT="OP_INTERROGATE OP_IMPORT"|EXEMPT="OP_INTERROGATE OP_IMPORT OP_ADD"|' "$tmp/$1.faultgate.sh" ;;
+          D) sedi 's|^EXEMPT="OP_INTERROGATE"|EXEMPT="OP_INTERROGATE OP_ADD"|' "$tmp/$1.faultgate.sh" ;;
         esac
     }
     gut() { # name -> writes $tmp/<name>.gate.sh
         cp "$real_gate" "$tmp/$1.gate.sh"
         case "$1" in
-          D) sedi 's|^EXEMPT="OP_INTERROGATE OP_IMPORT"|EXEMPT="OP_INTERROGATE OP_IMPORT OP_ADD"|' "$tmp/$1.gate.sh" ;;
+          D) sedi 's|^EXEMPT="OP_INTERROGATE"|EXEMPT="OP_INTERROGATE OP_ADD"|' "$tmp/$1.gate.sh" ;;
         esac
         case "$1" in
           E) sedi 's|\*) note_fail "opcode \$op is marked obs:READS.*|*) : ;;|' "$tmp/$1.gate.sh" ;;
