@@ -4348,6 +4348,14 @@ static void *thread_entry(void *arg) {
         val_decref(h->result);
         h->result = cloned;
     }
+    /* #1112: an uncaught error on this worker (either path above — a
+     * VAL_FN body that unwound, or a builtin that raised, e.g. the replay
+     * refusal of `recv`) has already been printed; it used to leave the
+     * process exit status at 0, the silent-success #493 closed for tasks.
+     * Count it on the STATE so main fails the run. `exit of N` sets
+     * g_has_error only to unwind and is latched separately — not a death. */
+    if (g_has_error && !g_exit_requested)
+        __atomic_add_fetch(&eigs_current->state->spawn_err_count, 1, __ATOMIC_RELAXED);
     /* An uncaught throw on this thread leaves its structured payload in
      * thread-local storage; release it before the thread exits. */
     eigs_clear_error_value();

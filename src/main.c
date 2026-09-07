@@ -379,6 +379,10 @@ int main(int argc, char **argv) {
      * value world is still alive (channels/threads live in the handle table,
      * not on a GC'd Value, so nothing else reclaims them). */
     handle_table_drain(eigs_st);
+    /* #1112: spawn()ed workers that died of an uncaught error — read AFTER
+     * the drain above has joined every worker (pthread_join is the
+     * happens-before edge for the worker's increment). */
+    int spawn_worker_error = __atomic_load_n(&eigs_st->spawn_err_count, __ATOMIC_RELAXED) > 0;
     /* An uncaught runtime error leaves g_has_error set (vm_run unwinds to
      * here rather than continuing with null). Report it as a non-zero exit
      * so scripts fail loudly for callers, Makefiles, and CI. */
@@ -390,7 +394,7 @@ int main(int argc, char **argv) {
      * is cleared off THIS thread's request, so a worker's exit never erases a
      * genuine main-thread error. */
     int exit_code = g_exit_latched ? g_exit_latch_code
-                    : ((g_has_error || unobserved_task_error) ? 1 : 0);
+                    : ((g_has_error || unobserved_task_error || spawn_worker_error) ? 1 : 0);
     if (g_exit_requested) g_has_error = 0;
     /* An uncaught `throw` leaves its structured payload stashed; release
      * it so exit is leak-clean. */

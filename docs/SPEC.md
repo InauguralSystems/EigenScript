@@ -1639,6 +1639,16 @@ print of (thread_join of h)
 9
 ```
 
+A worker that **dies of an uncaught error** prints its trace and the
+**process exits non-zero** (status 1) whether or not anything ever
+`thread_join`s it — the same rule as cooperative tasks below (#493), so a
+fire-and-forget thread's failure is never swallowed into a success exit.
+This covers a builtin spawned directly (`spawn of [recv, 5]` raises
+"invalid channel" on the worker) as well as a function body. An error
+`catch`-ed inside the worker recovers normally (exit 0), and a worker's
+`exit of N` still decides the status (#739). The failure is always a
+clean exit, never a signal (#1112).
+
 ## Cooperative tasks
 
 `task_spawn` creates a **cooperative task** on the single interpreter

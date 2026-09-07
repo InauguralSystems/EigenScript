@@ -289,6 +289,11 @@ print of (recv of ch)
 42
 ```
 
+One difference in failure: a Python thread's uncaught exception is printed
+and the process still exits 0. A `spawn`ed EigenScript worker that dies of
+an uncaught error fails the whole run (exit status 1), joined or not — the
+same rule as its cooperative tasks (see SPEC.md "Concurrency").
+
 ## Convergence loops: boilerplate you stop writing
 
 Before the metaphysics, the everyday win. Every numeric fixed-point loop in

@@ -165,6 +165,19 @@ These builtins raise a catchable runtime error under
 boundary; see docs/TRACE.md)"`. Programs that need to be replay-safe
 must guard these call sites or avoid them entirely.
 
+A boundary refusal is a **clean exit, never a signal**: uncaught, it ends
+the program with exit status 1 like any other runtime error; caught, the
+program continues. That holds on every thread — a refused `recv` on a
+`spawn`ed worker that runs the builtin directly (`spawn of [recv, ch]`)
+used to die by SIGSEGV after printing the diagnostic (#1112: the worker
+has no VM, and the uncaught-error printer dereferenced it); it now prints
+the diagnostic and the process exits 1, because an uncaught death on a
+worker fails the run (docs/SPEC.md "Concurrency"). A signal exit under
+`EIGS_REPLAY` is a runtime bug, and `tools/replay_diff.sh` — the
+same-binary record/replay differential CI runs over the whole corpus —
+fails on any signal exit in either arm regardless of what the arm
+printed; the diagnostic text never excuses a crash.
+
 ## Replay Semantics
 
 With `EIGS_REPLAY` set, each nondet builtin call takes the next `N`

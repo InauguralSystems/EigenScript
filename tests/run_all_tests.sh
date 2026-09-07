@@ -4662,6 +4662,25 @@ check_eigs_suite "concurrent workers, same chunks, exact results" test_spawn_par
 echo "[103] Spawn/Channel Exit (no hang on blocked worker, #303)"
 check_eigs_suite "recv-blocked worker doesn't hang exit" test_spawn_channel_exit.eigs "All tests passed" 1
 
+# [103a] #1112: the same program under EIGS_REPLAY -- the worker's `recv` is
+# refused at the replay boundary (#148), and that refusal, raised on a worker
+# with no VM (a builtin spawned directly), died by SIGSEGV in
+# vm_print_stack_trace. A boundary refusal is a clean rc-1 exit, never a
+# signal; an uncaught death on a spawn()ed worker fails the process (the #493
+# rule for tasks). Child script: every #148 builtin as a direct worker, both
+# tiers on the repro, plus the caught/exit-of-N/clean positive controls.
+echo "[103a] Replay boundary refusal is a clean exit; worker death fails the run (#1112)"
+RBE_OUTPUT=$(bash "$TESTS_DIR/test_replay_boundary_exit.sh" 2>&1); RBE_RC=$?
+RBE_PASS=$(echo "$RBE_OUTPUT" | grep -c "^PASS:" || true)
+RBE_FAIL=$(echo "$RBE_OUTPUT" | grep -c "^FAIL:" || true)
+[ "$RBE_RC" -ne 0 ] && [ "$RBE_FAIL" -eq 0 ] && RBE_FAIL=1
+# 21 checks by construction (1 repro x 2 tiers + 11 boundary builtins + 8
+# controls); fewer PASS lines on a green exit is the child narrowing.
+[ "$RBE_RC" -eq 0 ] && [ "$RBE_PASS" -lt 21 ] && { RBE_FAIL=$((RBE_FAIL + 1)); echo "  FAIL: replay-boundary child ran only $RBE_PASS of 21 checks"; }
+TOTAL=$((TOTAL + RBE_PASS + RBE_FAIL)); PASS=$((PASS + RBE_PASS)); FAIL=$((FAIL + RBE_FAIL))
+if [ "$RBE_FAIL" -gt 0 ]; then echo "  FAIL: replay boundary exit contract"; echo "$RBE_OUTPUT" | grep "^FAIL:" | head -5; else echo "  PASS: all $RBE_PASS replay-boundary exit checks (rc 1, no signal, both tiers)"; fi
+echo ""
+
 # [104] Worker arena-allocated return value survives detach (#302). thread_entry
 # deep-copies the result before arena_destroy frees the worker arena; a UAF here
 # is ASan-caught, and the values are pinned.
@@ -5839,6 +5858,30 @@ if bash "$TESTS_DIR/../tools/road_diff.sh" && \
 else
     FAIL=$((FAIL + 1))
     echo "  FAIL: road differential or planted faults"
+fi
+echo ""
+
+# #1112: the same-binary replay differential (CI job `replay-differential`)
+# classified a replay arm that printed the boundary diagnostic and then died
+# by SIGSEGV as "at the boundary" and said OK. A signal exit in either arm is
+# now the first verdict; the selftest plants that witness and an identical
+# crash in both arms through a wrapper binary (each must FAIL, attributed),
+# proves --record refuses over a crash, keeps a real clean boundary refusal
+# classified as boundary (positive control), and pins that a NON-signal
+# nonzero rc (124/127) still diffs into a row. The full corpus run stays a
+# CI job, not a suite section. The case count is pinned, not ">0": a gate
+# reduced to one echo satisfies "at least one case passed".
+echo "[99q] replay_diff crash gate: a signal exit is never a boundary (#1112)"
+TOTAL=$((TOTAL + 1))
+RDS_OUTPUT=$(bash "$TESTS_DIR/../tools/replay_diff.sh" --selftest 2>&1); RDS_RC=$?
+RDS_OK=$(printf '%s\n' "$RDS_OUTPUT" | grep -c "  selftest ok:" || true)
+if [ "$RDS_RC" -eq 0 ] && [ "$RDS_OK" -eq 6 ] && printf '%s\n' "$RDS_OUTPUT" | grep -q "^SELFTEST: all planted faults caught"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: replay_diff selftest (all $RDS_OK planted/control cases)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: replay_diff selftest (rc=$RDS_RC, $RDS_OK of 6 ok cases)"
+    printf '%s\n' "$RDS_OUTPUT" | grep -v "selftest ok" | head -8
 fi
 echo ""
 

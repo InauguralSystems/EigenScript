@@ -2830,6 +2830,13 @@ static int vm_desc_unrecorded(EigsChunk *chunk, int line, const char *what) {
 }
 
 void vm_print_stack_trace(FILE *out) {
+    /* #1112: a spawned worker that runs a BUILTIN directly (`spawn of
+     * [recv, ch]`) never enters vm_execute, so eigs_current->vm is NULL on
+     * that thread; rt_error/builtin_throw print immediately there (no
+     * dispatch loop to defer to) and used to dereference g_vm here — the
+     * replay refusal of `recv` on such a worker died by SIGSEGV instead of
+     * exiting cleanly. No frames means no trace to print. */
+    if (!eigs_current || !eigs_current->vm) return;
     if (g_vm.frame_count <= 0) return;
     for (int i = g_vm.frame_count - 1; i >= 0; i--) {
         CallFrame *f = &g_vm.frames[i];

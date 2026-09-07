@@ -678,6 +678,14 @@ struct EigsState {
      * flag alone would have silently dropped a worker's exit code to 0. */
     int             exit_latched;
     int             exit_latch_code;
+    /* #1112: number of spawn()ed OS-thread workers that died of an UNCAUGHT
+     * runtime error (the #493 rule for cooperative tasks, applied to
+     * threads: a fire-and-forget worker's death must not green the run).
+     * Incremented atomically by the dying worker in thread_entry, read by
+     * main once handle_table_drain has joined every worker. A worker's
+     * `exit of N` is a request, not a death, and goes through the latch
+     * above instead. */
+    int             spawn_err_count;
     /* Cycle-collector registry — the intrusive list of captured envs and its
      * live count. Per-STATE (not per-thread) so candidates created on any
      * thread survive that thread's death and stay collectable at exit; gc_lock

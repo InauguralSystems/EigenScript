@@ -89,6 +89,15 @@ themselves are not blocked under replay: a worker that returns a pure value
 replays deterministically (the joined result is copied). Keep replayable
 programs off `recv` and off any worker whose result depends on thread ordering.
 
+The refusal is a clean exit, never a signal, on the main thread and on a
+worker alike: `spawn of [recv, ch]` under `EIGS_REPLAY` prints the diagnostic
+and the process exits 1 (#1112 — it died by SIGSEGV before, because a worker
+that runs a builtin directly has no VM and the uncaught-error printer read
+it). The general rule behind that status: a `spawn`ed worker that dies of an
+uncaught error fails the run, joined or not, exactly as a cooperative task
+does (#493); an error caught inside the worker, or a worker's `exit of N`,
+decides its own status.
+
 ## The race gate
 
 The claim that the spawn/channel machinery is data-race-free is not a comment —
