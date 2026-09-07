@@ -1485,6 +1485,23 @@ static inline int eigs_obs_gate_open(void) {
     return g_obs_needed || __atomic_load_n(&g_trace_obs_hist_storage, __ATOMIC_RELAXED);
 }
 
+/* #972: debug counter behind EIGS_OBS_GATE_STATS=1 — how many times an
+ * observer update/sample entry point (observer_slot_update[_num],
+ * observer_slot_sample[_num], the JIT observe helpers) was ENTERED, counted
+ * before each one's own gate test. With the gate closed the observe ops are
+ * meant to skip the helper call entirely (the hoist this counter pins), so
+ * the tally must read 0 for a read-free program; `obs-gate: unobserved`
+ * alone cannot see the difference between "skipped" and "called and
+ * returned at the gate". One predictable branch on a cold global when the
+ * flag is off; a relaxed atomic add when it is on (workers observe too). */
+extern int  g_obs_count_observe_calls;
+extern long g_obs_observe_calls;
+static inline void eigs_obs_count_call(void) {
+    if (__builtin_expect(g_obs_count_observe_calls, 0))
+        __atomic_fetch_add(&g_obs_observe_calls, 1, __ATOMIC_RELAXED);
+}
+void eigs_obs_gate_stats_report(void);   /* prints `obs-gate: observe-calls N` */
+
 Env* env_new(Env *parent);
 void env_global_shared_lock(void);    /* #1035: module-env lock for external readers */
 void env_global_shared_unlock(void);

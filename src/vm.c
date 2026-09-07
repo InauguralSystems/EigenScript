@@ -1579,6 +1579,13 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
 }
 
 void jit_helper_observe_assign_local(int slot) {
+    eigs_obs_count_call();   /* #972: entered — the emitter's inline gate test
+                              * is what keeps this at 0 for a read-free program */
+    /* #972: the gate first, before the slot is even resolved — mirrors the
+     * CASE body. The emitter inlines the same test ahead of the call, so this
+     * runs only with the gate open (or when the helper is reached some other
+     * way); kept so the helper is correct on its own. */
+    if (!eigs_obs_gate_open()) return;
     /* #262 Phase-3/E — slot model: observe the persistent (fn_env, slot)
      * trajectory directly from TOS. No promotion, no Value-side state, no window
      * migration (the slot persists across assigns). */
@@ -1627,10 +1634,14 @@ void jit_helper_report_slot(int slot) {
 /* OP_OBSERVE_NAME_POST [name_idx] — observe a name binding's slot from TOS
  * after its SET. Peeks TOS; no stack change. Mirrors CASE(OBSERVE_NAME_POST). */
 void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
-    /* #1049: inside `unobserved:` the name is still resolved (when the #915
-     * gate is open) so the elided assignment's sample reaches the value
+    eigs_obs_count_call();   /* #972 — see jit_helper_observe_assign_local */
+    /* #972: gate closed -> nothing to record, so skip the name resolution and
+     * the slot lookup entirely (they were the measured residual: a read-free
+     * program resolved every assigned name only to return at the helper's
+     * gate test). #1049: inside `unobserved:` the name is still resolved when
+     * the gate IS open, so the elided assignment's sample reaches the value
      * window; only the entropy update, alias and tape snapshot are skipped. */
-    if (g_unobserved_depth != 0 && !eigs_obs_gate_open()) return;
+    if (!eigs_obs_gate_open()) return;
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
     /* #262 Phase-3 D: TOS may be an immediate num (the default path no longer
@@ -2705,6 +2716,8 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->off_thread_vm                = (int)offsetof(EigsThread, vm);
     out->off_thread_unobserved_depth  = (int)offsetof(EigsThread, unobserved_depth);
     out->off_vm_owner                 = (int)offsetof(VM, owner);
+    out->off_thread_state             = (int)offsetof(EigsThread, state);   /* #972 */
+    out->off_state_obs_needed         = (int)offsetof(EigsState, obs_needed);
     out->off_sp              = (int)offsetof(VM, sp);
     out->off_stack           = (int)offsetof(VM, stack);
     out->off_frame_count     = (int)offsetof(VM, frame_count);
@@ -5013,6 +5026,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * write, so report/predicate misclassify a slot-bound variable
          * (#129). */
         uint16_t slot = read_u16(ip); ip += 2;
+        /* #972: the gate test comes FIRST — before the TOS/slot resolution and
+         * the helper call. With the gate closed (#915: nothing in this state
+         * can interrogate the observer) every helper below returns at its own
+         * gate test anyway, so the only things this skips are the call and
+         * the bare-predicate alias, and the alias is unreadable while the
+         * gate is closed (OP_PREDICATE is a reader, which opens it at compile
+         * time; a descriptor's read after a mid-run arming raises through the
+         * #1027 gap guard before consulting it). Mirrors the JIT emitter's
+         * inline test (jit.c, emit_obs_gate_test). */
+        if (!eigs_obs_gate_open()) DISPATCH();
         if (g_unobserved_depth == 0) {
             /* #262 Phase-3/E — slot model: observe the binding's persistent
              * (fn_env, slot) ObserverSlot directly from TOS. No promotion (the
@@ -5251,11 +5274,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * still on TOS (SET peeked, didn't pop). Fixes the first-assignment
          * lag for name bindings. Emitted only under the compile-time flag. */
         uint16_t name_idx = read_u16(ip); ip += 2;
-        /* #1049: inside `unobserved:` the binding is still resolved (when the
-         * #915 gate is open) so the elided assignment's sample reaches the
-         * value window; the entropy update, the alias and the tape snapshot
-         * are what the block skips. Mirrors jit_helper_observe_name_post. */
-        if (g_unobserved_depth == 0 || eigs_obs_gate_open()) {
+        /* #972: gate closed -> skip the name resolution, the slot lookup and
+         * the helper call outright (the measured residual: a read-free
+         * program hashed and resolved every assigned name only to return at
+         * the helper's gate test). #1049: inside `unobserved:` the binding is
+         * still resolved when the gate IS open, so the elided assignment's
+         * sample reaches the value window; the entropy update, the alias and
+         * the tape snapshot are what the block skips. Mirrors
+         * jit_helper_observe_name_post. */
+        if (eigs_obs_gate_open()) {
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             /* #262 Phase-3 D: TOS is now an immediate num for an observed name
              * (default path no longer promotes), or a heap value. Observe the

@@ -705,7 +705,19 @@ static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
  * — the same drift shape #921/#925 are open on. One read, no copies. */
 #define g_trace_obs_hist __atomic_load_n(&g_trace_obs_hist_storage, __ATOMIC_RELAXED)
 
+/* #972: the observe-call tally (eigenscript.h) — a debug instrument, so its
+ * report is host-only; the freestanding profile never sets the flag. */
+int  g_obs_count_observe_calls = 0;
+long g_obs_observe_calls = 0;
+void eigs_obs_gate_stats_report(void) {
+#if !EIGENSCRIPT_FREESTANDING
+    fprintf(stderr, "obs-gate: observe-calls %ld\n",
+            __atomic_load_n(&g_obs_observe_calls, __ATOMIC_RELAXED));
+#endif
+}
+
 void observer_slot_update(Env *e, int idx, Value *newval) {
+    eigs_obs_count_call();   /* #972: before the gate test, by design */
     /* #915: nothing compiled into this state can interrogate the observer, so
      * skip the entropy walk entirely. compute_entropy recurses through every
      * reachable list item and dict value, which is where the 88% goes.
@@ -740,6 +752,7 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
  * number, so the default path can observe without promoting the num to a
  * tracked Value. Same trajectory math as observer_slot_update. */
 void observer_slot_update_num(Env *e, int idx, double num) {
+    eigs_obs_count_call();   /* #972 */
     if (!eigs_obs_gate_open()) return;           /* #915 — see observer_slot_update */
     observer_slot_update_e(e, idx, entropy_of_num(num));
     ObserverSlot *vs = env_obs_slot(e, idx);    /* #294 value-signal channel */
@@ -777,6 +790,7 @@ void observer_slot_update_num(Env *e, int idx, double num) {
  * says so. Gated by the same #915 observer gate as the full update: a
  * program nothing in which reads the observer still pays nothing. */
 void observer_slot_sample_num(Env *e, int idx, double num) {
+    eigs_obs_count_call();   /* #972 */
     if (!eigs_obs_gate_open()) return;
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
@@ -787,6 +801,7 @@ void observer_slot_sample_num(Env *e, int idx, double num) {
 }
 
 void observer_slot_sample(Env *e, int idx, Value *newval) {
+    eigs_obs_count_call();   /* #972 */
     if (!eigs_obs_gate_open()) return;
     if (newval && newval->type == VAL_NUM) {
         observer_slot_sample_num(e, idx, newval->data.num);

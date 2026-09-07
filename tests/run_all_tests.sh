@@ -3820,7 +3820,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=44
+OBS_GATE_EXPECTED_CHECKS=50
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -4553,6 +4553,74 @@ else
     OBS_G43_NOTE=" (SKIP: rlimit not enforced on this platform)"
 fi
 check "a fatal OOM inside the muted window still reaches stderr$OBS_G43_NOTE" "$OBS_G43" "oom-message-reaches-stderr"
+# 45-50. #972's one measured residual: with the gate CLOSED the observe ops
+#     (OBSERVE_ASSIGN_LOCAL / OBSERVE_NAME_POST) still dispatched into their
+#     helpers — call, TOS decode, slot/name resolution — only to return at the
+#     helper's own gate test (+18% module-level / +14% fn-level+JIT over
+#     `unobserved:` at 20M iterations). The gate test is now hoisted ahead of
+#     the helper call in the interpreter CASE bodies AND inlined by the JIT
+#     emitter. `obs-gate: unobserved` cannot see the difference between
+#     "skipped" and "called and returned at the gate", and the slot's `used`
+#     flag cannot either (the helper never touched the slot in either case),
+#     so the instrument is the observe-call TALLY EIGS_OBS_GATE_STATS=1 now
+#     prints at exit: every entry into observer_slot_update[_num] /
+#     observer_slot_sample[_num] / the two JIT observe helpers, counted BEFORE
+#     each one's gate test. Closed -> exactly 0 after 1000 assignments; open
+#     (a reader, or EIGS_OBS_FORCE=1) -> populated. Each verdict also carries
+#     the program's ANSWER and, on the JIT arms, the thunk witness — a loop
+#     that never got a thunk would score 0 calls while running interpreted
+#     (the inline-vs-measure trap), so `jit=compiled` is part of the verdict
+#     on x86_64 (elsewhere the JIT arms still run and are labelled jit=n/a).
+#     Planted fault (either hoist deleted): the interpreter arm reports
+#     calls=1000, the JIT arm calls=1000 — verified red for both before
+#     landing.
+printf 'x is 0.0\nfor i in range of 1000:\n    x is x + 1.5\nprint of x\n' > "$OBS_GATE_TMP/hoist_mod.eigs"
+printf 'define run as:\n    x is 0.0\n    for i in range of 1000:\n        x is x + 1.5\n    return x\nprint of (run of [])\n' > "$OBS_GATE_TMP/hoist_fn.eigs"
+printf 'define run as:\n    x is 0.0\n    for i in range of 1000:\n        x is x + 1.5\n    print of (report of x)\n    return x\nprint of (run of [])\n' > "$OBS_GATE_TMP/hoist_reader.eigs"
+# obs_hoist_verdict <jit|interp> <program> [env...] -> "<answer>/calls=<0|populated|N>/jit=<compiled|none|n/a|off>"
+obs_hoist_verdict() {
+    local OHV_MODE="$1" OHV_PROG="$2"; shift 2
+    local OHV_OUT OHV_RC OHV_ANS OHV_CALLS OHV_JIT
+    if [ "$OHV_MODE" = jit ]; then
+        OHV_OUT=$(env "$@" EIGS_OBS_GATE_STATS=1 EIGS_JIT_STATS=1 EIGS_JIT_OSR_THRESHOLD=1 $EIGS_BIN "$OHV_PROG" 2>&1); OHV_RC=$?
+    else
+        OHV_OUT=$(env "$@" EIGS_OBS_GATE_STATS=1 EIGS_JIT_OFF=1 $EIGS_BIN "$OHV_PROG" 2>&1); OHV_RC=$?
+    fi
+    if [ "$OHV_RC" -ne 0 ]; then echo "died-rc$OHV_RC"; return; fi
+    OHV_ANS=$(printf '%s\n' "$OHV_OUT" | grep -v '^obs-gate:\|^\[jit\]' | tail -1)
+    OHV_CALLS=$(printf '%s\n' "$OHV_OUT" | sed -n 's/^obs-gate: observe-calls \([0-9]*\)$/\1/p')
+    : "${OHV_CALLS:=missing}"
+    if [ "$OHV_CALLS" != missing ] && [ "$OHV_CALLS" -ge 1000 ] 2>/dev/null; then OHV_CALLS=populated; fi
+    if [ "$OHV_MODE" = jit ]; then
+        if [ "$(uname -m)" != x86_64 ]; then OHV_JIT="n/a"
+        elif printf '%s\n' "$OHV_OUT" | grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]'; then OHV_JIT=compiled
+        else OHV_JIT=none; fi
+    else OHV_JIT=off; fi
+    echo "$OHV_ANS/calls=$OHV_CALLS/jit=$OHV_JIT"
+}
+OBS_HOIST_JIT_EXPECT=compiled; [ "$(uname -m)" = x86_64 ] || OBS_HOIST_JIT_EXPECT="n/a"
+# 45. Interpreter, module-level names (OBSERVE_NAME_POST): closed -> no calls.
+OBS_G44=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_mod.eigs")
+check "gate closed: OBSERVE_NAME_POST never enters the observer (interpreter)" "$OBS_G44" "1500/calls=0/jit=off"
+# 46. Interpreter, fn-local slots (OBSERVE_ASSIGN_LOCAL): closed -> no calls.
+OBS_G45=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_fn.eigs")
+check "gate closed: OBSERVE_ASSIGN_LOCAL never enters the observer (interpreter)" "$OBS_G45" "1500/calls=0/jit=off"
+# 47. JIT, module-level names: the emitter's inline gate test skips the helper.
+OBS_G46=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_mod.eigs")
+check "gate closed: the JIT skips jit_helper_observe_name_post (thunk witnessed)" "$OBS_G46" "1500/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
+# 48. JIT, fn-local slots.
+OBS_G47=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_fn.eigs")
+check "gate closed: the JIT skips jit_helper_observe_assign_local (thunk witnessed)" "$OBS_G47" "1500/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
+# 49. Control — a reader opens the gate at compile time and the same JIT'd loop
+#     must then RECORD (populated tally, `diverging` verdict on the ramp). A
+#     do-nothing counter or a gate test that skips the call unconditionally
+#     scores 0 here and goes red.
+OBS_G48=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_reader.eigs")
+check "control: with a reader the JIT'd loop still records every assignment" "$OBS_G48" "1500/calls=populated/jit=$OBS_HOIST_JIT_EXPECT"
+# 50. Control — EIGS_OBS_FORCE=1 opens the gate from process start on the
+#     read-free program; the interpreter's hoisted test must see it open.
+OBS_G49=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_mod.eigs" EIGS_OBS_FORCE=1)
+check "control: EIGS_OBS_FORCE=1 still records the read-free program (interpreter)" "$OBS_G49" "1500/calls=populated/jit=off"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))

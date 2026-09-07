@@ -511,6 +511,52 @@ reads **no** observer state at all — `when` / `where` / `why` / `how` on a val
 operand return constants, because observer state is binding-keyed and a bare
 value has no binding.
 
+**What "pays nothing" means at the instruction level (#972).** The gate is
+decided at compile time but *tested* at run time, because it can open mid-run
+(a runtime arming, a SIGUSR1 dump, a descriptor). Where that test sits
+matters: until #972's last residual was closed, `OBSERVE_ASSIGN_LOCAL` and
+`OBSERVE_NAME_POST` still dispatched into their helpers — a call, the TOS
+decode, the slot or name resolution (a hash lookup for a module-level name) —
+and only *then* returned at `observer_slot_update_num`'s gate test, which
+measured as +18% (module level) / +14% (function level, JIT) over
+`unobserved:` on a 20M-iteration read-free loop. The test is now the first
+thing both opcodes do, in the interpreter `CASE` bodies and inlined into the
+JIT thunk ahead of the helper call (`emit_obs_gate_test`, src/jit.c — the
+same two loads `eigs_obs_gate_open()` makes, through the VM's owner
+back-pointer so nothing is baked but the trace flag's address), and the JIT
+no longer emits a call for the no-op `OP_OBSERVE_ASSIGN` at all. With the gate
+closed a read-free program's assignment therefore costs the two flag loads and
+a branch; with it open nothing changes. The `observe-calls` tally above is the
+regression instrument: suite section [99u] pins it at `0` for a read-free loop
+on both the interpreter and a witnessed JIT thunk, and at `populated` with a
+reader or `EIGS_OBS_FORCE=1`.
+
+**And what is left is not the observer — measured, with the control.** After
+the hoist, a read-free module-level loop is still slower than the same loop
+wrapped in `unobserved:`, and it is tempting to read that as observer cost
+still leaking. It is not. `unobserved:` does a *second* thing at module scope:
+#871 Part B promotes the names a block writes to module SLOTS when escape
+analysis says nothing outside the block reads them, which replaces a hashed
+`SET_NAME` with a slot store. The control that separates the two is the same
+`unobserved:` program with its `print` moved OUTSIDE the block, so the
+promotion is refused and the binding stays a module name (20M iterations, user
++sys CPU, n=5 medians, one shared box):
+
+| module-level probe | v0.43.0 | pre-hoist | post-hoist |
+|---|---|---|---|
+| read-free, `x` a module NAME | 4.13 s | 4.12 s | **3.88 s** |
+| `unobserved:`, `x` promoted to a module SLOT | 3.41 s | 3.42 s | 3.37 s |
+| `unobserved:`, promotion refused, `x` a NAME | 3.91 s | 3.90 s | 3.95 s |
+
+Against the like-for-like row the read-free arm went from +5.6% to −1.8%: the
+observer residual is gone. The ~15% that remains against the promoted row is
+the slot promotion, and it is available to any binding a slot can hold — it is
+a scope-and-storage result, not an observer one. Inside a function, where
+locals are already slots, the read-free arm is at or just under the
+`unobserved:` one (2.85 s vs 2.93 s post-hoist; 2.94 s vs 2.96 s before it). Quoting
+the raw `unobserved:`-vs-plain gap as "what the observer costs" over-attributes
+it by roughly three-quarters.
+
 ## Using the gate
 
 The gate is automatic and needs no source change. A program that never reads
@@ -519,7 +565,7 @@ observer state pays nothing for it; a program that does is unaffected.
 | control | effect |
 |---|---|
 | `EIGS_OBS_FORCE=1` | force observer recording ON, whatever the scan decided. The escape hatch, and the baseline arm for any measurement — one byte-identical binary serves both arms. |
-| `EIGS_OBS_GATE_STATS=1` | print one `obs-gate: observed\|unobserved <unit>` line per compiled unit on stderr. |
+| `EIGS_OBS_GATE_STATS=1` | print one `obs-gate: observed\|unobserved <unit>` line per compiled unit on stderr, and at exit one `obs-gate: observe-calls N` line: how many times an observer update/sample entry point was *entered* (counted before its own gate test). A read-free program must report `0` — the observe ops skip the helper call outright when the gate is closed (#972, below), and the per-unit verdict alone cannot tell "skipped" from "called and returned at the gate". |
 
 Both follow the tree's flag convention: any non-empty value that does not
 start with `0` turns the control on, so `=0` and `=` leave it off.

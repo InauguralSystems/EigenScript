@@ -1711,6 +1711,43 @@ static uint8_t *emit_incl_rdi_r9_4(uint8_t *w) {
 static uint8_t *emit_cmpl_0_mem_rax(uint8_t *w) {
     *w++ = 0x83; *w++ = 0x38; *w++ = 0x00; return w;
 }
+static uint8_t *emit_mov_disp32_rax_to_rax(uint8_t *w, int32_t disp);
+static uint8_t *emit_cmpl_imm32_disp32_rax(uint8_t *w, int32_t disp, uint32_t imm);
+static uint8_t *emit_jne_rel32(uint8_t *w, uint8_t **patch);
+static uint8_t *emit_je_rel32(uint8_t *w, uint8_t **patch);
+static void patch_rel32(uint8_t *patch, uint8_t *target);
+/* #972: the observer gate, inline, ahead of an observe helper call.
+ *
+ *     mov    off_vm_owner(%rbx), %rax        ; EigsThread*
+ *     mov    off_thread_state(%rax), %rax    ; EigsState*
+ *     cmpl   $0, off_state_obs_needed(%rax)  ; compile-time half
+ *     jne    .call
+ *     movabs $&g_trace_obs_hist_storage, %rax
+ *     cmpl   $0, (%rax)                      ; runtime half (a tape recording)
+ *     je     .skip                           ; <- caller patches after the call
+ * .call:
+ *
+ * Exactly eigs_obs_gate_open() (eigenscript.h), read live: the gate can open
+ * mid-run (a runtime arming, SIGUSR1, a descriptor), so nothing is baked but
+ * the trace flag's ADDRESS — the storage symbol, as the SET_NAME arms do.
+ * The plain loads are relaxed atomics at ISA level on x86 (the recorded JIT
+ * rule). Before this, a read-free program's OSR'd loop paid a full helper
+ * call per assignment (call, TOS decode, slot/name resolution) only to
+ * return at the helper's own gate test — the one residual #1034/#1024 left
+ * on #972. %rax is scratch between ops; the stack is untouched, so last_imm
+ * is the same on both arms of the merge. */
+static uint8_t *emit_obs_gate_test(uint8_t *w, uint8_t **skip_patch) {
+    uint8_t *call_p;
+    w = emit_mov_disp32_rbx_to_rax(w, g_layout.off_vm_owner);
+    w = emit_mov_disp32_rax_to_rax(w, g_layout.off_thread_state);
+    w = emit_cmpl_imm32_disp32_rax(w, g_layout.off_state_obs_needed, 0);
+    w = emit_jne_rel32(w, &call_p);
+    w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_obs_hist_storage);
+    w = emit_cmpl_0_mem_rax(w);
+    w = emit_je_rel32(w, skip_patch);
+    patch_rel32(call_p, w);
+    return w;
+}
 /* mov (%rax), %rax  (3 bytes) — deref a baked pointer-to-pointer (#410:
  * load the registered abort-flag pointer before testing the flag). */
 static uint8_t *emit_mov_mem_rax_to_rax(uint8_t *w) {
@@ -3006,30 +3043,27 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             if (done_p) patch_rel32(done_p, w);
             i += 5;
         } else if (op == OP_OBSERVE_ASSIGN) {
-            /* Stage 4o: out-of-line call to
-             *   jit_helper_observe_assign(chunk, name_idx).
-             * chunk arrives via %r14 (has_bail_op forces load). Helper
-             * reads g_vm.stack[sp-1] — sync %ecx → g_vm.sp before call.
-             * Helper does not change sp; reload %ecx after for safety
-             * (matches existing helper pattern, ~1 load). */
-            uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
-                                           ((uint16_t)chunk->code[i + 2] << 8));
-            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
-            w = emit_mov_r14_rdi(w);
-            w = emit_mov_imm32_esi(w, (uint32_t)name_idx);
-            w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_observe_assign);
-            w = emit_call_rax(w);
-            w = emit_pop_rcx(w);
-            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            /* Stage 4o used to emit an out-of-line call to
+             *   jit_helper_observe_assign(chunk, name_idx)
+             * here. Since #262 Phase-3/E that helper (and the interpreter's
+             * CASE(OBSERVE_ASSIGN)) is a no-op — a name binding is observed by
+             * the OBSERVE_NAME_POST the compiler emits after its SET — so the
+             * call was a full helper-call round trip per name assignment that
+             * did nothing (#972). Emit nothing; the op still advances by its
+             * 3 bytes, and last_imm falls through the switch's default (0)
+             * exactly as it did around the call. The helper stays defined
+             * (jit_smoke stubs it) for anything that still takes its address. */
             i += 3;
         } else if (op == OP_OBSERVE_ASSIGN_LOCAL) {
             /* Stage 4o: out-of-line call to
              *   jit_helper_observe_assign_local(slot).
              * No chunk needed; slot in %edi. Same sp sync/reload as
-             * OBSERVE_ASSIGN. */
+             * OBSERVE_NAME_POST. #972: guarded by the inline gate test — a
+             * read-free program skips the call entirely. */
             uint16_t slot = (uint16_t)(chunk->code[i + 1] |
                                        ((uint16_t)chunk->code[i + 2] << 8));
+            uint8_t *skip_p;
+            w = emit_obs_gate_test(w, &skip_p);
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_mov_imm32_edi(w, (uint32_t)slot);
             w = emit_push_rcx(w);
@@ -3037,6 +3071,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            patch_rel32(skip_p, w);
             i += 3;
         } else if (op == OP_REPORT_SLOT) {
             /* #262 C.2: jit_helper_report_slot(slot) — pushes the band string.
@@ -3055,9 +3090,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         } else if (op == OP_OBSERVE_NAME_POST) {
             /* #262 C.2: jit_helper_observe_name_post(chunk, name_idx). chunk via
              * %r14 (has_bail_op); name_idx in %esi. Peeks TOS, no stack change;
-             * same sp sync/reload as OBSERVE_ASSIGN. */
+             * sp synced before and reloaded after (the helper pattern). #972:
+             * guarded by the inline gate test — a read-free program skips the
+             * call (and the name resolution inside it) entirely. */
             uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
                                            ((uint16_t)chunk->code[i + 2] << 8));
+            uint8_t *skip_p;
+            w = emit_obs_gate_test(w, &skip_p);
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)name_idx);
@@ -3066,6 +3105,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            patch_rel32(skip_p, w);
             i += 3;
         } else if (op == OP_UNOBSERVED_BEGIN) {
             /* unobserved_depth now lives on EigsThread; reach it via
