@@ -11,6 +11,26 @@
 #                        from source/, plus eigs.json + eigs.lock.json
 set -euo pipefail
 
+# ---------------------------------------------------- how this test matches (#1122)
+# NO PIPELINE DECIDES A VERDICT HERE. Mechanism, from #1120: under
+# `set -o pipefail`, `echo "$s" | grep -q "$pat"` is a RACE, not a test.
+# `grep -q` exits the instant it matches and closes the read end; the
+# still-writing `echo` then takes SIGPIPE and exits 141; pipefail reports the
+# PIPELINE as 141 — a failed match — while grep's own status was 0, MATCHED.
+# The test then goes red while printing the very output it says is missing.
+# `tools/strict_differential.sh --selftest` reproduces that deterministically
+# on a capture larger than the pipe buffer.
+#
+# str_has is bash's own matcher: no fork, no pipe, no status to misread. The
+# needle is QUOTED inside the pattern, so a glob character in it is a literal —
+# the same promise `grep -F` made. Every needle replaced below is a literal
+# with no BRE metacharacter in it, so this is the same test, not a wider one —
+# and WIDER is the only direction that could turn a check that can fail into
+# one that cannot.
+# The surviving `| head -N` pipelines are diagnostics inside an already-decided
+# FAIL branch; they settle nothing and are not exposed.
+str_has() { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
+
 EIGS="${EIGENSCRIPT:-./eigenscript}"
 EIGS=$(realpath "$EIGS")
 
@@ -47,7 +67,7 @@ if "$EIGS" --pkg add greeting "$SOURCE_URL" v1.0.0 >/dev/null 2>&1; then
     exit 1
 fi
 BARE_ERR=$("$EIGS" --pkg add greeting "$SOURCE_URL" v1.0.0 2>&1 || true)
-if ! echo "$BARE_ERR" | grep -q "<owner>/<name>"; then
+if ! str_has "$BARE_ERR" "<owner>/<name>"; then
     echo "  FAIL: bare-name rejection should mention <owner>/<name>"
     echo "$BARE_ERR"
     exit 1
@@ -115,7 +135,7 @@ echo "  PASS: --pkg install reproduces eigs_modules at the locked commit"
 mkdir -p "$TMP/empty"
 cd "$TMP/empty"
 EMPTY_OUT=$("$EIGS" --pkg install 2>&1)
-if ! echo "$EMPTY_OUT" | grep -q "No dependencies"; then
+if ! str_has "$EMPTY_OUT" "No dependencies"; then
     echo "  FAIL: install on empty project should say 'No dependencies'"
     echo "$EMPTY_OUT"
     exit 1
@@ -171,6 +191,11 @@ echo "  PASS: --pkg add resolves a non-main default branch"
 
 # The manifest must NOT carry a fabricated tag — an omitted tag stays omitted,
 # which is what makes the project recoverable.
+#
+# This grep and the `'"tag": *"master"'` one below READ A FILE. There is no
+# writer on the other end of a pipe, so there is nothing for `grep -q` to
+# SIGPIPE and no #1122 exposure — and the second is a real BRE (`*` after a
+# space), which a substring matcher would answer differently. Both stay.
 if grep -q '"tag"' eigs.json; then
     echo "  FAIL: eigs.json must not record a guessed tag"
     cat eigs.json

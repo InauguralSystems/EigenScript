@@ -6726,6 +6726,44 @@ else
 fi
 echo ""
 
+# [99aa] No pipeline decides a verdict under pipefail (#1122; mechanism #1120).
+# `printf '%s' "$s" | grep -q "$pat"` under `set -o pipefail` is a race: grep -q
+# exits on the first match and closes the read end, the still-writing printf
+# takes SIGPIPE and exits 141, and pipefail reports the PIPELINE as 141 — a
+# failed match — while grep matched. The test then goes red printing the very
+# bytes it says are missing. This gate is static: it scans every .sh that
+# enables pipefail and fails on any early-exiting reader at the end of a pipe
+# whose STATUS picks a branch. File-reading greps, `grep -c`, `grep -vxF -f`
+# and diagnostic `| head` are all left alone, and --selftest proves both halves
+# of that — it FIRES on each banned spelling and stays QUIET on each legitimate
+# one. NOTE: run_all_tests.sh itself does not set pipefail, so its ~173
+# `| grep -q` sites are not exposed and are not subjects.
+#
+# Both halves are reported separately, and the self-test's check COUNT is
+# pinned rather than tested for ">0" — "at least one check passed" is satisfied
+# by a gate reduced to a single echo (the [99o] lesson).
+echo "[99aa] pipefail verdict-pipeline gate (#1122)"
+TOTAL=$((TOTAL + 1))
+PFV_EXPECTED=34
+pfv_audit_out=$(bash "$TESTS_DIR/../tools/pipefail_verdict_check.sh" 2>&1); pfv_audit_rc=$?
+pfv_self_out=$(bash "$TESTS_DIR/../tools/pipefail_verdict_check.sh" --selftest 2>&1); pfv_self_rc=$?
+PFV_COUNT=$(printf '%s\n' "$pfv_self_out" | sed -n 's/^  checks=\([0-9]*\) .*/\1/p')
+if [ "$pfv_audit_rc" -eq 0 ] && [ "$pfv_self_rc" -eq 0 ] && [ "${PFV_COUNT:-0}" -eq "$PFV_EXPECTED" ]; then
+    PASS=$((PASS + 1))
+    printf '%s\n' "$pfv_audit_out"
+else
+    FAIL=$((FAIL + 1))
+    if [ "$pfv_audit_rc" -ne 0 ]; then
+        echo "  FAIL: a pipefail script decides a verdict with a pipeline (audit exit $pfv_audit_rc):"
+        printf '%s\n' "$pfv_audit_out" | sed 's/^/      /'
+    fi
+    if [ "$pfv_self_rc" -ne 0 ] || [ "${PFV_COUNT:-0}" -ne "$PFV_EXPECTED" ]; then
+        echo "  FAIL: the gate self-test broke or shrank (exit $pfv_self_rc, checks=${PFV_COUNT:-none}, expected $PFV_EXPECTED):"
+        printf '%s\n' "$pfv_self_out" | sed 's/^/      /'
+    fi
+fi
+echo ""
+
 # [99p] Child-script exit-status ledger (#988). The synthetic FAIL: markers
 # emitted by the `bash` wrapper already fail each affected section; this is the
 # roster, so a reader sees WHICH children died rather than inferring it from

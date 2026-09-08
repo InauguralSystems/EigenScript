@@ -14,6 +14,19 @@
 # audit; asserting the flags on every compile invocation is simpler and cannot
 # be argued out of a leg.
 #
+# How this gate MATCHES (#1122). Every matcher below reads a here-string or a
+# file, never a pipe. `printf '%s\n' "$x" | grep -q RE` under `set -o pipefail`
+# — which this script sets — is a RACE, not a test: `grep -q` exits the instant
+# it matches and closes the read end, the still-writing `printf` takes SIGPIPE
+# and exits 141, and pipefail reports the PIPELINE as 141, a FAILED match,
+# while grep's own status was 0, MATCHED (#1120). Thirteen sites here were that
+# shape. `grep -qE RE <<<"$x"` is ONE command: bash never blocks writing a
+# here-string, there is no second process to kill, and pipefail is not
+# consulted — so grep's flags, pattern and LINE-ORIENTED semantics are all
+# preserved exactly, which matters here because these patterns are real EREs.
+# Measured on a 4 MB subject, 200 evaluations: pipeline form 200/200 wrong,
+# here-string form 0/200. tools/pipefail_verdict_check.sh is the gate.
+#
 # What counts as a compile invocation (the recognition rule):
 #   dry-run recipes are joined at backslash continuations, then SPLIT into
 #   individual invocations at shell separators (; && || |) — one logical
@@ -583,14 +596,14 @@ is_compile_invocation() {
     # path invokes `gcc.exe` / `x86_64-w64-mingw32-gcc.exe`, and a trailing
     # `.exe` broke the whole-token anchor in both matchers. No such line is in
     # the tree today — this is covered before the surface lands, not after.
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]]|[(`])("?[^[:space:]"]*[-/}])?"?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?(\.exe)?"?([[:space:]]|$)|(^|[[:space:]]|[(`])"?\$\{?CC([:]?[-=?+][^}]*)?\}?"?([[:space:]]|$)' || return 1
-    printf '%s\n' "$1" | grep -qE '\.c\b' && return 0
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]])-c([[:space:]]|$)' && return 0
+    grep -qE '(^|[[:space:]]|[(`])("?[^[:space:]"]*[-/}])?"?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?(\.exe)?"?([[:space:]]|$)|(^|[[:space:]]|[(`])"?\$\{?CC([:]?[-=?+][^}]*)?\}?"?([[:space:]]|$)' <<<"$1" || return 1
+    grep -qE '\.c\b' <<<"$1" && return 0
+    grep -qE '(^|[[:space:]])-c([[:space:]]|$)' <<<"$1" && return 0
     # `-x c -` compiles from stdin: a real compile with no .c anywhere and no
     # standalone -c. tests/test_leak_guard.sh's ASan probe is exactly this shape;
     # the coverage check below is what surfaced it (#925).
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]])-x[[:space:]]+c([[:space:]]|$)' && return 0
-    printf '%s\n' "$1" | grep -qE '(\$SOURCES|\$LSP_SOURCES|\$SRCS|\$\{SOURCES\[@\]\})'
+    grep -qE '(^|[[:space:]])-x[[:space:]]+c([[:space:]]|$)' <<<"$1" && return 0
+    grep -qE '(\$SOURCES|\$LSP_SOURCES|\$SRCS|\$\{SOURCES\[@\]\})' <<<"$1"
 }
 
 # ---- #925: assert the RECOGNIZER's own coverage -------------------------
@@ -651,7 +664,7 @@ recognizer_broad_match() {
     # --selftest fails if any widening of the strict matcher lands without the
     # matching widening here.
     # RECOGNIZER_PATTERN broad
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]"'"'"'(={;`])([^[:space:]"'"'"';)`]*[/}-])?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?(\.exe)?([[:space:]"'"'"';)`]|$)|\$\{?CC[:}=?+-]|\$CC\b'
+    grep -qE '(^|[[:space:]"'"'"'(={;`])([^[:space:]"'"'"';)`]*[/}-])?(gcc|clang|cc|emcc)(-[0-9][0-9.]*)?(\.exe)?([[:space:]"'"'"';)`]|$)|\$\{?CC[:}=?+-]|\$CC\b' <<<"$1"
 }
 
 # BROAD >= STRICT, asserted per axis rather than promised in a comment.
@@ -728,7 +741,7 @@ EOF
     # expansion referencing "$f" — a loop variable belonging to a DIFFERENT
     # function — which is an unbound-variable fatal under `set -u`, and it
     # aborted the clean run while the planted run still reported correctly.
-    bp=$(printf '%s' "$bp" | sed -e 's/^.*grep -qE //' -e 's/[[:space:]]*$//')
+    bp=$(printf '%s' "$bp" | sed -e 's/^.*grep -qE //' -e 's/ <<<"[$]1".*$//' -e 's/[[:space:]]*$//')
     pf=$(printf '%s' "$pf" | sed -e 's/^.*grep -qE //' -e 's/ "[$]f".*$//' -e 's/[[:space:]]*$//')
     # An extraction that finds NOTHING must fail, not skip. Failing open here is
     # the same silent-pass mode this whole gate exists to prevent, and the first
@@ -762,10 +775,10 @@ recognizer_waived() {
     #    Note an ENV-PREFIXED compile (`FOO=bar gcc -c x.c`) is not swallowed by
     #    this: the strict recognizer already SEES that line, so the waiver is
     #    never consulted for it.
-    printf '%s\n' "$seg" | grep -qE '^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*$' && return 0
+    grep -qE '^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*$' <<<"$seg" && return 0
     # 3. A relocatable LINK (`-r`), not a compile: no translation unit is
     #    compiled, so no warning flag applies. tests/test_lint_linkage.sh:48.
-    printf '%s\n' "$seg" | grep -qE '(^|[[:space:]])-r([[:space:]]|$)' && return 0
+    grep -qE '(^|[[:space:]])-r([[:space:]]|$)' <<<"$seg" && return 0
     # 2. The compiler word appears only inside a quoted string — a log message or
     #    a usage hint, e.g. amalgamate.sh's "compile: cc host.c ...".
     #
@@ -869,7 +882,7 @@ recognizer_coverage_check() {
 # Whole-argument flag match: `-Werror=switch-enum` must not satisfy this.
 carries_flag() {
     local line="$1" flag="$2"
-    printf '%s\n' "$line" | grep -qE "(^|[[:space:]])$flag([[:space:]]|$)"
+    grep -qE "(^|[[:space:]])$flag([[:space:]]|$)" <<<"$line"
 }
 
 missing_flags() {
@@ -1094,7 +1107,7 @@ if [ "${1:-}" = "--selftest" ]; then
         if [ "$VIOLATIONS" -ne 1 ]; then
             echo "SELFTEST FAILED: $name — expected 1 violation, got $VIOLATIONS"
             st_fail=1
-        elif ! printf '%s\n' "$out" | grep -qF -e "$needle"; then
+        elif ! grep -qF -e "$needle" <<<"$out"; then
             echo "SELFTEST FAILED: $name — violation output does not name '$needle'"
             printf '%s\n' "$out" | sed 's/^/    /'
             st_fail=1
@@ -1422,7 +1435,7 @@ EOF
     audit_stream "selftest:two-invocations-one-block" > "$st_out" < "$st_joined"
     out=$(cat "$st_out")
     if [ "$EXAMINED" -ne 2 ] || [ "$VIOLATIONS" -ne 1 ] \
-       || ! printf '%s\n' "$out" | grep -qF 'src/jit.c'; then
+       || ! grep -qF 'src/jit.c' <<<"$out"; then
         echo "SELFTEST FAILED: two invocations one block — expected examined=2 violations=1 naming src/jit.c, got examined=$EXAMINED violations=$VIOLATIONS"
         printf '%s\n' "$out" | sed 's/^/    /'
         st_fail=1
@@ -1444,8 +1457,8 @@ EOF
     else
         out=$(cat "$st_out")
         if [ "$EXAMINED" -ne 2 ] || [ "$VIOLATIONS" -ne 1 ] \
-           || ! printf '%s\n' "$out" | grep -qF 'selftest-target-b' \
-           || ! printf '%s\n' "$out" | grep -qF 'src/jit.c'; then
+           || ! grep -qF 'selftest-target-b' <<<"$out" \
+           || ! grep -qF 'src/jit.c' <<<"$out"; then
             echo "SELFTEST FAILED: merged-stream fault was not attributed to target B (examined=$EXAMINED violations=$VIOLATIONS)"
             printf '%s\n' "$out" | sed 's/^/    /'
             st_fail=1
