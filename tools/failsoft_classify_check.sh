@@ -35,6 +35,36 @@
 # the documented answer; what is missing is any way to distinguish it from a
 # rejected argument. That needs a decision on this issue, not a wider matcher.
 #
+# THE make_null() POPULATION IS SCOPED TO ONE FILE, ON PURPOSE (#1007).
+# `return make_null()` is a soft stand-in too — the drawing half of
+# ext_gfx.c answered a wrong-typed argument by silently drawing nothing —
+# but it is ALSO the correct answer almost everywhere else: a store_get
+# miss, a dict_get miss, an absent optional. Measured across the surface
+# before deciding:
+#
+#   src/builtins.c         247      src/ext_gfx.c    52
+#   src/builtins_tensor.c   51      src/ext_http.c   26
+#   src/builtins_host.c     42      src/ext_store.c  25
+#   src/ext_net.c           12      src/ext_db.c      1     TOTAL 456
+#
+# (Measured on the pre-#744 tree. #744 later split builtins_buf.c out of
+# builtins.c and #973/#1093 grew the tensor file, so `--residuals` now
+# reports the same population under different file names and a larger
+# total. The decision is about SCOPE, not about the exact count, and
+# `--residuals` is the live number.)
+#
+# Widening to all 456 would demand hundreds of hand annotations on code
+# that is already right — the cry-wolf failure, after which a gate gets
+# routed around and protects nothing. So the widening is SCOPED BY FILE to
+# the one surface where "a wrong-typed argument silently draws nothing" is
+# a coherent defect class with a single verdict, and the other 404 sites
+# are left out with this written reason rather than by omission. The scope
+# is one list, NULL_SCOPE below; adding a file to it is a review event and
+# means committing to classify every make_null() in it.
+#
+#   fs:VOID     the builtin ANSWERS null by contract (a drawing or other
+#               side-effect call whose every path returns null); this is
+#               the return value, not a stand-in for a rejected argument
 #   fs:ANSWER   the 0/"" is the documented result; strict must NOT raise
 #   fs:CHANNEL  failure is signalled out-of-band (a flag, an out-param)
 #   fs:LITERAL  not a guard — this IS the value being constructed
@@ -48,11 +78,16 @@
 # WHAT THIS GATE DOES NOT COVER (every exemption is a waiver, so it is
 # written here rather than left to be rediscovered):
 #
-#   - Soft stand-ins that are not zero/empty/-1: `return make_null()`,
-#     `return make_list()`. Those are a different population and are NOT
-#     enumerated here. Counted and reported as a residual by --residuals so
-#     the number is visible rather than implied. (The `-1` sentinel WAS in
-#     this list until #1008 moved it into the population; see below.)
+#   - `return make_null()` OUTSIDE the NULL_SCOPE file list, and
+#     `return make_list(0)` everywhere. Those are a different population and
+#     are NOT enumerated here. Both are counted by --residuals so the number
+#     is visible rather than implied — and a NULL_SCOPE file is printed there
+#     as IN the population, never as a residual, because listing a gated file
+#     as residual is how the two halves came to contradict each other. (The `-1`
+#     sentinel WAS in this list until #1008 moved it into the population,
+#     and `make_null()` in ext_gfx.c until #1007 scoped it in; both are
+#     instances of the header's own rule that WIDENING THE POPULATION CAN
+#     FALSIFY AN EXEMPTION WRITTEN FOR THE NARROWER ONE.)
 #   - A soft return reached through a HELPER (`return zero_value();`) or
 #     built by an expression (`return make_num(ok ? n : -1);`). This gate is
 #     a text matcher, not a call graph, so it is blind to both by
@@ -99,7 +134,14 @@ set -uo pipefail
 
 SELF_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-VALID_TAGS='ANSWER|CHANNEL|LITERAL|EMPTY|STRICT|TODO'
+VALID_TAGS='ANSWER|CHANNEL|LITERAL|EMPTY|STRICT|TODO|VOID'
+
+# Files whose `return make_null()` sites are IN the population (#1007). See
+# the scope paragraph in the header: this is a decision, not an oversight,
+# and the reason is recorded there rather than here so it cannot be edited
+# away without reading it. Paths are repo-relative, exactly as the file
+# derivation emits them.
+NULL_SCOPE='src/ext_gfx.c'
 
 # The population floor. Sites leave this population legitimately (a guard
 # converted to ARG_GUARD, a builtin deleted), so this is not pinned upward
@@ -120,7 +162,17 @@ VALID_TAGS='ANSWER|CHANNEL|LITERAL|EMPTY|STRICT|TODO'
 # population for the first time (sha256/md5/hmac_sha256 all have one), with
 # 8 sites that had never been classified. A floor rising because the
 # derivation got wider is the good direction; note it either way.
-FLOOR_SITES=136
+#
+# 136 -> 174 on 2026-09-07 (#1007), and again because the derivation got
+# wider, not because sites were added: `return make_null()` entered the
+# population for src/ext_gfx.c only (see NULL_SCOPE and the scope paragraph
+# in the header). 38 previously invisible sites appeared there, every one of
+# them read and classified, and all 136 previously-classified sites were
+# still found — the monotonicity check this header demands of any widening.
+# ext_gfx.c's four fs:TODO #971 deferrals were converted to ARG_GUARD in the
+# same change and left the population entirely, which is why the net is +38
+# rather than +42.
+FLOOR_SITES=174
 
 usage_mode="${1:-}"
 
@@ -185,8 +237,8 @@ builtin_files() {
 # statement is split, which is reported separately: it is matched correctly
 # here, but it must be reformatted so the MARKER-context window (the return
 # line and the two above it) is meaningful.
-norm_hits() {   # <file> -> "startline\tnlines\tctxstart"
-    awk '
+norm_hits() {   # <file> <wide-null:0|1> -> "startline\tnlines\tctxstart"
+    awk -v wide_null="${2:-0}" '
     # Comments are stripped with real block-comment state AND real STRING
     # state. Two failures bought each half:
     #
@@ -244,7 +296,8 @@ norm_hits() {   # <file> -> "startline\tnlines\tctxstart"
         if (sn ~ /^return/ && index(sn, ";") == 0) { pending = 1; next }
         pending = 0
         if (sn == "") next
-        if (sn ~ /returnmake_num\(0(\.0*)?\);/ || sn ~ /returnmake_str\(""\);/ || sn ~ /returnmake_num\(-1(\.0*)?\);/) {
+        if (sn ~ /returnmake_num\(0(\.0*)?\);/ || sn ~ /returnmake_str\(""\);/ || sn ~ /returnmake_num\(-1(\.0*)?\);/ ||
+            (wide_null == 1 && sn ~ /returnmake_null\(\);/)) {
             ctx = (crun_end == start - 1) ? crun_start : start
             printf "%d\t%d\t%d\n", start, NR - start + 1, ctx
         }
@@ -263,7 +316,7 @@ run_check() {   # <root>  -> 0 clean / 1 finding ; prints a summary
     # ships bash 3.2, where `declare -A` is a syntax error and `tally[$tag]`
     # with a string key is parsed as arithmetic on an unbound name (release
     # build failed here — the [99p] child-exit ledger surfaced it).
-    local t_ANSWER=0 t_CHANNEL=0 t_LITERAL=0 t_EMPTY=0 t_STRICT=0 t_TODO=0
+    local t_ANSWER=0 t_CHANNEL=0 t_LITERAL=0 t_EMPTY=0 t_STRICT=0 t_TODO=0 t_VOID=0
     local c
     for c in $covered; do
         if ! grep -qxF "$c" <<<"$compiled"; then
@@ -275,6 +328,10 @@ run_check() {   # <root>  -> 0 clean / 1 finding ; prints a summary
     for f in $covered; do
         n_files=$((n_files + 1))
         local ln nl ctx tag
+        # #1007: `return make_null()` is in the population only for the files
+        # named in NULL_SCOPE. See the scope paragraph in the header.
+        local wide=0
+        case " $NULL_SCOPE " in *" $f "*) wide=1 ;; esac
         while read -r ln nl ctxstart; do
             [ -z "$ln" ] && continue
             n_hits=$((n_hits + 1))
@@ -313,9 +370,10 @@ run_check() {   # <root>  -> 0 clean / 1 finding ; prints a summary
                 EMPTY)   t_EMPTY=$((t_EMPTY + 1)) ;;
                 STRICT)  t_STRICT=$((t_STRICT + 1)) ;;
                 TODO)    t_TODO=$((t_TODO + 1)) ;;
+                VOID)    t_VOID=$((t_VOID + 1)) ;;
             esac
             [ "$usage_mode" = "--verbose" ] && printf '  %-8s %s:%s\n' "$tag" "$f" "$ln"
-        done < <(norm_hits "$root/$f")
+        done < <(norm_hits "$root/$f" "$wide")
     done
 
     # Vacuity. A gate that examined nothing prints OK — the single most
@@ -336,7 +394,7 @@ run_check() {   # <root>  -> 0 clean / 1 finding ; prints a summary
     printf '  files=%d sites=%d classified=%d unclassified=%d floor=%d\n' \
         "$n_files" "$n_hits" "$n_tagged" "$n_bad" "$FLOOR_SITES"
     local t c out=""
-    for t in ANSWER CHANNEL LITERAL EMPTY STRICT TODO; do
+    for t in ANSWER CHANNEL LITERAL EMPTY STRICT TODO VOID; do
         case "$t" in
             ANSWER)  c=$t_ANSWER ;;
             CHANNEL) c=$t_CHANNEL ;;
@@ -344,6 +402,7 @@ run_check() {   # <root>  -> 0 clean / 1 finding ; prints a summary
             EMPTY)   c=$t_EMPTY ;;
             STRICT)  c=$t_STRICT ;;
             TODO)    c=$t_TODO ;;
+            VOID)    c=$t_VOID ;;
         esac
         out="$out $t=$c"
     done
@@ -356,9 +415,29 @@ run_check() {   # <root>  -> 0 clean / 1 finding ; prints a summary
 # --------------------------------------------------------------- residuals
 if [ "$usage_mode" = "--residuals" ]; then
     echo "== fail-soft residual population (NOT gated) =="
+    # RESIDUAL MEANS OUTSIDE THE POPULATION, and the population MOVES. #1007
+    # scoped ext_gfx.c's `make_null()` sites IN (they are classified, tagged
+    # and gated), so listing them here as residual double-counted them and
+    # told a reader the opposite of what the gate does — reported by a blind
+    # review as "self-contradictory". The scope list is the single source of
+    # truth for both halves: a file named in NULL_SCOPE is gated, never
+    # residual. (Same for `make_list()`: it was named as residual in the
+    # header while nothing counted it, so the header promised a number that
+    # did not exist. Both halves are printed now.)
     for f in $(builtin_files "$SELF_ROOT"); do
+        gated=0
+        case " $NULL_SCOPE " in *" $f "*) gated=1 ;; esac
+        if [ "$gated" = 1 ]; then
+            n=$(awk '{s=$0; gsub(/[ \t]+/,"",s); if (s ~ /returnmake_null\(\);/) c++} END{print c+0}' "$SELF_ROOT/$f")
+            [ "$n" != 0 ] && printf '  %-26s return make_null(): %s  IN THE POPULATION (NULL_SCOPE) — gated, not residual\n' "$f" "$n"
+            continue
+        fi
         n=$(awk '{s=$0; gsub(/[ \t]+/,"",s); if (s ~ /returnmake_null\(\);/) c++} END{print c+0}' "$SELF_ROOT/$f")
         [ "$n" != 0 ] && printf '  %-26s return make_null(): %s\n' "$f" "$n"
+    done
+    for f in $(builtin_files "$SELF_ROOT"); do
+        n=$(awk '{s=$0; gsub(/[ \t]+/,"",s); if (s ~ /returnmake_list\(0\);/) c++} END{print c+0}' "$SELF_ROOT/$f")
+        [ "$n" != 0 ] && printf '  %-26s return make_list(0): %s\n' "$f" "$n"
     done
     echo "  (a different soft stand-in; see this script's header)"
     exit 0
@@ -391,7 +470,9 @@ if [ "$usage_mode" = "--selftest" ]; then
             echo "  FAIL  $label (rc=$rc want=$want)"; sed 's/^/        /' "$tmp/out"; bad=$((bad+1))
         fi
     }
-    restore() { cp "$SELF_ROOT/src/builtins.c" "$root/src/builtins.c"; rm -f "$root/src/builtins_planted.c"; }
+    restore() { cp "$SELF_ROOT/src/builtins.c" "$root/src/builtins.c"
+                cp "$SELF_ROOT/src/ext_gfx.c" "$root/src/ext_gfx.c"
+                rm -f "$root/src/builtins_planted.c" "$root/src/builtins_digits.c"; }
 
     # 0. Control, BOTH halves. A control with only the must-flag half is
     #    satisfied by a check that always fails; and an unstartable mutant
@@ -504,6 +585,29 @@ EOF
 Value* builtin_planted_e(Value *arg) { (void)arg; return make_num(0); /* fs:ANSWER */ }
 EOF
     expect 1 "builtin file outside every make variant is an orphan"; restore
+
+    # 10. THE SCOPED make_null() POPULATION (#1007), all three directions.
+    #     The widening is scoped by FILE, so it needs three fixtures, not
+    #     one: it must FIRE inside the scope, DISCRIMINATE inside the scope
+    #     (a classified site is clean, so it is not simply flagging every
+    #     make_null it sees), and STAY OUT of it elsewhere. Without the third
+    #     row a global widening — the cry-wolf outcome the header rejects —
+    #     would pass this selftest.
+    printf '\nValue* builtin_planted_null(Value *arg) { (void)arg; return make_null(); }\n' >> "$root/src/ext_gfx.c"
+    expect 1 "planted unmarked make_null() IN the null scope is caught"; restore
+
+    printf '\nValue* builtin_planted_null_ok(Value *arg) { (void)arg; return make_null(); /* fs:VOID a planted void answer */ }\n' >> "$root/src/ext_gfx.c"
+    expect 0 "a CLASSIFIED make_null() in the null scope is clean"; restore
+
+    printf '\nValue* builtin_planted_null_out(Value *arg) { (void)arg; return make_null(); }\n' >> "$root/src/builtins.c"
+    expect 0 "an unmarked make_null() OUTSIDE the null scope is NOT in the population"; restore
+
+    # 11. the new fs:VOID tag must be a real tag, not silently unrecognised.
+    #     A tag added to VALID_TAGS but forgotten in the tally would count as
+    #     classified while reporting VOID=0 — classified-but-uncounted is the
+    #     interception blind spot this gate's own header names.
+    printf '\nValue* builtin_planted_void_typo(Value *arg) { (void)arg; return make_null(); /* fs:VIOD typo */ }\n' >> "$root/src/ext_gfx.c"
+    expect 1 "a misspelled fs:VOID in the null scope is caught"; restore
 
     # 7. the leavings. A gate that corrupts the thing it checks manufactures
     #    exactly the defect it exists to detect.

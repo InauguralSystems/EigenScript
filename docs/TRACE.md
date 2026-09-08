@@ -122,6 +122,21 @@ perspective lands on the tape as an `N` record:
   included, so a program that hits one cannot desync the stream. Greedy
   (`temperature < 0.01`) calls ride the same path: the tape cannot show
   which branch ran, and replay may not load a model to re-derive it.
+- **Rendered pixels (gfx extension, #823):** `gfx_read`. Renderer output
+  depends on the font rasteriser, the driver and the backend, so the pixel
+  a render-decode oracle reads back is a device input and takes the
+  TAKE/RECORD pair.
+- **A REJECTED argument consumes no record** (#1007). `audio_capture_open`,
+  `audio_capture_read`'s siblings and `gfx_read` all place their
+  argument-type guard *above* `TRACE_NONDET_TAKE`, because an argument's
+  type is deterministic and so a rejected call is not a nondeterministic
+  input. Placed below the TAKE, the capture run returns before
+  `TRACE_NONDET_RECORD` and writes nothing while the replay run's TAKE still
+  consumes one — every later record for that name shifts by one and the
+  rejected call replays as a real device id or a real pixel, silently, even
+  under `EIGS_STRICT=1`. Measured on `audio_capture_open` before the guard
+  was hoisted: capture printed `0 2 null`, replay of that same tape printed
+  `2 2 null`. Suite section `[133]` pins it.
 - **Audio capture (gfx extension, #579):** `audio_capture_open`,
   `audio_capture_read`. Captured audio is a device input, so the whole
   capture chain is TAKE/RECORD-wrapped: under `EIGS_REPLAY` the tape is

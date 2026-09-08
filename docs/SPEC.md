@@ -246,8 +246,18 @@ consequences are contracts you can rely on:
   wrong-typed argument with a stand-in, so `cos of "hello"` was `0` and
   `str_upper of 42` was `""` — a type mistake became a plausible value. Under
   strict those raise a catchable `type` error naming the builtin, across the
-  whole builtin surface (`builtins.c`, the host builtins, the tensor ops and
-  the embedded store). A `0` or `""` that is a genuine *answer* is untouched
+  whole builtin surface (`builtins.c`, the host builtins, the tensor ops, the
+  embedded store, and — since #1007 — the graphics/audio extension, where the
+  stand-in is usually `null` rather than `0`/`""`: `gfx_rect of [x, y, w, h,
+  "255", 0, 0]` drew a BLACK rectangle where red was asked for, in silence).
+  A guard covers the argument's **container** as well as its elements — a
+  short argument list, or a scalar where a list belonged, is a caller mistake
+  and raises. That half is the one an element-typed probe cannot see, and in
+  the extension it was the difference between "drew nothing" and a silent
+  *success*: `audio_stream_open of [48000]` opened the device at the 44100/1
+  defaults and answered a real device id, so the caller that asked for 48000
+  was told it got 48000.
+  A `0`, `""` or `null` that is a genuine *answer* is untouched
   in both modes: `try_parse` of invalid syntax still returns `0`, `task_alive`
   of an unknown id still returns `0`, `char_at` past the end is still `""`,
   and `num` still *coerces* (`num of ([1, 2])` is `0` — that is its documented

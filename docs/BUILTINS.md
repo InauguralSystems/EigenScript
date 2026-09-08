@@ -717,7 +717,7 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 |------|-----------|-------------|
 | `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer. Returns `1` on success, `0` when libSDL2 is unavailable or `width`/`height` are not numbers (#1007 — they used to be read without a type check, so a string opened a `0x0` window and still answered `1`). Under `EIGS_STRICT=1` a non-numeric size raises. |
 | `gfx_close` | `gfx_close of null` | Destroy window and quit SDL |
-| `gfx_clear` | `gfx_clear of [r, g, b]` | Clear backbuffer to color |
+| `gfx_clear` | `gfx_clear of [r, g, b]` / `gfx_clear of null` | Clear backbuffer to color; `null` clears to black |
 | `gfx_rect` | `gfx_rect of [x, y, w, h, r, g, b]` or `[..., a]` | Filled rectangle |
 | `gfx_line` | `gfx_line of [x1, y1, x2, y2, r, g, b]` | Line segment |
 | `gfx_point` | `gfx_point of [x, y, r, g, b]` | Single pixel |
@@ -735,6 +735,70 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 | `gfx_title` | `gfx_title of "text"` | Update window title |
 | `gfx_fb` | `gfx_fb of [buf, w, h, x, y, scale]` | Blit buffer (palette indices 0-3) as scaled texture |
 | `ppu_render_frame` | `ppu_render_frame of [mem_buf, fb_buf]` | Full Game Boy PPU render (BG/window/sprites) into framebuffer |
+
+**Wrong-typed and wrong-arity arguments (#1007).** Every builtin in this
+extension that takes an argument at all — the drawing calls, the text calls,
+the framebuffer blit, the PPU renderer, and the whole audio surface below —
+type-checks its arguments *before* reading them, and under `EIGS_STRICT=1` a
+wrong type, a short argument list, a wrong-shaped argument *container* (a
+number or a string where a list belonged) or an out-of-domain value raises a
+catchable `type` error naming the builtin and the shape it wanted. With the
+flag off the answer is byte-identical to before: the drawing calls still
+answer `null`, the generators still answer an empty list, the device calls
+still answer `0` or the device id they already answered.
+
+Two shapes are deliberately **not** covered, so the claim above is not read
+wider than it is. A builtin that takes **no** argument (`gfx_poll`,
+`gfx_present`, `gfx_ticks`, `gfx_close`, `audio_close`, `audio_clear`,
+`audio_capture_close`, `audio_capture_read`, `audio_stream_close`,
+`audio_stream_clear`, `audio_stream_queued`, `audio_queue_size`,
+`audio_music_stop`) ignores one entirely, and a **surplus trailing** argument
+to a fixed-arity builtin is dropped — both are the general over-arity
+question, which is #989's, not this extension's. `tools/gfx_strict_sweep.sh`
+crosses every guarded builtin in the extension with the wrong-container
+shapes and requires each pair to raise or to carry a reason in its allowlist,
+so this paragraph is checked against the binary rather than asserted.
+What changed with the flag OFF is the *read*, not the answer. `Value`'s union
+overlaps `double num` with `char *str`, so `gfx_rect of [0, 0, 32, 32, "255",
+0, 0]` used to reinterpret a `char *` as a `double`, `(int)`-cast it, and
+draw a **black** rectangle where red was asked for — silently, in both modes.
+That read is gone in both modes; an unchecked union pun is not behaviour
+anything can depend on.
+
+So be precise about what "byte-identical" covers: the **returned value** is
+unchanged in every case, and so is anything the call *reports*. What a
+rejected call **draws** is not, and cannot be — a 48-bit pointer read as a
+double is a subnormal that truncates to 0, so the parent painted a shape at
+coordinate 0, in colour 0, or at scale 1, and this build paints nothing at
+all. The same applies to the one drawing-surface builtin that answers with
+data: with a window open, `gfx_read of ["1", 1]` used to hand back the pixel
+at (0, 1) — the punned 0 — and now answers `null`.
+`tools/gfx_pixel_differential.sh` measures exactly that surface (it opens a
+window under the dummy driver and diffs a readback digest against a build of
+the parent commit) and requires every such divergence to carry an executed
+proof that the parent's answer was the punned zero and that this build's
+rejected call draws nothing else instead.
+
+**A wrong-typed OPTIONAL argument follows the same rule, which makes the three
+text builtins differ on purpose.** `gfx_text_width` and `gfx_text_height`
+type-checked their scale slot before this change, so a wrong-typed scale there
+is a *coercion*: with the flag off they still measure at scale 1.
+`gfx_text` did not — its scale slot was one of the unchecked reads — so a
+wrong-typed scale refuses the call and draws nothing. Under `EIGS_STRICT=1`
+all three raise. Layout code that sizes a box with `gfx_text_width` and then
+draws with `gfx_text` therefore sees a box with no text in it if it passes a
+stringy scale, which is the loudest signal available with the flag off; run
+strict to get the error.
+
+A few values are deliberately left quiet because they are the *answer*, not a
+rejected argument: a drawing call with no window open answers `null` (that is
+its answer on every path), `gfx_poll` answers `null` for "no event",
+`gfx_rrect`/`gfx_fb` answer `null` for a zero or negative width/height/scale
+(degenerate geometry covers no pixels), and every device builtin answers `0`
+when libSDL2 or the device is unavailable — environment state, not a caller
+mistake. The distinction is recorded per site in `src/ext_gfx.c` and enforced
+by `tools/failsoft_classify_check.sh`, whose `make_null()` population is
+scoped to that file (see its header for why it is not repo-wide).
 
 **Text rendering and fonts (#593).** `gfx_text` lazily loads
 `libSDL2_ttf-2.0.so.0` on first use and renders proportional antialiased
@@ -884,17 +948,17 @@ receiver.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `audio_open` | `audio_open of [freq, channels]` or `of null` | Open the mixer playback device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007 — they used to be read without a type check, so a string opened the device against a garbage spec and still answered a real id, taking the device with it). |
+| `audio_open` | `audio_open of [freq, channels]` or `of null` | Open the mixer playback device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007 — they used to be read without a type check, so a string opened the device against a garbage spec and still answered a real id, taking the device with it). A **short or non-list** argument also raises under strict (#1007 — it used to skip the check entirely, open at the defaults and hand back a real device id, so `audio_open of [44100]` was indistinguishable from a well-formed call). `of null` is still the defaults. |
 | `audio_sweep` | `audio_sweep of [freq_start, freq_end, duration, amplitude, waveform]` | Generate a frequency sweep with continuous phase. `waveform`: 0=sine, 1=sawtooth. Returns sample list. |
-| `audio_play` | `audio_play of samples` | Play a clip once on a free mixer channel (oldest finite channel recycled when all 16 are busy). Returns the channel id, or `0` on bad args / closed device. A non-numeric element in `samples` raises a `type_mismatch` error (#1007 — it used to be coerced to 0, so a wrong-typed list played silence on a real channel id). |
-| `audio_play_loop` | `audio_play_loop of [samples, loops]` | Play `samples` `loops` times on one mixer channel; `loops == -1` loops forever (the mixer rewinds — no memory multiplication). Returns the channel id, or `0` on bad args / closed device. |
-| `audio_volume` | `audio_volume of [channel, vol]` | Live per-channel volume, `0.0`–`4.0`. Returns `1`, or `0` on a bad/inactive channel. |
-| `audio_stop` | `audio_stop of channel` | Stop one mixer channel. Returns `1`, or `0` on a bad/inactive channel. |
-| `audio_capture_open` | `audio_capture_open of [freq, channels]` | Open the recording (microphone) device and start capturing (#579). Defaults `[44100, 1]`; SDL converts to exactly the requested format. Returns the device id, or `0` when SDL/capture is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007). Re-opening closes the previous capture device. Trace-recorded — under `EIGS_REPLAY` no real device is opened. |
+| `audio_play` | `audio_play of samples` | Play a clip once on a free mixer channel (oldest finite channel recycled when all 16 are busy). Returns the channel id, or `0` on bad args / closed device. A non-numeric element in `samples` raises a `type_mismatch` error (#1007 — it used to be coerced to 0, so a wrong-typed list played silence on a real channel id), and so does a `samples` that is not a list or buffer at all (#1007 — `audio_play of 42` answered the documented "nothing to play" `0`, indistinguishable from an empty clip). `of null` still plays nothing. |
+| `audio_play_loop` | `audio_play_loop of [samples, loops]` | Play `samples` `loops` times on one mixer channel; `loops == -1` loops forever (the mixer rewinds — no memory multiplication). Returns the channel id, or `0` on bad args / closed device. `loops` must be a number equal to `-1` or in `1..10000`; anything else answers `0` and raises under `EIGS_STRICT=1` (#1007), and so does a `samples` slot that is not a list or buffer. |
+| `audio_volume` | `audio_volume of [channel, vol]` | Live per-channel volume, `0.0`–`4.0`. Returns `1`, or `0` on a bad/inactive channel. A non-numeric `channel` or `vol` answers `0` and raises under `EIGS_STRICT=1` (#1007); an out-of-range channel is simply inactive and stays quiet. |
+| `audio_stop` | `audio_stop of channel` | Stop one mixer channel. Returns `1`, or `0` on a bad/inactive channel. A non-numeric `channel` answers `0` and raises under `EIGS_STRICT=1` (#1007). |
+| `audio_capture_open` | `audio_capture_open of [freq, channels]` | Open the recording (microphone) device and start capturing (#579). Defaults `[44100, 1]`; SDL converts to exactly the requested format. Returns the device id, or `0` when SDL/capture is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007), and so does a **short or non-list** argument, which used to open at the defaults and answer a real device id. `of null` is still the defaults. Re-opening closes the previous capture device. Trace-recorded — under `EIGS_REPLAY` no real device is opened. |
 | `audio_capture_read` | `audio_capture_read of null` | Drain samples accumulated since the last read as a **buffer** of floats in `[-1, 1]` (interleaved when `channels > 1`). At most 2048 samples per call — loop until the returned buffer is empty to drain fully (keeps each trace record replayable). Empty buffer = nothing new yet; `null` = no capture device open. Trace-recorded — replay serves the recorded samples, never a live microphone. |
 | `audio_capture_close` | `audio_capture_close of null` | Stop and close the recording device, dropping undrained samples. Safe to call twice or with no device open. |
-| `audio_stream_open` | `audio_stream_open of [freq, channels]` | Open the live streaming playback device (queue mode, F-DS-17 — for on-the-fly synthesis like musical typing). Coexists with the `audio_open` mixer device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Re-opening closes the previous stream device. |
-| `audio_stream_push` | `audio_stream_push of samples` | Queue a block of float samples `[-1, 1]` (**list** or **buffer**) onto the live stream. Same size cap / clamp as `audio_play`. Pure output sink (not trace-recorded). Returns `1` on success, `0` on a closed device or bad shape. |
+| `audio_stream_open` | `audio_stream_open of [freq, channels]` | Open the live streaming playback device (queue mode, F-DS-17 — for on-the-fly synthesis like musical typing). Coexists with the `audio_open` mixer device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007 — they used to skip the override, open at 44100/1 and answer a real id, so a caller that asked for 48000 was told it got it). A **short or non-list** argument raises for the same reason: `audio_stream_open of [48000]` answered device id 2 opened at 44100/1. `of null` is still the defaults. Re-opening closes the previous stream device. |
+| `audio_stream_push` | `audio_stream_push of samples` | Queue a block of float samples `[-1, 1]` (**list** or **buffer**) onto the live stream. Same size cap / clamp as `audio_play`. Pure output sink (not trace-recorded). Returns `1` on success, `0` on a closed device or bad shape; a `samples` that is not a list or buffer raises under `EIGS_STRICT=1` (#1007). |
 | `audio_stream_queued` | `audio_stream_queued of null` | Samples still buffered (not yet played) on the live stream — the refill pump pushes another block only while this stays under its latency target. Returns `0` when no stream is open. Trace-recorded (a live, timing-dependent value) — replay serves the recorded depth, keeping the session deterministic. |
 | `audio_stream_clear` | `audio_stream_clear of null` | Drop any buffered audio on the live stream (flush for a panic / all-notes-off). Safe with no device. |
 | `audio_stream_close` | `audio_stream_close of null` | Stop and close the live stream device, dropping buffered audio. Safe to call twice or with no device open. |

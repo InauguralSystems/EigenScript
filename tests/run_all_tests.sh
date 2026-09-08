@@ -3173,12 +3173,25 @@ fi
 # audio device came up, which the file reports, so the pin is exact in both
 # environments rather than a floor.
 #
-# WHAT THIS SECTION DOES NOT COVER, so a green line is not misread: only the
-# three *_open type-pun guards and the sample-element coercion. The other
-# ~85 fail-soft returns #1007 enumerates are untouched — in particular the 52
-# `make_null()` sites where gfx_rect/gfx_line/gfx_text answer a wrong-typed
-# argument by silently drawing nothing, which no gate in this repo sees
-# (tools/failsoft_classify_check.sh enumerates only the 0/"" population).
+# WHAT THIS SECTION COVERS, since the answer changed: the whole ext_gfx.c
+# argument surface, not just the three *_open type-pun guards it started as.
+# The drawing half — the ~52 `make_null()` sites where gfx_rect/gfx_line/
+# gfx_text answered a wrong-typed argument by silently drawing nothing — is
+# in it since #1007's second pass, and so are the COERCION shapes
+# (gfx_text_width's scale, audio_pause's flag, audio_mix's sample elements),
+# which have no stand-in return and are invisible to
+# tools/failsoft_classify_check.sh by construction.
+#
+# The load-bearing row is the PIXEL PROOF in the non-strict pass, gated on a
+# real renderer: pre-fix, a wrong-typed colour painted BLACK over the cleared
+# pixel — a wrong drawing, not a missing one — and gfx_read reads it back.
+# That is the only row here that can see the defect on real pixels; every
+# other non-strict row asserts the answer is UNCHANGED, which is the
+# byte-identity half of the claim. The strict pass discriminates without SDL.
+#
+# Still NOT covered: whether the classifications recorded in ext_gfx.c are
+# RIGHT ([99r]'s population plus this section's pins together), and leaks on
+# those paths ([137]).
 GA_PROBE_FILE=$(mktemp /tmp/eigs_ga_probe_XXXXXX.eigs)
 cat > "$GA_PROBE_FILE" <<'PROBE'
 print of (gfx_text_width of ["m", 1])
@@ -3216,12 +3229,38 @@ TAPEPROG
     # `|| echo 0` appends a SECOND line and the diagnostic reads "0\n0".
     GA_TAPE_N=$(grep -c '^N ' "$GA_TDIR/r.tape" 2>/dev/null); GA_TAPE_N=${GA_TAPE_N:-0}
     rm -rf "$GA_TDIR"
-    # An audio device adds two rows to each pass. Both counts are derived from
-    # the file's own marker so neither branch is a floor.
+
+    # FOURTH PASS: the same tape contract for gfx_read, whose #1007 guard had
+    # to be placed above TRACE_NONDET_TAKE for the identical reason. Its own
+    # program, because the record count is pinned BY NAME (`N gfx_read=`) and
+    # a shared program would let one builtin's record satisfy the other's pin.
+    # Environment-independent: with no renderer the well-typed read still
+    # records (a null), so the count is 1 either way — while the pre-guard
+    # binary records 2 (measured), which is what makes the row discriminate.
+    GA_RDIR=$(mktemp -d /tmp/eigs_ga_read_XXXXXX)
+    cat > "$GA_RDIR/tape.eigs" <<'READPROG'
+o is gfx_open of [32, 32, "eigs #1007 gfx_read tape"]
+ignore is gfx_clear of [1, 2, 3]
+print of (gfx_read of ["1", 1])
+print of (gfx_read of [1, 1])
+ignore is gfx_close of null
+READPROG
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
+    if cmp -s "$GA_RDIR/first.out" "$GA_RDIR/second.out"; then GA_READ_OK=1; else GA_READ_OK=0; fi
+    GA_READ_N=$(grep -c '^N gfx_read=' "$GA_RDIR/r.tape" 2>/dev/null); GA_READ_N=${GA_READ_N:-0}
+    rm -rf "$GA_RDIR"
+    # TWO environment axes now, each derived from the file's own marker so
+    # neither branch is a floor: an audio device adds 3 rows to the plain pass
+    # and 2 to the strict one, and a real renderer adds the 6 pixel-proof rows
+    # (plain only — the strict pass raises before it can draw). Counting only
+    # the audio axis, which is what this did while the pixel proof was being
+    # added, made the plain pin wrong by exactly 3 on a machine WITH libSDL2
+    # and right on one without.
+    GA_WANT_PLAIN=30; GA_WANT_STRICT=84
+    echo "$GA_PLAIN"  | grep -q "pixel-proof: 1"  && GA_WANT_PLAIN=$((GA_WANT_PLAIN + 6))
     if echo "$GA_STRICT" | grep -q "audio-device: 1"; then
-        GA_WANT_PLAIN=18; GA_WANT_STRICT=18
-    else
-        GA_WANT_PLAIN=15; GA_WANT_STRICT=16
+        GA_WANT_PLAIN=$((GA_WANT_PLAIN + 3)); GA_WANT_STRICT=$((GA_WANT_STRICT + 2))
     fi
     GA_GOT_PLAIN=$(echo "$GA_PLAIN"   | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
     GA_GOT_STRICT=$(echo "$GA_STRICT" | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
@@ -3233,23 +3272,26 @@ TAPEPROG
        && rc_ok "$GA_STRICT_RC" "$GA_STRICT" && echo "$GA_STRICT" | grep -q "All tests passed" \
        && echo "$GA_STRICT" | grep -q "strict-pass: 1" \
        && [ "$GA_GOT_PLAIN" = "$GA_WANT_PLAIN" ] && [ "$GA_GOT_STRICT" = "$GA_WANT_STRICT" ] \
-       && [ "$GA_TAPE_OK" = "1" ] && [ "$GA_TAPE_N" = "1" ]; then
-        TOTAL=$((TOTAL + 3))
-        PASS=$((PASS + 3))
+       && [ "$GA_TAPE_OK" = "1" ] && [ "$GA_TAPE_N" = "1" ] \
+       && [ "$GA_READ_OK" = "1" ] && [ "$GA_READ_N" = "1" ]; then
+        TOTAL=$((TOTAL + 4))
+        PASS=$((PASS + 4))
         echo "  PASS: wrong-typed w/h and freq/channels are refused in both modes ($GA_GOT_PLAIN + $GA_GOT_STRICT checks)"
         echo "  PASS: a rejected audio_capture_open consumes no tape record; capture == replay"
+        echo "  PASS: a rejected gfx_read consumes no tape record; capture == replay"
         # Say out loud what this environment could NOT exercise, rather than
         # letting a green line imply full coverage.
-        echo "$GA_PLAIN" | grep -q "sdl-present: 1" \
-            || echo "  NOTE: libSDL2 absent — the non-strict rows are not discriminating here; the strict pass is."
+        echo "$GA_PLAIN" | grep -q "pixel-proof: 1" \
+            || echo "  NOTE: libSDL2 absent — the pixel proof did not run, so the non-strict rows are not discriminating here; the strict pass is."
         echo "$GA_STRICT" | grep -q "audio-device: 1" \
             || echo "  NOTE: no audio device — the sample-element coercion rows did not run."
     else
-        TOTAL=$((TOTAL + 3))
-        FAIL=$((FAIL + 3))
+        TOTAL=$((TOTAL + 4))
+        FAIL=$((FAIL + 4))
         echo "  FAIL: gfx argument-type guards"
         echo "    counts: plain $GA_GOT_PLAIN/$GA_WANT_PLAIN, strict $GA_GOT_STRICT/$GA_WANT_STRICT"
         echo "    tape: capture==replay $GA_TAPE_OK (want 1), N records $GA_TAPE_N (want 1)"
+        echo "    gfx_read tape: capture==replay $GA_READ_OK (want 1), N gfx_read records $GA_READ_N (want 1)"
         echo "$GA_PLAIN"  | grep -iE "assert|error|FAIL" | head -3
         echo "$GA_STRICT" | grep -iE "assert|error|FAIL" | head -3
     fi
@@ -3377,6 +3419,127 @@ if bash "$TESTS_DIR/../tools/gfx_guard_order_check.sh"; then
 else
     FAIL=$((FAIL + 1))
     echo "  FAIL: a guard is behind its SDL load, or the scan went vacuous (see above)"
+fi
+echo ""
+
+# [137] ext_gfx.c under ASan+UBSan+LSan over the gfx corpus (#1007).
+#
+# `make asan-gfx` shipped in #1018 as a TOOL: no suite section and no
+# workflow ran it, so the file every app in the fleet and all 18 lib/ui
+# modules draw through was still the least instrumented in the repo. This is
+# the gate half. Its triage found one leak and it was OURS — gfx_poll's event
+# dict, 584 bytes / 6 allocations, leaked on the two paths that decode
+# nothing — so no LeakSanitizer suppression file is shipped: after the fix
+# the corpus has nothing to suppress, and a suppression with no leak behind
+# it is a waiver for a claim nobody checked.
+#
+# NOT probe-gated on THIS binary: the child finds or builds its own
+# asan-gfx binary (deliberately never by running `make`, which would
+# re-point src/eigenscript under the suite and trip the #681 fingerprint
+# guard), so the section is live in a release run too. It skips cleanly with
+# no ASan toolchain, and needs no libSDL2 — SDL is dlopen'd, so the corpus
+# walks every argument and allocation path either way and says so when the
+# renderer was absent. Its own positive/negative leak controls run BEFORE any
+# corpus verdict is believed.
+echo "[137] ext_gfx ASan/LSan corpus (#1007)"
+AG_OUTPUT=$(bash "$TESTS_DIR/test_asan_gfx.sh" 2>&1); AG_RC=$?
+AG_PASSED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: \([0-9]*\) passed.*/\1/p' | tail -1)
+AG_FAILED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
+TOTAL=$((TOTAL + 1))
+if [ "$AG_RC" = "0" ] && [ "${AG_FAILED:-1}" = "0" ]; then
+    PASS=$((PASS + 1))
+    if echo "$AG_OUTPUT" | grep -q "(skipped)"; then
+        echo "  PASS: $(echo "$AG_OUTPUT" | grep -m1 'SKIP:' | sed 's/^ *//')"
+    else
+        echo "  PASS: ext_gfx.c is leak- and UB-clean over the gfx corpus" \
+             "(${AG_PASSED:-?} checks, controls included)"
+        echo "$AG_OUTPUT" | grep -m1 "NOTE:" || true
+    fi
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: a leak or sanitizer error in the gfx corpus, or the gate's own"
+    echo "        leak controls did not fire"
+    echo "$AG_OUTPUT" | grep -E "FAIL:|SUMMARY|runtime error:" | head -8 | sed 's/^/    /'
+fi
+echo ""
+
+# [138] gfx PIXEL differential (#1007 round 2), --no-baseline half.
+# [99s] compares the RETURNED VALUE of a probe. Every drawing builtin returns
+# null on every path and every gfx probe there runs with no window open, so for
+# the whole drawing surface its "identical-when-off" line was measured in the
+# one state where it could not fail. A blind review found the consequence by
+# hand: a wrong-typed OPTIONAL scale changed what gfx_text painted, and nothing
+# in the change could see it. This section runs the readback oracle that can.
+# The two-binary identity half is a pre-landing step (it needs a `make gfx`
+# build of the parent); what runs here is the rest — every wrong-typed slot
+# still raises from its own guard, every VALID call is untouched by strict, no
+# valid row has decayed into drawing nothing, and the row set still covers
+# every guarded renderer builtin and every gfx_nums slot boundary derived from
+# src/ext_gfx.c.
+echo "[138] gfx pixel differential (#1007, no-baseline half)"
+GPD_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_pixel_differential.sh" --no-baseline 2>&1); GPD_RC=$?
+if echo "$GPD_OUTPUT" | grep -q "^SKIP:"; then
+    echo "  $(echo "$GPD_OUTPUT" | grep '^SKIP:' | head -1)"
+else
+    TOTAL=$((TOTAL + 1))
+    if [ "$GPD_RC" = 0 ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: $(echo "$GPD_OUTPUT" | grep -E '^  rows=' | head -1)"
+        echo "        $(echo "$GPD_OUTPUT" | grep -E '^  raises-under-strict' | head -1 | sed 's/^ *//')"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: a wrong-typed slot went silent, a valid call changed under"
+        echo "        strict, a row stopped drawing, or a guarded slot has no row"
+        echo "$GPD_OUTPUT" | sed -n '1,16p'
+    fi
+fi
+echo ""
+
+# [139] ext_gfx container-shape sweep (#1007 round 3). The gate that replaces
+# a hand-written probe row per bug. #1007 landed three times, and each time a
+# blind review found one more builtin silent under strict on the SAME axis --
+# the argument CONTAINER (its arity and type) rather than its elements: the
+# generators' short list, then the three audio *_open builtins' short/non-list
+# argument (which answered a REAL DEVICE ID at the 44100/1 defaults), then
+# audio_play/audio_stream_push's non-list samples. [133] and [99s] were green
+# through all three, because every row in them held the arity right and varied
+# only the element type -- the question was asked in the one state where it
+# could not fail. This section derives the guarded names AND their required
+# arity from src/ext_gfx.c and crosses each with the container shapes, so the
+# population grows with the file instead of with the bug reports. Its
+# allowlist of deliberately-quiet pairs is staleness-checked: a pair that
+# starts raising fails the section. Not probe-gated on the binary here -- the
+# tool skips cleanly by itself when the build has no EXT_GFX.
+echo "[139] ext_gfx container-shape sweep (#1007)"
+GSS_SELF=$(bash "$TESTS_DIR/../tools/gfx_strict_sweep.sh" --selftest 2>&1); GSS_SELF_RC=$?
+GSS_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_strict_sweep.sh" 2>&1); GSS_RC=$?
+# BOTH halves must have skipped, not just the sweep: --selftest returns before
+# the sweep's own probe, so a lane with no gfx builtins has to be recognised
+# twice or the section reports a red selftest for a surface that is not there.
+if echo "$GSS_OUTPUT" | grep -q "^  SKIP:" && echo "$GSS_SELF" | grep -q "^  SKIP:"; then
+    echo "  $(echo "$GSS_OUTPUT" | grep '^  SKIP:' | head -1 | sed 's/^ *//')"
+else
+    TOTAL=$((TOTAL + 2))
+    GSS_SELF_FAILED=$(echo "$GSS_SELF" | sed -n 's/^selftest: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
+    if [ "$GSS_SELF_RC" = 0 ] && [ "${GSS_SELF_FAILED:-1}" = "0" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: $(echo "$GSS_SELF" | grep '^selftest:' | head -1) (arity parser, short-list builder, population, verdict classifier)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: the sweep's own selftest is red — its verdicts mean nothing"
+        echo "$GSS_SELF" | grep '  FAIL' | head -4 | sed 's/^/    /'
+    fi
+    if [ "$GSS_RC" = 0 ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: $(echo "$GSS_OUTPUT" | grep -E '^  guarded names=' | head -1 | sed 's/^ *//')"
+        echo "        $(echo "$GSS_OUTPUT" | grep -E '^  raises-under-strict' | head -1 | sed 's/^ *//')"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: a guarded builtin is silent under strict for a wrong-shaped"
+        echo "        argument container, an allowlist entry has gone stale, or a"
+        echo "        probe never ran (did-not-run is not a guard verdict — #988)"
+        echo "$GSS_OUTPUT" | sed -n '1,16p'
+    fi
 fi
 echo ""
 

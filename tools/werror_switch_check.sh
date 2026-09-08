@@ -236,7 +236,11 @@ SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage
 # decision on record. test_leak_guard.sh:56 compiles the ENTIRE runtime
 # ($SRCS, the largest compile surface in the tree) and carried NEITHER
 # required flag until this change.
-SCRIPT_AUDITS="build.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/run_all_tests.sh"
+# tests/test_asan_gfx.sh joined in #1007: it builds its own asan-gfx
+# interpreter (deliberately not via `make`, which would re-point
+# src/eigenscript under the suite) plus two leak controls, so four real
+# compile invocations that no make target covers.
+SCRIPT_AUDITS="build.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
 # compile line is not a compile.
@@ -310,6 +314,7 @@ script:tools/embed_stack_soak.sh 1
 script:tools/core_ext_boundary_check.sh 1
 script:web/build.sh 1
 script:tests/test_leak_guard.sh 2
+script:tests/test_asan_gfx.sh 4
 script:tests/run_all_tests.sh 1
 '
 

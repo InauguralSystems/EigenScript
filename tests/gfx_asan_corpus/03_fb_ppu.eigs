@@ -1,0 +1,19 @@
+# The two buffer-consuming builtins: the framebuffer blit (allocates an ARGB
+# pixel array per call and caches an SDL texture across calls) and the whole
+# Game Boy PPU frame renderer.
+o is gfx_open of [160, 144, "fb"]
+fb is buffer of (160 * 144)
+for i in range of 100:
+    fb[i] is i % 4
+ignore is gfx_fb of [fb, 160, 144, 0, 0, 1]
+ignore is gfx_fb of [fb, 160, 144, 0, 0, 2]
+ignore is gfx_fb of [fb, 80, 72, 0, 0, 1]
+mem is buffer of 65536
+mem[0xFF40] is 0x91
+mem[0xFF47] is 0xE4
+ignore is ppu_render_frame of [mem, fb]
+mem[0xFF40] is 0x00
+ignore is ppu_render_frame of [mem, fb]
+print of f"fb[0]: {fb[0]}"
+ignore is gfx_close of null
+print of "03 done"

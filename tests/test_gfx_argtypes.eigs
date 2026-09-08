@@ -70,6 +70,127 @@ if env_get of "EIGS_STRICT" == "1":
     assert_eq of [strict_kind of ((_) => audio_sine of [440, 0.01, 0.5]), "none", "#1007 strict: a well-typed audio_sine does not raise"]
     assert_eq of [strict_kind of ((_) => audio_sweep of [100, 200, 0.01, 0.5, 0]), "none", "#1007 strict: a well-typed audio_sweep does not raise"]
     assert_eq of [strict_kind of ((_) => audio_gain of [[1.0], 0.5]), "none", "#1007 strict: a well-typed audio_gain does not raise"]
+
+    # ---- the DRAWING surface (#1007's second half) ----
+    # These are the ~52 make_null() sites: a wrong-typed or short argument
+    # was answered by silently drawing nothing (or, worse, drawing the
+    # WRONG thing off a punned pointer). None of them touch SDL before the
+    # guard, so every row below discriminates with or without libSDL2.
+    assert_eq of [strict_kind of ((_) => gfx_rect of ["10", 10, 50, 50, 255, 0, 0]), "type_mismatch", "#1007 strict: gfx_rect raises on a string x"]
+    assert_eq of [strict_kind of ((_) => gfx_rect of [0, 0, 1, 1, 255, 0, 0, "128"]), "type_mismatch", "#1007 strict: gfx_rect raises on a string OPTIONAL alpha"]
+    assert_eq of [strict_kind of ((_) => gfx_rect of [0, 0, 1, 1]), "type_mismatch", "#1007 strict: gfx_rect raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => gfx_line of ["0", 0, 10, 10, 1, 2, 3]), "type_mismatch", "#1007 strict: gfx_line raises on a string x1"]
+    assert_eq of [strict_kind of ((_) => gfx_point of ["1", 2, 3, 4, 5]), "type_mismatch", "#1007 strict: gfx_point raises on a string x"]
+    assert_eq of [strict_kind of ((_) => gfx_circle of ["1", 2, 3, 4, 5, 6]), "type_mismatch", "#1007 strict: gfx_circle raises on a string cx"]
+    assert_eq of [strict_kind of ((_) => gfx_rrect of ["1", 2, 3, 4, 5, 6, 7, 8]), "type_mismatch", "#1007 strict: gfx_rrect raises on a string x"]
+    assert_eq of [strict_kind of ((_) => gfx_clip of ["1", 2, 3, 4]), "type_mismatch", "#1007 strict: gfx_clip raises on a string x"]
+    assert_eq of [strict_kind of ((_) => gfx_clear of ["1", 2, 3]), "type_mismatch", "#1007 strict: gfx_clear raises on a string r"]
+    assert_eq of [strict_kind of ((_) => gfx_clear of "not a colour"), "type_mismatch", "#1007 strict: gfx_clear raises on an unusable shape (soft with the flag off -- it still clears to black)"]
+    assert_eq of [strict_kind of ((_) => gfx_text of [1, 2, "hi", "255", 0, 0]), "type_mismatch", "#1007 strict: gfx_text raises on a string r"]
+    assert_eq of [strict_kind of ((_) => gfx_text of [1, 2, 42, 255, 0, 0]), "type_mismatch", "#1007 strict: gfx_text raises on a non-string text (it used to draw \"\")"]
+    assert_eq of [strict_kind of ((_) => gfx_read of ["1", 1]), "type_mismatch", "#1007 strict: gfx_read raises on a string x"]
+    assert_eq of [strict_kind of ((_) => gfx_fb of [42, 4, 4, 0, 0, 1]), "type_mismatch", "#1007 strict: gfx_fb raises on a non-buffer"]
+    assert_eq of [strict_kind of ((_) => gfx_delay of "5"), "type_mismatch", "#1007 strict: gfx_delay raises on a string ms"]
+    assert_eq of [strict_kind of ((_) => gfx_title of 42), "type_mismatch", "#1007 strict: gfx_title raises on a non-string title"]
+    assert_eq of [strict_kind of ((_) => ppu_render_frame of [1, 2]), "type_mismatch", "#1007 strict: ppu_render_frame raises on non-buffers"]
+    # The COERCION shapes: no stand-in to name, so they raise under strict
+    # and do nothing otherwise.
+    assert_eq of [strict_kind of ((_) => gfx_text_width of 5), "type_mismatch", "#1007 strict: gfx_text_width raises on a non-string"]
+    assert_eq of [strict_kind of ((_) => gfx_text_width of ["hi", "2"]), "type_mismatch", "#1007 strict: gfx_text_width raises on a string scale"]
+    assert_eq of [strict_kind of ((_) => gfx_text_height of "2"), "type_mismatch", "#1007 strict: gfx_text_height raises on a string scale"]
+    assert_eq of [strict_kind of ((_) => audio_pause of "x"), "type_mismatch", "#1007 strict: audio_pause raises on a string flag"]
+    assert_eq of [strict_kind of ((_) => audio_music_volume of "loud"), "type_mismatch", "#1007 strict: audio_music_volume raises on a string volume"]
+    assert_eq of [strict_kind of ((_) => audio_mix of [["a"], [0.1]]), "type_mismatch", "#1007 strict: audio_mix raises on a non-number sample element"]
+    assert_eq of [strict_kind of ((_) => audio_gain of [["a"], 2.0]), "type_mismatch", "#1007 strict: audio_gain raises on a non-number sample element"]
+    assert_eq of [strict_kind of ((_) => audio_stop of "x"), "type_mismatch", "#1007 strict: audio_stop raises on a string channel"]
+    assert_eq of [strict_kind of ((_) => audio_volume of ["1", 1]), "type_mismatch", "#1007 strict: audio_volume raises on a string channel"]
+    assert_eq of [strict_kind of ((_) => audio_play_loop of [[0.1], "2"]), "type_mismatch", "#1007 strict: audio_play_loop raises on a string loops"]
+    assert_eq of [strict_kind of ((_) => audio_play_loop of [[0.1], 0]), "type_mismatch", "#1007 strict: audio_play_loop raises on an out-of-domain loops"]
+    assert_eq of [strict_kind of ((_) => audio_music_play of [42]), "type_mismatch", "#1007 strict: audio_music_play raises on a non-string path"]
+    # CONTROLS. Without these an over-broad guard — ARG_GUARD(1, ...), which
+    # would break the whole drawing surface — passes every row above.
+    assert_eq of [strict_kind of ((_) => gfx_rect of [0, 0, 1, 1, 255, 0, 0]), "none", "#1007 strict: a well-typed gfx_rect does not raise"]
+    assert_eq of [strict_kind of ((_) => gfx_rect of [0, 0, 1, 1, 255, 0, 0, 128]), "none", "#1007 strict: a well-typed gfx_rect with alpha does not raise"]
+    assert_eq of [strict_kind of ((_) => gfx_clear of [1, 2, 3]), "none", "#1007 strict: a well-typed gfx_clear does not raise"]
+    assert_eq of [strict_kind of ((_) => gfx_clip of null), "none", "#1007 strict: gfx_clip of null still clears the clip"]
+    assert_eq of [strict_kind of ((_) => gfx_text of [1, 2, "hi", 255, 0, 0]), "none", "#1007 strict: a well-typed gfx_text does not raise"]
+    assert_eq of [strict_kind of ((_) => gfx_text_width of ["hi", 2]), "none", "#1007 strict: a well-typed gfx_text_width does not raise"]
+    assert_eq of [strict_kind of ((_) => gfx_text_height of null), "none", "#1007 strict: gfx_text_height of null still defaults to scale 1"]
+    assert_eq of [strict_kind of ((_) => gfx_poll of null), "none", "#1007 strict: gfx_poll of null does not raise"]
+    assert_eq of [strict_kind of ((_) => audio_pause of null), "none", "#1007 strict: audio_pause of null still means pause"]
+    assert_eq of [strict_kind of ((_) => audio_mix of [[0.1], [0.2]]), "none", "#1007 strict: a well-typed audio_mix does not raise"]
+    assert_eq of [strict_kind of ((_) => audio_stop of 1), "none", "#1007 strict: a well-typed audio_stop does not raise"]
+    assert_eq of [strict_kind of ((_) => audio_play_loop of [[0.1], -1]), "none", "#1007 strict: loops == -1 is in domain"]
+    # #1007 round 2 — the ARITY/SHAPE half of the audio surface. Eight sites
+    # answered a short or non-list argument with an empty sample list, which
+    # is what a legitimately empty generation also answers, and stayed quiet
+    # under strict while docs/BUILTINS.md claimed "a short argument list ...
+    # raises". Measured against the binary by a blind review; these rows are
+    # the pin so the claim and the code cannot drift apart again.
+    assert_eq of [strict_kind of ((_) => audio_sine of [100, 0.01]), "type_mismatch", "#1007 strict: audio_sine raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_saw of [100, 0.01]), "type_mismatch", "#1007 strict: audio_saw raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_square of [100, 0.01]), "type_mismatch", "#1007 strict: audio_square raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_sweep of [1, 2, 3]), "type_mismatch", "#1007 strict: audio_sweep raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_noise of ([0.01])), "type_mismatch", "#1007 strict: audio_noise raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_envelope of [([0.1]), 1, 2, 3]), "type_mismatch", "#1007 strict: audio_envelope raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_mix of (["a"])), "type_mismatch", "#1007 strict: audio_mix raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_gain of (["a"])), "type_mismatch", "#1007 strict: audio_gain raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_mix of 42), "type_mismatch", "#1007 strict: audio_mix raises on a non-list argument"]
+    # #1007 round 3 — the SAME arity half on the three audio *_open builtins,
+    # the one place the round-2 sweep did not reach. Their element guard sits
+    # NESTED inside `if (count >= 2)`, so a SHORT or non-list argument walked
+    # past it, opened the device at the 44100/1 defaults and answered a REAL
+    # DEVICE ID: `audio_stream_open of [48000]` -> 2, silently, in both modes.
+    # That is a silent SUCCESS, not a silent no-op — the caller who asked for
+    # 48000 was told it got 48000 — and it is the sharpest shape in the issue.
+    # Found by a blind review against the binary, exactly as the generators'
+    # short-list case was; the rows below are why the same hole cannot be dug
+    # a third time.
+    assert_eq of [strict_kind of ((_) => audio_open of [44100]), "type_mismatch", "#1007 strict: audio_open raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_capture_open of [44100]), "type_mismatch", "#1007 strict: audio_capture_open raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_stream_open of [48000]), "type_mismatch", "#1007 strict: audio_stream_open raises on a short argument list"]
+    assert_eq of [strict_kind of ((_) => audio_open of 44100), "type_mismatch", "#1007 strict: audio_open raises on a non-list argument"]
+    assert_eq of [strict_kind of ((_) => audio_stream_open of "48000"), "type_mismatch", "#1007 strict: audio_stream_open raises on a non-list argument"]
+    # CONTROLS for those three. `of null` is the documented "use the defaults"
+    # form (BUILTINS.md), so a guard that refused it would break every caller
+    # that omits the spec while passing all five rows above. Each control opens
+    # a REAL device under the dummy driver, so each closes it again — the same
+    # discipline the audio_stream_open control above needed, for the same
+    # reason (a held device makes the later device-gated block silently skip).
+    assert_eq of [strict_kind of ((_) => audio_capture_open of null), "none", "#1007 strict: audio_capture_open of null still means the defaults"]
+    audio_capture_close of null
+    assert_eq of [strict_kind of ((_) => audio_stream_open of null), "none", "#1007 strict: audio_stream_open of null still means the defaults"]
+    audio_stream_close of null
+    assert_eq of [strict_kind of ((_) => audio_open of [44100, 1]), "none", "#1007 strict: a well-typed audio_open does not raise"]
+    audio_close of null
+    # #1007 round 3, the third instance of the same axis: the sample-list
+    # CONTAINER. A wrong-typed ELEMENT already raised inside
+    # audio_convert_samples; the line above it — `samples->type != VAL_LIST`
+    # — just returned NULL, which every caller reads as the documented
+    # "nothing to play" and answers 0. So `audio_play of ["a"]` was loud and
+    # `audio_play of 42` was silent. All three sit ABOVE the device check, so
+    # these rows discriminate with no audio device (which is where CI runs);
+    # a guard below it would exist only where nothing exercises it.
+    assert_eq of [strict_kind of ((_) => audio_play of 42), "type_mismatch", "#1007 strict: audio_play raises on a non-list samples argument"]
+    assert_eq of [strict_kind of ((_) => audio_play of "zzz"), "type_mismatch", "#1007 strict: audio_play raises on a string samples argument"]
+    assert_eq of [strict_kind of ((_) => audio_stream_push of 42), "type_mismatch", "#1007 strict: audio_stream_push raises on a non-list samples argument"]
+    # The NESTED slot, which the container sweep in tools/gfx_strict_sweep.sh
+    # deliberately does not reach: the top-level argument here is a well-formed
+    # two-element list and only slot 0 is wrong. Pinned by hand for that reason.
+    assert_eq of [strict_kind of ((_) => audio_play_loop of [42, 2]), "type_mismatch", "#1007 strict: audio_play_loop raises on a non-list samples SLOT"]
+    # CONTROLS: `of null` is "play nothing", a legitimate call, and a real
+    # sample list must stay quiet. Without them a guard that refused every
+    # argument would pass all four rows above.
+    assert_eq of [strict_kind of ((_) => audio_play of null), "none", "#1007 strict: audio_play of null still plays nothing"]
+    assert_eq of [strict_kind of ((_) => audio_stream_push of null), "none", "#1007 strict: audio_stream_push of null still pushes nothing"]
+    assert_eq of [strict_kind of ((_) => audio_play of [0.1, 0.2]), "none", "#1007 strict: a well-typed audio_play does not raise"]
+    assert_eq of [strict_kind of ((_) => audio_play_loop of [([0.1, 0.2]), 2]), "none", "#1007 strict: a well-typed audio_play_loop does not raise"]
+    # The optional trailing slot of gfx_text. Its wrong-typed scale was an
+    # unchecked `items[6]->data.num` read on the parent, so it is refused —
+    # and the refusal is loud here. The plain-mode half of the same rule is
+    # the pixel row below.
+    assert_eq of [strict_kind of ((_) => gfx_text of [0, 0, "H", 255, 255, 255, "2"]), "type_mismatch", "#1007 strict: gfx_text raises on a wrong-typed optional scale"]
+    assert_eq of [strict_kind of ((_) => gfx_text of [0, 0, "H", 255, 255, 255, 2]), "none", "#1007 strict: a well-typed gfx_text scale does not raise"]
     print of "strict-pass: 1"
 else:
     assert_eq of [gfx_open of ["800", "600", "t"], 0, "#1007: string w/h no longer opens a window"]
@@ -80,6 +201,18 @@ else:
     # 44100/1 defaults, answering a real device id to a caller that asked for
     # something else.
     assert_eq of [audio_stream_open of ["44100", "1"], 0, "#1007: string freq/channels no longer opens a stream device at defaults"]
+    # #1007 round 3, the plain half of the openers' ARITY axis. STRICT_REQUIRE
+    # cannot change non-strict behaviour BY CONSTRUCTION — it is a no-op when
+    # the flag is off — so the pin here is a RELATIVE one, and it is what
+    # would notice if someone "upgraded" that guard to an ARG_GUARD and
+    # started answering 0 to a short list. A short list must keep behaving
+    # exactly like the documented `of null` defaults form. Each open takes the
+    # single dummy device, so each is closed before the next.
+    short_dev is audio_stream_open of [48000]
+    audio_stream_close of null
+    null_dev is audio_stream_open of null
+    audio_stream_close of null
+    assert_eq of [short_dev, null_dev, "#1007: flag off, a short audio_stream_open still opens at the defaults exactly as `of null` does"]
     # CONTROL. Those three answer 0 for a wrong-typed argument — and 0 is also
     # the no-SDL answer, so on a machine without libSDL2 they pass on the
     # UNFIXED binary too. This row records which of the two worlds the run is
@@ -103,13 +236,98 @@ else:
     # names. Its sample elements were already type-checked; the volume beside
     # them was not.
     assert_eq of [len of (audio_gain of [[1.0], "2.0"]), 0, "#1007: audio_gain refuses a string volume"]
+    # #1007 round 2, the arity/shape half with the flag OFF: the empty list is
+    # still the stand-in, so the default path is byte-identical to before the
+    # guards. Only the flag makes these loud (rows in the strict pass above).
+    assert_eq of [len of (audio_sine of [100, 0.01]), 0, "#1007: a short audio_sine argument list still answers an empty list"]
+    assert_eq of [len of (audio_saw of [100, 0.01]), 0, "#1007: a short audio_saw argument list still answers an empty list"]
+    assert_eq of [len of (audio_square of [100, 0.01]), 0, "#1007: a short audio_square argument list still answers an empty list"]
+    assert_eq of [len of (audio_sweep of [1, 2, 3]), 0, "#1007: a short audio_sweep argument list still answers an empty list"]
+    assert_eq of [len of (audio_noise of ([0.01])), 0, "#1007: a short audio_noise argument list still answers an empty list"]
+    assert_eq of [len of (audio_envelope of [([0.1]), 1, 2, 3]), 0, "#1007: a short audio_envelope argument list still answers an empty list"]
+    assert_eq of [len of (audio_mix of (["a"])), 0, "#1007: a short audio_mix argument list still answers an empty list"]
+    assert_eq of [len of (audio_gain of (["a"])), 0, "#1007: a short audio_gain argument list still answers an empty list"]
+    assert_eq of [len of (audio_mix of 42), 0, "#1007: a non-list audio_mix argument still answers an empty list"]
     # Controls: a well-typed call must still produce samples, or the guards
     # above are over-broad and every row in this block passes for free.
     assert_true of [(len of (audio_sine of [440, 0.01, 0.5])) > 0, "#1007: a well-typed audio_sine still generates"]
     assert_true of [(len of (audio_sweep of [100, 200, 0.01, 0.5, 0])) > 0, "#1007: a well-typed audio_sweep still generates"]
     assert_true of [(len of (audio_envelope of [[0.1, 0.2], 0.01, 0.01, 0.5, 0.01])) > 0, "#1007: a well-typed audio_envelope still generates"]
     assert_eq of [(audio_gain of [[1.0], 0.5])[0], 0.5, "#1007: a well-typed audio_gain still scales"]
-    print of ("sdl-present: " + (str of (gfx_open of [80, 60, "eigs #1007 control"])))
+    # The drawing surface with the flag OFF: the ANSWER is unchanged (null
+    # on every path, exactly as before), which is what makes the default
+    # path byte-identical. What changed is that the punned read is gone.
+    assert_eq of [gfx_rect of ["10", 10, 50, 50, 255, 0, 0], null, "#1007: a rejected gfx_rect still answers null"]
+    assert_eq of [gfx_text_width of 5, 0, "#1007: gfx_text_width of a non-string still answers 0"]
+    assert_eq of [gfx_text_width of ["hi", "2"], (gfx_text_width of ["hi", 1]), "#1007: a wrong-typed scale still measures at scale 1 (coercion, not a stand-in)"]
+    assert_eq of [gfx_text_height of "2", (gfx_text_height of 1), "#1007: a wrong-typed height scale still answers scale 1"]
+    assert_eq of [len of (audio_mix of [["a"], [0.1]]), 1, "#1007: audio_mix still coerces the element with the flag off"]
+
+    sdl_open is gfx_open of [80, 60, "eigs #1007 control"]
+    print of ("sdl-present: " + (str of sdl_open))
+    # THE PIXEL PROOF, and the only row here that can see the defect the
+    # issue is about. Pre-fix, `gfx_rect of [..., "255", 0, 0]` reinterpreted
+    # the string's `char *` as a double, `(int)`-cast it to 0, and painted a
+    # BLACK rectangle over the cleared colour — a wrong drawing, not a
+    # missing one, and silent in both modes. Post-fix the call is refused
+    # before the read, so the cleared colour survives. Needs a real renderer,
+    # so it is gated and says when it did not run.
+    if sdl_open == 1:
+        ignore is gfx_clear of [7, 8, 9]
+        ignore is gfx_rect of [0, 0, 32, 32, "255", 0, 0]
+        px is gfx_read of [4, 4]
+        assert_eq of [px[0], 7, "#1007: a wrong-typed colour no longer paints black over the cleared pixel"]
+        assert_eq of [px[1], 8, "#1007: ...green channel unchanged too"]
+        # CONTROL: a well-typed rect at the same spot MUST still paint, or
+        # the row above passes because nothing draws at all any more.
+        ignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
+        px2 is gfx_read of [4, 4]
+        assert_eq of [px2[0], 255, "#1007 control: a well-typed gfx_rect still paints"]
+        # THE EXEMPTION, pinned. gfx_clear's wrong-SHAPE branch is deliberately
+        # a coercion, not a refusal: an unusable argument fell through to
+        # r = g = b = 0 and the buffer WAS cleared, to black. Refusing to clear
+        # would be a default-path behaviour change, so it stays soft and only
+        # the flag makes it loud. Without this row the exemption is a sentence
+        # in a comment that nothing executes.
+        ignore is gfx_clear of "not a colour"
+        px3 is gfx_read of [4, 4]
+        assert_eq of [px3[0], 0, "#1007: a wrong-shaped gfx_clear still clears to black with the flag off"]
+        # #1007 round 2 — THE ASYMMETRY BETWEEN THE THREE TEXT BUILTINS,
+        # pinned so it reads as a decision and not an accident.
+        # gfx_text_width / gfx_text_height type-checked their scale slot
+        # BEFORE this issue, so a wrong-typed scale there is a COERCION and
+        # still measures at scale 1 (asserted above). gfx_text did NOT:
+        # on the parent commit its read is
+        #     int scale = (count >= 7) ? (int)items[6]->data.num : 1;
+        # with no type test, so a string scale reinterpreted a `char *` as a
+        # double — which truncates to 0 and is then clamped to 1, making the
+        # glyph LOOK correct while being drawn from a pointer. That is the
+        # unchecked-read class, so the call is refused rather than defaulted.
+        # A blind review read the CHECKED shape (gfx_text_width's items[1])
+        # as gfx_text's and called the refusal a plain-mode regression; this
+        # row records which shape each builtin actually had, in pixels.
+        ignore is gfx_clear of [0, 0, 0]
+        ignore is gfx_text of [0, 0, "H", 255, 255, 255, "2"]
+        lit_bad is 0
+        for ty in range of 16:
+            for tx in range of 16:
+                cb is gfx_read of [tx, ty]
+                if cb[0] > 100:
+                    lit_bad is lit_bad + 1
+        assert_eq of [lit_bad, 0, "#1007: a wrong-typed gfx_text scale is refused (an unchecked read, not a coercion)"]
+        # CONTROL: the same call with a well-typed scale must still draw, or
+        # the row above passes because gfx_text draws nothing at all any more.
+        ignore is gfx_text of [0, 0, "H", 255, 255, 255, 2]
+        lit_ok is 0
+        for ty in range of 16:
+            for tx in range of 16:
+                cg is gfx_read of [tx, ty]
+                if cg[0] > 100:
+                    lit_ok is lit_ok + 1
+        assert_true of [lit_ok > 0, "#1007 control: a well-typed gfx_text scale still draws"]
+        print of "pixel-proof: 1"
+    else:
+        print of "pixel-proof: 0"
     print of "strict-pass: 0"
 
 # ---- the sample-element coercion, when a device is actually available ----

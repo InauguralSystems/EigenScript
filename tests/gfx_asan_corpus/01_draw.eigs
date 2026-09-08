@@ -1,0 +1,27 @@
+# Every drawing builtin, valid arguments, with a window open. The point is
+# the ALLOCATION paths inside ext_gfx.c, so each call is made and its answer
+# read back rather than discarded.
+o is gfx_open of [64, 48, "asan-gfx corpus"]
+print of f"open: {o}"
+ignore is gfx_clear of [10, 20, 30]
+ignore is gfx_rect of [0, 0, 8, 8, 255, 0, 0]
+ignore is gfx_rect of [8, 0, 8, 8, 255, 0, 0, 128]
+ignore is gfx_line of [0, 0, 63, 47, 0, 255, 0]
+ignore is gfx_point of [1, 1, 0, 0, 255]
+ignore is gfx_circle of [32, 24, 5, 9, 9, 9]
+ignore is gfx_circle of [32, 24, 5, 9, 9, 9, 200]
+ignore is gfx_rrect of [4, 4, 20, 12, 3, 1, 2, 3]
+ignore is gfx_rrect of [4, 20, 20, 12, 0, 1, 2, 3, 64]
+ignore is gfx_clip of [0, 0, 32, 24]
+ignore is gfx_text of [2, 2, "hello", 255, 255, 255]
+ignore is gfx_text of [2, 12, "hello", 255, 255, 255, 2]
+ignore is gfx_clip of null
+tw is gfx_text_width of ["hello", 2]
+th is gfx_text_height of 2
+print of f"w: {tw} h: {th}"
+print of f"pixel: {gfx_read of [1, 1]}"
+ignore is gfx_title of "renamed"
+ignore is gfx_present of null
+ignore is gfx_delay of 1
+ignore is gfx_close of null
+print of "01 done"

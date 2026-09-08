@@ -81,6 +81,14 @@ cd "$(cd "$(dirname "$0")/.." && pwd)"
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
 BASE="${1:-}"
 
+# #1007 put probes on the gfx/audio surface. They never open a window (the
+# guards all sit ABOVE the SDL load, which is the point of #1018's [135]
+# gate), but SDL is dlopen'd lazily and a probe that DID reach it must not
+# block on a real display or sound card. Only set when unset, so a caller
+# can still point the harness at a real driver.
+export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
+export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-dummy}"
+
 # --no-baseline runs every half EXCEPT identical-when-off, and passes on those.
 # It exists so CI has something: without it this tool only ever runs on a dev
 # box that happens to have built the parent commit, and a harness nobody runs
@@ -217,6 +225,18 @@ trap _sd_exit EXIT
 # ARG_GUARD reports, which is what the cross-check below matches on. The
 # optional third field is the message substring the raise must carry when
 # it is not ARG_GUARD's "<who>: expected" (the NaN and domain rows).
+#
+# A name may appear on MORE THAN ONE row, and for the three audio *_open
+# builtins it must. Holding arity right and varying only the element TYPE
+# measures exactly one axis, and #1007 shipped a first version whose guards
+# were NESTED inside a `count >= 2` shape test: every wrong-typed row went
+# loud while a SHORT list walked past the guard, opened the device at the
+# 44100/1 defaults and answered a real device id. `raises-under-strict: N,
+# silent: 0` was true and the surface was still silently succeeding, because
+# the table only ever asked the question in the state where it could not
+# fail. So the openers carry a short-list row (and audio_open a non-list
+# row) beside the wrong-typed one, and the well-formed `of null` /
+# `of [freq, channels]` forms sit in VALID below as the over-broad control.
 PROBES=$(cat <<'EOF'
 abs|print of (abs of "x")
 acos|print of (acos of "x")
@@ -301,6 +321,13 @@ gfx_open|print of (gfx_open of ["800", "600", "t"])
 audio_open|print of (audio_open of ["44100", "1"])
 audio_capture_open|print of (audio_capture_open of ["44100", "1"])
 audio_stream_open|print of (audio_stream_open of ["44100", "1"])
+audio_open|print of (audio_open of [44100])
+audio_capture_open|print of (audio_capture_open of [44100])
+audio_stream_open|print of (audio_stream_open of [48000])
+audio_open|print of (audio_open of 44100)
+audio_play|print of (audio_play of 42)
+audio_stream_push|print of (audio_stream_push of 42)
+audio_play_loop|print of (audio_play_loop of [42, 2])
 audio_sine|print of (len of (audio_sine of ["440", 0.01, 0.5]))
 audio_saw|print of (len of (audio_saw of ["440", 0.01, 0.5]))
 audio_square|print of (len of (audio_square of ["440", 0.01, 0.5]))
@@ -329,6 +356,28 @@ json_build|print of (json_build of ({"a": 1}))
 sort|print of (sort of ({"a": 1}))
 random_int|print of (random_int of ["a", 3])
 random_hex|print of (random_hex of "x")
+audio_mix|print of (len of (audio_mix of [42, ([0.1])]))
+audio_music_play|print of (audio_music_play of [42])
+audio_music_volume|print of (audio_music_volume of "loud")
+audio_pause|print of (audio_pause of "x")
+audio_play_loop|print of (audio_play_loop of [([0.1]), "2"])
+audio_stop|print of (audio_stop of "x")
+audio_volume|print of (audio_volume of ["1", 1])
+gfx_circle|print of (gfx_circle of ["1", 2, 3, 4, 5, 6])
+gfx_clear|print of (gfx_clear of ["1", 2, 3])
+gfx_clip|print of (gfx_clip of ["1", 2, 3, 4])
+gfx_delay|print of (gfx_delay of "5")
+gfx_fb|print of (gfx_fb of [42, 4, 4, 0, 0, 1])
+gfx_line|print of (gfx_line of ["0", 0, 10, 10, 1, 2, 3])
+gfx_point|print of (gfx_point of ["1", 2, 3, 4, 5])
+gfx_read|print of (gfx_read of ["1", 1])
+gfx_rect|print of (gfx_rect of ["10", 10, 50, 50, 255, 0, 0])
+gfx_rrect|print of (gfx_rrect of ["1", 2, 3, 4, 5, 6, 7, 8])
+gfx_text|print of (gfx_text of [1, 2, "hi", "255", 0, 0])
+gfx_text_height|print of (gfx_text_height of "2")
+gfx_text_width|print of (gfx_text_width of 5)
+gfx_title|print of (gfx_title of 42)
+ppu_render_frame|print of (ppu_render_frame of [1, 2])
 EOF
 )
 # A probe that needs a real resource must build it under this run's own $TMP,
@@ -449,6 +498,29 @@ print of (json_build of ["k", 1])
 print of (sort of [3, 1, 2])
 seed_random of 7\nprint of (random_int of [1, 1])
 print of (len of (random_hex of 4))
+print of (gfx_text_width of ["hello", 2])
+print of (gfx_text_width of "hello")
+print of (gfx_text_height of 3)
+print of (gfx_text_height of null)
+print of (gfx_rect of [0, 0, 1, 1, 1, 2, 3])
+print of (gfx_rect of [0, 0, 1, 1, 1, 2, 3, 128])
+print of (gfx_clear of [1, 2, 3])
+print of (gfx_clip of null)
+print of (gfx_poll of null)
+print of (gfx_read of [0, 0])
+print of (audio_mix of [[0.5], [0.25, 0.25]])
+print of (audio_gain of [[1.0], 0.5])
+print of (audio_stop of 1)
+print of (audio_volume of [1, 0.5])
+print of (audio_open of null)
+print of (audio_capture_open of null)
+print of (audio_stream_open of null)
+print of (audio_open of [44100, 1])
+print of (audio_capture_open of [44100, 1])
+print of (audio_stream_open of [44100, 1])
+print of (audio_play of null)
+print of (audio_stream_push of null)
+print of (audio_play of [0.1, 0.2])
 EOF
 )
 
@@ -748,11 +820,67 @@ extract_guard_names() {
 
 release_srcs="$(make print-SRC_V_release 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u)"
 variant_only=""
+absent_here=""
+
+# PRESENCE IS PROBED ONCE PER FILE, NOT ONCE PER NAME, and the probe carries
+# a SENTINEL (#1007). Both halves were bought on the same run.
+#
+# Per file: every builtin in a translation unit is registered together (one
+# `register_*_builtins` seam behind one -D flag), so a name's presence is a
+# property of its FILE. #1007 took ext_gfx.c's guarded-name count from 3 to
+# 33, which turned this loop from 3 interpreter launches into 34 — on a
+# loaded box, under ASan, 34 chances for one launch to come back wrong.
+#
+# Sentinel: without it, "the output does not say 'undefined variable'" was
+# read as "the name is present", so a launch that produced NO output at all
+# — killed, out of memory, a sanitizer abort — silently classified every
+# name in the file as present, its probe then failed with "undefined
+# variable", and the tool reported `misattributed` for a reason that has
+# nothing to do with the code under test. Observed once in a full ASan suite
+# run (2026-09-07) and green on the diagnostic re-run, which is exactly the
+# shape of a flake nobody can act on. An exit status can miss that shape (a
+# child killed after its parent has already read a clean 0), so BOTH tests
+# run and either one puts the file in the DID NOT RUN bucket below, which is
+# red and names the environment rather than a guard.
 if [ -n "$release_srcs" ]; then
     for f in src/*.c; do
         str_has_line "$release_srcs" "$f" && continue
+        # The slash forms ("sqrt/exp/log/negative") are trimmed to the first
+        # component here, because that is the spelling a program can call and
+        # the spelling probe_builtin_present compares against.
+        f_names="$(extract_guard_names "$f" | sed 's,/.*,,' | sed '/^$/d' | sort -u)"
+        [ -z "$f_names" ] && continue
         variant_only="$variant_only
-$(extract_guard_names "$f")"
+$f_names"
+        rep="$(printf '%s\n' "$f_names" | head -1)"
+        printf 'print of "eigs-probe-ran"\nprint of %s\n' "$rep" > "$TMP/present.eigs"
+        # Capture, THEN match. Under `set -o pipefail` a pipeline reports the
+        # rightmost nonzero status, and the probe program exits 1 by design
+        # when the name is undefined — so `prog | grep -q` returned 1 on a
+        # successful match and every absent builtin read as present.
+        _present_out="$("$NEW" "$TMP/present.eigs" 2>&1)"; _present_rc=$?
+        # A presence check that did not RUN is not a "present" answer, and it
+        # is not an "absent" one either. Assuming present sends every probe in
+        # the file to a guard that is not there, where it dies "undefined
+        # variable" and is scored RAISED BY THE WRONG GUARD — an environment
+        # fact charged to a guard, which is the #1120 shape arriving by a
+        # second road. Same bucket as an unrun probe: named, red, and not a
+        # finding about the code.
+        _why="$(run_did_not_measure "$_present_rc")"
+        if [ -z "$_why" ] && ! str_has "$_present_out" "eigs-probe-ran"; then
+            _why="the probe printed no sentinel, so it never reached its first statement"
+        fi
+        if [ -n "$_why" ]; then
+            n_unrun=$((n_unrun + 1))
+            unrun_list="$unrun_list
+    presence check for $f (representative: $rep) — $_why"
+            record_evidence unrun "presence:$f" "" "$_present_rc
+$_present_out"
+            continue
+        fi
+        if str_has "$_present_out" "undefined variable"; then
+            absent_here="$absent_here $(printf '%s\n' "$f_names" | tr '\n' ' ')"
+        fi
     done
     variant_only="$(printf '%s\n' "$variant_only" | sed '/^$/d' | sort -u)"
 else
@@ -761,33 +889,6 @@ else
     # justified is worse than a probe that fails loudly).
     echo "  NOTE: 'make print-SRC_V_release' gave nothing — variant-only detection off"
 fi
-
-absent_here=""
-for v in $variant_only; do
-    printf 'print of %s\n' "${v%%/*}" > "$TMP/present.eigs"
-    # Capture, THEN match. Under `set -o pipefail` a pipeline reports the
-    # rightmost nonzero status, and the probe program exits 1 by design when
-    # the name is undefined — so `prog | grep -q` returned 1 on a successful
-    # match and every absent builtin read as present.
-    _present_out="$("$NEW" "$TMP/present.eigs" 2>&1)"; _present_rc=$?
-    # A presence check that did not RUN is not a "present" answer. Assuming
-    # present sends the probe in, where it dies "undefined variable" and is
-    # scored RAISED BY THE WRONG GUARD — an environment fact charged to a
-    # guard, which is the #1120 shape arriving by a second road. Same bucket
-    # as an unrun probe: named, red, and not a finding about the code.
-    _why="$(run_did_not_measure "$_present_rc")"
-    if [ -n "$_why" ]; then
-        n_unrun=$((n_unrun + 1))
-        unrun_list="$unrun_list
-    presence check for ${v%%/*} — $_why"
-        record_evidence unrun "presence:${v%%/*}" "" "$_present_rc
-$_present_out"
-        continue
-    fi
-    case "$_present_out" in
-        *"undefined variable"*) absent_here="$absent_here ${v%%/*}" ;;
-    esac
-done
 
 # A probe is runnable unless its builtin is a variant-only one this build
 # does not contain.

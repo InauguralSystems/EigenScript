@@ -1,0 +1,56 @@
+# The REJECTED-argument paths, which is where #1007's guards live. A guard
+# that raises must not leak what it had already built (audio_mix / audio_gain
+# / audio_envelope allocate an output list, which is why their element checks
+# sit before the build). Non-strict here; the strict pass runs the same file
+# under EIGS_STRICT=1 with the raise caught by the harness.
+o is gfx_open of [32, 32, "rejected"]
+ignore is gfx_rect of ["10", 10, 50, 50, 255, 0, 0]
+ignore is gfx_line of ["0", 0, 10, 10, 1, 2, 3]
+ignore is gfx_point of ["1", 2, 3, 4, 5]
+ignore is gfx_circle of ["1", 2, 3, 4, 5, 6]
+ignore is gfx_rrect of ["1", 2, 3, 4, 5, 6, 7, 8]
+ignore is gfx_clip of ["1", 2, 3, 4]
+ignore is gfx_clear of ["1", 2, 3]
+ignore is gfx_text of [1, 2, "hi", "255", 0, 0]
+ignore is gfx_fb of [42, 4, 4, 0, 0, 1]
+ignore is gfx_read of ["1", 1]
+ignore is gfx_delay of "5"
+ignore is gfx_title of 42
+ignore is gfx_text_width of 5
+ignore is gfx_text_height of "2"
+ignore is ppu_render_frame of [1, 2]
+ignore is audio_mix of [["a"], [0.1]]
+ignore is audio_gain of [["a"], 2.0]
+ignore is audio_envelope of [["a"], 0.01, 0.01, 0.5, 0.01]
+ignore is audio_sine of ["440", 0.01, 0.5]
+ignore is audio_play_loop of [[0.1], "2"]
+ignore is audio_volume of ["1", 1]
+ignore is audio_stop of "x"
+ignore is audio_pause of "x"
+ignore is audio_music_play of [42]
+ignore is audio_music_volume of "loud"
+ignore is audio_open of ["44100", "1"]
+ignore is audio_capture_open of ["44100", "1"]
+ignore is audio_stream_open of ["44100", "1"]
+# #1007 round 3: the CONTAINER axis. A short or non-list argument to the three
+# openers used to walk past the element guard and open the device at the
+# defaults; a non-list `samples` used to answer the documented "nothing to
+# play" 0. Both take a new early-return path, so both are walked here — a
+# guard whose return is never executed under ASan is a guard nobody has
+# checked for a leak.
+ignore is audio_open of [44100]
+ignore is audio_capture_open of [44100]
+ignore is audio_stream_open of [48000]
+ignore is audio_open of 44100
+ignore is audio_play of 42
+ignore is audio_stream_push of "zzz"
+ignore is audio_play_loop of [42, 2]
+# Non-strict, the three short-list opens above really DO open a device (that
+# is the unchanged answer this change preserves), so close them again --
+# an SDL device left open at exit is a leak this gate would report as ours.
+ignore is audio_close of null
+ignore is audio_capture_close of null
+ignore is audio_stream_close of null
+ignore is gfx_open of ["800", "600", "t"]
+ignore is gfx_close of null
+print of "06 done"
