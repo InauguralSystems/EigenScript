@@ -201,6 +201,30 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **Layering has structure rather than convention (#744, closing #746).** The
+  core no longer includes any extension's private header: `src/ext_register.h`
+  carries the registrars and per-state teardowns as declarations only, so
+  `builtins.c` and `state.c` compile with the database extension enabled on a
+  machine with no PostgreSQL headers, which they previously could not.
+  `vm.c` no longer re-declares any cross-TU symbol; the stale block-scope
+  externs are gone, including one for a symbol that exists nowhere, and the two
+  legitimate ones are homed in `vm.h` and `eigenscript.h`. Three new
+  translation units carry code moved verbatim: `src/fsutil.c` (file reading and
+  the module-resolver chain, so the VM, compiler, formatter, linter and the
+  embedding API stop reaching into the builtins layer to read a file),
+  `src/task.c` (the cooperative scheduler, with its state now private to it),
+  and `src/builtins_buf.c` (numeric buffers, the vectorized kernels, PCM16LE
+  and DEFLATE). Behaviour-preserving, proven: a 532-program corpus differential
+  against a pre-change build is byte-identical and `tools/jit_diff.sh` is
+  clean. A new gate, `tools/core_ext_boundary_check.sh`, keeps the boundary
+  from drifting back, with a structural scan anchored to the Makefile's source
+  list and an executable probe that poisons the PostgreSQL header so it cannot
+  pass vacuously on a machine that has it. Five build-source lists that nothing
+  tied to the tree now derive from the Makefile or were corrected; one of them
+  had been silently costing the language-server builtin index 19 signature
+  comments. Per-layer headers, and breaking up the 1253-line umbrella header,
+  are recorded in `ROADMAP.md` as their own round.
+
 - **The observer gate is hoisted ahead of the observe helpers, in both the
   interpreter and the JIT (#972).** With the gate closed, every assignment
   still dispatched into a helper, decoded the top of stack and resolved a slot
