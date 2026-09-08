@@ -166,7 +166,25 @@ is_denied() {
     esac
 }
 
-corpus() { git ls-files '*.eigs' | sort; }
+corpus() {
+    # git ls-files is the source of truth for the TRACKED corpus, but it
+    # returns nothing when git refuses the checkout (dubious ownership / a
+    # detached devcontainer checkout — the selftest found 0 corpus names on
+    # the CI linux lanes, #1124). Fall back to a filesystem walk of the same
+    # tree (we are cd'd to $REPO), excluding non-corpus trees, so the selftest
+    # and the compare both have a corpus wherever git is unavailable.
+    local out
+    out=$(git ls-files '*.eigs' 2>/dev/null)
+    if [ -z "$out" ]; then
+        out=$(find . -name '*.eigs' -type f \
+                -not -path './.git/*' \
+                -not -path './build/*' \
+                -not -path './.observer_gate_captures/*' \
+                -not -path '*/eigs_modules/*' \
+                2>/dev/null | sed 's|^\./||')
+    fi
+    printf '%s\n' "$out" | sort
+}
 
 # Pure bash: this runs once per corpus entry per compare (520 x 9 in the
 # selftest); with a `tr` subprocess each time the selftest took 12.6s, pure
