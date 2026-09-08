@@ -36,15 +36,21 @@ cd "$(dirname "$0")/.."
 BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
 
+# Source list ANCHORED to the Makefile's SOURCES minus CLI_ONLY (the pattern
+# tools/amalgamate.sh and tools/freestanding_check.sh use). A hand-written copy
+# here is a list nothing ties to the tree: when #744 split three new TUs out of
+# vm.c/builtins.c/builtins_host.c, every copy of this list broke at the LINK
+# step and only the copies someone remembered to update were fixed.
+EMBED_SRC=$(make --no-print-directory print-SOURCES | tr ' ' '\n' | grep '\.c$')
+CLI_ONLY=$(make --no-print-directory print-CLI_ONLY | tr ' ' '\n' | grep '\.c$')
+for u in $CLI_ONLY; do EMBED_SRC=$(printf '%s\n' $EMBED_SRC | grep -vx "$u"); done
+[ -n "$EMBED_SRC" ] || { echo "FAIL: derived an EMPTY source list from the Makefile" >&2; exit 1; }
+
 gcc -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 \
     -DEIGENSCRIPT_FREESTANDING=1 \
     -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
     -o "$BUILD/embed_stack_soak" \
-    src/eigenscript.c src/lexer.c src/parser.c src/builtins.c \
-    src/builtins_host.c \
-    src/builtins_tensor.c src/hash.c src/arena.c src/state.c src/strbuf.c \
-    src/ext_store.c src/fmt.c src/lint.c src/lint_host.c src/chunk.c src/compiler.c \
-    src/vm.c src/jit.c src/trace.c src/eigs_embed.c \
+    $EMBED_SRC \
     tools/embed_stack_soak_main.c \
     -lm -lpthread
 

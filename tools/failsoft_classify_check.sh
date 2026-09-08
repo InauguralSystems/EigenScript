@@ -444,12 +444,24 @@ if [ "$usage_mode" = "--selftest" ]; then
     #    and the floor can speak. The one-sided faults above were already
     #    caught by design; a selftest built only from them proves nothing
     #    about this.
-    python3 - "$root/src/builtins.c" <<'PY' 2>/dev/null || cp "$SELF_ROOT/src/builtins.c" "$root/src/builtins.c"
+    python3 - "$root/src/builtins.c" <<'PY' || { echo "    selftest: could not plant the split-return fault"; cp "$SELF_ROOT/src/builtins.c" "$root/src/builtins.c"; }
 import re, sys
 p = sys.argv[1]
 s = open(p).read()
-s = s.replace("        return make_num(0);\n", "        return\n            make_num(0);\n", 1)
-open(p, "w").write(s)
+# Indentation is NOT hardcoded, and a plant that matches nothing is FATAL.
+# The literal 8-space form this used to search for was the shape every such
+# site happened to have; when #744 moved all seven of them into
+# builtins_buf.c the replace became a silent no-op, the file was rewritten
+# unchanged, the gate stayed (correctly) green, and the row read as "the
+# split detector missed the fault". A control that fails for the wrong
+# reason looks exactly like a real verdict.
+s2, n = re.subn(r"^([ \t]+)return make_num\(0\);$",
+                lambda m: m.group(1) + "return\n" + m.group(1) + "    make_num(0);",
+                s, count=1, flags=re.M)
+if n != 1:
+    sys.stderr.write("failsoft selftest: no `return make_num(0);` site to split\n")
+    sys.exit(1)
+open(p, "w").write(s2)
 PY
     expect 1 "two-sided loss (return split across lines) is caught"; restore
 

@@ -4,6 +4,7 @@
 
 #include "eigenscript.h"
 #include "env_flag.h"
+#include "fsutil.h"
 #include "state.h"
 #include "vm.h"
 #include "trace.h"

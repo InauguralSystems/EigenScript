@@ -6678,6 +6678,29 @@ else
 fi
 echo ""
 
+# [99i2] Core -> extension boundary (#744). The core must not include an
+# extension's PRIVATE header. `ext_db_internal.h` pulls <libpq-fe.h>, so a
+# core TU that includes it for one declaration makes the core unbuildable
+# without PostgreSQL headers wherever EIGENSCRIPT_EXT_DB=1 — and the only
+# target that compiles that combination is `make full`, which needs libpq to
+# build at all, so nothing in the suite could see it. Two legs: a structural
+# scan (core TUs from the Makefile's SOURCES, ext headers from the tree,
+# exemptions checked in both directions) and an executable -fsyntax-only
+# probe with every extension ON and <libpq-fe.h> POISONED, which is what
+# keeps the probe honest on a box that HAS libpq.
+echo "[99i2] Core/extension include boundary (#744)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/core_ext_boundary_check.sh" >/dev/null && \
+   bash "$TESTS_DIR/../tools/core_ext_boundary_check.sh" --selftest >/dev/null; then
+    PASS=$((PASS + 1))
+    echo "  PASS: no core -> extension-private include edge (gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: a core TU includes an extension private header, or the gate self-test broke"
+    bash "$TESTS_DIR/../tools/core_ext_boundary_check.sh" 2>&1 | head -8
+fi
+echo ""
+
 # [99o] Child-script exit-status accounting (#988). Two halves: the static
 # gate proves the mechanism is present and unbypassable, the behavioural test
 # proves it actually fails a section for each of the three modes the issue

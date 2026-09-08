@@ -13,15 +13,11 @@
  * cpp/function-in-block, and the header owning it is not visible to this TU. */
 void eigs_obs_memo_release(void);
 
-#if EIGENSCRIPT_EXT_HTTP
-/* Forward-declared here to avoid pulling ext_http_internal.h (and its
- * pthread/socket includes) into core runtime TUs. Defined in ext_http.c. */
-extern void ext_http_state_destroy(EigsState *st);
-#endif
-#if EIGENSCRIPT_EXT_DB
-/* Same reason — declared here rather than including libpq. #739. */
-extern void ext_db_state_destroy(EigsState *st);
-#endif
+/* #739/#744: per-state extension teardown. The two hand-written externs that
+ * used to sit here (one per extension, to avoid pulling ext_http_internal.h's
+ * pthread/socket includes and ext_db_internal.h's libpq) are now one shared
+ * seam — declarations only, no extension types. */
+#include "ext_register.h"
 
 __thread EigsThread *eigs_current = NULL;
 

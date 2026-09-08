@@ -270,6 +270,34 @@ observer/deterministic-replay niche instead of diluting it.**
       the default path byte-identical.
       ([#971](https://github.com/InauguralSystems/EigenScript/issues/971))
 
+- [ ] **Per-layer headers — break up the 1253-line `eigenscript.h` umbrella.**
+      Item 3 of [#744](https://github.com/InauguralSystems/EigenScript/issues/744),
+      the one part of that issue deliberately NOT done in the same round; items
+      1, 2, 4 and 5 landed (dead extension includes, stale externs, `fsutil.c`,
+      the `task.c` / `builtins_buf.c` splits). The measured facts, from the
+      2026-07 modularity review: there is no `lexer.h`, `parser.h`,
+      `compiler.h`, `chunk.h` or `builtins.h` — only `vm.h`, `jit.h`,
+      `trace.h`, `state.h` (plus, since #744, `fsutil.h`, `task.h` and
+      `ext_register.h`). `eigenscript.h` spans the tokenizer, the AST, values,
+      the arena, `EigsThread`, env, the parser, registration, the MODEL tensor
+      kernels, the handle table, the store, step, and fmt+lint: **26 structs
+      with every field visible, 167 declarations, included by 29 of ~30 TUs**.
+      Two consequences are measured, not asserted: a lexer change forces a full
+      rebuild of everything, and the layer order is violable and violated —
+      `compiler.c` increments the PARSER's `g_parse_depth` `EigsThread` field
+      as its own recursion guard, and lexer, parser and compiler all write
+      `g_parse_errors`, the front end mutating runtime thread state.
+      What makes this its own round rather than a follow-up commit: 29 TUs,
+      `tools/amalgamate.sh` (which concatenates them in SOURCES order and would
+      have to keep an acyclic include order across the split), and the
+      freestanding profile's two-stage symbol gate. Note the header GRAPH is
+      already clean and acyclic (`eigenscript.h -> value_slot.h`, `vm.h ->
+      value_slot.h`, everything else -> `eigenscript.h`), so this is a hub
+      problem, not a tangle — the split is mechanical once someone commits to
+      doing all 29 at once. `#744` showed the cheap version works: `fsutil.h`
+      moved 8 declarations out of the umbrella and 7 TUs now say they read
+      files, and nothing else changed.
+
 ### AOT (ouroboros — the native-perf path; not the JIT)
 
 - [x] Close the F-OURO-23 envelope via `lib/checksum.eigs` (CRC-32) as

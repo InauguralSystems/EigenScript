@@ -8,6 +8,7 @@
  * the multi-state model — not new behavior.
  */
 #include "eigenscript.h"
+#include "fsutil.h"
 #include "state.h"
 #include "vm.h"
 #include "trace.h"

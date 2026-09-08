@@ -1603,6 +1603,10 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val);
  * never round-trip through make_num + val_decref. Reference-count
  * semantics match the Value* variants: env *borrows* the input slot and
  * incref's internally, *_get returns a slot the caller must slot_decref. */
+/* #868/#908: how many assignments this binding has seen, for the `when <n>`
+ * ordinal space. Defined in eigenscript.c; the VM's OP_PREV_N path is the
+ * only other consumer (it used to re-extern it by hand — #744). */
+int env_get_assign_count(Env *env, const char *name, uint32_t h);
 void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 /* Same as env_set_local_hashed_slot, but `interned` must come from
@@ -1774,34 +1778,11 @@ const char* err_kind_name(ErrKind k);
 const char* eigs_predicate_name(unsigned kind);
 void rt_error(ErrKind kind, int line, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
-char* read_file_util(const char *path, long *out_size);
-int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap);
 /* File provenance is retained by the executing chunk, including closures. */
 const char *eigs_current_file_dir(void);
-char *eigs_file_directory(const char *path); /* hosted; caller frees */
-void eigs_file_resolve_error(const char *operation, const char *base,
-                            const char *path, int line); /* hosted */
-/* One chain for import/load_file; base is the containing file's directory. */
-int resolve_eigenscript_file_from(const char *base, const char *path,
-                                   char *resolved, size_t resolved_cap);
-/* #904: which half of the chain answered. The chain's tail steps are the
- * installed stdlib roots (`<prefix>/lib/eigenscript/`, `~/.local/lib/
- * eigenscript/`), and they answer a bare `<name>.eigs` request as well as
- * `lib/<name>.eigs` — so a STDLIB_ROOT hit on a bare request is the stdlib
- * itself, not a project file shadowing it. */
-#define EIGS_RESOLVE_PROJECT       0
-#define EIGS_RESOLVE_STDLIB_ROOT   1
-int resolve_eigenscript_file_from_ex(const char *base, const char *path,
-                                      char *resolved, size_t resolved_cap,
-                                      int *origin);
-/* #1046: the ONE `import NAME` resolver -- project-first, then stdlib --
- * shared by OP_IMPORT (vm.c) and the observer gate's compile-time pass
- * (compiler.c). `shadowed` (optional) receives the stdlib path a distinct
- * project file shadows, else "". Hosted; the freestanding stub resolves
- * nothing. */
-int eigs_import_resolve(const char *base, const char *name,
-                        char *resolved, size_t resolved_cap,
-                        char *shadowed, size_t shadowed_cap);
+/* Reading a file and resolving a module request are declared in fsutil.h
+ * (#744) — a consumer says so by including it, instead of getting them for
+ * free from this umbrella. */
 Value* eigs_json_parse_value(const char *s, int *pos);
 /* #777: the ONLY entry point for a top-level (non-recursive) JSON parse.
  * Clears both thread-local parse flags (g_json_parse_err,
@@ -1914,10 +1895,6 @@ void   handle_release(int id);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
-
-/* ---- gfx extension registrar (ext_gfx.c; TU only compiled when
- * EIGENSCRIPT_EXT_GFX — call sites keep the #if, matching http/db). ---- */
-void register_gfx_builtins(Env *env);
 
 /* ---- Tape-stepper (#418; step.c, CLI-only) ----
  * Interactive debugger over a recorded trace tape: `--step <tape> [src]`.

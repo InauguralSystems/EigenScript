@@ -9,6 +9,7 @@
  */
 
 #include "eigenscript.h"
+#include "ext_register.h"   /* register_gfx_builtins (#744) */
 #include "ext_names.h"
 #include "trace.h"   /* audio capture is a nondet input source (#579) */
 

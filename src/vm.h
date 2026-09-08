@@ -53,6 +53,13 @@ typedef struct ASTNode ASTNode;
 void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
                           Value *fn_val, Env *env);
 
+/* The one CONSUMING builtin (builtins.c). Declared here — not re-externed in
+ * each consumer — because every site that must special-case it (vm.c's three
+ * call sites, builtins.c's builtin_dispatch, builtins_tensor.c's
+ * call_eigs_fn) compares `fn->data.builtin` against it, and hand-written
+ * copies of one signature in three TUs are free to drift (#744). */
+Value* builtin_free_val(Value *arg);
+
 /* ---- Opcodes ---- */
 typedef enum {
     /* Constants */

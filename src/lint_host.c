@@ -9,6 +9,7 @@
 
 #include "eigenscript.h"
 #include "ext_names.h"
+#include "fsutil.h"
 #include "lint_internal.h"
 #include "vm.h"   /* #927: lint compiles the unit and discards the chunk */
 

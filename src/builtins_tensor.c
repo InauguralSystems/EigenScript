@@ -13,8 +13,8 @@
 
 /* Forward decls for helpers shared with the arena/observer machinery. */
 Value* make_num_permanent(double n);
-/* The one consuming builtin — call_eigs_fn must not touch `arg` after it. */
-extern Value* builtin_free_val(Value *arg);
+/* builtin_free_val — the one consuming builtin, call_eigs_fn must not touch
+ * `arg` after it — is declared in vm.h (#744). */
 
 /* Shared double-precision tensor kernels. These live in this always-compiled
  * translation unit so model-enabled and model-disabled builds execute the

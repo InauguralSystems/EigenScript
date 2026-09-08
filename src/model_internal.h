@@ -7,6 +7,7 @@
 #define MODEL_INTERNAL_H
 
 #include "eigenscript.h"
+#include "ext_register.h"   /* register_model_builtins (#744) */
 
 /* ---- Model types ---- */
 
@@ -208,7 +209,6 @@ Value* json_obj_get(Value *obj, const char *key);
 
 /* ---- Registration ---- */
 
-void register_model_builtins(Env *env);
 
 /* ---- Builtins — each file defines its own, registered by model_train.c ---- */
 

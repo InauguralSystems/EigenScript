@@ -15,7 +15,19 @@ cd "$(dirname "$0")/.."
 BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
 
-SRC="eigenscript lexer parser builtins builtins_host builtins_tensor hash arena state strbuf ext_store fmt lint lint_host chunk compiler vm jit trace eigs_embed"
+# Anchored to the Makefile's SOURCES (the single source of truth) minus the
+# CLI-only units, the same way tools/amalgamate.sh reads it — a hand-written
+# list here is a list nothing ties to the tree, and a new runtime TU silently
+# missing from it compiles nothing and reports whatever is left (#744).
+SRC=$(make --no-print-directory print-SOURCES \
+     | tr ' ' '\n' | sed -n 's#^src/\(.*\)\.c$#\1#p')
+CLI_ONLY=$(make --no-print-directory print-CLI_ONLY \
+     | tr ' ' '\n' | sed -n 's#^src/\(.*\)\.c$#\1#p')
+for u in $CLI_ONLY; do SRC=$(printf '%s\n' $SRC | grep -vx "$u"); done
+if [ -z "$SRC" ]; then
+    echo "FAIL: derived an EMPTY source list from the Makefile" >&2
+    exit 1
+fi
 for f in $SRC; do
     gcc -O2 -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE \
         -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation \
