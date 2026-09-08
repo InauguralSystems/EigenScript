@@ -5,6 +5,26 @@
 # dir running --pkg commands.
 set -euo pipefail
 
+# ---------------------------------------------------- how this test matches (#1122)
+# NO PIPELINE DECIDES A VERDICT HERE. Mechanism, from #1120: under
+# `set -o pipefail`, `echo "$s" | grep -q "$pat"` is a RACE, not a test.
+# `grep -q` exits the instant it matches and closes the read end; the
+# still-writing `echo` then takes SIGPIPE and exits 141; pipefail reports the
+# PIPELINE as 141 — a failed match — while grep's own status was 0, MATCHED.
+# The test then goes red while printing the very output it says is missing.
+# `tools/strict_differential.sh --selftest` reproduces that deterministically
+# on a capture larger than the pipe buffer.
+#
+# str_has is bash's own matcher: no fork, no pipe, no status to misread. The
+# needle is QUOTED inside the pattern, so a glob character in it is a literal —
+# the same promise `grep -F` made. Every needle replaced below is a literal
+# with no BRE metacharacter in it, so this is the same test, not a wider one —
+# and WIDER is the only direction that could turn a check that can fail into
+# one that cannot.
+# The surviving `| head -N` pipelines are diagnostics inside an already-decided
+# FAIL branch; they settle nothing and are not exposed.
+str_has() { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
+
 EIGS="${EIGENSCRIPT:-./eigenscript}"
 EIGS=$(realpath "$EIGS")
 
@@ -39,7 +59,7 @@ cd "$TMP/project"
 
 # ---- verify on clean install passes ----
 VERIFY_OUT=$("$EIGS" --pkg verify 2>&1)
-if ! echo "$VERIFY_OUT" | grep -q "Verified 1 package"; then
+if ! str_has "$VERIFY_OUT" "Verified 1 package"; then
     echo "  FAIL: verify on clean install should pass"
     echo "$VERIFY_OUT"
     exit 1
@@ -53,7 +73,7 @@ if "$EIGS" --pkg verify >/dev/null 2>&1; then
     exit 1
 fi
 VERIFY_DIRTY=$("$EIGS" --pkg verify 2>&1 || true)
-if ! echo "$VERIFY_DIRTY" | grep -q "TREE DRIFT"; then
+if ! str_has "$VERIFY_DIRTY" "TREE DRIFT"; then
     echo "  FAIL: verify should report 'TREE DRIFT' on tampered tree"
     echo "$VERIFY_DIRTY"
     exit 1
@@ -67,7 +87,7 @@ if "$EIGS" --pkg verify >/dev/null 2>&1; then
     exit 1
 fi
 VERIFY_GONE=$("$EIGS" --pkg verify 2>&1 || true)
-if ! echo "$VERIFY_GONE" | grep -q "MISSING"; then
+if ! str_has "$VERIFY_GONE" "MISSING"; then
     echo "  FAIL: verify should report 'MISSING' on gone tree"
     echo "$VERIFY_GONE"
     exit 1
@@ -79,7 +99,7 @@ echo "  PASS: --pkg verify catches a missing checkout"
 
 # ---- update with no new commit at tag is a no-op ----
 UPDATE_NOOP=$("$EIGS" --pkg update 2>&1)
-if ! echo "$UPDATE_NOOP" | grep -q "unchanged"; then
+if ! str_has "$UPDATE_NOOP" "unchanged"; then
     echo "  FAIL: update against unchanged tag should say 'unchanged'"
     echo "$UPDATE_NOOP"
     exit 1
@@ -104,7 +124,7 @@ if [ "$NEW_COMMIT" = "$OLD_COMMIT" ]; then
     echo "$UPDATE_OUT"
     exit 1
 fi
-if ! echo "$UPDATE_OUT" | grep -q "updated"; then
+if ! str_has "$UPDATE_OUT" "updated"; then
     echo "  FAIL: update should print 'updated'"
     echo "$UPDATE_OUT"
     exit 1
@@ -120,7 +140,7 @@ echo "  PASS: --pkg update <unknown> exits nonzero"
 
 # ---- verify accepts the post-update state ----
 VERIFY_POST=$("$EIGS" --pkg verify 2>&1)
-if ! echo "$VERIFY_POST" | grep -q "Verified 1 package"; then
+if ! str_has "$VERIFY_POST" "Verified 1 package"; then
     echo "  FAIL: verify should pass after update"
     echo "$VERIFY_POST"
     exit 1

@@ -273,6 +273,7 @@ a code's meaning never changes, and retired codes are not reused.
 | `W021` | hint | Function definition shadows a **public stdlib function** from a module the file never imported (`define 'median' shadows lib/stats.eigs 'median' (import stats to use it)`) — a discoverability nudge toward `lib/*.eigs` (#591), sibling of `W013` (which covers compiled-in builtins; a name that is both stays `W013`-only). The name table is scraped from the public top-level defines of the same `lib/` directories the import resolver searches; the hint stays silent when the module is imported, and when the linted file *is* the module that ships the name. Name-only matching has false positives (a deliberately-different local `mean`), so this is hint-severity: advisory, **never fails `--lint`** under either `--lint-level`, and suppressible like any other code. |
 | `W022` | warning | A bare literal argument list with **more elements than the callee's parameters** — with `define two(a, b)`, `two of [1, 2, 99]` passes 3 arguments to a 2-parameter callee (#733). Since #974 the runtime raises a catchable `value`-kind error at that call site (`call passes 3 arguments but the callee takes 2`); this warning catches the same mistake earlier, statically, without running the program. Conservative by construction, and **same-file only**: it fires only when the callee name provably has one meaning in the file — exactly one `define` of it anywhere and no other binding (assignment, param, lambda param, loop/comprehension var, catch name, list-pattern name, import, or any identifier inside a `match` pattern poisons the name), so a call into an imported module's callee is never checked here — cross-module over-arity reaches the runtime raise instead. One-parameter callees are exempt by the #405 semantics themselves: a 2+-element bare list binds WHOLE to a single parameter — nothing is dropped, and that shape is the deliberate variadic idiom (`reverse of [1, 2, 3]`). Parenthesized lists (`f of ([...])`) are a single argument and never fire. |
 | `W023` | warning | A direct bare assignment in one `if`/`elif`/`else` sibling branch has a `local` assignment in another branch and may mutate an outer module binding (#870). It fires only when the compiler-shaped model proves a module name and finds no parameter, captured/interrogated/env-bound name, dominating same-environment binder, or enclosing binder; unknown shapes stay silent (including the documented enclosing-`catch` false negative). |
+| `W024` | warning | An observer read (`<predicate> of q`, `report` / `report_value` / `observe` / `trajectory of q`) on a binding that the same loop rebinds from a **projection of an element that walks the loop** — `local q is fleet[i][2]`, `q is chans[i].a`, `for ent in fleet: q is ent.v`, `[n, k, v] is fleet[i]`, or a field of a base rebound from such an element (`ch is chans[i]` then `ch.a`) — with the read anywhere in that loop (#1048). The projection may sit under arithmetic with inert operands (`fleet[i][2] + 0.0`, `-fleet[i][2]`, `fleet[i][2] * scale` where the loop never assigns `scale`), which is the spelling the reporting consumer ships; an accumulator (`total is total + fleet[i].v`) is not that shape and stays silent. Observer trajectory lives on an environment slot, never on a Value, so a dict field or list element carries no history and the one binding's window becomes the **round-robin interleave** of every entity it visits: a monotonically decaying entity reads `oscillating`, with no diagnostic (phugoid rung 4 shipped this in every arm). The message names the two working forms — one named binding per entity, or one closure per entity — see [PREDICATES, What carries a trajectory](PREDICATES.md#what-carries-a-trajectory). A **module-level `for`-body `local`** is the opposite failure and gets its own text: the loop env is cleared each iteration, so the slot holds one observation and every read answers `equilibrium` (predicates: false) — that variant fires for any RHS when the `local` is the name's only assignment in the loop; inside a function a `for`-body `local` is a persisting frame slot and is treated like a `loop while` binding (both measured with `when is q`). Conservative by construction, and the residuals are named: a fixed field or element (`game.energy`, `xs[0]`) never fires — that is the documented way to give a field a trajectory; a base rebound from a call (`state is step of state`) never fires; a subscript that is not counter arithmetic (`xs[len of xs - 1]`) never fires; a **flat `xs[i]`** never fires, because subscripting a scalar list by the counter is also how a recorded series is replayed through one binding to classify it (`lib/experiment.eigs`, `lib/simulation.eigs`) — so a per-entity *scalar* list read the same way (`energies[i]`) is the one interleave this rule cannot see; reads outside the loop, interrogatives (`why is q`) and reads of the `for` binder itself are not covered. |
 
 The human linter output carries the code inline:
 
@@ -304,6 +305,39 @@ so `--lint --json 2>/dev/null` is pure JSON). Each element is:
   remaining #407 work.)
 - Exit code follows `--lint-level` (see below); the default fails on any
   surviving warning.
+
+- **Every string in the payload is valid UTF-8 — the `message`, the `file`
+  path — whatever a rule interpolates and whatever the linted file contains.**
+  Two things could break that, and both are handled at a chokepoint rather than
+  per rule (#1048):
+  - **Length.** Messages are assembled in a fixed 256-byte buffer, so a rule
+    that interpolates a long identifier can have its message clipped — but the
+    clip lands on a character boundary and is marked with a trailing `...`,
+    never inside a multi-byte sequence. Rules that interpolate unbounded text
+    are expected to budget it themselves so the actionable half survives:
+    `W024` shrinks the identifiers it quotes (middle ellipsis) rather than let
+    its remedy be cut.
+  - **Source bytes.** A message can quote text the linter did not choose — the
+    byte the lexer could not tokenize (`E002`), a duplicate dict key (`W010`),
+    a path. A file is a byte string and need not be valid UTF-8, so those
+    quotes are sanitized: a byte that is not part of a well-formed character is
+    replaced with `U+FFFD` (`duplicate dict key 'k�y'`), an incomplete
+    sequence at the end is dropped, and a byte the lexer cannot tokenize is
+    spelled rather than echoed — `unexpected character '\xc3'`, not half of an
+    `é`. Well-formed characters, multi-byte ones included, pass through
+    **byte-for-byte**.
+
+  This is a consumer-visible contract: a byte-level cut produced a payload
+  strict decoders reject while `jq` silently substituted U+FFFD, and
+  `eigenlsp` publishes the same strings over JSON-RPC.
+  `tools/lint_message_utf8_check.sh` drives every code above with a
+  200-character identifier, sweeps identifier length 1..250 and every source
+  byte `>= 0x80` through four source shapes, and decodes both channels
+  strictly with `python3` (never `jq`, which is lenient exactly here).
+  The same sanitizing applies to the human `--lint` line and to the
+  parse-error source excerpt, where a byte that cannot be decoded prints as
+  `?` so the caret below it still lines up. It covers the lint channels; other
+  LSP responses that echo document text (hover, formatting) are outside it.
 
 The `--json` flag may appear before or after the path. Runtime errors are
 not part of `--lint` — it compiles the program but never runs it.
@@ -413,8 +447,10 @@ two) — ROADMAP's sanctioned alternative to a type system. Its model:
   closures read enclosing function scopes; module names are
   order-insensitive (a body may read a module name bound after the
   definition); a nested `define` binds its name in the enclosing
-  function only; a **module-level `for` loop-scopes its variable** (the
-  VM drops it at loop exit — a function-level `for` var survives);
+  function only; a **`for` loop-scopes its variable at every level** (the
+  VM drops a module binder at loop exit and retires a function binder's
+  slot, #1105 — a post-loop read is a runtime error either way), while a
+  body's plain `is` binds in the enclosing function/module scope (#1056);
   listcomp and `catch` vars bind in the containing scope. Within a
   scope, "bound on some path" still suppresses (sibling-branch first
   assignments stay silent) — path-precise analysis is the remaining

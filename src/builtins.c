@@ -25,25 +25,18 @@
 
 #include <pthread.h>
 
-#if EIGENSCRIPT_EXT_HTTP
-#include "ext_http_internal.h"
-#endif
-
-#if EIGENSCRIPT_EXT_DB
-#include "ext_db_internal.h"
-#endif
+/* #744: the extension ENTRY POINTS, not the extensions' private headers.
+ * This TU calls five registrars and uses no extension type; pulling
+ * ext_db_internal.h for one declaration dragged <libpq-fe.h> into the core
+ * (so the `full` variant needed PostgreSQL headers to compile builtins.c),
+ * and model_internal.h dragged the transformer type set. ext_net_internal.h
+ * stays: handle_table_drain's HANDLE_NET pass reads EigsNetSock.fd, and that
+ * header is deliberately free of socket headers for exactly this use. */
+#include "ext_register.h"
 
 #if EIGENSCRIPT_EXT_NET
 #include "ext_net_internal.h"
 #include <unistd.h>   /* close() in handle_table_drain's HANDLE_NET pass */
-#endif
-
-#if EIGENSCRIPT_EXT_MODEL
-#include "model_internal.h"
-#endif
-
-#if EIGENSCRIPT_EXT_ZLIB
-#include <zlib.h>
 #endif
 
 /* How many bindings the runtime itself installs.
@@ -481,8 +474,10 @@ Value* builtin_len(Value *arg) {
         return make_num(arg->data.list.count);
     if (arg->type == VAL_STR)
         return make_num(strlen(arg->data.str));
-    if (arg->type == VAL_DICT)
+    if (arg->type == VAL_DICT) {
+        eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         return make_num(arg->data.dict.count);
+    }
     if (arg->type == VAL_BUFFER)
         return make_num(arg->data.buffer.count);
     if (arg->type == VAL_TEXT_BUILDER)
@@ -554,7 +549,9 @@ Value* builtin_num(Value *arg) {
             }
             return make_num(neg ? -v : v);
         }
-        return make_num(strtod(arg->data.str, NULL));
+        /* #971: strtod reads "nan"/"inf" — the in-language route to a NaN.
+         * Default collapses to 0 (+ EIGS_MATH_INVALID); strict raises, named. */
+        return make_num(num_guard_named(strtod(arg->data.str, NULL), "num"));
     }
     if (arg->type == VAL_NULL) return make_num(0);   /* fs:ANSWER coercion contract */
     return make_num(0);                              /* fs:ANSWER coercion contract */
@@ -637,6 +634,126 @@ Value* builtin_get_observer_thresholds(Value *arg) {
     list_append_owned(result, make_num(g_obs_dh_small));
     list_append_owned(result, make_num(g_obs_h_low));
     return result;
+}
+
+/* #1044: the observer window depth.
+ *
+ * The bare form (a number) sets the per-state DEFAULT depth in samples
+ * that every value-channel and entropy-channel verdict classifies over:
+ * 4..64, 10 at start. Read live, like the thresholds: a binding already
+ * carrying a trajectory classifies over the new depth at its next verdict
+ * (its ring grows on the next sample; a smaller depth reads fewer
+ * samples). The list form (["x", n]) is a per-BINDING override on the
+ * binding `x` visible from the call site (the same scope walk `report of
+ * x` does), affecting only that slot; n == 0 clears it back to the
+ * default. An unbound name raises — there is no slot to widen. Both
+ * return null.
+ *
+ * Why a depth knob: the window is in SAMPLES, and a mode slower than ~N
+ * samples of the consumer's cadence cannot fold inside it — the phugoid
+ * (T = 46.9 s) observed at 1 Hz read `diverging` on its rising quarter
+ * cycles with the fixed 10. Widening the binding's window to cover a
+ * period lets the folding rule see the fold. The ceiling is the ring
+ * counters' width; the floor is the motion bands' two-samples-per-half. */
+static int obs_window_arg(Value *v, const char *who) {
+    if (!v || v->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "%s: window depth must be a number", who);
+        return -1;
+    }
+    double d = v->data.num;
+    if (d != (int)d || d < OBSERVER_WINDOW_MIN || d > OBSERVER_WINDOW_MAX) {
+        rt_error(EK_VALUE, 0, "%s: window depth must be an integer in [%d, %d], got %g",
+                 who, OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX, d);
+        return -1;
+    }
+    return (int)d;
+}
+
+/* set_observer_window of n | ["x", n] — set the default (n) or one binding's (["x", n]) observer window depth, 4..64 samples. */
+Value* builtin_set_observer_window(Value *arg) {
+    if (arg && arg->type == VAL_LIST) {
+        if (arg->data.list.count != 2 || !arg->data.list.items[0] ||
+            arg->data.list.items[0]->type != VAL_STR) {
+            rt_error(EK_TYPE, 0, "set_observer_window requires n or [\"name\", n]");
+            return make_null();
+        }
+        const char *name = arg->data.list.items[0]->data.str;
+        Value *nv = arg->data.list.items[1];
+        int n;
+        if (nv && nv->type == VAL_NUM && nv->data.num == 0.0) {
+            n = 0;   /* clear the override */
+        } else {
+            n = obs_window_arg(nv, "set_observer_window");
+            if (n < 0) return make_null();
+        }
+        Env *start = g_builtin_call_env ? g_builtin_call_env : g_global_env;
+        int slot = -1, depth = 0;
+        Env *target = env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
+        if (!target || slot < 0) {
+            rt_error(EK_UNDEFINED_NAME, 0, "set_observer_window: no binding named '%s'", name);
+            return make_null();
+        }
+        if (!observer_slot_set_window(target, slot, n)) {
+            rt_error(EK_LIMIT, 0, "set_observer_window: observer slot table full");
+            return make_null();
+        }
+        /* The override lives on an Env slot, so the tape writer's
+         * state-configuration diff cannot see it — record it explicitly, or a
+         * stepped tape classifies this binding at the default depth and
+         * prints a verdict the live run never gave (docs/TRACE.md). */
+        trace_obs_window_binding(name, n);
+        return make_null();
+    }
+    int n = obs_window_arg(arg, "set_observer_window");
+    if (n < 0) return make_null();
+    g_obs_window = n;
+    return make_null();
+}
+
+/* get_observer_window of null | "x" — the default window depth, or the depth in force on binding "x". */
+Value* builtin_get_observer_window(Value *arg) {
+    if (arg && arg->type == VAL_STR) {
+        const char *name = arg->data.str;
+        Env *start = g_builtin_call_env ? g_builtin_call_env : g_global_env;
+        int slot = -1, depth = 0;
+        Env *target = env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
+        if (!target || slot < 0) {
+            rt_error(EK_UNDEFINED_NAME, 0, "get_observer_window: no binding named '%s'", name);
+            return make_null();
+        }
+        const ObserverSlot *s = (slot < target->obs_cap) ? env_obs_slot(target, slot) : NULL;
+        return make_num((double)observer_slot_window(s));
+    }
+    return make_num((double)observer_slot_window(NULL));
+}
+
+/* #1045: the characteristic scale of the value channel — the magnitude
+ * below which a value counts as "at zero". The relative step is
+ * Δv / max(|v|, |v_prev|, scale): above the scale a verdict is unit-free
+ * (the same physics stored in radians, degrees or milliradians reads the
+ * same); below it the deadband turns absolute (|Δv| < dh_zero·scale), so
+ * float noise around an exact zero is not motion. Default 0.001. Choose it
+ * in the unit the binding is stored in — it is the one number a unit
+ * choice still touches. */
+/* set_observer_scale of s — set the value channel's characteristic scale (the |v| below which a value counts as zero), s > 0. */
+Value* builtin_set_observer_scale(Value *arg) {
+    if (!arg || arg->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "set_observer_scale requires a number");
+        return make_null();
+    }
+    double sc = arg->data.num;
+    if (!(sc > 0.0) || sc > 1e300) {
+        rt_error(EK_VALUE, 0, "observer scale must be positive and finite, got %g", sc);
+        return make_null();
+    }
+    g_obs_scale = sc;
+    return make_null();
+}
+
+/* get_observer_scale of null — the value channel's characteristic scale. */
+Value* builtin_get_observer_scale(Value *arg) {
+    (void)arg;
+    return make_num(g_obs_scale);
 }
 
 /* exit of N — request a clean process exit with code N (default 0). Sets the
@@ -729,6 +846,7 @@ Value* builtin_throw(Value *arg) {
 
 Value* builtin_keys(Value *arg) {
     if (arg->type == VAL_DICT) {
+        eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
         for (int i = 0; i < arg->data.dict.count; i++)
             list_append_owned(list, make_str(arg->data.dict.keys[i]));
@@ -739,6 +857,7 @@ Value* builtin_keys(Value *arg) {
 
 Value* builtin_values(Value *arg) {
     if (arg->type == VAL_DICT) {
+        eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
         for (int i = 0; i < arg->data.dict.count; i++)
             list_append(list, arg->data.dict.vals[i]);
@@ -966,6 +1085,7 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
             break;
         }
         case VAL_DICT: {
+            eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             strbuf_append_char(out, '{');
             for (int i = 0; i < v->data.dict.count; i++) {
                 if (i > 0) strbuf_append_char(out, ',');
@@ -1459,7 +1579,11 @@ void eigs_json_escape_string(strbuf *out, const char *s) {
 
 Value* builtin_json_build(Value *arg) {
     /* json_build of [key1, val1, key2, val2, ...] — properly escaped JSON object */
-    if (!arg || arg->type != VAL_LIST) return make_str("{}");
+    /* #971 Phase D: a non-list (a dict, a string) built an empty object.
+     * `json_build of null` stays the empty-object idiom in both modes. */
+    ARG_GUARD(arg && arg->type != VAL_NULL && arg->type != VAL_LIST,
+              "json_build", "a list of alternating keys and values", make_str("{}"));
+    if (!arg || arg->type == VAL_NULL) return make_str("{}");   /* fs:ANSWER no pairs — the empty object */
     int count = arg->data.list.count;
     strbuf out;
     strbuf_init(&out);
@@ -1535,6 +1659,17 @@ Value* builtin_starts_with(Value *arg) {
 
 Value* builtin_split(Value *arg) {
     const char *str = "", *delim = " ";
+    /* #971 Phase D: a non-string subject coerced to "" (so `split of 42` was
+     * [""], a plausible one-part answer) and a non-string delimiter fell
+     * back to " " silently. Coercion shape — no single stand-in to name —
+     * so STRICT_REQUIRE: raise under strict, byte-identical otherwise. */
+    STRICT_REQUIRE(!arg || !(arg->type == VAL_STR ||
+                             (arg->type == VAL_LIST && arg->data.list.count >= 1 &&
+                              arg->data.list.items[0]->type == VAL_STR)),
+                   "split", "a string or [string, delimiter]");
+    STRICT_REQUIRE(arg->type == VAL_LIST && arg->data.list.count >= 2 &&
+                   arg->data.list.items[1]->type != VAL_STR,
+                   "split", "a string delimiter");
     if (arg && arg->type == VAL_STR) {
         str = arg->data.str;
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
@@ -1601,6 +1736,13 @@ Value* builtin_scan_ints(Value *arg) {
                 comment_marker = comment_val->data.str[0];
         }
     }
+
+    /* #971 Phase D: no string in the argument — a wrong type read as
+     * "no tokens". Coercion shape: raise under strict, unchanged otherwise.
+     * The guard sits ABOVE the make_list: STRICT_REQUIRE returns, so a list
+     * allocated first would be abandoned by the raise (see write_bytes in
+     * builtins_host.c, which frees instead because its buffer is raw). */
+    STRICT_REQUIRE(!str, "scan_ints", "a string or [string, comment_marker]");
 
     Value *out = make_list(128);
     if (!str) return out;
@@ -1700,6 +1842,13 @@ Value* builtin_scan_tokens(Value *arg) {
         }
     }
 
+    /* #971 Phase D: no string in the argument — a wrong type read as
+     * "no tokens". Coercion shape: raise under strict, unchanged otherwise.
+     * The guard sits ABOVE the make_list: STRICT_REQUIRE returns, so a list
+     * allocated first would be abandoned by the raise (see write_bytes in
+     * builtins_host.c, which frees instead because its buffer is raw). */
+    STRICT_REQUIRE(!str, "scan_tokens", "a string or [string, comment_marker]");
+
     Value *out = make_list(128);
     if (!str) return out;
 
@@ -1781,6 +1930,13 @@ Value* builtin_scan_int_tokens(Value *arg) {
                 comment_marker = comment_val->data.str[0];
         }
     }
+
+    /* #971 Phase D: no string in the argument — a wrong type read as
+     * "no tokens". Coercion shape: raise under strict, unchanged otherwise.
+     * The guard sits ABOVE the make_list: STRICT_REQUIRE returns, so a list
+     * allocated first would be abandoned by the raise (see write_bytes in
+     * builtins_host.c, which frees instead because its buffer is raw). */
+    STRICT_REQUIRE(!str, "scan_int_tokens", "a string or [string, comment_marker]");
 
     Value *out = make_list(128);
     if (!str) return out;
@@ -2163,12 +2319,14 @@ Value* builtin_random(Value *arg) {
 
 /* random_int of [lo, hi] → integer in [lo, hi] inclusive */
 Value* builtin_random_int(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        TRACE_NONDET_RET("random_int", make_num(0));
+    /* #971 Phase D: a malformed range answered 0 — a number in nobody's
+     * range. Taped shape: the soft half still records/replays as before. */
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+                    "random_int", "[lo, hi]", make_num(0));
     Value *lo = arg->data.list.items[0];
     Value *hi = arg->data.list.items[1];
-    if (!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM)
-        TRACE_NONDET_RET("random_int", make_num(0));
+    ARG_GUARD_TAPED(!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM,
+                    "random_int", "numeric bounds", make_num(0));
     eigs_ensure_random_seeded();
     /* Range-check as doubles before any integer cast — a double outside the
      * int64_t range (or non-finite) makes the cast itself UB (#698 fixed the
@@ -2366,13 +2524,30 @@ Value* builtin_json_path(Value *arg) {
 
     int pos = 0;
     Value *root = eigs_json_parse_root(json_str, &pos);   /* #777: fresh parse */
-    /* fs:TODO #971 PHASE C. This is NOT "no value at that path" — the
-     * DOCUMENT failed to parse, and that input error is laundered into the
-     * same "" that a legitimately-absent key returns, so a caller cannot
-     * tell malformed JSON from a missing field. Converting it means deciding
-     * whether JSON parse failure raises at all, which is a contract change
-     * with its own consumers (the flag channel below, ext_http, tidelog).
-     * Deliberately left soft here and recorded as the Phase C decision. */
+    /* #971 Phase C. A DOCUMENT that failed to parse is not "no value at that
+     * path", yet the lenient walk below answers the same "" an absent key
+     * returns, so a caller cannot tell malformed JSON from a missing field.
+     * Decided: under EIGS_STRICT the parse failure raises — a catchable
+     * `value` error naming the position, on exactly the acceptance test
+     * json_decode applies (structural error, a repaired scalar, or trailing
+     * garbage after the value). With the flag off nothing changes: the
+     * partial document is walked as before, which the flag channel's other
+     * consumers (ext_http's shared store and header parsing, the store's
+     * catalog) rely on and which this raise does not touch — they never
+     * pass through json_path. JSON `false`/`null`/literals are answers and
+     * stay quiet in both modes. */
+    if (g_strict) {
+        int end = pos;
+        eigs_json_skip_ws(json_str, &end);
+        if (!root || g_json_parse_err || g_json_parse_recoverable ||
+            json_str[end] != '\0') {
+            if (root) val_decref(root);
+            rt_error(EK_VALUE, 0, "json_path: invalid JSON at position %d", end);
+            return make_null();
+        }
+    }
+    /* fs:STRICT the g_strict block above raised on a parse failure; the soft
+     * "" is the flag-off path (unchanged since before #971 Phase C). */
     if (!root) return make_str("");
     Value *current = root;   /* walks borrowed children of root */
 
@@ -2454,10 +2629,6 @@ const char *eigs_current_file_dir(void) {
         if (chunk->src && chunk->src->resolve_dir) return chunk->src->resolve_dir;
     }
     return g_import_resolve_dir[0] ? g_import_resolve_dir : g_script_dir;
-}
-
-int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap) {
-    return resolve_eigenscript_file_from(eigs_current_file_dir(), path, resolved, resolved_cap);
 }
 
 
@@ -2570,7 +2741,7 @@ void free_tokenlist(TokenList *tl) {
  * Exposes the runtime's own tokenizer to .eigs code.
  * The learner sees its world the way the runtime does. */
 Value* builtin_tokenize_ids(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_list(0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "tokenize_ids", "a source string", make_list(0));  /* #971 Phase D */
     const char *src = arg->data.str;
     if (!src || !src[0]) return make_list(0);
 
@@ -2590,7 +2761,7 @@ Value* builtin_tokenize_ids(Value *arg) {
  * token types get an empty string. Used by corpus builders that need
  * per-identifier information for vocabulary enrichment. */
 Value* builtin_tokenize_with_names(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_list(0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "tokenize_with_names", "a source string", make_list(0));  /* #971 Phase D */
     const char *src = arg->data.str;
     if (!src || !src[0]) return make_list(0);
 
@@ -2624,7 +2795,9 @@ Value* builtin_tokenize_with_names(Value *arg) {
 /* ==== BUILTIN: token_name ==== */
 /* token_name of id → string name of token type (for display) */
 Value* builtin_token_name(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_str("?");
+    /* #971 Phase D: "?" is the documented answer for an UNKNOWN id (below);
+     * for a non-number it was laundering a type mistake into that answer. */
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "token_name", "a token id", make_str("?"));
     int id = (int)arg->data.num;
     static const char *names[] = {
         "NUM", "STR", "IDENT",
@@ -3293,6 +3466,7 @@ static const char *SANDBOX_ALLOW[] = {
     "exp", "floor", "log", "max", "mean", "min", "multiply", "negative",
     "norm", "num", "pi", "pow", "round", "sign_extend", "sin", "sqrt",
     "subtract", "sum", "tan", "gather", "matmul", "reshape", "shape", "zeros",
+    "matmul_at", "matmul_bt", "scatter_add",
     "zeros_like", "fill", "leaky_relu", "relu", "softmax", "log_softmax",
     "sgd_update", "sgd_update_cols", "sgd_update_rows", "numerical_grad",
     "numerical_grad_cols", "numerical_grad_rows",
@@ -4003,6 +4177,26 @@ static int at_index(Value *idx_val, int count, const char *what,
     return 1;
 }
 
+/* #1093: the buffer twin of at_index — same negative-from-the-end rule, but
+ * the diagnostic `b[i]` and `buf_get` already use for a buffer, so `set_at of
+ * [buf, 9, v]` and `buf[9]` do not report the same fault two different ways. */
+static int buf_at_index(Value *idx_val, int count, int *out) {
+    if (!idx_val || idx_val->type != VAL_NUM) {
+        rt_error(EK_VALUE, 0, "buffer index must be a number, got %s",
+                 val_type_name(idx_val ? idx_val->type : VAL_NULL));
+        return 0;
+    }
+    int idx = (int)idx_val->data.num;
+    if (idx < 0) idx += count;
+    if (idx < 0 || idx >= count) {
+        rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
+                 (int)idx_val->data.num, count);
+        return 0;
+    }
+    *out = idx;
+    return 1;
+}
+
 Value* builtin_set_at(Value *arg) {
     if (!arg || arg->type != VAL_LIST) {
         rt_error(EK_TYPE, 0, "set_at requires [list, index, value] or "
@@ -4010,6 +4204,44 @@ Value* builtin_set_at(Value *arg) {
         return make_null();
     }
     int argc = arg->data.list.count;
+    /* #1093: `zeros of n` is a buffer now, so the indexed accessors take one
+     * in the container position — 1-D on any buffer, [row, col] on a shaped
+     * one. A non-number value is refused with buf_set's message rather than
+     * silently type-punned. `at_index`'s negative-from-the-end rule applies
+     * to buffers too. */
+    if ((argc == 3 || argc == 4) && arg->data.list.items[0]
+        && arg->data.list.items[0]->type == VAL_BUFFER) {
+        Value *buf = arg->data.list.items[0];
+        Value *val = arg->data.list.items[argc == 3 ? 2 : 3];
+        int64_t off;
+        if (argc == 3) {
+            int idx;
+            if (!buf_at_index(arg->data.list.items[1], buf->data.buffer.count,
+                              &idx)) return make_null();
+            off = idx;
+        } else if (argc == 4 && buf->data.buffer.rows > 0) {
+            int row, col;
+            if (!buf_at_index(arg->data.list.items[1], buf->data.buffer.rows,
+                              &row)) return make_null();
+            if (!buf_at_index(arg->data.list.items[2], buf->data.buffer.cols,
+                              &col)) return make_null();
+            off = (int64_t)row * buf->data.buffer.cols + col;
+        } else {
+            rt_error(EK_TYPE, 0, "set_at: [buffer, row, col, value] needs a "
+                     "shaped buffer (see reshape)");
+            return make_null();
+        }
+        if (!val || val->type != VAL_NUM) {
+            rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)",
+                     val_type_name(val ? val->type : VAL_NULL));
+            return make_null();
+        }
+        buf->data.buffer.data[off] = val->data.num;
+        /* Direct child of the arg vector — the borrow protocol (#720,
+         * vm_borrow_compensate) compensates at the call site, exactly as for
+         * the list path's `return list`. */
+        return buf;
+    }
     if (argc == 3) {
         /* 1D: set_at of [list, index, value] */
         Value *list = arg->data.list.items[0];
@@ -4081,6 +4313,28 @@ Value* builtin_get_at(Value *arg) {
         return make_null();
     }
     int argc = arg->data.list.count;
+    /* #1093: same buffer reading as set_at above. */
+    if ((argc == 2 || argc == 3) && arg->data.list.items[0]
+        && arg->data.list.items[0]->type == VAL_BUFFER) {
+        Value *buf = arg->data.list.items[0];
+        if (argc == 2) {
+            int idx;
+            if (!buf_at_index(arg->data.list.items[1], buf->data.buffer.count,
+                              &idx)) return make_null();
+            return make_num(buf->data.buffer.data[idx]);
+        }
+        if (argc == 3 && buf->data.buffer.rows > 0) {
+            int row, col;
+            if (!buf_at_index(arg->data.list.items[1], buf->data.buffer.rows,
+                              &row)) return make_null();
+            if (!buf_at_index(arg->data.list.items[2], buf->data.buffer.cols,
+                              &col)) return make_null();
+            return make_num(buf->data.buffer.data[(int64_t)row * buf->data.buffer.cols + col]);
+        }
+        rt_error(EK_TYPE, 0, "get_at: [buffer, row, col] needs a shaped buffer "
+                 "(see reshape)");
+        return make_null();
+    }
     if (argc == 2) {
         Value *list = arg->data.list.items[0];
         if (!list || list->type != VAL_LIST) {
@@ -4233,6 +4487,14 @@ static void *thread_entry(void *arg) {
         val_decref(h->result);
         h->result = cloned;
     }
+    /* #1112: an uncaught error on this worker (either path above — a
+     * VAL_FN body that unwound, or a builtin that raised, e.g. the replay
+     * refusal of `recv`) has already been printed; it used to leave the
+     * process exit status at 0, the silent-success #493 closed for tasks.
+     * Count it on the STATE so main fails the run. `exit of N` sets
+     * g_has_error only to unwind and is latched separately — not a death. */
+    if (g_has_error && !g_exit_requested)
+        __atomic_add_fetch(&eigs_current->state->spawn_err_count, 1, __ATOMIC_RELAXED);
     /* An uncaught throw on this thread leaves its structured payload in
      * thread-local storage; release it before the thread exits. */
     eigs_clear_error_value();
@@ -4588,8 +4850,13 @@ Value* builtin_close_channel(Value *arg) {
 }
 
 Value* builtin_channel_closed(Value *arg) {
+    /* #971 Phase D: get_channel folds "not a channel handle" into "no such
+     * channel". The second is the documented answer (a reclaimed channel is
+     * closed); the first is a type mistake reading as closed. Split. */
+    int not_a_handle = !arg || arg->type != VAL_DICT || !dict_get(arg, "_channel_id");
+    ARG_GUARD(not_a_handle, "channel_closed", "a channel", make_num(1));
     Channel *ch = get_channel(arg);
-    if (!ch) return make_num(1);
+    if (!ch) return make_num(1);   /* fs:ANSWER an unknown/reclaimed channel is closed */
     /* Read ch->closed under the mutex: close_channel writes it while holding
      * the lock, so a bare read here is a data race (caught by the #401 TSan
      * gate — it fired in CI where two workers polled channel_closed against a
@@ -4975,6 +5242,30 @@ Value* builtin_task_sched_seed(Value *arg) {
     return make_null();
 }
 
+/* task_sched_trace of null — the cooperative scheduler's decision history
+ * (#846): a list of {seq, tick, task, cause} dicts, one per task RESUME since
+ * the trace was armed, in schedule order. `task_sched_trace of 1` arms it,
+ * `task_sched_trace of 0` disarms it and discards the history; EIGS_TASK_TRACE=1
+ * arms it from the environment. Off by default. A PURE READER of the schedule:
+ * arming changes no pick, no clock, no seed — a traced run is byte-identical
+ * to the untraced one — and the entries derive from the deterministic
+ * schedule, so they are not tape records and replay reproduces them. Arming
+ * never creates a scheduler (see EigsThread.task_trace_on). */
+Value* builtin_task_sched_trace(Value *arg) {
+    if (!arg || arg->type == VAL_NULL) return task_sched_trace_read();
+    if (arg->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "task_sched_trace takes null (read), 1 (arm) or 0 (disarm + clear)");
+        return make_null();
+    }
+    if (arg->data.num != 0) {
+        g_task_trace_on = 1;
+    } else {
+        g_task_trace_on = 0;
+        task_sched_trace_clear();
+    }
+    return make_null();
+}
+
 /* Deterministic teardown of OS-resource handles, run once the program has
  * finished executing (the full value world is still alive, so buffered-message
  * decrefs are safe). Channels and thread handles live in the process handle
@@ -5337,907 +5628,12 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     return result;
 }
 
-/* dispatch of [table, key, arg] — O(1) function dispatch.
-   table: list of functions (or null for unused slots).
-   key: integer index into the table.
-   arg: value passed to the selected function.
-   Returns the function's return value, or null if slot is empty. */
-/* ---- Typed numeric buffers (flat double arrays) ---- */
 
-/* buffer of count — create a zero-filled numeric buffer */
-Value* builtin_buffer(Value *arg) {
-    /* buffer of [rows, cols] -> shaped 2-D buffer (flat double[rows*cols]) */
-    if (arg && arg->type == VAL_LIST && arg->data.list.count == 2 &&
-        arg->data.list.items[0]->type == VAL_NUM &&
-        arg->data.list.items[1]->type == VAL_NUM) {
-        int r = (int)arg->data.list.items[0]->data.num;
-        int c = (int)arg->data.list.items[1]->data.num;
-        if (r < 0) r = 0;
-        if (c < 0) c = 0;
-        long total = (long)r * (long)c;
-        if (total > 10000000) { r = 0; c = 0; total = 0; }
-        if (!sandbox_charge((size_t)total * sizeof(double))) return make_null();  /* #292 */
-        Value *v = xcalloc(1, sizeof(Value));
-        v->type = VAL_BUFFER;
-        v->data.buffer.count = (int)total;
-        v->data.buffer.rows = r;
-        v->data.buffer.cols = c;
-        v->data.buffer.data = xcalloc(total > 0 ? (size_t)total : 1, sizeof(double));
-        v->refcount = 1;
-        return v;
-    }
-    int count = 0;
-    if (arg && arg->type == VAL_NUM) count = (int)arg->data.num;
-    if (count < 0) count = 0;
-    if (count > 10000000) count = 10000000;
-    if (!sandbox_charge((size_t)count * sizeof(double))) return make_null();  /* #292 */
-    Value *v = xcalloc(1, sizeof(Value));
-    v->type = VAL_BUFFER;
-    v->data.buffer.count = count;
-    v->data.buffer.data = xcalloc(count, sizeof(double));
-    v->refcount = 1;
-    return v;
-}
-
-/* reshape of [buf, rows, cols] -> a shaped copy of the flat buffer (rows*cols
- * must equal the element count). */
-Value* builtin_reshape(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
-    Value *b = arg->data.list.items[0];
-    if (b->type != VAL_BUFFER) return make_null();
-    if (arg->data.list.items[1]->type != VAL_NUM ||
-        arg->data.list.items[2]->type != VAL_NUM) return make_null();
-    int r = (int)arg->data.list.items[1]->data.num;
-    int c = (int)arg->data.list.items[2]->data.num;
-    if (r < 0 || c < 0 || (long)r * (long)c != (long)b->data.buffer.count) return make_null();
-    /* Same buffer chokepoint as buf_from_list — reshape copies the payload. */
-    if (!sandbox_charge((b->data.buffer.count > 0 ? (size_t)b->data.buffer.count : 1) * sizeof(double)))
-        return make_null();
-    Value *v = xcalloc(1, sizeof(Value));
-    v->type = VAL_BUFFER;
-    v->data.buffer.count = b->data.buffer.count;
-    v->data.buffer.rows = r;
-    v->data.buffer.cols = c;
-    v->data.buffer.data = xcalloc(b->data.buffer.count > 0 ? (size_t)b->data.buffer.count : 1, sizeof(double));
-    memcpy(v->data.buffer.data, b->data.buffer.data, (size_t)b->data.buffer.count * sizeof(double));
-    v->refcount = 1;
-    return v;
-}
-
-/* buf_get of [buf, index] — O(1) indexed read */
-Value* builtin_buf_get(Value *arg) {
-    /* #502: out-of-range used to fold to 0 — indistinguishable from a real
-     * stored 0. Raise index_range, matching the buffer `[i]` operator. */
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
-        rt_error(EK_TYPE, 0, "buf_get requires [buffer, index]");
-        /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
-    }
-    Value *buf = arg->data.list.items[0];
-    if (!buf || buf->type != VAL_BUFFER) {
-        rt_error(EK_TYPE, 0, "buf_get: first argument must be a buffer");
-        /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
-    }
-    int idx = (int)arg->data.list.items[1]->data.num;
-    if (idx < 0 || idx >= buf->data.buffer.count) {
-        rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
-                 idx, buf->data.buffer.count);
-        /* fs:CHANNEL the EK_INDEX rt_error above already raised (#502) */
-        return make_num(0);
-    }
-    return make_num(buf->data.buffer.data[idx]);
-}
-
-/* buf_set of [buf, index, value] — O(1) indexed write */
-Value* builtin_buf_set(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {  /* #502 */
-        rt_error(EK_TYPE, 0, "buf_set requires [buffer, index, value]");
-        return make_null();
-    }
-    Value *buf = arg->data.list.items[0];
-    if (!buf || buf->type != VAL_BUFFER) {
-        rt_error(EK_TYPE, 0, "buf_set: first argument must be a buffer");
-        return make_null();
-    }
-    /* #1061: both operands were read through the num union member unchecked
-     * -- a string index or value read garbage bits (the #1007 type-pun class).
-     * Loud, like the `b[i] is v` opcode path. */
-    if (arg->data.list.items[1]->type != VAL_NUM) {
-        rt_error(EK_TYPE, 0, "buf_set: index must be a number, got %s", val_type_name(arg->data.list.items[1]->type));
-        return make_null();
-    }
-    if (arg->data.list.items[2]->type != VAL_NUM) {
-        rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(arg->data.list.items[2]->type));
-        return make_null();
-    }
-    int idx = (int)arg->data.list.items[1]->data.num;
-    double val = arg->data.list.items[2]->data.num;
-    if (idx < 0 || idx >= buf->data.buffer.count) {
-        rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
-                 idx, buf->data.buffer.count);
-        return make_null();
-    }
-    buf->data.buffer.data[idx] = val;
-    return make_null();
-}
-
-/* buf_len of buf — return buffer length */
-Value* builtin_buf_len(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_BUFFER, "buf_len", "a buffer", make_num(0));
-    return make_num(arg->data.buffer.count);
-}
-
-/* buf_from_list of list — convert list of numbers to buffer */
-Value* builtin_buf_from_list(Value *arg) {
-    if (!arg || arg->type != VAL_LIST) return make_null();
-    int n = arg->data.list.count;
-    /* Sandbox chokepoint: the only two buffer producers not routed through the
-     * charged make_shaped_buffer/buf_alloc_flat allocators (this + reshape).
-     * Per-call output == input, but a loop re-using one charged input spawns N
-     * uncharged copies past the budget (blind round, 2026-08-17): 50 copies of
-     * an 800k buffer held 320MB under the 256MB default and abort under a
-     * ulimit. Charge like every other buffer producer. */
-    if (!sandbox_charge((n > 0 ? (size_t)n : 1) * sizeof(double))) return make_null();
-    Value *v = xcalloc(1, sizeof(Value));
-    v->type = VAL_BUFFER;
-    v->data.buffer.count = n;
-    v->data.buffer.data = xcalloc(n > 0 ? n : 1, sizeof(double));
-    v->refcount = 1;
-    for (int i = 0; i < n; i++) {
-        if (arg->data.list.items[i]->type == VAL_NUM) {
-            v->data.buffer.data[i] = arg->data.list.items[i]->data.num;
-        } else {
-            /* #1061: a non-number element silently stayed 0.0. */
-            const char *tn = val_type_name(arg->data.list.items[i]->type);
-            val_decref(v);
-            rt_error(EK_TYPE, 0, "buf_from_list: element %d is %s (buffers hold numbers)", i, tn);
-            return make_null();
-        }
-    }
-    return v;
-}
-
-/* str_from_bytes of <list|buffer of byte ints> → string of those raw bytes.
- * Reconstructs a native string from its bytes (the inverse of an `ord` loop);
- * the list form of scalar `chr` (chr of n == str_from_bytes of [n] for
- * 1..255). EigenScript strings are NUL-terminated, so a 0 byte ends the
- * string; binary data that may contain NUL must stay in a buffer.
- * Surfaced by tidelog's CBOR text-string decoder. */
-Value* builtin_str_from_bytes(Value *arg) {
-    int n = 0;
-    Value **items = NULL;
-    double *bufd = NULL;
-    if (arg && arg->type == VAL_LIST) {
-        n = arg->data.list.count;
-        items = arg->data.list.items;
-    } else if (arg && arg->type == VAL_BUFFER) {
-        n = arg->data.buffer.count;
-        bufd = arg->data.buffer.data;
-    } else {
-        ARG_GUARD(1, "str_from_bytes", "a list or buffer of byte values", make_str(""));
-    }
-    char *s = xcalloc((size_t)(n > 0 ? n : 0) + 1, 1);
-    int len = 0;
-    for (int i = 0; i < n; i++) {
-        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
-                          : bufd[i];
-        int b = (int)dv & 0xFF;
-        if (b == 0) break;            /* C-string terminates at NUL */
-        s[len++] = (char)b;
-    }
-    s[len] = '\0';
-    /* #965: the xcalloc above is an uncharged producer — wrap with the
-     * charging copy constructor, not make_str_owned. */
-    Value *r = make_str(s);
-    free(s);
-    return r;
-}
-
-/* f64_to_bytes of x → list of 8 ints: the big-endian IEEE-754 double encoding
- * of x (CBOR major-type 7 / network byte order). Portable across endianness —
- * the host bit pattern is captured via memcpy, then bytes are extracted with
- * explicit shifts, yielding the standard IEEE-754 layout on any platform. */
-Value* builtin_f64_to_bytes(Value *arg) {
-    double d = (arg && arg->type == VAL_NUM) ? arg->data.num : 0.0;
-    uint64_t bits;
-    memcpy(&bits, &d, sizeof(bits));
-    Value *list = make_list(8);
-    for (int i = 0; i < 8; i++) {
-        int shift = 8 * (7 - i);
-        list_append_owned(list, make_num((double)((bits >> shift) & 0xFFu)));
-    }
-    return list;
-}
-
-/* f64_from_bytes of <list|buffer of 8 big-endian bytes> → the decoded double.
- * Inverse of f64_to_bytes; reads exactly the first 8 bytes. */
-Value* builtin_f64_from_bytes(Value *arg) {
-    double bytes_in[8] = {0,0,0,0,0,0,0,0};
-    if (arg && arg->type == VAL_LIST) {
-        int n = arg->data.list.count;
-        for (int i = 0; i < 8 && i < n; i++)
-            if (arg->data.list.items[i] && arg->data.list.items[i]->type == VAL_NUM)
-                bytes_in[i] = arg->data.list.items[i]->data.num;
-    } else if (arg && arg->type == VAL_BUFFER) {
-        int n = arg->data.buffer.count;
-        for (int i = 0; i < 8 && i < n; i++)
-            bytes_in[i] = arg->data.buffer.data[i];
-    } else {
-        ARG_GUARD(1, "f64_from_bytes", "a list or buffer of 8 byte values", make_num(0));
-    }
-    uint64_t bits = 0;
-    for (int i = 0; i < 8; i++)
-        bits = (bits << 8) | (uint64_t)((int)bytes_in[i] & 0xFF);
-    double d;
-    memcpy(&d, &bits, sizeof(d));
-    return make_num(d);
-}
-
-/* ---- DEFLATE codecs (inflate/deflate, #684) ----
- * Thin wrappers over the system zlib (-lz), gated behind
- * EIGENSCRIPT_EXT_ZLIB — the same EIGENSCRIPT_EXT_* mechanism the http
- * variant uses. Default OFF so the minimal build stays zero-dependency;
- * compiled without zlib the four names stay registered but raise a
- * catchable runtime error, so a script can feature-detect with
- * try/catch instead of dying on "undefined variable".
- *
- * Byte representation mirrors read_bytes/write_bytes exactly: input is
- * a list of ints 0-255 (values taken mod 256, non-numbers read as 0)
- * or a VAL_BUFFER; output is always a fresh list of ints 0-255.
- *
- * inflate/deflate are the RAW DEFLATE pair (windowBits -15) — the ZIP
- * member format, so .xlsx/.ods entries are readable. zlib_inflate/
- * zlib_deflate are the zlib-wrapped pair; zlib_inflate uses windowBits
- * 15+32, which auto-detects zlib AND gzip headers — that is what makes
- * plain .gz files readable.
- */
-#if EIGENSCRIPT_EXT_ZLIB
-
-/* Inflate is an amplifier: a few KB of DEFLATE can expand without bound
- * (zip bomb). Cap the decompressed size like the other size caps
- * (read_bytes 10 MB, read_bytes_buf 512 MB): over the cap is a loud,
- * catchable `limit` error, never silent truncation. 256 MiB matches the
- * sandbox_run default allocation budget. */
-#define EIGS_INFLATE_MAX_OUT ((unsigned long)256 * 1024 * 1024)
-
-/* Shared argument extraction for the four codecs: accept the byte
- * representations write_bytes accepts and copy them into a malloc'd
- * byte array. Returns 1 on success; on a wrong-shape argument raises
- * `type` and returns 0. */
-static int zlib_bytes_arg(Value *arg, const char *who,
-                          unsigned char **out, size_t *out_n) {
-    *out = NULL;
-    *out_n = 0;
-    int n = 0;
-    Value **items = NULL;
-    double *bufd = NULL;
-    if (arg && arg->type == VAL_LIST) {
-        n = arg->data.list.count;
-        items = arg->data.list.items;
-    } else if (arg && arg->type == VAL_BUFFER) {
-        n = arg->data.buffer.count;
-        bufd = arg->data.buffer.data;
-    } else {
-        rt_error(EK_TYPE, 0,
-                 "%s requires a list of byte values (0-255) or a buffer, got %s",
-                 who, val_type_name(arg ? arg->type : VAL_NULL));
-        return 0;
-    }
-    unsigned char *b = xmalloc((size_t)(n > 0 ? n : 1));
-    for (int i = 0; i < n; i++) {
-        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
-                          : bufd[i];
-        b[i] = (unsigned char)((int)dv & 0xFF);
-    }
-    *out = b;
-    *out_n = (size_t)n;
-    return 1;
-}
-
-/* Wrap a finished byte buffer as the list-of-ints result value (the
- * read_bytes shape). Takes ownership of nothing; caller still frees. */
-static Value *zlib_bytes_result(const unsigned char *buf, unsigned long n) {
-    /* #292: the result is `n` fresh number Values at sizeof(Value)+sizeof(Value*)
-     * each — ~80 bytes per decompressed BYTE. Charging only the codec's own
-     * output buffer would therefore miss 98% of the cost, so charge the list
-     * here too, with the same accounting range/zeros use. Without this an
-     * allowlisted `inflate` allocates straight past max_bytes: the budget
-     * bounds allocators the caller has to *name* a size for, and a compressed
-     * blob names nothing. */
-    if (!sandbox_charge((size_t)n * (sizeof(Value) + sizeof(Value *))))
-        return make_null();
-    Value *result = make_list((int)n);
-    for (unsigned long i = 0; i < n; i++)
-        list_append_owned(result, make_num((double)buf[i]));
-    return result;
-}
-
-/* Shared inflate core. window_bits selects the wrapper (-15 raw,
- * 15+32 zlib/gzip auto-detect). A corrupt or truncated stream raises a
- * catchable `value` error; output over EIGS_INFLATE_MAX_OUT raises
- * `limit` (the zip-bomb bound). */
-static Value *zlib_inflate_impl(const char *who, int window_bits, Value *arg) {
-    unsigned char *src;
-    size_t src_n;
-    if (!zlib_bytes_arg(arg, who, &src, &src_n)) return make_null();
-
-    z_stream zs;
-    memset(&zs, 0, sizeof(zs));
-    if (inflateInit2(&zs, window_bits) != Z_OK) {
-        free(src);
-        rt_error(EK_INTERNAL, 0, "%s: inflateInit2 failed", who);
-        return make_null();
-    }
-    size_t cap = src_n * 3 + 64;
-    if (cap > EIGS_INFLATE_MAX_OUT) cap = EIGS_INFLATE_MAX_OUT;
-    /* #292: charge the codec's own buffer as it grows, so a bomb is refused
-     * before the memory is touched rather than after. EIGS_INFLATE_MAX_OUT
-     * bounds this at 256 MiB, which is the *default* whole-run budget — a
-     * caller that lowered max_bytes must not be overrun by one call. */
-    if (!sandbox_charge(cap)) {
-        inflateEnd(&zs);
-        free(src);
-        return make_null();
-    }
-    unsigned char *out = xmalloc(cap);
-    int zrc = Z_OK;
-    for (;;) {
-        if (zs.avail_in == 0 && zs.total_in < src_n) {
-            /* uInt is 32-bit: feed a >4 GiB input in chunks. */
-            zs.next_in = src + zs.total_in;
-            unsigned long rem = src_n - zs.total_in;
-            zs.avail_in = (uInt)(rem > UINT_MAX ? UINT_MAX : rem);
-        }
-        if (zs.total_out == cap) {
-            if (cap >= EIGS_INFLATE_MAX_OUT) break; /* limit raise below */
-            size_t ncap = cap * 2;
-            if (ncap > EIGS_INFLATE_MAX_OUT) ncap = EIGS_INFLATE_MAX_OUT;
-            if (!sandbox_charge(ncap - cap)) {   /* #292: charge the delta */
-                inflateEnd(&zs);
-                free(out);
-                free(src);
-                return make_null();
-            }
-            out = xrealloc(out, ncap);
-            cap = ncap;
-        }
-        zs.next_out = out + zs.total_out;
-        zs.avail_out = (uInt)(cap - zs.total_out);
-        zrc = inflate(&zs, Z_NO_FLUSH);
-        if (zrc == Z_STREAM_END) break;
-        if (zrc != Z_OK) break;
-        if (zs.avail_out != 0 && zs.total_in == src_n) {
-            /* Output not full yet zlib made no progress: input ran out
-             * mid-stream — truncated. */
-            zrc = Z_BUF_ERROR;
-            break;
-        }
-    }
-    if (zrc != Z_STREAM_END) {
-        if (zrc == Z_OK && zs.total_out >= EIGS_INFLATE_MAX_OUT) {
-            inflateEnd(&zs);
-            free(out);
-            free(src);
-            rt_error(EK_LIMIT, 0,
-                     "%s: decompressed output exceeds the %lu-byte cap",
-                     who, EIGS_INFLATE_MAX_OUT);
-            return make_null();
-        }
-        const char *msg = zs.msg;
-        inflateEnd(&zs);
-        free(out);
-        free(src);
-        rt_error(EK_VALUE, 0, "%s: invalid or truncated compressed stream (%s)",
-                 who, msg ? msg : "unexpected end of input");
-        return make_null();
-    }
-    unsigned long n = zs.total_out;
-    inflateEnd(&zs);
-    free(src);
-    Value *result = zlib_bytes_result(out, n);
-    free(out);
-    return result;
-}
-
-/* Shared deflate core (dual of zlib_inflate_impl). The output buffer is
- * deflateBound-sized up front, so a single Z_FINISH pass always fits. */
-static Value *zlib_deflate_impl(const char *who, int window_bits, Value *arg) {
-    unsigned char *src;
-    size_t src_n;
-    if (!zlib_bytes_arg(arg, who, &src, &src_n)) return make_null();
-
-    z_stream zs;
-    memset(&zs, 0, sizeof(zs));
-    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, window_bits,
-                     8, Z_DEFAULT_STRATEGY) != Z_OK) {
-        free(src);
-        rt_error(EK_INTERNAL, 0, "%s: deflateInit2 failed", who);
-        return make_null();
-    }
-    uLong bound = deflateBound(&zs, (uLong)src_n);
-    /* #292: deflate amplifies far less than inflate (bound ~= src_n), but the
-     * budget should account for every codec buffer, not just the dangerous
-     * one — an uncharged allocator is a gap whether or not it is exploitable. */
-    if (!sandbox_charge((size_t)bound)) {
-        deflateEnd(&zs);
-        free(src);
-        return make_null();
-    }
-    unsigned char *out = xmalloc(bound > 0 ? bound : 1);
-    size_t pos = 0;
-    int zrc = Z_OK;
-    for (;;) {
-        if (zs.avail_in == 0 && pos < src_n) {
-            unsigned long rem = src_n - pos;
-            uInt chunk = (uInt)(rem > UINT_MAX ? UINT_MAX : rem);
-            zs.next_in = src + pos;
-            zs.avail_in = chunk;
-            pos += chunk;
-        }
-        int flush = (pos == src_n && zs.avail_in == 0) ? Z_FINISH : Z_NO_FLUSH;
-        zs.next_out = out + zs.total_out;
-        zs.avail_out = (uInt)(bound - zs.total_out);
-        zrc = deflate(&zs, flush);
-        if (zrc == Z_STREAM_END) break;
-        if (zrc != Z_OK && zrc != Z_BUF_ERROR) break;
-        if (flush == Z_FINISH) break; /* cannot happen with bound space */
-    }
-    if (zrc != Z_STREAM_END) {
-        const char *msg = zs.msg;
-        deflateEnd(&zs);
-        free(out);
-        free(src);
-        rt_error(EK_INTERNAL, 0, "%s: deflate failed (%s)",
-                 who, msg ? msg : "unknown zlib error");
-        return make_null();
-    }
-    unsigned long n = zs.total_out;
-    deflateEnd(&zs);
-    free(src);
-    Value *result = zlib_bytes_result(out, n);
-    free(out);
-    return result;
-}
-
-Value* builtin_inflate(Value *arg)      { return zlib_inflate_impl("inflate", -15, arg); }
-Value* builtin_zlib_inflate(Value *arg) { return zlib_inflate_impl("zlib_inflate", 15 + 32, arg); }
-Value* builtin_deflate(Value *arg)      { return zlib_deflate_impl("deflate", -15, arg); }
-Value* builtin_zlib_deflate(Value *arg) { return zlib_deflate_impl("zlib_deflate", 15, arg); }
-
-#else /* !EIGENSCRIPT_EXT_ZLIB */
-
-/* Minimal build: the names exist so scripts can feature-detect (and the
- * sandbox allowlist can name real builtins), but every call raises a
- * clear catchable error pointing at the zlib build. */
-static Value *zlib_unavailable(const char *who) {
-    rt_error(EK_VALUE, 0,
-             "%s: compiled without zlib support (rebuild with `make zlib`)",
-             who);
-    return make_null();
-}
-
-Value* builtin_inflate(Value *arg)      { (void)arg; return zlib_unavailable("inflate"); }
-Value* builtin_zlib_inflate(Value *arg) { (void)arg; return zlib_unavailable("zlib_inflate"); }
-Value* builtin_deflate(Value *arg)      { (void)arg; return zlib_unavailable("deflate"); }
-Value* builtin_zlib_deflate(Value *arg) { (void)arg; return zlib_unavailable("zlib_deflate"); }
-
-#endif /* EIGENSCRIPT_EXT_ZLIB */
-
-
-/* ---- Vectorized buffer kernels (#597) ----
- * Shared window validation for the bulk buf_* family. All of these read
- * offsets/counts as 64-bit and bound with subtraction (off > n - count),
- * never addition (off + count > n): the int-add form let two large
- * offsets overflow negative, pass both checks, and drive memmove out of
- * bounds. Bounds failures RAISE (index_range / value), matching the
- * #490-#512 direction (buf_get/buf_set/set_at) — no silent truncation:
- * a clamped audio mix is a silently wrong render. */
-static int buf_count_arg(const char *who, Value *cnt_val, long long *out) {
-    if (!cnt_val || cnt_val->type != VAL_NUM) {
-        rt_error(EK_VALUE, 0, "%s: count must be a number", who);
-        return 0;
-    }
-    long long c = (long long)cnt_val->data.num;
-    if (c < 0) {
-        rt_error(EK_VALUE, 0, "%s: count must be non-negative (got %lld)",
-                 who, c);
-        return 0;
-    }
-    *out = c;
-    return 1;
-}
-
-static int buf_num_arg(const char *who, const char *what, Value *v,
-                       double *out) {
-    if (!v || v->type != VAL_NUM) {
-        rt_error(EK_VALUE, 0, "%s: %s must be a number", who, what);
-        return 0;
-    }
-    *out = v->data.num;
-    return 1;
-}
-
-/* Validate one (buffer, offset, count) window. On success writes the
- * offset and returns 1; on failure raises and returns 0. count must
- * already be validated non-negative (buf_count_arg). */
-static int buf_window_arg(const char *who, Value *buf, Value *off_val,
-                          long long count, long long *out_off) {
-    if (!buf || buf->type != VAL_BUFFER) {
-        rt_error(EK_TYPE, 0, "%s: expected a buffer", who);
-        return 0;
-    }
-    if (!off_val || off_val->type != VAL_NUM) {
-        rt_error(EK_VALUE, 0, "%s: offset must be a number", who);
-        return 0;
-    }
-    long long off = (long long)off_val->data.num;
-    long long n = buf->data.buffer.count;
-    if (off < 0 || off > n - count) {
-        rt_error(EK_INDEX, 0,
-                 "%s: window [%lld, %lld) out of range (length %lld)",
-                 who, off, off + count, n);
-        return 0;
-    }
-    *out_off = off;
-    return 1;
-}
-
-/* buf_copy of [src, src_off, dst, dst_off, count] — bulk copy between buffers.
- * #597: bad bounds used to return null silently; they now raise like the
- * rest of the family (the crash-safety guarantee — no OOB memmove — holds
- * either way). count 0 is a valid no-op. */
-Value* builtin_buf_copy(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) {
-        rt_error(EK_TYPE, 0, "buf_copy requires [src, src_off, dst, dst_off, count]");
-        return make_null();
-    }
-    Value *src = arg->data.list.items[0];
-    Value *dst = arg->data.list.items[2];
-    long long count, src_off, dst_off;
-    if (!buf_count_arg("buf_copy", arg->data.list.items[4], &count) ||
-        !buf_window_arg("buf_copy", src, arg->data.list.items[1], count, &src_off) ||
-        !buf_window_arg("buf_copy", dst, arg->data.list.items[3], count, &dst_off))
-        return make_null();
-    if (count == 0) return make_null();
-    memmove(&dst->data.buffer.data[dst_off], &src->data.buffer.data[src_off],
-            (size_t)count * sizeof(double));
-    return make_null();
-}
-
-/* buf_mix of [dst, src, dst_off, src_off, count, gain] —
- * dst[dst_off+i] += src[src_off+i] * gain, in place. The audio mix-down
- * kernel (DeslanStudio's ab_mix_into): one C loop instead of ~441k
- * dispatched VM iterations per stem pass. Arithmetic mirrors the VM
- * (num_guard per step) so the result is byte-identical to the
- * equivalent interpreted loop. dst and src may be the same buffer with
- * overlapping windows; the loop runs forward in index order (documented,
- * deterministic). Returns null. */
-Value* builtin_buf_mix(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 6) {
-        rt_error(EK_TYPE, 0, "buf_mix requires [dst, src, dst_off, src_off, count, gain]");
-        return make_null();
-    }
-    Value *dst = arg->data.list.items[0];
-    Value *src = arg->data.list.items[1];
-    long long count, dst_off, src_off;
-    double gain;
-    if (!buf_count_arg("buf_mix", arg->data.list.items[4], &count) ||
-        !buf_window_arg("buf_mix", dst, arg->data.list.items[2], count, &dst_off) ||
-        !buf_window_arg("buf_mix", src, arg->data.list.items[3], count, &src_off) ||
-        !buf_num_arg("buf_mix", "gain", arg->data.list.items[5], &gain))
-        return make_null();
-    double *dd = &dst->data.buffer.data[dst_off];
-    double *sd = &src->data.buffer.data[src_off];
-    for (long long i = 0; i < count; i++)
-        dd[i] = num_guard(dd[i] + num_guard(sd[i] * gain));
-    return make_null();
-}
-
-/* buf_scale_range of [b, off, count, gain] — in-place multiply over a
- * window: b[off+i] *= gain (num_guard per element, VM-identical).
- * Fades/normalize. Returns null. */
-Value* builtin_buf_scale_range(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
-        rt_error(EK_TYPE, 0, "buf_scale_range requires [buffer, off, count, gain]");
-        return make_null();
-    }
-    Value *buf = arg->data.list.items[0];
-    long long count, off;
-    double gain;
-    if (!buf_count_arg("buf_scale_range", arg->data.list.items[2], &count) ||
-        !buf_window_arg("buf_scale_range", buf, arg->data.list.items[1], count, &off) ||
-        !buf_num_arg("buf_scale_range", "gain", arg->data.list.items[3], &gain))
-        return make_null();
-    double *d = &buf->data.buffer.data[off];
-    for (long long i = 0; i < count; i++)
-        d[i] = num_guard(d[i] * gain);
-    return make_null();
-}
-
-/* buf_fill of [b, off, count, value] — bulk store over a window:
- * b[off+i] = value (stored verbatim, like buf_set). Silence gaps,
- * click-free zeroing. Returns null. */
-Value* builtin_buf_fill(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
-        rt_error(EK_TYPE, 0, "buf_fill requires [buffer, off, count, value]");
-        return make_null();
-    }
-    Value *buf = arg->data.list.items[0];
-    long long count, off;
-    double val;
-    if (!buf_count_arg("buf_fill", arg->data.list.items[2], &count) ||
-        !buf_window_arg("buf_fill", buf, arg->data.list.items[1], count, &off) ||
-        !buf_num_arg("buf_fill", "value", arg->data.list.items[3], &val))
-        return make_null();
-    double *d = &buf->data.buffer.data[off];
-    for (long long i = 0; i < count; i++)
-        d[i] = val;
-    return make_null();
-}
-
-/* buf_peak of [b, off, count] — max |x| over a window (normalize and
- * meter scans). An empty window peaks at 0. */
-Value* builtin_buf_peak(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        rt_error(EK_TYPE, 0, "buf_peak requires [buffer, off, count]");
-        /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
-    }
-    Value *buf = arg->data.list.items[0];
-    long long count, off;
-    if (!buf_count_arg("buf_peak", arg->data.list.items[2], &count) ||
-        !buf_window_arg("buf_peak", buf, arg->data.list.items[1], count, &off))
-        /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
-        return make_num(0);
-    double *d = &buf->data.buffer.data[off];
-    double m = 0.0;
-    for (long long i = 0; i < count; i++) {
-        double a = d[i] < 0 ? -d[i] : d[i];
-        if (a > m) m = a;
-    }
-    return make_num(m);
-}
-
-/* buf_dot of [a, b, a_off, b_off, count] — windowed dot product:
- * sum over i of a[a_off+i] * b[b_off+i]. The YIN-autocorrelation
- * kernel. Same contract as `dot`: the summation ORDER / ASSOCIATION is
- * UNSPECIFIED (a backend may reassociate across SIMD lanes) — programs
- * needing a strict left-to-right reduction write the explicit loop.
- * no-NaN/Inf is preserved (num_guard at each step). */
-Value* builtin_buf_dot(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) {
-        rt_error(EK_TYPE, 0, "buf_dot requires [a, b, a_off, b_off, count]");
-        /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
-    }
-    Value *a = arg->data.list.items[0];
-    Value *b = arg->data.list.items[1];
-    long long count, a_off, b_off;
-    if (!buf_count_arg("buf_dot", arg->data.list.items[4], &count) ||
-        !buf_window_arg("buf_dot", a, arg->data.list.items[2], count, &a_off) ||
-        !buf_window_arg("buf_dot", b, arg->data.list.items[3], count, &b_off))
-        /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
-        return make_num(0);
-    double *ad = &a->data.buffer.data[a_off];
-    double *bd = &b->data.buffer.data[b_off];
-    double s = 0.0;
-    for (long long i = 0; i < count; i++)
-        s = num_guard(s + num_guard(ad[i] * bd[i]));
-    return make_num(s);
-}
-
-/* ---- Bulk PCM16LE codec kernels (#602) ----
- * The byte-decode siblings of the #597 window kernels: DeslanStudio's
- * WAV import spent 10.8 s decoding a 50 s stereo file sample-by-sample
- * in the interpreter (src/tools/wavio.eigs). Each kernel mirrors the
- * consumer's interpreted arithmetic step-for-step (num_guard per VM
- * operation, same evaluation order), so the result is bit-identical to
- * the loop it replaces — pinned by the differential leg in
- * tests/test_pcm_codec.eigs. Pure compute over arguments: sandbox
- * pure-compute allowlist (allocation charged per #292),
- * freestanding-safe, tape-neutral. */
-
-/* Allocate a fresh flat VAL_BUFFER of `count` doubles, or NULL if the
- * sandbox allocation budget (#292) rejects it (sandbox_charge raises). */
-static Value* buf_alloc_flat(long long count) {
-    if (!sandbox_charge((size_t)count * sizeof(double))) return NULL;
-    Value *v = xcalloc(1, sizeof(Value));
-    v->type = VAL_BUFFER;
-    v->data.buffer.count = (int)count;
-    v->data.buffer.data = xcalloc(count > 0 ? (size_t)count : 1, sizeof(double));
-    v->refcount = 1;
-    return v;
-}
-
-/* buf_from_pcm16le of [bytes, byte_off, count] — decode `count`
- * little-endian signed 16-bit PCM samples starting at byte_off into a
- * NEW float buffer. Exactly wavio's wav_read arithmetic:
- *   v = b0 + 256*b1;  if v >= 32768: v -= 65536;  sample = v / 32767 */
-Value* builtin_buf_from_pcm16le(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        rt_error(EK_TYPE, 0, "buf_from_pcm16le requires [bytes, byte_off, count]");
-        return make_null();
-    }
-    Value *src = arg->data.list.items[0];
-    long long count, off;
-    if (!buf_count_arg("buf_from_pcm16le", arg->data.list.items[2], &count))
-        return make_null();
-    if (count > (long long)INT_MAX / 2) { /* 2*count below cannot overflow */
-        rt_error(EK_LIMIT, 0, "buf_from_pcm16le: count %lld over the buffer size limit", count);
-        return make_null();
-    }
-    if (!buf_window_arg("buf_from_pcm16le", src, arg->data.list.items[1],
-                        count * 2, &off))
-        return make_null();
-    Value *out = buf_alloc_flat(count);
-    if (!out) return make_null();
-    const double *sd = &src->data.buffer.data[off];
-    double *od = out->data.buffer.data;
-    for (long long i = 0; i < count; i++) {
-        double v = num_guard(sd[2*i] + num_guard(256.0 * sd[2*i + 1]));
-        if (v >= 32768.0) v = num_guard(v - 65536.0);
-        od[i] = num_guard(v / 32767.0);
-    }
-    return out;
-}
-
-/* buf_to_pcm16le of [floats, off, count] — encode `count` samples from
- * `off` into a NEW byte buffer (2 doubles per sample, LE order).
- * Exactly wavio's wav_write arithmetic: clamp to [-1, 1] (ds_clamp's
- * two independent comparisons), v = round(x * 32767), two's complement
- * via +65536, low byte = v - floor(v/256)*256 (the ds_fmod expansion),
- * high byte = floor(v/256). */
-Value* builtin_buf_to_pcm16le(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        rt_error(EK_TYPE, 0, "buf_to_pcm16le requires [floats, off, count]");
-        return make_null();
-    }
-    Value *src = arg->data.list.items[0];
-    long long count, off;
-    if (!buf_count_arg("buf_to_pcm16le", arg->data.list.items[2], &count))
-        return make_null();
-    if (count > (long long)INT_MAX / 2) { /* output is 2*count elements */
-        rt_error(EK_LIMIT, 0, "buf_to_pcm16le: count %lld over the buffer size limit", count);
-        return make_null();
-    }
-    if (!buf_window_arg("buf_to_pcm16le", src, arg->data.list.items[1],
-                        count, &off))
-        return make_null();
-    Value *out = buf_alloc_flat(count * 2);
-    if (!out) return make_null();
-    const double *sd = &src->data.buffer.data[off];
-    double *od = out->data.buffer.data;
-    for (long long i = 0; i < count; i++) {
-        double x = sd[i];
-        if (x < -1.0) x = -1.0;
-        if (x > 1.0) x = 1.0;
-        double v = round(num_guard(x * 32767.0));
-        if (v < 0.0) v = num_guard(v + 65536.0);
-        double q = floor(num_guard(v / 256.0));
-        od[2*i]     = num_guard(v - num_guard(q * 256.0));
-        od[2*i + 1] = q;
-    }
-    return out;
-}
-
-/* buf_deinterleave of [src, channel, nch, count?] — every nch-th sample
- * starting at index `channel` into a NEW buffer (frame-interleaved
- * channel split; wavio addresses sample (i, c) at i*nch + c). count
- * defaults to the full available tail. Pure copy — no arithmetic. */
-Value* builtin_buf_deinterleave(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        rt_error(EK_TYPE, 0, "buf_deinterleave requires [src, channel, nch, count?]");
-        return make_null();
-    }
-    Value *src = arg->data.list.items[0];
-    if (!src || src->type != VAL_BUFFER) {
-        rt_error(EK_TYPE, 0, "buf_deinterleave: expected a buffer");
-        return make_null();
-    }
-    Value *ch_v = arg->data.list.items[1];
-    Value *nch_v = arg->data.list.items[2];
-    if (!ch_v || ch_v->type != VAL_NUM || !nch_v || nch_v->type != VAL_NUM) {
-        rt_error(EK_VALUE, 0, "buf_deinterleave: channel and nch must be numbers");
-        return make_null();
-    }
-    long long nch = (long long)nch_v->data.num;
-    long long channel = (long long)ch_v->data.num;
-    if (nch < 1) {
-        rt_error(EK_VALUE, 0, "buf_deinterleave: nch must be >= 1 (got %lld)", nch);
-        return make_null();
-    }
-    if (channel < 0 || channel >= nch) {
-        rt_error(EK_VALUE, 0, "buf_deinterleave: channel %lld out of range for %lld channels",
-                 channel, nch);
-        return make_null();
-    }
-    long long n = src->data.buffer.count;
-    long long avail = channel < n ? (n - channel + nch - 1) / nch : 0;
-    long long count = avail;
-    if (arg->data.list.count >= 4 && arg->data.list.items[3] &&
-        arg->data.list.items[3]->type != VAL_NULL) {
-        if (!buf_count_arg("buf_deinterleave", arg->data.list.items[3], &count))
-            return make_null();
-        if (count > avail) {
-            rt_error(EK_INDEX, 0,
-                     "buf_deinterleave: count %lld over the %lld samples available "
-                     "(length %lld, channel %lld of %lld)",
-                     count, avail, n, channel, nch);
-            return make_null();
-        }
-    }
-    Value *out = buf_alloc_flat(count);
-    if (!out) return make_null();
-    const double *sd = src->data.buffer.data;
-    double *od = out->data.buffer.data;
-    for (long long i = 0; i < count; i++)
-        od[i] = sd[channel + i * nch];
-    return out;
-}
-
-/* ---- buf_resample_linear (#603) ----
- * buf_resample_linear of [src, dst_len] — endpoint-inclusive linear
- * resample into a NEW buffer. Exactly DeslanStudio's ab_resample_linear
- * mapping (src/daw/audio_buf.eigs):
- *   pos  = i * (n - 1) / (dst_len - 1)      (0 when dst_len == 1)
- *   lo   = floor(pos); hi = min(lo + 1, n - 1); frac = pos - lo
- *   out[i] = src[lo] * (1 - frac) + src[hi] * frac
- * num_guard per step in VM evaluation order — bit-identical to the
- * interpreted loop (differential-pinned in tests/test_buf_resample.eigs).
- * The kernel is LINEAR interpolation, not Fourier/sinc resampling (the
- * consumer-documented divergence from scipy.signal.resample — see
- * BUILTINS.md). dst_len 0 -> empty buffer; empty src with dst_len > 0
- * raises `value` (the consumer's wrapper guards n == 0 itself). */
-Value* builtin_buf_resample_linear(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
-        rt_error(EK_TYPE, 0, "buf_resample_linear requires [src, dst_len]");
-        return make_null();
-    }
-    Value *src = arg->data.list.items[0];
-    if (!src || src->type != VAL_BUFFER) {
-        rt_error(EK_TYPE, 0, "buf_resample_linear: expected a buffer");
-        return make_null();
-    }
-    long long dst_len;
-    if (!buf_count_arg("buf_resample_linear", arg->data.list.items[1], &dst_len))
-        return make_null();
-    if (dst_len > (long long)INT_MAX) {
-        rt_error(EK_LIMIT, 0, "buf_resample_linear: dst_len %lld over the buffer size limit", dst_len);
-        return make_null();
-    }
-    long long n = src->data.buffer.count;
-    if (n == 0 && dst_len > 0) {
-        rt_error(EK_VALUE, 0, "buf_resample_linear: cannot resample an empty buffer to length %lld", dst_len);
-        return make_null();
-    }
-    Value *out = buf_alloc_flat(dst_len);
-    if (!out) return make_null();
-    const double *sd = src->data.buffer.data;
-    double *od = out->data.buffer.data;
-    for (long long i = 0; i < dst_len; i++) {
-        double pos = 0.0;
-        if (dst_len > 1)
-            pos = num_guard(num_guard((double)i * (double)(n - 1)) /
-                            (double)(dst_len - 1));
-        double lo_f = floor(pos);
-        long long lo = (long long)lo_f;
-        long long hi = lo + 1;
-        if (hi > n - 1) hi = n - 1;
-        /* pos is in [0, n-1] by construction (the i = dst_len-1 quotient
-         * is exactly n-1, and an exact-integer product / exact divisor
-         * cannot round past it); the clamps below are pure memory-safety
-         * belts, unreachable for real inputs — the interpreted oracle
-         * would raise index_range where these would fire. */
-        if (lo < 0) lo = 0;
-        if (lo > n - 1) lo = n - 1;
-        if (hi < 0) hi = 0;
-        double frac = num_guard(pos - lo_f);
-        od[i] = num_guard(num_guard(sd[lo] * num_guard(1.0 - frac)) +
-                          num_guard(sd[hi] * frac));
-    }
-    return out;
-}
+/* ---- Typed numeric buffers, the vectorized buf_* kernels, the PCM16LE
+ * codecs and the DEFLATE codecs moved to src/builtins_buf.c (#744): one
+ * cohesive group, no shared statics with the rest of this file (measured:
+ * zero symbols crossed in either direction). Their prototypes are in
+ * builtins_internal.h; register_builtins below still binds them. ---- */
 
 /* sign_extend of [val, bits] — sign-extend val from given bit width.
  * E.g. sign_extend of [0xFF, 8] → -1 */
@@ -6469,6 +5865,8 @@ static int sort_cmp_str(const void *a, const void *b) {
 }
 
 Value* builtin_sort(Value *arg) {
+    /* #971 Phase D: a non-list was handed back unchanged, as if sorted. */
+    STRICT_REQUIRE(arg && arg->type != VAL_LIST, "sort", "a list");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return arg ? arg : make_null();
     ValType t = arg->data.list.items[0] ? arg->data.list.items[0]->type
@@ -6487,6 +5885,11 @@ Value* builtin_sort(Value *arg) {
     return arg;
 }
 
+/* dispatch of [table, key, arg] — O(1) function dispatch.
+   table: list of functions (or null for unused slots).
+   key: integer index into the table.
+   arg: value passed to the selected function.
+   Returns the function's return value, or null if slot is empty. */
 Value* builtin_dispatch(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "dispatch requires [table, key, arg]");
@@ -6659,6 +6062,10 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "report", make_builtin(builtin_report));
     env_set_local_owned(env, "set_observer_thresholds", make_builtin(builtin_set_observer_thresholds));
     env_set_local_owned(env, "get_observer_thresholds", make_builtin(builtin_get_observer_thresholds));
+    env_set_local_owned(env, "set_observer_window", make_builtin(builtin_set_observer_window));
+    env_set_local_owned(env, "get_observer_window", make_builtin(builtin_get_observer_window));
+    env_set_local_owned(env, "set_observer_scale", make_builtin(builtin_set_observer_scale));
+    env_set_local_owned(env, "get_observer_scale", make_builtin(builtin_get_observer_scale));
     env_set_local_owned(env, "assert", make_builtin(builtin_assert));
     env_set_local_owned(env, "exit", make_builtin(builtin_exit));
     env_set_local_owned(env, "throw", make_builtin(builtin_throw));
@@ -6720,6 +6127,9 @@ void register_builtins(Env *env) {
     /* ---- Tensor / math stdlib (always available) ---- */
     env_set_local_owned(env, "dot", make_builtin(builtin_dot));
     env_set_local_owned(env, "matmul", make_builtin(builtin_tensor_matmul));
+    env_set_local_owned(env, "matmul_at", make_builtin(builtin_tensor_matmul_at));
+    env_set_local_owned(env, "matmul_bt", make_builtin(builtin_tensor_matmul_bt));
+    env_set_local_owned(env, "scatter_add", make_builtin(builtin_tensor_scatter_add));
     env_set_local_owned(env, "add", make_builtin(builtin_tensor_add));
     env_set_local_owned(env, "subtract", make_builtin(builtin_tensor_subtract));
     env_set_local_owned(env, "multiply", make_builtin(builtin_tensor_multiply));
@@ -6788,6 +6198,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "task_sleep", make_builtin(builtin_task_sleep));
     env_set_local_owned(env, "task_now", make_builtin(builtin_task_now));
     env_set_local_owned(env, "task_sched_seed", make_builtin(builtin_task_sched_seed));
+    env_set_local_owned(env, "task_sched_trace", make_builtin(builtin_task_sched_trace));
     env_set_local_owned(env, "thread_join", make_builtin(builtin_thread_join));
     env_set_local_owned(env, "channel", make_builtin(builtin_channel));
     env_set_local_owned(env, "send", make_builtin(builtin_send));

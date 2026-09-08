@@ -259,6 +259,40 @@ def test_multiline_block():
     report(ok and rc == 0, "':' opens a block, blank line runs it", f"rc={rc}")
 
 
+def test_refeed_after_failed_block():
+    """#1109: the line that closes a failed multi-line unit is not swallowed."""
+    r = Repl()
+    ok = r.expect(b"eigs> ")
+    r.send(b"define f(@) as:\r")        # '@' is not a legal parameter
+    ok = ok and r.expect(b"...   ")
+    r.send(b"rf is 4242\r")             # unindented: closes the unit, which fails
+    ok = ok and r.expect(b"unexpected character")
+    ok = ok and r.expect(b"=> 4242")     # re-fed and run, not eaten
+    r.send(b"rf + 1\r")
+    ok = ok and r.expect(b"=> 4243")     # '4243' cannot come from an echo
+    r.send(b"exit\r")
+    rc = r.close()
+    report(ok and rc == 0, "failed block does not swallow its closing line (#1109)",
+           f"rc={rc}")
+
+
+def test_valid_block_closed_by_unindented_line():
+    """#1109 control: a VALID block closed by an unindented line is one unit."""
+    r = Repl()
+    ok = r.expect(b"eigs> ")
+    r.send(b"if 2 > 1:\r")
+    ok = ok and r.expect(b"...   ")
+    r.send(b"    ub is 51 + 6\r")
+    r.send(b"ub + 1\r")                  # unindented: closes the block, same unit
+    ok = ok and r.expect(b"=> 58")       # the joined unit's value
+    r.send(b"ub\r")
+    ok = ok and r.expect(b"=> 57")       # the block really ran
+    r.send(b"exit\r")
+    rc = r.close()
+    report(ok and rc == 0, "valid block closed by an unindented line stays one unit (#1109)",
+           f"rc={rc}")
+
+
 def test_temporal_on_session_bindings():
     r = Repl()
     ok = r.expect(b"eigs> ")
@@ -323,6 +357,8 @@ def main():
               test_history_recall, test_history_draft_parking,
               test_tab_completion_binding, test_tab_completion_builtin,
               test_ctrl_c_cancels, test_ctrl_d_eof, test_multiline_block,
+              test_refeed_after_failed_block,
+              test_valid_block_closed_by_unindented_line,
               test_temporal_on_session_bindings, test_history_file,
               test_plain_mode_hook):
         try:

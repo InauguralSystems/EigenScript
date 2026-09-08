@@ -7,6 +7,7 @@
  */
 
 #include "eigenscript.h"
+#include "fsutil.h"
 
 /* ---- helpers ---- */
 

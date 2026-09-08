@@ -9,6 +9,7 @@
 
 #include "eigenscript.h"
 #include "ext_names.h"
+#include "fsutil.h"
 #include "lint_internal.h"
 #include "vm.h"   /* #927: lint compiles the unit and discards the chunk */
 
@@ -20,16 +21,43 @@
 
 /* Escape a string for embedding in a JSON string literal (into a caller
  * buffer). This helper is host-only now that every JSON-producing lint path
- * lives in this TU; keeping it static prevents a generic host symbol leak. */
+ * lives in this TU; keeping it static prevents a generic host symbol leak.
+ *
+ * The output buffer is the SECOND place a diagnostic can be cut (the first is
+ * lint_vdiag's message buffer) and the ONLY place strings the linter never
+ * assembled itself — a file path, the parser's first-error message — reach a
+ * consumer. So it does what lint_copy_utf8 does: copy whole UTF-8 characters,
+ * replace any byte that is not part of a well-formed one with U+FFFD, and drop
+ * an incomplete sequence at the end rather than emit half of it. Emitting half
+ * produces a payload strict decoders reject, and `jq` hides that by
+ * substituting U+FFFD itself (#1048). Well-formed bytes >= 0x80 pass through
+ * raw — JSON accepts UTF-8 as-is. */
 static void lint_json_escape(const char *s, char *out, size_t outsz) {
-    size_t o = 0;
-    for (size_t i = 0; s[i] && o + 2 < outsz; i++) {
+    size_t o = 0, i = 0, n = s ? strlen(s) : 0;
+    if (outsz == 0) return;
+    while (i < n) {
         unsigned char c = (unsigned char)s[i];
-        if (c == '"' || c == '\\') { out[o++] = '\\'; out[o++] = (char)c; }
-        else if (c == '\n') { out[o++] = '\\'; out[o++] = 'n'; }
-        else if (c == '\t') { out[o++] = '\\'; out[o++] = 't'; }
-        else if (c >= 0x20) { out[o++] = (char)c; }
-        /* other control chars are dropped */
+        if (c < 0x80) {
+            const char *esc = NULL;
+            if (c == '"')       esc = "\\\"";
+            else if (c == '\\') esc = "\\\\";
+            else if (c == '\n') esc = "\\n";
+            else if (c == '\t') esc = "\\t";
+            else if (c < 0x20)  { i++; continue; }   /* other controls dropped */
+            size_t w = esc ? 2 : 1;
+            if (o + w + 1 > outsz) break;
+            if (esc) { out[o++] = esc[0]; out[o++] = esc[1]; }
+            else     { out[o++] = (char)c; }
+            i++;
+            continue;
+        }
+        int step = eigs_utf8_step((const unsigned char *)s + i, n - i);
+        if (step < 0) break;                          /* cut tail: drop it */
+        size_t w = step > 0 ? (size_t)step : 3;
+        if (o + w + 1 > outsz) break;
+        if (step > 0) { memcpy(out + o, s + i, w); i += w; }
+        else          { memcpy(out + o, "\xEF\xBF\xBD", 3); i += 1; }
+        o += w;
     }
     out[o] = '\0';
 }
@@ -692,8 +720,11 @@ void check_stdlib_shadow(ASTNode *ast, const char *path,
  *   - module-level names are order-insensitive (a function body may read
  *     a module name bound after the definition);
  *   - a nested `define` binds its name in the ENCLOSING function only;
- *   - a module-level `for` LOOP-SCOPES its variable (reading it after
- *     the loop is a runtime error) — a function-level `for` does not;
+ *   - a `for` LOOP-SCOPES its variable at every level (#1105: reading
+ *     it after the loop is a runtime error inside a function too); a
+ *     body's plain `is` binds in the enclosing function/module scope,
+ *     not the loop (#1056), so a post-loop read of a body-assigned
+ *     name stays silent;
  *   - listcomp vars and catch vars bind in the containing scope.
  * Within a scope the binder set is still an over-approximation across
  * paths ("bound on some path" suppresses — the sibling-branch
@@ -730,9 +761,14 @@ void check_stdlib_shadow(ASTNode *ast, const char *path,
 typedef struct {
     Env *bind;                      /* base: builtins + flat external binders */
     Env *module_scope;              /* the linted file's top-level scope */
-    Env *scope;                     /* current scope (chains to bind via parents) */
+    Env *scope;                     /* current LOOKUP scope (chains to bind via parents) */
+    Env *bind_scope;                /* nearest function/module scope: where a
+                                     * plain `is`, a listcomp/catch var and a
+                                     * nested define's name bind. Differs from
+                                     * `scope` inside a `for`, whose pushed
+                                     * scope holds only the binder (#1105). */
     /* Scope registry: COLLECT creates one Env per scope-introducing node
-     * (function, lambda, module-level for) in walk order; FLAG re-enters
+     * (function, lambda, for) in walk order; FLAG re-enters
      * the same Envs by replaying the counter. Both walks visit the same
      * nodes in the same order, so the indices agree by construction. */
     Env *scopes[E003_MAX_SCOPES];
@@ -754,9 +790,14 @@ static void e003_bind_in(Env *env, const char *name) {
         env_set_local_owned(env, name, make_null());
 }
 
-/* Bind in the CURRENT scope — external (loaded-file) collection routes
- * flat to the base env instead. */
+/* Bind in the nearest function/module scope — external (loaded-file)
+ * collection routes flat to the base env instead. */
 static void e003_bind_name(E003 *e, const char *name) {
+    e003_bind_in(e->external ? e->bind : e->bind_scope, name);
+}
+
+/* #1105: a `for` binder lives in the loop's own lookup scope only. */
+static void e003_bind_loop_var(E003 *e, const char *name) {
     e003_bind_in(e->external ? e->bind : e->scope, name);
 }
 
@@ -922,6 +963,8 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
              * params and body binders live in the function's own scope. */
             if (mode == E003_COLLECT) e003_bind_name(e, n->data.func.name);
             Env *prev = e003_scope_push(e, mode);
+            Env *prev_bind = e->bind_scope;
+            e->bind_scope = e->scope;
             if (mode == E003_COLLECT)
                 for (int i = 0; i < n->data.func.param_count; i++)
                     e003_bind_name(e, n->data.func.params[i]);
@@ -931,28 +974,33 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
             for (int i = 0; i < n->data.func.body_count; i++)
                 e003_walk(n->data.func.body[i], e, ctx, mode);
             e->scope = prev;
+            e->bind_scope = prev_bind;
             break;
         }
         case AST_LAMBDA: {
             Env *prev = e003_scope_push(e, mode);
+            Env *prev_bind = e->bind_scope;
+            e->bind_scope = e->scope;
             if (mode == E003_COLLECT)
                 for (int i = 0; i < n->data.lambda.param_count; i++)
                     e003_bind_name(e, n->data.lambda.params[i]);
             e003_walk(n->data.lambda.body, e, ctx, mode);
             e->scope = prev;
+            e->bind_scope = prev_bind;
             break;
         }
         case AST_FOR: {
-            /* Module-level `for` LOOP-SCOPES its variable (the VM drops
-             * it at loop exit — reading it after the loop is a runtime
-             * error); a function-level `for` var is an ordinary local.
-             * The iterable is evaluated before the var exists, so it
-             * walks in the outer scope. */
+            /* A `for` LOOP-SCOPES its variable at every level (#1105: the
+             * VM drops a module binder at loop exit and retires a function
+             * binder's slot -- reading it after the loop is a runtime
+             * error either way). Only the binder lives in the pushed
+             * scope: a body's plain `is` binds in the enclosing
+             * function/module scope (#1056), through bind_scope. The
+             * iterable is evaluated before the var exists, so it walks in
+             * the outer scope. */
             e003_walk(n->data.forloop.iter, e, ctx, mode);
-            int module_level = (!e->external && e->scope == e->module_scope);
-            Env *prev = e->scope;
-            if (module_level) prev = e003_scope_push(e, mode);
-            if (mode == E003_COLLECT) e003_bind_name(e, n->data.forloop.var);
+            Env *prev = e003_scope_push(e, mode);
+            if (mode == E003_COLLECT) e003_bind_loop_var(e, n->data.forloop.var);
             for (int i = 0; i < n->data.forloop.body_count; i++)
                 e003_walk(n->data.forloop.body[i], e, ctx, mode);
             e->scope = prev;
@@ -1073,6 +1121,7 @@ void check_undefined_names(ASTNode *ast, const char *path,
     e.bind = env_new(NULL);
     e.module_scope = env_new(e.bind);
     e.scope = e.module_scope;
+    e.bind_scope = e.module_scope;
     register_builtins(e.bind);   /* store/gfx-when-built ride inside (#742) */
     /* Extension builtins bind by NAME regardless of this binary's build
      * flags (ext_names.h, the same lists their registrars expand): the lint
@@ -1138,6 +1187,7 @@ void check_undefined_names(ASTNode *ast, const char *path,
     e003_walk(ast, &e, NULL, E003_COLLECT);
     if (!e.dynamic) {
         e.scope = e.module_scope;   /* replay from the top */
+        e.bind_scope = e.module_scope;
         e.scope_idx = 0;
         e003_walk(ast, &e, ctx, E003_FLAG);
     }
@@ -1233,6 +1283,12 @@ static int eigs_json_allows(Value *codes, const char *code) {
 
 int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     long src_size = 0;
+    /* The human channel prints the path raw, and a path is a byte string from
+     * the command line — on the JSON side lint_json_escape sanitizes it, so
+     * without this the two channels disagreed about a file whose name is not
+     * valid UTF-8 and only the human one was undecodable (#1048). */
+    char dpath[1024];
+    eigs_utf8_sanitize(dpath, sizeof(dpath), path);
     char *source = read_file_util(path, &src_size);
     if (!source) {
         if (json_mode) {
@@ -1242,7 +1298,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
             printf("[{\"code\":\"E000\",\"severity\":\"error\",\"line\":0,"
                    "\"file\":\"%s\",\"message\":\"%s '%s'\"}]\n", pesc, esc, pesc);
         } else {
-            fprintf(stderr, "Error: cannot read file '%s'\n", path);
+            fprintf(stderr, "Error: cannot read file '%s'\n", dpath);
         }
         return 1;
     }
@@ -1268,7 +1324,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
                    g_first_error_line, g_first_error_col + 1, pesc, esc);
         } else {
             fprintf(stderr, "%s: %d parse error(s) [%s] — cannot lint\n",
-                    path, g_parse_errors,
+                    dpath, g_parse_errors,
                     g_first_error_code ? g_first_error_code : "E002");
         }
         free_ast(ast);
@@ -1360,7 +1416,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
         printf("]\n");
     } else {
         for (int i = 0; i < ctx.warning_count; i++) {
-            fprintf(stderr, "%s:%d: %s[%s]: %s\n", path,
+            fprintf(stderr, "%s:%d: %s[%s]: %s\n", dpath,
                     ctx.warnings[i].line, ctx.warnings[i].level,
                     ctx.warnings[i].code, ctx.warnings[i].message);
         }
@@ -1368,9 +1424,9 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
             /* The compiler printed each diagnostic itself; this is the
              * summary line, shaped like the parse-error one above. */
             fprintf(stderr, "%s: %d compile error(s) [E004]\n",
-                    path, compile_errors);
+                    dpath, compile_errors);
         } else if (ctx.warning_count == 0) {
-            fprintf(stderr, "%s: no issues found\n", path);
+            fprintf(stderr, "%s: no issues found\n", dpath);
         }
     }
 

@@ -163,6 +163,53 @@ print of (map of [xs, (v) => v * 10])
 [10, 20, 30, 40, 50]
 ```
 
+## Numeric arrays: the list is not the fast container
+
+Python separates a `list` of boxed objects from a NumPy array of raw doubles,
+and you pick one per use. EigenScript draws the same line between `list` and
+`buffer` — and `zeros of n` hands you the flat one, because numeric code
+reaches for that name first (#1093).
+
+Python:
+
+```python
+import numpy as np
+z = np.zeros(4)              # flat float64 array
+z[1] = 2.5
+print(type(z).__name__, z.sum())
+xs = [0] * 4                 # a boxed list, when you want one
+print(type(xs).__name__, sum(xs))
+```
+
+EigenScript — no import, and every tensor builtin takes either container:
+
+```eigenscript
+z is zeros of 4
+z[1] is 2.5
+print of (type of z)
+print of (sum of z)
+xs is [0 for i in range of 4]
+print of (type of xs)
+print of (sum of xs)
+```
+```output
+buffer
+2.5
+list
+0
+```
+
+`zeros of [rows, cols]` still builds the nested list (the 2-D tensor form);
+`buffer of [rows, cols]` and `reshape of [buf, rows, cols]` build the
+flat-backed matrix. `matmul`, `softmax`, `sum`, `mean`, `norm`, `gather` and
+the rest accept either, and hand back a buffer when every operand was one.
+
+One place EigenScript is louder than NumPy: an out-of-range index in `gather`
+**raises** rather than answering a stand-in, on both containers — NumPy's
+`np.take` raises too, while a fancy-indexed read with an out-of-range entry is
+an `IndexError` there as well, so this matches. It is `gather`'s own history
+that changed: the list form used to answer `0.0` (#973/#1093).
+
 ## Dictionaries / objects
 
 JavaScript:
@@ -289,6 +336,11 @@ print of (recv of ch)
 42
 ```
 
+One difference in failure: a Python thread's uncaught exception is printed
+and the process still exits 0. A `spawn`ed EigenScript worker that dies of
+an uncaught error fails the whole run (exit status 1), joined or not — the
+same rule as its cooperative tasks (see SPEC.md "Concurrency").
+
 ## Convergence loops: boilerplate you stop writing
 
 Before the metaphysics, the everyday win. Every numeric fixed-point loop in
@@ -327,8 +379,10 @@ sqrt(2) = 1.414213562373095
 ```
 
 `converged` reads the loop's last-assigned value and fires once a full
-window of its relative steps sits under the settle deadband — the standard
-mixed-tolerance stopping criterion, built in (#861). This run exits
+window of its relative steps (`Δv` over the step's own scale, #1045 — so
+the unit the value is stored in does not matter) sits under the settle
+deadband — the standard mixed-tolerance stopping criterion, built in
+(#861). This run exits
 through the predicate itself in 13 iterations; the deadband is the
 tolerance (`set_observer_thresholds`), and an input that genuinely
 diverges ends via the observer's stall backstop with
@@ -346,9 +400,12 @@ contributes only its size term, #685). The boundary is explicit too: a
 binding holding a function classifies `opaque` — a function has no content
 to sample, and the observer names its blind spots (#708) rather than
 reporting a band it cannot defend. (The `unobserved` boundary is about
-observation only — assignments inside such a block are still counted by
-`when is x` and still addressable by ordinal, because a performance
-annotation must not change an answer, #908.) You can ask a variable about
+the entropy walk only — assignments inside such a block are still counted
+by `when is x` and still addressable by ordinal, #908, and a scalar's
+sample still enters the value window the numeric predicates read, #1049,
+because a performance annotation must not change an answer; what stays
+elided is entropy/dH, so `why`/`how` and the non-numeric route can still
+differ.) You can ask a variable about
 itself, terminate loops on *convergence* instead of a hand-written
 epsilon test, and read a variable's past:
 
@@ -529,10 +586,46 @@ stops at the module boundary, preserving the importer's bindings. Top-level `ret
 load_file yields its value, import finishes its namespace, and main discards
 its value.
 
-The existing function-slot exception remains: a binder with no prior binding
-inside a function retains its final value after the loop on every road. A
-pre-existing parameter or local is restored. This change preserves that
-exception; see the scope notes in LANGUAGE_CONTRACT.md.
+There is no function-scope exception (#1105): a binder with no prior binding
+inside a function is loop-scoped like any other, so reading it after the loop
+raises `undefined variable` on every road (Python, by contrast, leaks the
+loop variable into the enclosing function). A pre-existing parameter, `local`
+or module binding is restored after the loop.
+
+```eigenscript
+define probe() as:
+    for z in [7, 8]:
+        0
+    return z
+try:
+    print of (probe of [])
+catch e:
+    print of e.message
+```
+```output
+undefined variable 'z'
+```
+
+An imported module's namespace is a **live view** of that module's
+bindings, the way Python's module objects are — `m.x` reads the current
+binding and `m.x is v` writes it, for a number or string exactly as for
+a dict. It is not a copy taken at import time, so no "box your module
+state in a container or importers go stale" rule exists (#1057):
+
+```eigenscript
+write_text of ["cmp_live.eigs", "seen is 0\ndefine tick() as:\n    seen is seen + 1\n"]
+import cmp_live
+cmp_live.tick of null
+print of cmp_live.seen
+rm of "cmp_live.eigs"
+```
+```output
+1
+```
+
+The namespace is still an ordinary dict, so `keys`, `values`, `len` and
+indexing work on it — closer to a Lua module table than to a Rust `mod`,
+which has no runtime value at all.
 
 <!-- Embed contract: #1038/#1028; language-level observer semantics unchanged. -->
 The C embedding API starts observer recording open. Source evals retain

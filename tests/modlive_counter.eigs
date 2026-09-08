@@ -1,0 +1,17 @@
+# #1057 fixture: a module whose mutable state is a BARE SCALAR binding.
+# Before the live view, importers saw the value snapshotted at import time.
+ctr is 0
+label is "start"
+_hidden is 99
+
+define bump() as:
+    ctr is ctr + 1
+
+define peek() as:
+    return ctr
+
+define relabel(s) as:
+    label is s
+
+define peek_label() as:
+    return label

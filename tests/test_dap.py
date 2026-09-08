@@ -141,7 +141,10 @@ check("launch without a tape argument fails", r is not None and not r["success"]
 bad_tape = os.path.join(tmpdir, "bad.tape")
 with open(tape_path) as f:
     lines = f.read().split("\n")
-lines[0] = "V 2 0.0.1-not-this-binary"
+# keep the tape's OWN format integer so this stays a RUNTIME-version test
+# after a format bump (it went 2 -> 3 with the observer-config O records)
+fmt = open(tape_path).readline().split()[1]
+lines[0] = "V %s 0.0.1-not-this-binary" % fmt
 with open(bad_tape, "w") as f:
     f.write("\n".join(lines))
 msgs, _ = converse([req(1, "initialize"),
@@ -276,6 +279,86 @@ bframes = r["body"]["stackFrames"] if r and r["success"] else []
 check("reverseContinue lands on an earlier breakpoint line",
       bframes and bframes[0]["line"] in (2, 7))
 check("session exits 0", rc == 0)
+
+# ---- 4. the observer configuration a tape recorded, at the STOP ------
+# The DAP's binding cell and its trajectory children come from the same
+# tape_read fold as `--step`, and the label must be the one the LIVE run
+# printed at that stop. The knob here moves AFTER the binding's last assign:
+# the thresholds are read when a verdict is REPORTED, so the live run says
+# `converged` at line 10 and `stable` at line 8, and a reader that folds the
+# configuration only up to the last assign prints `stable` at both.
+OBS_FIXTURE = """x is 1000.0
+d is 5.0
+i is 0
+loop while i < 30:
+    x is x + d
+    d is d * 0.99
+    i is i + 1
+print of ("before=" + (report of x))
+set_observer_thresholds of [0.01, 0.02, 0.1]
+print of ("after=" + (report of x))
+"""
+obs_src = os.path.join(tmpdir, "dapobs.eigs")
+obs_tape = os.path.join(tmpdir, "dapobs.tape")
+with open(obs_src, "w") as f:
+    f.write(OBS_FIXTURE)
+live = subprocess.run([EIGS, obs_src], capture_output=True, text=True,
+                      timeout=30).stdout
+rec = subprocess.run([EIGS, obs_src], env=dict(os.environ, EIGS_TRACE=obs_tape),
+                     capture_output=True, text=True, timeout=30)
+live_after = [l.split("=", 1)[1] for l in live.splitlines()
+              if l.startswith("after=")]
+check("observer fixture recorded", rec.returncode == 0 and
+      os.path.exists(obs_tape) and live_after == ["converged"])
+
+msgs4, _ = converse([
+    req(1, "initialize"),
+    req(2, "launch", {"tape": obs_tape, "source": obs_src}),
+    req(3, "setBreakpoints",
+        {"source": {"path": obs_src}, "breakpoints": [{"line": 10}]}),
+    req(4, "configurationDone"),
+    req(5, "continue"),
+    req(6, "stackTrace"),
+    req(7, "disconnect"),
+])
+r = resp(msgs4, 6)
+oframes = r["body"]["stackFrames"] if r and r["success"] else []
+check("DAP stops on the line after the knob call",
+      len(oframes) == 1 and oframes[0]["line"] == 10)
+ofid = oframes[0]["id"] if oframes else 1
+msgs5, _ = converse([
+    req(1, "initialize"),
+    req(2, "launch", {"tape": obs_tape, "source": obs_src}),
+    req(3, "setBreakpoints",
+        {"source": {"path": obs_src}, "breakpoints": [{"line": 10}]}),
+    req(4, "configurationDone"),
+    req(5, "continue"),
+    req(6, "variables", {"variablesReference": 1000000 + ofid}),
+    req(7, "disconnect"),
+])
+r = resp(msgs5, 6)
+ovs = {v["name"]: v for v in (r["body"]["variables"] if r and r["success"] else [])}
+check("DAP labels x with the verdict the live run gave at that stop",
+      "x" in ovs and "[converged]" in ovs["x"]["value"])
+tref = ovs["x"]["variablesReference"] if "x" in ovs else 0
+msgs6, _ = converse([
+    req(1, "initialize"),
+    req(2, "launch", {"tape": obs_tape, "source": obs_src}),
+    req(3, "setBreakpoints",
+        {"source": {"path": obs_src}, "breakpoints": [{"line": 10}]}),
+    req(4, "configurationDone"),
+    req(5, "continue"),
+    req(6, "variables", {"variablesReference": tref}),
+    req(7, "disconnect"),
+])
+r = resp(msgs6, 6)
+okids = r["body"]["variables"] if r and r["success"] else []
+check("DAP trajectory names the settled label in its own row",
+      bool(okids) and okids[-1]["name"] == "#now"
+      and "[converged]" in okids[-1]["value"])
+check("DAP trajectory rows stay per-moment",
+      len(okids) >= 2 and "[stable]" in okids[-2]["value"])
+
 
 # ---- results ----------------------------------------------------------
 if SANITIZER_HITS:

@@ -1,0 +1,99 @@
+# #1057 — a module's namespace is a LIVE VIEW of the module's bindings,
+# not a shallow snapshot.
+#
+# Before: `import M` copied M's top-level bindings into a detached dict, so
+# whether an importer saw live state depended on the VALUE'S TYPE — a dict
+# or list was shared by reference and tracked, a number or string was
+# frozen at import time and went silently stale, and `M.x is v` reached
+# only the copy. The failure mode was a wrong number, never an error.
+#
+# After: `M.x` reads M's CURRENT binding and `M.x is v` writes it.
+# Containers keep sharing by reference (unchanged), so the dict-of-state
+# idiom nine stdlib modules use is now a style choice, not a correctness
+# requirement.
+
+load_file of "lib/test.eigs"
+
+# ---- Probe 1 (issue's _q4): scalar module state tracks ------------------
+import modlive_counter
+modlive_counter.bump of null
+modlive_counter.bump of null
+assert_eq of [modlive_counter.peek of null, 2, "module internal view sees 2"]
+assert_eq of [modlive_counter.ctr, 2, "namespace tracks the module binding"]
+
+# Strings go live too — the bug was type-dependent, the fix must not be.
+modlive_counter.relabel of "moved"
+assert_eq of [modlive_counter.label, "moved", "string binding is live too"]
+
+# ---- Probe 2 (issue's _q5): container state unchanged -------------------
+import modlive_box
+modlive_box.bump of null
+assert_eq of [modlive_box.peek of null, 1, "container state internal view"]
+assert_eq of [modlive_box.state.n, 1, "container state via namespace (unchanged)"]
+
+# ---- Probe 3 (issue's _q3): a write through the namespace lands ---------
+import modlive_plain
+modlive_plain.v is 42
+assert_eq of [modlive_plain.v, 42, "namespace read after write"]
+assert_eq of [modlive_plain.peek of null, 42, "the MODULE saw the write"]
+
+# ---- Control: reading a scalar out of the namespace still COPIES -------
+# `a is M.ctr` binds the value, not a live alias — a later bump must not
+# move `a`. (A live view must not turn every read into an alias.)
+snap is modlive_counter.ctr
+modlive_counter.bump of null
+assert_eq of [snap, 2, "a value read out of the namespace is a value"]
+assert_eq of [modlive_counter.ctr, 3, "namespace still live after the read"]
+
+# ---- Control: functions are callable through the namespace -------------
+assert_eq of [type of modlive_counter, "dict", "namespace is still a dict"]
+assert_eq of [modlive_counter.peek of null, 3, "M.f of x through namespace"]
+fn is modlive_counter.peek
+assert_eq of [fn of null, 3, "function value extracted from the namespace"]
+
+# ---- Control: enumeration still lists the bindings ---------------------
+k is keys of modlive_counter
+assert_true of [(len of k) >= 5, "keys lists the module's public bindings"]
+assert_eq of [has_key of [modlive_counter, "ctr"], 1, "has_key sees ctr"]
+assert_eq of [has_key of [modlive_counter, "peek"], 1, "has_key sees peek"]
+assert_eq of [len of modlive_counter, len of k, "len agrees with keys"]
+
+# ---- Control: `_`-private module bindings stay private ------------------
+assert_eq of [has_key of [modlive_counter, "_hidden"], 0, "_name stays private"]
+assert_eq of [modlive_counter._hidden, null, "_name unreadable through namespace"]
+
+# ---- Control: whole-dict readers see the CURRENT value -----------------
+# str/json of a namespace must not print the import-time snapshot.
+assert_true of [contains of [str of modlive_plain, "42"], "str of namespace is current"]
+assert_true of [contains of [json_encode of modlive_plain, "42"],
+                "json_encode of namespace is current"]
+
+# ---- Control: the module cache returns the same LIVE namespace ---------
+import modlive_counter
+assert_eq of [modlive_counter.ctr, 3, "re-import yields the same live state"]
+
+# ---- Control: a new key written through the namespace binds in the module
+modlive_plain.fresh is 7
+assert_eq of [modlive_plain.fresh, 7, "new namespace key reads back"]
+assert_eq of [has_key of [modlive_plain, "fresh"], 1, "new key enumerates"]
+
+# ---- Control: nested imports stay live ---------------------------------
+import modlive_outer
+assert_eq of [modlive_outer.depth, 2, "nested-import module binding"]
+modlive_outer.bump_inner of null
+assert_eq of [modlive_outer.inner_ctr of null, 4, "inner module bumped"]
+assert_eq of [modlive_counter.ctr, 4, "outer namespace's inner state is live"]
+assert_eq of [modlive_outer.modlive_counter.ctr, 4,
+              "namespace reached through a nested namespace is live"]
+
+# ---- Control: the load_file road is unchanged --------------------------
+# load_file binds into the CALLER's current scope and returns no namespace.
+lf is load_file of "../tests/modlive_plain.eigs"
+assert_eq of [v, 1, "load_file binds into the caller's scope (unchanged)"]
+assert_eq of [peek of null, 1, "load_file'd function reads the caller's v"]
+
+# ---- Control: the eval road is unchanged -------------------------------
+ev is eval of "3 + 4"
+assert_eq of [ev, 7, "eval road unchanged"]
+
+test_summary of null

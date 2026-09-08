@@ -45,7 +45,7 @@ The error-prone parts of the language. Most are not surfaced when working in a c
 
 ## Values
 - `+` concatenates **strings only** — list concat is `append of [xs, v]` (in place) or a comprehension; `xs + ys` is a runtime error.
-- Numbers are finite by construction: NaN collapses to `0`, overflow saturates at ±1e308 (`sqrt of -1` is `0`, not an error).
+- Numbers are finite by construction: NaN collapses to `0`, overflow saturates at ±1e308 (`sqrt of -1` is `0`, not an error). Under `EIGS_STRICT=1` the domain clamps, a NaN result, wrong-typed builtin arguments and a malformed `json_path` document raise catchable errors instead — run graders/tests with it on.
 - **Hex integer literals** (`0xFF`, `0X10`; digits only, ends at the first non-hex char) are a real lexed form since #378 (post-v0.24.0); hex-FLOAT forms (`0x1p4`, `0xA.8`) are loud parse errors. **On a v0.24.0-or-earlier pin hex is a strtod accident**: it works HOSTED (including hex floats) but the freestanding profile lexes `0xFF` as `0` + identifier `xFF` — don't use hex in code that must run freestanding on an old pin. No modulo keyword — the operator is `%` (`mod` is a parse error).
 
 ## Strings

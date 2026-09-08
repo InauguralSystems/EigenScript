@@ -164,7 +164,10 @@ if rep_g == "stable":
 # variable" two lines above a plain read of `m` that works. The answers
 # below must be the ones the same code gives when the name is NOT
 # promoted: an optimization may not change an answer, and it may
-# certainly not turn one into an error.
+# certainly not turn one into an error. (The literal answers moved with
+# #1049: the block no longer drops the samples from the value window, so
+# a 9.0 -> 4.5 step reads "moving" and the binding counts as observed;
+# the invariant under test — promoted == env-bound — is unchanged.)
 
 unobserved:  # lint: allow W020 -- promotion of a block-local name is the point
     m895 is 9.0
@@ -176,10 +179,10 @@ unobserved:  # lint: allow W020 -- promotion of a block-local name is the point
     plain895 is m895
 
 assert of [plain895 == 4.5, "OI-895 the plain read still works"]
-assert of [rep895 == "equilibrium", "OI-895 report of a promoted name resolves"]
-assert of [repv895 == "equilibrium", "OI-895 report_value of a promoted name resolves"]
-assert of [traj895.observed == 0, "OI-895 trajectory of a promoted name resolves"]
-assert of [obs895[0] == "equilibrium", "OI-895 observe of a promoted name resolves"]
+assert of [rep895 == "moving", "OI-895 report of a promoted name resolves"]
+assert of [repv895 == "moving", "OI-895 report_value of a promoted name resolves"]
+assert of [traj895.observed == 1, "OI-895 trajectory of a promoted name resolves"]
+assert of [obs895[0] == "moving", "OI-895 observe of a promoted name resolves"]
 
 # Same block, but the name escapes it, so nothing is promoted and the
 # *_NAME opcodes run. The answers must be identical.

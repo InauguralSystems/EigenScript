@@ -4,6 +4,7 @@
 
 #include "eigenscript.h"
 #include "env_flag.h"
+#include "fsutil.h"
 #include "state.h"
 #include "vm.h"
 #include "trace.h"
@@ -145,6 +146,13 @@ int main(int argc, char **argv) {
 
     trace_init();
     atexit(trace_shutdown);
+    /* #972: EIGS_OBS_GATE_STATS=1 also tallies observe-helper entries (the
+     * per-unit verdict lines come from compile_ast); reported at exit so a
+     * read-free program can be checked for `observe-calls 0`. */
+    if (eigs_env_flag("EIGS_OBS_GATE_STATS")) {
+        g_obs_count_observe_calls = 1;
+        atexit(eigs_obs_gate_stats_report);
+    }
 
     /* --fmt is a pure source transformer; no VM, no arena, no state. */
     if (argc >= 2 && strcmp(argv[1], "--fmt") == 0) {
@@ -182,6 +190,31 @@ int main(int argc, char **argv) {
         sigaction(SIGUSR1, &sa, NULL);
     }
 
+    /* #1121: every `--<mode>` return below happens BEFORE the run path's
+     * global Env exists, so none of them can call gc_collect_at_exit(global)
+     * the way the two returns at the bottom of this function do — and all of
+     * them were therefore skipping the cycle-collector drain entirely.
+     * That drain is not optional bookkeeping: val_decref on a LIST or DICT
+     * does not free it, it registers a candidate that only the exit sweep
+     * reclaims. So anything a mode allocated as a container leaked, and
+     * `--lint` leaked the parsed eigs.json on every run inside a project whose
+     * manifest has any nested value -- `"deps": {}` is enough, and that is in
+     * the manifest every repo in the fleet ships.
+     *
+     * gc_collect_at_exit tolerates a NULL global: it guards every deref of it,
+     * and the module-cache clear plus the gc_collect_cycles drain -- the half
+     * these paths need -- run unconditionally.
+     *
+     * Route EVERY pre-global return through here rather than patching the one
+     * that leaks today, so the next mode that allocates a container cannot
+     * reintroduce this by forgetting a line. */
+    #define MODE_EXIT(rc_) do { \
+        gc_collect_at_exit(NULL); \
+        eigs_thread_detach(); \
+        eigs_state_destroy(eigs_st); \
+        return (rc_); \
+    } while (0)
+
     /* --lint flag (optionally --lint --json for machine-readable output;
      * --json may appear before or after the path). */
     if (argc >= 2 && strcmp(argv[1], "--lint") == 0) {
@@ -199,9 +232,7 @@ int main(int argc, char **argv) {
                     fail_on_warning = 1;
                 } else {
                     fprintf(stderr, "Unknown --lint-level '%s' (use error|warning)\n", lvl);
-                    eigs_thread_detach();
-                    eigs_state_destroy(eigs_st);
-                    return 1;
+                    MODE_EXIT(1);
                 }
             } else if (!lint_path) {
                 lint_path = argv[i];
@@ -209,14 +240,10 @@ int main(int argc, char **argv) {
         }
         if (!lint_path) {
             fprintf(stderr, "Usage: eigenscript --lint [--json] [--lint-level error|warning] file.eigs\n");
-            eigs_thread_detach();
-            eigs_state_destroy(eigs_st);
-            return 1;
+            MODE_EXIT(1);
         }
         int rc = eigenscript_lint(lint_path, json_mode, fail_on_warning);
-        eigs_thread_detach();
-        eigs_state_destroy(eigs_st);
-        return rc;
+        MODE_EXIT(rc);
     }
 
     /* #734 --api: the machine-readable surface index. Answers "does X
@@ -226,9 +253,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "--api") == 0) {
         int api_json = (argc >= 3 && strcmp(argv[2], "--json") == 0);
         int rc = eigs_api_dump(stdout, api_json);
-        eigs_thread_detach();
-        eigs_state_destroy(eigs_st);
-        return rc;
+        MODE_EXIT(rc);
     }
 
     /* --pkg flag: dispatch to lib/pkg.eigs with the rest of the argv as
@@ -240,9 +265,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "--pkg") == 0) {
         if (!resolve_eigenscript_file("lib/pkg.eigs", pkg_path, sizeof(pkg_path))) {
             fprintf(stderr, "Error: cannot locate lib/pkg.eigs (stdlib not installed?)\n");
-            eigs_thread_detach();
-            eigs_state_destroy(eigs_st);
-            return 1;
+            MODE_EXIT(1);
         }
         argv[1] = pkg_path;
         /* fall through to script execution */
@@ -256,9 +279,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "--test") == 0) {
         if (!resolve_eigenscript_file("lib/test_runner.eigs", test_path, sizeof(test_path))) {
             fprintf(stderr, "Error: cannot locate lib/test_runner.eigs (stdlib not installed?)\n");
-            eigs_thread_detach();
-            eigs_state_destroy(eigs_st);
-            return 1;
+            MODE_EXIT(1);
         }
         argv[1] = test_path;
         /* fall through to script execution */
@@ -299,9 +320,7 @@ int main(int argc, char **argv) {
     int source_string = strcmp(argv[1], "-e") == 0;
     if (source_string && argc < 3) {
         fprintf(stderr, "Usage: eigenscript -e <source> [args...]\n");
-        eigs_thread_detach();
-        eigs_state_destroy(eigs_st);
-        return 1;
+        MODE_EXIT(1);
     }
 
     /* Extract script directory for load_file resolution. g_script_dir
@@ -317,10 +336,14 @@ int main(int argc, char **argv) {
                                  : read_file_util(argv[1], &src_size);
     if (!source) {
         fprintf(stderr, "Error: cannot read file '%s'\n", argv[1]);
-        eigs_thread_detach();
-        eigs_state_destroy(eigs_st);
-        return 1;
+        MODE_EXIT(1);
     }
+
+    /* Past this point the run path owns a global Env, so a teardown must
+     * collect against IT (gc_collect_at_exit(global)) rather than the NULL
+     * form. Undefining the macro makes that a compile error rather than a
+     * silently weaker drain. */
+    #undef MODE_EXIT
 
     if (source_string) {
         for (int i = 2; i + 1 < argc; i++) argv[i] = argv[i + 1];
@@ -343,6 +366,11 @@ int main(int argc, char **argv) {
         free_ast(ast);  /* parse returns a partial tree on error; free it (cf. #214) */
         free(source);
         free_tokenlist(&tl);
+        /* #1121: the success returns below collect before releasing the
+         * global; these error returns did not. Nothing container-shaped is
+         * rooted here today (measured clean under ASan), so this is a no-op
+         * now and the class stays closed if that changes. */
+        gc_collect_at_exit(global);
         env_decref(global);
         eigs_thread_detach();
         eigs_state_destroy(eigs_st);
@@ -357,6 +385,11 @@ int main(int argc, char **argv) {
         free_ast(ast);
         free(source);
         free_tokenlist(&tl);
+        /* #1121: the success returns below collect before releasing the
+         * global; these error returns did not. Nothing container-shaped is
+         * rooted here today (measured clean under ASan), so this is a no-op
+         * now and the class stays closed if that changes. */
+        gc_collect_at_exit(global);
         env_decref(global);
         eigs_thread_detach();
         eigs_state_destroy(eigs_st);
@@ -372,6 +405,10 @@ int main(int argc, char **argv) {
      * value world is still alive (channels/threads live in the handle table,
      * not on a GC'd Value, so nothing else reclaims them). */
     handle_table_drain(eigs_st);
+    /* #1112: spawn()ed workers that died of an uncaught error — read AFTER
+     * the drain above has joined every worker (pthread_join is the
+     * happens-before edge for the worker's increment). */
+    int spawn_worker_error = __atomic_load_n(&eigs_st->spawn_err_count, __ATOMIC_RELAXED) > 0;
     /* An uncaught runtime error leaves g_has_error set (vm_run unwinds to
      * here rather than continuing with null). Report it as a non-zero exit
      * so scripts fail loudly for callers, Makefiles, and CI. */
@@ -383,7 +420,7 @@ int main(int argc, char **argv) {
      * is cleared off THIS thread's request, so a worker's exit never erases a
      * genuine main-thread error. */
     int exit_code = g_exit_latched ? g_exit_latch_code
-                    : ((g_has_error || unobserved_task_error) ? 1 : 0);
+                    : ((g_has_error || unobserved_task_error || spawn_worker_error) ? 1 : 0);
     if (g_exit_requested) g_has_error = 0;
     /* An uncaught `throw` leaves its structured payload stashed; release
      * it so exit is leak-clean. */

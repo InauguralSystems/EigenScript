@@ -43,7 +43,8 @@
  * Output bytes are identical to the pre-#392 inline code; the one change
  * is free_ast on the parse-error path (parse returns a partial tree on
  * error — cf. #214 — which the old loop leaked). */
-static int repl_eval_buffer(Env *env, strbuf *input) {
+static int repl_eval_buffer(Env *env, strbuf *input, int *failed) {
+    *failed = 0;
     /* Skip empty input */
     char *check = input->data;
     while (*check == ' ' || *check == '\t' || *check == '\n' || *check == '\r') check++;
@@ -52,6 +53,7 @@ static int repl_eval_buffer(Env *env, strbuf *input) {
     g_parse_errors = 0;
     TokenList tl = tokenize(input->data);
     if (g_parse_errors > 0) {
+        *failed = 1;
         free_tokenlist(&tl);
         return 0;
     }
@@ -60,6 +62,7 @@ static int repl_eval_buffer(Env *env, strbuf *input) {
     ASTNode *ast = parse(&tl);
     parser_set_caret_source(NULL);
     if (g_parse_errors > 0) {
+        *failed = 1;
         free_ast(ast);
         free_tokenlist(&tl);
         return 0;
@@ -76,6 +79,7 @@ static int repl_eval_buffer(Env *env, strbuf *input) {
     eigs_obs_enable_runtime();   /* #915: via the helper, so a mid-run flip records the gap */
     EigsChunk *repl_chunk = compile_ast(ast, env, input->data);
     if (g_parse_errors > 0) {   /* e.g. an un-encodable jump/loop offset */
+        *failed = 1;
         fprintf(stderr, "%d compile error(s) — line not run\n", g_parse_errors);
         chunk_free(repl_chunk);
         free_tokenlist(&tl);
@@ -110,65 +114,123 @@ static int repl_eval_buffer(Env *env, strbuf *input) {
     return 0;
 }
 
+/* ---- shared line accumulation (#1109) ----
+ * Both input paths hand raw lines to one accumulator, so the multi-line
+ * rules live in exactly one place: a line ending in ':' opens a block; a
+ * blank line closes it; an unindented non-blank line closes it AND joins the
+ * same unit. `exit`/`quit` are matched here too, so a line re-fed after a
+ * failed unit is recognised exactly like a freshly typed one.
+ *
+ * The bug this structure fixes: the closing unindented line is part of the
+ * accumulated unit, so when that unit fails to tokenize/parse/compile it was
+ * thrown away with the rest of the buffer and never ran. `repl_feed_line`
+ * keeps it and re-feeds it as the start of the next unit.
+ */
+typedef struct {
+    Env    *env;
+    strbuf  input;
+    int     continuation;
+} ReplAccum;
+
+static void repl_accum_init(ReplAccum *st, Env *env) {
+    st->env = env;
+    st->continuation = 0;
+    strbuf_init(&st->input);
+}
+
+static void repl_accum_reset(ReplAccum *st) {
+    st->input.len = 0;
+    st->input.data[0] = '\0';
+}
+
+/* `exit`/`quit` as a REPL command: top level only, leading blanks skipped,
+ * the whole rest of the line must be the word plus its newline. Same rule
+ * both paths carried before (the editor's lines are newline-normalized by
+ * the caller, so one predicate now serves both). */
+static int repl_is_exit_command(const char *line) {
+    while (*line == ' ' || *line == '\t') line++;
+    return strcmp(line, "exit\n")   == 0 || strcmp(line, "quit\n")   == 0 ||
+           strcmp(line, "exit\r\n") == 0 || strcmp(line, "quit\r\n") == 0;
+}
+
+/* Feed one raw input line (trailing newline included) into the accumulator,
+ * running the unit when the line completes it. Returns 1 when the REPL must
+ * stop (`exit`/`quit`, or `exit of N` inside the unit). */
+static int repl_feed_line(ReplAccum *st, const char *line) {
+    /* Both callers read lines into a 4096-byte buffer, so a line that closed
+     * a block always fits here. Static, not stack: same PR #361 rule as
+     * EdState — the REPL is single-threaded and this loop never re-enters. */
+    static char refeed[4096];
+
+    for (;;) {
+        if (!st->continuation && repl_is_exit_command(line)) return 1;
+
+        size_t off = st->input.len;      /* where this line starts in the unit */
+        size_t len = strlen(line);
+        strbuf_append_n(&st->input, line, len);
+
+        int terminator = 0;              /* closed an open block and joined it */
+        if (!st->continuation) {
+            /* Block opener: last non-blank byte is ':' */
+            const char *end = line + len;
+            while (end > line && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ')) end--;
+            if (end > line && end[-1] == ':') {
+                st->continuation = 1;
+                return 0;
+            }
+        } else {
+            const char *trimmed = line;
+            while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+            if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0') {
+                st->continuation = 0;    /* blank line: run the block */
+            } else if (line[0] == ' ' || line[0] == '\t') {
+                return 0;                /* still indented, keep accumulating */
+            } else {
+                st->continuation = 0;    /* unindented: ends the block + included */
+                terminator = 1;
+            }
+        }
+
+        int failed = 0;
+        int stop = repl_eval_buffer(st->env, &st->input, &failed);
+
+        /* #1109: a unit that never ran must not swallow the line that closed
+         * it. Re-feed that line as the start of the next unit — it may open a
+         * block of its own, so it goes back through the same rules. Only the
+         * never-ran failures qualify (tokenize/parse/compile): once the unit
+         * executed, the closing line executed with it. */
+        int redo = (!stop && failed && terminator &&
+                    st->input.len > off && st->input.len - off < sizeof(refeed));
+        if (redo) {
+            size_t n = st->input.len - off;
+            memcpy(refeed, st->input.data + off, n);
+            refeed[n] = '\0';
+        }
+        repl_accum_reset(st);
+        if (stop) return 1;
+        if (!redo) return 0;
+        line = refeed;
+    }
+}
+
 /* ---- piped / non-tty path: the original fgets loop ---- */
 
 static void repl_plain(Env *env) {
     char line_buf[4096];
-    strbuf input;
-    strbuf_init(&input);
-    int continuation = 0;
+    ReplAccum st;
+    repl_accum_init(&st, env);
 
     while (1) {
-        printf(continuation ? "...   " : "eigs> ");
+        printf(st.continuation ? "...   " : "eigs> ");
         fflush(stdout);
 
         if (!fgets(line_buf, sizeof(line_buf), stdin)) {
             printf("\n");
             break;
         }
-
-        /* Exit commands */
-        if (!continuation) {
-            char *trimmed = line_buf;
-            while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-            if (strcmp(trimmed, "exit\n") == 0 || strcmp(trimmed, "quit\n") == 0 ||
-                strcmp(trimmed, "exit\r\n") == 0 || strcmp(trimmed, "quit\r\n") == 0) {
-                break;
-            }
-        }
-
-        int len = strlen(line_buf);
-        strbuf_append_n(&input, line_buf, (size_t)len);
-
-        /* Multi-line detection */
-        if (!continuation) {
-            /* Check if line ends with colon (block opener) */
-            char *end = line_buf + len - 1;
-            while (end > line_buf && (*end == '\n' || *end == '\r' || *end == ' ')) end--;
-            if (*end == ':') {
-                continuation = 1;
-                continue;
-            }
-        } else {
-            /* In continuation: blank line or unindented line ends block */
-            char *trimmed = line_buf;
-            while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-            if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0') {
-                continuation = 0;
-                /* fall through to execute */
-            } else if (line_buf[0] == ' ' || line_buf[0] == '\t') {
-                continue; /* still indented, keep accumulating */
-            } else {
-                continuation = 0;
-                /* unindented non-blank: end of block */
-            }
-        }
-
-        if (repl_eval_buffer(env, &input)) break;
-        input.len = 0;
-        input.data[0] = '\0';
+        if (repl_feed_line(&st, line_buf)) break;
     }
-    strbuf_free(&input);
+    strbuf_free(&st.input);
 }
 
 /* ---- interactive tty path: the line editor ---- */
@@ -604,62 +666,34 @@ static void repl_interactive(Env *env) {
     atexit(raw_off);   /* never leave the terminal raw, whatever the exit path */
 
     char line[ED_BUF];
+    static char fed[ED_BUF + 2];   /* the line plus the newline the accumulator expects */
     static EdState ed;             /* ~12 KiB: static, not stack (PR #361 rule) */
-    strbuf input;
-    strbuf_init(&input);
-    int continuation = 0;
+    ReplAccum st;
+    repl_accum_init(&st, env);
 
     for (;;) {
         if (raw_on() == -1) break;
-        int len = ed_readline(env, &ed, continuation ? "...   " : "eigs> ", line);
+        int len = ed_readline(env, &ed, st.continuation ? "...   " : "eigs> ", line);
         raw_off();     /* cooked during eval: scripts may read stdin; SIGINT works */
 
         if (len == RL_EOF) break;
         if (len == RL_CANCEL) {
-            continuation = 0;
-            input.len = 0;
-            input.data[0] = '\0';
+            st.continuation = 0;
+            repl_accum_reset(&st);
             continue;
         }
 
         if (len > 0) hist_add_mem(line);
 
-        /* Exit commands (top level only, same rule as the piped path) */
-        if (!continuation) {
-            char *trimmed = line;
-            while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-            if (strcmp(trimmed, "exit") == 0 || strcmp(trimmed, "quit") == 0) break;
-        }
-
-        strbuf_append_n(&input, line, (size_t)len);
-        strbuf_append_n(&input, "\n", 1);
-
-        /* Multi-line block rules, identical to the piped path */
-        if (!continuation) {
-            int e = len;
-            while (e > 0 && line[e - 1] == ' ') e--;
-            if (e > 0 && line[e - 1] == ':') {
-                continuation = 1;
-                continue;
-            }
-        } else {
-            char *trimmed = line;
-            while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-            if (*trimmed == '\0') {
-                continuation = 0;            /* blank line: run the block */
-            } else if (line[0] == ' ' || line[0] == '\t') {
-                continue;                    /* still indented, accumulate */
-            } else {
-                continuation = 0;            /* unindented: ends + included */
-            }
-        }
-
-        if (repl_eval_buffer(env, &input)) break;
-        input.len = 0;
-        input.data[0] = '\0';
+        /* Newline-normalize, then run the same accumulator as the piped path
+         * (exit/quit, block rules and #1109 re-feed all live there). */
+        memcpy(fed, line, (size_t)len);
+        fed[len] = '\n';
+        fed[len + 1] = '\0';
+        if (repl_feed_line(&st, fed)) break;
     }
 
-    strbuf_free(&input);
+    strbuf_free(&st.input);
     hist_save();
     hist_free();
 }

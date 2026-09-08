@@ -29,7 +29,8 @@ under noise — see "Pointwise behavior replaced" in each section.)
 
 The predicate words and `report` are **routed**: a binding whose most
 recent observed assignment is **numeric** answers from the **value
-channel** — the classifier below, over relative steps `Δv/(1+|v|)`; every
+channel** — the classifier below, over relative steps
+`rel = Δv / max(|v|, |v_prev|, scale)` (#1045); every
 other binding (strings, containers) answers from the **entropy channel**,
 the windowed formulas in "The six predicates". `report_value of x` is the
 value-channel classifier by name (identical to the routed words on a
@@ -48,8 +49,10 @@ gave the same computation targeting 5000, 5 and 0.005 three different
 verdicts. The value channel scores 25/27; the two misses are the
 irreducible tolerance floor, not defects (see the honesty bound below).
 
-**The numeric definitions** (window `N = 10` relative steps
-`rel = Δv/(1+|v|)`, raw steps `Δv` kept alongside — #422):
+**The numeric definitions** (window `N` relative steps — `N = 10` by
+default, per state or per binding via `set_observer_window`, see [The
+window](#the-window-1044) — `rel = Δv / max(|v|, |v_prev|, scale)`, raw
+steps `Δv` kept alongside — #422):
 
 | band | fires when |
 |---|---|
@@ -65,6 +68,33 @@ The quiescent lattice on this route: `converged ⊂ equilibrium` and
 bands exclude the raw structure tests; the motion bands are mutually
 exclusive. `report` resolves the canonical priority `oscillating →
 diverging → improving → converged → equilibrium → stable → moving`.
+
+**The relative step is scale-free (#1045).** `rel` divides the raw step
+by the step's own local scale, `max(|v|, |v_prev|)`, floored at the
+state's **characteristic scale** (`set_observer_scale of s`, default
+`0.001`). Above the scale a verdict is **unit-free**: one physical
+trajectory stored in radians, degrees or milliradians reads the same
+(phugoid's spiral mode — bank angle `0.0124 rad = 0.71 deg = 12.4 mrad`,
+halving every 14.9 s, replayed at 1 Hz — reads `moving` in all three;
+`tests/test_observer_window_scale.eigs`). Below the scale the deadband
+turns absolute: `|Δv| < dh_zero · scale` (`1e-6` by default), so
+rounding noise around an exact zero (`Δv ~ 1e-16`) is not motion, and a
+geometric decay toward zero keeps `rel = 1 − r` — `improving`, never
+`converged` — until it is inside the scale. Read as the textbook
+criterion, `converged` is `|Δx| ≤ rtol·|x|` with `rtol = dh_zero` and an
+absolute floor `atol = dh_zero · scale`. The previous step,
+`Δv/(1+|v|)`, was the entropy formula's normalisation borrowed as a step:
+below `|v| ~ 1` it was just `Δv`, an absolute deadband, and the unit the
+consumer stored the value in decided the verdict. The scale is the one
+number a unit choice still touches — choose it in the unit the binding
+is stored in (a bank angle kept in radians with milliradian relevance
+wants `set_observer_scale of 1e-6`; `set_observer_scale of 1` restores the
+old absolute shape for values under 1). Why the local scale and not the
+window's running maximum: for a monotone decay that maximum is the
+*oldest* sample, so `rel = (1−r)·r^(N−1)` and any ratio under ~0.5 would
+certify `converged` at the first full window no matter how far from its
+limit the value still was (`1e6·0.3^k` at `x ≈ 1.8`) — and a wider window
+would make it worse.
 
 **The honesty bound.** `converged` is a **stopping criterion, not a
 proof**: it means *settled at the deadband* — every recent step below the
@@ -90,7 +120,7 @@ assigned top-level value (`g_last_observer`):
 | `entropy` | current information content `where is x` — **recomputed from the value present at ask time** (#711), so in-place mutation is visible | `compute_entropy_impl` via `observer_entropy_now` |
 | `dH` | change since previous observation `why is x` — a trajectory of **assignments**; mutation does not move it, and a query never writes back | `update_observer` (`new − last`) |
 | `prev_dH` | the previous step's `dH` | `update_observer` |
-| `dh_window` | ring buffer of the last `OBSERVER_WINDOW_N` (=10) `dH` values | `observer_window_push` in `update_observer` |
+| `dh_window` | ring buffer of the last `N` `dH` values (`N` = the window depth in force, 10 by default — [The window](#the-window-1044)) | `observer_window_push` in `update_observer` |
 | `obs_age` | number of observations since the value first existed | `update_observer` |
 
 The ring buffer is allocated lazily on the *second* observation (the
@@ -101,6 +131,49 @@ its window on its second assignment, because the observe op is emitted
 unconditionally (see [OBSERVER.md](OBSERVER.md#cost)). `unobserved:` is what
 avoids it. Arena values skip the buffer entirely —
 they cannot be tracked across resets.
+
+**What `unobserved:` elides, precisely (#1049).** An assignment inside the
+block still records its **value-channel** sample: a scalar's relative and
+raw step enter `v_window`/`vr_window` and `last_value` moves (O(1) — one
+subtraction, one division, two ring writes), and a non-numeric value flips
+the route bit exactly as an observed one would. So the window the numeric
+route reads is complete, and every verdict on that route — the six
+predicates on a numeric binding, `report`, `report_value`, a `trajectory`
+snapshot's `rel`/`raw` — is **identical with and without the block**
+(an elided `b is 0.0` initialiser no longer moves the window-fill
+boundary by one read; one elided step mid-stream no longer perturbs the
+next ten verdicts). What the block does not compute is the entropy walk
+and everything built on it, so these remain **elision-sensitive**:
+
+| Reader | Why it can differ under `unobserved:` |
+|---|---|
+| `why is x`, `how is x` | read `dH`, which the block never updates |
+| `observe of x` | its `dH`/`prev_dH` elements; the band is routed like `report` |
+| `trajectory of x` | the `dh` list, `dH`, `last_entropy` (`rel`/`raw`/`last_value` are complete) |
+| `classify of [t, "entropy"]` | the explicit entropy channel |
+| `report` / the six predicates on a **non-numeric** binding | the entropy route — its `dh_window` is missing the elided steps |
+| the loop stall backstop | reads the last observed slot's `dH` |
+| a **bare** predicate | reads the last **observed** binding — the alias is deliberately not moved by an elided assignment, so scratch work inside the block cannot hijack a `loop while not converged` |
+
+`where is x` is unaffected: it is recomputed from the current value at
+ask time (#711). A predicate asked *inside* the block still raises (#871).
+
+One consequence: `unobserved:` is no longer a way to **declare** a numeric
+binding without putting a sample in its window (the pre-#1049 idiom in
+`lib/experiment.eigs`, which seeded `tracker is 0` inside a block so the
+seed-to-first-reading jump would not sit at the head of the trajectory).
+Seed with `null` instead — null and boolean assignments are never sampled,
+on either path — and the first real reading is the first observation:
+
+```eigenscript
+define first_stable(values) as:
+    tracker is null            # declares the binding; not a sample
+    for v in values:
+        tracker is v
+        if stable of tracker:
+            return v
+    return null
+```
 
 `window` below means the `dh_window` contents oldest→newest;
 `count = window_size(v)` is how many real samples it holds (≤ N).
@@ -117,12 +190,114 @@ h_low    = 0.1     entropy below this is "low information content"
 
 Override with `set_observer_thresholds of [dh_zero, dh_small, h_low]`.
 
-Two derived window constants (functions of `N = OBSERVER_WINDOW_N = 10`):
+A fourth number, the value channel's characteristic scale (#1045):
+
+```
+scale    = 0.001   |v| below this counts as "at zero": rel = Δv / max(|v|, |v_prev|, scale)
+```
+
+Override with `set_observer_scale of s` (`get_observer_scale of null`
+reads it). See "The relative step is scale-free" above for what it means.
+
+Two derived window constants (functions of the window depth `N`, 10 by
+default):
 
 ```
 VOTE  = 0.6                min fraction of genuine same-direction steps for improving/diverging
-FLIPS = ceil(N / 3)  = 4   min sign-flips in the window for oscillating
+FLIPS = ceil(N / 3)  = 4   min sign-flips in the window for oscillating (17 at N = 50)
 ```
+
+## The window (#1044)
+
+Every predicate classifies over the last `N` **samples** — observed
+assignments, not seconds. The depth is configurable:
+
+```eigenscript
+set_observer_window of 30           # the state default (4..64; 10 at start)
+set_observer_window of ["u", 50]    # one binding, by name — only that slot
+set_observer_window of ["u", 0]     # clear the override, back to the default
+get_observer_window of null         # -> 30
+get_observer_window of "u"          # -> 50
+```
+
+Both forms take effect **live**, like the thresholds: a binding already
+carrying a trajectory classifies over the new depth at its next verdict
+(its ring grows on the next sample, keeping what it holds; a smaller
+depth reads fewer samples). The per-binding form resolves the name from
+the call site the way `report of x` does; a string-literal operand also
+marks a function local interrogated, so the knob reaches plain locals. An
+override lives on the **binding**, exactly like the trajectory it governs:
+a global keeps it for the run, a function local gets it per call (set it
+where the local is initialised). A `trajectory of x` snapshot carries its
+depth (`t.window`), so `classify` of it agrees with the live verdict. An
+unbound name, a depth outside `4..64` or a non-integer raise.
+
+**Time versus samples.** A mode slower than about `N` samples of the
+consumer's cadence cannot fold inside the window, and the failure is not
+insensitivity — the verdict is confidently wrong. The 747 phugoid
+(`T = 46.9 s`, physics truth `oscillating` throughout) replayed through
+a binding at 1 Hz with the default `N = 10` reads `diverging` on its
+rising quarter-cycles and `stable`/`improving` elsewhere; the same signal
+decimated to 5 s (9.4 samples per cycle) reads `oscillating` at every
+probe. The folding rule (≥ 2 reversals, net travel ≤ 0.3× path) is the
+right test; it just never saw a fold. Widened to cover a period —
+`set_observer_window of ["u", 50]` — the same 1 Hz replay reads
+`oscillating` at every full-window sample and `diverging` never appears
+(`tests/test_observer_window_scale.eigs`; phugoid's
+`tests/observer_check.eigs` rows `O.ph1s.*`). The rule of thumb: **the
+window must span at least one period of the slowest mode you expect to
+see, in samples of the cadence you observe at** — `N ≥ T / Δt` — and the
+window must be *full* before a slow mode's verdict is trustworthy (the
+motion bands are early-warning and fire from 4 samples: during the
+first `N` samples a rising quarter-cycle still reads `diverging`). The
+opposite mismatch exists too: a mode *faster* than a few samples
+(phugoid's roll mode, `t_half = 0.56 s` at 0.02 s cadence) needs the
+window narrower or the cadence coarser, or its contraction test never
+spans enough of the mode. Choose the depth in samples from the physics;
+a frame-locked consumer with several timescales gives each binding its
+own.
+
+The window-widening cost: a ring of `N` doubles per channel per binding
+(the value channel keeps two), allocated at the depth in force on the
+first sample — the default depth allocates exactly what it did before
+#1044 — and the folding/variance tests are `O(N)` per verdict asked, not
+per assignment.
+
+## Configuration and the tape
+
+Every knob on this page — the three thresholds, the window depth in both
+its forms, and the scale — **rides the trace tape**, so a recorded run
+replayed or stepped classifies exactly as the live run did. It is carried
+as an event at the point the knob takes effect (`O cfg` / `O win` records,
+tape format v3), which is what makes a **mid-run** change reconstruct
+correctly: a binding that reads `moving` before a `set_observer_scale` and
+`converged` after reads exactly that at both stops under `--step` and in
+the DAP server. `EIGS_REPLAY` re-executes the program, so its knob calls
+run again by themselves.
+
+The reader folds the configuration up to the **stop position**, not up to the
+binding's last assignment, because the thresholds (and the window's
+full-window certifications) are consumed when a verdict is *reported*: a knob
+moved after the last assignment and before the stop changes the live verdict
+and therefore changes the stepped one too. The stepper's `p` view and the DAP
+binding cell answer "what would `report of x` say here"; the `t` trajectory
+rows stay per-moment, and name the settled label on a line of their own when
+it differs.
+
+A per-binding `O win` record names one **binding**, not a name: the reader
+resolves it along the recorded call chain and applies it to that history by
+identity, so two invocations of one function — or a function-local and a
+module-level global sharing a name — keep their own window depths.
+
+Two caveats remain, both narrow, both stated rather than papered over. (1) A
+binding the recorded call chain cannot reach — a closure over a captured
+name, whose environment parent is its definition site — resolves to nothing;
+the override is then applied only if that name is unique on the whole tape,
+and otherwise dropped, so the stepped verdict is the default-window one and
+never another binding's. (2) A tape recorded by a pre-v3 binary cannot carry
+any of this, so it is refused outright (exit 3), never classified at the
+defaults and presented as the recorded run. Both are written up in
+[TRACE.md](TRACE.md#observer-configuration-1044-1045).
 
 ## Partial-window rule (applies to all six)
 
@@ -670,10 +845,82 @@ loop while not (converged of x):
   deadband (`dh_zero`, default 0.1% relative). For a tighter answer,
   lower it first: `set_observer_thresholds of [1e-6, 1e-5, 0.1]`.
 
+## What carries a trajectory
+
+Observer trajectory is keyed to an **environment slot** — `env_obs_slot(Env *e,
+int idx)` returns `e->obs[idx]`, and the Value itself carries no observer
+state. So every predicate, `report`, `report_value`, `observe` and
+`trajectory of x` answer about a *binding*, and only a binding that persists
+across the observations has a history to classify (#1048). Every case
+follows from that one rule:
+
+| form | persistent env slot? | trajectory |
+|---|---|---|
+| a named local (`q is v`, `local q is v`) | yes | **carries** |
+| a closure-captured local (one factory call per entity) | yes — each call is its own `Env` | **carries**, N chosen at runtime |
+| an `eval`-generated name | yes | carries, N chosen at runtime (loses lint and the AOT — prefer the closure) |
+| a dict field `ch.a` | no — a Value in a container | none: `equilibrium`, no history |
+| a list element `xs[0]` | no — a Value in a container | none |
+| a function parameter | the frame dies each call | none: one observation per call |
+| a `for` binder `for x in xs:` | fresh each iteration (#1062) | none |
+| a `for`-body `local` **at module level** | the loop env is cleared each iteration | none: one observation, every read answers `equilibrium` |
+| a `for`-body `local` **inside a function** | a frame slot that persists for the loop | carries — and **interleaves** if fed several entities |
+| a `for`-body plain `q is …` | creates in the enclosing scope, persists | carries — and interleaves |
+| a `loop while`-body binding (plain or `local`) | one env, persists | carries — and interleaves |
+
+The last three rows are the sharp edge. The obvious per-entity read
+
+```eigenscript
+loop while i < n:
+    local q is fleet[i][2]        # ONE binding, rebound n times
+    if diverging of q: ...
+```
+
+does not lose resolution — it **manufactures verdicts**: the slot's window is
+the round-robin interleave of every entity it visits, so a monotonically
+decaying entity reads `oscillating`. Lint `W024` names this shape — including
+the common `local q is fleet[i][2] + 0.0` spelling, where the projection sits
+under arithmetic — and the module-level `for` variant, whose reads always
+answer `equilibrium`. The
+mirror form is fine: a *fixed* field or element copied into a binding each
+tick (`local e is game.energy`) is exactly how a container field is given a
+trajectory.
+
+**The recommended per-entity form is a closure per entity** — one `Env`, and
+so one slot, per factory call, in ordinary static source that lints and
+compiles like anything else:
+
+```eigenscript
+define make_ch as:
+    local q is 0.0
+    define step(v) as:
+        q is v
+        return report_value of q
+    return step
+
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+chans is [make_ch of [], make_ch of []]
+t is 0
+loop while t < 40:
+    fleet[0][2] is fleet[0][2] * 0.9      # decaying
+    fleet[1][2] is 0.0 - fleet[1][2]      # sign-flipping
+    a is (chans[0]) of fleet[0][2]
+    b is (chans[1]) of fleet[1][2]
+    t is t + 1
+print of (a + " " + b)                    # improving oscillating
+```
+
+A named binding per entity (`qa is fleet[0][2]`, `qb is fleet[1][2]`) is the
+same thing when N is fixed at authoring time. Container-keyed trajectory
+(dict fields and list elements carrying their own slot) is a ROADMAP item,
+not a current capability.
+
 ## Cost
 
-The `dh_window` costs one `xcalloc(N * sizeof(double))` (80 bytes at N=10)
-per *interrogated* value, lazily on the second observation. Per assignment
+The `dh_window` costs one `xcalloc(N * sizeof(double))` (80 bytes at the
+default N=10; the depth in force at the first push, see [The
+window](#the-window-1044)) per *interrogated* value, lazily on the second
+observation. Per assignment
 the cost is one buffer write + head advance, gated on the compile-time
 observer-tracking flag — values that no predicate or interrogative ever
 reads pay nothing. Free is handled in `free_value` before the `VAL_NUM`

@@ -6,7 +6,9 @@
  */
 
 #include "eigenscript.h"
+#include "fsutil.h"
 #include "vm.h"
+#include "task.h"
 #include "jit.h"
 #include "trace.h"
 #include <stdio.h>
@@ -387,16 +389,15 @@ int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
  * fields; the g_* identifiers are macros in eigenscript.h. No extern
  * decls needed here. */
 
-/* ---- Cross-TU helpers that no header declares (#744) ----
- * The value/env/dict constructors and accessors this file calls are all
- * declared in eigenscript.h — the re-declarations that used to sit here
- * were redundant copies free to drift from it (one still claimed
- * `observer_ensure_fresh` came from eval.c, a TU the bytecode VM replaced,
- * and `val_incref`/`val_decref`/`num_guard` are `static inline` in the
- * header, so the extern was inert). These three are the ones with no
- * header declaration to defer to; they stay until they get a home. */
-extern Value* builtin_free_val(Value *arg);                              /* builtins.c */
-extern int env_get_assign_count(Env *env, const char *name, uint32_t h); /* eigenscript.c */
+/* #744: this file no longer re-declares ANY cross-TU symbol. The value/env/
+ * dict constructors and accessors it calls are declared in eigenscript.h; the
+ * copies that used to sit here were free to drift from it (one still claimed
+ * `observer_ensure_fresh` came from eval.c, a TU the bytecode VM replaced, and
+ * `val_incref`/`val_decref`/`num_guard` are `static inline` in the header, so
+ * the extern was inert). The last two — `builtin_free_val` and
+ * `env_get_assign_count` — were homed in vm.h and eigenscript.h respectively,
+ * so the definitions are now checked against the declaration their callers
+ * see. Do not add a new extern here; give the symbol a header. */
 
 /* Inline fast-path for binding a single param into a fresh call env.
  * Caller guarantees `env->count == slot_idx` and `env->capacity > slot_idx`
@@ -619,6 +620,12 @@ static inline void dict_cache_insert(Value *dict, uint32_t h, int idx) {
 }
 
 static inline Value *dict_get_cached(Value *dict, const char *key, uint32_t h) {
+    /* #1057: a module namespace is a LIVE VIEW of the module env, so its
+     * own slots are only a mirror — the inline cache must not answer from
+     * them. Route to dict_get_hashed, which projects the current binding.
+     * The JIT's inline probe carries the same guard (emit_dict_cache_probe). */
+    if (__builtin_expect(dict->module_ns != 0, 0))
+        return dict_get_hashed(dict, key, h);
     DictCacheEntry *ce = dict_cache_probe(dict, h);
     if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
@@ -634,6 +641,10 @@ static inline Value *dict_get_cached(Value *dict, const char *key, uint32_t h) {
 }
 
 static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Value *val) {
+    if (__builtin_expect(dict->module_ns != 0, 0)) {   /* #1057: write through */
+        dict_set_hashed(dict, key, h, val);
+        return;
+    }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
     if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
@@ -661,6 +672,8 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
  * 1 if the in-place fast path fired; 0 means the caller must materialize
  * and call dict_set_cached. */
 static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) {
+    if (__builtin_expect(dict->module_ns != 0, 0))
+        return 0;                     /* #1057: never in-place on a mirror */
     DictCacheEntry *ce = dict_cache_probe(dict, h);
     if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
@@ -738,8 +751,6 @@ static inline EigsSlot slot_bridge_wrap(Value *v) {
     /* #262 Step E: nums never carry observer state → never TAG_TRACKED. */
     return slot_from_heap(v);
 }
-
-extern Value g_null_singleton_external_decl;  /* not used; doc only */
 
 static inline Value *slot_bridge_unwrap(EigsSlot s) {
     if (slot_is_num(s)) {
@@ -1579,13 +1590,25 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
 }
 
 void jit_helper_observe_assign_local(int slot) {
-    if (g_unobserved_depth != 0) return;
+    eigs_obs_count_call();   /* #972: entered — the emitter's inline gate test
+                              * is what keeps this at 0 for a read-free program */
+    /* #972: the gate first, before the slot is even resolved — mirrors the
+     * CASE body. The emitter inlines the same test ahead of the call, so this
+     * runs only with the gate open (or when the helper is reached some other
+     * way); kept so the helper is correct on its own. */
+    if (!eigs_obs_gate_open()) return;
     /* #262 Phase-3/E — slot model: observe the persistent (fn_env, slot)
      * trajectory directly from TOS. No promotion, no Value-side state, no window
      * migration (the slot persists across assigns). */
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
     Env *e = frame->fn_env;
+    if (g_unobserved_depth != 0) {
+        /* #1049: elided — value-window sample only (mirrors the CASE body). */
+        if (slot_is_num(s))      observer_slot_sample_num(e, slot, s.d);
+        else if (slot_is_ptr(s)) observer_slot_sample(e, slot, slot_as_ptr(s));
+        return;
+    }
     if (slot_is_num(s)) {
         observer_slot_update_num(e, slot, s.d);
         g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
@@ -1622,7 +1645,14 @@ void jit_helper_report_slot(int slot) {
 /* OP_OBSERVE_NAME_POST [name_idx] — observe a name binding's slot from TOS
  * after its SET. Peeks TOS; no stack change. Mirrors CASE(OBSERVE_NAME_POST). */
 void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
-    if (g_unobserved_depth != 0) return;
+    eigs_obs_count_call();   /* #972 — see jit_helper_observe_assign_local */
+    /* #972: gate closed -> nothing to record, so skip the name resolution and
+     * the slot lookup entirely (they were the measured residual: a read-free
+     * program resolved every assigned name only to return at the helper's
+     * gate test). #1049: inside `unobserved:` the name is still resolved when
+     * the gate IS open, so the elided assignment's sample reaches the value
+     * window; only the entropy update, alias and tape snapshot are skipped. */
+    if (!eigs_obs_gate_open()) return;
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
     /* #262 Phase-3 D: TOS may be an immediate num (the default path no longer
@@ -1634,6 +1664,11 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
     int oidx = -1, odepth = 0;
     Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
+    if (oe && oidx >= 0 && g_unobserved_depth != 0) {
+        if (slot_is_num(s)) observer_slot_sample_num(oe, oidx, s.d);
+        else                observer_slot_sample(oe, oidx, slot_as_ptr(s));
+        return;
+    }
     if (oe && oidx >= 0) {
         if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
         else observer_slot_update(oe, oidx, slot_as_ptr(s));
@@ -2692,6 +2727,8 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->off_thread_vm                = (int)offsetof(EigsThread, vm);
     out->off_thread_unobserved_depth  = (int)offsetof(EigsThread, unobserved_depth);
     out->off_vm_owner                 = (int)offsetof(VM, owner);
+    out->off_thread_state             = (int)offsetof(EigsThread, state);   /* #972 */
+    out->off_state_obs_needed         = (int)offsetof(EigsState, obs_needed);
     out->off_sp              = (int)offsetof(VM, sp);
     out->off_stack           = (int)offsetof(VM, stack);
     out->off_frame_count     = (int)offsetof(VM, frame_count);
@@ -2804,6 +2841,13 @@ static int vm_desc_unrecorded(EigsChunk *chunk, int line, const char *what) {
 }
 
 void vm_print_stack_trace(FILE *out) {
+    /* #1112: a spawned worker that runs a BUILTIN directly (`spawn of
+     * [recv, ch]`) never enters vm_execute, so eigs_current->vm is NULL on
+     * that thread; rt_error/builtin_throw print immediately there (no
+     * dispatch loop to defer to) and used to dereference g_vm here — the
+     * replay refusal of `recv` on such a worker died by SIGSEGV instead of
+     * exiting cleanly. No frames means no trace to print. */
+    if (!eigs_current || !eigs_current->vm) return;
     if (g_vm.frame_count <= 0) return;
     for (int i = g_vm.frame_count - 1; i >= 0; i--) {
         CallFrame *f = &g_vm.frames[i];
@@ -2861,12 +2905,8 @@ static const char *slot_type_name(EigsSlot s) {
 /* #408: forward decls — the copying-stack save/restore and the "who is
  * running" helper live with the scheduler below vm_execute; vm_run_ex's
  * resume/suspend paths call them. */
-static void task_restore_slice(Task *t);
-static void task_save_slice(Task *t);
-static Task *task_current_running(void);
-static void task_reap(Task *t);   /* #530 */
-static void task_apply_join_result(Task *t);   /* fill a join placeholder on resume */
-static void task_apply_recv_result(Task *t);   /* fill a recv placeholder on resume */
+/* The scheduler-slice hooks this dispatch loop calls are declared in
+ * task.h (#744) — task.c owns them. */
 
 /* vm_run_ex: the shared VM dispatch body. `resume` != NULL means resume a
  * suspended #408 task — restore its copying-stack slice onto the (empty) VM
@@ -5000,6 +5040,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * write, so report/predicate misclassify a slot-bound variable
          * (#129). */
         uint16_t slot = read_u16(ip); ip += 2;
+        /* #972: the gate test comes FIRST — before the TOS/slot resolution and
+         * the helper call. With the gate closed (#915: nothing in this state
+         * can interrogate the observer) every helper below returns at its own
+         * gate test anyway, so the only things this skips are the call and
+         * the bare-predicate alias, and the alias is unreadable while the
+         * gate is closed (OP_PREDICATE is a reader, which opens it at compile
+         * time; a descriptor's read after a mid-run arming raises through the
+         * #1027 gap guard before consulting it). Mirrors the JIT emitter's
+         * inline test (jit.c, emit_obs_gate_test). */
+        if (!eigs_obs_gate_open()) DISPATCH();
         if (g_unobserved_depth == 0) {
             /* #262 Phase-3/E — slot model: observe the binding's persistent
              * (fn_env, slot) ObserverSlot directly from TOS. No promotion (the
@@ -5014,6 +5064,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 observer_slot_update(e, (int)slot, slot_as_ptr(s));
                 g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
             }
+        } else {
+            /* #1049: elided assignment — the sample still enters the value
+             * window (O(1)); the entropy walk, the bare-predicate alias and
+             * the tape snapshot are what the block skips. See
+             * observer_slot_sample_num (eigenscript.c). */
+            EigsSlot s = g_vm.stack[g_vm.sp - 1];
+            Env *e = frame->fn_env;
+            if (slot_is_num(s))      observer_slot_sample_num(e, (int)slot, s.d);
+            else if (slot_is_ptr(s)) observer_slot_sample(e, (int)slot, slot_as_ptr(s));
         }
         DISPATCH();
     }
@@ -5229,7 +5288,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * still on TOS (SET peeked, didn't pop). Fixes the first-assignment
          * lag for name bindings. Emitted only under the compile-time flag. */
         uint16_t name_idx = read_u16(ip); ip += 2;
-        if (g_unobserved_depth == 0) {
+        /* #972: gate closed -> skip the name resolution, the slot lookup and
+         * the helper call outright (the measured residual: a read-free
+         * program hashed and resolved every assigned name only to return at
+         * the helper's gate test). #1049: inside `unobserved:` the binding is
+         * still resolved when the gate IS open, so the elided assignment's
+         * sample reaches the value window; the entropy update, the alias and
+         * the tape snapshot are what the block skips. Mirrors
+         * jit_helper_observe_name_post. */
+        if (eigs_obs_gate_open()) {
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             /* #262 Phase-3 D: TOS is now an immediate num for an observed name
              * (default path no longer promotes), or a heap value. Observe the
@@ -5240,7 +5307,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
                 int oidx = -1, odepth = 0;
                 Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
-                if (oe && oidx >= 0) {
+                if (oe && oidx >= 0 && g_unobserved_depth != 0) {
+                    if (slot_is_num(s)) observer_slot_sample_num(oe, oidx, s.d);
+                    else                observer_slot_sample(oe, oidx, slot_as_ptr(s));
+                } else if (oe && oidx >= 0) {
                     if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
                     else observer_slot_update(oe, oidx, slot_as_ptr(s));
                     g_last_obs_slot_env = oe;
@@ -5795,11 +5865,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
 
-        extern TokenList tokenize(const char *source);
-        extern ASTNode *parse(TokenList *tl);
-        extern void free_tokenlist(TokenList *tl);
-        extern void free_ast(ASTNode *ast);
-
         /* Source acquisition. The embedder's source provider
          * (eigs_set_source_provider) is consulted FIRST in every
          * profile; the filesystem chain is the hosted fallback and does
@@ -5837,69 +5902,37 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (!source) {
             char request[4096];
             char path_buf[8192];
+            char shadowed[8192];
 
-            extern char *read_file_util(const char *path, long *size);
 
             /* #1056: functions retain their containing file's directory
              * even when called after the importing/loading frame returns. */
             const char *resolve_base = eigs_current_file_dir();
 
-            /* #821: PROJECT-FIRST resolution. The user module `<name>.eigs`
-             * (script-relative, plus the chain's other locations and the
-             * eigs_modules walk) is tried BEFORE the stdlib's
-             * `lib/<name>.eigs`. The stdlib namespace grows over time, so
-             * under stdlib-first a new stdlib module could silently capture
-             * an existing project's import (dynamics' physics.eigs,
-             * F-DYN-8). Both requests are always probed: a name matching
-             * both is a collision worth a diagnostic whichever way
-             * resolution goes. */
-            char stdlib_buf[8192];
-            int user_origin = EIGS_RESOLVE_PROJECT;
-            snprintf(request, sizeof(request), "%.1024s.eigs", name);
-            int user_hit = resolve_eigenscript_file_from_ex(resolve_base, request,
-                                                             path_buf, sizeof(path_buf),
-                                                             &user_origin);
-            snprintf(request, sizeof(request), "lib/%.1024s.eigs", name);
-            int stdlib_hit = resolve_eigenscript_file_from_ex(resolve_base, request,
-                                                               stdlib_buf, sizeof(stdlib_buf),
-                                                               NULL);
-
-            /* #904: the bare `<name>.eigs` request also probes the installed
-             * stdlib roots, so on a machine that has run `make install` EVERY
-             * stdlib import came back with a "project" hit at
-             * `~/.local/lib/eigenscript/<name>.eigs` — a phantom collision
-             * (spurious warning on every import) AND a resolution bug: the
-             * installed copy won over the stdlib shipped with the binary
-             * being run, and over a bundle's own extracted lib/. A stdlib-root
-             * hit is the stdlib arm; it is never the project arm. */
-            if (user_hit && stdlib_hit && user_origin == EIGS_RESOLVE_STDLIB_ROOT)
-                user_hit = 0;
-
-            if (!user_hit && !stdlib_hit) {
+            /* #821: PROJECT-FIRST resolution, #904: a stdlib-root hit on the
+             * bare request is the stdlib arm. Both live in eigs_import_resolve
+             * (#1046) -- the ONE resolver, shared with the observer gate's
+             * compile-time pass in compiler.c, so the module the gate scanned
+             * before line 1 ran is the module compiled here. Resolving inline
+             * in this handler is what kept #915's import half open: a second
+             * copy would drift (#737). Do not re-inline it. */
+            if (!eigs_import_resolve(resolve_base, name, path_buf, sizeof(path_buf),
+                                     shadowed, sizeof(shadowed))) {
                 snprintf(request, sizeof(request), "%.1024s.eigs and lib/%.1024s.eigs", name, name);
                 eigs_file_resolve_error("import", resolve_base, request, current_line);
                 vm_push(make_null());
                 DISPATCH();
             }
-            if (user_hit && stdlib_hit &&
-                import_collision_first_report(name)) {
-                /* Same-file double hit is possible (e.g. a chain step that
-                 * resolves both request shapes to one path after symlinks) —
-                 * only a genuinely forked resolution is a collision. */
-                char ureal[8192], sreal[8192];
+            if (shadowed[0] && import_collision_first_report(name)) {
+                char ureal[8192];
                 if (!realpath(path_buf, ureal))
                     snprintf(ureal, sizeof(ureal), "%s", path_buf);
-                if (!realpath(stdlib_buf, sreal))
-                    snprintf(sreal, sizeof(sreal), "%s", stdlib_buf);
-                if (strcmp(ureal, sreal) != 0)
-                    fprintf(stderr, "Warning: import '%s' matches both a "
-                            "project file and a stdlib module — using '%s', "
-                            "shadowing '%s' (project-first; rename the file "
-                            "to use the stdlib module)\n",
-                            name, ureal, sreal);
+                fprintf(stderr, "Warning: import '%s' matches both a "
+                        "project file and a stdlib module — using '%s', "
+                        "shadowing '%s' (project-first; rename the file "
+                        "to use the stdlib module)\n",
+                        name, ureal, shadowed);
             }
-            if (!user_hit)
-                memcpy(path_buf, stdlib_buf, sizeof(path_buf));
 
             /* Module cache: canonicalize to absolute path so two different
              * importers (different cwds, different relative paths) hash to
@@ -5993,6 +6026,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * keeps top-level writes in the caller's current scope). */
         int saved_import_toplevel = g_compile_import_toplevel;
         g_compile_import_toplevel = 1;
+        /* #1046: the observer gate may have CLOSED on evidence gathered when
+         * the importing unit was compiled -- its eager pass resolved this
+         * literal import through the same resolver and scanned the module
+         * then. The module scanned and the module compiled now are two reads
+         * with the whole program in between; see builtin_load_file for the
+         * two shapes (rewrite, shadow) and for why the predicate is the
+         * module's OWN verdict against the sticky history-gap flag rather
+         * than a one-shot bit transition. ACQUIRE pairs with
+         * eigs_obs_enable's store order. */
+        int obs_before_module = obs_flag_load_acquire(obs_needed);
         EigsChunk *mod_chunk = compile_ast(ast, mod_env, source);
         g_compile_module_boundary = saved_boundary;
         g_compile_import_toplevel = saved_import_toplevel;
@@ -6000,6 +6043,25 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * eval must inherit its executing function's retained source directory,
          * even when that function is called by this imported module. */
         memcpy(g_import_resolve_dir, saved_resolve_dir, sizeof(saved_resolve_dir));
+        if (mod_chunk && chunk_reads_observer(mod_chunk) &&
+            (!obs_before_module || g_obs_history_gap)) {
+            obs_flag_store(obs_history_gap, 1);
+            g_parse_errors = saved_errors;
+            chunk_free(mod_chunk);
+            g_load_env = saved_load;
+            free_ast(ast);
+            free_tokenlist(&tl);
+            free(source);
+            env_decref(mod_env);
+            rt_error(EK_IO, current_line,
+                "import: '%s' reads observer state, but the observer gate was "
+                "closed when this program's earlier assignments ran — they have no "
+                "recorded history, so an observer query about them would answer a "
+                "rest value rather than the truth. Re-run with EIGS_OBS_FORCE=1.",
+                name);
+            vm_push(make_null());
+            DISPATCH();
+        }
         if (g_parse_errors > 0) {
             g_parse_errors = saved_errors;
             chunk_free(mod_chunk);
@@ -6037,6 +6099,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * (a fn-free module would otherwise be reclaimed immediately,
          * which is fine, but caching the env keeps observer-trace
          * identity stable across re-imports). */
+        /* #1057: the dict is a LIVE VIEW of mod_env, not a snapshot —
+         * `M.x` reads the module's current binding and `M.x is v` writes
+         * it. attach takes an owning ref on mod_env. */
+        eigs_module_ns_attach(mod_dict, mod_env);
         eigs_module_cache_put(abs_path, mod_dict, mod_env);
         env_decref(mod_env);
         vm_push(mod_dict);
@@ -6341,712 +6407,30 @@ static Value *vm_run(EigsChunk *chunk, Env *env, int call_argc) {
     return vm_run_ex(chunk, env, NULL, call_argc);
 }
 
+/* ---- The VM half of the task seam (#744) -------------------------------
+ * The cooperative scheduler (src/task.c) drives tasks through THIS dispatch
+ * loop, so it needs two ways in and one error accessor. They are wrappers,
+ * not promotions: `vm_run_ex` is the 3131-line dispatch function and
+ * `vm_take_error_value` is inlined into CHECK_ERROR, and making either
+ * externally visible would cost the compiler its interprocedural view of the
+ * hot loop to save three lines here. Both stay `static`.
+ *
+ * What did NOT move with the scheduler, and why: the `jit_helper_*` runtime
+ * ABI. It consumes the `static inline` vm_push / vm_pop / vm_slot_lift, so
+ * moving it needs those promoted to a private header first — a different
+ * change with a different risk profile (see #744 item 5). */
+Value *vm_task_run_entry(EigsChunk *chunk, Env *env, int call_argc) {
+    return vm_run_ex(chunk, env, NULL, call_argc);
+}
+Value *vm_task_resume(Task *t) {
+    return vm_run_ex(NULL, NULL, t, 0);   /* frame already exists */
+}
+Value *vm_task_take_error(void) {
+    return vm_take_error_value();
+}
+
 /* ---- Public API ---- */
 
-/* ===== #408 cooperative task scheduler ==================================
- * A trampoline just above the OUTERMOST vm_execute drives every task —
- * including task 0 (the main program) — so C-stack depth stays flat
- * (vm_execute → scheduler → one vm_run) no matter how often tasks ping-pong.
- * A task suspends by a builtin setting g_task_suspend_request; the CASE(CALL)
- * site saves its live stack+frame slice (the copying-stack model: memory =
- * live depth, not a full 1.28 MB VM per task) and returns here, which runs
- * the next ready task. Deterministic by construction — no tape records; the
- * interleaving is a pure function of program order.
- * ======================================================================== */
-
-#define TASK_READY_MAX HANDLE_TABLE_SIZE
-
-typedef struct {
-    int   ready[TASK_READY_MAX];  /* circular FIFO of runnable task ids (0=main) */
-    int   rhead, rcount;
-    int   current;                /* running task id; 0 = main */
-    int   live;                   /* spawned tasks not yet DONE/DEAD */
-    int   active;                 /* armed on first spawn */
-    int   dead_letters;           /* inc 2: sends to finished/unknown tasks */
-    int   detached_err_count;     /* #530: reaped detached tasks that died unobserved (#493 gate) */
-    uint64_t spawn_counter;       /* #535: monotonically increasing; stamps Task.spawn_seq */
-    double now;                   /* inc 3: virtual clock (logical, starts 0) */
-    int   seeded;                 /* inc 4: 1 once task_sched_seed installs a seed */
-    uint64_t rng_state;           /* inc 4: splitmix64 state for the seeded pick */
-    Task  main_task;              /* task 0 — save-buffer only, never "started" */
-} TaskScheduler;
-
-static TaskScheduler *sched_get(void) { return (TaskScheduler *)g_task_sched; }
-
-static TaskScheduler *sched_ensure(void) {
-    TaskScheduler *s = sched_get();
-    if (!s) {
-        s = xcalloc(1, sizeof(TaskScheduler));
-        s->main_task.id = 0;
-        s->main_task.state = TASK_RUNNING;
-        s->current = 0;
-        g_task_sched = s;
-    }
-    return s;
-}
-
-void task_sched_thread_free(void) {
-    TaskScheduler *s = sched_get();
-    if (!s) return;
-    Task *m = &s->main_task;
-    /* #483: main is USUALLY run-to-completion here (empty slice). But a fatal
-     * exit while main is still SUSPENDED — a `deadlock`, or main blocked on a
-     * join/recv that never resolves — leaves a live saved slice whose counted
-     * refs would otherwise leak: the base module frame owns a chunk ref (the
-     * script chunk, see vm_run's frame push), and the operand stack owns value
-     * refs. Release them, mirroring task_free's worker-slice teardown, before
-     * freeing the arrays. (owns_env is 0 for the module frame — the global env
-     * is dropped separately in main.c/eigs_close — so only chunk_decref here.) */
-    if (m->saved_stack) {
-        for (int i = 0; i < m->saved_stack_len; i++) slot_decref(m->saved_stack[i]);
-        free(m->saved_stack);
-    }
-    if (m->saved_frames) {
-        for (int i = 0; i < m->saved_frame_count; i++)
-            callframe_release(&m->saved_frames[i]);
-        free(m->saved_frames);
-    }
-    if (m->mbox) {
-        for (int i = 0; i < m->mbox_count; i++)
-            val_decref(m->mbox[(m->mbox_head + i) % m->mbox_cap]);
-        free(m->mbox);
-    }
-    if (m->result) val_decref(m->result);
-    if (m->error_value) val_decref(m->error_value);
-    free(s);
-    g_task_sched = NULL;
-}
-
-static Task *sched_lookup(TaskScheduler *s, int id) {
-    if (id == 0) return &s->main_task;
-    return (Task *)handle_lookup(id, HANDLE_TASK);
-}
-
-/* #493: does any worker still carry an uncaught-error death that no task_join
- * ever observed? Scanned once at process exit (before handle_table_drain frees
- * the tasks) so a fire-and-forget worker's death makes the process exit
- * non-zero instead of silently returning 0. */
-int task_any_unobserved_error(void) {
-    if (!g_task_sched) return 0;
-    /* #530: reaped detached tasks that died unobserved are counted, not held. */
-    if (((TaskScheduler *)g_task_sched)->detached_err_count > 0) return 1;
-    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
-        if (t && t->err_unobserved) return 1;
-    }
-    return 0;
-}
-
-static Task *task_current_running(void) {
-    TaskScheduler *s = sched_get();
-    return s ? sched_lookup(s, s->current) : NULL;
-}
-
-static void sched_ready_push(TaskScheduler *s, int id) {
-    if (s->rcount >= TASK_READY_MAX) return;   /* ids are table-bounded; can't overflow */
-    s->ready[(s->rhead + s->rcount) % TASK_READY_MAX] = id;
-    s->rcount++;
-}
-
-/* #530: drop tid's pending ready-queue entry. A task killed while READY (or
- * woken but not yet run) used to leave its entry behind; the trampoline
- * skips stale ids, but enough of them FILL the fixed queue and
- * sched_ready_push silently drops real wakeups — a spurious "deadlock".
- * A task has at most one entry (recv-wake is idempotent and a task must be
- * popped before it can re-enqueue), so one compacting pass suffices. */
-static void sched_ready_remove(TaskScheduler *s, int tid) {
-    int w = 0;
-    for (int k = 0; k < s->rcount; k++) {
-        int id = s->ready[(s->rhead + k) % TASK_READY_MAX];
-        if (id != tid) {
-            s->ready[(s->rhead + w) % TASK_READY_MAX] = id;
-            w++;
-        }
-    }
-    s->rcount = w;
-}
-
-/* Inc 4: splitmix64 — a deterministic, platform-independent integer PRNG for
- * the seeded scheduling strategy. Pure integer arithmetic (no float, no OS
- * entropy), so the pick sequence is a reproducible function of the installed
- * seed + program order — the seeded schedule replays byte-identically and
- * records no tape nondeterminism. */
-static uint64_t sched_rng_next(TaskScheduler *s) {
-    uint64_t z = (s->rng_state += 0x9E3779B97F4A7C15ULL);
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    return z ^ (z >> 31);
-}
-
-/* task_sched_seed: install a seed and switch the scheduler from FIFO
- * round-robin to a seeded pseudo-random pick of the next ready task. Ensures
- * the scheduler exists so the seed sticks even when set before the first
- * task_spawn. The interleaving stays deterministic — a DST varies the seed to
- * explore different interleavings, each fully reproducible. */
-void task_sched_set_seed(double seed) {
-    TaskScheduler *s = sched_ensure();
-    s->rng_state = (uint64_t)(int64_t)seed;   /* integer seeds; fractions truncate */
-    s->seeded = 1;
-}
-
-static int sched_ready_pop(TaskScheduler *s) {
-    if (s->rcount == 0) return -1;
-    if (!s->seeded || s->rcount == 1) {
-        /* Default FIFO: O(1) head pop — the fast path, unchanged. */
-        int id = s->ready[s->rhead];
-        s->rhead = (s->rhead + 1) % TASK_READY_MAX;
-        s->rcount--;
-        return id;
-    }
-    /* Seeded strategy: pick a pseudo-random ready task, then compact the hole
-     * by shifting the suffix down one (order-preserving among the rest). O(n)
-     * in the ready count, which is tiny and only paid in DST/seeded mode. */
-    int idx = (int)(sched_rng_next(s) % (uint64_t)s->rcount);
-    int id  = s->ready[(s->rhead + idx) % TASK_READY_MAX];
-    for (int k = idx; k < s->rcount - 1; k++) {
-        s->ready[(s->rhead + k) % TASK_READY_MAX] =
-            s->ready[(s->rhead + k + 1) % TASK_READY_MAX];
-    }
-    s->rcount--;
-    return id;
-}
-
-/* Copying-stack save: memcpy the running task's live slice [0,fc)/[0,sp) into
- * its right-sized save-buffer, then retreat the VM to empty. Refs move WITH
- * the bytes (the saved slots/frames own the same counted refs that were on
- * the stack), so sp/frame_count just retreat — no incref/decref, no walk. */
-static void task_save_slice(Task *t) {
-    if (!t) return;
-    int fc = g_vm.frame_count, sp = g_vm.sp;
-    free(t->saved_frames);
-    free(t->saved_stack);
-    t->saved_frames = fc ? xmalloc(sizeof(CallFrame) * fc) : NULL;
-    t->saved_stack  = sp ? xmalloc(sizeof(EigsSlot) * sp)  : NULL;
-    if (fc) memcpy(t->saved_frames, g_vm.frames, sizeof(CallFrame) * fc);
-    if (sp) memcpy(t->saved_stack,  g_vm.stack,  sizeof(EigsSlot) * sp);
-    t->saved_frame_count  = fc;
-    t->saved_stack_len    = sp;
-    t->saved_current_line = g_vm.current_line;
-    g_vm.frame_count = 0;
-    g_vm.sp = 0;
-    t->state = TASK_SUSPENDED;
-}
-
-/* Copying-stack restore: memcpy a suspended task's slice back onto the empty
- * VM. Symmetric with save — refs move back with the bytes. */
-static void task_restore_slice(Task *t) {
-    int fc = t->saved_frame_count, sp = t->saved_stack_len;
-    if (fc) memcpy(g_vm.frames, t->saved_frames, sizeof(CallFrame) * fc);
-    if (sp) memcpy(g_vm.stack,  t->saved_stack,  sizeof(EigsSlot) * sp);
-    g_vm.frame_count  = fc;
-    g_vm.sp           = sp;
-    g_vm.current_line = t->saved_current_line;
-    free(t->saved_frames); t->saved_frames = NULL;
-    free(t->saved_stack);  t->saved_stack  = NULL;
-    t->saved_frame_count = 0;
-    t->saved_stack_len   = 0;
-    t->state = TASK_RUNNING;
-}
-
-/* task_spawn (builtins.c) hands a freshly registered task here. */
-void task_sched_on_spawn(int id) {
-    TaskScheduler *s = sched_ensure();
-    s->active = 1;
-    s->live++;
-    /* #535: stamp spawn order. Handle IDs come from a rotating cursor, so
-     * they encode the process's WHOLE allocation history; any id-ordered
-     * tie-break makes the interleaving history-dependent. Spawn order is a
-     * pure function of the run. Main is 0 (spawn_counter starts at 1). */
-    Task *t = sched_lookup(s, id);
-    if (t) t->spawn_seq = ++s->spawn_counter;
-    sched_ready_push(s, id);
-}
-
-/* task_yield: mark the current task for suspension; the trampoline re-enqueues
- * it at the tail (round-robin) after the save. */
-void task_request_yield(void) { g_task_suspend_request = 1; }
-
-/* task_join: block the current task on `target`. Returns 0 for a bad target
- * (main, self, or unknown) so the builtin can fall back; 1 to suspend. A
- * target that is already finished is handled in the builtin (returns its
- * result without suspending). */
-int task_request_join(int target) {
-    TaskScheduler *s = sched_get();
-    if (!s || target == 0 || target == s->current) return 0;
-    Task *tt = sched_lookup(s, target);
-    if (!tt) return 0;
-    Task *cur = sched_lookup(s, s->current);
-    cur->join_target = target;
-    g_task_suspend_request = 1;
-    return 1;
-}
-
-/* ---- Inc 2: mailboxes -------------------------------------------------- */
-
-/* Append msg (ownership transferred in) to task `tid`'s FIFO mailbox and wake
- * it if it is blocked in task_recv. Returns 1 if delivered, 0 if dropped
- * because the target is gone (finished/unknown) — send-to-dead is a silent
- * drop plus a dead-letter count (Akka dead-letters / Erlang cast), NOT an
- * error: an error path here would be a nondeterminism magnet. */
-int task_deliver(int tid, Value *msg_owned) {
-    TaskScheduler *s = sched_get();
-    Task *t = s ? sched_lookup(s, tid) : NULL;
-    if (!t || t->state == TASK_DONE || t->state == TASK_DEAD) {
-        if (s) s->dead_letters++;
-        return 0;
-    }
-    if (t->mbox_count >= t->mbox_cap) {
-        int nc = t->mbox_cap ? t->mbox_cap * 2 : 8;
-        Value **nb = xmalloc(sizeof(Value *) * nc);
-        for (int i = 0; i < t->mbox_count; i++)
-            nb[i] = t->mbox[(t->mbox_head + i) % t->mbox_cap];
-        free(t->mbox);
-        t->mbox = nb; t->mbox_cap = nc; t->mbox_head = 0;
-    }
-    t->mbox[(t->mbox_head + t->mbox_count) % t->mbox_cap] = msg_owned;
-    t->mbox_count++;
-    /* Wake a recv-blocked receiver on the FIRST message that arrives while it
-     * waits on an empty mailbox (mbox_count just became 1). recv_blocked stays
-     * set so the resume path (task_apply_recv_result) delivers this message and
-     * clears it; the mbox_count==1 guard makes the enqueue idempotent — a
-     * second send before the receiver resumes finds count>1 and does not
-     * re-enqueue (which would put the task in the ready queue twice). */
-    if (t->recv_blocked && t->state == TASK_SUSPENDED && t->mbox_count == 1)
-        sched_ready_push(s, tid);
-    return 1;
-}
-
-int task_mbox_has(void) {
-    Task *t = task_current_running();
-    return (t && t->mbox_count > 0) ? 1 : 0;
-}
-
-Value *task_mbox_pop(void) {
-    Task *t = task_current_running();
-    if (!t || t->mbox_count == 0) return make_null();
-    Value *v = t->mbox[t->mbox_head];
-    t->mbox_head = (t->mbox_head + 1) % t->mbox_cap;
-    t->mbox_count--;
-    return v;   /* owned ref transfers to caller */
-}
-
-void task_request_recv(void) {
-    Task *t = task_current_running();
-    if (t) t->recv_blocked = 1;
-    g_task_suspend_request = 1;
-}
-
-/* ---- Inc 3: virtual time ---------------------------------------------- */
-
-/* task_sleep: the current task becomes runnable again when the virtual clock
- * reaches now + ticks. The trampoline advances the clock only when nothing is
- * runnable (see sched_wake_sleepers), so time is a pure function of program
- * order + sleep durations — no tape records, no wall clock. A negative sleep
- * is clamped to 0 (a same-tick yield to everything currently ready). */
-void task_request_sleep(double ticks) {
-    TaskScheduler *s = sched_get();
-    Task *t = task_current_running();
-    if (!s || !t) return;
-    double dt = ticks > 0 ? ticks : 0;
-    t->wake_at = s->now + dt;
-    t->sleeping = 1;
-    g_task_suspend_request = 1;
-}
-
-double task_virtual_now(void) {
-    TaskScheduler *s = sched_get();
-    return s ? s->now : 0;
-}
-
-/* task_self (builtins.c): the running task's id, in the same integer space
- * task_spawn returns — 0 for the main task, including before any scheduler
- * exists. Pure scheduler state, so no tape participation. */
-int task_current_id(void) {
-    TaskScheduler *s = sched_get();
-    return s ? s->current : 0;
-}
-
-/* When the ready queue is empty, advance the virtual clock to the earliest
- * sleeper's wake time and make every task due at (or before) that instant
- * runnable. Returns 1 if any sleeper was woken (the trampoline then loops),
- * 0 if there are no sleepers (genuine idle → done or deadlock). Ties at the
- * same wake_at are broken by ascending task id (main = 0 first), so the
- * interleaving stays deterministic. The clock only ever moves forward:
- * wake_at = now + dt >= now, so the min is never behind the current now. */
-static int sched_wake_sleepers(TaskScheduler *s) {
-    double best = 0; int have_best = 0;
-    if (s->main_task.state == TASK_SUSPENDED && s->main_task.sleeping) {
-        best = s->main_task.wake_at; have_best = 1;
-    }
-    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
-        if (t && t->state == TASK_SUSPENDED && t->sleeping &&
-            (!have_best || t->wake_at < best)) {
-            best = t->wake_at; have_best = 1;
-        }
-    }
-    if (!have_best) return 0;
-    s->now = best;
-    /* Wake main first, then tasks in ascending SPAWN order (#535) — NOT id
-     * order: ids come from a rotating next-fit cursor, so id order encodes
-     * the process's whole allocation history and two identical seeded runs
-     * in one process could interleave differently once slots recycle
-     * (surfaced by liferaft's in-sweep fault verify failing to reproduce
-     * standalone). Spawn order is a pure function of the run itself. */
-    if (s->main_task.state == TASK_SUSPENDED && s->main_task.sleeping &&
-        s->main_task.wake_at <= s->now) {
-        s->main_task.sleeping = 0;
-        sched_ready_push(s, 0);
-    }
-    for (;;) {
-        Task *next = NULL;
-        for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-            Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
-            if (t && t->state == TASK_SUSPENDED && t->sleeping && t->wake_at <= s->now &&
-                (!next || t->spawn_seq < next->spawn_seq))
-                next = t;
-        }
-        if (!next) break;
-        next->sleeping = 0;
-        sched_ready_push(s, next->id);
-    }
-    return 1;
-}
-
-/* Deterministic teardown of a task mid-run (task_kill): drop its mailbox and
- * saved slice, wake any joiner with an `interrupt` error, mark it DEAD. The
- * handle entry stays (task_alive → 0, joiners see DEAD); handle_table_drain
- * frees the struct at exit. Returns 0 for a bad/self/finished target. */
-int task_do_kill(int tid) {
-    TaskScheduler *s = sched_get();
-    if (!s || tid == 0 || tid == s->current) return 0;
-    Task *t = sched_lookup(s, tid);
-    if (!t || t->state == TASK_DONE || t->state == TASK_DEAD) return 0;
-    /* #530: a READY/woken victim holds a ready-queue entry — remove it so
-     * dead ids can never fill the queue and starve real wakeups. */
-    sched_ready_remove(s, tid);
-    /* Drain the mailbox. */
-    while (t->mbox_count > 0) {
-        val_decref(t->mbox[t->mbox_head]);
-        t->mbox_head = (t->mbox_head + 1) % t->mbox_cap;
-        t->mbox_count--;
-    }
-    free(t->mbox); t->mbox = NULL; t->mbox_cap = 0; t->mbox_head = 0;
-    /* Release the suspended slice's counted refs (mirror task_free's slice
-     * teardown) so a killed suspended task doesn't leak. */
-    if (t->saved_stack) {
-        for (int i = 0; i < t->saved_stack_len; i++) slot_decref(t->saved_stack[i]);
-        free(t->saved_stack); t->saved_stack = NULL; t->saved_stack_len = 0;
-    }
-    if (t->saved_frames) {
-        for (int i = 0; i < t->saved_frame_count; i++) {
-            CallFrame *f = &t->saved_frames[i];
-            /* A task killed while suspended INSIDE a try never runs the
-             * matching TRY_ENDs, and g_try_depth is a process global, not
-             * per-task: leaving it elevated makes rt_error's `g_try_depth == 0`
-             * gate suppress the diagnostic of every later uncaught error in
-             * the process — confirmed, the program exits 1 in silence (#726). */
-            g_try_depth -= f->try_count;
-            callframe_release(f);
-        }
-        if (g_try_depth < 0) g_try_depth = 0;
-        free(t->saved_frames); t->saved_frames = NULL; t->saved_frame_count = 0;
-    }
-    if (t->run_env) { env_decref(t->run_env); t->run_env = NULL; }
-    t->has_error = 1;
-    t->state = TASK_DEAD;
-    s->live--;
-    /* Wake joiners with an interrupt: on resume task_apply_join_result sees
-     * has_error and re-raises. Give them an error payload. */
-    if (!t->error_value) {
-        Value *ev = make_dict(3);
-        dict_set_owned(ev, "kind", make_str(err_kind_name(EK_INTERRUPT)));
-        dict_set_owned(ev, "message", make_str("task was killed"));
-        dict_set_owned(ev, "line", make_num(0));
-        t->error_value = ev;
-    }
-    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        Task *w = (Task *)handle_lookup(i, HANDLE_TASK);
-        if (w && w->state == TASK_SUSPENDED && w->join_target == tid)
-            sched_ready_push(s, w->id);
-    }
-    if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == tid)
-        sched_ready_push(s, 0);
-    /* #530: kill of a detached task is an explicit discard — reap now. (Kill
-     * is a deliberate teardown, never an uncaught error: no #493 counting.) */
-    if (t->detached) task_reap(t);
-    return 1;
-}
-
-/* On resuming a recv-blocked task, fill the placeholder the task_recv builtin
- * left on the stack top with the next mailbox message. */
-static void task_apply_recv_result(Task *t) {
-    /* Only a task that suspended INSIDE task_recv has a placeholder to fill.
-     * A task resuming from a plain task_yield/task_join must NOT have its
-     * mailbox drained here, even if a message arrived meanwhile. */
-    if (!t->recv_blocked) return;
-    t->recv_blocked = 0;
-    if (g_vm.sp > 0) {
-        slot_decref(g_vm.stack[g_vm.sp - 1]);
-        Value *msg;
-        if (t->mbox_count > 0) {
-            msg = t->mbox[t->mbox_head];
-            t->mbox_head = (t->mbox_head + 1) % t->mbox_cap;
-            t->mbox_count--;
-        } else {
-            msg = make_null();   /* woken without a message (killed sender race) */
-        }
-        g_vm.stack[g_vm.sp - 1] = slot_from_heap(msg);
-    }
-}
-
-/* Start a never-run spawned task: bind its deep-copied args into a fresh env
- * from the entry closure (the base frame borrows it — the Task owns run_env
- * across suspend/resume), then run at base 0 so it is suspendable. Mirrors
- * call_eigs_fn's param binding, but does not run to completion. */
-static Value *task_start(Task *t) {
-    Value *fn = t->entry_fn;
-    if (fn->type == VAL_BUILTIN) {          /* builtins never suspend — run direct */
-        Value *a = t->argc == 1 ? t->args[0] : make_null();
-        return fn->data.builtin(a);
-    }
-    Env *call_env = env_new(fn->data.fn.closure);
-    /* #989: same re-collect carve-out as every other entry point — a
-     * 1-parameter callee binds the WHOLE argument list (`one of [5, 6]` gives
-     * `a = [5, 6]`). This loop bound args[0] and silently dropped the rest.
-     * Over-arity on 2+-param callees is refused in builtin_task_spawn. */
-    if (fn->data.fn.param_count == 1 && t->argc > 1) {
-        Value *collected = make_list(t->argc);
-        for (int i = 0; i < t->argc; i++)
-            list_append(collected, t->args[i]);
-        env_set_local_owned(call_env, fn->data.fn.params[0], collected);
-    } else {
-        for (int i = 0; i < fn->data.fn.param_count && i < t->argc; i++)
-            env_set_local(call_env, fn->data.fn.params[i], t->args[i]);
-    }
-    t->run_env = call_env;                  /* Task owns it; base frame borrows */
-    t->started = 1;
-    EigsChunk *chunk = (EigsChunk *)fn->data.fn.body;
-    /* #997: pass the REAL argc. vm_run_ex's default of chunk->param_count
-     * marks every slot as caller-supplied, so every OP_DEFAULT_PARAM in the
-     * callee's prologue skipped and a defaulted parameter silently arrived as
-     * null — `d of 1` gives [1, 3] but `task_spawn of [d, 1]` gave [1, null].
-     * A re-collected single slot counts as one supplied argument. */
-    int supplied = (fn->data.fn.param_count == 1 && t->argc > 1) ? 1 : t->argc;
-    return vm_run_ex(chunk, call_env, NULL, supplied);
-}
-
-/* Record a task that just finished (returned or errored) and wake any joiner
- * blocked on it. `r` is the value vm_run returned (NULL on suspend — not this
- * path). g_has_error distinguishes a normal end from an uncaught error. */
-/* #530: release a task's handle slot and free the struct. Only for tasks
- * nobody will join (detached) — a reaped id reads as unknown afterwards
- * (task_alive 0, task_join null) and the slot is immediately reusable. */
-static void task_reap(Task *t) {
-    int id = t->id;
-    task_free(t);
-    handle_release(id);
-}
-
-/* #530: mark `tid` fire-and-forget. A detached task is reaped the moment it
- * finishes — or immediately here if it already has — so its handle slot
- * returns to the pool instead of holding the table until process exit. An
- * already-dead unobserved error moves to the scheduler-level counter so the
- * #493 exit gate survives the reap. The RUNNING task may detach itself.
- * Returns 1 on success, 0 for main (task 0) or an unknown id. */
-int task_do_detach(int tid) {
-    TaskScheduler *s = sched_get();
-    if (!s || tid == 0) return 0;
-    Task *t = sched_lookup(s, tid);
-    if (!t) return 0;
-    if (t->state == TASK_DONE || t->state == TASK_DEAD) {
-        if (t->err_unobserved) s->detached_err_count++;
-        task_reap(t);
-        return 1;
-    }
-    t->detached = 1;
-    return 1;
-}
-
-static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
-    /* A task that ended (returned OR died) while its per-thread arena is still
-     * active — arena_mark with no matching arena_reset, e.g. the arena-suspend
-     * guard raised inside the scope — must not leave the arena active: (1) its
-     * error dict / result below outlive the task and cross to the joiner, so
-     * they must be heap, not arena (a later arena_reset would dangle them); and
-     * (2) the next task must start from a clean arena baseline. The suspend
-     * guard guarantees a task never *yields* with the arena active, so the only
-     * way it's active here is an ending task that leaked the scope. */
-    g_arena.active = 0;
-    if (g_has_error) {
-        t->has_error = 1;
-        t->error_value = vm_take_error_value();  /* the {kind,message,line} dict */
-        g_has_error = 0;
-        /* #493: a worker that dies of an uncaught error must fail the process
-         * if nothing ever joins it. Main (task 0) already propagates its own
-         * error via the trampoline's return, so only mark workers here; a
-         * later task_join on this task clears the flag. */
-        if (t->id != 0) t->err_unobserved = 1;
-        if (r) val_decref(r);
-        t->result = NULL;
-    } else {
-        t->result = r ? val_clone_for_send(r) : NULL;   /* share-nothing result */
-        if (r) val_decref(r);
-    }
-    t->state = t->has_error ? TASK_DEAD : TASK_DONE;
-    if (t->id != 0) s->live--;
-    if (t->run_env) { env_decref(t->run_env); t->run_env = NULL; }
-    /* Wake every task blocked on this one: enqueue it; on resume the join
-     * builtin's placeholder gets overwritten with our result (or re-raise). */
-    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        Task *w = (Task *)handle_lookup(i, HANDLE_TASK);
-        if (w && w->state == TASK_SUSPENDED && w->join_target == t->id)
-            sched_ready_push(s, w->id);
-    }
-    if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == t->id)
-        sched_ready_push(s, 0);
-    /* #530: a detached task's outcome is nobody's to consume — reap the slot
-     * now so task-per-message workloads aren't bounded by lifetime spawns.
-     * An uncaught death still fails the process: the #493 flag moves to the
-     * scheduler counter before the slot frees (the trace already printed). */
-    if (t->id != 0 && t->detached) {
-        if (t->err_unobserved) s->detached_err_count++;
-        task_reap(t);
-    }
-}
-
-/* On resuming a task that was blocked in task_join, replace the placeholder
- * null the builtin left on the stack top with the joinee's result — or, if
- * the joinee died, re-raise its error in the joiner. Called from vm_run_ex's
- * resume path (after the stack is restored). */
-static void task_apply_join_result(Task *t) {
-    TaskScheduler *s = sched_get();
-    if (!s || t->join_target == 0) return;
-    Task *jt = sched_lookup(s, t->join_target);
-    t->join_target = 0;
-    if (!jt) return;
-    if (jt->has_error) {
-        jt->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
-        /* Re-raise: restore the error payload so the joiner's CHECK_ERROR
-         * catches/propagates it as if the throw happened at the join. */
-        if (jt->error_value) {
-            g_error_value = jt->error_value;
-            val_incref(g_error_value);
-            g_error_kind = (int)EK_USER;
-        }
-        snprintf(g_error_msg, sizeof(g_error_msg), "joined task %d failed", jt->id);
-        g_has_error = 1;
-        return;
-    }
-    /* Overwrite TOS placeholder with the joinee's (already deep-copied) result. */
-    if (g_vm.sp > 0) {
-        slot_decref(g_vm.stack[g_vm.sp - 1]);
-        Value *res = jt->result ? jt->result : make_null();
-        val_incref(res);
-        g_vm.stack[g_vm.sp - 1] = slot_from_heap(res);
-    }
-}
-
-/* The trampoline. Entered from the outermost vm_execute once main (task 0)
- * has first suspended. Drives tasks round-robin until the ready queue drains,
- * then returns main's result. All-tasks-blocked = deadlock (loud, not a hang).
- * Task 0 finishing kills outstanding tasks (kill-outstanding ruling). */
-static Value *scheduler_trampoline(TaskScheduler *s) {
-    for (;;) {
-        int id = sched_ready_pop(s);
-        if (id < 0) {
-            /* Nothing runnable now. Sleepers waiting on the virtual clock are
-             * not a deadlock — advance time to the earliest wake and retry
-             * before deciding anything is stuck. */
-            if (sched_wake_sleepers(s)) continue;
-            /* Genuinely nothing runnable. If main already finished, we're done.
-             * If tasks remain live (blocked on joins that can't resolve), that's
-             * a deadlock — raise it loudly rather than hang. */
-            if (s->main_task.state == TASK_DONE || s->main_task.state == TASK_DEAD) {
-                if (s->main_task.has_error) {
-                    g_error_value = s->main_task.error_value;
-                    s->main_task.error_value = NULL;
-                    g_has_error = 1;
-                    return make_null();
-                }
-                Value *r = s->main_task.result;
-                s->main_task.result = NULL;
-                return r ? r : make_null();
-            }
-            /* #509: deadlock is a normal runtime error, not a hang — make it
-             * CATCHABLE. main is guaranteed SUSPENDED here (the DONE/DEAD case
-             * returned above), blocked at a task_join/recv. Build the structured
-             * error at main's blocked line (vm_take_error_value later lazily
-             * turns g_error_kind/raw/line into a {kind,message,line} dict, so
-             * e.kind == "deadlock"). We drive the print/handling ourselves and
-             * do NOT go through rt_error's g_try_depth-gated print: g_try_depth
-             * is a global, not part of a task's saved slice, so a suspended
-             * worker's still-open try can leave it non-zero here. */
-            Task *m = &s->main_task;
-            int catchable = 0;
-            for (int i = 0; i < m->saved_frame_count; i++)
-                if (m->saved_frames[i].try_count > 0) { catchable = 1; break; }
-            g_error_kind = (int)EK_DEADLOCK;
-            g_error_line = m->saved_current_line;
-            snprintf(g_error_raw, sizeof(g_error_raw),
-                     "all tasks are blocked — deadlock");
-            snprintf(g_error_msg, sizeof(g_error_msg),
-                     "Error line %d: all tasks are blocked — deadlock", g_error_line);
-            g_has_error = 1;
-            eigs_clear_error_value();
-            if (catchable) {
-                /* Deliver at main's blocked site: clear the block reason so the
-                 * resume doesn't fill a normal join/recv result, then re-enqueue
-                 * main. The loop resumes it with g_has_error set → CHECK_ERROR
-                 * unwinds to the handler (which reads e.kind == "deadlock"). */
-                m->join_target = 0;
-                m->recv_blocked = 0;
-                m->sleeping = 0;
-                sched_ready_push(s, 0);
-                continue;
-            }
-            /* No handler in main → terminal: print loudly, exit non-zero. (No
-             * stack trace: between tasks g_vm has no live frames.) */
-            fprintf(stderr, "%s\n", g_error_msg);
-            return make_null();
-        }
-        Task *t = sched_lookup(s, id);
-        if (!t || t->state == TASK_DONE || t->state == TASK_DEAD) continue;
-        s->current = id;
-
-        Value *r;
-        if (t->state == TASK_SUSPENDED) {
-            /* Resume (the join placeholder, if any, is filled inside the
-             * resume path via task_apply_join_result). */
-            r = vm_run_ex(NULL, NULL, t, 0);   /* resume: frame already exists */
-        } else {
-            r = task_start(t);   /* never-run task: bind args + run at base 0 */
-        }
-
-        if (t->state == TASK_SUSPENDED) {
-            /* It suspended again. task_yield → re-enqueue; task_join → stay
-             * blocked (woken by sched_finish); task_recv on an empty mailbox →
-             * stay blocked (woken by task_deliver); task_sleep → stay blocked
-             * (woken by sched_wake_sleepers when the clock reaches wake_at). */
-            if (t->join_target == 0 && !t->recv_blocked && !t->sleeping)
-                sched_ready_push(s, id);
-        } else {
-            sched_finish(s, t, r);
-            /* kill-outstanding: main ending tears the rest down deterministically. */
-            if (id == 0) break;
-        }
-    }
-    /* main finished with tasks still outstanding → reap them (kill-outstanding). */
-    if (s->main_task.has_error) {
-        g_error_value = s->main_task.error_value;
-        s->main_task.error_value = NULL;
-        g_has_error = 1;
-        return make_null();
-    }
-    Value *r = s->main_task.result;
-    s->main_task.result = NULL;
-    return r ? r : make_null();
-}
 
 static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc);
 
@@ -7110,30 +6494,8 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
     int outermost = (g_vm.frame_count == 0);
     Value *r = vm_run(chunk, env, call_argc);
     if (!outermost) return r;
-    TaskScheduler *s = sched_get();
-    if (!s || !s->active) return r;
-    /* main (task 0) either finished (no task ever blocked) or suspended. If it
-     * suspended, its slice is saved; drive the trampoline. If it finished but
-     * tasks are still live, drive them too (kill-outstanding at main's end). */
-    if (s->main_task.state == TASK_SUSPENDED) {
-        /* main's first suspension happened in the initial vm_run, outside the
-         * trampoline — enqueue it now so it resumes round-robin, UNLESS it
-         * blocked on a join (sched_finish wakes it), a recv (task_deliver
-         * wakes it), or a sleep (sched_wake_sleepers wakes it). Mirrors the
-         * trampoline's re-enqueue guard. */
-        if (s->main_task.join_target == 0 && !s->main_task.recv_blocked &&
-            !s->main_task.sleeping)
-            sched_ready_push(s, 0);
-        return scheduler_trampoline(s);
-    }
-    /* main ran to completion without ever suspending. Record its result and,
-     * if any spawned task is still runnable, drive them (kill-outstanding). */
-    if (s->live > 0 && s->rcount > 0) {
-        s->main_task.state = TASK_DONE;
-        s->main_task.result = r ? val_clone_for_send(r) : NULL;
-        if (r) val_decref(r);
-        Value *mr = scheduler_trampoline(s);
-        return mr;
-    }
-    return r;
+    /* #744: TaskScheduler and the trampoline live in task.c. This is the one
+     * place the VM hands control to them; with no scheduler armed it returns
+     * `r` unchanged, so a program that never spawns pays one call. */
+    return task_sched_after_outermost(r);
 }

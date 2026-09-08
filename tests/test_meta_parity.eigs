@@ -123,6 +123,194 @@ check of ["paren'd 1-elem literal binds whole list (#355)", eigen_run of spread_
 spread_src_fill is "define f3(a, b, c) as:\n    if c == null:\n        return a + b\n    return 0\nf3 of [1, 2]"
 check of ["short spread null-fills trailing params", eigen_run of spread_src_fill, 3]
 
+# --- #1102/#1111: `report` / `report_value` are reserved observer forms ---
+# Native: the shared parser rejects every binding position and every
+# non-identifier operand with E005 before the unit runs (`eval` raises kind
+# "parse"). Meta: lib/eigen.eigs's tokenizer/parser must reject the same
+# programs, with a message that carries the runtime's E005 shape. Each probe
+# asserts BOTH sides raise (the div-by-zero pattern above, on both oracles).
+define both_reject(label, src) as:
+    local native_kind is "did not raise"
+    try:
+        eval of src
+    catch ne:
+        native_kind is ne.kind
+    check of [f"native E005 (parse) rejects: {label}", native_kind, "parse"]
+    local meta_msg is "did not raise"
+    try:
+        eigen_run of src
+    catch me:
+        meta_msg is me
+    check of [f"meta rejects: {label}", contains of [meta_msg, "is a reserved observer form"], 1]
+    check of [f"meta names E005: {label}", contains of [meta_msg, "[E005]"], 1]
+
+# binding positions (the issue's two probes first)
+both_reject of ["report is 4 / print of report", "report is 4\nprint of report"]
+both_reject of ["define report(v) shadows the form", "define report(v) as:\n    return \"mine\"\nrx is 1\nrx is 2\nprint of (report of rx)"]
+both_reject of ["report_value is 4 / print of report_value", "report_value is 4\nprint of report_value"]
+both_reject of ["define report_value(v)", "define report_value(v) as:\n    return 1"]
+both_reject of ["bare report as a value", "rb is 1\nprint of report"]
+both_reject of ["report as a parameter", "define rf(a, report) as:\n    return a"]
+both_reject of ["report_value as a lambda parameter", "rg is (a, report_value) => a"]
+both_reject of ["report as a for variable", "for report in [1]:\n    print of 1"]
+both_reject of ["report as a comprehension variable", "rys is [1 for report in [1]]"]
+both_reject of ["report_value as a catch name", "try:\n    rt is 1\ncatch report_value:\n    rt is 2"]
+# non-identifier operands (replaces the old `report of 5` == "equilibrium" pin)
+both_reject of ["report of 5", "report of 5"]
+both_reject of ["report_value of (x + 1)", "rq is 1\nreport_value of (rq + 1)"]
+both_reject of ["report of -x", "ru is 1\nreport of -ru"]
+both_reject of ["report of d.field", "rd is {\"a\": 1}\nreport of rd.a"]
+both_reject of ["report of ([1])", "report of ([1])"]
+
+# an UNBOUND identifier operand is a run-time error on both sides
+unb_native is "did not raise"
+try:
+    eval of "report of nope_report_operand"
+catch une:
+    unb_native is une.kind
+check of ["native: report of unbound raises undefined_name", unb_native, "undefined_name"]
+unb_meta is "did not raise"
+try:
+    eigen_run of "report of nope_report_operand"
+catch ume:
+    unb_meta is ume
+check of ["meta: report of unbound raises", contains of [unb_meta, "undefined variable"], 1]
+
+# positive controls: a bound identifier operand still works on both sides.
+# Values are the documented divergence (the meta bridge classifies the VALUE
+# with no host trajectory -> "equilibrium"; host functions -> "opaque"), so
+# the native side is pinned as "does not raise, returns a string".
+pv_native is eval of "pv1 is 1\npv1 is 2\nreport of pv1"
+check of ["native: report of bound ident returns a label", type of pv_native, "str"]
+check of ["meta: report of bound ident (bridge fallback)", eigen_run of "pv2 is 1\npv2 is 2\nreport of pv2", "equilibrium"]
+check of ["meta: report_value of bound ident (bridge fallback)", eigen_run of "pv3 is 1\npv3 is 2\nreport_value of pv3", "equilibrium"]
+check of ["meta: parenthesised identifier operand", eigen_run of "pv4 is 1\nreport of (pv4)", "equilibrium"]
+check of ["meta: report_value of ((x))", eigen_run of "pv5 is 1\nreport_value of ((pv5))", "equilibrium"]
+check of ["meta: `of` binds the identifier only (report of x + \"!\")", eigen_run of "pv6 is 1\nreport of pv6 + \"!\"", "equilibrium!"]
+check of ["native: `of` binds the identifier only", ends_with of [eval of "pv7 is 1\nreport of pv7 + \"!\"", "!"], 1]
+check of ["meta: host function operand is opaque", eigen_run of "report of print", "opaque"]
+check of ["meta: dict fields named report/report_value stay data keys", eigen_run of "rdk is {\"report\": 7, \"report_value\": 8}\nrdk.report is 9\nrdk.report + rdk.report_value", 17]
+check of ["native: dict fields named report/report_value stay data keys", eval of "rdn is {\"report\": 7, \"report_value\": 8}\nrdn.report is 9\nrdn.report + rdn.report_value", 17]
+
+# --- #1105: a fresh `for` binder is loop-scoped in a function too (both raise) ---
+define meta_probe(src) as:
+    try:
+        return ["ok", eigen_run of src]
+    catch pe:
+        return ["err"]
+check of ["fresh function binder: meta raises after the loop",
+    meta_probe of "define probe() as:\n    for z in [7, 8]:\n        0\n    return z\nprobe of []",
+    ["err"]]
+check of ["fresh module binder: meta raises after the loop",
+    meta_probe of "for m in [7, 8]:\n    0\nm",
+    ["err"]]
+check of ["parameter binder: restored after the loop",
+    meta_probe of "define f(p) as:\n    for p in [7, 8]:\n        p is p + 10\n    return p\nf of 1",
+    ["ok", 1]]
+check of ["fresh binder over a module name: module value after the loop",
+    meta_probe of "x is 5\ndefine g() as:\n    for x in [7, 8]:\n        0\n    return x\ng of []",
+    ["ok", 5]]
+check of ["post-loop write is a fresh binding",
+    meta_probe of "define h() as:\n    for z in [7, 8]:\n        0\n    z is 5\n    return z\nh of []",
+    ["ok", 5]]
+# The C VM answers the same five programs (the oracle side of the parity).
+define vm_probe(src) as:
+    try:
+        return ["ok", eval of src]
+    catch ve:
+        return ["err"]
+check of ["VM: fresh function binder raises",
+    vm_probe of "define probe1105() as:\n    for z in [7, 8]:\n        0\n    return z\nprobe1105 of []",
+    ["err"]]
+check of ["VM: parameter binder restored",
+    vm_probe of "define f1105(p) as:\n    for p in [7, 8]:\n        p is p + 10\n    return p\nf1105 of 1",
+    ["ok", 1]]
+
+# --- #1057: `import` resolution, and the module-namespace rule on both sides ---
+#
+# The C evaluator makes a namespace a LIVE VIEW of the module env: `M.x` reads
+# M's CURRENT binding, `M.x is v` writes it, and `_`-prefixed module bindings
+# are never projected or written. lib/eigen.eigs carries the mirror
+# (`_eigen_module_envs`, consulted by `dot`/`dot_assign`).
+#
+# Every row below asserts BOTH evaluators on the SAME source, the way the
+# #1111 and #1105 rows do. `parity` runs the source through eigen_run and
+# through the C `eval` and requires the same answer from each.
+#
+# These import a STDLIB module by NAME on purpose. `import` has to answer the
+# same module from any working directory: eigen.eigs used to read its module
+# with `read_text of ("lib/" + name + ".eigs")`, which is cwd-relative AND
+# answers "" for an absent path (read_text's documented answer) — so the
+# namespace came back silently EMPTY from every cwd but the repo root, and a
+# misspelt module name produced an empty namespace, not a raise.
+# `_eigen_module_path` now mirrors the C resolver's chain (cwd, then the
+# stdlib root beside the binary) and raises when nothing resolves; the `chdir`
+# row below is the gate on the cwd half, since this file is run from `src/` by
+# the suite and from the repo root by hand.
+
+define meta_probe(src) as:
+    try:
+        return ["ok", eigen_run of src]
+    catch me:
+        return ["err"]
+
+define parity(label, src, want) as:
+    check of [f"meta: {label}", meta_probe of src, want]
+    check of [f"VM: {label}", vm_probe of src, want]
+
+parity of ["a public module binding is in the namespace",
+    "import log\nhas_key of [log, \"log_info\"]", ["ok", 1]]
+parity of ["a `_` module binding reads as null through the namespace",
+    "import log\nlog._log_min_level", ["ok", null]]
+parity of ["a `_` module binding is not a namespace key",
+    "import log\nhas_key of [log, \"_log_min_level\"]", ["ok", 0]]
+parity of ["a key written through the namespace reads back",
+    "import map\nmap.probe1057 is 7\nmap.probe1057", ["ok", 7]]
+parity of ["a key written through the namespace becomes a namespace key",
+    "import map\nmap.probe1057 is 7\nhas_key of [map, \"probe1057\"]", ["ok", 1]]
+parity of ["a `_` key written through the namespace reads back (stays private)",
+    "import log\nlog._log_min_level is 3\nlog._log_min_level", ["ok", 3]]
+parity of ["an unresolvable module raises, it does not import empty",
+    "import no_such_module_1057\n1", ["err"]]
+
+# The namespace is a view of the module the IMPORT produced, not of the name:
+# rebind the name to an ordinary dict and both evaluators stop answering from
+# the module. (The C evaluator carries the module env on the namespace VALUE;
+# eigen.eigs registers it under the name, so it has to check that the target
+# still IS that namespace.)
+parity of ["rebinding the name drops the module view",
+    "import log\nlog is {}\nlog.log_info", ["ok", null]]
+parity of ["rebinding the name drops the module keys",
+    "import log\nlog is {}\nhas_key of [log, \"log_info\"]", ["ok", 0]]
+
+# The cwd gate. Run the same import from a directory that has no `lib/`: both
+# evaluators must still answer the stdlib module beside the binary. Done in a
+# temp cwd and restored immediately, so a failure below cannot leave the rest
+# of the file running somewhere else.
+_mp_cwd is getcwd of null
+chdir of "/tmp"
+_mp_meta_elsewhere is meta_probe of "import log\nhas_key of [log, \"log_info\"]"
+_mp_vm_elsewhere is vm_probe of "import log\nhas_key of [log, \"log_info\"]"
+chdir of _mp_cwd
+check of ["meta: import resolves from a cwd with no lib/", _mp_meta_elsewhere, ["ok", 1]]
+check of ["VM: import resolves from a cwd with no lib/", _mp_vm_elsewhere, ["ok", 1]]
+
+# GAP CANARY (a real gap, asserted as it behaves today). The live half of the
+# rule — a module FUNCTION mutating a module global and the importer seeing it
+# — has no parity row, because meta functions cannot read module globals at
+# all: `eigen_eval`'s "call" arm parents the call env on the CALLER's env, not
+# on the definition env ("func" stores no env, by an explicit choice to keep
+# function values acyclic). So `log.log_level of "warn"` throws
+# "undefined variable '_log_level_num'" in the meta-interpreter while the C
+# evaluator runs it. That is OLDER and SEPARATE from #1057. When this row goes
+# red, check which of the two moved — meta functions became lexically scoped
+# (then add the live round-trip rows here), or lib/log.eigs stopped reading a
+# module global from a public function (then pick another module).
+check of ["GAP: a meta module function cannot read a module global",
+    meta_probe of "import log\nlog.log_level of \"warn\"", ["err"]]
+check of ["VM: the same module function call succeeds",
+    vm_probe of "import log\nlog.log_level of \"warn\"", ["ok", null]]
+
 if checks == passed:
     print of "All tests passed"
 else:

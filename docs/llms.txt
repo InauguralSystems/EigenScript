@@ -68,11 +68,12 @@ not any outer `n`.
 - Two `local` traps: each **sibling `if`/`elif`/`else` branch** needs its own
   `local` for a first assignment (a `local` in one branch doesn't run for
   another), and a first assignment inside a `loop while` body needs `local`.
-- `if` blocks do NOT create a scope (assignments leak out). a `for` binder is loop-scoped
-  and never writes an outer binding; plain `is` in its body binds in the
-  enclosing scope, including an imported module. A fresh function-local
-  binder currently retains its slot after the loop (the existing exception). Comprehension variables
-  DO leak.
+- `if` blocks do NOT create a scope (assignments leak out). A `for` binder is loop-scoped
+  everywhere -- module scope AND inside a function -- and never writes an outer
+  binding; reading it after the loop is `undefined variable` (a pre-existing
+  parameter/local/module binding is restored instead). Plain `is` in its body
+  binds in the enclosing scope, including an imported module. Comprehension
+  variables DO leak.
 
 ## Reserved and soft keywords (cannot be plain variable names)
 
@@ -111,12 +112,24 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.4142135623
 - `report of x` returns the routed state string (value channel for numeric
   bindings, entropy channel otherwise); `report_value of x` uses the value
   channel explicitly. Both read the named binding's trajectory.
+- Numeric verdicts are over the value's RELATIVE step, `Δv / max(|v|, |v_prev|,
+  scale)`, N samples deep: unit-free above `scale` (`set_observer_scale`,
+  default 1e-3), an absolute floor `dh_zero*scale` below it; a decay toward
+  zero reads `improving` until inside the scale. A mode slower than N samples
+  of your cadence cannot fold in the window — `set_observer_window of ["x", n]`
+  (4..64; default 10, `set_observer_window of n`) so N >= period/step.
+- Trajectory is keyed to a binding's env slot, never to a value: a dict field,
+  list element, parameter or `for` binder has none, and ONE binding rebound
+  from `fleet[i][2]` in a loop carries the interleave of every entity (lint
+  `W024`) — give each entity its own named binding or a closure per entity.
 - `converged` needs LOW absolute entropy on top of a settled window: a value
   pinned at `5.0` reports `stable`, never `converged`; pinned at `0.0`/`1.0` it
   converges. Don't guess the predicate — see docs/PREDICATES.md.
 - Temporal reads: `prev of x` (value before the last assignment),
   `what is x at 12` / `state_at of 12` (past-line state). Bare `x at 12` is a
-  parse error. Wrap hot loops in `unobserved:` to skip observer bookkeeping.
+  parse error. Wrap hot loops in `unobserved:` to skip the observer's entropy
+  walk (a scalar's value-window sample still lands, so numeric verdicts do not
+  change; `why`/`how` and non-numeric bindings' verdicts can).
 
 ## Values and strings
 
@@ -124,10 +137,23 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.4142135623
   (in place) or a comprehension — `xs + ys` is a runtime error.
 - Numbers are f64 and finite by construction: `NaN` collapses to `0`, overflow
   saturates at ±1e308, `sqrt of -1` is `0`. Integer bit ops are `bit_and`/`&`
-  etc. on int64; exactness ends at 2^53.
+  etc. on int64; exactness ends at 2^53. `EIGS_STRICT=1` makes the stand-ins
+  loud: out-of-domain math, a NaN result, a wrong-typed builtin argument and a
+  malformed `json_path` document raise catchable errors instead.
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
 - f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`.
+
+## Numeric vectors: `buffer`, not `list`
+
+- `buffer of n` (and `zeros of n`, which returns a **buffer**) is the flat
+  `double[]` container: index/slice/iterate like a list, numbers only, and the
+  fast path for the JIT and the AOT. `str of` a buffer is `<buffer:n>`.
+- `zeros of [rows, cols]` still builds the nested LIST tensor; `buffer of
+  [r, c]` / `reshape of [buf, r, c]` build the flat-backed matrix.
+- Every tensor builtin (`add` … `pow`, `sqrt`/`exp`/`log`/`negative`, `matmul`,
+  `softmax`, `relu`, `sum`/`mean`/`norm`, `gather`, `zeros_like`) takes either
+  container and returns a buffer iff every tensor operand was one.
 
 ## Lists, dicts, control flow (quick shapes)
 
@@ -175,13 +201,21 @@ The runtime has ~255 builtins and `lib/` covers a lot. `ord`/`chr`/`str_lower`/
 (there is no bare `lower` — it's `str_lower`; `sort_by of [items, key_fn]` is
 the record-shaped sort and needs no import). `lib/` has `string.pad_left`,
 `format.fmt_*`, `checksum.crc32`, civil-date math in `datetime`, and
-`list.filter`/`list.reduce`. **`lib/` functions are NOT ambient** — reach them
-one of two ways:
+`list.filter`/`list.reduce`, and reverse-mode autograd on shaped buffers in
+`autograd` (`ag_tape`/`ag_leaf`/`ag_matmul`…/`ag_backward`/`ag_grad` — never
+hand-roll backprop or train with `numerical_grad`). **`lib/` functions are NOT
+ambient** — reach them one of two ways:
 
 ```eigenscript
 import list                              # namespaced: list.filter of [xs, fn]
 load_file of "lib/list.eigs"             # bare names: filter of [xs, fn]
 ```
+
+A module namespace is a **live view** of that module's bindings, not a
+snapshot (#1057): `m.x` reads the module's current `x` and `m.x is v`
+writes it, for a number or string exactly as for a dict or list. There is
+no "box module state in a container or importers go stale" rule. Names
+starting with `_` stay private to the module.
 
 See docs/BUILTINS.md and docs/STDLIB.md before writing your own — or resolve
 a name mechanically: `eigenscript --api --json` dumps every builtin,

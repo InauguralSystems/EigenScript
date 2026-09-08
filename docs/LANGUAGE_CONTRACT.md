@@ -76,7 +76,12 @@ bound only its message string.)
 **Promise:** `import name` executes the module once and binds its
 top-level definitions as a **dict named `name`** — nothing enters the
 importing scope besides that one binding, and module names starting
-with `_` are private (omitted from the dict). Import tries `name.eigs`
+with `_` are private (omitted from the dict). That dict is a **live
+view** of the module's bindings, not a snapshot (#1057): `name.x`
+reads the module's current binding and `name.x is v` writes it, for a
+number or string exactly as for a dict or list. Values read *out* of a
+namespace are ordinary values, not aliases. Boxing module state in a
+container is therefore a style choice, not a correctness requirement. Import tries `name.eigs`
 before `lib/name.eigs`, warns on a project/stdlib collision, and chooses
 the project file. `load_file of "path.eigs"` is the
 non-namespaced form: it executes the file directly in the current
@@ -113,15 +118,18 @@ partial AST — consistent with the **Errors** promise.
   continues; import finishes the module; the main program discards the value
   and exits successfully.
 
-The existing function-slot exception remains: a binder with no prior binding
-inside a function retains its final value after the loop on every road. A
-pre-existing parameter or local is restored. This change preserves that
-exception; see the scope notes in LANGUAGE_CONTRACT.md.
+There is no function-scope exception (#1105): a binder with no prior binding
+inside a function is loop-scoped like any other, and reading it after the loop
+raises `undefined variable` on every road. A pre-existing parameter, `local`
+or module binding is restored. See the scope notes below.
 
 **Status:** Enforced — `tools/road_diff.sh` and `tests/roads/`, `tests/test_import.eigs`,
 `tests/test_import_errors.eigs` (parse-error surfacing for `import` /
 `load_file` / `eval`) (stdlib + user modules,
-namespacing, `_` privacy, missing-module error), docs/SPEC.md Modules
+namespacing, `_` privacy, missing-module error),
+`tests/test_module_live_view.eigs` (#1057: live-view reads and writes,
+container state unchanged, privacy, enumeration, module cache, nested
+imports, load_file/eval roads unchanged), docs/SPEC.md Modules
 examples (executed by the suite).
 
 ## Numbers
@@ -148,13 +156,20 @@ examples (executed by the suite).
   returns `log(1e-10)`, i.e. `-23.025850929940457`), `sqrt of x` for
   negative `x` (returns 0, otherwise indistinguishable from
   `sqrt of 0`), and `asin`/`acos` outside [-1, 1] (argument clamped).
-  `invalid` is also set when a NaN is collapsed, which arithmetic
-  cannot produce (there is no way to obtain an Inf to combine) but
-  string conversion can: `num of "nan"` is `0` and `num of "inf"` is
+  `invalid` is also set when a NaN is collapsed, which the arithmetic
+  operators cannot produce (there is no way to obtain an Inf to combine)
+  but a few builtins can: `num of "nan"` is `0` and `num of "inf"` is
   `1e308`, so a data column containing either used to parse to a
-  plausible number with nothing to check. Both bits are sticky until
+  plausible number with nothing to check; `pow` of a negative base with
+  a fractional exponent, `f64_from_bytes` of a NaN bit pattern,
+  `matmul` reaching `inf - inf` (on its list result — a `matmul` whose
+  result is a *buffer* keeps the raw NaN instead, and reads back as
+  `null`; ROADMAP.md), and `tensor_load` of a file carrying
+  NaN bytes collapse the same way. Both bits are sticky until
   `clear_math_flags`, so bracket a computation the way you would on an
-  FPU.
+  FPU. Under `EIGS_STRICT=1` every one of those NaN sources raises a
+  catchable `value` error naming the builtin instead of collapsing
+  (SPEC.md, *Strict mode*).
 - **Saturation is not associative, and that is not detectable from the
   value alone.** `(1e300 * 1e300) / 1e300` is `1e8`; `1e300 * (1e300 /
   1e300)` is `1e300`. The first overflowed and came back down, and
@@ -235,10 +250,11 @@ else is truthy (including functions).
   and each iteration binds a fresh variable (so closures created in a loop
   capture distinct values). Inside a function, a binder whose name was
   already bound (a parameter, a `local`, an earlier assignment) has that
-  earlier value again after the loop (#1064). Function-scope note: a binder
-  whose name had NO prior binding in the function stays readable after the
-  loop with its last value — the loop var lives in a frame slot there, and
-  the unbound case is not diagnosed the way module scope diagnoses it.
+  earlier value again after the loop (#1064). A binder whose name had NO
+  prior binding is loop-scoped in a function exactly as at module scope:
+  reading it after the loop is an `undefined variable` error (#1105), and a
+  later plain assignment to the name creates a fresh binding. One rule,
+  every scope, every road (main, `load_file`, `import`).
 - Name resolution walks the scope chain; an unresolved name is a fatal
   runtime error.
 - Functions resolve referenced names at call time (late binding), so

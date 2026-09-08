@@ -259,22 +259,34 @@ typedef struct {
 typedef struct ObserverSlot {
     double  entropy, last_entropy, dH, prev_dH;
     int     obs_age;
-    double *dh_window;          /* lazily allocated, OBSERVER_WINDOW_N doubles */
+    double *dh_window;          /* lazily allocated ring of dH values; dh_cap deep */
     uint8_t dh_window_head, dh_window_count;
     uint8_t used;               /* 1 once this slot has been observed */
     /* #294 value-signal channel: the entropy window above tracks
      * entropy(value) — a lossy proxy that goes flat in mid-magnitude regions
      * (so a real value-oscillation reads "stable"). This parallel window tracks
-     * the value's OWN relative step Δv/(1+|v|), so `report_value of x`
-     * classifies the value trajectory directly. Same windowed logic/thresholds
-     * as the entropy channel; only the observed signal differs. */
+     * the value's OWN relative step (#1045: Δv / max(|v|, |v_prev|, scale)),
+     * so `report_value of x` classifies the value trajectory directly. Same
+     * windowed logic/thresholds as the entropy channel; only the observed
+     * signal differs. */
     double  last_value;         /* last observed numeric value (Δv source) */
-    double *v_window;           /* lazily allocated, OBSERVER_WINDOW_N relative-deltas */
+    double *v_window;           /* lazily allocated ring of relative steps; v_cap deep */
     double *vr_window;          /* #422 raw deltas (Δv un-normalized), same head/count:
                                  * the non-vanishing-step signal that catches additive
                                  * runaway and sub-deadband oscillation, both of which
                                  * relative normalization erases */
     uint8_t v_window_head, v_window_count;
+    /* #1044: ring CAPACITIES (what is allocated) and the per-binding window
+     * OVERRIDE (what the classifiers read). The depth a slot classifies over
+     * is observer_slot_window(s): win_override when nonzero, else the
+     * state's default (set_observer_window of n, OBSERVER_WINDOW_N at
+     * start). A ring is allocated at that depth on first push and re-grown
+     * (samples preserved, oldest first) when the depth in force exceeds the
+     * capacity; a depth SMALLER than the capacity simply reads the newest
+     * `depth` samples. So the common case — default depth, never touched —
+     * allocates exactly what it did before #1044. */
+    uint8_t v_cap, dh_cap;
+    uint8_t win_override;       /* 0 = follow the state default */
     uint8_t v_used;             /* 1 once a numeric value has been recorded */
     uint8_t v_last;             /* #861: 1 iff the MOST RECENT observed
                                  * assignment was numeric. The predicates and
@@ -353,12 +365,39 @@ struct Value {
      * struct's tail padding (no size change) and is zero-initialized by every
      * Value allocator (xcalloc / arena_alloc memset / freelist reuse memset). */
     unsigned char gc_buffered;
+    /* #1057: 1 iff this VAL_DICT is a module NAMESPACE — the value `import M`
+     * binds. Such a dict is a LIVE VIEW of the module's Env: field reads
+     * refresh from the module binding, field writes go through to it. The
+     * Env* backref lives in a side table (eigs_module_ns_env) so struct Value
+     * does not grow; this byte sits in the struct's existing tail padding and
+     * is what makes the common (non-namespace) dict path a single byte test —
+     * including in the JIT's inline dict-cache probe, which bails on it. */
+    unsigned char module_ns;
 };
 
 /* Window length for the per-Value dH ring buffer. Predicates require
  * a full window (count == OBSERVER_WINDOW_N) for "converged"-class
  * checks and a partial window (count >= 3) for trend-class checks. */
 #define OBSERVER_WINDOW_N 10
+/* #1044: the per-state default is set_observer_window of n; the per-binding
+ * form set_observer_window of ["x", n] overrides one slot. Both are clamped
+ * to [OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX]: the motion bands need two
+ * samples per half-window (4), and the ring counters are 8-bit. */
+#define OBSERVER_WINDOW_MIN 4
+#define OBSERVER_WINDOW_MAX 64
+/* Start-of-state values of the four scalar observer knobs. Named because the
+ * tape reader has to install exactly this configuration before replaying the
+ * tape's `O` records (docs/TRACE.md) — a second hand-written copy of the
+ * numbers in tape_read.c would be a silent divergence waiting to happen. */
+#define OBSERVER_DH_ZERO_DEFAULT  0.001
+#define OBSERVER_DH_SMALL_DEFAULT 0.01
+#define OBSERVER_H_LOW_DEFAULT    0.1
+#define OBSERVER_SCALE_DEFAULT    0.001
+/* Effective window depth of a slot (see the ObserverSlot comment). */
+int observer_slot_window(const struct ObserverSlot *s);
+/* Set / clear a binding's per-slot override (n == 0 clears). Grows the env's
+ * slot table if needed; returns 0 on OOM. */
+int observer_slot_set_window(struct Env *e, int idx, int n);
 
 /* Returns the current fill of v's dH window (0..OBSERVER_WINDOW_N). */
 size_t observer_window_size(const Value *v);
@@ -367,6 +406,11 @@ size_t observer_window_size(const Value *v);
 void observer_slot_update(struct Env *e, int idx, Value *newval);
 /* #262 Phase-3 D: slot update from a raw immediate number (no Value needed). */
 void observer_slot_update_num(struct Env *e, int idx, double num);
+/* #1049: the elided (`unobserved:`) assignment — value-window sample only,
+ * no entropy walk. What the observe ops call when g_unobserved_depth != 0;
+ * exported so the AOT runtime can call the same thing instead of skipping. */
+void observer_slot_sample(struct Env *e, int idx, Value *newval);
+void observer_slot_sample_num(struct Env *e, int idx, double num);
 void observer_slot_reset(struct Env *e);
 /* Observed-loop halting on an explicit env (no VM-frame dependency): one
  * iteration of OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK. Returns 1 when the loop
@@ -594,6 +638,8 @@ struct EigsState {
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
+    int             obs_window;     /* #1044 default value/dH window depth (default OBSERVER_WINDOW_N) */
+    double          obs_scale;      /* #1045 characteristic scale: rel = Δv / max(|v|, |v_prev|, obs_scale) (default 0.001) */
     /* #971: strict mode. Off by default — a wrong-typed or out-of-domain
      * argument gets a finite stand-in (NaN→0, domain clamps substitute,
      * overflow saturates, `cos of "hello"` → 0). On (EIGS_STRICT=1, read
@@ -648,6 +694,14 @@ struct EigsState {
      * flag alone would have silently dropped a worker's exit code to 0. */
     int             exit_latched;
     int             exit_latch_code;
+    /* #1112: number of spawn()ed OS-thread workers that died of an UNCAUGHT
+     * runtime error (the #493 rule for cooperative tasks, applied to
+     * threads: a fire-and-forget worker's death must not green the run).
+     * Incremented atomically by the dying worker in thread_entry, read by
+     * main once handle_table_drain has joined every worker. A worker's
+     * `exit of N` is a request, not a death, and goes through the latch
+     * above instead. */
+    int             spawn_err_count;
     /* Cycle-collector registry — the intrusive list of captured envs and its
      * live count. Per-STATE (not per-thread) so candidates created on any
      * thread survive that thread's death and stay collectable at exit; gc_lock
@@ -887,6 +941,15 @@ struct EigsThread {
      * Lives here rather than inside TaskScheduler so the CASE(CALL) poll stays
      * one load off the already-hot eigs_current, with no NULL check. */
     int                  task_suspend_request;
+    /* #846: the scheduler trace is ARMED here, on the thread, never on the
+     * TaskScheduler — arming must not create a scheduler. A scheduler that
+     * exists but was never armed by a spawn (task_sched_seed creates one) is
+     * a live hazard: task_yield suspends main against it and
+     * vm_execute_common returns the suspend's NULL, truncating the program
+     * silently (exit 0, no output). Reading this flag costs the trampoline
+     * one load per resume; the history itself lives in the scheduler and is
+     * freed with it. Seeded from EIGS_TASK_TRACE at thread attach. */
+    int                  task_trace_on;
     /* #739: sandbox_run's caps and budget. Per-OS-thread: the save/restore in
      * builtin_sandbox_run is correct for one thread's nesting, but the
      * premise it documented — "sandbox_run is synchronous / single-threaded" —
@@ -1047,6 +1110,19 @@ extern __thread EigsThread *eigs_current;
  * no `return make_num(0)` to enumerate. Found by the differential instead
  * (a probe that stayed silent under strict), which is why that harness
  * exists as well as the classifier. */
+/* PLACEMENT IS LOAD-BEARING: this RETURNS, so it must sit BEFORE anything the
+ * function has allocated and still owns, or the raise abandons it. Put the
+ * guard above the allocation where the inputs allow it (the three scan_*
+ * builtins each sat one line below a `make_list(128)` and leaked 1096 bytes
+ * per strict raise); where they do not, free explicitly first, as
+ * builtin_write_bytes does with its raw buffer.
+ *
+ * Nothing about the ordinary run catches that mistake: a strict raise ALREADY
+ * exits non-zero, so LeakSanitizer does not change the process status and a
+ * leaking guard is indistinguishable from an expected raise. The check that
+ * does catch it is `leak_clean` in tests/test_strict_math.sh, which reads the
+ * LeakSanitizer text out of the output it already captures — so every strict
+ * raise needs a row there, and a new guard without one is unguarded. */
 #define STRICT_REQUIRE(cond, who, want)                                       \
     do {                                                                      \
         if (g_strict && (cond)) {                                             \
@@ -1073,6 +1149,8 @@ extern __thread EigsThread *eigs_current;
 #define g_obs_dh_zero       (eigs_current->state->obs_dh_zero)
 #define g_obs_dh_small      (eigs_current->state->obs_dh_small)
 #define g_obs_h_low         (eigs_current->state->obs_h_low)
+#define g_obs_window        (eigs_current->state->obs_window)
+#define g_obs_scale         (eigs_current->state->obs_scale)
 #define g_global_env          (eigs_current->state->global_env)
 #define g_script_dir          (eigs_current->state->script_dir)
 #define g_exe_dir             (eigs_current->state->exe_dir)
@@ -1180,6 +1258,7 @@ void eigs_obs_unmute_for_fatal(void);
 #define g_native_call_depth   (eigs_current->native_call_depth)
 #define g_task_sched          (eigs_current->task_sched)
 #define g_task_suspend_request (eigs_current->task_suspend_request)
+#define g_task_trace_on       (eigs_current->task_trace_on)
 #define g_sandbox_loop_max    (eigs_current->sandbox_loop_max)
 #define g_sandbox_cap_hit     (eigs_current->sandbox_cap_hit)
 #define g_sandbox_active      (eigs_current->sandbox_active)
@@ -1346,14 +1425,53 @@ void free_value(Value *v);
                                  * there. Detection has to sit where the operands
                                  * are still live — the arithmetic dispatch. */
 
+/* #971: under EIGS_STRICT a NaN does not collapse — it RAISES a catchable
+ * `value` error. `who` names the builtin whose result was undefined (the
+ * enumerated sources call num_guard_named); NULL is the backstop from
+ * num_guard itself for a source nobody enumerated. Out of line so the NaN
+ * branch stays one call on a path a finite program never takes. */
+void eigs_strict_nan_raise(const char *who);
+
 static inline double num_guard(double x) {
     /* Fast path unchanged: the flag writes live only on the clamp branches,
      * which a program that does not overflow never takes. */
-    if (x != x) { g_math_flags |= EIGS_MATH_INVALID; return 0.0; }        /* NaN */
+    if (x != x) {                                                            /* NaN */
+        g_math_flags |= EIGS_MATH_INVALID;
+        if (g_strict) eigs_strict_nan_raise(NULL);
+        return 0.0;
+    }
     if (x > EIGS_NUM_MAX)  { g_math_flags |= EIGS_MATH_OVERFLOW; return EIGS_NUM_MAX; }
     if (x < -EIGS_NUM_MAX) { g_math_flags |= EIGS_MATH_OVERFLOW; return -EIGS_NUM_MAX; }
     return x;
 }
+
+/* #971: num_guard for a builtin whose result CAN be NaN on the current tree
+ * (`pow` of a negative base with a fractional exponent, `num of "nan"`,
+ * `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation,
+ * `tensor_load` of a file carrying NaN bytes). Default path identical to
+ * num_guard — collapse to 0, set EIGS_MATH_INVALID — but under strict the
+ * raise NAMES the builtin, which the bare backstop cannot. The string is the
+ * cross-check key tools/strict_differential.sh derives its probe set from,
+ * so a new caller here without a probe row goes red there. */
+static inline double num_guard_named(double x, const char *who) {
+    if (x != x) {
+        g_math_flags |= EIGS_MATH_INVALID;
+        if (g_strict) eigs_strict_nan_raise(who);
+        return 0.0;
+    }
+    return num_guard(x);
+}
+
+/* #971: a value-domain raise inside a double-returning helper, where
+ * ARG_GUARD's `return make_null()` does not fit. Raises under strict and
+ * does nothing otherwise, so the soft path is byte-identical by
+ * construction (the caller keeps returning its stand-in). `who` is the
+ * cross-check key, like ARG_GUARD's. */
+#define STRICT_DOMAIN(cond, who, what)                                       \
+    do {                                                                      \
+        if (g_strict && (cond))                                               \
+            rt_error(EK_VALUE, 0, "%s: %s", (who), (what));                   \
+    } while (0)
 
 /* The g_vm_multithreaded flag (state->multithreaded, bridge macro above)
  * is set to 1 by builtin_spawn before pthread_create, then stays 1.
@@ -1443,6 +1561,33 @@ static inline struct ObserverSlot *env_obs_slot(Env *e, int idx) {
     return &e->obs[idx];
 }
 
+/* #915/#1049: the observer gate as every TU sees it — g_obs_needed is the
+ * compile-time half, the trace-history flag the runtime half. The full
+ * rationale is on observer_slot_update (eigenscript.c). Lives here so the
+ * observe ops in vm.c can ask it before resolving a name they will only
+ * sample (#1049). */
+extern int g_trace_obs_hist_storage;   /* trace.h — the relaxed-load idiom */
+static inline int eigs_obs_gate_open(void) {
+    return g_obs_needed || __atomic_load_n(&g_trace_obs_hist_storage, __ATOMIC_RELAXED);
+}
+
+/* #972: debug counter behind EIGS_OBS_GATE_STATS=1 — how many times an
+ * observer update/sample entry point (observer_slot_update[_num],
+ * observer_slot_sample[_num], the JIT observe helpers) was ENTERED, counted
+ * before each one's own gate test. With the gate closed the observe ops are
+ * meant to skip the helper call entirely (the hoist this counter pins), so
+ * the tally must read 0 for a read-free program; `obs-gate: unobserved`
+ * alone cannot see the difference between "skipped" and "called and
+ * returned at the gate". One predictable branch on a cold global when the
+ * flag is off; a relaxed atomic add when it is on (workers observe too). */
+extern int  g_obs_count_observe_calls;
+extern long g_obs_observe_calls;
+static inline void eigs_obs_count_call(void) {
+    if (__builtin_expect(g_obs_count_observe_calls, 0))
+        __atomic_fetch_add(&g_obs_observe_calls, 1, __ATOMIC_RELAXED);
+}
+void eigs_obs_gate_stats_report(void);   /* prints `obs-gate: observe-calls N` */
+
 Env* env_new(Env *parent);
 void env_global_shared_lock(void);    /* #1035: module-env lock for external readers */
 void env_global_shared_unlock(void);
@@ -1458,6 +1603,10 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val);
  * never round-trip through make_num + val_decref. Reference-count
  * semantics match the Value* variants: env *borrows* the input slot and
  * incref's internally, *_get returns a slot the caller must slot_decref. */
+/* #868/#908: how many assignments this binding has seen, for the `when <n>`
+ * ordinal space. Defined in eigenscript.c; the VM's OP_PREV_N path is the
+ * only other consumer (it used to re-extern it by hand — #744). */
+int env_get_assign_count(Env *env, const char *name, uint32_t h);
 void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 /* Same as env_set_local_hashed_slot, but `interned` must come from
@@ -1485,6 +1634,21 @@ Env *env_resolve_chain(Env *start, const char *name, uint32_t h,
                        int *out_slot, int *out_depth);
 void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h);
+/* #1057 module namespaces. `import M` binds a dict that is a LIVE VIEW of the
+ * module's top-level Env: `M.x` reads the module's CURRENT binding and
+ * `M.x is v` writes it. attach flags the dict and takes an OWNING ref on the
+ * env (one GC_EDGE_TABLE row); detach hands that ref back to the caller and
+ * clears the flag; sync refreshes every entry (for whole-dict readers —
+ * `keys`, `values`, `len`, printing, json, iteration, equality). Private
+ * (`_`-prefixed) module bindings are not part of the namespace and are never
+ * projected. Not guarded for concurrent import, same as the module cache. */
+void eigs_module_ns_attach(Value *dict, Env *env);
+Env *eigs_module_ns_env(Value *dict);
+Env *eigs_module_ns_detach(Value *dict);
+void eigs_module_ns_sync(Value *dict);
+/* Raw (non-routed) dict store — writes the dict's own slot without going
+ * through a module namespace's env. The namespace projection uses it. */
+void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val);
 /* Env lifetime is a real refcount: env_new returns with refcount 1 (the
  * creator's ref — adopted by the call frame or the C caller) and an owned
  * ref on its parent. env_decref destroys at 0: drops every binding, drops
@@ -1614,26 +1778,11 @@ const char* err_kind_name(ErrKind k);
 const char* eigs_predicate_name(unsigned kind);
 void rt_error(ErrKind kind, int line, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
-char* read_file_util(const char *path, long *out_size);
-int resolve_eigenscript_file(const char *path, char *resolved, size_t resolved_cap);
 /* File provenance is retained by the executing chunk, including closures. */
 const char *eigs_current_file_dir(void);
-char *eigs_file_directory(const char *path); /* hosted; caller frees */
-void eigs_file_resolve_error(const char *operation, const char *base,
-                            const char *path, int line); /* hosted */
-/* One chain for import/load_file; base is the containing file's directory. */
-int resolve_eigenscript_file_from(const char *base, const char *path,
-                                   char *resolved, size_t resolved_cap);
-/* #904: which half of the chain answered. The chain's tail steps are the
- * installed stdlib roots (`<prefix>/lib/eigenscript/`, `~/.local/lib/
- * eigenscript/`), and they answer a bare `<name>.eigs` request as well as
- * `lib/<name>.eigs` — so a STDLIB_ROOT hit on a bare request is the stdlib
- * itself, not a project file shadowing it. */
-#define EIGS_RESOLVE_PROJECT       0
-#define EIGS_RESOLVE_STDLIB_ROOT   1
-int resolve_eigenscript_file_from_ex(const char *base, const char *path,
-                                      char *resolved, size_t resolved_cap,
-                                      int *origin);
+/* Reading a file and resolving a module request are declared in fsutil.h
+ * (#744) — a consumer says so by including it, instead of getting them for
+ * free from this umbrella. */
 Value* eigs_json_parse_value(const char *s, int *pos);
 /* #777: the ONLY entry point for a top-level (non-recursive) JSON parse.
  * Clears both thread-local parse flags (g_json_parse_err,
@@ -1660,6 +1809,18 @@ void eigs_record_first_error_code_at(int line, int col, int len,
  * shared format for parse-time and runtime diagnostics. No-op when src is
  * NULL or the position is out of range. */
 void eigs_print_caret_src(FILE *out, const char *src, int line, int col);
+/* #1048: decode one UTF-8 character — length 1..4 if well-formed, 0 if the
+ * bytes cannot start one (stray continuation, overlong, surrogate, > U+10FFFF,
+ * bad continuation), -1 if the input ends inside a well-formed prefix. Every
+ * diagnostic that renders bytes from the source funnels through it, so no
+ * channel (stderr, `--lint --json`, the LSP's JSON-RPC) can emit half a
+ * character. Defined in strbuf.c. */
+int eigs_utf8_step(const unsigned char *s, size_t avail);
+/* #1048: copy `src` into `dst` (`cap` bytes) as valid UTF-8 — whole characters
+ * only, a byte that is not part of a well-formed one replaced with U+FFFD, an
+ * incomplete tail dropped, and a copy that does not fit truncated on a
+ * character boundary and marked "...". Defined in strbuf.c. */
+void eigs_utf8_sanitize(char *dst, size_t cap, const char *src);
 /* #407: register the compilation unit's raw source so column-carrying parse
  * errors print a one-line excerpt + caret. NULL = no excerpt (unchanged
  * output). Set before parse, clear after — the parser never reads it outside
@@ -1734,10 +1895,6 @@ void   handle_release(int id);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
-
-/* ---- gfx extension registrar (ext_gfx.c; TU only compiled when
- * EIGENSCRIPT_EXT_GFX — call sites keep the #if, matching http/db). ---- */
-void register_gfx_builtins(Env *env);
 
 /* ---- Tape-stepper (#418; step.c, CLI-only) ----
  * Interactive debugger over a recorded trace tape: `--step <tape> [src]`.

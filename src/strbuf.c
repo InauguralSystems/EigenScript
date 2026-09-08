@@ -11,6 +11,78 @@
 
 #define STRBUF_INIT_CAP 64
 
+/* Decode one UTF-8 character at `s` (`avail` bytes left). Returns its length
+ * (1..4) when the bytes form a WELL-FORMED character; 0 when they cannot start
+ * one (a stray continuation byte, an overlong form, a surrogate, > U+10FFFF, a
+ * bad continuation); and -1 when they are a well-formed PREFIX that the input
+ * ends inside — a cut, not corruption. #1048: every diagnostic path that
+ * renders bytes the tool did not choose (a lint message, a JSON payload, the
+ * parse-error source excerpt) needs the three cases apart — a cut tail is
+ * dropped, a corrupt byte is replaced — so the primitive lives here rather
+ * than in any one of them. */
+int eigs_utf8_step(const unsigned char *s, size_t avail) {
+    if (avail == 0) return 0;
+    unsigned char c = s[0];
+    if (c < 0x80) return 1;
+    if (c < 0xC2 || c > 0xF4) return 0;      /* continuation / overlong / > max */
+    size_t need = c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+    unsigned char lo = 0x80, hi = 0xBF;      /* range of the SECOND byte */
+    if (c == 0xE0) lo = 0xA0;                /* no overlong 3-byte forms */
+    else if (c == 0xED) hi = 0x9F;           /* no UTF-16 surrogates */
+    else if (c == 0xF0) lo = 0x90;           /* no overlong 4-byte forms */
+    else if (c == 0xF4) hi = 0x8F;           /* no code point > U+10FFFF */
+    for (size_t i = 1; i < need; i++) {
+        if (i >= avail) return -1;           /* well-formed so far, input ended */
+        unsigned char b = s[i];
+        unsigned char blo = (i == 1) ? lo : 0x80, bhi = (i == 1) ? hi : 0xBF;
+        if (b < blo || b > bhi) return 0;
+    }
+    return (int)need;
+}
+
+/* Copy `src` into `dst` (`cap` bytes) as VALID UTF-8, whatever `src` holds:
+ * every character is copied whole, a byte that is not part of a well-formed
+ * character is replaced with U+FFFD, an incomplete sequence at the end is
+ * dropped, and a copy that does not fit is truncated on a character boundary
+ * and marked "...". Every lint diagnostic funnels through lint_vdiag into
+ * this, and so does every path the linter prints, so it is the whole-class
+ * guarantee: no rule, present or future, can emit malformed UTF-8 no matter
+ * what it interpolates — including one that echoes bytes straight out of the
+ * source (E002 quoted the byte it could not tokenize, which is half a
+ * character for any non-ASCII input; the lexer now spells it \xNN, and this
+ * replaces it if any future path does not). Individual rules must still keep
+ * their ACTIONABLE half inside the budget — a truncation here is valid output
+ * but a worse message (see w024_emit's shrink-to-fit). */
+void eigs_utf8_sanitize(char *dst, size_t cap, const char *src) {
+    if (!dst || cap == 0) return;
+    dst[0] = '\0';
+    if (!src) return;
+    const unsigned char *s = (const unsigned char *)src;
+    size_t n = strlen(src), i = 0, o = 0;
+    size_t hard = cap - 1;                     /* bytes usable before the NUL */
+    int clipped = 0;
+    while (i < n) {
+        int step = eigs_utf8_step(s + i, n - i);
+        if (step < 0) { clipped = 1; break; }  /* cut tail: drop, do not halve */
+        size_t w = step > 0 ? (size_t)step : 3;
+        if (o + w > hard) { clipped = 1; break; }
+        if (step > 0) memcpy(dst + o, s + i, w);
+        else          memcpy(dst + o, "\xEF\xBF\xBD", 3);   /* U+FFFD */
+        o += w;
+        i += step > 0 ? (size_t)step : 1;
+    }
+    if (!clipped) { dst[o] = '\0'; return; }
+    if (cap < 5) { dst[0] = '\0'; return; }
+    /* Back up over whole characters until "..." fits, then mark the cut. */
+    size_t room = cap - 4;
+    while (o > room) {
+        o--;
+        while (o > 0 && ((unsigned char)dst[o] & 0xC0) == 0x80) o--;
+    }
+    memcpy(dst + o, "...", 4);
+}
+
+
 void strbuf_init(strbuf *b) {
     b->cap = STRBUF_INIT_CAP;
     b->len = 0;

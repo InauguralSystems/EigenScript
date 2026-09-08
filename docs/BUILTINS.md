@@ -1,6 +1,6 @@
 # EigenScript Builtin Reference
 
-250+ builtins organized by module (199 core + ~60 extensions).
+348 builtins organized by module (261 core + 87 extensions). `eigenscript --api` prints the live index; the counts here are gated by tools/doc_drift_check.sh.
 Core builtins are always available; extension builtins (HTTP, DB, model,
 gfx, audio) require a full build or the `gfx` target.
 
@@ -28,7 +28,9 @@ streaming subprocess I/O (`proc_spawn`, `proc_write`, `proc_read_line`,
 `sha256_file`, `md5_file`, `hmac_sha256`), EigenStore (`store_open`,
 `store_close`, `store_put`, `store_get`, `store_delete`, `store_query`,
 `store_count`, `store_update`, `store_collections`, `store_drop`),
-observer tuning (`set_observer_thresholds`, `get_observer_thresholds`),
+observer tuning (`set_observer_thresholds`, `get_observer_thresholds`,
+`set_observer_scale`, `get_observer_scale`, `set_observer_window`,
+`get_observer_window`),
 audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 `audio_play_loop`, `audio_volume`, `audio_stop`, `audio_queue_size`, `audio_clear`, `audio_sine`,
 `audio_saw`, `audio_sweep`,
@@ -47,7 +49,7 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `print` | `print of value` | Output value to stdout with newline |
 | `len` | `len of value` | Length of string or list count |
 | `str` | `str of value` | Convert to string representation |
-| `num` | `num of value` | Convert to number (parse string or coerce) |
+| `num` | `num of value` | Convert to number (parse string or coerce). `num of "nan"` is `0` (sets `math_flags.invalid`) and `num of "inf"` saturates to `1e308`; under `EIGS_STRICT=1` the `NaN` case raises a `value` error naming `num` (#971). |
 | `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "none" (the null value — SPEC.md is normative and its gated example prints `none`; the string `"null"` is never produced) |
 | `math_flags` | `math_flags of null` | Sticky numeric status: `{overflow, invalid}` — 1 when a clamp has fired since the last `clear_math_flags` (#865) |
 | `clear_math_flags` | `clear_math_flags of null` | Reset both status bits |
@@ -69,13 +71,13 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `append` | `append of [list, item]` | Append item to list (mutates list) |
 | `concat` | `concat of [a, b]` | Concatenate two lists into new list |
 | `range` | `range of n` or `range of [start, end]` | Generate integer list [0..n) or [start..end) |
-| `set_at` | `set_at of [list, index, value]` | Set element at index (mutates list); negative indices count from the end, like `[]` |
-| `get_at` | `get_at of [list, index]` | Get element at index; negative indices count from the end, like `[]` |
+| `set_at` | `set_at of [list, index, value]` | Set element at index (mutates list); negative indices count from the end, like `[]`. Also takes a **buffer** in the first position — `set_at of [buf, i, v]`, or `set_at of [shaped_buf, row, col, v]` — where a non-number value is refused (`cannot store str in a buffer`) |
+| `get_at` | `get_at of [list, index]` | Get element at index; negative indices count from the end, like `[]`. Also takes a **buffer**: `get_at of [buf, i]`, or `get_at of [shaped_buf, row, col]` |
 | `copy_into` | `copy_into of [dest, offset, src]` | Copy src elements into dest starting at offset — a list into a list, or a buffer / list of numbers into a buffer. Returns dest. Wrong arity, a non-number offset (the doc used to list `[dest, src, offset]`, the code has always read `[dest, offset, src]`), a bad type, or a non-number element bound for a buffer RAISES (#1069; it silently returned null) |
 | `list_slice` | `list_slice of [list, start, end]` | New list with the elements of [start, end) — dual of `copy_into`. Negative indices count from the end, like `[]`; bounds then clamp to [0, len]. `start >= end` gives `[]`. Never raises on bounds |
 | `num_copy` | `num_copy of value` | Create independent copy of numeric value |
 | `hex` | `hex of n` or `hex of [n, nibbles]` | Uppercase hex string of a non-negative integer, zero-padded to `nibbles` (never truncated). Raises on negatives, fractions, non-numbers |
-| `sort` | `sort of list` | Sort an all-number or all-string list in-place (numeric / lexicographic). Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list |
+| `sort` | `sort of list` | Sort an all-number or all-string list in-place (numeric / lexicographic). Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list. A non-list argument is handed back unchanged; under `EIGS_STRICT=1` it raises (#971). |
 | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list |
 | `list_remove_at` | `list_remove_at of [list, index]` | Remove element at index, shift tail down (mutates). No-op if out of bounds. Returns the list |
 | `list_insert_at` | `list_insert_at of [list, index, value]` | Insert value at index, shift tail up (mutates) — dual of `list_remove_at`. `index == len` appends; any other out-of-bounds index is a no-op. Returns the list |
@@ -96,8 +98,8 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `ends_with` | `ends_with of [s, suffix]` | 1 if s ends with suffix, else 0 |
 | `index_of` | `index_of of [haystack, needle]` | First index of needle in haystack, or -1 (non-string operands are -1) |
 | `substr` | `substr of [s, start, length]` | Extract substring |
-| `split` | `split of [s, delim]` | Split string by delimiter into list |
-| `scan_ints` | `scan_ints of s` or `scan_ints of [s, comment_marker]` | C-backed scan of whitespace-delimited signed integer tokens, optionally skipping comment lines |
+| `split` | `split of [s, delim]` | Split string by delimiter into list. A non-string `s` splits as `""` (so answers `[""]`) and a non-string `delim` falls back to `" "`; under `EIGS_STRICT=1` both raise (#971). |
+| `scan_ints` | `scan_ints of s` or `scan_ints of [s, comment_marker]` | C-backed scan of whitespace-delimited signed integer tokens, optionally skipping comment lines. No string in the argument answers `[]`; under `EIGS_STRICT=1` it raises (#971, same for `scan_tokens`/`scan_int_tokens`). |
 | `scan_tokens` | `scan_tokens of s` or `scan_tokens of [s, comment_marker]` | C-backed scan of whitespace-delimited token rows `[text, line, col, start, end]` |
 | `scan_int_tokens` | `scan_int_tokens of s` or `scan_int_tokens of [s, comment_marker]` | Token rows `[text, line, col, start, end, is_int, value]` |
 | `trim` | `trim of s` | Strip leading/trailing whitespace |
@@ -154,7 +156,7 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `buffer` | `buffer of count` | Create zero-filled buffer of given size |
+| `buffer` | `buffer of count` | Create zero-filled buffer of given size (or `buffer of [rows, cols]` for a shaped one). A non-numeric size makes an empty buffer; under `EIGS_STRICT=1` it raises (#971). |
 | `buf_get` | `buf_get of [buf, index]` | Read element; out-of-range raises `index_range` (#502 — folding to 0 was indistinguishable from a real stored 0), matching the `buf[i]` operator |
 | `buf_set` | `buf_set of [buf, index, value]` | Write element |
 | `buf_len` | `buf_len of buf` | Return buffer element count |
@@ -190,8 +192,8 @@ For serialization: reconstruct strings/floats from raw bytes (the inverse of an
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Strings are NUL-terminated: a `0` byte ends the string — keep NUL-bearing binary in a buffer. |
-| `f64_to_bytes` | `f64_to_bytes of x` | List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). |
-| `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Decode a double from the first 8 big-endian IEEE-754 bytes. Inverse of `f64_to_bytes`. |
+| `f64_to_bytes` | `f64_to_bytes of x` | List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). A non-number encodes as `0.0`; under `EIGS_STRICT=1` it raises (#971). |
+| `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Decode a double from the first 8 big-endian IEEE-754 bytes. Inverse of `f64_to_bytes`. A `NaN` bit pattern collapses to `0` (sets `math_flags.invalid`); under `EIGS_STRICT=1` it raises a `value` error (#971). |
 
 Buffers also support direct indexing (`buf[i]`, `buf[i] is val`) and
 compound assignment (`buf[i] += val`).
@@ -224,9 +226,9 @@ sandbox allowlist can name them) but every call raises `value`:
 |------|-----------|-------------|
 | `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
 | `json_decode` | `json_decode of s` | Parse JSON string to value. Raises past the same 200-level limit, so a document that decodes always re-encodes. `\uXXXX` surrogate pairs are combined into one code point; unpaired surrogates, an escaped NUL, and malformed `\u` escapes raise (strict decode — lenient callers such as `json_path` receive the complete document with U+FFFD in place of the bad scalar). |
-| `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs |
+| `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs. `json_build of null` is `{}`; any other non-list answers `{}` too and raises under `EIGS_STRICT=1` (#971). |
 | `json_raw` | `json_raw of s` | Wrap raw JSON string (skip encoding) |
-| `json_path` | `json_path of [json_str, "dot.path"]` | Extract nested value by dot-notation path |
+| `json_path` | `json_path of [json_str, "dot.path"]` | Extract nested value by dot-notation path; `""` when there is no value at that path (absent key, index out of range, JSON `null`). The document is parsed leniently: a malformed document is walked as far as it parsed, so a parse failure also answers `""` or a partial value. Under `EIGS_STRICT=1` a document that `json_decode` would reject (structural error, a repaired `\u` scalar, trailing garbage) raises a catchable `value` error `json_path: invalid JSON at position N` instead (#971 Phase C); JSON `false`/`null`/absent keys stay answers in both modes. |
 
 ## Dictionaries
 
@@ -242,7 +244,8 @@ sandbox allowlist can name them) but every call raises `value`:
 
 Six keywords for querying a value's observer state. Asking is cheap — the
 state is already there — but note that maintaining it is not free: every
-assignment outside `unobserved:` is sampled whether or not you ever ask. See
+assignment outside `unobserved:` is sampled whether or not you ever ask, and
+inside one a scalar still pays the O(1) value-window sample (#1049). See
 [OBSERVER.md](OBSERVER.md#cost).
 
 | Name | Syntax | Returns |
@@ -270,6 +273,12 @@ Query a binding's assignment history. Always on for top-level bindings;
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `observe` | `observe of value` | Return [status, entropy, dH, prev_dH] snapshot |
+| `set_observer_thresholds` | `set_observer_thresholds of [dh_zero, dh_small, h_low]` | Set the classification thresholds (defaults 0.001 / 0.01 / 0.1); `dh_zero < dh_small`, all positive, else raises. Process-global for the state; blocked in the sandbox |
+| `get_observer_thresholds` | `get_observer_thresholds of null` | `[dh_zero, dh_small, h_low]` |
+| `set_observer_scale` | `set_observer_scale of s` | #1045: the value channel's characteristic scale — the magnitude below which a value counts as zero. The relative step is `Δv / max(\|v\|, \|v_prev\|, s)`: unit-free above `s`, an absolute deadband `dh_zero·s` below it. Default `0.001`; choose it in the unit the binding is stored in. Non-positive raises |
+| `get_observer_scale` | `get_observer_scale of null` | The characteristic scale |
+| `set_observer_window` | `set_observer_window of n` / `set_observer_window of ["x", n]` | #1044: the window depth (samples) every verdict classifies over, `4..64`. The bare form sets the state default (10 at start), live; the list form overrides one binding, resolved by name from the call site (a string literal also marks a function local interrogated so plain locals are reachable), `n = 0` clears it. A mode slower than `n` samples of the observation cadence cannot fold inside the window — size it to the slowest mode. Unbound name / out-of-range depth raise |
+| `get_observer_window` | `get_observer_window of null` / `get_observer_window of "x"` | The default depth, or the depth in force on binding `x` |
 | `classify` | `classify of t` or `classify of [t, "entropy"]` | Classify a trajectory snapshot (from `trajectory of x`, #421): value-channel label by default, entropy-channel with `"entropy"`. Raises `type_mismatch` on a non-snapshot — a bare value never silently classifies |
 
 **`report` and `report_value` are reserved** (#1102). They cannot be bound or
@@ -333,7 +342,7 @@ Boolean keywords that check the most recently observed value:
 | `proc_close` | `proc_close of fd` | Idempotent `close(2)`. Returns 1 on success, 0 if already closed / invalid. |
 | `proc_wait` | `proc_wait of pid` | Block on `waitpid(pid, ...)` and return the exit code (or `128 + signum` if killed by a signal). Answers `-1` when the pid is not a positive number or `waitpid` reports no such child — there is no exit status to give. |
 | `env_get` | `env_get of "VAR_NAME"` | Get environment variable (empty string if unset) |
-| `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom |
+| `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom (`""` for `n <= 0` or `n > 256`). A non-number `n` answers `""`; under `EIGS_STRICT=1` it raises (#971). |
 | `try_parse` | `try_parse of code_string` | 1 if string is valid EigenScript syntax, 0 otherwise |
 | `mkdir` | `mkdir of "path"` | Create directory (and parents). 1 on success, 0 on failure. Trace-recorded: replay serves the recorded bit and does not re-create the directory (#585) |
 | `ls` | `ls of "path"` | List directory contents as list of strings. Trace-recorded, so replay is deterministic (#585) |
@@ -383,7 +392,7 @@ stdlib roots. See [Modules](SPEC.md#modules) for import collision handling.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `random` | `random of null` | Random float in [0, 1) |
-| `random_int` | `random_int of [lo, hi]` | Random integer in [lo, hi] inclusive; raises on non-finite or out-of-int64 bounds and on a span over 2^31 |
+| `random_int` | `random_int of [lo, hi]` | Random integer in [lo, hi] inclusive; raises on non-finite or out-of-int64 bounds and on a span over 2^31. A malformed argument (not `[lo, hi]`, or non-numeric bounds) answers `0`; under `EIGS_STRICT=1` it raises (#971). |
 | `seed_random` | `seed_random of n` | Seed the RNG for deterministic sequences |
 
 ## Time
@@ -444,6 +453,25 @@ automatically at exit.
 
 ## Tensor Math
 
+**Numeric work wants a `buffer`.** A tensor argument (`t`, `a`, `b`, `matrix`)
+is any of: a number, a flat list of numbers, a nested list of lists (the 2-D
+tensor), or a **`buffer`** — flat `double[]`, one 8-byte element instead of a
+boxed `Value` per number, and the container the JIT and the AOT compile
+against. Every builtin in this section that accepts a flat numeric list accepts
+a buffer in the same position; a 1-D buffer reads as a 1-D tensor and a shaped
+buffer (`buffer of [r, c]`, `reshape of [buf, r, c]`) as its `r x c` 2-D
+tensor. The numbers are identical either way.
+
+**Container of the result**: a builtin that returns a tensor returns a
+*buffer* when **every** tensor operand was a buffer, and a *list* otherwise
+(so mixing a buffer with a list yields a list). Reductions (`sum`, `mean`,
+`norm`) return a number from either. `shape` always returns a list.
+
+**`zeros of n` returns a buffer** (#1093, breaking — it used to return a list);
+`zeros of [rows, cols]` still returns the nested list. Reach for
+`zeros of n` / `buffer of n` for numeric vectors and keep lists for
+heterogeneous or nested data.
+
 ### Arithmetic
 
 | Name | Signature | Description |
@@ -451,9 +479,26 @@ automatically at exit.
 | `add` | `add of [a, b]` | Element-wise addition |
 | `subtract` | `subtract of [a, b]` | Element-wise subtraction |
 | `multiply` | `multiply of [a, b]` | Element-wise multiplication |
-| `divide` | `divide of [a, b]` | Element-wise division; zero denominator returns 0, overflow saturates |
-| `pow` | `pow of [base, exp]` | Element-wise exponentiation; overflow saturates |
+| `divide` | `divide of [a, b]` | Element-wise division; zero denominator returns 0 (where the `/` operator raises), overflow saturates. Under `EIGS_STRICT=1` a zero denominator raises `divide: division by zero` (#971). |
+| `pow` | `pow of [base, exp]` | Element-wise exponentiation; overflow saturates. A negative base with a fractional exponent is `NaN` and collapses to `0` (sets `math_flags.invalid`); under `EIGS_STRICT=1` it raises a `value` error naming `pow` (#971). |
 | `negative` | `negative of t` | Element-wise negation |
+
+All five arithmetic builtins take shaped **buffers** wherever they take a flat
+numeric list (#1093/#973), through **one** implementation — the same
+`tensor_elementwise` shape algebra, container for container, so every rule
+below reads the same for buffers and lists: two operands of equal count are
+combined elementwise (keeping the first's shape); a `[rows × cols]` operand
+with a `[cols]` one broadcasts the vector over every row and with a `[rows]`
+one applies it per row, in either operand order (the bias shape
+`add of [x @ W, b]`); a number broadcasts over every element; operands of
+unequal, non-broadcastable length **truncate to the shorter** as they always
+have (the one place the two containers still differ: buffers truncate flat, so
+`add of [buf[5×4], buf[3]]` is `[3]` where the same shapes as lists are
+`[3, 4]` — neither is a meaningful answer, both are pinned in
+`tests/test_autograd.eigs`); a non-numeric partner (a string, a dict) answers
+`0` and raises under `EIGS_STRICT=1`. Before #1093 only equal-count `add` had a buffer path and
+every other buffer case answered a silent `0`. Same `num_guard` kernels
+either way, so the numbers are byte-identical.
 
 ### Functions
 
@@ -462,31 +507,34 @@ automatically at exit.
 | `sqrt` | `sqrt of t` | Element-wise square root; negative input returns 0 |
 | `exp` | `exp of t` | Element-wise e^x; overflow saturates |
 | `log` | `log of t` | Element-wise natural log. Positive input, however small, is exact (`log of 1e-15` = -34.538…); a non-positive or NaN element sets the `invalid` math flag and stands in for ln(1e-10) = -23.025… (#865, #1041) — never -inf |
-| `softmax` | `softmax of t` | Row-wise softmax normalization (a scalar is the one-element case → `1.0`) |
-| `log_softmax` | `log_softmax of t` | Row-wise log(softmax) (a scalar → `log(1)` = `0.0`) |
-| `relu` | `relu of t` | Element-wise max(0, x) (accepts a scalar) |
-| `leaky_relu` | `leaky_relu of t` | Element-wise max(0.01x, x) (accepts a scalar) |
+| `softmax` | `softmax of t` | Row-wise softmax normalization (a scalar is the one-element case → `1.0`). A shaped buffer computes row-wise on its shape and returns a buffer of the same shape (a 1-D buffer is one row) — #973 |
+| `log_softmax` | `log_softmax of t` | Row-wise log(softmax) (a scalar → `log(1)` = `0.0`); buffers as for `softmax`. The `[tensor, dim]` form is recognised only as exactly `[list, number]` — it used to fire on every 2-D list and answer for row 0 alone (#973) |
+| `relu` | `relu of t` | Element-wise max(0, x) (accepts a scalar; buffers keep their shape) |
+| `leaky_relu` | `leaky_relu of t` | Element-wise max(0.01x, x) (accepts a scalar; buffers keep their shape — #973) |
 
 ### Linear Algebra
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `matmul` | `matmul of [a, b]` | Matrix multiplication |
-| `gather` | `gather of [matrix, indices, dim]` | Gather rows/columns by index |
+| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; under `EIGS_STRICT=1` that raises a catchable `value` error naming `matmul` (#971). With the flag off the two result kinds differ, and the difference is pre-existing: a **list/tensor** result boxes through `make_num`, so the `NaN` collapses to `0` and sets `math_flags.invalid`, while a **buffer** result is whatever the kernel wrote — the raw `NaN` stays in the buffer and reads back as `null` (a `NaN` bit pattern is a boxed slot tag), with `math_flags` untouched. An overflowed element in a buffer result is likewise stored raw (reads back above `1e308`). Both buffer holes are recorded in ROADMAP.md; #971 left them exactly as v0.43.0 had them rather than change the default path under a strict-mode flag. |
+| `matmul_at` | `matmul_at of [a, b]` | `aᵀ·b` without materialising the transpose: `a` is `(m × k)`, `b` is `(m × n)`, result `(k × n)` — the weight gradient `dW = Xᵀ·dY` of a linear layer. Buffers and nested lists; byte-identical to `matmul` of the explicitly transposed operand (same tiled kernel order). Two 1-D operands give their `(k × n)` outer product. Shape/type/size errors raise like `matmul` (#973) |
+| `matmul_bt` | `matmul_bt of [a, b]` | `a·bᵀ`: `a` is `(m × k)`, `b` is `(n × k)`, result `(m × n)` — the input gradient `dX = dY·Wᵀ`. A 1-D left operand is a row vector and yields a 1-D result, as for `matmul` (#973) |
+| `gather` | `gather of [matrix, indices, dim]` | Gather one element per row: `out[i] = matrix[i][indices[i]]`. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i`. An **out-of-range index raises `index_range`** — in every form, list or buffer (#973/#1093, settled at integration: there is no element there, and `scatter_add` raises on the same index). A row that is not a row (a 1-D tensor in the per-row form) still answers `0.0` for that row |
+| `scatter_add` | `scatter_add of [dst, indices, values]` | The gradient of `gather`, accumulated **in place** into the buffer `dst` (returned). A shaped `[rows × cols]` dst does `dst[i][indices[i]] += values[i]` per row; a 1-D dst does the flat `dst[indices[j]] += values[j]`. `values` is a buffer, a list of numbers, or one number broadcast to every index; repeats accumulate. Lengths must line up exactly — a non-scalar `values` shorter or longer than `indices`, or a per-row `dst` whose row count differs from the index count, raises `value` rather than truncating (a dropped gradient entry is a silent wrong number). Every index is validated **before** anything is written, so a raise (`index_range`, `value`, or `type_mismatch` for a non-buffer dst / non-numeric index or value) leaves `dst` untouched (#973) |
 
 ### Reductions
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `mean` | `mean of t` | Average of all elements |
-| `sum` | `sum of t` | Sum of all elements |
+| `mean` | `mean of t` | Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) |
+| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer) |
 
 ### Construction
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `zeros` | `zeros of [rows, cols]` or `zeros of n` | Create zero tensor |
-| `zeros_like` | `zeros_like of t` | Create zero tensor matching shape |
+| `zeros` | `zeros of n` or `zeros of [rows, cols]` | `zeros of n` returns a **buffer** of `n` zeros (`type of` is `buffer`, `print of` shows `<buffer:n>`); `zeros of [rows, cols]` returns the nested-list 2-D tensor. Breaking change in #1093 — `zeros of n` used to return a list; write `[0 for i in range of n]` if you need that. Both spellings cap at 10,000,000 elements and charge the sandbox budget |
+| `zeros_like` | `zeros_like of t` | Zero tensor matching `t`'s shape **and container**: a buffer gives a buffer (shape preserved), a list gives a list, a number gives `0.0` |
 | `random_normal` | `random_normal of [rows, cols, scale]` | Gaussian random tensor |
 | `shape` | `shape of t` | Return dimensions as list |
 | `reshape` | `reshape of [buffer, rows, cols]` | New numeric buffer with the same data reinterpreted as `rows`×`cols` (requires `rows*cols == count`; `null` otherwise) |
@@ -495,14 +543,14 @@ automatically at exit.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `tensor_save` | `tensor_save of [tensor, "path"]` | Save tensor to binary file (preserves observer state) |
-| `tensor_load` | `tensor_load of "path"` | Load tensor from binary file (restores observer state) |
+| `tensor_save` | `tensor_save of [tensor, "path"]` | Save a list or buffer tensor to a binary file (preserves observer state) |
+| `tensor_load` | `tensor_load of "path"` | Load tensor from binary file (restores observer state). `NaN` bytes in the file collapse to `0` (sets `math_flags.invalid`); under `EIGS_STRICT=1` they raise a `value` error naming `tensor_load` (#971). |
 
 ### Gradients & SGD
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `numerical_grad` | `numerical_grad of [loss_fn, params, eps]` | Finite-difference gradient |
+| `numerical_grad` | `numerical_grad of [loss_fn, params, eps]` | Central finite-difference gradient. `params` is a 1-D/2-D list **or a shaped buffer** (#973: each element is perturbed in place and restored; the gradient comes back with the parameter's shape). O(params) forward passes — the gradient-check oracle for `lib/autograd.eigs`, not a training path |
 | `numerical_grad_rows` | `numerical_grad_rows of [loss_fn, params, eps, rows]` | Gradient for specific rows |
 | `numerical_grad_cols` | `numerical_grad_cols of [loss_fn, params, eps, cols]` | Gradient for specific columns |
 | `sgd_update` | `sgd_update of [params, grad, lr]` | In-place SGD: params -= lr * grad |
@@ -523,9 +571,9 @@ automatically at exit.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `tokenize_ids` | `tokenize_ids of code_string` | Return list of token type IDs |
+| `tokenize_ids` | `tokenize_ids of code_string` | Return list of token type IDs. A non-string answers `[]`; under `EIGS_STRICT=1` it raises (#971, same for `tokenize_with_names`). |
 | `tokenize_with_names` | `tokenize_with_names of code_string` | Return list of `[id, name]` pairs |
-| `token_name` | `token_name of id` | Return token type name by ID |
+| `token_name` | `token_name of id` | Return token type name by ID (`"?"` for an unknown id). A non-number answers `"?"` too; under `EIGS_STRICT=1` it raises (#971). |
 
 ## Corpus Preparation
 
@@ -669,7 +717,7 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 |------|-----------|-------------|
 | `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer. Returns `1` on success, `0` when libSDL2 is unavailable or `width`/`height` are not numbers (#1007 — they used to be read without a type check, so a string opened a `0x0` window and still answered `1`). Under `EIGS_STRICT=1` a non-numeric size raises. |
 | `gfx_close` | `gfx_close of null` | Destroy window and quit SDL |
-| `gfx_clear` | `gfx_clear of [r, g, b]` | Clear backbuffer to color |
+| `gfx_clear` | `gfx_clear of [r, g, b]` / `gfx_clear of null` | Clear backbuffer to color; `null` clears to black |
 | `gfx_rect` | `gfx_rect of [x, y, w, h, r, g, b]` or `[..., a]` | Filled rectangle |
 | `gfx_line` | `gfx_line of [x1, y1, x2, y2, r, g, b]` | Line segment |
 | `gfx_point` | `gfx_point of [x, y, r, g, b]` | Single pixel |
@@ -687,6 +735,70 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 | `gfx_title` | `gfx_title of "text"` | Update window title |
 | `gfx_fb` | `gfx_fb of [buf, w, h, x, y, scale]` | Blit buffer (palette indices 0-3) as scaled texture |
 | `ppu_render_frame` | `ppu_render_frame of [mem_buf, fb_buf]` | Full Game Boy PPU render (BG/window/sprites) into framebuffer |
+
+**Wrong-typed and wrong-arity arguments (#1007).** Every builtin in this
+extension that takes an argument at all — the drawing calls, the text calls,
+the framebuffer blit, the PPU renderer, and the whole audio surface below —
+type-checks its arguments *before* reading them, and under `EIGS_STRICT=1` a
+wrong type, a short argument list, a wrong-shaped argument *container* (a
+number or a string where a list belonged) or an out-of-domain value raises a
+catchable `type` error naming the builtin and the shape it wanted. With the
+flag off the answer is byte-identical to before: the drawing calls still
+answer `null`, the generators still answer an empty list, the device calls
+still answer `0` or the device id they already answered.
+
+Two shapes are deliberately **not** covered, so the claim above is not read
+wider than it is. A builtin that takes **no** argument (`gfx_poll`,
+`gfx_present`, `gfx_ticks`, `gfx_close`, `audio_close`, `audio_clear`,
+`audio_capture_close`, `audio_capture_read`, `audio_stream_close`,
+`audio_stream_clear`, `audio_stream_queued`, `audio_queue_size`,
+`audio_music_stop`) ignores one entirely, and a **surplus trailing** argument
+to a fixed-arity builtin is dropped — both are the general over-arity
+question, which is #989's, not this extension's. `tools/gfx_strict_sweep.sh`
+crosses every guarded builtin in the extension with the wrong-container
+shapes and requires each pair to raise or to carry a reason in its allowlist,
+so this paragraph is checked against the binary rather than asserted.
+What changed with the flag OFF is the *read*, not the answer. `Value`'s union
+overlaps `double num` with `char *str`, so `gfx_rect of [0, 0, 32, 32, "255",
+0, 0]` used to reinterpret a `char *` as a `double`, `(int)`-cast it, and
+draw a **black** rectangle where red was asked for — silently, in both modes.
+That read is gone in both modes; an unchecked union pun is not behaviour
+anything can depend on.
+
+So be precise about what "byte-identical" covers: the **returned value** is
+unchanged in every case, and so is anything the call *reports*. What a
+rejected call **draws** is not, and cannot be — a 48-bit pointer read as a
+double is a subnormal that truncates to 0, so the parent painted a shape at
+coordinate 0, in colour 0, or at scale 1, and this build paints nothing at
+all. The same applies to the one drawing-surface builtin that answers with
+data: with a window open, `gfx_read of ["1", 1]` used to hand back the pixel
+at (0, 1) — the punned 0 — and now answers `null`.
+`tools/gfx_pixel_differential.sh` measures exactly that surface (it opens a
+window under the dummy driver and diffs a readback digest against a build of
+the parent commit) and requires every such divergence to carry an executed
+proof that the parent's answer was the punned zero and that this build's
+rejected call draws nothing else instead.
+
+**A wrong-typed OPTIONAL argument follows the same rule, which makes the three
+text builtins differ on purpose.** `gfx_text_width` and `gfx_text_height`
+type-checked their scale slot before this change, so a wrong-typed scale there
+is a *coercion*: with the flag off they still measure at scale 1.
+`gfx_text` did not — its scale slot was one of the unchecked reads — so a
+wrong-typed scale refuses the call and draws nothing. Under `EIGS_STRICT=1`
+all three raise. Layout code that sizes a box with `gfx_text_width` and then
+draws with `gfx_text` therefore sees a box with no text in it if it passes a
+stringy scale, which is the loudest signal available with the flag off; run
+strict to get the error.
+
+A few values are deliberately left quiet because they are the *answer*, not a
+rejected argument: a drawing call with no window open answers `null` (that is
+its answer on every path), `gfx_poll` answers `null` for "no event",
+`gfx_rrect`/`gfx_fb` answer `null` for a zero or negative width/height/scale
+(degenerate geometry covers no pixels), and every device builtin answers `0`
+when libSDL2 or the device is unavailable — environment state, not a caller
+mistake. The distinction is recorded per site in `src/ext_gfx.c` and enforced
+by `tools/failsoft_classify_check.sh`, whose `make_null()` population is
+scoped to that file (see its header for why it is not repo-wide).
 
 **Text rendering and fonts (#593).** `gfx_text` lazily loads
 `libSDL2_ttf-2.0.so.0` on first use and renders proportional antialiased
@@ -799,7 +911,7 @@ Requires full build. Transformer model inference and training.
 | `try_recv` | `try_recv of channel` | Non-blocking receive. Returns the value if available, `null` if the channel is empty. |
 | `recv_timeout` | `recv_timeout of [channel, ms]` | Bounded-wait receive. Returns the value if one arrives before `ms` milliseconds elapse, else `null`. A close while waiting also returns `null`. Fractional `ms` is honored (ns precision on Linux); negative `ms` degenerates to a `try_recv`. |
 | `close_channel` | `close_channel of channel` | Close the channel. Wakes all blocked senders/receivers. |
-| `channel_closed` | `channel_closed of channel` | Returns 1 if closed, 0 otherwise. |
+| `channel_closed` | `channel_closed of channel` | Returns 1 if closed, 0 otherwise. An unknown or reclaimed channel is closed (1). A value that is not a channel handle also answers 1; under `EIGS_STRICT=1` it raises (#971). |
 | `task_spawn` | `task_spawn of fn` or `task_spawn of [fn, arg1, ...]` | Create a cooperative task (#408) running `fn` on the single OS thread — deterministic by construction, unlike `spawn`'s OS thread. Args are deep-COPIED (share-nothing, like channel sends), not shared by reference. Returns a numeric task id. (Increment 1a: the task is recorded and reported by `task_alive`; the copying-stack scheduler that runs and interleaves tasks — `task_yield`/`task_join` — lands in a later increment.) |
 | `task_alive` | `task_alive of id` | Returns 1 while the task is runnable or suspended, 0 once it has finished (or for an unknown id). |
 | `task_self` | `task_self of null` | The **running task's own id** (a number, in the same integer space `task_spawn` returns; the main task is 0, including before any task has been spawned). Lets a worker hand out its own id as a reply address — the message-link pattern a mailbox otherwise cannot express (#526). Deterministic — reads scheduler state, records no nondeterminism. |
@@ -813,6 +925,7 @@ Requires full build. Transformer model inference and training.
 | `task_detach` | `task_detach of id` | Mark task `id` **fire-and-forget** (the pthread-detach precedent, #530): it is reaped the moment it finishes — or immediately if already finished — releasing its handle slot for reuse, so task-per-message workloads are bounded by *concurrent* tasks, not lifetime spawns. A detached task's uncaught death still prints its trace and still fails the process at exit (#493). A reaped id reads as unknown afterwards (`task_join` null, `task_alive` 0). A task may detach itself: `task_detach of (task_self of null)`. Returns 1, or 0 for main/unknown. |
 | `task_sleep` | `task_sleep of ticks` | Suspend this task until the **virtual clock** advances by `ticks`. The clock is logical (discrete-event): it only jumps forward — to the earliest sleeper — when nothing else is runnable, so sleeping stays deterministic, not wall-clock. A negative sleep is treated as 0. A no-op when no task has been spawned. Forbidden inside an `arena_mark`…`arena_reset` scope. |
 | `task_now` | `task_now of null` | The current virtual-clock value (a number; 0 before any `task_sleep`). Deterministic — reads a logical counter, records no nondeterminism. |
+| `task_sched_trace` | `task_sched_trace of null` · `task_sched_trace of 1` · `task_sched_trace of 0` | The scheduler's decision history (#846), **off by default**. `of 1` arms it (so does `EIGS_TASK_TRACE=1` in the environment); `of null` returns a list of `{seq, tick, task, cause}` dicts — one per task **resume** since arming, in schedule order: `seq` the entry index, `tick` the virtual clock (`task_now`), `task` the resumed id (`0` = main), `cause` one of `spawn`, `yield`, `sleep-wake`, `join-release`, `kill-release`, `recv-wake`, `deadlock`; `of 0` disarms and discards. A **pure reader**: arming changes no pick, clock or seed (a traced run is byte-identical to the untraced one), and the entries derive from the deterministic schedule — they are not tape `N` records, so `EIGS_REPLAY` reproduces them. Unbounded while armed (one small entry per resume). Arming never creates a scheduler; the main task's initial run is implicit (it precedes every entry). Not sandbox-visible. |
 | `task_sched_seed` | `task_sched_seed of n` | Install a scheduling **seed**: the scheduler switches from FIFO round-robin to picking the next ready task from a seeded, platform-independent PRNG. Same seed ⇒ same interleaving (byte-identical run + replay, zero tape nondeterminism); a different seed explores a different ordering — the lever a deterministic simulation tester uses to search interleavings. No seed ⇒ unchanged FIFO. Typically called once at program start. Returns null. |
 
 **Thread safety:** Values sent through a channel (or returned through
@@ -835,17 +948,17 @@ receiver.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `audio_open` | `audio_open of [freq, channels]` or `of null` | Open the mixer playback device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007 — they used to be read without a type check, so a string opened the device against a garbage spec and still answered a real id, taking the device with it). |
+| `audio_open` | `audio_open of [freq, channels]` or `of null` | Open the mixer playback device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007 — they used to be read without a type check, so a string opened the device against a garbage spec and still answered a real id, taking the device with it). A **short or non-list** argument also raises under strict (#1007 — it used to skip the check entirely, open at the defaults and hand back a real device id, so `audio_open of [44100]` was indistinguishable from a well-formed call). `of null` is still the defaults. |
 | `audio_sweep` | `audio_sweep of [freq_start, freq_end, duration, amplitude, waveform]` | Generate a frequency sweep with continuous phase. `waveform`: 0=sine, 1=sawtooth. Returns sample list. |
-| `audio_play` | `audio_play of samples` | Play a clip once on a free mixer channel (oldest finite channel recycled when all 16 are busy). Returns the channel id, or `0` on bad args / closed device. A non-numeric element in `samples` raises a `type_mismatch` error (#1007 — it used to be coerced to 0, so a wrong-typed list played silence on a real channel id). |
-| `audio_play_loop` | `audio_play_loop of [samples, loops]` | Play `samples` `loops` times on one mixer channel; `loops == -1` loops forever (the mixer rewinds — no memory multiplication). Returns the channel id, or `0` on bad args / closed device. |
-| `audio_volume` | `audio_volume of [channel, vol]` | Live per-channel volume, `0.0`–`4.0`. Returns `1`, or `0` on a bad/inactive channel. |
-| `audio_stop` | `audio_stop of channel` | Stop one mixer channel. Returns `1`, or `0` on a bad/inactive channel. |
-| `audio_capture_open` | `audio_capture_open of [freq, channels]` | Open the recording (microphone) device and start capturing (#579). Defaults `[44100, 1]`; SDL converts to exactly the requested format. Returns the device id, or `0` when SDL/capture is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007). Re-opening closes the previous capture device. Trace-recorded — under `EIGS_REPLAY` no real device is opened. |
+| `audio_play` | `audio_play of samples` | Play a clip once on a free mixer channel (oldest finite channel recycled when all 16 are busy). Returns the channel id, or `0` on bad args / closed device. A non-numeric element in `samples` raises a `type_mismatch` error (#1007 — it used to be coerced to 0, so a wrong-typed list played silence on a real channel id), and so does a `samples` that is not a list or buffer at all (#1007 — `audio_play of 42` answered the documented "nothing to play" `0`, indistinguishable from an empty clip). `of null` still plays nothing. |
+| `audio_play_loop` | `audio_play_loop of [samples, loops]` | Play `samples` `loops` times on one mixer channel; `loops == -1` loops forever (the mixer rewinds — no memory multiplication). Returns the channel id, or `0` on bad args / closed device. `loops` must be a number equal to `-1` or in `1..10000`; anything else answers `0` and raises under `EIGS_STRICT=1` (#1007), and so does a `samples` slot that is not a list or buffer. |
+| `audio_volume` | `audio_volume of [channel, vol]` | Live per-channel volume, `0.0`–`4.0`. Returns `1`, or `0` on a bad/inactive channel. A non-numeric `channel` or `vol` answers `0` and raises under `EIGS_STRICT=1` (#1007); an out-of-range channel is simply inactive and stays quiet. |
+| `audio_stop` | `audio_stop of channel` | Stop one mixer channel. Returns `1`, or `0` on a bad/inactive channel. A non-numeric `channel` answers `0` and raises under `EIGS_STRICT=1` (#1007). |
+| `audio_capture_open` | `audio_capture_open of [freq, channels]` | Open the recording (microphone) device and start capturing (#579). Defaults `[44100, 1]`; SDL converts to exactly the requested format. Returns the device id, or `0` when SDL/capture is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007), and so does a **short or non-list** argument, which used to open at the defaults and answer a real device id. `of null` is still the defaults. Re-opening closes the previous capture device. Trace-recorded — under `EIGS_REPLAY` no real device is opened. |
 | `audio_capture_read` | `audio_capture_read of null` | Drain samples accumulated since the last read as a **buffer** of floats in `[-1, 1]` (interleaved when `channels > 1`). At most 2048 samples per call — loop until the returned buffer is empty to drain fully (keeps each trace record replayable). Empty buffer = nothing new yet; `null` = no capture device open. Trace-recorded — replay serves the recorded samples, never a live microphone. |
 | `audio_capture_close` | `audio_capture_close of null` | Stop and close the recording device, dropping undrained samples. Safe to call twice or with no device open. |
-| `audio_stream_open` | `audio_stream_open of [freq, channels]` | Open the live streaming playback device (queue mode, F-DS-17 — for on-the-fly synthesis like musical typing). Coexists with the `audio_open` mixer device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Re-opening closes the previous stream device. |
-| `audio_stream_push` | `audio_stream_push of samples` | Queue a block of float samples `[-1, 1]` (**list** or **buffer**) onto the live stream. Same size cap / clamp as `audio_play`. Pure output sink (not trace-recorded). Returns `1` on success, `0` on a closed device or bad shape. |
+| `audio_stream_open` | `audio_stream_open of [freq, channels]` | Open the live streaming playback device (queue mode, F-DS-17 — for on-the-fly synthesis like musical typing). Coexists with the `audio_open` mixer device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` answer `0` and raise under `EIGS_STRICT=1` (#1007 — they used to skip the override, open at 44100/1 and answer a real id, so a caller that asked for 48000 was told it got it). A **short or non-list** argument raises for the same reason: `audio_stream_open of [48000]` answered device id 2 opened at 44100/1. `of null` is still the defaults. Re-opening closes the previous stream device. |
+| `audio_stream_push` | `audio_stream_push of samples` | Queue a block of float samples `[-1, 1]` (**list** or **buffer**) onto the live stream. Same size cap / clamp as `audio_play`. Pure output sink (not trace-recorded). Returns `1` on success, `0` on a closed device or bad shape; a `samples` that is not a list or buffer raises under `EIGS_STRICT=1` (#1007). |
 | `audio_stream_queued` | `audio_stream_queued of null` | Samples still buffered (not yet played) on the live stream — the refill pump pushes another block only while this stays under its latency target. Returns `0` when no stream is open. Trace-recorded (a live, timing-dependent value) — replay serves the recorded depth, keeping the session deterministic. |
 | `audio_stream_clear` | `audio_stream_clear of null` | Drop any buffered audio on the live stream (flush for a panic / all-notes-off). Safe with no device. |
 | `audio_stream_close` | `audio_stream_close of null` | Stop and close the live stream device, dropping buffered audio. Safe to call twice or with no device open. |

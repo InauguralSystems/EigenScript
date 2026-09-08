@@ -128,6 +128,10 @@ define _render_spinbox(widget, ax, ay) as:
     gfx_text of [ax + widget.w - 15, ay + 5, "+", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale]
 
 define _render_combobox(widget, ax, ay) as:
+    # Stamp the absolute origin the overlay pass draws the open list from
+    # (#859) — see the note in _render_dropdown.
+    widget._ax is ax
+    widget._ay is ay
     if widget.hover == 1:
         cbg is _theme.dropdown_hover
     else:
@@ -155,29 +159,44 @@ define _render_combobox(widget, ax, ay) as:
         cx_pos is ax + 6 + widget.cursor * _theme.char_w
         if cx_pos < ax + widget.w - 20:
             gfx_line of [cx_pos, ay + 4, cx_pos, ay + widget.h - 4, _theme.accent[0], _theme.accent[1], _theme.accent[2]]
-    # Dropdown when open
-    if widget.open == 1:
-        item_h is 24
-        menu_h is (len of widget.filtered) * item_h
-        if menu_h > 200:
-            menu_h is 200
-        if menu_h > 0:
-            gfx_rrect of [ax, ay + widget.h + 2, widget.w, menu_h, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]]
-            for i in range of (len of widget.filtered):
-                iy is ay + widget.h + 2 + i * item_h
-                if iy < ay + widget.h + 2 + menu_h:
-                    if i == widget.hover_index:
-                        gfx_rrect of [ax + 2, iy, widget.w - 4, item_h, _theme.radius_sm, _theme.menu_hover[0], _theme.menu_hover[1], _theme.menu_hover[2]]
-                    _draw_text_clipped of [ax + 8, iy + 5, widget.w - 16, widget.filtered[i], _theme.text_color, _theme.font_scale]
+    # The OPEN LIST is not drawn here (#859) — _render_popups paints it
+    # after the tree walk so it sits above later siblings and past a
+    # clipped ancestor's edge. See _render_dropdown's note.
+
+# Absolute rect of the open list — [x, y, w, h], height capped at the
+# historical 200px scroll bound.
+
+define _combobox_popup_rect(widget) as:
+    menu_h is (len of widget.filtered) * 24
+    if menu_h > 200:
+        menu_h is 200
+    return [widget._ax, widget._ay + widget.h + 2, widget.w, menu_h]
+
+define _render_combobox_popup(widget) as:
+    if widget.open != 1:
+        return null
+    if widget._ax == null:
+        return null
+    r is _combobox_popup_rect of widget
+    menu_h is r[3]
+    if menu_h <= 0:
+        return null
+    px is r[0]
+    py is r[1]
+    item_h is 24
+    gfx_rrect of [px, py, r[2], menu_h, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]]
+    for i in range of (len of widget.filtered):
+        iy is py + i * item_h
+        if iy < py + menu_h:
+            if i == widget.hover_index:
+                gfx_rrect of [px + 2, iy, r[2] - 4, item_h, _theme.radius_sm, _theme.menu_hover[0], _theme.menu_hover[1], _theme.menu_hover[2]]
+            _draw_text_clipped of [px + 8, iy + 5, r[2] - 16, widget.filtered[i], _theme.text_color, _theme.font_scale]
+
+# Only the closed box (#859) — the open list is hit-tested above the
+# whole tree by _find_open_popup_at, not by extending in-tree bounds.
 
 define _hit_test_combobox(widget, ax, ay, mx, my) as:
-    total_h is widget.h
-    if widget.open == 1:
-        drop_h is (len of widget.filtered) * 24
-        if drop_h > 200:
-            drop_h is 200
-        total_h is widget.h + drop_h + 2
-    if _point_in_rect of [mx, my, ax, ay, widget.w, total_h]:
+    if _point_in_rect of [mx, my, ax, ay, widget.w, widget.h]:
         return widget
     return null
 
@@ -579,7 +598,6 @@ _register_widget of ["spinbox", {
 }]
 
 _register_widget of ["combobox", {
-    "clip": 0,
     "render": _render_combobox,
     "hit_test": _hit_test_combobox,
     "on_mousedown": _mousedown_combobox,

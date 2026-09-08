@@ -14,6 +14,15 @@
 # error instead of silently lexing to wrong values (`<<`/`>>` lex as two
 # comparisons and raise at parse time). (Slices, destructuring, and
 # parameter defaults also raise, at parse time — #339.)
+# RESERVED OBSERVER FORMS (#1102/#1111): `report` and `report_value` are
+# reserved words here exactly as in the C parser — never a binding
+# (assignment, define name, parameter, loop/comprehension/catch/lambda
+# variable, bare value use), and `report of x` / `report_value of x` require
+# an identifier operand (parentheses around the identifier are fine; dict
+# fields such as `d.report` stay legal data keys). A violation raises a parse
+# error whose text mirrors the runtime's E005 diagnostic, e.g.
+# "parse error line 1: 'report' is a reserved observer form; use it with
+# 'of variable', never as a binding [E005]".
 # DIAGNOSTICS are best-effort and intentionally differ (issue #306): raised
 # errors carry no "line N" prefix (eval-time AST nodes don't track source
 # lines), and divide-or-modulo-by-zero raises in both (the C VM raises a
@@ -37,6 +46,7 @@ load_file of "lib/math.eigs"
 
 # Token types (strings for readability):
 # "num", "str", "ident", "op", "kw", "newline", "indent", "dedent", "eof"
+# "report" (the reserved observer forms `report` / `report_value`, #1102)
 # "lparen", "rparen", "lbracket", "rbracket", "lbrace", "rbrace"
 # "comma", "colon", "dot", "arrow", "pipe", "null", "true", "false"
 
@@ -67,6 +77,10 @@ _interrogatives is ["what", "who", "when", "where", "why", "how"]
 # Predicate keywords
 _predicates is ["converged", "stable", "improving", "oscillating", "diverging", "equilibrium"]
 
+# Reserved observer forms (#1102/#1111): their own token kind, so the parser
+# can reject every binding position exactly where the C parser does.
+_reserved_forms is ["report", "report_value"]
+
 define _is_keyword(word) as:
     for i in range of (len of _keywords):
         if word == _keywords[i]:
@@ -82,6 +96,12 @@ define _is_interrogative(word) as:
 define _is_predicate(word) as:
     for i in range of (len of _predicates):
         if word == _predicates[i]:
+            return 1
+    return 0
+
+define _is_reserved_form(word) as:
+    for i in range of (len of _reserved_forms):
+        if word == _reserved_forms[i]:
             return 1
     return 0
 
@@ -342,6 +362,8 @@ define eigen_tokenize(source) as:
                     append of [tokens, ["interrogative", buf, line]]
                 elif (_is_predicate of buf) == 1:
                     append of [tokens, ["predicate", buf, line]]
+                elif (_is_reserved_form of buf) == 1:
+                    append of [tokens, ["report", buf, line]]
                 elif (_is_keyword of buf) == 1:
                     append of [tokens, ["kw", buf, line]]
                 else:
@@ -460,6 +482,7 @@ define eigen_tokenize(source) as:
 #   ["assign", "x", expr]
 #   ["binop", "+", left, right]
 #   ["call", fn_expr, arg_expr]
+#   ["report", "report" | "report_value", "x"]   (#1102: `report of x`)
 #   ["if", cond, if_body, else_body]
 #   ["loop", cond, body]
 #   ["for", var, iter, body]
@@ -512,8 +535,28 @@ define _p_peek_at(p, offset) as:
         return ["eof", null, 0]
     return p[0][idx]
 
+# #1102/#1111 parity: one reservation rule for every parser entry point. A
+# "report" token is never an identifier; only `report of <ident>` and a dot
+# key consume it. The message mirrors the C parser's E005 diagnostic (line
+# only — eigen tokens carry no column).
+define _p_report_error(tok, operand) as:
+    if operand == 1:
+        throw of f"parse error line {tok[2]}: '{tok[1]}' is a reserved observer form; requires a variable name operand [E005]"
+    throw of f"parse error line {tok[2]}: '{tok[1]}' is a reserved observer form; use it with 'of variable', never as a binding [E005]"
+
+# A dot key may be any word, including a reserved observer form (#1102:
+# `d.report` is a data key, never a binding).
+define _p_expect_key(p) as:
+    tok is _p_cur of p
+    if tok[0] == "report":
+        _p_advance of p
+        return tok
+    return _p_expect of [p, "ident"]
+
 define _p_expect(p, ttype) as:
     tok is _p_cur of p
+    if tok[0] == "report":
+        _p_report_error of [tok, 0]
     if tok[0] != ttype:
         throw of f"parse error: expected {ttype}, got {tok[0]} ('{tok[1]}') at line {tok[2]}"
     _p_advance of p
@@ -774,7 +817,7 @@ define _p_parse_postfix(p) as:
     loop while ((_p_peek_type of p) == "dot") or ((_p_peek_type of p) == "lbracket"):
         if (_p_peek_type of p) == "dot":
             _p_advance of p
-            key_tok is _p_expect of [p, "ident"]
+            key_tok is _p_expect_key of p
             node is ["dot", node, key_tok[1]]
         else:
             _p_advance of p
@@ -908,7 +951,7 @@ define _p_parse_call(p) as:
             left is ["index", left, idx]
         elif (_p_peek_type of p) == "dot":
             _p_advance of p
-            key_tok is _p_expect of [p, "ident"]
+            key_tok is _p_expect_key of p
             left is ["dot", left, key_tok[1]]
         else:
             parsing is 0
@@ -965,6 +1008,24 @@ define _p_parse_primary(p) as:
         _p_advance of p
         return ["ident", tok[1]]
 
+    # #1102/#1111: reserved observer forms. `report of <ident>` is the only
+    # value-producing shape (C parser: parse_primary + parse_relation);
+    # anything else is E005. The operand is parsed at unary precedence,
+    # mirroring the C parser's `of` RHS, so `report of x + "!"` is
+    # `(report of x) + "!"` and `report of (x)` is the identifier `x`.
+    if tt == "report":
+        tok is _p_cur of p
+        _p_advance of p
+        if (_p_peek_type of p) != "kw":
+            _p_report_error of [tok, 0]
+        if (_p_peek_val of p) != "of":
+            _p_report_error of [tok, 0]
+        _p_advance of p
+        operand is _p_parse_unary of p
+        if operand[0] != "ident":
+            _p_report_error of [tok, 1]
+        return ["report", tok[1], operand[1]]
+
     if tt == "lparen":
         # Check for lambda: (params) => expr
         saved_pos is p[1]
@@ -978,7 +1039,7 @@ define _p_parse_primary(p) as:
                 scan_ok is 0
             else:
                 stok is p[0][scan_pos]
-                if (stok[0] == "ident") or (stok[0] == "comma"):
+                if (stok[0] == "ident") or (stok[0] == "comma") or (stok[0] == "report"):
                     scan_pos is scan_pos + 1
                 elif stok[0] == "rparen":
                     # Check if next is arrow
@@ -1080,6 +1141,32 @@ define eigen_parse(tokens) as:
 # Evaluator
 # ============================================================
 
+# #1057: the module env behind a `M.x` target node, or null when this is not a
+# live module namespace. The registry is keyed by the imported NAME, so the
+# name alone is not enough to decide: `import log` followed by `log is {}`
+# rebinds the name to an ordinary dict, and the C evaluator then answers null
+# for `log.log_info` because the namespace VALUE it carried the module env on
+# is gone. `target` (the evaluated left-hand side) is therefore checked
+# against the namespace dict this import produced, and a `_`-prefixed key is
+# refused outright — those bindings are not part of a namespace and are never
+# projected or written through it.
+define _ns_env_for(target_node, key, target) as:
+    if (type of target_node) != "list":
+        return null
+    if (len of target_node) < 2:
+        return null
+    if target_node[0] != "ident":
+        return null
+    if (len of key) > 0:
+        if (char_at of [key, 0]) == "_":
+            return null
+    mod_name is target_node[1]
+    if (has_key of [_eigen_module_envs, mod_name]) == 0:
+        return null
+    if target != _eigen_module_ns[mod_name]:
+        return null
+    return _eigen_module_envs[mod_name]
+
 define _env_new(parent) as:
     return [[], parent]
 
@@ -1127,6 +1214,72 @@ define _env_set_local(env, name, val) as:
             return null
     append of [bindings, [name, val]]
     return null
+
+# #1105: the current env's OWN bindings only (no chain walk) -- a `for`
+# binder saves and restores exactly the scope it binds into.
+define _env_has_local(env, name) as:
+    bindings is env[0]
+    for i in range of (len of bindings):
+        if bindings[i][0] == name:
+            return 1
+    return 0
+
+define _env_unset_local(env, name) as:
+    bindings is env[0]
+    for i in range of (len of bindings):
+        if bindings[i][0] == name:
+            list_remove_at of [bindings, i]
+            return null
+    return null
+
+# Resolve `import NAME` the way the C evaluator does, so a meta-run import
+# answers the same module from any working directory. The C chain
+# (`eigs_import_resolve`, src/builtins_host.c) tries both `NAME.eigs` and
+# `lib/NAME.eigs` against the importing file's directory, the project root
+# and then the stdlib roots beside the binary. Script code here has only two
+# of those bases — the working directory and `exe_path` — so those are what
+# is mirrored, longest-standing first.
+#
+# The `file_exists` probe is the point: `read_text` answers "" for an absent
+# path — its documented answer, not a bug — so the previous
+# `read_text of ("lib/" + name + ".eigs")` made an unresolvable import produce
+# an EMPTY namespace rather than an error, and made a resolvable one depend on
+# the process's working directory. Deciding with `file_exists` and raising
+# when no candidate resolves removes both.
+define _eigen_module_path(name) as:
+    exedir is path_dir of (exe_path of null)
+    cands is ["lib/" + name + ".eigs", name + ".eigs",
+        exedir + "/../lib/" + name + ".eigs",
+        exedir + "/../lib/eigenscript/" + name + ".eigs"]
+    for ci in range of (len of cands):
+        if (file_exists of cands[ci]) == 1:
+            return cands[ci]
+    return null
+
+# #1057: a module namespace is a LIVE VIEW of the module's bindings, not a
+# snapshot — `M.x` reads M's CURRENT binding and `M.x is v` writes it. The
+# C evaluator carries the module Env on the namespace value itself; here the
+# namespace is a plain dict with no identity to hang it on, so the module env
+# is registered under the imported NAME and `dot`/`dot_assign` consult it when
+# the target is that bare name (the `M.x` form). Keeping it out of the dict is
+# deliberate: `keys of M` must list the module's bindings and nothing else.
+#
+# This path IS reached: `_eigen_module_path` resolves a module the way the C
+# resolver does, and tests/test_meta_parity.eigs asserts the read, the write,
+# the `_`-privacy and the new-key cases against the C evaluator on the same
+# source. What still has no parity row is the round trip through a module
+# FUNCTION (`M.f of null` reading a module global). That is a SEPARATE and
+# older gap, not #1057's: `eigen_eval`'s "call" arm parents the call env on
+# the CALLER's env rather than on the definition env ("func" deliberately
+# does not capture one), so a module function cannot see module globals at
+# all — `eigen_run of "import log\nlog.log_level of \"warn\""` throws
+# "undefined variable '_log_level_num'" here and answers null in C. Fixing
+# that is closing over the definition env for every meta function, which is
+# its own change with its own parity rows.
+_eigen_module_envs is {}
+# The namespace dict each of those imports produced, for the identity check
+# in `_ns_env_for` above.
+_eigen_module_ns is {}
 
 # Return / break / continue mechanism — global flags
 _eigen_returning is 0
@@ -1217,6 +1370,18 @@ define eigen_eval(node, env) as:
         if (_env_has of [env, node[1]]) == 0:
             throw of f"undefined variable '{node[1]}'"
         return _env_get of [env, node[1]]
+
+    if ntype == "report":
+        # #1102/#1111: `report of x` / `report_value of x` over a bound name.
+        # The operand must be bound (the C VM raises undefined_name at run
+        # time); the classification is this interpreter's documented
+        # value-only bridge (no host trajectory: equilibrium / opaque).
+        if (_env_has of [env, node[2]]) == 0:
+            throw of f"undefined variable '{node[2]}'"
+        val is _env_get of [env, node[2]]
+        if node[1] == "report_value":
+            return _report_value_bridge of val
+        return _report_bridge of val
 
     if ntype == "assign":
         val is eigen_eval of [node[2], env]
@@ -1384,6 +1549,13 @@ define eigen_eval(node, env) as:
         target is eigen_eval of [node[1], env]
         key is node[2]
         if (type of target) == "dict":
+            # #1057: `M.x` on a module namespace reads M's CURRENT binding.
+            ns_env is _ns_env_for of [node[1], key, target]
+            if ns_env != null:
+                mbind is ns_env[0]
+                for mi in range of (len of mbind):
+                    if mbind[mi][0] == key:
+                        return mbind[mi][1]
             if (has_key of [target, key]) == 1:
                 return target[key]
             return null
@@ -1394,6 +1566,10 @@ define eigen_eval(node, env) as:
         key is node[2]
         val is eigen_eval of [node[3], env]
         if (type of target) == "dict":
+            # #1057: `M.x is v` on a module namespace writes M's binding.
+            ns_env is _ns_env_for of [node[1], key, target]
+            if ns_env != null:
+                _env_set_local of [ns_env, key, val]
             dict_set of [target, key, val]
             return val
         throw of f"cannot assign .{key} on {type of target}"
@@ -1451,16 +1627,30 @@ define eigen_eval(node, env) as:
         var_name is node[1]
         iter is eigen_eval of [node[2], env]
         result is null
+        # #1105: the binder is loop-scoped. The C VM restores a binding the
+        # name already had (parameter, local, module name) and raises
+        # `undefined variable` on a post-loop read of a fresh one, in every
+        # scope and on every road. This evaluator binds the loop var straight
+        # into the current env, so mirror that by saving the current env's
+        # own binding (if any) and restoring or removing it on every exit.
+        had_prior is _env_has_local of [env, var_name]
+        prior_val is null
+        if had_prior == 1:
+            prior_val is _env_get of [env, var_name]
         for i in range of (len of iter):
             _env_set_local of [env, var_name, iter[i]]
             result is _eval_block of [node[3], env]
             if _eigen_returning == 1:
-                return result
+                break
             if _eigen_breaking == 1:
                 _eigen_breaking is 0
                 break
             if _eigen_continuing == 1:
                 _eigen_continuing is 0
+        if had_prior == 1:
+            _env_set_local of [env, var_name, prior_val]
+        else:
+            _env_unset_local of [env, var_name]
         return result
 
     if ntype == "func":
@@ -1521,12 +1711,10 @@ define eigen_eval(node, env) as:
 
     if ntype == "import":
         mod_name is node[1]
-        # Use load_file to load lib/NAME.eigs, then run it in isolated env
-        path is "lib/" + mod_name + ".eigs"
-        try:
-            source is read_text of path
-        catch err:
+        path is _eigen_module_path of mod_name
+        if path == null:
             throw of f"import: module '{mod_name}' not found"
+        source is read_text of path
         # Parse and eval in a child environment
         mod_tokens is eigen_tokenize of source
         mod_ast is eigen_parse of mod_tokens
@@ -1543,6 +1731,11 @@ define eigen_eval(node, env) as:
                 first_char is char_at of [bname, 0]
                 if first_char != "_":
                     dict_set of [mod_dict, bname, bval]
+        # #1057: register the module env so the namespace reads/writes live,
+        # and the namespace dict it belongs to so a later rebinding of the
+        # name does not keep answering from the module.
+        dict_set of [_eigen_module_envs, mod_name, mod_env]
+        dict_set of [_eigen_module_ns, mod_name, mod_dict]
         _env_set of [env, mod_name, mod_dict]
         return mod_dict
 
@@ -1694,11 +1887,19 @@ define _eval_block(stmts, env) as:
 # Built-in functions for the meta-circular environment
 # ============================================================
 
+# #1102/#1111: the reserved forms are parser syntax, never values in the meta
+# environment. `report of x` / `report_value of x` in meta source evaluate
+# through these fresh-parameter wrappers — this interpreter's documented
+# value-only bridge (no host trajectory -> equilibrium; host functions ->
+# opaque) — without exposing the host's named binding history to the meta env.
+_report_bridge is (v) => report of v
+_report_value_bridge is (v) => report_value of v
+
 define _make_default_env as:
     env is _env_new of null
     # Bridge the C builtins into the meta-interpreter's environment.
     # Since we're running inside the C runtime, these names resolve to
-    # VAL_BUILTIN values (report uses the wrapper below). The "call" handler calls them
+    # VAL_BUILTIN values. The "call" handler calls them
     # with `fn of arg` which the C runtime handles natively.
     _env_set_local of [env, "print", print]
     _env_set_local of [env, "write", write]
@@ -1708,11 +1909,6 @@ define _make_default_env as:
     _env_set_local of [env, "num", num]
     _env_set_local of [env, "append", append]
     _env_set_local of [env, "type", type]
-    # #1102: report is reserved syntax, so it cannot be stored as a value.
-    # This fresh-parameter wrapper preserves this interpreter's existing
-    # value-only bridge: no trajectory -> equilibrium, functions -> opaque.
-    # It does not expose the host's named binding history to the meta env.
-    _env_set_local of [env, "report", (v) => report of v]
     _env_set_local of [env, "assert", assert]
     _env_set_local of [env, "throw", throw]
     _env_set_local of [env, "keys", keys]

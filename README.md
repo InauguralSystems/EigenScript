@@ -225,10 +225,14 @@ unobserved:
         i is i + 1
 ```
 
-Inside the block, assignments to plain variables skip the observer and
-mutate the existing `Value` in place. Outside, normal behavior resumes.
-Measured 2.7x on a 2M-iteration accumulator loop (834ms → 307ms, n=5
-medians); iLambdaAi saw ~22% end-to-end on an 18-hour training run.
+Inside the block, assignments to plain variables skip the observer's
+entropy walk and mutate the existing `Value` in place. Outside, normal
+behavior resumes. Measured 2.7x on a 2M-iteration accumulator loop
+(834ms → 307ms, n=5 medians); iLambdaAi saw ~22% end-to-end on an
+18-hour training run. A scalar assignment inside the block still drops its
+O(1) sample into the value window (#1049), so the verdicts `report` and the
+predicates give a numeric binding are the same with the block as without
+it — only the entropy channel (`why`/`how`, the dH window) is elided.
 
 The block only helps **plain variables** — `x is ...`. A dict field or
 list element (`d.k is ...`, `xs[i] is ...`) is never observed in the
@@ -267,6 +271,11 @@ probs is softmax of h
 Builtins: `matmul`, `add`, `subtract`, `multiply`, `divide`, `softmax`,
 `log_softmax`, `relu`, `leaky_relu`, `zeros`, `random_normal`, `shape`,
 `numerical_grad`, `sgd_update`, `tensor_save`, `tensor_load`.
+
+Each of them takes a nested list, a flat list, or a flat numeric **`buffer`**,
+and returns a buffer when every tensor operand was one. `zeros of n` returns a
+buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
+wants the flat container, and that is the name it reaches for.
 
 EigenScript numbers are finite by construction. Operations that would create
 `NaN` return `0`; operations that would overflow to infinity saturate at
@@ -507,7 +516,7 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/SYNTAX.md](docs/SYNTAX.md) — tutorial-style language guide
 - [docs/GRAMMAR.md](docs/GRAMMAR.md) — formal EBNF grammar
 - [docs/LANGUAGE_CONTRACT.md](docs/LANGUAGE_CONTRACT.md) — edge-case promises
-- [docs/BUILTINS.md](docs/BUILTINS.md) — 250+ builtin functions (199 core + ~60 extensions)
+- [docs/BUILTINS.md](docs/BUILTINS.md) — 348 builtin functions (261 core + 87 extensions; `eigenscript --api` prints the live index)
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
 - [docs/TRACE.md](docs/TRACE.md) — execution trace, deterministic replay, temporal interrogatives

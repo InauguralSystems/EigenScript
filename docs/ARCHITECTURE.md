@@ -186,7 +186,8 @@ and drives `loop while not converged` termination.
 Observation uses lazy evaluation: `OP_OBSERVE_ASSIGN` marks values dirty
 (O(1)), and entropy is computed on demand when observer state is read.
 The last observed value is tracked via a thread-local pointer
-(`g_last_observer`). `unobserved` blocks skip observer marking entirely.
+(`g_last_observer`). `unobserved` blocks skip the entropy update; a scalar
+assignment inside one still records its value-window sample (#1049).
 
 Loop stall detection (`OP_LOOP_STALL_CHECK`) exits while-loops after 100
 consecutive iterations with `|dH| < threshold`, setting `__loop_exit__`
@@ -255,7 +256,7 @@ The minimal build (`make build`) sets all flags to 0. The full build
 
 ## Standard Library
 
-The 77 modules in `lib/` are pure EigenScript — no C code. They are loaded at
+The 78 modules in `lib/` are pure EigenScript — no C code. They are loaded at
 runtime via `load_file of "lib/module.eigs"`. Both loaders use absolute paths
 as-is; relative paths search the containing file's directory, the `eigs_modules`
 walk, the nearest `eigs.json` project root, then the executable-relative and

@@ -9,6 +9,7 @@
  */
 
 #include "eigenscript.h"
+#include "ext_register.h"   /* register_gfx_builtins (#744) */
 #include "ext_names.h"
 #include "trace.h"   /* audio capture is a nondet input source (#579) */
 
@@ -388,9 +389,65 @@ static const char* scancode_name(int sc) {
 
 /* ---- Builtins ---- */
 
+/* #1007: the drawing surface reads RUNS of list elements as `.data.num`
+ * with no type check. `Value`'s union overlaps `double num` with
+ * `char *str`, so an unchecked read reinterprets a pointer as a double
+ * and then `(int)`-casts it — the read itself is the defect, which is why
+ * every guard built on these helpers sits BEFORE it in BOTH modes:
+ * ARG_GUARD's soft half returns the same stand-in the function already
+ * answered, without performing the pun.
+ *
+ * `to` is clamped to the list count so an OPTIONAL trailing argument
+ * (gfx_rect's alpha, gfx_text's scale) can be named unconditionally.
+ * Caller must have established that `arg` is a VAL_LIST. */
+static int gfx_nums(Value *arg, int from, int to) {
+    int cnt = arg->data.list.count;
+    if (to > cnt) to = cnt;
+    for (int i = from; i < to; i++) {
+        Value *v = arg->data.list.items[i];
+        if (!v || v->type != VAL_NUM) return 0;
+    }
+    return 1;
+}
+
+/* Every element of a sample list is a number. Used by the audio helpers
+ * whose per-element read COERCES a non-number to 0.0 (audio_mix,
+ * audio_gain, audio_envelope): there is no single stand-in to name, so
+ * those sites use STRICT_REQUIRE and this predicate, checked BEFORE the
+ * output list is built so a strict raise leaks nothing. */
+static int gfx_list_all_num(Value *l) {
+    if (!l || l->type != VAL_LIST) return 0;
+    for (int i = 0; i < l->data.list.count; i++) {
+        Value *v = l->data.list.items[i];
+        if (!v || v->type != VAL_NUM) return 0;
+    }
+    return 1;
+}
+
+/* #1007 round 3: the CONTAINER half of the sample-list check. Round 1 made a
+ * wrong-typed sample ELEMENT loud (inside audio_convert_samples), and left the
+ * container itself silent one line above it: `samples->type != VAL_LIST` just
+ * `return NULL`, and every caller reads that NULL as the documented "nothing
+ * to play" and answers 0. So `audio_play of ["a"]` raised while
+ * `audio_play of 42` did not, which is the same asymmetry the three audio
+ * *_open builtins had between their element and arity halves.
+ *
+ * `null` stays quiet: audio_convert_samples answers NULL for a NULL argument
+ * too, and "play nothing" is a legitimate call. So only a PRESENT, non-null
+ * argument that is neither a list nor a buffer is a caller mistake. */
+static int gfx_bad_samples(Value *v) {
+    return v && v->type != VAL_NULL
+             && v->type != VAL_LIST && v->type != VAL_BUFFER;
+}
+
 /* gfx_open of [width, height, title] */
 Value* builtin_gfx_open(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_num(0);  /* fs:TODO #971 guards the [w, h, title] arg-list shape; deferred: gfx is a variant-only build (make gfx) no session test can exercise */
+    /* #1007: the arg-list SHAPE, converted out of its #971 deferral marker. A wrong
+     * arity used to answer the same 0 the missing-libSDL2 path answers,
+     * so "you called it wrong" and "this machine has no SDL" were the
+     * same value. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "gfx_open", "[number width, number height, title]", make_num(0));
     /* #1007: width and height were read as `.data.num` with no type check
      * while the title on the very next line WAS checked. Value's union
      * overlaps `double num` with `char *str`, so gfx_open of ["800","600",t]
@@ -444,26 +501,48 @@ Value* builtin_gfx_close(Value *arg) {
         dlclose(g_sdl_lib);
         g_sdl_lib = NULL;
     }
-    return make_null();
+    return make_null(); /* fs:VOID gfx_close answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* gfx_clear of [r, g, b] */
 Value* builtin_gfx_clear(Value *arg) {
-    if (!g_renderer) return make_null();
+    /* #1007: argument shape BEFORE the renderer check, the [135] rule. The
+     * stand-in is the same null the no-window path answers, so a guard
+     * placed after it would be unreachable in exactly the environment
+     * (headless CI, no window opened) where the suite runs. */
+    int shaped = (arg && arg->type == VAL_LIST && arg->data.list.count >= 3);
+    /* A wrong SHAPE is the COERCION shape here, not a stand-in one: an
+     * unusable argument fell through to r = g = b = 0 and the buffer WAS
+     * cleared, to black. Refusing to clear at all would be a default-path
+     * behaviour change, which this reform does not make -- so STRICT_REQUIRE,
+     * which raises under the flag and does nothing otherwise. */
+    STRICT_REQUIRE(!shaped && arg && arg->type != VAL_NULL,
+                   "gfx_clear", "[number r, number g, number b] or null");
+    /* A wrong ELEMENT TYPE is different: the read itself is the union pun,
+     * so it is removed in both modes and the stand-in is the same null every
+     * path of this builtin answers. */
+    ARG_GUARD(shaped && !gfx_nums(arg, 0, 3),
+              "gfx_clear", "[number r, number g, number b]", make_null());
+    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
     int r = 0, g = 0, b = 0;
-    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 3) {
+    if (shaped) {
         r = (int)arg->data.list.items[0]->data.num;
         g = (int)arg->data.list.items[1]->data.num;
         b = (int)arg->data.list.items[2]->data.num;
     }
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
     p_SDL_RenderClear(g_renderer);
-    return make_null();
+    return make_null(); /* fs:VOID gfx_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* gfx_rect of [x, y, w, h, r, g, b] or [x, y, w, h, r, g, b, a] */
 Value* builtin_gfx_rect(Value *arg) {
-    if (!g_renderer || !arg || arg->type != VAL_LIST || arg->data.list.count < 7) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 7
+              || !gfx_nums(arg, 0, 8),
+              "gfx_rect",
+              "[number x, number y, number w, number h, number r, number g, number b] and an optional number alpha",
+              make_null());
+    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_rect answers null on every path -- the return value, not a rejected-argument stand-in */
     SDL_Rect rect;
     rect.x = (int)arg->data.list.items[0]->data.num;
     rect.y = (int)arg->data.list.items[1]->data.num;
@@ -475,12 +554,17 @@ Value* builtin_gfx_rect(Value *arg) {
     int a = (arg->data.list.count >= 8) ? (int)arg->data.list.items[7]->data.num : 255;
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
     p_SDL_RenderFillRect(g_renderer, &rect);
-    return make_null();
+    return make_null(); /* fs:VOID gfx_rect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* gfx_line of [x1, y1, x2, y2, r, g, b] */
 Value* builtin_gfx_line(Value *arg) {
-    if (!g_renderer || !arg || arg->type != VAL_LIST || arg->data.list.count < 7) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 7
+              || !gfx_nums(arg, 0, 7),
+              "gfx_line",
+              "[number x1, number y1, number x2, number y2, number r, number g, number b]",
+              make_null());
+    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_line answers null on every path -- the return value, not a rejected-argument stand-in */
     int x1 = (int)arg->data.list.items[0]->data.num;
     int y1 = (int)arg->data.list.items[1]->data.num;
     int x2 = (int)arg->data.list.items[2]->data.num;
@@ -490,12 +574,16 @@ Value* builtin_gfx_line(Value *arg) {
     int b = (int)arg->data.list.items[6]->data.num;
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
     p_SDL_RenderDrawLine(g_renderer, x1, y1, x2, y2);
-    return make_null();
+    return make_null(); /* fs:VOID gfx_line answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* gfx_point of [x, y, r, g, b] */
 Value* builtin_gfx_point(Value *arg) {
-    if (!g_renderer || !arg || arg->type != VAL_LIST || arg->data.list.count < 5) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 5
+              || !gfx_nums(arg, 0, 5),
+              "gfx_point", "[number x, number y, number r, number g, number b]",
+              make_null());
+    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_point answers null on every path -- the return value, not a rejected-argument stand-in */
     int x = (int)arg->data.list.items[0]->data.num;
     int y = (int)arg->data.list.items[1]->data.num;
     int r = (int)arg->data.list.items[2]->data.num;
@@ -503,12 +591,17 @@ Value* builtin_gfx_point(Value *arg) {
     int b = (int)arg->data.list.items[4]->data.num;
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
     p_SDL_RenderDrawPoint(g_renderer, x, y);
-    return make_null();
+    return make_null(); /* fs:VOID gfx_point answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* gfx_circle of [cx, cy, radius, r, g, b] — filled circle via midpoint */
 Value* builtin_gfx_circle(Value *arg) {
-    if (!g_renderer || !arg || arg->type != VAL_LIST || arg->data.list.count < 6) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 6
+              || !gfx_nums(arg, 0, 7),
+              "gfx_circle",
+              "[number cx, number cy, number radius, number r, number g, number b] and an optional number alpha",
+              make_null());
+    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_circle answers null on every path -- the return value, not a rejected-argument stand-in */
     int cx = (int)arg->data.list.items[0]->data.num;
     int cy = (int)arg->data.list.items[1]->data.num;
     int radius = (int)arg->data.list.items[2]->data.num;
@@ -523,13 +616,18 @@ Value* builtin_gfx_circle(Value *arg) {
         SDL_Rect row = { cx - dx, cy + dy, dx * 2 + 1, 1 };
         p_SDL_RenderFillRect(g_renderer, &row);
     }
-    return make_null();
+    return make_null(); /* fs:VOID gfx_circle answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* gfx_rrect of [x, y, w, h, radius, r, g, b] or [..., a]
  * Filled rounded rectangle. Draws corner arcs via scanlines + rects for body. */
 Value* builtin_gfx_rrect(Value *arg) {
-    if (!g_renderer || !arg || arg->type != VAL_LIST || arg->data.list.count < 8) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 8
+              || !gfx_nums(arg, 0, 9),
+              "gfx_rrect",
+              "[number x, number y, number w, number h, number radius, number r, number g, number b] and an optional number alpha",
+              make_null());
+    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_rrect answers null on every path -- the return value, not a rejected-argument stand-in */
     int x = (int)arg->data.list.items[0]->data.num;
     int y = (int)arg->data.list.items[1]->data.num;
     int w = (int)arg->data.list.items[2]->data.num;
@@ -539,7 +637,7 @@ Value* builtin_gfx_rrect(Value *arg) {
     int g = (int)arg->data.list.items[6]->data.num;
     int b = (int)arg->data.list.items[7]->data.num;
     int a = (arg->data.list.count >= 9) ? (int)arg->data.list.items[8]->data.num : 255;
-    if (w <= 0 || h <= 0) return make_null();
+    if (w <= 0 || h <= 0) return make_null(); /* fs:EMPTY a rectangle with no width or height covers no pixels, so drawing nothing IS the answer -- the degenerate-geometry identity, not a laundered argument (lib/ui layout produces zero-size rects routinely) */
     /* Clamp radius to half the smaller dimension */
     if (rad > w / 2) rad = w / 2;
     if (rad > h / 2) rad = h / 2;
@@ -548,7 +646,7 @@ Value* builtin_gfx_rrect(Value *arg) {
     if (rad == 0) {
         SDL_Rect rect = { x, y, w, h };
         p_SDL_RenderFillRect(g_renderer, &rect);
-        return make_null();
+        return make_null(); /* fs:VOID radius 0 took the plain-rect path and drew it; gfx_rrect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
     }
     /* Center body (between top and bottom rounded bands) */
     SDL_Rect center = { x, y + rad, w, h - 2 * rad };
@@ -563,25 +661,32 @@ Value* builtin_gfx_rrect(Value *arg) {
         SDL_Rect bot_row = { x + rad - dx, y + h - 1 - dy, w - 2 * (rad - dx), 1 };
         p_SDL_RenderFillRect(g_renderer, &bot_row);
     }
-    return make_null();
+    return make_null(); /* fs:VOID gfx_rrect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* gfx_clip of [x, y, w, h] — set render clip rectangle.
  * gfx_clip of null — clear clip rectangle. */
 Value* builtin_gfx_clip(Value *arg) {
-    if (!g_renderer || !p_SDL_RenderSetClipRect) return make_null();
-    if (!arg || arg->type == VAL_NULL) {
+    /* `gfx_clip of null` CLEARS the clip and is the documented second call
+     * shape, so only a non-null argument is required to be a 4-number
+     * rectangle. */
+    int clearing = (!arg || arg->type == VAL_NULL);
+    ARG_GUARD(!clearing && (arg->type != VAL_LIST || arg->data.list.count < 4
+                            || !gfx_nums(arg, 0, 4)),
+              "gfx_clip", "[number x, number y, number w, number h] or null",
+              make_null());
+    if (!g_renderer || !p_SDL_RenderSetClipRect) return make_null();  /* fs:VOID no window / no SDL symbol: gfx_clip answers null on every path -- the return value, not a rejected-argument stand-in */
+    if (clearing) {
         p_SDL_RenderSetClipRect(g_renderer, NULL);
-        return make_null();
+        return make_null();  /* fs:VOID the clip was cleared -- gfx_clip's normal successful answer */
     }
-    if (arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
     SDL_Rect clip;
     clip.x = (int)arg->data.list.items[0]->data.num;
     clip.y = (int)arg->data.list.items[1]->data.num;
     clip.w = (int)arg->data.list.items[2]->data.num;
     clip.h = (int)arg->data.list.items[3]->data.num;
     p_SDL_RenderSetClipRect(g_renderer, &clip);
-    return make_null();
+    return make_null(); /* fs:VOID gfx_clip answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* gfx_read of [x, y] — read back one rendered pixel as [r, g, b].
@@ -594,9 +699,17 @@ Value* builtin_gfx_clip(Value *arg) {
  * this takes the TAKE/RECORD tape pair like audio_stream_queued.
  * Returns null with no window, no SDL symbol, or a failed read. */
 Value* builtin_gfx_read(Value *arg) {
+    /* ABOVE the tape seam, exactly as audio_capture_open's guard is (#1018).
+     * An argument's TYPE is deterministic, so a rejected call is not a
+     * nondeterministic input and must not touch the tape: placed below
+     * TRACE_NONDET_TAKE it would return without recording while replay's
+     * TAKE still consumed a record, shifting every later gfx_read and
+     * replaying a rejected call as a real pixel. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
+              || !gfx_nums(arg, 0, 2),
+              "gfx_read", "[number x, number y]", make_null());
     TRACE_NONDET_TAKE("gfx_read");
-    if (!g_renderer || !p_SDL_RenderReadPixels || !arg ||
-        arg->type != VAL_LIST || arg->data.list.count < 2)
+    if (!g_renderer || !p_SDL_RenderReadPixels)
         TRACE_NONDET_RECORD("gfx_read", make_null());
     SDL_Rect r;
     r.x = (int)arg->data.list.items[0]->data.num;
@@ -618,7 +731,7 @@ Value* builtin_gfx_read(Value *arg) {
 Value* builtin_gfx_present(Value *arg) {
     (void)arg;
     if (g_renderer) p_SDL_RenderPresent(g_renderer);
-    return make_null();
+    return make_null(); /* fs:VOID gfx_present answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* Attach keyboard modifier state as shift/ctrl/alt (0/1) dict fields.
@@ -641,9 +754,9 @@ static int poll_mod_state(void) {
  * Key, mouse, and wheel events all carry shift/ctrl/alt (0/1). */
 Value* builtin_gfx_poll(Value *arg) {
     (void)arg;
-    if (!g_window) return make_null();
+    if (!g_window) return make_null(); /* fs:ANSWER no window open means no event queue, which is the same "no event" null this builtin answers for an empty queue */
     SDL_Event ev;
-    if (!p_SDL_PollEvent(&ev)) return make_null();
+    if (!p_SDL_PollEvent(&ev)) return make_null(); /* fs:ANSWER SDL_PollEvent found nothing: "no event pending" is gfx_poll's documented answer */
 
     Value *d = make_dict(4);
     switch (ev.type) {
@@ -707,11 +820,17 @@ Value* builtin_gfx_poll(Value *arg) {
                 dict_set_owned(d, "w", make_num(ev.window.data1));
                 dict_set_owned(d, "h", make_num(ev.window.data2));
             } else {
-                return make_null();
+                /* #1007: `d` is already allocated. Returning without
+                 * releasing it leaked 584 bytes / 6 allocations per
+                 * uninteresting window event — the only leak `make asan-gfx`
+                 * surfaced over the gfx corpus, and it is ours, not SDL's. */
+                val_decref(d);
+                return make_null();  /* fs:ANSWER an uninteresting window event is "no event", the same null this builtin answers when the queue is empty */
             }
             break;
         default:
-            return make_null();
+            val_decref(d);
+            return make_null();  /* fs:ANSWER an event type this builtin does not decode is "no event", the same null it answers for an empty queue */
     }
     return d;
 }
@@ -724,16 +843,21 @@ Value* builtin_gfx_ticks(Value *arg) {
 
 /* gfx_delay of ms */
 Value* builtin_gfx_delay(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "gfx_delay", "number milliseconds",
+              make_null());
     if (g_sdl_lib) p_SDL_Delay((Uint32)arg->data.num);
-    return make_null();
+    return make_null(); /* fs:VOID gfx_delay answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* gfx_title of "new title" */
 Value* builtin_gfx_title(Value *arg) {
-    if (!g_window || !arg || arg->type != VAL_STR) return make_null();
+    /* Split: the STRING requirement is an argument guard, `!g_window` is
+     * environment state and stays soft. */
+    ARG_GUARD(!arg || arg->type != VAL_STR, "gfx_title", "string title",
+              make_null());
+    if (!g_window) return make_null();  /* fs:VOID no window open: gfx_title answers null on every path -- the return value, not a rejected-argument stand-in */
     p_SDL_SetWindowTitle(g_window, arg->data.str);
-    return make_null();
+    return make_null(); /* fs:VOID gfx_title answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* 5x7 bitmap font — printable ASCII 32..126 */
@@ -840,10 +964,37 @@ static const unsigned char font5x7[95][7] = {
  * (#593); the 5x7 bitmap path below is the exact pre-#593 behavior and
  * runs whenever any part of the TTF path is missing or fails. */
 Value* builtin_gfx_text(Value *arg) {
-    if (!g_renderer || !arg || arg->type != VAL_LIST || arg->data.list.count < 6) return make_null();
+    /* The text element was ALREADY type-checked here — and coerced to ""
+     * when it failed, so a number label drew nothing and said nothing —
+     * while the five numbers beside it were read unchecked. Same next-line
+     * asymmetry as gfx_open's.
+     *
+     * THE OPTIONAL SCALE (slot 6) IS IN THIS GUARD ON PURPOSE, and that is
+     * why gfx_text and gfx_text_width answer a wrong-typed scale
+     * DIFFERENTLY. gfx_text_width's slot carried `items[1]->type == VAL_NUM`
+     * before #1007, so its wrong-typed scale is a COERCION and keeps
+     * measuring at scale 1 (STRICT_REQUIRE there, byte-identical off the
+     * flag). This one did not:
+     *     int scale = (count >= 7) ? (int)items[6]->data.num : 1;
+     * reads the union unchecked, so a string scale drew the glyph from a
+     * reinterpreted `char *` — a subnormal that truncates to 0 and is then
+     * clamped to 1, which is why it LOOKED like scale 1 while being a pun.
+     * Unchecked reads are refused; checked coercions are preserved. A blind
+     * review read gfx_text_width's checked line as this one's and called the
+     * refusal a regression: tests/test_gfx_argtypes.eigs pins both shapes in
+     * pixels, and tools/gfx_pixel_differential.sh proves the parent's answer
+     * here was the punned zero. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 6
+              || !gfx_nums(arg, 0, 2)
+              || arg->data.list.items[2]->type != VAL_STR
+              || !gfx_nums(arg, 3, 7),
+              "gfx_text",
+              "[number x, number y, string text, number r, number g, number b] and an optional number scale",
+              make_null());
+    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_text answers null on every path -- the return value, not a rejected-argument stand-in */
     int x = (int)arg->data.list.items[0]->data.num;
     int y = (int)arg->data.list.items[1]->data.num;
-    const char *text = arg->data.list.items[2]->type == VAL_STR ? arg->data.list.items[2]->data.str : "";
+    const char *text = arg->data.list.items[2]->data.str;
     int r = (int)arg->data.list.items[3]->data.num;
     int g = (int)arg->data.list.items[4]->data.num;
     int b = (int)arg->data.list.items[5]->data.num;
@@ -866,7 +1017,7 @@ Value* builtin_gfx_text(Value *arg) {
                     SDL_Rect dst = { x, y, tw, th };
                     p_SDL_RenderCopy(g_renderer, tex, NULL, &dst);
                     p_SDL_DestroyTexture(tex);
-                    return make_null();
+                    return make_null(); /* fs:VOID the TTF path rendered the string; gfx_text answers null on every path -- this is the return value, not a stand-in for a rejected argument */
                 }
             }
         }
@@ -894,7 +1045,7 @@ Value* builtin_gfx_text(Value *arg) {
         }
         cx += (5 + 1) * scale; /* 5 pixel width + 1 pixel gap */
     }
-    return make_null();
+    return make_null(); /* fs:VOID gfx_text answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* gfx_text_width of [text, scale?] (or of "text") — pixel width of `text`
@@ -905,15 +1056,27 @@ Value* builtin_gfx_text(Value *arg) {
 Value* builtin_gfx_text_width(Value *arg) {
     const char *text = NULL;
     int scale = 1;
+    int bad_scale = 0;
     if (arg && arg->type == VAL_STR) {
         text = arg->data.str;
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
                && arg->data.list.items[0]->type == VAL_STR) {
         text = arg->data.list.items[0]->data.str;
-        if (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_NUM)
-            scale = (int)arg->data.list.items[1]->data.num;
+        if (arg->data.list.count >= 2) {
+            if (arg->data.list.items[1]->type == VAL_NUM)
+                scale = (int)arg->data.list.items[1]->data.num;
+            else
+                bad_scale = 1;
+        }
     }
-    if (!text) return make_num(0);  /* fs:TODO #971 guards a non-string / non-[string, ...] argument (text is still NULL here); deferred: variant-only build */
+    /* #1007: converted out of its #971 deferral marker. The 0 stays the non-strict
+     * stand-in — tests/test_gfx_text.eigs pins `gfx_text_width of 5` at 0. */
+    ARG_GUARD(!text, "gfx_text_width",
+              "string text or [string text, number scale]", make_num(0));
+    /* A wrong-typed SCALE is the COERCION shape, not a stand-in one: the
+     * width for scale 1 is still computed and returned. STRICT_REQUIRE
+     * leaves the default path byte-identical by construction. */
+    STRICT_REQUIRE(bad_scale, "gfx_text_width", "[string text, number scale]");
     if (scale < 1) scale = 1;
     if (*text && ttf_available()) {
         void *font = ttf_font_for_scale(scale);
@@ -929,6 +1092,14 @@ Value* builtin_gfx_text_width(Value *arg) {
  * the bitmap glyph height (7 * scale) otherwise. */
 Value* builtin_gfx_text_height(Value *arg) {
     int scale = 1;
+    /* #1007, the COERCION shape: a wrong-typed scale silently fell back to
+     * 1 and the caller was told the height it did not ask for. There is no
+     * stand-in to name (the height for scale 1 is still returned), so this
+     * raises under strict and does nothing otherwise. */
+    STRICT_REQUIRE(arg && arg->type != VAL_NULL && arg->type != VAL_NUM
+                   && !(arg->type == VAL_LIST && arg->data.list.count >= 1
+                        && arg->data.list.items[0]->type == VAL_NUM),
+                   "gfx_text_height", "number scale, [number scale] or null");
     if (arg && arg->type == VAL_NUM) {
         scale = (int)arg->data.num;
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
@@ -1104,6 +1275,26 @@ Value* builtin_audio_open(Value *arg) {
      * none, so a guard placed after the load would never be exercised there.
      * Non-strict is unaffected: the stand-in is the same 0 the missing-SDL
      * path already answers. */
+    /* #1007, the SHORT/NON-LIST half of the same defect, found by a blind
+     * review against this binary: the element guard below is NESTED inside
+     * `count >= 2`, so an argument that never reaches two elements skips it
+     * entirely, falls through to the 44100/1 defaults and answers a REAL
+     * device id. `audio_open of [48000]` was indistinguishable from a
+     * well-formed call -- the caller who asked for 48000 was told it got
+     * it, silently, in BOTH modes. That is the same silent success the
+     * element check closes, reached by arity instead of by type, and it is
+     * the shape the generators (audio_sine et al) already reject.
+     *
+     * COERCION shape, so STRICT_REQUIRE: there is no single stand-in to
+     * name -- non-strict still opens at the defaults and answers whatever
+     * device SDL gives, byte-identical to before BY CONSTRUCTION. `null`
+     * stays the documented "use the defaults" form (BUILTINS.md spells
+     * `audio_open of null` out), so only a PRESENT, non-null argument
+     * that is not a >= 2-element list is refused. Above the element guard, and
+     * so above the SDL load -- the [135] rule. */
+    STRICT_REQUIRE(arg && arg->type != VAL_NULL
+                   && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
+                   "audio_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         /* The same unchecked `.data.num` type-pun as gfx_open. That it is an
          * oversight rather than a convention is settled 180 lines down:
@@ -1149,15 +1340,20 @@ Value* builtin_audio_close(Value *arg) {
         g_audio_device = 0;
         audio_free_channels(0);
     }
-    return make_null();
+    return make_null(); /* fs:VOID audio_close answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* audio_pause of flag — 1=pause, 0=unpause */
 Value* builtin_audio_pause(Value *arg) {
-    if (!g_audio_device) return make_null();
+    /* #1007, COERCION shape: a wrong-typed flag fell back to 1 (pause), so
+     * `audio_pause of "off"` PAUSED the device and said nothing. Above the
+     * device check, the [135] rule. */
+    STRICT_REQUIRE(arg && arg->type != VAL_NULL && arg->type != VAL_NUM,
+                   "audio_pause", "number flag (1 = pause, 0 = unpause) or null");
+    if (!g_audio_device) return make_null();  /* fs:VOID no device open: audio_pause answers null on every path -- the return value, not a rejected-argument stand-in */
     int pause = (arg && arg->type == VAL_NUM) ? (int)arg->data.num : 1;
     p_SDL_PauseAudioDevice(g_audio_device, pause);
-    return make_null();
+    return make_null(); /* fs:VOID audio_pause answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* ================================================================
@@ -1223,6 +1419,28 @@ Value* builtin_audio_capture_open(Value *arg) {
      * one and the rejected call replayed as a real device id. Executed:
      * capture printed `0 2 null` with 1 record on the tape, replay of that
      * same tape printed `2 2 null`, silently, even under EIGS_STRICT=1. */
+    /* #1007, the SHORT/NON-LIST half of the same defect, found by a blind
+     * review against this binary: the element guard below is NESTED inside
+     * `count >= 2`, so an argument that never reaches two elements skips it
+     * entirely, falls through to the 44100/1 defaults and answers a REAL
+     * device id. `audio_capture_open of [48000]` was indistinguishable from a
+     * well-formed call -- the caller who asked for 48000 was told it got
+     * it, silently, in BOTH modes. That is the same silent success the
+     * element check closes, reached by arity instead of by type, and it is
+     * the shape the generators (audio_sine et al) already reject.
+     *
+     * COERCION shape, so STRICT_REQUIRE: there is no single stand-in to
+     * name -- non-strict still opens at the defaults and answers whatever
+     * device SDL gives, byte-identical to before BY CONSTRUCTION. `null`
+     * stays the documented "use the defaults" form (tests/test_audio.eigs
+     * calls `audio_capture_open of null`), so only a PRESENT,
+     * non-null argument that is not a >= 2-element list is refused. Above the element guard, and
+     * so above the SDL load and above the tape seam (a rejected argument
+     * is deterministic: it must neither consume nor write a record) --
+     * the [135] rule. */
+    STRICT_REQUIRE(arg && arg->type != VAL_NULL
+                   && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
+                   "audio_capture_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
                   arg->data.list.items[1]->type != VAL_NUM,
@@ -1289,7 +1507,7 @@ Value* builtin_audio_capture_close(Value *arg) {
         p_SDL_CloseAudioDevice(g_capture_device);
         g_capture_device = 0;
     }
-    return make_null();
+    return make_null(); /* fs:VOID audio_capture_close answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* ================================================================
@@ -1331,6 +1549,26 @@ Value* builtin_audio_stream_open(Value *arg) {
      * "expected type_mismatch, got none" there and only there. A guard behind
      * an environment check is a guard that does not exist in the environment
      * that lacks it. */
+    /* #1007, the SHORT/NON-LIST half of the same defect, found by a blind
+     * review against this binary: the element guard below is NESTED inside
+     * `count >= 2`, so an argument that never reaches two elements skips it
+     * entirely, falls through to the 44100/1 defaults and answers a REAL
+     * device id. `audio_stream_open of [48000]` was indistinguishable from a
+     * well-formed call -- the caller who asked for 48000 was told it got
+     * it, silently, in BOTH modes. That is the same silent success the
+     * element check closes, reached by arity instead of by type, and it is
+     * the shape the generators (audio_sine et al) already reject.
+     *
+     * COERCION shape, so STRICT_REQUIRE: there is no single stand-in to
+     * name -- non-strict still opens at the defaults and answers whatever
+     * device SDL gives, byte-identical to before BY CONSTRUCTION. `null`
+     * stays the documented "use the defaults" form (tests/test_audio.eigs
+     * calls `audio_stream_open of null`), so only a PRESENT,
+     * non-null argument that is not a >= 2-element list is refused. Above the element guard, and
+     * so above the SDL load -- the [135] rule. */
+    STRICT_REQUIRE(arg && arg->type != VAL_NULL
+                   && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
+                   "audio_stream_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
                   arg->data.list.items[1]->type != VAL_NUM,
@@ -1376,6 +1614,9 @@ Value* builtin_audio_stream_open(Value *arg) {
  * freed immediately. Pure sink, not traced. Returns 1 on success, 0 on a
  * closed device, bad shape, or an SDL queue error. */
 Value* builtin_audio_stream_push(Value *arg) {
+    /* #1007 round 3: above the device check, for the reason audio_play's is. */
+    STRICT_REQUIRE(gfx_bad_samples(arg), "audio_stream_push",
+                   "a list or buffer of samples, or null");
     if (!g_stream_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_stream_push: "0 on a closed device"; g_stream_device == 0 is device state, not an argument */
     int n = 0;
     int16_t *buf = audio_convert_samples(arg, &n);
@@ -1419,7 +1660,7 @@ Value* builtin_audio_stream_clear(Value *arg) {
     (void)arg;
     if (g_stream_device && p_SDL_ClearQueuedAudio)
         p_SDL_ClearQueuedAudio(g_stream_device);
-    return make_null();
+    return make_null(); /* fs:VOID audio_stream_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* audio_stream_close of null — stop and close the live stream device.
@@ -1430,7 +1671,7 @@ Value* builtin_audio_stream_close(Value *arg) {
         p_SDL_CloseAudioDevice(g_stream_device);
         g_stream_device = 0;
     }
-    return make_null();
+    return make_null(); /* fs:VOID audio_stream_close answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* audio_music_play of [path, loops] — stream a music file (mp3/ogg/wav) via
@@ -1438,10 +1679,16 @@ Value* builtin_audio_stream_close(Value *arg) {
  * any current track. Returns 1 on success, 0 on failure (missing mixer lib,
  * unreadable/undecodable file, no audio device). */
 Value* builtin_audio_music_play(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1) return make_num(0);  /* fs:TODO #971 guards the [path, loops] arg-list shape; deferred: variant-only build */
-    Value *pv = arg->data.list.items[0];
-    if (pv->type != VAL_STR) return make_num(0);  /* fs:TODO #971 guards a non-string path; deferred: variant-only build */
-    const char *path = pv->data.str;
+    /* #1007: both #971 deferral markers converted. Above load_sdl2(), the [135] rule. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 1
+              || arg->data.list.items[0]->type != VAL_STR,
+              "audio_music_play", "[string path, number loops]", make_num(0));
+    /* A wrong-typed `loops` is the COERCION shape: it fell back to -1
+     * (forever), so a typo made the track loop rather than play once. */
+    STRICT_REQUIRE(arg->data.list.count >= 2
+                   && arg->data.list.items[1]->type != VAL_NUM,
+                   "audio_music_play", "[string path, number loops]");
+    const char *path = arg->data.list.items[0]->data.str;
     int loops = (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_NUM)
                 ? (int)arg->data.list.items[1]->data.num : -1;
     if (!load_sdl2()) return make_num(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
@@ -1475,7 +1722,13 @@ Value* builtin_audio_music_play(Value *arg) {
 
 /* audio_music_volume of v — music volume 0..128 */
 Value* builtin_audio_music_volume(Value *arg) {
-    if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null();
+    /* #1007, COERCION shape: a wrong-typed volume fell through to v = 0 and
+     * MUTED the music. Above the mixer-state check, the [135] rule. */
+    STRICT_REQUIRE(!(arg && arg->type == VAL_NUM)
+                   && !(arg && arg->type == VAL_LIST && arg->data.list.count >= 1
+                        && arg->data.list.items[0]->type == VAL_NUM),
+                   "audio_music_volume", "number volume 0..128 or [number volume]");
+    if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null();  /* fs:VOID no mixer open: audio_music_volume answers null on every path -- the return value, not a rejected-argument stand-in */
     int v = 0;
     if (arg && arg->type == VAL_NUM) v = (int)arg->data.num;
     else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
@@ -1484,7 +1737,7 @@ Value* builtin_audio_music_volume(Value *arg) {
     if (v < 0) v = 0;
     if (v > MY_MIX_MAX_VOLUME) v = MY_MIX_MAX_VOLUME;
     p_Mix_VolumeMusic(v);
-    return make_null();
+    return make_null(); /* fs:VOID audio_music_volume answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* audio_music_stop of null — halt and free the current track. */
@@ -1492,11 +1745,17 @@ Value* builtin_audio_music_stop(Value *arg) {
     (void)arg;
     if (g_mixer_open && p_Mix_HaltMusic) p_Mix_HaltMusic();
     if (g_music && p_Mix_FreeMusic) { p_Mix_FreeMusic(g_music); g_music = NULL; }
-    return make_null();
+    return make_null(); /* fs:VOID audio_music_stop answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* audio_play of samples — convert float list [-1,1] to int16, queue */
 Value* builtin_audio_play(Value *arg) {
+    /* #1007 round 3: ABOVE the device check, the [135] rule applied to device
+     * state rather than to the SDL load. Below it, `audio_play of 42` is
+     * silent on any machine with no device open -- which is every CI runner
+     * -- so the guard would exist only where nothing runs it. */
+    STRICT_REQUIRE(gfx_bad_samples(arg), "audio_play",
+                   "a list or buffer of samples, or null");
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_play: "0 on ... closed device"; channel ids are slot+1 >= 1 (line 1057), so 0 is not a channel */
     int n = 0;
     int16_t *buf = audio_convert_samples(arg, &n);
@@ -1514,17 +1773,31 @@ Value* builtin_audio_play(Value *arg) {
  * no memory multiplication — Tidepool GAP-002). Returns the channel id,
  * or 0 on a bad arg / closed device. */
 Value* builtin_audio_play_loop(Value *arg) {
-    if (!g_audio_device || !arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_num(0);  /* fs:TODO #971 mixed condition: !g_audio_device is device state (must stay soft) but the VAL_LIST/count checks are a real arg guard -- splitting them is the conversion; deferred: variant-only build */
-    Value *samples = arg->data.list.items[0];
-    Value *loops_v = arg->data.list.items[1];
-    if (!loops_v || loops_v->type != VAL_NUM) return make_num(0);  /* fs:TODO #971 guards a non-number loops argument; deferred: variant-only build */
+    /* #1007: the mixed condition split, exactly as its #971 deferral marker asked. The
+     * arg-shape half is loud; `!g_audio_device` is device state and stays
+     * soft, and it moves BELOW the guard so the guard is reachable on a
+     * machine with no audio device (the [135] rule). */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
+              || !arg->data.list.items[1]
+              || arg->data.list.items[1]->type != VAL_NUM,
+              "audio_play_loop", "[samples, number loops]", make_num(0));
     /* #152: NaN/huge casts are UB; -1 is the one negative with meaning. */
-    double loops_d = loops_v->data.num;
+    double loops_d = arg->data.list.items[1]->data.num;
     int loops;
     if (loops_d == -1.0) loops = -1;
-    else if (isnan(loops_d) || loops_d < 1.0 || loops_d > 10000.0) return make_num(0);  /* fs:TODO #971 value-domain guard (NaN / <1 / >10000 loops, the #152 UB-cast bound), not a device or answer path; deferred: variant-only build */
-    else loops = (int)loops_d;
+    else {
+        ARG_GUARD(isnan(loops_d) || loops_d < 1.0 || loops_d > 10000.0,
+                  "audio_play_loop",
+                  "[samples, number loops] with loops == -1 or 1..10000",
+                  make_num(0));
+        loops = (int)loops_d;
+    }
+    /* #1007 round 3: the samples slot, beside the loops slot and above the
+     * device check for the same reachability reason. */
+    STRICT_REQUIRE(gfx_bad_samples(arg->data.list.items[0]), "audio_play_loop",
+                   "[list or buffer of samples, number loops]");
+    if (!g_audio_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_play_loop: "0 on ... closed device"; channel ids are slot+1 >= 1, so 0 is not a channel */
+    Value *samples = arg->data.list.items[0];
     int n = 0;
     int16_t *buf = audio_convert_samples(samples, &n);
     if (!buf) {
@@ -1539,12 +1812,14 @@ Value* builtin_audio_play_loop(Value *arg) {
 /* audio_volume of [channel, vol] — live per-channel volume, 0.0..4.0
  * (Tidepool GAP-003). Returns 1, or 0 on a bad channel/arg. */
 Value* builtin_audio_volume(Value *arg) {
-    if (!g_audio_device || !arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_num(0);  /* fs:TODO #971 mixed condition: !g_audio_device is device state (must stay soft) but the VAL_LIST/count checks are a real arg guard; deferred: variant-only build */
+    /* #1007: the mixed condition split, as its #971 deferral marker asked. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
+              || !arg->data.list.items[0] || arg->data.list.items[0]->type != VAL_NUM
+              || !arg->data.list.items[1] || arg->data.list.items[1]->type != VAL_NUM,
+              "audio_volume", "[number channel, number volume]", make_num(0));
+    if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing", and with no device open no channel is */
     Value *ch_v = arg->data.list.items[0];
     Value *vol_v = arg->data.list.items[1];
-    if (!ch_v || ch_v->type != VAL_NUM || !vol_v || vol_v->type != VAL_NUM)
-        return make_num(0);  /* fs:TODO #971 guards non-number channel/volume arguments; deferred: variant-only build */
     int c = (int)ch_v->data.num - 1;
     if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing" -- the same value line 1452 returns for an inactive in-range channel; an out-of-range id is definitionally inactive */
     double vol = vol_v->data.num;
@@ -1560,7 +1835,10 @@ Value* builtin_audio_volume(Value *arg) {
 /* audio_stop of channel — stop one mixer channel. Returns 1, or 0 on a
  * bad/inactive channel. */
 Value* builtin_audio_stop(Value *arg) {
-    if (!g_audio_device || !arg || arg->type != VAL_NUM) return make_num(0);  /* fs:TODO #971 mixed condition: !g_audio_device is device state (must stay soft) but arg->type != VAL_NUM is a real arg guard; deferred: variant-only build */
+    /* #1007: the mixed condition split, as its #971 deferral marker asked. */
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "audio_stop", "number channel",
+              make_num(0));
+    if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active", and with no device open none is */
     int c = (int)arg->data.num - 1;
     if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active" -- the same value line 1465 returns for an inactive in-range channel */
     p_SDL_LockAudioDevice(g_audio_device);
@@ -1594,12 +1872,21 @@ Value* builtin_audio_queue_size(Value *arg) {
 Value* builtin_audio_clear(Value *arg) {
     (void)arg;
     if (g_audio_device) audio_free_channels(1);
-    return make_null();
+    return make_null(); /* fs:VOID audio_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* audio_sine of [freq, duration, amplitude] — generate sine wave samples */
 Value* builtin_audio_sine(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_list(0);
+    /* #1007 round 2. The ARITY/SHAPE half of the same laundering: a short or
+     * non-list argument was answered with an empty sample list, which is
+     * indistinguishable from a legitimately empty generation (`n <= 0`
+     * returns the same list four lines down). Under EIGS_STRICT=1 it now
+     * raises; the empty list stays the non-strict stand-in, so the default
+     * path is byte-identical. Found by a blind review measuring the docs'
+     * "a wrong type, a short argument list or an out-of-domain value raises"
+     * claim against the binary: eight sites answered 0 quietly. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "audio_sine", "[number freq, number duration, number amplitude]", make_list(0));
     /* #1007, pointer-disclosure half. The generators BUILD their returned
      * samples out of these reads, so a type-pun here does not merely make a
      * wrong drawing call — it copies a reinterpreted `char *` into a list the
@@ -1632,7 +1919,9 @@ Value* builtin_audio_sine(Value *arg) {
 
 /* audio_saw of [freq, duration, amplitude] — sawtooth wave */
 Value* builtin_audio_saw(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_list(0);
+    /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "audio_saw", "[number freq, number duration, number amplitude]", make_list(0));
     /* #1007, pointer-disclosure half. The generators BUILD their returned
      * samples out of these reads, so a type-pun here does not merely make a
      * wrong drawing call — it copies a reinterpreted `char *` into a list the
@@ -1664,7 +1953,9 @@ Value* builtin_audio_saw(Value *arg) {
 
 /* audio_square of [freq, duration, amplitude] — square wave */
 Value* builtin_audio_square(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_list(0);
+    /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "audio_square", "[number freq, number duration, number amplitude]", make_list(0));
     /* #1007, pointer-disclosure half. The generators BUILD their returned
      * samples out of these reads, so a type-pun here does not merely make a
      * wrong drawing call — it copies a reinterpreted `char *` into a list the
@@ -1697,7 +1988,9 @@ Value* builtin_audio_square(Value *arg) {
 /* audio_sweep of [freq_start, freq_end, duration, amplitude, waveform]
    waveform: 0=sine, 1=sawtooth.  Continuous phase sweep. */
 Value* builtin_audio_sweep(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) return make_list(0);
+    /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 5,
+              "audio_sweep", "[number freq_start, number freq_end, number duration, number amplitude, number waveform]", make_list(0));
     /* #1007, pointer-disclosure half. The generators BUILD their returned
      * samples out of these reads, so a type-pun here does not merely make a
      * wrong drawing call — it copies a reinterpreted `char *` into a list the
@@ -1741,7 +2034,9 @@ Value* builtin_audio_sweep(Value *arg) {
 
 /* audio_noise of [duration, amplitude] — white noise */
 Value* builtin_audio_noise(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
+    /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "audio_noise", "[number duration, number amplitude]", make_list(0));
     /* #1007, pointer-disclosure half. The generators BUILD their returned
      * samples out of these reads, so a type-pun here does not merely make a
      * wrong drawing call — it copies a reinterpreted `char *` into a list the
@@ -1770,10 +2065,20 @@ Value* builtin_audio_noise(Value *arg) {
 
 /* audio_mix of [samples_a, samples_b] — add and clamp */
 Value* builtin_audio_mix(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
+    /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "audio_mix", "[list samples_a, list samples_b]", make_list(0));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
-    if (a->type != VAL_LIST || b->type != VAL_LIST) return make_list(0);
+    ARG_GUARD(a->type != VAL_LIST || b->type != VAL_LIST,
+              "audio_mix", "[list samples_a, list samples_b]", make_list(0));
+    /* #1007, COERCION shape: a non-number ELEMENT was substituted with 0.0,
+     * so a wrong-typed sample list mixed to silence and answered a valid
+     * list. Checked BEFORE the output list is built so a strict raise leaks
+     * nothing. The `i < count` padding of the shorter list is a documented
+     * answer and is deliberately not part of this condition. */
+    STRICT_REQUIRE(!gfx_list_all_num(a) || !gfx_list_all_num(b),
+                   "audio_mix", "[list of numbers, list of numbers]");
     int n = a->data.list.count > b->data.list.count ? a->data.list.count : b->data.list.count;
 
     Value *out = make_list(n);
@@ -1790,9 +2095,17 @@ Value* builtin_audio_mix(Value *arg) {
 
 /* audio_gain of [samples, volume] — scale and clamp */
 Value* builtin_audio_gain(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_list(0);
+    /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "audio_gain", "[list samples, number volume]", make_list(0));
     Value *samples = arg->data.list.items[0];
-    if (samples->type != VAL_LIST) return make_list(0);
+    ARG_GUARD(samples->type != VAL_LIST, "audio_gain",
+              "[list samples, number volume]", make_list(0));
+    /* #1007, COERCION shape: a non-number ELEMENT was substituted with 0.0.
+     * Checked before the output list is built so a strict raise leaks
+     * nothing. */
+    STRICT_REQUIRE(!gfx_list_all_num(samples), "audio_gain",
+                   "[list of numbers, number volume]");
     /* #1007: the SEVENTH member of the disclosure family, and the one that
      * survived the first pass because the fix was written from the six
      * generators rather than from a sweep. `vol` multiplies every sample and
@@ -1818,7 +2131,9 @@ Value* builtin_audio_gain(Value *arg) {
 
 /* audio_envelope of [samples, attack, decay, sustain_level, release] — ADSR */
 Value* builtin_audio_envelope(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) return make_list(0);
+    /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 5,
+              "audio_envelope", "[list samples, number attack, number decay, number sustain, number release]", make_list(0));
     /* #1007, pointer-disclosure half. The generators BUILD their returned
      * samples out of these reads, so a type-pun here does not merely make a
      * wrong drawing call — it copies a reinterpreted `char *` into a list the
@@ -1834,7 +2149,14 @@ Value* builtin_audio_envelope(Value *arg) {
               arg->data.list.items[4]->type != VAL_NUM,
               "audio_envelope", "[samples, number attack, number decay, number sustain, number release]", make_list(0));
     Value *samples = arg->data.list.items[0];
-    if (samples->type != VAL_LIST) return make_list(0);
+    ARG_GUARD(samples->type != VAL_LIST, "audio_envelope",
+              "[list samples, number attack, number decay, number sustain, number release]",
+              make_list(0));
+    /* #1007, COERCION shape: a non-number ELEMENT was substituted with 0.0.
+     * Checked before the output list is built so a strict raise leaks
+     * nothing. */
+    STRICT_REQUIRE(!gfx_list_all_num(samples), "audio_envelope",
+                   "[list of numbers, number attack, number decay, number sustain, number release]");
     double attack = arg->data.list.items[1]->data.num;
     double decay = arg->data.list.items[2]->data.num;
     double sustain = arg->data.list.items[3]->data.num;
@@ -1879,27 +2201,41 @@ Value* builtin_audio_envelope(Value *arg) {
  * renderer as a scaled texture.  One C call replaces width*height draw calls.
  * Palette: 0 → white (0xFF), 1 → light (0xAA), 2 → dark (0x55), 3 → black (0x00). */
 Value* builtin_gfx_fb(Value *arg) {
-    if (!g_renderer || !p_SDL_CreateTexture || !p_SDL_UpdateTexture || !p_SDL_RenderCopy)
-        return make_null();
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 6)
-        return make_null();
+    /* Argument shape BEFORE the renderer/symbol check, the [135] rule: the
+     * five geometry elements were read unchecked while the buffer beside
+     * them was type-checked one line down. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 6
+              || !arg->data.list.items[0]
+              || arg->data.list.items[0]->type != VAL_BUFFER
+              || !gfx_nums(arg, 1, 6),
+              "gfx_fb",
+              "[buffer fb, number w, number h, number x, number y, number scale]",
+              make_null());
     Value *buf  = arg->data.list.items[0];
     int    w    = (int)arg->data.list.items[1]->data.num;
     int    h    = (int)arg->data.list.items[2]->data.num;
     int    dx   = (int)arg->data.list.items[3]->data.num;
     int    dy   = (int)arg->data.list.items[4]->data.num;
     int    sc   = (int)arg->data.list.items[5]->data.num;
-    if (!buf || buf->type != VAL_BUFFER || w <= 0 || h <= 0 || sc <= 0)
-        return make_null();
-    if (buf->data.buffer.count < w * h)
-        return make_null();
+    /* A non-positive dimension is DEGENERATE geometry (nothing to blit),
+     * the same verdict gfx_rrect gives a zero-size rectangle. A buffer
+     * SHORTER than w * h is an argument mismatch and is loud -- still above
+     * the SDL check so it is reachable without libSDL2 (the [135] rule);
+     * the reads it needs are type-checked by the guard above. */
+    if (w <= 0 || h <= 0 || sc <= 0) return make_null();  /* fs:EMPTY a zero or negative width/height/scale covers no pixels, so drawing nothing IS the answer -- the same degenerate-geometry identity gfx_rrect gives */
+    ARG_GUARD(buf->data.buffer.count < w * h,
+              "gfx_fb",
+              "[buffer fb, number w, number h, number x, number y, number scale] with len of fb >= w * h",
+              make_null());
+    if (!g_renderer || !p_SDL_CreateTexture || !p_SDL_UpdateTexture || !p_SDL_RenderCopy)
+        return make_null();  /* fs:VOID no window / no SDL texture symbols: gfx_fb answers null on every path -- the return value, not a rejected-argument stand-in */
 
     /* Recreate texture if size changed */
     if (!g_fb_texture || g_fb_w != w || g_fb_h != h) {
         if (g_fb_texture) p_SDL_DestroyTexture(g_fb_texture);
         g_fb_texture = p_SDL_CreateTexture(g_renderer,
             MY_SDL_PIXELFORMAT_ARGB8888, MY_SDL_TEXTUREACCESS_STREAMING, w, h);
-        if (!g_fb_texture) return make_null();
+        if (!g_fb_texture) return make_null(); /* fs:ANSWER SDL_CreateTexture failed -- environment/driver state, not an argument; nothing can be blitted so null is the result */
         g_fb_w = w;
         g_fb_h = h;
     }
@@ -1926,7 +2262,7 @@ Value* builtin_gfx_fb(Value *arg) {
 
     SDL_Rect dst = { dx, dy, w * sc, h * sc };
     p_SDL_RenderCopy(g_renderer, g_fb_texture, NULL, &dst);
-    return make_null();
+    return make_null(); /* fs:VOID gfx_fb answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 /* ================================================================
@@ -1937,14 +2273,21 @@ Value* builtin_gfx_fb(Value *arg) {
  * Reads LCDC, scroll, palette, VRAM, OAM registers directly from mem_buf.
  * ================================================================ */
 Value* builtin_ppu_render_frame(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
-        return make_null();
+    /* #1007: a wrong-typed or undersized buffer used to answer null and
+     * render nothing, which in an emulator presents as a black screen with
+     * no diagnostic anywhere. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "ppu_render_frame", "[buffer mem, buffer fb]", make_null());
     Value *mem_v = arg->data.list.items[0];
     Value *fb_v  = arg->data.list.items[1];
-    if (!mem_v || mem_v->type != VAL_BUFFER || mem_v->data.buffer.count < 65536)
-        return make_null();
-    if (!fb_v || fb_v->type != VAL_BUFFER || fb_v->data.buffer.count < 23040)
-        return make_null();
+    ARG_GUARD(!mem_v || mem_v->type != VAL_BUFFER
+              || mem_v->data.buffer.count < 65536,
+              "ppu_render_frame", "[buffer mem of at least 65536, buffer fb]",
+              make_null());
+    ARG_GUARD(!fb_v || fb_v->type != VAL_BUFFER
+              || fb_v->data.buffer.count < 23040,
+              "ppu_render_frame", "[buffer mem, buffer fb of at least 23040]",
+              make_null());
 
     double *mem = mem_v->data.buffer.data;
     double *fb  = fb_v->data.buffer.data;
@@ -1953,7 +2296,7 @@ Value* builtin_ppu_render_frame(Value *arg) {
     if (!(lcdc & 0x80)) {
         /* LCD off — blank */
         for (int i = 0; i < 23040; i++) fb[i] = 0;
-        return make_null();
+        return make_null(); /* fs:VOID the LCD is off, so the frame was blanked; ppu_render_frame answers null on every path -- this is the return value, not a stand-in for a rejected argument */
     }
 
     int scy = (int)mem[0xFF42];
@@ -2128,7 +2471,7 @@ Value* builtin_ppu_render_frame(Value *arg) {
             }
         }
     }
-    return make_null();
+    return make_null(); /* fs:VOID ppu_render_frame answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
 void register_gfx_builtins(Env *env) {

@@ -85,6 +85,22 @@ Two of these are the load-bearing pair:
 Everything the observer "experiences" is one continuous quantity (`why`)
 and its sign. It has no words. The words come from the oracle.
 
+### What carries a trajectory
+
+Everything above is keyed to an **environment slot** (`env_obs_slot`) — the
+Value carries no observer state. A binding has a history; a container
+element does not (#1048):
+
+| carries a trajectory | does not |
+|---|---|
+| a named local; a closure-captured local (one factory call per entity); an `eval`-generated name | a dict field `ch.a`; a list element `xs[0]`; a function parameter; a `for` binder; a `for`-body `local` at module level (cleared each iteration) |
+
+And one binding rebound from a *different* element each iteration
+(`loop while i < n: local q is fleet[i][2]`) carries the interleave of all of
+them — a verdict about nothing. Lint `W024` flags that shape; the full table,
+the module-level-`for` asymmetry and the closure-per-entity recipe are in
+[PREDICATES, What carries a trajectory](PREDICATES.md#what-carries-a-trajectory).
+
 ## The oracle: where names come from
 
 The observer's experience is a smooth, continuous signal. Turning that
@@ -95,6 +111,10 @@ lines are the three thresholds:
 ```eigenscript
 set_observer_thresholds of [dh_zero, dh_small, h_low]
 # defaults: 0.001, 0.01, 0.1
+set_observer_scale of scale      # the value channel's "what counts as zero" (#1045)
+# default: 0.001
+set_observer_window of n         # how many samples a verdict spans (#1044)
+# default: 10; per binding: set_observer_window of ["x", n]
 ```
 
 So `set_observer_thresholds` is not a minor tuning footnote. **It is the
@@ -169,8 +189,15 @@ in the flat-entropy plateau around 5 — see #294.)
 
 `report_value of x` classifies the **value's own trajectory** instead, using
 the identical windowed logic and thresholds on the value's relative step
-`Δv/(1+|x|)` (relative, so the bands mean the same across value scales). On the
+`Δv / max(|x|, |x_prev|, scale)` (#1045 — relative to the step's own local
+scale, so the bands mean the same across value scales *and units*; `scale`,
+`set_observer_scale`, default `0.001`, is the magnitude below which a value
+counts as zero and the deadband turns absolute). On the
 same oracle it answers `moving`/`oscillating` — correctly never `converged`.
+The window the bands read is `N` samples deep — 10 by default,
+`set_observer_window` per state or per binding (#1044): a mode slower than
+`N` samples of the observation cadence cannot fold inside it, so size the
+window to the slowest mode you expect (PREDICATES.md "The window").
 Its vocabulary is `oscillating` (sign of `Δv` keeps flipping), `diverging`
 (non-vanishing same-sign steps — see below), `converged` (a full window of
 ~zero relative steps), `stable` (small relative steps, no flips), `moving`
@@ -409,9 +436,13 @@ One observation stands (not a defect — a property to know):
   time — has its window pushed on **every** assignment, with entropy and dH
   computed then and there. So `report of x` after a batch of writes reflects the
   whole window, not just the last value, and `loop while not converged` sees
-  each step because each `x is …` sampled it. `unobserved:` is the only thing
-  that skips the push — and the only thing that does. A binding you never
-  interrogate anywhere is still sampled on every assignment; see **Cost**.
+  each step because each `x is …` sampled it. `unobserved:` skips the
+  *entropy* push only (#1049): a scalar assignment inside the block still
+  lands in the value window the numeric predicates read, so their verdicts
+  do not change; `dH` and its window do not move — see
+  [PREDICATES.md](PREDICATES.md#inputs) for the readers that can differ. A
+  binding you never interrogate anywhere is still sampled on every
+  assignment; see **Cost**.
 
 ## Cost
 
@@ -436,8 +467,15 @@ everything it can reach; that distinction is what #685 was. The dH ring buffer
 is allocated lazily on a binding's **second** observation — again regardless of
 interrogation.
 
-`unobserved:` is the only opt-out, and it is a real one: it skips the emission,
-so a hot region inside it pays nothing.
+`unobserved:` is the only opt-out, and it is a real one: everything in the
+table above is skipped inside it. What it does *not* skip (#1049) is the O(1)
+value-window sample of a scalar assignment — one subtraction, one division,
+two ring stores — so that the block cannot change a numeric verdict.
+Measured on a 4M-iteration two-assignment loop with the gate open: observed
+~445 ms, inside `unobserved:` ~227 ms (was ~158 ms when the block also
+dropped the sample); a container-assignment loop inside the block is
+unchanged (the walk is what it elides). With the gate closed (below) the
+sample is skipped too and the block costs nothing.
 
 ### The automatic opt-out — the observer gate (#915/#972)
 
@@ -489,6 +527,52 @@ reads **no** observer state at all — `when` / `where` / `why` / `how` on a val
 operand return constants, because observer state is binding-keyed and a bare
 value has no binding.
 
+**What "pays nothing" means at the instruction level (#972).** The gate is
+decided at compile time but *tested* at run time, because it can open mid-run
+(a runtime arming, a SIGUSR1 dump, a descriptor). Where that test sits
+matters: until #972's last residual was closed, `OBSERVE_ASSIGN_LOCAL` and
+`OBSERVE_NAME_POST` still dispatched into their helpers — a call, the TOS
+decode, the slot or name resolution (a hash lookup for a module-level name) —
+and only *then* returned at `observer_slot_update_num`'s gate test, which
+measured as +18% (module level) / +14% (function level, JIT) over
+`unobserved:` on a 20M-iteration read-free loop. The test is now the first
+thing both opcodes do, in the interpreter `CASE` bodies and inlined into the
+JIT thunk ahead of the helper call (`emit_obs_gate_test`, src/jit.c — the
+same two loads `eigs_obs_gate_open()` makes, through the VM's owner
+back-pointer so nothing is baked but the trace flag's address), and the JIT
+no longer emits a call for the no-op `OP_OBSERVE_ASSIGN` at all. With the gate
+closed a read-free program's assignment therefore costs the two flag loads and
+a branch; with it open nothing changes. The `observe-calls` tally above is the
+regression instrument: suite section [99u] pins it at `0` for a read-free loop
+on both the interpreter and a witnessed JIT thunk, and at `populated` with a
+reader or `EIGS_OBS_FORCE=1`.
+
+**And what is left is not the observer — measured, with the control.** After
+the hoist, a read-free module-level loop is still slower than the same loop
+wrapped in `unobserved:`, and it is tempting to read that as observer cost
+still leaking. It is not. `unobserved:` does a *second* thing at module scope:
+#871 Part B promotes the names a block writes to module SLOTS when escape
+analysis says nothing outside the block reads them, which replaces a hashed
+`SET_NAME` with a slot store. The control that separates the two is the same
+`unobserved:` program with its `print` moved OUTSIDE the block, so the
+promotion is refused and the binding stays a module name (20M iterations, user
++sys CPU, n=5 medians, one shared box):
+
+| module-level probe | v0.43.0 | pre-hoist | post-hoist |
+|---|---|---|---|
+| read-free, `x` a module NAME | 4.13 s | 4.12 s | **3.88 s** |
+| `unobserved:`, `x` promoted to a module SLOT | 3.41 s | 3.42 s | 3.37 s |
+| `unobserved:`, promotion refused, `x` a NAME | 3.91 s | 3.90 s | 3.95 s |
+
+Against the like-for-like row the read-free arm went from +5.6% to −1.8%: the
+observer residual is gone. The ~15% that remains against the promoted row is
+the slot promotion, and it is available to any binding a slot can hold — it is
+a scope-and-storage result, not an observer one. Inside a function, where
+locals are already slots, the read-free arm is at or just under the
+`unobserved:` one (2.85 s vs 2.93 s post-hoist; 2.94 s vs 2.96 s before it). Quoting
+the raw `unobserved:`-vs-plain gap as "what the observer costs" over-attributes
+it by roughly three-quarters.
+
 ## Using the gate
 
 The gate is automatic and needs no source change. A program that never reads
@@ -497,10 +581,60 @@ observer state pays nothing for it; a program that does is unaffected.
 | control | effect |
 |---|---|
 | `EIGS_OBS_FORCE=1` | force observer recording ON, whatever the scan decided. The escape hatch, and the baseline arm for any measurement — one byte-identical binary serves both arms. |
-| `EIGS_OBS_GATE_STATS=1` | print one `obs-gate: observed\|unobserved <unit>` line per compiled unit on stderr. |
+| `EIGS_OBS_GATE_STATS=1` | print one `obs-gate: observed\|unobserved <unit>` line per compiled unit on stderr, and at exit one `obs-gate: observe-calls N` line: how many times an observer update/sample entry point was *entered* (counted before its own gate test). A read-free program must report `0` — the observe ops skip the helper call outright when the gate is closed (#972, below), and the per-unit verdict alone cannot tell "skipped" from "called and returned at the gate". |
 
 Both follow the tree's flag convention: any non-empty value that does not
 start with `0` turns the control on, so `=0` and `=` leave it off.
+
+### What arms the gate — the rule, precisely
+
+The decision is made once per compiled unit, in `compile_ast`, and is
+monotonic per interpreter state: once any unit arms it, every later unit in
+that state records. A unit arms the gate when **any** of the following holds;
+otherwise it does not, and nothing else does.
+
+1. **A reader opcode** anywhere in the unit, including in functions that are
+   never called: the interrogatives (`report of x`, `report_value`,
+   `trajectory of x`, `where is x`, ...), a predicate (`converged`,
+   `diverging of x`, ...), an observer-conditioned loop. The set is
+   `opcode_is_observer_reader()` in `src/chunk.c`, pinned against the
+   `obs:READS` markers by `tools/obs_reader_sync_check.sh`.
+2. **A binding-load of an observer builtin's name** — `OP_GET_NAME` whose
+   operand is `observe`, `classify`, `state_at`, `get_observer_thresholds`,
+   `eval` or `record_history` (`report`, `report_value` and `trajectory` are
+   listed for symmetry but cannot be loaded as values). This is the aliased
+   form: `local r is observe` then `r of x` emits no reader opcode. `eval`
+   and `record_history` are here because they open the channel at run time
+   from a string or a call, so their presence is the only signal.
+   **String data never arms** (#1046): `msg is "report"`, a keyword table
+   `["converged", "report", ...]`, a dict key `{"observe": 1}`, a printed
+   literal are all `OP_CONST` and are not consulted; neither is a field
+   access spelled like a builtin (`tbl.eval` is a `DOT_GET` on a user value)
+   nor a user `define observe(...)` (a binder). Until v0.43.0 the scan matched
+   the whole constant pool, so the string forms cost a program its gate.
+3. **A literal load target the unit cannot clear.** `load_file of "<literal>"`
+   and `import NAME` are resolved *at the importer's compile time* with the
+   same resolver the runtime uses (`resolve_eigenscript_file_from` and
+   `eigs_import_resolve` respectively — project-first, then stdlib, anchored
+   at the containing file's directory and the `eigs.json` project root), then
+   parsed and scanned by rules 1-3 transitively. The unit arms if any module
+   it reaches would, or if a target cannot be resolved, cannot be read, is
+   not a regular file, exceeds the speculative budget, or nests past the
+   depth cap. Until v0.43.0 the *presence* of an `import` armed the unit
+   unconditionally (`+49..84%` for one unused `import linalg`); the import
+   half of #915 is closed by #1046.
+4. **A non-literal load** — `load_file of (computed)`, an alias of
+   `load_file`, an `import` served by an embedder's source provider — makes
+   the unit opaque and arms it.
+5. **A forced or unknowable context**: `EIGS_OBS_FORCE=1`; a chunk assembled
+   from a descriptor rather than compiled; the REPL, where line N+1 can read a
+   binding from line N; more than one live thread during the eager pass.
+
+The two literal loaders carry the same run-time guard: if the module compiled
+at the load or import reads observer state and the gate was closed while the
+program's earlier assignments ran, the load raises (see the next section)
+rather than answering a rest value. A module scanned clean at compile time
+and rewritten before it runs is the case that guard exists for.
 
 ### When the gate refuses instead of answering
 
@@ -515,9 +649,10 @@ load_file: 'x.eigs' reads observer state, but the observer gate was closed when
 this program's earlier assignments ran — they have no recorded history...
 ```
 
-You will see this if a program **rewrites a module between the compile and the
-load**, or creates a nearer file that **shadows** the one the compile-time scan
-resolved. Both loaders search the containing file's directory, the
+(`import` raises the same way, naming the module.) You will see this if a
+program **rewrites a module between the compile and the load**, or creates a
+nearer file that **shadows** the one the compile-time scan resolved. Both
+loaders search the containing file's directory, the
 `eigs_modules` walk, the nearest `eigs.json` project root, then the executable
 and HOME stdlib roots (absolute paths are used as-is). For example, a newly
 created sibling can replace a project-root or stdlib target. Changing the
@@ -530,9 +665,10 @@ always safe — it restores the pre-gate behaviour exactly.
 
 ### When the gate declines to look
 
-To decide before the program runs, the gate compiles literally-loaded modules
-itself — including ones reached only from a function that is never called, since
-a `load_file` inside an uncalled function still contributes to the answer. That
+To decide before the program runs, the gate parses and scans literally-loaded
+and literally-imported modules itself — including ones reached only from a
+function that is never called, since a `load_file` or `import` inside an
+uncalled function still contributes to the answer. That
 work is speculative, so it is bounded: a per-thread cumulative ceiling on how
 many bytes the pass may read on the program's behalf, plus a rejection of
 anything that is not a regular file (a FIFO target once hung the compiler
@@ -567,10 +703,9 @@ across calls; opted-in evals reject later observer-reading units conservatively
 when an earlier unit ran unobserved. `EIGS_OBS_FORCE=1` from the start avoids
 that gap. Retained compiled functions can keep the eval gate open.
 
-Separately, every literally-loaded module is compiled **twice** — once by the
-gate to learn one bit, once for real by `load_file`, which has no module cache
-by design. Measured on `lib/ui.eigs`: 0.12-0.15s for the literal spelling that
-gates closed against 0.05-0.07s for a computed spelling that skips the pass, so
-a program that loads a large tree and does little work can pay more than it
-saves. The fix is to hand the eagerly-compiled chunk to `load_file` instead of
-discarding it; the budget above bounds the cost meanwhile.
+Separately, every literally-loaded or literally-imported module is **parsed
+twice** — once by the gate's pass (which since #1031 answers from the AST and
+compiles nothing), once for real by `load_file` (no module cache by design) or
+by the first `import` (cached thereafter). The pass hands nothing to the
+loader: the AST it scans is freed, and the runtime parse is the one that
+runs. The speculative budget above bounds the cost.

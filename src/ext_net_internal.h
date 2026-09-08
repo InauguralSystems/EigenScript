@@ -9,6 +9,7 @@
 #define EXT_NET_INTERNAL_H
 
 #include "eigenscript.h"
+#include "ext_register.h"   /* register_net_builtins (#744) */
 
 /* One row per live socket, owned by the process handle table
  * (HANDLE_NET). Listeners and connections share the struct; `kind`
@@ -21,6 +22,5 @@ typedef struct {
     EigsNetSockKind kind;
 } EigsNetSock;
 
-void register_net_builtins(Env *env);
 
 #endif

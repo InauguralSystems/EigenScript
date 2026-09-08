@@ -1,0 +1,18 @@
+# Capture and live-stream devices: both allocate buffers per read/push, and
+# both are trace-recorded, so this also walks the TAKE/RECORD seam.
+cd is audio_capture_open of [44100, 1]
+for i in range of 5:
+    b is audio_capture_read of null
+ignore is audio_capture_close of null
+sd is audio_stream_open of [44100, 1]
+blk is audio_sine of [440, 0.01, 0.3]
+ignore is audio_stream_push of blk
+ignore is audio_stream_queued of null
+ignore is audio_stream_clear of null
+ignore is audio_stream_close of null
+# The music path with no loadable file: exercises the SDL_mixer load-failure
+# branch, which frees on the way out.
+ignore is audio_music_play of ["/nonexistent/eigs-no-such-track.ogg", 0]
+ignore is audio_music_volume of 64
+ignore is audio_music_stop of null
+print of "05 done"

@@ -23,15 +23,17 @@ predicted-not-taken load + branch.
 
 ## Tape Format
 
-The tape is plain text, one record per line, five record kinds:
+The tape is plain text, one record per line, six record kinds:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 2 0.29.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 3 0.43.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `L <line>` | Source-line event (from `OP_LINE`). Adjacent duplicate lines with no `A`/`N` between them are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `S <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
 | `A <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and is scope-qualified by the preceding `S` record, so a function-local `i` and the top-level `i` are separate streams (`--step` resolves names innermost-first along the reconstructed call chain, with shadowing). |
 | `N <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
+| `O cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what the tape last said, immediately before the next `L`/`A` record. See [Observer Configuration](#observer-configuration-1044-1045). |
+| `O win <name> <n>` | Per-binding observer window override (v3) — `set_observer_window of ["name", n]`; `n == 0` clears it. |
 
 ### Value serialization
 
@@ -48,6 +50,17 @@ into real values on replay:
   with a `…<truncated:RESIDUAL>` marker so partial records remain
   visually parseable (truncated records are not replayable; the builtin
   falls back to its live source).
+
+## Derived, Not Recorded: The Scheduler Trace (#846)
+
+The cooperative task scheduler's decision history (`task_sched_trace`, see
+docs/CONCURRENCY.md) is **not** an `N` record. The interleaving is a pure
+function of program order and `task_sched_seed`, so a replayed run
+re-derives the identical history from the same schedule; recording it would
+create a second source of truth that could disagree with the first.
+`tests/test_task_sched_trace.sh` asserts the tape's `N`-record count is
+unchanged by arming the trace and that record → replay yields the same
+history on both tiers.
 
 ## Recorded Builtins
 
@@ -109,6 +122,21 @@ perspective lands on the tape as an `N` record:
   included, so a program that hits one cannot desync the stream. Greedy
   (`temperature < 0.01`) calls ride the same path: the tape cannot show
   which branch ran, and replay may not load a model to re-derive it.
+- **Rendered pixels (gfx extension, #823):** `gfx_read`. Renderer output
+  depends on the font rasteriser, the driver and the backend, so the pixel
+  a render-decode oracle reads back is a device input and takes the
+  TAKE/RECORD pair.
+- **A REJECTED argument consumes no record** (#1007). `audio_capture_open`,
+  `audio_capture_read`'s siblings and `gfx_read` all place their
+  argument-type guard *above* `TRACE_NONDET_TAKE`, because an argument's
+  type is deterministic and so a rejected call is not a nondeterministic
+  input. Placed below the TAKE, the capture run returns before
+  `TRACE_NONDET_RECORD` and writes nothing while the replay run's TAKE still
+  consumes one — every later record for that name shifts by one and the
+  rejected call replays as a real device id or a real pixel, silently, even
+  under `EIGS_STRICT=1`. Measured on `audio_capture_open` before the guard
+  was hoisted: capture printed `0 2 null`, replay of that same tape printed
+  `2 2 null`. Suite section `[133]` pins it.
 - **Audio capture (gfx extension, #579):** `audio_capture_open`,
   `audio_capture_read`. Captured audio is a device input, so the whole
   capture chain is TAKE/RECORD-wrapped: under `EIGS_REPLAY` the tape is
@@ -135,6 +163,124 @@ its return in the same macro. A builtin that *builds* its return value
 / `TRACE_NONDET_RECORD` pair instead (`args` does): the early `TAKE`
 short-circuits under replay before the value is built, so the live
 construction is neither run nor leaked.
+
+## Observer Configuration (#1044/#1045)
+
+A trajectory verdict — `report of x`, the six predicates, the trajectory
+labels `--step` and the DAP server print — is a function of the
+**assignments** and of the **observer configuration**: three thresholds
+(`set_observer_thresholds`), the window depth (`set_observer_window`, per
+state and per binding), and the characteristic scale
+(`set_observer_scale`). The tape carried the assignments and not the
+configuration, so a recorded run stepped back classified at the *state
+defaults* and printed a verdict the live run never gave:
+
+```
+u is 0.0
+set_observer_window of ["u", 50]        # a 46.9-sample period needs 50
+loop while t < 200:  u is 272.4 + 10.0 * (cos of (6.28318 * t / 46.9)) …
+print of (report of u)                  # live: oscillating
+```
+```
+$ eigenscript --step u.tape u.eigs      # before: [diverging]  ← never happened
+```
+
+A debugger that confidently prints the wrong verdict is exactly the
+fail-soft shape this language refuses, so the configuration rides the tape:
+
+- **`O cfg`** carries the five state-level scalars. It is emitted **by
+  diff**, not from the knob builtins: the writer compares the state's live
+  configuration against what the tape last said and emits a record when they
+  differ, immediately before the next `L` or `A` record. So the tape carries
+  the configuration *in force* by construction — one set by an embedder
+  before the run, by a second `EigsState`, or by a knob nobody remembered to
+  instrument still lands on the tape. A program that never moves a knob
+  writes no `O` records at all.
+- **`O win`** carries the per-binding window override, which lives on an
+  `Env` slot rather than on the state and so has no cheap diff. It is
+  written from `set_observer_window` at the point of the call, preceded by
+  its own frame's `S` record — the override belongs to the frame that
+  *resolved the name*, and that frame may not have assigned anything yet
+  (widening a parameter's window before the body writes it), so the scope
+  transition cannot be left to the next `A` record.
+- Both are recorded **as events, in place**, not stamped into the header.
+  That is the whole point: a program that changes a knob **mid-run** — one
+  phase `moving`, the next `converged` — steps back correctly at both
+  stops, which a header snapshot could only have refused.
+- `tape_read.c` is the one reader (`--step` and the DAP server share it):
+  it installs the compiled-in defaults, then applies every `O` record that
+  precedes the assign it is folding, and restores the caller's own
+  configuration when the fold ends. A reader never leaks a tape's knobs
+  into its own state.
+- **The configuration is folded to the STOP, not to the last assign.** The
+  knobs split by when the runtime consumes them: the window and the scale are
+  read while a value is being *recorded*, the three thresholds (and the window
+  again, for the full-window certifications) while a verdict is being
+  *reported*. So a knob moved after a binding's last assign and before the
+  stop still changes what `report of x` says there — and folding only up to
+  the last assign printed `stable` where the live run printed `converged`:
+
+  ```
+  x is 1000.0 / d is 5.0 … loop 30x: x is x + d ; d is d * 0.99
+  set_observer_thresholds of [0.01, 0.02, 0.1]
+  print of (report of x)                    # live: converged
+  ```
+  ```
+  $ eigenscript --step after.tape after.eigs      # `p x`
+  x = 1130.1498133058592  [stable]     ← before: the record was on the tape,
+                                          in force at the stop, and skipped
+  ```
+
+  `tape_traj_settle` walks the configuration cursor on to the stop position
+  and re-reads the label, so `p`/the DAP binding cell answer "what would
+  `report of x` say **here**". The `t` view's rows stay per-moment by
+  construction — a row is the label after *that* assign — so when the settled
+  label differs, it gets a line of its own ("observer configuration changed
+  after the last assign — at this stop: [converged]") rather than letting the
+  last row speak for the present; the DAP shows the same as a `#now` row.
+- **A corrupt `O` record is refused, not installed.** The reader puts these
+  values into its own observer state, so `O cfg … 0 …` divides by zero sizing
+  the value ring and a negative or 4e9 window asks `calloc` for 2^64−1 bytes.
+  Every field is therefore checked at parse time against exactly the
+  invariants the live builtins enforce — window in `[4, 64]` (plus the `O win
+  <name> 0` clear form), positive thresholds with `dh_zero < dh_small`,
+  positive finite scale — and a record
+  outside them refuses the tape with exit 3 (`tape observer-configuration
+  record is not one this runtime could have written …`). Tapes travel in #413
+  attached-tape bundles, so this is the torn-archive rule applied to the
+  configuration. Clamping was rejected: a clamped window is a configuration
+  the recording run never had, so the label would still be a confident lie,
+  just a different one.
+
+**Replay is unaffected**, and deliberately so: `EIGS_REPLAY` re-executes the
+program, so the program's own knob calls run again in the same order. The
+`O` records are for readers that reconstruct state *without* executing —
+the stepper, the DAP server, and anything else that folds `A` records into
+an `ObserverSlot`.
+
+**`O win` names a BINDING, not a name.** The live call resolved the binding
+innermost-first from its own frame; the reader resolves it the same way from
+the frame instance the record was written in (the tape's `S` records give the
+chain) and applies the override to that history **by identity** — never by
+name equality. This matters because one name is routinely several bindings on
+one tape: two invocations of a function are two frame instances, and a
+function-local can share a name with a module-level global. Matching by name
+made `--step` print `oscillating` for a binding whose live run said
+`diverging`, which is the same fail-soft shape the `O` records exist to
+remove. `tests/test_tape_observer_config.sh` section 8 pins all four shapes
+(leak forward, correct application, a parameter widened before its frame
+assigns, and a module-level binding assigned after the call).
+
+**Residual — a name the call chain cannot reach.** The reader walks the
+frame's `S`-record parents, which is the *call* chain; a closure's
+environment parent is its definition site instead, so an override set on a
+captured name may resolve to nothing. When it does, the reader applies the
+record only if exactly one history on the whole tape carries that name (then
+it can only mean that binding); otherwise it drops the override, and the
+stepped verdict is the default-window one. It never sprays the override
+across same-named bindings — losing a knob shows a *different* label than the
+live run, applying it to the wrong binding shows a *confident wrong* one, and
+only the second is the shape this design refuses to ship.
 
 ## Non-Replayable Builtins (issue #148)
 
@@ -164,6 +310,19 @@ These builtins raise a catchable runtime error under
 `"<fn>: not replayable under EIGS_REPLAY (subprocess/concurrency
 boundary; see docs/TRACE.md)"`. Programs that need to be replay-safe
 must guard these call sites or avoid them entirely.
+
+A boundary refusal is a **clean exit, never a signal**: uncaught, it ends
+the program with exit status 1 like any other runtime error; caught, the
+program continues. That holds on every thread — a refused `recv` on a
+`spawn`ed worker that runs the builtin directly (`spawn of [recv, ch]`)
+used to die by SIGSEGV after printing the diagnostic (#1112: the worker
+has no VM, and the uncaught-error printer dereferenced it); it now prints
+the diagnostic and the process exits 1, because an uncaught death on a
+worker fails the run (docs/SPEC.md "Concurrency"). A signal exit under
+`EIGS_REPLAY` is a runtime bug, and `tools/replay_diff.sh` — the
+same-binary record/replay differential CI runs over the whole corpus —
+fails on any signal exit in either arm regardless of what the arm
+printed; the diagnostic text never excuses a crash.
 
 ## Replay Semantics
 
@@ -241,6 +400,14 @@ everywhere else in the runtime (version-and-reject, never migrate).
 - Every tape's first record is `V <format> <runtime>`. The format integer
   (`TRACE_FORMAT_VERSION` in `src/trace.h`) bumps on **any** change to the
   tape encoding; the runtime string is the recording binary's version.
+  History: **v2** (#539) added the scope-transition `S` records; **v3**
+  (#1044/#1045 follow-up) added the observer-configuration `O` records.
+  A v2 tape cannot say what its knobs were — the calls simply are not on it
+  — so the compat decision for the bump is the standing one, and it is the
+  loud half: a v2 tape is **refused** by `--step`, by the DAP server and by
+  `EIGS_REPLAY` with exit 3, never classified at the defaults and presented
+  as the recorded run. Coverage: the `v2 (pre-O-record) tape is refused`
+  cases in `tests/test_tape_observer_config.sh`.
 - On replay, a missing header, a malformed (torn) header, a different
   format version, a different runtime version, an empty tape, or an
   unopenable `EIGS_REPLAY` path each refuse loudly — hosted replay exits
@@ -274,7 +441,14 @@ boundaries are enforced; dev builds are on their honor.
 
 Regression coverage: the `version refuse` cases in `tests/test_replay.sh`
 plant each mismatch class (format, runtime, missing header, empty file)
-and require the exit-3 refusal.
+and require the exit-3 refusal. `tests/test_tape_observer_config.sh`
+additionally carries a REAL pre-v3 tape — `tests/fixtures/tape_v2_baseline.tape`,
+recorded by the v0.43.0 release binary — and requires the same exit-3 refusal
+from both `--step` and `EIGS_REPLAY`. That refusal is the deliberate answer to
+"an old tape should still step": a v2 tape carries no `O` records, so stepping
+it would classify at the defaults and print a verdict the recorded run never
+gave. The knobs are exactly what the format bump exists for, so a tape that
+predates them is re-recorded, not reinterpreted.
 
 ## Temporal Interrogatives and `state_at`
 

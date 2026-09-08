@@ -14,10 +14,19 @@ sqrt(0.01) = 0.1
   step 90: improving signal=0.05506865395042193
   step 100: improving signal=0.023921187465699906
   step 110: improving signal=0.010391087646419113
-Converged at step 118 signal=0.005332902292568855
+  step 120: improving signal=0.004513768500430279
+  step 130: improving signal=0.0019607289216252324
+  step 140: improving signal=0.0008517180054163542
+  step 150: improving signal=0.0003699764678072454
+  step 160: improving signal=0.00016071350594990878
+  step 170: improving signal=6.981209142244144e-05
+  step 180: improving signal=3.0325566479113236e-05
+  step 190: improving signal=1.3173075946317996e-05
+  step 200: improving signal=5.722232097691588e-06
+Converged at step 201 signal=5.264453529876261e-06
 
 --- stable as early detection ---
-Converged at step 91 value=0.003427980662063994
+Converged at step 157 value=3.273738503506898e-06
 
 --- improving as progress monitor ---
   step 10: improving, value=15.749952347257809
@@ -32,14 +41,23 @@ Converged at step 91 value=0.003427980662063994
   step 55: improving, value=0.010498588203128042
   step 60: improving, value=0.0046582793594777405
   step 65: improving, value=0.00206690329890937
-Done at step 68 value=0.0012693369884427168 status=converged
+  step 70: improving, value=0.0009170959741498628
+  step 75: improving, value=0.00040692035580265683
+  step 80: improving, value=0.00018055272363402898
+  step 85: improving, value=8.011220266276296e-05
+  step 90: improving, value=3.5546209917544564e-05
+  step 95: improving, value=1.5772042179654708e-05
+  step 100: improving, value=6.998138904086872e-06
+  step 105: improving, value=3.105111409356272e-06
+  step 110: improving, value=1.37775442823574e-06
+Done at step 111 value=1.171091264000379e-06 status=converged
 
 --- regime detection ---
 Step 1: start -> moving
 Step 6: moving -> improving
-Step 78: improving -> converged
+Step 133: improving -> converged
 Total regime changes: 3
-Final loss: 0.002336783255831447
+Final loss: 2.066166902105908e-06
 
 --- oscillating as instability detector ---
   step 5: oscillating! lr halved to 0.6
@@ -52,4 +70,4 @@ Final loss: 0.002336783255831447
   step 12: oscillating! lr halved to 0.0046875
   step 13: oscillating! lr halved to 0.00234375
   step 14: oscillating! lr halved to 0.001171875
-Done at step 23 x=4.028419306289019 lr=0.001171875 adjustments=10
+Done at step 24 x=4.030696448539904 lr=0.001171875 adjustments=10

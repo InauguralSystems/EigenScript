@@ -187,6 +187,17 @@ examples/tests for `__loop_iterations__` before changing semantics).
 - Helper fallback blocks share the epilogue's `%r13d` advance
   machinery — the inline guard-fail jump target is the start of the
   full helper sequence for the *same* op, not the epilogue.
+- **Module namespaces bail out of the dict probe (#1057).** `import M`
+  binds a dict that is a LIVE VIEW of the module's `Env`, so its own
+  `keys`/`vals` slots are only a mirror and must never answer a field
+  read. `emit_dict_cache_probe` therefore carries one extra guard right
+  after the `type == VAL_DICT` check — `testb $1, module_ns(%rdi)`,
+  bailing to the helper when set. The helper routes through
+  `dict_get_hashed` / `dict_set_hashed`, which project the module's
+  current binding. The interpreter's `dict_get_cached` /
+  `dict_set_cached` / `dict_set_cached_immediate` carry the mirror of
+  that guard, so the inline path and the interpreter agree by
+  construction; `tools/jit_diff.sh` is the differential.
 - x86-64 only: everything here is inside `#if defined(__x86_64__)`.
 - Platform gates: the only Linux/Darwin split lives in the prologue's
   TLS load (`#if defined(__APPLE__)` calls `eigs_jit_load_eigs_current`,

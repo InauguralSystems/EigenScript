@@ -1,0 +1,20 @@
+# #846 probe for tests/test_task_sched_trace.sh: a seeded 3-task yield/sleep/
+# join program that ALSO consumes a real nondeterministic input (random), so
+# the tape it records carries N records — the test asserts that arming the
+# scheduler trace adds none. Prints the trace in compact form; under
+# EIGS_REPLAY the printed trace must be byte-identical to the recording run.
+task_sched_seed of 42
+salt is random of null
+define w(tag, ticks) as:
+    task_yield of null
+    task_sleep of ticks
+    return tag
+a is task_spawn of [w, "a", 30]
+b is task_spawn of [w, "b", 10]
+c is task_spawn of [w, "c", 20]
+print of (task_join of a)
+print of (task_join of b)
+print of (task_join of c)
+print of f"salt={salt}"
+for e in task_sched_trace of null:
+    print of f"{e.seq} t={e.tick} task={e.task} {e.cause}"

@@ -8,6 +8,7 @@
  * the multi-state model — not new behavior.
  */
 #include "eigenscript.h"
+#include "fsutil.h"
 #include "state.h"
 #include "vm.h"
 #include "trace.h"
@@ -75,6 +76,17 @@ void eigs_set_eval_observer_isolated(int enabled) {
         eigs_current->state->eval_observer_isolated = enabled != 0;
 }
 
+/* Missing-history evidence: a unit that executed while recording was off has
+ * assignments no later reader can reconstruct. The flag is sticky and the
+ * store is idempotent, so it is safe to record at both the end of the unit
+ * (#1114: truthful for a DIRECT host predicate read between units) and the
+ * next boundary (the pre-#1114 site, kept for code that executes closed
+ * outside eval_source, e.g. a host driving vm_execute itself). */
+static void obs_record_closed_execution(void) {
+    if (!g_obs_needed && g_obs_exec_started)
+        obs_flag_store(obs_history_gap, 1);
+}
+
 static EigsValue *eval_source(const char *src, const char *file_dir) {
     if (!src || !eigs_current || !g_global_env) return NULL;
     Env *global = g_global_env;
@@ -119,8 +131,7 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
         &eigs_current->state->obs_host_arm_pending, 0, __ATOMIC_ACQ_REL);
     if (eigs_current->state->eval_observer_isolated &&
         !g_obs_eval_host_callbacks) {
-        if (!g_obs_needed && g_obs_exec_started)
-            obs_flag_store(obs_history_gap, 1);
+        obs_record_closed_execution();
         if (!g_obs_eval_retains_code) {
             obs_flag_store(obs_exec_started, 0);
             obs_flag_store(obs_needed, 1);
@@ -156,6 +167,12 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
             "Restart the state with EIGS_OBS_FORCE=1 before the first eval.");
     }
     Value *result = g_has_error || g_parse_errors ? NULL : vm_execute(chunk, global);
+    /* #1114: the unit has finished. If it executed with the gate closed, its
+     * assignments already have no history -- record that NOW, not at the next
+     * boundary, so a host reading observer_predicate_at directly between
+     * units sees a truthful flag. Stored even when the unit raised: the
+     * assignments before the raise are just as unrecorded. */
+    obs_record_closed_execution();
     chunk_free(chunk);
     free_ast(ast);
     free_tokenlist(&tl);

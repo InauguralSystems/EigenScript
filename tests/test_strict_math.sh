@@ -23,12 +23,32 @@ fi
 TMP=$(mktemp /tmp/eigs_strict_XXXXXX.eigs)
 trap 'rm -f "$TMP"' EXIT
 
+# LEAK-VISIBLE ROWS (#971 round 2). Every row captures stdout+stderr together,
+# so when this file is driven by an ASan build with ASAN_OPTIONS=detect_leaks=1
+# a LeakSanitizer report lands in "$out" and `leak_clean` turns the row RED.
+# This exists because a strict raise ALREADY exits non-zero, so LeakSanitizer
+# does not change the process status and a leaking guard looks exactly like an
+# ordinary expected raise: three guards (scan_ints / scan_tokens /
+# scan_int_tokens) leaked 1096 bytes each while all 85 rows reported PASS.
+# Under a release build there is no such output and the check is a no-op, so
+# the gate costs nothing and cannot go vacuous silently: it reads the same
+# text the assertion already reads.
+#
 # NOTE: <expect-substr> must never be the empty string — `grep -qF ""` matches
 # any output, so an empty expectation silently degrades the row to an exit-code
 # check. Rows asserting an EMPTY result wrap it (`f"[{...}]"` against "[]") so
 # the emptiness is something the assertion can actually see.
 #
 # run <name> <env: unset|0|1> <expect-exit 0|1> <expect-substr> <program>
+# leak_clean <captured-output>: 1 unless LeakSanitizer reported on this run.
+# Only ever non-empty under an ASan build with detect_leaks=1.
+leak_clean() {
+    case "$1" in
+        *"LeakSanitizer: detected memory leaks"*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 run() {
     local name="$1" env="$2" xexit="$3" substr="$4" prog="$5"
     printf '%s\n' "$prog" > "$TMP"
@@ -40,7 +60,25 @@ run() {
     local exit_ok=0
     if [ "$xexit" = "0" ] && [ "$rc" = "0" ]; then exit_ok=1; fi
     if [ "$xexit" = "1" ] && [ "$rc" != "0" ]; then exit_ok=1; fi
-    if [ "$exit_ok" = "1" ] && echo "$out" | grep -qF "$substr"; then
+    if ! leak_clean "$out"; then
+        fail "$name" "LEAKED on this path: $(echo "$out" | grep -F 'SUMMARY: AddressSanitizer')"
+    elif [ "$exit_ok" = "1" ] && echo "$out" | grep -qF -- "$substr"; then
+        ok "$name"
+    else
+        fail "$name" "rc=$rc out='$out'"
+    fi
+}
+
+# run_jitoff <name> <expect-substr> <program>: EIGS_STRICT=1 with the JIT off,
+# expecting a raise — the interpreter half of the JIT/interpreter agreement.
+run_jitoff() {
+    local name="$1" substr="$2" prog="$3"
+    printf '%s\n' "$prog" > "$TMP"
+    local out rc
+    out=$(EIGS_STRICT=1 EIGS_JIT_OFF=1 "$EIGS" "$TMP" 2>&1); rc=$?
+    if ! leak_clean "$out"; then
+        fail "$name" "LEAKED on this path: $(echo "$out" | grep -F 'SUMMARY: AddressSanitizer')"
+    elif [ "$rc" != "0" ] && echo "$out" | grep -qF -- "$substr"; then
         ok "$name"
     else
         fail "$name" "rc=$rc out='$out'"
@@ -140,6 +178,142 @@ run "SM33 strict: num still COERCES a list to 0"       1 0 "0" 'print of (num of
 run "SM34 strict: list_contains finding nothing is 0"  1 0 "0" 'print of (list_contains of [[1, 2], 9])'
 run "SM35 strict: JSON false still decodes to 0"       1 0 "0" \
     'print of (json_path of ["{\"a\": false}", "a"])'
+
+# --- #971 Phase C: JSON parse failure in json_path ----------------------------
+# json_path walked a PARTIAL document and answered the same "" an absent key
+# returns, so malformed JSON was indistinguishable from a missing field. Under
+# strict the parse failure raises (json_decode's acceptance test: structural
+# error, repaired scalar, trailing garbage) as a catchable `value` error naming
+# the position. Off: byte-identical (SM36/SM37 pin the lenient walk). JSON
+# `false`/`null`/absent-key are ANSWERS and stay quiet in both modes.
+run "SM36 default json_path(bad number) still walks partial" unset 0 "[0]" \
+    'print of f"[{json_path of ["{\"a\": 1e", "a"]}]"'
+run "SM37 default json_path(truncated array) still partial" unset 0 "[[1,2]]" \
+    'print of f"[{json_path of ["{\"a\": [1, 2", "a"]}]"'
+run "SM38 strict json_path(bad number) raises with position" 1 1 "json_path: invalid JSON at position 8" \
+    'print of (json_path of ["{\"a\": 1e", "a"])'
+run "SM39 strict json_path(truncated) raises" 1 1 "json_path: invalid JSON at position" \
+    'print of (json_path of ["{\"a\": [1, 2", "a"])'
+run "SM40 strict json_path(trailing garbage) raises" 1 1 "json_path: invalid JSON at position 9" \
+    'print of (json_path of ["{\"a\": 1} x", "a"])'
+run "SM41 strict json_path(empty document) raises" 1 1 "json_path: invalid JSON at position 0" \
+    'print of (json_path of ["", "a"])'
+run "SM42 strict json_path raise is catchable as value" 1 0 "caught value" \
+'try:
+    x is json_path of ["{bad", "a"]
+catch e:
+    print of f"caught {e.kind}"'
+run "SM43 strict: JSON false is still 0"                1 0 "0"  'print of (json_path of ["{\"a\": false}", "a"])'
+run "SM44 strict: absent key is still empty"            1 0 "[]" 'print of f"[{json_path of ["{\"a\": 1}", "b"]}]"'
+run "SM45 strict: JSON null still renders empty"        1 0 "[]" 'print of f"[{json_path of ["{\"a\": null}", "a"]}]"'
+run "SM46 strict: valid nested path still resolves"     1 0 "x"  'print of (json_path of ["{\"a\": [1, {\"b\": \"x\"}]}", "a.1.b"])'
+
+# --- #971 NaN-collapse: the reachable NaN sources raise under strict ------------
+# Enumerated on the tree (the VM's own + - * / % cannot reach NaN from finite
+# operands — 0/0 and x%0 raise first, and no operand can hold an inf): `pow`
+# of a negative base with a fractional exponent, `num of "nan"` (strtod),
+# `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation (list
+# and buffer paths), `tensor_load` of a file carrying NaN bytes, and the
+# elementwise `divide` by zero (pre-collapsed to 0 where `/` raises). Default
+# collapses to 0 + math_flags.invalid exactly as before (SM47-SM49 pin it).
+run "SM47 default pow(-8, 0.5) still 0"            unset 0 "0"  'print of (pow of [0 - 8, 0.5])'
+run "SM48 default num(\"nan\") still 0 + invalid"  unset 0 "0 1" \
+'local v is num of "nan"
+print of f"{v} {(math_flags of null).invalid}"'
+run "SM49a default matmul(inf-inf) LIST path still collapses to 0 + invalid" unset 0 "[0] 1" \
+'local r is matmul of [[[1e200, 1e200]], [[1e200], [0 - 1e200]]]
+print of f"{r} {(math_flags of null).invalid}"'
+# The BUFFER path is deliberately NOT collapsed with the flag off. The kernel
+# writes into the result buffer raw, so the NaN stays there, and a raw NaN in
+# a buffer reads back as `null` (its bit pattern is a NaN-boxed slot tag,
+# 0xFFF8... == SLOT_NULL_BITS) with math_flags.invalid still 0. That is what
+# v0.43.0 does, and this change's contract is that the flag-off path is
+# byte-identical to it: an earlier draft collapsed it to 0 here and had to
+# carry a waiver in tools/strict_differential.sh to say so. The `null` read
+# is a real defect and is recorded in ROADMAP.md as its own change; SM49b
+# pins the CURRENT answer so that change cannot happen by accident.
+run "SM49b default matmul(inf-inf) BUFFER path is byte-identical to v0.43.0" unset 0 "null 0" \
+'local m1 is buffer of [1, 2]
+m1[0] is 1e200
+m1[1] is 1e200
+local m2 is buffer of [2, 1]
+m2[0] is 1e200
+m2[1] is 0 - 1e200
+local r is matmul of [m1, m2]
+print of f"{r[0]} {(math_flags of null).invalid}"'
+run "SM50 strict pow(-8, 0.5) raises, named"       1 1 "pow: result is not a number"     'print of (pow of [0 - 8, 0.5])'
+run "SM51 strict elementwise pow raises"           1 1 "pow: result is not a number"     'print of (pow of [[0 - 8, 4], 0.5])'
+run "SM52 strict num(\"nan\") raises, named"       1 1 "num: result is not a number"     'print of (num of "nan")'
+run "SM53 strict f64_from_bytes(NaN bits) raises"  1 1 "f64_from_bytes: result is not a number" \
+    'print of (f64_from_bytes of ([127, 248, 0, 0, 0, 0, 0, 0]))'
+run "SM54 strict matmul list inf-inf raises"       1 1 "matmul: result is not a number" \
+    'print of (matmul of [[[1e200, 1e200]], [[1e200], [0 - 1e200]]])'
+run "SM55 strict matmul buffer inf-inf raises"     1 1 "matmul: result is not a number" \
+'local m1 is buffer of [1, 2]
+m1[0] is 1e200
+m1[1] is 1e200
+local m2 is buffer of [2, 1]
+m2[0] is 1e200
+m2[1] is 0 - 1e200
+local r is matmul of [m1, m2]
+print of (r[0])'
+run "SM56 strict divide-by-zero (elementwise) raises" 1 1 "divide: division by zero" 'print of (divide of [[1], [0]])'
+run "SM57 strict NaN raise is catchable as value"  1 0 "caught value" \
+'try:
+    x is pow of [0 - 8, 0.5]
+catch e:
+    print of f"caught {e.kind}"'
+run "SM58 strict: num(\"inf\") still saturates (overflow, not NaN)" 1 0 "1e+308" 'print of (num of "inf")'
+run "SM59 strict: pow with an integer exponent is defined"      1 0 "-8"     'print of (pow of [0 - 2, 3])'
+run "SM60 strict: tensor_load of NaN bytes raises, named" 1 1 "tensor_load: result is not a number" \
+'write_bytes of ["/tmp/eigs_strict_nan_$$.tensor", [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 127, 0, 0, 0, 0, 0, 0, 4, 64]]
+print of (tensor_load of "/tmp/eigs_strict_nan_$$.tensor")'
+rm -f "/tmp/eigs_strict_nan_$$.tensor"
+# The interpreter and the JIT must agree: the JIT bails to the interpreter on
+# any non-finite result, so the raise comes from the same num_guard either way.
+run_jitoff "SM61 strict pow raises with the JIT off too" "pow: result is not a number" \
+'print of (pow of [0 - 8, 0.5])'
+
+# --- #971 Phase D: the -1 / falsy sentinel families (#1008) and the --sweep list
+# The documented sentinel for a valid-but-absent input is pinned in BOTH modes;
+# only a wrong-typed argument raises.
+run "SM62 strict: index_of miss is still -1"            1 0 "-1" 'print of (index_of of ["abc", "z"])'
+run "SM63 strict: file_exists of an absent path is 0"   1 0 "0"  'print of (file_exists of "/nonexistent/eigs_971_probe")'
+run "SM64 strict: is_dir of an absent path is 0"        1 0 "0"  'print of (is_dir of "/nonexistent/eigs_971_probe")'
+run "SM65 strict: read_text of an absent path is empty" 1 0 "[]" 'print of f"[{read_text of "/nonexistent/eigs_971_probe"}]"'
+run "SM66 strict index_of(num, str) raises"             1 1 "index_of: expected"    'print of (index_of of [42, "x"])'
+run "SM67 strict file_exists(num) raises"               1 1 "file_exists: expected" 'print of (file_exists of 42)'
+# --sweep candidates converted in this pass (each was a wrong type reading as
+# a plausible answer: `split of 42` -> [""], `buffer of "x"` -> an empty
+# buffer, `channel_closed of 42` -> 1 "closed", `f64_to_bytes of "x"` -> the
+# bytes of 0.0, `random_int of "x"` -> 0, `json_build of {..}` -> "{}").
+run "SM68 default split(num) still [\"\"]"              unset 0 '[""]' 'print of (split of 42)'
+run "SM69 strict split(num) raises"                     1 1 "split: expected"       'print of (split of 42)'
+run "SM70 strict split with a non-string delimiter raises" 1 1 "split: expected a string delimiter" 'print of (split of ["a b", 42])'
+run "SM71 strict scan_ints(dict) raises"                1 1 "scan_ints: expected"   'print of (scan_ints of ({"k": 1}))'
+run "SM72 strict buffer(str) raises"                    1 1 "buffer: expected"      'print of (buffer of "x")'
+run "SM73 strict channel_closed(num) raises"            1 1 "channel_closed: expected" 'print of (channel_closed of 42)'
+run "SM74 strict: unknown channel is still closed (1)"  1 0 "1"  'print of (channel_closed of ({"_channel_id": 99999}))'
+run "SM75 strict f64_to_bytes(str) raises"              1 1 "f64_to_bytes: expected" 'print of (f64_to_bytes of "x")'
+run "SM76 strict random_int(bad bounds) raises"         1 1 "random_int: expected" 'print of (random_int of ["a", 3])'
+run "SM77 strict json_build(dict) raises"               1 1 "json_build: expected" 'print of (json_build of ({"a": 1}))'
+run "SM78 strict: json_build of null is still {}"       1 0 "{}" 'print of (json_build of null)'
+run "SM79 strict sort(dict) raises"                     1 1 "sort: expected a list" 'print of (sort of ({"a": 1}))'
+run "SM80 strict token_name(str) raises"                1 1 "token_name: expected" 'print of (token_name of "x")'
+run "SM81 strict: token_name of an unknown id is still ?" 1 0 "?" 'print of (token_name of 9999)'
+run "SM82 strict tokenize_ids(num) raises"              1 1 "tokenize_ids: expected" 'print of (tokenize_ids of 42)'
+run "SM83 strict random_hex(str) raises"                1 1 "random_hex: expected" 'print of (random_hex of "x")'
+run "SM84 strict: random_hex of 0 is still empty"       1 0 "[]" 'print of f"[{random_hex of 0}]"'
+
+# SM85-SM88 (#971 round 2): scan_ints had a row (SM71); its two siblings had
+# none, so both leaked with no coverage at all. All three guards sit above the
+# make_list they used to follow, and these rows are the leak-visible ones (the
+# raise itself already exits 1, so only `leak_clean` can see a regression).
+run "SM85 strict scan_tokens(num) raises"               1 1 "scan_tokens: expected"     'print of (scan_tokens of 42)'
+run "SM86 strict scan_int_tokens(num) raises"           1 1 "scan_int_tokens: expected" 'print of (scan_int_tokens of 42)'
+# Flag-off pins: the wrong type still reads as "no tokens" -> an empty list.
+run "SM87 default scan_tokens(num) is still []"     unset 0 "[]" 'print of f"[{scan_tokens of 42}]"'
+run "SM88 default scan_int_tokens(num) is still []" unset 0 "[]" 'print of f"[{scan_int_tokens of 42}]"'
 
 echo "STRICT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

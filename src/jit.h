@@ -129,6 +129,12 @@ typedef struct {
                                        * to the owning EigsThread; lets the
                                        * JIT reach EigsThread fields without
                                        * a second TLS lookup mid-thunk. */
+    /* #972: the observer gate, inlined ahead of the observe helpers —
+     * eigs_obs_gate_open() is `eigs_current->state->obs_needed ||
+     * g_trace_obs_hist_storage`; the thunk reaches the state through
+     * VM.owner -> EigsThread.state. */
+    int  off_thread_state;            /* offsetof(EigsThread, state) */
+    int  off_state_obs_needed;        /* offsetof(EigsState, obs_needed) */
     int  off_sp;
     int  off_stack;
     int  off_frame_count;

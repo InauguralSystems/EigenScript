@@ -4,6 +4,7 @@
 
 #include "eigenscript.h"
 #include "env_flag.h"
+#include "fsutil.h"
 #include "vm.h"
 #include "trace.h"
 #include <stdio.h>
@@ -29,6 +30,11 @@ typedef struct {
     int      depth;     /* scope depth (0 = function-level) */
     int      slot;
     int      captured;
+    int      retired;   /* #1105: a fresh `for` binder's slot after its loop.
+                         * Still owned by the frame (the slot index stays
+                         * allocated) but invisible to name resolution, so a
+                         * post-loop read compiles to OP_GET_NAME and raises
+                         * `undefined variable` like module scope does. */
 } Local;
 
 typedef struct {
@@ -570,6 +576,7 @@ static int add_num_constant(Compiler *c, double num) {
 
 static int resolve_local(Compiler *c, const char *name, uint32_t hash) {
     for (int i = c->local_count - 1; i >= 0; i--) {
+        if (c->locals[i].retired) continue;   /* #1105 */
         if (c->locals[i].hash == hash && strcmp(c->locals[i].name, name) == 0)
             return c->locals[i].slot;
     }
@@ -601,6 +608,7 @@ static int add_local(Compiler *c, const char *name, uint32_t hash) {
     c->locals[slot].depth = c->scope_depth;
     c->locals[slot].slot = slot;
     c->locals[slot].captured = 0;
+    c->locals[slot].retired = 0;
     c->local_count++;
     return slot;
 }
@@ -1304,6 +1312,27 @@ static void stamp_local_traced(EigsChunk *ch, NameSet *interrogated) {
         ch->local_traced[i] = ch->local_names[i] && name_set_has(interrogated, ch->local_names[i]) ? 1 : 0;
 }
 
+/* #1044: `set_observer_window of ["x", n]` / `get_observer_window of "x"`
+ * name a binding by STRING at runtime, so the builtin resolves it through
+ * the env chain exactly as `eval` would — and a plain fn-local is a bare
+ * slot with no env name unless something interrogates it. A string-literal
+ * operand is therefore treated as an interrogation of that name (the same
+ * slow path `when is x` buys), so the per-binding knob reaches locals. A
+ * computed name (a variable holding "x") cannot be scanned and only
+ * reaches name-resolvable bindings; the builtin raises on a miss. */
+static void scan_window_name_arg(ASTNode *node, NameSet *out) {
+    ASTNode *fn = node->data.relation.left, *arg = node->data.relation.right;
+    if (!fn || fn->type != AST_IDENT || !arg) return;
+    if (strcmp(fn->data.ident.name, "set_observer_window") != 0 &&
+        strcmp(fn->data.ident.name, "get_observer_window") != 0) return;
+    ASTNode *lit = NULL;
+    if (arg->type == AST_STR) lit = arg;
+    else if (arg->type == AST_LIST && arg->data.list.count >= 1 &&
+             arg->data.list.elems[0] && arg->data.list.elems[0]->type == AST_STR)
+        lit = arg->data.list.elems[0];
+    if (lit && lit->data.str) name_set_add(out, lit->data.str);
+}
+
 static void scan_for_interrogated(ASTNode *node, NameSet *out) {
     if (!node) return;
     switch (node->type) {
@@ -1324,6 +1353,7 @@ static void scan_for_interrogated(ASTNode *node, NameSet *out) {
         scan_for_interrogated(node->data.unary.operand, out);
         break;
     case AST_RELATION:
+        scan_window_name_arg(node, out);
         scan_for_interrogated(node->data.relation.left, out);
         scan_for_interrogated(node->data.relation.right, out);
         break;
@@ -1771,7 +1801,7 @@ static int scan_dispatch_rebind_block(ASTNode **stmts, int count) {
 static int name_in_enclosing(Compiler *c, const char *name) {
     for (Compiler *e = c->enclosing; e && e->enclosing; e = e->enclosing) {
         for (int i = 0; i < e->local_count; i++)
-            if (strcmp(e->locals[i].name, name) == 0) return 1;
+            if (!e->locals[i].retired && strcmp(e->locals[i].name, name) == 0) return 1;
         if (name_set_has(&e->captured, name)) return 1;
         if (name_set_has(&e->interrogated, name)) return 1;
     }
@@ -2282,8 +2312,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                          * 8 for p). Save the pre-loop value in a hidden slot
                          * and restore it at the loop exit (both the exhausted
                          * and the break paths converge there). A name with
-                         * NO prior binding keeps its fresh slot (see the
-                         * contract's function-scope note). */
+                         * NO prior binding gets a fresh slot that is
+                         * retired at the loop exit (#1105, below). */
                         prior_slot = loop_var_slot;
                         save_slot = add_local(c, "__for_save", env_hash_name("__for_save"));
                     } else
@@ -2422,6 +2452,20 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             emit_op_u16(c, OP_GET_LOCAL, (uint16_t)save_slot, node->line);
             emit_op_u16(c, OP_SET_LOCAL, (uint16_t)prior_slot, node->line);
             emit(c, OP_POP, node->line);
+        } else if (can_skip_env && prior_slot < 0) {
+            /* #1105: a binder with NO prior binding is loop-scoped here
+             * exactly as at module scope. The slot was the loop's storage;
+             * once the loop is over, no later statement may resolve the
+             * name to it. Retiring it (rather than reusing it) keeps every
+             * GET_LOCAL/SET_LOCAL already emitted for the body valid and
+             * routes a post-loop read through OP_GET_NAME, which raises
+             * `undefined variable` unless an outer binding exists -- the
+             * same answer module scope gives. A post-loop write or a later
+             * `for` over the same name allocates a new slot. (A binder over
+             * an EXISTING slot whose #1064 save slot could not be allocated
+             * at MAX_LOCALS reaches here with prior_slot >= 0: that slot is
+             * the parameter/local itself and must never be retired.) */
+            c->locals[loop_var_slot].retired = 1;
         }
         emit(c, OP_NULL, node->line); /* for-loop result */
 
@@ -3391,16 +3435,20 @@ enum { OBS_GATE_MAX_LOADS = 64, OBS_GATE_MAX_DEPTH = 8 };
 typedef struct {
     char **paths;
     char **bases;              /* directory of the file containing each load */
+    unsigned char *kinds;      /* #1046: 1 = `import NAME`, 0 = literal load_file */
     const char *base;          /* borrowed while collecting one file */
     int count, cap, overflow;
+    int import_seen;           /* any import noted, even past the cap */
 } ObsLoadList;
 
-static void obs_gate_note_load(const char *path, void *ud) {
+static void obs_gate_note_load(const char *path, int is_import, void *ud) {
     /* Collect into a bounded, owned list; resolving here would re-enter the
      * compiler while chunk_scan_static_loads is still walking the chunk. */
     ObsLoadList *L = ud;
+    if (is_import) L->import_seen = 1;
     if (L->count >= L->cap) { L->overflow = 1; return; }  /* caller treats as opaque */
     if (L->bases) L->bases[L->count] = xstrdup(L->base);
+    if (L->kinds) L->kinds[L->count] = (unsigned char)(is_import != 0);
     L->paths[L->count++] = xstrdup(path);
 }
 
@@ -3570,19 +3618,30 @@ void eigs_obs_memo_release(void) { obs_memo_clear(); g_obs_spec_bytes = 0; }
  * to load_file (compile_ast numbers module slots from the env it is given,
  * and the scan env is not load_file's), so the pass answers from the AST
  * alone. Two rules, each the AST form of the chunk rule it replaces:
- *   reader  -- chunk_reads_observer: an interrogative, a predicate, an
- *              import, or ANY occurrence of an observer builtin's name
- *              (OBS_BUILTINS in chunk.c, mirrored here by name); a loop whose
- *              condition reads a predicate is covered by the predicate node.
+ *   reader  -- chunk_reads_observer: an interrogative, a predicate, or an
+ *              observer builtin's name used AS A NAME (an AST_IDENT --
+ *              OBS_BUILTINS in chunk.c, mirrored here by name; a string
+ *              literal spelling one is AST_STR and never arms, #1046); a loop
+ *              whose condition reads a predicate is covered by the predicate
+ *              node.
  *   loads   -- chunk_scan_static_loads: `load_file` may appear ONLY as the
  *              callee of a call (an AST_RELATION node -- the parser's spelling
  *              of `f of arg`) whose argument is a string literal (or
  *              an unparenthesised one-element list holding one); that path is
  *              appended to the load list. Any other occurrence of the name
- *              makes the unit opaque, exactly as the chunk scan does.
+ *              makes the unit opaque, exactly as the chunk scan does. An
+ *              `import NAME` (AST_IMPORT) is appended as an import-kind entry
+ *              (#1046) -- its target is a bare name, literal by construction.
  * Both are conservative in the safe direction: a stray name arms the gate
  * (observed, slower), never the reverse. Returns 1 when the module must arm. */
 static int obs_ast_name_is_observer_builtin(const char *nm) {
+    /* Mirrors OBS_BUILTINS in chunk.c, name for name. `report` / `report_value`
+     * are load-bearing HERE even though they are reserved forms (#1102): the
+     * parser spells `report of x` as an AST_RELATION whose callee is the
+     * IDENT "report" (compile_node then emits OP_REPORT_NAME), so this list is
+     * how the AST scan sees an interrogation. Executed: with the two names
+     * dropped, a host importing a module whose only read was `report of x`
+     * compiled `unobserved` and the import-time guard had to raise. */
     static const char *OBS_NAMES[] = {
         "observe", "report", "report_value", "trajectory", "classify",
         "state_at", "get_observer_thresholds", "eval", "record_history", NULL };
@@ -3601,6 +3660,11 @@ static int for_loop_reads_observer(ASTNode *node) {
     for (int i = 0; i < node->data.forloop.body_count && !r; i++)
         if (obs_ast_scan(node->data.forloop.body[i], &L)) r = 1;
     if (!r && node->data.forloop.iter && obs_ast_scan(node->data.forloop.iter, &L)) r = 1;
+    /* #1046: an `import` in the body no longer arms the scan by itself, but
+     * for THIS question it keeps its pre-#1046 answer -- a module imported
+     * from a top-level loop body shares the host's scope and could read the
+     * binder, so the loop stays on the CLEAR tier as before. */
+    if (!r && L.import_seen) r = 1;
     for (int i = 0; i < L.count; i++) free(L.paths[i]);
     free(L.paths);
     return r;
@@ -3612,7 +3676,10 @@ static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth) {
      * inside the muted window). Past the limit the unit is opaque. */
     if (depth > COMPILE_MAX_DEPTH) return 1;
     switch (n->type) {
-    case AST_INTERROGATE: case AST_PREDICATE: case AST_IMPORT: return 1;
+    case AST_INTERROGATE: case AST_PREDICATE: return 1;
+    case AST_IMPORT:   /* #1046: resolved and scanned by the caller's loop, like a literal load */
+        obs_gate_note_load(n->data.import.module_name, 1, L);
+        return 0;
     case AST_IDENT:
         if (strcmp(n->data.ident.name, "load_file") == 0) return 1;   /* not the call shape below */
         return obs_ast_name_is_observer_builtin(n->data.ident.name);
@@ -3627,7 +3694,7 @@ static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth) {
                      arg->data.list.elems[0]->type == AST_STR)
                 lit = arg->data.list.elems[0];
             if (!lit || !lit->data.str) return 1;
-            obs_gate_note_load(lit->data.str, L);
+            obs_gate_note_load(lit->data.str, 0, L);
             return 0;
         }
         return obs_ast_scan_d(fn, L, depth + 1) || obs_ast_scan_d(arg, L, depth + 1);
@@ -3707,6 +3774,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     if (g_obs_gate_depth >= OBS_GATE_MAX_DEPTH) { eigs_obs_enable_runtime(); return; }
 
     L.bases = xcalloc_array(OBS_GATE_MAX_LOADS, sizeof(char *));
+    L.kinds = xcalloc_array(OBS_GATE_MAX_LOADS, sizeof(unsigned char));
     L.base = chunk->src && chunk->src->resolve_dir
                  ? chunk->src->resolve_dir : eigs_current_file_dir();
 
@@ -3757,7 +3825,20 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * why a green release suite and a green ASan suite could not see it —
          * and it is the same defect class as the #ifdef-vs-#if mistake this file
          * already records, made a second time while fixing the first. */
-        int resolved_ok = resolve_eigenscript_file_from(L.bases[i], L.paths[i], resolved, 8192);
+        int resolved_ok;
+        if (L.kinds[i]) {
+            /* #1046: `import NAME`. An embedder's source provider is consulted
+             * FIRST by OP_IMPORT and serves source that is not a file; a
+             * provider-served module is not scanned here and arms the unit
+             * (conservative, and the shape that has no stat identity for the
+             * memo or budget anyway). Otherwise resolve through
+             * eigs_import_resolve -- THE resolver the OP_IMPORT handler calls,
+             * project-first then stdlib -- so what is scanned is what runs. */
+            if (eigs_source_lookup(L.paths[i])) { eigs_obs_enable_runtime(); break; }
+            resolved_ok = eigs_import_resolve(L.bases[i], L.paths[i], resolved, 8192, NULL, 0);
+        } else {
+            resolved_ok = resolve_eigenscript_file_from(L.bases[i], L.paths[i], resolved, 8192);
+        }
 #else
         int resolved_ok = 0;
 #endif
@@ -3871,6 +3952,7 @@ done:
         free(L.bases[i]);
     }
     free(L.bases);
+    free(L.kinds);
 }
 
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {

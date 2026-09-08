@@ -11,7 +11,8 @@
 #
 # Names come from the registration seams themselves:
 #   - core: every `env_set_local_owned(env, "name", ...)` line in
-#     src/builtins.c, src/builtins_host.c, src/hash.c, src/ext_store.c
+#     src/builtins.c, src/builtins_buf.c, src/builtins_host.c, src/hash.c,
+#     src/ext_store.c
 #     (the always-compiled registration TUs — store rides the single seam
 #     since #742). `__`-prefixed self-test hooks are skipped.
 #   - extensions: the X-macro rows of every EIGS_*_BUILTINS group in
@@ -44,7 +45,7 @@ export LC_ALL
 
 CORE_SRCS="src/builtins.c src/builtins_host.c src/hash.c src/ext_store.c"
 # TUs scanned for `name of ...` signature comments (core + every extension).
-DOC_SRCS="src/builtins.c src/builtins_host.c src/builtins_tensor.c \
+DOC_SRCS="src/builtins.c src/builtins_buf.c src/builtins_host.c src/builtins_tensor.c \
           src/hash.c src/ext_store.c src/ext_gfx.c src/ext_http.c \
           src/ext_db.c src/ext_net.c src/model_train.c"
 

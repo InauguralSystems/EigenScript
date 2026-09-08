@@ -351,9 +351,29 @@ ok_fill is (sandbox_run of [fill_desc of 1000000, 1000000, 1000])["ok"]
 assert_eq of [ok_fill, 0, "budget: fill(1M) under 1000-byte budget -> {ok:0}"]
 
 # --- 4. The DEFAULT budget (no max_bytes arg) bounds an otherwise-uncapped bomb,
-#        so it returns {ok:0} instead of x_oom/abort ---
-ok_default is (sandbox_run of [zeros_desc of 9000000, 1000000])["ok"]
-assert_eq of [ok_default, 0, "budget: default budget bounds zeros(9M) -> {ok:0}, no abort"]
+#        so it returns {ok:0} instead of x_oom/abort.
+#        #1093: `zeros of n` is a flat BUFFER now — 8 bytes/element instead of
+#        sizeof(Value)+sizeof(Value*), and capped at 10M elements, so a single
+#        `zeros` call can charge at most 80 MB and can no longer reach the
+#        256 MiB default on its own. The bomb is therefore four maximal
+#        allocations whose CUMULATIVE charge crosses the default, and the
+#        assertion now names the memory diagnostic: a bare `zeros(9M)` is still
+#        refused, but by the boundary result-scan (pinned separately below),
+#        and reading that refusal as "the byte budget held" would be wrong. ---
+big_alloc_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, POP,
+                         GET_NAME,0,0, CONST,1,0, CALL,1,0, POP,
+                         GET_NAME,0,0, CONST,1,0, CALL,1,0, POP,
+                         GET_NAME,0,0, CONST,1,0, CALL,1,0, POP,
+                         CONST,2,0, RETURN], ["zeros", 10000000, 0]]
+sr_default is sandbox_run of [big_alloc_desc, 1000000]
+assert_eq of [sr_default["ok"], 0, "budget: default budget bounds 4x zeros(10M) -> {ok:0}, no abort"]
+assert_true of [(index_of of [sr_default["error"]["message"], "memory budget exceeded"]) >= 0,
+                "budget: the default-budget refusal is the MEMORY diagnostic, not a boundary one"]
+# #1093: the old zeros(9M) bomb is still refused under the default budget, but
+# now at the result boundary (a 9M-element buffer exceeds the callable-scan
+# node budget). Pinned so the change of MECHANISM stays visible.
+sr_zeros9 is sandbox_run of [zeros_desc of 9000000, 1000000]
+assert_eq of [sr_zeros9["ok"], 0, "budget: zeros(9M) under the default budget is still refused"]
 
 # --- 5. CUMULATIVE (F2): two fills that each fit but together exceed the budget.
 #        fill(60k) result stays under the boundary result-scan budget

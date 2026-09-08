@@ -175,6 +175,18 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     }
 }
 
+/* #971: the strict half of the NaN collapse. Off, num_guard folds a NaN to
+ * 0 and sets EIGS_MATH_INVALID — a plausible number nothing downstream can
+ * tell from a real zero. On, the operation has no honest value, so it joins
+ * div0/mod0 and the domain raises: a catchable EK_VALUE. `who` is NULL when
+ * the backstop in num_guard fired for a source the enumerated callers of
+ * num_guard_named do not cover; the message then names the arithmetic
+ * rather than a builtin, which is still louder than a silent 0. */
+void eigs_strict_nan_raise(const char *who) {
+    rt_error(EK_VALUE, 0, "%s: result is not a number (NaN has no defined value)",
+             who ? who : "arithmetic");
+}
+
 const char* tok_type_name(TokType t) {
     switch (t) {
         case TOK_NUM: return "number";
@@ -403,6 +415,7 @@ static double compute_entropy_impl(Value *v) {
             return sum / v->data.list.count + log2((double)v->data.list.count + 1.0);
         }
         case VAL_DICT: {
+            eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             if (v->data.dict.count == 0) return 0.0;
             double sum = 0.0;
             for (int i = 0; i < v->data.dict.count; i++)
@@ -443,22 +456,66 @@ double compute_entropy(Value *v) {
  * aliasing temps tracks correctly. This is what fixed #262 — the value-path
  * observer model (state on the Value) was removed in Step E. */
 
-static void observer_slot_window_push(ObserverSlot *s, double dh) {
-    if (!s->dh_window) {
-        s->dh_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
-        s->dh_window_head = 0;
-        s->dh_window_count = 0;
-    }
-    s->dh_window[s->dh_window_head] = dh;
-    s->dh_window_head = (uint8_t)((s->dh_window_head + 1) % OBSERVER_WINDOW_N);
-    if (s->dh_window_count < OBSERVER_WINDOW_N) s->dh_window_count++;
+/* #1044: the window depth a slot classifies over. A per-binding override
+ * (set_observer_window of ["x", n]) wins; otherwise the state default
+ * (set_observer_window of n), read LIVE — like the thresholds, changing the
+ * default changes every subsequent verdict, not only bindings first seen
+ * after the call. The tape/step/DAP surfaces build slots without an env and
+ * get the default through the same read. */
+static inline int obs_win(const ObserverSlot *s) {
+    if (s && s->win_override) return s->win_override;
+    /* g_obs_window is validated at the seam (builtin_set_observer_window
+     * clamps to [MIN, MAX]) and seeded at OBSERVER_WINDOW_N, so the hot
+     * path re-checks nothing: this read is one branch and two loads per
+     * observed assignment. */
+    return eigs_current ? eigs_current->state->obs_window : OBSERVER_WINDOW_N;
+}
+int observer_slot_window(const ObserverSlot *s) { return obs_win(s); }
+
+/* The sample counts the classifiers read: the ring may hold MORE than the
+ * depth in force (the default was lowered, or an override shrank it), and
+ * then only the newest `depth` samples are the window. */
+static inline size_t obs_dh_count(const ObserverSlot *s) {
+    size_t n = (size_t)obs_win(s);
+    return s->dh_window_count < n ? s->dh_window_count : n;
+}
+static inline size_t obs_v_count(const ObserverSlot *s) {
+    size_t n = (size_t)obs_win(s);
+    return s->v_window_count < n ? s->v_window_count : n;
 }
 
 static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back) {
     if (!s->dh_window || offset_back >= s->dh_window_count) return 0.0;
     int idx = (int)s->dh_window_head - 1 - (int)offset_back;
-    while (idx < 0) idx += OBSERVER_WINDOW_N;
+    while (idx < 0) idx += s->dh_cap;
     return s->dh_window[idx];
+}
+
+/* Make the dH ring at least `n` deep, keeping the samples it holds (newest
+ * min(count, n) of them, re-laid oldest-first). Allocation is the one cost
+ * #1044 adds to the common path, and only when the depth in force exceeds
+ * the capacity — at the default depth this is the same single xcalloc the
+ * ring always paid. */
+static void observer_slot_dh_ensure(ObserverSlot *s, int n) {
+    if (s->dh_window && s->dh_cap >= n) return;
+    double *nw = xcalloc((size_t)n, sizeof(double));
+    int cnt = s->dh_window ? s->dh_window_count : 0;
+    if (cnt > n) cnt = n;
+    for (int i = 0; i < cnt; i++)
+        nw[i] = observer_slot_window_get(s, (size_t)(cnt - 1 - i));
+    free(s->dh_window);
+    s->dh_window = nw;
+    s->dh_cap = (uint8_t)n;
+    s->dh_window_count = (uint8_t)cnt;
+    s->dh_window_head = (uint8_t)(cnt % n);
+}
+
+static void observer_slot_window_push(ObserverSlot *s, double dh) {
+    int n = obs_win(s);
+    if (!s->dh_window || s->dh_cap < n) observer_slot_dh_ensure(s, n);
+    s->dh_window[s->dh_window_head] = dh;
+    if (++s->dh_window_head >= s->dh_cap) s->dh_window_head = 0;
+    if (s->dh_window_count < s->dh_cap) s->dh_window_count++;
 }
 
 /* #294 value-signal channel: same ring buffer as the entropy window, but the
@@ -468,31 +525,48 @@ static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back
  * two classes — additive/polynomial runaway (Δv/|v| → 0 while Δv doesn't)
  * and oscillation below the deadband — and both are recoverable from the
  * raw step's sign/decay structure alone. */
-static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_delta) {
-    if (!s->v_window) {
-        s->v_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
-        s->vr_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
-        s->v_window_head = 0;
-        s->v_window_count = 0;
-    }
-    s->v_window[s->v_window_head] = rel_delta;
-    if (s->vr_window) s->vr_window[s->v_window_head] = raw_delta;
-    s->v_window_head = (uint8_t)((s->v_window_head + 1) % OBSERVER_WINDOW_N);
-    if (s->v_window_count < OBSERVER_WINDOW_N) s->v_window_count++;
-}
-
 static double observer_slot_v_get(const ObserverSlot *s, size_t offset_back) {
     if (!s->v_window || offset_back >= s->v_window_count) return 0.0;
     int idx = (int)s->v_window_head - 1 - (int)offset_back;
-    while (idx < 0) idx += OBSERVER_WINDOW_N;
+    while (idx < 0) idx += s->v_cap;
     return s->v_window[idx];
 }
 
 static double observer_slot_vr_get(const ObserverSlot *s, size_t offset_back) {
     if (!s->vr_window || offset_back >= s->v_window_count) return 0.0;
     int idx = (int)s->v_window_head - 1 - (int)offset_back;
-    while (idx < 0) idx += OBSERVER_WINDOW_N;
+    while (idx < 0) idx += s->v_cap;
     return s->vr_window[idx];
+}
+
+/* #1044: value-channel twin of observer_slot_dh_ensure (both rings share
+ * head/count, so they grow together). */
+static void observer_slot_v_ensure(ObserverSlot *s, int n) {
+    if (s->v_window && s->v_cap >= n) return;
+    double *nv = xcalloc((size_t)n, sizeof(double));
+    double *nr = xcalloc((size_t)n, sizeof(double));
+    int cnt = s->v_window ? s->v_window_count : 0;
+    if (cnt > n) cnt = n;
+    for (int i = 0; i < cnt; i++) {
+        nv[i] = observer_slot_v_get(s, (size_t)(cnt - 1 - i));
+        nr[i] = observer_slot_vr_get(s, (size_t)(cnt - 1 - i));
+    }
+    free(s->v_window);
+    free(s->vr_window);
+    s->v_window = nv;
+    s->vr_window = nr;
+    s->v_cap = (uint8_t)n;
+    s->v_window_count = (uint8_t)cnt;
+    s->v_window_head = (uint8_t)(cnt % n);
+}
+
+static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_delta) {
+    int n = obs_win(s);
+    if (!s->v_window || s->v_cap < n) observer_slot_v_ensure(s, n);
+    s->v_window[s->v_window_head] = rel_delta;
+    s->vr_window[s->v_window_head] = raw_delta;
+    if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
+    if (s->v_window_count < s->v_cap) s->v_window_count++;
 }
 
 /* #422 raw-step structure tests. Both require a FULL window and steps above
@@ -521,7 +595,7 @@ static double observer_slot_vr_get(const ObserverSlot *s, size_t offset_back) {
  * false where the old semantics said true. The full-window requirement
  * stays where it belongs: on the REST bands, which certify. */
 static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     if (cnt < 4) return 0;
     double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
     size_t half = cnt / 2;
@@ -536,7 +610,7 @@ static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
 
 static int observer_slot_raw_diverging(const ObserverSlot *s) {
     if (!observer_slot_raw_nonvanishing(s)) return 0;
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     double first = observer_slot_vr_get(s, 0);
     for (size_t i = 1; i < cnt; i++)
         if (observer_slot_vr_get(s, i) * first <= 0.0) return 0;
@@ -545,8 +619,8 @@ static int observer_slot_raw_diverging(const ObserverSlot *s) {
 
 static int observer_slot_raw_oscillating(const ObserverSlot *s) {
     if (!observer_slot_raw_nonvanishing(s)) return 0;
-    size_t cnt = s->v_window_count;
-    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
+    size_t cnt = obs_v_count(s);
+    const int FLIPS = (observer_slot_window(s) + 2) / 3;
     double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
     int flips = 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
@@ -558,13 +632,40 @@ static int observer_slot_raw_oscillating(const ObserverSlot *s) {
 }
 
 /* Fold one observed numeric value into the slot's value channel. The stored
- * step is RELATIVE (Δv/(1+|v|)) so the thresholds carry the same meaning across
- * value scales: a ±0.6 swing around 5 reads "moving" (~12% steps), the same
- * swing around 1e6 is effectively settled. First value seeds last_value only. */
+ * step is RELATIVE so the thresholds carry the same meaning across value
+ * scales: a ±0.6 swing around 5 reads "moving" (~12% steps), the same swing
+ * around 1e6 is effectively settled. First value seeds last_value only.
+ *
+ * #1045: rel = Δv / max(|v|, |v_prev|, scale). The old Δv/(1+|v|) was the
+ * entropy formula's normalisation borrowed as a step: below |v| ~ 1 the
+ * denominator is ~1 and rel is just Δv — an ABSOLUTE deadband — so one
+ * physical trajectory read `converged` stored in radians and `moving` in
+ * degrees (phugoid's spiral mode, 0.0124 rad = 0.71 deg). The step's own
+ * local scale, max(|v|, |v_prev|), is the textbook relative step |Δx|/|x|
+ * symmetrised so it is bounded (|rel| <= 2) and defined across a zero
+ * crossing; `scale` (set_observer_scale, default 1e-3) is the magnitude
+ * below which a value counts as "at zero" and the tolerance turns absolute
+ * — so float noise around an exact zero (Δv ~ 1e-16) reads 1e-13, not O(1).
+ * Above the scale the verdict is unit-free: `converged` means every recent
+ * step under dh_zero of the value's own size, i.e. |Δx| <= rtol·|x| with
+ * an absolute floor of rtol·scale (1e-6 by default), and a geometric decay
+ * toward zero keeps rel = (1 - r) — `improving`, never `converged` — until
+ * it is inside the scale.
+ *
+ * Not the window's running max |v| (the design first proposed): for a
+ * monotone decay that max is the OLDEST sample, so rel = (1 - r)·r^(N-1)
+ * and any ratio r < ~0.5 reads `converged` at the first full window no
+ * matter how far from its limit the value still is (1e6·0.3^k certifies at
+ * x ~= 1.8) — and widening the window (#1044) makes it worse, r^49 at
+ * N = 50. The local scale keeps the two knobs independent. */
 void observer_slot_record_value(ObserverSlot *s, double v) {
     if (s->v_used) {
         double raw = v - s->last_value;
-        double rel = raw / (1.0 + fabs(v));
+        double a = fabs(v), b = fabs(s->last_value);
+        if (b > a) a = b;
+        double fl = eigs_current ? eigs_current->state->obs_scale : 0.001;
+        if (fl > a) a = fl;
+        double rel = raw / a;
         observer_slot_v_push(s, rel, raw);
     }
     s->last_value = v;
@@ -601,25 +702,35 @@ static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
     s->used = 1;
 }
 
-/* #915: the one place the observer gate is decided.
+/* #915: the one place the observer gate is decided — eigs_obs_gate_open,
+ * a static inline in eigenscript.h (#1049 moved it there so the observe ops
+ * in vm.c can ask it too).
  *
  * g_obs_needed is the compile-time half: chunk_reads_observer said some unit in
  * this state can interrogate. g_trace_obs_hist is the runtime half: a tape is
  * recording observer snapshots, so the bookkeeping is needed even though the
  * PROGRAM never asks for it.
  *
- * The trace flag is READ here rather than mirrored into g_obs_needed at each of
+ * The trace flag is READ there rather than mirrored into g_obs_needed at each of
  * the five sites that arm it (builtins.c, chunk.c, compiler.c x2, repl.c).
  * Mirroring would be five hand-maintained copies of one fact, and a sixth arming
  * site added later would silently record a tape full of dead observer snapshots
  * — the same drift shape #921/#925 are open on. One read, no copies. */
-extern int g_trace_obs_hist_storage;   /* trace.h — not included here */
 #define g_trace_obs_hist __atomic_load_n(&g_trace_obs_hist_storage, __ATOMIC_RELAXED)
-static inline int eigs_obs_gate_open(void) {
-    return g_obs_needed || g_trace_obs_hist;
+
+/* #972: the observe-call tally (eigenscript.h) — a debug instrument, so its
+ * report is host-only; the freestanding profile never sets the flag. */
+int  g_obs_count_observe_calls = 0;
+long g_obs_observe_calls = 0;
+void eigs_obs_gate_stats_report(void) {
+#if !EIGENSCRIPT_FREESTANDING
+    fprintf(stderr, "obs-gate: observe-calls %ld\n",
+            __atomic_load_n(&g_obs_observe_calls, __ATOMIC_RELAXED));
+#endif
 }
 
 void observer_slot_update(Env *e, int idx, Value *newval) {
+    eigs_obs_count_call();   /* #972: before the gate test, by design */
     /* #915: nothing compiled into this state can interrogate the observer, so
      * skip the entropy walk entirely. compute_entropy recurses through every
      * reachable list item and dict value, which is where the 88% goes.
@@ -654,10 +765,78 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
  * number, so the default path can observe without promoting the num to a
  * tracked Value. Same trajectory math as observer_slot_update. */
 void observer_slot_update_num(Env *e, int idx, double num) {
+    eigs_obs_count_call();   /* #972 */
     if (!eigs_obs_gate_open()) return;           /* #915 — see observer_slot_update */
     observer_slot_update_e(e, idx, entropy_of_num(num));
     ObserverSlot *vs = env_obs_slot(e, idx);    /* #294 value-signal channel */
     if (vs) observer_slot_record_value(vs, num);
+}
+
+/* #1049: the ELIDED assignment — what an `unobserved:` block still records.
+ *
+ * The block exists to skip the expensive half of an observation: the entropy
+ * walk (entropy_of_num's two log2s for a scalar, compute_entropy's
+ * O(children) pass for a container) and the dH bookkeeping built on it. It
+ * used to skip the whole update, so an elided assignment was ABSENT from the
+ * value window, and every value-channel verdict (`report`, the six predicates
+ * on a numeric binding, `report_value`, a trajectory snapshot's rel/raw
+ * lists) differed from the unelided program until the missing sample would
+ * have aged out of the 10-deep window: an elided `b is 0.0` initialiser
+ * moved the window-fill boundary by one read, a mid-stream elision merged two
+ * steps into one. A performance annotation was changing answers.
+ *
+ * So the O(1) half still runs here: a scalar's sample enters the value ring
+ * (observer_slot_record_value — one subtraction, one division, two ring
+ * writes, no log2), and the slot counts as having a trajectory (`used`,
+ * with obs_age untouched so the next OBSERVED assignment still seeds the
+ * entropy channel as a first observation). A non-numeric value only flips
+ * the route bit (v_last) the way an observed one would, so a binding rebound
+ * from number to container inside the block routes to the entropy channel
+ * exactly as it does outside — nothing is walked. What is NOT recorded:
+ * entropy, dH, the dH window, obs_age, the tape's observer snapshot, and the
+ * bare-predicate alias (g_last_obs_slot_*) — that alias is deliberately left
+ * on the last OBSERVED binding, because shielding a bare `loop while not
+ * converged` from scratch work is one of the block's documented uses. The
+ * entropy-channel readers (`why`/`how`, `observe`'s dH pair, a snapshot's
+ * `dh` list, `classify of [t, "entropy"]`, and `report`/predicates on a
+ * NON-numeric binding) therefore remain elision-sensitive; PREDICATES.md
+ * says so. Gated by the same #915 observer gate as the full update: a
+ * program nothing in which reads the observer still pays nothing. */
+void observer_slot_sample_num(Env *e, int idx, double num) {
+    eigs_obs_count_call();   /* #972 */
+    if (!eigs_obs_gate_open()) return;
+    if (!e || idx < 0) return;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (!s) return;
+    observer_slot_record_value(s, num);
+    s->used = 1;
+}
+
+void observer_slot_sample(Env *e, int idx, Value *newval) {
+    eigs_obs_count_call();   /* #972 */
+    if (!eigs_obs_gate_open()) return;
+    if (newval && newval->type == VAL_NUM) {
+        observer_slot_sample_num(e, idx, newval->data.num);
+        return;
+    }
+    if (!e || idx < 0) return;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (s) s->v_last = 0;   /* #861 route bit only — no walk, no `used` */
+}
+
+/* #1044: per-binding window override. Only the OVERRIDE is written — the
+ * rings grow on the next push if the new depth exceeds their capacity, and
+ * a smaller depth simply reads fewer samples — so the call is O(1) and
+ * touches no sample. n == 0 restores the state default. */
+int observer_slot_set_window(Env *e, int idx, int n) {
+    if (!e || idx < 0) return 0;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return 0;
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (!s) return 0;
+    s->win_override = (uint8_t)n;
+    return 1;
 }
 
 void observer_slot_reset(Env *e) {
@@ -737,7 +916,7 @@ static int observer_slot_saturated(const ObserverSlot *s) {
 
 /* Window flags: every |rel step| under dh_zero / dh_small. */
 static void obs_num_flags(const ObserverSlot *s, int *all_zero, int *all_small) {
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     *all_zero = 1; *all_small = 1;
     for (size_t i = 0; i < cnt; i++) {
         double w = fabs(observer_slot_v_get(s, i));
@@ -749,9 +928,9 @@ static void obs_num_flags(const ObserverSlot *s, int *all_zero, int *all_small) 
 /* Relative-step sign-flip oscillation — the head test report_value has
  * always run (flips above the deadband, >= FLIPS of them). */
 static int obs_num_rel_oscillating(const ObserverSlot *s) {
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     if (cnt < 3) return 0;
-    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
+    const int FLIPS = (observer_slot_window(s) + 2) / 3;
     int flips = 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
         double a = observer_slot_v_get(s, i);
@@ -772,8 +951,8 @@ static int obs_num_rel_oscillating(const ObserverSlot *s) {
  * a pure sampled sinusoid nets ~0 over any full window; a drift-with-
  * wiggle nets ~its path and stays out. */
 static int obs_num_bounded_oscillating(const ObserverSlot *s) {
-    size_t cnt = s->v_window_count;
-    if (cnt < OBSERVER_WINDOW_N) return 0;
+    size_t cnt = obs_v_count(s);
+    if (cnt < (size_t)observer_slot_window(s)) return 0;
     /* No non-vanishing gate here, deliberately: an underdamped oscillator's
      * x DECAYS while oscillating, and its oscillation is the fact worth
      * reporting mid-flight. The handoff to the settle bands is the all-under-
@@ -827,7 +1006,7 @@ static int obs_num_diverging(const ObserverSlot *s) {
  * the band instead of being promised a limit it does not have. */
 static int obs_num_improving(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     if (cnt < 4) return 0;                       /* early-warning band: same
                                                   * 4-sample floor as the raw
                                                   * tests, not the rest bands'
@@ -882,7 +1061,7 @@ static int obs_num_improving(const ObserverSlot *s) {
  * its raw steps do not). */
 static int obs_num_converged(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
-    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    if (obs_v_count(s) < (size_t)observer_slot_window(s)) return 0;
     int all_zero, all_small;
     obs_num_flags(s, &all_zero, &all_small);
     if (!all_zero) return 0;
@@ -895,18 +1074,19 @@ static int obs_num_converged(const ObserverSlot *s) {
  * (all-under-deadband forces both), preserving the quiescent lattice. */
 static int obs_num_equilibrium(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
-    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    size_t N = (size_t)observer_slot_window(s);
+    if (obs_v_count(s) < N) return 0;
     if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
     double sum = 0.0;
-    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) sum += observer_slot_v_get(s, i);
-    double mean = sum / (double)OBSERVER_WINDOW_N;
+    for (size_t i = 0; i < N; i++) sum += observer_slot_v_get(s, i);
+    double mean = sum / (double)N;
     if (fabs(mean) >= g_obs_dh_zero) return 0;
     double var = 0.0;
-    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
+    for (size_t i = 0; i < N; i++) {
         double d = observer_slot_v_get(s, i) - mean;
         var += d * d;
     }
-    var /= (double)OBSERVER_WINDOW_N;
+    var /= (double)N;
     return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
 }
 
@@ -915,12 +1095,13 @@ static int obs_num_equilibrium(const ObserverSlot *s) {
  * steps live here: real motion, no certified limit). converged => stable. */
 static int obs_num_stable(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
-    if (s->v_window_count < OBSERVER_WINDOW_N) return 0;
+    size_t N = (size_t)observer_slot_window(s);
+    if (obs_v_count(s) < N) return 0;
     if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
     int all_zero, all_small;
     obs_num_flags(s, &all_zero, &all_small);
     if (!all_small) return 0;
-    for (size_t i = 0; i + 1 < OBSERVER_WINDOW_N; i++) {
+    for (size_t i = 0; i + 1 < N; i++) {
         double a = observer_slot_v_get(s, i);
         double b = observer_slot_v_get(s, i + 1);
         if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
@@ -933,13 +1114,13 @@ static int obs_num_stable(const ObserverSlot *s) {
  * partial-window fallback preserved verbatim. */
 static const char *obs_num_report(const ObserverSlot *s) {
     if (!s || !s->v_used) return "equilibrium";   /* no numeric trajectory */
-    size_t cnt = s->v_window_count;
+    size_t cnt = obs_v_count(s);
     if (cnt == 0) return "equilibrium";           /* one value seen, no step yet */
     if (obs_num_oscillating(s)) return "oscillating";
     if (obs_num_diverging(s))   return "diverging";
     if (obs_num_improving(s))   return "improving";   /* partial-capable, like
                                                        * the two bands above */
-    if (cnt >= OBSERVER_WINDOW_N) {
+    if (cnt >= (size_t)observer_slot_window(s)) {
         if (obs_num_converged(s))   return "converged";
         if (obs_num_equilibrium(s)) return "equilibrium";
         if (obs_num_stable(s))      return "stable";
@@ -964,25 +1145,29 @@ static int obs_route_num(const ObserverSlot *s) {
  * handles saturation itself, so the entropy route can no longer see one. */
 int observer_slot_converged(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_converged(s);
-    if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
-    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++)
+    if (!s) return 0;
+    size_t N = (size_t)observer_slot_window(s);
+    if (obs_dh_count(s) < N) return 0;
+    for (size_t i = 0; i < N; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
     return (s->entropy < g_obs_h_low) ? 1 : 0;
 }
 
 int observer_slot_equilibrium(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_equilibrium(s);
-    if (!s || s->dh_window_count < OBSERVER_WINDOW_N) return 0;
+    if (!s) return 0;
+    size_t N = (size_t)observer_slot_window(s);
+    if (obs_dh_count(s) < N) return 0;
     double sum = 0.0;
-    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) sum += observer_slot_window_get(s, i);
-    double mean = sum / (double)OBSERVER_WINDOW_N;
+    for (size_t i = 0; i < N; i++) sum += observer_slot_window_get(s, i);
+    double mean = sum / (double)N;
     if (fabs(mean) >= g_obs_dh_zero) return 0;
     double var = 0.0;
-    for (size_t i = 0; i < OBSERVER_WINDOW_N; i++) {
+    for (size_t i = 0; i < N; i++) {
         double d = observer_slot_window_get(s, i) - mean;
         var += d * d;
     }
-    var /= (double)OBSERVER_WINDOW_N;
+    var /= (double)N;
     return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
 }
 
@@ -990,7 +1175,7 @@ int observer_slot_equilibrium(const ObserverSlot *s) {
  * the observer_*(Value*) versions above, reading the slot's window/entropy. */
 int observer_slot_improving(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_improving(s);
-    size_t cnt = s ? s->dh_window_count : 0;
+    size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < 3) return 0;
     double sum = 0.0; int down = 0;
     for (size_t i = 0; i < cnt; i++) {
@@ -1003,7 +1188,7 @@ int observer_slot_improving(const ObserverSlot *s) {
 
 int observer_slot_diverging(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_diverging(s);
-    size_t cnt = s ? s->dh_window_count : 0;
+    size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < 3) return 0;
     double sum = 0.0; int up = 0;
     for (size_t i = 0; i < cnt; i++) {
@@ -1016,9 +1201,9 @@ int observer_slot_diverging(const ObserverSlot *s) {
 
 int observer_slot_oscillating(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_oscillating(s);
-    size_t cnt = s ? s->dh_window_count : 0;
+    size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < 3) return 0;
-    const int FLIPS = (OBSERVER_WINDOW_N + 2) / 3;
+    const int FLIPS = (observer_slot_window(s) + 2) / 3;
     int flips = 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
         double a = observer_slot_window_get(s, i);
@@ -1030,8 +1215,8 @@ int observer_slot_oscillating(const ObserverSlot *s) {
 
 int observer_slot_stable(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_stable(s);
-    size_t cnt = s ? s->dh_window_count : 0;
-    if (cnt < OBSERVER_WINDOW_N) return 0;
+    size_t cnt = s ? obs_dh_count(s) : 0;
+    if (cnt < (size_t)observer_slot_window(s)) return 0;
     if (s->entropy < g_obs_h_low) return 0;
     for (size_t i = 0; i < cnt; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_small) return 0;
@@ -1079,7 +1264,7 @@ const char *observer_slot_report_entropy(const ObserverSlot *s) {
      * band, "moving" — the same label the value channel uses for exactly this
      * state. Reporting a still-moving value as settled is what broke the
      * documented settled-plus-hold recipe. */
-    if (s->dh_window_count >= OBSERVER_WINDOW_N) return "moving";
+    if (obs_dh_count(s) >= (size_t)observer_slot_window(s)) return "moving";
     /* Partial-window best-effort label (mirrors builtin_report's tail). */
     if (fabs(s->dH) < g_obs_dh_zero) return "equilibrium";
     if (fabs(s->dH) < g_obs_dh_small && s->entropy >= g_obs_h_low) return "stable";
@@ -1176,8 +1361,8 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     Value *out = make_dict(10);
     if (!out) return NULL;
     dict_set_owned(out, "kind", make_str("trajectory"));
-    int vcnt = (s && s->v_window)  ? s->v_window_count  : 0;
-    int dcnt = (s && s->dh_window) ? s->dh_window_count : 0;
+    int vcnt = (s && s->v_window)  ? (int)obs_v_count(s)  : 0;
+    int dcnt = (s && s->dh_window) ? (int)obs_dh_count(s) : 0;
     Value *rel = make_list_heap(vcnt > 0 ? vcnt : 1);
     Value *raw = make_list_heap(vcnt > 0 ? vcnt : 1);
     Value *dh  = make_list_heap(dcnt > 0 ? dcnt : 1);
@@ -1198,6 +1383,10 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     dict_set_owned(out, "last_value",   make_num((s && s->v_used) ? s->last_value : 0.0));
     dict_set_owned(out, "observed",     make_num(s ? (s->used != 0) : 0));
     dict_set_owned(out, "numeric",      make_num(s ? (s->v_used != 0) : 0));
+    /* #1044: the depth this slot classifies over travels with the snapshot,
+     * so `classify of (trajectory of x)` agrees with `report of x` for a
+     * binding carrying a per-binding override. */
+    dict_set_owned(out, "window",       make_num((double)observer_slot_window(s)));
     return out;
 }
 
@@ -1217,13 +1406,27 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     if (!rel || rel->type != VAL_LIST || !raw || raw->type != VAL_LIST ||
         !dh || dh->type != VAL_LIST)
         return 0;
-    /* Only the most recent OBSERVER_WINDOW_N entries matter — a hand-built
-     * longer list classifies identically to its tail, same ring semantics. */
+    /* #1044: a snapshot carries the depth it was taken at (a hand-built dict
+     * may omit it — the state default then applies). Out of range means a
+     * malformed snapshot, refused like any other wrong shape. */
+    {
+        Value *w = dict_get(dict, "window");
+        if (w) {
+            if (w->type != VAL_NUM || w->data.num < OBSERVER_WINDOW_MIN ||
+                w->data.num > OBSERVER_WINDOW_MAX || w->data.num != (int)w->data.num)
+                return 0;
+            out->win_override = (uint8_t)(int)w->data.num;
+        }
+    }
+    const int N = observer_slot_window(out);
+    /* Only the most recent N entries matter — a hand-built longer list
+     * classifies identically to its tail, same ring semantics. */
     int vcnt = rel->data.list.count;
     if (raw->data.list.count < vcnt) vcnt = raw->data.list.count;
-    int vstart = vcnt > OBSERVER_WINDOW_N ? vcnt - OBSERVER_WINDOW_N : 0;
-    out->v_window  = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
-    out->vr_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+    int vstart = vcnt > N ? vcnt - N : 0;
+    out->v_window  = xcalloc((size_t)N, sizeof(double));
+    out->vr_window = xcalloc((size_t)N, sizeof(double));
+    out->v_cap = out->dh_cap = (uint8_t)N;
     for (int i = vstart; i < vcnt; i++) {
         Value *a = rel->data.list.items[i], *b = raw->data.list.items[i];
         if (!a || a->type != VAL_NUM || !b || b->type != VAL_NUM) {
@@ -1235,10 +1438,10 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         out->vr_window[out->v_window_count] = b->data.num;
         out->v_window_count++;
     }
-    out->v_window_head = (uint8_t)(out->v_window_count % OBSERVER_WINDOW_N);
+    out->v_window_head = (uint8_t)(out->v_window_count % N);
     int dcnt = dh->data.list.count;
-    int dstart = dcnt > OBSERVER_WINDOW_N ? dcnt - OBSERVER_WINDOW_N : 0;
-    out->dh_window = xcalloc(OBSERVER_WINDOW_N, sizeof(double));
+    int dstart = dcnt > N ? dcnt - N : 0;
+    out->dh_window = xcalloc((size_t)N, sizeof(double));
     for (int i = dstart; i < dcnt; i++) {
         Value *a = dh->data.list.items[i];
         if (!a || a->type != VAL_NUM) {
@@ -1248,7 +1451,7 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         }
         out->dh_window[out->dh_window_count++] = a->data.num;
     }
-    out->dh_window_head = (uint8_t)(out->dh_window_count % OBSERVER_WINDOW_N);
+    out->dh_window_head = (uint8_t)(out->dh_window_count % N);
     Value *v;
     if ((v = dict_get(dict, "entropy"))      && v->type == VAL_NUM) out->entropy = v->data.num;
     if ((v = dict_get(dict, "dH"))           && v->type == VAL_NUM) out->dH = v->data.num;
@@ -1374,6 +1577,13 @@ void free_value(Value *v) {
                 free(v->data.list.items);
             break;
         case VAL_DICT:
+            if (v->module_ns) {
+                /* #1057: the non-cycle mirror of the module-namespace row of
+                 * GC_EDGE_TABLE — a namespace that dies by ordinary
+                 * refcounting drops its owning ref on the module env here. */
+                Env *me = eigs_module_ns_detach(v);
+                if (me) env_decref(me);
+            }
             for (int i = 0; i < v->data.dict.count; i++) {
                 /* keys are interned (env_intern_name) — do not free */
                 val_decref(v->data.dict.vals[i]);
@@ -1762,10 +1972,175 @@ Value* make_dict(int capacity) {
     env_hash_init(&v->data.dict.hash, ENV_HASH_INIT_CAP);
     v->refcount = 1;
     v->arena = 0;
+    v->module_ns = 0;      /* #1057: a plain dict is never a module namespace */
     return v;
 }
 
-void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
+/* ==== Module namespaces: a LIVE VIEW of the module env (#1057) ========
+ *
+ * `import M` used to bind a SHALLOW SNAPSHOT of M's top-level bindings, so
+ * whether an importer saw live state depended on the VALUE'S TYPE: a dict
+ * or list was shared by reference and tracked, a number or string was
+ * copied at import time and went silently stale, and `M.x is v` reached
+ * only the copy. The rule a user had to learn — "module state must be
+ * boxed in a container or it will go stale in your importer" — had no
+ * principle behind it and failed as a wrong number rather than an error.
+ *
+ * A namespace dict is now FLAGGED (Value::module_ns) and carries an OWNING
+ * backref to the module's Env. Field reads project the module's CURRENT
+ * binding into the dict slot and return it; field writes go through to the
+ * module binding. The dict's own storage is kept as a mirror so every
+ * whole-dict reader (keys / values / len / printing / json / iteration /
+ * equality) still works — those call eigs_module_ns_sync first.
+ *
+ * The Env* lives in this side table rather than in `struct Value` so the
+ * Value stays 72 bytes: the flag byte fits in the struct's existing tail
+ * padding, and only a flagged dict ever pays for the lookup.
+ *
+ * Ownership: attach takes env_incref; the edge is one GC_EDGE_TABLE row
+ * (dict -> env), cleared by gc_clear_node and by free_value. Module
+ * PRIVATE bindings (`_`-prefixed) are not part of the namespace and are
+ * never projected — the namespace's public surface is unchanged.
+ *
+ * Concurrency: written only by `import`, which — like the module cache
+ * this parallels — is a startup/main-thread operation and is not guarded.
+ */
+static inline void env_shared_lock(const Env *e);      /* #607, defined below */
+static inline void env_shared_unlock(const Env *e);
+
+typedef struct { Value *dict; Env *env; } ModuleNsEntry;
+static ModuleNsEntry *g_module_ns_tab = NULL;
+static size_t g_module_ns_cap = 0;     /* power of two; 0 = unallocated */
+static size_t g_module_ns_count = 0;
+
+static int module_ns_public(const char *name) {
+    return name && name[0] != '_';
+}
+
+/* Probe slot for `d`: the matching entry, or the first empty one. The load
+ * factor is held <= 70% and deletion rehashes, so an empty slot always
+ * exists and the probe terminates. */
+static size_t module_ns_slot(ModuleNsEntry *tab, size_t cap, Value *d) {
+    size_t i = ((uintptr_t)d >> 4) & (cap - 1);
+    while (tab[i].dict && tab[i].dict != d) i = (i + 1) & (cap - 1);
+    return i;
+}
+
+static void module_ns_rebuild(size_t ncap) {
+    ModuleNsEntry *nt = xcalloc(ncap, sizeof(ModuleNsEntry));
+    for (size_t i = 0; i < g_module_ns_cap; i++) {
+        if (!g_module_ns_tab[i].dict) continue;
+        size_t j = module_ns_slot(nt, ncap, g_module_ns_tab[i].dict);
+        nt[j] = g_module_ns_tab[i];
+    }
+    free(g_module_ns_tab);
+    g_module_ns_tab = nt;
+    g_module_ns_cap = ncap;
+}
+
+Env *eigs_module_ns_env(Value *dict) {
+    if (!dict || dict->type != VAL_DICT || !dict->module_ns) return NULL;
+    if (!g_module_ns_cap) return NULL;
+    size_t i = module_ns_slot(g_module_ns_tab, g_module_ns_cap, dict);
+    return g_module_ns_tab[i].dict ? g_module_ns_tab[i].env : NULL;
+}
+
+void eigs_module_ns_attach(Value *dict, Env *env) {
+    if (!dict || dict->type != VAL_DICT || !env) return;
+    if (dict->module_ns) return;                    /* already a namespace */
+    if ((g_module_ns_count + 1) * 10 > g_module_ns_cap * 7)
+        module_ns_rebuild(g_module_ns_cap ? g_module_ns_cap * 2 : 16);
+    size_t i = module_ns_slot(g_module_ns_tab, g_module_ns_cap, dict);
+    g_module_ns_tab[i].dict = dict;
+    g_module_ns_tab[i].env = env;
+    g_module_ns_count++;
+    env_incref(env);              /* OWNING edge — GC_EDGE_TABLE row below */
+    dict->module_ns = 1;
+}
+
+Env *eigs_module_ns_detach(Value *dict) {
+    if (!dict || !dict->module_ns) return NULL;
+    Env *e = NULL;
+    if (g_module_ns_cap) {
+        size_t i = module_ns_slot(g_module_ns_tab, g_module_ns_cap, dict);
+        if (g_module_ns_tab[i].dict == dict) {
+            e = g_module_ns_tab[i].env;
+            g_module_ns_tab[i].dict = NULL;
+            g_module_ns_tab[i].env  = NULL;
+            g_module_ns_count--;
+            /* Linear probing: removing an entry can orphan the rest of its
+             * cluster. Rehash at the same capacity rather than tombstone. */
+            module_ns_rebuild(g_module_ns_cap);
+        }
+    }
+    dict->module_ns = 0;
+    return e;                     /* caller owns the returned ref */
+}
+
+/* Project module binding `key` into the namespace's own slot and return it
+ * (borrowed, exactly like a plain dict_get). Falls back to the dict's own
+ * entry when the module has no such binding — a key written onto the
+ * namespace that the module does not define stays readable. */
+static Value *module_ns_project(Value *d, Env *e, const char *key, uint32_t h) {
+    /* #607: find + load under one hold, exactly as env_get_hashed_slot does —
+     * a concurrent module-env grow republishes names/values. No-op when the
+     * process is single-threaded. Nothing else here touches the env, so the
+     * hold is released before the (non-recursive) dict store below. */
+    env_shared_lock(e);
+    int ei = env_hash_find(&e->hash, key, h, e->names);
+    EigsSlot s = (ei >= 0) ? e->values[ei] : slot_null();
+    if (ei >= 0) slot_incref(s);       /* pin across the unlock */
+    env_shared_unlock(e);
+    int di = env_hash_find(&d->data.dict.hash, key, h, d->data.dict.keys);
+    if (ei < 0)
+        return (di >= 0) ? d->data.dict.vals[di] : NULL;
+    if (di >= 0) {
+        Value *cur = d->data.dict.vals[di];
+        if (slot_is_ptr(s)) {
+            /* Container/fn bindings were already shared by reference. */
+            if (slot_as_ptr(s) == cur) { slot_decref(s); return cur; }
+        } else if (slot_is_num(s) && cur && cur->type == VAL_NUM &&
+                   cur->refcount == 1 && !cur->arena) {
+            /* Exclusive untracked mirror — refresh in place, no allocation.
+             * Same exclusivity test as dict_set_cached_immediate: a mirror
+             * anyone else holds a ref to must not be mutated under them. */
+            cur->data.num = s.d;
+            slot_decref(s);
+            return cur;
+        }
+    }
+    Value *mv = slot_to_value(s);            /* owned */
+    slot_decref(s);                          /* drop the pin */
+    dict_set_hashed_raw(d, key, h, mv);
+    val_decref(mv);
+    di = env_hash_find(&d->data.dict.hash, key, h, d->data.dict.keys);
+    return (di >= 0) ? d->data.dict.vals[di] : NULL;
+}
+
+/* Refresh every projected entry. Whole-dict readers (keys / values / len /
+ * value_to_string / json / `for k in M` / equality) call this first; a
+ * single-field read does not need it (dict_get_hashed projects that one
+ * key). Also picks up module bindings created after the import. */
+void eigs_module_ns_sync(Value *dict) {
+    if (!dict || !dict->module_ns) return;
+    Env *e = eigs_module_ns_env(dict);
+    if (!e) return;
+    env_shared_lock(e);
+    int n = e->count;
+    env_shared_unlock(e);
+    for (int i = 0; i < n; i++) {
+        /* Names are interned and never freed while the env lives, so the
+         * pointer is stable once read; only the ARRAY can be republished
+         * under MT (#607), hence the hold across the load. */
+        env_shared_lock(e);
+        const char *nm = (i < e->count) ? e->names[i] : NULL;
+        env_shared_unlock(e);
+        if (!module_ns_public(nm)) continue;
+        module_ns_project(dict, e, nm, env_hash_name(nm));
+    }
+}
+
+void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
     if (!dict || dict->type != VAL_DICT) return;
     if (h == 0) h = env_hash_name(key);
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
@@ -1807,6 +2182,30 @@ void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
         env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dict->data.dict.count);
     else
         env_hash_insert(&dict->data.dict.hash, h, dict->data.dict.count - 1);
+}
+
+/* Routed store: a module namespace (#1057) writes THROUGH to the module's
+ * binding, then mirrors into its own slot so whole-dict readers stay
+ * consistent. Everything else is the raw store. */
+void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
+    if (!dict || dict->type != VAL_DICT) return;
+    if (h == 0) h = env_hash_name(key);
+    if (__builtin_expect(dict->module_ns != 0, 0)) {
+        Env *me = eigs_module_ns_env(dict);
+        if (me && module_ns_public(key))
+            /* env_set_local_hashed bumps the binding's assign_counts, so
+             * `when is x` inside the module counts a namespace write. It does
+             * NOT record assignment HISTORY: the tape's trace_assign calls
+             * live on the VM's SET_NAME/SET_LOCAL paths, keyed by the writing
+             * chunk's scan set, and there is no chunk here. So after
+             * `M.v is 50` the module's own `prev of v` still answers the
+             * value before its last INTERNAL write. Known, narrow (needs a
+             * temporal query and a scalar namespace write in the same
+             * program) and ledgered on #1057; a fix belongs with the tape,
+             * not here. */
+            env_set_local_hashed(me, key, h, val);
+    }
+    dict_set_hashed_raw(dict, key, h, val);
 }
 
 void dict_set(Value *dict, const char *key, Value *val) {
@@ -1878,6 +2277,10 @@ static Value *chan_clone_rec(Value *v, int depth) {
             return out;
         }
         case VAL_DICT: {
+            /* #1057: a namespace crossing a channel is snapshotted (the
+             * module env is not shared across the transfer) — refresh it
+             * first so the snapshot is the module's CURRENT state. */
+            eigs_module_ns_sync(v);
             int n = v->data.dict.count;
             Value *out = make_dict(n > 0 ? n : 8);
             for (int i = 0; i < n; i++) {
@@ -1920,6 +2323,11 @@ Value *val_clone_for_send(Value *v) {
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h) {
     if (!dict || dict->type != VAL_DICT) return NULL;
     if (h == 0) h = env_hash_name(key);
+    if (__builtin_expect(dict->module_ns != 0, 0)) {
+        Env *me = eigs_module_ns_env(dict);
+        if (me && module_ns_public(key))
+            return module_ns_project(dict, me, key, h);
+    }
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     return (idx >= 0) ? dict->data.dict.vals[idx] : NULL;
 }
@@ -2018,7 +2426,7 @@ int is_truthy(Value *v) {
         case VAL_FN: return 1;
         case VAL_BUILTIN: return 1;
         case VAL_JSON_RAW: return v->data.str && v->data.str[0] != '\0';
-        case VAL_DICT: return v->data.dict.count > 0;
+        case VAL_DICT: eigs_module_ns_sync(v); return v->data.dict.count > 0;
         case VAL_BUFFER: return v->data.buffer.count > 0;
         case VAL_TEXT_BUILDER: return v->data.text_builder.len > 0;
     }
@@ -2051,6 +2459,8 @@ static int values_equal_impl(Value *a, Value *b, int depth) {
             return 1;
         }
         case VAL_DICT: {
+            eigs_module_ns_sync(a);      /* #1057 whole-dict reader */
+            eigs_module_ns_sync(b);
             if (a->data.dict.count != b->data.dict.count) return 0;
             for (int i = 0; i < a->data.dict.count; i++) {
                 Value *bv = dict_get(b, a->data.dict.keys[i]);
@@ -2146,6 +2556,7 @@ char* value_to_string(Value *v) {
         case VAL_FN: snprintf(buf, sizeof(buf), "<fn %s>", v->data.fn.name); return xstrdup(buf);
         case VAL_DICT: {
             strbuf out;
+            eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             strbuf_init(&out);
             strbuf_append_char(&out, '{');
             g_vts_depth++;
@@ -3360,7 +3771,17 @@ static int gc_env_is_node(Env *e) {
       gc_value_is_node(_v->data.dict.vals[_i]),                               \
       { Value *_o = _v->data.dict.vals[_i];                                   \
         _v->data.dict.vals[_i] = NULL;                                        \
-        val_decref(_o); }, __VA_ARGS__)
+        val_decref(_o); }, __VA_ARGS__)                                       \
+    /* #1057 module namespace: the owning backref to the module Env taken   \
+     * by eigs_module_ns_attach. Without this row a garbage                 \
+     * namespace <-> module-env cycle would look externally referenced and  \
+     * leak (and gc_clear_node would leave the edge dangling). free_value   \
+     * is the non-cycle mirror. */                                          \
+    X((_k == GC_KIND_VAL && _v->type == VAL_DICT && _v->module_ns), 1,        \
+      eigs_module_ns_env(_v), GC_KIND_ENV,                                    \
+      gc_env_is_node(eigs_module_ns_env(_v)),                                 \
+      { Env *_o = eigs_module_ns_detach(_v);                                  \
+        if (_o) env_decref(_o); }, __VA_ARGS__)
 
 #define GC_EDGE_WALK(GUARD, COUNT, CHILD, CHILD_KIND, IS_NODE, CLEAR,         \
                      OUT_OBJ, OUT_KIND, BODY)                                 \

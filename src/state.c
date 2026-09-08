@@ -13,15 +13,11 @@
  * cpp/function-in-block, and the header owning it is not visible to this TU. */
 void eigs_obs_memo_release(void);
 
-#if EIGENSCRIPT_EXT_HTTP
-/* Forward-declared here to avoid pulling ext_http_internal.h (and its
- * pthread/socket includes) into core runtime TUs. Defined in ext_http.c. */
-extern void ext_http_state_destroy(EigsState *st);
-#endif
-#if EIGENSCRIPT_EXT_DB
-/* Same reason — declared here rather than including libpq. #739. */
-extern void ext_db_state_destroy(EigsState *st);
-#endif
+/* #739/#744: per-state extension teardown. The two hand-written externs that
+ * used to sit here (one per extension, to avoid pulling ext_http_internal.h's
+ * pthread/socket includes and ext_db_internal.h's libpq) are now one shared
+ * seam — declarations only, no extension types. */
+#include "ext_register.h"
 
 __thread EigsThread *eigs_current = NULL;
 
@@ -35,9 +31,11 @@ EigsState *eigs_state_new(void) {
     st->obs_needed = 1;
     st->obs_compile_pending = 1;
     /* Observer thresholds — same defaults as the legacy TLS globals. */
-    st->obs_dh_zero  = 0.001;
-    st->obs_dh_small = 0.01;
-    st->obs_h_low    = 0.1;
+    st->obs_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
+    st->obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
+    st->obs_h_low    = OBSERVER_H_LOW_DEFAULT;
+    st->obs_window   = OBSERVER_WINDOW_N;        /* #1044 */
+    st->obs_scale    = OBSERVER_SCALE_DEFAULT;   /* #1045 */
     /* #971: strict math mode, read once from env at creation (like the JIT
      * thresholds below). Any non-empty, non-"0" value enables it. */
     st->strict = eigs_env_flag("EIGS_STRICT");
@@ -130,6 +128,10 @@ EigsThread *eigs_thread_attach(EigsState *st) {
      * disabling the observer gate's eager pass on every thread. Default ON;
      * only --lint and the LSP clear it. */
     th->obs_gate_scan_enabled = 1;
+    /* #846: EIGS_TASK_TRACE=1 arms the cooperative-scheduler trace for this
+     * thread from the first resume (a program that cannot be edited can
+     * still be traced); `task_sched_trace of 1` arms it from a program. */
+    th->task_trace_on = eigs_env_flag("EIGS_TASK_TRACE");
     th->loop_exit_reason = "normal";
     th->last_obs_slot_idx = -1;   /* #262 Phase-2: no observed slot yet */
 

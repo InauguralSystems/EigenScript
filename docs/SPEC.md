@@ -93,7 +93,7 @@ EigenScript is dynamically typed. The runtime types are:
 | `str` | immutable byte string | `"text"` |
 | `list` | mutable ordered sequence | `[1, 2, 3]` |
 | `dict` | mutable string-keyed map | `{"k": 1}` |
-| `buffer` | flat mutable array of nums | `buffer of 8` |
+| `buffer` | flat mutable array of nums | `buffer of 8`, `zeros of 8` |
 | `fn` | user-defined function / closure | `define` / `(x) => x` |
 | `builtin` | native function | `print` |
 | `none` | the null value | `null` |
@@ -246,8 +246,18 @@ consequences are contracts you can rely on:
   wrong-typed argument with a stand-in, so `cos of "hello"` was `0` and
   `str_upper of 42` was `""` — a type mistake became a plausible value. Under
   strict those raise a catchable `type` error naming the builtin, across the
-  whole builtin surface (`builtins.c`, the host builtins, the tensor ops and
-  the embedded store). A `0` or `""` that is a genuine *answer* is untouched
+  whole builtin surface (`builtins.c`, the host builtins, the tensor ops, the
+  embedded store, and — since #1007 — the graphics/audio extension, where the
+  stand-in is usually `null` rather than `0`/`""`: `gfx_rect of [x, y, w, h,
+  "255", 0, 0]` drew a BLACK rectangle where red was asked for, in silence).
+  A guard covers the argument's **container** as well as its elements — a
+  short argument list, or a scalar where a list belonged, is a caller mistake
+  and raises. That half is the one an element-typed probe cannot see, and in
+  the extension it was the difference between "drew nothing" and a silent
+  *success*: `audio_stream_open of [48000]` opened the device at the 44100/1
+  defaults and answered a real device id, so the caller that asked for 48000
+  was told it got 48000.
+  A `0`, `""` or `null` that is a genuine *answer* is untouched
   in both modes: `try_parse` of invalid syntax still returns `0`, `task_alive`
   of an unknown id still returns `0`, `char_at` past the end is still `""`,
   and `num` still *coerces* (`num of ([1, 2])` is `0` — that is its documented
@@ -257,8 +267,38 @@ consequences are contracts you can rely on:
   documented answer. Every site in the surface therefore carries a written
   classification, mechanically enforced by
   `tools/failsoft_classify_check.sh`.
-  Overflow saturation and the `NaN`→`0` collapse are unchanged by the flag for
-  now. (Division and modulo by zero raise in *both* modes — no defined value.)
+  Three further classes are loud under the same flag and unchanged without it:
+  - **The `NaN`→`0` collapse.** With the flag off a `NaN` still collapses to
+    `0` and sets `math_flags.invalid`. Under strict every reachable `NaN`
+    source raises a catchable `value` error naming the builtin: `pow` of a
+    negative base with a fractional exponent, `num of "nan"`,
+    `f64_from_bytes` of a `NaN` bit pattern, `matmul` when its accumulation
+    reaches `inf - inf`, `tensor_load` of a file carrying `NaN` bytes — and
+    the elementwise `divide` by zero, which answers `0` by default where the
+    `/` operator raises. The arithmetic operators themselves cannot reach a
+    `NaN` from finite operands (`0 / 0` and `x % 0` raise first, and no
+    operand can hold an infinity), so any other source hits a backstop that
+    raises as `arithmetic`. The JIT bails to the interpreter on a non-finite
+    result, so both tiers raise from the same guard. One default-path
+    asymmetry is older than strict mode and is left alone by it: a `matmul`
+    whose result is a **buffer** keeps the raw `NaN` the kernel wrote (it
+    reads back as `null`, and `math_flags` is not set), where a list result
+    collapses to `0` — strict raises on both.
+  - **JSON parse failure in `json_path`.** With the flag off a malformed
+    document is walked leniently and a parse failure answers the same `""`
+    an absent key does. Under strict `json_path` applies `json_decode`'s
+    acceptance test and raises a catchable `value` error naming the position;
+    JSON `false`, `null` and an absent key are answers and stay quiet.
+  - **The sentinel and falsy families.** `index_of`/`list_index_of`/`ord`
+    (`-1`), `file_exists`/`is_dir`/`is_file`/`read_text`/`read_bytes`/`ls`/
+    `mkdir`/`env_get` (`0`/`""`), and the wrong-type launderers the sweep
+    found (`split`, `scan_ints`, `buffer`, `channel_closed`, `f64_to_bytes`,
+    `json_build`, `sort`, `random_int`, `random_hex`, `token_name`,
+    `tokenize_ids`...) raise on a wrong-typed argument; the documented
+    sentinel for a valid-but-absent input — `index_of` miss `-1`,
+    `file_exists` of a missing path `0` — is unchanged in both modes.
+  Overflow saturation is unchanged by the flag. (Division and modulo by zero
+  raise in *both* modes — no defined value.)
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
   `>>` and their `bit_*` builtin forms interpret operands as 64-bit integers, so
   `1 << 40` is exact where an f64 mantissa alone would not help. This is the
@@ -1163,6 +1203,41 @@ side effect
 1
 ```
 
+**A namespace is a live view, not a snapshot** (#1057). `name.x` reads
+the module's *current* binding `x`, and `name.x is v` writes that
+binding — the module and its importers see one state, whatever the
+value's type:
+
+```eigenscript
+write_text of ["spec_live.eigs", "hits is 0\ndefine record() as:\n    hits is hits + 1\ndefine total() as:\n    return hits\n"]
+import spec_live
+spec_live.record of null
+spec_live.record of null
+print of spec_live.hits
+spec_live.hits is 10
+print of (spec_live.total of null)
+rm of "spec_live.eigs"
+```
+```output
+2
+10
+```
+
+Before this, the namespace was a *shallow copy* of the module's
+bindings taken at import time, so whether an importer saw live state
+depended on the value's TYPE: a dict or list was shared by reference
+and tracked, a number or string was frozen and went silently stale, and
+a write through the namespace reached only the copy. The failure mode
+was a wrong number rather than an error. Values read *out* of a
+namespace are ordinary values — `n is name.hits` binds the number, not
+a live alias.
+
+`_`-private bindings are not part of the namespace and are not
+projected; everything else about a namespace is unchanged — it is still
+a dict (`type of name` is `"dict"`), still enumerable with `keys` /
+`values` / `len`, and its functions are still callable as `name.f of x`
+or extractable as values.
+
 `load_file of "path.eigs"` is the older, non-namespaced form: it
 executes a file directly **in the current scope**. The standard
 library's helper modules (`lib/test.eigs`'s `assert_eq`, ...) are
@@ -1180,10 +1255,32 @@ A top-level `return value` ends the current file, skipping all later statements:
 `load_file` yields the value to its caller; import finishes its namespace;
 the main program discards the value and exits successfully.
 
-The existing function-slot exception remains: a binder with no prior binding
-inside a function retains its final value after the loop on every road. A
-pre-existing parameter or local is restored. This change preserves that
-exception; see the scope notes in LANGUAGE_CONTRACT.md.
+There is no function-scope exception (#1105): a binder with no prior binding
+inside a function is loop-scoped like any other, so reading it after the loop
+raises `undefined variable` on every road. A pre-existing parameter, `local`
+or module binding is restored after the loop; a post-loop plain assignment to
+the name creates a fresh binding.
+
+```eigenscript
+define probe() as:
+    for z in [7, 8]:
+        0
+    return z
+try:
+    print of (probe of [])
+catch e:
+    print of e.message
+x is 5
+define over_module() as:
+    for x in [7, 8]:
+        0
+    return x
+print of (over_module of [])
+```
+```output
+undefined variable 'z'
+5
+```
 
 **Module write boundary.** A loaded (or imported) module's *functions*
 can read the loader's globals and call its functions, but they can
@@ -1198,11 +1295,15 @@ happens to already have — `counter is 0` at a module's top level can
 never rebind an importer's pre-existing `counter`. `load_file` is the
 one exception, per its older, documented contract above: its top-level
 statements still execute directly in the current (caller's) scope, so
-a same-named top-level assignment there *does* bind through. To share
-mutable state across files, put it in a dict or list and mutate fields
-— reads cross the boundary and field/index writes are value mutations,
-not bindings. The standard library's UI toolkit (`lib/ui.eigs`'s `_ui`
-state dict, shared by 17 sub-modules) is the reference pattern.
+a same-named top-level assignment there *does* bind through.
+
+Mutable state shared across files can live in a plain top-level binding
+— an importer reads and writes it through the live namespace (#1057) —
+or in a dict or list whose fields are mutated. Boxing state in a dict
+is now a **style** choice, not a correctness requirement; the standard
+library's UI toolkit (`lib/ui.eigs`'s `_ui` state dict, shared by 17
+sub-modules) remains the reference pattern for grouping related state
+under one private name.
 
 ```eigenscript skip
 load_file of "lib/test.eigs"     # assert_eq, test_summary, ...
@@ -1268,10 +1369,13 @@ print of converged
 
 For a **numeric** binding the predicates classify the value's own
 trajectory (#861): the observed signal is the relative step
-`Δv/(1+|v|)` — the standard mixed-tolerance stopping criterion, with
-the settle deadband as the tolerance — so the starting value and the
-limit's magnitude do not matter. A loop converging to `5`, `5000` or
-`0.005` certifies identically. Non-numeric bindings (strings,
+`Δv / max(|v|, |v_prev|, scale)` (#1045) — the standard mixed-tolerance
+stopping criterion `|Δx| ≤ rtol·|x|` with the settle deadband as `rtol`
+and `dh_zero · scale` as the absolute floor (`scale` is
+`set_observer_scale`, default `0.001`) — so the starting value, the
+limit's magnitude and the **unit** the value is stored in do not matter.
+A loop converging to `5`, `5000` or `0.005` certifies identically, and a
+bank angle reads the same in radians and degrees. Non-numeric bindings (strings,
 containers) classify their entropy trajectory as before; the entropy
 MEASUREMENT (`where is x`) is unchanged for everything.
 
@@ -1403,8 +1507,12 @@ diverging
 
 **The value channel** (`report_value of x`) is, since #861, the same
 classifier the predicate words and `report` use on numeric bindings —
-the two surfaces cannot disagree about one trajectory. Over a 10-sample
-window of relative steps `Δv/(1+|v|)`: `converged` is a full window all
+the two surfaces cannot disagree about one trajectory. Over a window of
+relative steps `Δv / max(|v|, |v_prev|, scale)` — `N` samples deep, 10
+by default, `set_observer_window of n` per state or
+`set_observer_window of ["x", n]` per binding (#1044; a mode slower than
+`N` samples of the observation cadence cannot fold inside the window) —
+`converged` is a full window all
 under the settle deadband; `stable` all under the small-motion band;
 `equilibrium` zero-mean, variance under deadband²; `improving` monotone
 steps contracting geometrically (a summable tail — genuinely closing on
@@ -1418,8 +1526,10 @@ path length — a sinusoid sampled slower than its half-period).
 not imply a limit (the harmonic series' steps vanish; its sum does not
 converge), so it means *settled at the deadband* — the strongest claim a
 finite window supports. The deadband is the tolerance knob
-(`set_observer_thresholds`); the structure rules are deliberately
-threshold-free.
+(`set_observer_thresholds`), the characteristic scale
+(`set_observer_scale`) is where the tolerance turns absolute, and the
+window depth (`set_observer_window`) is how many samples a verdict
+spans; the structure rules are deliberately threshold-free.
 
 **Trajectories cross call boundaries as snapshots** (#421). Observer state
 is binding-identity — a value passed to a function arrives with no history —
@@ -1445,9 +1555,9 @@ diverging
 diverging
 ```
 
-`unobserved:` blocks (and `loop` bodies inside them) skip observer
-updates entirely — use them for hot numeric loops. The depth is
-dynamic, so it covers functions called from inside the block; an
+`unobserved:` blocks (and `loop` bodies inside them) skip the
+**entropy** half of observation — use them for hot numeric loops. The
+depth is dynamic, so it covers functions called from inside the block; an
 observer predicate asked anywhere under one **raises**, because there is
 no trajectory for it to classify (a performance annotation must not
 change an answer):
@@ -1465,13 +1575,48 @@ print of total
 4999950000
 ```
 
-What the block suppresses is **observation**, not assignment. The writes
-still happen, still land in the history, and are still counted and
+What the block suppresses is the **entropy walk**, not assignment. The
+writes still happen, still land in the history, and are still counted and
 addressed like any other: `when is x` includes them, and each one takes
 an ordinal that `<kw> is x when <n>` can address (#908). The same rule
 that makes a predicate raise rather than answer from a dead trajectory
 is why the counter does not quietly shrink — a performance annotation
 must not change an answer.
+
+For the same reason a scalar assignment inside the block still records
+its **sample into the value window** (#1049): the relative and raw step
+enter the 10-deep ring the numeric predicates, `report` and
+`report_value` read, at O(1) per assignment. So the window is complete,
+and the verdicts a numeric binding gives after (or inside) the block are
+identical to the ones it gives without it — an elided initialiser no
+longer shifts the window-fill boundary, and a mid-stream elided step no
+longer merges two steps into one. What is *not* computed for an elided
+assignment is the entropy and everything built on it: `where`'s stored
+entropy (the query-time read is unaffected), `dH` and its window
+(`why`/`how`, `observe`'s dH pair, a `trajectory` snapshot's `dh`/`dH`),
+the tape's observer snapshot, and the bare-predicate alias (a bare
+`converged` keeps reading the last **observed** binding, so scratch work
+inside the block cannot hijack it). Those entropy-channel readers — and
+`report`/the predicates on a **non-numeric** binding, which route
+through the entropy channel — therefore remain sensitive to elision;
+[PREDICATES.md](PREDICATES.md#inputs) lists them. (It follows that the
+block is not a way to declare a numeric binding without a sample; seed
+with `null`, which is never sampled.)
+
+```eigenscript
+x is 9.0
+unobserved:
+    x is x * 0.5
+    x is x * 0.5
+print of (report of x)
+print of (len of (trajectory of x).rel)
+print of (why is x)
+```
+```output
+moving
+2
+0
+```
 
 ```eigenscript
 c is 0
@@ -1572,6 +1717,16 @@ print of (thread_join of h)
 42
 9
 ```
+
+A worker that **dies of an uncaught error** prints its trace and the
+**process exits non-zero** (status 1) whether or not anything ever
+`thread_join`s it — the same rule as cooperative tasks below (#493), so a
+fire-and-forget thread's failure is never swallowed into a success exit.
+This covers a builtin spawned directly (`spawn of [recv, 5]` raises
+"invalid channel" on the worker) as well as a function body. An error
+`catch`-ed inside the worker recovers normally (exit 0), and a worker's
+`exit of N` still decides the status (#739). The failure is always a
+clean exit, never a signal (#1112).
 
 ## Cooperative tasks
 
@@ -1743,6 +1898,47 @@ The same program with no seed prints the round-robin order
 `["a", "b", "c", "a", "b", "c"]`; a different seed prints a different — but
 equally reproducible — permutation.
 
+### Scheduler trace
+
+`task_sched_trace of 1` arms a trace of the scheduler's decisions (off by
+default; `EIGS_TASK_TRACE=1` arms it from the environment). While armed, every
+task **resume** appends one entry — `{seq, tick, task, cause}`: the entry's
+index, the virtual clock, the resumed task's id (`0` is the main task), and
+why it became runnable: `spawn` (its first run), `yield` (a `task_yield`
+re-enqueue), `sleep-wake` (the clock reached its `task_sleep` deadline),
+`join-release` (the task it joined finished), `kill-release` (the task it
+joined was killed), `recv-wake` (a message reached its empty mailbox), or
+`deadlock` (main re-enqueued to receive the catchable deadlock error).
+`task_sched_trace of null` reads the history; `task_sched_trace of 0` disarms
+it and discards it. The trace is a **pure reader**: arming it changes no pick,
+no clock and no seed — a traced run is byte-identical to the untraced one —
+and its entries are derived from the deterministic schedule rather than
+recorded on the trace tape, so a replayed run reproduces the same history.
+
+```eigenscript
+task_sched_trace of 1
+define step(tag) as:
+    task_yield of null
+    task_sleep of 10
+    return tag
+
+a is task_spawn of [step, "a"]
+b is task_spawn of [step, "b"]
+task_join of a
+task_join of b
+for e in task_sched_trace of null:
+    print of f"{e.seq} t={e.tick} task={e.task} {e.cause}"
+```
+```output
+0 t=0 task=1 spawn
+1 t=0 task=2 spawn
+2 t=0 task=1 yield
+3 t=0 task=2 yield
+4 t=10 task=1 sleep-wake
+5 t=10 task=2 sleep-wake
+6 t=10 task=0 join-release
+```
+
 ## Buffers
 
 `buffer of count` allocates a flat array of `count` nums (all 0).
@@ -1768,6 +1964,41 @@ print of s
 4
 5.5
 ```
+
+### `zeros of n` is a buffer
+
+`zeros of n` is the same flat container under the name numeric code reaches
+for first: it returns a **buffer** of `n` zeros, not a list of `n` boxed
+numbers. `zeros of [rows, cols]` is unchanged — that spelling still builds the
+nested-list tensor, because 2-D list code indexes rows. `zeros_like of t`
+mirrors its argument's container: a buffer in gives a buffer out, a list in
+gives a list out.
+
+```eigenscript
+z is zeros of 4
+print of (type of z)
+print of z
+z[1] is 2.5
+print of (sum of z)
+m is zeros of [2, 3]
+print of (type of m)
+print of m
+print of (type of (zeros_like of z))
+```
+```output
+buffer
+<buffer:4>
+2.5
+list
+[[0, 0, 0], [0, 0, 0]]
+buffer
+```
+
+This is a **breaking change** (#1093). Before it, `zeros of n` answered a list:
+`type of (zeros of 4)` was `list` and `print of` showed `[0, 0, 0, 0]`. Code
+that genuinely needs the list form spells it out — `[0 for i in range of n]` —
+and code that only indexes, assigns, iterates, reduces or passes the vector to
+a tensor builtin needs no change, because a buffer supports all of those.
 
 ### Reductions
 
@@ -1826,9 +2057,74 @@ when unshaped. Indexing stays flat (`buf[r*cols + c]`).
 
 The tensor builtins operate directly on the flat data — no per-call conversion.
 `matmul of [a, b]` multiplies two shaped buffers (a 1-D buffer is a row vector,
-so `matmul of [vec, mat]` returns a 1-D result); `add` and `relu` are
-elementwise. The result is identical to the nested-list tensor form, so storing
-weights as shaped buffers is purely a performance choice.
+so `matmul of [vec, mat]` returns a 1-D result); `matmul_at` / `matmul_bt`
+multiply with the first / second operand transposed (`aᵀ·b`, `a·bᵀ`) without
+materialising the transpose; `add`, `subtract`, `multiply`, `divide` are
+elementwise, with a `[cols]` buffer broadcast over the rows of a
+`[rows × cols]` buffer and a number broadcast over every element; `relu`,
+`leaky_relu`, `softmax`, `log_softmax`, `sum`, `mean`, `norm`, `gather`
+compute on the shape, and `scatter_add` is `gather`'s in-place dual. The
+result is identical to the nested-list tensor form, so storing weights as
+shaped buffers is purely a performance choice — and it is the substrate the
+reverse-mode autograd tape in `lib/autograd.eigs` runs on.
+
+### `gather` and an out-of-range index
+
+`gather of [matrix, indices]` selects `matrix[i][indices[i]]` for each row.
+An index outside the row **raises** `index_range` — in every form, on a list
+tensor and on a shaped buffer alike. There is no element at that index, so an
+answer of `0.0` would be a stand-in the caller cannot tell from a real `0`
+(a Q-value, a log-probability); `scatter_add`, which is `gather`'s gradient and
+takes the same index, raises on it too.
+
+```eigenscript
+q is [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+print of (gather of [q, [2, 0]])
+try:
+    print of (gather of [q, [2, 3]])
+catch e:
+    print of e["kind"]
+    print of e["message"]
+```
+```output
+[3, 4]
+index_range
+gather: column index 3 out of range for row 1 (cols 3)
+```
+
+Changed in this release (#973/#1093): the list form used to answer `0.0` for
+an out-of-range index and the buffer form was added folding the same way. A
+tensor that is not a matrix in the per-row form still answers `0.0` for that
+row — that is the shape reading, not the index one — and a wrong-typed
+argument still answers `0.0` unless `EIGS_STRICT=1` is set.
+
+Every tensor builtin that accepts a flat numeric list accepts a buffer in the
+same position, and returns a buffer when **every** tensor operand was a buffer:
+`add`/`subtract`/`multiply`/`divide`/`pow`, `sqrt`/`exp`/`log`/`negative`,
+`matmul`, `softmax`/`log_softmax`/`relu`/`leaky_relu`, `gather`, `shape`,
+`zeros_like`, `tensor_save`, and the `numerical_grad`/`sgd_update` family
+(including the `_rows`/`_cols` variants, whose index vector may also be a
+buffer). Mixing a buffer with a list yields a list. The reductions
+(`sum`, `mean`, `norm`) return a number from either container. A 1-D buffer
+reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
+the numbers agree element for element with the equivalent list.
+
+```eigenscript
+l is [1.0, 4.0, 9.0]
+b is buf_from_list of l
+print of (sqrt of l)
+print of ((sqrt of b)[2])
+print of (type of (sqrt of b))
+print of (type of (add of [b, l]))
+print of (mean of b)
+```
+```output
+[1, 2, 3]
+3
+buffer
+list
+4.666666666666667
+```
 
 ```eigenscript
 w is buffer of [2, 2]

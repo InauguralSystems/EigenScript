@@ -4,7 +4,9 @@ The first sections record round 1. The
 [round-2 record](#round-2-raw-host-coverage) distinguishes state creation from
 the separate embed-initialization pin; the
 [round-3 record](#round-3-explicit-host-arming-across-an-isolated-eval-boundary)
-corrects the explicit-host-arm recipe across an isolated eval boundary.
+corrects the explicit-host-arm recipe across an isolated eval boundary; the
+[round-4 record](#round-4-immediate-gap-flag-for-direct-reads-1114) makes the
+gap flag truthful at the end of a closed unit instead of one boundary later.
 
 Baseline: `origin/main` at `cd99388163c3ff6478851de1f5be906f7626341a`.
 The baseline runtime was built in this worktree before the runtime edits.
@@ -408,3 +410,61 @@ all three captures. `tests/test_throw_unwind.eigs` is therefore outside the
 497-program comparison. No differential-tool normalization, exclusion rule
 or coverage floor was changed. No new measurement contradicted the round-3
 brief; the reported F4 silent-wrong recipe was reproduced and repaired.
+
+## Round 4: immediate gap flag for direct reads (#1114)
+
+Baseline: v0.43.0 (`a6c50fb`). Found by a blind critic confirming round 3:
+under the opt-in, after an armed unit, an un-armed read-free unit that
+reassigns a binding runs closed, and a host reading `observer_predicate_at`
+DIRECTLY afterwards saw `obs_history_gap == 0`. The flag was only stored at
+the NEXT eval boundary (`eval_source`'s `!obs_needed && obs_exec_started`
+check), so for exactly one boundary the flag said "history complete" while the
+answer came from the stale window. The eval-unit read still raised (the
+#1028 promise held) and the documented recipe told hosts to arm each
+interrogated unit, so a conforming host was fine -- but the flag lied.
+
+Reproducer (a C program linked against the baseline release objects, run
+from `src/`; `series` is the fixture's descending trajectory):
+
+```text
+armed unit: err=0 obs_needed=1 gap=0
+un-armed reassigning unit: err=0 obs_needed=0 gap=0
+DIRECT improving(x)=1 obs_needed=0 gap=0       <- x went 1000 -> 2000 unrecorded
+third boundary: err=0 obs_needed=0 gap=1       <- the flag catches up here
+```
+
+Fix: `eval_source` records the closed execution at the END of the unit,
+immediately after `vm_execute` (same condition, same sticky release store),
+through a small helper shared with the pre-existing boundary site. The
+boundary site is kept for code that executes closed outside `eval_source`.
+No verdict logic, compile scan, guard or store order changed. After the fix:
+
+```text
+armed unit: err=0 obs_needed=1 gap=0
+un-armed reassigning unit: err=0 obs_needed=0 gap=1
+DIRECT improving(x)=1 obs_needed=0 gap=1
+third boundary: err=0 obs_needed=0 gap=1
+```
+
+The predicate answer is deliberately still the stale-window answer: direct
+reads bypass the eval guard by contract, and the flag is the host's signal.
+
+New fixture arm `isolated gap` (in the full run and `--isolated-host`):
+isolation on, explicit arm, `series`, assert `obs_needed && !gap`; un-armed
+`x is 1000 / x is 2000 / x`, assert `!obs_needed`; direct `improving` on `x`;
+assert `gap`; then an eval-unit `improving of x` must still raise naming
+`EIGS_OBS_FORCE=1`. The driver pins
+`isolated gap: DIRECT improving=[01] obs_needed=0 gap=1` (the answer is not
+pinned) and the count **41 passed, 0 failed**. The new fixture source linked
+against the baseline objects and run with `--isolated-host`:
+
+```text
+isolated gap: DIRECT improving=1 obs_needed=0 gap=0
+FAIL: isolated gap: flag is set before the next eval boundary
+embed observer: 9 passed, 1 failed
+```
+
+Planted fault (the end-of-unit store removed from the fixed tree, rebuilt):
+the same single `FAIL` line, `40 passed, 1 failed`, driver exit 1. Restored:
+41 passed, driver exit 0. The round-3 armed-recipe line
+`isolated host: DIRECT improving=1 obs_needed=1 gap=0` is unchanged.

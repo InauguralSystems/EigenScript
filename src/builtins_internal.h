@@ -22,6 +22,9 @@ Value* builtin_tensor_negative(Value *arg);
 Value* builtin_tensor_matmul(Value *arg);
 Value* builtin_tensor_softmax(Value *arg);
 Value* builtin_tensor_log_softmax(Value *arg);
+Value* builtin_tensor_matmul_at(Value *arg);
+Value* builtin_tensor_matmul_bt(Value *arg);
+Value* builtin_tensor_scatter_add(Value *arg);
 Value* builtin_tensor_relu(Value *arg);
 Value* builtin_tensor_leaky_relu(Value *arg);
 Value* builtin_tensor_mean(Value *arg);
@@ -40,6 +43,33 @@ Value* builtin_numerical_grad_cols(Value *arg);
 Value* builtin_sgd_update_cols(Value *arg);
 Value* builtin_tensor_save(Value *arg);
 Value* builtin_tensor_load(Value *arg);
+
+/* builtins_buf.c (#744) — numeric buffers, the vectorized buf_* kernels,
+ * the PCM16LE codecs and the DEFLATE codecs. Registered by builtins.c's
+ * register_builtins, which is why the prototypes belong here. */
+Value* builtin_buffer(Value *arg);
+Value* builtin_reshape(Value *arg);
+Value* builtin_buf_len(Value *arg);
+Value* builtin_buf_get(Value *arg);
+Value* builtin_buf_set(Value *arg);
+Value* builtin_buf_from_list(Value *arg);
+Value* builtin_str_from_bytes(Value *arg);
+Value* builtin_f64_to_bytes(Value *arg);
+Value* builtin_f64_from_bytes(Value *arg);
+Value* builtin_buf_copy(Value *arg);
+Value* builtin_buf_mix(Value *arg);
+Value* builtin_buf_scale_range(Value *arg);
+Value* builtin_buf_fill(Value *arg);
+Value* builtin_buf_peak(Value *arg);
+Value* builtin_buf_dot(Value *arg);
+Value* builtin_buf_from_pcm16le(Value *arg);
+Value* builtin_buf_to_pcm16le(Value *arg);
+Value* builtin_buf_deinterleave(Value *arg);
+Value* builtin_buf_resample_linear(Value *arg);
+Value* builtin_inflate(Value *arg);
+Value* builtin_zlib_inflate(Value *arg);
+Value* builtin_deflate(Value *arg);
+Value* builtin_zlib_deflate(Value *arg);
 
 /* builtins_host.c (#741) — every builtin needing a real OS underneath.
  * Whole-TU gated: under EIGENSCRIPT_FREESTANDING this registers nothing. */

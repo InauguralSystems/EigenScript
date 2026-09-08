@@ -1,0 +1,3 @@
+define median as:
+    return 1
+print of (median of [])

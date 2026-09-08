@@ -43,6 +43,22 @@ trajectory over a growing container). Keep at least one container-observing
 program in the corpus — a scalar-only corpus is silently narrower than it
 looks.
 
+## Golden recapture note (#1093, 2026-09-07)
+
+`dynamics__solve` diverged when `zeros of n` became a flat buffer: its three
+result vectors are built with `zeros` and printed through an f-string, so
+`[0.999…, …]` became `<buffer:3>`. **Only the rendering moved.** Element-wise
+against the pre-change binary the numbers are byte-identical
+(`{rj[0][0]} {rj[0][1]} {rj[0][2]}` and the two siblings agree to the last
+digit), and every iteration count in the golden (19 / 17 / 14 / 24) is
+unchanged — so the observer-driven stopping behaviour this corpus exists to
+watch did not move. The golden was recaptured for those three lines only.
+
+Cost to record: those three lines no longer carry the solvers' numeric values,
+so the corpus watches their convergence *counts* but not their *results*. When
+`dynamics` next refreshes `solve.eigs` it should print the elements (or
+`buf_to_list`) so the numeric signal comes back.
+
 ## Sources (same-owner repos; vendored with provenance)
 - **dynamics** — `solve`/`physics`/`life`: real solvers and trajectory demos
   using `report`, the six predicates, `unobserved`, and `prev`.

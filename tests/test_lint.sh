@@ -4,6 +4,28 @@ set -e
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="$TESTS_DIR/../src/eigenscript"
 
+# --- #1121: make a sanitizer diagnostic from ANY child visible to this file ---
+# Almost every assertion below captures the linter's text with `2>&1` and drops
+# its exit status with `|| true`, because the question being asked is about the
+# text. That is right for the text and blind to the process. #1121 leaked 1440
+# bytes on the #455 allow-list shape for as long as that block has existed: the
+# linter exited 1 under ASan on all five of its runs, and
+# `check_not_contains ... "W017"` was satisfied every time, because a
+# LeakSanitizer report does not contain the string "W017".
+#
+# Rewriting 151 call sites to capture rc would churn every assertion in the file
+# and still only cover the calls that exist today. Instead, point the sanitizer
+# runtime at a log DIRECTORY: with log_path set, a report is written to
+# "<prefix>.<pid>" instead of stderr, so a diagnostic from any child — present
+# or future, --lint or not — leaves a file behind. The ledger at the bottom of
+# this file turns any such file into a FAIL naming it.
+#
+# Appended, never assigned: run_all_tests.sh sets detect_leaks=1 and that must
+# survive. Harmless in a release build, where nothing writes these files.
+SAN_LOG_DIR=$(mktemp -d /tmp/lint_san_XXXXXX)
+export ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}log_path=$SAN_LOG_DIR/asan"
+export UBSAN_OPTIONS="${UBSAN_OPTIONS:+$UBSAN_OPTIONS:}log_path=$SAN_LOG_DIR/ubsan"
+
 PASS=0
 FAIL=0
 TOTAL=0
@@ -1256,6 +1278,39 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "E003 fires on post-loop read of module for-var" "$OUTPUT" "undefined name 'item'"
 rm -f "$TMPFILE"
 
+# Fires (#1105): a FUNCTION-level `for` loop-scopes its variable too — the
+# VM retires the binder's frame slot at loop exit, so a post-loop read is
+# `undefined variable` inside a function exactly as at module scope.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define probe() as:
+    for z in [7, 8]:
+        0
+    return z
+print of (probe of null)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "E003 fires on post-loop read of function for-var (#1105)" "$OUTPUT" "undefined name 'z'"
+rm -f "$TMPFILE"
+
+# Silent (#1056 rule, #1105 lint model): a body's plain `is` binds in the
+# enclosing function/module scope, not the loop — only the BINDER is
+# loop-scoped. Both levels; the module case was a false positive before.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+for k in range of 1:
+    from_for is 4
+print of from_for
+define fn() as:
+    for j in range of 2:
+        fin is j
+    return fin
+print of (fn of null)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "E003 silent on post-loop read of a body-assigned name (module + function)" "$OUTPUT" "E003"
+rm -f "$TMPFILE"
+
 # Near-miss suggestion: edit-distance-1 against the visible binding set.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'
@@ -1268,7 +1323,8 @@ rm -f "$TMPFILE"
 
 # Silent: the scope rules the runtime actually has — closures read
 # enclosing function locals; a function body reads a module name bound
-# after the definition; a FUNCTION-level for-var survives its loop;
+# after the definition; a parameter rebound by a `for` is restored after
+# the loop (#1064) and a body-assigned name is function-scoped (#1056);
 # a listcomp var leaks to the containing scope; a closure defined in a
 # module loop body reads the loop var.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
@@ -1280,10 +1336,10 @@ define outer() as:
     return inner of null
 define late_reader() as:
     return bound_later
-define fn_for() as:
+define fn_for(j) as:
     for j in [1, 2]:
         x is j
-    return j
+    return j + x
 bound_later is 5
 squares is [v * v for v in [1, 2]]
 last_v is v
@@ -1917,6 +1973,515 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1) && RC=0 || RC=$?
 check_status "compiling file still exits 0" "$RC" "0"
 check_contains "compiling file still reports clean" "$OUTPUT" "no issues found"
 rm -f "$TMPFILE"
+
+# --- #1048 (W024): observer read on a binding rebound from a container element ---
+# Trajectory lives on an env slot, never on a Value: one binding rebound from
+# `fleet[i][2]` each iteration carries the round-robin of every entity, and a
+# monotonically decaying entity reads `oscillating` — silent-wrong, the shape
+# phugoid rung 4 shipped. The positive is the issue's own loop; the negatives
+# are the two working forms (a named binding per entity, a closure per entity)
+# plus the stdlib's flat time-series replay, which a rule that flagged it would
+# teach people to rewrite.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+step is 0
+loop while step < 40:
+    fleet[0][2] is fleet[0][2] * 0.9
+    fleet[1][2] is 0.0 - fleet[1][2]
+    i is 0
+    loop while i < 2:
+        local q is fleet[i][2]
+        if diverging of q:
+            print of i
+        i is i + 1
+    step is step + 1
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1048 W024 fires on the issue's loop-while shape" "$OUTPUT" ":8: warning\[W024\]: 'q' is rebound from 'fleet\[..\]\[..\]'"
+check_contains "#1048 W024 names the read and the mechanism" "$OUTPUT" "'diverging of q' judges the round-robin"
+check_contains "#1048 W024 names the working forms" "$OUTPUT" "one named binding or one closure per entity"
+JSON=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+check_contains "#1048 W024 json shape" "$JSON" '"code":"W024","severity":"warning","line":8'
+rm -f "$TMPFILE"
+
+# Runtime proof that the rule is about a real verdict, not style: the same
+# program answers `oscillating` for the DECAYING entity through the shared
+# binding and `improving` through a named one.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+step is 0
+qa is 0.0
+loop while step < 40:
+    fleet[0][2] is fleet[0][2] * 0.9
+    fleet[1][2] is 0.0 - fleet[1][2]
+    i is 0
+    loop while i < 2:
+        local q is fleet[i][2]
+        if step == 39 and i == 0:
+            print of ("shared " + (report_value of q))
+        i is i + 1
+    qa is fleet[0][2]
+    step is step + 1
+print of ("named " + (report_value of qa))
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "#1048 shared binding manufactures 'oscillating' for a decaying entity" "$RUN" "^shared oscillating$"
+check_contains "#1048 named binding answers 'improving' for the same entity" "$RUN" "^named improving$"
+rm -f "$TMPFILE"
+
+# The closure-per-entity recipe is EXTRACTED from docs/PREDICATES.md, not
+# copied here: a copy gates nothing once the doc drifts (#1048 round 2).
+# PREDICATES.md is not in tests/test_doc_examples.py's file list, so this is
+# the only thing that keeps that recipe honest — it must run, print the two
+# correct verdicts for the two entities, and lint clean.
+PREDOC="$TESTS_DIR/../docs/PREDICATES.md"
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+awk '
+    /^\*\*The recommended per-entity form is a closure per entity\*\*/ { armed = 1; next }
+    armed && /^```eigenscript$/ { infence = 1; armed = 0; next }
+    infence && /^```$/ { exit }
+    infence { print }
+' "$PREDOC" > "$TMPFILE"
+# Vacuity guard: an extraction that silently yields nothing would make every
+# assertion below pass on an empty file.
+check_contains "#1048 PREDICATES.md closure recipe extracts (non-vacuous)" "$(cat "$TMPFILE")" "define make_ch as:"
+check_contains "#1048 PREDICATES.md closure recipe extracts the whole block" "$(cat "$TMPFILE")" "print of (a + \" \" + b)"
+# The doc's own printed claim is pinned too, so the block and its comment
+# cannot drift apart.
+check_contains "#1048 PREDICATES.md states the recipe's output" "$(cat "$TMPFILE")" "# improving oscillating"
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "#1048 PREDICATES.md closure recipe prints one verdict per entity" "$RUN" "^improving oscillating$"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1048 PREDICATES.md closure recipe lints clean" "$OUTPUT" "W024"
+rm -f "$TMPFILE"
+
+# Working form 1: one named binding per entity — silent.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+step is 0
+qa is 0.0
+qb is 0.0
+loop while step < 40:
+    fleet[0][2] is fleet[0][2] * 0.9
+    fleet[1][2] is 0.0 - fleet[1][2]
+    qa is fleet[0][2]
+    qb is fleet[1][2]
+    if diverging of qa:
+        print of "a"
+    if diverging of qb:
+        print of "b"
+    step is step + 1
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1048 W024 silent on one named binding per entity (fixed index)" "$OUTPUT" "W024"
+rm -f "$TMPFILE"
+
+# Working form 2: one closure per entity — silent (the loop rebinds `ch`
+# from `chans[i]` but observes nothing through it; the slot that carries the
+# trajectory is the factory's captured `q`).
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define make_ch as:
+    local q is 0.0
+    define step(v) as:
+        q is v
+        return report_value of q
+    return step
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+chans is [make_ch of [], make_ch of []]
+t is 0
+loop while t < 40:
+    fleet[0][2] is fleet[0][2] * 0.9
+    fleet[1][2] is 0.0 - fleet[1][2]
+    i is 0
+    loop while i < 2:
+        local ch is chans[i]
+        local v is ch of fleet[i][2]
+        if t == 39:
+            print of v
+        i is i + 1
+    t is t + 1
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1048 W024 silent on one closure per entity" "$OUTPUT" "W024"
+rm -f "$TMPFILE"
+
+# The other spellings of the same interleave: a field of the walking element,
+# a base rebound from the element, a `for` binder's field, a destructure.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+chans is [{"a": 1.0}, {"a": 2.0}]
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+i is 0
+loop while i < 2:
+    local ch is chans[i]
+    local q is ch.a
+    if stable of q:
+        print of i
+    i is i + 1
+for ent in chans:
+    e is ent.a
+    print of (report of e)
+for row in fleet:
+    [nm, kind, v] is row
+    print of (report_value of v)
+k is 0
+loop while k < 2:
+    w is chans[k].a
+    print of (trajectory of w)
+    k is k + 1
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1048 W024 field of a base rebound from the element" "$OUTPUT" ":6: warning\[W024\]: 'q' is rebound from 'ch.a'"
+check_contains "#1048 W024 field of a for binder" "$OUTPUT" ":11: warning\[W024\]: 'e' is rebound from 'ent.a'"
+check_contains "#1048 W024 destructure of the walking element" "$OUTPUT" ":14: warning\[W024\]: 'v' is rebound from '\[..\] is row'"
+check_contains "#1048 W024 field of a counter-subscripted element" "$OUTPUT" ":18: warning\[W024\]: 'w' is rebound from 'chans\[..\].a'"
+rm -f "$TMPFILE"
+
+# The spelling the reporting consumer actually ships: the projection sits
+# under arithmetic (`fleet[i][2] + 0.0` — the `+ 0.0` forces the assignment
+# the observer walks). phugoid rung 4's `run_ceiling` / `run_disciplined`
+# arms are this exact text, and the first cut of the rule was silent on all
+# of them. An accumulator (`total is total + fleet[i][1]`) is NOT this shape
+# — it carries across iterations and has a trajectory of its own — and a
+# base rebound from a call (`s is halve of s`) is one entity over time.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define halve(a) as:
+    return [a[0] * 0.5]
+fleet is [[0, 100.0], [0, 1.0]]
+scale is 2.0
+total is 0.0
+i is 0
+loop while i < 2:
+    local qobs is fleet[i][1] + 0.0
+    if oscillating of qobs:
+        print of "o"
+    local v is fleet[i][1] * scale
+    if stable of v:
+        print of "v"
+    local w is 0.0 - fleet[i][1]
+    if diverging of w:
+        print of "w"
+    total is total + fleet[i][1]
+    if converged of total:
+        print of "t"
+    i is i + 1
+s is [50.0]
+m is 0
+loop while m < 5:
+    s is halve of s
+    local u is s[0] + 0.0
+    if converged of u:
+        print of "u"
+    m is m + 1
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1048 W024 projection under arithmetic (the shipped '+ 0.0' spelling)" "$OUTPUT" ":8: warning\[W024\]: 'qobs' is rebound from 'fleet\[..\]\[..\]'"
+check_contains "#1048 W024 projection times a loop-invariant name" "$OUTPUT" ":11: warning\[W024\]: 'v' is rebound from 'fleet\[..\]\[..\]'"
+check_contains "#1048 W024 negated projection" "$OUTPUT" ":14: warning\[W024\]: 'w' is rebound from 'fleet\[..\]\[..\]'"
+check_not_contains "#1048 W024 silent: accumulator over the elements (line 17)" "$OUTPUT" ":17: warning\[W024\]"
+check_not_contains "#1048 W024 silent: call-rebound base read with '+ 0.0' (line 25)" "$OUTPUT" ":25: warning\[W024\]"
+rm -f "$TMPFILE"
+
+# Negatives that must stay silent — each is correct, load-bearing code:
+#  - a FIXED field/element mirrored into a binding (the documented way to give
+#    a dict field a trajectory);
+#  - a base rebound from a call (functional state update);
+#  - a subscript that is not counter arithmetic;
+#  - a flat `xs[i]` replay of a recorded series (lib/experiment.eigs's shape —
+#    one trajectory; also the rule's named residual for per-entity scalars);
+#  - a binding observed in a loop that does not rebind it from an element;
+#  - the projection outside any loop.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+game is {"energy": 100.0, "pos": [0.0, 0.0]}
+xs is [1.0, 2.0, 3.0]
+series is [3.0, 2.0, 1.0]
+tracker is 0
+i is 0
+loop while i < 10:
+    game.energy is game.energy * 0.9
+    local e is game.energy
+    if converged of e:
+        print of "settled"
+    local first is xs[0]
+    if stable of first:
+        print of "first"
+    local px is game.pos[0]
+    if stable of px:
+        print of "px"
+    game is {"energy": game.energy, "pos": game.pos}
+    local e2 is game.energy
+    if stable of e2:
+        print of "e2"
+    local last is xs[len of xs - 1]
+    if stable of last:
+        print of "last"
+    i is i + 1
+for k in range of (len of series):
+    tracker is series[k]
+    print of (report of tracker)
+x is 100.0
+loop while not (converged of x):
+    x is x * 0.5
+q is game.pos[0]
+print of (report of q)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1048 W024 silent on fixed field/element, call-rebound base, non-counter subscript, flat series replay" "$OUTPUT" "W024"
+LINT_STATUS=0; $EIGS --lint "$TMPFILE" >/dev/null 2>&1 || LINT_STATUS=$?
+check_status "#1048 W024 negatives lint clean (exit 0)" "$LINT_STATUS" "0"
+rm -f "$TMPFILE"
+
+# The asymmetry row from the issue's last comment, measured with `when is q`:
+# a MODULE-LEVEL `for`-body `local` is fresh each iteration (one observation,
+# every read answers equilibrium), while inside a function it is a persisting
+# frame slot that interleaves like a `loop while` binding. Both are wrong for
+# the per-entity read; the lint names each.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+for i in range of 2:
+    local q is fleet[i][2]
+    print of (report_value of q)
+for k in range of 5:
+    local y is k * 2.0
+    print of (report of y)
+define scan as:
+    for i in range of 2:
+        local r is fleet[i][2]
+        print of (report_value of r)
+    for k in range of 5:
+        local z is k * 2.0
+        print of (report of z)
+for k in range of 5:
+    local w is k * 2.0
+    w is w * 0.5
+    print of (report of w)
+scan of []
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1048 W024 module for-body local from an element: always equilibrium" "$OUTPUT" ":3: warning\[W024\]: 'q' is a 'for'-body local, fresh each iteration"
+check_contains "#1048 W024 module for-body local (element): names the interleave alternative" "$OUTPUT" "persisting binding would interleave"
+check_contains "#1048 W024 module for-body local (any RHS): always equilibrium" "$OUTPUT" ":6: warning\[W024\]: 'y' is a 'for'-body local, fresh each iteration"
+check_contains "#1048 W024 module for-body local (any RHS): advice is bind before the loop" "$OUTPUT" "bind it before the loop so its slot persists"
+check_contains "#1048 W024 function for-body local from an element: interleave (frame slot persists)" "$OUTPUT" ":10: warning\[W024\]: 'r' is rebound from 'fleet\[..\]\[..\]'"
+check_not_contains "#1048 W024 silent: function for-body local with its own trajectory (line 13)" "$OUTPUT" ":13: warning\[W024\]"
+check_not_contains "#1048 W024 silent: module for-body local assigned twice per iteration (line 16)" "$OUTPUT" ":16: warning\[W024\]"
+rm -f "$TMPFILE"
+
+# The runtime facts the two messages rest on (so the asymmetry cannot drift
+# silently under the lint): one observation per module-level iteration,
+# thirty inside a function.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+xs is [100.0, 1.0]
+for k in range of 30:
+    local q is xs[k % 2]
+    if k == 29:
+        print of ("module when=" + (str of (when is q)))
+define f as:
+    for k in range of 30:
+        local r is xs[k % 2]
+        if k == 29:
+            print of ("function when=" + (str of (when is r)))
+f of []
+EIGS
+RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "#1048 module-level for-body local is fresh per iteration (when=1)" "$RUN" "^module when=1$"
+check_contains "#1048 function for-body local persists across iterations (when=30)" "$RUN" "^function when=30$"
+rm -f "$TMPFILE"
+
+# --- #1048 round 2: a long identifier may not break the message ----------
+# W024 is the first rule to interpolate an unbounded identifier twice, so it
+# was the first whose message could overflow LintWarning.message[256]. The
+# overflow cut inside the em dash of the remedy clause: `--lint --json` then
+# emitted a lone 0xE2 (invalid UTF-8 — Python's decoder rejects it, jq hides
+# it behind U+FFFD) and the human line lost the only actionable half. The fix
+# budgets the IDENTIFIERS (middle ellipsis, UTF-8 boundaries) instead of the
+# message, so these assertions are: valid UTF-8, remedy present, suffix kept.
+check_json_utf8() {   # $1 = name, $2 = file — decode BOTH outputs STRICTLY
+    TOTAL=$((TOTAL + 1))
+    local test_name="$1" f="$2" out rc
+    # The human line on stderr is the other consumer and has its own copy of
+    # the bytes; decode it too, or a fix in the JSON escaper alone would hide
+    # a message buffer that is still malformed.
+    if ! "$EIGS" --lint "$f" 2>&1 >/dev/null | python3 -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' 2>/dev/null; then
+        echo "  FAIL: $test_name (human --lint output is not valid UTF-8)"; FAIL=$((FAIL + 1)); return
+    fi
+    out=$("$EIGS" --lint --json "$f" 2>/dev/null | python3 -c '
+import json, sys
+raw = sys.stdin.buffer.read()
+try:
+    d = json.loads(raw.decode("utf-8"))
+except UnicodeDecodeError as e:
+    print("NOT-UTF8 %s" % e); raise SystemExit(1)
+except Exception as e:
+    print("NOT-JSON %s" % e); raise SystemExit(1)
+for x in d:
+    n = len(x["message"].encode("utf-8"))
+    if n > 255:
+        print("OVERLONG %d" % n); raise SystemExit(1)
+print("OK")
+')
+    rc=$?
+    if [ $rc -eq 0 ] && [ "$out" = "OK" ]; then
+        echo "  PASS: $test_name"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $test_name ($out)"; FAIL=$((FAIL + 1))
+    fi
+}
+
+# 37+ characters: the threshold the defect was found at. Real names in this
+# ecosystem reach 42 (`diagnostic_header_unterminated_text_concat`).
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+i is 0
+loop while i < 2:
+    local _cumulative_mean_normalized_difference is fleet[i][2]
+    print of diverging of _cumulative_mean_normalized_difference
+    i is i + 1
+EIGS
+check_json_utf8 "#1048 W024 --lint --json is valid UTF-8 for a 38-char identifier" "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1048 W024 keeps its remedy clause at a 38-char identifier" "$OUTPUT" "use one named binding or one closure per entity"
+check_contains "#1048 W024 keeps the container spelling at a 38-char identifier" "$OUTPUT" "rebound from 'fleet\[\.\.\]\[\.\.\]'"
+rm -f "$TMPFILE"
+
+# A 200-character identifier AND a 300-character container name: the message
+# must still be valid, still end with the remedy, and still show the [..][..]
+# that says this is a projection of one element rather than the whole list.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+LONGV="v$(printf 'x%.0s' $(seq 1 199))"
+LONGC="c$(printf 'y%.0s' $(seq 1 299))"
+cat > "$TMPFILE" << EIGS
+$LONGC is [["a", 0, 100.0], ["b", 0, 1.0]]
+i is 0
+loop while i < 2:
+    local $LONGV is ${LONGC}[i][2]
+    print of diverging of $LONGV
+    i is i + 1
+EIGS
+check_json_utf8 "#1048 W024 --lint --json is valid UTF-8 for a 200-char identifier" "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1048 W024 keeps its remedy clause at a 200-char identifier" "$OUTPUT" "use one named binding or one closure per entity"
+check_contains "#1048 W024 keeps the [..][..] suffix at a 300-char container name" "$OUTPUT" "\.\.\.[a-z]*\[\.\.\]\[\.\.\]"
+check_contains "#1048 W024 ellipsises the identifier, not the message" "$OUTPUT" "'v[a-z]*\.\.\.[a-z]*' is rebound"
+rm -f "$TMPFILE"
+
+# The `for`-body-local messages take the same identifier budget.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+LONGV="w$(printf 'x%.0s' $(seq 1 199))"
+cat > "$TMPFILE" << EIGS
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+for k in range of 2:
+    local $LONGV is fleet[k][2]
+    print of (report of $LONGV)
+EIGS
+check_json_utf8 "#1048 W024 for-body message is valid UTF-8 at 200 chars" "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1048 W024 for-body message keeps its remedy clause at 200 chars" "$OUTPUT" "use one named binding or one closure per entity"
+rm -f "$TMPFILE"
+
+# Why the identifier fixtures above are all ASCII: the lexer admits no other
+# identifier. tools/lint_message_utf8_check.sh states that as its reason for
+# not driving a multi-byte NAME, so it is pinned here rather than assumed —
+# and the same file is then decoded strictly, because "the lexer rejects it"
+# was the whole of the old assertion and rejecting it is exactly when the
+# diagnostic quotes the byte.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'q\xc3\xa9nergie is 2\nprint of q\xc3\xa9nergie\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1048 the lexer rejects a non-ASCII identifier (so fixtures are ASCII)" "$OUTPUT" "parse error"
+# The rejection message used to quote the offending BYTE with %c — half of the
+# two-byte `é` — so `--lint --json`, the human line and the LSP frame all
+# carried a payload a strict decoder rejects (v0.43.0 does; this is not a
+# W024 defect, it is the same class arriving from the source side).
+check_json_utf8 "#1048 a non-ASCII source decodes strictly on both channels" "$TMPFILE"
+check_contains "#1048 the lexer spells the byte it cannot tokenize" "$OUTPUT" "unexpected character '.xc3'"
+rm -f "$TMPFILE"
+
+# An INVALID byte (0xff is part of no UTF-8 character at all), which also
+# reaches the parse-error caret excerpt — the excerpt echoes the raw source
+# line, so it is a third place a bad byte could leave the tool.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'q\xffnergie is 2\nprint of q\xffnergie\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_json_utf8 "#1048 an invalid-byte source decodes strictly on both channels" "$TMPFILE"
+check_contains "#1048 the caret excerpt shows an undecodable byte as '?'" "$OUTPUT" "| q?nergie is 2"
+rm -f "$TMPFILE"
+
+# A LINT RULE (not the lexer) interpolating source text: W010 quotes the
+# duplicated dict key. Invalid bytes in it become U+FFFD; a well-formed
+# character must survive byte-for-byte, or the fix would be over-sanitizing.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'd is {"k\xffy": 1, "k\xffy": 2}\nprint of d\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_json_utf8 "#1048 W010 quoting an invalid source byte decodes strictly" "$TMPFILE"
+check_contains "#1048 W010 still names the duplicate key it quoted" "$OUTPUT" "duplicate dict key"
+rm -f "$TMPFILE"
+
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'd is {"k\xc3\xa9y": 1, "k\xc3\xa9y": 2}\nprint of d\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+check_json_utf8 "#1048 W010 quoting a well-formed multi-byte key decodes strictly" "$TMPFILE"
+check_contains "#1048 a well-formed multi-byte key survives byte-for-byte" "$OUTPUT" "$(printf "duplicate dict key 'k\xc3\xa9y'")"
+rm -f "$TMPFILE"
+
+# The file PATH is the fourth piece of text the tool renders and never chose,
+# and it reaches the two channels through different code (the JSON escaper vs a
+# plain fprintf). A path is a byte string on POSIX, so both must sanitize it.
+PATHDIR=$(mktemp -d /tmp/lint_test_path_XXXXXX)
+BADPATH="$PATHDIR/$(printf 'w\xffname').eigs"
+printf 'unused_local is 42\nprint of 1\n' > "$BADPATH"
+check_json_utf8 "#1048 a file whose NAME is not valid UTF-8 decodes strictly" "$BADPATH"
+OUTPUT=$($EIGS --lint "$BADPATH" 2>&1 || true)
+check_contains "#1048 the diagnostic still names the file it linted" "$OUTPUT" "w.*name.eigs:1: warning\[W001\]"
+OUTPUT=$($EIGS --lint --json "${BADPATH}.missing" 2>/dev/null || true)
+check_contains "#1048 the unreadable-file payload (E000) still names the path" "$OUTPUT" '"code":"E000"'
+printf '%s' "$OUTPUT" | python3 -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' 2>/dev/null \
+    && check_contains "#1048 E000 on an invalid path decodes strictly" "ok" "ok" \
+    || check_contains "#1048 E000 on an invalid path decodes strictly" "not-utf8" "ok"
+rm -rf "$PATHDIR"
+
+# Deliberate sites carry the allow comment like every other code.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
+i is 0
+loop while i < 2:
+    local q is fleet[i][2]   # lint: allow W024
+    if diverging of q:
+        print of i
+    i is i + 1
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1048 '# lint: allow W024' suppresses it" "$OUTPUT" "W024"
+rm -f "$TMPFILE"
+
+# --- #1121 ledger: no child of this file may have tripped a sanitizer ---
+# One check, covering every linter invocation above rather than a sample. In a
+# release build no file is ever written and this passes trivially, which is
+# correct: it is the ASan leg that has the instrument.
+TOTAL=$((TOTAL + 1))
+SAN_FILES=$(ls "$SAN_LOG_DIR" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$SAN_FILES" = "0" ]; then
+    echo "  PASS: #1121 no sanitizer diagnostic from any linter invocation in this file"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: #1121 $SAN_FILES sanitizer diagnostic(s) from linter invocations in this file"
+    for f in "$SAN_LOG_DIR"/*; do
+        echo "    --- $(basename "$f") ---"
+        grep -E "SUMMARY:|runtime error:" "$f" 2>/dev/null | head -3 | sed 's/^/    /'
+    done
+    FAIL=$((FAIL + 1))
+fi
+rm -rf "$SAN_LOG_DIR"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"

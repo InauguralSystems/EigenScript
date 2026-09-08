@@ -53,6 +53,13 @@ typedef struct ASTNode ASTNode;
 void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
                           Value *fn_val, Env *env);
 
+/* The one CONSUMING builtin (builtins.c). Declared here — not re-externed in
+ * each consumer — because every site that must special-case it (vm.c's three
+ * call sites, builtins.c's builtin_dispatch, builtins_tensor.c's
+ * call_eigs_fn) compares `fn->data.builtin` against it, and hand-written
+ * copies of one signature in three TUs are free to drift (#744). */
+Value* builtin_free_val(Value *arg);
+
 /* ---- Opcodes ---- */
 typedef enum {
     /* Constants */
@@ -642,6 +649,12 @@ int   task_do_detach(int tid);       /* #530: mark fire-and-forget (reap at fini
 void   task_request_sleep(double ticks); /* current task sleeps until virtual now + ticks */
 double task_virtual_now(void);           /* current virtual-clock value (0 with no scheduler) */
 int    task_current_id(void);            /* running task id; 0 = main (incl. no scheduler) — task_self (#526) */
+/* #846 scheduler trace (builtins.c task_sched_trace). The trace is a PURE
+ * READER of the schedule: recording never touches the ready queue, the
+ * seeded PRNG, or the clock, and its entries are derived from the
+ * deterministic schedule, so they are not tape records. */
+Value *task_sched_trace_read(void);   /* list of {seq, tick, task, cause} dicts; [] when off / no scheduler */
+void   task_sched_trace_clear(void);  /* discard the recorded history (no-op without a scheduler) */
 /* Inc 4 seeded scheduling strategy (builtins.c task_sched_seed). */
 void   task_sched_set_seed(double seed); /* install a seed → seeded pick; ensures the scheduler */
 
@@ -681,13 +694,16 @@ int        chunk_reads_observer(const EigsChunk *chunk);
  * tools/obs_reader_sync_check.sh. Ask this; never restate the list. */
 int        opcode_is_observer_reader(uint8_t op);
 int        chunk_has_reader_opcode(const EigsChunk *chunk);
-/* #915: hand every STRING-LITERAL `load_file` target in this chunk to `visit`.
+/* #915: hand every STRING-LITERAL `load_file` target (is_import=0) and every
+ * `import NAME` target (is_import=1, #1046) in this chunk to `visit`.
  * Returns 1 if the unit is OPAQUE — it uses the name `load_file` in any shape
  * this scan does not recognize. An opaque unit must be treated as observing.
  * This does NOT check resolver parity between compile time and run time; that
- * is enforced at the load itself (builtin_load_file). See the definition. */
+ * is enforced at the load itself (builtin_load_file / OP_IMPORT). See the
+ * definition. */
 int        chunk_scan_static_loads(const EigsChunk *chunk,
-                                   void (*visit)(const char *path, void *ud),
+                                   void (*visit)(const char *path, int is_import,
+                                                 void *ud),
                                    void *ud);
 const char *op_name(uint8_t op);
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM

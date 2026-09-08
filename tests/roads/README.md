@@ -112,12 +112,14 @@ An inode-only scan memo missed the observing sibling and raised at runtime;
 the memo must include the containing directory. This was reproduced during
 #1056, and is why file provenance belongs in the scan as well as execution.
 
-`binders` deliberately retains the existing function-slot exception documented
-in LANGUAGE_CONTRACT.md: a binder with no prior binding in a function remains
-readable after the loop. On c1684bc `define f(): for z in [7, 8]: ...; return z`
-returns 8. This differs from module scope, but is uniform across roads; #1056
-does not change it. Pre-existing parameters, locals and module bindings are
-protected on every road.
+`binders` pins the uniform binder rule (#1105): a `for` binder with no prior
+binding is loop-scoped inside a function exactly as at module scope, so
+`define f(): for z in [7, 8]: ...; return z` raises `undefined variable 'z'`
+on every road (the fixture catches it and snapshots the message; before #1105
+the function returned 8 -- the retired "function-slot exception"). A fresh
+binder that shadows a module name reads the module value after the loop, and
+a post-loop write creates a fresh binding. Pre-existing parameters, locals and
+module bindings are restored on every road.
 
 The sanitizer run also checks compiler ownership: extending loop-binder
 tracking from functions to modules requires freeing the root compiler's

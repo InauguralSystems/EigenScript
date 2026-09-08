@@ -8,6 +8,27 @@
 
 /* ---- Lint warning storage ---- */
 
+/* Length of the longest prefix of `s` that is at most `max` bytes AND ends on
+ * a UTF-8 character boundary. A cut inside a multi-byte sequence leaves a
+ * lone lead/continuation byte, which is not valid UTF-8: `--lint --json` then
+ * emits a payload a strict decoder rejects (Python raises; jq silently
+ * substitutes U+FFFD, which is how it hides) and the LSP publishes that byte
+ * inside a JSON-RPC message. #1048. Invalid input is handled the same way —
+ * an incomplete or stray sequence at the cut is dropped, never halved. */
+size_t lint_utf8_prefix(const char *s, size_t max) {
+    if (!s) return 0;
+    size_t n = strlen(s);
+    if (n > max) n = max;
+    /* Back up to the last byte that STARTS a character; a lone lead byte at
+     * the cut counts (a bare 0xE2 is exactly the #1048 payload). */
+    size_t i = n;
+    while (i > 0 && ((unsigned char)s[i - 1] & 0xC0) == 0x80) i--;
+    if (i == 0) return 0;                      /* only continuation bytes */
+    unsigned char lead = (unsigned char)s[i - 1];
+    size_t need = lead < 0xC0 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
+    return (i - 1 + need == n) ? n : i - 1;    /* complete: keep. cut: drop it */
+}
+
 static void lint_vdiag(LintContext *ctx, int line, int col, int len,
                        const char *level,
                        const char *code, const char *fmt, va_list ap) {
@@ -18,7 +39,12 @@ static void lint_vdiag(LintContext *ctx, int line, int col, int len,
     w->len  = len;
     snprintf(w->level, sizeof(w->level), "%s", level);
     snprintf(w->code, sizeof(w->code), "%s", code);
-    vsnprintf(w->message, sizeof(w->message), fmt, ap);
+    /* Render first, then copy on a character boundary: vsnprintf straight
+     * into w->message would cut mid-sequence (#1048). The scratch can itself
+     * clip a pathological message; eigs_utf8_sanitize repairs either cut. */
+    char rendered[1024];
+    vsnprintf(rendered, sizeof(rendered), fmt, ap);
+    eigs_utf8_sanitize(w->message, sizeof(w->message), rendered);
 }
 
 static void lint_warn(LintContext *ctx, int line, const char *code,
@@ -2789,11 +2815,718 @@ static void check_error_kind_typo(ASTNode *ast, LintContext *ctx) {
     w018_scan(ast, ctx, &sc);
 }
 
+/* ---- W024: observer read on a binding rebound from a container element ---- */
+
+/* Observer trajectory lives on an ENVIRONMENT SLOT (`env_obs_slot`), never on
+ * a Value: a dict field or list element carries no history, so the obvious
+ * per-entity read
+ *
+ *     loop while i < n:
+ *         local q is fleet[i][2]     # ONE binding, rebound n times
+ *         if diverging of q: ...
+ *
+ * does not lose resolution — it MANUFACTURES verdicts. The single slot's
+ * window is the round-robin interleave of every entity it visits, so a
+ * monotonically decaying entity reads `oscillating` (#1048, phugoid rung 4).
+ * The two working forms need one persistent slot per entity: a named
+ * binding per entity, or a closure per entity (`define make_ch as: local q
+ * is 0.0 / define step(v) as: q is v / return report of q`).
+ *
+ * The rule, per loop (each assignment belongs to its innermost loop):
+ *   - a name is (re)bound from a VARYING container read — an index whose
+ *     subscript is a counter (a name assigned somewhere in the loop, or the
+ *     `for` binder), or a field/index of a base that is itself such a read
+ *     (`ch is chans[i]` then `ch.a`), transitively, optionally under
+ *     arithmetic with inert operands (`fleet[i][2] + 0.0`, the spelling the
+ *     reporting consumer ships);
+ *   - and an observer read of that name (`<predicate> of q`, `report`,
+ *     `report_value`, `observe`, `trajectory of q`) sits in the same loop
+ *     (nested `if`/loops included; nested function bodies excluded — a
+ *     different env).
+ * A binding that persists across iterations then interleaves (message A):
+ * every `loop while` binding, a plain `for`-body assignment (it creates in
+ * the enclosing scope), and a `for`-body `local` INSIDE A FUNCTION (a frame
+ * slot). A MODULE-LEVEL `for`-body `local` is the opposite failure: the loop
+ * env is cleared each iteration, so the slot holds one observation and every
+ * read answers `equilibrium` / false (message B) — the asymmetry the issue's
+ * last comment reports. Both were measured with `when is q` (1 vs 30) on
+ * every module-level tier (closure in body, interrogated binder, nested in
+ * if/try/match, loaded module) and every function-level one. Message B
+ * fires for any RHS when the local is the binding's ONLY assignment in the
+ * loop; a local assigned again inside the iteration has a real
+ * intra-iteration trajectory and stays silent.
+ *
+ * Conservative by construction, and the residuals are named: a fixed
+ * container read (`game.energy`, `xs[0]`) never fires — that is the
+ * documented way to give a field a trajectory; a base rebound from a call
+ * (`state is step of state`) never fires; an index that is anything but
+ * counter arithmetic (`xs[len of xs - 1]`) never fires; reads outside the
+ * loop, interrogatives (`why is q`) and reads of the `for` binder itself are
+ * not covered. The one shape it cannot tell apart is a single time series
+ * replayed through one binding (`loop while t < n: s is samples[t]`), which
+ * IS one trajectory — that site carries `# lint: allow W024`. */
+
+#define W024_MAX_NAMES 64
+
+typedef struct {
+    const char *name;
+    ASTNode    *assign;        /* first assignment owned by THIS loop, or NULL */
+    ASTNode    *rhs;           /* its RHS */
+    int         assign_count;  /* assignments to the name in the loop subtree */
+    int         local_only;    /* that first assignment is `local` */
+    int         walks;         /* RHS is an element that walks the loop (any depth) */
+    ASTNode    *proj;          /* the PROJECTION of a walking element it reads — fires */
+    int         destructure;   /* the assignment is a list-pattern destructure */
+    ASTNode    *read;          /* first observer read in the loop subtree */
+    const char *read_form;     /* "diverging of", "report_value of", ... */
+} W024Name;
+
+typedef struct {
+    W024Name    names[W024_MAX_NAMES];
+    int         count;
+    int         overflow;      /* > W024_MAX_NAMES names: fail safe to silence */
+    const char *for_var;       /* the `for` binder, NULL for `loop while` */
+} W024Loop;
+
+static W024Name *w024_entry(W024Loop *lp, const char *name) {
+    if (!name) return NULL;
+    for (int i = 0; i < lp->count; i++)
+        if (strcmp(lp->names[i].name, name) == 0) return &lp->names[i];
+    if (lp->count >= W024_MAX_NAMES) { lp->overflow = 1; return NULL; }
+    W024Name *e = &lp->names[lp->count++];
+    memset(e, 0, sizeof(*e));
+    e->name = name;
+    return e;
+}
+
+/* `<pred> of q` / `report|report_value|observe|trajectory of q` over an
+ * ident: the compiler-resolved slot reads (the same four query names W019
+ * anchors on). Returns the subject name and the form, or NULL. */
+static const char *w024_observer_read(ASTNode *n, const char **subject) {
+    if (!n || n->type != AST_RELATION) return NULL;
+    ASTNode *l = n->data.relation.left, *r = n->data.relation.right;
+    if (!l || !r || r->type != AST_IDENT) return NULL;
+    if (l->type == AST_PREDICATE) {
+        int k = l->data.predicate.kind;
+        static const char *forms[] = {
+            "converged of", "stable of", "improving of",
+            "diverging of", "oscillating of", "equilibrium of" };
+        const char *nm = (k >= 0) ? eigs_predicate_name((unsigned)k) : NULL;
+        if (!nm) return NULL;
+        for (size_t i = 0; i < sizeof(forms) / sizeof(forms[0]); i++)
+            if (strncmp(forms[i], nm, strlen(nm)) == 0 && forms[i][strlen(nm)] == ' ') {
+                *subject = r->data.ident.name;
+                return forms[i];
+            }
+        return NULL;
+    }
+    if (l->type == AST_IDENT) {
+        static const char *names[] = {"report", "report_value", "observe", "trajectory"};
+        static const char *forms[] = {"report of", "report_value of", "observe of", "trajectory of"};
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+            if (strcmp(l->data.ident.name, names[i]) == 0) {
+                *subject = r->data.ident.name;
+                return forms[i];
+            }
+    }
+    return NULL;
+}
+
+/* Pass 1: every assignment, every observer read, in the loop subtree.
+ * `nested` is 1 inside a nested loop: its assignments still count (they are
+ * counters and re-assignments for this loop's purposes) but belong to that
+ * loop for reporting. Function and lambda bodies are a different env and are
+ * not entered. */
+static void w024_collect(ASTNode *n, W024Loop *lp, int nested) {
+    if (!n || lp->overflow) return;
+    const char *subject = NULL;
+    const char *form = w024_observer_read(n, &subject);
+    if (form) {
+        W024Name *e = w024_entry(lp, subject);
+        if (e && !e->read) { e->read = n; e->read_form = form; }
+        return;
+    }
+    switch (n->type) {
+        case AST_ASSIGN: {
+            W024Name *e = w024_entry(lp, n->data.assign.name);
+            if (e) {
+                e->assign_count++;
+                if (!nested && !e->assign) {
+                    e->assign = n;
+                    e->rhs = n->data.assign.expr;
+                    e->local_only = n->data.assign.local_only;
+                }
+            }
+            w024_collect(n->data.assign.expr, lp, nested);
+            break;
+        }
+        case AST_LIST_PATTERN_ASSIGN:
+            /* `[name, kind, v] is fleet[i]` destructures the entity: each
+             * name is rebound from the element in turn. */
+            for (int i = 0; i < n->data.list_pattern_assign.name_count; i++) {
+                W024Name *e = w024_entry(lp, n->data.list_pattern_assign.names[i]);
+                if (e) {
+                    e->assign_count++;
+                    if (!nested && !e->assign) {
+                        e->assign = n;
+                        e->rhs = n->data.list_pattern_assign.expr;
+                        e->local_only = 0;
+                        e->destructure = 1;
+                    }
+                }
+            }
+            w024_collect(n->data.list_pattern_assign.expr, lp, nested);
+            break;
+        case AST_LOOP:
+            w024_collect(n->data.loop.cond, lp, nested);
+            for (int i = 0; i < n->data.loop.body_count; i++)
+                w024_collect(n->data.loop.body[i], lp, 1);
+            break;
+        case AST_FOR: {
+            W024Name *e = w024_entry(lp, n->data.forloop.var);
+            if (e) e->assign_count++;
+            w024_collect(n->data.forloop.iter, lp, nested);
+            for (int i = 0; i < n->data.forloop.body_count; i++)
+                w024_collect(n->data.forloop.body[i], lp, 1);
+            break;
+        }
+        case AST_FUNC:
+        case AST_LAMBDA:
+            break;
+        case AST_IF:
+            w024_collect(n->data.cond.cond, lp, nested);
+            for (int i = 0; i < n->data.cond.if_count; i++)
+                w024_collect(n->data.cond.if_body[i], lp, nested);
+            for (int i = 0; i < n->data.cond.else_count; i++)
+                w024_collect(n->data.cond.else_body[i], lp, nested);
+            break;
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++)
+                w024_collect(n->data.block.stmts[i], lp, nested);
+            break;
+        case AST_TRY: {
+            W024Name *e = w024_entry(lp, n->data.trycatch.err_name);
+            if (e) e->assign_count++;
+            for (int i = 0; i < n->data.trycatch.try_count; i++)
+                w024_collect(n->data.trycatch.try_body[i], lp, nested);
+            for (int i = 0; i < n->data.trycatch.catch_count; i++)
+                w024_collect(n->data.trycatch.catch_body[i], lp, nested);
+            break;
+        }
+        case AST_MATCH:
+            w024_collect(n->data.match.expr, lp, nested);
+            for (int c = 0; c < n->data.match.case_count; c++)
+                for (int i = 0; i < n->data.match.body_counts[c]; i++)
+                    w024_collect(n->data.match.bodies[c][i], lp, nested);
+            break;
+        case AST_BINOP:
+            w024_collect(n->data.binop.left, lp, nested);
+            w024_collect(n->data.binop.right, lp, nested);
+            break;
+        case AST_UNARY:
+            w024_collect(n->data.unary.operand, lp, nested);
+            break;
+        case AST_RELATION:
+            w024_collect(n->data.relation.left, lp, nested);
+            w024_collect(n->data.relation.right, lp, nested);
+            break;
+        case AST_RETURN:
+            w024_collect(n->data.ret.expr, lp, nested);
+            break;
+        case AST_LIST:
+            for (int i = 0; i < n->data.list.count; i++)
+                w024_collect(n->data.list.elems[i], lp, nested);
+            break;
+        case AST_DICT:
+            for (int i = 0; i < n->data.dict.count; i++) {
+                w024_collect(n->data.dict.keys[i], lp, nested);
+                w024_collect(n->data.dict.vals[i], lp, nested);
+            }
+            break;
+        case AST_INDEX:
+            w024_collect(n->data.index.target, lp, nested);
+            w024_collect(n->data.index.index, lp, nested);
+            break;
+        case AST_SLICE:
+            w024_collect(n->data.slice.target, lp, nested);
+            w024_collect(n->data.slice.start, lp, nested);
+            w024_collect(n->data.slice.end, lp, nested);
+            break;
+        case AST_DOT:
+            w024_collect(n->data.dot.target, lp, nested);
+            break;
+        case AST_DOT_ASSIGN:
+            w024_collect(n->data.dot_assign.target, lp, nested);
+            w024_collect(n->data.dot_assign.expr, lp, nested);
+            break;
+        case AST_INDEX_ASSIGN:
+            w024_collect(n->data.index_assign.target, lp, nested);
+            w024_collect(n->data.index_assign.index, lp, nested);
+            w024_collect(n->data.index_assign.expr, lp, nested);
+            break;
+        case AST_LISTCOMP:
+            w024_collect(n->data.listcomp.expr, lp, nested);
+            w024_collect(n->data.listcomp.iter, lp, nested);
+            w024_collect(n->data.listcomp.filter, lp, nested);
+            break;
+        case AST_INTERROGATE:
+            w024_collect(n->data.interrogate.expr, lp, nested);
+            w024_collect(n->data.interrogate.at_expr, lp, nested);
+            w024_collect(n->data.interrogate.when_expr, lp, nested);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < n->data.program.count; i++)
+                w024_collect(n->data.program.stmts[i], lp, nested);
+            break;
+        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL:
+        case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: case AST_IMPORT:
+            break;
+    }
+}
+
+/* Does this subscript walk the loop? Counter arithmetic only — an ident
+ * assigned in the loop (or the `for` binder), numbers, and arithmetic / unary
+ * over those. Anything else (`len of xs - 1`, a nested index) is not a
+ * counter and reads as fixed. */
+static int w024_index_varies(ASTNode *ix, W024Loop *lp) {
+    if (!ix) return 0;
+    switch (ix->type) {
+        case AST_IDENT: {
+            if (lp->for_var && strcmp(ix->data.ident.name, lp->for_var) == 0) return 1;
+            W024Name *e = NULL;
+            for (int i = 0; i < lp->count; i++)
+                if (strcmp(lp->names[i].name, ix->data.ident.name) == 0) { e = &lp->names[i]; break; }
+            return e && e->assign_count > 0;
+        }
+        case AST_BINOP:
+            return w024_index_varies(ix->data.binop.left, lp) ||
+                   w024_index_varies(ix->data.binop.right, lp);
+        case AST_UNARY:
+            return w024_index_varies(ix->data.unary.operand, lp);
+        case AST_NUM: case AST_STR: case AST_NULL: case AST_ASSIGN: case AST_RELATION:
+        case AST_IF: case AST_LOOP: case AST_FUNC: case AST_RETURN: case AST_BLOCK:
+        case AST_LIST: case AST_INDEX: case AST_LISTCOMP: case AST_FOR: case AST_PROGRAM:
+        case AST_INTERROGATE: case AST_PREDICATE: case AST_TRY: case AST_DICT: case AST_DOT:
+        case AST_BREAK: case AST_CONTINUE: case AST_DOT_ASSIGN: case AST_IMPORT:
+        case AST_MATCH: case AST_LAMBDA: case AST_UNOBSERVED: case AST_INDEX_ASSIGN:
+        case AST_LIST_PATTERN_ASSIGN: case AST_SLICE:
+            return 0;
+    }
+    return 0;
+}
+
+/* Is this expression an ELEMENT that walks the loop — the `for` binder, a
+ * name rebound in the loop from such an element (`ch is chans[i]`), a
+ * container read subscripted by a counter (`chans[i]`), or a field/index of
+ * any of those? */
+static int w024_elem_walks(ASTNode *n, W024Loop *lp) {
+    if (!n) return 0;
+    switch (n->type) {
+        case AST_IDENT:
+            if (lp->for_var && strcmp(n->data.ident.name, lp->for_var) == 0) return 1;
+            for (int i = 0; i < lp->count; i++)
+                if (strcmp(lp->names[i].name, n->data.ident.name) == 0)
+                    return lp->names[i].walks;
+            return 0;
+        case AST_INDEX:
+            return w024_index_varies(n->data.index.index, lp) ||
+                   w024_elem_walks(n->data.index.target, lp);
+        case AST_DOT:
+            return w024_elem_walks(n->data.dot.target, lp);
+        case AST_NUM: case AST_STR: case AST_NULL: case AST_ASSIGN: case AST_RELATION:
+        case AST_IF: case AST_LOOP: case AST_FUNC: case AST_RETURN: case AST_BLOCK:
+        case AST_LIST: case AST_LISTCOMP: case AST_FOR: case AST_PROGRAM: case AST_BINOP:
+        case AST_UNARY: case AST_INTERROGATE: case AST_PREDICATE: case AST_TRY:
+        case AST_DICT: case AST_BREAK: case AST_CONTINUE: case AST_DOT_ASSIGN:
+        case AST_IMPORT: case AST_MATCH: case AST_LAMBDA: case AST_UNOBSERVED:
+        case AST_INDEX_ASSIGN: case AST_LIST_PATTERN_ASSIGN: case AST_SLICE:
+            return 0;
+    }
+    return 0;
+}
+
+/* The fire condition: the RHS reads a PROJECTION of a walking element — a
+ * field or sub-element of it (`fleet[i][2]`, `chans[i].a`, `ent.v`, or a
+ * destructure `[n, k, v] is fleet[i]`), i.e. one quantity read out of each
+ * entity record in turn. A FLAT `xs[i]` is deliberately not one: subscripting
+ * a scalar list by the counter is also how a recorded series is replayed
+ * through one binding to classify it (`lib/experiment.eigs`,
+ * `lib/simulation.eigs`), and that IS one trajectory; the per-entity scalar
+ * list (`energies[i]`) is the same text and stays silent — see the residual
+ * in the header comment.
+ *
+ * The projection may sit under arithmetic, because the shipped spelling of
+ * this bug does exactly that: phugoid rung 4 — the consumer that reported
+ * #1048 — writes `local qobs is fleet[i][2] + 0.0` (the `+ 0.0` forces the
+ * assignment the observer walks). `-fleet[i][2]`, `fleet[i][2] * scale` and
+ * `fleet[i][2] - fleet[i][3]` are the same read. The other operand must be
+ * INERT — a literal, a name the loop never assigns, or another projection —
+ * so an accumulator (`total is total + fleet[i].v`, where `total` carries
+ * across iterations and has a real trajectory of its own) stays silent. */
+static ASTNode *w024_proj_node(ASTNode *n, W024Loop *lp);
+
+/* May this operand accompany a projection without making the RHS something
+ * other than one entity's quantity? */
+static int w024_operand_inert(ASTNode *n, W024Loop *lp) {
+    if (!n) return 0;
+    if (n->type == AST_NUM || n->type == AST_STR || n->type == AST_NULL) return 1;
+    if (n->type == AST_IDENT) {
+        if (lp->for_var && strcmp(n->data.ident.name, lp->for_var) == 0) return 0;
+        for (int i = 0; i < lp->count; i++)
+            if (strcmp(lp->names[i].name, n->data.ident.name) == 0)
+                return lp->names[i].assign_count == 0;   /* loop-invariant name */
+        return 1;
+    }
+    return w024_proj_node(n, lp) != NULL;
+}
+
+/* The projecting subexpression of `n`, or NULL. Also what the message
+ * renders, so `fleet[i][2] + 0.0` reports `fleet[..][..]`. */
+static ASTNode *w024_proj_node(ASTNode *n, W024Loop *lp) {
+    if (!n) return NULL;
+    if (n->type == AST_INDEX)
+        return w024_elem_walks(n->data.index.target, lp) ? n : NULL;
+    if (n->type == AST_DOT)
+        return w024_elem_walks(n->data.dot.target, lp) ? n : NULL;
+    if (n->type == AST_UNARY)
+        return w024_proj_node(n->data.unary.operand, lp);
+    if (n->type == AST_BINOP) {
+        ASTNode *p = w024_proj_node(n->data.binop.left, lp);
+        if (p && w024_operand_inert(n->data.binop.right, lp)) return p;
+        p = w024_proj_node(n->data.binop.right, lp);
+        if (p && w024_operand_inert(n->data.binop.left, lp)) return p;
+        return NULL;
+    }
+    return NULL;
+}
+
+/* The projection this RHS reads, or NULL. A destructure names the element
+ * itself (`[a, b] is fleet[i]`), so the element IS the reported form. */
+static ASTNode *w024_projects_walking_elem(ASTNode *rhs, W024Loop *lp, int destructure) {
+    if (!rhs) return NULL;
+    if (destructure) return w024_elem_walks(rhs, lp) ? rhs : NULL;
+    return w024_proj_node(rhs, lp);
+}
+
+/* ---- W024 message assembly: bounded, and bounded in the right place ----
+ *
+ * `LintWarning.message` is 256 bytes. W024 is the first rule to interpolate
+ * an unbounded IDENTIFIER more than once, so it is the first that a long but
+ * ordinary name can push over the edge: at ~37 characters (real names in this
+ * ecosystem reach 42) the old code cut the message inside the em dash of
+ * "... - use one named binding or one closure per entity", which both emitted
+ * an invalid UTF-8 byte and dropped the only actionable half (#1048).
+ *
+ * The message is therefore never the thing that gets cut: the IDENTIFIERS are
+ * budgeted, and the budget shrinks until the whole message fits. That
+ * direction is deliberate — a clipped identifier is recoverable (the
+ * diagnostic cites the line, and the name is in the source), a clipped remedy
+ * is not. Clipping is a middle ellipsis so a spelling keeps its tail:
+ * `fleet[..][..]` must not degrade to `fleet`, which reads as if the whole
+ * list were bound. */
+
+#define W024_SPELL_CAP  272   /* rendering scratch: base + suffix chain */
+#define W024_SFX_CAP    96    /* of which the `[..]` / `.key` chain */
+
+/* `s` into `out`, at most `budget` display bytes, cutting the MIDDLE (head +
+ * "..." + tail) on UTF-8 character boundaries so both ends survive. */
+static void w024_ellipsize(const char *s, char *out, size_t cap, size_t budget) {
+    if (!out || cap == 0) return;
+    if (!s) { out[0] = '\0'; return; }
+    if (budget > cap - 1) budget = cap - 1;
+    size_t n = strlen(s);
+    if (n <= budget) { memcpy(out, s, n + 1); return; }
+    if (budget < 8) {   /* too small for head+"..."+tail: plain boundary cut */
+        size_t k = lint_utf8_prefix(s, budget);
+        memcpy(out, s, k); out[k] = '\0'; return;
+    }
+    size_t keep = budget - 3;
+    size_t head = lint_utf8_prefix(s, keep / 2);
+    size_t tail = keep - head;
+    /* Walk the tail start forward to a character boundary. */
+    size_t ts = n - tail;
+    while (ts < n && ((unsigned char)s[ts] & 0xC0) == 0x80) ts++;
+    memcpy(out, s, head);
+    memcpy(out + head, "...", 3);
+    memcpy(out + head + 3, s + ts, n - ts);
+    out[head + 3 + (n - ts)] = '\0';
+}
+
+/* Short spelling of the RHS for the message: `fleet[..][..]`, `ch.a`.
+ * The suffix chain is measured FIRST and the base name gets what is left, so
+ * a long container name loses its own tail and never the `[..][..]` that
+ * says this is a projection of one element. */
+static void w024_render(ASTNode *n, char *buf, size_t cap) {
+    if (!buf || cap == 0) return;
+    buf[0] = '\0';
+    if (!n || cap < 8) return;
+
+    /* The chain, outermost first. */
+    ASTNode *chain[16];
+    int nch = 0, deep = 0;
+    ASTNode *base = n;
+    while (base && (base->type == AST_INDEX || base->type == AST_DOT)) {
+        if (nch < (int)(sizeof chain / sizeof chain[0])) chain[nch++] = base;
+        else deep = 1;
+        base = (base->type == AST_INDEX) ? base->data.index.target
+                                         : base->data.dot.target;
+    }
+
+    /* Suffix, in source order (= chain reversed). */
+    char sfx[W024_SFX_CAP];
+    size_t so = 0;
+    sfx[0] = '\0';
+    if (deep) { memcpy(sfx, "...", 3); so = 3; sfx[so] = '\0'; }
+    for (int i = nch - 1; i >= 0 && so + 6 < sizeof sfx; i--) {
+        if (chain[i]->type == AST_INDEX) {
+            memcpy(sfx + so, "[..]", 5);
+            so += 4;
+        } else {
+            char key[24];
+            w024_ellipsize(chain[i]->data.dot.key ? chain[i]->data.dot.key : "..",
+                           key, sizeof key, 16);
+            so += (size_t)snprintf(sfx + so, sizeof sfx - so, ".%s", key);
+            if (so >= sizeof sfx) { so = sizeof sfx - 1; sfx[so] = '\0'; break; }
+        }
+    }
+
+    char bb[W024_SPELL_CAP];
+    size_t bbudget = (so + 2 < cap) ? cap - 1 - so : 1;
+    w024_ellipsize(base && base->type == AST_IDENT ? base->data.ident.name : "...",
+                   bb, sizeof bb, bbudget);
+    snprintf(buf, cap, "%s%s", bb, sfx);
+}
+
+typedef enum {
+    W024_INTERLEAVE,   /* rebound from a container element every iteration */
+    W024_FRESH_PROJ,   /* module-level `for`-body local, element RHS */
+    W024_FRESH_PLAIN   /* module-level `for`-body local, any other RHS */
+} W024Msg;
+
+/* Emit, shrinking the identifier budget until the whole message fits
+ * LintWarning.message. The literals below are the contract this loop keeps:
+ * the smallest budget must fit them with room for both names, the read form
+ * and the spelling — asserted by the fixtures in tests/test_lint.sh (a
+ * 200-character identifier) and by tools/lint_message_utf8_check.sh, which
+ * decodes `--lint --json` strictly for every registered code. */
+static void w024_emit(LintContext *ctx, int line, W024Msg kind,
+                      const char *name, const char *rhs, const char *read_form) {
+    static const size_t budgets[] = { 128, 96, 64, 48, 32, 24, 16, 12, 8 };
+    const size_t nb = sizeof budgets / sizeof budgets[0];
+    const size_t fit = sizeof ((LintWarning *)0)->message;
+    char nbuf[W024_SPELL_CAP + 8], rbuf[W024_SPELL_CAP + 8], msg[1024];
+    for (size_t bi = 0; bi < nb; bi++) {
+        w024_ellipsize(name, nbuf, sizeof nbuf, budgets[bi]);
+        w024_ellipsize(rhs,  rbuf, sizeof rbuf, budgets[bi]);
+        switch (kind) {
+            case W024_INTERLEAVE:
+                snprintf(msg, sizeof msg,
+                    "'%s' is rebound from '%s' each iteration: '%s %s' judges the "
+                    "round-robin of every element it visits, not one entity "
+                    "(#1048) — use one named binding or one closure per entity",
+                    nbuf, rbuf, read_form, nbuf);
+                break;
+            case W024_FRESH_PROJ:
+                snprintf(msg, sizeof msg,
+                    "'%s' is a 'for'-body local, fresh each iteration: '%s %s' "
+                    "sees one observation and always answers equilibrium (#1048); "
+                    "a persisting binding would interleave every element instead "
+                    "— use one named binding or one closure per entity",
+                    nbuf, read_form, nbuf);
+                break;
+            case W024_FRESH_PLAIN:
+                snprintf(msg, sizeof msg,
+                    "'%s' is a 'for'-body local, fresh each iteration: '%s %s' "
+                    "sees one observation and always answers equilibrium (#1048) "
+                    "— bind it before the loop so its slot persists",
+                    nbuf, read_form, nbuf);
+                break;
+        }
+        if (strlen(msg) < fit) break;
+    }
+    lint_warn(ctx, line, "W024", "%s", msg);
+}
+
+static void w024_analyse_loop(ASTNode *loop, int fn_depth, LintContext *ctx) {
+    W024Loop lp;
+    memset(&lp, 0, sizeof(lp));
+    if (loop->type == AST_FOR) {
+        lp.for_var = loop->data.forloop.var;
+        w024_collect(loop->data.forloop.iter, &lp, 0);
+        for (int i = 0; i < loop->data.forloop.body_count; i++)
+            w024_collect(loop->data.forloop.body[i], &lp, 0);
+    } else {
+        w024_collect(loop->data.loop.cond, &lp, 0);
+        for (int i = 0; i < loop->data.loop.body_count; i++)
+            w024_collect(loop->data.loop.body[i], &lp, 0);
+    }
+    if (lp.overflow) return;
+    /* Walking is transitive through rebound bases (`ch is chans[i]`, then
+     * `ch.a`), and a name's projection can only be recognised once its base
+     * is known to walk: iterate to a fixed point; each pass can only add. */
+    for (int changed = 1, guard = 0; changed && guard <= lp.count + 1; guard++) {
+        changed = 0;
+        for (int i = 0; i < lp.count; i++) {
+            W024Name *e = &lp.names[i];
+            if (!e->assign) continue;
+            if (!e->walks && w024_elem_walks(e->rhs, &lp)) { e->walks = 1; changed = 1; }
+            if (!e->proj) {
+                ASTNode *p = w024_projects_walking_elem(e->rhs, &lp, e->destructure);
+                if (p) { e->proj = p; changed = 1; }
+            }
+        }
+    }
+    for (int i = 0; i < lp.count; i++) {
+        W024Name *e = &lp.names[i];
+        if (!e->assign || !e->read) continue;
+        int fresh_local = loop->type == AST_FOR && e->local_only && fn_depth == 0;
+        char rendered[W024_SPELL_CAP], rhs[W024_SPELL_CAP + 8];
+        if (fresh_local) {
+            if (e->assign_count != 1) continue;   /* intra-iteration trajectory */
+            w024_emit(ctx, e->assign->line,
+                      e->proj ? W024_FRESH_PROJ : W024_FRESH_PLAIN,
+                      e->name, NULL, e->read_form);
+            continue;
+        }
+        if (!e->proj) continue;
+        w024_render(e->proj, rendered, sizeof(rendered));
+        /* `[a, b] is fleet[i]` — say what was destructured */
+        snprintf(rhs, sizeof(rhs), "%s%s", e->destructure ? "[..] is " : "", rendered);
+        w024_emit(ctx, e->assign->line, W024_INTERLEAVE,
+                  e->name, rhs, e->read_form);
+    }
+}
+
+/* Driver: every loop, innermost-owner attribution; fn_depth > 0 inside any
+ * define/lambda (where a `for`-body `local` is a persisting frame slot). */
+static void w024_walk(ASTNode *n, int fn_depth, LintContext *ctx) {
+    if (!n) return;
+    switch (n->type) {
+        case AST_LOOP:
+            w024_analyse_loop(n, fn_depth, ctx);
+            w024_walk(n->data.loop.cond, fn_depth, ctx);
+            for (int i = 0; i < n->data.loop.body_count; i++)
+                w024_walk(n->data.loop.body[i], fn_depth, ctx);
+            break;
+        case AST_FOR:
+            w024_analyse_loop(n, fn_depth, ctx);
+            w024_walk(n->data.forloop.iter, fn_depth, ctx);
+            for (int i = 0; i < n->data.forloop.body_count; i++)
+                w024_walk(n->data.forloop.body[i], fn_depth, ctx);
+            break;
+        case AST_FUNC:
+            for (int i = 0; i < n->data.func.param_count; i++)
+                w024_walk(n->data.func.param_defaults ? n->data.func.param_defaults[i] : NULL, fn_depth + 1, ctx);
+            for (int i = 0; i < n->data.func.body_count; i++)
+                w024_walk(n->data.func.body[i], fn_depth + 1, ctx);
+            break;
+        case AST_LAMBDA:
+            w024_walk(n->data.lambda.body, fn_depth + 1, ctx);
+            break;
+        case AST_IF:
+            w024_walk(n->data.cond.cond, fn_depth, ctx);
+            for (int i = 0; i < n->data.cond.if_count; i++)
+                w024_walk(n->data.cond.if_body[i], fn_depth, ctx);
+            for (int i = 0; i < n->data.cond.else_count; i++)
+                w024_walk(n->data.cond.else_body[i], fn_depth, ctx);
+            break;
+        case AST_BLOCK:
+        case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++)
+                w024_walk(n->data.block.stmts[i], fn_depth, ctx);
+            break;
+        case AST_PROGRAM:
+            for (int i = 0; i < n->data.program.count; i++)
+                w024_walk(n->data.program.stmts[i], fn_depth, ctx);
+            break;
+        case AST_TRY:
+            for (int i = 0; i < n->data.trycatch.try_count; i++)
+                w024_walk(n->data.trycatch.try_body[i], fn_depth, ctx);
+            for (int i = 0; i < n->data.trycatch.catch_count; i++)
+                w024_walk(n->data.trycatch.catch_body[i], fn_depth, ctx);
+            break;
+        case AST_MATCH:
+            w024_walk(n->data.match.expr, fn_depth, ctx);
+            for (int c = 0; c < n->data.match.case_count; c++)
+                for (int i = 0; i < n->data.match.body_counts[c]; i++)
+                    w024_walk(n->data.match.bodies[c][i], fn_depth, ctx);
+            break;
+        case AST_ASSIGN:
+            w024_walk(n->data.assign.expr, fn_depth, ctx);
+            break;
+        case AST_LIST_PATTERN_ASSIGN:
+            w024_walk(n->data.list_pattern_assign.expr, fn_depth, ctx);
+            break;
+        case AST_DOT_ASSIGN:
+            w024_walk(n->data.dot_assign.target, fn_depth, ctx);
+            w024_walk(n->data.dot_assign.expr, fn_depth, ctx);
+            break;
+        case AST_INDEX_ASSIGN:
+            w024_walk(n->data.index_assign.target, fn_depth, ctx);
+            w024_walk(n->data.index_assign.index, fn_depth, ctx);
+            w024_walk(n->data.index_assign.expr, fn_depth, ctx);
+            break;
+        case AST_RETURN:
+            w024_walk(n->data.ret.expr, fn_depth, ctx);
+            break;
+        case AST_BINOP:
+            w024_walk(n->data.binop.left, fn_depth, ctx);
+            w024_walk(n->data.binop.right, fn_depth, ctx);
+            break;
+        case AST_UNARY:
+            w024_walk(n->data.unary.operand, fn_depth, ctx);
+            break;
+        case AST_RELATION:
+            w024_walk(n->data.relation.left, fn_depth, ctx);
+            w024_walk(n->data.relation.right, fn_depth, ctx);
+            break;
+        case AST_LIST:
+            for (int i = 0; i < n->data.list.count; i++)
+                w024_walk(n->data.list.elems[i], fn_depth, ctx);
+            break;
+        case AST_DICT:
+            for (int i = 0; i < n->data.dict.count; i++) {
+                w024_walk(n->data.dict.keys[i], fn_depth, ctx);
+                w024_walk(n->data.dict.vals[i], fn_depth, ctx);
+            }
+            break;
+        case AST_INDEX:
+            w024_walk(n->data.index.target, fn_depth, ctx);
+            w024_walk(n->data.index.index, fn_depth, ctx);
+            break;
+        case AST_SLICE:
+            w024_walk(n->data.slice.target, fn_depth, ctx);
+            w024_walk(n->data.slice.start, fn_depth, ctx);
+            w024_walk(n->data.slice.end, fn_depth, ctx);
+            break;
+        case AST_DOT:
+            w024_walk(n->data.dot.target, fn_depth, ctx);
+            break;
+        case AST_LISTCOMP:
+            w024_walk(n->data.listcomp.expr, fn_depth, ctx);
+            w024_walk(n->data.listcomp.iter, fn_depth, ctx);
+            w024_walk(n->data.listcomp.filter, fn_depth, ctx);
+            break;
+        case AST_INTERROGATE:
+            w024_walk(n->data.interrogate.expr, fn_depth, ctx);
+            break;
+        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL:
+        case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: case AST_IMPORT:
+            break;
+    }
+}
+
+static void check_container_rebind(ASTNode *ast, LintContext *ctx) {
+    w024_walk(ast, 0, ctx);
+}
+
 void lint_run_checks(ASTNode *ast, const char *path,
                      const char *source, LintContext *ctx) {
     check_outer_mutation(ast, ctx);
     check_sibling_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
+    check_container_rebind(ast, ctx);
     check_one_element_arg_list(ast, ctx);
     check_over_arity(ast, ctx);
     check_dead_unobserved(ast, ctx);
@@ -2878,7 +3611,11 @@ int lint_collect(ASTNode *ast, const char *path, const char *source,
         out[i].len  = ctx.warnings[i].len;
         snprintf(out[i].code, sizeof(out[i].code), "%s", ctx.warnings[i].code);
         snprintf(out[i].severity, sizeof(out[i].severity), "%s", ctx.warnings[i].level);
-        snprintf(out[i].message, sizeof(out[i].message), "%s", ctx.warnings[i].message);
+        /* The message crosses into a SECOND fixed buffer here (LintDiag is
+         * what eigenlsp publishes). Copy it the same way lint_vdiag filled
+         * the first: snprintf would cut mid-character the day the two
+         * buffers stop being the same size (#1048). */
+        eigs_utf8_sanitize(out[i].message, sizeof(out[i].message), ctx.warnings[i].message);
     }
     builtin_name_env_free();
     return n;

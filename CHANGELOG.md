@@ -4,6 +4,279 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **`gather` raises `index_range` on an out-of-range index, in every form
+  (#973/#1093).** Previously it folded to `0.0` — a per-row vector of indices
+  answered `[1, 0]`, a scalar index into a 1-D tensor answered `0`. A zero in a
+  Q-value or a log-prob is indistinguishable from a real zero, `gather`'s own
+  dual `scatter_add` already raised on exactly that index, and #1093's contract
+  is that a buffer is accepted wherever a flat numeric list is — so the answer
+  must not depend on the container. The list path moved with the buffer path;
+  the raise is unconditional, not `EIGS_STRICT`-gated, because it reports an
+  argument that has no answer rather than a documented soft answer. The
+  rationale is recorded at the definition in `src/builtins_tensor.c`.
+
+- **A module namespace is a LIVE VIEW of the module env, not a snapshot
+  (#1057).** `import M` bound a shallow copy of M's top-level bindings, so
+  whether an importer saw live state depended on the value's TYPE: a dict or
+  list was shared by reference, a number or string froze at import time and
+  went silently stale, and `M.x is v` reached only the copy. Reading a scalar
+  module global now answers its current value, and writing one reaches the
+  module. Nine stdlib modules were in the affected shape. `type of M` is still
+  `"dict"`, `keys`/`values`/`len`/`str`/`json_encode` are unchanged, and
+  `_`-prefixed module bindings stay private. `sizeof(Value)` is unchanged at
+  72 bytes: the flag rides existing tail padding and the owning `Env*` lives in
+  a side table. `lib/eigen.eigs` mirrors the rule and is asserted against the C
+  evaluator in `tests/test_meta_parity.eigs` (read, write, `_`-privacy, and the
+  rebinding case — a namespace is the view of the module the IMPORT produced,
+  not of the name). Reaching those rows required fixing the meta-interpreter's
+  `import`, which read `lib/NAME.eigs` with `read_text` — working-directory
+  relative, and answering `""` for an absent path (`read_text`'s documented
+  answer), so an unresolved import produced a silently EMPTY namespace instead
+  of an error. It now resolves the way the runtime's resolver does — cwd, then
+  the stdlib root beside the binary — decides with `file_exists`, and raises
+  when nothing resolves.
+
+### Added
+
+- **`unobserved:` keeps the value window complete (#1049).** An elided
+  assignment was absent from the observer's 10-deep value window, so every
+  value-channel verdict differed from the unelided program until the missing
+  sample aged out. Elision now suppresses the verdict, not the sample.
+
+- **Configurable observer window depth and a scale-free relative step
+  (#1044, #1045).** Both were found by phugoid grading verdicts against a
+  physical oracle: a fixed 10-deep window called an oscillation `stable`, and
+  the same trajectory in radians, degrees and milliradians produced three
+  different verdicts. The window depth is settable per state and per binding,
+  and the value channel has a characteristic scale.
+
+- **The trace tape carries the observer configuration (#1044, #1045).** A
+  verdict is a function of the assignments AND of the thresholds, window depth
+  and scale. The tape carried only the assignments, so a reader rebuilt every
+  slot at the compiled-in defaults and printed a verdict the live run never
+  gave. `--step`, the DAP server and deterministic replay now agree with the
+  recording run.
+
+- **Buffers are accepted wherever a flat numeric list is (#1093).** Every
+  tensor builtin taking a flat numeric list now takes a `VAL_BUFFER` in the
+  same position and returns a buffer when every tensor operand was one. Nested
+  2-D list inputs keep list semantics; a shaped buffer is the buffer form of a
+  2-D tensor. `zeros of n` returns a buffer.
+
+- **Reverse-mode autograd on shaped buffers (#973)**, plus `matmul_at`,
+  `matmul_bt` and `scatter_add`. Three new core builtins.
+
+- **W024: an observer read on a binding rebound from a container element
+  (#1048).** Observer trajectory is keyed to an environment slot, never to a
+  Value, so a dict field or list element carries no history and the obvious
+  per-entity read judges the round-robin interleave of every element the
+  binding visits. `docs/PREDICATES.md` gains "What carries a trajectory" with
+  the closure-per-entity recipe, extracted and executed by the test rather than
+  copied.
+
+- **Every diagnostic is UTF-8 safe at the chokepoint (#1048).** Sweeping
+  identifier length 1..250 against v0.43.0 found three shipped rules already
+  emitting invalid UTF-8 on both the `--json` and language-server channels
+  (W015 at 74 characters, W023 at 161-162, W018 at 198-199), and any non-ASCII
+  byte in a source file or filename made 512 of 1524 shape/length combinations
+  undecodable. `eigs_utf8_step` / `eigs_utf8_sanitize` now sit under everything
+  that truncates a message; the lexer spells an unexpected byte as `\xNN`; the
+  parser's caret line counts characters. Gated by
+  `tools/lint_source_byte_sweep.py` with a STRICT decoder — `jq` substitutes
+  U+FFFD and reports success, which is how this reached a release.
+
+- **`EIGS_STRICT=1` phases C and D (#971, #1008).** JSON parse failure in
+  `json_path` (a malformed document was walked leniently and answered the same
+  `""` an absent key does), the enumerated NaN sources, and the `-1`/falsy
+  wrong-type launderers. With the flag off every one is byte-identical to
+  v0.43.0, proven by `tools/strict_differential.sh` against a build of the
+  parent commit: 98 identical-when-off, 0 differing, 0 waived, 122/122
+  valid-input rows unchanged in both modes.
+
+- **Gated `task_sched_trace` (#846)** — a pure-reader scheduler decision
+  history, so a schedule visualizer or a deterministic simulation tester can
+  ask "who ran when" without instrumenting every yield site.
+
+- **Dropdown and combobox open lists render in the overlay pass (#859)**, on
+  the `_render_popups` path #565 built for menu-bar pull-downs, and grid's
+  row-label gutter is folded into its own rect. Two of the #823 containment
+  clip's four registry opt-outs are gone.
+
+### Fixed
+
+- **`EIGS_STRICT=1` reaches the graphics and audio extension (#1007).**
+  `src/ext_gfx.c` had no raise path at all — `grep -c rt_error src/ext_gfx.c`
+  was 0 — while ~89 argument reads went straight through `items[N]->data.num`,
+  and `Value`'s union overlaps `double num` with `char *str`, so a string
+  where a number belonged reinterpreted a pointer as a double. `gfx_rect of
+  [10, 10, 50, 50, "255", 0, 0]` drew a BLACK rectangle where red was asked
+  for, and ~52 `make_null()` returns stood in for a rejected argument,
+  indistinguishable from the same builtin's ordinary "nothing to do" answer.
+  60 `ARG_GUARD`/`STRICT_REQUIRE` sites now cover the drawing calls, the text
+  calls, `gfx_fb`, `ppu_render_frame`, the generators, the mixer and the three
+  device openers; every one sits above the `load_sdl2()` call and above any
+  device check, so it is reachable where CI runs, and the two trace-recorded
+  builtins (`gfx_read`, `audio_capture_open`) guard above the tape seam so a
+  rejected argument neither consumes nor writes a record. The union pun is
+  gone in BOTH modes: what a rejected call *draws* changes, every returned
+  value stays byte-identical. A guard covers the argument's CONTAINER as well
+  as its elements — three rounds of blind review found the same axis three
+  times, most sharply in the openers, where `audio_stream_open of [48000]`
+  opened the device at the 44100/1 defaults and handed back a real device id,
+  telling a caller that asked for 48000 that it got 48000. Four gates carry
+  it: `tools/gfx_strict_sweep.sh` (section [139]) derives the guarded names
+  and their arity from the file's own `want` strings and crosses them with the
+  wrong-container shapes — 35 names, 140 rows, 129 raises, 11 in a
+  staleness-checked allowlist; `tools/gfx_pixel_differential.sh` (section
+  [138]) is the readback oracle, because every drawing builtin returns null on
+  every path and a returned-value differential measures that surface in the
+  one state where it cannot fail; `tests/test_asan_gfx.sh` (section [137])
+  makes `make asan-gfx` a gate over a six-program corpus, with its own
+  positive and negative leak controls — its triage found one leak and it was
+  ours (`gfx_poll`'s event dict, 584 bytes on the two decode-nothing paths),
+  so no LeakSanitizer suppression ships; and `tools/failsoft_classify_check.sh`
+  scopes `return make_null()` into the classified population for this one file
+  (`NULL_SCOPE`, floor 136 -> 174, new `fs:VOID` tag). A builtin that takes no
+  argument still ignores one and a surplus trailing argument is still dropped;
+  both are the general over-arity question (#989) and are stated in
+  `docs/BUILTINS.md` rather than left to be discovered.
+
+- **Three `EIGS_STRICT` guards leaked their own allocation on every raise
+  (#971 round 2).** `STRICT_REQUIRE` returns, so it has to sit above anything
+  the function already owns; in `scan_ints`, `scan_tokens` and
+  `scan_int_tokens` it sat one line below a 128-element `make_list`, losing
+  1096 bytes per raise. The soft path is unchanged. Nothing caught it because a
+  strict raise already exits non-zero, so a leak detector's exit changes
+  nothing about the process status and a leaking guard looks exactly like a
+  working one — the strict-math test drove these very rows and reported 85 of
+  85 passing under the sanitizer. Those rows are now leak-gated by reading the
+  sanitizer's own text out of the output the assertion already captures.
+- **`tools/werror_switch_check.sh` no longer swaps its script population under
+  load (#971 round 2).** It chose between `git ls-files` and a filesystem walk
+  by whether the first produced output, so a fork that lost a race for memory
+  silently switched to the walk, which enumerates untracked build output and
+  scratch directories and reports them as unenrolled scripts. That is the root
+  cause of the intermittent `[99i]`/`[99p]` failure where the audit printed its
+  own success line and the section failed anyway. The choice is now made by
+  whether the process is inside a work tree at all, and an empty listing inside
+  one is an error rather than a cue to look elsewhere.
+- **`tools/strict_differential.sh` has no divergence-waiver mechanism (#971
+  round 2).** `differing-when-off: 0` is the single claim the tool makes, and
+  an exemption path is that claim with a hole in it. Both failure modes had
+  already been paid for: a waiver outliving its pull request made the
+  documented pre-land command fail on a clean tree for a whole release window,
+  and a waiver hides exactly what the tool exists to show.
+
+- **`tools/strict_differential.sh` (suite section `[99s]`) no longer flakes red
+  on a green tree under load (#1120).** Its verdicts were decided with
+  `printf … | grep -q …` under `set -o pipefail`, which is a race rather than a
+  test: `grep -q` exits the moment it matches and closes the pipe, the still-
+  writing `printf` takes SIGPIPE and exits 141, and pipefail reports the
+  pipeline as failed while grep itself reported a match. A probe was therefore
+  scored "raised by the wrong guard" while the diagnostic printed beside it
+  contained that guard's own message. Measured with the pipe form in place: 18
+  red runs in 186 under load, spread over 18 different probes; 0 in 300 without
+  it. Every verdict site now matches with the shell itself, no fork and no pipe,
+  and a new `--selftest` that `[99s]` runs before the differential pins those
+  matchers and reproduces the race deterministically. Alongside it: a
+  variant-only presence check that did not run is reported as an unrun probe
+  instead of being assumed present and charged to a guard; the tool fingerprints
+  its subject binary at both ends, so a `make` that re-points `src/eigenscript`
+  mid-run says so instead of looking like a broken guard; signal deaths are
+  named rather than left as a number; and any run that finds something writes
+  each finding's whole capture, exit status and matched pattern to an evidence
+  directory it names, including whether the pattern is in those bytes after
+  all — which labels a self-contradicting verdict as a harness bug on sight.
+
+- **`--lint` leaked the parsed `eigs.json` on every run inside a project whose
+  manifest has any nested value (#1121).** `"deps": {}` is enough, and it is in
+  the manifest every repo in the fleet ships. Dropping a reference to a list or
+  dict registers a cycle-collector candidate rather than freeing it, and the
+  eight pre-global `--<mode>` returns skipped the exit sweep the run path
+  performs. All eight now drain, not just the one that leaked. Found because
+  the suite's own `eigs.json` allow-list test had been running the leaking
+  shape five times per run since it was written, capturing the linter's text
+  and discarding its exit status; `tests/test_lint.sh` now routes sanitizer
+  output to a log directory and fails on any diagnostic from any child.
+
+- **The observer write-path gate no longer arms on the mere presence of an
+  import or of an observer name in the constant pool (#1046, #915).** Literal
+  imports are resolved at compile time and names are matched on `OP_GET_NAME`
+  rather than against the whole pool. Both stand-ins cost read-free programs
+  their gate.
+
+- **A fresh `for` binder is loop-scoped inside a function too (#1105).** With
+  no pre-existing binding it was loop-scoped at module scope but persisted in a
+  function, so a post-loop read silently answered the last element.
+
+- **The REPL no longer swallows the line that closed a failed multi-line unit
+  (#1109).** An unindented non-blank line is both the terminator of an open
+  block and part of the same compiled unit; on a tokenize, parse or compile
+  failure the whole buffer was discarded, taking a statement the user typed and
+  that never ran.
+
+- **Replay: a boundary refusal on a VM-less worker is a clean exit (#1112).**
+  It printed the #148 diagnostic and then died by `SIGSEGV`.
+  `tools/replay_diff.sh` now fails on any signal.
+
+- **Embed: `obs_history_gap` is stored at the end of a closed isolated eval
+  unit (#1114).** It was stored only at the next eval boundary, so a host
+  reading `observer_predicate_at` directly between units was told history was
+  complete for exactly one boundary while the answer came from the stale
+  window.
+
+- **The meta-interpreter honours the `report`/`report_value` reservation
+  (#1111).** `lib/eigen.eigs` still let both be bound and accepted
+  non-identifier operands, reproducing the shadowing #1102 removed from the
+  runtime.
+
+- **`tools/observer_gate_diff.sh` normalises the executable directory and the
+  out-of-tree import-shadow warning before diffing (#1115)**, so two
+  byte-identical trees at different paths no longer compare unequal.
+
+### Changed
+
+- **Layering has structure rather than convention (#744, closing #746).** The
+  core no longer includes any extension's private header: `src/ext_register.h`
+  carries the registrars and per-state teardowns as declarations only, so
+  `builtins.c` and `state.c` compile with the database extension enabled on a
+  machine with no PostgreSQL headers, which they previously could not.
+  `vm.c` no longer re-declares any cross-TU symbol; the stale block-scope
+  externs are gone, including one for a symbol that exists nowhere, and the two
+  legitimate ones are homed in `vm.h` and `eigenscript.h`. Three new
+  translation units carry code moved verbatim: `src/fsutil.c` (file reading and
+  the module-resolver chain, so the VM, compiler, formatter, linter and the
+  embedding API stop reaching into the builtins layer to read a file),
+  `src/task.c` (the cooperative scheduler, with its state now private to it),
+  and `src/builtins_buf.c` (numeric buffers, the vectorized kernels, PCM16LE
+  and DEFLATE). Behaviour-preserving, proven: a 532-program corpus differential
+  against a pre-change build is byte-identical and `tools/jit_diff.sh` is
+  clean. A new gate, `tools/core_ext_boundary_check.sh`, keeps the boundary
+  from drifting back, with a structural scan anchored to the Makefile's source
+  list and an executable probe that poisons the PostgreSQL header so it cannot
+  pass vacuously on a machine that has it. Five build-source lists that nothing
+  tied to the tree now derive from the Makefile or were corrected; one of them
+  had been silently costing the language-server builtin index 19 signature
+  comments. Per-layer headers, and breaking up the 1253-line umbrella header,
+  are recorded in `ROADMAP.md` as their own round.
+
+- **The observer gate is hoisted ahead of the observe helpers, in both the
+  interpreter and the JIT (#972).** With the gate closed, every assignment
+  still dispatched into a helper, decoded the top of stack and resolved a slot
+  or hashed name, only to return at the helper's own gate test one frame later.
+
+- **The builtin counts in `README.md` and `docs/BUILTINS.md` are derived from
+  `eigenscript --api` and gated (#1118).** Both claimed "250+ builtin functions
+  (199 core + ~60 extensions)"; the parenthetical was wrong on both terms and a
+  hand-maintained count re-drifts on the next addition — the issue measured 253
+  core and the tree already read 258 by the time the fix was written. Now 348
+  (261 core + 87 extensions), checked by `tools/doc_drift_check.sh`.
+
+- **`ext_net` raw TCP/UDP sockets are ticked as shipped in `ROADMAP.md`
+  (#1119).**
+
 ## [0.43.0] - 2026-09-06
 
 ### Breaking changes

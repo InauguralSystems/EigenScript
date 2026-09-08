@@ -1,0 +1,23 @@
+# The audio surface: device, generators (which allocate a sample list per
+# call), the transforms, the mixer channels, and the capture/stream devices.
+d is audio_open of [44100, 1]
+print of f"device: {d > 0}"
+s is audio_sine of [440, 0.01, 0.5]
+w is audio_saw of [220, 0.01, 0.4]
+q is audio_square of [330, 0.01, 0.3]
+p is audio_sweep of [100, 200, 0.01, 0.5, 0]
+z is audio_noise of [0.01, 0.2]
+m is audio_mix of [s, w]
+g is audio_gain of [m, 0.5]
+e is audio_envelope of [g, 0.002, 0.002, 0.5, 0.002]
+print of f"lens: {len of s} {len of q} {len of p} {len of z} {len of e}"
+c is audio_play of e
+c2 is audio_play_loop of [e, 2]
+ignore is audio_volume of [c, 0.5]
+ignore is audio_queue_size of null
+ignore is audio_stop of c
+ignore is audio_pause of 1
+ignore is audio_pause of 0
+ignore is audio_clear of null
+ignore is audio_close of null
+print of "04 done"

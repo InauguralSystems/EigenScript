@@ -1081,14 +1081,28 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
  * Two populations are checked:
  *   1. Reader OPCODES — the direct forms (`report of x`, a bare predicate,
  *      `trajectory of x`, `where is x`, an observer-conditioned loop).
- *   2. Reader BUILTIN NAMES in the constant pool — the indirect forms. These
- *      are ordinary bindings, so `local r is report` then `r of x` compiles to
- *      GET_NAME "report" + CALL and emits no reader opcode at all. Matching the
- *      name catches the alias. It also matches an unrelated string that merely
- *      spells "report", which costs a program its gate and is the safe way to
- *      be wrong.
+ *   2. Reader BUILTIN NAMES as the operand of OP_GET_NAME — the indirect
+ *      forms. These are ordinary bindings, so `local r is observe` then
+ *      `r of x` compiles to GET_NAME "observe" + CALL and emits no reader
+ *      opcode at all. Matching the name on the binding-LOAD opcode catches
+ *      the alias.
+ *
+ *      NOT the constant pool as a whole (#1046). This used to match any
+ *      string constant spelling one of the names, so `msg is "report"` — a
+ *      CONST, pure data — armed every assignment in the state (+48% on a
+ *      200k-frame write loop). Verified against the emitter with
+ *      EIGS_DUMP_BC: a string literal, a dict key and a printed literal are
+ *      CONST (VR_CONST); the alias is GET_NAME. And not every VR_NAME
+ *      operand either: OP_DOT_GET's operand is a FIELD name on whatever value
+ *      is on the stack (`tbl.eval` on a user dict — executed, it armed the
+ *      keyword-table fixture), the SET_* family are stores and binders, and
+ *      the *_NAME observer opcodes are readers the opcode scan already
+ *      covers. The builtin VALUE can only enter a program through GET_NAME
+ *      (a dict or module that holds it was filled by one), so GET_NAME is
+ *      the population — the one binding-load opcode in op_verify_operands.
  */
-static int const_pool_names_observer(const EigsChunk *chunk) {
+static int chunk_step_ip(const EigsChunk *chunk, int i);   /* defined below */
+static int chunk_name_loads_observer_builtin(const EigsChunk *chunk) {
     /* Names reachable only as BUILTINS; the opcode forms are covered by the
      * opcode scan above.
      *
@@ -1102,6 +1116,15 @@ static int const_pool_names_observer(const EigsChunk *chunk) {
      * is deliberately over-broad: a name here that is not a reader costs a
      * program its gate, which is the safe direction. */
     static const char *OBS_BUILTINS[] = {
+        /* `report` / `report_value` cannot reach a VR_NAME operand today:
+         * since #1102/#1110 they are reserved observer forms (any binding or
+         * first-class use is parse error E005; suite [42a] pins it), and
+         * `report of x` compiles to OP_REPORT_NAME, which the opcode scan
+         * covers. They stay listed anyway — this list is mirrored NAME FOR
+         * NAME by OBS_NAMES in compiler.c, where the AST scan needs them
+         * (the parser spells `report of x` as a relation headed by the IDENT
+         * "report"), and a matching entry here costs nothing: a string
+         * literal is a CONST, never a VR_NAME, so it cannot false-positive. */
         "observe", "report", "report_value", "trajectory", "classify",
         "state_at", "get_observer_thresholds",
         /* `eval` compiles a NEW unit at runtime from a string that need not
@@ -1116,13 +1139,12 @@ static int const_pool_names_observer(const EigsChunk *chunk) {
          * any other use of the name makes the unit opaque there. See that
          * comment for the three recorded failures that shape the rule.
          *
-         * OP_IMPORT is handled in the opcode switch above: it is an opcode with
-         * a bare-name operand, so it never appears in the constant pool as a
-         * string and a name list cannot see it at all. Its resolution is
-         * project-first-then-stdlib against a per-module resolve dir (vm.c
-         * CASE(IMPORT)); replicating that here would be a second copy of a
-         * resolver free to drift from the first, which is the #737 failure. So
-         * import stays conservative and #915's `import` half stays open. */
+         * `import` is not a name at all: OP_IMPORT carries its target as a
+         * VR_NAME operand and chunk_scan_static_loads hands that target to the
+         * eager pass, which resolves it through eigs_import_resolve — the SAME
+         * function the OP_IMPORT handler calls (#1046; the second-resolver
+         * drift that kept #915's import half open is gone because there is
+         * one resolver now). A module the pass cannot resolve arms the unit. */
         "eval",
         /* `record_history` sets g_trace_obs_hist — half of what opens the
          * observer channel — at RUNTIME, and it has NO opcode form, so its name
@@ -1133,11 +1155,20 @@ static int const_pool_names_observer(const EigsChunk *chunk) {
          * then CLOSES it again mid-program, so the channel can flicker. */
         "record_history", NULL
     };
-    for (int i = 0; i < chunk->const_count; i++) {
-        const char *s = chunk->const_interns ? chunk->const_interns[i] : NULL;
-        if (!s) continue;
-        for (int k = 0; OBS_BUILTINS[k]; k++)
-            if (strcmp(s, OBS_BUILTINS[k]) == 0) return 1;
+    if (!chunk->const_interns) return 0;
+    int i = 0;
+    while (i < chunk->code_len) {
+        if (chunk->code[i] == OP_GET_NAME) {
+            if (i + 3 > chunk->code_len) return 1;         /* truncated: observe */
+            /* LITTLE-endian, as read_u16 reads it (vm.c). */
+            int v = chunk->code[i + 1] | (chunk->code[i + 2] << 8);
+            if (v < 0 || v >= chunk->const_count) return 1;   /* malformed: observe */
+            const char *s = chunk->const_interns[v];
+            if (s)
+                for (int b = 0; OBS_BUILTINS[b]; b++)
+                    if (strcmp(s, OBS_BUILTINS[b]) == 0) return 1;
+        }
+        i = chunk_step_ip(chunk, i);
     }
     return 0;
 }
@@ -1149,7 +1180,7 @@ int chunk_reads_observer(const EigsChunk *chunk) {
      * its opcode stream is caller-supplied. Do not gate it. */
     if (!chunk->compiler_scanned) return 1;
     if (chunk_has_reader_opcode(chunk)) return 1;
-    if (const_pool_names_observer(chunk)) return 1;
+    if (chunk_name_loads_observer_builtin(chunk)) return 1;
     for (int f = 0; f < chunk->fn_count; f++)
         if (chunk_reads_observer(chunk->functions[f])) return 1;
     return 0;
@@ -1173,13 +1204,23 @@ int chunk_reads_observer(const EigsChunk *chunk) {
  * So the descriptor sites ask this instead, BEFORE running: does the chunk I am
  * about to execute read observer state while the gate is closed? If so, raise —
  * the same outcome guard builtin_load_file uses, for the same reason. */
-static int chunk_step_ip(const EigsChunk *chunk, int i);   /* defined below */
-
 /* THE reader set. One home, and it is the one tools/obs_reader_sync_check.sh
  * extracts and pins against the obs:READS markers in vm.h. Every consumer
  * asks this question rather than restating the list — a fourth restatement had
  * already diverged (OP_LOOP_STALL_CHECK) before anyone noticed. */
 int opcode_is_observer_reader(uint8_t op) {
+    /* OP_IMPORT is NOT a reader (#1046; marked obs:NONE in vm.h). It sat in
+     * this switch from #915 to v0.43.0 because a module compiled at RUNTIME
+     * flips the bit too late to have observed this unit's earlier assignments
+     * — the ordering hazard, not a read. A literal import target is now
+     * resolved and scanned before line 1 runs, exactly like a literal
+     * `load_file` (chunk_scan_static_loads below), and the OP_IMPORT handler
+     * raises if the module it compiles reads while the gate was closed (the
+     * same outcome guard builtin_load_file has). Suite check 40 and
+     * tests/test_obs_gate_import.sh hold the line: a host's pre-import
+     * history must stay visible to an imported reader. (The comment lives
+     * ABOVE the switch on purpose: the sync gate's demotion selftest plants
+     * against the switch's tail shape, `return 1;` / `default: return 0;`.) */
     switch ((OpCode)op) {
         case OP_INTERROGATE:
         case OP_INTERROGATE_NAMED:
@@ -1197,7 +1238,6 @@ int opcode_is_observer_reader(uint8_t op) {
         case OP_OBSERVE_VALUE_SLOT:
         case OP_OBSERVE_VALUE_NAME:
         case OP_LOOP_STALL_CHECK:
-        case OP_IMPORT:
             return 1;
         default: return 0;
     }
@@ -1335,7 +1375,8 @@ static int const_pool_index_of(const EigsChunk *chunk, const char *name) {
 }
 
 int chunk_scan_static_loads(const EigsChunk *chunk,
-                            void (*visit)(const char *path, void *ud), void *ud) {
+                            void (*visit)(const char *path, int is_import, void *ud),
+                            void *ud) {
     if (!chunk) return 1;
     if (!chunk->compiler_scanned) return 1;   /* unscanned chunk — see #830 above */
 
@@ -1358,8 +1399,12 @@ int chunk_scan_static_loads(const EigsChunk *chunk,
      * observer bit 0 -> 1, which is precisely "the gate closed on stale
      * evidence". That check is on the OUTCOME and needs no enumeration. */
 
+    /* #1046: `import NAME` is the second literal shape. OP_IMPORT's only
+     * operand IS the module name (a VR_NAME index), so there is no computed
+     * form to refuse — every import is literal by construction. The walk
+     * below runs whenever the unit holds either shape. */
     int lf = const_pool_index_of(chunk, "load_file");
-    if (lf >= 0) {
+    {
         int i = 0;
         while (i < chunk->code_len) {
             uint8_t op = chunk->code[i];
@@ -1367,11 +1412,19 @@ int chunk_scan_static_loads(const EigsChunk *chunk,
             VerifyRole roles[3];
             if (op != OP_LINE && op < OP_COUNT) nops = op_verify_operands(op, roles);
 
+            if (op == OP_IMPORT) {
+                if (nops != 1 || i + 3 > chunk->code_len) return 1;
+                int v = chunk->code[i + 1] | (chunk->code[i + 2] << 8);
+                if (v < 0 || v >= chunk->const_count || !chunk->const_interns ||
+                    !chunk->const_interns[v]) return 1;
+                if (visit) visit(chunk->const_interns[v], 1, ud);
+            }
+
             /* Operands are LITTLE-endian (read_u16, vm.c) — the same order the
              * verifier reads them in above. Getting this backwards reads a
              * garbage constant index and silently answers "not this shape". */
             int names_lf = 0;
-            if (i + 1 + 2 * nops <= chunk->code_len) {
+            if (lf >= 0 && i + 1 + 2 * nops <= chunk->code_len) {
                 for (int k = 0; k < nops; k++) {
                     if (roles[k] != VR_NAME) continue;
                     int off = i + 1 + 2 * k;
@@ -1393,7 +1446,7 @@ int chunk_scan_static_loads(const EigsChunk *chunk,
                 if (c + 2 >= chunk->code_len || chunk->code[c] != OP_CALL) return 1;
                 int argc = chunk->code[c + 1] | (chunk->code[c + 2] << 8);
                 if (argc != 1) return 1;
-                if (visit) visit(k->data.str, ud);
+                if (visit) visit(k->data.str, 0, ud);
                 /* Fall through to the normal step: the CONST/CALL are walked
                  * again harmlessly (neither names `load_file`). */
             }

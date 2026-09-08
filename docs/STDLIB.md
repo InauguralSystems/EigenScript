@@ -60,6 +60,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 | runtime invariant descent/preservation | `invariant.make_invariant`, `run_descent` | `lib/invariant.eigs` |
 | write tests with pass/fail tally | `test.assert_eq`, `test_summary`; `harness.start`/`check`/`finish` | `lib/test.eigs`, `lib/harness.eigs` |
 | neural-net helpers (init, loss, accuracy) | `tensor.xavier_init`, `linear`, `mse_loss`, `cross_entropy_loss` | `lib/tensor.eigs` |
+| gradients / backprop (reverse-mode autograd on a tape) | `autograd.ag_tape`, `ag_leaf`, `ag_matmul`, `ag_softmax_ce`, `ag_backward`, `ag_grad` | `lib/autograd.eigs` |
 | fixed-size integer vectors (buffer-backed) | `int_vector.int_vector_new`, `int_vector_from_list` | `lib/int_vector.eigs` |
 | a GUI (windows, widgets, charts) | `ui.panel`, `ui.button`, `ui.app_loop` + `ui_w_*` families | `lib/ui*.eigs` |
 | synthesize / play audio | `audio.play_note`, `note_freq`, `play_chord` | `lib/audio.eigs` |
@@ -299,6 +300,116 @@ Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 | `l2_norm` | `l2_norm of tensor` | Euclidean norm |
 | `scale` | `scale of [tensor, scalar]` | Scalar multiplication |
 
+### lib/autograd.eigs — Reverse-Mode Autograd (tape)
+
+Reverse-mode automatic differentiation over the f64 tensor builtins on
+shaped buffers (#973). A **tape** (Wengert list) records every op as a
+node; `ag_backward` seeds the loss with 1 and sweeps the tape in reverse
+applying each op's vector-Jacobian product, so a training step is one
+forward plus one backward — not `numerical_grad`'s one forward per
+parameter. It replaces the two hand-rolled backprops it was promoted from
+(Tidepool's DQN in `train.eigs`, iLambdaAi's transformer rules in
+`model_train.c`); `numerical_grad` stays as the gradient-check **oracle**
+(`tests/test_autograd.eigs` pins every rule below against it to 1e-4
+relative). Leaf values are the caller's own buffers — `ag_sgd_step` updates
+them in place. Build a fresh tape per step. Names carry the `ag_` prefix so
+`load_file` never shadows the builtins they wrap.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ag_tape` | `ag_tape of []` | New empty tape |
+| `ag_leaf` | `ag_leaf of [t, buf]` | Parameter node — gradient tracked |
+| `ag_const` | `ag_const of [t, buf]` | Data node — no gradient (inputs, targets) |
+| `ag_value` / `ag_grad` | `ag_value of node`, `ag_grad of node` | The node's value; its gradient (`null` until `ag_backward` reaches it) |
+| `ag_matmul` | `ag_matmul of [t, a, b]` | `matmul`; vjp `dA = dY·Bᵀ` (`matmul_bt`), `dB = Aᵀ·dY` (`matmul_at`) |
+| `ag_add` / `ag_sub` | `ag_add of [t, a, b]` | Same shape, or a broadcast operand (see below); a broadcast operand's gradient sums over the broadcast axis |
+| `ag_mul` | `ag_mul of [t, a, b]` | Elementwise product, same broadcast rule as `ag_add` |
+| `ag_scale` | `ag_scale of [t, a, k]` | Multiply by a number; a tensor `k` throws (use `ag_mul` with a node) |
+| `ag_relu` / `ag_leaky_relu` | `ag_relu of [t, a]` | Mask by pre-activation sign (0.01 on the negative side for leaky) |
+| `ag_softmax` / `ag_log_softmax` | `ag_softmax of [t, a]` | Row-wise; vjp `p·(dY − Σ dY·p)` / `dY − p·Σ dY` |
+| `ag_gather` | `ag_gather of [t, a, idx]` | `out[i] = a[i][idx[i]]` (1-D); vjp `scatter_add` |
+| `ag_norm` / `ag_sum` / `ag_mean` | `ag_norm of [t, a]` | Reductions to a scalar node (value is a num) |
+| `ag_softmax_ce` | `ag_softmax_ce of [t, logits, targets]` | Mean cross-entropy from logits and class indices; vjp `(p − onehot) / rows` |
+| `ag_backward` | `ag_backward of [t, node]` | Seed `node` with 1 (a ones-buffer for a tensor node) and sweep the tape |
+| `ag_sgd_step` | `ag_sgd_step of [node, lr]` | `value -= lr · grad`, in place on the caller's buffer; throws if the gradient's element count is not the parameter's |
+| `ag_sgd_step_clipped` | `ag_sgd_step_clipped of [node, lr, clip]` | As above with each gradient element clipped to ±clip (the DQN rule) |
+
+**Broadcasting.** `ag_add`, `ag_sub` and `ag_mul` inherit the elementwise
+builtins' broadcast rules: `[rows × cols]` against `[cols]` with either
+operand in either position, and a tensor against a scalar node (one whose
+value came from `ag_sum` / `ag_mean` / `ag_norm` / `ag_softmax_ce`). A
+broadcast operand contributed to every row of the result, so its gradient is
+the **sum of the result's gradient over the broadcast axis** — every rule
+does that reduction, so `ag_grad` always has its parameter's shape and
+`ag_sgd_step` always steps the parameter it was handed. A shape combination
+that is not one of the builtins' broadcast forms refuses: the forward pass
+raises from the builtin, and both step functions throw rather than stepping a
+parameter with a differently-shaped gradient.
+
+```eigenscript
+import autograd
+x is buffer of [2, 3]
+for i in range of 6:
+    x[i] is i + 1
+s is buffer of 3
+s[0] is 2
+s[1] is 3
+s[2] is 4
+t is autograd.ag_tape of []
+sn is autograd.ag_leaf of [t, s]
+y is autograd.ag_mul of [t, (autograd.ag_const of [t, x]), sn]
+autograd.ag_backward of [t, (autograd.ag_sum of [t, y])]
+g is autograd.ag_grad of sn
+print of (len of g)
+print of g[0]
+print of g[1]
+print of g[2]
+```
+```output
+3
+5
+7
+9
+```
+
+`x` is `[[1, 2, 3], [4, 5, 6]]` and `s` scales each column, so the gradient
+of `sum(x * s)` with respect to `s` is the column sum of `x` — `[5, 7, 9]`,
+three numbers for a three-element parameter, not the six of the unreduced
+product.
+
+```eigenscript
+import autograd
+x is buffer of [2, 2]
+x[0] is 1
+x[1] is 2
+x[2] is 3
+x[3] is 4
+w is buffer of [2, 1]
+w[0] is 1
+w[1] is 0.5
+t is autograd.ag_tape of []
+wn is autograd.ag_leaf of [t, w]
+y is autograd.ag_matmul of [t, (autograd.ag_const of [t, x]), wn]
+loss is autograd.ag_sum of [t, (autograd.ag_relu of [t, y])]
+autograd.ag_backward of [t, loss]
+g is autograd.ag_grad of wn
+print of (autograd.ag_value of loss)
+print of g[0]
+print of g[1]
+autograd.ag_sgd_step of [wn, 0.1]
+print of w[0]
+```
+```output
+7
+4
+6
+0.6
+```
+
+The gradient of `sum(relu(x·w))` with respect to `w` is the column sum of
+`x` (both rows are active): `[4, 6]`; the step then moves `w[0]` from 1 to
+`1 − 0.1·4 = 0.6` in the caller's buffer.
+
 ### lib/bcd.eigs — Packed BCD Codec
 
 `from_bcd of 0x26` → 26, `to_bcd of 59` → 0x59 — any width, each hex
@@ -514,10 +625,17 @@ its own rect, so **widget drawing is contained**: a `canvas` `on_paint`
 cannot spill over surrounding chrome, and a child wider than its parent
 (the classic overflowing side-panel label) crops at the parent's edge.
 A custom paint routine that needs a tighter clip pushes its own — it
-composes with the widget clip automatically. Widgets whose render
-legitimately leaves the rect (`dropdown`/`combobox` open lists, `menu`,
-`dialog`'s dim overlay, `grid`'s row-label gutter) opt out via their
-registry entry (`"clip": 0`).
+composes with the widget clip automatically. Exactly two widgets opt out
+via their registry entry (`"clip": 0`), and both are positioned in window
+coordinates rather than inside a parent: `menu` (a floating popup placed
+by `show_menu`) and `dialog` (a full-screen dim behind a centred panel).
+Everything else is contained. A widget that must paint past its own rect
+draws in the **overlay pass** instead of opting out — `_render_popups`
+runs after the whole tree walk, with no clip active, so an open
+`dropdown`/`combobox` list and a `menu_bar` pull-down sit above later
+siblings and past a clipped ancestor's edge (#565, #859). `app_loop` runs
+that pass for the root and for each visible modal; a hand-rolled render
+loop must call `_render_popups` itself or open lists will not appear.
 
 **Widget constructors, by family** (each returns a plain dict; see the
 module header for the full argument list):
@@ -563,7 +681,10 @@ opens inward), and the open/close state, including hovering across
 titles while open. Its pull-down is drawn by an overlay pass *after* the
 tree walk and hit-tested before it, so it sits above whatever it covers
 no matter where the bar lives in the tree — the z-order a shell used to
-hand-roll by adding every `menu` last to the root.
+hand-roll by adding every `menu` last to the root. `dropdown` and
+`combobox` open lists ride the same pass (#859), so a list opened inside
+a `scroll_panel` or a dock region is no longer cropped at that
+ancestor's edge and no longer painted over by a later sibling.
 
 **`chart(id, x, y, w, h)` is an x-y plot** (#819) — data coordinates on
 both axes, not y-vs-index. Everything else is set on the returned dict.
@@ -701,8 +822,19 @@ Notes on widget state, where the toolkit could otherwise shadow yours:
   it 0 and mouse/keyboard report `(row, col)` without touching `cells` —
   for an app whose model is the source of truth (undo history, pattern
   switching, randomize), so both sides don't keep copies that drift.
-  `row_label_w` (60) and `row_label_scale` (1) size the row-label gutter,
-  which is drawn to the *left* of the grid's `x`, outside its own bounds.
+  `row_label_w` (60) and `row_label_scale` (1) size the row-label gutter.
+  The gutter is **inside** the widget rect (#859): set `row_labels` and
+  the grid's `w` grows by `row_label_w` the next time it is laid out or
+  drawn, cell
+  (0, 0) starts at `x + row_label_w`, and nothing is ever drawn left of
+  `x`. With `row_labels` unset the gutter is 0 and the geometry is the
+  historical `cols * cell_w`. A click in the gutter is not a cell click.
+  `grid_cell_origin of widget` returns the absolute `[x, y]` of cell
+  (0, 0) — use it instead of assuming the cells start at the widget's
+  `_ax` (they do not once row labels are set). The widening runs through
+  the registry's `measure` hook, which `render` calls before pushing the
+  containment clip and `_layout` calls on its own pass, so a box derived
+  from content is never clipped to a rect it has outgrown.
 - **`piano_keyboard` is a horizontal trigger strip**, not a piano-roll
   pitch sidebar: a click fires `on_note(w, note, 1)` and the release
   fires `on_note(w, note, 0)` — including when the pointer leaves the key
@@ -964,11 +1096,36 @@ print of msg   # "World is running v0.5"
 
 ### lib/eigen.eigs — Meta-Circular Interpreter
 
-The meta-interpreter's `report` bridge classifies values without the host's
-binding trajectories: it returns `equilibrium` for ordinary values and `opaque`
-for functions. Since #1102 a fresh-parameter wrapper uses the reserved host
-syntax to preserve that existing fallback; the meta-interpreter remains a
-separate, partial implementation of the language.
+The meta-interpreter honours the `report` / `report_value` reservation
+(#1102, mirrored here by #1111) at the same stage as the runtime — its
+tokenizer lexes both words as a reserved token and its parser rejects every
+binding position (assignment, `define` name, parameter, loop/comprehension/
+catch/lambda variable, bare value use) and every non-identifier operand
+(`report of 5`, `report_value of (x + 1)`) with a parse error carrying the
+runtime's E005 text: `parse error line N: 'report' is a reserved observer
+form; use it with 'of variable', never as a binding [E005]` (operands:
+`... requires a variable name operand [E005]`). `report of x` /
+`report_value of x` over a bound identifier (parentheses allowed) and dict
+fields such as `d.report` work as in the runtime. The classification itself
+is the meta-interpreter's value-only bridge, without the host's binding
+trajectories: `equilibrium` for ordinary values and `opaque` for host
+functions. `tests/test_meta_parity.eigs` pins that native and meta agree on
+each of these probes. The meta-interpreter remains a separate, partial
+implementation of the language.
+
+`import NAME` inside meta-interpreted source resolves the module the way the
+runtime's resolver does — `lib/NAME.eigs` and `NAME.eigs` relative to the
+working directory, then the stdlib root beside the interpreter binary — and
+**raises** `import: module 'NAME' not found` when nothing resolves. It used to
+read `lib/NAME.eigs` with `read_text`, which is working-directory-relative and
+answers `""` for an absent path (`read_text`'s documented answer), so an import
+that did not resolve produced a silently EMPTY namespace instead of an error. The
+namespace itself follows the runtime's rule (#1057): a public module binding is
+readable and writable through it (`M.x`, `M.x is v`), and a `_`-prefixed module
+binding is neither projected nor written. `tests/test_meta_parity.eigs` asserts
+each of those on both evaluators, and pins one gap that remains: a module
+FUNCTION cannot read a module global in the meta-interpreter, because a call
+env is parented on the caller's env rather than on the definition env.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|

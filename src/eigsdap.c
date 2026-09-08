@@ -238,7 +238,7 @@ static void append_binding_value(strbuf *sb, const NameHist *h) {
     strbuf sv;
     strbuf_init(&sv);
     strbuf_append(&sv, last ? last->value : "?");
-    const char *label = tape_classify_at(h, g_pos, NULL);
+    const char *label = tape_classify_at(&g_tape, h, g_pos, NULL);
     if (label) strbuf_append_fmt(&sv, "  [%s]", label);
     json_escape_to(sb, sv.data ? sv.data : "");
     strbuf_free(&sv);
@@ -297,14 +297,15 @@ static void handle_variables(int rseq, const char *msg) {
         int idx = ref - VR_TRAJ;
         if (idx >= 0 && idx < g_tape.nnames) {
             const NameHist *h = &g_tape.names[idx];
-            ObserverSlot s;
-            memset(&s, 0, sizeof s);
+            /* #1044/#1045 follow-up: the shared feeder installs the tape's
+             * recorded observer configuration, so the DAP's trajectory labels
+             * match the live run's and the stepper's. */
+            TapeTraj tr;
+            const char *last_label = NULL;
+            tape_traj_begin(&tr, &g_tape, h);
             for (int i = 0; i < h->n && h->a[i].step <= g_pos; i++) {
-                const char *label = NULL;
-                if (h->a[i].is_num) {
-                    observer_slot_record_value(&s, h->a[i].num);
-                    label = observer_slot_report_value(&s);
-                }
+                const char *label = tape_traj_feed(&tr, &h->a[i]);
+                if (label) last_label = label;
                 if (n) strbuf_append_char(&sb, ',');
                 strbuf_append_fmt(&sb, "{\"name\":\"#%d\",\"value\":", n + 1);
                 strbuf sv;
@@ -318,9 +319,23 @@ static void handle_variables(int rseq, const char *msg) {
                 strbuf_append(&sb, ",\"variablesReference\":0}");
                 n++;
             }
-            free(s.v_window);
-            free(s.vr_window);
-            free(s.dh_window);
+            /* Same rule as the stepper's `t` view: the rows are per-moment,
+             * so a knob moved after the last assign gets its own row rather
+             * than silently leaving the last one to speak for the stop. */
+            const char *now = tape_traj_settle(&tr, g_pos);
+            if (now && last_label && strcmp(now, last_label) != 0) {
+                if (n) strbuf_append_char(&sb, ',');
+                strbuf_append(&sb, "{\"name\":\"#now\",\"value\":");
+                strbuf sv;
+                strbuf_init(&sv);
+                strbuf_append_fmt(&sv, "observer configuration changed after "
+                                  "the last assign — at this stop: [%s]", now);
+                json_escape_to(&sb, sv.data);
+                strbuf_free(&sv);
+                strbuf_append(&sb, ",\"variablesReference\":0}");
+                n++;
+            }
+            tape_traj_end(&tr);
         }
     } else if (ref >= VR_LOCALS) {
         uint32_t serial = frame_id_to_serial(ref - VR_LOCALS);

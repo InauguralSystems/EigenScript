@@ -1495,9 +1495,15 @@ fi
 # [107] Meta-interpreter parity (#306). lib/eigen.eigs (the meta-circular
 # interpreter) must agree with the C evaluator on and/or value-returning
 # short-circuit, raising on unbound identifiers, and div/mod-by-zero values —
-# the divergences it used to ship while claiming "full parity".
-echo "[107] Meta-Interpreter Parity (#306)"
-check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0)" test_meta_parity.eigs "All tests passed" 1
+# the divergences it used to ship while claiming "full parity". Since #1111 it
+# also pins the #1102 reservation: report/report_value cannot be bound and
+# need an identifier operand — native E005 and meta both raise. Since #1057 it
+# also pins module namespaces on both evaluators (read, write, `_`-privacy,
+# rebinding) and that `import` resolves from any working directory — the file
+# is run from src/ here and from the repo root by hand, and must be green from
+# both.
+echo "[107] Meta-Interpreter Parity (#306, #1111, #1057)"
+check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0, report/report_value reservation #1111, module namespaces + import resolution #1057)" test_meta_parity.eigs "All tests passed" 1
 
 # [108] sandbox_run allocation budget (#292). The size-controlled allocators
 # (zeros/fill/buffer/range) charge a per-run byte budget so untrusted generated
@@ -2214,6 +2220,27 @@ else
 fi
 echo ""
 
+# [42f2] Observer configuration on the tape (#1044/#1045 follow-up): the
+# knobs that decide a verdict — thresholds, window depth (state + per
+# binding), scale — ride the tape as O records, so --step and EIGS_REPLAY
+# classify exactly as the live run did. Includes the v2-tape refusal and the
+# cross-scope cases: an `O win` record governs the one BINDING it resolves
+# to, never every binding that shares its name.
+echo "[42f2] Tape Observer Configuration (68 checks)"
+OC_OUTPUT=$(bash "$TESTS_DIR/test_tape_observer_config.sh" 2>&1)
+OC_PASS=$(echo "$OC_OUTPUT" | grep -c "PASS:" || true)
+OC_FAIL=$(echo "$OC_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + OC_PASS + OC_FAIL))
+PASS=$((PASS + OC_PASS))
+FAIL=$((FAIL + OC_FAIL))
+if [ "$OC_FAIL" -gt 0 ]; then
+    echo "  FAIL: $OC_FAIL observer-configuration check(s) failed"
+    echo "$OC_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $OC_PASS observer-configuration checks"
+fi
+echo ""
+
 # [42g] --bundle (#413): single-file distribution — script + eigs_modules +
 # stdlib in one executable; tape-attached bundles replay byte-identically.
 echo "[42g] Bundle (16 checks)"
@@ -2232,7 +2259,7 @@ fi
 echo ""
 
 # [42c] REPL (#392): piped transcript byte-exact + pty-driven line editor
-echo "[42c] REPL editor & piped transcript (16 checks)"
+echo "[42c] REPL editor & piped transcript (24 checks)"
 RE_OUTPUT=$(bash "$TESTS_DIR/test_repl.sh" 2>&1)
 RE_PASS=$(echo "$RE_OUTPUT" | grep -c "PASS:" || true)
 RE_FAIL=$(echo "$RE_OUTPUT" | grep -c "FAIL:" || true)
@@ -2354,6 +2381,7 @@ echo "[43a2] Builtin Argument Errors (26 checks)"
 check_eigs_suite "builtin argument errors" test_builtin_errors.eigs "All builtin_errors tests passed" 30
 check_eigs_suite "module-boundary write insulation (#373)" test_module_scope.eigs "All module-scope tests passed" 9
 check_eigs_suite "import top-level scope insulation vs load_file current-scope contract (#589)" test_import_toplevel_scope.eigs "All import top-level scope tests passed" 11
+check_eigs_suite "module namespace is a LIVE VIEW of the module env (#1057)" test_module_live_view.eigs "All tests passed" 30
 
 echo "[43a2b] build_corpus slot-mode identifier encoding (6 checks)"
 CS_OUTPUT=$(bash "$TESTS_DIR/test_corpus_slots.sh" 2>&1)
@@ -2843,6 +2871,27 @@ else
 fi
 echo ""
 
+# [51a] #1049: `unobserved:` is verdict-neutral for the value channel. An
+# elided scalar assignment still lands in the value window (O(1)); only the
+# entropy walk is skipped. Both issue measurements (elided initialiser at the
+# window-fill boundary; one mid-stream elision) compare whole verdict streams,
+# on the fn-local slot path, the name path and the JIT-hot path.
+echo "[51a] Unobserved Verdict Neutrality (#1049)"
+check_eigs_suite "unobserved: elided samples still enter the value window; entropy channel still elided (#1049)" \
+    test_unobserved_neutral.eigs "All tests passed" 26
+echo ""
+
+# [51b] #1044/#1045: the value channel's window depth (set_observer_window,
+# per state and per binding) and characteristic scale (set_observer_scale).
+# Closed-form stand-ins for phugoid's oracle: the rad/deg/mrad triplet gives
+# one verdict, rounding noise around zero certifies, a geometric decay is
+# `improving` until inside the scale, and the 1 Hz phugoid reads oscillating
+# (never diverging) once its binding's window covers a period.
+echo "[51b] Observer Window Depth + Characteristic Scale (#1044, #1045)"
+check_eigs_suite "scale-free relative step; per-state/per-binding window depth" \
+    test_observer_window_scale.eigs "All tests passed" 34
+echo ""
+
 # [52] Stream I/O
 echo "[52] Stream Tensor I/O"
 SI_OUTPUT=$(./eigenscript ../tests/test_stream_io.eigs 2>&1); SI_OUTPUT_RC=$?
@@ -3124,12 +3173,25 @@ fi
 # audio device came up, which the file reports, so the pin is exact in both
 # environments rather than a floor.
 #
-# WHAT THIS SECTION DOES NOT COVER, so a green line is not misread: only the
-# three *_open type-pun guards and the sample-element coercion. The other
-# ~85 fail-soft returns #1007 enumerates are untouched — in particular the 52
-# `make_null()` sites where gfx_rect/gfx_line/gfx_text answer a wrong-typed
-# argument by silently drawing nothing, which no gate in this repo sees
-# (tools/failsoft_classify_check.sh enumerates only the 0/"" population).
+# WHAT THIS SECTION COVERS, since the answer changed: the whole ext_gfx.c
+# argument surface, not just the three *_open type-pun guards it started as.
+# The drawing half — the ~52 `make_null()` sites where gfx_rect/gfx_line/
+# gfx_text answered a wrong-typed argument by silently drawing nothing — is
+# in it since #1007's second pass, and so are the COERCION shapes
+# (gfx_text_width's scale, audio_pause's flag, audio_mix's sample elements),
+# which have no stand-in return and are invisible to
+# tools/failsoft_classify_check.sh by construction.
+#
+# The load-bearing row is the PIXEL PROOF in the non-strict pass, gated on a
+# real renderer: pre-fix, a wrong-typed colour painted BLACK over the cleared
+# pixel — a wrong drawing, not a missing one — and gfx_read reads it back.
+# That is the only row here that can see the defect on real pixels; every
+# other non-strict row asserts the answer is UNCHANGED, which is the
+# byte-identity half of the claim. The strict pass discriminates without SDL.
+#
+# Still NOT covered: whether the classifications recorded in ext_gfx.c are
+# RIGHT ([99r]'s population plus this section's pins together), and leaks on
+# those paths ([137]).
 GA_PROBE_FILE=$(mktemp /tmp/eigs_ga_probe_XXXXXX.eigs)
 cat > "$GA_PROBE_FILE" <<'PROBE'
 print of (gfx_text_width of ["m", 1])
@@ -3167,12 +3229,38 @@ TAPEPROG
     # `|| echo 0` appends a SECOND line and the diagnostic reads "0\n0".
     GA_TAPE_N=$(grep -c '^N ' "$GA_TDIR/r.tape" 2>/dev/null); GA_TAPE_N=${GA_TAPE_N:-0}
     rm -rf "$GA_TDIR"
-    # An audio device adds two rows to each pass. Both counts are derived from
-    # the file's own marker so neither branch is a floor.
+
+    # FOURTH PASS: the same tape contract for gfx_read, whose #1007 guard had
+    # to be placed above TRACE_NONDET_TAKE for the identical reason. Its own
+    # program, because the record count is pinned BY NAME (`N gfx_read=`) and
+    # a shared program would let one builtin's record satisfy the other's pin.
+    # Environment-independent: with no renderer the well-typed read still
+    # records (a null), so the count is 1 either way — while the pre-guard
+    # binary records 2 (measured), which is what makes the row discriminate.
+    GA_RDIR=$(mktemp -d /tmp/eigs_ga_read_XXXXXX)
+    cat > "$GA_RDIR/tape.eigs" <<'READPROG'
+o is gfx_open of [32, 32, "eigs #1007 gfx_read tape"]
+ignore is gfx_clear of [1, 2, 3]
+print of (gfx_read of ["1", 1])
+print of (gfx_read of [1, 1])
+ignore is gfx_close of null
+READPROG
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
+    if cmp -s "$GA_RDIR/first.out" "$GA_RDIR/second.out"; then GA_READ_OK=1; else GA_READ_OK=0; fi
+    GA_READ_N=$(grep -c '^N gfx_read=' "$GA_RDIR/r.tape" 2>/dev/null); GA_READ_N=${GA_READ_N:-0}
+    rm -rf "$GA_RDIR"
+    # TWO environment axes now, each derived from the file's own marker so
+    # neither branch is a floor: an audio device adds 3 rows to the plain pass
+    # and 2 to the strict one, and a real renderer adds the 6 pixel-proof rows
+    # (plain only — the strict pass raises before it can draw). Counting only
+    # the audio axis, which is what this did while the pixel proof was being
+    # added, made the plain pin wrong by exactly 3 on a machine WITH libSDL2
+    # and right on one without.
+    GA_WANT_PLAIN=30; GA_WANT_STRICT=84
+    echo "$GA_PLAIN"  | grep -q "pixel-proof: 1"  && GA_WANT_PLAIN=$((GA_WANT_PLAIN + 6))
     if echo "$GA_STRICT" | grep -q "audio-device: 1"; then
-        GA_WANT_PLAIN=18; GA_WANT_STRICT=18
-    else
-        GA_WANT_PLAIN=15; GA_WANT_STRICT=16
+        GA_WANT_PLAIN=$((GA_WANT_PLAIN + 3)); GA_WANT_STRICT=$((GA_WANT_STRICT + 2))
     fi
     GA_GOT_PLAIN=$(echo "$GA_PLAIN"   | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
     GA_GOT_STRICT=$(echo "$GA_STRICT" | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
@@ -3184,23 +3272,26 @@ TAPEPROG
        && rc_ok "$GA_STRICT_RC" "$GA_STRICT" && echo "$GA_STRICT" | grep -q "All tests passed" \
        && echo "$GA_STRICT" | grep -q "strict-pass: 1" \
        && [ "$GA_GOT_PLAIN" = "$GA_WANT_PLAIN" ] && [ "$GA_GOT_STRICT" = "$GA_WANT_STRICT" ] \
-       && [ "$GA_TAPE_OK" = "1" ] && [ "$GA_TAPE_N" = "1" ]; then
-        TOTAL=$((TOTAL + 3))
-        PASS=$((PASS + 3))
+       && [ "$GA_TAPE_OK" = "1" ] && [ "$GA_TAPE_N" = "1" ] \
+       && [ "$GA_READ_OK" = "1" ] && [ "$GA_READ_N" = "1" ]; then
+        TOTAL=$((TOTAL + 4))
+        PASS=$((PASS + 4))
         echo "  PASS: wrong-typed w/h and freq/channels are refused in both modes ($GA_GOT_PLAIN + $GA_GOT_STRICT checks)"
         echo "  PASS: a rejected audio_capture_open consumes no tape record; capture == replay"
+        echo "  PASS: a rejected gfx_read consumes no tape record; capture == replay"
         # Say out loud what this environment could NOT exercise, rather than
         # letting a green line imply full coverage.
-        echo "$GA_PLAIN" | grep -q "sdl-present: 1" \
-            || echo "  NOTE: libSDL2 absent — the non-strict rows are not discriminating here; the strict pass is."
+        echo "$GA_PLAIN" | grep -q "pixel-proof: 1" \
+            || echo "  NOTE: libSDL2 absent — the pixel proof did not run, so the non-strict rows are not discriminating here; the strict pass is."
         echo "$GA_STRICT" | grep -q "audio-device: 1" \
             || echo "  NOTE: no audio device — the sample-element coercion rows did not run."
     else
-        TOTAL=$((TOTAL + 3))
-        FAIL=$((FAIL + 3))
+        TOTAL=$((TOTAL + 4))
+        FAIL=$((FAIL + 4))
         echo "  FAIL: gfx argument-type guards"
         echo "    counts: plain $GA_GOT_PLAIN/$GA_WANT_PLAIN, strict $GA_GOT_STRICT/$GA_WANT_STRICT"
         echo "    tape: capture==replay $GA_TAPE_OK (want 1), N records $GA_TAPE_N (want 1)"
+        echo "    gfx_read tape: capture==replay $GA_READ_OK (want 1), N gfx_read records $GA_READ_N (want 1)"
         echo "$GA_PLAIN"  | grep -iE "assert|error|FAIL" | head -3
         echo "$GA_STRICT" | grep -iE "assert|error|FAIL" | head -3
     fi
@@ -3331,12 +3422,137 @@ else
 fi
 echo ""
 
-# [132] UI containment render-decode oracle (#823 — probe-gated: needs a
-# gfx build). The stubbed [63] suite proves containment on RECORDED clip
-# state; this section proves it on real pixels: the actual SDL software
-# renderer (dummy video driver) draws an escaping canvas on_paint and an
-# overflowing label, and gfx_read decodes the back buffer. Includes its
-# own planted fault (registry clip opt-out must turn the probe red).
+# [137] ext_gfx.c under ASan+UBSan+LSan over the gfx corpus (#1007).
+#
+# `make asan-gfx` shipped in #1018 as a TOOL: no suite section and no
+# workflow ran it, so the file every app in the fleet and all 18 lib/ui
+# modules draw through was still the least instrumented in the repo. This is
+# the gate half. Its triage found one leak and it was OURS — gfx_poll's event
+# dict, 584 bytes / 6 allocations, leaked on the two paths that decode
+# nothing — so no LeakSanitizer suppression file is shipped: after the fix
+# the corpus has nothing to suppress, and a suppression with no leak behind
+# it is a waiver for a claim nobody checked.
+#
+# NOT probe-gated on THIS binary: the child finds or builds its own
+# asan-gfx binary (deliberately never by running `make`, which would
+# re-point src/eigenscript under the suite and trip the #681 fingerprint
+# guard), so the section is live in a release run too. It skips cleanly with
+# no ASan toolchain, and needs no libSDL2 — SDL is dlopen'd, so the corpus
+# walks every argument and allocation path either way and says so when the
+# renderer was absent. Its own positive/negative leak controls run BEFORE any
+# corpus verdict is believed.
+echo "[137] ext_gfx ASan/LSan corpus (#1007)"
+AG_OUTPUT=$(bash "$TESTS_DIR/test_asan_gfx.sh" 2>&1); AG_RC=$?
+AG_PASSED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: \([0-9]*\) passed.*/\1/p' | tail -1)
+AG_FAILED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
+TOTAL=$((TOTAL + 1))
+if [ "$AG_RC" = "0" ] && [ "${AG_FAILED:-1}" = "0" ]; then
+    PASS=$((PASS + 1))
+    if echo "$AG_OUTPUT" | grep -q "(skipped)"; then
+        echo "  PASS: $(echo "$AG_OUTPUT" | grep -m1 'SKIP:' | sed 's/^ *//')"
+    else
+        echo "  PASS: ext_gfx.c is leak- and UB-clean over the gfx corpus" \
+             "(${AG_PASSED:-?} checks, controls included)"
+        echo "$AG_OUTPUT" | grep -m1 "NOTE:" || true
+    fi
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: a leak or sanitizer error in the gfx corpus, or the gate's own"
+    echo "        leak controls did not fire"
+    echo "$AG_OUTPUT" | grep -E "FAIL:|SUMMARY|runtime error:" | head -8 | sed 's/^/    /'
+fi
+echo ""
+
+# [138] gfx PIXEL differential (#1007 round 2), --no-baseline half.
+# [99s] compares the RETURNED VALUE of a probe. Every drawing builtin returns
+# null on every path and every gfx probe there runs with no window open, so for
+# the whole drawing surface its "identical-when-off" line was measured in the
+# one state where it could not fail. A blind review found the consequence by
+# hand: a wrong-typed OPTIONAL scale changed what gfx_text painted, and nothing
+# in the change could see it. This section runs the readback oracle that can.
+# The two-binary identity half is a pre-landing step (it needs a `make gfx`
+# build of the parent); what runs here is the rest — every wrong-typed slot
+# still raises from its own guard, every VALID call is untouched by strict, no
+# valid row has decayed into drawing nothing, and the row set still covers
+# every guarded renderer builtin and every gfx_nums slot boundary derived from
+# src/ext_gfx.c.
+echo "[138] gfx pixel differential (#1007, no-baseline half)"
+GPD_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_pixel_differential.sh" --no-baseline 2>&1); GPD_RC=$?
+if echo "$GPD_OUTPUT" | grep -q "^SKIP:"; then
+    echo "  $(echo "$GPD_OUTPUT" | grep '^SKIP:' | head -1)"
+else
+    TOTAL=$((TOTAL + 1))
+    if [ "$GPD_RC" = 0 ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: $(echo "$GPD_OUTPUT" | grep -E '^  rows=' | head -1)"
+        echo "        $(echo "$GPD_OUTPUT" | grep -E '^  raises-under-strict' | head -1 | sed 's/^ *//')"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: a wrong-typed slot went silent, a valid call changed under"
+        echo "        strict, a row stopped drawing, or a guarded slot has no row"
+        echo "$GPD_OUTPUT" | sed -n '1,16p'
+    fi
+fi
+echo ""
+
+# [139] ext_gfx container-shape sweep (#1007 round 3). The gate that replaces
+# a hand-written probe row per bug. #1007 landed three times, and each time a
+# blind review found one more builtin silent under strict on the SAME axis --
+# the argument CONTAINER (its arity and type) rather than its elements: the
+# generators' short list, then the three audio *_open builtins' short/non-list
+# argument (which answered a REAL DEVICE ID at the 44100/1 defaults), then
+# audio_play/audio_stream_push's non-list samples. [133] and [99s] were green
+# through all three, because every row in them held the arity right and varied
+# only the element type -- the question was asked in the one state where it
+# could not fail. This section derives the guarded names AND their required
+# arity from src/ext_gfx.c and crosses each with the container shapes, so the
+# population grows with the file instead of with the bug reports. Its
+# allowlist of deliberately-quiet pairs is staleness-checked: a pair that
+# starts raising fails the section. Not probe-gated on the binary here -- the
+# tool skips cleanly by itself when the build has no EXT_GFX.
+echo "[139] ext_gfx container-shape sweep (#1007)"
+GSS_SELF=$(bash "$TESTS_DIR/../tools/gfx_strict_sweep.sh" --selftest 2>&1); GSS_SELF_RC=$?
+GSS_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_strict_sweep.sh" 2>&1); GSS_RC=$?
+# BOTH halves must have skipped, not just the sweep: --selftest returns before
+# the sweep's own probe, so a lane with no gfx builtins has to be recognised
+# twice or the section reports a red selftest for a surface that is not there.
+if echo "$GSS_OUTPUT" | grep -q "^  SKIP:" && echo "$GSS_SELF" | grep -q "^  SKIP:"; then
+    echo "  $(echo "$GSS_OUTPUT" | grep '^  SKIP:' | head -1 | sed 's/^ *//')"
+else
+    TOTAL=$((TOTAL + 2))
+    GSS_SELF_FAILED=$(echo "$GSS_SELF" | sed -n 's/^selftest: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
+    if [ "$GSS_SELF_RC" = 0 ] && [ "${GSS_SELF_FAILED:-1}" = "0" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: $(echo "$GSS_SELF" | grep '^selftest:' | head -1) (arity parser, short-list builder, population, verdict classifier)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: the sweep's own selftest is red — its verdicts mean nothing"
+        echo "$GSS_SELF" | grep '  FAIL' | head -4 | sed 's/^/    /'
+    fi
+    if [ "$GSS_RC" = 0 ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: $(echo "$GSS_OUTPUT" | grep -E '^  guarded names=' | head -1 | sed 's/^ *//')"
+        echo "        $(echo "$GSS_OUTPUT" | grep -E '^  raises-under-strict' | head -1 | sed 's/^ *//')"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: a guarded builtin is silent under strict for a wrong-shaped"
+        echo "        argument container, an allowlist entry has gone stale, or a"
+        echo "        probe never ran (did-not-run is not a guard verdict — #988)"
+        echo "$GSS_OUTPUT" | sed -n '1,16p'
+    fi
+fi
+echo ""
+
+# [132] UI containment render-decode oracle (#823/#859 — probe-gated:
+# needs a gfx build). The stubbed [63] suite proves containment and the
+# overlay z-order on RECORDED clip/draw state; this section proves them on
+# real pixels: the actual SDL software renderer (dummy video driver) draws
+# an escaping canvas on_paint, an overflowing label, an open dropdown list
+# over a later sibling and past its panel's edge, and a grid whose
+# row-label gutter is inside its rect — and gfx_read decodes the back
+# buffer. Includes its own planted faults (the registry clip opt-out, and
+# re-registering the pre-#859 in-tree list render, must turn the probes
+# red).
 UC_PROBE_FILE=$(mktemp /tmp/eigs_uc_probe_XXXXXX.eigs)
 cat > "$UC_PROBE_FILE" <<'PROBE'
 print of (gfx_text_width of ["m", 1])
@@ -3345,17 +3561,18 @@ UC_PROBE_OUT=$(./eigenscript "$UC_PROBE_FILE" 2>&1)
 rm -f "$UC_PROBE_FILE"
 
 if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[132] UI Containment Render-Decode Oracle (9 checks)"
+    echo "[132] UI Containment Render-Decode Oracle"
     UC_OUTPUT=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_ui_containment_gfx.eigs 2>&1); UC_RC=$?
+    UC_N=$(derive_count "$UC_OUTPUT" 25 "[132] UI Containment Render-Decode Oracle")
     if rc_ok "$UC_RC" "$UC_OUTPUT" && echo "$UC_OUTPUT" | grep -q "All tests passed"; then
-        TOTAL=$((TOTAL + 9))
-        PASS=$((PASS + 9))
-        echo "  PASS: real-pixel containment + planted fault"
+        TOTAL=$((TOTAL + UC_N))
+        PASS=$((PASS + UC_N))
+        echo "  PASS: real-pixel containment + overlay z-order + planted faults ($UC_N checks)"
     elif echo "$UC_OUTPUT" | grep -q "^SKIP:"; then
         echo "  SKIP: $(echo "$UC_OUTPUT" | grep "^SKIP:" | head -1)"
     else
-        TOTAL=$((TOTAL + 9))
-        FAIL=$((FAIL + 9))
+        TOTAL=$((TOTAL + UC_N))
+        FAIL=$((FAIL + UC_N))
         echo "  FAIL: ui containment oracle"
         echo "$UC_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
     fi
@@ -3689,9 +3906,17 @@ check_eigs_suite "for binder in a loop env: body write lands in the loop env (#1
 # [70j] #1064 — a for binder that reuses an existing frame slot (parameter,
 # `local`, earlier assignment) is restored to its pre-loop value at loop exit
 # (exhausted and break paths), so the contract's "does not leak" holds inside
-# functions too. A binder with no prior binding keeps its function-scoped slot
-# (contract note).
+# functions too. A binder with no prior binding is loop-scoped as well since
+# #1105 (next block).
 check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 9
+# [70j2] #1105 -- a `for` binder with NO prior binding is loop-scoped inside a
+# function exactly as at module scope: the env-skip fast path's fresh frame
+# slot is retired at the loop exit, so a post-loop read raises
+# `undefined variable` (it returned the last element). Run on both tiers: the
+# hot for-range loop is JIT-compiled, and the post-loop read must be loud
+# whether or not the loop body went native.
+check_eigs_suite "fresh for binder is loop-scoped in a function too (#1105)" test_for_binder_fresh_loop_scoped.eigs "All tests passed" 16
+EIGS_JIT_OFF=1 check_eigs_suite "fresh for binder is loop-scoped in a function too, interpreter tier (#1105)" test_for_binder_fresh_loop_scoped.eigs "All tests passed" 16
 # [70k] #1062 — a module-scope `for` whose body reads the observer stays on the
 # CLEAR tier (the overwrite tier skipped the per-iteration reset of the binder's
 # observer slot, so `observe of i` accumulated across iterations for a
@@ -3789,7 +4014,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=44
+OBS_GATE_EXPECTED_CHECKS=50
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -4522,6 +4747,74 @@ else
     OBS_G43_NOTE=" (SKIP: rlimit not enforced on this platform)"
 fi
 check "a fatal OOM inside the muted window still reaches stderr$OBS_G43_NOTE" "$OBS_G43" "oom-message-reaches-stderr"
+# 45-50. #972's one measured residual: with the gate CLOSED the observe ops
+#     (OBSERVE_ASSIGN_LOCAL / OBSERVE_NAME_POST) still dispatched into their
+#     helpers — call, TOS decode, slot/name resolution — only to return at the
+#     helper's own gate test (+18% module-level / +14% fn-level+JIT over
+#     `unobserved:` at 20M iterations). The gate test is now hoisted ahead of
+#     the helper call in the interpreter CASE bodies AND inlined by the JIT
+#     emitter. `obs-gate: unobserved` cannot see the difference between
+#     "skipped" and "called and returned at the gate", and the slot's `used`
+#     flag cannot either (the helper never touched the slot in either case),
+#     so the instrument is the observe-call TALLY EIGS_OBS_GATE_STATS=1 now
+#     prints at exit: every entry into observer_slot_update[_num] /
+#     observer_slot_sample[_num] / the two JIT observe helpers, counted BEFORE
+#     each one's gate test. Closed -> exactly 0 after 1000 assignments; open
+#     (a reader, or EIGS_OBS_FORCE=1) -> populated. Each verdict also carries
+#     the program's ANSWER and, on the JIT arms, the thunk witness — a loop
+#     that never got a thunk would score 0 calls while running interpreted
+#     (the inline-vs-measure trap), so `jit=compiled` is part of the verdict
+#     on x86_64 (elsewhere the JIT arms still run and are labelled jit=n/a).
+#     Planted fault (either hoist deleted): the interpreter arm reports
+#     calls=1000, the JIT arm calls=1000 — verified red for both before
+#     landing.
+printf 'x is 0.0\nfor i in range of 1000:\n    x is x + 1.5\nprint of x\n' > "$OBS_GATE_TMP/hoist_mod.eigs"
+printf 'define run as:\n    x is 0.0\n    for i in range of 1000:\n        x is x + 1.5\n    return x\nprint of (run of [])\n' > "$OBS_GATE_TMP/hoist_fn.eigs"
+printf 'define run as:\n    x is 0.0\n    for i in range of 1000:\n        x is x + 1.5\n    print of (report of x)\n    return x\nprint of (run of [])\n' > "$OBS_GATE_TMP/hoist_reader.eigs"
+# obs_hoist_verdict <jit|interp> <program> [env...] -> "<answer>/calls=<0|populated|N>/jit=<compiled|none|n/a|off>"
+obs_hoist_verdict() {
+    local OHV_MODE="$1" OHV_PROG="$2"; shift 2
+    local OHV_OUT OHV_RC OHV_ANS OHV_CALLS OHV_JIT
+    if [ "$OHV_MODE" = jit ]; then
+        OHV_OUT=$(env "$@" EIGS_OBS_GATE_STATS=1 EIGS_JIT_STATS=1 EIGS_JIT_OSR_THRESHOLD=1 $EIGS_BIN "$OHV_PROG" 2>&1); OHV_RC=$?
+    else
+        OHV_OUT=$(env "$@" EIGS_OBS_GATE_STATS=1 EIGS_JIT_OFF=1 $EIGS_BIN "$OHV_PROG" 2>&1); OHV_RC=$?
+    fi
+    if [ "$OHV_RC" -ne 0 ]; then echo "died-rc$OHV_RC"; return; fi
+    OHV_ANS=$(printf '%s\n' "$OHV_OUT" | grep -v '^obs-gate:\|^\[jit\]' | tail -1)
+    OHV_CALLS=$(printf '%s\n' "$OHV_OUT" | sed -n 's/^obs-gate: observe-calls \([0-9]*\)$/\1/p')
+    : "${OHV_CALLS:=missing}"
+    if [ "$OHV_CALLS" != missing ] && [ "$OHV_CALLS" -ge 1000 ] 2>/dev/null; then OHV_CALLS=populated; fi
+    if [ "$OHV_MODE" = jit ]; then
+        if [ "$(uname -m)" != x86_64 ]; then OHV_JIT="n/a"
+        elif printf '%s\n' "$OHV_OUT" | grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]'; then OHV_JIT=compiled
+        else OHV_JIT=none; fi
+    else OHV_JIT=off; fi
+    echo "$OHV_ANS/calls=$OHV_CALLS/jit=$OHV_JIT"
+}
+OBS_HOIST_JIT_EXPECT=compiled; [ "$(uname -m)" = x86_64 ] || OBS_HOIST_JIT_EXPECT="n/a"
+# 45. Interpreter, module-level names (OBSERVE_NAME_POST): closed -> no calls.
+OBS_G44=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_mod.eigs")
+check "gate closed: OBSERVE_NAME_POST never enters the observer (interpreter)" "$OBS_G44" "1500/calls=0/jit=off"
+# 46. Interpreter, fn-local slots (OBSERVE_ASSIGN_LOCAL): closed -> no calls.
+OBS_G45=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_fn.eigs")
+check "gate closed: OBSERVE_ASSIGN_LOCAL never enters the observer (interpreter)" "$OBS_G45" "1500/calls=0/jit=off"
+# 47. JIT, module-level names: the emitter's inline gate test skips the helper.
+OBS_G46=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_mod.eigs")
+check "gate closed: the JIT skips jit_helper_observe_name_post (thunk witnessed)" "$OBS_G46" "1500/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
+# 48. JIT, fn-local slots.
+OBS_G47=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_fn.eigs")
+check "gate closed: the JIT skips jit_helper_observe_assign_local (thunk witnessed)" "$OBS_G47" "1500/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
+# 49. Control — a reader opens the gate at compile time and the same JIT'd loop
+#     must then RECORD (populated tally, `diverging` verdict on the ramp). A
+#     do-nothing counter or a gate test that skips the call unconditionally
+#     scores 0 here and goes red.
+OBS_G48=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_reader.eigs")
+check "control: with a reader the JIT'd loop still records every assignment" "$OBS_G48" "1500/calls=populated/jit=$OBS_HOIST_JIT_EXPECT"
+# 50. Control — EIGS_OBS_FORCE=1 opens the gate from process start on the
+#     read-free program; the interpreter's hoisted test must see it open.
+OBS_G49=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_mod.eigs" EIGS_OBS_FORCE=1)
+check "control: EIGS_OBS_FORCE=1 still records the read-free program (interpreter)" "$OBS_G49" "1500/calls=populated/jit=off"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))
@@ -4533,6 +4826,31 @@ else
     echo "  FAIL: section [99u] ran $OBS_GATE_RAN checks, expected $OBS_GATE_EXPECTED_CHECKS (a check was added or deleted)"
 fi
 rm -rf "$OBS_GATE_TMP"
+echo ""
+
+# [99u+] Observer gate, the `import` half (#1046 / #915). OP_IMPORT left the
+# reader set: a literal import target is resolved at the importer's compile
+# time through eigs_import_resolve (the ONE resolver OP_IMPORT calls) and
+# scanned like a literal load_file target, and the constant-pool string
+# match became a match on OP_GET_NAME operands, so string DATA never arms.
+# The fixture pins both halves AND the invariant #915's last comment names:
+# a host's pre-import history stays visible to an imported reader, asserted
+# on the VALUE (diverging), plus the import-time raise for a module rewritten
+# between scan and import. Count pinned like [42a]: a check added or deleted
+# without moving the number goes red here.
+echo "[99u+] Observer gate: import half + string data (#1046)"
+OBSIMP_OUT=$(bash "$TESTS_DIR/test_obs_gate_import.sh" 2>&1); OBSIMP_RC=$?
+OBSIMP_PASS=$(echo "$OBSIMP_OUT" | grep -c "^PASS:" || true)
+OBSIMP_FAIL=$(echo "$OBSIMP_OUT" | grep -c "^FAIL:" || true)
+TOTAL=$((TOTAL + 1))
+if [ "$OBSIMP_RC" -eq 0 ] && [ "$OBSIMP_PASS" -eq 19 ] && [ "$OBSIMP_FAIL" -eq 0 ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: all $OBSIMP_PASS import-gate checks"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: observer gate import half (rc=$OBSIMP_RC, $OBSIMP_PASS/19 checks passed)"
+    echo "$OBSIMP_OUT" | grep -E "^FAIL:|SUMMARY" | sed 's/^/    /'
+fi
 echo ""
 
 # [100] Worker-thread JIT lifetime (#296). A shared chunk that gets hot and
@@ -4562,6 +4880,25 @@ check_eigs_suite "concurrent workers, same chunks, exact results" test_spawn_par
 # channel must wake and let the program exit (this test times out if it regresses).
 echo "[103] Spawn/Channel Exit (no hang on blocked worker, #303)"
 check_eigs_suite "recv-blocked worker doesn't hang exit" test_spawn_channel_exit.eigs "All tests passed" 1
+
+# [103a] #1112: the same program under EIGS_REPLAY -- the worker's `recv` is
+# refused at the replay boundary (#148), and that refusal, raised on a worker
+# with no VM (a builtin spawned directly), died by SIGSEGV in
+# vm_print_stack_trace. A boundary refusal is a clean rc-1 exit, never a
+# signal; an uncaught death on a spawn()ed worker fails the process (the #493
+# rule for tasks). Child script: every #148 builtin as a direct worker, both
+# tiers on the repro, plus the caught/exit-of-N/clean positive controls.
+echo "[103a] Replay boundary refusal is a clean exit; worker death fails the run (#1112)"
+RBE_OUTPUT=$(bash "$TESTS_DIR/test_replay_boundary_exit.sh" 2>&1); RBE_RC=$?
+RBE_PASS=$(echo "$RBE_OUTPUT" | grep -c "^PASS:" || true)
+RBE_FAIL=$(echo "$RBE_OUTPUT" | grep -c "^FAIL:" || true)
+[ "$RBE_RC" -ne 0 ] && [ "$RBE_FAIL" -eq 0 ] && RBE_FAIL=1
+# 21 checks by construction (1 repro x 2 tiers + 11 boundary builtins + 8
+# controls); fewer PASS lines on a green exit is the child narrowing.
+[ "$RBE_RC" -eq 0 ] && [ "$RBE_PASS" -lt 21 ] && { RBE_FAIL=$((RBE_FAIL + 1)); echo "  FAIL: replay-boundary child ran only $RBE_PASS of 21 checks"; }
+TOTAL=$((TOTAL + RBE_PASS + RBE_FAIL)); PASS=$((PASS + RBE_PASS)); FAIL=$((FAIL + RBE_FAIL))
+if [ "$RBE_FAIL" -gt 0 ]; then echo "  FAIL: replay boundary exit contract"; echo "$RBE_OUTPUT" | grep "^FAIL:" | head -5; else echo "  PASS: all $RBE_PASS replay-boundary exit checks (rc 1, no signal, both tiers)"; fi
+echo ""
 
 # [104] Worker arena-allocated return value survives detach (#302). thread_entry
 # deep-copies the result before arena_destroy frees the worker arena; a UAF here
@@ -4673,6 +5010,30 @@ check_task_exit task_exit_killed.eigs         0 "MARK_END"         # #493 kill: 
 check_task_exit task_exit_detached_death.eigs 1 "MARK_END"         # #530: a DETACHED death still fails the process
 check_task_exit task_deadlock.eigs            1 "deadlock"         # #483 leak-clean (main's suspended slice) + #509 uncaught loud
 check_task_exit task_deadlock_worker_try.eigs 1 "deadlock"         # #509: deadlock goes to MAIN; a worker's try doesn't catch it
+
+# #846 scheduler trace: a gated, off-by-default history of every task resume
+# ({seq, tick, task, cause}). The fixture pins the cause vocabulary, the FIFO
+# and seeded histories (derivations written from the scheduler's source) and
+# the sandbox fail-closed posture; the child .sh pins the two DST constraints
+# — arming it perturbs nothing (byte-identical stdout/stderr/rc across all 12
+# task programs in the tree, error paths included) and it is derived, not
+# taped (replay reproduces it, plain and under EIGS_REPLAY_STRICT=1; the
+# N-record count is unchanged and no N record names the trace). Replay is
+# checked JIT-on and EIGS_JIT_OFF=1.
+echo "[104b] Scheduler Trace (task_sched_trace, #846)"
+check_eigs_suite "task_sched_trace: causes, fifo + seeded histories, arm/disarm (#846)" test_task_sched_trace.eigs "All tests passed" 1
+ST_OUTPUT=$(bash "$TESTS_DIR/test_task_sched_trace.sh" 2>&1)
+ST_PASS=$(echo "$ST_OUTPUT" | grep -c "PASS:" || true)
+ST_FAIL=$(echo "$ST_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + ST_PASS + ST_FAIL))
+PASS=$((PASS + ST_PASS))
+FAIL=$((FAIL + ST_FAIL))
+if [ "$ST_FAIL" -gt 0 ] || [ "$ST_PASS" -eq 0 ]; then
+    echo "  FAIL: scheduler-trace purity/replay/tape checks ($ST_PASS passed, $ST_FAIL failed)"
+    echo "$ST_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $ST_PASS scheduler-trace purity/replay/tape checks"
+fi
 
 # [105] Builtin contract fixes (#312 negative indices, #316 predicate
 # type-rejection, #317 min/max N-ary reduction) + #314: a directory as the
@@ -4865,6 +5226,33 @@ else
 fi
 echo ""
 
+# [81u] Lint diagnostic UTF-8 gate (#1048). A lint message is built in a
+# 256-byte buffer and shipped through --lint --json and the LSP, and it can
+# carry two kinds of text: what the RULE chose (W024 was the first to
+# interpolate an unbounded identifier twice — a ~37-character name truncated it
+# inside an em dash, emitting a lone 0xE2 that Python's decoder rejects and jq
+# hides behind U+FFFD) and what the SOURCE handed it (the byte the lexer could
+# not tokenize, a dict key a rule quotes — malformed on 512 of 1524 swept
+# byte/shape/channel combinations on v0.43.0). The gate drives every registered
+# code with a 200-character identifier, sweeps identifier length 1..250 and
+# every source byte >= 0x80, decodes strictly (python3, never jq), checks the
+# registry three ways, re-verifies each pinned exemption, and asserts the
+# chokepoints are still the only writers; --selftest plants nine faults
+# (including a new rule with no doc row and an emitter that leaks a raw byte)
+# and requires each to be caught.
+echo "[81u] lint diagnostic UTF-8 gate (#1048)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" >/dev/null 2>&1 && \
+   bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" --selftest >/dev/null 2>&1; then
+    PASS=$((PASS + 1))
+    echo "  PASS: no lint diagnostic can be malformed UTF-8, whatever its rule or its source interpolates (gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: a lint diagnostic is malformed UTF-8, or the gate self-test broke"
+    bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" 2>&1 | grep -E "^FAIL|SELFTEST-FAIL" | head -10
+fi
+echo ""
+
 # [81b] Test runner (--test) + exe_path builtin — runs test_*.eigs files
 # in their own processes and reports pass/fail (human + --json).
 echo "[81b] Test runner (--test)"
@@ -4994,6 +5382,17 @@ check_eigs_suite "flat-buffer tensors" test_flat_buffer_tensor.eigs "PASS: flat-
 # #932: a 65x65 by 65x67 matmul so the i and j tile bounds run multi-tile with
 # a partial remainder in every dimension, not only their single-tile path.
 check_eigs_suite "tiled tensor kernels (#745, #932)" test_tensor_kernel_tiling.eigs "TENSOR_KERNEL_TILING_OK" 1
+# #973: the flat-buffer surface the autograd tape runs on — matmul_at/matmul_bt
+# byte-identical to matmul of the transposed list operand, scatter_add vs the
+# list loop (and gather's dual), the buffer elementwise/softmax/leaky_relu/mean
+# paths vs the list path, numerical_grad on a buffer parameter; loud raises.
+check_eigs_suite "flat-buffer tensor ops for autograd: matmul_at/bt, scatter_add, buffer paths (#973)" \
+    test_tensor_buffer_ops.eigs "All tests passed." 78
+# #973: lib/autograd.eigs — every vjp rule vs the numerical_grad oracle (1e-4
+# relative + 1e-6 absolute), a 2-layer softmax-CE MLP trained by the tape, and
+# the Tidepool DQN shape (433->64->32->6, batch 32) through one backward.
+check_eigs_suite "lib/autograd: vjp rules vs numerical_grad, MLP trains, DQN shape backward (#973)" \
+    test_autograd.eigs "All tests passed." 101
 # #597: vectorized buffer kernels (buf_mix/buf_scale_range/buf_fill/buf_peak/
 # buf_dot + buf_copy loud bounds) — correctness, raise-on-bad-window, and the
 # differential leg (builtin exactly equals the interpreted per-sample loop on
@@ -5458,6 +5857,16 @@ else
 fi
 echo ""
 
+echo "[93b] Tensor builtins on buffers (#1093)"
+# #1093: every tensor builtin that accepts a flat numeric list accepts a
+# VAL_BUFFER in the same position, and returns a buffer where the input was a
+# buffer. Each check is a list/buffer PAIR whose numeric output must be
+# byte-identical, so reverting any one converted guard turns that pair red.
+# Also pins Part 2: `zeros of n` is a buffer, `zeros of [r, c]` stays a list.
+check_eigs_suite "tensor builtins accept buffers; zeros of n is a buffer" \
+    "test_tensor_buffer_inputs.eigs" "TENSOR_BUFFER_INPUTS_ALL_PASS" 99
+echo ""
+
 echo "[94] --pkg dispatcher (7 checks)"
 # Phase 1a of the package design: --pkg dispatcher, manifest read/write,
 # help, list, add (manifest-only — git fetch is Phase 1b), unknown
@@ -5743,6 +6152,30 @@ else
 fi
 echo ""
 
+# #1112: the same-binary replay differential (CI job `replay-differential`)
+# classified a replay arm that printed the boundary diagnostic and then died
+# by SIGSEGV as "at the boundary" and said OK. A signal exit in either arm is
+# now the first verdict; the selftest plants that witness and an identical
+# crash in both arms through a wrapper binary (each must FAIL, attributed),
+# proves --record refuses over a crash, keeps a real clean boundary refusal
+# classified as boundary (positive control), and pins that a NON-signal
+# nonzero rc (124/127) still diffs into a row. The full corpus run stays a
+# CI job, not a suite section. The case count is pinned, not ">0": a gate
+# reduced to one echo satisfies "at least one case passed".
+echo "[136] replay_diff crash gate: a signal exit is never a boundary (#1112)"
+TOTAL=$((TOTAL + 1))
+RDS_OUTPUT=$(bash "$TESTS_DIR/../tools/replay_diff.sh" --selftest 2>&1); RDS_RC=$?
+RDS_OK=$(printf '%s\n' "$RDS_OUTPUT" | grep -c "  selftest ok:" || true)
+if [ "$RDS_RC" -eq 0 ] && [ "$RDS_OK" -eq 6 ] && printf '%s\n' "$RDS_OUTPUT" | grep -q "^SELFTEST: all planted faults caught"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: replay_diff selftest (all $RDS_OK planted/control cases)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: replay_diff selftest (rc=$RDS_RC, $RDS_OK of 6 ok cases)"
+    printf '%s\n' "$RDS_OUTPUT" | grep -v "selftest ok" | head -8
+fi
+echo ""
+
 echo "[99b] Stdlib/builtin discoverability (#393)"
 TOTAL=$((TOTAL + 1))
 if bash "$TESTS_DIR/../tools/stdlib_index_check.sh" && bash "$TESTS_DIR/../tools/stdlib_index_check.sh" --selftest >/dev/null; then
@@ -5759,7 +6192,7 @@ echo ""
 # because the distinction between a fail-soft guard and a documented ANSWER is
 # not derivable from the code — `task_alive` has one of each, four lines apart.
 # The gate proves a DECISION WAS RECORDED, nothing more; whether the decision
-# is right is what [99q]'s pins assert.
+# is right is what [99s]'s pins assert.
 echo "[99r] Fail-soft classification gate (#971)"
 TOTAL=$((TOTAL + 1))
 if bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" >/dev/null && \
@@ -5782,16 +6215,48 @@ echo ""
 # existed — one probe named a builtin that does not exist and passed on
 # "undefined variable"), every documented ANSWER must stay quiet, and every
 # guard must have a probe.
+# RUN ONCE, REPORT THAT RUN. The first version threw the failing run's output
+# away (`>/dev/null`) and re-ran the tool to produce a diagnostic — so the
+# evidence printed under a FAIL banner came from a DIFFERENT run, and if the
+# failure was not deterministic the diagnostic was green. That is not a
+# hypothetical: a full-suite log from 2026-09-06 shows this section printing
+# "FAIL: a guard went silent..." followed by a completely clean report ending
+# in "OK", which is unreadable and untriageable — the one run that knew what
+# happened was discarded. Capture once; print what THAT run said.
+# THE HARNESS FIRST (#1120). Every verdict that tool prints is a string match,
+# and several of them were spelled `printf ... | grep -q`, which under
+# `set -o pipefail` reports a FAILED match whenever the reader exits early and
+# the writer is still writing: grep -q matches, closes the pipe, printf takes
+# SIGPIPE, and the pipeline's status is 141. That flaked THIS section red on a
+# green tree — measured 18 times in 186 runs under load with the pipe form in
+# place — and the accusation it printed ("raised by the wrong guard") was
+# refuted by the diagnostic two lines below it, which contained the guard's own
+# message. --selftest pins the fork-free matchers that replaced it and
+# reproduces the race deterministically, so the regression cannot return
+# quietly. It measures the script, not the build: ~0.1s, no binary needed.
 echo "[99s] Strict argument-guard differential (#971, no-baseline half)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline >/dev/null 2>&1; then
+STRICT_SELF_OUT="$(bash "$TESTS_DIR/../tools/strict_differential.sh" --selftest 2>&1)"
+STRICT_SELF_RC=$?
+STRICT_DIFF_OUT="$(bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline 2>&1)"
+STRICT_DIFF_RC=$?
+if [ "$STRICT_SELF_RC" = 0 ] && [ "$STRICT_DIFF_RC" = 0 ]; then
     PASS=$((PASS + 1))
-    echo "  PASS: every guard raises from its own guard; every answer stays quiet"
+    echo "  PASS: the harness's own matchers hold; every guard raises from its own"
+    echo "        guard; every answer stays quiet"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: a guard went silent, raised from the wrong place, a pin broke,"
-    echo "        or a guard has no probe"
-    bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline 2>&1 | sed -n '1,14p'
+    if [ "$STRICT_SELF_RC" != 0 ]; then
+        echo "  FAIL: the differential's OWN matchers broke (exit $STRICT_SELF_RC) — nothing"
+        echo "        below this line is a finding about a guard until that is fixed"
+        printf '%s\n' "$STRICT_SELF_OUT" | sed -n '1,20p'
+    fi
+    if [ "$STRICT_DIFF_RC" != 0 ]; then
+        echo "  FAIL: a guard went silent, raised from the wrong place, a pin broke,"
+        echo "        a guard has no probe, or a probe did not run (exit $STRICT_DIFF_RC)"
+        echo "  --- output of the run that failed (not a re-run) ---"
+        printf '%s\n' "$STRICT_DIFF_OUT" | sed -n '1,32p'
+    fi
 fi
 echo ""
 
@@ -6293,6 +6758,35 @@ else
 fi
 echo ""
 
+# [99q] Observer-gate corpus diff: location normalisation self-test (#1115).
+# tools/observer_gate_diff.sh compares full-corpus captures byte-for-byte, and
+# an out-of-tree baseline binary echoes its own exe-dir into two shapes of
+# text (the stdlib-roots list in every "cannot read" error, and the project-
+# vs-stdlib import-shadow warning that fires only out of tree). Seven programs
+# mismatched on exactly those shapes across three critic rounds on #1038 and a
+# clean run read as a regression. The tool now canonicalises ONLY those two
+# shapes; this self-test drives the real `compare` entry point over synthetic
+# captures (no corpus run) and pins that (1) both shapes are absorbed and named,
+# (2) a different error message, a differently-named shadow, a project-file
+# shadow, a corpus-path difference and the root-exe-dir guard each still FAIL,
+# (3) the same-build-same-path and path-mismatched-reference refusals still
+# fire, (4) genuinely different builds still get PASS. The case count is
+# pinned (mechanical-gates §37): a self-test shrunk to one case also exits 0.
+echo "[99q] Observer-gate corpus diff location normalisation (#1115)"
+TOTAL=$((TOTAL + 1))
+OGD_EXPECTED=9
+OGD_OUT=$(bash "$TESTS_DIR/../tools/observer_gate_diff.sh" selftest 2>&1); OGD_RC=$?
+OGD_TALLY=$(printf '%s\n' "$OGD_OUT" | sed -n 's/^SELFTEST: \([0-9]*\) ok, \([0-9]*\) failed (of \([0-9]*\))$/\1 \2 \3/p')
+if [ "$OGD_RC" -eq 0 ] && [ "$OGD_TALLY" = "$OGD_EXPECTED 0 $OGD_EXPECTED" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: exe-dir + import-shadow normalisation absorbs only the location shapes ($OGD_EXPECTED/$OGD_EXPECTED self-test cases)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: observer_gate_diff.sh self-test broke or shrank (rc=$OGD_RC, tally='${OGD_TALLY:-none}', expected '$OGD_EXPECTED 0 $OGD_EXPECTED')"
+    printf '%s\n' "$OGD_OUT" | grep -E '^  FAIL|^SELFTEST|^FAIL' | head -8 | sed 's/^/      /'
+fi
+echo ""
+
 # [99m] Lint archive symbol-collision gate (#917, hole closed by #922).
 # The #917 split turned lint's json_escape helper into an external symbol and
 # broke the static-library route for any embedder with its own json_escape.
@@ -6320,12 +6814,53 @@ echo ""
 # failure, not a silent pass).
 echo "[99i] werror-switch compile-line gate (#817/#835)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/werror_switch_check.sh" && bash "$TESTS_DIR/../tools/werror_switch_check.sh" --selftest >/dev/null; then
+# The two halves are reported SEPARATELY (#971 round 2). They used to be one
+# `a && b >/dev/null` chain, which made a self-test failure unattributable:
+# the audit half prints its own "gate OK" line, so a log showing OK followed
+# by this section's FAIL looked self-contradictory, and the self-test's
+# diagnostics — the only thing that says WHICH planted fault shape stopped
+# being caught — had gone to /dev/null. Observed on this box under load
+# (a full-suite run where the audit printed OK and the section still failed);
+# with the output kept, the next occurrence names its own cause.
+werror_audit_rc=0
+bash "$TESTS_DIR/../tools/werror_switch_check.sh" || werror_audit_rc=$?
+werror_selftest_out=$(bash "$TESTS_DIR/../tools/werror_switch_check.sh" --selftest 2>&1)
+werror_selftest_rc=$?
+if [ "$werror_audit_rc" -eq 0 ] && [ "$werror_selftest_rc" -eq 0 ]; then
     PASS=$((PASS + 1))
     echo "  PASS: every dry-run + audited-script compile line carries -Werror=switch (gate self-test green)"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: a compile line lacks -Werror=switch, or the gate self-test broke (see lines above)"
+    if [ "$werror_audit_rc" -ne 0 ]; then
+        echo "  FAIL: a compile line lacks -Werror=switch (audit exit $werror_audit_rc; see lines above)"
+    fi
+    if [ "$werror_selftest_rc" -ne 0 ]; then
+        echo "  FAIL: the gate self-test broke (--selftest exit $werror_selftest_rc); its output:"
+        printf '%s\n' "$werror_selftest_out" | sed 's/^/      /'
+    fi
+fi
+echo ""
+
+# [99i2] Core -> extension boundary (#744). The core must not include an
+# extension's PRIVATE header. `ext_db_internal.h` pulls <libpq-fe.h>, so a
+# core TU that includes it for one declaration makes the core unbuildable
+# without PostgreSQL headers wherever EIGENSCRIPT_EXT_DB=1 — and the only
+# target that compiles that combination is `make full`, which needs libpq to
+# build at all, so nothing in the suite could see it. Two legs: a structural
+# scan (core TUs from the Makefile's SOURCES, ext headers from the tree,
+# exemptions checked in both directions) and an executable -fsyntax-only
+# probe with every extension ON and <libpq-fe.h> POISONED, which is what
+# keeps the probe honest on a box that HAS libpq.
+echo "[99i2] Core/extension include boundary (#744)"
+TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/../tools/core_ext_boundary_check.sh" >/dev/null && \
+   bash "$TESTS_DIR/../tools/core_ext_boundary_check.sh" --selftest >/dev/null; then
+    PASS=$((PASS + 1))
+    echo "  PASS: no core -> extension-private include edge (gate self-test green)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: a core TU includes an extension private header, or the gate self-test broke"
+    bash "$TESTS_DIR/../tools/core_ext_boundary_check.sh" 2>&1 | head -8
 fi
 echo ""
 
@@ -6351,6 +6886,44 @@ else
     echo "  FAIL: child-exit accounting is broken, bypassed, or shrank (rc=$CEXIT_RC, checks=${CEXIT_COUNT:-none}, expected $CEXIT_EXPECTED)"
     printf '%s\n' "$CEXIT_OUT" | grep -E 'FAIL|BROKEN' | head -5 | sed 's/^/      /'
     bash "$TESTS_DIR/../tools/child_exit_check.sh" 2>&1 | head -5 | sed 's/^/      /'
+fi
+echo ""
+
+# [99aa] No pipeline decides a verdict under pipefail (#1122; mechanism #1120).
+# `printf '%s' "$s" | grep -q "$pat"` under `set -o pipefail` is a race: grep -q
+# exits on the first match and closes the read end, the still-writing printf
+# takes SIGPIPE and exits 141, and pipefail reports the PIPELINE as 141 — a
+# failed match — while grep matched. The test then goes red printing the very
+# bytes it says are missing. This gate is static: it scans every .sh that
+# enables pipefail and fails on any early-exiting reader at the end of a pipe
+# whose STATUS picks a branch. File-reading greps, `grep -c`, `grep -vxF -f`
+# and diagnostic `| head` are all left alone, and --selftest proves both halves
+# of that — it FIRES on each banned spelling and stays QUIET on each legitimate
+# one. NOTE: run_all_tests.sh itself does not set pipefail, so its ~173
+# `| grep -q` sites are not exposed and are not subjects.
+#
+# Both halves are reported separately, and the self-test's check COUNT is
+# pinned rather than tested for ">0" — "at least one check passed" is satisfied
+# by a gate reduced to a single echo (the [99o] lesson).
+echo "[99aa] pipefail verdict-pipeline gate (#1122)"
+TOTAL=$((TOTAL + 1))
+PFV_EXPECTED=34
+pfv_audit_out=$(bash "$TESTS_DIR/../tools/pipefail_verdict_check.sh" 2>&1); pfv_audit_rc=$?
+pfv_self_out=$(bash "$TESTS_DIR/../tools/pipefail_verdict_check.sh" --selftest 2>&1); pfv_self_rc=$?
+PFV_COUNT=$(printf '%s\n' "$pfv_self_out" | sed -n 's/^  checks=\([0-9]*\) .*/\1/p')
+if [ "$pfv_audit_rc" -eq 0 ] && [ "$pfv_self_rc" -eq 0 ] && [ "${PFV_COUNT:-0}" -eq "$PFV_EXPECTED" ]; then
+    PASS=$((PASS + 1))
+    printf '%s\n' "$pfv_audit_out"
+else
+    FAIL=$((FAIL + 1))
+    if [ "$pfv_audit_rc" -ne 0 ]; then
+        echo "  FAIL: a pipefail script decides a verdict with a pipeline (audit exit $pfv_audit_rc):"
+        printf '%s\n' "$pfv_audit_out" | sed 's/^/      /'
+    fi
+    if [ "$pfv_self_rc" -ne 0 ] || [ "${PFV_COUNT:-0}" -ne "$PFV_EXPECTED" ]; then
+        echo "  FAIL: the gate self-test broke or shrank (exit $pfv_self_rc, checks=${PFV_COUNT:-none}, expected $PFV_EXPECTED):"
+        printf '%s\n' "$pfv_self_out" | sed 's/^/      /'
+    fi
 fi
 echo ""
 

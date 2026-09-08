@@ -33,18 +33,42 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# ---------------------------------------------------- how this gate matches (#1122)
+# NO PIPELINE DECIDES A VERDICT HERE. Mechanism, from #1120: under
+# `set -o pipefail`, `printf '%s' "$s" | grep -q "$pat"` is a RACE, not a
+# test. `grep -q` exits the instant it matches and closes the read end; the
+# still-writing `printf` then takes SIGPIPE and exits 141; pipefail reports
+# the PIPELINE as 141 — a failed match — while grep's own status was 0,
+# MATCHED. The verdict then contradicts the evidence printed beside it.
+# Measured there: 21 false no-matches in 20,000 evaluations on a 157-byte
+# capture, and CERTAIN once the capture exceeds the pipe buffer, because the
+# writer must block and is therefore still writing when the reader exits.
+# `tools/strict_differential.sh --selftest` reproduces that deterministically.
+#
+# So the three verdict sites below match with bash's own matcher: no fork, no
+# pipe, no status to misread. The needle is QUOTED inside the pattern, so a
+# glob character in it is a literal — the same promise `grep -F` made.
+# All three needles are plain substrings; none was using a regex.
+str_has() { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
+
 BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
+
+# Source list ANCHORED to the Makefile's SOURCES minus CLI_ONLY (the pattern
+# tools/amalgamate.sh and tools/freestanding_check.sh use). A hand-written copy
+# here is a list nothing ties to the tree: when #744 split three new TUs out of
+# vm.c/builtins.c/builtins_host.c, every copy of this list broke at the LINK
+# step and only the copies someone remembered to update were fixed.
+EMBED_SRC=$(make --no-print-directory print-SOURCES | tr ' ' '\n' | grep '\.c$')
+CLI_ONLY=$(make --no-print-directory print-CLI_ONLY | tr ' ' '\n' | grep '\.c$')
+for u in $CLI_ONLY; do EMBED_SRC=$(printf '%s\n' $EMBED_SRC | grep -vx "$u"); done
+[ -n "$EMBED_SRC" ] || { echo "FAIL: derived an EMPTY source list from the Makefile" >&2; exit 1; }
 
 gcc -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 \
     -DEIGENSCRIPT_FREESTANDING=1 \
     -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
     -o "$BUILD/embed_stack_soak" \
-    src/eigenscript.c src/lexer.c src/parser.c src/builtins.c \
-    src/builtins_host.c \
-    src/builtins_tensor.c src/hash.c src/arena.c src/state.c src/strbuf.c \
-    src/ext_store.c src/fmt.c src/lint.c src/lint_host.c src/chunk.c src/compiler.c \
-    src/vm.c src/jit.c src/trace.c src/eigs_embed.c \
+    $EMBED_SRC \
     tools/embed_stack_soak_main.c \
     -lm -lpthread
 
@@ -52,7 +76,7 @@ set +e
 out=$(bash -c "ulimit -s 64; '$BUILD/embed_stack_soak'" 2>&1); rc=$?
 set -e
 
-if [ "$rc" = 0 ] && printf '%s' "$out" | grep -q "embed_stack_soak: OK"; then
+if [ "$rc" = 0 ] && str_has "$out" "embed_stack_soak: OK"; then
     echo "  PASS: REPL soak completes in a 64 KiB stack ($out)"
 else
     echo "  FAIL: soak under 64 KiB stack (rc=$rc)"
@@ -69,13 +93,16 @@ set -e
 # the source and not some unrelated parse failure; the marker proves the
 # runtime was still usable afterwards.
 if [ "$grc" = 0 ] \
-   && printf '%s' "$gout" | grep -q "nesting too deep" \
-   && printf '%s' "$gout" | grep -q "embed_stack_soak: depth-guard OK"; then
+   && str_has "$gout" "nesting too deep" \
+   && str_has "$gout" "embed_stack_soak: depth-guard OK"; then
     echo "  PASS: parse-depth guard rejects cleanly in a 256 KiB stack"
 else
     echo "  FAIL: depth-guard probe under 256 KiB stack (rc=$grc)"
     # Drop the cascade of follow-on "expected ')'" lines the rejected source
     # produces, so the tail shows the diagnostic that matters.
+    # This pipeline is NOT a verdict and is NOT exposed to #1122: `grep -v` and
+    # `tail` both read to EOF, so neither can SIGPIPE the writer, and the
+    # branch it prints in has already decided. Same for the `| tail -5` above.
     printf '%s\n' "$gout" | grep -v "expected ')'" | tail -5
     exit 1
 fi

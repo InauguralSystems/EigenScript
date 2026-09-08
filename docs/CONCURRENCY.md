@@ -77,6 +77,35 @@ parallelism: use threads for genuinely parallel work, not to speed up a tight
 serial loop. (A quantified before/after number lands with the replay-pinned
 benchmark harness, #398.)
 
+## The scheduler trace is a reader, not a source (#846)
+
+A schedule visualizer or a DST wants "who ran when" without instrumenting
+every yield site. `task_sched_trace of 1` (or `EIGS_TASK_TRACE=1`) arms a
+per-thread trace of the cooperative scheduler: one `{seq, tick, task, cause}`
+entry per task **resume**, read back with `task_sched_trace of null`. The
+cause vocabulary is enumerated from the scheduler's enqueue sites, so every
+value names a mechanism: `spawn`, `yield`, `sleep-wake`, `join-release`,
+`kill-release`, `recv-wake`, `deadlock` (the #509 re-enqueue of main).
+
+Two properties are load-bearing and gated by `tests/test_task_sched_trace.sh`:
+
+- **Pure reader.** The cause of each ready-queue entry is stamped at enqueue
+  time whether or not the trace is armed (one byte, moved in lockstep with the
+  queue), and arming only decides whether a pop is written down — after the
+  pick, never before it. So the seeded PRNG draws, the clock and the queue
+  order are untouched: a run with the trace armed is byte-identical (stdout,
+  stderr, exit code) to the same seed with it off.
+- **Derived, not taped.** The interleaving is a pure function of program
+  order and the seed, so the trace is re-derived on replay rather than
+  recorded: it adds no `N` records to the tape, and a tape recorded with the
+  trace armed replays to the identical history. A taped copy would be a
+  second source of truth that could disagree with the first.
+
+Arming never creates a scheduler (the flag lives on the thread, the history on
+the scheduler and is freed with it); the main task's initial run precedes the
+first entry and is implicit. The history is unbounded while armed — disarm
+(`task_sched_trace of 0`) to discard it.
+
 ## Replay boundary (#148)
 
 Thread scheduling is nondeterministic, so it cannot be recorded onto the trace
@@ -88,6 +117,15 @@ use (see docs/TRACE.md, "Non-Replayable Builtins"). `spawn` and `thread_join`
 themselves are not blocked under replay: a worker that returns a pure value
 replays deterministically (the joined result is copied). Keep replayable
 programs off `recv` and off any worker whose result depends on thread ordering.
+
+The refusal is a clean exit, never a signal, on the main thread and on a
+worker alike: `spawn of [recv, ch]` under `EIGS_REPLAY` prints the diagnostic
+and the process exits 1 (#1112 — it died by SIGSEGV before, because a worker
+that runs a builtin directly has no VM and the uncaught-error printer read
+it). The general rule behind that status: a `spawn`ed worker that dies of an
+uncaught error fails the run, joined or not, exactly as a cooperative task
+does (#493); an error caught inside the worker, or a worker's `exit of N`,
+decides its own status.
 
 ## The race gate
 
