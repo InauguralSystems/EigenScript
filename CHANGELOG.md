@@ -106,6 +106,43 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`EIGS_STRICT=1` reaches the graphics and audio extension (#1007).**
+  `src/ext_gfx.c` had no raise path at all — `grep -c rt_error src/ext_gfx.c`
+  was 0 — while ~89 argument reads went straight through `items[N]->data.num`,
+  and `Value`'s union overlaps `double num` with `char *str`, so a string
+  where a number belonged reinterpreted a pointer as a double. `gfx_rect of
+  [10, 10, 50, 50, "255", 0, 0]` drew a BLACK rectangle where red was asked
+  for, and ~52 `make_null()` returns stood in for a rejected argument,
+  indistinguishable from the same builtin's ordinary "nothing to do" answer.
+  60 `ARG_GUARD`/`STRICT_REQUIRE` sites now cover the drawing calls, the text
+  calls, `gfx_fb`, `ppu_render_frame`, the generators, the mixer and the three
+  device openers; every one sits above the `load_sdl2()` call and above any
+  device check, so it is reachable where CI runs, and the two trace-recorded
+  builtins (`gfx_read`, `audio_capture_open`) guard above the tape seam so a
+  rejected argument neither consumes nor writes a record. The union pun is
+  gone in BOTH modes: what a rejected call *draws* changes, every returned
+  value stays byte-identical. A guard covers the argument's CONTAINER as well
+  as its elements — three rounds of blind review found the same axis three
+  times, most sharply in the openers, where `audio_stream_open of [48000]`
+  opened the device at the 44100/1 defaults and handed back a real device id,
+  telling a caller that asked for 48000 that it got 48000. Four gates carry
+  it: `tools/gfx_strict_sweep.sh` (section [139]) derives the guarded names
+  and their arity from the file's own `want` strings and crosses them with the
+  wrong-container shapes — 35 names, 140 rows, 129 raises, 11 in a
+  staleness-checked allowlist; `tools/gfx_pixel_differential.sh` (section
+  [138]) is the readback oracle, because every drawing builtin returns null on
+  every path and a returned-value differential measures that surface in the
+  one state where it cannot fail; `tests/test_asan_gfx.sh` (section [137])
+  makes `make asan-gfx` a gate over a six-program corpus, with its own
+  positive and negative leak controls — its triage found one leak and it was
+  ours (`gfx_poll`'s event dict, 584 bytes on the two decode-nothing paths),
+  so no LeakSanitizer suppression ships; and `tools/failsoft_classify_check.sh`
+  scopes `return make_null()` into the classified population for this one file
+  (`NULL_SCOPE`, floor 136 -> 174, new `fs:VOID` tag). A builtin that takes no
+  argument still ignores one and a surplus trailing argument is still dropped;
+  both are the general over-arity question (#989) and are stated in
+  `docs/BUILTINS.md` rather than left to be discovered.
+
 - **Three `EIGS_STRICT` guards leaked their own allocation on every raise
   (#971 round 2).** `STRICT_REQUIRE` returns, so it has to sit above anything
   the function already owns; in `scan_ints`, `scan_tokens` and
