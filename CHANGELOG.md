@@ -106,6 +106,32 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Three `EIGS_STRICT` guards leaked their own allocation on every raise
+  (#971 round 2).** `STRICT_REQUIRE` returns, so it has to sit above anything
+  the function already owns; in `scan_ints`, `scan_tokens` and
+  `scan_int_tokens` it sat one line below a 128-element `make_list`, losing
+  1096 bytes per raise. The soft path is unchanged. Nothing caught it because a
+  strict raise already exits non-zero, so a leak detector's exit changes
+  nothing about the process status and a leaking guard looks exactly like a
+  working one — the strict-math test drove these very rows and reported 85 of
+  85 passing under the sanitizer. Those rows are now leak-gated by reading the
+  sanitizer's own text out of the output the assertion already captures.
+- **`tools/werror_switch_check.sh` no longer swaps its script population under
+  load (#971 round 2).** It chose between `git ls-files` and a filesystem walk
+  by whether the first produced output, so a fork that lost a race for memory
+  silently switched to the walk, which enumerates untracked build output and
+  scratch directories and reports them as unenrolled scripts. That is the root
+  cause of the intermittent `[99i]`/`[99p]` failure where the audit printed its
+  own success line and the section failed anyway. The choice is now made by
+  whether the process is inside a work tree at all, and an empty listing inside
+  one is an error rather than a cue to look elsewhere.
+- **`tools/strict_differential.sh` has no divergence-waiver mechanism (#971
+  round 2).** `differing-when-off: 0` is the single claim the tool makes, and
+  an exemption path is that claim with a hole in it. Both failure modes had
+  already been paid for: a waiver outliving its pull request made the
+  documented pre-land command fail on a clean tree for a whole release window,
+  and a waiver hides exactly what the tool exists to show.
+
 - **`tools/strict_differential.sh` (suite section `[99s]`) no longer flakes red
   on a green tree under load (#1120).** Its verdicts were decided with
   `printf … | grep -q …` under `set -o pipefail`, which is a race rather than a
