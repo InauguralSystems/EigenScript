@@ -6060,19 +6060,40 @@ echo ""
 # "FAIL: a guard went silent..." followed by a completely clean report ending
 # in "OK", which is unreadable and untriageable — the one run that knew what
 # happened was discarded. Capture once; print what THAT run said.
+# THE HARNESS FIRST (#1120). Every verdict that tool prints is a string match,
+# and several of them were spelled `printf ... | grep -q`, which under
+# `set -o pipefail` reports a FAILED match whenever the reader exits early and
+# the writer is still writing: grep -q matches, closes the pipe, printf takes
+# SIGPIPE, and the pipeline's status is 141. That flaked THIS section red on a
+# green tree — measured 18 times in 186 runs under load with the pipe form in
+# place — and the accusation it printed ("raised by the wrong guard") was
+# refuted by the diagnostic two lines below it, which contained the guard's own
+# message. --selftest pins the fork-free matchers that replaced it and
+# reproduces the race deterministically, so the regression cannot return
+# quietly. It measures the script, not the build: ~0.1s, no binary needed.
 echo "[99s] Strict argument-guard differential (#971, no-baseline half)"
 TOTAL=$((TOTAL + 1))
+STRICT_SELF_OUT="$(bash "$TESTS_DIR/../tools/strict_differential.sh" --selftest 2>&1)"
+STRICT_SELF_RC=$?
 STRICT_DIFF_OUT="$(bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline 2>&1)"
 STRICT_DIFF_RC=$?
-if [ "$STRICT_DIFF_RC" = 0 ]; then
+if [ "$STRICT_SELF_RC" = 0 ] && [ "$STRICT_DIFF_RC" = 0 ]; then
     PASS=$((PASS + 1))
-    echo "  PASS: every guard raises from its own guard; every answer stays quiet"
+    echo "  PASS: the harness's own matchers hold; every guard raises from its own"
+    echo "        guard; every answer stays quiet"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: a guard went silent, raised from the wrong place, a pin broke,"
-    echo "        a guard has no probe, or a probe did not run (exit $STRICT_DIFF_RC)"
-    echo "  --- output of the run that failed (not a re-run) ---"
-    printf '%s\n' "$STRICT_DIFF_OUT" | sed -n '1,24p'
+    if [ "$STRICT_SELF_RC" != 0 ]; then
+        echo "  FAIL: the differential's OWN matchers broke (exit $STRICT_SELF_RC) — nothing"
+        echo "        below this line is a finding about a guard until that is fixed"
+        printf '%s\n' "$STRICT_SELF_OUT" | sed -n '1,20p'
+    fi
+    if [ "$STRICT_DIFF_RC" != 0 ]; then
+        echo "  FAIL: a guard went silent, raised from the wrong place, a pin broke,"
+        echo "        a guard has no probe, or a probe did not run (exit $STRICT_DIFF_RC)"
+        echo "  --- output of the run that failed (not a re-run) ---"
+        printf '%s\n' "$STRICT_DIFF_OUT" | sed -n '1,32p'
+    fi
 fi
 echo ""
 
