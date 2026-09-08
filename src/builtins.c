@@ -1744,10 +1744,14 @@ Value* builtin_scan_ints(Value *arg) {
         }
     }
 
-    Value *out = make_list(128);
     /* #971 Phase D: no string in the argument — a wrong type read as
-     * "no tokens". Coercion shape: raise under strict, unchanged otherwise. */
+     * "no tokens". Coercion shape: raise under strict, unchanged otherwise.
+     * The guard sits ABOVE the make_list: STRICT_REQUIRE returns, so a list
+     * allocated first would be abandoned by the raise (see write_bytes in
+     * builtins_host.c, which frees instead because its buffer is raw). */
     STRICT_REQUIRE(!str, "scan_ints", "a string or [string, comment_marker]");
+
+    Value *out = make_list(128);
     if (!str) return out;
 
     const char *p = str;
@@ -1845,10 +1849,14 @@ Value* builtin_scan_tokens(Value *arg) {
         }
     }
 
-    Value *out = make_list(128);
     /* #971 Phase D: no string in the argument — a wrong type read as
-     * "no tokens". Coercion shape: raise under strict, unchanged otherwise. */
+     * "no tokens". Coercion shape: raise under strict, unchanged otherwise.
+     * The guard sits ABOVE the make_list: STRICT_REQUIRE returns, so a list
+     * allocated first would be abandoned by the raise (see write_bytes in
+     * builtins_host.c, which frees instead because its buffer is raw). */
     STRICT_REQUIRE(!str, "scan_tokens", "a string or [string, comment_marker]");
+
+    Value *out = make_list(128);
     if (!str) return out;
 
     const char *base = str;
@@ -1930,10 +1938,14 @@ Value* builtin_scan_int_tokens(Value *arg) {
         }
     }
 
-    Value *out = make_list(128);
     /* #971 Phase D: no string in the argument — a wrong type read as
-     * "no tokens". Coercion shape: raise under strict, unchanged otherwise. */
+     * "no tokens". Coercion shape: raise under strict, unchanged otherwise.
+     * The guard sits ABOVE the make_list: STRICT_REQUIRE returns, so a list
+     * allocated first would be abandoned by the raise (see write_bytes in
+     * builtins_host.c, which frees instead because its buffer is raw). */
     STRICT_REQUIRE(!str, "scan_int_tokens", "a string or [string, comment_marker]");
+
+    Value *out = make_list(128);
     if (!str) return out;
 
     const char *base = str;

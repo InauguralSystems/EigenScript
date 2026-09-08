@@ -23,12 +23,32 @@ fi
 TMP=$(mktemp /tmp/eigs_strict_XXXXXX.eigs)
 trap 'rm -f "$TMP"' EXIT
 
+# LEAK-VISIBLE ROWS (#971 round 2). Every row captures stdout+stderr together,
+# so when this file is driven by an ASan build with ASAN_OPTIONS=detect_leaks=1
+# a LeakSanitizer report lands in "$out" and `leak_clean` turns the row RED.
+# This exists because a strict raise ALREADY exits non-zero, so LeakSanitizer
+# does not change the process status and a leaking guard looks exactly like an
+# ordinary expected raise: three guards (scan_ints / scan_tokens /
+# scan_int_tokens) leaked 1096 bytes each while all 85 rows reported PASS.
+# Under a release build there is no such output and the check is a no-op, so
+# the gate costs nothing and cannot go vacuous silently: it reads the same
+# text the assertion already reads.
+#
 # NOTE: <expect-substr> must never be the empty string — `grep -qF ""` matches
 # any output, so an empty expectation silently degrades the row to an exit-code
 # check. Rows asserting an EMPTY result wrap it (`f"[{...}]"` against "[]") so
 # the emptiness is something the assertion can actually see.
 #
 # run <name> <env: unset|0|1> <expect-exit 0|1> <expect-substr> <program>
+# leak_clean <captured-output>: 1 unless LeakSanitizer reported on this run.
+# Only ever non-empty under an ASan build with detect_leaks=1.
+leak_clean() {
+    case "$1" in
+        *"LeakSanitizer: detected memory leaks"*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 run() {
     local name="$1" env="$2" xexit="$3" substr="$4" prog="$5"
     printf '%s\n' "$prog" > "$TMP"
@@ -40,7 +60,9 @@ run() {
     local exit_ok=0
     if [ "$xexit" = "0" ] && [ "$rc" = "0" ]; then exit_ok=1; fi
     if [ "$xexit" = "1" ] && [ "$rc" != "0" ]; then exit_ok=1; fi
-    if [ "$exit_ok" = "1" ] && echo "$out" | grep -qF -- "$substr"; then
+    if ! leak_clean "$out"; then
+        fail "$name" "LEAKED on this path: $(echo "$out" | grep -F 'SUMMARY: AddressSanitizer')"
+    elif [ "$exit_ok" = "1" ] && echo "$out" | grep -qF -- "$substr"; then
         ok "$name"
     else
         fail "$name" "rc=$rc out='$out'"
@@ -54,7 +76,9 @@ run_jitoff() {
     printf '%s\n' "$prog" > "$TMP"
     local out rc
     out=$(EIGS_STRICT=1 EIGS_JIT_OFF=1 "$EIGS" "$TMP" 2>&1); rc=$?
-    if [ "$rc" != "0" ] && echo "$out" | grep -qF -- "$substr"; then
+    if ! leak_clean "$out"; then
+        fail "$name" "LEAKED on this path: $(echo "$out" | grep -F 'SUMMARY: AddressSanitizer')"
+    elif [ "$rc" != "0" ] && echo "$out" | grep -qF -- "$substr"; then
         ok "$name"
     else
         fail "$name" "rc=$rc out='$out'"
@@ -280,6 +304,16 @@ run "SM81 strict: token_name of an unknown id is still ?" 1 0 "?" 'print of (tok
 run "SM82 strict tokenize_ids(num) raises"              1 1 "tokenize_ids: expected" 'print of (tokenize_ids of 42)'
 run "SM83 strict random_hex(str) raises"                1 1 "random_hex: expected" 'print of (random_hex of "x")'
 run "SM84 strict: random_hex of 0 is still empty"       1 0 "[]" 'print of f"[{random_hex of 0}]"'
+
+# SM85-SM88 (#971 round 2): scan_ints had a row (SM71); its two siblings had
+# none, so both leaked with no coverage at all. All three guards sit above the
+# make_list they used to follow, and these rows are the leak-visible ones (the
+# raise itself already exits 1, so only `leak_clean` can see a regression).
+run "SM85 strict scan_tokens(num) raises"               1 1 "scan_tokens: expected"     'print of (scan_tokens of 42)'
+run "SM86 strict scan_int_tokens(num) raises"           1 1 "scan_int_tokens: expected" 'print of (scan_int_tokens of 42)'
+# Flag-off pins: the wrong type still reads as "no tokens" -> an empty list.
+run "SM87 default scan_tokens(num) is still []"     unset 0 "[]" 'print of f"[{scan_tokens of 42}]"'
+run "SM88 default scan_int_tokens(num) is still []" unset 0 "[]" 'print of f"[{scan_int_tokens of 42}]"'
 
 echo "STRICT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

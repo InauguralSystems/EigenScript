@@ -73,10 +73,10 @@ cd "$(cd "$(dirname "$0")/.." && pwd)"
 # loudness detector must fire, because that binary lacks the guards this
 # tree added. Measured 2026-09-07 against the v0.43.0 build:
 # `raises-under-strict: 77 silent: 21` and FAIL, where this tree scores
-# 98/0 and OK. (The stale-waiver check is not exercised that way while both
-# waiver lists are empty, which they are — see the waiver block below. It is
-# exercised by ADDING a waiver for a probe that does not diverge, which is
-# what it exists to catch.) A harness that has never failed has not been
+# 98/0 and OK. The identical-when-off half is exercised the other way: put a
+# default-path change back into a converted site and it reports
+# `differing: 1` and FAILs — there is no exemption list that could absorb it
+# (see the waiver block below). A harness that has never failed has not been
 # shown to work.
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
 BASE="${1:-}"
@@ -452,56 +452,40 @@ print of (len of (random_hex of 4))
 EOF
 )
 
-# ---------------------------------------------------- divergence waivers
-# A waiver here says: "this probe's DEFAULT-path answer legitimately changes,
-# and here is why." It is compared against a build of the PARENT COMMIT.
+# --------------------------------------- no divergence-waiver mechanism
+# There is deliberately NO way to exempt a probe from the default-path
+# comparison. `differing-when-off: 0` is the single claim this tool exists to
+# make, and an exemption path is that claim with a hole in it.
 #
-# THEY ARE PR-SCOPED, AND THAT IS THE WHOLE LIFECYCLE. An entry is live for
-# exactly one review — while the change is unmerged and the parent still
-# lacks it. The moment it lands, the parent HAS the fix, the probe stops
-# diverging, and the entry is SPENT: inert, and pure debris. So a waiver is
-# added with the PR that needs it and removed with the next one.
+# There used to be one (EXPECTED_DIVERGE_FIXED / _UNSTABLE), and it is gone
+# because both of its failure modes were paid for:
 #
-# Bought (#1016). `sign_extend`'s waiver was written for #971 Phase B and left
-# behind when #1015 landed. From that commit on, the "baseline" contained the
-# guard, so `sign_extend of ["x", 8]` answered a deterministic 0 on BOTH
-# sides — and the waiver's proof, which requires the BASELINE to be unstable,
-# could never hold again. The documented pre-land command
-# (`bash tools/strict_differential.sh <parent-build>`) therefore returned
-# FAIL on a clean tree for every run between #1015 and #1016, while the half
-# it exists to measure was green: `identical-when-off: 63 differing: 0`.
-# A gate that always fails is ignored exactly as fast as one that never fires.
-# The eleven #1007 waivers were added the same day and would have started
-# rotting the moment #1018 merged; the STALE WAIVER check below caught all
-# eleven on the first post-merge run, which is what it is for.
+#   Waivers are PR-scoped, and nothing enforces that. An entry is live for
+#   exactly one review — while the change is unmerged and the parent still
+#   lacks it. The moment it lands, the parent HAS the fix, the probe stops
+#   diverging, and the entry is SPENT: inert, pure debris. Bought (#1016):
+#   `sign_extend`'s waiver was written for #971 Phase B and left behind when
+#   #1015 landed, so the documented pre-land command returned FAIL on a clean
+#   tree for every run between #1015 and #1016 while the half it measures was
+#   green. A gate that always fails is ignored as fast as one that never fires.
 #
-# CI never evaluates any of this: it runs --no-baseline, which skips every
-# `[ -n "$BASE" ]` block. So an entry left here is invisible until the next
-# person runs the two-binary mode by hand and is met with someone else's
-# expired paperwork.
+#   And a waiver hides exactly what the tool is for. #971 (NaN enumeration)
+#   ALMOST kept one. matmul's BUFFER path stores the kernel's raw inf-inf NaN,
+#   and a raw NaN in a buffer is not a number the program can see — its bit
+#   pattern is a NaN-boxed slot tag, so `r[0]` reads back as `null`
+#   (0xFFF8... is SLOT_NULL_BITS). Collapsing it to 0 the way the list path
+#   does looked like a free fix; it was written, waived, and proven. But a
+#   PROVEN waiver is still a hole in "with the flag off, nothing changed", and
+#   that claim is worth more than the incidental fix. The strict half now
+#   raises through STRICT_DOMAIN, which cannot touch the soft path; `r[0]`
+#   still reads `null` with the flag off; the pre-existing `null` read is
+#   recorded in ROADMAP.md as its own change with its own differential.
 #
-# Currently empty, deliberately. Add an entry ONLY alongside the change that
-# needs it, in the group whose proof matches the claim being made:
-#   EXPECTED_DIVERGE_UNSTABLE — "the old answer was undefined and not even
-#     stable across runs" (proof: two baseline runs must DIFFER)
-#   EXPECTED_DIVERGE_FIXED    — "the old answer was stable and wrong"
-#     (proof: two baseline runs must AGREE, and the new answer must be 0)
-# #971 (NaN enumeration) ALMOST added one, and the second look is the reason
-# both lists are empty. matmul's BUFFER path stores the kernel's raw inf-inf
-# NaN, and a raw NaN in a buffer is not a number the program can see — its bit
-# pattern is a NaN-boxed slot tag, so `r[0]` reads back as `null` (0xFFF8...
-# is SLOT_NULL_BITS). Collapsing it to 0 the way the list path does looked
-# like a free fix, and it was written, waived here as EXPECTED_DIVERGE_FIXED,
-# and proven. But a proven waiver is still a hole in the ONE claim this whole
-# tool exists to make — "with the flag off, nothing changed" — and that claim
-# is worth more than the incidental fix. The strict half now raises through
-# STRICT_DOMAIN, which cannot touch the soft path, `r[0]` still reads `null`
-# with the flag off, and the pre-existing `null` read is recorded in
-# ROADMAP.md as its own change with its own differential. Nothing is waived.
-EXPECTED_DIVERGE_UNSTABLE=""
-EXPECTED_DIVERGE_FIXED=""
-EXPECTED_DIVERGE="$EXPECTED_DIVERGE_UNSTABLE
-$EXPECTED_DIVERGE_FIXED"
+# So: if a future change genuinely must move a default-path answer, it is a
+# SEMANTICS CHANGE, not a waiver. It belongs in docs/SPEC.md + COMPARISON.md +
+# BUILTINS.md with a fixture pinning the new behaviour and a CHANGELOG line
+# that says so plainly — and this tool should go red until that is done.
+
 
 # Guards that CANNOT be probed, named with the reason. Without this list they
 # would sit in "GUARDED BUT UNPROBED" forever and train the reader to ignore
@@ -718,8 +702,7 @@ record_evidence() {   # <kind> <name> <pattern> <capture: "rc\nbytes">
 # false green this repo keeps a hook for, and it was living in the tool built
 # to prevent them. Do not reset rc anywhere below.
 rc=0
-n_probe=0 n_ident=0 n_differ=0 n_raise=0 n_silent=0 n_waived=0
-waived_seen=""
+n_probe=0 n_ident=0 n_differ=0 n_raise=0 n_silent=0
 n_pin=0 n_pin_ok=0 n_pin_broke=0 n_misattr=0
 n_unrun=0 unrun_list=""
 differ_list="" silent_list="" pin_list="" misattr_list=""
@@ -835,19 +818,11 @@ while IFS='|' read -r who prog expect; do
         if [ "$a" = "$b" ]; then
             n_ident=$((n_ident + 1))
         else
-            # A waived divergence still gets its strict half measured
-            # below — waiving the default-path comparison must not quietly
-            # drop the probe from the loudness count too.
-            if str_has_line "$EXPECTED_DIVERGE" "$who"; then
-                n_waived=$((n_waived + 1))
-                waived_seen="$waived_seen $who"
-            else
-                n_differ=$((n_differ + 1))
-                differ_list="$differ_list
+            n_differ=$((n_differ + 1))
+            differ_list="$differ_list
     $who
       baseline: $(printf '%s' "$a" | tr '\n' ' ' | cut -c1-90)
       new     : $(printf '%s' "$b" | tr '\n' ' ' | cut -c1-90)"
-            fi
         fi
     fi
 
@@ -1032,7 +1007,7 @@ if [ "$n_skipped" -gt 0 ]; then
     echo "  probes skipped (builtin not in this build): $n_skipped —$skipped_list"
 fi
 if [ -n "$BASE" ]; then
-    echo "  identical-when-off: $n_ident   differing: $n_differ   waived: $n_waived"
+    echo "  identical-when-off: $n_ident   differing: $n_differ"
 else
     echo "  identical-when-off: SKIPPED (no baseline binary given)"
 fi
@@ -1056,97 +1031,6 @@ fi
 [ -n "$pin_list" ]    && { echo "  PIN BROKEN (the reform overshot into a documented answer):$pin_list"; rc=1; }
 [ -n "$missing" ]     && { echo "  GUARDED BUT UNPROBED:"; printf '    %s\n' $missing; rc=1; }
 [ -n "$stale" ]       && { echo "  PROBED BUT NO LONGER GUARDED (stale probe):"; printf '    %s\n' $stale; rc=1; }
-
-# The waiver is ASSERTED, not asserted-about. sign_extend's justification is
-# "the baseline behaviour was undefined, and not even stable across runs", so
-# the harness proves that half rather than asking to be believed: run the
-# BASELINE twice on the same probe and require the two results to differ. If
-# they ever stop differing, the UB claim is wrong and the waiver must be
-# re-argued. (This probe is therefore deliberately kept OUT of the identity
-# comparison — a nondeterministic fixture does not belong in a differential
-# as an ordinary row.)
-# The DETERMINISTIC group (#1007) claims the opposite: the old answer was
-# stable and simply wrong — a reported success for an argument the builtin
-# could not honour — and the new one is that builtin's documented failure
-# answer. So its proof is the mirror image: the two baseline runs must AGREE
-# (a wobbling baseline would mean the "stable and wrong" reading is itself
-# wrong), and the NEW binary must answer 0. Neither half is implied by the
-# other, and neither is the instability check.
-if [ -n "$BASE" ]; then
-    for w in $EXPECTED_DIVERGE_FIXED; do
-        wprog="$(probe_prog_for "$w")"
-        [ -z "$wprog" ] && continue
-        printf '%b\n' "$wprog" > "$TMP/w.eigs"
-        probe_builtin_present "$w" || { echo "  waiver not exercised: $w is not in this build"; continue; }
-        d1="$(run_capture "$BASE" - "$TMP/w.eigs")"
-        d2="$(run_capture "$BASE" - "$TMP/w.eigs")"
-        dn="$(run_capture "$NEW" - "$TMP/w.eigs")"
-        if [ "$d1" != "$d2" ]; then
-            echo "  WAIVER UNPROVEN: $w — the baseline is NOT stable across runs"
-            echo "                   ($(printf '%s' "$d1" | tr '\n' ' ') vs $(printf '%s' "$d2" | tr '\n' ' ')),"
-            echo "                   so 'the old answer was deterministic and wrong' does not hold."
-            rc=1
-        elif [ "$dn" != "0
-0" ]; then
-            echo "  WAIVER UNPROVEN: $w — the new answer is not the documented failure value"
-            echo "                   (got $(printf '%s' "$dn" | tr '\n' ' '), want rc 0 and 0)."
-            rc=1
-        else
-            echo "  waiver proven: $w baseline stable at $(printf '%s' "$d1" | tr '\n' ' ' | cut -c1-40), new answers 0"
-        fi
-    done
-fi
-
-if [ -n "$BASE" ]; then
-    for w in $EXPECTED_DIVERGE_UNSTABLE; do
-        wprog="$(probe_prog_for "$w")"
-        if [ -n "$wprog" ]; then
-            printf '%b\n' "$wprog" > "$TMP/w.eigs"
-            r1="$(run_capture "$BASE" - "$TMP/w.eigs")"
-            r2="$(run_capture "$BASE" - "$TMP/w.eigs")"
-            if [ "$r1" = "$r2" ]; then
-                echo "  WAIVER UNPROVEN: $w — two baseline runs agreed"
-                echo "                   ($(printf '%s' "$r1" | tr '\n' ' ')),"
-                echo "                   so the 'undefined, unstable' justification"
-                echo "                   for waiving it does not hold. Re-argue it."
-                rc=1
-            else
-                echo "  waiver proven: $w baseline is run-to-run unstable"
-                echo "    run 1: $(printf '%s' "$r1" | tr '\n' ' ' | cut -c1-60)"
-                echo "    run 2: $(printf '%s' "$r2" | tr '\n' ' ' | cut -c1-60)"
-            fi
-        fi
-    done
-fi
-
-# An exemption that no longer fires must FAIL, not pass quietly: it means
-# the thing it waived changed shape, which is exactly when a stale waiver
-# starts covering something nobody agreed to.
-if [ -n "$BASE" ]; then
-    for w in $EXPECTED_DIVERGE_UNSTABLE; do
-        if ! str_has_word "$waived_seen" "$w"; then
-            echo "  SPENT WAIVER: $w is declared divergent but did not differ."
-            echo "                Remove the entry. A waiver is PR-scoped: it is live"
-            echo "                only while the parent lacks the change, and inert the"
-            echo "                moment it lands. Leaving it means the next person to"
-            echo "                run the two-binary mode meets expired paperwork —"
-            echo "                which is how sign_extend kept this tool red from"
-            echo "                #1015 to #1016 (see the waiver block at the top)."
-            rc=1
-        fi
-    done
-    for w in $EXPECTED_DIVERGE_FIXED; do
-        probe_builtin_present "$w" || continue
-        if ! str_has_word "$waived_seen" "$w"; then
-            echo "  SPENT WAIVER: $w is declared divergent but did not differ."
-            echo "                Either the probe no longer reaches the guard, or —"
-            echo "                far more likely — the change LANDED and the baseline"
-            echo "                now contains it. Remove the entry; a waiver is
-                PR-scoped (see the waiver block at the top)." | tr -s " "
-            rc=1
-        fi
-    done
-fi
 
 # Vacuity: this script cannot be green having measured nothing.
 if [ "$n_probe" -lt 55 ] || [ "$n_pin" -lt 14 ] || { [ -n "$BASE" ] && [ "$n_valid" -lt 25 ]; }; then

@@ -6651,12 +6651,30 @@ echo ""
 # failure, not a silent pass).
 echo "[99i] werror-switch compile-line gate (#817/#835)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/werror_switch_check.sh" && bash "$TESTS_DIR/../tools/werror_switch_check.sh" --selftest >/dev/null; then
+# The two halves are reported SEPARATELY (#971 round 2). They used to be one
+# `a && b >/dev/null` chain, which made a self-test failure unattributable:
+# the audit half prints its own "gate OK" line, so a log showing OK followed
+# by this section's FAIL looked self-contradictory, and the self-test's
+# diagnostics — the only thing that says WHICH planted fault shape stopped
+# being caught — had gone to /dev/null. Observed on this box under load
+# (a full-suite run where the audit printed OK and the section still failed);
+# with the output kept, the next occurrence names its own cause.
+werror_audit_rc=0
+bash "$TESTS_DIR/../tools/werror_switch_check.sh" || werror_audit_rc=$?
+werror_selftest_out=$(bash "$TESTS_DIR/../tools/werror_switch_check.sh" --selftest 2>&1)
+werror_selftest_rc=$?
+if [ "$werror_audit_rc" -eq 0 ] && [ "$werror_selftest_rc" -eq 0 ]; then
     PASS=$((PASS + 1))
     echo "  PASS: every dry-run + audited-script compile line carries -Werror=switch (gate self-test green)"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: a compile line lacks -Werror=switch, or the gate self-test broke (see lines above)"
+    if [ "$werror_audit_rc" -ne 0 ]; then
+        echo "  FAIL: a compile line lacks -Werror=switch (audit exit $werror_audit_rc; see lines above)"
+    fi
+    if [ "$werror_selftest_rc" -ne 0 ]; then
+        echo "  FAIL: the gate self-test broke (--selftest exit $werror_selftest_rc); its output:"
+        printf '%s\n' "$werror_selftest_out" | sed 's/^/      /'
+    fi
 fi
 echo ""
 

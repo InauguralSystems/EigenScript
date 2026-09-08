@@ -389,13 +389,41 @@ enrollment_check() {
     # while reporting success — measured at 0 scripts in a fault tree vs 66 in
     # the real repo, with a planted unenrolled compile going unreported. Fall
     # back to find, and refuse to pass on an empty enumeration.
+    #
+    # The fallback is chosen by WHERE WE ARE, never by whether git produced
+    # output (#971 round 2). Keying it on an empty result made the check
+    # silently swap populations whenever `git ls-files` failed for a reason
+    # that had nothing to do with the tree — a fork/exec that lost a race for
+    # memory under a loaded box being the observed one. `find` then enumerates
+    # UNTRACKED files too: build output, scratch dirs, another run's extracted
+    # fault tree. Any of those carrying a compile line is reported as an
+    # unenrolled script, so the gate goes red naming a file that is not part of
+    # the repository at all. That is the shape of the intermittent [99i]/[99p]
+    # failure seen under load: the audit half printed its own "gate OK" and the
+    # section still failed, because the SELF-TEST half tripped this.
+    #
+    # So: inside a work tree, `git ls-files` is authoritative and an empty or
+    # failed result is an ERROR, not a cue to look elsewhere. Outside one — the
+    # `git archive HEAD | tar -x` fault trees, which are extractions and not
+    # repositories — `find` is correct and is the only option.
     local enroll_scripts
-    enroll_scripts=$(git ls-files '*.sh' 2>/dev/null | sort -u)
-    [ -z "$enroll_scripts" ] && enroll_scripts=$(find . -name '*.sh' -not -path './.git/*' 2>/dev/null | sed 's|^\./||' | sort -u)
-    if [ -z "$enroll_scripts" ]; then
-        echo "GATE ERROR: script enrollment found NO shell scripts to examine —"
-        echo "the assertion would pass vacuously, so it fails instead."
-        return 1
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        enroll_scripts=$(git ls-files '*.sh' 2>/dev/null | sort -u)
+        if [ -z "$enroll_scripts" ]; then
+            echo "GATE ERROR: inside a git work tree, but 'git ls-files' listed no shell"
+            echo "scripts. That is a failure of the enumeration, not an empty tree, so the"
+            echo "check refuses to fall back to 'find' — find would enumerate untracked and"
+            echo "generated files and report them as unenrolled. Re-run; if it persists,"
+            echo "the work tree or index is broken."
+            return 1
+        fi
+    else
+        enroll_scripts=$(find . -name '*.sh' -not -path './.git/*' 2>/dev/null | sed 's|^\./||' | sort -u)
+        if [ -z "$enroll_scripts" ]; then
+            echo "GATE ERROR: script enrollment found NO shell scripts to examine —"
+            echo "the assertion would pass vacuously, so it fails instead."
+            return 1
+        fi
     fi
     for sc in $enroll_scripts; do
         case " $SCRIPT_AUDITS " in *" $sc "*) continue;; esac
@@ -763,13 +791,29 @@ recognizer_coverage_check() {
     # OK line with "0 waived" inside a fault tree, i.e. it examined zero files
     # and reported success. A coverage check that silently measures nothing is
     # worse than no check, because it reads as evidence.
-    scripts=$(git ls-files '*.sh' 2>/dev/null)
-    [ -z "$scripts" ] && scripts=$(find . -name '*.sh' -not -path './.git/*' 2>/dev/null | sed 's|^\./||')
-    if [ -z "$scripts" ]; then
-        echo "GATE ERROR: recognizer coverage found NO shell scripts to examine."
-        echo "Neither 'git ls-files' nor 'find' enumerated anything — the check"
-        echo "would pass vacuously, so it fails instead."
-        return 1
+    #
+    # Same rule as enrollment_check (#971 round 2): the fallback is chosen by
+    # WHERE WE ARE, never by whether git produced output. Keyed on an empty
+    # result, a transient `git ls-files` failure silently swaps a tracked-file
+    # population for one that also contains untracked, generated and scratch
+    # files — which is measurable here as a "waived by shape" count that moves
+    # between runs of an unchanged tree (6 and 7 both observed).
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        scripts=$(git ls-files '*.sh' 2>/dev/null)
+        if [ -z "$scripts" ]; then
+            echo "GATE ERROR: inside a git work tree, but 'git ls-files' listed no shell"
+            echo "scripts for the recognizer coverage check. That is a failed enumeration,"
+            echo "not an empty tree, so the check refuses to fall back to 'find'."
+            return 1
+        fi
+    else
+        scripts=$(find . -name '*.sh' -not -path './.git/*' 2>/dev/null | sed 's|^\./||')
+        if [ -z "$scripts" ]; then
+            echo "GATE ERROR: recognizer coverage found NO shell scripts to examine."
+            echo "Neither 'git ls-files' nor 'find' enumerated anything — the check"
+            echo "would pass vacuously, so it fails instead."
+            return 1
+        fi
     fi
     # Cheap per-file pre-filter. The expensive path is per-SEGMENT (two greps
     # each, after a three-process normalisation pipeline), and only ~10 of 66

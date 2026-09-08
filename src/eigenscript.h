@@ -1110,6 +1110,19 @@ extern __thread EigsThread *eigs_current;
  * no `return make_num(0)` to enumerate. Found by the differential instead
  * (a probe that stayed silent under strict), which is why that harness
  * exists as well as the classifier. */
+/* PLACEMENT IS LOAD-BEARING: this RETURNS, so it must sit BEFORE anything the
+ * function has allocated and still owns, or the raise abandons it. Put the
+ * guard above the allocation where the inputs allow it (the three scan_*
+ * builtins each sat one line below a `make_list(128)` and leaked 1096 bytes
+ * per strict raise); where they do not, free explicitly first, as
+ * builtin_write_bytes does with its raw buffer.
+ *
+ * Nothing about the ordinary run catches that mistake: a strict raise ALREADY
+ * exits non-zero, so LeakSanitizer does not change the process status and a
+ * leaking guard is indistinguishable from an expected raise. The check that
+ * does catch it is `leak_clean` in tests/test_strict_math.sh, which reads the
+ * LeakSanitizer text out of the output it already captures — so every strict
+ * raise needs a row there, and a new guard without one is unguarded. */
 #define STRICT_REQUIRE(cond, who, want)                                       \
     do {                                                                      \
         if (g_strict && (cond)) {                                             \
