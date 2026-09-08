@@ -106,6 +106,27 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`tools/strict_differential.sh` (suite section `[99s]`) no longer flakes red
+  on a green tree under load (#1120).** Its verdicts were decided with
+  `printf … | grep -q …` under `set -o pipefail`, which is a race rather than a
+  test: `grep -q` exits the moment it matches and closes the pipe, the still-
+  writing `printf` takes SIGPIPE and exits 141, and pipefail reports the
+  pipeline as failed while grep itself reported a match. A probe was therefore
+  scored "raised by the wrong guard" while the diagnostic printed beside it
+  contained that guard's own message. Measured with the pipe form in place: 18
+  red runs in 186 under load, spread over 18 different probes; 0 in 300 without
+  it. Every verdict site now matches with the shell itself, no fork and no pipe,
+  and a new `--selftest` that `[99s]` runs before the differential pins those
+  matchers and reproduces the race deterministically. Alongside it: a
+  variant-only presence check that did not run is reported as an unrun probe
+  instead of being assumed present and charged to a guard; the tool fingerprints
+  its subject binary at both ends, so a `make` that re-points `src/eigenscript`
+  mid-run says so instead of looking like a broken guard; signal deaths are
+  named rather than left as a number; and any run that finds something writes
+  each finding's whole capture, exit status and matched pattern to an evidence
+  directory it names, including whether the pattern is in those bytes after
+  all — which labels a self-contradicting verdict as a harness bug on sight.
+
 - **`--lint` leaked the parsed `eigs.json` on every run inside a project whose
   manifest has any nested value (#1121).** `"deps": {}` is enough, and it is in
   the manifest every repo in the fleet ships. Dropping a reference to a list or
