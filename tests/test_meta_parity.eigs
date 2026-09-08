@@ -226,20 +226,90 @@ check of ["VM: parameter binder restored",
     vm_probe of "define f1105(p) as:\n    for p in [7, 8]:\n        p is p + 10\n    return p\nf1105 of 1",
     ["ok", 1]]
 
-# --- #1057: the live-module-view rule, and why it has no parity row ---
+# --- #1057: `import` resolution, and the module-namespace rule on both sides ---
 #
-# The C evaluator makes a namespace a LIVE VIEW of the module env (`M.x` reads
-# M's current binding, `M.x is v` writes it), and lib/eigen.eigs carries the
-# mirror (`_eigen_module_envs`). That mirror cannot be asserted, because the
-# meta-interpreter's `import` does not resolve a module at all: it reads
-# `"lib/" + name + ".eigs"` with `read_text`, which answers "" for a path it
-# cannot open, so every meta-interpreted import produces an EMPTY namespace.
-# This is a MATCHED-BUG CANARY, not a specification: it pins the gap so that
-# the day `import` starts working here, this row goes red and whoever fixed it
-# adds the real live-view parity rows next to it (as #1111 and #1105 have).
-check of ["#1057 canary: meta-interpreted import is still an empty namespace",
-    eigen_run of "import math\nkeys of math",
-    []]
+# The C evaluator makes a namespace a LIVE VIEW of the module env: `M.x` reads
+# M's CURRENT binding, `M.x is v` writes it, and `_`-prefixed module bindings
+# are never projected or written. lib/eigen.eigs carries the mirror
+# (`_eigen_module_envs`, consulted by `dot`/`dot_assign`).
+#
+# Every row below asserts BOTH evaluators on the SAME source, the way the
+# #1111 and #1105 rows do. `parity` runs the source through eigen_run and
+# through the C `eval` and requires the same answer from each.
+#
+# These import a STDLIB module by NAME on purpose. `import` has to answer the
+# same module from any working directory: eigen.eigs used to read its module
+# with `read_text of ("lib/" + name + ".eigs")`, which is cwd-relative AND
+# answers "" for an absent path (read_text's documented answer) — so the
+# namespace came back silently EMPTY from every cwd but the repo root, and a
+# misspelt module name produced an empty namespace, not a raise.
+# `_eigen_module_path` now mirrors the C resolver's chain (cwd, then the
+# stdlib root beside the binary) and raises when nothing resolves; the `chdir`
+# row below is the gate on the cwd half, since this file is run from `src/` by
+# the suite and from the repo root by hand.
+
+define meta_probe(src) as:
+    try:
+        return ["ok", eigen_run of src]
+    catch me:
+        return ["err"]
+
+define parity(label, src, want) as:
+    check of [f"meta: {label}", meta_probe of src, want]
+    check of [f"VM: {label}", vm_probe of src, want]
+
+parity of ["a public module binding is in the namespace",
+    "import log\nhas_key of [log, \"log_info\"]", ["ok", 1]]
+parity of ["a `_` module binding reads as null through the namespace",
+    "import log\nlog._log_min_level", ["ok", null]]
+parity of ["a `_` module binding is not a namespace key",
+    "import log\nhas_key of [log, \"_log_min_level\"]", ["ok", 0]]
+parity of ["a key written through the namespace reads back",
+    "import map\nmap.probe1057 is 7\nmap.probe1057", ["ok", 7]]
+parity of ["a key written through the namespace becomes a namespace key",
+    "import map\nmap.probe1057 is 7\nhas_key of [map, \"probe1057\"]", ["ok", 1]]
+parity of ["a `_` key written through the namespace reads back (stays private)",
+    "import log\nlog._log_min_level is 3\nlog._log_min_level", ["ok", 3]]
+parity of ["an unresolvable module raises, it does not import empty",
+    "import no_such_module_1057\n1", ["err"]]
+
+# The namespace is a view of the module the IMPORT produced, not of the name:
+# rebind the name to an ordinary dict and both evaluators stop answering from
+# the module. (The C evaluator carries the module env on the namespace VALUE;
+# eigen.eigs registers it under the name, so it has to check that the target
+# still IS that namespace.)
+parity of ["rebinding the name drops the module view",
+    "import log\nlog is {}\nlog.log_info", ["ok", null]]
+parity of ["rebinding the name drops the module keys",
+    "import log\nlog is {}\nhas_key of [log, \"log_info\"]", ["ok", 0]]
+
+# The cwd gate. Run the same import from a directory that has no `lib/`: both
+# evaluators must still answer the stdlib module beside the binary. Done in a
+# temp cwd and restored immediately, so a failure below cannot leave the rest
+# of the file running somewhere else.
+_mp_cwd is getcwd of null
+chdir of "/tmp"
+_mp_meta_elsewhere is meta_probe of "import log\nhas_key of [log, \"log_info\"]"
+_mp_vm_elsewhere is vm_probe of "import log\nhas_key of [log, \"log_info\"]"
+chdir of _mp_cwd
+check of ["meta: import resolves from a cwd with no lib/", _mp_meta_elsewhere, ["ok", 1]]
+check of ["VM: import resolves from a cwd with no lib/", _mp_vm_elsewhere, ["ok", 1]]
+
+# GAP CANARY (a real gap, asserted as it behaves today). The live half of the
+# rule — a module FUNCTION mutating a module global and the importer seeing it
+# — has no parity row, because meta functions cannot read module globals at
+# all: `eigen_eval`'s "call" arm parents the call env on the CALLER's env, not
+# on the definition env ("func" stores no env, by an explicit choice to keep
+# function values acyclic). So `log.log_level of "warn"` throws
+# "undefined variable '_log_level_num'" in the meta-interpreter while the C
+# evaluator runs it. That is OLDER and SEPARATE from #1057. When this row goes
+# red, check which of the two moved — meta functions became lexically scoped
+# (then add the live round-trip rows here), or lib/log.eigs stopped reading a
+# module global from a public function (then pick another module).
+check of ["GAP: a meta module function cannot read a module global",
+    meta_probe of "import log\nlog.log_level of \"warn\"", ["err"]]
+check of ["VM: the same module function call succeeds",
+    vm_probe of "import log\nlog.log_level of \"warn\"", ["ok", null]]
 
 if checks == passed:
     print of "All tests passed"

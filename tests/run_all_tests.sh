@@ -1497,9 +1497,13 @@ fi
 # short-circuit, raising on unbound identifiers, and div/mod-by-zero values —
 # the divergences it used to ship while claiming "full parity". Since #1111 it
 # also pins the #1102 reservation: report/report_value cannot be bound and
-# need an identifier operand — native E005 and meta both raise.
-echo "[107] Meta-Interpreter Parity (#306, #1111)"
-check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0, report/report_value reservation #1111)" test_meta_parity.eigs "All tests passed" 1
+# need an identifier operand — native E005 and meta both raise. Since #1057 it
+# also pins module namespaces on both evaluators (read, write, `_`-privacy,
+# rebinding) and that `import` resolves from any working directory — the file
+# is run from src/ here and from the repo root by hand, and must be green from
+# both.
+echo "[107] Meta-Interpreter Parity (#306, #1111, #1057)"
+check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0, report/report_value reservation #1111, module namespaces + import resolution #1057)" test_meta_parity.eigs "All tests passed" 1
 
 # [108] sandbox_run allocation budget (#292). The size-controlled allocators
 # (zeros/fill/buffer/range) charge a per-run byte budget so untrusted generated

@@ -1141,10 +1141,16 @@ define eigen_parse(tokens) as:
 # Evaluator
 # ============================================================
 
-# #1057: the module env behind a `M.x` target node, or null when the target is
-# not a bare imported-module name or `x` is module-private (`_`-prefixed names
-# are not part of a namespace and are never projected through it).
-define _ns_env_for(target_node, key) as:
+# #1057: the module env behind a `M.x` target node, or null when this is not a
+# live module namespace. The registry is keyed by the imported NAME, so the
+# name alone is not enough to decide: `import log` followed by `log is {}`
+# rebinds the name to an ordinary dict, and the C evaluator then answers null
+# for `log.log_info` because the namespace VALUE it carried the module env on
+# is gone. `target` (the evaluated left-hand side) is therefore checked
+# against the namespace dict this import produced, and a `_`-prefixed key is
+# refused outright — those bindings are not part of a namespace and are never
+# projected or written through it.
+define _ns_env_for(target_node, key, target) as:
     if (type of target_node) != "list":
         return null
     if (len of target_node) < 2:
@@ -1154,9 +1160,12 @@ define _ns_env_for(target_node, key) as:
     if (len of key) > 0:
         if (char_at of [key, 0]) == "_":
             return null
-    if (has_key of [_eigen_module_envs, target_node[1]]) == 0:
+    mod_name is target_node[1]
+    if (has_key of [_eigen_module_envs, mod_name]) == 0:
         return null
-    return _eigen_module_envs[target_node[1]]
+    if target != _eigen_module_ns[mod_name]:
+        return null
+    return _eigen_module_envs[mod_name]
 
 define _env_new(parent) as:
     return [[], parent]
@@ -1223,6 +1232,30 @@ define _env_unset_local(env, name) as:
             return null
     return null
 
+# Resolve `import NAME` the way the C evaluator does, so a meta-run import
+# answers the same module from any working directory. The C chain
+# (`eigs_import_resolve`, src/builtins_host.c) tries both `NAME.eigs` and
+# `lib/NAME.eigs` against the importing file's directory, the project root
+# and then the stdlib roots beside the binary. Script code here has only two
+# of those bases — the working directory and `exe_path` — so those are what
+# is mirrored, longest-standing first.
+#
+# The `file_exists` probe is the point: `read_text` answers "" for an absent
+# path — its documented answer, not a bug — so the previous
+# `read_text of ("lib/" + name + ".eigs")` made an unresolvable import produce
+# an EMPTY namespace rather than an error, and made a resolvable one depend on
+# the process's working directory. Deciding with `file_exists` and raising
+# when no candidate resolves removes both.
+define _eigen_module_path(name) as:
+    exedir is path_dir of (exe_path of null)
+    cands is ["lib/" + name + ".eigs", name + ".eigs",
+        exedir + "/../lib/" + name + ".eigs",
+        exedir + "/../lib/eigenscript/" + name + ".eigs"]
+    for ci in range of (len of cands):
+        if (file_exists of cands[ci]) == 1:
+            return cands[ci]
+    return null
+
 # #1057: a module namespace is a LIVE VIEW of the module's bindings, not a
 # snapshot — `M.x` reads M's CURRENT binding and `M.x is v` writes it. The
 # C evaluator carries the module Env on the namespace value itself; here the
@@ -1231,13 +1264,22 @@ define _env_unset_local(env, name) as:
 # the target is that bare name (the `M.x` form). Keeping it out of the dict is
 # deliberate: `keys of M` must list the module's bindings and nothing else.
 #
-# NOTE: this path is not currently reachable. eigen.eigs's `import` reads its
-# module with `read_text of ("lib/" + name + ".eigs")`, which resolves to ""
-# rather than raising, so EVERY meta-interpreted import has produced an empty
-# namespace since long before #1057 (`eigen_run of "import math\nkeys of math"`
-# -> []). That is a separate meta-interpreter gap; test_meta_parity.eigs covers
-# no import case for the same reason.
+# This path IS reached: `_eigen_module_path` resolves a module the way the C
+# resolver does, and tests/test_meta_parity.eigs asserts the read, the write,
+# the `_`-privacy and the new-key cases against the C evaluator on the same
+# source. What still has no parity row is the round trip through a module
+# FUNCTION (`M.f of null` reading a module global). That is a SEPARATE and
+# older gap, not #1057's: `eigen_eval`'s "call" arm parents the call env on
+# the CALLER's env rather than on the definition env ("func" deliberately
+# does not capture one), so a module function cannot see module globals at
+# all — `eigen_run of "import log\nlog.log_level of \"warn\""` throws
+# "undefined variable '_log_level_num'" here and answers null in C. Fixing
+# that is closing over the definition env for every meta function, which is
+# its own change with its own parity rows.
 _eigen_module_envs is {}
+# The namespace dict each of those imports produced, for the identity check
+# in `_ns_env_for` above.
+_eigen_module_ns is {}
 
 # Return / break / continue mechanism — global flags
 _eigen_returning is 0
@@ -1508,7 +1550,7 @@ define eigen_eval(node, env) as:
         key is node[2]
         if (type of target) == "dict":
             # #1057: `M.x` on a module namespace reads M's CURRENT binding.
-            ns_env is _ns_env_for of [node[1], key]
+            ns_env is _ns_env_for of [node[1], key, target]
             if ns_env != null:
                 mbind is ns_env[0]
                 for mi in range of (len of mbind):
@@ -1525,7 +1567,7 @@ define eigen_eval(node, env) as:
         val is eigen_eval of [node[3], env]
         if (type of target) == "dict":
             # #1057: `M.x is v` on a module namespace writes M's binding.
-            ns_env is _ns_env_for of [node[1], key]
+            ns_env is _ns_env_for of [node[1], key, target]
             if ns_env != null:
                 _env_set_local of [ns_env, key, val]
             dict_set of [target, key, val]
@@ -1669,12 +1711,10 @@ define eigen_eval(node, env) as:
 
     if ntype == "import":
         mod_name is node[1]
-        # Use load_file to load lib/NAME.eigs, then run it in isolated env
-        path is "lib/" + mod_name + ".eigs"
-        try:
-            source is read_text of path
-        catch err:
+        path is _eigen_module_path of mod_name
+        if path == null:
             throw of f"import: module '{mod_name}' not found"
+        source is read_text of path
         # Parse and eval in a child environment
         mod_tokens is eigen_tokenize of source
         mod_ast is eigen_parse of mod_tokens
@@ -1691,8 +1731,11 @@ define eigen_eval(node, env) as:
                 first_char is char_at of [bname, 0]
                 if first_char != "_":
                     dict_set of [mod_dict, bname, bval]
-        # #1057: register the module env so the namespace reads/writes live.
+        # #1057: register the module env so the namespace reads/writes live,
+        # and the namespace dict it belongs to so a later rebinding of the
+        # name does not keep answering from the module.
         dict_set of [_eigen_module_envs, mod_name, mod_env]
+        dict_set of [_eigen_module_ns, mod_name, mod_dict]
         _env_set of [env, mod_name, mod_dict]
         return mod_dict
 

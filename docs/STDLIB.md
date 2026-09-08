@@ -1113,6 +1113,20 @@ functions. `tests/test_meta_parity.eigs` pins that native and meta agree on
 each of these probes. The meta-interpreter remains a separate, partial
 implementation of the language.
 
+`import NAME` inside meta-interpreted source resolves the module the way the
+runtime's resolver does — `lib/NAME.eigs` and `NAME.eigs` relative to the
+working directory, then the stdlib root beside the interpreter binary — and
+**raises** `import: module 'NAME' not found` when nothing resolves. It used to
+read `lib/NAME.eigs` with `read_text`, which is working-directory-relative and
+answers `""` for an absent path (`read_text`'s documented answer), so an import
+that did not resolve produced a silently EMPTY namespace instead of an error. The
+namespace itself follows the runtime's rule (#1057): a public module binding is
+readable and writable through it (`M.x`, `M.x is v`), and a `_`-prefixed module
+binding is neither projected nor written. `tests/test_meta_parity.eigs` asserts
+each of those on both evaluators, and pins one gap that remains: a module
+FUNCTION cannot read a module global in the meta-interpreter, because a call
+env is parented on the caller's env rather than on the definition env.
+
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `eigen_tokenize` | `eigen_tokenize of source` | Tokenize source string into token list |

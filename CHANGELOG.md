@@ -27,7 +27,16 @@ All notable changes to EigenScript are documented here.
   `"dict"`, `keys`/`values`/`len`/`str`/`json_encode` are unchanged, and
   `_`-prefixed module bindings stay private. `sizeof(Value)` is unchanged at
   72 bytes: the flag rides existing tail padding and the owning `Env*` lives in
-  a side table.
+  a side table. `lib/eigen.eigs` mirrors the rule and is asserted against the C
+  evaluator in `tests/test_meta_parity.eigs` (read, write, `_`-privacy, and the
+  rebinding case — a namespace is the view of the module the IMPORT produced,
+  not of the name). Reaching those rows required fixing the meta-interpreter's
+  `import`, which read `lib/NAME.eigs` with `read_text` — working-directory
+  relative, and answering `""` for an absent path (`read_text`'s documented
+  answer), so an unresolved import produced a silently EMPTY namespace instead
+  of an error. It now resolves the way the runtime's resolver does — cwd, then
+  the stdlib root beside the binary — decides with `file_exists`, and raises
+  when nothing resolves.
 
 ### Added
 
