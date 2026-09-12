@@ -21,8 +21,9 @@
 # the diagnostic and then died by SIGSEGV as "boundary" and the run said OK
 # over a crash; a crash both arms agree on was likewise invisible to the diff.
 # The crash check runs before any classification and is the first verdict.
-# It is a NUMERIC rc >= 128 test: 120-127 (timeout 124, no-such-command
-# 127) are ordinary nonzero exits and still get diffed into rows.
+# It is a NUMERIC rc >= 128 test. Exit 124 is separately a hard failure
+# before classification: it may be the timeout utility OR the program itself.
+# Other non-signal nonzero exits still participate in the fidelity comparison.
 #
 # Usage: bash tools/replay_diff.sh [--record | --selftest]
 #   --selftest  plant a boundary-plus-crash witness and an identical-crash
@@ -41,8 +42,8 @@ T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 # suite section runs --selftest there (tests/run_all_tests.sh probes the same
 # way). Unbounded is a hang, not a wrong verdict.
 TMO=""
-if command -v timeout >/dev/null 2>&1; then TMO="timeout 180"
-elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 180"; fi
+if command -v timeout >/dev/null 2>&1; then TMO="timeout 300"
+elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 300"; fi
 
 corpus_dir() { printf '%s' "${REPLAY_DIFF_CORPUS:-$ROOT/tests}"; }
 eig_bin()    { printf '%s' "${REPLAY_DIFF_EIG:-./eigenscript}"; }
@@ -50,7 +51,17 @@ norm() { sed -E 's/0x[0-9a-f]+/0xADDR/g' "$1"; }
 # stdin is pinned to /dev/null: test_terminal's raw_key reads it, and with the
 # harness's inherited stdin the record arm hung (rc 124) while the replay arm
 # exited 3 -- a phantom row from the environment, not the tape.
-run() { local out="$1"; shift; env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 "$@" $TMO "$(eig_bin)" "$(corpus_dir)/$b" > "$out" 2>&1 </dev/null; echo "rc=$?" >> "$out"; }
+run() {
+    local out="$1" rc; shift
+    env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 "$@" $TMO "$(eig_bin)" "$(corpus_dir)/$b" > "$out" 2>&1 </dev/null
+    rc=$?; echo "rc=$rc" >> "$out"
+    # Runs include self-check and second adjudication arms. Never compare,
+    # excuse as NONDET/boundary, or ledger a possibly incomplete exit-124 run.
+    if [ "$rc" -eq 124 ]; then
+        echo "replay_diff: FAIL: timeout/exit124: $b $(basename "$out") arm" >&2
+        exit 1
+    fi
+}
 # crash_check ARM FILE: a signal exit is named AND counted; the count is the
 # first verdict below. rc is the last line the arm wrote (`rc=N`).
 crash=0; prog_crash=0
@@ -72,7 +83,14 @@ if [ "${1:-}" = "--selftest" ]; then
 case "\$1" in
   *test_boundary_crash.eigs) if [ -n "\${EIGS_REPLAY:-}" ]; then echo "Error line 1: recv: not replayable under EIGS_REPLAY (subprocess/concurrency boundary; see docs/TRACE.md)" >&2; kill -SEGV \$\$; fi ;;
   *test_both_crash.eigs) echo same; kill -SEGV \$\$ ;;
-  *test_near_crash.eigs) if [ -n "\${EIGS_REPLAY:-}" ]; then echo replay; else echo record; fi; exit 124 ;;
+  *test_near_crash.eigs) if [ -n "\${EIGS_REPLAY:-}" ]; then echo replay; else echo record; fi; exit 120 ;;
+  *test_exit124_both.eigs|*test_math_underflow.eigs) echo identical; exit 124 ;;
+  *test_exit124_boundary.eigs) if [ -n "\${EIGS_REPLAY:-}" ]; then echo "Error: not replayable under EIGS_REPLAY" >&2; exit 124; fi ;;
+  *test_exit124_adjudication.eigs)
+    if [ -n "\${EIGS_TRACE:-}" ]; then
+      if [ -f "$T/second-record" ]; then echo incomplete; exit 124; fi
+      : > "$T/second-record"
+    else echo deliberately-different-replay; exit 0; fi ;;
 esac
 exec "$REAL" "\$@"
 W
@@ -85,6 +103,10 @@ W
             bcrash) printf 'print of 1\n' > "$d/test_boundary_crash.eigs" ;;
             both)  printf 'print of 1\n' > "$d/test_both_crash.eigs" ;;
             near)  printf 'print of 1\n' > "$d/test_near_crash.eigs" ;;
+            timeoutboth) printf 'print of 1\n' > "$d/test_exit124_both.eigs" ;;
+            timeoutboundary) printf 'print of 1\n' > "$d/test_exit124_boundary.eigs" ;;
+            timeoutsecond) rm -f "$T/second-record"; printf 'print of 1\n' > "$d/test_exit124_adjudication.eigs" ;;
+            timeoutself) printf 'print of 1\n' > "$d/test_math_underflow.eigs" ;;
         esac; done
     }
     # st_case NAME WANT_RC FLOOR ARGS -- WANT_SUBSTR...   (WANT_SUBSTR must ALL appear)
@@ -132,17 +154,31 @@ W
     mk_corpus "$T/corpus" clean
     st_case "clean boundary control stays OK, counted" 0 2 -- \
         "replay_diff: OK (2 programs record+replay; 1 at the documented boundary; 0 nondeterministic; 0 ledgered)"
-    # 5. rc 120-127 is NOT a signal. A divergence there must still become a
-    #    row: the first version of this gate skipped on a glob over the rc
-    #    text (`rc=1[2-9][0-9]`), which also swallowed 124 (timeout) and 127
-    #    (no such command) -- a loud row turned into no row at all.
+    # 5. Ordinary non-signal nonzero 120 must still become a row.
     mk_corpus "$T/corpus" near
-    st_case "non-signal nonzero rc (124) still diffs into a row" 1 2 -- \
+    st_case "non-signal nonzero rc (120) still diffs into a row" 1 2 -- \
         "replay_diff: LEDGER CHANGED" "> test_near_crash.eigs"
     # 6. The vacuity floor is not disabled by the plumbing: with no floor
     #    override the tiny corpus is refused by name.
     st_case "vacuity floor still fires at the default" 1 "" -- \
         "the scan is vacuous"
+    # 7-11. Exit 124 must fail before equality, boundary, re-adjudication,
+    # ledger writing or the initial self-check can hide an incomplete arm.
+    mk_corpus "$T/corpus" timeoutboth
+    st_case "identical exit124 arms hard-fail" 1 2 -- \
+        "replay_diff: FAIL: timeout/exit124: test_exit124_both.eigs rec arm"
+    st_case "--record refuses exit124" 1 2 "--record" \
+        "replay_diff: FAIL: timeout/exit124: test_exit124_both.eigs rec arm"
+    [ -s "$T/ledger" ] && { echo "SELFTEST FAIL: --record wrote a ledger over exit124" >&2; ST_RC=1; }
+    mk_corpus "$T/corpus" timeoutboundary
+    st_case "boundary-plus-exit124 hard-fails" 1 2 -- \
+        "replay_diff: FAIL: timeout/exit124: test_exit124_boundary.eigs rep arm"
+    mk_corpus "$T/corpus" timeoutsecond
+    st_case "second record exit124 hard-fails" 1 2 -- \
+        "replay_diff: FAIL: timeout/exit124: test_exit124_adjudication.eigs rec2 arm"
+    mk_corpus "$T/corpus" timeoutself
+    st_case "self-check exit124 hard-fails" 1 2 -- \
+        "replay_diff: FAIL: timeout/exit124: test_math_underflow.eigs r0 arm"
     [ "$ST_RC" -eq 0 ] && echo "SELFTEST: all planted faults caught"
     exit "$ST_RC"
 fi
@@ -171,9 +207,8 @@ for f in "$CORPUS"/test_*.eigs; do
   # is not "at the boundary"; both used to read as OK.
   prog_crash=0; crash_check rec "$T/rec"; crash_check rep "$T/rep"
   # Skip on the FLAG, not on a glob over the rc text: `rc=1[2-9][0-9]`
-  # also matches 120-127, which are not signals -- rc 124 (timeout) and
-  # 127 (no such command) would have been silently skipped instead of
-  # diffed, turning a loud row into no row at all.
+  # also matches non-signal statuses such as 120 and 127, which still
+  # need comparison. Exit 124 has already failed in run() above.
   [ "$prog_crash" -eq 0 ] || continue
   diff -q <(norm "$T/rec") <(norm "$T/rep") >/dev/null && continue
   if grep -q "not replayable under EIGS_REPLAY" "$T/rep"; then boundary=$((boundary + 1)); continue; fi

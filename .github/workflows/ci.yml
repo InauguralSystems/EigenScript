@@ -500,6 +500,10 @@ jobs:
         run: make asan
 
       - if: needs.scope.outputs.code == 'true'
+        name: Collector traversal ownership and reach
+        run: python3 tools/gc_traversal_check.py --variant asan
+
+      - if: needs.scope.outputs.code == 'true'
         name: Run full suite under sanitizers
         env:
           # Leak detection is ON: the suite runs leak-clean since the exit-time
