@@ -6,6 +6,7 @@
 # whole suite.
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 export EIGS_TEST_DIR="$TESTS_DIR"
+. "$TESTS_DIR/failure_output.sh" || exit 1
 cd "$(dirname "$0")/../src" || { echo "cannot cd to src"; exit 1; }
 
 PASS=0
@@ -424,7 +425,7 @@ check_eigs_suite() {
     else
         FAIL=$((FAIL + n))
         echo "  FAIL: $test_name (rc=$rc)"
-        echo "$out" | grep -iE "FAIL|MISMATCH|assert|error" | head -5
+        printf '%s\n' "$out" | eigs_failure_output
     fi
 }
 
@@ -5220,7 +5221,7 @@ PASS=$((PASS + LINT_PASS))
 FAIL=$((FAIL + LINT_FAIL))
 if [ "$LINT_FAIL" -gt 0 ]; then
     echo "  FAIL: $LINT_FAIL linter check(s) failed"
-    echo "$LINT_OUTPUT" | grep "FAIL:" | head -5
+    printf '%s\n' "$LINT_OUTPUT" | eigs_failure_output
 else
     echo "  PASS: all $LINT_PASS linter checks"
 fi
