@@ -587,8 +587,35 @@ jobs:
   # The net that catches use-after-free, buffer overflow, and UB the normal
   # -O2 build silently tolerates. Per-iteration leak regressions are covered
   # separately by tests/test_leak_guard.sh.
+  # Keep the required status while both complete sanitizer variants run in
+  # independent checkouts. Docs-only workers skip code steps but must succeed.
   sanitizers:
     name: asan + ubsan (full suite)
+    needs: [scope, sanitizers-core, sanitizers-http]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require complete sanitizer coverage
+        shell: bash
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CODE: ${{ needs.scope.outputs.code }}
+          CORE_RESULT: ${{ needs.sanitizers-core.result }}
+          HTTP_RESULT: ${{ needs.sanitizers-http.result }}
+        run: |
+          set -euo pipefail
+          [ "$SCOPE_RESULT" = success ]
+          case "$CODE" in true|false) ;; *) exit 1;; esac
+          for result in "$CORE_RESULT" "$HTTP_RESULT"; do
+            [ "$result" = success ] || exit 1
+          done
+          echo "Sanitizer coverage complete (code=$CODE; two workers succeeded)"
+
+  sanitizers-core:
+    name: asan + ubsan / core and LSP
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     # 45, not 30: the green run before #915's [99u] section landed took 19m57,
@@ -631,6 +658,29 @@ jobs:
         # sanitizer report from the LSP process (leaks, UB).
         run: cd tests && bash test_lsp_asan.sh
 
+  sanitizers-http:
+    name: asan + ubsan / HTTP and model full suite
+    needs: [dev-image, scope]
+    runs-on: ubuntu-latest
+    # 45, not 30: the green run before #915's [99u] section landed took 19m57,
+    # and that section legitimately adds minutes under ASan (it launches the
+    # sanitized binary ~60 times; sanitizer process startup dominates) — a slow
+    # runner then hit the old ceiling and the job rendered as CANCELLED at
+    # 30:02 with the suite mid-section. A timeout is not a verdict: the same
+    # tree's local ASan suite was 4117/4117. Headroom target ~2x the observed
+    # green duration, per the suite-runtime-baseline rule.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
       # The extension surface under sanitizers. `make asan` above compiles the
       # HTTP + model extensions OUT, so ext_http.c — a network-facing server
       # and client, the most exposed code in the repo — was never sanitized
@@ -647,8 +697,7 @@ jobs:
       # path (#731) are therefore NOT caught by this step; that class needs an
       # RSS-growth gate, measured separately.
       #
-      # Runs last in this job: every Makefile variant writes src/eigenscript,
-      # so this must not clobber the binary the steps above are using.
+      # This worker owns its checkout and alias, independently of core ASan.
       - if: needs.scope.outputs.code == 'true'
         name: Run suite under sanitizers with the HTTP+model extensions
         env:
