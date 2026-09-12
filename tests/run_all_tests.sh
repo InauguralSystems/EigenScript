@@ -6398,17 +6398,21 @@ echo ""
 # on observable state (READY/DONE markers), never sleeps — see
 # tests/test_sigusr1_dump.sh.
 echo "[99e] SIGUSR1 observer dump (#660)"
-OD_OUTPUT=$(bash "$TESTS_DIR/test_sigusr1_dump.sh" 2>&1)
-OD_PASS=$(echo "$OD_OUTPUT" | grep -c "PASS:" || true)
-OD_FAIL=$(echo "$OD_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + OD_PASS + OD_FAIL))
-PASS=$((PASS + OD_PASS))
-FAIL=$((FAIL + OD_FAIL))
-if [ "$OD_FAIL" -gt 0 ]; then
-    echo "  FAIL: $OD_FAIL SIGUSR1 dump check(s) failed"
-    echo "$OD_OUTPUT" | grep "FAIL:" | head -5
-else
+OD_OUTPUT=$(bash "$TESTS_DIR/test_sigusr1_dump.sh" 2>&1); OD_RC=$?
+. "$TESTS_DIR/sigusr1_support.sh"
+if OD_REASON=$(sigusr1_result_check "$OD_OUTPUT" "$OD_RC" 2>&1); then
+    OD_PASS=$(printf '%s\n' "$OD_OUTPUT" | grep -c '^PASS: ' || true)
+    TOTAL=$((TOTAL + OD_PASS)); PASS=$((PASS + OD_PASS))
     echo "  PASS: all $OD_PASS SIGUSR1 dump checks"
+else
+    OD_PASS=$(printf '%s\n' "$OD_OUTPUT" | grep -c '^PASS: ' || true)
+    OD_FAIL=$(printf '%s\n' "$OD_OUTPUT" | grep -c '^FAIL: ' || true)
+    # A child that exited early, silently, or after passing assertions is one
+    # explicit failure even when it supplied no FAIL marker of its own.
+    [ "$OD_FAIL" -gt 0 ] || OD_FAIL=1
+    TOTAL=$((TOTAL + OD_PASS + OD_FAIL)); PASS=$((PASS + OD_PASS)); FAIL=$((FAIL + OD_FAIL))
+    echo "  FAIL: $OD_REASON"
+    printf '%s\n' "$OD_OUTPUT"
 fi
 echo ""
 

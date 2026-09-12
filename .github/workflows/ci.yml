@@ -304,6 +304,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - if: needs.scope.outputs.code == 'true'
+        name: Shell harness portability controls
+        shell: bash
+        run: |
+          result=$(mktemp)
+          rc=0
+          bash tests/test_ci_portability.sh > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 0 ] || exit "$rc"
+          [ "$(grep -cx 'ci-portability: checks=25 failures=0' "$result")" -eq 1 ]
+          rc=0
+          bash tests/test_ci_portability.sh --no-cleanup-deferral > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 1 ]
+          grep -qxF 'FAIL: cleanup deferral fault abandoned READY child after delivered signal and matching trap exit' "$result"
+          ! grep -q '^ci-portability: checks=' "$result"
+
+      - if: needs.scope.outputs.code == 'true'
         name: Build
         run: CC=clang ./build.sh
 
@@ -346,6 +363,23 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Shell harness portability controls
+        shell: bash
+        run: |
+          result=$(mktemp)
+          rc=0
+          bash tests/test_ci_portability.sh > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 0 ] || exit "$rc"
+          [ "$(grep -cx 'ci-portability: checks=25 failures=0' "$result")" -eq 1 ]
+          rc=0
+          bash tests/test_ci_portability.sh --no-cleanup-deferral > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 1 ]
+          grep -qxF 'FAIL: cleanup deferral fault abandoned READY child after delivered signal and matching trap exit' "$result"
+          ! grep -q '^ci-portability: checks=' "$result"
 
       - if: needs.scope.outputs.code == 'true'
         name: JIT emitter smoke tests
