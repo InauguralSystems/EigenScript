@@ -40,6 +40,7 @@
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="$TESTS_DIR/../src/eigenscript"
+. "$TESTS_DIR/sigusr1_support.sh"
 
 FIX1=/tmp/eigs_sigusr1_a_$$.eigs
 FIX2=/tmp/eigs_sigusr1_b_$$.eigs
@@ -54,16 +55,23 @@ ERR2=/tmp/eigs_sigusr1_b_$$.err
 PIDS=""
 
 cleanup() {
+    local status=$?
+    trap '' INT TERM HUP
+    trap - EXIT
     for p in $PIDS; do
-        kill "$p" 2>/dev/null || true
-        wait "$p" 2>/dev/null || true
+        sigusr1_stop "$p" || status=1
     done
-    rm -f "$FIX1" "$FIX2" "$OUT1" "$ERR1" "$OUT2" "$ERR2" "$SENT1" "$SENT2"
+    rm -f "$FIX1" "$FIX2" "$OUT1" "$ERR1" "$OUT2" "$ERR2" "$SENT1" "$SENT2" "$FIX1.bak" "$FIX2.bak"
+    exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
+FAILED=0
 pass() { echo "PASS: $1"; }
-fail() { echo "FAIL: $1"; }
+fail() { echo "FAIL: $1"; FAILED=1; }
 
 # poll_file <file> <pattern> <tenths> — wait up to <tenths>/10 seconds for
 # grep -qE <pattern> <file> to succeed (observable-state barrier).
@@ -95,7 +103,7 @@ define train(n) as:
 r is train of 2000000000
 print of "DONE"
 EOF
-sed -i "s|@SENT1@|$SENT1|" "$FIX1"
+sigusr1_replace_sentinel "$FIX1" "@SENT1@" "$SENT1" || exit 1
 
 # ---- Subtest 1: single-thread dump shape -------------------------------
 
@@ -107,6 +115,7 @@ if poll_file "$OUT1" "^READY$" 600; then
     pass "sigusr1: child reached its loop (READY barrier)"
 else
     fail "sigusr1: child never printed READY (dead or hung before the loop)"
+    exit 1
 fi
 
 if ! kill -USR1 "$PID" 2>/dev/null; then
@@ -117,6 +126,7 @@ if poll_file "$ERR1" "^# end dump$" 600; then
     pass "sigusr1: dump arrived at a loop safepoint"
 else
     fail "sigusr1: no dump on stderr after SIGUSR1"
+    exit 1
 fi
 
 # #915: if the observer gate is closed for this fixture (it has no observer
@@ -141,6 +151,7 @@ if grep -q "observer gate CLOSED" "$ERR1"; then
         pass "sigusr1: second dump arrived after the gate armed"
     else
         fail "sigusr1: no second dump after the gate armed"
+    exit 1
     fi
 fi
 
@@ -175,15 +186,16 @@ fi
 : > "$SENT1"
 
 # The program must continue correctly after the dump: DONE marker, then a
-# clean exit on its own. DONE is the observable barrier; the wait below only
-# reaps (teardown after DONE cannot hang).
+# clean exit on its own. DONE is a barrier, not proof that teardown exited;
+# the owned-child wait is separately bounded.
 if poll_file "$OUT1" "^DONE$" 1200; then
     pass "sigusr1: program completed (DONE) after the dump"
 else
     fail "sigusr1: program never completed after the dump"
+    exit 1
 fi
-wait "$PID"; RC1=$?
-PIDS="${PIDS% $PID}"
+sigusr1_wait "$PID" 100; RC1=$?
+if ! sigusr1_running "$PID"; then PIDS="${PIDS% $PID}"; fi
 if [ "$RC1" = "0" ]; then
     pass "sigusr1: exit code 0 after the dump"
 else
@@ -227,7 +239,7 @@ r is train of 2000000000
 thread_join of t
 print of "DONE"
 EOF
-sed -i "s|@SENT2@|$SENT2|" "$FIX2"
+sigusr1_replace_sentinel "$FIX2" "@SENT2@" "$SENT2" || exit 1
 
 "$EIGS" "$FIX2" > "$OUT2" 2> "$ERR2" &
 PID=$!
@@ -237,6 +249,7 @@ if poll_file "$OUT2" "^READY$" 600; then
     pass "sigusr1-mt: child reached its loop with a task live"
 else
     fail "sigusr1-mt: child never printed READY"
+    exit 1
 fi
 
 if ! kill -USR1 "$PID" 2>/dev/null; then
@@ -249,6 +262,7 @@ if poll_file "$ERR2" "^# end dump$" 600; then
     pass "sigusr1-mt: dump arrived under a live task"
 else
     fail "sigusr1-mt: no dump on stderr after SIGUSR1"
+    exit 1
 fi
 
 if grep -qE '^step_count \| [0-9]+ \| when=[0-9]{4,} \| entropy=[^ ]+ \| dH=[^ ]+ \| [a-z]+$' "$ERR2"; then
@@ -264,9 +278,10 @@ if poll_file "$OUT2" "^DONE$" 1200; then
     pass "sigusr1-mt: program completed (DONE) after the dump"
 else
     fail "sigusr1-mt: program never completed after the dump"
+    exit 1
 fi
-wait "$PID"; RC2=$?
-PIDS="${PIDS% $PID}"
+sigusr1_wait "$PID" 100; RC2=$?
+if ! sigusr1_running "$PID"; then PIDS="${PIDS% $PID}"; fi
 
 # Share the main runner's rc_ok classification rather than restating it: a
 # LeakSanitizer nonzero exit from the known spawn-thread leak shapes counts as
@@ -301,3 +316,5 @@ case $? in
         fi
         ;;
 esac
+
+exit "$FAILED"

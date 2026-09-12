@@ -4,6 +4,7 @@
 #include "eigenscript.h"
 #include "env_flag.h"
 #include "state.h"
+#include "fsutil.h"
 #include "vm.h"
 #include "jit.h"
 #include "trace.h"   /* #739: trace_thread_release on detach */
@@ -42,6 +43,9 @@ EigsState *eigs_state_new(void) {
     /* Filesystem anchor defaults; main/eigenlsp overwrite after attach. */
     st->script_dir[0] = '.'; st->script_dir[1] = '\0';
     st->exe_dir[0]    = '.'; st->exe_dir[1]    = '\0';
+#if !EIGENSCRIPT_FREESTANDING
+    st->exe_path = eigs_executable_path(NULL);
+#endif
     /* Phase 9: JIT tuning per state, read once from env at creation. */
     jit_state_init_thresholds(st);
     return st;
@@ -69,6 +73,7 @@ void eigs_state_destroy(EigsState *st) {
      * paired with a leave — but free defensively). */
     for (size_t i = 0; i < st->loading_count; i++) free(st->loading_stack[i]);
     free(st->loading_stack);
+    free(st->exe_path);
     /* #307: value-candidate buffer pins were drained at gc_collect_at_exit;
      * free the (now-empty) backing array. NULL if no cycle ever parked. */
     free(st->gc_val_buf);

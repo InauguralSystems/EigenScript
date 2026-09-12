@@ -6,6 +6,7 @@
 # whole suite.
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 export EIGS_TEST_DIR="$TESTS_DIR"
+. "$TESTS_DIR/failure_output.sh" || exit 1
 cd "$(dirname "$0")/../src" || { echo "cannot cd to src"; exit 1; }
 
 PASS=0
@@ -424,7 +425,7 @@ check_eigs_suite() {
     else
         FAIL=$((FAIL + n))
         echo "  FAIL: $test_name (rc=$rc)"
-        echo "$out" | grep -iE "FAIL|MISMATCH|assert|error" | head -5
+        printf '%s\n' "$out" | eigs_failure_output
     fi
 }
 
@@ -5220,7 +5221,7 @@ PASS=$((PASS + LINT_PASS))
 FAIL=$((FAIL + LINT_FAIL))
 if [ "$LINT_FAIL" -gt 0 ]; then
     echo "  FAIL: $LINT_FAIL linter check(s) failed"
-    echo "$LINT_OUTPUT" | grep "FAIL:" | head -5
+    printf '%s\n' "$LINT_OUTPUT" | eigs_failure_output
 else
     echo "  PASS: all $LINT_PASS linter checks"
 fi
@@ -5267,6 +5268,20 @@ if [ "$TRUN_FAIL" -gt 0 ]; then
     echo "$TRUN_OUTPUT" | grep "FAIL:" | head -5
 else
     echo "  PASS: all $TRUN_PASS test-runner checks"
+fi
+echo ""
+
+# [81c] Executable-relative imports survive relative/absolute/PATH/symlink launches.
+echo "[81c] Executable path and import anchors"
+EXEPATH_OUTPUT=$(python3 "$TESTS_DIR/test_exe_path.py" </dev/null 2>&1); EXEPATH_RC=$?
+TOTAL=$((TOTAL + 5))
+if rc_ok "$EXEPATH_RC" "$EXEPATH_OUTPUT" && echo "$EXEPATH_OUTPUT" | grep -q '^EXE PATH: 5 passed, 0 failed$'; then
+    PASS=$((PASS + 5))
+    echo "  PASS: all 5 executable-path launch forms"
+else
+    FAIL=$((FAIL + 5))
+    echo "  FAIL: executable-path tests (rc=$EXEPATH_RC)"
+    echo "$EXEPATH_OUTPUT"
 fi
 echo ""
 
@@ -6398,17 +6413,21 @@ echo ""
 # on observable state (READY/DONE markers), never sleeps — see
 # tests/test_sigusr1_dump.sh.
 echo "[99e] SIGUSR1 observer dump (#660)"
-OD_OUTPUT=$(bash "$TESTS_DIR/test_sigusr1_dump.sh" 2>&1)
-OD_PASS=$(echo "$OD_OUTPUT" | grep -c "PASS:" || true)
-OD_FAIL=$(echo "$OD_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + OD_PASS + OD_FAIL))
-PASS=$((PASS + OD_PASS))
-FAIL=$((FAIL + OD_FAIL))
-if [ "$OD_FAIL" -gt 0 ]; then
-    echo "  FAIL: $OD_FAIL SIGUSR1 dump check(s) failed"
-    echo "$OD_OUTPUT" | grep "FAIL:" | head -5
-else
+OD_OUTPUT=$(bash "$TESTS_DIR/test_sigusr1_dump.sh" 2>&1); OD_RC=$?
+. "$TESTS_DIR/sigusr1_support.sh"
+if OD_REASON=$(sigusr1_result_check "$OD_OUTPUT" "$OD_RC" 2>&1); then
+    OD_PASS=$(printf '%s\n' "$OD_OUTPUT" | grep -c '^PASS: ' || true)
+    TOTAL=$((TOTAL + OD_PASS)); PASS=$((PASS + OD_PASS))
     echo "  PASS: all $OD_PASS SIGUSR1 dump checks"
+else
+    OD_PASS=$(printf '%s\n' "$OD_OUTPUT" | grep -c '^PASS: ' || true)
+    OD_FAIL=$(printf '%s\n' "$OD_OUTPUT" | grep -c '^FAIL: ' || true)
+    # A child that exited early, silently, or after passing assertions is one
+    # explicit failure even when it supplied no FAIL marker of its own.
+    [ "$OD_FAIL" -gt 0 ] || OD_FAIL=1
+    TOTAL=$((TOTAL + OD_PASS + OD_FAIL)); PASS=$((PASS + OD_PASS)); FAIL=$((FAIL + OD_FAIL))
+    echo "  FAIL: $OD_REASON"
+    printf '%s\n' "$OD_OUTPUT"
 fi
 echo ""
 

@@ -281,9 +281,9 @@ consequences are contracts you can rely on:
     raises as `arithmetic`. The JIT bails to the interpreter on a non-finite
     result, so both tiers raise from the same guard. One default-path
     asymmetry is older than strict mode and is left alone by it: a `matmul`
-    whose result is a **buffer** keeps the raw `NaN` the kernel wrote (it
-    reads back as `null`, and `math_flags` is not set), where a list result
-    collapses to `0` — strict raises on both.
+    whose result is a **buffer** preserves a `NaN` sentinel consistently
+    across platforms (it reads back as `null`, and `math_flags` is not set),
+    where a list result collapses to `0` — strict raises on both.
   - **JSON parse failure in `json_path`.** With the flag off a malformed
     document is walked leniently and a parse failure answers the same `""`
     an absent key does. Under strict `json_path` applies `json_decode`'s
@@ -2059,7 +2059,10 @@ The tensor builtins operate directly on the flat data — no per-call conversion
 `matmul of [a, b]` multiplies two shaped buffers (a 1-D buffer is a row vector,
 so `matmul of [vec, mat]` returns a 1-D result); `matmul_at` / `matmul_bt`
 multiply with the first / second operand transposed (`aᵀ·b`, `a·bᵀ`) without
-materialising the transpose; `add`, `subtract`, `multiply`, `divide` are
+materialising the transpose. All three matrix products round each
+multiplication to binary64 before adding it to the accumulator, in ascending
+inner-index order; multiplication and addition are not fused.
+`add`, `subtract`, `multiply`, `divide` are
 elementwise, with a `[cols]` buffer broadcast over the rows of a
 `[rows × cols]` buffer and a number broadcast over every element; `relu`,
 `leaky_relu`, `softmax`, `log_softmax`, `sum`, `mean`, `norm`, `gather`
