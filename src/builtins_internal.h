@@ -79,11 +79,8 @@ void register_host_builtins(Env *env);
  * "fail loudly under EIGS_REPLAY" boundary check (channels use it too). */
 int replay_blocks(const char *fn);
 
-/* builtins.c — shared with builtins_host.c: the process argv snapshot
- * (exe_path's argv[0] fallback) and the "is this name the language's?"
- * predicate (build_corpus skips registered builtins). */
-extern int g_argc;
-extern char **g_argv;
+/* builtins.c — the "is this name the language's?" predicate shared with
+ * builtins_host.c (build_corpus skips registered builtins). */
 int eigs_is_registered_builtin(const char *name);
 
 #endif /* EIGENSCRIPT_BUILTINS_INTERNAL_H */

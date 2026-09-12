@@ -1292,11 +1292,15 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     char *source = read_file_util(path, &src_size);
     if (!source) {
         if (json_mode) {
-            char esc[256], pesc[1024];
-            lint_json_escape("cannot read file", esc, sizeof(esc));
+            char rendered[1024], message[256], esc[512], pesc[1024];
+            /* Bound the assembled message before JSON escaping, as lint_vdiag
+             * does; the file field keeps its separate path budget. */
+            snprintf(rendered, sizeof(rendered), "cannot read file '%s'", path);
+            eigs_utf8_sanitize(message, sizeof(message), rendered);
+            lint_json_escape(message, esc, sizeof(esc));
             lint_json_escape(path, pesc, sizeof(pesc));
             printf("[{\"code\":\"E000\",\"severity\":\"error\",\"line\":0,"
-                   "\"file\":\"%s\",\"message\":\"%s '%s'\"}]\n", pesc, esc, pesc);
+                   "\"file\":\"%s\",\"message\":\"%s\"}]\n", pesc, esc);
         } else {
             fprintf(stderr, "Error: cannot read file '%s'\n", dpath);
         }

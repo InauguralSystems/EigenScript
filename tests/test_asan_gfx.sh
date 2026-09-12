@@ -27,8 +27,9 @@
 # looking at the corpus at all, because a corpus verdict from a blind
 # instrument is not evidence.
 #
-# SKIPS CLEANLY when the toolchain has no ASan, when the source list cannot
-# be derived, or when the binary it ends up with has no gfx builtins. libSDL2
+# SKIPS CLEANLY when the default toolchain has no ASan or when the binary
+# has no gfx builtins. Explicit compiler selection and build failures are
+# errors. libSDL2
 # is NOT required: it is dlopen'd, so the corpus runs either way -- gfx_open
 # answers 0 and the drawing calls no-op, which still walks every allocation
 # path on the argument side. Whether SDL was present is reported, so a green
@@ -39,6 +40,7 @@ set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$TESTS_DIR/.." && pwd)"
 CORPUS="$TESTS_DIR/gfx_asan_corpus"
+. "$TESTS_DIR/lsan_classify.sh" || exit 1
 
 PASS=0; FAIL=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
@@ -51,14 +53,28 @@ TMO=""
 if command -v timeout >/dev/null 2>&1; then TMO="timeout 120"
 elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 120"; fi
 
-# The -Werror trio is spelled out on every gcc line below rather than folded
+# The -Werror trio is spelled out on every compiler line below rather than folded
 # into a variable: tools/werror_switch_check.sh reads the line, not the
 # expansion, and this script is enrolled in its SCRIPT_AUDITS with a floor of
 # four compile invocations.
+CC="${EIGS_ASAN_GFX_CC:-gcc}"
 ASAN_CFLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1"
-if ! echo 'int main(void){return 0;}' | gcc -Werror=switch -Werror=comment -Werror=misleading-indentation $ASAN_CFLAGS -x c - -o /tmp/eigs_asan_gfx_probe 2>/dev/null; then
+if ! echo 'int main(void){return 0;}' | "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $ASAN_CFLAGS -x c - -o /tmp/eigs_asan_gfx_probe 2>/tmp/eigs_asan_gfx_probe.log; then
     rm -f /tmp/eigs_asan_gfx_probe
+    cat /tmp/eigs_asan_gfx_probe.log
+    if [ -n "${EIGS_ASAN_GFX_CC:-}" ]; then
+        bad "configured gfx sanitizer compiler cannot build the control: $CC"
+        echo "ASan gfx: $PASS passed, $FAIL failed"
+        exit 1
+    fi
     skip "AddressSanitizer not available in this toolchain"
+fi
+if ! ASAN_OPTIONS=detect_leaks=1 /tmp/eigs_asan_gfx_probe > /tmp/eigs_asan_gfx_probe.log 2>&1; then
+    cat /tmp/eigs_asan_gfx_probe.log
+    rm -f /tmp/eigs_asan_gfx_probe
+    bad "gfx sanitizer runtime cannot start with leak detection; set EIGS_ASAN_GFX_CC to a compiler with LeakSanitizer"
+    echo "ASan gfx: $PASS passed, $FAIL failed"
+    exit 1
 fi
 rm -f /tmp/eigs_asan_gfx_probe
 
@@ -75,7 +91,8 @@ BIN=""
 if [ -n "${EIGS_ASAN_GFX:-}" ] && [ -x "${EIGS_ASAN_GFX}" ]; then
     BIN="$EIGS_ASAN_GFX"
     echo "  using EIGS_ASAN_GFX=$BIN"
-elif [ -x "$ROOT/build/asan-gfx/eigenscript" ] \
+elif [ -z "${EIGS_ASAN_GFX_CC:-}" ] \
+     && [ -x "$ROOT/build/asan-gfx/eigenscript" ] \
      && [ -z "$(find "$ROOT/src" -name '*.c' -newer "$ROOT/build/asan-gfx/eigenscript" -print -quit 2>/dev/null)" ] \
      && [ -z "$(find "$ROOT/src" -name '*.h' -newer "$ROOT/build/asan-gfx/eigenscript" -print -quit 2>/dev/null)" ]; then
     BIN="$ROOT/build/asan-gfx/eigenscript"
@@ -86,12 +103,20 @@ else
     # fails the suite when the alias moves mid-run. Sources come from the
     # Makefile's own variable so a hand-copied list cannot drift (#223).
     SRCS=$(make -C "$ROOT" -s print-SRC_V_asan-gfx 2>/dev/null)
-    [ -n "$SRCS" ] || skip "could not read SRC_V_asan-gfx from the Makefile"
-    ( cd "$ROOT" && gcc -Werror=switch -Werror=comment -Werror=misleading-indentation $ASAN_CFLAGS \
+    if [ -z "$SRCS" ]; then
+        bad "could not read SRC_V_asan-gfx from the Makefile"
+        echo "ASan gfx: $PASS passed, $FAIL failed"
+        exit 1
+    fi
+    if ! ( cd "$ROOT" && "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $ASAN_CFLAGS \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
         -DEIGENSCRIPT_EXT_GFX=1 '-DEIGENSCRIPT_VERSION="asan_gfx_gate"' \
-        $SRCS -o /tmp/eigs_asan_gfx -lm -lpthread -ldl ) 2>/tmp/eigs_asan_gfx.log \
-        || skip "asan-gfx build failed (see /tmp/eigs_asan_gfx.log)"
+        $SRCS -o /tmp/eigs_asan_gfx -lm -lpthread -ldl ) 2>/tmp/eigs_asan_gfx.log; then
+        cat /tmp/eigs_asan_gfx.log
+        bad "asan-gfx build failed"
+        echo "ASan gfx: $PASS passed, $FAIL failed"
+        exit 1
+    fi
     BIN=/tmp/eigs_asan_gfx
     echo "  built /tmp/eigs_asan_gfx from SRC_V_asan-gfx"
 fi
@@ -99,10 +124,11 @@ fi
 # ---------------------------------------------------------------- predicate
 # ONE predicate, used by the corpus rows AND by the controls. Two copies of
 # this decision is how a guard goes green while the production path regresses.
-LAST_OUT=""
+LAST_OUT=""; LAST_RC=0
 leak_reported() {   # <cmd...> -> 0 when a leak WAS reported
     LAST_OUT="$($TMO "$@" 2>&1)"
-    printf '%s' "$LAST_OUT" | grep -q "LeakSanitizer: detected memory leaks"
+    LAST_RC=$?
+    lsan_classify "$LAST_OUT"
 }
 
 # ------------------------------------------------------------- the controls
@@ -112,10 +138,12 @@ CTRL_OK=1
 # (0) The BINARY under test is an AddressSanitizer build. Decisive about
 #     $BIN specifically, which the two program controls below are not: they
 #     prove the toolchain and the predicate, not which binary was picked.
-if command -v nm >/dev/null 2>&1 && nm -D "$BIN" 2>/dev/null | grep -q __asan; then
+if command -v nm >/dev/null 2>&1 && nm "$BIN" 2>/dev/null | grep -q __asan; then
     ok "the binary under test links AddressSanitizer (__asan* present)"
-elif strings "$BIN" 2>/dev/null | grep -q "AddressSanitizer"; then
-    ok "the binary under test links AddressSanitizer (banner string present)"
+elif command -v nm >/dev/null 2>&1 && nm -D "$BIN" 2>/dev/null | grep -q __asan; then
+    # Stripped ELF binaries can retain dynamic ASan imports. Mach-O's nm
+    # rejects -D, so its ordinary symbol table is checked first above.
+    ok "the binary under test links AddressSanitizer (dynamic __asan* present)"
 else
     bad "the binary at $BIN carries no AddressSanitizer symbols — a clean corpus below would mean nothing"
     CTRL_OK=0
@@ -148,19 +176,22 @@ int main(void) {
 }
 CEOF
 CTRL_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g -O0"
-if gcc -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_leak.c  -o /tmp/eigs_asan_gfx_leak  2>/dev/null \
-&& gcc -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_clean.c -o /tmp/eigs_asan_gfx_clean 2>/dev/null; then
-    if leak_reported /tmp/eigs_asan_gfx_leak; then
+if "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_leak.c  -o /tmp/eigs_asan_gfx_leak  2>/dev/null \
+&& "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_clean.c -o /tmp/eigs_asan_gfx_clean 2>/dev/null; then
+    if leak_reported /tmp/eigs_asan_gfx_leak && [ "$LAST_RC" -ne 0 ]; then
         ok "positive control: a deliberate 1234-byte leak IS reported"
     else
         bad "positive control: a deliberate leak was NOT reported — LeakSanitizer is not armed, so every corpus row below is a blind instrument"
+        printf '%s\n' "$LAST_OUT"
         CTRL_OK=0
     fi
-    if leak_reported /tmp/eigs_asan_gfx_clean; then
-        bad "negative control: a leak-free program was reported as leaking — the predicate is always-red and proves nothing"
-        CTRL_OK=0
-    else
+    leak_reported /tmp/eigs_asan_gfx_clean; CLEAN_CLASS=$?
+    if [ "$CLEAN_CLASS" -eq 2 ] && [ "$LAST_RC" -eq 0 ]; then
         ok "negative control: a leak-free program is clean"
+    else
+        bad "negative control: a leak-free program did not exit cleanly (rc=$LAST_RC class=$CLEAN_CLASS)"
+        printf '%s\n' "$LAST_OUT"
+        CTRL_OK=0
     fi
 else
     bad "could not compile the leak controls; the corpus verdict would be unvalidated"
@@ -180,10 +211,17 @@ fi
 # enters ext_gfx.c reports leak-free for the uninteresting reason.
 echo 'print of (gfx_text_width of ["m", 1])' > /tmp/eigs_asan_gfx_probe.eigs
 PROBE_OUT="$($TMO "$BIN" /tmp/eigs_asan_gfx_probe.eigs 2>&1)"
+PROBE_RC=$?
 rm -f /tmp/eigs_asan_gfx_probe.eigs
 case "$PROBE_OUT" in
     *"undefined variable"*) skip "the binary at $BIN has no gfx builtins (not an EIGENSCRIPT_EXT_GFX build)" ;;
 esac
+if [ "$PROBE_RC" -ne 0 ]; then
+    bad "gfx binary cannot execute the builtin probe (rc=$PROBE_RC)"
+    printf '%s\n' "$PROBE_OUT"
+    echo "ASan gfx: $PASS passed, $FAIL failed"
+    exit 1
+fi
 
 N_FILES=0
 for f in "$CORPUS"/*.eigs; do [ -f "$f" ] && N_FILES=$((N_FILES + 1)); done
@@ -206,15 +244,18 @@ for f in "$CORPUS"/*.eigs; do
         else
             if leak_reported "$BIN" "$f"; then LEAK=1; else LEAK=0; fi
         fi
-        # UBSan findings ride the same stream and are just as much a defect.
-        UB=0
-        printf '%s' "$LAST_OUT" | grep -q "runtime error:" && UB=1
-        printf '%s' "$LAST_OUT" | grep -q "AddressSanitizer: \(heap\|stack\|global\|attempting\)" && UB=1
-        if [ "$LEAK" = 0 ] && [ "$UB" = 0 ]; then
+        # Startup failures and signals cannot masquerade as clean corpus rows.
+        lsan_classify "$LAST_OUT"; CLASS=$?
+        RC_OK=0
+        [ "$LAST_RC" -eq 0 ] && RC_OK=1
+        if [ "$base" = 06_rejected.eigs ] && [ "$mode" = strict ] \
+             && [ "$LAST_RC" -eq 1 ] \
+             && printf '%s\n' "$LAST_OUT" | grep -Eq '^Error line [0-9]+: gfx_rect: expected \[number x, number y, number w, number h, number r, number g, number b\] and an optional number alpha$'; then RC_OK=1; fi
+        if [ "$LEAK" = 0 ] && [ "$CLASS" = 2 ] && [ "$RC_OK" = 1 ]; then
             ok "$base [$mode] clean under ASan+UBSan+LSan"
         else
-            bad "$base [$mode] leak=$LEAK sanitizer-error=$UB"
-            printf '%s\n' "$LAST_OUT" | grep -E "SUMMARY|runtime error:|ERROR: " | head -4 | sed 's/^/        /'
+            bad "$base [$mode] leak=$LEAK sanitizer-class=$CLASS rc=$LAST_RC"
+            printf '%s\n' "$LAST_OUT" | tail -8 | sed 's/^/        /'
         fi
     done
 done

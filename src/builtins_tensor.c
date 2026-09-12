@@ -50,11 +50,25 @@ void ne_softmax_buf(double *data, int64_t rows, int64_t cols) {
     }
 }
 
+/* #1131: each product must round to binary64 before accumulation. Fusing
+ * the multiply-add changes finite rounding and turns inf + (-inf) into inf
+ * when the second product would overflow, bypassing matmul's NaN guard.
+ * Keep this policy at the shared kernels for every build/storage road and
+ * all three transpose forms. GCC uses scoped optimization options; Clang's
+ * contract pragma is scoped to each function body below. */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC push_options
+#pragma GCC optimize ("fp-contract=off")
+#endif
+
 void ne_matmul_buf(
     double *a, int64_t m, int64_t k,
     double *b, int64_t n,
     double *out
 ) {
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
     memset(out, 0, m * n * sizeof(double));
     for (int64_t i0 = 0; i0 < m; i0 += NE_TENSOR_TILE_SIZE) {
         for (int64_t j0 = 0; j0 < n; j0 += NE_TENSOR_TILE_SIZE) {
@@ -89,6 +103,9 @@ void ne_matmul_at_buf(
     double *b, int64_t n,
     double *out
 ) {
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
     memset(out, 0, k * n * sizeof(double));
     for (int64_t i0 = 0; i0 < k; i0 += NE_TENSOR_TILE_SIZE) {
         for (int64_t j0 = 0; j0 < n; j0 += NE_TENSOR_TILE_SIZE) {
@@ -115,6 +132,9 @@ void ne_matmul_bt_buf(
     double *b, int64_t n,
     double *out
 ) {
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
     memset(out, 0, m * n * sizeof(double));
     for (int64_t i0 = 0; i0 < m; i0 += NE_TENSOR_TILE_SIZE) {
         for (int64_t j0 = 0; j0 < n; j0 += NE_TENSOR_TILE_SIZE) {
@@ -134,6 +154,10 @@ void ne_matmul_bt_buf(
         }
     }
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC pop_options
+#endif
 
 /* ---- flat-buffer tensors -------------------------------------------------
  * A VAL_BUFFER carries an optional 2-D shape (rows/cols; rows==0 => 1-D, length
@@ -651,37 +675,24 @@ Value* builtin_tensor_matmul(Value *arg) {
                                                 : make_shaped_buffer(ar, bc);
         if (!res) return make_null();
         ne_matmul_buf(a->data.buffer.data, ar, ac, b->data.buffer.data, bc, res->data.buffer.data);
-        /* #971: the kernel accumulates raw, so inf - inf leaves a NaN in the
-         * result buffer. The boxed roads collapse a NaN in make_num's
-         * num_guard; this path stores it verbatim, and a raw
-         * NaN in a buffer is not a number the program can see — its bit
-         * pattern is a NaN-boxed slot tag, so `r[i]` reads back as `null`
-         * (0xFFF8... is SLOT_NULL_BITS).
-         *
-         * Under strict that undefined result RAISES, named, like every
-         * other enumerated NaN source. With the flag OFF the buffer is
-         * left exactly as the kernel wrote it, INCLUDING that NaN: this
-         * reform's whole safety claim is that the default path is
-         * byte-identical to the previous release, and collapsing here
-         * would change `r[0]` from `null` to 0 and set EIGS_MATH_INVALID
-         * where the release set nothing (measured against the v0.43.0
-         * binary). The `null` read is a real defect — it is a buffer
-         * element that is neither a number nor a program-made null — but
-         * it is a PRE-EXISTING one, it is not unique to this writer
-         * (ext_store round-trips a NaN buffer element deliberately —
-         * store_nonfinite_sentinel), and fixing it means fixing the READ
-         * for every road at once. That is its own change with its own
-         * differential; it is recorded in ROADMAP.md, not smuggled in
-         * under a strict-mode flag. STRICT_DOMAIN is the shape for that:
-         * it raises under strict and does nothing otherwise, so the soft
-         * path cannot drift. */
-        if (g_strict) {
-            for (int i = 0; i < res->data.buffer.count; i++)
-                if (res->data.buffer.data[i] != res->data.buffer.data[i]) {
+        /* #971/#1131: inf - inf leaves a raw NaN. Strict raises; default
+         * preserves the historical buffer sentinel (`r[i]` is null, with
+         * no math flag), unlike the list path's 0 + invalid. x86 generates
+         * the negative quiet NaN that matches SLOT_NULL_BITS, but ARM's
+         * positive NaN would instead read as 0 + invalid. Canonicalize only
+         * this result's NaNs to the legacy sentinel, preserving that
+         * documented default on both architectures. Do not use num_guard:
+         * changing buffer-NaN reads generally is a separate reform tracked
+         * in ROADMAP.md. Finite results and infinities remain untouched. */
+        for (int i = 0; i < res->data.buffer.count; i++) {
+            if (res->data.buffer.data[i] != res->data.buffer.data[i]) {
+                if (g_strict) {
                     STRICT_DOMAIN(1, "matmul",
                                   "result is not a number (NaN has no defined value)");
                     break;
                 }
+                res->data.buffer.data[i] = slot_null().d;
+            }
         }
         return res;
     }

@@ -224,8 +224,8 @@ run "SM49a default matmul(inf-inf) LIST path still collapses to 0 + invalid" uns
 'local r is matmul of [[[1e200, 1e200]], [[1e200], [0 - 1e200]]]
 print of f"{r} {(math_flags of null).invalid}"'
 # The BUFFER path is deliberately NOT collapsed with the flag off. The kernel
-# writes into the result buffer raw, so the NaN stays there, and a raw NaN in
-# a buffer reads back as `null` (its bit pattern is a NaN-boxed slot tag,
+# writes into the result buffer raw; its NaN is kept in the canonical legacy
+# sentinel form, which reads back as `null` (a NaN-boxed slot tag,
 # 0xFFF8... == SLOT_NULL_BITS) with math_flags.invalid still 0. That is what
 # v0.43.0 does, and this change's contract is that the flag-off path is
 # byte-identical to it: an earlier draft collapsed it to 0 here and had to
@@ -241,6 +241,21 @@ m2[0] is 1e200
 m2[1] is 0 - 1e200
 local r is matmul of [m1, m2]
 print of f"{r[0]} {(math_flags of null).invalid}"'
+# #1131: canonicalization must visit every NaN and preserve intervening
+# finite results. On ARM the kernel's invalid-operation NaNs are positive.
+run "SM49c default matmul buffer preserves each NaN sentinel and finite neighbor" unset 0 "null 2e+200 null 0" \
+'local a is buffer of [1, 2]
+a[0] is 1e200
+a[1] is 1e200
+local b is buffer of [2, 3]
+b[0] is 1e200
+b[1] is 1
+b[2] is 1e200
+b[3] is 0 - 1e200
+b[4] is 1
+b[5] is 0 - 1e200
+local r is matmul of [a, b]
+print of f"{r[0]} {r[1]} {r[2]} {(math_flags of null).invalid}"'
 run "SM50 strict pow(-8, 0.5) raises, named"       1 1 "pow: result is not a number"     'print of (pow of [0 - 8, 0.5])'
 run "SM51 strict elementwise pow raises"           1 1 "pow: result is not a number"     'print of (pow of [[0 - 8, 4], 0.5])'
 run "SM52 strict num(\"nan\") raises, named"       1 1 "num: result is not a number"     'print of (num of "nan")'
@@ -257,6 +272,16 @@ m2[0] is 1e200
 m2[1] is 0 - 1e200
 local r is matmul of [m1, m2]
 print of (r[0])'
+run "SM55b strict matmul buffer finds NaN after a finite result" 1 1 "matmul: result is not a number" \
+'local a is buffer of [1, 2]
+a[0] is 1e200
+a[1] is 1e200
+local b is buffer of [2, 2]
+b[0] is 1
+b[1] is 1e200
+b[2] is 1
+b[3] is 0 - 1e200
+print of (matmul of [a, b])'
 run "SM56 strict divide-by-zero (elementwise) raises" 1 1 "divide: division by zero" 'print of (divide of [[1], [0]])'
 run "SM57 strict NaN raise is catchable as value"  1 0 "caught value" \
 'try:
@@ -314,6 +339,50 @@ run "SM86 strict scan_int_tokens(num) raises"           1 1 "scan_int_tokens: ex
 # Flag-off pins: the wrong type still reads as "no tokens" -> an empty list.
 run "SM87 default scan_tokens(num) is still []"     unset 0 "[]" 'print of f"[{scan_tokens of 42}]"'
 run "SM88 default scan_int_tokens(num) is still []" unset 0 "[]" 'print of f"[{scan_int_tokens of 42}]"'
+
+# #1131: every f64 matmul rounds the product before adding it. These exact
+# binary64 operands give -1 + round((1 + 2^-27) * (1 - 2^-27)) = 0;
+# contracting the second multiply-add instead gives -2^-54. Unlike SM49/54/55,
+# this witness stays finite, so a NaN/overflow special case cannot satisfy it.
+# Pin all three shared kernels, each on both storage roads and in both modes.
+for strict_mode in 0 1; do
+    run "SM89 mode=$strict_mode matmul list rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+'local r is matmul of [[[-1, 1.0000000074505806]], [[1], [0.9999999925494194]]]
+print of f"zero:{r[0] == 0}:end"'
+    run "SM90 mode=$strict_mode matmul buffer rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+'local a is buffer of [1, 2]
+a[0] is -1
+a[1] is 1.0000000074505806
+local b is buffer of [2, 1]
+b[0] is 1
+b[1] is 0.9999999925494194
+local r is matmul of [a, b]
+print of f"zero:{r[0] == 0}:end"'
+    run "SM91 mode=$strict_mode matmul_at list rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+'local r is matmul_at of [[[-1], [1.0000000074505806]], [[1], [0.9999999925494194]]]
+print of f"zero:{r[0][0] == 0}:end"'
+    run "SM92 mode=$strict_mode matmul_at buffer rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+'local a is buffer of [2, 1]
+a[0] is -1
+a[1] is 1.0000000074505806
+local b is buffer of [2, 1]
+b[0] is 1
+b[1] is 0.9999999925494194
+local r is matmul_at of [a, b]
+print of f"zero:{r[0] == 0}:end"'
+    run "SM93 mode=$strict_mode matmul_bt list rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+'local r is matmul_bt of [[[-1, 1.0000000074505806]], [[1, 0.9999999925494194]]]
+print of f"zero:{r[0] == 0}:end"'
+    run "SM94 mode=$strict_mode matmul_bt buffer rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+'local a is buffer of [1, 2]
+a[0] is -1
+a[1] is 1.0000000074505806
+local b is buffer of [1, 2]
+b[0] is 1
+b[1] is 0.9999999925494194
+local r is matmul_bt of [a, b]
+print of f"zero:{r[0] == 0}:end"'
+done
 
 echo "STRICT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

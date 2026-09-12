@@ -303,6 +303,11 @@ so `--lint --json 2>/dev/null` is pure JSON). Each element is:
   errors show `line:col` too, and the LSP diagnostic range starts at that
   column. (Warning elements are line-only for now — per-warning spans are the
   remaining #407 work.)
+- An unreadable file emits `E000` with exit 1. Its decoded JSON `message`
+  follows the same 255-byte UTF-8 limit: a long `cannot read file '…'` message
+  retains the longest complete character prefix fitting 252 bytes, followed
+  by `...` (#1132). The separate `file` field keeps its existing path escaping
+  and output-buffer budget; clipping the message does not shorten that field.
 - Exit code follows `--lint-level` (see below); the default fails on any
   surviving warning.
 

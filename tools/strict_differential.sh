@@ -194,15 +194,16 @@ TMP="$(mktemp -d)"
 # diagnostic re-run printed a completely clean report, because the failing run
 # was discarded rather than shown. If that happens again this line says so.
 verdict_printed=0
-_sd_main_pid=$BASHPID
+_sd_main_depth=$BASH_SUBSHELL
 _sd_exit() {
     local es=$?
     # ONLY the top-level shell. bash runs an EXIT trap in a subshell that is
     # killed by a signal too, and this trap both deletes $TMP and speaks: a
     # signalled command substitution would otherwise remove the temp dir out
     # from under the still-running parent and print ABORTED before the parent
-    # reaches its verdict. $BASHPID is per-subshell where $$ is not.
-    [ "$BASHPID" = "${_sd_main_pid:-}" ] || return 0
+    # reaches its verdict. Bash 3 supplies BASH_SUBSHELL; $$ cannot distinguish
+    # these inherited subshells, and BASHPID requires a newer Bash.
+    [ "$BASH_SUBSHELL" = "${_sd_main_depth:-}" ] || return 0
     rm -rf "${TMP:-}"
     if [ "${verdict_printed:-0}" != "1" ]; then
         if [ "$es" = "0" ]; then

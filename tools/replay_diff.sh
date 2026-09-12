@@ -48,6 +48,13 @@ elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 300"; fi
 corpus_dir() { printf '%s' "${REPLAY_DIFF_CORPUS:-$ROOT/tests}"; }
 eig_bin()    { printf '%s' "${REPLAY_DIFF_EIG:-./eigenscript}"; }
 norm() { sed -E 's/0x[0-9a-f]+/0xADDR/g' "$1"; }
+ledger_count() {
+    local count
+    count=$(wc -l < "$1") || return 1
+    count=${count//[[:space:]]/}
+    case "$count" in ''|*[!0-9]*) return 1;; esac
+    printf '%s' "$count"
+}
 # stdin is pinned to /dev/null: test_terminal's raw_key reads it, and with the
 # harness's inherited stdin the record arm hung (rc 124) while the replay arm
 # exited 3 -- a phantom row from the environment, not the tape.
@@ -225,10 +232,11 @@ if [ "$crash" -gt 0 ]; then
   echo "replay_diff: FAIL: $crash signal exit(s) -- a crash is never a boundary, whatever the arm printed (#1112); $n programs, $boundary at the documented boundary, $nondet nondeterministic"
   exit 1
 fi
-if [ "${1:-}" = "--record" ]; then cp "$got" "$BASE"; echo "replay_diff: baseline recorded ($(wc -l < "$BASE") rows, $n programs, $boundary at the documented boundary, $nondet nondeterministic)"; exit 0; fi
+if [ "${1:-}" = "--record" ]; then cp "$got" "$BASE"; count=$(ledger_count "$BASE") || { echo "replay_diff: FAIL: invalid ledger count"; exit 1; }; echo "replay_diff: baseline recorded ($count rows, $n programs, $boundary at the documented boundary, $nondet nondeterministic)"; exit 0; fi
 [ -f "$BASE" ] || { echo "replay_diff: no baseline at $BASE (run with --record)"; cat "$got"; exit 1; }
 if diff <(sort "$BASE") "$got" > "$T/d"; then
-  echo "replay_diff: OK ($n programs record+replay; $boundary at the documented boundary; $nondet nondeterministic; $(wc -l < "$BASE") ledgered)"; exit 0
+  count=$(ledger_count "$BASE") || { echo "replay_diff: FAIL: invalid ledger count"; exit 1; }
+  echo "replay_diff: OK ($n programs record+replay; $boundary at the documented boundary; $nondet nondeterministic; $count ledgered)"; exit 0
 fi
 echo "replay_diff: LEDGER CHANGED ($n programs examined)"
 echo "  '<' = ledgered and now identical (improvement -- remove it)"

@@ -47,10 +47,13 @@ Vacuity guards: a bare/ident run must produce E002 AND name the byte in the
 instead of sweeping clean; a path run must still name the file; and the
 valid-character cases must be found intact.
 """
+import json
 import os
 import subprocess
 import sys
 import tempfile
+
+from lint_path_fixture import create_warning_file
 
 CONTROLS = [0x01, 0x07, 0x1F, 0x7F]
 SEQ_BAD = {
@@ -93,39 +96,56 @@ def sweep_paths(eigs, bad, vacuous):
     readable file whose warning payload carries `"file"`, and a missing file
     (E000, whose whole message is the path)."""
     runs = 0
-    d = tempfile.mkdtemp()
-    for name, raw in [("invalid", b"bad\xffname"), ("lone-lead", b"bad\xc3name"),
-                      ("valid", "badénom".encode("utf-8"))]:
-        path = os.path.join(d.encode(), b"w_" + raw + b".eigs")
-        with open(path, "wb") as f:
-            f.write(b"unused_local is 42\nprint of 1\n")
-        for present, target in ((True, path), (False, path + b".missing")):
-            for mode in ([b"--lint", b"--json"], [b"--lint"]):
-                r = subprocess.run([eigs.encode()] + mode + [target],
-                                   capture_output=True)
-                out = r.stdout if b"--json" in mode else r.stdout + r.stderr
-                runs += 1
-                label = "%s path %s %s" % (name, "present" if present else "missing",
-                                           b" ".join(mode).decode())
-                try:
-                    out.decode("utf-8")
-                except UnicodeDecodeError as e:
-                    bad.append("%s: %s" % (label, e))
-                    continue
-                # the payload must still name the file it is talking about
-                stem = b"w_"
-                if stem not in out:
-                    vacuous.append("%s: the payload names no file" % label)
-                if name == "valid" and raw not in out:
-                    vacuous.append("%s: a well-formed path was not echoed intact"
-                                   % label)
-        os.unlink(path)
-    os.rmdir(d)
+    with tempfile.TemporaryDirectory() as d:
+        for name, raw in [("invalid", b"bad\xffname"), ("lone-lead", b"bad\xc3name"),
+                          ("valid", "badénom".encode("utf-8"))]:
+            path = os.path.join(os.fsencode(d), b"w_" + raw + b".eigs")
+            # Missing paths exercise invalid argv bytes even when the filesystem
+            # cannot store them. Readable paths remain covered wherever creation
+            # succeeds, and a valid UTF-8 readable path is mandatory everywhere.
+            targets = [(False, path + b".missing")]
+            if create_warning_file(path):
+                targets.insert(0, (True, path))
+            for present, target in targets:
+                for mode in ([b"--lint", b"--json"], [b"--lint"]):
+                    r = subprocess.run([eigs.encode()] + mode + [target],
+                                       capture_output=True)
+                    out = r.stdout if b"--json" in mode else r.stdout + r.stderr
+                    runs += 1
+                    label = "%s path %s %s" % (name, "present" if present else "missing",
+                                               b" ".join(mode).decode())
+                    try:
+                        out.decode("utf-8")
+                    except UnicodeDecodeError as e:
+                        bad.append("%s: %s" % (label, e))
+                        continue
+                    expected_path = target.decode("utf-8", errors="replace")
+                    # --lint defaults to warnings-as-errors, so W001 and
+                    # E000 both return 1; crashes must not look like a match.
+                    if r.returncode != 1:
+                        vacuous.append("%s: unexpected exit %d" % (label, r.returncode))
+                    if b"--json" in mode:
+                        try:
+                            rows = json.loads(out)
+                            expected_code = "W001" if present else "E000"
+                            if len(rows) != 1 or rows[0].get("code") != expected_code:
+                                raise ValueError("expected one %s diagnostic" % expected_code)
+                            if rows[0].get("file") != expected_path:
+                                raise ValueError("file field did not preserve the sanitized path")
+                        except (ValueError, TypeError, AttributeError) as error:
+                            vacuous.append("%s: %s" % (label, error))
+                    else:
+                        expected = (expected_path + ":1: warning[W001]:" if present
+                                    else "cannot read file '%s'" % expected_path)
+                        if expected.encode("utf-8") not in out:
+                            vacuous.append("%s: missing diagnostic naming the sanitized path" % label)
     return runs
 
 
 def main() -> int:
     eigs = sys.argv[1]
+    if sys.argv[2:] == ["--selftest-paths"]:
+        return selftest_paths(eigs)
     bad, vacuous, runs = [], [], 0
     byte_cases = [(hex(v), bytes([v])) for v in list(range(0x80, 0x100)) + CONTROLS]
     for name, b in byte_cases + sorted(SEQ_BAD.items()):
@@ -178,6 +198,54 @@ def main() -> int:
     print("swept %d source-byte cases x 4 shapes + 3 path shapes x 2 channels "
           "(%d runs), all decode"
           % (len(byte_cases) + len(SEQ_BAD), runs))
+    return 0
+
+
+def selftest_paths(eigs):
+    """Run the real path sweep with filesystem encoding rejection injected."""
+    import contextlib
+    import errno
+    import io
+    from unittest.mock import patch
+
+    real_open = open
+    for code in (errno.EILSEQ, errno.EINVAL):
+        def reject_invalid(path, *args, **kwargs):
+            try:
+                os.fsencode(path).decode("utf-8")
+            except UnicodeDecodeError:
+                raise OSError(code, "planted filename encoding rejection", path)
+            return real_open(path, *args, **kwargs)
+
+        bad, vacuous = [], []
+        notes = io.StringIO()
+        with patch("lint_path_fixture.open", reject_invalid, create=True):
+            with contextlib.redirect_stderr(notes):
+                runs = sweep_paths(eigs, bad, vacuous)
+        # Two missing invalid names and both states of the valid name, each
+        # on two channels. Omitting the fallback or the valid control fails.
+        if runs != 8 or bad or vacuous or notes.getvalue().count("NOTE:") != 2:
+            print("SELFTEST-FAIL: filename rejection errno %d: %d runs; %s"
+                  % (code, runs, bad + vacuous))
+            return 1
+        print("  selftest ok: filename rejection errno %d retains 8 path runs" % code)
+
+    # The fallback must not turn unrelated fixture failures into coverage
+    # exemptions, or accept encoding errors on an ordinary valid filename.
+    for path, code in ((b"invalid\xff.eigs", errno.EACCES),
+                       (b"invalid\xff.eigs", errno.ENOSPC),
+                       (b"valid.eigs", errno.EILSEQ),
+                       (b"valid.eigs", errno.EINVAL)):
+        with patch("lint_path_fixture.open", side_effect=OSError(code, "planted"),
+                   create=True):
+            try:
+                create_warning_file(path)
+            except OSError as error:
+                if error.errno == code:
+                    continue
+            print("SELFTEST-FAIL: unrelated fixture error was waived")
+            return 1
+    print("  selftest ok: 4 unrelated fixture errors remain fatal")
     return 0
 
 
