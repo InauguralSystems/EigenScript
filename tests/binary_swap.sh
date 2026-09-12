@@ -2,7 +2,9 @@
 # Move the original directory entry aside: copying it would lose hard-link
 # identity, and recreating a symlink would lose the original symlink inode.
 eigs_binary_swap_selftest() (
-    local scratch="" status
+    # Bash 3 unwinds function locals before running the EXIT trap. This
+    # function already has its own subshell, so cleanup state can live there.
+    scratch="" status=0
     restore_binary() {
         trap '' HUP INT TERM
         if [ -n "$scratch" ]; then
