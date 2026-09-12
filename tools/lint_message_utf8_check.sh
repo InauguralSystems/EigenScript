@@ -179,6 +179,11 @@ STUB
         "$ROOT/src/lint_host.c" | grep -q 'int step = eigs_utf8_step((const unsigned char \*)s + i, n - i);'
     st "json escaper sanitizer removed" $?
     [ "$probe" -eq 0 ] || { echo "SELFTEST-FAIL: lint_host.c has no sanitizer to plant against"; st_fail=1; }
+    # 10. Exercise the real path sweep when file creation rejects invalid
+    # names, as well as unrelated errors that must not become exemptions.
+    if ! python3 "$ROOT/tools/lint_source_byte_sweep.py" "$EIGS" --selftest-paths; then
+        st_fail=1
+    fi
     [ "$st_fail" -eq 0 ] && { echo "OK: gate self-test — planted faults all caught"; exit 0; }
     echo "FAILED: the gate no longer catches a planted fault"; exit 1
 fi
@@ -202,6 +207,14 @@ out="$(decode "$TMP/e000.json" E000)"; rc=$?
 checked=$((checked + 1))
 if [ $rc -ne 0 ]; then bad "E000: $out"; else note "  ok   E000 ($out)"; fi
 fixture_codes="$fixture_codes E000"
+# Dedicated paths pin the message bound independently of host TMPDIR length.
+e000_out="$(python3 "$ROOT/tools/lint_e000_check.py" "$EIGS" 2>&1)"; e000_rc=$?
+checked=$((checked + 1))
+if [ "$e000_rc" -ne 0 ] || [ "$e000_out" != "E000: 3 cases passed" ]; then
+    bad "E000 path contract: $e000_out"
+else
+    note "  ok   E000 path contract ($e000_out)"
+fi
 
 # --- 3. registry, both directions ------------------------------------------
 doc_codes="$(grep -oE '^\| *`[WE]0[0-9][0-9]`' "$DOCS" | grep -oE '[WE]0[0-9][0-9]' | sort -u | tr '\n' ' ')"
@@ -301,7 +314,7 @@ if x is 1:
 # pre-existing rule is long enough" was wrong as an argument. Both channels are
 # decoded: the human line and the JSON payload hold separate copies of the
 # bytes and are repaired at different chokepoints.
-sweep_out="$(python3 "$ROOT/tools/lint_message_sweep.py" "$EIGS")"
+sweep_out="$(python3 "$ROOT/tools/lint_message_sweep.py" "$EIGS" 2>&1)"
 if [ $? -ne 0 ]; then bad "identifier-length sweep: $sweep_out"; else note "  ok   sweep ($sweep_out)"; checked=$((checked + 1)); fi
 
 # --- source-byte sweep: bytes the DIAGNOSTIC did not choose ----------------
@@ -310,7 +323,7 @@ if [ $? -ne 0 ]; then bad "identifier-length sweep: $sweep_out"; else note "  ok
 # a source line the caret excerpt echoes. On v0.43.0, 512 of 1524 byte/shape/
 # channel combinations were malformed while every message was comfortably
 # short — which is why a length-only fix left the class open.
-byte_out="$(python3 "$ROOT/tools/lint_source_byte_sweep.py" "$EIGS")"
+byte_out="$(python3 "$ROOT/tools/lint_source_byte_sweep.py" "$EIGS" 2>&1)"
 if [ $? -ne 0 ]; then bad "source-byte sweep: $byte_out"; else note "  ok   bytes ($byte_out)"; checked=$((checked + 1)); fi
 
 # --- structural half: the chokepoints are still the only writers -----------
@@ -373,7 +386,7 @@ fi
 # --- verdict ---------------------------------------------------------------
 # Floor, not an exact count: adding a rule (and its fixture) raises it, and
 # only REMOVING coverage needs an edit here.
-FLOOR=39
+FLOOR=40
 if [ "$checked" -lt "$FLOOR" ]; then
     bad "only $checked checks ran, floor is $FLOOR — coverage was removed"
 fi

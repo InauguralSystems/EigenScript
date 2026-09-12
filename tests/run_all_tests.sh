@@ -6,6 +6,7 @@
 # whole suite.
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 export EIGS_TEST_DIR="$TESTS_DIR"
+. "$TESTS_DIR/failure_output.sh" || exit 1
 cd "$(dirname "$0")/../src" || { echo "cannot cd to src"; exit 1; }
 
 PASS=0
@@ -424,7 +425,7 @@ check_eigs_suite() {
     else
         FAIL=$((FAIL + n))
         echo "  FAIL: $test_name (rc=$rc)"
-        echo "$out" | grep -iE "FAIL|MISMATCH|assert|error" | head -5
+        printf '%s\n' "$out" | eigs_failure_output
     fi
 }
 
@@ -5220,7 +5221,7 @@ PASS=$((PASS + LINT_PASS))
 FAIL=$((FAIL + LINT_FAIL))
 if [ "$LINT_FAIL" -gt 0 ]; then
     echo "  FAIL: $LINT_FAIL linter check(s) failed"
-    echo "$LINT_OUTPUT" | grep "FAIL:" | head -5
+    printf '%s\n' "$LINT_OUTPUT" | eigs_failure_output
 else
     echo "  PASS: all $LINT_PASS linter checks"
 fi
@@ -5267,6 +5268,20 @@ if [ "$TRUN_FAIL" -gt 0 ]; then
     echo "$TRUN_OUTPUT" | grep "FAIL:" | head -5
 else
     echo "  PASS: all $TRUN_PASS test-runner checks"
+fi
+echo ""
+
+# [81c] Executable-relative imports survive relative/absolute/PATH/symlink launches.
+echo "[81c] Executable path and import anchors"
+EXEPATH_OUTPUT=$(python3 "$TESTS_DIR/test_exe_path.py" </dev/null 2>&1); EXEPATH_RC=$?
+TOTAL=$((TOTAL + 5))
+if rc_ok "$EXEPATH_RC" "$EXEPATH_OUTPUT" && echo "$EXEPATH_OUTPUT" | grep -q '^EXE PATH: 5 passed, 0 failed$'; then
+    PASS=$((PASS + 5))
+    echo "  PASS: all 5 executable-path launch forms"
+else
+    FAIL=$((FAIL + 5))
+    echo "  FAIL: executable-path tests (rc=$EXEPATH_RC)"
+    echo "$EXEPATH_OUTPUT"
 fi
 echo ""
 
@@ -6159,19 +6174,21 @@ echo ""
 # crash in both arms through a wrapper binary (each must FAIL, attributed),
 # proves --record refuses over a crash, keeps a real clean boundary refusal
 # classified as boundary (positive control), and pins that a NON-signal
-# nonzero rc (124/127) still diffs into a row. The full corpus run stays a
+# nonzero rc (120) still diffs into a row. Five further cases require
+# exit124 to fail before any self-check/equality/boundary/ledger classification.
+# The full corpus run stays a
 # CI job, not a suite section. The case count is pinned, not ">0": a gate
 # reduced to one echo satisfies "at least one case passed".
-echo "[136] replay_diff crash gate: a signal exit is never a boundary (#1112)"
+echo "[136] replay_diff crash/timeout gate: neither is a boundary (#1112)"
 TOTAL=$((TOTAL + 1))
 RDS_OUTPUT=$(bash "$TESTS_DIR/../tools/replay_diff.sh" --selftest 2>&1); RDS_RC=$?
 RDS_OK=$(printf '%s\n' "$RDS_OUTPUT" | grep -c "  selftest ok:" || true)
-if [ "$RDS_RC" -eq 0 ] && [ "$RDS_OK" -eq 6 ] && printf '%s\n' "$RDS_OUTPUT" | grep -q "^SELFTEST: all planted faults caught"; then
+if [ "$RDS_RC" -eq 0 ] && [ "$RDS_OK" -eq 11 ] && printf '%s\n' "$RDS_OUTPUT" | grep -q "^SELFTEST: all planted faults caught"; then
     PASS=$((PASS + 1))
     echo "  PASS: replay_diff selftest (all $RDS_OK planted/control cases)"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: replay_diff selftest (rc=$RDS_RC, $RDS_OK of 6 ok cases)"
+    echo "  FAIL: replay_diff selftest (rc=$RDS_RC, $RDS_OK of 11 ok cases)"
     printf '%s\n' "$RDS_OUTPUT" | grep -v "selftest ok" | head -8
 fi
 echo ""
@@ -6344,47 +6361,18 @@ if [ ! -f "$EIGS_BIN" ]; then
     PASS=$((PASS + 1))
     echo "  SKIP: no binary to fingerprint"
 else
-    export -f eigs_binary_fingerprint check_binary_fingerprint record_binary_fingerprint check_eigs_suite rc_ok lsan_classify lsan_classify_name derive_count
-    export EIGS_BIN EIGS_TMO
-    SELFTEST_BIN_BAK="${EIGS_BIN}.orig"
-    # If the binary is the #740 variant symlink, remember its target so the
-    # restore can re-create the link (the swap's mv replaces it with a
-    # regular file; the link's target file itself is never touched).
-    SELFTEST_LINK_TARGET=$(readlink "$EIGS_BIN" 2>/dev/null || true)
-    cp -p "$EIGS_BIN" "$SELFTEST_BIN_BAK"
-    # Background: wait a moment, then replace the binary with a modified copy.
-    (
-        sleep 1
-        cp "$EIGS_BIN" "${EIGS_BIN}.tmp"
-        printf '\n' >> "${EIGS_BIN}.tmp"
-        mv "${EIGS_BIN}.tmp" "$EIGS_BIN"
-    ) &
-    SWAP_PID=$!
-    SELFTEST_OUT=$( bash -c '
-        record_binary_fingerprint
-        # Tiny suite subset: one real check block, then a pause for the swap.
-        check_eigs_suite "binary-guard self-test block" "test_gen0_baseline.eigs" "T01" 1
-        sleep 2
-        check_binary_fingerprint
-        echo "SELFTEST_REACHED_END"
-    ' 2>&1 )
+    source "$TESTS_DIR/binary_swap.sh"
+    SELFTEST_OUT=$(eigs_binary_swap_selftest 2>&1)
     SELFTEST_RC=$?
-    wait "$SWAP_PID" 2>/dev/null || true
-    # Always restore the original binary before the suite continues.
-    if [ -n "$SELFTEST_LINK_TARGET" ]; then
-        rm -f "$EIGS_BIN" "$SELFTEST_BIN_BAK"
-        ln -s "$SELFTEST_LINK_TARGET" "$EIGS_BIN"
-    else
-        mv "$SELFTEST_BIN_BAK" "$EIGS_BIN"
-    fi
-    export -fn eigs_binary_fingerprint check_binary_fingerprint record_binary_fingerprint check_eigs_suite rc_ok lsan_classify lsan_classify_name derive_count
-    if [ "$SELFTEST_RC" -ne 0 ] && printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."; then
+    RESTORE_OUT=$(python3 "$TESTS_DIR/test_binary_swap_restore.py" 2>&1)
+    RESTORE_RC=$?
+    if [ "$SELFTEST_RC" -eq 1 ] && [ "$RESTORE_RC" -eq 0 ] && printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."; then
         PASS=$((PASS + 1))
         echo "  PASS: binary-fingerprint guard detected mid-run swap and aborted with the expected error"
     else
         FAIL=$((FAIL + 1))
         echo "  FAIL: binary-fingerprint guard did not detect mid-run swap (rc=$SELFTEST_RC)"
-        printf '%s\n' "$SELFTEST_OUT" | head -8 | sed 's/^/      /'
+        printf '%s\n' "$SELFTEST_OUT" "$RESTORE_OUT" | head -12 | sed 's/^/      /'
     fi
 fi
 echo ""
@@ -6398,17 +6386,21 @@ echo ""
 # on observable state (READY/DONE markers), never sleeps — see
 # tests/test_sigusr1_dump.sh.
 echo "[99e] SIGUSR1 observer dump (#660)"
-OD_OUTPUT=$(bash "$TESTS_DIR/test_sigusr1_dump.sh" 2>&1)
-OD_PASS=$(echo "$OD_OUTPUT" | grep -c "PASS:" || true)
-OD_FAIL=$(echo "$OD_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + OD_PASS + OD_FAIL))
-PASS=$((PASS + OD_PASS))
-FAIL=$((FAIL + OD_FAIL))
-if [ "$OD_FAIL" -gt 0 ]; then
-    echo "  FAIL: $OD_FAIL SIGUSR1 dump check(s) failed"
-    echo "$OD_OUTPUT" | grep "FAIL:" | head -5
-else
+OD_OUTPUT=$(bash "$TESTS_DIR/test_sigusr1_dump.sh" 2>&1); OD_RC=$?
+. "$TESTS_DIR/sigusr1_support.sh"
+if OD_REASON=$(sigusr1_result_check "$OD_OUTPUT" "$OD_RC" 2>&1); then
+    OD_PASS=$(printf '%s\n' "$OD_OUTPUT" | grep -c '^PASS: ' || true)
+    TOTAL=$((TOTAL + OD_PASS)); PASS=$((PASS + OD_PASS))
     echo "  PASS: all $OD_PASS SIGUSR1 dump checks"
+else
+    OD_PASS=$(printf '%s\n' "$OD_OUTPUT" | grep -c '^PASS: ' || true)
+    OD_FAIL=$(printf '%s\n' "$OD_OUTPUT" | grep -c '^FAIL: ' || true)
+    # A child that exited early, silently, or after passing assertions is one
+    # explicit failure even when it supplied no FAIL marker of its own.
+    [ "$OD_FAIL" -gt 0 ] || OD_FAIL=1
+    TOTAL=$((TOTAL + OD_PASS + OD_FAIL)); PASS=$((PASS + OD_PASS)); FAIL=$((FAIL + OD_FAIL))
+    echo "  FAIL: $OD_REASON"
+    printf '%s\n' "$OD_OUTPUT"
 fi
 echo ""
 

@@ -2366,11 +2366,9 @@ Value* builtin_seed_random(Value *arg) {
 }
 
 
-/* ---- Command-line arguments ----
- * Non-static: builtins_host.c's exe_path uses g_argv[0] as its fallback
- * when /proc/self/exe is unavailable (declared in builtins_internal.h). */
-int g_argc = 0;
-char **g_argv = NULL;
+/* ---- Command-line arguments ---- */
+static int g_argc = 0;
+static char **g_argv = NULL;
 
 void eigenscript_set_args(int argc, char **argv) {
     g_argc = argc;

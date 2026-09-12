@@ -377,22 +377,14 @@ Value* builtin_getcwd(Value *arg) {
 /* exe_path of null → absolute path of the running interpreter binary.
  * Lets an EigenScript program re-invoke the same interpreter — e.g. a
  * test runner spawning `exec_capture of [exe_path of null, testfile]`,
- * which is more robust than assuming `eigenscript` is on PATH. Reads
- * /proc/self/exe; falls back to argv[0]. */
+ * which is more robust than assuming `eigenscript` is on PATH. The state
+ * captures the host path before script code can change the cwd. */
 Value* builtin_exe_path(Value *arg) {
     (void)arg;
     /* #585: the interpreter path is machine-dependent — taped so replay
-     * serves the recorded path without touching /proc/self/exe. */
+     * serves the recorded path without consulting the host anchor. */
     TRACE_NONDET_TAKE("exe_path");
-    char buf[4096];
-    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (n > 0 && n < (ssize_t)sizeof(buf)) {
-        buf[n] = '\0';
-        TRACE_NONDET_RECORD("exe_path", make_str(buf));
-    }
-    if (g_argv && g_argc > 0 && g_argv[0])
-        TRACE_NONDET_RECORD("exe_path", make_str(g_argv[0]));
-    TRACE_NONDET_RECORD("exe_path", make_str("eigenscript"));
+    TRACE_NONDET_RECORD("exe_path", make_str(g_exe_path ? g_exe_path : "eigenscript"));
 }
 
 /* chdir of "path" → 1 on success, 0 on failure */

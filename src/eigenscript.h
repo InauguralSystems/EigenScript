@@ -657,6 +657,8 @@ struct EigsState {
     /* Filesystem anchors for `import` / `load_file` resolution. */
     char            script_dir[4096];
     char            exe_dir[4096];
+    /* Heap-owned absolute executable anchor, immutable after CLI startup. */
+    char           *exe_path;
     /* Import-time module cache — populated on first import of a path,
      * read on subsequent imports of the same path. Single-writer in
      * practice (main thread imports at startup); no internal lock. */
@@ -1154,6 +1156,7 @@ extern __thread EigsThread *eigs_current;
 #define g_global_env          (eigs_current->state->global_env)
 #define g_script_dir          (eigs_current->state->script_dir)
 #define g_exe_dir             (eigs_current->state->exe_dir)
+#define g_exe_path            (eigs_current->state->exe_path)
 #define g_load_env            (eigs_current->load_env)
 #define g_compile_module_boundary (eigs_current->compile_module_boundary)
 #define g_compile_import_toplevel (eigs_current->compile_import_toplevel)

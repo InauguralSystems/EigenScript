@@ -295,7 +295,9 @@ jobs:
     name: macos / ${{ matrix.os }}
     needs: scope
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # Intel completed the gfx gate and 540 compiler audit calls but reached
+    # 30 minutes in the audit's fault controls (#1130). Keep the full suite.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -304,12 +306,56 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - if: needs.scope.outputs.code == 'true'
+        name: Shell harness portability controls
+        shell: bash
+        run: |
+          result=$(mktemp)
+          rc=0
+          bash tests/test_ci_portability.sh > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 0 ] || exit "$rc"
+          [ "$(grep -cx 'ci-portability: checks=25 failures=0' "$result")" -eq 1 ]
+          rc=0
+          bash tests/test_ci_portability.sh --no-cleanup-deferral > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 1 ]
+          grep -qxF 'FAIL: cleanup deferral fault abandoned READY child after delivered signal and matching trap exit' "$result"
+          ! grep -q '^ci-portability: checks=' "$result"
+
+      - if: needs.scope.outputs.code == 'true'
         name: Build
         run: CC=clang ./build.sh
 
       - if: needs.scope.outputs.code == 'true'
         name: Verify binary
         run: ./src/eigenscript --version
+
+      # Use upstream LLVM's LSan runtime for the gfx gate, independently
+      # of the default Apple Clang used for the interpreter build.
+      # LLVM 20 deadlocks before main on macOS 26.4+ (llvm-project#182943).
+      # The fix was backported to LLVM 22 (llvm-project#188913). The gate's
+      # bounded executable control and intentional leak still verify it.
+      - if: needs.scope.outputs.code == 'true'
+        name: Select gfx LeakSanitizer toolchain
+        run: |
+          case '${{ matrix.os }}' in
+            macos-15-intel) formula=llvm@18 ;;
+            macos-latest)
+              formula=llvm@22
+              brew install --force-bottle "$formula"
+              ;;
+          esac
+          if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+            brew install --force-bottle coreutils
+          fi
+          sanitizer_cc="$(brew --prefix "$formula")/bin/clang"
+          test -x "$sanitizer_cc"
+          "$sanitizer_cc" --version
+          echo "EIGS_ASAN_GFX_CC=$sanitizer_cc" >> "$GITHUB_ENV"
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Verify gfx sanitizer controls
+        run: bash tests/test_asan_gfx.sh --toolchain-only
 
       - if: needs.scope.outputs.code == 'true'
         name: Run test suite
@@ -331,8 +377,38 @@ jobs:
   # (eigs_embed.c is otherwise 0% — embed-smoke is the only thing that runs
   # it), compile-check the LSP (bitrots invisibly otherwise), and run the
   # standalone JIT emitter smoke tests.
+  # Preserve the existing required check name while requiring every variant.
+  # Each worker still checks out on docs-only changes; its code steps skip.
+  # A failed/cancelled/skipped worker is never an aggregate success.
   extensions:
     name: extensions (http+model+gfx suite; embed/lsp/jit-smoke)
+    needs: [scope, extensions-http, extensions-gfx, extensions-zlib, extensions-net]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require complete extension coverage
+        shell: bash
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CODE: ${{ needs.scope.outputs.code }}
+          HTTP_RESULT: ${{ needs.extensions-http.result }}
+          GFX_RESULT: ${{ needs.extensions-gfx.result }}
+          ZLIB_RESULT: ${{ needs.extensions-zlib.result }}
+          NET_RESULT: ${{ needs.extensions-net.result }}
+        run: |
+          set -euo pipefail
+          [ "$SCOPE_RESULT" = success ]
+          case "$CODE" in true|false) ;; *) exit 1;; esac
+          for result in "$HTTP_RESULT" "$GFX_RESULT" "$ZLIB_RESULT" "$NET_RESULT"; do
+            [ "$result" = success ] || exit 1
+          done
+          echo "Extension coverage complete (code=$CODE; four workers succeeded)"
+
+  extensions-http:
+    name: extensions / http+model and ancillary checks
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -346,6 +422,23 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Shell harness portability controls
+        shell: bash
+        run: |
+          result=$(mktemp)
+          rc=0
+          bash tests/test_ci_portability.sh > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 0 ] || exit "$rc"
+          [ "$(grep -cx 'ci-portability: checks=25 failures=0' "$result")" -eq 1 ]
+          rc=0
+          bash tests/test_ci_portability.sh --no-cleanup-deferral > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 1 ]
+          grep -qxF 'FAIL: cleanup deferral fault abandoned READY child after delivered signal and matching trap exit' "$result"
+          ! grep -q '^ci-portability: checks=' "$result"
 
       - if: needs.scope.outputs.code == 'true'
         name: JIT emitter smoke tests
@@ -385,30 +478,6 @@ jobs:
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true'
-        name: Build gfx variant
-        run: make gfx
-
-      - if: needs.scope.outputs.code == 'true'
-        name: Run full suite against gfx build (audio [62], containment [132], gfx examples [97])
-        run: cd tests && bash run_all_tests.sh
-
-      - if: needs.scope.outputs.code == 'true'
-        name: Build zlib variant
-        run: make zlib
-
-      - if: needs.scope.outputs.code == 'true'
-        name: Run full suite against zlib build (executes DEFLATE section [124])
-        run: cd tests && bash run_all_tests.sh
-
-      - if: needs.scope.outputs.code == 'true'
-        name: Build net variant
-        run: make net
-
-      - if: needs.scope.outputs.code == 'true'
-        name: Run full suite against net build (executes network section [125])
-        run: cd tests && bash run_all_tests.sh
-
-      - if: needs.scope.outputs.code == 'true'
         name: Compile-check LSP
         run: make lsp
 
@@ -422,6 +491,81 @@ jobs:
       - if: needs.scope.outputs.code == 'true'
         name: Fuzz smoke (ASan harness, curated corpus)
         run: make fuzz && bash fuzz/run_fuzz.sh
+
+  extensions-gfx:
+    name: extensions / gfx full suite
+    needs: [dev-image, scope]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Build gfx variant
+        run: make gfx
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against gfx build (audio [62], containment [132], gfx examples [97])
+        run: cd tests && bash run_all_tests.sh
+
+
+  extensions-zlib:
+    name: extensions / zlib full suite
+    needs: [dev-image, scope]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Build zlib variant
+        run: make zlib
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against zlib build (executes DEFLATE section [124])
+        run: cd tests && bash run_all_tests.sh
+
+
+  extensions-net:
+    name: extensions / net full suite
+    needs: [dev-image, scope]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Build net variant
+        run: make net
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against net build (executes network section [125])
+        run: cd tests && bash run_all_tests.sh
+
 
   # Build the `full` variant (http+model+db) against a real PostgreSQL service
   # and run the suite with DATABASE_URL set. Without this, ext_db.c never
@@ -472,8 +616,35 @@ jobs:
   # The net that catches use-after-free, buffer overflow, and UB the normal
   # -O2 build silently tolerates. Per-iteration leak regressions are covered
   # separately by tests/test_leak_guard.sh.
+  # Keep the required status while both complete sanitizer variants run in
+  # independent checkouts. Docs-only workers skip code steps but must succeed.
   sanitizers:
     name: asan + ubsan (full suite)
+    needs: [scope, sanitizers-core, sanitizers-http]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require complete sanitizer coverage
+        shell: bash
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CODE: ${{ needs.scope.outputs.code }}
+          CORE_RESULT: ${{ needs.sanitizers-core.result }}
+          HTTP_RESULT: ${{ needs.sanitizers-http.result }}
+        run: |
+          set -euo pipefail
+          [ "$SCOPE_RESULT" = success ]
+          case "$CODE" in true|false) ;; *) exit 1;; esac
+          for result in "$CORE_RESULT" "$HTTP_RESULT"; do
+            [ "$result" = success ] || exit 1
+          done
+          echo "Sanitizer coverage complete (code=$CODE; two workers succeeded)"
+
+  sanitizers-core:
+    name: asan + ubsan / core and LSP
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     # 45, not 30: the green run before #915's [99u] section landed took 19m57,
@@ -500,6 +671,10 @@ jobs:
         run: make asan
 
       - if: needs.scope.outputs.code == 'true'
+        name: Collector traversal ownership and reach
+        run: python3 tools/gc_traversal_check.py --variant asan
+
+      - if: needs.scope.outputs.code == 'true'
         name: Run full suite under sanitizers
         env:
           # Leak detection is ON: the suite runs leak-clean since the exit-time
@@ -515,6 +690,29 @@ jobs:
         # ASan/UBSan and drives the JSON-RPC harness; test_lsp.py fails on any
         # sanitizer report from the LSP process (leaks, UB).
         run: cd tests && bash test_lsp_asan.sh
+
+  sanitizers-http:
+    name: asan + ubsan / HTTP and model full suite
+    needs: [dev-image, scope]
+    runs-on: ubuntu-latest
+    # 45, not 30: the green run before #915's [99u] section landed took 19m57,
+    # and that section legitimately adds minutes under ASan (it launches the
+    # sanitized binary ~60 times; sanitizer process startup dominates) — a slow
+    # runner then hit the old ceiling and the job rendered as CANCELLED at
+    # 30:02 with the suite mid-section. A timeout is not a verdict: the same
+    # tree's local ASan suite was 4117/4117. Headroom target ~2x the observed
+    # green duration, per the suite-runtime-baseline rule.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       # The extension surface under sanitizers. `make asan` above compiles the
       # HTTP + model extensions OUT, so ext_http.c — a network-facing server
@@ -532,8 +730,7 @@ jobs:
       # path (#731) are therefore NOT caught by this step; that class needs an
       # RSS-growth gate, measured separately.
       #
-      # Runs last in this job: every Makefile variant writes src/eigenscript,
-      # so this must not clobber the binary the steps above are using.
+      # This worker owns its checkout and alias, independently of core ASan.
       - if: needs.scope.outputs.code == 'true'
         name: Run suite under sanitizers with the HTTP+model extensions
         env:

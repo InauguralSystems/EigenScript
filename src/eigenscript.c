@@ -3571,6 +3571,7 @@ typedef struct {
     int32_t  *pinned;    /* refs held by the collector's own seed pins
                           * (exit-time snapshot of global bindings) */
     uint8_t  *mark;
+    uint8_t  *has_node_children; /* valid within this collection, before clearing */
     int       count, cap;
     int      *table;     /* open addressing, holds node index or -1 */
     int       mask;      /* table size - 1 (power of two) */
@@ -3613,6 +3614,7 @@ static int gcu_add(GcU *u, void *obj, int kind) {
         u->internal = xrealloc_array(u->internal, u->cap, sizeof(int32_t));
         u->pinned   = xrealloc_array(u->pinned, u->cap, sizeof(int32_t));
         u->mark     = xrealloc_array(u->mark, u->cap, sizeof(uint8_t));
+        u->has_node_children = xrealloc_array(u->has_node_children, u->cap, sizeof(uint8_t));
     }
     int n = u->count++;
     u->objs[n] = obj;
@@ -3620,6 +3622,7 @@ static int gcu_add(GcU *u, void *obj, int kind) {
     u->internal[n] = 0;
     u->pinned[n] = 0;
     u->mark[n] = 0;
+    u->has_node_children[n] = 0;
     if (u->count * 4 > (u->mask + 1) * 3)
         gcu_rehash(u, (u->mask + 1) * 2);
     uint32_t i = gc_ptr_hash(obj) & u->mask;
@@ -3887,8 +3890,11 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     for (int i = 0; i < 512; i++) u.table[i] = -1;
     u.mask = 511;
 
-    /* 1. Build U: registered envs + everything reachable via owned edges.
-     * u.count grows during the scan — the node array is the worklist. */
+    /* 1-2. Build U and count internal refs in the same edge walk. u.count
+     * grows during the scan — the node array is the worklist. Each owned
+     * edge counts, including duplicate edges and self references. The graph
+     * stays unchanged until clearing, so discovery also records which nodes
+     * have no node children; marking need not scan their leaf slots again. */
     for (Env *e = g_gc_envs; e; e = e->gc_next)
         gcu_add(&u, e, GC_KIND_ENV);
     for (int s = 0; s < seed_count; s++) {
@@ -3898,15 +3904,11 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     for (int n = 0; n < u.count; n++) {
         GC_FOR_EACH_CHILD(&u, n, child, child_kind, {
             gcu_add(&u, child, child_kind);
-        });
-    }
-
-    /* 2. Internal reference counts (edges from inside U). */
-    for (int n = 0; n < u.count; n++) {
-        GC_FOR_EACH_CHILD(&u, n, child, child_kind, {
-            (void)child_kind;
+            /* gcu_add may reallocate the arrays; retain indices, not pointers
+             * into them. The target is now present even on a forward edge. */
             int ci = gcu_find(&u, child);
-            if (ci >= 0) u.internal[ci]++;
+            u.internal[ci]++;
+            u.has_node_children[n] = 1;
         });
     }
 
@@ -3932,6 +3934,7 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
         free(stack);
         free(u.table); free(u.objs); free(u.kind);
         free(u.internal); free(u.pinned); free(u.mark);
+        free(u.has_node_children);
         g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
         g_gc_val_threshold = gc_val_next_threshold(u.count);
         g_in_gc = 0;
@@ -3941,6 +3944,7 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     /* 4. Mark everything reachable from the roots within U. */
     while (sp > 0) {
         int n = stack[--sp];
+        if (!u.has_node_children[n]) continue;
         GC_FOR_EACH_CHILD(&u, n, child, child_kind, {
             (void)child_kind;
             int ci = gcu_find(&u, child);
@@ -3978,6 +3982,7 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
 
     free(u.table); free(u.objs); free(u.kind);
     free(u.internal); free(u.pinned); free(u.mark);
+    free(u.has_node_children);
     g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
     g_gc_val_threshold = gc_val_next_threshold(u.count);
     g_in_gc = 0;
