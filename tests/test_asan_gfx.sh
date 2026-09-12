@@ -37,6 +37,15 @@
 #
 # Run by hand:  cd src && bash ../tests/test_asan_gfx.sh
 set -u
+TOOLCHAIN_ONLY=0
+if [ "$#" -eq 0 ]; then
+    :
+elif [ "$#" -eq 1 ] && [ "$1" = --toolchain-only ]; then
+    TOOLCHAIN_ONLY=1
+else
+    echo "Usage: $0 [--toolchain-only]" >&2
+    exit 2
+fi
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$TESTS_DIR/.." && pwd)"
 CORPUS="$TESTS_DIR/gfx_asan_corpus"
@@ -74,7 +83,7 @@ ASAN_CFLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1"
 if ! echo 'int main(void){return 0;}' | "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $ASAN_CFLAGS -x c - -o /tmp/eigs_asan_gfx_probe 2>/tmp/eigs_asan_gfx_probe.log; then
     rm -f /tmp/eigs_asan_gfx_probe
     cat /tmp/eigs_asan_gfx_probe.log
-    if [ -n "${EIGS_ASAN_GFX_CC:-}" ]; then
+    if [ -n "${EIGS_ASAN_GFX_CC:-}" ] || [ "$TOOLCHAIN_ONLY" -eq 1 ]; then
         bad "configured gfx sanitizer compiler cannot build the control: $CC"
         echo "ASan gfx: $PASS passed, $FAIL failed"
         exit 1
@@ -95,6 +104,104 @@ rm -f /tmp/eigs_asan_gfx_probe
 export ASAN_OPTIONS="detect_leaks=1:abort_on_error=0"
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-dummy}"
+
+# ---------------------------------------------------------------- predicate
+# ONE predicate, used by the corpus rows AND by the controls. Two copies of
+# this decision is how a guard goes green while the production path regresses.
+LAST_OUT=""; LAST_RC=0
+leak_reported() {   # <cmd...> -> 0 when a leak WAS reported
+    LAST_OUT="$($TMO "$@" 2>&1)"
+    LAST_RC=$?
+    lsan_classify "$LAST_OUT"
+}
+
+# ------------------------------------------------------------- the controls
+# The instrument is validated BEFORE any corpus verdict is believed.
+CTRL_OK=1
+
+cat > /tmp/eigs_asan_gfx_leak.c <<'CEOF'
+#include <pthread.h>
+#include <stdlib.h>
+/* Allocate only inside a worker which is joined before process exit. The
+ * main thread never holds the pointer, and the retired worker's registers
+ * and stack cannot conservatively keep it reachable (notably at -O0 on
+ * AArch64). Do not pass or return the allocation through pthread state. */
+static int allocation_failed;
+static void *allocate_in_worker(void *arg) {
+    (void)arg;
+    void *allocation = malloc(1234);
+    if (!allocation) {
+        allocation_failed = 1;
+        return NULL;
+    }
+    *(volatile unsigned char *)allocation = 42;
+    return NULL;
+}
+int main(void) {
+    pthread_t worker;
+    if (pthread_create(&worker, NULL, allocate_in_worker, NULL) != 0) return 2;
+    if (pthread_join(worker, NULL) != 0) return 3;
+    return allocation_failed ? 4 : 0;
+}
+CEOF
+cat > /tmp/eigs_asan_gfx_clean.c <<'CEOF'
+#include <pthread.h>
+#include <stdlib.h>
+static int allocation_failed;
+static void *allocate_in_worker(void *arg) {
+    (void)arg;
+    void *allocation = malloc(1234);
+    if (!allocation) {
+        allocation_failed = 1;
+        return NULL;
+    }
+    *(volatile unsigned char *)allocation = 42;
+    free(allocation);
+    return NULL;
+}
+int main(void) {
+    pthread_t worker;
+    if (pthread_create(&worker, NULL, allocate_in_worker, NULL) != 0) return 2;
+    if (pthread_join(worker, NULL) != 0) return 3;
+    return allocation_failed ? 4 : 0;
+}
+CEOF
+CTRL_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g -O0"
+if "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_leak.c  -lpthread -o /tmp/eigs_asan_gfx_leak  2>/dev/null \
+&& "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_clean.c -lpthread -o /tmp/eigs_asan_gfx_clean 2>/dev/null; then
+    # The integrated LSan control must finish with its expected failure exit;
+    # printing a leak and then hanging or dying by signal is not a control pass.
+    if leak_reported /tmp/eigs_asan_gfx_leak && [ "$LAST_RC" -eq 1 ]; then
+        ok "positive control: a deliberate 1234-byte leak IS reported"
+    else
+        bad "positive control: a deliberate leak did not finish with the expected LSan failure (rc=$LAST_RC) — the corpus verdict would be unvalidated"
+        printf '%s\n' "$LAST_OUT"
+        CTRL_OK=0
+    fi
+    leak_reported /tmp/eigs_asan_gfx_clean; CLEAN_CLASS=$?
+    if [ "$CLEAN_CLASS" -eq 2 ] && [ "$LAST_RC" -eq 0 ]; then
+        ok "negative control: a leak-free program is clean"
+    else
+        bad "negative control: a leak-free program did not exit cleanly (rc=$LAST_RC class=$CLEAN_CLASS)"
+        printf '%s\n' "$LAST_OUT"
+        CTRL_OK=0
+    fi
+else
+    bad "could not compile the leak controls; the corpus verdict would be unvalidated"
+    CTRL_OK=0
+fi
+rm -f /tmp/eigs_asan_gfx_leak.c /tmp/eigs_asan_gfx_clean.c \
+      /tmp/eigs_asan_gfx_leak /tmp/eigs_asan_gfx_clean
+
+if [ "$CTRL_OK" != 1 ]; then
+    echo "ASan gfx: $PASS passed, $FAIL failed"
+    exit 1
+fi
+
+if [ "$TOOLCHAIN_ONLY" -eq 1 ]; then
+    echo "ASan gfx toolchain: $PASS passed, $FAIL failed"
+    exit 0
+fi
 
 # ---------------------------------------------------------------- the binary
 # Prefer an artifact `make asan-gfx` already produced, but ONLY when it is
@@ -135,22 +242,8 @@ else
     echo "  built /tmp/eigs_asan_gfx from SRC_V_asan-gfx"
 fi
 
-# ---------------------------------------------------------------- predicate
-# ONE predicate, used by the corpus rows AND by the controls. Two copies of
-# this decision is how a guard goes green while the production path regresses.
-LAST_OUT=""; LAST_RC=0
-leak_reported() {   # <cmd...> -> 0 when a leak WAS reported
-    LAST_OUT="$($TMO "$@" 2>&1)"
-    LAST_RC=$?
-    lsan_classify "$LAST_OUT"
-}
-
-# ------------------------------------------------------------- the controls
-# The instrument is validated BEFORE any corpus verdict is believed.
-CTRL_OK=1
-
-# (0) The BINARY under test is an AddressSanitizer build. Decisive about
-#     $BIN specifically, which the two program controls below are not: they
+# The BINARY under test is an AddressSanitizer build. Decisive about
+#     $BIN specifically, which the two program controls above are not: they
 #     prove the toolchain and the predicate, not which binary was picked.
 if command -v nm >/dev/null 2>&1 && nm "$BIN" 2>/dev/null | grep -q __asan; then
     ok "the binary under test links AddressSanitizer (__asan* present)"
@@ -162,59 +255,6 @@ else
     bad "the binary at $BIN carries no AddressSanitizer symbols — a clean corpus below would mean nothing"
     CTRL_OK=0
 fi
-
-cat > /tmp/eigs_asan_gfx_leak.c <<'CEOF'
-#include <stdlib.h>
-/* Hidden inside a heap cell that is then freed, so the inner block is
- * unreachable from every root LeakSanitizer scans. -O0 on purpose: at -O1
- * the pointer survives in a register, LSan is reachability-based, and the
- * "leak" is not reported — measured, and it made the control read as
- * "LeakSanitizer is not armed" on a toolchain where it plainly was. */
-int main(void) {
-    void **cell = (void **)malloc(sizeof(void *));
-    if (!cell) return 1;
-    *cell = malloc(1234);
-    free(cell);
-    return 0;
-}
-CEOF
-cat > /tmp/eigs_asan_gfx_clean.c <<'CEOF'
-#include <stdlib.h>
-int main(void) {
-    void **cell = (void **)malloc(sizeof(void *));
-    if (!cell) return 1;
-    *cell = malloc(1234);
-    free(*cell);
-    free(cell);
-    return 0;
-}
-CEOF
-CTRL_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g -O0"
-if "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_leak.c  -o /tmp/eigs_asan_gfx_leak  2>/dev/null \
-&& "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_clean.c -o /tmp/eigs_asan_gfx_clean 2>/dev/null; then
-    # The integrated LSan control must finish with its expected failure exit;
-    # printing a leak and then hanging or dying by signal is not a control pass.
-    if leak_reported /tmp/eigs_asan_gfx_leak && [ "$LAST_RC" -eq 1 ]; then
-        ok "positive control: a deliberate 1234-byte leak IS reported"
-    else
-        bad "positive control: a deliberate leak did not finish with the expected LSan failure (rc=$LAST_RC) — the corpus verdict would be unvalidated"
-        printf '%s\n' "$LAST_OUT"
-        CTRL_OK=0
-    fi
-    leak_reported /tmp/eigs_asan_gfx_clean; CLEAN_CLASS=$?
-    if [ "$CLEAN_CLASS" -eq 2 ] && [ "$LAST_RC" -eq 0 ]; then
-        ok "negative control: a leak-free program is clean"
-    else
-        bad "negative control: a leak-free program did not exit cleanly (rc=$LAST_RC class=$CLEAN_CLASS)"
-        printf '%s\n' "$LAST_OUT"
-        CTRL_OK=0
-    fi
-else
-    bad "could not compile the leak controls; the corpus verdict would be unvalidated"
-    CTRL_OK=0
-fi
-rm -f /tmp/eigs_asan_gfx_leak.c /tmp/eigs_asan_gfx_clean.c \
-      /tmp/eigs_asan_gfx_leak /tmp/eigs_asan_gfx_clean
 
 if [ "$CTRL_OK" != 1 ]; then
     echo "ASan gfx: $PASS passed, $FAIL failed"
