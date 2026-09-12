@@ -354,6 +354,10 @@ jobs:
           echo "EIGS_ASAN_GFX_CC=$sanitizer_cc" >> "$GITHUB_ENV"
 
       - if: needs.scope.outputs.code == 'true'
+        name: Verify gfx sanitizer controls
+        run: bash tests/test_asan_gfx.sh --toolchain-only
+
+      - if: needs.scope.outputs.code == 'true'
         name: Run test suite
         run: cd tests && bash run_all_tests.sh
 
