@@ -106,6 +106,14 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- Standard-library imports and `exe_path` retain an absolute executable
+  anchor after `chdir` on macOS, including relative and PATH launches (#1133).
+- Matrix products use separate binary64 multiplication and addition across
+  platforms, preserving strict-mode invalid-result detection (#1131).
+- CI completes extension and sanitizer variants in separate workers. macOS
+  harnesses handle filename rejection, use an LLVM leak-detection runtime,
+  and reject sanitizer startup failures (#1126).
+
 - **`EIGS_STRICT=1` reaches the graphics and audio extension (#1007).**
   `src/ext_gfx.c` had no raise path at all — `grep -c rt_error src/ext_gfx.c`
   was 0 — while ~89 argument reads went straight through `items[N]->data.num`,

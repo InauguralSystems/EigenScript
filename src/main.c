@@ -24,30 +24,14 @@ extern int eigs_bundle_create(const char *argv0, const char *script,
 /* The REPL (piped loop + the #392 interactive line editor) lives in repl.c. */
 
 static void set_exe_dir(const char *argv0) {
-    char exe_path[4096];
-    ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-    if (n > 0 && n < (ssize_t)sizeof(exe_path)) {
-        exe_path[n] = '\0';
-    } else if (argv0 && strchr(argv0, '/')) {
-        strncpy(exe_path, argv0, sizeof(exe_path) - 1);
-        exe_path[sizeof(exe_path) - 1] = '\0';
-    } else {
-        memcpy(g_exe_dir, ".", 2);
-        return;
-    }
-
-    const char *last_slash = strrchr(exe_path, '/');
-    if (!last_slash) {
-        memcpy(g_exe_dir, ".", 2);
-        return;
-    }
-    int dir_len = (int)(last_slash - exe_path);
-    if (dir_len <= 0) {
-        memcpy(g_exe_dir, "/", 2);
-        return;
-    }
-    if (dir_len >= (int)sizeof(g_exe_dir)) dir_len = sizeof(g_exe_dir) - 1;
-    memcpy(g_exe_dir, exe_path, dir_len);
+    if (!g_exe_path) g_exe_path = eigs_executable_path(argv0);
+    if (!g_exe_path) return;
+    const char *last_slash = strrchr(g_exe_path, '/');
+    if (!last_slash) return;
+    size_t dir_len = last_slash == g_exe_path ? 1 : (size_t)(last_slash - g_exe_path);
+    /* Never turn an overlong anchor into a different, truncated directory. */
+    if (dir_len >= sizeof(g_exe_dir)) return;
+    memcpy(g_exe_dir, g_exe_path, dir_len);
     g_exe_dir[dir_len] = '\0';
 }
 

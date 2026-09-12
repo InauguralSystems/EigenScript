@@ -179,6 +179,11 @@ STUB
         "$ROOT/src/lint_host.c" | grep -q 'int step = eigs_utf8_step((const unsigned char \*)s + i, n - i);'
     st "json escaper sanitizer removed" $?
     [ "$probe" -eq 0 ] || { echo "SELFTEST-FAIL: lint_host.c has no sanitizer to plant against"; st_fail=1; }
+    # 10. Exercise the real path sweep when file creation rejects invalid
+    # names, as well as unrelated errors that must not become exemptions.
+    if ! python3 "$ROOT/tools/lint_source_byte_sweep.py" "$EIGS" --selftest-paths; then
+        st_fail=1
+    fi
     [ "$st_fail" -eq 0 ] && { echo "OK: gate self-test — planted faults all caught"; exit 0; }
     echo "FAILED: the gate no longer catches a planted fault"; exit 1
 fi
@@ -309,7 +314,7 @@ if x is 1:
 # pre-existing rule is long enough" was wrong as an argument. Both channels are
 # decoded: the human line and the JSON payload hold separate copies of the
 # bytes and are repaired at different chokepoints.
-sweep_out="$(python3 "$ROOT/tools/lint_message_sweep.py" "$EIGS")"
+sweep_out="$(python3 "$ROOT/tools/lint_message_sweep.py" "$EIGS" 2>&1)"
 if [ $? -ne 0 ]; then bad "identifier-length sweep: $sweep_out"; else note "  ok   sweep ($sweep_out)"; checked=$((checked + 1)); fi
 
 # --- source-byte sweep: bytes the DIAGNOSTIC did not choose ----------------
@@ -318,7 +323,7 @@ if [ $? -ne 0 ]; then bad "identifier-length sweep: $sweep_out"; else note "  ok
 # a source line the caret excerpt echoes. On v0.43.0, 512 of 1524 byte/shape/
 # channel combinations were malformed while every message was comfortably
 # short — which is why a length-only fix left the class open.
-byte_out="$(python3 "$ROOT/tools/lint_source_byte_sweep.py" "$EIGS")"
+byte_out="$(python3 "$ROOT/tools/lint_source_byte_sweep.py" "$EIGS" 2>&1)"
 if [ $? -ne 0 ]; then bad "source-byte sweep: $byte_out"; else note "  ok   bytes ($byte_out)"; checked=$((checked + 1)); fi
 
 # --- structural half: the chokepoints are still the only writers -----------

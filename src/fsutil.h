@@ -30,6 +30,9 @@
 char* read_file_util(const char *path, long *out_size);
 /* Canonical containing directory of `path`. Hosted; caller frees. */
 char *eigs_file_directory(const char *path);
+/* Absolute executable path, captured before user chdir. Caller frees; NULL
+ * if neither the platform lookup nor the startup argv/PATH fallback resolves. */
+char *eigs_executable_path(const char *argv0);
 /* Raise EK_IO naming every root the chain tried. Hosted. */
 void eigs_file_resolve_error(const char *operation, const char *base,
                             const char *path, int line);

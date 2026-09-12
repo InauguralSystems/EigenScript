@@ -2,7 +2,7 @@
 # Test the EigenScript linter (--lint)
 set -e
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-EIGS="$TESTS_DIR/../src/eigenscript"
+EIGS="${EIGENSCRIPT_BIN:-$TESTS_DIR/../src/eigenscript}"
 
 # --- #1121: make a sanitizer diagnostic from ANY child visible to this file ---
 # Almost every assertion below captures the linter's text with `2>&1` and drops
@@ -2438,10 +2438,21 @@ rm -f "$TMPFILE"
 # plain fprintf). A path is a byte string on POSIX, so both must sanitize it.
 PATHDIR=$(mktemp -d /tmp/lint_test_path_XXXXXX)
 BADPATH="$PATHDIR/$(printf 'w\xffname').eigs"
-printf 'unused_local is 42\nprint of 1\n' > "$BADPATH"
-check_json_utf8 "#1048 a file whose NAME is not valid UTF-8 decodes strictly" "$BADPATH"
+PATH_STATE=$(python3 "$TESTS_DIR/../tools/lint_path_fixture.py" "$BADPATH")
+case "$PATH_STATE" in
+    present|missing) ;;
+    *) echo "  FAIL: unexpected filename fixture state: $PATH_STATE"; exit 1 ;;
+esac
+# A filesystem may reject the filename (the helper reports the actual errno).
+# The invalid bytes still reach both diagnostic channels as a missing argv
+# path, so these checks must run even when no readable fixture can exist.
+check_json_utf8 "#1048 a file NAME with invalid UTF-8 decodes strictly ($PATH_STATE)" "$BADPATH"
 OUTPUT=$($EIGS --lint "$BADPATH" 2>&1 || true)
-check_contains "#1048 the diagnostic still names the file it linted" "$OUTPUT" "w.*name.eigs:1: warning\[W001\]"
+if [ "$PATH_STATE" = present ]; then
+    check_contains "#1048 the diagnostic still names the file it linted" "$OUTPUT" "w.*name.eigs:1: warning\[W001\]"
+else
+    check_contains "#1048 the rejected filename still reaches the human diagnostic" "$OUTPUT" "cannot read file '.*w.*name.eigs'"
+fi
 OUTPUT=$($EIGS --lint --json "${BADPATH}.missing" 2>/dev/null || true)
 check_contains "#1048 the unreadable-file payload (E000) still names the path" "$OUTPUT" '"code":"E000"'
 printf '%s' "$OUTPUT" | python3 -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' 2>/dev/null \

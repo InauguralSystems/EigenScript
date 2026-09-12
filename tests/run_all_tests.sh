@@ -5271,6 +5271,20 @@ else
 fi
 echo ""
 
+# [81c] Executable-relative imports survive relative/absolute/PATH/symlink launches.
+echo "[81c] Executable path and import anchors"
+EXEPATH_OUTPUT=$(python3 "$TESTS_DIR/test_exe_path.py" </dev/null 2>&1); EXEPATH_RC=$?
+TOTAL=$((TOTAL + 5))
+if rc_ok "$EXEPATH_RC" "$EXEPATH_OUTPUT" && echo "$EXEPATH_OUTPUT" | grep -q '^EXE PATH: 5 passed, 0 failed$'; then
+    PASS=$((PASS + 5))
+    echo "  PASS: all 5 executable-path launch forms"
+else
+    FAIL=$((FAIL + 5))
+    echo "  FAIL: executable-path tests (rc=$EXEPATH_RC)"
+    echo "$EXEPATH_OUTPUT"
+fi
+echo ""
+
 # [82] JIT fast paths — checksummed correctness for the fused opcodes,
 # inline ICs, iter/native-call helpers, and OSR that only fire on hot
 # benchmark-shaped code. Runs with EIGS_JIT_STATS so we can also assert

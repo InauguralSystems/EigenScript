@@ -328,6 +328,21 @@ jobs:
         name: Verify binary
         run: ./src/eigenscript --version
 
+      # Use upstream LLVM's LSan runtime for the gfx gate, independently
+      # of the default Apple Clang used for the interpreter build.
+      # Its executable control must start and its intentional leak must fire.
+      - if: needs.scope.outputs.code == 'true'
+        name: Select gfx LeakSanitizer toolchain
+        run: |
+          case '${{ matrix.os }}' in
+            macos-15-intel) formula=llvm@18 ;;
+            macos-latest) formula=llvm@20 ;;
+          esac
+          sanitizer_cc="$(brew --prefix "$formula")/bin/clang"
+          test -x "$sanitizer_cc"
+          "$sanitizer_cc" --version
+          echo "EIGS_ASAN_GFX_CC=$sanitizer_cc" >> "$GITHUB_ENV"
+
       - if: needs.scope.outputs.code == 'true'
         name: Run test suite
         run: cd tests && bash run_all_tests.sh

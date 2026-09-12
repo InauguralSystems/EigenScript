@@ -48,6 +48,59 @@ int eigs_import_resolve(const char *base, const char *name,
 #include <sys/stat.h>
 #include <unistd.h>
 #include <limits.h>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
+/* Resolve once at state/CLI startup. In particular dyld's answer may contain
+ * a symlink or relative components, so it must be canonicalized before chdir.
+ * No state bridge macros here: embedders call this before thread attachment. */
+char *eigs_executable_path(const char *argv0) {
+#if defined(__APPLE__)
+    uint32_t capacity = 0;
+    (void)_NSGetExecutablePath(NULL, &capacity);
+    if (capacity) {
+        char *path = xmalloc(capacity);
+        int rc = _NSGetExecutablePath(path, &capacity);
+        char *absolute = rc == 0 ? realpath(path, NULL) : NULL;
+        free(path);
+        if (absolute) return absolute;
+    }
+#elif defined(__linux__)
+    char path[4096];
+    ssize_t n = readlink("/proc/self/exe", path, sizeof(path));
+    /* A full buffer is truncated, not a usable executable path. */
+    if (n > 0 && n < (ssize_t)sizeof(path) && path[0] == '/') {
+        path[n] = '\0';
+        return xstrdup(path);
+    }
+#endif
+    if (!argv0 || !*argv0) return NULL;
+    if (strchr(argv0, '/')) return realpath(argv0, NULL);
+
+    /* A bare argv[0] names a PATH lookup, not a file in the startup cwd.
+     * Empty/relative entries are interpreted now, while that cwd is intact. */
+    const char *entry = getenv("PATH");
+    if (!entry) entry = "/bin:/usr/bin";
+    size_t name_len = strlen(argv0);
+    for (;;) {
+        const char *colon = strchr(entry, ':');
+        size_t dir_len = colon ? (size_t)(colon - entry) : strlen(entry);
+        char *candidate = xmalloc(dir_len + name_len + 2);
+        memcpy(candidate, entry, dir_len);
+        size_t offset = dir_len;
+        if (dir_len) candidate[offset++] = '/';
+        memcpy(candidate + offset, argv0, name_len + 1);
+        struct stat st;
+        char *absolute = NULL;
+        if (access(candidate, X_OK) == 0 && stat(candidate, &st) == 0 && S_ISREG(st.st_mode))
+            absolute = realpath(candidate, NULL);
+        free(candidate);
+        if (absolute) return absolute;
+        if (!colon) return NULL;
+        entry = colon + 1;
+    }
+}
 
 /* File I/O helper — used by load_file and main() */
 char* read_file_util(const char *path, long *out_size) {
