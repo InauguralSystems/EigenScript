@@ -47,11 +47,23 @@ ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 bad()  { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 skip() { echo "  SKIP: $1"; echo "ASan gfx: 0 passed, 0 failed (skipped)"; exit 0; }
 
-# A bound in pure shell. Coreutils' `timeout` is absent on the macOS runners,
-# and a child that calls it bare dies rc 127 there (test-suite rule).
+# The executable startup control can hang inside sanitizer initialization.
+# TERM alone cannot bound a runtime which ignores it; KILL follows after 5s.
+# BEGIN gfx timeout selector (also exercised by test_gfx_timeout.py)
 TMO=""
-if command -v timeout >/dev/null 2>&1; then TMO="timeout 120"
-elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 120"; fi
+if command -v timeout >/dev/null 2>&1; then TMO="timeout -k 5 120"
+elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout -k 5 120"
+else
+    bad "gfx sanitizer gate requires timeout or gtimeout (install coreutils)"
+    echo "ASan gfx: $PASS passed, $FAIL failed"
+    exit 1
+fi
+# END gfx timeout selector
+if ! python3 "$TESTS_DIR/test_gfx_timeout.py"; then
+    bad "gfx timeout controls failed"
+    echo "ASan gfx: $PASS passed, $FAIL failed"
+    exit 1
+fi
 
 # The -Werror trio is spelled out on every compiler line below rather than folded
 # into a variable: tools/werror_switch_check.sh reads the line, not the
@@ -69,10 +81,12 @@ if ! echo 'int main(void){return 0;}' | "$CC" -Werror=switch -Werror=comment -We
     fi
     skip "AddressSanitizer not available in this toolchain"
 fi
-if ! ASAN_OPTIONS=detect_leaks=1 /tmp/eigs_asan_gfx_probe > /tmp/eigs_asan_gfx_probe.log 2>&1; then
+ASAN_OPTIONS=detect_leaks=1 $TMO /tmp/eigs_asan_gfx_probe > /tmp/eigs_asan_gfx_probe.log 2>&1
+START_RC=$?
+if [ "$START_RC" -ne 0 ]; then
     cat /tmp/eigs_asan_gfx_probe.log
     rm -f /tmp/eigs_asan_gfx_probe
-    bad "gfx sanitizer runtime cannot start with leak detection; set EIGS_ASAN_GFX_CC to a compiler with LeakSanitizer"
+    bad "gfx sanitizer runtime cannot start with leak detection (rc=$START_RC; 120s deadline, 5s kill grace); set EIGS_ASAN_GFX_CC to a compiler with LeakSanitizer"
     echo "ASan gfx: $PASS passed, $FAIL failed"
     exit 1
 fi
@@ -178,10 +192,12 @@ CEOF
 CTRL_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g -O0"
 if "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_leak.c  -o /tmp/eigs_asan_gfx_leak  2>/dev/null \
 && "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_clean.c -o /tmp/eigs_asan_gfx_clean 2>/dev/null; then
-    if leak_reported /tmp/eigs_asan_gfx_leak && [ "$LAST_RC" -ne 0 ]; then
+    # The integrated LSan control must finish with its expected failure exit;
+    # printing a leak and then hanging or dying by signal is not a control pass.
+    if leak_reported /tmp/eigs_asan_gfx_leak && [ "$LAST_RC" -eq 1 ]; then
         ok "positive control: a deliberate 1234-byte leak IS reported"
     else
-        bad "positive control: a deliberate leak was NOT reported — LeakSanitizer is not armed, so every corpus row below is a blind instrument"
+        bad "positive control: a deliberate leak did not finish with the expected LSan failure (rc=$LAST_RC) — the corpus verdict would be unvalidated"
         printf '%s\n' "$LAST_OUT"
         CTRL_OK=0
     fi
@@ -256,6 +272,11 @@ for f in "$CORPUS"/*.eigs; do
         else
             bad "$base [$mode] leak=$LEAK sanitizer-class=$CLASS rc=$LAST_RC"
             printf '%s\n' "$LAST_OUT" | tail -8 | sed 's/^/        /'
+            case "$LAST_RC" in
+                124|137)
+                    echo "ASan gfx: $PASS passed, $FAIL failed"
+                    exit 1 ;;
+            esac
         fi
     done
 done
@@ -266,7 +287,15 @@ echo 'o is gfx_open of [8, 8, "probe"]
 print of f"sdl-present: {o}"
 ignore is gfx_close of null' > /tmp/eigs_asan_gfx_sdl.eigs
 SDL_OUT="$($TMO "$BIN" /tmp/eigs_asan_gfx_sdl.eigs 2>&1)"
+SDL_RC=$?
 rm -f /tmp/eigs_asan_gfx_sdl.eigs
+lsan_classify "$SDL_OUT"; SDL_CLASS=$?
+if [ "$SDL_RC" -ne 0 ] || [ "$SDL_CLASS" -ne 2 ]; then
+    bad "SDL availability probe failed (rc=$SDL_RC sanitizer-class=$SDL_CLASS)"
+    printf '%s\n' "$SDL_OUT"
+    echo "ASan gfx: $PASS passed, $FAIL failed"
+    exit 1
+fi
 printf '%s' "$SDL_OUT" | grep -q "sdl-present: 1" \
     || echo "  NOTE: libSDL2 absent — the corpus exercised the argument and"\
             "allocation paths but no real renderer or audio device."

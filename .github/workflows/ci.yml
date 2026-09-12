@@ -295,7 +295,9 @@ jobs:
     name: macos / ${{ matrix.os }}
     needs: scope
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # Intel completed the gfx gate and 540 compiler audit calls but reached
+    # 30 minutes in the audit's fault controls (#1130). Keep the full suite.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -330,14 +332,22 @@ jobs:
 
       # Use upstream LLVM's LSan runtime for the gfx gate, independently
       # of the default Apple Clang used for the interpreter build.
-      # Its executable control must start and its intentional leak must fire.
+      # LLVM 20 deadlocks before main on macOS 26.4+ (llvm-project#182943).
+      # The fix was backported to LLVM 22 (llvm-project#188913). The gate's
+      # bounded executable control and intentional leak still verify it.
       - if: needs.scope.outputs.code == 'true'
         name: Select gfx LeakSanitizer toolchain
         run: |
           case '${{ matrix.os }}' in
             macos-15-intel) formula=llvm@18 ;;
-            macos-latest) formula=llvm@20 ;;
+            macos-latest)
+              formula=llvm@22
+              brew install --force-bottle "$formula"
+              ;;
           esac
+          if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+            brew install --force-bottle coreutils
+          fi
           sanitizer_cc="$(brew --prefix "$formula")/bin/clang"
           test -x "$sanitizer_cc"
           "$sanitizer_cc" --version
