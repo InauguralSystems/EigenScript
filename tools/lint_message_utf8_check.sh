@@ -202,6 +202,14 @@ out="$(decode "$TMP/e000.json" E000)"; rc=$?
 checked=$((checked + 1))
 if [ $rc -ne 0 ]; then bad "E000: $out"; else note "  ok   E000 ($out)"; fi
 fixture_codes="$fixture_codes E000"
+# Dedicated paths pin the message bound independently of host TMPDIR length.
+e000_out="$(python3 "$ROOT/tools/lint_e000_check.py" "$EIGS" 2>&1)"; e000_rc=$?
+checked=$((checked + 1))
+if [ "$e000_rc" -ne 0 ] || [ "$e000_out" != "E000: 3 cases passed" ]; then
+    bad "E000 path contract: $e000_out"
+else
+    note "  ok   E000 path contract ($e000_out)"
+fi
 
 # --- 3. registry, both directions ------------------------------------------
 doc_codes="$(grep -oE '^\| *`[WE]0[0-9][0-9]`' "$DOCS" | grep -oE '[WE]0[0-9][0-9]' | sort -u | tr '\n' ' ')"
@@ -373,7 +381,7 @@ fi
 # --- verdict ---------------------------------------------------------------
 # Floor, not an exact count: adding a rule (and its fixture) raises it, and
 # only REMOVING coverage needs an edit here.
-FLOOR=39
+FLOOR=40
 if [ "$checked" -lt "$FLOOR" ]; then
     bad "only $checked checks ran, floor is $FLOOR — coverage was removed"
 fi
