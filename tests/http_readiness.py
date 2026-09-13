@@ -22,20 +22,30 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-EIGS = ROOT / 'src/eigenscript'
+EIGS = Path(os.environ['EIGS_BIN']) if os.environ.get('EIGS_BIN') else ROOT / 'src/eigenscript'
 HEADERS = {'x-eigen-release': 'build-readiness-1128', 'x-test-id': 'second value\twith tab'}
 PASS = FAIL = 0
+REQUIRE_EVALS = 0
+# Must match HTTP_MAX_CONCURRENT_CONNS in src/ext_http.c — the init table
+# and the serving accept loop shed at this number.
+INIT_CAP = 256
+HTTP_INIT_DEADLINE = 1.0
 
 
 def require(ok, message):
+    global REQUIRE_EVALS
+    REQUIRE_EVALS += 1
     if not ok:
         raise AssertionError(message)
 
 
 def run_check(name, fn):
-    global PASS, FAIL
+    global PASS, FAIL, REQUIRE_EVALS
+    before = REQUIRE_EVALS
     try:
         fn()
+        if REQUIRE_EVALS <= before:
+            raise AssertionError('check evaluated zero requirements')
     except Exception as exc:
         print(f'  FAIL: {name}: {exc}', flush=True)
         FAIL += 1
@@ -143,6 +153,22 @@ def curl(port, method, path, directory, extra=(), max_time=1):
     return parse_response(h.read_bytes(), b'' if method == 'HEAD' else b.read_bytes(), p.returncode)
 
 
+def recv_http(sock, timeout=3):
+    sock.settimeout(timeout)
+    data = b''
+    while b'\r\n\r\n' not in data:
+        try:
+            chunk = sock.recv(65536)
+        except ConnectionResetError:
+            break
+        if not chunk:
+            break
+        data += chunk
+    require(b'\r\n\r\n' in data, f'incomplete raw response ({len(data)} bytes empty-EOF={int(not data)})')
+    header, body = data.split(b'\r\n\r\n', 1)
+    return parse_response(header, body)
+
+
 def raw_request(port, request):
     with socket.create_connection(('127.0.0.1', port), 2) as s:
         s.settimeout(2)
@@ -195,6 +221,7 @@ CASES = [
     Case('R3-400', 'POST', '/', 400, 'text/plain', b'Invalid Content-Length', extra=('-H','Content-Length: -1')),
     Case('R3-global-cap', 'GET', '/', 503, 'text/plain', b'Overloaded\n', 'global-cap'),
     Case('R3-ip-cap', 'GET', '/', 503, 'text/plain', b'Too many connections\n', 'cap'),
+    Case('R2-init-capacity-shed', 'GET', '/not-live', 503, 'text/plain', b'Server initializing\n', 'init'),
 ]
 
 
@@ -342,6 +369,113 @@ def init_idle_cases(directory):
             run_check('R2-init-fragmented-with-16-idle', fragmented)
 
 
+def init_staller_cases(directory):
+    live = case_named('R2-live-get')
+    unready = case_named('R1-init-page')
+    shed = case_named('R2-init-capacity-shed')
+    with server(directory, with_headers=True, delay=8) as (port, proc, log):
+        inside = lambda: 'Starting HTTP server' not in log.read_text()
+        holders = []
+        try:
+            for _ in range(32):
+                holders.append(socket.create_connection(('127.0.0.1', port), 2))
+            for _ in range(32):
+                sock = socket.create_connection(('127.0.0.1', port), 2)
+                sock.sendall(b'GET /li')
+                holders.append(sock)
+            run_check('R2-liveness-under-64-stallers',
+                      lambda: check_init_latency(port, directory, live, inside))
+            run_check('R2-unready-under-64-stallers',
+                      lambda: check_init_latency(port, directory, unready, inside))
+        finally:
+            for sock in holders:
+                sock.close()
+    with server(directory, with_headers=True, delay=8) as (port, proc, log):
+        inside = lambda: 'Starting HTTP server' not in log.read_text()
+        filled = time.monotonic()
+        with held_connections(port, INIT_CAP) as holders:
+            require(time.monotonic() - filled < 0.8,
+                    f'took {time.monotonic()-filled:.3f}s to hold {INIT_CAP} stallers; table may have expired')
+            require(not select.select(holders, [], [], 0)[0],
+                    'init-cap holder already responded before shed probe')
+            run_check('R2-init-capacity-shed',
+                      lambda: check_init_latency(port, directory, shed, inside))
+            time.sleep(HTTP_INIT_DEADLINE + 0.2)
+            run_check('R2-init-deadline-frees-slot',
+                      lambda: check_init_latency(port, directory, live, inside))
+
+
+def handoff_drain_cases(directory):
+    # Incomplete request line (no CRLF) so the 1s deadline is the only other
+    # reply; connect late in the init window so deadline has not fired when
+    # http_serve joins the responder.
+    case = Case('R2-handoff-drain', 'GET', '/', 503, 'text/plain', b'Server initializing\n', 'init')
+    with server(directory, with_headers=True, delay=2) as (port, proc, log):
+        holders = []
+        try:
+            time.sleep(1.3)
+            require('Starting HTTP server' not in log.read_text(), 'handoff already happened before holders')
+            for _ in range(16):
+                sock = socket.create_connection(('127.0.0.1', port), 2)
+                sock.sendall(b'GET / HTTP/1.1')
+                holders.append(sock)
+            wait_ready(lambda: 'accepting on pre-bound' in log.read_text(), proc)
+            for sock in holders:
+                got = recv_http(sock)
+                check_response(case, got, HEADERS, inside=True)
+        finally:
+            for sock in holders:
+                sock.close()
+
+
+def teardown_drain_cases(directory):
+    port = pick_port()
+    script, log_path = directory/'teardown.eigs', directory/'teardown.log'
+    script.write_text(
+        'http_response_header of ["x-eigen-release", "build-readiness-1128"]\n'
+        'http_response_header of ["X-Test-Id", "second value\\twith tab"]\n'
+        f'http_early_bind of [{port}, "/livez"]\n'
+        'print of "INIT-CONFIGURED"\n'
+        'exec_capture of ["sleep", "3"]\n'
+    )
+    env = dict(os.environ, EIGS_HTTP_MAX_CONN_PER_IP='4')
+    env.pop('PORT', None)
+    case = Case('R2-teardown-drain', 'HEAD', '/', 503, 'text/plain', b'Server initializing\n', 'init')
+    with log_path.open('w') as log:
+        proc = subprocess.Popen([str(EIGS), str(script)], cwd=ROOT/'src', env=env, stdout=log, stderr=log)
+        holders = []
+        try:
+            wait_ready(lambda: 'INIT-CONFIGURED' in log_path.read_text(), proc)
+            # Connect in the last ~0.7s of the 3s sleep so the 1s client
+            # deadline cannot reply before destroy drains the table.
+            time.sleep(2.3)
+            for _ in range(16):
+                sock = socket.create_connection(('127.0.0.1', port), 2)
+                sock.sendall(b'HEAD / HTTP/1.1')
+                holders.append(sock)
+            try:
+                rc = proc.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                proc.kill(); proc.wait()
+                raise AssertionError('teardown script did not exit')
+            require(rc == 0, f'teardown script rc={rc} log={log_path.read_text()[-400:]}')
+            for sock in holders:
+                got = recv_http(sock)
+                check_response(case, got, HEADERS, inside=True)
+            require(not is_listening(port), 'port is still listening after natural exit')
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=4)
+                except subprocess.TimeoutExpired:
+                    proc.kill(); proc.wait()
+            for sock in holders:
+                sock.close()
+            output = log_path.read_text()
+            require(not any(x in output for x in ['AddressSanitizer', 'runtime error:', 'ThreadSanitizer']), output[-2000:])
+
+
 def global_cap_cases(directory):
     # Reverse-applying the round-1 global-cap hunk (literal Overloaded writer)
     # must turn R3-global-cap-headers red: that 503 is the one this case
@@ -420,7 +554,10 @@ def live_cases(directory):
         for case in [c for c in CASES if c.name in ['R1-ready-page','R3-options']]:
             run_check('R3-max-16x1088-'+case.name, lambda: check_response(case, curl(port, case.method, case.path, directory), huge))
     require_population(lambda: init_idle_cases(directory))
+    require_population(lambda: init_staller_cases(directory))
     require_population(lambda: global_cap_cases(directory))
+    run_check('R2-handoff-drain', lambda: handoff_drain_cases(directory))
+    run_check('R2-teardown-drain', lambda: teardown_drain_cases(directory))
 
 
 # (label, script, builtin, diagnostic rule). All are runtime errors, not parse failures.
@@ -631,7 +768,19 @@ def selftest(directory):
         for bad, args in [('soft', (0, f'{builtin}: {rule}', False)), ('silent', (3, '', False)), ('listening', (3, f'{builtin}: {rule}', True))]:
             run_check('SELF-red-R4-'+name+'-'+bad, lambda: expect_red(lambda: check_rejection(*args, builtin, rule), name))
     run_check('SELF-red-zero-checks', empty_production_control)
-    run_check('SELF-red-differential', lambda: expect_red(lambda: check_response(CASES[-1], Response(503, {'content-type':['text/plain'], 'content-length':['21'], **{k:[v] for k,v in HEADERS.items()}}, b'Too many connections\n'), HEADERS, Response(503, {'content-type':['text/plain'], 'content-length':['21'], 'extra':['changed']}, b'Too many connections\n')), 'baseline'))
+    run_check('SELF-red-differential', lambda: expect_red(lambda: check_response(CASES[-2], Response(503, {'content-type':['text/plain'], 'content-length':['21'], **{k:[v] for k,v in HEADERS.items()}}, b'Too many connections\n'), HEADERS, Response(503, {'content-type':['text/plain'], 'content-length':['21'], 'extra':['changed']}, b'Too many connections\n')), 'baseline'))
+    def planted_zero_require():
+        global PASS, FAIL
+        saved = PASS, FAIL
+        output = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(output):
+                run_check('planted-no-require', lambda: None)
+            require(FAIL == saved[1] + 1, f'zero-require check scored PASS={PASS} FAIL={FAIL}')
+            require('zero requirements' in output.getvalue(), output.getvalue())
+        finally:
+            PASS, FAIL = saved
+    run_check('SELF-red-zero-requires', planted_zero_require)
 
 
 def main():

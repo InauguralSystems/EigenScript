@@ -1,0 +1,11 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -223,7 +223,6 @@
+     tls_suppress_body = strcmp(method, "HEAD") == 0;
+     int live = complete && path && version && s->liveness_path &&
+         (strcmp(method, "GET") == 0 || tls_suppress_body) &&
+-        strcmp(path, s->liveness_path) == 0 &&
+         (strncmp(version, "HTTP/1.1\r\n", 10) == 0 ||
+          strncmp(version, "HTTP/1.0\r\n", 10) == 0);
+     send_response_full(c->fd, live ? 200 : 503,

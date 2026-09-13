@@ -1,0 +1,15 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -1864,10 +1864,7 @@
+     if (!st) return;
+     Server *s = st->ext_http_server;
+     if (!s) return;
+-    stop_init_responder(s);
+-    if (s->early_bind_fd >= 0) close(s->early_bind_fd);
+-    free(s->liveness_path);
+-    pthread_mutex_destroy(&s->response_mu);
++    /* mutant: skip stop/join, listener close, liveness free, mutex destroy */
+     for (int i = 0; i < s->route_count; i++) {
+         free(s->routes[i].method);
+         free(s->routes[i].path);

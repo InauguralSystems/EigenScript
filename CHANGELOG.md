@@ -11,8 +11,11 @@ All notable changes to EigenScript are documented here.
   Use `http_early_bind of [port, "/livez"]` for an explicit GET/HEAD liveness
   200; normal routing takes over at `http_serve`. The old universal 200
   responder is removed; scalar port/null calls remain supported. The init
-  responder answers accepted connections concurrently, so an idle client
-  cannot delay any other client's init-window 200/503.
+  responder's in-flight table is the same size as the serving connection cap;
+  the listener stays polled at capacity so a newcomer is 503'd immediately
+  rather than queued behind stallers, and a client that never completes a
+  request line is 503'd at a 1 s deadline. An idle client cannot delay any
+  other client's init-window 200/503.
 
 - **`gather` raises `index_range` on an out-of-range index, in every form
   (#973/#1093).** Previously it folded to `0.0` — a per-row vector of indices

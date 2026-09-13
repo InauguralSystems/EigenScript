@@ -196,13 +196,14 @@ static void stop_init_responder(Server *s) {
 }
 
 /* Startup is liveness-only: ordinary requests receive a retryable 503.
- * Accepted connections are polled together so one idle/slow client cannot
- * delay another. HTTP_INIT_MAX_CLIENTS is the in-flight bound; 1 restores
- * the old serial idle-blocking acceptor. Each client keeps a 1s read budget
- * (matching 20 × 50 ms) so a fragmented request line can still complete.
- * Handoff/destruction stops accepting, then replies to every already-accepted
- * fd — no silent drop. Backlog sockets stay queued for http_serve. */
-#define HTTP_INIT_MAX_CLIENTS 32
+ * Capacity is HTTP_MAX_CONCURRENT_CONNS — the same number the serving
+ * accept loop sheds at. The listener is always polled; at capacity a
+ * newcomer is accepted and answered with the init 503 immediately, never
+ * queued behind stallers. Each in-flight client keeps a 1s read budget so
+ * a fragmented request line can still complete; a client that never sends
+ * a complete request line is answered 503 at that deadline. Handoff and
+ * destruction stop accepting, then reply to every already-accepted fd. */
+#define HTTP_INIT_MAX_CLIENTS HTTP_MAX_CONCURRENT_CONNS
 #define HTTP_INIT_CLIENT_SEC  1.0
 
 typedef struct {
@@ -260,10 +261,23 @@ static int init_conn_read(InitConn *c) {
     return strstr(c->line, "\r\n") ? 1 : 0;
 }
 
+static void init_conn_shed(Server *s, int fd) {
+    InitConn extra;
+    extra.fd = fd;
+    extra.line = NULL;
+    extra.used = 0;
+    extra.cap = 0;
+    extra.deadline = 0;
+    struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    init_conn_reply(s, &extra, 0);
+}
+
 static void *init_responder(void *arg) {
     Server *s = arg;
     eigs_http_active = s;
-    InitConn clients[HTTP_INIT_MAX_CLIENTS];
+    InitConn *clients = xmalloc_array((size_t)HTTP_INIT_MAX_CLIENTS, sizeof(InitConn));
+    struct pollfd *pfds = xmalloc_array((size_t)HTTP_INIT_MAX_CLIENTS + 1, sizeof(struct pollfd));
     int n = 0;
     for (;;) {
         if (__atomic_load_n(&s->init_stop, __ATOMIC_ACQUIRE)) {
@@ -275,14 +289,10 @@ static void *init_responder(void *arg) {
             }
             break;
         }
-        struct pollfd pfds[HTTP_INIT_MAX_CLIENTS + 1];
         int np = 0;
-        int li = -1;
-        if (n < HTTP_INIT_MAX_CLIENTS) {
-            pfds[np].fd = s->early_bind_fd;
-            pfds[np].events = POLLIN;
-            li = np++;
-        }
+        pfds[np].fd = s->early_bind_fd;
+        pfds[np].events = POLLIN;
+        int li = np++;
         for (int i = 0; i < n; i++) {
             pfds[np].fd = clients[i].fd;
             pfds[np].events = POLLIN;
@@ -290,7 +300,7 @@ static void *init_responder(void *arg) {
         }
         int pr = poll(pfds, (nfds_t)np, 50);
         if (__atomic_load_n(&s->init_stop, __ATOMIC_ACQUIRE)) continue;
-        int base = (li >= 0) ? 1 : 0;
+        int base = li + 1;
         double now = monotonic_now();
         for (int i = n - 1; i >= 0; i--) {
             int complete = 0, dead = 0;
@@ -312,13 +322,13 @@ static void *init_responder(void *arg) {
                     init_conn_open(s, &clients[n], conn);
                     n++;
                 } else {
-                    InitConn extra;
-                    init_conn_open(s, &extra, conn);
-                    init_conn_reply(s, &extra, 0);
+                    init_conn_shed(s, conn);
                 }
             }
         }
     }
+    free(clients);
+    free(pfds);
     eigs_http_active = NULL;
     return NULL;
 }
@@ -544,7 +554,7 @@ Value* builtin_http_early_bind(Value *arg) {
     if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind"); close(server_fd); return make_str("error");
     }
-    if (listen(server_fd, 128) < 0) {
+    if (listen(server_fd, HTTP_MAX_CONCURRENT_CONNS) < 0) {
         perror("listen"); close(server_fd); return make_str("error");
     }
 
@@ -1721,7 +1731,7 @@ void http_serve_blocking(int port) {
             return;
         }
 
-        if (listen(server_fd, 128) < 0) {
+        if (listen(server_fd, HTTP_MAX_CONCURRENT_CONNS) < 0) {
             perror("listen");
             close(server_fd);
             return;

@@ -1,0 +1,12 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -466,7 +466,7 @@
+         return response_header_error(EK_VALUE, "value must be 0..1024 bytes");
+     for (size_t i = 0; i < vlen; i++) {
+         unsigned char c = (unsigned char)value->data.str[i];
+-        if ((c < 32 && c != '\t') || c > 126)
++        if (0 && ((c < 32 && c != '\t') || c > 126))
+             return response_header_error(EK_VALUE, "value requires visible ASCII, space or tab; no CR/LF/NUL");
+     }
+     /* EigenScript strings cannot contain NUL (chr/json/parser reject it). */

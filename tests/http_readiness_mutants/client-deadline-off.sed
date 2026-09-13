@@ -1,0 +1,1 @@
+s/#define HTTP_INIT_CLIENT_SEC  1.0/#define HTTP_INIT_CLIENT_SEC  100.0/

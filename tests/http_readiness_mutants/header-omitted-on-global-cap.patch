@@ -1,0 +1,21 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -1769,8 +1769,15 @@
+          * one slow client cannot stall the whole listener. */
+         int cur = __atomic_load_n(&g_conn_count, __ATOMIC_RELAXED);
+         if (cur >= HTTP_MAX_CONCURRENT_CONNS) {
+-            send_response_full(client_fd, 503, "Service Unavailable", "text/plain",
+-                               "Overloaded\n", 11, 0, "");
++            const char *busy =
++                "HTTP/1.1 503 Service Unavailable\r\n"
++                "Content-Type: text/plain\r\n"
++                "Content-Length: 11\r\n"
++                "Connection: close\r\n"
++                "\r\n"
++                "Overloaded\n";
++            ssize_t bw = write(client_fd, busy, strlen(busy));
++            (void)bw;
+             close(client_fd);
+             continue;
+         }
