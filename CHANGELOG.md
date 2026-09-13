@@ -6,6 +6,12 @@ All notable changes to EigenScript are documented here.
 
 ### Breaking changes
 
+- **Early HTTP readiness is honest (#1129):** `http_early_bind` now returns
+  503 with `Retry-After: 1` during initialization for arbitrary methods/paths.
+  Use `http_early_bind of [port, "/livez"]` for an explicit GET/HEAD liveness
+  200; normal routing takes over at `http_serve`. The old universal 200
+  responder is removed; scalar port/null calls remain supported.
+
 - **`gather` raises `index_range` on an out-of-range index, in every form
   (#973/#1093).** Previously it folded to `0.0` — a per-row vector of indices
   answered `[1, 0]`, a scalar index into a 1-D tensor answered `0`. A zero in a
@@ -39,6 +45,13 @@ All notable changes to EigenScript are documented here.
   when nothing resolves.
 
 ### Added
+
+- **`http_response_header of [name, value]` (#1128):** register up to 16
+  validated response headers before serving, including across early bind.
+  Every response carries them, including static/file routes, startup,
+  OPTIONS and load shedding; repeated names replace case-insensitively.
+  Invalid names/values and runtime-owned framing headers raise and prevent
+  startup. Deterministic configuration adds no tape records.
 
 - **`unobserved:` keeps the value window complete (#1049).** An elided
   assignment was absent from the observer's 10-deep value window, so every

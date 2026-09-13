@@ -12,6 +12,14 @@
 #include <pthread.h>
 
 #define MAX_ROUTES 256
+#define HTTP_RESPONSE_HEADER_MAX 16
+#define HTTP_RESPONSE_NAME_MAX 64
+#define HTTP_RESPONSE_VALUE_MAX 1024
+
+typedef struct {
+    char name[HTTP_RESPONSE_NAME_MAX + 1];
+    char value[HTTP_RESPONSE_VALUE_MAX + 1];
+} ResponseHeader;
 
 typedef struct {
     char *method;
@@ -35,7 +43,16 @@ struct EigsHttpServer {
     char *static_dir;
     Env *global_env;
     int early_bind_fd;
+    pthread_t init_tid;
+    int init_thread_active;     /* owner thread only; joined before destruction */
+    int init_stop;              /* atomic: owner writes, startup thread reads */
+    char *liveness_path;        /* immutable while the startup thread runs */
     char *cors_origin;  /* NULL = no CORS headers, "*" = wildcard */
+    pthread_mutex_t response_mu; /* headers/CORS can change during early bind */
+    ResponseHeader response_headers[HTTP_RESPONSE_HEADER_MAX];
+    int response_header_count;
+    int response_header_rejected; /* sticky: catching an error cannot start server */
+    int serving;                 /* response_mu guards config freeze */
 
     /* Cross-worker shared store: pthread_mutex-guarded JSON map. Read
      * and written by code routes via shared_set/get/has/delete/keys/

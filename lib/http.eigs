@@ -112,6 +112,9 @@ define parse_query(qs) as:
     return result
 
 # ---- start_server: bind and start serving ----
+# No init liveness path: early requests receive 503 with Retry-After: 1.
+# For explicit liveness use http_early_bind of [port, "/livez"] directly.
+# Register http_response_header before calling this helper to tag every response.
 define start_server(port) as:
     http_early_bind of null
     http_serve of port

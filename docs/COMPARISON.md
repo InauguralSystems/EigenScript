@@ -636,3 +636,16 @@ cross-unit history by default; hosts may explicitly promise isolated observer
 use with `eigs_set_eval_observer_isolated`. Missing history then raises
 conservatively instead of answering a rest value. See the
 [embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).
+
+### HTTP startup and response attribution
+
+With the HTTP extension, `http_early_bind of port` (or `of null`) listens
+while initialization continues, answering 503 with `Retry-After: 1`.
+`http_early_bind of [port, "/livez"]` explicitly opts one exact GET/HEAD
+request target into liveness 200s; `http_serve` then hands every path to the
+normal router. Readiness must check the actual routed resource.
+`http_response_header of ["X-Eigen-Release", "build-id"]` before serving
+attaches that field to every response, including startup and static files.
+Header names/values are validated and a rejected registration prevents server
+startup. See [HTTP builtin rules](BUILTINS.md#optional-http-extension) for the full
+limits and reserved names (#1128, #1129).
