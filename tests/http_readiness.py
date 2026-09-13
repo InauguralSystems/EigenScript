@@ -12,6 +12,7 @@ import io
 import os
 from pathlib import Path
 import random
+import select
 import signal
 import socket
 import subprocess
@@ -126,12 +127,17 @@ def parse_response(raw, body, rc=0):
     return Response(int(lines[0].split()[1]), headers, body, rc)
 
 
-def curl(port, method, path, directory, extra=()):
+def case_named(name):
+    return next(c for c in CASES if c.name == name)
+
+
+def curl(port, method, path, directory, extra=(), max_time=1):
     h, b = directory/'headers', directory/'body'
     h.write_bytes(b''); b.write_bytes(b'')
-    cmd = ['curl', '--noproxy', '*', '-sS', '--max-time', '1', '-D', str(h), '-o', str(b)]
+    cmd = ['curl', '--noproxy', '*', '-sS', '--max-time', str(max_time), '-D', str(h), '-o', str(b)]
     cmd += ['-I'] if method == 'HEAD' else ['-X', method]
-    p = subprocess.run(cmd + list(extra) + [f'http://127.0.0.1:{port}{path}'], capture_output=True, timeout=3)
+    p = subprocess.run(cmd + list(extra) + [f'http://127.0.0.1:{port}{path}'],
+                       capture_output=True, timeout=max(3, float(max_time) + 2))
     # -I duplicates the headers into curl's body output; HEAD wire-body is also
     # checked over a raw socket below, never inferred from curl -I alone.
     return parse_response(h.read_bytes(), b'' if method == 'HEAD' else b.read_bytes(), p.returncode)
@@ -187,6 +193,7 @@ CASES = [
     Case('R3-404', 'GET', '/missing', 404, 'application/json', b'{"error": "not_found"}'),
     Case('R2-live-retired', 'GET', '/livez', 404, 'application/json', b'{"error": "not_found"}'),
     Case('R3-400', 'POST', '/', 400, 'text/plain', b'Invalid Content-Length', extra=('-H','Content-Length: -1')),
+    Case('R3-global-cap', 'GET', '/', 503, 'text/plain', b'Overloaded\n', 'global-cap'),
     Case('R3-ip-cap', 'GET', '/', 503, 'text/plain', b'Too many connections\n', 'cap'),
 ]
 
@@ -210,7 +217,7 @@ def check_response(case, got, registered, baseline=None, inside=True):
 
 
 @contextlib.contextmanager
-def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude='', max_headers=False, early='number'):
+def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude='', max_headers=False, early='number', per_ip=4, header_min_rate=None, header_timeout=None):
     port = pick_port()
     script, log_path = directory/'server.eigs', directory/'server.log'
     header1 = 'http_response_header of ["X-Eigen-Release", "old"]\n' if with_headers else ''
@@ -233,7 +240,11 @@ def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude
     (directory/'asset.txt').write_bytes(b'real-asset\n')
     with (directory/'huge').open('wb') as huge:
         huge.truncate(64 * 1024 * 1024 + 1)  # sparse; reaches 413 without allocating a body
-    env = dict(os.environ, EIGS_HTTP_MAX_CONN_PER_IP='4')
+    env = dict(os.environ, EIGS_HTTP_MAX_CONN_PER_IP=str(per_ip))
+    if header_min_rate is not None:
+        env['EIGS_HTTP_HEADER_MIN_RATE'] = str(header_min_rate)
+    if header_timeout is not None:
+        env['EIGS_HTTP_HEADER_TIMEOUT'] = str(header_timeout)
     env.pop('PORT', None)
     if early == 'null':
         env['PORT'] = str(port)
@@ -250,6 +261,114 @@ def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude
                 proc.kill(); proc.wait()
             output = log_path.read_text()
             require(not any(x in output for x in ['AddressSanitizer', 'runtime error:', 'ThreadSanitizer']), output[-2000:])
+
+
+@contextlib.contextmanager
+def held_connections(port, count, payload=b'', keepalive=False):
+    holders = []
+    stop = threading.Event()
+    drip = None
+    try:
+        for _ in range(count):
+            sock = socket.create_connection(('127.0.0.1', port), 2)
+            holders.append(sock)
+            if payload:
+                sock.sendall(payload)
+        if keepalive:
+            def _drip():
+                while not stop.wait(1.0):
+                    for sock in list(holders):
+                        try:
+                            sock.sendall(b'X')
+                        except OSError:
+                            pass
+            drip = threading.Thread(target=_drip, daemon=True)
+            drip.start()
+        yield holders
+    finally:
+        stop.set()
+        if drip is not None:
+            drip.join(timeout=1)
+        for sock in holders:
+            sock.close()
+
+
+def check_init_latency(port, directory, case, inside):
+    # The wall-clock bound is independent of status/framing: an eventual 200
+    # after serial idle-client waits must be RED, even before curl's timeout.
+    before = inside()
+    start = time.monotonic()
+    try:
+        got = curl(port, case.method, case.path, directory, max_time=4)
+    except AssertionError as exc:
+        raise AssertionError(f'init probe failed after {time.monotonic()-start:.3f}s: {exc}') from exc
+    elapsed = time.monotonic() - start
+    check_response(case, got, HEADERS, inside=before and inside())
+    require(elapsed < .5, f'other idle clients delayed {case.path} by {elapsed:.3f}s (limit 0.5s)')
+    print(f'    init-idle latency {case.path}: {elapsed:.3f}s', flush=True)
+
+
+def init_idle_cases(directory):
+    live = case_named('R2-live-get')
+    unready = case_named('R1-init-page')
+    with server(directory, with_headers=True, delay=8) as (port, proc, log):
+        inside = lambda: 'Starting HTTP server' not in log.read_text()
+        with held_connections(port, 16):
+            run_check('R2-liveness-under-idle-connections',
+                      lambda: check_init_latency(port, directory, live, inside))
+            run_check('R2-unready-under-idle-connections',
+                      lambda: check_init_latency(port, directory, unready, inside))
+            # A fragmented client retains its own read budget, while another
+            # connection still answers promptly. A tiny serial read budget
+            # cannot satisfy this control by dropping incomplete requests.
+            def fragmented():
+                before = inside()
+                with socket.create_connection(('127.0.0.1', port), 2) as sock:
+                    sock.settimeout(2)
+                    sock.sendall(b'GET /li')
+                    time.sleep(.12)
+                    check_init_latency(port, directory, unready, inside)
+                    sock.sendall(b'vez HTTP/1.1\r\nHost: x\r\n\r\n')
+                    data = b''
+                    while True:
+                        chunk = sock.recv(65536)
+                        if not chunk:
+                            break
+                        data += chunk
+                require(b'\r\n\r\n' in data, 'incomplete fragmented liveness response')
+                h, body = data.split(b'\r\n\r\n', 1)
+                check_response(live, parse_response(h, body), HEADERS,
+                               inside=before and inside())
+            run_check('R2-init-fragmented-with-16-idle', fragmented)
+
+
+def global_cap_cases(directory):
+    # Reverse-applying the round-1 global-cap hunk (literal Overloaded writer)
+    # must turn R3-global-cap-headers red: that 503 is the one this case
+    # exists to witness. Per-IP cap is disabled so the 257th hits the global
+    # 256 cap; header min-rate 0 keeps incomplete holders from 408-ing.
+    baseline = None
+    case = next(c for c in CASES if c.phase == 'global-cap')
+    for headers in (False, True):
+        with server(directory, with_headers=headers, delay=.05, per_ip=0,
+                    header_min_rate=0, header_timeout=30) as (port, proc, log):
+            wait_ready(lambda: 'accepting on pre-bound' in log.read_text(), proc)
+            # No request is sent by the 257th socket: shedding precedes reads.
+            # All holders have incomplete headers, so no worker may finish.
+            with held_connections(port, 256, b'GET / HTTP/1.1\r\n', keepalive=True) as holders:
+                time.sleep(.2)
+                def check():
+                    nonlocal baseline
+                    got = raw_request(port, b'')
+                    # Pin the setup too: a prior slot being shed/timed out must
+                    # not masquerade as 256 held connections.
+                    require(not select.select(holders, [], [], 0)[0],
+                            'global-cap holder already responded/closed')
+                    check_response(case, got, HEADERS if headers else {},
+                                   baseline if headers else None)
+                    if not headers:
+                        baseline = got
+                run_check('R3-global-cap-'+('headers' if headers else 'baseline'), check)
 
 
 def live_cases(directory):
@@ -300,6 +419,8 @@ def live_cases(directory):
         wait_ready(lambda: 'accepting on pre-bound' in log.read_text(), proc)
         for case in [c for c in CASES if c.name in ['R1-ready-page','R3-options']]:
             run_check('R3-max-16x1088-'+case.name, lambda: check_response(case, curl(port, case.method, case.path, directory), huge))
+    require_population(lambda: init_idle_cases(directory))
+    require_population(lambda: global_cap_cases(directory))
 
 
 # (label, script, builtin, diagnostic rule). All are runtime errors, not parse failures.
@@ -397,6 +518,69 @@ def expect_red(fn, name):
     raise AssertionError(f'planted {name} survived the production checker')
 
 
+def _fake_init_reply(conn, request):
+    live = request.startswith(b'GET /livez HTTP/')
+    body = b'OK' if live else b'Server initializing\n'
+    raw = (f'HTTP/1.1 {200 if live else 503} Test\r\n'
+           f'Content-Type: text/plain\r\nContent-Length: {len(body)}\r\n').encode()
+    if not live:
+        raw += b'Retry-After: 1\r\n'
+    for k, v in HEADERS.items():
+        raw += f'{k}: {v}\r\n'.encode()
+    conn.sendall(raw + b'\r\n' + body)
+
+
+@contextlib.contextmanager
+def fake_init_scheduler(concurrent):
+    # Serial arm: 100ms on EACH idle connection, then a fully correct
+    # response. Only the production latency bound can reject it. Concurrent
+    # arm answers a live probe immediately on its own thread.
+    stop = threading.Event()
+    workers, errors = [], []
+    stall = 0.10
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0)); listener.listen(32); listener.settimeout(.05)
+        def handle(conn):
+            try:
+                with conn:
+                    ready, _, _ = select.select([conn], [], [], stall)
+                    request = b''
+                    if ready:
+                        conn.settimeout(.05)
+                        try:
+                            request = conn.recv(8192)
+                        except socket.timeout:
+                            request = b''
+                    if not request:
+                        _fake_init_reply(conn, b'')
+                        return
+                    _fake_init_reply(conn, request)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except Exception as exc:
+                errors.append(exc)
+        def accept_loop():
+            while not stop.is_set():
+                try:
+                    conn, _ = listener.accept()
+                except socket.timeout:
+                    continue
+                if concurrent:
+                    worker = threading.Thread(target=handle, args=(conn,))
+                    workers.append(worker); worker.start()
+                else:
+                    handle(conn)
+        thread = threading.Thread(target=accept_loop); thread.start()
+        try:
+            yield listener.getsockname()[1]
+        finally:
+            stop.set(); thread.join(timeout=3)
+            for worker in workers:
+                worker.join(timeout=1)
+            require(not thread.is_alive() and not any(w.is_alive() for w in workers), 'fake scheduler did not stop')
+            require(not errors, f'fake scheduler errors: {errors}')
+
+
 def selftest(directory):
     # Every enrolled response row is driven through curl + the real checker,
     # with a positive control and independent faults in each response field.
@@ -429,6 +613,19 @@ def selftest(directory):
             run_check('SELF-red-'+case.name+'-'+name, lambda: expect_red(lambda: exercise(mutant), name))
         if case.phase == 'init':
             run_check('SELF-red-'+case.name+'-outside-window', lambda: expect_red(lambda: exercise(good, False), 'outside window'))
+    for case in (case_named('R2-live-get'), case_named('R1-init-page')):
+        def idle_control(serial, probe=case):
+            with fake_init_scheduler(not serial) as port:
+                with held_connections(port, 16):
+                    check = lambda: check_init_latency(port, directory, probe, lambda: True)
+                    if serial:
+                        message = expect_red(check, 'serial init starvation')
+                        require('idle clients delayed' in message, message)
+                    else:
+                        check()
+        label = 'R2-liveness-under-idle-connections' if case.status == 200 else 'R2-unready-under-idle-connections'
+        run_check('SELF-control-'+label, lambda probe=case: idle_control(False, probe))
+        run_check('SELF-red-serial-'+label, lambda probe=case: idle_control(True, probe))
     for name, _, builtin, rule in INVALID:
         run_check('SELF-control-R4-'+name, lambda: check_rejection(3, f'{builtin}: {rule}', False, builtin, rule))
         for bad, args in [('soft', (0, f'{builtin}: {rule}', False)), ('silent', (3, '', False)), ('listening', (3, f'{builtin}: {rule}', True))]:

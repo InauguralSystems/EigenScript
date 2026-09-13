@@ -185,6 +185,7 @@ static long http_max_body_total(void) {
 static void send_response_full(int fd, int status, const char *status_text,
                                const char *content_type, const char *body,
                                long body_len, int cache_cors, const char *extra);
+static double monotonic_now(void);
 
 static void stop_init_responder(Server *s) {
     __atomic_store_n(&s->init_stop, 1, __ATOMIC_RELEASE);
@@ -194,60 +195,129 @@ static void stop_init_responder(Server *s) {
     }
 }
 
-/* Startup is liveness-only: ordinary requests receive a retryable 503. The
- * short poll interval bounds handoff/destruction even for an idle client;
- * unlike a wake-up TCP connection it cannot race another acceptor or depend
- * on http_serve receiving the same port as http_early_bind. */
+/* Startup is liveness-only: ordinary requests receive a retryable 503.
+ * Accepted connections are polled together so one idle/slow client cannot
+ * delay another. HTTP_INIT_MAX_CLIENTS is the in-flight bound; 1 restores
+ * the old serial idle-blocking acceptor. Each client keeps a 1s read budget
+ * (matching 20 × 50 ms) so a fragmented request line can still complete.
+ * Handoff/destruction stops accepting, then replies to every already-accepted
+ * fd — no silent drop. Backlog sockets stay queued for http_serve. */
+#define HTTP_INIT_MAX_CLIENTS 32
+#define HTTP_INIT_CLIENT_SEC  1.0
+
+typedef struct {
+    int fd;
+    char *line;
+    size_t used;
+    size_t cap;
+    double deadline;
+} InitConn;
+
+static void init_conn_reply(Server *s, InitConn *c, int complete) {
+    char empty[] = "";
+    char *line = c->line ? c->line : empty;
+    char *method = line, *path = strchr(line, ' '), *version = NULL;
+    if (path) { *path++ = '\0'; version = strchr(path, ' '); }
+    if (version) *version++ = '\0';
+    tls_suppress_body = strcmp(method, "HEAD") == 0;
+    int live = complete && path && version && s->liveness_path &&
+        (strcmp(method, "GET") == 0 || tls_suppress_body) &&
+        strcmp(path, s->liveness_path) == 0 &&
+        (strncmp(version, "HTTP/1.1\r\n", 10) == 0 ||
+         strncmp(version, "HTTP/1.0\r\n", 10) == 0);
+    send_response_full(c->fd, live ? 200 : 503,
+                       live ? "OK" : "Service Unavailable", "text/plain",
+                       live ? "OK" : "Server initializing\n", live ? 2 : 20,
+                       1, live ? "" : "Retry-After: 1\r\n");
+    free(c->line);
+    close(c->fd);
+    c->line = NULL;
+    c->fd = -1;
+    tls_suppress_body = 0;
+}
+
+static void init_conn_open(Server *s, InitConn *c, int fd) {
+    struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    size_t line_cap = s->liveness_path ? strlen(s->liveness_path) + 128 : 8192;
+    if (line_cap < 8192) line_cap = 8192;
+    c->fd = fd;
+    c->line = xmalloc(line_cap);
+    c->used = 0;
+    c->cap = line_cap;
+    c->deadline = monotonic_now() + HTTP_INIT_CLIENT_SEC;
+    c->line[0] = '\0';
+}
+
+/* 1 = request line complete or buffer full (reply), -1 = peer gone (reply),
+ * 0 = keep waiting. */
+static int init_conn_read(InitConn *c) {
+    if (c->used + 1 >= c->cap) return 1;
+    ssize_t n = recv(c->fd, c->line + c->used, c->cap - 1 - c->used, 0);
+    if (n <= 0) return -1;
+    c->used += (size_t)n;
+    c->line[c->used] = '\0';
+    return strstr(c->line, "\r\n") ? 1 : 0;
+}
+
 static void *init_responder(void *arg) {
     Server *s = arg;
     eigs_http_active = s;
-    while (!__atomic_load_n(&s->init_stop, __ATOMIC_ACQUIRE)) {
-        struct pollfd listener = { .fd = s->early_bind_fd, .events = POLLIN };
-        if (poll(&listener, 1, 50) <= 0) continue;
-        if (__atomic_load_n(&s->init_stop, __ATOMIC_ACQUIRE)) break;
-        int conn = accept(s->early_bind_fd, NULL, NULL);
-        if (conn < 0) continue;
-        struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
-        setsockopt(conn, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-        /* Read a complete request line before matching, including fragmented
-         * writes. A partial/oversize/malformed line is never a liveness 200.
-         * Allow the complete configured target even when it exceeds the
-         * usual request-line budget. Output headers have their own sizing. */
-        size_t line_cap = s->liveness_path ? strlen(s->liveness_path) + 128 : 8192;
-        if (line_cap < 8192) line_cap = 8192;
-        char *line = xmalloc(line_cap);
-        size_t used = 0;
-        int complete = 0;
-        for (int ticks = 0; ticks < 20 && used + 1 < line_cap; ticks++) {
-            if (__atomic_load_n(&s->init_stop, __ATOMIC_ACQUIRE)) break;
-            struct pollfd client = { .fd = conn, .events = POLLIN };
-            if (poll(&client, 1, 50) <= 0) continue;
-            ssize_t n = recv(conn, line + used, line_cap - 1 - used, 0);
-            if (n <= 0) break;
-            used += (size_t)n;
-            line[used] = '\0';
-            if (strstr(line, "\r\n")) { complete = 1; break; }
+    InitConn clients[HTTP_INIT_MAX_CLIENTS];
+    int n = 0;
+    for (;;) {
+        if (__atomic_load_n(&s->init_stop, __ATOMIC_ACQUIRE)) {
+            /* Shutdown ends accepting only. Every already-accepted fd still
+             * gets an honest startup response; none is silently dropped. */
+            for (int i = 0; i < n; i++) {
+                int complete = clients[i].line && strstr(clients[i].line, "\r\n") != NULL;
+                init_conn_reply(s, &clients[i], complete);
+            }
+            break;
         }
-        line[used] = '\0';
-        char *method = line, *path = strchr(line, ' '), *version = NULL;
-        if (path) { *path++ = '\0'; version = strchr(path, ' '); }
-        if (version) *version++ = '\0';
-        tls_suppress_body = strcmp(method, "HEAD") == 0;
-        int live = complete && path && version && s->liveness_path &&
-            (strcmp(method, "GET") == 0 || tls_suppress_body) &&
-            strcmp(path, s->liveness_path) == 0 &&
-            (strncmp(version, "HTTP/1.1\r\n", 10) == 0 ||
-             strncmp(version, "HTTP/1.0\r\n", 10) == 0);
-        /* Shutdown only ends accepting; an already accepted request still
-         * gets its honest startup response. No connection is silently dropped
-         * by the handoff itself. */
-        send_response_full(conn, live ? 200 : 503,
-                           live ? "OK" : "Service Unavailable", "text/plain",
-                           live ? "OK" : "Server initializing\n", live ? 2 : 20,
-                           1, live ? "" : "Retry-After: 1\r\n");
-        free(line);
-        close(conn);
-        tls_suppress_body = 0;
+        struct pollfd pfds[HTTP_INIT_MAX_CLIENTS + 1];
+        int np = 0;
+        int li = -1;
+        if (n < HTTP_INIT_MAX_CLIENTS) {
+            pfds[np].fd = s->early_bind_fd;
+            pfds[np].events = POLLIN;
+            li = np++;
+        }
+        for (int i = 0; i < n; i++) {
+            pfds[np].fd = clients[i].fd;
+            pfds[np].events = POLLIN;
+            np++;
+        }
+        int pr = poll(pfds, (nfds_t)np, 50);
+        if (__atomic_load_n(&s->init_stop, __ATOMIC_ACQUIRE)) continue;
+        int base = (li >= 0) ? 1 : 0;
+        double now = monotonic_now();
+        for (int i = n - 1; i >= 0; i--) {
+            int complete = 0, dead = 0;
+            if (pr > 0 && (pfds[base + i].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL))) {
+                int r = init_conn_read(&clients[i]);
+                if (r < 0) dead = 1;
+                else if (r > 0) complete = 1;
+            }
+            if (complete || dead || now >= clients[i].deadline) {
+                init_conn_reply(s, &clients[i], complete);
+                clients[i] = clients[n - 1];
+                n--;
+            }
+        }
+        if (pr > 0 && li >= 0 && (pfds[li].revents & POLLIN)) {
+            int conn = accept(s->early_bind_fd, NULL, NULL);
+            if (conn >= 0) {
+                if (n < HTTP_INIT_MAX_CLIENTS) {
+                    init_conn_open(s, &clients[n], conn);
+                    n++;
+                } else {
+                    InitConn extra;
+                    init_conn_open(s, &extra, conn);
+                    init_conn_reply(s, &extra, 0);
+                }
+            }
+        }
     }
     eigs_http_active = NULL;
     return NULL;
