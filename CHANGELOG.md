@@ -130,6 +130,64 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The trace tape is safe under threads and states (#1142, #1143).** A
+  process-wide mutex is held for each whole record and each replay take, so
+  concurrent `spawn` workers and co-located `EigsState`s no longer tear
+  lines, overflow the embed sink, or mix taped and live values. Replay of a
+  nondet builtin on a non-main thread raises the same catchable error as
+  `recv` (per-thread N streams are not this round). `O cfg` diffs against
+  what that state last emitted. `eigs_close` shuts the process tape only
+  when it closes the last live state, and deciding that is the same atomic
+  step as decrementing the live-state count, so two states closing at once
+  cannot both leave the tape open with zero states; `eigs_trace_shutdown`
+  is the process owner's explicit teardown. The arm/occurrence wildcard and
+  generation, which the recorder consults before it takes the tape lock,
+  are ACQUIRE/RELEASE rather than plain ints. Single-threaded tapes stay
+  byte-identical **and faster**: records are formatted into one output
+  buffer under the mutex and committed as one sink call per record and one
+  `fwrite` per ~32 KiB, replacing a per-byte `fputc`, so a 613,506-record
+  single-threaded tape runs 3.4% faster than before the mutex existed
+  (n=5 interleaved, CPU-time medians). The embed sink now receives ONE
+  complete record per call at any record length, **and at any record
+  COUNT**: an emit window that stages a scope transition (`S`) or an
+  `O cfg` diff in front of its `A`/`N` record is split at every newline
+  under the lock, so a consumer that maps one call to one journal entry
+  (the EigenOS M11 shape the header describes) no longer drops the
+  records that ride along. The byte stream is unchanged. The 4096-byte
+  per-byte sink line buffer that the two-state probe overflowed is gone.
+  Two of the new invariants are gated STRUCTURALLY, because their windows
+  are a few instructions wide and unobservable from a harness: the close
+  decision reads no live-state count (`close-count-toctou` in
+  `tests/test_trace_mt.sh`), and the sink callback fires under the tape
+  mutex, proved by a bounded rendezvous inside the callback in
+  `src/embed_concurrent.c` rather than by hoping a schedule tears.
+  The tape's new `pthread_self`/`pthread_once` imports are enrolled in the
+  freestanding ledger (`tools/freestanding_allowlist.txt`,
+  `tools/freestanding_hal_roots.txt`, docs/FREESTANDING.md) — thread
+  IDENTITY is a kernel-owed HAL root on EigenOS, not portable C, and
+  `make freestanding-check` was red without them.
+  Two more invariants joined the structural set rather than resting on a
+  schedule: `eigs_replay_take` runs under the tape mutex, proved by an
+  emitter's sink callback holding a bounded window while the other thread
+  attempts a take (a take that COMPLETES inside the window is an overlap —
+  0 of 80 here, 80 of 80 unlocked), which retires a ThreadSanitizer kill
+  that was measured surviving 1 train run in 10; and `trace_set_sink`
+  commits the `V` header in the same critical section that publishes the
+  callback, so the first call a freshly installed sink receives is always
+  its own header even while a sibling state records (0 of 24 here, 24 of 24
+  with the header emitted after the unlock). **A sink-only tape's memory is
+  bounded by the largest RECORD, not by the tape** — the staging buffer
+  rewinds after every hand-off — which is what makes the sink usable as
+  EigenOS M11's journal; that one line had no witness and now has one
+  (`trace_out_capacity()`, unchanged at 64 KiB across 12 MB of sink bytes
+  against 16 MB without the rewind). It follows, and is measured, that an
+  embedder has no buffered tail: a host that exits without `eigs_close` or
+  `eigs_trace_shutdown` loses nothing. The `atexit(trace_shutdown)` comment
+  in `trace_init` said that registration also covered "an embedder that
+  leaks its state"; it does not — `trace_init` has one caller in the tree,
+  `src/main.c` — and now says so. The mutation train is fourteen mutants,
+  each killed 10/10, and no longer needs a ThreadSanitizer build.
+
 - Standard-library imports and `exe_path` retain an absolute executable
   anchor after `chdir` on macOS, including relative and PATH launches (#1133).
 - Matrix products use separate binary64 multiplication and addition across

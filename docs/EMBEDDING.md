@@ -362,12 +362,42 @@ int  eigs_replay_take(const char *name, EigsValue **out);   /* 1 = served from t
 void eigs_trace_record_nondet(const char *name, EigsValue *v);
 ```
 
-The sink receives complete newline-terminated record lines (an
-oversized record arrives in ordered chunks). It fires from inside
+The sink receives ONE complete newline-terminated record per call,
+whatever its length and whatever else was staged in the same emit window
+(#1142 — before that an oversized record arrived in ordered chunks, and a
+record staged behind a scope transition or an `O cfg` diff rode along in
+the same call). One call is one record, so a host may map calls to
+journal entries directly. It fires from inside
 evaluation — do not re-enter the runtime from it; buffer the bytes and
 act between evals. While a replay tape is set, nondet builtins return
 the recorded `N` values in order instead of consulting their live
 sources; when the tape runs out they fall back to live.
+
+The first call a freshly installed sink receives is always its own `V`
+header: the callback pointer and the header are published in the same
+critical section, so a sibling state recording at that instant cannot
+get a record in ahead of it.
+
+**The runtime buffers nothing on your behalf.** Each record reaches the
+sink from inside the call that emitted it, before that call returns.
+Two consequences, both gated in `src/embed_concurrent.c` rather than
+argued:
+
+- **No tail is lost at exit.** A host that never calls `eigs_close` or
+  `eigs_trace_shutdown` — it crashed, it is a freestanding kernel, it
+  simply fell out of `main()` — has already received every byte
+  (`exit-tail`: two forked children run the identical program through
+  the identical sink, one tearing down properly and one exiting cold,
+  and their streams must be byte-identical). The `atexit` handler inside
+  `src/trace.c` is the CLI's flush of the `EIGS_TRACE` **file** tape;
+  no embed entry point reaches it, and `EIGS_TRACE` opens no file for an
+  embedded host.
+- **The tape costs memory proportional to one RECORD, not to the
+  journal.** With no file tape open, the record staging area rewinds
+  after every hand-off (`sink-only-bounded`: the staging capacity is
+  unchanged — 64 KiB — across 12 MB of sink bytes; 16 MB without the
+  rewind). This is what makes the sink usable as EigenOS M11's journal
+  on a machine with no filesystem to spill to.
 
 **Per-state resources are released at `eigs_state_destroy`** (#739). The
 HTTP server's route table and the libpq connection are owned by the
@@ -389,15 +419,46 @@ untrusted snippet calling `exit` left every subsequent eval in the
 process running with exception handling silently disabled, in any state.
 A host that wants the exit code reads it from the eval that requested it.
 
-**The sink and the tape are per-PROCESS, not per-state** (#739). With
-several states co-located, one sink serves them all, and the teardown
-that drops it — `trace_shutdown()`, which `eigs_close` calls — belongs
-to whoever owns the process. A per-request or per-task state must not
-call it: `ext_http`'s connection worker did, so the first request served
-closed the tape and unregistered the host's sink. A worker that wants to
-release its own temporal history calls `trace_thread_release()`, which
-`eigs_thread_detach` already does for every thread. The per-name history
-behind `prev of x` / `at` / `state_at` is per-thread and never shared.
+**The sink and the tape are per-PROCESS, not per-state** (#739, #1142,
+#1143). With several states co-located, one sink serves them all.
+Records are atomic (a process-wide tape mutex is held for each whole
+record and each replay take). `eigs_close` shuts the tape **only when
+it is closing the last live `EigsState`** — closing state A while B is
+still evaluating used to drop B's records with no error. The teardown
+that drops the sink while other states remain belongs to whoever owns
+the process: call `eigs_trace_shutdown()`. A per-request or per-task
+state must not call it; `eigs_close` of a non-last state does not.
+
+"Am I the last state?" is answered ONLY by the return value of
+`eigs_process_state_release()`, which decides and decrements in one step
+under `src/state.c`'s attached-state lock. There is deliberately no
+close-path count read to pair with it: reading the count and *then*
+releasing is a time-of-check/time-of-use window in which two concurrent
+`eigs_close` calls both see "2 live", neither believes it is last, and
+the process tape outlives every state. That window is a few instructions
+wide and proved unobservable from any harness on the dev box (0 kills in
+2000 barrier-synchronised double-closes, on the fixed tree and on the
+planted bug alike), so the class is closed **by construction** and gated
+structurally rather than behaviourally: `tests/test_trace_mt.sh`'s
+`close-count-toctou` rows fail if `eigs_close` reads a live-state count
+at all, or if the bare counter (`eigs_process_state_count`, whose one
+caller is `trace_shutdown`) gains a second caller. The mutation train's
+`close-toctou` mutant reintroduces the bug and dies on those rows 10/10.
+
+A worker that wants to release its own temporal history calls
+`trace_thread_release()`, which `eigs_thread_detach` already does for
+every thread. The per-name history behind `prev of x` / `at` /
+`state_at` is per-thread and never shared.
+
+Replay is a single-consumer stream until per-thread N streams exist: the
+OS thread that installed the tape may take; a nondet builtin on any
+other thread, or `eigs_replay_take` from a state that did not open the
+tape, raises the same catchable error as `recv` under `EIGS_REPLAY`
+(docs/TRACE.md "Threads and states"). A take that IS allowed holds the
+same process-wide tape mutex a record emission holds, so it can never
+interleave with one — `eigs_replay_take` will BLOCK for as long as a
+concurrent sink callback runs, which is one more reason not to do slow
+work inside the callback.
 
 Host builtins participate with the take/record pair, the same contract
 the runtime's own nondet builtins use:

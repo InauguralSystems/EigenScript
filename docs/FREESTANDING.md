@@ -51,7 +51,7 @@ them.
 | `console_write(bytes)` | HAL (VGA/serial) | the whole `printf`/`fputs`/`puts`/`putc`/`fwrite`/`write` family + `vsnprintf` formatter |
 | `read_char` | HAL (PS/2) | `fgets` `fgetc` `read` |
 | `clock_ns` | HAL (TSC/PIT) | `clock_gettime` `time` `usleep` |
-| `spawn` / `yield` / `park`+`unpark` + atomic CAS | HAL (scheduler) | `pthread_mutex_*` `pthread_cond_*` `pthread_once` |
+| `spawn` / `yield` / `park`+`unpark` + atomic CAS | HAL (scheduler) | `pthread_mutex_*` `pthread_cond_*` `pthread_once` `pthread_self` |
 | `map_exec` (RX pages) | HAL (deferrable) | `mmap` `mprotect` `munmap` |
 | entropy (`RDRAND`/TSC) | HAL/hardware | `rand` `srand` `drand48` `lrand48` `srand48` |
 | `halt` / `panic` | HAL | `exit` `_exit` `abort` `atexit` |
@@ -103,8 +103,12 @@ The bulk of the surface, but mostly *not* reimplemented:
   until there's a kernel FS to back them.
 
 ### Threading — `HAL` + `HARDEN`
-`pthread_create` `pthread_join` `pthread_once` `pthread_mutex_*`
-`pthread_cond_*` `pthread_condattr_*`
+`pthread_create` `pthread_join` `pthread_once` `pthread_self`
+`pthread_mutex_*` `pthread_cond_*` `pthread_condattr_*`
+`pthread_self` is thread IDENTITY, not scheduling: the #1142 replay tape
+records which OS thread opened it, so a take from any other thread fails
+loud instead of silently mixing taped and live values. On EigenOS it is a
+comparable task handle.
 Route onto the kernel's own scheduler + sync primitives via the HAL. **But
 harden first**: the threading/channel layer is the youngest part of the runtime
 (#293 cross-thread channel UAF; before #295/#297 the cycle collector was

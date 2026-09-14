@@ -136,6 +136,11 @@ run_one() {
         echo "MUTANT $spec: KILLED by $killed"
         return 0
     fi
+    # A crashed oracle with no FAIL line is a KILL, not a SURVIVE (#1142).
+    if [ "$rc" -ne 0 ]; then
+        echo "MUTANT $spec: KILLED by crash(rc=$rc)"
+        return 0
+    fi
     echo "MUTANT $spec: SURVIVED (oracle rc=$rc, no FAIL line)"
     return 1
 }

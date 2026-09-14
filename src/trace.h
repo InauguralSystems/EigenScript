@@ -33,7 +33,12 @@ typedef union { double d; uint64_t u; } EigsSlot;
 /* 1 when EIGS_TRACE was set and a tape was successfully opened.
  * Hook sites in vm.c gate on this directly so the disabled case
  * costs one load + one branch. */
-extern int g_trace_enabled;
+/* ATOMIC ACQUIRE load — shutdown stores RELEASE. An assignment through this
+ * name fails to compile so write sites stay enumerable (same idiom as
+ * g_trace_hist). The JIT does not bake this address. */
+extern int g_trace_enabled_storage;
+#define g_trace_enabled __atomic_load_n(&g_trace_enabled_storage, __ATOMIC_ACQUIRE)
+#define trace_enabled_store(v) __atomic_store_n(&g_trace_enabled_storage, (v), __ATOMIC_RELEASE)
 
 /* 1 when assignment history must be recorded: set by the compiler when
  * it sees `prev of`, any `at <expr>` qualifier, or a reference to the
@@ -148,13 +153,27 @@ int trace_occ_window(void);
 #define TRACE_OCC_WINDOW_DEFAULT 256
 #define TRACE_OCC_WINDOW_MAX     (1 << 20)
 
-/* Source line currently being executed. Written by OP_LINE (a plain global
- * store — cheaper than a call; the JIT also stamps it via a flat-address
- * write, so it can't be __thread), read by trace_assign to stamp history
- * entries and by the tape writer. #297: the interpreter write is gated off
- * under MT (history/replay is single-threaded; the per-thread g_vm.current_line
- * carries the error line), so it isn't raced by parallel workers. */
+/* Source line currently being executed. Written by OP_LINE, read by
+ * trace_assign to stamp history entries and by the tape writer. The JIT
+ * stamps it via a flat-address write, so it cannot be __thread.
+ *
+ * #297 gated the interpreter write off under MT (a state's own workers),
+ * which is why parallel workers never raced it. #1142: TWO STATES on two
+ * threads are each single-threaded by that test, so both wrote this plain
+ * int — TSan reported the race on every concurrent-embed run once the
+ * louder compiler.c one was silenced. Access is RELAXED-atomic: on x86-64
+ * that is the same `mov` (the JIT's flat write stays valid), but it is a
+ * defined access rather than a data race.
+ *
+ * Residual, documented: the VALUE is still process-global, so two states
+ * recording at once can stamp each other's line into their (thread-local)
+ * history tables. Per-thread line stamping needs the JIT's flat write to
+ * become a TLS write — tracked as the remaining #1142 gap, not fixed here. */
 extern int g_trace_current_line;
+#define trace_current_line_store(v) \
+    __atomic_store_n(&g_trace_current_line, (int)(v), __ATOMIC_RELAXED)
+#define trace_current_line_load() \
+    __atomic_load_n(&g_trace_current_line, __ATOMIC_RELAXED)
 
 /* 1 when the compiler has seen a `where`/`why`/`how ... at <line>`
  * interrogative anywhere in the program. Gates observer-state capture
@@ -187,8 +206,11 @@ void trace_thread_release(void);
 
 /* ---- Embed tape seam (the freestanding tape path; see eigs_embed.h).
  * trace_set_sink installs a byte sink for tape records and enables
- * recording — the sink receives complete record lines (newline
- * included; an oversized record arrives in ordered chunks). NULL
+ * recording — the sink receives ONE complete newline-terminated record
+ * per call, whatever its length and whatever else was staged in the same
+ * emit window (#1142; before that an oversized record arrived in ordered
+ * chunks, and a record staged behind a scope transition or an `O cfg`
+ * diff rode along in the same call). NULL
  * uninstalls and stops recording (unless EIGS_TRACE also opened a
  * file). trace_set_replay_mem installs a whole tape as the replay
  * source (bytes are COPIED in); NULL clears it. Returns 0 on OOM. */
@@ -196,6 +218,22 @@ void trace_thread_release(void);
 void trace_set_sink(void (*cb)(const char *bytes, size_t len, void *ud),
                     void *ud);
 int  trace_set_replay_mem(const char *bytes, size_t len, int strict);
+
+/* #1142 round 5 — the tape's staging-buffer CAPACITY in bytes, read under
+ * the tape lock. Read-only, and it exists for one reason: to give the
+ * sink-only DROP in sink_flush a witness.
+ *
+ * A sink-only embedder (the freestanding profile — EigenOS M11's journal —
+ * has no filesystem and no FILE tape) rewinds the staging buffer after every
+ * hand-off, because the sink already owns those bytes. Delete that one line
+ * and the buffer grows with the tape: unbounded memory on exactly the
+ * profile that cannot spill. Nothing else in the tree can see it — every
+ * record is still whole, every byte still reaches the sink, the tape still
+ * replays — so a bound on this number is the only available check
+ * (src/embed_concurrent.c's `sink-only-bounded` case; mutant
+ * `sink-only-no-drop`). It is NOT an embedding API: it reports an
+ * implementation detail and may disappear with it. */
+size_t trace_out_capacity(void);
 
 /* Record a source-line event. Emitted by OP_LINE. */
 void trace_line(int line);
@@ -348,8 +386,19 @@ int trace_name_is_internal(const char *name);
  * with status 3, for harnesses that want tape/program drift loud. EOF or
  * unparseable records return 0 and the builtin falls back to its normal
  * source. */
-extern int g_replay_enabled;
+extern int g_replay_enabled_storage;
+#define g_replay_enabled __atomic_load_n(&g_replay_enabled_storage, __ATOMIC_ACQUIRE)
+#define replay_enabled_store(v) __atomic_store_n(&g_replay_enabled_storage, (v), __ATOMIC_RELEASE)
 int trace_replay_take(const char *fn, struct Value **out);
+/* #1142: 1 when replay is active and the calling OS thread is not the
+ * thread that opened the tape. Nondet builtins raise rather than take.
+ * Until per-thread N streams exist, a single consumer (the opener thread)
+ * is the only legal replay reader. Reads owner state under the tape lock. */
+int trace_replay_off_owner_thread(void);
+/* Raise the recv-family refusal and return 1 if this OS thread must not
+ * consume N records. Hand-rolled take sites (read_bytes_buf) call this
+ * before trace_replay_take, same as TRACE_NONDET_*. */
+int trace_replay_refuse_off_owner(const char *fn);
 
 /* Centralized nondet-return macro for builtins.
  *
@@ -365,9 +414,15 @@ int trace_replay_take(const char *fn, struct Value **out);
  * before trace.h). */
 #define TRACE_NONDET_RET(name, expr) do {                            \
     Value *_tr_v;                                                    \
-    if (__builtin_expect(g_replay_enabled, 0) &&                     \
-        trace_replay_take((name), &_tr_v))                           \
-        return _tr_v;                                                \
+    if (__builtin_expect(g_replay_enabled, 0)) {                     \
+        /* #1142: a nondet builtin on a non-owner thread cannot      \
+         * consume the single-consumer N stream. Same catchable      \
+         * error the receive family raises. */                       \
+        if (trace_replay_refuse_off_owner((name)))                   \
+            return make_null();                                      \
+        if (trace_replay_take((name), &_tr_v))                       \
+            return _tr_v;                                            \
+    }                                                                \
     _tr_v = (expr);                                                  \
     if (__builtin_expect(g_trace_enabled, 0))                        \
         trace_nondet_value((name), _tr_v);                           \
@@ -387,9 +442,12 @@ int trace_replay_take(const char *fn, struct Value **out);
  * way, preserving the strict-ordering contract. */
 #define TRACE_NONDET_TAKE(name) do {                                 \
     Value *_tr_take;                                                 \
-    if (__builtin_expect(g_replay_enabled, 0) &&                     \
-        trace_replay_take((name), &_tr_take))                        \
-        return _tr_take;                                             \
+    if (__builtin_expect(g_replay_enabled, 0)) {                     \
+        if (trace_replay_refuse_off_owner((name)))                   \
+            return make_null();                                      \
+        if (trace_replay_take((name), &_tr_take))                    \
+            return _tr_take;                                         \
+    }                                                                \
 } while (0)
 
 #define TRACE_NONDET_RECORD(name, expr) do {                         \

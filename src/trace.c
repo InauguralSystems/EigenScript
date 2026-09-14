@@ -51,8 +51,8 @@
                                     * over-cap payloads emit a marker so
                                     * tape stays sized for visual debug */
 
-int g_trace_enabled = 0;
-int g_replay_enabled = 0;
+int g_trace_enabled_storage = 0;
+int g_replay_enabled_storage = 0;
 int g_trace_obs_hist_storage = 0;
 int g_trace_hist_storage = 0;
 int g_trace_current_line = 0;
@@ -209,8 +209,17 @@ typedef struct TracePrevEntry {
 static char   **g_arm_names = NULL;
 static int      g_arm_count = 0;
 static int      g_arm_cap   = 0;
-static int      g_arm_all   = 0;
-static uint32_t g_arm_gen   = 1;
+/* ACQUIRE loads / RELEASE stores: prev_record_assign reads these before
+ * tape_emit_begin (no lock). Shutdown writes them under g_tape_mu; a
+ * plain int race was TSan-flaky on g_arm_gen / g_arm_all (#1142 r3). */
+static int      g_arm_all_storage = 0;
+static uint32_t g_arm_gen_storage = 1;
+#define g_arm_all __atomic_load_n(&g_arm_all_storage, __ATOMIC_ACQUIRE)
+#define arm_all_store(v) __atomic_store_n(&g_arm_all_storage, (v), __ATOMIC_RELEASE)
+#define g_arm_gen __atomic_load_n(&g_arm_gen_storage, __ATOMIC_ACQUIRE)
+static void arm_gen_bump(void) {
+    __atomic_fetch_add(&g_arm_gen_storage, 1u, __ATOMIC_RELEASE);
+}
 
 static int arm_set_has(const char *name) {
     for (int i = 0; i < g_arm_count; i++)
@@ -232,8 +241,14 @@ static int arm_set_has(const char *name) {
 static char   **g_occ_names = NULL;
 static int      g_occ_count = 0;
 static int      g_occ_cap   = 0;
-static int      g_occ_all   = 0;   /* interactive REPL only — see trace.h */
-static uint32_t g_occ_gen   = 1;
+static int      g_occ_all_storage = 0;   /* interactive REPL only — see trace.h */
+static uint32_t g_occ_gen_storage = 1;
+#define g_occ_all __atomic_load_n(&g_occ_all_storage, __ATOMIC_ACQUIRE)
+#define occ_all_store(v) __atomic_store_n(&g_occ_all_storage, (v), __ATOMIC_RELEASE)
+#define g_occ_gen __atomic_load_n(&g_occ_gen_storage, __ATOMIC_ACQUIRE)
+static void occ_gen_bump(void) {
+    __atomic_fetch_add(&g_occ_gen_storage, 1u, __ATOMIC_RELEASE);
+}
 static int      g_occ_window = 0;   /* 0 = not yet resolved */
 
 int trace_occ_window(void) {
@@ -260,8 +275,8 @@ static int occ_set_has(const char *name) {
 
 void trace_arm_occurrences_all(void) {
     if (g_occ_all) return;
-    g_occ_all = 1;
-    g_occ_gen++;
+    occ_all_store(1);
+    occ_gen_bump();
     trace_arm_history_all();
 }
 
@@ -283,7 +298,7 @@ void trace_arm_occurrences_name(const char *name) {
     if (!copy) return;
     memcpy(copy, name, len);
     g_occ_names[g_occ_count++] = copy;
-    g_occ_gen++;
+    occ_gen_bump();
 }
 
 /* Widen to the wildcard WITHOUT enabling recording. Separate from
@@ -331,15 +346,15 @@ void trace_arm_restore(const TraceArmState *in) {
     g_occ_count = in->occ_count;
     trace_flag_store(g_trace_hist_storage, in->trace_hist);
     trace_flag_store(g_trace_obs_hist_storage, in->obs_hist);
-    g_arm_all        = in->arm_all;
-    g_occ_all        = in->occ_all;
-    g_arm_gen++;                    /* invalidate cached per-entry decisions */
+    arm_all_store(in->arm_all);
+    occ_all_store(in->occ_all);
+    arm_gen_bump();                    /* invalidate cached per-entry decisions */
 }
 
 void trace_arm_history_all_mt(void) {
     if (g_arm_all) return;
-    g_arm_all = 1;
-    g_arm_gen++;
+    arm_all_store(1);
+    arm_gen_bump();
 }
 
 void trace_arm_history_all(void) {
@@ -363,7 +378,7 @@ void trace_arm_history_name(const char *name) {
     if (!copy) { trace_arm_history_all(); return; }    /* OOM: never narrow */
     memcpy(copy, name, len);
     g_arm_names[g_arm_count++] = copy;
-    g_arm_gen++;
+    arm_gen_bump();
 }
 
 void trace_history_disable(void) {
@@ -549,7 +564,7 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
     e->has_current = 1;
 
     /* Stamp with the current VM line as cached by trace_line. */
-    int line = g_trace_current_line;
+    int line = trace_current_line_load();
     lc_bump(e, line);
 
     /* #868: the occurrence ring runs alongside the line history, not inside
@@ -841,38 +856,200 @@ static int g_line_dirty = 0;
  * compiled out there — but the tape itself is just bytes. An embedder
  * (EigenOS M11: the machine journal) installs a sink callback and the
  * emit primitives below hand it complete record lines (newline
- * included); a record longer than the staging buffer arrives in
- * chunks, still in order. Installing a sink enables recording exactly
+ * included). #1142 made that unconditional: the whole record is
+ * formatted before the sink is called, so a record of ANY length
+ * arrives in exactly ONE call — the old per-byte g_sink_buf[4096] and
+ * its chunked oversized records are gone. Installing a sink enables recording exactly
  * like EIGS_TRACE does hosted; the two paths are independent sinks of
  * the same byte stream (in practice an embedder uses one or the
  * other). All emitters funnel through tp_putc/tp_puts/tp_printf. */
 static void (*g_trace_sink)(const char *bytes, size_t len, void *ud) = NULL;
 static void *g_trace_sink_ud = NULL;
-#define TRACE_SINK_LINEBUF 4096
-static char   g_sink_buf[TRACE_SINK_LINEBUF];
-static size_t g_sink_len = 0;
+/* #1142: the old per-byte sink line buffer is GONE — see the output-buffer
+ * block below. `g_sink_buf[4096]` with its unsynchronised `g_sink_len`
+ * index (the global-buffer-overflow the two-state sink probe hit) no
+ * longer exists at all. */
+
+/* #1142: one process-wide tape mutex. Taken ONCE per record, in
+ * tape_emit_begin, and released in tape_emit_end — so a record (its
+ * obs-cfg diff, its scope transition, its bytes, the line-stamp/scope
+ * state update and the commit) is one atomic unit, and every piece of
+ * shared decision state (g_last_line, g_line_dirty, g_last_scope_serial,
+ * g_tape_session, the state's tape_obs_* last-emitted) is read and
+ * written under it. Never held across an EigenScript-level call or a
+ * blocking builtin. The sink callback fires while the lock is held — do
+ * not re-enter the runtime from it. */
+static pthread_mutex_t g_tape_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static void tape_lock(void)   { pthread_mutex_lock(&g_tape_mu); }
+static void tape_unlock(void) { pthread_mutex_unlock(&g_tape_mu); }
+/* Named so the replay-take-unlocked mutant can nop just the take path. */
+static void replay_take_lock(void)   { tape_lock(); }
+static void replay_take_unlock(void) { tape_unlock(); }
+static int  trace_out_active(void);
+
+/* ----- Record staging and the tape output buffer.
+ *
+ * Round 2 emitted every record byte-by-byte through fputc() with the tape
+ * mutex held. That was correct but cost +8..14% on a 615k-record
+ * single-threaded tape (two blind critics, n=5): the new per-record mutex
+ * on top of glibc's per-fputc stream work. Replacing fputc with one fwrite
+ * per record did NOT pay for the mutex either — a small fwrite costs more
+ * than the ~30 putc's it replaces (measured: still +6.8%).
+ *
+ * What works is to stop touching stdio per record at all. Records are
+ * formatted DIRECTLY into one process-wide output buffer, in place, under
+ * the tape mutex:
+ *
+ *   - the mutex is taken once in tape_emit_begin and released once in
+ *     tape_emit_end, so a record (its obs-cfg diff, its scope transition,
+ *     its bytes, the line-stamp/scope state update and the commit) is one
+ *     atomic unit, and every piece of shared decision state (g_last_line,
+ *     g_line_dirty, g_last_scope_serial, g_tape_session, the state's
+ *     tape_obs_* last-emitted) is read and written under it;
+ *   - g_rec_at marks where the record being formatted starts, so
+ *     tape_emit_end can hand the SINK exactly that record in one call —
+ *     which is what killed the old g_sink_buf[4096] + unsynchronised
+ *     g_sink_len (the global-buffer-overflow in the two-state sink probe);
+ *   - the FILE sees one fwrite per ~32 KiB of tape instead of one stdio
+ *     call per byte, which is where the mutex is paid for.
+ *
+ * Never held across an EigenScript-level call or a blocking builtin. The
+ * sink callback fires while the lock is held — do not re-enter the runtime
+ * from it. */
+#define TAPE_OUT_INIT   (64 * 1024)
+#define TAPE_OUT_FLUSH  (32 * 1024)
+static char   *g_out     = NULL;
+static size_t  g_out_cap = 0;
+static size_t  g_out_len = 0;   /* bytes formatted but not yet fwritten */
+static size_t  g_rec_at  = 0;   /* offset of the record being formatted */
+
+/* #1142 round 5: read-only witness for the sink-only DROP two functions
+ * below. Takes the lock so the read is not a torn one. See trace.h for why
+ * this exists at all — the one line it witnesses is invisible to every
+ * other oracle in the tree. */
+size_t trace_out_capacity(void) {
+    tape_lock();
+    size_t c = g_out_cap;
+    tape_unlock();
+    return c;
+}
+
+/* Caller holds g_tape_mu. */
+static void out_flush_locked(void) {
+    if (g_out_len && g_trace_fp) fwrite(g_out, 1, g_out_len, g_trace_fp);
+    g_out_len = 0;
+}
+
+/* Grow to hold `add` more bytes. Never flushes: the record being formatted
+ * lives in this buffer and tape_emit_end still has to hand its slice to the
+ * sink. Caller holds g_tape_mu. */
+static void out_reserve(size_t add) {
+    if (g_out_len + add <= g_out_cap) return;
+    size_t nc = g_out_cap ? g_out_cap : TAPE_OUT_INIT;
+    while (nc < g_out_len + add) nc *= 2;
+    char *nb = realloc(g_out, nc);
+    if (!nb) return;            /* record truncates; tape stays parseable */
+    g_out = nb;
+    g_out_cap = nc;
+}
+
+/* Begin/end a record. tape_emit_begin takes the tape mutex and re-checks
+ * activity under it, so a concurrent shutdown (which stores g_trace_fp /
+ * g_trace_sink under the same lock) cannot tear a record. */
+static int tape_emit_begin(void) {
+    /* ACQUIRE load; pairs with trace_enabled_store under the lock. Cheap
+     * gate so a program with no tape never touches the mutex. */
+    if (!g_trace_enabled) return 0;
+    tape_lock();
+    if (!trace_out_active()) {
+        tape_unlock();
+        return 0;
+    }
+    g_rec_at = g_out_len;
+    return 1;
+}
+
+/* Commit the staged record: the sink sees ONE complete newline-terminated
+ * record per call, and the FILE's bytes stay buffered until TAPE_OUT_FLUSH.
+ * Caller holds the lock; the sink-flush-outside-lock mutant moves this out
+ * of the critical section.
+ *
+ * One emit window can stage SEVERAL records: a scope transition
+ * (`S <fn> <depth> <serial>`) or an `O cfg` diff is formatted into the same
+ * window as the A/N record that triggered it. eigs_embed.h and
+ * docs/EMBEDDING.md promise the sink "ONE complete newline-terminated
+ * record per call" — the shape the EigenOS M11 journal consumes, one call
+ * one journal entry — so the hand-off SPLITS at every newline here, under
+ * the lock. The byte stream over all calls is unchanged; only the call
+ * boundaries are. (Handing the window over whole made 3 of 12 calls carry
+ * two records on a single state, and 536-762 of ~3000 on two — a consumer
+ * that treats a call as a record dropped every `A` that followed an `S`.)
+ * A trailing fragment with no newline can only come from an out_reserve
+ * OOM truncation; it is handed over as-is rather than dropped.
+ *
+ * The newline scan is a hand-rolled loop, not memchr: the sink IS the
+ * freestanding tape path (EigenOS M11's journal), and `memchr` is not on
+ * tools/freestanding_allowlist.txt nor implemented in
+ * src/freestanding/mini_libc.c, so calling it here would fail
+ * `make freestanding-check`. Record lengths are tens of bytes. */
+static void sink_hand_off(const char *p, size_t left) {
+    while (left) {
+        size_t rec = 0;
+        while (rec < left && p[rec] != '\n') rec++;
+        if (rec < left) rec++;          /* the record owns its newline */
+        g_trace_sink(p, rec, g_trace_sink_ud);
+        p += rec;
+        left -= rec;
+    }
+}
 
 static void sink_flush(void) {
-    if (g_trace_sink && g_sink_len) {
-        g_trace_sink(g_sink_buf, g_sink_len, g_trace_sink_ud);
-        g_sink_len = 0;
-    }
+    size_t n = g_out_len - g_rec_at;
+    if (g_trace_sink && n) sink_hand_off(g_out + g_rec_at, n);
+    /* Sink-only (the freestanding profile, EigenOS M11's journal): nothing
+     * will ever fwrite these bytes, and the sink already owns them, so the
+     * staging area rewinds to where this record started. WITHOUT this line
+     * g_out_len only ever grows and the tape output buffer grows WITH THE
+     * TAPE — unbounded memory on the one profile that has no filesystem to
+     * spill to (measured on the mutant: +14,092 KB of RSS over 14.3 MB of
+     * sink bytes, against 136 KB on this tree). No tape check can see it:
+     * every record is still well-formed and every byte still reaches the
+     * sink. The witness is trace_out_capacity() — pinned by the
+     * `sink-only-bounded` case in src/embed_concurrent.c, and killed by the
+     * `sink-only-no-drop` mutant. */
+    if (!g_trace_fp) g_out_len = g_rec_at;          /* sink-only: drop */
+    else if (g_out_len >= TAPE_OUT_FLUSH) out_flush_locked();
+}
+
+static void tape_emit_end(void) {
+    sink_flush();               /* commit-under-lock */
+    tape_unlock();
 }
 
 static int trace_out_active(void) {
     return g_trace_fp != NULL || g_trace_sink != NULL;
 }
 
-static void tp_putc(int c) {
-    if (g_trace_sink) {
-        g_sink_buf[g_sink_len++] = (char)c;
-        if (g_sink_len == TRACE_SINK_LINEBUF || c == '\n') sink_flush();
+static void tp_write(const char *s, size_t n) {
+    if (!s || !n) return;
+    if (g_out_len + n > g_out_cap) {
+        out_reserve(n);
+        if (g_out_len + n > g_out_cap) {
+            if (g_out_cap <= g_out_len) return;
+            n = g_out_cap - g_out_len;
+        }
     }
-    if (g_trace_fp) fputc(c, g_trace_fp);
+    memcpy(g_out + g_out_len, s, n);
+    g_out_len += n;
 }
 
-static void tp_write(const char *s, size_t n) {
-    for (size_t i = 0; i < n; i++) tp_putc(s[i]);
+static void tp_putc(int c) {
+    if (g_out_len >= g_out_cap) {
+        out_reserve(1);
+        if (g_out_len >= g_out_cap) return;
+    }
+    g_out[g_out_len++] = (char)c;
 }
 
 static void tp_puts(const char *s) { tp_write(s, strlen(s)); }
@@ -931,55 +1108,60 @@ static void emit_scope_transition(void) {
  *
  * The state-level scalars are emitted by DIFF rather than from the knob
  * builtins: obs_cfg_sync compares the state's live configuration against what
- * the tape last said and emits an `O cfg` record when they differ, immediately
- * before the next L or A record. That makes the tape carry the configuration
- * IN FORCE by construction — a configuration set by an embedder, by a second
- * EigsState, or by a knob nobody remembered to instrument still lands on the
- * tape. The per-binding window override (`set_observer_window of ["x", n]`)
- * lives on an Env slot, not on the state, so it has no cheap diff and is
- * emitted from its builtin through trace_obs_window_binding.
+ * THAT STATE last emitted and emits an `O cfg` record when they differ,
+ * immediately before the next L or A record. Two co-located states with
+ * different thresholds therefore emit one record each at first use, not a
+ * torn ping-pong of process-global last-emitted (#1142). The per-binding
+ * window override (`set_observer_window of ["x", n]`) lives on an Env slot,
+ * not on the state, so it has no cheap diff and is emitted from its builtin
+ * through trace_obs_window_binding.
  *
  * Cost when no tape is open: nothing (both entry points return on
  * trace_out_active). With a tape open: five compares per L/A record. */
-static double g_cfg_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
-static double g_cfg_dh_small = OBSERVER_DH_SMALL_DEFAULT;
-static double g_cfg_h_low    = OBSERVER_H_LOW_DEFAULT;
-static double g_cfg_scale    = OBSERVER_SCALE_DEFAULT;
-static int    g_cfg_window   = OBSERVER_WINDOW_N;
+/* #1142: tape-open generation. emit_header increments it; obs_cfg_sync
+ * treats a state's last-emitted as defaults when the session mismatches,
+ * so a new V header re-emits a non-default config (matching the old
+ * process-global reset) without a process-global last-emitted slot. */
+static unsigned g_tape_session = 0;
 
-/* Reset to the values a fresh EigsState starts with — what a reader installs
- * before applying the tape's O records, so "no O record" means "defaults". */
+/* Reset is a session bump: each state's next L/A compares against defaults. */
 static void obs_cfg_reset(void) {
-    g_cfg_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
-    g_cfg_dh_small = OBSERVER_DH_SMALL_DEFAULT;
-    g_cfg_h_low    = OBSERVER_H_LOW_DEFAULT;
-    g_cfg_scale    = OBSERVER_SCALE_DEFAULT;
-    g_cfg_window   = OBSERVER_WINDOW_N;
+    g_tape_session++;
 }
 
-/* Emit `O cfg` when the state's observer configuration has moved since the
- * last one. Callers must already have checked trace_out_active(). */
+/* Emit `O cfg` when THIS state's observer configuration has moved since
+ * what THIS state last emitted. Callers hold g_tape_mu and have checked
+ * trace_out_active(). A default-config state writes no record — single-
+ * threaded tapes stay byte-identical to the process-global-diff era. */
 static void obs_cfg_sync(void) {
     if (!eigs_current || !eigs_current->state) return;
-    const EigsState *st = eigs_current->state;
-    if (st->obs_dh_zero  == g_cfg_dh_zero  &&
-        st->obs_dh_small == g_cfg_dh_small &&
-        st->obs_h_low    == g_cfg_h_low    &&
-        st->obs_scale    == g_cfg_scale    &&
-        st->obs_window   == g_cfg_window) return;
-    g_cfg_dh_zero  = st->obs_dh_zero;
-    g_cfg_dh_small = st->obs_dh_small;
-    g_cfg_h_low    = st->obs_h_low;
-    g_cfg_scale    = st->obs_scale;
-    g_cfg_window   = st->obs_window;
+    EigsState *st = eigs_current->state;
+    if (st->tape_obs_session != g_tape_session) {
+        st->tape_obs_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
+        st->tape_obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
+        st->tape_obs_h_low    = OBSERVER_H_LOW_DEFAULT;
+        st->tape_obs_scale    = OBSERVER_SCALE_DEFAULT;
+        st->tape_obs_window   = OBSERVER_WINDOW_N;
+        st->tape_obs_session  = g_tape_session;
+    }
+    if (st->obs_dh_zero  == st->tape_obs_dh_zero  &&
+        st->obs_dh_small == st->tape_obs_dh_small &&
+        st->obs_h_low    == st->tape_obs_h_low    &&
+        st->obs_scale    == st->tape_obs_scale    &&
+        st->obs_window   == st->tape_obs_window) return;
+    st->tape_obs_dh_zero  = st->obs_dh_zero;
+    st->tape_obs_dh_small = st->obs_dh_small;
+    st->tape_obs_h_low    = st->obs_h_low;
+    st->tape_obs_scale    = st->obs_scale;
+    st->tape_obs_window   = st->obs_window;
     /* One field per tp_printf: its staging buffer is 128 bytes and five
      * %.17g fields in one call could silently truncate the record. */
     tp_puts("O cfg ");
-    tp_printf("%.17g ", g_cfg_dh_zero);
-    tp_printf("%.17g ", g_cfg_dh_small);
-    tp_printf("%.17g ", g_cfg_h_low);
-    tp_printf("%d ",    g_cfg_window);
-    tp_printf("%.17g\n", g_cfg_scale);
+    tp_printf("%.17g ", st->tape_obs_dh_zero);
+    tp_printf("%.17g ", st->tape_obs_dh_small);
+    tp_printf("%.17g ", st->tape_obs_h_low);
+    tp_printf("%d ",    st->tape_obs_window);
+    tp_printf("%.17g\n", st->tape_obs_scale);
 }
 
 /* `set_observer_window of ["x", n]` — the per-binding override, recorded at
@@ -987,19 +1169,23 @@ static void obs_cfg_sync(void) {
  * the one the call site resolved; a reader re-resolves it with the same
  * innermost-first scope walk it uses for every other binding. */
 void trace_obs_window_binding(const char *name, int n) {
-    if (!trace_out_active() || !name) return;
+    if (!name || !tape_emit_begin()) return;
     obs_cfg_sync();
     emit_scope_transition();
     tp_puts("O win ");
     tp_puts(name);
     tp_printf(" %d\n", n);
+    tape_emit_end();
 }
 
 /* #411: stamp the version header. Called once per tape-open (EIGS_TRACE
  * fopen, sink install) — a journal appended across several installs
  * carries one V record per session; replay verifies each. */
 static void emit_header(void) {
+    /* Caller holds g_tape_mu; formats + commits like any other record. */
+    g_rec_at = g_out_len;
     tp_printf("V %d %s\n", TRACE_FORMAT_VERSION, EIGENSCRIPT_VERSION);
+    sink_flush();
     g_last_scope_serial = 0;
     /* A session starts from the defaults on the tape: obs_cfg_sync emits an
      * `O cfg` for whatever the state already carries before the first L/A. */
@@ -1007,21 +1193,24 @@ static void emit_header(void) {
 }
 
 void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
+    tape_lock();
     if (cb) {
         g_trace_sink = cb;
         g_trace_sink_ud = ud;
-        g_sink_len = 0;
         g_last_line = -1;
         g_line_dirty = 0;
-        g_trace_enabled = 1;
+        trace_enabled_store(1);
         trace_arm_history_all();   /* a tape records every name's assigns */
-        emit_header();
+        emit_header();             /* commits the V record to the new sink */
     } else {
-        sink_flush();
+        /* Nothing can be pending: every record is handed to the sink whole
+         * inside tape_emit_end, under this same lock. */
+        g_rec_at = g_out_len;
         g_trace_sink = NULL;
         g_trace_sink_ud = NULL;
-        if (!g_trace_fp) g_trace_enabled = 0;
+        if (!g_trace_fp) trace_enabled_store(0);
     }
+    tape_unlock();
 }
 
 /* Forward decl — implementation below; called from trace_init. */
@@ -1067,9 +1256,34 @@ void trace_init(void) {
         return;
     }
     setvbuf(g_trace_fp, NULL, _IOFBF, 64 * 1024);
-    g_trace_enabled = 1;
+    /* #1142: tape bytes are buffered in g_out now, NOT in the FILE's stdio
+     * buffer, so stdio's own exit-time flush no longer covers a process that
+     * exits without calling trace_shutdown. Without this, up to
+     * TAPE_OUT_FLUSH bytes of the FILE tape are lost at exit — a regression
+     * against the pre-#1142 fputc path. trace_shutdown is idempotent, so the
+     * CLI's own call is unaffected.
+     *
+     * Round 5 correction — this registration is the CLI's, and ONLY the
+     * CLI's. trace_init has exactly one caller in the tree (src/main.c:131);
+     * no embed entry point calls it, so an embedder never reaches this line
+     * and EIGS_TRACE opens no file for one. The earlier wording here said it
+     * also covered "an embedder that leaks its state". It does not, and it
+     * cannot.
+     *
+     * Nor does an embedder need it: the embed tape is the SINK
+     * (trace_set_sink), and sink_flush hands each record over inside
+     * tape_emit_end — under the lock, before the emitting call returns — so
+     * a sink embedder has no buffered tail at all. Measured, not reasoned:
+     * the `exit-tail` case in src/embed_concurrent.c forks two children that
+     * run the same program through the same sink, one calling
+     * eigs_close/eigs_trace_shutdown and one exiting straight out of
+     * main(), and requires the two byte streams to be IDENTICAL. */
+    atexit(trace_shutdown);
+    tape_lock();
+    trace_enabled_store(1);
     trace_arm_history_all();   /* a tape records every name's assigns */
     emit_header();
+    tape_unlock();
 #endif /* !EIGENSCRIPT_FREESTANDING */
 }
 
@@ -1093,6 +1307,41 @@ static char  *g_replay_mem = NULL;
 static size_t g_replay_mem_len = 0;
 static size_t g_replay_mem_pos = 0;
 
+/* #1142: the OS thread (and, when known, the EigsState) that opened the
+ * replay tape. Nondet builtins on any other thread raise; eigs_replay_take
+ * additionally refuses a state that is not the opener. */
+static pthread_t   g_replay_owner_tid;
+static EigsState  *g_replay_owner_state = NULL;
+static int         g_replay_owner_valid = 0;
+
+static void replay_note_owner(void) {
+    g_replay_owner_tid = pthread_self();
+    g_replay_owner_state = eigs_current ? eigs_current->state : NULL;
+    g_replay_owner_valid = 1;
+}
+
+int trace_replay_off_owner_thread(void) {
+    tape_lock();
+    int off = g_replay_enabled_storage && g_replay_owner_valid
+              && !pthread_equal(pthread_self(), g_replay_owner_tid);
+    tape_unlock();
+    return off;
+}
+
+int trace_replay_refuse_off_owner(const char *fn) {
+    if (!trace_replay_off_owner_thread()) return 0;
+    rt_error(EK_IO, 0,
+        "%s: not replayable under EIGS_REPLAY (subprocess/concurrency "
+        "boundary; see docs/TRACE.md)", fn ? fn : "nondet");
+    return 1;
+}
+
+static int replay_is_owner_state(void) {
+    if (!g_replay_owner_valid) return 0;
+    if (!g_replay_owner_state) return 1; /* CLI opened before attach */
+    return eigs_current && eigs_current->state == g_replay_owner_state;
+}
+
 /* #411: consume and verify the tape's V header(s). Defined below
  * read_tape_line; prints the refusal reason on failure. */
 static int read_tape_line(void);
@@ -1100,17 +1349,23 @@ static int replay_check_header(void);
 static int replay_vline_ok(void);
 
 int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
+    tape_lock();
     if (!bytes) {
         free(g_replay_mem);
         g_replay_mem = NULL;
         g_replay_mem_len = 0;
         g_replay_mem_pos = 0;
-        if (!g_replay_fp) g_replay_enabled = 0;
+        if (!g_replay_fp) {
+            replay_enabled_store(0);
+            g_replay_owner_valid = 0;
+            g_replay_owner_state = NULL;
+        }
+        tape_unlock();
         return 1;
     }
 
     char *nm = malloc(len > 0 ? len : 1);
-    if (!nm) return 0;   /* prior replay state untouched */
+    if (!nm) { tape_unlock(); return 0; }   /* prior replay state untouched */
     memcpy(nm, bytes, len);
 
     /* Stage the new tape and validate EVERY session header up front (#411):
@@ -1122,6 +1377,9 @@ int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
     char  *om = g_replay_mem;
     size_t ol = g_replay_mem_len, op = g_replay_mem_pos;
     int    os = g_replay_strict, oe = g_replay_enabled;
+    pthread_t ot = g_replay_owner_tid;
+    EigsState *ost = g_replay_owner_state;
+    int ov = g_replay_owner_valid;
     g_replay_mem = nm;
     g_replay_mem_len = len;
     g_replay_mem_pos = 0;
@@ -1142,12 +1400,18 @@ int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
         g_replay_mem_len = ol;
         g_replay_mem_pos = op;
         g_replay_strict = os;
-        g_replay_enabled = oe;
+        replay_enabled_store(oe);
+        g_replay_owner_tid = ot;
+        g_replay_owner_state = ost;
+        g_replay_owner_valid = ov;
+        tape_unlock();
         return 0;
     }
     free(om);
     g_replay_mem_pos = 0;
-    g_replay_enabled = 1;
+    replay_enabled_store(1);
+    replay_note_owner();
+    tape_unlock();
     return 1;
 }
 
@@ -1175,7 +1439,8 @@ static void trace_replay_init(void) {
          * fatal. Same _exit rationale as the strict divergence abort. */
         _exit(3);
     }
-    g_replay_enabled = 1;
+    replay_enabled_store(1);
+    replay_note_owner();
 #endif /* !EIGENSCRIPT_FREESTANDING */
 }
 
@@ -1186,7 +1451,9 @@ static void replay_shutdown(void) {
     free(g_replay_line); g_replay_line = NULL; g_replay_cap = 0;
     free(g_replay_mem);  g_replay_mem = NULL;
     g_replay_mem_len = 0; g_replay_mem_pos = 0;
-    g_replay_enabled = 0;
+    replay_enabled_store(0);
+    g_replay_owner_valid = 0;
+    g_replay_owner_state = NULL;
 }
 
 /* getline that does not need _GNU_SOURCE — keeps a growable buffer in the
@@ -1492,13 +1759,30 @@ static Value *parse_value(const char *s) {
 }
 
 int trace_replay_take(const char *fn, Value **out) {
-    if ((!g_replay_fp && !g_replay_mem) || !out) return 0;
+    if (!out) return 0;
+    replay_take_lock();
+    if (!g_replay_enabled || (!g_replay_fp && !g_replay_mem)) {
+        replay_take_unlock();
+        return 0;
+    }
+    /* #1142: embed API — a state that did not open the tape cannot consume
+     * the single-consumer N stream. Unlock before rt_error (never hold the
+     * tape mutex across a raise). */
+    if (!replay_is_owner_state()) {
+        replay_take_unlock();
+        rt_error(EK_IO, 0,
+            "%s: not replayable under EIGS_REPLAY (subprocess/concurrency "
+            "boundary; see docs/TRACE.md)", fn ? fn : "nondet");
+        *out = make_null();
+        return 1;
+    }
     for (;;) {
         int len = read_tape_line();
         if (len < 0) {
             /* Tape exhausted — turn off replay so future calls skip the
              * read overhead, and let the builtin run normally. */
             replay_shutdown();
+            replay_take_unlock();
             return 0;
         }
         if (len >= 1 && g_replay_line[0] == 'V') {
@@ -1550,8 +1834,9 @@ int trace_replay_take(const char *fn, Value **out) {
                     fn, rec_name);
         }
         Value *v = parse_value(rec_val);
-        if (!v) return 0;   /* unparseable — fall through to live source */
+        if (!v) { replay_take_unlock(); return 0; }   /* unparseable — fall through to live source */
         *out = v;
+        replay_take_unlock();
         return 1;
     }
 }
@@ -1604,6 +1889,15 @@ void trace_thread_release(void) {
  * atexit), NEVER to a per-connection or per-task worker. A worker that wants
  * to clean up after itself wants trace_thread_release. */
 void trace_shutdown(void) {
+    /* #1142 round 2: the WHOLE teardown — sink/fp, enabled flags, replay
+     * reader, arm-set free — runs under the tape mutex. The unlocked
+     * fast path in tape_emit_begin is gone so a sibling cannot read
+     * g_trace_sink while we store NULL. Arm names are only freed when
+     * this is the last live state: an explicit eigs_trace_shutdown while
+     * siblings remain must not free a set those siblings still compile
+     * against. */
+    tape_lock();
+    out_flush_locked();         /* buffered tape bytes reach the FILE first */
 #if !EIGENSCRIPT_FREESTANDING
     if (g_trace_fp) {
         fflush(g_trace_fp);
@@ -1611,37 +1905,44 @@ void trace_shutdown(void) {
         g_trace_fp = NULL;
     }
 #endif
-    sink_flush();
-    g_trace_sink = NULL;
+    free(g_out);                /* the tape output buffer is tape-lifetime */
+    g_out = NULL;
+    g_out_cap = 0;
+    g_out_len = 0;
+    g_rec_at  = 0;
+    g_trace_sink = NULL;        /* shutdown-clear-sink */
     g_trace_sink_ud = NULL;
-    g_trace_enabled = 0;
+    trace_enabled_store(0);
+    replay_shutdown();
+    /* Publish the wildcard BEFORE freeing names so an ACQUIRE of
+     * g_arm_all == 1 skips arm_set_has (which would UAF). */
+    arm_all_store(1);
+    arm_gen_bump();
+    if (eigs_process_state_count() <= 1) {
+        for (int i = 0; i < g_arm_count; i++) free(g_arm_names[i]);
+        free(g_arm_names);
+        g_arm_names = NULL;
+        g_arm_count = 0;
+        g_arm_cap = 0;
+    }
+    tape_unlock();              /* shutdown-unlock */
 
     trace_thread_release();
-
-    /* #827: drop the compile-time armed-name set and fall back to the
-     * wildcard. Widening, never narrowing — a state opened after a
-     * process-wide teardown must not inherit a narrowing whose compile-time
-     * evidence has been freed. (Recording still needs g_trace_hist.) */
-    for (int i = 0; i < g_arm_count; i++) free(g_arm_names[i]);
-    free(g_arm_names);
-    g_arm_names = NULL;
-    g_arm_count = 0;
-    g_arm_cap = 0;
-    g_arm_all = 1;
-    g_arm_gen++;
-
-    replay_shutdown();
 }
 
 void trace_line(int line) {
     /* OP_LINE stores g_trace_current_line directly; this function is
      * only called when a tape is open (g_trace_enabled). */
-    if (!trace_out_active()) return;
+    if (!tape_emit_begin()) return;
     obs_cfg_sync();
-    if (line == g_last_line && !g_line_dirty) return;
+    if (line == g_last_line && !g_line_dirty) {
+        tape_emit_end();
+        return;
+    }
     tp_printf("L %d\n", line);
     g_last_line  = line;
     g_line_dirty = 0;
+    tape_emit_end();
 }
 
 /* Strings get quoted + truncated. \, ", \n, \r escaped so the tape is
@@ -1701,7 +2002,7 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int 
      * would rewrite the caller's `prev`. */
     if (record_prev) prev_record_assign(name, value, filtered);
 
-    if (!trace_out_active()) return;
+    if (!tape_emit_begin()) return;
     obs_cfg_sync();
     if (!name) name = "?";
     /* #539 v2: scope-transition record. When the innermost frame differs
@@ -1718,6 +2019,7 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int 
     write_slot(value);
     tp_putc('\n');
     g_line_dirty = 1;
+    tape_emit_end();
 }
 
 /* #830: the public, producer-facing entry point — an explicit "record this
@@ -1752,15 +2054,14 @@ void trace_assign_filtered(const char *name, EigsSlot value) {
  * record cannot be used for full determinism. */
 
 static void wf_putc(int c, int *budget) {
-    if (*budget <= 0 || !trace_out_active()) return;
+    if (*budget <= 0) return;
     tp_putc(c); (*budget)--;
 }
 static void wf_puts(const char *s, int *budget) {
-    if (!trace_out_active()) return;
     while (*s && *budget > 0) { tp_putc(*s++); (*budget)--; }
 }
 static void wf_printf(int *budget, const char *fmt, ...) {
-    if (*budget <= 0 || !trace_out_active()) return;
+    if (*budget <= 0) return;
     char buf[64];
     va_list ap; va_start(ap, fmt);
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -1841,7 +2142,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
 }
 
 void trace_nondet_value(const char *fn, Value *v) {
-    if (!trace_out_active()) return;
+    if (!tape_emit_begin()) return;
     if (!fn) fn = "?";
     tp_puts("N ");
     tp_puts(fn);
@@ -1851,4 +2152,5 @@ void trace_nondet_value(const char *fn, Value *v) {
     if (budget <= 0) tp_puts("…<truncated>");
     tp_putc('\n');
     g_line_dirty = 1;
+    tape_emit_end();
 }

@@ -1,0 +1,18 @@
+# Two workers recording nondet builtins concurrently while EIGS_TRACE is on.
+# 2 workers x 2000 iters x (random, monotonic_ns, env_get) = 12000 N records.
+define worker(id) as:
+    local acc is 0
+    local i is 0
+    loop while i < 2000:
+        local r is random of []
+        local t is monotonic_ns of []
+        local e is env_get of "HOME"
+        acc is acc + r
+        i is i + 1
+    return acc
+
+h1 is spawn of [worker, 1]
+h2 is spawn of [worker, 2]
+a is thread_join of h1
+b is thread_join of h2
+print of "done"

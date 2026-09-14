@@ -40,9 +40,16 @@ typedef struct Value      EigsValue;
 
 /* One-shot: state_new + thread_attach + register builtins. Returns NULL on
  * failure (already attached, OOM). The returned state must be closed with
- * eigs_close from the same OS thread. */
+ * eigs_close from the same OS thread.
+ *
+ * #1143: eigs_close tears down THIS state. It shuts the process-wide trace
+ * tape / embed sink / replay reader only when it is closing the last live
+ * EigsState. A host that wants the tape closed while other states remain
+ * (or that used the fine-grained state_new/destroy API) calls
+ * eigs_trace_shutdown. */
 EigsState  *eigs_open(void);
 void        eigs_close(EigsState *st);
+void        eigs_trace_shutdown(void);
 
 /* Finer-grained lifecycle for hosts that need to attach multiple threads
  * to the same state, or build the state in stages. */
@@ -174,13 +181,41 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
 /* ---- Trace tape (record + replay) ----------------------------------
  * The runtime's replay tape (hosted: EIGS_TRACE / EIGS_REPLAY files),
  * reachable without a filesystem. Install a sink and every tape record
- * (V/L/A/N lines) streams to it as bytes — the sink receives complete
- * newline-terminated lines (an oversized record arrives in ordered
- * chunks). Installing a sink ENABLES recording — the first bytes are the
+ * (V/L/A/N lines) streams to it as bytes — the sink receives ONE
+ * complete newline-terminated record per call, whatever its length and
+ * whatever else was staged in the same emit window (#1142; before that
+ * an oversized record arrived in chunks, and a record staged behind a
+ * scope transition or an `O cfg` diff rode along in the same call).
+ * Installing a sink ENABLES recording — the first bytes are the
  * version header (`V <format> <runtime>`, #411); a journal appended
  * across several installs carries one header per session. Passing NULL
  * stops recording. The sink fires from inside evaluation — do not
  * re-enter the runtime from it; buffer the bytes and act between evals.
+ * The sink and the tape are per-PROCESS (#739/#1142/#1143): one sink
+ * serves every co-located EigsState, each record is emitted under a
+ * process-wide tape mutex, and eigs_close shuts the tape only when it
+ * closes the last live state. Call eigs_trace_shutdown to drop the
+ * sink/tape/replay reader explicitly. Replay is a single-consumer
+ * stream until per-thread N streams exist: the OS thread that installed
+ * the tape may take; a nondet builtin on any other thread, or
+ * eigs_replay_take from a state that did not open the tape, raises the
+ * same catchable error as recv-under-replay.
+ *
+ * NOTHING IS BUFFERED FOR YOU, and that is a promise, not an accident:
+ * each record reaches the sink from inside the call that emitted it,
+ * before that call returns. A host that exits without eigs_close or
+ * eigs_trace_shutdown therefore loses no tail — there is no tail. (The
+ * `atexit` flush in src/trace.c belongs to the CLI's FILE tape; no embed
+ * entry point reaches it, and EIGS_TRACE opens no file for an embedded
+ * host.) The same property bounds the tape's MEMORY: with no file tape
+ * open, the staging buffer rewinds after every hand-off, so the runtime
+ * holds at most one record's worth of tape however long the journal
+ * grows. Both are gated — `exit-tail` and `sink-only-bounded` in
+ * src/embed_concurrent.c.
+ *
+ * The header is atomic with the install: the first call a freshly
+ * installed sink receives is always its own `V` record, even if another
+ * EigsState is recording at that moment.
  *
  * eigs_set_replay_tape hands the whole tape back as the replay source
  * (bytes are copied; NULL clears). Returns 0 on OOM or when the tape is

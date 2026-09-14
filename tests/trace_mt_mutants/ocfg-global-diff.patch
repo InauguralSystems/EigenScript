@@ -1,0 +1,62 @@
+--- a/src/trace.c
++++ b/src/trace.c
+@@ -979,6 +979,11 @@
+  * so a new V header re-emits a non-default config (matching the old
+  * process-global reset) without a process-global last-emitted slot. */
+ static unsigned g_tape_session = 0;
++static double g_cfg_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
++static double g_cfg_dh_small = OBSERVER_DH_SMALL_DEFAULT;
++static double g_cfg_h_low    = OBSERVER_H_LOW_DEFAULT;
++static double g_cfg_scale    = OBSERVER_SCALE_DEFAULT;
++static int    g_cfg_window   = OBSERVER_WINDOW_N;
+ 
+ /* Reset is a session bump: each state's next L/A compares against defaults. */
+ static void obs_cfg_reset(void) {
+@@ -992,32 +997,24 @@
+ static void obs_cfg_sync(void) {
+     if (!eigs_current || !eigs_current->state) return;
+     EigsState *st = eigs_current->state;
+-    if (st->tape_obs_session != g_tape_session) {
+-        st->tape_obs_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
+-        st->tape_obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
+-        st->tape_obs_h_low    = OBSERVER_H_LOW_DEFAULT;
+-        st->tape_obs_scale    = OBSERVER_SCALE_DEFAULT;
+-        st->tape_obs_window   = OBSERVER_WINDOW_N;
+-        st->tape_obs_session  = g_tape_session;
+-    }
+-    if (st->obs_dh_zero  == st->tape_obs_dh_zero  &&
+-        st->obs_dh_small == st->tape_obs_dh_small &&
+-        st->obs_h_low    == st->tape_obs_h_low    &&
+-        st->obs_scale    == st->tape_obs_scale    &&
+-        st->obs_window   == st->tape_obs_window) return;
+-    st->tape_obs_dh_zero  = st->obs_dh_zero;
+-    st->tape_obs_dh_small = st->obs_dh_small;
+-    st->tape_obs_h_low    = st->obs_h_low;
+-    st->tape_obs_scale    = st->obs_scale;
+-    st->tape_obs_window   = st->obs_window;
++    if (st->obs_dh_zero  == g_cfg_dh_zero  &&
++        st->obs_dh_small == g_cfg_dh_small &&
++        st->obs_h_low    == g_cfg_h_low    &&
++        st->obs_scale    == g_cfg_scale    &&
++        st->obs_window   == g_cfg_window) return;
++    g_cfg_dh_zero  = st->obs_dh_zero;
++    g_cfg_dh_small = st->obs_dh_small;
++    g_cfg_h_low    = st->obs_h_low;
++    g_cfg_scale    = st->obs_scale;
++    g_cfg_window   = st->obs_window;
+     /* One field per tp_printf: its staging buffer is 128 bytes and five
+      * %.17g fields in one call could silently truncate the record. */
+     tp_puts("O cfg ");
+-    tp_printf("%.17g ", st->tape_obs_dh_zero);
+-    tp_printf("%.17g ", st->tape_obs_dh_small);
+-    tp_printf("%.17g ", st->tape_obs_h_low);
+-    tp_printf("%d ",    st->tape_obs_window);
+-    tp_printf("%.17g\n", st->tape_obs_scale);
++    tp_printf("%.17g ", g_cfg_dh_zero);
++    tp_printf("%.17g ", g_cfg_dh_small);
++    tp_printf("%.17g ", g_cfg_h_low);
++    tp_printf("%d ",    g_cfg_window);
++    tp_printf("%.17g\n", g_cfg_scale);
+ }
+ 
+ /* `set_observer_window of ["x", n]` — the per-binding override, recorded at

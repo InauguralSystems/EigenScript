@@ -22,6 +22,15 @@ void eigs_obs_memo_release(void);
 
 __thread EigsThread *eigs_current = NULL;
 
+/* Process-wide attached-thread and live-state counts. The eager pre-pass
+ * (#915) keys off thread count; eigs_close (#1143) keys off state count
+ * to decide whether it is shutting the last interpreter (and the tape). */
+static pthread_mutex_t g_attached_lock = PTHREAD_MUTEX_INITIALIZER;
+static int g_attached_threads_storage = 0;
+static int g_live_states = 0;
+#define g_attached_threads_load() __atomic_load_n(&g_attached_threads_storage, __ATOMIC_ACQUIRE)
+#define g_attached_threads_add(d) __atomic_fetch_add(&g_attached_threads_storage, (d), __ATOMIC_RELEASE)
+
 EigsState *eigs_state_new(void) {
     EigsState *st = xcalloc(1, sizeof(*st));
     pthread_mutex_init(&st->threads_lock, NULL);
@@ -37,6 +46,14 @@ EigsState *eigs_state_new(void) {
     st->obs_h_low    = OBSERVER_H_LOW_DEFAULT;
     st->obs_window   = OBSERVER_WINDOW_N;        /* #1044 */
     st->obs_scale    = OBSERVER_SCALE_DEFAULT;   /* #1045 */
+    /* #1142: last-emitted tape config starts at the compiled-in defaults so a
+     * default-config state's first record does not emit `O cfg`. */
+    st->tape_obs_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
+    st->tape_obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
+    st->tape_obs_h_low    = OBSERVER_H_LOW_DEFAULT;
+    st->tape_obs_window   = OBSERVER_WINDOW_N;
+    st->tape_obs_scale    = OBSERVER_SCALE_DEFAULT;
+    st->tape_obs_session  = 0;
     /* #971: strict math mode, read once from env at creation (like the JIT
      * thresholds below). Any non-empty, non-"0" value enables it. */
     st->strict = eigs_env_flag("EIGS_STRICT");
@@ -48,10 +65,13 @@ EigsState *eigs_state_new(void) {
 #endif
     /* Phase 9: JIT tuning per state, read once from env at creation. */
     jit_state_init_thresholds(st);
+    pthread_mutex_lock(&g_attached_lock);
+    g_live_states++;
+    pthread_mutex_unlock(&g_attached_lock);
     return st;
 }
 
-void eigs_state_destroy(EigsState *st) {
+static void state_destroy_body(EigsState *st, int already_released) {
     if (!st) return;
     if (st->threads) {
         fprintf(stderr,
@@ -80,7 +100,20 @@ void eigs_state_destroy(EigsState *st) {
     pthread_mutex_destroy(&st->threads_lock);
     pthread_mutex_destroy(&st->handle_mutex);
     pthread_mutex_destroy(&st->gc_lock);
+    if (!already_released) {
+        pthread_mutex_lock(&g_attached_lock);
+        if (g_live_states > 0) g_live_states--;
+        pthread_mutex_unlock(&g_attached_lock);
+    }
     free(st);
+}
+
+void eigs_state_destroy(EigsState *st) {
+    state_destroy_body(st, 0);
+}
+
+void eigs_state_destroy_released(EigsState *st) {
+    state_destroy_body(st, 1);
 }
 
 /* #915: PROCESS-GLOBAL count of attached threads.
@@ -108,14 +141,42 @@ void eigs_state_destroy(EigsState *st) {
  *
  * So the precondition is not "this state is single-threaded", it is "this
  * PROCESS has one thread". */
-static pthread_mutex_t g_attached_lock = PTHREAD_MUTEX_INITIALIZER;
-static int g_attached_threads = 0;
 
 int eigs_process_thread_count(void) {
+    return g_attached_threads_load();
+}
+
+/* A bare snapshot of the live-state count. NOT a close decision: by the time
+ * a closer asks, its own state is already released and a sibling may close
+ * between the read and any action taken on it. trace_shutdown is its ONE
+ * caller (it frees the process-wide arm-name table only when no sibling
+ * state can still read it), and tests/test_trace_mt.sh's `close-count-toctou`
+ * check pins that: exactly one caller, and never inside eigs_close. */
+int eigs_process_state_count(void) {
     pthread_mutex_lock(&g_attached_lock);
-    int n = g_attached_threads;
+    int n = g_live_states;
     pthread_mutex_unlock(&g_attached_lock);
     return n;
+}
+
+/* #1142/#1143: the ONLY way to ask "am I closing the LAST state?" — decide
+ * and decrement are one step under g_attached_lock and the answer exists
+ * only as this call's RETURN VALUE. A close path that instead reads the
+ * count and then decrements is the round-2 TOCTOU: two concurrent
+ * eigs_close calls both read 2, neither shuts, and the process tape
+ * outlives every state. That window is ~100 ns and no harness on this box
+ * could observe it (0 kills in 2000 barrier'd double-closes on BOTH the
+ * fixed tree and the planted bug), so the class is closed STRUCTURALLY and
+ * gated structurally — see the `close-count-toctou` check. */
+int eigs_process_state_release(void) {
+    pthread_mutex_lock(&g_attached_lock);
+    int last = 0;
+    if (g_live_states > 0) {
+        g_live_states--;
+        last = (g_live_states == 0);
+    }
+    pthread_mutex_unlock(&g_attached_lock);
+    return last;
 }
 
 EigsThread *eigs_thread_attach(EigsState *st) {
@@ -128,7 +189,7 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
     th->intern_tbl = env_intern_table_new();   /* #1065: thread's ref */
-    pthread_mutex_lock(&g_attached_lock); g_attached_threads++; pthread_mutex_unlock(&g_attached_lock);
+    pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(1); pthread_mutex_unlock(&g_attached_lock);
     /* #915: xcalloc zeroes, and 0 here would mean "never scan", silently
      * disabling the observer gate's eager pass on every thread. Default ON;
      * only --lint and the LSP clear it. */
@@ -227,7 +288,7 @@ void eigs_thread_detach(void) {
      * so the bridge macros inside free_value/env destructors resolve. */
     eigs_thread_drain_caches(th);
     eigs_obs_memo_release();  /* #915: memo + speculative budget, thread-local */
-    pthread_mutex_lock(&g_attached_lock); g_attached_threads--; pthread_mutex_unlock(&g_attached_lock);
+    pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(-1); pthread_mutex_unlock(&g_attached_lock);
 
     arena_destroy();
     eigs_current = NULL;

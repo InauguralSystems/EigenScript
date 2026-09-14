@@ -53,20 +53,36 @@ void eigs_close(EigsState *st) {
      * This is also the only place st->multithreaded is cleared back to 0; skip
      * it and gc_collect_at_exit below bails (g_vm_multithreaded), silently
      * collecting nothing, AND channels/threads leak, AND a still-running worker
-     * can UAF the env/state we free next. Then: trace tape (its prev-table holds
-     * refs whose death can touch the env), collect cycles, drop the creator ref. */
+     * can UAF the env/state we free next. Then: this thread's prev-table (its
+     * slots hold refs whose death can touch the env), collect cycles, drop the
+     * creator ref.
+     *
+     * #1143: the process tape is NOT this state's to shut unless this is the
+     * last live EigsState. A sibling state still recording would otherwise
+     * keep evaluating and emit nothing, with no error. The process owner
+     * who wants the tape closed while states remain calls eigs_trace_shutdown. */
+    /* Decide-and-decrement is one step under g_attached_lock: the closer
+     * that takes the count to zero shuts the tape. Two concurrent closes
+     * both reading count==2 used to leave the tape open with zero states. */
+    int last_state = eigs_process_state_release();
     if (eigs_current && eigs_current->state == st) {
         handle_table_drain(st);
         if (g_global_env) {
             Env *global = g_global_env;
-            trace_shutdown();
+            if (last_state) trace_shutdown();
             gc_collect_at_exit(global);
             env_decref(global);
             g_global_env = NULL;
         }
+    } else if (last_state) {
+        trace_shutdown();
     }
     eigs_thread_detach();
-    eigs_state_destroy(st);
+    eigs_state_destroy_released(st);
+}
+
+void eigs_trace_shutdown(void) {
+    trace_shutdown();
 }
 
 /* ---- Eval --------------------------------------------------------- */
@@ -361,7 +377,7 @@ int eigs_set_replay_tape(const char *bytes, size_t len, int strict) {
 }
 
 int eigs_replay_take(const char *name, EigsValue **out) {
-    if (!g_replay_enabled || !out) return 0;
+    if (!out) return 0;
     return trace_replay_take(name, (Value **)out);
 }
 

@@ -190,12 +190,13 @@ fail-soft shape this language refuses, so the configuration rides the tape:
 
 - **`O cfg`** carries the five state-level scalars. It is emitted **by
   diff**, not from the knob builtins: the writer compares the state's live
-  configuration against what the tape last said and emits a record when they
-  differ, immediately before the next `L` or `A` record. So the tape carries
-  the configuration *in force* by construction — one set by an embedder
-  before the run, by a second `EigsState`, or by a knob nobody remembered to
-  instrument still lands on the tape. A program that never moves a knob
-  writes no `O` records at all.
+  configuration against what **that state last emitted** and emits a record
+  when they differ, immediately before the next `L` or `A` record. A
+  default-config state writes no `O cfg` (single-threaded tapes stay
+  byte-identical). Two co-located states with different thresholds emit
+  one record each at first use — not a torn ping-pong against a process-
+  global last-emitted (#1142). A program that never moves a knob writes
+  no `O` records at all. The record shape is unchanged (no format bump).
 - **`O win`** carries the per-binding window override, which lives on an
   `Env` slot rather than on the state and so has no cheap diff. It is
   written from `set_observer_window` at the point of the call, preceded by
@@ -324,6 +325,14 @@ same-binary record/replay differential CI runs over the whole corpus —
 fails on any signal exit in either arm regardless of what the arm
 printed; the diagnostic text never excuses a crash.
 
+The same refusal applies to **any nondeterministic builtin on a non-main
+thread** while replay is active (#1142). Until per-thread N streams exist,
+the tape is a single-consumer stream: the OS thread that opened it may
+take; a worker calling `random` / `env_get` / `monotonic_ns` / … raises
+rather than mixing taped and live values or tearing the reader. For the
+embed API, `eigs_replay_take` from a state that did not open the tape
+raises the same error. See [Threads and states](#threads-and-states-1142-1143).
+
 ## Replay Semantics
 
 With `EIGS_REPLAY` set, each nondet builtin call takes the next `N`
@@ -387,6 +396,133 @@ instead of silently diverging (see [Format Versioning](#format-versioning-411)).
 Archiving jobs need only keep the tape — it names its own version on line 1.
 `EIGS_REPLAY_STRICT=1` additionally turns any record/replay *name* mismatch
 into a loud abort.
+
+## Threads and states (#1142, #1143)
+
+The tape is **per-process**, not per-thread and not per-`EigsState`. Two
+`spawn` workers, or two embed states, write the same file or the same
+sink. That is load-bearing (EigenOS M11's journal, a host that wants one
+trace of every connection) and it used to be unsafe: `tp_putc` emitted
+byte-by-byte with no mutex, so concurrent recorders tore lines, overflowed
+the 4096-byte sink buffer, and mixed taped and live values on replay.
+
+The contract now:
+
+- **A record is an atomic unit.** A process-wide tape mutex is taken once
+  in `tape_emit_begin` and released in `tape_emit_end`, so it is held for
+  the whole of every record emission (`L`/`A`/`N`/`S`/`O cfg`/`O win`, the
+  `V` header, the line-stamp/scope-dedup state update, the commit) and for
+  the whole of a replay take (read + parse + exhaustion shutdown). It is
+  never held across an EigenScript-level call or a blocking builtin.
+  Records are formatted directly into ONE process-wide output buffer under
+  that mutex, so the sink is handed exactly one complete record per call
+  and the tape file sees one `fwrite` per ~32 KiB instead of one stdio call
+  per byte. That is what pays for the mutex: on a 613,506-record
+  single-threaded tape (n=5 interleaved, CPU-time medians) the mutexed path
+  is **3.4% faster** than the pre-#1142 lock-free `fputc` path, and the
+  tape bytes are byte-identical.
+- **The arm/occurrence generation is published, not raced.** The recorder
+  consults `g_arm_all`/`g_arm_gen` in `prev_record_assign` before it takes
+  the tape lock, and `trace_shutdown` widens them; those are ACQUIRE loads
+  paired with RELEASE stores, and shutdown publishes the wildcard BEFORE
+  freeing the name set so an acquiring reader short-circuits instead of
+  walking freed names.
+- **Replay is fail-loud off the main thread.** Until per-thread N streams
+  exist (not this round), a nondeterministic builtin on a non-main OS
+  thread while `EIGS_REPLAY` is active raises the same catchable error
+  the receive family raises (`"<fn>: not replayable under EIGS_REPLAY
+  (subprocess/concurrency boundary; see docs/TRACE.md)"`). A worker's
+  uncaught refusal exits 1, never a signal (#1112). The main-thread
+  single-consumer case is unchanged. For the embed API, `eigs_replay_take`
+  from a state that did not open the tape raises the same error; two
+  threads of the *opener* state may take, serialized by the mutex.
+- **`O cfg` is per state.** Emitted when that state's thresholds differ
+  from what that state last emitted. Record shape unchanged (no #411
+  bump). A multiplexed multi-state tape's sequential reader still cannot
+  attribute an `O cfg` to a state — per-thread streams are the remaining
+  gap, documented here so it is not mistaken for a silent default.
+- **Who shuts the tape.** `trace_shutdown` / `eigs_trace_shutdown` is
+  process-wide. `eigs_close` calls it only when it is closing the last
+  live `EigsState` — and *deciding* that is the same atomic step as
+  decrementing the count (`eigs_process_state_release`, under
+  `src/state.c`'s attached-state lock), so two states closing at once
+  cannot both read "2 others live" and leave the tape open with zero
+  states. Exactly one closer, the one that takes the count to zero, shuts
+  the tape. The answer exists ONLY as that call's return value — there is
+  no close-path count read, because read-then-decrement is the TOCTOU
+  itself. The window is a few instructions wide and unobservable from any
+  harness (0 kills in 2000 barrier'd double-closes, on the fixed tree and
+  on the planted bug alike), so the class is closed by construction and
+  gated structurally: `tests/test_trace_mt.sh`'s `close-count-toctou`
+  rows fail on any count read inside `eigs_close`, or on the bare counter
+  gaining a second caller. A host that used the fine-grained `state_new` /
+  `state_destroy` API, or that wants the tape closed while states remain,
+  calls `eigs_trace_shutdown` (docs/EMBEDDING.md).
+- **One record per sink call.** `sink_flush` splits the emit window at
+  every newline, under the tape lock, so an embedder's callback receives
+  exactly one complete newline-terminated record per call even when the
+  record was staged behind a scope transition or an `O cfg` diff. The
+  byte stream over all calls is unchanged; only the call boundaries are
+  (`src/eigs_embed.h`, docs/EMBEDDING.md).
+- **The session header is emitted under the same lock that publishes the
+  sink.** `trace_set_sink` takes the tape mutex, stores the callback and
+  its user pointer, and commits the `V` record before releasing — so the
+  FIRST call a freshly installed sink ever receives is its own header,
+  even when a sibling state is recording flat out at the moment of
+  installation. Gated by the `set-sink-header` case in
+  `src/embed_concurrent.c` (every install gets a fresh sink context; no
+  record may precede its `V`, and no sibling record may overlap the
+  header's hand-off), mutant `set-sink-header-unlocked`.
+- **A sink-only tape holds no memory.** With no `EIGS_TRACE` file open —
+  the freestanding profile, and every embedder — the record staging area
+  rewinds after each hand-off, because the sink already owns those bytes.
+  The tape's memory footprint is therefore a function of the largest
+  RECORD, not of the tape's length: measured flat at 64 KiB across 12 MB
+  of sink bytes, against 16 MB for the same run with the rewind removed.
+  Gated by `sink-only-bounded` in `src/embed_concurrent.c`, mutant
+  `sink-only-no-drop`. It follows that an embedder has **no buffered
+  tail**: every record reaches the sink inside the call that emitted it,
+  so a host that exits without `eigs_close`/`eigs_trace_shutdown` loses
+  nothing (measured by the `exit-tail` case — two forked children, one
+  tearing down and one falling out of `main()`, byte-identical streams).
+  The `atexit(trace_shutdown)` in `trace_init` is the **CLI's** flush of
+  the FILE tape's staging buffer and nothing else; `trace_init` has one
+  caller in the tree, `src/main.c`, so no embedder ever reaches it.
+
+Coverage: `tests/test_trace_mt.sh` (worker-tape parse, replay-workers
+fail-loud, single-worker control, parser `--selftest`), `make
+embed-concurrent` (sink byte accounting, per-state `O cfg`, close-while-
+other-runs, concurrent close, owner-only take, shutdown-while-sibling,
+serialized take, take-under-lock, set-sink header, sink-only memory bound,
+exit-tail), `tests/test_tsan.sh` (worker-tape with `EIGS_TRACE`,
+replay-workers, embed-concurrent), `tools/trace_mt_mutants.sh` (fourteen
+mutants, each killed 10/10). The sink and `O cfg` cases force the two
+states to overlap with a per-round barrier and FAIL with a named
+"no interleaving observed = inconclusive run" verdict rather than passing
+vacuously when they did not.
+
+Four properties are gated STRUCTURALLY rather than by hoping a scheduler
+window tears — each because the honest kill rate of the timing-based
+version was measured and found to be luck:
+
+1. the close decision's SHAPE (see above), because the window itself is
+   unobservable (0 kills in 2000 barrier'd double-closes);
+2. that the sink callback fires under the tape mutex — one callback per
+   thread per round is gated on a bounded rendezvous, so two callbacks
+   that overlap prove the flush left the critical section;
+3. that `eigs_replay_take` runs under the same mutex — an emitter's sink
+   callback blocks for a bounded window while the other thread attempts a
+   take, and a take that COMPLETES inside that window is an overlap
+   (0 of 80 here, 80 of 80 with the take unlocked). This replaced a
+   ThreadSanitizer report that a critic measured surviving 1 train run in
+   10;
+4. that the `V` header is emitted under the lock that publishes the sink —
+   no record may reach a fresh sink before its own header (0 of 24 here,
+   24 of 24 unlocked).
+
+The sink-only memory bound is not a timing property at all: it is a
+single-threaded reading of the staging buffer's capacity before and after
+12 MB of tape.
 
 ## Format Versioning (#411)
 
