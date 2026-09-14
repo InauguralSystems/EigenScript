@@ -959,14 +959,43 @@ static int tape_emit_begin(void) {
     return 1;
 }
 
-/* Commit the staged record: one sink call with the whole record, and the
- * FILE's bytes stay buffered until TAPE_OUT_FLUSH. Caller holds the lock;
- * the sink-flush-outside-lock mutant moves this out of the critical
- * section. */
+/* Commit the staged record: the sink sees ONE complete newline-terminated
+ * record per call, and the FILE's bytes stay buffered until TAPE_OUT_FLUSH.
+ * Caller holds the lock; the sink-flush-outside-lock mutant moves this out
+ * of the critical section.
+ *
+ * One emit window can stage SEVERAL records: a scope transition
+ * (`S <fn> <depth> <serial>`) or an `O cfg` diff is formatted into the same
+ * window as the A/N record that triggered it. eigs_embed.h and
+ * docs/EMBEDDING.md promise the sink "ONE complete newline-terminated
+ * record per call" — the shape the EigenOS M11 journal consumes, one call
+ * one journal entry — so the hand-off SPLITS at every newline here, under
+ * the lock. The byte stream over all calls is unchanged; only the call
+ * boundaries are. (Handing the window over whole made 3 of 12 calls carry
+ * two records on a single state, and 536-762 of ~3000 on two — a consumer
+ * that treats a call as a record dropped every `A` that followed an `S`.)
+ * A trailing fragment with no newline can only come from an out_reserve
+ * OOM truncation; it is handed over as-is rather than dropped.
+ *
+ * The newline scan is a hand-rolled loop, not memchr: the sink IS the
+ * freestanding tape path (EigenOS M11's journal), and `memchr` is not on
+ * tools/freestanding_allowlist.txt nor implemented in
+ * src/freestanding/mini_libc.c, so calling it here would fail
+ * `make freestanding-check`. Record lengths are tens of bytes. */
+static void sink_hand_off(const char *p, size_t left) {
+    while (left) {
+        size_t rec = 0;
+        while (rec < left && p[rec] != '\n') rec++;
+        if (rec < left) rec++;          /* the record owns its newline */
+        g_trace_sink(p, rec, g_trace_sink_ud);
+        p += rec;
+        left -= rec;
+    }
+}
+
 static void sink_flush(void) {
     size_t n = g_out_len - g_rec_at;
-    if (g_trace_sink && n)
-        g_trace_sink(g_out + g_rec_at, n, g_trace_sink_ud);
+    if (g_trace_sink && n) sink_hand_off(g_out + g_rec_at, n);
     if (!g_trace_fp) g_out_len = g_rec_at;          /* sink-only: drop */
     else if (g_out_len >= TAPE_OUT_FLUSH) out_flush_locked();
 }

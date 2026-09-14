@@ -448,20 +448,38 @@ The contract now:
   `src/state.c`'s attached-state lock), so two states closing at once
   cannot both read "2 others live" and leave the tape open with zero
   states. Exactly one closer, the one that takes the count to zero, shuts
-  the tape. A host that used the fine-grained `state_new` /
+  the tape. The answer exists ONLY as that call's return value — there is
+  no close-path count read, because read-then-decrement is the TOCTOU
+  itself. The window is a few instructions wide and unobservable from any
+  harness (0 kills in 2000 barrier'd double-closes, on the fixed tree and
+  on the planted bug alike), so the class is closed by construction and
+  gated structurally: `tests/test_trace_mt.sh`'s `close-count-toctou`
+  rows fail on any count read inside `eigs_close`, or on the bare counter
+  gaining a second caller. A host that used the fine-grained `state_new` /
   `state_destroy` API, or that wants the tape closed while states remain,
   calls `eigs_trace_shutdown` (docs/EMBEDDING.md).
+- **One record per sink call.** `sink_flush` splits the emit window at
+  every newline, under the tape lock, so an embedder's callback receives
+  exactly one complete newline-terminated record per call even when the
+  record was staged behind a scope transition or an `O cfg` diff. The
+  byte stream over all calls is unchanged; only the call boundaries are
+  (`src/eigs_embed.h`, docs/EMBEDDING.md).
 
 Coverage: `tests/test_trace_mt.sh` (worker-tape parse, replay-workers
 fail-loud, single-worker control, parser `--selftest`), `make
 embed-concurrent` (sink byte accounting, per-state `O cfg`, close-while-
 other-runs, concurrent close, owner-only take, shutdown-while-sibling,
 serialized take), `tests/test_tsan.sh` (worker-tape with `EIGS_TRACE`,
-replay-workers, embed-concurrent), `tools/trace_mt_mutants.sh` (ten
+replay-workers, embed-concurrent), `tools/trace_mt_mutants.sh` (twelve
 mutants, each killed 10/10). The sink and `O cfg` cases force the two
 states to overlap with a per-round barrier and FAIL with a named
 "no interleaving observed = inconclusive run" verdict rather than passing
-vacuously when they did not.
+vacuously when they did not. Two properties are gated STRUCTURALLY rather
+than by hoping a scheduler window tears: the close decision's shape (see
+above), and that the sink callback fires under the tape mutex — the sink
+case gates one callback per thread per round on a bounded rendezvous, so
+two callbacks that overlap prove the flush left the critical section, and
+two that cannot overlap prove it did not.
 
 ## Format Versioning (#411)
 

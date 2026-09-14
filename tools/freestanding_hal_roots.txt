@@ -39,6 +39,13 @@ pthread_cond_destroy
 pthread_condattr_init
 pthread_condattr_destroy
 pthread_condattr_setclock
+# One-time init (the PRNG seed, the SIGPIPE ignore) and thread IDENTITY
+# (#1142: the replay tape records which OS thread opened it so a take from
+# any other thread fails loud). Both are kernel-owed on EigenOS, in the same
+# cooperative-scheduler HAL story as the roots above — neither is portable C,
+# so mini-libc cannot supply them.
+pthread_once
+pthread_self
 
 # halt root
 exit

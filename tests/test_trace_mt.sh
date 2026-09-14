@@ -150,6 +150,74 @@ if [ "${1:-}" = "--selftest" ]; then
     exit $?
 fi
 
+# ---- structural checks -------------------------------------------------
+
+# #1143: the decide-then-decrement TOCTOU in eigs_close (read the live-state
+# count, then release; two concurrent closers both see 2 and neither shuts
+# the tape) is UNOBSERVABLE from a harness on this box — the critic's
+# close-toctou mutant was killed 0/10 by the behavioural train and 0/2000 by
+# a barrier'd double-close stress, on the fixed tree AND on the planted bug
+# alike. A class no oracle can see is closed BY CONSTRUCTION instead:
+# eigs_process_state_release() decides and decrements in one step under
+# g_attached_lock and returns whether the caller was last, and these rows pin
+# the construction — the close path takes its answer from that return value
+# and reads no count, and the bare count reader keeps its single non-close
+# caller. Reintroducing the bug therefore has to ADD a count read, which
+# these rows fail deterministically (mutant close-toctou, 10/10) instead of
+# hoping a ~100 ns window tears.
+#
+# Residual (mechanical-gates §6): these are TEXT checks over C source. They
+# pin the SHAPE of the close decision, not the atomicity of the decrement
+# itself — that rests on g_attached_lock in src/state.c, which no check here
+# reads. A close path added in a NEW function is also out of scope: the
+# population is `eigs_close` plus every caller of the count reader, and a
+# third spelling (a helper that both reads a count and releases) would need
+# this list extended.
+echo "=== close-count-toctou (structural: the close path reads no count) ==="
+EMBED_C="$SRC_DIR/eigs_embed.c"
+if [ ! -f "$EMBED_C" ]; then
+    fail "close-count-toctou: src/eigs_embed.c not found" "$EMBED_C"
+else
+    close_body=$(awk '/^void eigs_close\(EigsState \*st\) \{/ {f=1}
+                      f {print}
+                      f && /^\}$/ {exit}' "$EMBED_C")
+    body_lines=$(printf '%s\n' "$close_body" | grep -c .)
+    # Vacuity (§121): a renamed or reshaped eigs_close yields an empty body
+    # and every row below would pass having examined nothing.
+    if [ "$body_lines" -gt 5 ]; then
+        ok "close-count-toctou: eigs_close body located (examined=$body_lines lines)"
+    else
+        fail "close-count-toctou: eigs_close body located" "examined=$body_lines lines"
+    fi
+    n_release=$(printf '%s\n' "$close_body" | grep -c 'eigs_process_state_release()')
+    if [ "$n_release" -eq 1 ]; then
+        ok "close-count-toctou: eigs_close releases exactly once (n=$n_release)"
+    else
+        fail "close-count-toctou: eigs_close releases exactly once" "n=$n_release"
+    fi
+    n_count=$(printf '%s\n' "$close_body" \
+              | grep -cE 'eigs_process_state_count|g_live_states|state_live_count')
+    if [ "$n_count" -eq 0 ]; then
+        ok "close-count-toctou: eigs_close reads no live-state count (n=$n_count)"
+    else
+        fail "close-count-toctou: eigs_close reads no live-state count separately" \
+             "n=$n_count first=$(printf '%s\n' "$close_body" | grep -nE 'eigs_process_state_count|g_live_states|state_live_count' | head -1)"
+    fi
+fi
+# The bare count reader is pinned to ONE caller, and that caller is not a
+# close decision: trace_shutdown frees the process-wide arm-name table only
+# when no sibling state can still read it. A second caller anywhere is either
+# a new close decision (the bug) or a deliberate change that updates this pin.
+count_callers=$(grep -n 'eigs_process_state_count()' "$SRC_DIR"/*.c "$SRC_DIR"/*.h 2>/dev/null || true)
+n_callers=$(printf '%s\n' "$count_callers" | grep -c .)
+caller_files=$(printf '%s\n' "$count_callers" | sed 's/:.*//' | sed 's#.*/##' | sort -u | tr '\n' ' ')
+if [ "$n_callers" -eq 1 ] && [ "$caller_files" = "trace.c " ]; then
+    ok "close-count-toctou: the live-state count has exactly 1 caller (trace.c)"
+else
+    fail "close-count-toctou: the live-state count has exactly 1 caller (trace.c)" \
+         "n=$n_callers files='$caller_files'"
+fi
+
 # ---- live probes -------------------------------------------------------
 
 echo "=== worker-tape (2 workers x 2000 x 3 nondet) ==="

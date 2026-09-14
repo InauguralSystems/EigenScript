@@ -148,8 +148,24 @@ All notable changes to EigenScript are documented here.
   `fwrite` per ~32 KiB, replacing a per-byte `fputc`, so a 613,506-record
   single-threaded tape runs 3.4% faster than before the mutex existed
   (n=5 interleaved, CPU-time medians). The embed sink now receives ONE
-  complete record per call at any record length — the 4096-byte per-byte
-  sink line buffer that the two-state probe overflowed is gone.
+  complete record per call at any record length, **and at any record
+  COUNT**: an emit window that stages a scope transition (`S`) or an
+  `O cfg` diff in front of its `A`/`N` record is split at every newline
+  under the lock, so a consumer that maps one call to one journal entry
+  (the EigenOS M11 shape the header describes) no longer drops the
+  records that ride along. The byte stream is unchanged. The 4096-byte
+  per-byte sink line buffer that the two-state probe overflowed is gone.
+  Two of the new invariants are gated STRUCTURALLY, because their windows
+  are a few instructions wide and unobservable from a harness: the close
+  decision reads no live-state count (`close-count-toctou` in
+  `tests/test_trace_mt.sh`), and the sink callback fires under the tape
+  mutex, proved by a bounded rendezvous inside the callback in
+  `src/embed_concurrent.c` rather than by hoping a schedule tears.
+  The tape's new `pthread_self`/`pthread_once` imports are enrolled in the
+  freestanding ledger (`tools/freestanding_allowlist.txt`,
+  `tools/freestanding_hal_roots.txt`, docs/FREESTANDING.md) — thread
+  IDENTITY is a kernel-owed HAL root on EigenOS, not portable C, and
+  `make freestanding-check` was red without them.
 
 - Standard-library imports and `exe_path` retain an absolute executable
   anchor after `chdir` on macOS, including relative and PATH launches (#1133).

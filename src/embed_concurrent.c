@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static int failures = 0;
 
@@ -304,6 +305,13 @@ static void test_planted_fault_is_detectable(void) {
 typedef struct {
     char *buf;
     size_t len, cap;
+    /* #1142 contract (src/eigs_embed.h, docs/EMBEDDING.md): the sink gets
+     * ONE complete newline-terminated record per call. `calls` counts the
+     * hand-offs, `multi_rec` the calls carrying more than one record (a
+     * newline before the last byte), `unterminated` the calls that do not
+     * end in a newline. A consumer that maps one call to one journal entry
+     * (EigenOS M11) silently drops every record after the first otherwise. */
+    long calls, multi_rec, unterminated;
     pthread_mutex_t mu;
 } SinkBuf;
 
@@ -315,9 +323,59 @@ static void sinkbuf_free(SinkBuf *s) {
     free(s->buf);
     pthread_mutex_destroy(&s->mu);
 }
+
+/* #1142: the sink callback must fire UNDER the tape mutex. That is a
+ * structural property, so make it directly observable instead of hoping a
+ * ~100 ns scheduler window tears: two sink callbacks can NEVER be
+ * concurrent if the flush is inside the critical section. Each gated
+ * callback publishes "I am inside the callback" and spins up to
+ * CB_GATE_US for the sibling to publish the same.
+ *
+ *   - flush under the lock (correct): the sibling cannot reach its
+ *     callback at all while we are in ours, so every gated call times out
+ *     and cb_overlap stays 0 — deterministically, on any schedule;
+ *   - flush outside the lock (mutant sink-flush-outside-lock): both
+ *     siblings reach their callbacks inside the window and each sees the
+ *     other, so cb_overlap > 0 — deterministically, on any schedule.
+ *
+ * Only the first callback of each round per thread is gated, so the
+ * correct build pays the timeout 2 x SINK_ROUNDS times, not once per
+ * record. test_cb_overlap_detector is the arming control. */
+#define CB_GATE_US 2000
+static _Atomic int  cb_gate_on = 0;
+static _Atomic int  cb_in0 = 0, cb_in1 = 0;
+static _Atomic long cb_overlap = 0;
+static _Atomic long cb_gated = 0;
+static __thread int cb_slot = -1;
+static __thread int cb_gate_pending = 0;
+
+static void cb_gate(void) {
+    if (!atomic_load(&cb_gate_on) || cb_slot < 0 || !cb_gate_pending) return;
+    cb_gate_pending = 0;
+    _Atomic int *me    = cb_slot == 0 ? &cb_in0 : &cb_in1;
+    _Atomic int *other = cb_slot == 0 ? &cb_in1 : &cb_in0;
+    atomic_fetch_add(&cb_gated, 1);
+    atomic_store(me, 1);
+    /* Hold the flag raised for the WHOLE window and never break early: the
+     * thread that spots its sibling first would otherwise clear its own
+     * flag before the sibling looked, and the overlap would be seen by one
+     * side only (measured: overlap=1 of 2 on the arming control). */
+    int seen = 0;
+    for (int i = 0; i < CB_GATE_US / 50; i++) {
+        if (atomic_load(other)) seen = 1;
+        usleep(50);
+    }
+    if (seen) atomic_fetch_add(&cb_overlap, 1);
+    atomic_store(me, 0);
+}
+
 static void sinkbuf_cb(const char *b, size_t n, void *ud) {
     SinkBuf *s = (SinkBuf *)ud;
+    cb_gate();
     pthread_mutex_lock(&s->mu);
+    s->calls++;
+    if (n == 0 || b[n - 1] != '\n') s->unterminated++;
+    else if (memchr(b, '\n', n - 1) != NULL) s->multi_rec++;
     if (s->len + n + 1 > s->cap) {
         size_t nc = s->cap ? s->cap * 2 : 8192;
         while (nc < s->len + n + 1) nc *= 2;
@@ -405,7 +463,7 @@ static int tape_line_ok(const char *line) {
 }
 
 typedef struct {
-    int lines, well, malformed, nrec, ocfg;
+    int lines, well, malformed, nrec, ocfg, srec;
     size_t parsed_bytes;
 } TapeParse;
 
@@ -429,6 +487,7 @@ static TapeParse parse_tape_buf(const char *buf, size_t len) {
             t.well++;
             t.parsed_bytes += rec;
             if (line[0] == 'N' && line[1] == ' ') t.nrec++;
+            if (line[0] == 'S' && line[1] == ' ') t.srec++;
             if (strncmp(line, "O cfg ", 6) == 0) t.ocfg++;
         } else {
             t.malformed++;
@@ -448,19 +507,74 @@ typedef struct {
 static pthread_barrier_t sink_start, sink_round;
 static void *sink_worker(void *p) {
     SinkArg *a = (SinkArg *)p;
+    cb_slot = a->id;
     EigsState *st = eigs_open();
     if (!st) { a->err = -1; return NULL; }
+    /* Distinct thresholds per state, and one mid-run change below: each
+     * change makes the NEXT record's emit window stage an `O cfg` in front
+     * of its `A`. Together with the function call in `src` (which stages an
+     * `S <fn> <depth> <serial>` in front of the callee's first `A`), the
+     * run exercises both multi-record windows the one-record-per-call
+     * contract has to split. */
+    {
+        EigsValue *v = eigs_eval_string(a->id == 0
+            ? "set_observer_thresholds of [0.002, 0.03, 0.4]"
+            : "set_observer_thresholds of [0.003, 0.04, 0.5]");
+        if (v) eigs_value_release(v);
+    }
     pthread_barrier_wait(&sink_start);
     const char *src = a->id == 0
-        ? "sa is env_get of \"CONC_LONG\"\nr is random of []\nreturn r"
-        : "sb is env_get of \"CONC_LONG\"\nr is random of []\nreturn r";
+        ? "define fa(k) as:\n    qa is random of []\n    return qa\n"
+          "sa is env_get of \"CONC_LONG\"\nr is fa of [1]\nreturn r"
+        : "define fb(k) as:\n    qb is random of []\n    return qb\n"
+          "sb is env_get of \"CONC_LONG\"\nr is fb of [1]\nreturn r";
     for (int i = 0; i < SINK_ROUNDS; i++) {
         pthread_barrier_wait(&sink_round);
+        if (i == SINK_ROUNDS / 2) {
+            EigsValue *c = eigs_eval_string(a->id == 0
+                ? "set_observer_thresholds of [0.004, 0.05, 0.6]"
+                : "set_observer_thresholds of [0.005, 0.06, 0.7]");
+            if (c) eigs_value_release(c);
+        }
+        cb_gate_pending = 1;
         EigsValue *v = eigs_eval_string(src);
         if (v) { a->ok++; eigs_value_release(v); } else a->err++;
     }
     eigs_close(st);
     return NULL;
+}
+
+/* Arming control for cb_gate: with nothing serializing them, two threads
+ * that enter the gate together DO see each other. A detector that can only
+ * ever report 0 would pass the sink case vacuously. */
+static pthread_barrier_t cb_ctl_bar;
+static void *cb_gate_ctl(void *p) {
+    cb_slot = (int)(long)p;
+    cb_gate_pending = 1;
+    pthread_barrier_wait(&cb_ctl_bar);
+    cb_gate();
+    return NULL;
+}
+
+static void test_cb_overlap_detector(void) {
+    atomic_store(&cb_overlap, 0);
+    atomic_store(&cb_gated, 0);
+    atomic_store(&cb_gate_on, 1);
+    pthread_barrier_init(&cb_ctl_bar, NULL, 2);
+    pthread_t t0, t1;
+    pthread_create(&t0, NULL, cb_gate_ctl, (void *)0L);
+    pthread_create(&t1, NULL, cb_gate_ctl, (void *)1L);
+    pthread_join(t0, NULL);
+    pthread_join(t1, NULL);
+    pthread_barrier_destroy(&cb_ctl_bar);
+    atomic_store(&cb_gate_on, 0);
+    check(atomic_load(&cb_gated) == 2 && atomic_load(&cb_overlap) == 2,
+          "control: the sink-callback overlap detector fires when two "
+          "unserialized threads rendezvous");
+    printf("        cb-detector control: gated=%ld overlap=%ld\n",
+           (long)atomic_load(&cb_gated), (long)atomic_load(&cb_overlap));
+    atomic_store(&cb_overlap, 0);
+    atomic_store(&cb_gated, 0);
 }
 
 /* Count A-record switches between two prefixes. Serial A-then-B is 1
@@ -498,11 +612,15 @@ static void test_two_state_sink(void) {
     SinkArg a = {0, 0, 0}, b = {0, 0, 1};
     pthread_barrier_init(&sink_start, NULL, 2);
     pthread_barrier_init(&sink_round, NULL, 2);
+    atomic_store(&cb_overlap, 0);
+    atomic_store(&cb_gated, 0);
+    atomic_store(&cb_gate_on, 1);
     pthread_t ta, tb;
     pthread_create(&ta, NULL, sink_worker, &a);
     pthread_create(&tb, NULL, sink_worker, &b);
     pthread_join(ta, NULL);
     pthread_join(tb, NULL);
+    atomic_store(&cb_gate_on, 0);
     pthread_barrier_destroy(&sink_start);
     pthread_barrier_destroy(&sink_round);
 
@@ -517,6 +635,43 @@ static void test_two_state_sink(void) {
           "sink byte accounting: sink_bytes equals the sum of record lengths");
     check(p.nrec == SINK_ROUNDS * 2 * 2,
           "sink: N count equals 2 states x rounds x (env_get + random)");
+    /* #1142 contract: ONE complete newline-terminated record per call.
+     * Witnesses that the run actually contains the two multi-record emit
+     * windows first — an `S` in front of a callee's `A`, and an `O cfg` in
+     * front of the first `A` after each of the two threshold changes —
+     * otherwise "one record per call" would hold vacuously. */
+    check(p.srec > 0, "sink: the run contains scope transitions (S records)");
+    check(p.ocfg == 4,
+          "sink: the run contains 4 config changes (2 states x 2 changes)");
+    check(sb.calls > 0, "sink: the sink callback fired (calls > 0)");
+    check(sb.multi_rec == 0,
+          "sink: no call carries more than one record");
+    check(sb.unterminated == 0,
+          "sink: every call ends with a newline");
+    check(sb.calls == (long)p.lines,
+          "sink: exactly one sink call per tape record");
+    /* Control: the same accounting run over a hand-made two-record hand-off
+     * MUST come back multi_rec=1 — the counter is armed, not always 0. */
+    {
+        SinkBuf ctl;
+        sinkbuf_init(&ctl);
+        sinkbuf_cb("S fa 1 7\nA qa=1\n", 16, &ctl);
+        check(ctl.calls == 1 && ctl.multi_rec == 1,
+              "control: a two-record hand-off is counted as multi_rec");
+        sinkbuf_free(&ctl);
+    }
+    /* #1142: the flush runs UNDER the tape mutex, so two sink callbacks can
+     * never overlap. cb_gate makes that observable on every schedule (the
+     * arming control is test_cb_overlap_detector). */
+    check(atomic_load(&cb_gated) == SINK_ROUNDS * 2,
+          "sink: the overlap detector ran once per round per thread");
+    check(atomic_load(&cb_overlap) == 0,
+          "sink: sink callbacks never overlap (the flush is under the lock)");
+    printf("        sink: calls=%ld multi_rec=%ld unterminated=%ld S=%d "
+           "O_cfg=%d\n", sb.calls, sb.multi_rec, sb.unterminated,
+           p.srec, p.ocfg);
+    printf("        sink: cb_gated=%ld cb_overlap=%ld\n",
+           (long)atomic_load(&cb_gated), (long)atomic_load(&cb_overlap));
     {
         /* The kill for sink-flush-outside-lock only exists where the two
          * states' records actually overlap. A run where they never
@@ -596,6 +751,15 @@ static void test_ocfg_per_state(void) {
     check(p.lines > 0, "O cfg: parser examined lines > 0");
     check(p.malformed == 0, "O cfg: no torn records");
     check(p.ocfg == 2, "O cfg per state: exactly one first-record emit per state");
+    /* The `O cfg` is staged in the same emit window as the `A` that
+     * triggered it, so this case is the config-change half of the
+     * one-record-per-call contract. */
+    check(sb.calls > 0 && sb.multi_rec == 0 && sb.unterminated == 0,
+          "O cfg: one complete newline-terminated record per sink call");
+    check(sb.calls == (long)p.lines,
+          "O cfg: exactly one sink call per tape record");
+    printf("        O cfg: calls=%ld multi_rec=%ld unterminated=%ld lines=%d\n",
+           sb.calls, sb.multi_rec, sb.unterminated, p.lines);
     {
         int sw = tape_a_switches(sb.buf, sb.len, "A oa=", "A ob=");
         check(sw >= 2, "O cfg: interleaving observed (no interleaving observed "
@@ -1042,6 +1206,7 @@ int main(void) {
         test_global_isolation();
         test_error_isolation();
         test_planted_fault_is_detectable();
+        test_cb_overlap_detector();
         test_two_state_sink();
         test_ocfg_per_state();
         test_close_while_other_runs();

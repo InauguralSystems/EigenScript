@@ -14,6 +14,30 @@
 #   MUTANT <name>: SURVIVED
 # and exits nonzero if any mutant survived.
 #
+# TWO of the enrolled mutants are killed by STRUCTURAL rows in
+# tests/test_trace_mt.sh rather than by torn tape bytes, and that is
+# deliberate:
+#
+#   close-toctou — the #1143 decide-then-decrement window (read the live
+#     state count, then release, decide on the stale read) is UNOBSERVABLE
+#     from a harness on this box. Measured by the round-3 critic: killed
+#     0/10 by this whole train and 0/2000 by a barrier'd double-close
+#     stress, on the FIXED tree and on the planted bug ALIKE. So the class
+#     is closed BY CONSTRUCTION — eigs_process_state_release() decides and
+#     decrements in one step under g_attached_lock and hands back whether
+#     the caller was last, so the bug cannot be written without ADDING a
+#     count read — and the `close-count-toctou` rows in test_trace_mt.sh
+#     fail on exactly that addition, 10/10. A mutant with no behavioural
+#     kill and a structural one is honest; a mutant with neither would be
+#     a survivor.
+#
+#   sink-flush-outside-lock — its behavioural kill depended on a ~100 ns
+#     scheduler window (SURVIVED 3 of 10 train runs on this box). The sink
+#     case in src/embed_concurrent.c now makes the property structural
+#     instead: the sink callback fires under the tape mutex, so two sink
+#     callbacks can never overlap, and a gated rendezvous in the callback
+#     turns that into a deterministic verdict on any schedule.
+#
 # --selftest applies tests/trace_mt_mutants/comment-only-equivalent.sed
 # (a comment edit, behaviour-preserving) and requires this script to report
 # SURVIVED and exit nonzero — proving the train can express a survivor.
@@ -34,6 +58,8 @@ owner-state-bypass
 hand-rolled-take-bypass
 shutdown-outside-lock
 close-never-shuts
+sink-multi-record-call
+close-toctou
 '
 
 # Mutants whose kill is a data race: run their oracle under TSan objects.
@@ -136,14 +162,19 @@ run_oracle() {
     echo "$rc"
 }
 
-first_fail() {
-    sed -n 's/^  FAIL: \([^:]*\):.*/\1/p' "$1" | head -1
+# EVERY distinct named FAIL, not just the first. A mutant is often killed by
+# more than one case, and reporting only the earliest one hides the rest —
+# which reads as "the dedicated case does not catch this" (mechanical-gates
+# §21: verify WHICH check caught the fault, and record it where the next
+# reader looks). Derived from the log, so it cannot drift from the checks.
+fail_checks() {
+    sed -n 's/^  FAIL: \([^:]*\):.*/\1/p' "$1" | sort -u | paste -sd+ -
 }
 
 classify_kill() {
     local log="$1" rc="$2"
     local killed
-    killed="$(first_fail "$log")"
+    killed="$(fail_checks "$log")"
     # Pre-existing races in compiler.c (verify_self) fire on any TSan
     # embed_concurrent run. A tape-MT mutant is killed by a sanitizer
     # report only when the report names src/trace.c.

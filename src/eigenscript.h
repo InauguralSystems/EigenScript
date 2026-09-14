@@ -1263,13 +1263,20 @@ void eigs_obs_enable(void);
  * "this process has one thread" — a per-state multithreaded flag cannot see a
  * sibling state, and ext_http runs one state per connection per thread. */
 int  eigs_process_thread_count(void);
-/* #1142/#1143: how many EigsState objects are live process-wide. eigs_close
- * shuts the process tape only when this is 1 (it is closing the last state). */
+/* #1142/#1143: a bare snapshot of the live EigsState count. NOT usable as a
+ * close decision — see eigs_process_state_release below. trace_shutdown is
+ * its only caller. */
 int  eigs_process_state_count(void);
-/* Decrement the live-state count under g_attached_lock; return 1 iff this
- * call took the count to zero. Decide-and-decrement is one atomic step so
- * two concurrent eigs_close calls cannot both see count==2 and leave the
- * tape open with zero states. */
+/* #1142/#1143: decrement the live-state count under g_attached_lock and
+ * return 1 iff this call took it to zero — i.e. iff the caller is closing
+ * the LAST EigsState and so owns the process tape's shutdown. The answer
+ * exists ONLY as this return value: a close path that reads the count and
+ * then decrements is the decide-then-decrement TOCTOU (two concurrent
+ * eigs_close calls both read 2, neither shuts, the tape outlives every
+ * state). That window proved unobservable from any harness, so the class is
+ * closed by construction and gated structurally —
+ * tests/test_trace_mt.sh's `close-count-toctou` check fails any close path
+ * that reads a count separately, and pins the count reader's one caller. */
 int  eigs_process_state_release(void);
 /* Tear down a state whose live-count was already released by
  * eigs_process_state_release (eigs_close). Other callers use

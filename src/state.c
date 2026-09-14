@@ -146,6 +146,12 @@ int eigs_process_thread_count(void) {
     return g_attached_threads_load();
 }
 
+/* A bare snapshot of the live-state count. NOT a close decision: by the time
+ * a closer asks, its own state is already released and a sibling may close
+ * between the read and any action taken on it. trace_shutdown is its ONE
+ * caller (it frees the process-wide arm-name table only when no sibling
+ * state can still read it), and tests/test_trace_mt.sh's `close-count-toctou`
+ * check pins that: exactly one caller, and never inside eigs_close. */
 int eigs_process_state_count(void) {
     pthread_mutex_lock(&g_attached_lock);
     int n = g_live_states;
@@ -153,6 +159,15 @@ int eigs_process_state_count(void) {
     return n;
 }
 
+/* #1142/#1143: the ONLY way to ask "am I closing the LAST state?" — decide
+ * and decrement are one step under g_attached_lock and the answer exists
+ * only as this call's RETURN VALUE. A close path that instead reads the
+ * count and then decrements is the round-2 TOCTOU: two concurrent
+ * eigs_close calls both read 2, neither shuts, and the process tape
+ * outlives every state. That window is ~100 ns and no harness on this box
+ * could observe it (0 kills in 2000 barrier'd double-closes on BOTH the
+ * fixed tree and the planted bug), so the class is closed STRUCTURALLY and
+ * gated structurally — see the `close-count-toctou` check. */
 int eigs_process_state_release(void) {
     pthread_mutex_lock(&g_attached_lock);
     int last = 0;

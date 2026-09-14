@@ -363,8 +363,11 @@ void eigs_trace_record_nondet(const char *name, EigsValue *v);
 ```
 
 The sink receives ONE complete newline-terminated record per call,
-whatever its length (#1142 — before that an oversized record arrived in
-ordered chunks). It fires from inside
+whatever its length and whatever else was staged in the same emit window
+(#1142 — before that an oversized record arrived in ordered chunks, and a
+record staged behind a scope transition or an `O cfg` diff rode along in
+the same call). One call is one record, so a host may map calls to
+journal entries directly. It fires from inside
 evaluation — do not re-enter the runtime from it; buffer the bytes and
 act between evals. While a replay tape is set, nondet builtins return
 the recorded `N` values in order instead of consulting their live
@@ -398,8 +401,25 @@ it is closing the last live `EigsState`** — closing state A while B is
 still evaluating used to drop B's records with no error. The teardown
 that drops the sink while other states remain belongs to whoever owns
 the process: call `eigs_trace_shutdown()`. A per-request or per-task
-state must not call it; `eigs_close` of a non-last state does not. A
-worker that wants to release its own temporal history calls
+state must not call it; `eigs_close` of a non-last state does not.
+
+"Am I the last state?" is answered ONLY by the return value of
+`eigs_process_state_release()`, which decides and decrements in one step
+under `src/state.c`'s attached-state lock. There is deliberately no
+close-path count read to pair with it: reading the count and *then*
+releasing is a time-of-check/time-of-use window in which two concurrent
+`eigs_close` calls both see "2 live", neither believes it is last, and
+the process tape outlives every state. That window is a few instructions
+wide and proved unobservable from any harness on the dev box (0 kills in
+2000 barrier-synchronised double-closes, on the fixed tree and on the
+planted bug alike), so the class is closed **by construction** and gated
+structurally rather than behaviourally: `tests/test_trace_mt.sh`'s
+`close-count-toctou` rows fail if `eigs_close` reads a live-state count
+at all, or if the bare counter (`eigs_process_state_count`, whose one
+caller is `trace_shutdown`) gains a second caller. The mutation train's
+`close-toctou` mutant reintroduces the bug and dies on those rows 10/10.
+
+A worker that wants to release its own temporal history calls
 `trace_thread_release()`, which `eigs_thread_detach` already does for
 every thread. The per-name history behind `prev of x` / `at` /
 `state_at` is per-thread and never shared.
