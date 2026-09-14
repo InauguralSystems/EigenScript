@@ -393,14 +393,14 @@ def held_connections(port, count, payload=b'', keepalive=False):
             sock.close()
 
 
-def require_shed_wire(got, method):
+def require_shed_wire(got, method, registered=None):
     require(got.status == 503,
             f'status {got.status} expected 503 (liveness shed at cap; 200 means admitted past cap)')
     require(got.body == b'', f'shed {method} wire body {got.body!r} want empty')
     require(got.headers.get('content-length') == ['0'], 'shed Content-Length is not 0')
     require(got.headers.get('content-type') == ['text/plain'], 'shed Content-Type changed')
     require(got.headers.get('retry-after') == ['1'], '503 missing Retry-After: 1')
-    for key, value in HEADERS.items():
+    for key, value in (registered if registered is not None else HEADERS).items():
         require(got.headers.get(key) == [value], f'{key} missing, duplicated or wrong value')
 
 
@@ -693,40 +693,98 @@ def small_sndbuf_so():
     return so
 
 
-def shed_backpressure_case(directory):
-    # 256 idle holders, sixteen max-size registered headers, a shed peer that
-    # stops reading. LD_PRELOAD shrinks accept-side SO_SNDBUF so SO_SNDTIMEO
-    # can fire; production does not change the send buffer. The 503 is
-    # witnessed via MSG_PEEK without draining (#1136).
+def timed_liveness(port, directory, delay_what, limit=0.5):
+    """Unrelated GET /livez. FAIL names the delay, never a peer hang."""
+    start = time.monotonic()
+    try:
+        got = curl(port, 'GET', '/livez', directory, max_time=2)
+    except AssertionError:
+        elapsed = time.monotonic() - start
+        require(elapsed < limit,
+                f'{delay_what} delayed /livez by {elapsed:.3f}s (limit {limit}s)')
+        raise
+    elapsed = time.monotonic() - start
+    require(elapsed < limit,
+            f'{delay_what} delayed /livez by {elapsed:.3f}s (limit {limit}s)')
+    return got, elapsed
+
+
+def assert_peer_finished_or_closed(sock):
+    sock.settimeout(0.4)
+    try:
+        data = sock.recv(8192, socket.MSG_PEEK)
+    except socket.timeout:
+        require(False, 'non-reading peer still hanging with no reply')
+    except (ConnectionResetError, BrokenPipeError, OSError):
+        return
+    if not data:
+        return
+    require(b'HTTP/1.1 503' in data or b'HTTP/1.1 200' in data,
+            f'peer reply neither 503/200 nor closed: {data[:80]!r}')
+
+
+def nonreading_peer(port, payload=b''):
+    sock = socket.socket()
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024)
+    sock.settimeout(2)
+    sock.connect(('127.0.0.1', port))
+    if payload:
+        sock.sendall(payload)
+    return sock
+
+
+def max_header_map():
+    return {str(i).zfill(64): 'v' * 1024 for i in range(16)}
+
+
+def init_shed_nonblocking_case(directory):
+    # Full table + a non-reading shed peer (small accept-side SNDBUF via
+    # LD_PRELOAD). The responder must still answer an unrelated /livez
+    # within 0.5s — that probe is itself shed (table still full).
     so = small_sndbuf_so()
-    require(so is not None, 'backpressure case ran without an interposer')
+    require(so is not None, 'nonblocking case ran without an interposer')
+    huge = max_header_map()
     with server(directory, max_headers=True, delay=.5, delay_spawn=False, cors=False,
                 ld_preload=so) as (port, proc, log):
-        started = time.monotonic()
+        inside = lambda: 'Starting HTTP server' not in log.read_text()
         with held_connections(port, INIT_CAP) as holders:
-            require_filled(holders, INIT_CAP, 'backpressure-holders')
+            require_filled(holders, INIT_CAP, 'shed-nonblocking-holders')
             require(not select.select(holders, [], [], 0)[0],
-                    'backpressure holder already responded')
-            blocker = socket.socket()
+                    'shed-nonblocking holder already responded')
+            blocker = nonreading_peer(port, b'HEAD /livez HTTP/1.1\r\nHost: x\r\n\r\n')
             try:
-                blocker.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024)
-                blocker.settimeout(2)
-                blocker.connect(('127.0.0.1', port))
-                blocker.sendall(b'HEAD /livez HTTP/1.1\r\nHost: x\r\n\r\n')
-                time.sleep(.1)
-                peek = blocker.recv(64, socket.MSG_PEEK)
-                require(b'HTTP/1.1 503' in peek,
-                        f'shed 503 not witnessed via MSG_PEEK: {peek!r}')
-                deadline = started + 2.8
-                while 'accepting on pre-bound' not in log.read_text() and time.monotonic() < deadline:
-                    require(proc.poll() is None, 'init responder died under backpressure')
-                    time.sleep(.025)
-                require('accepting on pre-bound' in log.read_text(),
-                        f'server not ready within 2.8s while non-reading shed peer open '
-                        f'({time.monotonic()-started:.2f}s)')
+                got, elapsed = timed_liveness(port, directory, 'non-reading shed peer')
+                require(inside(), 'request was not proved inside init window')
+                require_shed_wire(got, 'GET', huge)
+                assert_peer_finished_or_closed(blocker)
                 require(proc.poll() is None, 'process died under backpressure')
+                print(f'    init-shed-nonblocking /livez: {elapsed:.3f}s status={got.status}',
+                      flush=True)
             finally:
                 blocker.close()
+
+
+def init_reply_nonblocking_case(directory):
+    # Below capacity: a peer that sent a complete request line and is not
+    # reading. An unrelated /livez must still 200 within 0.5s.
+    so = small_sndbuf_so()
+    require(so is not None, 'nonblocking case ran without an interposer')
+    live = case_named('R2-live-get')
+    huge = max_header_map()
+    with server(directory, max_headers=True, delay=.5, delay_spawn=False, cors=False,
+                ld_preload=so) as (port, proc, log):
+        inside = lambda: 'Starting HTTP server' not in log.read_text()
+        blocker = nonreading_peer(port, b'GET / HTTP/1.1\r\nHost: x\r\n\r\n')
+        try:
+            time.sleep(.05)
+            got, elapsed = timed_liveness(port, directory, 'non-reading init peer')
+            check_response(live, got, huge, inside=inside())
+            assert_peer_finished_or_closed(blocker)
+            require(proc.poll() is None, 'process died under backpressure')
+            print(f'    init-reply-nonblocking /livez: {elapsed:.3f}s status={got.status}',
+                  flush=True)
+        finally:
+            blocker.close()
 
 
 def empty_value_case(directory):
@@ -842,9 +900,11 @@ def live_cases(directory):
     run_check('R2-teardown-drain', lambda: teardown_drain_cases(directory))
     if small_sndbuf_so() is None:
         why = 'no cc' if not shutil.which('cc') else 'LD_PRELOAD not usable on ' + sys.platform
-        print(f'  SKIP: R2-init-shed-write-deadline: {why} for accept SO_SNDBUF interposer', flush=True)
+        print(f'  SKIP: R2-init-shed-nonblocking: {why} for accept SO_SNDBUF interposer', flush=True)
+        print(f'  SKIP: R2-init-reply-nonblocking: {why} for accept SO_SNDBUF interposer', flush=True)
     else:
-        run_check('R2-init-shed-write-deadline', lambda: shed_backpressure_case(directory))
+        run_check('R2-init-shed-nonblocking', lambda: init_shed_nonblocking_case(directory))
+        run_check('R2-init-reply-nonblocking', lambda: init_reply_nonblocking_case(directory))
 
 
 # (label, script, builtin, diagnostic rule). All are runtime errors, not parse failures.
@@ -999,6 +1059,73 @@ def split_write_server(status, headers, body, pause=0.005):
         finally:
             thread.join(timeout=3)
             require(not thread.is_alive(), 'split-write server failed to finish')
+
+
+@contextlib.contextmanager
+def fake_blocking_writer(stall):
+    """Hold the first accepted connection open. Later connections wait `stall`
+    seconds before a well-formed /livez 200. Turns timed_liveness red at stall=3."""
+    stop = threading.Event()
+    errors = []
+    workers = []
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        listener.listen(32)
+        listener.settimeout(0.05)
+        n_accept = {'n': 0}
+
+        def handle(conn, first):
+            try:
+                with conn:
+                    if first:
+                        while not stop.wait(0.05):
+                            pass
+                        return
+                    if stall:
+                        time.sleep(stall)
+                    conn.settimeout(0.5)
+                    req = b''
+                    try:
+                        req = conn.recv(4096) or b''
+                    except socket.timeout:
+                        pass
+                    live = b'/livez' in req
+                    body = b'OK' if live else b'Server initializing\n'
+                    raw = (f'HTTP/1.1 {200 if live else 503} Test\r\n'
+                           f'Content-Type: text/plain\r\nContent-Length: {len(body)}\r\n').encode()
+                    if not live:
+                        raw += b'Retry-After: 1\r\n'
+                    for k, v in HEADERS.items():
+                        raw += f'{k}: {v}\r\n'.encode()
+                    conn.sendall(raw + b'\r\n' + body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except Exception as exc:
+                errors.append(exc)
+
+        def accept_loop():
+            while not stop.is_set():
+                try:
+                    conn, _ = listener.accept()
+                except socket.timeout:
+                    continue
+                n_accept['n'] += 1
+                worker = threading.Thread(target=handle, args=(conn, n_accept['n'] == 1))
+                workers.append(worker)
+                worker.start()
+
+        thread = threading.Thread(target=accept_loop)
+        thread.start()
+        try:
+            yield listener.getsockname()[1]
+        finally:
+            stop.set()
+            thread.join(timeout=3)
+            for worker in workers:
+                worker.join(timeout=1)
+            require(not thread.is_alive() and not any(w.is_alive() for w in workers),
+                    'fake blocking writer did not stop')
+            require(not errors, f'fake blocking writer errors: {errors}')
 
 
 def expect_red(fn, name):
@@ -1204,6 +1331,24 @@ def selftest(directory):
     dead = type('P', (), {'poll': lambda self: 1})()
     run_check('SELF-red-sigpipe-dead', lambda: expect_red(
         lambda: require(dead.poll() is None, 'init responder died (SIGPIPE?)'), 'dead proc'))
+    def unblocked_probe(stall, delay_what):
+        with fake_blocking_writer(stall) as port:
+            blocker = socket.create_connection(('127.0.0.1', port), 2)
+            try:
+                time.sleep(0.12)
+                return timed_liveness(port, directory, delay_what)
+            finally:
+                blocker.close()
+    run_check('SELF-control-R2-init-shed-nonblocking',
+              lambda: unblocked_probe(0, 'non-reading shed peer'))
+    run_check('SELF-red-blocking-R2-init-shed-nonblocking', lambda: require(
+        'delayed' in expect_red(lambda: unblocked_probe(3, 'non-reading shed peer'), 'block'),
+        'blocking writer did not fail as a delay'))
+    run_check('SELF-control-R2-init-reply-nonblocking',
+              lambda: unblocked_probe(0, 'non-reading init peer'))
+    run_check('SELF-red-blocking-R2-init-reply-nonblocking', lambda: require(
+        'delayed' in expect_red(lambda: unblocked_probe(3, 'non-reading init peer'), 'block'),
+        'blocking writer did not fail as a delay'))
     run_check('SELF-red-gut-CASES', lambda: plant_table_gutting('cases_for_phase', 'CASES'))
     run_check('SELF-red-gut-INVALID', lambda: plant_table_gutting('invalid_rows', 'INVALID'))
     run_check('SELF-red-gut-max-headers', lambda: plant_table_gutting('max_header_rows', 'max-headers'))

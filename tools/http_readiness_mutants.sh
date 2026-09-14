@@ -50,7 +50,8 @@ name-check-allows-delims
 rejected-flag-ignored-by-early-bind
 runtime-emitted-name-accepted
 serving-shed-body
-shed-write-deadline-off
+shed-write-blocking
+init-reply-write-blocking
 '
 
 copy_tree() {

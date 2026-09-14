@@ -2518,16 +2518,16 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
         FAIL=$((FAIL + HR_FAIL))
         if [ "$HR_MODE" = live ]; then
             HR_LABEL='HTTP_READINESS'
-            HR_WANT=132
-            # One SKIP is the backpressure interposer (no cc / not Linux); it
-            # is counted, not a pass. More than one SKIP is a shrink.
-            if [ "$HR_SKIP" -eq 1 ]; then HR_WANT=131; fi
+            HR_WANT=133
+            # Two SKIPs are the nonblocking witnesses (no cc / not Linux);
+            # they are counted, not a pass. Any other SKIP count is a shrink.
+            if [ "$HR_SKIP" -eq 2 ]; then HR_WANT=131; fi
         else
             HR_LABEL='HTTP_READINESS_SELFTEST'
-            HR_WANT=506
+            HR_WANT=510
         fi
         if [ "$HR_RC" -ne 0 ] || [ "$HR_PASS" -ne "$HR_WANT" ] || [ "$HR_FAIL" -ne 0 ] \
-           || [ "$HR_SKIP" -gt 1 ] ||
+           || [ "$HR_SKIP" -gt 2 ] ||
            ! echo "$HR_OUTPUT" | grep -qx "${HR_LABEL}: ${HR_WANT} passed, 0 failed"; then
             TOTAL=$((TOTAL + 1)); FAIL=$((FAIL + 1))
             echo "  FAIL: HTTP readiness $HR_MODE (exit=$HR_RC, passed=$HR_PASS, failed=$HR_FAIL, skipped=$HR_SKIP, want=$HR_WANT)"

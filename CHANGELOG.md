@@ -18,9 +18,9 @@ All notable changes to EigenScript are documented here.
   other client's init-window 200/503. A newcomer past the cap is shed with a
   bodyless 503 (Content-Length 0) for every method, including HEAD (#1135).
   Serving-loop global-cap and per-IP 503s are the same bodyless image (they
-  also answer before reading the request). The init shed's write is bounded
-  by SO_SNDTIMEO against a non-reading peer so the poll loop cannot stall
-  (#1136).
+  also answer before reading the request). Init-window writes are
+  non-blocking: a peer that is not reading is closed rather than stalling
+  the single responder thread (#1136).
 
 - **`gather` raises `index_range` on an out-of-range index, in every form
   (#973/#1093).** Previously it folded to `0.0` — a per-row vector of indices

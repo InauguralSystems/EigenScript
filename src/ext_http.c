@@ -49,6 +49,9 @@ static __thread const char *tls_session_id = NULL;
 /* Set when serving a HEAD request — send_response writes the header but
  * skips the body. */
 static __thread int tls_suppress_body = 0;
+/* Init-responder writes: send() with MSG_DONTWAIT. A peer that is not
+ * reading is abandoned (connection closed); the responder never blocks. */
+static __thread int tls_write_nowait = 0;
 
 /* Concurrent connection cap. Each accepted connection runs in a detached
  * pthread; once g_conn_count reaches the cap we shed load with a 503. */
@@ -243,10 +246,12 @@ static void init_conn_reply(Server *s, InitConn *c, int complete) {
         strcmp(path, s->liveness_path) == 0 &&
         (strncmp(version, "HTTP/1.1\r\n", 10) == 0 ||
          strncmp(version, "HTTP/1.0\r\n", 10) == 0);
+    tls_write_nowait = 1;
     send_response_full(c->fd, live ? 200 : 503,
                        live ? "OK" : "Service Unavailable", "text/plain",
                        live ? "OK" : "Server initializing\n", live ? 2 : 20,
                        1, live ? "" : "Retry-After: 1\r\n");
+    tls_write_nowait = 0;
     free(c->line);
     close(c->fd);
     c->line = NULL;
@@ -255,8 +260,6 @@ static void init_conn_reply(Server *s, InitConn *c, int complete) {
 }
 
 static void init_conn_open(Server *s, InitConn *c, int fd) {
-    struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     size_t line_cap = s->liveness_path ? strlen(s->liveness_path) + 128 : 8192;
     if (line_cap < 8192) line_cap = 8192;
     c->fd = fd;
@@ -280,13 +283,14 @@ static int init_conn_read(InitConn *c) {
 
 static void init_conn_shed(Server *s, int fd) {
     /* Capacity shed does not read the request, so HEAD and GET must produce
-     * the same wire image: 503, Retry-After, Content-Length 0, no body. */
+     * the same wire image: 503, Retry-After, Content-Length 0, no body.
+     * The write is non-blocking: a peer that is not reading is closed. */
     (void)s;
-    struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    tls_write_nowait = 1;
     tls_suppress_body = 1;
     send_response_full(fd, 503, "Service Unavailable", "text/plain",
                        "", 0, 1, "Retry-After: 1\r\n");
+    tls_write_nowait = 0;
     tls_suppress_body = 0;
     close(fd);
 }
@@ -1081,8 +1085,13 @@ static const char* get_content_type(const char *path) {
 }
 
 static int write_all(int fd, const char *data, size_t len) {
+    /* Init-window writes use MSG_DONTWAIT so a full send buffer cannot stall
+     * the single responder thread. Partial / EAGAIN is failure: the caller
+     * closes. Serving-path writes stay blocking. */
     while (len) {
-        ssize_t n = write(fd, data, len);
+        ssize_t n = tls_write_nowait
+            ? send(fd, data, len, MSG_DONTWAIT)
+            : write(fd, data, len);
         if (n < 0 && errno == EINTR) continue;
         if (n <= 0) return 0;
         data += n;

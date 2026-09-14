@@ -1,7 +1,7 @@
 diff --git a/src/ext_http.c b/src/ext_http.c
 --- a/src/ext_http.c
 +++ b/src/ext_http.c
-@@ -221,11 +221,7 @@
+@@ -241,12 +241,8 @@
      if (path) { *path++ = '\0'; version = strchr(path, ' '); }
      if (version) *version++ = '\0';
      tls_suppress_body = strcmp(method, "HEAD") == 0;
@@ -11,6 +11,7 @@ diff --git a/src/ext_http.c b/src/ext_http.c
 -        (strncmp(version, "HTTP/1.1\r\n", 10) == 0 ||
 -         strncmp(version, "HTTP/1.0\r\n", 10) == 0);
 +    int live = 1;
+     tls_write_nowait = 1;
      send_response_full(c->fd, live ? 200 : 503,
                         live ? "OK" : "Service Unavailable", "text/plain",
                         live ? "OK" : "Server initializing\n", live ? 2 : 20,
