@@ -2474,15 +2474,15 @@ HTTP_PROBE_OUT=$(./eigenscript "$HTTP_PROBE_FILE" 2>&1)
 rm -f "$HTTP_PROBE_FILE"
 
 if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[44/47] HTTP Builtins (15 checks)"
+    echo "[44/47] HTTP Builtins (18 checks)"
     HTTP_OUTPUT=$(./eigenscript ../tests/test_http.eigs 2>&1); HTTP_OUTPUT_RC=$?
-    if rc_ok "$HTTP_OUTPUT_RC" "$HTTP_OUTPUT" && echo "$HTTP_OUTPUT" | grep -q "All http tests passed"; then
-        TOTAL=$((TOTAL + 15))
-        PASS=$((PASS + 15))
-        echo "  PASS: all 15 HTTP builtin checks"
+    if rc_ok "$HTTP_OUTPUT_RC" "$HTTP_OUTPUT" && echo "$HTTP_OUTPUT" | grep -q "All tests passed"; then
+        TOTAL=$((TOTAL + 18))
+        PASS=$((PASS + 18))
+        echo "  PASS: all 18 HTTP builtin checks"
     else
-        TOTAL=$((TOTAL + 15))
-        FAIL=$((FAIL + 15))
+        TOTAL=$((TOTAL + 18))
+        FAIL=$((FAIL + 18))
         echo "  FAIL: HTTP builtin tests"
         echo "$HTTP_OUTPUT" | grep -iE "assert|error" | head -5
     fi
@@ -2502,6 +2502,42 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     else
         echo "  PASS: all $HS_PASS HTTP server checks"
     fi
+    echo ""
+
+    # [45a] Readiness and response attribution, including planted-fault controls.
+    echo "[45a/47] HTTP Readiness and Response Headers"
+    for HR_MODE in live selftest; do
+        HR_ARGS=()
+        if [ "$HR_MODE" = selftest ]; then HR_ARGS=(--selftest); fi
+        HR_OUTPUT=$(bash "$TESTS_DIR/test_http_readiness.sh" "${HR_ARGS[@]}" 2>&1); HR_RC=$?
+        HR_PASS=$(echo "$HR_OUTPUT" | grep -c "PASS:" || true)
+        HR_FAIL=$(echo "$HR_OUTPUT" | grep -c "FAIL:" || true)
+        HR_SKIP=$(echo "$HR_OUTPUT" | grep -c "SKIP:" || true)
+        TOTAL=$((TOTAL + HR_PASS + HR_FAIL + HR_SKIP))
+        PASS=$((PASS + HR_PASS))
+        FAIL=$((FAIL + HR_FAIL))
+        if [ "$HR_MODE" = live ]; then
+            HR_LABEL='HTTP_READINESS'
+            HR_WANT=133
+            # Two SKIPs are the nonblocking witnesses (no cc / not Linux);
+            # they are counted, not a pass. Any other SKIP count is a shrink.
+            if [ "$HR_SKIP" -eq 2 ]; then HR_WANT=131; fi
+        else
+            HR_LABEL='HTTP_READINESS_SELFTEST'
+            HR_WANT=510
+        fi
+        if [ "$HR_RC" -ne 0 ] || [ "$HR_PASS" -ne "$HR_WANT" ] || [ "$HR_FAIL" -ne 0 ] \
+           || [ "$HR_SKIP" -gt 2 ] ||
+           ! echo "$HR_OUTPUT" | grep -qx "${HR_LABEL}: ${HR_WANT} passed, 0 failed"; then
+            TOTAL=$((TOTAL + 1)); FAIL=$((FAIL + 1))
+            echo "  FAIL: HTTP readiness $HR_MODE (exit=$HR_RC, passed=$HR_PASS, failed=$HR_FAIL, skipped=$HR_SKIP, want=$HR_WANT)"
+            echo "$HR_OUTPUT" | grep 'FAIL:' | head -5
+            echo "$HR_OUTPUT" | grep 'SKIP:' | head -5
+            echo "$HR_OUTPUT" | tail -5
+        else
+            echo "  PASS: all $HR_PASS HTTP readiness $HR_MODE checks"
+        fi
+    done
     echo ""
 
     # [45b] HTTP slow-loris hardening (per-IP cap + header-phase timeout/min-rate)

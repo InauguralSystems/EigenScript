@@ -1,0 +1,19 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -290,9 +290,12 @@
+             break;
+         }
+         int np = 0;
+-        pfds[np].fd = s->early_bind_fd;
+-        pfds[np].events = POLLIN;
+-        int li = np++;
++        int li = -1;
++        if (n < HTTP_INIT_MAX_CLIENTS) {
++            pfds[np].fd = s->early_bind_fd;
++            pfds[np].events = POLLIN;
++            li = np++;
++        }
+         for (int i = 0; i < n; i++) {
+             pfds[np].fd = clients[i].fd;
+             pfds[np].events = POLLIN;

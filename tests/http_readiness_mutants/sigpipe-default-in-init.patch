@@ -1,0 +1,11 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -601,7 +601,6 @@
+     g_server.early_bind_fd = server_fd;
+     g_server.liveness_path = live_path ? xstrdup(live_path) : NULL;
+     __atomic_store_n(&g_server.init_stop, 0, __ATOMIC_RELEASE);
+-    signal(SIGPIPE, SIG_IGN);
+     http_prime_config_caches();
+     if (pthread_create(&g_server.init_tid, NULL, init_responder, eigs_http_active) != 0) {
+         close(server_fd);

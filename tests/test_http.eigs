@@ -3,13 +3,15 @@
 # Runs only when the binary is compiled with EIGENSCRIPT_EXT_HTTP=1
 # (gated by run_all_tests.sh).
 
+load_file of "lib/test.eigs"
+
 # ---- http_route: minimal 3-arg form (method, path, body) ----
 r1 is http_route of ["GET", "/a", "body-a"]
-assert of [r1 == "route registered", "HTTP01 http_route GET returns ack"]
+assert_true of [r1 == "route registered", "HTTP01 http_route GET returns ack"]
 
 # ---- http_route: 4-arg form (method, path, kind, payload) ----
 r2 is http_route of ["POST", "/b", "static", "body-b"]
-assert of [r2 == "route registered", "HTTP02 http_route POST 4-arg returns ack"]
+assert_true of [r2 == "route registered", "HTTP02 http_route POST 4-arg returns ack"]
 
 # ---- http_route: bad argument shape raises (#356 — was a silent null
 # whose return value nobody checks, so the route just never existed) ----
@@ -20,55 +22,69 @@ try:
 catch e:
     c3 is 1
     m3 is e
-assert of [c3 == 1, "HTTP03 http_route non-list arg raises"]
-assert of [(contains of [m3.message, "http_route requires"]) == 1, "HTTP03 message"]
+assert_true of [c3 == 1, "HTTP03 http_route non-list arg raises"]
+assert_true of [(contains of [m3.message, "http_route requires"]) == 1, "HTTP03 message"]
 
 c4 is 0
 try:
     r_bad2 is http_route of (["GET"])
 catch e:
     c4 is 1
-assert of [c4 == 1, "HTTP04 http_route too-few-elements raises"]
+assert_true of [c4 == 1, "HTTP04 http_route too-few-elements raises"]
 
 # ---- http_route_authed: registers a route requiring auth ----
 r3 is http_route_authed of ["GET", "/secret", "secret-body"]
-assert of [r3 == "route registered", "HTTP05 http_route_authed returns ack"]
+assert_true of [r3 == "route registered", "HTTP05 http_route_authed returns ack"]
 
 # ---- http_static: registers static prefix + dir ----
 s1 is http_static of ["/static", "/tmp"]
-assert of [s1 == "static registered", "HTTP06 http_static returns ack"]
+assert_true of [s1 == "static registered", "HTTP06 http_static returns ack"]
 
 # ---- http_static: bad args return null ----
 s_bad is http_static of "just-a-string"
-assert of [s_bad == null, "HTTP07 http_static non-list returns null"]
+assert_true of [s_bad == null, "HTTP07 http_static non-list returns null"]
 
 # ---- http_request_body: default empty-request returns '{}' ----
 body is http_request_body of null
-assert of [body == "{}", "HTTP08 http_request_body default is '{}'"]
+assert_true of [body == "{}", "HTTP08 http_request_body default is '{}'"]
 
 # ---- http_session_id: default session is 'anonymous' ----
 sid is http_session_id of null
-assert of [sid == "anonymous", "HTTP09 http_session_id default is 'anonymous'"]
+assert_true of [sid == "anonymous", "HTTP09 http_session_id default is 'anonymous'"]
 
 # ---- http_request_headers: default empty outside a request ----
 hdrs is http_request_headers of null
-assert of [hdrs == "", "HTTP10 http_request_headers default is empty"]
+assert_true of [hdrs == "", "HTTP10 http_request_headers default is empty"]
 
 # ---- http_post: malformed args return empty string ----
 # (Does not actually hit the network; argv validation only.)
 p_bad1 is http_post of null
-assert of [p_bad1 == "", "HTTP11 http_post null returns empty string"]
+assert_true of [p_bad1 == "", "HTTP11 http_post null returns empty string"]
 
 p_bad2 is http_post of (["just-url"])
-assert of [p_bad2 == "", "HTTP12 http_post too-few-elements returns empty string"]
+assert_true of [p_bad2 == "", "HTTP12 http_post too-few-elements returns empty string"]
 
 p_bad3 is http_post of ["", "{}", "body"]
-assert of [p_bad3 == "", "HTTP13 http_post empty URL returns empty string"]
+assert_true of [p_bad3 == "", "HTTP13 http_post empty URL returns empty string"]
 
 p_bad4 is http_post of ["--version", "{}", "body"]
-assert of [p_bad4 == "", "HTTP14 http_post rejects curl-option URL"]
+assert_true of [p_bad4 == "", "HTTP14 http_post rejects curl-option URL"]
 
 p_bad5 is http_post of ["file:///etc/hostname", "{}", "body"]
-assert of [p_bad5 == "", "HTTP15 http_post rejects non-HTTP URL"]
+assert_true of [p_bad5 == "", "HTTP15 http_post rejects non-HTTP URL"]
 
-print of "All http tests passed"
+# Header configuration must raise even without EIGS_STRICT.
+header_error is 0
+try:
+    http_response_header of ["Content-Length", "42"]
+catch e:
+    header_error is (contains of [e.message, "http_response_header"]) and (contains of [e.message, "owned"])
+assert_true of [header_error, "HTTP16 response header owned name raises"]
+header_shape is 0
+try:
+    http_response_header of null
+catch e:
+    header_shape is contains of [e.message, "requires"]
+assert_true of [header_shape, "HTTP17 response header shape raises"]
+
+test_summary of null

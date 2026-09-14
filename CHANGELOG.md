@@ -6,6 +6,22 @@ All notable changes to EigenScript are documented here.
 
 ### Breaking changes
 
+- **Early HTTP readiness is honest (#1129):** `http_early_bind` now returns
+  503 with `Retry-After: 1` during initialization for arbitrary methods/paths.
+  Use `http_early_bind of [port, "/livez"]` for an explicit GET/HEAD liveness
+  200; normal routing takes over at `http_serve`. The old universal 200
+  responder is removed; scalar port/null calls remain supported. The init
+  responder's in-flight table is the same size as the serving connection cap;
+  the listener stays polled at capacity so a newcomer is 503'd immediately
+  rather than queued behind stallers, and a client that never completes a
+  request line is 503'd at a 1 s deadline. An idle client cannot delay any
+  other client's init-window 200/503. A newcomer past the cap is shed with a
+  bodyless 503 (Content-Length 0) for every method, including HEAD (#1135).
+  Serving-loop global-cap and per-IP 503s are the same bodyless image (they
+  also answer before reading the request). Init-window writes are
+  non-blocking: a peer that is not reading is closed rather than stalling
+  the single responder thread (#1136).
+
 - **`gather` raises `index_range` on an out-of-range index, in every form
   (#973/#1093).** Previously it folded to `0.0` — a per-row vector of indices
   answered `[1, 0]`, a scalar index into a 1-D tensor answered `0`. A zero in a
@@ -39,6 +55,14 @@ All notable changes to EigenScript are documented here.
   when nothing resolves.
 
 ### Added
+
+- **`http_response_header of [name, value]` (#1128, #1134):** register up to 16
+  validated response headers before serving, including across early bind.
+  Every response carries them, including static/file routes, startup,
+  OPTIONS and both load-shed 503s (global connection cap and per-IP cap);
+  repeated names replace case-insensitively. Invalid names/values and
+  runtime-owned framing headers raise and prevent startup. Deterministic
+  configuration adds no tape records.
 
 - **`unobserved:` keeps the value window complete (#1049).** An elided
   assignment was absent from the observer's 10-deep value window, so every

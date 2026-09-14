@@ -146,6 +146,7 @@ static const char *builtin_docs[][2] = {
     {"http_post", "http_post of [url, headers_json, body_string] -> response body string"},
     {"http_request_body", "http_request_body — http_request extension builtin; see docs/BUILTINS.md"},
     {"http_request_headers", "http_request_headers of null → raw request headers as string."},
+    {"http_response_header", "http_response_header — http extension builtin; see docs/BUILTINS.md"},
     {"http_route", "http_route — http extension builtin; see docs/BUILTINS.md"},
     {"http_route_authed", "http_route_authed — http extension builtin; see docs/BUILTINS.md"},
     {"http_serve", "http_serve — http extension builtin; see docs/BUILTINS.md"},

@@ -1,0 +1,15 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -1484,7 +1484,10 @@
+         /* Proper preflight: advertise the methods this server handles and
+          * mirror CORS headers when configured. 204 No Content is the more
+          * RFC-correct reply for an empty-body preflight. */
+-        send_response_full(fd, 204, "No Content", NULL, NULL, 0, 1, "");
++        {
++            const char *hdr = "HTTP/1.1 204 No Content\r\nAllow: GET, HEAD, OPTIONS\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n";
++            write_all(fd, hdr, strlen(hdr));
++        }
+         goto done;
+     }
+ 

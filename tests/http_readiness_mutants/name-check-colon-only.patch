@@ -1,0 +1,13 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -458,8 +458,7 @@
+         return response_header_error(EK_VALUE, "name must be 1..64 bytes (RFC 7230 token)");
+     for (size_t i = 0; i < nlen; i++) {
+         unsigned char c = (unsigned char)name->data.str[i];
+-        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+-              (c >= '0' && c <= '9') || strchr("!#$%&'*+-.^_`|~", c)))
++        if (c == ':')
+             return response_header_error(EK_VALUE, "name must be an RFC 7230 token");
+     }
+     if (vlen > HTTP_RESPONSE_VALUE_MAX)

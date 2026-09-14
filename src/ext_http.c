@@ -19,6 +19,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <poll.h>
 
 /* Phase 2.75 — HTTP nondet capture.
  *
@@ -38,9 +39,6 @@
  * so worker threads (which don't attach an EigsThread) can still read
  * route/static/CORS config. */
 __thread Server *eigs_http_active = NULL;
-static volatile int g_init_complete = 0;
-static pthread_t g_health_tid;
-static int g_health_thread_active = 0;
 
 /* Per-request state. Lives in TLS so concurrent connection threads do not
  * trample each other; each handler thread sets these once at the top of
@@ -51,6 +49,9 @@ static __thread const char *tls_session_id = NULL;
 /* Set when serving a HEAD request — send_response writes the header but
  * skips the body. */
 static __thread int tls_suppress_body = 0;
+/* Init-responder writes: send() with MSG_DONTWAIT. A peer that is not
+ * reading is abandoned (connection closed); the responder never blocks. */
+static __thread int tls_write_nowait = 0;
 
 /* Concurrent connection cap. Each accepted connection runs in a detached
  * pthread; once g_conn_count reaches the cap we shed load with a 503. */
@@ -181,34 +182,176 @@ static long http_max_body_total(void) {
     return g_http_max_body_total;
 }
 
-void* health_thread(void *arg) {
-    int fd = (int)(intptr_t)arg;
-    printf("[health-thread] Started on fd=%d, pid=%d\n", fd, getpid());
-    fflush(stdout);
-    int req_count = 0;
-    while (!g_init_complete) {
-        struct sockaddr_in client;
-        socklen_t len = sizeof(client);
-        int conn = accept(fd, (struct sockaddr*)&client, &len);
-        if (conn < 0) {
-            printf("[health-thread] accept() failed: errno=%d\n", errno);
-            fflush(stdout);
+/* Every lazily-initialised env-override cache above and below is a plain
+ * global first written on whichever thread happens to ask first. Worker
+ * connection threads and the init responder all ask, so under TSan each one
+ * is a data race (#1137 — http_max_body was the reported instance; the class
+ * is every such cache). Prime them ONCE on the main thread before any thread
+ * is created: pthread_create is the happens-before edge, and afterwards every
+ * reader sees an initialised value and never writes. */
+static long shared_max_bytes(void);
+static void http_prime_config_caches(void) {
+    (void)http_max_conn_per_ip();
+    (void)http_max_body();
+    (void)http_max_body_total();
+    (void)shared_max_bytes();
+}
+
+/* All response sites share this builder. `cache_cors` preserves the old
+ * load-shed headers; OPTIONS has no Content-Type/Length. Extra fields are
+ * runtime-owned literals (Retry-After), never caller text. Names this
+ * function emits are refused by http_response_header so a registration
+ * cannot duplicate a runtime line. */
+static void send_response_full(int fd, int status, const char *status_text,
+                               const char *content_type, const char *body,
+                               long body_len, int cache_cors, const char *extra);
+static double monotonic_now(void);
+
+static void stop_init_responder(Server *s) {
+    __atomic_store_n(&s->init_stop, 1, __ATOMIC_RELEASE);
+    if (s->init_thread_active) {
+        pthread_join(s->init_tid, NULL);
+        s->init_thread_active = 0;
+    }
+}
+
+/* Startup is liveness-only: ordinary requests receive a retryable 503.
+ * Capacity is HTTP_MAX_CONCURRENT_CONNS — the same number the serving
+ * accept loop sheds at. The listener is always polled; at capacity a
+ * newcomer is accepted and answered with the init 503 immediately, never
+ * queued behind stallers. Each in-flight client keeps a 1s read budget so
+ * a fragmented request line can still complete; a client that never sends
+ * a complete request line is answered 503 at that deadline. Handoff and
+ * destruction stop accepting, then reply to every already-accepted fd. */
+#define HTTP_INIT_MAX_CLIENTS HTTP_MAX_CONCURRENT_CONNS
+#define HTTP_INIT_CLIENT_SEC  1.0
+
+typedef struct {
+    int fd;
+    char *line;
+    size_t used;
+    size_t cap;
+    double deadline;
+} InitConn;
+
+static void init_conn_reply(Server *s, InitConn *c, int complete) {
+    char empty[] = "";
+    char *line = c->line ? c->line : empty;
+    char *method = line, *path = strchr(line, ' '), *version = NULL;
+    if (path) { *path++ = '\0'; version = strchr(path, ' '); }
+    if (version) *version++ = '\0';
+    tls_suppress_body = strcmp(method, "HEAD") == 0;
+    int live = complete && path && version && s->liveness_path &&
+        (strcmp(method, "GET") == 0 || tls_suppress_body) &&
+        strcmp(path, s->liveness_path) == 0 &&
+        (strncmp(version, "HTTP/1.1\r\n", 10) == 0 ||
+         strncmp(version, "HTTP/1.0\r\n", 10) == 0);
+    tls_write_nowait = 1;
+    send_response_full(c->fd, live ? 200 : 503,
+                       live ? "OK" : "Service Unavailable", "text/plain",
+                       live ? "OK" : "Server initializing\n", live ? 2 : 20,
+                       1, live ? "" : "Retry-After: 1\r\n");
+    tls_write_nowait = 0;
+    free(c->line);
+    close(c->fd);
+    c->line = NULL;
+    c->fd = -1;
+    tls_suppress_body = 0;
+}
+
+static void init_conn_open(Server *s, InitConn *c, int fd) {
+    size_t line_cap = s->liveness_path ? strlen(s->liveness_path) + 128 : 8192;
+    if (line_cap < 8192) line_cap = 8192;
+    c->fd = fd;
+    c->line = xmalloc(line_cap);
+    c->used = 0;
+    c->cap = line_cap;
+    c->deadline = monotonic_now() + HTTP_INIT_CLIENT_SEC;
+    c->line[0] = '\0';
+}
+
+/* 1 = request line complete or buffer full (reply), -1 = peer gone (reply),
+ * 0 = keep waiting. */
+static int init_conn_read(InitConn *c) {
+    if (c->used + 1 >= c->cap) return 1;
+    ssize_t n = recv(c->fd, c->line + c->used, c->cap - 1 - c->used, 0);
+    if (n <= 0) return -1;
+    c->used += (size_t)n;
+    c->line[c->used] = '\0';
+    return strstr(c->line, "\r\n") ? 1 : 0;
+}
+
+static void init_conn_shed(Server *s, int fd) {
+    /* Capacity shed does not read the request, so HEAD and GET must produce
+     * the same wire image: 503, Retry-After, Content-Length 0, no body.
+     * The write is non-blocking: a peer that is not reading is closed. */
+    (void)s;
+    tls_write_nowait = 1;
+    tls_suppress_body = 1;
+    send_response_full(fd, 503, "Service Unavailable", "text/plain",
+                       "", 0, 1, "Retry-After: 1\r\n");
+    tls_write_nowait = 0;
+    tls_suppress_body = 0;
+    close(fd);
+}
+
+static void *init_responder(void *arg) {
+    Server *s = arg;
+    eigs_http_active = s;
+    InitConn *clients = xmalloc_array((size_t)HTTP_INIT_MAX_CLIENTS, sizeof(InitConn));
+    struct pollfd *pfds = xmalloc_array((size_t)HTTP_INIT_MAX_CLIENTS + 1, sizeof(struct pollfd));
+    int n = 0;
+    for (;;) {
+        if (__atomic_load_n(&s->init_stop, __ATOMIC_ACQUIRE)) {
+            /* Shutdown ends accepting only. Every already-accepted fd still
+             * gets an honest startup response; none is silently dropped. */
+            for (int i = 0; i < n; i++) {
+                int complete = clients[i].line && strstr(clients[i].line, "\r\n") != NULL;
+                init_conn_reply(s, &clients[i], complete);
+            }
             break;
         }
-        if (g_init_complete) { close(conn); break; }
-        struct timeval tv = { .tv_sec = 5, .tv_usec = 0 };
-        setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-        char buf[1024];
-        recv(conn, buf, sizeof(buf), 0);
-        const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: text/plain\r\n\r\nOK";
-        send(conn, resp, strlen(resp), 0);
-        close(conn);
-        req_count++;
-        printf("[health-thread] Served health check #%d\n", req_count);
-        fflush(stdout);
+        int np = 0;
+        pfds[np].fd = s->early_bind_fd;
+        pfds[np].events = POLLIN;
+        int li = np++;
+        for (int i = 0; i < n; i++) {
+            pfds[np].fd = clients[i].fd;
+            pfds[np].events = POLLIN;
+            np++;
+        }
+        int pr = poll(pfds, (nfds_t)np, 50);
+        if (__atomic_load_n(&s->init_stop, __ATOMIC_ACQUIRE)) continue;
+        int base = li + 1;
+        double now = monotonic_now();
+        for (int i = n - 1; i >= 0; i--) {
+            int complete = 0, dead = 0;
+            if (pr > 0 && (pfds[base + i].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL))) {
+                int r = init_conn_read(&clients[i]);
+                if (r < 0) dead = 1;
+                else if (r > 0) complete = 1;
+            }
+            if (complete || dead || now >= clients[i].deadline) {
+                init_conn_reply(s, &clients[i], complete);
+                clients[i] = clients[n - 1];
+                n--;
+            }
+        }
+        if (pr > 0 && li >= 0 && (pfds[li].revents & POLLIN)) {
+            int conn = accept(s->early_bind_fd, NULL, NULL);
+            if (conn >= 0) {
+                if (n < HTTP_INIT_MAX_CLIENTS) {
+                    init_conn_open(s, &clients[n], conn);
+                    n++;
+                } else {
+                    init_conn_shed(s, conn);
+                }
+            }
+        }
     }
-    printf("[health-thread] Exiting after %d requests\n", req_count);
-    fflush(stdout);
+    free(clients);
+    free(pfds);
+    eigs_http_active = NULL;
     return NULL;
 }
 
@@ -317,7 +460,109 @@ Value* builtin_http_static(Value *arg) {
     return make_str("static registered");
 }
 
+/* Names send_response_full emits, plus Transfer-Encoding (owned, not currently
+ * written). Registration of any of these would duplicate a runtime line. */
+static int is_runtime_response_header_name(const char *name) {
+    static const char *const names[] = {
+        "Content-Length",
+        "Content-Type",
+        "Transfer-Encoding",
+        "Connection",
+        "Cache-Control",
+        "Retry-After",
+        "Allow",
+        "Access-Control-Allow-Origin",
+        "Access-Control-Allow-Methods",
+        "Access-Control-Allow-Headers",
+    };
+    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+        if (strcasecmp(name, names[i]) == 0) return 1;
+    }
+    return 0;
+}
+
+/* Deterministic script configuration: no tape records or external reads. */
+static Value *response_header_error(ErrKind kind, const char *rule) {
+    pthread_mutex_lock(&g_server.response_mu);
+    g_server.response_header_rejected = 1;
+    pthread_mutex_unlock(&g_server.response_mu);
+    rt_error(kind, 0, "http_response_header: %s", rule);
+    return make_null();
+}
+
+Value* builtin_http_response_header(Value *arg) {
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
+        return response_header_error(EK_TYPE, "requires [name, value] (exactly two strings)");
+    Value *name = arg->data.list.items[0], *value = arg->data.list.items[1];
+    if (name->type != VAL_STR || value->type != VAL_STR)
+        return response_header_error(EK_TYPE, "name and value must be strings");
+    size_t nlen = strlen(name->data.str), vlen = strlen(value->data.str);
+    if (nlen < 1 || nlen > HTTP_RESPONSE_NAME_MAX)
+        return response_header_error(EK_VALUE, "name must be 1..64 bytes (RFC 7230 token)");
+    for (size_t i = 0; i < nlen; i++) {
+        unsigned char c = (unsigned char)name->data.str[i];
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+              (c >= '0' && c <= '9') || strchr("!#$%&'*+-.^_`|~", c)))
+            return response_header_error(EK_VALUE, "name must be an RFC 7230 token");
+    }
+    if (vlen > HTTP_RESPONSE_VALUE_MAX)
+        return response_header_error(EK_VALUE, "value must be 0..1024 bytes");
+    for (size_t i = 0; i < vlen; i++) {
+        unsigned char c = (unsigned char)value->data.str[i];
+        if ((c < 32 && c != '\t') || c > 126)
+            return response_header_error(EK_VALUE, "value requires visible ASCII, space or tab; no CR/LF/NUL");
+    }
+    /* EigenScript strings cannot contain NUL (chr/json/parser reject it). */
+    if (is_runtime_response_header_name(name->data.str))
+        return response_header_error(EK_VALUE, "runtime-owned header name is refused");
+    pthread_mutex_lock(&g_server.response_mu);
+    if (g_server.serving) {
+        pthread_mutex_unlock(&g_server.response_mu);
+        return response_header_error(EK_VALUE, "must register before http_serve");
+    }
+    int slot = 0;
+    while (slot < g_server.response_header_count &&
+           strcasecmp(name->data.str, g_server.response_headers[slot].name) != 0) slot++;
+    if (slot == HTTP_RESPONSE_HEADER_MAX) {
+        pthread_mutex_unlock(&g_server.response_mu);
+        return response_header_error(EK_LIMIT, "at most 16 headers may be registered");
+    }
+    ResponseHeader *h = &g_server.response_headers[slot];
+    memcpy(h->name, name->data.str, nlen + 1);
+    memcpy(h->value, value->data.str, vlen + 1);
+    if (slot == g_server.response_header_count) g_server.response_header_count++;
+    pthread_mutex_unlock(&g_server.response_mu);
+    return make_str("response header registered");
+}
+
 Value* builtin_http_early_bind(Value *arg) {
+    const char *live_path = NULL;
+    if (arg && arg->type == VAL_LIST) {
+        if (arg->data.list.count != 2 || arg->data.list.items[1]->type != VAL_STR) {
+            rt_error(EK_TYPE, 0, "http_early_bind requires [port, absolute liveness path string]");
+            return make_null();
+        }
+        live_path = arg->data.list.items[1]->data.str;
+        if (live_path[0] != '/') {
+            rt_error(EK_VALUE, 0, "http_early_bind: liveness path must be absolute (start with /; no whitespace/CR/LF/NUL)");
+            return make_null();
+        }
+        for (const unsigned char *p = (const unsigned char *)live_path; *p; p++) {
+            if (*p <= 32 || *p == 127) {
+                rt_error(EK_VALUE, 0, "http_early_bind: absolute liveness path cannot contain whitespace/CR/LF/NUL");
+                return make_null();
+            }
+        }
+        arg = arg->data.list.items[0];
+    }
+    if (arg && arg->type != VAL_NULL && arg->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "http_early_bind: port must be a number or null");
+        return make_null();
+    }
+    if (g_server.early_bind_fd >= 0 || g_server.serving || g_server.response_header_rejected) {
+        rt_error(EK_VALUE, 0, "http_early_bind: server already bound/serving or http_response_header rejected");
+        return make_null();
+    }
     int port = 5000;
     if (arg && arg->type == VAL_NUM) port = (int)arg->data.num;
     const char *env_port = getenv("PORT");
@@ -349,27 +594,42 @@ Value* builtin_http_early_bind(Value *arg) {
     if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind"); close(server_fd); return make_str("error");
     }
-    if (listen(server_fd, 128) < 0) {
+    if (listen(server_fd, HTTP_MAX_CONCURRENT_CONNS) < 0) {
         perror("listen"); close(server_fd); return make_str("error");
     }
 
     g_server.early_bind_fd = server_fd;
-    printf("Port %d bound (early bind for health check)\n", port);
-    fflush(stdout);
-
-    if (pthread_create(&g_health_tid, NULL, health_thread, (void*)(intptr_t)server_fd) == 0) {
-        g_health_thread_active = 1;
-        printf("Health thread started for early responses\n");
-    } else {
-        perror("pthread_create");
-        printf("Warning: health thread failed, continuing without early responses\n");
+    g_server.liveness_path = live_path ? xstrdup(live_path) : NULL;
+    __atomic_store_n(&g_server.init_stop, 0, __ATOMIC_RELEASE);
+    signal(SIGPIPE, SIG_IGN);
+    http_prime_config_caches();
+    if (pthread_create(&g_server.init_tid, NULL, init_responder, eigs_http_active) != 0) {
+        close(server_fd);
+        g_server.early_bind_fd = -1;
+        free(g_server.liveness_path);
+        g_server.liveness_path = NULL;
+        rt_error(EK_IO, 0, "http_early_bind: could not start init responder");
+        return make_null();
     }
+    g_server.init_thread_active = 1;
+    printf("Port %d bound (startup requests receive 503; optional liveness only)\n", port);
     fflush(stdout);
 
     return make_str("bound");
 }
 
 Value* builtin_http_serve(Value *arg) {
+    pthread_mutex_lock(&g_server.response_mu);
+    int rejected = g_server.response_header_rejected;
+    if (!rejected) g_server.serving = 1;
+    pthread_mutex_unlock(&g_server.response_mu);
+    if (rejected) {
+        stop_init_responder(eigs_http_active);
+        if (g_server.early_bind_fd >= 0) close(g_server.early_bind_fd);
+        g_server.early_bind_fd = -1;
+        rt_error(EK_VALUE, 0, "http_response_header: rejected configuration; http_serve cannot start");
+        return make_null();
+    }
     int port = 5000;
     if (arg && arg->type == VAL_NUM) port = (int)arg->data.num;
     const char *env_port = getenv("PORT");
@@ -824,45 +1084,70 @@ static const char* get_content_type(const char *path) {
     return "application/octet-stream";
 }
 
+static int write_all(int fd, const char *data, size_t len) {
+    /* Init-window writes use MSG_DONTWAIT so a full send buffer cannot stall
+     * the single responder thread. Partial / EAGAIN is failure: the caller
+     * closes. Serving-path writes stay blocking. */
+    while (len) {
+        ssize_t n = tls_write_nowait
+            ? send(fd, data, len, MSG_DONTWAIT)
+            : write(fd, data, len);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return 0;
+        data += n;
+        len -= (size_t)n;
+    }
+    return 1;
+}
+
+static void send_response_full(int fd, int status, const char *status_text,
+                               const char *content_type, const char *body,
+                               long body_len, int cache_cors, const char *extra) {
+    /* Size from actual fields, with 512 bytes for fixed literals, integer
+     * formatting and the final NUL. No fixed header buffer: even sixteen
+     * maximum-size custom fields plus an arbitrarily long CORS origin fit.
+     * Copy the snapshot under the mutex; never hold a config lock over I/O. */
+    pthread_mutex_lock(&g_server.response_mu);
+    const char *origin = cache_cors ? g_server.cors_origin : NULL;
+    size_t cap = 512 + strlen(status_text) + strlen(extra) +
+                 (content_type ? strlen(content_type) : 0) +
+                 (origin ? strlen(origin) : 0);
+    for (int i = 0; i < g_server.response_header_count; i++) {
+        ResponseHeader *h = &g_server.response_headers[i];
+        cap += strlen(h->name) + strlen(h->value) + 4;
+    }
+    char *header = xmalloc(cap);
+    size_t used = (size_t)snprintf(header, cap, "HTTP/1.1 %d %s\r\n", status, status_text);
+    if (content_type)
+        used += (size_t)snprintf(header + used, cap - used,
+                                "Content-Type: %s\r\nContent-Length: %ld\r\n",
+                                content_type, body_len);
+    if (status == 204)
+        used += (size_t)snprintf(header + used, cap - used, "Allow: GET, HEAD, OPTIONS\r\n");
+    if (cache_cors)
+        used += (size_t)snprintf(header + used, cap - used, "Cache-Control: no-cache\r\n");
+    if (origin)
+        used += (size_t)snprintf(header + used, cap - used,
+                                "Access-Control-Allow-Origin: %s\r\n"
+                                "Access-Control-Allow-Methods: %s\r\n"
+                                "Access-Control-Allow-Headers: Content-Type\r\n",
+                                origin, status == 204 ? "GET, HEAD, OPTIONS" : "GET, POST, OPTIONS");
+    used += (size_t)snprintf(header + used, cap - used, "Connection: close\r\n%s", extra);
+    for (int i = 0; i < g_server.response_header_count; i++) {
+        ResponseHeader *h = &g_server.response_headers[i];
+        used += (size_t)snprintf(header + used, cap - used, "%s: %s\r\n", h->name, h->value);
+    }
+    used += (size_t)snprintf(header + used, cap - used, "\r\n");
+    pthread_mutex_unlock(&g_server.response_mu);
+    int sent = write_all(fd, header, used);
+    free(header);
+    if (sent && !tls_suppress_body && body && body_len > 0)
+        write_all(fd, body, (size_t)body_len);
+}
+
 static void send_response(int fd, int status, const char *status_text,
                           const char *content_type, const char *body, long body_len) {
-    char header[8192];
-    int hlen;
-    if (g_server.cors_origin) {
-        hlen = snprintf(header, sizeof(header),
-            "HTTP/1.1 %d %s\r\n"
-            "Content-Type: %s\r\n"
-            "Content-Length: %ld\r\n"
-            "Cache-Control: no-cache\r\n"
-            "Access-Control-Allow-Origin: %s\r\n"
-            "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-            "Access-Control-Allow-Headers: Content-Type\r\n"
-            "Connection: close\r\n"
-            "\r\n",
-            status, status_text, content_type, body_len, g_server.cors_origin);
-    } else {
-        hlen = snprintf(header, sizeof(header),
-            "HTTP/1.1 %d %s\r\n"
-            "Content-Type: %s\r\n"
-            "Content-Length: %ld\r\n"
-            "Cache-Control: no-cache\r\n"
-            "Connection: close\r\n"
-            "\r\n",
-            status, status_text, content_type, body_len);
-    }
-
-    if (write(fd, header, hlen) <= 0) return;
-    /* HEAD requests want headers but no body. Caller flips tls_suppress_body
-     * before invoking send_response so existing call sites need no change. */
-    if (tls_suppress_body) return;
-    if (body && body_len > 0) {
-        long sent = 0;
-        while (sent < body_len) {
-            long n = write(fd, body + sent, body_len - sent);
-            if (n <= 0) break;
-            sent += n;
-        }
-    }
+    send_response_full(fd, status, status_text, content_type, body, body_len, 1, "");
 }
 
 static void send_404(int fd, const char *path) {
@@ -1245,28 +1530,7 @@ static void handle_request(int fd) {
         /* Proper preflight: advertise the methods this server handles and
          * mirror CORS headers when configured. 204 No Content is the more
          * RFC-correct reply for an empty-body preflight. */
-        char hbuf[512];
-        int hl;
-        if (g_server.cors_origin) {
-            hl = snprintf(hbuf, sizeof(hbuf),
-                "HTTP/1.1 204 No Content\r\n"
-                "Allow: GET, HEAD, OPTIONS\r\n"
-                "Access-Control-Allow-Origin: %s\r\n"
-                "Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n"
-                "Access-Control-Allow-Headers: Content-Type\r\n"
-                "Cache-Control: no-cache\r\n"
-                "Connection: close\r\n"
-                "\r\n", g_server.cors_origin);
-        } else {
-            hl = snprintf(hbuf, sizeof(hbuf),
-                "HTTP/1.1 204 No Content\r\n"
-                "Allow: GET, HEAD, OPTIONS\r\n"
-                "Cache-Control: no-cache\r\n"
-                "Connection: close\r\n"
-                "\r\n");
-        }
-        ssize_t bw = write(fd, hbuf, hl);
-        (void)bw;
+        send_response_full(fd, 204, "No Content", NULL, NULL, 0, 1, "");
         goto done;
     }
 
@@ -1486,23 +1750,10 @@ done:
 void http_serve_blocking(int port) {
     int server_fd;
 
-    if (g_server.early_bind_fd > 0) {
-        g_init_complete = 1;
-        if (g_health_thread_active) {
-            int wake = socket(AF_INET, SOCK_STREAM, 0);
-            if (wake >= 0) {
-                struct sockaddr_in lo;
-                memset(&lo, 0, sizeof(lo));
-                lo.sin_family = AF_INET;
-                lo.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-                lo.sin_port = htons(port);
-                connect(wake, (struct sockaddr*)&lo, sizeof(lo));
-                close(wake);
-            }
-            pthread_join(g_health_tid, NULL);
-            g_health_thread_active = 0;
-            printf("Health thread stopped, main server taking over\n");
-        }
+    http_prime_config_caches();  /* before any worker thread exists (#1137) */
+
+    if (g_server.early_bind_fd >= 0) {
+        stop_init_responder(eigs_http_active);
         server_fd = g_server.early_bind_fd;
         printf("EigenScript HTTP server accepting on pre-bound 0.0.0.0:%d\n", port);
     } else {
@@ -1528,7 +1779,7 @@ void http_serve_blocking(int port) {
             return;
         }
 
-        if (listen(server_fd, 128) < 0) {
+        if (listen(server_fd, HTTP_MAX_CONCURRENT_CONNS) < 0) {
             perror("listen");
             close(server_fd);
             return;
@@ -1566,15 +1817,13 @@ void http_serve_blocking(int port) {
          * one slow client cannot stall the whole listener. */
         int cur = __atomic_load_n(&g_conn_count, __ATOMIC_RELAXED);
         if (cur >= HTTP_MAX_CONCURRENT_CONNS) {
-            const char *busy =
-                "HTTP/1.1 503 Service Unavailable\r\n"
-                "Content-Type: text/plain\r\n"
-                "Content-Length: 11\r\n"
-                "Connection: close\r\n"
-                "\r\n"
-                "Overloaded\n";
-            ssize_t bw = write(client_fd, busy, strlen(busy));
-            (void)bw;
+            /* Accept-loop shed does not read the request, so HEAD and GET
+             * must produce the same wire image: 503, Content-Length 0, no
+             * body. cache_cors stays 0 (the historical serving-shed shape). */
+            tls_suppress_body = 1;
+            send_response_full(client_fd, 503, "Service Unavailable", "text/plain",
+                               "", 0, 0, "");
+            tls_suppress_body = 0;
             close(client_fd);
             continue;
         }
@@ -1583,15 +1832,10 @@ void http_serve_blocking(int port) {
          * Shed with 503 before spending a worker on it. */
         uint32_t caddr = client_addr.sin_addr.s_addr;
         if (!ip_conn_acquire(caddr)) {
-            const char *busy =
-                "HTTP/1.1 503 Service Unavailable\r\n"
-                "Content-Type: text/plain\r\n"
-                "Content-Length: 21\r\n"
-                "Connection: close\r\n"
-                "\r\n"
-                "Too many connections\n";
-            ssize_t bw = write(client_fd, busy, strlen(busy));
-            (void)bw;
+            tls_suppress_body = 1;
+            send_response_full(client_fd, 503, "Service Unavailable", "text/plain",
+                               "", 0, 0, "");
+            tls_suppress_body = 0;
             close(client_fd);
             continue;
         }
@@ -1620,16 +1864,20 @@ void http_serve_blocking(int port) {
 /* http_cors of origin — configure CORS. Pass "*" for wildcard, null to disable. */
 static Value* builtin_http_cors(Value *arg) {
     if (!arg || arg->type == VAL_NULL) {
+        pthread_mutex_lock(&g_server.response_mu);
         free(g_server.cors_origin);
         g_server.cors_origin = NULL;
+        pthread_mutex_unlock(&g_server.response_mu);
         return make_str("cors disabled");
     }
     if (arg->type != VAL_STR) return make_null();
-    free(g_server.cors_origin);
     /* Strip CR/LF to prevent header injection */
     char *clean = xstrdup(arg->data.str);
     http_strip_crlf(clean);
+    pthread_mutex_lock(&g_server.response_mu);
+    free(g_server.cors_origin);
     g_server.cors_origin = clean;
+    pthread_mutex_unlock(&g_server.response_mu);
     return make_str(clean);
 }
 
@@ -1655,6 +1903,8 @@ void register_http_builtins(Env *env) {
     if (!st->ext_http_server) {
         st->ext_http_server = xcalloc(1, sizeof(Server));
         pthread_mutex_init(&st->ext_http_server->shared_mu, NULL);
+        pthread_mutex_init(&st->ext_http_server->response_mu, NULL);
+        st->ext_http_server->early_bind_fd = -1;
     }
     eigs_http_active = st->ext_http_server;
     g_server.global_env = env;
@@ -1669,6 +1919,10 @@ void ext_http_state_destroy(EigsState *st) {
     if (!st) return;
     Server *s = st->ext_http_server;
     if (!s) return;
+    stop_init_responder(s);
+    if (s->early_bind_fd >= 0) close(s->early_bind_fd);
+    free(s->liveness_path);
+    pthread_mutex_destroy(&s->response_mu);
     for (int i = 0; i < s->route_count; i++) {
         free(s->routes[i].method);
         free(s->routes[i].path);
@@ -1685,8 +1939,8 @@ void ext_http_state_destroy(EigsState *st) {
     free(s->shared);
     pthread_mutex_destroy(&s->shared_mu);
     /* global_env is aliased, not owned — env teardown happens in eigs_close
-     * before this runs. early_bind_fd is the listening socket; closed by
-     * http_serve_blocking on shutdown (or process exit). */
+     * before this runs. The init responder is joined before any config is
+     * freed, even when the script exits without ever calling http_serve. */
     free(s);
     st->ext_http_server = NULL;
     /* Clear the main thread's active pointer if it pointed here. Worker

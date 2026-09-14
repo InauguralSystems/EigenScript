@@ -1,0 +1,12 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -454,7 +454,6 @@
+         "Transfer-Encoding",
+         "Connection",
+         "Cache-Control",
+-        "Retry-After",
+         "Allow",
+         "Access-Control-Allow-Origin",
+         "Access-Control-Allow-Methods",
+         "Access-Control-Allow-Headers",

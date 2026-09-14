@@ -1,0 +1,12 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -302,7 +302,7 @@
+         if (__atomic_load_n(&s->init_stop, __ATOMIC_ACQUIRE)) continue;
+         int base = li + 1;
+         double now = monotonic_now();
+-        for (int i = n - 1; i >= 0; i--) {
++        for (int i = 0; i < (n > 0 ? 1 : 0); i++) {
+             int complete = 0, dead = 0;
+             if (pr > 0 && (pfds[base + i].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL))) {
+                 int r = init_conn_read(&clients[i]);

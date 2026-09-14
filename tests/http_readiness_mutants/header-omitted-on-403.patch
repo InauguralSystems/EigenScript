@@ -1,0 +1,20 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -1509,7 +1509,15 @@
+         const char *rel = path + strlen(g_server.static_prefix);
+         if (rel[0] == '/') rel++;
+         if (rel[0] == '/') {
+-            send_response(fd, 403, "Forbidden", "text/plain", "Forbidden", 9);
++            const char *busy =
++                "HTTP/1.1 403 Forbidden\r\n"
++                "Content-Type: text/plain\r\n"
++                "Content-Length: 9\r\n"
++                "Connection: close\r\n"
++                "\r\n"
++                "Forbidden";
++            ssize_t bw = write(fd, busy, strlen(busy));
++            (void)bw;
+             goto done;
+         }
+ 

@@ -50,14 +50,14 @@
  * by looking up the LIVE global env: by the time a script calls a builtin, its
  * own top-level functions are in that env too, and they are indistinguishable
  * from stdlib entries by Value type alone. */
-static int g_builtin_binding_count = 0;
+static int g_builtin_binding_count = 0;  /* atomic: every worker EigsState writes it (#1137) */
 
 /* True iff `name` is a name the runtime registered, as opposed to one the
  * running script defined. Deliberately allocation-free — the suite gates on a
  * zero leak tally, and a process-lifetime name snapshot would show up there. */
 int eigs_is_registered_builtin(const char *name) {
     if (!name || !g_global_env) return 0;
-    int n = g_builtin_binding_count;
+    int n = __atomic_load_n(&g_builtin_binding_count, __ATOMIC_RELAXED);
     if (n > g_global_env->count) n = g_global_env->count;
     for (int i = 0; i < n; i++) {
         if (g_global_env->names[i] && strcmp(g_global_env->names[i], name) == 0)
@@ -6285,5 +6285,9 @@ void register_builtins(Env *env) {
 
     /* Everything bound above this line is the language; everything bound after
      * it belongs to whatever program is running. See eigs_is_registered_builtin. */
-    g_builtin_binding_count = env->count;
+    /* Every per-connection worker EigsState runs this registrar concurrently
+     * (http_conn_thread), all writing the same count; a plain store is a data
+     * race under TSan (#1137). Relaxed atomics: the value is identical from
+     * every writer and the reader only needs a consistent int. */
+    __atomic_store_n(&g_builtin_binding_count, env->count, __ATOMIC_RELAXED);
 }

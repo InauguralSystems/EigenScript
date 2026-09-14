@@ -91,6 +91,7 @@
 
 /* ---- ext_http.c: server-scope builtins (EIGENSCRIPT_EXT_HTTP) ---- */
 #define EIGS_HTTP_BUILTINS(X) \
+    X(http_response_header, builtin_http_response_header) \
     X(http_route, builtin_http_route) \
     X(http_route_authed, builtin_http_route_authed) \
     X(http_static, builtin_http_static) \

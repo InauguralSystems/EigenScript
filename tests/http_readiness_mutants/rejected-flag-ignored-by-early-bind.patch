@@ -1,0 +1,12 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -545,7 +545,7 @@
+         rt_error(EK_TYPE, 0, "http_early_bind: port must be a number or null");
+         return make_null();
+     }
+-    if (g_server.early_bind_fd >= 0 || g_server.serving || g_server.response_header_rejected) {
++    if (g_server.early_bind_fd >= 0 || g_server.serving) {
+         rt_error(EK_VALUE, 0, "http_early_bind: server already bound/serving or http_response_header rejected");
+         return make_null();
+     }

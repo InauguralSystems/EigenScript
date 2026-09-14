@@ -1,0 +1,20 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -1143,7 +1143,15 @@
+         total += (size_t)n;
+     }
+     data[size] = '\0';
+-    send_response(fd, 200, "OK", get_content_type(filepath), data, (long)size);
++    {
++        const char *ct = get_content_type(filepath);
++        char hdr[512];
++        int hn = snprintf(hdr, sizeof hdr,
++            "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: close\r\n\r\n",
++            ct, (long)size);
++        write_all(fd, hdr, (size_t)hn);
++        if (!tls_suppress_body) write_all(fd, data, size);
++    }
+     free(data);
+ }
+ 
