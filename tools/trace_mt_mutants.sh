@@ -186,10 +186,10 @@ build_dest() {
     make -C "$dest" >/dev/null
     local objs
     objs=$(ls "$dest"/build/release/*.o 2>/dev/null | grep -v '/main.o$' || true)
-    gcc -O2 -o "$dest/src/embed_concurrent_bin" \
+    gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -o "$dest/src/embed_concurrent_bin" \
         "$dest/src/embed_concurrent.c" $objs -lm -lpthread \
         -I"$dest/src" -I"$dest/build" >/dev/null 2>&1 || \
-        gcc -O2 -o "$dest/src/embed_concurrent_bin" \
+        gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -o "$dest/src/embed_concurrent_bin" \
             "$dest/src/embed_concurrent.c" $objs -lm -lpthread \
             -I"$dest/src"
 }

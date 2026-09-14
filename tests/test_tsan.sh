@@ -131,7 +131,7 @@ ROOT="$TESTS_DIR/.."
 TSAN_OBJS=$(ls "$ROOT"/build/tsan/*.o 2>/dev/null | grep -v '/main.o$' || true)
 EC_BIN="$ROOT/build/tsan/embed_concurrent"
 if [ -n "$TSAN_OBJS" ]; then
-    gcc -fsanitize=thread -g -O1 -o "$EC_BIN" \
+    gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -fsanitize=thread -g -O1 -o "$EC_BIN" \
         "$ROOT/src/embed_concurrent.c" $TSAN_OBJS -lm -lpthread \
         -I"$ROOT/src" -I"$ROOT/build"
     # halt_on_error=0: the original thresh_worker hits a pre-existing
