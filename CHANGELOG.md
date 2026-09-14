@@ -15,7 +15,8 @@ All notable changes to EigenScript are documented here.
   the listener stays polled at capacity so a newcomer is 503'd immediately
   rather than queued behind stallers, and a client that never completes a
   request line is 503'd at a 1 s deadline. An idle client cannot delay any
-  other client's init-window 200/503.
+  other client's init-window 200/503. A newcomer past the cap is shed with a
+  bodyless 503 (Content-Length 0) for every method, including HEAD (#1135).
 
 - **`gather` raises `index_range` on an out-of-range index, in every form
   (#973/#1093).** Previously it folded to `0.0` — a per-row vector of indices

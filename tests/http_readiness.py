@@ -167,10 +167,8 @@ def curl(port, method, path, directory, extra=(), max_time=1):
     return parse_response(h.read_bytes(), b'' if method == 'HEAD' else b.read_bytes(), p.returncode)
 
 
-def recv_http(sock, timeout=3):
-    sock.settimeout(timeout)
-    data = b''
-    while b'\r\n\r\n' not in data:
+def _recv_until(sock, data, pred):
+    while not pred(data):
         try:
             chunk = sock.recv(65536)
         except ConnectionResetError:
@@ -178,28 +176,48 @@ def recv_http(sock, timeout=3):
         if not chunk:
             break
         data += chunk
+    return data
+
+
+def recv_http_truncated(sock, timeout=3):
+    """Old reader: body is only the bytes that arrived with the header CRLF.
+    Planted in --selftest; must not be used on the production path."""
+    sock.settimeout(timeout)
+    data = _recv_until(sock, b'', lambda d: b'\r\n\r\n' in d)
     require(b'\r\n\r\n' in data, f'incomplete raw response ({len(data)} bytes empty-EOF={int(not data)})')
     header, body = data.split(b'\r\n\r\n', 1)
     return parse_response(header, body)
 
 
+def recv_http(sock, timeout=3, head=False):
+    sock.settimeout(timeout)
+    data = _recv_until(sock, b'', lambda d: b'\r\n\r\n' in d)
+    require(b'\r\n\r\n' in data, f'incomplete raw response ({len(data)} bytes empty-EOF={int(not data)})')
+    header, body = data.split(b'\r\n\r\n', 1)
+    parsed = parse_response(header, body)
+    cl = parsed.headers.get('content-length')
+    if head or cl is None:
+        body = _recv_until(sock, body, lambda _d: False)
+        return parse_response(header, body)
+    want = int(cl[0])
+    while len(body) < want:
+        try:
+            chunk = sock.recv(65536)
+        except ConnectionResetError:
+            chunk = b''
+        if not chunk:
+            require(False, f'short body: got {len(body)} want {want}')
+        body += chunk
+    return parse_response(header, body[:want])
+
+
 def raw_request(port, request, timeout=2):
+    head = bool(request) and request.startswith(b'HEAD ')
     with socket.create_connection(('127.0.0.1', port), timeout) as s:
         s.settimeout(timeout)
         if request:
             s.sendall(request)
-        data = b''
-        while True:
-            try:
-                chunk = s.recv(65536)
-            except ConnectionResetError:
-                break  # retain the complete response preceding close-with-unread-data
-            if not chunk:
-                break
-            data += chunk
-    require(b'\r\n\r\n' in data, 'incomplete raw response')
-    h, b = data.split(b'\r\n\r\n', 1)
-    return parse_response(h, b)
+        return recv_http(s, timeout, head=head)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -264,7 +282,7 @@ def check_response(case, got, registered, baseline=None, inside=True):
 
 
 @contextlib.contextmanager
-def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude='', max_headers=False, early='number', per_ip=4, header_min_rate=None, header_timeout=None, extra='', max_body=None):
+def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude='', max_headers=False, early='number', per_ip=4, header_min_rate=None, header_timeout=None, extra='', max_body=None, delay_spawn=True):
     port = pick_port()
     script, log_path = directory/'server.eigs', directory/'server.log'
     header1 = 'http_response_header of ["X-Eigen-Release", "old"]\n' if with_headers else ''
@@ -277,7 +295,8 @@ def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude
     bindarg = f'[{port}, "/livez"]' if live else ('null' if early == 'null' else str(port))
     script.write_text(prelude + ('http_cors of "*"\n' if cors else '') + header1 +
                       f'http_early_bind of {bindarg}\n' + header2 + 'print of "INIT-CONFIGURED"\n' +
-                      f'exec_capture of ["sleep", "{delay}"]\n' +
+                      (f'exec_capture of ["sleep", "{delay}"]\n' if delay_spawn
+                       else f'usleep of {int(float(delay) * 1000000)}\n') +
                       'http_route of ["GET", "/", "real-page"]\n' +
                       f'http_static of ["/static", "{directory}"]\n' +
                       f'http_route of ["GET", "/file", "file", "{directory}/asset.txt"]\n' +
@@ -344,23 +363,29 @@ def held_connections(port, count, payload=b'', keepalive=False):
             sock.close()
 
 
-def check_capacity_livez_shed(port, inside):
-    # Discriminator: at capacity the exact liveness path is shed (503), not
-    # admitted (200). GET /not-live is 503 either way and cannot kill a
-    # doubled table. HEAD is the brief's probe; shed does not parse so a
-    # body may still be written — this check asserts status/headers/latency.
-    before = inside()
-    start = time.monotonic()
-    got = raw_request(port, b'HEAD /livez HTTP/1.1\r\nHost: x\r\n\r\n')
-    elapsed = time.monotonic() - start
+def require_shed_wire(got, method):
     require(got.status == 503,
             f'status {got.status} expected 503 (liveness shed at cap; 200 means admitted past cap)')
-    require(elapsed < .5, f'capacity shed delayed /livez by {elapsed:.3f}s (limit 0.5s)')
+    require(got.body == b'', f'shed {method} wire body {got.body!r} want empty')
+    require(got.headers.get('content-length') == ['0'], 'shed Content-Length is not 0')
+    require(got.headers.get('content-type') == ['text/plain'], 'shed Content-Type changed')
+    require(got.headers.get('retry-after') == ['1'], '503 missing Retry-After: 1')
     for key, value in HEADERS.items():
         require(got.headers.get(key) == [value], f'{key} missing, duplicated or wrong value')
-    require(got.headers.get('retry-after') == ['1'], '503 missing Retry-After: 1')
+
+
+def check_capacity_livez_shed(port, inside, method='HEAD'):
+    before = inside()
+    start = time.monotonic()
+    req = f'{method} /livez HTTP/1.1\r\nHost: x\r\n\r\n'.encode()
+    with socket.create_connection(('127.0.0.1', port), 2) as sock:
+        sock.sendall(req)
+        got = recv_http(sock, head=(method == 'HEAD'))
+    elapsed = time.monotonic() - start
+    require_shed_wire(got, method)
+    require(elapsed < .5, f'capacity shed delayed /livez by {elapsed:.3f}s (limit 0.5s)')
     require(before and inside(), 'request was not proved inside init window')
-    print(f'    init-cap shed HEAD /livez: {elapsed:.3f}s status={got.status}', flush=True)
+    print(f'    init-cap shed {method} /livez: {elapsed:.3f}s status={got.status} body={len(got.body)}', flush=True)
 
 
 def check_init_latency(port, directory, case, inside):
@@ -444,7 +469,9 @@ def init_staller_cases(directory):
             require(not select.select(holders, [], [], 0)[0],
                     'init-cap holder already responded before shed probe')
             run_check('R2-init-capacity-shed',
-                      lambda: check_capacity_livez_shed(port, inside))
+                      lambda: check_capacity_livez_shed(port, inside, 'HEAD'))
+            run_check('R2-init-capacity-shed-get',
+                      lambda: check_capacity_livez_shed(port, inside, 'GET'))
             time.sleep(HTTP_INIT_DEADLINE + 0.2)
             run_check('R2-init-deadline-frees-slot',
                       lambda: check_init_latency(port, directory, live, inside))
@@ -507,7 +534,7 @@ def teardown_drain_cases(directory):
                 raise AssertionError('teardown script did not exit')
             require(rc == 0, f'teardown script rc={rc} log={log_path.read_text()[-400:]}')
             def one(sock):
-                check_response(case, recv_http(sock), HEADERS, inside=True)
+                check_response(case, recv_http(sock, head=True), HEADERS, inside=True)
             for_each_holder(holders, one, 'teardown')
             require(not is_listening(port), 'port is still listening after natural exit')
         finally:
@@ -570,6 +597,22 @@ def error_site_cases(directory):
                 if not headers:
                     baseline[case.name] = got
             run_check(case.name + ('-headers' if headers else '-baseline'), check)
+
+
+def sigpipe_init_case(directory):
+    # Delay with usleep (no spawn). exec_capture would install SIG_IGN itself
+    # and hide deletion of the early-bind signal(SIGPIPE, SIG_IGN).
+    with server(directory, with_headers=True, delay=5, delay_spawn=False) as (port, proc, log):
+        script = (directory/'server.eigs').read_text()
+        require('exec_capture' not in script, 'SIGPIPE case spawned')
+        require('usleep of' in script, 'SIGPIPE case did not use usleep')
+        for _ in range(64):
+            sock = socket.create_connection(('127.0.0.1', port), 2)
+            sock.sendall(b'GET / HTTP/1.1\r\n\r\n')
+            sock.close()
+        require(proc.poll() is None, 'init responder died (SIGPIPE?)')
+        got = curl(port, 'GET', '/livez', directory)
+        check_response(case_named('R2-live-get'), got, HEADERS, inside=True)
 
 
 def empty_value_case(directory):
@@ -668,6 +711,7 @@ def live_cases(directory):
     require_population(lambda: global_cap_cases(directory))
     require_population(lambda: error_site_cases(directory))
     require_population(lambda: empty_value_case(directory))
+    run_check('R2-init-sigpipe-safe', lambda: sigpipe_init_case(directory))
     run_check('R2-handoff-drain', lambda: handoff_drain_cases(directory))
     run_check('R2-teardown-drain', lambda: teardown_drain_cases(directory))
 
@@ -688,6 +732,13 @@ INVALID = [
     ('name-control', 'http_response_header of [chr of 1, "1"]', 'http_response_header', 'token'),
     ('name-del', 'http_response_header of [chr of 127, "1"]', 'http_response_header', 'token'),
     ('name-high-byte', 'http_response_header of [chr of 255, "1"]', 'http_response_header', 'token'),
+    ('name-lparen', 'http_response_header of ["X(Y", "1"]', 'http_response_header', 'token'),
+    ('name-at', 'http_response_header of ["X@Y", "1"]', 'http_response_header', 'token'),
+    ('name-slash', 'http_response_header of ["X/Y", "1"]', 'http_response_header', 'token'),
+    ('name-lbracket', 'http_response_header of ["X[Y", "1"]', 'http_response_header', 'token'),
+    ('name-semi', 'http_response_header of ["X;Y", "1"]', 'http_response_header', 'token'),
+    ('name-eq', 'http_response_header of ["X=Y", "1"]', 'http_response_header', 'token'),
+    ('name-quote', 'http_response_header of ["X\\"Y", "1"]', 'http_response_header', 'token'),
     ('token', 'http_response_header of ["bad:name", "x"]', 'http_response_header', 'token'),
     ('empty-name', 'http_response_header of ["", "x"]', 'http_response_header', '1..64'),
     ('long-name', 'http_response_header of ["'+'x'*65+'", "x"]', 'http_response_header', '1..64'),
@@ -763,6 +814,33 @@ def fake_server(response):
         finally:
             thread.join(timeout=3)
             require(not thread.is_alive(), 'fake server failed to finish')
+
+
+@contextlib.contextmanager
+def split_write_server(status, headers, body, pause=0.005):
+    """Send headers, pause, then body — the load that truncated recv_http."""
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0)); listener.listen()
+        port = listener.getsockname()[1]
+        def serve():
+            conn, _ = listener.accept()
+            with conn:
+                conn.settimeout(2)
+                while b'\r\n\r\n' not in (conn.recv(4096) or b'\r\n\r\n'):
+                    pass
+                raw = f'HTTP/1.1 {status} Test\r\n'.encode()
+                for k, vs in headers.items():
+                    for v in vs:
+                        raw += f'{k}: {v}\r\n'.encode()
+                conn.sendall(raw + b'\r\n')
+                time.sleep(pause)
+                conn.sendall(body)
+        thread = threading.Thread(target=serve, daemon=True); thread.start()
+        try:
+            yield port
+        finally:
+            thread.join(timeout=3)
+            require(not thread.is_alive(), 'split-write server failed to finish')
 
 
 def expect_red(fn, name):
@@ -912,6 +990,30 @@ def selftest(directory):
     run_check('SELF-control-R3-empty-value', lambda: empty_value_check(empty_good))
     omitted = dataclasses.replace(empty_good, headers={k: v for k, v in empty_good.headers.items() if k != 'x-empty'})
     run_check('SELF-red-R3-empty-value-omit', lambda: expect_red(lambda: empty_value_check(omitted), 'omit empty'))
+    body408 = b'Request header timeout'
+    h408 = {**{k: [v] for k, v in HEADERS.items()},
+            'content-type': ['text/plain'], 'content-length': [str(len(body408))]}
+    def split_read(reader):
+        with split_write_server(408, h408, body408) as port:
+            with socket.create_connection(('127.0.0.1', port), 2) as sock:
+                sock.sendall(b'GET / HTTP/1.1\r\nHost: x\r\n\r\n')
+                return reader(sock)
+    run_check('SELF-control-split-write-body', lambda: require(
+        split_read(recv_http).body == body408, 'split-write body not assembled'))
+    run_check('SELF-red-truncated-reader', lambda: expect_red(
+        lambda: require(split_read(recv_http_truncated).body == body408, 'truncated body'),
+        'truncated body'))
+    shed_ok = Response(503, {**{k: [v] for k, v in HEADERS.items()},
+                             'content-type': ['text/plain'], 'content-length': ['0'],
+                             'retry-after': ['1']}, b'')
+    shed_body = dataclasses.replace(shed_ok, body=b'Server initializing\n',
+                                    headers={**shed_ok.headers, 'content-length': ['20']})
+    run_check('SELF-control-shed-bodyless', lambda: require_shed_wire(shed_ok, 'HEAD'))
+    run_check('SELF-red-shed-with-body', lambda: expect_red(
+        lambda: require_shed_wire(shed_body, 'HEAD'), 'shed body'))
+    dead = type('P', (), {'poll': lambda self: 1})()
+    run_check('SELF-red-sigpipe-dead', lambda: expect_red(
+        lambda: require(dead.poll() is None, 'init responder died (SIGPIPE?)'), 'dead proc'))
 
 
 def main():

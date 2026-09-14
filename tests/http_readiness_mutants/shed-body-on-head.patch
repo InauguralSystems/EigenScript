@@ -1,0 +1,27 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -262,16 +262,15 @@
+ }
+ 
+ static void init_conn_shed(Server *s, int fd) {
+-    /* Capacity shed does not read the request, so HEAD and GET must produce
+-     * the same wire image: 503, Retry-After, Content-Length 0, no body. */
+-    (void)s;
++    InitConn extra;
++    extra.fd = fd;
++    extra.line = NULL;
++    extra.used = 0;
++    extra.cap = 0;
++    extra.deadline = 0;
+     struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
+     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+-    tls_suppress_body = 1;
+-    send_response_full(fd, 503, "Service Unavailable", "text/plain",
+-                       "", 0, 1, "Retry-After: 1\r\n");
+-    tls_suppress_body = 0;
+-    close(fd);
++    init_conn_reply(s, &extra, 0);
+ }
+ 
+ static void *init_responder(void *arg) {

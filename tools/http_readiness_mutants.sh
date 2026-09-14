@@ -44,6 +44,9 @@ header-omitted-on-403
 capacity-doubled
 empty-value-rejected
 serial-handling
+shed-body-on-head
+sigpipe-default-in-init
+name-check-allows-delims
 '
 
 copy_tree() {

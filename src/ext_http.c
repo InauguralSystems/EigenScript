@@ -262,15 +262,16 @@ static int init_conn_read(InitConn *c) {
 }
 
 static void init_conn_shed(Server *s, int fd) {
-    InitConn extra;
-    extra.fd = fd;
-    extra.line = NULL;
-    extra.used = 0;
-    extra.cap = 0;
-    extra.deadline = 0;
+    /* Capacity shed does not read the request, so HEAD and GET must produce
+     * the same wire image: 503, Retry-After, Content-Length 0, no body. */
+    (void)s;
     struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    init_conn_reply(s, &extra, 0);
+    tls_suppress_body = 1;
+    send_response_full(fd, 503, "Service Unavailable", "text/plain",
+                       "", 0, 1, "Retry-After: 1\r\n");
+    tls_suppress_body = 0;
+    close(fd);
 }
 
 static void *init_responder(void *arg) {
