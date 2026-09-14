@@ -342,6 +342,12 @@ def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude
     if ld_preload:
         prev = env.get('LD_PRELOAD', '')
         env['LD_PRELOAD'] = str(ld_preload) + ((':' + prev) if prev else '')
+        # A sanitized binary refuses to start behind a non-sanitized preload
+        # ("ASan runtime does not come first in initial library list"). The
+        # interposer only shrinks SO_SNDBUF, so relaxing the link-order check
+        # is safe; harmless on non-sanitized builds.
+        asan = env.get('ASAN_OPTIONS', '')
+        env['ASAN_OPTIONS'] = 'verify_asan_link_order=0' + ((':' + asan) if asan else '')
     with log_path.open('w') as log:
         proc = subprocess.Popen([str(EIGS), str(script)], cwd=ROOT/'src', env=env, stdout=log, stderr=log)
         try:
