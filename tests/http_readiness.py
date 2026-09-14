@@ -60,6 +60,20 @@ def require_population(work):
     require(PASS + FAIL > before, 'zero checks executed in production population')
 
 
+def require_filled(holders, n, what):
+    require(n > 0, f'{what}: want empty population')
+    require(len(holders) == n, f'{what}: filled {len(holders)} want {n}')
+
+
+def for_each_holder(holders, fn, what='holders'):
+    require(len(holders) > 0, f'{what}: empty population')
+    n = 0
+    for item in holders:
+        fn(item)
+        n += 1
+    require(n == len(holders) and n > 0, f'{what}: examined {n} of {len(holders)}')
+
+
 def empty_production_control():
     # Plant the actual deletion, not just zero inputs to the final reporter.
     # The old setup wrapper counted itself as a PASS when BOTH workers were
@@ -169,9 +183,9 @@ def recv_http(sock, timeout=3):
     return parse_response(header, body)
 
 
-def raw_request(port, request):
-    with socket.create_connection(('127.0.0.1', port), 2) as s:
-        s.settimeout(2)
+def raw_request(port, request, timeout=2):
+    with socket.create_connection(('127.0.0.1', port), timeout) as s:
+        s.settimeout(timeout)
         if request:
             s.sendall(request)
         data = b''
@@ -216,6 +230,12 @@ CASES = [
     Case('R3-head', 'HEAD', '/static/asset.txt', 200, 'application/octet-stream', b'real-asset\n'),
     Case('R3-options', 'OPTIONS', '/', 204, None, b''),
     Case('R3-413', 'GET', '/static/huge', 413, 'text/plain', b'File too large'),
+    Case('R3-403', 'GET', '/static//x', 403, 'text/plain', b'Forbidden'),
+    Case('R3-500', 'GET', '/needauth', 500, 'application/json',
+         b'{"error": "require_auth not defined or not callable"}'),
+    Case('R3-401', 'GET', '/denied', 401, 'application/json', b'denied', 'auth'),
+    Case('R3-408', 'GET', '/', 408, 'text/plain', b'Request header timeout', 'timeout'),
+    Case('R3-431', 'GET', '/', 431, 'text/plain', b'Headers too large', 'oversize'),
     Case('R3-404', 'GET', '/missing', 404, 'application/json', b'{"error": "not_found"}'),
     Case('R2-live-retired', 'GET', '/livez', 404, 'application/json', b'{"error": "not_found"}'),
     Case('R3-400', 'POST', '/', 400, 'text/plain', b'Invalid Content-Length', extra=('-H','Content-Length: -1')),
@@ -244,7 +264,7 @@ def check_response(case, got, registered, baseline=None, inside=True):
 
 
 @contextlib.contextmanager
-def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude='', max_headers=False, early='number', per_ip=4, header_min_rate=None, header_timeout=None):
+def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude='', max_headers=False, early='number', per_ip=4, header_min_rate=None, header_timeout=None, extra='', max_body=None):
     port = pick_port()
     script, log_path = directory/'server.eigs', directory/'server.log'
     header1 = 'http_response_header of ["X-Eigen-Release", "old"]\n' if with_headers else ''
@@ -263,6 +283,8 @@ def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude
                       f'http_route of ["GET", "/file", "file", "{directory}/asset.txt"]\n' +
                       'http_route of ["GET", "/code", "code", "\\\"code-body\\\""]\n' +
                       'http_route_authed of ["GET", "/authed", "authed-body"]\n' +
+                      'http_route_authed of ["GET", "/needauth", "code", "\\\"ok\\\""]\n' +
+                      extra +
                       f'http_serve of {port}\n')
     (directory/'asset.txt').write_bytes(b'real-asset\n')
     with (directory/'huge').open('wb') as huge:
@@ -272,6 +294,8 @@ def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude
         env['EIGS_HTTP_HEADER_MIN_RATE'] = str(header_min_rate)
     if header_timeout is not None:
         env['EIGS_HTTP_HEADER_TIMEOUT'] = str(header_timeout)
+    if max_body is not None:
+        env['EIGS_HTTP_MAX_BODY'] = str(max_body)
     env.pop('PORT', None)
     if early == 'null':
         env['PORT'] = str(port)
@@ -320,6 +344,25 @@ def held_connections(port, count, payload=b'', keepalive=False):
             sock.close()
 
 
+def check_capacity_livez_shed(port, inside):
+    # Discriminator: at capacity the exact liveness path is shed (503), not
+    # admitted (200). GET /not-live is 503 either way and cannot kill a
+    # doubled table. HEAD is the brief's probe; shed does not parse so a
+    # body may still be written — this check asserts status/headers/latency.
+    before = inside()
+    start = time.monotonic()
+    got = raw_request(port, b'HEAD /livez HTTP/1.1\r\nHost: x\r\n\r\n')
+    elapsed = time.monotonic() - start
+    require(got.status == 503,
+            f'status {got.status} expected 503 (liveness shed at cap; 200 means admitted past cap)')
+    require(elapsed < .5, f'capacity shed delayed /livez by {elapsed:.3f}s (limit 0.5s)')
+    for key, value in HEADERS.items():
+        require(got.headers.get(key) == [value], f'{key} missing, duplicated or wrong value')
+    require(got.headers.get('retry-after') == ['1'], '503 missing Retry-After: 1')
+    require(before and inside(), 'request was not proved inside init window')
+    print(f'    init-cap shed HEAD /livez: {elapsed:.3f}s status={got.status}', flush=True)
+
+
 def check_init_latency(port, directory, case, inside):
     # The wall-clock bound is independent of status/framing: an eventual 200
     # after serial idle-client waits must be RED, even before curl's timeout.
@@ -340,7 +383,8 @@ def init_idle_cases(directory):
     unready = case_named('R1-init-page')
     with server(directory, with_headers=True, delay=8) as (port, proc, log):
         inside = lambda: 'Starting HTTP server' not in log.read_text()
-        with held_connections(port, 16):
+        with held_connections(port, 16) as holders:
+            require_filled(holders, 16, 'idle')
             run_check('R2-liveness-under-idle-connections',
                       lambda: check_init_latency(port, directory, live, inside))
             run_check('R2-unready-under-idle-connections',
@@ -372,7 +416,6 @@ def init_idle_cases(directory):
 def init_staller_cases(directory):
     live = case_named('R2-live-get')
     unready = case_named('R1-init-page')
-    shed = case_named('R2-init-capacity-shed')
     with server(directory, with_headers=True, delay=8) as (port, proc, log):
         inside = lambda: 'Starting HTTP server' not in log.read_text()
         holders = []
@@ -383,6 +426,7 @@ def init_staller_cases(directory):
                 sock = socket.create_connection(('127.0.0.1', port), 2)
                 sock.sendall(b'GET /li')
                 holders.append(sock)
+            require_filled(holders, 64, '64-stallers')
             run_check('R2-liveness-under-64-stallers',
                       lambda: check_init_latency(port, directory, live, inside))
             run_check('R2-unready-under-64-stallers',
@@ -396,10 +440,11 @@ def init_staller_cases(directory):
         with held_connections(port, INIT_CAP) as holders:
             require(time.monotonic() - filled < 0.8,
                     f'took {time.monotonic()-filled:.3f}s to hold {INIT_CAP} stallers; table may have expired')
+            require_filled(holders, INIT_CAP, 'init-cap')
             require(not select.select(holders, [], [], 0)[0],
                     'init-cap holder already responded before shed probe')
             run_check('R2-init-capacity-shed',
-                      lambda: check_init_latency(port, directory, shed, inside))
+                      lambda: check_capacity_livez_shed(port, inside))
             time.sleep(HTTP_INIT_DEADLINE + 0.2)
             run_check('R2-init-deadline-frees-slot',
                       lambda: check_init_latency(port, directory, live, inside))
@@ -419,10 +464,11 @@ def handoff_drain_cases(directory):
                 sock = socket.create_connection(('127.0.0.1', port), 2)
                 sock.sendall(b'GET / HTTP/1.1')
                 holders.append(sock)
+            require_filled(holders, 16, 'handoff-fill')
             wait_ready(lambda: 'accepting on pre-bound' in log.read_text(), proc)
-            for sock in holders:
-                got = recv_http(sock)
-                check_response(case, got, HEADERS, inside=True)
+            def one(sock):
+                check_response(case, recv_http(sock), HEADERS, inside=True)
+            for_each_holder(holders, one, 'handoff')
         finally:
             for sock in holders:
                 sock.close()
@@ -453,15 +499,16 @@ def teardown_drain_cases(directory):
                 sock = socket.create_connection(('127.0.0.1', port), 2)
                 sock.sendall(b'HEAD / HTTP/1.1')
                 holders.append(sock)
+            require_filled(holders, 16, 'teardown-fill')
             try:
                 rc = proc.wait(timeout=8)
             except subprocess.TimeoutExpired:
                 proc.kill(); proc.wait()
                 raise AssertionError('teardown script did not exit')
             require(rc == 0, f'teardown script rc={rc} log={log_path.read_text()[-400:]}')
-            for sock in holders:
-                got = recv_http(sock)
-                check_response(case, got, HEADERS, inside=True)
+            def one(sock):
+                check_response(case, recv_http(sock), HEADERS, inside=True)
+            for_each_holder(holders, one, 'teardown')
             require(not is_listening(port), 'port is still listening after natural exit')
         finally:
             if proc.poll() is None:
@@ -474,6 +521,68 @@ def teardown_drain_cases(directory):
                 sock.close()
             output = log_path.read_text()
             require(not any(x in output for x in ['AddressSanitizer', 'runtime error:', 'ThreadSanitizer']), output[-2000:])
+
+
+def error_site_cases(directory):
+    # 403/500 ride the default ready server via CASES. 401 needs a published
+    # deny source; 408/431 need timeout/body-cap overrides.
+    baseline = {}
+    extra = ('shared_set of ["require_auth", "\\\"denied\\\""]\n'
+             'http_route_authed of ["GET", "/denied", "code", "\\\"ok\\\""]\n')
+    for headers in (False, True):
+        with server(directory, with_headers=headers, delay=.05, extra=extra) as (port, proc, log):
+            wait_ready(lambda: 'accepting on pre-bound' in log.read_text(), proc)
+            case = case_named('R3-401')
+            def check():
+                got = curl(port, case.method, case.path, directory)
+                check_response(case, got, HEADERS if headers else {},
+                               baseline.get(case.name) if headers else None)
+                if not headers:
+                    baseline[case.name] = got
+            run_check(case.name + ('-headers' if headers else '-baseline'), check)
+    for headers in (False, True):
+        with server(directory, with_headers=headers, delay=.05, header_timeout=1,
+                    header_min_rate=0) as (port, proc, log):
+            wait_ready(lambda: 'accepting on pre-bound' in log.read_text(), proc)
+            case = case_named('R3-408')
+            def check():
+                # Read blocks up to 5s (SO_RCVTIMEO); a second byte after the
+                # 1s header deadline wakes it so the 408 path is evaluated.
+                with socket.create_connection(('127.0.0.1', port), 2) as sock:
+                    sock.settimeout(4)
+                    sock.sendall(b'GET / HTTP/1.1\r\nHost: x\r\n')
+                    time.sleep(1.15)
+                    sock.sendall(b'X')
+                    got = recv_http(sock, timeout=4)
+                check_response(case, got, HEADERS if headers else {},
+                               baseline.get(case.name) if headers else None)
+                if not headers:
+                    baseline[case.name] = got
+            run_check(case.name + ('-headers' if headers else '-baseline'), check)
+    for headers in (False, True):
+        with server(directory, with_headers=headers, delay=.05, max_body=1) as (port, proc, log):
+            wait_ready(lambda: 'accepting on pre-bound' in log.read_text(), proc)
+            case = case_named('R3-431')
+            def check():
+                got = raw_request(port, b'GET / HTTP/1.1\r\nHost: x\r\nX: ' + b'a' * 70000)
+                check_response(case, got, HEADERS if headers else {},
+                               baseline.get(case.name) if headers else None)
+                if not headers:
+                    baseline[case.name] = got
+            run_check(case.name + ('-headers' if headers else '-baseline'), check)
+
+
+def empty_value_case(directory):
+    prelude = 'http_response_header of ["X-Empty", ""]\n'
+    registered = {**HEADERS, 'x-empty': ''}
+    case = case_named('R1-ready-page')
+    def check():
+        with server(directory, with_headers=True, delay=.05, prelude=prelude) as (port, proc, log):
+            wait_ready(lambda: 'accepting on pre-bound' in log.read_text(), proc)
+            got = curl(port, case.method, case.path, directory)
+            check_response(case, got, registered)
+            require(got.headers.get('x-empty') == [''], 'empty header value missing')
+    run_check('R3-empty-value', check)
 
 
 def global_cap_cases(directory):
@@ -493,6 +602,7 @@ def global_cap_cases(directory):
                 time.sleep(.2)
                 def check():
                     nonlocal baseline
+                    require_filled(holders, 256, 'global-cap')
                     got = raw_request(port, b'')
                     # Pin the setup too: a prior slot being shed/timed out must
                     # not masquerade as 256 held connections.
@@ -556,6 +666,8 @@ def live_cases(directory):
     require_population(lambda: init_idle_cases(directory))
     require_population(lambda: init_staller_cases(directory))
     require_population(lambda: global_cap_cases(directory))
+    require_population(lambda: error_site_cases(directory))
+    require_population(lambda: empty_value_case(directory))
     run_check('R2-handoff-drain', lambda: handoff_drain_cases(directory))
     run_check('R2-teardown-drain', lambda: teardown_drain_cases(directory))
 
@@ -570,6 +682,12 @@ INVALID = [
     ('control', 'http_response_header of ["X", chr of 1]', 'http_response_header', 'ASCII'),
     ('del', 'http_response_header of ["X", chr of 127]', 'http_response_header', 'ASCII'),
     ('high-byte', 'http_response_header of ["X", chr of 255]', 'http_response_header', 'ASCII'),
+    ('name-cr', 'http_response_header of ["X\\rY", "1"]', 'http_response_header', 'token'),
+    ('name-lf', 'http_response_header of ["X\\nY", "1"]', 'http_response_header', 'token'),
+    ('name-space', 'http_response_header of ["X Y", "1"]', 'http_response_header', 'token'),
+    ('name-control', 'http_response_header of [chr of 1, "1"]', 'http_response_header', 'token'),
+    ('name-del', 'http_response_header of [chr of 127, "1"]', 'http_response_header', 'token'),
+    ('name-high-byte', 'http_response_header of [chr of 255, "1"]', 'http_response_header', 'token'),
     ('token', 'http_response_header of ["bad:name", "x"]', 'http_response_header', 'token'),
     ('empty-name', 'http_response_header of ["", "x"]', 'http_response_header', '1..64'),
     ('long-name', 'http_response_header of ["'+'x'*65+'", "x"]', 'http_response_header', '1..64'),
@@ -768,7 +886,7 @@ def selftest(directory):
         for bad, args in [('soft', (0, f'{builtin}: {rule}', False)), ('silent', (3, '', False)), ('listening', (3, f'{builtin}: {rule}', True))]:
             run_check('SELF-red-R4-'+name+'-'+bad, lambda: expect_red(lambda: check_rejection(*args, builtin, rule), name))
     run_check('SELF-red-zero-checks', empty_production_control)
-    run_check('SELF-red-differential', lambda: expect_red(lambda: check_response(CASES[-2], Response(503, {'content-type':['text/plain'], 'content-length':['21'], **{k:[v] for k,v in HEADERS.items()}}, b'Too many connections\n'), HEADERS, Response(503, {'content-type':['text/plain'], 'content-length':['21'], 'extra':['changed']}, b'Too many connections\n')), 'baseline'))
+    run_check('SELF-red-differential', lambda: expect_red(lambda: check_response(case_named('R3-ip-cap'), Response(503, {'content-type':['text/plain'], 'content-length':['21'], **{k:[v] for k,v in HEADERS.items()}}, b'Too many connections\n'), HEADERS, Response(503, {'content-type':['text/plain'], 'content-length':['21'], 'extra':['changed']}, b'Too many connections\n')), 'baseline'))
     def planted_zero_require():
         global PASS, FAIL
         saved = PASS, FAIL
@@ -781,6 +899,19 @@ def selftest(directory):
         finally:
             PASS, FAIL = saved
     run_check('SELF-red-zero-requires', planted_zero_require)
+    run_check('SELF-red-zero-examined', lambda: expect_red(
+        lambda: for_each_holder([1, 2, 3][:0], lambda _x: None, 'holders'), 'zero loop'))
+    empty_good = Response(200, {**{k: [v] for k, v in HEADERS.items()},
+                                'x-empty': [''], 'content-type': ['text/plain'],
+                                'content-length': ['9']}, b'real-page')
+    def empty_value_check(response):
+        with fake_server(response) as port:
+            got = curl(port, 'GET', '/', directory)
+        check_response(case_named('R1-ready-page'), got, {**HEADERS, 'x-empty': ''})
+        require(got.headers.get('x-empty') == [''], 'empty header value missing')
+    run_check('SELF-control-R3-empty-value', lambda: empty_value_check(empty_good))
+    omitted = dataclasses.replace(empty_good, headers={k: v for k, v in empty_good.headers.items() if k != 'x-empty'})
+    run_check('SELF-red-R3-empty-value-omit', lambda: expect_red(lambda: empty_value_check(omitted), 'omit empty'))
 
 
 def main():

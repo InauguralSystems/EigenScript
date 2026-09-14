@@ -39,6 +39,11 @@ teardown-drain-off
 handoff-drain-off
 validation-accepts-crlf
 owned-name-accepted
+name-check-colon-only
+header-omitted-on-403
+capacity-doubled
+empty-value-rejected
+serial-handling
 '
 
 copy_tree() {
