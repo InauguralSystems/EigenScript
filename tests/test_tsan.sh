@@ -126,6 +126,35 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo "=== embed-concurrent under TSan (shutdown-while-sibling) ==="
+ROOT="$TESTS_DIR/.."
+TSAN_OBJS=$(ls "$ROOT"/build/tsan/*.o 2>/dev/null | grep -v '/main.o$' || true)
+EC_BIN="$ROOT/build/tsan/embed_concurrent"
+if [ -n "$TSAN_OBJS" ]; then
+    gcc -fsanitize=thread -g -O1 -o "$EC_BIN" \
+        "$ROOT/src/embed_concurrent.c" $TSAN_OBJS -lm -lpthread \
+        -I"$ROOT/src" -I"$ROOT/build"
+    # halt_on_error=0: the original thresh_worker hits a pre-existing
+    # compile_ast verify_self race (compiler.c). The claim here is that
+    # the tape/shutdown paths in src/trace.c are quiet.
+    TSAN_OPTIONS="halt_on_error=0 exitcode=0" \
+        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EC_BIN" \
+        >"$ROOT/build/tsan_embed_concurrent.out" 2>"$ROOT/build/tsan_embed_concurrent.err"
+    LAST_RC=$?
+    TRACE_RACE=$(grep -c 'src/trace.c' "$ROOT/build/tsan_embed_concurrent.err" 2>/dev/null || true)
+    if grep -q 'EMBED_CONCURRENT_OK' "$ROOT/build/tsan_embed_concurrent.out" \
+       && [ "${TRACE_RACE:-0}" -eq 0 ]; then
+        echo "  PASS: embed-concurrent TSan-clean (shutdown-while-sibling, 0 trace.c reports)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: embed-concurrent tsan rc=$LAST_RC trace.c-reports=$TRACE_RACE"
+        FAIL=$((FAIL + 1))
+        grep -A2 'src/trace.c' "$ROOT/build/tsan_embed_concurrent.err" | head -12
+    fi
+else
+    echo "  FAIL: tsan objects missing"
+    FAIL=$((FAIL + 1))
+fi
+
 echo "=== gate self-validation: a seeded race MUST be caught ==="
 tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
 w=$WARNINGS

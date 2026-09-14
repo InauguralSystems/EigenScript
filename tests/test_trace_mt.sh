@@ -197,6 +197,36 @@ else
     fail "replay-workers: no signal" "rc=$rrc (signal $((rrc - 128)))"
 fi
 
+echo "=== read_bytes_buf-worker (hand-rolled take must fail-loud) ==="
+printf 'x\n' > "$TMPDIR/blob"
+printf '%s\n' \
+    "define worker(id) as:" \
+    "    local x is read_bytes_buf of \"$TMPDIR/blob\"" \
+    "    return x" \
+    "h is spawn of [worker, 1]" \
+    "a is thread_join of h" \
+    "print of \"done\"" \
+    > "$TMPDIR/rbb.eigs"
+EIGS_REPLAY="$rtape" "$EIGS" "$TMPDIR/rbb.eigs" \
+    >"$TMPDIR/rbb.out" 2>"$TMPDIR/rbb.err"
+rbrc=$?
+rbdiag=$(head -1 "$TMPDIR/rbb.err" 2>/dev/null || true)
+if [ "$rbrc" -eq 1 ]; then
+    ok "read_bytes_buf-worker: rc == 1"
+else
+    fail "read_bytes_buf-worker: rc == 1" "rc=$rbrc"
+fi
+if printf '%s\n' "$rbdiag" | grep -q 'not replayable under EIGS_REPLAY'; then
+    ok "read_bytes_buf-worker: diagnostic names the recv-family refusal"
+else
+    fail "read_bytes_buf-worker: diagnostic names the recv-family refusal" "stderr=$rbdiag"
+fi
+if [ "$rbrc" -lt 128 ]; then
+    ok "read_bytes_buf-worker: no signal"
+else
+    fail "read_bytes_buf-worker: no signal" "rc=$rbrc"
+fi
+
 echo ""
 echo "TRACE_MT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

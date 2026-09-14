@@ -51,8 +51,8 @@
                                     * over-cap payloads emit a marker so
                                     * tape stays sized for visual debug */
 
-int g_trace_enabled = 0;
-int g_replay_enabled = 0;
+int g_trace_enabled_storage = 0;
+int g_replay_enabled_storage = 0;
 int g_trace_obs_hist_storage = 0;
 int g_trace_hist_storage = 0;
 int g_trace_current_line = 0;
@@ -877,7 +877,9 @@ static void sink_flush(void) {
  * a close-of-last-state cannot tear a record that passed the unlocked
  * fast-path. tape_emit_end flushes the sink WHILE STILL HOLDING the lock. */
 static int tape_emit_begin(void) {
-    if (!trace_out_active()) return 0;
+    /* No unlocked fast path: shutdown stores g_trace_sink under the lock,
+     * and a plain read of that pointer races (#1142 round 2). Callers
+     * already skip on g_trace_enabled == 0 (atomic ACQUIRE). */
     tape_lock();
     if (!trace_out_active()) {
         tape_unlock();
@@ -1051,7 +1053,7 @@ void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
         g_sink_len = 0;
         g_last_line = -1;
         g_line_dirty = 0;
-        g_trace_enabled = 1;
+        trace_enabled_store(1);
         trace_arm_history_all();   /* a tape records every name's assigns */
         emit_header();
         sink_flush();
@@ -1059,7 +1061,7 @@ void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
         sink_flush();
         g_trace_sink = NULL;
         g_trace_sink_ud = NULL;
-        if (!g_trace_fp) g_trace_enabled = 0;
+        if (!g_trace_fp) trace_enabled_store(0);
     }
     tape_unlock();
 }
@@ -1108,7 +1110,7 @@ void trace_init(void) {
     }
     setvbuf(g_trace_fp, NULL, _IOFBF, 64 * 1024);
     tape_lock();
-    g_trace_enabled = 1;
+    trace_enabled_store(1);
     trace_arm_history_all();   /* a tape records every name's assigns */
     emit_header();
     tape_unlock();
@@ -1149,8 +1151,19 @@ static void replay_note_owner(void) {
 }
 
 int trace_replay_off_owner_thread(void) {
-    if (!g_replay_enabled || !g_replay_owner_valid) return 0;
-    return !pthread_equal(pthread_self(), g_replay_owner_tid);
+    tape_lock();
+    int off = g_replay_enabled_storage && g_replay_owner_valid
+              && !pthread_equal(pthread_self(), g_replay_owner_tid);
+    tape_unlock();
+    return off;
+}
+
+int trace_replay_refuse_off_owner(const char *fn) {
+    if (!trace_replay_off_owner_thread()) return 0;
+    rt_error(EK_IO, 0,
+        "%s: not replayable under EIGS_REPLAY (subprocess/concurrency "
+        "boundary; see docs/TRACE.md)", fn ? fn : "nondet");
+    return 1;
 }
 
 static int replay_is_owner_state(void) {
@@ -1173,7 +1186,7 @@ int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
         g_replay_mem_len = 0;
         g_replay_mem_pos = 0;
         if (!g_replay_fp) {
-            g_replay_enabled = 0;
+            replay_enabled_store(0);
             g_replay_owner_valid = 0;
             g_replay_owner_state = NULL;
         }
@@ -1217,7 +1230,7 @@ int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
         g_replay_mem_len = ol;
         g_replay_mem_pos = op;
         g_replay_strict = os;
-        g_replay_enabled = oe;
+        replay_enabled_store(oe);
         g_replay_owner_tid = ot;
         g_replay_owner_state = ost;
         g_replay_owner_valid = ov;
@@ -1226,7 +1239,7 @@ int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
     }
     free(om);
     g_replay_mem_pos = 0;
-    g_replay_enabled = 1;
+    replay_enabled_store(1);
     replay_note_owner();
     tape_unlock();
     return 1;
@@ -1256,7 +1269,7 @@ static void trace_replay_init(void) {
          * fatal. Same _exit rationale as the strict divergence abort. */
         _exit(3);
     }
-    g_replay_enabled = 1;
+    replay_enabled_store(1);
     replay_note_owner();
 #endif /* !EIGENSCRIPT_FREESTANDING */
 }
@@ -1268,7 +1281,7 @@ static void replay_shutdown(void) {
     free(g_replay_line); g_replay_line = NULL; g_replay_cap = 0;
     free(g_replay_mem);  g_replay_mem = NULL;
     g_replay_mem_len = 0; g_replay_mem_pos = 0;
-    g_replay_enabled = 0;
+    replay_enabled_store(0);
     g_replay_owner_valid = 0;
     g_replay_owner_state = NULL;
 }
@@ -1706,6 +1719,13 @@ void trace_thread_release(void) {
  * atexit), NEVER to a per-connection or per-task worker. A worker that wants
  * to clean up after itself wants trace_thread_release. */
 void trace_shutdown(void) {
+    /* #1142 round 2: the WHOLE teardown — sink/fp, enabled flags, replay
+     * reader, arm-set free — runs under the tape mutex. The unlocked
+     * fast path in tape_emit_begin is gone so a sibling cannot read
+     * g_trace_sink while we store NULL. Arm names are only freed when
+     * this is the last live state: an explicit eigs_trace_shutdown while
+     * siblings remain must not free a set those siblings still compile
+     * against. */
     tape_lock();
 #if !EIGENSCRIPT_FREESTANDING
     if (g_trace_fp) {
@@ -1715,28 +1735,22 @@ void trace_shutdown(void) {
     }
 #endif
     sink_flush();
-    g_trace_sink = NULL;
+    g_trace_sink = NULL;        /* shutdown-clear-sink */
     g_trace_sink_ud = NULL;
-    g_trace_enabled = 0;
-    tape_unlock();
-
-    trace_thread_release();
-
-    /* #827: drop the compile-time armed-name set and fall back to the
-     * wildcard. Widening, never narrowing — a state opened after a
-     * process-wide teardown must not inherit a narrowing whose compile-time
-     * evidence has been freed. (Recording still needs g_trace_hist.) */
-    for (int i = 0; i < g_arm_count; i++) free(g_arm_names[i]);
-    free(g_arm_names);
-    g_arm_names = NULL;
-    g_arm_count = 0;
-    g_arm_cap = 0;
+    trace_enabled_store(0);
+    replay_shutdown();
+    if (eigs_process_state_count() <= 1) {
+        for (int i = 0; i < g_arm_count; i++) free(g_arm_names[i]);
+        free(g_arm_names);
+        g_arm_names = NULL;
+        g_arm_count = 0;
+        g_arm_cap = 0;
+    }
     g_arm_all = 1;
     g_arm_gen++;
+    tape_unlock();              /* shutdown-unlock */
 
-    tape_lock();
-    replay_shutdown();
-    tape_unlock();
+    trace_thread_release();
 }
 
 void trace_line(int line) {

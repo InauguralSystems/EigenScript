@@ -587,27 +587,44 @@ static void test_close_while_other_runs(void) {
 
 #define TAKE_N 400
 
-typedef struct { int takes; } TakeArg;
+typedef struct {
+    int started;
+    int takes;
+    double v[TAKE_N];
+} TakeArg;
 static pthread_barrier_t take_start;
 static EigsState *take_st = NULL;
+static _Atomic int take_entered;
 
 static void *take_worker(void *p) {
     TakeArg *a = (TakeArg *)p;
     if (!eigs_thread_attach(take_st)) return NULL;
     pthread_barrier_wait(&take_start);
+    a->started = 1;
+    /* Both consumers must enter take while replay is still enabled.
+     * If one drains the tape and replay_shutdown stores enabled=0, the
+     * loser's take returns at the atomic flag and TSan sees no race on
+     * g_replay_mem_pos (the unlocked-take mutant then SURVIVES). */
+    atomic_fetch_add(&take_entered, 1);
+    while (atomic_load(&take_entered) < 2) sched_yield();
     for (;;) {
         EigsValue *v = NULL;
         if (!eigs_replay_take("random", &v)) break;
-        a->takes++;
+        if (a->takes < TAKE_N) {
+            a->v[a->takes] = v ? eigs_value_as_num(v) : -1.0;
+            a->takes++;
+        }
         if (v) eigs_value_release(v);
+        sched_yield();
     }
     eigs_thread_detach();
     return NULL;
 }
 
 static void test_replay_take_serialized(void) {
-    /* Build a tape: V header + TAKE_N `N random=0.5` records. Capture the
-     * header from a one-shot sink so the version stamp matches this binary. */
+    /* Distinct N values so the union is a multiset, not a scheduling split.
+     * Any A/B split including 0/400 is valid; duplicates or a missing i
+     * mean the take path tore. */
     SinkBuf hdr;
     sinkbuf_init(&hdr);
     EigsState *prep = eigs_open();
@@ -621,64 +638,243 @@ static void test_replay_take_serialized(void) {
     check(nl != NULL, "replay-take: captured a V header");
     if (!nl) { sinkbuf_free(&hdr); return; }
     size_t hlen = (size_t)(nl - hdr.buf + 1);
-    static const char nrec[] = "N random=0.5\n";
-    size_t rec_sz = sizeof nrec - 1;
-    size_t tlen = hlen + rec_sz * TAKE_N;
+    size_t tlen = hlen + (size_t)TAKE_N * 32;
     char *tape = malloc(tlen + 1);
+    if (!tape) { sinkbuf_free(&hdr); return; }
     memcpy(tape, hdr.buf, hlen);
     size_t off = hlen;
-    for (int i = 0; i < TAKE_N; i++) {
-        memcpy(tape + off, nrec, rec_sz);
-        off += rec_sz;
+    for (int i = 1; i <= TAKE_N; i++) {
+        int n = snprintf(tape + off, tlen - off + 1, "N random=%d\n", i);
+        if (n < 0) break;
+        off += (size_t)n;
     }
+    tlen = off;
     tape[tlen] = '\0';
     sinkbuf_free(&hdr);
 
-    take_st = eigs_state_new();
-    eigs_thread_attach(take_st);
-    eigs_state_init_runtime(take_st);
+    take_st = eigs_open();
+    check(take_st != NULL, "replay-take: opener state opened");
     check(eigs_set_replay_tape(tape, tlen, 0) != 0, "replay-take: tape installed");
 
     TakeArg a = {0}, b = {0};
+    atomic_store(&take_entered, 0);
     pthread_barrier_init(&take_start, NULL, 2);
     pthread_t tb;
-    /* Thread A is already attached (this thread). Thread B attaches inside. */
     pthread_create(&tb, NULL, take_worker, &b);
-    /* This thread also takes. take_worker on B will attach; we are attached. */
     pthread_barrier_wait(&take_start);
+    a.started = 1;
+    atomic_fetch_add(&take_entered, 1);
+    while (atomic_load(&take_entered) < 2) sched_yield();
     for (;;) {
         EigsValue *v = NULL;
         if (!eigs_replay_take("random", &v)) break;
-        a.takes++;
+        if (a.takes < TAKE_N) {
+            a.v[a.takes] = v ? eigs_value_as_num(v) : -1.0;
+            a.takes++;
+        }
         if (v) eigs_value_release(v);
+        sched_yield();
     }
     pthread_join(tb, NULL);
     pthread_barrier_destroy(&take_start);
 
-    int total = a.takes + b.takes;
-    check(total == TAKE_N, "replay take serialized: exactly N records consumed");
-    check(a.takes > 0 && b.takes > 0,
-          "replay take serialized: both threads consumed some records");
-    printf("        replay-take: A=%d B=%d total=%d (want %d)\n",
-           a.takes, b.takes, total, TAKE_N);
+    int seen[TAKE_N + 1];
+    memset(seen, 0, sizeof seen);
+    int bad = 0;
+    for (int i = 0; i < a.takes; i++) {
+        int k = (int)a.v[i];
+        if (k < 1 || k > TAKE_N || a.v[i] != (double)k) { bad++; continue; }
+        seen[k]++;
+    }
+    for (int i = 0; i < b.takes; i++) {
+        int k = (int)b.v[i];
+        if (k < 1 || k > TAKE_N || b.v[i] != (double)k) { bad++; continue; }
+        seen[k]++;
+    }
+    int missing = 0, dup = 0;
+    for (int i = 1; i <= TAKE_N; i++) {
+        if (seen[i] == 0) missing++;
+        if (seen[i] > 1) dup++;
+    }
+    check(a.started && b.started, "replay take serialized: both consumers ran");
+    check(a.takes + b.takes == TAKE_N && missing == 0 && dup == 0 && bad == 0,
+          "replay take serialized: union equals the tape multiset");
+    printf("        replay-take: A=%d B=%d total=%d (want %d) missing=%d dup=%d bad=%d\n",
+           a.takes, b.takes, a.takes + b.takes, TAKE_N, missing, dup, bad);
 
-    eigs_thread_detach();
-    eigs_state_destroy(take_st);
+    eigs_close(take_st);
     take_st = NULL;
     eigs_trace_shutdown();
     free(tape);
 }
 
+/* ------------------------------------------------------------------ 9 */
+/* #1142: a state that did not open the tape must RAISE on eigs_replay_take. */
+
+static pthread_barrier_t owner_bar;
+static char *owner_tape_bytes;
+static size_t owner_tape_len;
+
+static void *owner_install_worker(void *p) {
+    (void)p;
+    EigsState *st = eigs_open();
+    if (!st) return NULL;
+    eigs_set_replay_tape(owner_tape_bytes, owner_tape_len, 0);
+    pthread_barrier_wait(&owner_bar);
+    pthread_barrier_wait(&owner_bar);
+    eigs_close(st);
+    return NULL;
+}
+
+static void *owner_taker_worker(void *p) {
+    int *raised = (int *)p;
+    EigsState *st = eigs_open();
+    if (!st) return NULL;
+    pthread_barrier_wait(&owner_bar);
+    EigsValue *v = NULL;
+    int got = eigs_replay_take("random", &v);
+    if (v) eigs_value_release(v);
+    const char *msg = eigs_last_error_message();
+    *raised = (got && eigs_has_error() && msg
+               && strstr(msg, "not replayable under EIGS_REPLAY") != NULL);
+    eigs_close(st);
+    pthread_barrier_wait(&owner_bar);
+    return NULL;
+}
+
+static void test_owner_state_raises(void) {
+    SinkBuf hdr;
+    sinkbuf_init(&hdr);
+    EigsState *prep = eigs_open();
+    eigs_set_trace_sink(sinkbuf_cb, &hdr);
+    EigsValue *pv = eigs_eval_string("1");
+    if (pv) eigs_value_release(pv);
+    eigs_set_trace_sink(NULL, NULL);
+    eigs_close(prep);
+    char *nl = hdr.buf ? strchr(hdr.buf, '\n') : NULL;
+    check(nl != NULL, "owner-state: captured a V header");
+    if (!nl) { sinkbuf_free(&hdr); return; }
+    size_t hlen = (size_t)(nl - hdr.buf + 1);
+    owner_tape_len = hlen + 16;
+    owner_tape_bytes = malloc(owner_tape_len + 1);
+    memcpy(owner_tape_bytes, hdr.buf, hlen);
+    memcpy(owner_tape_bytes + hlen, "N random=1\n", 11);
+    owner_tape_len = hlen + 11;
+    owner_tape_bytes[owner_tape_len] = '\0';
+    sinkbuf_free(&hdr);
+
+    int raised = 0;
+    pthread_barrier_init(&owner_bar, NULL, 2);
+    pthread_t ta, tb;
+    pthread_create(&ta, NULL, owner_install_worker, NULL);
+    pthread_create(&tb, NULL, owner_taker_worker, &raised);
+    pthread_join(ta, NULL);
+    pthread_join(tb, NULL);
+    pthread_barrier_destroy(&owner_bar);
+    check(raised, "owner-state: non-opener take raises");
+    eigs_trace_shutdown();
+    free(owner_tape_bytes);
+    owner_tape_bytes = NULL;
+}
+
+/* ------------------------------------------------------------------ 10 */
+/* #1142: process owner shuts the tape while a sibling still records. */
+
+static pthread_barrier_t shut_go, shut_mid;
+static _Atomic int shut_phase;
+static _Atomic long shut_p2_bytes;
+static SinkBuf shut_sb;
+
+static void shut_sink_cb(const char *b, size_t n, void *ud) {
+    sinkbuf_cb(b, n, ud);
+    if (atomic_load(&shut_phase) == 2)
+        atomic_fetch_add(&shut_p2_bytes, (long)n);
+}
+
+static void *shut_owner(void *p) {
+    (void)p;
+    EigsState *st = eigs_open();
+    if (!st) return NULL;
+    pthread_barrier_wait(&shut_go);
+    for (int i = 0; i < 20; i++) {
+        EigsValue *v = eigs_eval_string("r is random of []\nreturn r");
+        if (v) eigs_value_release(v);
+    }
+    eigs_trace_shutdown();
+    atomic_store(&shut_phase, 2);
+    pthread_barrier_wait(&shut_mid);
+    eigs_close(st);
+    return NULL;
+}
+
+static void *shut_sib(void *p) {
+    int *p2ok = (int *)p;
+    EigsState *st = eigs_open();
+    if (!st) return NULL;
+    pthread_barrier_wait(&shut_go);
+    for (int i = 0; i < 20; i++) {
+        EigsValue *v = eigs_eval_string("r is random of []\nreturn r");
+        if (v) eigs_value_release(v);
+    }
+    pthread_barrier_wait(&shut_mid);
+    for (int i = 0; i < 20; i++) {
+        EigsValue *v = eigs_eval_string("r is random of []\nreturn r");
+        if (v) { (*p2ok)++; eigs_value_release(v); }
+    }
+    eigs_close(st);
+    return NULL;
+}
+
+static void test_shutdown_while_sibling(void) {
+    atomic_store(&shut_phase, 1);
+    atomic_store(&shut_p2_bytes, 0);
+    sinkbuf_init(&shut_sb);
+    eigs_set_trace_sink(shut_sink_cb, &shut_sb);
+    pthread_barrier_init(&shut_go, NULL, 2);
+    pthread_barrier_init(&shut_mid, NULL, 2);
+    int p2ok = 0;
+    pthread_t ta, tb;
+    pthread_create(&ta, NULL, shut_owner, NULL);
+    pthread_create(&tb, NULL, shut_sib, &p2ok);
+    pthread_join(ta, NULL);
+    pthread_join(tb, NULL);
+    pthread_barrier_destroy(&shut_go);
+    pthread_barrier_destroy(&shut_mid);
+
+    check(p2ok == 20, "shutdown-while-sibling: sibling evals after shutdown");
+    check(atomic_load(&shut_p2_bytes) == 0,
+          "shutdown-while-sibling: sibling records after shutdown are zero");
+    check(!(atomic_load(&shut_p2_bytes) > 0 && p2ok == 20),
+          "control: leftover sibling bytes would fail the shutdown check");
+    printf("        shutdown-while-sibling: p2_ok=%d p2_bytes=%ld\n",
+           p2ok, (long)atomic_load(&shut_p2_bytes));
+    sinkbuf_free(&shut_sb);
+}
+
 int main(void) {
     printf("embed concurrent multi-state (#885/#1142/#1143)\n");
-    test_observer_thresholds();
-    test_global_isolation();
-    test_error_isolation();
-    test_planted_fault_is_detectable();
-    test_two_state_sink();
-    test_ocfg_per_state();
-    test_close_while_other_runs();
-    test_replay_take_serialized();
+    /* EMBED_CONCURRENT_ONLY: the TSan mutant oracle runs just the take
+     * case with halt_on_error=1 so a data race exits instead of hanging
+     * in an unlocked take that never reaches EOF. */
+    const char *only = getenv("EMBED_CONCURRENT_ONLY");
+    if (only && strcmp(only, "replay-take") == 0) {
+        test_replay_take_serialized();
+    } else if (only && strcmp(only, "shutdown") == 0) {
+        test_shutdown_while_sibling();
+    } else if (only && strcmp(only, "owner-state") == 0) {
+        test_owner_state_raises();
+    } else {
+        test_observer_thresholds();
+        test_global_isolation();
+        test_error_isolation();
+        test_planted_fault_is_detectable();
+        test_two_state_sink();
+        test_ocfg_per_state();
+        test_close_while_other_runs();
+        test_replay_take_serialized();
+        test_owner_state_raises();
+        test_shutdown_while_sibling();
+    }
 
     if (failures) {
         printf("EMBED_CONCURRENT_FAIL: %d check(s) failed\n", failures);

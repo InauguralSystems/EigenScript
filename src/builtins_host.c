@@ -1114,6 +1114,7 @@ Value* builtin_read_bytes_buf(Value *arg) {
      * touching the live filesystem. */
     if (__builtin_expect(g_replay_enabled, 0)) {
         Value *tv;
+        if (trace_replay_refuse_off_owner("read_bytes_buf")) return make_null();
         if (trace_replay_take("read_bytes_buf", &tv)) {
             if (tv && tv->type == VAL_NUM) {
                 long long len = (long long)tv->data.num;

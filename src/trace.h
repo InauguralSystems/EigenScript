@@ -33,7 +33,12 @@ typedef union { double d; uint64_t u; } EigsSlot;
 /* 1 when EIGS_TRACE was set and a tape was successfully opened.
  * Hook sites in vm.c gate on this directly so the disabled case
  * costs one load + one branch. */
-extern int g_trace_enabled;
+/* ATOMIC ACQUIRE load — shutdown stores RELEASE. An assignment through this
+ * name fails to compile so write sites stay enumerable (same idiom as
+ * g_trace_hist). The JIT does not bake this address. */
+extern int g_trace_enabled_storage;
+#define g_trace_enabled __atomic_load_n(&g_trace_enabled_storage, __ATOMIC_ACQUIRE)
+#define trace_enabled_store(v) __atomic_store_n(&g_trace_enabled_storage, (v), __ATOMIC_RELEASE)
 
 /* 1 when assignment history must be recorded: set by the compiler when
  * it sees `prev of`, any `at <expr>` qualifier, or a reference to the
@@ -348,13 +353,19 @@ int trace_name_is_internal(const char *name);
  * with status 3, for harnesses that want tape/program drift loud. EOF or
  * unparseable records return 0 and the builtin falls back to its normal
  * source. */
-extern int g_replay_enabled;
+extern int g_replay_enabled_storage;
+#define g_replay_enabled __atomic_load_n(&g_replay_enabled_storage, __ATOMIC_ACQUIRE)
+#define replay_enabled_store(v) __atomic_store_n(&g_replay_enabled_storage, (v), __ATOMIC_RELEASE)
 int trace_replay_take(const char *fn, struct Value **out);
 /* #1142: 1 when replay is active and the calling OS thread is not the
  * thread that opened the tape. Nondet builtins raise rather than take.
  * Until per-thread N streams exist, a single consumer (the opener thread)
- * is the only legal replay reader. */
+ * is the only legal replay reader. Reads owner state under the tape lock. */
 int trace_replay_off_owner_thread(void);
+/* Raise the recv-family refusal and return 1 if this OS thread must not
+ * consume N records. Hand-rolled take sites (read_bytes_buf) call this
+ * before trace_replay_take, same as TRACE_NONDET_*. */
+int trace_replay_refuse_off_owner(const char *fn);
 
 /* Centralized nondet-return macro for builtins.
  *
@@ -374,12 +385,8 @@ int trace_replay_off_owner_thread(void);
         /* #1142: a nondet builtin on a non-owner thread cannot      \
          * consume the single-consumer N stream. Same catchable      \
          * error the receive family raises. */                       \
-        if (trace_replay_off_owner_thread()) {                       \
-            rt_error(EK_IO, 0,                                       \
-                "%s: not replayable under EIGS_REPLAY (subprocess/concurrency " \
-                "boundary; see docs/TRACE.md)", (name));             \
+        if (trace_replay_refuse_off_owner((name)))                   \
             return make_null();                                      \
-        }                                                            \
         if (trace_replay_take((name), &_tr_v))                       \
             return _tr_v;                                            \
     }                                                                \
@@ -403,12 +410,8 @@ int trace_replay_off_owner_thread(void);
 #define TRACE_NONDET_TAKE(name) do {                                 \
     Value *_tr_take;                                                 \
     if (__builtin_expect(g_replay_enabled, 0)) {                     \
-        if (trace_replay_off_owner_thread()) {                       \
-            rt_error(EK_IO, 0,                                       \
-                "%s: not replayable under EIGS_REPLAY (subprocess/concurrency " \
-                "boundary; see docs/TRACE.md)", (name));             \
+        if (trace_replay_refuse_off_owner((name)))                   \
             return make_null();                                      \
-        }                                                            \
         if (trace_replay_take((name), &_tr_take))                    \
             return _tr_take;                                         \
     }                                                                \

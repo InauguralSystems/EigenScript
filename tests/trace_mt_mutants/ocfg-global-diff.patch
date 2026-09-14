@@ -1,6 +1,6 @@
 --- a/src/trace.c
 +++ b/src/trace.c
-@@ -977,6 +977,11 @@
+@@ -979,6 +979,11 @@
   * so a new V header re-emits a non-default config (matching the old
   * process-global reset) without a process-global last-emitted slot. */
  static unsigned g_tape_session = 0;
@@ -12,7 +12,7 @@
  
  /* Reset is a session bump: each state's next L/A compares against defaults. */
  static void obs_cfg_reset(void) {
-@@ -990,32 +995,24 @@
+@@ -992,32 +997,24 @@
  static void obs_cfg_sync(void) {
      if (!eigs_current || !eigs_current->state) return;
      EigsState *st = eigs_current->state;

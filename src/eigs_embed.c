@@ -374,7 +374,7 @@ int eigs_set_replay_tape(const char *bytes, size_t len, int strict) {
 }
 
 int eigs_replay_take(const char *name, EigsValue **out) {
-    if (!g_replay_enabled || !out) return 0;
+    if (!out) return 0;
     return trace_replay_take(name, (Value **)out);
 }
 
