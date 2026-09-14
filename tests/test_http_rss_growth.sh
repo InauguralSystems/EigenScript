@@ -237,11 +237,27 @@ leak_verdict() {
     return 0
 }
 
+# Pick a listen port BELOW the kernel's ephemeral range (#760, ported from
+# test_http_server.sh). The old `(RANDOM % 10000) + 51000/52000` windows sit
+# INSIDE it (32768-60999 on Linux), and this section runs right after the HTTP
+# readiness oracle, whose hundreds of client connections hold ephemeral ports
+# from exactly that window — so the server could lose its bind to a client of
+# the previous section ("RSS2 authed route did not come up (port 59754)").
+pick_port() {
+    local lo hi
+    lo=$(awk '{print $1}' /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null)
+    case "$lo" in ''|*[!0-9]*) lo=32768 ;; esac
+    hi=$((lo - 1))
+    lo=$((hi - 11999))
+    [ "$lo" -lt 1024 ] && lo=1024
+    echo $(( (RANDOM % (hi - lo + 1)) + lo ))
+}
+
 # $1 = label, $2 = route path, $3 = server script body
 run_growth_check() {
     local label="$1" route="$2" body="$3"
     local port srv_file srv_pid
-    port=$(( (RANDOM % 10000) + 51000 ))
+    port=$(pick_port)
     srv_file=$(mktemp /tmp/eigs_rss_srv_XXXXXX.eigs)
     printf '%s\n' "$body" | sed -e "s/__PORT__/$port/" -e "s/__NONCE__/$NONCE/" > "$srv_file"
 
@@ -321,7 +337,7 @@ s is http_serve of [__PORT__]'
 # require_auth is seeded as a source string that evaluates to "" (= allow), so
 # every /secret request takes the shared-store auth branch at
 # ext_http.c:1295 (the shared_find(srv, "require_auth") lookup).
-PORT_A=$(( (RANDOM % 10000) + 52000 ))
+PORT_A=$(pick_port)
 AUTH_SRV=$(mktemp /tmp/eigs_rss_auth_XXXXXX.eigs)
 cat > "$AUTH_SRV" <<EIGS
 a is http_route of ["GET", "/asetup", "code", "shared_set of [\"require_auth\", \"\\\\\"\\\\\"\"]\n\"ok\""]
