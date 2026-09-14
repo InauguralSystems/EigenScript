@@ -1,16 +1,12 @@
 diff --git a/src/ext_http.c b/src/ext_http.c
 --- a/src/ext_http.c
 +++ b/src/ext_http.c
-@@ -470,10 +470,10 @@
+@@ -499,7 +499,7 @@
              return response_header_error(EK_VALUE, "value requires visible ASCII, space or tab; no CR/LF/NUL");
      }
      /* EigenScript strings cannot contain NUL (chr/json/parser reject it). */
--    if (strcasecmp(name->data.str, "Content-Length") == 0 ||
-+    if (0 && (strcasecmp(name->data.str, "Content-Length") == 0 ||
-         strcasecmp(name->data.str, "Content-Type") == 0 ||
-         strcasecmp(name->data.str, "Transfer-Encoding") == 0 ||
--        strcasecmp(name->data.str, "Connection") == 0)
-+        strcasecmp(name->data.str, "Connection") == 0))
+-    if (is_runtime_response_header_name(name->data.str))
++    if (0 && is_runtime_response_header_name(name->data.str))
          return response_header_error(EK_VALUE, "runtime-owned header name is refused");
      pthread_mutex_lock(&g_server.response_mu);
      if (g_server.serving) {

@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import random
 import select
+import shutil
 import signal
 import socket
 import subprocess
@@ -72,6 +73,24 @@ def for_each_holder(holders, fn, what='holders'):
         fn(item)
         n += 1
     require(n == len(holders) and n > 0, f'{what}: examined {n} of {len(holders)}')
+
+
+def cases_for_phase(phase):
+    return [c for c in CASES if c.phase == phase]
+
+
+def invalid_rows():
+    return list(INVALID)
+
+
+def max_header_rows(which):
+    if which == 'init':
+        return [CASES[0], CASES[2]]
+    return [c for c in CASES if c.name in ['R1-ready-page', 'R3-options']]
+
+
+def global_cap_rows():
+    return [c for c in CASES if c.phase == 'global-cap']
 
 
 def empty_production_control():
@@ -257,8 +276,10 @@ CASES = [
     Case('R3-404', 'GET', '/missing', 404, 'application/json', b'{"error": "not_found"}'),
     Case('R2-live-retired', 'GET', '/livez', 404, 'application/json', b'{"error": "not_found"}'),
     Case('R3-400', 'POST', '/', 400, 'text/plain', b'Invalid Content-Length', extra=('-H','Content-Length: -1')),
-    Case('R3-global-cap', 'GET', '/', 503, 'text/plain', b'Overloaded\n', 'global-cap'),
-    Case('R3-ip-cap', 'GET', '/', 503, 'text/plain', b'Too many connections\n', 'cap'),
+    Case('R3-global-cap', 'GET', '/', 503, 'text/plain', b'', 'global-cap'),
+    Case('R3-global-cap-head', 'HEAD', '/', 503, 'text/plain', b'', 'global-cap'),
+    Case('R3-ip-cap', 'GET', '/', 503, 'text/plain', b'', 'cap'),
+    Case('R3-ip-cap-head', 'HEAD', '/', 503, 'text/plain', b'', 'cap'),
     Case('R2-init-capacity-shed', 'GET', '/not-live', 503, 'text/plain', b'Server initializing\n', 'init'),
 ]
 
@@ -282,7 +303,7 @@ def check_response(case, got, registered, baseline=None, inside=True):
 
 
 @contextlib.contextmanager
-def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude='', max_headers=False, early='number', per_ip=4, header_min_rate=None, header_timeout=None, extra='', max_body=None, delay_spawn=True):
+def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude='', max_headers=False, early='number', per_ip=4, header_min_rate=None, header_timeout=None, extra='', max_body=None, delay_spawn=True, ld_preload=None):
     port = pick_port()
     script, log_path = directory/'server.eigs', directory/'server.log'
     header1 = 'http_response_header of ["X-Eigen-Release", "old"]\n' if with_headers else ''
@@ -318,6 +339,9 @@ def server(directory, with_headers=False, live=True, cors=True, delay=5, prelude
     env.pop('PORT', None)
     if early == 'null':
         env['PORT'] = str(port)
+    if ld_preload:
+        prev = env.get('LD_PRELOAD', '')
+        env['LD_PRELOAD'] = str(ld_preload) + ((':' + prev) if prev else '')
     with log_path.open('w') as log:
         proc = subprocess.Popen([str(EIGS), str(script)], cwd=ROOT/'src', env=env, stdout=log, stderr=log)
         try:
@@ -615,6 +639,90 @@ def sigpipe_init_case(directory):
         check_response(case_named('R2-live-get'), got, HEADERS, inside=True)
 
 
+# Built once under build/; wraps accept/accept4 so a shed write can fill the
+# send buffer. Production does not shrink SO_SNDBUF (#1136 witness).
+_SNDBUF_INTERPOSER_C = r'''#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <sys/socket.h>
+
+static void shrink_sndbuf(int fd) {
+    if (fd < 0) return;
+    int size = 1024;
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+}
+
+int accept(int fd, struct sockaddr *address, socklen_t *len) {
+    int (*real_accept)(int, struct sockaddr *, socklen_t *) = dlsym(RTLD_NEXT, "accept");
+    int result = real_accept(fd, address, len);
+    shrink_sndbuf(result);
+    return result;
+}
+
+int accept4(int fd, struct sockaddr *address, socklen_t *len, int flags) {
+    int (*real_accept4)(int, struct sockaddr *, socklen_t *, int) = dlsym(RTLD_NEXT, "accept4");
+    int result = real_accept4(fd, address, len, flags);
+    shrink_sndbuf(result);
+    return result;
+}
+'''
+_SNDBUF_SO = None
+
+
+def small_sndbuf_so():
+    """Compile the accept() SO_SNDBUF interposer once into build/. None if
+    this platform cannot LD_PRELOAD it (no cc, or not Linux)."""
+    global _SNDBUF_SO
+    if _SNDBUF_SO is not None:
+        return _SNDBUF_SO
+    if sys.platform != 'linux' or not shutil.which('cc'):
+        return None
+    dest = ROOT / 'build' / 'http_readiness_sndbuf'
+    dest.mkdir(parents=True, exist_ok=True)
+    src, so = dest / 'small_sndbuf.c', dest / 'small_sndbuf.so'
+    if not src.exists() or src.read_text() != _SNDBUF_INTERPOSER_C:
+        src.write_text(_SNDBUF_INTERPOSER_C)
+    if not so.exists() or so.stat().st_mtime < src.stat().st_mtime:
+        subprocess.check_call(['cc', '-shared', '-fPIC', '-o', str(so), str(src), '-ldl'])
+    _SNDBUF_SO = so
+    return so
+
+
+def shed_backpressure_case(directory):
+    # 256 idle holders, sixteen max-size registered headers, a shed peer that
+    # stops reading. LD_PRELOAD shrinks accept-side SO_SNDBUF so SO_SNDTIMEO
+    # can fire; production does not change the send buffer. The 503 is
+    # witnessed via MSG_PEEK without draining (#1136).
+    so = small_sndbuf_so()
+    require(so is not None, 'backpressure case ran without an interposer')
+    with server(directory, max_headers=True, delay=.5, delay_spawn=False, cors=False,
+                ld_preload=so) as (port, proc, log):
+        started = time.monotonic()
+        with held_connections(port, INIT_CAP) as holders:
+            require_filled(holders, INIT_CAP, 'backpressure-holders')
+            require(not select.select(holders, [], [], 0)[0],
+                    'backpressure holder already responded')
+            blocker = socket.socket()
+            try:
+                blocker.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024)
+                blocker.settimeout(2)
+                blocker.connect(('127.0.0.1', port))
+                blocker.sendall(b'HEAD /livez HTTP/1.1\r\nHost: x\r\n\r\n')
+                time.sleep(.1)
+                peek = blocker.recv(64, socket.MSG_PEEK)
+                require(b'HTTP/1.1 503' in peek,
+                        f'shed 503 not witnessed via MSG_PEEK: {peek!r}')
+                deadline = started + 2.8
+                while 'accepting on pre-bound' not in log.read_text() and time.monotonic() < deadline:
+                    require(proc.poll() is None, 'init responder died under backpressure')
+                    time.sleep(.025)
+                require('accepting on pre-bound' in log.read_text(),
+                        f'server not ready within 2.8s while non-reading shed peer open '
+                        f'({time.monotonic()-started:.2f}s)')
+                require(proc.poll() is None, 'process died under backpressure')
+            finally:
+                blocker.close()
+
+
 def empty_value_case(directory):
     prelude = 'http_response_header of ["X-Empty", ""]\n'
     registered = {**HEADERS, 'x-empty': ''}
@@ -629,12 +737,11 @@ def empty_value_case(directory):
 
 
 def global_cap_cases(directory):
-    # Reverse-applying the round-1 global-cap hunk (literal Overloaded writer)
-    # must turn R3-global-cap-headers red: that 503 is the one this case
-    # exists to witness. Per-IP cap is disabled so the 257th hits the global
-    # 256 cap; header min-rate 0 keeps incomplete holders from 408-ing.
-    baseline = None
-    case = next(c for c in CASES if c.phase == 'global-cap')
+    # Per-IP cap is disabled so the 257th hits the global 256 cap; header
+    # min-rate 0 keeps incomplete holders from 408-ing. HEAD and GET must
+    # both see a bodyless 503 (the accept loop sheds before reading).
+    baseline = {}
+    rows = global_cap_rows()
     for headers in (False, True):
         with server(directory, with_headers=headers, delay=.05, per_ip=0,
                     header_min_rate=0, header_timeout=30) as (port, proc, log):
@@ -643,19 +750,22 @@ def global_cap_cases(directory):
             # All holders have incomplete headers, so no worker may finish.
             with held_connections(port, 256, b'GET / HTTP/1.1\r\n', keepalive=True) as holders:
                 time.sleep(.2)
-                def check():
-                    nonlocal baseline
-                    require_filled(holders, 256, 'global-cap')
-                    got = raw_request(port, b'')
-                    # Pin the setup too: a prior slot being shed/timed out must
-                    # not masquerade as 256 held connections.
-                    require(not select.select(holders, [], [], 0)[0],
-                            'global-cap holder already responded/closed')
-                    check_response(case, got, HEADERS if headers else {},
-                                   baseline if headers else None)
-                    if not headers:
-                        baseline = got
-                run_check('R3-global-cap-'+('headers' if headers else 'baseline'), check)
+                def one(case):
+                    def check():
+                        require_filled(holders, 256, 'global-cap')
+                        req = (b'HEAD / HTTP/1.1\r\nHost: x\r\n\r\n'
+                               if case.method == 'HEAD' else b'')
+                        got = raw_request(port, req)
+                        # Pin the setup too: a prior slot being shed/timed out must
+                        # not masquerade as 256 held connections.
+                        require(not select.select(holders, [], [], 0)[0],
+                                'global-cap holder already responded/closed')
+                        check_response(case, got, HEADERS if headers else {},
+                                       baseline.get(case.name) if headers else None)
+                        if not headers:
+                            baseline[case.name] = got
+                    run_check(case.name + ('-headers' if headers else '-baseline'), check)
+                for_each_holder(rows, one, 'global-cap cases')
 
 
 def live_cases(directory):
@@ -674,13 +784,17 @@ def live_cases(directory):
                             sock.sendall(b'GET / HTTP/1.1\r\n')
                             holders.append(sock)
                         time.sleep(.15)
-                    for case in [c for c in CASES if c.phase == phase]:
+                    def one(case):
                         def check():
                             before = 'Starting HTTP server' not in log.read_text()
                             if case.phase == 'cap':
-                                # Do not send a request: accept-loop shedding replies before
-                                # reading it. This avoids RST discarding bytes being measured.
-                                got = raw_request(port, b'')
+                                # Shed replies before reading. HEAD still sends a
+                                # request line so the method is on the wire; GET
+                                # keeps the empty-write that avoids RST on the
+                                # unread buffer.
+                                req = (f'HEAD {case.path} HTTP/1.1\r\nHost: x\r\n\r\n'.encode()
+                                       if case.method == 'HEAD' else b'')
+                                got = raw_request(port, req)
                             elif case.method == 'HEAD':
                                 got = raw_request(port, f'HEAD {case.path} HTTP/1.1\r\nHost: x\r\n\r\n'.encode())
                             else:
@@ -690,22 +804,28 @@ def live_cases(directory):
                             if not headers:
                                 baseline[case.name] = got
                         run_check(case.name + ('-headers' if headers else '-baseline'), check)
+                    for_each_holder(cases_for_phase(phase), one, f'{phase} cases')
                 finally:
                     for sock in holders:
                         sock.close()
     # Both old spellings configure NO implicit liveness path, including PORT override.
-    for early in ['number', 'null']:
+    spellings = ['number', 'null']
+    def one_spelling(early):
         with server(directory, live=False, cors=False, early=early) as (port, proc, log):
-            for path in ['/', '/livez']:
+            def one_path(path):
                 case = Case('R2-no-live-'+early+path, 'GET', path, 503, 'text/plain', b'Server initializing\n', 'init')
                 run_check(case.name, lambda: check_response(case, curl(port, 'GET', path, directory), {}, inside='Starting HTTP server' not in log.read_text()))
+            for_each_holder(['/', '/livez'], one_path, f'no-live-{early} paths')
+    for_each_holder(spellings, one_spelling, 'no-live spellings')
     with server(directory, cors=False, max_headers=True) as (port, proc, log):
         huge = {str(i).zfill(64): 'v'*1024 for i in range(16)}
-        for case in [CASES[0], CASES[2]]:
+        def one_init(case):
             run_check('R3-max-16x1088-'+case.name, lambda: check_response(case, curl(port, case.method, case.path, directory), huge, inside='Starting HTTP server' not in log.read_text()))
+        for_each_holder(max_header_rows('init'), one_init, 'max-headers-init')
         wait_ready(lambda: 'accepting on pre-bound' in log.read_text(), proc)
-        for case in [c for c in CASES if c.name in ['R1-ready-page','R3-options']]:
+        def one_ready(case):
             run_check('R3-max-16x1088-'+case.name, lambda: check_response(case, curl(port, case.method, case.path, directory), huge))
+        for_each_holder(max_header_rows('ready'), one_ready, 'max-headers-ready')
     require_population(lambda: init_idle_cases(directory))
     require_population(lambda: init_staller_cases(directory))
     require_population(lambda: global_cap_cases(directory))
@@ -714,6 +834,11 @@ def live_cases(directory):
     run_check('R2-init-sigpipe-safe', lambda: sigpipe_init_case(directory))
     run_check('R2-handoff-drain', lambda: handoff_drain_cases(directory))
     run_check('R2-teardown-drain', lambda: teardown_drain_cases(directory))
+    if small_sndbuf_so() is None:
+        why = 'no cc' if not shutil.which('cc') else 'LD_PRELOAD not usable on ' + sys.platform
+        print(f'  SKIP: R2-init-shed-write-deadline: {why} for accept SO_SNDBUF interposer', flush=True)
+    else:
+        run_check('R2-init-shed-write-deadline', lambda: shed_backpressure_case(directory))
 
 
 # (label, script, builtin, diagnostic rule). All are runtime errors, not parse failures.
@@ -743,7 +868,10 @@ INVALID = [
     ('empty-name', 'http_response_header of ["", "x"]', 'http_response_header', '1..64'),
     ('long-name', 'http_response_header of ["'+'x'*65+'", "x"]', 'http_response_header', '1..64'),
     *[(name, f'http_response_header of ["{name}", "x"]', 'http_response_header', 'owned') for name in
-      ['cOnTeNt-LeNgTh', 'CONTENT-TYPE', 'Transfer-Encoding', 'connection']],
+      ['cOnTeNt-LeNgTh', 'CONTENT-TYPE', 'Transfer-Encoding', 'connection',
+       'cAcHe-CoNtRoL', 'rEtRy-AfTeR', 'AlLoW',
+       'aCcEsS-cOnTrOl-AlLoW-oRiGiN', 'ACCESS-CONTROL-ALLOW-METHODS',
+       'access-control-allow-headers']],
     ('17th', '\n'.join(f'http_response_header of ["X-{i}", "v"]' for i in range(17)), 'http_response_header', '16'),
     ('long-value', 'http_response_header of ["X", "'+'x'*1025+'"]', 'http_response_header', '1024'),
     *[('live-'+str(i), f'http_early_bind of [PORTNUM, "{path}"]', 'http_early_bind', 'absolute') for i,path in enumerate(['', 'livez', '/a b', '/a\\t', '/a\\r', '/a\\n'])],
@@ -765,7 +893,8 @@ def is_listening(port):
 
 
 def invalid_cases(directory):
-    for name, text, builtin, rule in INVALID:
+    def one(row):
+        name, text, builtin, rule = row
         def check():
             port = pick_port()
             script = directory/'invalid.eigs'
@@ -777,6 +906,7 @@ def invalid_cases(directory):
                 raise AssertionError('rejected script started server / hung')
             check_rejection(p.returncode, (p.stdout+p.stderr).decode(), is_listening(port), builtin, rule)
         run_check('R4-'+name, check)
+    for_each_holder(invalid_rows(), one, 'INVALID')
     # A caught error must not allow a partially configured server to start.
     port = pick_port()
     script = directory/'caught.eigs'
@@ -786,6 +916,28 @@ def invalid_cases(directory):
         p = subprocess.run([str(EIGS), str(script)], env=env, capture_output=True, timeout=3)
         check_rejection(p.returncode, (p.stdout+p.stderr).decode(), is_listening(port), 'http_response_header', 'rejected')
     run_check('R4-caught-poisons-start-and-closes-early-listener', caught)
+    # Violation caught BEFORE early bind: early bind itself must raise and
+    # the port must never listen. Dropping the rejected-flag check from
+    # http_early_bind lets /livez 200 in the init window.
+    def caught_then_bind():
+        port = pick_port()
+        script = directory/'caught-before-bind.eigs'
+        script.write_text(
+            'try:\n'
+            '    http_response_header of ["Content-Length", "1"]\n'
+            'catch e:\n'
+            '    print of e.message\n'
+            f'http_early_bind of [{port}, "/livez"]\n'
+            f'http_serve of {port}\n')
+        env = dict(os.environ); env.pop('PORT', None)
+        try:
+            p = subprocess.run([str(EIGS), str(script)], cwd=ROOT/'src', env=env,
+                               capture_output=True, timeout=3)
+        except subprocess.TimeoutExpired:
+            raise AssertionError('rejected script started server / hung')
+        check_rejection(p.returncode, (p.stdout+p.stderr).decode(), is_listening(port),
+                        'http_early_bind', 'rejected')
+    run_check('R4-caught-header-then-early-bind', caught_then_bind)
 
 
 @contextlib.contextmanager
@@ -914,10 +1066,35 @@ def fake_init_scheduler(concurrent):
             require(not errors, f'fake scheduler errors: {errors}')
 
 
+def plant_table_gutting(helper_name, label):
+    """Slice a production table to empty and invoke the live entry point."""
+    global PASS, FAIL
+    saved_fn = globals()[helper_name]
+    saved_argv, saved_p, saved_f = sys.argv, PASS, FAIL
+    output = io.StringIO()
+    try:
+        globals()[helper_name] = lambda *a, _orig=saved_fn, **k: _orig(*a, **k)[:0]
+        PASS = FAIL = 0
+        sys.argv = ['http_readiness.py']
+        with contextlib.redirect_stdout(output):
+            try:
+                rc = main()
+            except AssertionError as exc:
+                print(f'  FAIL: {label}: {exc}', flush=True)
+                rc = 1
+        text = output.getvalue()
+        require(rc != 0, f'{label} gutting survived rc=0:\n{text[-2000:]}')
+        require('empty population' in text or 'examined 0' in text or 'FAIL:' in text,
+                f'{label} gutting red for wrong reason:\n{text[-2000:]}')
+    finally:
+        globals()[helper_name] = saved_fn
+        sys.argv, PASS, FAIL = saved_argv, saved_p, saved_f
+
+
 def selftest(directory):
     # Every enrolled response row is driven through curl + the real checker,
     # with a positive control and independent faults in each response field.
-    for case in CASES:
+    def one_case(case):
         h = {k: [v] for k, v in HEADERS.items()}
         if case.ctype is not None:
             h.update({'content-type': [case.ctype], 'content-length': [str(len(case.body))]})
@@ -937,15 +1114,20 @@ def selftest(directory):
         mutants.append(('length', dataclasses.replace(good, headers={**h, 'content-length':['999']})))
         mutants.append(('type', dataclasses.replace(good, headers={**h, 'content-type':['wrong']})))
         if case.method == 'HEAD':
-            mutants.append(('head-body', dataclasses.replace(good, body=case.body)))
+            mutants.append(('head-body', dataclasses.replace(good, body=case.body or b'x')))
         if case.method != 'HEAD' and case.status != 204:
-            mutants.append(('body', dataclasses.replace(good, body=b'x'*len(good.body))))
+            if good.body:
+                mutants.append(('body', dataclasses.replace(good, body=b'x'*len(good.body))))
+            else:
+                mutants.append(('body', dataclasses.replace(good, body=b'x',
+                    headers={**h, 'content-length': ['1']})))
         if case.phase == 'init' and case.status == 503:
             mutants.append(('retry', dataclasses.replace(good, headers={k:v for k,v in h.items() if k != 'retry-after'})))
         for name, mutant in mutants:
             run_check('SELF-red-'+case.name+'-'+name, lambda: expect_red(lambda: exercise(mutant), name))
         if case.phase == 'init':
             run_check('SELF-red-'+case.name+'-outside-window', lambda: expect_red(lambda: exercise(good, False), 'outside window'))
+    for_each_holder(list(CASES), one_case, 'SELF-CASES')
     for case in (case_named('R2-live-get'), case_named('R1-init-page')):
         def idle_control(serial, probe=case):
             with fake_init_scheduler(not serial) as port:
@@ -959,12 +1141,14 @@ def selftest(directory):
         label = 'R2-liveness-under-idle-connections' if case.status == 200 else 'R2-unready-under-idle-connections'
         run_check('SELF-control-'+label, lambda probe=case: idle_control(False, probe))
         run_check('SELF-red-serial-'+label, lambda probe=case: idle_control(True, probe))
-    for name, _, builtin, rule in INVALID:
+    def one_invalid(row):
+        name, _, builtin, rule = row
         run_check('SELF-control-R4-'+name, lambda: check_rejection(3, f'{builtin}: {rule}', False, builtin, rule))
         for bad, args in [('soft', (0, f'{builtin}: {rule}', False)), ('silent', (3, '', False)), ('listening', (3, f'{builtin}: {rule}', True))]:
             run_check('SELF-red-R4-'+name+'-'+bad, lambda: expect_red(lambda: check_rejection(*args, builtin, rule), name))
+    for_each_holder(invalid_rows(), one_invalid, 'SELF-INVALID')
     run_check('SELF-red-zero-checks', empty_production_control)
-    run_check('SELF-red-differential', lambda: expect_red(lambda: check_response(case_named('R3-ip-cap'), Response(503, {'content-type':['text/plain'], 'content-length':['21'], **{k:[v] for k,v in HEADERS.items()}}, b'Too many connections\n'), HEADERS, Response(503, {'content-type':['text/plain'], 'content-length':['21'], 'extra':['changed']}, b'Too many connections\n')), 'baseline'))
+    run_check('SELF-red-differential', lambda: expect_red(lambda: check_response(case_named('R3-ip-cap'), Response(503, {'content-type':['text/plain'], 'content-length':['0'], **{k:[v] for k,v in HEADERS.items()}}, b''), HEADERS, Response(503, {'content-type':['text/plain'], 'content-length':['0'], 'extra':['changed']}, b'')), 'baseline'))
     def planted_zero_require():
         global PASS, FAIL
         saved = PASS, FAIL
@@ -1014,6 +1198,9 @@ def selftest(directory):
     dead = type('P', (), {'poll': lambda self: 1})()
     run_check('SELF-red-sigpipe-dead', lambda: expect_red(
         lambda: require(dead.poll() is None, 'init responder died (SIGPIPE?)'), 'dead proc'))
+    run_check('SELF-red-gut-CASES', lambda: plant_table_gutting('cases_for_phase', 'CASES'))
+    run_check('SELF-red-gut-INVALID', lambda: plant_table_gutting('invalid_rows', 'INVALID'))
+    run_check('SELF-red-gut-max-headers', lambda: plant_table_gutting('max_header_rows', 'max-headers'))
 
 
 def main():
@@ -1025,8 +1212,14 @@ def main():
         if '--selftest' in sys.argv:
             selftest(directory)
         else:
-            run_check('SETUP-and-response-matrix', lambda: require_population(lambda: live_cases(directory)))
+            require(len(cases_for_phase('init')) > 0, 'init cases: empty population')
+            require(len(cases_for_phase('ready')) > 0, 'ready cases: empty population')
+            require(len(cases_for_phase('cap')) > 0, 'cap cases: empty population')
+            require(len(invalid_rows()) > 0, 'INVALID: empty population')
+            require(len(max_header_rows('init')) > 0, 'max-headers-init: empty population')
+            require(len(max_header_rows('ready')) > 0, 'max-headers-ready: empty population')
             require_population(lambda: invalid_cases(directory))
+            run_check('SETUP-and-response-matrix', lambda: require_population(lambda: live_cases(directory)))
     return finish(PASS, FAIL, 'HTTP_READINESS_SELFTEST' if '--selftest' in sys.argv else 'HTTP_READINESS')
 
 

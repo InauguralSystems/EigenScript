@@ -1,7 +1,7 @@
 diff --git a/src/ext_http.c b/src/ext_http.c
 --- a/src/ext_http.c
 +++ b/src/ext_http.c
-@@ -262,16 +262,15 @@
+@@ -264,16 +264,15 @@
  }
  
  static void init_conn_shed(Server *s, int fd) {

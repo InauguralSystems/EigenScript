@@ -17,6 +17,10 @@ All notable changes to EigenScript are documented here.
   request line is 503'd at a 1 s deadline. An idle client cannot delay any
   other client's init-window 200/503. A newcomer past the cap is shed with a
   bodyless 503 (Content-Length 0) for every method, including HEAD (#1135).
+  Serving-loop global-cap and per-IP 503s are the same bodyless image (they
+  also answer before reading the request). The init shed's write is bounded
+  by SO_SNDTIMEO against a non-reading peer so the poll loop cannot stall
+  (#1136).
 
 - **`gather` raises `index_range` on an out-of-range index, in every form
   (#973/#1093).** Previously it folded to `0.0` — a per-row vector of indices

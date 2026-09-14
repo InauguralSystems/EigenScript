@@ -47,6 +47,10 @@ serial-handling
 shed-body-on-head
 sigpipe-default-in-init
 name-check-allows-delims
+rejected-flag-ignored-by-early-bind
+runtime-emitted-name-accepted
+serving-shed-body
+shed-write-deadline-off
 '
 
 copy_tree() {
@@ -167,6 +171,20 @@ if [ "${1:-}" != "" ]; then
     exit 2
 fi
 
+disk=$(cd "$MUTDIR" && ls *.patch *.sed | sed 's/\.\(patch\|sed\)$//' | grep -v '^comment-only-equivalent$' | sort)
+train=$(printf '%s\n' $MUTANTS | grep -v '^$' | sort)
+if [ "$disk" != "$train" ]; then
+    echo "mutant list does not match $MUTDIR (minus comment-only-equivalent):" >&2
+    echo "disk:" >&2; echo "$disk" >&2
+    echo "train:" >&2; echo "$train" >&2
+    exit 2
+fi
+n_disk=$(printf '%s\n' "$disk" | grep -c .)
+if [ "$n_disk" -eq 0 ]; then
+    echo "mutant directory empty after excluding equivalent" >&2
+    exit 2
+fi
+
 missing=0
 for spec in $MUTANTS; do
     if [ ! -f "$MUTDIR/${spec}.patch" ] && [ ! -f "$MUTDIR/${spec}.sed" ]; then
@@ -179,14 +197,20 @@ if [ "$missing" -ne 0 ]; then
 fi
 
 fail=0
+examined=0
 for spec in $MUTANTS; do
     if ! run_one "$spec"; then
         fail=1
     fi
+    examined=$((examined + 1))
 done
+if [ "$examined" -ne "$n_disk" ] || [ "$examined" -eq 0 ]; then
+    echo "examined $examined of $n_disk mutant files" >&2
+    exit 1
+fi
 if [ "$fail" -ne 0 ]; then
     echo "HTTP_READINESS_MUTANTS: survivors remain"
     exit 1
 fi
-echo "HTTP_READINESS_MUTANTS: all killed"
+echo "HTTP_READINESS_MUTANTS: all killed ($examined/$n_disk)"
 exit 0

@@ -1,0 +1,14 @@
+diff --git a/src/ext_http.c b/src/ext_http.c
+--- a/src/ext_http.c
++++ b/src/ext_http.c
+@@ -1798,10 +1798,8 @@
+              * must produce the same wire image: 503, Content-Length 0, no
+              * body. cache_cors stays 0 (the historical serving-shed shape). */
+-            tls_suppress_body = 1;
+             send_response_full(client_fd, 503, "Service Unavailable", "text/plain",
+-                               "", 0, 0, "");
+-            tls_suppress_body = 0;
++                               "Overloaded\n", 11, 0, "");
+             close(client_fd);
+             continue;
+         }

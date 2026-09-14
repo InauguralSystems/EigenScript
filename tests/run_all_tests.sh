@@ -2512,14 +2512,27 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
         HR_OUTPUT=$(bash "$TESTS_DIR/test_http_readiness.sh" "${HR_ARGS[@]}" 2>&1); HR_RC=$?
         HR_PASS=$(echo "$HR_OUTPUT" | grep -c "PASS:" || true)
         HR_FAIL=$(echo "$HR_OUTPUT" | grep -c "FAIL:" || true)
-        TOTAL=$((TOTAL + HR_PASS + HR_FAIL))
+        HR_SKIP=$(echo "$HR_OUTPUT" | grep -c "SKIP:" || true)
+        TOTAL=$((TOTAL + HR_PASS + HR_FAIL + HR_SKIP))
         PASS=$((PASS + HR_PASS))
         FAIL=$((FAIL + HR_FAIL))
-        if [ "$HR_RC" -ne 0 ] || [ "$HR_PASS" -eq 0 ] || [ "$HR_FAIL" -ne 0 ] ||
-           ! echo "$HR_OUTPUT" | grep -qE '^HTTP_READINESS(_SELFTEST)?: [1-9][0-9]* passed, 0 failed$'; then
+        if [ "$HR_MODE" = live ]; then
+            HR_LABEL='HTTP_READINESS'
+            HR_WANT=132
+            # One SKIP is the backpressure interposer (no cc / not Linux); it
+            # is counted, not a pass. More than one SKIP is a shrink.
+            if [ "$HR_SKIP" -eq 1 ]; then HR_WANT=131; fi
+        else
+            HR_LABEL='HTTP_READINESS_SELFTEST'
+            HR_WANT=506
+        fi
+        if [ "$HR_RC" -ne 0 ] || [ "$HR_PASS" -ne "$HR_WANT" ] || [ "$HR_FAIL" -ne 0 ] \
+           || [ "$HR_SKIP" -gt 1 ] ||
+           ! echo "$HR_OUTPUT" | grep -qx "${HR_LABEL}: ${HR_WANT} passed, 0 failed"; then
             TOTAL=$((TOTAL + 1)); FAIL=$((FAIL + 1))
-            echo "  FAIL: HTTP readiness $HR_MODE (exit=$HR_RC, passed=$HR_PASS, failed=$HR_FAIL)"
+            echo "  FAIL: HTTP readiness $HR_MODE (exit=$HR_RC, passed=$HR_PASS, failed=$HR_FAIL, skipped=$HR_SKIP, want=$HR_WANT)"
             echo "$HR_OUTPUT" | grep 'FAIL:' | head -5
+            echo "$HR_OUTPUT" | grep 'SKIP:' | head -5
             echo "$HR_OUTPUT" | tail -5
         else
             echo "  PASS: all $HR_PASS HTTP readiness $HR_MODE checks"

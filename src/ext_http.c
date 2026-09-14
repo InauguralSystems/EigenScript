@@ -181,7 +181,9 @@ static long http_max_body_total(void) {
 
 /* All response sites share this builder. `cache_cors` preserves the old
  * load-shed headers; OPTIONS has no Content-Type/Length. Extra fields are
- * runtime-owned literals (currently Retry-After), never caller text. */
+ * runtime-owned literals (Retry-After), never caller text. Names this
+ * function emits are refused by http_response_header so a registration
+ * cannot duplicate a runtime line. */
 static void send_response_full(int fd, int status, const char *status_text,
                                const char *content_type, const char *body,
                                long body_len, int cache_cors, const char *extra);
@@ -439,6 +441,27 @@ Value* builtin_http_static(Value *arg) {
     return make_str("static registered");
 }
 
+/* Names send_response_full emits, plus Transfer-Encoding (owned, not currently
+ * written). Registration of any of these would duplicate a runtime line. */
+static int is_runtime_response_header_name(const char *name) {
+    static const char *const names[] = {
+        "Content-Length",
+        "Content-Type",
+        "Transfer-Encoding",
+        "Connection",
+        "Cache-Control",
+        "Retry-After",
+        "Allow",
+        "Access-Control-Allow-Origin",
+        "Access-Control-Allow-Methods",
+        "Access-Control-Allow-Headers",
+    };
+    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+        if (strcasecmp(name, names[i]) == 0) return 1;
+    }
+    return 0;
+}
+
 /* Deterministic script configuration: no tape records or external reads. */
 static Value *response_header_error(ErrKind kind, const char *rule) {
     pthread_mutex_lock(&g_server.response_mu);
@@ -471,10 +494,7 @@ Value* builtin_http_response_header(Value *arg) {
             return response_header_error(EK_VALUE, "value requires visible ASCII, space or tab; no CR/LF/NUL");
     }
     /* EigenScript strings cannot contain NUL (chr/json/parser reject it). */
-    if (strcasecmp(name->data.str, "Content-Length") == 0 ||
-        strcasecmp(name->data.str, "Content-Type") == 0 ||
-        strcasecmp(name->data.str, "Transfer-Encoding") == 0 ||
-        strcasecmp(name->data.str, "Connection") == 0)
+    if (is_runtime_response_header_name(name->data.str))
         return response_header_error(EK_VALUE, "runtime-owned header name is refused");
     pthread_mutex_lock(&g_server.response_mu);
     if (g_server.serving) {
@@ -1770,8 +1790,13 @@ void http_serve_blocking(int port) {
          * one slow client cannot stall the whole listener. */
         int cur = __atomic_load_n(&g_conn_count, __ATOMIC_RELAXED);
         if (cur >= HTTP_MAX_CONCURRENT_CONNS) {
+            /* Accept-loop shed does not read the request, so HEAD and GET
+             * must produce the same wire image: 503, Content-Length 0, no
+             * body. cache_cors stays 0 (the historical serving-shed shape). */
+            tls_suppress_body = 1;
             send_response_full(client_fd, 503, "Service Unavailable", "text/plain",
-                               "Overloaded\n", 11, 0, "");
+                               "", 0, 0, "");
+            tls_suppress_body = 0;
             close(client_fd);
             continue;
         }
@@ -1780,8 +1805,10 @@ void http_serve_blocking(int port) {
          * Shed with 503 before spending a worker on it. */
         uint32_t caddr = client_addr.sin_addr.s_addr;
         if (!ip_conn_acquire(caddr)) {
+            tls_suppress_body = 1;
             send_response_full(client_fd, 503, "Service Unavailable", "text/plain",
-                               "Too many connections\n", 21, 0, "");
+                               "", 0, 0, "");
+            tls_suppress_body = 0;
             close(client_fd);
             continue;
         }
