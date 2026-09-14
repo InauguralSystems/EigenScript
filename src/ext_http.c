@@ -179,6 +179,21 @@ static long http_max_body_total(void) {
     return g_http_max_body_total;
 }
 
+/* Every lazily-initialised env-override cache above and below is a plain
+ * global first written on whichever thread happens to ask first. Worker
+ * connection threads and the init responder all ask, so under TSan each one
+ * is a data race (#1137 — http_max_body was the reported instance; the class
+ * is every such cache). Prime them ONCE on the main thread before any thread
+ * is created: pthread_create is the happens-before edge, and afterwards every
+ * reader sees an initialised value and never writes. */
+static long shared_max_bytes(void);
+static void http_prime_config_caches(void) {
+    (void)http_max_conn_per_ip();
+    (void)http_max_body();
+    (void)http_max_body_total();
+    (void)shared_max_bytes();
+}
+
 /* All response sites share this builder. `cache_cors` preserves the old
  * load-shed headers; OPTIONS has no Content-Type/Length. Extra fields are
  * runtime-owned literals (Retry-After), never caller text. Names this
@@ -583,6 +598,7 @@ Value* builtin_http_early_bind(Value *arg) {
     g_server.liveness_path = live_path ? xstrdup(live_path) : NULL;
     __atomic_store_n(&g_server.init_stop, 0, __ATOMIC_RELEASE);
     signal(SIGPIPE, SIG_IGN);
+    http_prime_config_caches();
     if (pthread_create(&g_server.init_tid, NULL, init_responder, eigs_http_active) != 0) {
         close(server_fd);
         g_server.early_bind_fd = -1;
@@ -1724,6 +1740,8 @@ done:
 
 void http_serve_blocking(int port) {
     int server_fd;
+
+    http_prime_config_caches();  /* before any worker thread exists (#1137) */
 
     if (g_server.early_bind_fd >= 0) {
         stop_init_responder(eigs_http_active);
