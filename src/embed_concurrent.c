@@ -24,17 +24,26 @@
  * Build:  make embed-concurrent
  */
 #include "eigs_embed.h"
+/* #1142 round 5: trace_out_capacity() — the witness for the sink-only drop
+ * in src/trace.c's sink_flush. It is an internal accessor, not an embedding
+ * API, so it comes from the internal header rather than eigs_embed.h. */
+#include "trace.h"
 #include <pthread.h>
 #include <stdatomic.h>
 #include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 static int failures = 0;
+static int checks_run = 0;
 
 static void check(int ok, const char *what) {
+    checks_run++;
     if (ok) {
         printf("  PASS: %s\n", what);
     } else {
@@ -42,6 +51,22 @@ static void check(int ok, const char *what) {
         failures++;
     }
 }
+
+/* mechanical-gates §121: every enumeration pins `examined == len(table) > 0`.
+ * This binary's table is the case list at the bottom of main(), and nothing
+ * else pins it: delete a case from that list and its checks go with it, the
+ * remaining ones all pass, and the run still prints EMBED_CONCURRENT_OK.
+ * (Round 4 shipped with exactly that hole; it is the reason the sink and
+ * take cases each carry their own population count.) So the FULL run pins
+ * the number of checks that actually ran. Adding or removing a check is then
+ * a deliberate edit of this constant — never a silent shrink. The
+ * EMBED_CONCURRENT_ONLY modes run one case on purpose and are exempt.
+ *
+ * If this row goes red, find the case that stopped running BEFORE touching
+ * the number: bumping a population pin to clear its own red is how a gate
+ * launders the loss it exists to report (mechanical-gates §4, §106). The
+ * number only ever moves for a check you just wrote. */
+#define EC_EXPECTED_CHECKS 83
 
 /* Rounds are deliberately modest: these assertions fire on the RATIO of two
  * states' settings, not on how long they are held, so a long spin buys nothing
@@ -1180,6 +1205,662 @@ static void test_concurrent_close(void) {
     sinkbuf_free(&sb);
 }
 
+/* ------------------------------------------------------------------ 12 */
+/* #1142 round 5, item 4 — the `atexit(trace_shutdown)` promise, measured.
+ *
+ * src/trace.c registers that handler inside trace_init, and trace_init has
+ * exactly ONE caller in the tree: src/main.c. An embedder never reaches it,
+ * so the registration is the CLI's and EIGS_TRACE opens no FILE tape for an
+ * embedded host at all. The question the comment used to answer wrongly is
+ * therefore: can an EMBEDDER lose a buffered tail by exiting without
+ * eigs_close / eigs_trace_shutdown?
+ *
+ * It cannot, because sink_flush hands every record over inside
+ * tape_emit_end — under the tape lock, before the emitting call returns —
+ * so a sink embedder has no tail. This case MEASURES that instead of
+ * asserting it: two forked children run the identical program through the
+ * identical sink, one tearing down properly and one falling out of main(),
+ * and their byte streams must be identical.
+ *
+ * Runs FIRST, before any thread is created: fork() in a process with live
+ * sibling threads can inherit a held lock. */
+
+#define TAIL_PROG \
+    "i is 0\n" \
+    "loop while i < 40:\n" \
+    "    q is i * 2\n" \
+    "    r is q + 1\n" \
+    "    i is i + 1\n" \
+    "return i\n"
+
+static int tail_fd = -1;
+
+static void tail_sink_cb(const char *b, size_t n, void *ud) {
+    (void)ud;
+    size_t off = 0;
+    while (off < n) {
+        ssize_t w = write(tail_fd, b + off, n - off);
+        if (w <= 0) return;
+        off += (size_t)w;
+    }
+}
+
+/* Child: emit TAIL_PROG through a pipe-backed sink. close_first == 1 tears
+ * the state and the tape down the documented way; 0 falls straight out of
+ * main() the way a host that forgot to (or could not) clean up does. */
+static void tail_child(int fd, int close_first) {
+    tail_fd = fd;
+    EigsState *st = eigs_open();
+    if (!st) _exit(2);
+    eigs_set_trace_sink(tail_sink_cb, NULL);
+    EigsValue *v = eigs_eval_string(TAIL_PROG);
+    if (v) eigs_value_release(v);
+    if (close_first) {
+        eigs_close(st);
+        eigs_trace_shutdown();
+    }
+    exit(0);            /* deliberately exit(), not _exit() */
+}
+
+/* Run one child and read its whole stream. Returns the byte count, or -1. */
+static long tail_run(int close_first, char **out) {
+    int fds[2];
+    if (pipe(fds) != 0) return -1;
+    fflush(stdout);     /* the child inherits this buffer and exit()s */
+    pid_t pid = fork();
+    if (pid < 0) { close(fds[0]); close(fds[1]); return -1; }
+    if (pid == 0) {
+        close(fds[0]);
+        tail_child(fds[1], close_first);
+        _exit(3);       /* unreachable */
+    }
+    close(fds[1]);
+    size_t cap = 65536, len = 0;
+    char *buf = malloc(cap);
+    if (!buf) { close(fds[0]); return -1; }
+    for (;;) {
+        if (len + 4096 > cap) {
+            char *nb = realloc(buf, cap * 2);
+            if (!nb) break;
+            buf = nb; cap *= 2;
+        }
+        ssize_t r = read(fds[0], buf + len, 4096);
+        if (r <= 0) break;
+        len += (size_t)r;
+    }
+    close(fds[0]);
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) { free(buf); return -2; }
+    *out = buf;
+    return (long)len;
+}
+
+/* The comparator the case asserts on, so the control below can drive the
+ * REAL one instead of a re-implementation of it (mechanical-gates §99). */
+static int tail_streams_identical(const char *a, long na,
+                                  const char *b, long nb) {
+    return na == nb && na > 0 && memcmp(a, b, (size_t)na) == 0;
+}
+
+static void test_exit_tail_not_lost(void) {
+    char *closed = NULL, *leaked = NULL;
+    long nc = tail_run(1, &closed);
+    long nl = tail_run(0, &leaked);
+    check(nc > 0, "exit-tail: the closing child's sink received bytes");
+    check(nl > 0, "exit-tail: the exiting child's sink received bytes");
+    if (nc > 0 && nl > 0) {
+        /* The population: a run that emitted three records would satisfy
+         * "identical" while measuring nothing about a tail. */
+        TapeParse p = parse_tape_buf(closed, (size_t)nc);
+        check(p.lines >= 100 && p.malformed == 0,
+              "exit-tail: the measured program emits a real tape "
+              "(>=100 well-formed records)");
+        check(tail_streams_identical(closed, nc, leaked, nl),
+              "exit-tail: a sink embedder that exits without eigs_close "
+              "loses NOTHING (byte-identical streams)");
+        printf("        exit-tail: closed=%ld bytes leaked=%ld bytes "
+               "records=%d malformed=%d\n", nc, nl, p.lines, p.malformed);
+        /* Control: the SAME comparator, fed a stream one byte short, must
+         * say "different" — otherwise the row above is an equality that
+         * cannot fail (mechanical-gates §101). */
+        check(!tail_streams_identical(closed, nc, closed, nc - 1),
+              "control: the identity comparator rejects a stream one byte "
+              "short");
+    }
+    free(closed);
+    free(leaked);
+}
+
+/* ------------------------------------------------------------------ 13 */
+/* #1142 round 5, item 2 — the sink-only DROP has a witness.
+ *
+ * src/trace.c's sink_flush ends a sink-only record with
+ * `if (!g_trace_fp) g_out_len = g_rec_at;`. That one line is what keeps a
+ * freestanding sink-only embedder (EigenOS M11's journal — no filesystem,
+ * nothing to spill to) from growing its staging buffer WITH THE TAPE.
+ * Deleting it survives every other oracle in this tree: each record is
+ * still whole, each byte still reaches the sink, the tape still replays.
+ * Only the memory moves (critic measurement: +14,092 KB of RSS over 14.3 MB
+ * of sink bytes, against 136 KB on this tree).
+ *
+ * So the witness is the buffer itself, through trace_out_capacity().
+ *
+ * ORDERING: this case must run before any other tape record in the process,
+ * because its arming control is `capacity == 0 before, > 0 after`. If some
+ * earlier case opened a tape the first row goes red — honestly, and naming
+ * the reason. (trace_shutdown frees the buffer and resets the capacity to 0,
+ * so "0" really does mean "no tape has been open".) */
+
+#define SOB_VAL_BYTES 30000
+#define SOB_ITERS     400
+#define SOB_TARGET    (10u * 1024u * 1024u)
+
+typedef struct { unsigned long bytes; long calls; size_t max_rec; } SobSink;
+
+static void sob_cb(const char *b, size_t n, void *ud) {
+    SobSink *s = (SobSink *)ud;
+    (void)b;
+    s->bytes += n;
+    s->calls++;
+    if (n > s->max_rec) s->max_rec = n;
+}
+
+static void test_sink_only_buffer_bounded(void) {
+    char *big = malloc(SOB_VAL_BYTES + 1);
+    if (!big) { check(0, "sink-only-bounded: allocation"); return; }
+    memset(big, 'x', SOB_VAL_BYTES);
+    big[SOB_VAL_BYTES] = '\0';
+    setenv("CONC_SINK_BIG", big, 1);
+
+    size_t cap0 = trace_out_capacity();
+    check(cap0 == 0,
+          "sink-only-bounded: no tape buffer exists before the first record "
+          "(this case runs before every other tape case)");
+
+    SobSink s;
+    memset(&s, 0, sizeof s);
+    EigsState *st = eigs_open();
+    check(st != NULL, "sink-only-bounded: state opened");
+    eigs_set_trace_sink(sob_cb, &s);
+
+    /* Warm-up: ONE iteration, which stages the largest record shape the
+     * loop below will ever stage (a ~30 KB `N env_get=` record). After this
+     * the capacity is whatever that shape needs, and the claim under test is
+     * that 10 MB more of the same changes it by zero. */
+    {
+        EigsValue *v = eigs_eval_string(
+            "w is env_get of \"CONC_SINK_BIG\"\nreturn 1");
+        if (v) eigs_value_release(v);
+    }
+    size_t cap1 = trace_out_capacity();
+    unsigned long warm_bytes = s.bytes;
+    /* Arming control (mechanical-gates §101): the instrument MOVES. A
+     * capacity reader stuck at a constant would pass the bound below having
+     * measured nothing. */
+    check(cap1 > cap0 && cap1 > 0,
+          "control: the capacity accessor moves when a record is staged "
+          "(0 -> cap)");
+
+    char src[256];
+    snprintf(src, sizeof src,
+             "i is 0\n"
+             "loop while i < %d:\n"
+             "    s is env_get of \"CONC_SINK_BIG\"\n"
+             "    i is i + 1\n"
+             "return i\n", SOB_ITERS);
+    EigsValue *v = eigs_eval_string(src);
+    int ran = v && (int)eigs_value_as_num(v) == SOB_ITERS;
+    if (v) eigs_value_release(v);
+    size_t cap2 = trace_out_capacity();
+
+    eigs_set_trace_sink(NULL, NULL);
+    if (st) eigs_close(st);
+
+    check(ran, "sink-only-bounded: the emitting program completed every "
+               "iteration");
+    /* Population pin (§121): the bound is a claim about >= 10 MB of tape.
+     * A run that emitted 3 KB would satisfy `cap2 == cap1` for free. */
+    check(s.bytes - warm_bytes >= SOB_TARGET,
+          "sink-only-bounded: the run pushed >= 10 MB of sink bytes");
+    check(s.calls > 0 && s.max_rec >= SOB_VAL_BYTES,
+          "sink-only-bounded: the stream really carries ~30 KB records");
+    check(cap2 == cap1,
+          "sink-only-bounded: the tape staging buffer does not grow with "
+          "the tape (sink-only records are dropped after hand-off)");
+    printf("        sink-only-bounded: cap0=%zu cap1=%zu cap2=%zu "
+           "sink_bytes=%lu calls=%ld max_rec=%zu\n",
+           cap0, cap1, cap2, s.bytes, s.calls, s.max_rec);
+
+    unsetenv("CONC_SINK_BIG");
+    free(big);
+}
+
+/* ------------------------------------------------------------------ 14 */
+/* #1142 round 5, item 3 — trace_set_sink emits the V header UNDER the tape
+ * lock, and a sibling state recording at the same time cannot get between
+ * the sink becoming visible and the header reaching it.
+ *
+ * Both halves are structural on the correct build, so both are measured
+ * structurally rather than by hoping a window tears:
+ *
+ *   - `pre_v == 0`: the sink pointer and its ud are published in the same
+ *     critical section that commits the V record, so the FIRST call a fresh
+ *     sink context ever receives is its own header. Each round installs a
+ *     FRESH context, so this is not diluted by the previous install's
+ *     stream.
+ *   - `hdr_overlap == 0`: the header callback fires with the tape mutex
+ *     held, so while it is running the sibling cannot be inside a callback
+ *     of its own. The header callback holds a bounded window and watches for
+ *     the sibling's flag; on the mutant (header emitted after tape_unlock)
+ *     the sibling is free to record throughout that window and is seen.
+ *
+ * test_hdr_overlap_detector is the arming control for the second. */
+
+#define HDR_ROUNDS 24
+#define HDR_WIN_US 2000
+#define HDR_SIB_US 300
+
+typedef struct {
+    long calls, v_calls, non_v, pre_v, malformed;
+    int  first_is_v;
+    pthread_mutex_t mu;
+} HdrCtx;
+
+static HdrCtx hdr_ctx[HDR_ROUNDS + 1];
+static _Atomic int  hdr_gate_on = 0;
+static _Atomic int  hdr_sib_in = 0;
+static _Atomic int  hdr_sib_run = 1;
+static _Atomic long hdr_gated = 0, hdr_overlap = 0, hdr_sib_evals = 0;
+static __thread int hdr_is_installer = 0;
+static __thread int hdr_sib_pending = 0;
+
+static void hdr_count(HdrCtx *c, const char *b, size_t n, int is_v) {
+    pthread_mutex_lock(&c->mu);
+    c->calls++;
+    if (is_v) {
+        if (c->calls == 1) c->first_is_v = 1;
+        c->v_calls++;
+    } else {
+        c->non_v++;
+        if (c->v_calls == 0) c->pre_v++;
+    }
+    if (n == 0 || b[n - 1] != '\n') c->malformed++;
+    else {
+        char line[8192];
+        size_t m = n - 1;
+        if (m >= sizeof line) m = sizeof line - 1;
+        memcpy(line, b, m);
+        line[m] = '\0';
+        if (!tape_line_ok(line)) c->malformed++;
+    }
+    pthread_mutex_unlock(&c->mu);
+}
+
+static void hdr_cb(const char *b, size_t n, void *ud) {
+    HdrCtx *c = (HdrCtx *)ud;
+    int is_v = (n >= 2 && b[0] == 'V' && b[1] == ' ');
+    if (atomic_load(&hdr_gate_on)) {
+        if (hdr_is_installer) {
+            if (is_v) {
+                atomic_fetch_add(&hdr_gated, 1);
+                int seen = 0;
+                for (int i = 0; i < HDR_WIN_US / 50; i++) {
+                    if (atomic_load(&hdr_sib_in)) seen = 1;
+                    usleep(50);
+                }
+                if (seen) atomic_fetch_add(&hdr_overlap, 1);
+            }
+        } else if (hdr_sib_pending) {
+            /* One gated callback per sibling eval: the sibling has to be
+             * inside a callback for a MEASURABLE fraction of the header's
+             * window, not for every record it writes. */
+            hdr_sib_pending = 0;
+            atomic_store(&hdr_sib_in, 1);
+            for (int i = 0; i < HDR_SIB_US / 50; i++) usleep(50);
+            atomic_store(&hdr_sib_in, 0);
+        }
+    }
+    hdr_count(c, b, n, is_v);
+}
+
+static void *hdr_sib_worker(void *p) {
+    (void)p;
+    EigsState *st = eigs_open();
+    if (!st) return NULL;
+    while (atomic_load(&hdr_sib_run)) {
+        hdr_sib_pending = 1;
+        EigsValue *v = eigs_eval_string("hs is 1\nreturn hs");
+        if (v) { eigs_value_release(v); atomic_fetch_add(&hdr_sib_evals, 1); }
+    }
+    eigs_close(st);
+    return NULL;
+}
+
+/* Arming control: with nothing serializing them, a thread inside the
+ * sibling window IS seen by the header watcher. */
+static void *hdr_ctl_holder(void *p) {
+    (void)p;
+    atomic_store(&hdr_sib_in, 1);
+    for (int i = 0; i < HDR_WIN_US / 50; i++) usleep(50);
+    atomic_store(&hdr_sib_in, 0);
+    return NULL;
+}
+
+static void test_hdr_overlap_detector(void) {
+    atomic_store(&hdr_gated, 0);
+    atomic_store(&hdr_overlap, 0);
+    atomic_store(&hdr_sib_in, 0);
+    pthread_t h;
+    pthread_create(&h, NULL, hdr_ctl_holder, NULL);
+    /* Drive the header watcher's own code by hand, with the tape nowhere in
+     * the picture: this is the operation the correct build serializes and
+     * the mutant does not. */
+    atomic_fetch_add(&hdr_gated, 1);
+    int seen = 0;
+    for (int i = 0; i < HDR_WIN_US / 50; i++) {
+        if (atomic_load(&hdr_sib_in)) seen = 1;
+        usleep(50);
+    }
+    if (seen) atomic_fetch_add(&hdr_overlap, 1);
+    pthread_join(h, NULL);
+    check(atomic_load(&hdr_gated) == 1 && atomic_load(&hdr_overlap) == 1,
+          "control: the header-overlap detector fires when an unserialized "
+          "thread records inside the window");
+    printf("        hdr-detector control: gated=%ld overlap=%ld\n",
+           (long)atomic_load(&hdr_gated), (long)atomic_load(&hdr_overlap));
+    atomic_store(&hdr_gated, 0);
+    atomic_store(&hdr_overlap, 0);
+}
+
+static void test_set_sink_header_atomic(void) {
+    for (int i = 0; i <= HDR_ROUNDS; i++) {
+        memset(&hdr_ctx[i], 0, sizeof hdr_ctx[i]);
+        pthread_mutex_init(&hdr_ctx[i].mu, NULL);
+    }
+    hdr_is_installer = 1;
+    atomic_store(&hdr_gate_on, 0);
+    atomic_store(&hdr_gated, 0);
+    atomic_store(&hdr_overlap, 0);
+    atomic_store(&hdr_sib_evals, 0);
+    atomic_store(&hdr_sib_run, 1);
+
+    /* Round 0 installs with no sibling running; the gate is off for it. */
+    eigs_set_trace_sink(hdr_cb, &hdr_ctx[0]);
+    pthread_t sib;
+    pthread_create(&sib, NULL, hdr_sib_worker, NULL);
+    /* Wait for the sibling to be actually recording before arming. */
+    for (int i = 0; i < 2000 && atomic_load(&hdr_sib_evals) < 2; i++)
+        usleep(500);
+    int sib_live = atomic_load(&hdr_sib_evals) >= 2;
+    atomic_store(&hdr_gate_on, 1);
+
+    for (int r = 1; r <= HDR_ROUNDS; r++) {
+        eigs_set_trace_sink(hdr_cb, &hdr_ctx[r]);
+        usleep(1000);       /* let the sibling stream into this context */
+    }
+
+    atomic_store(&hdr_gate_on, 0);
+    atomic_store(&hdr_sib_run, 0);
+    pthread_join(sib, NULL);
+    eigs_set_trace_sink(NULL, NULL);
+
+    long tot_calls = 0, tot_non_v = 0, bad_v = 0, bad_pre = 0, bad_first = 0,
+         mal = 0;
+    for (int r = 1; r <= HDR_ROUNDS; r++) {
+        tot_calls += hdr_ctx[r].calls;
+        tot_non_v += hdr_ctx[r].non_v;
+        if (hdr_ctx[r].v_calls != 1) bad_v++;
+        if (hdr_ctx[r].pre_v != 0) bad_pre++;
+        if (!hdr_ctx[r].first_is_v) bad_first++;
+        mal += hdr_ctx[r].malformed;
+    }
+
+    check(sib_live, "set-sink-header: the sibling state was recording before "
+                    "the gate armed");
+    /* §121: every round must have been examined. */
+    check(tot_calls > 0 && atomic_load(&hdr_gated) == HDR_ROUNDS,
+          "set-sink-header: every install emitted exactly one gated header "
+          "(examined == rounds)");
+    check(bad_v == 0,
+          "set-sink-header: each install's sink sees exactly one V record");
+    check(bad_first == 0 && bad_pre == 0,
+          "set-sink-header: the header is the FIRST record a freshly "
+          "installed sink receives (no sibling record precedes it)");
+    check(mal == 0, "set-sink-header: every collected line is well-formed");
+    /* Non-vacuity: the sibling really did write into these contexts, so
+     * "no record precedes the header" is a fact about a contended tape and
+     * not about an idle one. */
+    check(tot_non_v >= HDR_ROUNDS,
+          "set-sink-header: the sibling streamed records into the installed "
+          "sinks (>= 1 per round)");
+    check(atomic_load(&hdr_overlap) == 0,
+          "set-sink-header: no sibling record overlaps the header emission "
+          "(the header is emitted under the tape lock)");
+    printf("        set-sink-header: rounds=%d gated=%ld overlap=%ld "
+           "calls=%ld non_v=%ld sib_evals=%ld malformed=%ld\n",
+           HDR_ROUNDS, (long)atomic_load(&hdr_gated),
+           (long)atomic_load(&hdr_overlap), tot_calls, tot_non_v,
+           (long)atomic_load(&hdr_sib_evals), mal);
+    /* Control: the pre_v accounting arms — a non-V record delivered before
+     * any header IS counted. */
+    {
+        HdrCtx ctl;
+        memset(&ctl, 0, sizeof ctl);
+        pthread_mutex_init(&ctl.mu, NULL);
+        hdr_count(&ctl, "A x=1\n", 6, 0);
+        check(ctl.pre_v == 1 && ctl.first_is_v == 0,
+              "control: a record delivered before the header is counted as "
+              "pre_v");
+        pthread_mutex_destroy(&ctl.mu);
+    }
+    hdr_is_installer = 0;
+    for (int i = 0; i <= HDR_ROUNDS; i++) pthread_mutex_destroy(&hdr_ctx[i].mu);
+}
+
+/* ------------------------------------------------------------------ 15 */
+/* #1142 round 5, item 1 — eigs_replay_take runs UNDER the tape lock, gated
+ * structurally.
+ *
+ * Until this round the `replay-take-unlocked` mutant was killed by a
+ * ThreadSanitizer report, and a sanitizer report is a probabilistic kill: a
+ * critic measured it surviving 1 of 10 train runs. The property itself is
+ * not probabilistic — the take holds the same mutex the emit path holds —
+ * so measure the property.
+ *
+ * The sink callback fires with the tape lock held. So: one thread emits a
+ * record whose callback BLOCKS for a bounded window; the other thread waits
+ * to observe that the callback has been entered and then attempts a take.
+ *
+ *   - take under the lock (correct): the take CANNOT complete until the
+ *     callback returns and tape_emit_end unlocks, so the callback flag is
+ *     always already down when the take returns. 0 overlaps, on any
+ *     schedule, deterministically.
+ *   - take unlocked (mutant): the take completes in microseconds, deep
+ *     inside a 2 ms window, so the flag is still up. Overlaps on every
+ *     attempt.
+ *
+ * The take latency is printed, never asserted: a wall-clock budget is a
+ * claim about the machine, not about the mechanism (mechanical-gates §120).
+ * The ORDER of the two events is the witness. */
+
+#define TL_ROUNDS  80
+#define TL_WIN_US  2000
+#define TL_TAPE_N  200
+
+static _Atomic int  tl_gate_on = 0;
+static _Atomic int  tl_cb_in = 0;
+static _Atomic long tl_cb_fired = 0, tl_gated = 0, tl_overlap = 0,
+                    tl_served = 0, tl_missed = 0;
+static __thread int tl_is_emitter = 0;
+static __thread int tl_cb_pending = 0;
+static pthread_barrier_t tl_round;
+static _Atomic long tl_lat_us_total = 0;
+
+static void tl_hold_window(void) {
+    atomic_store(&tl_cb_in, 1);
+    for (int i = 0; i < TL_WIN_US / 50; i++) usleep(50);
+    atomic_store(&tl_cb_in, 0);
+}
+
+static void tl_sink_cb(const char *b, size_t n, void *ud) {
+    (void)b; (void)n; (void)ud;
+    if (!atomic_load(&tl_gate_on) || !tl_is_emitter || !tl_cb_pending) return;
+    tl_cb_pending = 0;
+    atomic_fetch_add(&tl_cb_fired, 1);
+    tl_hold_window();
+}
+
+static void *tl_emitter(void *p) {
+    (void)p;
+    tl_is_emitter = 1;
+    EigsState *st = eigs_open();
+    if (!st) return NULL;
+    for (int r = 0; r < TL_ROUNDS; r++) {
+        pthread_barrier_wait(&tl_round);
+        tl_cb_pending = 1;
+        EigsValue *v = eigs_eval_string("tx is 1\nreturn tx");
+        if (v) eigs_value_release(v);
+    }
+    eigs_close(st);
+    return NULL;
+}
+
+/* One gated attempt. Waits (bounded) for the emitter to be inside its
+ * callback, then takes and reports whether the callback was STILL inside
+ * when the take returned. */
+static void tl_attempt(void) {
+    int saw = 0;
+    for (int i = 0; i < 200000 && !saw; i++) {
+        if (atomic_load(&tl_cb_in)) saw = 1;
+        else usleep(10);
+    }
+    if (!saw) { atomic_fetch_add(&tl_missed, 1); return; }
+    atomic_fetch_add(&tl_gated, 1);
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    EigsValue *v = NULL;
+    int got = eigs_replay_take("random", &v);
+    int still = atomic_load(&tl_cb_in);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    if (still) atomic_fetch_add(&tl_overlap, 1);
+    if (got) {
+        atomic_fetch_add(&tl_served, 1);
+        if (v) eigs_value_release(v);
+    }
+    atomic_fetch_add(&tl_lat_us_total,
+                     (long)((t1.tv_sec - t0.tv_sec) * 1000000L
+                            + (t1.tv_nsec - t0.tv_nsec) / 1000L));
+}
+
+/* Arming control: the same counters, the same flag, and an operation known
+ * NOT to be serialized against the window. If this reads 0 the detector
+ * cannot report an overlap at all and the case below is decoration. */
+static void *tl_ctl_holder(void *p) { (void)p; tl_hold_window(); return NULL; }
+
+static void test_take_overlap_detector(void) {
+    atomic_store(&tl_gated, 0);
+    atomic_store(&tl_overlap, 0);
+    atomic_store(&tl_cb_in, 0);
+    pthread_t h;
+    pthread_create(&h, NULL, tl_ctl_holder, NULL);
+    int saw = 0;
+    for (int i = 0; i < 200000 && !saw; i++) {
+        if (atomic_load(&tl_cb_in)) saw = 1;
+        else usleep(10);
+    }
+    if (saw) {
+        atomic_fetch_add(&tl_gated, 1);
+        sched_yield();                     /* takes no tape mutex */
+        if (atomic_load(&tl_cb_in)) atomic_fetch_add(&tl_overlap, 1);
+    }
+    pthread_join(h, NULL);
+    check(atomic_load(&tl_gated) == 1 && atomic_load(&tl_overlap) == 1,
+          "control: the take-overlap detector fires for an operation that "
+          "does NOT take the tape mutex");
+    printf("        take-detector control: gated=%ld overlap=%ld\n",
+           (long)atomic_load(&tl_gated), (long)atomic_load(&tl_overlap));
+    atomic_store(&tl_gated, 0);
+    atomic_store(&tl_overlap, 0);
+}
+
+static void test_replay_take_under_lock(void) {
+    /* A tape this binary will accept: capture its own V header first. */
+    SinkBuf hdr;
+    sinkbuf_init(&hdr);
+    EigsState *prep = eigs_open();
+    eigs_set_trace_sink(sinkbuf_cb, &hdr);
+    EigsValue *pv = eigs_eval_string("1");
+    if (pv) eigs_value_release(pv);
+    eigs_set_trace_sink(NULL, NULL);
+    if (prep) eigs_close(prep);
+    char *nl = hdr.buf ? strchr(hdr.buf, '\n') : NULL;
+    check(nl != NULL, "replay-take-lock: captured a V header");
+    if (!nl) { sinkbuf_free(&hdr); return; }
+    size_t hlen = (size_t)(nl - hdr.buf + 1);
+    size_t tcap = hlen + (size_t)TL_TAPE_N * 32;
+    char *tape = malloc(tcap + 1);
+    if (!tape) { sinkbuf_free(&hdr); return; }
+    memcpy(tape, hdr.buf, hlen);
+    size_t off = hlen;
+    for (int i = 1; i <= TL_TAPE_N; i++)
+        off += (size_t)snprintf(tape + off, tcap - off + 1, "N random=%d\n", i);
+    tape[off] = '\0';
+    sinkbuf_free(&hdr);
+
+    atomic_store(&tl_cb_fired, 0);
+    atomic_store(&tl_gated, 0);
+    atomic_store(&tl_overlap, 0);
+    atomic_store(&tl_served, 0);
+    atomic_store(&tl_missed, 0);
+    atomic_store(&tl_lat_us_total, 0);
+    atomic_store(&tl_cb_in, 0);
+
+    EigsState *owner = eigs_open();
+    check(owner != NULL, "replay-take-lock: owner state opened");
+    check(eigs_set_replay_tape(tape, off, 0) != 0,
+          "replay-take-lock: tape installed");
+    eigs_set_trace_sink(tl_sink_cb, NULL);
+
+    pthread_barrier_init(&tl_round, NULL, 2);
+    atomic_store(&tl_gate_on, 1);
+    pthread_t em;
+    pthread_create(&em, NULL, tl_emitter, NULL);
+    for (int r = 0; r < TL_ROUNDS; r++) {
+        pthread_barrier_wait(&tl_round);
+        tl_attempt();
+    }
+    pthread_join(em, NULL);
+    atomic_store(&tl_gate_on, 0);
+    pthread_barrier_destroy(&tl_round);
+    eigs_set_trace_sink(NULL, NULL);
+
+    long gated = atomic_load(&tl_gated), served = atomic_load(&tl_served);
+    /* §121 population pins: every round produced a gated attempt, and every
+     * attempt was served a record. A take that returned 0 immediately, or a
+     * round where the emitter never entered its callback, would make the
+     * overlap count 0 for reasons that have nothing to do with the lock. */
+    check(atomic_load(&tl_cb_fired) == TL_ROUNDS && atomic_load(&tl_missed) == 0,
+          "replay-take-lock: the emitter entered its sink callback in every "
+          "round (examined == rounds)");
+    check(gated == TL_ROUNDS,
+          "replay-take-lock: every round produced a gated take attempt");
+    check(served == TL_ROUNDS,
+          "replay-take-lock: every gated take was served a tape record");
+    check(atomic_load(&tl_overlap) == 0,
+          "replay-take-lock: no take completes while a sink callback is "
+          "running (the take holds the tape mutex)");
+    printf("        replay-take-lock: rounds=%d cb_fired=%ld gated=%ld "
+           "served=%ld overlap=%ld missed=%ld mean_take_us=%ld\n",
+           TL_ROUNDS, (long)atomic_load(&tl_cb_fired), gated, served,
+           (long)atomic_load(&tl_overlap), (long)atomic_load(&tl_missed),
+           gated ? (long)atomic_load(&tl_lat_us_total) / gated : -1L);
+
+    if (owner) eigs_close(owner);
+    eigs_trace_shutdown();
+    free(tape);
+}
+
 int main(void) {
     printf("embed concurrent multi-state (#885/#1142/#1143)\n");
     /* EMBED_CONCURRENT_ONLY: the TSan mutant oracle runs just the take
@@ -1201,7 +1882,16 @@ int main(void) {
         test_owner_state_raises();
     } else if (only && strcmp(only, "close") == 0) {
         test_concurrent_close();
+    } else if (only && strcmp(only, "sink-only") == 0) {
+        test_sink_only_buffer_bounded();
     } else {
+        /* ORDER IS LOAD-BEARING at the top. test_exit_tail_not_lost forks,
+         * so it runs before any thread exists; test_sink_only_buffer_bounded
+         * reads the tape staging buffer's capacity BEFORE any tape has been
+         * open (its arming control is 0 -> nonzero), so it runs before any
+         * case that installs a sink. */
+        test_exit_tail_not_lost();
+        test_sink_only_buffer_bounded();
         test_observer_thresholds();
         test_global_isolation();
         test_error_isolation();
@@ -1209,11 +1899,25 @@ int main(void) {
         test_cb_overlap_detector();
         test_two_state_sink();
         test_ocfg_per_state();
+        test_hdr_overlap_detector();
+        test_set_sink_header_atomic();
         test_close_while_other_runs();
         test_replay_take_serialized();
+        test_take_overlap_detector();
+        test_replay_take_under_lock();
         test_owner_state_raises();
         test_shutdown_while_sibling();
         test_concurrent_close();
+        if (checks_run != EC_EXPECTED_CHECKS) {
+            printf("  FAIL: check population: %d checks ran, expected %d "
+                   "(a case was added, removed, or returned early — update "
+                   "EC_EXPECTED_CHECKS deliberately)\n",
+                   checks_run, EC_EXPECTED_CHECKS);
+            failures++;
+        } else {
+            printf("  PASS: check population: %d checks ran (== "
+                   "EC_EXPECTED_CHECKS)\n", checks_run);
+        }
     }
 
     if (failures) {

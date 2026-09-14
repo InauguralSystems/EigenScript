@@ -201,6 +201,22 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
  * eigs_replay_take from a state that did not open the tape, raises the
  * same catchable error as recv-under-replay.
  *
+ * NOTHING IS BUFFERED FOR YOU, and that is a promise, not an accident:
+ * each record reaches the sink from inside the call that emitted it,
+ * before that call returns. A host that exits without eigs_close or
+ * eigs_trace_shutdown therefore loses no tail — there is no tail. (The
+ * `atexit` flush in src/trace.c belongs to the CLI's FILE tape; no embed
+ * entry point reaches it, and EIGS_TRACE opens no file for an embedded
+ * host.) The same property bounds the tape's MEMORY: with no file tape
+ * open, the staging buffer rewinds after every hand-off, so the runtime
+ * holds at most one record's worth of tape however long the journal
+ * grows. Both are gated — `exit-tail` and `sink-only-bounded` in
+ * src/embed_concurrent.c.
+ *
+ * The header is atomic with the install: the first call a freshly
+ * installed sink receives is always its own `V` record, even if another
+ * EigsState is recording at that moment.
+ *
  * eigs_set_replay_tape hands the whole tape back as the replay source
  * (bytes are copied; NULL clears). Returns 0 on OOM or when the tape is
  * REFUSED: a tape whose version headers are missing, torn, or don't

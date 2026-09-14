@@ -219,6 +219,22 @@ void trace_set_sink(void (*cb)(const char *bytes, size_t len, void *ud),
                     void *ud);
 int  trace_set_replay_mem(const char *bytes, size_t len, int strict);
 
+/* #1142 round 5 — the tape's staging-buffer CAPACITY in bytes, read under
+ * the tape lock. Read-only, and it exists for one reason: to give the
+ * sink-only DROP in sink_flush a witness.
+ *
+ * A sink-only embedder (the freestanding profile — EigenOS M11's journal —
+ * has no filesystem and no FILE tape) rewinds the staging buffer after every
+ * hand-off, because the sink already owns those bytes. Delete that one line
+ * and the buffer grows with the tape: unbounded memory on exactly the
+ * profile that cannot spill. Nothing else in the tree can see it — every
+ * record is still whole, every byte still reaches the sink, the tape still
+ * replays — so a bound on this number is the only available check
+ * (src/embed_concurrent.c's `sink-only-bounded` case; mutant
+ * `sink-only-no-drop`). It is NOT an embedding API: it reports an
+ * implementation detail and may disappear with it. */
+size_t trace_out_capacity(void);
+
 /* Record a source-line event. Emitted by OP_LINE. */
 void trace_line(int line);
 

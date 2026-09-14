@@ -924,6 +924,17 @@ static size_t  g_out_cap = 0;
 static size_t  g_out_len = 0;   /* bytes formatted but not yet fwritten */
 static size_t  g_rec_at  = 0;   /* offset of the record being formatted */
 
+/* #1142 round 5: read-only witness for the sink-only DROP two functions
+ * below. Takes the lock so the read is not a torn one. See trace.h for why
+ * this exists at all — the one line it witnesses is invisible to every
+ * other oracle in the tree. */
+size_t trace_out_capacity(void) {
+    tape_lock();
+    size_t c = g_out_cap;
+    tape_unlock();
+    return c;
+}
+
 /* Caller holds g_tape_mu. */
 static void out_flush_locked(void) {
     if (g_out_len && g_trace_fp) fwrite(g_out, 1, g_out_len, g_trace_fp);
@@ -996,6 +1007,17 @@ static void sink_hand_off(const char *p, size_t left) {
 static void sink_flush(void) {
     size_t n = g_out_len - g_rec_at;
     if (g_trace_sink && n) sink_hand_off(g_out + g_rec_at, n);
+    /* Sink-only (the freestanding profile, EigenOS M11's journal): nothing
+     * will ever fwrite these bytes, and the sink already owns them, so the
+     * staging area rewinds to where this record started. WITHOUT this line
+     * g_out_len only ever grows and the tape output buffer grows WITH THE
+     * TAPE — unbounded memory on the one profile that has no filesystem to
+     * spill to (measured on the mutant: +14,092 KB of RSS over 14.3 MB of
+     * sink bytes, against 136 KB on this tree). No tape check can see it:
+     * every record is still well-formed and every byte still reaches the
+     * sink. The witness is trace_out_capacity() — pinned by the
+     * `sink-only-bounded` case in src/embed_concurrent.c, and killed by the
+     * `sink-only-no-drop` mutant. */
     if (!g_trace_fp) g_out_len = g_rec_at;          /* sink-only: drop */
     else if (g_out_len >= TAPE_OUT_FLUSH) out_flush_locked();
 }
@@ -1235,11 +1257,27 @@ void trace_init(void) {
     }
     setvbuf(g_trace_fp, NULL, _IOFBF, 64 * 1024);
     /* #1142: tape bytes are buffered in g_out now, NOT in the FILE's stdio
-     * buffer, so stdio's own exit-time flush no longer covers a process
-     * that exits without calling trace_shutdown (an embedder that leaks
-     * its state; the CLI registers this too, and trace_shutdown is
-     * idempotent). Without this, up to TAPE_OUT_FLUSH bytes of tape are
-     * lost at exit — a regression against the pre-#1142 fputc path. */
+     * buffer, so stdio's own exit-time flush no longer covers a process that
+     * exits without calling trace_shutdown. Without this, up to
+     * TAPE_OUT_FLUSH bytes of the FILE tape are lost at exit — a regression
+     * against the pre-#1142 fputc path. trace_shutdown is idempotent, so the
+     * CLI's own call is unaffected.
+     *
+     * Round 5 correction — this registration is the CLI's, and ONLY the
+     * CLI's. trace_init has exactly one caller in the tree (src/main.c:131);
+     * no embed entry point calls it, so an embedder never reaches this line
+     * and EIGS_TRACE opens no file for one. The earlier wording here said it
+     * also covered "an embedder that leaks its state". It does not, and it
+     * cannot.
+     *
+     * Nor does an embedder need it: the embed tape is the SINK
+     * (trace_set_sink), and sink_flush hands each record over inside
+     * tape_emit_end — under the lock, before the emitting call returns — so
+     * a sink embedder has no buffered tail at all. Measured, not reasoned:
+     * the `exit-tail` case in src/embed_concurrent.c forks two children that
+     * run the same program through the same sink, one calling
+     * eigs_close/eigs_trace_shutdown and one exiting straight out of
+     * main(), and requires the two byte streams to be IDENTICAL. */
     atexit(trace_shutdown);
     tape_lock();
     trace_enabled_store(1);

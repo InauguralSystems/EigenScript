@@ -373,6 +373,32 @@ act between evals. While a replay tape is set, nondet builtins return
 the recorded `N` values in order instead of consulting their live
 sources; when the tape runs out they fall back to live.
 
+The first call a freshly installed sink receives is always its own `V`
+header: the callback pointer and the header are published in the same
+critical section, so a sibling state recording at that instant cannot
+get a record in ahead of it.
+
+**The runtime buffers nothing on your behalf.** Each record reaches the
+sink from inside the call that emitted it, before that call returns.
+Two consequences, both gated in `src/embed_concurrent.c` rather than
+argued:
+
+- **No tail is lost at exit.** A host that never calls `eigs_close` or
+  `eigs_trace_shutdown` — it crashed, it is a freestanding kernel, it
+  simply fell out of `main()` — has already received every byte
+  (`exit-tail`: two forked children run the identical program through
+  the identical sink, one tearing down properly and one exiting cold,
+  and their streams must be byte-identical). The `atexit` handler inside
+  `src/trace.c` is the CLI's flush of the `EIGS_TRACE` **file** tape;
+  no embed entry point reaches it, and `EIGS_TRACE` opens no file for an
+  embedded host.
+- **The tape costs memory proportional to one RECORD, not to the
+  journal.** With no file tape open, the record staging area rewinds
+  after every hand-off (`sink-only-bounded`: the staging capacity is
+  unchanged — 64 KiB — across 12 MB of sink bytes; 16 MB without the
+  rewind). This is what makes the sink usable as EigenOS M11's journal
+  on a machine with no filesystem to spill to.
+
 **Per-state resources are released at `eigs_state_destroy`** (#739). The
 HTTP server's route table and the libpq connection are owned by the
 state that created them and torn down with it
@@ -428,7 +454,11 @@ Replay is a single-consumer stream until per-thread N streams exist: the
 OS thread that installed the tape may take; a nondet builtin on any
 other thread, or `eigs_replay_take` from a state that did not open the
 tape, raises the same catchable error as `recv` under `EIGS_REPLAY`
-(docs/TRACE.md "Threads and states").
+(docs/TRACE.md "Threads and states"). A take that IS allowed holds the
+same process-wide tape mutex a record emission holds, so it can never
+interleave with one — `eigs_replay_take` will BLOCK for as long as a
+concurrent sink callback runs, which is one more reason not to do slow
+work inside the callback.
 
 Host builtins participate with the take/record pair, the same contract
 the runtime's own nondet builtins use:

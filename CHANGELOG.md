@@ -166,6 +166,27 @@ All notable changes to EigenScript are documented here.
   `tools/freestanding_hal_roots.txt`, docs/FREESTANDING.md) — thread
   IDENTITY is a kernel-owed HAL root on EigenOS, not portable C, and
   `make freestanding-check` was red without them.
+  Two more invariants joined the structural set rather than resting on a
+  schedule: `eigs_replay_take` runs under the tape mutex, proved by an
+  emitter's sink callback holding a bounded window while the other thread
+  attempts a take (a take that COMPLETES inside the window is an overlap —
+  0 of 80 here, 80 of 80 unlocked), which retires a ThreadSanitizer kill
+  that was measured surviving 1 train run in 10; and `trace_set_sink`
+  commits the `V` header in the same critical section that publishes the
+  callback, so the first call a freshly installed sink receives is always
+  its own header even while a sibling state records (0 of 24 here, 24 of 24
+  with the header emitted after the unlock). **A sink-only tape's memory is
+  bounded by the largest RECORD, not by the tape** — the staging buffer
+  rewinds after every hand-off — which is what makes the sink usable as
+  EigenOS M11's journal; that one line had no witness and now has one
+  (`trace_out_capacity()`, unchanged at 64 KiB across 12 MB of sink bytes
+  against 16 MB without the rewind). It follows, and is measured, that an
+  embedder has no buffered tail: a host that exits without `eigs_close` or
+  `eigs_trace_shutdown` loses nothing. The `atexit(trace_shutdown)` comment
+  in `trace_init` said that registration also covered "an embedder that
+  leaks its state"; it does not — `trace_init` has one caller in the tree,
+  `src/main.c` — and now says so. The mutation train is fourteen mutants,
+  each killed 10/10, and no longer needs a ThreadSanitizer build.
 
 - Standard-library imports and `exe_path` retain an absolute executable
   anchor after `chdir` on macOS, including relative and PATH launches (#1133).

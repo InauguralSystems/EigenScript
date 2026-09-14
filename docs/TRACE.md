@@ -464,22 +464,65 @@ The contract now:
   record was staged behind a scope transition or an `O cfg` diff. The
   byte stream over all calls is unchanged; only the call boundaries are
   (`src/eigs_embed.h`, docs/EMBEDDING.md).
+- **The session header is emitted under the same lock that publishes the
+  sink.** `trace_set_sink` takes the tape mutex, stores the callback and
+  its user pointer, and commits the `V` record before releasing — so the
+  FIRST call a freshly installed sink ever receives is its own header,
+  even when a sibling state is recording flat out at the moment of
+  installation. Gated by the `set-sink-header` case in
+  `src/embed_concurrent.c` (every install gets a fresh sink context; no
+  record may precede its `V`, and no sibling record may overlap the
+  header's hand-off), mutant `set-sink-header-unlocked`.
+- **A sink-only tape holds no memory.** With no `EIGS_TRACE` file open —
+  the freestanding profile, and every embedder — the record staging area
+  rewinds after each hand-off, because the sink already owns those bytes.
+  The tape's memory footprint is therefore a function of the largest
+  RECORD, not of the tape's length: measured flat at 64 KiB across 12 MB
+  of sink bytes, against 16 MB for the same run with the rewind removed.
+  Gated by `sink-only-bounded` in `src/embed_concurrent.c`, mutant
+  `sink-only-no-drop`. It follows that an embedder has **no buffered
+  tail**: every record reaches the sink inside the call that emitted it,
+  so a host that exits without `eigs_close`/`eigs_trace_shutdown` loses
+  nothing (measured by the `exit-tail` case — two forked children, one
+  tearing down and one falling out of `main()`, byte-identical streams).
+  The `atexit(trace_shutdown)` in `trace_init` is the **CLI's** flush of
+  the FILE tape's staging buffer and nothing else; `trace_init` has one
+  caller in the tree, `src/main.c`, so no embedder ever reaches it.
 
 Coverage: `tests/test_trace_mt.sh` (worker-tape parse, replay-workers
 fail-loud, single-worker control, parser `--selftest`), `make
 embed-concurrent` (sink byte accounting, per-state `O cfg`, close-while-
 other-runs, concurrent close, owner-only take, shutdown-while-sibling,
-serialized take), `tests/test_tsan.sh` (worker-tape with `EIGS_TRACE`,
-replay-workers, embed-concurrent), `tools/trace_mt_mutants.sh` (twelve
+serialized take, take-under-lock, set-sink header, sink-only memory bound,
+exit-tail), `tests/test_tsan.sh` (worker-tape with `EIGS_TRACE`,
+replay-workers, embed-concurrent), `tools/trace_mt_mutants.sh` (fourteen
 mutants, each killed 10/10). The sink and `O cfg` cases force the two
 states to overlap with a per-round barrier and FAIL with a named
 "no interleaving observed = inconclusive run" verdict rather than passing
-vacuously when they did not. Two properties are gated STRUCTURALLY rather
-than by hoping a scheduler window tears: the close decision's shape (see
-above), and that the sink callback fires under the tape mutex — the sink
-case gates one callback per thread per round on a bounded rendezvous, so
-two callbacks that overlap prove the flush left the critical section, and
-two that cannot overlap prove it did not.
+vacuously when they did not.
+
+Four properties are gated STRUCTURALLY rather than by hoping a scheduler
+window tears — each because the honest kill rate of the timing-based
+version was measured and found to be luck:
+
+1. the close decision's SHAPE (see above), because the window itself is
+   unobservable (0 kills in 2000 barrier'd double-closes);
+2. that the sink callback fires under the tape mutex — one callback per
+   thread per round is gated on a bounded rendezvous, so two callbacks
+   that overlap prove the flush left the critical section;
+3. that `eigs_replay_take` runs under the same mutex — an emitter's sink
+   callback blocks for a bounded window while the other thread attempts a
+   take, and a take that COMPLETES inside that window is an overlap
+   (0 of 80 here, 80 of 80 with the take unlocked). This replaced a
+   ThreadSanitizer report that a critic measured surviving 1 train run in
+   10;
+4. that the `V` header is emitted under the lock that publishes the sink —
+   no record may reach a fresh sink before its own header (0 of 24 here,
+   24 of 24 unlocked).
+
+The sink-only memory bound is not a timing property at all: it is a
+single-threaded reading of the staging buffer's capacity before and after
+12 MB of tape.
 
 ## Format Versioning (#411)
 
