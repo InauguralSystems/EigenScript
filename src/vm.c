@@ -2810,7 +2810,7 @@ int vm_current_line(void) {
      * keeps current per statement and which inside the VM is the OP_LINE
      * value anyway. */
     if (!eigs_current || !eigs_current->vm || g_vm.frame_count <= 0)
-        return g_trace_current_line;
+        return trace_current_line_load();
     return g_vm.current_line;
 }
 
@@ -6145,7 +6145,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * single-threaded feature, and the error line is carried per-thread by
          * g_vm.current_line above. (The hot single-threaded path is unchanged:
          * one predicted branch on an already-cached flag.) */
-        if (!g_vm_multithreaded) g_trace_current_line = line;
+        if (!g_vm_multithreaded) trace_current_line_store(line);
         if (__builtin_expect(g_trace_enabled, 0)) trace_line(line);
         DISPATCH();
     }

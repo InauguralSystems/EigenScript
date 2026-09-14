@@ -1,7 +1,9 @@
 # file: src/trace.c
-s/if (g_sink_len == TRACE_SINK_LINEBUF || c == '\\n') sink_flush();/if (g_sink_len == TRACE_SINK_LINEBUF) sink_flush();/
-/static void tape_emit_end/,/^}/ {
-    s/sink_flush();/TAPE_END_FLUSH/
-    s/tape_unlock();/sink_flush();/
-    s/TAPE_END_FLUSH/tape_unlock();/
+# Commit the record (the sink call + the FILE buffer append) AFTER releasing
+# the tape mutex, so a sibling's record can overwrite g_rec_at / g_out_len
+# between the unlock and the commit.
+/^static void tape_emit_end(void) {$/,/^}$/ {
+    s|sink_flush();               /\* commit-under-lock \*/|TAPE_END_UNLOCK|
+    s|tape_unlock();|sink_flush();|
+    s|TAPE_END_UNLOCK|tape_unlock();|
 }

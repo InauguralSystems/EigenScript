@@ -408,12 +408,25 @@ the 4096-byte sink buffer, and mixed taped and live values on replay.
 
 The contract now:
 
-- **A record is an atomic unit.** A process-wide tape mutex is held for
-  the whole of every record emission (`L`/`A`/`N`/`S`/`O cfg`/`O win`,
-  the `V` header, the sink flush) and for the whole of a replay take
-  (read + parse + exhaustion shutdown). It is never held across an
-  EigenScript-level call or a blocking builtin. Single-threaded programs
-  pay one uncontended mutex per record; the tape bytes are unchanged.
+- **A record is an atomic unit.** A process-wide tape mutex is taken once
+  in `tape_emit_begin` and released in `tape_emit_end`, so it is held for
+  the whole of every record emission (`L`/`A`/`N`/`S`/`O cfg`/`O win`, the
+  `V` header, the line-stamp/scope-dedup state update, the commit) and for
+  the whole of a replay take (read + parse + exhaustion shutdown). It is
+  never held across an EigenScript-level call or a blocking builtin.
+  Records are formatted directly into ONE process-wide output buffer under
+  that mutex, so the sink is handed exactly one complete record per call
+  and the tape file sees one `fwrite` per ~32 KiB instead of one stdio call
+  per byte. That is what pays for the mutex: on a 613,506-record
+  single-threaded tape (n=5 interleaved, CPU-time medians) the mutexed path
+  is **3.4% faster** than the pre-#1142 lock-free `fputc` path, and the
+  tape bytes are byte-identical.
+- **The arm/occurrence generation is published, not raced.** The recorder
+  consults `g_arm_all`/`g_arm_gen` in `prev_record_assign` before it takes
+  the tape lock, and `trace_shutdown` widens them; those are ACQUIRE loads
+  paired with RELEASE stores, and shutdown publishes the wildcard BEFORE
+  freeing the name set so an acquiring reader short-circuits instead of
+  walking freed names.
 - **Replay is fail-loud off the main thread.** Until per-thread N streams
   exist (not this round), a nondeterministic builtin on a non-main OS
   thread while `EIGS_REPLAY` is active raises the same catchable error
@@ -430,15 +443,25 @@ The contract now:
   gap, documented here so it is not mistaken for a silent default.
 - **Who shuts the tape.** `trace_shutdown` / `eigs_trace_shutdown` is
   process-wide. `eigs_close` calls it only when it is closing the last
-  live `EigsState`. A host that used the fine-grained `state_new` /
+  live `EigsState` — and *deciding* that is the same atomic step as
+  decrementing the count (`eigs_process_state_release`, under
+  `src/state.c`'s attached-state lock), so two states closing at once
+  cannot both read "2 others live" and leave the tape open with zero
+  states. Exactly one closer, the one that takes the count to zero, shuts
+  the tape. A host that used the fine-grained `state_new` /
   `state_destroy` API, or that wants the tape closed while states remain,
   calls `eigs_trace_shutdown` (docs/EMBEDDING.md).
 
 Coverage: `tests/test_trace_mt.sh` (worker-tape parse, replay-workers
 fail-loud, single-worker control, parser `--selftest`), `make
 embed-concurrent` (sink byte accounting, per-state `O cfg`, close-while-
-other-runs, serialized take), `tests/test_tsan.sh` (worker-tape with
-`EIGS_TRACE`, replay-workers), `tools/trace_mt_mutants.sh`.
+other-runs, concurrent close, owner-only take, shutdown-while-sibling,
+serialized take), `tests/test_tsan.sh` (worker-tape with `EIGS_TRACE`,
+replay-workers, embed-concurrent), `tools/trace_mt_mutants.sh` (ten
+mutants, each killed 10/10). The sink and `O cfg` cases force the two
+states to overlap with a per-round barrier and FAIL with a named
+"no interleaving observed = inconclusive run" verdict rather than passing
+vacuously when they did not.
 
 ## Format Versioning (#411)
 

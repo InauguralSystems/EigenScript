@@ -331,32 +331,76 @@ static void sinkbuf_cb(const char *b, size_t n, void *ud) {
     pthread_mutex_unlock(&s->mu);
 }
 
-/* Grammar from docs/TRACE.md. Returns 1 if the line is a well-formed record. */
+/* A record kind letter glued onto the tail of another record's value:
+ * `A x=1A y=2`, `N random=0.5N monotonic_ns=17`, `V 3 0.43.0A x=1`. The
+ * signature is <non-space><A|N><space><name><'='>. Deliberately over-broad
+ * (a string value whose CONTENT reads "…A x=1" is called malformed):
+ * erring toward malformed turns a check RED, never silently green. */
+static int tape_glued(const char *v) {
+    for (const char *p = v + 1; p[0] && p[1]; p++) {
+        if ((*p != 'A' && *p != 'N') || p[-1] == ' ' || p[1] != ' ') continue;
+        const char *q = p + 2, *e = q;
+        while (*e && *e != ' ' && *e != '=') e++;
+        if (*e == '=' && e > q) return 1;
+    }
+    return 0;
+}
+
+/* An A/N value is exactly one of: a fully quoted string (may hold spaces),
+ * a bracketed list/buffer, a braced dict, or a single space-free token. */
+static int tape_value_ok(const char *v) {
+    size_t n = strlen(v);
+    if (!n) return 0;
+    if (tape_glued(v)) return 0;
+    if (v[0] == '"' && n >= 2 && v[n - 1] == '"') {
+        for (size_t i = 1; i + 1 < n; i++) {
+            if (v[i] == '\\') { i++; continue; }
+            if (v[i] == '"') return 0;      /* two glued strings */
+        }
+        return 1;
+    }
+    if (v[n - 1] == ']' && (v[0] == '[' || (v[0] == 'b' && v[1] == '['))) return 1;
+    if (v[0] == '{' && v[n - 1] == '}') return 1;
+    return strchr(v, ' ') == NULL;
+}
+
+static int tape_fields(const char *p) {
+    int fields = 0;
+    while (*p) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        fields++;
+        while (*p && *p != ' ') p++;
+    }
+    return fields;
+}
+
+/* Grammar from docs/TRACE.md. Every pattern is anchored to the WHOLE line
+ * and describes EXACTLY one record; two records glued by a tear are
+ * malformed. Returns 1 if the line is a well-formed record. */
 static int tape_line_ok(const char *line) {
     if (!line || !line[0]) return 0;
-    if (line[0] == 'V' && line[1] == ' ') return 1;
+    if (line[0] == 'V' && line[1] == ' ')       /* V <format> <version> */
+        return tape_fields(line + 2) == 2 && !tape_glued(line);
     if (line[0] == 'L' && line[1] == ' ') {
         const char *p = line + 2;
         if (!*p) return 0;
         while (*p) { if (*p < '0' || *p > '9') return 0; p++; }
         return 1;
     }
-    if (line[0] == 'S' && line[1] == ' ') return 1; /* S <fn> <depth> <serial> */
-    if (line[0] == 'A' && line[1] == ' ') return strchr(line + 2, '=') != NULL;
-    if (line[0] == 'N' && line[1] == ' ') return strchr(line + 2, '=') != NULL;
-    if (strncmp(line, "O cfg ", 6) == 0) {
-        /* five fields: three floats, window int, scale float */
-        int fields = 0;
-        const char *p = line + 6;
-        while (*p) {
-            while (*p == ' ') p++;
-            if (!*p) break;
-            fields++;
-            while (*p && *p != ' ') p++;
-        }
-        return fields == 5;
+    if (line[0] == 'S' && line[1] == ' ')       /* S <fn> <depth> <serial> */
+        return tape_fields(line + 2) == 3 && !tape_glued(line);
+    if ((line[0] == 'A' || line[0] == 'N') && line[1] == ' ') {
+        const char *p = line + 2, *eq = p;
+        while (*eq && *eq != '=' && *eq != ' ') eq++;
+        if (*eq != '=' || eq == p) return 0;
+        return tape_value_ok(eq + 1);
     }
-    if (strncmp(line, "O win ", 6) == 0) return 1;
+    if (strncmp(line, "O cfg ", 6) == 0)
+        /* five fields: three floats, window int, scale float */
+        return tape_fields(line + 6) == 5;
+    if (strncmp(line, "O win ", 6) == 0)
+        return tape_fields(line + 6) == 2 && !tape_glued(line);
     return 0;
 }
 
@@ -398,21 +442,48 @@ static TapeParse parse_tape_buf(const char *buf, size_t len) {
 
 typedef struct {
     int ok, err;
+    int id;
 } SinkArg;
 
-static pthread_barrier_t sink_start;
+static pthread_barrier_t sink_start, sink_round;
 static void *sink_worker(void *p) {
     SinkArg *a = (SinkArg *)p;
     EigsState *st = eigs_open();
     if (!st) { a->err = -1; return NULL; }
     pthread_barrier_wait(&sink_start);
+    const char *src = a->id == 0
+        ? "sa is env_get of \"CONC_LONG\"\nr is random of []\nreturn r"
+        : "sb is env_get of \"CONC_LONG\"\nr is random of []\nreturn r";
     for (int i = 0; i < SINK_ROUNDS; i++) {
-        EigsValue *v = eigs_eval_string(
-            "s is env_get of \"CONC_LONG\"\nr is random of []\nreturn r");
+        pthread_barrier_wait(&sink_round);
+        EigsValue *v = eigs_eval_string(src);
         if (v) { a->ok++; eigs_value_release(v); } else a->err++;
     }
     eigs_close(st);
     return NULL;
+}
+
+/* Count A-record switches between two prefixes. Serial A-then-B is 1
+ * switch; real overlap is ≥2 (A→B→A or B→A→B). */
+static int tape_a_switches(const char *buf, size_t len,
+                           const char *pa, const char *pb) {
+    int last = 0, sw = 0;
+    size_t i = 0;
+    while (i < len) {
+        size_t start = i;
+        while (i < len && buf[i] != '\n') i++;
+        if (i > start && buf[start] == 'A' && buf[start + 1] == ' ') {
+            if (strncmp(buf + start, pa, strlen(pa)) == 0) {
+                if (last == 2) sw++;
+                last = 1;
+            } else if (strncmp(buf + start, pb, strlen(pb)) == 0) {
+                if (last == 1) sw++;
+                last = 2;
+            }
+        }
+        if (i < len && buf[i] == '\n') i++;
+    }
+    return sw;
 }
 
 static void test_two_state_sink(void) {
@@ -424,14 +495,16 @@ static void test_two_state_sink(void) {
     sinkbuf_init(&sb);
     eigs_set_trace_sink(sinkbuf_cb, &sb);
 
-    SinkArg a = {0, 0}, b = {0, 0};
+    SinkArg a = {0, 0, 0}, b = {0, 0, 1};
     pthread_barrier_init(&sink_start, NULL, 2);
+    pthread_barrier_init(&sink_round, NULL, 2);
     pthread_t ta, tb;
     pthread_create(&ta, NULL, sink_worker, &a);
     pthread_create(&tb, NULL, sink_worker, &b);
     pthread_join(ta, NULL);
     pthread_join(tb, NULL);
     pthread_barrier_destroy(&sink_start);
+    pthread_barrier_destroy(&sink_round);
 
     eigs_set_trace_sink(NULL, NULL);
 
@@ -444,6 +517,22 @@ static void test_two_state_sink(void) {
           "sink byte accounting: sink_bytes equals the sum of record lengths");
     check(p.nrec == SINK_ROUNDS * 2 * 2,
           "sink: N count equals 2 states x rounds x (env_get + random)");
+    {
+        /* The kill for sink-flush-outside-lock only exists where the two
+         * states' records actually overlap. A run where they never
+         * interleave is INCONCLUSIVE, not a pass — name it and go red. */
+        int sw = tape_a_switches(sb.buf, sb.len, "A sa=", "A sb=");
+        check(sw >= 2, "sink: interleaving observed (no interleaving observed "
+                       "= inconclusive run, not a pass)");
+        printf("        sink: interleave switches=%d\n", sw);
+    }
+    /* Control: the anchored grammar calls two glued records malformed. */
+    check(!tape_line_ok("A x=1A y=2"),
+          "control: glued A records are malformed");
+    check(!tape_line_ok("N random=0.5N monotonic_ns=17"),
+          "control: glued N records are malformed");
+    check(tape_line_ok("A s=\"a b c\"") && tape_line_ok("N f=[1, 2, 3]"),
+          "control: a quoted string and a list value stay well-formed");
     /* Control: a truncated stream MUST make the byte-sum check red. */
     if (sb.len > 8) {
         TapeParse trunc = parse_tape_buf(sb.buf, sb.len / 2);
@@ -460,7 +549,7 @@ static void test_two_state_sink(void) {
 /* #1142: O cfg is per-state last-emitted. Two states with different
  * thresholds emit exactly one O cfg each (first record), none torn. */
 
-static pthread_barrier_t ocfg_start;
+static pthread_barrier_t ocfg_start, ocfg_round;
 typedef struct { int id; int ok; } OcfgArg;
 static void *ocfg_worker(void *p) {
     OcfgArg *a = (OcfgArg *)p;
@@ -474,8 +563,12 @@ static void *ocfg_worker(void *p) {
         if (v) eigs_value_release(v);
     }
     pthread_barrier_wait(&ocfg_start);
+    const char *src = a->id == 0
+        ? "oa is 1.0\noa is 2.0\nreturn oa"
+        : "ob is 1.0\nob is 2.0\nreturn ob";
     for (int i = 0; i < 50; i++) {
-        EigsValue *v = eigs_eval_string("x is 1.0\nx is 2.0\nreturn x");
+        pthread_barrier_wait(&ocfg_round);
+        EigsValue *v = eigs_eval_string(src);
         if (v) { a->ok++; eigs_value_release(v); }
     }
     eigs_close(st);
@@ -487,6 +580,7 @@ static void test_ocfg_per_state(void) {
     sinkbuf_init(&sb);
     eigs_set_trace_sink(sinkbuf_cb, &sb);
     pthread_barrier_init(&ocfg_start, NULL, 2);
+    pthread_barrier_init(&ocfg_round, NULL, 2);
     OcfgArg a = {0, 0}, b = {1, 0};
     pthread_t ta, tb;
     pthread_create(&ta, NULL, ocfg_worker, &a);
@@ -494,6 +588,7 @@ static void test_ocfg_per_state(void) {
     pthread_join(ta, NULL);
     pthread_join(tb, NULL);
     pthread_barrier_destroy(&ocfg_start);
+    pthread_barrier_destroy(&ocfg_round);
     eigs_set_trace_sink(NULL, NULL);
 
     TapeParse p = parse_tape_buf(sb.buf, sb.len);
@@ -501,6 +596,12 @@ static void test_ocfg_per_state(void) {
     check(p.lines > 0, "O cfg: parser examined lines > 0");
     check(p.malformed == 0, "O cfg: no torn records");
     check(p.ocfg == 2, "O cfg per state: exactly one first-record emit per state");
+    {
+        int sw = tape_a_switches(sb.buf, sb.len, "A oa=", "A ob=");
+        check(sw >= 2, "O cfg: interleaving observed (no interleaving observed "
+                       "= inconclusive run, not a pass)");
+        printf("        O cfg: interleave switches=%d\n", sw);
+    }
     /* Control: a torn O cfg line is rejected, so the well-formed count can
      * go red. */
     check(!tape_line_ok("O cfg 0.00.001 01 0.0.02"),
@@ -592,21 +693,38 @@ typedef struct {
     int takes;
     double v[TAKE_N];
 } TakeArg;
-static pthread_barrier_t take_start;
+static pthread_barrier_t take_start, take_round;
 static EigsState *take_st = NULL;
-static _Atomic int take_entered;
 
-static void *take_worker(void *p) {
-    TakeArg *a = (TakeArg *)p;
-    if (!eigs_thread_attach(take_st)) return NULL;
-    pthread_barrier_wait(&take_start);
-    a->started = 1;
-    /* Both consumers must enter take while replay is still enabled.
-     * If one drains the tape and replay_shutdown stores enabled=0, the
-     * loser's take returns at the atomic flag and TSan sees no race on
-     * g_replay_mem_pos (the unlocked-take mutant then SURVIVES). */
-    atomic_fetch_add(&take_entered, 1);
-    while (atomic_load(&take_entered) < 2) sched_yield();
+/* The take path is drained in ROUNDS, each opened by a barrier both
+ * consumers must reach. Inside a round each takes TAKE_PER_ROUND records
+ * with NO synchronisation between the two, so their accesses to the
+ * replay reader's position are unordered by construction.
+ *
+ * Why not a free-running loop: with one, run 4 of 10 of the
+ * replay-take-unlocked mutant came back `A=400 B=0` — one consumer drained
+ * the whole tape before the other was ever scheduled, so there was nothing
+ * for TSan to order against and the mutant SURVIVED. A kill that depends on
+ * the scheduler is not a kill. The barrier BLOCKS until both consumers are
+ * in the same unsynchronised window; the rounds are sized so the two of
+ * them consume the tape exactly. */
+#define TAKE_PER_ROUND 2
+#define TAKE_ROUNDS    (TAKE_N / (2 * TAKE_PER_ROUND))
+
+static void take_drain(TakeArg *a) {
+    for (int r = 0; r < TAKE_ROUNDS; r++) {
+        pthread_barrier_wait(&take_round);
+        for (int k = 0; k < TAKE_PER_ROUND; k++) {
+            EigsValue *v = NULL;
+            if (!eigs_replay_take("random", &v)) continue;
+            if (a->takes < TAKE_N) {
+                a->v[a->takes] = v ? eigs_value_as_num(v) : -1.0;
+                a->takes++;
+            }
+            if (v) eigs_value_release(v);
+        }
+    }
+    /* Anything the rounds left (a torn take can lose a record) */
     for (;;) {
         EigsValue *v = NULL;
         if (!eigs_replay_take("random", &v)) break;
@@ -615,8 +733,15 @@ static void *take_worker(void *p) {
             a->takes++;
         }
         if (v) eigs_value_release(v);
-        sched_yield();
     }
+}
+
+static void *take_worker(void *p) {
+    TakeArg *a = (TakeArg *)p;
+    if (!eigs_thread_attach(take_st)) return NULL;
+    pthread_barrier_wait(&take_start);
+    a->started = 1;
+    take_drain(a);
     eigs_thread_detach();
     return NULL;
 }
@@ -657,26 +782,16 @@ static void test_replay_take_serialized(void) {
     check(eigs_set_replay_tape(tape, tlen, 0) != 0, "replay-take: tape installed");
 
     TakeArg a = {0}, b = {0};
-    atomic_store(&take_entered, 0);
     pthread_barrier_init(&take_start, NULL, 2);
+    pthread_barrier_init(&take_round, NULL, 2);
     pthread_t tb;
     pthread_create(&tb, NULL, take_worker, &b);
     pthread_barrier_wait(&take_start);
     a.started = 1;
-    atomic_fetch_add(&take_entered, 1);
-    while (atomic_load(&take_entered) < 2) sched_yield();
-    for (;;) {
-        EigsValue *v = NULL;
-        if (!eigs_replay_take("random", &v)) break;
-        if (a.takes < TAKE_N) {
-            a.v[a.takes] = v ? eigs_value_as_num(v) : -1.0;
-            a.takes++;
-        }
-        if (v) eigs_value_release(v);
-        sched_yield();
-    }
+    take_drain(&a);
     pthread_join(tb, NULL);
     pthread_barrier_destroy(&take_start);
+    pthread_barrier_destroy(&take_round);
 
     int seen[TAKE_N + 1];
     memset(seen, 0, sizeof seen);
@@ -851,6 +966,56 @@ static void test_shutdown_while_sibling(void) {
     sinkbuf_free(&shut_sb);
 }
 
+/* ------------------------------------------------------------------ 11 */
+/* #1143 r3: two states closing at once must not leave the tape open. */
+
+static pthread_barrier_t cc_bar;
+static void *cc_worker(void *p) {
+    (void)p;
+    EigsState *st = eigs_open();
+    if (!st) return NULL;
+    EigsValue *v = eigs_eval_string("r is 1.0\nreturn r");
+    if (v) eigs_value_release(v);
+    pthread_barrier_wait(&cc_bar);
+    eigs_close(st);
+    return NULL;
+}
+
+static void test_concurrent_close(void) {
+    SinkBuf sb;
+    sinkbuf_init(&sb);
+    eigs_set_trace_sink(sinkbuf_cb, &sb);
+    pthread_barrier_init(&cc_bar, NULL, 2);
+    pthread_t ta, tb;
+    pthread_create(&ta, NULL, cc_worker, NULL);
+    pthread_create(&tb, NULL, cc_worker, NULL);
+    pthread_join(ta, NULL);
+    pthread_join(tb, NULL);
+    pthread_barrier_destroy(&cc_bar);
+
+    size_t after = sb.len;
+    check(after > 0, "concurrent-close: the tape was open and recording "
+                     "before the two closes");
+    EigsState *c = eigs_open();
+    check(c != NULL, "concurrent-close: third state opened");
+    /* Count the evals: "zero recorded bytes" is vacuous if the third state
+     * never actually ran anything. */
+    int p3ok = 0;
+    for (int i = 0; i < 20; i++) {
+        EigsValue *v = eigs_eval_string("z is 1.0\nreturn z");
+        if (v) { p3ok++; eigs_value_release(v); }
+    }
+    if (c) eigs_close(c);
+    check(p3ok == 20, "concurrent-close: third state completed every eval");
+    check(sb.len == after, "concurrent-close: third state records zero bytes");
+    check(!(sb.len > after && p3ok == 20),
+          "control: leftover third-state bytes would fail the close check");
+    printf("        concurrent-close: after=%zu third_ok=%d third_delta=%ld\n",
+           after, p3ok, (long)(sb.len - after));
+    eigs_set_trace_sink(NULL, NULL);
+    sinkbuf_free(&sb);
+}
+
 int main(void) {
     printf("embed concurrent multi-state (#885/#1142/#1143)\n");
     /* EMBED_CONCURRENT_ONLY: the TSan mutant oracle runs just the take
@@ -858,11 +1023,20 @@ int main(void) {
      * in an unlocked take that never reaches EOF. */
     const char *only = getenv("EMBED_CONCURRENT_ONLY");
     if (only && strcmp(only, "replay-take") == 0) {
-        test_replay_take_serialized();
+        /* The mutation train's replay-take-unlocked kill is a SANITIZER
+         * report, and a sanitizer report is probabilistic: with a single
+         * pass the mutant survived 6 of 20 isolated runs on this box even
+         * with the barrier-forced overlap in take_drain. A kill that
+         * depends on luck is not a kill, so the ONLY-mode the train uses
+         * repeats the whole case; the first report halts the process
+         * (halt_on_error=1), so a clean build pays for all eight. */
+        for (int i = 0; i < 8; i++) test_replay_take_serialized();
     } else if (only && strcmp(only, "shutdown") == 0) {
         test_shutdown_while_sibling();
     } else if (only && strcmp(only, "owner-state") == 0) {
         test_owner_state_raises();
+    } else if (only && strcmp(only, "close") == 0) {
+        test_concurrent_close();
     } else {
         test_observer_thresholds();
         test_global_isolation();
@@ -874,6 +1048,7 @@ int main(void) {
         test_replay_take_serialized();
         test_owner_state_raises();
         test_shutdown_while_sibling();
+        test_concurrent_close();
     }
 
     if (failures) {

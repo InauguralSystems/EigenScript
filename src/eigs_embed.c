@@ -61,7 +61,10 @@ void eigs_close(EigsState *st) {
      * last live EigsState. A sibling state still recording would otherwise
      * keep evaluating and emit nothing, with no error. The process owner
      * who wants the tape closed while states remain calls eigs_trace_shutdown. */
-    int last_state = (eigs_process_state_count() == 1);
+    /* Decide-and-decrement is one step under g_attached_lock: the closer
+     * that takes the count to zero shuts the tape. Two concurrent closes
+     * both reading count==2 used to leave the tape open with zero states. */
+    int last_state = eigs_process_state_release();
     if (eigs_current && eigs_current->state == st) {
         handle_table_drain(st);
         if (g_global_env) {
@@ -75,7 +78,7 @@ void eigs_close(EigsState *st) {
         trace_shutdown();
     }
     eigs_thread_detach();
-    eigs_state_destroy(st);
+    eigs_state_destroy_released(st);
 }
 
 void eigs_trace_shutdown(void) {

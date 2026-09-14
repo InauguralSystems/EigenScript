@@ -181,9 +181,10 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
 /* ---- Trace tape (record + replay) ----------------------------------
  * The runtime's replay tape (hosted: EIGS_TRACE / EIGS_REPLAY files),
  * reachable without a filesystem. Install a sink and every tape record
- * (V/L/A/N lines) streams to it as bytes — the sink receives complete
- * newline-terminated lines (an oversized record arrives in ordered
- * chunks). Installing a sink ENABLES recording — the first bytes are the
+ * (V/L/A/N lines) streams to it as bytes — the sink receives ONE
+ * complete newline-terminated record per call, whatever its length
+ * (#1142; before that an oversized record arrived in chunks).
+ * Installing a sink ENABLES recording — the first bytes are the
  * version header (`V <format> <runtime>`, #411); a journal appended
  * across several installs carries one header per session. Passing NULL
  * stops recording. The sink fires from inside evaluation — do not

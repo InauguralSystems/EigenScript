@@ -153,13 +153,27 @@ int trace_occ_window(void);
 #define TRACE_OCC_WINDOW_DEFAULT 256
 #define TRACE_OCC_WINDOW_MAX     (1 << 20)
 
-/* Source line currently being executed. Written by OP_LINE (a plain global
- * store — cheaper than a call; the JIT also stamps it via a flat-address
- * write, so it can't be __thread), read by trace_assign to stamp history
- * entries and by the tape writer. #297: the interpreter write is gated off
- * under MT (history/replay is single-threaded; the per-thread g_vm.current_line
- * carries the error line), so it isn't raced by parallel workers. */
+/* Source line currently being executed. Written by OP_LINE, read by
+ * trace_assign to stamp history entries and by the tape writer. The JIT
+ * stamps it via a flat-address write, so it cannot be __thread.
+ *
+ * #297 gated the interpreter write off under MT (a state's own workers),
+ * which is why parallel workers never raced it. #1142: TWO STATES on two
+ * threads are each single-threaded by that test, so both wrote this plain
+ * int — TSan reported the race on every concurrent-embed run once the
+ * louder compiler.c one was silenced. Access is RELAXED-atomic: on x86-64
+ * that is the same `mov` (the JIT's flat write stays valid), but it is a
+ * defined access rather than a data race.
+ *
+ * Residual, documented: the VALUE is still process-global, so two states
+ * recording at once can stamp each other's line into their (thread-local)
+ * history tables. Per-thread line stamping needs the JIT's flat write to
+ * become a TLS write — tracked as the remaining #1142 gap, not fixed here. */
 extern int g_trace_current_line;
+#define trace_current_line_store(v) \
+    __atomic_store_n(&g_trace_current_line, (int)(v), __ATOMIC_RELAXED)
+#define trace_current_line_load() \
+    __atomic_load_n(&g_trace_current_line, __ATOMIC_RELAXED)
 
 /* 1 when the compiler has seen a `where`/`why`/`how ... at <line>`
  * interrogative anywhere in the program. Gates observer-state capture

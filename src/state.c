@@ -26,8 +26,10 @@ __thread EigsThread *eigs_current = NULL;
  * (#915) keys off thread count; eigs_close (#1143) keys off state count
  * to decide whether it is shutting the last interpreter (and the tape). */
 static pthread_mutex_t g_attached_lock = PTHREAD_MUTEX_INITIALIZER;
-static int g_attached_threads = 0;
+static int g_attached_threads_storage = 0;
 static int g_live_states = 0;
+#define g_attached_threads_load() __atomic_load_n(&g_attached_threads_storage, __ATOMIC_ACQUIRE)
+#define g_attached_threads_add(d) __atomic_fetch_add(&g_attached_threads_storage, (d), __ATOMIC_RELEASE)
 
 EigsState *eigs_state_new(void) {
     EigsState *st = xcalloc(1, sizeof(*st));
@@ -69,7 +71,7 @@ EigsState *eigs_state_new(void) {
     return st;
 }
 
-void eigs_state_destroy(EigsState *st) {
+static void state_destroy_body(EigsState *st, int already_released) {
     if (!st) return;
     if (st->threads) {
         fprintf(stderr,
@@ -98,10 +100,20 @@ void eigs_state_destroy(EigsState *st) {
     pthread_mutex_destroy(&st->threads_lock);
     pthread_mutex_destroy(&st->handle_mutex);
     pthread_mutex_destroy(&st->gc_lock);
-    pthread_mutex_lock(&g_attached_lock);
-    if (g_live_states > 0) g_live_states--;
-    pthread_mutex_unlock(&g_attached_lock);
+    if (!already_released) {
+        pthread_mutex_lock(&g_attached_lock);
+        if (g_live_states > 0) g_live_states--;
+        pthread_mutex_unlock(&g_attached_lock);
+    }
     free(st);
+}
+
+void eigs_state_destroy(EigsState *st) {
+    state_destroy_body(st, 0);
+}
+
+void eigs_state_destroy_released(EigsState *st) {
+    state_destroy_body(st, 1);
 }
 
 /* #915: PROCESS-GLOBAL count of attached threads.
@@ -131,10 +143,7 @@ void eigs_state_destroy(EigsState *st) {
  * PROCESS has one thread". */
 
 int eigs_process_thread_count(void) {
-    pthread_mutex_lock(&g_attached_lock);
-    int n = g_attached_threads;
-    pthread_mutex_unlock(&g_attached_lock);
-    return n;
+    return g_attached_threads_load();
 }
 
 int eigs_process_state_count(void) {
@@ -142,6 +151,17 @@ int eigs_process_state_count(void) {
     int n = g_live_states;
     pthread_mutex_unlock(&g_attached_lock);
     return n;
+}
+
+int eigs_process_state_release(void) {
+    pthread_mutex_lock(&g_attached_lock);
+    int last = 0;
+    if (g_live_states > 0) {
+        g_live_states--;
+        last = (g_live_states == 0);
+    }
+    pthread_mutex_unlock(&g_attached_lock);
+    return last;
 }
 
 EigsThread *eigs_thread_attach(EigsState *st) {
@@ -154,7 +174,7 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
     th->intern_tbl = env_intern_table_new();   /* #1065: thread's ref */
-    pthread_mutex_lock(&g_attached_lock); g_attached_threads++; pthread_mutex_unlock(&g_attached_lock);
+    pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(1); pthread_mutex_unlock(&g_attached_lock);
     /* #915: xcalloc zeroes, and 0 here would mean "never scan", silently
      * disabling the observer gate's eager pass on every thread. Default ON;
      * only --lint and the LSP clear it. */
@@ -253,7 +273,7 @@ void eigs_thread_detach(void) {
      * so the bridge macros inside free_value/env destructors resolve. */
     eigs_thread_drain_caches(th);
     eigs_obs_memo_release();  /* #915: memo + speculative budget, thread-local */
-    pthread_mutex_lock(&g_attached_lock); g_attached_threads--; pthread_mutex_unlock(&g_attached_lock);
+    pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(-1); pthread_mutex_unlock(&g_attached_lock);
 
     arena_destroy();
     eigs_current = NULL;

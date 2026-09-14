@@ -4031,15 +4031,24 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * verifier that gates untrusted chunks. Off unless EIGS_VERIFY_SELF=1 (the
      * suite sets it for one full pass), so the normal compile path is untouched
      * bar one cached getenv. */
+    /* #1142: two states compiling on two threads both cached this
+     * one-shot getenv, and TSan reported the read/write on
+     * `verify_self` on EVERY concurrent embed run — which masked the
+     * tape races the #1142 gate exists to catch (halt_on_error=1 stops
+     * at the first report). Relaxed atomics: the value is idempotent,
+     * so a racing recompute is fine, but the access must not be a
+     * plain int race. */
     static int verify_self = -1;
-    if (verify_self < 0) {
-        verify_self = eigs_env_flag("EIGS_VERIFY_SELF");
+    int verify_self_now = __atomic_load_n(&verify_self, __ATOMIC_RELAXED);
+    if (verify_self_now < 0) {
+        verify_self_now = eigs_env_flag("EIGS_VERIFY_SELF");
+        __atomic_store_n(&verify_self, verify_self_now, __ATOMIC_RELAXED);
     }
     /* Only assert on a CLEAN compile: a unit that already failed to parse or
      * compile can carry a patched-to-0 jump or a truncated tail by design, and
      * the entry paths abort before running it. Verifying that is checking the
      * error path, not the table. */
-    if (verify_self && g_parse_errors == 0)
+    if (verify_self_now && g_parse_errors == 0)
         chunk_verify_self_check(chunk, chunk->name ? chunk->name : "?");
 
     /* #1038: an uncompiled state starts OPEN. Consume the first-compile

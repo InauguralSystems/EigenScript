@@ -33,6 +33,7 @@ replay-worker-allowed
 owner-state-bypass
 hand-rolled-take-bypass
 shutdown-outside-lock
+close-never-shuts
 '
 
 # Mutants whose kill is a data race: run their oracle under TSan objects.
@@ -201,7 +202,7 @@ run_one() {
         return 1
     fi
     local k=0 reason="" i rc killed
-    for i in 1 2 3; do
+    for i in 1 2 3 4 5 6 7 8 9 10; do
         local log="$SCRATCH_ROOT/${spec}.$i.log"
         rc="$(run_oracle "$dest" "$log" "$use_tsan")"
         if killed="$(classify_kill "$log" "$rc")"; then
@@ -212,7 +213,7 @@ run_one() {
             return 1
         fi
     done
-    echo "MUTANT $spec: KILLED by $reason (3/3)"
+    echo "MUTANT $spec: KILLED by $reason (10/10)"
     return 0
 }
 

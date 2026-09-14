@@ -362,8 +362,9 @@ int  eigs_replay_take(const char *name, EigsValue **out);   /* 1 = served from t
 void eigs_trace_record_nondet(const char *name, EigsValue *v);
 ```
 
-The sink receives complete newline-terminated record lines (an
-oversized record arrives in ordered chunks). It fires from inside
+The sink receives ONE complete newline-terminated record per call,
+whatever its length (#1142 — before that an oversized record arrived in
+ordered chunks). It fires from inside
 evaluation — do not re-enter the runtime from it; buffer the bytes and
 act between evals. While a replay tape is set, nondet builtins return
 the recorded `N` values in order instead of consulting their live

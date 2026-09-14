@@ -30,14 +30,33 @@ parse_tape() {
         return
     fi
     awk '
-    function ok_line(s) {
-        if (s ~ /^V [0-9]+ /) return 1
+    # A value is one token, a fully quoted string, or a bracketed/braced
+    # collection — and never carries a GLUED second record. The glue test
+    # is deliberately over-broad (a string value whose CONTENT looks like
+    # "…A x=1" is called malformed): erring toward malformed makes a check
+    # go red, never silently green.
+    function value_ok(v) {
+        if (v == "") return 0
+        if (v ~ /[^ ][AN] [^= ]+=/) return 0            # glued second record
+        if (v ~ /^"([^"\\]|\\.)*"$/) return 1           # quoted string
+        if (v ~ /^b?\[.*\]$/) return 1                  # list / buffer
+        if (v ~ /^\{.*\}$/) return 1                    # dict
+        return (v !~ / /)                               # one token
+    }
+    # Every pattern is anchored to the WHOLE line and describes EXACTLY one
+    # record. `N random=0.5N monotonic_ns=17` and `A x=1A y=2` are two
+    # records glued by a tear and must be malformed, not well-formed.
+    function ok_line(s, v) {
         if (s ~ /^L [0-9]+$/) return 1
         if (s ~ /^S [^ ]+ [0-9]+ [0-9]+$/) return 1
-        if (s ~ /^A .+=/) return 1
-        if (s ~ /^N .+=/) return 1
         if (s ~ /^O cfg [^ ]+ [^ ]+ [^ ]+ [0-9]+ [^ ]+$/) return 1
         if (s ~ /^O win [^ ]+ [0-9]+$/) return 1
+        if (s ~ /^V [0-9]+ [^ ]+$/) return 1
+        if (s ~ /^[AN] [^= ]+=/) {
+            v = s
+            sub(/^[AN] [^= ]+=/, "", v)
+            return value_ok(v)
+        }
         return 0
     }
     {
@@ -68,7 +87,8 @@ selftest() {
     local torn="$TMPDIR/torn.tape"
     local empty="$TMPDIR/empty.tape"
     local good="$TMPDIR/good.tape"
-    printf '%s\n' 'V 3 0.43.0' '30257A r=570844060311' '30101653L 7' > "$torn"
+    printf '%s\n' 'V 3 0.43.0' '30257A r=570844060311' '30101653L 7' \
+        'N random=0.5N monotonic_ns=17' 'A x=1A y=2' > "$torn"
     : > "$empty"
     printf '%s\n' 'V 3 0.43.0' 'L 1' 'N random=0.5' 'A x=1' > "$good"
 
@@ -100,6 +120,24 @@ selftest() {
     else
         fail "selftest: well-formed fixture is green" \
              "malformed=$t_mal examined=$t_ex N=$t_n"
+    fi
+
+    local concat_n concat_a
+    concat_n="$TMPDIR/concat_n.tape"
+    concat_a="$TMPDIR/concat_a.tape"
+    printf '%s\n' 'N random=0.5N monotonic_ns=17' > "$concat_n"
+    printf '%s\n' 'A x=1A y=2' > "$concat_a"
+    read -r t_lines t_well t_mal t_n t_o t_ex <<< "$(parse_tape "$concat_n")"
+    if [ "$t_mal" -gt 0 ]; then
+        ok "selftest: concatenated N records are red (malformed=$t_mal)"
+    else
+        fail "selftest: concatenated N records are red" "malformed=$t_mal well=$t_well"
+    fi
+    read -r t_lines t_well t_mal t_n t_o t_ex <<< "$(parse_tape "$concat_a")"
+    if [ "$t_mal" -gt 0 ]; then
+        ok "selftest: concatenated A records are red (malformed=$t_mal)"
+    else
+        fail "selftest: concatenated A records are red" "malformed=$t_mal well=$t_well"
     fi
 
     echo ""

@@ -1266,6 +1266,15 @@ int  eigs_process_thread_count(void);
 /* #1142/#1143: how many EigsState objects are live process-wide. eigs_close
  * shuts the process tape only when this is 1 (it is closing the last state). */
 int  eigs_process_state_count(void);
+/* Decrement the live-state count under g_attached_lock; return 1 iff this
+ * call took the count to zero. Decide-and-decrement is one atomic step so
+ * two concurrent eigs_close calls cannot both see count==2 and leave the
+ * tape open with zero states. */
+int  eigs_process_state_release(void);
+/* Tear down a state whose live-count was already released by
+ * eigs_process_state_release (eigs_close). Other callers use
+ * eigs_state_destroy, which releases. */
+void eigs_state_destroy_released(EigsState *st);
 /* #915: restore real stderr if the observer gate's eager pass has it muted.
  * Call before printing from any path that will abort/exit. */
 void eigs_obs_unmute_for_fatal(void);

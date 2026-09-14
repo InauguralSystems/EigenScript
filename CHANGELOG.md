@@ -137,8 +137,19 @@ All notable changes to EigenScript are documented here.
   nondet builtin on a non-main thread raises the same catchable error as
   `recv` (per-thread N streams are not this round). `O cfg` diffs against
   what that state last emitted. `eigs_close` shuts the process tape only
-  when it closes the last live state; `eigs_trace_shutdown` is the process
-  owner's explicit teardown. Single-threaded tapes stay byte-identical.
+  when it closes the last live state, and deciding that is the same atomic
+  step as decrementing the live-state count, so two states closing at once
+  cannot both leave the tape open with zero states; `eigs_trace_shutdown`
+  is the process owner's explicit teardown. The arm/occurrence wildcard and
+  generation, which the recorder consults before it takes the tape lock,
+  are ACQUIRE/RELEASE rather than plain ints. Single-threaded tapes stay
+  byte-identical **and faster**: records are formatted into one output
+  buffer under the mutex and committed as one sink call per record and one
+  `fwrite` per ~32 KiB, replacing a per-byte `fputc`, so a 613,506-record
+  single-threaded tape runs 3.4% faster than before the mutex existed
+  (n=5 interleaved, CPU-time medians). The embed sink now receives ONE
+  complete record per call at any record length — the 4096-byte per-byte
+  sink line buffer that the two-state probe overflowed is gone.
 
 - Standard-library imports and `exe_path` retain an absolute executable
   anchor after `chdir` on macOS, including relative and PATH launches (#1133).

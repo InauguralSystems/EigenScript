@@ -2263,7 +2263,7 @@ echo ""
 # "at least one check passed" is satisfied by a gate reduced to a single echo.
 echo "[42h] Trace tape MT (#1142/#1143)"
 TMT_EXPECTED=13
-TMT_SELFTEST_EXPECTED=4
+TMT_SELFTEST_EXPECTED=6
 TMT_OUTPUT=$(bash "$TESTS_DIR/test_trace_mt.sh" 2>&1); TMT_RC=$?
 TMT_PASS=$(echo "$TMT_OUTPUT" | grep -c "  PASS:" || true)
 TMT_FAIL=$(echo "$TMT_OUTPUT" | grep -c "  FAIL:" || true)
