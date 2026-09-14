@@ -2259,6 +2259,32 @@ else
 fi
 echo ""
 
+# [42h] #1142/#1143: the trace tape under threads and states. PINNED totals —
+# "at least one check passed" is satisfied by a gate reduced to a single echo.
+echo "[42h] Trace tape MT (#1142/#1143)"
+TMT_EXPECTED=10
+TMT_SELFTEST_EXPECTED=4
+TMT_OUTPUT=$(bash "$TESTS_DIR/test_trace_mt.sh" 2>&1); TMT_RC=$?
+TMT_PASS=$(echo "$TMT_OUTPUT" | grep -c "  PASS:" || true)
+TMT_FAIL=$(echo "$TMT_OUTPUT" | grep -c "  FAIL:" || true)
+TMT_ST_OUTPUT=$(bash "$TESTS_DIR/test_trace_mt.sh" --selftest 2>&1); TMT_ST_RC=$?
+TMT_ST_PASS=$(echo "$TMT_ST_OUTPUT" | grep -c "  PASS:" || true)
+TMT_ST_FAIL=$(echo "$TMT_ST_OUTPUT" | grep -c "  FAIL:" || true)
+if [ "$TMT_RC" -eq 0 ] && [ "$TMT_FAIL" -eq 0 ] && [ "$TMT_PASS" -eq "$TMT_EXPECTED" ] \
+   && [ "$TMT_ST_RC" -eq 0 ] && [ "$TMT_ST_FAIL" -eq 0 ] && [ "$TMT_ST_PASS" -eq "$TMT_SELFTEST_EXPECTED" ]; then
+    TOTAL=$((TOTAL + TMT_PASS + TMT_ST_PASS))
+    PASS=$((PASS + TMT_PASS + TMT_ST_PASS))
+    echo "  PASS: all $TMT_PASS tape-MT checks + $TMT_ST_PASS selftest"
+else
+    TOTAL=$((TOTAL + TMT_PASS + TMT_FAIL + TMT_ST_PASS + TMT_ST_FAIL + 1))
+    PASS=$((PASS + TMT_PASS + TMT_ST_PASS))
+    FAIL=$((FAIL + TMT_FAIL + TMT_ST_FAIL + 1))
+    echo "  FAIL: tape-MT (live rc=$TMT_RC $TMT_PASS/$TMT_EXPECTED, selftest rc=$TMT_ST_RC $TMT_ST_PASS/$TMT_SELFTEST_EXPECTED)"
+    echo "$TMT_OUTPUT" | grep "FAIL:" | head -5
+    echo "$TMT_ST_OUTPUT" | grep "FAIL:" | head -5
+fi
+echo ""
+
 # [42c] REPL (#392): piped transcript byte-exact + pty-driven line editor
 echo "[42c] REPL editor & piped transcript (24 checks)"
 RE_OUTPUT=$(bash "$TESTS_DIR/test_repl.sh" 2>&1)

@@ -389,15 +389,25 @@ untrusted snippet calling `exit` left every subsequent eval in the
 process running with exception handling silently disabled, in any state.
 A host that wants the exit code reads it from the eval that requested it.
 
-**The sink and the tape are per-PROCESS, not per-state** (#739). With
-several states co-located, one sink serves them all, and the teardown
-that drops it — `trace_shutdown()`, which `eigs_close` calls — belongs
-to whoever owns the process. A per-request or per-task state must not
-call it: `ext_http`'s connection worker did, so the first request served
-closed the tape and unregistered the host's sink. A worker that wants to
-release its own temporal history calls `trace_thread_release()`, which
-`eigs_thread_detach` already does for every thread. The per-name history
-behind `prev of x` / `at` / `state_at` is per-thread and never shared.
+**The sink and the tape are per-PROCESS, not per-state** (#739, #1142,
+#1143). With several states co-located, one sink serves them all.
+Records are atomic (a process-wide tape mutex is held for each whole
+record and each replay take). `eigs_close` shuts the tape **only when
+it is closing the last live `EigsState`** — closing state A while B is
+still evaluating used to drop B's records with no error. The teardown
+that drops the sink while other states remain belongs to whoever owns
+the process: call `eigs_trace_shutdown()`. A per-request or per-task
+state must not call it; `eigs_close` of a non-last state does not. A
+worker that wants to release its own temporal history calls
+`trace_thread_release()`, which `eigs_thread_detach` already does for
+every thread. The per-name history behind `prev of x` / `at` /
+`state_at` is per-thread and never shared.
+
+Replay is a single-consumer stream until per-thread N streams exist: the
+OS thread that installed the tape may take; a nondet builtin on any
+other thread, or `eigs_replay_take` from a state that did not open the
+tape, raises the same catchable error as `recv` under `EIGS_REPLAY`
+(docs/TRACE.md "Threads and states").
 
 Host builtins participate with the take/record pair, the same contract
 the runtime's own nondet builtins use:

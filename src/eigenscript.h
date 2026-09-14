@@ -640,6 +640,17 @@ struct EigsState {
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
     int             obs_window;     /* #1044 default value/dH window depth (default OBSERVER_WINDOW_N) */
     double          obs_scale;      /* #1045 characteristic scale: rel = Δv / max(|v|, |v_prev|, obs_scale) (default 0.001) */
+    /* #1142: last observer config THIS state emitted onto the process tape.
+     * Initialized to the compiled-in defaults so a default-config state
+     * writes no `O cfg` (single-state tapes stay byte-identical). Compared
+     * under the tape mutex. tape_obs_session tracks the tape-open generation
+     * so a new V header re-emits a non-default config. */
+    double          tape_obs_dh_zero;
+    double          tape_obs_dh_small;
+    double          tape_obs_h_low;
+    double          tape_obs_scale;
+    int             tape_obs_window;
+    unsigned        tape_obs_session;
     /* #971: strict mode. Off by default — a wrong-typed or out-of-domain
      * argument gets a finite stand-in (NaN→0, domain clamps substitute,
      * overflow saturates, `cos of "hello"` → 0). On (EIGS_STRICT=1, read
@@ -1252,6 +1263,9 @@ void eigs_obs_enable(void);
  * "this process has one thread" — a per-state multithreaded flag cannot see a
  * sibling state, and ext_http runs one state per connection per thread. */
 int  eigs_process_thread_count(void);
+/* #1142/#1143: how many EigsState objects are live process-wide. eigs_close
+ * shuts the process tape only when this is 1 (it is closing the last state). */
+int  eigs_process_state_count(void);
 /* #915: restore real stderr if the observer gate's eager pass has it muted.
  * Call before printing from any path that will abort/exit. */
 void eigs_obs_unmute_for_fatal(void);

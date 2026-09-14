@@ -350,6 +350,11 @@ int trace_name_is_internal(const char *name);
  * source. */
 extern int g_replay_enabled;
 int trace_replay_take(const char *fn, struct Value **out);
+/* #1142: 1 when replay is active and the calling OS thread is not the
+ * thread that opened the tape. Nondet builtins raise rather than take.
+ * Until per-thread N streams exist, a single consumer (the opener thread)
+ * is the only legal replay reader. */
+int trace_replay_off_owner_thread(void);
 
 /* Centralized nondet-return macro for builtins.
  *
@@ -365,9 +370,19 @@ int trace_replay_take(const char *fn, struct Value **out);
  * before trace.h). */
 #define TRACE_NONDET_RET(name, expr) do {                            \
     Value *_tr_v;                                                    \
-    if (__builtin_expect(g_replay_enabled, 0) &&                     \
-        trace_replay_take((name), &_tr_v))                           \
-        return _tr_v;                                                \
+    if (__builtin_expect(g_replay_enabled, 0)) {                     \
+        /* #1142: a nondet builtin on a non-owner thread cannot      \
+         * consume the single-consumer N stream. Same catchable      \
+         * error the receive family raises. */                       \
+        if (trace_replay_off_owner_thread()) {                       \
+            rt_error(EK_IO, 0,                                       \
+                "%s: not replayable under EIGS_REPLAY (subprocess/concurrency " \
+                "boundary; see docs/TRACE.md)", (name));             \
+            return make_null();                                      \
+        }                                                            \
+        if (trace_replay_take((name), &_tr_v))                       \
+            return _tr_v;                                            \
+    }                                                                \
     _tr_v = (expr);                                                  \
     if (__builtin_expect(g_trace_enabled, 0))                        \
         trace_nondet_value((name), _tr_v);                           \
@@ -387,9 +402,16 @@ int trace_replay_take(const char *fn, struct Value **out);
  * way, preserving the strict-ordering contract. */
 #define TRACE_NONDET_TAKE(name) do {                                 \
     Value *_tr_take;                                                 \
-    if (__builtin_expect(g_replay_enabled, 0) &&                     \
-        trace_replay_take((name), &_tr_take))                        \
-        return _tr_take;                                             \
+    if (__builtin_expect(g_replay_enabled, 0)) {                     \
+        if (trace_replay_off_owner_thread()) {                       \
+            rt_error(EK_IO, 0,                                       \
+                "%s: not replayable under EIGS_REPLAY (subprocess/concurrency " \
+                "boundary; see docs/TRACE.md)", (name));             \
+            return make_null();                                      \
+        }                                                            \
+        if (trace_replay_take((name), &_tr_take))                    \
+            return _tr_take;                                         \
+    }                                                                \
 } while (0)
 
 #define TRACE_NONDET_RECORD(name, expr) do {                         \

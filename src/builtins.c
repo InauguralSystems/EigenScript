@@ -2296,25 +2296,32 @@ Value* builtin_pi(Value *arg) {
  * ================================================================ */
 
 static int g_random_seeded = 0;
+static pthread_once_t g_random_once = PTHREAD_ONCE_INIT;
+
+static void random_seed_once(void) {
+    if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) return;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+#if EIGENSCRIPT_FREESTANDING
+    srand48(ts.tv_sec ^ ts.tv_nsec);   /* no pids on bare metal */
+#else
+    srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid());
+#endif
+    __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
+}
 
 void eigs_ensure_random_seeded(void) {
-    if (!g_random_seeded) {
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-#if EIGENSCRIPT_FREESTANDING
-        srand48(ts.tv_sec ^ ts.tv_nsec);   /* no pids on bare metal */
-#else
-        srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid());
-#endif
-        g_random_seeded = 1;
-    }
+    if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) return;
+    pthread_once(&g_random_once, random_seed_once);
 }
 
 /* random of null → float in [0, 1) */
 Value* builtin_random(Value *arg) {
     (void)arg;
-    eigs_ensure_random_seeded();
-    TRACE_NONDET_RET("random", make_num(drand48()));
+    /* Seed is part of the live source so a replay take / fail-loud raise
+     * does not race g_random_seeded (#1142 TSan on two workers under
+     * EIGS_REPLAY). */
+    TRACE_NONDET_RET("random", (eigs_ensure_random_seeded(), make_num(drand48())));
 }
 
 /* random_int of [lo, hi] → integer in [lo, hi] inclusive */
@@ -2361,7 +2368,7 @@ Value* builtin_random_int(Value *arg) {
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_num(0));
     srand48((long)arg->data.num);
-    g_random_seeded = 1;
+    __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
     return make_num(1);
 }
 

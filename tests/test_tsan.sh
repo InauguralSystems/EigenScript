@@ -62,6 +62,70 @@ else
     echo "  FAIL: C embed observer contract"; FAIL=$((FAIL + 1))
 fi
 
+echo "=== worker-tape under EIGS_TRACE must be race-free (#1142) ==="
+TAPE_MT="$TESTS_DIR/trace_mt_workers.eigs"
+TAPE_OUT="$TESTS_DIR/../build/tsan_trace_mt.tape"
+if [ -f "$TAPE_MT" ]; then
+    TSAN_OPTIONS="halt_on_error=1 exitcode=66" \
+        timeout "$TSAN_RUN_TIMEOUT" setarch -R env EIGS_TRACE="$TAPE_OUT" "$EIGS" "$TAPE_MT" \
+        >"$TESTS_DIR/../build/tsan_trace_mt.out" 2>"$TESTS_DIR/../build/tsan_trace_mt.err"
+    LAST_RC=$?
+    if [ "$LAST_RC" -eq 66 ]; then
+        echo "  FAIL: worker-tape ThreadSanitizer race (exit 66)"
+        FAIL=$((FAIL + 1))
+        grep -A2 "ThreadSanitizer" "$TESTS_DIR/../build/tsan_trace_mt.err" | head -8
+    elif [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: worker-tape HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"
+        FAIL=$((FAIL + 1))
+    elif [ "$LAST_RC" -eq 0 ]; then
+        echo "  PASS: worker-tape race-free under EIGS_TRACE"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: worker-tape rc=$LAST_RC"
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$TAPE_OUT"
+else
+    echo "  FAIL: worker-tape fixture missing"
+    FAIL=$((FAIL + 1))
+fi
+
+echo "=== replay-workers under EIGS_REPLAY must fail-loud, TSan-clean (#1142) ==="
+RP_EIGS="$TESTS_DIR/trace_mt_replay_workers.eigs"
+RP_TAPE="$TESTS_DIR/../build/tsan_replay_mt.tape"
+RP_HDR="$TESTS_DIR/../build/tsan_replay_hdr.tape"
+if [ -f "$RP_EIGS" ]; then
+    printf 'print of 1\n' > "$TESTS_DIR/../build/tsan_one.eigs"
+    EIGS_TRACE="$RP_HDR" timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" \
+        "$TESTS_DIR/../build/tsan_one.eigs" >/dev/null 2>&1 || true
+    {
+        head -1 "$RP_HDR" 2>/dev/null || echo "V 3 0.43.0"
+        i=0
+        while [ "$i" -lt 4000 ]; do printf 'N random=0.5\n'; i=$((i+1)); done
+    } > "$RP_TAPE"
+    TSAN_OPTIONS="halt_on_error=1 exitcode=66" \
+        timeout "$TSAN_RUN_TIMEOUT" setarch -R env EIGS_REPLAY="$RP_TAPE" "$EIGS" "$RP_EIGS" \
+        >"$TESTS_DIR/../build/tsan_replay_mt.out" 2>"$TESTS_DIR/../build/tsan_replay_mt.err"
+    LAST_RC=$?
+    if [ "$LAST_RC" -eq 66 ]; then
+        echo "  FAIL: replay-workers ThreadSanitizer race (exit 66)"
+        FAIL=$((FAIL + 1))
+    elif [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: replay-workers HUNG"
+        FAIL=$((FAIL + 1))
+    elif [ "$LAST_RC" -eq 1 ] && grep -q 'not replayable under EIGS_REPLAY' \
+            "$TESTS_DIR/../build/tsan_replay_mt.err"; then
+        echo "  PASS: replay-workers fail-loud, TSan-clean"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: replay-workers rc=$LAST_RC (want 1 + diagnostic)"
+        FAIL=$((FAIL + 1))
+        head -3 "$TESTS_DIR/../build/tsan_replay_mt.err"
+    fi
+    rm -f "$RP_TAPE" "$RP_HDR" "$TESTS_DIR/../build/tsan_one.eigs"
+else
+    echo "  FAIL: replay-workers fixture missing"
+    FAIL=$((FAIL + 1))
+fi
+
 echo "=== gate self-validation: a seeded race MUST be caught ==="
 tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
 w=$WARNINGS

@@ -1,0 +1,15 @@
+# Two workers consuming N records from one replay tape concurrently.
+# Under EIGS_REPLAY this must raise the recv-family catchable error (#1142).
+define worker(id) as:
+    local acc is 0
+    local i is 0
+    loop while i < 3000:
+        local r is random of []
+        acc is acc + r
+        i is i + 1
+    return acc
+h1 is spawn of [worker, 1]
+h2 is spawn of [worker, 2]
+a is thread_join of h1
+b is thread_join of h2
+print of f"a={a} b={b}"

@@ -295,12 +295,390 @@ static void test_planted_fault_is_detectable(void) {
            a.mismatches, a.rounds_run, b.mismatches, b.rounds_run, ROUNDS, PLANT_BUDGET);
 }
 
+/* ------------------------------------------------------------------ 5 */
+/* #1142: two states, one process-wide sink. Records must be atomic (every
+ * byte of the collected stream is a well-formed tape line) and sink_bytes
+ * must equal the sum of those record lengths. A mutex-free tp_putc loses
+ * bytes or overflows g_sink_buf. */
+
+typedef struct {
+    char *buf;
+    size_t len, cap;
+    pthread_mutex_t mu;
+} SinkBuf;
+
+static void sinkbuf_init(SinkBuf *s) {
+    memset(s, 0, sizeof *s);
+    pthread_mutex_init(&s->mu, NULL);
+}
+static void sinkbuf_free(SinkBuf *s) {
+    free(s->buf);
+    pthread_mutex_destroy(&s->mu);
+}
+static void sinkbuf_cb(const char *b, size_t n, void *ud) {
+    SinkBuf *s = (SinkBuf *)ud;
+    pthread_mutex_lock(&s->mu);
+    if (s->len + n + 1 > s->cap) {
+        size_t nc = s->cap ? s->cap * 2 : 8192;
+        while (nc < s->len + n + 1) nc *= 2;
+        char *nb = realloc(s->buf, nc);
+        if (!nb) { pthread_mutex_unlock(&s->mu); return; }
+        s->buf = nb; s->cap = nc;
+    }
+    memcpy(s->buf + s->len, b, n);
+    s->len += n;
+    s->buf[s->len] = '\0';
+    pthread_mutex_unlock(&s->mu);
+}
+
+/* Grammar from docs/TRACE.md. Returns 1 if the line is a well-formed record. */
+static int tape_line_ok(const char *line) {
+    if (!line || !line[0]) return 0;
+    if (line[0] == 'V' && line[1] == ' ') return 1;
+    if (line[0] == 'L' && line[1] == ' ') {
+        const char *p = line + 2;
+        if (!*p) return 0;
+        while (*p) { if (*p < '0' || *p > '9') return 0; p++; }
+        return 1;
+    }
+    if (line[0] == 'S' && line[1] == ' ') return 1; /* S <fn> <depth> <serial> */
+    if (line[0] == 'A' && line[1] == ' ') return strchr(line + 2, '=') != NULL;
+    if (line[0] == 'N' && line[1] == ' ') return strchr(line + 2, '=') != NULL;
+    if (strncmp(line, "O cfg ", 6) == 0) {
+        /* five fields: three floats, window int, scale float */
+        int fields = 0;
+        const char *p = line + 6;
+        while (*p) {
+            while (*p == ' ') p++;
+            if (!*p) break;
+            fields++;
+            while (*p && *p != ' ') p++;
+        }
+        return fields == 5;
+    }
+    if (strncmp(line, "O win ", 6) == 0) return 1;
+    return 0;
+}
+
+typedef struct {
+    int lines, well, malformed, nrec, ocfg;
+    size_t parsed_bytes;
+} TapeParse;
+
+static TapeParse parse_tape_buf(const char *buf, size_t len) {
+    TapeParse t;
+    memset(&t, 0, sizeof t);
+    size_t i = 0;
+    while (i < len) {
+        size_t start = i;
+        while (i < len && buf[i] != '\n') i++;
+        size_t n = i - start;
+        char line[65536];
+        if (n >= sizeof line) n = sizeof line - 1;
+        memcpy(line, buf + start, n);
+        line[n] = '\0';
+        /* count the newline as part of the record when present */
+        size_t rec = (i < len && buf[i] == '\n') ? (i - start + 1) : (i - start);
+        if (n == 0 && i >= len) break;
+        t.lines++;
+        if (tape_line_ok(line)) {
+            t.well++;
+            t.parsed_bytes += rec;
+            if (line[0] == 'N' && line[1] == ' ') t.nrec++;
+            if (strncmp(line, "O cfg ", 6) == 0) t.ocfg++;
+        } else {
+            t.malformed++;
+        }
+        if (i < len && buf[i] == '\n') i++;
+    }
+    return t;
+}
+
+#define SINK_ROUNDS 40
+
+typedef struct {
+    int ok, err;
+} SinkArg;
+
+static pthread_barrier_t sink_start;
+static void *sink_worker(void *p) {
+    SinkArg *a = (SinkArg *)p;
+    EigsState *st = eigs_open();
+    if (!st) { a->err = -1; return NULL; }
+    pthread_barrier_wait(&sink_start);
+    for (int i = 0; i < SINK_ROUNDS; i++) {
+        EigsValue *v = eigs_eval_string(
+            "s is env_get of \"CONC_LONG\"\nr is random of []\nreturn r");
+        if (v) { a->ok++; eigs_value_release(v); } else a->err++;
+    }
+    eigs_close(st);
+    return NULL;
+}
+
+static void test_two_state_sink(void) {
+    char longv[801];
+    memset(longv, 'x', 800); longv[800] = 0;
+    setenv("CONC_LONG", longv, 1);
+
+    SinkBuf sb;
+    sinkbuf_init(&sb);
+    eigs_set_trace_sink(sinkbuf_cb, &sb);
+
+    SinkArg a = {0, 0}, b = {0, 0};
+    pthread_barrier_init(&sink_start, NULL, 2);
+    pthread_t ta, tb;
+    pthread_create(&ta, NULL, sink_worker, &a);
+    pthread_create(&tb, NULL, sink_worker, &b);
+    pthread_join(ta, NULL);
+    pthread_join(tb, NULL);
+    pthread_barrier_destroy(&sink_start);
+
+    eigs_set_trace_sink(NULL, NULL);
+
+    TapeParse p = parse_tape_buf(sb.buf, sb.len);
+    check(a.ok == SINK_ROUNDS && b.ok == SINK_ROUNDS,
+          "sink: both states completed every eval");
+    check(p.lines > 0, "sink: parser examined lines > 0");
+    check(p.malformed == 0, "sink: every collected line is well-formed");
+    check(p.parsed_bytes == sb.len,
+          "sink byte accounting: sink_bytes equals the sum of record lengths");
+    check(p.nrec == SINK_ROUNDS * 2 * 2,
+          "sink: N count equals 2 states x rounds x (env_get + random)");
+    /* Control: a truncated stream MUST make the byte-sum check red. */
+    if (sb.len > 8) {
+        TapeParse trunc = parse_tape_buf(sb.buf, sb.len / 2);
+        check(trunc.parsed_bytes != sb.len,
+              "control: a truncated sink buffer fails the byte-sum equality");
+    }
+    printf("        sink: bytes=%zu lines=%d N=%d malformed=%d\n",
+           sb.len, p.lines, p.nrec, p.malformed);
+    sinkbuf_free(&sb);
+    unsetenv("CONC_LONG");
+}
+
+/* ------------------------------------------------------------------ 6 */
+/* #1142: O cfg is per-state last-emitted. Two states with different
+ * thresholds emit exactly one O cfg each (first record), none torn. */
+
+static pthread_barrier_t ocfg_start;
+typedef struct { int id; int ok; } OcfgArg;
+static void *ocfg_worker(void *p) {
+    OcfgArg *a = (OcfgArg *)p;
+    EigsState *st = eigs_open();
+    if (!st) return NULL;
+    if (a->id == 0) {
+        EigsValue *v = eigs_eval_string("set_observer_thresholds of [0.002, 0.03, 0.4]");
+        if (v) eigs_value_release(v);
+    } else {
+        EigsValue *v = eigs_eval_string("set_observer_thresholds of [0.003, 0.04, 0.5]");
+        if (v) eigs_value_release(v);
+    }
+    pthread_barrier_wait(&ocfg_start);
+    for (int i = 0; i < 50; i++) {
+        EigsValue *v = eigs_eval_string("x is 1.0\nx is 2.0\nreturn x");
+        if (v) { a->ok++; eigs_value_release(v); }
+    }
+    eigs_close(st);
+    return NULL;
+}
+
+static void test_ocfg_per_state(void) {
+    SinkBuf sb;
+    sinkbuf_init(&sb);
+    eigs_set_trace_sink(sinkbuf_cb, &sb);
+    pthread_barrier_init(&ocfg_start, NULL, 2);
+    OcfgArg a = {0, 0}, b = {1, 0};
+    pthread_t ta, tb;
+    pthread_create(&ta, NULL, ocfg_worker, &a);
+    pthread_create(&tb, NULL, ocfg_worker, &b);
+    pthread_join(ta, NULL);
+    pthread_join(tb, NULL);
+    pthread_barrier_destroy(&ocfg_start);
+    eigs_set_trace_sink(NULL, NULL);
+
+    TapeParse p = parse_tape_buf(sb.buf, sb.len);
+    check(a.ok == 50 && b.ok == 50, "O cfg: both states completed every eval");
+    check(p.lines > 0, "O cfg: parser examined lines > 0");
+    check(p.malformed == 0, "O cfg: no torn records");
+    check(p.ocfg == 2, "O cfg per state: exactly one first-record emit per state");
+    /* Control: a torn O cfg line is rejected, so the well-formed count can
+     * go red. */
+    check(!tape_line_ok("O cfg 0.00.001 01 0.0.02"),
+          "control: a torn O cfg line is not well-formed");
+    printf("        O cfg: well=%d ocfg=%d malformed=%d\n",
+           p.well, p.ocfg, p.malformed);
+    sinkbuf_free(&sb);
+}
+
+/* ------------------------------------------------------------------ 7 */
+/* #1143: eigs_close(A) must not shut the process tape while B is live. */
+
+static _Atomic int close_phase = 1;
+static _Atomic long close_phase2_bytes = 0;
+static SinkBuf close_sb;
+static pthread_barrier_t close_start, close_a_done;
+
+static void close_sink_cb(const char *b, size_t n, void *ud) {
+    sinkbuf_cb(b, n, ud);
+    if (atomic_load(&close_phase) == 2)
+        atomic_fetch_add(&close_phase2_bytes, (long)n);
+}
+
+typedef struct { int id; int p1_ok, p2_ok; } CloseArg;
+
+static void *close_worker(void *p) {
+    CloseArg *a = (CloseArg *)p;
+    EigsState *st = eigs_open();
+    if (!st) return NULL;
+    pthread_barrier_wait(&close_start);
+    for (int i = 0; i < 40; i++) {
+        EigsValue *v = eigs_eval_string("r is random of []\nreturn r");
+        if (v) { a->p1_ok++; eigs_value_release(v); }
+    }
+    if (a->id == 0) {
+        eigs_close(st);
+        atomic_store(&close_phase, 2);
+        pthread_barrier_wait(&close_a_done);
+        return NULL;
+    }
+    pthread_barrier_wait(&close_a_done);
+    for (int i = 0; i < 30; i++) {
+        EigsValue *v = eigs_eval_string("r is random of []\nreturn r");
+        if (v) { a->p2_ok++; eigs_value_release(v); }
+    }
+    eigs_close(st);
+    return NULL;
+}
+
+static void test_close_while_other_runs(void) {
+    atomic_store(&close_phase, 1);
+    atomic_store(&close_phase2_bytes, 0);
+    sinkbuf_init(&close_sb);
+    eigs_set_trace_sink(close_sink_cb, &close_sb);
+    pthread_barrier_init(&close_start, NULL, 2);
+    pthread_barrier_init(&close_a_done, NULL, 2);
+    CloseArg a = {0, 0, 0}, b = {1, 0, 0};
+    pthread_t ta, tb;
+    pthread_create(&ta, NULL, close_worker, &a);
+    pthread_create(&tb, NULL, close_worker, &b);
+    pthread_join(ta, NULL);
+    pthread_join(tb, NULL);
+    pthread_barrier_destroy(&close_start);
+    pthread_barrier_destroy(&close_a_done);
+    eigs_set_trace_sink(NULL, NULL);
+
+    check(a.p1_ok == 40 && b.p1_ok == 40, "close: both states completed phase 1");
+    check(b.p2_ok == 30, "close: B completed phase 2 after A closed");
+    check(atomic_load(&close_phase2_bytes) > 0,
+          "close: does not shut tape while another state lives");
+    /* Control: asserting phase-2 bytes == 0 is the close-always-shuts bug. */
+    check(!(atomic_load(&close_phase2_bytes) == 0 && b.p2_ok == 30),
+          "control: B evals with zero phase-2 bytes would fail the close check");
+    printf("        close: phase2_bytes=%ld B_p2_ok=%d\n",
+           (long)atomic_load(&close_phase2_bytes), b.p2_ok);
+    sinkbuf_free(&close_sb);
+}
+
+/* ------------------------------------------------------------------ 8 */
+/* #1142: two OS threads of the SAME owner state calling eigs_replay_take
+ * concurrently. The tape mutex serializes them; without it, N records tear
+ * or are double-consumed. Builtins on the second thread still fail-loud
+ * (TRACE_NONDET_RET); this path is the embed take API. */
+
+#define TAKE_N 400
+
+typedef struct { int takes; } TakeArg;
+static pthread_barrier_t take_start;
+static EigsState *take_st = NULL;
+
+static void *take_worker(void *p) {
+    TakeArg *a = (TakeArg *)p;
+    if (!eigs_thread_attach(take_st)) return NULL;
+    pthread_barrier_wait(&take_start);
+    for (;;) {
+        EigsValue *v = NULL;
+        if (!eigs_replay_take("random", &v)) break;
+        a->takes++;
+        if (v) eigs_value_release(v);
+    }
+    eigs_thread_detach();
+    return NULL;
+}
+
+static void test_replay_take_serialized(void) {
+    /* Build a tape: V header + TAKE_N `N random=0.5` records. Capture the
+     * header from a one-shot sink so the version stamp matches this binary. */
+    SinkBuf hdr;
+    sinkbuf_init(&hdr);
+    EigsState *prep = eigs_open();
+    eigs_set_trace_sink(sinkbuf_cb, &hdr);
+    EigsValue *pv = eigs_eval_string("1");
+    if (pv) eigs_value_release(pv);
+    eigs_set_trace_sink(NULL, NULL);
+    eigs_close(prep);
+
+    char *nl = hdr.buf ? strchr(hdr.buf, '\n') : NULL;
+    check(nl != NULL, "replay-take: captured a V header");
+    if (!nl) { sinkbuf_free(&hdr); return; }
+    size_t hlen = (size_t)(nl - hdr.buf + 1);
+    static const char nrec[] = "N random=0.5\n";
+    size_t rec_sz = sizeof nrec - 1;
+    size_t tlen = hlen + rec_sz * TAKE_N;
+    char *tape = malloc(tlen + 1);
+    memcpy(tape, hdr.buf, hlen);
+    size_t off = hlen;
+    for (int i = 0; i < TAKE_N; i++) {
+        memcpy(tape + off, nrec, rec_sz);
+        off += rec_sz;
+    }
+    tape[tlen] = '\0';
+    sinkbuf_free(&hdr);
+
+    take_st = eigs_state_new();
+    eigs_thread_attach(take_st);
+    eigs_state_init_runtime(take_st);
+    check(eigs_set_replay_tape(tape, tlen, 0) != 0, "replay-take: tape installed");
+
+    TakeArg a = {0}, b = {0};
+    pthread_barrier_init(&take_start, NULL, 2);
+    pthread_t tb;
+    /* Thread A is already attached (this thread). Thread B attaches inside. */
+    pthread_create(&tb, NULL, take_worker, &b);
+    /* This thread also takes. take_worker on B will attach; we are attached. */
+    pthread_barrier_wait(&take_start);
+    for (;;) {
+        EigsValue *v = NULL;
+        if (!eigs_replay_take("random", &v)) break;
+        a.takes++;
+        if (v) eigs_value_release(v);
+    }
+    pthread_join(tb, NULL);
+    pthread_barrier_destroy(&take_start);
+
+    int total = a.takes + b.takes;
+    check(total == TAKE_N, "replay take serialized: exactly N records consumed");
+    check(a.takes > 0 && b.takes > 0,
+          "replay take serialized: both threads consumed some records");
+    printf("        replay-take: A=%d B=%d total=%d (want %d)\n",
+           a.takes, b.takes, total, TAKE_N);
+
+    eigs_thread_detach();
+    eigs_state_destroy(take_st);
+    take_st = NULL;
+    eigs_trace_shutdown();
+    free(tape);
+}
+
 int main(void) {
-    printf("embed concurrent multi-state (#885)\n");
+    printf("embed concurrent multi-state (#885/#1142/#1143)\n");
     test_observer_thresholds();
     test_global_isolation();
     test_error_isolation();
     test_planted_fault_is_detectable();
+    test_two_state_sink();
+    test_ocfg_per_state();
+    test_close_while_other_runs();
+    test_replay_take_serialized();
 
     if (failures) {
         printf("EMBED_CONCURRENT_FAIL: %d check(s) failed\n", failures);

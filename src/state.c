@@ -22,6 +22,13 @@ void eigs_obs_memo_release(void);
 
 __thread EigsThread *eigs_current = NULL;
 
+/* Process-wide attached-thread and live-state counts. The eager pre-pass
+ * (#915) keys off thread count; eigs_close (#1143) keys off state count
+ * to decide whether it is shutting the last interpreter (and the tape). */
+static pthread_mutex_t g_attached_lock = PTHREAD_MUTEX_INITIALIZER;
+static int g_attached_threads = 0;
+static int g_live_states = 0;
+
 EigsState *eigs_state_new(void) {
     EigsState *st = xcalloc(1, sizeof(*st));
     pthread_mutex_init(&st->threads_lock, NULL);
@@ -37,6 +44,14 @@ EigsState *eigs_state_new(void) {
     st->obs_h_low    = OBSERVER_H_LOW_DEFAULT;
     st->obs_window   = OBSERVER_WINDOW_N;        /* #1044 */
     st->obs_scale    = OBSERVER_SCALE_DEFAULT;   /* #1045 */
+    /* #1142: last-emitted tape config starts at the compiled-in defaults so a
+     * default-config state's first record does not emit `O cfg`. */
+    st->tape_obs_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
+    st->tape_obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
+    st->tape_obs_h_low    = OBSERVER_H_LOW_DEFAULT;
+    st->tape_obs_window   = OBSERVER_WINDOW_N;
+    st->tape_obs_scale    = OBSERVER_SCALE_DEFAULT;
+    st->tape_obs_session  = 0;
     /* #971: strict math mode, read once from env at creation (like the JIT
      * thresholds below). Any non-empty, non-"0" value enables it. */
     st->strict = eigs_env_flag("EIGS_STRICT");
@@ -48,6 +63,9 @@ EigsState *eigs_state_new(void) {
 #endif
     /* Phase 9: JIT tuning per state, read once from env at creation. */
     jit_state_init_thresholds(st);
+    pthread_mutex_lock(&g_attached_lock);
+    g_live_states++;
+    pthread_mutex_unlock(&g_attached_lock);
     return st;
 }
 
@@ -80,6 +98,9 @@ void eigs_state_destroy(EigsState *st) {
     pthread_mutex_destroy(&st->threads_lock);
     pthread_mutex_destroy(&st->handle_mutex);
     pthread_mutex_destroy(&st->gc_lock);
+    pthread_mutex_lock(&g_attached_lock);
+    if (g_live_states > 0) g_live_states--;
+    pthread_mutex_unlock(&g_attached_lock);
     free(st);
 }
 
@@ -108,12 +129,17 @@ void eigs_state_destroy(EigsState *st) {
  *
  * So the precondition is not "this state is single-threaded", it is "this
  * PROCESS has one thread". */
-static pthread_mutex_t g_attached_lock = PTHREAD_MUTEX_INITIALIZER;
-static int g_attached_threads = 0;
 
 int eigs_process_thread_count(void) {
     pthread_mutex_lock(&g_attached_lock);
     int n = g_attached_threads;
+    pthread_mutex_unlock(&g_attached_lock);
+    return n;
+}
+
+int eigs_process_state_count(void) {
+    pthread_mutex_lock(&g_attached_lock);
+    int n = g_live_states;
     pthread_mutex_unlock(&g_attached_lock);
     return n;
 }

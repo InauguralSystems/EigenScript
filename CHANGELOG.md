@@ -130,6 +130,16 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The trace tape is safe under threads and states (#1142, #1143).** A
+  process-wide mutex is held for each whole record and each replay take, so
+  concurrent `spawn` workers and co-located `EigsState`s no longer tear
+  lines, overflow the embed sink, or mix taped and live values. Replay of a
+  nondet builtin on a non-main thread raises the same catchable error as
+  `recv` (per-thread N streams are not this round). `O cfg` diffs against
+  what that state last emitted. `eigs_close` shuts the process tape only
+  when it closes the last live state; `eigs_trace_shutdown` is the process
+  owner's explicit teardown. Single-threaded tapes stay byte-identical.
+
 - Standard-library imports and `exe_path` retain an absolute executable
   anchor after `chdir` on macOS, including relative and PATH launches (#1133).
 - Matrix products use separate binary64 multiplication and addition across

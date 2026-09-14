@@ -1,0 +1,14 @@
+# Single-worker control: 2000 iters x 3 nondet builtins = 6000 N records.
+define worker(id) as:
+    local acc is 0
+    local i is 0
+    loop while i < 2000:
+        local r is random of []
+        local t is monotonic_ns of []
+        local e is env_get of "HOME"
+        acc is acc + r
+        i is i + 1
+    return acc
+h1 is spawn of [worker, 1]
+a is thread_join of h1
+print of "done"
