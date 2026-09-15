@@ -1,0 +1,5 @@
+# Module fixture for dict_keys_mt_module.eigs. Two ordinary top-level bindings
+# so the namespace has content of its own before the worker adds to it.
+v is 1
+define bump() as:
+    return v + 1

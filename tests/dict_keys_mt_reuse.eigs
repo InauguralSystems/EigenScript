@@ -1,0 +1,19 @@
+# #1141 shape 4: the freed-memory-REUSE shape. The worker is joined AND its
+# handle dropped (so the handle-table resource is released), then main runs
+# 2000 unrelated allocations before reading. On a binary without the fix the
+# key bytes come back as whatever those allocations reused.
+results is {}
+define worker(tag) as:
+    results[tag] is {"score": 42}
+    results["from_" + tag] is tag
+    return 0
+h is spawn of [worker, "w1"]
+thread_join of h
+h is 0
+junk is []
+i is 0
+loop while i < 2000:
+    append of [junk, "junk_string_" + (str of i)]
+    i is i + 1
+print of f"KEYS 2 {join of [keys of results, "|"]}"
+print of f"VALS 2 {results.w1.score}|{results.from_w1}"

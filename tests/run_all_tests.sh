@@ -2285,6 +2285,33 @@ else
 fi
 echo ""
 
+# [42i] #1141: a dict key written by a worker must outlive the worker. PINNED
+# totals for the same reason [42h] pins them — "at least one check passed" is
+# satisfied by a gate reduced to a single echo (mechanical-gates §37).
+echo "[42i] Dict keys across threads (#1141)"
+DKM_EXPECTED=19
+DKM_SELFTEST_EXPECTED=8
+DKM_OUTPUT=$(bash "$TESTS_DIR/test_dict_keys_mt.sh" 2>&1); DKM_RC=$?
+DKM_PASS=$(echo "$DKM_OUTPUT" | grep -c "  PASS:" || true)
+DKM_FAIL=$(echo "$DKM_OUTPUT" | grep -c "  FAIL:" || true)
+DKM_ST_OUTPUT=$(bash "$TESTS_DIR/test_dict_keys_mt.sh" --selftest 2>&1); DKM_ST_RC=$?
+DKM_ST_PASS=$(echo "$DKM_ST_OUTPUT" | grep -c "  PASS:" || true)
+DKM_ST_FAIL=$(echo "$DKM_ST_OUTPUT" | grep -c "  FAIL:" || true)
+if [ "$DKM_RC" -eq 0 ] && [ "$DKM_FAIL" -eq 0 ] && [ "$DKM_PASS" -eq "$DKM_EXPECTED" ] \
+   && [ "$DKM_ST_RC" -eq 0 ] && [ "$DKM_ST_FAIL" -eq 0 ] && [ "$DKM_ST_PASS" -eq "$DKM_SELFTEST_EXPECTED" ]; then
+    TOTAL=$((TOTAL + DKM_PASS + DKM_ST_PASS))
+    PASS=$((PASS + DKM_PASS + DKM_ST_PASS))
+    echo "  PASS: all $DKM_PASS dict-key-MT checks + $DKM_ST_PASS selftest"
+else
+    TOTAL=$((TOTAL + DKM_PASS + DKM_FAIL + DKM_ST_PASS + DKM_ST_FAIL + 1))
+    PASS=$((PASS + DKM_PASS + DKM_ST_PASS))
+    FAIL=$((FAIL + DKM_FAIL + DKM_ST_FAIL + 1))
+    echo "  FAIL: dict-key-MT (live rc=$DKM_RC $DKM_PASS/$DKM_EXPECTED, selftest rc=$DKM_ST_RC $DKM_ST_PASS/$DKM_SELFTEST_EXPECTED)"
+    echo "$DKM_OUTPUT" | grep "FAIL:" | head -5
+    echo "$DKM_ST_OUTPUT" | grep "FAIL:" | head -5
+fi
+echo ""
+
 # [42c] REPL (#392): piped transcript byte-exact + pty-driven line editor
 echo "[42c] REPL editor & piped transcript (24 checks)"
 RE_OUTPUT=$(bash "$TESTS_DIR/test_repl.sh" 2>&1)

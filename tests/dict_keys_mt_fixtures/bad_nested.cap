@@ -1,0 +1,6 @@
+KEYS 1 [™Ò¯q
+KEYS 1 
+Error line 11: cannot access field 'lvl2' on null
+    11 | print of f"KEYS 1 {join of [keys of root.lvl1.lvl2, "|"]}"
+       |                                                          ^
+  at <module> (line 11)

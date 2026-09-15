@@ -1,0 +1,19 @@
+# #1141 shape 6: a module NAMESPACE is a live view of the module env (#1057),
+# so `M.k is v` inside a worker creates a BINDING in a sealed root env that
+# outlives every worker — the dict key and the env binding name both have to
+# survive the writer. Reading it back walks e->names[], which is the half a
+# dict-key-only fix leaves dangling.
+import dict_keys_mt_module_m
+define worker() as:
+    dict_keys_mt_module_m.worker_added is 99
+    return 0
+h is spawn of worker
+thread_join of h
+h is 0
+junk is []
+i is 0
+loop while i < 2000:
+    append of [junk, "junk_string_" + (str of i)]
+    i is i + 1
+print of f"KEYS 3 {join of [keys of dict_keys_mt_module_m, "|"]}"
+print of f"VALS 1 {dict_keys_mt_module_m.worker_added}"

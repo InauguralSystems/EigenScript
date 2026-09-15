@@ -2140,6 +2140,68 @@ void eigs_module_ns_sync(Value *dict) {
     }
 }
 
+/* ---- Process-global dict-key intern table (#293, #1141) ----------------
+ *
+ * An interned name normally lives in the WRITING THREAD's table
+ * (`g_env_name_interns` == `eigs_current->intern_tbl->buckets`), which
+ * `eigs_thread_drain_caches` frees at detach. That is safe only while every
+ * holder of the pointer dies with the thread. Two holders do not:
+ *
+ *   #293  — a value SENT ON A CHANNEL outlives the sender; `chan_clone_rec`
+ *           re-homes the copy's dict keys here.
+ *   #1141 — a dict written IN PLACE through a reference the parent also holds
+ *           (`d.k is v` inside a worker) IS the parent's dict. Nothing copies
+ *           it and nothing re-homes it at a boundary, because it never crosses
+ *           one — so the key must be re-homed at INSERTION. Symptom on the
+ *           release binary: `keys of d` prints freed bytes and every new field
+ *           reads back `null`, rc 0; under TSan, heap-use-after-free in
+ *           `make_str` <- `builtin_keys` against a free in
+ *           `env_intern_table_unref` <- `eigs_thread_detach`.
+ *
+ * The table is a static root, so LeakSanitizer sees its entries as
+ * still-reachable rather than leaked; it is deduped, so N writes of one key
+ * cost one entry; and nothing ever removes an entry, so a pointer handed out
+ * here is valid for the life of the PROCESS. That last property is the whole
+ * point: it is the only lifetime that dominates every dict, on every thread,
+ * without a per-dict owner list or a refcount on every key.
+ *
+ * Residual (mechanical-gates §6), and it is a real cost, not a disclaimer:
+ * entries are never reclaimed. A long-running multithreaded program whose
+ * workers write an UNBOUNDED number of DISTINCT dict keys retains
+ * sizeof(EnvNameIntern) + strlen(key) + 1 bytes per distinct key for the life
+ * of the process, where the same program single-threaded frees them at thread
+ * detach. The bound is the number of distinct key STRINGS — not the number of
+ * writes, not the number of dicts, and not affected by dicts dying. Removing
+ * that residual needs a refcount on every dict key (paid on every dict free,
+ * single-threaded included), which is a worse trade than the leak it removes.
+ */
+static EnvNameIntern *g_shared_key_interns[ENV_NAME_INTERN_BUCKETS];
+static pthread_mutex_t g_shared_key_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* The mutex is load-bearing, not hygiene: two workers inserting into one
+ * bucket at the same time lose an entry through the unsynchronised list push,
+ * and a reader can be handed `it->name` of a node whose `name` the other
+ * thread has not stored yet. Lookups outside this function need no lock —
+ * entries are never unlinked and `name` never changes after insertion. */
+static const char *shared_intern_key(const char *name) {
+    uint32_t h = env_hash_name(name);
+    int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
+    pthread_mutex_lock(&g_shared_key_mutex);
+    for (EnvNameIntern *it = g_shared_key_interns[bucket]; it; it = it->next) {
+        if (it->hash == h && strcmp(it->name, name) == 0) {
+            pthread_mutex_unlock(&g_shared_key_mutex);
+            return it->name;
+        }
+    }
+    EnvNameIntern *it = xcalloc(1, sizeof(EnvNameIntern));
+    it->name = xstrdup(name);
+    it->hash = h;
+    it->next = g_shared_key_interns[bucket];
+    g_shared_key_interns[bucket] = it;
+    pthread_mutex_unlock(&g_shared_key_mutex);
+    return it->name;
+}
+
 void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
     if (!dict || dict->type != VAL_DICT) return;
     if (h == 0) h = env_hash_name(key);
@@ -2167,12 +2229,31 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
         dict->data.dict.vals = xrealloc_array(dict->data.dict.vals, new_cap, sizeof(Value*));
         dict->data.dict.capacity = new_cap;
     }
-    char *interned = env_intern_name(key);
-    /* Claim scoped keys at insertion, not only at the sandbox result boundary:
-     * trace history and other counted Value holders may retain an inner dict
-     * even when that dict is not reachable from the returned result. */
-    if (g_sandbox_intern_scope != 0)
-        interned = env_intern_scope_promote(dict, interned);
+    /* #1141: while the process is multithreaded, a key must outlive the
+     * WRITING thread — see the g_shared_key_interns header above. Gated on
+     * g_vm_multithreaded exactly as the refcount-atomics gate is, so a program
+     * that never spawns takes the branch it has always taken and pays one
+     * predicted-false test on the INSERT path only (an update of an existing
+     * key returned above and never reaches here).
+     *
+     * The sandbox intern SCOPE is skipped on the MT arm deliberately, not by
+     * omission: env_intern_scope_promote matches by POINTER against this
+     * thread's table and then against the owner list, and a process-global
+     * pointer is in neither, so the call is a guaranteed no-op there. The
+     * lifetime it exists to grant — outliving the sandbox run — a globally
+     * interned key already has. */
+    char *interned;
+    if (__builtin_expect(g_vm_multithreaded, 0)) {
+        interned = (char *)shared_intern_key(key);
+    } else {
+        interned = env_intern_name(key);
+        /* Claim scoped keys at insertion, not only at the sandbox result
+         * boundary: trace history and other counted Value holders may retain
+         * an inner dict even when that dict is not reachable from the
+         * returned result. */
+        if (g_sandbox_intern_scope != 0)
+            interned = env_intern_scope_promote(dict, interned);
+    }
     dict->data.dict.keys[dict->data.dict.count] = interned;
     Value *promoted = promote_if_arena(val);
     dict->data.dict.vals[dict->data.dict.count] = promoted;
@@ -2227,34 +2308,11 @@ void dict_set_owned(Value *dict, const char *key, Value *val) {
  * receiver then reads dangling key pointers ("cannot index num" / garbage
  * keys). String VALUES are strdup-owned per Value and survive on refcount;
  * only the interned KEYS need rehoming. We deep-copy the value on send and
- * re-intern its dict keys into a process-global, lock-protected table that
- * lives for the process — reachable from a static root (so LeakSanitizer sees
- * it as still-reachable, not a leak) and deduped (so it stays bounded). Copying
+ * re-intern its dict keys into the process-global table above. Copying
  * also removes the old shared-by-reference concurrent-mutation footgun for the
  * data types it covers. Non-container types (fn/builtin/buffer/text_builder/
  * json) are still shared by refcount; sending a closure from a thread that then
  * exits remains unsupported (its interned params would dangle). */
-static EnvNameIntern *g_chan_key_interns[ENV_NAME_INTERN_BUCKETS];
-static pthread_mutex_t g_chan_key_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-static const char *chan_intern_key(const char *name) {
-    uint32_t h = env_hash_name(name);
-    int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
-    pthread_mutex_lock(&g_chan_key_mutex);
-    for (EnvNameIntern *it = g_chan_key_interns[bucket]; it; it = it->next) {
-        if (it->hash == h && strcmp(it->name, name) == 0) {
-            pthread_mutex_unlock(&g_chan_key_mutex);
-            return it->name;
-        }
-    }
-    EnvNameIntern *it = xcalloc(1, sizeof(EnvNameIntern));
-    it->name = xstrdup(name);
-    it->hash = h;
-    it->next = g_chan_key_interns[bucket];
-    g_chan_key_interns[bucket] = it;
-    pthread_mutex_unlock(&g_chan_key_mutex);
-    return it->name;
-}
 
 #define CHAN_CLONE_MAX_DEPTH 64
 static Value *chan_clone_rec(Value *v, int depth) {
@@ -2289,9 +2347,12 @@ static Value *chan_clone_rec(Value *v, int depth) {
             }
             /* Rehome keys from the (thread-local, soon-freed) intern table to
              * the process-global one. env_hash_find compares by hash+strcmp, so
-             * the differing key-pointer pool is fine. */
+             * the differing key-pointer pool is fine. Under #1141 the insert
+             * above has usually already done this (a send happens while
+             * multithreaded), but a clone can also run on the last thread after
+             * handle_table_drain has cleared the flag — so this stays. */
             for (int i = 0; i < out->data.dict.count; i++)
-                out->data.dict.keys[i] = (char *)chan_intern_key(out->data.dict.keys[i]);
+                out->data.dict.keys[i] = (char *)shared_intern_key(out->data.dict.keys[i]);
             return out;
         }
         /* Shared by refcount, not cloned. Enumerated rather than covered by a
@@ -3113,7 +3174,34 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
         }
         env->capacity = new_cap;
     }
-    env->names[env->count] = env_intern_name(name);
+    /* #1141, the module-namespace half. `M.k is v` inside a worker routes
+     * dict_set_hashed -> here, creating a BINDING in the module env — a
+     * sealed root that outlives every worker. The dict key is already
+     * re-homed at the insert below in dict_set_hashed_raw, but the binding's
+     * NAME was still interned in the writing thread's table, so the next
+     * `keys of M` walked e->names[] into freed memory (executed under ASan:
+     * heap-use-after-free in module_ns_public <- eigs_module_ns_sync <-
+     * builtin_keys, freed by T1 in env_intern_table_unref).
+     *
+     * The gate is g_vm_multithreaded, NOT env_mt_shared(). That was the first
+     * spelling and it was wrong, measured: env_mt_shared() is
+     * `multithreaded && parent == NULL`, and a module env is
+     * `env_new(g_global_env)` — it has a parent, so the guard was false on
+     * exactly the env this fixes and the ASan trace above reproduced
+     * unchanged. (That also says #607's module-env LOCK does not cover a
+     * module NAMESPACE env either; separate pre-existing question, filed with
+     * the repro, not fixed here.) This function is not a VM hot path — the
+     * interpreter's SET_NAME paths use env_set_local_pre_interned_slot with
+     * chunk-owned names — so gating on the process-wide flag costs a
+     * predicted-false test per call and nothing single-threaded.
+     *
+     * shared_intern_key takes only its own mutex and reaches nothing that can
+     * take an env lock (strcmp / env_hash_name / xcalloc / xstrdup), so
+     * calling it inside env_shared_lock (held when env IS a sealed root)
+     * cannot cycle — the trap the #1035 deadlock came from. */
+    env->names[env->count] = __builtin_expect(g_vm_multithreaded, 0)
+                             ? (char *)shared_intern_key(name)
+                             : env_intern_name(name);
     Value *promoted = promote_if_arena(val);
     if (promoted == val) val_incref(promoted);
     env->values[env->count] = slot_from_value(promoted);

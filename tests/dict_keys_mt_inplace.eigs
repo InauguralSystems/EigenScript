@@ -1,0 +1,12 @@
+# #1141 shape 1: a worker writes NEW keys into a dict the PARENT owns, through
+# the shared reference (no channel, no join transfer). The worker is joined
+# before main reads, so nothing here is a race — only a lifetime question.
+d is {"pre": 1}
+define worker() as:
+    d.added_by_worker is 42
+    d.second is "two"
+    return 0
+h is spawn of worker
+thread_join of h
+print of f"KEYS 3 {join of [keys of d, "|"]}"
+print of f"VALS 3 {d.pre}|{d.added_by_worker}|{d.second}"

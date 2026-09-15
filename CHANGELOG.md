@@ -130,6 +130,33 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **A dict key written by a worker outlives the worker (#1141).** Key strings
+  are interned, and `dict_set_hashed_raw` interned them into the WRITING
+  THREAD's table — which `eigs_thread_detach` frees. A dict shared by
+  reference is the parent's and outlives the worker, so `d.added_by_worker is
+  42` inside a spawned closure left the parent holding freed key pointers:
+  `keys of d` printed garbage bytes and every new field read back `null`, at
+  exit code 0, with no race anywhere (spawn → join → read is serialized).
+  Under TSan it was a heap-use-after-free in `make_str` ← `builtin_keys`
+  against a free in `env_intern_table_unref` ← `eigs_thread_detach`. #293
+  already re-homed keys for values crossing a channel or a join result; an
+  in-place write through a shared reference crosses no boundary and so got
+  nothing. Now, while the process is multithreaded, a key is interned at
+  INSERTION into the process-global, mutex-guarded table #293 introduced, so
+  its lifetime is the process rather than the writing thread. The gate is
+  `g_vm_multithreaded`, exactly like the refcount-atomics gate: a program
+  that never spawns takes the single-threaded path it always took, and pays
+  one predicted-false test on the insert path only. Covers a dict written in
+  place, a worker-built dict published through a shared list, nested dicts,
+  and a read long after the worker was joined and its handle released.
+  VALUES remain the user's race to avoid (#1152). Residual: entries in the
+  process-global table are never reclaimed, so a long-running multithreaded
+  program whose workers write an unbounded number of DISTINCT keys retains
+  them for the process lifetime — bounded by distinct key strings, not by
+  writes or by dicts. Gated by `tests/test_dict_keys_mt.sh` (suite [42i]),
+  the TSan arm in `tests/test_tsan.sh`, and the mutation train
+  `tools/dict_keys_mutants.sh`.
+
 - **The trace tape is safe under threads and states (#1142, #1143).** A
   process-wide mutex is held for each whole record and each replay take, so
   concurrent `spawn` workers and co-located `EigsState`s no longer tear
