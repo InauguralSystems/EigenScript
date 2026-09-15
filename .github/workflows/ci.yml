@@ -18,6 +18,31 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# TWO LANES (#1160).
+#
+# Measured on PR #1158 (head 8cc1f2d, 26 checks, all green): 35 min wall,
+# ~200 machine-minutes. The SAME ~240-section suite ran in TEN jobs that
+# differ only in the extension surface of the binary, and section [99i] (the
+# -Werror compile-line audit — dry runs of every make target plus a scan of
+# ~110 scripts; 6 min on the dev box, minutes on a runner) ran inside every
+# one of them, for a property that does not depend on the variant.
+#
+#   PR lane (pull_request)  — target <= 15 min wall. ONE full suite
+#     (linux/gcc). Every variant job runs only the sections its binary
+#     unlocks, DERIVED by tools/section_plan.sh from the suite's own
+#     probe gates (never a hand-written list). [99i] runs ONCE, in the
+#     `werror audit` job, cached on the audit's inputs. macos-15-intel is
+#     not on this lane.
+#   main lane (push to main) — the full matrix, exactly as before, except
+#     that [99i] is owned by the one `werror audit` job instead of being
+#     repeated ten times. The merge-er waits for this; contributors do not.
+#   nightly (.github/workflows/nightly.yml) — macos-15-intel and the full
+#     valgrind corpus, with a tracking issue on failure.
+#
+# The risk this accepts, stated: a variant-specific regression in a
+# NON-variant section reaches main before it is caught. Main still runs the
+# full matrix before anything is released.
+
 jobs:
   # Is this PR docs-only? A change touching nothing but *.md cannot alter C or
   # .eigs behavior, so the legs below that build/run the runtime have nothing to
@@ -134,6 +159,152 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # [99i], ONCE per run, cached (#1160).
+  #
+  # tools/werror_switch_check.sh asserts every compile invocation the Makefile
+  # and the tracked scripts emit carries -Werror=switch/comment/
+  # misleading-indentation. That is a property of the Makefile and the scripts:
+  # it cannot differ between a zlib build and a gfx build. It was nevertheless
+  # running inside all ten suite jobs (6 min on the dev box, minutes on a
+  # runner, ~500 compile invocations audited each time).
+  #
+  # Here it runs once, and the ten suite jobs set EIGS_SKIP_WERROR_AUDIT=1 so
+  # [99i] prints a SKIP naming this job rather than silently measuring less.
+  # Locally (no env var) run_all_tests.sh still runs it in full.
+  #
+  # The cache key is tools/werror_cache_key.sh: the Makefile's content, every
+  # tracked *.sh, and the NAMES of tracked files under src/ tests/ tools/ web/
+  # fuzz/ (a new source file changes the compile lines even though no covered
+  # file's content moved). Its --selftest carries both halves of the control:
+  # a one-line Makefile edit MISSES, a docs-only edit HITS.
+  werror-audit:
+    name: werror audit ([99i], cached)
+    needs: [dev-image, scope]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # A docs-only PR cannot change the Makefile or any tracked script, so it
+      # cannot change this audit's verdict. The job still REPORTS (a required
+      # check that never reports blocks the merge forever) — it just does not
+      # compute, restore or run anything.
+      - name: Docs-only — the audit's inputs cannot have changed
+        if: needs.scope.outputs.code != 'true'
+        run: |
+          echo "werror audit: docs-only change; the Makefile and every tracked *.sh are untouched, so [99i]'s verdict cannot have moved."
+
+      - name: Compute the audit cache key
+        if: needs.scope.outputs.code == 'true'
+        id: key
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          bash tools/werror_cache_key.sh --explain
+          echo "key=$(bash tools/werror_cache_key.sh)" >> "$GITHUB_OUTPUT"
+
+      # UNCACHED, every run, before the cache is consulted (#1160 round 2).
+      # The generated-header probes RUN the LSP index generators, and those
+      # read C sources — gen_lsp_builtin_index.sh reads the reserved observer
+      # words out of src/lexer.c. A blind critic planted `return (TOK_REPORT);`
+      # there and got a FAILING audit behind an UNCHANGED cache key. This half
+      # is 0.5 s measured, so it costs nothing to never cache it.
+      - name: Generated LSP header probes (uncached — they read C sources)
+        if: needs.scope.outputs.code == 'true'
+        run: bash tools/werror_switch_check.sh --headers-only
+
+      - name: Restore the audit result
+        if: needs.scope.outputs.code == 'true'
+        id: restore
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: .werror-audit-ok
+          key: werror-audit-v1-${{ steps.key.outputs.key }}
+
+      # A cache hit must SAY it skipped, and say what it skipped over — a log
+      # in which "audited 543 invocations" and "did not run" look the same is
+      # the failure this whole change is trying not to introduce.
+      - name: Cache HIT — the audit already passed for these exact inputs
+        if: needs.scope.outputs.code == 'true' && steps.restore.outputs.cache-hit == 'true'
+        run: |
+          echo "werror audit: CACHE HIT on werror-audit-v1-${{ steps.key.outputs.key }}"
+          echo "werror audit: [99i] NOT RUN this time; the stored result is:"
+          cat .werror-audit-ok
+
+      - name: Cache MISS — run the compile-line audit ([99i])
+        if: needs.scope.outputs.code == 'true' && steps.restore.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          echo "werror audit: CACHE MISS on werror-audit-v1-${{ steps.key.outputs.key }} — running the audit"
+          # The planted-fault self-test (proving the classifier is not
+          # vacuously green) and the dry-run audit. `--no-headers`: the
+          # generated-header probes ran UNCACHED in the step above, because
+          # their verdict moves with C-source content that this cache key
+          # deliberately does not hash.
+          bash tools/werror_switch_check.sh --selftest
+          bash tools/werror_switch_check.sh --no-headers
+          {
+            echo "werror audit passed"
+            echo "key=${{ steps.key.outputs.key }}"
+            echo "commit=$GITHUB_SHA"
+            echo "run=$GITHUB_RUN_ID"
+          } > .werror-audit-ok
+
+      # Saved only on the miss path, and only after the audit exited 0: a
+      # marker written unconditionally would cache a FAILURE as a pass.
+      - name: Save the audit result
+        if: needs.scope.outputs.code == 'true' && steps.restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: .werror-audit-ok
+          key: werror-audit-v1-${{ steps.key.outputs.key }}
+
+  # The new gates in this change are gates, so they get the treatment every
+  # other gate here gets: their planted-fault trains run in CI, on every run,
+  # cheaply. Without this the section-plan derivation and the cache key would
+  # be the only checks in the tree whose "it goes red when it should" claim
+  # rests on a local run.
+  gate-selftests:
+    name: gate self-tests (section plan + audit cache key)
+    needs: [dev-image, scope]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - if: needs.scope.outputs.code == 'true'
+        name: Build (the section plan runs the suite's own probes)
+        run: ./build.sh
+      - if: needs.scope.outputs.code == 'true'
+        name: Audit cache-key planted-invalidation controls
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          bash tools/werror_cache_key.sh --selftest
+      - if: needs.scope.outputs.code == 'true'
+        name: Section-plan derivation controls
+        run: bash tools/section_plan.sh --selftest
+      - if: needs.scope.outputs.code == 'true'
+        name: The derived plans, printed (the numbers a reviewer checks)
+        run: |
+          bash tools/section_plan.sh --gate-audit
+          bash tools/section_plan.sh --probes
+          bash tools/section_plan.sh --print-section-plan core
+
   # Linux build + full suite, inside the shared image, for gcc and clang.
   # gcc and clang shake out different warnings and codegen.
   build-and-test-linux:
@@ -162,7 +333,25 @@ jobs:
       - name: Verify binary
         run: ./src/eigenscript --version
 
-      - name: Run test suite
+      # THE full suite of the PR lane. gcc always runs all ~263 sections; the
+      # only thing it no longer runs is [99i], which the `werror audit` job
+      # owns for this run and which prints a SKIP naming that job.
+      - name: Run test suite (full)
+        if: matrix.cc == 'gcc' || github.event_name == 'push'
+        env:
+          EIGS_SKIP_WERROR_AUDIT: 1
+        run: cd tests && bash run_all_tests.sh
+
+      # clang on a PR: the value of this leg is the BUILD (-Werror fires at
+      # compile time, and clang's codegen differs), not a tenth execution of
+      # the same ~263 sections the gcc leg just ran on the same commit. It
+      # runs the derived core-smoke plan instead. On a push to main it runs
+      # the full suite like every other leg.
+      - name: Run test suite (derived core-smoke plan)
+        if: matrix.cc == 'clang' && github.event_name != 'push'
+        env:
+          EIGS_SUITE_SECTIONS: core
+          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       # Cross-repo observer corpus (#262): real observer-using programs
@@ -298,10 +487,15 @@ jobs:
     # Intel completed the gfx gate and 540 compiler audit calls but reached
     # 30 minutes in the audit's fault controls (#1130). Keep the full suite.
     timeout-minutes: 45
+    # macos-15-intel was the 35-minute job that SET the PR wall clock on
+    # #1158. It is the slowest runner in the pool and it catches Intel-mac-only
+    # shapes — worth having, and able to lag a day. On a push to `main` the
+    # matrix is unchanged; on a pull request it is macos-latest only, and
+    # macos-15-intel runs in .github/workflows/nightly.yml.
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, macos-15-intel]
+        os: ${{ github.event_name == 'push' && fromJSON('["macos-latest","macos-15-intel"]') || fromJSON('["macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -357,8 +551,21 @@ jobs:
         name: Verify gfx sanitizer controls
         run: bash tests/test_asan_gfx.sh --toolchain-only
 
-      - if: needs.scope.outputs.code == 'true'
-        name: Run test suite
+      # PR lane: [99i] is owned by the `werror audit` job. Measured on the dev
+      # box, that one section is the audit (6 min) plus its planted-fault
+      # self-test (11 min) — the single largest block of this leg's 15 min.
+      # Its verdict cannot differ by platform anyway: the only conditional in
+      # the Makefile is LDFLAGS, a LINK flag, and the audit reads COMPILE
+      # invocations. On a push to main it still runs here in full, so the
+      # gate's BSD-userland portability keeps an exercise at merge time.
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+        name: Run test suite (PR lane; [99i] owned by the werror audit job)
+        env:
+          EIGS_SKIP_WERROR_AUDIT: 1
+        run: cd tests && bash run_all_tests.sh
+
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
+        name: Run test suite (main lane, [99i] included)
         run: cd tests && bash run_all_tests.sh
 
       # Linux LSP coverage lives in the extensions job; this leg exists
@@ -473,8 +680,23 @@ jobs:
         name: Build http+model variant
         run: make http
 
-      - if: needs.scope.outputs.code == 'true'
+      # PR lane: only the sections this binary UNLOCKS. The list is derived
+      # by tools/section_plan.sh from the suite's own probe gates — the same
+      # `http_route` / `eigen_model_loaded` probes the suite already uses to
+      # decide whether to skip — plus a fixed core smoke, and the job fails if
+      # the http binary unlocks fewer probe-gated chunks than its floor (a
+      # broken registration otherwise collapses the plan silently).
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+        name: Run derived http+model section plan
+        env:
+          EIGS_SUITE_SECTIONS: http
+          EIGS_SKIP_WERROR_AUDIT: 1
+        run: cd tests && bash run_all_tests.sh
+
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
         name: Run full suite against http+model build
+        env:
+          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true'
@@ -493,7 +715,7 @@ jobs:
         run: make fuzz && bash fuzz/run_fuzz.sh
 
   extensions-gfx:
-    name: extensions / gfx full suite
+    name: extensions / gfx suite
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -512,13 +734,22 @@ jobs:
         name: Build gfx variant
         run: make gfx
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+        name: Run derived gfx section plan (audio [62], [120b], [132], [133], [134])
+        env:
+          EIGS_SUITE_SECTIONS: gfx
+          EIGS_SKIP_WERROR_AUDIT: 1
+        run: cd tests && bash run_all_tests.sh
+
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
         name: Run full suite against gfx build (audio [62], containment [132], gfx examples [97])
+        env:
+          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
 
   extensions-zlib:
-    name: extensions / zlib full suite
+    name: extensions / zlib suite
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -537,13 +768,22 @@ jobs:
         name: Build zlib variant
         run: make zlib
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+        name: Run derived zlib section plan (executes DEFLATE section [124b])
+        env:
+          EIGS_SUITE_SECTIONS: zlib
+          EIGS_SKIP_WERROR_AUDIT: 1
+        run: cd tests && bash run_all_tests.sh
+
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
         name: Run full suite against zlib build (executes DEFLATE section [124])
+        env:
+          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
 
   extensions-net:
-    name: extensions / net full suite
+    name: extensions / net suite
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -562,8 +802,17 @@ jobs:
         name: Build net variant
         run: make net
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+        name: Run derived net section plan (executes network section [125])
+        env:
+          EIGS_SUITE_SECTIONS: net
+          EIGS_SKIP_WERROR_AUDIT: 1
+        run: cd tests && bash run_all_tests.sh
+
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
         name: Run full suite against net build (executes network section [125])
+        env:
+          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
 
@@ -606,10 +855,19 @@ jobs:
         name: Build full variant (http+model+db)
         run: make full
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+        name: Run derived full-variant section plan with live DATABASE_URL
+        env:
+          DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
+          EIGS_SUITE_SECTIONS: full
+          EIGS_SKIP_WERROR_AUDIT: 1
+        run: cd tests && bash run_all_tests.sh
+
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
         name: Run full suite with live DATABASE_URL
         env:
           DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
+          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
   # Run the entire suite under AddressSanitizer + UndefinedBehaviorSanitizer.
@@ -681,6 +939,10 @@ jobs:
           # teardown + birth-ref adoption fixes, so any new leak fails this job.
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          # [99i] is a Makefile/script property, not a sanitizer property, and
+          # it is the most expensive thing this job did (it launches the
+          # sanitized binary for every dry run). The `werror audit` job owns it.
+          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true'
@@ -692,7 +954,7 @@ jobs:
         run: cd tests && bash test_lsp_asan.sh
 
   sanitizers-http:
-    name: asan + ubsan / HTTP and model full suite
+    name: asan + ubsan / HTTP and model suite
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     # 45, not 30: the green run before #915's [99u] section landed took 19m57,
@@ -731,11 +993,25 @@ jobs:
       # RSS-growth gate, measured separately.
       #
       # This worker owns its checkout and alias, independently of core ASan.
-      - if: needs.scope.outputs.code == 'true'
+      # PR lane: the sections the http+model surface unlocks, under the
+      # sanitizers. This job was 26 min on #1158 — the second-longest on the
+      # board — and the core sections it shared with `asan + ubsan / core and
+      # LSP` are already sanitized there on the same commit.
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+        name: Run derived asan-http section plan under sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          EIGS_SUITE_SECTIONS: asan-http
+          EIGS_SKIP_WERROR_AUDIT: 1
+        run: make asan-http && cd tests && bash run_all_tests.sh
+
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
         name: Run suite under sanitizers with the HTTP+model extensions
         env:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          EIGS_SKIP_WERROR_AUDIT: 1
         run: make asan-http && cd tests && bash run_all_tests.sh
 
   # Valgrind/Memcheck over a representative spread of programs — the

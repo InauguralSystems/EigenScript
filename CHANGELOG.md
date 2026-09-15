@@ -56,6 +56,53 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **CI runs each gate where it is suited: a ≤ 15-minute PR lane, the full
+  matrix on `main`, and a nightly (#1160).** Measured on PR #1158: 35 min
+  wall, ~200 machine-minutes, 26 checks — because the same ~263-section suite
+  ran in TEN jobs differing only in the extension surface of the binary, and
+  section [99i] (the `-Werror` compile-line audit; ~6 min of audit plus ~11 min
+  of self-test on the dev box) ran inside every one of them for a property
+  that cannot depend on the variant.
+  - `tools/section_plan.sh` derives, per variant, the sections that variant's
+    binary actually unlocks. Nothing is hand-listed: it splits
+    `tests/run_all_tests.sh` into top-level chunks by asking `bash -n` where a
+    statement ends (and verifies the chunks partition the file byte-for-byte),
+    reads the `# EIGS-CAP-GATE: <capability>` marker each gate now declares,
+    and RUNS that capability's probe — the suite's own probe program — against
+    the binary under test. The marker population is pinned against an
+    independent over-broad grep across the runner AND every child script the
+    runner dispatches, so a capability gate spelled a new way is a hard
+    failure rather than a section that silently leaves every plan. `EIGS_SUITE_SECTIONS=<variant> bash
+    tests/run_all_tests.sh` runs the derived plan; `bash
+    tests/run_all_tests.sh --print-section-plan <variant>` prints it with its
+    counts and floors. Measured locally: the `http` plan is 16 sections / 862
+    checks in 2m09 against 35m25 for the full suite.
+  - Every plan prints `sections=<n> (of <total>) plan=<variant>`, counting the
+    headers that will actually EXECUTE, and the runner then counts the headers
+    the run printed and fails if the two disagree. A plan of zero sections, a
+    RUN of zero assertions, an unparsable probe idiom, a lost marker, a
+    core-smoke entry that matches nothing, an unaccounted gate spelling, an
+    unused waiver, and a variant whose binary presents fewer capabilities than
+    its floor are all hard failures. A `make http` with
+    `http_route` unregistered used to print `HTTP tests SKIPPED` and exit 0;
+    it now goes red.
+  - [99i] is split: its generated-LSP-header probes (`--headers-only`, 0.5 s)
+    run UNCACHED on every CI run because the generators read C sources, and
+    only the expensive dry-run audit (`--no-headers`) is cached, keyed on
+    `tools/werror_cache_key.sh` (the `Makefile`'s content, every tracked
+    `*.sh`, and the names of tracked files under `src/ tests/ tools/ web/
+    fuzz/`). A local run with no flag still does both halves. The suite jobs set `EIGS_SKIP_WERROR_AUDIT=1`, and [99i] then
+    prints a `SKIP:` naming the owning job; unset — every local run — it runs
+    in full.
+  - `macos-15-intel` (35 min, the job that set the PR wall clock) and a
+    full-corpus valgrind run move to `.github/workflows/nightly.yml`, which
+    opens — or reopens and appends to — one tracking issue on failure.
+    `macos-15-intel` also still runs on every push to `main`; the FULL valgrind
+    corpus runs nightly only (the PR lane and `main` both run the 28-program
+    smoke).
+  - `docs/CI.md` is the new map: what runs on your PR, what runs on main, what
+    runs nightly, and the required-status-check list.
+
 - **`http_response_header of [name, value]` (#1128, #1134):** register up to 16
   validated response headers before serving, including across early bind.
   Every response carries them, including static/file routes, startup,

@@ -35,12 +35,79 @@ PROGS=(
   test_channel_nb test_chan_dict_xthread
 )
 
+# --full (#1160): the nightly lane runs the WHOLE runnable corpus, not this
+# 28-name spread. The list is DERIVED from tests/*.eigs rather than written
+# out, because a second hand-written list is a second thing to drift.
+#
+# The corpus contains fixtures that are *supposed* to exit non-zero (error
+# demos, guard self-tests) and fixtures that need arguments; valgrinding those
+# would report a program failure as a memory finding. So a pre-pass runs each
+# candidate under the plain binary with no arguments and keeps only the ones
+# that exit 0 — visibly counted, never silently dropped.
+#
+# Two floors, in both directions (a derived population shrinks quietly):
+#   * the derived corpus must be at least as large as the smoke spread;
+#   * every smoke program must survive the pre-pass, because those 28 are
+#     known-good — one of them being excluded means the pre-pass is wrong,
+#     not that the program is.
+FULL=0
+[ "${1:-}" = "--full" ] && FULL=1
+
+# `timeout` is GNU; the macOS runners ship neither it nor gtimeout by default.
+# This file is ubuntu-only today, but the suite's own probe costs one line and
+# keeps that from becoming a trap later (see .claude/rules/test-suite.md).
+VG_TMO=""
+PRE_TMO=""
+if command -v timeout >/dev/null 2>&1; then VG_TMO="timeout 600"; PRE_TMO="timeout 60"
+elif command -v gtimeout >/dev/null 2>&1; then VG_TMO="gtimeout 600"; PRE_TMO="gtimeout 60"; fi
+
+if [ "$FULL" -eq 1 ]; then
+  SMOKE=("${PROGS[@]}")
+  CANDIDATES=()
+  for f in test_*.eigs; do
+    [ -f "$f" ] || continue
+    CANDIDATES+=("${f%.eigs}")
+  done
+  if [ "${#CANDIDATES[@]}" -lt "${#SMOKE[@]}" ]; then
+    echo "FAIL: derived corpus (${#CANDIDATES[@]}) is smaller than the smoke spread (${#SMOKE[@]}) — tests/*.eigs did not enumerate"
+    exit 1
+  fi
+  KEPT=(); EXCLUDED=()
+  for p in "${CANDIDATES[@]}"; do
+    if EIGS_JIT_OFF=1 $PRE_TMO "$BIN" "$p.eigs" </dev/null >/dev/null 2>&1; then
+      KEPT+=("$p")
+    else
+      EXCLUDED+=("$p")
+    fi
+  done
+  missing=""
+  for s in "${SMOKE[@]}"; do
+    case " ${KEPT[*]} " in
+      *" $s "*) ;;
+      *) [ -f "$s.eigs" ] && missing="$missing $s" ;;
+    esac
+  done
+  if [ -n "$missing" ]; then
+    echo "FAIL: the pre-pass excluded known-good smoke program(s):$missing"
+    echo "      a smoke program that no longer exits 0 under the plain binary is a"
+    echo "      real failure or a broken pre-pass — either way this is not a corpus"
+    exit 1
+  fi
+  if [ "${#KEPT[@]}" -lt "${#SMOKE[@]}" ]; then
+    echo "FAIL: only ${#KEPT[@]} program(s) survived the pre-pass, below the smoke floor ${#SMOKE[@]}"
+    exit 1
+  fi
+  PROGS=("${KEPT[@]}")
+  echo "valgrind-full: corpus=${#PROGS[@]} of ${#CANDIDATES[@]} candidates; ${#EXCLUDED[@]} excluded (non-zero exit under the plain binary, no arguments)"
+  echo "valgrind-full: excluded: ${EXCLUDED[*]}"
+fi
+
 pass=0; fail=0
 for p in "${PROGS[@]}"; do
   f="$p.eigs"
   if [ ! -f "$f" ]; then echo "  SKIP (missing): $p"; continue; fi
   log="$(mktemp)"
-  if EIGS_JIT_OFF=1 "${VG[@]}" "$BIN" "$f" </dev/null >"$log" 2>&1; then
+  if EIGS_JIT_OFF=1 $VG_TMO "${VG[@]}" "$BIN" "$f" </dev/null >"$log" 2>&1; then
     echo "  PASS: $p"; pass=$((pass+1))
   else
     echo "  FAIL: $p — Valgrind reported errors:"
@@ -51,6 +118,16 @@ for p in "${PROGS[@]}"; do
 done
 
 echo "============================================"
-echo "  Valgrind smoke: $pass passed, $fail failed (of $((pass+fail)))"
+if [ "$FULL" -eq 1 ]; then
+  echo "  Valgrind FULL corpus: $pass passed, $fail failed (of $((pass+fail)))"
+else
+  echo "  Valgrind smoke: $pass passed, $fail failed (of $((pass+fail)))"
+fi
 echo "============================================"
+# A run that valgrinded NOTHING must not report success: "0 failed" and "never
+# ran" are the same line otherwise.
+if [ "$((pass+fail))" -eq 0 ]; then
+  echo "FAIL: valgrind examined zero programs — that is a broken harness, not a clean run"
+  exit 1
+fi
 [ "$fail" -eq 0 ]
