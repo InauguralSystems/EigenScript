@@ -52,9 +52,9 @@ workers — is caught by the ThreadSanitizer gate below
 ### A key written by a worker outlives the worker (#1141)
 
 Sharing by reference means the *structure* a worker builds has to survive the
-worker, not just its values. It does. **A dict KEY written on any thread is
-valid for the lifetime of the DICT**, whoever reads it and whether or not the
-writing thread has exited:
+worker, not just its values. It does. **Once a program has `spawn`ed, a dict
+KEY written on any thread is valid for the lifetime of the DICT**, whoever
+reads it and whether or not the writing thread has exited:
 
 ```eigenscript
 d is {"pre": 1}
@@ -77,7 +77,11 @@ joined and its handle released. (Mechanically: key strings are interned, and
 while the process is multithreaded new keys are interned into a
 process-global, mutex-guarded table instead of the writing thread's own — the
 thread's table is freed when the thread detaches, which is exactly the
-lifetime a shared dict does not have.)
+lifetime a shared dict does not have.) The guarantee is keyed on the
+multithreaded flag that `spawn` sets. The embed API's other thread shape —
+host threads attaching to one state without any `spawn` — is NOT covered:
+there a detaching host thread still frees the names it interned, dict keys
+and global bindings alike (#1162).
 
 This is a statement about the KEY, not about the VALUE. Two threads writing
 the same dict, or one writing while another reads, is still **your** race to
