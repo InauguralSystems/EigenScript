@@ -128,7 +128,16 @@ variant_chunks_floor() {
 #   * named in GATE_WAIVERS below, with a reason.
 # Anything else is a hard failure: a new gate spelling cannot enter the tree
 # without either a marker or a reviewed waiver.
-GATE_ENUM_RE='ndefined variable|compiled without zlib|built without|no gfx build'
+# Round 4 widened this with the SANITIZER axis. A blind critic pointed out that
+# section [119] Part B skips on a non-sanitizer binary — a BUILD-VARIANT skip,
+# just not an extension one — and the audit could not see it, so its waiver
+# carried a reason ("an env flag, not a build variant") that was false. The
+# added alternatives are the two SKIP phrasings only, not the words "sanitizer
+# build" anywhere: a matcher that fires on prose gets muted (mechanical-gates
+# §13). Each hit is classified by WHICH LANE carries it — the ASan shards for
+# sanitizer-only sections, the release lane for the ones that skip UNDER a
+# sanitizer.
+GATE_ENUM_RE='ndefined variable|compiled without zlib|built without|no gfx build|SKIP: non-sanitizer build|SKIP: sanitizer build'
 
 # Each waiver is "<path>|<16-hex sha256 of the EXACT line>|<reason, with an
 # excerpt so a reader can see what was waived>". The hash is the pin: edit the
@@ -149,8 +158,11 @@ tests/run_all_tests.sh|afa1df2cc3c846e7|same section, the token half; still a re
 tests/run_all_tests.sh|caf3ea70e21715df|same section, the closure half; still a refusal assertion, not a skip
 tests/test_asan_gfx.sh|898c996c43648e4b|the comment above that same OWN-binary probe in the child
 tests/test_asan_gfx.sh|eb3773f2d6a0382a|the child BUILDS its own asan-gfx binary and gates on that, not on the suite binary
-tests/test_borrow_guard.sh|f17115887aeaf7e5|gated on __borrow_guard_selftest, an EIGS_BORROW_GUARD env flag, not a build variant
-tests/test_borrow_guard.sh|2c7e3d903f4f6f5d|same env-flag gate, second site in the same child
+tests/test_borrow_guard.sh|f17115887aeaf7e5|the BUILD-TYPE probe for section [119] Part B. The opt-in env var IS set on this line, so an undefined name means the borrow guard was compiled OUT, i.e. a non-sanitizer build. It is a build-variant skip on the SANITIZER axis, and its PR-lane coverage is the asan shards, whose union is the full chunk list
+tests/test_borrow_guard.sh|2c7e3d903f4f6f5d|case 4 ASSERTS the selftest builtin is absent WITHOUT the opt-in env var. An assertion, not a skip: nothing is gated on it
+tests/test_borrow_guard.sh|9a5a23a57e0237b7|the SKIP line that probe reaches on a release build. Section [119] Part B is sanitizer-only; on the PR lane it runs inside the asan shards
+tests/run_all_tests.sh|dd8de89ad5db519e|the OBS_G43 witness note: that row SKIPS under a sanitizer because the ASan allocator aborts inside the window. Its PR-lane coverage is the RELEASE lane (the release Linux full-suite job), stated on the line itself
+tests/test_temporal_memory.sh|639145631af4d091|skips UNDER a sanitizer because ASan overhead swamps peak RSS. The inverse of a sanitizer-only gate: its PR-lane coverage is the RELEASE lane (the release Linux full-suite job)
 tests/test_dict_keys_mt.sh|b74f84cd4e3496fc|prose in a comment about where the captured fixtures came from
 tests/test_lint.sh|f2d9b89115c7dd5b|a lint-MESSAGE assertion (W023), not a skip
 tests/test_lint.sh|c42c8f00a9515b79|prose in a comment about what the runtime rejects
@@ -182,6 +194,21 @@ core_smoke_reason() {
         "[99p]")   echo "child-script exit ledger - the vacuity roster; without it a skipped child is invisible" ;;
         *)         echo "" ;;
     esac
+}
+
+# ONE work root for the whole process, removed by ONE EXIT trap. Round 3 made
+# a temp dir per mode and every `die` path skipped the `rm -rf`, so a box that
+# ran the selftest a few times accumulated 129 stale /tmp/eigs_section_plan.*
+# dirs. `trap ... EXIT` REPLACES rather than accumulates (mechanical-gates §7),
+# so this is the only EXIT trap in this file; anything else that needs cleanup
+# puts its directory under $SP_TMPROOT.
+SP_TMPROOT=$(mktemp -d "${TMPDIR:-/tmp}/eigs_section_plan.XXXXXX") || {
+    echo "section_plan: ERROR: mktemp -d failed" >&2; exit 1; }
+trap 'rm -rf "$SP_TMPROOT"' EXIT
+sp_workdir() {   # <name> -> a fresh dir under the one root
+    local d="$SP_TMPROOT/$1"
+    rm -rf "$d"; mkdir -p "$d" || { echo "section_plan: ERROR: cannot create $d" >&2; exit 1; }
+    printf '%s\n' "$d"
 }
 
 die() { echo "section_plan: ERROR: $*" >&2; exit 1; }
@@ -286,6 +313,341 @@ verify_partition() {
         die "chunk table is not a partition of $f (preamble+chunks+epilogue != file)"
     fi
     rm -f "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# SHARDING (#1160 round 4).
+#
+# Measured on the real PR run (34962403732, head 25ade7e): 21.1 min wall, and
+# the ENTIRE critical path was one job — `asan + ubsan / core and LSP`, 19.0
+# min, of which 13.9 min was the suite step. That job stays FULL on purpose
+# (it is the leak-tally gate), so the only way under 15 min is to run it as
+# parallel shards.
+#
+# A shard is a SUBSET OF THE CHUNK LIST — the same chunks the capability plans
+# select from — so "the shards cover the suite" is checkable as a set identity
+# rather than believed: `--shards N --check` asserts the union equals the full
+# chunk list and that the shards are pairwise disjoint.
+#
+# Balance is by MEASURED WEIGHT, never by count: section costs span three
+# orders of magnitude, so equal counts would leave one shard carrying most of
+# the time. Weights come from tests/section_weights.txt (regenerate with
+# `--print-weights <suite-log>` from a run's SECTION_TIME lines). A section
+# missing from the table gets SHARD_DEFAULT_CS and is REPORTED, so a new
+# section cannot silently unbalance a shard.
+#
+# The split is deterministic — longest-processing-time greedy over
+# (weight desc, chunk start asc) — so CI never depends on runner timing.
+WEIGHTS_FILE_DEFAULT="tests/section_weights.txt"
+SHARD_DEFAULT_CS=50          # centiseconds for an unmeasured section (0.5 s)
+
+# chunk weights -> "<centiseconds> <chunk-start>" per line, plus the roster of
+# section labels that had no measurement.
+derive_chunk_weights() {
+    local table="$1" out="$2" missing="$3"
+    local wf="${WEIGHTS_FILE:-$WEIGHTS_FILE_DEFAULT}"
+    case "$wf" in /*) ;; *) wf="$SP_ROOT/$wf" ;; esac
+    : > "$missing"
+    if [ ! -f "$wf" ]; then
+        SP_WEIGHTS_SOURCE="(none: $wf missing — every section takes the default)"
+        awk -v def="$SHARD_DEFAULT_CS" '{ print def, $1 }' "$table" > "$out"
+        awk '{ rest = $0; sub(/^[0-9]+[ \t]+[0-9]+[ \t]*/, "", rest)
+               while (match(rest, /\[[^]]*\]/)) { print substr(rest, RSTART, RLENGTH); rest = substr(rest, RSTART + RLENGTH) } }' \
+            "$table" | sort -u > "$missing"
+    else
+        SP_WEIGHTS_SOURCE="$wf"
+        awk -v def="$SHARD_DEFAULT_CS" -v missfile="$missing" '
+            FNR == NR {
+                if ($0 ~ /^\[/) {
+                    j = index($0, "]")
+                    if (j > 0) { lbl = substr($0, 1, j); w[lbl] += int($NF * 100 + 0.5) }
+                }
+                next
+            }
+            {
+                # The ids field is space-separated and a label may itself
+                # contain spaces, so walk the bracketed tokens with a regex
+                # rather than by field index.
+                start = $1; total = 0; seen = ""
+                rest = $0
+                sub(/^[0-9]+[ \t]+[0-9]+[ \t]*/, "", rest)
+                while (match(rest, /\[[^]]*\]/)) {
+                    id = substr(rest, RSTART, RLENGTH)
+                    rest = substr(rest, RSTART + RLENGTH)
+                    if (index(seen, "|" id "|") > 0) continue
+                    seen = seen "|" id "|"
+                    if (id in w) total += w[id]
+                    else { total += def; print id > missfile }
+                }
+                print total, start
+            }
+        ' "$wf" "$table" > "$out"
+    fi
+    sort -u "$missing" -o "$missing"
+    SP_WEIGHT_MISSING=$(grep -c . "$missing")
+}
+
+# Chunks are NOT independent: a few read a variable a NEIGHBOUR assigned.
+# Measured by running the shards (round 4): section [115b] reads $BIN_ABS, which
+# [115]'s chunk assigns, and in a shard that held [115b] without [115] the
+# emitted runner ran `"" main.eigs` — "command not found" on stderr, which
+# [115b] then reported as two real failures. `bash -n` cannot see that; only
+# executing the shards did.
+#
+# So chunks are grouped into shard-ATOMIC units before the split: if a chunk
+# references a name that no preamble line assigns and some EARLIER chunk does,
+# the two are merged (nearest preceding assigner — that is the runtime
+# semantics, and it also kills the obvious false positive, a loop variable
+# `i` assigned only in LATER chunks). The count of merges is printed, because a
+# grouping nobody sees is a grouping nobody can review.
+# Emits "<chunk-start> <group-leader-start>".
+derive_chunk_groups() {
+    local table="$1" out="$2"
+    awk -v pre_end="$SP_PREAMBLE_END" '
+        FNR == NR { n++; cs[n] = $1; ce[n] = $2; next }
+        {
+            line = FNR
+            if (line <= pre_end) { scope = 0 }
+            else {
+                scope = 0
+                while (cur < n && line > ce[cur]) cur++
+                if (cur >= 1 && cur <= n && line >= cs[cur] && line <= ce[cur]) scope = cur
+                else if (cur < n && line >= cs[cur + 1]) { cur++; if (line <= ce[cur]) scope = cur }
+            }
+            body = $0
+            # assignments: NAME=, local/export/declare NAME, for NAME in, read NAME
+            if (match(body, /^[ \t]*[A-Za-z_][A-Za-z0-9_]*=/)) {
+                nm = substr(body, RSTART, RLENGTH - 1); gsub(/^[ \t]+/, "", nm)
+                if (scope == 0) pre[nm] = 1; else asg[nm, scope] = 1
+                if (scope > 0 && !(nm in firstasg)) firstasg[nm] = scope
+                if (scope > 0) { k = nm SUBSEP scope; allasg[k] = 1; asgchunk[++na] = nm " " scope }
+            }
+            if (match(body, /^[ \t]*(local|export|declare)[ \t]+[A-Za-z_][A-Za-z0-9_]*/)) {
+                t = substr(body, RSTART, RLENGTH); sub(/^[ \t]*(local|export|declare)[ \t]+/, "", t)
+                if (scope == 0) pre[t] = 1; else { asgchunk[++na] = t " " scope }
+            }
+            if (match(body, /for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in/)) {
+                t = substr(body, RSTART, RLENGTH); sub(/^for[ \t]+/, "", t); sub(/[ \t]+in$/, "", t)
+                if (scope == 0) pre[t] = 1; else asgchunk[++na] = t " " scope
+            }
+            if (scope > 0) {
+                rest = body
+                while (match(rest, /\$\{?[A-Za-z_][A-Za-z0-9_]*/)) {
+                    v = substr(rest, RSTART, RLENGTH); gsub(/[$\{]/, "", v)
+                    rest = substr(rest, RSTART + RLENGTH)
+                    refchunk[++nr] = v " " scope
+                }
+            }
+        }
+        END {
+            for (j = 1; j <= na; j++) { split(asgchunk[j], a, " "); A[a[1] SUBSEP a[2]] = 1; names[a[1]] = 1 }
+            for (i = 1; i <= n; i++) parent[i] = i
+            for (j = 1; j <= nr; j++) {
+                split(refchunk[j], r, " "); v = r[1]; c = r[2] + 0
+                if (v in pre) continue
+                if (!(v in names)) continue
+                if ((v SUBSEP c) in A) continue
+                best = 0
+                for (i = 1; i < c; i++) if ((v SUBSEP i) in A) best = i
+                if (best == 0) continue
+                ra = find(c); rb = find(best)
+                if (ra != rb) { if (ra < rb) parent[rb] = ra; else parent[ra] = rb; merges++ }
+            }
+            for (i = 1; i <= n; i++) printf "%d %d\n", cs[i], cs[find(i)]
+            printf "MERGES %d\n", merges + 0 > "/dev/stderr"
+        }
+        function find(x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x] } return x }
+    ' "$table" "$RUNNER" > "$out" 2> "$out.merges"
+    SP_GROUP_MERGES=$(sed -n 's/^MERGES \([0-9]*\)$/\1/p' "$out.merges")
+    : "${SP_GROUP_MERGES:=0}"
+    SP_GROUPS=$(cut -d' ' -f2 "$out" | sort -u | grep -c .)
+}
+
+# Deterministic longest-processing-time greedy. Emits "<chunk-start> <shard>".
+derive_shard_assignment() {
+    local n="$1" weights="$2" out="$3" groups="${4:-}"
+    if [ -n "$groups" ]; then
+        # Aggregate each group's weight onto its leader, split the LEADERS, then
+        # expand back: a group is indivisible, so the balance is over groups.
+        local W2="$SP_TMPROOT/grp"
+        mkdir -p "$W2"
+        awk 'FNR == NR { g[$1] = $2; next } { lead = ($2 in g) ? g[$2] : $2; t[lead] += $1 }
+             END { for (k in t) print t[k], k }' "$groups" "$weights" > "$W2/gw"
+        sort -k1,1nr -k2,2n "$W2/gw" \
+          | awk -v n="$n" '
+                BEGIN { for (i = 1; i <= n; i++) { load[i] = 0; cnt[i] = 0 } }
+                {
+                    best = 1
+                    for (i = 2; i <= n; i++)
+                        if (load[i] < load[best] || (load[i] == load[best] && cnt[i] < cnt[best])) best = i
+                    load[best] += $1; cnt[best]++
+                    print $2, best
+                }
+            ' > "$W2/ga"
+        awk 'FNR == NR { sh[$1] = $2; next } { print $1, sh[$2] }' "$W2/ga" "$groups" | sort -n > "$out"
+        return 0
+    fi
+    sort -k1,1nr -k2,2n "$weights" \
+      | awk -v n="$n" '
+            BEGIN { for (i = 1; i <= n; i++) { load[i] = 0; cnt[i] = 0 } }
+            {
+                # Ties break on chunk COUNT, then on index, so a table of equal
+                # weights round-robins instead of piling every chunk into
+                # bucket 1 (which is what an unmeasured tree does).
+                best = 1
+                for (i = 2; i <= n; i++)
+                    if (load[i] < load[best] || (load[i] == load[best] && cnt[i] < cnt[best])) best = i
+                load[best] += $1; cnt[best]++
+                print $2, best
+            }
+        ' | sort -n > "$out"
+}
+
+shard_loads() {   # "<shard> <chunks> <seconds>" per shard
+    local weights="$1" assign="$2" n="$3"
+    awk -v n="$n" '
+        FNR == NR { w[$2] = $1; next }
+        { c[$2]++; t[$2] += w[$1] }
+        END { for (i = 1; i <= n; i++) printf "%d %d %d.%02d\n", i, c[i] + 0, t[i] / 100, t[i] % 100 }
+    ' "$weights" "$assign"
+}
+
+# The pin: union == the full chunk list, and pairwise disjoint. Both directions
+# (mechanical-gates §2) — "every chunk is in a shard" and "no chunk is in two"
+# fail differently, and only the second catches a duplicated chunk.
+shard_check() {
+    local n="$1"
+    local W; W=$(sp_workdir shards)
+    derive_chunks "$RUNNER" > "$W/chunks"
+    verify_partition "$RUNNER" "$W/chunks"
+    derive_chunk_weights "$W/chunks" "$W/weights" "$W/missing"
+    derive_chunk_groups "$W/chunks" "$W/groups"
+    derive_shard_assignment "$n" "$W/weights" "$W/assign" "$W/groups"
+
+    # TEST-ONLY mutation seam, used by --selftest to prove this check fires.
+    # It can only REMOVE or DUPLICATE an assignment — never add coverage — so
+    # the worst it can do is turn the check red, and it announces itself.
+    case "${SP_SHARD_MUTATE:-}" in
+        drop) echo "section_plan: WARNING: SP_SHARD_MUTATE=drop — one chunk removed from every shard (selftest seam)" >&2
+              sed -i '1d' "$W/assign" ;;
+        dup)  echo "section_plan: WARNING: SP_SHARD_MUTATE=dup — one chunk placed in two shards (selftest seam)" >&2
+              head -1 "$W/assign" | awk -v n="$n" '{ print $1, ($2 % n) + 1 }' >> "$W/assign"
+              sort -n -o "$W/assign" "$W/assign" ;;
+    esac
+
+    local total assigned uniq
+    total=$(grep -c '[0-9]' "$W/chunks")
+    assigned=$(grep -c '[0-9]' "$W/assign")
+    cut -d' ' -f1 "$W/assign" | sort -n -u > "$W/assigned_uniq"
+    uniq=$(grep -c '[0-9]' "$W/assigned_uniq")
+    cut -d' ' -f1 "$W/chunks" | sort -n > "$W/all_chunks"
+
+    [ "$assigned" = "$uniq" ] || die "shards OVERLAP: $assigned assignments over $uniq distinct chunks — a chunk in two shards is counted twice and its failures are reported twice"
+    if ! cmp -s "$W/all_chunks" "$W/assigned_uniq"; then
+        echo "section_plan: ERROR: the shard union is not the full chunk list:" >&2
+        diff "$W/all_chunks" "$W/assigned_uniq" | head -20 >&2
+        die "union != full — a chunk in no shard is a section that silently left CI"
+    fi
+    [ "$uniq" = "$total" ] || die "shard union covers $uniq of $total chunks"
+
+    local i cnt
+    for i in $(seq 1 "$n"); do
+        cnt=$(awk -v k="$i" '$2 == k' "$W/assign" | grep -c .)
+        [ "$cnt" -gt 0 ] || die "shard $i/$n got ZERO chunks — a job that measures nothing must not be green"
+    done
+
+    if [ "$VERBOSE" = "1" ]; then
+        echo "weights: $SP_WEIGHTS_SOURCE"
+        if [ "$SP_WEIGHT_MISSING" -gt 0 ]; then
+            echo "UNMEASURED sections (default ${SHARD_DEFAULT_CS}cs each) — refresh the weights table:"
+            sed 's/^/  /' "$W/missing"
+        fi
+        shard_loads "$W/weights" "$W/assign" "$n" \
+          | while read -r k c t; do echo "  shard $k/$n: chunks=$c weight=${t}s"; done
+    fi
+    echo "SHARDS: n=$n chunks=$total groups=$SP_GROUPS (merges=$SP_GROUP_MERGES) union=full disjoint=yes zero-section-shards=0 unmeasured-sections=$SP_WEIGHT_MISSING"
+}
+
+# The plan for ONE shard. Sets SP_WORK/selected like build_plan does.
+build_shard_plan() {
+    local k="$1" n="$2"
+    [ "$k" -ge 1 ] && [ "$k" -le "$n" ] || die "shard index $k is outside 1..$n"
+    SP_WORK="${SP_WORK:-$(sp_workdir plan)}"
+    derive_chunks "$RUNNER" > "$SP_WORK/chunks"
+    verify_partition "$RUNNER" "$SP_WORK/chunks"
+    derive_markers "$RUNNER" "$SP_WORK/chunks" > "$SP_WORK/markers"
+    derive_probes "$RUNNER" "$SP_WORK/chunks" "$SP_WORK" > "$SP_WORK/probes"
+    verify_probe_coverage "$SP_WORK/markers" "$SP_WORK/probes"
+    derive_chunk_weights "$SP_WORK/chunks" "$SP_WORK/weights" "$SP_WORK/missing"
+    derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
+    derive_shard_assignment "$n" "$SP_WORK/weights" "$SP_WORK/assign" "$SP_WORK/groups"
+
+    # A shard carries capability-gated chunks too, and on a binary without that
+    # capability the chunk takes its else branch — which sometimes prints NOTHING.
+    # The promised section count has to know that, or the runner's own
+    # plan-vs-printed check fires on a correct run.
+    resolve_binary "shard"
+    compute_capabilities
+
+    SP_SECTION_TOTAL=$(grep -coE 'echo "\[[^]]*\]' "$RUNNER")
+    awk -v k="$k" '$2 == k { print $1 }' "$SP_WORK/assign" | sort -n > "$SP_WORK/selected"
+    SP_SEL_CHUNKS=$(grep -c '[0-9]' "$SP_WORK/selected")
+    [ "$SP_SEL_CHUNKS" -gt 0 ] || die "shard $k/$n selected ZERO chunks"
+
+    local s e nsec mcap mv branch
+    SP_SEL_SECTIONS=0
+    while read -r s; do
+        [ -n "$s" ] || continue
+        e=$(awk -v ss="$s" '$1==ss {print $2}' "$SP_WORK/chunks")
+        mcap=$(awk -F'\t' -v ss="$s" '$1==ss {print $2}' "$SP_WORK/markers")
+        branch=present
+        if [ -n "$mcap" ]; then
+            mv=$(awk -F'\t' -v c="$mcap" '$1==c {print $2}' "$SP_WORK/caps")
+            [ "$mv" = "present" ] || branch=absent
+        fi
+        nsec=$(chunk_executed_headers "$s" "$e" "$branch")
+        SP_SEL_SECTIONS=$((SP_SEL_SECTIONS + nsec))
+    done < "$SP_WORK/selected"
+    [ "$SP_SEL_SECTIONS" -gt 0 ] || die "shard $k/$n selected ZERO sections — a job that measures nothing must not be green"
+
+    local wsec
+    wsec=$(shard_loads "$SP_WORK/weights" "$SP_WORK/assign" "$n" | awk -v k="$k" '$1 == k {print $3}')
+    if [ "$VERBOSE" = "1" ]; then
+        note "shard $k/$n sections:"
+        while read -r s; do
+            [ -n "$s" ] || continue
+            e=$(awk -v ss="$s" '$1==ss {print $2}' "$SP_WORK/chunks")
+            note "  chunk @$s  $(awk -v ss="$s" '$1==ss {$1="";$2="";print}' "$SP_WORK/chunks" | sed 's/^  *//')"
+        done < "$SP_WORK/selected"
+    fi
+    note "shard=$k/$n  weights: $SP_WEIGHTS_SOURCE  unmeasured sections: $SP_WEIGHT_MISSING"
+    [ "$SP_WEIGHT_MISSING" -gt 0 ] && note "UNMEASURED (default ${SHARD_DEFAULT_CS}cs each): $(tr '\n' ' ' < "$SP_WORK/missing")"
+    echo "PLAN: shard=$k/$n sections=$SP_SEL_SECTIONS (of $SP_SECTION_TOTAL) chunks=$SP_SEL_CHUNKS predicted=${wsec}s unmeasured=$SP_WEIGHT_MISSING"
+}
+
+# Regenerate the weights table from a suite log's SECTION_TIME lines. Duplicate
+# labels are SUMMED — a section whose header is echoed twice in one run (the
+# [45a] live/selftest loop) really does cost both.
+print_weights() {
+    local log="$1"
+    [ -f "$log" ] || die "no such log: $log"
+    local n
+    n=$(grep -c '^SECTION_TIME: ' "$log")
+    [ "$n" -ge 50 ] || die "only $n SECTION_TIME lines in $log (floor 50) — that log is not a full suite run"
+    echo "# tests/section_weights.txt — per-section wall seconds, summed per label."
+    echo "# Regenerate: tools/section_plan.sh --print-weights <suite log> > tests/section_weights.txt"
+    echo "# Source log: $n SECTION_TIME lines."
+    # A section label may contain spaces ("[JSON Depth / DoS guard]"), so the
+    # label is everything from the first [ to the first ] and the seconds are
+    # the LAST field — splitting on whitespace produced rows like "[Structural"
+    # and a weights table with 21 phantom entries.
+    awk '/^SECTION_TIME: / {
+             i = index($0, "["); j = index($0, "]")
+             if (i == 0 || j <= i) next
+             lbl = substr($0, i, j - i + 1)
+             cs[lbl] += int($NF * 100 + 0.5)
+         }
+         END { for (k in cs) printf "%s %d.%02d\n", k, cs[k] / 100, cs[k] % 100 }' "$log" | sort
 }
 
 # ---------------------------------------------------------------------------
@@ -511,6 +873,9 @@ resolve_binary() {
     [ -x "$SP_ROOT/src/eigenscript" ] || die "src/eigenscript is missing — build the variant first"
     SP_BIN_ABS="$SP_ROOT/src/eigenscript"
     SP_BIN_LABEL="src/eigenscript"
+    # "shard" is not a build variant, so there is nothing to inode-check it
+    # against; the binary the suite will run is the alias, which is what we probe.
+    [ "$variant" != "shard" ] || { SP_BIN_LABEL="src/eigenscript (shard mode)"; return 0; }
     local vb="$SP_ROOT/build/$variant/eigenscript"
     if [ -x "$vb" ]; then
         local a b
@@ -564,11 +929,54 @@ verify_probe_coverage() {
 # counting both branches over-reported (the http plan said 18 and the run
 # printed 16). The twin phrasing is not invented here: it is the same rule
 # tools/suite_label_check.sh already uses to allow one label to appear twice.
+# How many section headers a chunk will actually PRINT.
+#
+# Two facts, both measured against a real run rather than assumed:
+#   * A header at COLUMN 0 is not inside the chunk's capability `if`, so it
+#     prints whatever the binary is. [138], [139] and [42a/47] are exactly
+#     that shape — the header prints and the CHILD then self-skips — and a
+#     rule that ignored indentation predicted 239 headers for a run that
+#     printed 242.
+#   * An INDENTED header is in the `if`/`else`: the non-twin one prints when
+#     the capability is present, the twin ("… SKIPPED (binary built without …)")
+#     when it is absent, and some chunks have no twin and so print nothing.
+#     [17/17] is that case: the plan promised 79 and the run printed 78.
+# Every twin in the runner is indented (checked: zero column-0 twins), so the
+# two rules do not overlap.
 chunk_executed_headers() {
-    local s="$1" e="$2"
-    sed -n "${s},${e}p" "$RUNNER" \
-        | grep -oE 'echo "\[[^]]*\][^"]*' \
-        | grep -cvE 'SKIPPED \(|skipped — |stub check|minimal build'
+    local s="$1" e="$2" branch="${3:-present}" body top cond
+    body=$(sed -n "${s},${e}p" "$RUNNER")
+    top=$(printf '%s\n' "$body" | grep -cE '^echo "\[[^]]*\]')
+    if [ "$branch" = "absent" ]; then
+        cond=$(printf '%s\n' "$body" | grep -E '^[[:space:]]+echo "\[[^]]*\]' \
+               | grep -cE 'SKIPPED \(|skipped — |stub check|minimal build')
+    else
+        cond=$(printf '%s\n' "$body" | grep -E '^[[:space:]]+echo "\[[^]]*\]' \
+               | grep -cvE 'SKIPPED \(|skipped — |stub check|minimal build')
+    fi
+    echo $(( top + cond ))
+}
+
+compute_capabilities() {
+    note "capabilities (each probe is the suite's OWN gate, run against this binary):"
+    : > "$SP_WORK/caps"
+    local caps_all cap verdict agree ppat pprog pout ps pcap
+    caps_all=$(cut -f2 "$SP_WORK/markers" | sort -u)
+    for cap in $caps_all; do
+        verdict=""; agree=1
+        while IFS=$'\t' read -r ps _pout ppat pprog; do
+            [ -n "$ps" ] || continue
+            pcap=$(awk -F'\t' -v s="$ps" '$1==s {print $2}' "$SP_WORK/markers")
+            [ "$pcap" = "$cap" ] || continue
+            if probe_present "$pprog" "$ppat"; then pout=present; else pout=absent; fi
+            if [ -z "$verdict" ]; then verdict="$pout"
+            elif [ "$verdict" != "$pout" ]; then agree=0; fi
+        done < "$SP_WORK/probes"
+        [ -n "$verdict" ] || die "capability '$cap' is declared by a marker but no chunk provides a probe for it — the plan cannot decide whether this binary has it"
+        [ "$agree" = "1" ] || die "the probes for capability '$cap' DISAGREE on this binary — one of them is measuring something else"
+        printf '%s\t%s\n' "$cap" "$verdict" >> "$SP_WORK/caps"
+        note "  $verdict  $cap"
+    done
 }
 
 build_plan() {
@@ -578,7 +986,7 @@ build_plan() {
     chunks_floor=$(variant_chunks_floor "$variant")
     [ -n "$caps_floor" ] || die "unknown variant '$variant' (known: release core http full db zlib net gfx asan-http asan-gfx)"
 
-    SP_WORK="${SP_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/eigs_section_plan.XXXXXX")}"
+    SP_WORK="${SP_WORK:-$(sp_workdir plan)}"
     derive_chunks "$RUNNER" > "$SP_WORK/chunks"
     verify_partition "$RUNNER" "$SP_WORK/chunks"
     derive_markers "$RUNNER" "$SP_WORK/chunks" > "$SP_WORK/markers"
@@ -610,27 +1018,8 @@ build_plan() {
     # Every probe provider for a capability is RUN and they must AGREE. gfx has
     # five providers; a disagreement means one probe is measuring something
     # else, and silently taking the first would hide it.
-    note "capabilities (each probe is the suite's OWN gate, run against this binary):"
-    : > "$SP_WORK/caps"
-    local caps_all cap verdict agree ppat pprog pout
-    caps_all=$(cut -f2 "$SP_WORK/markers" | sort -u)
-    for cap in $caps_all; do
-        verdict=""; agree=1
-        while IFS=$'\t' read -r ps _pout ppat pprog; do
-            [ -n "$ps" ] || continue
-            pcap=$(awk -F'\t' -v s="$ps" '$1==s {print $2}' "$SP_WORK/markers")
-            [ "$pcap" = "$cap" ] || continue
-            if probe_present "$pprog" "$ppat"; then pout=present; else pout=absent; fi
-            if [ -z "$verdict" ]; then verdict="$pout"
-            elif [ "$verdict" != "$pout" ]; then agree=0; fi
-        done < "$SP_WORK/probes"
-        [ -n "$verdict" ] || die "capability '$cap' is declared by a marker but no chunk provides a probe for it — the plan cannot decide whether this binary has it"
-        [ "$agree" = "1" ] || die "the probes for capability '$cap' DISAGREE on this binary — one of them is measuring something else"
-        printf '%s\t%s\n' "$cap" "$verdict" >> "$SP_WORK/caps"
-        note "  $verdict  $cap"
-    done
+    compute_capabilities
     note ""
-
     : > "$SP_WORK/selected"
 
     # --- core smoke -------------------------------------------------------
@@ -707,19 +1096,26 @@ build_plan() {
 
 
 # ---------------------------------------------------------------------------
-# Emit the filtered runner.
-emit_plan() {
-    local variant="$1" out="$2"
+# Emit the filtered runner for one shard.
+emit_shard() {
+    local k="$1" n="$2" out="$3"
     VERBOSE=${EMIT_VERBOSE:-1}
-    SP_WORK=$(mktemp -d "${TMPDIR:-/tmp}/eigs_section_plan.XXXXXX")
-    build_plan "$variant" > "$SP_WORK/plan.line"
+    SP_WORK=$(sp_workdir emit)
+    build_shard_plan "$k" "$n" > "$SP_WORK/plan.line"
     local planline; planline=$(cat "$SP_WORK/plan.line")
+    write_filtered_runner "$out" "$planline" "shard $k/$n"
+    echo "$planline"
+}
 
+# The one place a filtered runner is written, shared by the capability plans
+# and the shards — two copies would drift and only one of them is exercised.
+write_filtered_runner() {
+    local out="$1" planline="$2" label="$3"
     {
         echo "#!/bin/bash"
         echo "# GENERATED by tools/section_plan.sh — DO NOT EDIT, DO NOT COMMIT (#1160)."
         echo "# $planline"
-        echo "# Source: tests/run_all_tests.sh   variant: $variant   binary: $SP_BIN_LABEL"
+        echo "# Source: tests/run_all_tests.sh   selection: $label   binary: ${SP_BIN_LABEL:-src/eigenscript}"
         echo "EIGS_PLAN_ACTIVE=1; export EIGS_PLAN_ACTIVE"
         echo "EIGS_PLAN_TESTS_DIR='$SP_ROOT/tests'; export EIGS_PLAN_TESTS_DIR"
         echo "EIGS_PLAN_LABEL='$planline'; export EIGS_PLAN_LABEL"
@@ -735,18 +1131,28 @@ emit_plan() {
         echo "echo \"  SECTION PLAN: $planline\""
         sed -n "${SP_EPILOGUE_START},\$p" "$RUNNER"
     } > "$out"
-
     bash -n "$out" || die "the emitted runner $out is not syntactically valid — the chunk boundaries are wrong"
+}
+
+# ---------------------------------------------------------------------------
+# Emit the filtered runner.
+emit_plan() {
+    local variant="$1" out="$2"
+    VERBOSE=${EMIT_VERBOSE:-1}
+    SP_WORK=$(sp_workdir emit)
+    build_plan "$variant" > "$SP_WORK/plan.line"
+    local planline; planline=$(cat "$SP_WORK/plan.line")
+    write_filtered_runner "$out" "$planline" "variant $variant"
     echo "$planline"
 }
+
 
 # ---------------------------------------------------------------------------
 # Selftest. Every fault is planted in a COPY (mechanical-gates §22: a gate must
 # not mutate what it checks), and every case names the check it must turn red.
 selftest() {
     local rc=0 pass=0 fail=0 dir out
-    dir=$(mktemp -d "${TMPDIR:-/tmp}/eigs_section_plan_selftest.XXXXXX")
-    trap 'rm -rf "$dir"' RETURN
+    dir=$(sp_workdir selftest)
 
     expect_ok() {   # <label> <command...>
         local label="$1"; shift
@@ -898,7 +1304,7 @@ selftest() {
     #     chunk, which carries six header echoes of which exactly one is a twin.
     local http_chunk http_end raw exec_n
     http_chunk=$("$0" --markers --quiet --runner "$RUNNER" >/dev/null 2>&1; true)
-    W2=$(mktemp -d "${TMPDIR:-/tmp}/eigs_sp_count.XXXXXX")
+    W2=$(sp_workdir count)
     derive_chunks "$RUNNER" > "$W2/chunks"
     http_chunk=$(awk '$0 ~ /\[44-45\/47\]/ {print $1; exit}' "$W2/chunks")
     http_end=$(awk -v s="$http_chunk" '$1==s {print $2}' "$W2/chunks")
@@ -951,22 +1357,98 @@ selftest() {
       grep -ohE 'section_plan\.sh --[a-z-]+' "$SP_ROOT/docs/CI.md" 2>/dev/null
       grep -ohE 'run_all_tests\.sh --[a-z-]+' "$SP_ROOT/docs/CI.md" 2>/dev/null
     } | sed 's/.*--/--/' | sort -u > "$modefile"
+    # rc is NOT enough: a mode that prints NOTHING and exits 0 would pass an
+    # rc-only check, and the round-3 version was exactly that — `--probes`
+    # was caught by a neighbouring case, not by this one. Each mode must also
+    # produce output, and the FAILING mode's output is what gets printed
+    # (round 3 printed whichever mode happened to run last).
+    local mode_out mode_rc mode_why=""
     while IFS= read -r m; do
         [ -n "$m" ] || continue
         mode_n=$((mode_n + 1))
+        mode_rc=0
         case "$m" in
-            --emit)                out=$("$0" --emit core "$dir/mode_emit.sh" 2>&1) || mode_bad="$mode_bad $m" ;;
-            --print-section-plan)  out=$("$0" --print-section-plan core --quiet 2>&1) || mode_bad="$mode_bad $m" ;;
-            --selftest)            : ;;   # we are inside it
-            *)                     out=$("$0" "$m" --quiet 2>&1) || mode_bad="$mode_bad $m" ;;
+            --emit)                mode_out=$("$0" --emit core "$dir/mode_emit.sh" 2>&1) || mode_rc=$? ;;
+            --print-section-plan)  mode_out=$("$0" --print-section-plan core 2>&1) || mode_rc=$? ;;
+            --selftest)            continue ;;   # we are inside it
+            --shards)              mode_out=$("$0" --shards 3 --check 2>&1) || mode_rc=$? ;;
+            --emit-shard)          mode_out=$("$0" --emit-shard 1 3 "$dir/mode_shard.sh" 2>&1) || mode_rc=$? ;;
+            --print-weights)       awk 'BEGIN { for (i = 1; i <= 60; i++) printf "SECTION_TIME: [s%d] 0.10\n", i }' > "$dir/synth.log"
+                                   mode_out=$("$0" --print-weights "$dir/synth.log" 2>&1) || mode_rc=$? ;;
+            *)                     mode_out=$("$0" "$m" 2>&1) || mode_rc=$? ;;
         esac
+        if [ "$mode_rc" -ne 0 ]; then
+            mode_bad="$mode_bad $m(rc=$mode_rc)"
+            [ -n "$mode_why" ] || mode_why="$m exited $mode_rc:
+$mode_out"
+        elif [ -z "$mode_out" ]; then
+            mode_bad="$mode_bad $m(silent)"
+            [ -n "$mode_why" ] || mode_why="$m exited 0 but printed nothing — a mode a workflow calls must say something"
+        fi
     done < "$modefile"
     if [ "$mode_n" -lt 3 ]; then
         echo "  FAIL: only $mode_n public mode(s) enumerated from the workflows and docs (floor 3) — the enumeration is vacuous"; fail=$((fail + 1))
     elif [ "$mode_bad" = "0" ]; then
         echo "  PASS: every public mode named by a workflow or docs/CI.md runs clean ($mode_n: $(tr '\n' ' ' < "$modefile"))"; pass=$((pass + 1))
     else
-        echo "  FAIL: public mode(s) a workflow or docs calls exit nonzero:${mode_bad#0}"; printf '%s\n' "$out" | sed 's/^/      /'; fail=$((fail + 1))
+        echo "  FAIL: public mode(s) a workflow or docs calls are broken:${mode_bad#0}"
+        printf '%s\n' "$mode_why" | sed 's/^/      /'
+        fail=$((fail + 1))
+    fi
+
+    # 6j. ROUND 4: the shard count lives in three places in ci.yml because
+    #     GitHub will not expand `env` inside `strategy.matrix`. Gate the sync
+    #     instead of hand-syncing it (mechanical-gates §26): read BOTH homes
+    #     and require agreement.
+    local ci="$SP_ROOT/.github/workflows/ci.yml"
+    if [ -f "$ci" ]; then
+        local n_env n_matrix n_lit
+        n_env=$(sed -n 's/^  ASAN_SHARDS: \([0-9][0-9]*\)$/\1/p' "$ci" | head -1)
+        n_matrix=$(sed -n 's/^        shard: \[\(.*\)\]$/\1/p' "$ci" | head -1 | tr -cd ',' | wc -c)
+        n_matrix=$((n_matrix + 1))
+        n_lit=$(grep -c 'EIGS_SUITE_SHARD: ${{ matrix.shard }}/'"$n_env" "$ci")
+        if [ -n "$n_env" ] && [ "$n_env" = "$n_matrix" ] && [ "$n_lit" -ge 1 ]; then
+            echo "  PASS: the ASan shard count agrees across ci.yml (ASAN_SHARDS=$n_env, matrix has $n_matrix legs, EIGS_SUITE_SHARD says /$n_env)"; pass=$((pass + 1))
+        else
+            echo "  FAIL: ci.yml shard count disagrees (ASAN_SHARDS=${n_env:-unset}, matrix legs=$n_matrix, EIGS_SUITE_SHARD=/$n_env occurrences=$n_lit)"; fail=$((fail + 1))
+        fi
+        if grep -q 'section_plan.sh --shards ${{ env.ASAN_SHARDS }} --check' "$ci"; then
+            echo "  PASS: the aggregator runs the union/disjointness check"; pass=$((pass + 1))
+        else
+            echo "  FAIL: the aggregator no longer runs --shards N --check — the shards could cover less than the suite and still be green"; fail=$((fail + 1))
+        fi
+    else
+        echo "  FAIL: ci.yml not found; the shard-count sync cannot be verified"; fail=$((fail + 1))
+    fi
+
+    # 6k. Union and disjointness, and both halves of that control: the real
+    #     split must pass, a chunk DROPPED from every shard must fail, and a
+    #     chunk in TWO shards must fail. The mutations run against a stub
+    #     assignment so no real chunk table is disturbed.
+    expect_ok "control: the real 3-way split is union==full and disjoint" \
+        "$0" --shards 3 --check --quiet
+
+    # NOT in a subshell: `( export X=1; expect_red ... )` ran the case but its
+    # pass/fail counters died with the subshell — the two rows printed and the
+    # total said 21 while 23 rows existed, and a FAILURE there would have been
+    # invisible to the tally. `env VAR=v` keeps it in this shell.
+    expect_red "planted: one chunk in NO shard -> the union check refuses" \
+        "union != full" env SP_SHARD_MUTATE=drop "$0" --shards 3 --check --quiet
+    expect_red "planted: one chunk in TWO shards -> the disjointness check refuses" \
+        "shards OVERLAP" env SP_SHARD_MUTATE=dup "$0" --shards 3 --check --quiet
+
+    # 6l. A section missing from the weights table must take the default AND be
+    #     REPORTED, so a new section cannot silently unbalance a shard.
+    printf '[0] 1.00\n[1/15] 2.00\n' > "$dir/thin_weights.txt"
+    if out=$(WEIGHTS_FILE="$dir/thin_weights.txt" "$0" --shards 3 --check 2>&1); then
+        if printf '%s\n' "$out" | grep -q 'UNMEASURED sections' \
+           && printf '%s\n' "$out" | grep -qE 'unmeasured-sections=[0-9]+'; then
+            echo "  PASS: a weights table missing sections reports them and falls back to the default"; pass=$((pass + 1))
+        else
+            echo "  FAIL: unmeasured sections were not reported"; printf '%s\n' "$out" | sed 's/^/      /'; fail=$((fail + 1))
+        fi
+    else
+        echo "  FAIL: --shards 3 --check failed against a thin weights table"; printf '%s\n' "$out" | sed 's/^/      /'; fail=$((fail + 1))
     fi
 
     # 7. The emitted runner for a real variant must parse.
@@ -982,6 +1464,9 @@ selftest() {
 MODE=""
 ARG1=""
 ARG2=""
+ARG3=""
+SP_SHARDS=""
+SP_SHARD_K=""
 SP_ROOT_RUNNER_SET=0
 case " $* " in *" --runner "*) SP_ROOT_RUNNER_SET=1 ;; esac
 while [ "$#" -gt 0 ]; do
@@ -994,27 +1479,33 @@ while [ "$#" -gt 0 ]; do
         --binary) BINARY="$2"; shift 2 ;;
         --quiet)  VERBOSE=0; shift ;;
         --chunks|--probes|--markers|--gate-audit|--selftest) MODE="$1"; shift ;;
+        --shards) SP_SHARDS="$2"; shift 2 ;;
+        --shard) SP_SHARD_K="$2"; shift 2 ;;
+        --check) MODE="--shard-check"; shift ;;
+        --weights-file) WEIGHTS_FILE="$2"; shift 2 ;;
+        --print-weights) MODE="$1"; ARG1="$2"; shift 2 ;;
+        --emit-shard) MODE="$1"; ARG1="$2"; ARG2="$3"; ARG3="$4"; shift 4 ;;
         --print-waivers) SP_PRINT_WAIVERS=1; export SP_PRINT_WAIVERS; shift ;;
         --print-section-plan) MODE="$1"; ARG1="$2"; shift 2 ;;
         --emit) MODE="$1"; ARG1="$2"; ARG2="$3"; shift 3 ;;
         *) die "unknown argument '$1'" ;;
     esac
 done
+if [ -z "$MODE" ] && [ -n "$SP_SHARDS" ] && [ -n "$SP_SHARD_K" ]; then MODE="--shard-plan"; fi
 [ -n "$MODE" ] || die "no mode given (see the header for usage)"
 [ -f "$RUNNER" ] || die "runner not found: $RUNNER"
 
 case "$MODE" in
     --chunks)
-        W=$(mktemp -d "${TMPDIR:-/tmp}/eigs_section_plan.XXXXXX")
+        W=$(sp_workdir mode)
         derive_chunks "$RUNNER" > "$W/chunks"
         verify_partition "$RUNNER" "$W/chunks"
         n=$(grep -c '[0-9]' "$W/chunks")
         [ "$VERBOSE" = "1" ] && cat "$W/chunks"
         echo "CHUNKS: $n  preamble=1-$SP_PREAMBLE_END  epilogue=$SP_EPILOGUE_START-$SP_TOTAL_LINES  partition=verified"
-        rm -rf "$W"
         ;;
     --markers|--gate-audit)
-        W=$(mktemp -d "${TMPDIR:-/tmp}/eigs_section_plan.XXXXXX")
+        W=$(sp_workdir mode)
         derive_chunks "$RUNNER" > "$W/chunks"
         verify_partition "$RUNNER" "$W/chunks"
         derive_markers "$RUNNER" "$W/chunks" > "$W/markers"
@@ -1027,17 +1518,16 @@ case "$MODE" in
                 echo "marker  cap=$mc  chunk @$ms-$me  sections: $ids"
             done < "$W/markers"
         fi
-        [ "$n" -ge "$CAP_MARKER_FLOOR" ] || { rm -rf "$W"; die "EIGS-CAP-GATE markers=$n < floor=$CAP_MARKER_FLOOR"; }
+        [ "$n" -ge "$CAP_MARKER_FLOOR" ] || { die "EIGS-CAP-GATE markers=$n < floor=$CAP_MARKER_FLOOR"; }
         if [ "$MODE" = "--gate-audit" ]; then
             gate_audit "$RUNNER" "$W/chunks" "$W/markers" "$W"
             echo "GATE AUDIT: markers=$n (floor $CAP_MARKER_FLOOR)  enumerated gate lines=$SP_GATE_HITS (floor $GATE_HIT_FLOOR) over the runner + $SP_CHILD_COUNT dispatched children  waivers used=$SP_WAIVERS_USED  unaccounted=0"
         else
             echo "MARKERS: $n (floor $CAP_MARKER_FLOOR)"
         fi
-        rm -rf "$W"
         ;;
     --probes)
-        W=$(mktemp -d "${TMPDIR:-/tmp}/eigs_section_plan.XXXXXX")
+        W=$(sp_workdir mode)
         derive_chunks "$RUNNER" > "$W/chunks"
         verify_partition "$RUNNER" "$W/chunks"
         derive_probes "$RUNNER" "$W/chunks" "$W" > "$W/probes"
@@ -1051,20 +1541,31 @@ case "$MODE" in
         fi
         derive_markers "$RUNNER" "$W/chunks" > "$W/markers"
         m=$(grep -c '[0-9]' "$W/markers")
-        [ "$m" -ge "$CAP_MARKER_FLOOR" ] || { rm -rf "$W"; die "EIGS-CAP-GATE markers=$m < floor=$CAP_MARKER_FLOOR"; }
+        [ "$m" -ge "$CAP_MARKER_FLOOR" ] || { die "EIGS-CAP-GATE markers=$m < floor=$CAP_MARKER_FLOOR"; }
         verify_probe_coverage "$W/markers" "$W/probes"
         echo "PROBES: $n provider(s) for $SP_CAPS_DECLARED declared capability(ies); every probe chunk carries a marker and every capability has a provider (markers=$m, floor $CAP_MARKER_FLOOR)"
-        rm -rf "$W"
         ;;
     --print-section-plan)
         build_plan "$ARG1"
-        rm -rf "$SP_WORK"
         ;;
     --emit)
         emit_plan "$ARG1" "$ARG2"
-        rm -rf "$SP_WORK"
+        ;;
+    --shard-check)
+        [ -n "$SP_SHARDS" ] || die "--check needs --shards N"
+        shard_check "$SP_SHARDS"
+        ;;
+    --print-weights)
+        print_weights "$ARG1"
+        ;;
+    --emit-shard)
+        emit_shard "$ARG1" "$ARG2" "$ARG3"
+        ;;
+    --shard-plan)
+        build_shard_plan "$SP_SHARD_K" "$SP_SHARDS"
         ;;
     --selftest)
         selftest
         ;;
 esac
+

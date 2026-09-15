@@ -102,6 +102,11 @@ if [ "$FULL" -eq 1 ]; then
   echo "valgrind-full: excluded: ${EXCLUDED[*]}"
 fi
 
+# The size of the spread is DERIVED, never written down: nightly.yml, docs/CI.md
+# (three places) and the CHANGELOG all said "28-program smoke" while PROGS held
+# 27 (#1160 round 4). A number in prose is a number that drifts.
+echo "valgrind: programs=${#PROGS[@]} mode=$( [ "$FULL" -eq 1 ] && echo full-corpus || echo smoke-spread )"
+
 pass=0; fail=0
 for p in "${PROGS[@]}"; do
   f="$p.eigs"

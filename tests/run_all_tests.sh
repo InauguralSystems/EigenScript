@@ -20,6 +20,10 @@ cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 #
 #   EIGS_SUITE_SECTIONS=<variant> bash run_all_tests.sh
 #       derive the plan for <variant> and run ONLY it
+#   EIGS_SUITE_SHARD=k/N bash run_all_tests.sh
+#       run shard k of an N-way weight-balanced split of the WHOLE suite
+#       (#1160 round 4 — the ASan lane; the union of the N shards is pinned to
+#       the full chunk list by `tools/section_plan.sh --shards N --check`)
 #   bash run_all_tests.sh --print-section-plan <variant>
 #       print the plan, its counts and its floors, and run nothing
 #
@@ -38,14 +42,22 @@ if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
         bash "$TESTS_DIR/../tools/section_plan.sh" --print-section-plan "${2:-core}"
         exit $?
     fi
-    if [ -n "${EIGS_SUITE_SECTIONS:-}" ]; then
+    if [ -n "${EIGS_SUITE_SECTIONS:-}" ] || [ -n "${EIGS_SUITE_SHARD:-}" ]; then
         __plan_runner=$(mktemp "${TMPDIR:-/tmp}/eigs_plan_runner.XXXXXX")
-        __plan_line=$(bash "$TESTS_DIR/../tools/section_plan.sh" --emit "$EIGS_SUITE_SECTIONS" "$__plan_runner")
+        if [ -n "${EIGS_SUITE_SHARD:-}" ]; then
+            # EIGS_SUITE_SHARD=k/N (#1160 round 4). A shard is a subset of the
+            # chunk list; the aggregator pins the union to the whole list.
+            __shard_k=${EIGS_SUITE_SHARD%%/*}
+            __shard_n=${EIGS_SUITE_SHARD##*/}
+            __plan_line=$(bash "$TESTS_DIR/../tools/section_plan.sh" --emit-shard "$__shard_k" "$__shard_n" "$__plan_runner")
+        else
+            __plan_line=$(bash "$TESTS_DIR/../tools/section_plan.sh" --emit "$EIGS_SUITE_SECTIONS" "$__plan_runner")
+        fi
         __plan_emit_rc=$?
         # Both conditions: a floor failure prints a PLAN: line on its way out,
         # so "non-empty output" alone would let a refused plan run anyway.
         if [ "$__plan_emit_rc" -ne 0 ] || [ -z "$__plan_line" ]; then
-            echo "ERROR: could not derive the section plan for '$EIGS_SUITE_SECTIONS' -- refusing to run a suite that would measure nothing (#1160)"
+            echo "ERROR: could not derive the section plan for '${EIGS_SUITE_SECTIONS:-shard ${EIGS_SUITE_SHARD:-}}' -- refusing to run a suite that would measure nothing (#1160)"
             rm -f "$__plan_runner"
             exit 1
         fi
@@ -73,6 +85,54 @@ PASS=0
 FAIL=0
 TOTAL=0
 LEAKED=0
+
+# ---- per-section wall time (#1160 round 4) --------------------------------
+# Sharding the ASan suite across parallel CI jobs needs per-section COST, not
+# per-section count, and a cost nobody measures is a guess. `echo` is shadowed
+# here for the same reason `bash` already is below: one seam beats 263 call
+# sites. Every line that OPENS a section — the `[nn] Title` convention that
+# tools/suite_label_check.sh already polices — closes the timer on the previous
+# section and prints
+#     SECTION_TIME: [nn] <seconds>
+# tools/section_weights.txt is regenerated from those lines (see docs/CI.md).
+#
+# Cost: one bash function call per echo. Measured over a full run: under 0.2 s.
+# `EPOCHREALTIME` is bash 5; macOS ships bash 3.2, so $SECONDS is the fallback
+# and the timer degrades to whole seconds there rather than failing.
+# Set EIGS_SECTION_TIME=0 to silence the lines (the timing still costs nothing).
+: "${EIGS_SECTION_TIME:=1}"
+__eigs_now_us() {
+    local t
+    if [ -n "${EPOCHREALTIME:-}" ]; then
+        t=${EPOCHREALTIME/,/.}
+        builtin echo "${t%.*}${t#*.}"
+    else
+        builtin echo "$(( SECONDS * 1000000 ))"
+    fi
+}
+__EIGS_SEC_LABEL=""
+__EIGS_SEC_T0=""
+__eigs_section_close() {
+    [ -n "$__EIGS_SEC_LABEL" ] || return 0
+    local now d
+    now=$(__eigs_now_us)
+    d=$(( now - __EIGS_SEC_T0 ))
+    [ "$d" -ge 0 ] || d=0
+    [ "$EIGS_SECTION_TIME" = "1" ] &&         builtin printf 'SECTION_TIME: %s %d.%02d\n' "$__EIGS_SEC_LABEL" "$(( d / 1000000 ))" "$(( (d % 1000000) / 10000 ))"
+    __EIGS_SEC_LABEL=""
+    return 0
+}
+echo() {
+    case "${1:-}" in
+        \[*\]*)
+            __eigs_section_close
+            __EIGS_SEC_LABEL="${1%%]*}]"
+            __EIGS_SEC_T0=$(__eigs_now_us)
+            ;;
+    esac
+    builtin echo "$@"
+}
+
 
 # Runaway guard for every .eigs invocation (test blocks via check_eigs_suite,
 # and the [97] example programs). GNU `timeout` is the backstop; on a stock
@@ -7168,6 +7228,9 @@ echo ""
 
 # Final guard (#681): if the binary changed during the last block, results are invalid.
 check_binary_fingerprint
+
+# Close the timer on the final section so the last row is not lost (#1160 r4).
+__eigs_section_close
 
 # A run that asserted NOTHING must not be green (#1160 round 2). The plan-level
 # refusal catches "this variant selected zero sections"; this catches the other

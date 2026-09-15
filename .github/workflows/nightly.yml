@@ -9,14 +9,14 @@ name: nightly
 #
 # What runs here:
 #   * macos-15-intel, the full suite (the 35-min job, off the PR lane)
-#   * valgrind over the WHOLE runnable .eigs corpus, not the 28-program smoke
+#   * valgrind over the WHOLE runnable .eigs corpus, not the fixed smoke spread
 #     the PR lane runs
 # What each lane's relationship to `main` actually is — stated exactly, because
 # round 1 claimed both of these also ran on main and only one does:
 #   * macos-15-intel DOES also run on every push to `main` (ci.yml's macOS
 #     matrix is the full pair on a push, macos-latest only on a pull request).
 #   * the FULL valgrind corpus runs ONLY here. `main` and the PR lane both run
-#     tests/valgrind_smoke.sh WITHOUT --full, i.e. the 28-program spread. So
+#     tests/valgrind_smoke.sh WITHOUT --full, i.e. the fixed smoke spread. So
 #     this nightly IS the sole owner of the full-corpus pass — which is the
 #     reason the tracking-issue job below exists.
 #
@@ -177,7 +177,7 @@ jobs:
 
           Run: $RUN_URL
 
-          These lanes moved off the PR path in #1160. \`macos-15-intel\` also runs on every push to \`main\`; the FULL valgrind corpus runs HERE ONLY (the PR lane and \`main\` both run the 28-program smoke), so a red \`valgrind-full\` is a finding nothing else will report. This thread exists so a nightly failure between main pushes is not silent."
+          These lanes moved off the PR path in #1160. \`macos-15-intel\` also runs on every push to \`main\`; the FULL valgrind corpus runs HERE ONLY (the PR lane and \`main\` both run the smoke spread), so a red \`valgrind-full\` is a finding nothing else will report. This thread exists so a nightly failure between main pushes is not silent."
 
           if [ -n "$num" ]; then
             # Reopen first: a closed thread that starts failing again is the

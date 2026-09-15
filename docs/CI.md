@@ -69,9 +69,12 @@ run. Contributors never wait on it; whoever merges does.
 
 - `macos-15-intel`, the full suite — the 35-minute job that used to set the PR
   wall clock. Intel-mac-only shapes are real; they can lag a day.
-- **valgrind over the whole runnable corpus**, not the 28-program smoke
+- **valgrind over the whole runnable corpus**, not the fixed smoke spread
   (`tests/valgrind_smoke.sh --full`). This is the ONLY lane that runs the full
-  corpus: both the PR lane and `main` run the 28-program smoke.
+  corpus: both the PR lane and `main` run the smoke spread. The spread's size
+  is not written down anywhere — `valgrind_smoke.sh` prints `programs=<n>` from
+  `${#PROGS[@]}`, because the last three documents that hard-coded it said 28
+  when the list held 27.
 - A failure opens — or appends to — a single tracking issue, so a nightly that
   nobody is watching still reaches someone. A green run after a red one
   comments on the same thread, which is what makes the thread closable.
@@ -107,7 +110,10 @@ run. Contributors never wait on it; whoever merges does.
 3. It **runs each probe program against the binary under test** and applies the
    suite's own predicate. The plan is exactly "the sections this binary
    unlocks", plus a small fixed core smoke.
-4. It floors the result. Eleven probe sites must be found in the runner; each
+4. It floors the result. Every probe-idiom chunk must carry a marker and every
+   declared capability must have at least one probe provider (there is no
+   standalone probe-count floor — the number of providers is not an independent
+   fact); each
    variant has a floor on how many capabilities its binary must actually
    present. A `make http` whose `http_route` registration broke still builds
    and still runs — and its plan collapses to the core smoke, which the floor
@@ -138,6 +144,69 @@ SECTION PLAN: PLAN: sections=6 (of 263) chunks=5 plan=zlib capabilities=1 (floor
 A plan of zero sections is a hard failure, and so is a RUN of zero assertions:
 `RESULTS: 0/0 passed, 0 failed` used to exit 0, which is indistinguishable from
 a clean run.
+
+## The ASan suite runs in shards
+
+Measured on the first real PR run of this change (run 34962403732, head
+25ade7e): **21.1 min wall, 27 checks green** — down from 35, but over the bar.
+The whole critical path was one job:
+
+| Job | min |
+|---|---|
+| `asan + ubsan / core and LSP` | **19.0** (build 4.7 + suite 13.9) |
+| `linux / gcc` | 9.5 |
+| `macos / macos-latest` | 9.4 |
+| `asan + ubsan / HTTP and model` | 7.8 |
+| everything else | ≤ 6.2 |
+
+That job stays **full** on purpose: it is the leak-tally gate (CLAUDE.md, "the
+suite must pass both release and ASan with leaks on"). So it runs in parallel
+shards instead. With ~2 min of queue and a 4.7-min ASan build in front,
+`queue + build + 13.9/N` gives 20.6 / 13.7 / **11.3** / 10.2 for N = 1/2/3/4.
+N=2 clears 15 by 1.3 min, which is inside runner noise; N=3 clears it by 3.7;
+past N=3 the *build* dominates and a fourth shard buys 1.1 min for another 4.7
+build-minutes. **N = 3.**
+
+**A shard is a subset of the chunk list**, so "the shards cover the suite" is a
+set identity rather than a belief:
+
+```bash
+tools/section_plan.sh --shards 3 --check     # union == full, pairwise disjoint
+tools/section_plan.sh --shards 3 --shard 2   # that shard's plan line
+EIGS_SUITE_SHARD=2/3 bash tests/run_all_tests.sh
+```
+
+The aggregator `asan + ubsan (full suite)` — still the only ruleset-required
+check, and still that name — does four things no shard can do for itself: it
+requires every matrix leg green, re-runs `--shards 3 --check`, requires one
+**receipt** per shard carrying that shard's `PLAN: shard=k/3 …` line, and
+**sums the LeakSanitizer tallies and requires 0**. Splitting the job must not
+split the gate.
+
+Shard 1 additionally owns the two ASan checks that are not suite sections —
+`gc_traversal_check.py --variant asan` and the LSP behaviour test — because
+"it runs somewhere" is how a check goes missing when a job is split.
+
+### The weights table
+
+Balancing by section **count** would be useless: section costs span three
+orders of magnitude. The runner therefore prints one line per section,
+
+```
+SECTION_TIME: [99u] 41.20
+```
+
+and `tests/section_weights.txt` is those numbers, measured under ASan. Refresh
+it from any full-suite log:
+
+```bash
+tools/section_plan.sh --print-weights /path/to/suite.log > tests/section_weights.txt
+```
+
+The split is longest-processing-time greedy over (weight desc, chunk start asc)
+— **deterministic**, so CI never depends on runner timing. A section missing
+from the table takes a default weight and is **reported** (`unmeasured-sections=N`,
+with the roster printed), so a new section cannot silently unbalance a shard.
 
 ## The [99i] cache
 
@@ -213,7 +282,7 @@ On a pull request, `ci.yml` produces these checks:
 | `jit differential (interpreter oracle, tape-replayed)` | gate |
 | `replay differential (same-binary tape fidelity)` | gate |
 | `freestanding profile (symbol gate + smoke)` | gate |
-| `valgrind (memcheck smoke, JIT off)` | gate (28-program spread) |
+| `valgrind (memcheck smoke, JIT off)` | gate (the smoke spread; the job prints its size) |
 | `tsan (concurrency race gate)` | gate |
 | `install.sh (interpreter + eigenlsp on PATH)` | gate |
 | `bench (instruction-count regression gate)` | gate |
