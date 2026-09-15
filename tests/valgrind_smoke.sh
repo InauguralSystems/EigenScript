@@ -36,7 +36,7 @@ PROGS=(
 )
 
 # --full (#1160): the nightly lane runs the WHOLE runnable corpus, not this
-# 28-name spread. The list is DERIVED from tests/*.eigs rather than written
+# fixed smoke spread. The list is DERIVED from tests/*.eigs rather than written
 # out, because a second hand-written list is a second thing to drift.
 #
 # The corpus contains fixtures that are *supposed* to exit non-zero (error
@@ -47,7 +47,7 @@ PROGS=(
 #
 # Two floors, in both directions (a derived population shrinks quietly):
 #   * the derived corpus must be at least as large as the smoke spread;
-#   * every smoke program must survive the pre-pass, because those 28 are
+#   * every smoke program must survive the pre-pass, because the spread is
 #     known-good — one of them being excluded means the pre-pass is wrong,
 #     not that the program is.
 FULL=0
@@ -103,7 +103,7 @@ if [ "$FULL" -eq 1 ]; then
 fi
 
 # The size of the spread is DERIVED, never written down: nightly.yml, docs/CI.md
-# (three places) and the CHANGELOG all said "28-program smoke" while PROGS held
+# (three places) and the CHANGELOG all said a literal count while PROGS held
 # 27 (#1160 round 4). A number in prose is a number that drifts.
 echo "valgrind: programs=${#PROGS[@]} mode=$( [ "$FULL" -eq 1 ] && echo full-corpus || echo smoke-spread )"
 

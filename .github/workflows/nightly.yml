@@ -116,7 +116,7 @@ jobs:
         run: make valgrind
 
       # --full derives its program list from the tests/ corpus instead of the
-      # smoke's 28-name spread, and floors the count so a shrinking corpus
+      # smoke's fixed spread, and floors the count so a shrinking corpus
       # cannot quietly turn this into a smaller smoke.
       - name: Valgrind memcheck, full corpus
         run: cd tests && bash valgrind_smoke.sh --full

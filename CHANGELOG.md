@@ -94,15 +94,22 @@ All notable changes to EigenScript are documented here.
     fuzz/`). A local run with no flag still does both halves. The suite jobs set `EIGS_SKIP_WERROR_AUDIT=1`, and [99i] then
     prints a `SKIP:` naming the owning job; unset — every local run — it runs
     in full.
-  - **The ASan suite runs in 3 weight-balanced shards.** The first real PR run
-    of this change measured 21.1 min wall with the ENTIRE critical path in one
-    job — `asan + ubsan / core and LSP`, 19.0 min (4.7 build + 13.9 suite).
+  - **The ASan suite runs in 3 weight-balanced shards. Measured end state:
+    13.4 min wall, 30 checks green (run 35020270020) — 35 → 21.1 → 13.4.** The
+    first real PR run of this change measured 21.1 min wall with the ENTIRE
+    critical path in one job — `asan + ubsan / core and LSP`, 19.0 min
+    (4.7 build + 13.9 suite).
     That job stays full (it is the leak-tally gate), so it is parallelised: a
     shard is a subset of the chunk list, split by MEASURED per-section wall
     time (`tests/section_weights.txt`, regenerated with
     `tools/section_plan.sh --print-weights <suite log>` from the runner's new
     `SECTION_TIME:` lines) with a deterministic longest-processing-time greedy,
-    so the split never depends on runner timing. `--shards N --check` pins the
+    so the split never depends on runner timing. The table is measured ON THE
+    CI RUNNER: a dev-box table did not transfer (per-section ratios reach 35x
+    in both directions), and `--print-weights` reads a raw `gh api …/logs`
+    job log directly, timestamp prefix and all. One section now sets the
+    floor — `[137]` is 319 s of the 862 s sharded total, and a section cannot
+    be split, so no N puts the slowest shard below it. `--shards N --check` pins the
     union to the whole chunk list and the shards to pairwise disjoint, and the
     aggregator `asan + ubsan (full suite)` — unchanged name, still the only
     ruleset-required check — requires every leg green, re-runs that check,

@@ -213,6 +213,30 @@ sp_workdir() {   # <name> -> a fresh dir under the one root
 
 die() { echo "section_plan: ERROR: $*" >&2; exit 1; }
 
+# The ASan shard count has FOUR homes in ci.yml, because GitHub will not
+# expand `env` inside `strategy.matrix`: the `ASAN_SHARDS` env, the matrix
+# list, the `EIGS_SUITE_SHARD: …/N` literal and the JOB NAME's `(shard …/N)`.
+# Prints one line and returns 0 only if all four agree.
+shard_count_sync() {
+    local ci="$1" n_env n_matrix n_lit n_name
+    n_env=$(sed -n 's/^  ASAN_SHARDS: \([0-9][0-9]*\)$/\1/p' "$ci" | head -1)
+    n_matrix=$(sed -n 's/^        shard: \[\(.*\)\]$/\1/p' "$ci" | head -1 | tr -cd ',' | wc -c)
+    n_matrix=$((n_matrix + 1))
+    # ONE RULE FOR ALL HOMES, rather than a row per known spelling: EVERY
+    # `matrix.shard }}/<N>` in the file — job name, step name, env value, any
+    # future one — must end in /$n_env. A per-spelling list is the thing that
+    # missed the job name in the first place.
+    n_lit=$(grep -coE 'matrix\.shard \}\}/[0-9]+' "$ci")
+    n_bad=$(grep -oE 'matrix\.shard \}\}/[0-9]+' "$ci" | grep -vc "/$n_env\$")
+    if [ -n "$n_env" ] && [ "$n_env" = "$n_matrix" ] && [ "$n_lit" -ge 2 ] && [ "$n_bad" -eq 0 ]; then
+        echo "the ASan shard count agrees everywhere in ci.yml (ASAN_SHARDS=$n_env, matrix legs=$n_matrix, and all $n_lit 'matrix.shard }}/N' occurrences say /$n_env)"
+        return 0
+    fi
+    echo "ci.yml shard count disagrees (ASAN_SHARDS=${n_env:-unset}, matrix legs=$n_matrix, 'matrix.shard }}/N' occurrences=$n_lit of which $n_bad do not say /$n_env)"
+    return 1
+}
+
+
 # Waivers are pinned to EXACT LINE CONTENT, by hash. Round 2 pinned them by
 # SUBSTRING, and a blind critic walked straight through it: the entry
 # `tests/test_lint.sh|undefined|lint-message assertions, not a skip` matched
@@ -415,53 +439,100 @@ derive_chunk_groups() {
                 else if (cur < n && line >= cs[cur + 1]) { cur++; if (line <= ce[cur]) scope = cur }
             }
             body = $0
-            # assignments: NAME=, local/export/declare NAME, for NAME in, read NAME
+            # ---- assignments, with the POSITION they happen at -------------
+            # Round 5 (Astra): position matters. Round 4 recorded only
+            # (name, chunk) and treated ANY same-chunk assignment as satisfying
+            # EVERY read in that chunk — so a read that PRECEDES a later
+            # same-chunk reassignment lost its producer in an earlier chunk,
+            # the chunks were not merged, and the consumer shard printed an
+            # empty value and exited 0. Assignments and reads now carry
+            # (line, column) and a read is satisfied only by an assignment
+            # EARLIER IN PROGRAM ORDER.
             if (match(body, /^[ \t]*[A-Za-z_][A-Za-z0-9_]*=/)) {
                 nm = substr(body, RSTART, RLENGTH - 1); gsub(/^[ \t]+/, "", nm)
-                if (scope == 0) pre[nm] = 1; else asg[nm, scope] = 1
-                if (scope > 0 && !(nm in firstasg)) firstasg[nm] = scope
-                if (scope > 0) { k = nm SUBSEP scope; allasg[k] = 1; asgchunk[++na] = nm " " scope }
+                if (scope == 0) pre[nm] = 1
+                else record_asg(nm, scope, line, RSTART)
+            }
+            # Mid-line assignments (`cmd; NAME=v`, `a && NAME=v`) — the dual of
+            # the same bug: a producer the scanner cannot see is a merge it
+            # cannot make.
+            rest2 = body; off2 = 0
+            while (match(rest2, /[;&|(][ \t]*[A-Za-z_][A-Za-z0-9_]*=/)) {
+                t = substr(rest2, RSTART, RLENGTH); col = off2 + RSTART
+                off2 += RSTART + RLENGTH - 1
+                rest2 = substr(rest2, RSTART + RLENGTH)
+                sub(/^[;&|(][ \t]*/, "", t); sub(/=$/, "", t)
+                if (scope == 0) pre[t] = 1; else record_asg(t, scope, line, col)
             }
             if (match(body, /^[ \t]*(local|export|declare)[ \t]+[A-Za-z_][A-Za-z0-9_]*/)) {
                 t = substr(body, RSTART, RLENGTH); sub(/^[ \t]*(local|export|declare)[ \t]+/, "", t)
-                if (scope == 0) pre[t] = 1; else { asgchunk[++na] = t " " scope }
+                if (scope == 0) pre[t] = 1; else record_asg(t, scope, line, RSTART)
             }
             if (match(body, /for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in/)) {
                 t = substr(body, RSTART, RLENGTH); sub(/^for[ \t]+/, "", t); sub(/[ \t]+in$/, "", t)
-                if (scope == 0) pre[t] = 1; else asgchunk[++na] = t " " scope
+                if (scope == 0) pre[t] = 1; else record_asg(t, scope, line, RSTART)
             }
+            # ---- reads, with their position --------------------------------
             if (scope > 0) {
-                rest = body
+                rest = body; off = 0
                 while (match(rest, /\$\{?[A-Za-z_][A-Za-z0-9_]*/)) {
-                    v = substr(rest, RSTART, RLENGTH); gsub(/[$\{]/, "", v)
+                    v = substr(rest, RSTART, RLENGTH); col = off + RSTART
+                    off += RSTART + RLENGTH - 1
                     rest = substr(rest, RSTART + RLENGTH)
-                    refchunk[++nr] = v " " scope
+                    gsub(/[$\{]/, "", v)
+                    nr++; rv[nr] = v; rc[nr] = scope; rl[nr] = line; rk[nr] = col
                 }
             }
         }
         END {
-            for (j = 1; j <= na; j++) { split(asgchunk[j], a, " "); A[a[1] SUBSEP a[2]] = 1; names[a[1]] = 1 }
             for (i = 1; i <= n; i++) parent[i] = i
             for (j = 1; j <= nr; j++) {
-                split(refchunk[j], r, " "); v = r[1]; c = r[2] + 0
+                v = rv[j]; c = rc[j] + 0
                 if (v in pre) continue
                 if (!(v in names)) continue
-                if ((v SUBSEP c) in A) continue
+                if (satisfied_before(v, c, rl[j], rk[j])) continue
                 best = 0
                 for (i = 1; i < c; i++) if ((v SUBSEP i) in A) best = i
                 if (best == 0) continue
                 ra = find(c); rb = find(best)
-                if (ra != rb) { if (ra < rb) parent[rb] = ra; else parent[ra] = rb; merges++ }
+                if (ra != rb) {
+                    if (ra < rb) parent[rb] = ra; else parent[ra] = rb
+                    merges++
+                    printf "MERGE %s %d %d\n", v, cs[best], cs[c] > "/dev/stderr"
+                }
             }
             for (i = 1; i <= n; i++) printf "%d %d\n", cs[i], cs[find(i)]
             printf "MERGES %d\n", merges + 0 > "/dev/stderr"
+        }
+        # Only the EARLIEST assignment of a name in a chunk can matter: if that
+        # one is not before the read, none is. Keeping just the minimum keeps
+        # the lookup O(1) — scanning every assignment per read was O(reads x
+        # assignments) and took the selftest from minutes to over ten.
+        function record_asg(nm, sc, ln, col,   k) {
+            na++
+            k = nm SUBSEP sc
+            if (!(k in A) || ln < minl[k] || (ln == minl[k] && col < minc[k])) {
+                minl[k] = ln; minc[k] = col
+            }
+            A[k] = 1; names[nm] = 1
+        }
+        # A same-chunk assignment counts only if it happens BEFORE the read in
+        # program order: an earlier line, or the same line at an earlier column.
+        function satisfied_before(v, c, ln, col,   k) {
+            k = v SUBSEP c
+            if (!(k in A)) return 0
+            if (minl[k] < ln) return 1
+            if (minl[k] == ln && minc[k] < col) return 1
+            return 0
         }
         function find(x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x] } return x }
     ' "$table" "$RUNNER" > "$out" 2> "$out.merges"
     SP_GROUP_MERGES=$(sed -n 's/^MERGES \([0-9]*\)$/\1/p' "$out.merges")
     : "${SP_GROUP_MERGES:=0}"
+    SP_GROUP_MERGE_LIST=$(sed -n 's/^MERGE /  merged: /p' "$out.merges")
     SP_GROUPS=$(cut -d' ' -f2 "$out" | sort -u | grep -c .)
 }
+
 
 # Deterministic longest-processing-time greedy. Emits "<chunk-start> <shard>".
 derive_shard_assignment() {
@@ -517,6 +588,7 @@ shard_loads() {   # "<shard> <chunks> <seconds>" per shard
 # fail differently, and only the second catches a duplicated chunk.
 shard_check() {
     local n="$1"
+    validate_shards "$n"
     local W; W=$(sp_workdir shards)
     derive_chunks "$RUNNER" > "$W/chunks"
     verify_partition "$RUNNER" "$W/chunks"
@@ -549,6 +621,9 @@ shard_check() {
         die "union != full — a chunk in no shard is a section that silently left CI"
     fi
     [ "$uniq" = "$total" ] || die "shard union covers $uniq of $total chunks"
+    # More shards than chunks cannot produce N non-empty shards, and the
+    # per-shard loop below would report the shortfall one shard at a time.
+    [ "$n" -le "$total" ] || die "asked for $n shards over $total chunks — at least one shard would be empty"
 
     local i cnt
     for i in $(seq 1 "$n"); do
@@ -562,6 +637,10 @@ shard_check() {
             echo "UNMEASURED sections (default ${SHARD_DEFAULT_CS}cs each) — refresh the weights table:"
             sed 's/^/  /' "$W/missing"
         fi
+        if [ -n "$SP_GROUP_MERGE_LIST" ]; then
+            echo "chunk groups merged for a cross-chunk variable dependency:"
+            printf '%s\n' "$SP_GROUP_MERGE_LIST"
+        fi
         shard_loads "$W/weights" "$W/assign" "$n" \
           | while read -r k c t; do echo "  shard $k/$n: chunks=$c weight=${t}s"; done
     fi
@@ -571,6 +650,8 @@ shard_check() {
 # The plan for ONE shard. Sets SP_WORK/selected like build_plan does.
 build_shard_plan() {
     local k="$1" n="$2"
+    validate_shards "$n"
+    validate_shards "$k"
     [ "$k" -ge 1 ] && [ "$k" -le "$n" ] || die "shard index $k is outside 1..$n"
     SP_WORK="${SP_WORK:-$(sp_workdir plan)}"
     derive_chunks "$RUNNER" > "$SP_WORK/chunks"
@@ -631,9 +712,24 @@ build_shard_plan() {
 print_weights() {
     local log="$1"
     [ -f "$log" ] || die "no such log: $log"
-    local n
-    n=$(grep -c '^SECTION_TIME: ' "$log")
-    [ "$n" -ge 50 ] || die "only $n SECTION_TIME lines in $log (floor 50) — that log is not a full suite run"
+    # A raw CI job log (`gh api .../jobs/<id>/logs`) prefixes every line with an
+    # ISO timestamp, so the pattern tolerates one rather than making the caller
+    # strip it by hand — a manual pre-step is a step someone does differently.
+    # The floor is the RUNNER'S OWN label population, not a magic 50. A single
+    # shard log has ~78 rows and sailed through the old floor, which would have
+    # produced a table with ~160 sections silently taking the default weight —
+    # and a default-weighted section is exactly what the table exists to stop.
+    # The input for a sharded lane is the shard logs CONCATENATED.
+    local n distinct want
+    n=$(grep -cE '^([0-9-]+T[0-9:.]+Z )?SECTION_TIME: ' "$log")
+    distinct=$(grep -oE 'SECTION_TIME: \[[^]]*\]' "$log" | sort -u | grep -c .)
+    want=$(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sort -u | grep -c .)
+    # 85%, not 100%: on any one binary some capability-gated sections never
+    # print at all (the http/model/net ones do not exist in an ASan build), so
+    # requiring every label would refuse every real log.
+    want=$(( want * 85 / 100 ))
+    [ "$n" -ge 50 ] || die "only $n SECTION_TIME lines in $log — that log is not a suite run at all"
+    [ "$distinct" -ge "$want" ] || die "only $distinct distinct sections in $log, need >= $want (85% of the $(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sort -u | grep -c .) labels in the runner) — this looks like ONE shard's log; concatenate every shard's log, or the table would default the sections it cannot see"
     echo "# tests/section_weights.txt — per-section wall seconds, summed per label."
     echo "# Regenerate: tools/section_plan.sh --print-weights <suite log> > tests/section_weights.txt"
     echo "# Source log: $n SECTION_TIME lines."
@@ -641,7 +737,7 @@ print_weights() {
     # label is everything from the first [ to the first ] and the seconds are
     # the LAST field — splitting on whitespace produced rows like "[Structural"
     # and a weights table with 21 phantom entries.
-    awk '/^SECTION_TIME: / {
+    awk '/^([0-9-]+T[0-9:.]+Z )?SECTION_TIME: / {
              i = index($0, "["); j = index($0, "]")
              if (i == 0 || j <= i) next
              lbl = substr($0, i, j - i + 1)
@@ -891,6 +987,21 @@ resolve_binary() {
 # ---------------------------------------------------------------------------
 # The plan. Sets SP_SELECTED (chunk start lines, newline separated) and the
 # counters; prints the human-readable table when VERBOSE=1.
+
+# N must be an integer >= 1 before ANY of it is used. Round 4 validated it
+# nowhere, and a blind critic found both failure modes: `--shards 0 --check`
+# and `--shards -1 --check` exited 0 printing "n=0 … zero-section-shards=0",
+# because the per-shard loop was `seq 1 0` and examined ZERO shards — a check
+# that examined nothing reporting success (mechanical-gates: the vacuity rule);
+# and `--shards abc --check` HUNG in the LPT awk, where `for (i = 2; i <= n;
+# i++)` compares against a string. A bad N dies here with a message.
+validate_shards() {
+    local n="$1"
+    case "$n" in
+        ''|*[!0-9]*) die "shard count must be a positive integer, got '$n'" ;;
+    esac
+    [ "$n" -ge 1 ] || die "shard count must be >= 1, got '$n'"
+}
 
 # The probe/marker population invariant, in BOTH directions (§2) — shared by
 # the plan and by `--probes`, so the public mode cannot drift into checking
@@ -1373,7 +1484,11 @@ selftest() {
             --selftest)            continue ;;   # we are inside it
             --shards)              mode_out=$("$0" --shards 3 --check 2>&1) || mode_rc=$? ;;
             --emit-shard)          mode_out=$("$0" --emit-shard 1 3 "$dir/mode_shard.sh" 2>&1) || mode_rc=$? ;;
-            --print-weights)       awk 'BEGIN { for (i = 1; i <= 60; i++) printf "SECTION_TIME: [s%d] 0.10\n", i }' > "$dir/synth.log"
+            --print-weights)       # The synthetic log must COVER the runner's labels, or the
+                                   # partial-log floor (T6) refuses it — which is the floor
+                                   # working, not the mode being broken.
+                                   grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sed 's/echo "//' | sort -u \
+                                     | awk '{ printf "SECTION_TIME: %s 0.10\n", $0 }' > "$dir/synth.log"
                                    mode_out=$("$0" --print-weights "$dir/synth.log" 2>&1) || mode_rc=$? ;;
             *)                     mode_out=$("$0" "$m" 2>&1) || mode_rc=$? ;;
         esac
@@ -1400,17 +1515,27 @@ $mode_out"
     #     GitHub will not expand `env` inside `strategy.matrix`. Gate the sync
     #     instead of hand-syncing it (mechanical-gates §26): read BOTH homes
     #     and require agreement.
+    #     ROUND 5 (T3): the JOB NAME's `/3` was a FOURTH home and was not
+    #     pinned — changing only that literal left the check green while the
+    #     board said "shard 1/4" for a 3-way split. It is checked now, and the
+    #     whole comparison moved into a function so the selftest can run it
+    #     against a mutated COPY instead of needing an env seam.
     local ci="$SP_ROOT/.github/workflows/ci.yml"
     if [ -f "$ci" ]; then
-        local n_env n_matrix n_lit
-        n_env=$(sed -n 's/^  ASAN_SHARDS: \([0-9][0-9]*\)$/\1/p' "$ci" | head -1)
-        n_matrix=$(sed -n 's/^        shard: \[\(.*\)\]$/\1/p' "$ci" | head -1 | tr -cd ',' | wc -c)
-        n_matrix=$((n_matrix + 1))
-        n_lit=$(grep -c 'EIGS_SUITE_SHARD: ${{ matrix.shard }}/'"$n_env" "$ci")
-        if [ -n "$n_env" ] && [ "$n_env" = "$n_matrix" ] && [ "$n_lit" -ge 1 ]; then
-            echo "  PASS: the ASan shard count agrees across ci.yml (ASAN_SHARDS=$n_env, matrix has $n_matrix legs, EIGS_SUITE_SHARD says /$n_env)"; pass=$((pass + 1))
+        if out=$(shard_count_sync "$ci"); then
+            echo "  PASS: $out"; pass=$((pass + 1))
         else
-            echo "  FAIL: ci.yml shard count disagrees (ASAN_SHARDS=${n_env:-unset}, matrix legs=$n_matrix, EIGS_SUITE_SHARD=/$n_env occurrences=$n_lit)"; fail=$((fail + 1))
+            echo "  FAIL: $out"; fail=$((fail + 1))
+        fi
+        # Both halves: the same check must go RED when ONLY the job-name
+        # literal is changed, which is exactly what round 4 missed.
+        sed 's#core and LSP (shard ${{ matrix.shard }}/3)#core and LSP (shard ${{ matrix.shard }}/4)#' "$ci" > "$dir/ci_jobname.yml"
+        if cmp -s "$ci" "$dir/ci_jobname.yml"; then
+            echo "  FAIL: could not plant the job-name mutation (the name line changed shape)"; fail=$((fail + 1))
+        elif out=$(shard_count_sync "$dir/ci_jobname.yml"); then
+            echo "  FAIL: changing ONLY the job name's /N left the shard-count check green — $out"; fail=$((fail + 1))
+        else
+            echo "  PASS: planted: the job name alone says /4 -> the shard-count check refuses"; pass=$((pass + 1))
         fi
         if grep -q 'section_plan.sh --shards ${{ env.ASAN_SHARDS }} --check' "$ci"; then
             echo "  PASS: the aggregator runs the union/disjointness check"; pass=$((pass + 1))
@@ -1449,6 +1574,96 @@ $mode_out"
         fi
     else
         echo "  FAIL: --shards 3 --check failed against a thin weights table"; printf '%s\n' "$out" | sed 's/^/      /'; fail=$((fail + 1))
+    fi
+
+    # 6m. ROUND 5, T2 (Astra, executed): the dependency scan treated ANY
+    #     same-chunk assignment as satisfying every read in that chunk, so a
+    #     read that PRECEDES a later same-chunk reassignment lost its producer
+    #     in an earlier chunk — the chunks were not merged and the consumer
+    #     shard printed an empty value and exited 0. This is Astra's miniature,
+    #     driven through the real --shards/--emit-shard path.
+    {
+        printf '#!/bin/bash\n'
+        printf 'TESTS_DIR="${EIGS_PLAN_TESTS_DIR:-$(cd "$(dirname "$0")" && pwd)}"\n'
+        printf 'PASS=0\nFAIL=0\nTOTAL=0\nLEAKED=0\n'
+        printf 'echo "[c1] producer"\n'
+        printf 'ASTRA_CROSS=previous\n'
+        printf 'echo "[c2] consumer"\n'
+        printf "printf 'ASTRA_READ=<%%s>\\n' \"\$ASTRA_CROSS\"\n"
+        printf 'ASTRA_CROSS=next\n'
+        printf 'echo "[c3] filler"\n'
+        printf 'TOTAL=$((TOTAL + 1)); PASS=$((PASS + 1))\n'
+        printf '# Final guard (#681)\n'
+        printf 'echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"\n'
+    } > "$dir/mini.sh"
+    if out=$("$0" --shards 2 --check --runner "$dir/mini.sh" 2>&1); then
+        if printf '%s\n' "$out" | grep -q 'merged: ASTRA_CROSS'; then
+            echo "  PASS: a read BEFORE a same-chunk reassignment still merges with its earlier producer"; pass=$((pass + 1))
+        else
+            echo "  FAIL: the cross-chunk read was treated as satisfied by the LATER same-chunk assignment"; printf '%s\n' "$out" | sed 's/^/      /'; fail=$((fail + 1))
+        fi
+    else
+        echo "  FAIL: --shards 2 --check failed on the dependency miniature"; printf '%s\n' "$out" | sed 's/^/      /'; fail=$((fail + 1))
+    fi
+    # And the consequence, end to end: whichever shard carries the consumer
+    # must print the producer's value, not an empty one.
+    mini_seen=""
+    for mk in 1 2; do
+        "$0" --emit-shard "$mk" 2 "$dir/mini_$mk.sh" --runner "$dir/mini.sh" >/dev/null 2>&1
+        mini_out=$(bash "$dir/mini_$mk.sh" 2>&1 | grep -o 'ASTRA_READ=<[^>]*>' | head -1)
+        [ -n "$mini_out" ] && mini_seen="$mini_out"
+    done
+    if [ "$mini_seen" = "ASTRA_READ=<previous>" ]; then
+        echo "  PASS: the emitted consumer shard reads the producer value ($mini_seen)"; pass=$((pass + 1))
+    else
+        echo "  FAIL: the emitted consumer shard read '${mini_seen:-nothing}', expected ASTRA_READ=<previous>"; fail=$((fail + 1))
+    fi
+
+    # 6n. ROUND 5, T6(1): N is validated at entry. Round 4 validated it nowhere:
+    #     `--shards 0` and `--shards -1` exited 0 having examined ZERO shards,
+    #     and `--shards abc` HUNG in the LPT awk. The `abc` case is bounded so a
+    #     regression is a failure, never a hung selftest.
+    for bad_n in 0 -1 abc; do
+        if out=$(timeout 60 "$0" --shards "$bad_n" --check --quiet 2>&1); then
+            echo "  FAIL: --shards $bad_n --check exited 0 — a run that examined zero shards must not be green"; fail=$((fail + 1))
+        elif printf '%s\n' "$out" | grep -q 'shard count must be'; then
+            echo "  PASS: planted: --shards $bad_n is refused at entry"; pass=$((pass + 1))
+        else
+            echo "  FAIL: --shards $bad_n went red for the wrong reason: $out"; fail=$((fail + 1))
+        fi
+    done
+
+    # 6o. ROUND 5, T6(2): --print-weights must refuse a PARTIAL log. A single
+    #     shard log has ~78 of the runner's 254 labels and used to sail through
+    #     a floor of 50, producing a table in which ~160 sections silently took
+    #     the default weight. Both halves, built from the runner's own labels.
+    grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sed 's/echo "//' | sort -u > "$dir/all_labels"
+    awk 'NR<=60  { printf "SECTION_TIME: %s 0.10\n", $0 }' "$dir/all_labels" > "$dir/w_partial.log"
+    awk 'NR<=230 { printf "SECTION_TIME: %s 0.10\n", $0 }' "$dir/all_labels" > "$dir/w_full.log"
+    if out=$("$0" --print-weights "$dir/w_partial.log" 2>&1); then
+        echo "  FAIL: --print-weights accepted a partial log; the table would default what it cannot see"; fail=$((fail + 1))
+    elif printf '%s\n' "$out" | grep -q 'distinct sections'; then
+        echo "  PASS: planted: --print-weights refuses a partial (one-shard) log"; pass=$((pass + 1))
+    else
+        echo "  FAIL: --print-weights refused a partial log for the wrong reason: $out"; fail=$((fail + 1))
+    fi
+    if out=$("$0" --print-weights "$dir/w_full.log" 2>&1) && [ "$(printf '%s\n' "$out" | grep -c '^\[')" -ge 200 ]; then
+        echo "  PASS: control: --print-weights still accepts a log covering the runner"; pass=$((pass + 1))
+    else
+        echo "  FAIL: --print-weights refused a log that covers the runner"; printf '%s\n' "$out" | head -3 | sed 's/^/      /'; fail=$((fail + 1))
+    fi
+
+    # 6p. ROUND 5, T6(3): the smoke spread's size is derived, so no document may
+    #     carry a literal count of it. It drifted twice (28 vs 27).
+    # --exclude this file: the pin's own pattern lives here, so scanning it
+    # makes the detector read its own reflection — the same §24 trap the gate
+    # audit self-excludes for. This file declares no valgrind spread.
+    if out=$(grep -rn --exclude=section_plan.sh '28-name\|28-program\|those 28' \
+                 "$SP_ROOT/.github" "$SP_ROOT/tests" "$SP_ROOT/tools" "$SP_ROOT/docs" \
+                 "$SP_ROOT/CHANGELOG.md" 2>/dev/null); then
+        echo "  FAIL: a hard-coded valgrind smoke count is back:"; printf '%s\n' "$out" | sed 's/^/      /'; fail=$((fail + 1))
+    else
+        echo "  PASS: no document carries a literal valgrind smoke count (the job prints programs=N)"; pass=$((pass + 1))
     fi
 
     # 7. The emitted runner for a real variant must parse.

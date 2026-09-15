@@ -167,6 +167,16 @@ N=2 clears 15 by 1.3 min, which is inside runner noise; N=3 clears it by 3.7;
 past N=3 the *build* dominates and a fourth shard buys 1.1 min for another 4.7
 build-minutes. **N = 3.**
 
+**MEASURED, on run 35020270020 (head c4c23ae): 13.4 min wall, 30 checks green
+— 35 → 21.1 → 13.4.** The shards ran 12.6 / 9.9 / 8.0 min end to end. The bar
+is met; what follows is what the numbers then said about the *split*.
+
+The floor is now one section, not the arithmetic: `[137]` (the ext_gfx
+ASan/LSan corpus) costs **319 s of the 862 s** the whole sharded suite takes on
+the runner — 37% — and a section is indivisible, so no N can put the slowest
+shard below 319 s. N=4 would not help. Splitting `[137]` itself is the next
+lever if this lane ever needs to be faster.
+
 **A shard is a subset of the chunk list**, so "the shards cover the suite" is a
 set identity rather than a belief:
 
@@ -196,12 +206,31 @@ orders of magnitude. The runner therefore prints one line per section,
 SECTION_TIME: [99u] 41.20
 ```
 
-and `tests/section_weights.txt` is those numbers, measured under ASan. Refresh
-it from any full-suite log:
+and `tests/section_weights.txt` is those numbers.
+
+**Measure them on the RUNNER, not on the dev box.** The first table was a
+dev-box measurement and it did not transfer: per-section ratios reach 35× in
+*both* directions (`[0a]` 0.75 s dev → 26.12 CI; `[126]` 0.97 → 28.61; `[88]`
+1.56 → 30.24; but `[124]` 94.87 → 13.30 and `[99o]` 21.79 → 2.41), and shards
+predicted at 590/590/590 s actually took 411/249/196. A dev-box run is a
+bootstrap for the very first split; the table itself comes from CI.
+
+Refresh it from the shard job logs of any green run:
 
 ```bash
-tools/section_plan.sh --print-weights /path/to/suite.log > tests/section_weights.txt
+run=35020270020                     # the CI run id
+gh api repos/InauguralSystems/EigenScript/actions/runs/$run/jobs \
+  --jq '.jobs[] | select(.name | startswith("asan + ubsan / core and LSP")) | .id' \
+  | while read -r id; do
+      gh api repos/InauguralSystems/EigenScript/actions/jobs/$id/logs
+    done > /tmp/asan-shards.log
+tools/section_plan.sh --print-weights /tmp/asan-shards.log > tests/section_weights.txt
 ```
+
+`--print-weights` accepts the raw job log — it tolerates the ISO timestamp
+prefix GitHub puts on every line, so there is no hand-stripping step to get
+wrong — and sums duplicate labels, so concatenating all three shard logs is
+the right input.
 
 The split is longest-processing-time greedy over (weight desc, chunk start asc)
 — **deterministic**, so CI never depends on runner timing. A section missing
