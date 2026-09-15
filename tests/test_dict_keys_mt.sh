@@ -88,7 +88,13 @@ verify_capture() {   # verify_capture <expected_file> <actual_file> <rc>
     # split string is literal in some awks and a regex in others (§63), and a
     # gate whose meaning depends on which awk is installed is a coin flip.
     local stats a_keys badcount badchars valnull
-    stats=$(awk '
+    # LC_ALL=C: the bad_* captures are freed-memory bytes, not UTF-8. Under a
+    # UTF-8 locale macOS's awk aborts on them ("invalid multibyte"), the pass
+    # prints nothing, and the fail-closed default below fires EVERY tag —
+    # which is exactly what PR #1163's macos-latest lane reported (three
+    # selftest rows "got" keycount+population+valnull on top of the expected
+    # set). Bytes are what the classifier is measuring; read them as bytes.
+    stats=$(LC_ALL=C awk '
         $1 == "KEYS" {
             keys++
             n = $2 + 0
