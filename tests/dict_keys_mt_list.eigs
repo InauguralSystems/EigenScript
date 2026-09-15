@@ -1,0 +1,10 @@
+# #1141 shape 2: the dict is BUILT on the worker and published through a shared
+# LIST. The list is the parent's; the dict and its keys outlive the worker.
+box is []
+define worker() as:
+    append of [box, {"wk": 1, "other": 2}]
+    return 0
+h is spawn of worker
+thread_join of h
+print of f"KEYS 2 {join of [keys of box[0], "|"]}"
+print of f"VALS 2 {box[0].wk}|{box[0].other}"

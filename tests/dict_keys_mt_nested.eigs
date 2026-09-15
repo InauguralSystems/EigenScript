@@ -1,0 +1,12 @@
+# #1141 shape 3: nested dicts. Every level is a separate dict_set, so a fix
+# that re-homes only the outermost key leaves the inner levels dangling.
+root is {}
+define worker() as:
+    root.lvl1 is {"lvl2": {"lvl3": 7}}
+    return 0
+h is spawn of worker
+thread_join of h
+print of f"KEYS 1 {join of [keys of root, "|"]}"
+print of f"KEYS 1 {join of [keys of root.lvl1, "|"]}"
+print of f"KEYS 1 {join of [keys of root.lvl1.lvl2, "|"]}"
+print of f"VALS 1 {root.lvl1.lvl2.lvl3}"

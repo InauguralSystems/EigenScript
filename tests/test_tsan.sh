@@ -155,6 +155,61 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo "=== dict keys written by a worker must outlive it, TSan-clean (#1141) ==="
+# The release oracle (tests/test_dict_keys_mt.sh) reads the OUTPUT; this arm
+# reads the sanitizer. They see the same defect from opposite sides: without
+# the fix the release binary prints freed bytes with rc 0 on two of these
+# shapes (silent), while TSan names it — heap-use-after-free in make_str <-
+# builtin_keys against a free in env_intern_table_unref <- eigs_thread_detach.
+# The fixture list is DECLARED, not globbed, and a missing member is a FAIL:
+# the `[ -f ] || continue` in the slice above is a silent shrink if a fixture
+# is ever renamed (mechanical-gates §121).
+#
+# Measured discrimination against a pristine pre-fix build, because a row that
+# cannot go red on the known-bad tree is decoration (mechanical-gates §64):
+#   inplace / list / nested / concurrent  TSan heap-use-after-free (1, 1, 4, 1)
+#   reuse                                 0 warnings, exits 1 — the `rc` arm
+#   module                                0 warnings, exits 0 — this row does
+#     NOT discriminate here. TSan does not see the module-namespace half (the
+#     env binding name): the read is on the main thread after the worker is
+#     joined, so there is no cross-thread access to report. Its harm witness
+#     is the ASAN lane, where the report lands in the probe's own capture and
+#     tests/test_dict_keys_mt.sh's `dict_keys_mt_module` row goes red —
+#     verified by building the `env-name-not-rehomed` mutant with `make asan`
+#     and running that oracle (3 rows red, including this probe).
+DKM_FIXTURES="dict_keys_mt_inplace dict_keys_mt_list dict_keys_mt_nested \
+dict_keys_mt_reuse dict_keys_mt_concurrent dict_keys_mt_module"
+DKM_DECLARED=6
+DKM_EXAMINED=0
+for t in $DKM_FIXTURES; do
+    DKM_EXAMINED=$((DKM_EXAMINED + 1))
+    f="$TESTS_DIR/$t.eigs"
+    if [ ! -f "$f" ]; then
+        echo "  FAIL: $t fixture missing ($f)"; FAIL=$((FAIL + 1)); continue
+    fi
+    tsan_warnings "$f"
+    w=$WARNINGS
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$w" -ne 0 ]; then
+        echo "  FAIL: $t reported $w ThreadSanitizer warning(s)"
+        FAIL=$((FAIL + 1))
+        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+    elif [ "$LAST_RC" -ne 0 ]; then
+        # A probe that DIED has not shown that the keys survive; a quiet
+        # sanitizer on a truncated run is absence of evidence.
+        echo "  FAIL: $t exited $LAST_RC (want 0)"; FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: $t TSan-clean and exited 0"; PASS=$((PASS + 1))
+    fi
+done
+if [ "$DKM_EXAMINED" -eq "$DKM_DECLARED" ] && [ "$DKM_EXAMINED" -gt 0 ]; then
+    echo "  PASS: dict-key fixtures examined == declared ($DKM_EXAMINED)"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: dict-key fixtures examined == declared (examined=$DKM_EXAMINED declared=$DKM_DECLARED)"
+    FAIL=$((FAIL + 1))
+fi
+
 echo "=== gate self-validation: a seeded race MUST be caught ==="
 tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
 w=$WARNINGS

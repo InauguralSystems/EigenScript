@@ -49,6 +49,43 @@ unsafe pattern — unsynchronized read-modify-write on a shared list from two
 workers — is caught by the ThreadSanitizer gate below
 (`tests/tsan_seeded_race.eigs`).
 
+### A key written by a worker outlives the worker (#1141)
+
+Sharing by reference means the *structure* a worker builds has to survive the
+worker, not just its values. It does. **A dict KEY written on any thread is
+valid for the lifetime of the DICT**, whoever reads it and whether or not the
+writing thread has exited:
+
+```eigenscript
+d is {"pre": 1}
+define worker() as:
+    d.added_by_worker is 42
+    return 0
+h is spawn of worker
+thread_join of h
+print of (keys of d)
+print of d.added_by_worker
+```
+```output
+["pre", "added_by_worker"]
+42
+```
+
+The same holds for a dict the worker builds and publishes through a shared
+list, for nested dicts, and for a read that happens long after the worker was
+joined and its handle released. (Mechanically: key strings are interned, and
+while the process is multithreaded new keys are interned into a
+process-global, mutex-guarded table instead of the writing thread's own — the
+thread's table is freed when the thread detaches, which is exactly the
+lifetime a shared dict does not have.)
+
+This is a statement about the KEY, not about the VALUE. Two threads writing
+the same dict, or one writing while another reads, is still **your** race to
+avoid: a user data race here is *undefined*, and because the writers touch
+allocator-managed structure it can corrupt the heap rather than merely
+returning a stale number (#1152). Communicate results; do not share mutable
+state between live threads.
+
 ## Cooperative tasks are per-thread
 
 `task_spawn`/`task_yield` (#408) are a *different* model from `spawn`:

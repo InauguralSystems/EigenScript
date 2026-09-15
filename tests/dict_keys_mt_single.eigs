@@ -1,0 +1,11 @@
+# T2 control: byte-identical writes with NO spawn. The single-threaded intern
+# path must produce exactly the output dict_keys_mt_inplace.eigs produces, so
+# a fix that changes single-threaded behaviour shows up as a diff here.
+d is {"pre": 1}
+define worker() as:
+    d.added_by_worker is 42
+    d.second is "two"
+    return 0
+worker of null
+print of f"KEYS 3 {join of [keys of d, "|"]}"
+print of f"VALS 3 {d.pre}|{d.added_by_worker}|{d.second}"
