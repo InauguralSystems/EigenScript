@@ -1,0 +1,6 @@
+# The module the USER-RACE fixture shares: its `define` rebinds ONE global
+# name, so two workers loading it concurrently overwrite the same binding —
+# the documented shared-mutable-state race, not a loader defect.
+define lm_rebind_fn(x) as:
+    return x * 2
+lm_rebind_val is 21

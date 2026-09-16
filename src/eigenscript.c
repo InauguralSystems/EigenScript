@@ -2002,78 +2002,201 @@ Value* make_dict(int capacity) {
  * PRIVATE bindings (`_`-prefixed) are not part of the namespace and are
  * never projected — the namespace's public surface is unchanged.
  *
- * Concurrency: written only by `import`, which — like the module cache
- * this parallels — is a startup/main-thread operation and is not guarded.
+ * Concurrency (#1144): the READ path runs on every `M.field` access
+ * (dict_get_hashed -> eigs_module_ns_env), so it must not take a lock. It
+ * takes none in EITHER mode — it is wait-free:
+ *
+ *   - the table is an IMMUTABLE-SHAPE snapshot (`ModuleNsTab`: capacity and
+ *     entries in ONE allocation) published through ONE atomic pointer. A
+ *     reader acquire-loads that pointer once and then uses a `cap` that
+ *     cannot change under it. (Separate `tab`/`cap` globals could tear
+ *     across a rebuild — the old array read with the new mask — and index
+ *     out of bounds.)
+ *   - an entry becomes visible by a RELEASE store of its `dict` word after
+ *     its `env` word is written, and a reader ACQUIRE-loads `dict` before
+ *     reading `env`. A reader that has not yet seen a just-attached module
+ *     falls back to the dict's own entry, which is what an un-projected
+ *     namespace read does anyway.
+ *   - removal writes a TOMBSTONE instead of rehashing. The old code rehashed
+ *     the whole table on every detach, which freed and republished the array
+ *     a concurrent probe was walking — the reported use-after-free (free in
+ *     module_ns_rebuild vs read in module_ns_slot <- eigs_module_ns_env <-
+ *     dict_get_hashed). A tombstone keeps the probe cluster intact, so no
+ *     reader is orphaned mid-probe.
+ *   - a table that IS replaced (growth, or a tombstone purge) is RETIRED,
+ *     not freed, while the process is multithreaded — the same
+ *     retire-and-publish discipline the #607 module-env arrays use, because
+ *     a reader can hold the old pointer across the swap. The retire list is
+ *     drained as soon as the process is back to one thread, so a normal
+ *     single-threaded program frees exactly as before and retains nothing;
+ *     what a spawned program retains until its workers are gone is bounded
+ *     by the tables replaced during that window, and the list head is a
+ *     static root, so LeakSanitizer sees still-reachable, not leaked
+ *     (the residual, stated exactly — mechanical-gates §6).
+ *
+ * WRITES (attach / detach / rebuild) serialize on g_module_ns_mu, a LEAF
+ * mutex: nothing called while it is held takes another lock.
  */
 static inline void env_shared_lock(const Env *e);      /* #607, defined below */
 static inline void env_shared_unlock(const Env *e);
 
 typedef struct { Value *dict; Env *env; } ModuleNsEntry;
-static ModuleNsEntry *g_module_ns_tab = NULL;
-static size_t g_module_ns_cap = 0;     /* power of two; 0 = unallocated */
-static size_t g_module_ns_count = 0;
+
+typedef struct ModuleNsTab {
+    size_t              cap;            /* power of two; immutable */
+    struct ModuleNsTab *retired_next;
+    ModuleNsEntry       ent[];
+} ModuleNsTab;
+
+/* A removed entry. Never dereferenced — only compared. */
+#define MODULE_NS_TOMB ((Value *)(uintptr_t)1)
+
+static ModuleNsTab *g_module_ns_pub = NULL;   /* atomic: the published table */
+static size_t g_module_ns_count = 0;          /* LIVE entries (writer-only) */
+static size_t g_module_ns_used  = 0;          /* live + tombstones (writer-only) */
+static pthread_mutex_t g_module_ns_mu = PTHREAD_MUTEX_INITIALIZER;
+static ModuleNsTab *g_module_ns_retired = NULL;   /* static root; see above */
 
 static int module_ns_public(const char *name) {
     return name && name[0] != '_';
 }
 
-/* Probe slot for `d`: the matching entry, or the first empty one. The load
- * factor is held <= 70% and deletion rehashes, so an empty slot always
- * exists and the probe terminates. */
-static size_t module_ns_slot(ModuleNsEntry *tab, size_t cap, Value *d) {
-    size_t i = ((uintptr_t)d >> 4) & (cap - 1);
-    while (tab[i].dict && tab[i].dict != d) i = (i + 1) & (cap - 1);
-    return i;
+/* "Could another thread be reading a retired table?" — true while this
+ * process has more than one attached thread, or this state has spawned.
+ * Deliberately the PROCESS-wide question (#915): `multithreaded` is a
+ * per-STATE flag and is 0 on every thread of a two-state embed host. */
+static int module_ns_mt(void) {
+    if (eigs_process_thread_count() > 1) return 1;
+    return eigs_current && eigs_current->state && eigs_current->state->multithreaded;
 }
 
-static void module_ns_rebuild(size_t ncap) {
-    ModuleNsEntry *nt = xcalloc(ncap, sizeof(ModuleNsEntry));
-    for (size_t i = 0; i < g_module_ns_cap; i++) {
-        if (!g_module_ns_tab[i].dict) continue;
-        size_t j = module_ns_slot(nt, ncap, g_module_ns_tab[i].dict);
-        nt[j] = g_module_ns_tab[i];
+/* Caller holds g_module_ns_mu. */
+static void module_ns_retire_locked(ModuleNsTab *old) {
+    if (!old) return;
+    if (!module_ns_mt()) { free(old); return; }
+    old->retired_next = g_module_ns_retired;
+    g_module_ns_retired = old;
+}
+
+/* Caller holds g_module_ns_mu. Runs at every write; a no-op while the
+ * process is multithreaded, so the window's retained tables are released as
+ * soon as the workers are gone. */
+static void module_ns_drain_retired_locked(void) {
+    if (module_ns_mt()) return;
+    while (g_module_ns_retired) {
+        ModuleNsTab *n = g_module_ns_retired->retired_next;
+        free(g_module_ns_retired);
+        g_module_ns_retired = n;
     }
-    free(g_module_ns_tab);
-    g_module_ns_tab = nt;
-    g_module_ns_cap = ncap;
+}
+
+/* Index of `d` in `t`, or -1. Stops at an EMPTY slot; steps over tombstones.
+ * The load factor (live + tombstones) is held <= 70%, so an empty slot
+ * always exists and the probe terminates. */
+static long module_ns_find(ModuleNsTab *t, Value *d) {
+    size_t i = ((uintptr_t)d >> 4) & (t->cap - 1);
+    for (;;) {
+        Value *cur = __atomic_load_n(&t->ent[i].dict, __ATOMIC_ACQUIRE);
+        if (!cur) return -1;
+        if (cur == d) return (long)i;
+        i = (i + 1) & (t->cap - 1);
+    }
+}
+
+/* Writer-side probe: the slot `d` belongs in — its own entry if present,
+ * else the first tombstone, else the terminating empty slot. Caller holds
+ * g_module_ns_mu, so plain reads are fine here. */
+static size_t module_ns_insert_slot(ModuleNsTab *t, Value *d) {
+    size_t i = ((uintptr_t)d >> 4) & (t->cap - 1);
+    long tomb = -1;
+    for (;;) {
+        Value *cur = t->ent[i].dict;
+        if (!cur) return (tomb >= 0) ? (size_t)tomb : i;
+        if (cur == d) return i;
+        if (cur == MODULE_NS_TOMB && tomb < 0) tomb = (long)i;
+        i = (i + 1) & (t->cap - 1);
+    }
+}
+
+/* Publish a fresh table holding exactly the live entries; retire the old
+ * one. Caller holds the mutex. `ncap` is a power of two with room for
+ * g_module_ns_count at the <= 70% load factor. */
+static void module_ns_rebuild_locked(size_t ncap) {
+    ModuleNsTab *old = g_module_ns_pub;
+    ModuleNsTab *nt = xcalloc(1, sizeof(ModuleNsTab) + ncap * sizeof(ModuleNsEntry));
+    nt->cap = ncap;
+    size_t live = 0;
+    if (old) {
+        for (size_t i = 0; i < old->cap; i++) {
+            Value *d = old->ent[i].dict;
+            if (!d || d == MODULE_NS_TOMB) continue;
+            size_t j = module_ns_insert_slot(nt, d);
+            nt->ent[j] = old->ent[i];
+            live++;
+        }
+    }
+    g_module_ns_count = live;
+    g_module_ns_used  = live;
+    __atomic_store_n(&g_module_ns_pub, nt, __ATOMIC_RELEASE);
+    module_ns_retire_locked(old);
 }
 
 Env *eigs_module_ns_env(Value *dict) {
     if (!dict || dict->type != VAL_DICT || !dict->module_ns) return NULL;
-    if (!g_module_ns_cap) return NULL;
-    size_t i = module_ns_slot(g_module_ns_tab, g_module_ns_cap, dict);
-    return g_module_ns_tab[i].dict ? g_module_ns_tab[i].env : NULL;
+    ModuleNsTab *t = __atomic_load_n(&g_module_ns_pub, __ATOMIC_ACQUIRE);
+    if (!t) return NULL;
+    long i = module_ns_find(t, dict);
+    return (i >= 0) ? t->ent[i].env : NULL;
 }
 
 void eigs_module_ns_attach(Value *dict, Env *env) {
     if (!dict || dict->type != VAL_DICT || !env) return;
-    if (dict->module_ns) return;                    /* already a namespace */
-    if ((g_module_ns_count + 1) * 10 > g_module_ns_cap * 7)
-        module_ns_rebuild(g_module_ns_cap ? g_module_ns_cap * 2 : 16);
-    size_t i = module_ns_slot(g_module_ns_tab, g_module_ns_cap, dict);
-    g_module_ns_tab[i].dict = dict;
-    g_module_ns_tab[i].env = env;
+    pthread_mutex_lock(&g_module_ns_mu);
+    if (dict->module_ns) {                          /* already a namespace */
+        pthread_mutex_unlock(&g_module_ns_mu);
+        return;
+    }
+    module_ns_drain_retired_locked();
+    ModuleNsTab *t = g_module_ns_pub;
+    if (!t || (g_module_ns_used + 1) * 10 > t->cap * 7) {
+        /* Grow only when the LIVE population demands it; otherwise this is
+         * a tombstone purge at the same capacity. */
+        size_t ncap = t ? t->cap : 16;
+        while ((g_module_ns_count + 1) * 10 > ncap * 7) ncap *= 2;
+        module_ns_rebuild_locked(ncap);
+        t = g_module_ns_pub;
+    }
+    size_t i = module_ns_insert_slot(t, dict);
+    if (t->ent[i].dict == NULL) g_module_ns_used++;   /* fresh slot, not a tomb */
     g_module_ns_count++;
+    t->ent[i].env = env;
+    /* RELEASE: the `env` write above is visible to any reader that sees
+     * this `dict`. */
+    __atomic_store_n(&t->ent[i].dict, dict, __ATOMIC_RELEASE);
     env_incref(env);              /* OWNING edge — GC_EDGE_TABLE row below */
     dict->module_ns = 1;
+    pthread_mutex_unlock(&g_module_ns_mu);
 }
 
 Env *eigs_module_ns_detach(Value *dict) {
     if (!dict || !dict->module_ns) return NULL;
     Env *e = NULL;
-    if (g_module_ns_cap) {
-        size_t i = module_ns_slot(g_module_ns_tab, g_module_ns_cap, dict);
-        if (g_module_ns_tab[i].dict == dict) {
-            e = g_module_ns_tab[i].env;
-            g_module_ns_tab[i].dict = NULL;
-            g_module_ns_tab[i].env  = NULL;
+    pthread_mutex_lock(&g_module_ns_mu);
+    ModuleNsTab *t = g_module_ns_pub;
+    if (t) {
+        long i = module_ns_find(t, dict);
+        if (i >= 0) {
+            e = t->ent[i].env;
+            /* Tombstone, never rehash: a concurrent probe must be able to
+             * walk PAST this slot to the rest of its cluster. `env` is left
+             * in place for a reader that already matched the dict. */
+            __atomic_store_n(&t->ent[i].dict, MODULE_NS_TOMB, __ATOMIC_RELEASE);
             g_module_ns_count--;
-            /* Linear probing: removing an entry can orphan the rest of its
-             * cluster. Rehash at the same capacity rather than tombstone. */
-            module_ns_rebuild(g_module_ns_cap);
         }
     }
     dict->module_ns = 0;
+    module_ns_drain_retired_locked();
+    pthread_mutex_unlock(&g_module_ns_mu);
     return e;                     /* caller owns the returned ref */
 }
 
@@ -3269,17 +3392,26 @@ void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
 /* Core local-set implementation: caller has already interned `name`. */
 void env_set_local_pre_interned_slot(Env *env, const char *interned,
                                      uint32_t h, EigsSlot s) {
+    /* #1144: the probe MUST be inside the hold. Its old comment — "single
+     * writer (module code runs on the main thread only), so the unlocked
+     * probe cannot go stale between probe and insert" — was the #607
+     * assumption this issue falsifies: `load_file`/`import` inside a worker
+     * runs MODULE-LEVEL code on a spawned thread, so two workers loading the
+     * same module both probe-miss and both insert the same name, and the
+     * unlocked probe itself walks hash/names arrays a sibling is
+     * republishing. Probe and insert are now one hold. The found path still
+     * stores in a SECOND hold (env_store_slot takes the same non-recursive
+     * mutex): a hit index is stable — entries are appended, never moved or
+     * removed, while the env is live. */
+    env_shared_lock(env);
     int idx = env_hash_find(&env->hash, interned, h, env->names);
     if (idx >= 0) {
+        env_shared_unlock(env);
         env_store_slot(env, idx, s);
-        if (env->assign_counts)
-            env->assign_counts[idx]++;
+        int *ac = env_assign_counts_ptr(env);
+        if (ac) ac[idx]++;
         return;
     }
-    env_shared_lock(env);   /* #607: vs concurrent worker chain walks.
-                             * Single writer (module code runs on the main
-                             * thread only), so the unlocked probe above
-                             * cannot go stale between probe and insert. */
     if (env->count >= env->capacity) {
         int new_cap = env->capacity * 2;
         size_t nsz = new_cap * sizeof(char *);
@@ -3300,7 +3432,26 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
         }
         env->capacity = new_cap;
     }
-    env->names[env->count] = (char*)interned;
+    /* #1144, the #1141 lifetime half. `interned` came from the WRITING
+     * thread's intern table (chunk->const_interns / env_intern_name), and
+     * under #1144 the writing thread can be a spawned WORKER running
+     * module-level code through load_file/import — so the binding it creates
+     * in the shared root env outlives the table its NAME lives in.
+     * `env_intern_table_unref` frees that table at eigs_thread_detach, and
+     * the next lookup strcmp'd freed bytes: measured under ASan as
+     *   heap-use-after-free READ in strcmp <- env_hash_find <-
+     *   env_set_local_pre_interned_slot <- vm_run_ex <- builtin_load_file <-
+     *   thread_entry, freed by T2 in env_intern_table_unref,
+     * and on the release binary as an intermittent `undefined variable
+     * 'mod_b_fn'` for a name the same thread had just defined (plus
+     * occasional glibc "malloc(): mismatching next->prev_size").
+     * Re-home into the process-global, mutex-guarded, never-freed table
+     * exactly as env_set_local_hashed does, on the same g_vm_multithreaded
+     * gate (NOT env_mt_shared — see that function's note on why the
+     * narrower spelling was measured wrong). */
+    env->names[env->count] = __builtin_expect(g_vm_multithreaded, 0)
+                             ? (char *)shared_intern_key(interned)
+                             : (char *)interned;
     EigsSlot stored = s;
     if (slot_is_ptr(s)) {
         Value *v = slot_as_ptr(s);
@@ -3626,7 +3777,14 @@ static void gc_unregister_env(Env *env) {
 
 void env_mark_captured(Env *env) {
     if (!env) return;
-    env->captured = 1;
+    /* #1144: RELAXED store, not a plain write. Two threads can capture the
+     * SAME env at once — `load_file` from two workers each compiles the
+     * module's `define`, and both closures capture the shared loader env —
+     * so this is a write/write race on one int even though both write 1
+     * (TSan: "Previous write ... by thread T2", both frames env_mark_captured
+     * <- vm_run_ex <- builtin_load_file). The only READER, vm_park_call_env,
+     * returns before it under g_vm_multithreaded, so no acquire is owed. */
+    __atomic_store_n(&env->captured, 1, __ATOMIC_RELAXED);
     if (!g_gc_enabled || g_in_gc || env->in_gc_list || env == g_global_env)
         return;
     gc_registry_lock();
@@ -4128,30 +4286,60 @@ void gc_collect_cycles(void) {
 /* ---- Module cache (Phase 0a) ----------------------------------------
  * Linear scan; modules-per-program is small (single digits to dozens).
  * Cache owns: strdup'd path, one ref on the dict, one ref on mod_env.
- * Multi-thread: not guarded — `import` from inside a spawned thread
- * isn't a documented use case, and the population pattern is "main
- * thread imports at startup". If that changes, wrap in a mutex. */
+ *
+ * #1144: guarded by st->module_lock. `import` inside a `define` body is an
+ * ordinary statement, so it is legal inside a spawned worker, and the old
+ * comment here ("the population pattern is main thread imports at startup")
+ * was an assumption the language never enforced: two workers importing
+ * concurrently reallocated this array under each other. The lock is
+ * unconditional rather than gated on g_vm_multithreaded because the embed
+ * API also attaches host threads to one state without any `spawn` (that flag
+ * stays 0 there) — and because a load is file I/O, so an uncontended mutex
+ * is not measurable next to it.
+ *
+ * LOCK ORDER: module_lock is a LEAF over the ARRAY. Ref drops happen outside
+ * it (clear snapshots first) — val_decref can re-enter the runtime, and a
+ * lock held across re-entry is how #1035 deadlocked. */
 int eigs_module_cache_get(const char *abs_path, Value **out_dict) {
     if (out_dict) *out_dict = NULL;
     if (!abs_path || !eigs_current) return 0;
     EigsState *st = eigs_current->state;
+    int found = 0;
+    pthread_mutex_lock(&st->module_lock);
     for (size_t i = 0; i < st->module_cache_count; i++) {
         if (strcmp(st->module_cache[i].path, abs_path) == 0) {
             if (out_dict) {
                 *out_dict = st->module_cache[i].dict;
                 val_incref(*out_dict);
             }
-            return 1;
+            found = 1;
+            break;
         }
     }
-    return 0;
+    pthread_mutex_unlock(&st->module_lock);
+    return found;
 }
 
-void eigs_module_cache_put(const char *abs_path, Value *dict, Env *env) {
-    if (!abs_path || !dict || !eigs_current) return;
+/* Returns 1 if THIS call stored the entry, 0 if a matching path was already
+ * cached (i.e. another thread completed the same import first).
+ *
+ * #1144: the return value is not cosmetic. `import` builds a private dict and
+ * env, then caches them; when the cache already had the path, the old code
+ * silently dropped the store AND pushed its own private instance anyway, so
+ * two threads importing the same module got two live modules. Writes through
+ * the loser's `M` landed in an instance nothing else could see, and a reader
+ * that lost the race never observed the winner's state — a silent split
+ * brain where a6333bb had failed loudly with a (false) circular dependency.
+ * The caller uses this answer to adopt the winner's instance. */
+int eigs_module_cache_put(const char *abs_path, Value *dict, Env *env) {
+    if (!abs_path || !dict || !eigs_current) return 0;
     EigsState *st = eigs_current->state;
+    pthread_mutex_lock(&st->module_lock);
     for (size_t i = 0; i < st->module_cache_count; i++) {
-        if (strcmp(st->module_cache[i].path, abs_path) == 0) return;
+        if (strcmp(st->module_cache[i].path, abs_path) == 0) {
+            pthread_mutex_unlock(&st->module_lock);
+            return 0;                    /* another thread won the race */
+        }
     }
     if (st->module_cache_count == st->module_cache_cap) {
         size_t newcap = st->module_cache_cap ? st->module_cache_cap * 2 : 8;
@@ -4165,19 +4353,28 @@ void eigs_module_cache_put(const char *abs_path, Value *dict, Env *env) {
     val_incref(dict);
     e->env = env;
     if (env) env_incref(env);
+    pthread_mutex_unlock(&st->module_lock);
+    return 1;
 }
 
 void eigs_module_cache_clear(void) {
     if (!eigs_current) return;
     EigsState *st = eigs_current->state;
-    for (size_t i = 0; i < st->module_cache_count; i++) {
-        free(st->module_cache[i].path);
-        val_decref(st->module_cache[i].dict);
-        if (st->module_cache[i].env) env_decref(st->module_cache[i].env);
-    }
+    /* Detach the entries under the lock, then drop their refs outside it:
+     * val_decref / env_decref run destructors that re-enter the runtime. */
+    pthread_mutex_lock(&st->module_lock);
+    EigsModuleCacheEntry *snap = st->module_cache;
+    size_t n = st->module_cache_count;
+    st->module_cache = NULL;
     st->module_cache_count = 0;
-    /* Keep the array allocated — eigs_state_destroy frees it. The cache
-     * is cleared at gc_collect_at_exit; the state outlives that call. */
+    st->module_cache_cap = 0;
+    pthread_mutex_unlock(&st->module_lock);
+    for (size_t i = 0; i < n; i++) {
+        free(snap[i].path);
+        val_decref(snap[i].dict);
+        if (snap[i].env) env_decref(snap[i].env);
+    }
+    free(snap);
 }
 
 /* ---- In-flight load guard (#496) ------------------------------------
@@ -4187,39 +4384,47 @@ void eigs_module_cache_clear(void) {
  * misses the cache and recurses through vm_execute until the C stack
  * overflows — SIGSEGV, rc=139, uncatchable. This stack records paths whose
  * load is currently on the C stack; the loader checks it on entry and
- * raises a catchable error instead of recursing. Same-thread startup use,
- * so unguarded like the module cache above. */
+ * raises a catchable error instead of recursing.
+ *
+ * #1144: the stack is per THREAD (EigsThread), not per state. "Is this path
+ * already being loaded?" is a question about ONE C stack, so the thread is
+ * its exact scope. A per-state stack answered it for the wrong thread — two
+ * workers loading the same module got "circular dependency" with no cycle
+ * present (rc 1 on the release binary), and the enter/leave realloc+memmove
+ * raced the concurrent scan (heap-use-after-free in eigs_loading_active).
+ * Per-thread needs no lock: nothing but the owning thread touches it, and a
+ * REAL cycle — which is always re-entrancy on one stack — is still caught. */
 int eigs_loading_active(const char *abs_path) {
     if (!abs_path || !eigs_current) return 0;
-    EigsState *st = eigs_current->state;
-    for (size_t i = 0; i < st->loading_count; i++)
-        if (strcmp(st->loading_stack[i], abs_path) == 0) return 1;
+    EigsThread *th = eigs_current;
+    for (size_t i = 0; i < th->loading_count; i++)
+        if (strcmp(th->loading_stack[i], abs_path) == 0) return 1;
     return 0;
 }
 
 void eigs_loading_enter(const char *abs_path) {
     if (!abs_path || !eigs_current) return;
-    EigsState *st = eigs_current->state;
-    if (st->loading_count == st->loading_cap) {
-        size_t newcap = st->loading_cap ? st->loading_cap * 2 : 8;
-        st->loading_stack = xrealloc_array(st->loading_stack, newcap,
+    EigsThread *th = eigs_current;
+    if (th->loading_count == th->loading_cap) {
+        size_t newcap = th->loading_cap ? th->loading_cap * 2 : 8;
+        th->loading_stack = xrealloc_array(th->loading_stack, newcap,
                                            sizeof(char *));
-        st->loading_cap = newcap;
+        th->loading_cap = newcap;
     }
-    st->loading_stack[st->loading_count++] = strdup(abs_path);
+    th->loading_stack[th->loading_count++] = strdup(abs_path);
 }
 
 void eigs_loading_leave(const char *abs_path) {
     if (!abs_path || !eigs_current) return;
-    EigsState *st = eigs_current->state;
+    EigsThread *th = eigs_current;
     /* LIFO in practice; scan from the top and remove the match so an
      * unexpected out-of-order leave can't strand the wrong entry. */
-    for (size_t i = st->loading_count; i-- > 0; ) {
-        if (strcmp(st->loading_stack[i], abs_path) == 0) {
-            free(st->loading_stack[i]);
-            memmove(&st->loading_stack[i], &st->loading_stack[i + 1],
-                    (st->loading_count - i - 1) * sizeof(char *));
-            st->loading_count--;
+    for (size_t i = th->loading_count; i-- > 0; ) {
+        if (strcmp(th->loading_stack[i], abs_path) == 0) {
+            free(th->loading_stack[i]);
+            memmove(&th->loading_stack[i], &th->loading_stack[i + 1],
+                    (th->loading_count - i - 1) * sizeof(char *));
+            th->loading_count--;
             return;
         }
     }
@@ -4271,8 +4476,30 @@ void gc_collect_at_exit(Env *global) {
     free(seeds);
 }
 
+/* #1144: `env->count` of a SHARED module env, read under the #607 lock.
+ * vm_execute's slot-promotion guard read it bare while the main thread was
+ * appending a binding under g_module_env_lock (env_set_local_hashed) — a
+ * TSan-reported data race on a plain int, and the decision it feeds
+ * (reserve slots or not) is a structural one. Single-threaded and for every
+ * non-root env this is the same plain load it always was. */
+int env_count_shared(Env *env) {
+    if (!env) return 0;
+    env_shared_lock(env);
+    int n = env->count;
+    env_shared_unlock(env);
+    return n;
+}
+
 void env_reserve_slots(Env *env, int total) {
-    if (!env || total <= env->count) return;
+    if (!env) return;
+    /* #1144: a module-level chunk entering vm_execute reserves slots on the
+     * SHARED root env, which under MT is exactly the #607 hazard — a bare
+     * xrealloc here frees names/values/assign_counts while a worker's chain
+     * walk is reading them. Take the same lock and use the same
+     * retire-and-publish grow as env_set_local_hashed. The lock is a no-op
+     * unless the env is a sealed root AND the state is multithreaded. */
+    env_shared_lock(env);
+    if (total <= env->count) { env_shared_unlock(env); return; }
     /* Grow capacity if needed. Mirrors env_set_local_hashed's grow path
      * for heap_allocated envs. Call-time envs are always heap-allocated
      * (env_new sets heap_allocated=1). Reserve ENV_LOOP_BIND_HEADROOM extra
@@ -4284,7 +4511,9 @@ void env_reserve_slots(Env *env, int total) {
         while (new_cap < want_cap) new_cap *= 2;
         size_t nsz = new_cap * sizeof(char *);
         size_t vsz = new_cap * sizeof(EigsSlot);
-        if (env->heap_allocated) {
+        if (env->heap_allocated && env_mt_shared(env)) {
+            env_grow_retire(env, new_cap);   /* #607: publish + retire */
+        } else if (env->heap_allocated) {
             env->names  = xrealloc(env->names,  nsz);
             env->values = xrealloc(env->values, vsz);
             env->assign_counts = xrealloc(env->assign_counts, new_cap * sizeof(int));
@@ -4307,6 +4536,7 @@ void env_reserve_slots(Env *env, int total) {
         if (env->assign_counts) env->assign_counts[i] = 0;
     }
     env->count = total;
+    env_shared_unlock(env);
 }
 
 void env_clear(Env *env) {

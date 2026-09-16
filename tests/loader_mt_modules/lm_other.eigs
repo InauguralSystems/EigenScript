@@ -1,0 +1,4 @@
+# #1144 fixture: loaded by main while the workers load lm_shared.eigs.
+define lm_other_fn(x) as:
+    return x + 1
+lm_other_val is 41

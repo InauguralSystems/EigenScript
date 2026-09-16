@@ -1,0 +1,3 @@
+# #1144 control: a REAL circular dependency. a loads b loads a.
+load_file of "lm_cyc_b.eigs"
+lm_cyc_a_val is 1

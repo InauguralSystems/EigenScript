@@ -206,6 +206,76 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`load_file` / `import` work from a spawned worker (#1144).** `import` is an
+  ordinary statement, so it is legal inside a `define` body and therefore
+  inside a worker — but the loader had no thread story and four of its
+  structures were shared and unguarded. On the release binary two workers
+  loading the same module exited 1 with `load_file: circular dependency —
+  '...' is already being loaded` **with no cycle present** (and SIGSEGV on
+  some runs); under ThreadSanitizer the same program reported 17-24 warnings.
+  Four fixes, one per structure: the `#496` in-flight load stack moved from
+  the state to the **thread** (a cycle is re-entrancy on one C stack, so the
+  thread is the exact scope, and a real cycle is still reported — on the main
+  thread and inside a worker); the module cache took a per-state mutex; the
+  process-global module-namespace table became an immutable-shape snapshot
+  published through one atomic pointer, with tombstoned removals and retired
+  (not freed) replaced tables, so the `M.field` **read path takes no lock in
+  either mode**; and `vm_execute`'s slot-promotion guard reads the shared
+  module env's `count` — and grows it — under the existing `#607` lock.
+  A fifth fix is the `#1141` rule applied to the loader's write path:
+  `env_set_local_pre_interned_slot` stored the name the WRITING thread had
+  interned straight into the shared root env, so after that worker detached
+  the next lookup `strcmp`'d freed bytes (ASan: heap-use-after-free in
+  `strcmp` <- `env_hash_find`, freed in `env_intern_table_unref`) and the
+  release binary intermittently answered `undefined variable` for a function
+  it had just defined. Contract and residuals: docs/CONCURRENCY.md, "Loading
+  from workers" (the same-binding write race stays out of scope as #1171). Gated by `tests/test_loader_mt.sh` (15 live + 6 selftest
+  checks, suite [42j]), the loader rows in `tests/test_tsan.sh`, and
+  `tools/loader_mt_mutants.sh`.
+
+- **Concurrent `import` of the same module yields ONE module, not two
+  (#1144).** A consequence of making the loader thread-safe at all, and found
+  by executing the new contract: two threads could both get past the module
+  cache probe and both build a private dict and env, and the one that lost the
+  race to store it dropped the store and pushed **its own** instance anyway.
+  That is a silent split brain — `M.x is v` through the loser's handle landed
+  in an instance nothing else could reach, and a reader that lost the race
+  never observed the writer's state. Measured on the fixed-loader branch
+  before this change, two workers importing one slow module (writer sets 41,
+  reader reads after a spin): `writer=41 reader=7 main=41`,
+  `writer=41 reader=7 main=7`, ... the reader **never** saw 41 in six runs,
+  and `main` read the stale value in two of them. On v0.43.0 the same program
+  had failed loudly instead (a false "circular dependency"), so the loader fix
+  had converted a loud failure into a quiet one. `eigs_module_cache_put` now
+  reports whether it stored the entry and the loser adopts the winner's
+  instance. What is **not** deduplicated is the module's top-level BODY: both
+  threads are already executing it when the race is decided, so module-scope
+  side effects can repeat (a module-level `print` printed twice in 2 of 3
+  runs) — only the bindings are single. Both facts are stated, with a
+  byte-checked example, in docs/CONCURRENCY.md. Gated by the
+  `loader_mt_same_import` suite row (release AND ThreadSanitizer) and the
+  `lost-put-pushes-private` mutant.
+
+- **The observer arming sets are safe under concurrency (#1145).** Both
+  compile-time arming tiers — the history tier (`prev of x`) and the
+  occurrence tier (`<kw> is x when <n>`) — are process-global arrays that grew
+  by `realloc` with nothing guarding them. Two shapes broke them and they need
+  different predicates, so the guard is now one leaf mutex taken
+  **unconditionally**: (a) one state with `spawn`, where a worker compiling
+  `what is q when 1` reallocs `g_occ_names` while other workers' assignments
+  walk it — `spawn` widens only the history tier (#827) and the occurrence
+  tier deliberately has no wildcard (#868); and (b) **two embed states with no
+  `spawn`**, where `multithreaded` is a per-state flag that is 0 on both
+  threads, which is how `src/ext_http.c` runs (a fresh state per connection)
+  — 25 ThreadSanitizer reports including a heap-use-after-free in
+  `arm_set_has`. The occurrence tier's lazily-memoised window
+  (`trace_occ_window`) is now published atomically for the same reason. Cost
+  is nil on any hot path: an assignment consults an arming set once per name
+  per arming generation, not once per assignment. Gated by
+  `tests/test_arming_mt.sh` (9 live + 5 selftest checks, suite [42k]),
+  `tests/test_arming_two_states.c` under both the release/ASan lane and
+  ThreadSanitizer, and `tools/arming_mt_mutants.sh`.
+
 - **A dict key written by a worker outlives the worker (#1141).** Key strings
   are interned, and `dict_set_hashed_raw` interned them into the WRITING
   THREAD's table — which `eigs_thread_detach` frees. A dict shared by

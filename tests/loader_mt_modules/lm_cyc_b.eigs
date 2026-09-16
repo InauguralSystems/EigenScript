@@ -1,0 +1,2 @@
+load_file of "lm_cyc_a.eigs"
+lm_cyc_b_val is 2

@@ -1,0 +1,17 @@
+# #1144, the #1141 lifetime half, made DETERMINISTIC (no scheduler window).
+# A worker `load_file`s a module only IT loads, so it certainly creates the
+# binding; `thread_join` then guarantees that worker has exited and
+# eigs_thread_detach has freed its intern table. The name stored in the
+# SHARED root env came from that table, so a read after the join is a
+# use-after-free unless the name was re-homed into the process-global table
+# at insertion. Pre-fix witness: intermittent "undefined variable" and, under
+# ASan, heap-use-after-free READ in strcmp <- env_hash_find <-
+# env_set_local_pre_interned_slot, freed in env_intern_table_unref.
+define lm_quick(n) as:
+    load_file of "loader_mt_modules/lm_quick.eigs"
+    return 1
+h is spawn of [lm_quick, 1]
+q is thread_join of h
+print of f"QUICK {q}"
+print of f"OUTLIVE {lm_quick_fn of 20}"
+print of f"OUTLIVEV {lm_quick_val}"

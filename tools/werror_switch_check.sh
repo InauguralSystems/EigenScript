@@ -141,7 +141,7 @@ MIN_LINES=100
 # coverage-clean/fuzz-run (no compiles).
 TARGETS="build full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison \
          lsp dap jit-smoke lib embed-smoke embed-smoke-gfx embed-concurrent pgo coverage \
-         fuzz fuzz-libfuzzer freestanding-libc-diff sandbox-intern-test errline-test nativefn-test embed-roads embed-observer-test"
+         fuzz fuzz-libfuzzer freestanding-libc-diff sandbox-intern-test errline-test nativefn-test embed-roads embed-observer-test arming-mt-test"
 
 # GNU make emits a shared prerequisite only once when several goals are in
 # one invocation. `embed-smoke-gfx` depends on `gfx`, so keeping that goal in
@@ -157,6 +157,7 @@ TARGET_BATCHES=(
     "nativefn-test"
     "embed-roads"
     "embed-observer-test"
+    "arming-mt-test"
 )
 
 # TARGET_BATCHES must cover TARGETS exactly.  Keep the hand-written batches
@@ -264,7 +265,7 @@ SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage
 # interpreter (deliberately not via `make`, which would re-point
 # src/eigenscript under the suite) plus two leak controls, so four real
 # compile invocations that no make target covers.
-SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh"
+SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
 # compile line is not a compile.
@@ -321,6 +322,7 @@ lib 1
 embed-smoke 1
 embed-roads 25
 embed-observer-test 25
+arming-mt-test 25
 embed-concurrent 1
 embed-smoke-gfx 27
 pgo 2
@@ -341,6 +343,7 @@ script:tests/test_leak_guard.sh 2
 script:tests/test_asan_gfx.sh 4
 script:tests/test_tsan.sh 1
 script:tools/trace_mt_mutants.sh 2
+script:tools/arming_mt_mutants.sh 1
 script:tests/run_all_tests.sh 1
 '
 

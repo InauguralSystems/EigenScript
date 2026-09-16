@@ -90,6 +90,148 @@ allocator-managed structure it can corrupt the heap rather than merely
 returning a stale number (#1152). Communicate results; do not share mutable
 state between live threads.
 
+## Loading from workers (#1144)
+
+`import` and `load_file` are ordinary statements, so they are legal inside a
+`define` body and therefore inside a spawned worker. **They now work there**,
+and this is the contract.
+
+**What the runtime guarantees.** The loader's own machinery is safe under
+concurrency:
+
+- The **in-flight load stack** (the `#496` circular-dependency guard) is
+  **per thread**. A cycle is re-entrancy on one C stack, so the thread is
+  exactly the right scope: two workers loading the *same* module no longer
+  accuse each other of a circular dependency, while a real cycle — `a` loads
+  `b` loads `a`, on the main thread or inside a worker — is still reported as
+  a catchable error. (Before, the stack was per *state*: the release binary
+  exited 1 with `load_file: circular dependency — '...' is already being
+  loaded` when no cycle existed, and the concurrent `realloc`/`memmove` was a
+  use-after-free.)
+- The **module cache** is guarded by a per-state mutex, so two workers
+  importing at once cannot realloc it under each other, and **exactly one
+  instance of a module survives**. Two threads importing the same path can
+  both get past the cache probe and both build a private dict and env; the one
+  that loses the race to store it then **drops its own instance and adopts the
+  winner's**, so every importer — the loser included — reads and writes the
+  same module. A write the loser makes *after* its `import` lands in the
+  shared instance:
+
+```eigenscript
+define writer(n) as:
+    import set
+    set.shared_marker is 41
+    return set.shared_marker
+define reader(n) as:
+    import set
+    local k is 0
+    loop while k < 200000:
+        k is k + 1
+    return set.shared_marker
+h1 is spawn of [writer, 1]
+h2 is spawn of [reader, 2]
+a is thread_join of h1
+b is thread_join of h2
+import set
+print of f"writer={a} reader={b} main={set.shared_marker}"
+```
+```output
+writer=41 reader=41 main=41
+```
+
+  This example is checked byte-for-byte by the doc-examples gate; the suite
+  row that *forces* the race (a module slow enough that both workers are
+  inside the same import at once) is `loader_mt_same_import` in
+  `tests/test_loader_mt.sh`. Before that fix the reader never saw the
+  writer's value — six runs printed `writer=41 reader=7` with `main` split
+  between 7 and 41 — because the loser kept its private instance.
+
+  **What is NOT deduplicated is the module's top-level BODY.** Both threads
+  are already executing it when the race is decided, so a module's top level
+  can run more than once and its side effects repeat — a `print` at module
+  scope printed twice in 2 of 3 runs of a two-worker import. Only the
+  resulting bindings are single. Put side effects in a function the importer
+  calls, not at module top level, if a worker may import concurrently.
+- The **module-namespace table** — the process-global side table behind every
+  `M.field` read — is published as an immutable-shape snapshot through one
+  atomic pointer, entries are made visible with a release store, removals are
+  tombstones rather than a rehash, and a replaced table is retired rather than
+  freed while the process is multithreaded. The **read path takes no lock in
+  either mode**; only attach/detach serialize. A module another thread is
+  attaching *right now* may not be visible for that instant, in which case the
+  read falls back to the namespace dict's own entry — the same answer an
+  un-projected read gives.
+- A **binding name** created by a worker's module-level code is re-homed into
+  the process-global intern table at insertion, so it stays valid for the life
+  of the env rather than dying with the worker's thread (the #1141 rule,
+  applied to the loader's write path).
+
+**What is still yours to avoid.** Loading publishes bindings into a *shared*
+scope: `load_file` runs in the loader's scope, and at worker top level that is
+the process-wide module env. So **two threads loading the same module are two
+threads writing the same bindings**, which is the ordinary shared-mutable-state
+race this document opens with — the runtime keeps its own tables consistent,
+but the binding's *value*, its refcount and its observer slot are yours. Under
+ThreadSanitizer that shape reports on the slot value, not on the loader.
+The safe patterns:
+
+- load or import once on the main thread **before** `spawn`, then read from
+  the workers; or
+- give each worker a **distinct** module to load.
+
+A `spawn`ed worker that imports stdlib modules its siblings do not import is
+fine, and is gated (`tests/test_loader_mt.sh`, plus the loader rows in
+`tests/test_tsan.sh`).
+
+**Two threads writing one binding is a separate, tracked defect, not just a
+style rule.** Because a shared-root slot is read by BORROWING the value and
+taking the reference afterwards, a concurrent overwrite can free what the
+other thread is still running: two workers that `load_file` a module whose
+`define` rebinds one global report ~20 ThreadSanitizer races per run and dump
+core roughly 1 run in 5. That is the class the `#607` comment in
+`src/eigenscript.c` declares out of scope ("two threads racing on the SAME
+slot's value or assign-count"); it predates the loader work and is filed on
+its own as #1171 with a repro and a fix direction (a counted reference taken inside the
+hold). Until it is closed, treat the two patterns above as a requirement
+rather than advice.
+
+**One shared slot the patterns above do NOT avoid: `__loop_iterations__`.**
+The runtime publishes a loop's iteration count as an ordinary binding in the
+loop's env (`loop_iter_store`, `src/vm.c`). For a MODULE-LEVEL loop that env
+is the shared root env — so main's module-level loop and a worker's
+module-level loop inside `load_file` write the same slot even when the two
+threads load completely different modules. Today the consequence is a lost
+update on a runtime-internal counter (the slot holds an immediate number, so
+nothing is freed twice and no value your program reads is corrupted); a
+`report`/`when is` on that name can under-count. It is tracked with the same
+issue.
+
+## Observer arming sets are process-global and locked (#1145)
+
+The observer's two compile-time **arming sets** — the per-name history tier
+(`prev of x`, `<kw> is x at L`) and the per-name occurrence tier
+(`<kw> is x when <n>`) — record compile-time facts about the whole process, so
+they are process-global. Every read and every write of them is taken under one
+leaf mutex, **unconditionally**.
+
+Unconditionally, because the two shapes that break them need different
+predicates and one of them has no flag to read at all:
+
+- **One state, `spawn`.** A worker compiling `what is q when 1` (through
+  `eval`, `load_file` or `import`) grows the occurrence set while other
+  workers' assignments walk it. `spawn` widens only the *history* tier to a
+  wildcard (#827); the occurrence tier deliberately has none (#868 — a
+  wildcard there would put a bounded ring on every name), so no spawn-time
+  escape can cover it.
+- **Two embed states, no `spawn`.** `multithreaded` is a *per-state* flag, so
+  it is 0 on both threads and nothing widens anything. This is the shape
+  `src/ext_http.c` runs (a fresh `EigsState` per connection, on its own
+  thread), and the shape `tests/test_arming_two_states.c` gates.
+
+Both shapes are covered. The cost is nil on any hot path: an assignment
+consults an arming set once per name per *arming generation*, not once per
+assignment, and the writers run at compile time.
+
 ## Cooperative tasks are per-thread
 
 `task_spawn`/`task_yield` (#408) are a *different* model from `spawn`:

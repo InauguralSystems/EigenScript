@@ -1,0 +1,5 @@
+QUICK 1
+Error line 16: undefined variable 'lm_quick_fn'
+    16 | print of f"OUTLIVE {lm_quick_fn of 20}"
+       |                     ^
+  at <module> (line 16)

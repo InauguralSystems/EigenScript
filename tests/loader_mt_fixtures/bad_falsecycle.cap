@@ -1,0 +1,8 @@
+Error line 16: load_file: circular dependency — 'loader_mt_modules/lm_spin.eigs' is already being loaded
+    16 |         load_file of "loader_mt_modules/lm_spin.eigs"
+       |                   ^
+  at lm_worker (line 16)
+LOADS 120
+MAIN 820
+W1 null
+W2 40

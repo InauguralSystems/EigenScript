@@ -2943,8 +2943,14 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
     /* Module-level slot promotion (Part B) AND nested entries from builtins
      * (e.g. call_eigs_fn, eval): if the chunk allocated slots past env->count
      * at compile time, reserve them now so OP_SET_LOCAL has a place to write.
-     * Slot indices in bytecode are absolute env positions. */
-    if (chunk->local_count > env->count) {
+     * Slot indices in bytecode are absolute env positions.
+     * #1144: `env->count` here is a SHARED module env under MT — a worker's
+     * load_file/import enters vm_execute while the main thread appends a
+     * binding under g_module_env_lock. Read it through the same lock
+     * (env_count_shared is a plain load for every non-root env and every
+     * single-threaded state); env_reserve_slots re-checks under its own
+     * hold, so this guard is purely the fast path. */
+    if (chunk->local_count > env_count_shared(env)) {
         env_reserve_slots(env, chunk->local_count);
     }
     frame = &g_vm.frames[g_vm.frame_count++];
@@ -6103,7 +6109,37 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * `M.x` reads the module's current binding and `M.x is v` writes
          * it. attach takes an owning ref on mod_env. */
         eigs_module_ns_attach(mod_dict, mod_env);
-        eigs_module_cache_put(abs_path, mod_dict, mod_env);
+        if (!eigs_module_cache_put(abs_path, mod_dict, mod_env)) {
+            /* #1144: another thread finished the same import first. Adopt ITS
+             * instance instead of pushing this thread's private one.
+             *
+             * Dropping the store and pushing the private dict anyway is a
+             * SILENT SPLIT BRAIN: `M.x is v` through the loser's handle lands
+             * in an instance nothing else can reach, and a reader that lost
+             * the race never observes the winner's state. Executed on this
+             * branch before the fix (two workers importing one slow module,
+             * writer sets 41, reader reads after a 300k-iteration spin):
+             *   writer=41 reader=7 main=41 | writer=41 reader=7 main=7 | ...
+             * the reader NEVER saw 41 in six runs. On a6333bb the same
+             * program died loudly ("import: circular dependency"), so the
+             * loader fix had converted a loud failure into a quiet one.
+             *
+             * The cache never removes an entry (only eigs_module_cache_clear
+             * at exit does), so the get below cannot miss; the `if` is
+             * defensive and falls through to the old behaviour rather than
+             * pushing nothing. */
+            Value *winner = NULL;
+            eigs_module_cache_get(abs_path, &winner);   /* owned ref */
+            if (winner) {
+                /* Drops the creator ref on the private dict, which detaches
+                 * its namespace edge and releases the env ref attach took;
+                 * the env_decref below is this frame's own creator ref. */
+                val_decref(mod_dict);
+                env_decref(mod_env);
+                vm_push(winner);
+                DISPATCH();
+            }
+        }
         env_decref(mod_env);
         vm_push(mod_dict);
         DISPATCH();

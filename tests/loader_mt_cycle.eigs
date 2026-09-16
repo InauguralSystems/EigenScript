@@ -1,0 +1,25 @@
+# #1144 CONTROL (mechanical-gates §23/§84): the per-thread loading stack must
+# still catch a REAL cycle — on the main thread AND inside a worker — and
+# repeated SEQUENTIAL loads of one path must stay legal (they are not a
+# cycle). Without this row "no false circular dependency" is satisfied by
+# deleting the guard.
+define lm_cycle_worker(n) as:
+    try:
+        load_file of "loader_mt_modules/lm_cyc_a.eigs"
+        return "none"
+    catch e:
+        return "caught"
+mainr is "none"
+try:
+    load_file of "loader_mt_modules/lm_cyc_a.eigs"
+catch e:
+    mainr is "caught"
+h is spawn of [lm_cycle_worker, 1]
+wr is thread_join of h
+si is 0
+loop while si < 5:
+    load_file of "loader_mt_modules/lm_shared.eigs"
+    si is si + 1
+print of f"CYCLE_MAIN {mainr}"
+print of f"CYCLE_WORKER {wr}"
+print of f"SEQ {lm_shared_fn of 5}"

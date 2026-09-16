@@ -1,0 +1,28 @@
+# #1145 control: the HISTORY tier under the same shape. #827's spawn-time
+# wildcard (trace_arm_history_all_mt) already covers this one, so it must
+# stay clean BOTH before and after the #1145 lock — the row that says the
+# occurrence result is not an accident of the whole file being quiet.
+hv is 0
+define am_hcompiler(n) as:
+    local k is 0
+    loop while k < 300:
+        local src is f"p{k} is 1\np{k} is 2\nw{k} is prev of p{k}\n"
+        try:
+            eval of src
+        catch e:
+            local dummy is 0
+        k is k + 1
+    return k
+define am_hassigner(n) as:
+    local i is 0
+    loop while i < 200000:
+        hv is hv + 1
+        i is i + 1
+    return i
+h1 is spawn of [am_hcompiler, 1]
+h2 is spawn of [am_hassigner, 2]
+c is thread_join of h1
+a is thread_join of h2
+print of f"HCOMPILED {c}"
+print of f"HASSIGNED {a}"
+print of f"HV {hv}"
