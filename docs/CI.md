@@ -130,6 +130,10 @@ tools/section_plan.sh --selftest                   # the planted-fault train
 EIGS_SUITE_SECTIONS=zlib bash tests/run_all_tests.sh   # run that plan
 ```
 
+`--selftest` takes about **7.5 minutes** on the dev box — six of its rows
+re-derive the 429-chunk table at ~15 s each — so it is a "before you push"
+check, not an inner-loop one. It runs on every CI run in `gate self-tests`.
+
 Every plan run prints one line, and the runner CHECKS it: after the plan runs,
 the dispatcher counts the `[...]` section headers the run actually printed and
 fails if that differs from the number the plan promised. `sections=` counts the
@@ -167,9 +171,13 @@ N=2 clears 15 by 1.3 min, which is inside runner noise; N=3 clears it by 3.7;
 past N=3 the *build* dominates and a fourth shard buys 1.1 min for another 4.7
 build-minutes. **N = 3.**
 
-**MEASURED, on run 35020270020 (head c4c23ae): 13.4 min wall, 30 checks green
-— 35 → 21.1 → 13.4.** The shards ran 12.6 / 9.9 / 8.0 min end to end. The bar
-is met; what follows is what the numbers then said about the *split*.
+**MEASURED: 13.4 min wall on run 35020270020 (head c4c23ae), then 15.0 min on
+run 35036548663 (head 418d62d) — 35 → 21.1 → 13.4 → 15.0.** The regression was
+not the split: the runner-measured weights worked, and the three suite steps
+came in at 290 / 285 / 278 s against a predicted 319 / 272 / 272. It was the
+job-level LSP step, hard-wired to shard 1, jumping from 1.5 s to 267 s (see
+below). With both extras' owners derived, the predicted lane is **~11.5–12.5
+min**, with the critical path moving off shard 1.
 
 The floor is now one section, not the arithmetic: `[137]` (the ext_gfx
 ASan/LSan corpus) costs **319 s of the 862 s** the whole sharded suite takes on
@@ -193,9 +201,29 @@ requires every matrix leg green, re-runs `--shards 3 --check`, requires one
 **sums the LeakSanitizer tallies and requires 0**. Splitting the job must not
 split the gate.
 
-Shard 1 additionally owns the two ASan checks that are not suite sections —
-`gc_traversal_check.py --variant asan` and the LSP behaviour test — because
-"it runs somewhere" is how a check goes missing when a job is split.
+### The two ASan checks that are not suite sections
+
+`gc_traversal_check.py --variant asan` and the LSP behaviour test are job-level
+steps, not sections, so somebody has to own them — and "it runs somewhere" is
+how a check goes missing when a job is split. They were pinned to shard 1,
+which is **by construction the heaviest shard**, so they landed on the critical
+path every time: on run 35036548663 shard 1 was 14.1 min of a 15.0 min lane.
+
+Both owners are **derived** now, and printed by the step that asks:
+
+- the collector check (5 s) goes to the **lightest** shard by predicted weight
+  (`tools/section_plan.sh --shard-owner 3`);
+- the LSP behaviour test goes to **whichever shard runs section [88]**
+  (`--shard-owner 3 --section '[88]'`), and that is not a preference. [88]
+  builds `eigenlsp` under ASan through `tests/aux_binary.sh`, so on that shard
+  the step is a no-op rebuild. Measured: **1.5 s** on run 35020270020, where
+  shard 1 happened to carry [88] — and **267 s** on run 35036548663, where the
+  CI-measured weights had moved [88] to shard 3 and shard 1 had to build
+  `eigenlsp` from scratch. Same step, same code, 180× apart.
+
+Each shard's receipt records which extras it claimed, and the aggregator
+requires **exactly one** claimant for each. A derived owner that nobody turns
+out to be is the one failure hard-wiring could not have, so it is gated.
 
 ### The weights table
 
@@ -224,8 +252,15 @@ gh api repos/InauguralSystems/EigenScript/actions/runs/$run/jobs \
   | while read -r id; do
       gh api repos/InauguralSystems/EigenScript/actions/jobs/$id/logs
     done > /tmp/asan-shards.log
-tools/section_plan.sh --print-weights /tmp/asan-shards.log > tests/section_weights.txt
+tools/section_plan.sh --print-weights /tmp/asan-shards.log \
+    --run "$run" --head c4c23ae > tests/section_weights.txt
 ```
+
+`--run` and `--head` are what put the provenance INTO the file, so the command
+above reproduces the committed `tests/section_weights.txt` **byte-for-byte** —
+`diff` it, that is the check. Without them the header says so, loudly
+("PROVENANCE NOT STATED"): a table whose origin the regeneration step erases is
+a table nobody can check.
 
 `--print-weights` accepts the raw job log — it tolerates the ISO timestamp
 prefix GitHub puts on every line, so there is no hand-stripping step to get

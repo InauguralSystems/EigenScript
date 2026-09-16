@@ -1,17 +1,18 @@
 # tests/section_weights.txt — per-section wall seconds, summed per label.
 #
-# MEASURED ON THE CI RUNNER, not on the dev box: run 35020270020, head
-# c4c23ae, the three `asan + ubsan / core and LSP (shard k/3)` job logs of
-# PR #1164, concatenated and fed to `--print-weights`. 242 rows.
+# MEASURED ON THE CI RUNNER, not on the dev box: run 35020270020,
+# head c4c23ae, the `asan + ubsan / core and LSP (shard k/N)`
+# job logs, concatenated and fed to `--print-weights`.
+# 242 SECTION_TIME lines, 242 distinct sections.
 #
-# The dev-box table this replaces did NOT transfer: per-section ratios reach
-# 35x in BOTH directions ([0a] 0.75 s dev -> 26.12 CI; [126] 0.97 -> 28.61;
-# [88] 1.56 -> 30.24; but [124] 94.87 -> 13.30 and [99o] 21.79 -> 2.41), and
-# the shards that were predicted 590/590/590 s actually took 411/249/196.
-# A dev-box measurement is a BOOTSTRAP for the first split, never the table.
+# A dev-box measurement is a BOOTSTRAP for the first split, never the table:
+# per-section ratios between the dev box and the runner reach 35x in BOTH
+# directions ([0a] 0.75 s dev -> 26.12 CI, but [124] 94.87 -> 13.30), and the
+# shards a dev-box table predicted at 590/590/590 s actually took 411/249/196.
 #
-# Refresh from a CI log — see docs/CI.md for the gh api recipe:
-#   tools/section_plan.sh --print-weights <ci-shard-logs> > tests/section_weights.txt
+# Refresh — see docs/CI.md for the gh api recipe:
+#   tools/section_plan.sh --print-weights <ci-shard-logs> \
+#       --run 35020270020 --head c4c23ae > tests/section_weights.txt
 [0] 0.04
 [0a] 26.12
 [0b] 0.21

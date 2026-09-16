@@ -114,8 +114,15 @@ All notable changes to EigenScript are documented here.
     aggregator `asan + ubsan (full suite)` — unchanged name, still the only
     ruleset-required check — requires every leg green, re-runs that check,
     requires one receipt per shard carrying its plan line, and SUMS the
-    LeakSanitizer tallies to 0. Shard 1 owns the collector-traversal check and
-    the LSP behaviour test.
+    LeakSanitizer tallies to 0. The two job-level ASan checks that are not
+    sections have DERIVED owners: the collector-traversal check goes to the
+    lightest shard, and the LSP behaviour test to whichever shard runs section
+    [88] — that shard has already built `eigenlsp` under ASan, which is the
+    difference between 1.5 s and 267 s for the same step. Each receipt records
+    which extras its shard claimed and the aggregator requires exactly one
+    claimant for each. The runner also refuses a malformed `EIGS_SUITE_SHARD`:
+    a bare `1` used to parse as k=1,n=1, so a job still named "shard 1/3" ran
+    the whole suite while every check stayed green.
   - `macos-15-intel` (35 min, the job that set the PR wall clock) and a
     full-corpus valgrind run move to `.github/workflows/nightly.yml`, which
     opens — or reopens and appends to — one tracking issue on failure.

@@ -951,10 +951,26 @@ jobs:
             f="shard-receipts/shard-$k.txt"
             [ -f "$f" ] || { echo "::error::no receipt from shard $k"; exit 1; }
             cat "$f"
-            grep -q "PLAN: shard=$k/$n " "$f" || { echo "::error::shard $k did not report its plan line"; exit 1; }
+            # Two checks, not one, because they are different faults and the
+            # combined message named the wrong one: a receipt carrying
+            # `shard=2/2` (what a shard prints when EIGS_SUITE_SHARD lost its
+            # /N) was rejected as "did not report its plan line", which sends
+            # the reader looking for a missing line instead of a wrong N.
+            plan=$(grep -o 'PLAN: shard=[0-9]*/[0-9]*' "$f" | head -1 || true)
+            [ -n "$plan" ] || { echo "::error::shard $k reported no plan line at all"; exit 1; }
+            [ "$plan" = "PLAN: shard=$k/$n" ] || { echo "::error::shard $k reported '$plan', expected 'PLAN: shard=$k/$n' — the shard ran a different split than this lane declares (ASAN_SHARDS=$n)"; exit 1; }
             leaked=$(sed -n 's/^leaked=\([0-9][0-9]*\)$/\1/p' "$f")
             [ -n "$leaked" ] || { echo "::error::shard $k did not report a leak tally"; exit 1; }
             total=$((total + leaked))
+          done
+          # Exactly one shard must have claimed each extra.
+          for extra in gc_traversal lsp_asan; do
+            # `grep -c` over MULTIPLE files prints one count per file, not a
+            # total — the first version of this line compared "shard-1.txt:0"
+            # against 1 and failed every run for the wrong reason.
+            claims=$(cat shard-receipts/shard-*.txt | grep -c "^$extra=yes\$" || true)
+            [ "$claims" = "1" ] || { echo "::error::$extra was claimed by $claims shard(s), expected exactly 1 — a derived owner nobody turned out to be means the check ran nowhere"; exit 1; }
+            echo "$extra: claimed by exactly one shard"
           done
           echo "summed LeakSanitizer tally across $n shards: $total"
           [ "$total" -eq 0 ] || { echo "::error::leak tally is $total, expected 0 (CLAUDE.md: a jump in the tally means a new leak)"; exit 1; }
@@ -1017,12 +1033,25 @@ jobs:
         name: Build with AddressSanitizer + UBSan
         run: make asan
 
-      # Shard 1 owns the once-per-lane ASan checks that are not suite sections.
-      # Naming the owner is the point: "it runs somewhere" is how a check goes
-      # missing when a job is split.
-      - if: needs.scope.outputs.code == 'true' && matrix.shard == 1
-        name: Collector traversal ownership and reach (shard 1 owns it)
-        run: python3 tools/gc_traversal_check.py --variant asan
+      # THE OWNER OF EACH JOB-LEVEL EXTRA IS DERIVED, NOT HARD-WIRED (#1160
+      # round 6). Round 4 pinned both of these to shard 1 — which is by
+      # construction the HEAVIEST shard, so the extras always landed on the
+      # critical path. Measured on run 35036548663: shard 1 was 14.1 min of a
+      # 15.0 min lane, 4.5 of it the LSP step.
+      #
+      # The collector check is 5 s, so it goes to the LIGHTEST shard.
+      - if: needs.scope.outputs.code == 'true'
+        name: Collector traversal ownership and reach (lightest shard owns it)
+        run: |
+          set -euo pipefail
+          owner=$(bash tools/section_plan.sh --shard-owner ${{ env.ASAN_SHARDS }} --quiet)
+          echo "collector traversal check: shard $owner owns it (lightest by predicted weight)"
+          if [ "$owner" != "${{ matrix.shard }}" ]; then
+            echo "gc_traversal=no" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "gc_traversal=yes" >> "$GITHUB_ENV"
+          python3 tools/gc_traversal_check.py --variant asan
 
       - if: needs.scope.outputs.code == 'true'
         name: Run shard ${{ matrix.shard }}/3 of the suite under sanitizers
@@ -1040,6 +1069,30 @@ jobs:
           set -o pipefail
           cd tests && bash run_all_tests.sh 2>&1 | tee "$GITHUB_WORKSPACE/shard.log"
 
+      # The LSP behaviour test goes to whichever shard runs section [88], and
+      # that is not a preference — it is the difference between 1.5 s and 267 s.
+      # [88] builds eigenlsp under ASan through tests/aux_binary.sh, so the
+      # shard that ran it has already paid for the build and this step is a
+      # no-op rebuild. On run 35020270020 shard 1 happened to carry [88] and
+      # this step took 1.5 s; when the CI-measured weights moved [88] to shard
+      # 3, the same step on shard 1 cost 267 s building eigenlsp from scratch.
+      - if: needs.scope.outputs.code == 'true'
+        name: Behavior-test the LSP under sanitizers (the shard running [88] owns it)
+        # `make asan` builds the interpreter, not eigenlsp — so the LSP would
+        # otherwise never run under a sanitizer in CI. This builds it with
+        # ASan/UBSan and drives the JSON-RPC harness; test_lsp.py fails on any
+        # sanitizer report from the LSP process (leaks, UB).
+        run: |
+          set -euo pipefail
+          owner=$(bash tools/section_plan.sh --shard-owner ${{ env.ASAN_SHARDS }} --section '[88]' --quiet)
+          echo "LSP behaviour test: shard $owner owns it (it runs section [88], which already builds eigenlsp)"
+          if [ "$owner" != "${{ matrix.shard }}" ]; then
+            echo "lsp_asan=no" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "lsp_asan=yes" >> "$GITHUB_ENV"
+          cd tests && bash test_lsp_asan.sh
+
       # The receipt the aggregator checks: the plan line this shard printed and
       # the LeakSanitizer tally it tolerated. Written even on failure, so a red
       # shard still reports what it measured.
@@ -1053,6 +1106,11 @@ jobs:
           grep -o 'PLAN: shard=[^"]*' "$log" | head -1 >> shard-${{ matrix.shard }}.txt || true
           leaked=$(sed -n 's/.*NOTE: \([0-9][0-9]*\) test program(s) exited nonzero on LeakSanitizer.*/\1/p' "$log" | head -1)
           echo "leaked=${leaked:-0}" >> shard-${{ matrix.shard }}.txt
+          # Which job-level extras this shard claimed. The aggregator requires
+          # exactly one claimant for each: a DERIVED owner that nobody turns out
+          # to be is how "it runs somewhere" becomes "it runs nowhere".
+          echo "gc_traversal=${gc_traversal:-no}" >> shard-${{ matrix.shard }}.txt
+          echo "lsp_asan=${lsp_asan:-no}" >> shard-${{ matrix.shard }}.txt
           cat shard-${{ matrix.shard }}.txt
 
       - if: always() && needs.scope.outputs.code == 'true'
@@ -1062,14 +1120,6 @@ jobs:
           name: asan-shard-${{ matrix.shard }}
           path: shard-${{ matrix.shard }}.txt
           if-no-files-found: error
-
-      - if: needs.scope.outputs.code == 'true' && matrix.shard == 1
-        name: Behavior-test the LSP under sanitizers (shard 1 owns it)
-        # `make asan` builds the interpreter, not eigenlsp — so the LSP would
-        # otherwise never run under a sanitizer in CI. This builds it with
-        # ASan/UBSan and drives the JSON-RPC harness; test_lsp.py fails on any
-        # sanitizer report from the LSP process (leaks, UB).
-        run: cd tests && bash test_lsp_asan.sh
 
   sanitizers-http:
     name: asan + ubsan / HTTP and model suite

@@ -217,6 +217,12 @@ die() { echo "section_plan: ERROR: $*" >&2; exit 1; }
 # expand `env` inside `strategy.matrix`: the `ASAN_SHARDS` env, the matrix
 # list, the `EIGS_SUITE_SHARD: …/N` literal and the JOB NAME's `(shard …/N)`.
 # Prints one line and returns 0 only if all four agree.
+# How many `matrix.shard }}/N` homes ci.yml declares: the job name, the step
+# name and the EIGS_SUITE_SHARD env value. Pinned, not a floor — a floor let
+# one of them be deleted (#1160 round 6). Changing this number is a deliberate
+# act and should come with a reason, exactly like CAP_MARKER_FLOOR.
+SHARD_LITERAL_HOMES=3
+
 shard_count_sync() {
     local ci="$1" n_env n_matrix n_lit n_name
     n_env=$(sed -n 's/^  ASAN_SHARDS: \([0-9][0-9]*\)$/\1/p' "$ci" | head -1)
@@ -226,13 +232,24 @@ shard_count_sync() {
     # `matrix.shard }}/<N>` in the file — job name, step name, env value, any
     # future one — must end in /$n_env. A per-spelling list is the thing that
     # missed the job name in the first place.
+    #
+    # ROUND 6: "all of them agree" is not enough on its own, because `>= 2`
+    # let any ONE of the three be DELETED. Deleting the env-value one was the
+    # dangerous case — `EIGS_SUITE_SHARD: ${{ matrix.shard }}` makes a job
+    # still named "shard 1/3" run the WHOLE suite, with this check, the
+    # aggregator and the receipts all still green. So the POPULATION is pinned
+    # the way CAP_MARKER_FLOOR pins its own (a count that may only be changed
+    # deliberately), and the load-bearing spelling — the env value the runner
+    # actually parses — is required by name.
     n_lit=$(grep -coE 'matrix\.shard \}\}/[0-9]+' "$ci")
     n_bad=$(grep -oE 'matrix\.shard \}\}/[0-9]+' "$ci" | grep -vc "/$n_env\$")
-    if [ -n "$n_env" ] && [ "$n_env" = "$n_matrix" ] && [ "$n_lit" -ge 2 ] && [ "$n_bad" -eq 0 ]; then
-        echo "the ASan shard count agrees everywhere in ci.yml (ASAN_SHARDS=$n_env, matrix legs=$n_matrix, and all $n_lit 'matrix.shard }}/N' occurrences say /$n_env)"
+    n_envval=$(grep -c "EIGS_SUITE_SHARD: \${{ matrix.shard }}/$n_env\$" "$ci")
+    if [ -n "$n_env" ] && [ "$n_env" = "$n_matrix" ] \
+       && [ "$n_lit" -eq "$SHARD_LITERAL_HOMES" ] && [ "$n_bad" -eq 0 ] && [ "$n_envval" -eq 1 ]; then
+        echo "the ASan shard count agrees everywhere in ci.yml (ASAN_SHARDS=$n_env, matrix legs=$n_matrix, all $n_lit of $SHARD_LITERAL_HOMES 'matrix.shard }}/N' homes say /$n_env, EIGS_SUITE_SHARD among them)"
         return 0
     fi
-    echo "ci.yml shard count disagrees (ASAN_SHARDS=${n_env:-unset}, matrix legs=$n_matrix, 'matrix.shard }}/N' occurrences=$n_lit of which $n_bad do not say /$n_env)"
+    echo "ci.yml shard count disagrees (ASAN_SHARDS=${n_env:-unset}, matrix legs=$n_matrix, 'matrix.shard }}/N' occurrences=$n_lit of $SHARD_LITERAL_HOMES expected, $n_bad not saying /$n_env, EIGS_SUITE_SHARD:/$n_env present=$n_envval)"
     return 1
 }
 
@@ -647,6 +664,49 @@ shard_check() {
     echo "SHARDS: n=$n chunks=$total groups=$SP_GROUPS (merges=$SP_GROUP_MERGES) union=full disjoint=yes zero-section-shards=0 unmeasured-sections=$SP_WEIGHT_MISSING"
 }
 
+# WHICH SHARD OWNS A JOB-LEVEL EXTRA (#1160 round 6).
+#
+# The ASan job has two steps that are not suite sections: the collector
+# traversal check and the LSP behaviour test. Round 4 hard-wired both to shard
+# 1 — and shard 1 is, by construction, the HEAVIEST shard, so the extras land
+# on the critical path every time. Measured: on run 35036548663 shard 1 was
+# 14.1 min end to end of a 15.0 min lane, 4.5 min of it the LSP step.
+#
+# Worse, that step's cost is not even a constant. On run 35020270020 the same
+# step took 1.5 s, because shard 1 happened to carry section [88], which builds
+# eigenlsp under ASan through tests/aux_binary.sh — the step's own build was
+# then a no-op. When the CI-measured weights moved [88] to shard 3, the step
+# had to build eigenlsp from scratch: 267 s. So the owner is DERIVED:
+#
+#   --shard-owner N --section '[88]'   the shard running that section (the one
+#                                      that has already paid for the build)
+#   --shard-owner N                    the LIGHTEST shard by predicted weight
+#
+# Always prints exactly one integer in 1..N, so a step can compare it with its
+# own matrix index; the aggregator then requires exactly one shard to claim
+# each extra, which is what stops "derived" from becoming "nobody ran it".
+shard_owner() {
+    local n="$1" section="${2:-}"
+    validate_shards "$n"
+    SP_WORK="${SP_WORK:-$(sp_workdir owner)}"
+    derive_chunks "$RUNNER" > "$SP_WORK/chunks"
+    derive_chunk_weights "$SP_WORK/chunks" "$SP_WORK/weights" "$SP_WORK/missing"
+    derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
+    derive_shard_assignment "$n" "$SP_WORK/weights" "$SP_WORK/assign" "$SP_WORK/groups"
+
+    if [ -n "$section" ]; then
+        local start owner
+        start=$(awk -v id="$section" '{ for (i = 3; i <= NF; i++) if ($i == id) { print $1; exit } }' "$SP_WORK/chunks")
+        [ -n "$start" ] || die "no chunk carries section '$section' — the extra it owns has no home"
+        owner=$(awk -v s="$start" '$1 == s { print $2 }' "$SP_WORK/assign")
+        [ -n "$owner" ] || die "section '$section' is in chunk @$start, which no shard claimed"
+        echo "$owner"
+        return 0
+    fi
+    shard_loads "$SP_WORK/weights" "$SP_WORK/assign" "$n" \
+      | sort -k3,3g -k1,1n | head -1 | cut -d' ' -f1
+}
+
 # The plan for ONE shard. Sets SP_WORK/selected like build_plan does.
 build_shard_plan() {
     local k="$1" n="$2"
@@ -730,9 +790,33 @@ print_weights() {
     want=$(( want * 85 / 100 ))
     [ "$n" -ge 50 ] || die "only $n SECTION_TIME lines in $log — that log is not a suite run at all"
     [ "$distinct" -ge "$want" ] || die "only $distinct distinct sections in $log, need >= $want (85% of the $(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sort -u | grep -c .) labels in the runner) — this looks like ONE shard's log; concatenate every shard's log, or the table would default the sections it cannot see"
+    # PROVENANCE COMES FROM THE ARGS, so the documented recipe reproduces the
+    # committed file byte-for-byte (#1160 round 6). Round 5 hand-wrote a
+    # 14-line header that the very recipe printed next to it would have ERASED
+    # — a regeneration step that silently drops the answer to "where did these
+    # numbers come from" is how a table becomes unverifiable.
+    local rows
+    rows=$(grep -oE 'SECTION_TIME: \[[^]]*\]' "$log" | sort -u | grep -c .)
     echo "# tests/section_weights.txt — per-section wall seconds, summed per label."
-    echo "# Regenerate: tools/section_plan.sh --print-weights <suite log> > tests/section_weights.txt"
-    echo "# Source log: $n SECTION_TIME lines."
+    echo "#"
+    if [ -n "${WEIGHTS_RUN:-}" ] || [ -n "${WEIGHTS_HEAD:-}" ]; then
+        echo "# MEASURED ON THE CI RUNNER, not on the dev box: run ${WEIGHTS_RUN:-unstated},"
+        echo "# head ${WEIGHTS_HEAD:-unstated}, the \`asan + ubsan / core and LSP (shard k/N)\`"
+        echo "# job logs, concatenated and fed to \`--print-weights\`."
+    else
+        echo "# PROVENANCE NOT STATED: this table was generated without --run/--head."
+        echo "# Measure on the CI RUNNER and pass them, or the numbers cannot be traced."
+    fi
+    echo "# $n SECTION_TIME lines, $rows distinct sections."
+    echo "#"
+    echo "# A dev-box measurement is a BOOTSTRAP for the first split, never the table:"
+    echo "# per-section ratios between the dev box and the runner reach 35x in BOTH"
+    echo "# directions ([0a] 0.75 s dev -> 26.12 CI, but [124] 94.87 -> 13.30), and the"
+    echo "# shards a dev-box table predicted at 590/590/590 s actually took 411/249/196."
+    echo "#"
+    echo "# Refresh — see docs/CI.md for the gh api recipe:"
+    echo "#   tools/section_plan.sh --print-weights <ci-shard-logs> \\"
+    echo "#       --run ${WEIGHTS_RUN:-<run id>} --head ${WEIGHTS_HEAD:-<head sha>} > tests/section_weights.txt"
     # A section label may contain spaces ("[JSON Depth / DoS guard]"), so the
     # label is everything from the first [ to the first ] and the seconds are
     # the LAST field — splitting on whitespace produced rows like "[Structural"
@@ -1483,6 +1567,8 @@ selftest() {
             --print-section-plan)  mode_out=$("$0" --print-section-plan core 2>&1) || mode_rc=$? ;;
             --selftest)            continue ;;   # we are inside it
             --shards)              mode_out=$("$0" --shards 3 --check 2>&1) || mode_rc=$? ;;
+            --shard-owner)         mode_out=$("$0" --shard-owner 3 --quiet 2>&1) || mode_rc=$? ;;
+            --section)             continue ;;   # a modifier of --shard-owner, not a mode
             --emit-shard)          mode_out=$("$0" --emit-shard 1 3 "$dir/mode_shard.sh" 2>&1) || mode_rc=$? ;;
             --print-weights)       # The synthetic log must COVER the runner's labels, or the
                                    # partial-log floor (T6) refuses it — which is the floor
@@ -1527,6 +1613,23 @@ $mode_out"
         else
             echo "  FAIL: $out"; fail=$((fail + 1))
         fi
+        # ROUND 6: deleting any ONE of the three `matrix.shard }}/N` homes used
+        # to pass as "all agree". Each deletion gets its own plant, because
+        # they fail differently — the env-value one is the dangerous one (the
+        # runner then parses a bare `1` and ran the whole suite), and a single
+        # combined case would be satisfied by whichever one happened to fire.
+        for home_line in $(grep -n 'matrix\.shard }}/' "$ci" | cut -d: -f1); do
+            sed -e "${home_line}s#\${{ matrix.shard }}/3#\${{ matrix.shard }}#" "$ci" > "$dir/ci_del.yml"
+            home_what=$(sed -n "${home_line}p" "$ci" | sed 's/^ *//' | cut -c1-40)
+            if cmp -s "$ci" "$dir/ci_del.yml"; then
+                echo "  FAIL: could not delete the shard literal at ci.yml:$home_line"; fail=$((fail + 1))
+            elif out=$(shard_count_sync "$dir/ci_del.yml"); then
+                echo "  FAIL: deleting the /N at ci.yml:$home_line ($home_what) left the check green — $out"; fail=$((fail + 1))
+            else
+                echo "  PASS: planted: deleting ONLY the /N at ci.yml:$home_line -> the shard-count check refuses"; pass=$((pass + 1))
+            fi
+        done
+
         # Both halves: the same check must go RED when ONLY the job-name
         # literal is changed, which is exactly what round 4 missed.
         sed 's#core and LSP (shard ${{ matrix.shard }}/3)#core and LSP (shard ${{ matrix.shard }}/4)#' "$ci" > "$dir/ci_jobname.yml"
@@ -1619,6 +1722,105 @@ $mode_out"
         echo "  FAIL: the emitted consumer shard read '${mini_seen:-nothing}', expected ASTRA_READ=<previous>"; fail=$((fail + 1))
     fi
 
+    # 6q. ROUND 6, T3: the AGGREGATOR's receipt check, driven with stub
+    #     receipts. It lives in ci.yml as shell, so the control extracts that
+    #     exact text and runs it — a copy here would be a second implementation
+    #     that agrees with itself.
+    if [ -f "$SP_ROOT/.github/workflows/ci.yml" ]; then
+        mkdir -p "$dir/agg/shard-receipts"
+        sed -n '/Require one receipt per shard/,/Sanitizer coverage complete/p' "$SP_ROOT/.github/workflows/ci.yml" \
+          | sed -n '/^          set -/,$p' \
+          | sed 's/\${{ env.ASAN_SHARDS }}/3/; s/\${{ needs.scope.outputs.code }}/true/' > "$dir/agg/agg.sh"
+        agg_write() {   # <k> <plan-n> <leaked> [gc] [lsp]
+            printf 'PLAN: shard=%s/%s sections=1 (of 263) chunks=1 predicted=1.00s unmeasured=0\nleaked=%s\ngc_traversal=%s\nlsp_asan=%s\n' \
+                "$1" "$2" "$3" "${4:-no}" "${5:-no}" > "$dir/agg/shard-receipts/shard-$1.txt"
+        }
+        agg_run() { ( cd "$dir/agg" && bash agg.sh 2>&1 ); }
+        if [ ! -s "$dir/agg/agg.sh" ]; then
+            echo "  FAIL: could not extract the aggregator receipt check from ci.yml"; fail=$((fail + 1))
+        else
+            agg_write 1 3 0; agg_write 2 3 0 yes; agg_write 3 3 0 no yes
+            if out=$(agg_run); then
+                echo "  PASS: control: three well-formed receipts with a zero tally pass the aggregator"; pass=$((pass + 1))
+            else
+                echo "  FAIL: the aggregator rejected three well-formed receipts"; printf '%s\n' "$out" | tail -2 | sed 's/^/      /'; fail=$((fail + 1))
+            fi
+            agg_write 2 2 0 yes                  # the shape a shard prints when EIGS_SUITE_SHARD lost its /N
+            if out=$(agg_run); then
+                echo "  FAIL: a receipt saying shard=2/2 passed an ASAN_SHARDS=3 lane"; fail=$((fail + 1))
+            elif printf '%s\n' "$out" | grep -q "expected 'PLAN: shard=2/3'"; then
+                echo "  PASS: planted: a receipt whose N differs from ASAN_SHARDS is refused, and named"; pass=$((pass + 1))
+            else
+                echo "  FAIL: the shard=2/2 receipt was refused for the wrong reason"; printf '%s\n' "$out" | tail -2 | sed 's/^/      /'; fail=$((fail + 1))
+            fi
+            agg_write 2 3 0 yes; agg_write 3 3 1 no yes   # a leak in one shard must sink the SUM
+            if out=$(agg_run); then
+                echo "  FAIL: a summed leak tally of 1 passed the aggregator"; fail=$((fail + 1))
+            elif printf '%s\n' "$out" | grep -q 'leak tally is 1'; then
+                echo "  PASS: planted: a leak tally of 1 in one shard fails the summed check"; pass=$((pass + 1))
+            else
+                echo "  FAIL: the leak tally was refused for the wrong reason"; printf '%s\n' "$out" | tail -2 | sed 's/^/      /'; fail=$((fail + 1))
+            fi
+
+            # ROUND 6 T6: each job-level extra must have EXACTLY ONE claimant.
+            # A derived owner nobody turns out to be is how "it runs somewhere"
+            # becomes "it runs nowhere" — the failure that hard-wiring at least
+            # could not have.
+            agg_write 1 3 0; agg_write 2 3 0 yes; agg_write 3 3 0    # nobody claims lsp_asan
+            if out=$(agg_run); then
+                echo "  FAIL: an unclaimed job-level extra passed the aggregator"; fail=$((fail + 1))
+            elif printf '%s\n' "$out" | grep -q 'lsp_asan was claimed by 0 shard'; then
+                echo "  PASS: planted: an extra no shard claimed is refused"; pass=$((pass + 1))
+            else
+                echo "  FAIL: the unclaimed extra was refused for the wrong reason"; printf '%s\n' "$out" | tail -2 | sed 's/^/      /'; fail=$((fail + 1))
+            fi
+            agg_write 1 3 0 no yes; agg_write 3 3 0 no yes           # two shards claim lsp_asan
+            if out=$(agg_run); then
+                echo "  FAIL: an extra claimed twice passed the aggregator"; fail=$((fail + 1))
+            elif printf '%s\n' "$out" | grep -q 'lsp_asan was claimed by 2 shard'; then
+                echo "  PASS: planted: an extra claimed by two shards is refused"; pass=$((pass + 1))
+            else
+                echo "  FAIL: the double-claimed extra was refused for the wrong reason"; printf '%s\n' "$out" | tail -2 | sed 's/^/      /'; fail=$((fail + 1))
+            fi
+        fi
+    else
+        echo "  FAIL: ci.yml not found; the aggregator receipt check cannot be driven"; fail=$((fail + 1))
+    fi
+
+    # 6s. ROUND 6 T6: the extras' OWNER is derived, and both questions must
+    #     answer with a shard index in range. The LSP one must land on the
+    #     shard that runs [88] — that is the 1.5 s vs 267 s difference.
+    own_light=$("$0" --shard-owner 3 --quiet 2>/dev/null)
+    own_lsp=$("$0" --shard-owner 3 --section '[88]' --quiet 2>/dev/null)
+    own_lsp_real=""
+    for ok in 1 2 3; do
+        if "$0" --shards 3 --shard "$ok" 2>&1 | grep -q '\[88\]'; then own_lsp_real="$ok"; fi
+    done
+    if [ "$own_light" -ge 1 ] 2>/dev/null && [ "$own_light" -le 3 ] \
+       && [ "$own_lsp" = "$own_lsp_real" ]; then
+        echo "  PASS: the extras' owners are derived (lightest=$own_light; [88] and the LSP test both on shard $own_lsp)"; pass=$((pass + 1))
+    else
+        echo "  FAIL: extras ownership is wrong (lightest='$own_light', LSP owner='$own_lsp', shard actually running [88]='$own_lsp_real')"; fail=$((fail + 1))
+    fi
+    if out=$("$0" --shard-owner 3 --section '[no-such-section]' --quiet 2>&1); then
+        echo "  FAIL: --shard-owner accepted a section no chunk carries"; fail=$((fail + 1))
+    else
+        echo "  PASS: planted: --shard-owner refuses a section no chunk carries"; pass=$((pass + 1))
+    fi
+
+    # 6r. ROUND 6, T1: the runner must never INFER a shard number. A bare
+    #     `EIGS_SUITE_SHARD=1` used to parse as k=1,n=1, so a job still named
+    #     "shard 1/3" ran the whole suite while every check stayed green.
+    for bad_s in 1 0/3 4/3 a/3; do
+        if out=$(cd "$SP_ROOT/tests" && EIGS_SUITE_SHARD="$bad_s" timeout 120 bash run_all_tests.sh 2>&1); then
+            echo "  FAIL: EIGS_SUITE_SHARD=$bad_s was accepted — a shard number must never be inferred"; fail=$((fail + 1))
+        elif printf '%s\n' "$out" | grep -q "^ERROR: EIGS_SUITE_SHARD="; then
+            echo "  PASS: planted: EIGS_SUITE_SHARD=$bad_s is refused before anything runs"; pass=$((pass + 1))
+        else
+            echo "  FAIL: EIGS_SUITE_SHARD=$bad_s went red for the wrong reason"; printf '%s\n' "$out" | tail -2 | sed 's/^/      /'; fail=$((fail + 1))
+        fi
+    done
+
     # 6n. ROUND 5, T6(1): N is validated at entry. Round 4 validated it nowhere:
     #     `--shards 0` and `--shards -1` exited 0 having examined ZERO shards,
     #     and `--shards abc` HUNG in the LPT awk. The `abc` case is bounded so a
@@ -1699,6 +1901,10 @@ while [ "$#" -gt 0 ]; do
         --check) MODE="--shard-check"; shift ;;
         --weights-file) WEIGHTS_FILE="$2"; shift 2 ;;
         --print-weights) MODE="$1"; ARG1="$2"; shift 2 ;;
+        --shard-owner) MODE="$1"; ARG1="$2"; shift 2 ;;
+        --section) ARG2="$2"; shift 2 ;;
+        --run) WEIGHTS_RUN="$2"; shift 2 ;;
+        --head) WEIGHTS_HEAD="$2"; shift 2 ;;
         --emit-shard) MODE="$1"; ARG1="$2"; ARG2="$3"; ARG3="$4"; shift 4 ;;
         --print-waivers) SP_PRINT_WAIVERS=1; export SP_PRINT_WAIVERS; shift ;;
         --print-section-plan) MODE="$1"; ARG1="$2"; shift 2 ;;
@@ -1772,6 +1978,9 @@ case "$MODE" in
         ;;
     --print-weights)
         print_weights "$ARG1"
+        ;;
+    --shard-owner)
+        shard_owner "$ARG1" "$ARG2"
         ;;
     --emit-shard)
         emit_shard "$ARG1" "$ARG2" "$ARG3"

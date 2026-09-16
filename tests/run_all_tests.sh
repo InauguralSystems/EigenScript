@@ -47,8 +47,29 @@ if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
         if [ -n "${EIGS_SUITE_SHARD:-}" ]; then
             # EIGS_SUITE_SHARD=k/N (#1160 round 4). A shard is a subset of the
             # chunk list; the aggregator pins the union to the whole list.
+            #
+            # THE SHARD NUMBER IS NEVER INFERRED (#1160 round 6). `${v%%/*}`
+            # and `${v##*/}` both return the WHOLE string when there is no
+            # slash, so `EIGS_SUITE_SHARD=1` used to parse as k=1, n=1 — and a
+            # job still named "shard 1/3" would then run the ENTIRE suite while
+            # every check stayed green and the wall-time win silently vanished.
+            # A malformed value dies here rather than becoming a plausible one.
+            case "$EIGS_SUITE_SHARD" in
+                *[!0-9/]*|*/*/*|/*|*/)
+                    echo "ERROR: EIGS_SUITE_SHARD='$EIGS_SUITE_SHARD' is malformed — it must be k/N with integers (#1160)"
+                    rm -f "$__plan_runner"; exit 1 ;;
+                */*) ;;
+                *)  echo "ERROR: EIGS_SUITE_SHARD='$EIGS_SUITE_SHARD' has no '/N' — a shard number is never inferred; use k/N (#1160)"
+                    rm -f "$__plan_runner"; exit 1 ;;
+            esac
             __shard_k=${EIGS_SUITE_SHARD%%/*}
             __shard_n=${EIGS_SUITE_SHARD##*/}
+            if [ -z "$__shard_k" ] || [ -z "$__shard_n" ] \
+               || [ "$__shard_n" -lt 1 ] 2>/dev/null || [ "$__shard_k" -lt 1 ] 2>/dev/null \
+               || [ "$__shard_k" -gt "$__shard_n" ] 2>/dev/null; then
+                echo "ERROR: EIGS_SUITE_SHARD='$EIGS_SUITE_SHARD' is out of range — need 1 <= k <= N (#1160)"
+                rm -f "$__plan_runner"; exit 1
+            fi
             __plan_line=$(bash "$TESTS_DIR/../tools/section_plan.sh" --emit-shard "$__shard_k" "$__shard_n" "$__plan_runner")
         else
             __plan_line=$(bash "$TESTS_DIR/../tools/section_plan.sh" --emit "$EIGS_SUITE_SECTIONS" "$__plan_runner")
