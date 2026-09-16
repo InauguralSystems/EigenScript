@@ -42,14 +42,27 @@ typedef struct {
     int wrong;        /* results that were not the pinned value */
 } Arg;
 
-static pthread_barrier_t g_start;
+/* Start gate. NOT pthread_barrier_t: it is a POSIX OPTION that macOS never
+ * implemented, and this file is built by the suite on the macos-latest lane
+ * (PR #1172's first CI run: "two-state build: rc=2" there, green on Linux).
+ * A mutex + condvar counter is the portable two-party barrier. */
+static pthread_mutex_t g_gate_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  g_gate_cv = PTHREAD_COND_INITIALIZER;
+static int             g_gate_arrived = 0;
+static void gate_wait(int parties) {
+    pthread_mutex_lock(&g_gate_mu);
+    g_gate_arrived++;
+    if (g_gate_arrived >= parties) pthread_cond_broadcast(&g_gate_cv);
+    while (g_gate_arrived < parties) pthread_cond_wait(&g_gate_cv, &g_gate_mu);
+    pthread_mutex_unlock(&g_gate_mu);
+}
 
 static void *worker(void *p) {
     Arg *a = (Arg *)p;
     char snippet[512];
     EigsState *st = eigs_open();
     if (!st) { fprintf(stderr, "eigs_open failed on thread %d\n", a->id); return NULL; }
-    pthread_barrier_wait(&g_start);
+    gate_wait(2);
     for (int i = 0; i < ITERS; i++) {
         /* A fresh name per iteration on each side: the arming sets only GROW
          * for a name they have not seen, so reusing names would stop the
@@ -79,7 +92,6 @@ static void *worker(void *p) {
 
 int main(void) {
     int pass = 0, fail = 0;
-    pthread_barrier_init(&g_start, NULL, 2);
     Arg a = {0, 0, 0, 0}, b = {1, 0, 0, 0};
     pthread_t ta, tb;
     pthread_create(&ta, NULL, worker, &a);
