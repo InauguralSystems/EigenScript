@@ -1,0 +1,19 @@
+# #1144: workers `import` stdlib modules while main imports others. Every
+# printed value is pinned; a lost or duplicated module-cache entry, or a
+# republished g_module_ns_tab, shows up as a wrong value or a raise.
+define lm_iw(k) as:
+    import stats
+    import sort
+    local xs is [3, 1, 2, k]
+    local s is sort.sort_asc of xs
+    return [stats.mean of xs, len of s]
+h1 is spawn of [lm_iw, 4]
+h2 is spawn of [lm_iw, 8]
+import string
+import list
+r0 is string.pad_left of ["7", 3, "0"]
+r1 is thread_join of h1
+r2 is thread_join of h2
+print of f"MAIN {r0}"
+print of f"W1 {r1[0]} {r1[1]}"
+print of f"W2 {r2[0]} {r2[1]}"

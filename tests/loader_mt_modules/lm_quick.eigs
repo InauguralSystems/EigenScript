@@ -1,0 +1,5 @@
+# #1144 fixture: loaded by a SHORT-LIVED worker. The binding it creates in
+# the shared root env must outlive the worker's thread.
+define lm_quick_fn(x) as:
+    return x + 5
+lm_quick_val is 77

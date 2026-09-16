@@ -1,0 +1,4 @@
+# #1144 fixture: imported BEFORE the spawn, then read through the module
+# namespace (dict_get_hashed -> eigs_module_ns_env) while a worker imports.
+x is 7
+name is "lm_base"

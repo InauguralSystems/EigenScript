@@ -1,0 +1,67 @@
+# #1144: worker A imports 40 distinct stdlib modules (each attach grows or
+# rehashes the process-global g_module_ns_tab) while worker B reads
+# `lm_base.x` through the namespace view on EVERY iteration
+# (dict_get_hashed -> eigs_module_ns_env -> the table A is republishing).
+# CONSERVED: READS is the loop count, SUM is READS * 7 — neither depends on
+# any interleaving. Pre-fix witness: TSan heap-use-after-free, free by
+# module_ns_rebuild against a read in module_ns_slot.
+import lm_base
+define lm_importer(n) as:
+    local r is 0
+    loop while r < 3:
+        import args
+        import bcd
+        import biology
+        import calculus
+        import checksum
+        import chemistry
+        import complex
+        import concurrent
+        import config
+        import contract
+        import data
+        import datetime
+        import earth_science
+        import engineering
+        import format
+        import functional
+        import geometry
+        import int_vector
+        import invariant
+        import json
+        import lab
+        import linalg
+        import list
+        import log
+        import map
+        import math
+        import numerics
+        import observer
+        import optimize
+        import physics
+        import probability
+        import queue
+        import sanitize
+        import set
+        import simulation
+        import sort
+        import state
+        import stats
+        import string
+        import experiment
+        r is r + 1
+    return r
+define lm_reader(n) as:
+    local s is 0
+    local i is 0
+    loop while i < 200000:
+        s is s + lm_base.x
+        i is i + 1
+    return [i, s]
+h1 is spawn of [lm_importer, 1]
+h2 is spawn of [lm_reader, 2]
+a is thread_join of h1
+r is thread_join of h2
+print of f"ROUNDS {a}"
+print of f"READS {r[0]}"
+print of f"SUM {r[1]}"

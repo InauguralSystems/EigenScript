@@ -2460,6 +2460,59 @@ else
 fi
 echo ""
 
+# [42j] #1144: load_file/import from a spawned worker. PINNED totals, same
+# reason [42i] pins them.
+echo "[42j] Loader under concurrency (#1144)"
+LMT_EXPECTED=15
+LMT_SELFTEST_EXPECTED=6
+LMT_OUTPUT=$(bash "$TESTS_DIR/test_loader_mt.sh" 2>&1); LMT_RC=$?
+LMT_PASS=$(echo "$LMT_OUTPUT" | grep -c "  PASS:" || true)
+LMT_FAIL=$(echo "$LMT_OUTPUT" | grep -c "  FAIL:" || true)
+LMT_ST_OUTPUT=$(bash "$TESTS_DIR/test_loader_mt.sh" --selftest 2>&1); LMT_ST_RC=$?
+LMT_ST_PASS=$(echo "$LMT_ST_OUTPUT" | grep -c "  PASS:" || true)
+LMT_ST_FAIL=$(echo "$LMT_ST_OUTPUT" | grep -c "  FAIL:" || true)
+if [ "$LMT_RC" -eq 0 ] && [ "$LMT_FAIL" -eq 0 ] && [ "$LMT_PASS" -eq "$LMT_EXPECTED" ] \
+   && [ "$LMT_ST_RC" -eq 0 ] && [ "$LMT_ST_FAIL" -eq 0 ] && [ "$LMT_ST_PASS" -eq "$LMT_SELFTEST_EXPECTED" ]; then
+    TOTAL=$((TOTAL + LMT_PASS + LMT_ST_PASS))
+    PASS=$((PASS + LMT_PASS + LMT_ST_PASS))
+    echo "  PASS: all $LMT_PASS loader-MT checks + $LMT_ST_PASS selftest"
+else
+    TOTAL=$((TOTAL + LMT_PASS + LMT_FAIL + LMT_ST_PASS + LMT_ST_FAIL + 1))
+    PASS=$((PASS + LMT_PASS + LMT_ST_PASS))
+    FAIL=$((FAIL + LMT_FAIL + LMT_ST_FAIL + 1))
+    echo "  FAIL: loader-MT (live rc=$LMT_RC $LMT_PASS/$LMT_EXPECTED, selftest rc=$LMT_ST_RC $LMT_ST_PASS/$LMT_SELFTEST_EXPECTED)"
+    echo "$LMT_OUTPUT" | grep "FAIL:" | head -5
+    echo "$LMT_ST_OUTPUT" | grep "FAIL:" | head -5
+fi
+echo ""
+
+# [42k] #1145: the observer arming sets under concurrency — the spawn shape
+# AND the two-embed-state shape (which has no spawn, so no spawn-time
+# widening can reach it). PINNED totals.
+echo "[42k] Observer arming sets under concurrency (#1145)"
+AMT_EXPECTED=9
+AMT_SELFTEST_EXPECTED=5
+AMT_OUTPUT=$(bash "$TESTS_DIR/test_arming_mt.sh" 2>&1); AMT_RC=$?
+AMT_PASS=$(echo "$AMT_OUTPUT" | grep -c "  PASS:" || true)
+AMT_FAIL=$(echo "$AMT_OUTPUT" | grep -c "  FAIL:" || true)
+AMT_ST_OUTPUT=$(bash "$TESTS_DIR/test_arming_mt.sh" --selftest 2>&1); AMT_ST_RC=$?
+AMT_ST_PASS=$(echo "$AMT_ST_OUTPUT" | grep -c "  PASS:" || true)
+AMT_ST_FAIL=$(echo "$AMT_ST_OUTPUT" | grep -c "  FAIL:" || true)
+if [ "$AMT_RC" -eq 0 ] && [ "$AMT_FAIL" -eq 0 ] && [ "$AMT_PASS" -eq "$AMT_EXPECTED" ] \
+   && [ "$AMT_ST_RC" -eq 0 ] && [ "$AMT_ST_FAIL" -eq 0 ] && [ "$AMT_ST_PASS" -eq "$AMT_SELFTEST_EXPECTED" ]; then
+    TOTAL=$((TOTAL + AMT_PASS + AMT_ST_PASS))
+    PASS=$((PASS + AMT_PASS + AMT_ST_PASS))
+    echo "  PASS: all $AMT_PASS arming-MT checks + $AMT_ST_PASS selftest"
+else
+    TOTAL=$((TOTAL + AMT_PASS + AMT_FAIL + AMT_ST_PASS + AMT_ST_FAIL + 1))
+    PASS=$((PASS + AMT_PASS + AMT_ST_PASS))
+    FAIL=$((FAIL + AMT_FAIL + AMT_ST_FAIL + 1))
+    echo "  FAIL: arming-MT (live rc=$AMT_RC $AMT_PASS/$AMT_EXPECTED, selftest rc=$AMT_ST_RC $AMT_ST_PASS/$AMT_SELFTEST_EXPECTED)"
+    echo "$AMT_OUTPUT" | grep "FAIL:" | head -5
+    echo "$AMT_ST_OUTPUT" | grep "FAIL:" | head -5
+fi
+echo ""
+
 # [42c] REPL (#392): piped transcript byte-exact + pty-driven line editor
 echo "[42c] REPL editor & piped transcript (24 checks)"
 RE_OUTPUT=$(bash "$TESTS_DIR/test_repl.sh" 2>&1)

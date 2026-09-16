@@ -1,0 +1,32 @@
+# #1144 G0: two workers `import` the SAME module at the same instant. One wins
+# the module cache; the loser used to keep its OWN private dict and env, so
+# `M.x is v` through the loser's handle landed in an instance nothing else
+# could reach and a reader that lost the race never saw the winner's state.
+#
+# Pre-fix witness on this branch (6 runs): writer=41 reader=7 main=41 |
+# writer=41 reader=7 main=7 | ... — the reader NEVER saw 41, and main saw the
+# stale 7 in 2 of 6. On a6333bb the same program died loudly instead
+# ("import: circular dependency — 'lm_slow' is already being loaded", rc 1),
+# so the loader fix had converted a loud failure into a quiet one.
+#
+# CONSERVED (mechanical-gates §131): there is ONE module, so all three reads
+# are the same number. Never an interleaving — whichever thread wins, the
+# writer's assignment lands in the one instance everybody holds.
+define lm_si_writer(n) as:
+    import lm_slow
+    lm_slow.x is 41
+    return lm_slow.x
+define lm_si_reader(n) as:
+    import lm_slow
+    local k is 0
+    loop while k < 300000:
+        k is k + 1
+    return lm_slow.x
+h1 is spawn of [lm_si_writer, 1]
+h2 is spawn of [lm_si_reader, 2]
+a is thread_join of h1
+b is thread_join of h2
+import lm_slow
+print of f"WRITER {a}"
+print of f"READER {b}"
+print of f"MAIN {lm_slow.x}"

@@ -36,6 +36,7 @@ EigsState *eigs_state_new(void) {
     pthread_mutex_init(&st->threads_lock, NULL);
     pthread_mutex_init(&st->handle_mutex, NULL);
     pthread_mutex_init(&st->gc_lock, NULL);   /* cycle-collector registry */
+    pthread_mutex_init(&st->module_lock, NULL);   /* #1144: import cache */
     st->handle_next = 1;  /* 0 reserved as invalid */
     /* #1038: absence of a compiler verdict means record, not discard. */
     st->obs_needed = 1;
@@ -88,15 +89,13 @@ static void state_destroy_body(EigsState *st, int already_released) {
     /* Module-cache refs were dropped at gc_collect_at_exit; the array
      * itself may still be allocated (capacity bumped past zero). */
     free(st->module_cache);
-    /* #496: any load still on the in-flight stack at destroy is a leak of
-     * a strdup'd path (shouldn't happen in a clean run — every enter is
-     * paired with a leave — but free defensively). */
-    for (size_t i = 0; i < st->loading_count; i++) free(st->loading_stack[i]);
-    free(st->loading_stack);
+    /* #1144: the in-flight load stack moved to EigsThread — it is freed by
+     * eigs_thread_detach, which runs before the state is destroyed. */
     free(st->exe_path);
     /* #307: value-candidate buffer pins were drained at gc_collect_at_exit;
      * free the (now-empty) backing array. NULL if no cycle ever parked. */
     free(st->gc_val_buf);
+    pthread_mutex_destroy(&st->module_lock);
     pthread_mutex_destroy(&st->threads_lock);
     pthread_mutex_destroy(&st->handle_mutex);
     pthread_mutex_destroy(&st->gc_lock);
@@ -286,6 +285,14 @@ void eigs_thread_detach(void) {
     /* Phase 8: release freelist + intern memory before the EigsThread
      * struct itself goes. Must run while eigs_current still points at th
      * so the bridge macros inside free_value/env destructors resolve. */
+    /* #496/#1144: any load still on this thread's in-flight stack is a
+     * strdup'd path (shouldn't happen in a clean run — every enter is paired
+     * with a leave — but free defensively). */
+    for (size_t i = 0; i < th->loading_count; i++) free(th->loading_stack[i]);
+    free(th->loading_stack);
+    th->loading_stack = NULL;
+    th->loading_count = th->loading_cap = 0;
+
     eigs_thread_drain_caches(th);
     eigs_obs_memo_release();  /* #915: memo + speculative budget, thread-local */
     pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(-1); pthread_mutex_unlock(&g_attached_lock);

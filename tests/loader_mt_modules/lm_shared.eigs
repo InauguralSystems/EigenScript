@@ -1,0 +1,4 @@
+# #1144 fixture: loaded SEQUENTIALLY (loader_mt_cycle's repeated-load row).
+define lm_shared_fn(x) as:
+    return x * 2
+lm_shared_val is 21

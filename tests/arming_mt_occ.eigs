@@ -1,0 +1,33 @@
+# #1145(a): a worker compiling `what is q when 1` reallocs the OCCURRENCE
+# arming set (g_occ_names) while another worker's assignments walk it
+# (prev_record_assign -> occ_set_has). `spawn` widens only the HISTORY tier
+# (#827 trace_arm_history_all_mt); the occurrence tier has no wildcard by
+# design (#868), so no spawn-time escape can cover it.
+# CONSERVED: compile count, assignment count, and the accumulator's total.
+ga is 0
+gb is 0
+define am_compiler(n) as:
+    local k is 0
+    loop while k < 300:
+        local src is f"q{k} is 1\nq{k} is 2\nz{k} is what is q{k} when 1\n"
+        try:
+            eval of src
+        catch e:
+            local dummy is 0
+        k is k + 1
+    return k
+define am_assigner(n) as:
+    local i is 0
+    loop while i < 200000:
+        ga is ga + 1
+        gb is ga * 2
+        i is i + 1
+    return i
+h1 is spawn of [am_compiler, 1]
+h2 is spawn of [am_assigner, 2]
+c is thread_join of h1
+a is thread_join of h2
+print of f"COMPILED {c}"
+print of f"ASSIGNED {a}"
+print of f"GA {ga}"
+print of f"GB {gb}"

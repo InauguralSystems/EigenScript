@@ -1,0 +1,7 @@
+# #1144 G0 fixture: slow enough that two workers are inside the SAME import at
+# the same instant, so both get past the module-cache probe and both build a
+# private instance — exactly one of them then loses eigs_module_cache_put.
+_lm_slow_i is 0
+loop while _lm_slow_i < 30000:
+    _lm_slow_i is _lm_slow_i + 1
+x is 7

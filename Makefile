@@ -70,7 +70,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx nativefn-test embed-roads print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx nativefn-test arming-mt-test embed-roads print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -211,6 +211,19 @@ $(NATIVEFN_TEST): $(NATIVEFN_TEST_OBJ) $(filter-out build/release/main.o build/r
 	$(CC) $(FLAGS_release) -o $@ $^ $(LIBS_release)
 nativefn-test: $(NATIVEFN_TEST)
 	@echo "Native-fn identity test built: $(NATIVEFN_TEST)"
+
+# #1145(b): two EigsStates on two OS threads with no spawn — the shape where
+# the per-STATE `multithreaded` flag is 0 on both sides and nothing widens the
+# process-global observer arming sets. Same variant discipline as
+# embed-observer-test: build against the variant the suite is running, and
+# never repoint the CLI alias.
+ARMING_MT_VARIANT ?= release
+ARMING_MT_OBJ := $(filter-out build/$(ARMING_MT_VARIANT)/main.o,$(OBJ_$(ARMING_MT_VARIANT)))
+build/$(ARMING_MT_VARIANT)/test_arming_two_states: tests/test_arming_two_states.c $(ARMING_MT_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile
+	$(CC) $(FLAGS_$(ARMING_MT_VARIANT)) -I$(SRC_DIR) -o $@ $< $(ARMING_MT_OBJ) $(LIBS_$(ARMING_MT_VARIANT))
+.PHONY: arming-mt-test
+arming-mt-test: build/$(ARMING_MT_VARIANT)/test_arming_two_states
+	@echo "Arming two-state test built: build/$(ARMING_MT_VARIANT)/test_arming_two_states"
 
 # #1038/#1028: same runtime variant as the suite; never repoint the CLI alias.
 EMBED_OBSERVER_VARIANT ?= release

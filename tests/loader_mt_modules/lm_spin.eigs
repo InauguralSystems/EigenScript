@@ -1,0 +1,21 @@
+# #1144 fixture: the module TWO WORKERS load at the same time.
+#
+# It binds only NUMBERS and defines nothing. That is deliberate. The property
+# under test is the LOADER's — two threads inside load_file for the same path
+# must not accuse each other of a circular dependency — and a module that
+# rebinds a function or a container would drag in the separate, documented
+# user-level race (two threads writing the same shared binding: its value,
+# its refcount and its observer slot; docs/CONCURRENCY.md, "Loading from
+# workers"). Numbers are NaN-boxed immediates, so a concurrent rebind of
+# these names frees nothing and the row measures the loader alone (§23:
+# assert the invariant, not a coincidence).
+#
+# The spin loop is the TEST-SIDE scheduler window (§131): it makes each load
+# long enough that two workers are reliably inside the loader at once, so a
+# shared in-flight load stack produces its false "circular dependency" EVERY
+# run instead of most runs (measured: 10/10 kills of the
+# loading-stack-shared-again mutant, versus 5-of-6 without it).
+_lm_spin_i is 0
+loop while _lm_spin_i < 20000:
+    _lm_spin_i is _lm_spin_i + 1
+_lm_spin_val is 21

@@ -1,0 +1,29 @@
+# The SCOPE BOUNDARY of #1144, made executable.
+#
+# Two workers load_file the same module 40x while main loads another; the
+# shared module's `define` rebinds one global that the other thread is
+# calling. That is the user-level shared-mutable-state race
+# (docs/CONCURRENCY.md, "Loading from workers") and the same-slot value /
+# assign-count class `src/eigenscript.c`'s #607 comment declares out of scope
+# — it is filed on its own and is NOT expected to be ThreadSanitizer-clean.
+#
+# What tests/test_tsan.sh asserts about this program is therefore not "zero
+# reports" but "no LOADER STRUCTURE appears in any report": no in-flight load
+# stack, no module cache, no module-namespace table. If #1144 regresses, one
+# of those symbols comes back and the row goes red — which is the executable
+# form of "out of scope", instead of a sentence.
+define lm_ur_worker(k) as:
+    local i is 0
+    local n is 0
+    loop while i < 40:
+        load_file of "loader_mt_modules/lm_rebind.eigs"
+        n is n + (lm_rebind_fn of k)
+        i is i + 1
+    return n
+h1 is spawn of [lm_ur_worker, 1]
+h2 is spawn of [lm_ur_worker, 2]
+mi is 0
+loop while mi < 40:
+    load_file of "loader_mt_modules/lm_other.eigs"
+    mi is mi + 1
+print of f"UR {thread_join of h1} {thread_join of h2}"

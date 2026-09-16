@@ -1,0 +1,35 @@
+# #1144: two workers load_file the SAME module 40x while main loads another.
+# Every printed number is a CONSERVED quantity (mechanical-gates §131) — a
+# count of loads that returned, and a sum that does not depend on any
+# interleaving. Pre-fix witness on the release binary: rc 1 with
+#   "load_file: circular dependency — '.../lm_spin.eigs' is already being
+#    loaded"  (no cycle exists), worker results null, SIGSEGV on some runs.
+#
+# The workers load lm_spin.eigs, which binds only numbers — see the comment
+# there for why the module the two threads SHARE deliberately defines
+# nothing. main loads lm_other.eigs, which nothing else loads, so its
+# function binding is uncontended and can be called.
+define lm_worker(k) as:
+    local i is 0
+    local n is 0
+    loop while i < 40:
+        load_file of "loader_mt_modules/lm_spin.eigs"
+        n is n + 1
+        i is i + 1
+    return n
+h1 is spawn of [lm_worker, 1]
+h2 is spawn of [lm_worker, 2]
+mi is 0
+mn is 0
+macc is 0
+loop while mi < 40:
+    load_file of "loader_mt_modules/lm_other.eigs"
+    mn is mn + 1
+    macc is macc + (lm_other_fn of mi)
+    mi is mi + 1
+r1 is thread_join of h1
+r2 is thread_join of h2
+print of f"LOADS {mn + r1 + r2}"
+print of f"MAIN {macc}"
+print of f"W1 {r1}"
+print of f"W2 {r2}"

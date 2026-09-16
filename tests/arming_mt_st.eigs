@@ -1,0 +1,12 @@
+# #1145 single-threaded control: the arming lock must not change an ANSWER.
+# Both tiers, read back through the forms that consult them.
+x is 1.0
+x is 2.0
+x is 3.0
+print of f"PREV {prev of x}"
+q is 1
+q is 2
+q is 3
+print of f"WHEN1 {what is q when 1}"
+print of f"WHEN2 {what is q when 2}"
+print of f"NOW {q}"

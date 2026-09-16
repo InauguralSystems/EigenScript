@@ -209,6 +209,45 @@ typedef struct TracePrevEntry {
 static char   **g_arm_names = NULL;
 static int      g_arm_count = 0;
 static int      g_arm_cap   = 0;
+
+/* ----- #1145: ONE leaf mutex over BOTH arming tiers' name arrays.
+ *
+ * The arrays are process-global (they record compile-time facts) and both
+ * tiers grow by `realloc`, so a compile racing an assignment frees the array
+ * the assignment is walking. Two shapes produce that, and they need DIFFERENT
+ * predicates — which is why this guard has none and is simply always taken:
+ *
+ *   (a) ONE state, spawn: a worker compiling `what is q when 1` (eval /
+ *       load_file / import) reallocs g_occ_names while other workers'
+ *       assignments walk it (prev_record_assign -> occ_set_has). `spawn`
+ *       widens only the HISTORY tier to the wildcard (trace_arm_history_all_mt,
+ *       #827); the occurrence tier has no wildcard by design (#868 — a
+ *       wildcard there would put a bounded ring on EVERY name), so no
+ *       spawn-time escape can cover it.
+ *   (b) TWO embed STATES, no spawn: `multithreaded` is a PER-STATE flag, so it
+ *       is 0 on both, nothing widens anything, and one state's
+ *       trace_arm_history_name reallocs while the other state's assignments
+ *       read arm_set_has (heap-use-after-free, h1c_two_states.c / #915's
+ *       ext_http shape). src/state.c's eigs_process_thread_count() guard
+ *       covers only the observer gate's eager PRE-PASS; compile_node_inner
+ *       (compiler.c) arms on the ordinary path and was unguarded.
+ *
+ * Cost: none on any hot path. Every reader is behind a per-PrevEntry
+ * generation cache (e->armed_gen / e->occ_armed_gen), so an assignment calls
+ * arm_set_has/occ_set_has once per name per ARMING GENERATION, not once per
+ * assignment; the writers run at compile time. A conditional guard
+ * (g_vm_multithreaded, or a thread count) would ALSO have a real window — the
+ * reader decides not to lock, then a second thread attaches and arms — so the
+ * unconditional take is both cheaper to reason about and strictly safer.
+ *
+ * LOCK ORDER: g_arm_mu is a LEAF. Nothing called while it is held may take
+ * another lock (the bodies are strcmp / malloc / free only). trace_shutdown
+ * takes it INSIDE g_tape_mu; because no path holds g_arm_mu across a tape
+ * lock, that is not a cycle. Keep it that way. */
+static pthread_mutex_t g_arm_mu = PTHREAD_MUTEX_INITIALIZER;
+static inline void arm_lock(void)   { pthread_mutex_lock(&g_arm_mu); }
+static inline void arm_unlock(void) { pthread_mutex_unlock(&g_arm_mu); }
+
 /* ACQUIRE loads / RELEASE stores: prev_record_assign reads these before
  * tape_emit_begin (no lock). Shutdown writes them under g_tape_mu; a
  * plain int race was TSan-flaky on g_arm_gen / g_arm_all (#1142 r3). */
@@ -221,10 +260,18 @@ static void arm_gen_bump(void) {
     __atomic_fetch_add(&g_arm_gen_storage, 1u, __ATOMIC_RELEASE);
 }
 
-static int arm_set_has(const char *name) {
+/* Caller holds g_arm_mu. */
+static int arm_set_has_locked(const char *name) {
     for (int i = 0; i < g_arm_count; i++)
         if (strcmp(g_arm_names[i], name) == 0) return 1;
     return 0;
+}
+
+static int arm_set_has(const char *name) {
+    arm_lock();
+    int r = arm_set_has_locked(name);
+    arm_unlock();
+    return r;
 }
 
 /* ----- #868: the occurrence-arming tier.
@@ -249,28 +296,45 @@ static uint32_t g_occ_gen_storage = 1;
 static void occ_gen_bump(void) {
     __atomic_fetch_add(&g_occ_gen_storage, 1u, __ATOMIC_RELEASE);
 }
-static int      g_occ_window = 0;   /* 0 = not yet resolved */
+/* 0 = not yet resolved. #1145: memoised LAZILY on the first occurrence
+ * record, which is a per-assignment path on EVERY thread — the plain
+ * read-then-write was a data race between two embed states (TSan: read at
+ * trace_occ_window <- occ_record <- prev_record_assign on T2 against the
+ * write one line later on T1). ACQUIRE/RELEASE, and two racing resolvers
+ * compute the SAME value from the same environment, so the duplicate work is
+ * harmless and no lock is owed on this path. */
+static int      g_occ_window_storage = 0;
 
 int trace_occ_window(void) {
-    if (g_occ_window) return g_occ_window;
-    g_occ_window = TRACE_OCC_WINDOW_DEFAULT;
+    int w = __atomic_load_n(&g_occ_window_storage, __ATOMIC_ACQUIRE);
+    if (w) return w;
+    w = TRACE_OCC_WINDOW_DEFAULT;
     const char *e = getenv("EIGS_OCC_WINDOW");
     if (e && *e) {
         char *end = NULL;
         long v = strtol(e, &end, 10);
         if (end && *end == '\0' && v >= 1) {
             if (v > TRACE_OCC_WINDOW_MAX) v = TRACE_OCC_WINDOW_MAX;
-            g_occ_window = (int)v;
+            w = (int)v;
         }
     }
-    return g_occ_window;
+    __atomic_store_n(&g_occ_window_storage, w, __ATOMIC_RELEASE);
+    return w;
 }
 
-static int occ_set_has(const char *name) {
+/* Caller holds g_arm_mu. */
+static int occ_set_has_locked(const char *name) {
     if (g_occ_all) return 1;
     for (int i = 0; i < g_occ_count; i++)
         if (strcmp(g_occ_names[i], name) == 0) return 1;
     return 0;
+}
+
+static int occ_set_has(const char *name) {
+    arm_lock();
+    int r = occ_set_has_locked(name);
+    arm_unlock();
+    return r;
 }
 
 void trace_arm_occurrences_all(void) {
@@ -284,21 +348,23 @@ void trace_arm_occurrences_name(const char *name) {
     if (!name || g_occ_all) return;
     /* The ring is fed from prev_record_assign, which only runs when the
      * line-history is armed for this name — so arm that too. */
-    trace_arm_history_name(name);
-    if (occ_set_has(name)) return;
+    trace_arm_history_name(name);    /* takes and releases g_arm_mu itself */
+    arm_lock();                      /* #1145: check + grow + append is ONE step */
+    if (occ_set_has_locked(name)) { arm_unlock(); return; }
     if (g_occ_count >= g_occ_cap) {
         int nc = g_occ_cap ? g_occ_cap * 2 : 8;
         char **nn = realloc(g_occ_names, (size_t)nc * sizeof(char *));
-        if (!nn) return;         /* OOM: this name simply gets no ring */
+        if (!nn) { arm_unlock(); return; }  /* OOM: this name gets no ring */
         g_occ_names = nn;
         g_occ_cap = nc;
     }
     size_t len = strlen(name) + 1;
     char *copy = malloc(len);
-    if (!copy) return;
+    if (!copy) { arm_unlock(); return; }
     memcpy(copy, name, len);
     g_occ_names[g_occ_count++] = copy;
     occ_gen_bump();
+    arm_unlock();
 }
 
 /* Widen to the wildcard WITHOUT enabling recording. Separate from
@@ -333,17 +399,21 @@ void trace_arm_snapshot(TraceArmState *out) {
     out->trace_hist   = g_trace_hist;
     out->obs_hist     = g_trace_obs_hist;
     out->arm_all      = g_arm_all;
-    out->arm_count    = g_arm_count;
     out->occ_all      = g_occ_all;
+    arm_lock();                       /* #1145 */
+    out->arm_count    = g_arm_count;
     out->occ_count    = g_occ_count;
+    arm_unlock();
 }
 
 void trace_arm_restore(const TraceArmState *in) {
     if (!in) return;
+    arm_lock();                       /* #1145: the one SHRINKING writer */
     for (int i = in->arm_count; i < g_arm_count; i++) free(g_arm_names[i]);
     g_arm_count = in->arm_count;
     for (int i = in->occ_count; i < g_occ_count; i++) free(g_occ_names[i]);
     g_occ_count = in->occ_count;
+    arm_unlock();
     trace_flag_store(g_trace_hist_storage, in->trace_hist);
     trace_flag_store(g_trace_obs_hist_storage, in->obs_hist);
     arm_all_store(in->arm_all);
@@ -365,20 +435,24 @@ void trace_arm_history_all(void) {
 void trace_arm_history_name(const char *name) {
     trace_flag_store(g_trace_hist_storage, 1);
     if (!name || g_arm_all) return;
-    if (arm_set_has(name)) return;
+    arm_lock();                      /* #1145: check + grow + append is ONE step */
+    if (arm_set_has_locked(name)) { arm_unlock(); return; }
     if (g_arm_count >= g_arm_cap) {
         int nc = g_arm_cap ? g_arm_cap * 2 : 8;
         char **nn = realloc(g_arm_names, (size_t)nc * sizeof(char *));
-        if (!nn) { trace_arm_history_all(); return; }  /* OOM: never narrow */
+        /* OOM: never narrow. trace_arm_history_all takes no lock (flag
+         * stores only), so calling it here cannot cycle on g_arm_mu. */
+        if (!nn) { arm_unlock(); trace_arm_history_all(); return; }
         g_arm_names = nn;
         g_arm_cap = nc;
     }
     size_t len = strlen(name) + 1;
     char *copy = malloc(len);
-    if (!copy) { trace_arm_history_all(); return; }    /* OOM: never narrow */
+    if (!copy) { arm_unlock(); trace_arm_history_all(); return; }
     memcpy(copy, name, len);
     g_arm_names[g_arm_count++] = copy;
     arm_gen_bump();
+    arm_unlock();
 }
 
 void trace_history_disable(void) {
@@ -1919,11 +1993,15 @@ void trace_shutdown(void) {
     arm_all_store(1);
     arm_gen_bump();
     if (eigs_process_state_count() <= 1) {
+        /* #1145: g_arm_mu taken INSIDE g_tape_mu. No path holds g_arm_mu
+         * across a tape lock, so this is an order, not a cycle. */
+        arm_lock();
         for (int i = 0; i < g_arm_count; i++) free(g_arm_names[i]);
         free(g_arm_names);
         g_arm_names = NULL;
         g_arm_count = 0;
         g_arm_cap = 0;
+        arm_unlock();
     }
     tape_unlock();              /* shutdown-unlock */
 

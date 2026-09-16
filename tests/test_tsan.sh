@@ -210,6 +210,176 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo "=== loader from workers must be race-free (#1144) ==="
+# The loader's OWN structures: the per-thread in-flight stack, the module
+# cache, the process-global module-namespace table and the module env's
+# count. DECLARED, not globbed — a missing fixture is a FAIL, never a silent
+# shrink (§121). Measured discriminating against a6333bb: s_import_concurrent
+# 8/12/5 warnings, p3_import_race 3/5/5 (free in module_ns_rebuild vs read in
+# module_ns_slot <- eigs_module_ns_env <- dict_get_hashed).
+#
+# tests/loader_mt_loadfile.eigs is DELIBERATELY NOT in this list. It is a
+# release-binary correctness row in tests/test_loader_mt.sh instead: two
+# workers loading the SAME module both REBIND the same global name, which is
+# the documented user-level shared-mutable-state race (docs/CONCURRENCY.md),
+# and TSan reports it on the binding's VALUE, its refcount and its observer
+# slot — the class #607 declares out of scope ("two threads racing on the
+# SAME slot's value or assign-count"; tracked as #1171). A row that can never be clean is not a
+# gate (§13/§23).
+LDR_FIXTURES="loader_mt_import loader_mt_cycle"
+LDR_DECLARED=2
+LDR_EXAMINED=0
+for t in $LDR_FIXTURES; do
+    LDR_EXAMINED=$((LDR_EXAMINED + 1))
+    f="$TESTS_DIR/$t.eigs"
+    if [ ! -f "$f" ]; then
+        echo "  FAIL: $t fixture missing ($f)"; FAIL=$((FAIL + 1)); continue
+    fi
+    tsan_warnings "$f"
+    w=$WARNINGS
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$w" -ne 0 ]; then
+        echo "  FAIL: $t reported $w ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
+        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+    elif [ "$LAST_RC" -ne 0 ]; then
+        echo "  FAIL: $t exited $LAST_RC (want 0) — a quiet sanitizer on a truncated run is absence of evidence"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: $t TSan-clean and exited 0"; PASS=$((PASS + 1))
+    fi
+done
+# Two fixtures live in their own directory (their `import` resolution is
+# relative to the probe file): the module-namespace read path, and the
+# same-path concurrent import that must yield exactly ONE module instance.
+LDR_DIR_FIXTURES="lm_nsread lm_same_import"
+LDR_DIR_DECLARED=2
+for t in $LDR_DIR_FIXTURES; do
+    LDR_EXAMINED=$((LDR_EXAMINED + 1))
+    f="$TESTS_DIR/loader_mt_modules/$t.eigs"
+    if [ ! -f "$f" ]; then
+        echo "  FAIL: $t fixture missing ($f)"; FAIL=$((FAIL + 1)); continue
+    fi
+    tsan_warnings "$f"
+    if [ "$WARNINGS" -eq 0 ] && [ "$LAST_RC" -eq 0 ]; then
+        echo "  PASS: $t TSan-clean and exited 0"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $t reported $WARNINGS warning(s), rc=$LAST_RC"; FAIL=$((FAIL + 1))
+        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+    fi
+done
+LDR_TOTAL=$((LDR_DECLARED + LDR_DIR_DECLARED))
+if [ "$LDR_EXAMINED" -eq "$LDR_TOTAL" ] && [ "$LDR_EXAMINED" -gt 0 ]; then
+    echo "  PASS: loader fixtures examined == declared ($LDR_EXAMINED)"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: loader fixtures examined == declared (examined=$LDR_EXAMINED declared=$LDR_TOTAL)"
+    FAIL=$((FAIL + 1))
+fi
+
+echo "=== #1144 scope boundary: the user-level race names NO loader structure ==="
+# tests/loader_mt_userrace.eigs is the one loader-shaped program that is NOT
+# expected to be clean: two workers load a module whose `define` rebinds one
+# global that the other is calling — the same-slot value/assign-count class
+# `src/eigenscript.c`'s #607 comment declares out of scope, filed on its own.
+#
+# Asserting "zero reports" there would be a gate that can never be green.
+# Asserting nothing would leave "out of scope" as a sentence. So the row
+# asserts what IS in scope: that no LOADER STRUCTURE appears in any report —
+# no in-flight load stack, no module cache, no module-namespace table. If
+# #1144 regresses, one of those symbols comes back here and this goes red.
+#
+# A capture with zero reports cannot witness the boundary (§121: a check that
+# examined nothing is vacuous), so the row retries for a racing capture and
+# says so if it never gets one.
+UR_FIXTURE="$TESTS_DIR/loader_mt_userrace.eigs"
+UR_FORBIDDEN='loading_stack|eigs_loading_|module_cache|module_lock|g_module_ns|module_ns_'
+if [ -f "$UR_FIXTURE" ]; then
+    UR_OUT=""; UR_W=0; UR_RC=0; UR_TRIES=0
+    while [ "$UR_TRIES" -lt 3 ]; do
+        UR_TRIES=$((UR_TRIES + 1))
+        UR_OUT=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$UR_FIXTURE" 2>&1)
+        UR_RC=$?
+        UR_W=$(printf '%s\n' "$UR_OUT" | grep -c "WARNING: ThreadSanitizer" || true)
+        [ "$UR_W" -gt 0 ] && break
+    done
+    UR_LOADER=$(printf '%s\n' "$UR_OUT" | grep -cE "$UR_FORBIDDEN" || true)
+    if [ "$UR_RC" -ne 0 ]; then
+        echo "  FAIL: scope-boundary probe exited $UR_RC (want 0)"; FAIL=$((FAIL + 1))
+    elif [ "$UR_W" -eq 0 ]; then
+        echo "  FAIL: scope-boundary probe raced nothing in $UR_TRIES attempts — the"
+        echo "        boundary check examined an empty capture, which proves nothing"
+        FAIL=$((FAIL + 1))
+    elif [ "$UR_LOADER" -ne 0 ]; then
+        echo "  FAIL: a LOADER STRUCTURE appears in the user-race reports ($UR_LOADER line(s)) — #1144 regressed"
+        printf '%s\n' "$UR_OUT" | grep -E "$UR_FORBIDDEN" | head -6
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: user-race reports name no loader structure ($UR_W report(s) examined, 0 loader frames)"
+        PASS=$((PASS + 1))
+    fi
+else
+    echo "  FAIL: scope-boundary fixture missing ($UR_FIXTURE)"; FAIL=$((FAIL + 1))
+fi
+
+echo "=== observer arming sets must be race-free (#1145) ==="
+# (a) the spawn shape, occurrence tier + the #827 history control.
+ARM_FIXTURES="arming_mt_occ arming_mt_hist"
+ARM_DECLARED=2
+ARM_EXAMINED=0
+for t in $ARM_FIXTURES; do
+    ARM_EXAMINED=$((ARM_EXAMINED + 1))
+    f="$TESTS_DIR/$t.eigs"
+    if [ ! -f "$f" ]; then
+        echo "  FAIL: $t fixture missing ($f)"; FAIL=$((FAIL + 1)); continue
+    fi
+    tsan_warnings "$f"
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$WARNINGS" -ne 0 ]; then
+        echo "  FAIL: $t reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
+        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+    elif [ "$LAST_RC" -ne 0 ]; then
+        echo "  FAIL: $t exited $LAST_RC (want 0)"; FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: $t TSan-clean and exited 0"; PASS=$((PASS + 1))
+    fi
+done
+if [ "$ARM_EXAMINED" -eq "$ARM_DECLARED" ] && [ "$ARM_EXAMINED" -gt 0 ]; then
+    echo "  PASS: arming fixtures examined == declared ($ARM_EXAMINED)"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: arming fixtures examined == declared (examined=$ARM_EXAMINED declared=$ARM_DECLARED)"
+    FAIL=$((FAIL + 1))
+fi
+
+# (b) the TWO-STATE shape. No spawn, so every per-state flag is 0 and no
+# .eigs program can express it — a C harness against the TSan objects, the
+# same way embed-concurrent is built above. Pre-fix witness: 6/14/9 warnings
+# across three runs, all on g_arm_names/g_arm_count (arm_set_has <-
+# trace_arm_history_name <- compile_node_inner).
+ATS_SRC="$TESTS_DIR/test_arming_two_states.c"
+ATS_BIN="$ROOT/build/tsan/test_arming_two_states"
+if [ -n "$TSAN_OBJS" ] && [ -f "$ATS_SRC" ]; then
+    gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -fsanitize=thread -g -O1 -o "$ATS_BIN" \
+        "$TESTS_DIR/test_arming_two_states.c" $TSAN_OBJS -lm -lpthread \
+        -I"$ROOT/src" -I"$ROOT/build"
+    TSAN_OPTIONS="halt_on_error=0 exitcode=0" \
+        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$ATS_BIN" \
+        >"$ROOT/build/tsan_arming_two_states.out" 2>"$ROOT/build/tsan_arming_two_states.err"
+    LAST_RC=$?
+    ATS_W=$(grep -c 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_arming_two_states.err" 2>/dev/null || true)
+    if [ "$LAST_RC" -eq 0 ] && [ "${ATS_W:-0}" -eq 0 ] \
+       && grep -q 'ARMING_TWO_STATES: 7 passed, 0 failed' "$ROOT/build/tsan_arming_two_states.out"; then
+        echo "  PASS: two-state arming TSan-clean (no spawn, 0 warnings)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: two-state arming rc=$LAST_RC warnings=${ATS_W:-0}"
+        FAIL=$((FAIL + 1))
+        grep -A3 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_arming_two_states.err" | head -10
+    fi
+else
+    echo "  FAIL: two-state arming harness or tsan objects missing"
+    FAIL=$((FAIL + 1))
+fi
+
 echo "=== gate self-validation: a seeded race MUST be caught ==="
 tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
 w=$WARNINGS

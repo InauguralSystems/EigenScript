@@ -671,23 +671,15 @@ struct EigsState {
     /* Heap-owned absolute executable anchor, immutable after CLI startup. */
     char           *exe_path;
     /* Import-time module cache — populated on first import of a path,
-     * read on subsequent imports of the same path. Single-writer in
-     * practice (main thread imports at startup); no internal lock. */
+     * read on subsequent imports of the same path. #1144: a worker that
+     * imports races the main thread's realloc here, so every read and every
+     * write goes through module_lock. The lock is a LEAF over the array
+     * only: entries' refs are dropped OUTSIDE it (eigs_module_cache_clear
+     * snapshots first), because a val_decref can re-enter the runtime. */
     EigsModuleCacheEntry *module_cache;
     size_t          module_cache_count;
     size_t          module_cache_cap;
-    /* In-flight load stack (#496): paths currently executing via import /
-     * load_file. The module cache is only populated *after* a load
-     * completes, so a re-entrant load of a still-loading path misses the
-     * cache and recurses through vm_execute until the C stack is exhausted
-     * (SIGSEGV, rc=139). This detects the cycle so the loader raises a
-     * catchable error instead. Not a cache: repeated *sequential* loads
-     * stay legal (each entry pops on completion); only active
-     * re-entrancy — a path importing itself, directly or transitively —
-     * is a cycle. */
-    char          **loading_stack;
-    size_t          loading_count;
-    size_t          loading_cap;
+    pthread_mutex_t module_lock;
     /* Opaque-pointer handle table (Store/Thread/Channel ids). Locked
      * via handle_mutex since spawn workers can release handles too. */
     EigsHandleSlot  handle_table[HANDLE_TABLE_SIZE];
@@ -862,6 +854,25 @@ struct EigsThread {
     uint32_t             jit_stop_counts[256];
     uint32_t             jit_stop_at_zero;
     uint32_t             jit_compiled_count;
+    /* In-flight load stack (#496): paths currently executing via import /
+     * load_file on THIS THREAD. The module cache is only populated *after* a
+     * load completes, so a re-entrant load of a still-loading path misses the
+     * cache and recurses through vm_execute until the C stack is exhausted
+     * (SIGSEGV, rc=139). This detects the cycle so the loader raises a
+     * catchable error instead. Not a cache: repeated *sequential* loads stay
+     * legal (each entry pops on completion); only active re-entrancy — a
+     * path importing itself, directly or transitively — is a cycle.
+     *
+     * #1144: per THREAD, not per state. A cycle is re-entrancy on ONE C
+     * stack, so the thread is the exact scope of the question — and a
+     * per-state stack made two workers loading the SAME module answer
+     * "circular dependency" for each other (no cycle existed; the release
+     * witness) while the realloc/memmove raced (heap-use-after-free in
+     * eigs_loading_active). Per-thread needs no lock at all: nothing but the
+     * owning thread ever reads or writes it. Freed by eigs_thread_detach. */
+    char               **loading_stack;
+    size_t               loading_count;
+    size_t               loading_cap;
     /* Target scope for load_file (sourced modules push into the
      * caller's scope, not the global env). NULL = state->global_env. */
     Env                 *load_env;
@@ -1708,6 +1719,9 @@ void env_clear(Env *env);
 /* Reserve env slots up to `total` (used at function call to pre-allocate
  * non-captured local slots; OP_SET_LOCAL writes directly to slot indices). */
 void env_reserve_slots(Env *env, int total);
+/* #1144: env->count read under the #607 shared-module-env lock (a no-op for
+ * any non-root env, and single-threaded). */
+int  env_count_shared(Env *env);
 
 /* Enable module-level slot promotion (Part B optimization).
  * Off by default. Set to 1 only for the main script chunk; load_file and REPL
@@ -1873,7 +1887,10 @@ int  eigs_module_cache_get(const char *abs_path, Value **out_dict);
 /* Adds (incref'ing dict and env, strdup'ing path). No-op if path already
  * cached — first writer wins, since two concurrent inserts of the same
  * module would be a bug anyway. */
-void eigs_module_cache_put(const char *abs_path, Value *dict, Env *env);
+/* 1 if this call stored the entry, 0 if the path was already cached (another
+ * thread won the same import). #1144: the loser must adopt the cached
+ * instance, not push its own — see the import opcode in vm.c. */
+int  eigs_module_cache_put(const char *abs_path, Value *dict, Env *env);
 /* Releases all cached refs. Called from gc_collect_at_exit before the
  * global env's container snapshot, so cached module dicts/envs are
  * dropped first and any pure-value cycle they hold goes through the
