@@ -22,6 +22,7 @@ VG=(valgrind --quiet --error-exitcode=1 --leak-check=full
 # pattern match, recursion, JSON, modules, the observer/predicate system,
 # tensors, error handling, and the full threading set (spawn/channel/cycles).
 PROGS=(
+  test_arena_ownership   # arena-using program: the EIGS_VALGRIND annotations are only exercised by one of these (nightly corpus found arena_alloc writing into NOACCESS memory)
   test_closures test_closure_cycles test_closure_mutation
   test_data test_dict test_list_remove_at
   test_fstrings test_large_strings
