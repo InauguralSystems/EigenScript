@@ -84,7 +84,22 @@
 # target emits, and any compile-bearing script outside SCRIPT_AUDITS, is a hard
 # failure. The examined count is always printed.
 #
-# Usage: tools/werror_switch_check.sh [--selftest | --print-counts]
+# Usage: tools/werror_switch_check.sh [--selftest | --print-counts |
+#                                      --headers-only | --no-headers]
+#   --headers-only / --no-headers : the two halves of this gate, split so CI
+#                can cache one of them (#1160). The generated-header probes at
+#                the bottom RUN the LSP index generators, and those generators
+#                read C SOURCES (gen_lsp_builtin_index.sh reads the reserved
+#                observer words out of src/lexer.c). Their verdict therefore
+#                moves with .c content, which the audit cache key deliberately
+#                does NOT hash — a blind critic planted `return (TOK_REPORT);`
+#                in src/lexer.c and got a FAILING audit behind an UNCHANGED
+#                key. So the cheap half (--headers-only: two generator runs
+#                plus two -fsyntax-only compiles) runs UNCACHED on every CI
+#                run, and only the expensive half (--no-headers: the dry runs
+#                and the script scans, whose inputs are the Makefile and the
+#                tracked *.sh) is cached. Default (no flag) runs BOTH, which is
+#                what every local run and the suite's [99i] still do.
 #   --selftest : feed synthetic dry-run streams (each fault shape planted
 #                in-memory, no tree mutation) through the classifier and
 #                confirm every one is classified correctly — proves the
@@ -98,6 +113,15 @@
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
+
+# The two halves (#1160). Defaults run both, so a local `bash
+# tools/werror_switch_check.sh` is unchanged.
+RUN_AUDIT=1
+RUN_HEADER_PROBES=1
+case "${1:-}" in
+    --headers-only) RUN_AUDIT=0; shift ;;
+    --no-headers)   RUN_HEADER_PROBES=0; shift ;;
+esac
 
 # #1013 adds -Werror=misleading-indentation. `-Wall` has ALWAYS emitted it,
 # so the four w023_walk warnings the issue reports were in every build of
@@ -1711,6 +1735,33 @@ a_target_with_no_floor 40
     exit 0
 fi
 
+# --headers-only: skip straight to the generated-header probes. Nothing below
+# the audit body depends on the dry runs except the final summary line.
+if [ "$RUN_AUDIT" = "0" ]; then
+    CC_BIN="${CC:-gcc}"
+    probe_dir=$(mktemp -d /tmp/eigenscript_werror_headers_XXXXXX)
+    trap 'rm -rf -- "$probe_dir"' EXIT
+    ho_failed=0
+    probe_generated_header_only() {
+        local generator="$1" output="$2" label="$3"
+        if ! "$generator" "$output" >/dev/null; then
+            echo "werror comment gate FAILED: could not regenerate $label LSP index"
+            return 1
+        fi
+        if ! "$CC_BIN" -Werror=comment -fsyntax-only -include "$output" src/main.c; then
+            echo "werror comment gate FAILED: configured producer returned nonzero for generated $label LSP header under -Werror=comment"
+            return 1
+        fi
+    }
+    probe_generated_header_only tools/gen_lsp_stdlib_index.sh \
+        "$probe_dir/lsp_stdlib_index.h" stdlib || ho_failed=1
+    probe_generated_header_only tools/gen_lsp_builtin_index.sh \
+        "$probe_dir/lsp_builtin_index.h" builtin || ho_failed=1
+    [ "$ho_failed" -eq 0 ] || exit 1
+    echo "werror header probes OK: both generated LSP indexes regenerate and compile clean under -Werror=comment (--headers-only; the dry-run audit was NOT run)"
+    exit 0
+fi
+
 # Validate the target partition before any dry run so a hand-edited batch
 # cannot silently reduce the gate's coverage.
 validate_target_batches "$TARGETS" "${TARGET_BATCHES[@]}" || exit 1
@@ -1825,10 +1876,16 @@ probe_generated_header() {
         return 1
     fi
 }
-probe_generated_header tools/gen_lsp_stdlib_index.sh \
-    "$probe_dir/lsp_stdlib_index.h" stdlib || gate_failed=1
-probe_generated_header tools/gen_lsp_builtin_index.sh \
-    "$probe_dir/lsp_builtin_index.h" builtin || gate_failed=1
+if [ "$RUN_HEADER_PROBES" = "1" ]; then
+    probe_generated_header tools/gen_lsp_stdlib_index.sh \
+        "$probe_dir/lsp_stdlib_index.h" stdlib || gate_failed=1
+    probe_generated_header tools/gen_lsp_builtin_index.sh \
+        "$probe_dir/lsp_builtin_index.h" builtin || gate_failed=1
+else
+    echo "NOTE: generated-header probes NOT run here (--no-headers). They read C sources,"
+    echo "      so their verdict is not cacheable on this gate's key; CI runs them uncached"
+    echo "      in the same job (#1160)."
+fi
 if [ "$gate_failed" -ne 0 ]; then
     exit 1
 fi

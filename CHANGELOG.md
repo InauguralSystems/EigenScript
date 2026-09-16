@@ -56,6 +56,82 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **CI runs each gate where it is suited: a ≤ 15-minute PR lane, the full
+  matrix on `main`, and a nightly (#1160).** Measured on PR #1158: 35 min
+  wall, ~200 machine-minutes, 26 checks — because the same ~263-section suite
+  ran in TEN jobs differing only in the extension surface of the binary, and
+  section [99i] (the `-Werror` compile-line audit; ~6 min of audit plus ~11 min
+  of self-test on the dev box) ran inside every one of them for a property
+  that cannot depend on the variant.
+  - `tools/section_plan.sh` derives, per variant, the sections that variant's
+    binary actually unlocks. Nothing is hand-listed: it splits
+    `tests/run_all_tests.sh` into top-level chunks by asking `bash -n` where a
+    statement ends (and verifies the chunks partition the file byte-for-byte),
+    reads the `# EIGS-CAP-GATE: <capability>` marker each gate now declares,
+    and RUNS that capability's probe — the suite's own probe program — against
+    the binary under test. The marker population is pinned against an
+    independent over-broad grep across the runner AND every child script the
+    runner dispatches, so a capability gate spelled a new way is a hard
+    failure rather than a section that silently leaves every plan. `EIGS_SUITE_SECTIONS=<variant> bash
+    tests/run_all_tests.sh` runs the derived plan; `bash
+    tests/run_all_tests.sh --print-section-plan <variant>` prints it with its
+    counts and floors. Measured locally: the `http` plan is 16 sections / 862
+    checks in 2m09 against 35m25 for the full suite.
+  - Every plan prints `sections=<n> (of <total>) plan=<variant>`, counting the
+    headers that will actually EXECUTE, and the runner then counts the headers
+    the run printed and fails if the two disagree. A plan of zero sections, a
+    RUN of zero assertions, an unparsable probe idiom, a lost marker, a
+    core-smoke entry that matches nothing, an unaccounted gate spelling, an
+    unused waiver, and a variant whose binary presents fewer capabilities than
+    its floor are all hard failures. A `make http` with
+    `http_route` unregistered used to print `HTTP tests SKIPPED` and exit 0;
+    it now goes red.
+  - [99i] is split: its generated-LSP-header probes (`--headers-only`, 0.5 s)
+    run UNCACHED on every CI run because the generators read C sources, and
+    only the expensive dry-run audit (`--no-headers`) is cached, keyed on
+    `tools/werror_cache_key.sh` (the `Makefile`'s content, every tracked
+    `*.sh`, and the names of tracked files under `src/ tests/ tools/ web/
+    fuzz/`). A local run with no flag still does both halves. The suite jobs set `EIGS_SKIP_WERROR_AUDIT=1`, and [99i] then
+    prints a `SKIP:` naming the owning job; unset — every local run — it runs
+    in full.
+  - **The ASan suite runs in 3 weight-balanced shards. Measured end state:
+    13.4 min wall, 30 checks green (run 35020270020) — 35 → 21.1 → 13.4.** The
+    first real PR run of this change measured 21.1 min wall with the ENTIRE
+    critical path in one job — `asan + ubsan / core and LSP`, 19.0 min
+    (4.7 build + 13.9 suite).
+    That job stays full (it is the leak-tally gate), so it is parallelised: a
+    shard is a subset of the chunk list, split by MEASURED per-section wall
+    time (`tests/section_weights.txt`, regenerated with
+    `tools/section_plan.sh --print-weights <suite log>` from the runner's new
+    `SECTION_TIME:` lines) with a deterministic longest-processing-time greedy,
+    so the split never depends on runner timing. The table is measured ON THE
+    CI RUNNER: a dev-box table did not transfer (per-section ratios reach 35x
+    in both directions), and `--print-weights` reads a raw `gh api …/logs`
+    job log directly, timestamp prefix and all. One section now sets the
+    floor — `[137]` is 319 s of the 862 s sharded total, and a section cannot
+    be split, so no N puts the slowest shard below it. `--shards N --check` pins the
+    union to the whole chunk list and the shards to pairwise disjoint, and the
+    aggregator `asan + ubsan (full suite)` — unchanged name, still the only
+    ruleset-required check — requires every leg green, re-runs that check,
+    requires one receipt per shard carrying its plan line, and SUMS the
+    LeakSanitizer tallies to 0. The two job-level ASan checks that are not
+    sections have DERIVED owners: the collector-traversal check goes to the
+    lightest shard, and the LSP behaviour test to whichever shard runs section
+    [88] — that shard has already built `eigenlsp` under ASan, which is the
+    difference between 1.5 s and 267 s for the same step. Each receipt records
+    which extras its shard claimed and the aggregator requires exactly one
+    claimant for each. The runner also refuses a malformed `EIGS_SUITE_SHARD`:
+    a bare `1` used to parse as k=1,n=1, so a job still named "shard 1/3" ran
+    the whole suite while every check stayed green.
+  - `macos-15-intel` (35 min, the job that set the PR wall clock) and a
+    full-corpus valgrind run move to `.github/workflows/nightly.yml`, which
+    opens — or reopens and appends to — one tracking issue on failure.
+    `macos-15-intel` also still runs on every push to `main`; the FULL valgrind
+    corpus runs nightly only (the PR lane and `main` both run the fixed
+    smoke).
+  - `docs/CI.md` is the new map: what runs on your PR, what runs on main, what
+    runs nightly, and the required-status-check list.
+
 - **`http_response_header of [name, value]` (#1128, #1134):** register up to 16
   validated response headers before serving, including across early bind.
   Every response carries them, including static/file routes, startup,

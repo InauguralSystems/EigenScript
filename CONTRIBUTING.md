@@ -34,6 +34,31 @@ Two gates worth knowing before you push:
   the same PR or CI fails — that's by design. Same for the expected
   messages in `examples/errors/`.
 
+## What CI will run on your PR — and how long you wait
+
+**Expect a pull request to go green in about 15 minutes** (seconds if you only
+touched `*.md`). Full detail, and the reasoning, is in [docs/CI.md](docs/CI.md);
+the short version:
+
+- **Your PR** runs one full suite (`linux / gcc`), the fast differential and
+  sanitizer gates, `macos-latest`, and a *derived section plan* for each
+  extension variant — a zlib build runs the zlib sections plus a small core
+  smoke, not all 263 sections a second time.
+- **Merging to `main`** runs the whole matrix: both macOS runners, every
+  variant on the complete suite. That is the real exit gate, and the person
+  merging waits for it, not you.
+- **Nightly** runs `macos-15-intel` and a full-corpus valgrind pass, and files
+  a tracking issue if either goes red.
+
+Locally nothing changes — `cd tests && bash run_all_tests.sh` still runs
+everything, including the `-Werror` compile-line audit that CI now runs once in
+its own cached job. If you want to reproduce what a variant job does:
+
+```bash
+bash tests/run_all_tests.sh --print-section-plan zlib   # what it would run, and why
+EIGS_SUITE_SECTIONS=zlib bash tests/run_all_tests.sh    # run exactly that
+```
+
 ## Code Style
 
 - **C source** (`src/`): 4-space indent, no tabs. Keep functions short. Every builtin gets a signature comment.

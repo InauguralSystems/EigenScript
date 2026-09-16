@@ -1,0 +1,214 @@
+name: nightly
+
+# The slow lanes, moved off the PR path (#1160).
+#
+# Measured on PR #1158 (26 checks, all green): 35 min wall, ~200 machine-min.
+# The wall clock was set by ONE job — `macos / macos-15-intel`, 35 min — and a
+# contributor waited all of it. Intel-mac-only shapes are real and worth
+# catching, but they can lag a day; they do not need to gate a pull request.
+#
+# What runs here:
+#   * macos-15-intel, the full suite (the 35-min job, off the PR lane)
+#   * valgrind over the WHOLE runnable .eigs corpus, not the fixed smoke spread
+#     the PR lane runs
+# What each lane's relationship to `main` actually is — stated exactly, because
+# round 1 claimed both of these also ran on main and only one does:
+#   * macos-15-intel DOES also run on every push to `main` (ci.yml's macOS
+#     matrix is the full pair on a push, macos-latest only on a pull request).
+#   * the FULL valgrind corpus runs ONLY here. `main` and the PR lane both run
+#     tests/valgrind_smoke.sh WITHOUT --full, i.e. the fixed smoke spread. So
+#     this nightly IS the sole owner of the full-corpus pass — which is the
+#     reason the tracking-issue job below exists.
+#
+# A silent nightly is worthless, so a failure opens or appends to a single
+# tracking issue (see the `report` job). That is the difference between "the
+# slow lanes moved" and "the slow lanes stopped being read".
+
+on:
+  schedule:
+    # 04:17 UTC — off the hour, so it does not queue behind everyone else's
+    # midnight cron on the shared runner pool.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos-intel:
+    name: nightly / macos-15-intel full suite
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Shell harness portability controls
+        shell: bash
+        run: |
+          result=$(mktemp)
+          rc=0
+          bash tests/test_ci_portability.sh > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 0 ] || exit "$rc"
+          [ "$(grep -cx 'ci-portability: checks=25 failures=0' "$result")" -eq 1 ]
+
+      - name: Build
+        run: CC=clang ./build.sh
+
+      - name: Verify binary
+        run: ./src/eigenscript --version
+
+      - name: Select gfx LeakSanitizer toolchain
+        run: |
+          formula=llvm@18
+          if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+            brew install --force-bottle coreutils
+          fi
+          sanitizer_cc="$(brew --prefix "$formula")/bin/clang"
+          test -x "$sanitizer_cc"
+          "$sanitizer_cc" --version
+          echo "EIGS_ASAN_GFX_CC=$sanitizer_cc" >> "$GITHUB_ENV"
+
+      - name: Verify gfx sanitizer controls
+        run: bash tests/test_asan_gfx.sh --toolchain-only
+
+      # The FULL suite, [99i] included: this lane has the wall clock for it,
+      # and unlike the ten PR-lane jobs it is the only one running here, so
+      # the audit is not being repeated.
+      - name: Run test suite
+        run: cd tests && bash run_all_tests.sh
+
+      - name: Compile-check LSP (macOS)
+        run: make lsp CC=clang
+
+  valgrind-full:
+    name: nightly / valgrind (full corpus, JIT off)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Valgrind
+        timeout-minutes: 10
+        run: |
+          set -uo pipefail
+          if command -v valgrind >/dev/null 2>&1; then valgrind --version; exit 0; fi
+          if timeout 120 sudo apt-get install -y valgrind; then
+            valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            echo "::warning::valgrind not in the current index; refreshing (attempt $attempt)"
+            if timeout 60 sudo apt-get update && timeout 120 sudo apt-get install -y valgrind; then
+              valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::SETUP FAILURE — could not install valgrind after 3 bounded attempts. This is NOT a regression detected by the gate; the gate never ran."
+          exit 1
+
+      - name: Build (-O1 -g, minimal)
+        run: make valgrind
+
+      # --full derives its program list from the tests/ corpus instead of the
+      # smoke's fixed spread, and floors the count so a shrinking corpus
+      # cannot quietly turn this into a smaller smoke.
+      - name: Valgrind memcheck, full corpus
+        run: cd tests && bash valgrind_smoke.sh --full
+
+  report:
+    name: nightly / tracking issue on failure
+    needs: [macos-intel, valgrind-full]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      # A nightly nobody reads is the same as no nightly. Every failing run
+      # lands on ONE tracking issue: created the first time, appended to
+      # afterwards, so a week of red is one thread rather than seven issues —
+      # and a green nightly after a red one says so on the same thread, which
+      # is what makes the thread closable.
+      - name: Open or append the nightly tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MAC_RESULT: ${{ needs.macos-intel.result }}
+          VG_RESULT: ${{ needs.valgrind-full.result }}
+        run: |
+          set -euo pipefail
+          TITLE="nightly lane: macos-15-intel / valgrind-full failures"
+          failed=""
+          [ "$MAC_RESULT" = success ] || failed="$failed macos-15-intel($MAC_RESULT)"
+          [ "$VG_RESULT" = success ] || failed="$failed valgrind-full($VG_RESULT)"
+
+          # Find the tracking issue by TITLE, across open AND closed, and not
+          # only in the newest 50 open issues: a thread that was closed last
+          # month, or that has scrolled past a `--limit 50` window, must be
+          # reopened and appended to rather than duplicated. `--search` is a
+          # full-text match, so the exact title is re-checked with jq — a
+          # substring hit on some other issue must not become the thread.
+          num=$(gh issue list --repo "$REPO" --state all --limit 100 \
+                  --search "in:title \"$TITLE\"" \
+                  --json number,title,state \
+                  --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
+
+          if [ -z "$failed" ]; then
+            echo "nightly green (macos-15-intel=$MAC_RESULT valgrind-full=$VG_RESULT)"
+            if [ -n "$num" ]; then
+              gh issue comment "$num" --repo "$REPO" \
+                --body "Nightly GREEN again: macos-15-intel=$MAC_RESULT, valgrind-full=$VG_RESULT. Run: $RUN_URL"
+            fi
+            exit 0
+          fi
+
+          BODY="Nightly lane failed:$failed
+
+          macos-15-intel: \`$MAC_RESULT\`
+          valgrind-full: \`$VG_RESULT\`
+
+          Run: $RUN_URL
+
+          These lanes moved off the PR path in #1160. \`macos-15-intel\` also runs on every push to \`main\`; the FULL valgrind corpus runs HERE ONLY (the PR lane and \`main\` both run the smoke spread), so a red \`valgrind-full\` is a finding nothing else will report. This thread exists so a nightly failure between main pushes is not silent."
+
+          if [ -n "$num" ]; then
+            # Reopen first: a closed thread that starts failing again is the
+            # same thread, and a comment on a closed issue is not seen.
+            gh issue reopen "$num" --repo "$REPO" >/dev/null 2>&1 || true
+            gh issue comment "$num" --repo "$REPO" --body "$BODY"
+            echo "appended to issue #$num"
+          else
+            # `gh issue create --label <unknown>` ERRORS and creates NOTHING —
+            # the repo has no `ci` label (bug, documentation, duplicate,
+            # enhancement, good first issue, help wanted, invalid, question,
+            # wontfix, dependencies, github_actions), so the first red nightly
+            # would have opened no thread at all. Create the label if we can,
+            # and fall back to an unlabelled issue if we cannot: the thread
+            # matters, the label does not.
+            LABEL_ARGS=()
+            if gh label create ci --repo "$REPO" --color ededed \
+                 --description "CI lanes and CI infrastructure" --force >/dev/null 2>&1; then
+              LABEL_ARGS=(--label ci)
+            elif gh label list --repo "$REPO" --json name --jq '.[].name' | grep -qx ci; then
+              LABEL_ARGS=(--label ci)
+            else
+              echo "::warning::could not create or find the 'ci' label; opening the issue unlabelled"
+            fi
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" "${LABEL_ARGS[@]}"
+            echo "opened a new tracking issue"
+          fi
+
+      # The report step must not be the thing that turns a red nightly green.
+      - name: Fail the run when a nightly lane failed
+        if: needs.macos-intel.result != 'success' || needs.valgrind-full.result != 'success'
+        run: |
+          echo "macos-intel=${{ needs.macos-intel.result }} valgrind-full=${{ needs.valgrind-full.result }}"
+          exit 1

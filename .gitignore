@@ -55,3 +55,6 @@ src/eigsdap
 # was committed that way in #998.
 __pycache__/
 *.pyc
+
+# CI-only marker for the cached [99i] audit job (#1160).
+.werror-audit-ok
