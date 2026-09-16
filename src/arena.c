@@ -168,8 +168,12 @@ void* arena_alloc(size_t size) {
     }
 
     void *ptr = g_arena.blocks[g_arena.current_block] + g_arena.offset;
+    /* Un-poison BEFORE the write: the block is NOACCESS (arena_init / growth /
+     * arena_reset_to_mark), so a memset first is itself the "Invalid write"
+     * memcheck exists to report — the nightly full corpus found exactly that
+     * (5 of 229 programs red on its first run). */
+    ARENA_VG_DEFINED(ptr, size);  /* addressable; the memset below makes it defined (zeroed) */
     memset(ptr, 0, size);
-    ARENA_VG_DEFINED(ptr, size);  /* now addressable + defined (zeroed) */
     g_arena.offset += size;
     g_arena.total_allocated += size;
     return ptr;
