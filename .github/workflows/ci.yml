@@ -234,7 +234,7 @@ jobs:
       - name: Restore the audit result
         if: needs.scope.outputs.code == 'true'
         id: restore
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: .werror-audit-ok
           key: werror-audit-v1-${{ steps.key.outputs.key }}
@@ -272,7 +272,7 @@ jobs:
       # marker written unconditionally would cache a FAILURE as a pass.
       - name: Save the audit result
         if: needs.scope.outputs.code == 'true' && steps.restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: .werror-audit-ok
           key: werror-audit-v1-${{ steps.key.outputs.key }}
