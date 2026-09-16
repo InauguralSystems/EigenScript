@@ -1,0 +1,55 @@
+# #1146 ROUND 2 / G3: a channel handle whose GENERATION does not match the slot
+# must be refused catchably by every channel builtin that consumes one.
+#
+# Found by a blind critic's OWN mutant, by execution: `handle_lookup` accepting
+# any generation when `type == HANDLE_CHANNEL` SURVIVED the round-1 oracle
+# 10/10, because no live row ever presented a channel handle with a wrong
+# generation — `construction_gen` only counts call-site arity, and a grep
+# cannot witness execution. Under that mutant a forged-generation `recv`
+# returned the real message ("hello") and a stripped-generation `recv` HUNG.
+#
+# THE WITNESS IS A FORGED HANDLE, deliberately, and this is the honest reason:
+# `close_channel` only flips a flag and no channel slot is ever released before
+# the exit drain, so a REAL channel recycle is unreachable from EigenScript
+# today (docs/CONCURRENCY.md says so). A forged/stripped generation is the
+# reachable shape of the same condition, and it is the shape the mutant moves.
+#
+# THREE messages are buffered and the tail read is `try_recv`, so that under a
+# mutant that ignores the generation NOTHING here can block: the kill is a
+# wrong ANSWER in milliseconds, not a 20 s hang. (The row is bounded anyway —
+# that is the backstop, not the plan.)
+define tag(m) as:
+    if (index_of of [m, "stale"]) >= 0:
+        return "ERR-stale"
+    return f"ERR-other({m})"
+c is channel of 4
+send of [c, "one"]
+send of [c, "two"]
+send of [c, "three"]
+forged is {"_channel_id": c._channel_id, "_channel_gen": c._channel_gen + 1}
+stripped is {"_channel_id": c._channel_id}
+recv_m is "NO-RAISE"
+try:
+    v is recv of forged
+    recv_m is f"NO-RAISE(returned {v})"
+catch e:
+    recv_m is e.message
+strip_t is "NO-RAISE"
+try:
+    v2 is try_recv of stripped
+    strip_t is f"NO-RAISE(returned {v2})"
+catch e:
+    strip_t is tag of e.message
+send_t is "NO-RAISE"
+try:
+    send of [forged, "x"]
+catch e:
+    send_t is tag of e.message
+close_t is "NO-RAISE"
+try:
+    close_channel of forged
+catch e:
+    close_t is tag of e.message
+real is try_recv of c
+close_channel of c
+print of f"forged_recv={recv_m} stripped={strip_t} forged_send={send_t} forged_close={close_t} real={real}"

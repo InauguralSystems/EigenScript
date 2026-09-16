@@ -317,6 +317,18 @@ struct Env {
      * downstream consumer at a pin bump. env_binding_home (vm.c) walks past
      * these. `local` is unaffected — it is a different opcode. */
     unsigned char is_loop_env;
+    /* #1161: "this env is reachable from more than one thread", the ONE
+     * predicate behind every MT-only env guard (env_mt_shared). It used to be
+     * spelled `parent == NULL`, which is true of the sealed root envs and
+     * FALSE of every imported module's namespace env — `env_new(g_global_env)`
+     * has a parent — so the #607 lock never engaged for a module namespace and
+     * two workers doing `M.new_field is v` grew names[]/slots[] with no lock
+     * (realloc under a reader: 61 ThreadSanitizer reports and a SIGSEGV on the
+     * 2,000-fields-per-worker repro, 5/5 crashes on the release binary).
+     * Set at creation for a root env and by env_mark_shared for a module
+     * namespace; env_new must assign it explicitly because the freelist branch
+     * does NOT zero the struct (same trap as is_loop_env above). */
+    unsigned char mt_shared;
     int env_refcount;   /* honest owner count: creator/frame + closures
                          * (make_fn) + child envs (parent link) + a chunk's
                          * parked env_cache. 0 -> destroyed. */
@@ -555,9 +567,17 @@ typedef enum {
     HANDLE_NET       /* #414 ext_net socket (listener or connection) */
 } HandleType;
 
+/* #1146: `gen` is bumped every time the slot is handed out, so a handle
+ * VALUE that still names a recycled slot is detectable. Ids recycle
+ * round-robin over the 255 usable slots, so after 255 spawn/join cycles a
+ * stale thread handle named a slot a DIFFERENT thread now owned and joined
+ * it silently (issue #1146 (2)). 0 is never issued — a handle value with no
+ * generation (a forged dict, or one whose field was stripped) reads as gen 0
+ * and can never match a live slot. */
 typedef struct {
     void      *ptr;
     HandleType type;
+    uint32_t   gen;
 } EigsHandleSlot;
 
 /* Import-time module cache entry (Phase 0a of the package design).
@@ -1635,6 +1655,9 @@ void eigs_obs_gate_stats_report(void);   /* prints `obs-gate: observe-calls N` *
 Env* env_new(Env *parent);
 void env_global_shared_lock(void);    /* #1035: module-env lock for external readers */
 void env_global_shared_unlock(void);
+/* #1161: mark an env as reachable from more than one thread (see Env::mt_shared).
+ * Called from eigs_module_ns_attach — the one place a module namespace is born. */
+void env_mark_shared(Env *e);
 void env_set(Env *env, const char *name, Value *val);
 Value* env_get(Env *env, const char *name);
 void env_set_local(Env *env, const char *name, Value *val);
@@ -1934,14 +1957,51 @@ Value* json_obj_get(Value *obj, const char *key);
 #endif
 
 /* ---- Handle table (opaque pointer indirection) ----
- * Table + lock + types declared up at the EigsState struct. */
-int    handle_register(void *ptr, HandleType type);
-void*  handle_lookup(int id, HandleType type);
+ * Table + lock + types declared up at the EigsState struct.
+ *
+ * #1146: every handed-out id carries the slot's GENERATION, and the two
+ * operations that can race — resolve, and take-ownership-then-destroy — are
+ * separate entry points:
+ *
+ *   handle_register   claim a free slot; *out_gen receives its generation.
+ *   handle_lookup     resolve id+gen to the pointer, or NULL. A generation
+ *                     mismatch means the slot no longer holds what this handle
+ *                     names. `why` (optional) receives a HANDLE_CLAIM_* code so
+ *                     the caller can hand it to handle_raise_unresolved.
+ *   handle_lookup_slot resolve by RAW INDEX with no generation check. For the
+ *                     table SCANS only (task.c walks 1..HANDLE_TABLE_SIZE-1);
+ *                     never for a handle a program is holding.
+ *   handle_claim      look up AND detach the slot in ONE hold of handle_mutex,
+ *                     so exactly one caller can ever own the resource. This is
+ *                     the fix for the double `pthread_join` in #1146 (1): two
+ *                     joiners both passed the old lookup and both joined one
+ *                     tid (POSIX UB — glibc never wakes the second: a HANG).
+ *                     *why receives a HANDLE_CLAIM_* code on failure.
+ *   handle_release    drop a slot, generation-checked. */
+#define HANDLE_CLAIM_OK       0   /* claimed */
+#define HANDLE_CLAIM_GONE     1   /* slot empty: already claimed/released */
+#define HANDLE_CLAIM_STALE    2   /* slot live but a different generation */
+#define HANDLE_CLAIM_TYPE     3   /* slot live, same generation, wrong kind */
+#define HANDLE_CLAIM_BADVALUE 4   /* not a handle value at all (round 2) */
+int    handle_register(void *ptr, HandleType type, uint32_t *out_gen);
+void*  handle_lookup(int id, uint32_t gen, HandleType type, int *why);
+void*  handle_lookup_slot(int idx, HandleType type);
+void*  handle_claim(int id, uint32_t gen, HandleType type, int *why);
+/* ROUND 2 (#1146 G2): the ONE place a refusal for an unresolved handle is
+ * worded. Every kind — thread, channel, store — routes here, so a stale
+ * handle SAYS "stale" in the same words whatever it names, and the wording
+ * cannot drift between kinds as sites are added. Round 1 refused a stale
+ * channel with `send: invalid channel`, which is correct but indistinguishable
+ * from a handle that was never valid; a user cannot tell "you recycled this"
+ * from "you made this up". `gone_verb` is the kind's own past participle
+ * ("joined" for a thread, "closed" for a channel or store). */
+void   handle_raise_unresolved(const char *who, const char *kind, int id,
+                               int why, const char *gone_verb);
 /* Deterministic teardown of channel + thread handles (builtins.c): joins
  * outstanding workers, then frees remaining channels. Call once execution is
  * done and the value world is still alive (before env/thread teardown). */
 void   handle_table_drain(struct EigsState *st);
-void   handle_release(int id);
+void   handle_release(int id, uint32_t gen);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);

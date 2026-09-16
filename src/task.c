@@ -139,7 +139,7 @@ void task_sched_thread_free(void) {
 
 static Task *sched_lookup(TaskScheduler *s, int id) {
     if (id == 0) return &s->main_task;
-    return (Task *)handle_lookup(id, HANDLE_TASK);
+    return (Task *)handle_lookup_slot(id, HANDLE_TASK);
 }
 
 /* #493: does any worker still carry an uncaught-error death that no task_join
@@ -151,7 +151,7 @@ int task_any_unobserved_error(void) {
     /* #530: reaped detached tasks that died unobserved are counted, not held. */
     if (((TaskScheduler *)g_task_sched)->detached_err_count > 0) return 1;
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
+        Task *t = (Task *)handle_lookup_slot(i, HANDLE_TASK);
         if (t && t->err_unobserved) return 1;
     }
     return 0;
@@ -447,7 +447,7 @@ static int sched_wake_sleepers(TaskScheduler *s) {
         best = s->main_task.wake_at; have_best = 1;
     }
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
+        Task *t = (Task *)handle_lookup_slot(i, HANDLE_TASK);
         if (t && t->state == TASK_SUSPENDED && t->sleeping &&
             (!have_best || t->wake_at < best)) {
             best = t->wake_at; have_best = 1;
@@ -469,7 +469,7 @@ static int sched_wake_sleepers(TaskScheduler *s) {
     for (;;) {
         Task *next = NULL;
         for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-            Task *t = (Task *)handle_lookup(i, HANDLE_TASK);
+            Task *t = (Task *)handle_lookup_slot(i, HANDLE_TASK);
             if (t && t->state == TASK_SUSPENDED && t->sleeping && t->wake_at <= s->now &&
                 (!next || t->spawn_seq < next->spawn_seq))
                 next = t;
@@ -534,7 +534,7 @@ int task_do_kill(int tid) {
         t->error_value = ev;
     }
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        Task *w = (Task *)handle_lookup(i, HANDLE_TASK);
+        Task *w = (Task *)handle_lookup_slot(i, HANDLE_TASK);
         if (w && w->state == TASK_SUSPENDED && w->join_target == tid)
             sched_ready_push(s, w->id, SCAUSE_KILL_RELEASE);
     }
@@ -612,8 +612,9 @@ static Value *task_start(Task *t) {
  * (task_alive 0, task_join null) and the slot is immediately reusable. */
 static void task_reap(Task *t) {
     int id = t->id;
+    uint32_t gen = t->hgen;
     task_free(t);
-    handle_release(id);
+    handle_release(id, gen);
 }
 
 /* #530: mark `tid` fire-and-forget. A detached task is reaped the moment it
@@ -667,7 +668,7 @@ static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
     /* Wake every task blocked on this one: enqueue it; on resume the join
      * builtin's placeholder gets overwritten with our result (or re-raise). */
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        Task *w = (Task *)handle_lookup(i, HANDLE_TASK);
+        Task *w = (Task *)handle_lookup_slot(i, HANDLE_TASK);
         if (w && w->state == TASK_SUSPENDED && w->join_target == t->id)
             sched_ready_push(s, w->id, SCAUSE_JOIN_RELEASE);
     }

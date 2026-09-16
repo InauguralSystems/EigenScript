@@ -273,7 +273,7 @@ sign_extend|print of (sign_extend of ["x", 8])
 sin|print of (sin of "x")
 sqrt/exp/log/negative|print of (sqrt of "x")
 starts_with|print of (starts_with of [42, "x"])
-store_delete|print of (store_delete of [42, "col", "k"])
+store_delete|print of (store_delete of [42, "col", "k"])|store_delete: invalid store
 index_of|print of (index_of of [42, "x"])
 list_index_of|print of (list_index_of of [42, 1])
 ord|print of (ord of 42)
@@ -311,9 +311,9 @@ mean|print of (mean of "hello")
 norm|print of (norm of "hello")
 join|print of (join of [["a", "b"], 42])
 rename|print of (rename of [42, "b"])
-store_count|print of (store_count of [42, "col"])
-store_drop|print of (store_drop of [42, "col"])
-store_update|print of (store_update of [42, "col", "k", {"a": 1}])
+store_count|print of (store_count of [42, "col"])|store_count: invalid store
+store_drop|print of (store_drop of [42, "col"])|store_drop: invalid store
+store_update|print of (store_update of [42, "col", "k", {"a": 1}])|store_update: invalid store
 store_update|print of (store_update of [(store_open of "@TMP@/probe.db"), "col", ([1, 2]), {"a": 1}])
 stream_open|print of (stream_open of [42, 1])
 write_text|print of (write_text of [42, "x"])

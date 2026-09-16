@@ -1,0 +1,34 @@
+# #1146 (1): two workers thread_join the SAME handle concurrently.
+#
+# The CONSERVED quantity (mechanical-gates §131) is not who wins: it is that
+# across any interleaving exactly ONE joiner receives the worker's value and
+# exactly one receives a catchable error. Before the claim step both joiners
+# passed handle_lookup and both called pthread_join on one tid — POSIX UB;
+# glibc never wakes the second, so this probe HUNG 3/3 here at a 30 s bound
+# (7/7 across the two reviewers on the issue).
+define slow(n) as:
+    usleep of 100000
+    return n
+target is spawn of [slow, 7]
+define joiner(h) as:
+    local r is null
+    try:
+        r is thread_join of h
+    catch e:
+        r is f"ERR:{e.kind}"
+    return r
+j1 is spawn of [joiner, target]
+j2 is spawn of [joiner, target]
+a is thread_join of j1
+b is thread_join of j2
+wins is 0
+errs is 0
+if a == 7:
+    wins is wins + 1
+if b == 7:
+    wins is wins + 1
+if a == "ERR:value":
+    errs is errs + 1
+if b == "ERR:value":
+    errs is errs + 1
+print of f"double_join wins={wins} errs={errs}"

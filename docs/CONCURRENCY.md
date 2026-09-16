@@ -90,6 +90,151 @@ allocator-managed structure it can corrupt the heap rather than merely
 returning a stale number (#1152). Communicate results; do not share mutable
 state between live threads.
 
+## Thread handles: one join per handle (#1146)
+
+`spawn` returns a **handle** — a dict carrying `_handle_id` and `_handle_gen`
+— and `thread_join` consumes it. The contract is three rules, each of which
+used to be a silent wrong answer or a hang.
+
+**A handle is joined exactly once, by exactly one caller.** `thread_join`
+*claims* the handle: under one hold of the handle-table mutex it resolves the
+id AND detaches the slot, and only then calls `pthread_join` outside the lock.
+So of any number of callers holding the same handle — sequentially, or on two
+threads at once — exactly one gets the worker's result and every other one
+gets a **catchable** error, `kind` `value`:
+
+```eigenscript
+define work(n) as:
+    return n * 2
+h is spawn of [work, 21]
+print of (thread_join of h)
+try:
+    print of (thread_join of h)
+catch e:
+    print of f"{e.kind}: {e.message}"
+```
+```output
+42
+value: thread_join: thread handle 1 has already been joined
+```
+
+Before the claim step, two threads joining one handle both passed the lookup
+and both called `pthread_join` on one thread id. That is undefined behaviour
+under POSIX, and on glibc the second caller never wakes: the process **hung**,
+7/7 runs across two reviewers and 3/3 on the maintainer box, with the loser
+then reading the freed handle. A second SEQUENTIAL join returned `null`, which
+is also what a worker that returned `null` gives you.
+
+**A handle names a generation, not just a slot.** The table has 255 usable
+slots handed out round-robin, so ids recycle. Each slot carries a counter that
+is bumped every time the slot is handed out, and the handle carries the value
+it was issued at, so a handle held across a full cycle of the table is
+**detected** rather than silently aliased to whatever now owns the slot:
+
+```
+stale is spawn of [w, "STALE"]
+thread_join of stale
+... 254 more spawn/join cycles, so the table wraps ...
+fresh is spawn of [w, "FRESH"]
+thread_join of stale     # raises: stale thread handle (slot N no longer holds it)
+thread_join of fresh     # "FRESH"
+```
+
+Before the generation, that program joined the STALE handle and got `"FRESH"`,
+then joined the FRESH handle and got `null`, at exit status 0. Channel and
+store handles carry the same generation (`_channel_gen`, `_store_gen`) and
+socket handles pack it into their numeric id. **Cooperative task ids are the
+one declared exception** — a task id is a plain number with nowhere to carry a
+generation, so `task_join`/`task_alive` resolve by raw slot; a detached task's
+slot is recycled, so an id kept past `task_detach` can name a later task
+(tracked as #1173). A task that is simply *joined* never releases its slot, on
+this version or any earlier one — 255 spawn/join cycles exhaust the table and
+raise `task_spawn: too many live tasks` — so `task_detach` is the only way to
+reach that ABA at all.
+
+**Which kinds can actually recycle.** Threads and stores release their slot
+(`thread_join`, `store_close`), so a real ABA is reachable for both and both
+are gated by a live test row. **Channels never release a slot**:
+`close_channel` only flips a flag, and the table entry is reclaimed at the exit
+drain, so a genuine channel recycle is unreachable from EigenScript today. The
+generation is still checked for channels, because the handle VALUE is an
+ordinary dict a program can copy, edit or build by hand — a forged or stripped
+`_channel_gen` is the reachable shape of the same condition, and that is what
+`tests/handles_channel_stale.eigs` presents.
+
+**A refusal says WHICH failure it is, in one vocabulary.** Every kind routes
+through one formatter (`handle_raise_unresolved`), so the four answers read the
+same whether the handle named a thread, a channel or a store:
+
+| condition | message |
+|---|---|
+| the slot was released | `thread_join: thread handle 1 has already been joined` · `store_get: store handle 1 has already been closed` |
+| the slot holds something else now | `store_get: stale store handle (slot 1 no longer holds the store this handle names)` |
+| the slot holds another kind | `recv: handle 1 is not a channel handle` |
+| not a handle at all | `send: invalid channel` |
+
+The wording matters because the first three used to be one word. A stale
+channel handle was refused with `send: invalid channel` — a refusal, which is
+the bar, but indistinguishable from a handle that was never valid, and a user
+debugging a recycled handle needs to be told it was recycled.
+
+**Every store builtin refuses a handle it cannot resolve.** `store_get`,
+`store_query`, `store_count`, `store_list`-style readers included — not just
+the writers. Round 1 added the generation check and `store_get` still turned
+the failed resolve into a silent `null`, so the ABA moved from "returns the
+wrong record" to "returns nothing", both at exit status 0. Both are the class
+this section exists to remove.
+
+**The table is finite and says so.** All handle kinds — threads, channels,
+cooperative tasks, sockets, stores — share **255** slots. `spawn`, `channel`,
+`task_spawn`, `store_open` and the socket builtins raise a catchable `limit`
+error when the table is full; none of them returns `null` for it. Before,
+`spawn` printed `Error: handle table full` to stderr — where no program can
+see it — and returned `null`, so 300 unjoined spawns reported
+`spawned=255 raises=0 silent=45` at exit status 0 and a caller that checked
+nothing carried on with 45 workers it had never started.
+
+Gated by `tests/test_handles_mt.sh` (suite [42l]), its rows in
+`tests/test_tsan.sh`, and the mutation train `tools/handles_mt_mutants.sh`.
+
+## Shared envs under MT are named, not inferred (#1161)
+
+The `#607` lock that serializes structural mutation of a shared env asked
+`multithreaded && parent == NULL`. Every sealed ROOT env satisfies that; no
+imported module's namespace env does, because a namespace is
+`env_new(g_global_env)` and has a parent. So the lock never engaged for the
+envs that `M.field is v` writes, and two workers adding distinct new fields to
+one imported module grew its `names[]`/`slots[]` concurrently — a `realloc`
+under a reader. Measured on the pre-fix tree: two workers × 2,000 distinct new
+fields crashed the release binary 5/5 (`double free or corruption`,
+`realloc(): invalid next size`, SIGSEGV) and reported 61 ThreadSanitizer
+findings — 77 of whose stack frames named `env_set_local_hashed` and 64
+`dict_set_hashed_raw`, which is why locking only the env would not have been
+enough.
+
+The predicate is now a property the env carries (`Env::mt_shared`), set in
+exactly two places: a root env at creation, and a module namespace when it is
+attached. Every MT-only env guard reads that one predicate, so a new kind of
+cross-thread env is one call rather than a second definition of "shared".
+
+A module namespace is **two** structures — the module env, which is the
+authority, and the dict mirror that whole-dict readers (`keys of M`, `len of`,
+printing, iteration) see. Both are serialized, on the same mutex in separate
+holds. That is the runtime's own coupling, not a user data race: the program
+wrote one binding assignment and the runtime chose to implement it as two
+structures. Two threads writing the same ORDINARY dict is still your race to
+avoid, exactly as above.
+
+The read path is unchanged in cost when nothing has spawned: the predicate
+still tests the multithreaded flag first, so a single-threaded program pays one
+predicted-false branch. Measured, 5,000,000 single-threaded `M.field is v`
+writes, n=5 interleaved against f532c8d: 1.1865 s -> 1.1829 s median (-0.3%,
+inside the run-to-run spread), `instructions:u` 5.048e9 -> 5.133e9 (+1.7%).
+
+Still yours to avoid: `keys of M` on one thread while another worker is adding
+fields is a whole-dict READ against a structural write, and is not serialized.
+Join first, or give each worker its own module.
+
 ## Loading from workers (#1144)
 
 `import` and `load_file` are ordinary statements, so they are legal inside a

@@ -1,0 +1,1 @@
+same_slot=1 get=store_get: stale store handle (slot 1 no longer holds the store this handle names) put=ERR-stale query=ERR-stale count=ERR-stale fresh=FRESH

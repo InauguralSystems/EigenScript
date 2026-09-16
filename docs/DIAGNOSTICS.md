@@ -96,11 +96,11 @@ below are the contract.)
 |------|---------|----------|
 | `undefined_name` | no binding for a name | `undefined variable 'x'` |
 | `type_mismatch` | operation/argument of the wrong type | `cannot apply '-' to list and num`, `bit_not expects a number` |
-| `value` | right type, unacceptable value | `index must be an integer, got 1.5`, `chr of 0`, invalid channel |
+| `value` | right type, unacceptable value | `index must be an integer, got 1.5`, `chr of 0`, `send: invalid channel`, `thread_join: thread handle 1 has already been joined`, `store_get: store handle 1 has already been closed`, `store_get: stale store handle (slot 1 no longer holds the store this handle names)`, `recv: stale channel handle (slot 1 no longer holds the channel this handle names)`, `recv: handle 1 is not a channel handle` |
 | `index_range` | index/slice outside bounds | `index 10 out of range (list length 3)` |
 | `parse` | runtime-surfaced parse/compile failure | `eval: parse error in code string`, `import: parse errors in 'm'` |
 | `io` | the outside world failed | `import: cannot read 'm'`, `store_open: cannot create`, thread-create failure, `db: query failed: ERROR:  relation "orders" does not exist` |
-| `limit` | engine resource cap hit | `call stack overflow`, `store_put: record too large`, route table full |
+| `limit` | engine resource cap hit | `call stack overflow`, `store_put: record too large`, route table full, `spawn: handle table full (max 255 live threads/channels/tasks/sockets)` |
 | `sandbox` | sandbox policy denial or budget | `blocked in sandbox`, `sandbox memory budget exceeded` |
 | `interrupt` | host-requested abort (`eigs_abort`) | `aborted` |
 | `assert` | `assert` builtin failure | `ASSERT FAIL: ...` |

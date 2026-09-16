@@ -2174,6 +2174,11 @@ void eigs_module_ns_attach(Value *dict, Env *env) {
      * this `dict`. */
     __atomic_store_n(&t->ent[i].dict, dict, __ATOMIC_RELEASE);
     env_incref(env);              /* OWNING edge — GC_EDGE_TABLE row below */
+    /* #1161: this env is now reachable from every thread that can reach the
+     * namespace dict — which, once anything spawns, is all of them. This is
+     * the ONE place a module namespace is born, so it is the one place that
+     * has to say so. */
+    env_mark_shared(env);
     dict->module_ns = 1;
     pthread_mutex_unlock(&g_module_ns_mu);
 }
@@ -2207,37 +2212,58 @@ Env *eigs_module_ns_detach(Value *dict) {
 static Value *module_ns_project(Value *d, Env *e, const char *key, uint32_t h) {
     /* #607: find + load under one hold, exactly as env_get_hashed_slot does —
      * a concurrent module-env grow republishes names/values. No-op when the
-     * process is single-threaded. Nothing else here touches the env, so the
-     * hold is released before the (non-recursive) dict store below. */
+     * process is single-threaded. */
     env_shared_lock(e);
     int ei = env_hash_find(&e->hash, key, h, e->names);
     EigsSlot s = (ei >= 0) ? e->values[ei] : slot_null();
     if (ei >= 0) slot_incref(s);       /* pin across the unlock */
     env_shared_unlock(e);
+    /* #1161: a module namespace is TWO structures — the module env (the
+     * authority) and this dict MIRROR — and BOTH are reachable from every
+     * thread. Serializing only the env left the mirror's keys[]/vals[]
+     * growing under a concurrent reader: across the repro's 61 pre-fix
+     * ThreadSanitizer reports, 64 stack frames named dict_set_hashed_raw
+     * (against 77 naming env_set_local_hashed). The mirror takes the SAME mutex in
+     * its OWN hold (it is not recursive, and the env hold above must be
+     * released before this one is taken). A plain shared dict is still the
+     * user's race to avoid (docs/CONCURRENCY.md) — what makes this one the
+     * runtime's problem is that the user wrote ONE binding assignment and the
+     * runtime chose to implement it as two structures. */
+    env_shared_lock(e);
     int di = env_hash_find(&d->data.dict.hash, key, h, d->data.dict.keys);
-    if (ei < 0)
-        return (di >= 0) ? d->data.dict.vals[di] : NULL;
+    if (ei < 0) {
+        Value *miss = (di >= 0) ? d->data.dict.vals[di] : NULL;
+        env_shared_unlock(e);
+        return miss;
+    }
     if (di >= 0) {
         Value *cur = d->data.dict.vals[di];
         if (slot_is_ptr(s)) {
             /* Container/fn bindings were already shared by reference. */
-            if (slot_as_ptr(s) == cur) { slot_decref(s); return cur; }
+            if (slot_as_ptr(s) == cur) {
+                env_shared_unlock(e);
+                slot_decref(s);
+                return cur;
+            }
         } else if (slot_is_num(s) && cur && cur->type == VAL_NUM &&
                    cur->refcount == 1 && !cur->arena) {
             /* Exclusive untracked mirror — refresh in place, no allocation.
              * Same exclusivity test as dict_set_cached_immediate: a mirror
              * anyone else holds a ref to must not be mutated under them. */
             cur->data.num = s.d;
+            env_shared_unlock(e);
             slot_decref(s);
             return cur;
         }
     }
     Value *mv = slot_to_value(s);            /* owned */
-    slot_decref(s);                          /* drop the pin */
     dict_set_hashed_raw(d, key, h, mv);
-    val_decref(mv);
     di = env_hash_find(&d->data.dict.hash, key, h, d->data.dict.keys);
-    return (di >= 0) ? d->data.dict.vals[di] : NULL;
+    Value *out = (di >= 0) ? d->data.dict.vals[di] : NULL;
+    env_shared_unlock(e);
+    slot_decref(s);                          /* drop the pin */
+    val_decref(mv);
+    return out;
 }
 
 /* Refresh every projected entry. Whole-dict readers (keys / values / len /
@@ -2408,6 +2434,15 @@ void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val) {
              * program) and ledgered on #1057; a fix belongs with the tape,
              * not here. */
             env_set_local_hashed(me, key, h, val);
+        if (me) {
+            /* #1161: the mirror half, in its OWN hold — see module_ns_project.
+             * env_set_local_hashed above took and released the same
+             * non-recursive mutex, so this cannot be folded into one hold. */
+            env_shared_lock(me);
+            dict_set_hashed_raw(dict, key, h, val);
+            env_shared_unlock(me);
+            return;
+        }
     }
     dict_set_hashed_raw(dict, key, h, val);
 }
@@ -2511,6 +2546,18 @@ Value* dict_get_hashed(Value *dict, const char *key, uint32_t h) {
         Env *me = eigs_module_ns_env(dict);
         if (me && module_ns_public(key))
             return module_ns_project(dict, me, key, h);
+        if (me) {
+            /* #1161: a module-PRIVATE (`_`-prefixed) key is never projected,
+             * so it never took the mirror hold above — but a sibling worker
+             * writing any public field reallocs the same keys[]/vals[] this
+             * probe walks. Same lock, same reason. */
+            env_shared_lock(me);
+            int pidx = env_hash_find(&dict->data.dict.hash, key, h,
+                                     dict->data.dict.keys);
+            Value *pv = (pidx >= 0) ? dict->data.dict.vals[pidx] : NULL;
+            env_shared_unlock(me);
+            return pv;
+        }
     }
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     return (idx >= 0) ? dict->data.dict.vals[idx] : NULL;
@@ -2884,8 +2931,17 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
  * not memory safety of the arrays. */
 static pthread_mutex_t g_module_env_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/* #1161: ONE definition of "shared env under MT". The old spelling was
+ * `e->parent == NULL`, which silently excluded every imported module's
+ * namespace env (`env_new(g_global_env)` — parent NOT NULL), i.e. exactly the
+ * envs two workers can extend through `M.field is v`. Now the env says so
+ * itself (Env::mt_shared, set for a root env at env_new and for a module
+ * namespace at eigs_module_ns_attach), so a new kind of cross-thread env is
+ * one call to env_mark_shared rather than a second predicate. The
+ * g_vm_multithreaded test stays FIRST and is the whole single-threaded cost:
+ * one predicted-false load, exactly as before. */
 static inline int env_mt_shared(const Env *e) {
-    return __builtin_expect(g_vm_multithreaded, 0) && e->parent == NULL;
+    return __builtin_expect(g_vm_multithreaded, 0) && e->mt_shared;
 }
 static inline void env_shared_lock(const Env *e) {
     if (env_mt_shared(e)) pthread_mutex_lock(&g_module_env_lock);
@@ -2897,6 +2953,10 @@ static inline void env_shared_unlock(const Env *e) {
  * names/count (builtin_sandbox_run's snapshot, #1035). */
 void env_global_shared_lock(void)   { env_shared_lock(g_global_env); }
 void env_global_shared_unlock(void) { env_shared_unlock(g_global_env); }
+
+/* #1161: see Env::mt_shared. Idempotent, and deliberately one-way — an env
+ * that has been published to another thread never becomes private again. */
+void env_mark_shared(Env *e) { if (e) e->mt_shared = 1; }
 
 /* #660: exported for the SIGUSR1 observer dump (vm.c) — the dump's
  * module-scope walk holds the existing #607 module-env lock under MT
@@ -3223,6 +3283,11 @@ Env* env_new(Env *parent) {
      * `count` is reset), so a stale is_loop_env from the previous occupant
      * would make an ordinary env look like a loop env (#959). */
     e->is_loop_env = 0;
+    /* #1161: same reason as is_loop_env — a recycled env must not inherit the
+     * previous occupant's shared flag, and a sealed ROOT env is shared by
+     * construction (it is the module/global scope every worker resolves
+     * through). A module namespace is marked later, at eigs_module_ns_attach. */
+    e->mt_shared = (parent == NULL);
     e->env_refcount = 1;              /* creator's ref (frame or C caller) */
     return e;
 }
@@ -4622,7 +4687,8 @@ Value* env_get(Env *env, const char *name) {
  * Table + lock live on EigsState (see eigenscript.h).
  * ================================================================ */
 
-int handle_register(void *ptr, HandleType type) {
+int handle_register(void *ptr, HandleType type, uint32_t *out_gen) {
+    if (out_gen) *out_gen = 0;
     if (!eigs_current) return -1;
     EigsState *st = eigs_current->state;
     pthread_mutex_lock(&st->handle_mutex);
@@ -4630,35 +4696,144 @@ int handle_register(void *ptr, HandleType type) {
         int idx = (st->handle_next + i) % HANDLE_TABLE_SIZE;
         if (idx == 0) continue;
         if (st->handle_table[idx].ptr == NULL) {
-            st->handle_table[idx].ptr = ptr;
+            /* #1146: a fresh generation per handing-out. Skip 0 on wrap —
+             * gen 0 is the "no generation" reading a forged or stripped
+             * handle value produces, and it must never match a live slot. */
+            uint32_t g = st->handle_table[idx].gen + 1;
+            if (g == 0) g = 1;
+            st->handle_table[idx].gen  = g;
+            st->handle_table[idx].ptr  = ptr;
             st->handle_table[idx].type = type;
             st->handle_next = (idx + 1) % HANDLE_TABLE_SIZE;
             pthread_mutex_unlock(&st->handle_mutex);
+            if (out_gen) *out_gen = g;
             return idx;
         }
     }
     pthread_mutex_unlock(&st->handle_mutex);
-    fprintf(stderr, "Error: handle table full\n");
+    /* #1146 (3): NO diagnostic here. The table being full is a catchable
+     * engine-limit error at the SPAWN/CHANNEL/OPEN site (rt_error EK_LIMIT),
+     * not a line on stderr under a `null` return that the program then joins
+     * silently. This function only reports the failure. */
     return -1;
 }
 
-void* handle_lookup(int id, HandleType type) {
+void* handle_lookup(int id, uint32_t gen, HandleType type, int *why) {
+    if (why) *why = HANDLE_CLAIM_BADVALUE;
     if (!eigs_current) return NULL;
     if (id <= 0 || id >= HANDLE_TABLE_SIZE) return NULL;
     EigsState *st = eigs_current->state;
     pthread_mutex_lock(&st->handle_mutex);
+    EigsHandleSlot *sl = &st->handle_table[id];
     void *ptr = NULL;
-    if (st->handle_table[id].ptr != NULL && st->handle_table[id].type == type)
-        ptr = st->handle_table[id].ptr;
+    /* ROUND 2: the same three-way diagnosis handle_claim already made, so a
+     * resolve that FAILS can say which of the three happened instead of
+     * folding all of them into one "invalid" (#1146 G2). */
+    if (sl->ptr == NULL) {
+        if (why) *why = HANDLE_CLAIM_GONE;
+    } else if (sl->gen != gen) {
+        if (why) *why = HANDLE_CLAIM_STALE;
+    } else if (sl->type != type) {
+        if (why) *why = HANDLE_CLAIM_TYPE;
+    } else {
+        ptr = sl->ptr;
+        if (why) *why = HANDLE_CLAIM_OK;
+    }
     pthread_mutex_unlock(&st->handle_mutex);
     return ptr;
 }
 
-void handle_release(int id) {
+/* #1146 G2 (round 2): ONE wording for every unresolved handle, of every kind.
+ * Bought by a blind critic: round 1 refused a stale CHANNEL handle with
+ * `value: send: invalid channel` — a refusal, which was the bar, but a user
+ * cannot tell a recycled handle from one that was never valid, and
+ * `thread_join` two files away was already distinguishing three reasons in
+ * its own words. Two vocabularies for one condition is how they drift. The
+ * STALE text deliberately does NOT say "reused": a channel slot is never
+ * released today, so the only way to reach STALE for a channel is a handle
+ * whose generation was forged or stripped — "no longer holds the X this
+ * handle names" is true of both that and a real recycle. */
+void handle_raise_unresolved(const char *who, const char *kind, int id,
+                             int why, const char *gone_verb) {
+    switch (why) {
+    case HANDLE_CLAIM_STALE:
+        rt_error(EK_VALUE, 0,
+                 "%s: stale %s handle (slot %d no longer holds the %s this "
+                 "handle names)", who, kind, id, kind);
+        return;
+    case HANDLE_CLAIM_TYPE:
+        rt_error(EK_VALUE, 0, "%s: handle %d is not a %s handle",
+                 who, id, kind);
+        return;
+    case HANDLE_CLAIM_BADVALUE:
+        /* "Not a handle at all", which is the ONLY reason that existed before
+         * round 2 — keep its exact pre-existing wording and kind so the
+         * refusals this work did not change do not drift either
+         * (tests/test_builtin_errors.eigs BE06-BE08 grep this text, and
+         * tests/test_replay_boundary_exit.sh greps it on the worker path). */
+        rt_error(EK_VALUE, 0, "%s: invalid %s", who, kind);
+        return;
+    default:   /* HANDLE_CLAIM_GONE */
+        rt_error(EK_VALUE, 0, "%s: %s handle %d has already been %s",
+                 who, kind, id, gone_verb);
+        return;
+    }
+}
+
+/* Raw-index resolve, no generation check. ONLY for the table SCANS (task.c
+ * walks 1..HANDLE_TABLE_SIZE-1 to find live tasks); a scan has no handle
+ * value in hand, so it has no generation to present. Never call this with an
+ * id that came from a program. */
+void* handle_lookup_slot(int idx, HandleType type) {
+    if (!eigs_current) return NULL;
+    if (idx <= 0 || idx >= HANDLE_TABLE_SIZE) return NULL;
+    EigsState *st = eigs_current->state;
+    pthread_mutex_lock(&st->handle_mutex);
+    void *ptr = NULL;
+    if (st->handle_table[idx].ptr != NULL && st->handle_table[idx].type == type)
+        ptr = st->handle_table[idx].ptr;
+    pthread_mutex_unlock(&st->handle_mutex);
+    return ptr;
+}
+
+/* #1146 (1): the CLAIM step. Resolve and DETACH in one hold of handle_mutex,
+ * so the resource has exactly one owner no matter how many callers hold the
+ * handle. thread_join then runs pthread_join UNLOCKED on a tid nobody else
+ * can reach. Before this, two joiners both passed handle_lookup and both
+ * called pthread_join on one tid: POSIX undefined behaviour, and on glibc the
+ * second never wakes — the process HUNG, 3/3 runs on this box (7/7 across two
+ * reviewers on the issue). The loser also went on to read the freed handle. */
+void* handle_claim(int id, uint32_t gen, HandleType type, int *why) {
+    if (why) *why = HANDLE_CLAIM_GONE;
+    if (!eigs_current) return NULL;
+    if (id <= 0 || id >= HANDLE_TABLE_SIZE) return NULL;
+    EigsState *st = eigs_current->state;
+    pthread_mutex_lock(&st->handle_mutex);
+    EigsHandleSlot *sl = &st->handle_table[id];
+    void *ptr = NULL;
+    if (sl->ptr == NULL) {
+        if (why) *why = HANDLE_CLAIM_GONE;
+    } else if (sl->gen != gen) {
+        if (why) *why = HANDLE_CLAIM_STALE;
+    } else if (sl->type != type) {
+        if (why) *why = HANDLE_CLAIM_TYPE;
+    } else {
+        ptr = sl->ptr;
+        sl->ptr = NULL;            /* detached: no second claimant exists */
+        if (why) *why = HANDLE_CLAIM_OK;
+    }
+    pthread_mutex_unlock(&st->handle_mutex);
+    return ptr;
+}
+
+void handle_release(int id, uint32_t gen) {
     if (!eigs_current) return;
     if (id <= 0 || id >= HANDLE_TABLE_SIZE) return;
     EigsState *st = eigs_current->state;
     pthread_mutex_lock(&st->handle_mutex);
-    st->handle_table[id].ptr = NULL;
+    /* Generation-checked: releasing through a STALE handle would free a slot
+     * its current owner is still using — the write half of the #1146 (2) ABA. */
+    if (st->handle_table[id].gen == gen)
+        st->handle_table[id].ptr = NULL;
     pthread_mutex_unlock(&st->handle_mutex);
 }

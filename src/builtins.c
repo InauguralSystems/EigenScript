@@ -4560,7 +4560,8 @@ Value* builtin_spawn(Value *arg) {
     h->parent_state = eigs_current_state();
     h->result = NULL;
     h->done = 0;
-    int hid = handle_register(h, HANDLE_THREAD);
+    uint32_t hgen = 0;
+    int hid = handle_register(h, HANDLE_THREAD, &hgen);
     if (hid < 0) {
         val_decref(fn);
         if (fn_args) {
@@ -4568,6 +4569,16 @@ Value* builtin_spawn(Value *arg) {
             free(fn_args);
         }
         free(h);
+        /* #1146 (3): RAISE. This used to return make_null() with only a line
+         * on stderr from handle_register, and `thread_join of null` then
+         * returned null — so 300 unjoined spawns reported
+         * `spawned=255 null_handles=45` at exit status 0 and a program that
+         * checked nothing carried on with 45 workers it never started. The
+         * task path (task_spawn, below) already raised; this is the same
+         * kind and the same shape. */
+        rt_error(EK_LIMIT, 0,
+                 "spawn: handle table full (max %d live threads/channels/"
+                 "tasks/sockets)", HANDLE_TABLE_SIZE - 1);
         return make_null();
     }
     /* Flip refcounts to atomic mode before any new thread can observe a Value.
@@ -4605,7 +4616,7 @@ Value* builtin_spawn(Value *arg) {
          * than as a hang far away. Seen on a memory-constrained host where
          * the new thread's stack allocation failed with EAGAIN/ENOMEM.
          * thread_entry never ran, so unwind this thread's setup fully. */
-        handle_release(hid);
+        handle_release(hid, hgen);
         val_decref(h->fn);
         if (h->fn_args) {
             for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
@@ -4617,20 +4628,51 @@ Value* builtin_spawn(Value *arg) {
     }
     Value *d = make_dict(8);
     dict_set_owned(d, "_handle_id", make_num((double)hid));
+    /* #1146 (2): the slot GENERATION travels with the handle. Ids recycle
+     * round-robin over 255 slots, so without this a handle held across 255
+     * spawn/join cycles named a slot a different thread now owned — and
+     * joining it returned THAT thread's value while the real one returned
+     * null, at exit status 0. */
+    dict_set_owned(d, "_handle_gen", make_num((double)hgen));
     dict_set_owned(d, "done", make_num(0));
     return d;
 }
 
+/* #1146 (1): CLAIM, then join. The claim detaches the slot under
+ * handle_mutex, so of any number of callers holding this handle exactly one
+ * reaches pthread_join and the rest get a catchable error. The old shape —
+ * lookup under the lock, pthread_join outside it, release after — let two
+ * joiners both pass the lookup and both join one tid: POSIX UB, a hang on
+ * glibc (3/3 here), and the loser then read the freed ThreadHandle.
+ *
+ * Three distinguishable refusals, all EK_VALUE ("right type, unacceptable
+ * value" — the handle is a well-formed handle that no longer names a live
+ * thread):
+ *   already joined  the slot is empty: this handle won once, or another
+ *                   caller won the race, or the drain reclaimed it;
+ *   stale handle    the slot is LIVE but a later handle owns it (the ABA);
+ *   not a thread    the slot is live at this generation but a channel/store. */
 Value* builtin_thread_join(Value *arg) {
     if (!arg || arg->type != VAL_DICT) {
         rt_error(EK_TYPE, 0, "thread_join requires a thread handle");
         return make_null();
     }
     Value *hv = dict_get(arg, "_handle_id");
-    if (!hv || hv->type != VAL_NUM) return make_null();
+    Value *gv = dict_get(arg, "_handle_gen");
+    if (!hv || hv->type != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "thread_join requires a thread handle");
+        return make_null();
+    }
     int hid = (int)hv->data.num;
-    ThreadHandle *h = (ThreadHandle*)handle_lookup(hid, HANDLE_THREAD);
-    if (!h) return make_null();
+    uint32_t hgen = (gv && gv->type == VAL_NUM) ? (uint32_t)gv->data.num : 0;
+    int why = HANDLE_CLAIM_GONE;
+    ThreadHandle *h = (ThreadHandle*)handle_claim(hid, hgen, HANDLE_THREAD, &why);
+    if (!h) {
+        /* ROUND 2: through the shared formatter, so a stale thread handle and
+         * a stale channel or store handle are refused in the same words. */
+        handle_raise_unresolved("thread_join", "thread", hid, why, "joined");
+        return make_null();
+    }
     pthread_join(h->tid, NULL);
     Value *result = h->result ? h->result : make_null();
     val_decref(h->fn);
@@ -4638,7 +4680,6 @@ Value* builtin_thread_join(Value *arg) {
         for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
         free(h->fn_args);
     }
-    handle_release(hid);
     free(h);
     return result;
 }
@@ -4656,11 +4697,42 @@ typedef struct {
     pthread_cond_t not_full;
 } Channel;
 
-static Channel* get_channel(Value *v) {
+/* #1146 (2): same generation check as thread handles. `close_channel` only
+ * flips a flag — no channel slot is released before the exit drain — so a
+ * REAL channel recycle is unreachable from EigenScript today. The check is
+ * here because the table is SHARED (the next release site added would
+ * otherwise inherit silent-wrong behaviour), and because a handle whose
+ * `_channel_gen` is forged or stripped is reachable right now and must be
+ * refused rather than served. `out_id` is set even on failure so the refusal
+ * can name the slot. */
+static Channel* get_channel_why(Value *v, int *why, int *out_id) {
+    *why = HANDLE_CLAIM_BADVALUE;
+    *out_id = 0;
     if (!v || v->type != VAL_DICT) return NULL;
     Value *cv = dict_get(v, "_channel_id");
     if (!cv || cv->type != VAL_NUM) return NULL;
-    return (Channel*)handle_lookup((int)cv->data.num, HANDLE_CHANNEL);
+    *out_id = (int)cv->data.num;
+    Value *gv = dict_get(v, "_channel_gen");
+    uint32_t gen = (gv && gv->type == VAL_NUM) ? (uint32_t)gv->data.num : 0;
+    return (Channel*)handle_lookup(*out_id, gen, HANDLE_CHANNEL, why);
+}
+
+/* Non-raising form. ONE caller by design: `channel_closed`, whose documented
+ * ANSWER for an unknown/reclaimed channel is 1 (#971 Phase D), not an error. */
+static Channel* get_channel(Value *v) {
+    int why = 0, id = 0;
+    return get_channel_why(v, &why, &id);
+}
+
+/* ROUND 2 (#1146 G2/G3): resolve or RAISE, in the shared wording. Every
+ * channel builtin that consumes a handle goes through this; the refusals used
+ * to be five hand-written copies of "<who>: invalid channel", which could not
+ * tell a stale handle from one that was never valid. */
+static Channel* channel_arg(Value *v, const char *who) {
+    int why = 0, id = 0;
+    Channel *ch = get_channel_why(v, &why, &id);
+    if (!ch) handle_raise_unresolved(who, "channel", id, why, "closed");
+    return ch;
 }
 
 /* On Linux (and most other POSIX targets) use CLOCK_MONOTONIC for the
@@ -4690,10 +4762,24 @@ Value* builtin_channel(Value *arg) {
     pthread_cond_init(&ch->not_full,  &cattr);
     pthread_condattr_destroy(&cattr);
     ch->closed = 0;
-    int hid = handle_register(ch, HANDLE_CHANNEL);
-    if (hid < 0) { free(ch); return make_null(); }
+    uint32_t cgen = 0;
+    int hid = handle_register(ch, HANDLE_CHANNEL, &cgen);
+    if (hid < 0) {
+        pthread_mutex_destroy(&ch->mutex);
+        pthread_cond_destroy(&ch->not_empty);
+        pthread_cond_destroy(&ch->not_full);
+        free(ch);
+        /* #1146 (3): same raise as spawn. `channel` returned null silently,
+         * and every send/recv on that null then raised "invalid channel"
+         * somewhere else entirely. */
+        rt_error(EK_LIMIT, 0,
+                 "channel: handle table full (max %d live threads/channels/"
+                 "tasks/sockets)", HANDLE_TABLE_SIZE - 1);
+        return make_null();
+    }
     Value *d = make_dict(8);
     dict_set_owned(d, "_channel_id", make_num((double)hid));
+    dict_set_owned(d, "_channel_gen", make_num((double)cgen));
     return d;
 }
 
@@ -4708,11 +4794,8 @@ Value* builtin_send(Value *arg) {
         rt_error(EK_TYPE, 0, "send requires [channel, value]");
         return make_null();
     }
-    Channel *ch = get_channel(arg->data.list.items[0]);
-    if (!ch) {
-        rt_error(EK_VALUE, 0, "send: invalid channel");
-        return make_null();
-    }
+    Channel *ch = channel_arg(arg->data.list.items[0], "send");
+    if (!ch) return make_null();
     /* Deep-copy into a self-contained heap value (refcount 1) owned by the
      * channel buffer; receiver adopts that ref. */
     Value *val = val_clone_for_send(arg->data.list.items[1]);
@@ -4742,11 +4825,8 @@ Value* builtin_recv(Value *arg) {
      * deterministic value error in both modes; refusing it as "not
      * replayable" turned a recorded `invalid channel` into an io error on
      * replay (test_builtin_errors BE07 under EIGS_REPLAY). */
-    Channel *ch = get_channel(arg);
-    if (!ch) {
-        rt_error(EK_VALUE, 0, "recv: invalid channel");
-        return make_null();
-    }
+    Channel *ch = channel_arg(arg, "recv");
+    if (!ch) return make_null();
     if (replay_blocks("recv")) return make_null();
     pthread_mutex_lock(&ch->mutex);
     while (ch->count == 0 && !ch->closed)
@@ -4764,11 +4844,8 @@ Value* builtin_recv(Value *arg) {
 
 /* try_recv of channel — non-blocking receive, returns null if empty */
 Value* builtin_try_recv(Value *arg) {
-    Channel *ch = get_channel(arg);           /* #1072: validate before the replay block */
-    if (!ch) {
-        rt_error(EK_VALUE, 0, "try_recv: invalid channel");
-        return make_null();
-    }
+    Channel *ch = channel_arg(arg, "try_recv");   /* #1072: validate before the replay block */
+    if (!ch) return make_null();
     if (replay_blocks("try_recv")) return make_null();
     pthread_mutex_lock(&ch->mutex);
     Value *val = NULL;
@@ -4791,11 +4868,8 @@ Value* builtin_recv_timeout(Value *arg) {
         rt_error(EK_TYPE, 0, "recv_timeout requires [channel, ms]");
         return make_null();
     }
-    Channel *ch = get_channel(arg->data.list.items[0]);
-    if (!ch) {
-        rt_error(EK_VALUE, 0, "recv_timeout: invalid channel");
-        return make_null();
-    }
+    Channel *ch = channel_arg(arg->data.list.items[0], "recv_timeout");
+    if (!ch) return make_null();
     if (replay_blocks("recv_timeout")) return make_null();   /* #1072: after validation */
     Value *ms_v = arg->data.list.items[1];
     if (ms_v->type != VAL_NUM) {
@@ -4841,11 +4915,8 @@ Value* builtin_recv_timeout(Value *arg) {
 }
 
 Value* builtin_close_channel(Value *arg) {
-    Channel *ch = get_channel(arg);
-    if (!ch) {
-        rt_error(EK_VALUE, 0, "close_channel: invalid channel");
-        return make_null();
-    }
+    Channel *ch = channel_arg(arg, "close_channel");
+    if (!ch) return make_null();
     pthread_mutex_lock(&ch->mutex);
     ch->closed = 1;
     pthread_cond_broadcast(&ch->not_empty);
@@ -4974,7 +5045,8 @@ Value* builtin_task_spawn(Value *arg) {
     val_incref(fn);
     t->args = args;
     t->argc = argc;
-    int id = handle_register(t, HANDLE_TASK);
+    uint32_t tgen = 0;
+    int id = handle_register(t, HANDLE_TASK, &tgen);
     if (id < 0) {
         task_free(t);
         rt_error(EK_LIMIT, 0, "task_spawn: too many live tasks (max %d)",
@@ -4982,6 +5054,7 @@ Value* builtin_task_spawn(Value *arg) {
         return make_null();
     }
     t->id = id;
+    t->hgen = tgen;
     task_sched_on_spawn(id);   /* enqueue + arm the scheduler */
     return make_num((double)id);
 }
@@ -5042,7 +5115,7 @@ Value* builtin_task_yield(Value *arg) {
 Value* builtin_task_join(Value *arg) {
     if (!arg || arg->type != VAL_NUM || !g_task_sched) return make_null();
     int target = (int)arg->data.num;
-    Task *t = (Task*)handle_lookup(target, HANDLE_TASK);
+    Task *t = (Task*)handle_lookup_slot(target, HANDLE_TASK);
     if (!t) return make_null();
     if (t->state == TASK_DONE || t->state == TASK_DEAD) {
         /* Already finished: deliver its result / error now, no suspend. */
@@ -5141,7 +5214,7 @@ Value* builtin_task_kill(Value *arg) {
  * (DONE, DEAD, or an unknown id). */
 Value* builtin_task_alive(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "task_alive", "a task id (number)", make_num(0));
-    Task *t = (Task*)handle_lookup((int)arg->data.num, HANDLE_TASK);
+    Task *t = (Task*)handle_lookup_slot((int)arg->data.num, HANDLE_TASK);
     /* fs:ANSWER an unknown id is NOT alive; 0 is this function's documented
      * answer. Four lines above, an identical `return make_num(0)` is a type
      * guard that DID convert — the pair Phase A pinned as the reason this

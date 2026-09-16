@@ -1,0 +1,1 @@
+forged_recv=recv: invalid channel stripped=ERR-other(recv: invalid channel) forged_send=ERR-other(send: invalid channel) forged_close=ERR-other(close_channel: invalid channel) real=one

@@ -1,0 +1,1 @@
+forged_recv=recv: stale channel handle (slot 1 no longer holds the channel this handle names) stripped=ERR-stale forged_send=ERR-stale forged_close=ERR-stale real=one

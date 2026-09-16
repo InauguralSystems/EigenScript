@@ -27,7 +27,11 @@ streaming subprocess I/O (`proc_spawn`, `proc_write`, `proc_read_line`,
 (`nearest_in_range`), hashing (`sha256`, `md5`,
 `sha256_file`, `md5_file`, `hmac_sha256`), EigenStore (`store_open`,
 `store_close`, `store_put`, `store_get`, `store_delete`, `store_query`,
-`store_count`, `store_update`, `store_collections`, `store_drop`),
+`store_count`, `store_update`, `store_collections`, `store_drop` — every one
+of which **raises** a catchable `value` error on a handle it cannot resolve:
+not a handle, already closed, or stale because its table slot was recycled.
+They do **not** answer `null`/`0`/`[]` for a bad handle, which they did before
+#1146; see docs/CONCURRENCY.md, "Thread handles"),
 observer tuning (`set_observer_thresholds`, `get_observer_thresholds`,
 `set_observer_scale`, `get_observer_scale`, `set_observer_window`,
 `get_observer_window`),

@@ -563,6 +563,14 @@ typedef enum {
 
 typedef struct Task {
     int        id;                 /* == handle-table id; 1-based */
+    /* #1146: the handle-table GENERATION this task's slot was handed out at.
+     * task_reap releases the slot, and handle_release is generation-checked,
+     * so the reap must present the generation it was given or it would either
+     * no-op (leaking the slot) or free a slot a LATER task_spawn now owns.
+     * Task ids are plain numbers with nowhere to carry a generation, so
+     * task_join/task_alive resolve by raw slot (handle_lookup_slot) — the one
+     * declared exception in the handle population; see docs/CONCURRENCY.md. */
+    uint32_t   hgen;
     TaskState  state;
     int        started;            /* 0 until first scheduled (1b) */
     Value     *entry_fn;           /* owned VAL_FN/VAL_BUILTIN to run */

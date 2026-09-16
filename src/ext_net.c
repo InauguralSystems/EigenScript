@@ -68,18 +68,49 @@ static Value* net_bytes_to_buffer(const unsigned char *bytes, int n) {
     return v;
 }
 
-static int net_register_sock(int fd, EigsNetSockKind kind) {
+/* #1146 (2): a socket handle is a plain NUMBER, not a dict, so it has no
+ * field to carry the slot generation in — it carries it in the number.
+ * `net_close` releases its slot, so without this a socket id held across 255
+ * opens named a different connection's fd and read/wrote it silently. The
+ * packing is `slot + gen * HANDLE_TABLE_SIZE`: slot is 1..255, gen starts at
+ * 1, so every live handle is >= 257 and a bare small integer (a forged or
+ * hand-computed id) decodes to gen 0, which no live slot has. Doubles carry
+ * 53 bits exactly, so the packed form is exact until a single slot has been
+ * reused 2^45 times. */
+static double net_pack(int idx, uint32_t gen) {
+    return (double)idx + (double)gen * (double)HANDLE_TABLE_SIZE;
+}
+
+static EigsNetSock* net_unpack(double packed, int *out_idx, uint32_t *out_gen) {
+    if (!(packed > 0) || packed > 9007199254740992.0) return NULL;
+    long long p = (long long)packed;
+    int idx = (int)(p % HANDLE_TABLE_SIZE);
+    uint32_t gen = (uint32_t)(p / HANDLE_TABLE_SIZE);
+    if (out_idx) *out_idx = idx;
+    if (out_gen) *out_gen = gen;
+    return (EigsNetSock*)handle_lookup(idx, gen, HANDLE_NET, NULL);
+}
+
+static double net_register_sock(int fd, EigsNetSockKind kind) {
     EigsNetSock *s = xmalloc(sizeof(EigsNetSock));
     s->fd = fd;
     s->kind = kind;
-    int id = handle_register(s, HANDLE_NET);
-    if (id < 0) { close(fd); free(s); }
-    return id;
+    uint32_t gen = 0;
+    int id = handle_register(s, HANDLE_NET, &gen);
+    if (id < 0) {
+        close(fd);
+        free(s);
+        rt_error(EK_LIMIT, 0,
+                 "net: handle table full (max %d live threads/channels/"
+                 "tasks/sockets)", HANDLE_TABLE_SIZE - 1);
+        return -1.0;
+    }
+    return net_pack(id, gen);
 }
 
 static EigsNetSock* net_lookup(Value *v, EigsNetSockKind kind) {
     if (!v || v->type != VAL_NUM) return NULL;
-    EigsNetSock *s = handle_lookup((int)v->data.num, HANDLE_NET);
+    EigsNetSock *s = net_unpack(v->data.num, NULL, NULL);
     if (!s || s->kind != kind) return NULL;
     return s;
 }
@@ -143,7 +174,7 @@ Value* builtin_net_listen(Value *arg) {
         close(fd);
         TRACE_NONDET_RECORD("net_listen", make_null());
     }
-    int id = net_register_sock(fd, NET_SOCK_LISTENER);
+    double id = net_register_sock(fd, NET_SOCK_LISTENER);
     if (id < 0) TRACE_NONDET_RECORD("net_listen", make_null());
     TRACE_NONDET_RECORD("net_listen", make_num(id));
 }
@@ -189,7 +220,7 @@ Value* builtin_net_accept(Value *arg) {
     int cfd;
     do { cfd = accept(s->fd, NULL, NULL); } while (cfd < 0 && errno == EINTR);
     if (cfd < 0) TRACE_NONDET_RECORD("net_accept", make_null());
-    int id = net_register_sock(cfd, NET_SOCK_CONN);
+    double id = net_register_sock(cfd, NET_SOCK_CONN);
     if (id < 0) TRACE_NONDET_RECORD("net_accept", make_null());
     TRACE_NONDET_RECORD("net_accept", make_num(id));
 }
@@ -241,7 +272,7 @@ Value* builtin_net_dial(Value *arg) {
         TRACE_NONDET_RECORD("net_dial", make_null());
     }
     fcntl(fd, F_SETFL, flags);
-    int id = net_register_sock(fd, NET_SOCK_CONN);
+    double id = net_register_sock(fd, NET_SOCK_CONN);
     if (id < 0) TRACE_NONDET_RECORD("net_dial", make_null());
     TRACE_NONDET_RECORD("net_dial", make_num(id));
 }
@@ -336,11 +367,13 @@ Value* builtin_net_close(Value *arg) {
         rt_error(EK_TYPE, 0, "net_close: expected a socket handle");
         return make_null();
     }
-    EigsNetSock *s = handle_lookup((int)arg->data.num, HANDLE_NET);
+    int nidx = 0;
+    uint32_t ngen = 0;
+    EigsNetSock *s = net_unpack(arg->data.num, &nidx, &ngen);
     if (s) {
         close(s->fd);
         free(s);
-        handle_release((int)arg->data.num);
+        handle_release(nidx, ngen);
     }
     return make_null();
 }

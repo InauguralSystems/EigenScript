@@ -172,7 +172,18 @@ NULL_SCOPE='src/ext_gfx.c'
 # ext_gfx.c's four fs:TODO #971 deferrals were converted to ARG_GUARD in the
 # same change and left the population entirely, which is why the net is +38
 # rather than +42.
-FLOOR_SITES=174
+#
+# 174 -> 178 on 2026-09-16 (#1146 round 2), and this time because SITES WERE
+# ADDED, not because the derivation got wider: the nine store builtins stopped
+# resolving their handle inline and went through one raise-or-resolve wrapper
+# (`store_arg`), so four of them gained a `if (!store) return make_num(0);`
+# post-raise placeholder — store_delete, store_count, store_update, store_drop.
+# The other five return make_null()/make_list(0), which this derivation does not
+# scope for ext_store.c. All 174 previously-classified sites were still found
+# (the monotonicity this header demands), and the four new ones are fs:CHANNEL:
+# store_arg has already rt_error'd when it returns NULL, and rt_error latches
+# instead of unwinding, so the return is a placeholder rather than an answer.
+FLOOR_SITES=178
 
 usage_mode="${1:-}"
 

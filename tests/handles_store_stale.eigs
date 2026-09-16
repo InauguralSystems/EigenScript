@@ -1,0 +1,61 @@
+# #1146 ROUND 2 / G1: a STALE store handle must be refused CATCHABLY by every
+# store builtin, not folded back into a silent `null`.
+#
+# Found by a blind critic, by execution. Round 1's generation check DID catch
+# this handle — and `builtin_store_get` then turned the NULL into `make_null()`
+# with no error. So the ABA went from "silently returns the FRESH record" (base)
+# to "silently returns null" (round 1 HEAD), both at exit status 0. Same class,
+# one builtin short of closed.
+#
+# The handle is a COPY of the original dict, so `store_close` cannot invalidate
+# it by editing the caller's fields: the only thing standing between this and
+# the fresh store in the recycled slot is the generation.
+#
+# `get` prints the RUNTIME's own message (the test also greps the capture for
+# the word "stale", so the wording cannot quietly become generic again); the
+# other three print a tag.
+define tag(m) as:
+    if (index_of of [m, "stale"]) >= 0:
+        return "ERR-stale"
+    return f"ERR-other({m})"
+d is "/tmp/eigs_handles_store_stale"
+mkdir of d
+s0 is store_open of f"{d}/s0.db"
+store_put of [s0, "c", {"_id": "k", "v": "STALE"}]
+copy is {"_store_id": s0._store_id, "_store_gen": s0._store_gen, "_type": "eigenstore"}
+store_close of s0
+i is 0
+loop while i < 254:
+    s is store_open of f"{d}/cyc.db"
+    store_close of s
+    i is i + 1
+fresh is store_open of f"{d}/fresh.db"
+store_put of [fresh, "c", {"_id": "k", "v": "FRESH"}]
+same is copy._store_id == fresh._store_id
+get_m is "NO-RAISE"
+try:
+    r is store_get of [copy, "c", "k"]
+    get_m is f"NO-RAISE(returned {r})"
+catch e:
+    get_m is e.message
+put_t is "NO-RAISE"
+try:
+    store_put of [copy, "c", {"_id": "k2", "v": "X"}]
+catch e:
+    put_t is tag of e.message
+query_t is "NO-RAISE"
+try:
+    store_query of [copy, "c"]
+catch e:
+    query_t is tag of e.message
+count_t is "NO-RAISE"
+try:
+    store_count of [copy, "c"]
+catch e:
+    count_t is tag of e.message
+fresh_v is (store_get of [fresh, "c", "k"]).v
+store_close of fresh
+rm of f"{d}/s0.db"
+rm of f"{d}/cyc.db"
+rm of f"{d}/fresh.db"
+print of f"same_slot={same} get={get_m} put={put_t} query={query_t} count={count_t} fresh={fresh_v}"
