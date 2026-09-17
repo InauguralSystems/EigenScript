@@ -53,6 +53,10 @@ define double as:      # no parameter list => ONE implicit parameter named `n`
 print of (add of [2, 3])   # 5
 print of (double of 21)    # 42
 ```
+```output
+5
+42
+```
 
 Inside a no-arg `define ... as:`, a reference to `n` is that implicit parameter,
 not any outer `n`.
@@ -105,6 +109,9 @@ define newton_sqrt as:
 
 print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.414213562373095
 ```
+```output
+sqrt(2) = 1.414213562373095
+```
 
 - `loop while not converged` uses the **bare** predicate reading the loop's
   last-assigned value. Put it **inside a function** so the loop gets a fresh
@@ -155,9 +162,40 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))   # sqrt(2) = 1.4142135623
   `softmax`, `relu`, `sum`/`mean`/`norm`, `gather`, `zeros_like`) takes either
   container and returns a buffer iff every tensor operand was one.
 
-## Lists, dicts, control flow (quick shapes)
+## Threads: VALUES copy through a channel, HANDLES share
+
+- `spawn of [fn, arg]` / `channel of n` / `send` / `recv` / `thread_join`.
+- **A number, string, list or dict sent through a channel is DEEP-COPIED**;
+  the receiver cannot see a later mutation by the sender.
+- **A `buffer`, a `text_builder`, a closure, or another channel/store/thread
+  handle is SHARED BY REFERENCE** — the receiver DOES see the sender's later
+  mutations. That asymmetry is open defect #1148; do not assume send-is-copy
+  for a buffer. Send a snapshot (copy into a fresh `buffer of n` with
+  `buf_copy`, or `text_builder_to_string`) when you need share-nothing.
 
 ```eigenscript
+c is channel of 1
+xs is [1, 2]
+b is buffer of 2
+buf_set of [b, 0, 1]
+send of [c, xs]
+send of [c, b]
+set_at of [xs, 0, 99]
+buf_set of [b, 0, 99]
+print of (recv of c)                      # the LIST copied
+print of (buf_get of [(recv of c), 0])    # the BUFFER shared
+```
+```output
+[1, 2]
+99
+```
+
+- The measured kind-by-kind table lives in docs/CONCURRENCY.md and is itself an
+  executed example — read that, never a remembered list.
+
+## Lists, dicts, control flow (quick shapes)
+
+```eigenscript fragment x=1
 xs is [1, 2, 3]
 append of [xs, 4]                       # in-place
 doubled is [v * 2 for v in xs]          # comprehension (its var leaks!)
@@ -196,7 +234,7 @@ match x:
 
 ## Before hand-rolling a helper
 
-The runtime has ~255 builtins and `lib/` covers a lot. `ord`/`chr`/`str_lower`/
+The runtime has 349 builtin functions (261 core + 88 extensions) and `lib/` covers a lot. `ord`/`chr`/`str_lower`/
 `str_upper`/`char_at`/`index_of`/`hex of [n, nibbles]`/`sort_by` are builtins
 (there is no bare `lower` — it's `str_lower`; `sort_by of [items, key_fn]` is
 the record-shaped sort and needs no import). `lib/` has `string.pad_left`,
@@ -206,7 +244,7 @@ the record-shaped sort and needs no import). `lib/` has `string.pad_left`,
 hand-roll backprop or train with `numerical_grad`). **`lib/` functions are NOT
 ambient** — reach them one of two ways:
 
-```eigenscript
+```eigenscript fragment
 import list                              # namespaced: list.filter of [xs, fn]
 load_file of "lib/list.eigs"             # bare names: filter of [xs, fn]
 ```

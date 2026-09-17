@@ -120,7 +120,7 @@ obs-gate: unobserved <module>
 EigenMiniSat snapshot: `cca0e1482da91ad5b2b61b3cf775a04d5a5ca4de`, archived into
 `build/observer-EigenMiniSat` inside this worktree. Its unmodified checkout has
 no `eigs.json`; the current runtime's file-resolution contract rejects
-`lib/dimacs.eigs` from `benchmarks/tseitin_ladder.eigs` (exit 1). This is a
+EigenMiniSat's `dimacs.eigs` from its `tseitin_ladder.eigs` (exit 1). This is a
 fixture setup difference from the historical #915 measurement.
 
 Added only `eigs.json` containing `{"name":"observer-gate-benchmark"}` to that

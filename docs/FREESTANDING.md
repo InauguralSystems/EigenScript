@@ -147,7 +147,7 @@ jitter). Used by `random_int`/`randn`/stdlib.
 ### Regex — `DROP` → route to EigenRegex (the route now exists)
 `regcomp` `regexec` `regfree`
 The regex builtins use glibc ERE. Freestanding: drop the C builtins and load
-**EigenRegex**'s `lib/regex_compat.eigs` (ERE-parity as of its S8, 2026-07-01) —
+**EigenRegex**'s `regex_compat.eigs` (ERE-parity as of its S8, 2026-07-01) —
 builtin-shaped drop-ins for `regex_match`/`regex_find`/`regex_replace` over the
 pure-EigenScript Pike VM, differential-tested against these builtins as the
 oracle. Documented divergences: POSIX leftmost-longest vs Pike-VM

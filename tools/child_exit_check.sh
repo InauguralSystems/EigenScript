@@ -25,20 +25,31 @@ cd "$(dirname "$0")/.." || exit 1
 
 RUNNER="${RUNNER:-tests/run_all_tests.sh}"
 
-# Coverage floor. The population is DERIVED by matching invocation sites in the
-# runner, so it can shrink without anything failing (mechanical-gates §43): a
-# site reformatted so the match no longer applies simply leaves the population,
-# and a smaller number is not by itself an error. `[ -z ]` is an emptiness test,
-# not a floor — it only catches losing ALL of them.
+# Declared population. The sites are DERIVED by matching invocations in the
+# runner, so the population can shrink without anything failing
+# (mechanical-gates §43): a site reformatted beyond the matcher's reach simply
+# leaves the set. `[ -z ]` is an emptiness test, not a guard — it only catches
+# losing ALL of them.
 #
-# Bump DELIBERATELY when child tests are genuinely added or removed. A DECREASE
-# is a review event, not a number to adjust.
+# ROUND 11 — FOUND == DECLARED, NOT A FLOOR (mechanical-gates §129).
+# This was `CHILD_SITE_FLOOR=60`, and its own planted "population shrunk below
+# the floor" case stopped firing: the plant removes a fixed handful of sites,
+# the population had grown to 113, and a fixed shrink can no longer cross a
+# floor 53 below. The selftest said so honestly — but the gate had been unable
+# to see a shrink for however long the two had been drifting apart, and a
+# floor plus a plant calibrated against it will drift apart again every time
+# the population grows. An exact count cannot: ANY movement, in either
+# direction, is a review event, and the plant needs no calibration at all.
+#
+# Adding or removing a child dispatch therefore means bumping this number in
+# the same commit — deliberately, the way every other population in this
+# suite's gates is pinned.
 #
 # The metric is LINES carrying an invocation, not invocations: a few sites run
-# two children on one line (`if bash A && bash B --selftest; then`), so the true
-# invocation count is higher. Lines are what the floor is measured in; do not
-# "correct" this to invocations without re-measuring the floor.
-CHILD_SITE_FLOOR="${CHILD_SITE_FLOOR:-60}"
+# two children on one line (`if bash A && bash B --selftest; then`), so the
+# true invocation count is higher. Lines are what this is measured in; do not
+# "correct" it to invocations without re-measuring.
+CHILD_SITES_DECLARED="${CHILD_SITES_DECLARED:-113}"
 
 fail() { echo "GATE ERROR: $*" >&2; RC=1; }
 RC=0
@@ -70,11 +81,11 @@ if ! grep -qF '[99p] Child-script exit-status ledger' "$RUNNER"; then
     fail "$RUNNER no longer runs the [99p] ledger section — nonzero children would be recorded and never reported"
 fi
 
-# --- 2. Population floor ---------------------------------------------------
+# --- 2. Population, pinned exactly -----------------------------------------
 # Every executable line invoking a `.sh` child through the wrapper.
 CHILD_SITES=$(runner_code | grep -cE '(^|[^a-zA-Z_])bash[[:space:]]+("?\$(TESTS_DIR|\{TESTS_DIR\})"?[^|;)]*\.sh|"[^"]*\.sh")')
-if [ "$CHILD_SITES" -lt "$CHILD_SITE_FLOOR" ]; then
-    fail "only $CHILD_SITES child-script invocation sites found, floor is $CHILD_SITE_FLOOR — either child tests were removed, or a site was reformatted out of this matcher's reach"
+if [ "$CHILD_SITES" -ne "$CHILD_SITES_DECLARED" ]; then
+    fail "$CHILD_SITES child-script invocation sites found, $CHILD_SITES_DECLARED declared — a child test was added or removed, or a site was reformatted out of this matcher's reach; bump CHILD_SITES_DECLARED deliberately after reviewing which"
 fi
 
 # --- 3. `bash` must be the COMMAND WORD, not merely present ----------------
@@ -86,8 +97,8 @@ fi
 #     $EIGS_TMO bash "$TESTS_DIR/test_x.sh"
 # — and the real /usr/bin/bash is exec'd: no synthetic FAIL:, no ledger row,
 # section silently back to marker-only. Every one of those spellings still
-# matches the population matcher above, so the floor stays satisfied and
-# nothing else notices.
+# matches the population matcher above, so the declared count stays satisfied
+# and nothing else notices.
 #
 # A denylist of known-bad launchers cannot work (the list is unbounded, and
 # `env` and `$EIGS_TMO` both already appear in this runner for other reasons).
@@ -177,7 +188,7 @@ else
 fi
 
 if [ "$RC" -eq 0 ]; then
-    echo "PASS: child-exit accounting present; $CHILD_SITES child-script sites (floor $CHILD_SITE_FLOOR), no bypass spellings"
+    echo "PASS: child-exit accounting present; $CHILD_SITES child-script sites ($CHILD_SITES_DECLARED declared), no bypass spellings"
 fi
 
 # ---------------------------------------------------------------------------
@@ -198,7 +209,7 @@ if [ "${1:-}" = "--selftest" ]; then
             ST_RC=1; return
         fi
         local out
-        out=$(RUNNER="$f" CHILD_SITE_FLOOR="$CHILD_SITE_FLOOR" "$0" 2>&1)
+        out=$(RUNNER="$f" CHILD_SITES_DECLARED="$CHILD_SITES_DECLARED" "$0" 2>&1)
         if [ "$?" -eq 0 ]; then
             echo "SELFTEST FAIL: '$name' was not caught (gate passed a broken runner)" >&2
             ST_RC=1
@@ -229,17 +240,22 @@ if [ "${1:-}" = "--selftest" ]; then
             's|CLI_OUTPUT=$(bash "$TESTS_DIR/test_cli.sh" 2>\&1)|CLI_OUTPUT=$(command bash "$TESTS_DIR/test_cli.sh" 2>\&1)|' \
             "an extra one bypasses accounting"
 
-    # Two-sided loss (mechanical-gates §43): the floor is the ONLY thing that
-    # sees a site reformatted beyond the matcher's reach, so it gets its own
-    # planted fault rather than resting on the one-sided cases above.
+    # Two-sided loss (mechanical-gates §43): the site count is the ONLY thing
+    # that sees a site reformatted beyond the matcher's reach, so it gets its
+    # own planted fault rather than resting on the one-sided cases above.
     # The realistic shape: an ordinary reformat puts the interpreter and the
     # script path on different lines, so a line-based matcher stops seeing the
-    # site. Nothing else in this gate can notice that — which is exactly why
-    # the floor exists and why it needs its own fault.
-    st_case "population shrunk below the floor" \
+    # site.
+    #
+    # ROUND 11: this plant used to have to shrink the population past a floor
+    # 53 sites below it, and had silently stopped doing so. Against an exact
+    # declared count it only has to move the number AT ALL — which is the
+    # point of the change: the plant is now calibration-free and cannot drift
+    # out of reach as the suite grows.
+    st_case "population shrunk below the declared count" \
             's|bash "\$TESTS_DIR/\(test_[a-z_]*\.sh\)" 2>&1)|bash \\\
         "$TESTS_DIR/\1" 2>\&1)|' \
-            "floor is"
+            "declared — a child test was added or removed"
 
     # Positive control (mechanical-gates §15): an UNMODIFIED runner must pass,
     # or a gate that always fails would score 6/6 above.

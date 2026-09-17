@@ -16,8 +16,14 @@
 # EigenScript
 
 A complete, standalone programming language with native observer semantics,
-real concurrency, a 44-widget GUI toolkit, embedded database, tensor math,
-and a 52-module standard library (14 STEM) — all in a single zero-dependency C binary.
+OS-thread concurrency (`spawn`/`channel`/`thread_join`, with a documented
+memory model in [docs/CONCURRENCY.md](docs/CONCURRENCY.md) — *values* copy
+through a channel, while closures and `buffer`/`text_builder` HANDLES are
+shared by reference, the last of which is the open defect
+[#1148](https://github.com/InauguralSystems/EigenScript/issues/1148) under
+[#1153](https://github.com/InauguralSystems/EigenScript/issues/1153)),
+a 47-widget GUI toolkit, embedded database, tensor math,
+and a 78-module standard library (17 STEM) — all in a single zero-dependency C binary.
 
 ## Try it in your browser
 
@@ -34,7 +40,7 @@ cd EigenScript
 ./install.sh
 ```
 
-This builds a ~620K minimal binary and installs it to `~/.local/bin/eigenscript`.
+This builds a ~940K minimal binary and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
 Run `./install.sh full` to also build the optional HTTP/DB/model binary
@@ -174,16 +180,23 @@ you when it has settled instead of you writing epsilon checks by hand:
 
 ```eigenscript check
 loss is 50.0
+steps is 0
 loop while not converged:     # exits on its own once loss settles
     loss is loss * 0.5
-print of (report of loss)          # "converged"  (after 25 steps, loss ~ 1.5e-06)
+    unobserved:
+        steps is steps + 1    # unobserved, so the bare predicate keeps reading loss
+print of (report of loss)
+print of steps
+print of loss
 ```
 
 ```output
 converged
+35
+1.4551915228366852e-09
 ```
 
-```eigenscript
+```eigenscript fragment
 reading is 5.0
 reading is 2.0
 reading is 5.0
@@ -218,7 +231,7 @@ Python or JS hand-rolls — see
 The observer runs on every assignment so interrogations are always
 cheap. When you know a hot region won't be interrogated, opt out:
 
-```eigenscript
+```eigenscript fragment i=0 n=3 acc=0 weights=[1,2,3] xs=[1,1,1]
 unobserved:
     loop while i < n:
         acc is acc + weights[i] * xs[i]
@@ -261,7 +274,7 @@ ended the loop is gated on the same depth.
 
 ### Tensor Math
 
-```eigenscript
+```eigenscript fragment input='zeros of [1, 8]'
 w is random_normal of [8, 32, 0.1]
 h is matmul of [input, w]
 h is leaky_relu of h
@@ -284,7 +297,7 @@ EigenScript numbers are finite by construction. Operations that would create
 
 ### Arena Memory
 
-```eigenscript
+```eigenscript fragment
 arena_mark of null       # save allocation point
 # ... compute gradients, intermediates ...
 arena_reset of null      # reclaim all transient allocations
@@ -332,7 +345,7 @@ Pure EigenScript libraries under `lib/`:
 | `lib/concurrent.eigs` | `future`, `await_all`, `parallel_map`, `parallel_each`, `worker_pool` |
 | `lib/sync.eigs` | `lock_new`, `lock_acquire`, `lock_release`, `with_lock` |
 | `lib/store.eigs` | `open`, `put`, `get`, `find`, `upsert`, `bulk_put`, `to_dataframe` |
-| `lib/ui.eigs` | 44-widget GUI toolkit (buttons, sliders, tables, charts, trees, etc.) |
+| `lib/ui.eigs` | 47-widget GUI toolkit (buttons, sliders, tables, charts, trees, etc.) |
 | `lib/physics.eigs` | Kinematics, forces, waves, thermodynamics, EM, optics, relativity, quantum |
 | `lib/chemistry.eigs` | Periodic table, molecular weight, stoichiometry, gas laws, pH, Gibbs |
 | `lib/biology.eigs` | Population dynamics, genetics, DNA/RNA/codons, enzyme kinetics, ecology |
@@ -353,8 +366,22 @@ Pure EigenScript libraries under `lib/`:
 | `lib/harness.eigs` | Count-and-continue test scaffolding with grep-able pass markers |
 | `lib/observer_slots.eigs` | Named observer slots for watching dynamic collections |
 | `lib/eigen.eigs` | Meta-circular interpreter — full language parity, debug hooks |
+| `lib/complex.eigs` | Complex numbers as `[re, im]` — arithmetic, polar form, polynomial roots |
+| `lib/autograd.eigs` | Reverse-mode autograd (Wengert tape) over the f64 tensor builtins |
+| `lib/contract.eigs` | Trajectory contracts — `require`/`ensure` over observer verdicts |
+| `lib/invariant.eigs` | Runtime invariant declarations checked inside a program |
+| `lib/test_runner.eigs` | Multi-file suite runner — per-file and total tallies |
+| `lib/supervise.eigs` | Observer-native supervision: crash-restart plus wedged-worker detection |
+| `lib/utf8.eigs` | UTF-8 codepoint semantics over byte strings |
+| `lib/pkg.eigs` | `--pkg` runtime half (eigs.json, SHA-pinned lockfiles) |
 
-```eigenscript
+The table above has 60 module rows. The other 18 files in `lib/` are the
+`lib/ui_*.eigs` **fragments of `lib/ui.eigs`**, composed by it rather than
+imported directly, so they have no row of their own; together they make up the
+78-module standard library in the headline. `tools/docs_claims_check.sh`
+derives all three numbers and fails if they stop adding up.
+
+```eigenscript fragment
 load_file of "lib/list.eigs"
 define double as:                        # functions take one argument, n
     return n * 2
@@ -470,7 +497,7 @@ eigenscript examples/stem/greenhouse_controller.eigs # closed-loop STEM controll
 
 ```bash
 cd tests
-./run_all_tests.sh    # 2,500+ checks (minimal build; full build adds HTTP/DB/model suites)
+./run_all_tests.sh    # 259 test sections (minimal build; full build adds HTTP/DB/model suites)
 ```
 
 ### Writing your own tests
@@ -567,7 +594,7 @@ get made and how contributors can earn commit access over time.
 
 ```bash
 make                  # build
-make test             # build and run the full suite (2,500+ checks)
+make test             # build and run the full suite (259 test sections)
 make gfx              # build with SDL2 graphics (UI toolkit, games)
 make net              # build with raw TCP sockets (record/replay-able)
 make install          # install to ~/.local/bin

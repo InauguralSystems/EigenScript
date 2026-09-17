@@ -368,7 +368,7 @@ or nothing:
   code) on **its own line** and **the line below it**, so it works as a trailing
   comment or on the line above the flagged construct:
 
-  ```eigenscript
+  ```eigenscript fragment compute='(v) => v' other='(v) => v' x=1 y=2
   scratch is compute of x   # lint: allow W001
   # lint: allow W001 W014
   next is other of y
@@ -381,7 +381,7 @@ or nothing:
   line. It is the blunt escape for a code that a whole file legitimately
   trips — a generated or vendored module, say:
 
-  ```eigenscript
+  ```eigenscript fragment
   # lint: allow-file W002 -- generated dispatch table; parameters are positional
   ```
 
@@ -404,11 +404,11 @@ or nothing:
   repeatable, works in both `--lint` and the LSP, and covers both
   composition styles:
 
-  ```eigenscript
+  ```eigenscript fragment
   # lint: loaded-by ../dmg.eigs        (the entry point that load_files me)
   ```
 
-  ```eigenscript
+  ```text
   # lint: loaded-by sibling.eigs       (out-of-language concat: the named
                                         file need not load me — its binders
                                         become context either way)

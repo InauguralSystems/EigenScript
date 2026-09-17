@@ -404,14 +404,21 @@ class DocExampleMarkerTests(unittest.TestCase):
                 check=False,
             )
 
-    def test_only_check_marker_runs_a_readme_pair(self):
+    def test_every_readme_pair_runs_marker_or_not(self):
+        """The gate is opt-OUT: `check` marks nothing any more.
+
+        This test used to assert the opposite — that an UNMARKED README pair
+        was ignored — and that is exactly how README.md carried 9 eigenscript
+        fences of which 3 ran (measured 2026-09-16). Both blocks below must
+        now execute and be compared.
+        """
         result = self.run_checker(
             """
             ```eigenscript
-            unmarked
+            marked
             ```
             ```output
-            ignored
+            marked
             ```
 
             ```eigenscript check
@@ -424,12 +431,18 @@ class DocExampleMarkerTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("README.md", result.stdout)
-        self.assertIn("Doc examples: 1 checked, 1 passed, 0 failed, 0 skipped",
+        self.assertIn("Doc examples: 2 checked, 2 passed, 0 failed, 0 skipped",
                       result.stdout)
         self.assertNotIn("README.md (README has 0 checked examples)",
                          result.stdout)
 
-    def test_zero_marked_pairs_fail_the_gate(self):
+    def test_an_unmarked_readme_pair_is_now_executed_and_can_fail(self):
+        """The counterpart: an unmarked pair whose output is wrong is RED.
+
+        Under the old opt-in rule this document exited 0 with the example
+        never run. The fake interpreter prints "unmarked-ran", so a gate that
+        went back to ignoring unmarked blocks would print "0 checked" here.
+        """
         result = self.run_checker(
             """
             ```eigenscript
@@ -441,8 +454,9 @@ class DocExampleMarkerTests(unittest.TestCase):
             """
         )
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("Doc examples: 0 checked, 0 passed, 0 failed, 0 skipped",
+        self.assertIn("Doc examples: 1 checked, 0 passed, 1 failed, 0 skipped",
                       result.stdout)
+        self.assertIn("unmarked-ran", result.stdout)
 
     def test_list_mode_keeps_a_successful_exit(self):
         result = self.run_checker(
@@ -468,7 +482,8 @@ class DocExampleMarkerTests(unittest.TestCase):
             """
         )
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertRegex(result.stdout, r"FAIL: .*README\.md:2 .*unpaired")
+        self.assertRegex(result.stdout,
+                         r"FAIL: .*README\.md:2 .*untagged eigenscript fence")
         self.assertIn("Doc examples: 0 checked, 0 passed, 0 failed, 0 skipped",
                       result.stdout)
 
@@ -489,7 +504,8 @@ class DocExampleMarkerTests(unittest.TestCase):
             """
         )
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertRegex(result.stdout, r"FAIL: .*README\.md:2 .*unpaired")
+        self.assertRegex(result.stdout,
+                         r"FAIL: .*README\.md:2 .*untagged eigenscript fence")
         self.assertIn("Doc examples: 0 checked, 0 passed, 0 failed, 0 skipped",
                       result.stdout)
 

@@ -1,0 +1,42 @@
+# docs-claims DECLARED POPULATIONS — CLASS | file | expected count
+#
+# found == declared, per class AND per file, in BOTH directions (a differing
+# count is red; a declared row nothing visited is red; an examined pair with
+# no row is red). A non-zero population was never the assertion; the DECLARED
+# one is - mechanical-gates 121 and 129.
+#
+# A data file for the same reason as the waiver table beside it: the tool must
+# contain no $(cat <<EOF) table at all, because bash 3.2 counts parentheses
+# inside a quoted heredoc body and a future row with one would break the macOS
+# lane again. Lines beginning with # and blank lines are ignored.
+#
+NUMBERS|README.md|13
+NUMBERS|docs/llms.txt|3
+NUMBERS|CLAUDE.md|3
+NUMBERS|docs/ARCHITECTURE.md|1
+NUMBERS|docs/BUILTINS.md|4
+NUMBERS|docs/CONCURRENCY.md|1
+PATHS|README.md|101
+PATHS|docs/llms.txt|3
+PATHS|CLAUDE.md|16
+PATHS|docs/ARCHITECTURE.md|6
+PATHS|docs/BUILTINS.md|21
+PATHS|docs/CONCURRENCY.md|16
+FLAGS|README.md|17
+FLAGS|docs/llms.txt|8
+FLAGS|CLAUDE.md|3
+FLAGS|docs/ARCHITECTURE.md|0
+FLAGS|docs/BUILTINS.md|4
+FLAGS|docs/CONCURRENCY.md|0
+TARGETS|README.md|7
+TARGETS|docs/llms.txt|0
+TARGETS|CLAUDE.md|11
+TARGETS|docs/ARCHITECTURE.md|4
+TARGETS|docs/BUILTINS.md|3
+TARGETS|docs/CONCURRENCY.md|1
+NAMES|README.md|4
+NAMES|docs/llms.txt|39
+NAMES|CLAUDE.md|6
+NAMES|docs/ARCHITECTURE.md|1
+NAMES|docs/BUILTINS.md|394
+NAMES|docs/CONCURRENCY.md|10

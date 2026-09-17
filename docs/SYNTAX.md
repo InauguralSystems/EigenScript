@@ -6,7 +6,7 @@ Assignment uses `is`. It is **outward-mutable**: if a variable exists in a
 parent scope, assignment updates that binding. If not found, it creates a
 new local.
 
-```eigenscript
+```eigenscript fragment
 x is 42
 name is "hello"
 data is [1, 2, 3, 4, 5]
@@ -17,7 +17,7 @@ the current evaluator scope, even if a parent scope already has a name with
 the same identifier. It does not create a new block scope for `if` or `loop`;
 it binds whichever environment is active for that statement.
 
-```eigenscript
+```eigenscript fragment
 name is "outer"
 define example as:
     local name is "inner"
@@ -32,7 +32,7 @@ name                         # still "outer"
 Numbers are finite by construction. EigenScript does not expose `NaN` or
 `Inf` values to user code:
 
-```eigenscript
+```eigenscript fragment
 1 / 1e-320       # 1e+308
 sqrt of -1       # 0
 exp of 999999    # 1e+308
@@ -48,7 +48,7 @@ that would overflow to infinity saturate at `+/-1e308`; `NaN` collapses to
 
 All arithmetic, bitwise, and shift operators have compound forms:
 
-```eigenscript
+```eigenscript fragment x=1 flags=0 val=1
 x += 3          # x is x + 3
 x -= 1          # x is x - 1
 x *= 2          # x is x * 2
@@ -59,7 +59,7 @@ val <<= 4       # val is val << 4
 
 These work on variables, dot-access, and index-access:
 
-```eigenscript
+```eigenscript fragment obj={"score":0} arr=[1,2] i=0 buf=[0,0]
 obj.score += 10
 arr[i] *= 2
 buf[0] ^= 0xFF
@@ -73,7 +73,7 @@ Available: `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`
 
 Define functions with named parameters in parentheses:
 
-```eigenscript
+```eigenscript fragment
 define add(a, b) as:
     return a + b
 
@@ -86,6 +86,9 @@ define greet(name, age) as:
 
 print of (greet of ["Jon", 30])
 ```
+```output
+Hello Jon, you are 30
+```
 
 The argument list is unpacked into the named parameters automatically.
 (With a named parameter list, `n` is not defined — the implicit `n` exists
@@ -95,7 +98,7 @@ The argument list is unpacked into the named parameters automatically.
 
 Functions can also be defined without named parameters. The argument is `n`:
 
-```eigenscript
+```eigenscript fragment
 define square as:
     return n * n
 
@@ -103,7 +106,7 @@ result is square of 5    # 25
 ```
 
 For multiple arguments in classic style, pass a list and unpack manually:
-```eigenscript
+```eigenscript fragment
 define add_three as:
     return n[0] + n[1] + n[2]
 
@@ -119,12 +122,15 @@ define greet as:
 
 greet of null
 ```
+```output
+Hello!
+```
 
 ## String Interpolation
 
 Prefix a string with `f` to enable expression interpolation with `{...}`:
 
-```eigenscript
+```eigenscript fragment items=[1,2,3]
 name is "World"
 x is 42
 print of f"Hello {name}!"
@@ -188,7 +194,7 @@ test suite drives.
 
 ## Conditionals
 
-```eigenscript
+```eigenscript fragment x=1
 if x > 0:
     print of "positive"
 elif x == 0:
@@ -200,13 +206,13 @@ else:
 ## Loops
 
 **While loop:**
-```eigenscript
+```eigenscript fragment counter=0 limit=3
 loop while counter < limit:
     counter is counter + 1
 ```
 
 **For loop** — iterates over a list:
-```eigenscript
+```eigenscript fragment items=[1,2]
 for i in range of 10:
     print of i
 
@@ -222,6 +228,9 @@ try:
 catch err:
     print of f"Caught: {err}"
 ```
+```output
+Caught: {"kind": "undefined_name", "message": "undefined variable 'items'", "line": 2}
+```
 
 Errors inside a `try` block are caught and bound to the variable after
 `catch`: runtime errors bind their message string; a `throw`n value
@@ -232,6 +241,9 @@ try:
     throw of {"kind": "validation", "field": "age"}
 catch e:
     print of e.kind    # "validation"
+```
+```output
+validation
 ```
 
 Without a `try` block, an error is fatal: it prints to stderr with a
@@ -251,6 +263,9 @@ try:
 catch err:
     print of f"Error: {err}"
 ```
+```output
+Error: division by zero
+```
 
 Try/catch blocks can be nested. Errors re-thrown in a catch block are caught
 by the outer try.
@@ -267,6 +282,9 @@ define make_adder(x) as:
 
 add5 is make_adder of 5
 print of (add5 of 10)    # 15
+```
+```output
+15
 ```
 
 This works for factory patterns, callbacks, and higher-order programming.
@@ -301,7 +319,7 @@ The flip side: `sqrt of x + 1` means `(sqrt of x) + 1`, *not*
 `sqrt of (x + 1)`. When the argument is itself an arithmetic expression,
 parenthesize it:
 
-```eigenscript
+```eigenscript fragment x=1 total=1 tax=2
 y is sqrt of (x + 1)      # not  sqrt of x + 1
 print of (total + tax)    # not  print of total + tax  (would print total, then error)
 ```
@@ -314,18 +332,22 @@ print of items[0]         # 1
 print of (len of items)   # 5
 append of [items, 6]      # mutates items
 ```
+```output
+1
+5
+```
 
 
 ## Dictionaries
 
 Dictionary literals use `{}` with string keys:
 
-```eigenscript
+```eigenscript fragment
 config is {"host": "localhost", "port": 8080, "debug": 1}
 ```
 
 **Dot access:**
-```eigenscript
+```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
 print of config.host       # "localhost"
 print of config.port       # 8080
 ```
@@ -336,7 +358,7 @@ keyword-named keys (e.g. from `json_decode` of external data) are
 reachable by dot as well as by bracket.
 
 **Bracket access:**
-```eigenscript
+```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
 key is "host"
 print of config["host"]    # "localhost"
 print of config[key]       # "localhost"
@@ -347,9 +369,12 @@ print of config[key]       # "localhost"
 app is {"db": {"host": "localhost", "port": 5432}, "name": "myapp"}
 print of app.db.host       # "localhost"
 ```
+```output
+localhost
+```
 
 **Builtins:**
-```eigenscript
+```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
 print of (keys of config)          # ["host", "port", "debug"]
 print of (values of config)        # ["localhost", 8080, 1]
 print of (has_key of [config, "host"])   # 1
@@ -367,6 +392,10 @@ eval of "print of 42"              # prints 42
 code is "x is 10\nprint of x"
 eval of code
 ```
+```output
+42
+10
+```
 
 Evaluated code runs in the caller's current scope. At top level this is the
 global scope; inside a function, new names stay in that function's scope.
@@ -381,10 +410,15 @@ starting with `_` stay private to the module.
 
 ```eigenscript
 import math
-result is math.clamp of [15, 0, 10]    # 10
-import shapes                          # your shapes.eigs, next to the script
-a is shapes.area of 2
+print of (math.clamp of [15, 0, 10])
 ```
+```output
+10
+```
+
+`import shapes` would load *your* `shapes.eigs` next to the script and bind
+`shapes.area`; that half of the example is not executed here because the file
+belongs to the reader's project, not to this repository.
 
 `load_file` is the non-namespaced form — it executes a file directly
 in the current scope:
@@ -392,6 +426,9 @@ in the current scope:
 ```eigenscript
 load_file of "lib/math.eigs"
 print of (abs of -5)
+```
+```output
+5
 ```
 
 The loaded file's definitions are added to the global environment.
@@ -445,6 +482,12 @@ print of (why is loss)     # negative — descending into a basin (entropy falli
 print of (how is loss)     # 0 — the last step is far outside the deadband
 print of (when is loss)    # 3 — three assignments
 ```
+```output
+0.2
+-0.26827341240613545
+0
+3
+```
 
 Note that `why` tracks the *entropy* trajectory, not the raw value: a
 magnitude shrinking toward `1` (e.g. `100 → 55`) climbs the entropy ridge and
@@ -469,6 +512,9 @@ loss is 100.0
 loss is 80.0
 print of (prev of loss)    # 100 — the value before the latest assign
 ```
+```output
+100
+```
 
 Returns `null` when `x` has been assigned fewer than two times. Note
 the connector: `prev` uses `of` (like a function call), while the six
@@ -490,6 +536,14 @@ print of (who is x at 2)     # "x"
 print of (where is x at 2)   # entropy as of the line-2 assign
 print of (why is x at 2)     # dH as of the line-2 assign
 ```
+```output
+2
+2
+2
+x
+0.9182958340544896
+-0.08170416594551044
+```
 
 **A line inside a loop is asked once, not per iteration.** "The last value
 bound at or before that line" is a statement about the *run*, so a line the
@@ -502,6 +556,10 @@ for i in range of 4:
     total is total + i     # line 3, runs four times
 print of (what is total at 3)   # 6 — the LAST pass (0+1+2+3), not the first
 print of (when is total at 3)   # 5 — all five assignments, seed included
+```
+```output
+6
+5
 ```
 
 To pin a single iteration, record it yourself (`snapshots[i] is total`);
@@ -534,7 +592,7 @@ runs deterministically, see [TRACE.md](TRACE.md).
 
 The observer system classifies value trajectories automatically:
 
-```eigenscript
+```eigenscript fragment loss=1.0
 status is report of loss   # "improving"
 state is observe of loss   # [status, entropy, dH, prev_dH]
 ```
@@ -543,7 +601,7 @@ Six trajectory states: `improving`, `diverging`, `stable`, `equilibrium`,
 `oscillating`, `converged`.
 
 **Predicates** — boolean keywords for use in conditions:
-```eigenscript
+```eigenscript fragment loss=1.0 lr=0.1
 loop while not converged:
     loss is loss * 0.9
     if stable:
@@ -564,7 +622,7 @@ later — and wasted when you know a region won't be.
 
 The `unobserved` block is the user-level opt-out:
 
-```eigenscript
+```eigenscript fragment game={"px":0,"py":0,"vx":1,"vy":1,"angle":0} DT=0.016
 unobserved:
     game.px is game.px + game.vx * DT
     game.py is game.py + game.vy * DT

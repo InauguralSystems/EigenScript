@@ -6,12 +6,22 @@ waits for a worker and returns its result. This document is the contract for
 what is shared, what is copied, and what that costs — the questions a static
 type cannot answer for you.
 
-## The one rule: messages copy, closures share
+## The one rule: VALUES copy, HANDLES share
 
 **A value sent through a channel, or returned through `thread_join`, is COPIED**
-(`val_clone_for_send`). Messages are share-nothing: the receiver gets an
-independent deep copy, so mutating the original after you send it cannot be
-observed by the other thread.
+(`val_clone_for_send`). Numbers, strings, lists and dicts are share-nothing:
+the receiver gets an independent deep copy, so mutating the original after you
+send it cannot be observed by the other thread.
+
+**A HANDLE is not a value and does NOT copy** — it points at state the copy
+still points at. **Do not read a list of handle kinds out of this prose: read
+the table the next section MEASURES.** An earlier revision of this page listed
+"three things"; a blind reviewer immediately found a fourth by sending a
+channel through a channel. A remembered list goes stale, so the enumeration
+here is a program's output. The handle half is open issue
+[#1148](https://github.com/InauguralSystems/EigenScript/issues/1148), tracked
+by [#1153](https://github.com/InauguralSystems/EigenScript/issues/1153); this
+page changes when the fix lands.
 
 ```eigenscript
 c is channel of 1
@@ -26,6 +36,126 @@ print of original
 [1, 2, 3]
 [999, 2, 3]
 ```
+
+### Which kinds copy and which share — MEASURED, not remembered (#1148)
+
+`val_clone_for_send` walks the value graph, and a handle's payload is not in
+that graph. So the receiver of a handle sees the sender's LATER mutations — the
+opposite of the rule above.
+
+The program below sends one value of each kind, mutates the sender's copy
+afterwards, and asks the receiver what it sees. **Its output IS the
+enumeration**: each row is a verdict the program computed, not a claim anyone
+typed, and the suite compares it byte-for-byte. A kind that changes sides moves
+this table and fails the build.
+
+```eigenscript
+define verdict(pair) as:
+    if pair[0] == pair[1]:
+        return "copies"
+    return "SHARES"
+
+define row(three) as:
+    print of (three[0] + (verdict of [three[1], three[2]]))
+
+n is 1
+cn is channel of 1
+send of [cn, n]
+n is 2
+row of ["number         ", "1", str of (recv of cn)]
+
+s is "a"
+cs is channel of 1
+send of [cs, s]
+s is "b"
+row of ["string         ", "a", recv of cs]
+
+xs is [1, 2, 3]
+cl is channel of 1
+send of [cl, xs]
+set_at of [xs, 0, 999]
+row of ["list           ", "[1, 2, 3]", str of (recv of cl)]
+
+d is {"k": 1}
+cd is channel of 1
+send of [cd, d]
+d["k"] is 999
+row of ["dict           ", "1", str of ((recv of cd)["k"])]
+
+seen is [1]
+define peek(ignored) as:
+    return seen[0]
+cf is channel of 1
+send of [cf, peek]
+set_at of [seen, 0, 42]
+got_fn is recv of cf
+row of ["closure        ", "1", str of (got_fn of null)]
+
+b is buffer of 2
+buf_set of [b, 0, 1]
+cb is channel of 1
+send of [cb, b]
+buf_set of [b, 0, 99]
+row of ["buffer         ", "1", str of (buf_get of [(recv of cb), 0])]
+
+t is text_builder_new of null
+text_builder_append of [t, "a"]
+ct is channel of 1
+send of [ct, t]
+text_builder_append of [t, "B"]
+row of ["text_builder   ", "a", text_builder_to_string of (recv of ct)]
+
+inner is channel of 1
+cc is channel of 1
+send of [cc, inner]
+got_chan is recv of cc
+send of [inner, 73]
+row of ["channel handle ", "empty", str of (recv of got_chan)]
+```
+```output
+number         copies
+string         copies
+list           copies
+dict           copies
+closure        SHARES
+buffer         SHARES
+text_builder   SHARES
+channel handle SHARES
+```
+
+**The rows the table cannot construct in three lines, and why they behave the
+way they do.** `chan_clone_rec` (src/eigenscript.c) switches on `ValType` with
+no `default:`, so `-Werror=switch` forces every new type to choose a side; the
+switch has **10 arms** — `VAL_NUM`, `VAL_NULL`, `VAL_STR`, `VAL_LIST`,
+`VAL_DICT` are rebuilt (copy), and `VAL_FN`, `VAL_BUILTIN`, `VAL_BUFFER`,
+`VAL_TEXT_BUILDER`, `VAL_JSON_RAW` take a refcount (share).
+`tools/docs_claims_check.sh` pins that arm count, so adding a `ValType` fails
+this page as well as the compiler. Two kinds are not in the table: `null` and a
+builtin have no mutable state, so there is nothing to observe. And a **store
+handle** and a **thread handle** behave exactly like the channel row: they are
+`VAL_NUM` ids into the process handle table (CLAUDE.md, leak tally), so the
+NUMBER copies while the resource it names is shared — which is why the channel
+row says SHARES even though a number copies.
+
+Until #1148 lands, send an explicit SNAPSHOT rather than the handle:
+
+```eigenscript
+c is channel of 1
+b is buffer of 4
+buf_set of [b, 0, 1.5]
+snap is buffer of (buf_len of b)
+buf_copy of [b, 0, snap, 0, (buf_len of b)]   # an independent buffer
+send of [c, snap]
+buf_set of [b, 0, 99]
+print of (buf_get of [(recv of c), 0])
+```
+```output
+1.5
+```
+
+`text_builder_to_string of t` is the same move for a builder, and a closure
+captures its environment by reference whether or not it crosses a channel (the
+next section).
 
 A joined result is a copy the same way — a worker that returns a pure value
 hands the parent an independent value:

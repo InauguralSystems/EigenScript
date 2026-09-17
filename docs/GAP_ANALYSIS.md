@@ -39,7 +39,7 @@ The survey is grounded in the current state of `src/`, `lib/`, `docs/`, and
 - JSON encode/decode, CSV, INI, `.env`
 - List / set / queue / map / state-machine / template / format helpers
 - Math, tensor math (autograd via `numerical_grad`, SGD, save/load)
-- Testing (`lib/test`), logging (`lib/log`), validation
+- Testing (`lib/test.eigs`), logging (`lib/log.eigs`), validation
 
 **Optional extensions (full build)**
 - HTTP server and client

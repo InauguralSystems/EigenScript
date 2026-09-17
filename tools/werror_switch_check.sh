@@ -1009,7 +1009,15 @@ audit_batch() {
     : > "$segment_file"
 
     while IFS= read -r line; do
-        if [[ "$line" =~ ^echo[[:space:]]+${BATCH_MARKER}([[:alnum:]_-]+)$ ]]; then
+        # The pattern is assigned FIRST, then matched unquoted. bash 3.2 cannot
+        # parse an unquoted `(` group written INLINE in a `[[ =~ ]]` pattern —
+        # "syntax error in conditional expression: unexpected token `('". macOS
+        # ships 3.2, and the main-lane macOS job runs the full suite WITHOUT
+        # EIGS_SKIP_WERROR_AUDIT, so [99i] reaches this line there; the PR lane
+        # sets that variable, which is the only reason it has not fired yet.
+        # Verified with a real bash 3.2 (~/.local/bin/bash32 -n), not inferred.
+        batch_marker_re="^echo[[:space:]]+${BATCH_MARKER}([[:alnum:]_-]+)$"
+        if [[ "$line" =~ $batch_marker_re ]]; then
             marker_target="${BASH_REMATCH[1]}"
             if [ "$target_index" -ge "${#batch_targets[@]}" ]; then
                 echo "GATE ERROR: batched dry run emitted an unexpected target marker '$marker_target'"

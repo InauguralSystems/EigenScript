@@ -1,12 +1,14 @@
 # EigenScript Language Specification
 
-This is the canonical, executable specification of EigenScript. Every
-`eigenscript` code block that is followed by an `output` block is run by
-the test suite (`tests/test_doc_examples.py`) and its stdout must match
-the output block exactly — the spec cannot drift from the
-implementation. Blocks marked `eigenscript skip` show valid syntax that
-is deliberately not executed (nondeterministic, interactive, or
-environment-dependent).
+This is the canonical, executable specification of EigenScript. **Every**
+`eigenscript` code block here is EXECUTED by the test suite
+(`tests/test_doc_examples.py`, suite section [89]) — the gate is opt-OUT.
+A block followed by an `output` block has its stdout compared byte-for-byte;
+a block tagged `eigenscript fragment k=v ...` is run with those free names
+bound and must finish cleanly; a block tagged `eigenscript nocheck <reason>`
+states on its own opening line why it is not executed. An untagged block with
+no `output` block fails the suite, so the spec cannot drift from the
+implementation and cannot quietly stop being checked.
 
 Companion documents: [SYNTAX.md](SYNTAX.md) (tutorial-style guide),
 [GRAMMAR.md](GRAMMAR.md) (formal grammar), [LANGUAGE_CONTRACT.md](LANGUAGE_CONTRACT.md)
@@ -1087,7 +1089,7 @@ An *uncaught* error prints the error, a one-line source excerpt with a
 between the failure and the top level, innermost first — then exits
 with code 1:
 
-```eigenscript skip
+```eigenscript nocheck the program deliberately raises UNCAUGHT; the block quotes the resulting stderr trace, which is not stdout
 # uncaught: stderr shows
 #   Error line 6: index 99 out of range (list length 2)
 #        6 | v is items[99]
@@ -1305,7 +1307,7 @@ library's UI toolkit (`lib/ui.eigs`'s `_ui` state dict, shared by 17
 sub-modules) remains the reference pattern for grouping related state
 under one private name.
 
-```eigenscript skip
+```eigenscript nocheck the second line loads mymodule.eigs, a file that exists only in the reader's project
 load_file of "lib/test.eigs"     # assert_eq, test_summary, ...
 load_file of "mymodule.eigs"     # definitions land in *your* scope
 ```
@@ -1333,7 +1335,7 @@ x
 3
 ```
 
-```eigenscript skip
+```eigenscript fragment x=1
 print of (where is x)   # entropy of x's value (a float >= 0)
 print of (why is x)     # dH: change in entropy at last assignment
 print of (how is x)     # stability in [0, 1]
@@ -1657,7 +1659,7 @@ print of score
 40
 ```
 
-```eigenscript skip
+```eigenscript nocheck an at-line query is line-number sensitive, and a fragment prelude would shift the line it names
 print of (what is score at 2)   # 25 — line-number qualified history
 ```
 
