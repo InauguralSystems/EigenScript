@@ -194,14 +194,18 @@ void jit_register_chunk(struct EigsChunk *chunk) {
  * diagnostic-only array grow without bound. Overflow is reported, never
  * silent. */
 #define JIT_HOT_ROWS_MAX 8192
+/* Relaxed atomic, not a plain int: jit_unregister_chunk runs on whichever
+ * thread frees the chunk, so two workers can bump this at once. Same
+ * reasoning as g_trace_hist_storage above. */
 static int g_jit_hot_rows_dropped = 0;
 
-/* EIGS_JIT_HOT, read once. Benign race between threads: every reader
- * computes the same value from the same environment. */
+/* EIGS_JIT_HOT. Deliberately NOT cached in a static: a `static int cached`
+ * lazy-init is a read/write race on every multithreaded run -- flag set or
+ * not, since the miss still WRITES -- and the tsan race gate is right to
+ * refuse it however identical the two values are. eigs_env_flag is a bare
+ * getenv, and this runs once per chunk free, not per opcode. */
 static int jit_hot_enabled(void) {
-    static int cached = -1;
-    if (cached < 0) cached = eigs_env_flag("EIGS_JIT_HOT") ? 1 : 0;
-    return cached;
+    return eigs_env_flag("EIGS_JIT_HOT");
 }
 
 /* Fill one dump row from a chunk. `dup_name` strdups the name for rows
@@ -261,7 +265,8 @@ void jit_unregister_chunk(struct EigsChunk *chunk) {
                     jit_hot_row_fill(&g_jit_hot_rows[g_jit_hot_rows_count++],
                                      chunk, 1);
                 else
-                    g_jit_hot_rows_dropped++;
+                    __atomic_fetch_add(&g_jit_hot_rows_dropped, 1,
+                                       __ATOMIC_RELAXED);
             }
             g_chunks[i] = g_chunks[--g_chunks_count];
             return;
@@ -399,11 +404,13 @@ void jit_thread_destroy(EigsThread *th) {
             fprintf(stderr, "\n=== Hot chunks (top %d of %d) ===\n",
                     top, nrows);
             fprintf(stderr, "total chunk entries: %" PRIu64 "\n", total_exec);
-            if (g_jit_hot_rows_dropped)
+            int dropped = __atomic_load_n(&g_jit_hot_rows_dropped,
+                                          __ATOMIC_RELAXED);
+            if (dropped)
                 fprintf(stderr,
                     "WARNING: %d chunk rows dropped (retained-row cap %d) "
                     "-- the figures below are INCOMPLETE\n",
-                    g_jit_hot_rows_dropped, JIT_HOT_ROWS_MAX);
+                    dropped, JIT_HOT_ROWS_MAX);
             fprintf(stderr,
                 "%-28s %12s  %3s  %6s  %5s %5s %6s  %4s  %3s %5s %5s  %s\n",
                 "chunk", "exec", "jit", "pct", "adv", "len", "nat%", "bked",
