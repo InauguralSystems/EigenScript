@@ -768,6 +768,23 @@ struct EigsState {
     void                  *ext_db_conn;
 };
 
+/* One row of the EIGS_JIT_HOT dump. Snapshotted when a chunk leaves the
+ * hotness registry so the shutdown dump survives teardown ordering. */
+typedef struct EigsJitHotRow {
+    char    *name;          /* owned when owns_name, else borrowed */
+    uint64_t exec_count;
+    uint32_t back_edge_count;
+    int      code_len;
+    int      advance;       /* effective native bytes (RETURN sentinel resolved) */
+    int      raw_advance;   /* -1 == the OP_RETURN sentinel */
+    int      osr_advance;
+    int      osr_entry;
+    uint8_t  jit_state;
+    uint8_t  osr_state;
+    uint8_t  stop_op;
+    uint8_t  owns_name;
+} EigsJitHotRow;
+
 struct EigsThread {
     EigsState  *state;
     Arena       arena;
@@ -866,6 +883,14 @@ struct EigsThread {
      * registry, and stop-opcode diagnostics. Lazily initialized;
      * cache + chunks array freed in eigs_thread_detach. */
     struct EigsJitCache *jit_cache;
+    /* EIGS_JIT_HOT rows snapshotted at chunk-unregister time. The live
+     * registry below is empty by the time the shutdown dump runs (main
+     * drops the global env, freeing every chunk, before detach), so the
+     * dump reads these plus whatever is still live. Only populated when
+     * EIGS_JIT_HOT is set. */
+    struct EigsJitHotRow *jit_hot_rows;
+    int                  jit_hot_rows_count;
+    int                  jit_hot_rows_cap;
     struct EigsChunk   **jit_chunks;
     int                  jit_chunks_count;
     int                  jit_chunks_cap;
@@ -1182,6 +1207,9 @@ extern __thread EigsThread *eigs_current;
 #define g_loop_exit_reason    (eigs_current->loop_exit_reason)
 #define g_call_serial_next    (eigs_current->call_serial_next)
 #define g_jit_cache           (eigs_current->jit_cache)
+#define g_jit_hot_rows        (eigs_current->jit_hot_rows)
+#define g_jit_hot_rows_count  (eigs_current->jit_hot_rows_count)
+#define g_jit_hot_rows_cap    (eigs_current->jit_hot_rows_cap)
 #define g_chunks              (eigs_current->jit_chunks)
 #define g_chunks_count        (eigs_current->jit_chunks_count)
 #define g_chunks_cap          (eigs_current->jit_chunks_cap)

@@ -167,10 +167,17 @@ def run_gate(binary, fixtures, only=None, *, architecture=None):
                         stderr = result.stderr
                         tier_ok = True
                         if native:
-                            stats = re.findall(rb"(?m)^\[jit\] scanned=(\d+) compiled=(\d+) cache_used=(\d+)\n", stderr)
-                            tier_ok = len(stats) == 1 and (int(stats[0][1]) == 0 if tier == "ref" else int(stats[0][1]) > 0)
-                            if len(stats) == 1:
-                                stats_line = b"[jit] scanned=%s compiled=%s cache_used=%s\n" % stats[0]
+                            # Tolerate trailing diagnostic fields. The line has
+                            # GROWN before (cache_full_rejects= joined it with the
+                            # #1176 work) and an anchored ...cache_used=(\d+)\n
+                            # silently stopped matching, so every native tier read
+                            # as "missing native mechanism". Match the whole line,
+                            # pin only the fields this gate actually judges.
+                            matches = list(re.finditer(
+                                rb"(?m)^\[jit\] scanned=\d+ compiled=(\d+) cache_used=\d+[^\n]*\n", stderr))
+                            tier_ok = len(matches) == 1 and (int(matches[0].group(1)) == 0 if tier == "ref" else int(matches[0].group(1)) > 0)
+                            if len(matches) == 1:
+                                stats_line = matches[0].group(0)
                                 stderr = stderr.replace(stats_line, b"", 1)
                                 print(f"road_diff: native {fixture.name} {road} tier={tier} cwd={cwd}: " +
                                       stats_line.decode().strip())
