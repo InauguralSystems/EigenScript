@@ -175,6 +175,7 @@ tools/strict_differential.sh|21747d00883ebb9a|prose about the sentinel that keep
 tools/strict_differential.sh|2d366ac396e7a318|CLASSIFIES variant-only names as absent and still reports; it never skips its section
 tools/suite_label_check.sh|4b33c19d8075f5f6|prose describing the twin-label phrasing that check allows
 tools/suite_label_check.sh|2cc9024e404127f3|prose listing those twin phrasings
+tools/docs_claims_check.sh|fd05073ec7e4e3b8|prose in the docs-claims gate QUOTING the SKIPPED-twin wording used by the runner, to explain why the runner has more labelled echo lines (267) than distinct sections (258). A comment about the label grammar, not a capability gate; same class as the two tools/suite_label_check.sh rows above. No apostrophe in this reason: GATE_WAIVERS is a single-quoted string and one would close it
 '
 
 # ---------------------------------------------------------------------------
@@ -387,7 +388,10 @@ SHARD_DEFAULT_CS=50          # centiseconds for an unmeasured section (0.5 s)
 derive_chunk_weights() {
     local table="$1" out="$2" missing="$3"
     local wf="${WEIGHTS_FILE:-$WEIGHTS_FILE_DEFAULT}"
-    case "$wf" in /*) ;; *) wf="$SP_ROOT/$wf" ;; esac
+    # `: ;;` not `;;` — bash 3.2 cannot parse an empty inline arm (see
+    # tools/docs_claims_check.sh and .claude/rules/test-suite.md). Pre-existing
+    # here and never hit, because this tool runs on the linux lane only.
+    case "$wf" in /*) : ;; *) wf="$SP_ROOT/$wf" ;; esac
     : > "$missing"
     if [ ! -f "$wf" ]; then
         SP_WEIGHTS_SOURCE="(none: $wf missing — every section takes the default)"

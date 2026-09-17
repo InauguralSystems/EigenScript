@@ -165,7 +165,7 @@ seed-to-first-reading jump would not sit at the head of the trajectory).
 Seed with `null` instead — null and boolean assignments are never sampled,
 on either path — and the first real reading is the first observation:
 
-```eigenscript
+```eigenscript fragment
 define first_stable(values) as:
     tracker is null            # declares the binding; not a sample
     for v in values:
@@ -212,7 +212,7 @@ FLIPS = ceil(N / 3)  = 4   min sign-flips in the window for oscillating (17 at N
 Every predicate classifies over the last `N` **samples** — observed
 assignments, not seconds. The depth is configurable:
 
-```eigenscript
+```eigenscript fragment u=1
 set_observer_window of 30           # the state default (4..64; 10 at start)
 set_observer_window of ["u", 50]    # one binding, by name — only that slot
 set_observer_window of ["u", 0]     # clear the override, back to the default
@@ -244,7 +244,7 @@ right test; it just never saw a fold. Widened to cover a period —
 `set_observer_window of ["u", 50]` — the same 1 Hz replay reads
 `oscillating` at every full-window sample and `diverging` never appears
 (`tests/test_observer_window_scale.eigs`; phugoid's
-`tests/observer_check.eigs` rows `O.ph1s.*`). The rule of thumb: **the
+`observer_check.eigs` rows `O.ph1s.*`). The rule of thumb: **the
 window must span at least one period of the slowest mode you expect to
 see, in samples of the cadence you observe at** — `N ≥ T / Δt` — and the
 window must be *full* before a slow mode's verdict is trustworthy (the
@@ -677,6 +677,9 @@ for i in range of 12:
 if converged:
     print of "converged"   # YES — and the same holds for 5, 42, or 0.005
 ```
+```output
+converged
+```
 
 Before #861, whether a constant could certify depended on its magnitude
 (`entropy < h_low` admitted only `|x| > ~76` and `|x| < ~0.013`). The
@@ -694,7 +697,7 @@ the certification.)
 
 ### Short trajectories never fire
 
-```eigenscript
+```eigenscript fragment
 y is 0
 y is 0
 if converged:
@@ -709,7 +712,7 @@ A bare predicate (`converged`, `stable`, …) has no syntactic subject, so it
 classifies whichever binding was **observed last** in scope. Every
 assignment is observed, so a trailing assignment silently repoints it:
 
-```eigenscript
+```eigenscript fragment x=1.0 rate=0.5 k=0
 loop while not converged:
     x is x * rate     # the quantity you mean
     k is k + 1        # observed last → the bare predicate now reads k
@@ -721,7 +724,7 @@ how `dynamics`' `settle_steps` returned the same count for every rate.)
 
 Name the subject with the **named form**:
 
-```eigenscript
+```eigenscript fragment x=1.0 rate=0.5 k=0
 loop while not (converged of x):   # binds to x's slot, every iteration
     x is x * rate
     k is k + 1
@@ -751,7 +754,7 @@ deadband. A quantity that is still moving but observed in tiny per-step
 increments has every relative step under `dh_zero` and reads settled —
 while still far from its limit:
 
-```eigenscript
+```eigenscript fragment
 x is 100.0
 for i in range of 20:
     x is x * 0.999        # genuine motion, but each step is ~0.1%
@@ -780,14 +783,14 @@ entropy route this made a value shrinking toward 1 read `diverging`
 both artifacts of the signal, not the motion. The value route reads the
 motion:
 
-```eigenscript
+```eigenscript fragment
 x is 100.0
 for i in range of 13:
     x is x * 0.7          # 100 → ~1: steps contracting toward a limit
 report of x               # "improving"
 ```
 
-```eigenscript
+```eigenscript fragment
 x is 1.0
 for i in range of 13:
     x is x * 1.43         # 1 → ~105: non-vanishing same-sign steps
@@ -818,7 +821,7 @@ does not produce it.
 
 ### Convergence-loop recipe
 
-```eigenscript
+```eigenscript fragment x=1.0 next_step='(v) => v * 0.5'
 loop while not (converged of x):   # named form: reads x, whatever else is assigned
     x is next_step of x
 ```
@@ -832,7 +835,7 @@ Two cases still deserve a guard:
   not (it must not false-halt on the global alias), so give it an
   absolute cap:
 
-```eigenscript
+```eigenscript fragment x=1.0 next_step='(v) => v * 0.5' max_iters=200
 it is 0
 loop while not (converged of x):
     x is next_step of x
@@ -870,7 +873,7 @@ follows from that one rule:
 
 The last three rows are the sharp edge. The obvious per-entity read
 
-```eigenscript
+```eigenscript nocheck the body is elided with an ellipsis; this shows binding identity, not a runnable program
 loop while i < n:
     local q is fleet[i][2]        # ONE binding, rebound n times
     if diverging of q: ...
@@ -908,6 +911,9 @@ loop while t < 40:
     b is (chans[1]) of fleet[1][2]
     t is t + 1
 print of (a + " " + b)                    # improving oscillating
+```
+```output
+improving oscillating
 ```
 
 A named binding per entity (`qa is fleet[0][2]`, `qb is fleet[1][2]`) is the

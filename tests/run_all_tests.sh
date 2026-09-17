@@ -6015,14 +6015,58 @@ else
 fi
 echo ""
 
-# [89] Executable documentation — every eigenscript/output block pair in
-# docs/SPEC.md, docs/COMPARISON.md, docs/CONCURRENCY.md, docs/STDLIB.md,
-# and the marked README.md examples runs and must match exactly, so the
-# documented surfaces cannot drift from the implementation. Skips without
-# python3.
-echo "[89] Doc Examples (SPEC.md + COMPARISON.md + CONCURRENCY.md + STDLIB.md + README.md)"
+# [89] Executable documentation — EVERY eigenscript fence in the twelve
+# documents below is EXECUTED (opt-OUT since 2026-09-16): a fence paired with
+# an ```output block is compared byte-for-byte, a fence tagged
+# `eigenscript fragment k=v ...` is run with its free names bound and must
+# finish clean, a fence tagged `eigenscript nocheck <reason>` states why it is
+# not run, and an untagged unpaired fence FAILS. Per-file populations are
+# pinned in tests/test_doc_examples.py. Skips without python3.
+#
+# The file list is the gate's POPULATION: a document dropped from this line
+# stops being checked, so the checker itself fails when the run does not cover
+# every pinned row ("Doc populations pinned: N of M"), and DOC_POPULATIONS
+# below pins the count here too — the two must agree.
+DOC_FILES_ARG="$TESTS_DIR/../README.md $TESTS_DIR/../docs/llms.txt \
+$TESTS_DIR/../docs/SPEC.md $TESTS_DIR/../docs/COMPARISON.md \
+$TESTS_DIR/../docs/CONCURRENCY.md $TESTS_DIR/../docs/STDLIB.md \
+$TESTS_DIR/../docs/SYNTAX.md $TESTS_DIR/../docs/PREDICATES.md \
+$TESTS_DIR/../docs/DIAGNOSTICS.md $TESTS_DIR/../docs/OBSERVER.md \
+$TESTS_DIR/../docs/BUILTINS.md $TESTS_DIR/../docs/LANGUAGE_CONTRACT.md"
+DOC_POPULATIONS=12
+# ROUND 13 — A WINDOW THAT CANNOT HIDE THE CAUSE.
+# Round 8 made these sections print the child's own words instead of grepping
+# for "^RED", and that was right. The BOUND it chose (20 lines) then spent
+# three rounds hiding the one part anybody needed: the docs-claims PATHS class
+# prints its classifiers and its per-file work near the TOP of a ~110-line
+# report, and the failure that has kept macOS red is visible only there. A tail
+# is the wrong shape for a report whose beginning is its evidence.
+#
+# So: print EVERYTHING, up to 500 lines. Why a bound at all, and why that one
+# is safe. The gate's green report is 110 lines and a fully failing one is a
+# few hundred (one RED per unresolved claim, and a run that red on every claim
+# would be reporting a broken TREE, not a broken gate). 500 covers that with
+# room. And when the bound does bite, it is not a tail: the first 250 lines
+# (banner, classifiers, the class that died) AND the last 250 (the per-class
+# summary the gate now prints LAST) both survive, with the elision counted in
+# between. There is no shape of output in which this drops both ends.
+print_captured() { # label  text
+    local __pc_label="$1" __pc_text="$2" __pc_n
+    __pc_n=$(printf '%s\n' "$__pc_text" | grep -c . || true)
+    echo "  ---- $__pc_label ($__pc_n line(s)) ----"
+    if [ "${__pc_n:-0}" -le 500 ]; then
+        printf '%s\n' "$__pc_text" | sed 's/^/    | /'
+    else
+        printf '%s\n' "$__pc_text" | head -250 | sed 's/^/    | /'
+        echo "    | ......... $((__pc_n - 500)) line(s) elided; the per-class SUMMARY is printed LAST and survives below ........."
+        printf '%s\n' "$__pc_text" | tail -250 | sed 's/^/    | /'
+    fi
+}
+
+echo "[89] Doc Examples (README + llms.txt + 10 docs/*.md, every fence executed)"
 if command -v python3 >/dev/null 2>&1; then
-    DOC_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" "$TESTS_DIR/../docs/SPEC.md" "$TESTS_DIR/../docs/COMPARISON.md" "$TESTS_DIR/../docs/CONCURRENCY.md" "$TESTS_DIR/../docs/STDLIB.md" "$TESTS_DIR/../README.md" 2>&1)
+    # shellcheck disable=SC2086
+    DOC_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" $DOC_FILES_ARG 2>&1)
     DOC_RC=$?
     DOC_PASS=$(echo "$DOC_OUTPUT" | grep -c "  PASS:" || true)
     DOC_FAIL=$(echo "$DOC_OUTPUT" | grep -c "  FAIL:" || true)
@@ -6030,15 +6074,35 @@ if command -v python3 >/dev/null 2>&1; then
     PASS=$((PASS + DOC_PASS))
     FAIL=$((FAIL + DOC_FAIL))
     if [ "$DOC_FAIL" -gt 0 ]; then
-        echo "  FAIL: $DOC_FAIL doc example(s) diverge from the implementation"
+        echo "  FAIL: $DOC_FAIL doc example(s) diverge from the implementation (rc=$DOC_RC)"
         echo "$DOC_OUTPUT" | grep -A8 "FAIL:" | head -20
+        # ROUND 8: the grep above finds a FAILING EXAMPLE. If the checker died
+        # for some other reason — a Python traceback, an import error, a
+        # platform difference — that grep finds nothing and the operator is
+        # left guessing, which is exactly what cost the macOS job two rounds.
+        # So the tail goes out too, always, prefixed as the tool's own words.
+        print_captured "doc-example checker, VERBATIM" "$DOC_OUTPUT"
     elif [ "$DOC_RC" -ne 0 ]; then
         TOTAL=$((TOTAL + 1))
         FAIL=$((FAIL + 1))
-        echo "  FAIL: documentation gate exited $DOC_RC without a failing example"
-        echo "$DOC_OUTPUT"
+        echo "  FAIL: doc-example gate exited $DOC_RC without a failing example; its output follows verbatim"
+        print_captured "doc-example checker, VERBATIM" "$DOC_OUTPUT"
     else
-        echo "  PASS: all $DOC_PASS doc examples match"
+        echo "  PASS: all $DOC_PASS doc examples ran and match"
+    fi
+
+    # §121: "some examples ran" is what a gutted gate also prints. The checker
+    # reports how many PINNED documents this run actually covered; the suite
+    # requires the exact number, so dropping a file from DOC_FILES_ARG is red
+    # here instead of silently shrinking the population.
+    TOTAL=$((TOTAL + 1))
+    if printf '%s\n' "$DOC_OUTPUT" | grep -qF "Doc populations pinned: $DOC_POPULATIONS of $DOC_POPULATIONS row(s) applied"; then
+        PASS=$((PASS + 1))
+        echo "  PASS: all $DOC_POPULATIONS pinned doc populations were examined"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: the doc gate did not report $DOC_POPULATIONS of $DOC_POPULATIONS pinned populations"
+        printf '%s\n' "$DOC_OUTPUT" | grep -E "populations pinned|population " | head -14
     fi
 
     # The marker self-test keeps the README opt-in and zero-count safeguards
@@ -6065,7 +6129,7 @@ if command -v python3 >/dev/null 2>&1; then
     # test), and that a fence the parser still cannot read is REPORTED rather
     # than dropped. The case COUNT is pinned: "exit 0" is also what a
     # self-test reduced to a single echo prints.
-    FENCE_EXPECTED=15
+    FENCE_EXPECTED=29
     FENCE_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" --selftest 2>&1)
     FENCE_RC=$?
     FENCE_OK=$(printf '%s\n' "$FENCE_OUTPUT" | grep -c "  selftest ok:" || true)
@@ -6445,6 +6509,96 @@ else
     else
         echo "  PASS: all $EX_PASS example programs run clean ($EX_SKIP gfx/net skipped — no gfx build)"
     fi
+fi
+echo ""
+
+# [99za] Doc CLAIMS — no hand-typed number, no dangling reference. Every number
+# followed by a unit word, every backticked repo path, every `eigenscript
+# --flag`, every `make <target>` and every backticked `name of` call in the
+# front-door documents is DERIVED from the tree or waived by its exact line.
+# Fast (no build, no suite): it belongs in the PR lane. See docs/CI.md.
+echo "[99za] Doc claims (derived, not typed)"
+TOTAL=$((TOTAL + 1))
+CLAIMS_OUTPUT=$(bash "$TESTS_DIR/../tools/docs_claims_check.sh" 2>&1)
+CLAIMS_RC=$?
+# The tool prints an env banner on every run — echo it even on success, because
+# it is the line that identifies a platform problem before it becomes a mystery.
+printf '%s\n' "$CLAIMS_OUTPUT" | grep -E "^docs-claims env:" | head -1
+if [ "$CLAIMS_RC" -eq 0 ]; then
+    PASS=$((PASS + 1))
+    printf '%s\n' "$CLAIMS_OUTPUT" | grep -E "^docs-claims: OK"
+else
+    FAIL=$((FAIL + 1))
+    # ROUND 8: print the tool's OWN WORDS, not a grep for "^RED". The macOS job
+    # sat at rc=2 for two rounds with 28 of 30 plants "ABSENT" and the reason
+    # never reached the log, because a parse error or an early die matches
+    # neither "^RED" nor "^      ". The #988 discipline — a child that exited
+    # without completing is not trustworthy and must print what it had —
+    # applies to a gate as much as to a test.
+    echo "  FAIL: doc-claims gate exited $CLAIMS_RC; its ENTIRE output follows verbatim (the class summary is at the end)"
+    print_captured "doc-claims gate, VERBATIM" "$CLAIMS_OUTPUT"
+fi
+
+# Its planted-fault selftest. The case COUNT is pinned: "exit 0" is also what
+# a selftest reduced to a single echo prints (mechanical-gates §121).
+# ROUND 4: pin the number of cases RUN, and require zero failures, as two
+# separate conditions. The first cut pinned the count of "selftest ok" lines,
+# so one failing case printed "cases=20, expected 21" — indistinguishable from
+# a case that had been DELETED, and the operator who read it looked for a
+# missing case instead of a failing one. A count that changes meaning when
+# something fails is not a population count (§121).
+CLAIMS_SELFTEST_EXPECTED=36
+CLAIMS_ST=$(bash "$TESTS_DIR/../tools/docs_claims_check.sh" --selftest 2>&1)
+CLAIMS_ST_RC=$?
+CLAIMS_ST_RUN=$(printf '%s\n' "$CLAIMS_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
+CLAIMS_ST_FAILED=$(printf '%s\n' "$CLAIMS_ST" | sed -nE 's/^SELFTEST: [0-9]+ case\(s\) run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
+TOTAL=$((TOTAL + 1))
+if [ "${CLAIMS_ST_RUN:-0}" -ne "$CLAIMS_SELFTEST_EXPECTED" ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: doc-claims selftest ran ${CLAIMS_ST_RUN:-0} case(s), $CLAIMS_SELFTEST_EXPECTED are pinned (rc=$CLAIMS_ST_RC) — a case was added, deleted, or the run never reached its summary; its ENTIRE output follows verbatim"
+    print_captured "doc-claims selftest, VERBATIM" "$CLAIMS_ST"
+elif [ "$CLAIMS_ST_RC" -ne 0 ] || [ "${CLAIMS_ST_FAILED:-1}" -ne 0 ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: doc-claims selftest: ${CLAIMS_ST_FAILED:-?} of $CLAIMS_ST_RUN planted fault(s) did NOT go red (rc=$CLAIMS_ST_RC)"
+    printf '%s\n' "$CLAIMS_ST" | grep -E "SELFTEST FAIL" | head -8
+    print_captured "doc-claims selftest, VERBATIM" "$CLAIMS_ST"
+else
+    PASS=$((PASS + 1))
+    echo "  PASS: doc-claims selftest ($CLAIMS_ST_RUN planted faults, all red)"
+fi
+echo ""
+
+# [99zb] Portability audit — every tracked *.sh PARSED by the OLDEST bash on
+# the machine, AND this repo's shell gates RUN under it.
+#
+# ROUND 14: parsing was never enough. The oracle was built in round 10 and used
+# only as `bash32 -n`; rounds 11, 12 and 13 each shipped a fix for a macOS
+# failure `-n` called clean, and each was diagnosed on CI days later. The cause
+# was a RUNTIME error — bash 3.2 scans `<( … )` for its closing paren without
+# honouring comments, so an apostrophe in a comment inside one opens a quote
+# that never closes, at execution. A parser cannot see that; running can, and
+# the whole docs-claims gate runs under 3.2 in ~20 s. When no old bash is
+# present the check ANNOUNCES the skip and prints both counts, so it can never
+# read as a completed audit. See docs/CI.md.
+echo "[99zb] Portability audit (oldest bash: parse every script, RUN the gates)"
+TOTAL=$((TOTAL + 1))
+PORT_OUTPUT=$(bash "$TESTS_DIR/../tools/portability_parse_check.sh" 2>&1)
+PORT_RC=$?
+printf '%s\n' "$PORT_OUTPUT" | grep -E "^portability(-parse|-run)?: (oracle|OK|ok|SKIPPED|NO OLD BASH)" | head -8
+# rc 0 is not enough: a verdict line must be PRESENT. A tool that died after
+# printing nothing also exits 0 if its last command did (mechanical-gates §121,
+# applied to the section rather than the tool).
+if [ "$PORT_RC" -eq 0 ] \
+   && ! printf '%s\n' "$PORT_OUTPUT" | grep -qE "^portability: OK:|^portability-parse: SKIPPED"; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: the portability audit exited 0 without printing a verdict line — it measured nothing"
+    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
+elif [ "$PORT_RC" -eq 0 ]; then
+    PASS=$((PASS + 1))
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: a tracked shell script does not PARSE, or a gate does not RUN, under the oldest bash here (rc=$PORT_RC)"
+    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
 fi
 echo ""
 

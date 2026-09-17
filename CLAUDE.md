@@ -110,9 +110,17 @@ Always-on:
   working). Over-arity on 2+-param callees is silently dropped — W022
   flags it for same-file callees. (More `.eigs`-writing gotchas:
   the `write-eigenscript` skill.)
-- **A semantics change must update `docs/SPEC.md` + `docs/COMPARISON.md` in
-  the same PR** — `tests/test_doc_examples.py` runs their example/output
-  pairs byte-for-byte (suite [89]/[90]) and CI fails otherwise.
+- **A semantics change must update `docs/SPEC.md`, `docs/COMPARISON.md`,
+  `README.md` and `docs/llms.txt` in the same PR** — the last two are the
+  front doors (a human's and an agent's), and they used to drift silently
+  because nothing executed them. The mechanism is mechanical, not a promise:
+  `tests/test_doc_examples.py` EXECUTES every `eigenscript` fence in all four
+  (suite [89]/[90]) — opt-OUT, so an untagged fence with no `output` block is
+  RED — and `tools/docs_claims_check.sh` (suite [99za]) derives every numeric
+  claim, repo path, CLI flag, `make` target and stdlib call in README.md +
+  docs/llms.txt + CLAUDE.md from the tree. **Never hand-type a number into a
+  doc**: add its derivation to that tool, or waive the exact line with a
+  reason.
 
 ## Task-specific procedures (skills — invoked on demand, not always loaded)
 
@@ -125,7 +133,7 @@ Always-on:
 - **Changing the AOT compiler** (separate `ouroboros` repo)? → the
   **`aot-differential`** skill (VM as byte-exact oracle).
 - **Writing `.eigs` code**? → the **`write-eigenscript`** skill, and
-  **`docs/llms.txt`** — the whole language in one 190-line file (call
+  **`docs/llms.txt`** — the whole language in one 291-line file (call
   syntax, scope, observer, validation ladder); an agent primed with it
   has written correct programs from it alone (#734). Resolve "does
   function X exist" with `eigenscript --api` (or `--api --json`) — the

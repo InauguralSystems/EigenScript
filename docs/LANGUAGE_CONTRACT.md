@@ -144,7 +144,7 @@ examples (executed by the suite).
   clamps are readable as sticky status flags — IEEE-754's own model
   (`fetestexcept`) — rather than being undetectable (#865):
 
-  ```eigenscript
+  ```eigenscript fragment risky='(vs) => vs[0]' xs=[1,2]
   clear_math_flags of null
   result is risky of xs
   if (math_flags of null).overflow:

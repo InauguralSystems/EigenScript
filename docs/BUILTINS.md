@@ -1,6 +1,6 @@
 # EigenScript Builtin Reference
 
-349 builtins organized by module (261 core + 88 extensions). `eigenscript --api` prints the live index; the counts here are gated by tools/doc_drift_check.sh.
+349 builtins organized by module (261 core + 88 extensions). `eigenscript --api` prints the live index; the counts here are derived by tools/docs_claims_check.sh, never typed by hand.
 Core builtins are always available; extension builtins (HTTP, DB, model,
 gfx, audio) require a full build or the `gfx` target.
 
@@ -816,7 +816,7 @@ fonts is probed (DejaVu Sans, Liberation Sans, Noto Sans under
 `/usr/share/fonts/truetype/`). Without SDL2_ttf or a font, `gfx_text`
 renders through the built-in 5x7 bitmap font exactly as before — the
 fallback is load-bearing (CI containers may have neither). Layout code
-should measure through `gfx_text_width`/`gfx_text_height` (as `lib/ui`
+should measure through `gfx_text_width`/`gfx_text_height` (as `lib/ui.eigs`
 does) rather than assuming the `6 * scale` monospace advance. Text
 rendering is output-only: no trace-tape records in either mode.
 
@@ -850,6 +850,9 @@ try:
     rows is json_decode of (db_query_json of "SELECT * FROM orders")
 catch e:
     print of ("query failed: " + e.message)   # e.kind is "io"
+```
+```output
+query failed: undefined variable 'db_query_json'
 ```
 
 ### SQL types survive the trip (#887)

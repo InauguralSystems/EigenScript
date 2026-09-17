@@ -1,0 +1,23 @@
+# docs-claims WAIVERS — file basename | EXACT line content | reason
+#
+# A DATA FILE, not a shell string. This one table has now produced three
+# quoting traps in three rounds: an apostrophe closed a single-quoted string
+# (round 2), an apostrophe closed section_plan's equivalent (round 6), and an
+# unbalanced '(' inside a quoted heredoc inside $( ) broke bash 3.2 and took
+# down the whole macOS lane (round 10 — bash 3.2 counts parentheses inside a
+# quoted heredoc body; bash 5 does not). The content is REVIEWED PROSE quoting
+# other people's documents, so it will keep containing apostrophes, backticks
+# and parentheses. Data belongs in data: a file has no quoting rules at all.
+#
+# Lines beginning with # and blank lines are ignored. Everything else is one
+# waiver: the basename of the document, the EXACT line content (never a
+# substring - mechanical-gates 125), and the reason a reviewer wrote.
+#
+CLAUDE.md|DMG is 3,288 lines, of which 818 are compiled and 2,470 interpreted,|a measurement of the DMG consumer repo quoted inside a dated bought-lesson narrative; not a fact about this tree
+CLAUDE.md|including the 837-line, 128-function opcode dispatch. Every emulated|same DMG narrative as the line above
+CLAUDE.md|  EVERY count — `f of []` zero args, `f of [x]` one arg (the element,|metasyntactic call-syntax illustration (#405): `f` stands for any callee, not a named function
+CLAUDE.md|  not the list), `f of [a, b]` two. To pass a literal list whole,|same #405 illustration as the line above
+CLAUDE.md|  parenthesise (#355): `f of ([x])`. Lint W017 flags the 1-element bare|same #405 illustration as the lines above
+CLAUDE.md|  callee re-collects a 2+-element arg list WHOLE (`one of [5, 6]` binds|metasyntactic arity-1 carve-out illustration (#733): `one` is a 1-parameter callee, not a named function
+BUILTINS.md|printing "0 rows" forever after a schema change and a migration that did|"0 rows" is quoted program OUTPUT inside a cautionary story, not a claim about this tree
+README.md|docker run --rm -v "$PWD:/work" ghcr.io/inauguralsystems/eigenscript:latest program.eigs|`--rm` is docker's flag, not eigenscript's

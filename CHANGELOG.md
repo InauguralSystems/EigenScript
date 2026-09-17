@@ -45,6 +45,230 @@ All notable changes to EigenScript are documented here.
   ... this handle names)", "handle N is not a ... handle", and the unchanged
   "invalid channel"/"invalid store" for a value that is not a handle at all.
 
+- **Documentation examples are checked opt-OUT, and doc numbers are derived,
+  not typed.** Two mechanical gates replace hand sweeps:
+  - **`tests/test_doc_examples.py` (suite [89]) now EXECUTES every
+    `eigenscript` fence** in README.md, docs/llms.txt and ten `docs/*.md`.
+    The old rule ran a fence only if an author paired it with an ```output
+    block: 98 of 180 fences ran, docs/SYNTAX.md 0 of 35, docs/PREDICATES.md
+    0 of 13, docs/llms.txt 0 of 4. **Breaking for doc authors:** an untagged
+    fence with no `output` block now FAILS the suite. The tag grammar is
+    ```` ```eigenscript ```` (paired, byte-compared), ````
+    ```eigenscript fragment i=0 xs=[1,2] ```` (run with those free names
+    bound; must finish with a clean exit and clean stderr), and ````
+    ```eigenscript nocheck <reason> ```` (not run; the reason is required on
+    the same line). The un-reasoned `eigenscript skip` spelling is GONE — its
+    five uses became `nocheck` with reasons or runnable fragments. Populations
+    are pinned per file and cross-checked against an independent line scan.
+    Result: 179 fences, 175 executed, 4 `nocheck` with stated reasons.
+  - **`tools/docs_claims_check.sh` (suite [99za])** derives every numeric
+    claim, backticked repo path, `eigenscript --flag`, `make <target>` and
+    backticked `name of` call in README.md, docs/llms.txt, CLAUDE.md,
+    docs/ARCHITECTURE.md and docs/BUILTINS.md from the tree. Anything not
+    derived must be waived by its exact line content with a reason. The three
+    number checks in `tools/doc_drift_check.sh` (README stdlib headline,
+    ARCHITECTURE lib/ count, builtin counts) moved into it — numeric doc
+    claims have ONE home now.
+  - Numbers fixed by the first run: the minimal binary is **943K**, not
+    "~620K" (a 2026-04-24 claim); the GUI toolkit registers **47** widgets,
+    not 44; `lib/` holds **78** modules, not 52 (the README table gained the
+    8 missing non-fragment modules and declares the 18 `lib/ui_*.eigs`
+    fragments, 60 + 18 = 78); **17** STEM modules, defined for the first time
+    by a machine-readable `# stdlib-tag: stem` header cross-checked against
+    docs/STDLIB.md's own section; the suite has **266 sections**, not "2,500+
+    checks"; docs/llms.txt claims **349 builtins (261 core + 88 extensions)**,
+    not "~255"; CLAUDE.md calls docs/llms.txt **260** lines, not 190. Six
+    dangling paths (`lib/ui`, `lib/test`, `lib/log`, and three cross-repo
+    references) were corrected.
+  - **CLAUDE.md's same-PR rule now names four documents**: a semantics change
+    updates `docs/SPEC.md`, `docs/COMPARISON.md`, `README.md` and
+    `docs/llms.txt`, and the two gates above are the mechanism.
+  - README's opening paragraph states what is true about concurrency today
+    (OS threads, channels, `thread_join`, the documented memory model in
+    docs/CONCURRENCY.md, open items in #1153) instead of "real concurrency".
+  - **docs/CONCURRENCY.md's headline rule was FALSE and is corrected.** It said
+    "messages copy, closures share"; a `buffer` or a `text_builder` sent
+    through a channel is shared BY REFERENCE, so the receiver sees the
+    sender's later mutations (`send` a buffer, then `buf_set` it, and the
+    receiver reads the new value). That is open defect **#1148** under #1153.
+    The rule is now "VALUES copy, HANDLES share", the counterexample and the
+    explicit-snapshot workaround are both EXECUTED examples with byte-compared
+    output, and the README sentence matches. A gate that proves numbers and
+    runs examples does not prove an English sentence; this one was found by
+    executing the sentence.
+  - **docs/CONCURRENCY.md's copy-vs-share taxonomy is MEASURED, not listed.**
+    The corrected page said "three things" share; a reviewer found a fourth by
+    sending a channel through a channel. The page now carries one executed
+    example that sends a value of each kind, mutates the sender, asks the
+    receiver what it sees, and PRINTS the verdict per kind — the enumeration is
+    the program's byte-compared output, so a kind that changes sides fails the
+    build. `chan_clone_rec`'s switch-arm count (10, no `default:`, so
+    `-Werror=switch` already forces the C decision) is now derived by
+    `tools/docs_claims_check.sh`, so adding a `ValType` fails the page too.
+    docs/llms.txt — the file every agent primes on — gained the rule and its
+    own paired example; it previously carried no copy/share sentence at all.
+  - **bash 3.2 counts parentheses inside a quoted heredoc**, so
+    `TABLE=$(cat <<'EOF' … )` breaks when a row contains an unbalanced `(` —
+    which a row of reviewed prose eventually does. Both such tables in the
+    docs-claims gate are now DATA FILES (`tools/docs_claims_waivers.txt`,
+    `tools/docs_claims_populations.txt`), immune to apostrophes, backticks and
+    parentheses at once. A pre-existing bash 3.2 break in
+    `tools/werror_switch_check.sh` (an unquoted `(` group in a `[[ =~ ]]`
+    pattern, reachable on the main-lane macOS job) is fixed the same way.
+    New suite section **[99zb]** parses every tracked `*.sh` under the oldest
+    bash on the machine and announces itself when there is none.
+  - **A failing doc gate now prints the tool's own words.** Both sections
+    (`[89]`, `[99za]`) echo the captured output's last 20 lines verbatim with
+    the exit code instead of grepping for `^RED`, which a parse error or an
+    early exit matches neither; both tools print a one-line environment banner
+    (shell/python version, make, uname, selected binary, release-binary
+    presence) on every run; and `docs_claims_check.sh` names itself on every
+    non-zero exit path, including an EXIT trap for a death that never reached a
+    verdict. A macOS failure went two CI rounds without its reason ever
+    reaching the log.
+  - **The binary-size claim names its variant, and a lane that cannot verify it
+    DEFERS rather than skips.** It measured `src/eigenscript`, a hard link to
+    the last-built variant, so the ASan shard measured the ASan binary and
+    reported "claims '940K' but D_BIN_K derives 28721". It is now verified
+    against `build/release/eigenscript` only; where that is absent the claim
+    becomes a pinned deferral (`RELEASE_ONLY_DECLARED=1`), so a deferral cannot
+    multiply unnoticed. **And then no lane verified it**: every CI leg builds
+    with `./build.sh`, which writes `src/eigenscript` directly, so
+    `build/release/` never existed in CI and the claim deferred everywhere —
+    a documentation number with no verifier, inside the gate that exists to
+    abolish those. The lane's binary is now identified BY INODE: if
+    `src/eigenscript` shares one with a `build/<variant>/eigenscript` the
+    variant names itself (only `release` is accepted, anything else defers);
+    if it shares one with none, it is the `./build.sh` product, which is
+    exactly what `install.sh` puts on a user's machine, and it is MEASURED.
+    A non-Linux lane defers too — a Mach-O of the same source is a different
+    object format, not documentation drift. Every state has its own planted
+    selftest row.
+  - **No scan that feeds a population suppresses its stderr, and there is one
+    authority for "what is a fence".** The DOC ENROLMENT class re-implemented
+    the fence grammar as an ERE with `2>/dev/null` on it; BSD grep rejected
+    that ERE outright, so on macOS every document counted 0 fences, the
+    population collapsed, and grep's explanation was discarded. The count now
+    comes from `tests/test_doc_examples.py --count` — the gate that EXECUTES
+    the fences, asked over a documented interface, one grammar instead of two —
+    and every remaining population scan runs through a helper that turns any
+    diagnostic into a RED quoting it.
+  - **Nothing in the gate extracts with `grep -o` any more.** On macOS the
+    PATHS per-file scan returned zero matches without failing, so six declared
+    rows read "never visited" and the class measured nothing while every other
+    class passed. `grep -o` is not in POSIX, and GNU and BSD differ on it with
+    `-E`, on patterns that can match empty, and on how it composes with `-n`.
+    All 18 extraction sites now use POSIX awk `match()`/`RSTART`/`RLENGTH`
+    (grep still finds lines; awk extracts), with two rules the helper
+    enforces: no backslash escapes in a pattern (a bracket expression instead,
+    since `\(` in a string-to-regex conversion is undefined) and no
+    `[[:class:]]` or `\b` (the word boundary is an explicit test in the
+    extractor). Every class count is unchanged — NUMBERS 25, PATHS 163,
+    FLAGS 32, MAKE TARGETS 26, NAMES 454, DOC ENROLMENT 12. And a scan that
+    matches ZERO times for a file with a non-zero declared count is now a RED
+    **at the scan**, quoting the command and its exit status, instead of a
+    "declared population … was never visited" three hundred lines later.
+  - **bash 3.2 scans `<( … )` without honouring comments, and the oracle was
+    only ever being asked to PARSE.** The apostrophe in a comment inside the
+    PATHS loop's `done < <( { … } )` — "resolves relative to its own file's
+    directory" — opened a quote that never closed, so 3.2 reported
+    `bad substitution: no closing ')'` at RUNTIME and the whole PATHS class
+    silently did not run on macOS. `bash -n` calls that clean; measured, both
+    ways: `<( { … # …file's… } )` parses and FAILS TO RUN under 3.2, while
+    `$( { … # …file's… } )` is fine in both. The loop now feeds from a temp
+    file and the comment lives in ordinary shell text. Fourth apostrophe-class
+    bug in this gate, so the rule is the construct and not the character: no
+    `<( … )` around a multi-line block that can contain a comment.
+    **[99zb] now RUNS the shell gates under the old bash**, not only parses
+    them (four gates, rc 0 required, count pinned; ~24 s for the parse sweep
+    plus the runs) — rounds 11, 12 and 13 were each diagnosable on the dev box
+    the moment anybody executed the gate under the oracle instead of parsing it.
+  - **The gate's own output was nondeterministic under bash 3.2, and one
+    selftest row had been reporting it correctly for four rounds.** Under 3.2 a
+    `printf … | grep -q` (or `| head -1`, or `| awk '… exit'`) makes the shell's
+    `printf` BUILTIN take SIGPIPE when the reader exits first, and 3.2 prints
+    `printf: write error: Broken pipe` on stderr where bash 5 says nothing —
+    nondeterministically, because it is a race. That is why "both build states
+    produce byte-identical output" failed on macOS: the two runs differed by a
+    race, not by build state. Every early-exiting reader in the gate is now fed
+    by a here-string rather than a pipe. Reproduced and fixed against real GNU
+    bash 3.2.0 (three repeat trials, byte-identical, zero diagnostics).
+    The three remaining binary-size rows are now platform-aware: on Linux they
+    assert the measurement, off Linux they assert the DEFERRAL and that a
+    planted wrong number does NOT red. Every row still runs and still counts on
+    both platforms — a row that vanishes on a platform makes a pinned count a
+    lie.
+  - **A failing gate's window can no longer hide the class that failed.** For
+    three CI rounds one macOS red showed up only as six "declared population
+    PATHS/… was never visited" lines from an audit far below the class, inside
+    the runner's 20-line tail, while the class's own work sat above it. Round 8
+    fixed "print what the child said"; the bound it chose became the thing
+    hiding the cause. The runner now prints the gate's ENTIRE output (bounded
+    at 500 lines, and when that bites it keeps the first 250 AND the last 250,
+    never a bare tail), the gate prints a **per-class summary LAST** — examined
+    count, files recorded, declared rows, and `THE CLASS DID NOT RUN` as its
+    own RED when a class recorded nothing — and the PATHS class states its
+    inputs before it walks: the document list, `TRACKED_LIST` and `PRODUCED`
+    sizes with each build-product route counted separately, and one line per
+    document as it is scanned.
+  - **The `make -p` classifier reports its two routes separately and no longer
+    depends on the database for variables.** macOS runs GNU Make 3.81 against
+    4.3 here and the `-p` dump format is a decade apart; when the database
+    yields no variable definitions the tool reads the same `^VAR := value`
+    assignments from the Makefile instead. Both routes empty is a hard RED
+    naming `make --version`.
+  - **`tools/child_exit_check.sh` pins its population exactly** instead of
+    holding a floor of 60 against 113 sites: its own "population shrunk"
+    planted fault had stopped crossing that floor and the selftest said so.
+    A floor plus a plant calibrated against it drifts apart every time the
+    population grows; `found == declared` cannot.
+  - **The gate runs on macOS.** Three GNU-only constructs made it exit 2 before
+    doing anything there: `declare -A` (a syntax error in bash 3.2, which macOS
+    still ships), `mktemp -d -p DIR TEMPLATE` and `stat -c %d`. Replaced with a
+    full `mktemp` path template, newline-delimited sets with a `case`
+    membership test, and no device comparison at all — the cross-filesystem
+    case is detected by attempting the hard-link copy, which is a behaviour
+    test rather than a platform quiz.
+  - **The gate's selftest no longer depends on the FILESYSTEM LAYOUT either.**
+    Its scratch tree was hard-linked (`cp -al`) into `/tmp`; a hard link cannot
+    cross a filesystem, and on a CI runner the workspace and `/tmp` are
+    different mounts, so the copy failed, the helper returned early and three
+    cases never ran — 13 red CI jobs against a green local ring. The scratch is
+    now created beside the repo, a failed hard-link copy falls back to a real
+    `cp -a` and says so, both call sites share one helper, and a selftest row
+    forces the cross-filesystem path (via `/dev/shm`) and requires the fallback
+    to fire and be announced. `EIGS_DOCS_SCRATCH_DIR` runs the whole selftest
+    under that shape. The script also resolves its own path before `cd`, so the
+    selftest's child invocations work when it is called by a relative path.
+  - **`tools/docs_claims_check.sh` no longer depends on BUILD STATE.** It was
+    rc 0 from a clean tree and rc 1 inside the release suite: suite section
+    [88] builds `src/eigenlsp`, so by [99za] the path existed, the waiver that
+    said "absent from a clean tree by design" matched nothing, and the
+    unmatched-waiver rule fired. A path is now CLASSIFIED before it is
+    checked — `git ls-files` says SOURCE (tracked and present), `make -p` says
+    BUILD PRODUCT (a rule produces it; its existence is never consulted),
+    neither is red — and the selftest proves the real doc set is green with the
+    products absent AND present, with byte-identical output. Both classifier
+    sets are derived from tools, not typed. The selftest also reports cases RUN
+    and cases FAILED as two numbers, so a failing case can no longer read as a
+    deleted one.
+  - The gates were hardened against their own blind spots after a blind
+    critic executed every check: a class population can no longer SHRINK
+    silently (every class carries a declared per-file count, found ==
+    declared both ways, and a waiver that matches nothing is red); the
+    suite-size claim is the 258 DISTINCT section labels rather than the 267
+    labelled lines, cross-checked against `tools/suite_label_check.sh`; a
+    fragment's free names are resolved statically through `--lint` E003, so a
+    name hiding in a dead branch is caught; FLAGS covers every `--flag` token
+    (and matches whole tokens, so `--ver` no longer passes as a prefix of
+    `--version`); PATHS covers Markdown link targets, resolved against the
+    LINKING FILE's directory only (a repo-root fallback had accepted
+    `](docs/STDLIB.md)` written inside `docs/BUILTINS.md`); the DOC ENROLMENT
+    class pins both directions, so a declared row naming a fence-less document
+    is red at the class that declares it; a fragment's failure quotes the
+    lint's own `error[E003]` line so the rule is greppable; and a value stated
+    in a comment inside an executed example is refused.
+
 - **Early HTTP readiness is honest (#1129):** `http_early_bind` now returns
   503 with `Retry-After: 1` during initialization for arbitrary methods/paths.
   Use `http_early_bind of [port, "/livez"]` for an explicit GET/HEAD liveness

@@ -38,9 +38,8 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 ## PR lane (`pull_request`) — target ≤ 15 minutes
 
 - `scope` decides whether the PR touches anything but `*.md`. A docs-only PR
-  reports green in seconds. (The doc gates themselves are not skipped: the
-  executable `docs/SPEC.md` / `docs/COMPARISON.md` examples run inside the
-  suite on the linux legs.)
+  reports green in seconds. (The doc gates themselves are not skipped — see
+  **The doc gates** below.)
 - **One full suite: `linux / gcc`.** All ~263 sections.
 - **`werror audit`** runs [99i] once, cached (see below). The suite jobs set
   `EIGS_SKIP_WERROR_AUDIT=1`, and [99i] then prints a `SKIP:` line naming this
@@ -55,6 +54,64 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
   `macos-15-intel` is not on this lane.
 - Fast gates unchanged: jit differential, replay differential, freestanding,
   tsan, install smoke, bench, CodeQL, `gate self-tests`.
+
+## The doc gates — where they run, and why they are cheap
+
+Three sections, all on the linux legs of the PR lane. None of them builds
+anything of its own, so a docs PR pays seconds, not minutes.
+
+| Section | Tool | What it refuses |
+|---|---|---|
+| **[89]** | `tests/test_doc_examples.py` | an eigenscript fence that is not executed. Opt-OUT: paired with an `output` block (byte-compared), tagged `eigenscript fragment k=v ...` (free names declared in the tag, resolved STATICALLY through `--lint` E003 so a name hiding in a dead branch still counts, then run and required to finish clean), or tagged `eigenscript nocheck <reason>`. Anything else is red. It also refuses a **value stated in a comment** inside an executed example — that is a claim wearing a checked example's clothes. Per-file populations are pinned and cross-checked against an independent line scan. |
+| **[99za]** | `tools/docs_claims_check.sh` | a hand-typed number, a dangling repo path **or Markdown link target** (resolved against the LINKING FILE's directory only — no repo-root fallback, because a link that resolves only at the root is a broken link). A path is classified before it is checked: `git ls-files` says SOURCE (must be tracked and present), `make -p` says BUILD PRODUCT (must be produced by a rule; its **existence is never consulted**, so `make lsp` cannot change the verdict), neither is red, **any** `--flag` token not in `--help`, a `make <target>` that is not a rule, a backticked `name of` call that resolves nowhere. Each is derived from the tree or waived by its exact line content with a reason. Every class carries a DECLARED per-file count (found == declared, both ways), and a waiver that matches nothing is red — so a claim cannot be deleted, and coverage cannot shrink, without a failure. Three rules bought on macOS: **no scan that feeds a population suppresses its stderr** (a rejected pattern used to read as "nothing found"); the **fence count comes from `tests/test_doc_examples.py --count`**, the gate that executes the fences — one grammar, not two; and **nothing in the tool extracts with `grep -o`** — grep finds lines, POSIX awk `match()`/`RSTART`/`RLENGTH` extracts, because `grep -o` is not in POSIX and GNU and BSD differ on it. A scan that matches ZERO times where a count is declared is a RED **at the scan**, quoting the command and its exit status, not a "was never visited" three hundred lines later. And the gate prints a **per-class summary LAST** — examined count, files recorded, declared rows — so a class that silently did not run is one named line rather than six consequence-REDs; the runner prints the gate's **entire** captured output on failure (bounded at 500 lines, and when that bites it keeps the first 250 AND the last 250, never a bare tail). The **binary-size** claim is measured against whichever install-shaped binary the lane actually has, decided by inode: `build/release/eigenscript` if present, else `src/eigenscript` when no `build/*/eigenscript` shares its inode (the `./build.sh` product, which is what every CI leg builds and what `install.sh` installs); a `src/eigenscript` that IS a variant alias, or a non-Linux lane, defers with the reason named and the deferral count pinned. |
+| **[99zb]** | `tools/portability_parse_check.sh` | a tracked `*.sh` that the OLDEST bash on the machine cannot parse — **or a shell gate it cannot RUN**. macOS ships **bash 3.2 (2007)**, and three CI rounds were spent guessing at what it rejects — twice wrongly. The dev box now carries a real one at **`~/.local/bin/bash32`**, built from GNU bash 3.2.0 source with `./configure --without-bash-malloc --disable-nls && make` (~4 min); `bash32 -n <file>` settles any portability question in a second, and the whole repo in under two. Parsing was never enough: bash 3.2 scans `<( … )` for its closing paren **without honouring comments**, so an apostrophe in a comment inside one opens a quote that never closes — at RUNTIME, which `bash -n` calls clean. That kept the macOS lane red for four rounds. The audit therefore also EXECUTES the four tracked shell gates (`docs_claims_check.sh`, `child_exit_check.sh`, `suite_label_check.sh`, `doc_drift_check.sh`) under the old bash and requires rc 0, with the run count pinned. `PORTABILITY_RUN_SELFTEST=1` adds the claims selftest (~3 min, driver-only extra coverage — its children still spawn through `#!/usr/bin/env bash`). When no old bash is present the check **announces the skip and prints both counts**, so it can never read as a completed audit. 120 files parsed + 4 gates run, ~24 s. |
+**`make -p` across make versions — measured, not assumed.** macOS runners carry
+**GNU Make 3.81** (2006); this box has 4.3, and [99za]'s build-product
+classifier parses `make -p -n --no-builtin-rules`. That was the leading
+suspicion for the macOS PATHS failure, so it was tested rather than guessed at:
+GNU Make 3.81 built from source (`curl -O
+https://ftp.gnu.org/gnu/make/make-3.81.tar.gz`, `./configure`, then
+`make GLOBINC= GLOBLIB= CFLAGS=-O2` — the bundled `glob/` does not link against
+modern glibc, the system one does; ~90 s) produces, over this Makefile,
+**exactly the same 886 file targets and the same 898-entry producer set** as
+4.3. The only difference in the variable dump is `MAKE_HOST`, which no recipe
+uses. So the database parse is version-stable here and `make -p` is **not** the
+macOS cause. The tool still reports its two routes separately and falls back to
+the Makefile's own `^VAR := value` lines if a database ever yields none — but
+that is insurance, not a fix for a diagnosis.
+
+**The gate's output is deterministic, and that is a checked property.** A
+selftest row runs the gate twice — once with build products absent, once with
+them present — and requires the two outputs to be BYTE-IDENTICAL, because a
+verdict that moves with build state is a verdict that depends on what someone
+ran. That row failed on macOS for four rounds, and the cause was not build
+state at all: under **bash 3.2** a `printf … | grep -q` (or `| head -1`, or
+`| awk '… exit'`) makes the shell's own `printf` builtin take SIGPIPE when the
+reader exits first, and 3.2 PRINTS `printf: write error: Broken pipe` where
+bash 5 swallows it — nondeterministically, because it is a race. Every
+early-exiting reader in the gate is now fed by a **here-string** instead of a
+pipe (a here-string is a temp file; there is no pipe to break). Same family as
+`tools/pipefail_verdict_check.sh` (#1122).
+
+| **[99v]** | `tools/doc_drift_check.sh` | the staleness classes that are not numbers: a stdlib module with no `docs/STDLIB.md` entry, a stale "Latest release" line, a `VERSION` with no CHANGELOG section, an unstamped `docs/llms.txt`. |
+
+Both new gates carry a planted-fault selftest that the suite runs with a
+**pinned case count** — `--selftest` on each tool, 29 and 36 cases — so a
+selftest reduced to an echo is red, not green. Cost on the dev box, measured: [89]
+runs 180 example programs plus a `--lint` pass each in **3 s**; [99za]'s live
+pass is **4 s** (one `git ls-files`, one `make -p -n`, one `--api`, one
+`--help`, one `suite_label_check.sh`, one `lib/ui.eigs` load, one
+`test_doc_examples.py --count`) and its 36-case selftest is **~3 min**,
+because each case re-runs the whole gate through its public entry point and
+nine of them copy the tree to vary build state. That
+scratch copy is made NEXT TO the repo, not in `/tmp`: a hard link cannot cross a
+filesystem, and on a CI runner the workspace and `/tmp` are different mounts. Both belong on the PR lane; neither belongs nightly.
+
+To add a document to [89]: add it to `DOC_FILES_ARG` in the runner AND a row to
+`POPULATION` in `tests/test_doc_examples.py`, and bump `DOC_POPULATIONS`. The
+checker refuses a document that carries fences and has no pinned row, and the
+suite refuses a run that covered fewer rows than are pinned — a file quietly
+dropped from either list is a failure at both ends.
 
 ## Main lane (push to `main`) — the full matrix
 

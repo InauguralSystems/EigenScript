@@ -466,7 +466,7 @@ while abs(e_prev - e) > 1e-9:
     e_prev, e = e, step(e)
 ```
 
-```eigenscript skip
+```eigenscript fragment e=1.0 step='(v) => v * 0.5'
 loop while not converged:    # EigenScript: the runtime watches e
     e is step of e
 ```

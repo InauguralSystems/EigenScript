@@ -108,7 +108,7 @@ into the vocabulary `converged` / `stable` / `improving` / … requires
 drawing lines on it — and a line is a decision made from outside. Those
 lines are the three thresholds:
 
-```eigenscript
+```eigenscript fragment dh_zero=0.001 dh_small=0.01 h_low=0.1 scale=0.001 n=10
 set_observer_thresholds of [dh_zero, dh_small, h_low]
 # defaults: 0.001, 0.01, 0.1
 set_observer_scale of scale      # the value channel's "what counts as zero" (#1045)
@@ -329,7 +329,7 @@ every assignment, without you writing the check. `lib/contract.eigs` turns that 
 machine-checked assertion — the affirmative answer to "what replaces static
 types here."
 
-```eigenscript
+```eigenscript fragment
 load_file of "lib/contract.eigs"
 
 define newton_sqrt2(x) as:

@@ -91,7 +91,7 @@ They already ship — reach for them first:
 
 ## Loading Libraries
 
-```eigenscript
+```eigenscript fragment
 load_file of "lib/math.eigs"
 load_file of "lib/list.eigs"
 ```
@@ -126,15 +126,18 @@ tree binary, or from an installed binary.
 EigenScript functions take one argument, `n`. Libraries follow two patterns:
 
 **Single argument** — `n` is the value directly:
-```eigenscript
-abs of -5             # n is -5
-reverse of [1, 2, 3]  # n is the list [1, 2, 3]
+```eigenscript fragment
+import list
+abs of -5                  # n is -5
+list.reverse of [1, 2, 3]  # n is the list [1, 2, 3]
 ```
 
 **Multiple arguments** — pass a list, unpack `n[0]`, `n[1]`:
-```eigenscript
-clamp of [15, 0, 10]         # n[0]=15, n[1]=0, n[2]=10
-map of [items, double_fn]    # n[0]=items, n[1]=double_fn
+```eigenscript fragment items=[1,2,3] double_fn='(v) => v * 2'
+import math
+import list
+math.clamp of [15, 0, 10]       # n[0]=15, n[1]=0, n[2]=10
+list.map of [items, double_fn]  # n[0]=items, n[1]=double_fn
 ```
 
 The difference: does the function need one thing or several? Check the
@@ -183,7 +186,7 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 
 Higher-order functions take EigenScript functions as arguments:
 
-```eigenscript
+```eigenscript fragment
 load_file of "lib/list.eigs"
 
 define double as:
@@ -517,6 +520,10 @@ load_file of "lib/checksum.eigs"
 print of (crc32 of "123456789")      # 3421780262
 print of (adler32 of "Wikipedia")    # 300286872
 ```
+```output
+3421780262
+300286872
+```
 
 `format.eigs` also ships `hexdump of data` (string or buffer → classic
 offset/hex/ascii rows), and `functional.eigs` ships
@@ -562,6 +569,10 @@ m is map_set of [m, "version", "0.5"]
 print of (map_get of [m, "lang"])       # "EigenScript"
 print of (map_keys of m)                # ["lang", "version"]
 ```
+```output
+EigenScript
+["lang", "version"]
+```
 
 ### lib/functional.eigs — Composition and Higher-Order Utilities
 
@@ -578,7 +589,7 @@ print of (map_keys of m)                # ["lang", "version"]
 | `times` | `times of [count, fn]` | Call fn(i) for i in 0..count-1 |
 | `iterate` | `iterate of [fn, value, count]` | Apply fn n times |
 
-```eigenscript
+```eigenscript fragment
 load_file of "lib/functional.eigs"
 
 define double as:
@@ -942,7 +953,7 @@ per-file and total tallies.
 | `has_flag` | `has_flag of [parsed, "--flag"]` | Alias for get_flag |
 | `require_opt` | `require_opt of [parsed, "--key", usage]` | Get option or exit |
 
-```eigenscript
+```eigenscript fragment
 load_file of "lib/args.eigs"
 # eigenscript myscript.eigs --verbose --output=result.txt input.csv
 parsed is parse_args of null
@@ -1073,6 +1084,10 @@ sm is sm_send of [sm, "start"]
 print of (sm_state of sm)              # "running"
 print of (sm_can_send of [sm, "stop"]) # 1
 ```
+```output
+running
+1
+```
 
 ### lib/template.eigs — String Templating
 
@@ -1091,6 +1106,9 @@ load_file of "lib/template.eigs"
 vars is [["name", "World"], ["version", "0.5"]]
 msg is render of ["{{name}} is running v{{version}}", vars]
 print of msg   # "World is running v0.5"
+```
+```output
+World is running v0.5
 ```
 {% endraw %}
 
@@ -1134,7 +1152,7 @@ env is parented on the caller's env rather than on the definition env.
 | `eigen_eval` | `eigen_eval of [ast, env]` | Evaluate AST in environment, return value |
 | `eigen_run` | `eigen_run of source` | Evaluate source string end-to-end |
 
-```eigenscript
+```eigenscript fragment
 load_file of "lib/eigen.eigs"
 tokens is eigen_tokenize of "x is 2 + 3"
 ast is eigen_parse of tokens
@@ -1160,13 +1178,13 @@ Follow these conventions:
    Exception: auth/sanitize modules that manage state.
 
 Example:
-```eigenscript
+```eigenscript fragment
 # ---- my_func: description of what it does ----
 # my_func of [arg1, arg2] -> return_type
 define my_func as:
     a is n[0]
     b is n[1]
-    # ... implementation ...
+    result is a + b            # ... implementation ...
     return result
 ```
 
