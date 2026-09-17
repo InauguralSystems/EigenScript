@@ -189,15 +189,94 @@ void jit_register_chunk(struct EigsChunk *chunk) {
  * The registry is thread-local; a chunk registered on one thread and
  * freed on another stays in the registering thread's array — that only
  * matters for the debug dump, and only main's registry is dumped. */
+/* Ceiling on retained EIGS_JIT_HOT rows. A long-running program that
+ * churns chunks (repeated import/eval) would otherwise let a
+ * diagnostic-only array grow without bound. Overflow is reported, never
+ * silent. */
+#define JIT_HOT_ROWS_MAX 8192
+/* Relaxed atomic, not a plain int: jit_unregister_chunk runs on whichever
+ * thread frees the chunk, so two workers can bump this at once. Same
+ * reasoning as g_trace_hist_storage above. */
+static int g_jit_hot_rows_dropped = 0;
+
+/* EIGS_JIT_HOT. Deliberately NOT cached in a static: a `static int cached`
+ * lazy-init is a read/write race on every multithreaded run -- flag set or
+ * not, since the miss still WRITES -- and the tsan race gate is right to
+ * refuse it however identical the two values are. eigs_env_flag is a bare
+ * getenv, and this runs once per chunk free, not per opcode. */
+static int jit_hot_enabled(void) {
+    return eigs_env_flag("EIGS_JIT_HOT");
+}
+
+/* Fill one dump row from a chunk. `dup_name` strdups the name for rows
+ * that must outlive the chunk (the unregister snapshot); live rows
+ * borrow it. jit_advance == -1 is the OP_RETURN sentinel: the thunk ran
+ * a full return, so its native coverage is the whole chunk. */
+static void jit_hot_row_fill(EigsJitHotRow *r, const struct EigsChunk *c,
+                             int dup_name) {
+    memset(r, 0, sizeof *r);
+    const char *nm = c->name ? c->name : "<anon>";
+    if (dup_name) {
+        size_t n = strlen(nm) + 1;
+        char *copy = malloc(n);
+        if (copy) { memcpy(copy, nm, n); r->owns_name = 1; }
+        r->name = copy;                 /* NULL on OOM -> printed as <anon> */
+    } else {
+        r->name = (char *)nm;
+    }
+    r->exec_count      = c->exec_count;
+    r->back_edge_count = c->back_edge_count;
+    r->code_len        = c->code_len;
+    r->jit_state       = c->jit_state;
+    r->raw_advance     = c->jit_advance;
+    r->advance         = c->jit_state == 2
+        ? (c->jit_advance == -1 ? c->code_len : c->jit_advance) : 0;
+    r->osr_state       = c->jit_osr[0].state;
+    r->osr_advance     = c->jit_osr[0].state == 2
+        ? (c->jit_osr[0].advance == -1 ? c->code_len : c->jit_osr[0].advance) : 0;
+    r->osr_entry       = c->jit_osr[0].state != 0 ? c->jit_osr[0].entry_offset : 0;
+    r->stop_op         = c->jit_stop_op;
+}
+
 void jit_unregister_chunk(struct EigsChunk *chunk) {
     if (!chunk) return;
     for (int i = 0; i < g_chunks_count; i++) {
         if (g_chunks[i] == chunk) {
+            /* Snapshot before the chunk dies. Without this the shutdown
+             * dump sees an EMPTY registry in every normal run -- main
+             * drops the global env (freeing every chunk) before
+             * eigs_thread_detach -- and prints nothing at all. That was
+             * the state from 0.11.8 (chunk refcounting, 2026-06-10)
+             * until this row was added: a diagnostic that silently
+             * measured nothing for three months. */
+            if (jit_hot_enabled() && chunk->exec_count > 0) {
+                if (g_jit_hot_rows_count == g_jit_hot_rows_cap &&
+                    g_jit_hot_rows_cap < JIT_HOT_ROWS_MAX) {
+                    int nc = g_jit_hot_rows_cap ? g_jit_hot_rows_cap * 2 : 64;
+                    if (nc > JIT_HOT_ROWS_MAX) nc = JIT_HOT_ROWS_MAX;
+                    EigsJitHotRow *nr = realloc(g_jit_hot_rows,
+                                                (size_t)nc * sizeof *nr);
+                    if (nr) { g_jit_hot_rows = nr; g_jit_hot_rows_cap = nc; }
+                }
+                /* Dropped rows are COUNTED and printed. A diagnostic that
+                 * silently measures less than it claims is the bug this
+                 * whole path exists to fix (#1176). */
+                if (g_jit_hot_rows_count < g_jit_hot_rows_cap)
+                    jit_hot_row_fill(&g_jit_hot_rows[g_jit_hot_rows_count++],
+                                     chunk, 1);
+                else
+                    __atomic_fetch_add(&g_jit_hot_rows_dropped, 1,
+                                       __ATOMIC_RELAXED);
+            }
             g_chunks[i] = g_chunks[--g_chunks_count];
             return;
         }
     }
 }
+
+/* Probe counter: chunks rejected because the code cache was full. */
+static int g_jit_cache_full_rejects = 0;
+
 
 void jit_module_init(void) {
     /* Defer cache creation until the first compile request. */
@@ -220,9 +299,10 @@ void jit_module_shutdown(void) {
 void jit_thread_destroy(EigsThread *th) {
     if (!th) return;
     if (eigs_env_flag("EIGS_JIT_STATS")) {
-        fprintf(stderr, "[jit] scanned=%d compiled=%d cache_used=%zu\n",
+        fprintf(stderr, "[jit] scanned=%d compiled=%d cache_used=%zu cache_full_rejects=%d\n",
                 g_jit_scanned_chunks, g_jit_compiled_chunks,
-                g_jit_cache ? jit_cache_used(g_jit_cache) : 0);
+                g_jit_cache ? jit_cache_used(g_jit_cache) : 0,
+                g_jit_cache_full_rejects);
     }
     if (eigs_env_flag("EIGS_JIT_STOPS")) {
         uint32_t total_stops = 0;
@@ -278,119 +358,123 @@ void jit_thread_destroy(EigsThread *th) {
                     c, op_name((uint8_t)op), pct);
         }
     }
-    if (eigs_env_flag("EIGS_JIT_HOT") && g_chunks_count > 0) {
-        /* Selection sort top-N by exec_count. Small registry (~80 on
-         * DMG), one-shot at exit, no need for a real sort. */
-        int top = g_chunks_count < 30 ? g_chunks_count : 30;
-        int *order = malloc(g_chunks_count * sizeof(int));
-        if (order) {
-            for (int i = 0; i < g_chunks_count; i++) order[i] = i;
+    if (jit_hot_enabled()) {
+        /* Rows, not live chunks: see jit_unregister_chunk. The registry
+         * is empty at this point in every normal run, so the dump merges
+         * the unregister snapshots with whatever is still registered. */
+        int live = g_chunks_count;
+        int nrows = live + g_jit_hot_rows_count;
+        EigsJitHotRow *rows = nrows
+            ? calloc((size_t)nrows, sizeof *rows) : NULL;
+        if (!rows) {
+            /* Never exit silently with the flag set: an empty dump and a
+             * broken dump looked identical for three months (#1176). */
+            fprintf(stderr, "\n=== Hot chunks: none recorded ===\n");
+            fprintf(stderr, "total chunk entries: 0\n");
+            if (nrows) fprintf(stderr, "  (row allocation failed)\n");
+        } else {
+            int n = 0;
+            for (int i = 0; i < live; i++)
+                jit_hot_row_fill(&rows[n++], g_chunks[i], 0);
+            for (int i = 0; i < g_jit_hot_rows_count; i++)
+                rows[n++] = g_jit_hot_rows[i];   /* moves name ownership */
+            g_jit_hot_rows_count = 0;
+
+            /* Selection sort top-N by exec_count. Small set (~80 on DMG),
+             * one-shot at exit, no need for a real sort. */
+            int top = nrows < 30 ? nrows : 30;
             for (int a = 0; a < top; a++) {
                 int best = a;
-                for (int b = a + 1; b < g_chunks_count; b++) {
-                    if (g_chunks[order[b]]->exec_count >
-                        g_chunks[order[best]]->exec_count) best = b;
+                for (int b = a + 1; b < nrows; b++)
+                    if (rows[b].exec_count > rows[best].exec_count) best = b;
+                if (best != a) {
+                    EigsJitHotRow t = rows[a]; rows[a] = rows[best]; rows[best] = t;
                 }
-                int tmp = order[a]; order[a] = order[best]; order[best] = tmp;
             }
             uint64_t total_exec = 0;
-            for (int i = 0; i < g_chunks_count; i++)
-                total_exec += g_chunks[i]->exec_count;
+            for (int i = 0; i < nrows; i++) total_exec += rows[i].exec_count;
             /* Static native-byte coverage diagnostic: each chunk entry
              * executes some prefix of its bytecode natively (if compiled)
              * and the remainder interpreted. Aggregating exec_count *
-             * jit_advance vs exec_count * code_len tells us roughly what
-             * fraction of executed bytecode bytes are native — and thus
+             * advance vs exec_count * code_len tells us roughly what
+             * fraction of executed bytecode bytes are native -- and thus
              * whether extending the JIT prefix further would still pay. */
             uint64_t bytes_native = 0, bytes_total = 0;
             uint64_t bytes_native_top = 0, bytes_total_top = 0;
             fprintf(stderr, "\n=== Hot chunks (top %d of %d) ===\n",
-                    top, g_chunks_count);
+                    top, nrows);
             fprintf(stderr, "total chunk entries: %" PRIu64 "\n", total_exec);
+            int dropped = __atomic_load_n(&g_jit_hot_rows_dropped,
+                                          __ATOMIC_RELAXED);
+            if (dropped)
+                fprintf(stderr,
+                    "WARNING: %d chunk rows dropped (retained-row cap %d) "
+                    "-- the figures below are INCOMPLETE\n",
+                    dropped, JIT_HOT_ROWS_MAX);
             fprintf(stderr,
                 "%-28s %12s  %3s  %6s  %5s %5s %6s  %4s  %3s %5s %5s  %s\n",
                 "chunk", "exec", "jit", "pct", "adv", "len", "nat%", "bked",
                 "osr", "oadv", "oent", "stop");
-            /* jit_advance == -1 is the Stage 4s OP_RETURN sentinel: the
-             * thunk executed a full return, so coverage is "all of the
-             * reachable straight-line code from byte 0" — treat it as
-             * full-len for both display and aggregate purposes. Without
-             * this normalization a -1 reads as a negative percentage in
-             * the per-chunk row AND drags the aggregate share down by
-             * exec_count bytes per RETURN-terminated hit. */
-            #define JIT_EFFECTIVE_ADV(c) \
-                ((c)->jit_state == 2 \
-                    ? ((c)->jit_advance == -1 ? (c)->code_len : (c)->jit_advance) \
-                    : 0)
-            /* Stage 5g: the dump reports OSR slot 0 only (multi-slot
-             * detail is visible via EIGS_JIT_DEBUG compile lines). */
-            #define JIT_OSR_EFFECTIVE_ADV(c) \
-                ((c)->jit_osr[0].state == 2 \
-                    ? ((c)->jit_osr[0].advance == -1 ? (c)->code_len : (c)->jit_osr[0].advance) \
-                    : 0)
             for (int a = 0; a < top; a++) {
-                struct EigsChunk *c = g_chunks[order[a]];
-                if (c->exec_count == 0) break;
+                EigsJitHotRow *r = &rows[a];
+                if (r->exec_count == 0) break;
                 const char *jstate =
-                    c->jit_state == 2 ? "yes" :
-                    c->jit_state == 1 ? "no " : "?  ";
+                    r->jit_state == 2 ? "yes" : r->jit_state == 1 ? "no " : "?  ";
                 const char *ostate =
-                    c->jit_osr[0].state == 2 ? "yes" :
-                    c->jit_osr[0].state == 1 ? "no " : "?  ";
+                    r->osr_state == 2 ? "yes" : r->osr_state == 1 ? "no " : "?  ";
                 double pct = total_exec
-                    ? (100.0 * (double)c->exec_count / (double)total_exec)
-                    : 0.0;
-                int adv  = JIT_EFFECTIVE_ADV(c);
-                int oadv = JIT_OSR_EFFECTIVE_ADV(c);
-                int oent = (c->jit_osr[0].state != 0) ? c->jit_osr[0].entry_offset : 0;
-                int len = c->code_len;
-                double nat = len ? (100.0 * (double)adv / (double)len) : 0.0;
-                const char *stop_name = (c->jit_stop_op == OP_COUNT)
-                    ? "<end>" : op_name(c->jit_stop_op);
-                /* Display the raw jit_advance with a 'R' tag when it's
-                 * the RETURN sentinel, so the reader can distinguish
+                    ? (100.0 * (double)r->exec_count / (double)total_exec) : 0.0;
+                double nat = r->code_len
+                    ? (100.0 * (double)r->advance / (double)r->code_len) : 0.0;
+                /* Display the raw advance with a RET tag when it is the
+                 * RETURN sentinel, so the reader can distinguish
                  * "compiled to end of straight-line" from "compiled
                  * through a full return". */
                 char adv_buf[16];
-                if (c->jit_state == 2 && c->jit_advance == -1)
+                if (r->jit_state == 2 && r->raw_advance == -1)
                     snprintf(adv_buf, sizeof adv_buf, "RET");
                 else
-                    snprintf(adv_buf, sizeof adv_buf, "%d", adv);
+                    snprintf(adv_buf, sizeof adv_buf, "%d", r->advance);
                 fprintf(stderr,
                         "%-28s %12" PRIu64 "  %s  %5.1f%%  %5s %5d %5.1f%%  %4u  %s %5d %5d  %s\n",
-                        c->name ? c->name : "<anon>",
-                        c->exec_count, jstate, pct, adv_buf, len, nat,
-                        c->back_edge_count, ostate, oadv, oent, stop_name);
-                bytes_native_top += c->exec_count * (uint64_t)adv;
-                bytes_total_top  += c->exec_count * (uint64_t)len;
+                        r->name ? r->name : "<anon>",
+                        r->exec_count, jstate, pct, adv_buf, r->code_len, nat,
+                        r->back_edge_count, ostate, r->osr_advance, r->osr_entry,
+                        r->stop_op == OP_COUNT ? "<end>" : op_name(r->stop_op));
+                bytes_native_top += r->exec_count * (uint64_t)r->advance;
+                bytes_total_top  += r->exec_count * (uint64_t)r->code_len;
             }
-            for (int i = 0; i < g_chunks_count; i++) {
-                struct EigsChunk *c = g_chunks[i];
-                int adv = JIT_EFFECTIVE_ADV(c);
-                bytes_native += c->exec_count * (uint64_t)adv;
-                bytes_total  += c->exec_count * (uint64_t)c->code_len;
+            for (int i = 0; i < nrows; i++) {
+                bytes_native += rows[i].exec_count * (uint64_t)rows[i].advance;
+                bytes_total  += rows[i].exec_count * (uint64_t)rows[i].code_len;
             }
-            #undef JIT_EFFECTIVE_ADV
-            #undef JIT_OSR_EFFECTIVE_ADV
             double nat_share_top = bytes_total_top
-                ? 100.0 * (double)bytes_native_top / (double)bytes_total_top
-                : 0.0;
+                ? 100.0 * (double)bytes_native_top / (double)bytes_total_top : 0.0;
             double nat_share_all = bytes_total
-                ? 100.0 * (double)bytes_native / (double)bytes_total
-                : 0.0;
+                ? 100.0 * (double)bytes_native / (double)bytes_total : 0.0;
             fprintf(stderr,
                 "native-byte share (top %d hot): %.1f%%   "
                 "(all %d chunks): %.1f%%\n",
-                top, nat_share_top, g_chunks_count, nat_share_all);
+                top, nat_share_top, nrows, nat_share_all);
             fprintf(stderr,
                 "  bytes native: %" PRIu64 " / total: %" PRIu64 "\n",
                 bytes_native, bytes_total);
-            free(order);
+            for (int i = 0; i < nrows; i++)
+                if (rows[i].owns_name) free(rows[i].name);
+            free(rows);
         }
     }
     if (th->jit_cache) {
         jit_cache_free(th->jit_cache);
         th->jit_cache = NULL;
+    }
+    if (th->jit_hot_rows) {
+        for (int i = 0; i < th->jit_hot_rows_count; i++)
+            if (th->jit_hot_rows[i].owns_name) free(th->jit_hot_rows[i].name);
+        free(th->jit_hot_rows);
+        th->jit_hot_rows = NULL;
+        th->jit_hot_rows_count = 0;
+        th->jit_hot_rows_cap = 0;
     }
     if (th->jit_chunks) {
         free(th->jit_chunks);
@@ -2393,7 +2477,14 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
     }
 
     if (!g_jit_cache) {
-        g_jit_cache = jit_cache_new(256); /* 256 pages = 1 MB */
+        /* EIGS_JIT_CACHE_PAGES: probe knob for the exhaustion ceiling.
+         * The default 1 MB fills on DMG (cache_used=1045769 of 1048576
+         * after 39 compiles), and every chunk that gets hot afterwards
+         * is marked permanently unsupported. */
+        long pages = 256;
+        { const char *e = getenv("EIGS_JIT_CACHE_PAGES");
+          if (e) { long v = atol(e); if (v > 0) pages = v; } }
+        g_jit_cache = jit_cache_new((size_t)pages); /* 256 pages = 1 MB */
         if (!g_jit_cache) {
             *out_state = 1;
             *out_code = NULL;
@@ -2411,6 +2502,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                     extra_size);
     uint8_t *code = jit_cache_alloc(g_jit_cache, size);
     if (!code) {
+        g_jit_cache_full_rejects++;
         *out_state = 1;
         *out_code = NULL;
         jit_cache_seal(g_jit_cache);

@@ -5643,7 +5643,7 @@ echo ""
 # benchmark-shaped code. Runs with EIGS_JIT_STATS so we can also assert
 # (on x86-64) that thunks really compiled — a regression that quietly
 # disables the JIT must not let this section pass interpreted.
-echo "[82] JIT Fast Paths (23 checks + thunk gate)"
+echo "[82] JIT Fast Paths (23 checks + thunk gate + hot-dump gate)"
 JPATH_OUTPUT=$(EIGS_JIT_STATS=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
 TOTAL=$((TOTAL + 23))
 if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then
@@ -5670,6 +5670,32 @@ if [ "$(uname -m)" = "x86_64" ]; then
 else
     PASS=$((PASS + 1))
     echo "  SKIP: thunk gate (JIT not built or not supported on this platform)"
+fi
+TOTAL=$((TOTAL + 1))
+# EIGS_JIT_HOT gate. The hotness dump reads the chunk registry, which
+# teardown EMPTIES before it runs: main drops the global env (freeing
+# every chunk, each one unregistering) and only then detaches the
+# thread. From 0.11.8 (chunk refcounting, 2026-06-10) until the
+# unregister-time row snapshot was added, the dump therefore printed
+# NOTHING in every normal run -- three months of a diagnostic silently
+# measuring nothing while the JIT track needed exactly that number.
+# Assert real rows, not just a header: a data row AND a nonzero
+# executed-bytes total.
+if [ "$(uname -m)" = "x86_64" ]; then
+    JHOT_OUTPUT=$(EIGS_JIT_HOT=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
+    JHOT_BYTES=$(echo "$JHOT_OUTPUT" | sed -n 's/.*bytes native: [0-9]* \/ total: \([0-9]*\).*/\1/p' | head -1)
+    if echo "$JHOT_OUTPUT" | grep -q "=== Hot chunks" &&
+       echo "$JHOT_OUTPUT" | grep -qE '[0-9]+  (yes|no |\?  ) +[0-9.]+%' &&
+       [ -n "$JHOT_BYTES" ] && [ "$JHOT_BYTES" -gt 0 ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: EIGS_JIT_HOT dumped hot-chunk rows (total bytes=$JHOT_BYTES)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: EIGS_JIT_HOT printed no hot-chunk rows -- the hotness registry is empty at dump time"
+    fi
+else
+    PASS=$((PASS + 1))
+    echo "  SKIP: EIGS_JIT_HOT gate (JIT not built or not supported on this platform)"
 fi
 echo ""
 
