@@ -1718,6 +1718,29 @@ print of (thread_join of h)
 9
 ```
 
+A handle is joined **exactly once**. `thread_join` claims the handle before
+it waits, so a second join — sequential, or from another thread at the same
+time — raises a catchable `value` error instead of answering `null`; a handle
+whose table slot has been recycled by a later `spawn` raises rather than
+joining the new thread; and `spawn`/`channel`/`task_spawn`/`store_open` raise
+a catchable `limit` error when the 255-slot handle table is full instead of
+returning `null` (#1146). Details and the reasoning: docs/CONCURRENCY.md.
+
+```eigenscript
+define work(n) as:
+    return n * 2
+h is spawn of [work, 21]
+print of (thread_join of h)
+try:
+    print of (thread_join of h)
+catch e:
+    print of f"{e.kind}: {e.message}"
+```
+```output
+42
+value: thread_join: thread handle 1 has already been joined
+```
+
 A worker that **dies of an uncaught error** prints its trace and the
 **process exits non-zero** (status 1) whether or not anything ever
 `thread_join`s it — the same rule as cooperative tasks below (#493), so a

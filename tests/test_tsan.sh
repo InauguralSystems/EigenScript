@@ -380,6 +380,75 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo "=== thread handles + module-env lock must be race-free (#1146, #1161) ==="
+# Two claims on this lane:
+#   (a) the module NAMESPACE under two workers. Pre-fix on f532c8d this fixture
+#       reported 61 ThreadSanitizer findings (57 data races + 4
+#       heap-use-after-free) and then died of SIGSEGV inside strcmp; on the
+#       release binary it crashed 5/5. Counting STACK FRAMES across those
+#       reports: 77 named env_set_local_hashed (the #607 lock that never
+#       engaged, because env_mt_shared() asked `parent == NULL`) and 64 named
+#       dict_set_hashed_raw (the namespace's dict MIRROR — the other half of
+#       the same structure, which is why locking only the env was not enough).
+#   (b) the thread-handle probes. handles_double_join is the one that matters:
+#       pre-fix it made TWO pthread_join calls on one tid, which TSan itself
+#       refuses with `CHECK failed: sanitizer_thread_registry.cpp:348`. A
+#       hung/aborted run here is a FAIL, not a quiet pass. ROUND 2 adds
+#       handles_channel_stale: a forged-generation `recv` must be refused, and
+#       the critic's mutant that served it instead made a stripped-generation
+#       `recv` HANG — a liveness failure this lane must see as a FAIL.
+#       handles_store_stale is deliberately NOT on this lane: it is
+#       single-threaded (255 store open/close cycles) and has nothing for
+#       ThreadSanitizer to say; it runs on the release and ASan lanes.
+HMT_FIXTURES="handles_double_join handles_join_twice handles_reuse handles_full \
+handles_channel_stale"
+HMT_DECLARED=5
+HMT_EXAMINED=0
+for t in $HMT_FIXTURES; do
+    HMT_EXAMINED=$((HMT_EXAMINED + 1))
+    f="$TESTS_DIR/$t.eigs"
+    if [ ! -f "$f" ]; then
+        echo "  FAIL: $t fixture missing ($f)"; FAIL=$((FAIL + 1)); continue
+    fi
+    tsan_warnings "$f"
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s) — a double pthread_join?"
+        FAIL=$((FAIL + 1))
+    elif [ "$WARNINGS" -ne 0 ]; then
+        echo "  FAIL: $t reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
+        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+    elif [ "$LAST_RC" -ne 0 ]; then
+        echo "  FAIL: $t exited $LAST_RC (want 0) — a quiet sanitizer on a truncated run is absence of evidence"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: $t TSan-clean and exited 0"; PASS=$((PASS + 1))
+    fi
+done
+# The #1161 fixture lives in its own directory (its `import` resolves relative
+# to the probe file).
+HMT_EXAMINED=$((HMT_EXAMINED + 1))
+MODENV_F="$TESTS_DIR/handles_mt_modules/hm_modenv.eigs"
+if [ -f "$MODENV_F" ]; then
+    tsan_warnings "$MODENV_F"
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: hm_modenv HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$WARNINGS" -eq 0 ] && [ "$LAST_RC" -eq 0 ]; then
+        echo "  PASS: hm_modenv TSan-clean and exited 0"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: hm_modenv reported $WARNINGS warning(s), rc=$LAST_RC"; FAIL=$((FAIL + 1))
+        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$MODENV_F" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+    fi
+else
+    echo "  FAIL: hm_modenv fixture missing ($MODENV_F)"; FAIL=$((FAIL + 1))
+fi
+HMT_TOTAL=$((HMT_DECLARED + 1))
+if [ "$HMT_EXAMINED" -eq "$HMT_TOTAL" ] && [ "$HMT_EXAMINED" -gt 0 ]; then
+    echo "  PASS: handle/modenv fixtures examined == declared ($HMT_EXAMINED)"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: handle/modenv fixtures examined == declared (examined=$HMT_EXAMINED declared=$HMT_TOTAL)"
+    FAIL=$((FAIL + 1))
+fi
+
 echo "=== gate self-validation: a seeded race MUST be caught ==="
 tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
 w=$WARNINGS

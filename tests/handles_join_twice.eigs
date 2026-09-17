@@ -1,0 +1,14 @@
+# #1146 (1, sequential half): a SECOND thread_join of the same handle.
+# On main it returned null silently; the claim step makes it the same
+# catchable error the losing concurrent joiner gets.
+define f(n) as:
+    return n + 1
+h is spawn of [f, 1]
+a is thread_join of h
+second is "none"
+try:
+    b is thread_join of h
+    second is f"VALUE:{b}"
+catch e:
+    second is f"ERR:{e.kind}"
+print of f"first={a} second={second}"

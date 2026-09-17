@@ -1,0 +1,42 @@
+# #1146 (3): 300 unjoined spawns against a 255-slot table.
+#
+# Two INDEPENDENT counts, not one restated twice:
+#   raises  spawns that refused loudly (catchable EK_LIMIT)
+#   silent  spawns that returned null with NO error — the pre-fix signature
+# On f532c8d: raises=0 silent=45, exit status 0, plus 45 lines of
+# `Error: handle table full` on stderr that no program can see. Now:
+# raises=45 silent=0.
+#
+# `joined`/`bad` pin the program's OWN invariant, which is conserved whatever
+# the table does: every handle that came back joins to its own value.
+define quick(n) as:
+    return n
+hs is []
+i is 0
+raises is 0
+silent is 0
+raised is 0
+h is null
+loop while i < 300:
+    h is null
+    raised is 0
+    try:
+        h is spawn of [quick, i]
+    catch e:
+        raises is raises + 1
+        raised is 1
+    if raised == 0:
+        if h == null:
+            silent is silent + 1
+    if h != null:
+        append of [hs, h]
+    i is i + 1
+joined is 0
+bad is 0
+for hh in hs:
+    v is thread_join of hh
+    if v == null:
+        bad is bad + 1
+    else:
+        joined is joined + 1
+print of f"spawned={len of hs} raises={raises} silent={silent} joined={joined} bad={bad}"

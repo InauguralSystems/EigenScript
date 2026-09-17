@@ -1,6 +1,20 @@
+# Handle-table forgery. EXPECTATIONS CHANGED BY #1146 (round 2): a handle the
+# table cannot resolve is now a CATCHABLE ERROR, not a silent `null`.
+#
+# Both assertions below used to read "returns null". That is the exact class
+# #1146 removes: a program that forges a handle, or keeps using one it closed,
+# got the same answer as a genuine "no such record" and carried on. The table
+# still refuses the handle — it just says so now.
 fake is {"_store_id": 9999, "_type": "eigenstore"}
-result is store_get of [fake, "col", "key"]
-assert of [type of result == "none", "forged store_get returns null"]
+forged_caught is 0
+forged_kind is ""
+try:
+    result is store_get of [fake, "col", "key"]
+catch e:
+    forged_caught is 1
+    forged_kind is e.kind
+assert of [forged_caught == 1, "forged store_get raises instead of returning null"]
+assert of [forged_kind == "value", "forged store_get raises kind 'value'"]
 
 db is store_open of "/tmp/test_handle.db"
 store_put of [db, "c", {"x": 1}]
@@ -8,8 +22,53 @@ v is store_get of [db, "c", "1"]
 assert of [v != null, "real handle works"]
 store_close of db
 
-v2 is store_get of [db, "c", "1"]
-assert of [type of v2 == "none", "closed handle returns null"]
+# A CLOSED handle now names its own failure: the slot was released, so the
+# generation check reports "already been closed" rather than the generic
+# "invalid store" the old `_store_id` blanking produced.
+closed_caught is 0
+closed_msg is ""
+try:
+    v2 is store_get of [db, "c", "1"]
+catch e:
+    closed_caught is 1
+    closed_msg is e.message
+assert of [closed_caught == 1, "closed store_get raises instead of returning null"]
+assert of [(index_of of [closed_msg, "already been closed"]) >= 0,
+           "closed store_get names the close, not a generic invalid handle"]
+
+# THE DEFAULT-PATH PIN (#1146 round 3). These four answered `0` for a
+# non-handle argument with EIGS_STRICT OFF, and now raise.
+# tools/strict_differential.sh's identical-when-off half reports exactly these
+# four as `differing` against a v0.43.0 parent; that tool has no waiver
+# mechanism by design ("a moved default-path answer is a SEMANTICS CHANGE, not
+# a waiver … it belongs in the docs with a fixture pinning the new behaviour").
+# This is that fixture. If any of them goes back to answering, this goes red
+# before the differential is even reached.
+zero_answerers is ["store_delete", "store_count", "store_drop", "store_update"]
+raised is 0
+answered is ""
+try:
+    store_delete of [42, "col", "k"]
+    answered is f"{answered} store_delete"
+catch e:
+    raised is raised + 1
+try:
+    store_count of [42, "col"]
+    answered is f"{answered} store_count"
+catch e:
+    raised is raised + 1
+try:
+    store_drop of [42, "col"]
+    answered is f"{answered} store_drop"
+catch e:
+    raised is raised + 1
+try:
+    store_update of [42, "col", "k", {"a": 1}]
+    answered is f"{answered} store_update"
+catch e:
+    raised is raised + 1
+assert of [raised == len of zero_answerers,
+           f"all {len of zero_answerers} former zero-answerers raise on a non-handle (still answering:{answered})"]
 
 rm of "/tmp/test_handle.db"
 print of "PASS: handle table"

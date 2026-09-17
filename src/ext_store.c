@@ -764,11 +764,36 @@ cat_fail:
  * Store handle extraction (same pattern as get_channel)
  * ================================================================ */
 
-static Store* get_store(Value *v) {
+/* #1146 (2): generation-checked, like every other handle. store_close DOES
+ * release its slot, so a store handle held across 255 opens named a different
+ * store's slot; a forged handle (tests/test_handle_forge.eigs) carries no
+ * generation and reads as gen 0, which no live slot ever has. `out_id` is set
+ * even on failure so the refusal can name the slot. */
+static Store* get_store_why(Value *v, int *why, int *out_id) {
+    *why = HANDLE_CLAIM_BADVALUE;
+    *out_id = 0;
     if (!v || v->type != VAL_DICT) return NULL;
     Value *sv = dict_get(v, "_store_id");
     if (!sv || sv->type != VAL_NUM) return NULL;
-    return (Store*)handle_lookup((int)sv->data.num, HANDLE_STORE);
+    *out_id = (int)sv->data.num;
+    Value *gv = dict_get(v, "_store_gen");
+    uint32_t gen = (gv && gv->type == VAL_NUM) ? (uint32_t)gv->data.num : 0;
+    return (Store*)handle_lookup(*out_id, gen, HANDLE_STORE, why);
+}
+
+/* ROUND 2 (#1146 G1): resolve or RAISE. A blind critic executed the gap this
+ * closes: the generation check landed in round 1 and CAUGHT a stale store
+ * handle, and then `builtin_store_get` turned the NULL into `make_null()` with
+ * no error — so the ABA went from "silently returns the WRONG record" to
+ * "silently returns null", at exit status 0. That is the same silent-null
+ * class this issue exists to remove, one builtin short of removed. Every
+ * store builtin that resolves a handle now goes through here, so adding a
+ * tenth cannot re-open the hole by forgetting to check. */
+static Store* store_arg(Value *v, const char *who) {
+    int why = 0, id = 0;
+    Store *st = get_store_why(v, &why, &id);
+    if (!st) handle_raise_unresolved(who, "store", id, why, "closed");
+    return st;
 }
 
 /* ================================================================
@@ -862,38 +887,43 @@ static Value* builtin_store_open(Value *arg) {
         store->dirty = 0;
     }
 
-    int hid = handle_register(store, HANDLE_STORE);
+    uint32_t sgen = 0;
+    int hid = handle_register(store, HANDLE_STORE, &sgen);
     if (hid < 0) {
         fclose(store->fp);
         store_free(store);
+        rt_error(EK_LIMIT, 0,
+                 "store_open: handle table full (max %d live threads/channels/"
+                 "tasks/sockets/stores)", HANDLE_TABLE_SIZE - 1);
         return make_null();
     }
     Value *handle = make_dict(8);
     dict_set_owned(handle, "_store_id", make_num((double)hid));
+    dict_set_owned(handle, "_store_gen", make_num((double)sgen));
     dict_set_owned(handle, "_type", make_str("eigenstore"));
     return handle;
 }
 
 /* store_close(handle) -> null */
 static Value* builtin_store_close(Value *arg) {
-    Store *store = get_store(arg);
-    if (!store) {
-        rt_error(EK_TYPE, 0, "store_close requires a store handle\n");
-        return make_null();
-    }
+    Store *store = store_arg(arg, "store_close");
+    if (!store) return make_null();
     /* Release handle BEFORE freeing memory to prevent use-after-free
      * if another thread calls get_store() concurrently. */
     Value *id_val = (arg && arg->type == VAL_DICT) ? dict_get(arg, "_store_id") : NULL;
     int hid = (id_val && id_val->type == VAL_NUM) ? (int)id_val->data.num : -1;
-    handle_release(hid);
+    Value *g_val = (arg && arg->type == VAL_DICT) ? dict_get(arg, "_store_gen") : NULL;
+    uint32_t hgen = (g_val && g_val->type == VAL_NUM) ? (uint32_t)g_val->data.num : 0;
+    handle_release(hid, hgen);
     store->dirty = 1; /* Force flush */
     store_flush_catalog(store);
     fclose(store->fp);
     store_free(store);
-    /* Invalidate handle */
-    if (arg && arg->type == VAL_DICT) {
-        dict_set_owned(arg, "_store_id", make_null());
-    }
+    /* ROUND 2: do NOT blank `_store_id`. The slot is released above, so the
+     * generation check already refuses this handle — and it refuses it with
+     * "store handle N has already been closed", which is the diagnosis.
+     * Blanking the id threw that away and downgraded every later use to the
+     * generic "invalid store". */
     return make_null();
 }
 
@@ -903,10 +933,11 @@ static Value* builtin_store_put(Value *arg) {
         rt_error(EK_TYPE, 0, "store_put requires [handle, collection, record]\n");
         return make_null();
     }
-    Store *store = get_store(arg->data.list.items[0]);
+    Store *store = store_arg(arg->data.list.items[0], "store_put");
+    if (!store) return make_null();
     Value *col_val = arg->data.list.items[1];
     Value *record = arg->data.list.items[2];
-    if (!store || !col_val || col_val->type != VAL_STR) {
+    if (!col_val || col_val->type != VAL_STR) {
         rt_error(EK_VALUE, 0, "store_put: invalid handle or collection\n");
         return make_null();
     }
@@ -1065,10 +1096,11 @@ static Value* builtin_store_get(Value *arg) {
         rt_error(EK_TYPE, 0, "store_get requires [handle, collection, key]\n");
         return make_null();
     }
-    Store *store = get_store(arg->data.list.items[0]);
+    Store *store = store_arg(arg->data.list.items[0], "store_get");
+    if (!store) return make_null();
     Value *col_val = arg->data.list.items[1];
     Value *key_val = arg->data.list.items[2];
-    if (!store || !col_val || col_val->type != VAL_STR) return make_null();
+    if (!col_val || col_val->type != VAL_STR) return make_null();
 
     const char *collection = col_val->data.str;
     char key_buf[STORE_MAX_KEY_LEN];
@@ -1220,10 +1252,16 @@ static Value* builtin_store_delete(Value *arg) {
          * CV2-68); this return is the post-raise placeholder, not the answer. */
         return make_num(0);
     }
-    Store *store = get_store(arg->data.list.items[0]);
+    Store *store = store_arg(arg->data.list.items[0], "store_delete");
+    /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
+     * rt_error'd — "invalid store", "stale store handle", "already been
+     * closed" — by the time it returns NULL, and rt_error LATCHES rather
+     * than unwinding, so this return is the post-raise placeholder, not
+     * "deleted nothing". Same shape as the arity guard above. */
+    if (!store) return make_num(0);
     Value *col_val = arg->data.list.items[1];
     Value *key_val = arg->data.list.items[2];
-    ARG_GUARD(!store || !col_val || col_val->type != VAL_STR,
+    ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_delete", "[store handle, string collection, key]", make_num(0));
 
     const char *collection = col_val->data.str;
@@ -1266,9 +1304,10 @@ static Value* builtin_store_query(Value *arg) {
         rt_error(EK_TYPE, 0, "store_query requires [handle, collection]\n");
         return make_list(0);
     }
-    Store *store = get_store(arg->data.list.items[0]);
+    Store *store = store_arg(arg->data.list.items[0], "store_query");
+    if (!store) return make_list(0);
     Value *col_val = arg->data.list.items[1];
-    if (!store || !col_val || col_val->type != VAL_STR) return make_list(0);
+    if (!col_val || col_val->type != VAL_STR) return make_list(0);
 
     const char *collection = col_val->data.str;
     Value *col_info = dict_get(store->catalog, collection);
@@ -1311,9 +1350,15 @@ static Value* builtin_store_count(Value *arg) {
          * CV2-71); this return is the post-raise placeholder, not a count. */
         return make_num(0);
     }
-    Store *store = get_store(arg->data.list.items[0]);
+    Store *store = store_arg(arg->data.list.items[0], "store_count");
+    /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
+     * rt_error'd by the time it returns NULL, and rt_error latches rather
+     * than unwinding, so this return is the post-raise placeholder, not a
+     * count of 0. Distinct from the two documented-answer zeros below, which
+     * are store_count's real result for an unknown collection. */
+    if (!store) return make_num(0);
     Value *col_val = arg->data.list.items[1];
-    ARG_GUARD(!store || !col_val || col_val->type != VAL_STR,
+    ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_count", "[store handle, string collection]", make_num(0));
 
     const char *collection = col_val->data.str;
@@ -1359,8 +1404,13 @@ static Value* builtin_store_update(Value *arg) {
     Value *key_val = arg->data.list.items[2];
     Value *record = arg->data.list.items[3];
 
-    Store *store = get_store(handle);
-    ARG_GUARD(!store || !col_val || col_val->type != VAL_STR,
+    Store *store = store_arg(handle, "store_update");
+    /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
+     * rt_error'd by the time it returns NULL, and rt_error latches rather
+     * than unwinding, so this return is the post-raise placeholder, not
+     * "no record updated". */
+    if (!store) return make_num(0);
+    ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_update", "[store handle, string collection, key, record]",
               make_num(0));
     const char *collection = col_val->data.str;
@@ -1470,11 +1520,8 @@ static Value* builtin_store_update(Value *arg) {
 
 /* store_collections(handle) -> list of collection names */
 static Value* builtin_store_collections(Value *arg) {
-    Store *store = get_store(arg);
-    if (!store) {
-        rt_error(EK_TYPE, 0, "store_collections requires a store handle\n");
-        return make_list(0);
-    }
+    Store *store = store_arg(arg, "store_collections");
+    if (!store) return make_list(0);
     Value *list = make_list(store->catalog->data.dict.count);
     for (int i = 0; i < store->catalog->data.dict.count; i++) {
         list_append_owned(list, make_str(store->catalog->data.dict.keys[i]));
@@ -1491,9 +1538,15 @@ static Value* builtin_store_drop(Value *arg) {
          * CV2-74); this return is the post-raise placeholder, not "not dropped". */
         return make_num(0);
     }
-    Store *store = get_store(arg->data.list.items[0]);
+    Store *store = store_arg(arg->data.list.items[0], "store_drop");
+    /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
+     * rt_error'd by the time it returns NULL, and rt_error latches rather
+     * than unwinding, so this return is the post-raise placeholder, not
+     * store_drop's documented "no" (that is the documented-answer zero
+     * below). */
+    if (!store) return make_num(0);
     Value *col_val = arg->data.list.items[1];
-    ARG_GUARD(!store || !col_val || col_val->type != VAL_STR,
+    ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_drop", "[store handle, string collection]", make_num(0));
 
     const char *collection = col_val->data.str;

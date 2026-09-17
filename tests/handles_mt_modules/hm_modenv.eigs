@@ -1,0 +1,22 @@
+# #1161: two workers each write 2,000 DISTINCT new fields on one imported
+# module. `M.k is v` on a namespace dict routes to env_set_local_hashed on the
+# module env, which is `env_new(g_global_env)` — parent NOT NULL — so the #607
+# predicate `multithreaded && parent == NULL` never engaged and the two workers
+# grew names[]/slots[] with no lock (realloc under a reader).
+#
+# The pinned quantity is CONSERVED (mechanical-gates §131): 2,000 + 2,000
+# distinct new names plus the module's own prior bindings, whatever the
+# interleaving. Nothing here depends on who ran when.
+import hm_target
+define writer(tag) as:
+    local i is 0
+    loop while i < 2000:
+        hm_target[f"{tag}{i}"] is i
+        i is i + 1
+    return 1
+h1 is spawn of [writer, "a"]
+h2 is spawn of [writer, "b"]
+r1 is thread_join of h1
+r2 is thread_join of h2
+ks is keys of hm_target
+print of f"modenv keys={len of ks} joined={r1 + r2} ping={hm_target.ping of null}"

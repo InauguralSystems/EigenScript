@@ -1,0 +1,22 @@
+# #1146 (2): handle-table ABA. Ids recycle round-robin over 255 usable slots,
+# so after 255 spawn/join cycles a STALE handle names a slot a DIFFERENT
+# thread now owns. On main the stale join returned FRESH and the fresh join
+# returned null, rc 0 — silent. The generation makes the stale join raise.
+define w(k) as:
+    return k
+stale is spawn of [w, "STALE"]
+first is thread_join of stale
+i is 0
+loop while i < 254:
+    h is spawn of [w, i]
+    thread_join of h
+    i is i + 1
+fresh is spawn of [w, "FRESH"]
+stale_r is "none"
+try:
+    r is thread_join of stale
+    stale_r is f"VALUE:{r}"
+catch e:
+    stale_r is f"ERR:{e.kind}"
+fresh_r is thread_join of fresh
+print of f"first={first} stale={stale_r} fresh={fresh_r} same_slot={stale._handle_id == fresh._handle_id}"

@@ -6,6 +6,45 @@ All notable changes to EigenScript are documented here.
 
 ### Breaking changes
 
+- **A thread handle is joined exactly once, and a full handle table raises
+  (#1146).** `thread_join` now *claims* the handle — it resolves the id and
+  detaches the table slot under one hold of the handle mutex, then waits
+  outside it — so a second join, sequential or concurrent, raises a catchable
+  `value` error (`thread_join: thread handle N has already been joined`) instead
+  of answering `null`. Handles also carry the slot's GENERATION (`_handle_gen`,
+  `_channel_gen`, `_store_gen`; socket ids pack it into the number), so a
+  handle held across a full 255-slot recycle raises `stale thread handle`
+  instead of silently naming a different thread. And `spawn`, `channel`,
+  `task_spawn`, `store_open` and the socket builtins raise a catchable `limit`
+  error when the shared 255-slot table is full instead of returning `null`
+  behind a line on stderr. Programs that tested a spawn result for `null`, or
+  that relied on a repeated join answering `null`, must use `try`/`catch`.
+  Cooperative task ids are the one declared exception to the generation rule —
+  a task id is a plain number with nowhere to carry one; tracked as #1173, see
+  docs/CONCURRENCY.md (a JOINED task never releases its slot on any version, so
+  that ABA is reachable only through `task_detach`).
+
+  **Every store builtin refuses a handle it cannot resolve, and a stale handle
+  SAYS "stale".** `store_get`, `store_query`, `store_count`, `store_delete`,
+  `store_update`, `store_drop`, `store_collections`, `store_put` and
+  `store_close` all raise a catchable `value` error instead of answering
+  `null`/`0`/`[]`. **This moves a DEFAULT-PATH answer, with `EIGS_STRICT` off**:
+  `store_delete`, `store_count`, `store_drop` and `store_update` answered `0`
+  for a non-handle argument and now raise, and `tools/strict_differential.sh`'s
+  identical-when-off half reports those four as `differing` against a v0.43.0
+  parent — deliberately, because that tool has no waiver mechanism and a moved
+  default-path answer is a semantics change rather than a waiver. Pinned by
+  `tests/test_handle_forge.eigs`. — `tests/test_handle_forge.eigs`'s two "returns null"
+  assertions changed to "raises" for exactly this reason, and `store_close` no
+  longer blanks `_store_id` (the generation already refuses the handle, and
+  with a better diagnosis: `store handle 1 has already been closed` rather than
+  a generic invalid-handle error). One formatter
+  (`handle_raise_unresolved`) words the refusal for every kind, so a stale
+  thread, channel and store handle are refused in the same four shapes:
+  "already been joined/closed", "stale ... handle (slot N no longer holds the
+  ... this handle names)", "handle N is not a ... handle", and the unchanged
+  "invalid channel"/"invalid store" for a value that is not a handle at all.
+
 - **Early HTTP readiness is honest (#1129):** `http_early_bind` now returns
   503 with `Retry-After: 1` during initialization for arbitrary methods/paths.
   Use `http_early_bind of [port, "/livez"]` for an explicit GET/HEAD liveness
@@ -205,6 +244,59 @@ All notable changes to EigenScript are documented here.
   clip's four registry opt-outs are gone.
 
 ### Fixed
+
+- **A stale STORE handle is refused, not silently emptied (#1146, round 2).**
+  The generation check landed with the rest of #1146 and correctly CAUGHT a
+  store handle whose slot had been recycled — and `builtin_store_get` then
+  turned the failed resolve into `make_null()` with no error. So the ABA moved
+  from "silently returns the FRESH store's record" to "silently returns null",
+  both at exit status 0, which is the same class one builtin short of closed.
+  Found by a blind critic, by execution. All nine store builtins now resolve
+  through one raising wrapper, so a tenth cannot re-open the hole by forgetting
+  to check. A channel handle with a forged or stripped `_channel_gen` is
+  likewise refused by `send`/`recv`/`try_recv`/`recv_timeout`/`close_channel`
+  (`channel_closed` keeps its documented ANSWER of 1 for an unknown channel,
+  #971 Phase D) — a second critic's own mutant, which ignored the generation
+  for channels only, survived the round-1 oracle 10/10 because no live row ever
+  presented one. Gated by `handles_store_stale` and `handles_channel_stale` in
+  `tests/test_handles_mt.sh` and by both mutants in the train.
+
+- **Two concurrent joins of one thread handle no longer hang the process
+  (#1146).** `thread_join` looked the handle up under the handle mutex and
+  then called `pthread_join` outside it, leaving the slot claimable, so two
+  joiners both passed the lookup and both joined one thread id — undefined
+  behaviour under POSIX, and on glibc the second caller never wakes. The probe
+  hung 7/7 runs across two reviewers and 3/3 on the maintainer box; the loser
+  then read the freed handle, and ThreadSanitizer refused the program outright
+  (`CHECK failed: sanitizer_thread_registry.cpp:348`). The claim step makes the
+  resolve-and-detach atomic, so exactly one caller reaches `pthread_join`.
+  After the fix the same probe completes in 0.12 s, 20/20 runs, TSan-clean.
+  Two more silent failures went with it: a stale handle after 255 spawn/join
+  cycles joined a DIFFERENT thread (returning `"FRESH"` for the stale handle
+  and `null` for the fresh one, at exit status 0) and now raises; and 300
+  unjoined spawns against the 255-slot table reported
+  `spawned=255 raises=0 silent=45` at exit status 0 and now raise 45 catchable
+  `limit` errors. Gated by `tests/test_handles_mt.sh` (suite [42l]), rows in
+  `tests/test_tsan.sh`, and the mutation train `tools/handles_mt_mutants.sh`.
+
+- **The module-env lock now covers module namespaces (#1161).** `#607`'s
+  "shared env under MT" predicate was `multithreaded && parent == NULL`. Every
+  sealed ROOT env satisfies it; no imported module's namespace env does,
+  because a namespace is `env_new(g_global_env)` and has a parent — so the lock
+  never engaged for exactly the envs that `M.field is v` writes. Two workers
+  each adding 2,000 distinct new fields to one imported module grew its
+  `names[]`/`slots[]` with no lock: the release binary crashed 5/5
+  (`double free or corruption`, `realloc(): invalid next size`, SIGSEGV) and
+  ThreadSanitizer reported 61 findings (57 data races, 4 heap-use-after-free)
+  before dying inside `strcmp`. The predicate is now a property the env
+  carries (`Env::mt_shared`), set in exactly two places — a root env at
+  creation, a module namespace at attach — so every MT-only env guard reads
+  one definition of "shared". The namespace's dict MIRROR is serialized on the
+  same mutex, because a module namespace is two structures and locking one of
+  them is not locking the namespace. The same repro is now TSan-clean and
+  answers `keys=4002` 10/10. Single-threaded cost is unchanged: 5,000,000
+  `M.field is v` writes, n=5 interleaved against the pre-fix binary, 1.1865 s
+  -> 1.1829 s median (-0.3%, inside the spread), `instructions:u` +1.7%.
 
 - **`load_file` / `import` work from a spawned worker (#1144).** `import` is an
   ordinary statement, so it is legal inside a `define` body and therefore

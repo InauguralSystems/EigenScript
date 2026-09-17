@@ -1,0 +1,4 @@
+# #1161 repro target: an imported module whose NAMESPACE env two workers extend.
+seed is 7
+define ping() as:
+    return seed

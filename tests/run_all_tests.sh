@@ -2513,6 +2513,33 @@ else
 fi
 echo ""
 
+# [42l] #1146 + #1161: thread-handle claim/generation/full-table, and the
+# module-env lock predicate. PINNED totals, same reason [42i]-[42k] pin them:
+# a silently shrunk row count reads as green.
+echo "[42l] Thread handles + module-env lock under concurrency (#1146, #1161)"
+HMT_EXPECTED=16
+HMT_SELFTEST_EXPECTED=11
+HMT_OUTPUT=$(bash "$TESTS_DIR/test_handles_mt.sh" 2>&1); HMT_RC=$?
+HMT_PASS=$(echo "$HMT_OUTPUT" | grep -c "  PASS:" || true)
+HMT_FAIL=$(echo "$HMT_OUTPUT" | grep -c "  FAIL:" || true)
+HMT_ST_OUTPUT=$(bash "$TESTS_DIR/test_handles_mt.sh" --selftest 2>&1); HMT_ST_RC=$?
+HMT_ST_PASS=$(echo "$HMT_ST_OUTPUT" | grep -c "  PASS:" || true)
+HMT_ST_FAIL=$(echo "$HMT_ST_OUTPUT" | grep -c "  FAIL:" || true)
+if [ "$HMT_RC" -eq 0 ] && [ "$HMT_FAIL" -eq 0 ] && [ "$HMT_PASS" -eq "$HMT_EXPECTED" ] \
+   && [ "$HMT_ST_RC" -eq 0 ] && [ "$HMT_ST_FAIL" -eq 0 ] && [ "$HMT_ST_PASS" -eq "$HMT_SELFTEST_EXPECTED" ]; then
+    TOTAL=$((TOTAL + HMT_PASS + HMT_ST_PASS))
+    PASS=$((PASS + HMT_PASS + HMT_ST_PASS))
+    echo "  PASS: all $HMT_PASS handle-MT checks + $HMT_ST_PASS selftest"
+else
+    TOTAL=$((TOTAL + HMT_PASS + HMT_FAIL + HMT_ST_PASS + HMT_ST_FAIL + 1))
+    PASS=$((PASS + HMT_PASS + HMT_ST_PASS))
+    FAIL=$((FAIL + HMT_FAIL + HMT_ST_FAIL + 1))
+    echo "  FAIL: handle-MT (live rc=$HMT_RC $HMT_PASS/$HMT_EXPECTED, selftest rc=$HMT_ST_RC $HMT_ST_PASS/$HMT_SELFTEST_EXPECTED)"
+    echo "$HMT_OUTPUT" | grep "FAIL:" | head -5
+    echo "$HMT_ST_OUTPUT" | grep "FAIL:" | head -5
+fi
+echo ""
+
 # [42c] REPL (#392): piped transcript byte-exact + pty-driven line editor
 echo "[42c] REPL editor & piped transcript (24 checks)"
 RE_OUTPUT=$(bash "$TESTS_DIR/test_repl.sh" 2>&1)
