@@ -53,10 +53,21 @@ bash tests/test_string_scaling.sh            # the gate
 bash tests/test_string_scaling.sh --selftest # eleven cases: prove it can FAIL
 ```
 
-It times a scan at 20k, 40k and 80k characters (n=5 medians per point) and
-fails if any doubling costs more than **2.60x** — a threshold placed between
-the two shapes, not near either. Worst ratio was **4.69** before the fix and
-**2.00** after.
+It times a scan at 20k, 40k and 80k characters and fails if any doubling costs
+more than **2.60x** — a threshold placed between the two shapes, not near
+either. Worst ratio was **4.69** before the fix and **2.00** after.
+
+Two details that are not incidental. The per-point statistic is the **minimum**
+of its samples, not the median, because this noise is one-sided: nothing makes
+a scan finish faster than the machine can run it, so every sample is the true
+cost plus some stall, and a ratio divides two points — a stall landing on the
+larger one alone is multiplied straight into the verdict. And a red is
+**confirmed with three times the samples** before it fails, both ratios
+printed. Measured under two CPU hogs on a 2-core box: the median-of-5 version
+returned 6.51 on a healthy binary, 1 run in 3; the current one returned zero
+false reds in 8, while the pre-fix binary still fails both passes (4.52 then
+4.48). The confirmation takes MORE samples, never fewer — that is what makes it
+a confirmation rather than a retry.
 
 What it does NOT cover, stated so nobody reads it as more: it measures the
 SHAPE of the growth, not the absolute cost. A change that makes every string

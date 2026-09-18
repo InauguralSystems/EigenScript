@@ -469,6 +469,27 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The string-scaling gate binds the runtime it measures, and a stalled
+  sample no longer fails it (#1188, #1189).** Both found by a blind critic, by
+  execution, on the enrolment itself. #1188: the suite section ran the child
+  without binding `EIGS`, on the reasoning that the child's default resolves to
+  the suite's binary — true, and only a default. Exporting `EIGS` at a healthy
+  binary made the SAME section report 2/2 PASS against the **pre-fix quadratic
+  tree**. The section now passes the runtime explicitly and then asserts, by
+  inode, that the child measured that file: a reasoned default is not a
+  binding, and a binding nobody checked is not evidence. #1189: with two CPU
+  hogs on a 2-core box the median-of-5 gate returned a worst ratio of **6.51**
+  on a healthy binary — a false RED, 1 run in 3, and CI runners are exactly
+  that machine. The per-point statistic is now the **minimum** (the noise is
+  one-sided: nothing finishes faster than the machine can run it, so the
+  minimum is the sample that got a clean slice), and a red is confirmed with
+  **three times** the samples before it fails, printing both ratios. Measured
+  after: 0 false reds in 8 runs under the same load, two of them rescued by the
+  confirmation (4.26 -> 1.51, 4.37 -> 2.01); the pre-fix binary still fails
+  both passes (4.52 then 4.48). Selftest 11 -> 14 cases, the third of which
+  pins that a genuinely quadratic series fails BOTH passes — the confirmation
+  is not a retry-until-green.
+
 - **The docs-claims gate no longer reads its own stdin, and the guard that
   depended on it can fire (#1186).** Five counters were spelled
   `x=$(grep -c .) <<< "$LIST"` — the here-string lands on the ASSIGNMENT, and a

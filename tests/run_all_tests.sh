@@ -6639,12 +6639,21 @@ echo ""
 #
 # It asserts the SHAPE of the growth -- a doubling RATIO, linear ~2.0 against
 # quadratic ~4.0 -- and never a wall-clock budget, so it is a claim about the
-# algorithm and not about the machine (mechanical-gates §120). The child's
-# default runtime is $ROOT/src/eigenscript, which from this suite's cwd is
-# exactly $EIGS_BIN: the gate measures the binary under test, variant included.
+# algorithm and not about the machine (mechanical-gates §120).
+#
+# RUNTIME IDENTITY AT THE ENROLMENT BOUNDARY (#1188). The child accepts an
+# `EIGS=` override, which is what lets a person drive it against an old build
+# -- and the first cut of this section did not BIND it, reasoning instead that
+# the child's default resolves to $EIGS_BIN from this suite's cwd. True, and
+# useless: it is only the default. A blind critic exported EIGS at a healthy
+# binary, ran this exact section against the PRE-FIX tree, and got 2/2 PASS on
+# the quadratic runtime. So the section binds the runtime it means, and then
+# ASSERTS the child measured that same file by inode -- a reasoned default is
+# not a binding, and a binding nobody checked is not evidence.
 echo "[99zc] String index/scan scales linearly (#1183)"
 TOTAL=$((TOTAL + 1))
-SCALE_OUTPUT=$(bash "$TESTS_DIR/test_string_scaling.sh" 2>&1)
+SCALE_EIGS="$PWD/${EIGS_BIN#./}"
+SCALE_OUTPUT=$(EIGS="$SCALE_EIGS" bash "$TESTS_DIR/test_string_scaling.sh" 2>&1)
 SCALE_RC=$?
 printf '%s\n' "$SCALE_OUTPUT" | grep -E "^worst doubling ratio:" | head -1
 # rc 0 is not enough: the VERDICT LINE must be present. A gate that died after
@@ -6665,8 +6674,8 @@ fi
 # ways a blind critic made this gate report PASS on the still-quadratic binary
 # -- a stderr diagnostic taken as the reading, an EIGS_REPLAY tape supplying
 # both clock readings, and readings of `e`, `-1`, `0` and the wrong length.
-SCALE_SELFTEST_EXPECTED=11
-SCALE_ST=$(bash "$TESTS_DIR/test_string_scaling.sh" --selftest 2>&1)
+SCALE_SELFTEST_EXPECTED=14
+SCALE_ST=$(EIGS="$SCALE_EIGS" bash "$TESTS_DIR/test_string_scaling.sh" --selftest 2>&1)
 SCALE_ST_RC=$?
 SCALE_ST_RUN=$(printf '%s\n' "$SCALE_ST" | sed -nE 's/^== selftest ([0-9]+) run.*/\1/p' | tail -1)
 SCALE_ST_FAILED=$(printf '%s\n' "$SCALE_ST" | sed -nE 's/^== selftest [0-9]+ run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
@@ -6683,6 +6692,22 @@ elif [ "$SCALE_ST_RC" -ne 0 ] || [ "${SCALE_ST_FAILED:-1}" -ne 0 ]; then
 else
     PASS=$((PASS + 1))
     echo "  PASS: string-scaling selftest ($SCALE_ST_RUN cases, every planted false-green refused)"
+fi
+
+# The binding, VERIFIED (#1188). The child names the runtime it used on its
+# own `runtime:` line; that file must be the same INODE as the binary this
+# suite is testing. `-ef` rather than a string compare, because the two
+# spellings legitimately differ (an absolute path against `./eigenscript`)
+# while a symlink, an alias re-point or an inherited override does not change
+# the spelling at all.
+TOTAL=$((TOTAL + 1))
+SCALE_RUNTIME=$(printf '%s\n' "$SCALE_OUTPUT" | sed -n 's/^runtime: //p' | head -1)
+if [ -n "$SCALE_RUNTIME" ] && [ "$SCALE_RUNTIME" -ef "$EIGS_BIN" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: the gate measured this suite's own binary"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: the gate reported runtime '${SCALE_RUNTIME:-<none>}', which is not $EIGS_BIN — the section measured a binary other than the one under test (#1188)"
 fi
 echo ""
 

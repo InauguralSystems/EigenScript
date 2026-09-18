@@ -180,14 +180,29 @@ measure_once() {  # $1 = target length -> prints "len ms"
     printf '%s\n' "$line"
 }
 
-measure() {  # $1 = target length -> prints "len median_ms" over REPS samples
+measure() {  # $1 = target length -> prints "len min_ms" over REPS samples
+    # THE MINIMUM, NOT THE MEDIAN. Bought by a blind critic (#1189): with two
+    # CPU hogs on this 2-core box the median-of-5 gate reported a worst ratio
+    # of **6.51** on a HEALTHY binary -- a false RED, 1 run in 3. A shared CI
+    # runner is exactly that machine.
+    #
+    # The reason the median fails here is that the noise is one-sided. Nothing
+    # makes a scan finish FASTER than the machine can run it, so every sample
+    # is (true cost + some stall). Under sustained contention most samples
+    # carry a stall, so the median carries one too -- and because the ratio
+    # divides two points, a stall that lands on the LARGER point alone is
+    # multiplied straight into the verdict. The minimum is the sample that got
+    # a clean slice, which is the one estimating the algorithm rather than the
+    # scheduler. (This is why microbenchmarks report a minimum and wall-clock
+    # tables report a median: they answer different questions. docs/PERFORMANCE.md
+    # publishes medians; this gate asks about SHAPE.)
     local i line len ms samples=""
     for i in $(seq 1 "$REPS"); do
         line=$(measure_once "$1") || return 1
         len=${line%% *}; ms=${line##* }
         samples="$samples$ms\n"
     done
-    printf "%s %s\n" "$len" "$(printf "$samples" | sort -n | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}')"
+    printf "%s %s\n" "$len" "$(printf "$samples" | sort -n | head -1)"
 }
 
 run_gate() {
@@ -269,6 +284,72 @@ STUB
     chk "an inherited EIGS_* does not reach the probe" "$g" "20000 5.0"
     rm -rf "$STUB_DIR"
 
+    # ---- #1189: the statistic, and the confirmation pass -------------------
+    # A blind critic put two CPU hogs on this 2-core box and the median-of-5
+    # gate reported 6.51 on a HEALTHY binary -- a false RED, 1 run in 3. The
+    # three rows below pin the two halves of the fix and, in the third row,
+    # pin that the fix did not buy the green with the gate's teeth.
+    # The rows above end by removing $STUB_DIR; these need it back.
+    mkdir -p "$STUB_DIR"
+    CNT="$STUB_DIR/calls"
+
+    # (i) the per-point reading is the MIN of its samples, not the median. The
+    #     stub returns 1.0 twice and 9.0 three times: median 9.0, min 1.0.
+    cat > "$STUB_DIR/varying" <<STUB
+#!/bin/sh
+c=\$(cat "$CNT" 2>/dev/null || echo 0); c=\$((c+1)); echo \$c > "$CNT"
+if [ "\$c" -le 2 ]; then echo "20000 1.0"; else echo "20000 9.0"; fi
+STUB
+    chmod +x "$STUB_DIR/varying"
+    rm -f "$CNT"
+    WORK="$STUB_DIR"; : > "$WORK/scan.eigs"; EIGS_TMO=""
+    st_reps="$REPS"; REPS=5
+    EIGS="$STUB_DIR/varying"; m=$(measure 20000 2>/dev/null)
+    REPS="$st_reps"
+    chk "the per-point reading is the MIN of its samples, not the median" "$m" "20000 1.0"
+
+    # (ii) a stall on ONE pass does not fail the gate: the confirmation run,
+    #      with three times the samples, is what decides. The stub is linear
+    #      (10/20/40 ms, ratio 2.0) except that the first five readings of the
+    #      largest length carry an 8x stall, which is the shape a loaded
+    #      runner produces.
+    cat > "$STUB_DIR/stalled" <<STUB
+#!/bin/sh
+n=\$2
+c=\$(cat "$CNT.\$n" 2>/dev/null || echo 0); c=\$((c+1)); echo \$c > "$CNT.\$n"
+base=\$(awk -v n="\$n" 'BEGIN{ printf "%.3f", n/2000 }')
+if [ "\$n" = 80000 ] && [ "\$c" -le 5 ]; then echo "\$n 320.0"; else echo "\$n \$base"; fi
+STUB
+    chmod +x "$STUB_DIR/stalled"
+    rm -f "$CNT".*
+    st_out=$(REPS=5 EIGS="$STUB_DIR/stalled" bash "$0" 2>&1); st_rc=$?
+    if [ "$st_rc" = 0 ] && printf '%s\n' "$st_out" | grep -q "the first pass was stalled, not superlinear"; then
+        chk "a stalled first pass is confirmed away, and SAYS it was stalled" "ok" "ok"
+    else
+        chk "a stalled first pass is confirmed away, and SAYS it was stalled" "rc=$st_rc $(printf '%s\n' "$st_out" | tail -1)" "ok"
+    fi
+
+    # (iii) ...and the confirmation is not a way to buy a green. A genuinely
+    #       quadratic series (10/40/160 ms, ratio 4.0) must fail BOTH passes.
+    #       Without this row, row (ii) is satisfied by a gate that always
+    #       passes (mechanical-gates §15 -- a positive control needs both
+    #       halves).
+    cat > "$STUB_DIR/quadratic" <<'STUB'
+#!/bin/sh
+n=$2
+awk -v n="$n" 'BEGIN{ printf "%s %.3f\n", n, (n/20000)*(n/20000)*10 }'
+STUB
+    chmod +x "$STUB_DIR/quadratic"
+    q_out=$(REPS=5 EIGS="$STUB_DIR/quadratic" bash "$0" 2>&1); q_rc=$?
+    if [ "$q_rc" != 0 ] \
+       && printf '%s\n' "$q_out" | grep -q "^confirmation doubling ratio: 4" \
+       && printf '%s\n' "$q_out" | grep -q "^FAIL: string scan is superlinear"; then
+        chk "a quadratic series fails BOTH passes -- the confirmation is not a retry-until-green" "ok" "ok"
+    else
+        chk "a quadratic series fails BOTH passes -- the confirmation is not a retry-until-green" "rc=$q_rc $(printf '%s\n' "$q_out" | tail -1)" "ok"
+    fi
+    rm -f "$CNT" "$CNT".*
+
     echo "== selftest $run run, $((run-bad)) passed, $bad failed =="
     # A marker line, in the suite's own vocabulary. tests/run_all_tests.sh
     # wraps every `bash tests/test_*.sh` in an accounting function that reads
@@ -290,6 +371,29 @@ worst=$(run_gate) || fail "could not measure"
 worst_ratio=$(echo "$worst" | tail -1)
 verdict=$(awk -v w="$worst_ratio" -v m="$MAX_RATIO" 'BEGIN{ print (w+0 <= m+0) ? "PASS" : "FAIL" }')
 echo "worst doubling ratio: $worst_ratio  (max $MAX_RATIO; linear ~2.0, quadratic ~4.0)"
+
+# A RED IS CONFIRMED WITH MORE SAMPLES, NEVER WITH FEWER, AND BOTH RATIOS ARE
+# PRINTED. This is not "retry until green": the confirmation run takes THREE
+# TIMES the samples, and the thing it exists to reject -- a stall on one point
+# of one pass -- cannot survive that, while the thing it must not reject
+# cannot avoid it. Measured: the pre-fix binary is 4.38-4.57 on every run ever
+# taken of it, against a 2.60 threshold; there is no sample count at which a
+# genuinely quadratic scan reads as linear. The minimum above removes most of
+# the noise; this removes the tail of it, for ~1.5 s, only when the gate was
+# about to fail.
+if [ "$verdict" = FAIL ]; then
+    echo "confirming with $((REPS * 3)) samples per point (a single stalled sample must not fail this gate)"
+    conf=$(REPS=$((REPS * 3)) run_gate) || fail "could not re-measure for confirmation"
+    conf_ratio=$(echo "$conf" | tail -1)
+    conf_verdict=$(awk -v w="$conf_ratio" -v m="$MAX_RATIO" 'BEGIN{ print (w+0 <= m+0) ? "PASS" : "FAIL" }')
+    echo "confirmation doubling ratio: $conf_ratio  (max $MAX_RATIO)"
+    if [ "$conf_verdict" = PASS ]; then
+        echo "NOTE: first pass read $worst_ratio, confirmation read $conf_ratio -- the first pass was stalled, not superlinear"
+        verdict=PASS
+        worst_ratio="$conf_ratio"
+    fi
+fi
+
 if [ "$verdict" = PASS ]; then
     echo "PASS: string scan scales linearly"
 else
