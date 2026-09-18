@@ -20,7 +20,7 @@
   parameter. With `define one(a)`: `one of [5]` binds `a = 5`, but
   `one of [5, 6]` binds `a = [5, 6]` (not `a = 5` with `6` dropped). This
   carve-out is what makes `len of [1, 2]` return `2` and
-  `reverse of [1, 2, 3]` reverse the list — but it means you cannot predict
+  `sum of [1, 2, 3]` return `6` — but it means you cannot predict
   a binding from the call site alone; you need the callee's arity.
 - **Over-arity RAISES** on 2+-parameter callees: with `define two(a, b)`,
   `two of [1, 2, 99]` is a catchable `value`-kind error at the call site
