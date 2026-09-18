@@ -133,7 +133,13 @@ measure_once() {  # $1 = target length -> prints "len ms"
     #   -> worst doubling ratio: 0.00  PASS      (before this fix)
     local out err rc line
     err="$WORK/err.$1.$$"
-    out=$( EIGS_JIT_OFF=1 $EIGS_TMO "$EIGS" "$WORK/scan.eigs" "$1" 2>"$err" ); rc=$?
+    # SANITIZED ENVIRONMENT. The gate must control what it measures: an
+    # inherited EIGS_* variable can change what the runtime does or prints.
+    # A blind critic passed the UNFIXED binary at ratio 1.00 by exporting
+    # EIGS_REPLAY with a 10-character tape — replay supplied argv and both
+    # clock readings, so every "sample" returned the same recorded numbers.
+    out=$( for __v in $(env | sed -n 's/^\(EIGS_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$__v"; done
+           EIGS_JIT_OFF=1 $EIGS_TMO "$EIGS" "$WORK/scan.eigs" "$1" 2>"$err" ); rc=$?
     if [ "$rc" != 0 ]; then
         echo "string-scaling: probe rc=$rc at len=$1" >&2
         echo "  stdout: $out" >&2; echo "  stderr: $(cat "$err" 2>/dev/null)" >&2
@@ -146,6 +152,28 @@ measure_once() {  # $1 = target length -> prints "len ms"
     if [ -z "$line" ]; then
         echo "string-scaling: could not parse a single 'len ms' line at len=$1" >&2
         echo "  stdout was: $out" >&2
+        rm -f "$err"; return 1
+    fi
+    # VALIDATE THE VALUES, not just the shape. Matching `<digits> <number-ish>`
+    # accepted every one of these from a blind critic's stubs, each of which
+    # made the gate report PASS on a binary that is still quadratic:
+    #   "20000 e"    -- `e` matches the number character class
+    #   "20000 -1"   -- negative time
+    #   "20000 0"    -- zero time (ratios become 0/0 or 0)
+    #   "10 1"       -- a reading for a DIFFERENT length than was requested
+    # The length the probe reports must be the length it was ASKED for, and the
+    # time must be a finite number strictly greater than zero. This one check
+    # closes all four, and also the EIGS_REPLAY fault above, whose tape reports
+    # length 10 for every requested size.
+    local got_len got_ms
+    got_len=${line%% *}; got_ms=${line##* }
+    if [ "$got_len" != "$1" ]; then
+        echo "string-scaling: probe reported length $got_len but was asked for $1" >&2
+        echo "  (a reading for a different length is not a measurement of this one)" >&2
+        rm -f "$err"; return 1
+    fi
+    if ! awk -v m="$got_ms" 'BEGIN{ exit !(m+0 > 0 && m+0 < 1e12 && m ~ /^[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$/) }'; then
+        echo "string-scaling: probe reported a non-positive or malformed time: '$got_ms' at len=$1" >&2
         rm -f "$err"; return 1
     fi
     rm -f "$err"
@@ -213,6 +241,32 @@ STUB
     chk "a stderr diagnostic does not become the reading" "$a" "20000 5.0"
     EIGS="$STUB_DIR/ambiguous"; measure_once 20000 >/dev/null 2>&1
     chk "two reading-shaped lines are refused" "$?" "1"
+
+    # VALUES, not just shape. Each of these made the gate report PASS on a
+    # still-quadratic binary until the values were validated (blind critic,
+    # round 3). The stub echoes whatever reading it is told to.
+    for case in "20000 e:malformed" "20000 -1:negative" "20000 0:zero" "10 1:wrong-length"; do
+        reading=${case%%:*}; name=${case##*:}
+        printf '#!/bin/sh\necho "%s"\n' "$reading" > "$STUB_DIR/v"; chmod +x "$STUB_DIR/v"
+        EIGS="$STUB_DIR/v"; measure_once 20000 >/dev/null 2>&1
+        chk "a $name reading is refused" "$?" "1"
+    done
+
+    # A reading for the CORRECT length with a sane time is still accepted, so
+    # the four rows above are rejecting the fault and not simply everything.
+    printf '#!/bin/sh\necho "20000 5.0"\n' > "$STUB_DIR/v"; chmod +x "$STUB_DIR/v"
+    EIGS="$STUB_DIR/v"; g=$(measure_once 20000 2>/dev/null)
+    chk "an honest reading is still accepted" "$g" "20000 5.0"
+
+    # The probe's environment is the GATE's to control: an inherited EIGS_*
+    # must not reach it. The stub reports which branch it took.
+    cat > "$STUB_DIR/envcheck" <<'STUB'
+#!/bin/sh
+if [ -n "${EIGS_REPLAY:-}" ]; then echo "10 1.0"; else echo "$2 5.0"; fi
+STUB
+    chmod +x "$STUB_DIR/envcheck"
+    EIGS="$STUB_DIR/envcheck"; g=$(EIGS_REPLAY=/some/tape measure_once 20000 2>/dev/null)
+    chk "an inherited EIGS_* does not reach the probe" "$g" "20000 5.0"
     rm -rf "$STUB_DIR"
 
     echo "== selftest $run run, $((run-bad)) passed, $bad failed =="
