@@ -73,10 +73,7 @@ if [ "$SELFTEST" = 1 ]; then
     chk "threshold is between linear and quadratic" \
         "$(awk -v m="$MAX_RATIO" 'BEGIN{ print (m+0 > 2.2 && m+0 < 3.5) ? "yes" : "no" }')" "yes"
 
-    echo "== selftest $run run, $((run-bad)) passed, $bad failed =="
-    [ "$bad" = 0 ] || exit 1
-    exit 0
-fi
+fi   # stage two runs after the functions it exercises
 
 [ -x "$EIGS" ] || fail "no runtime at $EIGS (set EIGS=)"
 
@@ -125,11 +122,34 @@ elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout 300"
 else EIGS_TMO=""; fi
 
 measure_once() {  # $1 = target length -> prints "len ms"
-    local out rc
-    out=$( EIGS_JIT_OFF=1 $EIGS_TMO "$EIGS" "$WORK/scan.eigs" "$1" 2>&1 ); rc=$?
-    [ "$rc" = 0 ] || { echo "string-scaling: probe rc=$rc at len=$1: $out" >&2; return 1; }
-    case "$out" in *BAD*) echo "string-scaling: scan returned the wrong count: $out" >&2; return 1 ;; esac
-    echo "$out" | tail -1
+    # stdout and stderr are kept SEPARATE, and the reading is matched by SHAPE
+    # rather than taken as "the last line". Bought by a blind critic, round 2:
+    # the probe merged 2>&1 and used `tail -1`, so any stray diagnostic on
+    # stderr became the measurement. With EIGS_JIT_STATS=1 the runtime's
+    # `[jit] scanned=... compiled=...` line landed last, `ms` parsed as 0, the
+    # ratio collapsed to 0.00, and the gate reported PASS **on the unfixed,
+    # quadratic binary** — a false green, which is worse than no gate.
+    #   EIGS_JIT_STATS=1 EIGS=<old binary> bash tests/test_string_scaling.sh
+    #   -> worst doubling ratio: 0.00  PASS      (before this fix)
+    local out err rc line
+    err="$WORK/err.$1.$$"
+    out=$( EIGS_JIT_OFF=1 $EIGS_TMO "$EIGS" "$WORK/scan.eigs" "$1" 2>"$err" ); rc=$?
+    if [ "$rc" != 0 ]; then
+        echo "string-scaling: probe rc=$rc at len=$1" >&2
+        echo "  stdout: $out" >&2; echo "  stderr: $(cat "$err" 2>/dev/null)" >&2
+        rm -f "$err"; return 1
+    fi
+    case "$out" in *BAD*) echo "string-scaling: scan returned the wrong count: $out" >&2; rm -f "$err"; return 1 ;; esac
+    # Exactly one line of the shape "<digits> <number>"; anything else is a
+    # parse failure and a FAIL, never a silently-zero reading.
+    line=$(printf '%s\n' "$out" | awk '/^[0-9]+ [0-9.eE+-]+$/ { n++; last=$0 } END { if (n==1) print last }')
+    if [ -z "$line" ]; then
+        echo "string-scaling: could not parse a single 'len ms' line at len=$1" >&2
+        echo "  stdout was: $out" >&2
+        rm -f "$err"; return 1
+    fi
+    rm -f "$err"
+    printf '%s\n' "$line"
 }
 
 measure() {  # $1 = target length -> prints "len median_ms" over REPS samples
@@ -164,6 +184,41 @@ run_gate() {
     [ "$rows" -ge 3 ] || { echo "string-scaling: examined $rows lengths, need >= 3" >&2; return 1; }
     echo "$worst"
 }
+
+if [ "$SELFTEST" = 1 ]; then
+    # The reading must come from the program's STDOUT and must be matched by
+    # SHAPE. Planted against a stub "runtime" rather than a real binary, so
+    # these cases need no build and run in milliseconds.
+    STUB_DIR=$(mktemp -d "${TMPDIR:-/tmp}/strscale-stub.XXXXXX")
+    # (a) a diagnostic on stderr must NOT become the measurement. This is the
+    #     defect a blind critic found: EIGS_JIT_STATS=1 put `[jit] scanned=...`
+    #     last, the merged-stderr `tail -1` read it as the timing, the ratio
+    #     collapsed to 0.00, and the gate PASSED the unfixed quadratic binary.
+    cat > "$STUB_DIR/noisy" <<'STUB'
+#!/bin/sh
+echo "[jit] scanned=9 compiled=9 cache_used=1234" >&2
+echo "20000 5.0"
+STUB
+    # (b) two reading-shaped lines is ambiguous and must be refused, never
+    #     silently resolved by taking one of them.
+    cat > "$STUB_DIR/ambiguous" <<'STUB'
+#!/bin/sh
+echo "20000 5.0"
+echo "20000 9.0"
+STUB
+    chmod +x "$STUB_DIR/noisy" "$STUB_DIR/ambiguous"
+    WORK="$STUB_DIR"; : > "$WORK/scan.eigs"
+    EIGS_TMO=""
+    EIGS="$STUB_DIR/noisy";     a=$(measure_once 20000 2>/dev/null)
+    chk "a stderr diagnostic does not become the reading" "$a" "20000 5.0"
+    EIGS="$STUB_DIR/ambiguous"; measure_once 20000 >/dev/null 2>&1
+    chk "two reading-shaped lines are refused" "$?" "1"
+    rm -rf "$STUB_DIR"
+
+    echo "== selftest $run run, $((run-bad)) passed, $bad failed =="
+    [ "$bad" = 0 ] || exit 1
+    exit 0
+fi
 
 echo "string-scaling: index/scan growth (EigenScript#1183)"
 echo "runtime: $EIGS"
