@@ -2274,6 +2274,94 @@ void jit_helper_index_get(void) {
     vm_push(result);
 }
 
+/* #1178: thunk-profitability accounting, called by all three from-zero
+ * thunk invocation sites (CASE(CALL), CASE(DISPATCH), jit_helper_call)
+ * immediately after the thunk returns and BEFORE any chunk_decref, since
+ * the RETURN sentinel path can free the chunk.
+ *
+ * A thunk entry costs a fixed prologue (2-6 callee-saved pushes, the TLS
+ * read, sp/env/frame cache loads), a matching epilogue, and the caller's
+ * advance/resync branch. It buys however much bytecode the compiled prefix
+ * actually ran. When that purchase is small, entering the thunk is slower
+ * than interpreting the same ops -- which is the whole of the JIT's measured
+ * loss on ouroboros and EigenMiniSat (EIGS_JIT_HOT: 5.0% native coverage
+ * over 565k entries, against DMG's 42.3%).
+ *
+ * Credit per exit:
+ *   advance >= 0  the prefix ran to a bail at that offset -> `advance` bytes
+ *   advance == -1 the thunk ran the whole call including OP_RETURN, so the
+ *                 interpreter never re-entered this chunk -> code_len bytes
+ *   advance == -2 deep bail out of a native callee -> nothing; the caller
+ *                 thunk is abandoned mid-prefix and the interpreter resyncs
+ *
+ * Demotion clears jit_code, which is the single predicate all three
+ * invocation sites and jit_helper_call already test, so the chunk simply
+ * interprets from then on. jit_state stays 2, so jit_try_compile_chunk will
+ * not recompile it. The gate is OFF when g_jit_profit_min == 0. */
+static inline void jit_note_thunk_exit(EigsChunk *c, int adv) {
+    int min = g_jit_profit_min;
+    if (min <= 0) return;
+    /* A looping prefix is judged on COMPLETION, not on size: it must
+     * average at least half its loop body per entry, which a thunk that
+     * runs its iterations natively always does and a thunk that guard-bails
+     * early (or deep-bails, credit 0) never does. */
+    if (c->jit_has_loop) min = c->jit_native_len / 2 + 1;
+    c->jit_entries++;
+    if (adv > 0)            c->jit_native_bytes += (uint32_t)adv;
+    else if (adv == -1) {
+        /* A RETURN-sentinel exit means the thunk ran the whole call: the
+         * interpreter never resumes this chunk, so there is no partial-
+         * coverage penalty to amortize. Credit it at least the minimum so
+         * a small always-completing callee is never demoted for being
+         * small -- EigenMiniSat's lit_abs is 54 bytes and 31.5% of every
+         * frame entry in the run. */
+        uint32_t credit = (uint32_t)c->jit_native_len;
+        if (g_jit_profit_ret_exempt && credit < (uint32_t)min)
+            credit = (uint32_t)min;
+        c->jit_native_bytes += credit;
+    }
+    if (c->jit_entries >= (uint32_t)g_jit_profit_window) {
+        if (c->jit_native_bytes < c->jit_entries * (uint32_t)min) {
+            c->jit_code = NULL;
+            if (!c->jit_demoted) {
+                c->jit_demoted = 1;
+                __atomic_fetch_add(&g_jit_demoted_chunks, 1, __ATOMIC_RELAXED);
+            }
+        }
+        c->jit_entries = 0;
+        c->jit_native_bytes = 0;
+    }
+}
+
+/* #1178: the OSR twin of jit_note_thunk_exit. Credit for a RETURN-sentinel
+ * exit is the bytecode from the loop header to the end of the chunk, since
+ * the thunk ran the rest of the call. */
+static inline void jit_note_osr_exit(EigsChunk *c, int slot, int adv) {
+    int min = g_jit_profit_min;
+    if (min <= 0) return;
+    if (c->jit_osr[slot].has_loop) min = c->jit_osr[slot].native_len / 2 + 1;
+    c->jit_osr[slot].entries++;
+    if (adv > 0)        c->jit_osr[slot].native_bytes += (uint32_t)adv;
+    else if (adv == -1) {
+        uint32_t credit = (uint32_t)c->jit_osr[slot].native_len;
+        if (g_jit_profit_ret_exempt && credit < (uint32_t)min)
+            credit = (uint32_t)min;
+        c->jit_osr[slot].native_bytes += credit;
+    }
+    if (c->jit_osr[slot].entries >= (uint32_t)g_jit_profit_window) {
+        if (c->jit_osr[slot].native_bytes <
+            c->jit_osr[slot].entries * (uint32_t)min) {
+            c->jit_osr[slot].code = NULL;
+            if (!c->jit_osr[slot].demoted) {
+                c->jit_osr[slot].demoted = 1;
+                __atomic_fetch_add(&g_jit_demoted_chunks, 1, __ATOMIC_RELAXED);
+            }
+        }
+        c->jit_osr[slot].entries = 0;
+        c->jit_osr[slot].native_bytes = 0;
+    }
+}
+
 /* Direct-borrow heuristic, shared by the three builtin call sites
  * (CASE(CALL), jit_helper_call, OP_DISPATCH): if a builtin's result is
  * one of arg's top-level items (coalesce/append/dict_set return
@@ -2556,6 +2644,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         g_native_call_depth--;
 
         int adv = fn_chunk->jit_advance;
+        jit_note_thunk_exit(fn_chunk, adv);   /* #1178, before any decref */
         if (adv == -1) {
             /* Callee ran to RETURN: its frame is popped (by
              * jit_helper_return) and the result is on the caller's
@@ -3846,6 +3935,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (osr_hit >= 0 && chunk->jit_osr[osr_hit].code) {
             frame->ip = ip;
             ((JitChunkFn)chunk->jit_osr[osr_hit].code)();
+            jit_note_osr_exit(chunk, osr_hit, chunk->jit_osr[osr_hit].advance); /* #1178 */
             if (chunk->jit_osr[osr_hit].advance == -1) {
                 /* Stage 4s: OSR thunk hit OP_RETURN. Same shape as the
                  * OP_CALL hook: result already on caller's stack, frame
@@ -4211,6 +4301,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched &&
                 !g_arena.active && !g_sandbox_active) {
                 ((JitChunkFn)fn_chunk->jit_code)();
+                jit_note_thunk_exit(fn_chunk, fn_chunk->jit_advance); /* #1178 */
                 if (fn_chunk->jit_advance == -1) {
                     /* jit_helper_return popped fn_chunk's frame but left
                      * its chunk ref to us — the thunk epilogue writes
@@ -6336,6 +6427,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched &&
                 !g_arena.active && !g_sandbox_active) {   /* #873, #940: see the OP_CALL hook */
                 ((JitChunkFn)fn_chunk->jit_code)();
+                jit_note_thunk_exit(fn_chunk, fn_chunk->jit_advance); /* #1178 */
                 if (fn_chunk->jit_advance == -1) {
                     /* Stage 4s: OP_RETURN sentinel — see OP_CALL hook.
                      * Popped frame's chunk ref is ours to drop. */

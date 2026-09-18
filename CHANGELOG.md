@@ -817,6 +817,30 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **The JIT only enters a thunk that pays for itself (#1178).** Measured for
+  the first time against the interpreter on real consumers, the JIT was a NET
+  LOSS on parser- and solver-shaped work (ouroboros -6.9%, EigenMiniSat
+  -2.6%) while winning on emulator-shaped work (DMG +4.8%). `perf` on the
+  losing side says why: the generated code plus its out-of-line
+  `jit_helper_*` calls spend more time than the interpreter loop gives up, on
+  chunks whose compiled prefix is a handful of bytes or ends in a deep bail —
+  ouroboros ran 565k thunk entries covering 5.0% of its executed bytecode,
+  against DMG's 42.3%. The runtime now measures that trade per chunk (bytecode
+  bytes run natively per thunk entry, over a sliding 32-entry window) and
+  abandons a thunk that does not clear the bar, and the scanner refuses up
+  front the prefixes that could never clear it. A prefix that runs to the
+  function's own `return`, or that contains a loop back-edge into itself, is
+  judged differently — those have no partial-coverage cost to amortize.
+  Alongside it, three per-call costs that were paid on every frame entry:
+  `EIGS_JIT_OFF` was a `getenv` per call of every not-yet-hot chunk, the
+  hotness registry answered "already registered?" with a linear scan of
+  itself, and the code cache bump-allocated each thunk's worst-case size
+  estimate and never gave the unused tail back — a 1 MB cache held about a
+  tenth of that in real code, with the rest holes, which both refused later
+  chunks as "cache full" and scattered the thunks across pages.
+  `EIGS_JIT_STATS=1` gained a `demoted=` count and `EIGS_JIT_HOT=1` marks a
+  demoted chunk `dem` rather than `yes`.
+
 - **Layering has structure rather than convention (#744, closing #746).** The
   core no longer includes any extension's private header: `src/ext_register.h`
   carries the registrars and per-state teardowns as declarations only, so

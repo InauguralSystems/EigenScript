@@ -97,6 +97,36 @@ void *jit_cache_alloc(EigsJitCache *jc, size_t bytes) {
     return p;
 }
 
+/* #1178: hand back the unused tail of the LAST allocation.
+ *
+ * jit_cache_alloc bump-allocates jit_estimate_size(), which budgets 198
+ * bytes per bytecode byte so the worst op (OP_MOD, the inline-IC SET_NAME)
+ * always fits. Real thunks use a small fraction of that, and nothing ever
+ * gave the slack back: a 1 MB cache held ~10% real code, the rest holes, so
+ * (a) chunks were refused for "cache full" at a tenth of the code the cache
+ * can hold -- 29 of 37 hot chunks on DMG -- and (b) the thunks that did
+ * compile were scattered one per page or worse, which is the worst possible
+ * icache/iTLB layout for code entered millions of times per run.
+ *
+ * Only the most recent allocation can be trimmed, and it always is the most
+ * recent: jit_emit_const_return is the only other caller of
+ * jit_cache_alloc and it is used exclusively by jit_smoke. The
+ * top-of-bump assertion below keeps that true rather than assuming it. */
+static void jit_cache_trim(EigsJitCache *jc, void *p, size_t alloc_bytes,
+                           size_t used_bytes) {
+#if EIGS_JIT_ENABLED
+    if (!jc || !p) return;
+    uint8_t *q = (uint8_t *)p;
+    if (q + alloc_bytes != jc->base + jc->used) return;   /* not the top */
+    if (used_bytes > alloc_bytes) return;                 /* caller bug */
+    used_bytes = (used_bytes + 15u) & ~(size_t)15u;       /* 16B alignment */
+    if (used_bytes > alloc_bytes) used_bytes = alloc_bytes;
+    jc->used = (size_t)(q - jc->base) + used_bytes;
+#else
+    (void)jc; (void)p; (void)alloc_bytes; (void)used_bytes;
+#endif
+}
+
 int jit_cache_seal(EigsJitCache *jc) {
     if (!jc) return -1;
     if (jc->sealed) return 0;
@@ -170,10 +200,17 @@ JitConstFn jit_emit_const_return(EigsJitCache *jc, int64_t value) {
  * further extension). */
 
 void jit_register_chunk(struct EigsChunk *chunk) {
-    if (!chunk) return;
-    for (int i = 0; i < g_chunks_count; i++) {
-        if (g_chunks[i] == chunk) return;
-    }
+    /* #1178: the membership test is the chunk's own flag, not a scan of the
+     * registry. This is called on every frame entry of every chunk still in
+     * jit_state 0, so the old O(registry) scan was O(chunks) per call on
+     * exactly the workloads with many never-hot chunks (ouroboros: 259
+     * chunks, 565k frame entries). Registration only ever happens
+     * single-threaded (jit_try_compile_chunk returns early when
+     * g_vm_multithreaded), so one flag answers for one registry; the flag
+     * is cleared again in jit_unregister_chunk and in jit_thread_destroy,
+     * which is what keeps the EIGS_JIT_HOT population from silently
+     * shrinking if a second thread later runs the same chunks. */
+    if (!chunk || chunk->jit_registered) return;
     if (g_chunks_count == g_chunks_cap) {
         int new_cap = g_chunks_cap ? g_chunks_cap * 2 : 64;
         struct EigsChunk **p = realloc(g_chunks, new_cap * sizeof(*p));
@@ -182,6 +219,7 @@ void jit_register_chunk(struct EigsChunk *chunk) {
         g_chunks_cap = new_cap;
     }
     g_chunks[g_chunks_count++] = chunk;
+    chunk->jit_registered = 1;
 }
 
 /* Called from chunk_decref when a chunk dies, so the hotness registry
@@ -236,6 +274,8 @@ static void jit_hot_row_fill(EigsJitHotRow *r, const struct EigsChunk *c,
         ? (c->jit_osr[0].advance == -1 ? c->code_len : c->jit_osr[0].advance) : 0;
     r->osr_entry       = c->jit_osr[0].state != 0 ? c->jit_osr[0].entry_offset : 0;
     r->stop_op         = c->jit_stop_op;
+    r->demoted         = c->jit_demoted;
+    r->osr_demoted     = c->jit_osr[0].demoted;
 }
 
 void jit_unregister_chunk(struct EigsChunk *chunk) {
@@ -269,6 +309,7 @@ void jit_unregister_chunk(struct EigsChunk *chunk) {
                                        __ATOMIC_RELAXED);
             }
             g_chunks[i] = g_chunks[--g_chunks_count];
+            chunk->jit_registered = 0;
             return;
         }
     }
@@ -276,6 +317,12 @@ void jit_unregister_chunk(struct EigsChunk *chunk) {
 
 /* Probe counter: chunks rejected because the code cache was full. */
 static int g_jit_cache_full_rejects = 0;
+
+/* #1178: chunks whose thunk the profitability gate abandoned. The demote
+ * happens in vm.c's thunk-exit accounting, on whichever thread ran the
+ * thunk, so this is genuinely process-wide -- relaxed atomics, matching the
+ * g_trace_hist_storage idiom, never a plain static increment (#1180). */
+int g_jit_demoted_chunks = 0;
 
 
 void jit_module_init(void) {
@@ -299,10 +346,11 @@ void jit_module_shutdown(void) {
 void jit_thread_destroy(EigsThread *th) {
     if (!th) return;
     if (eigs_env_flag("EIGS_JIT_STATS")) {
-        fprintf(stderr, "[jit] scanned=%d compiled=%d cache_used=%zu cache_full_rejects=%d\n",
+        fprintf(stderr, "[jit] scanned=%d compiled=%d cache_used=%zu cache_full_rejects=%d demoted=%d\n",
                 g_jit_scanned_chunks, g_jit_compiled_chunks,
                 g_jit_cache ? jit_cache_used(g_jit_cache) : 0,
-                g_jit_cache_full_rejects);
+                g_jit_cache_full_rejects,
+                __atomic_load_n(&g_jit_demoted_chunks, __ATOMIC_RELAXED));
     }
     if (eigs_env_flag("EIGS_JIT_STOPS")) {
         uint32_t total_stops = 0;
@@ -418,9 +466,15 @@ void jit_thread_destroy(EigsThread *th) {
             for (int a = 0; a < top; a++) {
                 EigsJitHotRow *r = &rows[a];
                 if (r->exec_count == 0) break;
+                /* #1178: a demoted chunk has a compiled thunk that is no
+                 * longer entered. It must not read as "yes" -- that would
+                 * make the profitability gate invisible in the one
+                 * diagnostic that could witness it. */
                 const char *jstate =
+                    r->demoted ? "dem" :
                     r->jit_state == 2 ? "yes" : r->jit_state == 1 ? "no " : "?  ";
                 const char *ostate =
+                    r->osr_demoted ? "dem" :
                     r->osr_state == 2 ? "yes" : r->osr_state == 1 ? "no " : "?  ";
                 double pct = total_exec
                     ? (100.0 * (double)r->exec_count / (double)total_exec) : 0.0;
@@ -477,6 +531,14 @@ void jit_thread_destroy(EigsThread *th) {
         th->jit_hot_rows_cap = 0;
     }
     if (th->jit_chunks) {
+        /* #1178: hand the chunks back their "unregistered" state. The flag
+         * is what jit_register_chunk tests instead of scanning, and this
+         * registry is about to stop existing -- leaving the flags set would
+         * make a chunk still alive after this thread invisible to the next
+         * thread's registry, i.e. a silently smaller EIGS_JIT_HOT
+         * population. */
+        for (int i = 0; i < th->jit_chunks_count; i++)
+            if (th->jit_chunks[i]) th->jit_chunks[i]->jit_registered = 0;
         free(th->jit_chunks);
         th->jit_chunks = NULL;
         th->jit_chunks_count = 0;
@@ -544,8 +606,12 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
                                 int entry_offset,
                                 int *needs_env_cache, int *has_bail_op,
                                 int *needs_frame_cache, int *extra_size,
-                                uint8_t *stop_op, int *stop_offset) {
+                                uint8_t *stop_op, int *stop_offset,
+                                int *ops_out, int *call_ops_out,
+                                int *has_native_loop) {
     int i = entry_offset, ops = 0, non_line_ops = 0;
+    int call_ops = 0;
+    *has_native_loop = 0;
     int last_good = entry_offset;
     *needs_env_cache = 0;
     *has_bail_op = 0;
@@ -754,10 +820,31 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * at the function start where the stack frame matches the
              * compiler's tracking, so its loops + tails stay in one thunk. */
             int stop_after_backedge = 0;
-            if (op == OP_JUMP_BACK && entry_offset > 0) {
+            if (op == OP_JUMP_BACK) {
                 uint16_t boff = (uint16_t)(chunk->code[i + 1] |
                                            ((uint16_t)chunk->code[i + 2] << 8));
-                if (i + 3 - (int)boff == entry_offset) stop_after_backedge = 1;
+                int target = i + 3 - (int)boff;
+                /* #1178: a back edge landing inside the prefix is a NATIVE
+                 * loop -- the thunk can run an unbounded amount of bytecode
+                 * per entry, so `prefix` is no longer the ceiling on what one
+                 * entry does and the per-entry byte budget does not apply.
+                 * bench_idxset is the canonical shape and the JIT's own
+                 * 2.0-2.3x bench: a ~70-byte loop body run 100k times from
+                 * ONE thunk entry. Without this the profitability gate
+                 * refused it and tools/jit_diff.sh's JIT arm compiled
+                 * nothing at all.
+                 *
+                 * The exemption is from the COMPILE-TIME refusal only. The
+                 * run-time gate still judges these thunks, and its window
+                 * denominator does the discrimination for free: a thunk that
+                 * really loops internally is entered a handful of times and
+                 * never fills a 32-entry window, while one whose loop runs
+                 * two or three iterations per call (ouroboros's keyword
+                 * scan) fills windows immediately and is demoted on the
+                 * bytes it actually covers. */
+                if (target >= entry_offset) *has_native_loop = 1;
+                if (entry_offset > 0 && target == entry_offset)
+                    stop_after_backedge = 1;
             }
             i += 3; ops++; non_line_ops++;
             /* Uses r13d/r14 machinery to either chain into native code at
@@ -825,6 +912,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 3; ops++; non_line_ops++;
             *has_bail_op = 1;
         } else if (op == OP_CALL) {
+            call_ops++;   /* #1178 call-density signal */
             /* Stage 4r: 3-byte op [op][argc:16]. Helper handles the
              * VAL_BUILTIN case inline; for VAL_FN / VAL_CLOSURE / non-
              * callable, the helper returns 1 without touching the stack
@@ -937,6 +1025,8 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
         last_good = i;
     }
     if (non_line_ops == 0 || ops < 3) return 0;
+    *ops_out = ops;
+    *call_ops_out = call_ops;
     return last_good;
 }
 
@@ -2381,6 +2471,49 @@ static uint8_t *emit_decref_value_rdi(uint8_t *w, int *bail) {
  * in [200, 5000] — savings dwarf the 4500 extra interpreted iterations. */
 #define EIGS_JIT_OSR_THRESHOLD   5000
 
+/* #1178 thunk-profitability gate. Measured on the consumer fleet: the JIT
+ * was a NET LOSS on ouroboros (-4.7%..-6.9%) and EigenMiniSat (-2.6%) while
+ * winning on DMG (+4.8%) and Tidepool (+8.5%). EIGS_JIT_HOT says why: on
+ * ouroboros 565k thunk entries cover 5.0% of the executed bytecode, because
+ * the parser's hot callees are small chunks whose compiled prefix stops
+ * almost immediately (_p_peek_type: 38 bytes of bytecode, every entry ends
+ * in a deep bail) -- entry/exit cost paid in full, nearly no native work
+ * bought. DMG's hot callees cover 42.3%.
+ *
+ * So the lever is not coverage (refuted, #1177) and not a static size
+ * threshold (a flat "refuse chunks under 150 bytes" probe helped
+ * EigenMiniSat and cost DMG ~1.5%): it is the RATIO, measured per chunk
+ * from what the thunk actually does at run time. Over a window of
+ * PROFIT_WINDOW entries a chunk must average PROFIT_MIN bytecode bytes of
+ * native execution; otherwise its thunk is abandoned and the chunk
+ * interprets. A RETURN-sentinel exit is credited the whole chunk (the thunk
+ * ran the call to completion); a deep bail is credited nothing.
+ *
+ * Window 32 is short enough that a losing chunk is demoted before it has
+ * burnt much (ouroboros's worst chunk is entered 126k times) and long
+ * enough not to be swayed by a couple of unlucky early calls. */
+#define EIGS_JIT_PROFIT_WINDOW   32
+/* 128 bytes/entry chosen from the fleet, not from taste. Measured native
+ * bytes per thunk entry on the winning row (DMG): fetch8 225, mem_read 187,
+ * cpu_mem_read 207, mem_write 746, handle_interrupts/read_r8 the whole
+ * chunk. On the losing rows: ouroboros _p_cur 26, _is_alnum 25, cg_node 33,
+ * _p_peek_type 0 (deep bail); EigenMiniSat lit_value/lit_index/watch_add 0
+ * (deep bail), clause_satisfied 13, clause_conflict 25. The two populations
+ * are two orders of magnitude apart, and 128 sits in the gap. Swept on all
+ * three loss rows plus DMG (EIGS_JIT_PROFIT_MIN=N, n=3-5 medians, plus
+ * perf-stat cycle counts where wall-clock resolution was too coarse): DMG is
+ * flat-to-better from 48 up and best at 256 (+7.8% against JIT-off in the
+ * same batch), EigenMiniSat crosses from -0.3% to +0.2% between 128 and 256,
+ * ouroboros is flat from 32 up. Above 256 the refusal starts taking DMG's
+ * fetch8/mem_read prefixes, which are the win. */
+#define EIGS_JIT_PROFIT_MIN      256
+/* Percent of a prefix's ops that may be OP_CALL before it counts as
+ * call-dominated and loses the RETURN exemption. Swept 0/10/20/100 on all
+ * three loss rows and DMG (perf stat -r 4, cycles): 10 keeps DMG's win
+ * (+4.8%) while giving ouroboros back ~0.9 points against 20 and ~1.2
+ * against no density test at all. */
+#define EIGS_JIT_PROFIT_CALLPCT  10
+
 /* g_entry/iter/osr_threshold now live on EigsState (Phase 9). Identifiers
  * are bridge macros from eigenscript.h. Initialization moved out of the
  * lazy load_thresholds path into jit_state_init_thresholds, called by
@@ -2397,6 +2530,26 @@ void jit_state_init_thresholds(EigsState *st) {
     e = getenv("EIGS_JIT_OSR_THRESHOLD");
     st->jit_osr_threshold = e ? atoi(e) : EIGS_JIT_OSR_THRESHOLD;
     if (st->jit_osr_threshold < 1) st->jit_osr_threshold = 1;
+
+    st->jit_off     = eigs_env_flag("EIGS_JIT_OFF") ? 1 : 0;
+    st->jit_osr_off = eigs_env_flag("EIGS_JIT_OSR_OFF") ? 1 : 0;
+
+    e = getenv("EIGS_JIT_PROFIT_WINDOW");
+    st->jit_profit_window = e ? atoi(e) : EIGS_JIT_PROFIT_WINDOW;
+    if (st->jit_profit_window < 1) st->jit_profit_window = 1;
+
+    /* MIN is allowed to be 0: that is the gate switched off, which is what
+     * the differential and the A/B arms need. */
+    e = getenv("EIGS_JIT_PROFIT_MIN");
+    st->jit_profit_min = e ? atoi(e) : EIGS_JIT_PROFIT_MIN;
+    if (st->jit_profit_min < 0) st->jit_profit_min = 0;
+
+    e = getenv("EIGS_JIT_PROFIT_RET_EXEMPT");
+    st->jit_profit_ret_exempt = e ? (atoi(e) != 0) : 1;
+
+    e = getenv("EIGS_JIT_PROFIT_CALLPCT");
+    st->jit_profit_callpct = e ? atoi(e) : EIGS_JIT_PROFIT_CALLPCT;
+    if (st->jit_profit_callpct < 0) st->jit_profit_callpct = 0;
 }
 
 /* Phase 2b: the body of jit_try_compile_chunk is now this static helper,
@@ -2415,12 +2568,17 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                  uint8_t *out_state,
                                  void **out_code,
                                  int *out_advance,
-                                 uint8_t *out_stop_op) {
+                                 uint8_t *out_stop_op,
+                                 int *out_native_len,
+                                 uint8_t *out_has_loop,
+                                 uint8_t *out_demoted) {
     g_jit_scanned_chunks++;
+    *out_native_len = 0;
+    *out_has_loop = 0;
 #if !EIGS_JIT_ENABLED
     (void)chunk;
     (void)entry_offset; (void)advance_field_offset; (void)out_advance;
-    (void)out_stop_op;
+    (void)out_stop_op; (void)out_demoted;
     *out_state = 1;
     *out_code = NULL;
     return;
@@ -2433,10 +2591,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
     int extra_size = 0;
     uint8_t stop_op = OP_COUNT;
     int stop_offset = 0;
+    int scan_ops = 0, scan_call_ops = 0, has_native_loop = 0;
     int prefix = jit_supported_prefix(chunk, entry_offset,
                                       &needs_env_cache, &has_bail_op,
                                       &needs_frame_cache, &extra_size,
-                                      &stop_op, &stop_offset);
+                                      &stop_op, &stop_offset,
+                                      &scan_ops, &scan_call_ops,
+                                      &has_native_loop);
     *out_stop_op = stop_op;
     /* Every scanned chunk contributes one stop_op tally, whether it
      * ultimately compiles or not. Compiled chunks also bump
@@ -2473,6 +2634,46 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         g_jit_stop_at_zero++;
         *out_state = 1;
         *out_code = NULL;
+        return;
+    }
+    /* #1178: refuse UP FRONT what the runtime profitability gate would
+     * demote anyway. `prefix - entry_offset` is the ceiling on the bytecode
+     * any entry of this thunk can run natively, so a prefix shorter than
+     * PROFIT_MIN can never average PROFIT_MIN bytes per entry -- this is a
+     * pre-image of the dynamic gate, not a second opinion, and it cannot
+     * refuse a thunk the dynamic gate would have kept.
+     *
+     * Why it matters beyond saving a compile: measured on ouroboros
+     * (perf stat -r 4), a run where every thunk is demoted at run time
+     * still costs +0.73% CYCLES over JIT-off at +0.13% INSTRUCTIONS. The
+     * cost is not the executing; it is emitting and touching ~1 MB of
+     * native code on a 2-core box with small caches. Refusing the compile
+     * is the only way to not pay it.
+     *
+     * Marked `demoted`, not plain unsupported: the EIGS_JIT_HOT dump must
+     * not report "the emitter cannot do this bytecode" when the truth is
+     * "this thunk would not have paid". */
+    /* The exemption is withdrawn from CALL-DOMINATED prefixes. Measured on
+     * ouroboros (perf, JIT-on vs JIT-off, same run length): the interpreter
+     * loop gives up 392 samples and the generated code plus jit_helper_*
+     * spend 758 to replace them -- the JIT tier runs that code ~1.9x SLOWER
+     * than the interpreter, and jit_helper_call alone is 2.4% of the whole
+     * run. The reason is what the emitter does with these ops: a prefix of
+     * arithmetic and local slot traffic (DMG's opcode handlers) becomes
+     * inline native code, while a prefix of calls becomes a sequence of
+     * out-of-line C helper invocations, which the interpreter does better
+     * because its version is inlined into the dispatch loop. Size does not
+     * separate the two populations; call density does. */
+    int ret_terminated = (stop_op == OP_RETURN || stop_op == OP_RETURN_NULL);
+    int call_dominated = (scan_ops > 0 &&
+                          scan_call_ops * 100 > scan_ops * g_jit_profit_callpct);
+    if (!has_native_loop &&
+        !(ret_terminated && g_jit_profit_ret_exempt && !call_dominated) &&
+        prefix - entry_offset < g_jit_profit_min) {
+        *out_state = 1;
+        *out_code = NULL;
+        *out_demoted = 1;
+        __atomic_fetch_add(&g_jit_demoted_chunks, 1, __ATOMIC_RELAXED);
         return;
     }
 
@@ -4196,6 +4397,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         return;
     }
 
+    jit_cache_trim(g_jit_cache, code, size, (size_t)(w - code));
+
     if (jit_cache_seal(g_jit_cache) != 0) {
         free(byte_to_native);
         *out_state = 1;
@@ -4210,6 +4413,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
      * entry position (entry_offset) if the thunk runs to completion
      * without writing r13d. For entry_offset == 0 this is just `prefix`. */
     *out_advance = prefix - entry_offset;
+    *out_native_len = prefix - entry_offset;
+    *out_has_loop   = (uint8_t)(has_native_loop ? 1 : 0);
     g_jit_compiled_chunks++;
     g_jit_compiled_count++;
     if (eigs_env_flag("EIGS_JIT_DEBUG")) {
@@ -4262,8 +4467,12 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
     return;
 #endif
     /* EIGS_JIT_OFF: hard-disable native compilation. Useful for bisecting
-     * suspected JIT bugs against the interpreter. */
-    if (eigs_env_flag("EIGS_JIT_OFF")) {
+     * suspected JIT bugs against the interpreter. Resolved once at
+     * state_new (#1178) -- this line runs on every frame entry of every
+     * never-hot chunk, and a getenv there is a linear walk of environ per
+     * call. Same value semantics as before (#1032): eigs_env_flag decides,
+     * only earlier. */
+    if (g_jit_off) {
         chunk->jit_state = 1;
         chunk->jit_code = NULL;
         return;
@@ -4274,7 +4483,9 @@ void jit_try_compile_chunk(struct EigsChunk *chunk) {
     jit_compile_to_thunk(chunk, 0,
                          (int)offsetof(struct EigsChunk, jit_advance),
                          &chunk->jit_state, &chunk->jit_code,
-                         &chunk->jit_advance, &chunk->jit_stop_op);
+                         &chunk->jit_advance, &chunk->jit_stop_op,
+                         &chunk->jit_native_len, &chunk->jit_has_loop,
+                         &chunk->jit_demoted);
 }
 
 /* Public OSR entry: caller has already decided (via back-edge hotness
@@ -4303,7 +4514,7 @@ void jit_try_compile_chunk_osr(struct EigsChunk *chunk, int entry_offset,
     chunk->jit_osr[slot].code = NULL;
     return;
 #endif
-    if (eigs_env_flag("EIGS_JIT_OFF") || eigs_env_flag("EIGS_JIT_OSR_OFF")) {
+    if (g_jit_off || g_jit_osr_off) {
         chunk->jit_osr[slot].state = 1;
         chunk->jit_osr[slot].code = NULL;
         return;
@@ -4315,5 +4526,8 @@ void jit_try_compile_chunk_osr(struct EigsChunk *chunk, int entry_offset,
                          &chunk->jit_osr[slot].state,
                          &chunk->jit_osr[slot].code,
                          &chunk->jit_osr[slot].advance,
-                         &chunk->jit_osr[slot].stop_op);
+                         &chunk->jit_osr[slot].stop_op,
+                         &chunk->jit_osr[slot].native_len,
+                         &chunk->jit_osr[slot].has_loop,
+                         &chunk->jit_osr[slot].demoted);
 }

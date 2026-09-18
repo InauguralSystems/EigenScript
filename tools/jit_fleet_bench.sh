@@ -71,11 +71,12 @@ else
   [ -n "$ECO" ] || { echo "jit_fleet_bench: FAIL: cannot locate the ecosystem root; set ECO=" >&2; exit 1; }
 fi
 N="${N:-5}"
-QUICK=0; SELFTEST=0
+QUICK=0; SELFTEST=0; ONLY=""
 for a in "$@"; do
   case "$a" in
     --quick)    QUICK=1 ;;
     --selftest) SELFTEST=1 ;;
+    --rows=*)   ONLY="${a#--rows=}" ;;
     *) echo "usage: $0 [--quick] [--selftest]" >&2; exit 2 ;;
   esac
 done
@@ -102,7 +103,7 @@ med() { sort -n | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}'; }
 # name : dir : floor_pct : expect : argv...
 # The row set IS the claim this gate makes, so its size is pinned below.
 ROWS=(
-  "ouroboros-frontend:$ECO/ouroboros:0:some:ouroboros.eigs src/frontend.eigs"
+  "ouroboros-sheet:$ECO/ouroboros:0:some:ouroboros.eigs $ECO/eigen-sheet/sheet.eigs"
   "eigenminisat-s5:$ECO/EigenMiniSat:0:some:minisat.eigs --bench --size 5"
   "ouroboros-stmtcap:$ECO/ouroboros:0:some:ouroboros.eigs $ECO/EigenScript/tests/test_stmt_cap.eigs"
   "dmg-5M:$ECO/DMG:3:some:dmg.eigs roms/cpu_instrs.gb --cycles 5000000"
@@ -110,7 +111,7 @@ ROWS=(
   "liferaft-CONTROL:$ECO/liferaft:-1:none:liferaft_sweep.eigs --seeds 20 --steps 300"
 )
 ROW_COUNT=6            # section 121: found == declared, never ">= 1"
-QUICK_ROWS="ouroboros-frontend eigenminisat-s5"
+QUICK_ROWS="ouroboros-sheet eigenminisat-s5"
 
 [ "${#ROWS[@]}" = "$ROW_COUNT" ] ||
   fail "matrix has ${#ROWS[@]} rows, ROW_COUNT declares $ROW_COUNT"
@@ -126,6 +127,24 @@ run_row() {
 
   [ -d "$dir" ] || { echo "$name VERDICT=FAIL reason=missing-dir:$dir"; return; }
 
+  # DID THE PROGRAM RUN? Before any mechanism or timing question. A workload
+  # that dies immediately still yields a small POSITIVE wall time, so the
+  # "no-timing" guard below cannot see it -- and for the CONTROL row, whose
+  # expectation is compiled=0, a dead program satisfies every other check and
+  # PASSES, certifying the instrument while measuring nothing.
+  # Bought 2026-09-18: a stale AOT binary reported compiled=0 and was read as
+  # "the JIT does not engage inside AOT output". It was dying on line 5 --
+  # `load_file: cannot read 'lib/int_vector.eigs'` -- because its build-time
+  # paths no longer existed. The engagement check was necessary and not
+  # sufficient; rc is the missing half.
+  local rc_probe
+  ( cd "$dir" && ulimit -v 2000000
+    timeout 300 "$EIGS" "${argv[@]}" >/dev/null 2>&1 ); rc_probe=$?
+  if [ "$rc_probe" != 0 ]; then
+    echo "$name VERDICT=FAIL reason=workload-exited-$rc_probe (the program did not run; every timing below would be of a failure)"
+    return
+  fi
+
   # compiled= under each arm. This is the mechanism assertion, not a timing.
   local compiled_on compiled_off
   compiled_on=$( ( cd "$dir" && ulimit -v 2000000
@@ -135,6 +154,14 @@ run_row() {
       EIGS_JIT_STATS=1 EIGS_JIT_OFF=1 timeout 300 "$EIGS" "${argv[@]}" 2>&1 >/dev/null ) |
       grep -o 'compiled=[0-9]*' | sed 's/.*=//' | awk '{s+=$1} END{print s+0}' )
 
+  # ARMS INTERLEAVED, one off then one on per iteration, and the verdict is
+  # the median of the PAIRED deltas. Bought 2026-09-17: the first version ran
+  # all-off then all-on in blocks, so any drift across a 30 s block landed
+  # entirely in the percentage -- three rows moved more than a point between
+  # identical runs of the same binary, and the builder's own interleaved read
+  # of eigenminisat disagreed with the harness's block read by 1.2 points.
+  # Pairing cancels drift that is common to both arms; the spread of the pairs
+  # is then an honest statement of what the instrument can resolve.
   local off=() on=() i t
   for ((i=0;i<N;i++)); do
     t=$( ( cd "$dir" && ulimit -v 2000000
@@ -153,11 +180,18 @@ run_row() {
     on+=("$t")
   done
 
-  local mo mn
+  local mo mn pairs
   mo=$(printf '%s\n' "${off[@]}" | med); mn=$(printf '%s\n' "${on[@]}" | med)
+  # Paired deltas, one per interleaved iteration.
+  pairs=""
+  for ((i=0;i<N;i++)); do
+    pairs="$pairs $(awk -v a="${off[$i]}" -v b="${on[$i]}" \
+      'BEGIN{ if (a+0>0) printf "%.2f", 100*(a-b)/a; else print "nan" }')"
+  done
 
   awk -v n="$name" -v con="$compiled_on" -v coff="$compiled_off" -v e="$expect" \
-      -v f="$floor" -v o="$mo" -v m="$mn" -v skipoff="$skip_offcheck" 'BEGIN {
+      -v f="$floor" -v o="$mo" -v m="$mn" -v skipoff="$skip_offcheck" \
+      -v pairs="$pairs" 'BEGIN {
     if (o+0 <= 0 || m+0 <= 0) {
       printf "%s VERDICT=FAIL reason=no-timing (timeout or unparsable)\n", n; exit }
     pct = 100*(o-m)/o
@@ -171,11 +205,29 @@ run_row() {
     if (e == "none" && con+0 != 0) {
       printf "%s VERDICT=FAIL reason=control-compiled-%d (the control must engage nothing)\n", n, con; exit }
 
+    # Paired statistic: median of the per-iteration deltas, plus the spread.
+    np = split(pairs, P, " "); for (i=1;i<=np;i++) Q[i] = P[i]+0
+    for (i=1;i<=np;i++) for (j=i+1;j<=np;j++) if (Q[j]<Q[i]) { t=Q[i]; Q[i]=Q[j]; Q[j]=t }
+    pmed = (np % 2) ? Q[int(np/2)+1] : (Q[np/2]+Q[np/2+1])/2
+    # Interquartile range, NOT the full range: the range can only grow with N,
+    # so using it would mean more samples made a row less resolvable rather
+    # than more. The IQR is stable as N rises, which is what lets raising N
+    # actually settle a contested row.
+    lo = Q[int(np/4)+1]; hi = Q[int(3*np/4)+1]; if (hi=="") hi = Q[np]
+    spread = hi - lo
+    if (spread < 0) spread = -spread
+
     if (e == "none") {
-      v = (pct <= 1.0 && pct >= -1.0) ? "PASS" : "FAIL"
-      printf "%s ENGAGE=0 off=%.2f on=%.2f PCT=%+.1f BAND=+-1.0 VERDICT=%s\n", n, o, m, pct, v; exit }
-    v = (pct >= f+0) ? "PASS" : "FAIL"
-    printf "%s ENGAGE=%s off=%.2f on=%.2f PCT=%+.1f FLOOR=%+.1f VERDICT=%s\n", n, con, o, m, pct, f+0, v
+      v = (pmed <= 1.0 && pmed >= -1.0) ? "PASS" : "FAIL"
+      printf "%s ENGAGE=0 off=%.2f on=%.2f PAIRED=%+.1f SPREAD=%.1f BAND=+-1.0 VERDICT=%s\n", n, o, m, pmed, spread, v; exit }
+
+    # A verdict the instrument cannot support is UNRESOLVED, never a PASS and
+    # never a FAIL: if the distance from the floor is inside the spread of the
+    # paired samples, this box cannot tell the two apart today.
+    if ((pmed - f+0) < spread/2 && (f+0 - pmed) < spread/2) {
+      printf "%s ENGAGE=%s off=%.2f on=%.2f PAIRED=%+.1f SPREAD=%.1f FLOOR=%+.1f VERDICT=UNRESOLVED (effect is inside the instrument noise; re-read on a quiet box)\n", n, con, o, m, pmed, spread, f+0; exit }
+    v = (pmed >= f+0) ? "PASS" : "FAIL"
+    printf "%s ENGAGE=%s off=%.2f on=%.2f PAIRED=%+.1f SPREAD=%.1f FLOOR=%+.1f VERDICT=%s\n", n, con, o, m, pmed, spread, f+0, v
   }'
 }
 
@@ -197,8 +249,10 @@ if [ "$SELFTEST" = 1 ]; then
   out=$(N=3 run_row "dmg-5M:$ECO/DMG:3:some:dmg.eigs roms/cpu_instrs.gb --cycles 1000000" 1)
   # Must fail ON THE FLOOR, having produced a real PCT -- a missing-dir or
   # no-timing FAIL would satisfy a bare VERDICT=FAIL and prove nothing.
-  check "P1 dead-JIT-arm measured a PCT" "PCT=" "$out"
-  check "P1 dead-JIT-arm reds the WIN floor" "FLOOR=+3.0 VERDICT=FAIL" "$out"
+  check "P1 dead-JIT-arm measured a delta" "PAIRED=" "$out"
+  check "P1 dead-JIT-arm does not PASS the WIN floor" "FLOOR=+3.0 VERDICT=" "$out"
+  case "$out" in *"VERDICT=PASS"*) echo "   MISS P1 PASSED with a dead JIT arm"; bad=$((bad+1));; esac
+  run=$((run+1))
 
   # P2: a workload the JIT never touches, timed as if it did. Must red BY
   # REASON -- passing on a lucky percentage is the failure being prevented.
@@ -214,6 +268,13 @@ if [ "$SELFTEST" = 1 ]; then
   out=$(N=3 run_row "offcheck:$ECO/DMG:3:some:dmg.eigs roms/cpu_instrs.gb --cycles 1000000" 0 1)
   check "P3 clean WIN row measures a real PCT (positive control)" "ENGAGE=" "$out"
 
+  # P5: a workload that does not RUN must fail even on the control's
+  # expectation (compiled=0), where every other check is satisfied by death.
+  out=$(N=2 run_row "deadctl:$ECO/liferaft:-1:none:no_such_program_xyz.eigs")
+  check "P5 dead workload reds on the control expectation" "workload-exited-" "$out"
+  case "$out" in *VERDICT=PASS*) echo "   MISS P5 a DEAD program PASSED the control"; bad=$((bad+1));; esac
+  run=$((run+1))
+
   # P4: the population itself. A dropped row must fail, never shrink quietly.
   sub=$(ROWS=("${ROWS[@]:0:3}"); echo "${#ROWS[@]}")
   check "P4 ROW_COUNT pins the matrix size" "3" "$sub"
@@ -226,26 +287,40 @@ fi
 
 # ---------------------------------------------------------------------- run
 banner; echo
-examined=0; passed=0; failed=0
+examined=0; passed=0; failed=0; unresolved=0
 for spec in "${ROWS[@]}"; do
   name="${spec%%:*}"
   if [ "$QUICK" = 1 ]; then
     case " $QUICK_ROWS " in *" $name "*) ;; *) continue ;; esac
   fi
+  if [ -n "$ONLY" ]; then
+    case ",$ONLY," in *",$name,"*) ;; *) continue ;; esac
+  fi
   out=$(run_row "$spec"); echo "$out"
   examined=$((examined+1))
-  case "$out" in *VERDICT=PASS*) passed=$((passed+1)) ;; *) failed=$((failed+1)) ;; esac
+  case "$out" in
+    *VERDICT=PASS*)       passed=$((passed+1)) ;;
+    *VERDICT=UNRESOLVED*) unresolved=$((unresolved+1)) ;;
+    *)                    failed=$((failed+1)) ;;
+  esac
 done
 
 # Section 121/142: a run that examined nothing is a FAIL, and the tally says
 # what it measured -- "N run, N passed, M failed", so a DELETED row and a
 # FAILING row can never print the same thing.
 [ "$examined" -gt 0 ] || fail "examined 0 rows -- the matrix is empty"
-if [ "$QUICK" = 0 ] && [ "$examined" != "$ROW_COUNT" ]; then
+if [ "$QUICK" = 0 ] && [ -z "$ONLY" ] && [ "$examined" != "$ROW_COUNT" ]; then
   fail "examined $examined rows, matrix declares $ROW_COUNT"
 fi
 
 echo
-echo "jit_fleet_bench: $examined run, $passed passed, $failed failed"
+echo "jit_fleet_bench: $examined run, $passed passed, $failed failed, $unresolved unresolved"
+if [ "$unresolved" != 0 ]; then
+  echo "jit_fleet_bench: NOT OK -- $unresolved row(s) the instrument could not resolve."
+  echo "  An UNRESOLVED row is not a pass. Re-read on a quiet box (load < 0.5)"
+  echo "  before treating its sign as real; widening the floor to swallow it"
+  echo "  would be fitting the bar to the measurement."
+  exit 1
+fi
 [ "$failed" = 0 ] || exit 1
 echo "jit_fleet_bench: OK"

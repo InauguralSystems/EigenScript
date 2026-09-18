@@ -74,6 +74,11 @@ typedef void (*JitChunkFn)(void);
  * immediately if jit_state != 0. */
 void jit_try_compile_chunk(struct EigsChunk *chunk);
 
+/* #1178: count of chunks the thunk-profitability gate has demoted.
+ * Written with relaxed atomics from vm.c's thunk-exit accounting (any
+ * attached thread can demote); read by the EIGS_JIT_STATS line. */
+extern int g_jit_demoted_chunks;
+
 /* On-stack-replacement variant. Compiles a thunk that begins execution
  * at `entry_offset` (typically a hot loop header) rather than chunk
  * byte 0, into chunk->jit_osr[slot] (Stage 5g: one slot per hot loop

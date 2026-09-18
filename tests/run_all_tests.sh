@@ -6688,6 +6688,31 @@ else
 fi
 echo ""
 
+# [99zc] The JIT thunk-profitability gate (#1178). Four conditional arms, each
+# with a fixture that flips when that arm's env knob disables it, plus a SPEED
+# check for the native-loop rule -- the one arm whose removal left every
+# correctness gate green while silently turning the JIT's own 2.5x bench into
+# a no-op. tests/test_jit_profit_gate.sh.
+echo "[99zc] JIT thunk-profitability gate (#1178)"
+PG_OUTPUT=$(bash "$TESTS_DIR/test_jit_profit_gate.sh" 2>&1)
+PG_PASS=$(echo "$PG_OUTPUT" | grep -c "PASS:" || true)
+PG_FAIL=$(echo "$PG_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + PG_PASS + PG_FAIL))
+PASS=$((PASS + PG_PASS))
+FAIL=$((FAIL + PG_FAIL))
+# Section 121: the count is PINNED, so a check that stops running is a red
+# section and never a quietly smaller "all N passed".
+if [ "$PG_FAIL" -gt 0 ] || [ "$PG_PASS" -ne 5 ]; then
+    if [ "$PG_PASS" -ne 5 ] && [ "$PG_FAIL" -eq 0 ]; then
+        echo "  FAIL: expected 5 profitability-gate checks, saw $PG_PASS"
+        FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1))
+    fi
+    echo "$PG_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $PG_PASS profitability-gate arms discriminate"
+fi
+echo ""
+
 # The road gate enumerates disk fixtures and checks each road against a golden
 # stdout as well as its peers. Its selftest must prove both divergence and
 # empty enumeration fail. A selected-fixture diagnostic run is never used here.

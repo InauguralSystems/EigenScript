@@ -392,6 +392,44 @@ typedef struct EigsChunk {
     uint8_t  jit_stop_op;       /* opcode that stopped the JIT prefix scan,
                                  * or OP_COUNT if scan ran to end of chunk */
 
+    /* #1178 thunk-profitability accounting. A thunk is only worth entering
+     * if the bytecode it runs natively outweighs its own entry/exit cost
+     * (prologue pushes + TLS read + cache loads, epilogue pops, the
+     * caller's advance/resync branch). On the consumer shapes where the
+     * JIT measured as a NET LOSS the compiled prefix is tiny or ends in a
+     * deep bail, so that trade is negative on every call: ouroboros's
+     * parser runs 565k thunk entries whose native coverage is 5.0% of the
+     * executed bytecode. These two counters measure the trade per chunk
+     * over a sliding window; jit_note_thunk_exit() demotes the chunk
+     * (jit_code = NULL -> interpret) when it does not pay. jit_demoted is
+     * diagnostic only, so EIGS_JIT_HOT can show WHICH chunks were demoted
+     * rather than leaving the mechanism unwitnessable.
+     *
+     * Single-threaded only, like exec_count (#297): every site that runs a
+     * thunk is already gated on !g_vm_multithreaded. */
+    /* #1178: 1 once this chunk is in the per-thread hotness registry.
+     * jit_register_chunk is called from jit_try_compile_chunk on EVERY
+     * frame entry of a chunk still in jit_state 0 -- i.e. on every call of
+     * every chunk that never gets hot -- and used to answer "already
+     * registered?" with a LINEAR SCAN of the whole registry (259 chunks on
+     * ouroboros). Measured: with nothing ever compiling, that scan plus the
+     * getenv beside it cost 10% of the ouroboros frontend run. */
+    uint8_t  jit_registered;
+    /* #1178: bytecode bytes the compiled prefix covers -- the ceiling on
+     * what one thunk entry can run natively, and the credit a RETURN-
+     * sentinel exit earns. 0 when nothing compiled. */
+    int      jit_native_len;
+    /* 1 when that prefix contains a back edge into itself, so a single
+     * entry can run an unbounded number of bytecode bytes. Such a thunk is
+     * judged on whether it COMPLETES its loop body (advance vs the prefix),
+     * never on absolute bytes per entry: bench_idxset's loop is 75 bytes,
+     * runs 100k iterations and is worth 2.5x, and an absolute 128-byte
+     * minimum demoted it and took the whole win away. */
+    uint8_t  jit_has_loop;
+    uint32_t jit_entries;       /* thunk entries in the current window */
+    uint32_t jit_native_bytes;  /* bytecode bytes run natively in it */
+    uint8_t  jit_demoted;       /* 1 once the profitability gate fired */
+
     /* #366: body is a single pure accessor expression over param locals
      * (field/index gets + num arithmetic, ending in RETURN — set by
      * chunk_scan_leaf_accessor at compile time). Exactly-fed calls run
@@ -432,9 +470,21 @@ typedef struct EigsChunk {
     struct {
         uint8_t  state;
         uint8_t  stop_op;
+        /* #1178 profitability, per slot -- see jit_entries below. An OSR
+         * thunk that loops INTERNALLY is entered rarely and never fills a
+         * window, so the window denominator self-selects the thunks worth
+         * judging: the ones re-entered on (nearly) every back edge, which
+         * are exactly the ones bailing per iteration. EigenMiniSat's
+         * clause_satisfied is the shape -- 279k back edges, an OSR thunk
+         * that deep-bails on every one of them. */
+        uint8_t  demoted;
         int      entry_offset;
         int      advance;
         void    *code;
+        int      native_len;
+        uint8_t  has_loop;
+        uint32_t entries;
+        uint32_t native_bytes;
     } jit_osr[4];
 #define JIT_OSR_SLOTS 4
 

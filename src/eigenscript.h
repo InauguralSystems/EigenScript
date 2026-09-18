@@ -752,6 +752,29 @@ struct EigsState {
     int             jit_entry_threshold;
     int             jit_iter_threshold;
     int             jit_osr_threshold;
+    /* #1178 thunk-profitability gate: over a window of jit_profit_window
+     * thunk entries, a chunk must average at least jit_profit_min bytecode
+     * bytes run natively per entry or its thunk is abandoned. 0 disables
+     * the gate (every thunk stays live, the pre-#1178 behaviour). */
+    int             jit_profit_window;
+    int             jit_profit_min;
+    /* #1178: EIGS_JIT_OFF / EIGS_JIT_OSR_OFF, resolved ONCE at state_new.
+     * They were read with a bare getenv inside jit_try_compile_chunk, which
+     * runs on every frame entry of every chunk still in jit_state 0 -- a
+     * per-call getenv on the cold-chunk path. Per-STATE, not a file static:
+     * a lazy static cache in jit.c is a read/write race on every
+     * multithreaded run (#1180), and eigs_state_new is the same place the
+     * thresholds beside them are resolved. Value semantics (#1032) are
+     * eigs_env_flag's, unchanged -- only the timing moves. */
+    int             jit_off;
+    int             jit_osr_off;
+    /* #1178: 1 = a compiled prefix that ENDS IN A RETURN is exempt from the
+     * profitability minimum. The minimum exists to amortize thunk entry
+     * against PARTIAL coverage, where the interpreter has to resume the
+     * chunk mid-way; a prefix that reaches the function's own return runs
+     * the whole call natively and there is no resume to pay for. */
+    int             jit_profit_ret_exempt;
+    int             jit_profit_callpct;
     /* ext_http per-interpreter server config (routes, static prefix,
      * CORS, early-bind fd). Allocated by register_http_builtins on
      * first registration; freed by ext_http_state_destroy at state
@@ -783,6 +806,8 @@ typedef struct EigsJitHotRow {
     uint8_t  osr_state;
     uint8_t  stop_op;
     uint8_t  owns_name;
+    uint8_t  demoted;       /* #1178 profitability gate abandoned the thunk */
+    uint8_t  osr_demoted;   /* ... and the same for OSR slot 0 */
 } EigsJitHotRow;
 
 struct EigsThread {
@@ -1362,6 +1387,12 @@ void eigs_obs_unmute_for_fatal(void);
 #define g_sandbox_refusal_line (eigs_current->sandbox_refusal_line)
 #define g_sandbox_refusal_msg  (eigs_current->sandbox_refusal_msg)
 #define g_stream_file         (*(FILE **)&eigs_current->stream_file)
+#define g_jit_off             (eigs_current->state->jit_off)
+#define g_jit_osr_off         (eigs_current->state->jit_osr_off)
+#define g_jit_profit_ret_exempt (eigs_current->state->jit_profit_ret_exempt)
+#define g_jit_profit_callpct  (eigs_current->state->jit_profit_callpct)
+#define g_jit_profit_window   (eigs_current->state->jit_profit_window)
+#define g_jit_profit_min      (eigs_current->state->jit_profit_min)
 #define g_entry_threshold     (eigs_current->state->jit_entry_threshold)
 #define g_iter_threshold      (eigs_current->state->jit_iter_threshold)
 #define g_osr_threshold       (eigs_current->state->jit_osr_threshold)
