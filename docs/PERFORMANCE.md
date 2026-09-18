@@ -57,17 +57,33 @@ It times a scan at 20k, 40k and 80k characters and fails if any doubling costs
 more than **2.60x** — a threshold placed between the two shapes, not near
 either. Worst ratio was **4.69** before the fix and **2.00** after.
 
-Two details that are not incidental. The per-point statistic is the **minimum**
-of its samples, not the median, because this noise is one-sided: nothing makes
-a scan finish faster than the machine can run it, so every sample is the true
-cost plus some stall, and a ratio divides two points — a stall landing on the
-larger one alone is multiplied straight into the verdict. And a red is
-**confirmed with three times the samples** before it fails, both ratios
-printed. Measured under two CPU hogs on a 2-core box: the median-of-5 version
-returned 6.51 on a healthy binary, 1 run in 3; the current one returned zero
-false reds in 8, while the pre-fix binary still fails both passes (4.52 then
-4.48). The confirmation takes MORE samples, never fewer — that is what makes it
-a confirmation rather than a retry.
+Three details that are not incidental, each bought by a blind critic breaking
+the version before it.
+
+**It measures in rounds, not in blocks.** Each round times every length back to
+back and yields its own doubling ratios; the verdict is the **median of 15
+round ratios**. Timing every length once per round is what confines a
+scheduling stall to the round it landed in — a per-length aggregate taken in
+block order lets a burst of contention land entirely on one point, and a ratio
+divides that straight into the verdict. Measured under two CPU hogs on a
+2-core box: a block-ordered median-of-5 returned **6.51 on a healthy binary**,
+1 run in 3; the round-structured version returned **zero false reds in 14**,
+every reading between 1.80 and 2.06.
+
+**There is no second pass.** An earlier version re-measured before failing on a
+red, which sounds conservative and is not: a re-measurement is a second chance
+for any subject whose badness is intermittent, and three constructed subjects
+walked straight through it — including one that was quadratic on four
+invocations in five. A gate that re-rolls until it likes the answer has a
+different false-negative rate than the one it reports.
+
+**It declines the builds its claim is false of.** `EIGS_STR_LEN_CHECK` (on in
+asan, valgrind and poison builds) re-derives every cached length with
+`strlen(3)` at every read — that check *is* the O(n) index the fix removed, so
+the scan is quadratic there by design. The gate measured 2.43 against its 2.60
+threshold in that build: passing, on 7% of headroom, because the constant
+factors had not crossed the line yet. It now skips there, names the flag, and
+says which lane covers it.
 
 What it does NOT cover, stated so nobody reads it as more: it measures the
 SHAPE of the growth, not the absolute cost. A change that makes every string

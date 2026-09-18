@@ -137,7 +137,14 @@ variant_chunks_floor() {
 # §13). Each hit is classified by WHICH LANE carries it — the ASan shards for
 # sanitizer-only sections, the release lane for the ones that skip UNDER a
 # sanitizer.
-GATE_ENUM_RE='ndefined variable|compiled without zlib|built without|no gfx build|SKIP: non-sanitizer build|SKIP: sanitizer build'
+# Round 5 widened this with the BUILD-FLAG axis. A gate may decline because a
+# compile flag changed the ALGORITHM it measures rather than because an
+# extension is absent: EIGS_STR_LEN_CHECK (asan/valgrind/poison) re-derives
+# every cached string length at every read, so [99zc]'s linear-growth claim is
+# false of those builds and its child declines there. Matched by the FLAG
+# NAME, not by the word "skip" near it -- a matcher that fires on prose gets
+# muted (mechanical-gates §13).
+GATE_ENUM_RE='ndefined variable|compiled without zlib|built without|no gfx build|SKIP: non-sanitizer build|SKIP: sanitizer build|EIGS_STR_LEN_CHECK'
 
 # Each waiver is "<path>|<16-hex sha256 of the EXACT line>|<reason, with an
 # excerpt so a reader can see what was waived>". The hash is the pin: edit the
@@ -176,6 +183,12 @@ tools/strict_differential.sh|2d366ac396e7a318|CLASSIFIES variant-only names as a
 tools/suite_label_check.sh|4b33c19d8075f5f6|prose describing the twin-label phrasing that check allows
 tools/suite_label_check.sh|2cc9024e404127f3|prose listing those twin phrasings
 tools/docs_claims_check.sh|fd05073ec7e4e3b8|prose in the docs-claims gate QUOTING the SKIPPED-twin wording used by the runner, to explain why the runner has more labelled echo lines (267) than distinct sections (258). A comment about the label grammar, not a capability gate; same class as the two tools/suite_label_check.sh rows above. No apostrophe in this reason: GATE_WAIVERS is a single-quoted string and one would close it
+tests/run_all_tests.sh|aad4caaf64e34080|the [99zc] skip ARM: a build-FLAG decline, not a build-extension one. EIGS_STR_LEN_CHECK re-derives every cached string length at every read, so the scan is quadratic in asan/valgrind/poison builds BY DESIGN and a linear-growth claim would be false there. Its PR-lane coverage is the RELEASE lane (the release Linux full-suite job), which has no such flag; the sanitizer lanes cover the invariant the check enforces
+tests/run_all_tests.sh|96327d8cc9200f5e|the comment above that same arm, stating the lane split
+tests/run_all_tests.sh|a6a7aa425303e5b7|the SKIPPED line that arm prints. Recognised by tools/suite_label_check.sh as a conditional twin, and counted, so the section can never read as having measured
+tests/test_string_scaling.sh|16b69373a2b938ca|the child selftest asserting its decline fires — a test of the skip, not a skip
+tests/test_string_scaling.sh|dd5d00bcc3acc7a7|prose in the child header explaining why the decline exists
+tests/test_string_scaling.sh|3abba8a39ed688df|the child SKIP line itself, the decline this whole row set is about. Same lane split as the [99zc] arm above
 '
 
 # ---------------------------------------------------------------------------

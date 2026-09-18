@@ -189,6 +189,19 @@ elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout $EIGS_TEST_TIM
 # -L and the symlink-aware [99d] restore below cost nothing on a hard link
 # and keep the guard correct if the alias is ever a symlink.)
 EIGS_BIN="./eigenscript"
+# RUNTIME IDENTITY FOR EVERY CHILD (#1188). Seven child tests resolve their
+# runtime as `${EIGS:-<some default>}`, so an EIGS inherited from the
+# environment chooses the binary they measure. A blind critic exported one at
+# a healthy build, ran the suite's own string-scaling section against the
+# PRE-FIX quadratic tree, and got a clean PASS. Binding it at each dispatch
+# site would work exactly until the next site forgot, so it is bound ONCE
+# here, centrally, the way #988's child accounting is central: the cwd is
+# already this suite's src directory (the cd at the top of this file), so
+# $EIGS_BIN resolves against it, and the absolute form survives the children
+# that cd into fixture directories. Children that hard-set their own EIGS are
+# unaffected; nothing in the runtime reads a bare `EIGS`.
+EIGS="$PWD/${EIGS_BIN#./}"
+export EIGS
 
 eigs_binary_fingerprint() {
     # -L: dereference — cksum reads through a symlink, so the size/mtime
@@ -6659,7 +6672,17 @@ printf '%s\n' "$SCALE_OUTPUT" | grep -E "^worst doubling ratio:" | head -1
 # rc 0 is not enough: the VERDICT LINE must be present. A gate that died after
 # its last successful command also exits 0, and "measured nothing" must never
 # render as "measured, found healthy" (mechanical-gates §121, §11).
-if [ "$SCALE_RC" -eq 0 ] && printf '%s\n' "$SCALE_OUTPUT" | grep -q "^PASS: string scan scales linearly"; then
+if [ "$SCALE_RC" -eq 0 ] && printf '%s\n' "$SCALE_OUTPUT" | grep -q "^SKIP: this binary is built with EIGS_STR_LEN_CHECK"; then
+    # SKIPPED (binary built with EIGS_STR_LEN_CHECK). Not a build-EXTENSION
+    # skip like the probe-gated sections: this one is about a compile flag
+    # that changes the ALGORITHM. asan/valgrind/poison builds re-derive every
+    # cached string length with strlen(3) at every read, so the scan is
+    # quadratic there by design and a linear-growth claim would be false. The
+    # release lane is this gate's PR-lane coverage; the sanitizer lanes cover
+    # the invariant that check enforces, which is the other half of #1183.
+    PASS=$((PASS + 1))
+    echo "  SKIPPED (binary built with EIGS_STR_LEN_CHECK): the scan is quadratic there by design; the release lane covers this gate"
+elif [ "$SCALE_RC" -eq 0 ] && printf '%s\n' "$SCALE_OUTPUT" | grep -q "^PASS: string scan scales linearly"; then
     PASS=$((PASS + 1))
     echo "  PASS: string scan scales linearly"
 else
@@ -6673,8 +6696,9 @@ fi
 # not a population count (mechanical-gates §121). Six of these eleven cases are
 # ways a blind critic made this gate report PASS on the still-quadratic binary
 # -- a stderr diagnostic taken as the reading, an EIGS_REPLAY tape supplying
-# both clock readings, and readings of `e`, `-1`, `0` and the wrong length.
-SCALE_SELFTEST_EXPECTED=14
+# both clock readings, readings of `e`, `-1`, `0` and the wrong length, and a
+# runtime that is quadratic on four invocations in five.
+SCALE_SELFTEST_EXPECTED=19
 SCALE_ST=$(EIGS="$SCALE_EIGS" bash "$TESTS_DIR/test_string_scaling.sh" --selftest 2>&1)
 SCALE_ST_RC=$?
 SCALE_ST_RUN=$(printf '%s\n' "$SCALE_ST" | sed -nE 's/^== selftest ([0-9]+) run.*/\1/p' | tail -1)

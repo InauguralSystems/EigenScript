@@ -187,8 +187,37 @@ else
     done
 fi
 
+# --- 5. Every child measures the binary UNDER TEST (#1188) -----------------
+# A child that resolves its runtime as `${EIGS:-<default>}` lets the
+# ENVIRONMENT choose which binary it measures. A blind critic exported EIGS at
+# a healthy build, ran the suite's own string-scaling section against the
+# pre-fix quadratic tree, and got a clean PASS -- the section was measuring a
+# different program than the one under test and could not tell.
+#
+# The fix is central, like the wrapper above: the runner binds EIGS to
+# $EIGS_BIN once and exports it, so no dispatch site has to remember. Central
+# also means it dies silently if someone removes it, which is what this
+# section is for. Both halves are required -- the binding must be DERIVED from
+# $EIGS_BIN (a hard-coded path would drift from the variant under test) and it
+# must be EXPORTED (an unexported binding reaches no child at all).
+ENV_RUNTIME_CHILDREN_DECLARED="${ENV_RUNTIME_CHILDREN_DECLARED:-7}"
+if ! grep -qE '^EIGS="\$PWD/\$\{EIGS_BIN#\./\}"$' "$RUNNER"; then
+    fail "$RUNNER no longer binds EIGS to \$EIGS_BIN — every child that resolves \${EIGS:-...} now measures whatever the environment says (#1188)"
+elif ! grep -qE '^export EIGS$' "$RUNNER"; then
+    fail "$RUNNER binds EIGS but does not export it — the binding reaches no child (#1188)"
+fi
+# The population it protects, pinned exactly in both directions: a new child
+# with an environment-selectable runtime is a review event, and a population
+# that silently empties would leave this section guarding nothing.
+ENV_RUNTIME_CHILDREN=$(grep -lE '^[[:space:]]*EIGS=.?\$\{EIGS:-' tests/test_*.sh 2>/dev/null | grep -c . || true)
+if [ "${ENV_RUNTIME_CHILDREN:-0}" -eq 0 ]; then
+    fail "found ZERO children resolving \${EIGS:-...} — the scan for them is broken, not the tree (§121)"
+elif [ "$ENV_RUNTIME_CHILDREN" -ne "$ENV_RUNTIME_CHILDREN_DECLARED" ]; then
+    fail "$ENV_RUNTIME_CHILDREN child test(s) take their runtime from the environment, $ENV_RUNTIME_CHILDREN_DECLARED declared — a child gained or lost an \${EIGS:-...} default; confirm the runner's binding still covers it and bump the number"
+fi
+
 if [ "$RC" -eq 0 ]; then
-    echo "PASS: child-exit accounting present; $CHILD_SITES child-script sites ($CHILD_SITES_DECLARED declared), no bypass spellings"
+    echo "PASS: child-exit accounting present; $CHILD_SITES child-script sites ($CHILD_SITES_DECLARED declared), no bypass spellings; EIGS bound for $ENV_RUNTIME_CHILDREN environment-selectable child(ren)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -236,6 +265,25 @@ if [ "${1:-}" = "--selftest" ]; then
     st_case "bypass spelling introduced" \
             's|LG_OUTPUT=$(bash "$TESTS_DIR/test_leak_guard.sh" 2>\&1)|LG_OUTPUT=$(/bin/bash "$TESTS_DIR/test_leak_guard.sh" 2>\&1)|' \
             "reached through something other than the bash() wrapper"
+    # #1188: the central runtime binding, both halves and its population.
+    st_case "runtime binding removed" \
+            's|^EIGS="\$PWD/\${EIGS_BIN#\./}"$|EIGS="/some/other/eigenscript"|' \
+            "no longer binds EIGS to \$EIGS_BIN"
+    st_case "runtime binding not exported" \
+            's/^export EIGS$/: EIGS is not exported/' \
+            "does not export it"
+    # The population is derived from tests/, not from the runner, so this one
+    # drives the declared count rather than planting in a file.
+    ST_RC_BEFORE=$ST_RC
+    st_pop_out=$(ENV_RUNTIME_CHILDREN_DECLARED=99 "$0" 2>&1)
+    if [ "$?" -eq 0 ] || ! printf '%s\n' "$st_pop_out" | grep -qF "99 declared"; then
+        echo "SELFTEST FAIL: a wrong environment-selectable-child count was not caught" >&2
+        ST_RC=1
+    else
+        echo "  selftest ok: a wrong environment-selectable-child count is caught"
+    fi
+    : "$ST_RC_BEFORE"
+
     st_case "second command-bash added" \
             's|CLI_OUTPUT=$(bash "$TESTS_DIR/test_cli.sh" 2>\&1)|CLI_OUTPUT=$(command bash "$TESTS_DIR/test_cli.sh" 2>\&1)|' \
             "an extra one bypasses accounting"

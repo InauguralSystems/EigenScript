@@ -469,8 +469,9 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
-- **The string-scaling gate binds the runtime it measures, and a stalled
-  sample no longer fails it (#1188, #1189).** Both found by a blind critic, by
+- **The string-scaling gate binds the runtime it measures, measures in
+  interleaved rounds, and declines the builds its claim is false of (#1188,
+  #1189).** Both found by a blind critic, by
   execution, on the enrolment itself. #1188: the suite section ran the child
   without binding `EIGS`, on the reasoning that the child's default resolves to
   the suite's binary — true, and only a default. Exporting `EIGS` at a healthy
@@ -480,15 +481,37 @@ All notable changes to EigenScript are documented here.
   binding, and a binding nobody checked is not evidence. #1189: with two CPU
   hogs on a 2-core box the median-of-5 gate returned a worst ratio of **6.51**
   on a healthy binary — a false RED, 1 run in 3, and CI runners are exactly
-  that machine. The per-point statistic is now the **minimum** (the noise is
-  one-sided: nothing finishes faster than the machine can run it, so the
-  minimum is the sample that got a clean slice), and a red is confirmed with
-  **three times** the samples before it fails, printing both ratios. Measured
-  after: 0 false reds in 8 runs under the same load, two of them rescued by the
-  confirmation (4.26 -> 1.51, 4.37 -> 2.01); the pre-fix binary still fails
-  both passes (4.52 then 4.48). Selftest 11 -> 14 cases, the third of which
-  pins that a genuinely quadratic series fails BOTH passes — the confirmation
-  is not a retry-until-green.
+  that machine.
+
+  The first answer to that — take each point's **minimum** and confirm a red
+  with three times the samples — was itself broken by the next critic round,
+  and the way it broke is the interesting part: the minimum selects a rare
+  fast path, and confirming with MORE samples makes that selection likelier,
+  so the confirmation was biased toward green **by construction**. It passed a
+  subject that was quadratic on 51 invocations out of 60. A one-sample
+  confirmation also cleared every selftest row then present.
+
+  The fix is structural rather than statistical. Each **round** measures every
+  length back to back and yields its own doubling ratios, so a stall is
+  confined to the round it landed in instead of contaminating a per-length
+  aggregate that the ratio then divides; the verdict is the **median** of 15
+  round ratios. And there is **no second pass at all** — a re-measurement is a
+  second chance for any subject whose badness is intermittent, and three of
+  the critic's subjects walked through exactly that door. Measured: 0 false
+  reds in 14 runs under two CPU hogs (readings 1.80–2.06 against a 2.60
+  threshold), the pre-fix binary red at 4.39, and a runtime that is quadratic
+  on four invocations in five still red.
+
+  The gate also now **declines a build whose claim it would be lying about**.
+  `EIGS_STR_LEN_CHECK` (asan, valgrind and poison) re-derives every cached
+  length with `strlen(3)` at every read — that check IS the O(n) index the fix
+  removed, so the scan is quadratic there by design. It measured 2.43 against
+  the 2.60 threshold: passing, on 7% of headroom, for no reason anyone would
+  defend. The child now probes for the check's own diagnostic string (the
+  mechanism, not a proxy like `__asan_init`, which would miss valgrind and
+  poison) and skips with the lane split named; `tools/section_plan.sh`'s gate
+  audit learned the build-FLAG axis so the decline is visible to it, with six
+  pinned waivers. Selftest 11 -> 19 cases.
 
 - **The docs-claims gate no longer reads its own stdin, and the guard that
   depended on it can fire (#1186).** Five counters were spelled
