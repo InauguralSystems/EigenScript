@@ -1337,10 +1337,10 @@ void jit_helper_local_idx_get(int slot, int idx) {
             return;
         }
         if (target->type == VAL_STR) {
-            int len = (int)strlen(target->data.str);
+            int len = (int)val_str_len(target);
             if (i < len) {
                 char buf[2] = { target->data.str[i], 0 };
-                vm_push(make_str(buf));
+                vm_push(make_str_len(buf, 1));
             } else {
                 rt_error(EK_INDEX, g_vm.current_line,
                     "string index %d out of range (length %d)",
@@ -2248,13 +2248,13 @@ void jit_helper_index_get(void) {
         int i;
         if (!vm_index_is_int(idx->data.num, &i)) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
-        } else if (vm_index_resolve(&i, (int)strlen(target->data.str))) {
+        } else if (vm_index_resolve(&i, (int)val_str_len(target))) {
             char buf[2] = { target->data.str[i], 0 };
-            result = make_str(buf);
+            result = make_str_len(buf, 1);
         } else {
             rt_error(EK_INDEX, g_vm.current_line,
                 "string index %d out of range (length %d)",
-                i, (int)strlen(target->data.str));
+                i, (int)val_str_len(target));
         }
     } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
         int i;
@@ -3189,7 +3189,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (NUM_REUSE(b)) { b->data.num = r; vm_push(b); val_decref(a); DISPATCH(); }
             vm_push(make_num(r));
         } else if (a->type == VAL_STR && b->type == VAL_STR) {
-            int la = strlen(a->data.str), lb = strlen(b->data.str);
+            int la = val_str_len(a), lb = val_str_len(b);
             /* #292's byte budget charged only the size-controlled builtins;
              * `s is s + s` in a sandboxed loop doubled straight past
              * max_bytes to an uncatchable x_oom abort() — the grader died
@@ -3207,7 +3207,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             memcpy(s, a->data.str, la);
             memcpy(s + la, b->data.str, lb);
             s[la + lb] = 0;
-            vm_push(make_str_owned(s));
+            /* #1183: the length is already known — don't re-scan the result. */
+            vm_push(make_str_owned_len(s, (size_t)la + lb));
         } else {
             /* Strict: + adds two numbers or concatenates two strings; it does
              * not coerce across types ("3" + 4 was a footgun). For mixed
@@ -4448,11 +4449,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             int i;
             if (!vm_index_is_int(idx->data.num, &i)) {
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
-            } else if (vm_index_resolve(&i, (int)strlen(target->data.str))) {
+            } else if (vm_index_resolve(&i, (int)val_str_len(target))) {
                 char buf[2] = { target->data.str[i], 0 };
-                result = make_str(buf);
+                result = make_str_len(buf, 1);
             } else {
-                rt_error(EK_INDEX, current_line, "string index %d out of range (length %d)", i, (int)strlen(target->data.str));
+                rt_error(EK_INDEX, current_line, "string index %d out of range (length %d)", i, (int)val_str_len(target));
             }
         } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
             int i;
@@ -4739,10 +4740,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 DISPATCH();
             }
             if (target->type == VAL_STR) {
-                int len = (int)strlen(target->data.str);
+                int len = (int)val_str_len(target);
                 if (i < len) {
                     char buf[2] = { target->data.str[i], 0 };
-                    vm_push(make_str(buf));
+                    vm_push(make_str_len(buf, 1));
                 } else {
                     rt_error(EK_INDEX, current_line, "string index %d out of range (length %d)",
                                   i, len);
@@ -5342,7 +5343,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         switch (kind) {
         case 0: /* what */
             if (v && v->type == VAL_NUM) { result = make_num(v->data.num); }
-            else if (v && v->type == VAL_STR) { result = make_num(strlen(v->data.str)); }
+            else if (v && v->type == VAL_STR) { result = make_num(val_str_len(v)); }
             else if (v && v->type == VAL_LIST) { result = make_num(v->data.list.count); }
             else if (v && v->type == VAL_BUFFER) { result = make_num(v->data.buffer.count); }
             else { result = make_num(0); }
@@ -5581,7 +5582,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int len = -1;
         switch (target->type) {
             case VAL_LIST:   len = target->data.list.count; break;
-            case VAL_STR:    len = (int)strlen(target->data.str); break;
+            case VAL_STR:    len = (int)val_str_len(target); break;
             case VAL_BUFFER: len = target->data.buffer.count; break;
             /* Not sliceable. Enumerated rather than covered by a `default:`
              * so -Werror=switch forces a new ValType to choose here. */
@@ -5669,7 +5670,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             char *buf = xmalloc((size_t)n + 1);
             if (n > 0) memcpy(buf, target->data.str + start, (size_t)n);
             buf[n] = '\0';
-            result = make_str_owned(buf);
+            /* #1183: n is the slice length by construction. */
+            result = make_str_owned_len(buf, (size_t)n);
         } else {
             /* VAL_BUFFER */
             /* As with every other raw buffer producer, charge the newly

@@ -331,7 +331,7 @@ Value* builtin_net_send(Value *arg) {
     size_t len;
     if (data->type == VAL_STR) {
         bytes = (const unsigned char*)data->data.str;
-        len = strlen(data->data.str);
+        len = val_str_len(data);
     } else {
         int n = data->type == VAL_BUFFER ? data->data.buffer.count
                                          : data->data.list.count;

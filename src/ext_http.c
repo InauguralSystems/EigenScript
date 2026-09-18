@@ -496,7 +496,7 @@ Value* builtin_http_response_header(Value *arg) {
     Value *name = arg->data.list.items[0], *value = arg->data.list.items[1];
     if (name->type != VAL_STR || value->type != VAL_STR)
         return response_header_error(EK_TYPE, "name and value must be strings");
-    size_t nlen = strlen(name->data.str), vlen = strlen(value->data.str);
+    size_t nlen = val_str_len(name), vlen = val_str_len(value);
     if (nlen < 1 || nlen > HTTP_RESPONSE_NAME_MAX)
         return response_header_error(EK_VALUE, "name must be 1..64 bytes (RFC 7230 token)");
     for (size_t i = 0; i < nlen; i++) {
@@ -873,7 +873,7 @@ Value* builtin_shared_set(Value *arg) {
     char *json = eigs_json_encode(val);
     if (!json) return make_null();
     long new_json_len = (long)strlen(json);
-    long key_len = (long)strlen(key_v->data.str);
+    long key_len = (long)val_str_len(key_v);
     long cap = shared_max_bytes();
 
     pthread_mutex_lock(&s->shared_mu);
@@ -947,7 +947,7 @@ Value* builtin_shared_incr(Value *arg) {
      * a documented-nullable return. */
     if (!new_json) { pthread_mutex_unlock(&s->shared_mu); return make_null(); }
     long new_json_len = (long)strlen(new_json);
-    long key_len = (long)strlen(key_v->data.str);
+    long key_len = (long)val_str_len(key_v);
     long old_bytes = (idx >= 0) ? (long)strlen(s->shared[idx].json) : 0;
     long delta_bytes = (idx >= 0) ? (new_json_len - old_bytes)
                                   : (key_len + new_json_len);

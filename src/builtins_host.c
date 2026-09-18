@@ -1224,7 +1224,7 @@ Value* builtin_write_text(Value *arg) {
      * is xfopen_write failing (missing directory, permissions, sandbox), and
      * the header comment documents write_text as "1 on success, 0 on failure". */
     if (!f) return make_num(0);
-    size_t len = strlen(text_val->data.str);
+    size_t len = val_str_len(text_val);
     size_t written = fwrite(text_val->data.str, 1, len, f);
     int close_ok = (fclose(f) == 0);
     return make_num(written == len && close_ok ? 1 : 0);

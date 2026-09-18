@@ -20,7 +20,7 @@
   parameter. With `define one(a)`: `one of [5]` binds `a = 5`, but
   `one of [5, 6]` binds `a = [5, 6]` (not `a = 5` with `6` dropped). This
   carve-out is what makes `len of [1, 2]` return `2` and
-  `reverse of [1, 2, 3]` reverse the list — but it means you cannot predict
+  `sum of [1, 2, 3]` return `6` — but it means you cannot predict
   a binding from the call site alone; you need the callee's arity.
 - **Over-arity RAISES** on 2+-parameter callees: with `define two(a, b)`,
   `two of [1, 2, 99]` is a catchable `value`-kind error at the call site
@@ -89,8 +89,10 @@ not any outer `n`.
   errors, so bind the expression first. Dict fields `d.report` remain legal.
 - **Soft** (`prev`, `at`, and the six question words `what who when where why
   how`): usable as params/loop-vars/catch-names, but you can NEVER bind one with
-  plain `is` (`what is e` is the interrogative form, a silent no-op as an
-  assignment). Just avoid naming variables after any keyword.
+  plain `is` — `what is e` is a COMPILE ERROR (`E004`), whether or not `e` is
+  bound, because it parses as the interrogative form and its result is
+  discarded. It is legal inside an expression: `print of (what is e)` prints the
+  value. Just avoid naming variables after any keyword.
 
 ## The observer (the reason to use this language)
 
@@ -129,9 +131,11 @@ sqrt(2) = 1.414213562373095
   list element, parameter or `for` binder has none, and ONE binding rebound
   from `fleet[i][2]` in a loop carries the interleave of every entity (lint
   `W024`) — give each entity its own named binding or a closure per entity.
-- `converged` needs LOW absolute entropy on top of a settled window: a value
-  pinned at `5.0` reports `stable`, never `converged`; pinned at `0.0`/`1.0` it
-  converges. Don't guess the predicate — see docs/PREDICATES.md.
+- `converged` needs LOW absolute entropy on top of a settled window. A value
+  pinned at a constant satisfies every clause and reports `converged` — the
+  constant does not matter (measured for `0.0`, `1.0`, `5.0`, `42.0`), because a
+  repeated number is a quiet window AND low entropy. Don't guess the predicate —
+  see docs/PREDICATES.md, whose saturation rule turns on exactly this.
 - Temporal reads: `prev of x` (value before the last assignment),
   `what is x at 12` / `state_at of 12` (past-line state). Bare `x at 12` is a
   parse error. Wrap hot loops in `unobserved:` to skip the observer's entropy
