@@ -178,8 +178,14 @@ static void w021_scan_file(const char *dirpath, const char *filename) {
     module[nl - 5] = '\0';
     if (w021_mod_find(module) >= 0) return;   /* resolved higher in the chain */
 
-    char full[8192];
-    snprintf(full, sizeof(full), "%.4000s/%.500s", dirpath, filename);
+    /* Bounded to `real`'s size below, not larger: realpath(3) writes up to
+     * PATH_MAX, and when it FAILS this buffer is copied into `real` — so a
+     * bigger `full` could only truncate there, silently, recording a wrong
+     * path for the W021 diagnostic. gcc -Wformat-truncation flagged exactly
+     * that (line 193, on every build of this tree, the AOT's runtime lib and
+     * EigenOS's objects). The precisions keep the join under the bound. */
+    char full[4096];
+    snprintf(full, sizeof(full), "%.3500s/%.500s", dirpath, filename);
     FILE *f = fopen(full, "r");
     if (!f) return;
 
