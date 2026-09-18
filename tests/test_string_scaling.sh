@@ -38,6 +38,10 @@ MAX_RATIO=2.60
 # Lengths: large enough that the O(n^2) term dominates start-up, small enough
 # that a healthy build finishes in well under a second per point.
 LENS="20000 40000 80000"
+# Repetitions per length, median taken. ONE sample per point flakes against
+# the threshold: the same patched binary produced 1.94 2.05 2.07 2.01 2.59
+# and 2.93 on an idle box. Each point costs ~10-70 ms, so this is cheap.
+REPS="${REPS:-5}"
 
 fail() { echo "string-scaling: FAIL: $*" >&2; exit 1; }
 
@@ -113,12 +117,29 @@ if r != n:
 print of f"{n} {(t1 - t0) / 1000000}"
 EOF
 
-measure() {  # $1 = target length -> prints "len ms"
+# macOS runners ship no coreutils `timeout`; a suite child that calls it bare
+# dies rc 127 there (PR #1077). Probe the way tests/run_all_tests.sh does, and
+# accept running unbounded rather than failing on a missing tool.
+if command -v timeout >/dev/null 2>&1; then EIGS_TMO="timeout 300"
+elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout 300"
+else EIGS_TMO=""; fi
+
+measure_once() {  # $1 = target length -> prints "len ms"
     local out rc
-    out=$( EIGS_JIT_OFF=1 timeout 300 "$EIGS" "$WORK/scan.eigs" "$1" 2>&1 ); rc=$?
+    out=$( EIGS_JIT_OFF=1 $EIGS_TMO "$EIGS" "$WORK/scan.eigs" "$1" 2>&1 ); rc=$?
     [ "$rc" = 0 ] || { echo "string-scaling: probe rc=$rc at len=$1: $out" >&2; return 1; }
     case "$out" in *BAD*) echo "string-scaling: scan returned the wrong count: $out" >&2; return 1 ;; esac
     echo "$out" | tail -1
+}
+
+measure() {  # $1 = target length -> prints "len median_ms" over REPS samples
+    local i line len ms samples=""
+    for i in $(seq 1 "$REPS"); do
+        line=$(measure_once "$1") || return 1
+        len=${line%% *}; ms=${line##* }
+        samples="$samples$ms\n"
+    done
+    printf "%s %s\n" "$len" "$(printf "$samples" | sort -n | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}')"
 }
 
 run_gate() {
