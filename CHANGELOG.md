@@ -469,6 +469,22 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The docs-claims gate no longer reads its own stdin, and the guard that
+  depended on it can fire (#1186).** Five counters were spelled
+  `x=$(grep -c .) <<< "$LIST"` — the here-string lands on the ASSIGNMENT, and a
+  command substitution is expanded before any redirection is applied, so the
+  `grep` read the SCRIPT's stdin instead of the list. Two silent faces: with
+  stdin at `/dev/null` the count was 0, and the §121 guard built on it compared
+  `0 -ne 0` and passed, so **it had never been able to fire**; with stdin an
+  open stream (a background job, a pipeline) the same line BLOCKED — measured
+  at 20 minutes of silence, taking `tools/portability_parse_check.sh`, which
+  runs this gate under bash 3.2, down with it. The sites now take their input
+  inside the substitution; `exec 0</dev/null` at the top of the gate closes the
+  CLASS, so no future spelling can hang and degrades to the zero instead; and
+  that zero is now red (`the fence counter was handed ZERO documents`). Two new
+  `--selftest` rows pin both faces — the plant restores the bug and must go
+  red, and the mechanism row proves the `exec` line is load-bearing.
+
 - **A string Value carries its length, so indexing is O(1) and a character
   scan is O(n) (#1183).** `struct Value`'s `VAL_STR` payload was a bare
   `char *` with no length while every other sequence in the same union caches
@@ -487,7 +503,11 @@ All notable changes to EigenScript are documented here.
   in every asan/poison/valgrind build, so the whole suite runs under it)
   re-derives the length at every read and aborts on a mismatch. Gated by
   `tests/test_string_scaling.sh`, a doubling-RATIO gate (worst ratio 4.69
-  before, 2.00 after, max 2.60).
+  before, 2.00 after, max 2.60) — a ratio and not a wall-clock budget, so the
+  claim is about the algorithm and not about the machine. The suite runs it as
+  section **[99zc]** along with its eleven-case selftest, six of whose cases
+  are ways a blind critic made the gate report PASS on the still-quadratic
+  binary; `tools/portability_parse_check.sh` runs that selftest under bash 3.2.
 
 - **A stale STORE handle is refused, not silently emptied (#1146, round 2).**
   The generation check landed with the rest of #1146 and correctly CAUGHT a

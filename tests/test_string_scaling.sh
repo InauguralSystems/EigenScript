@@ -270,8 +270,18 @@ STUB
     rm -rf "$STUB_DIR"
 
     echo "== selftest $run run, $((run-bad)) passed, $bad failed =="
-    [ "$bad" = 0 ] || exit 1
-    exit 0
+    # A marker line, in the suite's own vocabulary. tests/run_all_tests.sh
+    # wraps every `bash tests/test_*.sh` in an accounting function that reads
+    # the child's output for a `PASS:`/`FAIL:`/`SKIP:` line and ledgers a child
+    # that exited 0 while reporting nothing as VACUOUS (#988). Without this the
+    # selftest -- whose own summary speaks a different dialect -- would enrol
+    # as a silent child the first time the suite dispatched it.
+    if [ "$bad" = 0 ]; then
+        echo "PASS: string-scaling selftest ($run planted faults and controls, all correct)"
+        exit 0
+    fi
+    echo "FAIL: string-scaling selftest: $bad of $run case(s) missed"
+    exit 1
 fi
 
 echo "string-scaling: index/scan growth (EigenScript#1183)"

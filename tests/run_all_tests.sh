@@ -6573,7 +6573,7 @@ fi
 # a case that had been DELETED, and the operator who read it looked for a
 # missing case instead of a failing one. A count that changes meaning when
 # something fails is not a population count (§121).
-CLAIMS_SELFTEST_EXPECTED=36
+CLAIMS_SELFTEST_EXPECTED=38
 CLAIMS_ST=$(bash "$TESTS_DIR/../tools/docs_claims_check.sh" --selftest 2>&1)
 CLAIMS_ST_RC=$?
 CLAIMS_ST_RUN=$(printf '%s\n' "$CLAIMS_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
@@ -6625,6 +6625,64 @@ else
     FAIL=$((FAIL + 1))
     echo "  FAIL: a tracked shell script does not PARSE, or a gate does not RUN, under the oldest bash here (rc=$PORT_RC)"
     print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
+fi
+echo ""
+
+# [99zc] String index/scan must scale LINEARLY (#1183).
+#
+# `VAL_STR` carried a bare `char *` and no length while every sibling type in
+# the same union cached one, so every `s[i]` called strlen(3) on the whole
+# string: indexing was O(n) and a character scan O(n^2). Measured before the
+# fix, 39% of the self-hosting compiler's runtime (ouroboros -- a LEXER) was
+# __strlen_sse2, and its self-compile dropped 37% when the length moved into
+# the Value (PR #1185). This gate is what stops that coming back.
+#
+# It asserts the SHAPE of the growth -- a doubling RATIO, linear ~2.0 against
+# quadratic ~4.0 -- and never a wall-clock budget, so it is a claim about the
+# algorithm and not about the machine (mechanical-gates §120). The child's
+# default runtime is $ROOT/src/eigenscript, which from this suite's cwd is
+# exactly $EIGS_BIN: the gate measures the binary under test, variant included.
+echo "[99zc] String index/scan scales linearly (#1183)"
+TOTAL=$((TOTAL + 1))
+SCALE_OUTPUT=$(bash "$TESTS_DIR/test_string_scaling.sh" 2>&1)
+SCALE_RC=$?
+printf '%s\n' "$SCALE_OUTPUT" | grep -E "^worst doubling ratio:" | head -1
+# rc 0 is not enough: the VERDICT LINE must be present. A gate that died after
+# its last successful command also exits 0, and "measured nothing" must never
+# render as "measured, found healthy" (mechanical-gates §121, §11).
+if [ "$SCALE_RC" -eq 0 ] && printf '%s\n' "$SCALE_OUTPUT" | grep -q "^PASS: string scan scales linearly"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: string scan scales linearly"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: string index/scan growth is superlinear, or the gate never reached a verdict (rc=$SCALE_RC)"
+    print_captured "string-scaling gate, VERBATIM" "$SCALE_OUTPUT"
+fi
+
+# Its planted-fault selftest. The case COUNT is pinned, and "how many failed"
+# is a SEPARATE condition: a count that changes meaning when a case fails is
+# not a population count (mechanical-gates §121). Six of these eleven cases are
+# ways a blind critic made this gate report PASS on the still-quadratic binary
+# -- a stderr diagnostic taken as the reading, an EIGS_REPLAY tape supplying
+# both clock readings, and readings of `e`, `-1`, `0` and the wrong length.
+SCALE_SELFTEST_EXPECTED=11
+SCALE_ST=$(bash "$TESTS_DIR/test_string_scaling.sh" --selftest 2>&1)
+SCALE_ST_RC=$?
+SCALE_ST_RUN=$(printf '%s\n' "$SCALE_ST" | sed -nE 's/^== selftest ([0-9]+) run.*/\1/p' | tail -1)
+SCALE_ST_FAILED=$(printf '%s\n' "$SCALE_ST" | sed -nE 's/^== selftest [0-9]+ run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
+TOTAL=$((TOTAL + 1))
+if [ "${SCALE_ST_RUN:-0}" -ne "$SCALE_SELFTEST_EXPECTED" ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: string-scaling selftest ran ${SCALE_ST_RUN:-0} case(s), $SCALE_SELFTEST_EXPECTED are pinned (rc=$SCALE_ST_RC) — a case was added, deleted, or the run never reached its summary; its ENTIRE output follows verbatim"
+    print_captured "string-scaling selftest, VERBATIM" "$SCALE_ST"
+elif [ "$SCALE_ST_RC" -ne 0 ] || [ "${SCALE_ST_FAILED:-1}" -ne 0 ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: string-scaling selftest: ${SCALE_ST_FAILED:-?} of $SCALE_ST_RUN case(s) did not behave (rc=$SCALE_ST_RC)"
+    printf '%s\n' "$SCALE_ST" | grep -E "MISS" | head -8
+    print_captured "string-scaling selftest, VERBATIM" "$SCALE_ST"
+else
+    PASS=$((PASS + 1))
+    echo "  PASS: string-scaling selftest ($SCALE_ST_RUN cases, every planted false-green refused)"
 fi
 echo ""
 
