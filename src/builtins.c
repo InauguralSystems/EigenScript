@@ -473,7 +473,7 @@ Value* builtin_len(Value *arg) {
     if (arg->type == VAL_LIST)
         return make_num(arg->data.list.count);
     if (arg->type == VAL_STR)
-        return make_num(strlen(arg->data.str));
+        return make_num(val_str_len(arg));
     if (arg->type == VAL_DICT) {
         eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         return make_num(arg->data.dict.count);
@@ -1654,7 +1654,7 @@ Value* builtin_starts_with(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "starts_with", "[string, prefix]", make_num(0));
     Value *s = arg->data.list.items[0], *p = arg->data.list.items[1];
     ARG_GUARD(!s || s->type != VAL_STR || !p || p->type != VAL_STR, "starts_with", "two strings", make_num(0));
-    return make_num(strncmp(s->data.str, p->data.str, strlen(p->data.str)) == 0 ? 1 : 0);
+    return make_num(strncmp(s->data.str, p->data.str, val_str_len(p)) == 0 ? 1 : 0);
 }
 
 Value* builtin_split(Value *arg) {
@@ -2097,7 +2097,7 @@ Value* builtin_char_at(Value *arg) {
     ARG_GUARD(!str_val || str_val->type != VAL_STR || !idx_val || idx_val->type != VAL_NUM,
               "char_at", "[string, number]", make_str(""));
     int idx = (int)idx_val->data.num;
-    int len = strlen(str_val->data.str);
+    int len = val_str_len(str_val);
     if (idx < 0) idx += len;
     /* fs:ANSWER an index outside the string has no character; "" is the
      * documented result for an in-range TYPE with an out-of-range VALUE,
@@ -2130,7 +2130,7 @@ Value* builtin_substr(Value *arg) {
     ARG_GUARD(!str_val || str_val->type != VAL_STR, "substr", "a string as its first argument", make_str(""));
     ARG_GUARD(!start_val || start_val->type != VAL_NUM, "substr", "a number as its start", make_str(""));
     ARG_GUARD(!len_val || len_val->type != VAL_NUM, "substr", "a number as its length", make_str(""));
-    int slen = strlen(str_val->data.str);
+    int slen = val_str_len(str_val);
     int start = (int)start_val->data.num;
     int rlen = (int)len_val->data.num;
     /* #504: a negative start counts from the end, matching char_at and the
@@ -2412,8 +2412,8 @@ Value* builtin_path_join(Value *arg) {
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
     ARG_GUARD(!a || a->type != VAL_STR || !b || b->type != VAL_STR, "path_join", "two strings", make_str(""));
-    int alen = strlen(a->data.str);
-    int blen = strlen(b->data.str);
+    int alen = val_str_len(a);
+    int blen = val_str_len(b);
     /* Skip trailing slash on a, skip leading slash on b */
     int strip_a = (alen > 0 && a->data.str[alen-1] == '/') ? 1 : 0;
     int skip_b = (blen > 0 && b->data.str[0] == '/') ? 1 : 0;

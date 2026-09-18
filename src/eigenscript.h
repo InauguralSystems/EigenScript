@@ -84,6 +84,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <stddef.h>   /* offsetof — the VAL_STR payload/length overlay assert */
 #include <limits.h>
 #include <setjmp.h>
 #include <unistd.h>
@@ -358,7 +359,25 @@ struct Value {
     ValType type;
     union {
         double num;
-        char *str;
+        /* VAL_STR / VAL_JSON_RAW payload: NUL-terminated bytes.
+         *
+         * #1183: the member is `char *const` on purpose. Every other sequence
+         * in this union caches its length (list.count, buffer.count,
+         * text_builder.len); a string used to be the odd one out, so every
+         * `s[i]` bounds-check called strlen(3) over the whole string and a
+         * character scan was O(n^2) (39% of ouroboros's lexer runtime was
+         * __strlen_sse2). The length now lives in `strv.len` right next to
+         * the pointer — and `const` here is what keeps the two in lockstep:
+         * `v->data.str = p` no longer COMPILES, so a new construction site
+         * cannot silently skip the length. Writes go through val_str_set()
+         * below; reads stay spelled `v->data.str` at all ~270 sites. */
+        char *const str;
+        /* The same pointer as `str` (offset 0, identical type — pinned by the
+         * _Static_assert under this struct) plus its cached strlen. Writing
+         * this member and reading `str` is union type-punning, which both GCC
+         * and Clang document as supported when the access goes through the
+         * union object, as it does everywhere here. */
+        struct { char *ptr; size_t len; } strv;
         struct { Value **items; int count; int capacity; } list;
         struct { char *name; char **params; uint32_t *param_hashes; int param_count; ASTNode **body; int body_count; Env *closure; } fn;
         BuiltinFn builtin;
@@ -386,6 +405,46 @@ struct Value {
      * including in the JIT's inline dict-cache probe, which bails on it. */
     unsigned char module_ns;
 };
+
+/* #1183: the `str` / `strv.ptr` overlay is the whole mechanism — pin it at
+ * compile time rather than trusting the union layout. The size assert is the
+ * second half of the claim: caching the length cost ZERO bytes per Value
+ * (it lives in the union, beside a 56-byte `fn`), so numbers did not get
+ * bigger to make strings faster. */
+_Static_assert(offsetof(Value, data.str) == offsetof(Value, data.strv.ptr),
+               "VAL_STR payload and its cached length must overlay at offset 0");
+_Static_assert(sizeof(((Value *)0)->data.str) == sizeof(((Value *)0)->data.strv.ptr),
+               "VAL_STR payload pointer and strv.ptr must be the same type");
+_Static_assert(sizeof(((Value *)0)->data) == sizeof(((Value *)0)->data.fn),
+               "the value union must still be sized by `fn` — #1183 pays 0 bytes for the cached string length");
+
+/* Install a VAL_STR / VAL_JSON_RAW payload. `s` is adopted (the Value frees
+ * it) and `n` MUST equal strlen(s). This is the ONLY way to write the payload
+ * — `v->data.str` is const, so the compiler refuses the alternative. */
+static inline void val_str_set(Value *v, char *s, size_t n) {
+    v->data.strv.ptr = s;
+    v->data.strv.len = n;
+}
+
+/* Cached byte length of a VAL_STR / VAL_JSON_RAW payload — O(1).
+ *
+ * EIGS_STR_LEN_CHECK (on in every asan/poison/valgrind build, so the whole
+ * suite runs under it) re-derives the length and aborts on a mismatch. A
+ * cached length that is too LARGE is a silent out-of-bounds read, which is
+ * strictly worse than the slow path it replaced; this turns that into a
+ * loud failure at the first read of the bad Value. */
+static inline size_t val_str_len(const Value *v) {
+#ifdef EIGS_STR_LEN_CHECK
+    if (v->data.strv.ptr ? strlen(v->data.strv.ptr) != v->data.strv.len
+                         : v->data.strv.len != 0) {
+        fprintf(stderr, "FATAL: cached string length is wrong (#1183): ptr=%p cached=%zu actual=%zu\n",
+                (const void *)v->data.strv.ptr, v->data.strv.len,
+                v->data.strv.ptr ? strlen(v->data.strv.ptr) : (size_t)0);
+        abort();
+    }
+#endif
+    return v->data.strv.len;
+}
 
 /* Window length for the per-Value dH ring buffer. Predicates require
  * a full window (count == OBSERVER_WINDOW_N) for "converged"-class
@@ -1430,7 +1489,9 @@ Value* promote_if_arena(Value *v);
 Value* make_num_permanent(double n);   /* heap-only make_num (#873 store paths) */
 void recycle_intermediate(Value *v);
 Value* make_str(const char *s);
+Value* make_str_len(const char *s, size_t n);   /* #1183: caller knows strlen(s) */
 Value* make_str_owned(char *s);
+Value* make_str_owned_len(char *s, size_t n);   /* #1183: caller knows strlen(s) */
 Value* make_null(void);
 Value* make_list(int capacity);
 Value* make_list_heap(int capacity);

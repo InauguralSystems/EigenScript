@@ -469,6 +469,26 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **A string Value carries its length, so indexing is O(1) and a character
+  scan is O(n) (#1183).** `struct Value`'s `VAL_STR` payload was a bare
+  `char *` with no length while every other sequence in the same union caches
+  one (`list.count`, `buffer.count`, `text_builder.len`), so every `s[i]`
+  bounds-check, every `len of`, every slice and every concat called `strlen(3)`
+  over the whole string — a character scan was quadratic. Measured before:
+  20k chars 27.2 ms, 40k 118.9, 80k 412.0, 160k 1538.8 (~4x per doubling);
+  after: 9.3 / 19.0 / 35.9 / 71.6 ms (~2x per doubling, 21.5x faster at 160k).
+  ouroboros self-compiling its own 2460-line front end — a LEXER, which scans
+  source text character by character — went 2.56s -> 1.62s (n=5 medians,
+  interleaved), and its 63-program parity oracle plus the byte-exact bootstrap
+  fixed point still pass. No observable behaviour changed and `struct Value`
+  did not grow: the length lives in the union beside the pointer. The payload
+  member is now `char *const`, so `v->data.str = p` does not COMPILE and every
+  construction site must go through `val_str_set()`; `EIGS_STR_LEN_CHECK` (on
+  in every asan/poison/valgrind build, so the whole suite runs under it)
+  re-derives the length at every read and aborts on a mismatch. Gated by
+  `tests/test_string_scaling.sh`, a doubling-RATIO gate (worst ratio 4.69
+  before, 2.00 after, max 2.60).
+
 - **A stale STORE handle is refused, not silently emptied (#1146, round 2).**
   The generation check landed with the rest of #1146 and correctly CAUGHT a
   store handle whose slot had been recycled — and `builtin_store_get` then

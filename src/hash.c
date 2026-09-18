@@ -245,7 +245,7 @@ Value* builtin_sha256(Value *arg) {
     }
     SHA256_CTX ctx;
     sha256_init(&ctx);
-    sha256_update(&ctx, (uint8_t*)arg->data.str, strlen(arg->data.str));
+    sha256_update(&ctx, (uint8_t*)arg->data.str, val_str_len(arg));
     uint8_t hash[32];
     sha256_final(&ctx, hash);
     char hex[65];
@@ -262,7 +262,7 @@ Value* builtin_md5(Value *arg) {
     }
     MD5_CTX ctx;
     md5_init(&ctx);
-    md5_update(&ctx, (uint8_t*)arg->data.str, strlen(arg->data.str));
+    md5_update(&ctx, (uint8_t*)arg->data.str, val_str_len(arg));
     uint8_t hash[16];
     md5_final(&ctx, hash);
     char hex[33];
@@ -345,9 +345,9 @@ Value* builtin_hmac_sha256(Value *arg) {
     }
 
     const uint8_t *key = (const uint8_t*)key_val->data.str;
-    size_t key_len = strlen(key_val->data.str);
+    size_t key_len = val_str_len(key_val);
     const uint8_t *msg = (const uint8_t*)msg_val->data.str;
-    size_t msg_len = strlen(msg_val->data.str);
+    size_t msg_len = val_str_len(msg_val);
 
     uint8_t key_block[64];
     memset(key_block, 0, 64);

@@ -88,7 +88,13 @@ endef
 VERDEF   := -DEIGENSCRIPT_VERSION='"$(VERSION)"'
 DEFS_OFF := -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
 MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
-ASAN_FLAGS := -fsanitize=address,undefined,float-cast-overflow -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1
+# EIGS_STR_LEN_CHECK (#1183): re-derive every cached VAL_STR length at every
+# read and abort on a mismatch. A wrong cached length is a silent
+# out-of-bounds read, strictly worse than the strlen it replaced, so the
+# invariant is CHECKED in every debug variant rather than trusted — the full
+# suite runs under asan, so every string the suite touches is validated.
+STRLEN_CHECK := -DEIGS_STR_LEN_CHECK
+ASAN_FLAGS := -fsanitize=address,undefined,float-cast-overflow -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 $(STRLEN_CHECK)
 
 SRC_V_release := $(SOURCES)
 FLAGS_release := $(CFLAGS) $(DEFS_OFF) $(VERDEF)
@@ -131,11 +137,11 @@ FLAGS_tsan := -fsanitize=thread -Werror=switch -Werror=comment -Werror=misleadin
 LIBS_tsan  := -lm -lpthread
 
 SRC_V_valgrind := $(SOURCES)
-FLAGS_valgrind := -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 -DEIGS_VALGRIND $(DEFS_OFF) $(VERDEF)
+FLAGS_valgrind := -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 -DEIGS_VALGRIND $(STRLEN_CHECK) $(DEFS_OFF) $(VERDEF)
 LIBS_valgrind  := -lm -lpthread
 
 SRC_V_poison := $(SOURCES)
-FLAGS_poison := -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 -DEIGS_POISON $(DEFS_OFF) $(VERDEF)
+FLAGS_poison := -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 -DEIGS_POISON $(STRLEN_CHECK) $(DEFS_OFF) $(VERDEF)
 LIBS_poison  := -lm -lpthread
 
 VARIANTS := release full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison

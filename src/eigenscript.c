@@ -1738,7 +1738,12 @@ Value* promote_if_arena(Value *v) {
     if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
         Value *h = xcalloc(1, sizeof(Value));
         h->type = v->type;
-        h->data.str = xstrdup(v->data.str);
+        /* #1183: the source already knows its length — copy it, don't re-scan. */
+        size_t n = val_str_len(v);
+        char *copy = xmalloc(n + 1);
+        memcpy(copy, v->data.str ? v->data.str : "", n);
+        copy[n] = '\0';
+        val_str_set(h, copy, n);
         h->refcount = 1;
         return h;
     }
@@ -1797,11 +1802,31 @@ Value* make_str(const char *s) {
      * raised the catchable EK_SANDBOX that fails the run; the string is
      * still built (bounded by the iteration cap) so callers' non-NULL
      * assumption holds. No-op outside an armed sandbox. */
-    if (!sandbox_charge(strlen(s) + 1)) { /* raised; proceed like make_list */ }
+    size_t n = strlen(s);   /* #1183: measured once here, then cached */
+    if (!sandbox_charge(n + 1)) { /* raised; proceed like make_list */ }
     int from_arena = g_arena.active;
     Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_STR;
-    v->data.str = xstrdup(s);
+    char *copy = xmalloc(n + 1);
+    memcpy(copy, s, n + 1);
+    val_str_set(v, copy, n);
+    if (from_arena) arena_track_string(v->data.str);
+    v->refcount = 1;
+    v->arena = from_arena;
+    return v;
+}
+
+/* make_str for a caller that already knows the length (n == strlen(s)) —
+ * skips the re-measure. Same charging contract as make_str. */
+Value* make_str_len(const char *s, size_t n) {
+    if (!sandbox_charge(n + 1)) { /* raised; proceed like make_list */ }
+    int from_arena = g_arena.active;
+    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    v->type = VAL_STR;
+    char *copy = xmalloc(n + 1);
+    memcpy(copy, s, n);
+    copy[n] = '\0';
+    val_str_set(v, copy, n);
     if (from_arena) arena_track_string(v->data.str);
     v->refcount = 1;
     v->arena = from_arena;
@@ -1814,10 +1839,17 @@ Value* make_str_owned(char *s) {
      * must uphold that — raw VM slice copies charge their payload immediately
      * before this transfer, and all other sandbox-reachable producers either
      * charge at their allocator chokepoint or are explicit host-only paths. */
+    return make_str_owned_len(s, s ? strlen(s) : 0);
+}
+
+/* make_str_owned for a producer that already knows the length it built
+ * (n == strlen(s)) — the VM's concat and slice both do, and re-measuring
+ * their own output is exactly the O(n) scan #1183 is removing. */
+Value* make_str_owned_len(char *s, size_t n) {
     int from_arena = g_arena.active;
     Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     v->type = VAL_STR;
-    v->data.str = s;
+    val_str_set(v, s, n);
     if (from_arena) arena_track_string(s);
     v->refcount = 1;
     v->arena = from_arena;
