@@ -133,7 +133,7 @@ Always-on:
 - **Changing the AOT compiler** (separate `ouroboros` repo)? → the
   **`aot-differential`** skill (VM as byte-exact oracle).
 - **Writing `.eigs` code**? → the **`write-eigenscript`** skill, and
-  **`docs/llms.txt`** — the whole language in one 291-line file (call
+  **`docs/llms.txt`** — the whole language in one 295-line file (call
   syntax, scope, observer, validation ladder); an agent primed with it
   has written correct programs from it alone (#734). Resolve "does
   function X exist" with `eigenscript --api` (or `--api --json`) — the
