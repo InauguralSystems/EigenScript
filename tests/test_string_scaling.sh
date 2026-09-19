@@ -128,7 +128,29 @@ if [ "$SELFTEST" = 1 ]; then
     # regression fails here.
     echo "== string-scaling selftest =="
     bad=0; run=0
-    chk() { run=$((run+1)); if [ "$2" = "$3" ]; then echo "   ok   $1"; else echo "   MISS $1 (got $2 want $3)"; bad=$((bad+1)); fi; }
+    # AN EMPTY OBSERVATION IS NEVER A PASS, whatever it is compared against.
+    #
+    # Three consecutive blind-critic rounds found the same shape: a row that
+    # passes while its subject never ran. The last one (#1197) compared two
+    # md5sum digests, and with md5sum off PATH both sides were the empty
+    # string -- equal, green, nothing measured. Every expectation in this
+    # selftest is a non-empty literal, so an empty OBSERVED value can only
+    # mean the subject, the tool that read it, or the plumbing between them
+    # did not run. Refusing it here closes the class for every row at once
+    # instead of one row per round (§121 at the assertion, not the
+    # enumeration).
+    chk() {
+        run=$((run+1))
+        if [ -z "$2" ]; then
+            echo "   MISS $1 (observed NOTHING -- the subject or its reader did not run; wanted $3)"
+            bad=$((bad+1))
+        elif [ "$2" = "$3" ]; then
+            echo "   ok   $1"
+        else
+            echo "   MISS $1 (got $2 want $3)"
+            bad=$((bad+1))
+        fi
+    }
 
     # Quadratic shape, measured on main at #1183: must be REJECTED.
     q=$(awk -v m="$MAX_RATIO" 'BEGIN{
