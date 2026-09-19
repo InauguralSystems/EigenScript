@@ -6672,17 +6672,7 @@ printf '%s\n' "$SCALE_OUTPUT" | grep -E "^worst doubling ratio:" | head -1
 # rc 0 is not enough: the VERDICT LINE must be present. A gate that died after
 # its last successful command also exits 0, and "measured nothing" must never
 # render as "measured, found healthy" (mechanical-gates §121, §11).
-if [ "$SCALE_RC" -eq 0 ] && printf '%s\n' "$SCALE_OUTPUT" | grep -q "^SKIP: this binary is built with EIGS_STR_LEN_CHECK"; then
-    # SKIPPED (binary built with EIGS_STR_LEN_CHECK). Not a build-EXTENSION
-    # skip like the probe-gated sections: this one is about a compile flag
-    # that changes the ALGORITHM. asan/valgrind/poison builds re-derive every
-    # cached string length with strlen(3) at every read, so the scan is
-    # quadratic there by design and a linear-growth claim would be false. The
-    # release lane is this gate's PR-lane coverage; the sanitizer lanes cover
-    # the invariant that check enforces, which is the other half of #1183.
-    PASS=$((PASS + 1))
-    echo "  SKIPPED (binary built with EIGS_STR_LEN_CHECK): the scan is quadratic there by design; the release lane covers this gate"
-elif [ "$SCALE_RC" -eq 0 ] && printf '%s\n' "$SCALE_OUTPUT" | grep -q "^PASS: string scan scales linearly"; then
+if [ "$SCALE_RC" -eq 0 ] && printf '%s\n' "$SCALE_OUTPUT" | grep -q "^PASS: string scan scales linearly"; then
     PASS=$((PASS + 1))
     echo "  PASS: string scan scales linearly"
 else

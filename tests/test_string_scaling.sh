@@ -32,9 +32,36 @@ SELFTEST=0
 [ "${1:-}" = "--selftest" ] && SELFTEST=1
 
 # Ratio a DOUBLING may reach before the growth is called superlinear.
-# linear = 2.0, quadratic = 4.0. 2.60 leaves headroom for constant factors
-# and cache effects without admitting the quadratic shape.
-MAX_RATIO=2.60
+# linear = 2.0, quadratic = 4.0, and the threshold is placed from MEASURED
+# spreads rather than taste. Every figure below was taken on this box, the
+# loaded ones under two CPU hogs on two cores:
+#
+#   release build, idle or loaded      1.80 - 2.06
+#   asan build, loaded                 2.35 - 2.50   (see the note below)
+#   the pre-#1185 binary               4.27 - 4.64
+#   a mildly superlinear shape, n^1.58 3.00
+#
+# 2.90 sits 16% above the highest healthy reading and 32% below the lowest
+# unhealthy one, and still rejects the n^1.58 shape -- which the selftest
+# pins, so the number cannot drift upward without a row going red.
+#
+# THE ASAN ROW IS NOT NOISE. EIGS_STR_LEN_CHECK (asan, valgrind and poison --
+# see the Makefile) re-derives every cached length with strlen(3) at every
+# read, which is the O(n) index #1183 removed, so those builds really are
+# nearer the quadratic shape and their readings are systematically higher.
+# An earlier cut tried to DECLINE them, probing for the check by grepping the
+# binary for the diagnostic string val_str_len() prints. A blind critic
+# relinked the ordinary release objects with an object carrying that string
+# in a non-allocated `.ident` section -- .text byte-for-byte identical -- and
+# the gate skipped a perfectly good release binary, exit 0, reported as
+# SKIPPED. Content presence is not evidence of compiled behaviour
+# (mechanical-gates §135); the flag has no behavioural signature other than
+# the timing this gate measures, so there is no sound cheap probe for it. A
+# gate that can be talked into skipping is worse than one that measures a
+# build it is mildly pessimistic about, because SKIPPED reads like good news.
+# So every build is measured, and the band accommodates the honest spread of
+# both. The RELEASE lane remains the authority for the shipped algorithm.
+MAX_RATIO=2.90
 # THE STATISTIC, and why it is this one (#1189, round 2).
 #
 # Three designs were measured against four subjects -- a healthy binary, a
@@ -101,9 +128,23 @@ if [ "$SELFTEST" = 1 ]; then
         print (w > m+0) ? "reject" : "accept" }')
     chk "a linear series with constant-factor noise is accepted" "$l" "accept"
 
-    # The threshold must sit strictly between the two shapes.
+    # The threshold must sit strictly between the two shapes -- and the band
+    # is NARROW on purpose. A blind critic widened MAX_RATIO from 2.60 to 3.40
+    # and every row here still passed, because the old band admitted anything
+    # under 3.5 and the pre-fix series it checks against is ~3.96. A threshold
+    # that can be moved halfway to the quadratic shape without a test noticing
+    # is not pinned (mechanical-gates §5).
     chk "threshold is between linear and quadratic" \
-        "$(awk -v m="$MAX_RATIO" 'BEGIN{ print (m+0 > 2.2 && m+0 < 3.5) ? "yes" : "no" }')" "yes"
+        "$(awk -v m="$MAX_RATIO" 'BEGIN{ print (m+0 > 2.2 && m+0 < 3.0) ? "yes" : "no" }')" "yes"
+
+    # ...and a series that is only MILDLY superlinear must still be rejected.
+    # 3.0 per doubling is n^1.58 -- far from quadratic, and exactly the region
+    # a widened threshold would start admitting.
+    chk "a mildly superlinear series (3.0x per doubling) is rejected" \
+        "$(awk -v m="$MAX_RATIO" 'BEGIN{
+            split("10.0 30.0 90.0 270.0", t, " "); w=0
+            for (i=2; i<=4; i++) { r=t[i]/t[i-1]; if (r>w) w=r }
+            print (w > m+0) ? "reject" : "accept" }')" "reject"
 
 fi   # stage two runs after the functions it exercises
 
@@ -438,25 +479,34 @@ STUB
     chk "the rounds are INTERLEAVED: the probe cycles through the lengths" \
         "$(printf '%s' "$got_cycle" | md5sum 2>/dev/null | cut -d' ' -f1)" \
         "$(printf '%s' "$want_cycle" | md5sum 2>/dev/null | cut -d' ' -f1)"
-    # (vii) and (viii) THE BUILD-FLAG DECLINE, both directions. A gate that
-    #       skips needs its skip pinned as hard as its verdict: a probe that
-    #       stopped matching would silently start asserting a false claim
-    #       about the sanitizer lanes, and one that matched everything would
-    #       silently stop testing the release lane (mechanical-gates §3).
-    printf '#!/bin/sh\necho "FATAL: cached string length is wrong (#1183)"\n' > "$STUB_DIR/checking"
-    chmod +x "$STUB_DIR/checking"
-    sk_out=$(EIGS="$STUB_DIR/checking" bash "$0" 2>&1); sk_rc=$?
-    if [ "$sk_rc" = 0 ] && printf '%s\n' "$sk_out" | grep -q "^SKIP: this binary is built with EIGS_STR_LEN_CHECK"; then
-        chk "a length-CHECKING build is declined, not measured" "ok" "ok"
+    # (vii) the MEDIAN specifically, not merely "a low order statistic". A
+    #       blind critic mutated the median to the lower tertile and every
+    #       row above still passed -- the choice was unpinned, and a tertile
+    #       is exactly the kind of "a bit more robust" edit someone makes on
+    #       a flaky morning. This subject is linear for 6 of its 15 rounds
+    #       and quadratic for the other 9: the 8th-of-15 (median) reads
+    #       quadratic and must go RED, while the 6th-of-15 (tertile) reads
+    #       linear and would not.
+    cat > "$STUB_DIR/six_linear_rounds" <<STUB
+#!/bin/sh
+n=\$2
+c=\$(cat "$CNT.sl.\$n" 2>/dev/null || echo 0); c=\$((c+1)); echo \$c > "$CNT.sl.\$n"
+if [ "\$c" -le 6 ]; then
+    awk -v n="\$n" 'BEGIN{ printf "%s %.4f\n", n, n/2000 }'
+else
+    awk -v n="\$n" 'BEGIN{ printf "%s %.4f\n", n, (n/20000)*(n/20000)*10 }'
+fi
+STUB
+    chmod +x "$STUB_DIR/six_linear_rounds"
+    rm -f "$CNT".sl.*
+    sl_out=$(EIGS="$STUB_DIR/six_linear_rounds" bash "$0" 2>&1); sl_rc=$?
+    if [ "$sl_rc" != 0 ]; then
+        chk "9 quadratic rounds of 15 is RED -- the verdict is the MEDIAN, not a lower quantile" "ok" "ok"
     else
-        chk "a length-CHECKING build is declined, not measured" "rc=$sk_rc $(printf '%s\n' "$sk_out" | tail -1)" "ok"
+        chk "9 quadratic rounds of 15 is RED -- the verdict is the MEDIAN, not a lower quantile" \
+            "green ($(printf '%s\n' "$sl_out" | grep '^worst' | cut -c1-30))" "ok"
     fi
-    ns_out=$(EIGS="$STUB_DIR/quadratic" bash "$0" 2>&1)
-    if printf '%s\n' "$ns_out" | grep -q "^SKIP:"; then
-        chk "a build WITHOUT the check is measured, not declined" "skipped" "measured"
-    else
-        chk "a build WITHOUT the check is measured, not declined" "measured" "measured"
-    fi
+    rm -f "$CNT".sl.*
 
     rm -f "$CNT" "$CNT".* "$CNT.total" "$CNT.order"
 
@@ -478,31 +528,6 @@ fi
 echo "string-scaling: index/scan growth (EigenScript#1183)"
 echo "runtime: $EIGS"
 
-# THIS GATE'S CLAIM IS FALSE OF A LENGTH-CHECKING BUILD, AND IT MUST SAY SO
-# RATHER THAN PASS BY LUCK.
-#
-# EIGS_STR_LEN_CHECK (asan, valgrind and poison builds -- see the Makefile)
-# makes val_str_len() re-derive the cached length with strlen(3) at every
-# read, deliberately, so that a wrong cached length aborts instead of reading
-# out of bounds. That check IS the O(n) index the fix removed: under it the
-# scan is quadratic by construction, and asserting "scales linearly" there is
-# asserting something untrue about that binary. Measured on this box: 2.43
-# against a 2.60 threshold -- it passes, on 7% of headroom, and the reason it
-# passes is that the constant factors have not crossed the line yet, which is
-# not a reason.
-#
-# So the gate declines, names the flag, and says which lane covers it. The
-# probe is the diagnostic string val_str_len() prints, which is present only
-# when the check is compiled in -- the mechanism itself, not a proxy like
-# __asan_init, which would miss the valgrind and poison builds that also
-# carry it (mechanical-gates §1).
-if grep -qa "cached string length is wrong (#1183)" "$EIGS" 2>/dev/null; then
-    echo "SKIP: this binary is built with EIGS_STR_LEN_CHECK, which re-derives every cached"
-    echo "SKIP: string length with strlen(3) at every read -- the scan is quadratic there BY"
-    echo "SKIP: DESIGN, so a linear-growth claim would be false. The release lane is what"
-    echo "SKIP: covers this gate; the sanitizer lanes cover the invariant the check enforces."
-    exit 0
-fi
 worst=$(run_gate) || fail "could not measure"
 worst_ratio=$(echo "$worst" | tail -1)
 verdict=$(awk -v w="$worst_ratio" -v m="$MAX_RATIO" 'BEGIN{ print (w+0 <= m+0) ? "PASS" : "FAIL" }')

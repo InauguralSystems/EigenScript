@@ -498,20 +498,24 @@ All notable changes to EigenScript are documented here.
   round ratios. And there is **no second pass at all** — a re-measurement is a
   second chance for any subject whose badness is intermittent, and three of
   the critic's subjects walked through exactly that door. Measured: 0 false
-  reds in 14 runs under two CPU hogs (readings 1.80–2.06 against a 2.60
-  threshold), the pre-fix binary red at 4.39, and a runtime that is quadratic
-  on four invocations in five still red.
+  reds in 14 runs under two CPU hogs (readings 1.80–2.06), the pre-fix binary
+  red at 4.57, and a runtime that is quadratic on four invocations in five
+  still red.
 
-  The gate also now **declines a build whose claim it would be lying about**.
-  `EIGS_STR_LEN_CHECK` (asan, valgrind and poison) re-derives every cached
-  length with `strlen(3)` at every read — that check IS the O(n) index the fix
-  removed, so the scan is quadratic there by design. It measured 2.43 against
-  the 2.60 threshold: passing, on 7% of headroom, for no reason anyone would
-  defend. The child now probes for the check's own diagnostic string (the
-  mechanism, not a proxy like `__asan_init`, which would miss valgrind and
-  poison) and skips with the lane split named; `tools/section_plan.sh`'s gate
-  audit learned the build-FLAG axis so the decline is visible to it, with six
-  pinned waivers. Selftest 11 -> 19 cases.
+  **The threshold is now placed from measured spreads rather than taste**, at
+  2.90: release readings 1.80–2.06, asan 2.35–2.50 under load, the pre-fix
+  binary 4.27–4.64. `EIGS_STR_LEN_CHECK` (asan, valgrind, poison) re-derives
+  every cached length with `strlen(3)` at every read — the O(n) index #1183
+  removed — so those builds genuinely read higher, and a third critic round
+  killed the attempt to exclude them: the probe grepped the binary for the
+  diagnostic string the check prints, and relinking the ordinary release
+  objects with that string in a non-allocated `.ident` section (`.text`
+  byte-for-byte identical) made the gate skip a perfectly good release binary
+  and report SKIPPED. Content presence is not evidence of compiled behaviour,
+  and a gate that can be talked into skipping is worse than one that is mildly
+  pessimistic. Every build is measured; the release lane stays the authority.
+  Selftest 11 -> 19 cases, two of which pin the threshold from below (an
+  n^1.58 shape must be rejected) so it cannot drift upward unnoticed.
 
 - **The docs-claims gate no longer reads its own stdin, and the guard that
   depended on it can fire (#1186).** Five counters were spelled
@@ -547,7 +551,7 @@ All notable changes to EigenScript are documented here.
   in every asan/poison/valgrind build, so the whole suite runs under it)
   re-derives the length at every read and aborts on a mismatch. Gated by
   `tests/test_string_scaling.sh`, a doubling-RATIO gate (worst ratio 4.69
-  before, 2.00 after, max 2.60) — a ratio and not a wall-clock budget, so the
+  before, 2.00 after, max 2.90) — a ratio and not a wall-clock budget, so the
   claim is about the algorithm and not about the machine. The suite runs it as
   section **[99zc]** along with its eleven-case selftest, six of whose cases
   are ways a blind critic made the gate report PASS on the still-quadratic

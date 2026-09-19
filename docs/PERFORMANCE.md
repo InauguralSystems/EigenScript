@@ -54,8 +54,9 @@ bash tests/test_string_scaling.sh --selftest # eleven cases: prove it can FAIL
 ```
 
 It times a scan at 20k, 40k and 80k characters and fails if any doubling costs
-more than **2.60x** — a threshold placed between the two shapes, not near
-either. Worst ratio was **4.69** before the fix and **2.00** after.
+more than **2.90x** — placed from measured spreads, not taste: 16% above the
+highest healthy reading ever taken here and 32% below the lowest unhealthy
+one. Worst ratio was **4.69** before the fix and **2.00** after.
 
 Three details that are not incidental, each bought by a blind critic breaking
 the version before it.
@@ -77,13 +78,20 @@ walked straight through it — including one that was quadratic on four
 invocations in five. A gate that re-rolls until it likes the answer has a
 different false-negative rate than the one it reports.
 
-**It declines the builds its claim is false of.** `EIGS_STR_LEN_CHECK` (on in
-asan, valgrind and poison builds) re-derives every cached length with
-`strlen(3)` at every read — that check *is* the O(n) index the fix removed, so
-the scan is quadratic there by design. The gate measured 2.43 against its 2.60
-threshold in that build: passing, on 7% of headroom, because the constant
-factors had not crossed the line yet. It now skips there, names the flag, and
-says which lane covers it.
+**It measures every build, including the ones it is mildly pessimistic
+about.** `EIGS_STR_LEN_CHECK` (on in asan, valgrind and poison builds)
+re-derives every cached length with `strlen(3)` at every read — that check
+*is* the O(n) index the fix removed, so those builds genuinely sit nearer the
+quadratic shape and read 2.35–2.50 under load rather than ~2.0. An earlier cut
+tried to DECLINE them by grepping the binary for the diagnostic string the
+check prints; a critic relinked the ordinary release objects with that string
+in a non-allocated `.ident` section — `.text` byte-for-byte identical — and
+the gate skipped a perfectly good release binary and reported `SKIPPED`.
+Content presence is not evidence of compiled behaviour, the flag has no
+behavioural signature other than the timing this gate measures, and a gate
+that can be talked into skipping is worse than one that is mildly pessimistic,
+because `SKIPPED` reads like good news. So the band accommodates both build
+families honestly and the release lane stays the authority.
 
 What it does NOT cover, stated so nobody reads it as more: it measures the
 SHAPE of the growth, not the absolute cost. A change that makes every string
