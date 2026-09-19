@@ -492,11 +492,18 @@ STUB
     chmod +x "$STUB_DIR/ordering"
     rm -f "$CNT.order"
     EIGS="$STUB_DIR/ordering" bash "$0" >/dev/null 2>&1
-    want_cycle=$(i=0; while [ "$i" -lt "$ROUNDS" ]; do printf '%s\n' $LENS; i=$((i+1)); done)
-    got_cycle=$(cat "$CNT.order" 2>/dev/null)
+    # COMPARED DIRECTLY, NOT THROUGH A HASH. The first cut ran both sides
+    # through `md5sum`, and a blind critic removed md5sum from PATH: both
+    # sides became the empty string, the row passed, and the subject had
+    # never run -- 23/23 with a production block-order mutant in place
+    # (#1197). A digest was only ever there to keep the failure message
+    # short. The sequence is 45 tokens; compare it, and make the absent case
+    # impossible to mistake for agreement: `want` is built from $LENS and can
+    # never be empty, `got` says so in words when the file is missing.
+    want_cycle=$(i=0; while [ "$i" -lt "$ROUNDS" ]; do printf '%s\n' $LENS; i=$((i+1)); done | tr '\n' ' ')
+    got_cycle=$(tr '\n' ' ' < "$CNT.order" 2>/dev/null)
     chk "the rounds are INTERLEAVED: the probe cycles through the lengths" \
-        "$(printf '%s' "$got_cycle" | md5sum 2>/dev/null | cut -d' ' -f1)" \
-        "$(printf '%s' "$want_cycle" | md5sum 2>/dev/null | cut -d' ' -f1)"
+        "${got_cycle:-<the ordering subject never ran>}" "$want_cycle"
     # (vii) the MEDIAN specifically, not merely "a low order statistic". A
     #       blind critic mutated the median to the lower tertile and every
     #       row above still passed -- the choice was unpinned, and a tertile
