@@ -70,8 +70,16 @@ FILE_FLOOR=110
 # the SELFTEST DRIVER's own body under 3.2 — its children are spawned through
 # `bash`, the modern one, so the extra coverage is one file's second half.
 # Set PORTABILITY_RUN_SELFTEST=1 to include it when that half is what changed.
-RUN_TARGETS="tools/docs_claims_check.sh tools/child_exit_check.sh tools/suite_label_check.sh tools/doc_drift_check.sh"
-RUN_TARGETS_DECLARED=4
+#
+# tests/test_string_scaling.sh --selftest IS here, and it is the only tests/
+# entry: it is a gate whose own header cites three CI rounds lost to BSD
+# `mktemp` on a sibling, it runs entirely on stubs, and 23 of its
+# cases are string-manipulation-heavy bash (`${case%%:*}` splitting, awk
+# ratios) -- exactly the shape 3.2 breaks on. The GATE half is not here: it
+# needs a built runtime and measures wall-clock, which is not what this audit
+# is asking about.
+RUN_TARGETS="tools/docs_claims_check.sh tools/child_exit_check.sh tools/suite_label_check.sh tools/doc_drift_check.sh tests/test_string_scaling.sh|--selftest"
+RUN_TARGETS_DECLARED=5
 
 # Candidates, oldest first. $PORTABILITY_BASH overrides for a test.
 OLD_BASH=""

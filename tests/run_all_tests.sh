@@ -189,6 +189,19 @@ elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout $EIGS_TEST_TIM
 # -L and the symlink-aware [99d] restore below cost nothing on a hard link
 # and keep the guard correct if the alias is ever a symlink.)
 EIGS_BIN="./eigenscript"
+# RUNTIME IDENTITY FOR EVERY CHILD (#1188). Seven child tests resolve their
+# runtime as `${EIGS:-<some default>}`, so an EIGS inherited from the
+# environment chooses the binary they measure. A blind critic exported one at
+# a healthy build, ran the suite's own string-scaling section against the
+# PRE-FIX quadratic tree, and got a clean PASS. Binding it at each dispatch
+# site would work exactly until the next site forgot, so it is bound ONCE
+# here, centrally, the way #988's child accounting is central: the cwd is
+# already this suite's src directory (the cd at the top of this file), so
+# $EIGS_BIN resolves against it, and the absolute form survives the children
+# that cd into fixture directories. Children that hard-set their own EIGS are
+# unaffected; nothing in the runtime reads a bare `EIGS`.
+EIGS="$PWD/${EIGS_BIN#./}"
+export EIGS
 
 eigs_binary_fingerprint() {
     # -L: dereference — cksum reads through a symlink, so the size/mtime
@@ -6573,7 +6586,7 @@ fi
 # a case that had been DELETED, and the operator who read it looked for a
 # missing case instead of a failing one. A count that changes meaning when
 # something fails is not a population count (§121).
-CLAIMS_SELFTEST_EXPECTED=36
+CLAIMS_SELFTEST_EXPECTED=38
 CLAIMS_ST=$(bash "$TESTS_DIR/../tools/docs_claims_check.sh" --selftest 2>&1)
 CLAIMS_ST_RC=$?
 CLAIMS_ST_RUN=$(printf '%s\n' "$CLAIMS_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
@@ -6625,6 +6638,90 @@ else
     FAIL=$((FAIL + 1))
     echo "  FAIL: a tracked shell script does not PARSE, or a gate does not RUN, under the oldest bash here (rc=$PORT_RC)"
     print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
+fi
+echo ""
+
+# [99zc] String index/scan must scale LINEARLY (#1183).
+#
+# `VAL_STR` carried a bare `char *` and no length while every sibling type in
+# the same union cached one, so every `s[i]` called strlen(3) on the whole
+# string: indexing was O(n) and a character scan O(n^2). Measured before the
+# fix, 39% of the self-hosting compiler's runtime (ouroboros -- a LEXER) was
+# __strlen_sse2, and its self-compile dropped 37% when the length moved into
+# the Value (PR #1185). This gate is what stops that coming back.
+#
+# It asserts the SHAPE of the growth -- a doubling RATIO, linear ~2.0 against
+# quadratic ~4.0 -- and never a wall-clock budget, so it is a claim about the
+# algorithm and not about the machine (mechanical-gates §120).
+#
+# RUNTIME IDENTITY AT THE ENROLMENT BOUNDARY (#1188). The child accepts an
+# `EIGS=` override, which is what lets a person drive it against an old build
+# -- and the first cut of this section did not BIND it, reasoning instead that
+# the child's default resolves to $EIGS_BIN from this suite's cwd. True, and
+# useless: it is only the default. A blind critic exported EIGS at a healthy
+# binary, ran this exact section against the PRE-FIX tree, and got 2/2 PASS on
+# the quadratic runtime. So the section binds the runtime it means, and then
+# ASSERTS the child measured that same file by inode -- a reasoned default is
+# not a binding, and a binding nobody checked is not evidence.
+echo "[99zc] String index/scan scales linearly (#1183)"
+TOTAL=$((TOTAL + 1))
+SCALE_EIGS="$PWD/${EIGS_BIN#./}"
+SCALE_OUTPUT=$(EIGS="$SCALE_EIGS" bash "$TESTS_DIR/test_string_scaling.sh" 2>&1)
+SCALE_RC=$?
+printf '%s\n' "$SCALE_OUTPUT" | grep -E "^worst doubling ratio:" | head -1
+# rc 0 is not enough: the VERDICT LINE must be present. A gate that died after
+# its last successful command also exits 0, and "measured nothing" must never
+# render as "measured, found healthy" (mechanical-gates §121, §11).
+if [ "$SCALE_RC" -eq 0 ] && printf '%s\n' "$SCALE_OUTPUT" | grep -q "^PASS: string scan scales linearly"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: string scan scales linearly"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: string index/scan growth is superlinear, or the gate never reached a verdict (rc=$SCALE_RC)"
+    print_captured "string-scaling gate, VERBATIM" "$SCALE_OUTPUT"
+fi
+
+# Its planted-fault selftest. The case COUNT is pinned, and "how many failed"
+# is a SEPARATE condition: a count that changes meaning when a case fails is
+# not a population count (mechanical-gates §121). Most of these 23 cases are
+# ways a blind critic made this gate report PASS on the still-quadratic binary
+# -- a stderr diagnostic taken as the reading, an EIGS_REPLAY tape supplying
+# both clock readings, readings of `e`, `-1`, `0` and the wrong length, and a
+# runtime that is quadratic on four invocations in five.
+SCALE_SELFTEST_EXPECTED=26
+SCALE_ST=$(EIGS="$SCALE_EIGS" bash "$TESTS_DIR/test_string_scaling.sh" --selftest 2>&1)
+SCALE_ST_RC=$?
+SCALE_ST_RUN=$(printf '%s\n' "$SCALE_ST" | sed -nE 's/^== selftest ([0-9]+) run.*/\1/p' | tail -1)
+SCALE_ST_FAILED=$(printf '%s\n' "$SCALE_ST" | sed -nE 's/^== selftest [0-9]+ run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
+TOTAL=$((TOTAL + 1))
+if [ "${SCALE_ST_RUN:-0}" -ne "$SCALE_SELFTEST_EXPECTED" ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: string-scaling selftest ran ${SCALE_ST_RUN:-0} case(s), $SCALE_SELFTEST_EXPECTED are pinned (rc=$SCALE_ST_RC) — a case was added, deleted, or the run never reached its summary; its ENTIRE output follows verbatim"
+    print_captured "string-scaling selftest, VERBATIM" "$SCALE_ST"
+elif [ "$SCALE_ST_RC" -ne 0 ] || [ "${SCALE_ST_FAILED:-1}" -ne 0 ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: string-scaling selftest: ${SCALE_ST_FAILED:-?} of $SCALE_ST_RUN case(s) did not behave (rc=$SCALE_ST_RC)"
+    printf '%s\n' "$SCALE_ST" | grep -E "MISS" | head -8
+    print_captured "string-scaling selftest, VERBATIM" "$SCALE_ST"
+else
+    PASS=$((PASS + 1))
+    echo "  PASS: string-scaling selftest ($SCALE_ST_RUN cases, every planted false-green refused)"
+fi
+
+# The binding, VERIFIED (#1188). The child names the runtime it used on its
+# own `runtime:` line; that file must be the same INODE as the binary this
+# suite is testing. `-ef` rather than a string compare, because the two
+# spellings legitimately differ (an absolute path against `./eigenscript`)
+# while a symlink, an alias re-point or an inherited override does not change
+# the spelling at all.
+TOTAL=$((TOTAL + 1))
+SCALE_RUNTIME=$(printf '%s\n' "$SCALE_OUTPUT" | sed -n 's/^runtime: //p' | head -1)
+if [ -n "$SCALE_RUNTIME" ] && [ "$SCALE_RUNTIME" -ef "$EIGS_BIN" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: the gate measured this suite's own binary"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: the gate reported runtime '${SCALE_RUNTIME:-<none>}', which is not $EIGS_BIN — the section measured a binary other than the one under test (#1188)"
 fi
 echo ""
 

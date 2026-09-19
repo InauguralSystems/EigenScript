@@ -469,6 +469,95 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The string-scaling gate binds the runtime it measures, measures in
+  interleaved rounds, and states the scope it actually has (#1188, #1189).** Both found by a blind critic, by
+  execution, on the enrolment itself. #1188: the suite section ran the child
+  without binding `EIGS`, on the reasoning that the child's default resolves to
+  the suite's binary — true, and only a default. Exporting `EIGS` at a healthy
+  binary made the SAME section report 2/2 PASS against the **pre-fix quadratic
+  tree**. The section now passes the runtime explicitly and then asserts, by
+  inode, that the child measured that file: a reasoned default is not a
+  binding, and a binding nobody checked is not evidence. #1189: with two CPU
+  hogs on a 2-core box the median-of-5 gate returned a worst ratio of **6.51**
+  on a healthy binary — a false RED, 1 run in 3, and CI runners are exactly
+  that machine.
+
+  The first answer to that — take each point's **minimum** and confirm a red
+  with three times the samples — was itself broken by the next critic round,
+  and the way it broke is the interesting part: the minimum selects a rare
+  fast path, and confirming with MORE samples makes that selection likelier,
+  so the confirmation was biased toward green **by construction**. It passed a
+  subject that was quadratic on 51 invocations out of 60. A one-sample
+  confirmation also cleared every selftest row then present.
+
+  The fix is structural rather than statistical. Each **round** measures every
+  length back to back and yields its own doubling ratios, so a stall is
+  confined to the round it landed in instead of contaminating a per-length
+  aggregate that the ratio then divides; the verdict is the **median** of 15
+  round ratios. And there is **no second pass at all** — a re-measurement is a
+  second chance for any subject whose badness is intermittent, and three of
+  the critic's subjects walked through exactly that door. Measured: 0 false
+  reds in 14 runs under two CPU hogs (readings 1.80–2.06), the pre-fix binary
+  red at 4.57, and a runtime that is quadratic on four invocations in five
+  still red.
+
+  **Both execution tiers are measured (#1200).** The probe forced
+  `EIGS_JIT_OFF=1` -- added to sanitise the environment, and it narrowed the
+  gate to the interpreter. A blind critic replaced `val_str_len(target)` with
+  `strlen(target->data.str)` in `jit_helper_index_get` alone -- a real
+  one-line regression in `src/jit.c`, no harness edit -- and the gate stayed
+  GREEN at 2.02 while JIT'd scans grew 5.18x and 3.82x per doubling. The gate
+  now runs its round structure once per tier, reports each, takes the worse,
+  and names the tier that moved: the same binary reads 5.31 and fails, and
+  the pre-#1185 binary now fails on both (4.41 interpreter, 4.65 JIT). Its
+  own knobs are validated too (#1202): `ROUND_RATIO_Q=2` indexed past the
+  sorted ratios and reported `0.00 PASS` against a quadratic runtime, so an
+  out-of-range knob is now an instrument failure rather than a measurement.
+
+  A fifth round found the gate's coverage claim was **false**: the header said
+  it exercised `len of`, and the probe hoisted that call out of the timed
+  loop. A critic reverted one line — `builtin_len`'s `val_str_len(arg)` back
+  to `strlen(...)`, half of the #1183 regression — and the gate stayed GREEN
+  at 2.01. Putting the call back in the loop does catch it (3.68 against 2.06
+  healthy) and **was tried and reverted**: `EIGS_STR_LEN_CHECK` makes `len of`
+  O(n) by design in the asan/valgrind/poison builds, which then read 2.56–2.98
+  under load against the 2.90 threshold — 2 false reds in 5 — while the lowest
+  unhealthy reading is 3.36. No threshold separates those. The coverage and
+  the sanitizer lanes cannot both be had from one gate, so the header now
+  states the real scope (indexing, exactly one operation) and the gap is filed
+  as #1192 with the measurements and three ways to close it.
+
+  **The threshold is now placed from measured spreads rather than taste**, at
+  2.90: release readings 1.80–2.06, asan 2.35–2.50 under load, the pre-fix
+  binary 4.27–4.64. `EIGS_STR_LEN_CHECK` (asan, valgrind, poison) re-derives
+  every cached length with `strlen(3)` at every read — the O(n) index #1183
+  removed — so those builds genuinely read higher, and a third critic round
+  killed the attempt to exclude them: the probe grepped the binary for the
+  diagnostic string the check prints, and relinking the ordinary release
+  objects with that string in a non-allocated `.ident` section (`.text`
+  byte-for-byte identical) made the gate skip a perfectly good release binary
+  and report SKIPPED. Content presence is not evidence of compiled behaviour,
+  and a gate that can be talked into skipping is worse than one that is mildly
+  pessimistic. Every build is measured; the release lane stays the authority.
+  Selftest 11 -> 23 cases, two of which pin the threshold from below (an
+  n^1.58 shape must be rejected) so it cannot drift upward unnoticed.
+
+- **The docs-claims gate no longer reads its own stdin, and the guard that
+  depended on it can fire (#1186).** Five counters were spelled
+  `x=$(grep -c .) <<< "$LIST"` — the here-string lands on the ASSIGNMENT, and a
+  command substitution is expanded before any redirection is applied, so the
+  `grep` read the SCRIPT's stdin instead of the list. Two silent faces: with
+  stdin at `/dev/null` the count was 0, and the §121 guard built on it compared
+  `0 -ne 0` and passed, so **it had never been able to fire**; with stdin an
+  open stream (a background job, a pipeline) the same line BLOCKED — measured
+  at 20 minutes of silence, taking `tools/portability_parse_check.sh`, which
+  runs this gate under bash 3.2, down with it. The sites now take their input
+  inside the substitution; `exec 0</dev/null` at the top of the gate closes the
+  CLASS, so no future spelling can hang and degrades to the zero instead; and
+  that zero is now red (`the fence counter was handed ZERO documents`). Two new
+  `--selftest` rows pin both faces — the plant restores the bug and must go
+  red, and the mechanism row proves the `exec` line is load-bearing.
+
 - **A string Value carries its length, so indexing is O(1) and a character
   scan is O(n) (#1183).** `struct Value`'s `VAL_STR` payload was a bare
   `char *` with no length while every other sequence in the same union caches
@@ -487,7 +576,11 @@ All notable changes to EigenScript are documented here.
   in every asan/poison/valgrind build, so the whole suite runs under it)
   re-derives the length at every read and aborts on a mismatch. Gated by
   `tests/test_string_scaling.sh`, a doubling-RATIO gate (worst ratio 4.69
-  before, 2.00 after, max 2.60).
+  before, 2.00 after, max 2.90) — a ratio and not a wall-clock budget, so the
+  claim is about the algorithm and not about the machine. The suite runs it as
+  section **[99zc]** along with its 23-case selftest, most of whose cases
+  are ways a blind critic made the gate report PASS on the still-quadratic
+  binary; `tools/portability_parse_check.sh` runs that selftest under bash 3.2.
 
 - **A stale STORE handle is refused, not silently emptied (#1146, round 2).**
   The generation check landed with the rest of #1146 and correctly CAUGHT a

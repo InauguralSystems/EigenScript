@@ -62,6 +62,29 @@ cd "$ROOT" || { echo "docs-claims: ABORTED: cannot cd to ROOT '$ROOT'" >&2; exit
 #   * the EXIT trap below: if the script ends without having printed its
 #     verdict line, it says so, with the exit code and the last command the
 #     shell was running. An unexplained death is now a named death.
+#
+# ---------------------------------------------------------------------------
+# THIS GATE NEVER READS STDIN, AND SAYS SO IN THE ONLY WAY THAT BINDS.
+#
+# Bought 2026-09-18, on main, by an enrolment round for a different gate. Five
+# sites here were written as `x=$(grep -c .) <<< "$LIST"` -- the here-string is
+# applied to the ASSIGNMENT, and the command substitution is expanded BEFORE
+# any redirection, so `grep` read the SCRIPT's stdin instead of the list. Two
+# faces, both silent:
+#   * stdin is an open stream (a background job, a pipeline, a CI runner that
+#     leaves it attached) -> `grep` blocks on a pipe that never closes and the
+#     whole gate HANGS. Measured: 20 minutes, no output after the NUMBERS
+#     class summary, and the portability audit that drives this gate under
+#     bash 3.2 hung with it.
+#   * stdin is /dev/null -> instant EOF, the count is 0, and the §121 guard
+#     built on those counts compared 0 against 0 and PASSED. It had never been
+#     able to fire.
+# The sites are fixed. This line closes the CLASS rather than the instances:
+# no future spelling of the same mistake can hang, because there is nothing on
+# this script's stdin to block on -- it degrades to the zero, and the
+# nonzero-population assertions below are what turn that zero red.
+exec 0</dev/null
+
 DC_VERDICT_PRINTED=0
 dc_on_exit() {
     local rc=$?
@@ -768,6 +791,76 @@ import sys; raise SystemExit("planted: this counter cannot run")' \
     else
         printf '  SELFTEST FAIL: could not make a scratch copy for the unmatchable-scan row\n'
         st_rc=1; st_failed=$((st_failed + 1))
+    fi
+
+    # ---- 2026-09-18: THE MISPLACED HERE-STRING, BOTH FACES ------------------
+    # `x=$(grep -c .) <<< "$LIST"` puts the here-string on the ASSIGNMENT. A
+    # command substitution is expanded BEFORE any redirection is applied, so
+    # the `grep` inside it reads the SCRIPT's stdin, not the list. Five sites
+    # in this file were written that way, one of them the §121 guard on the
+    # fence population — which therefore compared 0 against 0 and had never
+    # been able to fire. The two rows below pin the two faces.
+    #
+    # FACE 1, the vacuity: the plant restores the bug at the fence guard and
+    # the run must go RED — not on the inequality (both sides read 0, so they
+    # agree), but on the nonzero-population assertion that exists for it.
+    st_hs="$st_dir/herestring"
+    st_cases=$((st_cases + 1))
+    if st_copy_tree "$ROOT" "$st_hs"; then
+        sed -e 's|^fence_asked=$(grep -c \. <<< "$FENCE_FILES")$|fence_asked=$(grep -c .) <<< "$FENCE_FILES"|' \
+            -e 's|^fence_answered=$(grep -c \. <<< "$FENCE_COUNTS")$|fence_answered=$(grep -c .) <<< "$FENCE_COUNTS"|' \
+            "$ROOT/tools/docs_claims_check.sh" > "$st_hs/tools/docs_claims_check.sh.new"
+        if cmp -s "$st_hs/tools/docs_claims_check.sh.new" "$ROOT/tools/docs_claims_check.sh"; then
+            printf '  SELFTEST FAIL: the misplaced-here-string plant changed nothing — the fence counter lines moved\n'
+            st_rc=1; st_failed=$((st_failed + 1))
+        else
+            rm -f "$st_hs/tools/docs_claims_check.sh"
+            mv "$st_hs/tools/docs_claims_check.sh.new" "$st_hs/tools/docs_claims_check.sh"
+            out=$(cd "$st_hs" && bash tools/docs_claims_check.sh 2>&1); rc=$?
+            if [ "$rc" -ne 0 ] && grep -qF "was handed ZERO documents" <<< "$out"; then
+                printf '  selftest ok: a counter that reads stdin instead of its list reports ZERO, and ZERO is red\n'
+            else
+                printf '  SELFTEST FAIL: the fence counter read 0 documents and the run stayed green (rc=%d)\n' "$rc"
+                grep -E '^RED|fence counter' <<< "$out" | head -4 | sed 's/^/        /'
+                st_rc=1; st_failed=$((st_failed + 1))
+            fi
+        fi
+        rm -rf "$st_hs"
+    else
+        printf '  SELFTEST FAIL: could not make a scratch copy for the misplaced-here-string row\n'
+        st_rc=1; st_failed=$((st_failed + 1))
+    fi
+
+    # FACE 2, the hang, and why `exec 0</dev/null` at the top of this file is
+    # load-bearing rather than tidy. With stdin an OPEN stream — a background
+    # job, a pipeline, a CI runner that leaves it attached — the same spelling
+    # does not return 0; it blocks on a pipe that never closes. Measured on
+    # main: 20 minutes of silence, and the bash-3.2 portability audit that
+    # drives this gate hung with it. The row proves the MECHANISM in seconds
+    # rather than paying a full gate run to reach the site: same two lines of
+    # shell, once with stdin attached and once with it closed.
+    st_cases=$((st_cases + 1))
+    st_tmo=""
+    if command -v timeout >/dev/null 2>&1; then st_tmo="timeout 3"
+    elif command -v gtimeout >/dev/null 2>&1; then st_tmo="gtimeout 3"; fi
+    if [ -n "$st_tmo" ]; then
+        # `sleep 6 |` holds the write end open, so there is never an EOF. The
+        # sleep outlives the timeout deliberately and the shell waits for the
+        # whole pipeline, so this row costs ~6 s, not 3.
+        sleep 6 | $st_tmo bash -c 'x=$(grep -c .) <<< "a" ; echo "returned $x"' >/dev/null 2>&1
+        hs_open_rc=$?
+        $st_tmo bash -c 'exec 0</dev/null; x=$(grep -c .) <<< "a" ; echo "returned $x"' >/dev/null 2>&1
+        hs_null_rc=$?
+        if [ "$hs_open_rc" -eq 124 ] && [ "$hs_null_rc" -eq 0 ]; then
+            printf '  selftest ok: the misplaced-here-string spelling BLOCKS on an attached stdin and cannot with stdin closed — `exec 0</dev/null` above is load-bearing\n'
+        else
+            printf '  SELFTEST FAIL: the stdin mechanism row did not reproduce (attached rc=%d want 124, closed rc=%d want 0)\n' \
+                   "$hs_open_rc" "$hs_null_rc"
+            st_rc=1; st_failed=$((st_failed + 1))
+        fi
+    else
+        # Not a skip: the case still counts and says what it could not do.
+        printf '  selftest ok: stdin-mechanism row: no timeout(1) on this machine, so the blocking half was not driven — the fix above is unchanged\n'
     fi
 
     # A waiver must be pinned to the EXACT line (mechanical-gates §125): edit
@@ -1608,7 +1701,7 @@ $2
 "*) return 0 ;; esac; return 1; }
 
 note ""
-note "docs-claims PATHS classifiers: $(grep -c .) tracked file(s) (git ls-files), $PRODUCED_N build product(s) (make -p)" <<< "$TRACKED_LIST"
+note "docs-claims PATHS classifiers: $(grep -c . <<< "$TRACKED_LIST") tracked file(s) (git ls-files), $PRODUCED_N build product(s) (make -p)"
 
 # ---------------------------------------------------------------------------
 # ROUND 13 (H2) — THE CLASS SAYS WHAT IT IS ABOUT TO DO, AND HOW FAR IT GOT.
@@ -1627,7 +1720,7 @@ for f in $DOC_FILES; do [ -f "$f" ] && path_docs_n=$((path_docs_n + 1)); done
 note ""
 note "docs-claims class PATHS:"
 note "  PATHS: about to walk $path_docs_n document(s) of $(printf '%s\n' $DOC_FILES | grep -c .) named: $DOC_FILES"
-note "  PATHS: classifiers — TRACKED_LIST=$(grep -c .) entries, PRODUCED=$PRODUCED_N entries (make -p route $PRODUCED_DB_N, Makefile recipe route $PRODUCED_REC_N, variable rules $VAR_RULES_N)" <<< "$TRACKED_LIST"
+note "  PATHS: classifiers — TRACKED_LIST=$(grep -c . <<< "$TRACKED_LIST") entries, PRODUCED=$PRODUCED_N entries (make -p route $PRODUCED_DB_N, Makefile recipe route $PRODUCED_REC_N, variable rules $VAR_RULES_N)"
 note "  PATHS: segment alternation = '$seg_alt'"
 if [ "$path_docs_n" -eq 0 ]; then
     fail "class PATHS is about to walk ZERO documents — \$DOC_FILES is '$DOC_FILES' and none of them is a file from $(pwd)"
@@ -1736,7 +1829,7 @@ for f in $DOC_FILES; do
     done < "$DC_FEEDFILE"
     dc_empty_check PATHS "$f" "$per"
     record_found PATHS "$f" "$per"
-    note "  population $f: $per repo path(s) (scans: backtick $(grep -c .), inline-link $(printf '%s\n' "$pp_inline" <<< "$pp_backtick" | grep -c .), ref-link $(printf '%s\n' "$pp_ref" | grep -c .))"
+    note "  population $f: $per repo path(s) (scans: backtick $(grep -c . <<< "$pp_backtick"), inline-link $(grep -c . <<< "$pp_inline"), ref-link $(grep -c . <<< "$pp_ref"))"
 done
 [ "$path_examined" -eq 0 ] && fail "class PATHS examined 0 paths — a zero population is a broken enumeration, not a clean tree (§121)"
 note "  PATHS: examined $path_examined, resolved $path_ok (of which $path_product are build products, verified against the Makefile and NEVER against the filesystem), waived $path_waived"
@@ -1950,10 +2043,17 @@ FENCE_COUNTS="$DC_SCAN_OUT"
 # §121 on the new seam: the counter must have answered for every file it was
 # handed. A short answer is a scan that stopped early, which would otherwise
 # read as "those documents have no examples".
-fence_asked=$(grep -c .) <<< "$FENCE_FILES"
-fence_answered=$(grep -c .) <<< "$FENCE_COUNTS"
+fence_asked=$(grep -c . <<< "$FENCE_FILES")
+fence_answered=$(grep -c . <<< "$FENCE_COUNTS")
 if [ "$fence_answered" -ne "$fence_asked" ]; then
     fail "the fence counter was handed $fence_asked document(s) and answered for $fence_answered — the count is incomplete, not empty"
+fi
+# ...and a count of ZERO on BOTH sides is not agreement, it is two broken
+# scans agreeing (§121). This is the assertion the misplaced-here-string bug
+# above defeated: asked 0, answered 0, 0 -ne 0 is false, green. An equality
+# between two derived numbers is only evidence when the numbers exist.
+if [ "$fence_asked" -eq 0 ]; then
+    fail "the fence counter was handed ZERO documents — \$FENCE_FILES is empty, so the DOC ENROLMENT population is vacuous, not clean"
 fi
 note "  fence counter: $POPTABLE --count, asked $fence_asked document(s), answered $fence_answered"
 fence_count_of() { # file -> its fence count, or the empty string if unanswered
