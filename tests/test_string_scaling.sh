@@ -117,6 +117,16 @@ ROUND_RATIO_Q="${ROUND_RATIO_Q:-0.50}"
 # Lengths: large enough that the O(n^2) term dominates start-up, small enough
 # that a healthy build finishes in well under a second per point.
 LENS="20000 40000 80000"
+# BOTH EXECUTION TIERS, because the language has two and each has its own
+# index path. Bought by a blind critic (#1200): the probe forced
+# EIGS_JIT_OFF=1 -- added to sanitise the environment, and it quietly narrowed
+# the gate to the interpreter. Replacing `val_str_len(target)` with
+# `strlen(target->data.str)` in `jit_helper_index_get` alone -- a real
+# one-line regression in src/jit.c, no harness edit -- left this gate GREEN at
+# 2.02 while JIT'd scans grew 5.18x and 3.82x per doubling. With the tier
+# measured it reads 5.31 and fails. A gate that covers one of two tiers is
+# not a gate on the language.
+TIERS="${TIERS:-off on}"
 
 # AN INSTRUMENT FAILURE IS NOT A VERDICT, AND MUST NOT SHARE ITS EXIT CODE.
 #
@@ -199,6 +209,25 @@ if [ "$SELFTEST" = 1 ]; then
 
 fi   # stage two runs after the functions it exercises
 
+# THE GATE'S OWN KNOBS ARE VALIDATED, because they are reachable from the
+# environment and three of them can manufacture a PASS. Bought by a blind
+# critic (#1202): ROUND_RATIO_Q=2 indexes past the end of the sorted ratios,
+# awk reads the empty string as 0, and the gate reported "worst doubling
+# ratio: 0.00  PASS" against a quadratic runtime. A knob that can turn the
+# verdict green is part of the verdict, so an out-of-range value is an
+# instrument failure (exit 2), never a measurement.
+case "$ROUNDS" in
+    ''|*[!0-9]*) fail "ROUNDS must be a positive integer, got '$ROUNDS'" ;;
+esac
+[ "$ROUNDS" -ge 3 ] || fail "ROUNDS=$ROUNDS is too few to take a median of; 3 is the floor, 15 is the default"
+awk -v q="$ROUND_RATIO_Q" 'BEGIN{ exit !(q+0 > 0 && q+0 <= 1 && q ~ /^[0-9]*[.]?[0-9]+$/) }' \
+    || fail "ROUND_RATIO_Q must be a quantile in (0,1], got '$ROUND_RATIO_Q'"
+awk -v m="$MAX_RATIO" 'BEGIN{ exit !(m+0 > 2.0 && m+0 < 4.0 && m ~ /^[0-9]*[.]?[0-9]+$/) }' \
+    || fail "MAX_RATIO must lie strictly between the linear (2.0) and quadratic (4.0) shapes, got '$MAX_RATIO'"
+for __t in $TIERS; do
+    case "$__t" in on|off) ;; *) fail "TIERS may contain only 'on' and 'off', got '$__t'" ;; esac
+done
+
 [ -x "$EIGS" ] || fail "no runtime at $EIGS (set EIGS=)"
 
 # BSD mktemp has no -p and its -t takes a prefix, not a template, so a full
@@ -264,8 +293,11 @@ measure_once() {  # $1 = target length -> prints "len ms"
     # A blind critic passed the UNFIXED binary at ratio 1.00 by exporting
     # EIGS_REPLAY with a 10-character tape — replay supplied argv and both
     # clock readings, so every "sample" returned the same recorded numbers.
+    # $2 is the tier: "off" forces the interpreter, "on" leaves the runtime's
+    # own default (the JIT, where it is built and engages).
     out=$( for __v in $(env | sed -n 's/^\(EIGS_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$__v"; done
-           EIGS_JIT_OFF=1 $EIGS_TMO "$EIGS" "$WORK/scan.eigs" "$1" 2>"$err" ); rc=$?
+           [ "${2:-off}" = off ] && export EIGS_JIT_OFF=1
+           $EIGS_TMO "$EIGS" "$WORK/scan.eigs" "$1" 2>"$err" ); rc=$?
     if [ "$rc" != 0 ]; then
         echo "string-scaling: probe rc=$rc at len=$1" >&2
         echo "  stdout: $out" >&2; echo "  stderr: $(cat "$err" 2>/dev/null)" >&2
@@ -306,14 +338,14 @@ measure_once() {  # $1 = target length -> prints "len ms"
     printf '%s\n' "$line"
 }
 
-measure_round() {  # prints one "ratio ratio ..." line: each doubling, this round
+measure_round() {  # $1 = tier; prints one "ratio ratio ..." line: each doubling
     # ONE ROUND TOUCHES EVERY LENGTH, back to back. That is what confines a
     # scheduling stall to the round it landed in: a per-length aggregate taken
     # in block order lets a burst of contention land entirely on one point and
     # be divided straight into the verdict.
     local L line prev=0 ms out=""
     for L in $LENS; do
-        line=$(measure_once "$L") || return 1
+        line=$(measure_once "$L" "${1:-off}") || return 1
         ms=${line##* }
         if [ "$prev" != 0 ]; then
             out="$out $(awk -v a="$ms" -v b="$prev" 'BEGIN{ if (b+0<=0) print "nan"; else printf "%.4f", a/b }')"
@@ -323,13 +355,13 @@ measure_round() {  # prints one "ratio ratio ..." line: each doubling, this roun
     printf '%s\n' "${out# }"
 }
 
-run_gate() {
+run_gate() {  # $1 = tier ("off" | "on"), default "off"
     # Collect ROUNDS interleaved rounds, then take the MEDIAN of each
     # doubling's ratios (ROUND_RATIO_Q) and report the worst of those.
-    local r rows="" line n_doublings=0
-    echo "  round      ratios per doubling"
+    local r rows="" line n_doublings=0 tier="${1:-off}"
+    echo "  round      ratios per doubling   (tier: JIT $tier)"
     for r in $(seq 1 "$ROUNDS"); do
-        line=$(measure_round) || return 1
+        line=$(measure_round "$tier") || return 1
         printf "  %-10s %s\n" "$r" "$line"
         rows="$rows$line\n"
         n_doublings=$(printf '%s\n' "$line" | wc -w | tr -d ' ')
@@ -551,8 +583,13 @@ STUB
     EIGS="$STUB_DIR/counting" bash "$0" >/dev/null 2>&1
     n_calls=$(wc -l < "$CNT.total" 2>/dev/null | tr -d ' ')
     n_lens=$(printf '%s\n' $LENS | grep -c .)
+    n_tiers=$(printf '%s\n' $TIERS | grep -c .)
+    # Derived from $TIERS, not hard-coded: when the second execution tier was
+    # added this row went red at "got 90 want 45", which is the pin doing its
+    # job -- and a hard-coded 45 would have been edited to 90 and learned
+    # nothing.
     chk "a RED run measures no more than a green one -- there is no retry" \
-        "$n_calls" "$((ROUNDS * n_lens))"
+        "$n_calls" "$((n_tiers * ROUNDS * n_lens))"
 
     # (vi) the rounds are INTERLEAVED, not blocked. This is the structural
     #      half of the fix -- it is what confines a stall to one round -- and
@@ -576,7 +613,8 @@ STUB
     # short. The sequence is 45 tokens; compare it, and make the absent case
     # impossible to mistake for agreement: `want` is built from $LENS and can
     # never be empty, `got` says so in words when the file is missing.
-    want_cycle=$(i=0; while [ "$i" -lt "$ROUNDS" ]; do printf '%s\n' $LENS; i=$((i+1)); done | tr '\n' ' ')
+    # Once per tier: each tier runs its own ROUNDS of interleaved rounds.
+    want_cycle=$(for __t in $TIERS; do i=0; while [ "$i" -lt "$ROUNDS" ]; do printf '%s\n' $LENS; i=$((i+1)); done; done | tr '\n' ' ')
     got_cycle=$(tr '\n' ' ' < "$CNT.order" 2>/dev/null)
     chk "the rounds are INTERLEAVED: the probe cycles through the lengths" \
         "${got_cycle:-<the ordering subject never ran>}" "$want_cycle"
@@ -600,8 +638,21 @@ fi
 STUB
     chmod +x "$STUB_DIR/six_linear_rounds"
     rm -f "$CNT".sl.*
+    # ONE TIER for this row: its subject counts invocations per length, and
+    # the calibration (6 linear rounds then 9 quadratic) only means what it
+    # says over exactly ROUNDS rounds. Measured when the second tier landed:
+    # with 30 invocations the pattern degenerates to "quadratic after round
+    # 6" and a lower quantile stops being distinguishable, so the row
+    # silently stopped killing median->tertile. The tier dimension is pinned
+    # by its own row below.
+    # EXPORTED: gate_says drives `bash "$0"`, a child, which re-derives its
+    # own default. Setting the variable without exporting it pinned nothing
+    # -- measured: the median->tertile mutant survived again until this was
+    # an export.
+    st_tiers="$TIERS"; export TIERS=off
     chk "9 quadratic rounds of 15 is RED at 4.00 -- the verdict is the MEDIAN, not a lower quantile" \
         "$(gate_says six_linear_rounds FAIL 4.00)" "FAIL"
+    export TIERS="$st_tiers"
     rm -f "$CNT".sl.*
 
     # (viii)-(x) THE PRODUCTION DECISION BOUNDARY, DRIVEN THROUGH THE REAL
@@ -701,6 +752,18 @@ STUB
     chk "a subject that only PRINTS a verdict cannot supply one" \
         "$(gate_says spoof FAIL 4.00)" "rc=2 expected 1 (2 = the gate could not measure)"
 
+    # (xiii) BOTH TIERS ARE MEASURED, AND BOTH ARE NAMED. #1200 was a gate
+    #        that silently covered one of the language's two index paths, so
+    #        "how many tiers ran" cannot be derived from $TIERS the way the
+    #        invocation count is -- dropping a tier would move both sides of
+    #        that comparison together. This row reads the gate's own per-tier
+    #        lines instead.
+    mk_series tiers_ok 10 20 40
+    tier_out=$(EIGS="$STUB_DIR/tiers_ok" bash "$0" 2>/dev/null)
+    tier_named=$(printf '%s\n' "$tier_out" | sed -n 's/^tier JIT \([a-z]*\):.*/\1/p' | tr '\n' ' ')
+    chk "every tier in TIERS is measured and named in the output" \
+        "${tier_named:-<no tier line at all>}" "off on "
+
     rm -f "$CNT" "$CNT".* "$CNT.total" "$CNT.order"
 
     echo "== selftest $run run, $((run-bad)) passed, $bad failed =="
@@ -721,10 +784,26 @@ fi
 echo "string-scaling: index/scan growth (EigenScript#1183)"
 echo "runtime: $EIGS"
 
-worst=$(run_gate) || fail "could not measure"
-worst_ratio=$(echo "$worst" | tail -1)
+# EVERY TIER IS MEASURED AND EVERY TIER IS REPORTED, and the verdict is the
+# worst of them: a regression in either index path is a regression in the
+# language. The per-tier line is what tells a reader WHICH path moved, which
+# is the first question after a red.
+worst_ratio=0
+worst_tier=""
+tiers_seen=0
+for __tier in $TIERS; do
+    t_out=$(run_gate "$__tier") || fail "could not measure (tier: JIT $__tier)"
+    t_ratio=$(echo "$t_out" | tail -1)
+    tiers_seen=$((tiers_seen + 1))
+    echo "tier JIT $__tier: worst doubling ratio $t_ratio"
+    worst_ratio=$(awk -v a="$worst_ratio" -v b="$t_ratio" 'BEGIN{ printf "%.2f", (b+0>a+0)?b:a }')
+    [ "$worst_ratio" = "$t_ratio" ] && worst_tier="$__tier"
+done
+# A run that measured no tier at all is a malfunction, not a clean sheet
+# (mechanical-gates §121): TIERS could be emptied by an environment.
+[ "$tiers_seen" -ge 1 ] || fail "TIERS is empty -- no execution tier was measured"
 verdict=$(awk -v w="$worst_ratio" -v m="$MAX_RATIO" 'BEGIN{ print (w+0 <= m+0) ? "PASS" : "FAIL" }')
-echo "worst doubling ratio: $worst_ratio  (max $MAX_RATIO; linear ~2.0, quadratic ~4.0)"
+echo "worst doubling ratio: $worst_ratio  (max $MAX_RATIO; linear ~2.0, quadratic ~4.0; worst tier: JIT $worst_tier)"
 
 if [ "$verdict" = PASS ]; then
     echo "PASS: string scan scales linearly"

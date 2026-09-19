@@ -61,6 +61,16 @@ one. Worst ratio was **4.69** before the fix and **2.00** after.
 Three details that are not incidental, each bought by a blind critic breaking
 the version before it.
 
+**It measures both execution tiers.** EigenScript indexes a string in two
+places — the interpreter's bounds check and the JIT's `jit_helper_index_get`
+— so the gate runs its whole round structure once with the JIT forced off and
+once with it on, reports each, and takes the worse. This was not the first
+design: the probe forced `EIGS_JIT_OFF=1` to sanitise its environment, which
+quietly narrowed the gate to one tier. A one-line regression in the JIT
+helper alone then left it **green at 2.02** while JIT'd scans grew 5.18x and
+3.82x per doubling; with the tier measured the same binary reads **5.31** and
+fails, and the output names which tier moved.
+
 **It measures in rounds, not in blocks.** Each round times every length back to
 back and yields its own doubling ratios; the verdict is the **median of 15
 round ratios**. Timing every length once per round is what confines a

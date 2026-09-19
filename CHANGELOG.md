@@ -501,6 +501,19 @@ All notable changes to EigenScript are documented here.
   red at 4.57, and a runtime that is quadratic on four invocations in five
   still red.
 
+  **Both execution tiers are measured (#1200).** The probe forced
+  `EIGS_JIT_OFF=1` -- added to sanitise the environment, and it narrowed the
+  gate to the interpreter. A blind critic replaced `val_str_len(target)` with
+  `strlen(target->data.str)` in `jit_helper_index_get` alone -- a real
+  one-line regression in `src/jit.c`, no harness edit -- and the gate stayed
+  GREEN at 2.02 while JIT'd scans grew 5.18x and 3.82x per doubling. The gate
+  now runs its round structure once per tier, reports each, takes the worse,
+  and names the tier that moved: the same binary reads 5.31 and fails, and
+  the pre-#1185 binary now fails on both (4.41 interpreter, 4.65 JIT). Its
+  own knobs are validated too (#1202): `ROUND_RATIO_Q=2` indexed past the
+  sorted ratios and reported `0.00 PASS` against a quadratic runtime, so an
+  out-of-range knob is now an instrument failure rather than a measurement.
+
   A fifth round found the gate's coverage claim was **false**: the header said
   it exercised `len of`, and the probe hoisted that call out of the timed
   loop. A critic reverted one line — `builtin_len`'s `val_str_len(arg)` back
