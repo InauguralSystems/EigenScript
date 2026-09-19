@@ -8,6 +8,17 @@
 # change is judged on consumer shapes instead of on benches written to suit
 # the emitter (EigenScript#1178).
 #
+# NOT ENROLLED IN THE SUITE, AND THAT IS A SCOPE STATEMENT, NOT AN OVERSIGHT.
+# An oracle nobody dispatches is a script in a directory (mechanical-gates
+# 151), so: this needs the CONSUMER CHECKOUTS -- $ECO/DMG, ouroboros,
+# EigenMiniSat, Tidepool, liferaft -- which neither tests/run_all_tests.sh
+# nor any CI lane has, and the full matrix is ~12 minutes of wall-clock
+# timing that a shared runner cannot resolve anyway (see UNRESOLVED below).
+# Its selftest has the same dependency, so that cannot be enrolled either.
+# It is a MANUAL instrument, run deliberately when a JIT change needs
+# judging. What would have to change to enrol it: the consumer repos
+# available to CI, and a quiet-enough runner for the spreads to resolve.
+#
 #   bash tools/jit_fleet_bench.sh              # full matrix (~12 min)
 #   bash tools/jit_fleet_bench.sh --quick      # the two decisive rows (~3 min)
 #   bash tools/jit_fleet_bench.sh --selftest   # planted faults; must go red
