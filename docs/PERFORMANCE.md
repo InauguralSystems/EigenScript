@@ -93,10 +93,18 @@ that can be talked into skipping is worse than one that is mildly pessimistic,
 because `SKIPPED` reads like good news. So the band accommodates both build
 families honestly and the release lane stays the authority.
 
-What it does NOT cover, stated so nobody reads it as more: it measures the
-SHAPE of the growth, not the absolute cost. A change that makes every string
-operation uniformly 10x slower passes this gate — that is what the wall-clock
-table and the `Ir` gate above are for.
+What it does NOT cover, stated exactly, because the list was once wrong. It
+measures the SHAPE of the growth for **one operation — indexing** — and not
+absolute cost; a change making every string operation uniformly 10x slower
+passes. **`len of` is not covered and cannot be by this gate**: putting the
+call in the timed loop does catch a `len of`-only regression (3.68 against
+2.06 healthy), but `EIGS_STR_LEN_CHECK` makes `len of` O(n) by design in the
+asan, valgrind and poison builds, which then read 2.56–2.98 under load against
+a 2.90 threshold — 2 false reds in 5, with the lowest unhealthy reading at
+3.36. No threshold separates those, so the coverage and the sanitizer lanes
+cannot both be had from one gate. Tracked as
+[#1192](https://github.com/InauguralSystems/EigenScript/issues/1192), which
+suggests a deterministic `Ir` comparison instead of a wall clock.
 
 ## Wall-clock medians
 

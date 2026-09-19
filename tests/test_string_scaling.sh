@@ -19,11 +19,27 @@
 # shape and is stable across machines: linear work ~2x per doubling, quadratic
 # ~4x. The threshold sits between them with room for constant-factor noise.
 #
-# WHAT THIS GATE DOES NOT COVER: it measures the SHAPE of the growth, not the
-# absolute speed, and it measures only the operations exercised below (index,
-# `len of`, concat-in-loop is deliberately excluded -- see the note at build
-# time). A change that makes every operation uniformly 10x slower passes this
-# gate; the fleet bench and bench_perf are where absolute cost is judged.
+# WHAT THIS GATE DOES NOT COVER, exactly, because the list was once wrong.
+#
+# It measures the SHAPE of the growth, not absolute speed, and for exactly ONE
+# operation: **indexing, `s[i]`**, which is the only string operation in the
+# timed loop. A change that makes every operation uniformly 10x slower passes
+# here; the fleet bench and bench_perf judge absolute cost.
+#
+# `len of` IS NOT COVERED, and cannot be by this gate. The header used to
+# claim it while the probe hoisted the call out of the loop, and a blind
+# critic proved the consequence: reverting ONLY `builtin_len`'s
+# `val_str_len(arg)` to `strlen(arg->data.strv.ptr)` -- half of the #1183
+# regression, one line -- left this gate GREEN at 2.01. Putting the call in
+# the loop condition does catch it (that build then reads 3.68 / 3.36), and
+# was tried. It cannot stay: under EIGS_STR_LEN_CHECK `len of` is O(n) BY
+# DESIGN, so the asan lanes went 2.56-2.98 against this 2.90 threshold --
+# 2 false reds in 5 under load -- while the lowest unhealthy reading is 3.36.
+# There is no threshold separating those, so the coverage and the sanitizer
+# lanes cannot both be had here. Tracked as #1192, with the measurements.
+#
+# Concat is excluded too: building the string is quadratic on its own and
+# would swamp the signal (see the note at build time).
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -164,6 +180,8 @@ cat > "$WORK/scan.eigs" <<'EOF'
 define scan(s, n) as:
     i is 0
     acc is 0
+    # The bound is HOISTED, and that is a real limit of this gate rather than
+    # an oversight -- see "WHAT THIS GATE DOES NOT COVER" in the header.
     loop while i < n:
         c is s[i]
         acc is acc + 1
@@ -507,6 +525,58 @@ STUB
             "green ($(printf '%s\n' "$sl_out" | grep '^worst' | cut -c1-30))" "ok"
     fi
     rm -f "$CNT".sl.*
+
+    # (viii)-(x) THE PRODUCTION DECISION BOUNDARY, DRIVEN THROUGH THE REAL
+    # ENTRY POINT. The two threshold rows near the top of this selftest
+    # compute the comparison THEMSELVES in awk, so they say what the numbers
+    # mean and nothing about what the gate does with them. A blind critic
+    # showed the cost: changing only the production verdict expression from
+    # `w+0 <= m+0` to `w+0 <= m+0.30` -- moving the real boundary to 3.20
+    # while MAX_RATIO still reads 2.90 -- left all 19 rows green
+    # (mechanical-gates §124: driving the internals, or a reimplementation of
+    # them, proves nothing about the command CI runs). A second one-token
+    # survivor set the aggregation's `cols = NF` to `cols = 1`, judging only
+    # the first doubling while still collecting every length and satisfying
+    # the invocation count. These three rows drive real subjects through
+    # `bash "$0"` instead.
+    mk_series() {  # $1 name, $2..$4 ms for 20k/40k/80k
+        cat > "$STUB_DIR/$1" <<STUB
+#!/bin/sh
+case "\$2" in
+    20000) echo "20000 $2" ;;
+    40000) echo "40000 $3" ;;
+    80000) echo "80000 $4" ;;
+esac
+STUB
+        chmod +x "$STUB_DIR/$1"
+    }
+    series_rc() { EIGS="$STUB_DIR/$1" bash "$0" >/dev/null 2>&1; echo $?; }
+
+    # A uniformly 3.0x series -- n^1.58, mildly superlinear -- must be RED at
+    # the REAL boundary. This is what a widened MAX_RATIO or a padded verdict
+    # expression lets through.
+    mk_series mild 10 30 90
+    chk "a 3.0x series is RED through the real entry point (the boundary, not a copy of it)" \
+        "$(series_rc mild)" "1"
+
+    # ...and the first doubling alone being bad is RED: 4.0 then 2.0.
+    mk_series first_bad 10 40 80
+    chk "a series bad on only the FIRST doubling is RED" "$(series_rc first_bad)" "1"
+
+    # ...and so is the second alone: 2.0 then 4.0. This is the row that dies
+    # if the aggregation stops looking at every doubling.
+    mk_series second_bad 10 20 80
+    chk "a series bad on only the SECOND doubling is RED" "$(series_rc second_bad)" "1"
+
+    # (xi) the doubling FLOOR. With three lengths there are always two
+    #      doublings, so the `>= 2` guard cannot bind on the shipped
+    #      configuration and a critic lowered it to 1 with nothing noticing.
+    #      It exists for the day someone shortens LENS, so the row shortens
+    #      LENS: one doubling is not a growth curve and must be refused.
+    st_lens="$LENS"; LENS="20000 40000"
+    EIGS="$STUB_DIR/mild"; run_gate >/dev/null 2>&1; floor_rc=$?
+    LENS="$st_lens"
+    chk "a LENS with only one doubling is REFUSED, not measured" "$floor_rc" "1"
 
     rm -f "$CNT" "$CNT".* "$CNT.total" "$CNT.order"
 

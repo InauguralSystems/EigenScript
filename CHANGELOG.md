@@ -502,6 +502,19 @@ All notable changes to EigenScript are documented here.
   red at 4.57, and a runtime that is quadratic on four invocations in five
   still red.
 
+  A fifth round found the gate's coverage claim was **false**: the header said
+  it exercised `len of`, and the probe hoisted that call out of the timed
+  loop. A critic reverted one line — `builtin_len`'s `val_str_len(arg)` back
+  to `strlen(...)`, half of the #1183 regression — and the gate stayed GREEN
+  at 2.01. Putting the call back in the loop does catch it (3.68 against 2.06
+  healthy) and **was tried and reverted**: `EIGS_STR_LEN_CHECK` makes `len of`
+  O(n) by design in the asan/valgrind/poison builds, which then read 2.56–2.98
+  under load against the 2.90 threshold — 2 false reds in 5 — while the lowest
+  unhealthy reading is 3.36. No threshold separates those. The coverage and
+  the sanitizer lanes cannot both be had from one gate, so the header now
+  states the real scope (indexing, exactly one operation) and the gap is filed
+  as #1192 with the measurements and three ways to close it.
+
   **The threshold is now placed from measured spreads rather than taste**, at
   2.90: release readings 1.80–2.06, asan 2.35–2.50 under load, the pre-fix
   binary 4.27–4.64. `EIGS_STR_LEN_CHECK` (asan, valgrind, poison) re-derives
