@@ -162,23 +162,51 @@ run_row() {
   # of eigenminisat disagreed with the harness's block read by 1.2 points.
   # Pairing cancels drift that is common to both arms; the spread of the pairs
   # is then an honest statement of what the instrument can resolve.
-  local off=() on=() i t
+  # EVERY TIMED INVOCATION IS CHECKED, NOT A PROBE RUN THAT RESEMBLES THEM.
+  #
+  # #1204: the rc probe above runs ONCE, up front, and -- crucially -- with a
+  # different environment from the runs it vouches for (no EIGS_JIT_OFF, no
+  # unset OSR threshold). The timing loop then threw the workload's status
+  # away entirely: `/usr/bin/time -f %e` prints an elapsed line whether the
+  # program returned 0 or 23, and `| tail -1` takes it, so a dead run yields
+  # a perfectly plausible number. A blind critic planted a fixture that
+  # exited 23 on EVERY timed invocation and this harness reported
+  # `PASS, +71.4%` -- while its own selftest passed 8/8.
+  #
+  # `/usr/bin/time -o FILE` writes the timing to FILE and exits with the
+  # COMMAND's status, so both are available without a pipeline swallowing
+  # the one that matters.
+  local off=() on=() i t rc tf
+  tf="$(mktemp "${TMPDIR:-/tmp}/jitfleet.time.XXXXXX")"
+  timed_run() {  # $1 = arm label, $2.. = env assignments; prints seconds, returns workload rc
+      local arm="$1"; shift
+      ( cd "$dir" && ulimit -v 2000000
+        env "$@" /usr/bin/time -f %e -o "$tf" timeout 300 "$EIGS" "${argv[@]}" >/dev/null 2>&1 )
+      local r=$?
+      printf '%s' "$(tail -1 "$tf" 2>/dev/null)"
+      return $r
+  }
   for ((i=0;i<N;i++)); do
-    t=$( ( cd "$dir" && ulimit -v 2000000
-      { /usr/bin/time -f %e env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 \
-          timeout 300 "$EIGS" "${argv[@]}" >/dev/null; } 2>&1 | tail -1 ) )
+    t=$(timed_run off -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1); rc=$?
+    if [ "$rc" != 0 ]; then
+      rm -f "$tf"
+      echo "$name VERDICT=FAIL reason=timed-run-exited-$rc-arm-off-iter-$i (a timing of a failed run is not a timing)"
+      return
+    fi
     off+=("$t")
     if [ "$force_same" = 1 ]; then
-      t=$( ( cd "$dir" && ulimit -v 2000000
-        { /usr/bin/time -f %e env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 \
-            timeout 300 "$EIGS" "${argv[@]}" >/dev/null; } 2>&1 | tail -1 ) )
+      t=$(timed_run on -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1); rc=$?
     else
-      t=$( ( cd "$dir" && ulimit -v 2000000
-        { /usr/bin/time -f %e env -u EIGS_JIT_OFF -u EIGS_JIT_OSR_THRESHOLD \
-            timeout 300 "$EIGS" "${argv[@]}" >/dev/null; } 2>&1 | tail -1 ) )
+      t=$(timed_run on -u EIGS_JIT_OFF -u EIGS_JIT_OSR_THRESHOLD); rc=$?
+    fi
+    if [ "$rc" != 0 ]; then
+      rm -f "$tf"
+      echo "$name VERDICT=FAIL reason=timed-run-exited-$rc-arm-on-iter-$i (a timing of a failed run is not a timing)"
+      return
     fi
     on+=("$t")
   done
+  rm -f "$tf"
 
   local mo mn pairs
   mo=$(printf '%s\n' "${off[@]}" | med); mn=$(printf '%s\n' "${on[@]}" | med)
@@ -274,6 +302,33 @@ if [ "$SELFTEST" = 1 ]; then
   check "P5 dead workload reds on the control expectation" "workload-exited-" "$out"
   case "$out" in *VERDICT=PASS*) echo "   MISS P5 a DEAD program PASSED the control"; bad=$((bad+1));; esac
   run=$((run+1))
+
+  # P6 (#1204): PASSES THE PROBE, FAILS THE TIMED RUNS. This is the gap P5
+  # does not cover -- P5's program does not exist, so the up-front rc probe
+  # catches it. The probe runs with a DIFFERENT environment from the runs it
+  # vouches for (no EIGS_JIT_OFF), so a workload can satisfy the probe and
+  # then die on every timed invocation. A blind critic did exactly that and
+  # this harness reported PASS, +71.4%, with its own selftest green.
+  #
+  # The plant is that shape in two lines: exit 0 when run plainly, exit 23
+  # when EIGS_JIT_OFF is set -- i.e. every off-arm timing is of a corpse.
+  p6dir=$(mktemp -d "${TMPDIR:-/tmp}/jitfleet.p6.XXXXXX")
+  # It must BURN TIME before dying. A plant that exits instantly is caught by
+  # the no-timing check instead, which passes the row for the wrong reason
+  # and proves nothing about rc (mechanical-gates section 41). With the loop,
+  # `/usr/bin/time` emits a plausible elapsed line that `tail -1` happily
+  # reads -- which is precisely how the critic's fixture got PASS, +71.4%.
+  printf 'v is env_get of "EIGS_JIT_OFF"\ni is 0\ns is 0\nloop while i < 300000:\n    s is s + i\n    i is i + 1\nif v != "":\n    exit of 23\nprint of s\n' > "$p6dir/p6.eigs"
+  # Registered as a LOSS row, not a control: as a control the
+  # compile-nothing assertion fires first and the row reds for a reason that
+  # says nothing about rc. With expect=some the mechanism checks are all
+  # SATISFIED -- the on arm compiles, the off arm does not -- so the only
+  # thing left standing between this corpse and a verdict is the rc check.
+  out=$(N=2 run_row "probepass:$p6dir:0:some:p6.eigs")
+  check "P6 a run that dies only when TIMED is caught" "timed-run-exited-23" "$out"
+  case "$out" in *VERDICT=PASS*) echo "   MISS P6 a workload dying on every timed run PASSED"; bad=$((bad+1));; esac
+  run=$((run+1))
+  rm -rf "$p6dir"
 
   # P4: the population itself. A dropped row must fail, never shrink quietly.
   sub=$(ROWS=("${ROWS[@]:0:3}"); echo "${#ROWS[@]}")
