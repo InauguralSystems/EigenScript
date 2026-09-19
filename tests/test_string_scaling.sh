@@ -118,7 +118,20 @@ ROUND_RATIO_Q="${ROUND_RATIO_Q:-0.50}"
 # that a healthy build finishes in well under a second per point.
 LENS="20000 40000 80000"
 
-fail() { echo "string-scaling: FAIL: $*" >&2; exit 1; }
+# AN INSTRUMENT FAILURE IS NOT A VERDICT, AND MUST NOT SHARE ITS EXIT CODE.
+#
+#   exit 1 = this gate MEASURED the scan and it is superlinear.
+#   exit 2 = this gate could not measure at all (no runtime, no scratch dir,
+#            an unparsable reading). Nothing is being claimed about the scan.
+#
+# Bought by a blind critic: both used to be exit 1, so a subject that made
+# the gate die as "could not measure" was indistinguishable, by exit status,
+# from one the gate had judged quadratic -- and a selftest row asserting
+# "this must be RED" was satisfied by having broken the instrument. The suite
+# section treats any nonzero as a failed section either way, so nothing
+# downstream loosens; what changes is that a row can now require the verdict
+# and never be handed a malfunction instead.
+fail() { echo "string-scaling: FAIL: $*" >&2; exit 2; }
 
 if [ "$SELFTEST" = 1 ]; then
     # This gate's planted fault needs no synthetic mutant: the tree BEFORE the
@@ -427,14 +440,33 @@ STUB
     # So: the observed value is always the gate's own words. `$1` is the stub,
     # `$2` is PASS or FAIL, `$3` (optional) the worst ratio it must report.
     gate_says() {
-        local out rc want_line
-        out=$(EIGS="$STUB_DIR/$1" bash "$0" 2>&1); rc=$?
+        # STREAMS SEPARATED, AND THE EXIT CODE READ EXACTLY.
+        #
+        # The first cut merged them with 2>&1 and searched the merged text.
+        # A blind critic then wrote a fixture that exits 23 with no timing
+        # reading at all but emits the verdict lines inside a multiline
+        # diagnostic: the gate relays that diagnostic, dies as "could not
+        # measure", and the helper read the relayed copy as a completed
+        # superlinear verdict -- 23/23 with median->tertile also planted.
+        # Exact copies of the real lines worked too, so anchoring alone
+        # cannot fix it. This is #1186's defect (a diagnostic becoming the
+        # reading) in the selftest rather than the probe.
+        #
+        # The gate prints its VERDICT on stdout and its DIAGNOSTICS on
+        # stderr, so only stdout is searched; and `fail` now exits 2, so a
+        # malfunction can never satisfy a row that requires rc 1.
+        local out err rc want_line
+        err="$STUB_DIR/gate_says.err.$$"
+        out=$(EIGS="$STUB_DIR/$1" bash "$0" 2>"$err"); rc=$?
+        rm -f "$err"
         case "$2" in
-            PASS) want_line="^PASS: string scan scales linearly"; [ "$rc" = 0 ] || { printf 'rc=%s expected 0; last=%s\n' "$rc" "$(printf '%s\n' "$out" | tail -1)"; return; } ;;
-            FAIL) want_line="^FAIL: string scan is superlinear";  [ "$rc" = 1 ] || { printf 'rc=%s expected 1; last=%s\n' "$rc" "$(printf '%s\n' "$out" | tail -1)"; return; } ;;
+            PASS) want_line="^PASS: string scan scales linearly"
+                  [ "$rc" = 0 ] || { printf 'rc=%s expected 0 (2 = the gate could not measure)\n' "$rc"; return; } ;;
+            FAIL) want_line="^FAIL: string scan is superlinear"
+                  [ "$rc" = 1 ] || { printf 'rc=%s expected 1 (2 = the gate could not measure)\n' "$rc"; return; } ;;
         esac
         if ! printf '%s\n' "$out" | grep -q "$want_line"; then
-            printf 'no %s verdict line; last=%s\n' "$2" "$(printf '%s\n' "$out" | tail -1)"
+            printf 'no %s verdict line on STDOUT; last=%s\n' "$2" "$(printf '%s\n' "$out" | tail -1)"
             return
         fi
         if [ -n "${3:-}" ] && ! printf '%s\n' "$out" | grep -q "^worst doubling ratio: $3 "; then
@@ -608,7 +640,10 @@ STUB
     # also pins that the right doubling was judged.
     series_verdict() {  # $1 = stub name, $2 = the worst ratio it must report
         local out rc
-        out=$(EIGS="$STUB_DIR/$1" bash "$0" 2>&1); rc=$?
+        # Same provenance rule as gate_says: stdout only, rc exactly 1.
+        local err="$STUB_DIR/series.err.$$"
+        out=$(EIGS="$STUB_DIR/$1" bash "$0" 2>"$err"); rc=$?
+        rm -f "$err"
         if [ "$rc" = 1 ] \
            && printf '%s\n' "$out" | grep -q "^FAIL: string scan is superlinear" \
            && printf '%s\n' "$out" | grep -q "^worst doubling ratio: $2 "; then
@@ -649,6 +684,22 @@ STUB
         floor_got="rc=$floor_rc last=$(printf '%s\n' "$floor_out" | tail -1)"
     fi
     chk "a LENS with only one doubling is REFUSED, and says why" "$floor_got" "ok"
+
+    # (xii) A MALFUNCTION IS NOT A VERDICT. The subject here exits 23 with no
+    #       reading at all while printing exact copies of the verdict and
+    #       ratio lines -- the critic's spoof. The gate must die as "could
+    #       not measure" (exit 2), and a row asking for a superlinear verdict
+    #       must NOT be satisfied by it. Without both halves of the fix --
+    #       stdout-only, and exit 2 for a malfunction -- this reads FAIL.
+    cat > "$STUB_DIR/spoof" <<'STUB'
+#!/bin/sh
+echo "worst doubling ratio: 4.00  (max 2.90; linear ~2.0, quadratic ~4.0)"
+echo "FAIL: string scan is superlinear -- indexing is O(n), see EigenScript#1183"
+exit 23
+STUB
+    chmod +x "$STUB_DIR/spoof"
+    chk "a subject that only PRINTS a verdict cannot supply one" \
+        "$(gate_says spoof FAIL 4.00)" "rc=2 expected 1 (2 = the gate could not measure)"
 
     rm -f "$CNT" "$CNT".* "$CNT.total" "$CNT.order"
 

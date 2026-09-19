@@ -6688,7 +6688,7 @@ fi
 # -- a stderr diagnostic taken as the reading, an EIGS_REPLAY tape supplying
 # both clock readings, readings of `e`, `-1`, `0` and the wrong length, and a
 # runtime that is quadratic on four invocations in five.
-SCALE_SELFTEST_EXPECTED=23
+SCALE_SELFTEST_EXPECTED=24
 SCALE_ST=$(EIGS="$SCALE_EIGS" bash "$TESTS_DIR/test_string_scaling.sh" --selftest 2>&1)
 SCALE_ST_RC=$?
 SCALE_ST_RUN=$(printf '%s\n' "$SCALE_ST" | sed -nE 's/^== selftest ([0-9]+) run.*/\1/p' | tail -1)
