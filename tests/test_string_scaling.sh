@@ -410,6 +410,41 @@ STUB
     mkdir -p "$STUB_DIR"
     CNT="$STUB_DIR/calls"
 
+    # NO ROW MANUFACTURES ITS OWN VERDICT. Every end-to-end row goes through
+    # this one helper, which reports what the GATE said rather than what the
+    # row concluded from an exit code.
+    #
+    # Bought three times. #1193: rows asserted rc alone. #1195: a broken
+    # fixture made the gate exit 1 for "could not measure" and the rc-only
+    # rows passed -- and combined with a padded production boundary, 23/23
+    # again. #1198: a row wrote `chk "..." "ok" "ok"` inside an `if rc != 0`
+    # branch, so it SYNTHESISED the literal `ok` from a bare nonzero exit;
+    # deleting its subject passed, and combining that with median->tertile
+    # gave 23/23 in the selftest AND 3/3 in the extracted [99zc]. Refusing an
+    # empty observation in `chk` could not help, because the row never handed
+    # `chk` the observation -- it handed it a literal.
+    #
+    # So: the observed value is always the gate's own words. `$1` is the stub,
+    # `$2` is PASS or FAIL, `$3` (optional) the worst ratio it must report.
+    gate_says() {
+        local out rc want_line
+        out=$(EIGS="$STUB_DIR/$1" bash "$0" 2>&1); rc=$?
+        case "$2" in
+            PASS) want_line="^PASS: string scan scales linearly"; [ "$rc" = 0 ] || { printf 'rc=%s expected 0; last=%s\n' "$rc" "$(printf '%s\n' "$out" | tail -1)"; return; } ;;
+            FAIL) want_line="^FAIL: string scan is superlinear";  [ "$rc" = 1 ] || { printf 'rc=%s expected 1; last=%s\n' "$rc" "$(printf '%s\n' "$out" | tail -1)"; return; } ;;
+        esac
+        if ! printf '%s\n' "$out" | grep -q "$want_line"; then
+            printf 'no %s verdict line; last=%s\n' "$2" "$(printf '%s\n' "$out" | tail -1)"
+            return
+        fi
+        if [ -n "${3:-}" ] && ! printf '%s\n' "$out" | grep -q "^worst doubling ratio: $3 "; then
+            printf 'ratio was %s, expected %s\n' \
+                   "$(printf '%s\n' "$out" | sed -n 's/^worst doubling ratio: \([^ ]*\) .*/\1/p' | tail -1)" "$3"
+            return
+        fi
+        echo "$2"
+    }
+
     # (i) the per-doubling verdict is the MEDIAN of the ROUND ratios, not a
     #     ratio of per-length aggregates and not an extreme. Fifteen rounds,
     #     five of them stalled 10x on the largest length: the median must read
@@ -436,12 +471,8 @@ STUB
     # (ii) ...and end to end through the real entry point, those same stalled
     #      rounds do not fail the gate.
     rm -f "$CNT".*
-    st_out=$(EIGS="$STUB_DIR/stalled_rounds" bash "$0" 2>&1); st_rc=$?
-    if [ "$st_rc" = 0 ]; then
-        chk "stalled rounds do not fail the gate" "ok" "ok"
-    else
-        chk "stalled rounds do not fail the gate" "rc=$st_rc $(printf '%s\n' "$st_out" | tail -1)" "ok"
-    fi
+    chk "stalled rounds do not fail the gate, and it reads the clean 2.00" \
+        "$(gate_says stalled_rounds PASS 2.00)" "PASS"
 
     # (iii) a quadratic series fails.
     cat > "$STUB_DIR/quadratic" <<'STUB'
@@ -450,12 +481,7 @@ n=$2
 awk -v n="$n" 'BEGIN{ printf "%s %.4f\n", n, (n/20000)*(n/20000)*10 }'
 STUB
     chmod +x "$STUB_DIR/quadratic"
-    q_out=$(EIGS="$STUB_DIR/quadratic" bash "$0" 2>&1); q_rc=$?
-    if [ "$q_rc" != 0 ] && printf '%s\n' "$q_out" | grep -q "^FAIL: string scan is superlinear"; then
-        chk "a quadratic series is RED" "ok" "ok"
-    else
-        chk "a quadratic series is RED" "rc=$q_rc $(printf '%s\n' "$q_out" | tail -1)" "ok"
-    fi
+    chk "a quadratic series is RED at 4.00" "$(gate_says quadratic FAIL 4.00)" "FAIL"
 
     # (iv) THE CRITIC'S SUBJECT. Quadratic on four invocations in five, linear
     #      on the fifth -- the shape that walked through round 1's
@@ -473,12 +499,8 @@ fi
 STUB
     chmod +x "$STUB_DIR/mostly_quadratic"
     rm -f "$CNT".mm.*
-    m_out=$(EIGS="$STUB_DIR/mostly_quadratic" bash "$0" 2>&1); m_rc=$?
-    if [ "$m_rc" != 0 ] && printf '%s\n' "$m_out" | grep -q "^FAIL: string scan is superlinear"; then
-        chk "a runtime that is quadratic 4 invocations in 5 is still RED" "ok" "ok"
-    else
-        chk "a runtime that is quadratic 4 invocations in 5 is still RED" "rc=$m_rc $(printf '%s\n' "$m_out" | tail -1)" "ok"
-    fi
+    chk "a runtime that is quadratic 4 invocations in 5 is still RED" \
+        "$(gate_says mostly_quadratic FAIL)" "FAIL"
 
     # (v) THERE IS NO SECOND CHANCE. A red run measures exactly as much as a
     #     green one: ROUNDS x len(LENS) probe invocations, no more. Pinned by
@@ -546,13 +568,8 @@ fi
 STUB
     chmod +x "$STUB_DIR/six_linear_rounds"
     rm -f "$CNT".sl.*
-    sl_out=$(EIGS="$STUB_DIR/six_linear_rounds" bash "$0" 2>&1); sl_rc=$?
-    if [ "$sl_rc" != 0 ]; then
-        chk "9 quadratic rounds of 15 is RED -- the verdict is the MEDIAN, not a lower quantile" "ok" "ok"
-    else
-        chk "9 quadratic rounds of 15 is RED -- the verdict is the MEDIAN, not a lower quantile" \
-            "green ($(printf '%s\n' "$sl_out" | grep '^worst' | cut -c1-30))" "ok"
-    fi
+    chk "9 quadratic rounds of 15 is RED at 4.00 -- the verdict is the MEDIAN, not a lower quantile" \
+        "$(gate_says six_linear_rounds FAIL 4.00)" "FAIL"
     rm -f "$CNT".sl.*
 
     # (viii)-(x) THE PRODUCTION DECISION BOUNDARY, DRIVEN THROUGH THE REAL
