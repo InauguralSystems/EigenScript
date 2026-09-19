@@ -470,8 +470,7 @@ All notable changes to EigenScript are documented here.
 ### Fixed
 
 - **The string-scaling gate binds the runtime it measures, measures in
-  interleaved rounds, and declines the builds its claim is false of (#1188,
-  #1189).** Both found by a blind critic, by
+  interleaved rounds, and states the scope it actually has (#1188, #1189).** Both found by a blind critic, by
   execution, on the enrolment itself. #1188: the suite section ran the child
   without binding `EIGS`, on the reasoning that the child's default resolves to
   the suite's binary — true, and only a default. Exporting `EIGS` at a healthy
@@ -527,7 +526,7 @@ All notable changes to EigenScript are documented here.
   and report SKIPPED. Content presence is not evidence of compiled behaviour,
   and a gate that can be talked into skipping is worse than one that is mildly
   pessimistic. Every build is measured; the release lane stays the authority.
-  Selftest 11 -> 19 cases, two of which pin the threshold from below (an
+  Selftest 11 -> 23 cases, two of which pin the threshold from below (an
   n^1.58 shape must be rejected) so it cannot drift upward unnoticed.
 
 - **The docs-claims gate no longer reads its own stdin, and the guard that
@@ -566,7 +565,7 @@ All notable changes to EigenScript are documented here.
   `tests/test_string_scaling.sh`, a doubling-RATIO gate (worst ratio 4.69
   before, 2.00 after, max 2.90) — a ratio and not a wall-clock budget, so the
   claim is about the algorithm and not about the machine. The suite runs it as
-  section **[99zc]** along with its eleven-case selftest, six of whose cases
+  section **[99zc]** along with its 23-case selftest, most of whose cases
   are ways a blind critic made the gate report PASS on the still-quadratic
   binary; `tools/portability_parse_check.sh` runs that selftest under bash 3.2.
 

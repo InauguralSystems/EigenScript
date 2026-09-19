@@ -73,7 +73,7 @@ FILE_FLOOR=110
 #
 # tests/test_string_scaling.sh --selftest IS here, and it is the only tests/
 # entry: it is a gate whose own header cites three CI rounds lost to BSD
-# `mktemp` on a sibling, it runs entirely on stubs in 0.3 s, and eleven of its
+# `mktemp` on a sibling, it runs entirely on stubs, and 23 of its
 # cases are string-manipulation-heavy bash (`${case%%:*}` splitting, awk
 # ratios) -- exactly the shape 3.2 breaks on. The GATE half is not here: it
 # needs a built runtime and measures wall-clock, which is not what this audit

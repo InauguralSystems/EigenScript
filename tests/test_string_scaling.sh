@@ -289,8 +289,8 @@ measure_round() {  # prints one "ratio ratio ..." line: each doubling, this roun
 }
 
 run_gate() {
-    # Collect ROUNDS interleaved rounds, then take the LOWER TERTILE of each
-    # doubling's ratios and report the worst of those.
+    # Collect ROUNDS interleaved rounds, then take the MEDIAN of each
+    # doubling's ratios (ROUND_RATIO_Q) and report the worst of those.
     local r rows="" line n_doublings=0
     echo "  round      ratios per doubling"
     for r in $(seq 1 "$ROUNDS"); do
@@ -310,7 +310,7 @@ run_gate() {
             worst = 0
             for (i = 1; i <= cols; i++) {
                 for (j = 1; j <= n; j++) a[j] = v[i, j]
-                # insertion sort: n is single digits
+                # insertion sort: n is ROUNDS, 15 by default
                 for (j = 2; j <= n; j++) { t = a[j]; k = j - 1; while (k >= 1 && a[k] > t) { a[k+1] = a[k]; k-- } a[k+1] = t }
                 idx = int(q * (n - 1) + 0.5) + 1
                 if (a[idx] > worst) worst = a[idx]
@@ -550,23 +550,43 @@ esac
 STUB
         chmod +x "$STUB_DIR/$1"
     }
-    series_rc() { EIGS="$STUB_DIR/$1" bash "$0" >/dev/null 2>&1; echo $?; }
+    # A NONZERO EXIT IS NOT THIS ROW PASSING (mechanical-gates §19). The first
+    # cut of these three rows asserted rc alone, and a blind critic broke the
+    # FIXTURE instead of the gate -- `case "$2"` to `case "$1"`, so the stub
+    # matched on the script path rather than the length and emitted nothing.
+    # The gate then exited 1 for "could not measure", every row passed, and
+    # 23/23 held. Worse, combining that broken fixture with the +0.30
+    # production-boundary mutant ALSO gave 23/23: a broken fixture hid exactly
+    # the defect these rows exist to pin. So each row now requires the gate's
+    # own superlinear verdict AND the ratio it should have computed -- which
+    # also pins that the right doubling was judged.
+    series_verdict() {  # $1 = stub name, $2 = the worst ratio it must report
+        local out rc
+        out=$(EIGS="$STUB_DIR/$1" bash "$0" 2>&1); rc=$?
+        if [ "$rc" = 1 ] \
+           && printf '%s\n' "$out" | grep -q "^FAIL: string scan is superlinear" \
+           && printf '%s\n' "$out" | grep -q "^worst doubling ratio: $2 "; then
+            echo ok
+        else
+            printf 'rc=%s last=%s\n' "$rc" "$(printf '%s\n' "$out" | tail -1)"
+        fi
+    }
 
     # A uniformly 3.0x series -- n^1.58, mildly superlinear -- must be RED at
     # the REAL boundary. This is what a widened MAX_RATIO or a padded verdict
     # expression lets through.
     mk_series mild 10 30 90
     chk "a 3.0x series is RED through the real entry point (the boundary, not a copy of it)" \
-        "$(series_rc mild)" "1"
+        "$(series_verdict mild 3.00)" "ok"
 
     # ...and the first doubling alone being bad is RED: 4.0 then 2.0.
     mk_series first_bad 10 40 80
-    chk "a series bad on only the FIRST doubling is RED" "$(series_rc first_bad)" "1"
+    chk "a series bad on only the FIRST doubling is RED" "$(series_verdict first_bad 4.00)" "ok"
 
     # ...and so is the second alone: 2.0 then 4.0. This is the row that dies
     # if the aggregation stops looking at every doubling.
     mk_series second_bad 10 20 80
-    chk "a series bad on only the SECOND doubling is RED" "$(series_rc second_bad)" "1"
+    chk "a series bad on only the SECOND doubling is RED" "$(series_verdict second_bad 4.00)" "ok"
 
     # (xi) the doubling FLOOR. With three lengths there are always two
     #      doublings, so the `>= 2` guard cannot bind on the shipped
@@ -574,9 +594,15 @@ STUB
     #      It exists for the day someone shortens LENS, so the row shortens
     #      LENS: one doubling is not a growth curve and must be refused.
     st_lens="$LENS"; LENS="20000 40000"
-    EIGS="$STUB_DIR/mild"; run_gate >/dev/null 2>&1; floor_rc=$?
+    EIGS="$STUB_DIR/mild"; floor_out=$(run_gate 2>&1); floor_rc=$?
     LENS="$st_lens"
-    chk "a LENS with only one doubling is REFUSED, not measured" "$floor_rc" "1"
+    # ...and refused FOR THAT REASON, not because the stub happened to break.
+    if [ "$floor_rc" = 1 ] && printf '%s\n' "$floor_out" | grep -q "doubling(s) measured, need >= 2"; then
+        floor_got=ok
+    else
+        floor_got="rc=$floor_rc last=$(printf '%s\n' "$floor_out" | tail -1)"
+    fi
+    chk "a LENS with only one doubling is REFUSED, and says why" "$floor_got" "ok"
 
     rm -f "$CNT" "$CNT".* "$CNT.total" "$CNT.order"
 

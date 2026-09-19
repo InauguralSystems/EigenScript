@@ -50,7 +50,7 @@ section **[99zc]**:
 
 ```bash
 bash tests/test_string_scaling.sh            # the gate
-bash tests/test_string_scaling.sh --selftest # eleven cases: prove it can FAIL
+bash tests/test_string_scaling.sh --selftest # 23 cases: prove it can FAIL
 ```
 
 It times a scan at 20k, 40k and 80k characters and fails if any doubling costs

@@ -6683,7 +6683,7 @@ fi
 
 # Its planted-fault selftest. The case COUNT is pinned, and "how many failed"
 # is a SEPARATE condition: a count that changes meaning when a case fails is
-# not a population count (mechanical-gates §121). Six of these eleven cases are
+# not a population count (mechanical-gates §121). Most of these 23 cases are
 # ways a blind critic made this gate report PASS on the still-quadratic binary
 # -- a stderr diagnostic taken as the reading, an EIGS_REPLAY tape supplying
 # both clock readings, readings of `e`, `-1`, `0` and the wrong length, and a
