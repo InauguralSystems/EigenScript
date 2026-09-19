@@ -764,6 +764,35 @@ STUB
     chk "every tier in TIERS is measured and named in the output" \
         "${tier_named:-<no tier line at all>}" "off on "
 
+    # (xiv) ...AND THE TIERS ACTUALLY DISPATCH, which the row above does not
+    #        show. A blind critic deleted the `"$__tier"` ARGUMENT from the
+    #        run_gate call: both passes then ran with the default (off) while
+    #        the reporting loop still printed "tier JIT off" and "tier JIT
+    #        on", so the naming row stayed green, all 25 cases passed, and
+    #        the real JIT regression read 2.02 PASS (#1203). A label is not
+    #        an execution mode.
+    #
+    #        This row witnesses the mode the runtime was actually invoked
+    #        with: the stub records EIGS_JIT_OFF on every call, so the
+    #        sequence must be ROUNDS x |LENS| of "1" and then the same number
+    #        of "unset". Same technique as the interleaving row -- ask the
+    #        subject what happened to it, never the harness what it intended.
+    cat > "$STUB_DIR/tierwitness" <<STUB
+#!/bin/sh
+echo "\${EIGS_JIT_OFF:-unset}" >> "$CNT.tier"
+awk -v n="\$2" 'BEGIN{ printf "%s %.4f\n", n, n/2000 }'
+STUB
+    chmod +x "$STUB_DIR/tierwitness"
+    rm -f "$CNT.tier"
+    EIGS="$STUB_DIR/tierwitness" bash "$0" >/dev/null 2>&1
+    tier_modes=$(sort -u "$CNT.tier" 2>/dev/null | tr '\n' ' ')
+    tier_off_n=$(grep -c '^1$' "$CNT.tier" 2>/dev/null)
+    tier_on_n=$(grep -c '^unset$' "$CNT.tier" 2>/dev/null)
+    chk "each tier DISPATCHES its mode, not just its label" \
+        "modes=${tier_modes:-<none>}off=${tier_off_n:-0} on=${tier_on_n:-0}" \
+        "modes=1 unset off=$((ROUNDS * n_lens)) on=$((ROUNDS * n_lens))"
+    rm -f "$CNT.tier"
+
     rm -f "$CNT" "$CNT".* "$CNT.total" "$CNT.order"
 
     echo "== selftest $run run, $((run-bad)) passed, $bad failed =="
