@@ -43,6 +43,8 @@ make freestanding-check  # 2-stage symbol gate for the EigenOS profile (docs/FRE
 make freestanding-libc-diff  # mini-libc/libm vs glibc oracle (src/freestanding/)
 make poison     # 0xAA uninit-read hunter build; run the suite with MALLOC_PERTURB_=170
 bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (CI gate)
+bash tools/consumer_acceptance.sh plan            # every sibling consumer's OWN acceptance command, derived from its pin
+bash tools/consumer_acceptance.sh run src/eigenscript   # run them serially against a candidate; record -> reports/consumer_acceptance/
 ```
 
 - The suite must pass **both** release and ASan with leaks on:
