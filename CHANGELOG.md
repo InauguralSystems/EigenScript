@@ -326,11 +326,26 @@ All notable changes to EigenScript are documented here.
   PASS/FAIL/HANG/KILLED/UNRUNNABLE/SKIP, rc, duration, candidate identity).
   `examined == inventory > 0` is required to pass; a missing checkout or
   missing command is UNRUNNABLE not a skip; rc 124/137 is HANG/KILLED by
-  name; an interrupted run marks the record INCOMPLETE and exits 2. The
-  self-test plants a broken candidate, a shrinkage, a hang, and an
-  interruption — each must FIRE — plus an honest two-consumer PASS control.
-  Isolation: `CA_ECO` points the inventory at a fixture; the self-test never
-  mutates a sibling repo (mechanical-gates §168). Plan mode is unchanged.
+  name; an interrupted run (INT/TERM/HUP) marks the record INCOMPLETE and
+  exits 2. The record is fail-closed: it is created `INCOMPLETE` (with
+  `run_id`, timestamp, and `eco_root`) and the signal traps are installed
+  before anything from the candidate executes, including `--version`, which
+  runs under the same per-command timeout (a hanging or failing probe is
+  UNRUNNABLE for the whole run). `VERDICT: PASS` is printed only after the
+  final record is written to a same-directory temp and renamed into place;
+  a write/rename failure is FAIL, exit 1. Consumers run as a background
+  job (`setsid` + `timeout`, `wait` in the runner) so a trap can kill the
+  in-flight process group without waiting out the consumer budget. Block
+  bodies run under `bash -e -o pipefail -c`. The self-test plants a broken
+  candidate, a shrinkage, a hang, an interruption, a hanging `--version`
+  probe over a stale PASS record, an unwritable record path, and a two-line
+  block whose first line fails — each must FIRE — plus an honest
+  two-consumer PASS control. Six guards are mutation-tested in isolation
+  (examined==inventory, nonempty inventory, missing command, SKIP reason,
+  exact verdict line, plan GAP): each plant is SILENT with its guard
+  gutted. Isolation: `CA_ECO` points the inventory at a fixture; the
+  self-test never mutates a sibling repo (mechanical-gates §168). Plan
+  mode is unchanged.
 
 - **CI runs each gate where it is suited: a ≤ 15-minute PR lane, the full
   matrix on `main`, and a nightly (#1160).** Measured on PR #1158: 35 min
