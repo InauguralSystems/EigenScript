@@ -366,14 +366,33 @@ All notable changes to EigenScript are documented here.
   mutation-tested in isolation: each plant is SILENT with its guard
   gutted. Isolation: `CA_ECO` points the inventory at a fixture; the
   self-test never mutates a sibling repo (mechanical-gates §168). Every
-  run row carries `cand_calls=N` from a counting `eigenscript` shim;
-  `cand_calls=0` cannot be PASS (it is `UNEXERCISED`). `EIGS_DIR` and
-  `EIGENSCRIPT_DIR` are exported to an overlay of the candidate tree so
-  consumers that resolve `../EigenScript` exercise the candidate.
-  DECLARED commands are verified at plan time (the named file must
-  exist); EigenGauntlet is `bash tests/run_smoke.sh` and EigenMiniSat is
-  the consumer's real CI command. A missing `PREREQS` tool (eddy: `go`,
-  `java`) is `UNRUNNABLE|prereq:<tool>`, labelled as the environment's.
+  run row carries `cand_calls=N cand_ok=N cand_fail=M` from a counting
+  `eigenscript` shim whose log path is baked into the wrapper (not
+  exported; not named `CA_*`). `cand_calls` counts only non-trivial
+  invocations (a `.eigs` path or a non-flag positional); `--version` /
+  `--api` / `--help` / bare are `probe` and do not count. `cand_calls=0`
+  cannot be PASS (`UNEXERCISED`). Command rc 0 with `cand_ok=0
+  cand_fail>0` is `SWALLOWED`. The consumer inherits
+  `EIGS`/`EIGENSCRIPT`/`EIGS_DIR`/`EIGENSCRIPT_DIR`/`EIGENSCRIPT_BIN`/
+  `EIGENSCRIPT_GFX` and the shim `PATH`; every `CA_*` name is unset.
+  `EIGS_DIR` is a COPY overlay (`src/`, `lib/`, top-level files including
+  dotfiles a build may read; never `.git`; `src/eigenscript` is the
+  shim). `sibling_binary_present=yes/no` records whether
+  `$ECO/EigenScript/src/eigenscript` exists and differs from the
+  candidate (DMG#73 is visible, not worked around). DECLARED commands
+  are verified at plan time (every `bash`/`python3` file token, plus
+  `python3 -m unittest discover -s DIR`); EigenGauntlet is
+  `bash tests/run_smoke.sh` and EigenMiniSat is the consumer's real CI
+  command including the unittest step. A missing `PREREQS` tool (eddy:
+  `go` `java`; EigenMiniSat: `drat-trim`; dynamics: `gfx`, detected via
+  `--api` plus a `gfx_open` bind probe) is `UNRUNNABLE|prereq:<tool>`.
+  Residuals stated in the record header: a same-uid consumer that reads
+  the shim can still find the log path (non-accidental, not
+  adversary-proof); a missing tool referenced only inside a called
+  script still shows as a generic FAIL; ouroboros `aot/build.sh` keys
+  `libeigsrt.a` on `pwd -P` of `$EIGS_DIR/src`, so every run rebuilds
+  against the overlay path and leaves `aot/build/.libsrc` stamped with
+  a dead path.
 
 - **CI runs each gate where it is suited: a ≤ 15-minute PR lane, the full
   matrix on `main`, and a nightly (#1160).** Measured on PR #1158: 35 min
