@@ -319,6 +319,22 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **Consumer-acceptance `run` residuals (M1 round 7).** Self-test TMPDIR is
+  private (concurrent self-tests no longer `rm -rf` each other's
+  `ca-run.*`). The consumer process group is reaped after `wait` and the
+  per-row call log is a new inode. Export lines are joined with a real
+  newline. The call log lives under a directory the consumer is never
+  told about. Overlay dirs are copied with `cp -rL`. A gfx bind probe
+  must exit 0 with the expected output (`candidate_gfx: unknown` on
+  nonzero; gfx prereq treats unknown as missing). `EIGENSCRIPT_GFX` is
+  exported only when `CAND_HAS_GFX=1`; `consumer_skips` counts `^SKIP`
+  lines and a PASS with skips is `PASS|skips=N`. A bare candidate is
+  refused when `$ECO/EigenScript` exists. Plants D/D2 require exactly
+  one stdout `VERDICT: INCOMPLETE`. Plant Z's stub lists `gfx_open` and
+  its transverse guts the probe-routing/re-arm, not the counter.
+  `sibling_binary_present` is computed after the wave too (executable
+  regular file only).
+
 - **Consumer-acceptance `run` mode** (`tools/consumer_acceptance.sh run
   <CANDIDATE>`): executes every gated consumer's own acceptance command
   serially against a release candidate, with the candidate on `PATH` as

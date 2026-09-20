@@ -17,14 +17,17 @@
 #
 #   tools/consumer_acceptance.sh plan            what would run, and coverage
 #   tools/consumer_acceptance.sh run <BINARY>    run it, serially; write a record
-#     PATH shim logs argv+rc to a scratch file whose path is baked into the
-#     shim (not exported; not named CA_*). cand_calls counts NON-TRIVIAL
-#     invocations (a .eigs path or a non-flag positional). --version/--api/
-#     --help/bare are `probe` and do not count. cand_calls=0 cannot be PASS
-#     (UNEXERCISED). Command rc 0 with cand_ok=0 cand_fail>0 is SWALLOWED.
-#     EIGS_DIR is a COPY overlay (src/, lib/, top-level files; never .git;
-#     src/eigenscript is the shim). EIGENSCRIPT_BIN/EIGENSCRIPT_GFX point
-#     at the shim (consumers' own documented variables).
+#     PATH shim logs argv+rc to a scratch file under a directory the consumer
+#     is never told about (not the shim dir, not $EIGS_DIR, not their parents);
+#     the path is baked into the shim (not exported; not named CA_*). cand_calls
+#     counts NON-TRIVIAL invocations (a .eigs path or a non-flag positional).
+#     --version/--api/--help/bare are `probe` and do not count. cand_calls=0
+#     cannot be PASS (UNEXERCISED). Command rc 0 with cand_ok=0 cand_fail>0 is
+#     SWALLOWED. EIGS_DIR is a COPY overlay (src/, lib/, top-level files; never
+#     .git; src/eigenscript is the shim; dirs copied with cp -rL).
+#     EIGENSCRIPT_BIN points at the shim; EIGENSCRIPT_GFX is exported only
+#     when CAND_HAS_GFX=1. consumer_skips counts ^SKIP lines in the consumer's
+#     combined output; a PASS with skips is PASS|skips=N, not a bare PASS.
 #   tools/consumer_acceptance.sh --self-test     plant a fault, prove it fires
 #
 # Isolation (mechanical-gates §168): this script never mutates a sibling repo.
@@ -87,13 +90,14 @@
 # so a trap can kill the in-flight process group without waiting out the
 # consumer budget. Block bodies run under bash -e -o pipefail -c.
 # The consumer inherits EIGS/EIGENSCRIPT/EIGS_DIR/EIGENSCRIPT_DIR/
-# EIGENSCRIPT_BIN/EIGENSCRIPT_GFX and the shim PATH; every CA_* name is
-# unset in that environment. run_cleanup removes the run's scratch on
-# every exit path.
+# EIGENSCRIPT_BIN (and EIGENSCRIPT_GFX only when the candidate actually
+# has gfx) and the shim PATH; every CA_* name is unset in that
+# environment. run_cleanup removes the run's scratch on every exit path.
 #
 # Residuals stated in the record header (not fixed here):
-#   - a same-uid consumer that reads the shim script can still find the
-#     call-log path; the evidence is non-accidental, not adversary-proof.
+#   - any same-uid consumer that finds the shim script and reads it can
+#     still recover the call-log path; the evidence is non-accidental,
+#     not adversary-proof.
 #   - a missing tool referenced inside a called script (not in PREREQS
 #     and not a top-level token) still shows as a generic FAIL.
 #   - ouroboros aot/build.sh keys libeigsrt.a on pwd -P of $EIGS_DIR/src,
@@ -101,6 +105,13 @@
 #     aot/build/.libsrc stamped with a dead path. Known cost of the
 #     overlay; not a bug. DMG#73 (hard-coded sibling path) is visible
 #     via sibling_binary_present=, not worked around.
+#   - SWALLOWED on an all-negative suite: a suite whose every candidate
+#     call expects rc≠0 must include one positive invocation.
+#   - a row-wide cand_calls count cannot certify WHICH work the candidate
+#     did when an absolute-path subprocess then accepts with another
+#     runtime after one candidate setup call.
+#   - stdin-fed programs and `eigenscript --test` count as probe; no
+#     real consumer uses them.
 #
 # examined != inventory on a COMPLETED record is unreachable without a
 # broken loop: the production path that stops early is an interrupt, and
@@ -312,8 +323,12 @@ missing_prereq() {
     [ -z "$t" ] && continue
     if [ "$t" = gfx ]; then
       # CA-GUARD:gfx-prereq
-      if [ "${CAND_HAS_GFX:-0}" -eq 0 ]; then
-        printf 'gfx-build'
+      if [ "${CAND_HAS_GFX:-0}" != 1 ]; then
+        if [ "${CAND_HAS_GFX:-0}" = unknown ]; then
+          printf 'gfx-build (probe rc %s)' "${CAND_GFX_RC:-?}"
+        else
+          printf 'gfx-build'
+        fi
         return 0
       fi
       continue
@@ -327,8 +342,9 @@ missing_prereq() {
 }
 
 # Walk up from the candidate until a directory whose src/eigenscript is
-# that same file (-ef). Empty CAND_TREE means a bare binary: tree-resolving
-# consumers will not see EIGS_DIR and report UNEXERCISED.
+# that same file (-ef). Empty CAND_TREE is a bare binary: if $ECO/EigenScript
+# also exists, run refuses (exit 2) rather than letting EIGS_DIR-fallback
+# consumers do their tree work against the sibling.
 derive_candidate_tree() {
   local cand="$1" dir
   CAND_TREE=""
@@ -343,19 +359,39 @@ derive_candidate_tree() {
   return 1
 }
 
+# Executable regular file, distinct from the candidate. Used before the
+# wave (header) and after (footer); no→yes when a consumer created one.
+sibling_is_present() {
+  local p="${ECO:-}/EigenScript/src/eigenscript"
+  if [ -f "$p" ] && [ -x "$p" ] && [ ! "$p" -ef "${CAND_ABS:-/}" ]; then
+    printf 'yes'
+  else
+    printf 'no'
+  fi
+}
+
 # Overlay of the candidate tree under the run scratch: a COPY of src/,
 # lib/, and top-level files (including dotfiles a build may read, e.g.
-# .gitignore; never .git). src/eigenscript is replaced by the counting
-# shim. Writes land in scratch; realpath stays inside the overlay.
-# Never mutates the real tree. Symlink nothing.
+# .gitignore; never .git). Dirs are copied with cp -rL so writes through
+# a symlink cannot reach outside the overlay. A link that cannot be
+# dereferenced is skipped and noted (overlay_skipped=). src/eigenscript
+# is replaced by the counting shim. Never mutates the real tree.
 build_candidate_overlay() {
-  local src="$1" dst="$2" item base
+  local src="$1" dst="$2" item base s
   CAND_OVERLAY=""
+  OVERLAY_SKIPPED=""
   [ -n "$src" ] && [ -d "$src" ] || return 1
   mkdir -p "$dst"
   # CA-GUARD:overlay-copy
   if [ -d "$src/src" ]; then
-    cp -a "$src/src" "$dst/src"
+    if ! cp -rL "$src/src" "$dst/src" 2>/dev/null; then
+      mkdir -p "$dst/src"
+      for s in "$src/src"/*; do
+        [ -e "$s" ] || { OVERLAY_SKIPPED="${OVERLAY_SKIPPED:+$OVERLAY_SKIPPED }src/$(basename "$s")"; continue; }
+        cp -rL "$s" "$dst/src/$(basename "$s")" 2>/dev/null || \
+          OVERLAY_SKIPPED="${OVERLAY_SKIPPED:+$OVERLAY_SKIPPED }src/$(basename "$s")"
+      done
+    fi
   else
     mkdir -p "$dst/src"
   fi
@@ -363,7 +399,14 @@ build_candidate_overlay() {
   cp "$SHIM/eigenscript" "$dst/src/eigenscript"
   chmod +x "$dst/src/eigenscript"
   if [ -d "$src/lib" ]; then
-    cp -a "$src/lib" "$dst/lib"
+    if ! cp -rL "$src/lib" "$dst/lib" 2>/dev/null; then
+      mkdir -p "$dst/lib"
+      for s in "$src/lib"/*; do
+        [ -e "$s" ] || { OVERLAY_SKIPPED="${OVERLAY_SKIPPED:+$OVERLAY_SKIPPED }lib/$(basename "$s")"; continue; }
+        cp -rL "$s" "$dst/lib/$(basename "$s")" 2>/dev/null || \
+          OVERLAY_SKIPPED="${OVERLAY_SKIPPED:+$OVERLAY_SKIPPED }lib/$(basename "$s")"
+      done
+    fi
   fi
   local nullglob_was=0 dotglob_was=0
   shopt -q nullglob && nullglob_was=1
@@ -528,7 +571,12 @@ CAND_TREE=""
 CAND_OVERLAY=""
 RESOLVED=""
 CALL_LOG=""
+PRIV=""
 CAND_HAS_GFX=0
+CAND_GFX_RC=""
+OVERLAY_SKIPPED=""
+SIBLING_BEFORE=no
+SIBLING_AFTER=no
 SIBLING_PRESENT=no
 LAST_CALLS=0
 LAST_OK=0
@@ -743,6 +791,7 @@ die_record() {
 # the footer has already written PASS/FAIL and RECORD_FINISHED is still 0
 # (the finalization race the finished-before-rename guard exists to close).
 finish_incomplete() {
+  # CA-GUARD:finish-incomplete
   [ "${RECORD_FINISHED:-0}" -eq 1 ] && return
   [ -n "${RECORD:-}" ] && [ -f "$RECORD" ] || return
   if [ -n "${RUN_ID:-}" ] && grep -Fx "run_id=${RUN_ID}" "$RECORD" >/dev/null 2>&1; then
@@ -786,6 +835,10 @@ run_cleanup() {
     # CA-GUARD:scratch-cleanup
     rm -rf "$WORK"
     WORK=""
+  fi
+  if [ -n "${PRIV:-}" ] && [ -d "${PRIV:-}" ]; then
+    rm -rf "$PRIV"
+    PRIV=""
   fi
   release_record_lock
 }
@@ -852,18 +905,33 @@ invalidate_previous_record() {
 write_record_header() {
   write_record replace tmp <<EOF
 # consumer_acceptance record
-# Residual: a same-uid consumer that reads the shim script can still find
-# the call-log path; the evidence is non-accidental, not adversary-proof.
+# Residual: any same-uid consumer that finds the shim script and reads it
+# can still recover the call-log path; the evidence is non-accidental, not
+# adversary-proof.
 # Residual: a missing tool referenced inside a called script (not in
 # PREREQS / top-level tokens) still shows as a generic FAIL.
-# Overlay is a COPY of src/, lib/, and top-level files (never .git).
+# Overlay is a COPY of src/, lib/, and top-level files (never .git);
+# directories are copied with cp -rL. A symlink that cannot be
+# dereferenced is skipped (overlay_skipped=).
 # ouroboros aot/build.sh keys libeigsrt.a on pwd -P of \$EIGS_DIR/src, so
 # every run rebuilds against the per-run overlay path and leaves
 # aot/build/.libsrc stamped with a dead path (the next local build
 # rebuilds again). Known cost of the overlay, not a bug.
 # When sibling_binary_present=yes, consumers with hard-coded sibling
 # paths (DMG#73) may have used \$ECO/EigenScript/src/eigenscript; that is
-# visible here, not worked around.
+# visible here, not worked around. sibling_binary_present is the value
+# before the wave; sibling_binary_present_after is after. Counted only
+# when \$ECO/EigenScript/src/eigenscript is an executable regular file
+# distinct from the candidate.
+# A bare candidate is refused (exit 2) when \$ECO/EigenScript exists;
+# pass a tree candidate so EIGS_DIR is an overlay of the candidate.
+# Residual: SWALLOWED on an all-negative suite -- a suite whose every
+# candidate call expects rc≠0 must include one positive invocation.
+# Residual: a row-wide cand_calls count cannot certify WHICH work the
+# candidate did when an absolute-path subprocess then accepts with
+# another runtime after one candidate setup call.
+# Residual: stdin-fed programs and eigenscript --test count as probe;
+# no real consumer uses them.
 run_id=$RUN_ID
 started=$STARTED
 eco_root=${ECO:-PENDING}
@@ -873,12 +941,13 @@ candidate_version=PENDING
 candidate_tree=PENDING
 eigenscript_resolved=${RESOLVED:-PENDING}
 overlay=copy
+overlay_skipped=PENDING
 sibling_binary_present=PENDING
 inventory=PENDING
 examined=PENDING
 status=INCOMPLETE
 ${RECORD_LOCK_NOTE:+note=$RECORD_LOCK_NOTE
-}# row|name|pin|verdict|rc|duration_s|cand_calls=N|cand_ok=N|cand_fail=M|sibling_binary_present=yes/no
+}# row|name|pin|verdict|rc|duration_s|cand_calls=N|cand_ok=N|cand_fail=M|consumer_skips=N|sibling_binary_present=yes/no
 VERDICT: INCOMPLETE
 EOF
 }
@@ -908,13 +977,18 @@ write_record_footer() {
         candidate_version=PENDING) printf 'candidate_version=%s\n' "${CAND_VER:-}" ;;
         candidate_tree=PENDING)    printf 'candidate_tree=%s\n' "${CAND_TREE:-}" ;;
         eigenscript_resolved=PENDING) printf 'eigenscript_resolved=%s\n' "${RESOLVED:-}" ;;
-        sibling_binary_present=PENDING) printf 'sibling_binary_present=%s\n' "${SIBLING_PRESENT:-no}" ;;
+        sibling_binary_present=PENDING) printf 'sibling_binary_present=%s\n' "${SIBLING_BEFORE:-${SIBLING_PRESENT:-no}}" ;;
+        overlay_skipped=PENDING)   printf 'overlay_skipped=%s\n' "${OVERLAY_SKIPPED:-}" ;;
         "VERDICT: INCOMPLETE")     verdict_line "$verdict" ;;
         VERDICT:*)                 ;; # drop any other verdict; we emit one
         *)                         printf '%s\n' "$line" ;;
       esac
     done < "$RECORD"
     printf 'probe_rc=%s\n' "${PROBE_RC:--}"
+    printf 'sibling_binary_present_after=%s\n' "${SIBLING_AFTER:-${SIBLING_PRESENT:-no}}"
+    if [ "${SIBLING_BEFORE:-no}" != "${SIBLING_AFTER:-${SIBLING_PRESENT:-no}}" ]; then
+      printf 'sibling_binary_present_changed=%s→%s\n' "${SIBLING_BEFORE:-no}" "${SIBLING_AFTER:-${SIBLING_PRESENT:-no}}"
+    fi
     printf 'inventory=%s examined=%s\n' "${INVENTORY:-0}" "${EXAMINED:-0}"
     printf 'status=%s\n' "$status"
   )"
@@ -927,7 +1001,7 @@ write_record_footer() {
 }
 
 append_row() {
-  local extra="cand_calls=${LAST_CALLS:-0}|cand_ok=${LAST_OK:-0}|cand_fail=${LAST_FAIL:-0}|sibling_binary_present=${SIBLING_PRESENT:-no}"
+  local extra="cand_calls=${LAST_CALLS:-0}|cand_ok=${LAST_OK:-0}|cand_fail=${LAST_FAIL:-0}|consumer_skips=${LAST_SKIPS:-0}|sibling_binary_present=${SIBLING_PRESENT:-no}"
   if [ -n "${LAST_PREREQ:-}" ]; then
     extra="$extra|prereq=$LAST_PREREQ"
   fi
@@ -957,7 +1031,14 @@ run_bounded() {
   CA_INFLIGHT_PID=$!
   wait "$CA_INFLIGHT_PID"
   LAST_RC=$?
+  local pid="$CA_INFLIGHT_PID"
   CA_INFLIGHT_PID=""
+  # Reap the setsid group so a background child cannot keep the call-log
+  # fd and write into the next row's slice.
+  if [ -n "$pid" ]; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    kill -KILL -- "-$pid" 2>/dev/null || true
+  fi
 }
 
 LAST_VERDICT=""
@@ -973,6 +1054,7 @@ run_one() {
   LAST_CALLS=0
   LAST_OK=0
   LAST_FAIL=0
+  LAST_SKIPS=0
   LAST_PREREQ=""
 
   if [ ! -d "$repo" ]; then
@@ -1000,9 +1082,12 @@ run_one() {
 
   log="$WORK/logs/$name.log"
   mkdir -p "$WORK/logs"
-  # Arm this row's slice of the private log. The harness --version/--api
-  # probes ran before any row log existed and used CAND_ABS, not the shim.
+  # Arm this row's slice of the private log (new inode, so a straggler
+  # holding the previous fd cannot append here). The harness
+  # --version/--api probes ran before any row log existed and used
+  # CAND_ABS, not the shim.
   if [ -n "${CALL_LOG:-}" ]; then
+    rm -f "$CALL_LOG"
     : > "$CALL_LOG"
   fi
 
@@ -1013,7 +1098,13 @@ run_one() {
   fi
   # CA-GUARD:eigenscript-bin
   if true; then
-    eigs_exports="${eigs_exports}$(printf 'export EIGENSCRIPT_BIN=%q\nexport EIGENSCRIPT_GFX=%q\n' "$SHIM/eigenscript" "$SHIM/eigenscript")"
+    if [ -n "$eigs_exports" ]; then
+      eigs_exports="${eigs_exports}"$'\n'
+    fi
+    eigs_exports="${eigs_exports}$(printf 'export EIGENSCRIPT_BIN=%q\n' "$SHIM/eigenscript")"
+    if [ "${CAND_HAS_GFX:-0}" = 1 ]; then
+      eigs_exports="${eigs_exports}"$'\n'"$(printf 'export EIGENSCRIPT_GFX=%q\n' "$SHIM/eigenscript")"
+    fi
   fi
   # CA-GUARD:private-log-export
   true
@@ -1035,10 +1126,11 @@ run_one() {
   LAST_OK="${LAST_OK:-0}"
   LAST_FAIL=$((LAST_CALLS - LAST_OK))
   if [ "$LAST_FAIL" -lt 0 ]; then LAST_FAIL=0; fi
+  LAST_SKIPS="$(grep -c '^SKIP' "$log" 2>/dev/null || true)"
+  LAST_SKIPS="${LAST_SKIPS:-0}"
   # CA-GUARD:probe-not-attributed
-  # The harness --version/--api probes ran before this log was armed and
-  # used the candidate path directly, never the shim.
-  :
+  # The harness --version/--api/bind probes ran against CAND_ABS (not the
+  # shim) before this log was armed; the per-row recreate drops them.
 
   case "$LAST_RC" in
     0)   LAST_VERDICT=PASS ;;
@@ -1060,6 +1152,9 @@ run_one() {
   # A nonzero candidate rc is not by itself a failure (lint/fail-soft).
   if [ "$LAST_VERDICT" = PASS ] && [ "${LAST_OK:-0}" -eq 0 ] && [ "${LAST_FAIL:-0}" -gt 0 ]; then
     LAST_VERDICT=SWALLOWED
+  fi
+  if [ "$LAST_VERDICT" = PASS ] && [ "${LAST_SKIPS:-0}" -gt 0 ]; then
+    LAST_VERDICT="PASS|skips=$LAST_SKIPS"
   fi
 }
 
@@ -1167,13 +1262,16 @@ run_mode() {
 
   SHIM="$WORK/bin"
   mkdir -p "$SHIM"
-  # Private call log: random name under the run scratch, baked into the
-  # shim, never exported. A same-uid consumer that reads the shim can
-  # still find it (stated residual); an accidental CA_* write cannot.
-  CALL_LOG="$WORK/$(od -An -N12 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
-  case "$CALL_LOG" in
-    "$WORK/"|"$WORK") CALL_LOG="$WORK/c${RANDOM}${RANDOM}${RANDOM}" ;;
-  esac
+  # Private call log: a directory the consumer is never told about (not
+  # the shim dir, not $EIGS_DIR, not their parents). Path baked into the
+  # shim. Residual: any same-uid consumer that finds the shim script and
+  # reads it can still recover the path.
+  PRIV="$(mktemp -d "${TMPDIR:-/tmp}/ca-priv.XXXXXX")"
+  local _hid
+  _hid="$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+  [ -n "$_hid" ] || _hid="c${RANDOM}${RANDOM}"
+  mkdir -p "$PRIV/.$_hid"
+  CALL_LOG="$PRIV/.$_hid/log"
   : > "$CALL_LOG"
   # Counting wrapper, not a symlink: records argv+rc then runs the
   # candidate (cannot exec -- we need the rc). Probe argv does not count.
@@ -1201,15 +1299,18 @@ run_mode() {
   chmod +x "$SHIM/eigenscript"
   RESOLVED="$SHIM/eigenscript"
   derive_candidate_tree "$CAND_ABS" || true
+  if [ -z "${CAND_TREE:-}" ] && [ -e "$ECO/EigenScript" ]; then
+    say "consumer_acceptance: refusing a bare candidate ($CAND_ABS) while sibling tree $ECO/EigenScript exists; pass a tree candidate (.../src/eigenscript) so EIGS_DIR is an overlay of the candidate"
+    RUN_RC=2
+    exit 2
+  fi
   CAND_OVERLAY=""
   if [ -n "${CAND_TREE:-}" ]; then
     build_candidate_overlay "$CAND_TREE" "$WORK/cand_tree" || true
   fi
-  SIBLING_PRESENT=no
-  if [ -e "$ECO/EigenScript/src/eigenscript" ] \
-     && [ ! "$ECO/EigenScript/src/eigenscript" -ef "$CAND_ABS" ]; then
-    SIBLING_PRESENT=yes
-  fi
+  SIBLING_BEFORE="$(sibling_is_present)"
+  SIBLING_PRESENT="$SIBLING_BEFORE"
+  SIBLING_AFTER="$SIBLING_BEFORE"
 
   # CA-GUARD:scan-inventory
   scan_inventory
@@ -1239,8 +1340,8 @@ run_mode() {
     say "candidate_tree: (bare binary, no src/eigenscript tree)"
   fi
   say "eigenscript_resolved: $RESOLVED"
-  say "sibling_binary_present: $SIBLING_PRESENT"
-  if [ "$SIBLING_PRESENT" = yes ]; then
+  say "sibling_binary_present: $SIBLING_BEFORE"
+  if [ "$SIBLING_BEFORE" = yes ]; then
     say "note: \$ECO/EigenScript/src/eigenscript exists and differs from the candidate; consumers with hard-coded sibling paths (DMG#73) may have used it"
   fi
   say "inventory=$INVENTORY examined=PENDING"
@@ -1265,6 +1366,7 @@ run_mode() {
   # lists the gfx group even when built headless); a bind probe confirms
   # the name is actually defined. Stubs that omit gfx_open skip the bind.
   CAND_HAS_GFX=0
+  CAND_GFX_RC=""
   local api_log gfx_bind_log gfx_bind_src
   api_log="$WORK/api.log"
   run_bounded "$api_log" "$CAND_ABS" --api --json
@@ -1276,10 +1378,18 @@ run_mode() {
     gfx_bind_log="$WORK/gfx_bind.log"
     printf 'print of gfx_open\n' > "$gfx_bind_src"
     run_bounded "$gfx_bind_log" "$CAND_ABS" "$gfx_bind_src"
-    if grep -q "undefined variable" "$gfx_bind_log" 2>/dev/null; then
-      CAND_HAS_GFX=0
-    else
+    CAND_GFX_RC="$LAST_RC"
+    # A defined gfx_open prints <fn gfx_open> (named native) or <builtin>
+    # (older unnamed native). rc 0 with neither is not gfx. Any nonzero
+    # is unknown (segfault, undefined variable, …).
+    if [ "$LAST_RC" -eq 0 ] \
+       && grep -qE '<fn gfx_open>|<builtin>' "$gfx_bind_log" 2>/dev/null \
+       && ! grep -q "undefined variable" "$gfx_bind_log" 2>/dev/null; then
       CAND_HAS_GFX=1
+    elif [ "$LAST_RC" -ne 0 ]; then
+      CAND_HAS_GFX=unknown
+    else
+      CAND_HAS_GFX=0
     fi
   fi
   say "candidate_gfx: $CAND_HAS_GFX"
@@ -1318,9 +1428,9 @@ run_mode() {
     append_row "$name" "$pin" "$verdict" "$LAST_RC" "$LAST_DUR"
     EXAMINED=$((EXAMINED + 1))
     if [ -n "${LAST_PREREQ:-}" ]; then
-      say "  UNRUNNABLE|prereq:${LAST_PREREQ}  $name  pin=$pin rc=$LAST_RC ${LAST_DUR}s cand_calls=${LAST_CALLS:-0} cand_ok=${LAST_OK:-0} cand_fail=${LAST_FAIL:-0} sibling_binary_present=${SIBLING_PRESENT:-no}"
+      say "  UNRUNNABLE|prereq:${LAST_PREREQ}  $name  pin=$pin rc=$LAST_RC ${LAST_DUR}s cand_calls=${LAST_CALLS:-0} cand_ok=${LAST_OK:-0} cand_fail=${LAST_FAIL:-0} consumer_skips=${LAST_SKIPS:-0} sibling_binary_present=${SIBLING_PRESENT:-no}"
     else
-      say "  $verdict  $name  pin=$pin rc=$LAST_RC ${LAST_DUR}s cand_calls=${LAST_CALLS:-0} cand_ok=${LAST_OK:-0} cand_fail=${LAST_FAIL:-0} sibling_binary_present=${SIBLING_PRESENT:-no}"
+      say "  $verdict  $name  pin=$pin rc=$LAST_RC ${LAST_DUR}s cand_calls=${LAST_CALLS:-0} cand_ok=${LAST_OK:-0} cand_fail=${LAST_FAIL:-0} consumer_skips=${LAST_SKIPS:-0} sibling_binary_present=${SIBLING_PRESENT:-no}"
     fi
     if [ "$verdict" != PASS ]; then
       ANY_BAD=1
@@ -1330,6 +1440,15 @@ run_mode() {
     fi
     i=$((i + 1))
   done
+
+  SIBLING_AFTER="$(sibling_is_present)"
+  SIBLING_PRESENT="$SIBLING_AFTER"
+  if [ "$SIBLING_AFTER" != "$SIBLING_BEFORE" ]; then
+    say "sibling_binary_present_after: $SIBLING_AFTER"
+    say "sibling_binary_present_changed: ${SIBLING_BEFORE}→${SIBLING_AFTER}"
+  else
+    say "sibling_binary_present_after: $SIBLING_AFTER"
+  fi
 
   finalize_run
 }
@@ -1386,6 +1505,16 @@ mk_stub() {
 mk_stub_hang_version() {
   local path="$1"
   printf '%s\n' "#!/bin/sh" "if [ \"\${1:-}\" = --version ]; then sleep 30; echo hang-version; exit 0; fi" "exit 0" > "$path"
+  chmod +x "$path"
+}
+
+# --api lists gfx_open so the harness bind probe (a positional .eigs) runs.
+mk_stub_gfx() {
+  local path="$1"
+  printf '%s\n' '#!/bin/sh' \
+    'if [ "${1:-}" = --version ]; then echo "eigenscript stub"; exit 0; fi' \
+    'if [ "${1:-}" = --api ]; then echo "{\"builtins\":[\"gfx_open\"]}"; exit 0; fi' \
+    'exit 0' > "$path"
   chmod +x "$path"
 }
 
@@ -1556,6 +1685,56 @@ plant_trailing_verdict() {
   if [ "$rc" -eq 0 ] \
      && printf '%s\n' "$out" | grep -q 'VERDICT: PASS' \
      && ! printf '%s\n' "$out" | grep -qx 'VERDICT: PASS'; then
+    return 0
+  fi
+  return 1
+}
+
+# D / D2: SIGTERM/SIGHUP mid-wave. FIRE: exit 2, record INCOMPLETE, and
+# exactly one `VERDICT: INCOMPLETE` line on stdout (the record header
+# already says INCOMPLETE, so stdout is what finish_incomplete does).
+plant_interruption() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local sig="${5:-TERM}"
+  local pid waited rc t0 t1 elapsed n_out outf
+  outf="${rec}.stdout"
+  rm -f "$outf"
+  CA_ECO="$eco" CA_TIMEOUT=20 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" >"$outf" 2>&1 &
+  pid=$!
+  waited=0
+  while [ "$waited" -lt 20 ]; do
+    if [ -f "$rec" ] && grep -q 'status=INCOMPLETE' "$rec" 2>/dev/null; then
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  sleep 1
+  t0="$(date +%s)"
+  kill -"$sig" "$pid" 2>/dev/null || true
+  waited=0
+  while [ "$waited" -lt 8 ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+  wait "$pid"
+  rc=$?
+  t1="$(date +%s)"
+  elapsed=$((t1 - t0))
+  n_out="$(grep -c '^VERDICT: INCOMPLETE$' "$outf" 2>/dev/null || true)"
+  LAST_PLANT_DETAIL="rc=$rc elapsed=${elapsed}s n_out=$n_out rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$(cat "$outf" 2>/dev/null || true)" "$rec" "$rc"
+  if [ "$rc" -eq 2 ] \
+     && [ "$n_out" = 1 ] \
+     && grep -q '^VERDICT: INCOMPLETE$' "$rec" \
+     && grep -q 'status=INCOMPLETE' "$rec" \
+     && [ "$elapsed" -le 5 ]; then
     return 0
   fi
   return 1
@@ -2031,6 +2210,141 @@ plant_clobber_symlink() {
   return 1
 }
 
+# Straggler from row N must not land in row N+1. FIRE: b_never_calls UNEXERCISED.
+plant_straggler() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=8 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if grep -q 'row|b_never_calls|v0.43.0|UNEXERCISED|' "$rec" \
+     && grep -q 'cand_calls=0' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# Export-block join: EIGENSCRIPT_DIR equals EIGS_DIR and ends in cand_tree.
+plant_exports_join() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 0 ] \
+     && grep -q 'row|exp_join|v0.43.0|PASS|' "$rec" \
+     && exact_verdict_file "$rec" PASS; then
+    return 0
+  fi
+  return 1
+}
+
+# Find every regular file under the shim dir's parent and $EIGS_DIR; forging
+# them must leave the row UNEXERCISED.
+plant_private_find() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|priv_find|v0.43.0|UNEXERCISED|' "$rec" \
+     && grep -q 'cand_calls=0' "$rec" \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
+# Overlay symlink: write through $EIGS_DIR/lib/link must not change the
+# outside file. stub is the tree-shaped candidate.
+plant_overlay_symlink() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" outside="$5"
+  local out rc before after
+  before="$(cat "$outside" 2>/dev/null || echo missing)"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  after="$(cat "$outside" 2>/dev/null || echo missing)"
+  LAST_PLANT_DETAIL="rc=$rc before=$before after=$after rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$before" = "$after" ] \
+     && [ "$before" = "ORIGINAL" ] \
+     && grep -q 'row|ov_link|v0.43.0|PASS|' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# Bind probe segfaults → candidate_gfx unknown, gfx prereq missing with rc.
+plant_gfx_crash() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc gfx=$(printf '%s\n' "$out" | grep '^candidate_gfx:' | tr '\n' ' ') rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && printf '%s\n' "$out" | grep -q 'candidate_gfx: unknown' \
+     && grep -q 'row|ab_crash|v0.43.0|UNRUNNABLE|' "$rec" \
+     && grep -q 'prereq=gfx-build (probe rc 139)' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# DMG-shaped self-skip: consumer_skips=1 and not a bare PASS.
+plant_gfx_selfskip() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if grep -q 'row|dmg_like|v0.43.0|PASS|skips=1|' "$rec" \
+     && grep -q 'consumer_skips=1' "$rec" \
+     && ! grep -q 'row|dmg_like|v0.43.0|PASS|0|' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# Bare candidate + sibling tree present → exit 2 before any row.
+plant_bare_sibling() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc out=$(printf '%s\n' "$out" | grep -E 'refusing a bare|VERDICT:|^row|' | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 2 ] \
+     && printf '%s\n' "$out" | grep -q 'refusing a bare candidate' \
+     && printf '%s\n' "$out" | grep -F -q "$stub" \
+     && printf '%s\n' "$out" | grep -F -q "$eco/EigenScript" \
+     && ! grep -q '^row|' "$rec" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+# sibling_binary_present computed after the wave; no→yes when it changed.
+plant_sibling_late() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep -E 'sibling_binary_present' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if grep -q '^sibling_binary_present=no$' "$rec" \
+     && grep -q '^sibling_binary_present_after=yes$' "$rec" \
+     && grep -q 'sibling_binary_present_changed=no→yes' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
 apply_mutation() {
   local src="$1" dest="$2" kind="$3"
   python3 - "$src" "$dest" "$kind" << 'PY'
@@ -2218,21 +2532,21 @@ repls = {
         '    LAST_VERDICT=SWALLOWED\n'
         '  fi',
     ),
-    "probe-not-attributed": (
-        '  # CA-GUARD:probe-not-attributed\n'
-        '  # The harness --version/--api probes ran before this log was armed and\n'
-        '  # used the candidate path directly, never the shim.\n'
-        '  :',
-        '  # CA-GUARD:probe-not-attributed\n'
-        '  # The harness --version/--api probes ran before this log was armed and\n'
-        '  # used the candidate path directly, never the shim.\n'
-        '  LAST_CALLS=$((LAST_CALLS + 1)); LAST_OK=$((LAST_OK + 1))',
-    ),
+
     "gfx-prereq": (
         '      # CA-GUARD:gfx-prereq\n'
-        '      if [ "${CAND_HAS_GFX:-0}" -eq 0 ]; then',
+        '      if [ "${CAND_HAS_GFX:-0}" != 1 ]; then',
         '      # CA-GUARD:gfx-prereq\n'
-        '      if false && [ "${CAND_HAS_GFX:-0}" -eq 0 ]; then',
+        '      if false && [ "${CAND_HAS_GFX:-0}" != 1 ]; then',
+    ),
+    "finish-incomplete": (
+        'finish_incomplete() {\n'
+        '  # CA-GUARD:finish-incomplete\n'
+        '  [ "${RECORD_FINISHED:-0}" -eq 1 ] && return\n',
+        'finish_incomplete() {\n'
+        '  # CA-GUARD:finish-incomplete\n'
+        '  return 0\n'
+        '  [ "${RECORD_FINISHED:-0}" -eq 1 ] && return\n',
     ),
     "clobber-no-follow": (
         '  # CA-GUARD:clobber-no-follow\n'
@@ -2352,11 +2666,36 @@ elif kind == "private-log":
         sys.stderr.write("mutation private-log: strip_ca assignment not found\n")
         sys.exit(2)
     text = text[:i] + start + "  strip_ca=true" + text[line_end:]
+elif kind == "probe-not-attributed":
+    pairs = [
+        ('run_bounded "$probe_log" "$CAND_ABS" --version',
+         'run_bounded "$probe_log" "$SHIM/eigenscript" --version'),
+        ('run_bounded "$api_log" "$CAND_ABS" --api --json',
+         'run_bounded "$api_log" "$SHIM/eigenscript" --api --json'),
+        ('run_bounded "$api_log" "$CAND_ABS" --api',
+         'run_bounded "$api_log" "$SHIM/eigenscript" --api'),
+        ('run_bounded "$gfx_bind_log" "$CAND_ABS" "$gfx_bind_src"',
+         'run_bounded "$gfx_bind_log" "$SHIM/eigenscript" "$gfx_bind_src"'),
+        ('    rm -f "$CALL_LOG"\n    : > "$CALL_LOG"\n',
+         '    :\n'),
+    ]
+    for a, b in pairs:
+        if a not in text:
+            sys.stderr.write("mutation probe-not-attributed: needle not found: %r\n" % (a[:60],))
+            sys.exit(2)
+        text = text.replace(a, b, 1)
 elif kind == "overlay-copy":
     a = (
         '  # CA-GUARD:overlay-copy\n'
         '  if [ -d "$src/src" ]; then\n'
-        '    cp -a "$src/src" "$dst/src"\n'
+        '    if ! cp -rL "$src/src" "$dst/src" 2>/dev/null; then\n'
+        '      mkdir -p "$dst/src"\n'
+        '      for s in "$src/src"/*; do\n'
+        '        [ -e "$s" ] || { OVERLAY_SKIPPED="${OVERLAY_SKIPPED:+$OVERLAY_SKIPPED }src/$(basename "$s")"; continue; }\n'
+        '        cp -rL "$s" "$dst/src/$(basename "$s")" 2>/dev/null || \\\n'
+        '          OVERLAY_SKIPPED="${OVERLAY_SKIPPED:+$OVERLAY_SKIPPED }src/$(basename "$s")"\n'
+        '      done\n'
+        '    fi\n'
         '  else\n'
         '    mkdir -p "$dst/src"\n'
         '  fi\n'
@@ -2364,7 +2703,14 @@ elif kind == "overlay-copy":
         '  cp "$SHIM/eigenscript" "$dst/src/eigenscript"\n'
         '  chmod +x "$dst/src/eigenscript"\n'
         '  if [ -d "$src/lib" ]; then\n'
-        '    cp -a "$src/lib" "$dst/lib"\n'
+        '    if ! cp -rL "$src/lib" "$dst/lib" 2>/dev/null; then\n'
+        '      mkdir -p "$dst/lib"\n'
+        '      for s in "$src/lib"/*; do\n'
+        '        [ -e "$s" ] || { OVERLAY_SKIPPED="${OVERLAY_SKIPPED:+$OVERLAY_SKIPPED }lib/$(basename "$s")"; continue; }\n'
+        '        cp -rL "$s" "$dst/lib/$(basename "$s")" 2>/dev/null || \\\n'
+        '          OVERLAY_SKIPPED="${OVERLAY_SKIPPED:+$OVERLAY_SKIPPED }lib/$(basename "$s")"\n'
+        '      done\n'
+        '    fi\n'
         '  fi\n'
     )
     b = (
@@ -2420,14 +2766,18 @@ prep_mutant() {
 }
 
 selftest() {
-  local st_root rec out rc pid
+  local st_root rec out rc pid outer_tmp
   ST_FAIL=0
-  st_root="$(mktemp -d "${TMPDIR:-/tmp}/ca-st.XXXXXX")"
+  outer_tmp="${TMPDIR:-/tmp}"
+  st_root="$(mktemp -d "${outer_tmp}/ca-st.XXXXXX")"
+  mkdir -p "$st_root/tmp"
+  export TMPDIR="$st_root/tmp"
   trap 'if [ -n "${st_root:-}" ] && [ -d "${st_root:-}" ]; then find "$st_root" -type d -exec chmod u+w {} + 2>/dev/null || true; rm -rf "$st_root"; fi' EXIT
 
   local sh="$0"
   mk_stub "$st_root/stub-ok" 0
   mk_stub "$st_root/stub-bad" 1
+  mk_stub_gfx "$st_root/stub-gfx"
 
   # --- plan plant: ungated consumer must FAIL the plan (GAP + VERDICT: FAIL + nonzero).
   local plan_eco="$st_root/plan-eco"
@@ -2559,42 +2909,10 @@ selftest() {
   mk_consumer "$d_eco" aaa_block "sleep 30"
   mk_consumer "$d_eco" zzz_after "eigenscript work.eigs"
   rec="$st_root/d.record"
-  CA_ECO="$d_eco" CA_TIMEOUT=20 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$st_root/stub-ok" >/dev/null 2>&1 &
-  pid=$!
-  local waited=0
-  while [ "$waited" -lt 20 ]; do
-    if [ -f "$rec" ] && grep -q 'status=INCOMPLETE' "$rec" 2>/dev/null; then
-      break
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  sleep 1
-  local t0 t1 elapsed
-  t0="$(date +%s)"
-  kill -TERM "$pid" 2>/dev/null || true
-  waited=0
-  while [ "$waited" -lt 8 ]; do
-    if ! kill -0 "$pid" 2>/dev/null; then
-      break
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -KILL "$pid" 2>/dev/null || true
-  fi
-  wait "$pid"
-  rc=$?
-  t1="$(date +%s)"
-  elapsed=$((t1 - t0))
-  if [ "$rc" -eq 2 ] \
-     && grep -q 'VERDICT: INCOMPLETE' "$rec" \
-     && grep -q 'status=INCOMPLETE' "$rec" \
-     && [ "$elapsed" -le 5 ]; then
-    plant_line "D interruption" 0 "record INCOMPLETE, exit 2, returned in ${elapsed}s"
+  if plant_interruption "$sh" "$d_eco" "$st_root/stub-ok" "$rec" TERM; then
+    plant_line "D interruption" 0 "record INCOMPLETE, exactly one stdout VERDICT: INCOMPLETE, exit 2"
   else
-    plant_line "D interruption" 1 "rc=$rc elapsed=${elapsed}s record=$(tail -6 "$rec" 2>/dev/null | tr '\n' ' ')"
+    plant_line "D interruption" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- D2: SIGHUP is trapped the same way (exit 2, not 129).
@@ -2604,40 +2922,10 @@ selftest() {
   mk_consumer "$dh_eco" aaa_block "sleep 30"
   mk_consumer "$dh_eco" zzz_after "eigenscript work.eigs"
   rec="$st_root/dh.record"
-  CA_ECO="$dh_eco" CA_TIMEOUT=20 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$st_root/stub-ok" >/dev/null 2>&1 &
-  pid=$!
-  waited=0
-  while [ "$waited" -lt 20 ]; do
-    if [ -f "$rec" ] && grep -q 'status=INCOMPLETE' "$rec" 2>/dev/null; then
-      break
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  sleep 1
-  t0="$(date +%s)"
-  kill -HUP "$pid" 2>/dev/null || true
-  waited=0
-  while [ "$waited" -lt 8 ]; do
-    if ! kill -0 "$pid" 2>/dev/null; then
-      break
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -KILL "$pid" 2>/dev/null || true
-  fi
-  wait "$pid"
-  rc=$?
-  t1="$(date +%s)"
-  elapsed=$((t1 - t0))
-  if [ "$rc" -eq 2 ] \
-     && grep -q 'VERDICT: INCOMPLETE' "$rec" \
-     && [ "$elapsed" -le 5 ]; then
-    plant_line "D2 sighup" 0 "SIGHUP -> INCOMPLETE, exit 2 (not 129), ${elapsed}s"
+  if plant_interruption "$sh" "$dh_eco" "$st_root/stub-ok" "$rec" HUP; then
+    plant_line "D2 sighup" 0 "SIGHUP -> INCOMPLETE, exactly one stdout VERDICT: INCOMPLETE, exit 2"
   else
-    plant_line "D2 sighup" 1 "rc=$rc elapsed=${elapsed}s record=$(tail -6 "$rec" 2>/dev/null | tr '\n' ' ')"
+    plant_line "D2 sighup" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- E: hanging --version probe; stale PASS at the record path is gone.
@@ -2886,6 +3174,20 @@ selftest() {
     plant_line "M scratch-cleanup" 1 "$LAST_PLANT_DETAIL"
   fi
 
+  # Decoy in the OUTER tmp (a concurrent run's scratch). Must survive plant M.
+  # $$ so two concurrent self-tests do not share one path.
+  local decoy="$outer_tmp/ca-run.DECOY.$$"
+  mkdir -p "$decoy"
+  touch "$decoy"
+  rec="$st_root/m-decoy.record"
+  if plant_scratch_cleanup "$sh" "$good_eco" "$st_root/stub-ok" "$rec" \
+     && [ -d "$decoy" ]; then
+    plant_line "M decoy-tmp-isolation" 0 "outer ca-run.DECOY survived plant M"
+  else
+    plant_line "M decoy-tmp-isolation" 1 "decoy=$( [ -d "$decoy" ] && echo live || echo gone ) $LAST_PLANT_DETAIL"
+  fi
+  rm -rf "$decoy"
+
   # --- R: `true` never calls the candidate -> UNEXERCISED.
   local r_eco="$st_root/r-eco"
   mkdir -p "$r_eco"
@@ -2989,14 +3291,15 @@ selftest() {
     plant_line "Y overlay-write" 1 "$LAST_PLANT_DETAIL"
   fi
 
-  # --- Z: consumer runs nothing -> cand_calls=0 (probe not attributed).
+  # --- Z: consumer runs nothing; stub lists gfx_open so the bind probe
+  # (a positional) exists to mis-attribute if the mechanism is gutted.
   local z_idle_eco="$st_root/z-idle-eco"
   mkdir -p "$z_idle_eco"
   printf 'fixture\n' > "$z_idle_eco/.ca_fixture"
   mk_consumer "$z_idle_eco" z_idle "true"
   rec="$st_root/z-idle.record"
-  if plant_probe_not_attributed "$sh" "$z_idle_eco" "$st_root/stub-ok" "$rec"; then
-    plant_line "Z probe-not-attributed" 0 "true -> cand_calls=0 UNEXERCISED"
+  if plant_probe_not_attributed "$sh" "$z_idle_eco" "$st_root/stub-gfx" "$rec"; then
+    plant_line "Z probe-not-attributed" 0 "true + gfx stub -> cand_calls=0 UNEXERCISED"
   else
     plant_line "Z probe-not-attributed" 1 "$LAST_PLANT_DETAIL"
   fi
@@ -3056,6 +3359,150 @@ selftest() {
     plant_line "AC clobber-symlink" 1 "$LAST_PLANT_DETAIL"
   fi
 
+  # --- straggler: row N's background call must not land in row N+1.
+  local st_eco="$st_root/st-eco"
+  mkdir -p "$st_eco"
+  printf 'fixture\n' > "$st_eco/.ca_fixture"
+  mk_consumer_block "$st_eco" a_leaves_bg \
+    'eigenscript work.eigs' \
+    '( sleep 2; eigenscript straggler.eigs ) > /dev/null 2>&1 &' \
+    'exit 0'
+  mk_consumer_block "$st_eco" b_never_calls 'sleep 1' 'true'
+  rec="$st_root/straggler.record"
+  if plant_straggler "$sh" "$st_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "straggler" 0 "b_never_calls UNEXERCISED"
+  else
+    plant_line "straggler" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- export-block join: EIGENSCRIPT_DIR equals EIGS_DIR, ends in cand_tree.
+  local exp_eco="$st_root/exp-eco" exp_stub="$st_root/exp-cand/src/eigenscript"
+  mkdir -p "$exp_eco" "$st_root/exp-cand/src"
+  printf 'fixture\n' > "$exp_eco/.ca_fixture"
+  mk_stub "$exp_stub" 0
+  mk_consumer_block "$exp_eco" exp_join \
+    'case "$EIGENSCRIPT_DIR" in "$EIGS_DIR") ;; *) exit 1 ;; esac' \
+    'case "$EIGS_DIR" in */cand_tree) ;; *) exit 1 ;; esac' \
+    'eigenscript work.eigs'
+  rec="$st_root/exp.record"
+  if plant_exports_join "$sh" "$exp_eco" "$exp_stub" "$rec"; then
+    plant_line "exports-join" 0 "EIGENSCRIPT_DIR equals EIGS_DIR and ends in cand_tree"
+  else
+    plant_line "exports-join" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- private log: find every regular file under shim parent and EIGS_DIR.
+  local pf_eco="$st_root/pf-eco"
+  mkdir -p "$pf_eco"
+  printf 'fixture\n' > "$pf_eco/.ca_fixture"
+  mk_consumer_block "$pf_eco" priv_find \
+    'W="$(dirname "$(dirname "$(command -v eigenscript)")")"' \
+    'E="${EIGS_DIR:-}"' \
+    'find "$W" ${E:+"$E"} -type f 2>/dev/null | while IFS= read -r f; do' \
+    '  printf "call|rc=0|x\n" >> "$f" 2>/dev/null || true' \
+    'done' \
+    'true'
+  rec="$st_root/pf.record"
+  if plant_private_find "$sh" "$pf_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "private-find" 0 "find+forge under shim parent and EIGS_DIR -> UNEXERCISED"
+  else
+    plant_line "private-find" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- overlay symlink: write through lib/link must not change the outside file.
+  local ovl_eco="$st_root/ovl-eco" ovl_stub="$st_root/ovl-cand/src/eigenscript"
+  local ovl_out="$st_root/ovl-outside"
+  mkdir -p "$ovl_eco" "$st_root/ovl-cand/src" "$st_root/ovl-cand/lib"
+  printf 'fixture\n' > "$ovl_eco/.ca_fixture"
+  printf 'ORIGINAL\n' > "$ovl_out"
+  ln -s "$ovl_out" "$st_root/ovl-cand/lib/link"
+  mk_stub "$ovl_stub" 0
+  mk_consumer_block "$ovl_eco" ov_link \
+    'printf CHANGED > "$EIGS_DIR/lib/link"' \
+    'eigenscript work.eigs'
+  rec="$st_root/ovl.record"
+  if plant_overlay_symlink "$sh" "$ovl_eco" "$ovl_stub" "$rec" "$ovl_out"; then
+    plant_line "overlay-symlink" 0 "outside file unchanged"
+  else
+    plant_line "overlay-symlink" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- gfx bind probe segfaults -> unknown, gfx prereq missing with rc 139.
+  local gc_eco="$st_root/gc-eco" gc_stub="$st_root/stub-segv"
+  mkdir -p "$gc_eco"
+  printf 'fixture\n' > "$gc_eco/.ca_fixture"
+  printf '%s\n' '#!/bin/sh' \
+    'if [ "${1:-}" = --version ]; then echo stub; exit 0; fi' \
+    'if [ "${1:-}" = --api ]; then echo "{\"builtins\":[\"gfx_open\"]}"; exit 0; fi' \
+    'case "$1" in *gfx_bind.eigs) exit 139 ;; esac' \
+    'exit 0' > "$gc_stub"
+  chmod +x "$gc_stub"
+  mk_consumer "$gc_eco" ab_crash "eigenscript work.eigs"
+  printf 'gfx\n' > "$gc_eco/ab_crash/.ca_prereqs"
+  rec="$st_root/gc.record"
+  if plant_gfx_crash "$sh" "$gc_eco" "$gc_stub" "$rec"; then
+    plant_line "gfx-crash" 0 "candidate_gfx unknown, UNRUNNABLE prereq:gfx-build (probe rc 139)"
+  else
+    plant_line "gfx-crash" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- DMG-shaped self-skip: consumer_skips=1, not a bare PASS.
+  local gs_eco="$st_root/gs-eco"
+  mkdir -p "$gs_eco/dmg_like/tests"
+  printf 'fixture\n' > "$gs_eco/.ca_fixture"
+  cat > "$gs_eco/dmg_like/tests/run_debug_ui_oracle.sh" <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${EIGENSCRIPT_GFX:-}" ]; then E="$EIGENSCRIPT_GFX"; elif command -v eigenscript >/dev/null; then E="$(command -v eigenscript)"; else echo "SKIP: no binary"; exit 0; fi
+if ! "$E" tests/probe_ui.eigs >/dev/null 2>&1; then echo "SKIP: dock widget not in this runtime's lib (self-skip, exit 0)"; exit 0; fi
+echo "UI ORACLE RAN"; exit 1
+EOS
+  chmod +x "$gs_eco/dmg_like/tests/run_debug_ui_oracle.sh"
+  mk_consumer_block "$gs_eco" dmg_like \
+    'eigenscript tests/test_cpu.eigs' \
+    'bash tests/run_debug_ui_oracle.sh'
+  rec="$st_root/gs.record"
+  printf '%s\n' '#!/bin/sh' \
+    'if [ "${1:-}" = --version ]; then echo stub; exit 0; fi' \
+    'if [ "${1:-}" = --api ]; then echo "{\"builtins\":[]}"; exit 0; fi' \
+    'case "$1" in *probe_ui.eigs) echo "undefined variable gfx_open" >&2; exit 1;; esac' \
+    'exit 0' > "$st_root/stub-headless"
+  chmod +x "$st_root/stub-headless"
+  if plant_gfx_selfskip "$sh" "$gs_eco" "$st_root/stub-headless" "$rec"; then
+    plant_line "gfx-selfskip" 0 "PASS|skips=1 consumer_skips=1"
+  else
+    plant_line "gfx-selfskip" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- bare candidate + sibling tree -> exit 2 before any row.
+  local bs_eco="$st_root/bs-eco"
+  mkdir -p "$bs_eco/tree_user" "$bs_eco/EigenScript/src"
+  printf 'fixture\n' > "$bs_eco/.ca_fixture"
+  mk_stub "$bs_eco/EigenScript/src/eigenscript" 0
+  mk_consumer "$bs_eco" tree_user "eigenscript work.eigs"
+  rec="$st_root/bs.record"
+  if plant_bare_sibling "$sh" "$bs_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "bare-sibling" 0 "exit 2, names both paths, no row"
+  else
+    plant_line "bare-sibling" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- sibling_binary_present after the wave; no→yes when a consumer created it.
+  local sl_eco="$st_root/sl-eco"
+  mkdir -p "$sl_eco"
+  printf 'fixture\n' > "$sl_eco/.ca_fixture"
+  mk_stub "$st_root/sl-template" 0
+  mk_consumer_block "$sl_eco" sib_late \
+    'eigenscript work.eigs' \
+    'mkdir -p ../EigenScript/src' \
+    "cp \"$st_root/sl-template\" ../EigenScript/src/eigenscript"
+  rec="$st_root/sl.record"
+  if plant_sibling_late "$sh" "$sl_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "sibling-late" 0 "sibling_binary_present no→yes after the wave"
+  else
+    plant_line "sibling-late" 1 "$LAST_PLANT_DETAIL"
+  fi
+
   # --- plant-of-plant: a mutant that exits 7 is BROKEN-MUTANT, not SILENT.
   local cr_md="$st_root/mutants/crash-early" cr_mutant cr_rec
   cr_rec="$st_root/crash.record"
@@ -3102,7 +3549,8 @@ selftest() {
       version-only)     plant_version_only "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       swallowed)        plant_swallowed "$script" "$eco" "$st_root/stub-bad" "$rec" ;;
       overlay-write)    plant_overlay_write "$script" "$eco" "$extra" "$rec" ;;
-      probe-not-attributed) plant_probe_not_attributed "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      probe-not-attributed) plant_probe_not_attributed "$script" "$eco" "${extra:-$st_root/stub-gfx}" "$rec" ;;
+      interruption)     plant_interruption "$script" "$eco" "$st_root/stub-ok" "$rec" TERM ;;
       bin-routing)      plant_bin_routing "$script" "$eco" "$extra" "$rec" ;;
       gfx-prereq)       plant_gfx_prereq "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       clobber-symlink)  plant_clobber_symlink "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
@@ -3157,6 +3605,18 @@ selftest() {
         fi
         return
         ;;
+      interruption)
+        # finish_incomplete no-op: no stdout VERDICT: INCOMPLETE (plant
+        # SILENT) but the record header still says INCOMPLETE, so the
+        # mutant is not VERDICT: PASS.
+        if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ]; then
+          say "transverse $kind / $plant: intact=FIRES mutant=SILENT  OK"
+        else
+          say "transverse $kind / $plant: intact=$intact mutant=$mutant_st  FAIL (want intact FIRES, mutant SILENT)"
+          ST_FAIL=1
+        fi
+        return
+        ;;
     esac
     # Trailing-text is inverted: the "guard" is the exact-line check, the
     # plant IS the extra-mutant. Intact production has no extra text so the
@@ -3183,6 +3643,7 @@ selftest() {
     fi
   }
 
+  transverse_one finish-incomplete       interruption     "$d_eco"    t-d
   transverse_one examined-eq             early-stop       "$es_eco"   t-es
   transverse_one nonempty                empty-inventory  "$z_eco"    t-z
   transverse_one missing-command         missing-command  "$m_eco"    t-m
@@ -3207,7 +3668,7 @@ selftest() {
   transverse_one nontrivial-calls        version-only     "$w_eco"    t-w
   transverse_one swallowed               swallowed        "$x_eco"    t-x
   transverse_one overlay-copy            overlay-write    "$y_eco"    t-y "$y_stub"
-  transverse_one probe-not-attributed    probe-not-attributed "$z_idle_eco" t-zidle
+  transverse_one probe-not-attributed    probe-not-attributed "$z_idle_eco" t-zidle "$st_root/stub-gfx"
   transverse_one eigenscript-bin         bin-routing      "$aa_eco"   t-aa "$aa_stub"
   transverse_one gfx-prereq              gfx-prereq       "$ab_eco"   t-ab
   transverse_one clobber-no-follow       clobber-symlink  "$ac_eco"   t-ac
