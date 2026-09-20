@@ -319,6 +319,19 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **Consumer-acceptance `run` mode** (`tools/consumer_acceptance.sh run
+  <CANDIDATE>`): executes every gated consumer's own acceptance command
+  serially against a release candidate, with the candidate on `PATH` as
+  `eigenscript`, and writes a record (inventory, examined, per-consumer
+  PASS/FAIL/HANG/KILLED/UNRUNNABLE/SKIP, rc, duration, candidate identity).
+  `examined == inventory > 0` is required to pass; a missing checkout or
+  missing command is UNRUNNABLE not a skip; rc 124/137 is HANG/KILLED by
+  name; an interrupted run marks the record INCOMPLETE and exits 2. The
+  self-test plants a broken candidate, a shrinkage, a hang, and an
+  interruption — each must FIRE — plus an honest two-consumer PASS control.
+  Isolation: `CA_ECO` points the inventory at a fixture; the self-test never
+  mutates a sibling repo (mechanical-gates §168). Plan mode is unchanged.
+
 - **CI runs each gate where it is suited: a ≤ 15-minute PR lane, the full
   matrix on `main`, and a nightly (#1160).** Measured on PR #1158: 35 min
   wall, ~200 machine-minutes, 26 checks — because the same ~263-section suite
