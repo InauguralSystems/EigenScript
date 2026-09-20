@@ -329,14 +329,25 @@ All notable changes to EigenScript are documented here.
   name; an interrupted run (INT/TERM/HUP) marks the record INCOMPLETE and
   exits 2. Record class: at every moment the file at `CA_RECORD` is this
   run's record in a truthful state, or absent — never a previous run's
-  PASS. The first three actions of `run` (before the inventory scan, the
-  shim, and the candidate) are: install INT/TERM/HUP traps, invalidate
-  the previous record (move aside, or truncate in place and FAIL if the
-  directory will not allow a stash), write the INCOMPLETE header
-  (`inventory=PENDING` until the scan finishes). Every record write goes
-  through one helper that is checked at every call site. `RECORD_FINISHED`
-  is set before the final rename, so a signal after the rename is a
-  completed run; the footer writer asserts exactly one `VERDICT:` line.
+  PASS, never a foreign PASS. Exclusive ownership: a mkdir lock on
+  `<record>.lock.d` is taken before invalidate and held through cleanup;
+  a second invocation on the same `CA_RECORD` refuses immediately (exit
+  2, touches nothing); a stale lock (holder pid dead) is reclaimed with
+  a note in the header. Every append is ownership-checked (`run_id=` must
+  match this run). `die_record` leaves `RECORD_FINISHED=0` when its FAIL
+  footer did not land, so `finish_incomplete` still appends INCOMPLETE or
+  clobbers a foreign file in place. The first actions of `run` (before
+  the inventory scan, the shim, and the candidate) are: install
+  INT/TERM/HUP traps, take the record lock, create the scratch dir,
+  invalidate the previous record (move aside, or truncate in place and
+  FAIL if the directory will not allow a stash), write the INCOMPLETE
+  header (`inventory=PENDING` until the scan finishes). Every record
+  write goes through one helper that is checked at every call site.
+  `RECORD_FINISHED` is set before the final rename, so a signal after
+  the rename is a completed run; the trap still emits exactly one
+  stdout `VERDICT:` line on that path. Footer rewrite temps live under
+  the run scratch dir. The default record path does not stash an empty
+  `.prev`. The footer writer asserts exactly one `VERDICT:` line.
   `CA_TIMEOUT` must be a positive integer (`0`/`00`/`abc` exit 2). Block
   bodies run under `bash -e -o pipefail -c`. Scratch dirs are removed on
   every exit path. `--version` runs under the same per-command timeout.
@@ -345,7 +356,9 @@ All notable changes to EigenScript are documented here.
   unwritable record path, a two-line block whose first line fails, an
   INT in the pre-scan window, a stale PASS in an unwritable directory, a
   signal during finalization, `CA_TIMEOUT=0`/`00`, a `false | true` block,
-  and leftover scratch — each must FIRE — plus an honest two-consumer
+  leftover scratch, a second invocation on a live record, a foreign-file
+  append, a failed FAIL footer, and HUP-after-rename stdout — each must
+  FIRE — plus an honest two-consumer
   PASS control. A mutant that emits no `VERDICT: PASS` is BROKEN-MUTANT,
   not SILENT. Guards are mutation-tested in isolation: each plant is
   SILENT with its guard gutted. Isolation: `CA_ECO` points the inventory

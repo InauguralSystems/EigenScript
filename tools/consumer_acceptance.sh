@@ -36,25 +36,43 @@
 #                                    (the completed-record path for
 #                                    examined < inventory; interrupt is plant D)
 #                 empty_skip_reason  append a SKIP row with an empty reason
+#                 foreign_record     replace the record with a different
+#                                    run_id before the first row (plant O)
+#                 fail_footer        make the final footer write fail after
+#                                    planting a FAIL body (plant P)
 #
 # Record lifecycle (the class, fail-closed):
 #   At every moment from process start to exit, the file at CA_RECORD is
 #   either THIS run's record in a truthful state, or absent -- never a
-#   previous run's PASS. Every write that participates goes through
-#   write_record, which returns nonzero on any failure and is checked
-#   (write_record || die_record "why"). No || true on a record write.
+#   previous run's PASS, never a foreign PASS. Every write that
+#   participates goes through write_record, which returns nonzero on any
+#   failure and is checked (write_record || die_record "why"). No || true
+#   on a record write. write_record append refuses unless the file's
+#   header carries run_id=$RUN_ID (empty files, used by in-place clobber,
+#   are the one exception).
 #
-#   First three actions of run_mode, before the inventory scan, before
-#   the shim, before the candidate: install traps, invalidate the
-#   previous record, write the INCOMPLETE header (inventory=PENDING
-#   until the scan finishes -- that is truthful). Invalidating fails
-#   closed: if the previous file cannot be moved aside, it is truncated
-#   / overwritten in place so it is unreadable as PASS, then the run
-#   FAILS immediately, exit 1. VERDICT: PASS is printed only after the
-#   final record is written to a same-directory temp; RECORD_FINISHED=1
-#   is set BEFORE that rename, so a signal after the rename is a
-#   completed run. Exactly one VERDICT: line can ever exist in the
-#   footer writer's output.
+#   Exclusive ownership: a mkdir lock on <record>.lock.d is taken BEFORE
+#   invalidating the previous record and held through cleanup. A second
+#   invocation on the same CA_RECORD refuses immediately (exit 2, touches
+#   nothing). A stale lock (holder pid dead) is reclaimed with a note in
+#   the header.
+#
+#   First actions of run_mode, before the inventory scan, before the
+#   shim, before the candidate: install traps, take the record lock,
+#   create the scratch dir, invalidate the previous record, write the
+#   INCOMPLETE header (inventory=PENDING until the scan finishes -- that
+#   is truthful). Invalidating fails closed: if the previous file cannot
+#   be moved aside, it is truncated / overwritten in place so it is
+#   unreadable as PASS, then the run FAILS immediately, exit 1.
+#   VERDICT: PASS is printed only after the final record is written to a
+#   scratch-dir temp; RECORD_FINISHED=1 is set BEFORE that rename, so a
+#   signal after the rename is a completed run. The INT/TERM/HUP trap
+#   emits the stdout VERDICT when RECORD_FINISHED is already 1, so
+#   HUP-after-rename still prints exactly one VERDICT: line. Exactly one
+#   VERDICT: line can ever exist in the footer writer's output.
+#   die_record leaves RECORD_FINISHED=0 when its FAIL footer did not
+#   land, so finish_incomplete still runs (append INCOMPLETE, or clobber
+#   a foreign file in place).
 #
 # Consumers run as a background job (setsid + timeout, wait in this shell)
 # so a trap can kill the in-flight process group without waiting out the
@@ -241,6 +259,11 @@ WORK=""
 RECORD=""
 RECORD_FINISHED=0
 RECORD_WRITE_ERR=""
+RECORD_LOCKED=0
+RECORD_LOCKDIR=""
+RECORD_LOCK_NOTE=""
+HEADER_WRITTEN=0
+STDOUT_VERDICT_EMITTED=0
 EXAMINED=0
 INVENTORY=0
 CAND_ABS=""
@@ -277,16 +300,86 @@ verdict_line() {
   printf 'VERDICT: %s\n' "$1"
 }
 
+# Idempotent stdout verdict. Every run-mode exit path that has a record
+# lifecycle (PASS/FAIL/INCOMPLETE) goes through here once.
+emit_stdout_verdict() {
+  [ "${STDOUT_VERDICT_EMITTED:-0}" -eq 1 ] && return 0
+  verdict_line "$1"
+  STDOUT_VERDICT_EMITTED=1
+}
+
+# HUP-after-rename lands here: RECORD_FINISHED was set before mv, so the
+# trap treats the run as complete and must still print VERDICT.
+emit_stdout_verdict_for_rc() {
+  # CA-GUARD:stdout-verdict
+  case "${RUN_RC:-1}" in
+    0) emit_stdout_verdict PASS ;;
+    1) emit_stdout_verdict FAIL ;;
+    *) emit_stdout_verdict INCOMPLETE ;;
+  esac
+}
+
 fixture_fault() {
   [ -f "${ECO:-}/.ca_fixture" ] || return 1
   [ -n "${CA_FAULT:-}" ] || return 1
   return 0
 }
 
+# Exclusive lock on the record path. mkdir is the portable atomic; the
+# holder file names the live pid so a dead holder's dir is reclaimed.
+acquire_record_lock() {
+  local lockdir="${RECORD}.lock.d" holder_pid="" holder_id="" tries=0
+  RECORD_LOCKDIR="$lockdir"
+  RECORD_LOCK_NOTE=""
+  RECORD_LOCKED=0
+  while [ "$tries" -lt 5 ]; do
+    if mkdir "$lockdir" 2>/dev/null; then
+      printf 'pid=%s\nrun_id=%s\n' "$$" "${RUN_ID:-unknown}" > "$lockdir/holder" || true
+      RECORD_LOCKED=1
+      return 0
+    fi
+    if [ ! -d "$lockdir" ]; then
+      # Parent unwritable / missing -- not "busy". Later writes fail closed.
+      RECORD_LOCKDIR=""
+      return 0
+    fi
+    if [ ! -f "$lockdir/holder" ]; then
+      sleep 0.05 2>/dev/null || sleep 1
+    fi
+    holder_pid=""
+    holder_id=""
+    if [ -f "$lockdir/holder" ]; then
+      holder_pid="$(grep '^pid=' "$lockdir/holder" 2>/dev/null | head -1 | cut -d= -f2-)"
+      holder_id="$(grep '^run_id=' "$lockdir/holder" 2>/dev/null | head -1 | cut -d= -f2-)"
+    fi
+    if [ -n "$holder_pid" ] && kill -0 "$holder_pid" 2>/dev/null; then
+      say "consumer_acceptance: record busy (held by run ${holder_id:-unknown}, pid $holder_pid)"
+      RECORD_LOCKDIR=""
+      return 1
+    fi
+    RECORD_LOCK_NOTE="reclaimed stale lock (held by run ${holder_id:-unknown}, pid ${holder_pid:-dead})"
+    rm -rf "$lockdir"
+    tries=$((tries + 1))
+  done
+  say "consumer_acceptance: record busy (held by run ${holder_id:-unknown}, pid ${holder_pid:-unknown})"
+  RECORD_LOCKDIR=""
+  return 1
+}
+
+release_record_lock() {
+  if [ "${RECORD_LOCKED:-0}" -eq 1 ] && [ -n "${RECORD_LOCKDIR:-}" ]; then
+    rm -rf "$RECORD_LOCKDIR"
+  fi
+  RECORD_LOCKED=0
+  RECORD_LOCKDIR=""
+}
+
 # The single writer. Reads stdin. Returns 1 on any failure; sets
 # RECORD_WRITE_ERR. mode is append | replace; optional tag names the
 # temp file (footer uses "rewrite" so a PATH-shim can target the final
 # rename). Callers check: write_record ... || die_record "why".
+# Replace temps live under WORK (the run scratch dir) so an untrapped
+# signal cannot leave .<record>.rewrite.<pid> beside the record.
 write_record() {
   local mode="${1:-}" tag="${2:-tmp}" dir tmp
   RECORD_WRITE_ERR=""
@@ -300,6 +393,14 @@ write_record() {
         RECORD_WRITE_ERR="cannot append, $RECORD missing"
         return 1
       fi
+      # CA-GUARD:append-owned
+      # Empty files (in-place clobber after truncate) have no run_id yet
+      # and are allowed; a file that names some other run is not ours.
+      if grep -q '^run_id=' "$RECORD" 2>/dev/null \
+         && ! grep -Fx "run_id=${RUN_ID}" "$RECORD" >/dev/null 2>&1; then
+        RECORD_WRITE_ERR="record not ours"
+        return 1
+      fi
       if ! cat >> "$RECORD"; then
         RECORD_WRITE_ERR="cannot append to $RECORD"
         return 1
@@ -307,7 +408,11 @@ write_record() {
       return 0
       ;;
     replace)
-      dir="$(dirname "$RECORD")"
+      if [ -n "${WORK:-}" ] && [ -d "${WORK:-}" ]; then
+        dir="$WORK"
+      else
+        dir="$(dirname "$RECORD")"
+      fi
       tmp="$dir/.$(basename "$RECORD").${tag}.$$"
       if ! cat > "$tmp"; then
         RECORD_WRITE_ERR="cannot write record temp at $tmp"
@@ -336,13 +441,25 @@ write_record() {
 }
 
 die_record() {
-  local why="$1"
+  local why="$1" footer_ok=0
   say "consumer_acceptance: $why${RECORD_WRITE_ERR:+ ($RECORD_WRITE_ERR)}"
   if [ -n "${RECORD:-}" ] && [ -f "${RECORD:-}" ] && [ "${RECORD_FINISHED:-0}" -eq 0 ]; then
-    write_record_footer FAIL COMPLETE || say "consumer_acceptance: also failed to write FAIL footer"
+    if [ -n "${RUN_ID:-}" ] && grep -Fx "run_id=${RUN_ID}" "$RECORD" >/dev/null 2>&1; then
+      if write_record_footer FAIL COMPLETE; then
+        footer_ok=1
+      else
+        say "consumer_acceptance: also failed to write FAIL footer"
+      fi
+    fi
   fi
-  verdict_line FAIL
-  RECORD_FINISHED=1
+  emit_stdout_verdict FAIL
+  # CA-GUARD:die-record-flag
+  # Leave RECORD_FINISHED=0 when the footer did not land, so the EXIT
+  # trap's finish_incomplete still appends INCOMPLETE or clobbers a
+  # foreign file. Never a foreign PASS at the path.
+  if [ "$footer_ok" -eq 1 ]; then
+    RECORD_FINISHED=1
+  fi
   exit 1
 }
 
@@ -356,10 +473,11 @@ die_record() {
 finish_incomplete() {
   [ "${RECORD_FINISHED:-0}" -eq 1 ] && return
   [ -n "${RECORD:-}" ] && [ -f "$RECORD" ] || return
-  if grep -q "^run_id=${RUN_ID}$" "$RECORD" 2>/dev/null; then
+  if [ -n "${RUN_ID:-}" ] && grep -Fx "run_id=${RUN_ID}" "$RECORD" >/dev/null 2>&1; then
     if grep -q '^VERDICT: INCOMPLETE$' "$RECORD" \
        && ! grep -q '^VERDICT: PASS$' "$RECORD" \
        && ! grep -q '^VERDICT: FAIL$' "$RECORD"; then
+      emit_stdout_verdict INCOMPLETE
       RECORD_FINISHED=1
       return
     fi
@@ -369,8 +487,13 @@ examined=${EXAMINED:-0}
 inventory=${INVENTORY:-0} examined=${EXAMINED:-0}
 VERDICT: INCOMPLETE
 EOF
-  else
+    emit_stdout_verdict INCOMPLETE
+  elif [ "${HEADER_WRITTEN:-0}" -eq 1 ]; then
+    # We claimed the path, then lost it: clobber so a foreign PASS cannot
+    # survive. If we never wrote a header, leave the previous file (the
+    # invalidate guard is what destroys a stale PASS before we start).
     clobber_record_in_place || say "consumer_acceptance: failed to clobber stale record at $RECORD"
+    emit_stdout_verdict INCOMPLETE
   fi
   RECORD_FINISHED=1
 }
@@ -392,12 +515,15 @@ run_cleanup() {
     rm -rf "$WORK"
     WORK=""
   fi
+  release_record_lock
 }
 
 install_run_traps() {
   # Snapshot RECORD_FINISHED before cleanup: finish_incomplete sets the
-  # flag after writing INCOMPLETE, which is not a completed run.
-  trap 'fin=${RECORD_FINISHED:-0}; run_cleanup; if [ "$fin" -eq 1 ]; then exit "${RUN_RC:-0}"; else exit 2; fi' INT TERM HUP
+  # flag after writing INCOMPLETE, which is not a completed run. When
+  # the flag was already 1 (HUP-after-rename), emit the stdout verdict
+  # the finalizer did not reach.
+  trap 'fin=${RECORD_FINISHED:-0}; run_cleanup; if [ "$fin" -eq 1 ]; then emit_stdout_verdict_for_rc; exit "${RUN_RC:-0}"; else exit 2; fi' INT TERM HUP
   trap 'run_cleanup' EXIT
 }
 
@@ -455,7 +581,8 @@ eigenscript_resolved=${RESOLVED:-PENDING}
 inventory=PENDING
 examined=PENDING
 status=INCOMPLETE
-# row|name|pin|verdict|rc|duration_s
+${RECORD_LOCK_NOTE:+note=$RECORD_LOCK_NOTE
+}# row|name|pin|verdict|rc|duration_s
 VERDICT: INCOMPLETE
 EOF
 }
@@ -464,6 +591,15 @@ write_record_footer() {
   local verdict="$1" status="$2" line content n
   if [ ! -f "$RECORD" ]; then
     RECORD_WRITE_ERR="footer: $RECORD missing"
+    return 1
+  fi
+  if fixture_fault && [ "${CA_FAULT:-}" = fail_footer ]; then
+    printf '%s\n' \
+      "run_id=$RUN_ID" \
+      "status=COMPLETE" \
+      "inventory=${INVENTORY:-0} examined=${EXAMINED:-0}" \
+      "VERDICT: PASS" > "$RECORD"
+    RECORD_WRITE_ERR="planted footer failure"
     return 1
   fi
   content="$(
@@ -594,7 +730,7 @@ finalize_run() {
     die_record "failed to write final record"
   fi
   say "inventory=$INVENTORY examined=$EXAMINED"
-  verdict_line "$final"
+  emit_stdout_verdict "$final"
   RECORD_FINISHED=1
   exit "$RUN_RC"
 }
@@ -619,15 +755,27 @@ run_mode() {
     RECORD="$CA_RECORD"
   else
     RECORD="$(mktemp "${TMPDIR:-/tmp}/ca-record.XXXXXX")"
+    # mktemp creates an empty file; do not stash it as .prev on a fresh run.
+    rm -f "$RECORD"
   fi
 
-  # First three actions -- before the inventory scan, before the shim,
-  # before the candidate. A previous PASS must not outlive this point.
+  # First actions -- before the inventory scan, before the shim, before
+  # the candidate. A previous PASS must not outlive this point. The lock
+  # is taken BEFORE invalidate so a second invocation refuses without
+  # touching the live record.
   # CA-GUARD:traps-before-scan
   install_run_traps
+  # CA-GUARD:record-lock
+  if ! acquire_record_lock; then
+    RECORD_FINISHED=1
+    RUN_RC=2
+    exit 2
+  fi
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/ca-run.XXXXXX")"
   # CA-GUARD:invalidate-fail-closed
   invalidate_previous_record || die_record "cannot invalidate previous record at $RECORD"
   write_record_header || die_record "cannot initialise record at $RECORD"
+  HEADER_WRITTEN=1
   # CA-GUARD:end-traps-before-scan
 
   # CA-GUARD:timeout-positive
@@ -658,7 +806,6 @@ run_mode() {
     exit 2
   fi
 
-  WORK="$(mktemp -d "${TMPDIR:-/tmp}/ca-run.XXXXXX")"
   SHIM="$WORK/bin"
   mkdir -p "$SHIM"
   ln -s "$CAND_ABS" "$SHIM/eigenscript"
@@ -727,6 +874,9 @@ run_mode() {
   EXAMINED=0
   i=0
   while [ "$i" -lt "$INVENTORY" ]; do
+    if [ "$i" -eq 0 ] && fixture_fault && [ "${CA_FAULT:-}" = foreign_record ]; then
+      printf '%s\n' '# foreign' 'run_id=FOREIGN_RUN' 'status=INCOMPLETE' 'inventory=PENDING' 'examined=PENDING' 'VERDICT: INCOMPLETE' > "$RECORD"
+    fi
     name="${GATE_NAMES[$i]}"
     pin="${GATE_PINS[$i]}"
     cmd="${GATE_CMDS[$i]}"
@@ -1058,19 +1208,21 @@ plant_stale_unwritable() {
   return 1
 }
 
-# J: signal during finalization (PATH shim for mv). FIRE: exactly one VERDICT line.
+# J / Q: signal during finalization (PATH shim for mv). FIRE: exactly one
+# VERDICT line in the record, rc 0, and exactly one stdout VERDICT: PASS.
 plant_footer_signal() {
   local sh="$1" eco="$2" stub="$3" rec="$4" shim="${5:-}"
-  local out rc n env_path
+  local out rc n env_path n_out
   env_path="$PATH"
   [ -n "$shim" ] && env_path="$shim:$PATH"
   out="$(PATH="$env_path" CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
   n=0
   [ -f "$rec" ] && n="$(grep -c '^VERDICT:' "$rec" || true)"
-  LAST_PLANT_DETAIL="rc=$rc n=$n rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  n_out="$(printf '%s\n' "$out" | grep -c '^VERDICT:' || true)"
+  LAST_PLANT_DETAIL="rc=$rc n=$n n_out=$n_out rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
-  if [ "$n" = 1 ]; then
+  if [ "$n" = 1 ] && [ "$rc" -eq 0 ] && [ "$n_out" = 1 ] && exact_verdict "$out" PASS; then
     return 0
   fi
   return 1
@@ -1101,6 +1253,88 @@ plant_pipefail() {
   if [ "$rc" -eq 1 ] \
      && grep -q 'row|pipe_fail|v0.43.0|FAIL|' "$rec" \
      && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
+# N: second invocation on the same CA_RECORD is refused. FIRE: run 2 exits 2
+# with the busy message; run 1 finishes PASS with exactly one VERDICT.
+plant_record_busy() {
+  local sh="$1" eco1="$2" eco2="$3" stub_ok="$4" stub_bad="$5" rec="$6"
+  local log1 pid1 rc1 rc2 out2 waited n
+  log1="${rec}.log1"
+  rm -f "$rec" "$log1"
+  rm -rf "${rec}.lock.d"
+  CA_ECO="$eco1" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" \
+    "$sh" run "$stub_ok" >"$log1" 2>&1 &
+  pid1=$!
+  waited=0
+  while [ "$waited" -lt 50 ]; do
+    if [ -d "${rec}.lock.d" ]; then
+      break
+    fi
+    # Mutant with no lock: start run 2 as soon as run 1 has a header,
+    # so the two actually interleave rather than waiting out the sleep.
+    if [ -f "$rec" ] && grep -q '^run_id=' "$rec" 2>/dev/null; then
+      break
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  # Run 2 uses the same passing stub: without the lock it completes PASS
+  # (the interleaving the plant exists to stop). A failing stub would
+  # make the gutted mutant BROKEN-MUTANT rather than SILENT.
+  out2="$(CA_ECO="$eco2" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" \
+    "$sh" run "$stub_ok" 2>&1)"
+  rc2=$?
+  wait "$pid1"
+  rc1=$?
+  n=0
+  [ -f "$rec" ] && n="$(grep -c '^VERDICT:' "$rec" || true)"
+  LAST_PLANT_DETAIL="rc1=$rc1 rc2=$rc2 n=$n busy=$(printf '%s' "$out2" | grep -c 'record busy' || true)"
+  note_plant "$out2" "$rec" "$rc2"
+  if [ "$rc2" -eq 2 ] \
+     && printf '%s\n' "$out2" | grep -q 'record busy (held by run' \
+     && [ "$rc1" -eq 0 ] \
+     && [ "$n" = 1 ] \
+     && exact_verdict_file "$rec" PASS \
+     && ! grep -q '|FAIL|' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# O: mid-run foreign file is refused. FIRE: FAIL by name (record not ours),
+# foreign file clobbered in place, exit 1.
+plant_foreign_record() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_FAULT=foreign_record CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep -E 'run_id=|VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && printf '%s\n' "$out" | grep -q 'record not ours' \
+     && [ -f "$rec" ] \
+     && ! grep -q '^VERDICT: PASS$' "$rec" \
+     && ! grep -q '^run_id=FOREIGN_RUN$' "$rec" \
+     && grep -q '^VERDICT: INCOMPLETE$' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# P: FAIL footer write fails; finish_incomplete still lands INCOMPLETE.
+plant_fail_footer() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_FAULT=fail_footer CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q '^VERDICT: INCOMPLETE$' "$rec"; then
     return 0
   fi
   return 1
@@ -1204,6 +1438,49 @@ repls = {
         '  # CA-GUARD:not-crash\n'
         '  exit 7\n'
         '  local cand="${1:-}"',
+    ),
+    "record-lock": (
+        '  # CA-GUARD:record-lock\n'
+        '  if ! acquire_record_lock; then\n'
+        '    RECORD_FINISHED=1\n'
+        '    RUN_RC=2\n'
+        '    exit 2\n'
+        '  fi',
+        '  # CA-GUARD:record-lock\n'
+        '  true',
+    ),
+    "append-owned": (
+        '      # CA-GUARD:append-owned\n'
+        '      # Empty files (in-place clobber after truncate) have no run_id yet\n'
+        '      # and are allowed; a file that names some other run is not ours.\n'
+        '      if grep -q \'^run_id=\' "$RECORD" 2>/dev/null \\\n'
+        '         && ! grep -Fx "run_id=${RUN_ID}" "$RECORD" >/dev/null 2>&1; then\n'
+        '        RECORD_WRITE_ERR="record not ours"\n'
+        '        return 1\n'
+        '      fi',
+        '      # CA-GUARD:append-owned\n'
+        '      true',
+    ),
+    "die-record-flag": (
+        '  # CA-GUARD:die-record-flag\n'
+        '  # Leave RECORD_FINISHED=0 when the footer did not land, so the EXIT\n'
+        '  # trap\'s finish_incomplete still appends INCOMPLETE or clobbers a\n'
+        '  # foreign file. Never a foreign PASS at the path.\n'
+        '  if [ "$footer_ok" -eq 1 ]; then\n'
+        '    RECORD_FINISHED=1\n'
+        '  fi',
+        '  # CA-GUARD:die-record-flag\n'
+        '  RECORD_FINISHED=1',
+    ),
+    "stdout-verdict": (
+        '  # CA-GUARD:stdout-verdict\n'
+        '  case "${RUN_RC:-1}" in\n'
+        '    0) emit_stdout_verdict PASS ;;\n'
+        '    1) emit_stdout_verdict FAIL ;;\n'
+        '    *) emit_stdout_verdict INCOMPLETE ;;\n'
+        '  esac',
+        '  # CA-GUARD:stdout-verdict\n'
+        '  :',
     ),
 }
 if kind == "traps-after-scan":
@@ -1678,7 +1955,7 @@ selftest() {
     plant_line "I stale-unwritable" 1 "$LAST_PLANT_DETAIL"
   fi
 
-  # --- J: signal during finalization -- exactly one VERDICT line.
+  # --- J: signal during finalization -- exactly one VERDICT line, rc, stdout.
   local j_eco="$st_root/j-eco" j_shim="$st_root/j-shim"
   mkdir -p "$j_eco" "$j_shim"
   printf 'fixture\n' > "$j_eco/.ca_fixture"
@@ -1687,9 +1964,55 @@ selftest() {
   chmod +x "$j_shim/mv"
   rec="$st_root/j.record"
   if plant_footer_signal "$sh" "$j_eco" "$st_root/stub-ok" "$rec" "$j_shim"; then
-    plant_line "J footer-signal" 0 "exactly one VERDICT line"
+    plant_line "J footer-signal" 0 "exactly one VERDICT line, rc=0, stdout PASS"
   else
     plant_line "J footer-signal" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- N: second invocation on the same CA_RECORD is refused.
+  local n_eco_a="$st_root/n-eco-a" n_eco_b="$st_root/n-eco-b"
+  mkdir -p "$n_eco_a" "$n_eco_b"
+  printf 'fixture\n' > "$n_eco_a/.ca_fixture"
+  printf 'fixture\n' > "$n_eco_b/.ca_fixture"
+  mk_consumer "$n_eco_a" aa_slow "sleep 3"
+  mk_consumer "$n_eco_b" aa_bad "eigenscript"
+  rec="$st_root/n.record"
+  if plant_record_busy "$sh" "$n_eco_a" "$n_eco_b" "$st_root/stub-ok" "$st_root/stub-bad" "$rec"; then
+    plant_line "N record-busy" 0 "second run exit 2 busy, first PASS one VERDICT"
+  else
+    plant_line "N record-busy" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- O: foreign-file append refused, clobbered in place.
+  local o_eco="$st_root/o-eco"
+  mkdir -p "$o_eco"
+  printf 'fixture\n' > "$o_eco/.ca_fixture"
+  mk_consumer "$o_eco" o_one "eigenscript"
+  rec="$st_root/o.record"
+  if plant_foreign_record "$sh" "$o_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "O foreign-record" 0 "record not ours, foreign PASS clobbered, exit 1"
+  else
+    plant_line "O foreign-record" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- P: die_record after a failed footer still lands INCOMPLETE.
+  local p_eco="$st_root/p-eco"
+  mkdir -p "$p_eco"
+  printf 'fixture\n' > "$p_eco/.ca_fixture"
+  mk_consumer "$p_eco" p_one "eigenscript"
+  rec="$st_root/p.record"
+  if plant_fail_footer "$sh" "$p_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "P fail-footer" 0 "footer fail, finish_incomplete lands INCOMPLETE"
+  else
+    plant_line "P fail-footer" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- Q: stdout verdict on HUP-after-rename (J's scenario, rc + stdout).
+  rec="$st_root/q.record"
+  if plant_footer_signal "$sh" "$j_eco" "$st_root/stub-ok" "$rec" "$j_shim"; then
+    plant_line "Q stdout-hup" 0 "HUP-after-rename rc=0, one stdout VERDICT: PASS"
+  else
+    plant_line "Q stdout-hup" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- K: CA_TIMEOUT=0 and 00 both exit 2.
@@ -1761,6 +2084,10 @@ selftest() {
       timeout-zero)     plant_timeout_zero "$script" "$eco" "$st_root/stub-ok" "$rec" 00 ;;
       pipefail)         plant_pipefail "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       scratch-cleanup)  plant_scratch_cleanup "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      record-busy)      plant_record_busy "$script" "$n_eco_a" "$n_eco_b" "$st_root/stub-ok" "$st_root/stub-bad" "$rec" ;;
+      foreign-record)   plant_foreign_record "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      fail-footer)      plant_fail_footer "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      stdout-hup)       plant_footer_signal "$script" "$eco" "$st_root/stub-ok" "$rec" "$extra" ;;
       *)                return 2 ;;
     esac
   }
@@ -1835,6 +2162,10 @@ selftest() {
   transverse_one timeout-zero            timeout-zero     "$tz_eco"   t-k
   transverse_one no-pipefail             pipefail         "$l_eco"    t-l
   transverse_one no-cleanup              scratch-cleanup  "$good_eco" t-sc
+  transverse_one record-lock             record-busy      "$n_eco_a"  t-n
+  transverse_one append-owned            foreign-record   "$o_eco"    t-o
+  transverse_one die-record-flag         fail-footer      "$p_eco"    t-p
+  transverse_one stdout-verdict          stdout-hup       "$j_eco"    t-q "$j_shim"
 
   if [ "$ST_FAIL" -ne 0 ]; then
     say "SELF-TEST: FAIL -- one or more plants SILENT or a transverse row failed"
