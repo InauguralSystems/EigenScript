@@ -37,18 +37,29 @@
 #                                    examined < inventory; interrupt is plant D)
 #                 empty_skip_reason  append a SKIP row with an empty reason
 #
-# Record lifecycle (fail-closed):
-#   A previous file at the record path is moved aside before the wave.
-#   The record is created INCOMPLETE (run_id + timestamp + eco_root) and
-#   INT/TERM/HUP traps are installed BEFORE anything from the candidate
-#   executes -- including --version, which runs under the same timeout.
-#   VERDICT: PASS is printed only after the final record is written to a
-#   temp path in the same directory and renamed into place. A write/rename
-#   failure is FAIL, exit 1, and stdout says why.
+# Record lifecycle (the class, fail-closed):
+#   At every moment from process start to exit, the file at CA_RECORD is
+#   either THIS run's record in a truthful state, or absent -- never a
+#   previous run's PASS. Every write that participates goes through
+#   write_record, which returns nonzero on any failure and is checked
+#   (write_record || die_record "why"). No || true on a record write.
+#
+#   First three actions of run_mode, before the inventory scan, before
+#   the shim, before the candidate: install traps, invalidate the
+#   previous record, write the INCOMPLETE header (inventory=PENDING
+#   until the scan finishes -- that is truthful). Invalidating fails
+#   closed: if the previous file cannot be moved aside, it is truncated
+#   / overwritten in place so it is unreadable as PASS, then the run
+#   FAILS immediately, exit 1. VERDICT: PASS is printed only after the
+#   final record is written to a same-directory temp; RECORD_FINISHED=1
+#   is set BEFORE that rename, so a signal after the rename is a
+#   completed run. Exactly one VERDICT: line can ever exist in the
+#   footer writer's output.
 #
 # Consumers run as a background job (setsid + timeout, wait in this shell)
 # so a trap can kill the in-flight process group without waiting out the
 # consumer budget. Block bodies run under bash -e -o pipefail -c.
+# run_cleanup removes the run's scratch on every exit path.
 #
 # examined != inventory on a COMPLETED record is unreachable without a
 # broken loop: the production path that stops early is an interrupt, and
@@ -56,7 +67,7 @@
 # by CA_FAULT=stop_after=N under .ca_fixture (plant early-stop). The
 # honest control also pins inventory=2 examined=2 by grep.
 #
-# CA-GUARD: comments name the six checks the self-test guts in isolation.
+# CA-GUARD: comments name the checks the self-test guts in isolation.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -128,6 +139,19 @@ accept_cmd_of() {
 scan_inventory() {
   local verbose=0
   [ "${1:-}" = print ] && verbose=1
+  # Fixture-only pause so plant H can INT inside the scan window. The
+  # production cost is one python fork per workflow; this sleep is the
+  # deterministic stand-in under .ca_fixture, not a production delay.
+  if [ -f "${ECO:-}/.ca_fixture" ] && [ -n "${CA_SCAN_PAUSE:-}" ]; then
+    if [ -n "${CA_SCAN_READY:-}" ]; then
+      printf 'ready\n' > "$CA_SCAN_READY"
+    fi
+    # Background + wait, not a foreground sleep: a trapped INT/TERM is
+    # delivered during wait, matching run_bounded. A foreground sleep
+    # swallows the signal until it exits and the trap never runs.
+    sleep "$CA_SCAN_PAUSE" &
+    wait $! || true
+  fi
   GATE_NAMES=(); GATE_PINS=(); GATE_CMDS=(); GATE_KINDS=()
   SKIP_NAMES=(); SKIP_PINS=(); SKIP_REASONS=()
   INVENTORY=0
@@ -218,6 +242,7 @@ RECORD=""
 RECORD_FINISHED=0
 RECORD_WRITE_ERR=""
 EXAMINED=0
+INVENTORY=0
 CAND_ABS=""
 CAND_VER=""
 RESOLVED=""
@@ -258,17 +283,95 @@ fixture_fault() {
   return 0
 }
 
+# The single writer. Reads stdin. Returns 1 on any failure; sets
+# RECORD_WRITE_ERR. mode is append | replace; optional tag names the
+# temp file (footer uses "rewrite" so a PATH-shim can target the final
+# rename). Callers check: write_record ... || die_record "why".
+write_record() {
+  local mode="${1:-}" tag="${2:-tmp}" dir tmp
+  RECORD_WRITE_ERR=""
+  if [ -z "${RECORD:-}" ]; then
+    RECORD_WRITE_ERR="write_record: RECORD is unset"
+    return 1
+  fi
+  case "$mode" in
+    append)
+      if [ ! -f "$RECORD" ]; then
+        RECORD_WRITE_ERR="cannot append, $RECORD missing"
+        return 1
+      fi
+      if ! cat >> "$RECORD"; then
+        RECORD_WRITE_ERR="cannot append to $RECORD"
+        return 1
+      fi
+      return 0
+      ;;
+    replace)
+      dir="$(dirname "$RECORD")"
+      tmp="$dir/.$(basename "$RECORD").${tag}.$$"
+      if ! cat > "$tmp"; then
+        RECORD_WRITE_ERR="cannot write record temp at $tmp"
+        rm -f "$tmp"
+        return 1
+      fi
+      if [ "$tag" = rewrite ]; then
+        # CA-GUARD:finished-before-rename
+        RECORD_FINISHED=1
+      fi
+      if ! mv "$tmp" "$RECORD"; then
+        RECORD_WRITE_ERR="cannot rename record temp onto $RECORD"
+        rm -f "$tmp"
+        if [ "$tag" = rewrite ]; then
+          RECORD_FINISHED=0
+        fi
+        return 1
+      fi
+      return 0
+      ;;
+    *)
+      RECORD_WRITE_ERR="write_record: unknown mode ${mode:-empty}"
+      return 1
+      ;;
+  esac
+}
+
+die_record() {
+  local why="$1"
+  say "consumer_acceptance: $why${RECORD_WRITE_ERR:+ ($RECORD_WRITE_ERR)}"
+  if [ -n "${RECORD:-}" ] && [ -f "${RECORD:-}" ] && [ "${RECORD_FINISHED:-0}" -eq 0 ]; then
+    write_record_footer FAIL COMPLETE || say "consumer_acceptance: also failed to write FAIL footer"
+  fi
+  verdict_line FAIL
+  RECORD_FINISHED=1
+  exit 1
+}
+
 # EXIT/INT/TERM/HUP: a record that never got a footer is INCOMPLETE. Guard
 # every expansion -- under set -u a trap abort skips the rest of cleanup.
+# Foreign (previous-run) files are clobbered, never appended-to, so a PASS
+# from another run cannot survive this run's trap. This run's own file
+# already carries VERDICT: INCOMPLETE from the header; we only append when
+# the footer has already written PASS/FAIL and RECORD_FINISHED is still 0
+# (the finalization race the finished-before-rename guard exists to close).
 finish_incomplete() {
   [ "${RECORD_FINISHED:-0}" -eq 1 ] && return
   [ -n "${RECORD:-}" ] && [ -f "$RECORD" ] || return
-  {
-    printf 'status=INCOMPLETE\n'
-    printf 'examined=%s\n' "${EXAMINED:-0}"
-    printf 'inventory=%s examined=%s\n' "${INVENTORY:-0}" "${EXAMINED:-0}"
-    verdict_line INCOMPLETE
-  } >> "$RECORD" 2>/dev/null || true
+  if grep -q "^run_id=${RUN_ID}$" "$RECORD" 2>/dev/null; then
+    if grep -q '^VERDICT: INCOMPLETE$' "$RECORD" \
+       && ! grep -q '^VERDICT: PASS$' "$RECORD" \
+       && ! grep -q '^VERDICT: FAIL$' "$RECORD"; then
+      RECORD_FINISHED=1
+      return
+    fi
+    write_record append <<EOF || say "consumer_acceptance: failed to write INCOMPLETE footer"
+status=INCOMPLETE
+examined=${EXAMINED:-0}
+inventory=${INVENTORY:-0} examined=${EXAMINED:-0}
+VERDICT: INCOMPLETE
+EOF
+  else
+    clobber_record_in_place || say "consumer_acceptance: failed to clobber stale record at $RECORD"
+  fi
   RECORD_FINISHED=1
 }
 
@@ -285,33 +388,17 @@ run_cleanup() {
   kill_inflight
   finish_incomplete
   if [ -n "${WORK:-}" ] && [ -d "${WORK:-}" ]; then
+    # CA-GUARD:scratch-cleanup
     rm -rf "$WORK"
+    WORK=""
   fi
 }
 
 install_run_traps() {
-  trap 'kill_inflight; run_cleanup; exit 2' INT TERM HUP
+  # Snapshot RECORD_FINISHED before cleanup: finish_incomplete sets the
+  # flag after writing INCOMPLETE, which is not a completed run.
+  trap 'fin=${RECORD_FINISHED:-0}; run_cleanup; if [ "$fin" -eq 1 ]; then exit "${RUN_RC:-0}"; else exit 2; fi' INT TERM HUP
   trap 'run_cleanup' EXIT
-}
-
-# Write stdin onto $RECORD via a same-directory temp + rename. PASS is never
-# emitted until this succeeds for the footer.
-atomic_replace_record() {
-  local dir tmp
-  RECORD_WRITE_ERR=""
-  dir="$(dirname "$RECORD")"
-  tmp="$dir/.$(basename "$RECORD").tmp.$$"
-  if ! cat > "$tmp" 2>/dev/null; then
-    RECORD_WRITE_ERR="cannot write record temp at $tmp"
-    rm -f "$tmp" 2>/dev/null || true
-    return 1
-  fi
-  if ! mv "$tmp" "$RECORD" 2>/dev/null; then
-    RECORD_WRITE_ERR="cannot rename record temp onto $RECORD"
-    rm -f "$tmp" 2>/dev/null || true
-    return 1
-  fi
-  return 0
 }
 
 stash_previous_record() {
@@ -323,63 +410,90 @@ stash_previous_record() {
     aside="${RECORD}.prev.$n"
     n=$((n + 1))
   done
-  mv "$RECORD" "$aside" 2>/dev/null || return 1
-  return 0
+  mv "$RECORD" "$aside"
+}
+
+# Truncate/overwrite in place. The file itself is writable even when the
+# directory is not; this is how a stale PASS is destroyed before we FAIL.
+clobber_record_in_place() {
+  if ! : > "$RECORD"; then
+    RECORD_WRITE_ERR="cannot truncate $RECORD in place"
+    return 1
+  fi
+  write_record append <<EOF
+# consumer_acceptance record
+run_id=${RUN_ID:-unknown}
+started=${STARTED:-}
+eco_root=${ECO:-}
+status=INCOMPLETE
+note=clobbered in place; directory would not allow stash
+VERDICT: INCOMPLETE
+EOF
+}
+
+# Fail closed: move aside, or destroy PASS in place and still return 1.
+invalidate_previous_record() {
+  [ -e "$RECORD" ] || return 0
+  if stash_previous_record; then
+    return 0
+  fi
+  clobber_record_in_place
+  RECORD_WRITE_ERR="${RECORD_WRITE_ERR:-cannot move aside $RECORD}"
+  return 1
 }
 
 write_record_header() {
-  {
-    printf '# consumer_acceptance record\n'
-    printf 'run_id=%s\n' "$RUN_ID"
-    printf 'started=%s\n' "$STARTED"
-    printf 'eco_root=%s\n' "$ECO"
-    printf 'block_shell=bash -e -o pipefail -c\n'
-    printf 'candidate_path=%s\n' "$CAND_ABS"
-    printf 'candidate_version=PENDING\n'
-    printf 'eigenscript_resolved=%s\n' "${RESOLVED:-PENDING}"
-    printf 'inventory=%s\n' "$INVENTORY"
-    printf 'examined=PENDING\n'
-    printf 'status=INCOMPLETE\n'
-    printf '# row|name|pin|verdict|rc|duration_s\n'
-  } | atomic_replace_record
+  write_record replace tmp <<EOF
+# consumer_acceptance record
+run_id=$RUN_ID
+started=$STARTED
+eco_root=${ECO:-PENDING}
+block_shell=bash -e -o pipefail -c
+candidate_path=${CAND_ABS:-PENDING}
+candidate_version=PENDING
+eigenscript_resolved=${RESOLVED:-PENDING}
+inventory=PENDING
+examined=PENDING
+status=INCOMPLETE
+# row|name|pin|verdict|rc|duration_s
+VERDICT: INCOMPLETE
+EOF
 }
 
 write_record_footer() {
-  local verdict="$1" status="$2" tmp line
-  tmp="$(dirname "$RECORD")/.$(basename "$RECORD").rewrite.$$"
-  if ! {
+  local verdict="$1" status="$2" line content n
+  if [ ! -f "$RECORD" ]; then
+    RECORD_WRITE_ERR="footer: $RECORD missing"
+    return 1
+  fi
+  content="$(
     while IFS= read -r line || [ -n "$line" ]; do
       case "$line" in
-        examined=PENDING)          printf 'examined=%s\n' "$EXAMINED" ;;
+        inventory=PENDING)         printf 'inventory=%s\n' "${INVENTORY:-0}" ;;
+        examined=PENDING)          printf 'examined=%s\n' "${EXAMINED:-0}" ;;
         status=INCOMPLETE|status=RUNNING) printf 'status=%s\n' "$status" ;;
-        candidate_version=PENDING) printf 'candidate_version=%s\n' "$CAND_VER" ;;
-        eigenscript_resolved=PENDING) printf 'eigenscript_resolved=%s\n' "$RESOLVED" ;;
+        candidate_path=PENDING)    printf 'candidate_path=%s\n' "${CAND_ABS:-}" ;;
+        candidate_version=PENDING) printf 'candidate_version=%s\n' "${CAND_VER:-}" ;;
+        eigenscript_resolved=PENDING) printf 'eigenscript_resolved=%s\n' "${RESOLVED:-}" ;;
+        "VERDICT: INCOMPLETE")     verdict_line "$verdict" ;;
+        VERDICT:*)                 ;; # drop any other verdict; we emit one
         *)                         printf '%s\n' "$line" ;;
       esac
     done < "$RECORD"
-    printf 'probe_rc=%s\n' "$PROBE_RC"
-    printf 'inventory=%s examined=%s\n' "$INVENTORY" "$EXAMINED"
+    printf 'probe_rc=%s\n' "${PROBE_RC:--}"
+    printf 'inventory=%s examined=%s\n' "${INVENTORY:-0}" "${EXAMINED:-0}"
     printf 'status=%s\n' "$status"
-    verdict_line "$verdict"
-  } > "$tmp" 2>/dev/null; then
-    RECORD_WRITE_ERR="cannot write record rewrite at $tmp"
-    rm -f "$tmp" 2>/dev/null || true
+  )"
+  n="$(printf '%s\n' "$content" | grep -c '^VERDICT:' || true)"
+  if [ "$n" != 1 ]; then
+    RECORD_WRITE_ERR="footer would write $n VERDICT lines (want 1)"
     return 1
   fi
-  if ! mv "$tmp" "$RECORD" 2>/dev/null; then
-    RECORD_WRITE_ERR="cannot rename record rewrite onto $RECORD"
-    rm -f "$tmp" 2>/dev/null || true
-    return 1
-  fi
-  RECORD_FINISHED=1
-  return 0
+  write_record replace rewrite <<<"$content"
 }
 
 append_row() {
-  printf 'row|%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "$4" "$5" >> "$RECORD" 2>/dev/null || {
-    RECORD_WRITE_ERR="cannot append row to $RECORD"
-    ANY_BAD=1
-  }
+  write_record append <<<"row|$1|$2|$3|$4|$5" || die_record "cannot append row to $RECORD"
 }
 
 append_skip() {
@@ -388,7 +502,7 @@ append_skip() {
     SKIP_MISSING_REASON=1
     ANY_BAD=1
   fi
-  printf 'skip|%s|%s|%s\n' "$1" "$2" "$3" >> "$RECORD" 2>/dev/null || true
+  write_record append <<<"skip|$1|$2|$3" || die_record "cannot append skip to $RECORD"
 }
 
 # Bounded background job: wait in THIS shell so INT/TERM/HUP can fire and
@@ -439,6 +553,7 @@ run_one() {
   cd_cmd="$(printf 'export PATH=%q:"$PATH"\nexport EIGS=eigenscript\nexport EIGENSCRIPT=eigenscript\ncd %q || exit 125\n%s\n' "$SHIM" "$repo" "$cmd")"
 
   start="$(date +%s)"
+  # CA-GUARD:block-pipefail
   run_bounded "$log" bash -e -o pipefail -c "$cd_cmd"
   end="$(date +%s)"
   LAST_DUR=$((end - start))
@@ -451,17 +566,6 @@ run_one() {
     125) LAST_VERDICT=UNRUNNABLE ;;
     *)   LAST_VERDICT=FAIL ;;
   esac
-}
-
-fail_closed() {
-  local why="$1"
-  say "consumer_acceptance: $why"
-  if [ -n "${RECORD:-}" ] && [ -f "${RECORD:-}" ]; then
-    write_record_footer FAIL COMPLETE || true
-  fi
-  verdict_line FAIL
-  RECORD_FINISHED=1
-  exit 1
 }
 
 finalize_run() {
@@ -487,10 +591,7 @@ finalize_run() {
   fi
 
   if ! write_record_footer "$final" COMPLETE; then
-    say "consumer_acceptance: failed to write final record: ${RECORD_WRITE_ERR:-unknown}"
-    verdict_line FAIL
-    RECORD_FINISHED=1
-    exit 1
+    die_record "failed to write final record"
   fi
   say "inventory=$INVENTORY examined=$EXAMINED"
   verdict_line "$final"
@@ -499,15 +600,48 @@ finalize_run() {
 }
 
 run_mode() {
+  # CA-GUARD:not-crash
   local cand="${1:-}"
   resolve_eco
   probe_timeout
-  BUDGET="${CA_TIMEOUT:-1800}"
+  # Unset → default 1800. Empty / 0 / 00 / non-integer → exit 2 below.
+  if [ "${CA_TIMEOUT+set}" = set ]; then
+    BUDGET="$CA_TIMEOUT"
+  else
+    BUDGET=1800
+  fi
   KILL_AFTER="${CA_KILL_AFTER:-10}"
 
+  RUN_ID="$(date +%s).$$.${RANDOM:-0}"
+  STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%s)"
+
+  if [ -n "${CA_RECORD:-}" ]; then
+    RECORD="$CA_RECORD"
+  else
+    RECORD="$(mktemp "${TMPDIR:-/tmp}/ca-record.XXXXXX")"
+  fi
+
+  # First three actions -- before the inventory scan, before the shim,
+  # before the candidate. A previous PASS must not outlive this point.
+  # CA-GUARD:traps-before-scan
+  install_run_traps
+  # CA-GUARD:invalidate-fail-closed
+  invalidate_previous_record || die_record "cannot invalidate previous record at $RECORD"
+  write_record_header || die_record "cannot initialise record at $RECORD"
+  # CA-GUARD:end-traps-before-scan
+
+  # CA-GUARD:timeout-positive
   case "$BUDGET" in
-    ''|*[!0-9]*|0) say "consumer_acceptance: CA_TIMEOUT must be an integer >= 1 (got ${CA_TIMEOUT:-})"; exit 2 ;;
+    ''|*[!0-9]*)
+      say "consumer_acceptance: CA_TIMEOUT must be a positive integer (got ${CA_TIMEOUT:-})"
+      exit 2
+      ;;
   esac
+  if [ "$((10#$BUDGET))" -lt 1 ]; then
+    say "consumer_acceptance: CA_TIMEOUT must be a positive integer (got ${CA_TIMEOUT:-})"
+    exit 2
+  fi
+  # CA-GUARD:end-timeout-positive
 
   if [ -z "$cand" ]; then
     say "usage: $0 run <CANDIDATE_BINARY>"
@@ -524,7 +658,15 @@ run_mode() {
     exit 2
   fi
 
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/ca-run.XXXXXX")"
+  SHIM="$WORK/bin"
+  mkdir -p "$SHIM"
+  ln -s "$CAND_ABS" "$SHIM/eigenscript"
+  RESOLVED="$SHIM/eigenscript"
+
+  # CA-GUARD:scan-inventory
   scan_inventory
+  # CA-GUARD:end-scan-inventory
 
   # Self-test plant B: drop a snapshotted consumer's checkout. The .ca_fixture
   # marker is the only thing that unlocks this, so a stray env var cannot
@@ -537,29 +679,6 @@ run_mode() {
     SKIP_NAMES+=("planted_empty_skip")
     SKIP_PINS+=("v0.43.0")
     SKIP_REASONS+=("")
-  fi
-
-  WORK="$(mktemp -d "${TMPDIR:-/tmp}/ca-run.XXXXXX")"
-  SHIM="$WORK/bin"
-  mkdir -p "$SHIM"
-  ln -s "$CAND_ABS" "$SHIM/eigenscript"
-  RESOLVED="$SHIM/eigenscript"
-
-  RUN_ID="$(date +%s).$$.${RANDOM:-0}"
-  STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%s)"
-
-  if [ -n "${CA_RECORD:-}" ]; then
-    RECORD="$CA_RECORD"
-  else
-    RECORD="$(mktemp "${TMPDIR:-/tmp}/ca-record.XXXXXX")"
-  fi
-
-  # Stale PASS from a previous run must not be this run's record: move it
-  # aside first. Traps + INCOMPLETE file exist before any candidate exec.
-  stash_previous_record || true
-  install_run_traps
-  if ! write_record_header; then
-    fail_closed "cannot initialise record at $RECORD: ${RECORD_WRITE_ERR:-unknown}"
   fi
 
   say "consumer_acceptance run  bash=$BASH_VERSION  uname=$(uname -s)  timeout=$TMO_BIN  budget=${BUDGET}s"
@@ -640,6 +759,16 @@ mk_consumer() {
   fi
 }
 
+# Extra workflow files without runCmd so accept_cmd_of forks python more
+# than once per consumer -- plant H needs the scan to outlast a 0.5s INT.
+mk_consumer_padded() {
+  mk_consumer "$1" "$2" "$3"
+  mkdir -p "$1/$2/.github/workflows"
+  printf '# no runCmd\n' > "$1/$2/.github/workflows/00-a.yml"
+  printf '# no runCmd\n' > "$1/$2/.github/workflows/00-b.yml"
+  printf '# no runCmd\n' > "$1/$2/.github/workflows/00-c.yml"
+}
+
 mk_consumer_block() {
   local eco="$1" name="$2"
   shift 2
@@ -694,7 +823,35 @@ exact_verdict_file() {
 }
 
 # 0=FIRES 1=SILENT. LAST_PLANT_DETAIL for the SILENT line.
+# LAST_PLANT_OUT/REC/RC feed mutant_not_fires_kind: a mutant that did not
+# FIRE is SILENT only if it printed exactly VERDICT: PASS (the fault
+# genuinely read as success). Anything else is BROKEN-MUTANT.
 LAST_PLANT_DETAIL=""
+LAST_PLANT_OUT=""
+LAST_PLANT_REC=""
+LAST_PLANT_RC=""
+
+note_plant() {
+  LAST_PLANT_OUT="${1:-}"
+  LAST_PLANT_REC="${2:-}"
+  LAST_PLANT_RC="${3:-}"
+}
+
+mutant_not_fires_kind() {
+  local rec="${LAST_PLANT_REC:-}" out="${LAST_PLANT_OUT:-}"
+  # "exactly VERDICT: PASS" means the fault read as success: a PASS
+  # verdict line (run mode) or "VERDICT: PASS -- ..." (plan mode).
+  # A mutant that emitted no PASS is BROKEN-MUTANT, not a catch.
+  if [ -n "$rec" ] && [ -f "$rec" ] && grep -q '^VERDICT: PASS' "$rec"; then
+    printf '%s' SILENT
+    return
+  fi
+  if printf '%s\n' "$out" | grep -q '^VERDICT: PASS'; then
+    printf '%s' SILENT
+    return
+  fi
+  printf '%s' BROKEN-MUTANT
+}
 
 plant_plan_gap() {
   local sh="$1" eco="$2"
@@ -702,6 +859,7 @@ plant_plan_gap() {
   out="$("$sh" plan 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc"
+  note_plant "$out" "" "$rc"
   if [ "$rc" -ne 0 ] && printf '%s\n' "$out" | grep -q "GAP    zz-planted-consumer" \
      && printf '%s\n' "$out" | grep -q '^VERDICT: FAIL'; then
     return 0
@@ -715,6 +873,7 @@ plant_honest_good() {
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc"
+  note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 0 ] \
      && exact_verdict_file "$rec" PASS \
      && exact_verdict "$out" PASS \
@@ -734,6 +893,7 @@ plant_early_stop() {
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_FAULT=stop_after=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc rec=$(grep -E 'inventory=|VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] \
      && grep -q 'inventory=3 examined=1' "$rec" \
      && exact_verdict_file "$rec" FAIL \
@@ -749,6 +909,7 @@ plant_empty_inventory() {
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc"
+  note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] \
      && grep -q 'inventory=0 examined=0' "$rec" \
      && exact_verdict_file "$rec" FAIL \
@@ -764,6 +925,7 @@ plant_missing_command() {
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] \
      && grep -q 'row|no_wf|v0.43.0|UNRUNNABLE|-|' "$rec" \
      && exact_verdict_file "$rec" FAIL; then
@@ -778,6 +940,7 @@ plant_skip_no_reason() {
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_FAULT=empty_skip_reason CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc"
+  note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] \
      && grep -q '^skip|planted_empty_skip|' "$rec" \
      && exact_verdict_file "$rec" FAIL; then
@@ -794,6 +957,7 @@ plant_trailing_verdict() {
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc verdict=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 0 ] \
      && grep -q 'VERDICT: PASS' "$rec" \
      && ! grep -qx 'VERDICT: PASS' "$rec"; then
@@ -803,6 +967,164 @@ plant_trailing_verdict() {
      && printf '%s\n' "$out" | grep -q 'VERDICT: PASS' \
      && ! printf '%s\n' "$out" | grep -qx 'VERDICT: PASS'; then
     return 0
+  fi
+  return 1
+}
+
+# H: INT in the pre-scan window over a stale PASS. FIRE: record is not
+# PASS, exit 2. The 16-consumer skeleton makes scan_inventory take ~1s+
+# (one python fork per workflow file) so 0.5s lands inside the scan.
+#
+# bash `&` sets SIGINT to SIG_IGN in the child, and a signal ignored on
+# entry cannot be trapped (POSIX). Spawn via python so SIGINT is SIG_DFL
+# and install_run_traps' INT trap actually fires.
+plant_prescan_int() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local pid waited rc mark leftover
+  mark="$(mktemp "${TMPDIR:-/tmp}/ca-hmark.XXXXXX")"
+  local ready="${rec}.ready"
+  rm -f "$ready"
+  printf '%s\n' '# stale' 'run_id=OLD_RUN' 'status=COMPLETE' 'inventory=1 examined=1' 'VERDICT: PASS' > "$rec"
+  CA_ECO="$eco" CA_TIMEOUT=20 CA_KILL_AFTER=1 CA_RECORD="$rec" CA_SCAN_PAUSE=2 CA_SCAN_READY="$ready" \
+    python3 -c 'import os,signal,sys
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+os.execvp("bash", ["bash"] + sys.argv[1:])' "$sh" run "$stub" >/dev/null 2>&1 &
+  pid=$!
+  waited=0
+  while [ ! -f "$ready" ] && [ "$waited" -lt 40 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  if [ ! -f "$ready" ]; then
+    kill -KILL "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    rm -f "$mark"
+    note_plant "" "$rec" 98
+    LAST_PLANT_DETAIL="scan never reached pause (ready missing)"
+    return 1
+  fi
+  sleep 0.2
+  kill -INT "$pid" 2>/dev/null
+  waited=0
+  while [ "$waited" -lt 8 ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    rc=99
+  else
+    wait "$pid"
+    rc=$?
+  fi
+  leftover="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'ca-run.*' -newer "$mark" 2>/dev/null || true)"
+  rm -f "$mark"
+  if [ -n "$leftover" ]; then
+    # Mutant without traps leaks scratch; do not leave it.
+    # shellcheck disable=SC2086
+    rm -rf $leftover
+  fi
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "" "$rec" "$rc"
+  if [ "$rc" -eq 2 ] && { [ ! -f "$rec" ] || ! grep -q '^VERDICT: PASS$' "$rec"; }; then
+    return 0
+  fi
+  return 1
+}
+
+# I: stale PASS + unwritable directory. FIRE: record not readable as PASS, exit 1.
+# The passed rec path is a unique prefix; the plant owns a sibling directory
+# so chmod a-w cannot land on the self-test root (or any shared dir).
+plant_stale_unwritable() {
+  local sh="$1" eco="$2" stub="$3" rec_hint="$4"
+  local dir rec out rc
+  dir="${rec_hint}.rodir"
+  mkdir -p "$dir"
+  rec="$dir/record"
+  printf '%s\n' 'run_id=OLD_RUN' 'status=COMPLETE' 'inventory=1 examined=1' 'VERDICT: PASS' > "$rec"
+  chmod a-w "$dir"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  chmod u+w "$dir"
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] && { [ ! -f "$rec" ] || ! grep -q '^VERDICT: PASS$' "$rec"; }; then
+    return 0
+  fi
+  return 1
+}
+
+# J: signal during finalization (PATH shim for mv). FIRE: exactly one VERDICT line.
+plant_footer_signal() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" shim="${5:-}"
+  local out rc n env_path
+  env_path="$PATH"
+  [ -n "$shim" ] && env_path="$shim:$PATH"
+  out="$(PATH="$env_path" CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  n=0
+  [ -f "$rec" ] && n="$(grep -c '^VERDICT:' "$rec" || true)"
+  LAST_PLANT_DETAIL="rc=$rc n=$n rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$n" = 1 ]; then
+    return 0
+  fi
+  return 1
+}
+
+# K: CA_TIMEOUT=0 / 00 must exit 2.
+plant_timeout_zero() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" val="$5"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT="$val" CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="val=$val rc=$rc"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 2 ] && printf '%s\n' "$out" | grep -q 'positive integer'; then
+    return 0
+  fi
+  return 1
+}
+
+# L: false | true is a FAIL row (pipefail).
+plant_pipefail() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|pipe_fail|v0.43.0|FAIL|' "$rec" \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
+# M: after a run, no /tmp/ca-run.* newer than the run's start remains.
+plant_scratch_cleanup() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local mark leftover out rc
+  mark="$(mktemp "${TMPDIR:-/tmp}/ca-mark.XXXXXX")"
+  sleep 0.05
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  leftover="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'ca-run.*' -newer "$mark" 2>/dev/null || true)"
+  rm -f "$mark"
+  LAST_PLANT_DETAIL="rc=$rc leftover=$(printf '%s' "$leftover" | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ -z "$leftover" ]; then
+    return 0
+  fi
+  # Mutant leftover must not escape the self-test.
+  if [ -n "$leftover" ]; then
+    # shellcheck disable=SC2086
+    rm -rf $leftover
   fi
   return 1
 }
@@ -858,15 +1180,112 @@ repls = {
         '  # CA-GUARD:plan-gap\n'
         '  if false && [ "$GAPS" -gt 0 ]; then',
     ),
+    "invalidate-fail-closed": (
+        '  # CA-GUARD:invalidate-fail-closed\n'
+        '  invalidate_previous_record || die_record "cannot invalidate previous record at $RECORD"',
+        '  # CA-GUARD:invalidate-fail-closed\n'
+        '  true',
+    ),
+    "no-pipefail": (
+        '  # CA-GUARD:block-pipefail\n'
+        '  run_bounded "$log" bash -e -o pipefail -c "$cd_cmd"',
+        '  # CA-GUARD:block-pipefail\n'
+        '  run_bounded "$log" bash -e -c "$cd_cmd"',
+    ),
+    "no-cleanup": (
+        '    # CA-GUARD:scratch-cleanup\n'
+        '    rm -rf "$WORK"',
+        '    # CA-GUARD:scratch-cleanup\n'
+        '    :',
+    ),
+    "crash-early": (
+        '  # CA-GUARD:not-crash\n'
+        '  local cand="${1:-}"',
+        '  # CA-GUARD:not-crash\n'
+        '  exit 7\n'
+        '  local cand="${1:-}"',
+    ),
 }
-if kind not in repls:
+if kind == "traps-after-scan":
+    start = "  # CA-GUARD:traps-before-scan\n"
+    end = "  # CA-GUARD:end-traps-before-scan\n"
+    scan_end = "  # CA-GUARD:end-scan-inventory\n"
+    i = text.find(start)
+    j = text.find(end)
+    if i < 0 or j < 0 or j < i:
+        sys.stderr.write("mutation traps-after-scan: block not found\n")
+        sys.exit(2)
+    j += len(end)
+    block = text[i:j]
+    text = text[:i] + text[j:]
+    k = text.find(scan_end)
+    if k < 0:
+        sys.stderr.write("mutation traps-after-scan: scan end not found\n")
+        sys.exit(2)
+    k += len(scan_end)
+    text = text[:k] + block + text[k:]
+elif kind == "timeout-zero":
+    start = "  # CA-GUARD:timeout-positive\n"
+    end = "  # CA-GUARD:end-timeout-positive\n"
+    i = text.find(start)
+    j = text.find(end)
+    if i < 0 or j < 0 or j < i:
+        sys.stderr.write("mutation timeout-zero: block not found\n")
+        sys.exit(2)
+    j += len(end)
+    text = text[:i] + start + "  : # gutted timeout validation\n" + end + text[j:]
+elif kind == "finished-after-rename":
+    # Move RECORD_FINISHED=1 from before mv to after successful mv.
+    a = (
+        '        # CA-GUARD:finished-before-rename\n'
+        '        RECORD_FINISHED=1\n'
+    )
+    b = (
+        '        # CA-GUARD:finished-before-rename\n'
+        '        :\n'
+    )
+    if a not in text:
+        sys.stderr.write("mutation finished-after-rename: before-flag not found\n")
+        sys.exit(2)
+    text = text.replace(a, b, 1)
+    needle = (
+        '      if ! mv "$tmp" "$RECORD"; then\n'
+        '        RECORD_WRITE_ERR="cannot rename record temp onto $RECORD"\n'
+        '        rm -f "$tmp"\n'
+        '        if [ "$tag" = rewrite ]; then\n'
+        '          RECORD_FINISHED=0\n'
+        '        fi\n'
+        '        return 1\n'
+        '      fi\n'
+        '      return 0\n'
+    )
+    repl = (
+        '      if ! mv "$tmp" "$RECORD"; then\n'
+        '        RECORD_WRITE_ERR="cannot rename record temp onto $RECORD"\n'
+        '        rm -f "$tmp"\n'
+        '        if [ "$tag" = rewrite ]; then\n'
+        '          RECORD_FINISHED=0\n'
+        '        fi\n'
+        '        return 1\n'
+        '      fi\n'
+        '      if [ "$tag" = rewrite ]; then\n'
+        '        RECORD_FINISHED=1\n'
+        '      fi\n'
+        '      return 0\n'
+    )
+    if needle not in text:
+        sys.stderr.write("mutation finished-after-rename: mv block not found\n")
+        sys.exit(2)
+    text = text.replace(needle, repl, 1)
+elif kind in repls:
+    a, b = repls[kind]
+    if a not in text:
+        sys.stderr.write("mutation %s: needle not found\n" % kind)
+        sys.exit(2)
+    text = text.replace(a, b, 1)
+else:
     sys.stderr.write("unknown mutation %s\n" % kind)
     sys.exit(2)
-a, b = repls[kind]
-if a not in text:
-    sys.stderr.write("mutation %s: needle not found\n" % kind)
-    sys.exit(2)
-text = text.replace(a, b, 1)
 open(dest, "w").write(text)
 sys.exit(0)
 PY
@@ -1231,26 +1650,135 @@ selftest() {
     plant_line "skip-no-reason" 1 "$LAST_PLANT_DETAIL"
   fi
 
+  # --- H: INT in the pre-scan window over a stale PASS (16-consumer skeleton).
+  local h_eco="$st_root/h-eco" hi
+  mkdir -p "$h_eco"
+  printf 'fixture\n' > "$h_eco/.ca_fixture"
+  hi=1
+  while [ "$hi" -le 16 ]; do
+    mk_consumer_padded "$h_eco" "c$(printf '%02d' "$hi")" "eigenscript"
+    hi=$((hi + 1))
+  done
+  rec="$st_root/h.record"
+  if plant_prescan_int "$sh" "$h_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "H prescan-int" 0 "stale PASS gone, exit 2"
+  else
+    plant_line "H prescan-int" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- I: stale PASS + unwritable directory.
+  local i_eco="$st_root/i-eco" i_dir
+  mkdir -p "$i_eco" "$st_root/i-ro"
+  printf 'fixture\n' > "$i_eco/.ca_fixture"
+  mk_consumer "$i_eco" i_one "eigenscript"
+  rec="$st_root/i-ro/record"
+  if plant_stale_unwritable "$sh" "$i_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "I stale-unwritable" 0 "record not PASS, exit 1"
+  else
+    plant_line "I stale-unwritable" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- J: signal during finalization -- exactly one VERDICT line.
+  local j_eco="$st_root/j-eco" j_shim="$st_root/j-shim"
+  mkdir -p "$j_eco" "$j_shim"
+  printf 'fixture\n' > "$j_eco/.ca_fixture"
+  mk_consumer "$j_eco" j_one "eigenscript"
+  printf '%s\n' '#!/bin/bash' '/usr/bin/mv "$@" || exit $?' 'case "$1" in *.rewrite.*) kill -HUP "$PPID" ;; esac' 'exit 0' > "$j_shim/mv"
+  chmod +x "$j_shim/mv"
+  rec="$st_root/j.record"
+  if plant_footer_signal "$sh" "$j_eco" "$st_root/stub-ok" "$rec" "$j_shim"; then
+    plant_line "J footer-signal" 0 "exactly one VERDICT line"
+  else
+    plant_line "J footer-signal" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- K: CA_TIMEOUT=0 and 00 both exit 2.
+  # Not k_eco: C2 already bound that name to the kill fixture.
+  local tz_eco="$st_root/tz-eco"
+  mkdir -p "$tz_eco"
+  printf 'fixture\n' > "$tz_eco/.ca_fixture"
+  mk_consumer "$tz_eco" tz_one "eigenscript"
+  rec="$st_root/k0.record"
+  if plant_timeout_zero "$sh" "$tz_eco" "$st_root/stub-ok" "$rec" 0 \
+     && plant_timeout_zero "$sh" "$tz_eco" "$st_root/stub-ok" "$st_root/k00.record" 00 \
+     && plant_timeout_zero "$sh" "$tz_eco" "$st_root/stub-ok" "$st_root/kempty.record" ""; then
+    plant_line "K timeout-zero" 0 "0, 00 and empty all exit 2"
+  else
+    plant_line "K timeout-zero" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- L: false | true is a FAIL row (pipefail).
+  local l_eco="$st_root/l-eco"
+  mkdir -p "$l_eco"
+  printf 'fixture\n' > "$l_eco/.ca_fixture"
+  mk_consumer_block "$l_eco" pipe_fail "false | true"
+  rec="$st_root/l.record"
+  if plant_pipefail "$sh" "$l_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "L pipefail" 0 "false | true is a FAIL row"
+  else
+    plant_line "L pipefail" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- M: scratch dirs do not outlive the run.
+  rec="$st_root/m-scratch.record"
+  if plant_scratch_cleanup "$sh" "$good_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "M scratch-cleanup" 0 "no ca-run leftover"
+  else
+    plant_line "M scratch-cleanup" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- plant-of-plant: a mutant that exits 7 is BROKEN-MUTANT, not SILENT.
+  local cr_md="$st_root/mutants/crash-early" cr_mutant cr_rec
+  cr_rec="$st_root/crash.record"
+  if ! prep_mutant "$cr_md" crash-early; then
+    plant_line "broken-mutant-class" 1 "crash-early mutation did not land"
+  else
+    cr_mutant="$cr_md/tools/consumer_acceptance.sh"
+    plant_early_stop "$cr_mutant" "$es_eco" "$st_root/stub-ok" "$cr_rec" || true
+    if [ "$(mutant_not_fires_kind)" = BROKEN-MUTANT ]; then
+      plant_line "broken-mutant-class" 0 "exit-7 mutant is BROKEN-MUTANT, not SILENT"
+    else
+      plant_line "broken-mutant-class" 1 "exit-7 mutant classified as $(mutant_not_fires_kind)"
+    fi
+  fi
+
   # --- transversality: gut each guard, require its plant SILENT.
   say ""
   say "transverse: gut each guard, require its plant SILENT (and intact FIRES)"
 
+  run_named_plant() {
+    local fn="$1" script="$2" eco="$3" rec="$4" extra="${5:-}"
+    case "$fn" in
+      early-stop)       plant_early_stop "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      empty-inventory)  plant_empty_inventory "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      missing-command)  plant_missing_command "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      skip-no-reason)   plant_skip_no_reason "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      plan-gap)         CA_ECO="$eco" plant_plan_gap "$script" "$eco" ;;
+      trailing-verdict) plant_trailing_verdict "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      prescan-int)      plant_prescan_int "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      stale-unwritable) plant_stale_unwritable "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      footer-signal)    plant_footer_signal "$script" "$eco" "$st_root/stub-ok" "$rec" "$extra" ;;
+      timeout-zero)     plant_timeout_zero "$script" "$eco" "$st_root/stub-ok" "$rec" 00 ;;
+      pipefail)         plant_pipefail "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      scratch-cleanup)  plant_scratch_cleanup "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      *)                return 2 ;;
+    esac
+  }
+
   transverse_one() {
     local kind="$1" plant="$2" eco="$3" rec_prefix="$4"
+    local extra="${5:-}"
     local md mutant rec_i rec_m
     md="$st_root/mutants/$kind"
     rec_i="$st_root/${rec_prefix}-intact.record"
     rec_m="$st_root/${rec_prefix}-mutant.record"
     rm -f "$rec_i" "$rec_m"
     local intact=SILENT mutant_st=BROKEN
-    case "$plant" in
-      early-stop)      plant_early_stop "$sh" "$eco" "$st_root/stub-ok" "$rec_i" && intact=FIRES || intact=SILENT ;;
-      empty-inventory) plant_empty_inventory "$sh" "$eco" "$st_root/stub-ok" "$rec_i" && intact=FIRES || intact=SILENT ;;
-      missing-command) plant_missing_command "$sh" "$eco" "$st_root/stub-ok" "$rec_i" && intact=FIRES || intact=SILENT ;;
-      skip-no-reason)  plant_skip_no_reason "$sh" "$eco" "$st_root/stub-ok" "$rec_i" && intact=FIRES || intact=SILENT ;;
-      plan-gap)        CA_ECO="$eco" plant_plan_gap "$sh" "$eco" && intact=FIRES || intact=SILENT ;;
-      trailing-verdict) plant_trailing_verdict "$sh" "$eco" "$st_root/stub-ok" "$rec_i" && intact=FIRES || intact=SILENT ;;
-    esac
+    if run_named_plant "$plant" "$sh" "$eco" "$rec_i" "$extra"; then
+      intact=FIRES
+    else
+      intact=SILENT
+    fi
     if ! prep_mutant "$md" "$kind"; then
       say "transverse $kind / $plant: intact=$intact mutant=BROKEN -- mutation did not land"
       ST_FAIL=1
@@ -1265,14 +1793,11 @@ selftest() {
       ST_FAIL=1
       return
     fi
-    case "$plant" in
-      early-stop)      plant_early_stop "$mutant" "$eco" "$st_root/stub-ok" "$rec_m" && mutant_st=FIRES || mutant_st=SILENT ;;
-      empty-inventory) plant_empty_inventory "$mutant" "$eco" "$st_root/stub-ok" "$rec_m" && mutant_st=FIRES || mutant_st=SILENT ;;
-      missing-command) plant_missing_command "$mutant" "$eco" "$st_root/stub-ok" "$rec_m" && mutant_st=FIRES || mutant_st=SILENT ;;
-      skip-no-reason)  plant_skip_no_reason "$mutant" "$eco" "$st_root/stub-ok" "$rec_m" && mutant_st=FIRES || mutant_st=SILENT ;;
-      plan-gap)        CA_ECO="$eco" plant_plan_gap "$mutant" "$eco" && mutant_st=FIRES || mutant_st=SILENT ;;
-      trailing-verdict) plant_trailing_verdict "$mutant" "$eco" "$st_root/stub-ok" "$rec_m" && mutant_st=FIRES || mutant_st=SILENT ;;
-    esac
+    if run_named_plant "$plant" "$mutant" "$eco" "$rec_m" "$extra"; then
+      mutant_st=FIRES
+    else
+      mutant_st="$(mutant_not_fires_kind)"
+    fi
     # Trailing-text is inverted: the "guard" is the exact-line check, the
     # plant IS the extra-mutant. Intact production has no extra text so the
     # trailing-text plant is SILENT there; the extra-mutant must FIRE.
@@ -1285,6 +1810,11 @@ selftest() {
       fi
       return
     fi
+    if [ "$mutant_st" = BROKEN-MUTANT ]; then
+      say "transverse $kind / $plant: intact=$intact mutant=BROKEN-MUTANT  FAIL (mutant did not print VERDICT: PASS; rc=${LAST_PLANT_RC:-} rec=${LAST_PLANT_REC:-} recV=$(grep '^VERDICT:' "${LAST_PLANT_REC:-/dev/null}" 2>/dev/null | tr '\n' '|') detail=${LAST_PLANT_DETAIL:-} out=$(printf '%s\n' "${LAST_PLANT_OUT:-}" | tail -8 | tr '\n' '|'))"
+      ST_FAIL=1
+      return
+    fi
     if [ "$intact" = FIRES ] && [ "$mutant_st" = SILENT ]; then
       say "transverse $kind / $plant: intact=FIRES mutant=SILENT  OK"
     else
@@ -1293,12 +1823,18 @@ selftest() {
     fi
   }
 
-  transverse_one examined-eq     early-stop       "$es_eco"   t-es
-  transverse_one nonempty        empty-inventory  "$z_eco"    t-z
-  transverse_one missing-command missing-command  "$m_eco"    t-m
-  transverse_one skip-reason     skip-no-reason   "$sr_eco"   t-sr
-  transverse_one exact-verdict   trailing-verdict "$good_eco" t-tv
-  transverse_one plan-gap        plan-gap         "$plan_eco" t-pg
+  transverse_one examined-eq             early-stop       "$es_eco"   t-es
+  transverse_one nonempty                empty-inventory  "$z_eco"    t-z
+  transverse_one missing-command         missing-command  "$m_eco"    t-m
+  transverse_one skip-reason             skip-no-reason   "$sr_eco"   t-sr
+  transverse_one exact-verdict           trailing-verdict "$good_eco" t-tv
+  transverse_one plan-gap                plan-gap         "$plan_eco" t-pg
+  transverse_one traps-after-scan        prescan-int      "$h_eco"    t-h
+  transverse_one invalidate-fail-closed  stale-unwritable "$i_eco"    t-i
+  transverse_one finished-after-rename   footer-signal    "$j_eco"    t-j "$j_shim"
+  transverse_one timeout-zero            timeout-zero     "$tz_eco"   t-k
+  transverse_one no-pipefail             pipefail         "$l_eco"    t-l
+  transverse_one no-cleanup              scratch-cleanup  "$good_eco" t-sc
 
   if [ "$ST_FAIL" -ne 0 ]; then
     say "SELF-TEST: FAIL -- one or more plants SILENT or a transverse row failed"

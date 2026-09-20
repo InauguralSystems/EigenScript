@@ -327,25 +327,30 @@ All notable changes to EigenScript are documented here.
   `examined == inventory > 0` is required to pass; a missing checkout or
   missing command is UNRUNNABLE not a skip; rc 124/137 is HANG/KILLED by
   name; an interrupted run (INT/TERM/HUP) marks the record INCOMPLETE and
-  exits 2. The record is fail-closed: it is created `INCOMPLETE` (with
-  `run_id`, timestamp, and `eco_root`) and the signal traps are installed
-  before anything from the candidate executes, including `--version`, which
-  runs under the same per-command timeout (a hanging or failing probe is
-  UNRUNNABLE for the whole run). `VERDICT: PASS` is printed only after the
-  final record is written to a same-directory temp and renamed into place;
-  a write/rename failure is FAIL, exit 1. Consumers run as a background
-  job (`setsid` + `timeout`, `wait` in the runner) so a trap can kill the
-  in-flight process group without waiting out the consumer budget. Block
-  bodies run under `bash -e -o pipefail -c`. The self-test plants a broken
-  candidate, a shrinkage, a hang, an interruption, a hanging `--version`
-  probe over a stale PASS record, an unwritable record path, and a two-line
-  block whose first line fails — each must FIRE — plus an honest
-  two-consumer PASS control. Six guards are mutation-tested in isolation
-  (examined==inventory, nonempty inventory, missing command, SKIP reason,
-  exact verdict line, plan GAP): each plant is SILENT with its guard
-  gutted. Isolation: `CA_ECO` points the inventory at a fixture; the
-  self-test never mutates a sibling repo (mechanical-gates §168). Plan
-  mode is unchanged.
+  exits 2. Record class: at every moment the file at `CA_RECORD` is this
+  run's record in a truthful state, or absent — never a previous run's
+  PASS. The first three actions of `run` (before the inventory scan, the
+  shim, and the candidate) are: install INT/TERM/HUP traps, invalidate
+  the previous record (move aside, or truncate in place and FAIL if the
+  directory will not allow a stash), write the INCOMPLETE header
+  (`inventory=PENDING` until the scan finishes). Every record write goes
+  through one helper that is checked at every call site. `RECORD_FINISHED`
+  is set before the final rename, so a signal after the rename is a
+  completed run; the footer writer asserts exactly one `VERDICT:` line.
+  `CA_TIMEOUT` must be a positive integer (`0`/`00`/`abc` exit 2). Block
+  bodies run under `bash -e -o pipefail -c`. Scratch dirs are removed on
+  every exit path. `--version` runs under the same per-command timeout.
+  The self-test plants a broken candidate, a shrinkage, a hang, an
+  interruption, a hanging `--version` probe over a stale PASS, an
+  unwritable record path, a two-line block whose first line fails, an
+  INT in the pre-scan window, a stale PASS in an unwritable directory, a
+  signal during finalization, `CA_TIMEOUT=0`/`00`, a `false | true` block,
+  and leftover scratch — each must FIRE — plus an honest two-consumer
+  PASS control. A mutant that emits no `VERDICT: PASS` is BROKEN-MUTANT,
+  not SILENT. Guards are mutation-tested in isolation: each plant is
+  SILENT with its guard gutted. Isolation: `CA_ECO` points the inventory
+  at a fixture; the self-test never mutates a sibling repo
+  (mechanical-gates §168). Plan mode is unchanged.
 
 - **CI runs each gate where it is suited: a ≤ 15-minute PR lane, the full
   matrix on `main`, and a nightly (#1160).** Measured on PR #1158: 35 min
