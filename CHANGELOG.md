@@ -319,6 +319,97 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **Consumer-acceptance `run` residuals (M1 round 7).** Self-test TMPDIR is
+  private (concurrent self-tests no longer `rm -rf` each other's
+  `ca-run.*`). The consumer process group is reaped after `wait` and the
+  per-row call log is a new inode. Export lines are joined with a real
+  newline. The call log lives under a directory the consumer is never
+  told about. Overlay dirs are copied with `cp -rL`. A gfx bind probe
+  must exit 0 with the expected output (`candidate_gfx: unknown` on
+  nonzero; gfx prereq treats unknown as missing). `EIGENSCRIPT_GFX` is
+  exported only when `CAND_HAS_GFX=1`; `consumer_skips` counts `^SKIP`
+  lines and a PASS with skips is `PASS|skips=N`. A bare candidate is
+  refused when `$ECO/EigenScript` exists. Plants D/D2 require exactly
+  one stdout `VERDICT: INCOMPLETE`. Plant Z's stub lists `gfx_open` and
+  its transverse guts the probe-routing/re-arm, not the counter.
+  `sibling_binary_present` is computed after the wave too (executable
+  regular file only).
+
+- **Consumer-acceptance `run` mode** (`tools/consumer_acceptance.sh run
+  <CANDIDATE>`): executes every gated consumer's own acceptance command
+  serially against a release candidate, with the candidate on `PATH` as
+  `eigenscript`, and writes a record (inventory, examined, per-consumer
+  PASS/FAIL/HANG/KILLED/UNRUNNABLE/SKIP, rc, duration, candidate identity).
+  `examined == inventory > 0` is required to pass; a missing checkout or
+  missing command is UNRUNNABLE not a skip; rc 124/137 is HANG/KILLED by
+  name; an interrupted run (INT/TERM/HUP) marks the record INCOMPLETE and
+  exits 2. Record class: at every moment the file at `CA_RECORD` is this
+  run's record in a truthful state, or absent — never a previous run's
+  PASS, never a foreign PASS. Exclusive ownership: a mkdir lock on
+  `<record>.lock.d` is taken before invalidate and held through cleanup;
+  a second invocation on the same `CA_RECORD` refuses immediately (exit
+  2, touches nothing); a stale lock (holder pid dead) is reclaimed with
+  a note in the header. Every append is ownership-checked (`run_id=` must
+  match this run). `die_record` leaves `RECORD_FINISHED=0` when its FAIL
+  footer did not land, so `finish_incomplete` still appends INCOMPLETE or
+  clobbers a foreign file in place. The first actions of `run` (before
+  the inventory scan, the shim, and the candidate) are: install
+  INT/TERM/HUP traps, take the record lock, create the scratch dir,
+  invalidate the previous record (move aside, or truncate in place and
+  FAIL if the directory will not allow a stash), write the INCOMPLETE
+  header (`inventory=PENDING` until the scan finishes). Every record
+  write goes through one helper that is checked at every call site.
+  `RECORD_FINISHED` is set before the final rename, so a signal after
+  the rename is a completed run; the trap still emits exactly one
+  stdout `VERDICT:` line on that path. Footer rewrite temps live under
+  the run scratch dir. The default record path does not stash an empty
+  `.prev`. The footer writer asserts exactly one `VERDICT:` line.
+  `CA_TIMEOUT` must be a positive integer (`0`/`00`/`abc` exit 2). Block
+  bodies run under `bash -e -o pipefail -c`. Scratch dirs are removed on
+  every exit path. `--version` runs under the same per-command timeout.
+  The self-test plants a broken candidate, a shrinkage, a hang, an
+  interruption, a hanging `--version` probe over a stale PASS, an
+  unwritable record path, a two-line block whose first line fails, an
+  INT in the pre-scan window, a stale PASS in an unwritable directory, a
+  signal during finalization, `CA_TIMEOUT=0`/`00`, a `false | true` block,
+  leftover scratch, a second invocation on a live record, a foreign-file
+  append, a failed FAIL footer, HUP-after-rename stdout, an unexercised
+  row (`true` never calls the candidate), a tree consumer
+  (`$EIGS_DIR/src/eigenscript`), a DECLARED command whose file does not
+  exist, and a missing environment prereq — each must FIRE — plus an
+  honest two-consumer PASS control. A mutant that emits no
+  `VERDICT: PASS` is BROKEN-MUTANT, not SILENT. Guards are
+  mutation-tested in isolation: each plant is SILENT with its guard
+  gutted. Isolation: `CA_ECO` points the inventory at a fixture; the
+  self-test never mutates a sibling repo (mechanical-gates §168). Every
+  run row carries `cand_calls=N cand_ok=N cand_fail=M` from a counting
+  `eigenscript` shim whose log path is baked into the wrapper (not
+  exported; not named `CA_*`). `cand_calls` counts only non-trivial
+  invocations (a `.eigs` path or a non-flag positional); `--version` /
+  `--api` / `--help` / bare are `probe` and do not count. `cand_calls=0`
+  cannot be PASS (`UNEXERCISED`). Command rc 0 with `cand_ok=0
+  cand_fail>0` is `SWALLOWED`. The consumer inherits
+  `EIGS`/`EIGENSCRIPT`/`EIGS_DIR`/`EIGENSCRIPT_DIR`/`EIGENSCRIPT_BIN`/
+  `EIGENSCRIPT_GFX` and the shim `PATH`; every `CA_*` name is unset.
+  `EIGS_DIR` is a COPY overlay (`src/`, `lib/`, top-level files including
+  dotfiles a build may read; never `.git`; `src/eigenscript` is the
+  shim). `sibling_binary_present=yes/no` records whether
+  `$ECO/EigenScript/src/eigenscript` exists and differs from the
+  candidate (DMG#73 is visible, not worked around). DECLARED commands
+  are verified at plan time (every `bash`/`python3` file token, plus
+  `python3 -m unittest discover -s DIR`); EigenGauntlet is
+  `bash tests/run_smoke.sh` and EigenMiniSat is the consumer's real CI
+  command including the unittest step. A missing `PREREQS` tool (eddy:
+  `go` `java`; EigenMiniSat: `drat-trim`; dynamics: `gfx`, detected via
+  `--api` plus a `gfx_open` bind probe) is `UNRUNNABLE|prereq:<tool>`.
+  Residuals stated in the record header: a same-uid consumer that reads
+  the shim can still find the log path (non-accidental, not
+  adversary-proof); a missing tool referenced only inside a called
+  script still shows as a generic FAIL; ouroboros `aot/build.sh` keys
+  `libeigsrt.a` on `pwd -P` of `$EIGS_DIR/src`, so every run rebuilds
+  against the overlay path and leaves `aot/build/.libsrc` stamped with
+  a dead path.
+
 - **CI runs each gate where it is suited: a ≤ 15-minute PR lane, the full
   matrix on `main`, and a nightly (#1160).** Measured on PR #1158: 35 min
   wall, ~200 machine-minutes, 26 checks — because the same ~263-section suite
