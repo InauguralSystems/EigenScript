@@ -357,13 +357,23 @@ All notable changes to EigenScript are documented here.
   INT in the pre-scan window, a stale PASS in an unwritable directory, a
   signal during finalization, `CA_TIMEOUT=0`/`00`, a `false | true` block,
   leftover scratch, a second invocation on a live record, a foreign-file
-  append, a failed FAIL footer, and HUP-after-rename stdout — each must
-  FIRE — plus an honest two-consumer
-  PASS control. A mutant that emits no `VERDICT: PASS` is BROKEN-MUTANT,
-  not SILENT. Guards are mutation-tested in isolation: each plant is
-  SILENT with its guard gutted. Isolation: `CA_ECO` points the inventory
-  at a fixture; the self-test never mutates a sibling repo
-  (mechanical-gates §168). Plan mode is unchanged.
+  append, a failed FAIL footer, HUP-after-rename stdout, an unexercised
+  row (`true` never calls the candidate), a tree consumer
+  (`$EIGS_DIR/src/eigenscript`), a DECLARED command whose file does not
+  exist, and a missing environment prereq — each must FIRE — plus an
+  honest two-consumer PASS control. A mutant that emits no
+  `VERDICT: PASS` is BROKEN-MUTANT, not SILENT. Guards are
+  mutation-tested in isolation: each plant is SILENT with its guard
+  gutted. Isolation: `CA_ECO` points the inventory at a fixture; the
+  self-test never mutates a sibling repo (mechanical-gates §168). Every
+  run row carries `cand_calls=N` from a counting `eigenscript` shim;
+  `cand_calls=0` cannot be PASS (it is `UNEXERCISED`). `EIGS_DIR` and
+  `EIGENSCRIPT_DIR` are exported to an overlay of the candidate tree so
+  consumers that resolve `../EigenScript` exercise the candidate.
+  DECLARED commands are verified at plan time (the named file must
+  exist); EigenGauntlet is `bash tests/run_smoke.sh` and EigenMiniSat is
+  the consumer's real CI command. A missing `PREREQS` tool (eddy: `go`,
+  `java`) is `UNRUNNABLE|prereq:<tool>`, labelled as the environment's.
 
 - **CI runs each gate where it is suited: a ≤ 15-minute PR lane, the full
   matrix on `main`, and a nightly (#1160).** Measured on PR #1158: 35 min

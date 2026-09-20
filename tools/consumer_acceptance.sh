@@ -10,12 +10,15 @@
 #   - primitives shipped for a consumer sat unused in that consumer's own code
 #
 # The rule that follows from those: a consumer that is MISSING, whose command
-# cannot be found, or whose command is SKIPPED must fail the run. A release
-# gate that can quietly examine fewer consumers than last time is the failure
-# mode this whole file exists to prevent (mechanical-gates 15, 165).
+# cannot be found, whose command is SKIPPED, or whose command never reaches
+# the candidate must fail the run. A release gate that can quietly examine
+# fewer consumers than last time is the failure mode this whole file exists
+# to prevent (mechanical-gates 15, 165, 113, 170).
 #
 #   tools/consumer_acceptance.sh plan            what would run, and coverage
 #   tools/consumer_acceptance.sh run <BINARY>    run it, serially; write a record
+#     PATH shim counts candidate execs (cand_calls=N; 0 => UNEXERCISED).
+#     EIGS_DIR/EIGENSCRIPT_DIR point at an overlay of the candidate tree.
 #   tools/consumer_acceptance.sh --self-test     plant a fault, prove it fires
 #
 # Isolation (mechanical-gates §168): this script never mutates a sibling repo.
@@ -112,8 +115,16 @@ declare -A EXCLUDED=(
 declare -A DECLARED=(
   [eigen-edit]="bash tests/test_smoke.sh"
   [eigen-sheet]="bash tests/test_smoke.sh"
-  [EigenMiniSat]="python3 -m unittest discover -s benchmarks -p 'test_*.py' -v"
-  [EigenGauntlet]="bash tests/run.sh"
+  [EigenMiniSat]="bash tests/run_smoke.sh && bash tests/run_proof_check.sh && eigenscript minisat.eigs --proof-bench --size 1"
+  [EigenGauntlet]="bash tests/run_smoke.sh"
+)
+
+# Tools a consumer's command needs that are not the candidate. Keyed by
+# repo name; also unioned with top-level tokens of the command itself
+# (go/java/python3/make). A missing tool is UNRUNNABLE|prereq:<tool>,
+# not a candidate regression (mechanical-gates §170).
+declare -A PREREQS=(
+  [eddy]="go java"
 )
 
 say() { printf '%s\n' "$*"; }
@@ -150,6 +161,142 @@ accept_cmd_of() {
   return 1
 }
 
+# For a DECLARED command, the file the first token names must exist in
+# the consumer checkout (bash <file>, python3 <file>, <file>). Compound
+# commands (&& / ;) are checked segment by segment. Prints the first
+# missing path (relative to the repo) or nothing. Mechanical-gates §170:
+# a declared fallback is a hand-typed claim and is verified like a derived one.
+declared_missing_file() {
+  local repo="$1" cmd="$2"
+  local norm piece first second file
+  norm="${cmd//&&/$'\n'}"
+  norm="${norm//;/$'\n'}"
+  while IFS= read -r piece || [ -n "$piece" ]; do
+    piece="${piece#"${piece%%[![:space:]]*}"}"
+    piece="${piece%"${piece##*[![:space:]]}"}"
+    [ -z "$piece" ] && continue
+    # shellcheck disable=SC2086
+    set -- $piece
+    first="${1:-}"
+    second="${2:-}"
+    file=""
+    case "$first" in
+      bash|sh|python3|python)
+        case "$second" in
+          ''|-*) ;;
+          *) file="$second" ;;
+        esac
+        ;;
+      *)
+        case "$first" in
+          */*|*.sh|*.py|*.eigs) file="$first" ;;
+        esac
+        ;;
+    esac
+    if [ -n "$file" ]; then
+      case "$file" in
+        /*)
+          if [ ! -f "$file" ]; then
+            printf '%s' "$file"
+            return 0
+          fi
+          ;;
+        *)
+          if [ ! -f "$repo/$file" ]; then
+            printf '%s' "$file"
+            return 0
+          fi
+          ;;
+      esac
+    fi
+  done <<< "$norm"
+  return 0
+}
+
+# First missing tool from PREREQS[name], fixture .ca_prereqs, and top-level
+# command tokens (go/java/python3/python/make). Prints the tool; rc 0 if
+# something is missing, 1 if every named tool is on PATH.
+missing_prereq() {
+  local name="$1" cmd="$2"
+  local tools="" t piece first
+  tools="${PREREQS[$name]:-}"
+  if [ -f "${ECO:-}/.ca_fixture" ] && [ -f "$ECO/$name/.ca_prereqs" ]; then
+    tools="$tools $(tr '\n' ' ' < "$ECO/$name/.ca_prereqs")"
+  fi
+  local norm="${cmd//&&/$'\n'}"
+  norm="${norm//;/$'\n'}"
+  while IFS= read -r piece || [ -n "$piece" ]; do
+    piece="${piece#"${piece%%[![:space:]]*}"}"
+    [ -z "$piece" ] && continue
+    # shellcheck disable=SC2086
+    set -- $piece
+    first="${1:-}"
+    case "$first" in
+      go|java|python3|python|make) tools="$tools $first" ;;
+    esac
+  done <<< "$norm"
+  for t in $tools; do
+    [ -z "$t" ] && continue
+    if ! command -v "$t" >/dev/null 2>&1; then
+      printf '%s' "$t"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Walk up from the candidate until a directory whose src/eigenscript is
+# that same file (-ef). Empty CAND_TREE means a bare binary: tree-resolving
+# consumers will not see EIGS_DIR and report UNEXERCISED.
+derive_candidate_tree() {
+  local cand="$1" dir
+  CAND_TREE=""
+  dir="$(cd "$(dirname "$cand")" && pwd)" || return 1
+  while [ -n "$dir" ] && [ "$dir" != "/" ]; do
+    if [ -e "$dir/src/eigenscript" ] && [ "$dir/src/eigenscript" -ef "$cand" ]; then
+      CAND_TREE="$dir"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+# Overlay of the candidate tree under the run scratch: every entry is a
+# symlink at the original except src/eigenscript, which is the counting
+# shim. EIGS_DIR/EIGENSCRIPT_DIR point here so Tidepool/ouroboros/DMG
+# resolve the candidate, not a sibling checkout, and the shim still
+# counts the call. Never mutates the real tree.
+build_candidate_overlay() {
+  local src="$1" dst="$2" item base s sb
+  CAND_OVERLAY=""
+  [ -n "$src" ] && [ -d "$src" ] || return 1
+  mkdir -p "$dst"
+  local nullglob_was=0
+  shopt -q nullglob && nullglob_was=1
+  shopt -s nullglob
+  for item in "$src"/*; do
+    base="$(basename "$item")"
+    if [ "$base" = src ] && [ -d "$item" ]; then
+      mkdir -p "$dst/src"
+      for s in "$item"/*; do
+        sb="$(basename "$s")"
+        if [ "$sb" = eigenscript ]; then
+          ln -s "$SHIM/eigenscript" "$dst/src/eigenscript"
+        else
+          ln -s "$s" "$dst/src/$sb"
+        fi
+      done
+    else
+      ln -s "$item" "$dst/$base"
+    fi
+  done
+  if [ "$nullglob_was" -eq 0 ]; then
+    shopt -u nullglob
+  fi
+  CAND_OVERLAY="$dst"
+}
+
 # Scan ECO into GATE_* / SKIP_* arrays. Prints the plan listing iff $1=print.
 # Does not print a verdict -- callers do. Diagnostics never go through stdout
 # of a function whose result is captured (mechanical-gates: no $(( $(fn) ))).
@@ -174,7 +321,7 @@ scan_inventory() {
   SKIP_NAMES=(); SKIP_PINS=(); SKIP_REASONS=()
   INVENTORY=0
   GAPS=0
-  local r pin cmd d
+  local r pin cmd d kind gap_why miss
   local nullglob_was=0
   shopt -q nullglob && nullglob_was=1
   shopt -s nullglob
@@ -199,26 +346,43 @@ scan_inventory() {
       continue
     fi
     cmd=""
+    kind=""
+    gap_why=""
     if cmd="$(accept_cmd_of "$r")"; then
-      GATE_KINDS+=("derived")
+      kind=derived
     elif [ -n "${DECLARED[$r]:-}" ]; then
       cmd="${DECLARED[$r]}"
-      GATE_KINDS+=("declared")
+      kind=declared
+    elif [ -f "${ECO:-}/.ca_fixture" ] && [ -f "$ECO/$r/.ca_declared" ]; then
+      IFS= read -r cmd < "$ECO/$r/.ca_declared" || true
+      kind=declared
     else
-      GATE_KINDS+=("gap")
+      kind=gap
       GAPS=$((GAPS + 1))
+      gap_why="pins the runtime but no acceptance command could be derived"
     fi
+    if [ "$kind" = declared ]; then
+      miss=""
+      # CA-GUARD:declared-file
+      miss="$(declared_missing_file "$ECO/$r" "$cmd")"
+      if [ -n "$miss" ]; then
+        kind=gap
+        cmd=""
+        GAPS=$((GAPS + 1))
+        gap_why="declared command's file does not exist: $miss"
+      fi
+    fi
+    GATE_KINDS+=("$kind")
     GATE_NAMES+=("$r")
     GATE_PINS+=("$pin")
     GATE_CMDS+=("$cmd")
     INVENTORY=$((INVENTORY + 1))
     if [ "$verbose" -eq 1 ]; then
-      local kind="${GATE_KINDS[$((INVENTORY - 1))]}"
       if [ "$kind" = declared ]; then
         say "  gate   $r  ($pin)  [declared -- CI has no runCmd to derive]"
         say "         $ $cmd"
       elif [ "$kind" = gap ]; then
-        say "  GAP    $r  ($pin) -- pins the runtime but no acceptance command could be derived"
+        say "  GAP    $r  ($pin) -- ${gap_why:-pins the runtime but no acceptance command could be derived}"
       else
         local lines
         lines="$(printf '%s' "$cmd" | wc -l)"
@@ -268,7 +432,11 @@ EXAMINED=0
 INVENTORY=0
 CAND_ABS=""
 CAND_VER=""
+CAND_TREE=""
+CAND_OVERLAY=""
 RESOLVED=""
+LAST_CALLS=0
+LAST_PREREQ=""
 RUN_RC=1
 ANY_BAD=0
 SKIP_MISSING_REASON=0
@@ -394,9 +562,16 @@ write_record() {
         return 1
       fi
       # CA-GUARD:append-owned
-      # Empty files (in-place clobber after truncate) have no run_id yet
-      # and are allowed; a file that names some other run is not ours.
-      if grep -q '^run_id=' "$RECORD" 2>/dev/null \
+      # The ONLY file we may append to without our run_id is a ZERO-BYTE one
+      # (the in-place clobber after truncate). A nonempty file with no run_id
+      # line is somebody else's content (round-4 residual R11: a replacement
+      # INCOMPLETE record with no run_id was accepted and the final record read
+      # PASS with rows missing). And never through a symlink (R7).
+      if [ -L "$RECORD" ]; then
+        RECORD_WRITE_ERR="record path is a symlink"
+        return 1
+      fi
+      if [ -s "$RECORD" ] \
          && ! grep -Fx "run_id=${RUN_ID}" "$RECORD" >/dev/null 2>&1; then
         RECORD_WRITE_ERR="record not ours"
         return 1
@@ -577,12 +752,13 @@ eco_root=${ECO:-PENDING}
 block_shell=bash -e -o pipefail -c
 candidate_path=${CAND_ABS:-PENDING}
 candidate_version=PENDING
+candidate_tree=PENDING
 eigenscript_resolved=${RESOLVED:-PENDING}
 inventory=PENDING
 examined=PENDING
 status=INCOMPLETE
 ${RECORD_LOCK_NOTE:+note=$RECORD_LOCK_NOTE
-}# row|name|pin|verdict|rc|duration_s
+}# row|name|pin|verdict|rc|duration_s|cand_calls=N
 VERDICT: INCOMPLETE
 EOF
 }
@@ -610,6 +786,7 @@ write_record_footer() {
         status=INCOMPLETE|status=RUNNING) printf 'status=%s\n' "$status" ;;
         candidate_path=PENDING)    printf 'candidate_path=%s\n' "${CAND_ABS:-}" ;;
         candidate_version=PENDING) printf 'candidate_version=%s\n' "${CAND_VER:-}" ;;
+        candidate_tree=PENDING)    printf 'candidate_tree=%s\n' "${CAND_TREE:-}" ;;
         eigenscript_resolved=PENDING) printf 'eigenscript_resolved=%s\n' "${RESOLVED:-}" ;;
         "VERDICT: INCOMPLETE")     verdict_line "$verdict" ;;
         VERDICT:*)                 ;; # drop any other verdict; we emit one
@@ -629,7 +806,11 @@ write_record_footer() {
 }
 
 append_row() {
-  write_record append <<<"row|$1|$2|$3|$4|$5" || die_record "cannot append row to $RECORD"
+  local extra="cand_calls=${LAST_CALLS:-0}"
+  if [ -n "${LAST_PREREQ:-}" ]; then
+    extra="$extra|prereq=$LAST_PREREQ"
+  fi
+  write_record append <<<"row|$1|$2|$3|$4|$5|$extra" || die_record "cannot append row to $RECORD"
 }
 
 append_skip() {
@@ -664,10 +845,12 @@ LAST_DUR=""
 
 run_one() {
   local name="$1" pin="$2" cmd="$3"
-  local repo="$ECO/$name" log start end cd_cmd
+  local repo="$ECO/$name" log start end cd_cmd count_file eigs_exports prereq_tool
   LAST_VERDICT=""
   LAST_RC="-"
   LAST_DUR="0"
+  LAST_CALLS=0
+  LAST_PREREQ=""
 
   if [ ! -d "$repo" ]; then
     LAST_VERDICT=UNRUNNABLE
@@ -683,10 +866,27 @@ run_one() {
     return
   fi
 
-  log="$WORK/logs/$name.log"
-  mkdir -p "$WORK/logs"
+  # CA-GUARD:prereq
+  if prereq_tool="$(missing_prereq "$name" "$cmd")"; then
+    LAST_VERDICT=UNRUNNABLE
+    LAST_PREREQ="$prereq_tool"
+    LAST_RC="-"
+    LAST_DUR="0"
+    return
+  fi
 
-  cd_cmd="$(printf 'export PATH=%q:"$PATH"\nexport EIGS=eigenscript\nexport EIGENSCRIPT=eigenscript\ncd %q || exit 125\n%s\n' "$SHIM" "$repo" "$cmd")"
+  log="$WORK/logs/$name.log"
+  mkdir -p "$WORK/logs" "$WORK/calls"
+  count_file="$WORK/calls/$name.calls"
+  : > "$count_file"
+
+  eigs_exports=""
+  # CA-GUARD:eigs-dir
+  if [ -n "${CAND_OVERLAY:-}" ]; then
+    eigs_exports="$(printf 'export EIGS_DIR=%q\nexport EIGENSCRIPT_DIR=%q\n' "$CAND_OVERLAY" "$CAND_OVERLAY")"
+  fi
+
+  cd_cmd="$(printf 'export PATH=%q:"$PATH"\nexport EIGS=eigenscript\nexport EIGENSCRIPT=eigenscript\nexport CA_CAND_COUNT_FILE=%q\n%s\ncd %q || exit 125\n%s\n' "$SHIM" "$count_file" "$eigs_exports" "$repo" "$cmd")"
 
   start="$(date +%s)"
   # CA-GUARD:block-pipefail
@@ -695,6 +895,9 @@ run_one() {
   LAST_DUR=$((end - start))
   if [ "$LAST_DUR" -lt 0 ]; then LAST_DUR=0; fi
 
+  LAST_CALLS="$(grep -c '^call|' "$count_file" 2>/dev/null || true)"
+  LAST_CALLS="${LAST_CALLS:-0}"
+
   case "$LAST_RC" in
     0)   LAST_VERDICT=PASS ;;
     124) LAST_VERDICT=HANG ;;
@@ -702,6 +905,13 @@ run_one() {
     125) LAST_VERDICT=UNRUNNABLE ;;
     *)   LAST_VERDICT=FAIL ;;
   esac
+  # CA-GUARD:cand-calls
+  # A PASS that never reached the candidate is UNEXERCISED (mechanical-gates
+  # §113: every arm must prove it RAN). HANG/KILLED/UNRUNNABLE/FAIL keep
+  # their names -- cand_calls=0 cannot be PASS.
+  if [ "$LAST_VERDICT" = PASS ] && [ "$LAST_CALLS" -eq 0 ]; then
+    LAST_VERDICT=UNEXERCISED
+  fi
 }
 
 finalize_run() {
@@ -808,8 +1018,25 @@ run_mode() {
 
   SHIM="$WORK/bin"
   mkdir -p "$SHIM"
-  ln -s "$CAND_ABS" "$SHIM/eigenscript"
+  # Counting wrapper, not a symlink: each exec records the resolved target
+  # into the per-row count file (CA_CAND_COUNT_FILE) then execs the candidate.
+  {
+    printf '%s\n' '#!/bin/sh'
+    printf 'target=%s\n' "$(printf '%q' "$CAND_ABS")"
+    printf '%s\n' \
+      'count_file="${CA_CAND_COUNT_FILE:-}"' \
+      'if [ -n "$count_file" ]; then' \
+      '  printf "call|%s\n" "$target" >> "$count_file"' \
+      'fi' \
+      'exec "$target" "$@"'
+  } > "$SHIM/eigenscript"
+  chmod +x "$SHIM/eigenscript"
   RESOLVED="$SHIM/eigenscript"
+  derive_candidate_tree "$CAND_ABS" || true
+  CAND_OVERLAY=""
+  if [ -n "${CAND_TREE:-}" ]; then
+    build_candidate_overlay "$CAND_TREE" "$WORK/cand_tree" || true
+  fi
 
   # CA-GUARD:scan-inventory
   scan_inventory
@@ -833,6 +1060,11 @@ run_mode() {
   say "run_id: $RUN_ID"
   say "eco_root: $ECO"
   say "candidate: $CAND_ABS"
+  if [ -n "${CAND_TREE:-}" ]; then
+    say "candidate_tree: $CAND_TREE"
+  else
+    say "candidate_tree: (bare binary, no src/eigenscript tree)"
+  fi
   say "eigenscript_resolved: $RESOLVED"
   say "inventory=$INVENTORY examined=PENDING"
 
@@ -884,7 +1116,11 @@ run_mode() {
     verdict="$LAST_VERDICT"
     append_row "$name" "$pin" "$verdict" "$LAST_RC" "$LAST_DUR"
     EXAMINED=$((EXAMINED + 1))
-    say "  $verdict  $name  pin=$pin rc=$LAST_RC ${LAST_DUR}s"
+    if [ -n "${LAST_PREREQ:-}" ]; then
+      say "  UNRUNNABLE|prereq:${LAST_PREREQ}  $name  pin=$pin rc=$LAST_RC ${LAST_DUR}s cand_calls=${LAST_CALLS:-0}"
+    else
+      say "  $verdict  $name  pin=$pin rc=$LAST_RC ${LAST_DUR}s cand_calls=${LAST_CALLS:-0}"
+    fi
     if [ "$verdict" != PASS ]; then
       ANY_BAD=1
     fi
@@ -1363,6 +1599,78 @@ plant_scratch_cleanup() {
   return 1
 }
 
+# R: command `true` never calls the candidate. FIRE: UNEXERCISED, FAIL.
+plant_unexercised() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|r_true|v0.43.0|UNEXERCISED|' "$rec" \
+     && grep -q 'cand_calls=0' "$rec" \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
+# S: tree consumer invokes "$EIGS_DIR/src/eigenscript". FIRE: PASS cand_calls=1
+# and candidate_tree= the dir containing that src/eigenscript. stub is the
+# tree-shaped candidate (.../src/eigenscript).
+plant_tree_consumer() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc tree
+  tree="$(cd "$(dirname "$stub")/.." && pwd)" || return 1
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep -E 'candidate_tree=|^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 0 ] \
+     && exact_verdict_file "$rec" PASS \
+     && grep -q "^candidate_tree=$tree$" "$rec" \
+     && grep -q 'row|tree_user|v0.43.0|PASS|' "$rec" \
+     && grep -q 'cand_calls=1' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# T: DECLARED command names a file that does not exist. FIRE: plan GAP + FAIL.
+plant_declared_missing() {
+  local sh="$1" eco="$2"
+  local out rc
+  out="$(CA_ECO="$eco" "$sh" plan 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc"
+  note_plant "$out" "" "$rc"
+  if [ "$rc" -ne 0 ] \
+     && printf '%s\n' "$out" | grep -q "declared command's file does not exist" \
+     && printf '%s\n' "$out" | grep -q '^VERDICT: FAIL'; then
+    return 0
+  fi
+  return 1
+}
+
+# U: PREREQS names a tool that is not on PATH. FIRE: UNRUNNABLE|prereq:<tool>.
+plant_prereq_missing() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|u_prereq|v0.43.0|UNRUNNABLE|' "$rec" \
+     && grep -q 'prereq=nonexistent-tool' "$rec" \
+     && printf '%s\n' "$out" | grep -q 'UNRUNNABLE|prereq:nonexistent-tool' \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
 apply_mutation() {
   local src="$1" dest="$2" kind="$3"
   python3 - "$src" "$dest" "$kind" << 'PY'
@@ -1451,9 +1759,16 @@ repls = {
     ),
     "append-owned": (
         '      # CA-GUARD:append-owned\n'
-        '      # Empty files (in-place clobber after truncate) have no run_id yet\n'
-        '      # and are allowed; a file that names some other run is not ours.\n'
-        '      if grep -q \'^run_id=\' "$RECORD" 2>/dev/null \\\n'
+        '      # The ONLY file we may append to without our run_id is a ZERO-BYTE one\n'
+        '      # (the in-place clobber after truncate). A nonempty file with no run_id\n'
+        '      # line is somebody else\'s content (round-4 residual R11: a replacement\n'
+        '      # INCOMPLETE record with no run_id was accepted and the final record read\n'
+        '      # PASS with rows missing). And never through a symlink (R7).\n'
+        '      if [ -L "$RECORD" ]; then\n'
+        '        RECORD_WRITE_ERR="record path is a symlink"\n'
+        '        return 1\n'
+        '      fi\n'
+        '      if [ -s "$RECORD" ] \\\n'
         '         && ! grep -Fx "run_id=${RUN_ID}" "$RECORD" >/dev/null 2>&1; then\n'
         '        RECORD_WRITE_ERR="record not ours"\n'
         '        return 1\n'
@@ -1481,6 +1796,42 @@ repls = {
         '  esac',
         '  # CA-GUARD:stdout-verdict\n'
         '  :',
+    ),
+    "cand-calls": (
+        '  # CA-GUARD:cand-calls\n'
+        '  # A PASS that never reached the candidate is UNEXERCISED (mechanical-gates\n'
+        '  # §113: every arm must prove it RAN). HANG/KILLED/UNRUNNABLE/FAIL keep\n'
+        '  # their names -- cand_calls=0 cannot be PASS.\n'
+        '  if [ "$LAST_VERDICT" = PASS ] && [ "$LAST_CALLS" -eq 0 ]; then\n'
+        '    LAST_VERDICT=UNEXERCISED\n'
+        '  fi',
+        '  # CA-GUARD:cand-calls\n'
+        '  # A PASS that never reached the candidate is UNEXERCISED (mechanical-gates\n'
+        '  # §113: every arm must prove it RAN). HANG/KILLED/UNRUNNABLE/FAIL keep\n'
+        '  # their names -- cand_calls=0 cannot be PASS.\n'
+        '  if false && [ "$LAST_VERDICT" = PASS ] && [ "$LAST_CALLS" -eq 0 ]; then\n'
+        '    LAST_VERDICT=UNEXERCISED\n'
+        '  fi',
+    ),
+    "eigs-dir": (
+        '  # CA-GUARD:eigs-dir\n'
+        '  if [ -n "${CAND_OVERLAY:-}" ]; then',
+        '  # CA-GUARD:eigs-dir\n'
+        '  if false && [ -n "${CAND_OVERLAY:-}" ]; then',
+    ),
+    "declared-file": (
+        '      # CA-GUARD:declared-file\n'
+        '      miss="$(declared_missing_file "$ECO/$r" "$cmd")"\n'
+        '      if [ -n "$miss" ]; then',
+        '      # CA-GUARD:declared-file\n'
+        '      miss="$(declared_missing_file "$ECO/$r" "$cmd")"\n'
+        '      if false && [ -n "$miss" ]; then',
+    ),
+    "prereq": (
+        '  # CA-GUARD:prereq\n'
+        '  if prereq_tool="$(missing_prereq "$name" "$cmd")"; then',
+        '  # CA-GUARD:prereq\n'
+        '  if false && prereq_tool="$(missing_prereq "$name" "$cmd")"; then',
     ),
 }
 if kind == "traps-after-scan":
@@ -1974,7 +2325,7 @@ selftest() {
   mkdir -p "$n_eco_a" "$n_eco_b"
   printf 'fixture\n' > "$n_eco_a/.ca_fixture"
   printf 'fixture\n' > "$n_eco_b/.ca_fixture"
-  mk_consumer "$n_eco_a" aa_slow "sleep 3"
+  mk_consumer "$n_eco_a" aa_slow "eigenscript; sleep 3"
   mk_consumer "$n_eco_b" aa_bad "eigenscript"
   rec="$st_root/n.record"
   if plant_record_busy "$sh" "$n_eco_a" "$n_eco_b" "$st_root/stub-ok" "$st_root/stub-bad" "$rec"; then
@@ -2034,7 +2385,7 @@ selftest() {
   local l_eco="$st_root/l-eco"
   mkdir -p "$l_eco"
   printf 'fixture\n' > "$l_eco/.ca_fixture"
-  mk_consumer_block "$l_eco" pipe_fail "false | true"
+  mk_consumer_block "$l_eco" pipe_fail "false | true" "eigenscript"
   rec="$st_root/l.record"
   if plant_pipefail "$sh" "$l_eco" "$st_root/stub-ok" "$rec"; then
     plant_line "L pipefail" 0 "false | true is a FAIL row"
@@ -2048,6 +2399,56 @@ selftest() {
     plant_line "M scratch-cleanup" 0 "no ca-run leftover"
   else
     plant_line "M scratch-cleanup" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- R: `true` never calls the candidate -> UNEXERCISED.
+  local r_eco="$st_root/r-eco"
+  mkdir -p "$r_eco"
+  printf 'fixture\n' > "$r_eco/.ca_fixture"
+  mk_consumer "$r_eco" r_true "true"
+  rec="$st_root/r.record"
+  if plant_unexercised "$sh" "$r_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "R unexercised" 0 "true -> UNEXERCISED cand_calls=0, VERDICT: FAIL"
+  else
+    plant_line "R unexercised" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- S: tree consumer via EIGS_DIR/src/eigenscript -> PASS cand_calls=1.
+  local s_eco="$st_root/s-eco" s_stub="$st_root/s-cand/src/eigenscript"
+  mkdir -p "$s_eco" "$st_root/s-cand/src"
+  printf 'fixture\n' > "$s_eco/.ca_fixture"
+  mk_stub "$s_stub" 0
+  mk_consumer "$s_eco" tree_user '"$EIGS_DIR/src/eigenscript" --version'
+  rec="$st_root/s.record"
+  if plant_tree_consumer "$sh" "$s_eco" "$s_stub" "$rec"; then
+    plant_line "S tree-consumer" 0 "EIGS_DIR/src/eigenscript PASS cand_calls=1"
+  else
+    plant_line "S tree-consumer" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- T: DECLARED command names a nonexistent file -> plan GAP.
+  local t_eco="$st_root/t-eco"
+  mkdir -p "$t_eco"
+  printf 'fixture\n' > "$t_eco/.ca_fixture"
+  mk_consumer "$t_eco" t_miss ""
+  printf 'bash tests/does_not_exist.sh\n' > "$t_eco/t_miss/.ca_declared"
+  if CA_ECO="$t_eco" plant_declared_missing "$sh" "$t_eco"; then
+    plant_line "T declared-missing" 0 "GAP declared command's file does not exist"
+  else
+    plant_line "T declared-missing" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- U: PREREQS=nonexistent-tool -> UNRUNNABLE|prereq:nonexistent-tool.
+  local u_eco="$st_root/u-eco"
+  mkdir -p "$u_eco"
+  printf 'fixture\n' > "$u_eco/.ca_fixture"
+  mk_consumer "$u_eco" u_prereq "eigenscript"
+  printf 'nonexistent-tool\n' > "$u_eco/u_prereq/.ca_prereqs"
+  rec="$st_root/u.record"
+  if plant_prereq_missing "$sh" "$u_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "U prereq-missing" 0 "UNRUNNABLE|prereq:nonexistent-tool"
+  else
+    plant_line "U prereq-missing" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- plant-of-plant: a mutant that exits 7 is BROKEN-MUTANT, not SILENT.
@@ -2088,6 +2489,10 @@ selftest() {
       foreign-record)   plant_foreign_record "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       fail-footer)      plant_fail_footer "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       stdout-hup)       plant_footer_signal "$script" "$eco" "$st_root/stub-ok" "$rec" "$extra" ;;
+      unexercised)      plant_unexercised "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      tree-consumer)    plant_tree_consumer "$script" "$eco" "$extra" "$rec" ;;
+      declared-missing) CA_ECO="$eco" plant_declared_missing "$script" "$eco" ;;
+      prereq-missing)   plant_prereq_missing "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       *)                return 2 ;;
     esac
   }
@@ -2124,6 +2529,22 @@ selftest() {
       mutant_st=FIRES
     else
       mutant_st="$(mutant_not_fires_kind)"
+    fi
+    # Tree-consumer is a SUCCESS plant: intact must PASS with cand_calls=1.
+    # Gutting EIGS_DIR export makes the row UNEXERCISED/UNRUNNABLE/FAIL,
+    # which is not VERDICT: PASS, so mutant_not_fires_kind would say
+    # BROKEN-MUTANT. Accept that as the proven transverse (the row is
+    # no longer PASS).
+    if [ "$plant" = "tree-consumer" ]; then
+      if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ] \
+         && [ -f "$rec_m" ] && ! grep -q '^VERDICT: PASS$' "$rec_m" \
+         && grep -qE 'UNEXERCISED|UNRUNNABLE|FAIL' "$rec_m"; then
+        say "transverse $kind / $plant: intact=FIRES mutant=UNEXERCISED/UNRUNNABLE  OK"
+      else
+        say "transverse $kind / $plant: intact=$intact mutant=$mutant_st  FAIL (want intact FIRES, mutant not PASS)"
+        ST_FAIL=1
+      fi
+      return
     fi
     # Trailing-text is inverted: the "guard" is the exact-line check, the
     # plant IS the extra-mutant. Intact production has no extra text so the
@@ -2166,6 +2587,10 @@ selftest() {
   transverse_one append-owned            foreign-record   "$o_eco"    t-o
   transverse_one die-record-flag         fail-footer      "$p_eco"    t-p
   transverse_one stdout-verdict          stdout-hup       "$j_eco"    t-q "$j_shim"
+  transverse_one cand-calls              unexercised      "$r_eco"    t-r
+  transverse_one eigs-dir                tree-consumer    "$s_eco"    t-s "$s_stub"
+  transverse_one declared-file           declared-missing "$t_eco"    t-t
+  transverse_one prereq                  prereq-missing   "$u_eco"    t-u
 
   if [ "$ST_FAIL" -ne 0 ]; then
     say "SELF-TEST: FAIL -- one or more plants SILENT or a transverse row failed"
