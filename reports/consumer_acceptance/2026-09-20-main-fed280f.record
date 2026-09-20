@@ -1,0 +1,64 @@
+# consumer_acceptance record
+# Residual: any same-uid consumer that finds the shim script and reads it
+# can still recover the call-log path; the evidence is non-accidental, not
+# adversary-proof.
+# Residual: a missing tool referenced inside a called script (not in
+# PREREQS / top-level tokens) still shows as a generic FAIL.
+# Overlay is a COPY of src/, lib/, and top-level files (never .git);
+# directories are copied with cp -rL. A symlink that cannot be
+# dereferenced is skipped (overlay_skipped=).
+# ouroboros aot/build.sh keys libeigsrt.a on pwd -P of $EIGS_DIR/src, so
+# every run rebuilds against the per-run overlay path and leaves
+# aot/build/.libsrc stamped with a dead path (the next local build
+# rebuilds again). Known cost of the overlay, not a bug.
+# When sibling_binary_present=yes, consumers with hard-coded sibling
+# paths (DMG#73) may have used $ECO/EigenScript/src/eigenscript; that is
+# visible here, not worked around. sibling_binary_present is the value
+# before the wave; sibling_binary_present_after is after. Counted only
+# when $ECO/EigenScript/src/eigenscript is an executable regular file
+# distinct from the candidate.
+# A bare candidate is refused (exit 2) when $ECO/EigenScript exists;
+# pass a tree candidate so EIGS_DIR is an overlay of the candidate.
+# Residual: SWALLOWED on an all-negative suite -- a suite whose every
+# candidate call expects rc≠0 must include one positive invocation.
+# Residual: a row-wide cand_calls count cannot certify WHICH work the
+# candidate did when an absolute-path subprocess then accepts with
+# another runtime after one candidate setup call.
+# Residual: stdin-fed programs and eigenscript --test count as probe;
+# no real consumer uses them.
+run_id=1789937799.1058276.31671
+started=2026-09-20T20:56:39Z
+eco_root=/home/jon/src/InauguralSystems/EigenScriptEcosystem
+block_shell=bash -e -o pipefail -c
+candidate_path=/home/jon/src/InauguralSystems/EigenScriptEcosystem/EigenScript/src/eigenscript
+candidate_version=0.43.0
+candidate_tree=/home/jon/src/InauguralSystems/EigenScriptEcosystem/EigenScript
+eigenscript_resolved=/tmp/ca-run.x3NDWx/bin/eigenscript
+overlay=copy
+overlay_skipped=
+sibling_binary_present=no
+inventory=16
+examined=16
+status=COMPLETE
+# row|name|pin|verdict|rc|duration_s|cand_calls=N|cand_ok=N|cand_fail=M|consumer_skips=N|sibling_binary_present=yes/no
+VERDICT: FAIL
+row|DeslanStudio|v0.43.0|FAIL|1|17|cand_calls=27|cand_ok=25|cand_fail=2|consumer_skips=0|sibling_binary_present=no
+row|DMG|v0.43.0|FAIL|1|45|cand_calls=12|cand_ok=11|cand_fail=1|consumer_skips=0|sibling_binary_present=no
+row|dynamics|v0.43.0|UNRUNNABLE|-|0|cand_calls=0|cand_ok=0|cand_fail=0|consumer_skips=0|sibling_binary_present=no|prereq=gfx-build (probe rc 1)
+row|eddy|v0.43.0|UNRUNNABLE|-|0|cand_calls=0|cand_ok=0|cand_fail=0|consumer_skips=0|sibling_binary_present=no|prereq=go
+row|eigen-edit|v0.43.0|PASS|0|0|cand_calls=2|cand_ok=2|cand_fail=0|consumer_skips=0|sibling_binary_present=no
+row|EigenGauntlet|v0.43.0|FAIL|1|0|cand_calls=1|cand_ok=0|cand_fail=1|consumer_skips=0|sibling_binary_present=no
+row|EigenMiniSat|v0.43.0|UNRUNNABLE|-|0|cand_calls=0|cand_ok=0|cand_fail=0|consumer_skips=0|sibling_binary_present=no|prereq=drat-trim
+row|EigenRegex|v0.43.0|PASS|0|1|cand_calls=14|cand_ok=14|cand_fail=0|consumer_skips=0|sibling_binary_present=no
+row|eigen-sheet|v0.43.0|PASS|0|1|cand_calls=2|cand_ok=2|cand_fail=0|consumer_skips=0|sibling_binary_present=no
+row|iLambdaAi|v0.43.0|FAIL|1|4|cand_calls=31|cand_ok=22|cand_fail=9|consumer_skips=0|sibling_binary_present=no
+row|liferaft|v0.43.0|PASS|0|232|cand_calls=94|cand_ok=93|cand_fail=1|consumer_skips=0|sibling_binary_present=no
+row|ouroboros|v0.43.0|FAIL|1|1086|cand_calls=1082|cand_ok=866|cand_fail=216|consumer_skips=0|sibling_binary_present=no
+row|phugoid|v0.43.0|FAIL|1|14|cand_calls=1|cand_ok=0|cand_fail=1|consumer_skips=0|sibling_binary_present=no
+row|polymethod|v0.43.0|PASS|0|14|cand_calls=10|cand_ok=10|cand_fail=0|consumer_skips=0|sibling_binary_present=no
+row|tidelog|v0.43.0|PASS|0|2|cand_calls=17|cand_ok=17|cand_fail=0|consumer_skips=0|sibling_binary_present=no
+row|Tidepool|v0.43.0|PASS|0|1|cand_calls=25|cand_ok=20|cand_fail=5|consumer_skips=0|sibling_binary_present=no
+probe_rc=0
+sibling_binary_present_after=no
+inventory=16 examined=16
+status=COMPLETE
