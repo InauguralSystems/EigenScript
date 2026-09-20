@@ -992,7 +992,7 @@ write_record_footer() {
     printf 'inventory=%s examined=%s\n' "${INVENTORY:-0}" "${EXAMINED:-0}"
     printf 'status=%s\n' "$status"
   )"
-  n="$(printf '%s\n' "$content" | grep -c '^VERDICT:' || true)"
+  n="$(grep -c '^VERDICT:' <<< "$content" || true)"
   if [ "$n" != 1 ]; then
     RECORD_WRITE_ERR="footer would write $n VERDICT lines (want 1)"
     return 1
@@ -1530,8 +1530,8 @@ plant_line() {
 
 exact_verdict() {
   local src="$1" v="$2" n
-  n="$(printf '%s\n' "$src" | grep -c '^VERDICT:' || true)"
-  [ "$n" = 1 ] && printf '%s\n' "$src" | grep -qx "VERDICT: $v"
+  n="$(grep -c '^VERDICT:' <<< "$src" || true)"
+  [ "$n" = 1 ] && grep -qx "VERDICT: $v" <<< "$src"
 }
 
 exact_verdict_file() {
@@ -1565,7 +1565,7 @@ mutant_not_fires_kind() {
     printf '%s' SILENT
     return
   fi
-  if printf '%s\n' "$out" | grep -q '^VERDICT: PASS'; then
+  if grep -q '^VERDICT: PASS' <<< "$out"; then
     printf '%s' SILENT
     return
   fi
@@ -1579,8 +1579,8 @@ plant_plan_gap() {
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc"
   note_plant "$out" "" "$rc"
-  if [ "$rc" -ne 0 ] && printf '%s\n' "$out" | grep -q "GAP    zz-planted-consumer" \
-     && printf '%s\n' "$out" | grep -q '^VERDICT: FAIL'; then
+  if [ "$rc" -ne 0 ] && grep -q "GAP    zz-planted-consumer" <<< "$out" \
+     && grep -q '^VERDICT: FAIL' <<< "$out"; then
     return 0
   fi
   return 1
@@ -1683,8 +1683,8 @@ plant_trailing_verdict() {
     return 0
   fi
   if [ "$rc" -eq 0 ] \
-     && printf '%s\n' "$out" | grep -q 'VERDICT: PASS' \
-     && ! printf '%s\n' "$out" | grep -qx 'VERDICT: PASS'; then
+     && grep -q 'VERDICT: PASS' <<< "$out" \
+     && ! grep -qx 'VERDICT: PASS' <<< "$out"; then
     return 0
   fi
   return 1
@@ -1838,7 +1838,7 @@ plant_footer_signal() {
   rc=$?
   n=0
   [ -f "$rec" ] && n="$(grep -c '^VERDICT:' "$rec" || true)"
-  n_out="$(printf '%s\n' "$out" | grep -c '^VERDICT:' || true)"
+  n_out="$(grep -c '^VERDICT:' <<< "$out" || true)"
   LAST_PLANT_DETAIL="rc=$rc n=$n n_out=$n_out rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
   if [ "$n" = 1 ] && [ "$rc" -eq 0 ] && [ "$n_out" = 1 ] && exact_verdict "$out" PASS; then
@@ -1855,7 +1855,7 @@ plant_timeout_zero() {
   rc=$?
   LAST_PLANT_DETAIL="val=$val rc=$rc"
   note_plant "$out" "$rec" "$rc"
-  if [ "$rc" -eq 2 ] && printf '%s\n' "$out" | grep -q 'positive integer'; then
+  if [ "$rc" -eq 2 ] && grep -q 'positive integer' <<< "$out"; then
     return 0
   fi
   return 1
@@ -1911,10 +1911,10 @@ plant_record_busy() {
   rc1=$?
   n=0
   [ -f "$rec" ] && n="$(grep -c '^VERDICT:' "$rec" || true)"
-  LAST_PLANT_DETAIL="rc1=$rc1 rc2=$rc2 n=$n busy=$(printf '%s' "$out2" | grep -c 'record busy' || true)"
+  LAST_PLANT_DETAIL="rc1=$rc1 rc2=$rc2 n=$n busy=$(grep -c 'record busy' <<< "$out2" || true)"
   note_plant "$out2" "$rec" "$rc2"
   if [ "$rc2" -eq 2 ] \
-     && printf '%s\n' "$out2" | grep -q 'record busy (held by run' \
+     && grep -q 'record busy (held by run' <<< "$out2" \
      && [ "$rc1" -eq 0 ] \
      && [ "$n" = 1 ] \
      && exact_verdict_file "$rec" PASS \
@@ -1934,7 +1934,7 @@ plant_foreign_record() {
   LAST_PLANT_DETAIL="rc=$rc rec=$(grep -E 'run_id=|VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] \
-     && printf '%s\n' "$out" | grep -q 'record not ours' \
+     && grep -q 'record not ours' <<< "$out" \
      && [ -f "$rec" ] \
      && ! grep -q '^VERDICT: PASS$' "$rec" \
      && ! grep -q '^run_id=FOREIGN_RUN$' "$rec" \
@@ -2029,8 +2029,8 @@ plant_declared_missing() {
   LAST_PLANT_DETAIL="rc=$rc"
   note_plant "$out" "" "$rc"
   if [ "$rc" -ne 0 ] \
-     && printf '%s\n' "$out" | grep -q "declared command's file does not exist" \
-     && printf '%s\n' "$out" | grep -q '^VERDICT: FAIL'; then
+     && grep -q "declared command's file does not exist" <<< "$out" \
+     && grep -q '^VERDICT: FAIL' <<< "$out"; then
     return 0
   fi
   return 1
@@ -2047,7 +2047,7 @@ plant_prereq_missing() {
   if [ "$rc" -eq 1 ] \
      && grep -q 'row|u_prereq|v0.43.0|UNRUNNABLE|' "$rec" \
      && grep -q 'prereq=nonexistent-tool' "$rec" \
-     && printf '%s\n' "$out" | grep -q 'UNRUNNABLE|prereq:nonexistent-tool' \
+     && grep -q 'UNRUNNABLE|prereq:nonexistent-tool' <<< "$out" \
      && exact_verdict_file "$rec" FAIL; then
     return 0
   fi
@@ -2179,7 +2179,7 @@ plant_gfx_prereq() {
   if [ "$rc" -eq 1 ] \
      && grep -q 'row|ab_gfx|v0.43.0|UNRUNNABLE|' "$rec" \
      && grep -q 'prereq=gfx-build' "$rec" \
-     && printf '%s\n' "$out" | grep -q 'UNRUNNABLE|prereq:gfx-build' \
+     && grep -q 'UNRUNNABLE|prereq:gfx-build' <<< "$out" \
      && exact_verdict_file "$rec" FAIL; then
     return 0
   fi
@@ -2284,10 +2284,10 @@ plant_gfx_crash() {
   local out rc
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
-  LAST_PLANT_DETAIL="rc=$rc gfx=$(printf '%s\n' "$out" | grep '^candidate_gfx:' | tr '\n' ' ') rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  LAST_PLANT_DETAIL="rc=$rc gfx=$(grep '^candidate_gfx:' <<< "$out" | tr '\n' ' ') rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] \
-     && printf '%s\n' "$out" | grep -q 'candidate_gfx: unknown' \
+     && grep -q 'candidate_gfx: unknown' <<< "$out" \
      && grep -q 'row|ab_crash|v0.43.0|UNRUNNABLE|' "$rec" \
      && grep -q 'prereq=gfx-build (probe rc 139)' "$rec"; then
     return 0
@@ -2317,12 +2317,12 @@ plant_bare_sibling() {
   local out rc
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
-  LAST_PLANT_DETAIL="rc=$rc out=$(printf '%s\n' "$out" | grep -E 'refusing a bare|VERDICT:|^row|' | tr '\n' ' ')"
+  LAST_PLANT_DETAIL="rc=$rc out=$(grep -E 'refusing a bare|VERDICT:|^row|' <<< "$out" | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 2 ] \
-     && printf '%s\n' "$out" | grep -q 'refusing a bare candidate' \
-     && printf '%s\n' "$out" | grep -F -q "$stub" \
-     && printf '%s\n' "$out" | grep -F -q "$eco/EigenScript" \
+     && grep -q 'refusing a bare candidate' <<< "$out" \
+     && grep -F -q "$stub" <<< "$out" \
+     && grep -F -q "$eco/EigenScript" <<< "$out" \
      && ! grep -q '^row|' "$rec" 2>/dev/null; then
     return 0
   fi
@@ -2804,7 +2804,7 @@ selftest() {
 
   # Plan on the same honest fixture must still PASS (plan mode unchanged).
   out="$(CA_ECO="$good_eco" "$sh" plan 2>&1)" || true
-  if printf '%s' "$out" | grep -q 'VERDICT: PASS -- 2 consumers'; then
+  if grep -q 'VERDICT: PASS -- 2 consumers' <<< "$out"; then
     plant_line "plan-control" 0 "plan still PASSes a 2-consumer fixture"
   else
     plant_line "plan-control" 1 "plan did not PASS the honest fixture"
@@ -2978,7 +2978,7 @@ selftest() {
   rc=$?
   chmod u+w "$ro_dir"
   if [ "$rc" -eq 1 ] \
-     && ! printf '%s\n' "$out" | grep -q 'VERDICT: PASS' \
+     && ! grep -q 'VERDICT: PASS' <<< "$out" \
      && [ ! -e "$rec_f" ]; then
     plant_line "F unwritable-record" 0 "no VERDICT: PASS, exit 1, record absent"
   else
@@ -3581,7 +3581,7 @@ EOS
     # Sanity-start: the mutant must produce a VERDICT line on plan.
     local start_out
     start_out="$(CA_ECO="$good_eco" "$mutant" plan 2>&1)" || true
-    if ! printf '%s' "$start_out" | grep -q '^VERDICT:'; then
+    if ! grep -q '^VERDICT:' <<< "$start_out"; then
       say "transverse $kind / $plant: intact=$intact mutant=BROKEN -- mutant plan emitted no VERDICT"
       ST_FAIL=1
       return

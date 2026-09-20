@@ -1582,7 +1582,7 @@ fi
 #    population. Not derived FROM git, because then a directory that vanished
 #    would shrink the population instead of failing.
 # ---------------------------------------------------------------------------
-PATH_SEGMENTS="src lib tests tools docs examples editors bench fuzz web .github .claude .devcontainer"
+PATH_SEGMENTS="src lib tests tools docs examples editors bench fuzz web reports .github .claude .devcontainer"
 if git -c safe.directory='*' rev-parse --git-dir >/dev/null 2>&1; then
     tracked=$(git -c safe.directory='*' ls-files | awk -F/ 'NF>1 {print $1}' | sort -u)
     for d in $tracked; do
