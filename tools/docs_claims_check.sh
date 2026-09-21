@@ -106,7 +106,7 @@ printf 'docs-claims env: bash %s, %s, %s, EIGS=%s, %s=%s\n' \
        "build/release/eigenscript" \
        "$([ -f build/release/eigenscript ] && echo present || echo ABSENT)"
 
-DOC_FILES_DEFAULT="README.md docs/llms.txt CLAUDE.md docs/ARCHITECTURE.md docs/BUILTINS.md docs/CONCURRENCY.md"
+DOC_FILES_DEFAULT="README.md docs/llms.txt CLAUDE.md docs/ARCHITECTURE.md docs/BUILTINS.md docs/CONCURRENCY.md ROADMAP.md"
 DOC_FILES="${DOCS_CLAIMS_DOCS:-$DOC_FILES_DEFAULT}"
 # Whether this run covers the real doc set. The "a declared row was never
 # visited" half of the declaration audit only means something then; the
@@ -742,8 +742,12 @@ import sys; raise SystemExit("planted: this counter cannot run")' \
             rm -f "$st_norecord/tools/docs_claims_check.sh"
             mv "$st_norecord/tools/docs_claims_check.sh.new" "$st_norecord/tools/docs_claims_check.sh"
             out=$(cd "$st_norecord" && bash tools/docs_claims_check.sh 2>&1); rc=$?
+            # The doc-set size is DERIVED from DOC_FILES_DEFAULT, not typed:
+            # enrolling ROADMAP.md (round 2 of #1207) turned a hand-typed "6"
+            # here into a selftest failure with nothing wrong in the tree.
+            st_docn=$(printf '%s\n' $DOC_FILES_DEFAULT | grep -c .)
             if [ "$rc" -ne 0 ] \
-               && grep -qF "recorded 0/6 declared row(s) — THE CLASS DID NOT RUN" <<< "$out" \
+               && grep -qF "recorded 0/$st_docn declared row(s) — THE CLASS DID NOT RUN" <<< "$out" \
                && grep -qF "docs-claims CLASS SUMMARY" <<< "$out"; then
                 printf '  selftest ok: a class that records nothing is named in ONE line by the summary printed LAST\n'
             else
@@ -1354,7 +1358,7 @@ waivers_audit() {
         fail "the waiver table holds $n entries but $WAIVERS_DECLARED are declared — adding or removing a waiver is a deliberate edit"
     fi
 }
-WAIVERS_DECLARED=8
+WAIVERS_DECLARED=17
 
 # ---------------------------------------------------------------------------
 # 2b. DECLARED POPULATIONS (mechanical-gates §121 + §129, Astra G1).
@@ -1442,7 +1446,7 @@ EOF
 # `[A-Za-z0-9_]` itself. `\b` is a GNU extension, not POSIX ERE, and it means
 # a backspace inside an awk dynamic regex — a second portability question this
 # file is no longer asking anyone.
-UNIT_RE='[0-9][0-9,]*[ -]?(builtin functions|builtins?|module rows|modules?|rows|widgets?|checks?|test sections|sections?|lines?|line|K|files|core|extensions?|STEM|fragments?|arms?)'
+UNIT_RE='[0-9][0-9,]*[ -]?(builtin functions|builtins?|module rows|modules?|rows|widgets?|checkbox lines?|checkboxe?s?|checks?|test sections|sections?|lines?|line|K|files|core|extensions?|STEM|fragments?|arms?)'
 
 # Parameter expansion, not a pipeline: two processes per numeric claim, and
 # `grep -o` is exactly what this round is removing. `${t%%[!0-9,]*}` keeps the

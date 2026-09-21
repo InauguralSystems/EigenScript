@@ -6,10 +6,17 @@ row per milestone; no checkboxes anywhere. `tools/roadmap_check.sh` fails if a
 available and authenticated — if the table's open rows stop matching the open
 milestones returned by
 `gh api repos/InauguralSystems/EigenScript/milestones`. That is the point of
-the rewrite (#1207/#1155): the previous version of this file carried 112
-checkboxes, 62 of them historical highlights under `## Completed`, so anything
-counting "roadmap items" was counting the past and double-counting the present
-(#414 appeared twice, Windows appeared as an umbrella plus three tiers).
+the rewrite (#1207/#1155). The previous version of this file carried
+113 checkbox lines, and 62 checkbox lines of those were historical highlights
+under `## Completed`, so anything counting "roadmap items" was counting the
+past and double-counting the present (#414 appeared twice, Windows appeared as
+an umbrella plus three tiers). Those two numbers are written down HERE and
+nowhere else, each beside the command that produces it:
+
+    git show b91768e:ROADMAP.md | grep -cE '^[[:space:]]*- \[( |x|~)\]'
+    git show b91768e:ROADMAP.md | sed -n '/^## Completed/,$p' \
+        | grep -cE '^[[:space:]]*- \[( |x|~)\]'
+
 **The counted population is the table, and nothing else.** Everything else here
 is either shipped (`## Completed`) or uncommitted
 (`## Ideas and deferrals (uncounted)`), and neither is a plan.
@@ -23,14 +30,14 @@ number, so it cannot fall behind it.
 | # | Milestone | Status | GitHub | DONE when |
 | --- | --- | --- | --- | --- |
 | 2 | M1 — Consumer acceptance for a release | active | https://github.com/InauguralSystems/EigenScript/milestone/2 | one complete release+pin wave whose record names the candidate, every consumer's result, and the originating gaps actually closed |
-| 3 | M2 — A safe hosted concurrency contract | active | https://github.com/InauguralSystems/EigenScript/milestone/3 | the tier criteria of the concurrency foundation #1153 are met and the race gate covers them |
-| 4 | M3 — EigenMiniSat's next AOT rung inside the memory budget | active | https://github.com/InauguralSystems/EigenScript/milestone/4 | the 5x6 lane completes under the existing cap with an independently verified certificate, and ouroboros#231's iterator finding is validated separately rather than assumed to explain the cliff |
-| 5 | M4 — One numeric validity contract | declared-not-started | https://github.com/InauguralSystems/EigenScript/milestone/5 | one contract, every producer agreeing at the shared read boundary, and the strict-default decision made rather than deferred again |
-| 6 | M5 — One demanding OS-thread consumer that also uses packages | active | https://github.com/InauguralSystems/EigenScript/milestone/6 | one small certified solve through the pinned package mechanism, with the consumer's GAPS.md recording the upstream findings |
-| 7 | M6 — The next justified AOT record specialization | declared-not-started | https://github.com/InauguralSystems/EigenScript/milestone/7 | the prediction declared BEFORE implementation is met or refuted on the record at the pinned 2M-cycle window |
-| 8 | M7 — Make JIT selection pay on the measured fleet | active | https://github.com/InauguralSystems/EigenScript/milestone/8 | the bounded profitability intervention lands and the 25-workload fleet re-measures net-positive, or it fails and an explicit retention/default decision is recorded instead |
-| 9 | M8 — Gates and claims that measure what they say | active | https://github.com/InauguralSystems/EigenScript/milestone/9 | each listed issue is closed with its gate proven to fire by a planted fault, and no gate in the set examines fewer items than the previous run without saying so |
-| 10 | M9 — A gfx consumer that looks like 2026 | active | https://github.com/InauguralSystems/EigenScript/milestone/10 | #1216 is closed builtin by builtin with a Tidepool consumer commit per builtin, Tidepool#43 and #59 are closed, and the M1 wave's Tidepool row PASSes on a gfx candidate |
+| 3 | M2 — A safe hosted concurrency contract | active | https://github.com/InauguralSystems/EigenScript/milestone/3 | #1153's tier criteria met and the race gate covers them |
+| 4 | M3 — EigenMiniSat's next AOT rung inside the memory budget | active | https://github.com/InauguralSystems/EigenScript/milestone/4 | 5x6 completes under the cap with a verified certificate; ouroboros#231's iterator finding validated separately rather than assumed to explain the cliff |
+| 5 | M4 — One numeric validity contract | declared-not-started | https://github.com/InauguralSystems/EigenScript/milestone/5 | one contract, all producers agreeing, and the strict-default decision made rather than deferred again |
+| 6 | M5 — One demanding OS-thread consumer that also uses packages | active | https://github.com/InauguralSystems/EigenScript/milestone/6 | one small certified solve, with the consumer's GAPS.md recording the upstream findings. Hosted threading only — not an attempt to bypass EigenOS's SMP blocker |
+| 7 | M6 — The next justified AOT record specialization | declared-not-started | https://github.com/InauguralSystems/EigenScript/milestone/7 | the pre-declared prediction met or refuted on the record. Neither K~86 nor '15x' is an acceptance promise; flat unboxed records follow only when separately sized |
+| 8 | M7 — Make JIT selection pay on the measured fleet | active | https://github.com/InauguralSystems/EigenScript/milestone/8 | the intervention lands and the fleet re-measures net-positive — or it fails and an explicit retention/default decision is recorded instead. Misleading diagnostics fixed or removed in the same change |
+| 9 | M8 — Gates and claims that measure what they say | active | https://github.com/InauguralSystems/EigenScript/milestone/9 | each listed issue closed with its gate proven to fire, and no gate in the set examining fewer items than the previous run without saying so |
+| 10 | M9 — A gfx consumer that looks like 2026 | active | https://github.com/InauguralSystems/EigenScript/milestone/10 | #1216 closed builtin by builtin with a Tidepool consumer commit per builtin; Tidepool#43 and #59 closed; the M1 wave's Tidepool row carries a gfx oracle and PASSes on a gfx candidate |
 | — | Windows Tier 2 — JIT on the Windows x64 ABI | retired | [#419](https://github.com/InauguralSystems/EigenScript/issues/419) | never; it contradicts the standing veto on grinding the JIT toward native claims — native perf routes through the AOT (see the vetoes below) |
 | — | Package registry, version solver and `--pkg audit` lockfiles | retired | [#419](https://github.com/InauguralSystems/EigenScript/issues/419) | never; the SHA-pinned vendoring model is structurally sounder at this scale (see the vetoes below), and hq carries the same veto |
 
@@ -270,8 +277,10 @@ when picked up:
   cost (partially mitigated by the v0.12.0 hoist sweep) are what remains.
   Shipped: GAP-001 `audio_sweep`; GAP-002 finite-count `audio_play_loop`
   (0.13.0); GAP-005 non-blocking channel recv and GAP-006 spawn-with-args
-  (0.13.0). **GAP-002's infinite-loop variant is CLOSED too** — Tidepool
-  PR #375 — so the "still open" sentence that stood here was false.
+  (0.13.0). **GAP-002's infinite-loop variant is CLOSED too** — EigenScript
+  PR #375, which is how Tidepool's own GAPS.md cites it (this file
+  previously credited it to the Tidepool repository, whose PR #375 does not
+  exist) — so the "still open" sentence that stood here was false.
   Tidepool's live gfx asks are M9's subject, not this list.
 - **EigenMiniSat** (`InauguralSystems/EigenMiniSat/GAPS.md`):
   open watchlist around CDCL hot-path inlining patterns.
@@ -320,8 +329,9 @@ when picked up:
 
 Condensed highlights; see [CHANGELOG.md](CHANGELOG.md) for the full
 per-version record. These are HISTORY, deliberately written as a plain list:
-62 of them used to be `- [x]` checkboxes, which is how a counter came to
-report 92 of 112 roadmap items "done".
+most of them used to be `- [x]` checkboxes, which is how a counter came to
+report the past as roadmap items "done" (the header above derives both counts
+with the commands that produce them; no number is retyped here).
 
 ### Shipped since this file last claimed them (corrected 2026-09-21, #1207)
 
@@ -535,7 +545,7 @@ report 92 of 112 roadmap items "done".
 
 ### 0.9.2
 
-- 12 STEM standard library modules
+- 12 STEM modules
 - SDL2 audio extension
 - Code formatter and linter
 - Tidepool game near-parity

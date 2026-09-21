@@ -2,8 +2,12 @@ name: issue-triage
 
 # Issue labels are ENFORCED, not remembered.
 #
-# Measured 2026-09-21, the day the maintainer said "we aren't labeling issues":
-# 33 of 36 open issues carried no label at all. The scheme exists on the
+# The day the maintainer said "we aren't labeling issues" (2026-09-21) the open
+# backlog was essentially unlabelled. The "33 of 36" census that first
+# circulated is not reproducible from the API — the open set was 35 at the
+# sweep and never 36 — so the figure this lane stands on is the gate's own
+# first real run after the hand sweep: `examined=35 missing=0`.
+# The scheme exists on the
 # repository (`area:<subsystem>`, `kind:*` plus the stock `bug`/`enhancement`,
 # `found-by:*`, `blocks-release`) and the whole backlog was labelled by hand
 # once. A hand sweep is the failure, not the fix, so two mechanisms keep it
@@ -16,6 +20,12 @@ name: issue-triage
 #     issue. It prints `examined=N missing=M` and fails when M > 0 OR when
 #     N == 0 (an empty enumeration satisfies "nothing is missing" without
 #     checking anything — mechanical-gates §121).
+#
+# A SUCCESSFUL EXIT IS NOT A MEASUREMENT. Round 1 of this lane accepted the
+# gate gutted to `exit 0` — `exit=0 output=''` passed the audit step. The gate
+# now publishes its contract (`--contract`: the population line it promises to
+# print, and how many planted faults its selftest runs) and the audit step
+# asserts BOTH, by name, instead of trusting the exit status.
 #
 # See docs/CI.md, "Issue labels".
 
@@ -52,7 +62,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash tools/issue_labels_check.sh --ensure-labels
 
-      - name: Mark an issue filed without an area: label
+      - name: "Mark an issue filed without an area: label"
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
@@ -79,15 +89,44 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: The gate's own planted faults
-        run: bash tools/issue_labels_check.sh --selftest
-
-      - name: Every open issue carries an area: label and a kind
+      - name: "Every open issue carries an area: label and a kind"
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_LABELS_REPO: ${{ github.repository }}
         run: |
           set -u
+          # The gate's CONTRACT first: the population line it promises to
+          # print and the number of planted faults its selftest runs. Both
+          # assertions below are made against what the gate itself publishes,
+          # so the regex lives in exactly one place and cannot drift from the
+          # line it is matched against.
+          contract=$(bash tools/issue_labels_check.sh --contract 2>&1) || true
+          re=$(printf '%s\n' "$contract" | sed -n 's/^POPULATION_RE=//p' | head -1)
+          cases=$(printf '%s\n' "$contract" | sed -n 's/^SELFTEST_CASES=//p' | head -1)
+          if [ -z "$re" ] || [ -z "$cases" ]; then
+            echo "issue-triage: the gate publishes no --contract, so nothing here can assert that it measured anything"
+            exit 1
+          fi
+          case "$re" in
+            *examined=*) ;;
+            *) echo "issue-triage: the gate's POPULATION_RE does not mention examined= : $re" ; exit 1 ;;
+          esac
+
+          # The gate's own planted faults, and the PINNED case count: a
+          # selftest reduced to a single echo also exits 0.
+          st=$(mktemp)
+          rc=0
+          bash tools/issue_labels_check.sh --selftest > "$st" 2>&1 || rc=$?
+          cat "$st"
+          if [ "$rc" -ne 0 ]; then
+            echo "issue-triage: the gate's own planted faults did not all go red"
+            exit 1
+          fi
+          if ! grep -qE "^SELFTEST: $cases case\(s\) run, $cases passed" "$st"; then
+            echo "issue-triage: the selftest did not report its pinned $cases case(s) — a selftest that ran nothing also exits 0"
+            exit 1
+          fi
+
           out=$(mktemp)
           rc=0
           bash tools/issue_labels_check.sh > "$out" 2>&1 || rc=$?
@@ -96,6 +135,11 @@ jobs:
           # an unauthenticated or offline run must be loud rather than green.
           if grep -q 'SKIPPED BY NAME' "$out"; then
             echo "issue-triage: the audit skipped on a lane whose whole purpose is to run it"
+            exit 1
+          fi
+          if ! grep -qE "$re" "$out"; then
+            echo "issue-triage: the audit printed no population line — a successful exit is not a measurement"
+            echo "issue-triage: contract: $re"
             exit 1
           fi
           exit "$rc"

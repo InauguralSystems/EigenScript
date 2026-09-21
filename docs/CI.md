@@ -132,19 +132,47 @@ fails when M > 0 **or when N == 0** — an empty enumeration satisfies "nothing
 is missing" without checking anything. Without `gh` it SKIPs by name; it never
 turns a missing credential into a pass. `.github/workflows/issue-triage.yml`
 runs it daily and, on `issues: [opened, reopened]`, puts `needs-triage` on
-anything that arrives without an `area:` label. Measured before the sweep: 33
-of 36 open issues had no label at all.
+anything that arrives without an `area:` label. The backlog was essentially
+unlabelled before the sweep; the often-quoted "33 of 36" census is not
+reproducible from the API (the open set was 35 at the sweep and never 36), so
+the figure of record is the gate's own first real run afterwards:
+`examined=35 missing=0`.
+
+Both the daily lane and `[99zd]` assert the gate's PUBLISHED CONTRACT rather
+than its exit status: `bash tools/issue_labels_check.sh --contract` prints the
+population line the gate promises (`POPULATION_RE`) and how many planted faults
+its selftest runs (`SELFTEST_CASES`), and each caller requires the live run to
+print a matching line and the selftest to report that pinned count. Round 1
+shipped without this and accepted the gate gutted to `exit 0` — `exit=0
+output=''` passed both boundaries. A successful exit is not a measurement.
 
 **ROADMAP.md.** `tools/roadmap_check.sh` refuses (a) any `- [ ]`/`- [x]`/`- [~]`
 line anywhere in the file and anything other than exactly one table, inside
 `## Milestones`, with five cells and a known status per row; and (b) — with
 `gh` present and authenticated — an open table row set that differs from the
 open GitHub milestones by number, or a milestone list that comes back empty.
-Arm (b) skips by name without `gh`; arm (a) never skips. The old file carried
-112 checkboxes, 62 of them historical highlights under `## Completed`, so every
-counter of "roadmap items" was counting the past. Both tools carry a
-planted-fault `--selftest` with a pinned case count, and the suite runs the
-live pass and the selftest as `[99zd]`.
+Arm (b) also compares each open row's DONE cell with that milestone's own DONE
+text (equality after whitespace normalisation — a PREFIX rule would call a
+truncation green, and a truncation is what round 1 shipped for M7); and a new
+arm (c) resolves every issue/PR reference in the table's cells plus every
+repo-qualified reference anywhere in the file, because round 1 credited
+"Tidepool PR #375" for a change that is EigenScript PR #375 and the Tidepool
+endpoint 404s. Arms (b) and (c) skip by name without `gh`; arm (a) never skips.
+The old file was a checkbox pile, most of it historical highlights under
+`## Completed`, so every counter of "roadmap items" was counting the past —
+ROADMAP.md's own header derives both counts beside the commands that produce
+them, and this page deliberately does not retype them.
+
+`tools/workflow_yaml_check.sh` loads every file under `.github/workflows/`:
+(a) no `name:` value is an unquoted plain scalar containing `: ` — the exact
+defect round 1 shipped, which made the daily issue-triage lane unloadable YAML
+that GitHub would have rejected outright — and (b) every file round-trips
+through a real YAML loader. Arm (a) never skips; arm (b) skips by name without
+PyYAML.
+
+All three tools carry a planted-fault `--selftest` with a pinned case count and
+a `--contract`, and the suite runs the live pass, the contract and the selftest
+of each as `[99zd]`.
 
 ## Main lane (push to `main`) — the full matrix
 

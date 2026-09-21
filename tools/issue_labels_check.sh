@@ -2,7 +2,11 @@
 # issue_labels_check.sh — every OPEN issue carries an `area:` label and a kind.
 #
 # WHY THIS EXISTS (maintainer, 2026-09-21: "we aren't labeling issues"):
-# measured the same day, 33 of 36 open issues carried NO label at all. Triage
+# the open backlog was essentially unlabelled that day. The "33 of 36" census
+# that first circulated is NOT reproducible from the API — the open set was 35
+# at the sweep (#1123 closed 2026-09-20, #1217 opened 2026-09-21) and never 36
+# — so it is not restated here. The figure this gate stands on is its own
+# first real run after the hand sweep: `examined=35 missing=0`. Triage
 # by memory does not survive a week, and an unlabelled backlog cannot be
 # ranked, split across a fleet, or reported on. The scheme now exists on the
 # repository — `area:<subsystem>`, `kind:*` (plus the stock `bug` and
@@ -24,6 +28,9 @@
 #   bash tools/issue_labels_check.sh --selftest   # planted faults, no network
 #   bash tools/issue_labels_check.sh --ensure-labels
 #                                                 # create `needs-triage` if absent
+#   bash tools/issue_labels_check.sh --contract   # the population regex and the
+#                                                 # pinned selftest case count
+#                                                 # that every CALLER asserts
 #   ISSUE_LABELS_JSON=/path/to/issues.json bash tools/issue_labels_check.sh
 #                                                 # the selftest's seam; also an
 #                                                 # offline escape hatch
@@ -31,6 +38,21 @@ set -u
 
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 REPO="${ISSUE_LABELS_REPO:-InauguralSystems/EigenScript}"
+
+# ---------------------------------------------------------------------------
+# THE CONTRACT — the population line this gate promises to print, and how many
+# planted faults its selftest runs. Defined ONCE, here, and printed by
+# `--contract`, so that every caller (the `[99zd]` suite section and
+# `.github/workflows/issue-triage.yml`) asserts the SAME regex this gate
+# prints and the two cannot drift apart.
+#
+# BOUGHT 2026-09-21 (round-2 blind critic, Astra): with this script gutted to
+# `exit 0`, BOTH callers passed — `exit=0 output=''` satisfied the daily audit
+# `run:` block under `bash -e` and the suite section alike. A successful exit
+# is not a measurement (mechanical-gates §121): the caller must require the
+# POSITIVE POPULATION LINE, by regex, and fail by name when it is absent.
+POPULATION_RE='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: '
+SELFTEST_CASES=6
 
 # Nothing on this gate's stdin, for the reason docs_claims_check.sh records:
 # a counting pipeline that inherits an open stdin hangs, and one that inherits
@@ -130,7 +152,18 @@ run_live() {
     missing=$(printf '%s\n' "$out" | sed -n 's/^examined=[0-9]* missing=\([0-9]*\)$/\1/p')
     numbers=$(printf '%s\n' "$out" | sed -n 's/^MISSING \([0-9]*\) .*/#\1/p' | tr '\n' ' ')
 
-    echo "issue-labels: examined=${examined:-0} missing=${missing:-0} (source: $src)"
+    local pop_line="issue-labels: examined=${examined:-0} missing=${missing:-0} (source: $src)"
+    echo "$pop_line"
+    # The gate proves its OWN output satisfies the contract it publishes. If
+    # someone rewords this line without updating POPULATION_RE, the gate goes
+    # red here rather than leaving every caller asserting a regex that can no
+    # longer match anything.
+    if [ -n "${examined:-}" ] && [ "${examined:-0}" -gt 0 ] && ! [[ $pop_line =~ $POPULATION_RE ]]; then
+        echo "RED: issue-labels: the population line does not match this gate's own published contract"
+        echo "      line:     $pop_line"
+        echo "      contract: $POPULATION_RE"
+        return 1
+    fi
     if [ -z "${examined:-}" ] || [ -z "${missing:-}" ]; then
         echo "RED: issue-labels: the classifier did not report its counts"
         printf '%s\n' "$out" | head -5 | sed 's/^/      /'
@@ -257,6 +290,9 @@ EOF
 case "${1:-}" in
     --selftest)      selftest; exit $? ;;
     --ensure-labels) ensure_labels; exit $? ;;
+    --contract)      printf 'POPULATION_RE=%s\n' "$POPULATION_RE"
+                     printf 'SELFTEST_CASES=%s\n' "$SELFTEST_CASES"
+                     exit 0 ;;
     "")              run_live; exit $? ;;
-    *) echo "usage: $0 [--selftest|--ensure-labels]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--selftest|--ensure-labels|--contract]" >&2; exit 2 ;;
 esac

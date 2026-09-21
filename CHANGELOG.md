@@ -1054,9 +1054,11 @@ All notable changes to EigenScript are documented here.
   wording was checked in the same pass and needed no change.
 
 - **ROADMAP.md is a milestone set, and issue labels are enforced (#1207,
-  #1155).** The file carried 112 checkboxes — 92 `[x]`, 20 `[ ]`, one `[~]` —
-  of which 62 were historical highlights under `## Completed`, so anything
-  counting "roadmap items" counted the past; it also double-counted (#414 at
+  #1155).** The file was a checkbox pile, most of it historical highlights
+  under `## Completed`, so anything counting "roadmap items" counted the past
+  (ROADMAP.md's header now derives both counts beside the commands that
+  produce them; the figures are deliberately not retyped anywhere else — the
+  first cut of this entry typed "112" for a file its own gate counts at 113); it also double-counted (#414 at
   two lines, Windows as an umbrella plus three tiers), carried items execution
   refutes (Public release, WASM, `utf8_encode`, the `eigenscript.h` line
   count, the GET_LOCAL/SET_LOCAL premise, Tidepool GAP-002), carried two items
@@ -1067,11 +1069,33 @@ All notable changes to EigenScript are documented here.
   `## Ideas and deferrals (uncounted)`. `tools/roadmap_check.sh` refuses any
   checkbox anywhere in the file and any table set that diverges from the open
   milestones; `tools/issue_labels_check.sh` refuses an open issue without an
-  `area:` label and a kind, and refuses a run that examined zero issues (33 of
-  36 open issues had no label at all on 2026-09-21).
+  `area:` label and a kind, and refuses a run that examined zero issues (the
+  backlog was essentially unlabelled on 2026-09-21; the "33 of 36" census that
+  first circulated is not reproducible from the API, and the figure of record
+  is the gate's first real run after the sweep, `examined=35 missing=0`).
   `.github/workflows/issue-triage.yml` labels a new issue `needs-triage` when
   it arrives without an `area:` and runs the audit daily. Both gates are suite
   section `[99zd]` with pinned selftest case counts.
+
+  Round 2 closed what the blind critics found in round 1. A SUCCESSFUL EXIT IS
+  NOT A MEASUREMENT: both callers accepted `tools/issue_labels_check.sh`
+  gutted to `exit 0` (`exit=0 output=''`), and `[99zd]` read `TOTAL=4 PASS=4`
+  with only `tools/roadmap_check.sh`'s live-data walk removed. Each gate now
+  publishes a `--contract` — the population line it promises to print and its
+  pinned selftest case count — and the suite section and the workflow both
+  assert that contract by name instead of reading the exit status.
+  `tools/roadmap_check.sh` gained (b) a DONE-clause comparison against each
+  milestone's own DONE text (M7's row had shipped with
+  "Misleading diagnostics fixed or removed in the same change." missing off
+  the end) and (c) reference resolution for the table's evidence cells and
+  every repo-qualified reference in the file ("Tidepool PR #375" is
+  EigenScript PR #375; the Tidepool endpoint 404s). And
+  `tools/workflow_yaml_check.sh` loads every workflow: round 1 shipped
+  `.github/workflows/issue-triage.yml` with two step names of the shape
+  `- name: Every open issue carries an area: label and a kind` — a plain YAML
+  scalar containing `: ` — so the file was not loadable YAML and the daily
+  audit could never have run. Two blind critics quoted that workflow's
+  permissions and concurrency key back verbatim; neither parsed it.
 
 - **Layering has structure rather than convention (#744, closing #746).** The
   core no longer includes any extension's private header: `src/ext_register.h`
