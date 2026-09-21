@@ -567,35 +567,50 @@ All notable changes to EigenScript are documented here.
   `fn` is 28). The real claim is that caching the string length added no
   bytes to the union: `sizeof(data.strv) <= sizeof(data.fn)`. Gated by
   suite `[99i3]` (`tools/ilp32_syntax_check.sh`): clang `-m32 -fsyntax-only`
-  over **every entry** of `web/build.sh`'s SOURCES — 23 today, printed by the
-  gate rather than typed, and floored, so a shrinking SOURCES array is a
-  deliberate re-pin rather than a quiet green. That population includes
-  `web/eigs_wasm.c`, the playground's entry point: filtering the array to
-  `src/*.c` examined 22 of the 23 units emcc compiles, and a compile error
-  planted in the entry point passed both the gate and its self-test. It is now
-  compiled against a stub `<emscripten.h>` carrying `EMSCRIPTEN_KEEPALIVE`
-  exactly as emscripten's `em_macros.h` defines it — `__attribute__((used))`,
-  not a no-op, because an empty macro accepts `EMSCRIPTEN_KEEPALIVE return x;`
-  which the real header rejects (`'used' attribute cannot be applied to a
-  statement`). The `-D` set is the **wasm32-emscripten target's own
-  predefines**, read off `clang --target=wasm32-unknown-emscripten -E -dM`:
-  `__EMSCRIPTEN__`, `__wasm__`, `__wasm32__`, plus `-DEIGENSCRIPT_VERSION`
-  from the VERSION file as the emcc line passes it. The bare `EMSCRIPTEN` name
-  is **not** passed: `web/build.sh`'s emcc line never defined it and the
-  target does not predefine it (it is a legacy macro that STRICT mode drops).
-  That mattered: the one conditional in the population keyed on this world,
-  `src/jit.c:110 #if !defined(__wasm__)`, took the OPPOSITE branch under the
-  old flags — the gate compiled the `__builtin___clear_cache` arm emcc never
-  sees. SOURCES is not the whole compile line either, so the invocation is
-  audited for `.c` tokens outside `"${SOURCES[@]}"` and fails by name; a
-  literal appended there was 24 arguments against 23 examined. Eight self-test
-  plants and two controls hold all of it: a syntax error in the entry point,
-  an `#ifdef __EMSCRIPTEN__` arm, a misplaced `EMSCRIPTEN_KEEPALIVE`, a TU on
-  the compile line outside the array, an empty inventory, a 1-entry
-  population, the entry point dropped from the inventory (23 → 22, below the
-  floor), the old 64-bit assert — plus a REFORMATTED SOURCES array that must
-  yield the identical inventory (the round-2 plant edited the array's TEXT and
-  so went falsely red on a reflow) and the live inventory staying green.
+  over **every translation unit the playground recipe hands the compiler** —
+  23 today, printed by the gate rather than typed, and floored, so a shrinking
+  population is a deliberate re-pin rather than a quiet green. That population
+  is **the recorded argv of a stand-in compiler**, not a reading of
+  `web/build.sh`: the gate stages the repo in a scratch sandbox, puts a
+  recorder first on PATH, runs the real recipe, and classifies the arguments
+  bash actually produced. Three rounds derived it by text and a blind critic
+  broke each one — a `src/*.c` filter examined 22 of 23 (the playground entry
+  point `web/eigs_wasm.c` sat outside the gate AND its self-test, and a
+  compile error planted there passed both), and the `.c`-token audit that
+  replaced it was blind to a single-quoted `'web/x.c'` literal, a `$(...)`
+  substitution, an array entry behind a variable and `.C`/`.cc` units, while
+  counting a comment line inside `SOURCES=(` as a source and an `-o out.c`
+  operand as one too. Six self-test plants pin exactly those shapes. The entry
+  point is compiled against a stub `<emscripten.h>` carrying
+  `EMSCRIPTEN_KEEPALIVE` exactly as emscripten's `em_macros.h` defines it —
+  `__attribute__((used))`, not a no-op, because an empty macro accepts
+  `EMSCRIPTEN_KEEPALIVE return x;` which the real header rejects (`'used'
+  attribute cannot be applied to a statement`). The `-D`/`-U` set is
+  **derived, not typed**: the gate reads both worlds' predefines with
+  `-E -dM` (`clang --target=wasm32-unknown-emscripten` and `clang -m32`),
+  reconciles every difference — measured 2026-09-21 as 39, the 30 macros the
+  host adds and the 9 the target adds — re-derives the host world under those
+  flags, and asserts defined-ness parity for every macro any conditional in
+  the population tests, failing by name on one it cannot reconcile. Round 3
+  hand-typed `__EMSCRIPTEN__ __wasm__ __wasm32__` and called them "the
+  target's own predefines"; they were 3 of the 9 additions and none of the 30
+  removals, so `src/fsutil.c:69 #elif defined(__linux__)` compiled the Linux
+  arm under a gate standing in for a lane that has no `__linux__` at all. The
+  conditionals keyed on this world are **printed** by the gate
+  (`macro_parity: tested=N reconciled=N`) rather than listed in a comment: two
+  today, `src/fsutil.c:69` on `__linux__` and `src/jit.c:110` on `__wasm__`.
+  This is PREDEFINE parity — a macro a system header supplies (`__GLIBC__`,
+  from glibc's features.h) is outside it, and the gate says so. Seventeen
+  self-test plants and two controls hold all of it: the six argv shapes, a
+  syntax error in the entry point, an `#ifdef __EMSCRIPTEN__` arm, a misplaced
+  `EMSCRIPTEN_KEEPALIVE`, an arm the wasm32 target takes and the host does not
+  (with its opposite as a control), the parity assertion run with no
+  reconciliation flags and with an empty tested population, an empty
+  inventory, a 1-entry population, the entry point dropped from the inventory
+  (23 → 22, below the floor), the old 64-bit assert — plus a REFORMATTED
+  SOURCES array that must yield the identical inventory (the round-2 plant
+  edited the array's TEXT and so went falsely red on a reflow) and the live
+  inventory staying green.
   `-m32` is the i386 ABI, not wasm32 — it catches pointer-width breaks, the
   `#1185` class, not every layout difference. Availability is probed by
   EXECUTION, not by the compiler's name: a toolchain with no 32-bit target

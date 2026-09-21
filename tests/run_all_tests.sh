@@ -7512,17 +7512,21 @@ fi  # EIGS_SKIP_WERROR_AUDIT
 # [99i3] ILP32 syntax gate (brief named this [99k]; that label is taken by
 # CRLF #880). pages.yml compiles the playground with emcc (wasm32); a
 # 64-bit-only sizeof(data)==sizeof(fn) assert kept that lane red from #1185.
-# The gate runs clang -m32 -fsyntax-only over EVERY entry of web/build.sh's
-# SOURCES — including web/eigs_wasm.c, the playground entry point, which round
-# 1 filtered out and so examined 22 of the 23 TUs emcc compiles — and it also
-# audits the compile line itself, because a `.c` written directly onto the
-# invocation is outside the array and so outside the derived population. The -D
-# set is the wasm32-emscripten target's own predefines (__EMSCRIPTEN__,
-# __wasm__, __wasm32__), measured with `-E -dM`; round 2 passed a bare
-# -DEMSCRIPTEN that emcc does not define, and so took the OPPOSITE branch of
-# src/jit.c:110 from the lane it stands in for. SKIP (not a pass) when this
-# toolchain cannot target 32-bit at all — probed by EXECUTION, not by the
-# compiler's name.
+# The gate runs clang -m32 -fsyntax-only over every translation unit the
+# playground recipe hands the compiler. That population is the RECORDED ARGV
+# of a stand-in compiler put first on PATH while the real web/build.sh runs in
+# a scratch sandbox — not a reading of the script. Three rounds derived it by
+# text and three rounds a blind critic found a spelling the text missed
+# (a src/*.c filter; then a `.c`-token audit blind to quoting, `$(...)`,
+# variables, `.cc` and comment lines inside the array). Bash has already
+# resolved all of that by the time the stand-in sees argv, so the gate asks
+# bash. The -D/-U set is DERIVED the same way: both worlds' predefines are read
+# with `-E -dM` (target `--target=wasm32-unknown-emscripten`, host `-m32`),
+# every difference is reconciled, and defined-ness parity is asserted for every
+# macro any conditional in the population tests — round 3 hand-typed three
+# predefines and left `src/fsutil.c:69` taking the `__linux__` arm on a lane
+# that has no `__linux__`. SKIP (not a pass) when this toolchain cannot target
+# 32-bit at all — probed by EXECUTION, not by the compiler's name.
 echo "[99i3] ILP32 syntax gate (the playground's wasm32 build cannot break unnoticed)"
 TOTAL=$((TOTAL + 1))
 ilp32_audit_out=$(bash "$TESTS_DIR/../tools/ilp32_syntax_check.sh" 2>&1)
@@ -7545,20 +7549,24 @@ else
     # prints nothing, so the section requires the tool's OWN examined line
     # (mechanical-gates §146: gate the OUTPUT, not the invocation) and pins
     # the self-test's case count (§142) — "some cases ran" is what a deleted
-    # plant also prints. 10 = plants 1, 1b, 1c, 1d, 2, 2c, 3, 3b plus two
-    # controls (a reformatted SOURCES array yields the identical inventory;
-    # the live inventory stays green). 1b (a syntax error in web/eigs_wasm.c)
-    # and 3b (that file out of the inventory) are the two the round-1 gate
-    # could not see at all; 1c (an `#ifdef __EMSCRIPTEN__` arm, green under
-    # round 2's `-DEMSCRIPTEN` and red under the target's real predefines) and
-    # 1d (`EMSCRIPTEN_KEEPALIVE` in statement position, which an empty stub
-    # accepts and `__attribute__((used))` rejects) are round 2's; 2c is a `.c`
-    # written straight onto the compile line, which the SOURCES-derived
-    # inventory cannot see at all.
-    ILP32_SELFTEST_CASES=10
+    # plant also prints. The audit's macro_parity line is required for the same
+    # reason: a gate that stopped deriving the target's macro world still
+    # prints its examined line. 19 = plants 1, 1b, 1c, 1d (the entry point and
+    # the header), 2q, 2s, 2v, 2x, 2m, 2o (the six argv shapes a text parser
+    # reads wrong: a single-quoted literal, a command substitution, an array
+    # entry behind a variable, a `.cc` unit, a comment inside `SOURCES=(`
+    # naming a `.c` that must NOT count, and an `-o` operand ending in `.c`
+    # that must NOT count), 4m and its control 4mc (an arm the wasm32 target
+    # takes and the -m32 host does not), 4e and 4z (the parity assertion run
+    # with no reconciliation flags, and with an empty tested population — both
+    # must FAIL by name), 2, 3, 3b (empty, shrunk and entry-point-less
+    # inventories), plus two controls: a reformatted SOURCES array yields the
+    # identical inventory, and the live inventory stays green after the plants.
+    ILP32_SELFTEST_CASES=19
     ilp32_ok_lines=$(printf '%s\n' "$ilp32_selftest_out" | grep -c '^selftest ok:')
     if [ "$ilp32_audit_rc" -eq 0 ] && [ "$ilp32_selftest_rc" -eq 0 ] \
        && grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out" \
+       && grep -qE '^macro_parity: tested=[0-9]+ reconciled=[0-9]+' <<<"$ilp32_audit_out" \
        && [ "$ilp32_ok_lines" -eq "$ILP32_SELFTEST_CASES" ]; then
         PASS=$((PASS + 1))
         echo "  PASS: every playground TU emcc compiles is ILP32-clean ($ilp32_ok_lines/$ILP32_SELFTEST_CASES gate self-test cases green)"
@@ -7568,6 +7576,9 @@ else
             echo "  FAIL: a playground TU does not compile at 32-bit pointer width (audit exit $ilp32_audit_rc)"
         elif ! grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out"; then
             echo "  FAIL: the ILP32 gate exited 0 without reporting how many TUs it examined; its output:"
+            printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
+        elif ! grep -qE '^macro_parity: tested=[0-9]+ reconciled=[0-9]+' <<<"$ilp32_audit_out"; then
+            echo "  FAIL: the ILP32 gate exited 0 without reporting macro parity, so its -D/-U set was not derived from the target; its output:"
             printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
         fi
         if [ "$ilp32_selftest_rc" -ne 0 ]; then

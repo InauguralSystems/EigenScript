@@ -266,7 +266,11 @@ SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage
 # src/eigenscript under the suite) plus two leak controls, so four real
 # compile invocations that no make target covers.
 # tools/ilp32_syntax_check.sh joined with [99i3]: clang -m32 -fsyntax-only
-# over the playground TUs (pages.yml wasm32 stand-in).
+# over the playground TUs (pages.yml wasm32 stand-in). Its floor moved 2 -> 4
+# when that gate stopped hand-typing the wasm32 predefines: the two `-E -dM`
+# derivations that read the target's and the host's macro worlds are compile
+# invocations by this recognizer (`-x c`), so a floor of 2 would have let both
+# of them be deleted while still printing OK.
 SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh tools/ilp32_syntax_check.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
@@ -347,7 +351,7 @@ script:tests/test_tsan.sh 1
 script:tools/trace_mt_mutants.sh 2
 script:tools/arming_mt_mutants.sh 1
 script:tests/run_all_tests.sh 1
-script:tools/ilp32_syntax_check.sh 2
+script:tools/ilp32_syntax_check.sh 4
 '
 
 # Floor for a label, or empty when the label is untracked.
