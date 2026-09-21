@@ -567,11 +567,21 @@ All notable changes to EigenScript are documented here.
   `fn` is 28). The real claim is that caching the string length added no
   bytes to the union: `sizeof(data.strv) <= sizeof(data.fn)`. Gated by
   suite `[99i3]` (`tools/ilp32_syntax_check.sh`): clang `-m32 -fsyntax-only`
-  over every `src/*.c` in `web/build.sh`'s SOURCES — 22 today, floored, so a
-  shrinking SOURCES array is a deliberate re-pin rather than a quiet green.
-  Availability is probed by EXECUTION, not by the compiler's name: a
-  toolchain with no 32-bit target (the macOS runners) SKIPs by name with the
-  compiler's own words, counted as a skip and never as a pass.
+  over **every entry** of `web/build.sh`'s SOURCES — 23 today, printed by the
+  gate rather than typed, and floored, so a shrinking SOURCES array is a
+  deliberate re-pin rather than a quiet green. That population includes
+  `web/eigs_wasm.c`, the playground's entry point: filtering the array to
+  `src/*.c` examined 22 of the 23 units emcc compiles, and a compile error
+  planted in the entry point passed both the gate and its self-test. It is now
+  compiled against a stub `<emscripten.h>` (one no-op macro) with
+  `-DEMSCRIPTEN` and `-DEIGENSCRIPT_VERSION` exactly as the emcc line passes
+  them, and two self-test plants hold the line: a syntax error in that file,
+  and that file removed from SOURCES (23 → 22, below the floor). `-m32` is the
+  i386 ABI, not wasm32 — it catches pointer-width breaks, the `#1185` class,
+  not every layout difference. Availability is probed by EXECUTION, not by the
+  compiler's name: a toolchain with no 32-bit target (the macOS runners) SKIPs
+  by name with the compiler's own words, counted as a skip and never as a
+  pass.
 
 - **The db-extension error-path example in `docs/BUILTINS.md` no longer
   pins the core build's "undefined variable" output.** Section [89] on

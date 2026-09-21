@@ -2855,8 +2855,14 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
         echo "  PASS: all $SL_PASS HTTP slow-loris checks"
     fi
     SLST_OUTPUT=$(bash "$TESTS_DIR/test_http_slowloris.sh" --self-test 2>&1)
-    SLST_PASS=$(echo "$SLST_OUTPUT" | grep -c "PASS:" || true)
-    SLST_FAIL=$(echo "$SLST_OUTPUT" | grep -c "FAIL:" || true)
+    # Count the PLANT VERDICT lines only. A red plant dumps the tail of the
+    # inner run, and that dump carries the inner script's own "FAIL:" lines —
+    # so a bare grep -c "FAIL:" reported failed=2 for ONE failing plant
+    # (over-count on the failing side; measured 2026-09-21). The verdict lines
+    # are the self-test's own, "  PASS: plant N …" / "  FAIL: plant N …", and
+    # the dump is indented past them.
+    SLST_PASS=$(echo "$SLST_OUTPUT" | grep -c "^  PASS: plant " || true)
+    SLST_FAIL=$(echo "$SLST_OUTPUT" | grep -c "^  FAIL: plant " || true)
     TOTAL=$((TOTAL + SLST_PASS + SLST_FAIL))
     PASS=$((PASS + SLST_PASS))
     FAIL=$((FAIL + SLST_FAIL))
@@ -7506,9 +7512,11 @@ fi  # EIGS_SKIP_WERROR_AUDIT
 # [99i3] ILP32 syntax gate (brief named this [99k]; that label is taken by
 # CRLF #880). pages.yml compiles the playground with emcc (wasm32); a
 # 64-bit-only sizeof(data)==sizeof(fn) assert kept that lane red from #1185.
-# The gate runs clang -m32 -fsyntax-only over every src/*.c in web/build.sh's
-# SOURCES, same -D flags. SKIP (not a pass) when this toolchain cannot target
-# 32-bit at all — probed by EXECUTION, not by the compiler's name.
+# The gate runs clang -m32 -fsyntax-only over EVERY entry of web/build.sh's
+# SOURCES — including web/eigs_wasm.c, the playground entry point, which round
+# 1 filtered out and so examined 22 of the 23 TUs emcc compiles — with the same
+# -D flags. SKIP (not a pass) when this toolchain cannot target 32-bit at all —
+# probed by EXECUTION, not by the compiler's name.
 echo "[99i3] ILP32 syntax gate (the playground's wasm32 build cannot break unnoticed)"
 TOTAL=$((TOTAL + 1))
 ilp32_audit_out=$(bash "$TESTS_DIR/../tools/ilp32_syntax_check.sh" 2>&1)
@@ -7531,14 +7539,16 @@ else
     # prints nothing, so the section requires the tool's OWN examined line
     # (mechanical-gates §146: gate the OUTPUT, not the invocation) and pins
     # the self-test's case count (§142) — "some cases ran" is what a deleted
-    # plant also prints. 4 = plants 1-3 plus the live-inventory control.
-    ILP32_SELFTEST_CASES=4
+    # plant also prints. 6 = plants 1, 1b, 2, 3, 3b plus the live-inventory
+    # control. 1b (a syntax error in web/eigs_wasm.c) and 3b (that file removed
+    # from SOURCES) are the two the round-1 gate could not see at all.
+    ILP32_SELFTEST_CASES=6
     ilp32_ok_lines=$(printf '%s\n' "$ilp32_selftest_out" | grep -c '^selftest ok:')
     if [ "$ilp32_audit_rc" -eq 0 ] && [ "$ilp32_selftest_rc" -eq 0 ] \
        && grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out" \
        && [ "$ilp32_ok_lines" -eq "$ILP32_SELFTEST_CASES" ]; then
         PASS=$((PASS + 1))
-        echo "  PASS: every playground src/*.c is ILP32-clean ($ilp32_ok_lines/$ILP32_SELFTEST_CASES gate self-test cases green)"
+        echo "  PASS: every playground TU emcc compiles is ILP32-clean ($ilp32_ok_lines/$ILP32_SELFTEST_CASES gate self-test cases green)"
     else
         FAIL=$((FAIL + 1))
         if [ "$ilp32_audit_rc" -ne 0 ]; then
