@@ -546,24 +546,65 @@ ORDER, and PATH order belongs to the consumer: one
 EigenGauntlet and EigenMiniSat already use via `$GITHUB_PATH` — puts the
 developer's stale runtime back in front of the shim, and the row still
 read `PASS`. So the row now runs with `PATH=$SHIM:$FARM` and nothing
-else: `$FARM` holds one symlink per executable found on the INHERITED
-`PATH` **except** every name matching `eigenscript*`, which is never
-linked (`path_farm=` / `path_dropped=` in the record header). `HOME` is a
+else: `$FARM` holds, for every executable found on the INHERITED `PATH`
+**except** every name matching `eigenscript*`, a two-line EXEC WRAPPER
+(`#!/bin/sh` + `exec "<absolute original path>" "$@"`, mode 755), so
+every tool runs **at its original location** (`path_farm=` /
+`path_dropped=` in the record header). A SYMLINK farm relocated the tool
+and broke consumers: a virtualenv's `python3` reached through a link
+reports `sys.prefix=/usr`, because venv detection reads `pyvenv.cfg`
+beside the executable's own path — a dependency installed in the selected
+virtualenv vanished and the row FAILed *after* the candidate call
+succeeded. Farm construction is fail-closed by name (`cannot build the
+PATH farm under <dir>`, exit 2), and `path_farm=N` must be at least the
+number of executables the enumeration found: a farm directory that could
+not be written used to swallow every failure and read `path_farm=0` under
+`VERDICT: PASS`. `HOME` is a
 scratch directory per row (`home_scratch=yes`) containing empty
-`.local/bin` and `bin`, so a prepend adds an empty directory. The
+`.local/bin` and `bin`, so a prepend adds an empty directory — but the
+named build/tool CACHE variables survive it (`env_passthrough=`):
+`GOPATH`, `GOMODCACHE`, `GOCACHE`, `GOFLAGS`, `JAVA_HOME`, `ELLE_JAR`,
+`CARGO_HOME`, `RUSTUP_HOME`, `PIP_CACHE_DIR`, `npm_config_cache`, with
+the three Go ones derived from the real home when unset. Measured on
+eddy: with the scratch HOME alone, `GOPROXY=off go list -m all` returns
+`module lookup disabled by GOPROXY=off` where the real HOME returns rc 0,
+so every run would re-download its modules and fail without a network.
+A consumer **PATH EDIT** is a finding of its own:
+`tools/_derive_variants.py` extracts every `PATH=`, `export PATH=`,
+`PATH+=` and `$GITHUB_PATH` append from shell text, Makefile recipe lines
+and a workflow `runCmd`, `plan` prints them as
+`path_edit|<consumer>|<component>|<file>:<line>` (all 16 real consumers
+report none — the two `$GITHUB_PATH` appends in EigenGauntlet's and
+EigenMiniSat's CI are ordinary `run:` steps, not the `runCmd`, and the
+`ENV PATH=` lines are Dockerfile, which is not the acceptance command),
+and a row whose edit adds a LITERAL absolute directory that exists on
+this box outside `$SHIM`, `$FARM`, the row's scratch `$HOME` and its own
+checkout is `FAIL|path-edit:<dir>` **before it runs**, with a
+`log|<name>|preflight:` line. That is the shape that reached the
+developer's real `~/.local/bin/eigenscript-full.stale` (`0.21.0`) under a
+`PASS` row. The
 enumeration follows symlinked `PATH` directories (`find -L`); a directory
 that is executable but not readable contributes nothing and is reachable
 from nothing. What the claim now is, exactly: **no stale `eigenscript*`
 file is on the row's `PATH` at all**, and a name that resolves nowhere is
 `FAIL|undeclared-variant:<name>` (the block shell's
 `command_not_found_handle` records it) rather than a `127` the consumer
-can swallow with `|| true`. Two residuals stay, stated in the header: a
-consumer that prepends an ABSOLUTE directory outside `$HOME` that it did
-not create in the row (`/opt/foo/bin`) can still reach a binary there —
-nothing short of a mount namespace closes that, and CI has no such
-directory — and a path the consumer computes INSIDE its own checkout
-(`./eigenscript-*`) is not on `PATH` at all, so that row reads
-`UNEXERCISED`, never `PASS`.
+can swallow with `|| true`. Three residuals stay, stated in the header
+and each **pinned by a plant that fires only while it holds**:
+
+1. a PATH edit the scanner cannot see because the consumer COMPUTES it at
+   run time (`PATH="$(cat dir.txt):$PATH"`, or `os.environ["PATH"]`);
+2. a farmed, inherited wrapper that resolves its OWN location
+   (`exec "$(dirname "$(readlink -f "$0")")/eigenscript"`) still reaches
+   the stale `eigenscript` sitting beside it in the inherited directory —
+   that is the price of running tools in place, and running them in place
+   is what keeps a virtualenv working. The only closures are an execve
+   WITNESS (an `LD_PRELOAD` interposer that fails the row on an
+   `eigenscript*` target) or a MOUNT NAMESPACE; both are deferred. No
+   consumer ships such a wrapper;
+3. a path the consumer computes INSIDE its own checkout
+   (`./eigenscript-*`) is not on `PATH` at all, so that row reads
+   `UNEXERCISED`, never `PASS`.
 
 `EIGS_DIR` is the twin of that PATH: it is a `cp -rL` copy of the
 candidate tree, so it used to hand the consumer the sibling's
@@ -590,7 +631,16 @@ tied to what actually RAN: the dropped process prints its own script's
 sha256 as its first line and the outer compares it with the copy it
 checked, because a drop tool that rewrites the copy between the check and
 the `exec` otherwise ran a different script under a "byte-identical"
-banner. Every scratch name the self-test and its children create in the
+banner. The TRUST ROOT is the drop TOOL this script chooses (`runuser`,
+then `setpriv`) — never a command handed in from the environment: a
+read-back of a LINE cannot authenticate a PROCESS, and both critics built
+a wrapper that emitted the honest first line and then ran a substitute
+verdict producer. `CA_DROP_CMD` exists only so the fixture-gated
+self-test can drive the drop path on a non-root box; it is honoured only
+when `$CA_ECO/.ca_fixture` exists, is otherwise IGNORED (`--drop-tool`
+prints the tool actually chosen), and a `--self-test` started with an
+ungated `CA_DROP_CMD` is refused with exit 2 rather than quietly running
+seven minutes that tested nothing. Every scratch name the self-test and its children create in the
 outer tmp carries that run's token, so a CONCURRENT self-test's
 `/tmp/ca-st.*` is no longer read as this run's leftover (it was, and it
 printed a false `SELF-TEST: FAIL`). That line

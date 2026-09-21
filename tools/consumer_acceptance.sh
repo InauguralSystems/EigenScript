@@ -43,14 +43,34 @@
 #     via $GITHUB_PATH -- put a stale runtime back in front of $SHIM and
 #     the row still read PASS (Fable/Astra r3). So each row runs with
 #       PATH=$SHIM:$FARM   and nothing else,
-#     where $FARM holds one symlink per executable found on the INHERITED
+#     where $FARM holds, for every executable found on the INHERITED
 #     PATH (find -L, first occurrence wins) EXCEPT every name matching
-#     eigenscript*, which is NEVER linked. No inherited directory is on
-#     the row's PATH, so there is no `.`, no empty entry and no
-#     $HOME/.local/bin to prepend in front of; HOME is an empty per-row
-#     scratch directory (home_scratch=yes, with empty .local/bin and bin)
-#     and XDG_* is unset. Header: path_farm=<n executables>,
-#     path_dropped=<names>, home_scratch=, overlay_shimmed=.
+#     eigenscript*, a two-line EXEC WRAPPER
+#       #!/bin/sh
+#       exec "<absolute original path>" "$@"
+#     so the tool RUNS IN PLACE. A symlink farm ran the tool from the
+#     farm instead, and that BROKE consumers: relocating a
+#     virtualenv's python3 moves sys.prefix to /usr (venv detection
+#     reads pyvenv.cfg beside the executable's OWN path), so a
+#     dependency installed in the selected virtualenv vanished and the
+#     row FAILed after the candidate call succeeded (Astra r4). Hard
+#     links and copies are worse still. The wrapper keeps
+#     sys.executable, $0, pyvenv.cfg and every sibling data file at the
+#     tool's original location, and keeps first-occurrence-wins.
+#     No inherited directory is on the row's PATH, so there is no `.`,
+#     no empty entry and no $HOME/.local/bin to prepend in front of;
+#     HOME is an empty per-row scratch directory (home_scratch=yes,
+#     with empty .local/bin and bin) and XDG_* is unset, while the
+#     named build/tool CACHE variables pass through (env_passthrough=).
+#     Header: path_farm=<n executables>, path_dropped=<names>,
+#     home_scratch=, overlay_shimmed=, env_passthrough=, path_edit=.
+#     Farm construction is FAIL-CLOSED: a farm directory that cannot be
+#     written exits 2 by name, and path_farm=N must be >= the number of
+#     non-eigenscript* executables the enumeration found.
+#     A consumer PATH EDIT that adds an ABSOLUTE directory which exists
+#     on this box outside $SHIM/$FARM/the row's $HOME/the consumer's own
+#     checkout is refused BEFORE the row runs:
+#     FAIL|path-edit:<dir>, with a log|<name>|preflight: line.
 #     Names outside the candidate set still get their 127-shims in $SHIM
 #     (path_masked=) -- those work for ANY shell, so they are what turns a
 #     computed name invoked from a `sh` script into a named failure -- and
@@ -196,12 +216,29 @@
 #     a row reads UNEXERCISED (cand_calls=0), never PASS; plant
 #     variant-glob-residual pins exactly that behaviour, so closing this
 #     residual turns that plant red on purpose.
-#   - PATH-FARM RESIDUAL: a consumer that prepends an ABSOLUTE directory
-#     outside $HOME that it did not create inside the row (e.g.
-#     /opt/foo/bin) can still reach a binary there. Nothing short of a
-#     mount namespace closes that, and CI has no such directory. A
-#     directory the consumer creates in the row is a freshly built
-#     binary, not a stale one.
+#   - PATH-EDIT RESIDUAL (narrowed, round 5): a PATH edit the SCANNER
+#     CANNOT SEE is the residual -- one computed at runtime
+#     (PATH="$(cat dir.txt):$PATH"), or made through a non-shell API
+#     (python os.environ["PATH"]). A LITERAL absolute component is no
+#     longer a residual: it is FAIL|path-edit:<dir> by name before the
+#     row runs. The round-4 wording ("outside $HOME") was wrong in
+#     effect: with HOME scratched, the developer's REAL home is an
+#     absolute directory outside the row's $HOME, and Fable r4 reached
+#     ~/.local/bin/eigenscript-full.stale (0.21.0) under a PASS row.
+#   - FARM-WRAPPER RESIDUAL: each farm entry EXECS the tool at its
+#     original absolute location, so a farmed, inherited wrapper that
+#     resolves its own location -- exec "$(dirname "$(readlink -f
+#     "$0")")/eigenscript" -- still reaches the stale eigenscript
+#     sitting beside it in the inherited directory (Fable r4 p2). This
+#     is the price of running tools in place, and running them in place
+#     is what keeps a virtualenv working. No consumer ships such a
+#     wrapper. The only closures are an execve WITNESS (an LD_PRELOAD
+#     interposer that logs every execve and fails the row on an
+#     eigenscript* target) or a MOUNT NAMESPACE that unmounts the
+#     inherited directories; both are deferred, and plant
+#     farm-wrapper-sibling PINS the residual -- it FIRES only while the
+#     stale sibling is still reachable, and goes red on purpose the day
+#     one of those closures lands.
 #   - a PATH directory that is executable but not READABLE (mode 0111)
 #     cannot be enumerated: nothing from it is farmed and nothing from it
 #     is on the row's PATH either -- fail closed, not fall through.
@@ -466,6 +503,51 @@ parse_variant_names() {
   printf '%s' "$out"
 }
 
+# CA-GUARD:path-edit-scan
+# Fable r4 check 3 (the residual whose wording was wrong in effect): one
+# `export PATH=/home/jon/.local/bin:$PATH` inside a consumer's own command
+# reached the developer's REAL stale eigenscript-full.stale (0.21.0) while
+# the row read PASS. The farm takes the stale files off the PATH the
+# HARNESS hands the row; it cannot stop the row naming an absolute
+# directory. So a literal absolute component that EXISTS on this box and is
+# outside $SHIM, $FARM, the row's scratch $HOME and the consumer's own
+# checkout is refused BY NAME, before the row runs.
+# Prints `<component>|<file>:<line>` for the first offender, rc 0 when there
+# is one, and NOTHING else on stdout (the caller reads it back).
+# Residual (narrowed): a component computed at runtime -- `$(cat dir.txt)`,
+# `$SOMEVAR` -- is not a literal, so it is not seen. Pinned by plant
+# path-edit-computed.
+path_edit_offender() {
+  local repo="$1" home="$2" edits="$3" comp loc
+  while IFS= read -r comp || [ -n "$comp" ]; do
+    [ -n "$comp" ] || continue
+    loc="${comp#*|}"
+    comp="${comp%%|*}"
+    case "$comp" in
+      /*) ;;
+      *) continue ;;            # relative, $HOME-rooted or computed
+    esac
+    case "$comp" in
+      *'$'*|*'`'*) continue ;;  # a runtime-computed component: the residual
+    esac
+    [ -d "$comp" ] || continue   # not a directory ON THIS BOX
+    case "$comp" in
+      "${SHIM:-/nonexistent-shim}"|"${SHIM:-/nonexistent-shim}"/*) continue ;;
+      "${FARM:-/nonexistent-farm}"|"${FARM:-/nonexistent-farm}"/*) continue ;;
+    esac
+    if [ -n "$home" ]; then
+      case "$comp" in "$home"|"$home"/*) continue ;; esac
+    fi
+    if [ -n "$repo" ]; then
+      case "$comp" in "$repo"|"$repo"/*) continue ;; esac
+    fi
+    printf '%s|%s' "$comp" "$loc"
+    return 0
+  done <<< "$edits"
+  return 1
+}
+# CA-GUARD:end-path-edit-scan
+
 derive_variants() {
   local r dir raw line n rc=0
   r="${1:-}"
@@ -473,6 +555,8 @@ derive_variants() {
   DERIVED_NAMES=""
   DERIVED_EXCLUDED=""
   DERIVED_EXAMINED=""
+  DERIVED_PATHEDITS=""
+  DERIVED_PATHEXAMINED=""
   DERIVED_RC=0
   [ -d "$dir" ] || return 0
   raw="$(python3 "$HERE/tools/_derive_variants.py" "$dir" 2>/dev/null)" || rc=$?
@@ -492,6 +576,12 @@ derive_variants() {
         ;;
       excluded\|*)
         DERIVED_EXCLUDED="${DERIVED_EXCLUDED}${line#excluded|}"$'\n'
+        ;;
+      pathedit\|*)
+        DERIVED_PATHEDITS="${DERIVED_PATHEDITS}${line#pathedit|}"$'\n'
+        ;;
+      pathexamined\|*)
+        DERIVED_PATHEXAMINED="${line#pathexamined|}"
         ;;
       examined\|*)
         DERIVED_EXAMINED="${line#examined|}"
@@ -909,7 +999,7 @@ scan_inventory() {
   FLOOR_FAIL=0
   FLOOR_WHY=""
   load_expected_list
-  local r pin cmd d kind gap_why miss vnames wf vexcl vexam exline
+  local r pin cmd d kind gap_why miss vnames wf vexcl vexam exline vpedits peline
   local nullglob_was=0
   shopt -q nullglob && nullglob_was=1
   shopt -s nullglob
@@ -942,6 +1032,7 @@ scan_inventory() {
     # row is caught), so deriving here as well would be one python walk of
     # every checkout for nothing.
     vnames=""
+    vpedits=""
     vexcl=""
     vexam=""
     if [ "$verbose" -eq 1 ]; then
@@ -949,6 +1040,7 @@ scan_inventory() {
       vnames="$DERIVED_NAMES"
       vexcl="$DERIVED_EXCLUDED"
       vexam="$DERIVED_EXAMINED"
+      vpedits="$DERIVED_PATHEDITS"
       if [ "${DERIVED_RC:-0}" -ne 0 ]; then
         GAPS=$((GAPS + 1))
         gap_why="${gap_why:+$gap_why; }variant derivation failed (rc=$DERIVED_RC)"
@@ -1021,6 +1113,15 @@ scan_inventory() {
           [ -n "$exline" ] || continue
           say "  variants|$r|excluded:$exline"
         done <<< "$vexcl"
+      fi
+      # Every directory this consumer ADDS to PATH, with its file:line. A
+      # literal absolute one that exists on this box outside the row's own
+      # scratch is FAIL|path-edit:<dir> at run time.
+      if [ -n "${vpedits:-}" ]; then
+        while IFS= read -r peline || [ -n "$peline" ]; do
+          [ -n "$peline" ] || continue
+          say "  path_edit|$r|$peline"
+        done <<< "$vpedits"
       fi
     fi
   done
@@ -1557,21 +1658,39 @@ write_record_header() {
 # (tools/_derive_variants.py); every occurrence that did not enter the
 # set is listed by \`plan\` as variants|<consumer>|excluded:<name>|<file>:<line>.
 # At execution time the row runs with PATH=\$SHIM:\$FARM and nothing else:
-# \$FARM carries one symlink per executable on the INHERITED PATH except
-# every name matching eigenscript*, which is never linked (path_farm=,
-# path_dropped=), and HOME is an empty per-row scratch directory
-# (home_scratch=). No stale eigenscript* file is on the row's PATH at all,
-# so a consumer's own PATH prepend cannot re-order one in front of the
-# shims. Names outside the candidate set keep their 127-shims
-# (path_masked=), the overlay's own eigenscript* files are shimmed
-# (overlay_shimmed=), and a row whose call log shows a blocked| hit is
-# FAIL|undeclared-variant:<name>.
+# \$FARM carries, for every executable on the INHERITED PATH except every
+# name matching eigenscript*, a two-line EXEC WRAPPER
+# (#!/bin/sh + exec "<absolute original path>" "\$@"), so every tool runs
+# AT ITS ORIGINAL LOCATION with its original environment -- a relocated
+# virtualenv python3 loses its own sys.prefix and its dependencies
+# (Astra r4). path_farm= is the wrapper count and must be >= the number
+# of executables the enumeration found; a farm that cannot be written
+# exits 2 by name. HOME is an empty per-row scratch directory
+# (home_scratch=) and the named cache/tool variables pass through
+# (env_passthrough=). No stale eigenscript* file is on the row's PATH at
+# all, so a consumer's own PATH prepend cannot re-order one in front of
+# the shims, and a PATH edit that names an absolute directory existing on
+# this box outside \$SHIM/\$FARM/\$HOME/the checkout is refused before the
+# row runs (FAIL|path-edit:<dir>). Names outside the candidate set keep
+# their 127-shims (path_masked=), the overlay's own eigenscript* files
+# are shimmed (overlay_shimmed=), and a row whose call log shows a
+# blocked| hit is FAIL|undeclared-variant:<name>.
 # Residual: a consumer that resolves the runtime by a PATH IT COMPUTES --
 # ./eigenscript-full inside its own checkout, or a glob over one -- is not
 # on PATH at all; such a row reads UNEXERCISED (cand_calls=0), never PASS.
-# Residual: a consumer that prepends an ABSOLUTE directory outside \$HOME
-# that it did not create inside the row (/opt/foo/bin) can still reach a
-# binary there; nothing short of a mount namespace closes that.
+# Residual: a PATH edit the SCANNER CANNOT SEE -- computed at runtime
+# (PATH="\$(cat dir.txt):\$PATH") or made through a non-shell API -- can
+# still add a directory. A LITERAL absolute component is refused by name.
+# Residual: a farm entry EXECS its tool at the tool's ORIGINAL location,
+# so an inherited wrapper that resolves its own location
+# (exec "\$(dirname "\$(readlink -f "\$0")")/eigenscript") still reaches
+# the stale eigenscript beside it. Running tools in place is what keeps a
+# virtualenv working; the closures (an LD_PRELOAD execve witness, or a
+# mount namespace) are deferred. Plant farm-wrapper-sibling pins it.
+# Trust root of the dropped self-test: the drop TOOL the harness itself
+# chooses (runuser, then setpriv). CA_DROP_CMD is a fixture-gated
+# self-test lever, never a trust root: it is honoured only when
+# \$CA_ECO/.ca_fixture exists.
 # Residual: a Dockerfile RUN line is not scanned for invocations: it builds
 # the image, it is not the acceptance command.
 run_id=$RUN_ID
@@ -1593,6 +1712,8 @@ path_masked=PENDING
 path_farm=PENDING
 path_dropped=PENDING
 home_scratch=PENDING
+env_passthrough=PENDING
+path_edit=PENDING
 overlay_shimmed=PENDING
 overlay=copy
 overlay_skipped=PENDING
@@ -1641,6 +1762,8 @@ write_record_footer() {
         path_farm=PENDING)         printf 'path_farm=%s\n' "${PATH_FARM_N:-0}" ;;
         path_dropped=PENDING)      printf 'path_dropped=%s\n' "${PATH_DROPPED:-none}" ;;
         home_scratch=PENDING)      printf 'home_scratch=%s\n' "${HOME_SCRATCH:-no}" ;;
+        env_passthrough=PENDING)   printf 'env_passthrough=%s\n' "${ENV_PASSTHROUGH:-none}" ;;
+        path_edit=PENDING)         printf 'path_edit=%s\n' "${PATH_EDIT_SEEN:-none}" ;;
         overlay_shimmed=PENDING)   printf 'overlay_shimmed=%s\n' "${OVERLAY_SHIMMED:-none}" ;;
         sibling_binary_present=PENDING) printf 'sibling_binary_present=%s\n' "${SIBLING_BEFORE:-${SIBLING_PRESENT:-no}}" ;;
         overlay_skipped=PENDING)   printf 'overlay_skipped=%s\n' "${OVERLAY_SKIPPED:-}" ;;
@@ -1779,10 +1902,14 @@ run_one() {
   # grep rc 1 is "no match"; any other rc means the filter itself failed
   # and the derivation runs (fail closed).
   DERIVED_NAMES=""
+  DERIVED_PATHEDITS=""
   DERIVED_RC=0
-  local _grep_rc=0
+  local _grep_rc=0 _path_rc=0
   grep -rqI --exclude-dir=.git -e 'eigenscript-' "$repo" 2>/dev/null || _grep_rc=$?
-  if [ "$_grep_rc" -ne 1 ]; then
+  # The PATH-edit scan has its OWN pre-filter: a checkout with no
+  # `eigenscript-` in it can still edit PATH, and that edit is a finding.
+  grep -rqI --exclude-dir=.git -e 'PATH' "$repo" 2>/dev/null || _path_rc=$?
+  if [ "$_grep_rc" -ne 1 ] || [ "$_path_rc" -ne 1 ]; then
     derive_variants "$name"
   fi
   if [ "${DERIVED_RC:-0}" -ne 0 ]; then
@@ -1805,12 +1932,14 @@ run_one() {
   # `eigenscript` is always a candidate and is skipped by the loop below.
   # So a command with no `eigenscript-` in it cannot contribute a name --
   # this skips a python fork, it does not skip a decision.
-  local cmd_names="" cfile
-  if [ -n "${WORK:-}" ] && [ -d "${WORK:-}" ] && [ "${cmd#*eigenscript-}" != "$cmd" ]; then
+  local cmd_names="" cfile cmd_raw="" cmd_edits=""
+  if [ -n "${WORK:-}" ] && [ -d "${WORK:-}" ] \
+     && { [ "${cmd#*eigenscript-}" != "$cmd" ] || [ "${cmd#*PATH}" != "$cmd" ]; }; then
     cfile="$WORK/declared_cmd.txt"
     printf '%s\n' "$cmd" > "$cfile"
-    cmd_names="$(python3 "$HERE/tools/_derive_variants.py" --shell "$cfile" 2>/dev/null || true)"
-    cmd_names="$(parse_variant_names "$cmd_names")"
+    cmd_raw="$(python3 "$HERE/tools/_derive_variants.py" --shell "$cfile" 2>/dev/null || true)"
+    cmd_names="$(parse_variant_names "$cmd_raw")"
+    cmd_edits="$(grep '^pathedit|' <<< "$cmd_raw" | sed 's/^pathedit|//' || true)"
   fi
   need="$DERIVED_NAMES $cmd_names"
   # CA-GUARD:noglob-split
@@ -1905,7 +2034,47 @@ run_one() {
   HOME_SCRATCH=yes
   local home_export
   home_export="$(printf 'export HOME=%q' "$row_home")"
+  # CA-GUARD:env-passthrough-row
+  # The named build/tool CACHE variables survive the scratch HOME; nothing
+  # else does.
+  local env_pass="${ENV_PASS_EXPORTS:-}"
   # CA-GUARD:end-home-scratch
+
+  # CA-GUARD:path-edit-preflight
+  # BEFORE the row runs: a literal absolute PATH component that exists on
+  # this box and is outside $SHIM/$FARM/the row's $HOME/this checkout is a
+  # named refusal, not a residual (Fable r4 check 3).
+  local _pe _pe_dir _pe_where _all_edits _has_edit=0
+  _all_edits="$DERIVED_PATHEDITS"
+  # ${cmd_edits:-}, not $cmd_edits: `cmd_edits` is declared INSIDE the
+  # variant-mask block, and the variant-mask transverse mutation deletes
+  # that whole block. The round-5 witness caught exactly that --
+  # `mutants/variant-mask/...: line 1961: cmd_edits: unbound variable` --
+  # which is why a count without a witness is not a gate.
+  if [ -n "${cmd_edits:-}" ]; then
+    _all_edits="${_all_edits}${cmd_edits}"$'\n'
+  fi
+  # A record is `<component>|<file>:<line>`; blank lines are not records.
+  # (`$'\n'` inside double quotes is NOT ANSI-C quoting, so the emptiness
+  # test is a case pattern, which is unquoted and therefore is.)
+  case "$_all_edits" in
+    *[![:space:]]*) _has_edit=1 ;;
+  esac
+  # CA-GUARD:path-edit-guard
+  if true && [ "$_has_edit" -eq 1 ]; then
+    if _pe="$(path_edit_offender "$repo" "$row_home" "$_all_edits")"; then
+      _pe_dir="${_pe%%|*}"
+      _pe_where="${_pe#*|}"
+      printf 'preflight: path-edit %s added to PATH at %s -- an absolute directory on this box, outside $SHIM, $FARM, the row scratch $HOME and the checkout %s; the row is refused before it runs\n' \
+        "$_pe_dir" "$_pe_where" "$repo" > "$log"
+      PATH_EDIT_SEEN="${PATH_EDIT_SEEN:+$PATH_EDIT_SEEN }$name:$_pe_dir"
+      LAST_VERDICT="FAIL|path-edit:$_pe_dir"
+      LAST_RC="-"
+      LAST_DUR="0"
+      return
+    fi
+  fi
+  # CA-GUARD:end-path-edit-preflight
 
   # CA-GUARD:not-found-variant
   # With the farm there is no stale eigenscript* on the row's PATH at all,
@@ -1931,7 +2100,7 @@ run_one() {
   path_export="$(printf 'export PATH=%q:%q' "$SHIM" "$FARM")"
   # CA-GUARD:end-path-farm-row
 
-  cd_cmd="$(printf '%s\nexport EIGS=eigenscript\nexport EIGENSCRIPT=eigenscript\n%s\n%s\n%s\n%s\ncd %q || exit 125\n%s\n' "$path_export" "$eigs_exports" "$strip_ca" "$home_export" "$nf_handler" "$repo" "$cmd")"
+  cd_cmd="$(printf '%s\nexport EIGS=eigenscript\nexport EIGENSCRIPT=eigenscript\n%s\n%s\n%s\n%s\n%s\ncd %q || exit 125\n%s\n' "$path_export" "$eigs_exports" "$strip_ca" "$home_export" "$env_pass" "$nf_handler" "$repo" "$cmd")"
 
   start="$(date +%s)"
   # CA-GUARD:block-pipefail
@@ -2176,6 +2345,9 @@ is_candidate_name() {
 # is outside PATH and is not masked.
 PATH_MASKED=""
 PATH_DROPPED=""
+PATH_EDIT_SEEN=""
+DERIVED_PATHEDITS=""
+DERIVED_PATHEXAMINED=""
 mask_path_variants() {
   local d b f
   local -a dirs=()
@@ -2239,10 +2411,24 @@ mask_path_variants() {
 # enumerated, so nothing from it is farmed and nothing from it is
 # reachable either -- fail closed, not fall through.
 PATH_FARM_N=0
+PATH_FARM_WANT=0
+# CA-GUARD:farm-fail-closed
+# Astra r4 check 7: a farm directory that cannot be WRITTEN swallowed every
+# link failure, the header read path_farm=0, and the row read PASS with the
+# whole inherited PATH effectively gone. Farm construction fails closed BY
+# NAME like scratch creation, and the count in the header is checked against
+# the enumeration's own witness.
+farm_die() {
+  say "consumer_acceptance: cannot build the PATH farm under ${FARM:-<unset>} ($1)"
+  RUN_RC=2
+  exit 2
+}
+# CA-GUARD:end-farm-fail-closed
 build_path_farm() {
-  local d
+  local d dabs f b q
   local -a dirs=()
   PATH_FARM_N=0
+  PATH_FARM_WANT=0
   [ -n "${WORK:-}" ] || scratch_die "path farm: run scratch is unset"
   FARM="$WORK/farm"
   mkdir -p "$FARM" || scratch_die "cannot create the PATH farm $FARM"
@@ -2256,22 +2442,99 @@ build_path_farm() {
   # shellcheck disable=SC2206
   dirs=($PATH)
   IFS="$oldifs"
-  [ "$glob_off" -eq 0 ] && set +f
   local -a keep=()
   for d in "${dirs[@]+"${dirs[@]}"}"; do
     [ -n "$d" ] || d="."
     case "$d" in "$SHIM"|"$FARM") continue ;; esac
     [ -d "$d" ] || continue
-    keep+=("$d")
+    # An ABSOLUTE original path is what the wrapper has to exec, so a
+    # relative PATH entry (`.`) is resolved here, once.
+    dabs="$(cd -P -- "$d" 2>/dev/null && pwd)" || continue
+    [ -n "$dabs" ] || continue
+    case "$dabs" in "$SHIM"|"$FARM") continue ;; esac
+    keep+=("$dabs")
   done
   if [ "${#keep[@]}" -gt 0 ]; then
-    find -L "${keep[@]}" -maxdepth 1 -type f -perm -u+x \
-      ! -name 'eigenscript*' -exec ln -s -t "$FARM" -- {} + 2>/dev/null || true
+    while IFS= read -r f || [ -n "$f" ]; do
+      [ -n "$f" ] || continue
+      b="${f##*/}"
+      [ -n "$b" ] || continue
+      # First occurrence wins, exactly as the inherited PATH resolves it.
+      [ -e "$FARM/$b" ] && continue
+      PATH_FARM_WANT=$((PATH_FARM_WANT + 1))
+      # CA-GUARD:farm-exec-wrapper
+      if true; then
+        # printf -v, not $(printf ...): a command substitution per entry is
+        # 2144 forks and 4.5 s of farm build on this box; -v is 0.57 s.
+        printf -v q '%q' "$f"
+        printf '#!/bin/sh\nexec %s "$@"\n' "$q" > "$FARM/$b" \
+          || farm_die "cannot write the exec wrapper $b"
+      else
+        # The round-4 symlink farm, kept only as the transverse mutation's
+        # target: it RELOCATES the tool and breaks a virtualenv.
+        ln -s -- "$f" "$FARM/$b" 2>/dev/null || true
+      fi
+    done <<< "$(find -L "${keep[@]}" -maxdepth 1 -type f -perm -u+x \
+                     ! -name 'eigenscript*' -print 2>/dev/null || true)"
   fi
-  PATH_FARM_N="$(find "$FARM" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l | tr -d ' ')"
+  [ "$glob_off" -eq 0 ] && set +f
+  if [ "$PATH_FARM_WANT" -gt 0 ]; then
+    find "$FARM" -maxdepth 1 -mindepth 1 -type f -exec chmod 755 {} + 2>/dev/null \
+      || farm_die "cannot make the exec wrappers executable"
+  fi
+  PATH_FARM_N="$(find "$FARM" -maxdepth 1 -mindepth 1 -type f -perm -u+x 2>/dev/null | wc -l | tr -d ' ')"
   PATH_FARM_N="${PATH_FARM_N:-0}"
+  # CA-GUARD:farm-witness
+  # The enumeration's own witness (mechanical-gates 120): the farm must hold
+  # at least as many runnable entries as the enumeration found names for.
+  # path_farm=0 with a non-empty inherited PATH is a BROKEN farm, not a
+  # quiet one.
+  if [ "$PATH_FARM_N" -lt "$PATH_FARM_WANT" ]; then
+    farm_die "path_farm=$PATH_FARM_N < enumerated $PATH_FARM_WANT executables"
+  fi
+  # CA-GUARD:end-farm-witness
 }
 # CA-GUARD:end-path-farm
+
+# CA-GUARD:env-passthrough
+# Fable r4 check 4b: the scratch HOME also drops every TOOL CACHE that
+# lives under the real home. Measured on eddy:
+#   HOME=<scratch> GOPROXY=off go list -m all -> "module lookup disabled"
+#   (real HOME: rc 0)
+# so an eddy row re-downloads its modules on every run and FAILS with no
+# network. The cache is not the developer's stale runtime -- it is the
+# consumer's declared dependency set -- so these names pass through when
+# the harness has them, and GOPATH/GOMODCACHE/GOCACHE are DERIVED from the
+# REAL home when it does not. Exactly this list, printed as
+# env_passthrough= in the header; anything else still sees the scratch HOME.
+ENV_PASS_NAMES="GOPATH GOMODCACHE GOCACHE GOFLAGS JAVA_HOME ELLE_JAR CARGO_HOME RUSTUP_HOME PIP_CACHE_DIR npm_config_cache"
+ENV_PASSTHROUGH=""
+ENV_PASS_EXPORTS=""
+REAL_HOME=""
+build_env_passthrough() {
+  local n v derived
+  ENV_PASSTHROUGH=""
+  ENV_PASS_EXPORTS=""
+  REAL_HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"
+  [ -n "$REAL_HOME" ] || REAL_HOME="${HOME:-}"
+  for n in $ENV_PASS_NAMES; do
+    v=""
+    eval 'v="${'"$n"':-}"'
+    derived=""
+    if [ -z "$v" ] && [ -n "$REAL_HOME" ]; then
+      case "$n" in
+        GOPATH)     v="$REAL_HOME/go"; derived=1 ;;
+        GOMODCACHE) v="$REAL_HOME/go/pkg/mod"; derived=1 ;;
+        GOCACHE)    v="$REAL_HOME/.cache/go-build"; derived=1 ;;
+      esac
+    fi
+    [ -n "$v" ] || continue
+    ENV_PASS_EXPORTS="${ENV_PASS_EXPORTS}$(printf 'export %s=%q\n' "$n" "$v")"$'\n'
+    ENV_PASSTHROUGH="${ENV_PASSTHROUGH:+$ENV_PASSTHROUGH }$n${derived:+(derived)}"
+  done
+  [ -n "$ENV_PASSTHROUGH" ] || ENV_PASSTHROUGH=none
+}
+# CA-GUARD:end-env-passthrough
 
 run_mode() {
   # CA-GUARD:not-crash
@@ -2451,6 +2714,7 @@ run_mode() {
   mask_path_variants
   # CA-GUARD:end-path-variant-sweep
   build_path_farm
+  build_env_passthrough
   # CA-GUARD:end-variant-mask
   derive_candidate_tree "$CAND_ABS" || true
   if [ -z "${CAND_TREE:-}" ] && [ -e "$ECO/EigenScript" ]; then
@@ -2491,6 +2755,7 @@ run_mode() {
   say "path_farm: ${PATH_FARM_N:-0} executables"
   say "path_dropped: ${PATH_DROPPED:-none}"
   say "home_scratch: yes"
+  say "env_passthrough: ${ENV_PASSTHROUGH:-none}"
   say "overlay_shimmed: ${OVERLAY_SHIMMED:-none}"
   say "sibling_binary_present: $SIBLING_BEFORE"
   if [ "$SIBLING_BEFORE" = yes ]; then
@@ -2743,9 +3008,28 @@ note_plant() {
   LAST_PLANT_REC="${2:-}"
   LAST_PLANT_RC="${3:-}"
   ST_RUNS=$((${ST_RUNS:-0} + 1))
-  if grep -q 'unbound variable' <<< "${1:-}"; then
-    ST_UNBOUND=$((${ST_UNBOUND:-0} + 1))
+  # CA-GUARD:unbound-witness
+  # A COUNT is not a witness (mechanical-gates 120): round 5 run 2 read
+  # `unbound=1 cap_hits=0` and there was nothing in the log to say WHICH
+  # invocation produced it. The offending line names the script by path,
+  # which is how a mutant under $st_root/mutants/<kind>/ is told apart
+  # from the production script.
+  local _ub
+  _ub="$(grep -m1 'unbound variable' <<< "${1:-}" || true)"
+  if [ -n "$_ub" ]; then
+    if [ "${ST_IN_MUTANT:-0}" = 1 ]; then
+      # A MUTANT is deliberately broken; its own diagnostics are not
+      # evidence about the production script (that is why transverse_one
+      # redirects its stderr capture too). Counted and PRINTED separately,
+      # never dropped.
+      ST_UNBOUND_MUTANT=$((${ST_UNBOUND_MUTANT:-0} + 1))
+      ST_UNBOUND_MUTANT_WITNESS="${ST_UNBOUND_MUTANT_WITNESS:-$_ub}"
+    else
+      ST_UNBOUND=$((${ST_UNBOUND:-0} + 1))
+      ST_UNBOUND_WITNESS="${ST_UNBOUND_WITNESS:-$_ub}"
+    fi
   fi
+  # CA-GUARD:end-unbound-witness
 }
 
 mutant_not_fires_kind() {
@@ -2951,8 +3235,15 @@ plant_prescan_int() {
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 os.execvp("bash", ["bash"] + sys.argv[1:])' "$sh" run "$stub" >/dev/null 2>&1 &
   pid=$!
+  # Wait for the CONDITION (the scan reached its pause), with a cap that
+  # exists only so a broken harness cannot hang the self-test. Round 5: the
+  # cap was 4 s, and the PATH farm added ~0.6 s of startup to every run
+  # (2144 exec wrappers) -- on a loaded 2-core box the scan had not reached
+  # the pause yet and the plant read SILENT for a reason that had nothing to
+  # do with the guard it tests. A duration is not a witness; the `ready`
+  # file is, so wait for it properly.
   waited=0
-  while [ ! -f "$ready" ] && [ "$waited" -lt 40 ]; do
+  while [ ! -f "$ready" ] && [ "$waited" -lt 300 ]; do
     sleep 0.1
     waited=$((waited + 1))
   done
@@ -2961,7 +3252,7 @@ os.execvp("bash", ["bash"] + sys.argv[1:])' "$sh" run "$stub" >/dev/null 2>&1 &
     wait "$pid" 2>/dev/null
     rm -f "$mark"
     note_plant "" "$rec" 98
-    LAST_PLANT_DETAIL="scan never reached pause (ready missing)"
+    LAST_PLANT_DETAIL="scan never reached pause (ready missing after ${waited}00 ms)"
     return 1
   fi
   sleep 0.2
@@ -3572,6 +3863,41 @@ import sys
 src, dest, kind = sys.argv[1], sys.argv[2], sys.argv[3]
 text = open(src).read()
 repls = {
+    "farm-exec-wrapper": (
+        '      # CA-GUARD:farm-exec-wrapper\n'
+        '      if true; then',
+        '      # CA-GUARD:farm-exec-wrapper\n'
+        '      if false; then',
+    ),
+    "farm-fail-closed": (
+        'farm_die() {\n'
+        '  say "consumer_acceptance: cannot build the PATH farm under ${FARM:-<unset>} ($1)"\n'
+        '  RUN_RC=2\n'
+        '  exit 2\n'
+        '}',
+        'farm_die() {\n'
+        '  : "fall open on $1"\n'
+        '  return 0\n'
+        '}',
+    ),
+    "path-edit-scan": (
+        '  # CA-GUARD:path-edit-guard\n'
+        '  if true && [ "$_has_edit" -eq 1 ]; then',
+        '  # CA-GUARD:path-edit-guard\n'
+        '  if false && [ "$_has_edit" -eq 1 ]; then',
+    ),
+    "drop-fixture-gate": (
+        '  # CA-GUARD:drop-fixture-gate\n'
+        '  if [ -z "${CA_ECO:-}" ] || [ ! -f "$CA_ECO/.ca_fixture" ]; then return 1; fi',
+        '  # CA-GUARD:drop-fixture-gate\n'
+        '  :',
+    ),
+    "env-passthrough": (
+        '  local env_pass="${ENV_PASS_EXPORTS:-}"\n'
+        '  # CA-GUARD:end-home-scratch',
+        '  local env_pass=""\n'
+        '  # CA-GUARD:end-home-scratch',
+    ),
     "path-farm": (
         '  path_export="$(printf \'export PATH=%q:%q\' "$SHIM" "$FARM")"',
         '  path_export="$(printf \'export PATH=%q:"$PATH"\' "$SHIM")"',
@@ -4621,15 +4947,30 @@ plant_home_scratch() {
 # PATH is not found at all -- a bare 127 the consumer swallows with
 # `|| true`. command_not_found_handle turns it into the same blocked|
 # record a 127-shim writes, so the row FAILs BY NAME.
+# Round 5 fix 3 (Fable r4 check 5): the fixture used the name
+# `eigenscript-jit`, which is ENVIRONMENT-DEPENDENT -- on a box with a
+# stale eigenscript-jit anywhere on the inherited PATH the 127-shim sweep
+# answers first, the handler is never reached, and the INTACT transverse
+# read `mutant=FIRES`: a RED self-test blaming a guard that is whole. The
+# name now carries the run token, so it exists NOWHERE by construction, and
+# the plant asserts that before planting. A decoy `eigenscript-jit` is
+# prepended to the harness's own PATH so the plant PROVES it no longer
+# depends on that name.
 plant_not_found_variant() {
-  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local sh="$1" eco="$2" stub="$3" rec="$4" nfname="$5" decoy="$6" decoy_log="$7"
   local out rc
-  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  if command -v "$nfname" >/dev/null 2>&1; then
+    LAST_PLANT_DETAIL="the token-carrying fixture name $nfname EXISTS on PATH ($(command -v "$nfname")) -- the plant cannot mean what it says"
+    return 1
+  fi
+  : > "$decoy_log"
+  out="$(PATH="$decoy:$PATH" CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
-  LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  LAST_PLANT_DETAIL="rc=$rc nfname=$nfname decoy_ran=$(wc -c < "$decoy_log" 2>/dev/null || echo 0) rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] \
-     && grep -q 'row|nf_user|v0.43.0|FAIL|undeclared-variant:eigenscript-jit|' "$rec" \
+     && grep -q "row|nf_user|v0.43.0|FAIL|undeclared-variant:$nfname|" "$rec" \
+     && [ ! -s "$decoy_log" ] \
      && exact_verdict_file "$rec" FAIL; then
     return 0
   fi
@@ -4661,6 +5002,165 @@ plant_scratch_fail_closed() {
      && grep -q '^consumer_acceptance: cannot create scratch under ' <<< "$out" \
      && [ "$before" = "$after" ] \
      && [ -z "$created" ]; then
+    return 0
+  fi
+  return 1
+}
+
+# --- round 5 -------------------------------------------------------------
+
+# Fix 1 (Astra r4, the blocking gap): the farm holds EXEC WRAPPERS, so a
+# tool runs AT ITS ORIGINAL LOCATION. A symlink farm moved a virtualenv's
+# python3 into $FARM, sys.prefix became /usr, and a dependency installed in
+# the selected virtualenv vanished -- the row FAILed after the candidate
+# call succeeded. The fixture is a real venv with one module in it.
+plant_farm_exec_wrapper() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" venv="$5" marker="$6"
+  local out rc want_prefix
+  want_prefix="$(cd -P -- "$venv" && pwd)"
+  : > "$marker"
+  out="$(PATH="$venv/bin:/usr/bin:/bin" CA_ECO="$eco" CA_TIMEOUT=20 CA_KILL_AFTER=1 \
+    CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc marker=$(tr '\n' ' ' < "$marker" 2>/dev/null) rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 0 ] \
+     && grep -q 'row|venv_user|v0.43.0|PASS|' "$rec" \
+     && grep -q '^venv dependency loaded$' "$marker" \
+     && grep -qxF "prefix=$want_prefix" "$marker"; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 1's stated RESIDUAL, pinned (Fable r4 p2): running a tool in place is
+# exactly what lets an inherited, farmed, SELF-LOCATING wrapper reach the
+# stale eigenscript beside it. This plant FIRES while that is still true.
+# The day an execve witness or a mount namespace closes it, the plant goes
+# red ON PURPOSE and the header sentence changes with it (mechanical-gates
+# 100: a pinned residual is a plant, not a sentence).
+plant_farm_wrapper_sibling() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" wrapbin="$5" stale_log="$6"
+  local out rc
+  : > "$stale_log"
+  out="$(PATH="$wrapbin:$PATH" CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 \
+    CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc stale=$(tr '\n' ' ' < "$stale_log" 2>/dev/null) rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  # FIRES == the residual still holds: the stale sibling RAN and the row is PASS.
+  if grep -q 'row|wrap_user|v0.43.0|PASS|' "$rec" \
+     && grep -q 'STALE-RAN' "$stale_log"; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 6 (Astra r4 check 7): a farm directory that cannot be written used to
+# swallow every failure -- path_farm=0, VERDICT: PASS, and the row ran with
+# no inherited tool at all. Now exit 2 BY NAME. The fixture wraps mktemp so
+# the run scratch comes back with a read-only farm/ already in it.
+plant_farm_fail_closed() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" inject="$5"
+  local out rc
+  rm -f "$rec"
+  out="$(PATH="$inject:$PATH" CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 \
+    CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc recV=$(grep -h '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')out=$(grep -m1 'cannot build the PATH farm' <<< "$out" || true)"
+  note_plant "$out" "$rec" "$rc"
+  # The farm is built after the record lock, so the record exists and says
+  # INCOMPLETE -- truthful, and never PASS. The named refusal is the plant.
+  if [ "$rc" -eq 2 ] \
+     && grep -q '^consumer_acceptance: cannot build the PATH farm under ' <<< "$out" \
+     && ! grep -q 'VERDICT: PASS' <<< "$out" \
+     && ! grep -q '^VERDICT: PASS' "$rec" 2>/dev/null \
+     && ! grep -q '^row|' "$rec" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 2 (Fable r4 check 3): a consumer PATH edit that adds an ABSOLUTE
+# directory existing on this box is refused BY NAME before the row runs.
+# Three rows in one fixture: an absolute scratch bin (FAIL by name), the
+# developer's REAL home by absolute path (FAIL by name -- this is the row
+# that reached eigenscript-full.stale 0.21.0 under PASS in round 4), and
+# the ordinary `$HOME/.local/bin` prepend, which is fine (scratch HOME).
+plant_path_edit_absolute() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" absbin="$5" stale_log="$6" realdir="$7"
+  local out rc
+  : > "$stale_log"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc stale=$(wc -c < "$stale_log" 2>/dev/null || echo 0) rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -qF "row|pe_absbin|v0.43.0|FAIL|path-edit:$absbin|" "$rec" \
+     && grep -qF "row|pe_realhome|v0.43.0|FAIL|path-edit:$realdir|" "$rec" \
+     && grep -q 'row|pe_home|v0.43.0|PASS|' "$rec" \
+     && grep -qF "log|pe_absbin|preflight: path-edit $absbin added to PATH at " "$rec" \
+     && [ ! -s "$stale_log" ]; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 2's stated RESIDUAL, pinned: a component the scanner cannot see
+# because the consumer COMPUTES it at run time still reaches. FIRES while
+# that holds.
+plant_path_edit_computed() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" stale_log="$5"
+  local out rc
+  : > "$stale_log"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc stale=$(tr '\n' ' ' < "$stale_log" 2>/dev/null) rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if grep -q 'row|pe_computed|v0.43.0|' "$rec" \
+     && ! grep -q 'row|pe_computed|v0.43.0|FAIL|path-edit' "$rec" \
+     && grep -q 'STALE-RAN' "$stale_log"; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 4 (Fable r4 check 4b): the scratch HOME must not drop the TOOL CACHES
+# a consumer's dependency set lives in. A farmed `go` in the row must name
+# the REAL module cache, not one under the row's scratch HOME.
+plant_env_passthrough_go() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" marker="$5" gobin="$6"
+  local out rc got want
+  want="${GOMODCACHE:-$REAL_HOME/go/pkg/mod}"
+  : > "$marker"
+  out="$(PATH="$gobin:$PATH" CA_ECO="$eco" CA_TIMEOUT=30 CA_KILL_AFTER=1 \
+    CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  got="$(head -1 "$marker" 2>/dev/null || true)"
+  LAST_PLANT_DETAIL="rc=$rc go_env_GOMODCACHE=$got want=$want rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 0 ] \
+     && grep -q 'row|go_user|v0.43.0|PASS|' "$rec" \
+     && [ "$got" = "$want" ] \
+     && grep -q '^env_passthrough=.*GOMODCACHE' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 5 (Fable r4 check 6, Astra r4 check 6): CA_DROP_CMD is a fixture-gated
+# self-test lever, never the trust root. Without $CA_ECO/.ca_fixture it is
+# IGNORED and the harness names the tool it chose itself.
+plant_drop_trust_root() {
+  local sh="$1" fixture_eco="$2"
+  local ungated gated own
+  own="$("$sh" --drop-tool 2>/dev/null || true)"
+  ungated="$(CA_DROP_CMD=/bin/echo-not-a-trust-root "$sh" --drop-tool 2>/dev/null || true)"
+  gated="$(CA_ECO="$fixture_eco" CA_DROP_CMD=/bin/echo-not-a-trust-root "$sh" --drop-tool 2>/dev/null || true)"
+  LAST_PLANT_DETAIL="own=$own ungated=$ungated gated=$gated"
+  if [ "$ungated" = "$own" ] \
+     && [ "$ungated" != "drop=/bin/echo-not-a-trust-root" ] \
+     && [ "$gated" = "drop=/bin/echo-not-a-trust-root" ]; then
     return 0
   fi
   return 1
@@ -4843,7 +5343,7 @@ plant_plant_total() {
 # FAILs by name: gutting both ST_SKIP increments left `plants=67 skipped=0
 # SELF-TEST: PASS` (Fable r2), and a deleted plant is the same shape. Bump
 # this in the same commit as any plant change.
-ST_DECLARED_PLANTS=86
+ST_DECLARED_PLANTS=93
 # This run's scratch token: every ca-* name the self-test and its children
 # create in the OUTER tmp carries it, so the hygiene scan can tell THIS
 # run's leftovers from a concurrent tenant's (both critics, r3).
@@ -4867,10 +5367,49 @@ plant_total_verdict() {
 # in. Returns 0 having re-run itself as nobody (the caller exits with that
 # status), or 1 when no drop is possible and the caller must SKIP the two
 # plants by name.
+# CA-GUARD:drop-trust-root
+# THE TRUST ROOT of the dropped self-test is the drop TOOL THIS SCRIPT
+# CHOOSES -- runuser, then setpriv -- never a command handed in from the
+# environment. CA_DROP_CMD exists only so the fixture-gated self-test can
+# drive the drop path on a non-root box, and it is honoured ONLY when
+# $CA_ECO/.ca_fixture exists. Fable r4 check 6 and Astra r4 check 6 both
+# built a CA_DROP_CMD wrapper that produced the expected first line and ran
+# a SUBSTITUTE verdict producer; a read-back of a LINE can never
+# authenticate a PROCESS, so the claim is narrowed to what is true: the
+# sha read-back catches a copy that was rewritten or never announced
+# itself, and the drop tool is what makes the process trustworthy.
+# Prints the chosen drop tool; empty when none applies.
+ca_drop_override() {
+  [ -n "${CA_DROP_CMD:-}" ] || return 1
+  # CA-GUARD:drop-fixture-gate
+  if [ -z "${CA_ECO:-}" ] || [ ! -f "$CA_ECO/.ca_fixture" ]; then return 1; fi
+  printf '%s' "$CA_DROP_CMD"
+  return 0
+}
+drop_tool() {
+  local d
+  if d="$(ca_drop_override)"; then
+    printf '%s' "$d"
+    return 0
+  fi
+  if getent passwd nobody >/dev/null 2>&1; then
+    if command -v runuser >/dev/null 2>&1; then
+      printf '%s' "runuser -u nobody --"
+      return 0
+    elif command -v setpriv >/dev/null 2>&1; then
+      printf '%s' "setpriv --reuid=nobody --regid=nogroup --clear-groups"
+      return 0
+    fi
+  fi
+  printf '%s' none
+  return 0
+}
+# CA-GUARD:end-drop-trust-root
+
 selftest_drop_privileges() {
   local sh="$1" drop="" root="" rc=0 run_sh="" sha_src="" sha_copy=""
-  if [ -n "${CA_DROP_CMD:-}" ]; then
-    drop="$CA_DROP_CMD"
+  if drop="$(ca_drop_override)"; then
+    :
   elif getent passwd nobody >/dev/null 2>&1; then
     if command -v runuser >/dev/null 2>&1; then
       drop="runuser -u nobody --"
@@ -4934,6 +5473,7 @@ selftest_drop_privileges() {
   # running as root could do it whatever the mode says.
   find "$root/repo" -type d -exec chmod a-w {} + 2>/dev/null || true
   # CA-GUARD:end-drop-freeze-tree
+  say "self-test: trust root = the drop tool this script chooses (runuser, then setpriv); CA_DROP_CMD is a fixture-gated self-test lever, never a trust root, and a read-back of a LINE cannot authenticate a PROCESS"
   say "self-test: uid $(id -u) -- re-running the WHOLE self-test unprivileged via: $drop"
   say "self-test: drop root $root, script sha256=$sha_copy (byte-identical to $sh)"
   local inner_out="$root/inner.out"
@@ -4962,11 +5502,17 @@ selftest_drop_privileges() {
 
 selftest() {
   local st_root rec out rc pid outer_tmp
+  # REAL_HOME / ENV_PASS_* are wanted by the round-5 fixtures as well.
+  build_env_passthrough
   ST_FAIL=0
   ST_SKIP=0
   ST_TV_SKIP=0
   ST_RUNS=0
   ST_UNBOUND=0
+  ST_UNBOUND_WITNESS=""
+  ST_UNBOUND_MUTANT=0
+  ST_UNBOUND_MUTANT_WITNESS=""
+  ST_IN_MUTANT=0
   ST_PLANTS=0
   ST_DROP_WHY=""
   ST_DROP_EXIT=0
@@ -4981,8 +5527,16 @@ selftest() {
   fi
   # CA-GUARD:end-drop-sha-announce
   # CA-GUARD:root-drop
+  # A CA_DROP_CMD that is NOT fixture-gated is refused loudly rather than
+  # silently ignored: whoever set it meant to exercise the drop path, and a
+  # seven-minute self-test that quietly did not is worse than a refusal.
+  if [ -z "${CA_ST_DROPPED:-}" ] && [ -n "${CA_DROP_CMD:-}" ] && ! ca_drop_override >/dev/null; then
+    say "self-test: CA_DROP_CMD is IGNORED without \$CA_ECO/.ca_fixture -- the trust root is the drop tool this script chooses: drop=$(drop_tool)"
+    say "SELF-TEST: FAIL -- CA_DROP_CMD set without a fixture gate"
+    exit 2
+  fi
   if [ -z "${CA_ST_DROPPED:-}" ] \
-     && { [ "$(id -u)" = 0 ] || { [ "${CA_FAULT:-}" = pretend_root ] && [ -n "${CA_DROP_CMD:-}" ]; }; }; then
+     && { [ "$(id -u)" = 0 ] || { [ "${CA_FAULT:-}" = pretend_root ] && ca_drop_override >/dev/null; }; }; then
     if selftest_drop_privileges "$self_sh"; then
       exit "$ST_DROP_EXIT"
     fi
@@ -6131,17 +6685,180 @@ EOS
   # --- round 4: a computed name nothing covers is NOT FOUND, and that is
   # a named row failure, not a 127 the consumer can swallow.
   local nf_eco="$st_root/nf-eco"
-  mkdir -p "$nf_eco"
+  # The fixture name carries the RUN TOKEN, so no box can already have one.
+  local nf_tok nf_name nf_decoy nf_decoy_log
+  nf_tok="$(printf '%s' "$ST_TOKEN" | tr -cd 'a-z0-9')"
+  [ -n "$nf_tok" ] || nf_tok="x0"
+  nf_name="eigenscript-nf-$nf_tok"
+  nf_decoy="$st_root/nf-decoy"
+  nf_decoy_log="$st_root/stale-nf-decoy.log"
+  mkdir -p "$nf_eco" "$nf_decoy"
   printf 'fixture\n' > "$nf_eco/.ca_fixture"
   mk_consumer_block "$nf_eco" nf_user \
-    'V=jit' \
+    "V=nf-$nf_tok" \
     'eigenscript-$V work.eigs || true' \
     'eigenscript work.eigs'
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$nf_decoy_log\"" 'exit 0' \
+    > "$nf_decoy/eigenscript-jit"
+  chmod +x "$nf_decoy/eigenscript-jit"
   rec="$st_root/nf.record"
-  if plant_not_found_variant "$sh" "$nf_eco" "$st_root/stub-ok" "$rec"; then
-    plant_line "not-found-variant" 0 "an uncovered computed name that resolves NOWHERE is FAIL|undeclared-variant:eigenscript-jit, not a swallowed 127"
+  if plant_not_found_variant "$sh" "$nf_eco" "$st_root/stub-ok" "$rec" "$nf_name" "$nf_decoy" "$nf_decoy_log"; then
+    plant_line "not-found-variant" 0 "an uncovered computed name that resolves NOWHERE is FAIL|undeclared-variant:$nf_name, not a swallowed 127 -- with a decoy eigenscript-jit prepended to the harness PATH, which never ran"
   else
     plant_line "not-found-variant" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 5 fix 1: the farm holds EXEC WRAPPERS, so a tool runs AT ITS
+  # ORIGINAL LOCATION. Astra r4: relocating a virtualenv's python3 into the
+  # farm moved sys.prefix to /usr and its dependency vanished.
+  local venv_eco="$st_root/venv-eco" venv_dir="$st_root/venv"
+  local venv_marker="$st_root/venv.out" venv_site=""
+  mkdir -p "$venv_eco"
+  printf 'fixture\n' > "$venv_eco/.ca_fixture"
+  if python3 -m venv --without-pip "$venv_dir" >/dev/null 2>&1 \
+     && [ -x "$venv_dir/bin/python3" ] \
+     && venv_site="$("$venv_dir/bin/python3" -c 'import sysconfig; print(sysconfig.get_path("purelib"))' 2>/dev/null)" \
+     && [ -d "$venv_site" ]; then
+    printf 'VALUE = "venv dependency loaded"\n' > "$venv_site/critic_dependency.py"
+    mk_consumer_block "$venv_eco" venv_user \
+      "python3 -c 'import sys,critic_dependency; print(critic_dependency.VALUE); print(\"prefix=\"+sys.prefix)' > $venv_marker" \
+      'eigenscript work.eigs'
+    rec="$st_root/venv.record"
+    if plant_farm_exec_wrapper "$sh" "$venv_eco" "$st_root/stub-ok" "$rec" "$venv_dir" "$venv_marker"; then
+      plant_line "farm-exec-wrapper" 0 "the row's python3 is the SELECTED virtualenv's: 'venv dependency loaded' and sys.prefix=$venv_dir INSIDE the harness, row PASS"
+    else
+      plant_line "farm-exec-wrapper" 1 "$LAST_PLANT_DETAIL"
+    fi
+  else
+    say "plant farm-exec-wrapper: SKIP -- python3 -m venv --without-pip is unavailable here"
+    ST_SKIP=$((ST_SKIP + 1))
+  fi
+
+  # --- round 5 fix 1, the RESIDUAL it buys, PINNED (Fable r4 p2): a farmed
+  # inherited wrapper that resolves its OWN location execs the stale
+  # eigenscript beside it. FIRES while that holds; red on purpose the day
+  # an execve witness or a mount namespace closes it.
+  local wrap_eco="$st_root/wrap-eco" wrapbin="$st_root/wrapbin"
+  local stale_wrap="$st_root/stale-wrap.log"
+  mkdir -p "$wrap_eco" "$wrapbin"
+  printf 'fixture\n' > "$wrap_eco/.ca_fixture"
+  printf '%s\n' '#!/bin/sh' "echo \"STALE-RAN \$0 \$*\" >> \"$stale_wrap\"" 'exit 0' \
+    > "$wrapbin/eigenscript"
+  chmod +x "$wrapbin/eigenscript"
+  printf '%s\n' '#!/bin/sh' 'exec "$(dirname "$(readlink -f "$0")")/eigenscript" "$@"' \
+    > "$wrapbin/run-eigs-real"
+  chmod +x "$wrapbin/run-eigs-real"
+  mk_consumer_block "$wrap_eco" wrap_user \
+    'eigenscript work.eigs' \
+    'run-eigs-real work.eigs'
+  rec="$st_root/wrap.record"
+  if plant_farm_wrapper_sibling "$sh" "$wrap_eco" "$st_root/stub-ok" "$rec" "$wrapbin" "$stale_wrap"; then
+    plant_line "farm-wrapper-sibling" 0 "RESIDUAL PINNED: a farmed self-locating wrapper still execs the stale eigenscript beside it and the row reads PASS -- the price of running tools in place; closures (LD_PRELOAD execve witness, mount namespace) are deferred and named in the header"
+  else
+    plant_line "farm-wrapper-sibling" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 5 fix 6 (Astra r4 check 7): a farm that cannot be written is
+  # exit 2 BY NAME, not path_farm=0 under VERDICT: PASS.
+  local ffc_inject="$st_root/ffc-inject"
+  mkdir -p "$ffc_inject"
+  {
+    printf '%s\n' '#!/bin/bash'
+    printf '%s\n' 'p=$(/usr/bin/mktemp "$@") || exit $?'
+    printf '%s\n' 'case "$p" in */ca-run.*) /usr/bin/mkdir "$p/farm" 2>/dev/null && /usr/bin/chmod 555 "$p/farm";; esac'
+    printf '%s\n' 'printf "%s\n" "$p"'
+  } > "$ffc_inject/mktemp"
+  chmod +x "$ffc_inject/mktemp"
+  rec="$st_root/ffc.record"
+  if plant_farm_fail_closed "$sh" "$good_eco" "$st_root/stub-ok" "$rec" "$ffc_inject"; then
+    plant_line "farm-fail-closed" 0 "a read-only farm directory is exit 2 naming the farm, and the record carries no VERDICT: PASS and no row at all"
+  else
+    plant_line "farm-fail-closed" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 5 fix 2 (Fable r4 check 3): a consumer PATH edit that adds an
+  # absolute directory existing on this box is FAIL BY NAME before the row.
+  local pe_eco="$st_root/pe-eco" pe_absbin="$st_root/pe-absbin"
+  local stale_pe="$st_root/stale-pe.log" pe_real=""
+  mkdir -p "$pe_eco" "$pe_absbin"
+  printf 'fixture\n' > "$pe_eco/.ca_fixture"
+  printf '%s\n' '#!/bin/sh' "echo \"STALE-RAN \$0 \$*\" >> \"$stale_pe\"" 'exit 0' \
+    > "$pe_absbin/eigenscript"
+  chmod +x "$pe_absbin/eigenscript"
+  # The exact shape Fable measured: the developer's REAL ~/.local/bin by
+  # absolute path. Under a dropped self-test that home does not exist, so
+  # fall back to a directory that always does -- the CLAIM is "an absolute
+  # directory on this box outside the row's scratch", not "$HOME".
+  pe_real="${REAL_HOME:-$HOME}/.local/bin"
+  [ -d "$pe_real" ] || pe_real="/usr/bin"
+  mk_consumer_block "$pe_eco" pe_absbin \
+    "export PATH=$pe_absbin:\$PATH" \
+    'eigenscript work.eigs'
+  mk_consumer_block "$pe_eco" pe_realhome \
+    "export PATH=$pe_real:\$PATH" \
+    'eigenscript work.eigs'
+  mk_consumer_block "$pe_eco" pe_home \
+    'export PATH="$HOME/.local/bin:$PATH"' \
+    'eigenscript work.eigs'
+  rec="$st_root/pe.record"
+  if plant_path_edit_absolute "$sh" "$pe_eco" "$st_root/stub-ok" "$rec" "$pe_absbin" "$stale_pe" "$pe_real"; then
+    plant_line "path-edit-absolute" 0 "pe_absbin and pe_realhome are FAIL|path-edit:<dir> by name with a log| preflight line, the stale binary never ran, and the ordinary \$HOME/.local/bin prepend still PASSes"
+  else
+    plant_line "path-edit-absolute" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 5 fix 2, the RESIDUAL it leaves, PINNED: a component the
+  # scanner cannot see because the consumer computes it at run time.
+  local pec_eco="$st_root/pec-eco" stale_pec="$st_root/stale-pec.log"
+  local pec_bin="$st_root/pec-bin"
+  mkdir -p "$pec_eco" "$pec_bin"
+  printf 'fixture\n' > "$pec_eco/.ca_fixture"
+  printf '%s\n' '#!/bin/sh' "echo \"STALE-RAN \$0 \$*\" >> \"$stale_pec\"" 'exit 0' \
+    > "$pec_bin/eigenscript"
+  chmod +x "$pec_bin/eigenscript"
+  mk_consumer_block "$pec_eco" pe_computed \
+    'eigenscript work.eigs' \
+    "D=$pec_bin" \
+    'export PATH="$D:$PATH"' \
+    'eigenscript work.eigs'
+  rec="$st_root/pec.record"
+  if plant_path_edit_computed "$sh" "$pec_eco" "$st_root/stub-ok" "$rec" "$stale_pec"; then
+    plant_line "path-edit-computed" 0 "RESIDUAL PINNED: PATH=\"\$D:\$PATH\" is not a literal, the scanner cannot see it, and the stale binary is reached -- the day the scanner resolves runtime values this plant goes red on purpose"
+  else
+    plant_line "path-edit-computed" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 5 fix 4 (Fable r4 check 4b): the scratch HOME must not drop
+  # the tool CACHES. A farmed `go` in the row names the REAL module cache.
+  local go_eco="$st_root/go-eco" go_marker="$st_root/go.out" go_bin=""
+  mkdir -p "$go_eco"
+  printf 'fixture\n' > "$go_eco/.ca_fixture"
+  if command -v go >/dev/null 2>&1; then
+    go_bin="$(dirname "$(command -v go)")"
+  elif [ -x "${REAL_HOME:-$HOME}/go-sdk/go/bin/go" ]; then
+    go_bin="${REAL_HOME:-$HOME}/go-sdk/go/bin"
+  fi
+  if [ -n "$go_bin" ]; then
+    mk_consumer_block "$go_eco" go_user \
+      "go env GOMODCACHE > $go_marker" \
+      'eigenscript work.eigs'
+    rec="$st_root/go.record"
+    if plant_env_passthrough_go "$sh" "$go_eco" "$st_root/stub-ok" "$rec" "$go_marker" "$go_bin"; then
+      plant_line "env-passthrough-go" 0 "a farmed go inside the row prints the REAL module cache, not one under the scratch HOME, and env_passthrough= names it"
+    else
+      plant_line "env-passthrough-go" 1 "$LAST_PLANT_DETAIL"
+    fi
+  else
+    say "plant env-passthrough-go: SKIP -- no go on PATH and no ~/go-sdk/go/bin/go"
+    ST_SKIP=$((ST_SKIP + 1))
+  fi
+
+  # --- round 5 fix 5 (Fable r4 check 6, Astra r4 check 6): the trust root
+  # of the dropped self-test is the drop TOOL the harness chooses.
+  if plant_drop_trust_root "$sh" "$nf_eco"; then
+    plant_line "drop-trust-root" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "drop-trust-root" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- round 4 fix 2: an unusable $TMPDIR is a FAIL-CLOSED by name.
@@ -6298,7 +7015,12 @@ EOS
       unbound-capture)  plant_unbound_capture "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       path-farm)        plant_path_farm "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root/stale-farm.log" "$st_root/farm-cwd" ;;
       home-scratch)     plant_home_scratch "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root/stale-home.log" "$st_root/fake-home" ;;
-      not-found-variant) plant_not_found_variant "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      not-found-variant) plant_not_found_variant "$script" "$eco" "$st_root/stub-ok" "$rec" "$nf_name" "$nf_decoy" "$nf_decoy_log" ;;
+      farm-exec-wrapper) plant_farm_exec_wrapper "$script" "$eco" "$st_root/stub-ok" "$rec" "$venv_dir" "$venv_marker" ;;
+      farm-fail-closed)  plant_farm_fail_closed "$script" "$eco" "$st_root/stub-ok" "$rec" "$ffc_inject" ;;
+      path-edit-absolute) plant_path_edit_absolute "$script" "$eco" "$st_root/stub-ok" "$rec" "$pe_absbin" "$stale_pe" "$pe_real" ;;
+      env-passthrough-go) plant_env_passthrough_go "$script" "$eco" "$st_root/stub-ok" "$rec" "$go_marker" "$go_bin" ;;
+      drop-trust-root)   plant_drop_trust_root "$script" "$eco" ;;
       scratch-fail-closed) plant_scratch_fail_closed "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root" ;;
       overlay-variant)  plant_overlay_variant "$script" "$eco" "$extra" "$rec" "$st_root/stale-twin.log" ;;
       drop-sha)         plant_drop_sha "$script" "$st_root/dropsha-t" ;;
@@ -6316,9 +7038,16 @@ EOS
     rec_i="$st_root/${rec_prefix}-intact.record"
     rec_m="$st_root/${rec_prefix}-mutant.record"
     rm -f "$rec_i" "$rec_m"
-    local intact=SILENT mutant_st=BROKEN intact_rc=0
+    local intact=SILENT mutant_st=BROKEN intact_rc=0 intact_detail=""
     run_named_plant "$plant" "$sh" "$eco" "$rec_i" "$extra"
     intact_rc=$?
+    # CA-GUARD:transverse-intact-witness
+    # An intact arm that does NOT fire is a red row the reader cannot act
+    # on unless it says WHY (round 5: `intact=SILENT` on scratch-fail-closed
+    # appeared in 1 run of 3 and named nothing). Capture the plant's own
+    # detail BEFORE the mutant run overwrites it.
+    intact_detail="${LAST_PLANT_DETAIL:-none}"
+    # CA-GUARD:end-transverse-intact-witness
     if [ "$intact_rc" -eq 0 ]; then
       intact=FIRES
     elif [ "$intact_rc" -eq 3 ]; then
@@ -6331,7 +7060,7 @@ EOS
       intact=SILENT
     fi
     if ! prep_mutant "$md" "$kind"; then
-      say "transverse $kind / $plant: intact=$intact mutant=BROKEN -- mutation did not land"
+      say "transverse $kind / $plant: intact=$intact mutant=BROKEN -- mutation did not land; intact_detail=$intact_detail"
       ST_FAIL=1
       return
     fi
@@ -6350,22 +7079,24 @@ EOS
       ST_FAIL=1
       return
     fi
+    ST_IN_MUTANT=1
     if run_named_plant "$plant" "$mutant" "$eco" "$rec_m" "$extra"; then
       mutant_st=FIRES
     else
       mutant_st="$(mutant_not_fires_kind)"
     fi
+    ST_IN_MUTANT=0
     export CA_STDERR_CAP="$prev_cap"
     # Success / side-effect plants: gutting the guard makes the plant
     # condition fail, but the mutant often does not print VERDICT: PASS
     # (UNEXERCISED, FAIL after a refused append, etc.). The transverse
     # is that the plant no longer FIRE.
     case "$plant" in
-      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy)
+      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy|farm-exec-wrapper|farm-fail-closed|path-edit-absolute|drop-trust-root)
         if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ]; then
           say "transverse $kind / $plant: intact=FIRES mutant=$mutant_st  OK"
         else
-          say "transverse $kind / $plant: intact=$intact mutant=$mutant_st  FAIL (want intact FIRES, mutant not FIRES)"
+          say "transverse $kind / $plant: intact=$intact mutant=$mutant_st  FAIL (want intact FIRES, mutant not FIRES) intact_detail=$intact_detail"
           ST_FAIL=1
         fi
         return
@@ -6377,7 +7108,7 @@ EOS
         if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ]; then
           say "transverse $kind / $plant: intact=FIRES mutant=SILENT  OK"
         else
-          say "transverse $kind / $plant: intact=$intact mutant=$mutant_st  FAIL (want intact FIRES, mutant SILENT)"
+          say "transverse $kind / $plant: intact=$intact mutant=$mutant_st  FAIL (want intact FIRES, mutant SILENT) intact_detail=$intact_detail"
           ST_FAIL=1
         fi
         return
@@ -6403,7 +7134,7 @@ EOS
     if [ "$intact" = FIRES ] && [ "$mutant_st" = SILENT ]; then
       say "transverse $kind / $plant: intact=FIRES mutant=SILENT  OK"
     else
-      say "transverse $kind / $plant: intact=$intact mutant=$mutant_st  FAIL (want intact FIRES, mutant SILENT)"
+      say "transverse $kind / $plant: intact=$intact mutant=$mutant_st  FAIL (want intact FIRES, mutant SILENT) intact_detail=$intact_detail"
       ST_FAIL=1
     fi
   }
@@ -6461,6 +7192,22 @@ EOS
   transverse_one overlay-variant-shim    overlay-variant  "$twin_eco" t-twin "$twin_tree/src/eigenscript"
   transverse_one drop-sha-readback       drop-sha         "$good_eco" t-dsha
   transverse_one outer-tmp-token         outer-tmp-decoy  "$good_eco" t-otd
+  # --- round 5
+  if [ -d "$venv_dir/bin" ]; then
+    transverse_one farm-exec-wrapper     farm-exec-wrapper "$venv_eco" t-few
+  else
+    say "transverse farm-exec-wrapper / farm-exec-wrapper: SKIP -- no venv fixture"
+    ST_TV_SKIP=$((ST_TV_SKIP + 1))
+  fi
+  transverse_one farm-fail-closed        farm-fail-closed "$good_eco" t-ffc
+  transverse_one path-edit-scan          path-edit-absolute "$pe_eco" t-pea
+  transverse_one drop-fixture-gate       drop-trust-root  "$nf_eco"   t-dtr
+  if [ -n "$go_bin" ]; then
+    transverse_one env-passthrough       env-passthrough-go "$go_eco" t-epg
+  else
+    say "transverse env-passthrough / env-passthrough-go: SKIP -- no go"
+    ST_TV_SKIP=$((ST_TV_SKIP + 1))
+  fi
 
   # --- scratch hygiene: the self-test writes nothing under the OUTER tmp
   # except its own root. Previous rounds left ca-run.* and ca-st*.{time,txt}
@@ -6492,9 +7239,9 @@ EOS
   cap_unbound="$(grep -c 'unbound variable' "$ST_CAP" 2>/dev/null || true)"
   cap_unbound="${cap_unbound:-0}"
   if [ "${ST_RUNS:-0}" -gt 0 ] && [ "${ST_UNBOUND:-0}" -eq 0 ] && [ "$cap_unbound" -eq 0 ]; then
-    plant_line "no-unbound-variable" 0 "examined=$ST_RUNS unbound=0 capture=$ST_CAP cap_hits=0"
+    plant_line "no-unbound-variable" 0 "examined=$ST_RUNS unbound=0 capture=$ST_CAP cap_hits=0 mutant_unbound=${ST_UNBOUND_MUTANT:-0}${ST_UNBOUND_MUTANT_WITNESS:+ (gutted-mutant diagnostic, not the production script: $ST_UNBOUND_MUTANT_WITNESS)}"
   else
-    plant_line "no-unbound-variable" 1 "examined=${ST_RUNS:-0} unbound=${ST_UNBOUND:-0} cap_hits=$cap_unbound $(grep -m1 'unbound variable' "$ST_CAP" 2>/dev/null || true)"
+    plant_line "no-unbound-variable" 1 "examined=${ST_RUNS:-0} unbound=${ST_UNBOUND:-0} cap_hits=$cap_unbound witness=${ST_UNBOUND_WITNESS:-none} cap=$(grep -m1 'unbound variable' "$ST_CAP" 2>/dev/null || true)"
   fi
 
   # CA-GUARD:plant-total-check
@@ -6530,6 +7277,12 @@ case "${1:-plan}" in
     # Self-test probe for CA-GUARD:drop-sha-readback. Pure: one word out.
     shift
     printf '%s\n' "$(drop_sha_verdict "${1:-}" "${2:-}")" ;;
+  --drop-tool)
+    # Self-test probe for CA-GUARD:drop-trust-root. Pure: one line out,
+    # naming the drop tool THIS SCRIPT would use. CA_DROP_CMD appears here
+    # only under $CA_ECO/.ca_fixture; otherwise it is IGNORED and the
+    # harness-chosen tool is named.
+    printf 'drop=%s\n' "$(drop_tool)" ;;
   --outer-tmp-strays)
     # Self-test probe for CA-GUARD:outer-tmp-token. <dir> <token> <keep>.
     shift

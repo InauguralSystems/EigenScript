@@ -38,11 +38,23 @@ Prose, comments, JSON, YAML values other than runCmd, URLs and any token
 containing `/` are NOT invocations. Every rejected occurrence is reported so
 the choice is visible rather than silent.
 
+The same scan also extracts every PATH EDIT (#1213 round 5, Fable r4
+check 3): `PATH=`, `export PATH=`, `PATH+=` and an append to `$GITHUB_PATH`,
+in shell text, Makefile recipe lines and a workflow runCmd. Each added
+component is reported RAW -- resolving it (absolute? on this box? inside the
+row's own scratch?) is the harness's job, which is the only place that knows
+$SHIM/$FARM/$HOME. `$PATH` / `${PATH}` itself is not an added component.
+A PATH edit the scanner cannot see -- one COMPUTED at runtime
+(`PATH="$(cat dir.txt):$PATH"`) or made through a non-shell API
+(`os.environ["PATH"] = ...`) -- is the stated residual.
+
 Output, one record per line, on stdout:
 
     variant|<name>|<relpath>:<line>      an invocation position
     excluded|<name>|<relpath>:<line>     an occurrence that is not one
+    pathedit|<component>|<relpath>:<line>  a directory added to PATH
     examined|<files>|<occurrences>       the enumeration's own witness
+    pathexamined|<files>|<edits>         the PATH scan's own witness
 
 `variant` records are emitted in first-seen order, deduplicated by name.
 `excluded` records are deduplicated by name and only for names that never
@@ -289,6 +301,175 @@ def scan_shell(text, hits, path, line_offset=0):
             cmdpos = False
 
 
+PATH_ASSIGN_RE = re.compile(
+    r"(?:^|[;&|(]|\bexport\s+|\bdeclare\s+-x\s+|\btypeset\s+-x\s+)"
+    r"\s*PATH\s*(\+?=)"
+)
+GITHUB_PATH_RE = re.compile(r">>\s*[\"']?\$\{?GITHUB_PATH\}?[\"']?")
+
+
+def _value_after(line, start):
+    """The single shell WORD beginning at `start` (quotes respected)."""
+    i = start
+    n = len(line)
+    out = ""
+    while i < n and line[i] in " \t":
+        i += 1
+    while i < n:
+        c = line[i]
+        if c in " \t;&|<>)":
+            break
+        if c in "'\"":
+            q = c
+            j = i + 1
+            while j < n:
+                if line[j] == "\\" and q == '"' and j + 1 < n:
+                    j += 2
+                    continue
+                if line[j] == q:
+                    break
+                j += 1
+            out += line[i:min(j + 1, n)]
+            i = j + 1
+            continue
+        if c == "\\" and i + 1 < n:
+            out += line[i:i + 2]
+            i += 2
+            continue
+        if c == "$" and i + 1 < n and line[i + 1] == "(":
+            depth = 1
+            j = i + 2
+            while j < n and depth:
+                if line[j] == "(":
+                    depth += 1
+                elif line[j] == ")":
+                    depth -= 1
+                j += 1
+            out += line[i:j]
+            i = j
+            continue
+        out += c
+        i += 1
+    return out
+
+
+def _components(value):
+    """Split a PATH value on `:` OUTSIDE quotes and command substitutions."""
+    parts = []
+    cur = ""
+    i = 0
+    n = len(value)
+    quote = None
+    depth = 0
+    while i < n:
+        c = value[i]
+        if quote:
+            cur += c
+            if c == "\\" and quote == '"' and i + 1 < n:
+                cur += value[i + 1]
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if c in "'\"":
+            quote = c
+            cur += c
+            i += 1
+            continue
+        if c == "$" and i + 1 < n and value[i + 1] == "(":
+            depth += 1
+            cur += value[i:i + 2]
+            i += 2
+            continue
+        if depth and c == ")":
+            depth -= 1
+            cur += c
+            i += 1
+            continue
+        if c == ":" and depth == 0:
+            parts.append(cur)
+            cur = ""
+            i += 1
+            continue
+        cur += c
+        i += 1
+    parts.append(cur)
+    return parts
+
+
+def _record_components(value, edits, path, lineno):
+    # Unquote FIRST: `export PATH="/a/two:$PATH"` is one shell WORD, and its
+    # components are only visible after the quotes come off.
+    for raw in _components(_unquote(value)):
+        comp = raw.strip()
+        if not comp:
+            continue
+        if comp in ("$PATH", "${PATH}"):
+            continue
+        if "|" in comp or "\n" in comp:
+            continue
+        edits.append((comp, path, lineno))
+
+
+def scan_path_edits(text, edits, path, line_offset=0):
+    """Record (component, path, lineno) for every directory ADDED to PATH.
+
+    Fable r4 check 3: `export PATH=/home/jon/.local/bin:$PATH` inside a
+    consumer's own command reached the developer's REAL stale runtime while
+    the row read PASS. The farm takes stale files out of reach only for the
+    PATH the harness hands the row; a consumer that names an absolute
+    directory reaches past it. So the edit is refused BY NAME instead.
+    """
+    for lineno, line in shell_lines(text):
+        for m in PATH_ASSIGN_RE.finditer(line):
+            _record_components(
+                _value_after(line, m.end()), edits, path, lineno + line_offset
+            )
+        if GITHUB_PATH_RE.search(line):
+            # `echo "/opt/x/bin" >> $GITHUB_PATH` -- the appended word is the
+            # component. Take every quoted or bare word before the redirect
+            # that is not the command itself.
+            head = line[:GITHUB_PATH_RE.search(line).start()]
+            toks = _split_words(head)
+            for tok in toks[1:]:
+                if tok in SEPARATORS or tok.startswith("-"):
+                    continue
+                _record_components(tok, edits, path, lineno + line_offset)
+
+
+def scan_makefile_path_edits(text, edits, path):
+    for i, line in enumerate(text.split("\n")):
+        if line.startswith("\t"):
+            # `$$PATH` in a recipe is what make hands the shell as `$PATH`.
+            body = line[1:].lstrip("@-+").replace("$$", "$")
+            scan_path_edits(body, edits, path, line_offset=i)
+
+
+def scan_yaml_path_edits(text, edits, path):
+    """Only the runCmd is a command in a workflow. A `$GITHUB_PATH` append in
+    an ordinary `run:` step is NOT the acceptance command and is not scanned
+    -- EigenGauntlet and EigenMiniSat both have one, and both build the
+    runtime there rather than reaching a stale one."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    try:
+        from _extract_runcmd import extract
+    except Exception:
+        return
+    cmd = extract(text)
+    if not cmd:
+        return
+    lineno = 1
+    for i, line in enumerate(text.split("\n")):
+        if "runCmd" in line:
+            lineno = i + 1
+            break
+    scan_path_edits(cmd, edits, path, line_offset=lineno - 1)
+
+
 def scan_python(text, hits, path):
     import ast
 
@@ -412,10 +593,12 @@ def kind_of(path, head):
 
 
 def derive(root):
-    """Return (variants, excluded, files, occurrences)."""
+    """Return (variants, excluded, files, occurrences, edits, pfiles)."""
     hits = []
     occurrences = []
+    edits = []
     files = 0
+    pfiles = 0
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d != ".git")
         for fn in sorted(filenames):
@@ -433,29 +616,40 @@ def derive(root):
                 continue
             if b"\0" in blob:
                 continue
-            if b"eigenscript" not in blob:
+            has_eigs = b"eigenscript" in blob
+            has_path = b"PATH" in blob
+            if not has_eigs and not has_path:
                 continue
             try:
                 text = blob.decode("utf-8")
             except UnicodeDecodeError:
                 text = blob.decode("latin-1")
             rel = os.path.relpath(full, root)
-            files += 1
-            for i, line in enumerate(text.split("\n")):
-                for m in NAME_RE.finditer(line):
-                    occurrences.append((m.group(0), rel, i + 1))
             head = text[:200]
             kind = kind_of(full, head)
-            if kind == "shell":
-                scan_shell(text, hits, rel)
-            elif kind == "python":
-                scan_python(text, hits, rel)
-            elif kind == "eigs":
-                scan_eigs(text, hits, rel)
-            elif kind == "yaml":
-                scan_yaml(text, hits, rel)
-            elif kind == "makefile":
-                scan_makefile(text, hits, rel)
+            if has_eigs:
+                files += 1
+                for i, line in enumerate(text.split("\n")):
+                    for m in NAME_RE.finditer(line):
+                        occurrences.append((m.group(0), rel, i + 1))
+                if kind == "shell":
+                    scan_shell(text, hits, rel)
+                elif kind == "python":
+                    scan_python(text, hits, rel)
+                elif kind == "eigs":
+                    scan_eigs(text, hits, rel)
+                elif kind == "yaml":
+                    scan_yaml(text, hits, rel)
+                elif kind == "makefile":
+                    scan_makefile(text, hits, rel)
+            if has_path and kind in ("shell", "yaml", "makefile"):
+                pfiles += 1
+                if kind == "shell":
+                    scan_path_edits(text, edits, rel)
+                elif kind == "yaml":
+                    scan_yaml_path_edits(text, edits, rel)
+                else:
+                    scan_makefile_path_edits(text, edits, rel)
     variants = []
     seen = set()
     for name, path, line in hits:
@@ -470,7 +664,14 @@ def derive(root):
             continue
         exseen.add(name)
         excluded.append((name, path, line))
-    return variants, excluded, files, len(occurrences)
+    ped = []
+    pseen = set()
+    for comp, path, line in edits:
+        if comp in pseen:
+            continue
+        pseen.add(comp)
+        ped.append((comp, path, line))
+    return variants, excluded, files, len(occurrences), ped, pfiles, len(edits)
 
 
 def selftest():
@@ -555,12 +756,58 @@ def selftest():
             "          push: never\n"
             "          image: ghcr.io/x/eigenscript-image\n"
         )}, {"eigenscript-y1"}),
+        # --- PATH EDITS (round 5, Fable r4 check 3). The name set is empty
+        # for most of these on purpose: a PATH edit is a finding of its own.
+        ("path-edit-absolute", {"run.sh":
+            "#!/bin/sh\nexport PATH=/opt/foo/bin:$PATH\neigenscript x\n"},
+         {"eigenscript"}, {"/opt/foo/bin"}),
+        ("path-edit-forms", {"run.sh": (
+            "#!/bin/bash\n"
+            "PATH=/a/one:$PATH\n"
+            "export PATH=\"/a/two:$PATH\"\n"
+            "PATH+=:/a/three\n"
+            "PATH=$PATH:/a/four\n"
+            "echo \"/a/five\" >> $GITHUB_PATH\n"
+            "echo /a/six >> \"$GITHUB_PATH\"\n"
+        )}, set(), {"/a/one", "/a/two", "/a/three", "/a/four", "/a/five",
+                    "/a/six"}),
+        ("path-edit-relative-and-home", {"run.sh": (
+            "#!/bin/sh\n"
+            "export PATH=\"$HOME/.local/bin:$PATH\"\n"
+            "export PATH=bin:$PATH\n"
+            "export PATH=\"$(cat dir.txt):$PATH\"\n"
+        )}, set(), {"$HOME/.local/bin", "bin", "$(cat dir.txt)"}),
+        ("path-edit-comment-and-heredoc", {"run.sh": (
+            "#!/bin/sh\n"
+            "# export PATH=/a/commented:$PATH\n"
+            "cat <<EOF\n"
+            "export PATH=/a/heredoc:$PATH\n"
+            "EOF\n"
+            "export PATH=/a/real:$PATH\n"
+        )}, set(), {"/a/real"}),
+        ("path-edit-yaml-runcmd-only", {".github/workflows/ci.yml": (
+            "jobs:\n"
+            "  t:\n"
+            "    steps:\n"
+            "      - run: echo \"/a/github-path\" >> $GITHUB_PATH\n"
+            "      - uses: devcontainers/ci@v0\n"
+            "        with:\n"
+            "          runCmd: |\n"
+            "            export PATH=/a/runcmd:$PATH\n"
+            "            eigenscript x\n"
+        )}, {"eigenscript"}, {"/a/runcmd"}),
+        ("path-edit-makefile-recipe", {"Makefile":
+            "run:\n\texport PATH=/a/recipe:$$PATH; eigenscript x\n"
+            "OTHER = PATH=/a/notrecipe\n"},
+         {"eigenscript"}, {"/a/recipe"}),
     ]
     examined = 0
     failed = 0
     tmp = tempfile.mkdtemp(prefix="ca-dv-")
     try:
-        for name, files, want in cases:
+        for case in cases:
+            name, files, want = case[0], case[1], case[2]
+            want_edits = case[3] if len(case) > 3 else set()
             examined += 1
             root = os.path.join(tmp, name)
             for rel, content in files.items():
@@ -568,13 +815,25 @@ def selftest():
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with open(dest, "w") as fh:
                     fh.write(content)
-            variants, excluded, nfiles, noccur = derive(root)
+            variants, excluded, nfiles, noccur, edits, pfiles, nedits = derive(root)
             got = set(n for n, _, _ in variants)
             if got != want:
                 sys.stderr.write(
                     "FAIL %s: got %r want %r\n" % (name, sorted(got), sorted(want))
                 )
                 failed += 1
+            got_edits = set(c for c, _, _ in edits)
+            if got_edits != want_edits:
+                sys.stderr.write(
+                    "FAIL %s: pathedit got %r want %r\n"
+                    % (name, sorted(got_edits), sorted(want_edits))
+                )
+                failed += 1
+            if want_edits and pfiles == 0:
+                sys.stderr.write("FAIL %s: PATH scan examined ZERO files\n" % name)
+                failed += 1
+            if name.startswith("path-edit"):
+                continue
             if nfiles == 0:
                 sys.stderr.write("FAIL %s: examined ZERO files\n" % name)
                 failed += 1
@@ -611,11 +870,14 @@ def main(argv):
         # own. It goes through the same call-site rule as everything else,
         # so a declared fallback cannot smuggle a name in from a comment.
         hits = []
+        edits = []
         try:
             text = open(argv[2]).read()
         except OSError:
             return 1
-        scan_shell(text, hits, os.path.basename(argv[2]))
+        base = os.path.basename(argv[2])
+        scan_shell(text, hits, base)
+        scan_path_edits(text, edits, base)
         seen = set()
         out = []
         for name, path, line in hits:
@@ -623,7 +885,14 @@ def main(argv):
                 continue
             seen.add(name)
             out.append("variant|%s|%s:%d" % (name, path, line))
+        pseen = set()
+        for comp, path, line in edits:
+            if comp in pseen:
+                continue
+            pseen.add(comp)
+            out.append("pathedit|%s|%s:%d" % (comp, path, line))
         out.append("examined|1|%d" % len(hits))
+        out.append("pathexamined|1|%d" % len(edits))
         sys.stdout.write("\n".join(out) + "\n")
         return 0
     if len(argv) != 2:
@@ -632,13 +901,16 @@ def main(argv):
     root = argv[1]
     if not os.path.isdir(root):
         return 1
-    variants, excluded, files, occurrences = derive(root)
+    variants, excluded, files, occurrences, edits, pfiles, nedits = derive(root)
     out = []
     for name, path, line in variants:
         out.append("variant|%s|%s:%d" % (name, path, line))
     for name, path, line in excluded:
         out.append("excluded|%s|%s:%d" % (name, path, line))
+    for comp, path, line in edits:
+        out.append("pathedit|%s|%s:%d" % (comp, path, line))
     out.append("examined|%d|%d" % (files, occurrences))
+    out.append("pathexamined|%d|%d" % (pfiles, nedits))
     sys.stdout.write("\n".join(out) + "\n")
     return 0
 

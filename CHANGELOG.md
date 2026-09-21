@@ -342,11 +342,37 @@ All notable changes to EigenScript are documented here.
   idiom EigenGauntlet and EigenMiniSat already use via `$GITHUB_PATH`)
   put a stale runtime back in front of the shim and the row still read
   PASS. Each row therefore runs with `PATH=$SHIM:$FARM` and nothing else:
-  `$FARM` holds one symlink per executable found on the inherited PATH
-  EXCEPT every name matching `eigenscript*`, which is never linked
-  (`path_farm=`, `path_dropped=`), and `HOME` is an empty per-row scratch
-  directory (`home_scratch=yes`) so a prepend of `$HOME/.local/bin` adds
-  an empty directory. The enumeration follows symlinked PATH directories
+  `$FARM` holds, for every executable found on the inherited PATH EXCEPT
+  every name matching `eigenscript*`, a two-line EXEC WRAPPER
+  (`#!/bin/sh` + `exec "<absolute original path>" "$@"`, mode 755), so
+  every tool runs AT ITS ORIGINAL LOCATION (`path_farm=`,
+  `path_dropped=`). A SYMLINK farm relocated the tool and broke
+  consumers: a virtualenv's `python3` reached through a link reports
+  `sys.prefix=/usr` (venv detection reads `pyvenv.cfg` beside the
+  executable's own path), so a dependency installed in the selected
+  virtualenv vanished and the row FAILed after the candidate call
+  succeeded. Farm construction is fail-closed by name (`cannot build the
+  PATH farm under <dir>`, exit 2) and `path_farm=N` must be at least the
+  number of executables the enumeration found -- a farm directory that
+  could not be written used to read `path_farm=0` under `VERDICT: PASS`.
+  `HOME` is an empty per-row scratch directory (`home_scratch=yes`) so a
+  prepend of `$HOME/.local/bin` adds an empty directory, while the named
+  build/tool CACHE variables (`GOPATH`, `GOMODCACHE`, `GOCACHE`,
+  `GOFLAGS`, `JAVA_HOME`, `ELLE_JAR`, `CARGO_HOME`, `RUSTUP_HOME`,
+  `PIP_CACHE_DIR`, `npm_config_cache`) pass through and the three Go ones
+  are derived from the real home when unset (`env_passthrough=`):
+  measured on eddy, a scratch HOME alone turned `GOPROXY=off go list -m
+  all` into `module lookup disabled`. A consumer PATH EDIT is now a
+  finding of its own: `tools/_derive_variants.py` extracts every `PATH=`,
+  `export PATH=`, `PATH+=` and `$GITHUB_PATH` append from shell text,
+  Makefile recipes and a workflow `runCmd` (`plan` prints
+  `path_edit|<consumer>|<component>|<file>:<line>`; all 16 real consumers
+  report none), and a row whose edit adds a LITERAL absolute directory
+  that exists on this box outside `$SHIM`, `$FARM`, the row's scratch
+  `$HOME` and its own checkout is `FAIL|path-edit:<dir>` before it runs,
+  with a `log|<name>|preflight:` line -- the shape that reached the
+  developer's real `~/.local/bin/eigenscript-full.stale` (`0.21.0`) under
+  a PASS row. The enumeration follows symlinked PATH directories
   (`find -L`); an unreadable (0111) PATH directory contributes nothing and
   is reachable from nothing. Names outside the candidate set keep their
   127-shims in `$SHIM` (`path_masked=`) so the row is
@@ -356,11 +382,17 @@ All notable changes to EigenScript are documented here.
   swallow with `|| true`. `EIGS_DIR` is the twin of that PATH -- a
   `cp -rL` copy of the candidate tree that used to hand out the sibling's
   `src/eigenscript-full` -- so every `eigenscript*` file in the overlay is
-  a shim too (`overlay_shimmed=`). Two residuals remain, in the header: a
-  consumer that prepends an ABSOLUTE directory outside `$HOME` that it did
-  not create in the row (`/opt/foo/bin`) can still reach a binary there,
-  and a path the consumer computes INSIDE its checkout (`./eigenscript-*`)
-  is not on PATH at all and reads UNEXERCISED, never PASS. Scratch
+  a shim too (`overlay_shimmed=`). Three residuals remain, each named in
+  the header and each PINNED BY A PLANT that fires only while it holds: a
+  PATH edit the scanner cannot see because the consumer COMPUTES it at
+  run time (`PATH="$(cat dir.txt):$PATH"`); a farmed, inherited wrapper
+  that resolves its own location
+  (`exec "$(dirname "$(readlink -f "$0")")/eigenscript"`) and so reaches
+  the stale `eigenscript` beside it -- the price of running tools in
+  place, closable only by an execve witness or a mount namespace, both
+  deferred; and a path the consumer computes INSIDE its checkout
+  (`./eigenscript-*`), which is not on PATH at all and reads UNEXERCISED,
+  never PASS. Scratch
   creation is fail-closed: every `mktemp`/`mkdir` whose result the harness
   writes into is checked, an unusable `$TMPDIR` exits 2 with `cannot
   create scratch under <dir> (<why>)` BEFORE any shim is written, and a

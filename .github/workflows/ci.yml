@@ -316,9 +316,14 @@ jobs:
           bash tools/section_plan.sh --probes
           bash tools/section_plan.sh --print-section-plan core
       # Measured 211s / 239s / 273s on this 2-core/4 GB box (n=3) after the
-      # M1b round-4 plants (86 plants, 53 transverse rows). Measured on the
-      # dev box (2 cores, other work running): 455 s / 326 s / 423 s over
-      # three consecutive PASS runs. Under 8 minutes,
+      # M1b round-3 plants; round 4 (86 plants, 53 transverse rows) measured
+      # 455 s / 326 s / 423 s; round 5 (93 plants, 58 transverse rows)
+      # measures SELFTEST_SECONDS below on the dev box with other agents
+      # running. The PATH farm now writes one two-line exec wrapper per
+      # inherited executable instead of one symlink: 2144 wrappers cost
+      # 0.57 s and 86 KB (8.6 MB of 4 KiB blocks) per harness RUN, measured
+      # -- with $(printf ...) instead of printf -v it was 4.5 s. Under 8
+      # minutes,
       # so this stays on the PR job rather than splitting to nightly.yml. As
       # root in this container the WHOLE self-test re-runs itself as an
       # unprivileged user (a byte-identical copy of its tool tree in a drop
