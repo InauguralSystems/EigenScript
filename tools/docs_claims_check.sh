@@ -1334,10 +1334,20 @@ DC_ROADMAP_HIST_COMMIT="${DC_ROADMAP_HIST_COMMIT:-b91768e23c5a874a64e76e4af9ab29
 D_ROADMAP_HIST_CHECKBOXES=""
 D_ROADMAP_HIST_COMPLETED=""
 DC_ROADMAP_HIST_WHY="SKIPPED BY NAME: commit $DC_ROADMAP_HIST_COMMIT is not reachable here (shallow checkout or no .git), so the pre-PR checkbox counts cannot be derived"
-if git cat-file -e "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" 2>/dev/null; then
-    D_ROADMAP_HIST_CHECKBOXES=$(git show "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" \
+#
+# `-c safe.directory='*'`, AND THE OMISSION COST A RED CI LANE. Bought
+# 2026-09-21, ON THE FIRST RUN OF THE [99za] CHECK ADDED THIS ROUND: the CI
+# container runs as a different uid from the checkout's owner, so PLAIN `git`
+# dies with "detected dubious ownership" — and this `cat-file` swallowed that
+# on stderr and deferred by name, exactly as it does for a genuinely shallow
+# clone. The PATHS class's `git ls-files` three hundred lines below already
+# carried the flag; its sibling here did not, which is §26's two-homes shape
+# inside one file. The lane HELD the commit (the caller read it with the flag)
+# and the gate still said it could not. One workaround, every git call.
+if git -c safe.directory='*' cat-file -e "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" 2>/dev/null; then
+    D_ROADMAP_HIST_CHECKBOXES=$(git -c safe.directory='*' show "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" \
         | grep -cE '^[[:space:]]*- \[( |x|~)\]' | tr -d ' ')
-    D_ROADMAP_HIST_COMPLETED=$(git show "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" \
+    D_ROADMAP_HIST_COMPLETED=$(git -c safe.directory='*' show "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" \
         | sed -n '/^## Completed/,$p' \
         | grep -cE '^[[:space:]]*- \[( |x|~)\]' | tr -d ' ')
     DC_ROADMAP_HIST_WHY="git show $DC_ROADMAP_HIST_COMMIT:ROADMAP.md"

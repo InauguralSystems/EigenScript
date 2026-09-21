@@ -1262,6 +1262,15 @@ All notable changes to EigenScript are documented here.
   other programs), the exemption is named and its reason written, and the gate
   audits that the exemption exists, is enrolled elsewhere, and actually fired.
 
+  And the `[99za]` history check earned its place on its first CI run: with the
+  base commit fetched and present, the gate STILL deferred, because its
+  `git cat-file` was plain `git` and the CI container runs as a different uid
+  from the checkout's owner — "detected dubious ownership", swallowed by
+  `2>/dev/null` and indistinguishable from a shallow clone. The PATHS class's
+  `git ls-files` in the same file had carried `-c safe.directory='*'` all
+  along; its sibling three hundred lines away did not. One workaround, every
+  git call.
+
   Smaller, same round: `gh api --paginate` already merges REST pages into one
   array, so `issue_labels_check.sh`'s `sed 's/^\]\[/,/'` splice was dead — and
   could not have worked anyway, since a raw concatenation puts the seam

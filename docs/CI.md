@@ -193,6 +193,16 @@ history, one more check refuses a tree whose `ci.yml` no longer fetches it.
 (The full 40-character SHA, not an abbreviation: `git fetch origin <sha>`
 rejects an abbreviated object name outright.)
 
+That check found a second cause on its FIRST CI run, which is the whole
+argument for it. With the commit fetched and demonstrably present — the caller
+read it — the gate still deferred, because the gate's `git cat-file` was PLAIN
+`git` and the container runs as a different uid from the checkout's owner, so
+git refuses with "detected dubious ownership" and the `2>/dev/null` made that
+indistinguishable from a shallow clone. `git ls-files` in the same file, three
+hundred lines away, had carried `-c safe.directory='*'` for months. One
+workaround, every git call — and the caller that probes with the flag is what
+makes a gate that cannot agree with it red by name.
+
 **`gh api --paginate` returns ONE array, so the labels gate stopped splicing
 one.** `issue_labels_check.sh` carried `sed 's/^\]\[/,/' | tr -d '\n'` to join
 per-page arrays. Measured with `per_page=3` over four pages: `gh` merges them
