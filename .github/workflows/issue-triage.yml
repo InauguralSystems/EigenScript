@@ -220,7 +220,11 @@ jobs:
       # macOS and sanitizer lanes that genuinely have no credentials — this job
       # exists to make the API call, so `skipped:` is a failure and so is a
       # reference walk that resolved nothing (`resolved=0`) or had to skip a
-      # reference (`skipped=N`). The literals are THIS file's own copy; a
+      # reference (`skipped=N`). It also requires `repos=verified:N` — the
+      # KNOWN_REPOS verification is what makes "does not exist" and "is
+      # private" decidable, and until round 6 it left no trace on the OK line,
+      # so a listing that 403'd printed a byte-identical verdict (round-5 blind
+      # critic, Fable). The literals are THIS file's own copy; a
       # separate check asserts the gate's --contract still equals the caller's
       # skip-admitting form, so a drift is red by name and never auto-adopted.
       - name: "ROADMAP.md is a milestone set (live arms, this lane holds the token)"
@@ -229,8 +233,8 @@ jobs:
           ROADMAP_CHECK_REPO: ${{ github.repository }}
         run: |
           set -u
-          ROADMAP_POP_RE_LIVE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=gh-api:[^ ]+ refs=gh-api:[^ ]+ resolved=[1-9][0-9]* skipped=0\)$'
-          ROADMAP_POP_RE_CONTRACT='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+\)$'
+          ROADMAP_POP_RE_LIVE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=gh-api:[^ ]+ refs=gh-api:[^ ]+ resolved=[1-9][0-9]* skipped=0 repos=verified:[1-9][0-9]*\)$'
+          ROADMAP_POP_RE_CONTRACT='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+ repos=(verified:[0-9]+|skipped:[^ ]+)\)$'
           ROADMAP_SELFTEST_CASES_PINNED=21
 
           CONTRACT_SEEN=0

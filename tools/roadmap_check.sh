@@ -159,7 +159,19 @@ KNOWN_OWNERS="${ROADMAP_CHECK_OWNERS:-$OWNER}"
 # red, not a pass). The contract still ADMITS a named skip, because a lane with
 # no credentials legitimately prints one; it is the CALLER that refuses a skip
 # on a lane where it has established for itself that GitHub is reachable.
-POPULATION_RE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+\)$'
+#
+# ROUND 5 (blind critic Fable): the KNOWN_REPOS verification — the one call
+# that makes every "does not exist" and every "is private" decidable — left NO
+# TRACE on the OK line. A run whose organisation listing 403'd, came back
+# empty, or was gutted printed `(c) SKIPPED BY NAME: …` into the body and then
+# an OK line BYTE-IDENTICAL to a fully verified run, so `[99zd]` passed 11/11
+# on a token-holding lane with the verification doing nothing
+# (`ROADMAP_CHECK_ORG_FIXTURE=<UNLISTABLE> bash run_99zd.sh`). The line now
+# carries `repos=verified:N` (N = KNOWN_REPOS entries confirmed PUBLIC against
+# the listing) or `repos=skipped:<why>`. The contract ADMITS both, because a
+# lane with no credentials legitimately skips; it is the CALLER that requires
+# `repos=verified:[1-9][0-9]*` once it has established GitHub is reachable.
+POPULATION_RE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+ repos=(verified:[0-9]+|skipped:[^ ]+)\)$'
 SELFTEST_CASES=21
 
 # What arms (b) and (c) actually used this run. One of
@@ -172,6 +184,13 @@ SRC_REFS="skipped:not-reached"
 # says nothing about work done.
 REF_RESOLVED=0
 REF_SKIPPED=0
+# What the KNOWN_REPOS verification actually did this run: `verified:<N>` (N
+# entries confirmed PUBLIC against the organisation listing) or
+# `skipped:<why>`. Printed on the OK line for the same reason the reference
+# walk's counts are: the arm's own body says which happened, and until round 6
+# the OK line did not, so a verification that never ran was invisible to every
+# caller (round-5 blind critic, Fable).
+REPOS_SRC="skipped:not-reached"
 
 RED=0
 red() { echo "RED: $*"; RED=$((RED + 1)); }
@@ -580,10 +599,11 @@ org_listing() {
 verify_known_repos() {
     local listing rc entry name priv
     local org_public=" " org_private=" "
-    local listed=0 pub=0 prv=0
+    local listed=0 pub=0 prv=0 pub_known=0
     listing=$(org_listing)
     rc=$?
     if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
+        REPOS_SRC="skipped:org-listing-unavailable"
         echo "      (c) SKIPPED BY NAME: KNOWN_REPOS could not be verified — the $OWNER repository listing (${ROADMAP_CHECK_ORG_FIXTURE:-gh api orgs/$OWNER/repos}) failed or came back empty on this lane, so a 404 on a repository is a fact about this token and not about the repository. The reference walk below still runs."
         return 0
     fi
@@ -606,12 +626,20 @@ verify_known_repos() {
             *" $entry "*)
                 REPO_STATE_PUBLIC="$REPO_STATE_PUBLIC$OWNER/$entry "
                 pub=$((pub + 1))
+                pub_known=$((pub_known + 1))
                 continue ;;
         esac
+        # PRIVATE IS NOT MISSING, AND THE LISTING KNOWS THE DIFFERENCE.
+        # Bought 2026-09-21 (round-5 blind critic, Astra): a KNOWN_REPOS entry
+        # that FLIPS to private was red — correctly — but diagnosed as "does
+        # not exist (KNOWN_REPOS is stale)", which sends a maintainer to look
+        # for a deleted repository instead of moving one line between two
+        # lists. The listing carries `.private`, so whenever it succeeds and
+        # names the entry the two are distinguishable and must be said apart.
         case "$org_private" in
             *" $entry "*)
                 REPO_STATE_PRIVATE="$REPO_STATE_PRIVATE$OWNER/$entry "
-                red "(c) KNOWN_REPOS names $OWNER/$entry and the organisation listing says it is PRIVATE — a private repository is not evidence in a public roadmap; move it to PRIVATE_REPOS"
+                red "(c) KNOWN_REPOS names $OWNER/$entry and the organisation listing says it is now private (move it to PRIVATE_REPOS) — the repository EXISTS; a private one is simply not evidence in a public roadmap"
                 continue ;;
         esac
         REPO_STATE_MISSING="$REPO_STATE_MISSING$OWNER/$entry "
@@ -632,12 +660,14 @@ verify_known_repos() {
         prv=$((prv + 1))
     done
     REPOS_VERIFIED=1
+    REPOS_SRC="verified:$pub_known"
     echo "      (c) KNOWN_REPOS verified against the $OWNER listing ($listed repositories): $pub public citable, $prv private and not citable in a public document"
 }
 
 check_references() {
     if ! command -v python3 >/dev/null 2>&1; then
         SRC_REFS="skipped:no-python3"
+        REPOS_SRC="skipped:no-python3"
         echo "      (c) SKIPPED BY NAME: python3 is not on PATH, so references cannot be extracted. Arm (a) still ran."
         return
     fi
@@ -652,6 +682,7 @@ check_references() {
     else
         if ! command -v gh >/dev/null 2>&1; then
             SRC_REFS="skipped:no-gh"
+            REPOS_SRC="skipped:no-gh"
             echo "      (c) SKIPPED BY NAME: gh is not on PATH, so the table's references cannot be resolved. Arm (a) still ran."
             return
         fi
@@ -663,6 +694,7 @@ check_references() {
         # An unauthenticated 404 is not evidence about the reference.
         if ! gh_authenticated; then
             SRC_REFS="skipped:gh-unauthenticated"
+            REPOS_SRC="skipped:gh-unauthenticated"
             echo "      (c) SKIPPED BY NAME: gh is on PATH but has no working credentials, so nothing can be resolved — an unauthenticated 404 says nothing about whether the reference exists. Arm (a) still ran."
             return
         fi
@@ -675,6 +707,8 @@ check_references() {
     # the selftest; a pure refs-fixture run has no organisation to ask.
     if [ -z "$fixture" ] || [ -n "${ROADMAP_CHECK_ORG_FIXTURE:-}" ]; then
         verify_known_repos
+    else
+        REPOS_SRC="skipped:refs-fixture-no-organisation"
     fi
 
     local out
@@ -934,7 +968,7 @@ run_live() {
         echo "roadmap-check: $RED problem(s)"
         return 1
     fi
-    local ok_line="roadmap-check: OK (examined=$TABLE_ROWS row(s), open=$TABLE_OPEN_ROWS) (source: milestones=$SRC_MILESTONES refs=$SRC_REFS resolved=$REF_RESOLVED skipped=$REF_SKIPPED)"
+    local ok_line="roadmap-check: OK (examined=$TABLE_ROWS row(s), open=$TABLE_OPEN_ROWS) (source: milestones=$SRC_MILESTONES refs=$SRC_REFS resolved=$REF_RESOLVED skipped=$REF_SKIPPED repos=$REPOS_SRC)"
     echo "$ok_line"
     # The gate proves its OWN output satisfies the contract it publishes, so
     # that rewording this line without updating POPULATION_RE goes red here
@@ -969,8 +1003,16 @@ ST_RUN=0
 ST_FAIL=0
 ST_SKIP=0
 st_case() {
-    # st_case <name> <arm> <expect red|green> <file> <json-or-->
-    local name="$1" arm="$2" expect="$3" file="$4" js="$5"
+    # st_case <name> <arm> <expect red|green> <file> <json-or--> [<phrase>]
+    #
+    # <phrase>, when given, is a literal the RED output must CONTAIN. Bought
+    # 2026-09-21 (round-5 blind critic, Astra): plants 16 and 17 plant two
+    # DIFFERENT facts — a KNOWN_REPOS entry that is GONE, and one that FLIPPED
+    # to private — and both were scored purely on "arm (c) went red", so the
+    # gate could answer "does not exist" to both and still pass its own
+    # selftest. It did. Red for the wrong reason is a defect in a diagnosis,
+    # and nothing here was measuring it.
+    local name="$1" arm="$2" expect="$3" file="$4" js="$5" want="${6:-}"
     ST_RUN=$((ST_RUN + 1))
     local out rc
     if [ "$js" = "-" ]; then
@@ -980,8 +1022,14 @@ st_case() {
     fi
     rc=$?
     if [ "$expect" = "red" ]; then
-        if [ "$rc" -ne 0 ] && [[ $'\n'"$out" == *$'\n'"RED: ($arm)"* ]]; then
-            echo "  selftest ok: $name — arm ($arm) went red"
+        if [ "$rc" -ne 0 ] && [[ $'\n'"$out" == *$'\n'"RED: ($arm)"* ]] \
+           && { [ -z "$want" ] || [[ "$out" == *"$want"* ]]; }; then
+            echo "  selftest ok: $name — arm ($arm) went red${want:+ and said so: $want}"
+            printf '%s\n' "$out" | grep "^RED: ($arm)" | head -2 | sed 's/^/      /'
+        elif [ "$rc" -ne 0 ] && [ -n "$want" ] && [[ $'\n'"$out" == *$'\n'"RED: ($arm)"* ]]; then
+            ST_FAIL=$((ST_FAIL + 1))
+            echo "  SELFTEST FAIL: $name — arm ($arm) went red for the WRONG reason"
+            echo "      the diagnosis had to contain: $want"
             printf '%s\n' "$out" | grep "^RED: ($arm)" | head -2 | sed 's/^/      /'
         elif [[ "$out" == *"      ($arm) SKIPPED BY NAME"* ]]; then
             # A plant proves nothing about an arm that did not run on this
@@ -1226,14 +1274,14 @@ EOF
     # Fable). The organisation listing is what makes the 404 decidable.
     export ROADMAP_CHECK_ORG_FIXTURE="$work/org-gone.txt"
     st_case "plant: a KNOWN_REPOS entry that does not exist in the organisation" "c" red \
-            "$work/good.md" "$work/ms.json"
+            "$work/good.md" "$work/ms.json" "does not exist (KNOWN_REPOS is stale)"
 
     # PLANT 17 (arm c): the same entry, PRIVATE. A public roadmap cannot cite
     # a repository its readers cannot open, so this is red by name rather
     # than resolved on whichever maintainer token happens to run the gate.
     export ROADMAP_CHECK_ORG_FIXTURE="$work/org-private.txt"
     st_case "plant: a KNOWN_REPOS entry the organisation lists as private" "c" red \
-            "$work/good.md" "$work/ms.json"
+            "$work/good.md" "$work/ms.json" "is now private (move it to PRIVATE_REPOS)"
 
     # CONTROL 18 (arm c) — THE DISCRIMINATOR. Same missing repository, but the
     # organisation CANNOT BE LISTED: nothing here is decidable, so the

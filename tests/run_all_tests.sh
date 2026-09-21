@@ -6623,7 +6623,26 @@ echo "[99zb] Portability audit (oldest bash: parse every script, RUN the gates)"
 TOTAL=$((TOTAL + 1))
 PORT_OUTPUT=$(bash "$TESTS_DIR/../tools/portability_parse_check.sh" 2>&1)
 PORT_RC=$?
-printf '%s\n' "$PORT_OUTPUT" | grep -E "^portability(-parse|-run)?: (oracle|OK|ok|SKIPPED|NO OLD BASH)" | head -8
+printf '%s\n' "$PORT_OUTPUT" | grep -E "^portability(-parse|-run)?: (oracle|OK|ok|SKIPPED|NO OLD BASH|and |looked for|rejected by|every candidate|this machine|this run proves|tools/portability)" | head -14
+# THE ORACLE'S IDENTITY IS PART OF THE VERDICT. Bought 2026-09-21 (round-5
+# blind critics, Astra and Fable, converging). Removing ONE line from the
+# gate's candidate selection — the `<= 3` guard — makes it pick the system
+# bash 5, do all the work honestly, and print a receipt that SAYS bash 5; this
+# caller then read rc 0 and the `portability: OK:` prefix and passed it. The
+# gate's own version guard was the only thing standing between "the macOS
+# shell was modelled" and "a modern shell was exercised twice", and a caller
+# that cannot see through its gate's selection is not an independent check.
+# So the caller holds its OWN literal maximum and parses the identity line.
+PORT_OLD_MAJOR_MAX=3
+PORT_ORACLE_MAJOR=$(printf '%s\n' "$PORT_OUTPUT" | sed -n 's/^portability-parse: oracle=.*(GNU bash, version \([0-9][0-9]*\)\..*/\1/p' | head -1)
+PORT_CLAIMS_MEASURED=0
+printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability: OK:" && PORT_CLAIMS_MEASURED=1
+PORT_IDENTITY_VERDICT=""
+if [ "$PORT_CLAIMS_MEASURED" -eq 1 ] && [ -z "$PORT_ORACLE_MAJOR" ]; then
+    PORT_IDENTITY_VERDICT="the portability gate claimed a completed audit and never named its interpreter (no 'portability-parse: oracle=... (GNU bash, version X.Y...)' line) — nothing here says which shell it measured under"
+elif [ "$PORT_CLAIMS_MEASURED" -eq 1 ] && [ "$PORT_ORACLE_MAJOR" -gt "$PORT_OLD_MAJOR_MAX" ]; then
+    PORT_IDENTITY_VERDICT="the portability gate measured under bash $PORT_ORACLE_MAJOR — that is not the old shell it exists to model"
+fi
 # rc 0 is not enough: a verdict line must be PRESENT. A tool that died after
 # printing nothing also exits 0 if its last command did (mechanical-gates §121,
 # applied to the section rather than the tool).
@@ -6631,6 +6650,12 @@ if [ "$PORT_RC" -eq 0 ] \
    && ! printf '%s\n' "$PORT_OUTPUT" | grep -qE "^portability: OK:|^portability-parse: SKIPPED"; then
     FAIL=$((FAIL + 1))
     echo "  FAIL: the portability audit exited 0 without printing a verdict line — it measured nothing"
+    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
+elif [ "$PORT_RC" -eq 0 ] && [ -n "$PORT_IDENTITY_VERDICT" ]; then
+    # A NAMED SKIP is still a counted skip: no `portability: OK:` line, so
+    # this arm never fires on the "no old bash here" path.
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: $PORT_IDENTITY_VERDICT"
     print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
 elif [ "$PORT_RC" -eq 0 ]; then
     PASS=$((PASS + 1))
@@ -6907,14 +6932,20 @@ fi
 # The CONTRACT pin: what the gate publishes via `--contract`, asserted
 # verbatim against this copy. It ADMITS a named skip, because a lane with no
 # credentials legitimately prints one.
-ROADMAP_POP_RE_PINNED='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+\)$'
+ROADMAP_POP_RE_PINNED='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+ repos=(verified:[0-9]+|skipped:[^ ]+)\)$'
 # The LIVE pin: what this caller requires of the OUTPUT on a lane where it has
 # established for itself that GitHub is reachable. No `skipped:` alternative,
 # and `skipped=0` — a 403 storm that resolved nothing used to print the same
 # `refs=gh-api:…` token as a walk that resolved all seven (round-4 blind
 # critic, Fable, mutation M3). `resolved=[1-9][0-9]*` because zero resolved
 # references is not a measurement either.
-ROADMAP_POP_RE_LIVE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=gh-api:[^ ]+ refs=gh-api:[^ ]+ resolved=[1-9][0-9]* skipped=0\)$'
+#
+# ROUND 5 (blind critic Fable): `repos=verified:[1-9][0-9]*`. The KNOWN_REPOS
+# verification is the one call that makes "does not exist" and "is private"
+# decidable, and its outcome was nowhere on the OK line — a run whose
+# organisation listing 403'd, came back empty, or was gutted printed a line
+# BYTE-IDENTICAL to a verified one and passed here 11/11 on this very lane.
+ROADMAP_POP_RE_LIVE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=gh-api:[^ ]+ refs=gh-api:[^ ]+ resolved=[1-9][0-9]* skipped=0 repos=verified:[1-9][0-9]*\)$'
 ROADMAP_SELFTEST_EXPECTED=21
 
 LABELS_POP_RE_PINNED='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: gh-api:[^ )]+\)$'

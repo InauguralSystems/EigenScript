@@ -94,28 +94,38 @@ RUN_TARGETS_DECLARED=5
 # by hand.
 #
 # "Old" here means what the header means by it: MAJOR VERSION 3 or lower —
-# bash 3.2 (2007), what Apple still ships. A system shell is asked its own
-# `BASH_VERSINFO[0]` and is a candidate only if it answers <= 3, so a Linux
-# runner's bash 5 is never mistaken for an oracle. The two `bash32` paths and
-# $PORTABILITY_BASH stay unconditional: they are DECLARED oracles, named by a
-# human who built one.
+# bash 3.2 (2007), what Apple still ships.
+#
+# EVERY CANDIDATE IS ASKED ITS OWN VERSION, INCLUDING THE DECLARED ONES.
+# Bought 2026-09-21 (round-5 blind critic, Fable). Until round 6 only
+# /bin/bash and /usr/bin/bash were version-checked; $PORTABILITY_BASH and the
+# two `bash32` paths were trusted BY NAME, as "declared oracles, named by a
+# human who built one". A file called `bash32` is not bash 3.2 — a symlink to
+# the system shell, a rebuild that picked up a modern source tree, or a
+# $PORTABILITY_BASH typed at a shell that is simply the current one, all
+# passed unchecked, and the gate then printed a perfectly truthful
+# `oracle=… version 5.x` receipt for an audit that models nothing. The name is
+# a hint; `BASH_VERSINFO[0]` is the fact, and it costs one exec to ask.
 PORTABILITY_OLD_MAJOR_MAX=3
 OLD_BASH=""
 PORT_CANDIDATES_TRIED=""
+PORT_CANDIDATES_REJECTED=""
 for cand in "${PORTABILITY_BASH:-}" "$HOME/.local/bin/bash32" /usr/local/bin/bash32 /bin/bash /usr/bin/bash; do
     [ -n "$cand" ] || continue
     PORT_CANDIDATES_TRIED="$PORT_CANDIDATES_TRIED $cand"
     [ -x "$cand" ] || continue
-    case "$cand" in
-        /bin/bash|/usr/bin/bash)
-            # A SYSTEM shell: it qualifies only by its own version number.
-            cand_major=$("$cand" -c 'echo ${BASH_VERSINFO[0]}' 2>/dev/null)
-            case "$cand_major" in
-                ''|*[!0-9]*) continue ;;
-            esac
-            [ "$cand_major" -le "$PORTABILITY_OLD_MAJOR_MAX" ] || continue
-            ;;
+    # EVERY candidate — declared or system — qualifies only by its own version
+    # number, and a candidate that cannot answer at all is not bash.
+    cand_major=$("$cand" -c 'echo ${BASH_VERSINFO[0]}' 2>/dev/null)
+    case "$cand_major" in
+        ''|*[!0-9]*)
+            PORT_CANDIDATES_REJECTED="$PORT_CANDIDATES_REJECTED $cand(no-BASH_VERSINFO)"
+            continue ;;
     esac
+    if [ "$cand_major" -gt "$PORTABILITY_OLD_MAJOR_MAX" ]; then
+        PORT_CANDIDATES_REJECTED="$PORT_CANDIDATES_REJECTED $cand(major=$cand_major)"
+    fi
+    [ "$cand_major" -le "$PORTABILITY_OLD_MAJOR_MAX" ] || continue
     OLD_BASH="$cand"; break
 done
 
@@ -137,9 +147,9 @@ if [ -z "$OLD_BASH" ]; then
     # machine" on a runner whose /bin/bash is 3.2.57, because /bin/bash was
     # never a candidate (round-5 blind critic, Fable).
     echo "portability-parse: looked for, in order:$PORT_CANDIDATES_TRIED"
-    echo "portability-parse:   \$PORTABILITY_BASH and the two bash32 oracle paths are taken as declared oracles;"
-    echo "portability-parse:   /bin/bash and /usr/bin/bash qualify only when their own BASH_VERSINFO[0] is <= $PORTABILITY_OLD_MAJOR_MAX."
-    echo "portability-parse:   this machine's /bin/bash reports major version $(/bin/bash -c 'echo ${BASH_VERSINFO[0]}' 2>/dev/null || echo '?')."
+    echo "portability-parse: rejected by their own version:${PORT_CANDIDATES_REJECTED:- (none)}"
+    echo "portability-parse: every candidate qualifies only when its own BASH_VERSINFO[0] is <= $PORTABILITY_OLD_MAJOR_MAX — a name is a hint, the version is the fact."
+    echo "portability-parse: this machine's /bin/bash reports major version $(/bin/bash -c 'echo ${BASH_VERSINFO[0]}' 2>/dev/null || echo '?')."
     echo "portability-parse: this run proves nothing about bash 3.2. Build the oracle (see the header of"
     echo "portability-parse: tools/portability_parse_check.sh) or install one at ~/.local/bin/bash32."
     echo "portability-parse: SKIPPED (announced, not silent): files=$n checked=0 gates-run=0"
