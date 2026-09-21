@@ -21,8 +21,8 @@
 # Locally, match it: codspeed run -m simulation --cycle-estimation=false
 #
 # Run locally (after `codspeed auth login`):
-#   make && codspeed run -m simulation            # every target
-#   codspeed run -m simulation --bench dmg-shape  # one target by id
+#   make && codspeed run -m simulation --cycle-estimation=false   # every target
+#   (CLI 5.3.1 has no per-target selector; the ids exist for the report only)
 #
 # Workloads: bench/*.eigs are the five Ir-gate workloads; the three tests/
 # benches are the JIT's own shapes (CLAUDE.md "Benchmarks"), dmg_shape being

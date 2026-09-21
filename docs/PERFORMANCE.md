@@ -196,8 +196,7 @@ local run should too.
 
 ```bash
 codspeed auth login                           # once per machine
-make && codspeed run -m simulation            # every target in codspeed.yml
-codspeed run -m simulation --bench dmg-shape  # one target, by its id
+make && codspeed run -m simulation --cycle-estimation=false   # every target in codspeed.yml
 ```
 
 ## Reproducing
