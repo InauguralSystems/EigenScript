@@ -33,7 +33,12 @@ and only two of the three can gate CI honestly:
   day an O(n²) operation is merely given a faster constant factor.
 
 The gate is not vacuous: `bench/check_regression.sh --selftest` builds a workload
-that does ~2x the work and asserts it is flagged.
+that does ~2x the work and asserts it is flagged. The local default is **two-sided**:
+an improvement past the threshold also fails, as "stale baseline, run `--update`",
+because a one-sided check against a checked-in number decays with every
+improvement that lands without one (measured 2026-09-20: 6-36% stale on every
+workload, so a +30% regression would have passed). The self-test plants that
+direction too: a 2x-stale baseline must fail.
 
 ## Complexity shape, and why it needed its own gate
 
