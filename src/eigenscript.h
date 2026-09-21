@@ -408,15 +408,16 @@ struct Value {
 
 /* #1183: the `str` / `strv.ptr` overlay is the whole mechanism — pin it at
  * compile time rather than trusting the union layout. The size assert is the
- * second half of the claim: caching the length cost ZERO bytes per Value
- * (it lives in the union, beside a 56-byte `fn`), so numbers did not get
- * bigger to make strings faster. */
+ * second half of the claim: caching the length cost ZERO extra bytes in the
+ * union on every pointer width (`sizeof(strv) <= sizeof(fn)`). "The union is
+ * sized by `fn`" is a 64-bit accident (on ILP32 `dict` is larger); the pages.yml
+ * wasm32 build broke on that wording since #1185. */
 _Static_assert(offsetof(Value, data.str) == offsetof(Value, data.strv.ptr),
                "VAL_STR payload and its cached length must overlay at offset 0");
 _Static_assert(sizeof(((Value *)0)->data.str) == sizeof(((Value *)0)->data.strv.ptr),
                "VAL_STR payload pointer and strv.ptr must be the same type");
-_Static_assert(sizeof(((Value *)0)->data) == sizeof(((Value *)0)->data.fn),
-               "the value union must still be sized by `fn` — #1183 pays 0 bytes for the cached string length");
+_Static_assert(sizeof(((Value *)0)->data.strv) <= sizeof(((Value *)0)->data.fn),
+               "cached string length must fit in the union without growing it past `fn` on any pointer width — #1183");
 
 /* Install a VAL_STR / VAL_JSON_RAW payload. `s` is adopted (the Value frees
  * it) and `n` MUST equal strlen(s). This is the ONLY way to write the payload

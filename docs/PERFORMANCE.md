@@ -50,6 +50,13 @@ quadratic term is invisible at one point. It surfaced only as a number nobody
 had a gate for: **39% of the self-hosting compiler's runtime was
 `__strlen_sse2`**, in a lexer that reads source text one character at a time.
 
+The compile-time pin of "caching the length cost zero bytes" was written as
+`sizeof(data) == sizeof(data.fn)`. That equality is a 64-bit accident — at
+32-bit pointers `data` is 36 bytes and `fn` is 28 — and it broke the Docs-site
+wasm32 build (pages.yml) from #1185. The claim that holds on every pointer
+width is `sizeof(data.strv) <= sizeof(data.fn)`. Suite `[99i3]` compiles every
+playground `src/*.c` at `-m32` so that lane cannot go red unnoticed.
+
 `tests/test_string_scaling.sh` is the missing instrument, run by the suite as
 section **[99zc]**:
 

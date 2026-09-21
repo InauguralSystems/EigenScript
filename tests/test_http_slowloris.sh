@@ -16,12 +16,109 @@
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$(cd "$TESTS_DIR/.." && pwd)/src"
-EIGS="$SRC_DIR/eigenscript"
+# Suite runner exports EIGS at the binary under test (#1188). A default is
+# only for a standalone invocation.
+EIGS="${EIGS:-$SRC_DIR/eigenscript}"
+# Cold-start budget (#1165). Shared CI runners were losing a 3 s poll;
+# 30 s is generous and the poll is 100 ms so a fast server costs nothing.
+READY_SECS="${EIGS_SLOWLORIS_READY_SECS:-30}"
 
 PASS=0
 FAIL=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
+
+# Plants drive the REAL script (this file without --self-test), so gutting
+# wait_server would turn them red. Inner FAIL: lines stay in the capture.
+sl_selftest() {
+    local script real stub_never stub_exit3 stub_late out rc t0 t1 dt
+    local st_fail=0
+    script="$TESTS_DIR/test_http_slowloris.sh"
+    real="$EIGS"
+    # Not `local`: bash 3 function locals can vanish before an EXIT trap runs.
+    SLST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/eigs-sl-st-XXXXXX")
+    mkdir -p "$SLST_ROOT/tmp" "$SLST_ROOT/stubs"
+    export TMPDIR="$SLST_ROOT/tmp"
+    trap 'rm -rf -- "${SLST_ROOT:-}"' EXIT
+
+    stub_never="$SLST_ROOT/stubs/never_bind"
+    # `exec` is load-bearing: without it dash keeps the wrapper shell as the
+    # pid the test knows about, cleanup kills only that shell, and `sleep`
+    # is reparented to init and runs for 999 s after EVERY suite run
+    # (measured: one orphan per --self-test invocation).
+    printf '%s\n' '#!/bin/sh' 'exec sleep 999' > "$stub_never"
+    chmod +x "$stub_never"
+
+    stub_exit3="$SLST_ROOT/stubs/exit3"
+    printf '%s\n' '#!/bin/sh' 'exit 3' > "$stub_exit3"
+    chmod +x "$stub_exit3"
+
+    stub_late="$SLST_ROOT/stubs/late"
+    printf '%s\n' '#!/bin/sh' 'sleep 5' "exec \"${real}\" \"\$@\"" > "$stub_late"
+    chmod +x "$stub_late"
+
+    # Plant 1: candidate that never binds → deadline failure by name, rc 1,
+    # HTTP_SLOWLORIS: 0 passed, 1 failed. Bound is 1 s so the plant is cheap;
+    # production READY_SECS is 30.
+    out="$SLST_ROOT/plant1.out"
+    t0=$(date +%s)
+    EIGS="$stub_never" EIGS_SLOWLORIS_READY_SECS=1 command bash "$script" >"$out" 2>&1
+    rc=$?
+    t1=$(date +%s)
+    dt=$((t1 - t0))
+    if [ "$rc" -eq 1 ] \
+       && grep -q 'FAIL: server not ready within 1 s' "$out" \
+       && grep -q 'HTTP_SLOWLORIS: 0 passed, 1 failed' "$out"; then
+        echo "  PASS: plant 1 never-bind hits deadline by name (${dt}s)"
+    else
+        echo "  FAIL: plant 1 never-bind did not print the deadline failure by name (rc=$rc dt=${dt}s)"
+        sed 's/^/      /' "$out" | tail -20
+        st_fail=$((st_fail + 1))
+    fi
+
+    # Plant 2: stub that exits 3 immediately → "exited rc=3" by name, fast.
+    out="$SLST_ROOT/plant2.out"
+    t0=$(date +%s)
+    EIGS="$stub_exit3" command bash "$script" >"$out" 2>&1
+    rc=$?
+    t1=$(date +%s)
+    dt=$((t1 - t0))
+    if [ "$rc" -eq 1 ] \
+       && grep -q 'FAIL: server exited rc=3 before it was ready' "$out" \
+       && [ "$dt" -lt 2 ]; then
+        echo "  PASS: plant 2 exit-3 is named and fast (${dt}s)"
+    else
+        echo "  FAIL: plant 2 exit-3 did not print the exited-rc failure by name (rc=$rc dt=${dt}s)"
+        sed 's/^/      /' "$out" | tail -20
+        st_fail=$((st_fail + 1))
+    fi
+
+    # Plant 3 (control): real binary wrapped so the server starts 5 s late.
+    # The 30 s budget must still let the 4 live checks PASS.
+    out="$SLST_ROOT/plant3.out"
+    EIGS="$stub_late" command bash "$script" >"$out" 2>&1
+    rc=$?
+    if [ "$rc" -eq 0 ] \
+       && grep -q 'HTTP_SLOWLORIS: 4 passed, 0 failed' "$out"; then
+        echo "  PASS: plant 3 late-start (sleep 5) still PASSes 4 checks"
+    else
+        echo "  FAIL: plant 3 late-start did not keep the 4 live checks green (rc=$rc)"
+        sed 's/^/      /' "$out" | tail -30
+        st_fail=$((st_fail + 1))
+    fi
+
+    if [ "$st_fail" -eq 0 ]; then
+        echo "HTTP_SLOWLORIS_SELFTEST: 3 passed, 0 failed"
+        return 0
+    fi
+    echo "HTTP_SLOWLORIS_SELFTEST: $((3 - st_fail)) passed, $st_fail failed"
+    return 1
+}
+
+if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
+    sl_selftest
+    exit $?
+fi
 
 if ! command -v python3 >/dev/null 2>&1; then
     echo "  SKIP: python3 not available"
@@ -30,7 +127,8 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 PORT=$(( (RANDOM % 10000) + 50000 ))
-SRV=$(mktemp /tmp/eigs_sl_srv_XXXXXX.eigs)
+SRV=$(mktemp "${TMPDIR:-/tmp}/eigs_sl_srv_XXXXXX.eigs")
+LOG="${TMPDIR:-/tmp}/eigs_sl_srv_$$.log"
 cat > "$SRV" <<EIGS
 r is http_route of ["GET", "/ping", "pong"]
 serve is http_serve of $PORT
@@ -38,22 +136,59 @@ EIGS
 
 # Per-IP cap squeezed to 4 so the cap is testable from a single loopback
 # address. Header timeout/min-rate left at defaults (10s / 256 B/s).
-EIGS_HTTP_MAX_CONN_PER_IP=4 "$EIGS" "$SRV" > /tmp/eigs_sl_srv_$$.log 2>&1 &
+EIGS_HTTP_MAX_CONN_PER_IP=4 "$EIGS" "$SRV" > "$LOG" 2>&1 &
 SRV_PID=$!
 cleanup() {
     kill "$SRV_PID" 2>/dev/null || true
     wait "$SRV_PID" 2>/dev/null || true
-    rm -f "$SRV" /tmp/eigs_sl_srv_$$.log
+    rm -f "$SRV" "$LOG"
 }
 trap cleanup EXIT
 
-for _ in $(seq 1 30); do
-    curl -s --max-time 1 "http://127.0.0.1:$PORT/ping" >/dev/null 2>&1 && break
+# Readiness: poll every 100 ms up to READY_SECS. Fail BY NAME in each of the
+# two ways — process gone, or deadline. A duration budget is not the witness;
+# the named line is.
+#
+# kill -0 is not enough: an `exit 3` stub is a zombie until we wait, and
+# kill -0 on a zombie succeeds, so plant 2 would wait out the deadline and
+# print the wrong name. ps -o stat= reports Z on both Linux and Darwin.
+server_gone() {
+    if ! kill -0 "$1" 2>/dev/null; then
+        return 0
+    fi
+    case "$(ps -o stat= -p "$1" 2>/dev/null || true)" in
+        *Z*) return 0 ;;
+    esac
+    return 1
+}
+# The bound is a WALL-CLOCK deadline, not an iteration count. An iteration
+# count of READY_SECS*10 assumes each round costs exactly the 0.1 s sleep;
+# measured, a refused-connection round costs ~0.155 s (curl spawn + sleep), so
+# a 30 s budget took 47 s and the failure line named a number that was not
+# true. A `date`-based deadline makes the printed bound the bound.
+SL_READY=0
+sl_deadline=$(( $(date +%s) + READY_SECS ))
+while :; do
+    if server_gone "$SRV_PID"; then
+        wait "$SRV_PID"
+        rc=$?
+        echo "  FAIL: server exited rc=$rc before it was ready"
+        [ -f "$LOG" ] && head -20 "$LOG"
+        echo "HTTP_SLOWLORIS: 0 passed, 1 failed"
+        exit 1
+    fi
+    if curl -s --max-time 1 "http://127.0.0.1:$PORT/ping" >/dev/null 2>&1; then
+        SL_READY=1
+        break
+    fi
+    # Deadline tested AFTER the probe, so the budget always buys at least one
+    # full attempt even at READY_SECS=1 (the self-test's cheap bound).
+    [ "$(date +%s)" -ge "$sl_deadline" ] && break
     sleep 0.1
 done
-if ! curl -s --max-time 1 "http://127.0.0.1:$PORT/ping" >/dev/null 2>&1; then
-    echo "  FAIL: server never came up on port $PORT"
-    head -20 /tmp/eigs_sl_srv_$$.log
+if [ "$SL_READY" -ne 1 ]; then
+    echo "  FAIL: server not ready within ${READY_SECS} s"
+    [ -f "$LOG" ] && head -20 "$LOG"
     echo "HTTP_SLOWLORIS: 0 passed, 1 failed"
     exit 1
 fi

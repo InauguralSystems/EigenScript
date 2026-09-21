@@ -560,6 +560,41 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The Value-union size assert is the #1183 claim that holds at every
+  pointer width, so the Docs-site wasm32 lane (pages.yml) compiles again
+  (#1185).** `sizeof(data) == sizeof(data.fn)` was a 64-bit accident (`fn`
+  and `dict` are both 56 bytes there; at 32-bit pointers `data` is 36 and
+  `fn` is 28). The real claim is that caching the string length added no
+  bytes to the union: `sizeof(data.strv) <= sizeof(data.fn)`. Gated by
+  suite `[99i3]` (`tools/ilp32_syntax_check.sh`): clang `-m32 -fsyntax-only`
+  over every `src/*.c` in `web/build.sh`'s SOURCES — 22 today, floored, so a
+  shrinking SOURCES array is a deliberate re-pin rather than a quiet green.
+  Availability is probed by EXECUTION, not by the compiler's name: a
+  toolchain with no 32-bit target (the macOS runners) SKIPs by name with the
+  compiler's own words, counted as a skip and never as a pass.
+
+- **The db-extension error-path example in `docs/BUILTINS.md` no longer
+  pins the core build's "undefined variable" output.** Section [89] on
+  `make full` was red since 9d503d5 (#1175): the executed fence expected
+  `query failed: undefined variable 'db_query_json'` while the db build
+  raises `db: not connected — call db_connect first`. The example now
+  prints a prefix that holds on both binaries; the prose next to it says
+  what each build actually raises.
+
+- **HTTP slow-loris readiness waits 30 s and fails by name (#1165).**
+  `tests/test_http_slowloris.sh` polled curl 30 × 0.1 s then printed
+  `FAIL: server never came up` — a cold-start race on shared runners, not
+  a sanitizer effect (ASan run 35048451582 and the postgres lane on
+  #1187, both green on rerun). The wait now polls every 100 ms against a
+  WALL-CLOCK deadline and names `server exited rc=N before it was ready` vs
+  `server not ready within 30 s`. The bound is a deadline rather than an
+  iteration count because a refused-connection round costs ~0.155 s, not
+  0.1 s: measured, the iteration-count draft took 47 s to print "within
+  30 s", and a failure line that names a number it does not keep is not a
+  witness. Three plants (`--self-test`, enrolled next to [45b] and pinned
+  at 3 cases) prove both named failures and the 5 s late-start control.
+  Closes #1165.
+
 - **The string-scaling gate binds the runtime it measures, measures in
   interleaved rounds, and states the scope it actually has (#1188, #1189).** Both found by a blind critic, by
   execution, on the enrolment itself. #1188: the suite section ran the child

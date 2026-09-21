@@ -265,7 +265,9 @@ SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage
 # interpreter (deliberately not via `make`, which would re-point
 # src/eigenscript under the suite) plus two leak controls, so four real
 # compile invocations that no make target covers.
-SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh"
+# tools/ilp32_syntax_check.sh joined with [99i3]: clang -m32 -fsyntax-only
+# over the playground TUs (pages.yml wasm32 stand-in).
+SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh tools/ilp32_syntax_check.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
 # compile line is not a compile.
@@ -345,6 +347,7 @@ script:tests/test_tsan.sh 1
 script:tools/trace_mt_mutants.sh 2
 script:tools/arming_mt_mutants.sh 1
 script:tests/run_all_tests.sh 1
+script:tools/ilp32_syntax_check.sh 2
 '
 
 # Floor for a label, or empty when the label is untracked.
@@ -1179,6 +1182,18 @@ if [ "${1:-}" = "--selftest" ]; then
         # which is what the failure actually reported (#1007, adding asan-gfx).
         # The check must be keyed to the tree under test, not to HEAD.
         cp Makefile "$root/Makefile"
+        # SCRIPT_AUDITS members too: the live gate lists them, so they must
+        # exist in the fault tree or the nested run dies on "script not found"
+        # before reaching the planted header — same class as the Makefile
+        # overlay (adding a compile-bearing script and its enrollment in ONE
+        # change). Overlay from the working tree; skip any path that is not
+        # a file yet (a typo in SCRIPT_AUDITS is still the live gate's job).
+        local sc
+        for sc in $SCRIPT_AUDITS; do
+            [ -f "$sc" ] || continue
+            mkdir -p "$root/$(dirname "$sc")"
+            cp "$sc" "$root/$sc"
+        done
         # New auxiliary targets can also depend on not-yet-committed C inputs.
         # Copying only their recipe/enrollment left `embed-roads` without its
         # source and aborted the dry run before the planted header (#1056).

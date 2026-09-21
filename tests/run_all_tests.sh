@@ -189,7 +189,7 @@ elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout $EIGS_TEST_TIM
 # -L and the symlink-aware [99d] restore below cost nothing on a hard link
 # and keep the guard correct if the alias is ever a symlink.)
 EIGS_BIN="./eigenscript"
-# RUNTIME IDENTITY FOR EVERY CHILD (#1188). Seven child tests resolve their
+# RUNTIME IDENTITY FOR EVERY CHILD (#1188). Eight child tests resolve their
 # runtime as `${EIGS:-<some default>}`, so an EIGS inherited from the
 # environment chooses the binary they measure. A blind critic exported one at
 # a healthy build, ran the suite's own string-scaling section against the
@@ -2838,6 +2838,9 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     echo ""
 
     # [45b] HTTP slow-loris hardening (per-IP cap + header-phase timeout/min-rate)
+    # The #988 wrapper still treats a non-completing child as untrustworthy —
+    # do not route this through env/timeout/$EIGS_TMO; bash must be the command
+    # word. The self-test is a second invocation of the same script, counted.
     echo "[45b/47] HTTP slow-loris hardening (4 checks)"
     SL_OUTPUT=$(bash "$TESTS_DIR/test_http_slowloris.sh" 2>&1)
     SL_PASS=$(echo "$SL_OUTPUT" | grep -c "PASS:" || true)
@@ -2850,6 +2853,19 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
         echo "$SL_OUTPUT" | grep "FAIL:" | head -5
     else
         echo "  PASS: all $SL_PASS HTTP slow-loris checks"
+    fi
+    SLST_OUTPUT=$(bash "$TESTS_DIR/test_http_slowloris.sh" --self-test 2>&1)
+    SLST_PASS=$(echo "$SLST_OUTPUT" | grep -c "PASS:" || true)
+    SLST_FAIL=$(echo "$SLST_OUTPUT" | grep -c "FAIL:" || true)
+    TOTAL=$((TOTAL + SLST_PASS + SLST_FAIL))
+    PASS=$((PASS + SLST_PASS))
+    FAIL=$((FAIL + SLST_FAIL))
+    if [ "$SLST_FAIL" -gt 0 ] || [ "$SLST_PASS" -ne 3 ]; then
+        echo "  FAIL: HTTP slow-loris self-test (passed=$SLST_PASS want 3, failed=$SLST_FAIL)"
+        echo "$SLST_OUTPUT" | grep "FAIL:" | head -8
+        echo "$SLST_OUTPUT" | tail -8
+    else
+        echo "  PASS: all $SLST_PASS HTTP slow-loris readiness plants"
     fi
     echo ""
 
@@ -7486,6 +7502,61 @@ else
 fi
 echo ""
 fi  # EIGS_SKIP_WERROR_AUDIT
+
+# [99i3] ILP32 syntax gate (brief named this [99k]; that label is taken by
+# CRLF #880). pages.yml compiles the playground with emcc (wasm32); a
+# 64-bit-only sizeof(data)==sizeof(fn) assert kept that lane red from #1185.
+# The gate runs clang -m32 -fsyntax-only over every src/*.c in web/build.sh's
+# SOURCES, same -D flags. SKIP (not a pass) when this toolchain cannot target
+# 32-bit at all — probed by EXECUTION, not by the compiler's name.
+echo "[99i3] ILP32 syntax gate (the playground's wasm32 build cannot break unnoticed)"
+TOTAL=$((TOTAL + 1))
+ilp32_audit_out=$(bash "$TESTS_DIR/../tools/ilp32_syntax_check.sh" 2>&1)
+ilp32_audit_rc=$?
+printf '%s\n' "$ilp32_audit_out"
+# The tool SKIPs (exit 0, one SKIP: line) when this toolchain has no 32-bit
+# target at all — the macOS runners, where the compiler exists and `-m32` has
+# no target. Count that as a skip, not a pass, and relay the tool's OWN reason
+# rather than a second wording of it (a skip is a claim; the reason is what
+# makes it reviewable). The compiler is not named here: a compiler token in
+# this runner is a recognizer-coverage hit in [99i].
+if [ "$ilp32_audit_rc" -eq 0 ] && grep -q '^SKIP:' <<<"$ilp32_audit_out"; then
+    TOTAL=$((TOTAL - 1))
+    ilp32_skip_line=$(printf '%s\n' "$ilp32_audit_out" | grep -m1 '^SKIP:')
+    echo "  $ilp32_skip_line"
+else
+    ilp32_selftest_out=$(bash "$TESTS_DIR/../tools/ilp32_syntax_check.sh" --selftest 2>&1)
+    ilp32_selftest_rc=$?
+    # rc 0 is not the verdict. A gate gutted to `return 0` also exits 0 and
+    # prints nothing, so the section requires the tool's OWN examined line
+    # (mechanical-gates §146: gate the OUTPUT, not the invocation) and pins
+    # the self-test's case count (§142) — "some cases ran" is what a deleted
+    # plant also prints. 4 = plants 1-3 plus the live-inventory control.
+    ILP32_SELFTEST_CASES=4
+    ilp32_ok_lines=$(printf '%s\n' "$ilp32_selftest_out" | grep -c '^selftest ok:')
+    if [ "$ilp32_audit_rc" -eq 0 ] && [ "$ilp32_selftest_rc" -eq 0 ] \
+       && grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out" \
+       && [ "$ilp32_ok_lines" -eq "$ILP32_SELFTEST_CASES" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: every playground src/*.c is ILP32-clean ($ilp32_ok_lines/$ILP32_SELFTEST_CASES gate self-test cases green)"
+    else
+        FAIL=$((FAIL + 1))
+        if [ "$ilp32_audit_rc" -ne 0 ]; then
+            echo "  FAIL: a playground TU does not compile at 32-bit pointer width (audit exit $ilp32_audit_rc)"
+        elif ! grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out"; then
+            echo "  FAIL: the ILP32 gate exited 0 without reporting how many TUs it examined; its output:"
+            printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
+        fi
+        if [ "$ilp32_selftest_rc" -ne 0 ]; then
+            echo "  FAIL: the ILP32 gate self-test broke (--selftest exit $ilp32_selftest_rc); its output:"
+            printf '%s\n' "$ilp32_selftest_out" | sed 's/^/      /'
+        elif [ "$ilp32_ok_lines" -ne "$ILP32_SELFTEST_CASES" ]; then
+            echo "  FAIL: the ILP32 gate self-test ran $ilp32_ok_lines of $ILP32_SELFTEST_CASES cases — a plant was deleted, not a fault found"
+            printf '%s\n' "$ilp32_selftest_out" | sed 's/^/      /'
+        fi
+    fi
+fi
+echo ""
 
 # [99i2] Core -> extension boundary (#744). The core must not include an
 # extension's PRIVATE header. `ext_db_internal.h` pulls <libpq-fe.h>, so a
