@@ -169,6 +169,16 @@ cannot: a per-target differential flamegraph on every PR, and a history
 that is not a checked-in `baseline.txt`. It is a profiler and a record, not a
 second merge gate; the `bench` job stays the authority.
 
+The lane also runs one **real consumer**: the DMG emulator on Blargg's
+`cpu_instrs` for 2 M cycles, JIT on and off, fetched at a commit pinned in the
+workflow. The in-repo `bench_dmg_shape` flatters the JIT about 10x against the
+emulator it names — under cachegrind the JIT removes 48% of that bench's
+instructions and 11.8% of DMG's (2026-09-21), and the fleet matrix on
+[#1178](https://github.com/InauguralSystems/EigenScript/issues/1178) reads
++5% wall. Three of the other ten targets are the JIT's own shapes, so without
+the consumer row the lane could show a JIT change as large while the fleet
+calls it a coin flip.
+
 The lane's headline metric is **instructions**, not CodSpeed's cycle
 estimate: the estimate's cache model attributed ~60% of the DMG shape to cache
 misses, and `perf stat` on real hardware read IPC 1.61 with 1.6% last-level
