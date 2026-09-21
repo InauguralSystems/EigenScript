@@ -322,9 +322,26 @@ All notable changes to EigenScript are documented here.
 - **Consumer-acceptance harness (#1213, #1214, #1217).** `run` takes a
   candidate set (`--full` / `--gfx`); a name a consumer invokes that the
   set does not cover is `UNRUNNABLE|prereq:variant:<name>` with a 127-shim
-  on PATH. Variant discovery scans every text file (`grep -rIl`), admits
-  multi-hyphen names, and binds `local` before deriving so `run` consults
-  the set (a name in a called script is `UNRUNNABLE`, not a 127 FAIL).
+  on PATH. Variant discovery (`tools/_derive_variants.py`) takes a name
+  only from an INVOCATION POSITION -- the first word of a simple command
+  in shell text (`*.sh`, a `#!` script, Makefile recipes, a workflow
+  `runCmd`, a declared command), the word after
+  `exec`/`env`/`timeout N`/`xvfb-run`/`command -v`, an assignment or
+  `${VAR:-default}` value, a Python `subprocess`/`os.system`/`os.exec*`/
+  `shutil.which` first argument or `os.environ.get` default, and an
+  `.eigs` `exec_capture`/`proc_spawn` first string. Comments, heredoc
+  bodies, prose, JSON, non-`runCmd` YAML and anything with a `/` are not
+  invocations; every rejected occurrence is printed by `plan` as
+  `variants|<consumer>|excluded:<name>|<file>:<line>`. Scanning every
+  TOKEN instead had made a Dockerfile path, a skill name in CLAUDE.md,
+  bench-JSON keys, a comment and a release-asset URL into prerequisites of
+  ouroboros, iLambdaAi and Tidepool. The class is closed at EXECUTION time
+  too: every `eigenscript*` executable on the inherited PATH outside the
+  candidate set is 127-shimmed (`path_masked=`), and a row whose own call
+  log shows a blocked `argv[0]` is `FAIL|undeclared-variant:<name>` -- so
+  a name the consumer COMPUTES (`eigenscript-$V`) cannot reach a stale
+  binary. A path the consumer computes INSIDE its checkout
+  (`./eigenscript-*`) is the stated residual and reads UNEXERCISED.
   Non-PASS rows keep the last 60 lines of the consumer log in the
   record (`log|<name>|<line>`), or `log|<name>|preflight: <reason>` when
   there is no consumer output; `CA_LOGS` copies logs before cleanup. The
@@ -334,11 +351,23 @@ All notable changes to EigenScript are documented here.
   stdout before the verdict and in the record footer, while the
   `VERDICT:` line itself stays exact. `_extract_runcmd.py`
   matches YAML block-scalar chomping, folding, and relative indent.
-  `set -f` around word splits including the variant loop. A signal in
-  the pause-before-rename window removes the rewrite temp. `--self-test`
-  is a `gate self-tests` CI step; the fixture `plan` step asserts
-  `expected=N` with N>0. A uid-0 self-test drops to an unprivileged user
-  for `stale-unwritable` or SKIPs that plant by name.
+  Only a dated `YYYY-MM-DD-*.record` counts toward that floor; any other
+  `*.record` in the directory is `stray record file: <name>`, a FAIL by
+  name (a non-dated `smoke.record` used to LOWER the floor to its own row
+  count). `_extract_runcmd.py` matches YAML block-scalar chomping,
+  folding, and relative indent, keeps the trailing newlines `|+`/`>+`
+  keep, treats a MORE-INDENTED line in a folded scalar as literal (three
+  commands stayed three commands, so a failing one still fails the block)
+  and normalises CRLF. `set -f` around word splits including the variant
+  loop. A signal in the pause-before-rename window removes the rewrite
+  temp. `--self-test` is a `gate self-tests` CI step; the fixture `plan`
+  step asserts `expected=N` with N>0. A uid-0 self-test re-runs the WHOLE
+  self-test as an unprivileged user (a byte-identical copy of its tool
+  tree inside a drop root it chowns), or SKIPs both unwritable plants by
+  name; `plants + skipped` is pinned to a declared constant, so a gutted
+  SKIP counter or a deleted plant is red; and every child duplicates its
+  stderr into a capture file the `no-unbound-variable` check reads, so a
+  plant that discards both streams cannot hide a diagnostic.
 
 - **Consumer-acceptance `run` residuals (M1 round 7).** Self-test TMPDIR is
   private (concurrent self-tests no longer `rm -rf` each other's

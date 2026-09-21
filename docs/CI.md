@@ -539,10 +539,17 @@ The same job also runs `tools/consumer_acceptance.sh --self-test` and
 `plan` against a fixture inventory whose declared set is the fixture's
 own (never the real ecosystem); the step asserts `expected=N` with N>0.
 The job runs as uid 0 in the container, where a `chmod a-w` directory is
-still writable, so the `stale-unwritable` plant drops to an unprivileged
-user (`runuser`/`setpriv` + `nobody`); if that is unavailable the plant
-and its transverse row SKIP **by name** and the self-test's final line
-reports `plants=N skipped=M` — never a silent OK.
+still writable and no plant that depends on "cannot write" can be planted.
+So the **whole** self-test re-runs itself as an unprivileged user
+(`runuser`/`setpriv` + `nobody`, a drop root it chowns, `TMPDIR` inside
+it; stdout and exit status propagate unchanged) — every plant then runs
+exactly as it does on a developer box. Per-plant drops were the wrong
+layer: round 2 dropped only for `stale-unwritable` and CI still recorded
+`VERDICT: PASS` for it. If no drop is possible, BOTH unwritable plants
+(`F unwritable-record`, `I stale-unwritable`) SKIP **by name** and the
+final line reports `plants=N skipped=2` — never a silent OK. That line
+also pins `plants + skipped` to a declared constant in the script, so a
+gutted SKIP counter or a deleted plant turns the self-test red.
 
 Every plan run prints one line, and the runner CHECKS it: after the plan runs,
 the dispatcher counts the `[...]` section headers the run actually printed and

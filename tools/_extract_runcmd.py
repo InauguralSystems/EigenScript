@@ -29,6 +29,9 @@ Exits 0 and prints the command, or exits 1 if this file has no runCmd.
 import re
 import sys
 
+# CRLF: the source is normalised to LF in extract() before either regex
+# runs, so a \r never reaches the indicator or the body (Fable r2 05: a
+# CRLF workflow yielded None because this pattern required \n).
 HEADER_RE = re.compile(
     r"^([ \t]*)runCmd:[ \t]*([|>])([+-]?)([1-9][0-9]*)?[ \t]*\n",
     re.M,
@@ -54,37 +57,55 @@ def _leading_spaces(line):
     return n
 
 
-def _fold_block(text):
-    """YAML folded scalar: adjacent non-empty lines become one line, joined
-    by a space; one blank line is a paragraph break (a single newline);
-    extra blank lines become extra newlines."""
-    raw_lines = text.split("\n")
+def _fold_block_lines(body):
+    """YAML folded scalar, line list in / line list out.
+
+    Adjacent non-empty lines become one line joined by a space; one blank
+    line is a paragraph break (a single newline); extra blank lines become
+    extra newlines. A MORE-INDENTED line (body lines have the block indent
+    already stripped, so any remaining leading space is more-indented) is
+    NOT folded: YAML keeps the breaks on both sides of it. Fable r2 05
+    measured the old code turning `a` / `  b` / `c` into `a   b c` where
+    YAML gives `a\n  b\nc\n`; Astra's instance of the same shape folded
+    three commands into one and a failing `false` stopped being a command
+    at all, so the row read PASS.
+    """
     out = []
     buf = []
 
     def flush():
         if buf:
             out.append(" ".join(buf))
-            buf.clear()
+            del buf[:]
 
     i = 0
-    while i < len(raw_lines):
-        line = raw_lines[i]
+    while i < len(body):
+        line = body[i]
         if line.strip() == "":
             flush()
             nblank = 1
-            while i + 1 < len(raw_lines) and raw_lines[i + 1].strip() == "":
+            while i + 1 < len(body) and body[i + 1].strip() == "":
                 nblank += 1
                 i += 1
-            extra = nblank - 1
+            # Mid-scalar the first break of the run replaces the fold
+            # space, so a run of n blanks is n-1 extra newlines. At the
+            # END of the scalar there is no line to fold into, so all n
+            # are kept -- that is the newline `>+` chomping keeps and the
+            # old code dropped.
+            trailing = all(b.strip() == "" for b in body[i + 1:])
+            extra = nblank if trailing else nblank - 1
             if extra > 0 and out:
                 for _ in range(extra):
                     out.append("")
+        elif line[:1] in (" ", "\t"):
+            # CA-GUARD:folded-more-indented
+            flush()
+            out.append(line)
         else:
             buf.append(line)
         i += 1
     flush()
-    return "\n".join(out)
+    return out
 
 
 def extract_block(src):
@@ -97,6 +118,13 @@ def extract_block(src):
     explicit = m.group(4)
     rest = src[m.end():]
     lines = rest.split("\n")
+    # split() on a body that ends in a newline yields one trailing ""
+    # that is an artefact of the separator, not an empty content line.
+    # Dropping it is what makes `+` (keep) chomping count the same
+    # trailing newlines YAML does (Fable r2 05: `|+` followed by another
+    # key kept one fewer newline than yaml.safe_load).
+    if rest.endswith("\n") and lines and lines[-1] == "":
+        lines.pop()
 
     indent = (key_indent + int(explicit)) if explicit else None
     body = []
@@ -117,11 +145,12 @@ def extract_block(src):
             break
         body.append(line[indent:])
 
-    text = "\n".join(body)
-    if not text.strip():
+    if not "\n".join(body).strip():
         return None
     if style == ">":
-        text = _fold_block(text)
+        body = _fold_block_lines(body)
+    # Every content line of a block scalar carries its own line break.
+    text = "".join(line + "\n" for line in body)
     if chomp == "-":
         text = text.rstrip("\n")
     elif chomp == "+":
@@ -141,6 +170,8 @@ def extract_inline(src):
 
 
 def extract(src):
+    # CA-GUARD:crlf-normalise
+    src = src.replace("\r\n", "\n")
     block = extract_block(src)
     if block is not None:
         return block
@@ -183,7 +214,9 @@ def _yaml_oracle(src):
 
 def selftest():
     """Plants: over-consume `|`, folded `>`, leading blank, folded paragraph,
-    explicit relative indent, chomping `|-`/`|+`. examined == len(cases) > 0.
+    explicit relative indent, chomping `|-`/`|+`, keep-then-key, a
+    more-indented line inside a folded scalar (twice: as text and as three
+    commands), CRLF. examined == len(cases) > 0.
     When PyYAML is importable, valid documents are cross-checked against
     yaml.safe_load (trailing clip newline rstripped to match command form)."""
     cases = [
@@ -221,6 +254,40 @@ def selftest():
             "chomp-keep",
             "runCmd: |+\n  make test\n\n",
             "make test\n\n",
+        ),
+        # Fable r2 evidence/05, shape (a): a keep block followed by another
+        # key kept one fewer trailing newline than yaml.safe_load.
+        (
+            "chomp-keep-then-key",
+            "runCmd: |+\n  make test\n\npush: never\n",
+            "make test\n\n",
+        ),
+        (
+            "chomp-keep-folded-then-key",
+            "runCmd: >+\n  a\n  b\n\npush: never\n",
+            "a b\n\n",
+        ),
+        # shape (b): a MORE-INDENTED line in a folded scalar is literal --
+        # YAML keeps the breaks on both sides of it.
+        (
+            "folded-more-indented",
+            "runCmd: >\n  a\n    b\n  c\n",
+            "a\n  b\nc",
+        ),
+        # Astra r2 evidence/05: the same shape as THREE COMMANDS. Folding
+        # them into one line made a failing `false` stop being a command,
+        # and the harness row read PASS.
+        (
+            "folded-more-indented-commands",
+            "runCmd: >\n  eigenscript work.eigs\n    false\n  echo accepted\n",
+            "eigenscript work.eigs\n  false\necho accepted",
+        ),
+        # shape (c): CRLF. HEADER_RE needs \n right after the indicator, so
+        # a CRLF workflow used to yield None (no acceptance command at all).
+        (
+            "crlf-block",
+            "runCmd: |\r\n  make test\r\n  make more\r\n",
+            "make test\nmake more",
         ),
     ]
     examined = 0

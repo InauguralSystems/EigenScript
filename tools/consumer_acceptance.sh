@@ -21,14 +21,29 @@
 #     --full shims eigenscript-full; --gfx shims eigenscript-gfx. A name a
 #     consumer invokes that the set does not cover is UNRUNNABLE|prereq:variant:<name>
 #     and a 127-shim of that name sits on PATH (never a stale PATH fall-through).
-#     The name set is DERIVED, never typed: every text file in the checkout
-#     (grep -rIl, minus .git -- no extension allowlist, so a .py, a Makefile
-#     or an extensionless script counts) is scanned for eigenscript and
-#     eigenscript-[a-z0-9-]+ (multi-hyphen included). The check runs in
-#     run_one too, not only on the runCmd tokens, so a name reached from a
-#     script the consumer CALLS is refused before the stale binary is.
-#     PATH shim logs argv+rc to a scratch file under a directory the consumer
-#     is never told about (not the shim dir, not $EIGS_DIR, not their parents);
+#     The name set is DERIVED, never typed, and only from INVOCATION
+#     POSITIONS (tools/_derive_variants.py): the first word of a simple
+#     command in shell text (*.sh, an extensionless #! script, Makefile
+#     recipe lines, a workflow runCmd, a DECLARED command via --shell), the
+#     word after exec/env/nohup/setsid/`timeout N`/`xvfb-run`/`command -v`,
+#     the value of an assignment or a ${VAR:-default}, the first element of
+#     a Python subprocess/os.system/os.exec*/shutil.which call or an
+#     os.environ.get default, and the first string of an .eigs
+#     exec_capture/proc_spawn call. Comments, heredoc bodies, prose, JSON,
+#     YAML values other than runCmd and anything with a / are NOT
+#     invocations, and every rejected occurrence is printed by `plan` as
+#     variants|<consumer>|excluded:<name>|<file>:<line>. The check runs in
+#     run_one too, not only at plan time, so a name reached from a script
+#     the consumer CALLS is refused before the stale binary is.
+#     At EXECUTION time the class is closed independently of the
+#     derivation: every eigenscript* executable on the INHERITED PATH that
+#     is not in the candidate set is 127-shimmed into $SHIM (path_masked=),
+#     so a name the consumer COMPUTES (eigenscript-$V) cannot reach a stale
+#     binary; the row's own call log is then read back and any argv[0]
+#     basename outside the candidate set makes the row
+#     FAIL|undeclared-variant:<name>.
+#     PATH shim logs argv0+rc+argv to a scratch file under a directory the
+#     consumer is never told about (not the shim dir, not $EIGS_DIR, not their parents);
 #     the path is baked into the shim (not exported; not named CA_*). cand_calls
 #     counts NON-TRIVIAL invocations (a .eigs path or a non-flag positional).
 #     --version/--api/--help/bare are `probe` and do not count. cand_calls=0
@@ -42,6 +57,12 @@
 #     a bare PASS. Every non-PASS row is followed by log|<name>|<line> (last 60
 #     lines of combined output). CA_LOGS=<dir> copies those logs before cleanup.
 #   tools/consumer_acceptance.sh --self-test     plant a fault, prove it fires
+#     As uid 0 it re-execs itself as an unprivileged user (see the root
+#     residual below) so every plant runs in a world that can refuse it.
+#   tools/consumer_acceptance.sh --plant-total N M
+#     Self-test accounting probe: prints OK when N+M equals the declared
+#     plant total, MISMATCH otherwise. Exists so the comparison can be
+#     mutated and observed without re-running the whole self-test.
 #
 # Isolation (mechanical-gates §168): this script never mutates a sibling repo.
 # Consumer commands run in the checkout as-is. Overrides, resolved per call:
@@ -144,22 +165,21 @@
 #     runtime after one candidate setup call.
 #   - stdin-fed programs and `eigenscript --test` count as probe; no
 #     real consumer uses them.
-#   - variant derivation is by TOKEN, not by call site: a name that only
-#     ever appears in prose, a comment, a JSON blob or a release-asset
-#     filename still enters the set and makes the row UNRUNNABLE until
-#     the operator supplies that candidate. Measured against the real
-#     ecosystem on 2026-09-21: ouroboros yields eigenscript-src (a
-#     Dockerfile path), eigenscript-aot-compiler-engineer (a skill name
-#     in CLAUDE.md), eigenscript-probe / eigenscript-original /
-#     eigenscript-missing-reuse (bench JSON); iLambdaAi yields
-#     eigenscript-full-from-env (a comment) and eigenscript-full-linux-x86
-#     (a release asset URL); Tidepool yields eigenscript-gfx-binary (a
-#     usage line). Fail-closed and named beats a silent stale-PATH PASS
-#     (#1213), but narrowing this to invocation sites is open work.
-#   - the unwritable-directory plant cannot be planted as uid 0. As root
-#     the self-test drops to an unprivileged user; with no runuser/setpriv
-#     + nobody, or when a probe under that user fails, the plant and its
-#     transverse row SKIP BY NAME and the final line reports skipped=N.
+#   - a consumer that resolves the runtime by a path IT COMPUTES --
+#     ./eigenscript-full inside its own checkout, or a glob over one --
+#     is not on PATH, so the execution-time sweep cannot mask it. Such a
+#     row reads UNEXERCISED (cand_calls=0), never PASS; plant
+#     variant-glob-residual pins exactly that behaviour, so closing this
+#     residual turns that plant red on purpose.
+#   - a Dockerfile RUN line is not scanned for invocations: it builds the
+#     image, it is not the acceptance command.
+#   - the unwritable-directory plants cannot be planted as uid 0. The
+#     WHOLE self-test therefore re-runs itself as an unprivileged user
+#     when it starts as root (runuser/setpriv + nobody, a drop root it
+#     chowns, TMPDIR inside it, stdout and exit status propagated). With
+#     no drop tool, or when the probe under that user fails, BOTH
+#     unwritable plants SKIP BY NAME and the final line reports
+#     skipped=2 -- never a silent OK.
 #
 # examined != inventory on a COMPLETED record is unreachable without a
 # broken loop: the production path that stops early is an interrupt, and
@@ -172,6 +192,20 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FAILED=0
+
+# CA-GUARD:stderr-capture
+# Self-test only. Every invocation of this script duplicates its OWN stderr
+# into the capture file the self-test names, so a plant that discards both
+# streams (`>/dev/null 2>&1`) cannot hide a diagnostic from the
+# no-unbound-variable check. Astra r2 01: plant E discarded stderr, an
+# unbound variable on the rc-124 path printed `critic_probe: unbound
+# variable`, and the self-test still read unbound=0. The duplication
+# happens INSIDE the child, after it starts, so no caller redirection can
+# defeat it. CA_* names are stripped from every consumer environment, so a
+# consumer never inherits this.
+if [ -n "${CA_STDERR_CAP:-}" ]; then
+  exec 2> >(tee -a "$CA_STDERR_CAP" >&2)
+fi
 
 # Repos that pin this runtime but are deliberately NOT acceptance-gated. Each
 # needs a reason -- an unexplained exclusion is how a consumer goes missing.
@@ -307,38 +341,84 @@ accept_cmd_of() {
   return 1
 }
 
-# Executable names this consumer invokes: eigenscript, or
-# eigenscript-[a-z0-9-]+ (multi-hyphen included). Derived from EVERY text
-# file in the checkout (grep -rIl, no type allowlist, minus .git), never
-# typed. Bind locals first, then derive — `local r=... dir=$r` expands $r
-# before the local binds it, and under set -u a run_one subshell dies
-# with `r: unbound variable` and yields "" (the derived set is then never
-# consulted).
-variants_of() {
-  local r n out="" seen=" " dir raw="" f
-  r="${1:-}"
-  dir="${ECO:-}/$r"
-  [ -d "$dir" ] || { printf '%s' ""; return 0; }
-  raw=""
-  while IFS= read -r f || [ -n "$f" ]; do
-    [ -n "$f" ] || continue
-    [ -f "$f" ] || continue
-    raw="${raw}$(grep -hEo 'eigenscript(-[a-z0-9]+)*' "$f" 2>/dev/null || true)"$'\n'
-  done <<< "$(grep -rIl --exclude-dir=.git . "$dir" 2>/dev/null || true)"
-  while IFS= read -r n || [ -n "$n" ]; do
-    [ -z "$n" ] && continue
-    case "$n" in
-      eigenscript) ;;
-      eigenscript-[a-z0-9]*) ;;
+# Executable names this consumer INVOKES. Derived by
+# tools/_derive_variants.py from INVOCATION POSITIONS only -- the first word
+# of a simple command in shell text (`*.sh`, an extensionless `#!` script,
+# Makefile recipe lines, a workflow's runCmd), the word after
+# exec/env/nohup/setsid/`timeout N`/`xvfb-run ...`/`command -v`, the value of
+# a variable assignment or a `${VAR:-default}`, the first element of a
+# Python subprocess/os.system/os.exec*/shutil.which call or an
+# os.environ.get default, and the first string of an .eigs
+# exec_capture/proc_spawn call. Round 2 took every TOKEN in every text file
+# and so declared a Dockerfile path, a skill name, bench JSON keys, a comment
+# and a release-asset URL as prerequisites of three live consumers (#1213).
+#
+# Sets DERIVED_NAMES (space separated, deduplicated, first-seen order),
+# DERIVED_EXCLUDED (one `<name>|<file>:<line>` per line, every occurrence
+# that is NOT an invocation) and DERIVED_EXAMINED (files|occurrences, the
+# enumeration's own witness). Fails CLOSED: if the deriver cannot run, or
+# emits no `examined|` witness, DERIVED_RC is nonzero and the row is
+# UNRUNNABLE|prereq:variant-derivation rather than an empty set.
+DERIVED_NAMES=""
+DERIVED_EXCLUDED=""
+DERIVED_EXAMINED=""
+DERIVED_RC=0
+
+# stdin-free: prints the space-separated names of the variant| records in $1.
+parse_variant_names() {
+  local raw="${1:-}" line n out="" 
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      variant\|*) ;;
       *) continue ;;
     esac
-    case "$seen" in
+    n="${line#variant|}"
+    n="${n%%|*}"
+    case " $out " in
       *" $n "*) continue ;;
     esac
-    seen="$seen$n "
     out="${out:+$out }$n"
   done <<< "$raw"
   printf '%s' "$out"
+}
+
+derive_variants() {
+  local r dir raw line n rc=0
+  r="${1:-}"
+  dir="${ECO:-}/$r"
+  DERIVED_NAMES=""
+  DERIVED_EXCLUDED=""
+  DERIVED_EXAMINED=""
+  DERIVED_RC=0
+  [ -d "$dir" ] || return 0
+  raw="$(python3 "$HERE/tools/_derive_variants.py" "$dir" 2>/dev/null)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    DERIVED_RC="$rc"
+    return 0
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      variant\|*)
+        n="${line#variant|}"
+        n="${n%%|*}"
+        case " $DERIVED_NAMES " in
+          *" $n "*) ;;
+          *) DERIVED_NAMES="${DERIVED_NAMES:+$DERIVED_NAMES }$n" ;;
+        esac
+        ;;
+      excluded\|*)
+        DERIVED_EXCLUDED="${DERIVED_EXCLUDED}${line#excluded|}"$'\n'
+        ;;
+      examined\|*)
+        DERIVED_EXAMINED="${line#examined|}"
+        ;;
+    esac
+  done <<< "$raw"
+  # CA-GUARD:derive-examined
+  if [ -z "$DERIVED_EXAMINED" ]; then
+    DERIVED_RC=3
+  fi
+  return 0
 }
 
 # For a DECLARED command, every bash/sh/python3/python file token must
@@ -605,6 +685,7 @@ build_candidate_overlay() {
 load_expected_list() {
   EXPECTED_LIST=()
   RECORD_FLOOR=0
+  RECORD_STRAY=""
   if [ -f "${ECO:-}/.ca_expected" ]; then
     local n
     while IFS= read -r n || [ -n "$n" ]; do
@@ -633,6 +714,7 @@ load_expected_list() {
     fi
   fi
   local computed=0
+  RECORD_STRAY=""
   if [ "$rec_dir" = "__fault__" ]; then
     computed="${rows:-0}"
   elif [ -n "$rec_dir" ]; then
@@ -640,6 +722,18 @@ load_expected_list() {
     for f in "$rec_dir"/*.record; do
       [ -f "$f" ] || continue
       b="$(basename "$f")"
+      # CA-GUARD:record-dated-name
+      # Only a DATED record counts. Round 2 iterated every *.record, so a
+      # zzz.record raised the floor and a non-dated smoke.record LOWERED it
+      # to its own row count and the run still said PASS (Fable r2 03). A
+      # stray file in this directory is a FAIL by name, never a new floor.
+      case "$b" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.record) ;;
+        *)
+          RECORD_STRAY="${RECORD_STRAY:+$RECORD_STRAY }$b"
+          continue
+          ;;
+      esac
       if [ -z "$newest" ]; then
         newest="$f"
       else
@@ -692,7 +786,7 @@ scan_inventory() {
   FLOOR_FAIL=0
   FLOOR_WHY=""
   load_expected_list
-  local r pin cmd d kind gap_why miss vnames wf
+  local r pin cmd d kind gap_why miss vnames wf vexcl vexam exline
   local nullglob_was=0
   shopt -q nullglob && nullglob_was=1
   shopt -s nullglob
@@ -720,7 +814,24 @@ scan_inventory() {
     kind=""
     gap_why=""
     wf=""
-    vnames="$(variants_of "$r")"
+    # GATE_VARS feeds the PLAN listing only; run mode re-derives per row
+    # in run_one (freshly, so a tree that changes between the scan and the
+    # row is caught), so deriving here as well would be one python walk of
+    # every checkout for nothing.
+    vnames=""
+    vexcl=""
+    vexam=""
+    if [ "$verbose" -eq 1 ]; then
+      derive_variants "$r"
+      vnames="$DERIVED_NAMES"
+      vexcl="$DERIVED_EXCLUDED"
+      vexam="$DERIVED_EXAMINED"
+      if [ "${DERIVED_RC:-0}" -ne 0 ]; then
+        GAPS=$((GAPS + 1))
+        gap_why="${gap_why:+$gap_why; }variant derivation failed (rc=$DERIVED_RC)"
+        kind=gap
+      fi
+    fi
     if accept_cmd_of "$r"; then
       cmd="$ACCEPT_CMD"
       kind=derived
@@ -779,6 +890,15 @@ scan_inventory() {
         say "  workflow|$r|$wf"
       fi
       say "  variants|$r|${vnames:-eigenscript}"
+      say "  variants|$r|examined:${vexam:-none}"
+      # Every occurrence that did NOT enter the set, with its file:line, so
+      # the derivation's choice is visible rather than silent.
+      if [ -n "$vexcl" ]; then
+        while IFS= read -r exline || [ -n "$exline" ]; do
+          [ -n "$exline" ] || continue
+          say "  variants|$r|excluded:$exline"
+        done <<< "$vexcl"
+      fi
     fi
   done
   if [ "$nullglob_was" -eq 0 ]; then
@@ -829,6 +949,19 @@ scan_inventory() {
       fi
       gi=$((gi + 1))
     done
+  fi
+  # CA-GUARD:record-stray
+  if [ -n "${RECORD_STRAY:-}" ]; then
+    local sname
+    local stray_glob_off=0
+    case "$-" in *f*) stray_glob_off=1 ;; esac
+    set -f
+    for sname in $RECORD_STRAY; do
+      FLOOR_FAIL=1
+      FLOOR_WHY="${FLOOR_WHY:+$FLOOR_WHY; }stray record file: $sname"
+      GAPS=$((GAPS + 1))
+    done
+    [ "$stray_glob_off" -eq 0 ] && set +f
   fi
   if [ "${RECORD_FLOOR:-0}" -gt 0 ] && [ "$INVENTORY" -lt "$RECORD_FLOOR" ]; then
     FLOOR_FAIL=1
@@ -892,6 +1025,7 @@ LAST_CALLS=0
 LAST_OK=0
 LAST_FAIL=0
 LAST_PREREQ=""
+LAST_UNDECLARED=""
 RUN_RC=1
 ANY_BAD=0
 SKIP_MISSING_REASON=0
@@ -1294,6 +1428,18 @@ write_record_header() {
 # another runtime after one candidate setup call.
 # Residual: stdin-fed programs and eigenscript --test count as probe;
 # no real consumer uses them.
+# Variant names are derived from INVOCATION POSITIONS only
+# (tools/_derive_variants.py); every occurrence that did not enter the
+# set is listed by \`plan\` as variants|<consumer>|excluded:<name>|<file>:<line>.
+# At execution time every eigenscript* executable on the inherited PATH
+# that is not in the candidate set is 127-shimmed into path_masked=, and
+# a row whose call log shows a blocked| hit is FAIL|undeclared-variant:<name>.
+# Residual: a consumer that resolves the runtime by a PATH IT COMPUTES --
+# ./eigenscript-full inside its own checkout, or a glob over one -- is not
+# on PATH and is not masked; such a row reads UNEXERCISED (cand_calls=0),
+# never PASS.
+# Residual: a Dockerfile RUN line is not scanned for invocations: it builds
+# the image, it is not the acceptance command.
 run_id=$RUN_ID
 started=$STARTED
 eco_root=${ECO:-PENDING}
@@ -1309,6 +1455,7 @@ candidate_gfx_path=${CAND_GFX_ABS:-}
 candidate_gfx_version=PENDING
 candidate_gfx_sha256=PENDING
 eigenscript_resolved=${RESOLVED:-PENDING}
+path_masked=PENDING
 overlay=copy
 overlay_skipped=PENDING
 sibling_binary_present=PENDING
@@ -1352,6 +1499,7 @@ write_record_footer() {
         candidate_gfx_version=PENDING)  printf 'candidate_gfx_version=%s\n' "${CAND_GFX_VER:-}" ;;
         candidate_gfx_sha256=PENDING)   printf 'candidate_gfx_sha256=%s\n' "${CAND_GFX_SHA:-}" ;;
         eigenscript_resolved=PENDING) printf 'eigenscript_resolved=%s\n' "${RESOLVED:-}" ;;
+        path_masked=PENDING)       printf 'path_masked=%s\n' "${PATH_MASKED:-none}" ;;
         sibling_binary_present=PENDING) printf 'sibling_binary_present=%s\n' "${SIBLING_BEFORE:-${SIBLING_PRESENT:-no}}" ;;
         overlay_skipped=PENDING)   printf 'overlay_skipped=%s\n' "${OVERLAY_SKIPPED:-}" ;;
         "VERDICT: INCOMPLETE")     verdict_line "$verdict" ;;
@@ -1455,6 +1603,7 @@ run_one() {
   LAST_FAIL=0
   LAST_SKIPS=0
   LAST_PREREQ=""
+  LAST_UNDECLARED=""
 
   if [ ! -d "$repo" ]; then
     LAST_VERDICT=UNRUNNABLE
@@ -1481,7 +1630,47 @@ run_one() {
 
   # CA-GUARD:variant-mask
   local need v
-  need="$(variants_of "$name") $cmd"
+  # CA-GUARD:derive-fail-closed
+  # Same pre-filter as for the command text, and sound for the same
+  # reason: a checkout with no `eigenscript-` substring anywhere cannot
+  # yield a name other than `eigenscript`, which is always a candidate.
+  # grep rc 1 is "no match"; any other rc means the filter itself failed
+  # and the derivation runs (fail closed).
+  DERIVED_NAMES=""
+  DERIVED_RC=0
+  local _grep_rc=0
+  grep -rqI --exclude-dir=.git -e 'eigenscript-' "$repo" 2>/dev/null || _grep_rc=$?
+  if [ "$_grep_rc" -ne 1 ]; then
+    derive_variants "$name"
+  fi
+  if [ "${DERIVED_RC:-0}" -ne 0 ]; then
+    LAST_VERDICT=UNRUNNABLE
+    LAST_PREREQ="variant-derivation"
+    LAST_RC="-"
+    LAST_DUR="0"
+    return
+  fi
+  # The command text is NOT scanned for raw tokens: a runCmd is already
+  # derived from its workflow by call site, and a DECLARED command goes
+  # through the same rule via --shell. Round 2 split $cmd on whitespace and
+  # took any eigenscript-* word, so `eigenscript-$V` -- a name the consumer
+  # computes at runtime -- became a literal prerequisite named
+  # `variant:eigenscript-$V`. Runtime-computed names are closed at
+  # EXECUTION time instead (CA-GUARD:path-variant-sweep).
+  # Pre-filter, strictly broader than what it gates: every variant name
+  # other than `eigenscript` itself contains the substring `eigenscript-`
+  # (the name grammar is eigenscript(-[a-z0-9]+)*), and a bare
+  # `eigenscript` is always a candidate and is skipped by the loop below.
+  # So a command with no `eigenscript-` in it cannot contribute a name --
+  # this skips a python fork, it does not skip a decision.
+  local cmd_names="" cfile
+  if [ -n "${WORK:-}" ] && [ -d "${WORK:-}" ] && [ "${cmd#*eigenscript-}" != "$cmd" ]; then
+    cfile="$WORK/declared_cmd.txt"
+    printf '%s\n' "$cmd" > "$cfile"
+    cmd_names="$(python3 "$HERE/tools/_derive_variants.py" --shell "$cfile" 2>/dev/null || true)"
+    cmd_names="$(parse_variant_names "$cmd_names")"
+  fi
+  need="$DERIVED_NAMES $cmd_names"
   # CA-GUARD:noglob-split
   local glob_off=0
   case "$-" in *f*) glob_off=1 ;; esac
@@ -1601,6 +1790,30 @@ run_one() {
   if [ "$LAST_VERDICT" = PASS ] && [ "${LAST_SKIPS:-0}" -gt 0 ]; then
     LAST_VERDICT="PASS|skips=$LAST_SKIPS"
   fi
+  # CA-GUARD:undeclared-variant
+  # Read our OWN call log back: every logged argv[0] basename must be in
+  # the candidate set. A blocked| hit is a name the consumer computed at
+  # runtime and the derivation never saw -- that row is FAIL BY NAME, not
+  # UNEXERCISED and certainly not PASS.
+  LAST_UNDECLARED=""
+  local _ln _nm
+  while IFS= read -r _ln || [ -n "$_ln" ]; do
+    [ -n "$_ln" ] || continue
+    _nm="${_ln#*|}"
+    _nm="${_nm#*|}"
+    _nm="${_nm%%|*}"
+    case "$_nm" in
+      eigenscript|eigenscript-*) ;;
+      *) continue ;;
+    esac
+    is_candidate_name "$_nm" && continue
+    LAST_UNDECLARED="$_nm"
+    break
+  done < "${CALL_LOG:-/dev/null}"
+  if [ -n "$LAST_UNDECLARED" ]; then
+    LAST_VERDICT="FAIL|undeclared-variant:$LAST_UNDECLARED"
+  fi
+  # CA-GUARD:end-undeclared-variant
 }
 
 finalize_run() {
@@ -1651,11 +1864,13 @@ file_sha256() {
 }
 
 write_counting_shim() {
-  local dest="$1" target="$2"
+  local dest="$1" target="$2" name="${3:-}"
+  [ -n "$name" ] || name="$(basename "$dest")"
   {
     printf '%s\n' '#!/bin/sh'
     printf 'target=%s\n' "$(printf '%q' "$target")"
     printf 'log=%s\n' "$(printf '%q' "$CALL_LOG")"
+    printf 'name=%s\n' "$(printf '%q' "$name")"
     printf '%s\n' \
       'log="$log"' \
       'kind=probe' \
@@ -1668,18 +1883,83 @@ write_counting_shim() {
       'done' \
       '"$target" "$@"' \
       'rc=$?' \
-      'printf "%s|rc=%s|%s\n" "$kind" "$rc" "$*" >> "$log"' \
+      '# CA-GUARD:log-argv0' \
+      'printf "%s|rc=%s|%s|%s\n" "$kind" "$rc" "$name" "$*" >> "$log"' \
       'exit "$rc"'
   } > "$dest"
   chmod +x "$dest"
 }
 
+# A name with no candidate must not reach a stale binary of that name on
+# the inherited PATH. The shim refuses by name AND logs the hit, so the row
+# can be FAILed as undeclared-variant instead of silently reading PASS.
 write_127_shim() {
   local dest="$1" name="$2"
-  printf '%s\n' '#!/bin/sh' \
-    "echo \"consumer_acceptance: no candidate for $name\" >&2" \
-    'exit 127' > "$dest"
+  {
+    printf '%s\n' '#!/bin/sh'
+    printf 'name=%s\n' "$(printf '%q' "$name")"
+    printf 'log=%s\n' "$(printf '%q' "${CALL_LOG:-/dev/null}")"
+    printf '%s\n' \
+      'echo "consumer_acceptance: no candidate for $name" >&2' \
+      '# CA-GUARD:log-argv0' \
+      'printf "blocked|rc=127|%s|%s\n" "$name" "$*" >> "$log" 2>/dev/null || true' \
+      'exit 127'
+  } > "$dest"
   chmod +x "$dest"
+}
+
+# The candidate SET: which names have a real binary behind them.
+is_candidate_name() {
+  case "${1:-}" in
+    eigenscript) return 0 ;;
+    eigenscript-full) [ -n "${CAND_FULL_ABS:-}" ] && return 0 ;;
+    eigenscript-gfx)  [ -n "${CAND_GFX_ABS:-}" ] && return 0 ;;
+  esac
+  return 1
+}
+
+# Close the class at EXECUTION time (#1213, Fable/Astra r2): the derivation
+# decides which names are DECLARED prerequisites, and it cannot see a name
+# the consumer computes at runtime (`eigenscript-$V`). So before any row
+# runs, every executable named eigenscript* on the INHERITED PATH that is
+# not in the candidate set gets a 127-shim in $SHIM, which is first on the
+# row's PATH -- the stale binary is unreachable BY NAME from any script.
+# Residual, stated in the header: a consumer that resolves the runtime by a
+# path it computes (`./eigenscript-full`, a glob inside its own checkout)
+# is outside PATH and is not masked.
+PATH_MASKED=""
+mask_path_variants() {
+  local d b f
+  local -a dirs=()
+  PATH_MASKED=""
+  [ -n "${SHIM:-}" ] || return 0
+  local oldifs="$IFS"
+  local glob_off=0
+  case "$-" in *f*) glob_off=1 ;; esac
+  set -f
+  IFS=:
+  # shellcheck disable=SC2206
+  dirs=($PATH)
+  IFS="$oldifs"
+  [ "$glob_off" -eq 0 ] && set +f
+  for d in "${dirs[@]+"${dirs[@]}"}"; do
+    [ -n "$d" ] || d="."
+    [ -d "$d" ] || continue
+    case "$d" in "$SHIM") continue ;; esac
+    while IFS= read -r f || [ -n "$f" ]; do
+      [ -n "$f" ] || continue
+      [ -x "$f" ] || continue
+      b="$(basename "$f")"
+      case "$b" in
+        eigenscript|eigenscript-*) ;;
+        *) continue ;;
+      esac
+      is_candidate_name "$b" && continue
+      [ -e "$SHIM/$b" ] && continue
+      write_127_shim "$SHIM/$b" "$b"
+      PATH_MASKED="${PATH_MASKED:+$PATH_MASKED }$b"
+    done <<< "$(find "$d" -maxdepth 1 -name 'eigenscript*' 2>/dev/null || true)"
+  done
 }
 
 run_mode() {
@@ -1816,6 +2096,7 @@ run_mode() {
     printf '%s\n' '#!/bin/sh'
     printf 'target=%s\n' "$(printf '%q' "$CAND_ABS")"
     printf 'log=%s\n' "$(printf '%q' "$CALL_LOG")"
+    printf 'name=%s\n' eigenscript
     printf '%s\n' \
       '# CA-GUARD:private-log' \
       'log="$log"' \
@@ -1830,7 +2111,8 @@ run_mode() {
       'done' \
       '"$target" "$@"' \
       'rc=$?' \
-      'printf "%s|rc=%s|%s\n" "$kind" "$rc" "$*" >> "$log"' \
+      '# CA-GUARD:log-argv0' \
+      'printf "%s|rc=%s|%s|%s\n" "$kind" "$rc" "$name" "$*" >> "$log"' \
       'exit "$rc"'
   } > "$SHIM/eigenscript"
   chmod +x "$SHIM/eigenscript"
@@ -1846,6 +2128,9 @@ run_mode() {
   else
     write_127_shim "$SHIM/eigenscript-gfx" eigenscript-gfx
   fi
+  # CA-GUARD:path-variant-sweep
+  mask_path_variants
+  # CA-GUARD:end-path-variant-sweep
   # CA-GUARD:end-variant-mask
   derive_candidate_tree "$CAND_ABS" || true
   if [ -z "${CAND_TREE:-}" ] && [ -e "$ECO/EigenScript" ]; then
@@ -1882,6 +2167,7 @@ run_mode() {
     say "candidate_tree: (bare binary, no src/eigenscript tree)"
   fi
   say "eigenscript_resolved: $RESOLVED"
+  say "path_masked: ${PATH_MASKED:-none}"
   say "sibling_binary_present: $SIBLING_BEFORE"
   if [ "$SIBLING_BEFORE" = yes ]; then
     say "note: \$ECO/EigenScript/src/eigenscript exists and differs from the candidate; consumers with hard-coded sibling paths (DMG#73) may have used it"
@@ -2403,64 +2689,33 @@ os.execvp("bash", ["bash"] + sys.argv[1:])' "$sh" run "$stub" >/dev/null 2>&1 &
 # non-root box, where no drop tool applies, so the SKIP path is exercised.
 plant_stale_unwritable() {
   local sh="$1" eco="$2" stub="$3" rec_hint="$4"
-  local dir rec out rc drop="" as_root=0 why="" drop_tmp="" a
+  local dir rec out rc as_root=0 why=""
   [ "$(id -u)" = 0 ] && as_root=1
   # Gated on the FIXTURE's own marker (the self-test's ECO is the repo, not
-  # a fixture, so fixture_fault would not see it).
+  # a fixture, so fixture_fault would not see it). The pretend_root fault
+  # takes the SAME decision branch as a real uid 0 with no usable drop.
   if [ -f "${eco:-}/.ca_fixture" ] && [ "${CA_FAULT:-}" = pretend_root ]; then
     as_root=1
   fi
   if [ "$as_root" -eq 1 ]; then
-    if [ "$(id -u)" = 0 ] && getent passwd nobody >/dev/null 2>&1; then
-      if command -v runuser >/dev/null 2>&1; then
-        drop="runuser -u nobody --"
-      elif command -v setpriv >/dev/null 2>&1; then
-        drop="setpriv --reuid=nobody --regid=nogroup --clear-groups"
-      fi
-    fi
-    if [ -z "$drop" ]; then
-      why="no runuser/setpriv with a nobody user"
-      LAST_PLANT_DETAIL="SKIP (root: $why)"
-      note_plant "plant stale-unwritable: SKIP (root: $why)" "" 0
-      return 3
-    fi
+    # The whole self-test drops to an unprivileged user at entry when it
+    # can (CA-GUARD:root-drop). Reaching here means it could not: root
+    # writes through a 0555 directory, so "cannot write" is not plantable
+    # and the plant SKIPs BY NAME and is counted -- never a silent OK.
+    why="uid 0 and the self-test could not drop privileges; cannot plant an unwritable directory as root"
+    LAST_PLANT_DETAIL="SKIP (root: $why)"
+    note_plant "plant stale-unwritable: SKIP (root: $why)" "" 0
+    return 3
   fi
   dir="${rec_hint}.rodir"
   mkdir -p "$dir"
   rec="$dir/record"
   printf '%s\n' 'run_id=OLD_RUN' 'status=COMPLETE' 'inventory=1 examined=1' 'VERDICT: PASS' > "$rec"
-  if [ -n "$drop" ]; then
-    # The unprivileged user must traverse to $dir, read the fixture and the
-    # script, and own a writable TMPDIR. Open the path, then PROBE it.
-    a="$dir"
-    while [ "$a" != "/" ] && [ -n "$a" ]; do
-      chmod a+rX "$a" 2>/dev/null || true
-      a="$(dirname "$a")"
-    done
-    chmod -R a+rX "$eco" 2>/dev/null || true
-    chmod a+rx "$sh" "$stub" 2>/dev/null || true
-    chmod a+r "$rec" 2>/dev/null || true
-    drop_tmp="${rec_hint}.droptmp"
-    mkdir -p "$drop_tmp" && chmod 1777 "$drop_tmp" 2>/dev/null || true
-    if ! $drop sh -c 'test -r "$1" && test -x "$2" && test -d "$3" && : > "$3/probe"' \
-         _ "$rec" "$sh" "$drop_tmp" >/dev/null 2>&1; then
-      why="unprivileged probe failed (cannot reach the fixture as nobody)"
-      LAST_PLANT_DETAIL="SKIP (root: $why)"
-      note_plant "plant stale-unwritable: SKIP (root: $why)" "" 0
-      return 3
-    fi
-  fi
   chmod a-w "$dir"
-  if [ -n "$drop" ]; then
-    out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" TMPDIR="$drop_tmp" \
-      $drop "$sh" run "$stub" 2>&1)"
-    rc=$?
-  else
-    out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
-    rc=$?
-  fi
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
   chmod u+w "$dir"
-  LAST_PLANT_DETAIL="rc=$rc drop=${drop:-none} rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  LAST_PLANT_DETAIL="rc=$rc uid=$(id -u) rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] && { [ ! -f "$rec" ] || ! grep -q '^VERDICT: PASS$' "$rec"; }; then
     return 0
@@ -3055,6 +3310,50 @@ repls = {
         '    # CA-GUARD:scratch-cleanup\n'
         '    :',
     ),
+    "path-variant-sweep": (
+        '  # CA-GUARD:path-variant-sweep\n'
+        '  mask_path_variants\n',
+        '  # CA-GUARD:path-variant-sweep\n'
+        '  true\n',
+    ),
+    "undeclared-variant": (
+        '  if [ -n "$LAST_UNDECLARED" ]; then\n'
+        '    LAST_VERDICT="FAIL|undeclared-variant:$LAST_UNDECLARED"\n'
+        '  fi',
+        '  if false && [ -n "$LAST_UNDECLARED" ]; then\n'
+        '    LAST_VERDICT="FAIL|undeclared-variant:$LAST_UNDECLARED"\n'
+        '  fi',
+    ),
+    "record-dated-name": (
+        '      case "$b" in\n'
+        '        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.record) ;;\n'
+        '        *)\n'
+        '          RECORD_STRAY="${RECORD_STRAY:+$RECORD_STRAY }$b"\n'
+        '          continue\n'
+        '          ;;\n'
+        '      esac',
+        '      case "$b" in\n'
+        '        *) ;;\n'
+        '      esac',
+    ),
+    "stderr-capture": (
+        'if [ -n "${CA_STDERR_CAP:-}" ]; then\n'
+        '  exec 2> >(tee -a "$CA_STDERR_CAP" >&2)\n'
+        'fi',
+        'if false; then\n'
+        '  exec 2> >(tee -a "${CA_STDERR_CAP:-/dev/null}" >&2)\n'
+        'fi',
+    ),
+    "plant-total": (
+        '  # CA-GUARD:plant-total\n'
+        '  if [ "$((plants + skipped))" -eq "$ST_DECLARED_PLANTS" ]; then',
+        '  # CA-GUARD:plant-total\n'
+        '  if true; then',
+    ),
+    "timeout-unbound": (
+        '    124) LAST_VERDICT=HANG ;;',
+        '    124) LAST_VERDICT=HANG; printf \'%s\' "$critic_probe" ;;',
+    ),
     "crash-early": (
         '  # CA-GUARD:not-crash\n'
         '  local cand="" arg\n',
@@ -3451,11 +3750,59 @@ sys.exit(0)
 PY
 }
 
+# $3: the script to mutate (default: this one). A plant that mutates the
+# script it was HANDED can be run transversely -- the transverse mutant is
+# the source, and the plant's own mutation stacks on top of it.
 prep_mutant() {
-  local d="$1" kind="$2"
+  local d="$1" kind="$2" src="${3:-$HERE/tools/consumer_acceptance.sh}"
   mkdir -p "$d/tools"
-  cp "$HERE/tools/consumer_acceptance.sh" "$d/tools/consumer_acceptance.sh.orig"
+  cp "$src" "$d/tools/consumer_acceptance.sh.orig"
   cp "$HERE/tools/_extract_runcmd.py" "$d/tools/_extract_runcmd.py"
+  cp "$HERE/tools/_derive_variants.py" "$d/tools/_derive_variants.py"
+  case "$kind" in
+    any-token)
+      # The DERIVER, not the harness: put every occurrence back in the set,
+      # exactly as round 2 did.
+      python3 - "$HERE/tools/_derive_variants.py" "$d/tools/_derive_variants.py" << 'PYD' || return 1
+import sys
+src, dest = sys.argv[1], sys.argv[2]
+text = open(src).read()
+old = """    variants = []
+    seen = set()
+    for name, path, line in hits:"""
+new = """    variants = []
+    seen = set()
+    hits = list(occurrences)
+    for name, path, line in hits:"""
+if old not in text:
+    sys.exit(1)
+open(dest, "w").write(text.replace(old, new, 1))
+PYD
+      cp "$d/tools/consumer_acceptance.sh.orig" "$d/tools/consumer_acceptance.sh"
+      chmod +x "$d/tools/consumer_acceptance.sh"
+      return 0
+      ;;
+    folded-more-indented)
+      # The extractor, not the harness: gut the more-indented rule so a
+      # folded scalar's three commands fold back into one line.
+      python3 - "$HERE/tools/_extract_runcmd.py" "$d/tools/_extract_runcmd.py" << 'PYX' || return 1
+import sys
+src, dest = sys.argv[1], sys.argv[2]
+text = open(src).read()
+old = """            # CA-GUARD:folded-more-indented
+            flush()
+            out.append(line)"""
+new = """            # CA-GUARD:folded-more-indented
+            buf.append(line)"""
+if old not in text:
+    sys.exit(1)
+open(dest, "w").write(text.replace(old, new, 1))
+PYX
+      cp "$d/tools/consumer_acceptance.sh.orig" "$d/tools/consumer_acceptance.sh"
+      chmod +x "$d/tools/consumer_acceptance.sh"
+      return 0
+      ;;
+  esac
   if ! apply_mutation "$d/tools/consumer_acceptance.sh.orig" "$d/tools/consumer_acceptance.sh" "$kind"; then
     return 1
   fi
@@ -3757,16 +4104,319 @@ plant_overlay_partial() {
   return 1
 }
 
+# --- round-3 plants ---------------------------------------------------
+
+# Fix 1 (#1213): the six REAL shapes that round 2 turned into declared
+# prerequisites. FIRE: the row PASSes and the derived set is eigenscript
+# alone. Gutting the call-site rule (mutation any-token) makes every one of
+# them a prerequisite again and the row goes UNRUNNABLE.
+plant_variant_prose() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc plan_out
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  plan_out="$(CA_ECO="$eco" "$sh" plan 2>&1)" || true
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ') variants=$(grep 'variants|prose_user|' <<< "$plan_out" | head -1)"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 0 ] \
+     && grep -q 'row|prose_user|v0.43.0|PASS|' "$rec" \
+     && ! grep -q 'prereq:variant:' "$rec" \
+     && grep -qx '  variants|prose_user|eigenscript' <<< "$plan_out"; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 1 shape (c): an .eigs exec-family call IS an invocation position.
+plant_variant_eigs_call() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" stale_log="$5" stale_dir="$6"
+  local out rc
+  : > "$stale_log"
+  out="$(PATH="$stale_dir:$PATH" CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ') stale=$(wc -c < "$stale_log")"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|eigs_user|v0.43.0|UNRUNNABLE|' "$rec" \
+     && grep -q 'prereq:variant:eigenscript-eigs' <<< "$out" \
+     && [ ! -s "$stale_log" ]; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 1b: a RUNTIME-COMPUTED name (eigenscript-$V). The derivation cannot
+# see it, so the PATH sweep must make it unreachable BY NAME and the row
+# must be FAIL|undeclared-variant:<name> -- not PASS, not UNEXERCISED.
+# The consumer swallows the 127 with `|| true`, so the ONLY thing that can
+# fail this row is the call-log assertion: gutting either guard yields
+# VERDICT: PASS.
+plant_variant_computed() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" stale_log="$5" stale_dir="$6"
+  local out rc
+  : > "$stale_log"
+  out="$(PATH="$stale_dir:$PATH" CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ') stale=$(wc -c < "$stale_log")"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|computed_user|v0.43.0|FAIL|undeclared-variant:eigenscript-jit|' "$rec" \
+     && [ ! -s "$stale_log" ] \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 1b, the RESIDUAL, pinned: a path the consumer COMPUTES inside its own
+# checkout (./eigenscript-* glob over a symlink) is not on PATH and is not
+# masked. FIRE: the stale binary IS reached and the row is UNEXERCISED --
+# never PASS. If someone closes this residual, this plant goes red and the
+# header sentence must be updated in the same commit.
+plant_variant_glob_residual() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" stale_log="$5"
+  local out rc
+  : > "$stale_log"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ') stale=$(wc -c < "$stale_log")"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|glob_user|v0.43.0|UNEXERCISED|' "$rec" \
+     && [ -s "$stale_log" ] \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 5 / Astra r2 05: a folded scalar whose more-indented line is a
+# command. Under YAML these are THREE commands and the block exits 1;
+# folded into one line the `false` stops being a command and the row read
+# PASS. FIRE: the derived command has three lines and the row is FAIL.
+plant_folded_commands() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc plan_out derived lines
+  local ex_root
+  ex_root="$(cd "$(dirname "$(dirname "$sh")")" && pwd)"
+  derived="$(python3 "$ex_root/tools/_extract_runcmd.py" "$eco/fold_user/.github/workflows/ci.yml" 2>/dev/null || true)"
+  lines="$(printf '%s' "$derived" | wc -l)"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc derived_lines=$((lines + 1)) rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && [ "$lines" -eq 2 ] \
+     && grep -q 'row|fold_user|v0.43.0|FAIL|1|' "$rec" \
+     && ! grep -q 'accepted' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 6 / Fable r2 03: only a DATED record raises or lowers the floor. A
+# stray file is a FAIL by name. $5 is the stray basename, $6 its row count.
+plant_record_stray() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" stray="$5" rows="$6"
+  local out rc i
+  mkdir -p "$eco/reports/consumer_acceptance"
+  rm -f "$eco/reports/consumer_acceptance/$stray"
+  i=1
+  while [ "$i" -le "$rows" ]; do
+    printf 'row|s%02d|v|PASS|0|0\n' "$i"
+    i=$((i + 1))
+  done > "$eco/reports/consumer_acceptance/$stray"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  rm -f "$eco/reports/consumer_acceptance/$stray"
+  LAST_PLANT_DETAIL="rc=$rc stray=$stray floor=$(grep -o 'inventory floor: [^|]*' "$rec" 2>/dev/null | head -1)"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q "stray record file: $stray" "$rec" \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 7 / Astra r2 01: a plant that discards BOTH streams must not be able
+# to hide an unbound variable. Mutate the rc-124 path of the script it was
+# handed, run it with >/dev/null 2>&1, and require the message in the
+# capture file. Gutting the capture (mutation stderr-capture) silences it.
+plant_unbound_capture() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local md mutant cap n_intact n_mutant
+  md="$ST_ROOT/mutants/timeout-unbound.$$"
+  rm -rf "$md"
+  if ! prep_mutant "$md" timeout-unbound "$sh"; then
+    LAST_PLANT_DETAIL="timeout-unbound mutation did not land"
+    note_plant "" "" 1
+    return 1
+  fi
+  mutant="$md/tools/consumer_acceptance.sh"
+  cap="$ST_ROOT/unbound-probe.cap"
+  : > "$cap"
+  CA_ECO="$eco" CA_TIMEOUT=1 CA_KILL_AFTER=1 CA_RECORD="$rec" CA_STDERR_CAP="$cap" \
+    "$sh" run "$stub" >/dev/null 2>&1
+  n_intact="$(grep -c 'unbound variable' "$cap" 2>/dev/null || true)"
+  n_intact="${n_intact:-0}"
+  : > "$cap"
+  CA_ECO="$eco" CA_TIMEOUT=1 CA_KILL_AFTER=1 CA_RECORD="$rec" CA_STDERR_CAP="$cap" \
+    "$mutant" run "$stub" >/dev/null 2>&1
+  n_mutant="$(grep -c 'unbound variable' "$cap" 2>/dev/null || true)"
+  n_mutant="${n_mutant:-0}"
+  LAST_PLANT_DETAIL="intact_unbound=$n_intact mutant_unbound=$n_mutant (both runs discarded stderr)"
+  note_plant "" "" 0
+  rm -rf "$md"
+  if [ "$n_intact" -eq 0 ] && [ "$n_mutant" -gt 0 ]; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 4 / Fable r2: plants + skipped is pinned to a declared constant, so a
+# gutted SKIP counter (plants=N-2 skipped=0) and a deleted plant
+# (plants=N-1 skipped=0) are both red. Gutting the comparison makes every
+# input read OK.
+plant_plant_total() {
+  local sh="$1"
+  local ok removed gutted
+  ok="$("$sh" --plant-total "$ST_DECLARED_PLANTS" 0 2>/dev/null || true)"
+  removed="$("$sh" --plant-total "$((ST_DECLARED_PLANTS - 1))" 0 2>/dev/null || true)"
+  gutted="$("$sh" --plant-total "$((ST_DECLARED_PLANTS - 2))" 0 2>/dev/null || true)"
+  LAST_PLANT_DETAIL="honest=$ok removed-plant=$removed gutted-skip=$gutted declared=$ST_DECLARED_PLANTS"
+  note_plant "$ok $removed $gutted" "" 0
+  if [ "$ok" = OK ] && [ "$removed" = MISMATCH ] && [ "$gutted" = MISMATCH ]; then
+    return 0
+  fi
+  return 1
+}
+
+# Declared plant total. plants + skipped must equal it, or the self-test
+# FAILs by name: gutting both ST_SKIP increments left `plants=67 skipped=0
+# SELF-TEST: PASS` (Fable r2), and a deleted plant is the same shape. Bump
+# this in the same commit as any plant change.
+ST_DECLARED_PLANTS=79
+
+plant_total_verdict() {
+  local plants="${1:-0}" skipped="${2:-0}"
+  # CA-GUARD:plant-total
+  if [ "$((plants + skipped))" -eq "$ST_DECLARED_PLANTS" ]; then
+    printf 'OK'
+  else
+    printf 'MISMATCH'
+  fi
+}
+
+# Drop to an unprivileged user for the WHOLE self-test. Two plants depend
+# on "cannot write" (F unwritable-record, I stale-unwritable) and as uid 0
+# neither is plantable: root writes through a 0555 directory, so the record
+# said PASS and the plants were SILENT in CI. Per-plant drops were the
+# wrong layer -- as root EVERY plant runs in a world it cannot be refused
+# in. Returns 0 having re-run itself as nobody (the caller exits with that
+# status), or 1 when no drop is possible and the caller must SKIP the two
+# plants by name.
+selftest_drop_privileges() {
+  local sh="$1" drop="" root="" rc=0 run_sh="" sha_src="" sha_copy=""
+  if [ -n "${CA_DROP_CMD:-}" ]; then
+    drop="$CA_DROP_CMD"
+  elif getent passwd nobody >/dev/null 2>&1; then
+    if command -v runuser >/dev/null 2>&1; then
+      drop="runuser -u nobody --"
+    elif command -v setpriv >/dev/null 2>&1; then
+      drop="setpriv --reuid=nobody --regid=nogroup --clear-groups"
+    fi
+  fi
+  if [ -z "$drop" ]; then
+    ST_DROP_WHY="no runuser/setpriv with a nobody user"
+    return 1
+  fi
+  root="$(mktemp -d "${TMPDIR:-/tmp}/ca-stdrop.XXXXXX")" || {
+    ST_DROP_WHY="cannot create a drop root under ${TMPDIR:-/tmp}"
+    return 1
+  }
+  # The dropped user must reach the script, the deriver, the extractor and
+  # a writable TMPDIR. A repo under a 0750 home is unreachable to nobody,
+  # so the self-test runs a BYTE-IDENTICAL COPY of its own tool tree inside
+  # the drop root -- one path on every box, and cmp pins that the copy is
+  # the file in the tree. reports/ comes along because plan_eco is not a
+  # fixture and reads the committed record floor from $HERE.
+  mkdir -p "$root/tmp" "$root/repo/tools" "$root/repo/reports"
+  cp "$HERE/tools/consumer_acceptance.sh" "$HERE/tools/_extract_runcmd.py" \
+     "$HERE/tools/_derive_variants.py" "$root/repo/tools/" || {
+    rm -rf "$root"
+    ST_DROP_WHY="cannot copy the tool tree into the drop root"
+    return 1
+  }
+  cp -r "$HERE/reports/consumer_acceptance" "$root/repo/reports/" 2>/dev/null || true
+  run_sh="$root/repo/tools/consumer_acceptance.sh"
+  chmod -R a+rX "$root/repo"
+  chmod 755 "$root"
+  chmod 1777 "$root/tmp"
+  if [ "$(id -u)" = 0 ]; then
+    chown -R nobody "$root" 2>/dev/null || true
+  fi
+  # CA-GUARD:drop-copy-identical
+  if ! cmp -s "$sh" "$run_sh"; then
+    rm -rf "$root"
+    ST_DROP_WHY="the copied script differs from $sh"
+    return 1
+  fi
+  sha_src="$(file_sha256 "$sh")"
+  sha_copy="$(file_sha256 "$run_sh")"
+  if [ -z "$sha_src" ] || [ "$sha_src" != "$sha_copy" ]; then
+    rm -rf "$root"
+    ST_DROP_WHY="sha256 of the copied script does not match ($sha_src vs $sha_copy)"
+    return 1
+  fi
+  if ! $drop sh -c 'test -r "$1" && test -x "$1" && test -r "$2" && test -r "$3" && test -d "$4" && : > "$4/probe"' \
+       _ "$run_sh" "$root/repo/tools/_derive_variants.py" "$root/repo/tools/_extract_runcmd.py" "$root/tmp" >/dev/null 2>&1; then
+    rm -rf "$root"
+    ST_DROP_WHY="unprivileged probe failed (cannot read the copied tree as the dropped user)"
+    return 1
+  fi
+  say "self-test: uid $(id -u) -- re-running the WHOLE self-test unprivileged via: $drop"
+  say "self-test: drop root $root, script sha256=$sha_copy (byte-identical to $sh)"
+  $drop env -u CA_FAULT -u CA_DROP_CMD -u CA_STDERR_CAP \
+    CA_ST_DROPPED=1 TMPDIR="$root/tmp" HOME="$root" \
+    bash "$run_sh" --self-test
+  rc=$?
+  rm -rf "$root"
+  ST_DROP_EXIT="$rc"
+  return 0
+}
+
 selftest() {
   local st_root rec out rc pid outer_tmp
   ST_FAIL=0
   ST_SKIP=0
+  ST_TV_SKIP=0
   ST_RUNS=0
   ST_UNBOUND=0
   ST_PLANTS=0
+  ST_DROP_WHY=""
+  ST_DROP_EXIT=0
+  ST_AS_ROOT=0
+  local self_sh
+  self_sh="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+  # CA-GUARD:root-drop
+  if [ -z "${CA_ST_DROPPED:-}" ] \
+     && { [ "$(id -u)" = 0 ] || { [ "${CA_FAULT:-}" = pretend_root ] && [ -n "${CA_DROP_CMD:-}" ]; }; }; then
+    if selftest_drop_privileges "$self_sh"; then
+      exit "$ST_DROP_EXIT"
+    fi
+    ST_AS_ROOT=1
+    say "self-test: uid 0 and no usable drop ($ST_DROP_WHY) -- the two unwritable plants SKIP by name"
+  fi
+  # CA-GUARD:end-root-drop
   outer_tmp="${TMPDIR:-/tmp}"
   st_root="$(mktemp -d "${outer_tmp}/ca-st.XXXXXX")"
+  ST_ROOT="$st_root"
   mkdir -p "$st_root/tmp"
+  : > "$st_root/.stmark"
+  ST_CAP="$st_root/stderr.cap"
+  : > "$ST_CAP"
+  export CA_STDERR_CAP="$ST_CAP"
   export TMPDIR="$st_root/tmp"
   trap 'if [ -n "${st_root:-}" ] && [ -d "${st_root:-}" ]; then find "$st_root" -type d -exec chmod u+w {} + 2>/dev/null || true; rm -rf "$st_root"; fi' EXIT
 
@@ -3776,8 +4426,9 @@ selftest() {
   mk_stub "$st_root/stub-bad" 1
   mk_stub_gfx "$st_root/stub-gfx"
 
-  if python3 "$HERE/tools/_extract_runcmd.py" --selftest >/dev/null; then
-    plant_line "extract-runcmd" 0 "SELFTEST: PASS examined=7"
+  local ex_out=""
+  if ex_out="$(python3 "$HERE/tools/_extract_runcmd.py" --selftest)"; then
+    plant_line "extract-runcmd" 0 "$ex_out"
   else
     plant_line "extract-runcmd" 1 "extractor --selftest failed"
   fi
@@ -3978,16 +4629,25 @@ selftest() {
   ro_dir="$st_root/ro"
   mkdir -p "$ro_dir"
   rec_f="$ro_dir/record"
+  # CA-GUARD:unwritable-class-skip
+  # Same class as plant I: as uid 0 a 0555 directory is still writable, so
+  # the plant cannot be planted. It SKIPs BY NAME and is counted.
+  if [ "$(id -u)" = 0 ]; then
+    say "plant F unwritable-record: SKIP -- uid 0 and the self-test could not drop privileges (${ST_DROP_WHY:-unknown})"
+    ST_SKIP=$((ST_SKIP + 1))
+  else
   chmod a-w "$ro_dir"
   out="$(CA_ECO="$f_eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec_f" "$sh" run "$st_root/stub-ok" 2>&1)"
   rc=$?
   chmod u+w "$ro_dir"
+  note_plant "$out" "$rec_f" "$rc"
   if [ "$rc" -eq 1 ] \
      && ! grep -q 'VERDICT: PASS' <<< "$out" \
      && [ ! -e "$rec_f" ]; then
-    plant_line "F unwritable-record" 0 "no VERDICT: PASS, exit 1, record absent"
+    plant_line "F unwritable-record" 0 "no VERDICT: PASS, exit 1, record absent (uid=$(id -u))"
   else
     plant_line "F unwritable-record" 1 "rc=$rc exists=$( [ -e "$rec_f" ] && echo yes || echo no ) out=$(printf '%s\n' "$out" | tail -3 | tr '\n' ' ')"
+  fi
   fi
 
   # --- G: two-line block, first line fails, second would succeed -> FAIL row.
@@ -4198,16 +4858,20 @@ selftest() {
   # Decoy in the OUTER tmp (a concurrent run's scratch). Must survive plant M.
   # $$ so two concurrent self-tests do not share one path.
   local decoy="$outer_tmp/ca-run.DECOY.$$"
-  mkdir -p "$decoy"
-  touch "$decoy"
+  # ca-run.VICTIM-<pid> is the exact shape a round-6 critic probe used to
+  # ask whether plant M deletes a NEIGHBOUR's scratch; both shapes are
+  # covered, and both are removed before the outer-tmp hygiene check.
+  local victim="$outer_tmp/ca-run.VICTIM-$$"
+  mkdir -p "$decoy" "$victim"
+  touch "$decoy" "$victim"
   rec="$st_root/m-decoy.record"
   if plant_scratch_cleanup "$sh" "$good_eco" "$st_root/stub-ok" "$rec" \
-     && [ -d "$decoy" ]; then
-    plant_line "M decoy-tmp-isolation" 0 "outer ca-run.DECOY survived plant M"
+     && [ -d "$decoy" ] && [ -d "$victim" ]; then
+    plant_line "M decoy-tmp-isolation" 0 "outer ca-run.DECOY and ca-run.VICTIM survived plant M"
   else
-    plant_line "M decoy-tmp-isolation" 1 "decoy=$( [ -d "$decoy" ] && echo live || echo gone ) $LAST_PLANT_DETAIL"
+    plant_line "M decoy-tmp-isolation" 1 "decoy=$( [ -d "$decoy" ] && echo live || echo gone ) victim=$( [ -d "$victim" ] && echo live || echo gone ) $LAST_PLANT_DETAIL"
   fi
-  rm -rf "$decoy"
+  rm -rf "$decoy" "$victim"
 
   # --- R: `true` never calls the candidate -> UNEXERCISED.
   local r_eco="$st_root/r-eco"
@@ -4743,6 +5407,138 @@ EOS
     plant_line "overlay-partial" 1 "$LAST_PLANT_DETAIL"
   fi
 
+  # --- deriver self-test (call-site derivation, its own table).
+  if python3 "$HERE/tools/_derive_variants.py" --selftest >/dev/null; then
+    plant_line "derive-variants" 0 "SELFTEST: PASS (invocation shapes in, prose/JSON/URL/comment out)"
+  else
+    plant_line "derive-variants" 1 "deriver --selftest failed"
+  fi
+
+  # --- fix 1: the six REAL shapes measured against the ecosystem are NOT
+  # prerequisites; the row runs.
+  local prose_eco="$st_root/prose-eco"
+  mkdir -p "$prose_eco"
+  printf 'fixture\n' > "$prose_eco/.ca_fixture"
+  mk_consumer "$prose_eco" prose_user "eigenscript work.eigs"
+  printf 'COPY . /opt/eigenscript-src\n' > "$prose_eco/prose_user/Dockerfile"
+  printf 'route to the eigenscript-aot-compiler-engineer skill\n' > "$prose_eco/prose_user/CLAUDE.md"
+  printf '{"a": "eigenscript-probe.c", "b": "eigenscript-original.c",\n "c": "eigenscript-missing-reuse.c"}\n' \
+    > "$prose_eco/prose_user/bench.json"
+  printf '%s\n' '#!/bin/sh' \
+    '# preflight validated eigenscript-full-from-env once' \
+    'curl -L https://x/releases/eigenscript-full-linux-x86_64 -o /tmp/e' \
+    "echo 'usage: screenshot.sh <eigenscript-gfx-binary> <harness.eigs>'" \
+    > "$prose_eco/prose_user/notes.sh"
+  chmod +x "$prose_eco/prose_user/notes.sh"
+  rec="$st_root/prose.record"
+  if plant_variant_prose "$sh" "$prose_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "variant-prose-not-declared" 0 "six real shapes excluded, row PASS, variants|prose_user|eigenscript"
+  else
+    plant_line "variant-prose-not-declared" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- fix 1 shape (c): an .eigs exec-family call IS an invocation.
+  local eigs_eco="$st_root/eigs-eco" stale_eigs="$st_root/stale-eigs.log"
+  mkdir -p "$eigs_eco"
+  printf 'fixture\n' > "$eigs_eco/.ca_fixture"
+  mk_consumer "$eigs_eco" eigs_user "eigenscript work.eigs"
+  printf 'let r is exec_capture of ["eigenscript-eigs", "work.eigs"]\n' \
+    > "$eigs_eco/eigs_user/driver.eigs"
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_eigs\"" 'exit 0' > "$stale_dir/eigenscript-eigs"
+  chmod +x "$stale_dir/eigenscript-eigs"
+  rec="$st_root/var-eigs.record"
+  if plant_variant_eigs_call "$sh" "$eigs_eco" "$st_root/stub-ok" "$rec" "$stale_eigs" "$stale_dir"; then
+    plant_line "variant-eigs-call" 0 "UNRUNNABLE|prereq:variant:eigenscript-eigs from exec_capture"
+  else
+    plant_line "variant-eigs-call" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- fix 1b: a runtime-computed name is unreachable and FAILs by name.
+  local comp_eco="$st_root/comp-eco" stale_jit2="$st_root/stale-jit2.log"
+  mkdir -p "$comp_eco"
+  printf 'fixture\n' > "$comp_eco/.ca_fixture"
+  mk_consumer_block "$comp_eco" computed_user \
+    'eigenscript work.eigs' \
+    'V=jit' \
+    'eigenscript-$V work.eigs || true'
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_jit2\"" 'exit 0' > "$stale_dir/eigenscript-jit"
+  chmod +x "$stale_dir/eigenscript-jit"
+  rec="$st_root/var-computed.record"
+  if plant_variant_computed "$sh" "$comp_eco" "$st_root/stub-ok" "$rec" "$stale_jit2" "$stale_dir"; then
+    plant_line "variant-computed" 0 "FAIL|undeclared-variant:eigenscript-jit, stale never ran"
+  else
+    plant_line "variant-computed" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- fix 1b residual, PINNED: a path computed inside the checkout.
+  local glob_eco="$st_root/glob-eco" stale_glob="$st_root/stale-glob.log"
+  mkdir -p "$glob_eco"
+  printf 'fixture\n' > "$glob_eco/.ca_fixture"
+  mk_consumer_block "$glob_eco" glob_user \
+    'for b in ./eigenscript-*; do "$b" work.eigs; done' \
+    'true'
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_glob\"" 'exit 0' > "$st_root/stale-inside"
+  chmod +x "$st_root/stale-inside"
+  ln -sf "$st_root/stale-inside" "$glob_eco/glob_user/eigenscript-full"
+  rec="$st_root/var-glob.record"
+  if plant_variant_glob_residual "$sh" "$glob_eco" "$st_root/stub-ok" "$rec" "$stale_glob"; then
+    plant_line "variant-glob-residual" 0 "path inside the checkout reaches the stale binary; row UNEXERCISED (residual pinned)"
+  else
+    plant_line "variant-glob-residual" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- fix 5: a folded scalar's more-indented line is a COMMAND.
+  local fold_eco="$st_root/fold-eco"
+  mkdir -p "$fold_eco/fold_user/.devcontainer" "$fold_eco/fold_user/.git" \
+           "$fold_eco/fold_user/.github/workflows"
+  printf 'fixture\n' > "$fold_eco/.ca_fixture"
+  printf 'ARG EIGS_REF=v0.43.0\n' > "$fold_eco/fold_user/.devcontainer/Dockerfile"
+  printf '%s\n' 'runCmd: >' '  eigenscript work.eigs' '    false' '  echo accepted' \
+    > "$fold_eco/fold_user/.github/workflows/ci.yml"
+  rec="$st_root/fold.record"
+  if plant_folded_commands "$sh" "$fold_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "folded-more-indented-commands" 0 "three commands, block exits 1, row FAIL"
+  else
+    plant_line "folded-more-indented-commands" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- fix 6: only a DATED record file is a floor; a stray is a FAIL.
+  local stray_eco="$st_root/stray-eco"
+  mkdir -p "$stray_eco/reports/consumer_acceptance"
+  printf 'fixture\n' > "$stray_eco/.ca_fixture"
+  printf '%s\n' sa sb > "$stray_eco/.ca_expected"
+  mk_consumer "$stray_eco" sa "eigenscript work.eigs"
+  mk_consumer "$stray_eco" sb "eigenscript work.eigs"
+  printf '%s\n' 'row|sa|v|PASS|0|0' 'row|sb|v|PASS|0|0' \
+    > "$stray_eco/reports/consumer_acceptance/2026-09-21-ok.record"
+  rec="$st_root/stray-low.record"
+  if plant_record_stray "$sh" "$stray_eco" "$st_root/stub-ok" "$rec" smoke.record 1; then
+    plant_line "record-stray-lowers" 0 "non-dated smoke.record (1 row) is a FAIL by name, not a lower floor"
+  else
+    plant_line "record-stray-lowers" 1 "$LAST_PLANT_DETAIL"
+  fi
+  rec="$st_root/stray-high.record"
+  if plant_record_stray "$sh" "$stray_eco" "$st_root/stub-ok" "$rec" zzz.record 7; then
+    plant_line "record-stray-raises" 0 "non-dated zzz.record (7 rows) is a FAIL by name, not a higher floor"
+  else
+    plant_line "record-stray-raises" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- fix 7: a plant cannot discard a diagnostic.
+  rec="$st_root/unbound.record"
+  if plant_unbound_capture "$sh" "$c_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "unbound-capture" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "unbound-capture" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- fix 4: plants + skipped is pinned to a declared constant.
+  if plant_plant_total "$sh"; then
+    plant_line "plant-total-accounting" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "plant-total-accounting" 1 "$LAST_PLANT_DETAIL"
+  fi
+
   # --- plant-of-plant: a mutant that exits 7 is BROKEN-MUTANT, not SILENT.
   local cr_md="$st_root/mutants/crash-early" cr_mutant cr_rec
   cr_rec="$st_root/crash.record"
@@ -4804,6 +5600,12 @@ EOS
       tmp-beside-record) plant_show_tmp "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       workflow-prefer)  plant_workflow_prefer "$script" "$eco" ;;
       overlay-partial)  plant_overlay_partial "$script" "$eco" "$extra" "$rec" ;;
+      variant-prose)    plant_variant_prose "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      variant-computed) plant_variant_computed "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root/stale-jit2.log" "$stale_dir" ;;
+      record-stray)     plant_record_stray "$script" "$eco" "$st_root/stub-ok" "$rec" smoke.record 1 ;;
+      folded-commands)  plant_folded_commands "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      unbound-capture)  plant_unbound_capture "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      plant-total)      plant_plant_total "$script" ;;
       *)                return 2 ;;
     esac
   }
@@ -4825,7 +5627,7 @@ EOS
       # The plant cannot be planted in this environment and said so by
       # name. A skipped row is counted, never a silent OK.
       say "transverse $kind / $plant: SKIP -- $LAST_PLANT_DETAIL"
-      ST_SKIP=$((ST_SKIP + 1))
+      ST_TV_SKIP=$((ST_TV_SKIP + 1))
       return
     else
       intact=SILENT
@@ -4836,10 +5638,16 @@ EOS
       return
     fi
     mutant="$md/tools/consumer_acceptance.sh"
+    # A MUTANT is deliberately broken, so its diagnostics must not land in
+    # the capture file the no-unbound-variable check reads: that check is
+    # about the production script under its own plants.
+    local prev_cap="${CA_STDERR_CAP:-}"
+    export CA_STDERR_CAP="$st_root/mutant-stderr.cap"
     # Sanity-start: the mutant must produce a VERDICT line on plan.
     local start_out
     start_out="$(CA_ECO="$good_eco" "$mutant" plan 2>&1)" || true
     if ! grep -q '^VERDICT:' <<< "$start_out"; then
+      export CA_STDERR_CAP="$prev_cap"
       say "transverse $kind / $plant: intact=$intact mutant=BROKEN -- mutant plan emitted no VERDICT"
       ST_FAIL=1
       return
@@ -4849,12 +5657,13 @@ EOS
     else
       mutant_st="$(mutant_not_fires_kind)"
     fi
+    export CA_STDERR_CAP="$prev_cap"
     # Success / side-effect plants: gutting the guard makes the plant
     # condition fail, but the mutant often does not print VERDICT: PASS
     # (UNEXERCISED, FAIL after a refused append, etc.). The transverse
     # is that the plant no longer FIRE.
     case "$plant" in
-      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor)
+      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|variant-prose|unbound-capture|plant-total)
         if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ]; then
           say "transverse $kind / $plant: intact=FIRES mutant=$mutant_st  OK"
         else
@@ -4940,18 +5749,61 @@ EOS
   transverse_one tmp-beside-record       tmp-beside-record "$good_eco" t-tmp
   transverse_one workflow-prefer         workflow-prefer  "$wf_eco"   t-wf
   transverse_one overlay-retry-rm        overlay-partial  "$ovp_eco"  t-ovp "$ovp_stub"
+  transverse_one any-token               variant-prose    "$prose_eco" t-prose
+  transverse_one path-variant-sweep      variant-computed "$comp_eco" t-vcs
+  transverse_one undeclared-variant      variant-computed "$comp_eco" t-vcu
+  transverse_one record-dated-name       record-stray     "$stray_eco" t-rs
+  transverse_one folded-more-indented    folded-commands  "$fold_eco" t-fc
+  transverse_one stderr-capture          unbound-capture  "$c_eco"    t-uc
+  transverse_one plant-total             plant-total      "$good_eco" t-pt
 
-  if [ "${ST_RUNS:-0}" -gt 0 ] && [ "${ST_UNBOUND:-0}" -eq 0 ]; then
-    plant_line "no-unbound-variable" 0 "examined=$ST_RUNS unbound=0"
+  # --- scratch hygiene: the self-test writes nothing under the OUTER tmp
+  # except its own root. Previous rounds left ca-run.* and ca-st*.{time,txt}
+  # behind; plant M covers a run's own scratch, this covers the self-test.
+  local stray_tmp="" tf
+  while IFS= read -r tf || [ -n "$tf" ]; do
+    [ -n "$tf" ] || continue
+    case "$tf" in
+      "$st_root"|"$st_root"/*) continue ;;
+    esac
+    stray_tmp="${stray_tmp:+$stray_tmp }$tf"
+  done <<< "$(find "$outer_tmp" -maxdepth 1 -name 'ca-*' -newer "$st_root/.stmark" 2>/dev/null || true)"
+  if [ -z "$stray_tmp" ]; then
+    plant_line "scratch-outer-tmp" 0 "no ca-* under $outer_tmp newer than the start marker (outside \$st_root)"
   else
-    plant_line "no-unbound-variable" 1 "examined=${ST_RUNS:-0} unbound=${ST_UNBOUND:-0}"
+    plant_line "scratch-outer-tmp" 1 "left behind: $stray_tmp"
+  fi
+
+  # CA-GUARD:unbound-capture-read
+  # examined is the number of plant INVOCATIONS; the witness is the capture
+  # file every child duplicated its stderr into, so a plant that discarded
+  # both streams cannot report unbound=0 falsely (Astra r2 01).
+  local cap_unbound
+  cap_unbound="$(grep -c 'unbound variable' "$ST_CAP" 2>/dev/null || true)"
+  cap_unbound="${cap_unbound:-0}"
+  if [ "${ST_RUNS:-0}" -gt 0 ] && [ "${ST_UNBOUND:-0}" -eq 0 ] && [ "$cap_unbound" -eq 0 ]; then
+    plant_line "no-unbound-variable" 0 "examined=$ST_RUNS unbound=0 capture=$ST_CAP cap_hits=0"
+  else
+    plant_line "no-unbound-variable" 1 "examined=${ST_RUNS:-0} unbound=${ST_UNBOUND:-0} cap_hits=$cap_unbound $(grep -m1 'unbound variable' "$ST_CAP" 2>/dev/null || true)"
+  fi
+
+  # CA-GUARD:plant-total-check
+  # plants + skipped == the declared constant. A gutted SKIP counter or a
+  # deleted plant both change this sum (Fable r2: plants=67 skipped=0 PASS).
+  local total_verdict
+  total_verdict="$(plant_total_verdict "${ST_PLANTS:-0}" "${ST_SKIP:-0}")"
+  if [ "$total_verdict" = OK ]; then
+    say "plant accounting: plants=${ST_PLANTS:-0} + skipped=${ST_SKIP:-0} == declared=$ST_DECLARED_PLANTS  OK"
+  else
+    say "plant accounting: plants=${ST_PLANTS:-0} + skipped=${ST_SKIP:-0} != declared=$ST_DECLARED_PLANTS  FAIL (bump ST_DECLARED_PLANTS in the same commit as any plant change)"
+    ST_FAIL=1
   fi
 
   if [ "$ST_FAIL" -ne 0 ]; then
-    say "SELF-TEST: FAIL -- one or more plants SILENT or a transverse row failed plants=${ST_PLANTS:-0} skipped=${ST_SKIP:-0}"
+    say "SELF-TEST: FAIL -- one or more plants SILENT or a transverse row failed plants=${ST_PLANTS:-0} skipped=${ST_SKIP:-0} transverse_skipped=${ST_TV_SKIP:-0}"
     exit 1
   fi
-  say "SELF-TEST: PASS -- run-mode plants FIRE and each gutted guard silences its plant plants=${ST_PLANTS:-0} skipped=${ST_SKIP:-0}"
+  say "SELF-TEST: PASS -- run-mode plants FIRE and each gutted guard silences its plant plants=${ST_PLANTS:-0} skipped=${ST_SKIP:-0} transverse_skipped=${ST_TV_SKIP:-0}"
   exit 0
 }
 
@@ -4964,6 +5816,12 @@ case "${1:-plan}" in
     run_mode "$@" ;;
   --self-test)
     selftest ;;
+  --plant-total)
+    # Self-test accounting probe (CA-GUARD:plant-total). Reads nothing and
+    # writes nothing: it exists so the comparison can be mutated and the
+    # mutation observed without re-running the whole self-test.
+    shift
+    printf '%s\n' "$(plant_total_verdict "${1:-0}" "${2:-0}")" ;;
   *) say "usage: $0 [plan|run|--self-test]"; exit 2 ;;
 esac
 
