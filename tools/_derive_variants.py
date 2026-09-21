@@ -38,15 +38,32 @@ Prose, comments, JSON, YAML values other than runCmd, URLs and any token
 containing `/` are NOT invocations. Every rejected occurrence is reported so
 the choice is visible rather than silent.
 
-The same scan also extracts every PATH EDIT (#1213 round 5, Fable r4
-check 3): `PATH=`, `export PATH=`, `PATH+=` and an append to `$GITHUB_PATH`,
-in shell text, Makefile recipe lines and a workflow runCmd. Each added
-component is reported RAW -- resolving it (absolute? on this box? inside the
-row's own scratch?) is the harness's job, which is the only place that knows
-$SHIM/$FARM/$HOME. `$PATH` / `${PATH}` itself is not an added component.
-A PATH edit the scanner cannot see -- one COMPUTED at runtime
-(`PATH="$(cat dir.txt):$PATH"`) or made through a non-shell API
-(`os.environ["PATH"] = ...`) -- is the stated residual.
+The same scan also extracts every PATH EDIT (#1213 rounds 5-6). Round 6
+matches the SUBSTRING, not the syntactic position: ANY occurrence of
+`PATH=`, `PATH+=`, `PATH :=` or `PATH ?=` -- word-bounded on the left, so
+MANPATH / PYTHONPATH / GITHUB_PATH do not match -- ANYWHERE in a scanned
+text line is a PATH edit. Comments and heredoc BODIES are scanned; a
+Makefile is scanned in FULL (a top-level `export PATH := ...` sets every
+recipe's PATH); `.eigs` STRING LITERALS are scanned; a workflow is scanned
+at its runCmd. `$GITHUB_PATH` appends are extracted as before. Round 5
+matched a position list (line start, `;&|(`, `export`/`declare -x`/
+`typeset -x`) and Fable r5 walked through six holes in one run --
+`env PATH=/abs:$PATH cmd`, `exec env PATH=...`, `bash -c 'PATH=...'`, a
+heredoc body, a Makefile top-level export, and `~user/...`. A position
+list always has a next hole; a substring does not.
+
+THE PRICE, stated: the rule is over-broad in the SAFE direction. A line
+that merely NAMES a PATH edit -- a comment, a usage string, a README
+example inside a `.sh` -- makes that consumer's row FAIL by name. It
+refuses a row it could have run; it never runs a row it should have
+refused.
+
+Each added component is reported RAW -- resolving it (absolute? `~user`?
+on this box? inside the row's own scratch?) is the harness's job, which is
+the only place that knows $SHIM/$FARM/$HOME. `$PATH`, `${PATH}` and
+`$(PATH)` are not added components. The residual is now only a component
+COMPUTED at runtime (`PATH="$(cat dir.txt):$PATH"`, `$SOMEVAR`) or an edit
+made through a non-shell API (`os.environ["PATH"] = ...`).
 
 Output, one record per line, on stdout:
 
@@ -301,10 +318,31 @@ def scan_shell(text, hits, path, line_offset=0):
             cmdpos = False
 
 
-PATH_ASSIGN_RE = re.compile(
-    r"(?:^|[;&|(]|\bexport\s+|\bdeclare\s+-x\s+|\btypeset\s+-x\s+)"
-    r"\s*PATH\s*(\+?=)"
-)
+# CA-GUARD:path-edit-substring
+# ROUND 6, the class change. Round 5 matched a PATH assignment by
+# SYNTACTIC POSITION -- line start, `;&|(`, or export / declare -x /
+# typeset -x immediately before `PATH=` -- over comment-stripped,
+# heredoc-stripped lines, and in a Makefile over TAB-indented recipe
+# lines only. Every hole Fable r5 measured is a position that list does
+# not name: `env PATH=/abs:$PATH cmd`, `exec env PATH=...`,
+# `bash -c 'PATH=/abs:$PATH cmd'`, a heredoc BODY fed to `bash`, a
+# Makefile TOP-LEVEL `export PATH := /abs:$(PATH)`, and `~user/...`.
+# A position list always has a next hole, so the rule is now the
+# SUBSTRING: any occurrence of `PATH=`, `PATH+=`, `PATH :=` or `PATH ?=`
+# -- word-bounded on the LEFT so MANPATH / PYTHONPATH / GITHUB_PATH do
+# not match -- ANYWHERE in any scanned text line, comments and heredoc
+# bodies included, is a PATH edit.
+# THE PRICE, stated rather than hidden: a line that merely NAMES a PATH
+# edit (a comment, a usage string, a README example living inside a
+# `.sh`) makes its consumer's row FAIL|path-edit:<dir> by name. That is
+# over-broad in the SAFE direction -- it refuses a row it could have run,
+# it never runs a row it should have refused. Selftest row
+# `path-edit-comment-is-over-broad` documents it.
+# What stays a residual: a component COMPUTED at run time -- `$(...)`, or
+# a `$VAR` other than $HOME/$PWD/$PATH -- is not a literal directory, so
+# nothing resolves it. Plant path-edit-computed pins that.
+PATH_EDIT_RE = re.compile(r"(?:^|[^A-Za-z0-9_])PATH\s*(?:\+=|:=|\?=|=)")
+# CA-GUARD:end-path-edit-substring
 GITHUB_PATH_RE = re.compile(r">>\s*[\"']?\$\{?GITHUB_PATH\}?[\"']?")
 
 
@@ -406,7 +444,7 @@ def _record_components(value, edits, path, lineno):
         comp = raw.strip()
         if not comp:
             continue
-        if comp in ("$PATH", "${PATH}"):
+        if comp in ("$PATH", "${PATH}", "$(PATH)"):
             continue
         if "|" in comp or "\n" in comp:
             continue
@@ -422,16 +460,21 @@ def scan_path_edits(text, edits, path, line_offset=0):
     PATH the harness hands the row; a consumer that names an absolute
     directory reaches past it. So the edit is refused BY NAME instead.
     """
-    for lineno, line in shell_lines(text):
-        for m in PATH_ASSIGN_RE.finditer(line):
+    # RAW lines, not shell_lines(): round 6 scans COMMENTS and HEREDOC
+    # BODIES too. `bash <<EOF` + `export PATH=/abs:$PATH` is a command the
+    # consumer runs, and dropping the body made it invisible (Fable r5).
+    for i, line in enumerate(text.split("\n")):
+        lineno = i + 1
+        for m in PATH_EDIT_RE.finditer(line):
             _record_components(
                 _value_after(line, m.end()), edits, path, lineno + line_offset
             )
-        if GITHUB_PATH_RE.search(line):
+        gm = GITHUB_PATH_RE.search(line)
+        if gm:
             # `echo "/opt/x/bin" >> $GITHUB_PATH` -- the appended word is the
             # component. Take every quoted or bare word before the redirect
             # that is not the command itself.
-            head = line[:GITHUB_PATH_RE.search(line).start()]
+            head = line[:gm.start()]
             toks = _split_words(head)
             for tok in toks[1:]:
                 if tok in SEPARATORS or tok.startswith("-"):
@@ -440,11 +483,30 @@ def scan_path_edits(text, edits, path, line_offset=0):
 
 
 def scan_makefile_path_edits(text, edits, path):
+    """EVERY line, not only the TAB-indented recipe lines. A TOP-LEVEL
+    `export PATH := /abs:$(PATH)` sets the PATH of every recipe in the
+    file and was invisible to round 5 (Fable r5 shape `make_export`)."""
     for i, line in enumerate(text.split("\n")):
         if line.startswith("\t"):
             # `$$PATH` in a recipe is what make hands the shell as `$PATH`.
             body = line[1:].lstrip("@-+").replace("$$", "$")
-            scan_path_edits(body, edits, path, line_offset=i)
+        else:
+            body = line
+        scan_path_edits(body, edits, path, line_offset=i)
+
+
+EIGS_STR_RE = re.compile(r"\"([^\"\n]*)\"|'([^'\n]*)'")
+
+
+def scan_eigs_path_edits(text, edits, path):
+    """A `.eigs` program can only edit PATH through a STRING it hands an
+    exec-family builtin, so its STRING LITERALS are the scanned text."""
+    for i, line in enumerate(text.split("\n")):
+        for m in EIGS_STR_RE.finditer(line):
+            lit = m.group(1) if m.group(1) is not None else m.group(2)
+            if not lit:
+                continue
+            scan_path_edits(lit, edits, path, line_offset=i)
 
 
 def scan_yaml_path_edits(text, edits, path):
@@ -642,12 +704,14 @@ def derive(root):
                     scan_yaml(text, hits, rel)
                 elif kind == "makefile":
                     scan_makefile(text, hits, rel)
-            if has_path and kind in ("shell", "yaml", "makefile"):
+            if has_path and kind in ("shell", "yaml", "makefile", "eigs"):
                 pfiles += 1
                 if kind == "shell":
                     scan_path_edits(text, edits, rel)
                 elif kind == "yaml":
                     scan_yaml_path_edits(text, edits, rel)
+                elif kind == "eigs":
+                    scan_eigs_path_edits(text, edits, rel)
                 else:
                     scan_makefile_path_edits(text, edits, rel)
     variants = []
@@ -777,6 +841,9 @@ def selftest():
             "export PATH=bin:$PATH\n"
             "export PATH=\"$(cat dir.txt):$PATH\"\n"
         )}, set(), {"$HOME/.local/bin", "bin", "$(cat dir.txt)"}),
+        # ROUND 6: a comment and a heredoc BODY are now SCANNED. The
+        # heredoc half is the fix (Fable r5 `bash <<EOF` shape); the
+        # comment half is the stated PRICE.
         ("path-edit-comment-and-heredoc", {"run.sh": (
             "#!/bin/sh\n"
             "# export PATH=/a/commented:$PATH\n"
@@ -784,7 +851,51 @@ def selftest():
             "export PATH=/a/heredoc:$PATH\n"
             "EOF\n"
             "export PATH=/a/real:$PATH\n"
-        )}, set(), {"/a/real"}),
+        )}, set(), {"/a/commented", "/a/heredoc", "/a/real"}),
+        # --- ROUND 6: one row per shape Fable r5 walked through (six), the
+        # two controls, and the over-broad control that documents the price.
+        ("path-edit-env-prefix", {"run.sh":
+            "#!/bin/sh\nenv PATH=/a/envpfx:$PATH eigenscript work.eigs\n"},
+         {"eigenscript"}, {"/a/envpfx"}),
+        ("path-edit-exec-env-prefix", {"run.sh":
+            "#!/bin/sh\nexec env PATH=/a/execpfx:$PATH eigenscript work.eigs\n"},
+         {"eigenscript"}, {"/a/execpfx"}),
+        ("path-edit-bash-c-string", {"run.sh":
+            "#!/bin/sh\nbash -c 'PATH=/a/bashc:$PATH eigenscript work.eigs'\n"},
+         set(), {"/a/bashc"}),
+        ("path-edit-heredoc-body-fed-to-shell", {"run.sh": (
+            "#!/bin/sh\n"
+            "bash <<EOF\n"
+            "export PATH=/a/hdbody:$PATH\n"
+            "eigenscript work.eigs\n"
+            "EOF\n"
+        )}, set(), {"/a/hdbody"}),
+        # `~user` is reported RAW: only the harness can resolve it (getent
+        # passwd), and only the harness knows the row's scratch $HOME.
+        ("path-edit-tilde-user", {"run.sh":
+            "#!/bin/sh\nexport PATH=~jon/.local/bin:$PATH\n"},
+         set(), {"~jon/.local/bin"}),
+        ("path-edit-makefile-top-level-export", {"Makefile":
+            "export PATH := /a/toplevel:$(PATH)\nstale:\n\teigenscript x\n"},
+         {"eigenscript"}, {"/a/toplevel"}),
+        ("path-edit-eigs-string-literal", {"run.eigs":
+            "let r is exec_capture of [\"sh\", \"-c\", "
+            "\"export PATH=/a/eigslit:$PATH; eigenscript x\"]\n"},
+         set(), {"/a/eigslit"}),
+        # CONTROLS: both are computed or $HOME-rooted, so neither is a
+        # literal absolute directory and neither can refuse a row.
+        ("path-edit-controls-pwd-and-home", {"run.sh": (
+            "#!/bin/sh\n"
+            "export PATH=\"$PWD/bin:$PATH\"\n"
+            "export PATH=\"$HOME/.local/bin:$PATH\"\n"
+        )}, set(), {"$PWD/bin", "$HOME/.local/bin"}),
+        # THE PRICE, as a row: a COMMENT that merely names a PATH edit is
+        # extracted, and its consumer's row will FAIL by name. Over-broad
+        # in the safe direction, documented rather than hidden.
+        ("path-edit-comment-is-over-broad", {"notes.sh":
+            "#!/bin/sh\n# to use the system build: export PATH=/usr/bin:$PATH\n"
+            "true\n"},
+         set(), {"/usr/bin"}),
         ("path-edit-yaml-runcmd-only", {".github/workflows/ci.yml": (
             "jobs:\n"
             "  t:\n"
@@ -796,10 +907,13 @@ def selftest():
             "            export PATH=/a/runcmd:$PATH\n"
             "            eigenscript x\n"
         )}, {"eigenscript"}, {"/a/runcmd"}),
+        # ROUND 6: `OTHER = PATH=/a/notrecipe` is now extracted too -- a
+        # make variable holding a PATH edit is one `$(OTHER)` away from
+        # being a recipe's PATH. The price, in the safe direction.
         ("path-edit-makefile-recipe", {"Makefile":
             "run:\n\texport PATH=/a/recipe:$$PATH; eigenscript x\n"
             "OTHER = PATH=/a/notrecipe\n"},
-         {"eigenscript"}, {"/a/recipe"}),
+         {"eigenscript"}, {"/a/recipe", "/a/notrecipe"}),
     ]
     examined = 0
     failed = 0

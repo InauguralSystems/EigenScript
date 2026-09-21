@@ -216,15 +216,38 @@
 #     a row reads UNEXERCISED (cand_calls=0), never PASS; plant
 #     variant-glob-residual pins exactly that behaviour, so closing this
 #     residual turns that plant red on purpose.
-#   - PATH-EDIT RESIDUAL (narrowed, round 5): a PATH edit the SCANNER
-#     CANNOT SEE is the residual -- one computed at runtime
-#     (PATH="$(cat dir.txt):$PATH"), or made through a non-shell API
-#     (python os.environ["PATH"]). A LITERAL absolute component is no
-#     longer a residual: it is FAIL|path-edit:<dir> by name before the
-#     row runs. The round-4 wording ("outside $HOME") was wrong in
-#     effect: with HOME scratched, the developer's REAL home is an
-#     absolute directory outside the row's $HOME, and Fable r4 reached
-#     ~/.local/bin/eigenscript-full.stale (0.21.0) under a PASS row.
+#   - PATH-EDIT RULE AND ITS RESIDUAL (round 6, the class change). Round
+#     5 matched a PATH assignment by SYNTACTIC POSITION and claimed "a
+#     LITERAL absolute component is no longer a residual". That claim was
+#     FALSE as written: Fable r5 walked through six positions the list
+#     did not name -- `env PATH=/abs:$PATH cmd`, `exec env PATH=...`,
+#     `bash -c 'PATH=/abs:$PATH cmd'`, a heredoc BODY fed to bash, a
+#     Makefile TOP-LEVEL `export PATH := /abs:$(PATH)`, and
+#     `export PATH=~user/...` -- all six PASS while the stale binary ran.
+#     A position list always has a next hole, so the rule is now the
+#     SUBSTRING: any occurrence of PATH= / PATH+= / PATH := / PATH ?=
+#     (word-bounded on the left) ANYWHERE in a scanned text line --
+#     comments and heredoc bodies included, Makefiles in FULL, .eigs
+#     string literals, a workflow runCmd -- is a PATH edit; each RHS
+#     component that is a LITERAL absolute directory (after ~ and ~user
+#     expansion via getent passwd) existing on this box outside $SHIM,
+#     $FARM, the row's scratch $HOME and the checkout is
+#     FAIL|path-edit:<dir> by name before the row runs.
+#     THE PRICE, stated: the rule is over-broad in the SAFE direction. A
+#     line that merely NAMES a PATH edit -- a comment, a usage string, a
+#     README example inside a .sh, a make variable holding one -- refuses
+#     that consumer's row BY NAME. It refuses a row it could have run; it
+#     never runs a row it should have refused. All 16 real consumers
+#     report ZERO edits under the new rule (plan prints the scan's own
+#     witness, pathexamined|<consumer>|<files>|<edits>).
+#     WHAT IS STILL A RESIDUAL: a component COMPUTED at run time --
+#     $(cat dir.txt), or a $VAR other than $HOME/$PWD/$PATH -- and an
+#     edit made through a non-shell API (python os.environ["PATH"]).
+#     Plant path-edit-computed pins exactly that. The round-4 wording
+#     ("outside $HOME") was wrong in effect too: with HOME scratched, the
+#     developer's REAL home is an absolute directory outside the row's
+#     $HOME, and Fable r4 reached ~/.local/bin/eigenscript-full.stale
+#     (0.21.0) under a PASS row.
 #   - FARM-WRAPPER RESIDUAL: each farm entry EXECS the tool at its
 #     original absolute location, so a farmed, inherited wrapper that
 #     resolves its own location -- exec "$(dirname "$(readlink -f
@@ -512,6 +535,16 @@ parse_variant_names() {
 # directory. So a literal absolute component that EXISTS on this box and is
 # outside $SHIM, $FARM, the row's scratch $HOME and the consumer's own
 # checkout is refused BY NAME, before the row runs.
+# ROUND 6 (Fable r5): the deriver now matches the SUBSTRING `PATH=` /
+# `PATH+=` / `PATH :=` / `PATH ?=` anywhere in a scanned line -- comments
+# and heredoc bodies included, Makefiles in full, `.eigs` string literals
+# too -- instead of a list of syntactic positions, because a position list
+# always has a next hole. This side resolves what the deriver reports RAW:
+# `~` / `~/x` is the ROW's scratch HOME (allowed, exactly like $HOME), and
+# `~user/x` resolves from the PASSWD DATABASE, which is how Fable r5
+# reached an absolute directory through `~jon/../..` under a PASS row.
+# THE PRICE, stated: a line that merely NAMES a PATH edit (a comment, a
+# usage string) refuses its row by name. Over-broad in the SAFE direction.
 # Prints `<component>|<file>:<line>` for the first offender, rc 0 when there
 # is one, and NOTHING else on stdout (the caller reads it back).
 # Residual (narrowed): a component computed at runtime -- `$(cat dir.txt)`,
@@ -519,10 +552,27 @@ parse_variant_names() {
 # path-edit-computed.
 path_edit_offender() {
   local repo="$1" home="$2" edits="$3" comp loc
+  local _rest _user _real _skip _cand
   while IFS= read -r comp || [ -n "$comp" ]; do
     [ -n "$comp" ] || continue
     loc="${comp#*|}"
     comp="${comp%%|*}"
+    # CA-GUARD:path-edit-tilde
+    case "$comp" in
+      '~'|'~/'*) continue ;;    # the ROW's scratch HOME: allowed
+      '~'*)
+        _rest="${comp#\~}"
+        _user="${_rest%%/*}"
+        case "$_rest" in
+          */*) _rest="/${_rest#*/}" ;;
+          *)   _rest="" ;;
+        esac
+        _real="$(getent passwd "$_user" 2>/dev/null | cut -d: -f6)"
+        [ -n "$_real" ] || continue   # no such user: nothing to resolve
+        comp="$_real$_rest"
+        ;;
+    esac
+    # CA-GUARD:end-path-edit-tilde
     case "$comp" in
       /*) ;;
       *) continue ;;            # relative, $HOME-rooted or computed
@@ -531,16 +581,25 @@ path_edit_offender() {
       *'$'*|*'`'*) continue ;;  # a runtime-computed component: the residual
     esac
     [ -d "$comp" ] || continue   # not a directory ON THIS BOX
-    case "$comp" in
-      "${SHIM:-/nonexistent-shim}"|"${SHIM:-/nonexistent-shim}"/*) continue ;;
-      "${FARM:-/nonexistent-farm}"|"${FARM:-/nonexistent-farm}"/*) continue ;;
-    esac
-    if [ -n "$home" ]; then
-      case "$comp" in "$home"|"$home"/*) continue ;; esac
-    fi
-    if [ -n "$repo" ]; then
-      case "$comp" in "$repo"|"$repo"/*) continue ;; esac
-    fi
+    # `~jon/../../tmp/x` and `/tmp/x` are the same directory, so the
+    # containment tests run against BOTH the written form and the resolved
+    # one -- a `..` must not walk a component out of the allowed set.
+    _real="$(cd -P -- "$comp" 2>/dev/null && pwd)" || _real=""
+    [ -n "$_real" ] || _real="$comp"
+    _skip=0
+    for _cand in "$comp" "$_real"; do
+      case "$_cand" in
+        "${SHIM:-/nonexistent-shim}"|"${SHIM:-/nonexistent-shim}"/*) _skip=1 ;;
+        "${FARM:-/nonexistent-farm}"|"${FARM:-/nonexistent-farm}"/*) _skip=1 ;;
+      esac
+      if [ -n "$home" ]; then
+        case "$_cand" in "$home"|"$home"/*) _skip=1 ;; esac
+      fi
+      if [ -n "$repo" ]; then
+        case "$_cand" in "$repo"|"$repo"/*) _skip=1 ;; esac
+      fi
+    done
+    [ "$_skip" -eq 0 ] || continue
     printf '%s|%s' "$comp" "$loc"
     return 0
   done <<< "$edits"
@@ -1000,6 +1059,7 @@ scan_inventory() {
   FLOOR_WHY=""
   load_expected_list
   local r pin cmd d kind gap_why miss vnames wf vexcl vexam exline vpedits peline
+  local vpexam
   local nullglob_was=0
   shopt -q nullglob && nullglob_was=1
   shopt -s nullglob
@@ -1035,12 +1095,14 @@ scan_inventory() {
     vpedits=""
     vexcl=""
     vexam=""
+    vpexam=""
     if [ "$verbose" -eq 1 ]; then
       derive_variants "$r"
       vnames="$DERIVED_NAMES"
       vexcl="$DERIVED_EXCLUDED"
       vexam="$DERIVED_EXAMINED"
       vpedits="$DERIVED_PATHEDITS"
+      vpexam="$DERIVED_PATHEXAMINED"
       if [ "${DERIVED_RC:-0}" -ne 0 ]; then
         GAPS=$((GAPS + 1))
         gap_why="${gap_why:+$gap_why; }variant derivation failed (rc=$DERIVED_RC)"
@@ -1114,6 +1176,13 @@ scan_inventory() {
           say "  variants|$r|excluded:$exline"
         done <<< "$vexcl"
       fi
+      # CA-GUARD:pathexamined-witness
+      # The PATH scan's OWN witness, <files>|<edits>, per consumer. It was
+      # parsed and never printed before round 6, so "0 path_edit| lines"
+      # could not be told apart from "the scan examined nothing" -- a
+      # duration budget, not a witness (mechanical-gates 120-121).
+      say "  pathexamined|$r|${vpexam:-none}"
+      # CA-GUARD:end-pathexamined-witness
       # Every directory this consumer ADDS to PATH, with its file:line. A
       # literal absolute one that exists on this box outside the row's own
       # scratch is FAIL|path-edit:<dir> at run time.
@@ -1665,7 +1734,16 @@ write_record_header() {
 # virtualenv python3 loses its own sys.prefix and its dependencies
 # (Astra r4). path_farm= is the wrapper count and must be >= the number
 # of executables the enumeration found; a farm that cannot be written
-# exits 2 by name. HOME is an empty per-row scratch directory
+# exits 2 by name, and so does a \$SHIM that cannot be written.
+# COST of the farm, measured on this box (Fable r5): +2-7 ms per farmed
+# call (1000 \`git --version\`: direct 9.99 s / farmed 16.83 s, then
+# 15.82 s / 17.72 s), so a consumer like ouroboros that makes hundreds of
+# \`cc\` calls pays seconds. WRAPPER-QUOTING LIMIT, stated rather than
+# fixed: the wrapper is #!/bin/sh but the original path is bash-%q
+# quoted, so an inherited PATH directory whose name holds a TAB or (under
+# LC_ALL=C) a non-ASCII byte yields \`exec: \$/...: not found\` and the row
+# reads FAIL|127 -- fail-closed, never PASS, and no such directory is on
+# this box's or CI's PATH. HOME is an empty per-row scratch directory
 # (home_scratch=) and the named cache/tool variables pass through
 # (env_passthrough=). No stale eigenscript* file is on the row's PATH at
 # all, so a consumer's own PATH prepend cannot re-order one in front of
@@ -1678,9 +1756,16 @@ write_record_header() {
 # Residual: a consumer that resolves the runtime by a PATH IT COMPUTES --
 # ./eigenscript-full inside its own checkout, or a glob over one -- is not
 # on PATH at all; such a row reads UNEXERCISED (cand_calls=0), never PASS.
-# Residual: a PATH edit the SCANNER CANNOT SEE -- computed at runtime
-# (PATH="\$(cat dir.txt):\$PATH") or made through a non-shell API -- can
-# still add a directory. A LITERAL absolute component is refused by name.
+# The PATH-edit scan matches the SUBSTRING PATH= / PATH+= / PATH := /
+# PATH ?= anywhere in a scanned text line -- comments and heredoc bodies
+# included, Makefiles in full, .eigs string literals, a workflow runCmd --
+# and refuses BY NAME any RHS component that is a literal absolute
+# directory on this box (after ~ / ~user expansion) outside
+# \$SHIM/\$FARM/\$HOME/the checkout. Price, stated: a line that merely
+# NAMES a PATH edit refuses its row too -- over-broad in the safe
+# direction. Residual: a component COMPUTED at runtime
+# (PATH="\$(cat dir.txt):\$PATH") or an edit made through a non-shell API
+# is still invisible; plant path-edit-computed pins it.
 # Residual: a farm entry EXECS its tool at the tool's ORIGINAL location,
 # so an inherited wrapper that resolves its own location
 # (exec "\$(dirname "\$(readlink -f "\$0")")/eigenscript") still reaches
@@ -2230,6 +2315,20 @@ assert_shim_dest() {
 }
 # CA-GUARD:end-shim-inside-work
 
+# CA-GUARD:shim-fail-closed
+# Fable r5 / Astra r4 `readonly-bin`: the row's $SHIM directory exists but
+# is mode 555, so every `> "$SHIM/<name>"` failed, no shim was written, and
+# the row read FAIL|127 cand_calls=0 -- a generic failure, while the
+# fail-closed claim says an unusable scratch is refused BY NAME. A shim
+# that cannot be written is now named and exits 2, exactly like the farm's
+# farm_die.
+shim_die() {
+  say "consumer_acceptance: cannot write the shim ${1:-<unset>} ($2)"
+  RUN_RC=2
+  exit 2
+}
+# CA-GUARD:end-shim-fail-closed
+
 write_counting_shim() {
   local dest="$1" target="$2" name="${3:-}"
   [ -n "$name" ] || name="$(basename "$dest")"
@@ -2254,8 +2353,9 @@ write_counting_shim() {
       '# CA-GUARD:log-argv0' \
       'printf "%s|rc=%s|%s|%s\n" "$kind" "$rc" "$name" "$*" >> "$log"' \
       'exit "$rc"'
-  } > "$dest"
-  chmod +x "$dest"
+  } > "$dest" || shim_die "$dest" "write failed"
+  chmod +x "$dest" || shim_die "$dest" "chmod failed"
+  [ -x "$dest" ] || shim_die "$dest" "not executable after write"
 }
 
 # A name with no candidate must not reach a stale binary of that name on
@@ -2273,8 +2373,9 @@ write_127_shim() {
       '# CA-GUARD:log-argv0' \
       'printf "blocked|rc=127|%s|%s\n" "$name" "$*" >> "$log" 2>/dev/null || true' \
       'exit 127'
-  } > "$dest"
-  chmod +x "$dest"
+  } > "$dest" || shim_die "$dest" "write failed"
+  chmod +x "$dest" || shim_die "$dest" "chmod failed"
+  [ -x "$dest" ] || shim_die "$dest" "not executable after write"
 }
 
 # CA-GUARD:drop-sha-readback
@@ -2696,8 +2797,9 @@ run_mode() {
       '# CA-GUARD:log-argv0' \
       'printf "%s|rc=%s|%s|%s\n" "$kind" "$rc" "$name" "$*" >> "$log"' \
       'exit "$rc"'
-  } > "$SHIM/eigenscript"
-  chmod +x "$SHIM/eigenscript"
+  } > "$SHIM/eigenscript" || shim_die "$SHIM/eigenscript" "write failed"
+  chmod +x "$SHIM/eigenscript" || shim_die "$SHIM/eigenscript" "chmod failed"
+  [ -x "$SHIM/eigenscript" ] || shim_die "$SHIM/eigenscript" "not executable after write"
   RESOLVED="$SHIM/eigenscript"
   # CA-GUARD:variant-mask
   if [ -n "${CAND_FULL_ABS:-}" ]; then
@@ -3880,6 +3982,17 @@ repls = {
         '  return 0\n'
         '}',
     ),
+    "shim-fail-closed": (
+        'shim_die() {\n'
+        '  say "consumer_acceptance: cannot write the shim ${1:-<unset>} ($2)"\n'
+        '  RUN_RC=2\n'
+        '  exit 2\n'
+        '}',
+        'shim_die() {\n'
+        '  : "fall open on $1 $2"\n'
+        '  return 0\n'
+        '}',
+    ),
     "path-edit-scan": (
         '  # CA-GUARD:path-edit-guard\n'
         '  if true && [ "$_has_edit" -eq 1 ]; then',
@@ -4473,6 +4586,25 @@ if old not in text:
     sys.exit(1)
 open(dest, "w").write(text.replace(old, new, 1))
 PYD
+      cp "$d/tools/consumer_acceptance.sh.orig" "$d/tools/consumer_acceptance.sh"
+      chmod +x "$d/tools/consumer_acceptance.sh"
+      return 0
+      ;;
+    path-edit-substring)
+      # The DERIVER, not the harness: put round 5's POSITIONAL regex back,
+      # so `env PATH=/abs:$PATH cmd` is invisible again. The `env` row then
+      # runs and reads PASS, and the plant goes SILENT.
+      python3 - "$HERE/tools/_derive_variants.py" "$d/tools/_derive_variants.py" << 'PYP' || return 1
+import sys
+src, dest = sys.argv[1], sys.argv[2]
+text = open(src).read()
+old = 'PATH_EDIT_RE = re.compile(r"(?:^|[^A-Za-z0-9_])PATH\\s*(?:\\+=|:=|\\?=|=)")'
+new = ('PATH_EDIT_RE = re.compile(r"(?:^|[;&|(]|\\bexport\\s+|\\bdeclare\\s+-x\\s+'
+       '|\\btypeset\\s+-x\\s+)\\s*PATH\\s*(?:\\+=|=)")')
+if old not in text:
+    sys.exit(1)
+open(dest, "w").write(text.replace(old, new, 1))
+PYP
       cp "$d/tools/consumer_acceptance.sh.orig" "$d/tools/consumer_acceptance.sh"
       chmod +x "$d/tools/consumer_acceptance.sh"
       return 0
@@ -5081,6 +5213,32 @@ plant_farm_fail_closed() {
   return 1
 }
 
+# ROUND 6 fix 3 (Fable r5, Astra r4 check 7 `readonly-bin`): the row's
+# $SHIM directory exists but cannot be WRITTEN. Round 5 swallowed every
+# shim write and the row read FAIL|127 cand_calls=0 -- generic, while the
+# fail-closed claim promises a named exit 2. Now it is named.
+plant_shim_fail_closed() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" inject="$5"
+  local out rc
+  rm -f "$rec"
+  out="$(PATH="$inject:$PATH" CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 \
+    CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc recV=$(grep -h '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')out=$(grep -m1 'cannot write the shim' <<< "$out" || true)"
+  note_plant "$out" "$rec" "$rc"
+  # The shim is written after the record lock, so the record exists and
+  # says INCOMPLETE -- truthful, and never PASS. The named refusal is the
+  # plant, and no row runs at all.
+  if [ "$rc" -eq 2 ] \
+     && grep -q '^consumer_acceptance: cannot write the shim ' <<< "$out" \
+     && ! grep -q 'VERDICT: PASS' <<< "$out" \
+     && ! grep -q '^VERDICT: PASS' "$rec" 2>/dev/null \
+     && ! grep -q '^row|' "$rec" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
 # Fix 2 (Fable r4 check 3): a consumer PATH edit that adds an ABSOLUTE
 # directory existing on this box is refused BY NAME before the row runs.
 # Three rows in one fixture: an absolute scratch bin (FAIL by name), the
@@ -5089,21 +5247,28 @@ plant_farm_fail_closed() {
 # the ordinary `$HOME/.local/bin` prepend, which is fine (scratch HOME).
 plant_path_edit_absolute() {
   local sh="$1" eco="$2" stub="$3" rec="$4" absbin="$5" stale_log="$6" realdir="$7"
-  local out rc
+  local tildedir="${8:-}"
+  local out rc r
   : > "$stale_log"
-  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=20 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc stale=$(wc -c < "$stale_log" 2>/dev/null || echo 0) rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
-  if [ "$rc" -eq 1 ] \
-     && grep -qF "row|pe_absbin|v0.43.0|FAIL|path-edit:$absbin|" "$rec" \
-     && grep -qF "row|pe_realhome|v0.43.0|FAIL|path-edit:$realdir|" "$rec" \
-     && grep -q 'row|pe_home|v0.43.0|PASS|' "$rec" \
-     && grep -qF "log|pe_absbin|preflight: path-edit $absbin added to PATH at " "$rec" \
-     && [ ! -s "$stale_log" ]; then
-    return 0
+  [ "$rc" -eq 1 ] || return 1
+  grep -qF "row|pe_absbin|v0.43.0|FAIL|path-edit:$absbin|" "$rec" || return 1
+  grep -qF "row|pe_realhome|v0.43.0|FAIL|path-edit:$realdir|" "$rec" || return 1
+  grep -q 'row|pe_home|v0.43.0|PASS|' "$rec" || return 1
+  grep -qF "log|pe_absbin|preflight: path-edit $absbin added to PATH at " "$rec" || return 1
+  # ROUND 6: one row per shape Fable r5 walked through. Every one of these
+  # read PASS at ba74be3 while the stale eigenscript in $absbin RAN.
+  for r in pe_env pe_execenv pe_bashc pe_heredoc pe_make; do
+    grep -qF "row|$r|v0.43.0|FAIL|path-edit:$absbin|" "$rec" || return 1
+  done
+  if [ -n "$tildedir" ]; then
+    grep -qF "row|pe_tilde|v0.43.0|FAIL|path-edit:$tildedir|" "$rec" || return 1
   fi
-  return 1
+  [ ! -s "$stale_log" ] || return 1
+  return 0
 }
 
 # Fix 2's stated RESIDUAL, pinned: a component the scanner cannot see
@@ -5343,7 +5508,7 @@ plant_plant_total() {
 # FAILs by name: gutting both ST_SKIP increments left `plants=67 skipped=0
 # SELF-TEST: PASS` (Fable r2), and a deleted plant is the same shape. Bump
 # this in the same commit as any plant change.
-ST_DECLARED_PLANTS=93
+ST_DECLARED_PLANTS=94
 # This run's scratch token: every ca-* name the self-test and its children
 # create in the OUTER tmp carries it, so the hygiene scan can tell THIS
 # run's leftovers from a concurrent tenant's (both critics, r3).
@@ -6776,6 +6941,24 @@ EOS
     plant_line "farm-fail-closed" 1 "$LAST_PLANT_DETAIL"
   fi
 
+  # --- round 6 fix 3 (Fable r5 / Astra readonly-bin): a $SHIM directory
+  # that cannot be WRITTEN is exit 2 BY NAME, not FAIL|127 cand_calls=0.
+  local sfc_inject="$st_root/sfc-inject"
+  mkdir -p "$sfc_inject"
+  {
+    printf '%s\n' '#!/bin/bash'
+    printf '%s\n' 'p=$(/usr/bin/mktemp "$@") || exit $?'
+    printf '%s\n' 'case "$p" in */ca-run.*) /usr/bin/mkdir "$p/bin" 2>/dev/null && /usr/bin/chmod 555 "$p/bin";; esac'
+    printf '%s\n' 'printf "%s\n" "$p"'
+  } > "$sfc_inject/mktemp"
+  chmod +x "$sfc_inject/mktemp"
+  rec="$st_root/sfc.record"
+  if plant_shim_fail_closed "$sh" "$good_eco" "$st_root/stub-ok" "$rec" "$sfc_inject"; then
+    plant_line "shim-fail-closed" 0 "an unwritable \$SHIM is exit 2 naming the shim, and the record carries no VERDICT: PASS and no row at all"
+  else
+    plant_line "shim-fail-closed" 1 "$LAST_PLANT_DETAIL"
+  fi
+
   # --- round 5 fix 2 (Fable r4 check 3): a consumer PATH edit that adds an
   # absolute directory existing on this box is FAIL BY NAME before the row.
   local pe_eco="$st_root/pe-eco" pe_absbin="$st_root/pe-absbin"
@@ -6800,9 +6983,47 @@ EOS
   mk_consumer_block "$pe_eco" pe_home \
     'export PATH="$HOME/.local/bin:$PATH"' \
     'eigenscript work.eigs'
+  # --- ROUND 6: one consumer per shape Fable r5 walked through. At ba74be3
+  # every one of these read PASS while the stale eigenscript in $pe_absbin
+  # RAN; the substring rule refuses all six by name.
+  mk_consumer_block "$pe_eco" pe_env \
+    "env PATH=$pe_absbin:\$PATH eigenscript work.eigs"
+  mk_consumer_block "$pe_eco" pe_execenv \
+    "exec env PATH=$pe_absbin:\$PATH eigenscript work.eigs"
+  mk_consumer_block "$pe_eco" pe_bashc \
+    "bash -c 'PATH=$pe_absbin:\$PATH eigenscript work.eigs'"
+  mk_consumer_block "$pe_eco" pe_heredoc \
+    'bash <<EOF' \
+    "export PATH=$pe_absbin:\$PATH" \
+    'eigenscript work.eigs' \
+    'EOF'
+  # A Makefile TOP-LEVEL `export PATH :=` sets every recipe's PATH; round 5
+  # read only TAB-indented recipe lines.
+  mk_consumer_block "$pe_eco" pe_make 'make -s stale'
+  printf 'export PATH := %s:$(PATH)\nstale:\n\teigenscript work.eigs\n' \
+    "$pe_absbin" > "$pe_eco/pe_make/Makefile"
+  # `~user` resolves from the PASSWD DATABASE, not from $HOME. Pick a user
+  # whose home exists on THIS box (root first, then whoever is running the
+  # self-test), so the row works under the dropped re-run as well.
+  local pe_tilde_user="" pe_tilde_dir="" _u _h
+  for _u in root "$(id -un 2>/dev/null || true)"; do
+    [ -n "$_u" ] || continue
+    _h="$(getent passwd "$_u" 2>/dev/null | cut -d: -f6)"
+    [ -n "$_h" ] || continue
+    [ -d "$_h" ] || continue
+    case "$_h" in /) continue ;; esac
+    pe_tilde_user="$_u"
+    pe_tilde_dir="$_h"
+    break
+  done
+  if [ -n "$pe_tilde_user" ]; then
+    mk_consumer_block "$pe_eco" pe_tilde \
+      "export PATH=~$pe_tilde_user:\$PATH" \
+      'eigenscript work.eigs'
+  fi
   rec="$st_root/pe.record"
-  if plant_path_edit_absolute "$sh" "$pe_eco" "$st_root/stub-ok" "$rec" "$pe_absbin" "$stale_pe" "$pe_real"; then
-    plant_line "path-edit-absolute" 0 "pe_absbin and pe_realhome are FAIL|path-edit:<dir> by name with a log| preflight line, the stale binary never ran, and the ordinary \$HOME/.local/bin prepend still PASSes"
+  if plant_path_edit_absolute "$sh" "$pe_eco" "$st_root/stub-ok" "$rec" "$pe_absbin" "$stale_pe" "$pe_real" "$pe_tilde_dir"; then
+    plant_line "path-edit-absolute" 0 "pe_absbin, pe_realhome and Fable r5's six shapes (pe_env, pe_execenv, pe_bashc, pe_heredoc, pe_make, pe_tilde) are FAIL|path-edit:<dir> by name with a log| preflight line, the stale binary never ran, and the ordinary \$HOME/.local/bin prepend still PASSes"
   else
     plant_line "path-edit-absolute" 1 "$LAST_PLANT_DETAIL"
   fi
@@ -7018,7 +7239,8 @@ EOS
       not-found-variant) plant_not_found_variant "$script" "$eco" "$st_root/stub-ok" "$rec" "$nf_name" "$nf_decoy" "$nf_decoy_log" ;;
       farm-exec-wrapper) plant_farm_exec_wrapper "$script" "$eco" "$st_root/stub-ok" "$rec" "$venv_dir" "$venv_marker" ;;
       farm-fail-closed)  plant_farm_fail_closed "$script" "$eco" "$st_root/stub-ok" "$rec" "$ffc_inject" ;;
-      path-edit-absolute) plant_path_edit_absolute "$script" "$eco" "$st_root/stub-ok" "$rec" "$pe_absbin" "$stale_pe" "$pe_real" ;;
+      path-edit-absolute) plant_path_edit_absolute "$script" "$eco" "$st_root/stub-ok" "$rec" "$pe_absbin" "$stale_pe" "$pe_real" "$pe_tilde_dir" ;;
+      shim-fail-closed)  plant_shim_fail_closed "$script" "$eco" "$st_root/stub-ok" "$rec" "$sfc_inject" ;;
       env-passthrough-go) plant_env_passthrough_go "$script" "$eco" "$st_root/stub-ok" "$rec" "$go_marker" "$go_bin" ;;
       drop-trust-root)   plant_drop_trust_root "$script" "$eco" ;;
       scratch-fail-closed) plant_scratch_fail_closed "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root" ;;
@@ -7092,7 +7314,7 @@ EOS
     # (UNEXERCISED, FAIL after a refused append, etc.). The transverse
     # is that the plant no longer FIRE.
     case "$plant" in
-      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy|farm-exec-wrapper|farm-fail-closed|path-edit-absolute|drop-trust-root)
+      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy|farm-exec-wrapper|farm-fail-closed|shim-fail-closed|path-edit-absolute|drop-trust-root)
         if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ]; then
           say "transverse $kind / $plant: intact=FIRES mutant=$mutant_st  OK"
         else
@@ -7201,6 +7423,12 @@ EOS
   fi
   transverse_one farm-fail-closed        farm-fail-closed "$good_eco" t-ffc
   transverse_one path-edit-scan          path-edit-absolute "$pe_eco" t-pea
+  # --- round 6
+  transverse_one shim-fail-closed        shim-fail-closed "$good_eco" t-shim
+  # Gut the SUBSTRING rule back to round 5's positional regex: the `env`
+  # row (and its five siblings) goes SILENT -- the exact hole Fable r5
+  # measured, so the class change is what holds the plant up.
+  transverse_one path-edit-substring     path-edit-absolute "$pe_eco" t-pes
   transverse_one drop-fixture-gate       drop-trust-root  "$nf_eco"   t-dtr
   if [ -n "$go_bin" ]; then
     transverse_one env-passthrough       env-passthrough-go "$go_eco" t-epg

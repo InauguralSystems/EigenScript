@@ -559,7 +559,15 @@ succeeded. Farm construction is fail-closed by name (`cannot build the
 PATH farm under <dir>`, exit 2), and `path_farm=N` must be at least the
 number of executables the enumeration found: a farm directory that could
 not be written used to swallow every failure and read `path_farm=0` under
-`VERDICT: PASS`. `HOME` is a
+`VERDICT: PASS`. Two measured costs of running tools in place, stated
+rather than hidden: the wrapper adds **+2–7 ms per farmed call** on this
+box (1000 `git --version`: direct 9.99 s / farmed 16.83 s, then 15.82 s /
+17.72 s), so a consumer making hundreds of `cc` calls pays seconds; and
+the wrapper is `#!/bin/sh` while the original path is bash-`%q` quoted, so
+an inherited `PATH` directory whose name holds a TAB or (under `LC_ALL=C`)
+a non-ASCII byte yields `exec: $/…: not found` and the row reads
+`FAIL|127` — fail-closed, never `PASS`, and no such directory is on this
+box's or CI's `PATH`. `HOME` is a
 scratch directory per row (`home_scratch=yes`) containing empty
 `.local/bin` and `bin`, so a prepend adds an empty directory — but the
 named build/tool CACHE variables survive it (`env_passthrough=`):
@@ -569,20 +577,47 @@ the three Go ones derived from the real home when unset. Measured on
 eddy: with the scratch HOME alone, `GOPROXY=off go list -m all` returns
 `module lookup disabled by GOPROXY=off` where the real HOME returns rc 0,
 so every run would re-download its modules and fail without a network.
-A consumer **PATH EDIT** is a finding of its own:
-`tools/_derive_variants.py` extracts every `PATH=`, `export PATH=`,
-`PATH+=` and `$GITHUB_PATH` append from shell text, Makefile recipe lines
-and a workflow `runCmd`, `plan` prints them as
-`path_edit|<consumer>|<component>|<file>:<line>` (all 16 real consumers
-report none — the two `$GITHUB_PATH` appends in EigenGauntlet's and
-EigenMiniSat's CI are ordinary `run:` steps, not the `runCmd`, and the
-`ENV PATH=` lines are Dockerfile, which is not the acceptance command),
-and a row whose edit adds a LITERAL absolute directory that exists on
-this box outside `$SHIM`, `$FARM`, the row's scratch `$HOME` and its own
-checkout is `FAIL|path-edit:<dir>` **before it runs**, with a
-`log|<name>|preflight:` line. That is the shape that reached the
-developer's real `~/.local/bin/eigenscript-full.stale` (`0.21.0`) under a
-`PASS` row. The
+A consumer **PATH EDIT** is a finding of its own, and the rule matches the
+**substring, not the syntactic position**. `tools/_derive_variants.py`
+treats ANY occurrence of `PATH=`, `PATH+=`, `PATH :=` or `PATH ?=` —
+word-bounded on the left, so `MANPATH`/`PYTHONPATH`/`GITHUB_PATH` do not
+match — **anywhere in a scanned text line** as a PATH edit, plus every
+`$GITHUB_PATH` append. Comments and **heredoc bodies** are scanned, a
+Makefile is scanned in **full** (a top-level `export PATH := …` sets every
+recipe's PATH), `.eigs` **string literals** are scanned, and a workflow is
+scanned at its `runCmd`. Round 5 matched a position list instead (line
+start, `;&|(`, `export`/`declare -x`/`typeset -x`) and claimed "a LITERAL
+absolute component is no longer a residual"; Fable r5 walked through six
+positions that list did not name — `env PATH=/abs:$PATH cmd`,
+`exec env PATH=…`, `bash -c 'PATH=/abs:$PATH cmd'`, a heredoc body fed to
+`bash`, a Makefile top-level `export PATH := /abs:$(PATH)`, and
+`export PATH=~user/…` — every one of them `PASS` while the stale binary
+ran. A position list always has a next hole; a substring does not.
+
+`plan` prints the edits as `path_edit|<consumer>|<component>|<file>:<line>`
+and the scan's **own witness** as `pathexamined|<consumer>|<files>|<edits>`,
+so "no edits" can be told apart from "the scan examined nothing". All 16
+real consumers report zero edits under the new rule (the two
+`$GITHUB_PATH` appends in EigenGauntlet's and EigenMiniSat's CI are
+ordinary `run:` steps, not the `runCmd`, and the `ENV PATH=` lines are
+Dockerfile, which is not the acceptance command). A row whose edit adds a
+component that is a LITERAL absolute directory existing on this box —
+after `~` (the row's own scratch `$HOME`, allowed) and `~user` (resolved
+from `getent passwd`) expansion — outside `$SHIM`, `$FARM`, the row's
+scratch `$HOME` and its own checkout is `FAIL|path-edit:<dir>` **before it
+runs**, with a `log|<name>|preflight:` line. That is the shape that reached
+the developer's real `~/.local/bin/eigenscript-full.stale` (`0.21.0`) under
+a `PASS` row.
+
+**The price, stated:** the rule is over-broad in the SAFE direction. A line
+that merely *names* a PATH edit — a comment, a usage string, a README
+example living inside a `.sh`, a make variable holding one — refuses that
+consumer's row by name. It refuses a row it could have run; it never runs a
+row it should have refused. The deriver's selftest row
+`path-edit-comment-is-over-broad` documents exactly that. What remains a
+residual is only a component the scanner cannot resolve because it is
+COMPUTED (`$(…)`, a `$VAR` other than `$HOME`/`$PWD`/`$PATH`) or an edit
+made through a non-shell API. The
 enumeration follows symlinked `PATH` directories (`find -L`); a directory
 that is executable but not readable contributes nothing and is reachable
 from nothing. What the claim now is, exactly: **no stale `eigenscript*`
@@ -593,7 +628,9 @@ can swallow with `|| true`. Three residuals stay, stated in the header
 and each **pinned by a plant that fires only while it holds**:
 
 1. a PATH edit the scanner cannot see because the consumer COMPUTES it at
-   run time (`PATH="$(cat dir.txt):$PATH"`, or `os.environ["PATH"]`);
+   run time (`PATH="$(cat dir.txt):$PATH"`, a `$VAR` other than
+   `$HOME`/`$PWD`/`$PATH`, or `os.environ["PATH"]`) — a literal absolute
+   component, in any syntactic position, is no longer one;
 2. a farmed, inherited wrapper that resolves its OWN location
    (`exec "$(dirname "$(readlink -f "$0")")/eigenscript"`) still reaches
    the stale `eigenscript` sitting beside it in the inherited directory —
@@ -614,7 +651,12 @@ the name, a 127-shim when it does not (`overlay_shimmed=`).
 
 Scratch creation is fail-closed: an unusable `$TMPDIR` exits 2 with
 `cannot create scratch under …` **before** any shim is written, and a
-shim is never written to a directory outside the run scratch. The
+shim is never written to a directory outside the run scratch. A `$SHIM`
+directory that exists but cannot be WRITTEN (Astra's `readonly-bin`, mode
+`555`) is now named too — `cannot write the shim …`, exit 2, no row at
+all — where round 5 swallowed every shim write and the row read a generic
+`FAIL|127 cand_calls=0` under a fail-closed claim (plant
+`shim-fail-closed`). The
 unchecked `mktemp` this replaces had `SHIM` fall open to `/bin`, and a
 round-2 run as root wrote stub shims into `/usr/bin` on a dev box.
 The job runs as uid 0 in the container, where a `chmod a-w` directory is
