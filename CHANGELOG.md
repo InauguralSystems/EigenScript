@@ -362,17 +362,37 @@ All notable changes to EigenScript are documented here.
   `PIP_CACHE_DIR`, `npm_config_cache`) pass through and the three Go ones
   are derived from the real home when unset (`env_passthrough=`):
   measured on eddy, a scratch HOME alone turned `GOPROXY=off go list -m
-  all` into `module lookup disabled`. A consumer PATH EDIT is now a
-  finding of its own: `tools/_derive_variants.py` extracts every `PATH=`,
-  `export PATH=`, `PATH+=` and `$GITHUB_PATH` append from shell text,
-  Makefile recipes and a workflow `runCmd` (`plan` prints
-  `path_edit|<consumer>|<component>|<file>:<line>`; all 16 real consumers
-  report none), and a row whose edit adds a LITERAL absolute directory
-  that exists on this box outside `$SHIM`, `$FARM`, the row's scratch
-  `$HOME` and its own checkout is `FAIL|path-edit:<dir>` before it runs,
-  with a `log|<name>|preflight:` line -- the shape that reached the
-  developer's real `~/.local/bin/eigenscript-full.stale` (`0.21.0`) under
-  a PASS row. The enumeration follows symlinked PATH directories
+  all` into `module lookup disabled`. A consumer PATH EDIT is a
+  finding of its own, and the rule matches the SUBSTRING, not the
+  syntactic position: `tools/_derive_variants.py` treats ANY occurrence
+  of `PATH=`, `PATH+=`, `PATH :=` or `PATH ?=` -- word-bounded on the
+  left, so `MANPATH`, `PYTHONPATH` and `GITHUB_PATH` do not match --
+  ANYWHERE in a scanned text line as a PATH edit, plus every
+  `$GITHUB_PATH` append. Comments and heredoc BODIES are scanned, a
+  Makefile is scanned in FULL (a top-level `export PATH := ...` sets
+  every recipe's PATH), `.eigs` string literals are scanned, and a
+  workflow is scanned at its `runCmd`. `plan` prints both the edits
+  (`path_edit|<consumer>|<component>|<file>:<line>`) and the scan's OWN
+  witness (`pathexamined|<consumer>|<files>|<edits>`), so "no edits" can
+  be told apart from "the scan examined nothing"; all 16 real consumers
+  report zero edits. A row whose edit adds a component that is a LITERAL
+  absolute directory existing on this box -- after `~` (the row's own
+  scratch `$HOME`, allowed) and `~user` (resolved from `getent passwd`)
+  expansion -- whose RESOLVED form is outside `$SHIM`, `$FARM`, the row's
+  scratch `$HOME` and its own checkout is `FAIL|path-edit:<resolved dir>`
+  before it runs, with a `log|<name>|preflight:` line that also carries
+  the WRITTEN form -- the shape that reached the developer's real
+  `~/.local/bin/eigenscript-full.stale` (`0.21.0`) under a PASS row.
+  Containment is decided on the RESOLVED form ONLY: while EITHER form
+  could buy the allowance, `<checkout>/../../<absdir>` and a symlink
+  inside the checkout pointing outside it both read PASS while the stale
+  binary ran; every allowed prefix is resolved on the same terms, so a
+  checkout or scratch reached THROUGH a symlink is still allowed. THE
+  PRICE, stated: the rule is over-broad in the SAFE direction -- a line
+  that merely NAMES a PATH edit (a comment, a usage string, a README
+  example living inside a `.sh`, a make variable holding one) refuses
+  that consumer's row BY NAME. It refuses a row it could have run; it
+  never runs a row it should have refused. The enumeration follows symlinked PATH directories
   (`find -L`); an unreadable (0111) PATH directory contributes nothing and
   is reachable from nothing. Names outside the candidate set keep their
   127-shims in `$SHIM` (`path_masked=`) so the row is
@@ -384,9 +404,24 @@ All notable changes to EigenScript are documented here.
   `src/eigenscript-full` -- so every `eigenscript*` file in the overlay is
   a shim too (`overlay_shimmed=`). Three residuals remain, each named in
   the header and each PINNED BY A PLANT that fires only while it holds: a
-  PATH edit the scanner cannot see because the consumer COMPUTES it at
-  run time (`PATH="$(cat dir.txt):$PATH"`); a farmed, inherited wrapper
-  that resolves its own location
+  PATH edit the scanner cannot SEE -- the substring rule did not remove
+  that hole, it MOVED it from line POSITION to FILE KIND and COMPONENT
+  PARSE. The scan sees every scanned file kind (`.sh`, `.bash`, `.zsh`,
+  an extensionless file carrying a `#!` line, a `.yml` at its `runCmd`,
+  `Makefile` and `.mk`, and `.eigs`) and, inside those, every literal
+  component it can PARSE, which leaves three shapes: (a) file kinds
+  outside that list -- a `PATH=` shell string inside a `.py`, a
+  `Makefile.in`, a sourced extensionless file with no shebang; (b)
+  components the splitter cannot parse -- a `${PATH:+:$PATH}` suffix, a
+  line-continued value, `$'...'` quoting; (c) computed components --
+  `PATH="$(cat dir.txt):$PATH"`, a `$VAR` other than
+  `$HOME`/`$PWD`/`$PATH`, or `os.environ["PATH"]`. Measured over all 16
+  checkouts, every file kind, `.git` excluded, NO consumer has any of
+  them: the only `PATH=` lines in the ecosystem are five
+  `.devcontainer/Dockerfile` `ENV PATH=` lines (DMG, dynamics, eddy,
+  phugoid, Tidepool), and a Dockerfile is not the acceptance command. The
+  ledger is issue #1229. Then: a farmed, inherited wrapper that resolves
+  its own location
   (`exec "$(dirname "$(readlink -f "$0")")/eigenscript"`) and so reaches
   the stale `eigenscript` beside it -- the price of running tools in
   place, closable only by an execve witness or a mount namespace, both
@@ -460,9 +495,16 @@ All notable changes to EigenScript are documented here.
   `examined == inventory > 0` is required to pass; a missing checkout or
   missing command is UNRUNNABLE not a skip; rc 124/137 is HANG/KILLED by
   name; an interrupted run (INT/TERM/HUP) marks the record INCOMPLETE and
-  exits 2. Record class: at every moment the file at `CA_RECORD` is this
-  run's record in a truthful state, or absent — never a previous run's
-  PASS, never a foreign PASS. Exclusive ownership: a mkdir lock on
+  exits 2. Record class: ONCE THE RUN HAS TAKEN THE RECORD PATH (from the
+  record lock and the invalidate of the previous file, to exit) the file
+  at `CA_RECORD` is this run's record in a truthful state, or absent —
+  never a previous run's PASS, never a foreign PASS. BEFORE that point
+  the previous record is left BYTE-IDENTICAL on purpose: a usage error, a
+  second invocation on the same `CA_RECORD`, and a scratch refusal all
+  exit 2 having touched no record path, so an earlier run's
+  `VERDICT: PASS` is still there afterwards (plant `scratch-fail-closed`
+  asserts `record_unchanged=yes`). A wave driver must therefore read the
+  EXIT STATUS, never the file alone. Exclusive ownership: a mkdir lock on
   `<record>.lock.d` is taken before invalidate and held through cleanup;
   a second invocation on the same `CA_RECORD` refuses immediately (exit
   2, touches nothing); a stale lock (holder pid dead) is reclaimed with

@@ -68,9 +68,10 @@
 #     written exits 2 by name, and path_farm=N must be >= the number of
 #     non-eigenscript* executables the enumeration found.
 #     A consumer PATH EDIT that adds an ABSOLUTE directory which exists
-#     on this box outside $SHIM/$FARM/the row's $HOME/the consumer's own
-#     checkout is refused BEFORE the row runs:
-#     FAIL|path-edit:<dir>, with a log|<name>|preflight: line.
+#     on this box and whose RESOLVED form is outside $SHIM/$FARM/the
+#     row's $HOME/the consumer's own checkout is refused BEFORE the row
+#     runs: FAIL|path-edit:<resolved dir>, with a log|<name>|preflight:
+#     line that also carries the WRITTEN form.
 #     Names outside the candidate set still get their 127-shims in $SHIM
 #     (path_masked=) -- those work for ANY shell, so they are what turns a
 #     computed name invoked from a `sh` script into a named failure -- and
@@ -147,9 +148,22 @@
 #                                    SKIPs by name and is counted)
 #
 # Record lifecycle (the class, fail-closed):
-#   At every moment from process start to exit, the file at CA_RECORD is
-#   either THIS run's record in a truthful state, or absent -- never a
-#   previous run's PASS, never a foreign PASS. Every write that
+#   ONCE THE RUN HAS TAKEN THE RECORD PATH -- that is, from the moment it
+#   takes the record lock and invalidates the previous file, to exit --
+#   the file at CA_RECORD is either THIS run's record in a truthful state,
+#   or absent: never a previous run's PASS, never a foreign PASS.
+#   BEFORE that point the previous record is left BYTE-IDENTICAL, on
+#   purpose. A usage error (candidate missing or not executable,
+#   CA_TIMEOUT non-numeric, no timeout(1)), a second invocation on the
+#   same CA_RECORD, and a scratch refusal (an unusable $TMPDIR) all exit 2
+#   having touched no record path at all -- so if a previous run left a
+#   VERDICT: PASS there, that PASS is still there, unchanged, after the
+#   exit-2 run. Plant scratch-fail-closed ASSERTS record_unchanged=yes;
+#   this is the designed behaviour, not a gap. THE CONSEQUENCE FOR A
+#   CALLER: a wave driver must read the EXIT STATUS. Reading only the file
+#   can read a stale PASS from an earlier run that this run never
+#   replaced. rc 0 with VERDICT: PASS in the file is the only green.
+#   Every write that
 #   participates goes through write_record, which returns nonzero on any
 #   failure and is checked (write_record || die_record "why"). No || true
 #   on a record write. write_record append refuses unless the file's
@@ -224,7 +238,7 @@
 #     `bash -c 'PATH=/abs:$PATH cmd'`, a heredoc BODY fed to bash, a
 #     Makefile TOP-LEVEL `export PATH := /abs:$(PATH)`, and
 #     `export PATH=~user/...` -- all six PASS while the stale binary ran.
-#     A position list always has a next hole, so the rule is now the
+#     So the rule is now the
 #     SUBSTRING: any occurrence of PATH= / PATH+= / PATH := / PATH ?=
 #     (word-bounded on the left) ANYWHERE in a scanned text line --
 #     comments and heredoc bodies included, Makefiles in FULL, .eigs
@@ -240,14 +254,44 @@
 #     never runs a row it should have refused. All 16 real consumers
 #     report ZERO edits under the new rule (plan prints the scan's own
 #     witness, pathexamined|<consumer>|<files>|<edits>).
-#     WHAT IS STILL A RESIDUAL: a component COMPUTED at run time --
-#     $(cat dir.txt), or a $VAR other than $HOME/$PWD/$PATH -- and an
-#     edit made through a non-shell API (python os.environ["PATH"]).
-#     Plant path-edit-computed pins exactly that. The round-4 wording
-#     ("outside $HOME") was wrong in effect too: with HOME scratched, the
-#     developer's REAL home is an absolute directory outside the row's
-#     $HOME, and Fable r4 reached ~/.local/bin/eigenscript-full.stale
-#     (0.21.0) under a PASS row.
+#     WHAT IS STILL A RESIDUAL -- stated as MEASURED, not as "none".
+#     The substring rule did not remove the hole; it MOVED it from line
+#     position to FILE KIND and COMPONENT PARSE. The scan sees every
+#     SCANNED FILE KIND -- .sh, .bash, .zsh, an extensionless file with a
+#     #! line, a .yml at its runCmd, Makefile and .mk, and .eigs -- and,
+#     inside those, every literal component it can PARSE. Three residual
+#     SHAPES are left (ledger: issue #1229):
+#       (a) FILE KINDS OUTSIDE THAT LIST: a PATH edit in a shell string
+#           inside a .py file (subprocess.run("PATH=/abs:$PATH ...",
+#           shell=True)), a Makefile.in the row itself copies to
+#           Makefile, and an extensionless file with no shebang that the
+#           row sources.
+#       (b) COMPONENTS THE SPLITTER CANNOT PARSE:
+#           PATH="/abs${PATH:+:$PATH}" (the first component reads as
+#           /abs${PATH, which holds a $ and is taken as computed), a
+#           value continued onto the next physical line with a trailing
+#           backslash, and $'...' ANSI-C quoting.
+#       (c) COMPUTED COMPONENTS: $(cat dir.txt), a $VAR other than
+#           $HOME/$PWD/$PATH, or an edit made through a non-shell API
+#           (python os.environ["PATH"]). Plant path-edit-computed pins
+#           this one.
+#     NONE of the 16 real consumers has any of those shapes: measured
+#     over all 16 checkouts, every file kind, .git excluded, the only
+#     PATH= lines in the ecosystem are five .devcontainer/Dockerfile
+#     `ENV PATH=` lines (DMG, dynamics, eddy, phugoid, Tidepool), and a
+#     Dockerfile is not the acceptance command.
+#     CONTAINMENT IS THE RESOLVED FORM ONLY (round 7, Astra r6): round 6
+#     kept the allowance when EITHER the written or the resolved form was
+#     under an allowed prefix, so <checkout>/../../<absdir> and a symlink
+#     inside the checkout pointing outside it both read PASS while the
+#     stale binary ran. Every allowed prefix is resolved on the same
+#     terms, so a checkout or scratch reached THROUGH a symlink is still
+#     allowed, and the offender is NAMED by its resolved directory (the
+#     written form rides along in the preflight log line).
+#     The round-4 wording ("outside $HOME") was wrong in effect too: with
+#     HOME scratched, the developer's REAL home is an absolute directory
+#     outside the row's $HOME, and Fable r4 reached
+#     ~/.local/bin/eigenscript-full.stale (0.21.0) under a PASS row.
 #   - FARM-WRAPPER RESIDUAL: each farm entry EXECS the tool at its
 #     original absolute location, so a farmed, inherited wrapper that
 #     resolves its own location -- exec "$(dirname "$(readlink -f
@@ -538,8 +582,10 @@ parse_variant_names() {
 # ROUND 6 (Fable r5): the deriver now matches the SUBSTRING `PATH=` /
 # `PATH+=` / `PATH :=` / `PATH ?=` anywhere in a scanned line -- comments
 # and heredoc bodies included, Makefiles in full, `.eigs` string literals
-# too -- instead of a list of syntactic positions, because a position list
-# always has a next hole. This side resolves what the deriver reports RAW:
+# too -- instead of a list of syntactic positions. That did not remove the
+# hole, it MOVED it to file kind and component parse; the three residual
+# shapes that remain are enumerated in the header (ledger #1229). This
+# side resolves what the deriver reports RAW:
 # `~` / `~/x` is the ROW's scratch HOME (allowed, exactly like $HOME), and
 # `~user/x` resolves from the PASSWD DATABASE, which is how Fable r5
 # reached an absolute directory through `~jon/../..` under a PASS row.
@@ -552,7 +598,7 @@ parse_variant_names() {
 # path-edit-computed.
 path_edit_offender() {
   local repo="$1" home="$2" edits="$3" comp loc
-  local _rest _user _real _skip _cand
+  local _rest _user _real _skip _cand _croot
   while IFS= read -r comp || [ -n "$comp" ]; do
     [ -n "$comp" ] || continue
     loc="${comp#*|}"
@@ -581,26 +627,33 @@ path_edit_offender() {
       *'$'*|*'`'*) continue ;;  # a runtime-computed component: the residual
     esac
     [ -d "$comp" ] || continue   # not a directory ON THIS BOX
-    # `~jon/../../tmp/x` and `/tmp/x` are the same directory, so the
-    # containment tests run against BOTH the written form and the resolved
-    # one -- a `..` must not walk a component out of the allowed set.
+    # CA-GUARD:path-edit-containment
+    # ROUND 7 (Astra r6 check 2, the false PASS): containment is decided on
+    # the RESOLVED form ONLY. Round 6 kept the allowance if EITHER the
+    # written OR the resolved form was under an allowed prefix, so
+    # `<checkout>/../../<absdir>` and a symlink INSIDE the checkout pointing
+    # outside it both read PASS while the stale eigenscript in <absdir> ran.
+    # The written form now grants nothing. Each allowed prefix ($SHIM,
+    # $FARM, the row's scratch $HOME, the consumer's checkout) is resolved
+    # on the same terms, so a checkout or scratch reached THROUGH a symlink
+    # is still allowed -- containment must not become a spelling test in the
+    # other direction either. The offender is reported by its RESOLVED name,
+    # because that is the directory the row would actually reach; the
+    # written form rides along in the preflight log line.
     _real="$(cd -P -- "$comp" 2>/dev/null && pwd)" || _real=""
     [ -n "$_real" ] || _real="$comp"
     _skip=0
-    for _cand in "$comp" "$_real"; do
-      case "$_cand" in
-        "${SHIM:-/nonexistent-shim}"|"${SHIM:-/nonexistent-shim}"/*) _skip=1 ;;
-        "${FARM:-/nonexistent-farm}"|"${FARM:-/nonexistent-farm}"/*) _skip=1 ;;
+    for _cand in "${SHIM:-}" "${FARM:-}" "$home" "$repo"; do
+      [ -n "$_cand" ] || continue
+      _croot="$(cd -P -- "$_cand" 2>/dev/null && pwd)" || _croot=""
+      [ -n "$_croot" ] || _croot="$_cand"
+      case "$_real" in
+        "$_croot"|"$_croot"/*) _skip=1 ;;
       esac
-      if [ -n "$home" ]; then
-        case "$_cand" in "$home"|"$home"/*) _skip=1 ;; esac
-      fi
-      if [ -n "$repo" ]; then
-        case "$_cand" in "$repo"|"$repo"/*) _skip=1 ;; esac
-      fi
     done
     [ "$_skip" -eq 0 ] || continue
-    printf '%s|%s' "$comp" "$loc"
+    printf '%s|%s|%s' "$_real" "$loc" "$comp"
+    # CA-GUARD:end-path-edit-containment
     return 0
   done <<< "$edits"
   return 1
@@ -2129,7 +2182,7 @@ run_one() {
   # BEFORE the row runs: a literal absolute PATH component that exists on
   # this box and is outside $SHIM/$FARM/the row's $HOME/this checkout is a
   # named refusal, not a residual (Fable r4 check 3).
-  local _pe _pe_dir _pe_where _all_edits _has_edit=0
+  local _pe _pe_dir _pe_where _pe_written _pe_rest _all_edits _has_edit=0
   _all_edits="$DERIVED_PATHEDITS"
   # ${cmd_edits:-}, not $cmd_edits: `cmd_edits` is declared INSIDE the
   # variant-mask block, and the variant-mask transverse mutation deletes
@@ -2148,10 +2201,15 @@ run_one() {
   # CA-GUARD:path-edit-guard
   if true && [ "$_has_edit" -eq 1 ]; then
     if _pe="$(path_edit_offender "$repo" "$row_home" "$_all_edits")"; then
+      # `<resolved>|<file>:<line>|<written>` -- the offender is named by the
+      # directory it RESOLVES to (round 7); the written form is kept in the
+      # log line so the record still says what the consumer actually wrote.
       _pe_dir="${_pe%%|*}"
-      _pe_where="${_pe#*|}"
-      printf 'preflight: path-edit %s added to PATH at %s -- an absolute directory on this box, outside $SHIM, $FARM, the row scratch $HOME and the checkout %s; the row is refused before it runs\n' \
-        "$_pe_dir" "$_pe_where" "$repo" > "$log"
+      _pe_rest="${_pe#*|}"
+      _pe_where="${_pe_rest%%|*}"
+      _pe_written="${_pe_rest#*|}"
+      printf 'preflight: path-edit %s added to PATH at %s -- an absolute directory on this box, outside $SHIM, $FARM, the row scratch $HOME and the checkout %s; written as %s; the row is refused before it runs\n' \
+        "$_pe_dir" "$_pe_where" "$repo" "$_pe_written" > "$log"
       PATH_EDIT_SEEN="${PATH_EDIT_SEEN:+$PATH_EDIT_SEEN }$name:$_pe_dir"
       LAST_VERDICT="FAIL|path-edit:$_pe_dir"
       LAST_RC="-"
@@ -5248,7 +5306,15 @@ plant_shim_fail_closed() {
 plant_path_edit_absolute() {
   local sh="$1" eco="$2" stub="$3" rec="$4" absbin="$5" stale_log="$6" realdir="$7"
   local tildedir="${8:-}"
-  local out rc r
+  local out rc r _r
+  # ROUND 7: the offender is now named by its RESOLVED directory, so the
+  # expected names are resolved on exactly the same terms (a private
+  # TMPDIR that is itself a symlink must not silently make this vacuous).
+  _r="$(cd -P -- "$absbin" 2>/dev/null && pwd)"; [ -z "$_r" ] || absbin="$_r"
+  _r="$(cd -P -- "$realdir" 2>/dev/null && pwd)"; [ -z "$_r" ] || realdir="$_r"
+  if [ -n "$tildedir" ]; then
+    _r="$(cd -P -- "$tildedir" 2>/dev/null && pwd)"; [ -z "$_r" ] || tildedir="$_r"
+  fi
   : > "$stale_log"
   out="$(CA_ECO="$eco" CA_TIMEOUT=20 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
@@ -5267,6 +5333,17 @@ plant_path_edit_absolute() {
   if [ -n "$tildedir" ]; then
     grep -qF "row|pe_tilde|v0.43.0|FAIL|path-edit:$tildedir|" "$rec" || return 1
   fi
+  # ROUND 7 (Astra r6 check 2): written under the checkout, resolved
+  # outside it -- through `..` and through a symlink in the checkout.
+  # Refused BY THE RESOLVED NAME, which is the directory the row reaches.
+  for r in pe_dotdot pe_symlink; do
+    grep -qF "row|$r|v0.43.0|FAIL|path-edit:$absbin|" "$rec" || return 1
+  done
+  grep -qF "log|pe_dotdot|preflight: path-edit $absbin added to PATH at " "$rec" || return 1
+  # ...and the controls: a directory that really is inside the checkout is
+  # still allowed, in both spellings.
+  grep -q 'row|pe_relbin|v0.43.0|PASS|' "$rec" || return 1
+  grep -q 'row|pe_inrepo|v0.43.0|PASS|' "$rec" || return 1
   [ ! -s "$stale_log" ] || return 1
   return 0
 }
@@ -7021,9 +7098,33 @@ EOS
       "export PATH=~$pe_tilde_user:\$PATH" \
       'eigenscript work.eigs'
   fi
+  # --- ROUND 7 (Astra r6 check 2): the two shapes whose WRITTEN form sits
+  # under the checkout and whose RESOLVED form is outside it. At c53429f
+  # both read PASS while the stale eigenscript in $pe_absbin RAN, because
+  # the written form alone bought the allowance.
+  mk_consumer_block "$pe_eco" pe_dotdot \
+    "export PATH=$pe_eco/pe_dotdot/../../${pe_absbin##*/}:\$PATH" \
+    'eigenscript work.eigs'
+  mk_consumer_block "$pe_eco" pe_symlink \
+    "export PATH=$pe_eco/pe_symlink/bin-link:\$PATH" \
+    'eigenscript work.eigs'
+  ln -sfn "$pe_absbin" "$pe_eco/pe_symlink/bin-link"
+  # The CONTROLS for the same fix: resolving must not refuse a directory
+  # that really is inside the checkout. `./bin` is the relative spelling;
+  # pe_inrepo is the absolute spelling of the same thing, and it is the row
+  # that goes red if the checkout side of the comparison is ever left
+  # unresolved while the component side is resolved.
+  mk_consumer_block "$pe_eco" pe_relbin \
+    'export PATH=./bin:$PATH' \
+    'eigenscript work.eigs'
+  mkdir -p "$pe_eco/pe_relbin/bin"
+  mk_consumer_block "$pe_eco" pe_inrepo \
+    "export PATH=$pe_eco/pe_inrepo/bin:\$PATH" \
+    'eigenscript work.eigs'
+  mkdir -p "$pe_eco/pe_inrepo/bin"
   rec="$st_root/pe.record"
   if plant_path_edit_absolute "$sh" "$pe_eco" "$st_root/stub-ok" "$rec" "$pe_absbin" "$stale_pe" "$pe_real" "$pe_tilde_dir"; then
-    plant_line "path-edit-absolute" 0 "pe_absbin, pe_realhome and Fable r5's six shapes (pe_env, pe_execenv, pe_bashc, pe_heredoc, pe_make, pe_tilde) are FAIL|path-edit:<dir> by name with a log| preflight line, the stale binary never ran, and the ordinary \$HOME/.local/bin prepend still PASSes"
+    plant_line "path-edit-absolute" 0 "pe_absbin, pe_realhome, Fable r5's six shapes (pe_env, pe_execenv, pe_bashc, pe_heredoc, pe_make, pe_tilde) and Astra r6's two escapes (pe_dotdot through '..', pe_symlink through a link in the checkout) are FAIL|path-edit:<resolved dir> by name with a log| preflight line, the stale binary never ran, and the in-checkout controls pe_home, pe_relbin and pe_inrepo still PASS"
   else
     plant_line "path-edit-absolute" 1 "$LAST_PLANT_DETAIL"
   fi

@@ -592,7 +592,34 @@ positions that list did not name — `env PATH=/abs:$PATH cmd`,
 `exec env PATH=…`, `bash -c 'PATH=/abs:$PATH cmd'`, a heredoc body fed to
 `bash`, a Makefile top-level `export PATH := /abs:$(PATH)`, and
 `export PATH=~user/…` — every one of them `PASS` while the stale binary
-ran. A position list always has a next hole; a substring does not.
+ran. The substring rule is not a claim that nothing is left: it MOVED the
+hole from line position to **file kind** and **component parse**. What the
+scan sees, measured: every SCANNED FILE KIND — `.sh`, `.bash`, `.zsh`, an
+extensionless file carrying a `#!` line, a workflow `.yml` at its
+`runCmd`, `Makefile` and `.mk`, and `.eigs` — and, inside those, every
+literal component the splitter can PARSE. Three residual SHAPES are left,
+each walked end to end by a blind critic and filed as issue
+[#1229](https://github.com/InauguralSystems/EigenScript/issues/1229):
+
+1. **file kinds outside that list** — a PATH edit inside a shell string in
+   a `.py` file (`subprocess.run("PATH=/abs:$PATH …", shell=True)`), a
+   `Makefile.in` the row itself copies to `Makefile`, and an extensionless
+   file with no shebang that the row `source`s;
+2. **components the splitter cannot parse** —
+   `export PATH="/abs${PATH:+:$PATH}"` (the "append only if set" idiom:
+   the first component reads as `/abs${PATH`, which contains `$` and so is
+   treated as computed), a value continued onto the next physical line
+   with a trailing `\`, and `$'…'` ANSI-C quoting;
+3. **computed components** — `$(cat dir.txt)`, a `$VAR` other than
+   `$HOME`/`$PWD`/`$PATH`, or an edit made through a non-shell API
+   (`os.environ["PATH"]`).
+
+None of the 16 real consumers has ANY of those shapes. Measured over all
+16 checkouts, every file kind, `.git` excluded: the only `PATH=` lines in
+the ecosystem are five `.devcontainer/Dockerfile` `ENV PATH=` lines (DMG,
+dynamics, eddy, phugoid, Tidepool), and a Dockerfile is not the acceptance
+command; there is no `shell=True` PATH string, no `Makefile.in`, no
+`${PATH:+`, and no `runCmd` that sources an extensionless file.
 
 `plan` prints the edits as `path_edit|<consumer>|<component>|<file>:<line>`
 and the scan's **own witness** as `pathexamined|<consumer>|<files>|<edits>`,
@@ -604,10 +631,22 @@ Dockerfile, which is not the acceptance command). A row whose edit adds a
 component that is a LITERAL absolute directory existing on this box —
 after `~` (the row's own scratch `$HOME`, allowed) and `~user` (resolved
 from `getent passwd`) expansion — outside `$SHIM`, `$FARM`, the row's
-scratch `$HOME` and its own checkout is `FAIL|path-edit:<dir>` **before it
-runs**, with a `log|<name>|preflight:` line. That is the shape that reached
+scratch `$HOME` and its own checkout is `FAIL|path-edit:<resolved dir>`
+**before it runs**, with a `log|<name>|preflight:` line that also carries
+the WRITTEN form. That is the shape that reached
 the developer's real `~/.local/bin/eigenscript-full.stale` (`0.21.0`) under
 a `PASS` row.
+
+Containment is decided on the **resolved** form only, and the offender is
+named by it. Round 6 kept the allowance when EITHER the written OR the
+resolved form sat under an allowed prefix, so `<checkout>/../../<absdir>`
+and a symlink inside the checkout pointing outside it both read `PASS`
+while the stale binary in `<absdir>` ran (Astra r6). Every allowed prefix
+is resolved on the same terms, so a checkout or a scratch reached THROUGH
+a symlink is still allowed — containment is not a spelling test in either
+direction. Plant `path-edit-absolute` carries both escapes (`pe_dotdot`,
+`pe_symlink`) and both in-checkout controls (`pe_relbin` written `./bin`,
+`pe_inrepo` written absolute).
 
 **The price, stated:** the rule is over-broad in the SAFE direction. A line
 that merely *names* a PATH edit — a comment, a usage string, a README
@@ -629,8 +668,9 @@ and each **pinned by a plant that fires only while it holds**:
 
 1. a PATH edit the scanner cannot see because the consumer COMPUTES it at
    run time (`PATH="$(cat dir.txt):$PATH"`, a `$VAR` other than
-   `$HOME`/`$PWD`/`$PATH`, or `os.environ["PATH"]`) — a literal absolute
-   component, in any syntactic position, is no longer one;
+   `$HOME`/`$PWD`/`$PATH`, or `os.environ["PATH"]`) — together with the
+   unscanned file kinds and the unparsed component shapes listed above,
+   which are the same residual class reached by a different layer;
 2. a farmed, inherited wrapper that resolves its OWN location
    (`exec "$(dirname "$(readlink -f "$0")")/eigenscript"`) still reaches
    the stale `eigenscript` sitting beside it in the inherited directory —
