@@ -315,6 +315,25 @@ jobs:
           bash tools/section_plan.sh --skip-audit
           bash tools/section_plan.sh --probes
           bash tools/section_plan.sh --print-section-plan core
+      # Measured 93s on this 2-core/4 GB box after the M1b plants. Under 8
+      # minutes, so this stays on the PR job rather than splitting to nightly.yml.
+      - if: needs.scope.outputs.code == 'true'
+        name: Consumer-acceptance harness self-test (93s)
+        run: bash tools/consumer_acceptance.sh --self-test
+      - if: needs.scope.outputs.code == 'true'
+        name: Consumer-acceptance plan against fixture inventory
+        run: |
+          fx=$(mktemp -d)
+          printf 'fixture\n' > "$fx/.ca_fixture"
+          mkdir -p "$fx/good_a/.devcontainer" "$fx/good_a/.git" \
+                   "$fx/good_a/.github/workflows" \
+                   "$fx/good_b/.devcontainer" "$fx/good_b/.git" \
+                   "$fx/good_b/.github/workflows"
+          printf 'ARG EIGS_REF=v0.43.0\n' > "$fx/good_a/.devcontainer/Dockerfile"
+          printf 'ARG EIGS_REF=v0.43.0\n' > "$fx/good_b/.devcontainer/Dockerfile"
+          printf 'runCmd: eigenscript work.eigs\n' > "$fx/good_a/.github/workflows/ci.yml"
+          printf 'runCmd: eigenscript work.eigs\n' > "$fx/good_b/.github/workflows/ci.yml"
+          CA_ECO="$fx" bash tools/consumer_acceptance.sh plan
 
   # Linux build + full suite, inside the shared image, for gcc and clang.
   # gcc and clang shake out different warnings and codegen.

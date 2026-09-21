@@ -535,6 +535,8 @@ EIGS_SUITE_SECTIONS=zlib bash tests/run_all_tests.sh   # run that plan
 `--selftest` takes about **7.5 minutes** on the dev box — six of its rows
 re-derive the 429-chunk table at ~15 s each — so it is a "before you push"
 check, not an inner-loop one. It runs on every CI run in `gate self-tests`.
+The same job also runs `tools/consumer_acceptance.sh --self-test` and
+`plan` against a fixture inventory (never the real ecosystem).
 
 Every plan run prints one line, and the runner CHECKS it: after the plan runs,
 the dispatcher counts the `[...]` section headers the run actually printed and
