@@ -44,7 +44,17 @@ jobs:
 
       # `run` is deliberately omitted: with no command the runner executes the
       # exec-harness targets declared in codspeed.yml at the repository root.
+      #
+      # cycle-estimation OFF: the headline metric is then INSTRUCTIONS, the
+      # unit the in-repo Ir gate uses and the unit the dev box agrees with
+      # (perf `instructions:u` matched cachegrind Ir within 1%). With it on,
+      # the first run attributed ~60% of the DMG shape's time to simulated
+      # cache misses; perf stat on the box the same night read IPC 1.61,
+      # 1.6% last-level references and 76 K memory misses in a 1.19 G
+      # instruction run — a busy core, not a stalled one. A model that
+      # disagrees with the hardware by that much is not a headline number.
       - name: Run codspeed.yml targets under CPU simulation
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea  # v5.2.1
         with:
           mode: simulation
+          cycle-estimation: false
