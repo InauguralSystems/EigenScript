@@ -106,6 +106,14 @@ PASS=0
 FAIL=0
 TOTAL=0
 LEAKED=0
+# A section that SKIPPED measured nothing, and round 5's [99i3] proved that
+# "measured nothing" is invisible here: the section subtracted itself from
+# TOTAL and the RESULTS line said nothing at all, so a lane that examined 23
+# translation units last week and 0 this week read exactly like a clean run
+# (measured by a blind critic, 2026-09-21). Every lane now prints `skipped=N`,
+# `skipped=0` included — a zero that is printed is a claim; a number that is
+# absent is not reviewable.
+SKIPPED=0
 
 # ---- per-section wall time (#1160 round 4) --------------------------------
 # Sharding the ASan suite across parallel CI jobs needs per-section COST, not
@@ -7524,30 +7532,57 @@ fi  # EIGS_SKIP_WERROR_AUDIT
 # could not see `-x c -`. So the rule is now "an existing regular file the
 # compiler did not write, with a C-family suffix", cross-checked against the
 # real clang driver's own `-x c` inputs; the gate examines the UNION and goes
-# red by name when the two derivations disagree. The -D/-U set is DERIVED the
+# red by name when the two derivations disagree. The RECORDER keeps EVERY
+# invocation, not the last one: round 5's stand-in truncated its records, so a
+# recipe that compiled a planted `#error` unit in a first `-c` call and linked
+# it in a second printed `OK: examined 23` while the real target was RED.
+# Compile-then-link is the canonical build shape; the population is now the
+# UNION over every recorded call, reported as `N call(s) recorded`, and a
+# recipe with zero calls is FAIL by name. The driver cross-check is fed only
+# operands the driver can OPEN: emcc's documented spaced form
+# `-s TOTAL_MEMORY=64MB` made clang answer `no such file or directory` and
+# this gate called a buildable recipe RED, so an operand the driver itself
+# names as unopenable is dropped and REPORTED on `classifier: dropped=`, while
+# one whose suffix is a `.c` stays FAIL by name. The -D/-U set is DERIVED the
 # same way: both worlds' predefines are read with `-E -dM` (target
 # `--target=wasm32-unknown-emscripten`, host `-m32`), every difference in NAME
 # and in VALUE is reconciled, which values glibc refuses is MEASURED, and
 # defined-ness parity is asserted for every macro any conditional in the
-# population tests. SKIP (not a pass) when this toolchain cannot compile a
-# 32-bit TU against its own C library — probed by EXECUTION, not by the
-# compiler's name, and the probe now INCLUDES the C library: round 3's probe
-# had no includes, which an arm64 mac accepts at -m32, so this gate passed its
-# own availability check on macos-latest and then went red on all 23 TUs with
-# the SDK's `#error Unsupported architecture`.
+# population tests. EXACTLY ONE case SKIPs, and it is COUNTED on the RESULTS
+# line: a C library with no 32-bit target for its own headers, saying so in
+# its own words (`#error Unsupported architecture` on the macOS SDK), at
+# whichever of the two stages it says so: macos-latest's availability probe
+# PASSES and the SDK refuses only once the reconciliation has replaced
+# `__i386__`/`__APPLE__`, so the same diagnostic decides at both. Round 5
+# skipped on ANY probe failure and a blind critic reached that branch four
+# ways on a LINUX box — no compiler on PATH, the gate's own `gnu/stubs-32.h`
+# deleted, the system include directory pointing nowhere, and a broken
+# reconciliation derivation whose diagnostic is glibc's, not an SDK's — each
+# exiting 0 with `TOTAL=0` and no tally anywhere. All four are FAIL by name
+# now, and the reconciled-world refusal runs its control (the same headers
+# WITHOUT the reconciliation) before deciding either way, in the live path
+# rather than in --selftest.
 echo "[99i3] ILP32 syntax gate (the playground's wasm32 build cannot break unnoticed)"
 TOTAL=$((TOTAL + 1))
 ilp32_audit_out=$(bash "$TESTS_DIR/../tools/ilp32_syntax_check.sh" 2>&1)
 ilp32_audit_rc=$?
 printf '%s\n' "$ilp32_audit_out"
-# The tool SKIPs (exit 0, one SKIP: line) when this toolchain has no 32-bit
-# target at all — the macOS runners, where the compiler exists and `-m32` has
-# no target. Count that as a skip, not a pass, and relay the tool's OWN reason
-# rather than a second wording of it (a skip is a claim; the reason is what
-# makes it reviewable). The compiler is not named here: a compiler token in
-# this runner is a recognizer-coverage hit in [99i].
+# The tool SKIPs (exit 0, one SKIP: line) in exactly ONE case: a C library
+# with no 32-bit target for its own headers, which says so in its own words —
+# the macOS runners, whose SDK answers `#error Unsupported architecture`
+# (measured in CI: at the macro-world stage, not the availability probe).
+# Round 5 skipped on any probe failure and a blind critic reached that branch
+# four ways on a LINUX box (no compiler on PATH, the gate's own stub deleted,
+# the system include directory pointing nowhere, a broken reconciliation
+# derivation), each exiting 0 with TOTAL=0 and nothing counting it. Those are
+# all FAIL by name in the tool now. Count the remaining skip — as a skip, not
+# a pass — and relay the tool's OWN reason rather than a second wording of it
+# (a skip is a claim; the reason is what makes it reviewable). The compiler is
+# not named here: a compiler token in this runner is a recognizer-coverage hit
+# in [99i].
 if [ "$ilp32_audit_rc" -eq 0 ] && grep -q '^SKIP:' <<<"$ilp32_audit_out"; then
     TOTAL=$((TOTAL - 1))
+    SKIPPED=$((SKIPPED + 1))
     ilp32_skip_line=$(printf '%s\n' "$ilp32_audit_out" | grep -m1 '^SKIP:')
     echo "  $ilp32_skip_line"
 else
@@ -7557,19 +7592,31 @@ else
     # prints nothing, so the section requires the tool's OWN examined line
     # (mechanical-gates §146: gate the OUTPUT, not the invocation) and pins
     # the self-test's case count (§142) — "some cases ran" is what a deleted
-    # plant also prints. THREE report lines are required, one per derivation
+    # plant also prints. FIVE report lines are required, one per derivation
     # the gate performs, because a gate that stopped deriving any one of them
-    # still prints the other two: `classifier:` (the population, derived twice
-    # and cross-checked), `macro_parity: ... values=N/M` (the macro world,
-    # derived in NAME and in VALUE — round 4 printed `reconciled=48` with not
-    # one value compared), and `OK: examined N`. 36 = plants 1, 1b, 1c, 1d
+    # still prints the others: `classifier: N call(s) recorded` (the recorder
+    # — round 5 kept only the LAST invocation), `classifier: ... union
+    # examined` (the population, derived twice and cross-checked),
+    # `classifier: dropped=` (the operands the driver cross-check could not be
+    # fed), `macro_parity: ... values=N/M` (the macro world, derived in NAME
+    # and in VALUE — round 4 printed `reconciled=48` with not one value
+    # compared), and `OK: examined N`. 46 = plants 1, 1b, 1c, 1d
     # (the entry point and the header), 2q, 2s, 2v, 2x, 2m, 2o (six argv
     # shapes a text parser reads wrong), 2f, 2p, 2r, 2n, 2i, 2u, 2e (seven
     # shapes a typed OPTION GRAMMAR reads wrong: a TU after `--emrun` and
     # after `--proxy-to-worker`, a TU inside an `@response-file`, response
     # files nested three deep, a TU on stdin, a `-x c` unit with a non-TU
-    # suffix, and the over-inclusion control), 2w (a recipe writing `src/`
-    # must not reach the working tree), 4m/4mc, 4e, 4z, 4v/4vc, 4w, 4y, 2t
+    # suffix, and the over-inclusion control), 2c, 2ca, 2cz, 2b (the RECORDER:
+    # a TU compiled by an earlier invocation than the link line, a pure
+    # compile-then-link recipe whose call count and population are both
+    # asserted, a recipe with ZERO invocations, and an EMPTY TU produced by
+    # one call and compiled by the next — round 5 counted scanned files with
+    # awk's `FNR == 1`, which an empty file never reaches, and answered "the
+    # tested-macro population shrank silently"), 3s, 3sj, 3st (the DRIVER
+    # OPERANDS: emcc's spaced setting form dropped and reported, the glued
+    # form as its control, and a `.c` token naming no existing file still FAIL
+    # by name), 2w (a recipe writing `src/` must not reach the working tree),
+    # 4m/4mc, 4e, 4z, 4v/4vc, 4w, 4y, 2t
     # (the macro world: an arm only the target takes and its control, parity
     # with no reconciliation flags, an empty tested population, a VALUE
     # comparison and its control, a value glibc refuses, an unreconcilable
@@ -7577,20 +7624,29 @@ else
     # shrink the tested population), 2, 3, 3b (empty, shrunk and
     # entry-point-less inventories), plus two controls: a reformatted SOURCES
     # array yields the identical inventory, and the live inventory stays green
-    # after the plants; and 5s/5sc, the SKIP arm — a toolchain with no 32-bit C
-    # library must be reported unavailable (round 3's probe compiled a TU with
-    # no includes, which an arm64 mac accepts, so the gate ran anyway and every
-    # TU failed on the SDK's `#error Unsupported architecture`), with the live
-    # toolchain as its control; and 5r/5rc, the second skip arm — a C library
-    # that refuses the TARGET's macro world (the reconciliation removes
-    # `__i386__`/`__APPLE__`, which is its job, and the macOS SDK answers
-    # `#error Unsupported architecture`) must produce a SKIP reason by name,
-    # again with the live toolchain as its control.
-    ILP32_SELFTEST_CASES=36
+    # after the plants; and the AVAILABILITY arms 5s, 5sc, 5b1, 5b2, 5b3 —
+    # only a C library that refuses the architecture in the SDK's own words
+    # may SKIP (round 3's probe compiled a TU with no includes, which an arm64
+    # mac accepts, so the gate ran anyway and every TU failed on the SDK's
+    # `#error Unsupported architecture`), with the live toolchain as its
+    # control and the three apparatus breaks a blind critic drove to a green
+    # skip on Linux (no compiler on PATH, the gate's own stub missing, the
+    # system include directory pointing nowhere) each FAIL by name; and the
+    # pair 5r/5rs at the macro-world stage, which is the stage macos-latest
+    # actually reaches — its availability probe PASSES and the SDK refuses
+    # only once the reconciliation has replaced `__i386__`/`__APPLE__`, so the
+    # SAME diagnostic decides there: 5rs (the SDK's own words) must be a SKIP
+    # reason by name and 5r (any other refusal) a FAIL by name. Round 5's
+    # control 5rc is no longer a --selftest case: it runs in the LIVE path,
+    # before that verdict, because a control that only runs in the non-skip
+    # branch never runs on the run that skipped.
+    ILP32_SELFTEST_CASES=46
     ilp32_ok_lines=$(printf '%s\n' "$ilp32_selftest_out" | grep -c '^selftest ok:')
     if [ "$ilp32_audit_rc" -eq 0 ] && [ "$ilp32_selftest_rc" -eq 0 ] \
        && grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out" \
        && grep -qE '^macro_parity: tested=[0-9]+ reconciled=[0-9]+ values=[0-9]+/[0-9]+' <<<"$ilp32_audit_out" \
+       && grep -qE '^classifier: [0-9]+ call\(s\) recorded' <<<"$ilp32_audit_out" \
+       && grep -qE '^classifier: dropped=' <<<"$ilp32_audit_out" \
        && grep -qE '^classifier: [0-9]+ input\(s\) by suffix\+filesystem, [0-9]+ by the driver derivation, [0-9]+ in the union examined' <<<"$ilp32_audit_out" \
        && [ "$ilp32_ok_lines" -eq "$ILP32_SELFTEST_CASES" ]; then
         PASS=$((PASS + 1))
@@ -7607,6 +7663,12 @@ else
             printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
         elif ! grep -qE '^classifier: [0-9]+ input\(s\) by suffix\+filesystem, [0-9]+ by the driver derivation, [0-9]+ in the union examined' <<<"$ilp32_audit_out"; then
             echo "  FAIL: the ILP32 gate exited 0 without reporting BOTH derivations of the population, so its classifier was not cross-checked; its output:"
+            printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
+        elif ! grep -qE '^classifier: [0-9]+ call\(s\) recorded' <<<"$ilp32_audit_out"; then
+            echo "  FAIL: the ILP32 gate exited 0 without reporting how many compiler invocations the recipe made, so a recipe whose earlier calls went unrecorded would read as clean; its output:"
+            printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
+        elif ! grep -qE '^classifier: dropped=' <<<"$ilp32_audit_out"; then
+            echo "  FAIL: the ILP32 gate exited 0 without reporting which operands it dropped from the driver cross-check; its output:"
             printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
         fi
         if [ "$ilp32_selftest_rc" -ne 0 ]; then
@@ -7759,7 +7821,7 @@ if [ "$TOTAL" -le 0 ]; then
 fi
 
 echo "============================================"
-echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed"
+echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed, $SKIPPED skipped"
 if [ "$LEAKED" -gt 0 ]; then
     echo "  NOTE: $LEAKED test program(s) exited nonzero on LeakSanitizer"
     echo "  reports (spawn-thread programs + known non-closure leak"

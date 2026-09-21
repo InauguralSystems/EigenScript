@@ -132,7 +132,7 @@
 # real emcc build can hit.
 #
 # Usage: tools/ilp32_syntax_check.sh [--selftest]
-#   --selftest : plant 36 faults through the REAL derive/record/classify/
+#   --selftest : plant 46 faults through the REAL derive/record/classify/
 #                compile/examine functions, and require each one RED for its
 #                own stated reason:
 #                  source faults   (1) the old sizeof(data)==sizeof(fn) assert,
@@ -153,6 +153,17 @@
 #                    suffix rule's disagreement named), (2e) the over-inclusion
 #                    control: a DATA file named `.c` behind `--embed-file` is
 #                    counted and red BY NAME;
+#                  THE RECORDER  (2c) a TU compiled by an EARLIER invocation
+#                    than the link line, (2ca) a pure compile-then-link recipe
+#                    (its CALL count and its population both asserted), (2cz) a
+#                    recipe with zero invocations (must FAIL by name), (2b) an
+#                    EMPTY TU produced by one call's `-o` and compiled by the
+#                    next (must be examined and COUNTED, not read as a silent
+#                    shrink);
+#                  DRIVER OPERANDS  (3s) emcc's spaced `-s TOTAL_MEMORY=64MB`
+#                    (dropped from the driver call and REPORTED, never a red),
+#                    (3sj) the glued form as its control, (3st) a `.c` token
+#                    naming no existing file (must FAIL by name, never a drop);
 #                  sandbox  (2w) a recipe line writing `src/` lands in the
 #                    sandbox and NOT in the working tree;
 #                  macro parity  (4m) an arm the real target takes and the host
@@ -168,11 +179,18 @@
 #                  population size  (2) an empty TU list, (3) a population
 #                    below the floor, (3b) the entry point dropped from the
 #                    inventory;
-#                  availability  (5s) a toolchain with no 32-bit C library must
-#                    be reported UNAVAILABLE, with (5sc) the live toolchain as
-#                    its control; (5r) a C library that refuses the target's
-#                    macro world must produce a SKIP reason by name, with
-#                    (5rc) the live toolchain as its control;
+#                  availability — ONLY THE SDK'S OWN REFUSAL MAY SKIP
+#                    (5s) a C library refusing the architecture in the SDK's
+#                    own words must SKIP by name, with (5sc) the live
+#                    toolchain as its control; (5b1) no compiler on PATH,
+#                    (5b2) the gate's own stub missing and (5b3) a system
+#                    include directory that does not exist must each FAIL BY
+#                    NAME — round 5 skipped on all three; and at the macro-
+#                    world stage, which is the one macos-latest reaches,
+#                    (5rs) the SDK's own refusal of the RECONCILED world must
+#                    be a SKIP reason by name while (5r) any other refusal is
+#                    a FAIL by name. Round 5's control 5rc is not a case here
+#                    any more: it runs in the LIVE path, before that verdict;
 #                  controls  a REFORMATTED SOURCES array must yield the
 #                    identical inventory, and the live inventory must stay
 #                    green after every plant.
@@ -216,11 +234,15 @@ VALUE_DIFF_N=0
 VALUE_RECONCILED_N=0
 VALUE_UNRECONCILED=''
 
-# Classifier state, set by sandbox_record_inputs: the size of each of the two
-# independent derivations, and the file naming their disagreement (empty file
-# = they agree). The CALLER owns the verdict on that file.
+# Classifier state, set by sandbox_record_inputs: how many compiler
+# invocations the recipe made, the size of each of the two independent
+# derivations over the UNION of those calls, the tokens dropped from the
+# driver cross-check, and the file naming the two derivations' disagreement
+# (empty file = they agree). The CALLER owns the verdict on that file.
+CLASSIFIER_N_CALLS=0
 CLASSIFIER_N_FS=0
 CLASSIFIER_N_DRV=0
+CLASSIFIER_DROPPED=''
 CLASSIFIER_DIFF_FILE=''
 # path<TAB>language for every input the driver derivation reported, so a unit
 # whose suffix is not a TU suffix (`-x c web/unit.inc`) is compiled AS the
@@ -232,11 +254,12 @@ TESTED_SCAN_FILES=0
 # The derived system-header probe used to measure which value reconciliations
 # the host's own headers refuse. Built once per process.
 HEADER_PROBE=''
-# Set by macro_parity_init when this toolchain's C library cannot be
-# preprocessed at 32 bits in the TARGET's macro world at all. That is a
-# capability absence, not a fault in the tree, so the caller turns it into a
-# SKIP — see the availability section for why it is an arm of the probe and
-# not a FAIL.
+# Set by macro_parity_init ONLY when this toolchain's C library refuses the
+# TARGET's macro world with the SDK's own "Unsupported architecture" — the
+# same capability absence the availability probe names, reached one stage
+# later, and the stage macos-latest actually reaches. Any OTHER refusal is a
+# FAIL by name, decided after the control runs (round 5 skipped on all of
+# them; see macro_parity_init).
 MACRO_PARITY_SKIP_REASON=''
 
 # ---- scratch state --------------------------------------------------------
@@ -266,25 +289,49 @@ printf '%s\n' '#ifndef EIGS_ILP32_STUB_EMSCRIPTEN_H' \
 # The recording stand-in. It lives in RUN, never in the tree, and is put FIRST
 # on PATH for the recipe run — so what it records is exactly what bash expanded.
 #
-# It records four FILESYSTEM facts, never a reading of emcc's option grammar:
+# EVERY INVOCATION IS RECORDED. Round 5's stand-in wrote its four records with
+# `>`, so a recipe that invoked the compiler more than once kept only the LAST
+# call: a planted `#error` unit compiled by a first `emcc -c web/x.c -o
+# web/dist/x.o` and linked by the second call was outside the population
+# entirely and the gate printed `OK: examined 23` while the real target was RED
+# (measured by a blind critic, 2026-09-21). Compile-then-link is the canonical
+# build shape. So each call now APPENDS a record of its own: the stand-in
+# allocates the next `call-NNNN` directory under EIGS_ILP32_REC_DIR with
+# `mkdir` (which is atomic, so two concurrent calls cannot collide) and writes
+# its four facts there. The assumption that is now true, stated: EVERY
+# INVOCATION OF THE STAND-IN IS RECORDED, and the population is the UNION over
+# all of them. A recipe that never invokes the compiler is FAIL by name.
+#
+# The four FILESYSTEM facts, never a reading of emcc's option grammar:
 #   argv     one argument per NUL;
 #   cwd      the directory the recipe was in when it invoked the compiler, so
 #            every relative argument resolves the way the compiler resolved it
 #            (a recipe that `cd`s elsewhere no longer needs the gate to guess);
-#   created  every file the stand-in itself WROTE. It writes the `-o` target so
-#            a recipe that copies or lists its own output completes; that is
-#            the stand-in's compiler role, not the classifier's. What the
+#   created  every file THIS call wrote. It writes the `-o` target so a recipe
+#            that copies or lists its own output completes; that is the
+#            stand-in's compiler role, not the classifier's. What the
 #            classifier takes from it is a fact no suffix can give: a file the
-#            COMPILER produced is an output, never an input;
+#            COMPILER produced in THIS call is that call's output, never that
+#            call's input. It is per-call on purpose: a `.c` written by call 1
+#            and handed to call 2 is a translation unit emcc really compiles,
+#            and is examined;
 #   stdin    the translation unit on standard input, captured only when `-` is
 #            actually in argv, so a recipe that redirects nothing never blocks.
 STANDIN_BIN="$RUN/standin"
 mkdir -p "$STANDIN_BIN"
 cat > "$STANDIN_BIN/emcc" <<'EIGS_ILP32_STANDIN'
 #!/usr/bin/env bash
-printf '%s\0' "$@" > "${EIGS_ILP32_ARGV_OUT:?}"
-printf '%s\n' "$PWD" > "${EIGS_ILP32_CWD_OUT:?}"
-: > "${EIGS_ILP32_CREATED_OUT:?}"
+rec="${EIGS_ILP32_REC_DIR:?}"
+n=1
+while :; do
+    d=$(printf '%s/call-%04d' "$rec" "$n")
+    mkdir "$d" 2>/dev/null && break
+    n=$((n + 1))
+    [ "$n" -gt 10000 ] && exit 1
+done
+printf '%s\0' "$@" > "$d/argv"
+printf '%s\n' "$PWD" > "$d/cwd"
+: > "$d/created"
 prev=
 for a in "$@"; do
     if [ "$prev" = "-o" ]; then
@@ -292,14 +339,14 @@ for a in "$@"; do
         if : > "$a" 2>/dev/null; then
             p=$a
             case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
-            printf '%s\n' "$p" >> "${EIGS_ILP32_CREATED_OUT}"
+            printf '%s\n' "$p" >> "$d/created"
         fi
     fi
     prev=$a
 done
 for a in "$@"; do
     if [ "$a" = "-" ]; then
-        cat > "${EIGS_ILP32_STDIN_OUT:?}"
+        cat > "$d/stdin.c"
         break
     fi
 done
@@ -443,29 +490,96 @@ driver_rejects_option() {
     return 1
 }
 
+# THE DRIVER IS FED ONLY OPTIONS AND OPERANDS IT CAN OPEN. emcc's SPACED
+# setting form `-s TOTAL_MEMORY=64MB` is documented and accepted; bare `-s` is
+# a flag clang knows (strip), so the operand `TOTAL_MEMORY=64MB` reached the
+# driver as an INPUT and clang answered `error: no such file or directory:
+# 'TOTAL_MEMORY=64MB'`, which this function turned into `FAIL: the real
+# compiler driver refused the recorded command line` — a FALSE RED on a recipe
+# emcc builds fine (measured by a blind critic, 2026-09-21; the glued
+# `-sTOTAL_MEMORY=64MB` is an unknown option and was already removed).
+#
+# The token to drop is MEASURED, never typed: the driver is run, and if it
+# refuses, its own `no such file or directory: '<token>'` diagnostic names the
+# operands it could not open. Those are dropped and the driver is re-run. A
+# rule of the form "a non-option token that is not a file is an emcc setting"
+# would have been wrong in the usual direction: `-x c web/unit.inc` has
+# exactly that shape, and dropping `c` hands clang the unit as a LANGUAGE.
+# Every dropped token is REPORTED on the `classifier: dropped=` line.
+#
+# With ONE exception, which is why this is a drop and not a silence: a refused
+# operand whose suffix IS a C-family translation unit suffix is FAIL BY NAME.
+# That is a typo in the recipe — emcc would refuse it too — and dropping it
+# would let the gate examine one TU fewer than the recipe names and print OK.
+#
 # $1 = expanded argv, $2 = cwd, $3 = captured stdin TU, $4 = output list.
-# Prints nothing on stdout; writes one ABSOLUTE path per line to $4.
+# Prints nothing on stdout; writes one ABSOLUTE path per line to $4, and
+# appends each dropped token to CLASSIFIER_DROPPED.
 driver_inputs() {
     local argv="$1" root="$2" stdin_tu="$3" out="$4"
-    local tok lang file rc
+    local tok lang file rc bad round=0 dropped_any t
     local -a keep=()
+    local -a next=()
     while IFS= read -r -d '' tok; do
         case "$tok" in
             -?*) driver_rejects_option "$tok" && continue ;;
         esac
         keep+=("$tok")
     done < "$argv"
-    ( cd "$root" && clang -m32 -fsyntax-only -c \
-        -Werror=switch -Werror=comment -Werror=misleading-indentation \
-        -### "${keep[@]}" ) >/dev/null 2>"$RUN/driver.err"
-    rc=$?
-    if [ "$rc" -ne 0 ]; then
-        echo "FAIL: the real compiler driver refused the recorded command line (exit $rc), so the gate cannot cross-check which arguments are translation units:" >&2
-        sed 's/^/      /' "$RUN/driver.err" >&2
-        return 1
-    fi
+    while :; do
+        ( cd "$root" && clang -m32 -fsyntax-only -c \
+            -Werror=switch -Werror=comment -Werror=misleading-indentation \
+            -### "${keep[@]}" ) >/dev/null 2>"$RUN/driver.err"
+        rc=$?
+        [ "$rc" -eq 0 ] && break
+        # WHICH token the driver refused is MEASURED from its own diagnostic,
+        # never guessed from a model of which options take an operand: `-x c`
+        # and `-s TOTAL_MEMORY=64MB` are the same shape to any such model, and
+        # dropping `c` from the first would hand clang the unit as a LANGUAGE.
+        # The driver names the operand it could not open; that is the one that
+        # is not a file.
+        sed -n "s/.*error: no such file or directory: '\(.*\)'\$/\1/p" "$RUN/driver.err" \
+            | sort -u > "$RUN/driver.missing"
+        if ! [ -s "$RUN/driver.missing" ]; then
+            echo "FAIL: the real compiler driver refused the recorded command line (exit $rc), so the gate cannot cross-check which arguments are translation units:" >&2
+            sed 's/^/      /' "$RUN/driver.err" >&2
+            return 1
+        fi
+        while IFS= read -r bad; do
+            case "$bad" in
+                *.c|*.C|*.cc|*.CC|*.cpp|*.CPP|*.cxx|*.CXX|*.c++)
+                    echo "FAIL: the recipe hands the compiler '$bad', which names a translation unit that does not exist under the sandbox — the gate would examine one TU fewer than the recipe names, and the recipe itself would not build" >&2
+                    return 1
+                    ;;
+            esac
+        done < "$RUN/driver.missing"
+        next=()
+        dropped_any=0
+        for t in ${keep[@]+"${keep[@]}"}; do
+            if grep -qxF -- "$t" "$RUN/driver.missing"; then
+                dropped_any=1
+                CLASSIFIER_DROPPED="$CLASSIFIER_DROPPED $t"
+                continue
+            fi
+            next+=("$t")
+        done
+        if [ "$dropped_any" -eq 0 ]; then
+            echo "FAIL: the real compiler driver refused the recorded command line (exit $rc) over operand(s) that are not on it, so the gate cannot cross-check which arguments are translation units:" >&2
+            sed 's/^/      /' "$RUN/driver.err" >&2
+            return 1
+        fi
+        keep=(${next[@]+"${next[@]}"})
+        round=$((round + 1))
+        if [ "$round" -gt 16 ]; then
+            echo "FAIL: the driver cross-check dropped non-file operands 16 times and the driver still refuses the line:" >&2
+            sed 's/^/      /' "$RUN/driver.err" >&2
+            return 1
+        fi
+    done
     : > "$out"
-    : > "$TU_LANG_MAP"
+    # TU_LANG_MAP is APPENDED, never truncated: it accumulates across every
+    # recorded invocation, and sandbox_record_inputs truncates it once per
+    # recipe run.
     while IFS= read -r line; do
         lang=${line#\"-x\" \"}
         lang=${lang%%\"*}
@@ -553,17 +667,15 @@ sandbox_prepare() {
 # verdict, so a self-test can plant a disagreement and require it.
 # Diagnostics on stderr; status is the return value.
 sandbox_record_inputs() {
-    local sbx="$1" out="$2" argv cwdf createdf stdinf log rc root stdin_tu exp
-    argv="$sbx/.eigs-ilp32-argv"
-    cwdf="$sbx/.eigs-ilp32-cwd"
-    createdf="$sbx/.eigs-ilp32-created"
-    stdinf="$sbx/.eigs-ilp32-stdin.c"
-    exp="$sbx/.eigs-ilp32-argv-expanded"
+    local sbx="$1" out="$2" recdir log rc root stdin_tu exp d argv cwdf createdf stdinf
+    recdir="$sbx/.eigs-ilp32-rec"
     log="$sbx/.eigs-ilp32-recipe.log"
-    rm -f "$argv" "$cwdf" "$createdf" "$stdinf" "$exp"
+    rm -rf "$recdir"
+    mkdir -p "$recdir" || return 1
     : > "$sbx/.eigs-ilp32-classifier-diff"
-    EIGS_ILP32_ARGV_OUT="$argv" EIGS_ILP32_CWD_OUT="$cwdf" \
-        EIGS_ILP32_CREATED_OUT="$createdf" EIGS_ILP32_STDIN_OUT="$stdinf" \
+    : > "$TU_LANG_MAP"
+    CLASSIFIER_DROPPED=''
+    EIGS_ILP32_REC_DIR="$recdir" \
         PATH="$STANDIN_BIN:$PATH" \
         bash "$sbx/web/build.sh" > "$log" 2>&1
     rc=$?
@@ -572,30 +684,49 @@ sandbox_record_inputs() {
         sed 's/^/      /' "$log" >&2
         return 1
     fi
-    if ! [ -f "$argv" ]; then
+    CLASSIFIER_N_CALLS=0
+    : > "$RUN/fs.raw"
+    : > "$RUN/drv.raw"
+    # EVERY recorded invocation, in the order the recipe made them. The two
+    # derivations are taken per call — each call has its OWN cwd, its own
+    # created-file set and its own stdin unit — and unioned across calls.
+    for d in "$recdir"/call-*; do
+        [ -d "$d" ] || continue
+        argv="$d/argv"
+        cwdf="$d/cwd"
+        createdf="$d/created"
+        stdinf="$d/stdin.c"
+        [ -f "$argv" ] || continue
+        CLASSIFIER_N_CALLS=$((CLASSIFIER_N_CALLS + 1))
+        exp="$d/argv-expanded"
+        root=$(cat "$cwdf" 2>/dev/null)
+        [ -n "$root" ] || root="$sbx"
+        expand_response_files "$argv" "$root" "$exp" || return 1
+        stdin_tu=''
+        [ -s "$stdinf" ] && stdin_tu="$stdinf"
+        local stdin_asked=0 t
+        while IFS= read -r -d '' t; do
+            [ "$t" = "-" ] && stdin_asked=1
+        done < "$exp"
+        if [ -z "$stdin_tu" ] && [ "$stdin_asked" -eq 1 ]; then
+            echo "FAIL: the recipe handed the compiler a translation unit on standard input and nothing was captured — the gate would examine one TU fewer than emcc compiles" >&2
+            return 1
+        fi
+        classify_inputs "$exp" "$root" "$createdf" "$stdin_tu" >> "$RUN/fs.raw"
+        driver_inputs "$exp" "$root" "$stdin_tu" "$d/drv.inputs" || return 1
+        cat "$d/drv.inputs" >> "$RUN/drv.raw"
+    done
+    if [ "$CLASSIFIER_N_CALLS" -eq 0 ]; then
         echo "FAIL: the playground recipe completed without ever invoking the compiler — there is no argv to examine, and an unexamined recipe is not a clean one" >&2
         sed 's/^/      /' "$log" >&2
         return 1
     fi
-    root=$(cat "$cwdf" 2>/dev/null)
-    [ -n "$root" ] || root="$sbx"
-    expand_response_files "$argv" "$root" "$exp" || return 1
-    stdin_tu=''
-    [ -s "$stdinf" ] && stdin_tu="$stdinf"
-    local stdin_asked=0 t
-    while IFS= read -r -d '' t; do
-        [ "$t" = "-" ] && stdin_asked=1
-    done < "$exp"
-    if [ -z "$stdin_tu" ] && [ "$stdin_asked" -eq 1 ]; then
-        echo "FAIL: the recipe handed the compiler a translation unit on standard input and nothing was captured — the gate would examine one TU fewer than emcc compiles" >&2
-        return 1
-    fi
-    classify_inputs "$exp" "$root" "$createdf" "$stdin_tu" | sort -u > "$RUN/fs.inputs"
-    driver_inputs "$exp" "$root" "$stdin_tu" "$RUN/drv.raw" || return 1
+    sort -u "$RUN/fs.raw" > "$RUN/fs.inputs"
     sort -u "$RUN/drv.raw" > "$RUN/drv.inputs"
     sort -u "$RUN/fs.inputs" "$RUN/drv.inputs" > "$out"
     CLASSIFIER_N_FS=$(grep -c . "$RUN/fs.inputs")
     CLASSIFIER_N_DRV=$(grep -c . "$RUN/drv.inputs")
+    CLASSIFIER_DROPPED=${CLASSIFIER_DROPPED# }
     {
         comm -23 "$RUN/fs.inputs" "$RUN/drv.inputs" | sed 's/^/      only the suffix+filesystem rule: /'
         comm -13 "$RUN/fs.inputs" "$RUN/drv.inputs" | sed 's/^/      only the driver derivation:       /'
@@ -666,9 +797,21 @@ macro_value_map() {
 # on that file and `tested=48` became `tested=19`, rc 0, the only sign an awk
 # line on stderr (measured by a blind critic, 2026-09-21). So the file list is
 # read NUL-safely into an array, awk's status is checked, awk reports how many
-# files it actually opened and how many conditional lines it matched, and BOTH
-# are cross-checked against an independent `grep -c` over the same list. A
+# files it was HANDED and how many conditional lines it matched, and BOTH are
+# cross-checked against an independent `grep -c` over the same list. A
 # disagreement is FAIL BY NAME.
+#
+# THE FILE COUNT IS BY ENUMERATION, NOT BY `FNR == 1`. Round 5 counted a file
+# as seen when awk reached its first record — which an EMPTY file never has.
+# A `.c` the recipe's own first call produced with `-o` and its second call
+# compiled is empty, in the population, and compiles clean; the gate answered
+# `FAIL: the conditional scan opened 45 of the 46 files it enumerated — the
+# tested-macro population shrank silently`, which is loud and wrong (measured
+# by a blind critic, 2026-09-21). awk now reports `ARGC - 1`, the files it was
+# HANDED, so an empty translation unit is examined and counted like any other.
+# The check is not vacuous: it still catches an argument list that reaches awk
+# with a different shape than bash enumerated, and a file awk cannot OPEN is
+# caught by awk's own status, which is checked.
 tested_macros() {
     local list="$1" out="$2" files nfiles nseen nlines ngrep
     files="$RUN/parity-scan.list"
@@ -682,7 +825,6 @@ tested_macros() {
         return 1
     fi
     awk '
-        FNR == 1 { nfiles++ }
         /^[ \t]*#[ \t]*(if|ifdef|ifndef|elif)([ \t(!].*)?$/ {
             nlines++
             line = $0
@@ -694,7 +836,7 @@ tested_macros() {
                 line = substr(line, RSTART + RLENGTH)
             }
         }
-        END { print nfiles + 0 " " nlines + 0 > "/dev/stderr" }
+        END { print (ARGC - 1) " " nlines + 0 > "/dev/stderr" }
     ' "${scan[@]}" 2>"$RUN/tested.counts" | sort -u > "$out"
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then
         echo "FAIL: the preprocessor-conditional scan exited non-zero, so the tested-macro population is a partial one:" >&2
@@ -704,7 +846,7 @@ tested_macros() {
     nseen=$(awk 'END { print $1 + 0 }' "$RUN/tested.counts")
     nlines=$(awk 'END { print $2 + 0 }' "$RUN/tested.counts")
     if [ "$nseen" -ne "$nfiles" ]; then
-        echo "FAIL: the conditional scan opened $nseen of the $nfiles files it enumerated — the tested-macro population shrank silently" >&2
+        echo "FAIL: the conditional scan was handed $nseen of the $nfiles files it enumerated — the tested-macro population shrank silently" >&2
         return 1
     fi
     ngrep=$(grep -chE '^[ \t]*#[ \t]*(if|ifdef|ifndef|elif)([ \t(!].*)?$' "${scan[@]}" | awk '{ s += $1 } END { print s + 0 }')
@@ -932,18 +1074,52 @@ macro_parity_init() {
     VALUE_DIFF_N=$(grep -c . "$RUN/valdiff.map")
     header_probe_init "$list" || return 1
     if ! header_probe_ok "${nameflags[@]}"; then
-        # NOT a fault in the tree: this toolchain's C library headers refuse to
-        # be preprocessed once the host's own world is replaced by the
-        # target's. macos-latest is the measured case — the reconciliation
-        # removes `__i386__`/`__APPLE__` (that is its whole job) and the SDK
-        # answers `sys/cdefs.h:1068: #error Unsupported architecture`. A
-        # toolchain that cannot hold the target's macro world cannot stand in
-        # for the lane, so the caller SKIPs by name with the toolchain's own
-        # words. Stage 1 of the availability probe has already proved that the
-        # SAME headers compile at -m32 WITHOUT the reconciliation, so this arm
-        # is specific: it fires on a host whose libc is tied to its own
-        # architecture macros, not on any compile failure.
-        MACRO_PARITY_SKIP_REASON=$(cat "$RUN/header_probe.err")
+        # ROUND 6: the SAME discriminator as the availability probe, applied
+        # one stage later. Round 5 turned ANY refusal here into a SKIP, and a
+        # blind critic broke the reconciliation derivation on LINUX and got
+        # `SKIP:` + exit 0 + `TOTAL=0` out of it — the gate's own derivation
+        # being wrong read as "this runner has nothing to say". Only the SDK's
+        # own refusal of the architecture may skip; a C library that refuses
+        # for any OTHER reason is the gate being wrong, and that is a FAIL.
+        #
+        # This is the stage macos-latest actually reaches: its availability
+        # probe PASSES (the SDK compiles a 32-bit TU against its own headers),
+        # and the refusal arrives only once the reconciliation has replaced
+        # `__i386__`/`__APPLE__` with the target's world — which is the
+        # reconciliation doing its job, and the SDK answering
+        # `sys/cdefs.h:1068: error: Unsupported architecture` (measured in CI,
+        # 2026-09-21). So the match is on the diagnostic, not on the stage.
+        #
+        # THE CONTROL RUNS FIRST, in the LIVE path and not only in --selftest:
+        # round 5's control 5rc was a --selftest case, and the section runs
+        # --selftest only in the NON-skip branch, so on the very run that
+        # skipped, the control never executed. The control is this same probe
+        # with NO reconciliation — it decides whether these headers preprocess
+        # at 32 bits at all, which is what makes a refusal attributable. It
+        # runs on every branch and its verdict is printed with the skip or the
+        # failure; it does not get a VOTE on the skip, because the thing that
+        # decides a skip is the SDK saying the words, and a control that
+        # disagreed would only turn a capability absence into a red lane on a
+        # runner this gate has nothing to say about.
+        cp "$RUN/header_probe.err" "$RUN/header_probe.reconciled.err"
+        local control_ok=0 control_says
+        header_probe_ok && control_ok=1
+        if [ "$control_ok" -eq 1 ]; then
+            control_says='control: these same headers DO preprocess at 32 bits without the reconciliation, so what this toolchain refuses is the target macro world itself'
+        else
+            control_says='control: these same headers do NOT preprocess at 32 bits without the reconciliation either'
+        fi
+        if grep -qE "$ILP32_SDK_REFUSAL_RE" "$RUN/header_probe.reconciled.err"; then
+            MACRO_PARITY_SKIP_REASON=$(printf '%s\n%s\n' "$(cat "$RUN/header_probe.reconciled.err")" "$control_says")
+        elif [ "$control_ok" -eq 1 ]; then
+            echo "FAIL: this C library's own headers preprocess at 32 bits UNRECONCILED (control) and REFUSE the wasm32 target's macro world this gate derived — and NOT because the SDK refuses the architecture, so the derivation is wrong, and a wrong derivation is a broken gate, not a runner to skip:" >&2
+            sed 's/^/      /' "$RUN/header_probe.reconciled.err" >&2
+        else
+            echo "FAIL: this C library's own headers do not preprocess at 32 bits even WITHOUT the reconciliation (control), although the availability probe passed — the gate's apparatus is inconsistent with itself:" >&2
+            sed 's/^/      /' "$RUN/header_probe.err" >&2
+            echo "      and under the reconciliation:" >&2
+            sed 's/^/      /' "$RUN/header_probe.reconciled.err" >&2
+        fi
         return 1
     fi
     value_parity_measure "$RUN/valdiff.map" nameflags "$RUN/valueflags" "$RUN/valuebad" || return 1
@@ -1063,12 +1239,33 @@ examine_tus() {
 # a skip is a claim, and a silent one reads as coverage). If the Linux lane
 # ever starts skipping, the reason is printed right there.
 #
-# $1 = the stub include dir to probe with. Prints the toolchain's own words on
-# failure and nothing on success; status is the verdict. Taking the stub dir as
-# an argument is what makes the SKIP arm testable: self-test plant 5s probes
-# with a stub whose <stdlib.h> refuses, and requires "unavailable".
+# ONLY THE SDK'S OWN REFUSAL MAY SKIP. Round 5 turned EVERY probe failure into
+# a SKIP that exited 0, and a blind critic reached that branch four ways on
+# THIS Linux box (2026-09-21): no `clang` on PATH, the gate's own
+# `gnu/stubs-32.h` stub deleted, `-isystem /usr/include/x86_64-linux-gnu`
+# pointing nowhere, and a broken reconciliation derivation. Each printed
+# `SKIP:` and exited 0, the section contributed `TOTAL=0`, and nothing counted
+# it — a gate that stopped measuring read exactly like a gate that measured.
+# Every one of those is the GATE'S OWN APPARATUS breaking, not a capability
+# this runner lacks, so every one of them is now FAIL BY NAME. The single
+# thing that may skip is the one this gate genuinely cannot stand in for: a C
+# library with no 32-bit target for its own headers, which says so in its own
+# words — the macOS SDK's `sys/cdefs.h: error: Unsupported architecture`. That
+# diagnostic is MATCHED and PRINTED, and the runner counts the skip.
+ILP32_SDK_REFUSAL_RE='error:[ \t]*Unsupported architecture'
+# The multiarch system include directory the gate compiles against. A variable
+# because the availability verdict has to be able to say that IT is what is
+# missing, and because self-test plant 5b3 probes with one that does not exist.
+SYS_INCLUDE_DIR=/usr/include/x86_64-linux-gnu
+
+# $1 = the stub include dir to probe with, $2 = the system include dir. Prints
+# the toolchain's own words on failure and nothing on success; status is the
+# verdict. Taking both directories as arguments is what makes the arms
+# testable: plant 5s probes with a stub whose <stdlib.h> answers the SDK's own
+# refusal, 5b2 with a stub that has lost its `gnu/stubs-32.h`, and 5b3 with a
+# system include directory that does not exist.
 ilp32_capability_probe() {
-    local stubdir="$1" out
+    local stubdir="$1" sysdir="$2" out
     printf '%s\n' '#include <stdlib.h>' '#include <stdio.h>' \
                   'int eigs_ilp32_probe(void) { return 0; }' > "$stubdir/probe_avail.c"
     # The -Werror= trio is not load-bearing for a three-line probe; it is here
@@ -1076,7 +1273,7 @@ ilp32_capability_probe() {
     # script by SOURCE TEXT, and an audited line without them is a violation.
     if out=$(clang -m32 -fsyntax-only -c \
             -Werror=switch -Werror=comment -Werror=misleading-indentation \
-            -isystem "$stubdir" -isystem /usr/include/x86_64-linux-gnu \
+            -isystem "$stubdir" -isystem "$sysdir" \
             "$stubdir/probe_avail.c" 2>&1); then
         return 0
     fi
@@ -1084,10 +1281,38 @@ ilp32_capability_probe() {
     return 1
 }
 
-if ! avail_err=$(ilp32_capability_probe "$STUB"); then
-    echo "SKIP: this toolchain cannot compile a 32-bit C translation unit against its own C library — the playground's 32-bit shape was NOT checked"
-    printf '%s\n' "$avail_err" | sed 's/^/      /'
-    exit 0
+# $1 = stub dir, $2 = system include dir, $3 = the probe's own diagnostic.
+# Status 0 = this is the SDK refusing the architecture: a capability absence,
+# a SKIP by name, printed on STDOUT because the runner reads it and counts it.
+# Status 1 = the gate's apparatus is broken: a FAIL by name on STDERR, naming
+# WHICH piece. Every branch prints the diagnostic it decided on.
+ilp32_availability_verdict() {
+    local stubdir="$1" sysdir="$2" diag="$3"
+    if grep -qE "$ILP32_SDK_REFUSAL_RE" <<<"$diag"; then
+        echo "SKIP: this toolchain's C library has no 32-bit target for its own headers — it refuses the architecture in its own words below, so the playground's 32-bit shape was NOT checked"
+        printf '%s\n' "$diag" | sed 's/^/      /'
+        return 0
+    fi
+    if ! [ -f "$stubdir/gnu/stubs-32.h" ]; then
+        echo "FAIL: the gate's own <gnu/stubs-32.h> stub is missing from $stubdir, so the availability probe measured the GATE'S APPARATUS, not this toolchain — that is a broken gate, not a runner without a 32-bit target:" >&2
+    elif ! [ -f "$stubdir/emscripten.h" ]; then
+        echo "FAIL: the gate's own <emscripten.h> stub is missing from $stubdir, so the availability probe measured the GATE'S APPARATUS, not this toolchain:" >&2
+    elif ! [ -d "$sysdir" ]; then
+        echo "FAIL: the gate's system include directory $sysdir does not exist on this box, so the availability probe measured the GATE'S APPARATUS, not this toolchain — fix the directory the gate compiles against:" >&2
+    elif grep -qF 'command not found' <<<"$diag"; then
+        echo "FAIL: the gate could not run a 32-bit compile at all — the compiler it invokes is not on PATH, so nothing was measured:" >&2
+    else
+        echo "FAIL: the 32-bit availability probe failed for a reason that is NOT this toolchain refusing the architecture, so it is the gate's own apparatus and not a capability absence — only an SDK that says '$ILP32_SDK_REFUSAL_RE' may skip:" >&2
+    fi
+    printf '%s\n' "$diag" | sed 's/^/      /' >&2
+    return 1
+}
+
+if ! avail_err=$(ilp32_capability_probe "$STUB" "$SYS_INCLUDE_DIR"); then
+    if ilp32_availability_verdict "$STUB" "$SYS_INCLUDE_DIR" "$avail_err"; then
+        exit 0
+    fi
+    exit 1
 fi
 
 # ---- the live population, derived once ------------------------------------
@@ -1101,11 +1326,17 @@ if ! sandbox_record_inputs "$LIVE_SBX" "$LIVE_TUS"; then
     exit 1
 fi
 N_LIVE_TUS=$(grep -c . "$LIVE_TUS")
+echo "classifier: $CLASSIFIER_N_CALLS call(s) recorded"
 echo "classifier: $CLASSIFIER_N_FS input(s) by suffix+filesystem, $CLASSIFIER_N_DRV by the driver derivation, $N_LIVE_TUS in the union examined"
+echo "classifier: dropped=${CLASSIFIER_DROPPED:-none}"
 
 if ! macro_parity_init "$LIVE_TUS"; then
+    # The ONLY skip left at this stage, and the same one the availability
+    # probe names: the SDK refuses the architecture once its own arch macros
+    # are replaced by the target's. Everything else macro_parity_init already
+    # reported as a FAIL by name, with its control decided first.
     if [ -n "$MACRO_PARITY_SKIP_REASON" ]; then
-        echo "SKIP: this toolchain's C library headers cannot be preprocessed at 32 bits in the wasm32 target's macro world — the playground's 32-bit shape was NOT checked"
+        echo "SKIP: this toolchain's C library has no 32-bit target for its own headers in the wasm32 target's macro world — it refuses the architecture in its own words below, so the playground's 32-bit shape was NOT checked"
         printf '%s\n' "$MACRO_PARITY_SKIP_REASON" | sed 's/^/      /'
         exit 0
     fi
@@ -1271,9 +1502,12 @@ fi
 # two derivations must AGREE exactly). $7 is what keeps the second derivation
 # honest: a plant that says "agree" goes red the moment either half stops
 # deriving, which is how gutting the response-file expansion is caught.
+# $8 a token that must appear in `classifier: dropped=` (empty = NOTHING may
+# be dropped from the driver call). Every plant asserts it, so a drop rule
+# that starts eating operands shows up on the plant next door.
 # The scratch recipe is read from "$WORK/$key.sh".
 argv_plant() {
-    local key="$1" label="$2" want_delta="$3" want_present="$4" want_absent="$5" tu_content="${6:-}" want_diff="${7:-}"
+    local key="$1" label="$2" want_delta="$3" want_present="$4" want_absent="$5" tu_content="${6:-}" want_diff="${7:-}" want_dropped="${8:-}"
     local sbx="$WORK/sbx-$key" list="$WORK/$key.tus" n delta
     if cmp -s "$REPO/web/build.sh" "$WORK/$key.sh"; then
         echo "selftest FAIL: $label was a no-op — the scratch recipe is identical to the live one"
@@ -1306,6 +1540,17 @@ argv_plant() {
     elif ! grep -qF -- "$want_diff" "$sbx/.eigs-ilp32-classifier-diff"; then
         echo "selftest FAIL: $label — the classifier disagreement does not name '$want_diff'; it says:"
         sed 's/^/      /' "$sbx/.eigs-ilp32-classifier-diff"
+        fails=1
+        return
+    fi
+    if [ -z "$want_dropped" ]; then
+        if [ -n "$CLASSIFIER_DROPPED" ]; then
+            echo "selftest FAIL: $label — the driver cross-check dropped operand(s) it should have kept: $CLASSIFIER_DROPPED"
+            fails=1
+            return
+        fi
+    elif ! grep -qF -- "$want_dropped" <<<"$CLASSIFIER_DROPPED"; then
+        echo "selftest FAIL: $label — '$want_dropped' was not dropped from the driver call; dropped='$CLASSIFIER_DROPPED'"
         fails=1
         return
     fi
@@ -1442,7 +1687,7 @@ awk '/^emcc /            { print "printf '"'"'#error EIGS_ILP32_PLANT_2I\\n'"'"'
     "$BUILD_SH" | sed 's|^\( *\)-o web/dist/eigs\.js$|\1-o web/dist/eigs.js < web/eigs_ilp32_plant_2i.c|' \
     > "$WORK/2i.sh"
 argv_plant 2i "plant 2i a TU on standard input (-x c -) is captured and examined (24 of 24)" \
-    1 ".eigs-ilp32-stdin.c" "" "" ""
+    1 ".eigs-ilp32-rec/call-0001/stdin.c" "" "" ""
 
 # 2u: a unit whose SUFFIX is not a TU suffix, compiled as C by `-x c`. The
 # suffix rule cannot see it and says so: the two derivations disagree, the
@@ -1461,6 +1706,163 @@ awk '{ print } /^[ \t]*"\$\{SOURCES\[@\]\}"[ \t]*\\[ \t]*$/ { print "    --embed
     "$BUILD_SH" > "$WORK/2e.sh"
 argv_plant 2e "control 2e a DATA file named .c behind --embed-file is counted and RED BY NAME (stated over-inclusion)" \
     1 "web/eigs_ilp32_plant_2e.c" "" 'EIGS_ILP32_PLANT_2E is data, not C source' ""
+
+# ---- the MULTI-CALL plants (2c, 2ca, 2cz, 2b) ----------------------------
+# Round 5's stand-in wrote its records with `>`, so only the LAST invocation
+# survived and every unit compiled by an earlier call was outside the
+# population — the gate printed `OK: examined 23` on a recipe whose first call
+# compiled a planted `#error` unit (measured by a blind critic, 2026-09-21).
+# Compile-then-link is the canonical build shape.
+
+# 2c: the critic's own two-call shape — a `-c` compile of a planted unit, then
+# the live link line with its `.o` added.
+awk '/^emcc / { print "emcc -Werror=switch -Werror=comment -Werror=misleading-indentation -c web/eigs_ilp32_plant_2c.c -o web/dist/eigs_ilp32_plant_2c.o" }
+     { print }
+     /^[ \t]*"\$\{SOURCES\[@\]\}"[ \t]*\\[ \t]*$/ { print "    web/dist/eigs_ilp32_plant_2c.o \\" }' \
+    "$BUILD_SH" > "$WORK/2c.sh"
+argv_plant 2c "plant 2c a TU compiled by an EARLIER invocation than the link line is examined (24 of 24)" \
+    1 "web/eigs_ilp32_plant_2c.c" "" '#error EIGS_ILP32_PLANT_2C' ""
+
+# 2ca: the PURE compile-then-link shape — one `-c` call per unit and then a
+# link of the objects. Round 5 recorded the link call alone, whose inputs are
+# all `.o`, so the population was ZERO; the floor caught that one loudly,
+# which is why last-wins looked safe. Here the assertion is the count of
+# CALLS as well as the population, because that is the fact that was missing.
+# The recipe is built FROM the live one — a `-c` call per unit inserted before
+# the live compile line, whose SOURCES expansion is replaced by the objects —
+# so the link step is the recipe's own line and every generated compile line
+# carries the -Werror trio tools/werror_switch_check.sh requires of one.
+sed "s|^$LIVE_SBX/||" "$LIVE_TUS" > "$WORK/2ca.srcs"
+awk -v SRCS="$WORK/2ca.srcs" '
+    /^emcc / && !ins {
+        n = 0
+        while ((getline s < SRCS) > 0) {
+            if (s == "") continue
+            n++
+            printf "emcc -Werror=switch -Werror=comment -Werror=misleading-indentation -c %s -o web/dist/eigs_ilp32_2ca_%03d.o\n", s, n
+        }
+        ins = 1
+    }
+    /^[ \t]*"\$\{SOURCES\[@\]\}"[ \t]*\\[ \t]*$/ { print "    web/dist/eigs_ilp32_2ca_*.o \\"; next }
+    { print }' "$BUILD_SH" > "$WORK/2ca.sh"
+if ! sandbox_prepare "$WORK/sbx-2ca" "$WORK/2ca.sh" 2>"$WORK/2ca.prep.err"; then
+    echo "selftest FAIL: plant 2ca could not be staged:"
+    sed 's/^/      /' "$WORK/2ca.prep.err"
+    fails=1
+elif ! sandbox_record_inputs "$WORK/sbx-2ca" "$WORK/2ca.tus" 2>"$WORK/2ca.err"; then
+    echo "selftest FAIL: plant 2ca — a compile-then-link recipe recorded nothing:"
+    sed 's/^/      /' "$WORK/2ca.err"
+    fails=1
+elif [ "$CLASSIFIER_N_CALLS" -ne $((N_LIVE_TUS + 1)) ]; then
+    echo "selftest FAIL: plant 2ca — the recipe made $((N_LIVE_TUS + 1)) compiler invocations and the recorder kept $CLASSIFIER_N_CALLS"
+    fails=1
+elif [ "$(grep -c . "$WORK/2ca.tus")" -ne "$N_LIVE_TUS" ]; then
+    echo "selftest FAIL: plant 2ca — a compile-then-link recipe over $N_LIVE_TUS units derived a population of $(grep -c . "$WORK/2ca.tus")"
+    sed 's/^/      /' "$WORK/2ca.tus"
+    fails=1
+else
+    echo "selftest ok: plant 2ca a pure compile-then-link recipe records $CLASSIFIER_N_CALLS call(s) and examines $N_LIVE_TUS TUs (not 0)"
+fi
+
+# 2cz: a recipe that never invokes the compiler at all. `examined 0` is the
+# same class as plant 2, one layer earlier: a recipe nobody compiled is not a
+# clean recipe.
+awk '/^emcc / { print "echo eigs_ilp32_plant_2cz: this recipe compiles nothing"; skip = 1 }
+     skip { if ($0 ~ /^[ \t]*-o web\/dist\/eigs\.js[ \t]*$/) skip = 0; next }
+     { print }' "$BUILD_SH" > "$WORK/2cz.sh"
+if cmp -s "$BUILD_SH" "$WORK/2cz.sh"; then
+    echo "selftest FAIL: plant 2cz was a no-op — the compile line was not removed from the scratch recipe"
+    fails=1
+elif ! sandbox_prepare "$WORK/sbx-2cz" "$WORK/2cz.sh" 2>"$WORK/2cz.prep.err"; then
+    echo "selftest FAIL: plant 2cz could not be staged:"
+    sed 's/^/      /' "$WORK/2cz.prep.err"
+    fails=1
+elif sandbox_record_inputs "$WORK/sbx-2cz" "$WORK/2cz.tus" 2>"$WORK/2cz.err"; then
+    echo "selftest FAIL: plant 2cz (a recipe with ZERO compiler invocations) was accepted — an unexamined recipe is not a clean one"
+    fails=1
+elif grep -q 'without ever invoking the compiler' "$WORK/2cz.err"; then
+    echo "selftest ok: plant 2cz a recipe with zero compiler invocations is FAIL by name"
+else
+    echo "selftest FAIL: plant 2cz went red for the wrong reason:"
+    sed 's/^/      /' "$WORK/2cz.err"
+    fails=1
+fi
+
+# 2b: an EMPTY translation unit, produced by one call's own `-o` and compiled
+# by the next. Round 5 counted files in the conditional scan with awk's
+# `FNR == 1`, which an empty file never reaches, so the gate answered `the
+# tested-macro population shrank silently` — loud, and wrong (measured by a
+# blind critic, 2026-09-21). An empty TU compiles clean and must be examined
+# and COUNTED like any other. Two units join the population here: the `-E`
+# input and the empty output it names.
+awk '/^emcc / { print "printf '"'"'int eigs_ilp32_plant_2b(void);\\n'"'"' > web/eigs_ilp32_plant_2b_src.c"
+                print "emcc -Werror=switch -Werror=comment -Werror=misleading-indentation -E web/eigs_ilp32_plant_2b_src.c -o web/eigs_ilp32_plant_2b_gen.c" }
+     { print }
+     /^SOURCES=\(/ { print "    web/eigs_ilp32_plant_2b_gen.c" }' \
+    "$BUILD_SH" > "$WORK/2b.sh"
+if ! sandbox_prepare "$WORK/sbx-2b" "$WORK/2b.sh" 2>"$WORK/2b.prep.err"; then
+    echo "selftest FAIL: plant 2b could not be staged:"
+    sed 's/^/      /' "$WORK/2b.prep.err"
+    fails=1
+elif ! sandbox_record_inputs "$WORK/sbx-2b" "$WORK/2b.tus" 2>"$WORK/2b.err"; then
+    echo "selftest FAIL: plant 2b — the two-call recipe recorded nothing:"
+    sed 's/^/      /' "$WORK/2b.err"
+    fails=1
+elif ! grep -qx "$WORK/sbx-2b/web/eigs_ilp32_plant_2b_gen.c" "$WORK/2b.tus"; then
+    echo "selftest FAIL: plant 2b — the empty generated unit the second call compiles is NOT in the derived population:"
+    sed 's/^/      /' "$WORK/2b.tus"
+    fails=1
+elif [ -s "$WORK/sbx-2b/web/eigs_ilp32_plant_2b_gen.c" ]; then
+    echo "selftest FAIL: plant 2b was a no-op — the generated unit is not empty, so the empty-file case was never exercised"
+    fails=1
+elif [ "$(grep -c . "$WORK/2b.tus")" -ne $((N_LIVE_TUS + 2)) ]; then
+    echo "selftest FAIL: plant 2b moved the population to $(grep -c . "$WORK/2b.tus"), want $((N_LIVE_TUS + 2)) (the -E input and the empty unit it produced)"
+    fails=1
+elif ! tested_macros "$WORK/2b.tus" "$WORK/2b.names" 2>"$WORK/2b.scan.err"; then
+    echo "selftest FAIL: plant 2b — an EMPTY translation unit in the population broke the conditional scan:"
+    sed 's/^/      /' "$WORK/2b.scan.err"
+    fails=1
+elif ! examine_tus "$WORK/2b.tus" "" "$STUB" "$TU_FLOOR" >"$WORK/2b.examine.out" 2>&1; then
+    echo "selftest FAIL: plant 2b — an EMPTY translation unit was not examined clean:"
+    sed 's/^/      /' "$WORK/2b.examine.out"
+    fails=1
+else
+    echo "selftest ok: plant 2b an empty TU produced by one call and compiled by the next is examined and counted ($(sed -n 's/^OK: //p' "$WORK/2b.examine.out"))"
+fi
+
+# ---- the DRIVER-OPERAND plants (3s, 3sj, 3st) ----------------------------
+# emcc's spaced setting form was a FALSE RED: bare `-s` is clang's strip flag,
+# so `TOTAL_MEMORY=64MB` reached the driver as an input it could not open and
+# the gate reported `the real compiler driver refused the recorded command
+# line` on a recipe emcc builds (measured by a blind critic, 2026-09-21).
+awk '{ print } /^[ \t]*"\$\{SOURCES\[@\]\}"[ \t]*\\[ \t]*$/ { print "    -s TOTAL_MEMORY=64MB \\" }' \
+    "$BUILD_SH" > "$WORK/3s.sh"
+argv_plant 3s "plant 3s emcc's spaced setting form is dropped from the driver call and reported, not a red (23 of 23)" \
+    0 "" "" "" "" "TOTAL_MEMORY=64MB"
+
+awk '{ print } /^[ \t]*"\$\{SOURCES\[@\]\}"[ \t]*\\[ \t]*$/ { print "    -sTOTAL_MEMORY=64MB \\" }' \
+    "$BUILD_SH" > "$WORK/3sj.sh"
+argv_plant 3sj "control 3sj the glued setting form is an unknown option and needs no drop (23 of 23)" \
+    0 "" "" "" "" ""
+
+# 3st: the other direction. A `.c` token naming no existing file is a typo the
+# recipe itself would not survive, so it is FAIL BY NAME and never a drop.
+awk '{ print } /^[ \t]*"\$\{SOURCES\[@\]\}"[ \t]*\\[ \t]*$/ { print "    web/eigs_ilp32_plant_3st_missing.c \\" }' \
+    "$BUILD_SH" > "$WORK/3st.sh"
+if ! sandbox_prepare "$WORK/sbx-3st" "$WORK/3st.sh" 2>"$WORK/3st.prep.err"; then
+    echo "selftest FAIL: plant 3st could not be staged:"
+    sed 's/^/      /' "$WORK/3st.prep.err"
+    fails=1
+elif sandbox_record_inputs "$WORK/sbx-3st" "$WORK/3st.tus" 2>"$WORK/3st.err"; then
+    echo "selftest FAIL: plant 3st (a .c token naming no existing file) was accepted — a TU the recipe names and the gate cannot examine"
+    fails=1
+elif grep -q 'names a translation unit that does not exist' "$WORK/3st.err"; then
+    echo "selftest ok: plant 3st a .c token naming no existing file is FAIL by name, not a dropped operand"
+else
+    echo "selftest FAIL: plant 3st went red for the wrong reason:"
+    sed 's/^/      /' "$WORK/3st.err"
+    fails=1
+fi
 
 # 2w: the SANDBOX claim. Round 4 symlinked every top-level entry, so a recipe
 # line writing `src/x.h` wrote into the real src/. The header said "nothing is
@@ -1715,68 +2117,151 @@ else
     fi
 fi
 
-# Plant 5s: the SKIP arm. Round 3's availability probe compiled a TU with no
-# includes, which an arm64 mac accepts at -m32 because it never reaches a
-# header — so the probe passed on macos-latest and all 23 real TUs then failed
-# on `sys/cdefs.h: #error Unsupported architecture`. The probe now includes the
-# C library; this plant proves that arm can still say "unavailable", by giving
-# it a stub whose <stdlib.h> refuses. Without it the SKIP branch is a claim no
-# case ever exercises.
+# ---- the availability arms (5s, 5sc, 5b1, 5b2, 5b3) ----------------------
+# ONE of these may skip, and it is the one the runner counts. Round 5 skipped
+# on ANY probe failure and a blind critic reached that branch four ways on
+# this Linux box, each `SKIP:` + exit 0 + `TOTAL=0`. Each arm below runs the
+# REAL probe and the REAL verdict function, and asserts which of the two
+# answers it gets — by name.
+#
+# $1 key, $2 label, $3 stub dir, $4 system include dir, $5 `skip` or `fail`,
+# $6 a literal the verdict line must contain.
+avail_arm() {
+    local key="$1" label="$2" stubdir="$3" sysdir="$4" want="$5" needle="$6"
+    local out="$WORK/$key.out" rc
+    if ilp32_capability_probe "$stubdir" "$sysdir" > "$out" 2>&1; then
+        if [ "$want" = "available" ]; then
+            echo "selftest ok: $label"
+            return
+        fi
+        echo "selftest FAIL: $label — the probe reported this toolchain AVAILABLE, so the gate would run against headers it cannot use and go red on every TU"
+        fails=1
+        return
+    fi
+    if [ "$want" = "available" ]; then
+        echo "selftest FAIL: $label — the live availability probe now says unavailable, so the whole run below it was vacuous:"
+        sed 's/^/      /' "$out"
+        fails=1
+        return
+    fi
+    ilp32_availability_verdict "$stubdir" "$sysdir" "$(cat "$out")" > "$WORK/$key.verdict" 2>&1
+    rc=$?
+    if [ "$want" = skip ] && [ "$rc" -ne 0 ]; then
+        echo "selftest FAIL: $label — the SDK's own refusal was not recognised as a skip; the verdict was:"
+        sed 's/^/      /' "$WORK/$key.verdict"
+        fails=1
+        return
+    fi
+    if [ "$want" = fail ] && [ "$rc" -eq 0 ]; then
+        echo "selftest FAIL: $label — a BROKEN GATE was reported as a skip (exit 0). Only the SDK's refusal may skip; everything else is a fault in the gate:"
+        sed 's/^/      /' "$WORK/$key.verdict"
+        fails=1
+        return
+    fi
+    if ! grep -qF -- "$needle" "$WORK/$key.verdict"; then
+        echo "selftest FAIL: $label — the verdict does not name '$needle'; it says:"
+        sed 's/^/      /' "$WORK/$key.verdict"
+        fails=1
+        return
+    fi
+    echo "selftest ok: $label"
+}
+
+# 5s: the ONE case that may skip — a C library with no 32-bit target for its
+# own headers, saying so in the SDK's own words. Round 3's probe compiled a TU
+# with no includes, which an arm64 mac accepts at -m32 because it never
+# reaches a header, so the probe passed on macos-latest and all 23 real TUs
+# then failed on `sys/cdefs.h: #error Unsupported architecture`. This plant
+# gives the probe a stub whose <stdlib.h> answers exactly that.
 mkdir -p "$WORK/skipstub/gnu"
 : > "$WORK/skipstub/gnu/stubs-32.h"
-printf '%s\n' '#error EIGS_ILP32_PLANT_5S_NO_32BIT_LIBC' > "$WORK/skipstub/stdlib.h"
-if ilp32_capability_probe "$WORK/skipstub" > "$WORK/plant5s.out" 2>&1; then
-    echo "selftest FAIL: plant 5s (a toolchain with no 32-bit C library) was reported AVAILABLE — the gate would run against headers it cannot use and go red on every TU"
-    fails=1
-elif grep -q 'EIGS_ILP32_PLANT_5S_NO_32BIT_LIBC' "$WORK/plant5s.out"; then
-    echo "selftest ok: plant 5s a toolchain with no 32-bit C library is reported unavailable, with the toolchain's own words"
-else
-    echo "selftest FAIL: plant 5s went red for the wrong reason:"
-    sed 's/^/      /' "$WORK/plant5s.out"
-    fails=1
-fi
+: > "$WORK/skipstub/emscripten.h"
+printf '%s\n' '#error Unsupported architecture' > "$WORK/skipstub/stdlib.h"
+avail_arm 5s "plant 5s a C library that refuses the architecture in the SDK's own words is a SKIP by name" \
+    "$WORK/skipstub" "$SYS_INCLUDE_DIR" skip "SKIP: this toolchain's C library has no 32-bit target"
 
 # Control 5sc: the LIVE stub must still be reported available, or "unavailable"
 # would only mean "this probe always says no".
-if ilp32_capability_probe "$STUB" > "$WORK/plant5sc.out" 2>&1; then
-    echo "selftest ok: control 5sc this toolchain's own 32-bit C library probe is available"
-else
-    echo "selftest FAIL: control 5sc — the live availability probe now says unavailable, so the whole run below it was vacuous:"
-    sed 's/^/      /' "$WORK/plant5sc.out"
-    fails=1
-fi
+avail_arm 5sc "control 5sc this toolchain's own 32-bit C library probe is available" \
+    "$STUB" "$SYS_INCLUDE_DIR" available ""
 
-# Plant 5r / control 5rc: the SECOND skip arm — a toolchain whose C library
-# cannot be preprocessed in the target's macro world. macos-latest is the
-# measured case (the reconciliation removes `__i386__`/`__APPLE__`, which is
-# its job, and the SDK answers `#error Unsupported architecture`). The plant
-# points the DERIVED header probe at one that refuses and requires the real
-# macro_parity_init to report a SKIP reason naming it; the control requires
-# this toolchain not to take that arm, or everything below it was vacuous.
+# 5b1 / 5b2 / 5b3: the three apparatus breaks a blind critic drove to a green
+# SKIP on THIS Linux box (2026-09-21). Each must be FAIL BY NAME now.
+#   5b1 no compiler on PATH at all,
+#   5b2 the gate's own gnu/stubs-32.h stub missing,
+#   5b3 the system include directory pointing nowhere.
+# 5b1's PATH carries only the text utilities the verdict itself runs, so the
+# absence under test is the compiler's and nothing else's.
+mkdir -p "$WORK/noclangbin"
+for u in cat grep sed; do
+    ln -sf "$(command -v "$u")" "$WORK/noclangbin/$u"
+done
+( PATH="$WORK/noclangbin"; export PATH; fails=0
+  avail_arm 5b1 "plant 5b1 no compiler on PATH is FAIL by name, not a skip" \
+      "$STUB" "$SYS_INCLUDE_DIR" fail "the compiler it invokes is not on PATH"
+  printf '%s' "$fails" > "$WORK/5b1.fails" )
+[ "$(cat "$WORK/5b1.fails" 2>/dev/null)" = 0 ] || fails=1
+
+mkdir -p "$WORK/nostub"
+: > "$WORK/nostub/emscripten.h"
+avail_arm 5b2 "plant 5b2 the gate's own <gnu/stubs-32.h> stub missing is FAIL by name, not a skip" \
+    "$WORK/nostub" "$SYS_INCLUDE_DIR" fail "stub is missing from"
+
+avail_arm 5b3 "plant 5b3 a system include directory that does not exist is FAIL by name, not a skip" \
+    "$STUB" "$WORK/no-such-include-dir" fail "does not exist on this box"
+
+# Plant 5r: a C library that refuses the macro world the gate DERIVED. Round 5
+# made that the second SKIP arm and a blind critic reached it on Linux by
+# breaking the derivation — `SKIP:` + exit 0 + `TOTAL=0`, a wrong derivation
+# reading as "nothing to say here". Round 6 makes it a FAIL by name, and its
+# control runs in the LIVE path (round 5's 5rc was a --selftest case, and the
+# section runs --selftest only in the non-skip branch, so on the very run that
+# skipped, the control never executed). The probe is poisoned in exactly the
+# shape the macOS SDK has: it refuses UNDER the reconciliation (`__wasm__` is
+# a target-only predefine, so the reconciliation defines it) and compiles
+# clean WITHOUT it, which is the branch the live control distinguishes.
 HEADER_PROBE_SAVED="$HEADER_PROBE"
-printf '%s\n' '#error EIGS_ILP32_PLANT_5R_NO_TARGET_MACRO_WORLD' > "$WORK/poison_probe.c"
+printf '%s\n' '#if defined(__wasm__)' '#error EIGS_ILP32_PLANT_5R_NO_TARGET_MACRO_WORLD' '#endif' \
+              'int eigs_ilp32_plant_5r(void);' > "$WORK/poison_probe.c"
 HEADER_PROBE="$WORK/poison_probe.c"
 MACRO_PARITY_SKIP_REASON=''
 if macro_parity_init "$LIVE_TUS" >/dev/null 2>"$WORK/plant5r.err"; then
     echo "selftest FAIL: plant 5r (a C library that refuses the target's macro world) was accepted — the gate would report parity it never verified"
     fails=1
-elif grep -q 'EIGS_ILP32_PLANT_5R_NO_TARGET_MACRO_WORLD' <<<"$MACRO_PARITY_SKIP_REASON"; then
-    echo "selftest ok: plant 5r a C library that refuses the target's macro world is reported as a SKIP reason, by name"
+elif [ -n "$MACRO_PARITY_SKIP_REASON" ]; then
+    echo "selftest FAIL: plant 5r — a refusal that is NOT the SDK's own was turned into a SKIP reason, which is round 5's green-on-a-broken-derivation exactly: '$MACRO_PARITY_SKIP_REASON'"
+    fails=1
+elif grep -q 'REFUSE the wasm32 target' "$WORK/plant5r.err" \
+     && grep -q 'EIGS_ILP32_PLANT_5R_NO_TARGET_MACRO_WORLD' "$WORK/plant5r.err"; then
+    echo "selftest ok: plant 5r a C library that refuses the derived target macro world for a NON-SDK reason is FAIL by name, with its control decided first"
 else
-    echo "selftest FAIL: plant 5r went red for the wrong reason (skip reason '$MACRO_PARITY_SKIP_REASON'):"
+    echo "selftest FAIL: plant 5r went red for the wrong reason:"
     sed 's/^/      /' "$WORK/plant5r.err"
+    fails=1
+fi
+
+# Plant 5rs: the same stage, the OTHER answer — the macOS shape, which is the
+# one this arm exists for. macos-latest's availability probe PASSES and the
+# SDK refuses only once the reconciliation has replaced `__i386__`/`__APPLE__`
+# (CI, 2026-09-21: `sys/cdefs.h:1068: error: Unsupported architecture`). That
+# must be a SKIP reason by name — and the suite counts it — while 5r above
+# must not be. Without both, "only the SDK may skip" is a claim with one side.
+printf '%s\n' '#if defined(__wasm__)' '#error Unsupported architecture' '#endif' \
+              'int eigs_ilp32_plant_5rs(void);' > "$WORK/sdk_probe.c"
+HEADER_PROBE="$WORK/sdk_probe.c"
+MACRO_PARITY_SKIP_REASON=''
+if macro_parity_init "$LIVE_TUS" >/dev/null 2>"$WORK/plant5rs.err"; then
+    echo "selftest FAIL: plant 5rs (an SDK that refuses the target's macro world) was accepted — the gate would report parity it never verified"
+    fails=1
+elif grep -qE "$ILP32_SDK_REFUSAL_RE" <<<"$MACRO_PARITY_SKIP_REASON"; then
+    echo "selftest ok: plant 5rs an SDK that refuses the architecture in the target's macro world is a SKIP reason by name (the macos-latest shape)"
+else
+    echo "selftest FAIL: plant 5rs — the SDK's own refusal was not recognised as the one skippable case (skip reason '$MACRO_PARITY_SKIP_REASON'):"
+    sed 's/^/      /' "$WORK/plant5rs.err"
     fails=1
 fi
 HEADER_PROBE="$HEADER_PROBE_SAVED"
 MACRO_PARITY_SKIP_REASON=''
-if macro_parity_init "$LIVE_TUS" >/dev/null 2>"$WORK/plant5rc.err" \
-   && [ -z "$MACRO_PARITY_SKIP_REASON" ]; then
-    echo "selftest ok: control 5rc this toolchain holds the target's macro world, so the skip arm is not taken here"
-else
-    echo "selftest FAIL: control 5rc — the live run now takes the skip arm, so every plant above it measured nothing (skip reason '$MACRO_PARITY_SKIP_REASON'):"
-    sed 's/^/      /' "$WORK/plant5rc.err"
-    fails=1
-fi
 
 # Control: the live inventory must still be green, or the selftest has broken
 # the compile function. Re-derive from the recipe, same as production.

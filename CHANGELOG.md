@@ -652,7 +652,7 @@ All notable changes to EigenScript are documented here.
   and the conditional lines it matched are cross-checked against an independent
   `grep -c` over the same list.
   This is PREDEFINE parity — a macro a system header supplies (`__GLIBC__`,
-  from glibc's features.h) is outside it, and the gate says so. **Thirty-six**
+  from glibc's features.h) is outside it, and the gate says so. **Forty-six**
   self-test plants and controls hold all of it: the six argv shapes; seven
   option-grammar shapes (a TU after `--emrun` and after `--proxy-to-worker`, a
   TU named only inside an `@response-file`, response files nested three deep, a
@@ -671,11 +671,36 @@ All notable changes to EigenScript are documented here.
   that must yield the identical inventory (the round-2 plant edited the array's
   TEXT and so went falsely red on a reflow) and the live inventory staying
   green.
+  The RECORDER keeps EVERY invocation. Round 5's stand-in wrote its records
+  with `>`, so a recipe that called the compiler twice was recorded once: a
+  planted `#error` unit compiled by a first `emcc -c web/x.c -o web/dist/x.o`
+  and linked by the second call sat outside the population entirely while the
+  gate printed `OK: examined 23` and the real wasm32 target was RED (a blind
+  critic, by execution). Compile-then-link is the canonical build shape. Each
+  call now appends its own record — argv, cwd, the files THAT call created,
+  its stdin unit — the population is the union across calls, `classifier: N
+  call(s) recorded` is printed every run, and a recipe with zero invocations
+  is fail-by-name. The assumption that is now true, stated: every invocation
+  of the stand-in is recorded. Plants 2c, 2ca, 2cz and 2b hold it. The driver
+  cross-check is also fed only operands the driver can OPEN: emcc's documented
+  spaced form `-s TOTAL_MEMORY=64MB` reached clang as an input (bare `-s` is
+  clang's strip flag), clang answered `no such file or directory:
+  'TOTAL_MEMORY=64MB'`, and the gate called a recipe emcc builds fine RED. The
+  operand to drop is MEASURED from the driver's own diagnostic rather than
+  typed — a rule of the form "a non-option token that is not a file is a
+  setting" would eat the `c` in `-x c web/unit.inc` — every dropped token is
+  printed on `classifier: dropped=`, and a refused operand whose suffix is a
+  `.c` is still fail-by-name, because that is a recipe naming a unit that does
+  not exist (plants 3s, 3sj, 3st). And an EMPTY translation unit is examined
+  and counted: the conditional scan counted files with awk's `FNR == 1`, which
+  an empty file never reaches, so a `.c` produced by one call's `-o` and
+  compiled by the next made the gate answer "the tested-macro population
+  shrank silently" — loud, and wrong. The scan counts by enumeration now.
   `-m32` is the i386 ABI, not wasm32 — it catches pointer-width breaks, the
   `#1185` class, not every layout difference. Availability is probed by
-  EXECUTION, not by the compiler's name: a toolchain that cannot compile a
-  32-bit TU against its own C library (the macOS runners) SKIPs by name with
-  the compiler's own words, counted as a skip and never as a pass. That probe
+  EXECUTION, not by the compiler's name, and EXACTLY ONE outcome may skip: a C
+  library with no 32-bit target for its own headers, which says so in its own
+  words, at whichever of the two stages it says so. That probe
   had to ASK FOR THE CAPABILITY THE GATE USES: the first version compiled a
   one-line TU with no includes, which clang accepts at `-m32` on an arm64 mac
   because it never reaches a header — so the gate passed its own availability
@@ -683,20 +708,32 @@ All notable changes to EigenScript are documented here.
   `MacOSX.sdk/usr/include/sys/cdefs.h:1068: error: Unsupported architecture`,
   becoming exactly the new red lane on a runner it has nothing to say about
   that the probe exists to prevent. The probe now includes the C library, and
-  plants 5s/5sc hold that arm (a stub whose `<stdlib.h>` refuses must be
-  reported unavailable; the live toolchain must be reported available). That
-  was still not the whole capability: the reconciliation's job is to REMOVE
-  the host's own architecture macros, and the macOS SDK ties its headers to
-  them (`#error Unsupported architecture` from `sys/cdefs.h` once `__i386__`
-  and `__APPLE__` are gone), so a second, measured skip arm was needed — if
-  this toolchain's C library cannot be preprocessed at 32 bits IN THE
-  TARGET'S MACRO WORLD, the gate skips by name with the toolchain's own
-  words. The arm is specific rather than a catch-all: stage 1 has already
-  proved the same headers compile at `-m32` WITHOUT the reconciliation.
-  Plants 5r/5rc hold it, with the live toolchain as the control that the arm
-  is not taken here. The gate is also bash-3.2 clean — no `declare -A`, no
-  `mapfile`, no `grep -z` — because macOS is where it has to reach its own
-  probe.
+  it MATCHES the SDK's own diagnostic, at either stage that can hit it: round
+  5 skipped on ANY probe failure, and a blind critic reached that branch four
+  ways on a LINUX box — no compiler on `PATH`, the gate's own
+  `<gnu/stubs-32.h>` stub deleted, `-isystem /usr/include/x86_64-linux-gnu`
+  pointing nowhere, and a broken reconciliation derivation — each printing
+  `SKIP:`, exiting 0, contributing `TOTAL=0`, with no tally anywhere to
+  notice. Every one of those is the GATE'S OWN APPARATUS breaking, so every
+  one of them is now FAIL BY NAME (plants 5b1, 5b2, 5b3), and the one case
+  that may skip is held by 5s/5sc (a stub answering `#error Unsupported
+  architecture` must SKIP by name; the live toolchain must be reported
+  available). macos-latest reaches that verdict one stage LATER — measured in
+  CI: its availability probe passes, and the SDK refuses only once the
+  reconciliation has replaced `__i386__`/`__APPLE__`, which is the
+  reconciliation doing its job — so the same diagnostic decides there too:
+  the SDK's own words are a skip (plant 5rs), and any OTHER refusal of the
+  derived macro world is the derivation being wrong and so a FAIL by name
+  (plant 5r; round 5 skipped on both). The control for that verdict — the
+  same headers *without* the reconciliation — runs in the LIVE path before it
+  is taken either way, because round 5's control was a `--selftest` case and
+  the section runs `--selftest` only in the non-skip branch, so on the very
+  run that skipped the control never executed. The suite's
+  RESULTS line prints `passed, failed, skipped` on every lane, `skipped=0`
+  included, and `[99i3]`'s skip increments it: a section that measured nothing
+  is now a number on the verdict line and not only a line in the log. The gate
+  is also bash-3.2 clean — no `declare -A`, no `mapfile`, no `grep -z` —
+  because macOS is where it has to reach its own probe.
 
 - **The db-extension error-path example in `docs/BUILTINS.md` no longer
   pins the core build's "undefined variable" output.** Section [89] on
