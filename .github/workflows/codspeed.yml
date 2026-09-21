@@ -1,0 +1,50 @@
+name: CodSpeed
+
+# The hosted twin of the CI `bench` job. That job DIFFS cachegrind Ir of the PR
+# binary against an origin/main binary and is the merge gate. This lane runs
+# the same class of measurement (valgrind CPU simulation, deterministic) on
+# the targets in codspeed.yml and uploads per-commit results, so every PR gets
+# a differential flamegraph per target and a trend line lives somewhere other
+# than a checked-in baseline. It is a PROFILER and a record, not a second
+# gate: nothing here is a required check.
+#
+# Docs-only diffs are skipped by path: they cannot change the instruction
+# count of a C binary.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codspeed-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulation:
+    name: codspeed (simulation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write  # OIDC upload; the repo is public, so no token secret is needed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Build the release interpreter
+        run: ./build.sh
+
+      # `run` is deliberately omitted: with no command the runner executes the
+      # exec-harness targets declared in codspeed.yml at the repository root.
+      - name: Run codspeed.yml targets under CPU simulation
+        uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea  # v5.2.1
+        with:
+          mode: simulation

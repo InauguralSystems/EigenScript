@@ -1,0 +1,62 @@
+# CodSpeed exec-harness targets (https://codspeed.io/docs).
+#
+# Same measurement philosophy as bench/check_regression.sh: each target is one
+# whole-program run of the release interpreter under valgrind's CPU simulation,
+# so the number is deterministic instruction/cycle counting, not wall-clock.
+# What this adds over the in-repo Ir gate: a hosted history per commit,
+# per-target differential flamegraphs on every PR, and a PR comment. The Ir
+# gate (CI `bench` job) stays the MERGE gate — this is the profiler and the
+# trend line, not a second gate.
+#
+# Tier is part of the target name: the interpreter JITs by default, so an
+# unqualified target measures the JIT tier. The `vm-tier` targets pin
+# EIGS_JIT_OFF=1 so an interpreter-only regression is visible on its own row
+# (#1200: a probe that silently forced one tier covered only that tier).
+# Measured 2026-09-20 under cachegrind, bench_dmg_shape: JIT on 1.20 G Ir,
+# JIT off 2.22 G Ir — the JIT DOES engage under valgrind, both arms differ.
+#
+# Run locally (after `codspeed auth login`):
+#   make && codspeed run -m simulation            # every target
+#   codspeed run -m simulation --bench dmg-shape  # one target by id
+#
+# Workloads: bench/*.eigs are the five Ir-gate workloads; the three tests/
+# benches are the JIT's own shapes (CLAUDE.md "Benchmarks"), dmg_shape being
+# the consumer stand-in for the DMG emulator's hot loop.
+$schema: https://raw.githubusercontent.com/CodSpeedHQ/codspeed/refs/heads/main/schemas/codspeed.schema.json
+
+benchmarks:
+  # --- the five Ir-gate workloads (bench/) ---
+  - name: "scalar_loop"
+    id: scalar-loop
+    exec: ./src/eigenscript bench/scalar_loop.eigs
+  - name: "dict_ops"
+    id: dict-ops
+    exec: ./src/eigenscript bench/dict_ops.eigs
+  - name: "string_build"
+    id: string-build
+    exec: ./src/eigenscript bench/string_build.eigs
+  - name: "observed_loop"
+    id: observed-loop
+    exec: ./src/eigenscript bench/observed_loop.eigs
+  - name: "unobserved_loop"
+    id: unobserved-loop
+    exec: ./src/eigenscript bench/unobserved_loop.eigs
+
+  # --- the JIT's own shapes (tests/) ---
+  - name: "bench_perf"
+    id: bench-perf
+    exec: ./src/eigenscript tests/bench_perf.eigs
+  - name: "bench_dmg_shape"
+    id: dmg-shape
+    exec: ./src/eigenscript tests/bench_dmg_shape.eigs
+  - name: "bench_idxset"
+    id: idxset
+    exec: ./src/eigenscript tests/bench_idxset.eigs
+
+  # --- interpreter tier, JIT hard-disabled ---
+  - name: "bench_dmg_shape (vm-tier)"
+    id: dmg-shape-vm
+    exec: env EIGS_JIT_OFF=1 ./src/eigenscript tests/bench_dmg_shape.eigs
+  - name: "scalar_loop (vm-tier)"
+    id: scalar-loop-vm
+    exec: env EIGS_JIT_OFF=1 ./src/eigenscript bench/scalar_loop.eigs
