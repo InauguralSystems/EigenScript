@@ -813,7 +813,10 @@ declared_missing_file() {
 
 # First missing tool from PREREQS[name], fixture .ca_prereqs, and top-level
 # command tokens (go/java/python3/python/make). `gfx` is a candidate
-# capability (not a PATH tool): missing it is prereq:gfx-build. Prints
+# capability (not a PATH tool): missing it is prereq:gfx-build, and it is
+# DECLARED only -- round 7 also read it off the SUBSTRING `gfx` in the
+# command text, so `--no-gfx` or a path like tests/gfx_smoke.sh made a
+# headless row UNRUNNABLE that would have passed. Prints
 # the tool; rc 0 if something is missing, 1 if every named tool is present.
 missing_prereq() {
   local name="$1" cmd="$2"
@@ -822,9 +825,17 @@ missing_prereq() {
   if [ -f "${ECO:-}/.ca_fixture" ] && [ -f "$ECO/$name/.ca_prereqs" ]; then
     tools="$tools $(tr '\n' ' ' < "$ECO/$name/.ca_prereqs")"
   fi
-  case "$cmd" in
-    *gfx*) tools="$tools gfx" ;;
-  esac
+  # CA-GUARD:gfx-declared-only
+  # ROUND 8, finding 9: `case "$cmd" in *gfx*)` made ANY occurrence of the
+  # substring `gfx` in the acceptance command a hard gfx-build prerequisite
+  # -- a path like tests/gfx_smoke.sh, and even the flag `--no-gfx` --
+  # so a headless run of such a consumer was UNRUNNABLE|prereq:gfx-build
+  # although the row would have passed. The requirement is DECLARED
+  # (PREREQS[name], or a fixture .ca_prereqs) and nothing else; a consumer
+  # that invokes `eigenscript-gfx` is already refused by name at the
+  # variant gate (UNRUNNABLE|prereq:variant:eigenscript-gfx) when no --gfx
+  # binary was given, which is a better message than prereq:gfx-build.
+  # CA-GUARD:end-gfx-declared-only
   local norm="${cmd//&&/$'\n'}"
   norm="${norm//;/$'\n'}"
   while IFS= read -r piece || [ -n "$piece" ]; do
@@ -1004,25 +1015,51 @@ build_candidate_overlay() {
 
 # Declared expected names for this ECO. Fixtures skip EXPECTED_CONSUMERS
 # unless $ECO/.ca_expected lists them. Production always uses the table.
-# Record floor: lexically greatest YYYY-MM-DD-… filename, never mtime.
+# Record floor (ROUND 8, finding 2 -- MEASURED on 21daf05): the floor is the
+# MAXIMUM row count over the DATED records in the directory whose header says
+# status=COMPLETE, EXCLUDING the file this run is writing (compared by
+# realpath), and it is computed BEFORE this run takes the record path.
+# Round 7 read the LEXICALLY GREATEST dated name at scan time, which is
+# after write_record_header, so the ecosystem's own documented convention --
+# CA_RECORD=$ECO/reports/consumer_acceptance/<today>-<tag>.record -- made
+# THIS run's own 0-row INCOMPLETE header the newest dated record and set the
+# floor to 0: a 3-row committed record beside it, inventory 2, VERDICT: PASS.
+# The same mechanism let an INTERRUPTED wave's dated INCOMPLETE record with
+# N<16 rows lower the next run's floor to N. Three rules, each with its own
+# failure: status=COMPLETE (an interrupted record is not a measurement), the
+# realpath exclusion (a run cannot be its own floor), and MAX rather than
+# newest (a smaller later record cannot lower a floor the ecosystem already
+# reached). A non-dated *.record in the directory is still a stray -- a FAIL
+# by name, never a floor (Fable r2 03).
 # Fixtures read $ECO/reports/consumer_acceptance when that dir exists so
 # plant B3 can reach the floor; CA_FAULT=record_floor=N overrides.
-load_expected_list() {
-  EXPECTED_LIST=()
+RECORD_FLOOR=0
+RECORD_STRAY=""
+RECORD_FLOOR_LOCKED=0
+RECORD_FLOOR_WITNESS=""
+RECORD_FLOOR_EXAMINED=0
+
+# Absolute, symlink-resolved path of $1 for identity comparison; prints the
+# input unchanged when it cannot be resolved (a record that does not exist
+# yet resolves through its directory).
+record_realpath() {
+  local p="${1:-}" d b
+  [ -n "$p" ] || return 0
+  d="$(dirname -- "$p")"
+  b="$(basename -- "$p")"
+  d="$(cd -P -- "$d" 2>/dev/null && pwd)" || { printf '%s' "$p"; return 0; }
+  printf '%s/%s' "$d" "$b"
+}
+
+# CA-GUARD:record-floor-compute
+compute_record_floor() {
+  if [ "${RECORD_FLOOR_LOCKED:-0}" -eq 1 ]; then
+    return 0
+  fi
+  local rec_dir="" f rows b self="" fr
   RECORD_FLOOR=0
   RECORD_STRAY=""
-  if [ -f "${ECO:-}/.ca_expected" ]; then
-    local n
-    while IFS= read -r n || [ -n "$n" ]; do
-      n="${n#"${n%%[![:space:]]*}"}"
-      n="${n%"${n##*[![:space:]]}"}"
-      [ -z "$n" ] && continue
-      EXPECTED_LIST+=("$n")
-    done < "$ECO/.ca_expected"
-  elif [ ! -f "${ECO:-}/.ca_fixture" ]; then
-    EXPECTED_LIST=("${EXPECTED_CONSUMERS[@]}")
-  fi
-  local rec_dir="" f newest="" rows b nb
+  RECORD_FLOOR_WITNESS=""
   if fixture_fault; then
     case "${CA_FAULT:-}" in
       record_floor=*)
@@ -1038,12 +1075,15 @@ load_expected_list() {
       rec_dir="$HERE/reports/consumer_acceptance"
     fi
   fi
-  local computed=0
-  RECORD_STRAY=""
+  local computed=0 examined=0
   if [ "$rec_dir" = "__fault__" ]; then
     computed="${rows:-0}"
+    examined=1
   elif [ -n "$rec_dir" ]; then
-    newest=""
+    # CA-GUARD:record-self-exclude
+    # The file THIS run writes is not evidence about the previous wave.
+    self="$(record_realpath "${RECORD:-}")"
+    # CA-GUARD:end-record-self-exclude
     for f in "$rec_dir"/*.record; do
       [ -f "$f" ] || continue
       b="$(basename "$f")"
@@ -1059,22 +1099,49 @@ load_expected_list() {
           continue
           ;;
       esac
-      if [ -z "$newest" ]; then
-        newest="$f"
-      else
-        nb="$(basename "$newest")"
-        if [ "$b" \> "$nb" ]; then
-          newest="$f"
-        fi
+      fr="$(record_realpath "$f")"
+      if [ -n "$self" ] && [ "$fr" = "$self" ]; then
+        RECORD_FLOOR_WITNESS="${RECORD_FLOOR_WITNESS:+$RECORD_FLOOR_WITNESS }$b:self"
+        continue
       fi
+      # CA-GUARD:record-floor-complete
+      # An INCOMPLETE record is an interrupted wave, not a measurement.
+      if ! grep -q '^status=COMPLETE$' "$f" 2>/dev/null; then
+        RECORD_FLOOR_WITNESS="${RECORD_FLOOR_WITNESS:+$RECORD_FLOOR_WITNESS }$b:incomplete"
+        continue
+      fi
+      # CA-GUARD:end-record-floor-complete
+      rows="$(grep -c '^row|' "$f" 2>/dev/null || true)"
+      rows="${rows:-0}"
+      examined=$((examined + 1))
+      RECORD_FLOOR_WITNESS="${RECORD_FLOOR_WITNESS:+$RECORD_FLOOR_WITNESS }$b:$rows"
+      # CA-GUARD:record-floor-max
+      if [ "$rows" -gt "$computed" ]; then
+        computed="$rows"
+      fi
+      # CA-GUARD:end-record-floor-max
     done
-    if [ -n "$newest" ]; then
-      rows="$(grep -c '^row|' "$newest" 2>/dev/null || true)"
-      computed="${rows:-0}"
-    fi
   fi
+  RECORD_FLOOR_EXAMINED="$examined"
   # CA-GUARD:record-floor
   RECORD_FLOOR="$computed"
+}
+# CA-GUARD:end-record-floor-compute
+
+load_expected_list() {
+  EXPECTED_LIST=()
+  if [ -f "${ECO:-}/.ca_expected" ]; then
+    local n
+    while IFS= read -r n || [ -n "$n" ]; do
+      n="${n#"${n%%[![:space:]]*}"}"
+      n="${n%"${n##*[![:space:]]}"}"
+      [ -z "$n" ] && continue
+      EXPECTED_LIST+=("$n")
+    done < "$ECO/.ca_expected"
+  elif [ ! -f "${ECO:-}/.ca_fixture" ]; then
+    EXPECTED_LIST=("${EXPECTED_CONSUMERS[@]}")
+  fi
+  compute_record_floor
 }
 
 # Scan ECO into GATE_* / SKIP_* arrays. Prints the plan listing iff $1=print.
@@ -1315,7 +1382,7 @@ scan_inventory() {
     GAPS=$((GAPS + 1))
   fi
   if [ "$verbose" -eq 1 ]; then
-    say "inventory_floor expected=${#EXPECTED_LIST[@]} scanned=$INVENTORY record_floor=${RECORD_FLOOR:-0}"
+    say "inventory_floor expected=${#EXPECTED_LIST[@]} scanned=$INVENTORY record_floor=${RECORD_FLOOR:-0} floor_records=${RECORD_FLOOR_EXAMINED:-0} floor_witness=${RECORD_FLOOR_WITNESS:-none}"
   fi
 }
 
@@ -1364,6 +1431,7 @@ RESOLVED=""
 CALL_LOG=""
 PRIV=""
 CAND_HAS_GFX=0
+GFX_EXPORT=""
 CAND_GFX_RC=""
 OVERLAY_SKIPPED=""
 SIBLING_BEFORE=no
@@ -1846,6 +1914,7 @@ candidate_gfx_path=${CAND_GFX_ABS:-}
 candidate_gfx_version=PENDING
 candidate_gfx_sha256=PENDING
 eigenscript_resolved=${RESOLVED:-PENDING}
+eigenscript_gfx_exported=PENDING
 path_masked=PENDING
 path_farm=PENDING
 path_dropped=PENDING
@@ -1896,6 +1965,7 @@ write_record_footer() {
         candidate_gfx_version=PENDING)  printf 'candidate_gfx_version=%s\n' "${CAND_GFX_VER:-}" ;;
         candidate_gfx_sha256=PENDING)   printf 'candidate_gfx_sha256=%s\n' "${CAND_GFX_SHA:-}" ;;
         eigenscript_resolved=PENDING) printf 'eigenscript_resolved=%s\n' "${RESOLVED:-}" ;;
+        eigenscript_gfx_exported=PENDING) printf 'eigenscript_gfx_exported=%s\n' "${GFX_EXPORT:-none}" ;;
         path_masked=PENDING)       printf 'path_masked=%s\n' "${PATH_MASKED:-none}" ;;
         path_farm=PENDING)         printf 'path_farm=%s\n' "${PATH_FARM_N:-0}" ;;
         path_dropped=PENDING)      printf 'path_dropped=%s\n' "${PATH_DROPPED:-none}" ;;
@@ -2145,9 +2215,18 @@ run_one() {
       eigs_exports="${eigs_exports}"$'\n'
     fi
     eigs_exports="${eigs_exports}$(printf 'export EIGENSCRIPT_BIN=%q\n' "$SHIM/eigenscript")"
-    if [ "${CAND_HAS_GFX:-0}" = 1 ]; then
-      eigs_exports="${eigs_exports}"$'\n'"$(printf 'export EIGENSCRIPT_GFX=%q\n' "$SHIM/eigenscript")"
+    # CA-GUARD:gfx-variant-export
+    # ROUND 8, finding 6: with --gfx <binary> this exported the HEADLESS
+    # base shim, so a consumer honouring EIGENSCRIPT_GFX ran its gfx suite
+    # against the wrong binary -- a false red on a good gfx candidate, or a
+    # PASS whose cand_calls were credited while the --gfx binary was never
+    # executed. The variable names the shim of the binary that ACTUALLY
+    # provides gfx: $SHIM/eigenscript-gfx when --gfx was given, and only
+    # otherwise the base shim (whose own binary probed gfx-capable).
+    if [ -n "${GFX_EXPORT:-}" ]; then
+      eigs_exports="${eigs_exports}"$'\n'"$(printf 'export EIGENSCRIPT_GFX=%q\n' "$GFX_EXPORT")"
     fi
+    # CA-GUARD:end-gfx-variant-export
   fi
   # CA-GUARD:private-log-export
   true
@@ -2231,7 +2310,44 @@ run_one() {
   local nf_handler=""
   # CA-GUARD:not-found-guard
   if true; then
-    nf_handler="$(printf 'command_not_found_handle() {\n  case "${1:-}" in\n    eigenscript|eigenscript-*)\n      printf "blocked|rc=127|%%s|%%s\\n" "$1" "${*:2}" >> %q 2>/dev/null || true\n      printf "consumer_acceptance: no candidate for %%s\\n" "$1" >&2 ;;\n    *) printf "%%s: command not found\\n" "$1" >&2 ;;\n  esac\n  return 127\n}' "${CALL_LOG:-/dev/null}")"
+    # CA-GUARD:not-found-export
+    # ROUND 8, finding 1 (MEASURED by /code-review on 21daf05): the handler
+    # was defined in the block shell and never EXPORTED, so it reached the
+    # block's own simple commands and nothing else. Every real consumer runs
+    # its suite through `bash tests/...`, and in that child a computed
+    # `eigenscript-$V` was a bare 127 the consumer swallowed with `|| true`:
+    # the review's fixture read `PASS cand_calls=1` while this header claimed
+    # FAIL|undeclared-variant. `export -f` carries the handler into every
+    # bash child. The body is one line that runs a HELPER kept beside the
+    # shims, so the exported environment names only $SHIM (already on PATH)
+    # and the call-log path stays baked into a file, exactly as it is in the
+    # counting shim -- exporting the old body would have put that path in
+    # every consumer's environment.
+    # `export -f` ALONE IS NOT ENOUGH, and that is MEASURED here, not
+    # assumed: every command in a row runs through a FARM WRAPPER whose
+    # first line is `#!/bin/sh`, /bin/sh on this box and in CI is dash, and
+    # dash DROPS environment entries whose names are not valid identifiers
+    # -- which is exactly the shape bash uses for an exported function
+    # (`BASH_FUNC_command_not_found_handle%%`). Measured: `env | grep -c
+    # BASH_FUNC` is 1 directly and 0 through a two-line sh wrapper. So the
+    # handler travels as BASH_ENV, a perfectly ordinary variable that dash
+    # passes through, and which every NON-INTERACTIVE bash sources at
+    # startup -- `bash tests/run.sh`, `#!/usr/bin/env bash` scripts and
+    # `bash -c` alike. `export -f` is kept as well: it covers a bash reached
+    # WITHOUT a wrapper, and it costs nothing.
+    # RESIDUAL, stated: `sh`/dash children read neither, so a computed name
+    # invoked from a `#!/bin/sh` script is still a bare 127. Those rely on
+    # the 127-shim sweep (path_masked=), which covers every eigenscript*
+    # name the inherited PATH holds; a name that exists NOWHERE and is
+    # invoked from a sub-`sh` remains uncaught. A consumer that sets its own
+    # BASH_ENV overrides ours, and is the same residual. Plant
+    # not-found-child pins both halves: the bash child FAILs by name, the
+    # sh child does not.
+    nf_handler="$(printf 'command_not_found_handle() {\n  %q "$@"\n  return 127\n}\nexport -f command_not_found_handle 2>/dev/null || true' "${SHIM:-/nonexistent}/.ca_notfound")"
+    # CA-GUARD:not-found-bashenv
+    nf_handler="${nf_handler}"$'\n'"$(printf 'export BASH_ENV=%q' "${SHIM:-/nonexistent}/.ca_bashenv")"
+    # CA-GUARD:end-not-found-bashenv
+    # CA-GUARD:end-not-found-export
   fi
   # CA-GUARD:end-not-found-variant
 
@@ -2530,10 +2646,18 @@ mask_path_variants() {
       [ -n "$f" ] || continue
       [ -x "$f" ] || continue
       b="$(basename "$f")"
+      # CA-GUARD:dropped-filter
+      # ROUND 8, finding 10: build_path_farm drops every `eigenscript*` file
+      # from the row's PATH, but this listed only `eigenscript` and
+      # `eigenscript-*`, so a stale `eigenscript.old` (or `eigenscript_helper`)
+      # was taken out of reach and NOT named in path_dropped= -- a reader
+      # auditing "what did the farm hide" could not see it had been on the
+      # inherited PATH at all. Same filter in both places.
       case "$b" in
-        eigenscript|eigenscript-*) ;;
+        eigenscript*) ;;
         *) continue ;;
       esac
+      # CA-GUARD:end-dropped-filter
       case " $PATH_DROPPED " in
         *" $b "*) ;;
         *) PATH_DROPPED="${PATH_DROPPED:+$PATH_DROPPED }$b" ;;
@@ -2778,6 +2902,19 @@ run_mode() {
     fi
     CAND_GFX_ABS="$(abs_path "$CAND_GFX")" || { say "consumer_acceptance: cannot resolve --gfx path: $CAND_GFX"; exit 2; }
   fi
+  # CA-GUARD:bare-candidate
+  # ROUND 8, finding 8: this refusal is a USAGE error -- it reads argv and
+  # $ECO and nothing else -- but it ran after invalidate_previous_record and
+  # write_record_header, so an exit 2 for a bare candidate stashed the
+  # previous VERDICT: PASS to .prev and left an INCOMPLETE record, breaking
+  # the class this file states ("a usage error exits 2 having touched no
+  # record path at all"). Both static checks now sit in the usage block.
+  derive_candidate_tree "$CAND_ABS" || true
+  if [ -z "${CAND_TREE:-}" ] && [ -e "$ECO/EigenScript" ]; then
+    say "consumer_acceptance: refusing a bare candidate ($CAND_ABS) while sibling tree $ECO/EigenScript exists; pass a tree candidate (.../src/eigenscript) so EIGS_DIR is an overlay of the candidate"
+    exit 2
+  fi
+  # CA-GUARD:end-bare-candidate
   # CA-GUARD:end-usage-before-record
 
   RUN_ID="$(date +%s).$$.${RANDOM:-0}"
@@ -2791,6 +2928,17 @@ run_mode() {
     # mktemp creates an empty file; do not stash it as .prev on a fresh run.
     rm -f "$RECORD"
   fi
+
+  # CA-GUARD:floor-before-record
+  # The floor is evidence about the PREVIOUS wave, so it is read while the
+  # previous wave's files are still exactly as they were -- before the lock,
+  # before invalidate_previous_record, before this run's own INCOMPLETE
+  # header exists. $RECORD is known here, so the self-exclusion can be made
+  # on realpath. Locked afterwards so scan_inventory's load_expected_list
+  # cannot recompute it against the file this run has since written.
+  compute_record_floor
+  RECORD_FLOOR_LOCKED=1
+  # CA-GUARD:end-floor-before-record
 
   # First actions -- before the inventory scan, before the shim, before
   # the candidate. A previous PASS must not outlive this point. The lock
@@ -2870,18 +3018,40 @@ run_mode() {
   else
     write_127_shim "$SHIM/eigenscript-gfx" eigenscript-gfx
   fi
+  # CA-GUARD:not-found-helper
+  # The body of command_not_found_handle (see CA-GUARD:not-found-export).
+  # A dot-name, so PATH lookup can never reach it by name.
+  {
+    printf '%s\n' '#!/bin/sh'
+    printf 'log=%s\n' "$(printf '%q' "${CALL_LOG:-/dev/null}")"
+    printf '%s\n' \
+      'n="${1:-}"' \
+      '[ "$#" -eq 0 ] || shift' \
+      'case "$n" in' \
+      '  eigenscript*)' \
+      '    printf "blocked|rc=127|%s|%s\n" "$n" "$*" >> "$log" 2>/dev/null || true' \
+      '    printf "consumer_acceptance: no candidate for %s\n" "$n" >&2 ;;' \
+      '  *) printf "%s: command not found\n" "$n" >&2 ;;' \
+      'esac' \
+      'exit 127'
+  } > "$SHIM/.ca_notfound" || shim_die "$SHIM/.ca_notfound" "write failed"
+  chmod +x "$SHIM/.ca_notfound" || shim_die "$SHIM/.ca_notfound" "chmod failed"
+  [ -x "$SHIM/.ca_notfound" ] || shim_die "$SHIM/.ca_notfound" "not executable after write"
+  # The BASH_ENV file every non-interactive bash child sources (see
+  # CA-GUARD:not-found-export). It defines the handler and nothing else.
+  {
+    printf '%s\n' 'command_not_found_handle() {'
+    printf '  %s "$@"\n' "$(printf '%q' "$SHIM/.ca_notfound")"
+    printf '%s\n' '  return 127' '}'
+  } > "$SHIM/.ca_bashenv" || shim_die "$SHIM/.ca_bashenv" "write failed"
+  [ -s "$SHIM/.ca_bashenv" ] || shim_die "$SHIM/.ca_bashenv" "empty after write"
+  # CA-GUARD:end-not-found-helper
   # CA-GUARD:path-variant-sweep
   mask_path_variants
   # CA-GUARD:end-path-variant-sweep
   build_path_farm
   build_env_passthrough
   # CA-GUARD:end-variant-mask
-  derive_candidate_tree "$CAND_ABS" || true
-  if [ -z "${CAND_TREE:-}" ] && [ -e "$ECO/EigenScript" ]; then
-    say "consumer_acceptance: refusing a bare candidate ($CAND_ABS) while sibling tree $ECO/EigenScript exists; pass a tree candidate (.../src/eigenscript) so EIGS_DIR is an overlay of the candidate"
-    RUN_RC=2
-    exit 2
-  fi
   CAND_OVERLAY=""
   if [ -n "${CAND_TREE:-}" ]; then
     build_candidate_overlay "$CAND_TREE" "$WORK/cand_tree" || true
@@ -2986,7 +3156,16 @@ run_mode() {
   if [ -n "${CAND_GFX_ABS:-}" ]; then
     CAND_HAS_GFX=1
   fi
+  GFX_EXPORT=""
+  if [ "${CAND_HAS_GFX:-0}" = 1 ]; then
+    if [ -n "${CAND_GFX_ABS:-}" ]; then
+      GFX_EXPORT="$SHIM/eigenscript-gfx"
+    else
+      GFX_EXPORT="$SHIM/eigenscript"
+    fi
+  fi
   say "candidate_gfx: $CAND_HAS_GFX"
+  say "eigenscript_gfx_exported: ${GFX_EXPORT:-none}"
 
   local i name pin cmd verdict STOP_AFTER kind
   STOP_AFTER=0
@@ -3030,12 +3209,18 @@ run_mode() {
     fi
     verdict="$LAST_VERDICT"
     append_row "$name" "$pin" "$verdict" "$LAST_RC" "$LAST_DUR"
+    # CA-GUARD:log-tail-nonpass
+    # ROUND 8, finding 3: `PASS|skips=N` sets ANY_BAD and FAILs the wave,
+    # and its evidence IS the consumer's SKIP lines -- yet the `PASS|*`
+    # exemption dropped exactly that row's log tail. #1214 as stated: every
+    # row that is not a bare PASS is followed by log|<name>|<line>.
     case "$verdict" in
-      PASS|PASS\|*) ;;
+      PASS) ;;
       *)
         append_log_tail "$name" "$WORK/logs/$name.log"
         ;;
     esac
+    # CA-GUARD:end-log-tail-nonpass
     EXAMINED=$((EXAMINED + 1))
     if [ -n "${LAST_AMBIGUOUS:-}" ]; then
       say "  UNRUNNABLE|ambiguous-workflow:${LAST_AMBIGUOUS}  $name  pin=$pin rc=$LAST_RC ${LAST_DUR}s cand_calls=${LAST_CALLS:-0} cand_ok=${LAST_OK:-0} cand_fail=${LAST_FAIL:-0} consumer_skips=${LAST_SKIPS:-0} sibling_binary_present=${SIBLING_PRESENT:-no}"
@@ -3972,10 +4157,15 @@ plant_gfx_selfskip() {
   local out rc
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
-  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep -E '^row\||^log\|dmg_like\|' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
+  # ROUND 8, finding 3: PASS|skips=N fails the wave, so its evidence -- the
+  # consumer's own SKIP lines -- must land as log| tail lines. The `PASS|*`
+  # exemption dropped exactly this row's tail.
   if grep -q 'row|dmg_like|v0.43.0|PASS|skips=1|' "$rec" \
      && grep -q 'consumer_skips=1' "$rec" \
+     && grep -q '^log|dmg_like|' "$rec" \
+     && grep -q '^log|dmg_like|.*SKIP: dock widget' "$rec" \
      && ! grep -q 'row|dmg_like|v0.43.0|PASS|0|' "$rec"; then
     return 0
   fi
@@ -4385,6 +4575,43 @@ repls = {
         '  # CA-GUARD:expected-floor\n'
         '  EXPECTED_LIST=()\n',
     ),
+    "not-found-export": (
+        '    # CA-GUARD:not-found-bashenv\n'
+        '    nf_handler="${nf_handler}"$\'\\n\'"$(printf \'export BASH_ENV=%q\' "${SHIM:-/nonexistent}/.ca_bashenv")"\n',
+        '    # CA-GUARD:not-found-bashenv\n',
+    ),
+    "gfx-declared-only": (
+        '  # CA-GUARD:gfx-declared-only\n',
+        '  # CA-GUARD:gfx-declared-only\n'
+        '  case "$cmd" in *gfx*) tools="$tools gfx" ;; esac\n',
+    ),
+    "dropped-filter": (
+        '      # CA-GUARD:dropped-filter\n',
+        '      # CA-GUARD:dropped-filter\n'
+        '      case "$b" in eigenscript|eigenscript-*) ;; *) continue ;; esac\n',
+    ),
+    "log-tail-nonpass": (
+        '    case "$verdict" in\n'
+        '      PASS) ;;\n',
+        '    case "$verdict" in\n'
+        '      PASS|PASS\\|*) ;;\n',
+    ),
+    "gfx-variant-export": (
+        '      GFX_EXPORT="$SHIM/eigenscript-gfx"\n',
+        '      GFX_EXPORT="$SHIM/eigenscript"\n',
+    ),
+    "record-floor-max": (
+        '      if [ "$rows" -gt "$computed" ]; then\n',
+        '      if true; then\n',
+    ),
+    "record-self-exclude": (
+        '    self="$(record_realpath "${RECORD:-}")"\n',
+        '    self=""\n',
+    ),
+    "record-floor-complete": (
+        '''      if ! grep -q '^status=COMPLETE$' "$f" 2>/dev/null; then\n''',
+        '      if false; then\n',
+    ),
     "record-floor": (
         '  # CA-GUARD:record-floor\n'
         '  RECORD_FLOOR="$computed"\n',
@@ -4786,6 +5013,57 @@ plant_b3_record_floor() {
   return 1
 }
 
+# ROUND 8 finding 2: the floor must not read THIS run's own record.
+# Arm (a) is the orchestrator's measured fixture: CA_RECORD inside the
+# ecosystem's reports/consumer_acceptance/ with a date newer than the
+# committed record. Arm (b) pre-seeds that same path with a COMPLETE 9-row
+# record, so only the realpath exclusion can keep the floor at 3.
+plant_record_floor_selfexclude() {
+  local sh="$1" eco="$2" stub="$3"
+  local rec="$eco/reports/consumer_acceptance/2026-09-22-cand.record"
+  local out rc a_ok=0 b_ok=0
+  rm -f "$rec" "$rec.prev"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)" || true
+  note_plant "$out" "$rec" 0
+  if grep -q '^inventory floor: inventory 2 < record floor 3' "$rec" \
+     && exact_verdict_file "$rec" FAIL; then
+    a_ok=1
+  fi
+  local a_detail
+  a_detail="$(grep -E 'inventory floor|VERDICT' "$rec" 2>/dev/null | tr '\n' ' ')"
+  rm -f "$rec" "$rec.prev"
+  printf '%s\n' 'status=COMPLETE' 'row|s1|v|PASS|0|0' 'row|s2|v|PASS|0|0' \
+    'row|s3|v|PASS|0|0' 'row|s4|v|PASS|0|0' 'row|s5|v|PASS|0|0' \
+    'row|s6|v|PASS|0|0' 'row|s7|v|PASS|0|0' 'row|s8|v|PASS|0|0' \
+    'row|s9|v|PASS|0|0' > "$rec"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)" || true
+  note_plant "$out" "$rec" 0
+  if grep -q '^inventory floor: inventory 2 < record floor 3' "$rec" \
+     && exact_verdict_file "$rec" FAIL; then
+    b_ok=1
+  fi
+  LAST_PLANT_DETAIL="fresh-in-reports[$a_ok] $a_detail | stale-9-row-at-\$RECORD[$b_ok] $(grep -E 'inventory floor|VERDICT' "$rec" 2>/dev/null | tr '\n' ' ')"
+  rm -f "$rec" "$rec.prev"
+  [ "$a_ok" -eq 1 ] && [ "$b_ok" -eq 1 ] && return 0
+  return 1
+}
+
+# ROUND 8 finding 2: an INCOMPLETE dated record (an interrupted wave) has
+# 9 rows beside a COMPLETE 3-row one. The floor is 3, not 9.
+plant_record_floor_incomplete() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)" || true
+  LAST_PLANT_DETAIL="$(grep -E 'inventory floor|VERDICT' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" 0
+  if grep -q '^inventory floor: inventory 2 < record floor 3' "$rec" \
+     && ! grep -q 'record floor 9' "$rec" \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
 # FAIL row carries log|<name>|<line> immediately after the row.
 plant_log_tail() {
   local sh="$1" eco="$2" stub="$3" rec="$4"
@@ -4907,20 +5185,109 @@ plant_j2_pause_rename() {
   return 1
 }
 
-# Usage error does not touch the committed record.
+# Usage error does not touch the committed record. TWO rows: no candidate
+# at all, and (ROUND 8, finding 8) a BARE candidate while the sibling tree
+# exists -- also a usage-class exit 2, which until round 8 ran after
+# invalidate_previous_record and stashed the previous PASS to .prev.
 plant_usage_no_candidate() {
-  local sh="$1" eco="$2" rec="$3"
-  local out rc sha1 sha2
+  local sh="$1" eco="$2" rec="$3" bs_eco="${4:-}" bare="${5:-}"
+  local out rc sha1 sha2 arg1=0 arg2=0
   printf '%s\n' '# committed' 'run_id=OLD' 'status=COMPLETE' 'inventory=1 examined=1' 'VERDICT: PASS' > "$rec"
   sha1="$(file_sha256 "$rec")"
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_RECORD="$rec" "$sh" run 2>&1)"
   rc=$?
   sha2="$(file_sha256 "$rec")"
-  LAST_PLANT_DETAIL="rc=$rc sha1=$sha1 sha2=$sha2 prev=$( [ -e "${rec}.prev" ] && echo yes || echo no )"
+  LAST_PLANT_DETAIL="no-candidate: rc=$rc sha1=$sha1 sha2=$sha2 prev=$( [ -e "${rec}.prev" ] && echo yes || echo no )"
   note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 2 ] \
      && [ "$sha1" = "$sha2" ] \
      && [ ! -e "${rec}.prev" ]; then
+    arg1=1
+  fi
+  if [ -z "$bs_eco" ] || [ -z "$bare" ]; then
+    LAST_PLANT_DETAIL="$LAST_PLANT_DETAIL | bare+sibling: NOT SUPPLIED"
+    [ "$arg1" -eq 1 ] && return 0
+    return 1
+  fi
+  local rec2="${rec}.bs" sha3 sha4
+  rm -f "$rec2" "${rec2}.prev"
+  printf '%s\n' '# committed' 'run_id=OLD2' 'status=COMPLETE' 'inventory=1 examined=1' 'VERDICT: PASS' > "$rec2"
+  sha3="$(file_sha256 "$rec2")"
+  out="$(CA_ECO="$bs_eco" CA_TIMEOUT=5 CA_RECORD="$rec2" "$sh" run "$bare" 2>&1)"
+  rc=$?
+  sha4="$(file_sha256 "$rec2")"
+  LAST_PLANT_DETAIL="$LAST_PLANT_DETAIL | bare+sibling: rc=$rc sha=$sha3/$sha4 prev=$( [ -e "${rec2}.prev" ] && echo yes || echo no )"
+  note_plant "$out" "$rec2" "$rc"
+  if [ "$rc" -eq 2 ] \
+     && grep -q 'refusing a bare candidate' <<< "$out" \
+     && [ "$sha3" = "$sha4" ] \
+     && [ ! -e "${rec2}.prev" ]; then
+    arg2=1
+  fi
+  rm -f "$rec2" "${rec2}.prev"
+  [ "$arg1" -eq 1 ] && [ "$arg2" -eq 1 ] && return 0
+  return 1
+}
+
+# ROUND 8, finding 6: with --gfx <binary>, a consumer that honours
+# EIGENSCRIPT_GFX must get the GFX shim. The base stub lacks gfx_open and
+# refuses probe_gfx.eigs; the gfx stub has it and accepts. Only the gfx
+# stub's marker may exist, and the call must be attributed to
+# eigenscript-gfx in the row's own call log (cand_calls=1, no
+# undeclared-variant).
+plant_gfx_variant_export() {
+  local sh="$1" eco="$2" base="$3" gfx="$4" rec="$5" base_log="$6" gfx_log="$7"
+  local out rc
+  : > "$base_log"
+  : > "$gfx_log"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$base" --gfx "$gfx" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc exported=$(grep '^eigenscript_gfx_exported=' "$rec" 2>/dev/null | tr '\n' ' ')row=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')base_ran=$(wc -c < "$base_log" 2>/dev/null || echo 0) gfx_ran=$(wc -c < "$gfx_log" 2>/dev/null || echo 0)"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 0 ] \
+     && grep -qE '^eigenscript_gfx_exported=.*/eigenscript-gfx$' "$rec" \
+     && grep -q 'row|gfx_user|v0.43.0|PASS|0|' "$rec" \
+     && grep -q 'cand_calls=1' "$rec" \
+     && [ -s "$gfx_log" ] \
+     && [ ! -s "$base_log" ] \
+     && exact_verdict_file "$rec" PASS; then
+    return 0
+  fi
+  return 1
+}
+
+# ROUND 8, finding 9: the substring `gfx` in the acceptance command is not
+# a gfx prerequisite. `--no-gfx` on a headless candidate RUNS.
+plant_gfx_prereq_nosubstring() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 0 ] \
+     && grep -q 'row|nogfx_user|v0.43.0|PASS|0|' "$rec" \
+     && ! grep -q 'prereq:gfx-build' "$rec" \
+     && ! grep -q 'prereq=gfx-build' "$rec" \
+     && exact_verdict_file "$rec" PASS; then
+    return 0
+  fi
+  return 1
+}
+
+# ROUND 8, finding 10: path_dropped= must name every eigenscript* file the
+# farm took out of reach, not only `eigenscript` and `eigenscript-*`.
+plant_path_dropped_decoy() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" decoy="$5"
+  local out rc
+  out="$(PATH="$decoy:$PATH" CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc dropped=$(grep '^path_dropped=' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 0 ] \
+     && grep -qE '^path_dropped=(.* )?eigenscript\.old( |$)' "$rec" \
+     && ! grep -q 'eigen-other' "$rec" \
+     && exact_verdict_file "$rec" PASS; then
     return 0
   fi
   return 1
@@ -5161,6 +5528,32 @@ plant_not_found_variant() {
   if [ "$rc" -eq 1 ] \
      && grep -q "row|nf_user|v0.43.0|FAIL|undeclared-variant:$nfname|" "$rec" \
      && [ ! -s "$decoy_log" ] \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
+# ROUND 8 finding 1 (MEASURED by /code-review on 21daf05): the handler was
+# never exported, so a computed name invoked from `bash run.sh` -- the shape
+# every real consumer has -- was a bare 127 the row swallowed with `|| true`
+# and read PASS cand_calls=1. The bash child must now FAIL BY NAME. The
+# `sh` child is the STATED RESIDUAL and is pinned to PASS here on purpose:
+# the day a closure lands for sub-`sh`, this arm goes red and says so.
+plant_not_found_child() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" nfname="$5"
+  local out rc
+  if command -v "$nfname" >/dev/null 2>&1; then
+    LAST_PLANT_DETAIL="the token-carrying fixture name $nfname EXISTS on PATH -- the plant cannot mean what it says"
+    return 1
+  fi
+  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep -E '^row\|nf_(child|sh)\|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q "row|nf_child|v0.43.0|FAIL|undeclared-variant:$nfname|" "$rec" \
+     && grep -q "row|nf_sh|v0.43.0|PASS|0|" "$rec" \
      && exact_verdict_file "$rec" FAIL; then
     return 0
   fi
@@ -5585,7 +5978,7 @@ plant_plant_total() {
 # FAILs by name: gutting both ST_SKIP increments left `plants=67 skipped=0
 # SELF-TEST: PASS` (Fable r2), and a deleted plant is the same shape. Bump
 # this in the same commit as any plant change.
-ST_DECLARED_PLANTS=94
+ST_DECLARED_PLANTS=100
 # This run's scratch token: every ca-* name the self-test and its children
 # create in the OUTER tmp carries it, so the hygiene scan can tell THIS
 # run's leftovers from a concurrent tenant's (both critics, r3).
@@ -6534,9 +6927,64 @@ EOS
     'exit 0' > "$st_root/stub-headless"
   chmod +x "$st_root/stub-headless"
   if plant_gfx_selfskip "$sh" "$gs_eco" "$st_root/stub-headless" "$rec"; then
-    plant_line "gfx-selfskip" 0 "PASS|skips=1 consumer_skips=1"
+    plant_line "gfx-selfskip" 0 "$LAST_PLANT_DETAIL"
   else
     plant_line "gfx-selfskip" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- ROUND 8 finding 6: --gfx must be what EIGENSCRIPT_GFX names.
+  local gx_eco="$st_root/gx-eco"
+  local gx_base_log="$st_root/gx-base.log" gx_gfx_log="$st_root/gx-gfx.log"
+  mkdir -p "$gx_eco"
+  printf 'fixture\n' > "$gx_eco/.ca_fixture"
+  mk_consumer_block "$gx_eco" gfx_user '"$EIGENSCRIPT_GFX" tests/probe_gfx.eigs'
+  mkdir -p "$gx_eco/gfx_user/tests"
+  : > "$gx_eco/gfx_user/tests/probe_gfx.eigs"
+  printf '%s\n' '#!/bin/sh' \
+    'if [ "${1:-}" = --version ]; then echo "eigenscript stub"; exit 0; fi' \
+    'if [ "${1:-}" = --api ]; then echo "{\"builtins\":[]}"; exit 0; fi' \
+    "case \"\${1:-}\" in *probe_gfx.eigs) printf base >> $(printf '%q' "$gx_base_log"); echo 'undefined variable gfx_open' >&2; exit 1 ;; esac" \
+    'exit 0' > "$st_root/stub-gfx-base"
+  chmod +x "$st_root/stub-gfx-base"
+  printf '%s\n' '#!/bin/sh' \
+    'if [ "${1:-}" = --version ]; then echo "eigenscript gfx stub"; exit 0; fi' \
+    'if [ "${1:-}" = --api ]; then echo "{\"builtins\":[\"gfx_open\"]}"; exit 0; fi' \
+    "case \"\${1:-}\" in *probe_gfx.eigs) printf gfx >> $(printf '%q' "$gx_gfx_log") ;; esac" \
+    'exit 0' > "$st_root/stub-gfx-cand"
+  chmod +x "$st_root/stub-gfx-cand"
+  rec="$st_root/gx.record"
+  if plant_gfx_variant_export "$sh" "$gx_eco" "$st_root/stub-gfx-base" "$st_root/stub-gfx-cand" "$rec" "$gx_base_log" "$gx_gfx_log"; then
+    plant_line "gfx-variant-export" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "gfx-variant-export" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- ROUND 8 finding 9: `--no-gfx` is not a gfx prerequisite.
+  local ngfx_eco="$st_root/ngfx-eco"
+  mkdir -p "$ngfx_eco"
+  printf 'fixture\n' > "$ngfx_eco/.ca_fixture"
+  mk_consumer "$ngfx_eco" nogfx_user "eigenscript tests/run_headless.eigs --no-gfx"
+  rec="$st_root/ngfx.record"
+  if plant_gfx_prereq_nosubstring "$sh" "$ngfx_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "gfx-prereq-nosubstring" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "gfx-prereq-nosubstring" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- ROUND 8 finding 10: the farm hides every eigenscript* file; the
+  # header must NAME every one of them.
+  local pd_eco="$st_root/pd-eco" pd_decoy="$st_root/pd-decoy"
+  mkdir -p "$pd_eco" "$pd_decoy"
+  printf 'fixture\n' > "$pd_eco/.ca_fixture"
+  mk_consumer "$pd_eco" pd_user "eigenscript work.eigs"
+  printf '%s\n' '#!/bin/sh' 'exit 0' > "$pd_decoy/eigenscript.old"
+  printf '%s\n' '#!/bin/sh' 'exit 0' > "$pd_decoy/eigen-other"
+  chmod +x "$pd_decoy/eigenscript.old" "$pd_decoy/eigen-other"
+  rec="$st_root/pd.record"
+  if plant_path_dropped_decoy "$sh" "$pd_eco" "$st_root/stub-ok" "$rec" "$pd_decoy"; then
+    plant_line "path-dropped-decoy" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "path-dropped-decoy" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- bare candidate + sibling tree -> exit 2 before any row.
@@ -6677,27 +7125,81 @@ EOS
     plant_line "B2 missing-declared" 1 "$LAST_PLANT_DETAIL"
   fi
 
-  # --- B3: 2 consumers, record floor 3 (lexical newest, not mtime).
+  # --- B3: 2 consumers, record floor 3. ROUND 8: the floor is the MAX row
+  # count over DATED COMPLETE records, so this fixture now discriminates
+  # three ways at once -- a lexically NEWER 1-row COMPLETE record does not
+  # LOWER the floor (round 7's lexical-newest rule read 1 and PASSed), a
+  # 99-row INCOMPLETE record does not raise it (an interrupted wave is not
+  # a measurement), and mtime is still irrelevant (that 99-row file is the
+  # newest on disk).
   local b3_eco="$st_root/b3-eco"
   mkdir -p "$b3_eco/reports/consumer_acceptance"
   printf 'fixture\n' > "$b3_eco/.ca_fixture"
   printf '%s\n' a b > "$b3_eco/.ca_expected"
   mk_consumer "$b3_eco" a "eigenscript work.eigs"
   mk_consumer "$b3_eco" b "eigenscript work.eigs"
-  printf '%s\n' 'row|x|v|PASS|0|0' 'row|y|v|PASS|0|0' 'row|z|v|PASS|0|0' \
+  printf '%s\n' 'status=COMPLETE' 'row|x|v|PASS|0|0' 'row|y|v|PASS|0|0' 'row|z|v|PASS|0|0' \
     > "$b3_eco/reports/consumer_acceptance/2026-09-21-new.record"
+  printf '%s\n' 'status=COMPLETE' 'row|w|v|PASS|0|0' \
+    > "$b3_eco/reports/consumer_acceptance/2026-09-22-later.record"
+  printf 'status=INCOMPLETE\n' > "$b3_eco/reports/consumer_acceptance/2020-01-01-old.record"
   i=1
   while [ "$i" -le 99 ]; do
     printf 'row|old%02d|v|PASS|0|0\n' "$i"
     i=$((i + 1))
-  done > "$b3_eco/reports/consumer_acceptance/2020-01-01-old.record"
+  done >> "$b3_eco/reports/consumer_acceptance/2020-01-01-old.record"
   touch -d '2026-12-01' "$b3_eco/reports/consumer_acceptance/2020-01-01-old.record" 2>/dev/null \
     || touch -t 202612010000 "$b3_eco/reports/consumer_acceptance/2020-01-01-old.record"
   rec="$st_root/b3.record"
   if plant_b3_record_floor "$sh" "$b3_eco" "$st_root/stub-ok" "$rec"; then
-    plant_line "B3 record-floor" 0 "inventory 2 < record floor 3 (lexical, not mtime)"
+    plant_line "B3 record-floor" 0 "inventory 2 < record floor 3 (MAX over dated COMPLETE records: a newer 1-row COMPLETE does not lower it, a 99-row INCOMPLETE with the newest mtime does not raise it)"
   else
     plant_line "B3 record-floor" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- ROUND 8 finding 2 (MEASURED by the orchestrator on 21daf05): with
+  # CA_RECORD inside the ecosystem's own reports/consumer_acceptance/ --
+  # the convention the README and CLAUDE.md state -- the run's own record
+  # was the newest DATED file by the time the floor was read, so the floor
+  # read 0 and a 2-consumer inventory PASSed beside a 3-row committed
+  # record. Two arms: (a) the orchestrator's exact fixture, fresh record
+  # path; (b) the same path already holding a COMPLETE 9-row record from an
+  # earlier run, which must NOT become this run's own floor. Arm (b) is the
+  # one the realpath exclusion holds up on its own.
+  local sx_eco="$st_root/sx-eco"
+  mkdir -p "$sx_eco/reports/consumer_acceptance"
+  printf 'fixture\n' > "$sx_eco/.ca_fixture"
+  printf '%s\n' sxa sxb > "$sx_eco/.ca_expected"
+  mk_consumer "$sx_eco" sxa "eigenscript work.eigs"
+  mk_consumer "$sx_eco" sxb "eigenscript work.eigs"
+  printf '%s\n' 'status=COMPLETE' 'row|p|v|PASS|0|0' 'row|q|v|PASS|0|0' 'row|r|v|PASS|0|0' \
+    > "$sx_eco/reports/consumer_acceptance/2026-09-20-prev.record"
+  if plant_record_floor_selfexclude "$sh" "$sx_eco" "$st_root/stub-ok"; then
+    plant_line "record-floor-selfexclude" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "record-floor-selfexclude" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- ROUND 8 finding 2, second mechanism: an INTERRUPTED wave leaves a
+  # dated record with status=INCOMPLETE. It is not a measurement, so it
+  # neither raises nor lowers the floor.
+  local ic_eco="$st_root/ic-eco"
+  mkdir -p "$ic_eco/reports/consumer_acceptance"
+  printf 'fixture\n' > "$ic_eco/.ca_fixture"
+  printf '%s\n' ica icb > "$ic_eco/.ca_expected"
+  mk_consumer "$ic_eco" ica "eigenscript work.eigs"
+  mk_consumer "$ic_eco" icb "eigenscript work.eigs"
+  printf '%s\n' 'status=COMPLETE' 'row|p|v|PASS|0|0' 'row|q|v|PASS|0|0' 'row|r|v|PASS|0|0' \
+    > "$ic_eco/reports/consumer_acceptance/2026-09-20-prev.record"
+  printf '%s\n' 'status=INCOMPLETE' 'row|a1|v|PASS|0|0' 'row|a2|v|PASS|0|0' 'row|a3|v|PASS|0|0' \
+    'row|a4|v|PASS|0|0' 'row|a5|v|PASS|0|0' 'row|a6|v|PASS|0|0' 'row|a7|v|PASS|0|0' \
+    'row|a8|v|PASS|0|0' 'row|a9|v|PASS|0|0' \
+    > "$ic_eco/reports/consumer_acceptance/2026-09-21-interrupted.record"
+  rec="$st_root/ic.record"
+  if plant_record_floor_incomplete "$sh" "$ic_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "record-floor-incomplete" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "record-floor-incomplete" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- noglob: tests/*.eigs stays literal; variant loop also set -f.
@@ -6725,8 +7227,8 @@ EOS
 
   # --- usage error does not rewrite a committed record.
   rec="$st_root/usage.record"
-  if plant_usage_no_candidate "$sh" "$good_eco" "$rec"; then
-    plant_line "usage-no-candidate" 0 "exit 2, sha256 unchanged, no .prev"
+  if plant_usage_no_candidate "$sh" "$good_eco" "$rec" "$bs_eco" "$st_root/stub-ok"; then
+    plant_line "usage-no-candidate" 0 "$LAST_PLANT_DETAIL"
   else
     plant_line "usage-no-candidate" 1 "$LAST_PLANT_DETAIL"
   fi
@@ -6940,6 +7442,27 @@ EOS
     "V=nf-$nf_tok" \
     'eigenscript-$V work.eigs || true' \
     'eigenscript work.eigs'
+  # ROUND 8 finding 1: the same computed name invoked from a CHILD SCRIPT.
+  # Every real consumer runs its suite through `bash tests/...`, and until
+  # the handler was exported this row read PASS cand_calls=1.
+  mk_consumer_block "$nf_eco" nf_child 'bash run.sh'
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'V=nf-%s\n' "$nf_tok"
+    printf 'eigenscript-$V work.eigs || true\n'
+    printf 'eigenscript work.eigs\n'
+  } > "$nf_eco/nf_child/run.sh"
+  chmod +x "$nf_eco/nf_child/run.sh"
+  # The stated residual, PINNED: a `sh` child does not import bash
+  # functions, so the same computed name there is still a swallowed 127.
+  mk_consumer_block "$nf_eco" nf_sh 'sh run.sh'
+  {
+    printf '#!/bin/sh\n'
+    printf 'V=nf-%s\n' "$nf_tok"
+    printf 'eigenscript-$V work.eigs || true\n'
+    printf 'eigenscript work.eigs\n'
+  } > "$nf_eco/nf_sh/run.sh"
+  chmod +x "$nf_eco/nf_sh/run.sh"
   printf '%s\n' '#!/bin/sh' "printf stale >> \"$nf_decoy_log\"" 'exit 0' \
     > "$nf_decoy/eigenscript-jit"
   chmod +x "$nf_decoy/eigenscript-jit"
@@ -6948,6 +7471,12 @@ EOS
     plant_line "not-found-variant" 0 "an uncovered computed name that resolves NOWHERE is FAIL|undeclared-variant:$nf_name, not a swallowed 127 -- with a decoy eigenscript-jit prepended to the harness PATH, which never ran"
   else
     plant_line "not-found-variant" 1 "$LAST_PLANT_DETAIL"
+  fi
+  rec="$st_root/nfchild.record"
+  if plant_not_found_child "$sh" "$nf_eco" "$st_root/stub-ok" "$rec" "$nf_name"; then
+    plant_line "not-found-child" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "not-found-child" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- round 5 fix 1: the farm holds EXEC WRAPPERS, so a tool runs AT ITS
@@ -7239,7 +7768,7 @@ EOS
   printf '%s\n' sa sb > "$stray_eco/.ca_expected"
   mk_consumer "$stray_eco" sa "eigenscript work.eigs"
   mk_consumer "$stray_eco" sb "eigenscript work.eigs"
-  printf '%s\n' 'row|sa|v|PASS|0|0' 'row|sb|v|PASS|0|0' \
+  printf '%s\n' 'status=COMPLETE' 'row|sa|v|PASS|0|0' 'row|sb|v|PASS|0|0' \
     > "$stray_eco/reports/consumer_acceptance/2026-09-21-ok.record"
   rec="$st_root/stray-low.record"
   if plant_record_stray "$sh" "$stray_eco" "$st_root/stub-ok" "$rec" smoke.record 1; then
@@ -7325,8 +7854,14 @@ EOS
       missing-declared) CA_ECO="$eco" plant_b2_missing_declared "$script" "$eco" "$st_root/stub-ok" ;;
       noglob-split)     plant_noglob "$script" "$eco" "$ng_cwd" "$st_root/stub-ok" ;;
       record-floor)     plant_b3_record_floor "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      record-floor-selfexclude) plant_record_floor_selfexclude "$script" "$eco" "$st_root/stub-ok" ;;
+      record-floor-incomplete)  plant_record_floor_incomplete "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       pause-before-rename) plant_j2_pause_rename "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
-      usage-no-candidate) plant_usage_no_candidate "$script" "$eco" "$rec" ;;
+      usage-no-candidate) plant_usage_no_candidate "$script" "$eco" "$rec" "$bs_eco" "$st_root/stub-ok" ;;
+      gfx-variant-export) plant_gfx_variant_export "$script" "$eco" "$st_root/stub-gfx-base" "$st_root/stub-gfx-cand" "$rec" "$gx_base_log" "$gx_gfx_log" ;;
+      gfx-prereq-nosubstring) plant_gfx_prereq_nosubstring "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      path-dropped-decoy) plant_path_dropped_decoy "$script" "$eco" "$st_root/stub-ok" "$rec" "$pd_decoy" ;;
+      gfx-selfskip)     plant_gfx_selfskip "$script" "$eco" "$st_root/stub-headless" "$rec" ;;
       tmp-beside-record) plant_show_tmp "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       workflow-prefer)  plant_workflow_prefer "$script" "$eco" ;;
       overlay-partial)  plant_overlay_partial "$script" "$eco" "$extra" "$rec" ;;
@@ -7338,6 +7873,7 @@ EOS
       path-farm)        plant_path_farm "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root/stale-farm.log" "$st_root/farm-cwd" ;;
       home-scratch)     plant_home_scratch "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root/stale-home.log" "$st_root/fake-home" ;;
       not-found-variant) plant_not_found_variant "$script" "$eco" "$st_root/stub-ok" "$rec" "$nf_name" "$nf_decoy" "$nf_decoy_log" ;;
+      not-found-child)   plant_not_found_child "$script" "$eco" "$st_root/stub-ok" "$rec" "$nf_name" ;;
       farm-exec-wrapper) plant_farm_exec_wrapper "$script" "$eco" "$st_root/stub-ok" "$rec" "$venv_dir" "$venv_marker" ;;
       farm-fail-closed)  plant_farm_fail_closed "$script" "$eco" "$st_root/stub-ok" "$rec" "$ffc_inject" ;;
       path-edit-absolute) plant_path_edit_absolute "$script" "$eco" "$st_root/stub-ok" "$rec" "$pe_absbin" "$stale_pe" "$pe_real" "$pe_tilde_dir" ;;
@@ -7415,7 +7951,7 @@ EOS
     # (UNEXERCISED, FAIL after a refused append, etc.). The transverse
     # is that the plant no longer FIRE.
     case "$plant" in
-      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy|farm-exec-wrapper|farm-fail-closed|shim-fail-closed|path-edit-absolute|drop-trust-root)
+      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|record-floor-selfexclude|record-floor-incomplete|not-found-child|gfx-variant-export|gfx-prereq-nosubstring|gfx-selfskip|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy|farm-exec-wrapper|farm-fail-closed|shim-fail-closed|path-edit-absolute|drop-trust-root)
         if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ]; then
           say "transverse $kind / $plant: intact=FIRES mutant=$mutant_st  OK"
         else
@@ -7495,6 +8031,9 @@ EOS
   transverse_one log-tail                log-tail         "$lt_eco"   t-lt
   transverse_one expected-floor          missing-declared "$b2_eco"   t-b2
   transverse_one record-floor            record-floor     "$b3_eco"   t-b3
+  transverse_one record-floor-max        record-floor     "$b3_eco"   t-b3max
+  transverse_one record-self-exclude     record-floor-selfexclude "$sx_eco" t-sx
+  transverse_one record-floor-complete   record-floor-incomplete  "$ic_eco" t-ic
   transverse_one noglob-split            noglob-split     "$ng_eco"   t-ng
   transverse_one pause-before-rename     pause-before-rename "$j_eco" t-j2
   transverse_one usage-before-record     usage-no-candidate "$good_eco" t-use
@@ -7511,6 +8050,11 @@ EOS
   transverse_one path-farm               path-farm        "$farm_eco" t-farm
   transverse_one home-scratch            home-scratch     "$home_eco" t-home
   transverse_one not-found-guard         not-found-variant "$nf_eco"  t-nf
+  transverse_one not-found-export        not-found-child  "$nf_eco"   t-nfc
+  transverse_one gfx-variant-export      gfx-variant-export "$gx_eco" t-gx
+  transverse_one gfx-declared-only       gfx-prereq-nosubstring "$ngfx_eco" t-ngfx
+  transverse_one dropped-filter          path-dropped-decoy "$pd_eco" t-pd
+  transverse_one log-tail-nonpass        gfx-selfskip     "$gs_eco"   t-ssl
   transverse_one scratch-fail-closed     scratch-fail-closed "$good_eco" t-sfc
   transverse_one overlay-variant-shim    overlay-variant  "$twin_eco" t-twin "$twin_tree/src/eigenscript"
   transverse_one drop-sha-readback       drop-sha         "$good_eco" t-dsha

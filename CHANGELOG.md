@@ -397,9 +397,13 @@ All notable changes to EigenScript are documented here.
   is reachable from nothing. Names outside the candidate set keep their
   127-shims in `$SHIM` (`path_masked=`) so the row is
   `FAIL|undeclared-variant:<name>` by name, and a name that resolves
-  NOWHERE is recorded the same way by the block shell's
-  `command_not_found_handle` instead of being a `127` the consumer can
-  swallow with `|| true`. `EIGS_DIR` is the twin of that PATH -- a
+  NOWHERE is recorded the same way by `command_not_found_handle` instead
+  of being a `127` the consumer can swallow with `|| true`. That handler
+  travels as `BASH_ENV`, so it reaches every non-interactive bash in the
+  row and not only the block shell; `export -f` alone does not travel,
+  because every command runs through a `#!/bin/sh` farm wrapper and dash
+  drops the `BASH_FUNC_…%%` entry (measured). A `#!/bin/sh` child reads
+  neither and is the stated residual, pinned by plant `not-found-child`. `EIGS_DIR` is the twin of that PATH -- a
   `cp -rL` copy of the candidate tree that used to hand out the sibling's
   `src/eigenscript-full` -- so every `eigenscript*` file in the overlay is
   a shim too (`overlay_shimmed=`). Three residuals remain, each named in
@@ -437,8 +441,14 @@ All notable changes to EigenScript are documented here.
   Non-PASS rows keep the last 60 lines of the consumer log in the
   record (`log|<name>|<line>`), or `log|<name>|preflight: <reason>` when
   there is no consumer output; `CA_LOGS` copies logs before cleanup. The
-  inventory is a declared 16-name floor plus the last committed record's
-  row count (lexically greatest dated filename, never mtime); `run`
+  inventory is a declared 16-name floor plus a committed-record floor: the
+  MAXIMUM row count over the DATED records whose header says
+  `status=COMPLETE`, excluding by realpath the file this run is writing,
+  and read BEFORE the run takes the record path. Reading the lexically
+  newest dated record at scan time let this run's own `INCOMPLETE` header
+  -- under the `reports/consumer_acceptance/<date>-<tag>.record`
+  convention this repo documents -- set the floor to 0, so a 2-consumer
+  inventory `PASS`ed beside a 3-row committed record. `run`
   names a floor failure on its own `inventory floor: <why>` line, on
   stdout before the verdict and in the record footer, while the
   `VERDICT:` line itself stays exact. `_extract_runcmd.py`
@@ -470,6 +480,34 @@ All notable changes to EigenScript are documented here.
   token, and the hygiene scan asks only about entries tagged with it: a
   CONCURRENT self-test's `/tmp/ca-st.*` used to be read as this run's
   leftover and printed a false `SELF-TEST: FAIL`.
+
+- **Consumer-acceptance harness, round 8 (#1213, #1214, #1217, #1229).**
+  Eight defects `/code-review` found against round 7, each fixed with the
+  plant that goes red if it returns. `command_not_found_handle` reaches
+  every non-interactive bash child via `BASH_ENV` (`export -f` alone is
+  dropped by the `#!/bin/sh` farm wrapper, measured) -- the `bash
+  tests/run.sh` shape every real consumer has used to swallow a computed
+  `eigenscript-$V` and read `PASS`. The record floor is the MAX row count
+  over DATED `status=COMPLETE` records, excluding this run's own file by
+  realpath and computed before the record path is taken. `PASS|skips=N`
+  keeps its `log|` tail (it fails the wave, and the SKIP lines are the
+  evidence). `--gfx <binary>` is what `EIGENSCRIPT_GFX` names, recorded as
+  `eigenscript_gfx_exported=`; it used to name the headless base shim. The
+  `gfx` prerequisite is declared-only -- the old `*gfx*` substring made
+  `--no-gfx` a hard gfx requirement -- and no real consumer's acceptance
+  command contains `gfx` today. The bare-candidate refusal moved into the
+  usage-before-record block, so that exit 2 leaves the previous record
+  byte-identical. `path_dropped=` uses the farm's own `eigenscript*`
+  filter, so a hidden `eigenscript.old` is named. In the deriver, a
+  here-string (`<<<`) and a quoted `<<WORD` are no longer heredoc openers
+  that swallowed the rest of the file, `$(…)` bodies inside double quotes
+  are scanned recursively (`BIN="$(command -v eigenscript-full)"`), and a
+  `for` list of literal names is an invocation position. In
+  `_extract_runcmd.py`, a quoted inline scalar (`runCmd: 'make test'`)
+  loses its quotes -- `bash -c` used to run a command named `'make test'`
+  -- and the PyYAML cross-check has a floor: every row declared a valid
+  document by construction must reach the oracle, or the selftest fails
+  rather than printing `PASS yaml-oracle=0`.
 
 - **Consumer-acceptance `run` residuals (M1 round 7).** Self-test TMPDIR is
   private (concurrent self-tests no longer `rm -rf` each other's

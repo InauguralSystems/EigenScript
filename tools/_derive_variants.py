@@ -23,8 +23,16 @@ A name enters the set only from an INVOCATION POSITION:
       setsid / stdbuf / time / `timeout N` / `xvfb-run ...` / `command -v`,
       or the value of a variable assignment (`EIGS=eigenscript-full`,
       `export EIGENSCRIPT_BIN=eigenscript-full`) or of a `${VAR:-default}`
-      expansion. Comments (`#` outside quotes) and heredoc BODIES are
-      stripped before tokenising.
+      expansion, or a literal word in the LIST of a `for`/`select` (the
+      values the loop body runs). The body of a `$(...)` or `` `...` ``
+      substitution is itself shell and is scanned recursively, INCLUDING
+      inside double quotes, so the ordinary `BIN="$(command -v
+      eigenscript-full)"` idiom derives the name (round 7 derived it only
+      unquoted). Comments (`#` outside quotes) and heredoc BODIES are
+      stripped before tokenising; a heredoc OPENER is `<<`/`<<-` outside
+      quotes and not part of `<<<` -- round 7 read a here-string
+      (`tr a-z A-Z <<< hello`) and a quoted `"see <<EOF above"` as openers
+      and swallowed the rest of the file as a heredoc body.
   (b) Python -- a string literal that is the first element of a
       `subprocess.*` / `os.system` / `os.exec*` / `shutil.which` argument,
       or the default of `os.environ.get("X", "eigenscript-y")`. A
@@ -190,6 +198,52 @@ def _strip_comment(line):
 HEREDOC_RE = re.compile(r"<<[-~]?\s*([\"']?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
 
+# CA-GUARD:heredoc-opener
+# ROUND 8, finding 4 (measured by /code-review on 21daf05): a bare
+# HEREDOC_RE.search() over the line called `tr a-z A-Z <<< hello` a heredoc
+# opener with delimiter `hello`, and `echo "see <<EOF above"` an opener with
+# delimiter `EOF`. shell_lines then SKIPPED every following line until one
+# equal to that word -- usually to EOF -- so `eigenscript-full work.eigs`
+# below either line derived NOTHING and the deriver's own witness said the
+# file held no invocation. Two rules, both from the shell grammar:
+#   `<<<` is a HERE-STRING, not a heredoc (the `<<` is followed by `<`);
+#   `<<` inside quotes is text, so the scan tracks quote state.
+def _heredoc_delim(line):
+    """The delimiter word of an UNQUOTED heredoc opener on this line, or None."""
+    i = 0
+    n = len(line)
+    quote = None
+    while i < n:
+        c = line[i]
+        if quote:
+            if c == "\\" and quote == '"' and i + 1 < n:
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if c in "'\"":
+            quote = c
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if c == "<" and line[i + 1:i + 2] == "<":
+            if line[i + 2:i + 3] == "<":
+                i += 3  # here-string: data on THIS line, no body follows
+                continue
+            m = HEREDOC_RE.match(line, i)
+            if m:
+                return m.group(2)
+            i += 2
+            continue
+        i += 1
+    return None
+# CA-GUARD:end-heredoc-opener
+
+
 def shell_lines(text):
     """Yield (lineno, line) for shell lines with comments and heredoc
     BODIES removed. A heredoc body is data, not commands."""
@@ -199,10 +253,9 @@ def shell_lines(text):
     while i < n:
         raw = lines[i]
         line = _strip_comment(raw)
-        m = HEREDOC_RE.search(line)
+        delim = _heredoc_delim(line)
         yield (i + 1, line)
-        if m:
-            delim = m.group(2)
+        if delim is not None:
             j = i + 1
             while j < n and lines[j].strip() != delim:
                 j += 1
@@ -267,55 +320,144 @@ def _split_words(line):
 SEPARATORS = {";", ";;", "|", "||", "&&", "&", "(", ")", "$(", "`", "{", "}"}
 
 
+# CA-GUARD:subst-body
+# ROUND 8, finding 5 (measured): _split_words keeps a DOUBLE-QUOTED string
+# as one opaque token, so the ordinary `BIN="$(command -v eigenscript-full)"`
+# idiom derived NOTHING while the unquoted spelling derived the name -- and
+# `command -v` is advertised as a handled invocation position in the
+# docstring, the harness header, CHANGELOG and docs/CI.md. The bodies of
+# `$(...)` and `` `...` `` are SHELL, wherever they sit, so they are scanned
+# recursively. Single-quoted text is not expanded, so it is not a body.
+def _subst_bodies(tok):
+    """Bodies of $(...) / `...` inside tok that are not single-quoted."""
+    out = []
+    i = 0
+    n = len(tok)
+    quote = None
+    while i < n:
+        c = tok[i]
+        if quote == "'":
+            if c == "'":
+                quote = None
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if c == "'" and quote is None:
+            quote = "'"
+            i += 1
+            continue
+        if c == '"':
+            quote = None if quote == '"' else '"'
+            i += 1
+            continue
+        if c == "$" and tok[i + 1:i + 2] == "(":
+            depth = 1
+            j = i + 2
+            while j < n and depth:
+                if tok[j] == "(":
+                    depth += 1
+                elif tok[j] == ")":
+                    depth -= 1
+                j += 1
+            if depth == 0:
+                out.append(tok[i + 2:j - 1])
+                i = j
+                continue
+            i += 2
+            continue
+        if c == "`":
+            j = tok.find("`", i + 1)
+            if j > i:
+                out.append(tok[i + 1:j])
+                i = j + 1
+                continue
+        i += 1
+    return out
+# CA-GUARD:end-subst-body
+
+
 def scan_shell(text, hits, path, line_offset=0):
     """Record (name, lineno) for every invocation position in shell text."""
     for lineno, line in shell_lines(text):
-        toks = _split_words(line)
-        cmdpos = True
-        pending_prefix = ""
-        for tok in toks:
-            if tok in SEPARATORS:
+        scan_shell_line(line, hits, path, lineno + line_offset)
+
+
+def scan_shell_line(line, hits, path, lineno, depth=0):
+    toks = _split_words(line)
+    cmdpos = True
+    pending_prefix = ""
+    # CA-GUARD:for-list
+    # ROUND 8, finding 5b (measured): `for b in eigenscript-full
+    # eigenscript-gfx; do "$b" x; done` derived []. The words of a `for`
+    # list are the values the loop body RUNS, so a literal runtime name
+    # there is an invocation position exactly like an assignment's value.
+    for_state = 0
+    # CA-GUARD:end-for-list
+    for tok in toks:
+        if tok in SEPARATORS:
+            cmdpos = True
+            pending_prefix = ""
+            for_state = 0
+            continue
+        if tok in ("<", ">", ">>", "<<"):
+            cmdpos = False
+            continue
+        word = _unquote(tok)
+        # ${VAR:-eigenscript-x} defaults are invocation-shaped wherever
+        # they appear: the value is what a later `$VAR` runs.
+        for dflt in DEFAULT_EXPANSION.findall(tok):
+            cand = _unquote(dflt).strip()
+            if FULL_NAME_RE.match(cand):
+                hits.append((cand, path, lineno))
+        if depth < 4:
+            for body in _subst_bodies(tok):
+                scan_shell_line(body, hits, path, lineno, depth + 1)
+        if for_state:
+            if for_state == 1:            # the loop variable
+                for_state = 2
+                continue
+            if for_state == 2:            # the `in` that opens the list
+                for_state = 3 if word == "in" else 0
+                continue
+            if word in ("do", "done"):    # the list is over
+                for_state = 0
                 cmdpos = True
-                pending_prefix = ""
-                continue
-            if tok in ("<", ">", ">>", "<<"):
-                cmdpos = False
-                continue
-            word = _unquote(tok)
-            # ${VAR:-eigenscript-x} defaults are invocation-shaped wherever
-            # they appear: the value is what a later `$VAR` runs.
-            for dflt in DEFAULT_EXPANSION.findall(tok):
-                cand = _unquote(dflt).strip()
-                if FULL_NAME_RE.match(cand):
-                    hits.append((cand, path, lineno + line_offset))
-            if not cmdpos:
-                continue
-            if word in KEYWORDS or word in ASSIGN_KEYWORD:
-                # a keyword, or `export`/`local`/..., keeps the command
-                # position open for the word or assignment that follows
-                continue
-            m = ASSIGN_RE.match(word)
-            if m:
-                val = _unquote(m.group(2)).strip()
-                if FULL_NAME_RE.match(val):
-                    hits.append((val, path, lineno + line_offset))
-                continue  # assignment prefix: still a command position
-            if pending_prefix:
-                if word.startswith("-"):
-                    continue  # a flag of the prefix
-                if pending_prefix == "timeout" and DURATION_RE.match(word):
-                    continue  # the budget, not the command
-                pending_prefix = ""
-            elif word.startswith("-"):
-                continue
-            if word in PASSTHROUGH:
-                continue
-            if word in OPERAND_PREFIX:
-                pending_prefix = word
                 continue
             if FULL_NAME_RE.match(word):
-                hits.append((word, path, lineno + line_offset))
-            cmdpos = False
+                hits.append((word, path, lineno))
+            continue
+        if not cmdpos:
+            continue
+        if word in KEYWORDS or word in ASSIGN_KEYWORD:
+            # a keyword, or `export`/`local`/..., keeps the command
+            # position open for the word or assignment that follows
+            if word in ("for", "select"):
+                for_state = 1
+            continue
+        m = ASSIGN_RE.match(word)
+        if m:
+            val = _unquote(m.group(2)).strip()
+            if FULL_NAME_RE.match(val):
+                hits.append((val, path, lineno))
+            continue  # assignment prefix: still a command position
+        if pending_prefix:
+            if word.startswith("-"):
+                continue  # a flag of the prefix
+            if pending_prefix == "timeout" and DURATION_RE.match(word):
+                continue  # the budget, not the command
+            pending_prefix = ""
+        elif word.startswith("-"):
+            continue
+        if word in PASSTHROUGH:
+            continue
+        if word in OPERAND_PREFIX:
+            pending_prefix = word
+            continue
+        if FULL_NAME_RE.match(word):
+            hits.append((word, path, lineno))
+        cmdpos = False
 
 
 # CA-GUARD:path-edit-substring
@@ -783,6 +925,33 @@ def selftest():
         ("shell-path-is-not-a-name", {"run.sh":
             "#!/bin/sh\n./eigenscript-local x\n/usr/bin/eigenscript-abs x\n"},
          set()),
+        # ROUND 8, finding 4 (measured on 21daf05): a here-string was read
+        # as a heredoc opener with delimiter `hello`, so every line after it
+        # was swallowed as a heredoc BODY and the file derived nothing.
+        ("here-string-is-not-a-heredoc", {"run.sh": (
+            "#!/bin/sh\n"
+            "tr a-z A-Z <<< hello\n"
+            "eigenscript-hs work.eigs\n"
+        )}, {"eigenscript-hs"}),
+        # Same finding, second shape: `<<WORD` inside a quoted string.
+        ("quoted-heredoc-marker-is-text", {"run.sh": (
+            "#!/bin/sh\n"
+            'echo "see <<EOF above"\n'
+            "eigenscript-qh work.eigs\n"
+        )}, {"eigenscript-qh"}),
+        # ROUND 8, finding 5 (measured): the quoted `$(command -v ...)`
+        # idiom, a quoted substitution in an argument, and a `for` list of
+        # literal names all derived [] while their unquoted spellings did not.
+        ("quoted-command-substitution", {"run.sh": (
+            "#!/bin/sh\n"
+            'BIN="$(command -v eigenscript-qs)"\n'
+            'echo "$(eigenscript-qt --version)"\n'
+            'REF="`command -v eigenscript-qb`"\n'
+        )}, {"eigenscript-qs", "eigenscript-qt", "eigenscript-qb"}),
+        ("for-list-of-names", {"run.sh": (
+            "#!/bin/sh\n"
+            'for b in eigenscript-fl1 eigenscript-fl2; do "$b" x; done\n'
+        )}, {"eigenscript-fl1", "eigenscript-fl2"}),
         ("extensionless-shebang", {"acceptance":
             "#!/usr/bin/env bash\neigenscript-ext work.eigs\n"},
          {"eigenscript-ext"}),

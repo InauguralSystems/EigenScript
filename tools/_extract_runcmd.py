@@ -161,11 +161,39 @@ def extract_block(src):
     return text
 
 
+# CA-GUARD:inline-quoted-scalar
+# ROUND 8, finding 7 (measured by /code-review on 21daf05): `runCmd: 'make
+# test'` extracted the QUOTES with the text, so the harness ran
+# `bash -e -o pipefail -c "'make test'"`, whose command NAME is the
+# five-word string `'make test'` -- rc 127, a row that FAILs for a reason
+# that has nothing to do with the candidate. A YAML inline scalar may be
+# single- or double-quoted; the quotes are syntax, not command text.
+def _unquote_scalar(text):
+    if len(text) < 2 or text[0] != text[-1] or text[0] not in "'\"":
+        return text
+    q = text[0]
+    inner = text[1:-1]
+    if q == "'":
+        return inner.replace("''", "'")
+    out = []
+    i = 0
+    n = len(inner)
+    while i < n:
+        if inner[i] == "\\" and i + 1 < n:
+            out.append(inner[i + 1])
+            i += 2
+            continue
+        out.append(inner[i])
+        i += 1
+    return "".join(out)
+# CA-GUARD:end-inline-quoted-scalar
+
+
 def extract_inline(src):
     m = INLINE_RE.search(src)
     if not m:
         return None
-    text = m.group(1).strip()
+    text = _unquote_scalar(m.group(1).strip())
     return text or None
 
 
@@ -289,11 +317,39 @@ def selftest():
             "runCmd: |\r\n  make test\r\n  make more\r\n",
             "make test\nmake more",
         ),
+        # ROUND 8, finding 7 (measured): the quotes of an inline scalar were
+        # extracted with the text, so `bash -c "'make test'"` ran a command
+        # NAME of `'make test'` and the row read 127.
+        (
+            "inline-single-quoted",
+            "runCmd: 'make test'\n",
+            "make test",
+        ),
+        (
+            "inline-double-quoted",
+            'runCmd: "make test && echo ok"\n',
+            "make test && echo ok",
+        ),
+        (
+            "inline-bare",
+            "runCmd: make test\n",
+            "make test",
+        ),
     ]
+    # CA-GUARD:yaml-valid-set
+    # DECLARED, not derived: the rows that are a complete YAML document by
+    # construction. Every one of them must reach the oracle, or the
+    # cross-check examined less than it claims.
+    yaml_valid = set(
+        name for name, _, _ in cases
+    ) - {"literal-stop-at-less-indent"}
+    # CA-GUARD:end-yaml-valid-set
     examined = 0
     failed = 0
     yaml_checked = 0
     yaml_skip = 0
+    yaml_invalid = 0
+    yaml_ok_names = set()
     for name, src, want in cases:
         examined += 1
         got = extract(src)
@@ -305,8 +361,11 @@ def selftest():
         st, oracle = _yaml_oracle(src)
         if st == "skip":
             yaml_skip += 1
+        elif st == "invalid":
+            yaml_invalid += 1
         elif st == "ok":
             yaml_checked += 1
+            yaml_ok_names.add(name)
             oracle_cmd = oracle.rstrip("\n") if not name.startswith("chomp-keep") else oracle
             # keep (`|+`) is compared as the oracle emitted it; clip/strip
             # command form rstrips trailing newlines.
@@ -324,6 +383,36 @@ def selftest():
                     )
                     failed += 1
         # invalid: over-consume fixtures are not a complete YAML document
+    # CA-GUARD:yaml-floor
+    # The oracle's own witness. yaml_checked had no floor, so a change that
+    # made every fixture unparseable (or moved runCmd where _find_runcmd
+    # cannot see it) left examined=12 yaml_checked=0 and still printed PASS.
+    if yaml_skip == 0:
+        if yaml_ok_names != yaml_valid:
+            sys.stderr.write(
+                "FAIL yaml-oracle floor: checked %r declared-valid %r\n"
+                % (sorted(yaml_ok_names), sorted(yaml_valid))
+            )
+            failed += 1
+        if yaml_checked < len(yaml_valid) or len(yaml_valid) == 0:
+            sys.stderr.write(
+                "FAIL yaml-oracle floor: yaml_checked=%d < declared-valid=%d\n"
+                % (yaml_checked, len(yaml_valid))
+            )
+            failed += 1
+    elif yaml_skip != len(cases):
+        sys.stderr.write(
+            "FAIL yaml-oracle: PyYAML skipped %d of %d rows (all or nothing)\n"
+            % (yaml_skip, len(cases))
+        )
+        failed += 1
+    if yaml_checked + yaml_skip + yaml_invalid != examined:
+        sys.stderr.write(
+            "FAIL yaml-oracle accounting: ok=%d skip=%d invalid=%d != examined=%d\n"
+            % (yaml_checked, yaml_skip, yaml_invalid, examined)
+        )
+        failed += 1
+    # CA-GUARD:end-yaml-floor
     if examined != len(cases) or examined == 0:
         sys.stderr.write(
             "FAIL examined=%d len(cases)=%d (want examined == len(table) > 0)\n"
@@ -339,7 +428,8 @@ def selftest():
         )
     else:
         sys.stdout.write(
-            "SELFTEST: PASS examined=%d yaml-oracle=%d\n" % (examined, yaml_checked)
+            "SELFTEST: PASS examined=%d yaml-oracle=%d/%d invalid=%d\n"
+            % (examined, yaml_checked, len(yaml_valid), yaml_invalid)
         )
     return 0
 

@@ -621,6 +621,76 @@ dynamics, eddy, phugoid, Tidepool), and a Dockerfile is not the acceptance
 command; there is no `shell=True` PATH string, no `Makefile.in`, no
 `${PATH:+`, and no `runCmd` that sources an extensionless file.
 
+### Round 8 — what the third critic found, and what is now true
+
+`/code-review 1224 medium` (the third critic family, run once before merge)
+returned ten findings against `21daf05`. Eight are fixed here; each is stated
+as what is now TRUE, with the plant that goes red if it stops being true.
+
+1. **The not-found handler reaches every bash child.** It used to be defined
+   in the block shell and nowhere else, so the shape every real consumer has
+   — `bash tests/run.sh` — swallowed a computed `eigenscript-$V` as a bare
+   `127` and the row read `PASS cand_calls=1` while this document claimed
+   `FAIL|undeclared-variant`. `export -f` is NOT enough and that is measured,
+   not assumed: every command in a row goes through a farm wrapper whose
+   first line is `#!/bin/sh`, `/bin/sh` is dash, and dash drops the
+   `BASH_FUNC_command_not_found_handle%%` environment entry (`env | grep -c
+   BASH_FUNC`: 1 directly, 0 through the wrapper). The handler therefore
+   travels as `BASH_ENV`, which every non-interactive bash sources. Residual,
+   pinned: a `#!/bin/sh` child reads neither, so plant `not-found-child`
+   asserts the bash row `FAIL`s by name AND that the `sh` row still `PASS`es.
+2. **The inventory floor cannot read this run's own record.** With
+   `CA_RECORD` inside `reports/consumer_acceptance/` — the convention this
+   repo's own README states — the run's `INCOMPLETE` header was the newest
+   dated record by the time the floor was read, so the floor was 0 and a
+   2-consumer inventory `PASS`ed beside a 3-row committed record (measured).
+   The floor is now the MAX row count over the DATED records whose header
+   says `status=COMPLETE`, excluding the file at `$RECORD` by realpath, read
+   BEFORE the run takes the record path. Plants: `record-floor-selfexclude`
+   (the measured fixture, plus a stale 9-row `COMPLETE` record already at
+   `$RECORD` that must not become the floor), `record-floor-incomplete` (an
+   interrupted wave's 9-row `INCOMPLETE` record does not raise it), and `B3`
+   (a lexically newer 1-row `COMPLETE` record does not lower it).
+3. **`PASS|skips=N` carries its `log|` tail.** That verdict sets `ANY_BAD`
+   and fails the wave, and its evidence IS the consumer's `SKIP` lines — yet
+   the `PASS|*` exemption dropped exactly that row's tail. #1214 as written:
+   every row that is not a bare `PASS` is followed by `log|<name>|<line>`.
+4. **A here-string is not a heredoc.** `tr a-z A-Z <<< hello`, and a quoted
+   `"see <<EOF above"`, were read as heredoc openers and the deriver
+   swallowed the rest of the file as a body — deriving `[]` and reporting no
+   exclusions, so its own witness lied.
+5. **A quoted `$(…)` is scanned.** `BIN="$(command -v eigenscript-full)"`
+   derived nothing while the unquoted spelling derived the name; a `for` list
+   of literal names derived nothing either. Substitution bodies are now
+   scanned recursively inside double quotes, and a `for`/`select` list is an
+   invocation position.
+6. **`--gfx <binary>` is what `EIGENSCRIPT_GFX` names.** It pointed at the
+   headless base shim, so a consumer honouring the variable ran its gfx suite
+   against the wrong binary. Plant `gfx-variant-export` runs a base stub that
+   lacks `gfx_open` and a gfx stub that has it, and asserts that only the gfx
+   stub was executed and that `cand_calls` was credited to `eigenscript-gfx`.
+   The value is in the record header as `eigenscript_gfx_exported=`.
+7. **The runCmd extractor's YAML oracle has a floor**, and a quoted inline
+   scalar loses its quotes. `yaml_checked` had none and `invalid` counted as
+   neither, so the cross-check could examine zero documents and still print
+   `SELFTEST: PASS`; and `runCmd: 'make test'` extracted the quotes, so
+   `bash -c` ran a command named `'make test'` → 127.
+8. **The bare-candidate refusal is a usage error and now happens before the
+   record path is taken**, so it leaves the previous record byte-identical
+   and writes no `.prev`, like every other exit-2 usage error. Plant
+   `usage-no-candidate` has both rows.
+9. **A `gfx` prerequisite is DECLARED, never a substring of the command.**
+   `case "$cmd" in *gfx*)` made `--no-gfx`, or a path like
+   `tests/gfx_smoke.sh`, a hard gfx-build prerequisite and refused a headless
+   row that would have passed. Measured: no acceptance command of the 16 real
+   consumers contains `gfx` today, so this changes no real row; `dynamics`
+   keeps its declared `gfx` in `PREREQS`.
+10. **`path_dropped=` uses the farm's own filter.** The farm takes every
+    `eigenscript*` file out of reach but the header listed only `eigenscript`
+    and `eigenscript-*`, so a stale `eigenscript.old` was hidden without
+    being named. On this box the witness lists `eigenscript-full.stale`,
+    `eigenscript-full.0.16.3.bak` and `eigenscript-full.pre291.bak`.
+
 `plan` prints the edits as `path_edit|<consumer>|<component>|<file>:<line>`
 and the scan's **own witness** as `pathexamined|<consumer>|<files>|<edits>`,
 so "no edits" can be told apart from "the scan examined nothing". All 16
@@ -661,9 +731,8 @@ enumeration follows symlinked `PATH` directories (`find -L`); a directory
 that is executable but not readable contributes nothing and is reachable
 from nothing. What the claim now is, exactly: **no stale `eigenscript*`
 file is on the row's `PATH` at all**, and a name that resolves nowhere is
-`FAIL|undeclared-variant:<name>` (the block shell's
-`command_not_found_handle` records it) rather than a `127` the consumer
-can swallow with `|| true`. Three residuals stay, stated in the header
+`FAIL|undeclared-variant:<name>` (`command_not_found_handle` records it)
+rather than a `127` the consumer can swallow with `|| true`. Three residuals stay, stated in the header
 and each **pinned by a plant that fires only while it holds**:
 
 1. a PATH edit the scanner cannot see because the consumer COMPUTES it at
