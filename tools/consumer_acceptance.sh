@@ -21,6 +21,12 @@
 #     --full shims eigenscript-full; --gfx shims eigenscript-gfx. A name a
 #     consumer invokes that the set does not cover is UNRUNNABLE|prereq:variant:<name>
 #     and a 127-shim of that name sits on PATH (never a stale PATH fall-through).
+#     The name set is DERIVED, never typed: every text file in the checkout
+#     (grep -rIl, minus .git -- no extension allowlist, so a .py, a Makefile
+#     or an extensionless script counts) is scanned for eigenscript and
+#     eigenscript-[a-z0-9-]+ (multi-hyphen included). The check runs in
+#     run_one too, not only on the runCmd tokens, so a name reached from a
+#     script the consumer CALLS is refused before the stale binary is.
 #     PATH shim logs argv+rc to a scratch file under a directory the consumer
 #     is never told about (not the shim dir, not $EIGS_DIR, not their parents);
 #     the path is baked into the shim (not exported; not named CA_*). cand_calls
@@ -68,6 +74,11 @@
 #                 overlay_partial    force the first cp -rL of src/ to fail
 #                                    after creating dst/src/data, so the
 #                                    per-entry retry runs (plant overlay-partial)
+#                 record_floor=N     fixture-gated record floor of N (plant B3)
+#                 pretend_root       self-test: take the uid-0 decision branch
+#                                    of plant stale-unwritable (on a non-root
+#                                    box no drop tool applies, so the plant
+#                                    SKIPs by name and is counted)
 #
 # Record lifecycle (the class, fail-closed):
 #   At every moment from process start to exit, the file at CA_RECORD is
@@ -133,6 +144,22 @@
 #     runtime after one candidate setup call.
 #   - stdin-fed programs and `eigenscript --test` count as probe; no
 #     real consumer uses them.
+#   - variant derivation is by TOKEN, not by call site: a name that only
+#     ever appears in prose, a comment, a JSON blob or a release-asset
+#     filename still enters the set and makes the row UNRUNNABLE until
+#     the operator supplies that candidate. Measured against the real
+#     ecosystem on 2026-09-21: ouroboros yields eigenscript-src (a
+#     Dockerfile path), eigenscript-aot-compiler-engineer (a skill name
+#     in CLAUDE.md), eigenscript-probe / eigenscript-original /
+#     eigenscript-missing-reuse (bench JSON); iLambdaAi yields
+#     eigenscript-full-from-env (a comment) and eigenscript-full-linux-x86
+#     (a release asset URL); Tidepool yields eigenscript-gfx-binary (a
+#     usage line). Fail-closed and named beats a silent stale-PATH PASS
+#     (#1213), but narrowing this to invocation sites is open work.
+#   - the unwritable-directory plant cannot be planted as uid 0. As root
+#     the self-test drops to an unprivileged user; with no runuser/setpriv
+#     + nobody, or when a probe under that user fails, the plant and its
+#     transverse row SKIP BY NAME and the final line reports skipped=N.
 #
 # examined != inventory on a COMPLETED record is unreachable without a
 # broken loop: the production path that stops early is an interrupt, and
@@ -238,8 +265,9 @@ ACCEPT_WF=""
 ACCEPT_CMD=""
 ACCEPT_AMBIGUOUS=""
 accept_cmd_of() {
-  local r="$1" wfdir="$ECO/$r/.github/workflows"
-  local f p cmd base
+  local r wfdir f p cmd base
+  r="$1"
+  wfdir="$ECO/$r/.github/workflows"
   local -a others
   ACCEPT_WF=""
   ACCEPT_CMD=""
@@ -279,25 +307,29 @@ accept_cmd_of() {
   return 1
 }
 
-# Executable names this consumer invokes: eigenscript, or eigenscript-<one
-# component> (eigenscript-full). Tokens with extra hyphens
-# (eigenscript-full-from-env, eigenscript-gfx-binary) are comments, not
-# PATH commands. Derived from scripts/workflows, never typed.
+# Executable names this consumer invokes: eigenscript, or
+# eigenscript-[a-z0-9-]+ (multi-hyphen included). Derived from EVERY text
+# file in the checkout (grep -rIl, no type allowlist, minus .git), never
+# typed. Bind locals first, then derive — `local r=... dir=$r` expands $r
+# before the local binds it, and under set -u a run_one subshell dies
+# with `r: unbound variable` and yields "" (the derived set is then never
+# consulted).
 variants_of() {
-  local r="${1:-}" dir="${ECO:-}/$r" n out="" seen=" "
-  local raw=""
+  local r n out="" seen=" " dir raw="" f
+  r="${1:-}"
+  dir="${ECO:-}/$r"
   [ -d "$dir" ] || { printf '%s' ""; return 0; }
-  raw="$(grep -Rho --include='*.sh' --include='*.yml' --include='*.yaml' --include='*.eigs' \
-    -E 'eigenscript(-[a-z]+)*' "$dir" 2>/dev/null || true)"
+  raw=""
+  while IFS= read -r f || [ -n "$f" ]; do
+    [ -n "$f" ] || continue
+    [ -f "$f" ] || continue
+    raw="${raw}$(grep -hEo 'eigenscript(-[a-z0-9]+)*' "$f" 2>/dev/null || true)"$'\n'
+  done <<< "$(grep -rIl --exclude-dir=.git . "$dir" 2>/dev/null || true)"
   while IFS= read -r n || [ -n "$n" ]; do
     [ -z "$n" ] && continue
     case "$n" in
       eigenscript) ;;
-      eigenscript-[a-z]*)
-        case "$n" in
-          eigenscript-*-*) continue ;;
-        esac
-        ;;
+      eigenscript-[a-z0-9]*) ;;
       *) continue ;;
     esac
     case "$seen" in
@@ -567,6 +599,9 @@ build_candidate_overlay() {
 
 # Declared expected names for this ECO. Fixtures skip EXPECTED_CONSUMERS
 # unless $ECO/.ca_expected lists them. Production always uses the table.
+# Record floor: lexically greatest YYYY-MM-DD-… filename, never mtime.
+# Fixtures read $ECO/reports/consumer_acceptance when that dir exists so
+# plant B3 can reach the floor; CA_FAULT=record_floor=N overrides.
 load_expected_list() {
   EXPECTED_LIST=()
   RECORD_FLOOR=0
@@ -581,19 +616,46 @@ load_expected_list() {
   elif [ ! -f "${ECO:-}/.ca_fixture" ]; then
     EXPECTED_LIST=("${EXPECTED_CONSUMERS[@]}")
   fi
-  if [ ! -f "${ECO:-}/.ca_fixture" ]; then
-    local f newest="" rows
-    for f in "$HERE/reports/consumer_acceptance/"*.record; do
+  local rec_dir="" f newest="" rows b nb
+  if fixture_fault; then
+    case "${CA_FAULT:-}" in
+      record_floor=*)
+        rec_dir="__fault__"
+        rows="${CA_FAULT#record_floor=}"
+        ;;
+    esac
+  fi
+  if [ -z "$rec_dir" ]; then
+    if [ -f "${ECO:-}/.ca_fixture" ] && [ -d "${ECO:-}/reports/consumer_acceptance" ]; then
+      rec_dir="$ECO/reports/consumer_acceptance"
+    elif [ ! -f "${ECO:-}/.ca_fixture" ]; then
+      rec_dir="$HERE/reports/consumer_acceptance"
+    fi
+  fi
+  local computed=0
+  if [ "$rec_dir" = "__fault__" ]; then
+    computed="${rows:-0}"
+  elif [ -n "$rec_dir" ]; then
+    newest=""
+    for f in "$rec_dir"/*.record; do
       [ -f "$f" ] || continue
-      if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then
+      b="$(basename "$f")"
+      if [ -z "$newest" ]; then
         newest="$f"
+      else
+        nb="$(basename "$newest")"
+        if [ "$b" \> "$nb" ]; then
+          newest="$f"
+        fi
       fi
     done
     if [ -n "$newest" ]; then
       rows="$(grep -c '^row|' "$newest" 2>/dev/null || true)"
-      RECORD_FLOOR="${rows:-0}"
+      computed="${rows:-0}"
     fi
   fi
+  # CA-GUARD:record-floor
+  RECORD_FLOOR="$computed"
 }
 
 # Scan ECO into GATE_* / SKIP_* arrays. Prints the plan listing iff $1=print.
@@ -862,7 +924,9 @@ verdict_line() {
 }
 
 # Idempotent stdout verdict. Every run-mode exit path that has a record
-# lifecycle (PASS/FAIL/INCOMPLETE) goes through here once.
+# lifecycle (PASS/FAIL/INCOMPLETE) goes through here once. The VERDICT
+# line stays EXACT ("VERDICT: FAIL"); a floor failure is named on its own
+# `inventory floor: <why>` line before the verdict and in the footer.
 emit_stdout_verdict() {
   [ "${STDOUT_VERDICT_EMITTED:-0}" -eq 1 ] && return 0
   verdict_line "$1"
@@ -939,8 +1003,9 @@ release_record_lock() {
 # RECORD_WRITE_ERR. mode is append | replace; optional tag names the
 # temp file (footer uses "rewrite" so a PATH-shim can target the final
 # rename). Callers check: write_record ... || die_record "why".
-# Replace temps live under WORK (the run scratch dir) so an untrapped
-# signal cannot leave .<record>.rewrite.<pid> beside the record.
+# Replace temps live in the record's own directory (mktemp next to
+# $RECORD, then mv). run_cleanup removes a leftover rewrite temp if a
+# signal arrives in the pause-before-rename window.
 write_record() {
   local mode="${1:-}" tag="${2:-tmp}" dir tmp
   RECORD_WRITE_ERR=""
@@ -982,12 +1047,14 @@ write_record() {
         RECORD_WRITE_ERR="cannot create record temp next to $RECORD"
         return 1
       }
+      RECORD_REWRITE_TMP="$tmp"
       if fixture_fault && [ "${CA_FAULT:-}" = show_tmp ]; then
         say "record_tmp_dir=$(dirname "$tmp")"
       fi
       if ! cat > "$tmp"; then
         RECORD_WRITE_ERR="cannot write record temp at $tmp"
         rm -f "$tmp"
+        RECORD_REWRITE_TMP=""
         return 1
       fi
       if fixture_fault && [ "${CA_FAULT:-}" = pause_before_rename ] && [ "$tag" = rewrite ]; then
@@ -997,8 +1064,10 @@ write_record() {
       if ! mv "$tmp" "$RECORD"; then
         RECORD_WRITE_ERR="cannot rename record temp onto $RECORD"
         rm -f "$tmp"
+        RECORD_REWRITE_TMP=""
         return 1
       fi
+      RECORD_REWRITE_TMP=""
       if [ "$tag" = rewrite ]; then
         # CA-GUARD:finished-before-rename
         RECORD_FINISHED=1
@@ -1104,6 +1173,10 @@ kill_inflight() {
 run_cleanup() {
   kill_inflight
   finish_incomplete
+  if [ -n "${RECORD_REWRITE_TMP:-}" ]; then
+    rm -f "$RECORD_REWRITE_TMP"
+    RECORD_REWRITE_TMP=""
+  fi
   if [ -n "${CA_LOGS:-}" ] && [ -n "${WORK:-}" ] && [ -d "${WORK:-}/logs" ]; then
     mkdir -p "$CA_LOGS"
     cp -a "$WORK/logs/." "$CA_LOGS/" 2>/dev/null || true
@@ -1292,6 +1365,9 @@ write_record_footer() {
       printf 'sibling_binary_present_changed=%s→%s\n' "${SIBLING_BEFORE:-no}" "${SIBLING_AFTER:-${SIBLING_PRESENT:-no}}"
     fi
     printf 'inventory=%s examined=%s\n' "${INVENTORY:-0}" "${EXAMINED:-0}"
+    if [ "${FLOOR_FAIL:-0}" -ne 0 ] && [ -n "${FLOOR_WHY:-}" ]; then
+      printf 'inventory floor: %s\n' "$FLOOR_WHY"
+    fi
     printf 'status=%s\n' "$status"
   )"
   n="$(grep -c '^VERDICT:' <<< "$content" || true)"
@@ -1312,9 +1388,17 @@ append_row() {
 
 # Last 60 lines of a non-PASS consumer's combined output, as log|<name>|<line>
 # immediately after the row. CA-GUARD:log-tail is the append itself.
+# A preflight UNRUNNABLE (no consumer output) still gets one log| line so
+# every non-PASS row has at least one (#1214).
 append_log_tail() {
-  local name="$1" log="$2" line tailf
-  [ -f "$log" ] || return 0
+  local name="$1" log="$2" line tailf reason
+  if [ ! -f "$log" ] || [ ! -s "$log" ]; then
+    reason="${LAST_PREREQ:+prereq:$LAST_PREREQ}"
+    [ -n "$reason" ] || reason="${LAST_AMBIGUOUS:+ambiguous-workflow:$LAST_AMBIGUOUS}"
+    [ -n "$reason" ] || reason="${LAST_VERDICT:-UNRUNNABLE}"
+    write_record append <<<"log|$name|preflight: $reason" || die_record "cannot append preflight log to $RECORD"
+    return 0
+  fi
   # CA-GUARD:log-tail
   tailf="$WORK/tail.$name"
   tail -n 60 "$log" > "$tailf" 2>/dev/null || return 0
@@ -1398,36 +1482,47 @@ run_one() {
   # CA-GUARD:variant-mask
   local need v
   need="$(variants_of "$name") $cmd"
+  # CA-GUARD:noglob-split
+  local glob_off=0
+  case "$-" in *f*) glob_off=1 ;; esac
+  set -f
   for v in $need; do
     case "$v" in
       eigenscript) continue ;;
       eigenscript-full)
         if [ -z "${CAND_FULL_ABS:-}" ]; then
+          [ -n "${SHIM:-}" ] && write_127_shim "$SHIM/$v" "$v"
           LAST_VERDICT=UNRUNNABLE
           LAST_PREREQ="variant:eigenscript-full"
           LAST_RC="-"
           LAST_DUR="0"
+          [ "$glob_off" -eq 0 ] && set +f
           return
         fi
         ;;
       eigenscript-gfx)
         if [ -z "${CAND_GFX_ABS:-}" ]; then
+          [ -n "${SHIM:-}" ] && write_127_shim "$SHIM/$v" "$v"
           LAST_VERDICT=UNRUNNABLE
           LAST_PREREQ="variant:eigenscript-gfx"
           LAST_RC="-"
           LAST_DUR="0"
+          [ "$glob_off" -eq 0 ] && set +f
           return
         fi
         ;;
       eigenscript-*)
+        [ -n "${SHIM:-}" ] && write_127_shim "$SHIM/$v" "$v"
         LAST_VERDICT=UNRUNNABLE
         LAST_PREREQ="variant:$v"
         LAST_RC="-"
         LAST_DUR="0"
+        [ "$glob_off" -eq 0 ] && set +f
         return
         ;;
     esac
   done
+  [ "$glob_off" -eq 0 ] && set +f
   # CA-GUARD:end-variant-mask
 
   log="$WORK/logs/$name.log"
@@ -1522,6 +1617,9 @@ finalize_run() {
   elif [ "${FLOOR_FAIL:-0}" -ne 0 ]; then
     final=FAIL
     RUN_RC=1
+    if [ -n "${FLOOR_WHY:-}" ]; then
+      say "inventory floor: ${FLOOR_WHY}"
+    fi
   elif [ "${SKIP_MISSING_REASON:-0}" -ne 0 ]; then
     final=FAIL
     RUN_RC=1
@@ -1999,6 +2097,7 @@ mk_stub_gfx() {
 
 plant_line() {
   local name="$1" st="$2" detail="${3:-}"
+  ST_PLANTS=$((${ST_PLANTS:-0} + 1))
   if [ "$st" -eq 0 ]; then
     say "plant $name: FIRES${detail:+ -- $detail}"
   else
@@ -2033,6 +2132,10 @@ note_plant() {
   LAST_PLANT_OUT="${1:-}"
   LAST_PLANT_REC="${2:-}"
   LAST_PLANT_RC="${3:-}"
+  ST_RUNS=$((${ST_RUNS:-0} + 1))
+  if grep -q 'unbound variable' <<< "${1:-}"; then
+    ST_UNBOUND=$((${ST_UNBOUND:-0} + 1))
+  fi
 }
 
 mutant_not_fires_kind() {
@@ -2287,18 +2390,77 @@ os.execvp("bash", ["bash"] + sys.argv[1:])' "$sh" run "$stub" >/dev/null 2>&1 &
 # I: stale PASS + unwritable directory. FIRE: record not readable as PASS, exit 1.
 # The passed rec path is a unique prefix; the plant owns a sibling directory
 # so chmod a-w cannot land on the self-test root (or any shared dir).
+#
+# uid 0 writes THROUGH a chmod a-w directory, so as root the fault cannot be
+# planted at all (measured: PR #1224's `gate self-tests` job runs as root in
+# the devcontainer and this row read intact=SILENT mutant=SILENT FAIL). As
+# root the plant drops to an unprivileged user (runuser/setpriv + nobody) and
+# opens the path so that user can reach the fixture. When no such user or
+# tool exists, or a positive precondition PROBE under that user fails, the
+# plant returns 3 = SKIP and the caller names it; the self-test's final line
+# reports skipped=N so the count is never a silent OK.
+# CA_FAULT=pretend_root (fixture-gated) takes the same decision branch on a
+# non-root box, where no drop tool applies, so the SKIP path is exercised.
 plant_stale_unwritable() {
   local sh="$1" eco="$2" stub="$3" rec_hint="$4"
-  local dir rec out rc
+  local dir rec out rc drop="" as_root=0 why="" drop_tmp="" a
+  [ "$(id -u)" = 0 ] && as_root=1
+  # Gated on the FIXTURE's own marker (the self-test's ECO is the repo, not
+  # a fixture, so fixture_fault would not see it).
+  if [ -f "${eco:-}/.ca_fixture" ] && [ "${CA_FAULT:-}" = pretend_root ]; then
+    as_root=1
+  fi
+  if [ "$as_root" -eq 1 ]; then
+    if [ "$(id -u)" = 0 ] && getent passwd nobody >/dev/null 2>&1; then
+      if command -v runuser >/dev/null 2>&1; then
+        drop="runuser -u nobody --"
+      elif command -v setpriv >/dev/null 2>&1; then
+        drop="setpriv --reuid=nobody --regid=nogroup --clear-groups"
+      fi
+    fi
+    if [ -z "$drop" ]; then
+      why="no runuser/setpriv with a nobody user"
+      LAST_PLANT_DETAIL="SKIP (root: $why)"
+      note_plant "plant stale-unwritable: SKIP (root: $why)" "" 0
+      return 3
+    fi
+  fi
   dir="${rec_hint}.rodir"
   mkdir -p "$dir"
   rec="$dir/record"
   printf '%s\n' 'run_id=OLD_RUN' 'status=COMPLETE' 'inventory=1 examined=1' 'VERDICT: PASS' > "$rec"
+  if [ -n "$drop" ]; then
+    # The unprivileged user must traverse to $dir, read the fixture and the
+    # script, and own a writable TMPDIR. Open the path, then PROBE it.
+    a="$dir"
+    while [ "$a" != "/" ] && [ -n "$a" ]; do
+      chmod a+rX "$a" 2>/dev/null || true
+      a="$(dirname "$a")"
+    done
+    chmod -R a+rX "$eco" 2>/dev/null || true
+    chmod a+rx "$sh" "$stub" 2>/dev/null || true
+    chmod a+r "$rec" 2>/dev/null || true
+    drop_tmp="${rec_hint}.droptmp"
+    mkdir -p "$drop_tmp" && chmod 1777 "$drop_tmp" 2>/dev/null || true
+    if ! $drop sh -c 'test -r "$1" && test -x "$2" && test -d "$3" && : > "$3/probe"' \
+         _ "$rec" "$sh" "$drop_tmp" >/dev/null 2>&1; then
+      why="unprivileged probe failed (cannot reach the fixture as nobody)"
+      LAST_PLANT_DETAIL="SKIP (root: $why)"
+      note_plant "plant stale-unwritable: SKIP (root: $why)" "" 0
+      return 3
+    fi
+  fi
   chmod a-w "$dir"
-  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
-  rc=$?
+  if [ -n "$drop" ]; then
+    out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" TMPDIR="$drop_tmp" \
+      $drop "$sh" run "$stub" 2>&1)"
+    rc=$?
+  else
+    out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+    rc=$?
+  fi
   chmod u+w "$dir"
-  LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  LAST_PLANT_DETAIL="rc=$rc drop=${drop:-none} rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] && { [ ! -f "$rec" ] || ! grep -q '^VERDICT: PASS$' "$rec"; }; then
     return 0
@@ -3058,6 +3220,12 @@ repls = {
         '  # CA-GUARD:expected-floor\n'
         '  EXPECTED_LIST=()\n',
     ),
+    "record-floor": (
+        '  # CA-GUARD:record-floor\n'
+        '  RECORD_FLOOR="$computed"\n',
+        '  # CA-GUARD:record-floor\n'
+        '  RECORD_FLOOR=0\n',
+    ),
     "overlay-retry-rm": (
         '        # CA-GUARD:overlay-retry-rm\n'
         '        rm -rf "$to/$base"\n',
@@ -3298,8 +3466,9 @@ prep_mutant() {
   return 0
 }
 
-# Variant (a): eigenscript-full invoked, stale binary on PATH, no --full.
-# FIRE: UNRUNNABLE|prereq:variant:eigenscript-full and stale log is empty.
+# Variant (a): eigenscript-full in a called script AND as a runCmd token,
+# stale binary on PATH, no --full. FIRE: both rows UNRUNNABLE|prereq:variant:eigenscript-full,
+# stale log empty, each non-PASS row has a log| preflight line.
 plant_variant_missing() {
   local sh="$1" eco="$2" stub="$3" rec="$4" stale_log="$5" stale_bin="$6"
   local out rc
@@ -3307,11 +3476,14 @@ plant_variant_missing() {
   out="$(PATH="$(dirname "$stale_bin"):$PATH" CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" \
     "$sh" run "$stub" 2>&1)"
   rc=$?
-  LAST_PLANT_DETAIL="rc=$rc stale=$(wc -c < "$stale_log" 2>/dev/null || echo 0) rec=$(grep -E 'row|UNRUNNABLE' "$rec" 2>/dev/null | tr '\n' ' ')"
+  LAST_PLANT_DETAIL="rc=$rc stale=$(wc -c < "$stale_log" 2>/dev/null || echo 0) rec=$(grep -E 'row|UNRUNNABLE|^log' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] \
      && grep -q 'UNRUNNABLE|prereq:variant:eigenscript-full' <<< "$out" \
-     && grep -q 'row|full_user|v0.43.0|UNRUNNABLE|' "$rec" \
+     && grep -q 'row|script_user|v0.43.0|UNRUNNABLE|' "$rec" \
+     && grep -q 'row|token_user|v0.43.0|UNRUNNABLE|' "$rec" \
+     && grep -q '^log|script_user|preflight: prereq:variant:eigenscript-full' "$rec" \
+     && grep -q '^log|token_user|preflight: prereq:variant:eigenscript-full' "$rec" \
      && [ ! -s "$stale_log" ]; then
     return 0
   fi
@@ -3328,9 +3500,55 @@ plant_variant_full() {
   LAST_PLANT_DETAIL="rc=$rc rec=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 0 ] \
-     && grep -q 'row|full_user|v0.43.0|PASS|' "$rec" \
+     && grep -q 'row|script_user|v0.43.0|PASS|' "$rec" \
+     && grep -q 'row|token_user|v0.43.0|PASS|' "$rec" \
      && grep -q 'cand_calls=1' "$rec" \
      && exact_verdict_file "$rec" PASS; then
+    return 0
+  fi
+  return 1
+}
+
+# A consumer whose variant name lives in an unusual file. FIRE:
+# UNRUNNABLE|prereq:variant:<name>, stale unreached.
+plant_variant_named() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" stale_log="$5" stale_bin="$6" cname="$7" vname="$8"
+  local out rc
+  : > "$stale_log"
+  out="$(PATH="$(dirname "$stale_bin"):$PATH" CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" \
+    "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc name=$vname stale=$(wc -c < "$stale_log" 2>/dev/null || echo 0) rec=$(grep -E 'row|UNRUNNABLE|^log' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q "UNRUNNABLE|prereq:variant:${vname}" <<< "$out" \
+     && grep -q "row|${cname}|v0.43.0|UNRUNNABLE|" "$rec" \
+     && grep -q "^log|${cname}|preflight: prereq:variant:${vname}" "$rec" \
+     && [ ! -s "$stale_log" ]; then
+    return 0
+  fi
+  return 1
+}
+
+# B3: 2 consumers, committed-record floor of 3. FIRE: FAIL naming the floor,
+# in plan AND in the run record. Discriminates lexical newest (floor 3)
+# from mtime (the older-named record is touched newer and has 99 rows).
+plant_b3_record_floor() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" "$sh" plan 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="plan rc=$rc $(grep -E 'inventory_floor|VERDICT' <<< "$out" | tr '\n' ' ')"
+  note_plant "$out" "" "$rc"
+  if [ "$rc" -eq 0 ] || ! grep -q 'inventory 2 < record floor 3' <<< "$out"; then
+    return 1
+  fi
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)" || true
+  LAST_PLANT_DETAIL="$LAST_PLANT_DETAIL run=$(grep -E 'inventory floor|VERDICT' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" 0
+  if grep -q '^inventory floor: inventory 2 < record floor 3' "$rec" \
+     && grep -q '^inventory floor: inventory 2 < record floor 3' <<< "$out" \
+     && exact_verdict_file "$rec" FAIL; then
     return 0
   fi
   return 1
@@ -3352,36 +3570,61 @@ plant_log_tail() {
   return 1
 }
 
-# B2: declared consumer absent from disk. FIRE: FAIL naming it.
+# B2: declared consumer absent from disk. FIRE: FAIL naming it, in plan
+# AND in the run record (the same named line).
 plant_b2_missing_declared() {
-  local sh="$1" eco="$2"
-  local out rc
+  local sh="$1" eco="$2" stub="${3:-/bin/true}"
+  local out rc rec
   out="$(CA_ECO="$eco" "$sh" plan 2>&1)"
   rc=$?
-  LAST_PLANT_DETAIL="rc=$rc"
+  LAST_PLANT_DETAIL="plan rc=$rc"
   note_plant "$out" "" "$rc"
-  if [ "$rc" -ne 0 ] \
-     && grep -q 'declared consumer absent: missing_one' <<< "$out" \
-     && grep -q '^VERDICT: FAIL' <<< "$out"; then
+  if [ "$rc" -eq 0 ] \
+     || ! grep -q 'declared consumer absent: missing_one' <<< "$out" \
+     || ! grep -q '^VERDICT: FAIL' <<< "$out"; then
+    return 1
+  fi
+  rec="${eco}.b2.run.record"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)" || true
+  LAST_PLANT_DETAIL="$LAST_PLANT_DETAIL run=$(grep -E 'inventory floor|VERDICT|row' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" 0
+  if grep -q '^inventory floor: declared consumer absent: missing_one' "$rec" \
+     && grep -q '^inventory floor: declared consumer absent: missing_one' <<< "$out" \
+     && exact_verdict_file "$rec" FAIL; then
     return 0
   fi
   return 1
 }
 
-# Globbing off: declared token tests/*.eigs is literal. FIRE: GAP names the glob.
+# Globbing off: declared token tests/*.eigs is literal (plan), AND a runCmd
+# with *.eigs in the variant scan does not expand to a variant name (run).
 plant_noglob() {
-  local sh="$1" eco="$2" cwd="$3"
-  local out rc
+  local sh="$1" eco="$2" cwd="$3" stub="$4"
+  local out rc rec
   out="$(cd "$cwd" && CA_ECO="$eco" "$sh" plan 2>&1)"
   rc=$?
-  LAST_PLANT_DETAIL="rc=$rc out=$(grep -E 'GAP|VERDICT:|does not exist' <<< "$out" | tr '\n' ' ')"
+  LAST_PLANT_DETAIL="plan rc=$rc out=$(grep -E 'GAP|VERDICT:|does not exist' <<< "$out" | tr '\n' ' ')"
   note_plant "$out" "" "$rc"
-  if [ "$rc" -ne 0 ] \
-     && grep -Fq 'tests/*.eigs' <<< "$out" \
-     && grep -q '^VERDICT: FAIL' <<< "$out"; then
-    return 0
+  if [ "$rc" -eq 0 ] \
+     || ! grep -Fq 'tests/*.eigs' <<< "$out" \
+     || ! grep -q '^VERDICT: FAIL' <<< "$out"; then
+    return 1
   fi
-  return 1
+  rec="${cwd}/ng-run.record"
+  printf 'x\n' > "$cwd/eigenscript-full.eigs"
+  out="$(cd "$cwd" && CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" \
+    "$sh" run "$stub" 2>&1)" || true
+  LAST_PLANT_DETAIL="$LAST_PLANT_DETAIL run=$(grep -E 'row|UNRUNNABLE|VERDICT' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" 0
+  # Positive witness first: the glob_run row exists (the run really ran).
+  # Then the negative: the variant loop did not expand *.eigs into a name.
+  grep -q '^row|glob_run|' "$rec" 2>/dev/null || return 1
+  grep -q '^VERDICT:' "$rec" 2>/dev/null || return 1
+  if grep -q 'prereq:variant:eigenscript-full.eigs' "$rec" 2>/dev/null \
+     || grep -q 'prereq:variant:eigenscript-full.eigs' <<< "$out"; then
+    return 1
+  fi
+  return 0
 }
 
 # J2: signal between footer-write and rename. FIRE: INCOMPLETE, exit 2, file=stdout.
@@ -3419,10 +3662,14 @@ plant_j2_pause_rename() {
   n_out="$(grep -c '^VERDICT: INCOMPLETE$' "$outf" 2>/dev/null || true)"
   LAST_PLANT_DETAIL="rc=$rc n_out=$n_out rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$(cat "$outf" 2>/dev/null || true)" "$rec" "$rc"
+  local leftover
+  leftover="$(ls "$(dirname "$rec")"/.$(basename "$rec").rewrite.* 2>/dev/null || true)"
+  LAST_PLANT_DETAIL="rc=$rc n_out=$n_out leftover=$( [ -n "$leftover" ] && echo yes || echo no ) rec=$(grep '^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
   if [ "$rc" -eq 2 ] \
      && [ "$n_out" = 1 ] \
      && grep -q '^VERDICT: INCOMPLETE$' "$rec" \
-     && grep -q 'status=INCOMPLETE' "$rec"; then
+     && grep -q 'status=INCOMPLETE' "$rec" \
+     && [ -z "$leftover" ]; then
     return 0
   fi
   return 1
@@ -3513,6 +3760,10 @@ plant_overlay_partial() {
 selftest() {
   local st_root rec out rc pid outer_tmp
   ST_FAIL=0
+  ST_SKIP=0
+  ST_RUNS=0
+  ST_UNBOUND=0
+  ST_PLANTS=0
   outer_tmp="${TMPDIR:-/tmp}"
   st_root="$(mktemp -d "${outer_tmp}/ca-st.XXXXXX")"
   mkdir -p "$st_root/tmp"
@@ -3526,7 +3777,7 @@ selftest() {
   mk_stub_gfx "$st_root/stub-gfx"
 
   if python3 "$HERE/tools/_extract_runcmd.py" --selftest >/dev/null; then
-    plant_line "extract-runcmd" 0 "SELFTEST: PASS examined=2"
+    plant_line "extract-runcmd" 0 "SELFTEST: PASS examined=7"
   else
     plant_line "extract-runcmd" 1 "extractor --selftest failed"
   fi
@@ -3827,10 +4078,26 @@ selftest() {
   printf 'fixture\n' > "$i_eco/.ca_fixture"
   mk_consumer "$i_eco" i_one "eigenscript work.eigs"
   rec="$st_root/i-ro/record"
-  if plant_stale_unwritable "$sh" "$i_eco" "$st_root/stub-ok" "$rec"; then
+  plant_stale_unwritable "$sh" "$i_eco" "$st_root/stub-ok" "$rec"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
     plant_line "I stale-unwritable" 0 "record not PASS, exit 1"
+  elif [ "$rc" -eq 3 ]; then
+    say "plant I stale-unwritable: SKIP -- $LAST_PLANT_DETAIL"
+    ST_SKIP=$((ST_SKIP + 1))
   else
     plant_line "I stale-unwritable" 1 "$LAST_PLANT_DETAIL"
+  fi
+  # Fixture-gated pretend_root: the plant takes the named SKIP path (or, as
+  # real root with a usable drop tool, FIREs under the unprivileged user).
+  CA_FAULT=pretend_root plant_stale_unwritable "$sh" "$i_eco" "$st_root/stub-ok" "$st_root/i-ro/pretend"
+  rc=$?
+  if [ "$rc" -eq 3 ] && [ "${LAST_PLANT_DETAIL#SKIP \(root: }" != "$LAST_PLANT_DETAIL" ]; then
+    plant_line "I stale-unwritable-root" 0 "$LAST_PLANT_DETAIL"
+  elif [ "$rc" -eq 0 ]; then
+    plant_line "I stale-unwritable-root" 0 "unprivileged drop FIRE -- $LAST_PLANT_DETAIL"
+  else
+    plant_line "I stale-unwritable-root" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- J: signal during finalization -- exactly one VERDICT line, rc, stdout.
@@ -4257,11 +4524,14 @@ EOS
     plant_line "sibling-late" 1 "$LAST_PLANT_DETAIL"
   fi
 
-  # --- variant (a): eigenscript-full, stale on PATH, no --full.
+  # --- variant (a): eigenscript-full in a called script AND as a token.
   local var_eco="$st_root/var-eco" stale_dir="$st_root/stale-bin" stale_log="$st_root/stale-full.log"
   mkdir -p "$var_eco" "$stale_dir"
   printf 'fixture\n' > "$var_eco/.ca_fixture"
-  mk_consumer "$var_eco" full_user "eigenscript-full work.eigs"
+  mk_consumer "$var_eco" script_user "bash run.sh"
+  printf '%s\n' '#!/bin/sh' 'eigenscript-full work.eigs' > "$var_eco/script_user/run.sh"
+  chmod +x "$var_eco/script_user/run.sh"
+  mk_consumer "$var_eco" token_user "eigenscript-full work.eigs"
   printf '%s\n' '#!/bin/sh' \
     "printf 'stale:%s\\n' \"\$*\" >> \"$stale_log\"" \
     'echo stale-full-version; exit 0' > "$stale_dir/eigenscript-full"
@@ -4269,7 +4539,7 @@ EOS
   : > "$stale_log"
   rec="$st_root/var-a.record"
   if plant_variant_missing "$sh" "$var_eco" "$st_root/stub-ok" "$rec" "$stale_log" "$stale_dir/eigenscript-full"; then
-    plant_line "variant-missing" 0 "UNRUNNABLE|prereq:variant:eigenscript-full, stale log empty"
+    plant_line "variant-missing" 0 "UNRUNNABLE|prereq:variant:eigenscript-full both rows, stale empty, log|"
   else
     plant_line "variant-missing" 1 "$LAST_PLANT_DETAIL"
   fi
@@ -4280,6 +4550,63 @@ EOS
     plant_line "variant-full" 0 "PASS cand_calls=1 with --full"
   else
     plant_line "variant-full" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- name in a .py and a Makefile; multi-hyphen; extensionless script.
+  local py_eco="$st_root/py-eco" mf_eco="$st_root/mf-eco"
+  local mh_eco="$st_root/mh-eco" ex_eco="$st_root/ex-eco"
+  local stale_jit="$st_root/stale-jit.log" stale_gfx="$st_root/stale-gfx.log"
+  local stale_http="$st_root/stale-http.log" stale_dbg="$st_root/stale-dbg.log"
+  mkdir -p "$py_eco" "$mf_eco" "$mh_eco" "$ex_eco" "$stale_dir"
+  printf 'fixture\n' > "$py_eco/.ca_fixture"
+  printf 'fixture\n' > "$mf_eco/.ca_fixture"
+  printf 'fixture\n' > "$mh_eco/.ca_fixture"
+  printf 'fixture\n' > "$ex_eco/.ca_fixture"
+  mk_consumer "$py_eco" py_user "eigenscript work.eigs"
+  printf 'os.system("eigenscript-jit x")\n' > "$py_eco/py_user/run.py"
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_jit\"" 'exit 0' > "$stale_dir/eigenscript-jit"
+  chmod +x "$stale_dir/eigenscript-jit"
+  : > "$stale_jit"
+  rec="$st_root/var-py.record"
+  if plant_variant_named "$sh" "$py_eco" "$st_root/stub-ok" "$rec" "$stale_jit" "$stale_dir/eigenscript-jit" py_user eigenscript-jit; then
+    plant_line "variant-py" 0 "UNRUNNABLE|prereq:variant:eigenscript-jit from .py"
+  else
+    plant_line "variant-py" 1 "$LAST_PLANT_DETAIL"
+  fi
+  mk_consumer "$mf_eco" mf_user "eigenscript work.eigs"
+  printf 'run:\n\teigenscript-gfx x\n' > "$mf_eco/mf_user/Makefile"
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_gfx\"" 'exit 0' > "$stale_dir/eigenscript-gfx"
+  chmod +x "$stale_dir/eigenscript-gfx"
+  : > "$stale_gfx"
+  rec="$st_root/var-mf.record"
+  if plant_variant_named "$sh" "$mf_eco" "$st_root/stub-ok" "$rec" "$stale_gfx" "$stale_dir/eigenscript-gfx" mf_user eigenscript-gfx; then
+    plant_line "variant-makefile" 0 "UNRUNNABLE|prereq:variant:eigenscript-gfx from Makefile"
+  else
+    plant_line "variant-makefile" 1 "$LAST_PLANT_DETAIL"
+  fi
+  mk_consumer "$mh_eco" mh_user "bash run.sh"
+  printf '%s\n' '#!/bin/sh' 'eigenscript-http-model work.eigs' > "$mh_eco/mh_user/run.sh"
+  chmod +x "$mh_eco/mh_user/run.sh"
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_http\"" 'exit 0' > "$stale_dir/eigenscript-http-model"
+  chmod +x "$stale_dir/eigenscript-http-model"
+  : > "$stale_http"
+  rec="$st_root/var-mh.record"
+  if plant_variant_named "$sh" "$mh_eco" "$st_root/stub-ok" "$rec" "$stale_http" "$stale_dir/eigenscript-http-model" mh_user eigenscript-http-model; then
+    plant_line "variant-multi-hyphen" 0 "UNRUNNABLE|prereq:variant:eigenscript-http-model"
+  else
+    plant_line "variant-multi-hyphen" 1 "$LAST_PLANT_DETAIL"
+  fi
+  mk_consumer "$ex_eco" ex_user "bash acceptance"
+  printf '%s\n' '#!/bin/sh' 'eigenscript-debug work.eigs' > "$ex_eco/ex_user/acceptance"
+  chmod +x "$ex_eco/ex_user/acceptance"
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_dbg\"" 'exit 0' > "$stale_dir/eigenscript-debug"
+  chmod +x "$stale_dir/eigenscript-debug"
+  : > "$stale_dbg"
+  rec="$st_root/var-ex.record"
+  if plant_variant_named "$sh" "$ex_eco" "$st_root/stub-ok" "$rec" "$stale_dbg" "$stale_dir/eigenscript-debug" ex_user eigenscript-debug; then
+    plant_line "variant-extensionless" 0 "UNRUNNABLE|prereq:variant:eigenscript-debug from extensionless"
+  else
+    plant_line "variant-extensionless" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- log tail on a FAIL row.
@@ -4300,13 +4627,36 @@ EOS
   printf 'fixture\n' > "$b2_eco/.ca_fixture"
   printf '%s\n' keep missing_one > "$b2_eco/.ca_expected"
   mk_consumer "$b2_eco" keep "eigenscript work.eigs"
-  if CA_ECO="$b2_eco" plant_b2_missing_declared "$sh" "$b2_eco"; then
-    plant_line "B2 missing-declared" 0 "FAIL naming missing_one"
+  if CA_ECO="$b2_eco" plant_b2_missing_declared "$sh" "$b2_eco" "$st_root/stub-ok"; then
+    plant_line "B2 missing-declared" 0 "FAIL naming missing_one in plan and record"
   else
     plant_line "B2 missing-declared" 1 "$LAST_PLANT_DETAIL"
   fi
 
-  # --- noglob: tests/*.eigs stays literal.
+  # --- B3: 2 consumers, record floor 3 (lexical newest, not mtime).
+  local b3_eco="$st_root/b3-eco"
+  mkdir -p "$b3_eco/reports/consumer_acceptance"
+  printf 'fixture\n' > "$b3_eco/.ca_fixture"
+  printf '%s\n' a b > "$b3_eco/.ca_expected"
+  mk_consumer "$b3_eco" a "eigenscript work.eigs"
+  mk_consumer "$b3_eco" b "eigenscript work.eigs"
+  printf '%s\n' 'row|x|v|PASS|0|0' 'row|y|v|PASS|0|0' 'row|z|v|PASS|0|0' \
+    > "$b3_eco/reports/consumer_acceptance/2026-09-21-new.record"
+  i=1
+  while [ "$i" -le 99 ]; do
+    printf 'row|old%02d|v|PASS|0|0\n' "$i"
+    i=$((i + 1))
+  done > "$b3_eco/reports/consumer_acceptance/2020-01-01-old.record"
+  touch -d '2026-12-01' "$b3_eco/reports/consumer_acceptance/2020-01-01-old.record" 2>/dev/null \
+    || touch -t 202612010000 "$b3_eco/reports/consumer_acceptance/2020-01-01-old.record"
+  rec="$st_root/b3.record"
+  if plant_b3_record_floor "$sh" "$b3_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "B3 record-floor" 0 "inventory 2 < record floor 3 (lexical, not mtime)"
+  else
+    plant_line "B3 record-floor" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- noglob: tests/*.eigs stays literal; variant loop also set -f.
   local ng_eco="$st_root/ng-eco" ng_cwd="$st_root/ng-cwd"
   mkdir -p "$ng_eco" "$ng_cwd/tests" "$ng_eco/glob_user/tests"
   printf 'fixture\n' > "$ng_eco/.ca_fixture"
@@ -4314,8 +4664,9 @@ EOS
   printf 'x\n' > "$ng_eco/glob_user/tests/a.eigs"
   mk_consumer "$ng_eco" glob_user ""
   printf 'eigenscript tests/*.eigs\n' > "$ng_eco/glob_user/.ca_declared"
-  if plant_noglob "$sh" "$ng_eco" "$ng_cwd"; then
-    plant_line "noglob-split" 0 "literal tests/*.eigs, GAP"
+  mk_consumer "$ng_eco" glob_run "eigenscript *.eigs"
+  if plant_noglob "$sh" "$ng_eco" "$ng_cwd" "$st_root/stub-ok"; then
+    plant_line "noglob-split" 0 "literal tests/*.eigs, GAP; variant loop no glob"
   else
     plant_line "noglob-split" 1 "$LAST_PLANT_DETAIL"
   fi
@@ -4323,7 +4674,7 @@ EOS
   # --- J2: signal between footer-write and rename.
   rec="$st_root/j2.record"
   if plant_j2_pause_rename "$sh" "$j_eco" "$st_root/stub-ok" "$rec"; then
-    plant_line "J2 pause-before-rename" 0 "INCOMPLETE exit 2, file and stdout agree"
+    plant_line "J2 pause-before-rename" 0 "INCOMPLETE exit 2, file and stdout agree, no .rewrite. leftover"
   else
     plant_line "J2 pause-before-rename" 1 "$LAST_PLANT_DETAIL"
   fi
@@ -4445,8 +4796,9 @@ EOS
       clobber-symlink)  plant_clobber_symlink "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       variant-missing)  plant_variant_missing "$script" "$eco" "$st_root/stub-ok" "$rec" "$stale_log" "$stale_dir/eigenscript-full" ;;
       log-tail)         plant_log_tail "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
-      missing-declared) CA_ECO="$eco" plant_b2_missing_declared "$script" "$eco" ;;
-      noglob-split)     plant_noglob "$script" "$eco" "$ng_cwd" ;;
+      missing-declared) CA_ECO="$eco" plant_b2_missing_declared "$script" "$eco" "$st_root/stub-ok" ;;
+      noglob-split)     plant_noglob "$script" "$eco" "$ng_cwd" "$st_root/stub-ok" ;;
+      record-floor)     plant_b3_record_floor "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       pause-before-rename) plant_j2_pause_rename "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       usage-no-candidate) plant_usage_no_candidate "$script" "$eco" "$rec" ;;
       tmp-beside-record) plant_show_tmp "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
@@ -4464,9 +4816,17 @@ EOS
     rec_i="$st_root/${rec_prefix}-intact.record"
     rec_m="$st_root/${rec_prefix}-mutant.record"
     rm -f "$rec_i" "$rec_m"
-    local intact=SILENT mutant_st=BROKEN
-    if run_named_plant "$plant" "$sh" "$eco" "$rec_i" "$extra"; then
+    local intact=SILENT mutant_st=BROKEN intact_rc=0
+    run_named_plant "$plant" "$sh" "$eco" "$rec_i" "$extra"
+    intact_rc=$?
+    if [ "$intact_rc" -eq 0 ]; then
       intact=FIRES
+    elif [ "$intact_rc" -eq 3 ]; then
+      # The plant cannot be planted in this environment and said so by
+      # name. A skipped row is counted, never a silent OK.
+      say "transverse $kind / $plant: SKIP -- $LAST_PLANT_DETAIL"
+      ST_SKIP=$((ST_SKIP + 1))
+      return
     else
       intact=SILENT
     fi
@@ -4494,7 +4854,7 @@ EOS
     # (UNEXERCISED, FAIL after a refused append, etc.). The transverse
     # is that the plant no longer FIRE.
     case "$plant" in
-      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing)
+      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor)
         if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ]; then
           say "transverse $kind / $plant: intact=FIRES mutant=$mutant_st  OK"
         else
@@ -4573,6 +4933,7 @@ EOS
   transverse_one variant-mask            variant-missing  "$var_eco"  t-var
   transverse_one log-tail                log-tail         "$lt_eco"   t-lt
   transverse_one expected-floor          missing-declared "$b2_eco"   t-b2
+  transverse_one record-floor            record-floor     "$b3_eco"   t-b3
   transverse_one noglob-split            noglob-split     "$ng_eco"   t-ng
   transverse_one pause-before-rename     pause-before-rename "$j_eco" t-j2
   transverse_one usage-before-record     usage-no-candidate "$good_eco" t-use
@@ -4580,11 +4941,17 @@ EOS
   transverse_one workflow-prefer         workflow-prefer  "$wf_eco"   t-wf
   transverse_one overlay-retry-rm        overlay-partial  "$ovp_eco"  t-ovp "$ovp_stub"
 
+  if [ "${ST_RUNS:-0}" -gt 0 ] && [ "${ST_UNBOUND:-0}" -eq 0 ]; then
+    plant_line "no-unbound-variable" 0 "examined=$ST_RUNS unbound=0"
+  else
+    plant_line "no-unbound-variable" 1 "examined=${ST_RUNS:-0} unbound=${ST_UNBOUND:-0}"
+  fi
+
   if [ "$ST_FAIL" -ne 0 ]; then
-    say "SELF-TEST: FAIL -- one or more plants SILENT or a transverse row failed"
+    say "SELF-TEST: FAIL -- one or more plants SILENT or a transverse row failed plants=${ST_PLANTS:-0} skipped=${ST_SKIP:-0}"
     exit 1
   fi
-  say "SELF-TEST: PASS -- run-mode plants FIRE and each gutted guard silences its plant"
+  say "SELF-TEST: PASS -- run-mode plants FIRE and each gutted guard silences its plant plants=${ST_PLANTS:-0} skipped=${ST_SKIP:-0}"
   exit 0
 }
 

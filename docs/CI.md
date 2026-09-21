@@ -536,7 +536,13 @@ EIGS_SUITE_SECTIONS=zlib bash tests/run_all_tests.sh   # run that plan
 re-derive the 429-chunk table at ~15 s each — so it is a "before you push"
 check, not an inner-loop one. It runs on every CI run in `gate self-tests`.
 The same job also runs `tools/consumer_acceptance.sh --self-test` and
-`plan` against a fixture inventory (never the real ecosystem).
+`plan` against a fixture inventory whose declared set is the fixture's
+own (never the real ecosystem); the step asserts `expected=N` with N>0.
+The job runs as uid 0 in the container, where a `chmod a-w` directory is
+still writable, so the `stale-unwritable` plant drops to an unprivileged
+user (`runuser`/`setpriv` + `nobody`); if that is unavailable the plant
+and its transverse row SKIP **by name** and the self-test's final line
+reports `plants=N skipped=M` — never a silent OK.
 
 Every plan run prints one line, and the runner CHECKS it: after the plan runs,
 the dispatcher counts the `[...]` section headers the run actually printed and

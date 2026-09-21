@@ -322,15 +322,23 @@ All notable changes to EigenScript are documented here.
 - **Consumer-acceptance harness (#1213, #1214, #1217).** `run` takes a
   candidate set (`--full` / `--gfx`); a name a consumer invokes that the
   set does not cover is `UNRUNNABLE|prereq:variant:<name>` with a 127-shim
-  on PATH. Non-PASS rows keep the last 60 lines of the consumer log in the
-  record (`log|<name>|<line>`); `CA_LOGS` copies logs before cleanup. The
+  on PATH. Variant discovery scans every text file (`grep -rIl`), admits
+  multi-hyphen names, and binds `local` before deriving so `run` consults
+  the set (a name in a called script is `UNRUNNABLE`, not a 127 FAIL).
+  Non-PASS rows keep the last 60 lines of the consumer log in the
+  record (`log|<name>|<line>`), or `log|<name>|preflight: <reason>` when
+  there is no consumer output; `CA_LOGS` copies logs before cleanup. The
   inventory is a declared 16-name floor plus the last committed record's
-  row count. `_extract_runcmd.py` stops a block scalar at a less-indented
-  line. `set -f` around word splits. `RECORD_FINISHED` is set after the
-  footer `mv`; the trap re-reads `VERDICT:`. Usage errors do not touch the
-  record. Replace temps live next to the record. First workflow wins
-  (`ci.yml`, `tests.yml`, `test.yml`). Overlay per-entry retry `rm -rf`s
-  the destination. `--self-test` is a `gate self-tests` CI step.
+  row count (lexically greatest dated filename, never mtime); `run`
+  names a floor failure on its own `inventory floor: <why>` line, on
+  stdout before the verdict and in the record footer, while the
+  `VERDICT:` line itself stays exact. `_extract_runcmd.py`
+  matches YAML block-scalar chomping, folding, and relative indent.
+  `set -f` around word splits including the variant loop. A signal in
+  the pause-before-rename window removes the rewrite temp. `--self-test`
+  is a `gate self-tests` CI step; the fixture `plan` step asserts
+  `expected=N` with N>0. A uid-0 self-test drops to an unprivileged user
+  for `stale-unwritable` or SKIPs that plant by name.
 
 - **Consumer-acceptance `run` residuals (M1 round 7).** Self-test TMPDIR is
   private (concurrent self-tests no longer `rm -rf` each other's
