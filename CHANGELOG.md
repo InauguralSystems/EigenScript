@@ -580,7 +580,40 @@ All notable changes to EigenScript are documented here.
   replaced it was blind to a single-quoted `'web/x.c'` literal, a `$(...)`
   substitution, an array entry behind a variable and `.C`/`.cc` units, while
   counting a comment line inside `SOURCES=(` as a source and an `-o out.c`
-  operand as one too. Six self-test plants pin exactly those shapes. The entry
+  operand as one too. Six self-test plants pin exactly those shapes.
+  Recording argv was not enough on its own: round 4 then classified it with a
+  hand-typed model of emcc's option grammar, and the model was wrong in the
+  direction that HIDES inputs — `--emrun`, `--proxy-to-worker` and
+  `--default-obj-ext` take NO operand in emcc (`cmdline.py`'s `check_flag` and
+  `LEGACY_FLAGS`), so a translation unit sitting after one of them was dropped
+  from the population while emcc compiled it, and the gate still printed
+  `OK: examined 23`; `@response-files`, which emcc expands before it parses
+  anything, and `-x c <unit>` were uncounted for the same reason. **There is
+  no operand model left.** Response files are expanded first (two levels; a
+  third is fail-by-name), and an INPUT is any token that names an existing
+  regular file under the sandbox — relative to the cwd the stand-in recorded —
+  which the compiler did not itself write and whose suffix is a C-family
+  translation unit. That rule is position-independent, so no argument's meaning
+  depends on the one before it. The two shapes a suffix cannot see, a unit on
+  stdin (`-x c -`, captured by the stand-in) and a unit whose suffix is not a
+  TU suffix (`-x c web/unit.inc`), are decided by asking the REAL driver: clang
+  is handed the recorded argv with emcc's own options removed and its
+  `-x <lang> <file>` cc1 inputs are read back, where "emcc's own options" is
+  itself measured — a token is emcc's exactly when
+  `clang -m32 -fsyntax-only -### <token> /dev/null` rejects it as unknown. Both
+  derivations are printed (`classifier: N by suffix+filesystem, M by the clang
+  driver, K in the union examined`), the gate examines their UNION, and a
+  DISAGREEMENT is fail-by-name in both directions. The stated residual is the
+  over-inclusion direction: the operand of an emcc-only option stays on the
+  line, so `--embed-file web/data.c` — a data file that happens to be named
+  `.c` — is counted by both derivations and goes red by name, loudly rather
+  than silently (self-test control 2e). Nothing the recipe writes reaches the
+  tree any more either: round 4 symlinked every top-level entry, so a recipe
+  line writing `src/x.h` wrote through into the real `src/` while the header
+  claimed otherwise; the gate now makes one pristine copy of the repo (21 MB,
+  1.9 s measured), makes its files read-only, and hard-links a clone per
+  sandbox (0.4 s), so a created file lands in the sandbox and an overwrite of
+  an existing one is EPERM. The entry
   point is compiled against a stub `<emscripten.h>` carrying
   `EMSCRIPTEN_KEEPALIVE` exactly as emscripten's `em_macros.h` defines it —
   `__attribute__((used))`, not a no-op, because an empty macro accepts
@@ -595,27 +628,75 @@ All notable changes to EigenScript are documented here.
   hand-typed `__EMSCRIPTEN__ __wasm__ __wasm32__` and called them "the
   target's own predefines"; they were 3 of the 9 additions and none of the 30
   removals, so `src/fsutil.c:69 #elif defined(__linux__)` compiled the Linux
-  arm under a gate standing in for a lane that has no `__linux__` at all. The
-  conditionals keyed on this world are **printed** by the gate
-  (`macro_parity: tested=N reconciled=N`) rather than listed in a comment: two
-  today, `src/fsutil.c:69` on `__linux__` and `src/jit.c:110` on `__wasm__`.
+  arm under a gate standing in for a lane that has no `__linux__` at all.
+  Reconciling NAMES was not enough either: 32 predefines are defined in both
+  worlds with DIFFERENT values — `__SIZEOF_LONG_DOUBLE__` is 16 on the target
+  and 12 on the `-m32` host, `__INTPTR_TYPE__` is `long int` vs `int`,
+  `__SIZE_TYPE__`, the whole `__LDBL_*` family — so
+  `#if __SIZEOF_LONG_DOUBLE__ == 16` was red on the real target and green under
+  a gate reporting `reconciled=48`. Each of those now carries the target's own
+  value too, and WHICH of them glibc's `-m32` headers refuse is MEASURED, not
+  assumed: the gate builds a probe from the system headers the population
+  itself includes, compiles it under the candidate set, and bisects by name;
+  the survivors are applied, the refusals are printed as
+  `value_parity_unreconciled=`, and a conditional that READS one of them is
+  fail-by-name. The report line separates the two claims —
+  `macro_parity: tested=N reconciled=N values=N/M` — because round 4 said
+  "reconciled" of 48 macros with not one value compared. The conditionals keyed
+  on this world are **printed** by the gate rather than listed in a comment:
+  two today, `src/fsutil.c:69` on `__linux__` and `src/jit.c:110` on
+  `__wasm__`. The tested-macro population cannot shrink silently either: round
+  4 scanned the TU list with an unquoted `$(cat "$files")` and no status check,
+  so one path containing a space made `tested=48` become `tested=19` at exit 0;
+  the list is read NUL-safely, awk's status is checked, and the files it opened
+  and the conditional lines it matched are cross-checked against an independent
+  `grep -c` over the same list.
   This is PREDEFINE parity — a macro a system header supplies (`__GLIBC__`,
-  from glibc's features.h) is outside it, and the gate says so. Seventeen
-  self-test plants and two controls hold all of it: the six argv shapes, a
-  syntax error in the entry point, an `#ifdef __EMSCRIPTEN__` arm, a misplaced
-  `EMSCRIPTEN_KEEPALIVE`, an arm the wasm32 target takes and the host does not
-  (with its opposite as a control), the parity assertion run with no
-  reconciliation flags and with an empty tested population, an empty
-  inventory, a 1-entry population, the entry point dropped from the inventory
-  (23 → 22, below the floor), the old 64-bit assert — plus a REFORMATTED
-  SOURCES array that must yield the identical inventory (the round-2 plant
-  edited the array's TEXT and so went falsely red on a reflow) and the live
-  inventory staying green.
+  from glibc's features.h) is outside it, and the gate says so. **Thirty-six**
+  self-test plants and controls hold all of it: the six argv shapes; seven
+  option-grammar shapes (a TU after `--emrun` and after `--proxy-to-worker`, a
+  TU named only inside an `@response-file`, response files nested three deep, a
+  TU on stdin, a `-x c` unit with a non-TU suffix, and the `--embed-file`
+  over-inclusion control); a recipe line writing `src/` that must not reach the
+  working tree; a syntax error in the entry point, an `#ifdef __EMSCRIPTEN__`
+  arm, a misplaced `EMSCRIPTEN_KEEPALIVE`; an arm the wasm32 target takes and
+  the host does not (with its opposite as a control), a conditional comparing a
+  VALUE that differs (with its opposite as a control), a value reconciliation
+  glibc refuses (must be measured and named), an unreconcilable value a
+  conditional reads (must fail by name), the parity assertion run with no
+  reconciliation flags and with an empty tested population, a TU path with a
+  space that must not shrink the tested population; an empty inventory, a
+  1-entry population, the entry point dropped from the inventory (23 → 22,
+  below the floor), the old 64-bit assert — plus a REFORMATTED SOURCES array
+  that must yield the identical inventory (the round-2 plant edited the array's
+  TEXT and so went falsely red on a reflow) and the live inventory staying
+  green.
   `-m32` is the i386 ABI, not wasm32 — it catches pointer-width breaks, the
   `#1185` class, not every layout difference. Availability is probed by
-  EXECUTION, not by the compiler's name: a toolchain with no 32-bit target
-  (the macOS runners) SKIPs by name with the compiler's own words, counted as
-  a skip and never as a pass.
+  EXECUTION, not by the compiler's name: a toolchain that cannot compile a
+  32-bit TU against its own C library (the macOS runners) SKIPs by name with
+  the compiler's own words, counted as a skip and never as a pass. That probe
+  had to ASK FOR THE CAPABILITY THE GATE USES: the first version compiled a
+  one-line TU with no includes, which clang accepts at `-m32` on an arm64 mac
+  because it never reaches a header — so the gate passed its own availability
+  check on macos-latest and then went red on all 23 TUs with
+  `MacOSX.sdk/usr/include/sys/cdefs.h:1068: error: Unsupported architecture`,
+  becoming exactly the new red lane on a runner it has nothing to say about
+  that the probe exists to prevent. The probe now includes the C library, and
+  plants 5s/5sc hold that arm (a stub whose `<stdlib.h>` refuses must be
+  reported unavailable; the live toolchain must be reported available). That
+  was still not the whole capability: the reconciliation's job is to REMOVE
+  the host's own architecture macros, and the macOS SDK ties its headers to
+  them (`#error Unsupported architecture` from `sys/cdefs.h` once `__i386__`
+  and `__APPLE__` are gone), so a second, measured skip arm was needed — if
+  this toolchain's C library cannot be preprocessed at 32 bits IN THE
+  TARGET'S MACRO WORLD, the gate skips by name with the toolchain's own
+  words. The arm is specific rather than a catch-all: stage 1 has already
+  proved the same headers compile at `-m32` WITHOUT the reconciliation.
+  Plants 5r/5rc hold it, with the live toolchain as the control that the arm
+  is not taken here. The gate is also bash-3.2 clean — no `declare -A`, no
+  `mapfile`, no `grep -z` — because macOS is where it has to reach its own
+  probe.
 
 - **The db-extension error-path example in `docs/BUILTINS.md` no longer
   pins the core build's "undefined variable" output.** Section [89] on

@@ -270,7 +270,14 @@ SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage
 # when that gate stopped hand-typing the wasm32 predefines: the two `-E -dM`
 # derivations that read the target's and the host's macro worlds are compile
 # invocations by this recognizer (`-x c`), so a floor of 2 would have let both
-# of them be deleted while still printing OK.
+# of them be deleted while still printing OK. It moved 4 -> 8 when that gate
+# stopped hand-typing emcc's OPTION grammar and started measuring instead:
+# each new derivation is a compile line this recognizer sees — the `-###`
+# probe that asks whether the clang driver knows a token, the `-###` run that
+# reads back the driver's own `-x c` inputs, the per-header availability probe
+# and the value-parity probe that measures which reconciliations glibc
+# refuses. A floor left at 4 would let any four of the eight be deleted while
+# the gate still printed OK, which is the exact failure this table exists for.
 SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh tools/ilp32_syntax_check.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
@@ -351,7 +358,7 @@ script:tests/test_tsan.sh 1
 script:tools/trace_mt_mutants.sh 2
 script:tools/arming_mt_mutants.sh 1
 script:tests/run_all_tests.sh 1
-script:tools/ilp32_syntax_check.sh 4
+script:tools/ilp32_syntax_check.sh 8
 '
 
 # Floor for a label, or empty when the label is untracked.

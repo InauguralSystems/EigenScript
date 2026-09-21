@@ -58,14 +58,40 @@ width is `sizeof(data.strv) <= sizeof(data.fn)`. Suite `[99i3]` compiles every
 translation unit `web/build.sh` hands to emcc — the runtime `src/*.c` units and
 `web/eigs_wasm.c`, the playground entry point — at `-m32`, so that lane cannot
 go red unnoticed. The gate prints the population it examined rather than
-asserting a typed-in number, floors it so a shrinking SOURCES array is a
-deliberate re-pin, and audits the emcc invocation itself for `.c` arguments
-written outside the array. It compiles with the wasm32-emscripten target's own
-predefines — `__EMSCRIPTEN__`, `__wasm__`, `__wasm32__`, measured with
-`clang --target=wasm32-unknown-emscripten -E -dM`, and **not** the bare
-`EMSCRIPTEN` the emcc line never passed: under that older flag the gate
-compiled the `#if !defined(__wasm__)` arm at `src/jit.c:110` that emcc never
-sees, i.e. it stood in for the lane while taking the other branch.
+asserting a typed-in number, and floors it so a shrinking SOURCES array is a
+deliberate re-pin.
+
+That population is not a reading of the script. The gate runs the real
+`web/build.sh` in a scratch sandbox with a stand-in `emcc` first on `PATH`
+that records its argv, its cwd, the files it created and any unit handed to it
+on stdin; bash has already resolved quoting, `$(...)`, variables and array
+shape by then. The recorded argv is classified by the **filesystem**, not by a
+model of emcc's option grammar: `@response-files` are expanded first (as emcc
+expands them), and an input is any token naming an existing regular file the
+compiler did not itself write whose suffix is a C-family translation unit.
+That rule is position-independent, so a unit after a flag that takes no
+operand — `--emrun`, `--proxy-to-worker` — is counted, where a typed operand
+table dropped it. The two shapes a suffix cannot see, a unit on stdin
+(`-x c -`) and a unit with a non-TU suffix (`-x c web/unit.inc`), are decided
+by asking the real clang driver for its own `-x c` inputs; the gate examines
+the **union** of the two derivations and goes red by name when they disagree.
+
+It compiles with the wasm32-emscripten target's macro world **derived**, never
+typed: both worlds' predefines are read with `-E -dM`
+(`clang --target=wasm32-unknown-emscripten` and `clang -m32`), every difference
+in NAME is reconciled with a `-U` or a `-D`, every difference in VALUE — 32 of
+them, including `__SIZEOF_LONG_DOUBLE__` at 16 on the target and 12 on the
+host — gets the target's own value, and which of those glibc's `-m32` headers
+refuse is measured rather than assumed. Three hand-typed predefines were not
+enough: under them the gate took the `#elif defined(__linux__)` arm at
+`src/fsutil.c:69` on a lane that has no `__linux__` at all, i.e. it stood in
+for the lane while compiling the other branch. Availability is probed by
+EXECUTION and the probe asks for the capability the gate uses — it compiles a
+32-bit TU **that includes the C library**, and then the population's own system
+headers **under the target's macro world**, because a probe with no includes
+passes on an arm64 mac that has no 32-bit SDK and lets the gate go red on
+every TU instead of skipping. A toolchain that fails either arm SKIPs by name
+with the toolchain's own words, counted as a skip and never as a pass.
 
 `tests/test_string_scaling.sh` is the missing instrument, run by the suite as
 section **[99zc]**:

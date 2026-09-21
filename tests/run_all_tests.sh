@@ -7515,18 +7515,26 @@ fi  # EIGS_SKIP_WERROR_AUDIT
 # The gate runs clang -m32 -fsyntax-only over every translation unit the
 # playground recipe hands the compiler. That population is the RECORDED ARGV
 # of a stand-in compiler put first on PATH while the real web/build.sh runs in
-# a scratch sandbox — not a reading of the script. Three rounds derived it by
-# text and three rounds a blind critic found a spelling the text missed
-# (a src/*.c filter; then a `.c`-token audit blind to quoting, `$(...)`,
-# variables, `.cc` and comment lines inside the array). Bash has already
-# resolved all of that by the time the stand-in sees argv, so the gate asks
-# bash. The -D/-U set is DERIVED the same way: both worlds' predefines are read
-# with `-E -dM` (target `--target=wasm32-unknown-emscripten`, host `-m32`),
-# every difference is reconciled, and defined-ness parity is asserted for every
-# macro any conditional in the population tests — round 3 hand-typed three
-# predefines and left `src/fsutil.c:69` taking the `__linux__` arm on a lane
-# that has no `__linux__`. SKIP (not a pass) when this toolchain cannot target
-# 32-bit at all — probed by EXECUTION, not by the compiler's name.
+# a scratch sandbox — not a reading of the script — and it is CLASSIFIED by
+# the filesystem, not by a model of emcc's option grammar. Four rounds in a
+# row a blind critic found a spelling the previous round's rule missed: a
+# src/*.c filter; a `.c`-token audit blind to quoting, `$(...)`, variables and
+# `.cc`; then a hand-typed operand table that dropped the TU after `--emrun`
+# (a flag emcc takes NO operand for), never expanded an `@response-file` and
+# could not see `-x c -`. So the rule is now "an existing regular file the
+# compiler did not write, with a C-family suffix", cross-checked against the
+# real clang driver's own `-x c` inputs; the gate examines the UNION and goes
+# red by name when the two derivations disagree. The -D/-U set is DERIVED the
+# same way: both worlds' predefines are read with `-E -dM` (target
+# `--target=wasm32-unknown-emscripten`, host `-m32`), every difference in NAME
+# and in VALUE is reconciled, which values glibc refuses is MEASURED, and
+# defined-ness parity is asserted for every macro any conditional in the
+# population tests. SKIP (not a pass) when this toolchain cannot compile a
+# 32-bit TU against its own C library — probed by EXECUTION, not by the
+# compiler's name, and the probe now INCLUDES the C library: round 3's probe
+# had no includes, which an arm64 mac accepts at -m32, so this gate passed its
+# own availability check on macos-latest and then went red on all 23 TUs with
+# the SDK's `#error Unsupported architecture`.
 echo "[99i3] ILP32 syntax gate (the playground's wasm32 build cannot break unnoticed)"
 TOTAL=$((TOTAL + 1))
 ilp32_audit_out=$(bash "$TESTS_DIR/../tools/ilp32_syntax_check.sh" 2>&1)
@@ -7549,24 +7557,41 @@ else
     # prints nothing, so the section requires the tool's OWN examined line
     # (mechanical-gates §146: gate the OUTPUT, not the invocation) and pins
     # the self-test's case count (§142) — "some cases ran" is what a deleted
-    # plant also prints. The audit's macro_parity line is required for the same
-    # reason: a gate that stopped deriving the target's macro world still
-    # prints its examined line. 19 = plants 1, 1b, 1c, 1d (the entry point and
-    # the header), 2q, 2s, 2v, 2x, 2m, 2o (the six argv shapes a text parser
-    # reads wrong: a single-quoted literal, a command substitution, an array
-    # entry behind a variable, a `.cc` unit, a comment inside `SOURCES=(`
-    # naming a `.c` that must NOT count, and an `-o` operand ending in `.c`
-    # that must NOT count), 4m and its control 4mc (an arm the wasm32 target
-    # takes and the -m32 host does not), 4e and 4z (the parity assertion run
-    # with no reconciliation flags, and with an empty tested population — both
-    # must FAIL by name), 2, 3, 3b (empty, shrunk and entry-point-less
-    # inventories), plus two controls: a reformatted SOURCES array yields the
-    # identical inventory, and the live inventory stays green after the plants.
-    ILP32_SELFTEST_CASES=19
+    # plant also prints. THREE report lines are required, one per derivation
+    # the gate performs, because a gate that stopped deriving any one of them
+    # still prints the other two: `classifier:` (the population, derived twice
+    # and cross-checked), `macro_parity: ... values=N/M` (the macro world,
+    # derived in NAME and in VALUE — round 4 printed `reconciled=48` with not
+    # one value compared), and `OK: examined N`. 36 = plants 1, 1b, 1c, 1d
+    # (the entry point and the header), 2q, 2s, 2v, 2x, 2m, 2o (six argv
+    # shapes a text parser reads wrong), 2f, 2p, 2r, 2n, 2i, 2u, 2e (seven
+    # shapes a typed OPTION GRAMMAR reads wrong: a TU after `--emrun` and
+    # after `--proxy-to-worker`, a TU inside an `@response-file`, response
+    # files nested three deep, a TU on stdin, a `-x c` unit with a non-TU
+    # suffix, and the over-inclusion control), 2w (a recipe writing `src/`
+    # must not reach the working tree), 4m/4mc, 4e, 4z, 4v/4vc, 4w, 4y, 2t
+    # (the macro world: an arm only the target takes and its control, parity
+    # with no reconciliation flags, an empty tested population, a VALUE
+    # comparison and its control, a value glibc refuses, an unreconcilable
+    # value a conditional reads, and a TU path with a space that must not
+    # shrink the tested population), 2, 3, 3b (empty, shrunk and
+    # entry-point-less inventories), plus two controls: a reformatted SOURCES
+    # array yields the identical inventory, and the live inventory stays green
+    # after the plants; and 5s/5sc, the SKIP arm — a toolchain with no 32-bit C
+    # library must be reported unavailable (round 3's probe compiled a TU with
+    # no includes, which an arm64 mac accepts, so the gate ran anyway and every
+    # TU failed on the SDK's `#error Unsupported architecture`), with the live
+    # toolchain as its control; and 5r/5rc, the second skip arm — a C library
+    # that refuses the TARGET's macro world (the reconciliation removes
+    # `__i386__`/`__APPLE__`, which is its job, and the macOS SDK answers
+    # `#error Unsupported architecture`) must produce a SKIP reason by name,
+    # again with the live toolchain as its control.
+    ILP32_SELFTEST_CASES=36
     ilp32_ok_lines=$(printf '%s\n' "$ilp32_selftest_out" | grep -c '^selftest ok:')
     if [ "$ilp32_audit_rc" -eq 0 ] && [ "$ilp32_selftest_rc" -eq 0 ] \
        && grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out" \
-       && grep -qE '^macro_parity: tested=[0-9]+ reconciled=[0-9]+' <<<"$ilp32_audit_out" \
+       && grep -qE '^macro_parity: tested=[0-9]+ reconciled=[0-9]+ values=[0-9]+/[0-9]+' <<<"$ilp32_audit_out" \
+       && grep -qE '^classifier: [0-9]+ input\(s\) by suffix\+filesystem, [0-9]+ by the driver derivation, [0-9]+ in the union examined' <<<"$ilp32_audit_out" \
        && [ "$ilp32_ok_lines" -eq "$ILP32_SELFTEST_CASES" ]; then
         PASS=$((PASS + 1))
         echo "  PASS: every playground TU emcc compiles is ILP32-clean ($ilp32_ok_lines/$ILP32_SELFTEST_CASES gate self-test cases green)"
@@ -7577,8 +7602,11 @@ else
         elif ! grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out"; then
             echo "  FAIL: the ILP32 gate exited 0 without reporting how many TUs it examined; its output:"
             printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
-        elif ! grep -qE '^macro_parity: tested=[0-9]+ reconciled=[0-9]+' <<<"$ilp32_audit_out"; then
-            echo "  FAIL: the ILP32 gate exited 0 without reporting macro parity, so its -D/-U set was not derived from the target; its output:"
+        elif ! grep -qE '^macro_parity: tested=[0-9]+ reconciled=[0-9]+ values=[0-9]+/[0-9]+' <<<"$ilp32_audit_out"; then
+            echo "  FAIL: the ILP32 gate exited 0 without reporting macro parity in BOTH name and value, so its -D/-U set was not derived from the target; its output:"
+            printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
+        elif ! grep -qE '^classifier: [0-9]+ input\(s\) by suffix\+filesystem, [0-9]+ by the driver derivation, [0-9]+ in the union examined' <<<"$ilp32_audit_out"; then
+            echo "  FAIL: the ILP32 gate exited 0 without reporting BOTH derivations of the population, so its classifier was not cross-checked; its output:"
             printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
         fi
         if [ "$ilp32_selftest_rc" -ne 0 ]; then
