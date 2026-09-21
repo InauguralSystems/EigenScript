@@ -178,6 +178,9 @@ instructions and 11.8% of DMG's (2026-09-21), and the fleet matrix on
 +5% wall. Three of the other ten targets are the JIT's own shapes, so without
 the consumer row the lane could show a JIT change as large while the fleet
 calls it a coin flip.
+`tools/codspeed_targets_check.sh` pins the target set in the lane itself (count,
+consumer ids, a 40-hex pin, paths under the fetched dir), with a self-test that
+plants each fault, so the lane cannot shrink back to the proxies and stay green.
 
 The lane's headline metric is **instructions**, not CodSpeed's cycle
 estimate: the estimate's cache model attributed ~60% of the DMG shape to cache

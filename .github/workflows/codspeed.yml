@@ -42,6 +42,12 @@ jobs:
       - name: Build the release interpreter
         run: ./build.sh
 
+      # The target set is a claim; pin it before measuring anything. Red if a
+      # consumer row is gone, the pin is a branch name, or an exec line reaches
+      # a DMG outside the fetched dir. Its --selftest plants each of those.
+      - name: Pin the lane's target set (tools/codspeed_targets_check.sh)
+        run: bash tools/codspeed_targets_check.sh --selftest && bash tools/codspeed_targets_check.sh
+
       # A real consumer in the matrix. Pinned by SHA, not branch: a moving
       # consumer would put ITS changes into this repo's trend line (the
       # solver-policy confound). Bump deliberately, in a PR that says why.
