@@ -30,7 +30,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 #                       A gate whose second arm never runs on the lane is the
 #                       round-1 "a lane that never ran" failure in a new hat.
 #   gdb              -> the JIT debugging workflow (see CLAUDE.md)
-#   curl             -> exercising the http extension by hand
+#   curl             -> exercising the http extension by hand; ALSO how `gh`
+#                       is fetched below
 # SDL2 is deliberately absent: `make gfx` dlopen's it at runtime and compiles
 # against typedefs only, so no -dev headers are needed to build it.
 RUN apt-get update \
@@ -47,5 +48,32 @@ RUN apt-get update \
         gdb \
         curl \
  && rm -rf /var/lib/apt/lists/*
+
+# `gh` — the GitHub CLI, the LIVE arm of suite section [99zd].
+#
+# BOUGHT 2026-09-21 (round-4 blind critic, Fable; #1207): arms (b) and (c) of
+# tools/roadmap_check.sh — the milestone-set mirror and the reference resolver,
+# the whole point of the issue — were executed against GitHub by NO automated
+# caller anywhere. This image had no `gh`, so the Linux legs SKIPPED BY NAME;
+# the macOS runner has `gh` with no credentials, so it skipped too; and the
+# daily audit ran only the labels gate. "CI 31/31 green" measured the
+# structural arm alone while the section reported `population lines 3/3`. A
+# mirror nobody checks is the failure #1207 was filed about.
+#
+# THE RELEASE TARBALL, not GitHub's apt repository: one pinned version with a
+# checksum this Dockerfile verifies, rather than a third-party apt source whose
+# key rotation is another thing that can silently change what CI runs. The
+# version and the SHA-256 are a deliberate edit; `gh --version` is asserted at
+# build time so a bad extraction fails HERE and not as a mystery skip in the
+# suite.
+ARG GH_VERSION=2.101.0
+ARG GH_SHA256=9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8
+RUN curl -fsSL -o /tmp/gh.tar.gz \
+        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+ && echo "${GH_SHA256}  /tmp/gh.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/gh.tar.gz -C /tmp \
+ && install -m 0755 "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh \
+ && rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_amd64" \
+ && gh --version
 
 WORKDIR /workspaces/EigenScript

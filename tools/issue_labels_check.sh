@@ -23,6 +23,18 @@
 # issues: an empty enumeration satisfies "nothing is missing" and is the
 # vacuity mechanical-gates §121 exists to stop, so it fails too.
 #
+# WHAT A CALLER OF THIS GATE CAN AND CANNOT PROVE. A caller ([99zd] in
+# tests/run_all_tests.sh, the audit in .github/workflows/issue-triage.yml)
+# verifies that this gate printed a population line it could only have produced
+# by running its live arm ON THAT LANE — the source token is pinned to
+# `gh-api:` with no `SKIPPED BY NAME` alternative whenever the CALLER'S OWN
+# probe (tools/gh_probe.sh) can reach GitHub — and that this gate's selftest
+# ran with the pinned case count. A gate that FABRICATES its own output —
+# printing the population line and the selftest line without doing the work —
+# is outside any caller's power to detect: a forged receipt reads exactly like
+# a true one. That is what the blind-critic rounds and this selftest's
+# transverse mutations are for.
+#
 # Usage:
 #   bash tools/issue_labels_check.sh              # the live repository
 #   bash tools/issue_labels_check.sh --selftest   # planted faults, no network
@@ -38,6 +50,15 @@ set -u
 
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 REPO="${ISSUE_LABELS_REPO:-InauguralSystems/EigenScript}"
+
+# The `gh` reachability probe lives in ONE file, sourced by this gate AND by
+# its callers ([99zd] in tests/run_all_tests.sh and the audit step in
+# .github/workflows/issue-triage.yml). Round 3 let each gate decide alone
+# whether GitHub was reachable and had the callers believe the answer, so a
+# gate whose probe always said "no" passed on an authenticated box (round-4
+# blind critic, Fable). Two readers of one probe cannot disagree.
+# shellcheck source=gh_probe.sh
+. "$(cd "$(dirname "$0")" && pwd)/gh_probe.sh"
 
 # ---------------------------------------------------------------------------
 # THE CONTRACT — the population line this gate promises to print, and how many
@@ -137,14 +158,11 @@ run_live() {
         fi
         # `gh` INSTALLED IS NOT `gh` AUTHENTICATED — the macOS runner has one
         # and not the other (CI run 35599371704), and the two states must be
-        # distinguishable by name rather than collapsed into one failure.
-        # `gh auth status` alone is not the probe: with a bogus GH_TOKEN it
-        # says "The token in GH_TOKEN is invalid." and exits 0, so one cheap
-        # authenticated call decides it. `rate_limit`, not `user`: it costs no
-        # rate limit and it answers for a workflow's GITHUB_TOKEN, which is
-        # forbidden from `/user` — probing with that would have made this
-        # gate skip itself on the lane that exists to run it.
-        if ! gh auth status >/dev/null 2>&1 || ! gh api rate_limit >/dev/null 2>&1; then
+        # distinguishable by name rather than collapsed into one failure. The
+        # probe itself is tools/gh_probe.sh, which is also what this gate's
+        # CALLERS run, so "the gate says it could not reach GitHub" is a claim
+        # the caller can check rather than one it has to believe.
+        if ! gh_probe_authenticated; then
             echo "issue-labels: SKIPPED BY NAME: gh is on PATH but has no working credentials, so the open-issue set cannot be read"
             return 0
         fi

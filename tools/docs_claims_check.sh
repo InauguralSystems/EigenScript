@@ -295,6 +295,14 @@ if [ "${1:-}" = "--selftest" ]; then
     st_case "planted unresolvable \`name of\` call goes red" \
             "$p" 1 "calls \`no_such_builtin of ...\`"
 
+    # BUILTIN FAMILIES (#1227). docs/BUILTINS.md's UDP sentence is a NEGATIVE
+    # claim and is waived by its exact line. Turn it into a shipping claim —
+    # the shape ROADMAP.md carried at 5213ba3 — and the waiver stops matching,
+    # so the family claim is judged and goes red by name against `--api`.
+    p=$(plant "BUILTINS.md" 's/UDP is not yet exposed/UDP datagram sockets are exposed and shipped/' docs/BUILTINS.md)
+    st_case "planted 'UDP shipped' family claim goes red" \
+            "$p" 1 "names the builtin family udp"
+
     # Zero population, one class at a time is not enough: a doc with NOTHING in
     # it must trip every class's guard, and each message is asserted by name.
     : > "$st_dir/EMPTY.md"
@@ -1240,6 +1248,19 @@ D_CHAN_ARMS=$(awk '/^static Value \*chan_clone_rec/,/^}/' src/eigenscript.c \
 # cannot reach it (a shallow CI checkout, a `git archive` scratch copy with no
 # `.git` at all) cannot derive the number, so the claim DEFERS by name into its
 # own declared class rather than silently dropping out of the population.
+#
+# WHAT A DEFERRAL COSTS (round-4 blind critic, Fable, check 1). A deferred
+# claim is NOT verified — it is verified NOWHERE until someone re-derives it.
+# The commit above is a HISTORICAL one: if the history is ever rewritten, or
+# the commit is garbage-collected, or CI switches to a shallow fetch, these two
+# claims defer on EVERY lane and stay unverified indefinitely, with the tree
+# still printing `docs-claims: OK`. Until round 4 the OK line was BYTE-IDENTICAL
+# whether the claims were derived or deferred, and the CI logs print only that
+# line — so whether CI measured them was unknowable from the lane. The OK line
+# now carries `history-deferred=N`. If N stops being 0 on a lane that used to
+# derive, re-pin DC_ROADMAP_HIST_COMMIT to a reachable commit (or restate the
+# two claims from a commit that is), rather than letting the deferral become
+# the normal state.
 DC_ROADMAP_HIST_COMMIT="${DC_ROADMAP_HIST_COMMIT:-b91768e}"
 D_ROADMAP_HIST_CHECKBOXES=""
 D_ROADMAP_HIST_COMPLETED=""
@@ -1387,7 +1408,7 @@ waivers_audit() {
         fail "the waiver table holds $n entries but $WAIVERS_DECLARED are declared — adding or removing a waiver is a deliberate edit"
     fi
 }
-WAIVERS_DECLARED=16
+WAIVERS_DECLARED=18
 
 # ---------------------------------------------------------------------------
 # 2b. DECLARED POPULATIONS (mechanical-gates §121 + §129, Astra G1).
@@ -2061,6 +2082,79 @@ done
 note "  NAMES: examined $name_examined, in the index $name_ok, defined locally $name_local, waived $name_waived"
 
 # ---------------------------------------------------------------------------
+# 7b. CLASS NAMES, subclass BUILTIN FAMILIES. A doc line that NAMES a builtin
+#     family claims a family of builtins exists; the index says whether it
+#     does.
+#
+#     BOUGHT 2026-09-21 (#1227, round-4 blind critic Fable's cold read):
+#     ROADMAP.md carried "**Raw TCP/UDP sockets** (#414) — shipped" under
+#     "### Shipped since this file last claimed them". Measured against the
+#     built binary: `--api` lists net_accept/close/dial/listen/port/recv/send
+#     and nothing else, `grep -i udp src/*.c src/*.h` is empty, and
+#     docs/BUILTINS.md says in prose that UDP is not exposed. The NAMES class
+#     could not see it, because the claim is not a `name of` call — it is a
+#     family name in English, and #414's title (TCP/UDP) is what the roadmap
+#     line was copied from.
+#
+#     THE RULE: a doc line naming a declared family keyword must find that
+#     family's MARKER among the names `eigenscript --api` prints, or carry an
+#     exact-line waiver. A line that states the family does NOT exist is the
+#     waived shape, and because a waiver is pinned to the EXACT line
+#     (mechanical-gates §125), re-asserting the family — putting "UDP" back
+#     into a shipped-claim sentence — drops the waiver and goes red by name.
+#
+#     Each row is `keyword|ERE|marker|what the family is`. The ERE is
+#     deliberately looser on its LEFT edge than the thing it polices (§12): the
+#     trailing word boundary is enforced, the leading one is not, so
+#     `SomethingUDP` is examined rather than missed.
+FAMILY_CLAIMS='udp|[Uu][Dd][Pp]|udp|UDP datagram sockets
+tcp|[Tt][Cc][Pp]|net_|TCP stream sockets'
+# Population, pinned like every other in this gate (§129) and counted in
+# MENTIONS, not lines: one sentence naming a family twice is two claims. A
+# keyword that stops appearing anywhere makes the class vacuous, so any
+# movement in either direction is a review event.
+FAMILY_CLAIMS_DECLARED=9
+
+family_examined=0; family_ok=0; family_waived=0
+note ""
+note "docs-claims class NAMES/BUILTIN FAMILIES:"
+FAMILY_API_NAMES=$(printf '%s\n' "$NAMES_API")
+while IFS='|' read -r fkw fre fmarker fwhat; do
+    [ -n "${fkw:-}" ] || continue
+    if grep -qi -- "$fmarker" <<< "$FAMILY_API_NAMES"; then
+        fpresent=1
+    else
+        fpresent=0
+    fi
+    note "  family $fkw ($fwhat): marker '$fmarker' is $([ "$fpresent" -eq 1 ] && echo 'IN' || echo 'NOT IN') the --api index"
+    for f in $DOC_FILES; do
+        [ -f "$f" ] || continue
+        dc_extract "the '$fkw' family scan of $f" numword "$fre" "$f"
+        while IFS= read -r hit; do
+            [ -z "$hit" ] && continue
+            lineno="${hit%%:*}"
+            fline=$(sed -n "${lineno}p" "$f")
+            family_examined=$((family_examined + 1))
+            if [ "$fpresent" -eq 1 ]; then
+                family_ok=$((family_ok + 1))
+            elif waiver_lookup "$f" "$fline"; then
+                family_waived=$((family_waived + 1))
+                note "  WAIVED  $f:$lineno  names the builtin family $fkw — $WAIVER_REASON"
+            else
+                fail "$f:$lineno names the builtin family $fkw ($fwhat), and no name in \`eigenscript --api\` carries '$fmarker' — the document claims a family of builtins this tree does not have"
+            fi
+        done < <(printf '%s\n' "$DC_SCAN_OUT")
+    done
+done <<EOF
+$FAMILY_CLAIMS
+EOF
+[ "$family_examined" -eq 0 ] && fail "class NAMES/BUILTIN FAMILIES examined 0 family mentions — zero population (§121)"
+if [ "$DOCSET_IS_DEFAULT" -eq 1 ] && [ "$family_examined" -ne "$FAMILY_CLAIMS_DECLARED" ]; then
+    fail "class NAMES/BUILTIN FAMILIES examined $family_examined family mention(s) but $FAMILY_CLAIMS_DECLARED are declared — a family claim was added or removed; update FAMILY_CLAIMS_DECLARED deliberately after reviewing which"
+fi
+note "  BUILTIN FAMILIES: examined $family_examined mention(s), family present $family_ok, waived $family_waived"
+
+# ---------------------------------------------------------------------------
 # 8. CLASS: DOC ENROLMENT (mechanical-gates §119 — a gate is only as wide as
 #    its derivation's REACH). Section [89] executes the documents it is HANDED.
 #    A new docs/*.md full of eigenscript fences that nobody added to that list
@@ -2218,7 +2312,7 @@ class_summary
 
 note ""
 if [ "$red" -eq 0 ]; then
-    note "docs-claims: OK — NUMBERS $num_examined, PATHS $path_examined, FLAGS $flag_examined, MAKE TARGETS $tgt_examined, NAMES $name_examined, DOC ENROLMENT $enrol_examined (every class non-empty)"
+    note "docs-claims: OK — NUMBERS $num_examined (history-deferred=$hist_deferred), PATHS $path_examined, FLAGS $flag_examined, MAKE TARGETS $tgt_examined, NAMES $name_examined (families $family_examined), DOC ENROLMENT $enrol_examined (every class non-empty)"
 else
     note "docs-claims: FAILED (see RED lines above)"
 fi

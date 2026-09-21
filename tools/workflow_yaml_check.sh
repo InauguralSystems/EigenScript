@@ -97,6 +97,20 @@ indent_of() {
     printf '%s' "$(( ${#s} - ${#rest} ))"
 }
 
+# The two [[ =~ ]] patterns below, held in VARIABLES.
+#
+# BOUGHT 2026-09-21 (round 4, #1207): bash 3.2 — the oldest shell
+# tools/portability_parse_check.sh parses every tracked script under — CANNOT
+# PARSE a literal `=~` regex containing `(`; it dies at parse time with
+# "syntax error in conditional expression: unexpected token `('". The same
+# regex held in a variable parses and matches identically on 3.2 and on 5.x.
+# This file shipped with both patterns inline since round 1 and no CI lane ever
+# noticed, because every runner in the matrix reports "NO OLD BASH ON THIS
+# MACHINE" and [99zb] SKIPs — a gate that can only skip, which is the exact
+# class this whole campaign is about.
+RE_BLOCK_SCALAR='^[[:space:]]*(-[[:space:]]+)?[^:#]*:[[:space:]]*[|>][0-9]*[+-]?[[:space:]]*$'
+RE_NAME_KEY='^[[:space:]]*(-[[:space:]]+)?name:[[:space:]](.*)$'
+
 # Trim leading and trailing spaces/tabs.
 trim() {
     local s="$1"
@@ -135,7 +149,7 @@ check_text() {
             fi
 
             # --- does this line OPEN a block scalar (`key: |`, `- run: >-2`)?
-            if [[ $line =~ ^[[:space:]]*(-[[:space:]]+)?[^:#]*:[[:space:]]*[\|\>][0-9]*[+-]?[[:space:]]*$ ]]; then
+            if [[ $line =~ $RE_BLOCK_SCALAR ]]; then
                 in_block=1
                 blk_indent=$(indent_of "$line")
                 continue
@@ -146,7 +160,7 @@ check_text() {
                 *) continue ;;
             esac
             # `name:` as a key: optional list dash, then name:, then the value.
-            if ! [[ $line =~ ^[[:space:]]*(-[[:space:]]+)?name:[[:space:]](.*)$ ]]; then
+            if ! [[ $line =~ $RE_NAME_KEY ]]; then
                 continue
             fi
             NAMES_N=$((NAMES_N + 1))

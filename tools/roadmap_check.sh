@@ -49,6 +49,18 @@
 # `examined=N` and refuse when N is 0 or when N != the table size. "Some rows
 # were checked" is what a gutted walk also prints.
 #
+# WHAT A CALLER OF THIS GATE CAN AND CANNOT PROVE. A caller ([99zd] in
+# tests/run_all_tests.sh, the audit in .github/workflows/issue-triage.yml)
+# verifies that this gate printed a population line it could only have produced
+# by running its live arm ON THAT LANE — the source token is pinned to
+# `gh-api:` and `skipped=0` whenever the CALLER'S OWN probe (tools/gh_probe.sh)
+# can reach GitHub — and that this gate's selftest ran with the pinned case
+# count. A gate that FABRICATES its own output — printing the population line
+# and the selftest line without doing the work — is outside any caller's power
+# to detect: a forged receipt reads exactly like a true one. That is what the
+# blind-critic rounds and this selftest's transverse mutations are for, and it
+# is stated here so nobody mistakes a pinned regex for a proof of work.
+#
 # Usage:
 #   bash tools/roadmap_check.sh              # the real ROADMAP.md
 #   bash tools/roadmap_check.sh --selftest   # planted faults, each must go red
@@ -61,6 +73,15 @@ set -u
 
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# The `gh` reachability probe lives in ONE file, sourced by this gate AND by
+# its callers ([99zd] in tests/run_all_tests.sh, the daily audit in
+# .github/workflows/issue-triage.yml). Round 3 let this gate decide alone
+# whether GitHub was reachable, and the callers believed the answer: a gate
+# whose probe always said "no" passed on an authenticated box (round-4 blind
+# critic, Fable). Two readers of one probe cannot disagree.
+# shellcheck source=gh_probe.sh
+. "$ROOT/tools/gh_probe.sh"
 
 # This gate never reads stdin: a `grep -c` whose stdin is an open pipe hangs
 # the whole check, and one whose stdin is /dev/null counts 0 and passes a
@@ -76,6 +97,13 @@ OWNER="${REPO%%/*}"
 # anything NOT on this list is red rather than silently skipped: an unknown
 # repository name is how "Tidepool PR #375" survived review.
 KNOWN_REPOS="${ROADMAP_CHECK_REPOS:-EigenScript ouroboros Tidepool EigenMiniSat EigenOS EigenRegex EigenGauntlet DeslanStudio liferaft tidelog dynamics phugoid polymethod iLambdaAi eigen-sheet eigen-edit eigen-site EigenKB}"
+
+# The OWNERS a reference may name. An explicit owner is part of the identity of
+# a reference (`cli/Tidepool#59` is not `InauguralSystems/Tidepool#59`), so one
+# outside this set is red by name rather than replaced by the default — which
+# is how a reference to a repository that does not exist was certified by
+# resolving a different organisation's (round-4 blind critic, Astra).
+KNOWN_OWNERS="${ROADMAP_CHECK_OWNERS:-$OWNER}"
 
 # ---------------------------------------------------------------------------
 # THE CONTRACT — the population line this gate promises to print, and how many
@@ -95,13 +123,29 @@ KNOWN_REPOS="${ROADMAP_CHECK_REPOS:-EigenScript ouroboros Tidepool EigenMiniSat 
 # sources in machine-readable tokens (`gh-api:`, `fixture:`, `skipped:`) and
 # the contract requires a non-fixture one, so a run driven by the selftest seam
 # is red at the caller by name.
-POPULATION_RE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+\)$'
-SELFTEST_CASES=14
+#
+# ROUND 4 (blind critics Fable and Astra): `refs=gh-api:…` named the ENDPOINT
+# the arm intended to call, not work done — with every per-reference call
+# answering HTTP 403 the arm reported `refs=0 resolved, skipped=7` and the OK
+# line was byte-identical to a run that resolved all seven. The line now
+# carries the walk's OWN counts, `resolved=N skipped=M`, so a caller that can
+# reach GitHub can require `skipped=0` (a 403 storm on an authenticated lane is
+# red, not a pass). The contract still ADMITS a named skip, because a lane with
+# no credentials legitimately prints one; it is the CALLER that refuses a skip
+# on a lane where it has established for itself that GitHub is reachable.
+POPULATION_RE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+\)$'
+SELFTEST_CASES=17
 
 # What arms (b) and (c) actually used this run. One of
 #   gh-api:<endpoint>   fixture:<path>   skipped:<reason>
 SRC_MILESTONES="skipped:not-reached"
 SRC_REFS="skipped:not-reached"
+# What arm (c) actually DID: how many references it resolved and how many it
+# had to skip by name (401/403/429, a transport error, or a repository this
+# token cannot read). Printed on the OK line, because the source token alone
+# says nothing about work done.
+REF_RESOLVED=0
+REF_SKIPPED=0
 
 RED=0
 red() { echo "RED: $*"; RED=$((RED + 1)); }
@@ -149,21 +193,13 @@ is_closed_status() {
         *) return 1 ;;
     esac
 }
-# AUTHENTICATED, not merely installed. `gh auth status` alone is not enough:
-# with GH_TOKEN set to a bogus value it prints "The token in GH_TOKEN is
-# invalid." and STILL EXITS 0 (measured on the dev box, 2026-09-21), so the
-# probe also makes one cheap authenticated call. Both arms use this, so they
-# cannot disagree about which of the three states — no gh, gh without
-# credentials, gh with working credentials — this runner is in.
+# AUTHENTICATED, not merely installed — see tools/gh_probe.sh for why
+# `gh auth status` alone is not the probe. Both arms use this, AND so does
+# every caller, so a gate and its caller cannot disagree about which of the
+# three states — no gh, gh without credentials, gh with working credentials —
+# this runner is in.
 gh_authenticated() {
-    command -v gh >/dev/null 2>&1 || return 1
-    gh auth status >/dev/null 2>&1 || return 1
-    # `rate_limit` and not `user`: it costs no rate limit, it answers for a
-    # personal token AND for a workflow's GITHUB_TOKEN (which is FORBIDDEN from
-    # `/user` — probing with that would have made the daily lane skip itself),
-    # and it is a 401 on a bad token.
-    gh api rate_limit >/dev/null 2>&1 || return 1
-    return 0
+    gh_probe_authenticated
 }
 
 is_known_status() {
@@ -491,12 +527,13 @@ check_references() {
             echo "      (c) SKIPPED BY NAME: gh is on PATH but has no working credentials, so nothing can be resolved — an unauthenticated 404 says nothing about whether the reference exists. Arm (a) still ran."
             return
         fi
-        src="gh api repos/<repo>/issues/<n>"
-        SRC_REFS="gh-api:repos/$OWNER/*/issues"
+        src="gh api repos/<owner>/<repo>/issues/<n>"
+        SRC_REFS="gh-api:repos/<owner>/*/issues"
     fi
 
     local out
     if ! out=$(RC_KNOWN_REPOS="$KNOWN_REPOS" RC_DEFAULT_REPO="${REPO##*/}" \
+               RC_KNOWN_OWNERS="$KNOWN_OWNERS" RC_DEFAULT_OWNER="$OWNER" \
                python3 -c '
 import os, re, sys
 
@@ -508,26 +545,59 @@ except Exception as exc:
     sys.exit(2)
 
 known = set(os.environ.get("RC_KNOWN_REPOS", "").split())
+owners = set(os.environ.get("RC_KNOWN_OWNERS", "").split())
 default = os.environ.get("RC_DEFAULT_REPO", "")
-REF = re.compile(r"([A-Za-z][A-Za-z0-9_.-]*)?#([0-9]+)")
-PROSE = re.compile(r"([A-Za-z][A-Za-z0-9_.-]*) +(?:PR|pull request|issue|issues) +#([0-9]+)")
+default_owner = os.environ.get("RC_DEFAULT_OWNER", "")
+
+# AN EXPLICIT OWNER IS PART OF THE IDENTITY.
+# BOUGHT 2026-09-21 (round-4 blind critic, Astra): this pattern used to be
+# `([A-Za-z][A-Za-z0-9_.-]*)?#([0-9]+)`, which captured only the REPOSITORY
+# half. `cli/Tidepool#59` therefore extracted as `Tidepool#59`, deduplicated
+# against the `InauguralSystems/Tidepool#59` already in the population, and the
+# owner was reconstructed from this gate default at lookup time — so a
+# reference to a repository that does not exist was certified by resolving a
+# DIFFERENT one. The owner is now captured, carried through deduplication, and
+# an owner outside the known set is red BY NAME rather than replaced.
+REF = re.compile(r"(?:([A-Za-z0-9][A-Za-z0-9-]*)/)?([A-Za-z][A-Za-z0-9_.-]*)?#([0-9]+)")
+PROSE = re.compile(r"(?:([A-Za-z0-9][A-Za-z0-9-]*)/)?([A-Za-z][A-Za-z0-9_.-]*) +(?:PR|pull request|issue|issues) +#([0-9]+)")
 
 seen = []
-def add(repo, num, why):
-    for r, n, w in seen:
-        if r == repo and n == num:
+def add(owner, repo, num, why):
+    # The key is the FULL TRIPLE. Two owners of the same repo#N are two
+    # different references and must both be resolved.
+    for o, r, n, w in seen:
+        if o == owner and r == repo and n == num:
             return
-    seen.append((repo, num, why))
+    seen.append((owner, repo, num, why))
 
 unknown = []
 def unknown_add(msg):
     if msg not in unknown:
         unknown.append(msg)
 
+bad_owner = []
+def bad_owner_add(msg):
+    if msg not in bad_owner:
+        bad_owner.append(msg)
+
 ambiguous = []
 def ambiguous_add(msg):
     if msg not in ambiguous:
         ambiguous.append(msg)
+
+def classify(owner, repo, num, why):
+    # An owner with no repository half (`.../#5`) is punctuation, not an
+    # owner: fall back to the bare-reference rule rather than accusing.
+    if repo is None:
+        return ("bare", None)
+    if owner is not None and owner not in owners:
+        bad_owner_add("%s/%s#%s (%s)" % (owner, repo, num, why))
+        return ("bad-owner", None)
+    if repo not in known:
+        unknown_add("%s#%s (%s)" % (repo, num, why))
+        return ("unknown-repo", None)
+    add(owner or default_owner, repo, num, why)
+    return ("ok", None)
 
 def cells_of(line):
     # the SAME split rule the structure arm uses: `\|` is content.
@@ -544,10 +614,10 @@ for ln in text.split("\n"):
         continue
     for cell in cells_of(ln):
         qualified = [m for m in REF.finditer(cell)
-                     if m.group(1) is not None and m.group(1) in known]
+                     if m.group(2) is not None and m.group(2) in known]
         for m in REF.finditer(cell):
-            q = m.group(1)
-            if q is None:
+            owner, repo, num = m.group(1), m.group(2), m.group(3)
+            if repo is None:
                 if qualified:
                     # BOUGHT 2026-09-21 (round-3 blind critic, Fable): M9 read
                     # "Tidepool#43 and #59 closed". The bare #59 silently became
@@ -556,13 +626,11 @@ for ln in text.split("\n"):
                     # it does not mean. A bare number beside a qualified one is
                     # ambiguous; the gate refuses it instead of guessing.
                     ambiguous_add("bare #%s beside %s#%s — a bare number defaults to %s, and this cell names another repository; qualify it"
-                                  % (m.group(2), qualified[0].group(1), qualified[0].group(2), default))
+                                  % (num, qualified[0].group(2), qualified[0].group(3), default))
                     continue
-                add(default, m.group(2), "table")
-            elif q in known:
-                add(q, m.group(2), "table")
-            else:
-                unknown_add("%s#%s (table)" % (q, m.group(2)))
+                add(default_owner, default, num, "table")
+                continue
+            classify(owner, repo, num, "table")
 
 # 2. every REPO-QUALIFIED reference anywhere in the file, attached or in prose.
 #    Whitespace is normalised first: the reference this arm was bought for
@@ -572,48 +640,71 @@ for ln in text.split("\n"):
 #    the sentence that explains the row.
 norm = re.sub(r"\s+", " ", text)
 for m in REF.finditer(norm):
-    q = m.group(1)
-    if q is None:
+    owner, repo, num = m.group(1), m.group(2), m.group(3)
+    if repo is None:
         continue
-    if q in known:
-        add(q, m.group(2), "qualified")
-    else:
-        unknown_add("%s#%s (prose)" % (q, m.group(2)))
-# The SPACED prose form (`Tidepool PR #375`) is only RESOLVED, never accused:
-# its left word is an ordinary English word most of the time ("whose PR #375"),
-# so an unknown one there is not evidence of anything. The ATTACHED form
-# (`PrivateRepo#999999`) is unambiguous — nobody writes `word#123` by accident —
-# and that is the one an unknown qualifier is red for, wherever it appears.
+    classify(owner, repo, num, "qualified")
+# The SPACED prose form (`Tidepool PR #375`) is only RESOLVED, never accused
+# for its REPOSITORY half: that left word is an ordinary English word most of
+# the time ("whose PR #375"), so an unknown one there is not evidence of
+# anything. An explicit OWNER is different — nobody writes `word/word PR #12`
+# by accident — so `cli/Tidepool PR #59` is accused like the attached form.
 for m in PROSE.finditer(norm):
-    if m.group(1) in known:
-        add(m.group(1), m.group(2), "prose")
+    owner, repo, num = m.group(1), m.group(2), m.group(3)
+    if owner is not None and owner not in owners:
+        bad_owner_add("%s/%s#%s (prose)" % (owner, repo, num))
+        continue
+    if repo in known:
+        add(owner or default_owner, repo, num, "prose")
 
 for msg in ambiguous:
     print("AMBIGUOUS %s" % msg)
+for msg in bad_owner:
+    print("BADOWNER %s" % msg)
 for msg in unknown:
     print("UNKNOWN %s" % msg)
-for r, n, w in seen:
-    print("REF %s %s %s" % (r, n, w))
+for o, r, n, w in seen:
+    print("REF %s %s %s %s" % (o, r, n, w))
 print("TOTAL %d" % len(seen))
 ' "$RC_FILE"); then
         red "(c) could not extract the references from $RC_FILE"
         return
     fi
 
-    local line unknown_n=0 ambiguous_n=0
+    local line unknown_n=0 ambiguous_n=0 badowner_n=0
     while IFS= read -r line; do
         case "$line" in
             AMBIGUOUS\ *) red "(c) ${line#AMBIGUOUS } — $RC_FILE"; ambiguous_n=$((ambiguous_n + 1)) ;;
+            BADOWNER\ *) red "(c) ${line#BADOWNER } names an owner this gate does not know — owner '$(o="${line#BADOWNER }"; o="${o%%/*}"; printf '%s' "$o")' is not this gate's organisation (KNOWN_OWNERS: $KNOWN_OWNERS). An explicit owner is part of the reference's identity and is never replaced by the default"; badowner_n=$((badowner_n + 1)) ;;
             UNKNOWN\ *) red "(c) ${line#UNKNOWN } names no repository this gate knows (KNOWN_REPOS) — a qualified reference must name one"; unknown_n=$((unknown_n + 1)) ;;
         esac
     done <<< "$out"
 
-    local total resolved=0 examined=0 skipped=0 repo num why full err rc status
+    local total resolved=0 examined=0 skipped=0 owner repo num why full err rc status
     total=$(printf '%s\n' "$out" | sed -n 's/^TOTAL //p' | tail -1)
     if [ "${total:-0}" -eq 0 ]; then
         red "(c) the milestone table offers ZERO references as evidence — an empty reference set resolves trivially (mechanical-gates §121)"
         return
     fi
+
+    # A 404 on an issue in a repository this token CANNOT READ AT ALL is a fact
+    # about the token, not about the reference — and reporting it as "the
+    # reference does not exist" is the same false accusation arm (c) exists to
+    # prevent, pointed the other way. The repository itself is probed once per
+    # distinct owner/repo; a repository that cannot be read makes its references
+    # SKIP BY NAME and lands in `skipped=`, which an authenticated caller
+    # refuses. Never a silent pass.
+    local readable_ok=" " readable_bad=" "
+    repo_readable() { # <owner>/<repo>
+        case "$readable_ok" in *" $1 "*) return 0 ;; esac
+        case "$readable_bad" in *" $1 "*) return 1 ;; esac
+        if gh api "repos/$1" --jq .full_name >/dev/null 2>&1; then
+            readable_ok="$readable_ok$1 "
+            return 0
+        fi
+        readable_bad="$readable_bad$1 "
+        return 1
+    }
 
     while IFS= read -r line; do
         case "$line" in
@@ -621,9 +712,9 @@ print("TOTAL %d" % len(seen))
             *) continue ;;
         esac
         set -- $line
-        repo="$2"; num="$3"; why="$4"
+        owner="$2"; repo="$3"; num="$4"; why="$5"
         examined=$((examined + 1))
-        full="$OWNER/$repo"
+        full="$owner/$repo"
         if [ -n "$fixture" ]; then
             # An exact-line fixture: anything not listed does not exist.
             if [[ $'\n'"$(cat "$fixture")"$'\n' == *$'\n'"$full#$num"$'\n'* ]]; then
@@ -631,6 +722,11 @@ print("TOTAL %d" % len(seen))
             else
                 red "(c) $full#$num ($why) does not exist — the reference is evidence for a claim in $RC_FILE"
             fi
+            continue
+        fi
+        if ! repo_readable "$full"; then
+            skipped=$((skipped + 1))
+            note "(c) SKIPPED BY NAME: $full#$num ($why) — this token cannot read the repository $full at all, so a 404 on an issue inside it is a fact about this run, not about the reference"
             continue
         fi
         # stdout discarded, stderr captured: `gh` prints the HTTP status there,
@@ -645,7 +741,7 @@ print("TOTAL %d" % len(seen))
         status=$(printf '%s\n' "$err" | sed -n 's/.*(HTTP \([0-9][0-9]*\)).*/\1/p' | head -1)
         case "${status:-none}" in
             404)
-                red "(c) $full#$num ($why) does not resolve — $RC_FILE offers it as evidence and the endpoint answers HTTP 404 to a token that reads this org's other references" ;;
+                red "(c) $full#$num ($why) does not resolve — $RC_FILE offers it as evidence, this token can read $full, and the endpoint answers HTTP 404" ;;
             401|403|429)
                 skipped=$((skipped + 1))
                 note "(c) SKIPPED BY NAME: $full#$num ($why) — the API answered HTTP $status (unauthorised, forbidden, or rate-limited); that is a fact about this run, not about the reference" ;;
@@ -655,11 +751,13 @@ print("TOTAL %d" % len(seen))
         esac
     done <<< "$out"
 
+    REF_RESOLVED=$resolved
+    REF_SKIPPED=$skipped
     if [ "$examined" -ne "${total:-0}" ]; then
         red "(c) extracted ${total:-0} reference(s) but walked $examined — the reference walk lost rows"
         return
     fi
-    if [ $((resolved + skipped)) -ne "$examined" ] || [ "$unknown_n" -ne 0 ] || [ "$ambiguous_n" -ne 0 ]; then
+    if [ $((resolved + skipped)) -ne "$examined" ] || [ "$unknown_n" -ne 0 ] || [ "$ambiguous_n" -ne 0 ] || [ "$badowner_n" -ne 0 ]; then
         return
     fi
     echo "      (c) references: examined=$examined, refs=$resolved resolved, skipped=$skipped (source: $src); bare #N outside the table is NOT resolved, by design"
@@ -674,7 +772,7 @@ run_live() {
         echo "roadmap-check: $RED problem(s)"
         return 1
     fi
-    local ok_line="roadmap-check: OK (examined=$TABLE_ROWS row(s), open=$TABLE_OPEN_ROWS) (source: milestones=$SRC_MILESTONES refs=$SRC_REFS)"
+    local ok_line="roadmap-check: OK (examined=$TABLE_ROWS row(s), open=$TABLE_OPEN_ROWS) (source: milestones=$SRC_MILESTONES refs=$SRC_REFS resolved=$REF_RESOLVED skipped=$REF_SKIPPED)"
     echo "$ok_line"
     # The gate proves its OWN output satisfies the contract it publishes, so
     # that rewording this line without updating POPULATION_RE goes red here
@@ -784,6 +882,19 @@ InauguralSystems/EigenScript#419
 InauguralSystems/Tidepool#43
 EOF
     export ROADMAP_CHECK_REFS_FIXTURE="$work/refs.txt"
+    # A SECOND known owner, so the owner-identity plants below can put the SAME
+    # repo#N under two owners that the gate both accepts as organisations. With
+    # one known owner the only reachable plant is "unknown owner", which cannot
+    # show that deduplication keys on the full triple.
+    export ROADMAP_CHECK_OWNERS="InauguralSystems SecondOrg"
+    # The same reference set, plus the second owner's copy — the CONTROL for
+    # plant 14 below: when both owners really have the issue, both resolve.
+    cat > "$work/refs2.txt" <<'EOF'
+InauguralSystems/EigenScript#375
+InauguralSystems/EigenScript#419
+InauguralSystems/Tidepool#43
+SecondOrg/Tidepool#43
+EOF
 
     st_case "control: a well-formed table matches its milestones" "-" green \
             "$work/good.md" "$work/ms.json"
@@ -889,6 +1000,37 @@ EOF
         >> "$work/unknownprose.md"
     st_case "plant: an unknown repo-qualified reference in prose" "c" red \
             "$work/unknownprose.md" "$work/ms.json"
+
+    # PLANT 13 (arm c): an EXPLICIT OWNER outside the known set. Round 3
+    # captured only the repository half, so `cli/Tidepool#43` deduplicated
+    # against `InauguralSystems/Tidepool#43` and the owner was rebuilt from the
+    # default at lookup time — a nonexistent fully qualified reference passed by
+    # having a DIFFERENT organisation's repository resolved for it (round-4
+    # blind critic, Astra).
+    cp "$work/good.md" "$work/badowner.md"
+    printf '\nEvidence: cli/Tidepool#43.\n' >> "$work/badowner.md"
+    st_case "plant: a reference whose owner is not this gate's organisation" "c" red \
+            "$work/badowner.md" "$work/ms.json"
+
+    # PLANT 14 (arm c) — THE REGRESSION FIXTURE: the SAME repo#N under two
+    # owners, one real and one not. Deduplication must key on the full triple,
+    # so the fake one is walked and goes red on its own account while the real
+    # one resolves. Under round 3's extractor this file produced ONE reference.
+    cp "$work/good.md" "$work/twoowners.md"
+    printf '\nEvidence: InauguralSystems/Tidepool#43 and SecondOrg/Tidepool#43.\n' \
+        >> "$work/twoowners.md"
+    st_case "plant: the same repo#N under two owners, only one of which has it" "c" red \
+            "$work/twoowners.md" "$work/ms.json"
+
+    # CONTROL 15 (arm c): the same file against a fixture where BOTH owners
+    # have the issue — green. Without this, plant 14 would also pass against an
+    # extractor that simply refused every second owner (mechanical-gates §19).
+    # (An assignment PREFIXED to a shell-function call persists after the call
+    # in bash, so the fixture is swapped and swapped back explicitly.)
+    export ROADMAP_CHECK_REFS_FIXTURE="$work/refs2.txt"
+    st_case "control: the same repo#N under two owners that both have it" "-" green \
+            "$work/twoowners.md" "$work/ms.json"
+    export ROADMAP_CHECK_REFS_FIXTURE="$work/refs.txt"
 
     echo ""
     echo "SELFTEST: $ST_RUN case(s) run, $((ST_RUN - ST_FAIL - ST_SKIP)) passed, $ST_FAIL failed, $ST_SKIP skipped"

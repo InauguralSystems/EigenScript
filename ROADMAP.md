@@ -352,8 +352,12 @@ with the commands that produce them; no number is retyped here).
   version solver, audit lockfiles) is vetoed, not pending: it is the retired
   row in the table above. The old `- [~]` was the only tri-state box in the
   file and meant neither.
-- **Raw TCP/UDP sockets** (#414) — shipped; it was listed twice in the old
-  active region, once under "Next" and once under "Ecosystem".
+- **Raw TCP sockets** (#414) — shipped as the `net_*` extension
+  (`eigenscript --api` is the index); it was listed twice in the old active
+  region, once under "Next" and once under "Ecosystem". Only the TCP half
+  shipped: #414's title says TCP/UDP, and UDP is not exposed — see
+  [docs/BUILTINS.md](docs/BUILTINS.md), "Optional: Network Extension", which
+  is the pointer of record.
 
 ### Decisions taken (kept here so they are not re-opened as "items")
 

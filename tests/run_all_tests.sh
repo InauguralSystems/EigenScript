@@ -6586,7 +6586,7 @@ fi
 # a case that had been DELETED, and the operator who read it looked for a
 # missing case instead of a failing one. A count that changes meaning when
 # something fails is not a population count (§121).
-CLAIMS_SELFTEST_EXPECTED=38
+CLAIMS_SELFTEST_EXPECTED=39
 CLAIMS_ST=$(bash "$TESTS_DIR/../tools/docs_claims_check.sh" --selftest 2>&1)
 CLAIMS_ST_RC=$?
 CLAIMS_ST_RUN=$(printf '%s\n' "$CLAIMS_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
@@ -6847,32 +6847,116 @@ echo ""
 # present and UNAUTHENTICATED, which is a third state the macOS runner is in
 # and round 2 reported as seven 404s. The structural arm never skips, so a
 # runner with no credentials still refuses a checkbox.
+#
+# ROUND 4 — THE CALLER PROBES `gh` ITSELF, AND A LANE HOLDS A TOKEN.
+# Round 3 trusted the gate's own SKIP TOKEN. The pinned regex admitted
+# `milestones=skipped:… refs=skipped:…`, so removing ONLY the live GitHub walk
+# from tools/roadmap_check.sh and dressing it as a named skip
+# (`gh_authenticated() { return 1; }`) passed this section ON AN AUTHENTICATED
+# BOX (round-4 blind critic, Fable) — the round-1 mutation in a new hat. Worse,
+# NO automated lane could do anything but skip: no `run_all_tests.sh` step
+# exported a token, the dev image had no `gh`, the macOS runner's `gh` is
+# unauthenticated, and the daily audit ran only the labels gate. "CI 31/31
+# green" measured arm (a) of the roadmap gate while this section printed
+# `population lines 3/3`. The milestone mirror was one nobody checked, which is
+# what #1207 was filed about.
+#
+# So: this caller runs the SAME probe the gates run (tools/gh_probe.sh, one
+# file, sourced by both), and when the probe succeeds the pins REQUIRE the live
+# tokens — `milestones=gh-api:… refs=gh-api:… resolved=N skipped=0`, a
+# `gh-api:` labels line with no `SKIPPED BY NAME` alternative, and
+# `loader=pyyaml` whenever this caller's own `import yaml` succeeds. A
+# skip-dressed live walk is then red BY NAME. When the probe fails, the named
+# skip is accepted AND this caller prints its own line saying so, so the CI log
+# records which lanes measured what. `.github/workflows/ci.yml`'s `linux / gcc`
+# job now exports `GH_TOKEN` and its dev image installs `gh`, so the live arms
+# run on every push; the daily `issue-triage.yml` audit runs the roadmap gate
+# too, with a `gh-api:`-only pin.
+#
+# WHAT THIS CALLER CAN AND CANNOT PROVE. It verifies that a gate printed a
+# population line it could only have produced by RUNNING ITS LIVE ARM ON THIS
+# LANE (token-pinned, against this caller's own probe), and that the gate's
+# selftest ran with the pinned count. A gate that FABRICATES its own output —
+# printing the three literal lines and the selftest line with no work behind
+# them — is outside this caller's power: a forged receipt reads exactly like a
+# true one, and a caller measured 10/10 against one (round-4 blind critic,
+# Fable, mutation M4). That is what the blind-critic rounds and each gate's own
+# transverse mutations are for. The section still REQUIRES the live token, so a
+# lying gate has to lie about a specific, checkable thing.
 echo "[99zd] Roadmap is a milestone set, and issues are labelled (#1207/#1155)"
+
+# ---------------------------------------------------------------------------
+# THIS CALLER'S OWN `gh` PROBE. The same file the gates source, so the two
+# cannot disagree about whether GitHub is reachable — and so "the gate says it
+# skipped" becomes a claim this caller can CHECK instead of one it believes.
+# ---------------------------------------------------------------------------
+# shellcheck source=../tools/gh_probe.sh
+. "$TESTS_DIR/../tools/gh_probe.sh"
+ZD_GH_STATE=$(gh_probe_state) && ZD_LIVE=1 || ZD_LIVE=0
+if [ "$ZD_LIVE" -eq 1 ]; then
+    echo "  [99zd] live arms: REQUIRED on this lane — this caller reached GitHub itself (gh_probe_state=$ZD_GH_STATE), so a gate that skips its GitHub arm here is red by name"
+else
+    echo "  [99zd] live arms: SKIPPED (no gh credentials on this lane) — gh_probe_state=$ZD_GH_STATE; the GitHub-facing arms may skip by name here, and THIS line is how the CI log says which lanes measured what"
+fi
 
 # ---------------------------------------------------------------------------
 # THE CALLER'S OWN COPY. Literals. Not read from any gate.
 # ---------------------------------------------------------------------------
-ROADMAP_POP_RE_PINNED='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+\)$'
-ROADMAP_SELFTEST_EXPECTED=14
+# The CONTRACT pin: what the gate publishes via `--contract`, asserted
+# verbatim against this copy. It ADMITS a named skip, because a lane with no
+# credentials legitimately prints one.
+ROADMAP_POP_RE_PINNED='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+\)$'
+# The LIVE pin: what this caller requires of the OUTPUT on a lane where it has
+# established for itself that GitHub is reachable. No `skipped:` alternative,
+# and `skipped=0` — a 403 storm that resolved nothing used to print the same
+# `refs=gh-api:…` token as a walk that resolved all seven (round-4 blind
+# critic, Fable, mutation M3). `resolved=[1-9][0-9]*` because zero resolved
+# references is not a measurement either.
+ROADMAP_POP_RE_LIVE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=gh-api:[^ ]+ refs=gh-api:[^ ]+ resolved=[1-9][0-9]* skipped=0\)$'
+ROADMAP_SELFTEST_EXPECTED=17
 
 LABELS_POP_RE_PINNED='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: gh-api:[^ )]+\)$'
 LABELS_SELFTEST_EXPECTED=6
 # This gate has no structural arm, so a runner with no credentials has nothing
-# to measure. It must then SAY SO — silence with rc=0 is the gutted shape.
+# to measure. It must then SAY SO — silence with rc=0 is the gutted shape. On a
+# lane where THIS caller reached GitHub the skip is not accepted at all.
 LABELS_SKIP_RE_PINNED='^issue-labels: SKIPPED BY NAME: '
 
 WORKFLOW_POP_RE_PINNED='^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), [1-9][0-9]* name\(s\), loader=(pyyaml|skipped:[a-z0-9-]+)\)$'
+WORKFLOW_POP_RE_LIVE='^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), [1-9][0-9]* name\(s\), loader=pyyaml\)$'
 WORKFLOW_SELFTEST_EXPECTED=8
 # The ONE named-skip allowance in this section: the workflow-yaml gate's two
 # loader plants, and only when PyYAML is genuinely absent. This caller decides
-# that for itself rather than believing the gate.
+# that for itself rather than believing the gate — and round 4 applies the same
+# probe to the gate's LIVE line, which round 3 did not: arm (b) skipping only
+# on the live run, with PyYAML present, was accepted (round-4 blind critic,
+# Fable, mutation M2).
 WORKFLOW_SELFTEST_SKIPS_NO_PYYAML=2
 if python3 -c 'import yaml' >/dev/null 2>&1; then
     WORKFLOW_ST_WANT_SKIP=0
+    ZD_PYYAML=1
 else
     WORKFLOW_ST_WANT_SKIP=$WORKFLOW_SELFTEST_SKIPS_NO_PYYAML
+    ZD_PYYAML=0
 fi
 WORKFLOW_ST_WANT_PASS=$((WORKFLOW_SELFTEST_EXPECTED - WORKFLOW_ST_WANT_SKIP))
+
+# ---------------------------------------------------------------------------
+# THE EFFECTIVE PINS. Which of the two copies above this run asserts is decided
+# by THIS caller's probes, never by the gate's own claim.
+# ---------------------------------------------------------------------------
+if [ "$ZD_LIVE" -eq 1 ]; then
+    ROADMAP_POP_RE_EFFECTIVE="$ROADMAP_POP_RE_LIVE"
+    LABELS_SKIP_RE_EFFECTIVE=""
+else
+    ROADMAP_POP_RE_EFFECTIVE="$ROADMAP_POP_RE_PINNED"
+    LABELS_SKIP_RE_EFFECTIVE="$LABELS_SKIP_RE_PINNED"
+fi
+if [ "$ZD_PYYAML" -eq 1 ]; then
+    WORKFLOW_POP_RE_EFFECTIVE="$WORKFLOW_POP_RE_LIVE"
+else
+    WORKFLOW_POP_RE_EFFECTIVE="$WORKFLOW_POP_RE_PINNED"
+fi
 
 # ---------------------------------------------------------------------------
 # The witnesses. A helper increments one ONLY when the caller's own pinned
@@ -6887,7 +6971,7 @@ ZD_CHECKS=0
 ZD_POP_EXPECTED=3
 ZD_ST_EXPECTED=3
 ZD_CONTRACT_EXPECTED=3
-ZD_CHECKS_EXPECTED=10
+ZD_CHECKS_EXPECTED=11
 
 # zd_contract_check <path> <pinned re> <pinned cases> <label>
 #   The gate's published contract must EQUAL this caller's literals, verbatim.
@@ -6963,7 +7047,7 @@ fi
 
 ROADMAP_OUTPUT=$(bash "$TESTS_DIR/../tools/roadmap_check.sh" 2>&1)
 ROADMAP_RC=$?
-zd_pop_check "$ROADMAP_POP_RE_PINNED" "$ROADMAP_OUTPUT"
+zd_pop_check "$ROADMAP_POP_RE_EFFECTIVE" "$ROADMAP_OUTPUT"
 TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
 if [ "$ROADMAP_RC" -ne 0 ]; then
     FAIL=$((FAIL + 1))
@@ -6975,7 +7059,10 @@ elif [ "$ZD_POP_HITS" -ne 1 ]; then
     # gutted-walk shape; two means the line was duplicated.
     FAIL=$((FAIL + 1))
     echo "  FAIL: roadmap gate printed $ZD_POP_HITS line(s) matching the caller's pinned population regex; exactly 1 is required"
-    echo "        caller pin: $ROADMAP_POP_RE_PINNED"
+    if [ "$ZD_LIVE" -eq 1 ]; then
+        echo "        THE CALLER CAN REACH GITHUB; THE GATE SKIPPED ANYWAY, or its reference walk resolved nothing — on this lane the pin admits no skipped: token and requires resolved>0 skipped=0. A skip-dressed live walk is not a measurement (round-4 blind critic, Fable)."
+    fi
+    echo "        caller pin: $ROADMAP_POP_RE_EFFECTIVE"
     print_captured "roadmap gate, VERBATIM" "$ROADMAP_OUTPUT"
 else
     PASS=$((PASS + 1))
@@ -7007,7 +7094,7 @@ fi
 
 LABELS_OUTPUT=$(bash "$TESTS_DIR/../tools/issue_labels_check.sh" 2>&1)
 LABELS_RC=$?
-zd_pop_check "$LABELS_POP_RE_PINNED" "$LABELS_OUTPUT" "$LABELS_SKIP_RE_PINNED"
+zd_pop_check "$LABELS_POP_RE_PINNED" "$LABELS_OUTPUT" "$LABELS_SKIP_RE_EFFECTIVE"
 TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
 if [ "$LABELS_RC" -ne 0 ]; then
     FAIL=$((FAIL + 1))
@@ -7022,7 +7109,12 @@ elif [ "$ZD_POP_HITS" -eq 0 ] && [ "$ZD_POP_SKIPS" -eq 0 ]; then
     # Silence plus rc=0 is the gutted shape, and a fixture-sourced line no
     # longer matches the caller's pin either.
     FAIL=$((FAIL + 1))
-    echo "  FAIL: issue-label gate examined no live issues — it exited 0 without printing a line matching the caller's pinned population regex, and without skipping by name"
+    echo "  FAIL: issue-label gate examined no live issues — it exited 0 without printing a line matching the caller's pinned population regex"
+    if [ "$ZD_LIVE" -eq 1 ]; then
+        echo "        THE CALLER CAN REACH GITHUB; THE GATE SKIPPED ANYWAY — on this lane a SKIPPED BY NAME line is not accepted in place of a measurement."
+    else
+        echo "        ...and without skipping by name."
+    fi
     echo "        caller pin: $LABELS_POP_RE_PINNED"
     print_captured "issue-label gate, VERBATIM" "$LABELS_OUTPUT"
 else
@@ -7055,7 +7147,7 @@ fi
 
 WORKFLOW_OUTPUT=$(bash "$TESTS_DIR/../tools/workflow_yaml_check.sh" 2>&1)
 WORKFLOW_RC=$?
-zd_pop_check "$WORKFLOW_POP_RE_PINNED" "$WORKFLOW_OUTPUT"
+zd_pop_check "$WORKFLOW_POP_RE_EFFECTIVE" "$WORKFLOW_OUTPUT"
 TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
 if [ "$WORKFLOW_RC" -ne 0 ]; then
     FAIL=$((FAIL + 1))
@@ -7064,7 +7156,10 @@ if [ "$WORKFLOW_RC" -ne 0 ]; then
 elif [ "$ZD_POP_HITS" -ne 1 ]; then
     FAIL=$((FAIL + 1))
     echo "  FAIL: workflow-yaml gate printed $ZD_POP_HITS line(s) matching the caller's pinned population regex; exactly 1 is required"
-    echo "        caller pin: $WORKFLOW_POP_RE_PINNED"
+    if [ "$ZD_PYYAML" -eq 1 ]; then
+        echo "        THIS CALLER'S OWN \`import yaml\` SUCCEEDED, so the live line must say loader=pyyaml; a loader skip on this lane is red by name (round-4 blind critic, Fable, mutation M2)."
+    fi
+    echo "        caller pin: $WORKFLOW_POP_RE_EFFECTIVE"
     print_captured "workflow-yaml gate, VERBATIM" "$WORKFLOW_OUTPUT"
 else
     PASS=$((PASS + 1))
@@ -7083,6 +7178,26 @@ else
     FAIL=$((FAIL + 1))
     echo "  FAIL: workflow-yaml selftest — $ZD_ST_WHY"
     print_captured "workflow-yaml selftest, VERBATIM" "$WORKFLOW_ST"
+fi
+
+# --- the lane's DECLARED credentials vs what the probe found ---------------
+# An INDEPENDENT signal from the probe: the environment a workflow set, not
+# `gh`'s answer. A lane that exports GH_TOKEN/GITHUB_TOKEN and then cannot
+# reach GitHub is broken — either the token is wrong or the shared probe has
+# been gutted — and that is a finding, not a skip. This is the one cross-check
+# that survives a mutation of tools/gh_probe.sh on a token-holding lane; on a
+# lane that declares nothing (the dev box's keyring login, the macOS runner)
+# it says so and allows the named skips.
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
+if gh_probe_token_declared && [ "$ZD_LIVE" -eq 0 ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: this lane EXPORTS GH_TOKEN/GITHUB_TOKEN but tools/gh_probe.sh reports '$ZD_GH_STATE' — a lane that declares a credential and cannot use it measured nothing, and the named skips above would have been accepted on a lane whose whole purpose is to run the live arms"
+elif [ "$ZD_LIVE" -eq 1 ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: credentials — probe=$ZD_GH_STATE, lane declares a token: $(gh_probe_token_declared && echo yes || echo 'no (keyring or host login)'); the live pins above were the ones asserted"
+else
+    PASS=$((PASS + 1))
+    echo "  PASS: credentials — probe=$ZD_GH_STATE and this lane declares no token, so the GitHub-facing arms are allowed to skip BY NAME here (and did not silently pass)"
 fi
 
 # --- the section's own accounting ------------------------------------------

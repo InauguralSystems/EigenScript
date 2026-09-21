@@ -156,9 +156,22 @@ knowing:
 
 * the population count group is `[1-9][0-9]*` and exactly ONE matching line is
   required, so an empty enumeration and a duplicated line are both red;
-* the pinned regexes require a LIVE source token (`gh-api:`), because both
-  callers used to accept `(source: fixture ...)` as a live measurement — their
-  regex stopped before `(source:`;
+* the source is a machine-readable token (`gh-api:` / `fixture:` /
+  `skipped:`), because both callers used to accept `(source: fixture ...)` as a
+  live measurement — their regex stopped before `(source:`. The pins admit NO
+  `fixture:` source anywhere. Whether they also require a LIVE `gh-api:` token
+  depends on the lane, and each caller decides that FOR ITSELF, never from the
+  gate's claim: each runs the shared probe `tools/gh_probe.sh` (the same code
+  the gates run), and when the probe reaches GitHub the pin requires
+  `milestones=gh-api:… refs=gh-api:… resolved=N skipped=0`, a `gh-api:` labels
+  line with no `SKIPPED BY NAME` alternative, and — when the caller's own
+  `python3 -c 'import yaml'` succeeds — `loader=pyyaml`. When the probe does
+  NOT reach GitHub the named skip is accepted and the caller prints its own
+  line (`[99zd] live arms: SKIPPED (no gh credentials on this lane)`), so the
+  log says which lanes measured what. Round 3 stated flatly that "the pinned
+  regexes require a LIVE source token"; that was false for two of the three
+  pins, which is what let a gate whose GitHub arms never ran pass on an
+  authenticated box;
 * each caller counts its own work. Every assertion that reached a verdict the
   caller accepts increments a witness, and a final check compares the witnesses
   and the caller's check count with pinned literals — so deleting or
@@ -166,6 +179,30 @@ knowing:
 
 A successful exit is not a measurement, and neither is a contract the gate
 wrote for itself.
+
+**What the caller can and cannot prove.** A caller verifies that a gate printed
+a population line it could only have produced by running its live arm ON THIS
+LANE (token-pinned, against the caller's own probe), and that the gate's
+selftest ran with the pinned count. A gate that FABRICATES its own output —
+printing the population line and the selftest line with no work behind them —
+is outside the caller's power to detect: a forged receipt reads exactly like a
+true one, and a round-4 blind critic scored 10/10 against print-only stubs. That
+is what the blind-critic rounds and each gate's own transverse mutations are
+for. The caller's job is to make the receipt SPECIFIC enough that forging it is
+a deliberate lie about a checkable thing, not to make forgery impossible.
+
+**Which lanes run the live arms.** `ci.yml`'s `linux / gcc` job (and `clang` on
+a push) runs the full suite inside the dev image, which now installs `gh` from
+a pinned, checksummed release tarball (`.devcontainer/Dockerfile`), and its
+suite step exports `GH_TOKEN: ${{ github.token }}` with `issues: read` on the
+job. `.github/workflows/issue-triage.yml`'s daily audit runs BOTH the labels
+gate and `tools/roadmap_check.sh`, with a pin that admits no skip at all —
+that lane exists to make the API call. Every other lane (macOS, the sanitizer
+shards) declares no token, skips the GitHub arms BY NAME, and says so on the
+caller's own line. Before round 4 no lane anywhere could do anything but skip:
+the milestone mirror and the reference resolver — the whole point of #1207 —
+were executed against GitHub by nothing, while `[99zd]` reported
+`population lines 3/3`.
 
 **ROADMAP.md.** `tools/roadmap_check.sh` refuses (a) any `- [ ]`/`- [x]`/`- [~]`
 line anywhere in the file and anything other than exactly one table, inside
@@ -182,8 +219,18 @@ endpoint 404s. Arms (b) and (c) skip by name without `gh` — and also when `gh`
 present but UNAUTHENTICATED, which is the state the macOS runner is in and
 which round 2 reported as seven 404s, taking that leg red on a tree whose
 references are all fine. Within arm (c), a genuine HTTP 404 is red with the
-status in the message; a 401/403/429 or a transport error SKIPs that one
-reference by name and is counted in `skipped=` on the arm's line. Arm (a) never
+status in the message; a 401/403/429, a transport error, or a repository this
+token cannot read AT ALL SKIPs that one reference by name and is counted in
+`skipped=` on the arm's line — and the OK line now carries `resolved=N
+skipped=M`, because `refs=gh-api:…` named the endpoint the arm meant to call
+and not work done: with every per-reference call answering HTTP 403 the line
+was byte-identical to a walk that resolved all seven. An authenticated caller
+requires `skipped=0`. Arm (c) also keeps an EXPLICIT OWNER whole: round 3
+extracted only the repository half, so `cli/Tidepool#59` deduplicated against
+`InauguralSystems/Tidepool#59` and was certified by resolving a different
+organisation's repository. Deduplication keys on the full owner/repo/number
+triple, and an owner outside `KNOWN_OWNERS` is red by name rather than replaced
+by the default. Arm (a) never
 skips. Arm (c) also REFUSES a bare `#N` in a cell that also carries a qualified
 `Repo#M`: M9's row read "Tidepool#43 and #59", the bare `#59` silently resolved
 against EigenScript (a real, closed PR), and the row was green for a reference

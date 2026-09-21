@@ -1143,6 +1143,45 @@ All notable changes to EigenScript are documented here.
   together used to stay green, because the derivation the waiver's reason
   described was never executed.
 
+  Round 4 closed the caller/enrolment class for good. ROUND 3 TRUSTED THE
+  GATE'S OWN SKIP TOKEN, and NO LANE COULD DO ANYTHING BUT SKIP: the pinned
+  regex admitted `milestones=skipped:… refs=skipped:…`, so removing only the
+  live GitHub walk from `tools/roadmap_check.sh` and dressing it as a named
+  skip passed `[99zd]` on an authenticated box; and no `run_all_tests.sh` step
+  exported a token, the dev image had no `gh`, the macOS runner's `gh` is
+  unauthenticated, and the daily audit ran only the labels gate — so the
+  milestone-set mirror and the reference resolver, the whole point of #1207,
+  were executed against GitHub by nothing while the section printed
+  `population lines 3/3`. The probe now lives in ONE file, `tools/gh_probe.sh`,
+  sourced by the gates AND by their callers: when the CALLER reaches GitHub it
+  requires `milestones=gh-api:… refs=gh-api:… resolved=N skipped=0`, a
+  `gh-api:` labels line with no skip alternative, and `loader=pyyaml` whenever
+  its own `import yaml` succeeds; when it does not, it accepts the named skip
+  AND prints `[99zd] live arms: SKIPPED (no gh credentials on this lane)` so
+  the log says which lane measured what. A lane that EXPORTS a token and
+  cannot use it is red on an independent cross-check. `.devcontainer/Dockerfile`
+  installs `gh` from a pinned, checksummed release tarball, `ci.yml`'s
+  `linux / gcc` job exports `GH_TOKEN` with `issues: read`, and the daily
+  `issue-triage.yml` audit runs the roadmap gate too, with a pin that admits no
+  skip at all.
+
+  Four more, same round. The roadmap OK line carries `resolved=N skipped=M`,
+  because `refs=gh-api:…` named the endpoint the arm meant to call and not work
+  done — with every per-reference call answering HTTP 403 it was byte-identical
+  to a walk that resolved all seven. Arm (c) keeps an EXPLICIT OWNER whole:
+  `cli/Tidepool#59` used to extract as `Tidepool#59`, deduplicate against
+  `InauguralSystems/Tidepool#59` and be certified by resolving a different
+  organisation's repository; deduplication now keys on the owner/repo/number
+  triple and an unknown owner is red by name. `docs-claims: OK` carries
+  `history-deferred=N`, which was byte-identical whether the two ROADMAP-history
+  claims were derived or deferred. The `NAMES` class gained a BUILTIN FAMILIES
+  rule — a doc line naming a builtin family must find that family in
+  `eigenscript --api` — which is what ROADMAP.md's checked-off
+  "Raw TCP/UDP sockets" claim needed (#1227: `--api` has `net_*` and nothing carrying `udp`, and
+  docs/BUILTINS.md said so in prose). `tools/workflow_yaml_check.sh` held two
+  `[[ =~ ]]` regexes inline that bash 3.2 cannot PARSE; every runner reports
+  "NO OLD BASH ON THIS MACHINE" so `[99zb]` had always skipped.
+
 - **Layering has structure rather than convention (#744, closing #746).** The
   core no longer includes any extension's private header: `src/ext_register.h`
   carries the registrars and per-state teardowns as declarations only, so
@@ -1164,8 +1203,11 @@ All notable changes to EigenScript are documented here.
   pass vacuously on a machine that has it. Five build-source lists that nothing
   tied to the tree now derive from the Makefile or were corrected; one of them
   had been silently costing the language-server builtin index 19 signature
-  comments. Per-layer headers, and breaking up the 1253-line umbrella header,
-  are recorded in `ROADMAP.md` as their own round.
+  comments. Per-layer headers, and breaking up the `src/eigenscript.h` umbrella
+  header, are recorded in `ROADMAP.md` as their own round. (The "1253-line"
+  figure this entry used to carry was stale by ~900 lines; a line count of a
+  file under active edit rots by construction, so the measurement is
+  `wc -l src/eigenscript.h` and no number is retyped here. #1228.)
 
 - **The observer gate is hoisted ahead of the observe helpers, in both the
   interpreter and the JIT (#972).** With the gate closed, every assignment

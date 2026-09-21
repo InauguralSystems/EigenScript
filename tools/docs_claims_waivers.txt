@@ -42,3 +42,12 @@ ROADMAP.md|- 15 STEM simulation examples|a historical release note under `## Com
 ROADMAP.md|- 12 STEM modules|a historical release note under `## Completed` for 0.9.2, true of that release; D_STEM derives TODAY's count, which is a different claim - the words 'standard library' were dropped from this line so the present-tense derivation rule stops claiming a past release note
 ROADMAP.md|- UI toolkit — 44 widgets, 3 themes, flex layout, animation|a historical release note under `## Completed` for 0.9.0, true of that release
 ROADMAP.md|- Observer semantics, 121 builtins, 25 stdlib modules|a historical release note under `## Completed` for 0.5.0, true of that release
+#
+# BUILTIN FAMILIES (#1227, round 4). The class refuses a doc line that names a
+# builtin family absent from `eigenscript --api`. The two lines below name UDP
+# in order to say it is NOT there - a NEGATIVE claim, which is the shape the
+# class is meant to allow. Because a waiver is pinned to the EXACT line, an
+# edit that turns either sentence back into a shipping claim drops its waiver
+# and the line goes red again, which is the whole point.
+BUILTINS.md|drain. UDP is not yet exposed (#414 tracks it).|a NEGATIVE family claim: this sentence states that UDP is absent, and absent is what `eigenscript --api` says
+ROADMAP.md|  shipped: #414's title says TCP/UDP, and UDP is not exposed — see|a NEGATIVE family claim: the sentence corrected by #1227, which names UDP only to say the TCP half shipped and UDP did not
