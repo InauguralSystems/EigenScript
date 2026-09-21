@@ -67,8 +67,23 @@ gh_probe_authenticated() {
 # `gh`'s answer — so a caller can cross-check the two. A lane that exports
 # GH_TOKEN/GITHUB_TOKEN and then cannot reach GitHub is broken (or the probe
 # has been gutted), and that is a finding rather than a skip.
+#
+# PRESENCE, NOT NON-EMPTINESS. Bought 2026-09-21 (round-5 blind critic,
+# Astra): round 4 asked `[ -n "${GH_TOKEN:-}" ]`, so a lane that exported
+# GH_TOKEN="" declared NOTHING by this predicate. That is the shape a workflow
+# produces when the secret is missing, misspelled, or scoped away —
+# `env: GH_TOKEN: ${{ secrets.TYPO }}` exports an empty string, not nothing —
+# and it is exactly the lane whose whole purpose is to make the API call. With
+# it the probe reported `gh-unauthenticated`, every GitHub-facing arm took its
+# named skip, and the suite caller's eleventh check said "this lane declares no
+# token" and passed 11/11 on a lane that measured nothing.
+#
+# A DECLARED-BUT-EMPTY TOKEN IS A DECLARED TOKEN: the lane was written to hold
+# a credential and holds one it cannot use. An UNSET variable is the only shape
+# that still permits the named skip, which is why this tests `+x` (set, even to
+# the empty string) and not `-n` (set and non-empty).
 gh_probe_token_declared() {
-    [ -n "${GH_TOKEN:-}" ] || [ -n "${GITHUB_TOKEN:-}" ]
+    [ -n "${GH_TOKEN+x}" ] || [ -n "${GITHUB_TOKEN+x}" ]
 }
 
 # Executed rather than sourced: the CLI form, for callers that are not shell.

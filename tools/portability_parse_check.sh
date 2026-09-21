@@ -82,10 +82,40 @@ RUN_TARGETS="tools/docs_claims_check.sh tools/child_exit_check.sh tools/suite_la
 RUN_TARGETS_DECLARED=5
 
 # Candidates, oldest first. $PORTABILITY_BASH overrides for a test.
+#
+# THE SYSTEM SHELL IS A CANDIDATE WHEN IT IS OLD. Bought 2026-09-21 (round-5
+# blind critic, Fable): until now the list was $PORTABILITY_BASH, the two
+# `bash32` oracle paths, and nothing else — so on the ONE platform this whole
+# audit exists for, the macOS runner, it found no old bash and skipped with
+# "NO OLD BASH ON THIS MACHINE". That reason was FALSE. macOS's default
+# /bin/bash IS GNU bash 3.2.57, the exact interpreter the gate is written
+# about; the list simply never looked at it. The audit announced a skip on the
+# lane it was built to protect and ran only where an oracle had been installed
+# by hand.
+#
+# "Old" here means what the header means by it: MAJOR VERSION 3 or lower —
+# bash 3.2 (2007), what Apple still ships. A system shell is asked its own
+# `BASH_VERSINFO[0]` and is a candidate only if it answers <= 3, so a Linux
+# runner's bash 5 is never mistaken for an oracle. The two `bash32` paths and
+# $PORTABILITY_BASH stay unconditional: they are DECLARED oracles, named by a
+# human who built one.
+PORTABILITY_OLD_MAJOR_MAX=3
 OLD_BASH=""
-for cand in "${PORTABILITY_BASH:-}" "$HOME/.local/bin/bash32" /usr/local/bin/bash32; do
+PORT_CANDIDATES_TRIED=""
+for cand in "${PORTABILITY_BASH:-}" "$HOME/.local/bin/bash32" /usr/local/bin/bash32 /bin/bash /usr/bin/bash; do
     [ -n "$cand" ] || continue
+    PORT_CANDIDATES_TRIED="$PORT_CANDIDATES_TRIED $cand"
     [ -x "$cand" ] || continue
+    case "$cand" in
+        /bin/bash|/usr/bin/bash)
+            # A SYSTEM shell: it qualifies only by its own version number.
+            cand_major=$("$cand" -c 'echo ${BASH_VERSINFO[0]}' 2>/dev/null)
+            case "$cand_major" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            [ "$cand_major" -le "$PORTABILITY_OLD_MAJOR_MAX" ] || continue
+            ;;
+    esac
     OLD_BASH="$cand"; break
 done
 
@@ -102,6 +132,14 @@ if [ -z "$OLD_BASH" ]; then
     # completed audit, and the named path tells a reader how to get the real one.
     echo "portability-parse: NO OLD BASH ON THIS MACHINE — $n tracked *.sh were NOT parsed by an old shell,"
     echo "portability-parse: and $RUN_TARGETS_DECLARED gate(s) were NOT executed under one either."
+    # NAME WHAT WAS LOOKED FOR. A skip whose reason cannot be checked is a
+    # reason nobody checks: round 4's message said "no old bash on this
+    # machine" on a runner whose /bin/bash is 3.2.57, because /bin/bash was
+    # never a candidate (round-5 blind critic, Fable).
+    echo "portability-parse: looked for, in order:$PORT_CANDIDATES_TRIED"
+    echo "portability-parse:   \$PORTABILITY_BASH and the two bash32 oracle paths are taken as declared oracles;"
+    echo "portability-parse:   /bin/bash and /usr/bin/bash qualify only when their own BASH_VERSINFO[0] is <= $PORTABILITY_OLD_MAJOR_MAX."
+    echo "portability-parse:   this machine's /bin/bash reports major version $(/bin/bash -c 'echo ${BASH_VERSINFO[0]}' 2>/dev/null || echo '?')."
     echo "portability-parse: this run proves nothing about bash 3.2. Build the oracle (see the header of"
     echo "portability-parse: tools/portability_parse_check.sh) or install one at ~/.local/bin/bash32."
     echo "portability-parse: SKIPPED (announced, not silent): files=$n checked=0 gates-run=0"

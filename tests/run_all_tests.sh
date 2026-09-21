@@ -6839,10 +6839,12 @@ echo ""
 # and allows exactly the pinned named-skip count, for that gate alone.
 #
 # None of these tools builds anything and all belong on the PR lane. Measured
-# on the dev box: roadmap live pass 8.2 s (one `gh api` for the milestones plus
-# one per reference in the table), its selftest ~24 s; issue-labels live pass
-# 1.5 s (one `gh api --paginate`), its selftest 1.7 s; workflow-yaml 1.7 s live
-# and 4.2 s selftest.
+# on the dev box 2026-09-21, after round 5 added the once-per-run KNOWN_REPOS
+# verification: roadmap live pass 11.9 s (one `gh api` for the milestones, one
+# `gh api orgs/<owner>/repos --paginate` for the repository list, and one per
+# reference in the table), its selftest 7.0 s (entirely fixture-driven, no
+# network); issue-labels live pass 1.5 s (one `gh api --paginate`), its
+# selftest 1.7 s; workflow-yaml 1.7 s live and 4.2 s selftest.
 # The GitHub-facing arms of each SKIP BY NAME without `gh` — or with `gh`
 # present and UNAUTHENTICATED, which is a third state the macOS runner is in
 # and round 2 reported as seven 404s. The structural arm never skips, so a
@@ -6913,7 +6915,7 @@ ROADMAP_POP_RE_PINNED='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=
 # critic, Fable, mutation M3). `resolved=[1-9][0-9]*` because zero resolved
 # references is not a measurement either.
 ROADMAP_POP_RE_LIVE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=gh-api:[^ ]+ refs=gh-api:[^ ]+ resolved=[1-9][0-9]* skipped=0\)$'
-ROADMAP_SELFTEST_EXPECTED=17
+ROADMAP_SELFTEST_EXPECTED=21
 
 LABELS_POP_RE_PINNED='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: gh-api:[^ )]+\)$'
 LABELS_SELFTEST_EXPECTED=6
@@ -7066,7 +7068,15 @@ elif [ "$ZD_POP_HITS" -ne 1 ]; then
     print_captured "roadmap gate, VERBATIM" "$ROADMAP_OUTPUT"
 else
     PASS=$((PASS + 1))
-    printf '%s\n' "$ROADMAP_OUTPUT" | grep -E "^      \(a\) structure:|^      \(b\) milestones:|^      \(c\) references:|SKIPPED BY NAME|^roadmap-check: OK"
+    # EVERY POPULATION LINE THE GATE PRINTS REACHES THE LOG. Measured on the
+    # pushed head of round 5 (CI run 35629058643, `linux / gcc`): arm (c)'s new
+    # `KNOWN_REPOS verified against the <org> listing (N repositories): P
+    # public citable, Q private` line was absent from this lane's log, because
+    # this display filter enumerated the three arm lines by name and the new
+    # one was not among them. The measurement HAD run — its named skip carries
+    # `SKIPPED BY NAME`, which this filter does show, and no skip appeared —
+    # but a count nobody can read is the shape mechanical-gates §121 is about.
+    printf '%s\n' "$ROADMAP_OUTPUT" | grep -E "^      \(a\) structure:|^      \(b\) milestones:|^      \(c\) KNOWN_REPOS|^      \(c\) references:|SKIPPED BY NAME|^roadmap-check: OK"
 fi
 
 ROADMAP_ST=$(bash "$TESTS_DIR/../tools/roadmap_check.sh" --selftest 2>&1)
@@ -7188,16 +7198,25 @@ fi
 # that survives a mutation of tools/gh_probe.sh on a token-holding lane; on a
 # lane that declares nothing (the dev box's keyring login, the macOS runner)
 # it says so and allows the named skips.
+#
+# ROUND 5 — A DECLARED-BUT-EMPTY TOKEN IS A DECLARED TOKEN (blind critic,
+# Astra). `gh_probe_token_declared` used to test NON-EMPTINESS, so a lane
+# exporting GH_TOKEN="" — what a workflow produces when the secret is missing
+# or misspelled — reached this check declaring nothing, and this check printed
+# "this lane declares no token" and passed. The whole section then read 11/11
+# with every GitHub-facing arm skipped. The predicate now tests PRESENCE
+# (`${GH_TOKEN+x}`), so an empty export is the finding it always was; an UNSET
+# token still permits the named skip.
 TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
 if gh_probe_token_declared && [ "$ZD_LIVE" -eq 0 ]; then
     FAIL=$((FAIL + 1))
-    echo "  FAIL: this lane EXPORTS GH_TOKEN/GITHUB_TOKEN but tools/gh_probe.sh reports '$ZD_GH_STATE' — a lane that declares a credential and cannot use it measured nothing, and the named skips above would have been accepted on a lane whose whole purpose is to run the live arms"
+    echo "  FAIL: this lane EXPORTS GH_TOKEN/GITHUB_TOKEN (possibly EMPTY: GH_TOKEN=[${GH_TOKEN+set}${GH_TOKEN:+, non-empty}] GITHUB_TOKEN=[${GITHUB_TOKEN+set}${GITHUB_TOKEN:+, non-empty}]) but tools/gh_probe.sh reports '$ZD_GH_STATE' — a lane that declares a credential and cannot use it measured nothing, and the named skips above would have been accepted on a lane whose whole purpose is to run the live arms"
 elif [ "$ZD_LIVE" -eq 1 ]; then
     PASS=$((PASS + 1))
     echo "  PASS: credentials — probe=$ZD_GH_STATE, lane declares a token: $(gh_probe_token_declared && echo yes || echo 'no (keyring or host login)'); the live pins above were the ones asserted"
 else
     PASS=$((PASS + 1))
-    echo "  PASS: credentials — probe=$ZD_GH_STATE and this lane declares no token, so the GitHub-facing arms are allowed to skip BY NAME here (and did not silently pass)"
+    echo "  PASS: credentials — probe=$ZD_GH_STATE and this lane declares no token AT ALL (GH_TOKEN and GITHUB_TOKEN are both UNSET, not merely empty), so the GitHub-facing arms are allowed to skip BY NAME here (and did not silently pass)"
 fi
 
 # --- the section's own accounting ------------------------------------------

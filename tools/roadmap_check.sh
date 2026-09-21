@@ -93,10 +93,36 @@ RC_FILE="${ROADMAP_CHECK_FILE:-$ROOT/ROADMAP.md}"
 REPO="${ROADMAP_CHECK_REPO:-InauguralSystems/EigenScript}"
 OWNER="${REPO%%/*}"
 
-# The ecosystem repositories a reference may name. A qualified reference to
-# anything NOT on this list is red rather than silently skipped: an unknown
-# repository name is how "Tidepool PR #375" survived review.
-KNOWN_REPOS="${ROADMAP_CHECK_REPOS:-EigenScript ouroboros Tidepool EigenMiniSat EigenOS EigenRegex EigenGauntlet DeslanStudio liferaft tidelog dynamics phugoid polymethod iLambdaAi eigen-sheet eigen-edit eigen-site EigenKB}"
+# The ecosystem repositories a reference may name AS EVIDENCE. A qualified
+# reference to anything NOT on this list (or PRIVATE_REPOS below) is red rather
+# than silently skipped: an unknown repository name is how "Tidepool PR #375"
+# survived review.
+#
+# THE LIST IS DATA, AND DATA GOES STALE. Bought 2026-09-21 (round-5 blind
+# critic, Fable): `EigenKB` was on this list and NO SUCH REPOSITORY EXISTS.
+# `repos/InauguralSystems/EigenKB` is a 404 for every token including the
+# org's most privileged one, and the walk below mapped a repository-level 404
+# to "this token cannot read the repository at all" — a statement about the
+# run — so `EigenKB#1` in the roadmap SKIPPED BY NAME and the gate printed OK.
+# A membership list nothing verifies certifies whatever is typed into it. So
+# the list is now VERIFIED ONCE PER RUN against the org's own repository
+# listing (verify_known_repos below), and `EigenKB` is gone.
+#
+# EigenOS, eigen-site, DeslanStudio and iLambdaAi are gone from this list too,
+# for a different reason: they are PRIVATE (measured 2026-09-21, `.private` is
+# true on all four). ROADMAP.md is a PUBLIC document, and a public document
+# cannot cite a repository its readers cannot open — "see EigenOS#42" is not
+# evidence, it is a note to the four people with access. They keep their names
+# in PRIVATE_REPOS so that citing one is red BY ITS REAL REASON rather than
+# red as an unrecognised name.
+KNOWN_REPOS="${ROADMAP_CHECK_REPOS:-EigenScript ouroboros Tidepool EigenMiniSat EigenRegex EigenGauntlet liferaft tidelog dynamics phugoid polymethod eigen-sheet eigen-edit}"
+
+# Repositories of this organisation that EXIST and are PRIVATE. They are
+# "known" to the extractor — a reference naming one is recognised — and then
+# refused by name at resolution time. Verified once per run in the other
+# direction: an entry that has become PUBLIC is red, because the list would
+# then be refusing a citation that is now perfectly good evidence.
+PRIVATE_REPOS="${ROADMAP_CHECK_PRIVATE_REPOS:-EigenOS eigen-site DeslanStudio iLambdaAi}"
 
 # The OWNERS a reference may name. An explicit owner is part of the identity of
 # a reference (`cli/Tidepool#59` is not `InauguralSystems/Tidepool#59`), so one
@@ -134,7 +160,7 @@ KNOWN_OWNERS="${ROADMAP_CHECK_OWNERS:-$OWNER}"
 # no credentials legitimately prints one; it is the CALLER that refuses a skip
 # on a lane where it has established for itself that GitHub is reachable.
 POPULATION_RE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+\)$'
-SELFTEST_CASES=17
+SELFTEST_CASES=21
 
 # What arms (b) and (c) actually used this run. One of
 #   gh-api:<endpoint>   fixture:<path>   skipped:<reason>
@@ -496,6 +522,119 @@ print("CHECKED %d" % checked)
 # (`Tidepool#43`) or in prose (`<Repo> PR #N`). NOT resolved: bare `#N` in the
 # file`s prose history — roughly fifty API calls for the same answer — and
 # this arm prints that limit rather than implying it checked them.
+# ---------------------------------------------------------------------------
+# KNOWN_REPOS IS DATA, AND IT IS VERIFIED ONCE PER RUN.
+#
+# BOUGHT 2026-09-21 (round-5 blind critic, Fable). `EigenKB` sat in
+# KNOWN_REPOS and no such repository exists. Arm (c) probed
+# `repos/<owner>/<repo>` per referenced repository and mapped the 404 to "this
+# token cannot read the repository at all" — a fact about the RUN — so a
+# roadmap citing `EigenKB#1` printed `OK … skipped=1`. The mapping was written
+# for a private repository and could not tell one from a repository that is
+# not there, on the org's most privileged token.
+#
+# THE DISCRIMINATOR IS THE ORGANISATION LISTING. One call (`gh api
+# orgs/<owner>/repos`, ~31 rows here, one page) answers existence AND privacy
+# for every name at once, and its success is what makes a 404 meaningful:
+#   * listing succeeds, name absent      -> the repository DOES NOT EXIST
+#   * listing succeeds, name present     -> exists; `.private` says which list
+#                                           it belongs on
+#   * listing fails or comes back empty  -> this token cannot see the org, so
+#                                           nothing here is decidable: SKIP BY
+#                                           NAME (never a silent pass)
+# A repo-scoped `${{ github.token }}` sees only the org's PUBLIC repositories,
+# so for a PRIVATE_REPOS entry "absent" and "private" are the same answer and
+# both are fine; a PRIVATE_REPOS entry that shows up PUBLIC is the stale
+# direction and is red.
+#
+# ROADMAP.md IS A PUBLIC DOCUMENT. A citation its readers cannot open is not
+# evidence, so a reference into a private repository is red BY NAME rather
+# than skipped — which is what round 4 did with `EigenOS#N` and
+# `eigen-site#N`, both of which resolve on the maintainer's token and would
+# have been `skipped=1` (and therefore RED at the token-holding caller, for
+# the wrong reason) under `${{ github.token }}`.
+# ---------------------------------------------------------------------------
+REPO_STATE_PUBLIC=" "
+REPO_STATE_PRIVATE=" "
+REPO_STATE_MISSING=" "
+REPOS_VERIFIED=0
+
+# The organisation's repositories, one `<name> <private-bool>` per line on
+# stdout. rc 1 when the org cannot be listed at all. The fixture seam keeps the
+# selftest offline; a fixture holding the single word UNLISTABLE is how the
+# selftest drives the "cannot see the org" branch.
+org_listing() {
+    local fx="${ROADMAP_CHECK_ORG_FIXTURE:-}"
+    if [ -n "$fx" ]; then
+        [ -f "$fx" ] || return 1
+        if grep -qx 'UNLISTABLE' "$fx"; then
+            return 1
+        fi
+        grep -v '^UNLISTABLE$' "$fx"
+        return 0
+    fi
+    gh api "orgs/$OWNER/repos?per_page=100" --paginate \
+           --jq '.[] | .name + " " + (.private|tostring)' 2>/dev/null
+}
+
+verify_known_repos() {
+    local listing rc entry name priv
+    local org_public=" " org_private=" "
+    local listed=0 pub=0 prv=0
+    listing=$(org_listing)
+    rc=$?
+    if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
+        echo "      (c) SKIPPED BY NAME: KNOWN_REPOS could not be verified — the $OWNER repository listing (${ROADMAP_CHECK_ORG_FIXTURE:-gh api orgs/$OWNER/repos}) failed or came back empty on this lane, so a 404 on a repository is a fact about this token and not about the repository. The reference walk below still runs."
+        return 0
+    fi
+    # A here-string, never a pipe: under bash 3.2 a `printf | reader` that
+    # exits early makes the shell's own printf take SIGPIPE and print
+    # `write error: Broken pipe` (the failure tools/docs_claims_check.sh
+    # bought on macOS).
+    while read -r name priv; do
+        [ -n "${name:-}" ] || continue
+        listed=$((listed + 1))
+        if [ "${priv:-}" = "true" ]; then
+            org_private="$org_private$name "
+        else
+            org_public="$org_public$name "
+        fi
+    done <<< "$listing"
+
+    for entry in $KNOWN_REPOS; do
+        case "$org_public" in
+            *" $entry "*)
+                REPO_STATE_PUBLIC="$REPO_STATE_PUBLIC$OWNER/$entry "
+                pub=$((pub + 1))
+                continue ;;
+        esac
+        case "$org_private" in
+            *" $entry "*)
+                REPO_STATE_PRIVATE="$REPO_STATE_PRIVATE$OWNER/$entry "
+                red "(c) KNOWN_REPOS names $OWNER/$entry and the organisation listing says it is PRIVATE — a private repository is not evidence in a public roadmap; move it to PRIVATE_REPOS"
+                continue ;;
+        esac
+        REPO_STATE_MISSING="$REPO_STATE_MISSING$OWNER/$entry "
+        red "(c) repository $OWNER/$entry does not exist (KNOWN_REPOS is stale) — the $OWNER listing succeeded with $listed repositories and does not contain it, so this is a fact about the repository and not about the token. A membership list nothing verifies certifies whatever is typed into it"
+    done
+
+    for entry in $PRIVATE_REPOS; do
+        case "$org_public" in
+            *" $entry "*)
+                REPO_STATE_PUBLIC="$REPO_STATE_PUBLIC$OWNER/$entry "
+                pub=$((pub + 1))
+                red "(c) PRIVATE_REPOS names $OWNER/$entry and the organisation listing says it is PUBLIC — move it to KNOWN_REPOS; this gate is refusing a citation that is now perfectly good evidence"
+                continue ;;
+        esac
+        # Absent is indistinguishable from private under a repo-scoped token,
+        # and both mean the same thing here: not citable in a public document.
+        REPO_STATE_PRIVATE="$REPO_STATE_PRIVATE$OWNER/$entry "
+        prv=$((prv + 1))
+    done
+    REPOS_VERIFIED=1
+    echo "      (c) KNOWN_REPOS verified against the $OWNER listing ($listed repositories): $pub public citable, $prv private and not citable in a public document"
+}
+
 check_references() {
     if ! command -v python3 >/dev/null 2>&1; then
         SRC_REFS="skipped:no-python3"
@@ -531,8 +670,15 @@ check_references() {
         SRC_REFS="gh-api:repos/<owner>/*/issues"
     fi
 
+    # ONCE PER RUN, before a single reference is resolved: is the list this
+    # arm measures against still true? Live, or driven by the org fixture in
+    # the selftest; a pure refs-fixture run has no organisation to ask.
+    if [ -z "$fixture" ] || [ -n "${ROADMAP_CHECK_ORG_FIXTURE:-}" ]; then
+        verify_known_repos
+    fi
+
     local out
-    if ! out=$(RC_KNOWN_REPOS="$KNOWN_REPOS" RC_DEFAULT_REPO="${REPO##*/}" \
+    if ! out=$(RC_KNOWN_REPOS="$KNOWN_REPOS $PRIVATE_REPOS" RC_DEFAULT_REPO="${REPO##*/}" \
                RC_KNOWN_OWNERS="$KNOWN_OWNERS" RC_DEFAULT_OWNER="$OWNER" \
                python3 -c '
 import os, re, sys
@@ -676,7 +822,7 @@ print("TOTAL %d" % len(seen))
         case "$line" in
             AMBIGUOUS\ *) red "(c) ${line#AMBIGUOUS } — $RC_FILE"; ambiguous_n=$((ambiguous_n + 1)) ;;
             BADOWNER\ *) red "(c) ${line#BADOWNER } names an owner this gate does not know — owner '$(o="${line#BADOWNER }"; o="${o%%/*}"; printf '%s' "$o")' is not this gate's organisation (KNOWN_OWNERS: $KNOWN_OWNERS). An explicit owner is part of the reference's identity and is never replaced by the default"; badowner_n=$((badowner_n + 1)) ;;
-            UNKNOWN\ *) red "(c) ${line#UNKNOWN } names no repository this gate knows (KNOWN_REPOS) — a qualified reference must name one"; unknown_n=$((unknown_n + 1)) ;;
+            UNKNOWN\ *) red "(c) ${line#UNKNOWN } names no repository this gate knows (KNOWN_REPOS or PRIVATE_REPOS) — a qualified reference must name one, and both lists are verified against the $OWNER listing once per run"; unknown_n=$((unknown_n + 1)) ;;
         esac
     done <<< "$out"
 
@@ -715,6 +861,22 @@ print("TOTAL %d" % len(seen))
         owner="$2"; repo="$3"; num="$4"; why="$5"
         examined=$((examined + 1))
         full="$owner/$repo"
+        # THE VERIFIED STATE COMES FIRST. A repository-level 404 is only
+        # "this token cannot read it" once the organisation listing has been
+        # asked; when it HAS been asked, "does not exist" and "private" are
+        # separate, named verdicts and neither is a skip.
+        if [ "$REPOS_VERIFIED" -eq 1 ]; then
+            case "$REPO_STATE_PRIVATE" in
+                *" $full "*)
+                    red "(c) $full#$num ($why) cites a PRIVATE repository — a private repository is not evidence in a public roadmap: $RC_FILE is public and its readers cannot open $full"
+                    continue ;;
+            esac
+            case "$REPO_STATE_MISSING" in
+                *" $full "*)
+                    red "(c) $full#$num ($why) names a repository that DOES NOT EXIST — the $OWNER listing succeeded and does not contain $full, so this is not a fact about the token"
+                    continue ;;
+            esac
+        fi
         if [ -n "$fixture" ]; then
             # An exact-line fixture: anything not listed does not exist.
             if [[ $'\n'"$(cat "$fixture")"$'\n' == *$'\n'"$full#$num"$'\n'* ]]; then
@@ -882,6 +1044,31 @@ InauguralSystems/EigenScript#419
 InauguralSystems/Tidepool#43
 EOF
     export ROADMAP_CHECK_REFS_FIXTURE="$work/refs.txt"
+    # THE ORG-LISTING SEAM. `verify_known_repos` asks the organisation which
+    # repositories exist and which are private; here it asks this file, so the
+    # existence and privacy plants below are deterministic and network-free.
+    # The lists are narrowed to match, because a two-line listing against the
+    # real 13-entry KNOWN_REPOS would red every case for the wrong reason
+    # (mechanical-gates §41 — a row must go red for ITS reason).
+    export ROADMAP_CHECK_REPOS="EigenScript Tidepool"
+    export ROADMAP_CHECK_PRIVATE_REPOS="SecretThing"
+    cat > "$work/org.txt" <<'EOF'
+EigenScript false
+Tidepool false
+EOF
+    # The three mutations of that listing, one per branch of the classifier.
+    #   gone.txt        Tidepool is not in the org at all  -> does not exist
+    #   private.txt     Tidepool is in the org, private    -> not citable
+    #   unlistable.txt  the org cannot be listed at all    -> SKIP BY NAME
+    cat > "$work/org-gone.txt" <<'EOF'
+EigenScript false
+EOF
+    cat > "$work/org-private.txt" <<'EOF'
+EigenScript false
+Tidepool true
+EOF
+    printf 'UNLISTABLE\n' > "$work/org-unlistable.txt"
+    export ROADMAP_CHECK_ORG_FIXTURE="$work/org.txt"
     # A SECOND known owner, so the owner-identity plants below can put the SAME
     # repo#N under two owners that the gate both accepts as organisations. With
     # one known owner the only reachable plant is "unknown owner", which cannot
@@ -1031,6 +1218,44 @@ EOF
     st_case "control: the same repo#N under two owners that both have it" "-" green \
             "$work/twoowners.md" "$work/ms.json"
     export ROADMAP_CHECK_REFS_FIXTURE="$work/refs.txt"
+
+    # PLANT 16 (arm c) — KNOWN_REPOS IS STALE. The round-5 defect itself:
+    # `EigenKB` was on the list, no such repository exists, and the
+    # repository-level 404 was reported as "this token cannot read the
+    # repository" — a skip, and `OK … skipped=1` (round-5 blind critic,
+    # Fable). The organisation listing is what makes the 404 decidable.
+    export ROADMAP_CHECK_ORG_FIXTURE="$work/org-gone.txt"
+    st_case "plant: a KNOWN_REPOS entry that does not exist in the organisation" "c" red \
+            "$work/good.md" "$work/ms.json"
+
+    # PLANT 17 (arm c): the same entry, PRIVATE. A public roadmap cannot cite
+    # a repository its readers cannot open, so this is red by name rather
+    # than resolved on whichever maintainer token happens to run the gate.
+    export ROADMAP_CHECK_ORG_FIXTURE="$work/org-private.txt"
+    st_case "plant: a KNOWN_REPOS entry the organisation lists as private" "c" red \
+            "$work/good.md" "$work/ms.json"
+
+    # CONTROL 18 (arm c) — THE DISCRIMINATOR. Same missing repository, but the
+    # organisation CANNOT BE LISTED: nothing here is decidable, so the
+    # verification SKIPS BY NAME and the run is green. Without this control,
+    # plant 16 would also pass a gate that simply called every repository
+    # missing; with it, gutting the discriminator in EITHER direction is red
+    # (always-listable turns this green case red, always-unlistable turns
+    # plant 16 silent).
+    export ROADMAP_CHECK_ORG_FIXTURE="$work/org-unlistable.txt"
+    st_case "control: the org listing fails, so existence is undecidable" "-" green \
+            "$work/good.md" "$work/ms.json"
+    export ROADMAP_CHECK_ORG_FIXTURE="$work/org.txt"
+
+    # PLANT 19 (arm c): the roadmap CITES a private repository by name. The
+    # reference is recognised (PRIVATE_REPOS is in the extractor's known set,
+    # so this is not an "unknown repository" red) and refused for its real
+    # reason. Round 4 had EigenOS and eigen-site in KNOWN_REPOS: on the
+    # maintainer's token such a citation RESOLVED and was counted as evidence.
+    cp "$work/good.md" "$work/privateref.md"
+    printf '\nThe rest of the work is tracked in SecretThing#7.\n' >> "$work/privateref.md"
+    st_case "plant: the roadmap cites an issue in a private repository" "c" red \
+            "$work/privateref.md" "$work/ms.json"
 
     echo ""
     echo "SELFTEST: $ST_RUN case(s) run, $((ST_RUN - ST_FAIL - ST_SKIP)) passed, $ST_FAIL failed, $ST_SKIP skipped"

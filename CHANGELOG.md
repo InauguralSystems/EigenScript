@@ -1182,6 +1182,33 @@ All notable changes to EigenScript are documented here.
   `[[ =~ ]]` regexes inline that bash 3.2 cannot PARSE; every runner reports
   "NO OLD BASH ON THIS MACHINE" so `[99zb]` had always skipped.
 
+  Round 5 closed the layer under the caller; both blind critics converged on
+  the gates themselves. A DECLARED-BUT-EMPTY TOKEN IS A DECLARED TOKEN:
+  `gh_probe_token_declared` tested non-emptiness, so a lane exporting
+  `GH_TOKEN=""` — what a workflow produces when the secret is missing,
+  misspelled or scoped away — declared nothing, every GitHub arm took its named
+  skip, and `[99zd]` printed "this lane declares no token" and passed 11/11 on
+  a lane that measured nothing; the predicate now tests PRESENCE
+  (`${GH_TOKEN+x}`) and an UNSET token is the only shape that still permits the
+  skip. `KNOWN_REPOS` IS VERIFIED ONCE PER RUN: it named `EigenKB`, which does
+  not exist, and arm (c) mapped the repository-level 404 to "this token cannot
+  read the repository" — a fact about the run — so a roadmap citing `EigenKB#1`
+  printed `OK … skipped=1` on the organisation's most privileged token. One
+  `gh api orgs/<owner>/repos` call is now the discriminator: absent from a
+  SUCCESSFUL listing is `does not exist (KNOWN_REPOS is stale)`, present says
+  public or private, and a listing that fails leaves nothing decidable and
+  SKIPs by name. ROADMAP.md is PUBLIC, so a citation its readers cannot open is
+  not evidence: `EigenOS`, `eigen-site`, `DeslanStudio` and `iLambdaAi` (all
+  measured `.private == true`) moved to `PRIVATE_REPOS`, where citing one is
+  red for its real reason rather than as an unknown name. `--selftest` is 21
+  cases, including the control that makes the discriminator load-bearing. And
+  `[99zb]`'s skip reason was FALSE: its candidate list was `$PORTABILITY_BASH`
+  and two `bash32` paths, never `/bin/bash` — which on macOS, the one platform
+  the audit exists for, IS GNU bash 3.2.57. `/bin/bash` and `/usr/bin/bash` are
+  now candidates when their own `BASH_VERSINFO[0]` is 3 or lower, so the macOS
+  lane parses all 128 tracked scripts and runs the five shell gates instead of
+  announcing a skip; the skip message names every candidate it tried.
+
 - **Layering has structure rather than convention (#744, closing #746).** The
   core no longer includes any extension's private header: `src/ext_register.h`
   carries the registrars and per-state teardowns as declarations only, so

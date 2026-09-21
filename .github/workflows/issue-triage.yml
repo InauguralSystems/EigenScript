@@ -172,7 +172,15 @@ jobs:
           rc=0
           bash tools/issue_labels_check.sh > "$out" 2>&1 || rc=$?
           cat "$out"
-          hits=$(grep -cE "$POP_RE_PINNED" "$out")
+          # `|| true`, and it is load-bearing: this job runs under `bash -e`
+          # (Actions' default shell is `bash -e {0}`), and `grep -c` exits 1
+          # when the count is ZERO — which is exactly the failing case this
+          # line is measuring. Without it the step dies AT THE GREP, nonzero
+          # but SILENT, and the named diagnosis below never prints. Measured
+          # 2026-09-21 by running this step body under `bash -e` with
+          # GH_TOKEN="": it exited 1 after the contract check and said
+          # nothing about why.
+          hits=$(grep -cE "$POP_RE_PINNED" "$out" || true)
           # A SKIP is not a pass here: this job exists to make the API call, so
           # an unauthenticated or offline run must be loud rather than green.
           if grep -q 'SKIPPED BY NAME' "$out"; then
@@ -223,7 +231,7 @@ jobs:
           set -u
           ROADMAP_POP_RE_LIVE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=gh-api:[^ ]+ refs=gh-api:[^ ]+ resolved=[1-9][0-9]* skipped=0\)$'
           ROADMAP_POP_RE_CONTRACT='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+\)$'
-          ROADMAP_SELFTEST_CASES_PINNED=17
+          ROADMAP_SELFTEST_CASES_PINNED=21
 
           CONTRACT_SEEN=0
           ST_SEEN=0
@@ -235,11 +243,21 @@ jobs:
           # 0. THE SAME PROBE THE GATE USES. A lane that exports a token and
           #    cannot reach GitHub has measured nothing, and this is the one
           #    check that says so rather than accepting the gate's skip.
+          #    ROUND 5 (blind critic, Astra): `gh_probe_token_declared` now
+          #    tests PRESENCE, not non-emptiness. A step whose env maps
+          #    GH_TOKEN to a secret expression naming a secret that does not
+          #    exist exports an EMPTY string, not nothing, and round 4 read
+          #    that as "this lane declares no token" — the shape that let the
+          #    suite caller pass 11/11 with every GitHub arm skipped. An empty
+          #    export is a declaration of a credential this lane cannot use,
+          #    and it is named as such here.
           CHECKS=$((CHECKS + 1))
           . tools/gh_probe.sh
           state=$(gh_probe_state) || true
           echo "issue-triage: gh_probe_state=$state"
-          if [ "$state" != "authenticated" ]; then
+          if gh_probe_token_declared && [ "$state" != "authenticated" ]; then
+            echo "issue-triage: this lane DECLARES GH_TOKEN/GITHUB_TOKEN (set, possibly EMPTY) and the shared probe still reports '$state' — a lane that declares a credential it cannot use has measured nothing, and this step exists to make the API call"
+          elif [ "$state" != "authenticated" ]; then
             echo "issue-triage: this lane exports GH_TOKEN and the shared probe still reports '$state' — the roadmap gate's live arms cannot run here, which is the whole reason this step exists"
           else
             PROBE_SEEN=1
@@ -282,7 +300,15 @@ jobs:
           rc=0
           bash tools/roadmap_check.sh > "$out" 2>&1 || rc=$?
           cat "$out"
-          hits=$(grep -cE "$ROADMAP_POP_RE_LIVE" "$out")
+          # `|| true`, and it is load-bearing: this job runs under `bash -e`
+          # (Actions' default shell is `bash -e {0}`), and `grep -c` exits 1
+          # when the count is ZERO — which is exactly the failing case this
+          # line is measuring. Without it the step dies AT THE GREP, nonzero
+          # but SILENT, and the named diagnosis below never prints. Measured
+          # 2026-09-21 by running this step body under `bash -e` with
+          # GH_TOKEN="": it exited 1 after the contract check and said
+          # nothing about why.
+          hits=$(grep -cE "$ROADMAP_POP_RE_LIVE" "$out" || true)
           if [ "$hits" -ne 1 ]; then
             echo "issue-triage: the roadmap gate printed $hits line(s) matching this workflow's LIVE pin; exactly 1 is required. This lane holds a token, so a skipped: source, resolved=0, or any skipped reference is a failure here — the milestone mirror and the reference walk are what this step exists to run."
             echo "issue-triage: caller pin: $ROADMAP_POP_RE_LIVE"

@@ -64,7 +64,7 @@ anything of its own, so a docs PR pays seconds, not minutes.
 |---|---|---|
 | **[89]** | `tests/test_doc_examples.py` | an eigenscript fence that is not executed. Opt-OUT: paired with an `output` block (byte-compared), tagged `eigenscript fragment k=v ...` (free names declared in the tag, resolved STATICALLY through `--lint` E003 so a name hiding in a dead branch still counts, then run and required to finish clean), or tagged `eigenscript nocheck <reason>`. Anything else is red. It also refuses a **value stated in a comment** inside an executed example — that is a claim wearing a checked example's clothes. Per-file populations are pinned and cross-checked against an independent line scan. |
 | **[99za]** | `tools/docs_claims_check.sh` | a hand-typed number, a dangling repo path **or Markdown link target** (resolved against the LINKING FILE's directory only — no repo-root fallback, because a link that resolves only at the root is a broken link). A path is classified before it is checked: `git ls-files` says SOURCE (must be tracked and present), `make -p` says BUILD PRODUCT (must be produced by a rule; its **existence is never consulted**, so `make lsp` cannot change the verdict), neither is red, **any** `--flag` token not in `--help`, a `make <target>` that is not a rule, a backticked `name of` call that resolves nowhere. Each is derived from the tree or waived by its exact line content with a reason. Every class carries a DECLARED per-file count (found == declared, both ways), and a waiver that matches nothing is red — so a claim cannot be deleted, and coverage cannot shrink, without a failure. Three rules bought on macOS: **no scan that feeds a population suppresses its stderr** (a rejected pattern used to read as "nothing found"); the **fence count comes from `tests/test_doc_examples.py --count`**, the gate that executes the fences — one grammar, not two; and **nothing in the tool extracts with `grep -o`** — grep finds lines, POSIX awk `match()`/`RSTART`/`RLENGTH` extracts, because `grep -o` is not in POSIX and GNU and BSD differ on it. A scan that matches ZERO times where a count is declared is a RED **at the scan**, quoting the command and its exit status, not a "was never visited" three hundred lines later. And the gate prints a **per-class summary LAST** — examined count, files recorded, declared rows — so a class that silently did not run is one named line rather than six consequence-REDs; the runner prints the gate's **entire** captured output on failure (bounded at 500 lines, and when that bites it keeps the first 250 AND the last 250, never a bare tail). The **binary-size** claim is measured against whichever install-shaped binary the lane actually has, decided by inode: `build/release/eigenscript` if present, else `src/eigenscript` when no `build/*/eigenscript` shares its inode (the `./build.sh` product, which is what every CI leg builds and what `install.sh` installs); a `src/eigenscript` that IS a variant alias, or a non-Linux lane, defers with the reason named and the deferral count pinned. |
-| **[99zb]** | `tools/portability_parse_check.sh` | a tracked `*.sh` that the OLDEST bash on the machine cannot parse — **or a shell gate it cannot RUN**. macOS ships **bash 3.2 (2007)**, and three CI rounds were spent guessing at what it rejects — twice wrongly. The dev box now carries a real one at **`~/.local/bin/bash32`**, built from GNU bash 3.2.0 source with `./configure --without-bash-malloc --disable-nls && make` (~4 min); `bash32 -n <file>` settles any portability question in a second, and the whole repo in under two. Parsing was never enough: bash 3.2 scans `<( … )` for its closing paren **without honouring comments**, so an apostrophe in a comment inside one opens a quote that never closes — at RUNTIME, which `bash -n` calls clean. That kept the macOS lane red for four rounds. The audit therefore also EXECUTES five tracked shell gates (`docs_claims_check.sh`, `child_exit_check.sh`, `suite_label_check.sh`, `doc_drift_check.sh`, and `tests/test_string_scaling.sh --selftest` — the one `tests/` entry, 23 stub-driven cases of string-splitting bash) under the old bash and requires rc 0, with the run count pinned. `PORTABILITY_RUN_SELFTEST=1` adds the claims selftest (~3 min, driver-only extra coverage — its children still spawn through `#!/usr/bin/env bash`). When no old bash is present the check **announces the skip and prints both counts**, so it can never read as a completed audit. 121 files parsed + 5 gates run, ~24 s. |
+| **[99zb]** | `tools/portability_parse_check.sh` | a tracked `*.sh` that the OLDEST bash on the machine cannot parse — **or a shell gate it cannot RUN**. macOS ships **bash 3.2 (2007)**, and three CI rounds were spent guessing at what it rejects — twice wrongly. The dev box now carries a real one at **`~/.local/bin/bash32`**, built from GNU bash 3.2.0 source with `./configure --without-bash-malloc --disable-nls && make` (~4 min); `bash32 -n <file>` settles any portability question in a second, and the whole repo in under two. Parsing was never enough: bash 3.2 scans `<( … )` for its closing paren **without honouring comments**, so an apostrophe in a comment inside one opens a quote that never closes — at RUNTIME, which `bash -n` calls clean. That kept the macOS lane red for four rounds. The audit therefore also EXECUTES five tracked shell gates (`docs_claims_check.sh`, `child_exit_check.sh`, `suite_label_check.sh`, `doc_drift_check.sh`, and `tests/test_string_scaling.sh --selftest` — the one `tests/` entry, 23 stub-driven cases of string-splitting bash) under the old bash and requires rc 0, with the run count pinned. `PORTABILITY_RUN_SELFTEST=1` adds the claims selftest (~3 min, driver-only extra coverage — its children still spawn through `#!/usr/bin/env bash`). When no old bash is present the check **announces the skip and prints both counts** AND names every candidate it looked at, so it can never read as a completed audit. 128 files parsed + 5 gates run, ~24 s. **The system shell is a candidate when it IS old** (round-5 blind critic, Fable): until then the candidate list was `$PORTABILITY_BASH` and the two `bash32` oracle paths and nothing else, so on the one platform this audit exists for — the macOS runner, whose default `/bin/bash` IS GNU bash 3.2.57 — it found no old bash and skipped with "NO OLD BASH ON THIS MACHINE". That reason was false; the list simply never tried `/bin/bash`. `/bin/bash` and `/usr/bin/bash` are now candidates **when their own `BASH_VERSINFO[0]` is ≤ 3**, so the macOS lane runs the real audit and a Linux runner's bash 5 is never mistaken for an oracle; the two `bash32` paths stay unconditional because a human built and named them. |
 **`make -p` across make versions — measured, not assumed.** macOS runners carry
 **GNU Make 3.81** (2006); this box has 4.3, and [99za]'s build-product
 classifier parses `make -p -n --no-builtin-rules`. That was the leading
@@ -92,6 +92,23 @@ bash 5 swallows it — nondeterministically, because it is a race. Every
 early-exiting reader in the gate is now fed by a **here-string** instead of a
 pipe (a here-string is a temp file; there is no pipe to break). Same family as
 `tools/pipefail_verdict_check.sh` (#1122).
+
+**The doc set every [99za] class walks, named.** `tools/docs_claims_check.sh`
+examines exactly **seven** files — `README.md`, `docs/llms.txt`, `CLAUDE.md`,
+`docs/ARCHITECTURE.md`, `docs/BUILTINS.md`, `docs/CONCURRENCY.md`,
+`ROADMAP.md` (`DOC_FILES_DEFAULT` in the tool) — and every class, including
+**BUILTIN FAMILIES** (the class that refuses a doc line naming a builtin family
+`eigenscript --api` does not carry, bought by ROADMAP.md's "Raw TCP/UDP
+sockets", #1227), is only as wide as that list. The other documents are outside
+it deliberately: `docs/SPEC.md`, `docs/COMPARISON.md`, `docs/PREDICATES.md`,
+`docs/OBSERVER.md`, `docs/TRACE.md` and the rest are either **executed-example
+documents**, where section [89] runs every fence against the built binary and a
+false claim fails as a program rather than as prose, or prose about design that
+states no derived number. The cost of that boundary is exact and worth writing
+down: **a builtin-family claim in `docs/TRACE.md` is unseen by [99za]** — if
+`docs/TRACE.md` ever says the tape records UDP sockets, no class here will
+object. Widening `DOC_FILES_DEFAULT` is the fix when that becomes real, and it
+requires re-deriving every per-file declared count in the same commit.
 
 | **[99v]** | `tools/doc_drift_check.sh` | the staleness classes that are not numbers: a stdlib module with no `docs/STDLIB.md` entry, a stale "Latest release" line, a `VERSION` with no CHANGELOG section, an unstamped `docs/llms.txt`. |
 
@@ -180,6 +197,22 @@ knowing:
 A successful exit is not a measurement, and neither is a contract the gate
 wrote for itself.
 
+**A declared-but-empty token is a declared token.** Each caller cross-checks
+the probe against an INDEPENDENT signal — does this lane DECLARE a credential?
+— and a lane that declares one and cannot reach GitHub is red by name rather
+than allowed its skip. Round 4 asked that question with `[ -n "$GH_TOKEN" ]`,
+so a lane exporting `GH_TOKEN=""` declared nothing by it. That is not a
+hypothetical shape: `env: GH_TOKEN: ${{ secrets.TYPO }}` exports an EMPTY
+string, not nothing, and a secret that is missing, misspelled or scoped away
+produces exactly it. With an empty token the probe reported
+`gh-unauthenticated`, every GitHub-facing arm took its named skip, and the
+suite caller's eleventh check printed "this lane declares no token" and passed
+**11/11** on a lane that measured nothing (round-5 blind critic, Astra).
+`gh_probe_token_declared` now tests PRESENCE (`${GH_TOKEN+x}`): an empty export
+is a credential this lane was written to hold and cannot use, which is the
+finding. An UNSET token — the dev box's keyring login, the macOS runner, the
+sanitizer shards — is the only shape that still permits the named skip.
+
 **What the caller can and cannot prove.** A caller verifies that a gate printed
 a population line it could only have produced by running its live arm ON THIS
 LANE (token-pinned, against the caller's own probe), and that the gate's
@@ -199,7 +232,14 @@ job. `.github/workflows/issue-triage.yml`'s daily audit runs BOTH the labels
 gate and `tools/roadmap_check.sh`, with a pin that admits no skip at all —
 that lane exists to make the API call. Every other lane (macOS, the sanitizer
 shards) declares no token, skips the GitHub arms BY NAME, and says so on the
-caller's own line. Before round 4 no lane anywhere could do anything but skip:
+caller's own line. **The sanitizer shards could hold a token and deliberately
+do not**: all three run the same dev image as `linux / gcc`, so `gh` is there
+and `${{ github.token }}` would work — they would simply add three more
+`gh api` walks per push (a milestone read, an organisation listing and a
+reference walk each) for an answer `linux / gcc` and `linux / clang` have
+already produced on that same commit. The live arms are about the CONTENT of
+ROADMAP.md, which is identical across shards; running them once per push is the
+measurement, and running them four times is rate limit. Before round 4 no lane anywhere could do anything but skip:
 the milestone mirror and the reference resolver — the whole point of #1207 —
 were executed against GitHub by nothing, while `[99zd]` reported
 `population lines 3/3`.
@@ -235,6 +275,38 @@ skips. Arm (c) also REFUSES a bare `#N` in a cell that also carries a qualified
 `Repo#M`: M9's row read "Tidepool#43 and #59", the bare `#59` silently resolved
 against EigenScript (a real, closed PR), and the row was green for a reference
 it does not mean.
+
+**`KNOWN_REPOS` is verified once per run, and a private repository is not
+evidence.** Round 4's list named `EigenKB`, which **does not exist** — a 404 on
+every token, including the organisation's most privileged one — and arm (c)
+mapped a repository-level 404 to "this token cannot read the repository", a
+statement about the run, so `EigenKB#1` in the roadmap SKIPPED BY NAME and the
+gate printed `OK … skipped=1` (round-5 blind critic, Fable). A membership list
+nothing verifies certifies whatever is typed into it. Arm (c) now makes ONE
+call, `gh api orgs/<owner>/repos --paginate` (31 rows here, one page), and that
+listing is the discriminator: name absent from a SUCCESSFUL listing → the
+repository **does not exist**, red by name, `KNOWN_REPOS is stale`; name
+present → `.private` decides which list it belongs on; listing fails or returns
+empty → nothing is decidable and the verification **SKIPs by name** (the
+reference walk still runs, exactly as before). A repo-scoped
+`${{ github.token }}` sees only the organisation's public repositories, so for
+a `PRIVATE_REPOS` entry "absent" and "private" are the same answer and both are
+fine; an entry that shows up **public** is the stale direction and is red too.
+`ROADMAP.md` is a PUBLIC document, so a citation its readers cannot open is not
+evidence: `EigenOS`, `eigen-site`, `DeslanStudio` and `iLambdaAi` (measured
+2026-09-21: `.private` is true on all four) moved out of `KNOWN_REPOS` into
+`PRIVATE_REPOS`, which keeps them recognisable so that citing one is red for
+its REAL reason ("private repository is not evidence in a public roadmap")
+rather than red as an unrecognised name. Under round 4 those citations RESOLVED
+on a maintainer's token and were counted as evidence, and would have been
+`skipped=1` — and therefore red at the token-holding daily lane, for the wrong
+reason — under `${{ github.token }}`. The selftest drives all of this through
+an organisation-listing fixture, offline: a missing entry, a private entry, a
+cited private repository, and the CONTROL that makes the discriminator load-
+bearing — the same missing entry with the listing UNREADABLE is **green**, so
+gutting the discriminator is red in one direction and silent in the other, and
+the pair catches both. `--selftest` is **21 cases**, and all three callers pin
+that number.
 
 The old file was a checkbox pile, most of it historical highlights under
 `## Completed`, so every counter of "roadmap items" was counting the past.
