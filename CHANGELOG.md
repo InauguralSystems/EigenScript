@@ -1097,6 +1097,52 @@ All notable changes to EigenScript are documented here.
   audit could never have run. Two blind critics quoted that workflow's
   permissions and concurrency key back verbatim; neither parsed it.
 
+  Round 3 closed what round 2's critics found, all of it in the same layer.
+  THE CALLERS TRUSTED THE CONTRACT THEY WERE SUPPOSED TO POLICE: both read
+  `POPULATION_RE` and `SELFTEST_CASES` from the gate, so `POPULATION_RE=
+  examined=|.*` admitted empty output and a gate with every plant deleted and
+  `SELFTEST_CASES=1` passed the daily lane. "One regex per gate" was the wrong
+  invariant. Each caller now holds its OWN literal copy of both pins, asserts
+  the gate's output against that copy, and separately asserts the gate's
+  `--contract` EQUALS it — two copies kept equal by a test, with a drift red by
+  name and never auto-adopted. Both callers also require a LIVE source token,
+  because `examined=1 missing=0 (source: fixture ...)` used to pass (their
+  regex stopped before `(source:`); both require exactly ONE population line
+  with a non-zero count; and both count their own checks, so gutting an
+  assertion changes RESULTS. The round-2 substring vacuity guard
+  (`case "$re" in *examined=*`) is deleted — the caller's own pinned regex is
+  the guard.
+
+  THE PR LANE WAS RED ON EVERY SUITE LEG for three independent reasons, all
+  fixed here. `tools/workflow_yaml_check.sh --selftest` failed 2 of 5 because
+  two plants can only go red through arm (b) and NO runner had PyYAML: the
+  runners now install it (`python3-yaml` in `.devcontainer/Dockerfile`, a setup
+  step on the macOS lane) and the selftest is skip-aware, scoring a plant whose
+  arm skipped by name as `SKIP` rather than a failure. `tools/child_exit_check.sh`
+  declared 119 child sites for a tree with 121. And on macOS, where `gh` is
+  present but UNAUTHENTICATED, `tools/roadmap_check.sh` arm (c) reported all
+  seven references as "does not resolve — the endpoint 404s": both GitHub-facing
+  arms now check `gh auth status` and SKIP BY NAME, and within arm (c) a
+  genuine 404 is red with its HTTP status while a 401/403/429 or transport
+  error skips that one reference by name and is counted in `skipped=`.
+
+  Arm (a) of the YAML gate also stopped rejecting LEGAL YAML — a trailing
+  `# comment: detail`, a quoted scalar after extra spaces, and `name:` text
+  inside a `run: |` block scalar were all red; it now tokenises the scalar the
+  way YAML does, with those three as green controls. Arm (a) of the roadmap
+  gate counted a legal escaped pipe in a table cell as an extra cell. Arm (c)
+  now REFUSES a bare `#N` in a cell that also carries a qualified `Repo#M`:
+  M9's row read "Tidepool#43 and #59", the bare `#59` silently resolved against
+  EigenScript (a real, closed PR) and the row was green for a reference it does
+  not mean — the milestone description on GitHub and the row are both qualified
+  now. And an unknown repo-qualified reference is red wherever it appears, not
+  only inside the table. Finally, the two pre-PR checkbox counts in ROADMAP.md
+  are DERIVED (`D_ROADMAP_HIST_CHECKBOXES` / `D_ROADMAP_HIST_COMPLETED` in
+  `tools/docs_claims_check.sh`, deferring by name on a checkout too shallow to
+  reach the commit) rather than waived: changing the number AND its waiver
+  together used to stay green, because the derivation the waiver's reason
+  described was never executed.
+
 - **Layering has structure rather than convention (#744, closing #746).** The
   core no longer includes any extension's private header: `src/ext_register.h`
   carries the registrars and per-state teardowns as declarations only, so

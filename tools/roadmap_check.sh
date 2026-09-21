@@ -88,12 +88,58 @@ KNOWN_REPOS="${ROADMAP_CHECK_REPOS:-EigenScript ouroboros Tidepool EigenMiniSat 
 # accepted by `[99zd]`, which read `TOTAL=4 PASS=4`. A successful exit is not a
 # measurement (mechanical-gates §121): the caller must require the POSITIVE
 # POPULATION LINE, by regex, and fail by name when it is absent.
-POPULATION_RE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\)$'
-SELFTEST_CASES=11
+#
+# ROUND 3 (blind critic Fable): the callers also accepted a FIXTURE-sourced
+# "live" run — `examined=1 missing=0 (source: fixture ...)` passed, because the
+# caller's regex stopped before `(source:`. The OK line therefore NAMES its
+# sources in machine-readable tokens (`gh-api:`, `fixture:`, `skipped:`) and
+# the contract requires a non-fixture one, so a run driven by the selftest seam
+# is red at the caller by name.
+POPULATION_RE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+\)$'
+SELFTEST_CASES=14
+
+# What arms (b) and (c) actually used this run. One of
+#   gh-api:<endpoint>   fixture:<path>   skipped:<reason>
+SRC_MILESTONES="skipped:not-reached"
+SRC_REFS="skipped:not-reached"
 
 RED=0
 red() { echo "RED: $*"; RED=$((RED + 1)); }
 note() { echo "      $*"; }
+
+# Trim leading/trailing spaces and tabs.
+trim_ws() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+# Split a markdown table row into ROW_CELLS.
+#
+# BOUGHT 2026-09-21 (round-3 blind critic, Astra check 3): the first cut split
+# with `awk -F'|'`, so a cell containing a LEGAL escaped pipe (`\|`, the only
+# way to put a pipe inside a markdown cell) was counted as two cells and the
+# row was red for having 6. An escaped pipe is CONTENT. It is swapped for a
+# control character before the split and swapped back inside each cell, with
+# bash parameter expansion rather than sed: `\x01` in a sed replacement is a
+# GNU extension the macOS lane does not have.
+ROW_CELLS=()
+split_row() {
+    local line="$1" esc field
+    ROW_CELLS=()
+    esc="${line//\\|/$'\001'}"
+    esc="${esc#|}"
+    esc="${esc%|}"
+    esc="$esc|"
+    while [ -n "$esc" ]; do
+        field="${esc%%|*}"
+        esc="${esc#*|}"
+        field="${field//$'\001'/|}"
+        field=$(trim_ws "$field")
+        ROW_CELLS[${#ROW_CELLS[@]}]="$field"
+    done
+}
 
 # A status word that is NOT compared against GitHub. Everything else is an
 # "open row" and must have a milestone number.
@@ -103,6 +149,23 @@ is_closed_status() {
         *) return 1 ;;
     esac
 }
+# AUTHENTICATED, not merely installed. `gh auth status` alone is not enough:
+# with GH_TOKEN set to a bogus value it prints "The token in GH_TOKEN is
+# invalid." and STILL EXITS 0 (measured on the dev box, 2026-09-21), so the
+# probe also makes one cheap authenticated call. Both arms use this, so they
+# cannot disagree about which of the three states — no gh, gh without
+# credentials, gh with working credentials — this runner is in.
+gh_authenticated() {
+    command -v gh >/dev/null 2>&1 || return 1
+    gh auth status >/dev/null 2>&1 || return 1
+    # `rate_limit` and not `user`: it costs no rate limit, it answers for a
+    # personal token AND for a workflow's GITHUB_TOKEN (which is FORBIDDEN from
+    # `/user` — probing with that would have made the daily lane skip itself),
+    # and it is a 401 on a bad token.
+    gh api rate_limit >/dev/null 2>&1 || return 1
+    return 0
+}
+
 is_known_status() {
     case "$1" in
         active|declared-not-started|blocked|retired|completed) return 0 ;;
@@ -180,14 +243,15 @@ check_structure() {
             continue
         fi
         TABLE_ROWS=$((TABLE_ROWS + 1))
-        # split on '|' — leading and trailing empties dropped
-        num=$(printf '%s' "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
-        title=$(printf '%s' "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$3); print $3}')
-        status=$(printf '%s' "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$4); print $4}')
-        url=$(printf '%s' "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$5); print $5}')
-        done_when=$(printf '%s' "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$6); print $6}')
+        # Split on UNESCAPED '|' — `\|` is a legal escaped pipe inside a cell.
+        split_row "$line"
+        num="${ROW_CELLS[0]:-}"
+        title="${ROW_CELLS[1]:-}"
+        status="${ROW_CELLS[2]:-}"
+        url="${ROW_CELLS[3]:-}"
+        done_when="${ROW_CELLS[4]:-}"
         local ncells
-        ncells=$(printf '%s' "$line" | awk -F'|' '{print NF-2}')
+        ncells=${#ROW_CELLS[@]}
         if [ "$ncells" -ne 5 ]; then
             red "(a) table row has $ncells cell(s), 5 required (number, milestone, status, GitHub, DONE when): $line"
             bad_cells=$((bad_cells + 1))
@@ -231,6 +295,7 @@ check_structure() {
 check_milestones() {
     local json src
     if ! command -v python3 >/dev/null 2>&1; then
+        SRC_MILESTONES="skipped:no-python3"
         echo "      (b) SKIPPED BY NAME: python3 is not on PATH, so the milestone JSON cannot be parsed. Arm (a) still ran."
         return
     fi
@@ -241,16 +306,30 @@ check_milestones() {
         fi
         json=$(cat "$ROADMAP_CHECK_MILESTONES_JSON")
         src="fixture $ROADMAP_CHECK_MILESTONES_JSON"
+        SRC_MILESTONES="fixture:$ROADMAP_CHECK_MILESTONES_JSON"
     else
         if ! command -v gh >/dev/null 2>&1; then
+            SRC_MILESTONES="skipped:no-gh"
             echo "      (b) SKIPPED BY NAME: gh is not on PATH, so the table cannot be compared with the GitHub milestone set. Arm (a) still ran."
             return
         fi
+        # AUTHENTICATION IS A DISTINCT STATE FROM `gh` BEING INSTALLED.
+        # Bought 2026-09-21 (round-3 blind critic, Fable; CI run 35599371704):
+        # the macOS runner HAS `gh` and no credentials, so every call failed —
+        # arm (b) skipped but arm (c) called all seven failures "404s" and took
+        # the whole macOS leg red. Auth is checked ONCE, by name, up front.
+        if ! gh_authenticated; then
+            SRC_MILESTONES="skipped:gh-unauthenticated"
+            echo "      (b) SKIPPED BY NAME: gh is on PATH but has no working credentials (gh auth status fails, or an authenticated probe call does), so the milestone set cannot be read. Arm (a) still ran."
+            return
+        fi
         if ! json=$(gh api "repos/$REPO/milestones?state=open&per_page=100" 2>/dev/null); then
-            echo "      (b) SKIPPED BY NAME: gh is present but the milestone API call failed (unauthenticated, offline, or rate-limited). Arm (a) still ran."
+            SRC_MILESTONES="skipped:gh-api-failed"
+            echo "      (b) SKIPPED BY NAME: gh is authenticated but the milestone API call failed (offline, rate-limited, or the repository is unreadable). Arm (a) still ran."
             return
         fi
         src="gh api repos/$REPO/milestones"
+        SRC_MILESTONES="gh-api:repos/$REPO/milestones"
     fi
 
     local report
@@ -383,6 +462,7 @@ print("CHECKED %d" % checked)
 # this arm prints that limit rather than implying it checked them.
 check_references() {
     if ! command -v python3 >/dev/null 2>&1; then
+        SRC_REFS="skipped:no-python3"
         echo "      (c) SKIPPED BY NAME: python3 is not on PATH, so references cannot be extracted. Arm (a) still ran."
         return
     fi
@@ -393,12 +473,26 @@ check_references() {
             return
         fi
         src="fixture $fixture"
+        SRC_REFS="fixture:$fixture"
     else
         if ! command -v gh >/dev/null 2>&1; then
+            SRC_REFS="skipped:no-gh"
             echo "      (c) SKIPPED BY NAME: gh is not on PATH, so the table's references cannot be resolved. Arm (a) still ran."
             return
         fi
+        # `gh` INSTALLED IS NOT `gh` AUTHENTICATED. Bought 2026-09-21 (round-3
+        # blind critic, Fable; CI run 35599371704): the macOS runner has `gh`
+        # and no credentials, so every `gh api` failed and this arm reported
+        # all seven references as "does not resolve — the endpoint 404s",
+        # taking the macOS leg red on a tree whose references are all fine.
+        # An unauthenticated 404 is not evidence about the reference.
+        if ! gh_authenticated; then
+            SRC_REFS="skipped:gh-unauthenticated"
+            echo "      (c) SKIPPED BY NAME: gh is on PATH but has no working credentials, so nothing can be resolved — an unauthenticated 404 says nothing about whether the reference exists. Arm (a) still ran."
+            return
+        fi
         src="gh api repos/<repo>/issues/<n>"
+        SRC_REFS="gh-api:repos/$OWNER/*/issues"
     fi
 
     local out
@@ -425,33 +519,79 @@ def add(repo, num, why):
             return
     seen.append((repo, num, why))
 
+unknown = []
+def unknown_add(msg):
+    if msg not in unknown:
+        unknown.append(msg)
+
+ambiguous = []
+def ambiguous_add(msg):
+    if msg not in ambiguous:
+        ambiguous.append(msg)
+
+def cells_of(line):
+    # the SAME split rule the structure arm uses: `\|` is content.
+    body = line.replace("\\|", "\x01").strip()
+    body = body[1:] if body.startswith("|") else body
+    body = body[:-1] if body.endswith("|") else body
+    return [c.replace("\x01", "|") for c in body.split("|")]
+
 # 1. every reference in a TABLE cell (the evidence cells of the milestone set)
 for ln in text.split("\n"):
     if not ln.startswith("|"):
         continue
     if re.match(r"^\|[\s:|-]+\|[\s:|-]*$", ln):
         continue
-    for m in REF.finditer(ln):
-        q = m.group(1)
-        if q is None:
-            add(default, m.group(2), "table")
-        elif q in known:
-            add(q, m.group(2), "table")
-        else:
-            print("UNKNOWN %s#%s names no known repository" % (q, m.group(2)))
+    for cell in cells_of(ln):
+        qualified = [m for m in REF.finditer(cell)
+                     if m.group(1) is not None and m.group(1) in known]
+        for m in REF.finditer(cell):
+            q = m.group(1)
+            if q is None:
+                if qualified:
+                    # BOUGHT 2026-09-21 (round-3 blind critic, Fable): M9 read
+                    # "Tidepool#43 and #59 closed". The bare #59 silently became
+                    # EigenScript#59 (a closed 2026 PR about the self-hosted
+                    # parser) and RESOLVED, so the row was green for a reference
+                    # it does not mean. A bare number beside a qualified one is
+                    # ambiguous; the gate refuses it instead of guessing.
+                    ambiguous_add("bare #%s beside %s#%s — a bare number defaults to %s, and this cell names another repository; qualify it"
+                                  % (m.group(2), qualified[0].group(1), qualified[0].group(2), default))
+                    continue
+                add(default, m.group(2), "table")
+            elif q in known:
+                add(q, m.group(2), "table")
+            else:
+                unknown_add("%s#%s (table)" % (q, m.group(2)))
 
 # 2. every REPO-QUALIFIED reference anywhere in the file, attached or in prose.
 #    Whitespace is normalised first: the reference this arm was bought for
-#    (Tidepool PR #375) straddled a line break.
+#    (Tidepool PR #375) straddled a line break. A qualifier that names NO known
+#    repository is red wherever it appears — round 2 ignored it in prose and
+#    only caught it in a table, which is how a wrong-repo credit survives in
+#    the sentence that explains the row.
 norm = re.sub(r"\s+", " ", text)
 for m in REF.finditer(norm):
     q = m.group(1)
-    if q is not None and q in known:
+    if q is None:
+        continue
+    if q in known:
         add(q, m.group(2), "qualified")
+    else:
+        unknown_add("%s#%s (prose)" % (q, m.group(2)))
+# The SPACED prose form (`Tidepool PR #375`) is only RESOLVED, never accused:
+# its left word is an ordinary English word most of the time ("whose PR #375"),
+# so an unknown one there is not evidence of anything. The ATTACHED form
+# (`PrivateRepo#999999`) is unambiguous — nobody writes `word#123` by accident —
+# and that is the one an unknown qualifier is red for, wherever it appears.
 for m in PROSE.finditer(norm):
     if m.group(1) in known:
         add(m.group(1), m.group(2), "prose")
 
+for msg in ambiguous:
+    print("AMBIGUOUS %s" % msg)
+for msg in unknown:
+    print("UNKNOWN %s" % msg)
 for r, n, w in seen:
     print("REF %s %s %s" % (r, n, w))
 print("TOTAL %d" % len(seen))
@@ -460,14 +600,15 @@ print("TOTAL %d" % len(seen))
         return
     fi
 
-    local line unknown_n=0
+    local line unknown_n=0 ambiguous_n=0
     while IFS= read -r line; do
         case "$line" in
-            UNKNOWN\ *) red "(c) ${line#UNKNOWN } — a qualified reference must name a repository this gate knows (KNOWN_REPOS)"; unknown_n=$((unknown_n + 1)) ;;
+            AMBIGUOUS\ *) red "(c) ${line#AMBIGUOUS } — $RC_FILE"; ambiguous_n=$((ambiguous_n + 1)) ;;
+            UNKNOWN\ *) red "(c) ${line#UNKNOWN } names no repository this gate knows (KNOWN_REPOS) — a qualified reference must name one"; unknown_n=$((unknown_n + 1)) ;;
         esac
     done <<< "$out"
 
-    local total resolved=0 examined=0 repo num why full
+    local total resolved=0 examined=0 skipped=0 repo num why full err rc status
     total=$(printf '%s\n' "$out" | sed -n 's/^TOTAL //p' | tail -1)
     if [ "${total:-0}" -eq 0 ]; then
         red "(c) the milestone table offers ZERO references as evidence — an empty reference set resolves trivially (mechanical-gates §121)"
@@ -492,21 +633,36 @@ print("TOTAL %d" % len(seen))
             fi
             continue
         fi
-        if gh api "repos/$full/issues/$num" --jq .number >/dev/null 2>&1; then
+        # stdout discarded, stderr captured: `gh` prints the HTTP status there,
+        # and the STATUS is the whole point — a 404 is a verdict about the
+        # reference, a 401/403/429 is a verdict about this run.
+        err=$(gh api "repos/$full/issues/$num" --jq .number 2>&1 >/dev/null)
+        rc=$?
+        if [ "$rc" -eq 0 ]; then
             resolved=$((resolved + 1))
-        else
-            red "(c) $full#$num ($why) does not resolve — $RC_FILE offers it as evidence, and the endpoint 404s"
+            continue
         fi
+        status=$(printf '%s\n' "$err" | sed -n 's/.*(HTTP \([0-9][0-9]*\)).*/\1/p' | head -1)
+        case "${status:-none}" in
+            404)
+                red "(c) $full#$num ($why) does not resolve — $RC_FILE offers it as evidence and the endpoint answers HTTP 404 to a token that reads this org's other references" ;;
+            401|403|429)
+                skipped=$((skipped + 1))
+                note "(c) SKIPPED BY NAME: $full#$num ($why) — the API answered HTTP $status (unauthorised, forbidden, or rate-limited); that is a fact about this run, not about the reference" ;;
+            *)
+                skipped=$((skipped + 1))
+                note "(c) SKIPPED BY NAME: $full#$num ($why) — the API call failed with no HTTP status (network or transport error): $(printf '%s\n' "$err" | head -1)" ;;
+        esac
     done <<< "$out"
 
     if [ "$examined" -ne "${total:-0}" ]; then
         red "(c) extracted ${total:-0} reference(s) but walked $examined — the reference walk lost rows"
         return
     fi
-    if [ "$resolved" -ne "$examined" ] || [ "$unknown_n" -ne 0 ]; then
+    if [ $((resolved + skipped)) -ne "$examined" ] || [ "$unknown_n" -ne 0 ] || [ "$ambiguous_n" -ne 0 ]; then
         return
     fi
-    echo "      (c) references: examined=$examined, refs=$resolved resolved (source: $src); bare #N outside the table is NOT resolved, by design"
+    echo "      (c) references: examined=$examined, refs=$resolved resolved, skipped=$skipped (source: $src); bare #N outside the table is NOT resolved, by design"
 }
 
 run_live() {
@@ -518,17 +674,29 @@ run_live() {
         echo "roadmap-check: $RED problem(s)"
         return 1
     fi
-    local ok_line="roadmap-check: OK (examined=$TABLE_ROWS row(s), open=$TABLE_OPEN_ROWS)"
+    local ok_line="roadmap-check: OK (examined=$TABLE_ROWS row(s), open=$TABLE_OPEN_ROWS) (source: milestones=$SRC_MILESTONES refs=$SRC_REFS)"
     echo "$ok_line"
     # The gate proves its OWN output satisfies the contract it publishes, so
     # that rewording this line without updating POPULATION_RE goes red here
     # rather than leaving every caller asserting a regex nothing can match.
-    if ! [[ $ok_line =~ $POPULATION_RE ]]; then
-        echo "RED: (a) the population line does not match this gate's own published contract"
-        echo "      line:     $ok_line"
-        echo "      contract: $POPULATION_RE"
-        return 1
-    fi
+    #
+    # A FIXTURE-driven run is exempt, and only a fixture-driven run: the
+    # contract deliberately admits no `fixture:` source (round 3, fix 7 — the
+    # callers used to accept `(source: fixture ...)` as a live measurement), so
+    # the selftest's own seam could never satisfy it. The exemption is keyed to
+    # the source token the line itself carries, so it cannot be claimed by a
+    # live run.
+    case "$SRC_MILESTONES $SRC_REFS" in
+        *fixture:*)
+            echo "      (self) contract check skipped: this run is fixture-driven ($SRC_MILESTONES $SRC_REFS); the published contract admits only live or named-skip sources" ;;
+        *)
+            if ! [[ $ok_line =~ $POPULATION_RE ]]; then
+                echo "RED: (a) the population line does not match this gate's own published contract"
+                echo "      line:     $ok_line"
+                echo "      contract: $POPULATION_RE"
+                return 1
+            fi ;;
+    esac
     return 0
 }
 
@@ -539,6 +707,7 @@ run_live() {
 # ---------------------------------------------------------------------------
 ST_RUN=0
 ST_FAIL=0
+ST_SKIP=0
 st_case() {
     # st_case <name> <arm> <expect red|green> <file> <json-or-->
     local name="$1" arm="$2" expect="$3" file="$4" js="$5"
@@ -554,6 +723,13 @@ st_case() {
         if [ "$rc" -ne 0 ] && [[ $'\n'"$out" == *$'\n'"RED: ($arm)"* ]]; then
             echo "  selftest ok: $name — arm ($arm) went red"
             printf '%s\n' "$out" | grep "^RED: ($arm)" | head -2 | sed 's/^/      /'
+        elif [[ "$out" == *"      ($arm) SKIPPED BY NAME"* ]]; then
+            # A plant proves nothing about an arm that did not run on this
+            # host. Scoring that as a FAILURE is what took three CI legs red
+            # on 538288c (round-3 blind critic, Fable).
+            ST_SKIP=$((ST_SKIP + 1))
+            echo "  selftest SKIPPED BY NAME: $name — arm ($arm) did not run on this host"
+            printf '%s\n' "$out" | grep "($arm) SKIPPED BY NAME" | head -1 | sed 's/^/      /'
         else
             ST_FAIL=$((ST_FAIL + 1))
             echo "  SELFTEST FAIL: $name — expected arm ($arm) red, got rc=$rc"
@@ -605,6 +781,7 @@ EOF
     cat > "$work/refs.txt" <<'EOF'
 InauguralSystems/EigenScript#375
 InauguralSystems/EigenScript#419
+InauguralSystems/Tidepool#43
 EOF
     export ROADMAP_CHECK_REFS_FIXTURE="$work/refs.txt"
 
@@ -685,8 +862,36 @@ EOF
     st_case "plant: a prose reference attributed to the wrong repository" "c" red \
             "$work/wrongrepo.md" "$work/ms.json"
 
+    # CONTROL 10 (arm a): a LEGAL escaped pipe inside a cell. `\|` is the only
+    # way to put a pipe in a markdown cell, and round 2 counted it as a cell
+    # separator, so a correct row was red for having 6 cells (round-3 blind
+    # critic, Astra check 3). A gate that fails correct input gets disabled.
+    sed 's%| M1 — A thing |%| M1 — A thing \\| with a pipe |%' \
+        "$work/good.md" > "$work/escpipe.md"
+    st_case "control: a cell containing a legal escaped pipe" "-" green \
+            "$work/escpipe.md" "$work/ms.json"
+
+    # PLANT 11 (arm c): a BARE #N in a cell that also carries a qualified
+    # reference. This is M9's own row: "Tidepool#43 and #59" silently resolved
+    # #59 against EigenScript (a real, closed PR) and was green for a reference
+    # the row does not mean (round-3 blind critic, Fable).
+    sed 's%| — | A vetoed thing | retired | #419 | never |%| — | A vetoed thing | retired | see Tidepool#43 and #59 | never |%' \
+        "$work/good.md" > "$work/ambiguous.md"
+    st_case "plant: a bare #N beside a qualified Repo#M in one cell" "c" red \
+            "$work/ambiguous.md" "$work/ms.json"
+
+    # PLANT 12 (arm c): an unknown repo-qualified reference in PROSE. Round 2
+    # only caught this shape inside a table and ignored it everywhere else
+    # (round-3 blind critic, Astra check 4) — which is exactly the sentence
+    # that EXPLAINS a row, where a wrong-repo credit does its damage.
+    cp "$work/good.md" "$work/unknownprose.md"
+    printf '\nThe finding was filed as PrivateRepo#999999 and never seen again.\n' \
+        >> "$work/unknownprose.md"
+    st_case "plant: an unknown repo-qualified reference in prose" "c" red \
+            "$work/unknownprose.md" "$work/ms.json"
+
     echo ""
-    echo "SELFTEST: $ST_RUN case(s) run, $((ST_RUN - ST_FAIL)) passed, $ST_FAIL failed"
+    echo "SELFTEST: $ST_RUN case(s) run, $((ST_RUN - ST_FAIL - ST_SKIP)) passed, $ST_FAIL failed, $ST_SKIP skipped"
     [ "$ST_FAIL" -eq 0 ]
 }
 

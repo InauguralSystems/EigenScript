@@ -22,6 +22,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   libpq-dev        -> `make full` / build.sh full (ext_db.c, -lpq)
 #   postgresql-client-> psql, for poking the devcontainer's db sidecar
 #   python3          -> tests/test_doc_examples.py (suite section [89])
+#   python3-yaml     -> tools/workflow_yaml_check.sh arm (b), the REAL YAML
+#                       loader behind suite section [99zd]. Without it that arm
+#                       SKIPs BY NAME and two of the gate's planted faults
+#                       cannot go red: on 538288c that took linux/gcc, macOS
+#                       and ASan shard 2/3 red at once (CI run 35599371704).
+#                       A gate whose second arm never runs on the lane is the
+#                       round-1 "a lane that never ran" failure in a new hat.
 #   gdb              -> the JIT debugging workflow (see CLAUDE.md)
 #   curl             -> exercising the http extension by hand
 # SDL2 is deliberately absent: `make gfx` dlopen's it at runtime and compiles
@@ -36,6 +43,7 @@ RUN apt-get update \
         zlib1g-dev \
         postgresql-client \
         python3 \
+        python3-yaml \
         gdb \
         curl \
  && rm -rf /var/lib/apt/lists/*

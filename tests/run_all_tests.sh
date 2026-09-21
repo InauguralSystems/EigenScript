@@ -6790,153 +6790,240 @@ echo ""
 # "we aren't labeling issues"): ROADMAP.md was a checkbox pile, most of it
 # historical highlights under `## Completed`, so every counter of "roadmap
 # items" was counting the past (ROADMAP.md's header derives both counts beside
-# the commands that produce them; they are deliberately not retyped here), and
-# the open backlog was unlabelled — the labels gate's first real run after the
-# hand sweep read `examined=35 missing=0`.
+# the commands that produce them; tools/docs_claims_check.sh executes those
+# commands), and the open backlog was unlabelled — the labels gate's first real
+# run after the hand sweep read `examined=35 missing=0`.
 #
 # A SUCCESSFUL EXIT IS NOT A MEASUREMENT (mechanical-gates §121). Round 1 of
 # this section took `exit 0` as a pass: Astra removed ONLY the live-data walk
 # from tools/roadmap_check.sh, left its fixture selftest intact, and this
-# section read TOTAL=4 PASS=4. So each gate now publishes its contract
-# (`--contract`: the POPULATION LINE it promises to print, and how many
-# planted faults its selftest runs) and this caller asserts BOTH — the
-# population line by that regex, and the selftest case count against a pin
-# held HERE, independently, so gutting the gate's contract is itself red.
+# section read TOTAL=4 PASS=4.
+#
+# ROUND 2 ADDED A CONTRACT AND THEN TRUSTED IT — the wrong invariant.
+# Round 2 had each gate publish `--contract` (its population regex and its
+# selftest case count) and had this caller read BOTH from the gate. So the
+# thing being policed supplied the yardstick: `POPULATION_RE=examined=|.*`
+# admitted empty output, a contract permitting `examined=0` passed, and a gate
+# with five plants deleted plus `SELFTEST_CASES=1` passed the daily workflow
+# (round-2 blind critics, Astra checks 2 and 7). "One regex per gate" was the
+# wrong invariant.
+#
+# ROUND 3 — TWO COPIES, KEPT EQUAL BY A TEST. Every pin below is a LITERAL in
+# this caller. The caller asserts the gate's output against ITS OWN copy, and a
+# SEPARATE check asserts the gate's `--contract` equals this copy verbatim. A
+# drift is red BY NAME and is never auto-adopted; the caller is the independent
+# witness, not a reader of the thing it polices. Three further round-3 rules:
+#   * the population count group is `[1-9][0-9]*` — zero is never a population —
+#     and EXACTLY ONE population line is required, so a duplicated line is red;
+#   * the pinned regexes require a LIVE source token (`gh-api:`), so a
+#     fixture-sourced run (`(source: fixture ...)`, which both callers accepted
+#     in round 2 because their regex stopped before `(source:`) is red by name;
+#   * the round-2 vacuity guard (`case "$re" in *examined=*`) is GONE. It was a
+#     substring test that `POPULATION_RE='examined='` satisfied. The caller no
+#     longer consumes the gate's regex at all, so its own pinned regex IS the
+#     guard.
+#
+# The section also counts its OWN work. Each assertion that actually reached a
+# verdict the caller accepts increments a witness, and the last check compares
+# the three witnesses and the section's check count with pinned literals — so
+# deleting or short-circuiting a check changes RESULTS instead of silently
+# measuring less.
 #
 # The same section also loads every workflow file (tools/workflow_yaml_check.sh):
 # round 1 shipped the daily lane as unparseable YAML, so the audit this section
-# guards could never have run at all.
+# guards could never have run at all. Round 3: its selftest is skip-aware,
+# because two of its plants need PyYAML and no runner had it — on 538288c that
+# took linux/gcc, macOS and ASan shard 2/3 red (CI run 35599371704). The
+# runners now install PyYAML (.devcontainer/Dockerfile, and a macOS setup step
+# in ci.yml); when it is nevertheless absent THIS caller probes for it itself
+# and allows exactly the pinned named-skip count, for that gate alone.
 #
 # None of these tools builds anything and all belong on the PR lane. Measured
 # on the dev box: roadmap live pass 8.2 s (one `gh api` for the milestones plus
-# one per reference in the table), its selftest 9.7 s; issue-labels live pass
-# 1.5 s (one `gh api --paginate`), its selftest 1.7 s.
-# The GitHub-facing arms of each SKIP BY NAME without `gh`; the structural arm
-# never skips, so a runner with no credentials still refuses a checkbox.
+# one per reference in the table), its selftest ~24 s; issue-labels live pass
+# 1.5 s (one `gh api --paginate`), its selftest 1.7 s; workflow-yaml 1.7 s live
+# and 4.2 s selftest.
+# The GitHub-facing arms of each SKIP BY NAME without `gh` — or with `gh`
+# present and UNAUTHENTICATED, which is a third state the macOS runner is in
+# and round 2 reported as seven 404s. The structural arm never skips, so a
+# runner with no credentials still refuses a checkbox.
 echo "[99zd] Roadmap is a milestone set, and issues are labelled (#1207/#1155)"
 
-# The pins live here, in the CALLER, and are cross-checked against what the
-# gate publishes. One number in one place is drift-proof only if the other end
-# says the same number out loud.
-ROADMAP_SELFTEST_EXPECTED=11
-LABELS_SELFTEST_EXPECTED=6
+# ---------------------------------------------------------------------------
+# THE CALLER'S OWN COPY. Literals. Not read from any gate.
+# ---------------------------------------------------------------------------
+ROADMAP_POP_RE_PINNED='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+\)$'
+ROADMAP_SELFTEST_EXPECTED=14
 
-# gate_contract <path> <pinned selftest count> <label>
-#   Prints exactly one line: `RE=<population regex>` when the gate publishes a
-#   usable contract, or `WHY=<reason>` when it does not. It reports through
-#   STDOUT rather than a variable because every caller reads it inside a
-#   command substitution, and a subshell's variables never reach the parent —
-#   the first cut of this helper set GATE_CONTRACT_WHY and the suite printed
-#   `FAIL: ` with an empty reason when a gate was missing entirely.
-gate_contract() {
-    local path="$1" pinned="$2" label="$3" out re cases
+LABELS_POP_RE_PINNED='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: gh-api:[^ )]+\)$'
+LABELS_SELFTEST_EXPECTED=6
+# This gate has no structural arm, so a runner with no credentials has nothing
+# to measure. It must then SAY SO — silence with rc=0 is the gutted shape.
+LABELS_SKIP_RE_PINNED='^issue-labels: SKIPPED BY NAME: '
+
+WORKFLOW_POP_RE_PINNED='^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), [1-9][0-9]* name\(s\), loader=(pyyaml|skipped:[a-z0-9-]+)\)$'
+WORKFLOW_SELFTEST_EXPECTED=8
+# The ONE named-skip allowance in this section: the workflow-yaml gate's two
+# loader plants, and only when PyYAML is genuinely absent. This caller decides
+# that for itself rather than believing the gate.
+WORKFLOW_SELFTEST_SKIPS_NO_PYYAML=2
+if python3 -c 'import yaml' >/dev/null 2>&1; then
+    WORKFLOW_ST_WANT_SKIP=0
+else
+    WORKFLOW_ST_WANT_SKIP=$WORKFLOW_SELFTEST_SKIPS_NO_PYYAML
+fi
+WORKFLOW_ST_WANT_PASS=$((WORKFLOW_SELFTEST_EXPECTED - WORKFLOW_ST_WANT_SKIP))
+
+# ---------------------------------------------------------------------------
+# The witnesses. A helper increments one ONLY when the caller's own pinned
+# literal actually matched; the reporting branch that follows cannot fabricate
+# one. So gutting a branch (the `elif false; then` a round-2 critic used) still
+# ends the section red, at the accounting check below.
+# ---------------------------------------------------------------------------
+ZD_POP_SEEN=0
+ZD_ST_SEEN=0
+ZD_CONTRACT_SEEN=0
+ZD_CHECKS=0
+ZD_POP_EXPECTED=3
+ZD_ST_EXPECTED=3
+ZD_CONTRACT_EXPECTED=3
+ZD_CHECKS_EXPECTED=10
+
+# zd_contract_check <path> <pinned re> <pinned cases> <label>
+#   The gate's published contract must EQUAL this caller's literals, verbatim.
+#   Nothing here is adopted from the gate: a difference is the finding.
+zd_contract_check() {
+    local path="$1" re="$2" cases="$3" label="$4" out gre gcases
+    ZD_CONTRACT_WHY=""
     out=$(bash "$path" --contract 2>&1)
-    re=$(printf '%s\n' "$out" | sed -n 's/^POPULATION_RE=//p' | head -1)
-    cases=$(printf '%s\n' "$out" | sed -n 's/^SELFTEST_CASES=//p' | head -1)
-    if [ -z "$re" ] || [ -z "$cases" ]; then
-        printf 'WHY=%s\n' "$label publishes no --contract (POPULATION_RE/SELFTEST_CASES); a gate with no declared population line cannot be asserted against. It said: $(printf '%s' "$out" | head -1)"
+    gre=$(printf '%s\n' "$out" | sed -n 's/^POPULATION_RE=//p' | head -1)
+    gcases=$(printf '%s\n' "$out" | sed -n 's/^SELFTEST_CASES=//p' | head -1)
+    if [ -z "$gre" ] || [ -z "$gcases" ]; then
+        ZD_CONTRACT_WHY="$label publishes no --contract (POPULATION_RE/SELFTEST_CASES); it said: $(printf '%s' "$out" | head -1)"
         return 1
     fi
-    case "$re" in
-        *examined=*) ;;
-        *) printf 'WHY=%s\n' "$label publishes a POPULATION_RE that does not mention examined= : $re"
-           return 1 ;;
-    esac
-    if [ "$cases" != "$pinned" ]; then
-        printf 'WHY=%s\n' "$label publishes SELFTEST_CASES=$cases but $pinned is pinned here — the gate and its caller disagree about how many planted faults exist"
+    if [ "$gre" != "$re" ]; then
+        ZD_CONTRACT_WHY="$label contract changed; re-pin the caller deliberately — gate POPULATION_RE=[$gre] but this caller pins [$re]"
         return 1
     fi
-    printf 'RE=%s\n' "$re"
+    if [ "$gcases" != "$cases" ]; then
+        ZD_CONTRACT_WHY="$label contract changed; re-pin the caller deliberately — gate SELFTEST_CASES=$gcases but this caller pins $cases"
+        return 1
+    fi
+    ZD_CONTRACT_SEEN=$((ZD_CONTRACT_SEEN + 1))
+    return 0
 }
 
-# gate_contract_re / gate_contract_why <captured output>
-gate_contract_re()  { printf '%s\n' "$1" | sed -n 's/^RE=//p' | head -1; }
-gate_contract_why() { printf '%s\n' "$1" | sed -n 's/^WHY=//p' | head -1; }
+# zd_pop_check <pinned re> <output> [<allowed named-skip re>]
+#   Sets ZD_POP_HITS / ZD_POP_SKIPS and counts the witness. EXACTLY one
+#   matching population line: zero is a gutted walk, two is a duplicated line
+#   and neither is a measurement.
+zd_pop_check() {
+    local re="$1" out="$2" skipre="${3:-}"
+    ZD_POP_HITS=$(printf '%s\n' "$out" | grep -cE "$re")
+    ZD_POP_SKIPS=0
+    if [ -n "$skipre" ]; then
+        ZD_POP_SKIPS=$(printf '%s\n' "$out" | grep -cE "$skipre")
+    fi
+    if [ "$ZD_POP_HITS" -eq 1 ]; then
+        ZD_POP_SEEN=$((ZD_POP_SEEN + 1))
+    elif [ "$ZD_POP_HITS" -eq 0 ] && [ "$ZD_POP_SKIPS" -ge 1 ]; then
+        ZD_POP_SEEN=$((ZD_POP_SEEN + 1))
+    fi
+}
 
-ROADMAP_CONTRACT=$(gate_contract "$TESTS_DIR/../tools/roadmap_check.sh" "$ROADMAP_SELFTEST_EXPECTED" "roadmap gate")
-ROADMAP_POP_RE=$(gate_contract_re "$ROADMAP_CONTRACT")
-TOTAL=$((TOTAL + 1))
-if [ -z "$ROADMAP_POP_RE" ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: $(gate_contract_why "$ROADMAP_CONTRACT")"
-else
+# zd_selftest_check <output> <rc> <run> <passed> <skipped>
+#   The whole line, exactly, against this caller's arithmetic.
+zd_selftest_check() {
+    local out="$1" rc="$2" run="$3" passed="$4" skipped="$5" want
+    ZD_ST_WHY=""
+    want="SELFTEST: $run case(s) run, $passed passed, 0 failed, $skipped skipped"
+    if [ "$rc" -ne 0 ]; then
+        ZD_ST_WHY="the selftest exited $rc; this caller pins [$want]"
+        return 1
+    fi
+    if [ "$(printf '%s\n' "$out" | grep -cxF "$want")" -ne 1 ]; then
+        ZD_ST_WHY="the selftest line is not exactly this caller's pin [$want]"
+        return 1
+    fi
+    ZD_ST_SEEN=$((ZD_ST_SEEN + 1))
+    return 0
+}
+
+# --- roadmap gate -----------------------------------------------------------
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
+if zd_contract_check "$TESTS_DIR/../tools/roadmap_check.sh" \
+        "$ROADMAP_POP_RE_PINNED" "$ROADMAP_SELFTEST_EXPECTED" "roadmap gate"; then
     PASS=$((PASS + 1))
-    echo "  PASS: roadmap gate contract ($ROADMAP_SELFTEST_EXPECTED planted faults declared, population line declared)"
+    echo "  PASS: roadmap gate contract equals the caller's pin ($ROADMAP_SELFTEST_EXPECTED planted faults, population line pinned here)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: $ZD_CONTRACT_WHY"
 fi
 
 ROADMAP_OUTPUT=$(bash "$TESTS_DIR/../tools/roadmap_check.sh" 2>&1)
 ROADMAP_RC=$?
-ROADMAP_POP_HITS=0
-if [ -n "$ROADMAP_POP_RE" ]; then
-    ROADMAP_POP_HITS=$(printf '%s\n' "$ROADMAP_OUTPUT" | grep -cE "$ROADMAP_POP_RE")
-fi
-TOTAL=$((TOTAL + 1))
+zd_pop_check "$ROADMAP_POP_RE_PINNED" "$ROADMAP_OUTPUT"
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
 if [ "$ROADMAP_RC" -ne 0 ]; then
     FAIL=$((FAIL + 1))
     echo "  FAIL: roadmap gate exited $ROADMAP_RC; its ENTIRE output follows verbatim"
     print_captured "roadmap gate, VERBATIM" "$ROADMAP_OUTPUT"
-elif [ "$ROADMAP_POP_HITS" -eq 0 ]; then
+elif [ "$ZD_POP_HITS" -ne 1 ]; then
     # Arm (a) never skips, so this line is owed on every platform and every
-    # runner. Its absence with rc=0 is the gutted-walk shape, not a skip.
+    # runner — with a source token naming what arms (b)/(c) used. Zero is the
+    # gutted-walk shape; two means the line was duplicated.
     FAIL=$((FAIL + 1))
-    echo "  FAIL: roadmap gate examined no live rows — it exited 0 without printing the population line it publishes"
-    echo "        contract: $ROADMAP_POP_RE"
+    echo "  FAIL: roadmap gate printed $ZD_POP_HITS line(s) matching the caller's pinned population regex; exactly 1 is required"
+    echo "        caller pin: $ROADMAP_POP_RE_PINNED"
     print_captured "roadmap gate, VERBATIM" "$ROADMAP_OUTPUT"
 else
     PASS=$((PASS + 1))
-    printf '%s\n' "$ROADMAP_OUTPUT" | grep -E "^      \(a\) structure:|^      \(b\) milestones:|^      \(c\) references:|^roadmap-check: OK"
+    printf '%s\n' "$ROADMAP_OUTPUT" | grep -E "^      \(a\) structure:|^      \(b\) milestones:|^      \(c\) references:|SKIPPED BY NAME|^roadmap-check: OK"
 fi
 
-# The case COUNT is pinned, and the failure count separately: "exit 0" is also
-# what a selftest reduced to a single echo prints (mechanical-gates §121), and
-# a count that changes meaning when something fails is not a population count.
 ROADMAP_ST=$(bash "$TESTS_DIR/../tools/roadmap_check.sh" --selftest 2>&1)
 ROADMAP_ST_RC=$?
-ROADMAP_ST_RUN=$(printf '%s\n' "$ROADMAP_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
-ROADMAP_ST_FAILED=$(printf '%s\n' "$ROADMAP_ST" | sed -nE 's/^SELFTEST: [0-9]+ case\(s\) run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
-TOTAL=$((TOTAL + 1))
-if [ "${ROADMAP_ST_RUN:-0}" -ne "$ROADMAP_SELFTEST_EXPECTED" ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: roadmap selftest ran ${ROADMAP_ST_RUN:-0} case(s), $ROADMAP_SELFTEST_EXPECTED are pinned (rc=$ROADMAP_ST_RC)"
-    print_captured "roadmap selftest, VERBATIM" "$ROADMAP_ST"
-elif [ "$ROADMAP_ST_RC" -ne 0 ] || [ "${ROADMAP_ST_FAILED:-1}" -ne 0 ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: roadmap selftest: ${ROADMAP_ST_FAILED:-?} of $ROADMAP_ST_RUN planted fault(s) did NOT go red (rc=$ROADMAP_ST_RC)"
-    print_captured "roadmap selftest, VERBATIM" "$ROADMAP_ST"
-else
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
+if zd_selftest_check "$ROADMAP_ST" "$ROADMAP_ST_RC" "$ROADMAP_SELFTEST_EXPECTED" "$ROADMAP_SELFTEST_EXPECTED" 0; then
     PASS=$((PASS + 1))
-    echo "  PASS: roadmap selftest ($ROADMAP_ST_RUN planted faults, all red)"
+    echo "  PASS: roadmap selftest ($ROADMAP_SELFTEST_EXPECTED planted faults, all red)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: roadmap selftest — $ZD_ST_WHY"
+    print_captured "roadmap selftest, VERBATIM" "$ROADMAP_ST"
 fi
 
-LABELS_CONTRACT=$(gate_contract "$TESTS_DIR/../tools/issue_labels_check.sh" "$LABELS_SELFTEST_EXPECTED" "issue-label gate")
-LABELS_POP_RE=$(gate_contract_re "$LABELS_CONTRACT")
-TOTAL=$((TOTAL + 1))
-if [ -z "$LABELS_POP_RE" ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: $(gate_contract_why "$LABELS_CONTRACT")"
-else
+# --- issue-label gate -------------------------------------------------------
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
+if zd_contract_check "$TESTS_DIR/../tools/issue_labels_check.sh" \
+        "$LABELS_POP_RE_PINNED" "$LABELS_SELFTEST_EXPECTED" "issue-label gate"; then
     PASS=$((PASS + 1))
-    echo "  PASS: issue-label gate contract ($LABELS_SELFTEST_EXPECTED planted faults declared, population line declared)"
+    echo "  PASS: issue-label gate contract equals the caller's pin ($LABELS_SELFTEST_EXPECTED planted faults, population line pinned here)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: $ZD_CONTRACT_WHY"
 fi
 
 LABELS_OUTPUT=$(bash "$TESTS_DIR/../tools/issue_labels_check.sh" 2>&1)
 LABELS_RC=$?
-LABELS_POP_HITS=0
-LABELS_SKIPS=$(printf '%s\n' "$LABELS_OUTPUT" | grep -c 'SKIPPED BY NAME')
-if [ -n "$LABELS_POP_RE" ]; then
-    LABELS_POP_HITS=$(printf '%s\n' "$LABELS_OUTPUT" | grep -cE "$LABELS_POP_RE")
-fi
-TOTAL=$((TOTAL + 1))
+zd_pop_check "$LABELS_POP_RE_PINNED" "$LABELS_OUTPUT" "$LABELS_SKIP_RE_PINNED"
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
 if [ "$LABELS_RC" -ne 0 ]; then
     FAIL=$((FAIL + 1))
     echo "  FAIL: issue-label gate exited $LABELS_RC; its ENTIRE output follows verbatim"
     print_captured "issue-label gate, VERBATIM" "$LABELS_OUTPUT"
-elif [ "$LABELS_POP_HITS" -eq 0 ] && [ "$LABELS_SKIPS" -eq 0 ]; then
-    # This gate legitimately SKIPS BY NAME without `gh` — but then it SAYS so.
-    # Silence plus rc=0 is the gutted shape.
+elif [ "$ZD_POP_HITS" -gt 1 ]; then
     FAIL=$((FAIL + 1))
-    echo "  FAIL: issue-label gate examined no live issues — it exited 0 without printing the population line it publishes, and without skipping by name"
-    echo "        contract: $LABELS_POP_RE"
+    echo "  FAIL: issue-label gate printed $ZD_POP_HITS population lines; exactly 1 is required"
+    print_captured "issue-label gate, VERBATIM" "$LABELS_OUTPUT"
+elif [ "$ZD_POP_HITS" -eq 0 ] && [ "$ZD_POP_SKIPS" -eq 0 ]; then
+    # This gate legitimately SKIPS BY NAME without `gh` — but then it SAYS so.
+    # Silence plus rc=0 is the gutted shape, and a fixture-sourced line no
+    # longer matches the caller's pin either.
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: issue-label gate examined no live issues — it exited 0 without printing a line matching the caller's pinned population regex, and without skipping by name"
+    echo "        caller pin: $LABELS_POP_RE_PINNED"
     print_captured "issue-label gate, VERBATIM" "$LABELS_OUTPUT"
 else
     PASS=$((PASS + 1))
@@ -6945,76 +7032,74 @@ fi
 
 LABELS_ST=$(bash "$TESTS_DIR/../tools/issue_labels_check.sh" --selftest 2>&1)
 LABELS_ST_RC=$?
-LABELS_ST_RUN=$(printf '%s\n' "$LABELS_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
-LABELS_ST_FAILED=$(printf '%s\n' "$LABELS_ST" | sed -nE 's/^SELFTEST: [0-9]+ case\(s\) run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
-TOTAL=$((TOTAL + 1))
-if [ "${LABELS_ST_RUN:-0}" -ne "$LABELS_SELFTEST_EXPECTED" ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: issue-label selftest ran ${LABELS_ST_RUN:-0} case(s), $LABELS_SELFTEST_EXPECTED are pinned (rc=$LABELS_ST_RC)"
-    print_captured "issue-label selftest, VERBATIM" "$LABELS_ST"
-elif [ "$LABELS_ST_RC" -ne 0 ] || [ "${LABELS_ST_FAILED:-1}" -ne 0 ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: issue-label selftest: ${LABELS_ST_FAILED:-?} of $LABELS_ST_RUN planted fault(s) did NOT go red (rc=$LABELS_ST_RC)"
-    print_captured "issue-label selftest, VERBATIM" "$LABELS_ST"
-else
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
+if zd_selftest_check "$LABELS_ST" "$LABELS_ST_RC" "$LABELS_SELFTEST_EXPECTED" "$LABELS_SELFTEST_EXPECTED" 0; then
     PASS=$((PASS + 1))
-    echo "  PASS: issue-label selftest ($LABELS_ST_RUN planted faults, all red)"
+    echo "  PASS: issue-label selftest ($LABELS_SELFTEST_EXPECTED planted faults, all red)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: issue-label selftest — $ZD_ST_WHY"
+    print_captured "issue-label selftest, VERBATIM" "$LABELS_ST"
 fi
 
-# The lane that carries the daily audit must LOAD. Round 1 shipped
-# .github/workflows/issue-triage.yml with two step names of the shape
-# `- name: Every open issue carries an area: label and a kind` — a plain YAML
-# scalar containing `: `, which no loader accepts. GitHub would have rejected
-# the workflow and the daily audit would never have run; two blind critics
-# read that file and neither parsed it. Measured: 1.7 s live, 4.2 s selftest.
-WORKFLOW_SELFTEST_EXPECTED=5
-WORKFLOW_CONTRACT=$(gate_contract "$TESTS_DIR/../tools/workflow_yaml_check.sh" "$WORKFLOW_SELFTEST_EXPECTED" "workflow-yaml gate")
-WORKFLOW_POP_RE=$(gate_contract_re "$WORKFLOW_CONTRACT")
-TOTAL=$((TOTAL + 1))
-if [ -z "$WORKFLOW_POP_RE" ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: $(gate_contract_why "$WORKFLOW_CONTRACT")"
-else
+# --- workflow-yaml gate -----------------------------------------------------
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
+if zd_contract_check "$TESTS_DIR/../tools/workflow_yaml_check.sh" \
+        "$WORKFLOW_POP_RE_PINNED" "$WORKFLOW_SELFTEST_EXPECTED" "workflow-yaml gate"; then
     PASS=$((PASS + 1))
-    echo "  PASS: workflow-yaml gate contract ($WORKFLOW_SELFTEST_EXPECTED planted faults declared, population line declared)"
+    echo "  PASS: workflow-yaml gate contract equals the caller's pin ($WORKFLOW_SELFTEST_EXPECTED planted faults, population line pinned here)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: $ZD_CONTRACT_WHY"
 fi
 
 WORKFLOW_OUTPUT=$(bash "$TESTS_DIR/../tools/workflow_yaml_check.sh" 2>&1)
 WORKFLOW_RC=$?
-WORKFLOW_POP_HITS=0
-if [ -n "$WORKFLOW_POP_RE" ]; then
-    WORKFLOW_POP_HITS=$(printf '%s\n' "$WORKFLOW_OUTPUT" | grep -cE "$WORKFLOW_POP_RE")
-fi
-TOTAL=$((TOTAL + 1))
+zd_pop_check "$WORKFLOW_POP_RE_PINNED" "$WORKFLOW_OUTPUT"
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
 if [ "$WORKFLOW_RC" -ne 0 ]; then
     FAIL=$((FAIL + 1))
     echo "  FAIL: workflow-yaml gate exited $WORKFLOW_RC; its ENTIRE output follows verbatim"
     print_captured "workflow-yaml gate, VERBATIM" "$WORKFLOW_OUTPUT"
-elif [ "$WORKFLOW_POP_HITS" -eq 0 ]; then
+elif [ "$ZD_POP_HITS" -ne 1 ]; then
     FAIL=$((FAIL + 1))
-    echo "  FAIL: workflow-yaml gate examined no workflow files — it exited 0 without printing the population line it publishes"
+    echo "  FAIL: workflow-yaml gate printed $ZD_POP_HITS line(s) matching the caller's pinned population regex; exactly 1 is required"
+    echo "        caller pin: $WORKFLOW_POP_RE_PINNED"
     print_captured "workflow-yaml gate, VERBATIM" "$WORKFLOW_OUTPUT"
 else
     PASS=$((PASS + 1))
-    printf '%s\n' "$WORKFLOW_OUTPUT" | grep -E "^workflow-yaml: OK"
+    printf '%s\n' "$WORKFLOW_OUTPUT" | grep -E "^workflow-yaml: OK|SKIPPED BY NAME"
 fi
 
 WORKFLOW_ST=$(bash "$TESTS_DIR/../tools/workflow_yaml_check.sh" --selftest 2>&1)
 WORKFLOW_ST_RC=$?
-WORKFLOW_ST_RUN=$(printf '%s\n' "$WORKFLOW_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
-WORKFLOW_ST_FAILED=$(printf '%s\n' "$WORKFLOW_ST" | sed -nE 's/^SELFTEST: [0-9]+ case\(s\) run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
-TOTAL=$((TOTAL + 1))
-if [ "${WORKFLOW_ST_RUN:-0}" -ne "$WORKFLOW_SELFTEST_EXPECTED" ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: workflow-yaml selftest ran ${WORKFLOW_ST_RUN:-0} case(s), $WORKFLOW_SELFTEST_EXPECTED are pinned (rc=$WORKFLOW_ST_RC)"
-    print_captured "workflow-yaml selftest, VERBATIM" "$WORKFLOW_ST"
-elif [ "$WORKFLOW_ST_RC" -ne 0 ] || [ "${WORKFLOW_ST_FAILED:-1}" -ne 0 ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: workflow-yaml selftest: ${WORKFLOW_ST_FAILED:-?} of $WORKFLOW_ST_RUN planted fault(s) did NOT go red (rc=$WORKFLOW_ST_RC)"
-    print_captured "workflow-yaml selftest, VERBATIM" "$WORKFLOW_ST"
-else
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
+if zd_selftest_check "$WORKFLOW_ST" "$WORKFLOW_ST_RC" "$WORKFLOW_SELFTEST_EXPECTED" \
+                     "$WORKFLOW_ST_WANT_PASS" "$WORKFLOW_ST_WANT_SKIP"; then
     PASS=$((PASS + 1))
-    echo "  PASS: workflow-yaml selftest ($WORKFLOW_ST_RUN planted faults, all red)"
+    echo "  PASS: workflow-yaml selftest ($WORKFLOW_SELFTEST_EXPECTED planted faults: $WORKFLOW_ST_WANT_PASS red, $WORKFLOW_ST_WANT_SKIP skipped by name — this caller probed PyYAML itself)"
+    printf '%s\n' "$WORKFLOW_ST" | grep -E "SKIPPED BY NAME" | head -4
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: workflow-yaml selftest — $ZD_ST_WHY"
+    print_captured "workflow-yaml selftest, VERBATIM" "$WORKFLOW_ST"
+fi
+
+# --- the section's own accounting ------------------------------------------
+# Three witnesses, one per assertion family, each incremented ONLY by the
+# helper that did the matching — plus this section's own check count. Deleting
+# a check, or short-circuiting one so it always reports PASS, changes these
+# numbers and therefore changes RESULTS. A gate that measures less must say so.
+TOTAL=$((TOTAL + 1)); ZD_CHECKS=$((ZD_CHECKS + 1))
+if [ "$ZD_CONTRACT_SEEN" -eq "$ZD_CONTRACT_EXPECTED" ] && \
+   [ "$ZD_POP_SEEN" -eq "$ZD_POP_EXPECTED" ] && \
+   [ "$ZD_ST_SEEN" -eq "$ZD_ST_EXPECTED" ] && \
+   [ "$ZD_CHECKS" -eq "$ZD_CHECKS_EXPECTED" ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: section accounting — $ZD_CHECKS/$ZD_CHECKS_EXPECTED checks ran; contracts $ZD_CONTRACT_SEEN/$ZD_CONTRACT_EXPECTED, population lines $ZD_POP_SEEN/$ZD_POP_EXPECTED, selftest pins $ZD_ST_SEEN/$ZD_ST_EXPECTED all matched the caller's own literals"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: section accounting — checks $ZD_CHECKS/$ZD_CHECKS_EXPECTED, contracts $ZD_CONTRACT_SEEN/$ZD_CONTRACT_EXPECTED, population lines $ZD_POP_SEEN/$ZD_POP_EXPECTED, selftest pins $ZD_ST_SEEN/$ZD_ST_EXPECTED; a check that did not run, or did not match the caller's literal, measured less than this section declares"
 fi
 echo ""
 

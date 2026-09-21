@@ -51,7 +51,13 @@ REPO="${ISSUE_LABELS_REPO:-InauguralSystems/EigenScript}"
 # `run:` block under `bash -e` and the suite section alike. A successful exit
 # is not a measurement (mechanical-gates §121): the caller must require the
 # POSITIVE POPULATION LINE, by regex, and fail by name when it is absent.
-POPULATION_RE='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: '
+#
+# ROUND 3 (blind critic, Fable): the callers also accepted a FIXTURE-sourced
+# "live" run — `examined=1 missing=0 (source: fixture ...)` passed, because the
+# caller's regex stopped before `(source:`. The source is now a machine-readable
+# token (`gh-api:` / `fixture:`) and the contract admits only the live one, so a
+# run driven by the selftest seam is red at the caller by name.
+POPULATION_RE='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: gh-api:[^ )]+\)$'
 SELFTEST_CASES=6
 
 # Nothing on this gate's stdin, for the reason docs_claims_check.sh records:
@@ -119,7 +125,7 @@ run_live() {
             return 1
         fi
         json=$(cat "$ISSUE_LABELS_JSON")
-        src="fixture $ISSUE_LABELS_JSON"
+        src="fixture:$ISSUE_LABELS_JSON"
     else
         if ! command -v gh >/dev/null 2>&1; then
             echo "issue-labels: SKIPPED BY NAME: gh is not on PATH, so the open-issue set cannot be read"
@@ -129,13 +135,26 @@ run_live() {
             echo "issue-labels: SKIPPED BY NAME: python3 is not on PATH, so the issue list cannot be classified"
             return 0
         fi
+        # `gh` INSTALLED IS NOT `gh` AUTHENTICATED — the macOS runner has one
+        # and not the other (CI run 35599371704), and the two states must be
+        # distinguishable by name rather than collapsed into one failure.
+        # `gh auth status` alone is not the probe: with a bogus GH_TOKEN it
+        # says "The token in GH_TOKEN is invalid." and exits 0, so one cheap
+        # authenticated call decides it. `rate_limit`, not `user`: it costs no
+        # rate limit and it answers for a workflow's GITHUB_TOKEN, which is
+        # forbidden from `/user` — probing with that would have made this
+        # gate skip itself on the lane that exists to run it.
+        if ! gh auth status >/dev/null 2>&1 || ! gh api rate_limit >/dev/null 2>&1; then
+            echo "issue-labels: SKIPPED BY NAME: gh is on PATH but has no working credentials, so the open-issue set cannot be read"
+            return 0
+        fi
         if ! json=$(gh api "repos/$REPO/issues?state=open&per_page=100" --paginate 2>/dev/null); then
-            echo "issue-labels: SKIPPED BY NAME: gh is present but the issues API call failed (unauthenticated, offline, or rate-limited)"
+            echo "issue-labels: SKIPPED BY NAME: gh is authenticated but the issues API call failed (offline, rate-limited, or the repository is unreadable)"
             return 0
         fi
         # --paginate concatenates one JSON array per page; splice them.
         json=$(printf '%s' "$json" | sed 's/^\]\[/,/' | tr -d '\n')
-        src="gh api repos/$REPO/issues"
+        src="gh-api:repos/$REPO/issues"
     fi
 
     if ! command -v python3 >/dev/null 2>&1; then
@@ -157,13 +176,19 @@ run_live() {
     # The gate proves its OWN output satisfies the contract it publishes. If
     # someone rewords this line without updating POPULATION_RE, the gate goes
     # red here rather than leaving every caller asserting a regex that can no
-    # longer match anything.
-    if [ -n "${examined:-}" ] && [ "${examined:-0}" -gt 0 ] && ! [[ $pop_line =~ $POPULATION_RE ]]; then
-        echo "RED: issue-labels: the population line does not match this gate's own published contract"
-        echo "      line:     $pop_line"
-        echo "      contract: $POPULATION_RE"
-        return 1
-    fi
+    # longer match anything. A FIXTURE-driven run is exempt, and only a
+    # fixture-driven one: the contract admits no `fixture:` source by design
+    # (round 3, fix 7), so the selftest's own seam could never satisfy it.
+    case "$src" in
+        fixture:*) : ;;
+        *)
+            if [ -n "${examined:-}" ] && [ "${examined:-0}" -gt 0 ] && ! [[ $pop_line =~ $POPULATION_RE ]]; then
+                echo "RED: issue-labels: the population line does not match this gate's own published contract"
+                echo "      line:     $pop_line"
+                echo "      contract: $POPULATION_RE"
+                return 1
+            fi ;;
+    esac
     if [ -z "${examined:-}" ] || [ -z "${missing:-}" ]; then
         echo "RED: issue-labels: the classifier did not report its counts"
         printf '%s\n' "$out" | head -5 | sed 's/^/      /'
@@ -283,7 +308,10 @@ EOF
             "$WORK/prs_only.json" "examined 0 open issue"
 
     echo ""
-    echo "SELFTEST: $ST_RUN case(s) run, $((ST_RUN - ST_FAIL)) passed, $ST_FAIL failed"
+    # The `skipped` field is always present so every caller parses ONE line
+    # shape across the three gates; this gate's fixtures never skip, so it is
+    # always 0 here, and a nonzero value would be a defect.
+    echo "SELFTEST: $ST_RUN case(s) run, $((ST_RUN - ST_FAIL)) passed, $ST_FAIL failed, 0 skipped"
     [ "$ST_FAIL" -eq 0 ]
 }
 

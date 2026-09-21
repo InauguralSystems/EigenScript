@@ -6,12 +6,17 @@ row per milestone; no checkboxes anywhere. `tools/roadmap_check.sh` fails if a
 available and authenticated — if the table's open rows stop matching the open
 milestones returned by
 `gh api repos/InauguralSystems/EigenScript/milestones`. That is the point of
-the rewrite (#1207/#1155). The previous version of this file carried
-113 checkbox lines, and 62 checkbox lines of those were historical highlights
-under `## Completed`, so anything counting "roadmap items" was counting the
-past and double-counting the present (#414 appeared twice, Windows appeared as
-an umbrella plus three tiers). Those two numbers are written down HERE and
-nowhere else, each beside the command that produces it:
+the rewrite (#1207/#1155).
+
+The previous version of this file carried 113 checkbox lines in total.
+62 checkbox lines of those were historical highlights under `## Completed`, so
+anything counting "roadmap items" was counting the past and double-counting the
+present (#414 appeared twice, Windows appeared as an umbrella plus three
+tiers). Neither number is typed on trust: `tools/docs_claims_check.sh` DERIVES
+both by running these two commands against that commit, and SKIPs them BY NAME
+on a checkout too shallow to reach it (round 3 — they used to be waived, and a
+waiver whose reason describes a derivation nobody runs is a promise, not a
+measurement):
 
     git show b91768e:ROADMAP.md | grep -cE '^[[:space:]]*- \[( |x|~)\]'
     git show b91768e:ROADMAP.md | sed -n '/^## Completed/,$p' \
@@ -37,7 +42,7 @@ number, so it cannot fall behind it.
 | 7 | M6 — The next justified AOT record specialization | declared-not-started | https://github.com/InauguralSystems/EigenScript/milestone/7 | the pre-declared prediction met or refuted on the record. Neither K~86 nor '15x' is an acceptance promise; flat unboxed records follow only when separately sized |
 | 8 | M7 — Make JIT selection pay on the measured fleet | active | https://github.com/InauguralSystems/EigenScript/milestone/8 | the intervention lands and the fleet re-measures net-positive — or it fails and an explicit retention/default decision is recorded instead. Misleading diagnostics fixed or removed in the same change |
 | 9 | M8 — Gates and claims that measure what they say | active | https://github.com/InauguralSystems/EigenScript/milestone/9 | each listed issue closed with its gate proven to fire, and no gate in the set examining fewer items than the previous run without saying so |
-| 10 | M9 — A gfx consumer that looks like 2026 | active | https://github.com/InauguralSystems/EigenScript/milestone/10 | #1216 closed builtin by builtin with a Tidepool consumer commit per builtin; Tidepool#43 and #59 closed; the M1 wave's Tidepool row carries a gfx oracle and PASSes on a gfx candidate |
+| 10 | M9 — A gfx consumer that looks like 2026 | active | https://github.com/InauguralSystems/EigenScript/milestone/10 | InauguralSystems/EigenScript#1216 closed builtin by builtin with a Tidepool consumer commit per builtin; InauguralSystems/Tidepool#43 and InauguralSystems/Tidepool#59 closed; the M1 wave's Tidepool row carries a gfx oracle and PASSes on a gfx candidate |
 | — | Windows Tier 2 — JIT on the Windows x64 ABI | retired | [#419](https://github.com/InauguralSystems/EigenScript/issues/419) | never; it contradicts the standing veto on grinding the JIT toward native claims — native perf routes through the AOT (see the vetoes below) |
 | — | Package registry, version solver and `--pkg audit` lockfiles | retired | [#419](https://github.com/InauguralSystems/EigenScript/issues/419) | never; the SHA-pinned vendoring model is structurally sounder at this scale (see the vetoes below), and hq carries the same veto |
 

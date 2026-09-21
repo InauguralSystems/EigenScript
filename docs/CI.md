@@ -138,13 +138,34 @@ reproducible from the API (the open set was 35 at the sweep and never 36), so
 the figure of record is the gate's own first real run afterwards:
 `examined=35 missing=0`.
 
-Both the daily lane and `[99zd]` assert the gate's PUBLISHED CONTRACT rather
-than its exit status: `bash tools/issue_labels_check.sh --contract` prints the
-population line the gate promises (`POPULATION_RE`) and how many planted faults
-its selftest runs (`SELFTEST_CASES`), and each caller requires the live run to
-print a matching line and the selftest to report that pinned count. Round 1
-shipped without this and accepted the gate gutted to `exit 0` — `exit=0
-output=''` passed both boundaries. A successful exit is not a measurement.
+**The caller holds its own copy of every pin.** Round 1 accepted the gate
+gutted to `exit 0` — `exit=0 output=''` passed both boundaries — so round 2 had
+each gate publish a contract (`--contract`: the population line it promises,
+`POPULATION_RE`, and how many planted faults its selftest runs,
+`SELFTEST_CASES`) and had both callers READ it. That made the thing being
+policed supply the yardstick: `POPULATION_RE=examined=|.*` admitted empty
+output, and a gate that deleted its plants and lowered `SELFTEST_CASES` passed
+the daily lane. Round 3 keeps TWO copies, kept equal by a test. Each caller —
+`[99zd]` in `tests/run_all_tests.sh` and the audit step in
+`.github/workflows/issue-triage.yml` — holds the population regex and the
+selftest case count as LITERALS, asserts the gate's output against its own
+copy, and separately asserts that the gate's `--contract` equals that copy
+verbatim. A difference is red by name ("gate contract changed; re-pin the
+caller deliberately") and is never auto-adopted. Three consequences worth
+knowing:
+
+* the population count group is `[1-9][0-9]*` and exactly ONE matching line is
+  required, so an empty enumeration and a duplicated line are both red;
+* the pinned regexes require a LIVE source token (`gh-api:`), because both
+  callers used to accept `(source: fixture ...)` as a live measurement — their
+  regex stopped before `(source:`;
+* each caller counts its own work. Every assertion that reached a verdict the
+  caller accepts increments a witness, and a final check compares the witnesses
+  and the caller's check count with pinned literals — so deleting or
+  short-circuiting a check changes RESULTS instead of quietly measuring less.
+
+A successful exit is not a measurement, and neither is a contract the gate
+wrote for itself.
 
 **ROADMAP.md.** `tools/roadmap_check.sh` refuses (a) any `- [ ]`/`- [x]`/`- [~]`
 line anywhere in the file and anything other than exactly one table, inside
@@ -157,18 +178,47 @@ truncation green, and a truncation is what round 1 shipped for M7); and a new
 arm (c) resolves every issue/PR reference in the table's cells plus every
 repo-qualified reference anywhere in the file, because round 1 credited
 "Tidepool PR #375" for a change that is EigenScript PR #375 and the Tidepool
-endpoint 404s. Arms (b) and (c) skip by name without `gh`; arm (a) never skips.
+endpoint 404s. Arms (b) and (c) skip by name without `gh` — and also when `gh` is
+present but UNAUTHENTICATED, which is the state the macOS runner is in and
+which round 2 reported as seven 404s, taking that leg red on a tree whose
+references are all fine. Within arm (c), a genuine HTTP 404 is red with the
+status in the message; a 401/403/429 or a transport error SKIPs that one
+reference by name and is counted in `skipped=` on the arm's line. Arm (a) never
+skips. Arm (c) also REFUSES a bare `#N` in a cell that also carries a qualified
+`Repo#M`: M9's row read "Tidepool#43 and #59", the bare `#59` silently resolved
+against EigenScript (a real, closed PR), and the row was green for a reference
+it does not mean.
+
 The old file was a checkbox pile, most of it historical highlights under
-`## Completed`, so every counter of "roadmap items" was counting the past —
-ROADMAP.md's own header derives both counts beside the commands that produce
-them, and this page deliberately does not retype them.
+`## Completed`, so every counter of "roadmap items" was counting the past.
+ROADMAP.md's own header states both pre-PR counts beside the commands that
+produce them, and `tools/docs_claims_check.sh` RUNS those commands
+(`D_ROADMAP_HIST_CHECKBOXES` / `D_ROADMAP_HIST_COMPLETED`) rather than waiving
+them — a waiver whose reason describes a derivation nobody executes is a
+promise, not a measurement. On a checkout too shallow to reach the commit the
+two claims defer by name into their own declared class. This page deliberately
+does not retype either number.
 
 `tools/workflow_yaml_check.sh` loads every file under `.github/workflows/`:
 (a) no `name:` value is an unquoted plain scalar containing `: ` — the exact
 defect round 1 shipped, which made the daily issue-triage lane unloadable YAML
 that GitHub would have rejected outright — and (b) every file round-trips
 through a real YAML loader. Arm (a) never skips; arm (b) skips by name without
-PyYAML.
+PyYAML. A load proves the bytes parse and carry a `jobs:` mapping — it does NOT
+prove GitHub's own workflow schema accepts the file.
+
+Arm (a) tokenises the scalar the way YAML does before looking for `: `: a
+trailing ` #` comment is stripped, a quoted scalar is skipped whole, and lines
+inside a `|`/`>` block scalar are skipped until the block dedents. It used to
+reject all three of those as faults, and a gate that fails correct input is a
+gate somebody turns off. The gate's selftest is SKIP-AWARE for the same reason:
+two of its plants can only go red through arm (b), and on a runner without
+PyYAML they were scored "did NOT go red" — which took three suite legs red at
+once. A plant whose arm skipped by name is now scored `SKIP` and reported in
+the pinned `SELFTEST:` line. The runners install PyYAML so arm (b) actually
+runs (`python3-yaml` in `.devcontainer/Dockerfile` for every Linux leg, a setup
+step on the macOS lane); when it is absent anyway, the CALLER probes for PyYAML
+itself and allows exactly the pinned named-skip count, for that gate alone.
 
 All three tools carry a planted-fault `--selftest` with a pinned case count and
 a `--contract`, and the suite runs the live pass, the contract and the selftest

@@ -15,13 +15,43 @@
 # (Every other workflow in the tree parsed, so the gate was red exactly once,
 # on the file that bought it.)
 #
+# WHAT A LOAD PROVES, EXACTLY: that the bytes are well-formed YAML and carry a
+# top-level `jobs:` mapping. It does NOT prove the file is a valid GitHub
+# Actions workflow — GitHub's own schema (step keys, `uses:` shapes, expression
+# syntax, `runs-on` labels) is not checked here and a file can load cleanly and
+# still be rejected by GitHub. Loadability is the floor this gate owns.
+#
 # WHAT IT ENFORCES:
 #   (a) TEXT — no `name:` value is an unquoted plain scalar containing `: `.
 #       This is the exact defect, catchable with no dependencies at all, so
 #       this arm NEVER skips.
+#
+#       ROUND 3 (blind critics Astra check 6 / Fable evidence 07): arm (a) as
+#       shipped rejected LEGAL YAML, which is worse than missing a fault —
+#       a gate that cries wolf on correct files gets disabled. All three of
+#           name: safe # comment: detail
+#           name:  "key: value"
+#           run: |
+#             echo "name: x: y"          <- inside a block scalar
+#       load fine in PyYAML and were red. Arm (a) now tokenises the scalar the
+#       way YAML does before looking for `: `: a ` #` comment is stripped
+#       first, the value is trimmed, a quoted scalar is skipped whole, and any
+#       line inside a `|`/`>` block scalar is skipped until the block dedents.
+#
 #   (b) PARSE — every workflow file round-trips through a real YAML loader.
 #       Broader than (a): catches indentation and structure faults too. Needs
-#       python3 with PyYAML; SKIPs BY NAME without it, never (a).
+#       python3 with PyYAML; SKIPs BY NAME without it, never (a). The runner
+#       images install it (.devcontainer/Dockerfile for the Linux/dev image,
+#       a setup step on the macOS lane), because a gate whose second arm never
+#       runs on the lane is the round-1 failure wearing a different hat.
+#
+#   The SELFTEST is skip-aware for the same reason (round 3, Fable): two of
+#   its plants can only go red through arm (b), and on a runner with no PyYAML
+#   they were scored "did NOT go red" — so the gate that exists because a lane
+#   never ran took every suite leg red with it (CI run 35599371704). A plant
+#   whose arm skipped by name is now scored SKIP, counted, and reported in the
+#   pinned SELFTEST line, and the CALLER pins the skip count and allows it
+#   only when PyYAML is genuinely absent (it probes for PyYAML itself).
 #
 # Enumeration discipline (mechanical-gates §121): both arms print `examined=N`
 # over a population that must be non-empty. A workflow directory that matched
@@ -44,27 +74,73 @@ WF_DIR="${WORKFLOW_CHECK_DIR:-$ROOT/.github/workflows}"
 # counts 0 and passes the guard built on that count.
 exec 0</dev/null
 
-# THE CONTRACT — printed by `--contract`, asserted by the caller, defined once.
-POPULATION_RE='^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), [1-9][0-9]* name\(s\)\)$'
-SELFTEST_CASES=5
+# THE CONTRACT — printed by `--contract`. Every CALLER holds its OWN literal
+# copy of both values and asserts the gate's output against ITS copy; a
+# separate caller check asserts this contract EQUALS the caller's copy, so a
+# drift is red by name and is never auto-adopted (round-3 rule: the caller is
+# the independent witness, not a reader of the thing it polices).
+POPULATION_RE='^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), [1-9][0-9]* name\(s\), loader=(pyyaml|skipped:[a-z0-9-]+)\)$'
+SELFTEST_CASES=8
 
 RED=0
 red() { echo "RED: $*"; RED=$((RED + 1)); }
 
 FILES_N=0
 NAMES_N=0
+LOADER_SRC="unset"
+
+# Leading-whitespace width of a line, tabs counted as one column each (YAML
+# forbids tabs in indentation, so this only has to be monotone).
+indent_of() {
+    local s="$1" rest
+    rest="${s#"${s%%[![:space:]]*}"}"
+    printf '%s' "$(( ${#s} - ${#rest} ))"
+}
+
+# Trim leading and trailing spaces/tabs.
+trim() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
 
 # ---------------------------------------------------------------------------
-# (a) TEXT — a `name:` whose plain value contains `: ` is not loadable YAML.
+# (a) TEXT — a `name:` whose PLAIN value contains `: ` is not loadable YAML.
+#     Tokenised per YAML: comments stripped, quoted scalars skipped, block
+#     scalars skipped whole.
 # ---------------------------------------------------------------------------
 check_text() {
-    local f line lineno value
+    local f line lineno value in_block blk_indent ind
     for f in "$WF_DIR"/*.yml "$WF_DIR"/*.yaml; do
         [ -f "$f" ] || continue
         FILES_N=$((FILES_N + 1))
         lineno=0
+        in_block=0
+        blk_indent=0
         while IFS= read -r line; do
             lineno=$((lineno + 1))
+
+            # --- inside a `|`/`>` block scalar? Its content is DATA, not YAML
+            # structure: `name: x: y` in a `run:` script is legal and was red.
+            if [ "$in_block" -eq 1 ]; then
+                if [ -z "$(trim "$line")" ]; then
+                    continue
+                fi
+                ind=$(indent_of "$line")
+                if [ "$ind" -gt "$blk_indent" ]; then
+                    continue
+                fi
+                in_block=0
+            fi
+
+            # --- does this line OPEN a block scalar (`key: |`, `- run: >-2`)?
+            if [[ $line =~ ^[[:space:]]*(-[[:space:]]+)?[^:#]*:[[:space:]]*[\|\>][0-9]*[+-]?[[:space:]]*$ ]]; then
+                in_block=1
+                blk_indent=$(indent_of "$line")
+                continue
+            fi
+
             case "$line" in
                 *"name:"*) ;;
                 *) continue ;;
@@ -73,11 +149,22 @@ check_text() {
             if ! [[ $line =~ ^[[:space:]]*(-[[:space:]]+)?name:[[:space:]](.*)$ ]]; then
                 continue
             fi
-            value="${BASH_REMATCH[2]}"
             NAMES_N=$((NAMES_N + 1))
+            value=$(trim "${BASH_REMATCH[2]}")
+
+            # A quoted scalar carries its colons legally; a block scalar header
+            # was consumed above; an anchor/alias/empty value has no plain text.
             case "$value" in
-                '"'*|"'"*|'>'*|'|'*|'') continue ;;
+                '"'*|"'"*|'>'*|'|'*|'#'*|'') continue ;;
             esac
+            # A ` #` outside quotes starts a comment: everything after it is
+            # not part of the scalar. `${value%% #*}` keeps the SHORTEST
+            # prefix, i.e. it cuts at the FIRST ` #`.
+            case "$value" in
+                *' #'*) value=$(trim "${value%% #*}") ;;
+            esac
+            [ -n "$value" ] || continue
+
             case "$value" in
                 *': '*)
                     red "(a) $f:$lineno — the plain scalar after \`name:\` contains \`: \`, which no YAML loader accepts; quote it: $line" ;;
@@ -100,13 +187,16 @@ check_text() {
 # ---------------------------------------------------------------------------
 check_parse() {
     if ! command -v python3 >/dev/null 2>&1; then
+        LOADER_SRC="skipped:no-python3"
         echo "      (b) SKIPPED BY NAME: python3 is not on PATH, so the files cannot be loaded. Arm (a) still ran."
         return
     fi
     if ! python3 -c "import yaml" >/dev/null 2>&1; then
+        LOADER_SRC="skipped:no-pyyaml"
         echo "      (b) SKIPPED BY NAME: PyYAML is not installed, so the files cannot be loaded. Arm (a) still ran."
         return
     fi
+    LOADER_SRC="pyyaml"
     local out
     if ! out=$(WF_DIR="$WF_DIR" python3 -c '
 import glob, os, sys, yaml
@@ -139,7 +229,7 @@ print("PARSED %d" % len(files))
         red "(b) the loader saw ${parsed:-0} file(s) but the text arm saw $FILES_N — the two arms are not looking at the same population"
         return
     fi
-    echo "      (b) loader: examined=${parsed:-0} workflow file(s)"
+    echo "      (b) loader: examined=${parsed:-0} workflow file(s) (a load proves the bytes parse and carry jobs:, NOT that GitHub's workflow schema accepts them)"
 }
 
 run_live() {
@@ -150,20 +240,26 @@ run_live() {
         echo "workflow-yaml: $RED problem(s)"
         return 1
     fi
-    local ok_line="workflow-yaml: OK (examined=$FILES_N file(s), $NAMES_N name(s))"
+    local ok_line="workflow-yaml: OK (examined=$FILES_N file(s), $NAMES_N name(s), loader=$LOADER_SRC)"
     echo "$ok_line"
     if ! [[ $ok_line =~ $POPULATION_RE ]]; then
         echo "RED: (a) the population line does not match this gate's own published contract"
+        echo "      line:     $ok_line"
+        echo "      contract: $POPULATION_RE"
         return 1
     fi
     return 0
 }
 
 # ---------------------------------------------------------------------------
-# --selftest — every plant names the ARM it must turn red.
+# --selftest — every plant names the ARM it must turn red. A plant whose arm
+# SKIPPED BY NAME on this runner is scored SKIP, not FAIL: the plant proves
+# nothing about an arm that did not execute, and calling that a failure is how
+# this gate took three CI legs red on 538288c.
 # ---------------------------------------------------------------------------
 ST_RUN=0
 ST_FAIL=0
+ST_SKIP=0
 st_case() {
     local name="$1" arm="$2" expect="$3" dir="$4"
     ST_RUN=$((ST_RUN + 1))
@@ -174,6 +270,10 @@ st_case() {
         if [ "$rc" -ne 0 ] && [[ $'\n'"$out" == *$'\n'"RED: ($arm)"* ]]; then
             echo "  selftest ok: $name — arm ($arm) went red"
             printf '%s\n' "$out" | grep "^RED: ($arm)" | head -1 | sed 's/^/      /'
+        elif [[ "$out" == *"      ($arm) SKIPPED BY NAME"* ]]; then
+            ST_SKIP=$((ST_SKIP + 1))
+            echo "  selftest SKIPPED BY NAME: $name — arm ($arm) did not run on this host"
+            printf '%s\n' "$out" | grep "($arm) SKIPPED BY NAME" | head -1 | sed 's/^/      /'
         else
             ST_FAIL=$((ST_FAIL + 1))
             echo "  SELFTEST FAIL: $name — expected arm ($arm) red, got rc=$rc"
@@ -230,8 +330,60 @@ EOF
     mkdir -p "$work/empty"
     st_case "plant: a workflow directory with no workflows (vacuity)" "a" red "$work/empty"
 
+    # --- CONTROLS for the three legal-YAML shapes arm (a) used to reject.
+    # A gate that fails correct input is a gate somebody turns off; each of
+    # these loads cleanly in PyYAML and must be GREEN here (round 3).
+
+    # CONTROL 5 (arm a): a trailing ` #` comment whose text contains `: `.
+    mkdir -p "$work/comment"
+    cat > "$work/comment/w.yml" <<'EOF'
+name: a lane
+on:
+  workflow_dispatch:
+jobs:
+  one:
+    runs-on: ubuntu-latest
+    steps:
+      - name: safe # comment: detail
+        run: echo hi
+EOF
+    st_case "control: a name with a trailing '# comment: detail'" "-" green "$work/comment"
+
+    # CONTROL 6 (arm a): a quoted scalar after EXTRA spaces.
+    mkdir -p "$work/quoted"
+    cat > "$work/quoted/w.yml" <<'EOF'
+name: a lane
+on:
+  workflow_dispatch:
+jobs:
+  one:
+    runs-on: ubuntu-latest
+    steps:
+      - name:  "key: value"
+        run: echo hi
+EOF
+    st_case "control: a quoted name after two spaces" "-" green "$work/quoted"
+
+    # CONTROL 7 (arm a): `name:` TEXT inside a `run: |` block scalar. This is
+    # script data, not a YAML key, and loads fine.
+    mkdir -p "$work/block"
+    cat > "$work/block/w.yml" <<'EOF'
+name: a lane
+on:
+  workflow_dispatch:
+jobs:
+  one:
+    runs-on: ubuntu-latest
+    steps:
+      - name: prints a colon
+        run: |
+          echo "name: x: y"
+          echo "- name: Every open issue carries an area: label and a kind"
+EOF
+    st_case "control: 'name: x: y' inside a run block scalar" "-" green "$work/block"
+
     echo ""
-    echo "SELFTEST: $ST_RUN case(s) run, $((ST_RUN - ST_FAIL)) passed, $ST_FAIL failed"
+    echo "SELFTEST: $ST_RUN case(s) run, $((ST_RUN - ST_FAIL - ST_SKIP)) passed, $ST_FAIL failed, $ST_SKIP skipped"
     [ "$ST_FAIL" -eq 0 ]
 }
 

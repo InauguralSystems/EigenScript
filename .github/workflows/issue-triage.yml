@@ -22,10 +22,13 @@ name: issue-triage
 #     checking anything — mechanical-gates §121).
 #
 # A SUCCESSFUL EXIT IS NOT A MEASUREMENT. Round 1 of this lane accepted the
-# gate gutted to `exit 0` — `exit=0 output=''` passed the audit step. The gate
-# now publishes its contract (`--contract`: the population line it promises to
-# print, and how many planted faults its selftest runs) and the audit step
-# asserts BOTH, by name, instead of trusting the exit status.
+# gate gutted to `exit 0` — `exit=0 output=''` passed the audit step. Round 2
+# made the gate publish a contract (`--contract`) and had this step READ it —
+# so the thing being policed supplied the yardstick, and a gate that lowered
+# its own contract passed. Round 3 keeps the audit step's OWN literal copy of
+# the population regex and the selftest case count, asserts the gate's output
+# against that copy, and asserts the gate's contract EQUALS it. Two copies,
+# kept equal by a test; a drift is red by name and never auto-adopted.
 #
 # See docs/CI.md, "Issue labels".
 
@@ -95,51 +98,95 @@ jobs:
           ISSUE_LABELS_REPO: ${{ github.repository }}
         run: |
           set -u
-          # The gate's CONTRACT first: the population line it promises to
-          # print and the number of planted faults its selftest runs. Both
-          # assertions below are made against what the gate itself publishes,
-          # so the regex lives in exactly one place and cannot drift from the
-          # line it is matched against.
-          contract=$(bash tools/issue_labels_check.sh --contract 2>&1) || true
-          re=$(printf '%s\n' "$contract" | sed -n 's/^POPULATION_RE=//p' | head -1)
-          cases=$(printf '%s\n' "$contract" | sed -n 's/^SELFTEST_CASES=//p' | head -1)
-          if [ -z "$re" ] || [ -z "$cases" ]; then
-            echo "issue-triage: the gate publishes no --contract, so nothing here can assert that it measured anything"
-            exit 1
-          fi
-          case "$re" in
-            *examined=*) ;;
-            *) echo "issue-triage: the gate's POPULATION_RE does not mention examined= : $re" ; exit 1 ;;
-          esac
+          # ---------------------------------------------------------------
+          # THE CALLER'S OWN COPY. Literals, held HERE, asserted against the
+          # gate's output. A separate check asserts the gate's --contract
+          # EQUALS these literals; a drift is red BY NAME and is never
+          # auto-adopted.
+          #
+          # ROUND 2 READ BOTH FROM THE GATE and was therefore policed by the
+          # thing it polices: `POPULATION_RE=examined=|.*` admitted empty
+          # output, a zero-permitting contract passed, and a gate with five
+          # plants deleted plus SELFTEST_CASES=1 passed this job (round-2
+          # blind critic, Astra check 7). The round-2 vacuity guard
+          # (`case "$re" in *examined=*`) is gone too: it was a substring test
+          # that `POPULATION_RE='examined='` satisfied.
+          #
+          # ROUND 3 also requires a LIVE source token. `examined=1 missing=0
+          # (source: fixture ...)` used to pass here because the regex stopped
+          # before `(source:`.
+          # ---------------------------------------------------------------
+          POP_RE_PINNED='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: gh-api:[^ )]+\)$'
+          SELFTEST_CASES_PINNED=6
 
-          # The gate's own planted faults, and the PINNED case count: a
-          # selftest reduced to a single echo also exits 0.
+          # Witnesses: incremented only where the pinned literal actually
+          # matched, so a gutted reporting branch still ends this step red at
+          # the accounting check below.
+          CONTRACT_SEEN=0
+          POP_SEEN=0
+          ST_SEEN=0
+          CHECKS=0
+          CHECKS_EXPECTED=4
+
+          # 1. the gate's published contract must EQUAL the pins above.
+          CHECKS=$((CHECKS + 1))
+          contract=$(bash tools/issue_labels_check.sh --contract 2>&1) || true
+          gate_re=$(printf '%s\n' "$contract" | sed -n 's/^POPULATION_RE=//p' | head -1)
+          gate_cases=$(printf '%s\n' "$contract" | sed -n 's/^SELFTEST_CASES=//p' | head -1)
+          if [ -z "$gate_re" ] || [ -z "$gate_cases" ]; then
+            echo "issue-triage: the gate publishes no --contract, so nothing here can assert that it measured anything"
+          elif [ "$gate_re" != "$POP_RE_PINNED" ]; then
+            echo "issue-triage: gate contract changed; re-pin the caller deliberately — gate POPULATION_RE=[$gate_re] but this workflow pins [$POP_RE_PINNED]"
+          elif [ "$gate_cases" != "$SELFTEST_CASES_PINNED" ]; then
+            echo "issue-triage: gate contract changed; re-pin the caller deliberately — gate SELFTEST_CASES=$gate_cases but this workflow pins $SELFTEST_CASES_PINNED"
+          else
+            CONTRACT_SEEN=1
+            echo "issue-triage: gate contract equals this workflow's pin"
+          fi
+
+          # 2. the gate's own planted faults, against THIS file's pinned line.
+          CHECKS=$((CHECKS + 1))
           st=$(mktemp)
           rc=0
           bash tools/issue_labels_check.sh --selftest > "$st" 2>&1 || rc=$?
           cat "$st"
+          want="SELFTEST: $SELFTEST_CASES_PINNED case(s) run, $SELFTEST_CASES_PINNED passed, 0 failed, 0 skipped"
           if [ "$rc" -ne 0 ]; then
             echo "issue-triage: the gate's own planted faults did not all go red"
-            exit 1
-          fi
-          if ! grep -qE "^SELFTEST: $cases case\(s\) run, $cases passed" "$st"; then
-            echo "issue-triage: the selftest did not report its pinned $cases case(s) — a selftest that ran nothing also exits 0"
-            exit 1
+          elif [ "$(grep -cxF "$want" "$st")" -ne 1 ]; then
+            echo "issue-triage: the selftest line is not exactly this workflow's pin [$want] — a selftest that ran nothing also exits 0"
+          else
+            ST_SEEN=1
           fi
 
+          # 3. the LIVE run, against THIS file's pinned population regex.
+          CHECKS=$((CHECKS + 1))
           out=$(mktemp)
           rc=0
           bash tools/issue_labels_check.sh > "$out" 2>&1 || rc=$?
           cat "$out"
+          hits=$(grep -cE "$POP_RE_PINNED" "$out")
           # A SKIP is not a pass here: this job exists to make the API call, so
           # an unauthenticated or offline run must be loud rather than green.
           if grep -q 'SKIPPED BY NAME' "$out"; then
             echo "issue-triage: the audit skipped on a lane whose whole purpose is to run it"
-            exit 1
+          elif [ "$hits" -ne 1 ]; then
+            echo "issue-triage: the audit printed $hits line(s) matching this workflow's pinned population regex; exactly 1 is required (a successful exit is not a measurement, and a fixture-sourced line is not a live one)"
+            echo "issue-triage: caller pin: $POP_RE_PINNED"
+          elif [ "$rc" -ne 0 ]; then
+            echo "issue-triage: the audit found unlabelled open issues (see above)"
+          else
+            POP_SEEN=1
           fi
-          if ! grep -qE "$re" "$out"; then
-            echo "issue-triage: the audit printed no population line — a successful exit is not a measurement"
-            echo "issue-triage: contract: $re"
+
+          # 4. this step's own accounting. Deleting or short-circuiting any
+          #    check above changes these numbers instead of quietly measuring
+          #    less.
+          CHECKS=$((CHECKS + 1))
+          echo "issue-triage: accounting — checks $CHECKS/$CHECKS_EXPECTED, contract $CONTRACT_SEEN/1, selftest $ST_SEEN/1, population $POP_SEEN/1"
+          if [ "$CHECKS" -ne "$CHECKS_EXPECTED" ] || [ "$CONTRACT_SEEN" -ne 1 ] \
+             || [ "$ST_SEEN" -ne 1 ] || [ "$POP_SEEN" -ne 1 ]; then
+            echo "issue-triage: a check did not run, or did not match this workflow's own literal"
             exit 1
           fi
           exit "$rc"
