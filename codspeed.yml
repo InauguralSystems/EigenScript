@@ -15,6 +15,11 @@
 # Measured 2026-09-20 under cachegrind, bench_dmg_shape: JIT on 1.20 G Ir,
 # JIT off 2.22 G Ir — the JIT DOES engage under valgrind, both arms differ.
 #
+# The lane runs with cycle-estimation OFF (see the workflow): the headline
+# is instructions, not the runner's cache model, because perf stat on the
+# dev box refuted that model's 60% cache share (IPC 1.61, 1.6% LLC refs).
+# Locally, match it: codspeed run -m simulation --cycle-estimation=false
+#
 # Run locally (after `codspeed auth login`):
 #   make && codspeed run -m simulation            # every target
 #   codspeed run -m simulation --bench dmg-shape  # one target by id

@@ -164,6 +164,12 @@ cannot: a per-target differential flamegraph on every PR, and a history
 that is not a checked-in `baseline.txt`. It is a profiler and a record, not a
 second merge gate; the `bench` job stays the authority.
 
+The lane's headline metric is **instructions**, not CodSpeed's cycle
+estimate: the estimate's cache model attributed ~60% of the DMG shape to cache
+misses, and `perf stat` on real hardware read IPC 1.61 with 1.6% last-level
+references — a busy core. Instructions is the unit the `bench` job uses and the
+one the hardware agreed with (within 1% of cachegrind's `Ir`).
+
 Two rules carried over from the gate. **Tier is in the target name**: an
 unqualified target measures the default (JIT) tier and the `vm-tier` targets
 pin `EIGS_JIT_OFF=1`, so an interpreter-only regression has its own row — the
