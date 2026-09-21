@@ -151,6 +151,34 @@ cliff. It is documented as a contract in
 [docs/CONCURRENCY.md](CONCURRENCY.md#the-multithreaded-performance-cliff); a
 dedicated spawn/channel bench workload is future work here.
 
+## CodSpeed: the hosted twin of the Ir gate
+
+The `bench` job answers one yes/no question per PR — did this change cost more
+than a few percent of instructions on five workloads — and throws the numbers
+away. `codspeed.yml` at the repository root declares the same five workloads
+plus the JIT's own shapes (`tests/bench_perf.eigs`, `tests/bench_dmg_shape.eigs`,
+`tests/bench_idxset.eigs`) as CodSpeed **exec-harness** targets, and the
+`.github/workflows/codspeed.yml` lane runs them under the same valgrind CPU
+simulation and uploads the result per commit. What that buys that the gate
+cannot: a per-target differential flamegraph on every PR, and a history
+that is not a checked-in `baseline.txt`. It is a profiler and a record, not a
+second merge gate; the `bench` job stays the authority.
+
+Two rules carried over from the gate. **Tier is in the target name**: an
+unqualified target measures the default (JIT) tier and the `vm-tier` targets
+pin `EIGS_JIT_OFF=1`, so an interpreter-only regression has its own row — the
+JIT does engage under valgrind (2026-09-20, `bench_dmg_shape` under cachegrind:
+JIT on 1.20 G Ir, JIT off 2.22 G Ir). And **the binary must be the release
+build**: `make asan` overwrites `src/eigenscript` with a ~5x slower one that
+`--version` does not disclose, so the lane builds with `./build.sh` and a
+local run should too.
+
+```bash
+codspeed auth login                           # once per machine
+make && codspeed run -m simulation            # every target in codspeed.yml
+codspeed run -m simulation --bench dmg-shape  # one target, by its id
+```
+
 ## Reproducing
 
 ```bash
