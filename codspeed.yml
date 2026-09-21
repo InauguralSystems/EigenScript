@@ -21,8 +21,8 @@
 # Locally, match it: codspeed run -m simulation --cycle-estimation=false
 #
 # Run locally (after `codspeed auth login`):
-#   make && codspeed run -m simulation            # every target
-#   codspeed run -m simulation --bench dmg-shape  # one target by id
+#   make && codspeed run -m simulation --cycle-estimation=false   # every target
+#   (CLI 5.3.1 has no per-target selector; the ids exist for the report only)
 #
 # Workloads: bench/*.eigs are the five Ir-gate workloads; the three tests/
 # benches are the JIT's own shapes (CLAUDE.md "Benchmarks"), dmg_shape being
@@ -57,6 +57,22 @@ benchmarks:
   - name: "bench_idxset"
     id: idxset
     exec: ./src/eigenscript tests/bench_idxset.eigs
+
+  # --- a REAL consumer: the DMG Game Boy emulator running Blargg's cpu_instrs ---
+  # The in-repo dmg_shape bench flatters the JIT ~10x against the emulator it
+  # names (measured 2026-09-21 under cachegrind: JIT removes 48% of the
+  # instructions on bench_dmg_shape, 11.8% on DMG itself at 2 M cycles; the
+  # fleet matrix on #1178 reads +5% wall). A per-PR verdict about the JIT
+  # needs the consumer's shape, so the lane fetches DMG at the commit pinned
+  # in .github/workflows/codspeed.yml into .codspeed-consumers/ (ignored).
+  # Locally: run that workflow step by hand, or point the path at a checkout
+  # -- and say which DMG commit you measured; the pin is the one in CI.
+  - name: "dmg cpu_instrs 2M cycles"
+    id: dmg-cpu-instrs
+    exec: ./src/eigenscript .codspeed-consumers/DMG/dmg.eigs .codspeed-consumers/DMG/roms/cpu_instrs.gb --cycles 2000000
+  - name: "dmg cpu_instrs 2M cycles (vm-tier)"
+    id: dmg-cpu-instrs-vm
+    exec: env EIGS_JIT_OFF=1 ./src/eigenscript .codspeed-consumers/DMG/dmg.eigs .codspeed-consumers/DMG/roms/cpu_instrs.gb --cycles 2000000
 
   # --- interpreter tier, JIT hard-disabled ---
   - name: "bench_dmg_shape (vm-tier)"

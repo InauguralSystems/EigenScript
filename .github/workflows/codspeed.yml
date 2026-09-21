@@ -42,6 +42,22 @@ jobs:
       - name: Build the release interpreter
         run: ./build.sh
 
+      # A real consumer in the matrix. Pinned by SHA, not branch: a moving
+      # consumer would put ITS changes into this repo's trend line (the
+      # solver-policy confound). Bump deliberately, in a PR that says why.
+      # Shallow fetch of one commit; `git clone` of a branch is not a pin.
+      - name: Fetch consumer DMG at its pin
+        env:
+          DMG_REF: cf6ef5e151deff98cc29250a7c8fc394ee4b64d6  # DMG master, 2026-09-21
+        run: |
+          set -euo pipefail
+          mkdir -p .codspeed-consumers/DMG && cd .codspeed-consumers/DMG
+          git init -q && git remote add origin https://github.com/InauguralSystems/DMG
+          git fetch -q --depth 1 origin "$DMG_REF"
+          git -c advice.detachedHead=false checkout -q FETCH_HEAD
+          test -f roms/cpu_instrs.gb && test -f eigs.json
+          echo "DMG at $(git rev-parse HEAD)"
+
       # `run` is deliberately omitted: with no command the runner executes the
       # exec-harness targets declared in codspeed.yml at the repository root.
       #

@@ -58,3 +58,6 @@ __pycache__/
 
 # CI-only marker for the cached [99i] audit job (#1160).
 .werror-audit-ok
+
+# Consumer checkouts fetched by the CodSpeed lane (pinned in .github/workflows/codspeed.yml)
+.codspeed-consumers/
