@@ -36,12 +36,37 @@
 #     run_one too, not only at plan time, so a name reached from a script
 #     the consumer CALLS is refused before the stale binary is.
 #     At EXECUTION time the class is closed independently of the
-#     derivation: every eigenscript* executable on the INHERITED PATH that
-#     is not in the candidate set is 127-shimmed into $SHIM (path_masked=),
-#     so a name the consumer COMPUTES (eigenscript-$V) cannot reach a stale
-#     binary; the row's own call log is then read back and any argv[0]
-#     basename outside the candidate set makes the row
-#     FAIL|undeclared-variant:<name>.
+#     derivation, by CONFINEMENT rather than by shadowing. A 127-shim
+#     earlier on PATH is only as good as PATH ORDER, and PATH order
+#     belongs to the CONSUMER: one `export PATH="$HOME/.local/bin:$PATH"`
+#     -- the ordinary CI idiom EigenGauntlet and EigenMiniSat already use
+#     via $GITHUB_PATH -- put a stale runtime back in front of $SHIM and
+#     the row still read PASS (Fable/Astra r3). So each row runs with
+#       PATH=$SHIM:$FARM   and nothing else,
+#     where $FARM holds one symlink per executable found on the INHERITED
+#     PATH (find -L, first occurrence wins) EXCEPT every name matching
+#     eigenscript*, which is NEVER linked. No inherited directory is on
+#     the row's PATH, so there is no `.`, no empty entry and no
+#     $HOME/.local/bin to prepend in front of; HOME is an empty per-row
+#     scratch directory (home_scratch=yes, with empty .local/bin and bin)
+#     and XDG_* is unset. Header: path_farm=<n executables>,
+#     path_dropped=<names>, home_scratch=, overlay_shimmed=.
+#     Names outside the candidate set still get their 127-shims in $SHIM
+#     (path_masked=) -- those work for ANY shell, so they are what turns a
+#     computed name invoked from a `sh` script into a named failure -- and
+#     a name that resolves NOWHERE is recorded the same way by the block
+#     shell's command_not_found_handle rather than being a bare 127 the
+#     consumer can swallow with `|| true`. The row's own call log is then
+#     read back and any argv[0] basename outside the candidate set makes
+#     the row FAIL|undeclared-variant:<name>.
+#     EIGS_DIR is the TWIN of that PATH: it is a cp -rL copy of the
+#     candidate tree, so every eigenscript* file in the overlay is a shim
+#     too -- the candidate's counting shim when the set covers the name, a
+#     127-shim when it does not.
+#     Scratch creation is FAIL-CLOSED: every mktemp/mkdir whose result the
+#     harness writes into is checked, an unusable $TMPDIR exits 2 with
+#     `cannot create scratch under <dir> (<why>)` BEFORE any shim is
+#     written, and a shim is never written outside the run scratch.
 #     PATH shim logs argv0+rc+argv to a scratch file under a directory the
 #     consumer is never told about (not the shim dir, not $EIGS_DIR, not their parents);
 #     the path is baked into the shim (not exported; not named CA_*). cand_calls
@@ -167,10 +192,19 @@
 #     real consumer uses them.
 #   - a consumer that resolves the runtime by a path IT COMPUTES --
 #     ./eigenscript-full inside its own checkout, or a glob over one --
-#     is not on PATH, so the execution-time sweep cannot mask it. Such a
-#     row reads UNEXERCISED (cand_calls=0), never PASS; plant
+#     is not on PATH, so neither the farm nor the sweep can reach it. Such
+#     a row reads UNEXERCISED (cand_calls=0), never PASS; plant
 #     variant-glob-residual pins exactly that behaviour, so closing this
 #     residual turns that plant red on purpose.
+#   - PATH-FARM RESIDUAL: a consumer that prepends an ABSOLUTE directory
+#     outside $HOME that it did not create inside the row (e.g.
+#     /opt/foo/bin) can still reach a binary there. Nothing short of a
+#     mount namespace closes that, and CI has no such directory. A
+#     directory the consumer creates in the row is a freshly built
+#     binary, not a stale one.
+#   - a PATH directory that is executable but not READABLE (mode 0111)
+#     cannot be enumerated: nothing from it is farmed and nothing from it
+#     is on the row's PATH either -- fail closed, not fall through.
 #   - a Dockerfile RUN line is not scanned for invocations: it builds the
 #     image, it is not the acceptance command.
 #   - the unwritable-directory plants cannot be planted as uid 0. The
@@ -268,6 +302,56 @@ EXPECTED_CONSUMERS=(
 )
 
 say() { printf '%s\n' "$*"; }
+
+# CA-GUARD:scratch-tag
+# Every scratch directory this script creates in the OUTER tmp carries an
+# optional tag so a scan can tell ENTRIES CREATED BY THIS RUN from a
+# concurrent tenant's. Production leaves it empty; the self-test exports a
+# per-run token (Fable/Astra r3: a concurrent self-test's /tmp/ca-st.* was
+# read as this run's leftover and the self-test printed a false FAIL).
+# Sanitised, because it lands in a mktemp template.
+scratch_tag() {
+  local raw="${CA_SCRATCH_TAG:-}"
+  raw="$(printf '%s' "$raw" | tr -cd 'A-Za-z0-9._-')"
+  printf '%s' "$raw"
+}
+
+# A scratch path the harness will WRITE INTO must exist and be non-empty.
+# Fable r3 (critical): `WORK="$(mktemp -d ...)"` was unchecked under
+# `set -uo pipefail` (no -e), so an unusable $TMPDIR gave WORK="" and
+# SHIM="/bin" -- and a round-2 run as root wrote stub shims into /usr/bin
+# on the dev box. Fail closed, by name, before any shim is written.
+scratch_die() {
+  say "consumer_acceptance: cannot create scratch under ${TMPDIR:-/tmp} ($1)"
+  RUN_RC=2
+  exit 2
+}
+
+# CA-GUARD:scratch-fail-closed
+# $1 = path, $2 = why. Non-empty, a real directory, and (when $WORK is
+# already known) under $WORK's realpath. A shim is never written anywhere
+# else.
+# The resolved path is handed back in SCRATCH_REAL, never on stdout: this
+# function EXITS the process when the check fails, and a command
+# substitution would exit only the subshell (and swallow the diagnostic).
+WORK_REAL=""
+SCRATCH_REAL=""
+assert_scratch_dir() {
+  local d="${1:-}" why="${2:-}" dr=""
+  SCRATCH_REAL=""
+  [ -n "$d" ] || scratch_die "$why: empty path"
+  [ -d "$d" ] || scratch_die "$why: not a directory ($d)"
+  dr="$(cd -P -- "$d" 2>/dev/null && pwd)"
+  [ -n "$dr" ] || scratch_die "$why: unresolvable ($d)"
+  if [ -n "${WORK_REAL:-}" ]; then
+    case "$dr" in
+      "$WORK_REAL"|"$WORK_REAL"/*) ;;
+      *) scratch_die "$why: $dr is outside the run scratch $WORK_REAL" ;;
+    esac
+  fi
+  SCRATCH_REAL="$dr"
+}
+# CA-GUARD:end-scratch-fail-closed
 
 # Per-call: CA_ECO must be read HERE, not once at file load, so a self-test
 # child with an override is not silently aimed at the real siblings.
@@ -613,10 +697,46 @@ sibling_is_present() {
 # a symlink cannot reach outside the overlay. A link that cannot be
 # dereferenced is skipped and noted (overlay_skipped=). src/eigenscript
 # is replaced by the counting shim. Never mutates the real tree.
+# CA-GUARD:overlay-variant-shim
+# The TWIN SITE of the PATH farm (Fable r3): EIGS_DIR is a cp -rL COPY of
+# the candidate tree's src/, so with a tree candidate and no --full the
+# consumer's "$EIGS_DIR/src/eigenscript-full" ran the copied sibling
+# binary and the row read PASS. Every eigenscript* file the overlay hands
+# out is therefore replaced: a covered candidate gets the same counting
+# shim $SHIM carries, an uncovered name gets the same 127-shim, so the
+# row is FAIL|undeclared-variant:<name> instead of a silent stale run.
+OVERLAY_SHIMMED=""
+overlay_shim_variants() {
+  local dir="$1" f b
+  [ -d "$dir" ] || return 0
+  while IFS= read -r f || [ -n "$f" ]; do
+    [ -n "$f" ] || continue
+    b="$(basename "$f")"
+    case "$b" in
+      eigenscript|eigenscript-*) ;;
+      *) continue ;;
+    esac
+    rm -f "$f"
+    if is_candidate_name "$b"; then
+      cp "$SHIM/$b" "$f" || continue
+    else
+      write_127_shim "$f" "$b"
+    fi
+    chmod +x "$f"
+    case " $OVERLAY_SHIMMED " in
+      *" $b "*) ;;
+      *) OVERLAY_SHIMMED="${OVERLAY_SHIMMED:+$OVERLAY_SHIMMED }$b" ;;
+    esac
+  done <<< "$(find "$dir" -maxdepth 1 ! -type d -name 'eigenscript*' 2>/dev/null || true)"
+  return 0
+}
+# CA-GUARD:end-overlay-variant-shim
+
 build_candidate_overlay() {
   local src="$1" dst="$2" item base s
   CAND_OVERLAY=""
   OVERLAY_SKIPPED=""
+  OVERLAY_SHIMMED=""
   [ -n "$src" ] && [ -d "$src" ] || return 1
   mkdir -p "$dst"
   # CA-GUARD:overlay-copy
@@ -650,6 +770,7 @@ build_candidate_overlay() {
   rm -f "$dst/src/eigenscript"
   cp "$SHIM/eigenscript" "$dst/src/eigenscript"
   chmod +x "$dst/src/eigenscript"
+  overlay_shim_variants "$dst/src"
   if [ -d "$src/lib" ]; then
     overlay_copy_dir "$src/lib" "$dst/lib" lib
   fi
@@ -674,6 +795,8 @@ build_candidate_overlay() {
   if [ "$nullglob_was" -eq 0 ]; then
     shopt -u nullglob
   fi
+  overlay_shim_variants "$dst"
+  overlay_shim_variants "$dst/lib"
   CAND_OVERLAY="$dst"
 }
 
@@ -997,6 +1120,8 @@ TMO_BIN=""
 BUDGET=1800
 KILL_AFTER=10
 SHIM=""
+FARM=""
+HOME_SCRATCH=no
 WORK=""
 RECORD=""
 RECORD_FINISHED=0
@@ -1431,13 +1556,22 @@ write_record_header() {
 # Variant names are derived from INVOCATION POSITIONS only
 # (tools/_derive_variants.py); every occurrence that did not enter the
 # set is listed by \`plan\` as variants|<consumer>|excluded:<name>|<file>:<line>.
-# At execution time every eigenscript* executable on the inherited PATH
-# that is not in the candidate set is 127-shimmed into path_masked=, and
-# a row whose call log shows a blocked| hit is FAIL|undeclared-variant:<name>.
+# At execution time the row runs with PATH=\$SHIM:\$FARM and nothing else:
+# \$FARM carries one symlink per executable on the INHERITED PATH except
+# every name matching eigenscript*, which is never linked (path_farm=,
+# path_dropped=), and HOME is an empty per-row scratch directory
+# (home_scratch=). No stale eigenscript* file is on the row's PATH at all,
+# so a consumer's own PATH prepend cannot re-order one in front of the
+# shims. Names outside the candidate set keep their 127-shims
+# (path_masked=), the overlay's own eigenscript* files are shimmed
+# (overlay_shimmed=), and a row whose call log shows a blocked| hit is
+# FAIL|undeclared-variant:<name>.
 # Residual: a consumer that resolves the runtime by a PATH IT COMPUTES --
 # ./eigenscript-full inside its own checkout, or a glob over one -- is not
-# on PATH and is not masked; such a row reads UNEXERCISED (cand_calls=0),
-# never PASS.
+# on PATH at all; such a row reads UNEXERCISED (cand_calls=0), never PASS.
+# Residual: a consumer that prepends an ABSOLUTE directory outside \$HOME
+# that it did not create inside the row (/opt/foo/bin) can still reach a
+# binary there; nothing short of a mount namespace closes that.
 # Residual: a Dockerfile RUN line is not scanned for invocations: it builds
 # the image, it is not the acceptance command.
 run_id=$RUN_ID
@@ -1456,6 +1590,10 @@ candidate_gfx_version=PENDING
 candidate_gfx_sha256=PENDING
 eigenscript_resolved=${RESOLVED:-PENDING}
 path_masked=PENDING
+path_farm=PENDING
+path_dropped=PENDING
+home_scratch=PENDING
+overlay_shimmed=PENDING
 overlay=copy
 overlay_skipped=PENDING
 sibling_binary_present=PENDING
@@ -1500,6 +1638,10 @@ write_record_footer() {
         candidate_gfx_sha256=PENDING)   printf 'candidate_gfx_sha256=%s\n' "${CAND_GFX_SHA:-}" ;;
         eigenscript_resolved=PENDING) printf 'eigenscript_resolved=%s\n' "${RESOLVED:-}" ;;
         path_masked=PENDING)       printf 'path_masked=%s\n' "${PATH_MASKED:-none}" ;;
+        path_farm=PENDING)         printf 'path_farm=%s\n' "${PATH_FARM_N:-0}" ;;
+        path_dropped=PENDING)      printf 'path_dropped=%s\n' "${PATH_DROPPED:-none}" ;;
+        home_scratch=PENDING)      printf 'home_scratch=%s\n' "${HOME_SCRATCH:-no}" ;;
+        overlay_shimmed=PENDING)   printf 'overlay_shimmed=%s\n' "${OVERLAY_SHIMMED:-none}" ;;
         sibling_binary_present=PENDING) printf 'sibling_binary_present=%s\n' "${SIBLING_BEFORE:-${SIBLING_PRESENT:-no}}" ;;
         overlay_skipped=PENDING)   printf 'overlay_skipped=%s\n' "${OVERLAY_SKIPPED:-}" ;;
         "VERDICT: INCOMPLETE")     verdict_line "$verdict" ;;
@@ -1715,7 +1857,7 @@ run_one() {
   # CA-GUARD:end-variant-mask
 
   log="$WORK/logs/$name.log"
-  mkdir -p "$WORK/logs"
+  mkdir -p "$WORK/logs" || scratch_die "cannot create the row log directory"
   # Arm this row's slice of the private log (new inode, so a straggler
   # holding the previous fd cannot append here). The harness
   # --version/--api probes ran before any row log existed and used
@@ -1742,10 +1884,54 @@ run_one() {
   fi
   # CA-GUARD:private-log-export
   true
+  # XDG_* goes with CA_*: the row's HOME is a scratch directory, and an
+  # inherited XDG_DATA_HOME/XDG_CONFIG_HOME would point a consumer's
+  # "user install" back at the developer's real home. (The strip_ca
+  # assignment must stay on the line directly after the guard marker: the
+  # private-log mutation replaces exactly that line.)
   # CA-GUARD:strip-ca-env
-  strip_ca='for _ca_k in $(env | awk -F= '\''$1 ~ /^CA_/ {print $1}'\''); do unset "$_ca_k"; done'
+  strip_ca='for _ca_k in $(env | awk -F= '\''$1 ~ /^(CA_|XDG_)/ {print $1}'\''); do unset "$_ca_k"; done'
 
-  cd_cmd="$(printf 'export PATH=%q:"$PATH"\nexport EIGS=eigenscript\nexport EIGENSCRIPT=eigenscript\n%s\n%s\ncd %q || exit 125\n%s\n' "$SHIM" "$eigs_exports" "$strip_ca" "$repo" "$cmd")"
+  # CA-GUARD:home-scratch
+  # A scratch HOME per row, created empty (with the two bin directories a
+  # consumer usually prepends), so `export PATH="$HOME/.local/bin:$PATH"`
+  # adds an EMPTY directory instead of the developer's stale runtimes.
+  local row_home
+  row_home="$WORK/home/$name"
+  mkdir -p "$row_home/.local/bin" "$row_home/bin" \
+    || scratch_die "cannot create the row HOME $row_home"
+  assert_scratch_dir "$row_home" "row HOME"
+  row_home="$SCRATCH_REAL"
+  HOME_SCRATCH=yes
+  local home_export
+  home_export="$(printf 'export HOME=%q' "$row_home")"
+  # CA-GUARD:end-home-scratch
+
+  # CA-GUARD:not-found-variant
+  # With the farm there is no stale eigenscript* on the row's PATH at all,
+  # so a name the consumer COMPUTES that no candidate covers is simply NOT
+  # FOUND -- a bare 127 the consumer can swallow with `|| true`. The block
+  # shell's command_not_found_handle turns that into the same blocked|
+  # record a 127-shim writes, so the row is FAIL|undeclared-variant:<name>
+  # by name instead of a silent PASS (Fable r3 dot-PATH probe). Defined in
+  # the block, never exported: the call-log path stays out of the
+  # consumer's environment.
+  local nf_handler=""
+  # CA-GUARD:not-found-guard
+  if true; then
+    nf_handler="$(printf 'command_not_found_handle() {\n  case "${1:-}" in\n    eigenscript|eigenscript-*)\n      printf "blocked|rc=127|%%s|%%s\\n" "$1" "${*:2}" >> %q 2>/dev/null || true\n      printf "consumer_acceptance: no candidate for %%s\\n" "$1" >&2 ;;\n    *) printf "%%s: command not found\\n" "$1" >&2 ;;\n  esac\n  return 127\n}' "${CALL_LOG:-/dev/null}")"
+  fi
+  # CA-GUARD:end-not-found-variant
+
+  # CA-GUARD:path-farm-row
+  # EXACTLY $SHIM:$FARM. No inherited directory, so no stale eigenscript*
+  # file is on the row's PATH at all -- a prepend cannot re-order what is
+  # not there.
+  local path_export
+  path_export="$(printf 'export PATH=%q:%q' "$SHIM" "$FARM")"
+  # CA-GUARD:end-path-farm-row
+
+  cd_cmd="$(printf '%s\nexport EIGS=eigenscript\nexport EIGENSCRIPT=eigenscript\n%s\n%s\n%s\n%s\ncd %q || exit 125\n%s\n' "$path_export" "$eigs_exports" "$strip_ca" "$home_export" "$nf_handler" "$repo" "$cmd")"
 
   start="$(date +%s)"
   # CA-GUARD:block-pipefail
@@ -1863,9 +2049,22 @@ file_sha256() {
   fi
 }
 
+# CA-GUARD:shim-inside-work
+# A shim file is only ever created under $WORK. Without this, a fall-open
+# $SHIM ("/bin" after an unchecked mktemp) had the harness writing stub
+# shims into system directories (Fable r3, observed on this box).
+assert_shim_dest() {
+  local dest="${1:-}" dir=""
+  [ -n "$dest" ] || scratch_die "shim destination is empty"
+  dir="$(dirname "$dest")"
+  assert_scratch_dir "$dir" "shim destination"
+}
+# CA-GUARD:end-shim-inside-work
+
 write_counting_shim() {
   local dest="$1" target="$2" name="${3:-}"
   [ -n "$name" ] || name="$(basename "$dest")"
+  assert_shim_dest "$dest"
   {
     printf '%s\n' '#!/bin/sh'
     printf 'target=%s\n' "$(printf '%q' "$target")"
@@ -1895,6 +2094,7 @@ write_counting_shim() {
 # can be FAILed as undeclared-variant instead of silently reading PASS.
 write_127_shim() {
   local dest="$1" name="$2"
+  assert_shim_dest "$dest"
   {
     printf '%s\n' '#!/bin/sh'
     printf 'name=%s\n' "$(printf '%q' "$name")"
@@ -1907,6 +2107,53 @@ write_127_shim() {
   } > "$dest"
   chmod +x "$dest"
 }
+
+# CA-GUARD:drop-sha-readback
+# Fix 4 (Fable/Astra r3, drop TOCTOU): the uid-0 self-test cmp/sha256s the
+# copy of itself it is about to run, then hands the path to $drop -- and a
+# drop tool that rewrites the copy in that window ran a DIFFERENT script
+# while the outer printed "byte-identical". The dropped process therefore
+# prints its OWN script's sha256 as its first line and the outer compares
+# that. Pure: prints exactly one verdict word, no diagnostics.
+drop_sha_verdict() {
+  local want="${1:-}" f="${2:-}" got=""
+  [ -n "$want" ] || { printf '%s' MISSING-EXPECTED; return; }
+  [ -f "$f" ] || { printf '%s' MISSING; return; }
+  got="$(grep -m1 '^dropped_script_sha256=' "$f" 2>/dev/null || true)"
+  got="${got#dropped_script_sha256=}"
+  got="${got%% *}"
+  if [ -z "$got" ]; then printf '%s' MISSING; return; fi
+  if [ "$got" = "$want" ]; then printf '%s' OK; return; fi
+  printf 'MISMATCH:%s' "$got"
+}
+# CA-GUARD:end-drop-sha-readback
+
+# CA-GUARD:outer-tmp-token
+# Fix 5 (both critics r3): the self-test's outer-tmp hygiene scan read a
+# CONCURRENT self-test's /tmp/ca-st.* as this run's leftover and printed a
+# false SELF-TEST: FAIL. Every scratch name this script creates in the
+# outer tmp carries CA_SCRATCH_TAG, so the scan can ask only about entries
+# CREATED BY THIS RUN. OUTER_TMP_EXAMINED is the enumeration's own witness
+# (>0 always, because $keep itself matches): a pattern that matched
+# nothing would otherwise print a clean OK.
+OUTER_TMP_EXAMINED=0
+OUTER_TMP_STRAYS=""
+outer_tmp_strays() {
+  local dir="$1" token="$2" keep="$3" pat tf
+  pat="ca-*"
+  [ -n "$token" ] && pat="ca-*${token}*"
+  OUTER_TMP_EXAMINED=0
+  OUTER_TMP_STRAYS=""
+  while IFS= read -r tf || [ -n "$tf" ]; do
+    [ -n "$tf" ] || continue
+    OUTER_TMP_EXAMINED=$((OUTER_TMP_EXAMINED + 1))
+    case "$tf" in
+      "$keep"|"$keep"/*) continue ;;
+    esac
+    OUTER_TMP_STRAYS="${OUTER_TMP_STRAYS:+$OUTER_TMP_STRAYS }$tf"
+  done <<< "$(find "$dir" -maxdepth 1 -name "$pat" 2>/dev/null || true)"
+}
+# CA-GUARD:end-outer-tmp-token
 
 # The candidate SET: which names have a real binary behind them.
 is_candidate_name() {
@@ -1928,10 +2175,12 @@ is_candidate_name() {
 # path it computes (`./eigenscript-full`, a glob inside its own checkout)
 # is outside PATH and is not masked.
 PATH_MASKED=""
+PATH_DROPPED=""
 mask_path_variants() {
   local d b f
   local -a dirs=()
   PATH_MASKED=""
+  PATH_DROPPED=""
   [ -n "${SHIM:-}" ] || return 0
   local oldifs="$IFS"
   local glob_off=0
@@ -1954,13 +2203,75 @@ mask_path_variants() {
         eigenscript|eigenscript-*) ;;
         *) continue ;;
       esac
+      case " $PATH_DROPPED " in
+        *" $b "*) ;;
+        *) PATH_DROPPED="${PATH_DROPPED:+$PATH_DROPPED }$b" ;;
+      esac
       is_candidate_name "$b" && continue
       [ -e "$SHIM/$b" ] && continue
       write_127_shim "$SHIM/$b" "$b"
       PATH_MASKED="${PATH_MASKED:+$PATH_MASKED }$b"
-    done <<< "$(find "$d" -maxdepth 1 -name 'eigenscript*' 2>/dev/null || true)"
+      # -L so a PATH entry that is a SYMLINK to a directory is enumerated
+      # too (Astra r3: a symlinked PATH dir escaped the sweep entirely).
+    done <<< "$(find -L "$d" -maxdepth 1 -name 'eigenscript*' 2>/dev/null || true)"
   done
 }
+
+# CA-GUARD:path-farm
+# The class closure (#1213, Fable/Astra r3). Shadowing is only as good as
+# PATH ORDER, and PATH order belongs to the CONSUMER: one
+# `export PATH="$HOME/.local/bin:$PATH"` -- the ordinary CI idiom two real
+# consumers already use -- puts a stale binary back in front of $SHIM.
+# So the stale files are taken OUT OF REACH instead of out-ordered: the
+# row runs with PATH=$SHIM:$FARM and nothing else, where $FARM holds one
+# symlink per executable found on the INHERITED PATH EXCEPT every name
+# matching eigenscript*, which is never linked. No inherited directory is
+# on the row's PATH at all, so there is no `.`, no empty entry and no
+# $HOME/.local/bin to prepend in front of.
+# Enumeration is -L (a symlinked PATH directory is followed) and first
+# occurrence wins (ln without -f refuses an existing name), so the farm
+# preserves the inherited PATH's own precedence.
+# Residual, stated in the record header: a consumer that prepends an
+# ABSOLUTE directory outside $HOME that it did not create inside the row
+# (e.g. /opt/foo/bin) can still reach a binary there; nothing short of a
+# mount namespace closes that, and CI has no such directory. A PATH
+# directory that is executable but not READABLE (mode 0111) cannot be
+# enumerated, so nothing from it is farmed and nothing from it is
+# reachable either -- fail closed, not fall through.
+PATH_FARM_N=0
+build_path_farm() {
+  local d
+  local -a dirs=()
+  PATH_FARM_N=0
+  [ -n "${WORK:-}" ] || scratch_die "path farm: run scratch is unset"
+  FARM="$WORK/farm"
+  mkdir -p "$FARM" || scratch_die "cannot create the PATH farm $FARM"
+  assert_scratch_dir "$FARM" "PATH farm"
+  FARM="$SCRATCH_REAL"
+  local oldifs="$IFS"
+  local glob_off=0
+  case "$-" in *f*) glob_off=1 ;; esac
+  set -f
+  IFS=:
+  # shellcheck disable=SC2206
+  dirs=($PATH)
+  IFS="$oldifs"
+  [ "$glob_off" -eq 0 ] && set +f
+  local -a keep=()
+  for d in "${dirs[@]+"${dirs[@]}"}"; do
+    [ -n "$d" ] || d="."
+    case "$d" in "$SHIM"|"$FARM") continue ;; esac
+    [ -d "$d" ] || continue
+    keep+=("$d")
+  done
+  if [ "${#keep[@]}" -gt 0 ]; then
+    find -L "${keep[@]}" -maxdepth 1 -type f -perm -u+x \
+      ! -name 'eigenscript*' -exec ln -s -t "$FARM" -- {} + 2>/dev/null || true
+  fi
+  PATH_FARM_N="$(find "$FARM" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l | tr -d ' ')"
+  PATH_FARM_N="${PATH_FARM_N:-0}"
+}
+# CA-GUARD:end-path-farm
 
 run_mode() {
   # CA-GUARD:not-crash
@@ -2053,7 +2364,8 @@ run_mode() {
   if [ -n "${CA_RECORD:-}" ]; then
     RECORD="$CA_RECORD"
   else
-    RECORD="$(mktemp "${TMPDIR:-/tmp}/ca-record.XXXXXX")"
+    RECORD="$(mktemp "${TMPDIR:-/tmp}/ca-record.$(scratch_tag)XXXXXX")" \
+      || scratch_die "mktemp ca-record failed"
     # mktemp creates an empty file; do not stash it as .prev on a fresh run.
     rm -f "$RECORD"
   fi
@@ -2070,7 +2382,10 @@ run_mode() {
     RUN_RC=2
     exit 2
   fi
-  WORK="$(mktemp -d "${TMPDIR:-/tmp}/ca-run.XXXXXX")"
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/ca-run.$(scratch_tag)XXXXXX")" \
+    || scratch_die "mktemp -d ca-run failed"
+  assert_scratch_dir "$WORK" "run scratch"
+  WORK_REAL="$SCRATCH_REAL"
   # CA-GUARD:invalidate-fail-closed
   invalidate_previous_record || die_record "cannot invalidate previous record at $RECORD"
   write_record_header || die_record "cannot initialise record at $RECORD"
@@ -2078,16 +2393,20 @@ run_mode() {
   # CA-GUARD:end-traps-before-scan
 
   SHIM="$WORK/bin"
-  mkdir -p "$SHIM"
+  mkdir -p "$SHIM" || scratch_die "cannot create the shim directory $SHIM"
+  assert_scratch_dir "$SHIM" "shim directory"
+  SHIM="$SCRATCH_REAL"
   # Private call log: a directory the consumer is never told about (not
   # the shim dir, not $EIGS_DIR, not their parents). Path baked into the
   # shim. Residual: any same-uid consumer that finds the shim script and
   # reads it can still recover the path.
-  PRIV="$(mktemp -d "${TMPDIR:-/tmp}/ca-priv.XXXXXX")"
+  PRIV="$(mktemp -d "${TMPDIR:-/tmp}/ca-priv.$(scratch_tag)XXXXXX")" \
+    || scratch_die "mktemp -d ca-priv failed"
+  [ -n "$PRIV" ] && [ -d "$PRIV" ] || scratch_die "private log root is not a directory ($PRIV)"
   local _hid
   _hid="$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
   [ -n "$_hid" ] || _hid="c${RANDOM}${RANDOM}"
-  mkdir -p "$PRIV/.$_hid"
+  mkdir -p "$PRIV/.$_hid" || scratch_die "cannot create the private call-log directory"
   CALL_LOG="$PRIV/.$_hid/log"
   : > "$CALL_LOG"
   # Counting wrapper, not a symlink: records argv+rc then runs the
@@ -2131,6 +2450,7 @@ run_mode() {
   # CA-GUARD:path-variant-sweep
   mask_path_variants
   # CA-GUARD:end-path-variant-sweep
+  build_path_farm
   # CA-GUARD:end-variant-mask
   derive_candidate_tree "$CAND_ABS" || true
   if [ -z "${CAND_TREE:-}" ] && [ -e "$ECO/EigenScript" ]; then
@@ -2168,6 +2488,10 @@ run_mode() {
   fi
   say "eigenscript_resolved: $RESOLVED"
   say "path_masked: ${PATH_MASKED:-none}"
+  say "path_farm: ${PATH_FARM_N:-0} executables"
+  say "path_dropped: ${PATH_DROPPED:-none}"
+  say "home_scratch: yes"
+  say "overlay_shimmed: ${OVERLAY_SHIMMED:-none}"
   say "sibling_binary_present: $SIBLING_BEFORE"
   if [ "$SIBLING_BEFORE" = yes ]; then
     say "note: \$ECO/EigenScript/src/eigenscript exists and differs from the candidate; consumers with hard-coded sibling paths (DMG#73) may have used it"
@@ -2658,7 +2982,7 @@ os.execvp("bash", ["bash"] + sys.argv[1:])' "$sh" run "$stub" >/dev/null 2>&1 &
     wait "$pid"
     rc=$?
   fi
-  leftover="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'ca-run.*' -newer "$mark" 2>/dev/null || true)"
+  leftover="$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name "ca-run.$(scratch_tag)*" -newer "$mark" 2>/dev/null || true)"
   rm -f "$mark"
   if [ -n "$leftover" ]; then
     # Mutant without traps leaks scratch; do not leave it.
@@ -2859,7 +3183,7 @@ plant_fail_footer() {
 plant_scratch_cleanup() {
   local sh="$1" eco="$2" stub="$3" rec="$4"
   local mark leftover out rc
-  mark="$(mktemp "${TMPDIR:-/tmp}/ca-mark.XXXXXX")"
+  mark="$(mktemp "${TMPDIR:-/tmp}/ca-mark.$(scratch_tag)XXXXXX")"
   sleep 0.05
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
@@ -3248,6 +3572,51 @@ import sys
 src, dest, kind = sys.argv[1], sys.argv[2], sys.argv[3]
 text = open(src).read()
 repls = {
+    "path-farm": (
+        '  path_export="$(printf \'export PATH=%q:%q\' "$SHIM" "$FARM")"',
+        '  path_export="$(printf \'export PATH=%q:"$PATH"\' "$SHIM")"',
+    ),
+    "home-scratch": (
+        '  home_export="$(printf \'export HOME=%q\' "$row_home")"',
+        '  home_export=""',
+    ),
+    "not-found-guard": (
+        '  # CA-GUARD:not-found-guard\n'
+        '  if true; then',
+        '  # CA-GUARD:not-found-guard\n'
+        '  if false; then',
+    ),
+    "scratch-fail-closed": (
+        'scratch_die() {\n'
+        '  say "consumer_acceptance: cannot create scratch under ${TMPDIR:-/tmp} ($1)"\n'
+        '  RUN_RC=2\n'
+        '  exit 2\n'
+        '}',
+        'scratch_die() {\n'
+        '  : "fall open on $1"\n'
+        '  return 0\n'
+        '}',
+    ),
+    "overlay-variant-shim": (
+        '    case "$b" in\n'
+        '      eigenscript|eigenscript-*) ;;\n'
+        '      *) continue ;;\n'
+        '    esac\n'
+        '    rm -f "$f"',
+        '    case "$b" in\n'
+        '      eigenscript) ;;\n'
+        '      *) continue ;;\n'
+        '    esac\n'
+        '    rm -f "$f"',
+    ),
+    "drop-sha-readback": (
+        '  if [ "$got" = "$want" ]; then printf \'%s\' OK; return; fi',
+        '  if [ -n "$got" ]; then printf \'%s\' OK; return; fi',
+    ),
+    "outer-tmp-token": (
+        '  [ -n "$token" ] && pat="ca-*${token}*"',
+        '  [ -n "$token" ] && pat="ca-*"',
+    ),
     "examined-eq": (
         '  # CA-GUARD:examined-eq-inventory\n'
         '  elif [ "$EXAMINED" -ne "$INVENTORY" ]; then',
@@ -4190,6 +4559,184 @@ plant_variant_glob_residual() {
   return 1
 }
 
+# --- round 4 plants -------------------------------------------------------
+
+# Fix 1 (class closure): the row's PATH is EXACTLY $SHIM:$FARM, so no
+# inherited directory -- not `.`, not an empty entry, not $HOME/.local/bin --
+# is on it. The discriminating row is Fable r3's dot-PATH shape: the harness
+# inherits `.` on PATH, the consumer's OWN checkout holds a stale
+# eigenscript-jit, and with the inherited PATH in the row (round 3) `.`
+# resolves inside the consumer's repo and the stale binary RUNS under PASS.
+# The control row proves the farm still hands out the real toolchain.
+plant_path_farm() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" stale_log="$5" cwd="$6"
+  local out rc
+  : > "$stale_log"
+  out="$(cd "$cwd" && PATH=".:$PATH" CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" \
+    "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')stale=$(wc -c < "$stale_log" 2>/dev/null || echo 0) $(grep -E '^(path_farm|home_scratch)' <<< "$out" | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  local farm_n
+  farm_n="$(grep -m1 '^path_farm: ' <<< "$out" || true)"
+  farm_n="${farm_n#path_farm: }"
+  farm_n="${farm_n%% *}"
+  farm_n="${farm_n:-0}"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|farm_dot|v0.43.0|FAIL|undeclared-variant:eigenscript-jit|' "$rec" \
+     && grep -q 'row|farm_control|v0.43.0|PASS|' "$rec" \
+     && [ ! -s "$stale_log" ] \
+     && [ "$farm_n" -gt 0 ] \
+     && grep -q '^home_scratch: yes' <<< "$out" \
+     && grep -q '^path_farm=' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 1 (second half): HOME is a scratch directory per row, so the ordinary
+# CI idiom `export PATH="$HOME/.local/bin:$PATH"` prepends an EMPTY
+# directory. With the developer's real HOME (round 3) that one line put a
+# stale runtime back in front of $SHIM and the row read PASS.
+plant_home_scratch() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" stale_log="$5" fake_home="$6"
+  local out rc
+  : > "$stale_log"
+  out="$(HOME="$fake_home" PATH="$fake_home/.local/bin:$PATH" CA_ECO="$eco" CA_TIMEOUT=10 \
+    CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')stale=$(wc -c < "$stale_log" 2>/dev/null || echo 0)"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|home_prepend|v0.43.0|FAIL|undeclared-variant:eigenscript-jit|' "$rec" \
+     && grep -q 'row|home_empty|v0.43.0|PASS|' "$rec" \
+     && [ ! -s "$stale_log" ] \
+     && grep -q '^home_scratch=yes' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# A computed name that NO candidate covers and that is nowhere on the row's
+# PATH is not found at all -- a bare 127 the consumer swallows with
+# `|| true`. command_not_found_handle turns it into the same blocked|
+# record a 127-shim writes, so the row FAILs BY NAME.
+plant_not_found_variant() {
+  local sh="$1" eco="$2" stub="$3" rec="$4"
+  local out rc
+  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|nf_user|v0.43.0|FAIL|undeclared-variant:eigenscript-jit|' "$rec" \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 2 (Fable r3, critical): an unusable $TMPDIR used to give WORK="" and
+# SHIM="/bin" under `set -uo pipefail`, and a round-2 run as root wrote stub
+# shims into /usr/bin on this box. Exit 2 BY NAME before any shim is
+# written, the previous record's bytes untouched, and nothing created in any
+# system bin directory.
+plant_scratch_fail_closed() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" bad="$5"
+  local out rc mark before after created
+  printf 'previous record bytes\nVERDICT: PASS\n' > "$rec"
+  before="$(file_sha256 "$rec")"
+  mark="$(mktemp "${TMPDIR:-/tmp}/ca-mark.$(scratch_tag)XXXXXX")"
+  sleep 0.05
+  out="$(TMPDIR="$bad/does-not-exist" CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 \
+    CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  after="$(file_sha256 "$rec")"
+  created="$(find /usr/bin /bin /usr/local/bin "$HOME/.local/bin" -maxdepth 1 \
+    -name 'eigenscript*' -newer "$mark" 2>/dev/null || true)"
+  rm -f "$mark"
+  LAST_PLANT_DETAIL="rc=$rc record_unchanged=$( [ "$before" = "$after" ] && echo yes || echo no ) created=$(printf '%s' "$created" | tr '\n' ' ') out=$(grep -m1 'cannot create scratch' <<< "$out" || true)"
+  note_plant "$out" "" "$rc"
+  if [ "$rc" -eq 2 ] \
+     && grep -q '^consumer_acceptance: cannot create scratch under ' <<< "$out" \
+     && [ "$before" = "$after" ] \
+     && [ -z "$created" ]; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 3 (Fable r3 twin site): EIGS_DIR is a cp -rL COPY of the candidate
+# tree, so "$EIGS_DIR/src/eigenscript-full" used to run the copied sibling
+# binary under a PASS row. Every eigenscript* the overlay hands out is now
+# a shim. stub is the tree-shaped candidate (.../src/eigenscript).
+plant_overlay_variant() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" stale_log="$5"
+  local out rc
+  : > "$stale_log"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')stale=$(wc -c < "$stale_log" 2>/dev/null || echo 0)"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q 'row|twin_user|v0.43.0|FAIL|undeclared-variant:eigenscript-full|' "$rec" \
+     && [ ! -s "$stale_log" ] \
+     && grep -q '^overlay_shimmed=.*eigenscript-full' "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+# Fix 4: the dropped self-test prints its OWN script's sha256; the outer
+# compares. Three arms, so neither a rewritten copy nor a copy that never
+# announced itself can read as OK.
+plant_drop_sha() {
+  local sh="$1" d="$2"
+  local ok mis none
+  mkdir -p "$d"
+  printf 'dropped_script_sha256=AAA path=/x\nSELF-TEST: PASS\n' > "$d/honest.out"
+  printf 'dropped_script_sha256=BBB path=/x\nSELF-TEST: PASS\n' > "$d/rewritten.out"
+  printf 'self-test: MUTATED COPY RAN\nSELF-TEST: PASS plants=0\n' > "$d/absent.out"
+  ok="$("$sh" --drop-sha AAA "$d/honest.out" 2>/dev/null || true)"
+  mis="$("$sh" --drop-sha AAA "$d/rewritten.out" 2>/dev/null || true)"
+  none="$("$sh" --drop-sha AAA "$d/absent.out" 2>/dev/null || true)"
+  LAST_PLANT_DETAIL="honest=$ok rewritten=$mis absent=$none"
+  note_plant "$ok $mis $none" "" 0
+  [ "$ok" = OK ] && [ "$mis" = "MISMATCH:BBB" ] && [ "$none" = MISSING ]
+}
+
+# Fix 5 (both critics r3): the outer-tmp hygiene scan read a CONCURRENT
+# self-test's /tmp/ca-st.* as this run's leftover and printed a false
+# SELF-TEST: FAIL. The scan asks only about entries tagged with THIS run's
+# token. Control arm: with no token the same scan DOES name both decoys, so
+# the tagged arm is not passing because it looked at nothing.
+plant_outer_tmp_decoy() {
+  local sh="$1" dir="$2" keep="$3" token="$4"
+  local d1="$dir/ca-st.OTHER-DECOY.$$" d2="$dir/ca-run.OTHER-DECOY.$$"
+  local tagged untagged tag_ex tag_str un_str
+  mkdir -p "$d1" "$d2"
+  tagged="$("$sh" --outer-tmp-strays "$dir" "$token" "$keep" 2>/dev/null || true)"
+  untagged="$("$sh" --outer-tmp-strays "$dir" "" "$keep" 2>/dev/null || true)"
+  tag_ex="${tagged#examined=}"
+  tag_ex="${tag_ex%% *}"
+  tag_str="${tagged#*strays=}"
+  un_str="${untagged#*strays=}"
+  LAST_PLANT_DETAIL="tagged=[$tagged] untagged_control=[$un_str]"
+  note_plant "$tagged $untagged" "" 0
+  local ok=0
+  if [ -d "$d1" ] && [ -d "$d2" ] \
+     && [ "${tag_ex:-0}" -gt 0 ] \
+     && [ "$tag_str" = none ] \
+     && [ "${un_str#*ca-st.OTHER-DECOY}" != "$un_str" ] \
+     && [ "${un_str#*ca-run.OTHER-DECOY}" != "$un_str" ]; then
+    ok=0
+  else
+    ok=1
+  fi
+  rm -rf "$d1" "$d2"
+  return "$ok"
+}
+
 # Fix 5 / Astra r2 05: a folded scalar whose more-indented line is a
 # command. Under YAML these are THREE commands and the block exits 1;
 # folded into one line the `false` stops being a command and the row read
@@ -4296,7 +4843,11 @@ plant_plant_total() {
 # FAILs by name: gutting both ST_SKIP increments left `plants=67 skipped=0
 # SELF-TEST: PASS` (Fable r2), and a deleted plant is the same shape. Bump
 # this in the same commit as any plant change.
-ST_DECLARED_PLANTS=79
+ST_DECLARED_PLANTS=86
+# This run's scratch token: every ca-* name the self-test and its children
+# create in the OUTER tmp carries it, so the hygiene scan can tell THIS
+# run's leftovers from a concurrent tenant's (both critics, r3).
+ST_TOKEN=""
 
 plant_total_verdict() {
   local plants="${1:-0}" skipped="${2:-0}"
@@ -4331,7 +4882,7 @@ selftest_drop_privileges() {
     ST_DROP_WHY="no runuser/setpriv with a nobody user"
     return 1
   fi
-  root="$(mktemp -d "${TMPDIR:-/tmp}/ca-stdrop.XXXXXX")" || {
+  root="$(mktemp -d "${TMPDIR:-/tmp}/ca-stdrop.$(scratch_tag)XXXXXX")" || {
     ST_DROP_WHY="cannot create a drop root under ${TMPDIR:-/tmp}"
     return 1
   }
@@ -4375,12 +4926,35 @@ selftest_drop_privileges() {
     ST_DROP_WHY="unprivileged probe failed (cannot read the copied tree as the dropped user)"
     return 1
   fi
+  # CA-GUARD:drop-freeze-tree
+  # The DIRECTORIES of the copied tree go read-only, so the checked script
+  # cannot be swapped for a different inode between the check and the run.
+  # An in-place rewrite of the file itself is deliberately still possible:
+  # that is what the sha read-back below has to catch, and a drop tool
+  # running as root could do it whatever the mode says.
+  find "$root/repo" -type d -exec chmod a-w {} + 2>/dev/null || true
+  # CA-GUARD:end-drop-freeze-tree
   say "self-test: uid $(id -u) -- re-running the WHOLE self-test unprivileged via: $drop"
   say "self-test: drop root $root, script sha256=$sha_copy (byte-identical to $sh)"
+  local inner_out="$root/inner.out"
+  : > "$inner_out"
   $drop env -u CA_FAULT -u CA_DROP_CMD -u CA_STDERR_CAP \
     CA_ST_DROPPED=1 TMPDIR="$root/tmp" HOME="$root" \
-    bash "$run_sh" --self-test
+    bash "$run_sh" --self-test > "$inner_out" 2>&1
   rc=$?
+  cat "$inner_out"
+  # CA-GUARD:drop-sha-check
+  # What the outer checked and what actually RAN are now tied together:
+  # the dropped process printed its own script's sha256 as its first line.
+  local sha_verdict
+  sha_verdict="$(drop_sha_verdict "$sha_copy" "$inner_out")"
+  if [ "$sha_verdict" != OK ]; then
+    say "self-test: the dropped copy did NOT run the script that was checked ($sha_verdict, want $sha_copy)"
+    say "SELF-TEST: FAIL -- dropped copy identity unverified plants=0 skipped=0 transverse_skipped=0"
+    rc=1
+  fi
+  # CA-GUARD:end-drop-sha-check
+  find "$root/repo" -type d -exec chmod u+w {} + 2>/dev/null || true
   rm -rf "$root"
   ST_DROP_EXIT="$rc"
   return 0
@@ -4399,6 +4973,13 @@ selftest() {
   ST_AS_ROOT=0
   local self_sh
   self_sh="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+  # CA-GUARD:drop-sha-announce
+  # First line out of a DROPPED self-test: the sha256 of the script that is
+  # actually executing. The outer compares it with the copy it checked.
+  if [ -n "${CA_ST_DROPPED:-}" ]; then
+    say "dropped_script_sha256=$(file_sha256 "$self_sh") path=$self_sh"
+  fi
+  # CA-GUARD:end-drop-sha-announce
   # CA-GUARD:root-drop
   if [ -z "${CA_ST_DROPPED:-}" ] \
      && { [ "$(id -u)" = 0 ] || { [ "${CA_FAULT:-}" = pretend_root ] && [ -n "${CA_DROP_CMD:-}" ]; }; }; then
@@ -4410,7 +4991,10 @@ selftest() {
   fi
   # CA-GUARD:end-root-drop
   outer_tmp="${TMPDIR:-/tmp}"
-  st_root="$(mktemp -d "${outer_tmp}/ca-st.XXXXXX")"
+  # CA-GUARD:scratch-token
+  ST_TOKEN="t$$x${RANDOM:-0}"
+  export CA_SCRATCH_TAG="$ST_TOKEN."
+  st_root="$(mktemp -d "${outer_tmp}/ca-st.$ST_TOKEN.XXXXXX")"
   ST_ROOT="$st_root"
   mkdir -p "$st_root/tmp"
   : > "$st_root/.stmark"
@@ -5457,10 +6041,16 @@ EOS
   local comp_eco="$st_root/comp-eco" stale_jit2="$st_root/stale-jit2.log"
   mkdir -p "$comp_eco"
   printf 'fixture\n' > "$comp_eco/.ca_fixture"
+  # The computed name is invoked from a `sh` script, not from the block
+  # bash: command_not_found_handle is a bash feature, so only the sweep's
+  # 127-shim can turn this into a named failure. (With the name reached
+  # from the block shell both mechanisms fire and the sweep's transverse
+  # row stops discriminating -- measured, round 4.)
   mk_consumer_block "$comp_eco" computed_user \
     'eigenscript work.eigs' \
-    'V=jit' \
-    'eigenscript-$V work.eigs || true'
+    'sh ./compute.sh || true'
+  printf '%s\n' 'V=jit' '"eigenscript-$V" work.eigs' \
+    > "$comp_eco/computed_user/compute.sh"
   printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_jit2\"" 'exit 0' > "$stale_dir/eigenscript-jit"
   chmod +x "$stale_dir/eigenscript-jit"
   rec="$st_root/var-computed.record"
@@ -5485,6 +6075,107 @@ EOS
     plant_line "variant-glob-residual" 0 "path inside the checkout reaches the stale binary; row UNEXERCISED (residual pinned)"
   else
     plant_line "variant-glob-residual" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 4 fix 1: the CONFINED PATH FARM. The row's PATH is exactly
+  # $SHIM:$FARM, so no inherited directory is on it. Discriminating row:
+  # Fable r3's dot-PATH shape -- the harness inherits `.`, the consumer's
+  # OWN checkout holds a stale eigenscript-jit, and with the inherited PATH
+  # in the row `.` resolves inside the repo and the stale binary runs.
+  local farm_eco="$st_root/farm-eco" farm_cwd="$st_root/farm-cwd"
+  local stale_farm="$st_root/stale-farm.log"
+  mkdir -p "$farm_eco" "$farm_cwd"
+  printf 'fixture\n' > "$farm_eco/.ca_fixture"
+  mk_consumer_block "$farm_eco" farm_dot \
+    'V=jit' \
+    'eigenscript-$V work.eigs || true' \
+    'eigenscript work.eigs'
+  mk_consumer_block "$farm_eco" farm_control \
+    'python3 -c "print(1)" >/dev/null' \
+    'sed -n 1p /dev/null' \
+    'eigenscript work.eigs'
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_farm\"" 'exit 0' \
+    > "$farm_eco/farm_dot/eigenscript-jit"
+  chmod +x "$farm_eco/farm_dot/eigenscript-jit"
+  rec="$st_root/farm.record"
+  if plant_path_farm "$sh" "$farm_eco" "$st_root/stub-ok" "$rec" "$stale_farm" "$farm_cwd"; then
+    plant_line "path-farm-confined" 0 "farm_dot FAIL|undeclared-variant:eigenscript-jit with \`.\` on the inherited PATH, stale never ran, farm_control PASS through the farm"
+  else
+    plant_line "path-farm-confined" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 4 fix 1b: a scratch HOME per row, so the ordinary CI idiom
+  # `export PATH="$HOME/.local/bin:$PATH"` prepends an EMPTY directory.
+  local home_eco="$st_root/home-eco" fake_home="$st_root/fake-home"
+  local stale_home="$st_root/stale-home.log"
+  mkdir -p "$home_eco" "$fake_home/.local/bin"
+  printf 'fixture\n' > "$home_eco/.ca_fixture"
+  mk_consumer_block "$home_eco" home_prepend \
+    'export PATH="$HOME/.local/bin:$PATH"' \
+    'V=jit' \
+    'eigenscript-$V work.eigs || true' \
+    'eigenscript work.eigs'
+  mk_consumer_block "$home_eco" home_empty \
+    'test ! -e "$HOME/.local/bin/eigenscript-jit"' \
+    'eigenscript work.eigs'
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_home\"" 'exit 0' \
+    > "$fake_home/.local/bin/eigenscript-jit"
+  chmod +x "$fake_home/.local/bin/eigenscript-jit"
+  rec="$st_root/home.record"
+  if plant_home_scratch "$sh" "$home_eco" "$st_root/stub-ok" "$rec" "$stale_home" "$fake_home"; then
+    plant_line "home-scratch" 0 "home_prepend FAIL|undeclared-variant:eigenscript-jit (the prepended \$HOME/.local/bin is empty), stale never ran, home_empty PASS"
+  else
+    plant_line "home-scratch" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 4: a computed name nothing covers is NOT FOUND, and that is
+  # a named row failure, not a 127 the consumer can swallow.
+  local nf_eco="$st_root/nf-eco"
+  mkdir -p "$nf_eco"
+  printf 'fixture\n' > "$nf_eco/.ca_fixture"
+  mk_consumer_block "$nf_eco" nf_user \
+    'V=jit' \
+    'eigenscript-$V work.eigs || true' \
+    'eigenscript work.eigs'
+  rec="$st_root/nf.record"
+  if plant_not_found_variant "$sh" "$nf_eco" "$st_root/stub-ok" "$rec"; then
+    plant_line "not-found-variant" 0 "an uncovered computed name that resolves NOWHERE is FAIL|undeclared-variant:eigenscript-jit, not a swallowed 127"
+  else
+    plant_line "not-found-variant" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 4 fix 2: an unusable $TMPDIR is a FAIL-CLOSED by name.
+  rec="$st_root/scratch-fc.record"
+  if plant_scratch_fail_closed "$sh" "$good_eco" "$st_root/stub-ok" "$rec" "$st_root"; then
+    plant_line "scratch-fail-closed" 0 "exit 2 naming the unusable TMPDIR, previous record bytes unchanged, no eigenscript* created in /usr/bin /bin /usr/local/bin \$HOME/.local/bin"
+  else
+    plant_line "scratch-fail-closed" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 4 fix 3: the overlay must not hand out sibling binaries.
+  local twin_eco="$st_root/twin-eco" twin_tree="$st_root/twin-cand"
+  local stale_twin="$st_root/stale-twin.log"
+  mkdir -p "$twin_eco" "$twin_tree/src"
+  printf 'fixture\n' > "$twin_eco/.ca_fixture"
+  mk_stub "$twin_tree/src/eigenscript" 0
+  printf '%s\n' '#!/bin/sh' "printf stale >> \"$stale_twin\"" 'exit 0' \
+    > "$twin_tree/src/eigenscript-full"
+  chmod +x "$twin_tree/src/eigenscript-full"
+  mk_consumer_block "$twin_eco" twin_user \
+    '"$EIGS_DIR/src/eigenscript-full" work.eigs || true' \
+    'eigenscript work.eigs'
+  rec="$st_root/twin.record"
+  if plant_overlay_variant "$sh" "$twin_eco" "$twin_tree/src/eigenscript" "$rec" "$stale_twin"; then
+    plant_line "overlay-variant-shim" 0 "the copied sibling eigenscript-full never runs; row FAIL|undeclared-variant:eigenscript-full"
+  else
+    plant_line "overlay-variant-shim" 1 "$LAST_PLANT_DETAIL"
+  fi
+
+  # --- round 4 fix 4: the dropped copy announces the sha of what RAN.
+  if plant_drop_sha "$sh" "$st_root/dropsha"; then
+    plant_line "drop-sha-readback" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "drop-sha-readback" 1 "$LAST_PLANT_DETAIL"
   fi
 
   # --- fix 5: a folded scalar's more-indented line is a COMMAND.
@@ -5605,6 +6296,13 @@ EOS
       record-stray)     plant_record_stray "$script" "$eco" "$st_root/stub-ok" "$rec" smoke.record 1 ;;
       folded-commands)  plant_folded_commands "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       unbound-capture)  plant_unbound_capture "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      path-farm)        plant_path_farm "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root/stale-farm.log" "$st_root/farm-cwd" ;;
+      home-scratch)     plant_home_scratch "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root/stale-home.log" "$st_root/fake-home" ;;
+      not-found-variant) plant_not_found_variant "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
+      scratch-fail-closed) plant_scratch_fail_closed "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root" ;;
+      overlay-variant)  plant_overlay_variant "$script" "$eco" "$extra" "$rec" "$st_root/stale-twin.log" ;;
+      drop-sha)         plant_drop_sha "$script" "$st_root/dropsha-t" ;;
+      outer-tmp-decoy)  plant_outer_tmp_decoy "$script" "$outer_tmp" "$st_root" "$ST_TOKEN" ;;
       plant-total)      plant_plant_total "$script" ;;
       *)                return 2 ;;
     esac
@@ -5663,7 +6361,7 @@ EOS
     # (UNEXERCISED, FAIL after a refused append, etc.). The transverse
     # is that the plant no longer FIRE.
     case "$plant" in
-      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|variant-prose|unbound-capture|plant-total)
+      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy)
         if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ]; then
           say "transverse $kind / $plant: intact=FIRES mutant=$mutant_st  OK"
         else
@@ -5756,20 +6454,32 @@ EOS
   transverse_one folded-more-indented    folded-commands  "$fold_eco" t-fc
   transverse_one stderr-capture          unbound-capture  "$c_eco"    t-uc
   transverse_one plant-total             plant-total      "$good_eco" t-pt
+  transverse_one path-farm               path-farm        "$farm_eco" t-farm
+  transverse_one home-scratch            home-scratch     "$home_eco" t-home
+  transverse_one not-found-guard         not-found-variant "$nf_eco"  t-nf
+  transverse_one scratch-fail-closed     scratch-fail-closed "$good_eco" t-sfc
+  transverse_one overlay-variant-shim    overlay-variant  "$twin_eco" t-twin "$twin_tree/src/eigenscript"
+  transverse_one drop-sha-readback       drop-sha         "$good_eco" t-dsha
+  transverse_one outer-tmp-token         outer-tmp-decoy  "$good_eco" t-otd
 
   # --- scratch hygiene: the self-test writes nothing under the OUTER tmp
   # except its own root. Previous rounds left ca-run.* and ca-st*.{time,txt}
   # behind; plant M covers a run's own scratch, this covers the self-test.
-  local stray_tmp="" tf
-  while IFS= read -r tf || [ -n "$tf" ]; do
-    [ -n "$tf" ] || continue
-    case "$tf" in
-      "$st_root"|"$st_root"/*) continue ;;
-    esac
-    stray_tmp="${stray_tmp:+$stray_tmp }$tf"
-  done <<< "$(find "$outer_tmp" -maxdepth 1 -name 'ca-*' -newer "$st_root/.stmark" 2>/dev/null || true)"
-  if [ -z "$stray_tmp" ]; then
-    plant_line "scratch-outer-tmp" 0 "no ca-* under $outer_tmp newer than the start marker (outside \$st_root)"
+  # A concurrent self-test's /tmp/ca-st.* is NOT this run's leftover: scan
+  # only entries tagged with this run's token, and pin the enumeration's own
+  # witness (>0, because $st_root itself matches the pattern).
+  if plant_outer_tmp_decoy "$sh" "$outer_tmp" "$st_root" "$ST_TOKEN"; then
+    plant_line "outer-tmp-decoy" 0 "an untagged neighbour ca-st.OTHER-DECOY/ca-run.OTHER-DECOY survives and is not reported; the untagged control names both"
+  else
+    plant_line "outer-tmp-decoy" 1 "$LAST_PLANT_DETAIL"
+  fi
+  local stray_tmp=""
+  outer_tmp_strays "$outer_tmp" "$ST_TOKEN" "$st_root"
+  stray_tmp="$OUTER_TMP_STRAYS"
+  if [ "${OUTER_TMP_EXAMINED:-0}" -eq 0 ]; then
+    plant_line "scratch-outer-tmp" 1 "the outer-tmp scan examined ZERO entries: pattern ca-*$ST_TOKEN* matched nothing, not even \$st_root"
+  elif [ -z "$stray_tmp" ]; then
+    plant_line "scratch-outer-tmp" 0 "no ca-* tagged $ST_TOKEN under $outer_tmp outside \$st_root (examined=$OUTER_TMP_EXAMINED)"
   else
     plant_line "scratch-outer-tmp" 1 "left behind: $stray_tmp"
   fi
@@ -5816,6 +6526,15 @@ case "${1:-plan}" in
     run_mode "$@" ;;
   --self-test)
     selftest ;;
+  --drop-sha)
+    # Self-test probe for CA-GUARD:drop-sha-readback. Pure: one word out.
+    shift
+    printf '%s\n' "$(drop_sha_verdict "${1:-}" "${2:-}")" ;;
+  --outer-tmp-strays)
+    # Self-test probe for CA-GUARD:outer-tmp-token. <dir> <token> <keep>.
+    shift
+    outer_tmp_strays "${1:-}" "${2:-}" "${3:-}"
+    printf 'examined=%s strays=%s\n' "$OUTER_TMP_EXAMINED" "${OUTER_TMP_STRAYS:-none}" ;;
   --plant-total)
     # Self-test accounting probe (CA-GUARD:plant-total). Reads nothing and
     # writes nothing: it exists so the comparison can be mutated and the

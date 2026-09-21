@@ -538,6 +538,44 @@ check, not an inner-loop one. It runs on every CI run in `gate self-tests`.
 The same job also runs `tools/consumer_acceptance.sh --self-test` and
 `plan` against a fixture inventory whose declared set is the fixture's
 own (never the real ecosystem); the step asserts `expected=N` with N>0.
+
+`run` confines each consumer row rather than out-ordering it. Shadowing a
+stale binary with a 127-shim earlier on `PATH` is only as good as PATH
+ORDER, and PATH order belongs to the consumer: one
+`export PATH="$HOME/.local/bin:$PATH"` — the ordinary CI idiom
+EigenGauntlet and EigenMiniSat already use via `$GITHUB_PATH` — puts the
+developer's stale runtime back in front of the shim, and the row still
+read `PASS`. So the row now runs with `PATH=$SHIM:$FARM` and nothing
+else: `$FARM` holds one symlink per executable found on the INHERITED
+`PATH` **except** every name matching `eigenscript*`, which is never
+linked (`path_farm=` / `path_dropped=` in the record header). `HOME` is a
+scratch directory per row (`home_scratch=yes`) containing empty
+`.local/bin` and `bin`, so a prepend adds an empty directory. The
+enumeration follows symlinked `PATH` directories (`find -L`); a directory
+that is executable but not readable contributes nothing and is reachable
+from nothing. What the claim now is, exactly: **no stale `eigenscript*`
+file is on the row's `PATH` at all**, and a name that resolves nowhere is
+`FAIL|undeclared-variant:<name>` (the block shell's
+`command_not_found_handle` records it) rather than a `127` the consumer
+can swallow with `|| true`. Two residuals stay, stated in the header: a
+consumer that prepends an ABSOLUTE directory outside `$HOME` that it did
+not create in the row (`/opt/foo/bin`) can still reach a binary there —
+nothing short of a mount namespace closes that, and CI has no such
+directory — and a path the consumer computes INSIDE its own checkout
+(`./eigenscript-*`) is not on `PATH` at all, so that row reads
+`UNEXERCISED`, never `PASS`.
+
+`EIGS_DIR` is the twin of that PATH: it is a `cp -rL` copy of the
+candidate tree, so it used to hand the consumer the sibling's
+`src/eigenscript-full`. Every `eigenscript*` file in the overlay is now a
+shim too — the candidate's counting shim when the candidate set covers
+the name, a 127-shim when it does not (`overlay_shimmed=`).
+
+Scratch creation is fail-closed: an unusable `$TMPDIR` exits 2 with
+`cannot create scratch under …` **before** any shim is written, and a
+shim is never written to a directory outside the run scratch. The
+unchecked `mktemp` this replaces had `SHIM` fall open to `/bin`, and a
+round-2 run as root wrote stub shims into `/usr/bin` on a dev box.
 The job runs as uid 0 in the container, where a `chmod a-w` directory is
 still writable and no plant that depends on "cannot write" can be planted.
 So the **whole** self-test re-runs itself as an unprivileged user
@@ -547,7 +585,15 @@ exactly as it does on a developer box. Per-plant drops were the wrong
 layer: round 2 dropped only for `stale-unwritable` and CI still recorded
 `VERDICT: PASS` for it. If no drop is possible, BOTH unwritable plants
 (`F unwritable-record`, `I stale-unwritable`) SKIP **by name** and the
-final line reports `plants=N skipped=2` — never a silent OK. That line
+final line reports `plants=N skipped=2` — never a silent OK. The drop is
+tied to what actually RAN: the dropped process prints its own script's
+sha256 as its first line and the outer compares it with the copy it
+checked, because a drop tool that rewrites the copy between the check and
+the `exec` otherwise ran a different script under a "byte-identical"
+banner. Every scratch name the self-test and its children create in the
+outer tmp carries that run's token, so a CONCURRENT self-test's
+`/tmp/ca-st.*` is no longer read as this run's leftover (it was, and it
+printed a false `SELF-TEST: FAIL`). That line
 also pins `plants + skipped` to a declared constant in the script, so a
 gutted SKIP counter or a deleted plant turns the self-test red.
 

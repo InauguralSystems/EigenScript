@@ -336,12 +336,37 @@ All notable changes to EigenScript are documented here.
   TOKEN instead had made a Dockerfile path, a skill name in CLAUDE.md,
   bench-JSON keys, a comment and a release-asset URL into prerequisites of
   ouroboros, iLambdaAi and Tidepool. The class is closed at EXECUTION time
-  too: every `eigenscript*` executable on the inherited PATH outside the
-  candidate set is 127-shimmed (`path_masked=`), and a row whose own call
-  log shows a blocked `argv[0]` is `FAIL|undeclared-variant:<name>` -- so
-  a name the consumer COMPUTES (`eigenscript-$V`) cannot reach a stale
-  binary. A path the consumer computes INSIDE its checkout
-  (`./eigenscript-*`) is the stated residual and reads UNEXERCISED.
+  too, by CONFINEMENT rather than by shadowing: a 127-shim earlier on
+  `PATH` is only as good as PATH ORDER, and PATH order belongs to the
+  consumer -- one `export PATH="$HOME/.local/bin:$PATH"` (the ordinary CI
+  idiom EigenGauntlet and EigenMiniSat already use via `$GITHUB_PATH`)
+  put a stale runtime back in front of the shim and the row still read
+  PASS. Each row therefore runs with `PATH=$SHIM:$FARM` and nothing else:
+  `$FARM` holds one symlink per executable found on the inherited PATH
+  EXCEPT every name matching `eigenscript*`, which is never linked
+  (`path_farm=`, `path_dropped=`), and `HOME` is an empty per-row scratch
+  directory (`home_scratch=yes`) so a prepend of `$HOME/.local/bin` adds
+  an empty directory. The enumeration follows symlinked PATH directories
+  (`find -L`); an unreadable (0111) PATH directory contributes nothing and
+  is reachable from nothing. Names outside the candidate set keep their
+  127-shims in `$SHIM` (`path_masked=`) so the row is
+  `FAIL|undeclared-variant:<name>` by name, and a name that resolves
+  NOWHERE is recorded the same way by the block shell's
+  `command_not_found_handle` instead of being a `127` the consumer can
+  swallow with `|| true`. `EIGS_DIR` is the twin of that PATH -- a
+  `cp -rL` copy of the candidate tree that used to hand out the sibling's
+  `src/eigenscript-full` -- so every `eigenscript*` file in the overlay is
+  a shim too (`overlay_shimmed=`). Two residuals remain, in the header: a
+  consumer that prepends an ABSOLUTE directory outside `$HOME` that it did
+  not create in the row (`/opt/foo/bin`) can still reach a binary there,
+  and a path the consumer computes INSIDE its checkout (`./eigenscript-*`)
+  is not on PATH at all and reads UNEXERCISED, never PASS. Scratch
+  creation is fail-closed: every `mktemp`/`mkdir` whose result the harness
+  writes into is checked, an unusable `$TMPDIR` exits 2 with `cannot
+  create scratch under <dir> (<why>)` BEFORE any shim is written, and a
+  shim is never written to a directory outside the run scratch -- the
+  unchecked `mktemp` this replaces let `SHIM` fall open to `/bin`, and a
+  round-2 run as root wrote stub shims into `/usr/bin` on a dev box.
   Non-PASS rows keep the last 60 lines of the consumer log in the
   record (`log|<name>|<line>`), or `log|<name>|preflight: <reason>` when
   there is no consumer output; `CA_LOGS` copies logs before cleanup. The
@@ -367,7 +392,17 @@ All notable changes to EigenScript are documented here.
   name; `plants + skipped` is pinned to a declared constant, so a gutted
   SKIP counter or a deleted plant is red; and every child duplicates its
   stderr into a capture file the `no-unbound-variable` check reads, so a
-  plant that discards both streams cannot hide a diagnostic.
+  plant that discards both streams cannot hide a diagnostic. The drop is
+  tied to what actually RAN: the dropped process prints its own script's
+  sha256 as its first line and the outer compares it with the copy it
+  cmp'd, because a drop tool that rewrites the copy between the check and
+  the exec otherwise ran a different script under a "byte-identical"
+  banner; the copied tree's directories are read-only for the run, so the
+  file cannot be swapped for another inode either. Every scratch name the
+  self-test and its children create in the outer tmp carries that run's
+  token, and the hygiene scan asks only about entries tagged with it: a
+  CONCURRENT self-test's `/tmp/ca-st.*` used to be read as this run's
+  leftover and printed a false `SELF-TEST: FAIL`.
 
 - **Consumer-acceptance `run` residuals (M1 round 7).** Self-test TMPDIR is
   private (concurrent self-tests no longer `rm -rf` each other's
