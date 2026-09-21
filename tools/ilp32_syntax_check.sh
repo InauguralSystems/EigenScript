@@ -5,7 +5,7 @@
 # that was true only at 64-bit pointer width (#1183's "union sized by fn") kept
 # that lane red from bcdd99f (#1185). This gate runs the same recipe locally
 # without emcc: clang -m32 -fsyntax-only over EVERY translation unit that
-# web/build.sh passes to emcc, with the same -D flags that script uses.
+# web/build.sh passes to emcc, with the -D set below.
 #
 # Population is DERIVED from web/build.sh's SOURCES=(...) array — every entry,
 # no directory filter, no sibling list. Round 1 filtered the array to src/*.c
@@ -15,11 +15,45 @@
 # assertion is examined == len(SOURCES) > 0, floored; an empty inventory is
 # FAIL, not a clean tree.
 #
-# web/eigs_wasm.c includes <emscripten.h>, which a box without emsdk does not
-# have. The gate writes a STUB into its own temp include dir defining the one
-# macro that file uses (EMSCRIPTEN_KEEPALIVE) as a no-op, and passes
-# -DEMSCRIPTEN (implicit under emcc) so any #ifdef EMSCRIPTEN arm takes the
-# same branch. Plant 1b is what proves the stub cannot mask a real error.
+# SOURCES IS NOT THE WHOLE COMPILE LINE. The derived population can only see
+# what the array holds; a `.c` written directly onto the emcc invocation is a
+# TU emcc compiles and this gate never touches — measured 2026-09-21 as 24
+# actual arguments against 23 examined. So the invocation itself is audited:
+# check_sources_only() joins the continuation lines of the command that expands
+# "${SOURCES[@]}" and FAILS BY NAME on any other token ending in `.c`. Its
+# plant is 2c. Residual, stated rather than implied: a token that reaches the
+# compiler through a shell variable, or a SECOND compile command elsewhere in
+# that script, is outside both the array and this audit.
+#
+# DEFINE PARITY. Round 2 defined the bare name `EMSCRIPTEN` and claimed that
+# was "exactly as the emcc line passes them". Measured 2026-09-21: web/build.sh's
+# emcc line defines no such macro, and `clang --target=wasm32-unknown-emscripten
+# -E -dM` predefines __EMSCRIPTEN__, __wasm__, __wasm32__ (plus the alias
+# spellings __wasm / __wasm32 and the __wasm_*__ feature macros) and does NOT
+# define EMSCRIPTEN — the bare name is a legacy emcc macro that STRICT mode
+# does not emit. No TU in SOURCES tests EMSCRIPTEN. The one conditional in the
+# population keyed on this world is src/jit.c:110 `#if !defined(__wasm__)`, and
+# under round 2's flags the gate compiled the __builtin___clear_cache arm that
+# emcc never sees, i.e. it took the OPPOSITE branch from the lane it stands in
+# for. So compile_tu now defines __EMSCRIPTEN__, __wasm__ and __wasm32__, and
+# not the bare name. Plant 1c is the case that proves it: an `#ifdef
+# __EMSCRIPTEN__ / #error` arm was GREEN under the old flags and is RED under
+# these. (The flag literals themselves are on compile_tu's clang line and
+# nowhere else in this file, so a grep for the gate's -D set reads the
+# invocation rather than this paragraph.)
+#
+# THE STUB DEFINES THE REAL MACRO, NOT A NO-OP. web/eigs_wasm.c includes
+# <emscripten.h>, which a box without emsdk does not have, so the gate writes
+# its own into a temp include dir. Round 2 stubbed EMSCRIPTEN_KEEPALIVE as
+# empty, which erased a SYNTAX constraint: `EMSCRIPTEN_KEEPALIVE return x;`
+# compiled clean under the gate and is RED under emscripten's real header
+# ("'used' attribute cannot be applied to a statement"). The stub now carries
+# em_macros.h's actual definition, __attribute__((used)); plant 1d is that
+# mutant. EMSCRIPTEN_KEEPALIVE is the only macro the entry point uses today —
+# read the file before assuming. The first real emscripten_*() API CALL in that
+# entry point turns this gate RED by name with an implicit-declaration error,
+# because the stub carries no prototypes; that is the intended signal to extend
+# the stub with the real declaration, not to silence it.
 #
 # LIMIT, not a fix: -m32 is the i386 ABI, NOT wasm32. `double` aligns to 4 on
 # i386 and to 8 on wasm32, so this stand-in catches pointer-width breaks — the
@@ -29,10 +63,15 @@
 # Usage: tools/ilp32_syntax_check.sh [--selftest]
 #   --selftest : plant (1) the old sizeof(data)==sizeof(fn) assert, (1b) a
 #                syntax error in a scratch copy of the playground entry point,
-#                (2) an empty TU list, (3) a population below the floor, and
-#                (3b) a SOURCES array with web/eigs_wasm.c removed; all five
-#                must go RED through the real compile/examine functions (not a
-#                re-implementation), and the live inventory must stay green.
+#                (1c) an emcc-only #error arm in that file, (1d) the misplaced
+#                EMSCRIPTEN_KEEPALIVE attribute, (2) an empty TU list, (2c) a
+#                `.c` literal on the compile line outside SOURCES, (3) a
+#                population below the floor, and (3b) the entry point dropped
+#                from the evaluated inventory; plus two controls — a
+#                REFORMATTED SOURCES array must yield the identical inventory,
+#                and the live inventory must stay green. All of them run
+#                through the real compile/examine/audit functions, not a
+#                re-implementation.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 REPO=$(pwd)
@@ -50,11 +89,9 @@ SELFTEST=0
 # web/eigs_wasm.c, the playground entry point emcc compiles on the same line.
 # Adding a source raises the count and needs no edit; a DECREASE is a
 # deliberate re-pin. Plant 3b is the case that matters: dropping the entry
-# point from SOURCES takes the population to 22, which this floor calls RED.
+# point from the inventory takes the population to 22, which this floor calls
+# RED.
 TU_FLOOR="${EIGS_ILP32_TU_FLOOR:-23}"
-
-# Playground -D flags, from web/build.sh (the pages.yml compile). Inlined on
-# the clang line as well — the werror gate reads SOURCE TEXT, not expansions.
 
 # Extract EVERY TU from web/build.sh SOURCES=(...). Ask the file; do not keep a
 # sibling list, and do NOT filter by directory: web/eigs_wasm.c rides the same
@@ -62,21 +99,72 @@ TU_FLOOR="${EIGS_ILP32_TU_FLOOR:-23}"
 # examines-fewer-than-it-says failure this gate exists to prevent. ("src" in
 # the function name reads as "source", not "src/"; reproducers outside the repo
 # source this function by name, so the name is stable.)
+#
+# FORMAT-INDEPENDENT by construction: entries are taken from anywhere between
+# the `SOURCES=(` and the closing `)`, including tokens sharing those two
+# lines, so reflowing the array cannot change the inventory. The round-2
+# version skipped the opening line whole, which meant a one-line array read as
+# EMPTY. The reformat control in --selftest is what holds this.
 # awk character class is [ \t], not [[:space:]] (POSIX awk).
 extract_src_tus() {
     awk '
-        /^SOURCES=\(/ { in_arr = 1; next }
-        in_arr && /^\)/ { exit }
-        in_arr {
-            n = split($0, a, /[ \t]+/)
+        {
+            line = $0
+            if (!in_arr) {
+                if (line !~ /^SOURCES=\(/) next
+                sub(/^SOURCES=\(/, "", line)
+                in_arr = 1
+            }
+            if (line ~ /\)/) { sub(/\).*$/, "", line); done = 1 }
+            n = split(line, a, /[ \t]+/)
             for (i = 1; i <= n; i++) {
                 s = a[i]
-                gsub(/^[ \t]+/, "", s)
-                gsub(/[ \t\\]+$/, "", s)
+                gsub(/[ \t\\"]+/, "", s)
                 if (s ~ /\.c$/) print s
             }
+            if (done) exit
         }
     ' "$1"
+}
+
+# Every token ending in `.c` on the joined command line that expands
+# "${SOURCES[@]}", EXCLUDING the array expansion itself. Continuation lines are
+# joined first, and the SOURCES=(...) block is skipped, so what remains is what
+# the invocation names directly. Prints offenders on stdout and nothing else —
+# the caller owns the verdict text.
+extra_tus_on_compile_line() {
+    awk '
+        /^SOURCES=\(/ { in_arr = 1 }
+        in_arr { if ($0 ~ /\)/) in_arr = 0; next }
+        {
+            l = $0
+            if (l ~ /\\[ \t]*$/) { sub(/\\[ \t]*$/, "", l); buf = buf " " l; next }
+            buf = buf " " l
+            if (buf ~ /SOURCES\[@\]/) {
+                n = split(buf, a, /[ \t]+/)
+                for (i = 1; i <= n; i++) {
+                    t = a[i]
+                    gsub(/^"+|"+$/, "", t)
+                    if (t ~ /\.c$/) print t
+                }
+            }
+            buf = ""
+        }
+    ' "$1"
+}
+
+# $1 = the build script to audit. FAIL BY NAME when the compile line names a
+# translation unit the derived inventory cannot see.
+check_sources_only() {
+    local f="$1" extra
+    extra=$(extra_tus_on_compile_line "$f")
+    if [ -n "$extra" ]; then
+        echo "FAIL: the playground compile line names translation unit(s) outside the SOURCES array, so the derived inventory examines fewer TUs than are compiled:" >&2
+        printf '%s\n' "$extra" | sed 's/^/      /' >&2
+        echo "      Put them in SOURCES=(...) or this gate cannot see them." >&2
+        return 1
+    fi
+    return 0
 }
 
 # $1 = translation unit path (repo-relative or absolute). $2 = optional extra
@@ -95,12 +183,15 @@ compile_tu() {
     # Status captured DIRECTLY. $? after a pipeline is the last stage.
     # Flag literals (not $VAR) so tools/werror_switch_check.sh can see them.
     # -c is load-bearing for that recognizer; -fsyntax-only is the actual work.
+    # The three predefines are the wasm32-emscripten target's, measured with
+    # `-E -dM`; the bare EMSCRIPTEN name is NOT among them (see the header).
     out=$(clang -m32 -fsyntax-only -c \
         -Werror=switch -Werror=comment -Werror=misleading-indentation \
         -isystem "$stubdir" -isystem /usr/include/x86_64-linux-gnu \
         $inc \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
-        -DEMSCRIPTEN -DEIGENSCRIPT_VERSION="\"$EIGS_VERSION\"" \
+        -D__EMSCRIPTEN__ -D__wasm__ -D__wasm32__ \
+        -DEIGENSCRIPT_VERSION="\"$EIGS_VERSION\"" \
         "$tu" 2>&1)
     st=$?
     if [ "$st" -ne 0 ]; then
@@ -154,12 +245,15 @@ STUB=$(mktemp -d "${TMPDIR:-/tmp}/eigs-ilp32-stub-XXXXXX")
 mkdir -p "$STUB/gnu"
 : > "$STUB/gnu/stubs-32.h"
 # <emscripten.h> stub: the playground entry point includes it and a box without
-# emsdk has no such header. Define ONLY the macro web/eigs_wasm.c uses, as a
-# no-op — a stub that defined more would start hiding real errors. Plant 1b
-# compiles a planted syntax error through this very stub and requires RED.
+# emsdk has no such header. EMSCRIPTEN_KEEPALIVE is defined EXACTLY as
+# emscripten's system/include/emscripten/em_macros.h defines it, so the macro's
+# SYNTAX constraints survive the stand-in (plant 1d). Nothing else is defined:
+# the entry point uses no other macro today, and an invented prototype would
+# start hiding real errors. Plants 1b/1c/1d compile through this very stub and
+# require RED.
 printf '%s\n' '#ifndef EIGS_ILP32_STUB_EMSCRIPTEN_H' \
                '#define EIGS_ILP32_STUB_EMSCRIPTEN_H' \
-               '#define EMSCRIPTEN_KEEPALIVE' \
+               '#define EMSCRIPTEN_KEEPALIVE __attribute__((used))' \
                '#endif' > "$STUB/emscripten.h"
 trap 'rm -rf -- "${STUB:-}" "${WORK:-}"' EXIT
 
@@ -190,6 +284,9 @@ if ! avail_err=$(clang -m32 -fsyntax-only -c \
 fi
 
 if [ "$SELFTEST" -eq 0 ]; then
+    if ! check_sources_only "$REPO/web/build.sh"; then
+        exit 1
+    fi
     tus=$(mktemp "${TMPDIR:-/tmp}/eigs-ilp32-tus-XXXXXX")
     extract_src_tus "$REPO/web/build.sh" > "$tus"
     examine_tus "$tus" "" "$STUB" "$TU_FLOOR"
@@ -198,9 +295,29 @@ if [ "$SELFTEST" -eq 0 ]; then
     exit $st
 fi
 
-# ---- selftest: plant the three faults through the REAL functions ----------
+# ---- selftest: plant the faults through the REAL functions ----------------
 fails=0
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/eigs-ilp32-st-XXXXXX")
+
+# $1 = key (used for the error file name), $2 = human label, $3 = TU to
+# compile, $4 = literal substring the diagnostic must contain. Prints the
+# verdict line; sets `fails` on anything but a RED for the stated reason.
+expect_tu_red() {
+    local key="$1" label="$2" tu="$3" needle="$4" errf
+    errf="$WORK/$key.err"
+    if compile_tu "$tu" "" "$STUB" 2>"$errf"; then
+        echo "selftest FAIL: $label compiled clean — the ILP32 check did not go RED"
+        fails=1
+        return
+    fi
+    if grep -qF -- "$needle" "$errf"; then
+        echo "selftest ok: $label is RED at ILP32"
+    else
+        echo "selftest FAIL: $label went red for the wrong reason:"
+        sed 's/^/      /' "$errf"
+        fails=1
+    fi
+}
 
 # Plant 1: copy the tree's eigenscript.h, re-insert the OLD assert
 #   sizeof(((Value *)0)->data) == sizeof(((Value *)0)->data.fn)
@@ -241,45 +358,72 @@ else
     fi
 fi
 
-# Plant 1b: a SYNTAX ERROR in a scratch copy of the playground entry point.
-# This is the fault round 1's gate could not see at all: web/eigs_wasm.c was
-# outside both the inventory and this self-test, so a broken entry point was
-# green twice over (Astra/Fable, 2026-09-21). It is also what keeps the
-# <emscripten.h> stub honest — if the stub were masking errors, the planted one
-# would compile too. The CLEAN copy is compiled first through the identical
-# path: without that control, a red plant could be the copy mechanism rather
-# than the fault. The copy lives in a tree whose ../src resolves, because the
-# file's own includes are "../src/...".
+# ---- the three entry-point mutants (1b, 1c, 1d) --------------------------
+# web/eigs_wasm.c was outside both the inventory and this self-test in round 1,
+# so a broken entry point was green twice over (Astra/Fable, 2026-09-21). Each
+# mutant gets a FRESH copy of the live file; the CLEAN copy is compiled first
+# through the identical path, because without that control a red plant could be
+# the copy mechanism rather than the fault. The copy lives in a tree whose
+# ../src resolves, since the file's own includes are "../src/...".
 mkdir -p "$WORK/tree/web"
 ln -sfn "$REPO/src" "$WORK/tree/src"
 SHIM_TU="web/eigs_wasm.c"
+SHIM_COPY="$WORK/tree/web/eigs_wasm.c"
 # Derived ONCE into a file, then read from it: a pipeline must not decide a
 # verdict under pipefail (#1122, tools/pipefail_verdict_check.sh).
 extract_src_tus "$REPO/web/build.sh" > "$WORK/live.tus"
 N_LIVE_TUS=$(grep -c . "$WORK/live.tus")
+entry_ok=1
 if ! [ -f "$REPO/$SHIM_TU" ]; then
-    echo "selftest FAIL: plant 1b cannot run — $SHIM_TU is not in the tree"
+    echo "selftest FAIL: the entry-point plants cannot run — $SHIM_TU is not in the tree"
     fails=1
+    entry_ok=0
 elif ! grep -qx "$SHIM_TU" "$WORK/live.tus"; then
-    echo "selftest FAIL: plant 1b cannot run — $SHIM_TU is not in the derived inventory (the gate is back to examining fewer TUs than emcc compiles)"
+    echo "selftest FAIL: the entry-point plants cannot run — $SHIM_TU is not in the derived inventory (the gate is back to examining fewer TUs than emcc compiles)"
     fails=1
+    entry_ok=0
 else
-    cp "$REPO/$SHIM_TU" "$WORK/tree/web/eigs_wasm.c"
-    if ! compile_tu "$WORK/tree/web/eigs_wasm.c" "" "$STUB" 2>"$WORK/plant1b-clean.err"; then
-        echo "selftest FAIL: plant 1b control — the UNPLANTED copy of $SHIM_TU does not compile, so a red plant would prove nothing:"
-        sed 's/^/      /' "$WORK/plant1b-clean.err"
+    cp "$REPO/$SHIM_TU" "$SHIM_COPY"
+    if ! compile_tu "$SHIM_COPY" "" "$STUB" 2>"$WORK/entry-clean.err"; then
+        echo "selftest FAIL: entry-point control — the UNPLANTED copy of $SHIM_TU does not compile, so a red plant would prove nothing:"
+        sed 's/^/      /' "$WORK/entry-clean.err"
+        fails=1
+        entry_ok=0
+    fi
+fi
+
+if [ "$entry_ok" -eq 1 ]; then
+    # 1b: a plain syntax error — the fault round 1's gate could not see at all.
+    cp "$REPO/$SHIM_TU" "$SHIM_COPY"
+    printf '%s\n' 'int eigs_ilp32_plant_1b(void) { return 1 }' >> "$SHIM_COPY"
+    expect_tu_red plant1b "plant 1b a syntax error in the playground entry point" \
+        "$SHIM_COPY" "expected ';'"
+
+    # 1c: an arm keyed on the macro the REAL target predefines. Under round 2's
+    # bare-name define this compiled clean while emcc saw the #error — the gate
+    # took the opposite branch from the lane it stands in for.
+    cp "$REPO/$SHIM_TU" "$SHIM_COPY"
+    printf '%s\n' '#ifdef __EMSCRIPTEN__' '#error EIGS_ILP32_PLANT_1C' '#endif' >> "$SHIM_COPY"
+    expect_tu_red plant1c "plant 1c an emcc-only #ifdef __EMSCRIPTEN__ arm in the playground entry point" \
+        "$SHIM_COPY" "EIGS_ILP32_PLANT_1C"
+
+    # 1d: EMSCRIPTEN_KEEPALIVE in statement position. Legal under an EMPTY stub
+    # (round 2), RED under em_macros.h's real __attribute__((used)). This is the
+    # class a no-op stub erases: syntax constraints, not just names.
+    cp "$REPO/$SHIM_TU" "$SHIM_COPY"
+    if ! grep -q '^    return EIGENSCRIPT_VERSION;' "$SHIM_COPY"; then
+        echo "selftest FAIL: plant 1d cannot be installed — the anchor line in $SHIM_TU moved"
         fails=1
     else
-        printf '%s\n' 'int eigs_ilp32_plant_1b(void) { return 1 }' >> "$WORK/tree/web/eigs_wasm.c"
-        if compile_tu "$WORK/tree/web/eigs_wasm.c" "" "$STUB" 2>"$WORK/plant1b.err"; then
-            echo "selftest FAIL: plant 1b (syntax error in $SHIM_TU) compiled clean — the playground entry point is not really being examined"
+        sed 's/^    return EIGENSCRIPT_VERSION;/    EMSCRIPTEN_KEEPALIVE return EIGENSCRIPT_VERSION;/' \
+            "$SHIM_COPY" > "$SHIM_COPY.planted"
+        if cmp -s "$SHIM_COPY" "$SHIM_COPY.planted"; then
+            echo "selftest FAIL: plant 1d sed was a no-op — the misplaced attribute was not inserted"
             fails=1
-        elif grep -q "expected ';'" "$WORK/plant1b.err"; then
-            echo "selftest ok: plant 1b a syntax error in the playground entry point is RED at ILP32"
         else
-            echo "selftest FAIL: plant 1b went red for the wrong reason:"
-            sed 's/^/      /' "$WORK/plant1b.err"
-            fails=1
+            mv "$SHIM_COPY.planted" "$SHIM_COPY"
+            expect_tu_red plant1d "plant 1d a misplaced EMSCRIPTEN_KEEPALIVE attribute in the playground entry point" \
+                "$SHIM_COPY" "cannot be applied to a statement"
         fi
     fi
 fi
@@ -299,11 +443,40 @@ else
     fi
 fi
 
+# Plant 2c: a `.c` literal appended to the compile line OUTSIDE the array. The
+# derived inventory is unchanged (still 23) and every one of them compiles, so
+# every other assertion in this file is green — this is the residual that was
+# measured as 24 arguments against 23 examined, and check_sources_only is the
+# only thing that can see it.
+ROGUE_TU="web/eigs_ilp32_rogue_2c.c"
+awk -v rogue="$ROGUE_TU" '
+    { if ($0 ~ /^[ \t]*-lm[ \t]*\\$/) print "    " rogue " \\"; print }
+' "$REPO/web/build.sh" > "$WORK/build_rogue.sh"
+if cmp -s "$REPO/web/build.sh" "$WORK/build_rogue.sh"; then
+    echo "selftest FAIL: plant 2c was a no-op — no extra TU was added to the scratch compile line"
+    fails=1
+else
+    n_rogue=$(extract_src_tus "$WORK/build_rogue.sh" | grep -c .)
+    if [ "$n_rogue" -ne "$N_LIVE_TUS" ]; then
+        echo "selftest FAIL: plant 2c changed the derived inventory ($N_LIVE_TUS -> $n_rogue); it must be invisible to it, or it is not testing check_sources_only"
+        fails=1
+    elif check_sources_only "$WORK/build_rogue.sh" 2>"$WORK/rogue.err"; then
+        echo "selftest FAIL: plant 2c (a TU on the compile line outside SOURCES) passed — the gate compiles 23 of 24"
+        fails=1
+    elif grep -qF "$ROGUE_TU" "$WORK/rogue.err"; then
+        echo "selftest ok: plant 2c a TU on the compile line outside SOURCES is FAIL by name"
+    else
+        echo "selftest FAIL: plant 2c went red for the wrong reason:"
+        sed 's/^/      /' "$WORK/rogue.err"
+        fails=1
+    fi
+fi
+
 # Plant 3: a population BELOW the floor -> examine_tus must FAIL. `> 0` alone
 # cannot see a derived list that shrank from 22 to 1; this is the plant that
 # makes the floor non-vacuous (mechanical-gates §43). Built from the live list
 # so the TU compiles cleanly and the ONLY thing wrong is the population size.
-extract_src_tus "$REPO/web/build.sh" | head -1 > "$WORK/short.tus"
+head -1 "$WORK/live.tus" > "$WORK/short.tus"
 if ! [ -s "$WORK/short.tus" ]; then
     echo "selftest FAIL: plant 3 could not build a 1-entry TU list from web/build.sh"
     fails=1
@@ -320,39 +493,75 @@ else
     fi
 fi
 
-# Plant 3b: the playground entry point REMOVED from a scratch copy of
-# web/build.sh's SOURCES. This is plant 3 aimed at the exact shrink that
-# happened for real — the population falls from 23 to 22 and the floor must
-# call it RED. Plant 3 uses a 1-entry list, which any floor > 1 catches; 3b is
-# the off-by-one that a floor of 22 would have waved through.
-sed '/^ *web\/eigs_wasm\.c *$/d' "$REPO/web/build.sh" > "$WORK/build_noshim.sh"
-if cmp -s "$REPO/web/build.sh" "$WORK/build_noshim.sh"; then
-    echo "selftest FAIL: plant 3b sed was a no-op — web/eigs_wasm.c was not removed from the scratch SOURCES"
+# Plant 3b: the playground entry point REMOVED from the inventory. This is
+# plant 3 aimed at the exact shrink that happened for real — the population
+# falls from 23 to 22 and the floor must call it RED. Plant 3 uses a 1-entry
+# list, which any floor > 1 catches; 3b is the off-by-one a floor of 22 would
+# have waved through.
+#
+# It edits the EVALUATED array, not the text of web/build.sh. Round 2 deleted a
+# line matching `^ *web/eigs_wasm\.c *$` and so was pinned to one-entry-per-line
+# formatting: reflowing the array made the deletion a no-op and turned [99i3]
+# falsely RED while the gate itself was fine. A plant must fail when the gate
+# is broken, not when the subject is reindented.
+grep -vx "$SHIM_TU" "$WORK/live.tus" > "$WORK/noshim.tus"
+n_noshim=$(grep -c . "$WORK/noshim.tus")
+if [ "$n_noshim" -ne $((N_LIVE_TUS - 1)) ]; then
+    echo "selftest FAIL: plant 3b removed $((N_LIVE_TUS - n_noshim)) TU(s), not exactly 1 (live=$N_LIVE_TUS planted=$n_noshim)"
+    fails=1
+elif examine_tus "$WORK/noshim.tus" "" "$STUB" "$TU_FLOOR" >/dev/null 2>"$WORK/noshim.err"; then
+    echo "selftest FAIL: plant 3b (the inventory minus the playground entry point, $n_noshim of $TU_FLOOR) passed — the floor cannot see the entry point leave"
+    fails=1
+elif grep -q "examined $n_noshim playground TUs, floor is $TU_FLOOR" "$WORK/noshim.err"; then
+    echo "selftest ok: plant 3b dropping the playground entry point ($n_noshim of $TU_FLOOR) is FAIL"
+else
+    echo "selftest FAIL: plant 3b went red for the wrong reason:"
+    sed 's/^/      /' "$WORK/noshim.err"
+    fails=1
+fi
+
+# Control: REFORMATTING the array must not change the inventory. The extractor
+# is the one piece of this gate that reads web/build.sh as TEXT, so it is the
+# one piece a reflow can silently empty — the round-2 version skipped the
+# `SOURCES=(` line whole, so a single-line array yielded ZERO entries and the
+# empty-inventory rule would have reported a "shrink" that never happened.
+# The scratch file collapses the whole array onto one line.
+{
+    printf 'SOURCES=('
+    while IFS= read -r tu; do
+        [ -z "$tu" ] && continue
+        printf ' %s' "$tu"
+    done < "$WORK/live.tus"
+    printf ' )\n'
+} > "$WORK/oneline.txt"
+awk 'NR==FNR { repl = $0; next }
+     /^SOURCES=\(/ { print repl; skip = 1; next }
+     skip { if ($0 ~ /^\)/) skip = 0; next }
+     { print }' "$WORK/oneline.txt" "$REPO/web/build.sh" > "$WORK/build_oneline.sh"
+if cmp -s "$REPO/web/build.sh" "$WORK/build_oneline.sh"; then
+    echo "selftest FAIL: the reformat control was a no-op — the scratch SOURCES array was not reflowed"
     fails=1
 else
-    extract_src_tus "$WORK/build_noshim.sh" > "$WORK/noshim.tus"
-    n_noshim=$(grep -c . "$WORK/noshim.tus")
-    n_live="$N_LIVE_TUS"
-    if [ "$n_noshim" -ne $((n_live - 1)) ]; then
-        echo "selftest FAIL: plant 3b removed $((n_live - n_noshim)) TU(s), not exactly 1 (live=$n_live planted=$n_noshim)"
-        fails=1
-    elif examine_tus "$WORK/noshim.tus" "" "$STUB" "$TU_FLOOR" >/dev/null 2>"$WORK/noshim.err"; then
-        echo "selftest FAIL: plant 3b (SOURCES minus the playground entry point, $n_noshim of $TU_FLOOR) passed — the floor cannot see the entry point leave"
-        fails=1
-    elif grep -q "examined $n_noshim playground TUs, floor is $TU_FLOOR" "$WORK/noshim.err"; then
-        echo "selftest ok: plant 3b dropping the playground entry point ($n_noshim of $TU_FLOOR) is FAIL"
+    extract_src_tus "$WORK/build_oneline.sh" > "$WORK/oneline.tus"
+    if cmp -s "$WORK/live.tus" "$WORK/oneline.tus"; then
+        echo "selftest ok: reformat control a one-line SOURCES array yields the identical $N_LIVE_TUS-TU inventory"
     else
-        echo "selftest FAIL: plant 3b went red for the wrong reason:"
-        sed 's/^/      /' "$WORK/noshim.err"
+        echo "selftest FAIL: reformatting SOURCES changed the derived inventory — the extractor is pinned to the current layout:"
+        diff "$WORK/live.tus" "$WORK/oneline.tus" | sed 's/^/      /'
         fails=1
     fi
 fi
 
 # Control: the live inventory must still be green, or the selftest has broken
 # the compile function. Re-derive from web/build.sh, same as production —
-# including the floor, so the control mirrors the production call exactly.
+# including the floor and the compile-line audit, so the control mirrors the
+# production call exactly.
 extract_src_tus "$REPO/web/build.sh" > "$WORK/live.tus"
-if ! examine_tus "$WORK/live.tus" "" "$STUB" "$TU_FLOOR" >/dev/null; then
+if ! check_sources_only "$REPO/web/build.sh" 2>"$WORK/live-audit.err"; then
+    echo "selftest FAIL: the live compile line names a TU outside SOURCES:"
+    sed 's/^/      /' "$WORK/live-audit.err"
+    fails=1
+elif ! examine_tus "$WORK/live.tus" "" "$STUB" "$TU_FLOOR" >/dev/null; then
     echo "selftest FAIL: live inventory went red during --selftest — the plants contaminated compile_tu"
     fails=1
 else

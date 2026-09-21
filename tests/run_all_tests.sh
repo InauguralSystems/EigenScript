@@ -7514,9 +7514,15 @@ fi  # EIGS_SKIP_WERROR_AUDIT
 # 64-bit-only sizeof(data)==sizeof(fn) assert kept that lane red from #1185.
 # The gate runs clang -m32 -fsyntax-only over EVERY entry of web/build.sh's
 # SOURCES — including web/eigs_wasm.c, the playground entry point, which round
-# 1 filtered out and so examined 22 of the 23 TUs emcc compiles — with the same
-# -D flags. SKIP (not a pass) when this toolchain cannot target 32-bit at all —
-# probed by EXECUTION, not by the compiler's name.
+# 1 filtered out and so examined 22 of the 23 TUs emcc compiles — and it also
+# audits the compile line itself, because a `.c` written directly onto the
+# invocation is outside the array and so outside the derived population. The -D
+# set is the wasm32-emscripten target's own predefines (__EMSCRIPTEN__,
+# __wasm__, __wasm32__), measured with `-E -dM`; round 2 passed a bare
+# -DEMSCRIPTEN that emcc does not define, and so took the OPPOSITE branch of
+# src/jit.c:110 from the lane it stands in for. SKIP (not a pass) when this
+# toolchain cannot target 32-bit at all — probed by EXECUTION, not by the
+# compiler's name.
 echo "[99i3] ILP32 syntax gate (the playground's wasm32 build cannot break unnoticed)"
 TOTAL=$((TOTAL + 1))
 ilp32_audit_out=$(bash "$TESTS_DIR/../tools/ilp32_syntax_check.sh" 2>&1)
@@ -7539,10 +7545,17 @@ else
     # prints nothing, so the section requires the tool's OWN examined line
     # (mechanical-gates §146: gate the OUTPUT, not the invocation) and pins
     # the self-test's case count (§142) — "some cases ran" is what a deleted
-    # plant also prints. 6 = plants 1, 1b, 2, 3, 3b plus the live-inventory
-    # control. 1b (a syntax error in web/eigs_wasm.c) and 3b (that file removed
-    # from SOURCES) are the two the round-1 gate could not see at all.
-    ILP32_SELFTEST_CASES=6
+    # plant also prints. 10 = plants 1, 1b, 1c, 1d, 2, 2c, 3, 3b plus two
+    # controls (a reformatted SOURCES array yields the identical inventory;
+    # the live inventory stays green). 1b (a syntax error in web/eigs_wasm.c)
+    # and 3b (that file out of the inventory) are the two the round-1 gate
+    # could not see at all; 1c (an `#ifdef __EMSCRIPTEN__` arm, green under
+    # round 2's `-DEMSCRIPTEN` and red under the target's real predefines) and
+    # 1d (`EMSCRIPTEN_KEEPALIVE` in statement position, which an empty stub
+    # accepts and `__attribute__((used))` rejects) are round 2's; 2c is a `.c`
+    # written straight onto the compile line, which the SOURCES-derived
+    # inventory cannot see at all.
+    ILP32_SELFTEST_CASES=10
     ilp32_ok_lines=$(printf '%s\n' "$ilp32_selftest_out" | grep -c '^selftest ok:')
     if [ "$ilp32_audit_rc" -eq 0 ] && [ "$ilp32_selftest_rc" -eq 0 ] \
        && grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out" \

@@ -573,15 +573,34 @@ All notable changes to EigenScript are documented here.
   `web/eigs_wasm.c`, the playground's entry point: filtering the array to
   `src/*.c` examined 22 of the 23 units emcc compiles, and a compile error
   planted in the entry point passed both the gate and its self-test. It is now
-  compiled against a stub `<emscripten.h>` (one no-op macro) with
-  `-DEMSCRIPTEN` and `-DEIGENSCRIPT_VERSION` exactly as the emcc line passes
-  them, and two self-test plants hold the line: a syntax error in that file,
-  and that file removed from SOURCES (23 → 22, below the floor). `-m32` is the
-  i386 ABI, not wasm32 — it catches pointer-width breaks, the `#1185` class,
-  not every layout difference. Availability is probed by EXECUTION, not by the
-  compiler's name: a toolchain with no 32-bit target (the macOS runners) SKIPs
-  by name with the compiler's own words, counted as a skip and never as a
-  pass.
+  compiled against a stub `<emscripten.h>` carrying `EMSCRIPTEN_KEEPALIVE`
+  exactly as emscripten's `em_macros.h` defines it — `__attribute__((used))`,
+  not a no-op, because an empty macro accepts `EMSCRIPTEN_KEEPALIVE return x;`
+  which the real header rejects (`'used' attribute cannot be applied to a
+  statement`). The `-D` set is the **wasm32-emscripten target's own
+  predefines**, read off `clang --target=wasm32-unknown-emscripten -E -dM`:
+  `__EMSCRIPTEN__`, `__wasm__`, `__wasm32__`, plus `-DEIGENSCRIPT_VERSION`
+  from the VERSION file as the emcc line passes it. The bare `EMSCRIPTEN` name
+  is **not** passed: `web/build.sh`'s emcc line never defined it and the
+  target does not predefine it (it is a legacy macro that STRICT mode drops).
+  That mattered: the one conditional in the population keyed on this world,
+  `src/jit.c:110 #if !defined(__wasm__)`, took the OPPOSITE branch under the
+  old flags — the gate compiled the `__builtin___clear_cache` arm emcc never
+  sees. SOURCES is not the whole compile line either, so the invocation is
+  audited for `.c` tokens outside `"${SOURCES[@]}"` and fails by name; a
+  literal appended there was 24 arguments against 23 examined. Eight self-test
+  plants and two controls hold all of it: a syntax error in the entry point,
+  an `#ifdef __EMSCRIPTEN__` arm, a misplaced `EMSCRIPTEN_KEEPALIVE`, a TU on
+  the compile line outside the array, an empty inventory, a 1-entry
+  population, the entry point dropped from the inventory (23 → 22, below the
+  floor), the old 64-bit assert — plus a REFORMATTED SOURCES array that must
+  yield the identical inventory (the round-2 plant edited the array's TEXT and
+  so went falsely red on a reflow) and the live inventory staying green.
+  `-m32` is the i386 ABI, not wasm32 — it catches pointer-width breaks, the
+  `#1185` class, not every layout difference. Availability is probed by
+  EXECUTION, not by the compiler's name: a toolchain with no 32-bit target
+  (the macOS runners) SKIPs by name with the compiler's own words, counted as
+  a skip and never as a pass.
 
 - **The db-extension error-path example in `docs/BUILTINS.md` no longer
   pins the core build's "undefined variable" output.** Section [89] on

@@ -58,8 +58,14 @@ width is `sizeof(data.strv) <= sizeof(data.fn)`. Suite `[99i3]` compiles every
 translation unit `web/build.sh` hands to emcc — the runtime `src/*.c` units and
 `web/eigs_wasm.c`, the playground entry point — at `-m32`, so that lane cannot
 go red unnoticed. The gate prints the population it examined rather than
-asserting a typed-in number, and floors it so a shrinking SOURCES array is a
-deliberate re-pin.
+asserting a typed-in number, floors it so a shrinking SOURCES array is a
+deliberate re-pin, and audits the emcc invocation itself for `.c` arguments
+written outside the array. It compiles with the wasm32-emscripten target's own
+predefines — `__EMSCRIPTEN__`, `__wasm__`, `__wasm32__`, measured with
+`clang --target=wasm32-unknown-emscripten -E -dM`, and **not** the bare
+`EMSCRIPTEN` the emcc line never passed: under that older flag the gate
+compiled the `#if !defined(__wasm__)` arm at `src/jit.c:110` that emcc never
+sees, i.e. it stood in for the lane while taking the other branch.
 
 `tests/test_string_scaling.sh` is the missing instrument, run by the suite as
 section **[99zc]**:
