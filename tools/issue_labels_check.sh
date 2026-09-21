@@ -79,7 +79,7 @@ REPO="${ISSUE_LABELS_REPO:-InauguralSystems/EigenScript}"
 # token (`gh-api:` / `fixture:`) and the contract admits only the live one, so a
 # run driven by the selftest seam is red at the caller by name.
 POPULATION_RE='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: gh-api:[^ )]+\)$'
-SELFTEST_CASES=6
+SELFTEST_CASES=7
 
 # Nothing on this gate's stdin, for the reason docs_claims_check.sh records:
 # a counting pipeline that inherits an open stdin hangs, and one that inherits
@@ -104,6 +104,16 @@ except Exception as exc:
     sys.exit(2)
 if not isinstance(data, list):
     sys.stderr.write("issue-labels: expected a JSON array of issues\n")
+    sys.exit(2)
+# ONE LEVEL OF PAGES, FLATTENED HERE. `gh api --paginate` hands us one merged
+# array; `gh api --paginate --slurp` (and any fixture shaped like it) hands us
+# an array OF PAGES. Both are accepted; anything else is named rather than
+# silently walked, because a list of strings would examine zero issues and
+# "examined 0" is the vacuity this gate refuses anyway.
+if data and all(isinstance(x, list) for x in data):
+    data = [it for page in data for it in page]
+if any(not isinstance(it, dict) for it in data):
+    sys.stderr.write("issue-labels: the list is neither an array of issues nor an array of pages of issues\n")
     sys.exit(2)
 
 KIND_EXACT = {"bug", "enhancement"}
@@ -170,8 +180,24 @@ run_live() {
             echo "issue-labels: SKIPPED BY NAME: gh is authenticated but the issues API call failed (offline, rate-limited, or the repository is unreadable)"
             return 0
         fi
-        # --paginate concatenates one JSON array per page; splice them.
-        json=$(printf '%s' "$json" | sed 's/^\]\[/,/' | tr -d '\n')
+        # ONE ARRAY, NOT A SPLICE. Bought 2026-09-21 (third critic,
+        # `/code-review 1226 medium`, finding 8): this line used to be
+        # `sed 's/^\]\[/,/' | tr -d '\n'`, and it was dead twice over.
+        # `gh api --paginate` MERGES REST pages into a single JSON array —
+        # measured on this repository with `per_page=3` over 4 pages: zero
+        # `][` seams — and on a `gh` that DID concatenate raw bodies the seam
+        # would sit mid-line, where a `^`-anchored sed cannot reach it. A
+        # dead repair that reads as a live one is worse than none, because it
+        # retires the question.
+        #
+        # `--slurp` states the shape explicitly and is deliberately NOT used:
+        # measured 2026-09-21, `gh` 2.45.0 (Ubuntu's package, the dev box)
+        # answers `unknown flag: --slurp`, so the API call would fail and this
+        # gate would take its named SKIP — which at a live caller is RED — on
+        # every lane whose `gh` predates the flag. The classifier accepts
+        # EITHER shape instead (one array of issues, or an array of pages) and
+        # refuses anything else BY NAME, so a `gh` that ever does emit pages
+        # is parsed rather than spliced.
         src="gh-api:repos/$REPO/issues"
     fi
 
@@ -324,6 +350,21 @@ EOF
 EOF
     st_case "plant: the list holds only pull requests, so nothing is examined" red \
             "$WORK/prs_only.json" "examined 0 open issue"
+
+    # THE PAGED SHAPE. An array OF PAGES is what `gh api --paginate --slurp`
+    # produces, and until round 7 the only thing that ever touched a page
+    # boundary was a `^]\[`-anchored sed that could not fire (third critic,
+    # `/code-review 1226 medium`, finding 8). Two pages, one unlabelled issue
+    # on the SECOND one: a walk that reads only the first page, or that treats
+    # the pages as issues, examines the wrong population and cannot see it.
+    cat > "$WORK/two_pages.json" <<'EOF'
+[[{"number": 1, "state": "open", "title": "page one, labelled",
+   "labels": [{"name": "area:runtime-vm"}, {"name": "kind:silent-wrong"}]}],
+ [{"number": 42, "state": "open", "title": "page two, filed and forgotten",
+   "labels": []}]]
+EOF
+    st_case "plant: an unlabelled issue on the SECOND page of a paged listing" red \
+            "$WORK/two_pages.json" "#42"
 
     echo ""
     # The `skipped` field is always present so every caller parses ONE line

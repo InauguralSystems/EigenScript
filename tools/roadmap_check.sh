@@ -124,6 +124,10 @@ KNOWN_REPOS="${ROADMAP_CHECK_REPOS:-EigenScript ouroboros Tidepool EigenMiniSat 
 # then be refusing a citation that is now perfectly good evidence.
 PRIVATE_REPOS="${ROADMAP_CHECK_PRIVATE_REPOS:-EigenOS eigen-site DeslanStudio iLambdaAi}"
 
+# A markdown table's header SEPARATOR row, anchored. One definition, read by
+# the separator count, the section-placement check and the row walk.
+RC_SEP_RE='^[[:space:]]*\|[[:space:]:-]+\|[[:space:]:|-]*$'
+
 # The OWNERS a reference may name. An explicit owner is part of the identity of
 # a reference (`cli/Tidepool#59` is not `InauguralSystems/Tidepool#59`), so one
 # outside this set is red by name rather than replaced by the default — which
@@ -172,7 +176,7 @@ KNOWN_OWNERS="${ROADMAP_CHECK_OWNERS:-$OWNER}"
 # lane with no credentials legitimately skips; it is the CALLER that requires
 # `repos=verified:[1-9][0-9]*` once it has established GitHub is reachable.
 POPULATION_RE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+ repos=(verified:[0-9]+|skipped:[^ ]+)\)$'
-SELFTEST_CASES=21
+SELFTEST_CASES=25
 
 # What arms (b) and (c) actually used this run. One of
 #   gh-api:<endpoint>   fixture:<path>   skipped:<reason>
@@ -283,15 +287,24 @@ check_structure() {
     fi
 
     # Exactly one table: count header-separator lines (`| --- | --- |`).
+    #
+    # ONE HOME FOR "WHAT IS A SEPARATOR ROW". Bought 2026-09-21 (third critic,
+    # `/code-review 1226 medium`, finding 6): the row walk below skipped any
+    # row merely CONTAINING `---` as a substring, while this count used the
+    # anchored regex — so a data row whose DONE clause said `never --- see the
+    # vetoes` was invisible to the walk (never counted in `examined=`, never
+    # checked for cells, status or milestone number) and perfectly visible to
+    # this count. Two spellings of one rule is how they disagree
+    # (mechanical-gates §26); there is now one, and both readers use it.
     local seps
-    seps=$(grep -cE '^[[:space:]]*\|[[:space:]:-]+\|[[:space:]:|-]*$' "$RC_FILE")
+    seps=$(grep -cE "$RC_SEP_RE" "$RC_FILE")
     if [ "$seps" -ne 1 ]; then
         red "(a) $RC_FILE has $seps markdown table(s); exactly one is allowed, and it is the milestone table"
     fi
 
     # ...and it must live under `## Milestones`.
     local sep_line ms_line next_h
-    sep_line=$(grep -nE '^[[:space:]]*\|[[:space:]:-]+\|[[:space:]:|-]*$' "$RC_FILE" | head -1 | cut -d: -f1)
+    sep_line=$(grep -nE "$RC_SEP_RE" "$RC_FILE" | head -1 | cut -d: -f1)
     ms_line=$(grep -n '^## Milestones[[:space:]]*$' "$RC_FILE" | head -1 | cut -d: -f1)
     if [ -z "$ms_line" ]; then
         red "(a) $RC_FILE has no '## Milestones' heading — the table has no declared home"
@@ -312,10 +325,11 @@ check_structure() {
             '|'*) ;;
             *) continue ;;
         esac
-        # skip the header row and the separator
-        case "$line" in
-            *'---'*) continue ;;
-        esac
+        # skip the separator row — by the SAME regex the count above uses,
+        # never by "contains ---" (see RC_SEP_RE).
+        if [[ $line =~ $RC_SEP_RE ]]; then
+            continue
+        fi
         # The header row. Matched with bash's own matcher rather than
         # `printf | grep -q`: an early-exiting reader at the end of a pipe is
         # the shape tools/pipefail_verdict_check.sh bans, and under bash 3.2 it
@@ -592,14 +606,19 @@ org_listing() {
         grep -v '^UNLISTABLE$' "$fx"
         return 0
     fi
+    # THE TOKEN CARRIES ITS TYPE. `(.private|tostring)` maps the JSON STRING
+    # "false" and the boolean false onto the same word, and a missing or null
+    # field onto "null" — so a listing that carries no visibility at all
+    # reads exactly like one that says "public". A non-boolean is tagged here
+    # and refused below (round-6 blind critics, Astra and Fable, converging).
     gh api "orgs/$OWNER/repos?per_page=100" --paginate \
-           --jq '.[] | .name + " " + (.private|tostring)' 2>/dev/null
+           --jq '.[] | .name + " " + (if (.private|type) == "boolean" then (.private|tostring) else "non-boolean:" + (.private|type) end)' 2>/dev/null
 }
 
 verify_known_repos() {
     local listing rc entry name priv
-    local org_public=" " org_private=" "
-    local listed=0 pub=0 prv=0 pub_known=0
+    local org_public=" " org_private=" " org_unknown=" "
+    local listed=0 pub=0 prv=0 pub_known=0 unknown=0 priv_rows=0
     listing=$(org_listing)
     rc=$?
     if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
@@ -614,11 +633,26 @@ verify_known_repos() {
     while read -r name priv; do
         [ -n "${name:-}" ] || continue
         listed=$((listed + 1))
-        if [ "${priv:-}" = "true" ]; then
-            org_private="$org_private$name "
-        else
-            org_public="$org_public$name "
-        fi
+        # THE CLASSIFIER FAILS CLOSED. Bought 2026-09-21 (round-6 blind
+        # critics, Astra check 3 and Fable item 3, converging): this was
+        # `[ "$priv" = "true" ] && private || public`, so EVERY value other
+        # than the literal `true` counted as PUBLIC — a listing whose rows
+        # carry no `.private` field at all (a projection, a proxy, a future
+        # API change, a `jq` that answered `null`) produced
+        # `repos=verified:13` with ZERO explicit `false` values, and both
+        # callers accepted it. "Public" is now a POSITIVE fact the listing has
+        # to state; anything else is unknown visibility and is refused by
+        # name. A gate whose classifier fails open certifies whatever it
+        # cannot read.
+        case "${priv:-}" in
+            false) org_public="$org_public$name " ;;
+            true)  org_private="$org_private$name "; priv_rows=$((priv_rows + 1)) ;;
+            *)     org_unknown="$org_unknown$name "
+                   unknown=$((unknown + 1))
+                   if [ "$unknown" -le 5 ]; then
+                       echo "      (c) the $OWNER listing gives $name a .private of '${priv:-<empty>}', which is neither the boolean false nor the boolean true"
+                   fi ;;
+        esac
     done <<< "$listing"
 
     for entry in $KNOWN_REPOS; do
@@ -642,8 +676,26 @@ verify_known_repos() {
                 red "(c) KNOWN_REPOS names $OWNER/$entry and the organisation listing says it is now private (move it to PRIVATE_REPOS) — the repository EXISTS; a private one is simply not evidence in a public roadmap"
                 continue ;;
         esac
+        # UNKNOWN VISIBILITY IS NOT PUBLIC.
+        case "$org_unknown" in
+            *" $entry "*)
+                red "(c) the organisation listing carries no visibility for $OWNER/$entry; refusing to certify it public — the row's .private is neither the boolean false nor the boolean true, and a citation this gate cannot prove is readable is not evidence in a public roadmap"
+                continue ;;
+        esac
+        # "ABSENT" MEANS ABSENT-OR-PRIVATE WHEN THE VIEW IS PUBLIC-ONLY.
+        # Bought 2026-09-21 (round-6 blind critics, ledger 4): a repo-scoped
+        # `${{ github.token }}` sees only the organisation's PUBLIC half, so
+        # on that lane a listing that names no private repository at all
+        # cannot tell "deleted" from "turned private" — and sending a
+        # maintainer to look for a deleted repository is the same false
+        # accusation in the other direction. Still RED either way; the
+        # DIAGNOSIS is what changes.
+        if [ "$priv_rows" -eq 0 ]; then
+            red "(c) $OWNER/$entry is absent from a public-only listing: deleted, renamed, or now private — check with a token that can see private repositories. The $OWNER listing succeeded with $listed repositories and NOT ONE of them is private, so this token sees only the public half"
+            continue
+        fi
         REPO_STATE_MISSING="$REPO_STATE_MISSING$OWNER/$entry "
-        red "(c) repository $OWNER/$entry does not exist (KNOWN_REPOS is stale) — the $OWNER listing succeeded with $listed repositories and does not contain it, so this is a fact about the repository and not about the token. A membership list nothing verifies certifies whatever is typed into it"
+        red "(c) repository $OWNER/$entry does not exist (KNOWN_REPOS is stale) — the $OWNER listing succeeded with $listed repositories (of which $priv_rows private, so this is not a public-only view) and does not contain it, so this is a fact about the repository and not about the token. A membership list nothing verifies certifies whatever is typed into it"
     done
 
     for entry in $PRIVATE_REPOS; do
@@ -654,14 +706,32 @@ verify_known_repos() {
                 red "(c) PRIVATE_REPOS names $OWNER/$entry and the organisation listing says it is PUBLIC — move it to KNOWN_REPOS; this gate is refusing a citation that is now perfectly good evidence"
                 continue ;;
         esac
+        # Same fail-closed rule on this side: an unknown row is not evidence
+        # that the entry is private either, and "not citable" must not be
+        # reached by accident.
+        case "$org_unknown" in
+            *" $entry "*)
+                red "(c) the organisation listing carries no visibility for $OWNER/$entry; refusing to certify it private — the row's .private is neither the boolean false nor the boolean true, so PRIVATE_REPOS is unverified for this entry"
+                continue ;;
+        esac
         # Absent is indistinguishable from private under a repo-scoped token,
         # and both mean the same thing here: not citable in a public document.
         REPO_STATE_PRIVATE="$REPO_STATE_PRIVATE$OWNER/$entry "
         prv=$((prv + 1))
     done
+    # NOTHING IS CERTIFIED FROM A LISTING THIS GATE COULD NOT READ. The
+    # `repos=` token on the OK line is the only trace the verification leaves,
+    # and the live pin at both callers requires `verified:N` — so an
+    # unreadable visibility column now produces a token the callers refuse,
+    # rather than a byte-identical one.
+    if [ "$unknown" -ne 0 ]; then
+        REPOS_SRC="skipped:visibility-unknown:$unknown"
+        echo "      (c) KNOWN_REPOS NOT verified: $unknown of $listed row(s) in the $OWNER listing carry a non-boolean .private, so this listing cannot say what is public:$org_unknown"
+        return 0
+    fi
     REPOS_VERIFIED=1
     REPOS_SRC="verified:$pub_known"
-    echo "      (c) KNOWN_REPOS verified against the $OWNER listing ($listed repositories): $pub public citable, $prv private and not citable in a public document"
+    echo "      (c) KNOWN_REPOS verified against the $OWNER listing ($listed repositories, $priv_rows private): $pub public citable, $prv private and not citable in a public document"
 }
 
 check_references() {
@@ -876,6 +946,14 @@ print("TOTAL %d" % len(seen))
     # refuses. Never a silent pass.
     local readable_ok=" " readable_bad=" "
     repo_readable() { # <owner>/<repo>
+        # The organisation listing already answered this for every repository
+        # it names as PUBLIC, and it answered with one call for all of them.
+        # Re-probing each one costs a round trip per repository to re-derive a
+        # fact this run has already established (third critic,
+        # `/code-review 1226 medium`, finding 10).
+        if [ "$REPOS_VERIFIED" -eq 1 ]; then
+            case "$REPO_STATE_PUBLIC" in *" $1 "*) return 0 ;; esac
+        fi
         case "$readable_ok" in *" $1 "*) return 0 ;; esac
         case "$readable_bad" in *" $1 "*) return 1 ;; esac
         if gh api "repos/$1" --jq .full_name >/dev/null 2>&1; then
@@ -1071,7 +1149,7 @@ The gap this file used to call open is closed — EigenScript PR #375.
 | --- | --- | --- | --- | --- |
 | 2 | M1 — A thing | active | https://example.invalid/milestone/2 | the thing is done and EigenScript PR #375 is merged |
 | 3 | M2 — Another thing | declared-not-started | https://example.invalid/milestone/3 | the other thing is done. And the second sentence is half the clause |
-| — | A vetoed thing | retired | #419 | never |
+| — | A vetoed thing | retired | #419 | never --- see the vetoes |
 
 ## Completed
 
@@ -1108,8 +1186,30 @@ EOF
     #   gone.txt        Tidepool is not in the org at all  -> does not exist
     #   private.txt     Tidepool is in the org, private    -> not citable
     #   unlistable.txt  the org cannot be listed at all    -> SKIP BY NAME
+    # A PRIVATE ROW IS WHAT MAKES "does not exist" SAYABLE. Without one the
+    # listing is a public-only view and absence means absent-or-private, which
+    # is plant 22's case, not this one.
     cat > "$work/org-gone.txt" <<'EOF'
 EigenScript false
+SecretThing true
+EOF
+    # The same absence in a listing with NO private row at all: a public-only
+    # view, where the honest diagnosis is different (plant 22).
+    cat > "$work/org-publiconly.txt" <<'EOF'
+EigenScript false
+EOF
+    # The visibility column this gate cannot read. `org-null.txt` is the shape
+    # a `jq` without a type guard emits for a MISSING or null `.private`
+    # (round-6 blind critic, Astra, verbatim fixture); `org-strfalse.txt` is
+    # the JSON STRING "false", which `tostring` would have collapsed onto the
+    # boolean.
+    cat > "$work/org-null.txt" <<'EOF'
+EigenScript null
+Tidepool null
+EOF
+    cat > "$work/org-strfalse.txt" <<'EOF'
+EigenScript false
+Tidepool non-boolean:string
 EOF
     cat > "$work/org-private.txt" <<'EOF'
 EigenScript false
@@ -1221,7 +1321,7 @@ EOF
     # reference. This is M9's own row: "Tidepool#43 and #59" silently resolved
     # #59 against EigenScript (a real, closed PR) and was green for a reference
     # the row does not mean (round-3 blind critic, Fable).
-    sed 's%| — | A vetoed thing | retired | #419 | never |%| — | A vetoed thing | retired | see Tidepool#43 and #59 | never |%' \
+    sed 's%| — | A vetoed thing | retired | #419 | never --- see the vetoes |%| — | A vetoed thing | retired | see Tidepool#43 and #59 | never --- see the vetoes |%' \
         "$work/good.md" > "$work/ambiguous.md"
     st_case "plant: a bare #N beside a qualified Repo#M in one cell" "c" red \
             "$work/ambiguous.md" "$work/ms.json"
@@ -1304,6 +1404,46 @@ EOF
     printf '\nThe rest of the work is tracked in SecretThing#7.\n' >> "$work/privateref.md"
     st_case "plant: the roadmap cites an issue in a private repository" "c" red \
             "$work/privateref.md" "$work/ms.json"
+
+    # PLANT 20 (arm c) — THE CLASSIFIER MUST FAIL CLOSED. Every row's
+    # `.private` is `null` (a missing field, a projection, a proxy). Until
+    # round 7 the classifier was `= "true" ? private : public`, so this
+    # listing certified all thirteen KNOWN_REPOS entries as PUBLIC and printed
+    # `repos=verified:13` with not one explicit `false` in it — accepted by
+    # both callers (round-6 blind critics, Astra check 3 / Fable item 3).
+    export ROADMAP_CHECK_ORG_FIXTURE="$work/org-null.txt"
+    st_case "plant: the organisation listing carries NO visibility at all" "c" red \
+            "$work/good.md" "$work/ms.json" "a .private of 'null'"
+
+    # PLANT 21 (arm c): the JSON STRING "false". `(.private|tostring)` maps it
+    # onto the boolean, so a listing shaped by anything but GitHub itself
+    # could say "public" in a type the API never uses. The token now carries
+    # its type and a non-boolean is refused by name.
+    export ROADMAP_CHECK_ORG_FIXTURE="$work/org-strfalse.txt"
+    st_case "plant: a .private that is a STRING, not a boolean" "c" red \
+            "$work/good.md" "$work/ms.json" "a .private of 'non-boolean:string'"
+
+    # PLANT 22 (arm c) — ABSENT FROM A PUBLIC-ONLY VIEW. Same missing
+    # repository as plant 16, but the listing names NO private repository, so
+    # this token sees only the public half and cannot tell "deleted" from
+    # "turned private". Red either way; the diagnosis is the finding
+    # (round-6 blind critics, ledger 4).
+    export ROADMAP_CHECK_ORG_FIXTURE="$work/org-publiconly.txt"
+    st_case "plant: a KNOWN_REPOS entry absent from a PUBLIC-ONLY listing" "c" red \
+            "$work/good.md" "$work/ms.json" "absent from a public-only listing"
+    export ROADMAP_CHECK_ORG_FIXTURE="$work/org.txt"
+
+    # PLANT 23 (arm a) — A ROW IS NOT A SEPARATOR BECAUSE IT CONTAINS `---`.
+    # The control table's retired row carries `never --- see the vetoes` in
+    # its DONE clause. Until round 7 the walk skipped any row CONTAINING
+    # `---`, so that row was never counted and never checked: this plant —
+    # the same row with a status no `is_known_status` accepts — was GREEN
+    # (third critic, `/code-review 1226 medium`, finding 6). The green control
+    # is every other case in this selftest: they all walk that row, and the
+    # structure line counts it (`examined=3`, not 2).
+    sed 's/| retired | #419 |/| bogus-status | #419 |/' "$work/good.md" > "$work/dashrow.md"
+    st_case "plant: a data row whose cell contains --- is walked, not skipped" "a" red \
+            "$work/dashrow.md" "$work/ms.json" "unknown status 'bogus-status'"
 
     echo ""
     echo "SELFTEST: $ST_RUN case(s) run, $((ST_RUN - ST_FAIL - ST_SKIP)) passed, $ST_FAIL failed, $ST_SKIP skipped"

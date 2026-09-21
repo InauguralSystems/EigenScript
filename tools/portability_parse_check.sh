@@ -106,8 +106,18 @@ RUN_TARGETS_DECLARED=5
 # passed unchecked, and the gate then printed a perfectly truthful
 # `oracle=… version 5.x` receipt for an audit that models nothing. The name is
 # a hint; `BASH_VERSINFO[0]` is the fact, and it costs one exec to ask.
+#
+# THE IDENTITY THE CALLER READS IS THE FACT, NOT THE BANNER. Bought 2026-09-21
+# (round-6 blind critic, Fable, item 2): `[99zb]` parsed the interpreter's
+# major version out of `--version`'s GNU BANNER, so a bash whose banner does
+# not begin "GNU bash, version" — a vendor build, a wrapper, a rebuild with a
+# changed `RELEASE` string — produced no number at all and the caller failed
+# a perfectly good bash 3.2 by name. The gate now PRINTS the selected
+# candidate's own `BASH_VERSINFO[0]` on its own line and the caller parses
+# THAT; the banner stays display only.
 PORTABILITY_OLD_MAJOR_MAX=3
 OLD_BASH=""
+OLD_BASH_MAJOR=""
 PORT_CANDIDATES_TRIED=""
 PORT_CANDIDATES_REJECTED=""
 for cand in "${PORTABILITY_BASH:-}" "$HOME/.local/bin/bash32" /usr/local/bin/bash32 /bin/bash /usr/bin/bash; do
@@ -126,7 +136,7 @@ for cand in "${PORTABILITY_BASH:-}" "$HOME/.local/bin/bash32" /usr/local/bin/bas
         PORT_CANDIDATES_REJECTED="$PORT_CANDIDATES_REJECTED $cand(major=$cand_major)"
     fi
     [ "$cand_major" -le "$PORTABILITY_OLD_MAJOR_MAX" ] || continue
-    OLD_BASH="$cand"; break
+    OLD_BASH="$cand"; OLD_BASH_MAJOR="$cand_major"; break
 done
 
 files=$(git -c safe.directory='*' ls-files '*.sh' 2>/dev/null)
@@ -175,6 +185,10 @@ if [ "$checked" -ne "$n" ]; then
 fi
 
 echo "portability-parse: oracle=$OLD_BASH ($ver)"
+# The line the CALLER reads. `BASH_VERSINFO[0]` as the selected candidate
+# itself reported it, on a line of its own, in a fixed shape — so the caller's
+# own `<= 3` literal has a number to apply and never has to parse prose.
+echo "portability-parse: oracle-major=$OLD_BASH_MAJOR"
 if [ "$bad" -eq 0 ]; then
     echo "portability-parse: OK: files=$n checked=$checked failures=0"
 else

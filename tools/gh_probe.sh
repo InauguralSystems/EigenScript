@@ -40,19 +40,42 @@
 #   no-gh               `gh` is not on PATH
 #   gh-unauthenticated  `gh` is there and has no working credentials
 #   authenticated       `gh auth status` AND one real API call both succeeded
+#
+# MEMOISED PER PROCESS, AND ONLY PER PROCESS. Bought 2026-09-21 (third critic,
+# `/code-review 1226 medium`, finding 10): the probe costs TWO round trips
+# (`gh auth status` plus one API call) and a live suite run made it four
+# times — the suite caller once and the gates once each. The answer cannot
+# change inside one gate's run, so it is computed once and remembered in a
+# shell variable.
+#
+# The memo is deliberately NOT exported. A child process that inherited
+# `authenticated` would be holding a receipt it never earned — the same forged
+# receipt the caller/gate split exists to refuse — and a `$(gh_probe_state)`
+# caller runs in a SUBSHELL, so it re-probes and its memo dies with it. That
+# is the correct direction to be wrong in.
+GH_PROBE_STATE_MEMO=""
 gh_probe_state() {
+    if [ -n "$GH_PROBE_STATE_MEMO" ]; then
+        printf '%s' "$GH_PROBE_STATE_MEMO"
+        [ "$GH_PROBE_STATE_MEMO" = "authenticated" ]
+        return
+    fi
     if ! command -v gh >/dev/null 2>&1; then
+        GH_PROBE_STATE_MEMO="no-gh"
         printf 'no-gh'
         return 1
     fi
     if ! gh auth status >/dev/null 2>&1; then
+        GH_PROBE_STATE_MEMO="gh-unauthenticated"
         printf 'gh-unauthenticated'
         return 1
     fi
     if ! gh api rate_limit >/dev/null 2>&1; then
+        GH_PROBE_STATE_MEMO="gh-unauthenticated"
         printf 'gh-unauthenticated'
         return 1
     fi
+    GH_PROBE_STATE_MEMO="authenticated"
     printf 'authenticated'
     return 0
 }

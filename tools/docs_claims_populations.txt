@@ -45,3 +45,13 @@ PATHS|ROADMAP.md|20
 FLAGS|ROADMAP.md|9
 TARGETS|ROADMAP.md|2
 NAMES|ROADMAP.md|6
+#
+# docs/CI.md, enrolled 2026-09-21 (round 7 of #1207). Four classes, not five:
+# see DOC_FILES_FLAGS_EXEMPT in tools/docs_claims_check.sh for the FLAGS
+# exemption and its reason. There is deliberately NO `FLAGS|docs/CI.md` row —
+# the class never visits it, and the declaration audit checks both directions,
+# so a row here for a class that does not walk the file would be red.
+NUMBERS|docs/CI.md|4
+PATHS|docs/CI.md|50
+TARGETS|docs/CI.md|2
+NAMES|docs/CI.md|0

@@ -124,7 +124,7 @@ jobs:
           # before `(source:`.
           # ---------------------------------------------------------------
           POP_RE_PINNED='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: gh-api:[^ )]+\)$'
-          SELFTEST_CASES_PINNED=6
+          SELFTEST_CASES_PINNED=7
 
           # Witnesses: incremented only where the pinned literal actually
           # matched, so a gutted reporting branch still ends this step red at
@@ -235,7 +235,7 @@ jobs:
           set -u
           ROADMAP_POP_RE_LIVE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=gh-api:[^ ]+ refs=gh-api:[^ ]+ resolved=[1-9][0-9]* skipped=0 repos=verified:[1-9][0-9]*\)$'
           ROADMAP_POP_RE_CONTRACT='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+ repos=(verified:[0-9]+|skipped:[^ ]+)\)$'
-          ROADMAP_SELFTEST_CASES_PINNED=21
+          ROADMAP_SELFTEST_CASES_PINNED=25
 
           CONTRACT_SEEN=0
           ST_SEEN=0
@@ -262,7 +262,12 @@ jobs:
           if gh_probe_token_declared && [ "$state" != "authenticated" ]; then
             echo "issue-triage: this lane DECLARES GH_TOKEN/GITHUB_TOKEN (set, possibly EMPTY) and the shared probe still reports '$state' — a lane that declares a credential it cannot use has measured nothing, and this step exists to make the API call"
           elif [ "$state" != "authenticated" ]; then
-            echo "issue-triage: this lane exports GH_TOKEN and the shared probe still reports '$state' — the roadmap gate's live arms cannot run here, which is the whole reason this step exists"
+            # BOTH VARIABLES ARE UNSET on this arm — `gh_probe_token_declared`
+            # just said so. Round 6 printed "this lane exports GH_TOKEN" here
+            # anyway, which sends a reader to look at a token that is not
+            # there (round-6 blind critics, ledger 6). The failure is the
+            # same; the diagnosis is what has to be true.
+            echo "issue-triage: this lane DECLARES NO TOKEN (GH_TOKEN and GITHUB_TOKEN are both UNSET) and the shared probe reports '$state' — the roadmap gate's live arms cannot run here, which is the whole reason this step exists; the step's env: block is what should be exporting one"
           else
             PROBE_SEEN=1
           fi

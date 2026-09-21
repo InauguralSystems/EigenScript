@@ -51,3 +51,14 @@ ROADMAP.md|- Observer semantics, 121 builtins, 25 stdlib modules|a historical re
 # and the line goes red again, which is the whole point.
 BUILTINS.md|drain. UDP is not yet exposed (#414 tracks it).|a NEGATIVE family claim: this sentence states that UDP is absent, and absent is what `eigenscript --api` says
 ROADMAP.md|  shipped: #414's title says TCP/UDP, and UDP is not exposed — see|a NEGATIVE family claim: the sentence corrected by #1227, which names UDP only to say the TCP half shipped and UDP did not
+#
+# docs/CI.md, enrolled 2026-09-21 (round 7 of #1207/#1155, third critic
+# `/code-review 1226 medium` finding 7). Everything below is either a
+# MEASUREMENT OF A PAST CI RUN — true of that run, named with its run id, and
+# not a claim about this tree — or a sentence that names a builtin family in
+# order to say it is ABSENT. Each waiver is the EXACT line, so editing the
+# line drops the waiver and the claim goes red again.
+CI.md|PR #1158 (head `8cc1f2d`, 26 checks, all green):|a measurement of ONE named past PR run, identified by its head commit; not a claim about this tree
+CI.md|25ade7e): **21.1 min wall, 27 checks green** — down from 35, but over the bar.|a measurement of ONE named past CI run (run 34962403732), identified by its head commit; not a claim about this tree
+CI.md|`eigenscript --api` does not carry, bought by ROADMAP.md's "Raw TCP/UDP|a NEGATIVE family claim: this sentence names UDP only to say `eigenscript --api` does NOT carry it, which is the shape the BUILTIN FAMILIES class exists to allow
+CI.md|`docs/TRACE.md` ever says the tape records UDP sockets, no class here will|a NEGATIVE family claim inside a hypothetical: it names UDP to describe a claim this gate would NOT see, and absent is what `eigenscript --api` says

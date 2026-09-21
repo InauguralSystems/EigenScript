@@ -106,8 +106,48 @@ printf 'docs-claims env: bash %s, %s, %s, EIGS=%s, %s=%s\n' \
        "build/release/eigenscript" \
        "$([ -f build/release/eigenscript ] && echo present || echo ABSENT)"
 
-DOC_FILES_DEFAULT="README.md docs/llms.txt CLAUDE.md docs/ARCHITECTURE.md docs/BUILTINS.md docs/CONCURRENCY.md ROADMAP.md"
+# ROUND 7 — docs/CI.md IS A FRONT DOOR TOO. It is the page a contributor is
+# sent to in order to learn what runs on their PR, and it was outside this
+# gate entirely: four hand-typed numbers in it were already stale in the very
+# diff that added them (third critic, `/code-review 1226 medium`, finding 7).
+DOC_FILES_DEFAULT="README.md docs/llms.txt CLAUDE.md docs/ARCHITECTURE.md docs/BUILTINS.md docs/CONCURRENCY.md ROADMAP.md docs/CI.md"
 DOC_FILES="${DOCS_CLAIMS_DOCS:-$DOC_FILES_DEFAULT}"
+
+# THE ONE CLASS docs/CI.md IS EXEMPT FROM, AND WHY. The FLAGS class asks
+# `eigenscript --help` about every `--flag` token it finds. That is the right
+# question for a document ABOUT EIGENSCRIPT; docs/CI.md is a document about
+# this repository's SHELL GATES, and 45 of its 50 flag tokens belong to other
+# programs (`--selftest`, `--contract`, `--print-section-plan`, `--paginate`,
+# `--without-bash-malloc`, ...). Enrolling it there would mean forty-five
+# waivers whose reason is the same sentence, and a gate whose failures are
+# mostly noise stops being read (mechanical-gates §13). So the exemption is
+# NAMED here, it is one class wide, and the audit below asserts every entry is
+# real, is enrolled for the other four classes, and actually fired — an
+# exemption nothing uses is a waiver covering something nobody agreed to
+# (§3). The other four classes DO walk it: PATHS, NUMBERS, MAKE TARGETS and
+# NAMES all ask questions that are true of any document in this tree.
+# The exemption is a property of the DOCUMENT, not of the run: it fires
+# whenever the named document is in the set being walked, including the
+# selftest's `DOCS_CLAIMS_DOCS="$DOC_FILES_DEFAULT"` control. Keying it on
+# "DOCS_CLAIMS_DOCS is unset" took that control red on forty-five flags in
+# this round's own first selftest — a gate whose own control cannot pass is
+# not a gate yet.
+DOC_FILES_FLAGS_EXEMPT_DEFAULT="docs/CI.md"
+DOC_FILES_FLAGS_EXEMPT=""
+for __x in $DOC_FILES_FLAGS_EXEMPT_DEFAULT; do
+    case " $DOC_FILES " in
+        *" $__x "*) DOC_FILES_FLAGS_EXEMPT="$DOC_FILES_FLAGS_EXEMPT $__x" ;;
+    esac
+done
+DOC_FILES_FLAGS=""
+for __d in $DOC_FILES; do
+    __skip=0
+    for __x in $DOC_FILES_FLAGS_EXEMPT; do
+        [ "$__d" = "$__x" ] && __skip=1
+    done
+    [ "$__skip" -eq 1 ] || DOC_FILES_FLAGS="$DOC_FILES_FLAGS $__d"
+done
+unset __d __x __skip
 # Whether this run covers the real doc set. The "a declared row was never
 # visited" half of the declaration audit only means something then; the
 # selftest drives copies of ONE document at a time and would otherwise drown
@@ -278,6 +318,17 @@ if [ "${1:-}" = "--selftest" ]; then
     p=$(plant "README.md" 's/47-widget GUI toolkit, embedded/44-widget GUI toolkit, embedded/')
     st_case "planted wrong number goes red and names the line" \
             "$p" 1 "claims '44-widget' but D_WIDGETS derives 47"
+
+    # docs/CI.md IS WALKED — the enrolment of round 7, proven rather than
+    # declared. Until then the page a contributor is sent to for "what runs on
+    # my PR" was outside the gate, and four of its hand-typed numbers were
+    # stale in the diff that wrote them (third critic, `/code-review 1226
+    # medium`, finding 7). The planted number sits on the one line of that
+    # page the gate now DERIVES, so a doc set that quietly drops docs/CI.md
+    # takes this case green.
+    p=$(plant "CI.md" 's/All 261 test sections./All 999 test sections./' "docs/CI.md")
+    st_case "planted wrong number in the enrolled docs/CI.md goes red" \
+            "$p" 1 "claims '999 test sections' but D_SECTIONS derives"
 
     p=$(plant "README.md" 's|`src/embed_smoke.c`|`src/no_such_source.c`|')
     st_case "planted dangling path goes red and names the path" \
@@ -1261,7 +1312,25 @@ D_CHAN_ARMS=$(awk '/^static Value \*chan_clone_rec/,/^}/' src/eigenscript.c \
 # derive, re-pin DC_ROADMAP_HIST_COMMIT to a reachable commit (or restate the
 # two claims from a commit that is), rather than letting the deferral become
 # the normal state.
-DC_ROADMAP_HIST_COMMIT="${DC_ROADMAP_HIST_COMMIT:-b91768e}"
+#
+# ROUND 7 — AND A LANE THAT CANNOT REACH IT IS NOW A LANE THAT FETCHES IT.
+# The deferral above was not hypothetical: measured on this PR's own head
+# (linux/gcc job 106465168161, macOS job 106465087620), BOTH printed
+# `docs-claims: OK — NUMBERS 36 (history-deferred=2)`, because every suite
+# job's `actions/checkout` is shallow and the PR merge ref's parents are not
+# fetched. So these two claims were derived NOWHERE, on any lane, ever — and
+# retyping 113 as 114 passed CI (third critic, `/code-review 1226 medium`,
+# finding 5). `.github/workflows/ci.yml`'s `linux` job now fetches exactly
+# this one commit (`git fetch --depth=1 origin <sha>`, about a second), and
+# suite section [99za] probes the commit ITSELF and requires
+# `history-deferred=0` on any lane that holds it — so a lane that claims the
+# derivation without the history is red by name.
+#
+# THE FULL 40-CHARACTER SHA, not an abbreviation: `git fetch origin <sha>`
+# rejects an abbreviated object name outright (`couldn't find remote ref
+# b91768e`, measured), so the abbreviation could not be the thing a lane
+# fetches.
+DC_ROADMAP_HIST_COMMIT="${DC_ROADMAP_HIST_COMMIT:-b91768e23c5a874a64e76e4af9ab291e6aa49983}"
 D_ROADMAP_HIST_CHECKBOXES=""
 D_ROADMAP_HIST_COMPLETED=""
 DC_ROADMAP_HIST_WHY="SKIPPED BY NAME: commit $DC_ROADMAP_HIST_COMMIT is not reachable here (shallow checkout or no .git), so the pre-PR checkbox counts cannot be derived"
@@ -1408,7 +1477,7 @@ waivers_audit() {
         fail "the waiver table holds $n entries but $WAIVERS_DECLARED are declared — adding or removing a waiver is a deliberate edit"
     fi
 }
-WAIVERS_DECLARED=18
+WAIVERS_DECLARED=22
 
 # ---------------------------------------------------------------------------
 # 2b. DECLARED POPULATIONS (mechanical-gates §121 + §129, Astra G1).
@@ -1928,11 +1997,16 @@ note "  PATHS: examined $path_examined, resolved $path_ok (of which $path_produc
 #    A population defined by the one spelling its author had in mind is the
 #    §60 blind spot; the token is the population now.
 # ---------------------------------------------------------------------------
+#
+#    ROUND 7: this class, alone, walks $DOC_FILES_FLAGS rather than
+#    $DOC_FILES — see DOC_FILES_FLAGS_EXEMPT at the top of this file for the
+#    one document it does not ask about and why. The audit at the end of the
+#    class is what stops that exemption from silently widening.
 HELP_TXT=$("$EIGS" --help 2>&1)
 flag_examined=0; flag_ok=0; flag_waived=0
 note ""
 note "docs-claims class FLAGS:"
-for f in $DOC_FILES; do
+for f in $DOC_FILES_FLAGS; do
     [ -f "$f" ] || continue
     per=0
     dc_extract "the --flag scan of $f" num '--[a-z][a-z0-9-]*' "$f"
@@ -1957,7 +2031,42 @@ for f in $DOC_FILES; do
     note "  population $f: $per flag mention(s)"
 done
 [ "$flag_examined" -eq 0 ] && fail "class FLAGS examined 0 flags — zero population (§121)"
-note "  FLAGS: examined $flag_examined, in --help $flag_ok, waived $flag_waived"
+# THE EXEMPTION AUDIT (mechanical-gates §3). Every exempt entry must be a real
+# document, must be enrolled for the OTHER classes, and must actually have
+# been held out of this one — an exemption naming a file nobody walks, or a
+# file that is not in the doc set at all, waives something nobody agreed to.
+# And the arithmetic is checked in both directions, so adding a name here
+# cannot quietly shrink the class.
+# First, the DECLARATION, independently of which doc set this run walks: every
+# name in it must be a real file AND must be enrolled by the default doc set.
+# An exemption for a document no class walks holds nothing out of anything.
+flag_exempt_declared=0
+for f in $DOC_FILES_FLAGS_EXEMPT_DEFAULT; do
+    flag_exempt_declared=$((flag_exempt_declared + 1))
+    [ -f "$f" ] || fail "DOC_FILES_FLAGS_EXEMPT_DEFAULT names '$f', which is not a file — an exemption for a document that does not exist covers nothing and hides the next one"
+    case " $DOC_FILES_DEFAULT " in
+        *" $f "*) : ;;
+        *) fail "DOC_FILES_FLAGS_EXEMPT_DEFAULT names '$f', which DOC_FILES_DEFAULT does not enrol — this list holds a document out of ONE class, it is not a way to leave a document unenrolled" ;;
+    esac
+done
+[ "$flag_exempt_declared" -eq 0 ] && fail "DOC_FILES_FLAGS_EXEMPT_DEFAULT is empty while this class still advertises an exemption — delete the mechanism or name what it covers"
+# Then this run: every entry that applied must actually have been held out.
+flag_exempt_n=0
+for f in $DOC_FILES_FLAGS_EXEMPT; do
+    flag_exempt_n=$((flag_exempt_n + 1))
+    case " $DOC_FILES_FLAGS " in
+        *" $f "*) fail "DOC_FILES_FLAGS_EXEMPT names '$f' and the FLAGS class walked it anyway — the exemption did not fire, so it is a comment, not a waiver" ;;
+    esac
+done
+if [ "$DOCSET_IS_DEFAULT" -eq 1 ] && [ "$flag_exempt_n" -ne "$flag_exempt_declared" ]; then
+    fail "the FLAGS class held out $flag_exempt_n document(s) but $flag_exempt_declared are declared exempt — an exemption that no longer fires must be red, not quiet"
+fi
+flag_docs_n=$(printf '%s\n' $DOC_FILES | grep -c .)
+flag_walked_n=$(printf '%s\n' $DOC_FILES_FLAGS | grep -c .)
+if [ "$DOCSET_IS_DEFAULT" -eq 1 ] && [ "$flag_walked_n" -ne $((flag_docs_n - flag_exempt_n)) ]; then
+    fail "class FLAGS walked $flag_walked_n document(s) of $flag_docs_n with $flag_exempt_n exempt — the arithmetic does not close, so the class is narrower than this file declares"
+fi
+note "  FLAGS: examined $flag_examined, in --help $flag_ok, waived $flag_waived (walked $flag_walked_n of $flag_docs_n document(s); $flag_exempt_n held out by name:${DOC_FILES_FLAGS_EXEMPT:- none})"
 
 # ---------------------------------------------------------------------------
 # 6. CLASS: MAKE TARGETS. Every `make <target>` must be a Makefile rule.
@@ -2113,7 +2222,7 @@ tcp|[Tt][Cc][Pp]|net_|TCP stream sockets'
 # MENTIONS, not lines: one sentence naming a family twice is two claims. A
 # keyword that stops appearing anywhere makes the class vacuous, so any
 # movement in either direction is a review event.
-FAMILY_CLAIMS_DECLARED=9
+FAMILY_CLAIMS_DECLARED=12
 
 family_examined=0; family_ok=0; family_waived=0
 note ""

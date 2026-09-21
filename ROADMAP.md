@@ -18,8 +18,9 @@ on a checkout too shallow to reach it (round 3 — they used to be waived, and a
 waiver whose reason describes a derivation nobody runs is a promise, not a
 measurement):
 
-    git show b91768e:ROADMAP.md | grep -cE '^[[:space:]]*- \[( |x|~)\]'
-    git show b91768e:ROADMAP.md | sed -n '/^## Completed/,$p' \
+    git show b91768e23c5a874a64e76e4af9ab291e6aa49983:ROADMAP.md \
+        | grep -cE '^[[:space:]]*- \[( |x|~)\]'
+    git show b91768e23c5a874a64e76e4af9ab291e6aa49983:ROADMAP.md | sed -n '/^## Completed/,$p' \
         | grep -cE '^[[:space:]]*- \[( |x|~)\]'
 
 **The counted population is the table, and nothing else.** Everything else here

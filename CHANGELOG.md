@@ -1119,7 +1119,8 @@ All notable changes to EigenScript are documented here.
   runners now install it (`python3-yaml` in `.devcontainer/Dockerfile`, a setup
   step on the macOS lane) and the selftest is skip-aware, scoring a plant whose
   arm skipped by name as `SKIP` rather than a failure. `tools/child_exit_check.sh`
-  declared 119 child sites for a tree with 121. And on macOS, where `gh` is
+  declared 115 child sites (the value on `main`) for a tree that had grown to
+  121. And on macOS, where `gh` is
   present but UNAUTHENTICATED, `tools/roadmap_check.sh` arm (c) reported all
   seven references as "does not resolve — the endpoint 404s": both GitHub-facing
   arms now check `gh auth status` and SKIP BY NAME, and within arm (c) a
@@ -1200,14 +1201,80 @@ All notable changes to EigenScript are documented here.
   SKIPs by name. ROADMAP.md is PUBLIC, so a citation its readers cannot open is
   not evidence: `EigenOS`, `eigen-site`, `DeslanStudio` and `iLambdaAi` (all
   measured `.private == true`) moved to `PRIVATE_REPOS`, where citing one is
-  red for its real reason rather than as an unknown name. `--selftest` is 21
-  cases, including the control that makes the discriminator load-bearing. And
+  red for its real reason rather than as an unknown name. `--selftest` gained
+  the control that makes the discriminator load-bearing — the same missing
+  entry with the listing UNREADABLE is GREEN, so gutting the discriminator is
+  red in one direction and silent in the other. And
   `[99zb]`'s skip reason was FALSE: its candidate list was `$PORTABILITY_BASH`
   and two `bash32` paths, never `/bin/bash` — which on macOS, the one platform
   the audit exists for, IS GNU bash 3.2.57. `/bin/bash` and `/usr/bin/bash` are
   now candidates when their own `BASH_VERSINFO[0]` is 3 or lower, so the macOS
-  lane parses all 128 tracked scripts and runs the five shell gates instead of
+  lane parses every tracked script and runs the five shell gates instead of
   announcing a skip; the skip message names every candidate it tried.
+
+  Rounds 6 and 7 attacked the gates' own predicates, and round 7 folded in a
+  third critic (`/code-review 1226 medium`, run against the pushed head). THE
+  PRIVACY CLASSIFIER FAILED OPEN: `verify_known_repos` asked
+  `[ "$priv" = "true" ]` and treated every other value as PUBLIC, so an
+  organisation listing whose rows carry no `.private` at all — a projection, a
+  proxy, a `jq` answering `null` — produced `repos=verified:13` with not one
+  explicit `false` in it, and both callers accepted it (measured with a
+  13-row null fixture: the gate printed the byte-identical OK line and
+  `[99zd]` read 11/11). "Public" is now a positive fact the listing has to
+  state: `false` is public, `true` is private, anything else is UNKNOWN
+  VISIBILITY, red by name, and the run's token becomes
+  `repos=skipped:visibility-unknown:N`, which the live pin at both callers
+  refuses. The listing's token also carries its TYPE, because
+  `(.private|tostring)` maps the JSON string `"false"` onto the boolean. And
+  "absent" from a listing with NO private row at all is a PUBLIC-ONLY VIEW —
+  still red, but diagnosed "deleted, renamed, or now private", instead of
+  sending a maintainer to look for a repository that was merely turned
+  private.
+
+  `[99zb]` keyed its verdict on the WRONG THING: it parsed the oracle's major
+  version out of the GNU banner, so a bash 3.2 behind a wrapper whose banner
+  reads `Custom Bash 3.2.0` was failed by name while the fact was right there.
+  The gate now prints `portability-parse: oracle-major=N` from the selected
+  candidate's own `BASH_VERSINFO[0]`, the caller parses that and keeps its own
+  `<= 3` literal, and the arm carries three synthetic receipts as its own
+  planted faults — a bash 5 wearing a 3.2 banner (refused), a real 3.2 with a
+  vendor banner (accepted), and a completed audit with no identity line
+  (refused) — so the arm that had never fired on a healthy tree is now shown
+  to fire.
+
+  Three more from the third critic. THE TWO "DERIVED" ROADMAP-HISTORY NUMBERS
+  WERE DERIVED ON NO LANE AT ALL: every suite job checks out shallow, so the
+  base commit was unreachable and both claims deferred by name on every push
+  (verified in this PR's own logs — `linux/gcc` job 106465168161 and macOS job
+  106465087620 both printed `history-deferred=2`, and retyping 113 as 114
+  passed CI). `ci.yml`'s linux job now fetches that one commit — the SHA read
+  out of the gate, so there is no second home for it — and `[99za]` probes the
+  commit ITSELF, requiring `history-deferred=0` on a lane that holds it and
+  refusing a tree where the fetch has been removed. The row walk in
+  `tools/roadmap_check.sh` skipped any table row CONTAINING `---`, not only
+  the header separator, so a row whose DONE clause said `never --- see the
+  vetoes` was never counted and never checked; one anchored regex now serves
+  the separator count, the section-placement check and the walk. And
+  `docs/CI.md` — the page a contributor is sent to for "what runs on my PR" —
+  is now in the doc-claims doc set, where four of its hand-typed numbers were
+  already stale in the diff that wrote them; it is exempt from ONE class
+  (FLAGS, which asks `eigenscript --help` about flags that mostly belong to
+  other programs), the exemption is named and its reason written, and the gate
+  audits that the exemption exists, is enrolled elsewhere, and actually fired.
+
+  Smaller, same round: `gh api --paginate` already merges REST pages into one
+  array, so `issue_labels_check.sh`'s `sed 's/^\]\[/,/'` splice was dead — and
+  could not have worked anyway, since a raw concatenation puts the seam
+  mid-line where a `^`-anchored sed cannot reach it; the classifier now accepts
+  a merged array OR an array of pages and refuses anything else by name, with a
+  two-page fixture whose unlabelled issue is on the SECOND page. The shared
+  `gh` probe is memoised per process (16 `gh` invocations per roadmap-gate run
+  became 11, measured with a counting wrapper on PATH), and arm (c) no longer
+  re-probes a repository the organisation listing has already proved public.
+  `.devcontainer/Dockerfile` selected the `linux_amd64` gh tarball and checksum
+  unconditionally, so the whole dev image failed to build on an arm64 host; the
+  architecture comes from `dpkg --print-architecture` and each one carries its
+  own pinned checksum from the release's own `checksums.txt`.
 
 - **Layering has structure rather than convention (#744, closing #746).** The
   core no longer includes any extension's private header: `src/ext_register.h`

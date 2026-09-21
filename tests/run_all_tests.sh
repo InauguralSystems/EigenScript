@@ -6586,7 +6586,7 @@ fi
 # a case that had been DELETED, and the operator who read it looked for a
 # missing case instead of a failing one. A count that changes meaning when
 # something fails is not a population count (§121).
-CLAIMS_SELFTEST_EXPECTED=39
+CLAIMS_SELFTEST_EXPECTED=40
 CLAIMS_ST=$(bash "$TESTS_DIR/../tools/docs_claims_check.sh" --selftest 2>&1)
 CLAIMS_ST_RC=$?
 CLAIMS_ST_RUN=$(printf '%s\n' "$CLAIMS_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
@@ -6604,6 +6604,69 @@ elif [ "$CLAIMS_ST_RC" -ne 0 ] || [ "${CLAIMS_ST_FAILED:-1}" -ne 0 ]; then
 else
     PASS=$((PASS + 1))
     echo "  PASS: doc-claims selftest ($CLAIMS_ST_RUN planted faults, all red)"
+fi
+
+# THE TWO "DERIVED" ROADMAP-HISTORY NUMBERS WERE DERIVED ON NO LANE AT ALL.
+#
+# BOUGHT 2026-09-21 (third critic, `/code-review 1226 medium`, finding 5):
+# ROADMAP.md's pre-PR checkbox counts are derived from `git show
+# <base>:ROADMAP.md`, and every suite job checks out shallow — so the base was
+# unreachable and BOTH claims deferred by name on every lane, on every push.
+# Measured in this PR's own head logs (linux/gcc job 106465168161, macOS job
+# 106465087620): `docs-claims: OK — NUMBERS 36 (history-deferred=2)`. A
+# deferral that is the permanent state is a claim nothing checks, and retyping
+# 113 as 114 passed CI.
+#
+# This caller PROBES THE COMMIT ITSELF — it does not ask the gate whether it
+# could — and on a lane that holds the history a `history-deferred` other than
+# 0 is red BY NAME. `.github/workflows/ci.yml`'s linux job fetches that one
+# commit before the suite, so the derivation happens on every push; the last
+# check below refuses a tree where that fetch has been removed, because a lane
+# list that silently empties is how this whole class comes back.
+ZA_HIST_COMMIT=b91768e23c5a874a64e76e4af9ab291e6aa49983
+ZA_HIST_HELD=0
+if git -C "$TESTS_DIR/.." -c safe.directory='*' cat-file -e "$ZA_HIST_COMMIT:ROADMAP.md" 2>/dev/null; then
+    ZA_HIST_HELD=1
+fi
+ZA_HIST_DEFERRED=$(printf '%s\n' "$CLAIMS_OUTPUT" | sed -n 's/^docs-claims: OK — NUMBERS [0-9][0-9]* (history-deferred=\([0-9][0-9]*\)).*/\1/p' | head -1)
+TOTAL=$((TOTAL + 1))
+if [ "$CLAIMS_RC" -ne 0 ]; then
+    # The gate already failed above and printed everything; do not double-report.
+    PASS=$((PASS + 1))
+    echo "  PASS: ROADMAP-history derivation not judged — the doc-claims gate itself failed above (see its verbatim output)"
+elif [ -z "$ZA_HIST_DEFERRED" ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: the doc-claims gate printed no 'history-deferred=N' on its OK line — this caller cannot tell whether the two ROADMAP-history claims were derived or deferred, which is the state that let them go unverified on every lane"
+elif [ "$ZA_HIST_HELD" -eq 1 ] && [ "$ZA_HIST_DEFERRED" -ne 0 ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: this lane HOLDS $ZA_HIST_COMMIT (this caller read it itself) and the doc-claims gate still deferred $ZA_HIST_DEFERRED ROADMAP-history claim(s) — a lane that can derive must derive, or a deferral becomes the permanent state"
+elif [ "$ZA_HIST_HELD" -eq 1 ] && ! printf '%s\n' "$CLAIMS_OUTPUT" | grep -qF "git show $ZA_HIST_COMMIT:ROADMAP.md"; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: this lane holds $ZA_HIST_COMMIT but the gate's derivation line does not name it — the gate derived from some other commit, or from nothing"
+elif [ "$ZA_HIST_HELD" -eq 1 ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: ROADMAP history derived on this lane — it holds $ZA_HIST_COMMIT and history-deferred=$ZA_HIST_DEFERRED"
+else
+    PASS=$((PASS + 1))
+    echo "  PASS: ROADMAP history DEFERRED on this lane BY NAME — this caller cannot read $ZA_HIST_COMMIT here (shallow checkout or no .git), so history-deferred=$ZA_HIST_DEFERRED is the honest answer and the two claims are verified on the lanes that fetch it"
+fi
+
+# ...and the fetch that makes a lane hold it must still exist. A per-lane
+# probe alone cannot notice that EVERY lane stopped holding the history: each
+# one would simply announce its honest skip and the class would go unchecked
+# again, silently (mechanical-gates §3 — an exemption that no longer fires
+# must fail, not pass quietly).
+ZA_CI_WORKFLOW="$TESTS_DIR/../.github/workflows/ci.yml"
+TOTAL=$((TOTAL + 1))
+if [ ! -f "$ZA_CI_WORKFLOW" ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: $ZA_CI_WORKFLOW does not exist, so nothing here can say whether any CI lane still holds the ROADMAP history"
+elif grep -q 'DC_ROADMAP_HIST_COMMIT' "$ZA_CI_WORKFLOW" && grep -q 'fetch --depth=1 origin' "$ZA_CI_WORKFLOW"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: .github/workflows/ci.yml still fetches the ROADMAP-history base (it reads DC_ROADMAP_HIST_COMMIT out of the gate and fetches that one commit), so at least one lane derives these claims"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: .github/workflows/ci.yml no longer fetches the ROADMAP-history base commit — with it gone every lane defers by name, every lane's skip reads as honest, and the two derived ROADMAP numbers are checked nowhere (this is the state measured on 93ff029)"
 fi
 echo ""
 
@@ -6633,16 +6696,34 @@ printf '%s\n' "$PORT_OUTPUT" | grep -E "^portability(-parse|-run)?: (oracle|OK|o
 # shell was modelled" and "a modern shell was exercised twice", and a caller
 # that cannot see through its gate's selection is not an independent check.
 # So the caller holds its OWN literal maximum and parses the identity line.
+# ROUND 7 — THE IDENTITY IS A FACT THE GATE REPORTS, NOT A BANNER THIS CALLER
+# PARSES. Bought 2026-09-21 (round-6 blind critic, Fable, item 2): round 6 read
+# the major version out of `--version`'s GNU banner, so an interpreter whose
+# banner does not begin "GNU bash, version" — a vendor build, a wrapper, a
+# rebuild with a changed RELEASE string — yielded NO number and this caller
+# failed a perfectly good bash 3.2 by name (measured with a wrapper printing
+# `Custom Bash 3.2.0` around the real 3.2 oracle). The gate now prints
+# `portability-parse: oracle-major=N` from the SELECTED candidate's own
+# `BASH_VERSINFO[0]`; this caller parses that and keeps its own `<= 3` literal.
+# The banner is display only.
 PORT_OLD_MAJOR_MAX=3
-PORT_ORACLE_MAJOR=$(printf '%s\n' "$PORT_OUTPUT" | sed -n 's/^portability-parse: oracle=.*(GNU bash, version \([0-9][0-9]*\)\..*/\1/p' | head -1)
-PORT_CLAIMS_MEASURED=0
-printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability: OK:" && PORT_CLAIMS_MEASURED=1
-PORT_IDENTITY_VERDICT=""
-if [ "$PORT_CLAIMS_MEASURED" -eq 1 ] && [ -z "$PORT_ORACLE_MAJOR" ]; then
-    PORT_IDENTITY_VERDICT="the portability gate claimed a completed audit and never named its interpreter (no 'portability-parse: oracle=... (GNU bash, version X.Y...)' line) — nothing here says which shell it measured under"
-elif [ "$PORT_CLAIMS_MEASURED" -eq 1 ] && [ "$PORT_ORACLE_MAJOR" -gt "$PORT_OLD_MAJOR_MAX" ]; then
-    PORT_IDENTITY_VERDICT="the portability gate measured under bash $PORT_ORACLE_MAJOR — that is not the old shell it exists to model"
-fi
+# port_identity_verdict <gate output>
+#   Sets PORT_IDENTITY_VERDICT: empty when the receipt is acceptable, else the
+#   named reason. ONE implementation, used on the real run and on the three
+#   synthetic receipts below, so the controls exercise the code that judges.
+port_identity_verdict() {
+    local out="$1" major measured
+    measured=0
+    printf '%s\n' "$out" | grep -q "^portability: OK:" && measured=1
+    major=$(printf '%s\n' "$out" | sed -n 's/^portability-parse: oracle-major=\([0-9][0-9]*\)$/\1/p' | head -1)
+    PORT_IDENTITY_VERDICT=""
+    if [ "$measured" -eq 1 ] && [ -z "$major" ]; then
+        PORT_IDENTITY_VERDICT="the portability gate claimed a completed audit and never printed a 'portability-parse: oracle-major=N' line — nothing here says which shell it measured under, and a version banner is prose, not a version"
+    elif [ "$measured" -eq 1 ] && [ "$major" -gt "$PORT_OLD_MAJOR_MAX" ]; then
+        PORT_IDENTITY_VERDICT="the portability gate measured under bash $major — that is not the old shell it exists to model"
+    fi
+}
+port_identity_verdict "$PORT_OUTPUT"
 # rc 0 is not enough: a verdict line must be PRESENT. A tool that died after
 # printing nothing also exits 0 if its last command did (mechanical-gates §121,
 # applied to the section rather than the tool).
@@ -6663,6 +6744,56 @@ else
     FAIL=$((FAIL + 1))
     echo "  FAIL: a tracked shell script does not PARSE, or a gate does not RUN, under the oldest bash here (rc=$PORT_RC)"
     print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
+fi
+
+# THE IDENTITY ARM'S OWN PLANTED FAULTS. The arm above fires only when the
+# gate misbehaves, so on a healthy tree it has never been observed to work —
+# which is the definition of a gate nobody has shown to be a gate
+# (mechanical-gates §19). These three synthetic receipts drive the SAME
+# function the real verdict used, and both halves are present: a receipt that
+# must be refused, and one that must be accepted (§15).
+#
+#   1. bash 5 wearing a bash 3.2 BANNER  -> refused. Round 6 accepted this,
+#      because it read the banner and not the fact.
+#   2. a real bash 3.2 with a VENDOR banner -> accepted. Round 6 refused this.
+#   3. a completed audit with no identity line at all -> refused.
+PORT_CTRL_OK=0
+PORT_CTRL_WHY=""
+PORT_SYNTH_5="portability-parse: oracle=/bin/bash (GNU bash, version 3.2.57(1)-release (x86_64-apple-darwin23))
+portability-parse: oracle-major=5
+portability: OK: files=128 checked=128 parse-failures=0; gates-run=5/5 run-failures=0"
+PORT_SYNTH_3="portability-parse: oracle=/opt/vendor/bash (Custom Bash 3.2.0, same GNU Bash 3.2 engine)
+portability-parse: oracle-major=3
+portability: OK: files=128 checked=128 parse-failures=0; gates-run=5/5 run-failures=0"
+PORT_SYNTH_NONE="portability-parse: oracle=/bin/bash (GNU bash, version 3.2.57(1)-release)
+portability: OK: files=128 checked=128 parse-failures=0; gates-run=5/5 run-failures=0"
+port_identity_verdict "$PORT_SYNTH_5"
+if [ -n "$PORT_IDENTITY_VERDICT" ]; then
+    PORT_CTRL_OK=$((PORT_CTRL_OK + 1))
+else
+    PORT_CTRL_WHY="$PORT_CTRL_WHY [a bash-5 oracle wearing a bash 3.2 banner was ACCEPTED]"
+fi
+port_identity_verdict "$PORT_SYNTH_3"
+if [ -z "$PORT_IDENTITY_VERDICT" ]; then
+    PORT_CTRL_OK=$((PORT_CTRL_OK + 1))
+else
+    PORT_CTRL_WHY="$PORT_CTRL_WHY [a real bash 3.2 with a vendor banner was REFUSED: $PORT_IDENTITY_VERDICT]"
+fi
+port_identity_verdict "$PORT_SYNTH_NONE"
+if [ -n "$PORT_IDENTITY_VERDICT" ]; then
+    PORT_CTRL_OK=$((PORT_CTRL_OK + 1))
+else
+    PORT_CTRL_WHY="$PORT_CTRL_WHY [a completed audit with no oracle-major line was ACCEPTED]"
+fi
+# Restore the verdict for anything downstream that reads it.
+port_identity_verdict "$PORT_OUTPUT"
+TOTAL=$((TOTAL + 1))
+if [ "$PORT_CTRL_OK" -eq 3 ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: portability identity arm, 3/3 synthetic receipts judged correctly (bash-5-in-a-3.2-banner refused, vendor-bannered 3.2 accepted, identity-less audit refused)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: portability identity arm judged $PORT_CTRL_OK/3 synthetic receipts correctly —$PORT_CTRL_WHY"
 fi
 echo ""
 
@@ -6946,10 +7077,10 @@ ROADMAP_POP_RE_PINNED='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=
 # organisation listing 403'd, came back empty, or was gutted printed a line
 # BYTE-IDENTICAL to a verified one and passed here 11/11 on this very lane.
 ROADMAP_POP_RE_LIVE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=gh-api:[^ ]+ refs=gh-api:[^ ]+ resolved=[1-9][0-9]* skipped=0 repos=verified:[1-9][0-9]*\)$'
-ROADMAP_SELFTEST_EXPECTED=21
+ROADMAP_SELFTEST_EXPECTED=25
 
 LABELS_POP_RE_PINNED='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: gh-api:[^ )]+\)$'
-LABELS_SELFTEST_EXPECTED=6
+LABELS_SELFTEST_EXPECTED=7
 # This gate has no structural arm, so a runner with no credentials has nothing
 # to measure. It must then SAY SO — silence with rc=0 is the gutted shape. On a
 # lane where THIS caller reached GitHub the skip is not accepted at all.
