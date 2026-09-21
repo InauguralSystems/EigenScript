@@ -113,6 +113,39 @@ checker refuses a document that carries fences and has no pinned row, and the
 suite refuses a run that covered fewer rows than are pinned — a file quietly
 dropped from either list is a failure at both ends.
 
+## Issue labels, and the roadmap that is a milestone set
+
+Two things that were kept by memory are now kept by a gate, both bought the
+same day (2026-09-21, #1207/#1155 and the maintainer's "we aren't labeling
+issues").
+
+**Issue labels.** The scheme on the repository is `area:<subsystem>`
+(runtime-vm, jit, concurrency, observer, memory, trace-tape, packages, http,
+gfx, embed, docs, ci, gates, lint-tooling, consumer, aot, stdlib), a KIND
+(`kind:silent-wrong`, `kind:gate-defect`, `kind:docs-drift`, `kind:flake`,
+`kind:tracking`, `kind:decision`, or the stock `bug`/`enhancement`),
+`found-by:*` (critic, wave, code-review, consumer, ci, cold-read) and
+`blocks-release`. The rule is: **every open issue carries an `area:` label and
+a kind.** `tools/issue_labels_check.sh` enumerates every open ISSUE (never a
+pull request), prints `examined=N missing=M` with the offending numbers, and
+fails when M > 0 **or when N == 0** — an empty enumeration satisfies "nothing
+is missing" without checking anything. Without `gh` it SKIPs by name; it never
+turns a missing credential into a pass. `.github/workflows/issue-triage.yml`
+runs it daily and, on `issues: [opened, reopened]`, puts `needs-triage` on
+anything that arrives without an `area:` label. Measured before the sweep: 33
+of 36 open issues had no label at all.
+
+**ROADMAP.md.** `tools/roadmap_check.sh` refuses (a) any `- [ ]`/`- [x]`/`- [~]`
+line anywhere in the file and anything other than exactly one table, inside
+`## Milestones`, with five cells and a known status per row; and (b) — with
+`gh` present and authenticated — an open table row set that differs from the
+open GitHub milestones by number, or a milestone list that comes back empty.
+Arm (b) skips by name without `gh`; arm (a) never skips. The old file carried
+112 checkboxes, 62 of them historical highlights under `## Completed`, so every
+counter of "roadmap items" was counting the past. Both tools carry a
+planted-fault `--selftest` with a pinned case count, and the suite runs the
+live pass and the selftest as `[99zd]`.
+
 ## Main lane (push to `main`) — the full matrix
 
 Everything above runs in full: both macOS runners, every variant job on the

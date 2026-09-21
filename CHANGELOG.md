@@ -499,6 +499,20 @@ All notable changes to EigenScript are documented here.
   value-channel verdict differed from the unelided program until the missing
   sample aged out. Elision now suppresses the verdict, not the sample.
 
+  **The SPEC sentence was corrected to match (`Refs #1212`).** `docs/SPEC.md`
+  still said the block "suppresses observation and not assignment", which
+  pre-dates #1049 and reads as if `report` were suppressed too. It now says
+  what `docs/PREDICATES.md` says: the block elides the **entropy** half of
+  observation, not the value-channel sample, and points at
+  PREDICATES.md#inputs for the readers that can differ. Two executed fences
+  in SPEC.md pin the property as a PAIR — the same program with and without
+  the block — so `when` and `report` are compared byte-for-byte across the
+  boundary while `why` is shown to differ. **Consumers asserting
+  `report_after == report_before` across an `unobserved:` block are asserting
+  something the block no longer changes**: assert on `why`/`how` (or a
+  `trajectory` snapshot's `dh`/`dH`) instead, which is where elision is
+  observable. EigenGauntlet is migrated separately.
+
 - **Configurable observer window depth and a scale-free relative step
   (#1044, #1045).** Both were found by phugoid grading verdicts against a
   physical oracle: a fixed 10-deep window called an oscillation `stable`, and
@@ -1020,6 +1034,44 @@ All notable changes to EigenScript are documented here.
   byte-identical trees at different paths no longer compare unequal.
 
 ### Changed
+
+- **Three front-door claims that only EXECUTION could refute (#1209, #1210,
+  #1211).** Each was stated in `docs/llms.txt` — the file every agent primes
+  on — and each is now stated correctly with an executed fence beside it.
+  (1) "`what is e` is a COMPILE ERROR whether or not `e` is bound" was false:
+  `printf 'e is 1\nwhat is e\n'` exits 0. The refusal is at the DISCARD site,
+  so a bare interrogative is refused (`E004`) everywhere except as the last
+  statement of its block, which nothing pops; `--lint` flags both positions as
+  `W019`. The refused program is executed as
+  `examples/errors/interrogative_discarded.eigs` by suite section [90] (19 →
+  20 checks). (2) "Under-arity null-fills, silently" omitted the arity-1
+  carve-out (#733): `one of []` on `define one(a)` binds `a = []`, not
+  `a = null`, because the 1-parameter callee re-collects the argument list
+  whole; the null-fill is the 2+-parameter case. (3) "1/0 does NOT throw (it
+  warns and returns 0)" was a fossil of the pre-#975 fail-soft runtime —
+  division by zero raises a catchable `value` error, `division by zero`.
+  README.md carried the same interrogative error. The SPEC/COMPARISON/OBSERVER
+  wording was checked in the same pass and needed no change.
+
+- **ROADMAP.md is a milestone set, and issue labels are enforced (#1207,
+  #1155).** The file carried 112 checkboxes — 92 `[x]`, 20 `[ ]`, one `[~]` —
+  of which 62 were historical highlights under `## Completed`, so anything
+  counting "roadmap items" counted the past; it also double-counted (#414 at
+  two lines, Windows as an umbrella plus three tiers), carried items execution
+  refutes (Public release, WASM, `utf8_encode`, the `eigenscript.h` line
+  count, the GET_LOCAL/SET_LOCAL premise, Tidepool GAP-002), carried two items
+  its own veto list contradicts, and omitted the concurrency foundation #1153
+  entirely. It is now ONE table — number, milestone, status, GitHub URL, DONE
+  clause — mirroring the nine open GitHub milestones, with the vetoed items as
+  `retired` rows and everything uncommitted under
+  `## Ideas and deferrals (uncounted)`. `tools/roadmap_check.sh` refuses any
+  checkbox anywhere in the file and any table set that diverges from the open
+  milestones; `tools/issue_labels_check.sh` refuses an open issue without an
+  `area:` label and a kind, and refuses a run that examined zero issues (33 of
+  36 open issues had no label at all on 2026-09-21).
+  `.github/workflows/issue-triage.yml` labels a new issue `needs-triage` when
+  it arrives without an `area:` and runs the audit daily. Both gates are suite
+  section `[99zd]` with pinned selftest case counts.
 
 - **Layering has structure rather than convention (#744, closing #746).** The
   core no longer includes any extension's private header: `src/ext_register.h`

@@ -6188,7 +6188,7 @@ echo ""
 
 # [90] Error examples — examples/errors/*.eigs must exit nonzero and
 # print their declared '# expect-error:' message.
-echo "[90] Error Examples (19 checks)"
+echo "[90] Error Examples (20 checks)"
 ERR_OUTPUT=$(bash "$TESTS_DIR/test_error_examples.sh" 2>&1)
 ERR_PASS=$(echo "$ERR_OUTPUT" | grep -c "  PASS:" || true)
 ERR_FAIL=$(echo "$ERR_OUTPUT" | grep -c "  FAIL:" || true)
@@ -6782,6 +6782,83 @@ if [ "$EF_FAIL" -gt 0 ]; then
     echo "$EF_OUTPUT" | grep "FAIL:" | head -5
 else
     echo "  PASS: all $EF_PASS env-flag checks"
+fi
+echo ""
+
+# [99zd] ROADMAP.md is a MILESTONE SET, and issue labels are enforced rather
+# than remembered. Both bought 2026-09-21 (#1207/#1155, and the maintainer's
+# "we aren't labeling issues"): ROADMAP.md carried 112 checkboxes, 62 of them
+# historical highlights under `## Completed`, so every counter of "roadmap
+# items" was counting the past; 33 of 36 open issues carried no label at all.
+# Neither tool builds anything and both belong on the PR lane. Measured on the
+# dev box: roadmap live pass 2.0 s (one `gh api` call), its selftest 5.3 s;
+# issue-labels live pass 2.0 s (one `gh api --paginate`), its selftest 3.0 s.
+# The GitHub-facing arm of each SKIPS BY NAME without `gh`; the structural arm
+# never skips, so a runner with no credentials still refuses a checkbox.
+echo "[99zd] Roadmap is a milestone set, and issues are labelled (#1207/#1155)"
+ROADMAP_OUTPUT=$(bash "$TESTS_DIR/../tools/roadmap_check.sh" 2>&1)
+ROADMAP_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$ROADMAP_RC" -eq 0 ]; then
+    PASS=$((PASS + 1))
+    printf '%s\n' "$ROADMAP_OUTPUT" | grep -E "^      \(a\) structure:|^roadmap-check: OK"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: roadmap gate exited $ROADMAP_RC; its ENTIRE output follows verbatim"
+    print_captured "roadmap gate, VERBATIM" "$ROADMAP_OUTPUT"
+fi
+
+# The case COUNT is pinned, and the failure count separately: "exit 0" is also
+# what a selftest reduced to a single echo prints (mechanical-gates §121), and
+# a count that changes meaning when something fails is not a population count.
+ROADMAP_SELFTEST_EXPECTED=8
+ROADMAP_ST=$(bash "$TESTS_DIR/../tools/roadmap_check.sh" --selftest 2>&1)
+ROADMAP_ST_RC=$?
+ROADMAP_ST_RUN=$(printf '%s\n' "$ROADMAP_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
+ROADMAP_ST_FAILED=$(printf '%s\n' "$ROADMAP_ST" | sed -nE 's/^SELFTEST: [0-9]+ case\(s\) run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
+TOTAL=$((TOTAL + 1))
+if [ "${ROADMAP_ST_RUN:-0}" -ne "$ROADMAP_SELFTEST_EXPECTED" ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: roadmap selftest ran ${ROADMAP_ST_RUN:-0} case(s), $ROADMAP_SELFTEST_EXPECTED are pinned (rc=$ROADMAP_ST_RC)"
+    print_captured "roadmap selftest, VERBATIM" "$ROADMAP_ST"
+elif [ "$ROADMAP_ST_RC" -ne 0 ] || [ "${ROADMAP_ST_FAILED:-1}" -ne 0 ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: roadmap selftest: ${ROADMAP_ST_FAILED:-?} of $ROADMAP_ST_RUN planted fault(s) did NOT go red (rc=$ROADMAP_ST_RC)"
+    print_captured "roadmap selftest, VERBATIM" "$ROADMAP_ST"
+else
+    PASS=$((PASS + 1))
+    echo "  PASS: roadmap selftest ($ROADMAP_ST_RUN planted faults, all red)"
+fi
+
+LABELS_OUTPUT=$(bash "$TESTS_DIR/../tools/issue_labels_check.sh" 2>&1)
+LABELS_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$LABELS_RC" -eq 0 ]; then
+    PASS=$((PASS + 1))
+    printf '%s\n' "$LABELS_OUTPUT" | grep -E "^issue-labels: " | head -2
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: issue-label gate exited $LABELS_RC; its ENTIRE output follows verbatim"
+    print_captured "issue-label gate, VERBATIM" "$LABELS_OUTPUT"
+fi
+
+LABELS_SELFTEST_EXPECTED=6
+LABELS_ST=$(bash "$TESTS_DIR/../tools/issue_labels_check.sh" --selftest 2>&1)
+LABELS_ST_RC=$?
+LABELS_ST_RUN=$(printf '%s\n' "$LABELS_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
+LABELS_ST_FAILED=$(printf '%s\n' "$LABELS_ST" | sed -nE 's/^SELFTEST: [0-9]+ case\(s\) run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
+TOTAL=$((TOTAL + 1))
+if [ "${LABELS_ST_RUN:-0}" -ne "$LABELS_SELFTEST_EXPECTED" ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: issue-label selftest ran ${LABELS_ST_RUN:-0} case(s), $LABELS_SELFTEST_EXPECTED are pinned (rc=$LABELS_ST_RC)"
+    print_captured "issue-label selftest, VERBATIM" "$LABELS_ST"
+elif [ "$LABELS_ST_RC" -ne 0 ] || [ "${LABELS_ST_FAILED:-1}" -ne 0 ]; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: issue-label selftest: ${LABELS_ST_FAILED:-?} of $LABELS_ST_RUN planted fault(s) did NOT go red (rc=$LABELS_ST_RC)"
+    print_captured "issue-label selftest, VERBATIM" "$LABELS_ST"
+else
+    PASS=$((PASS + 1))
+    echo "  PASS: issue-label selftest ($LABELS_ST_RUN planted faults, all red)"
 fi
 echo ""
 

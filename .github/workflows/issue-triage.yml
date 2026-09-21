@@ -1,0 +1,101 @@
+name: issue-triage
+
+# Issue labels are ENFORCED, not remembered.
+#
+# Measured 2026-09-21, the day the maintainer said "we aren't labeling issues":
+# 33 of 36 open issues carried no label at all. The scheme exists on the
+# repository (`area:<subsystem>`, `kind:*` plus the stock `bug`/`enhancement`,
+# `found-by:*`, `blocks-release`) and the whole backlog was labelled by hand
+# once. A hand sweep is the failure, not the fix, so two mechanisms keep it
+# labelled from here:
+#
+#   * `triage` — a new or reopened issue with no `area:` label gets
+#     `needs-triage` immediately, so the gap is visible on the issue itself
+#     rather than in a report nobody opens.
+#   * `audit` — a daily run of tools/issue_labels_check.sh over every OPEN
+#     issue. It prints `examined=N missing=M` and fails when M > 0 OR when
+#     N == 0 (an empty enumeration satisfies "nothing is missing" without
+#     checking anything — mechanical-gates §121).
+#
+# See docs/CI.md, "Issue labels".
+
+on:
+  issues:
+    types: [opened, reopened]
+  schedule:
+    # 05:23 UTC, off the hour and after the nightly lanes, so it does not queue
+    # behind everyone else's midnight cron on the shared runner pool.
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-triage-${{ github.event_name }}-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    name: issue-triage / label a new issue
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Ensure the needs-triage label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/issue_labels_check.sh --ensure-labels
+
+      - name: Mark an issue filed without an area: label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -u
+          labels=$(gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" \
+                     --json labels --jq '.labels[].name')
+          echo "issue #$ISSUE labels: ${labels:-<none>}"
+          if printf '%s\n' "$labels" | grep -q '^area:'; then
+            echo "issue #$ISSUE already carries an area: label; nothing to do"
+            exit 0
+          fi
+          gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label needs-triage
+          echo "issue #$ISSUE labelled needs-triage"
+
+  audit:
+    name: issue-triage / every open issue is labelled
+    if: github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: The gate's own planted faults
+        run: bash tools/issue_labels_check.sh --selftest
+
+      - name: Every open issue carries an area: label and a kind
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_LABELS_REPO: ${{ github.repository }}
+        run: |
+          set -u
+          out=$(mktemp)
+          rc=0
+          bash tools/issue_labels_check.sh > "$out" 2>&1 || rc=$?
+          cat "$out"
+          # A SKIP is not a pass here: this job exists to make the API call, so
+          # an unauthenticated or offline run must be loud rather than green.
+          if grep -q 'SKIPPED BY NAME' "$out"; then
+            echo "issue-triage: the audit skipped on a lane whose whole purpose is to run it"
+            exit 1
+          fi
+          exit "$rc"

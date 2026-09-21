@@ -1,0 +1,9 @@
+# expect-error: 'what is ...' is an interrogative, not an assignment
+# A bare interrogative statement is refused exactly where its result would be
+# DISCARDED (#1209). Here `what is e` is followed by another statement, so its
+# value is popped and the compiler refuses it with E004. As the LAST statement
+# of its block nothing pops it and the same line compiles — that asymmetry is
+# the rule, and this file is the executed half of it (docs/llms.txt states it).
+e is 1
+what is e
+print of "never reached"

@@ -137,6 +137,12 @@ is purely for discoverability.
 
 Use the [bug report template](https://github.com/InauguralSystems/EigenScript/issues/new?template=bug_report.md) and include a minimal `.eigs` reproducer.
 
+Every issue carries an `area:<subsystem>` label and a kind (`kind:*`, or the
+stock `bug`/`enhancement`); `needs-triage` is what an issue filed without an
+`area:` label gets automatically, and a maintainer replaces it. You do not have
+to label your own issue — `tools/issue_labels_check.sh` runs daily and fails on
+any open issue that is still missing either one, so nothing sits unlabelled.
+
 For private or non-issue contact, email contact@inauguralsystems.com with one
 of these subject prefixes:
 

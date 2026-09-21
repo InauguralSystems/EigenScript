@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+# issue_labels_check.sh — every OPEN issue carries an `area:` label and a kind.
+#
+# WHY THIS EXISTS (maintainer, 2026-09-21: "we aren't labeling issues"):
+# measured the same day, 33 of 36 open issues carried NO label at all. Triage
+# by memory does not survive a week, and an unlabelled backlog cannot be
+# ranked, split across a fleet, or reported on. The scheme now exists on the
+# repository — `area:<subsystem>`, `kind:*` (plus the stock `bug` and
+# `enhancement`), `found-by:*`, `blocks-release` — every open issue was
+# labelled by hand once, and from here the rule is MECHANICAL: this check runs
+# daily and on demand, and `.github/workflows/issue-triage.yml` puts
+# `needs-triage` on anything new that arrives without an `area:`.
+#
+# THE RULE, exactly: an open ISSUE (never a pull request) must carry
+#   * at least one label whose name starts with `area:`, AND
+#   * at least one KIND — a label starting with `kind:`, or the stock `bug`,
+#     or the stock `enhancement`.
+# Anything else is missing, and missing > 0 is a failure. So is examining ZERO
+# issues: an empty enumeration satisfies "nothing is missing" and is the
+# vacuity mechanical-gates §121 exists to stop, so it fails too.
+#
+# Usage:
+#   bash tools/issue_labels_check.sh              # the live repository
+#   bash tools/issue_labels_check.sh --selftest   # planted faults, no network
+#   bash tools/issue_labels_check.sh --ensure-labels
+#                                                 # create `needs-triage` if absent
+#   ISSUE_LABELS_JSON=/path/to/issues.json bash tools/issue_labels_check.sh
+#                                                 # the selftest's seam; also an
+#                                                 # offline escape hatch
+set -u
+
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+REPO="${ISSUE_LABELS_REPO:-InauguralSystems/EigenScript}"
+
+# Nothing on this gate's stdin, for the reason docs_claims_check.sh records:
+# a counting pipeline that inherits an open stdin hangs, and one that inherits
+# /dev/null counts 0 and passes the guard built on that count.
+exec 0</dev/null
+
+# ---------------------------------------------------------------------------
+# The classifier. Kept in one place so the workflow, the selftest and the live
+# run cannot disagree about what "labelled" means.
+# ---------------------------------------------------------------------------
+classify() {
+    # reads the issue JSON array on stdin; prints
+    #   examined=<n> missing=<n>
+    #   MISSING <number> <what-is-missing> <title>
+    python3 -c '
+import json, sys
+
+try:
+    data = json.load(sys.stdin)
+except Exception as exc:
+    sys.stderr.write("issue-labels: cannot parse the issue list: %s\n" % exc)
+    sys.exit(2)
+if not isinstance(data, list):
+    sys.stderr.write("issue-labels: expected a JSON array of issues\n")
+    sys.exit(2)
+
+KIND_EXACT = {"bug", "enhancement"}
+examined = 0
+missing = []
+for it in data:
+    # A pull request is not an issue. The REST list endpoint returns both and
+    # marks PRs with a "pull_request" key; gh issue list does not, so both
+    # shapes are handled rather than one being assumed.
+    if it.get("pull_request"):
+        continue
+    if it.get("state", "open") != "open":
+        continue
+    examined += 1
+    names = []
+    for lab in it.get("labels", []) or []:
+        names.append(lab["name"] if isinstance(lab, dict) else str(lab))
+    has_area = any(n.startswith("area:") for n in names)
+    has_kind = any(n.startswith("kind:") or n in KIND_EXACT for n in names)
+    if has_area and has_kind:
+        continue
+    want = []
+    if not has_area:
+        want.append("area:")
+    if not has_kind:
+        want.append("kind")
+    missing.append((it.get("number"), "+".join(want), it.get("title", "")))
+
+print("examined=%d missing=%d" % (examined, len(missing)))
+for num, want, title in missing:
+    print("MISSING %s %s %s" % (num, want, title[:70]))
+'
+}
+
+run_live() {
+    local json src out rc examined missing numbers
+    if [ -n "${ISSUE_LABELS_JSON:-}" ]; then
+        if [ ! -f "$ISSUE_LABELS_JSON" ]; then
+            echo "RED: ISSUE_LABELS_JSON names no file: $ISSUE_LABELS_JSON"
+            return 1
+        fi
+        json=$(cat "$ISSUE_LABELS_JSON")
+        src="fixture $ISSUE_LABELS_JSON"
+    else
+        if ! command -v gh >/dev/null 2>&1; then
+            echo "issue-labels: SKIPPED BY NAME: gh is not on PATH, so the open-issue set cannot be read"
+            return 0
+        fi
+        if ! command -v python3 >/dev/null 2>&1; then
+            echo "issue-labels: SKIPPED BY NAME: python3 is not on PATH, so the issue list cannot be classified"
+            return 0
+        fi
+        if ! json=$(gh api "repos/$REPO/issues?state=open&per_page=100" --paginate 2>/dev/null); then
+            echo "issue-labels: SKIPPED BY NAME: gh is present but the issues API call failed (unauthenticated, offline, or rate-limited)"
+            return 0
+        fi
+        # --paginate concatenates one JSON array per page; splice them.
+        json=$(printf '%s' "$json" | sed 's/^\]\[/,/' | tr -d '\n')
+        src="gh api repos/$REPO/issues"
+    fi
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "issue-labels: SKIPPED BY NAME: python3 is not on PATH, so the issue list cannot be classified"
+        return 0
+    fi
+
+    if ! out=$(printf '%s' "$json" | classify); then
+        echo "RED: issue-labels: could not classify the issue list from $src"
+        return 1
+    fi
+
+    examined=$(printf '%s\n' "$out" | sed -n 's/^examined=\([0-9]*\) .*/\1/p')
+    missing=$(printf '%s\n' "$out" | sed -n 's/^examined=[0-9]* missing=\([0-9]*\)$/\1/p')
+    numbers=$(printf '%s\n' "$out" | sed -n 's/^MISSING \([0-9]*\) .*/#\1/p' | tr '\n' ' ')
+
+    echo "issue-labels: examined=${examined:-0} missing=${missing:-0} (source: $src)"
+    if [ -z "${examined:-}" ] || [ -z "${missing:-}" ]; then
+        echo "RED: issue-labels: the classifier did not report its counts"
+        printf '%s\n' "$out" | head -5 | sed 's/^/      /'
+        return 1
+    fi
+    if [ "$examined" -eq 0 ]; then
+        echo "RED: issue-labels: examined 0 open issue(s) — an empty population satisfies 'nothing is missing' without checking anything (mechanical-gates §121)"
+        return 1
+    fi
+    if [ "$missing" -gt 0 ]; then
+        echo "RED: issue-labels: $missing of $examined open issue(s) lack an area: label, a kind label, or both: $numbers"
+        printf '%s\n' "$out" | grep '^MISSING ' | sed 's/^/      /'
+        echo "      Every open issue carries an area: label and a kind (kind:*, bug, or enhancement). See docs/CI.md."
+        return 1
+    fi
+    echo "issue-labels: OK — all $examined open issue(s) carry an area: label and a kind"
+    return 0
+}
+
+ensure_labels() {
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "issue-labels: SKIPPED BY NAME: gh is not on PATH, so needs-triage cannot be created"
+        return 0
+    fi
+    local existing
+    existing=$(gh label list --repo "$REPO" --limit 200 2>/dev/null | cut -f1)
+    # Bash's own matcher, not `| grep -qx`: an early-exiting reader at the end
+    # of a pipe is the banned verdict shape (tools/pipefail_verdict_check.sh).
+    if [[ $'\n'"$existing"$'\n' == *$'\n'"needs-triage"$'\n'* ]]; then
+        echo "issue-labels: needs-triage already exists on $REPO"
+        return 0
+    fi
+    gh label create needs-triage --repo "$REPO" --color ededed \
+       --description "Filed without an area: label; triage and label it" 2>&1
+    local rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "issue-labels: could not create needs-triage (rc=$rc)"
+        return "$rc"
+    fi
+    echo "issue-labels: created needs-triage on $REPO"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# --selftest: fixtures only, no network. Each case names what must happen.
+# ---------------------------------------------------------------------------
+ST_RUN=0
+ST_FAIL=0
+st_case() {
+    local name="$1" expect="$2" fixture="$3" want="$4"
+    ST_RUN=$((ST_RUN + 1))
+    local out rc
+    out=$(ISSUE_LABELS_JSON="$fixture" "$SELF" 2>&1)
+    rc=$?
+    local ok=0
+    if [ "$expect" = "red" ] && [ "$rc" -ne 0 ]; then ok=1; fi
+    if [ "$expect" = "green" ] && [ "$rc" -eq 0 ]; then ok=1; fi
+    if [ "$ok" -eq 1 ] && [ -n "$want" ]; then
+        [[ "$out" == *"$want"* ]] || ok=0
+    fi
+    if [ "$ok" -eq 1 ]; then
+        echo "  selftest ok: $name"
+        printf '%s\n' "$out" | grep -E '^(RED|issue-labels): ' | head -2 | sed 's/^/      /'
+    else
+        ST_FAIL=$((ST_FAIL + 1))
+        echo "  SELFTEST FAIL: $name — expected $expect (and ${want:-any output}), got rc=$rc"
+        printf '%s\n' "$out" | head -10 | sed 's/^/      /'
+    fi
+}
+
+selftest() {
+    WORK=$(mktemp -d "${TMPDIR:-/tmp}/issue_labels.XXXXXX") || exit 2
+    trap 'rm -rf "$WORK"' EXIT
+
+    cat > "$WORK/all_labelled.json" <<'EOF'
+[{"number": 1, "state": "open", "title": "a runtime bug",
+  "labels": [{"name": "area:runtime-vm"}, {"name": "kind:silent-wrong"}]},
+ {"number": 2, "state": "open", "title": "a docs ask",
+  "labels": [{"name": "area:docs"}, {"name": "enhancement"}]},
+ {"number": 3, "state": "open", "title": "a pull request, not an issue",
+  "pull_request": {"url": "https://example.invalid/pull/3"}, "labels": []}]
+EOF
+    st_case "control: every open issue labelled (and a PR ignored)" green \
+            "$WORK/all_labelled.json" "examined=2 missing=0"
+
+    cat > "$WORK/one_unlabelled.json" <<'EOF'
+[{"number": 1, "state": "open", "title": "a runtime bug",
+  "labels": [{"name": "area:runtime-vm"}, {"name": "kind:silent-wrong"}]},
+ {"number": 2, "state": "open", "title": "filed and forgotten", "labels": []}]
+EOF
+    st_case "plant: one unlabelled open issue" red \
+            "$WORK/one_unlabelled.json" "#2"
+
+    cat > "$WORK/area_only.json" <<'EOF'
+[{"number": 7, "state": "open", "title": "has an area but no kind",
+  "labels": [{"name": "area:jit"}, {"name": "found-by:critic"}]}]
+EOF
+    st_case "plant: an area: label with no kind (found-by is not a kind)" red \
+            "$WORK/area_only.json" "#7"
+
+    cat > "$WORK/kind_only.json" <<'EOF'
+[{"number": 8, "state": "open", "title": "has a kind but no area",
+  "labels": [{"name": "bug"}]}]
+EOF
+    st_case "plant: a kind with no area: label" red \
+            "$WORK/kind_only.json" "#8"
+
+    printf '[]\n' > "$WORK/empty.json"
+    st_case "plant: zero issues examined (vacuity)" red \
+            "$WORK/empty.json" "examined 0 open issue"
+
+    cat > "$WORK/prs_only.json" <<'EOF'
+[{"number": 9, "state": "open", "title": "only a PR is open",
+  "pull_request": {"url": "https://example.invalid/pull/9"}, "labels": []}]
+EOF
+    st_case "plant: the list holds only pull requests, so nothing is examined" red \
+            "$WORK/prs_only.json" "examined 0 open issue"
+
+    echo ""
+    echo "SELFTEST: $ST_RUN case(s) run, $((ST_RUN - ST_FAIL)) passed, $ST_FAIL failed"
+    [ "$ST_FAIL" -eq 0 ]
+}
+
+case "${1:-}" in
+    --selftest)      selftest; exit $? ;;
+    --ensure-labels) ensure_labels; exit $? ;;
+    "")              run_live; exit $? ;;
+    *) echo "usage: $0 [--selftest|--ensure-labels]" >&2; exit 2 ;;
+esac
