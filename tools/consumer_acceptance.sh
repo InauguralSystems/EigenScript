@@ -6480,7 +6480,15 @@ selftest_drop_privileges() {
 plant_root_drop_refuse() {
   local sh="$1" eco="$2"
   local out rc
-  out="$(CA_ECO="$eco" CA_FAULT=pretend_root CA_DROP_CMD=false timeout 20 "$sh" --self-test 2>&1)"
+  # `env -u CA_ST_DROPPED` is load-bearing, MEASURED under the root gate: the
+  # refusal this plant exists to observe is guarded by `[ -z "$CA_ST_DROPPED" ]`
+  # (it must not re-fire inside an already-dropped child). A ROOT run re-execs
+  # the whole self-test with CA_ST_DROPPED=1 exported, the nested invocation
+  # below inherited it, both the fixture-gate check and the pretend_root branch
+  # were skipped, and the plant fell through into a real self-test until its own
+  # timeout: `rc=124 plant_lines=12 refused=0`, i.e. SILENT in the one context
+  # the plant was written for. Unprivileged it passed three consecutive runs.
+  out="$(env -u CA_ST_DROPPED CA_ECO="$eco" CA_FAULT=pretend_root CA_DROP_CMD=false timeout 20 "$sh" --self-test 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc plant_lines=$(grep -c '^plant ' <<< "$out") refused=$(grep -c '^SELF-TEST: FAIL -- refusing to run as uid 0' <<< "$out")"
   note_plant "$out" "" "$rc"
