@@ -26,8 +26,26 @@
   `two of [1, 2, 99]` is a catchable `value`-kind error at the call site
   (`call passes 3 arguments but the callee takes 2`), in the interpreter
   and the JIT alike, and across module boundaries — lint `W022` still
-  catches the same-file case earlier, at `--lint` time. Under-arity
-  null-fills, silently — unchanged by #974 (raising there is deferred).
+  catches the same-file case earlier, at `--lint` time. **Under-arity
+  null-fills, silently** on a 2+-parameter callee — with `define two(a, b)`,
+  `two of [1]` leaves `b` null — but on a **1-parameter** callee the
+  carve-out above wins instead: the argument list re-collects whole, so
+  `one of []` binds `a = []`, not `a = null`. Under-arity is unchanged by
+  #974 (raising there is deferred).
+
+```eigenscript check
+define one(a) as:
+    print of a
+define two(a, b) as:
+    print of (b == null)
+one of []
+two of [1]
+```
+```output
+[]
+1
+```
+
 - **Parentheses always mean exactly one argument**: `f of ([a, b])` passes the
   literal 2-element list as one argument (the escape hatch), and `f of (x)`
   is an unambiguous single argument.
@@ -89,10 +107,30 @@ not any outer `n`.
   errors, so bind the expression first. Dict fields `d.report` remain legal.
 - **Soft** (`prev`, `at`, and the six question words `what who when where why
   how`): usable as params/loop-vars/catch-names, but you can NEVER bind one with
-  plain `is` — `what is e` is a COMPILE ERROR (`E004`), whether or not `e` is
-  bound, because it parses as the interrogative form and its result is
-  discarded. It is legal inside an expression: `print of (what is e)` prints the
-  value. Just avoid naming variables after any keyword.
+  plain `is` — `what is e` parses as the interrogative form, never as an
+  assignment, whether or not `e` is bound. The compiler REFUSES it (`E004`)
+  exactly where its result would be **discarded**, i.e. anywhere except as the
+  LAST statement of its block — nothing pops that one, so no refusal fires and
+  the program runs. Do not rely on the accepted position: `--lint` flags the
+  bare form as `W019` in both, so a clean lint is the rule to trust. Inside an
+  expression it is always legal: `print of (what is e)` prints the value. Just
+  avoid naming variables after any keyword.
+
+```eigenscript nocheck this program is EXPECTED to fail compilation (E004) and is executed as examples/errors/interrogative_discarded.eigs by tests/test_error_examples.sh, suite section [90]
+e is 1
+what is e
+print of "never reached"
+```
+
+```eigenscript check
+e is 41
+print of (what is e)
+what is e
+```
+```output
+41
+```
+
 
 ## The observer (the reason to use this language)
 
@@ -225,7 +263,7 @@ else:
     print of "under"
 
 try:
-    throw of "boom"          # 1/0 does NOT throw (it warns and returns 0) — raise explicitly
+    throw of "boom"          # your own raise; arithmetic raises on its own, below
 catch err:
     print of ("caught: " + err)
 
@@ -234,6 +272,23 @@ match x:
         print of "one"
     case _:
         print of "other"
+```
+
+**Division by zero RAISES** — it is a catchable `value`-kind error, not a
+warning and not `0` (that fossil died with the fail-soft reform, #975).
+A caught error is a dict with `kind`, `message` and `line`:
+
+```eigenscript check
+try:
+    x is 1 / 0
+    print of "not reached"
+catch err:
+    print of err.kind
+    print of err.message
+```
+```output
+value
+division by zero
 ```
 
 ## Before hand-rolling a helper

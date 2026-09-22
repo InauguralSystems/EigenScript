@@ -1,0 +1,338 @@
+name: issue-triage
+
+# Issue labels are ENFORCED, not remembered.
+#
+# The day the maintainer said "we aren't labeling issues" (2026-09-21) the open
+# backlog was essentially unlabelled. The "33 of 36" census that first
+# circulated is not reproducible from the API — the open set was 35 at the
+# sweep and never 36 — so the figure this lane stands on is the gate's own
+# first real run after the hand sweep: `examined=35 missing=0`.
+# The scheme exists on the
+# repository (`area:<subsystem>`, `kind:*` plus the stock `bug`/`enhancement`,
+# `found-by:*`, `blocks-release`) and the whole backlog was labelled by hand
+# once. A hand sweep is the failure, not the fix, so two mechanisms keep it
+# labelled from here:
+#
+#   * `triage` — a new or reopened issue with no `area:` label gets
+#     `needs-triage` immediately, so the gap is visible on the issue itself
+#     rather than in a report nobody opens.
+#   * `audit` — a daily run of tools/issue_labels_check.sh over every OPEN
+#     issue. It prints `examined=N missing=M` and fails when M > 0 OR when
+#     N == 0 (an empty enumeration satisfies "nothing is missing" without
+#     checking anything — mechanical-gates §121).
+#
+# A SUCCESSFUL EXIT IS NOT A MEASUREMENT. Round 1 of this lane accepted the
+# gate gutted to `exit 0` — `exit=0 output=''` passed the audit step. Round 2
+# made the gate publish a contract (`--contract`) and had this step READ it —
+# so the thing being policed supplied the yardstick, and a gate that lowered
+# its own contract passed. Round 3 keeps the audit step's OWN literal copy of
+# the population regex and the selftest case count, asserts the gate's output
+# against that copy, and asserts the gate's contract EQUALS it. Two copies,
+# kept equal by a test; a drift is red by name and never auto-adopted.
+#
+# See docs/CI.md, "Issue labels".
+
+on:
+  issues:
+    types: [opened, reopened]
+  schedule:
+    # 05:23 UTC, off the hour and after the nightly lanes, so it does not queue
+    # behind everyone else's midnight cron on the shared runner pool.
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-triage-${{ github.event_name }}-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    name: issue-triage / label a new issue
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Ensure the needs-triage label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/issue_labels_check.sh --ensure-labels
+
+      - name: "Mark an issue filed without an area: label"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -u
+          labels=$(gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" \
+                     --json labels --jq '.labels[].name')
+          echo "issue #$ISSUE labels: ${labels:-<none>}"
+          if printf '%s\n' "$labels" | grep -q '^area:'; then
+            echo "issue #$ISSUE already carries an area: label; nothing to do"
+            exit 0
+          fi
+          gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label needs-triage
+          echo "issue #$ISSUE labelled needs-triage"
+          # SAY WHAT THE LABEL MEANS, on the issue. A label a reporter has
+          # never seen, with no way to act on it, is a maintainer's private
+          # note wearing a public badge; CONTRIBUTING.md points here, so this
+          # comment names the scheme in one line and the reporter can
+          # self-serve.
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+            'Thanks for filing. Labelled `needs-triage` because it has no `area:` label yet. The scheme is `area:<subsystem>` (runtime-vm, jit, concurrency, observer, memory, trace-tape, packages, http, gfx, embed, docs, ci, gates, lint-tooling, consumer, aot, stdlib) plus a kind (`kind:*`, or the stock `bug`/`enhancement`) — add the ones that fit if you know them, and a maintainer will confirm and drop `needs-triage`. See CONTRIBUTING.md, "Reporting Bugs".'
+
+  audit:
+    name: issue-triage / every open issue is labelled
+    if: github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: "Every open issue carries an area: label and a kind"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_LABELS_REPO: ${{ github.repository }}
+        run: |
+          set -u
+          # ---------------------------------------------------------------
+          # THE CALLER'S OWN COPY. Literals, held HERE, asserted against the
+          # gate's output. A separate check asserts the gate's --contract
+          # EQUALS these literals; a drift is red BY NAME and is never
+          # auto-adopted.
+          #
+          # ROUND 2 READ BOTH FROM THE GATE and was therefore policed by the
+          # thing it polices: `POPULATION_RE=examined=|.*` admitted empty
+          # output, a zero-permitting contract passed, and a gate with five
+          # plants deleted plus SELFTEST_CASES=1 passed this job (round-2
+          # blind critic, Astra check 7). The round-2 vacuity guard
+          # (`case "$re" in *examined=*`) is gone too: it was a substring test
+          # that `POPULATION_RE='examined='` satisfied.
+          #
+          # ROUND 3 also requires a LIVE source token. `examined=1 missing=0
+          # (source: fixture ...)` used to pass here because the regex stopped
+          # before `(source:`.
+          # ---------------------------------------------------------------
+          POP_RE_PINNED='^issue-labels: examined=[1-9][0-9]* missing=[0-9][0-9]* \(source: gh-api:[^ )]+\)$'
+          SELFTEST_CASES_PINNED=7
+
+          # Witnesses: incremented only where the pinned literal actually
+          # matched, so a gutted reporting branch still ends this step red at
+          # the accounting check below.
+          CONTRACT_SEEN=0
+          POP_SEEN=0
+          ST_SEEN=0
+          CHECKS=0
+          CHECKS_EXPECTED=4
+
+          # 1. the gate's published contract must EQUAL the pins above.
+          CHECKS=$((CHECKS + 1))
+          contract=$(bash tools/issue_labels_check.sh --contract 2>&1) || true
+          gate_re=$(printf '%s\n' "$contract" | sed -n 's/^POPULATION_RE=//p' | head -1)
+          gate_cases=$(printf '%s\n' "$contract" | sed -n 's/^SELFTEST_CASES=//p' | head -1)
+          if [ -z "$gate_re" ] || [ -z "$gate_cases" ]; then
+            echo "issue-triage: the gate publishes no --contract, so nothing here can assert that it measured anything"
+          elif [ "$gate_re" != "$POP_RE_PINNED" ]; then
+            echo "issue-triage: gate contract changed; re-pin the caller deliberately — gate POPULATION_RE=[$gate_re] but this workflow pins [$POP_RE_PINNED]"
+          elif [ "$gate_cases" != "$SELFTEST_CASES_PINNED" ]; then
+            echo "issue-triage: gate contract changed; re-pin the caller deliberately — gate SELFTEST_CASES=$gate_cases but this workflow pins $SELFTEST_CASES_PINNED"
+          else
+            CONTRACT_SEEN=1
+            echo "issue-triage: gate contract equals this workflow's pin"
+          fi
+
+          # 2. the gate's own planted faults, against THIS file's pinned line.
+          CHECKS=$((CHECKS + 1))
+          st=$(mktemp)
+          rc=0
+          bash tools/issue_labels_check.sh --selftest > "$st" 2>&1 || rc=$?
+          cat "$st"
+          want="SELFTEST: $SELFTEST_CASES_PINNED case(s) run, $SELFTEST_CASES_PINNED passed, 0 failed, 0 skipped"
+          if [ "$rc" -ne 0 ]; then
+            echo "issue-triage: the gate's own planted faults did not all go red"
+          elif [ "$(grep -cxF "$want" "$st")" -ne 1 ]; then
+            echo "issue-triage: the selftest line is not exactly this workflow's pin [$want] — a selftest that ran nothing also exits 0"
+          else
+            ST_SEEN=1
+          fi
+
+          # 3. the LIVE run, against THIS file's pinned population regex.
+          CHECKS=$((CHECKS + 1))
+          out=$(mktemp)
+          rc=0
+          bash tools/issue_labels_check.sh > "$out" 2>&1 || rc=$?
+          cat "$out"
+          # `|| true`, and it is load-bearing: this job runs under `bash -e`
+          # (Actions' default shell is `bash -e {0}`), and `grep -c` exits 1
+          # when the count is ZERO — which is exactly the failing case this
+          # line is measuring. Without it the step dies AT THE GREP, nonzero
+          # but SILENT, and the named diagnosis below never prints. Measured
+          # 2026-09-21 by running this step body under `bash -e` with
+          # GH_TOKEN="": it exited 1 after the contract check and said
+          # nothing about why.
+          hits=$(grep -cE "$POP_RE_PINNED" "$out" || true)
+          # A SKIP is not a pass here: this job exists to make the API call, so
+          # an unauthenticated or offline run must be loud rather than green.
+          if grep -q 'SKIPPED BY NAME' "$out"; then
+            echo "issue-triage: the audit skipped on a lane whose whole purpose is to run it"
+          elif [ "$hits" -ne 1 ]; then
+            echo "issue-triage: the audit printed $hits line(s) matching this workflow's pinned population regex; exactly 1 is required (a successful exit is not a measurement, and a fixture-sourced line is not a live one)"
+            echo "issue-triage: caller pin: $POP_RE_PINNED"
+          elif [ "$rc" -ne 0 ]; then
+            echo "issue-triage: the audit found unlabelled open issues (see above)"
+          else
+            POP_SEEN=1
+          fi
+
+          # 4. this step's own accounting. Deleting or short-circuiting any
+          #    check above changes these numbers instead of quietly measuring
+          #    less.
+          CHECKS=$((CHECKS + 1))
+          echo "issue-triage: accounting — checks $CHECKS/$CHECKS_EXPECTED, contract $CONTRACT_SEEN/1, selftest $ST_SEEN/1, population $POP_SEEN/1"
+          if [ "$CHECKS" -ne "$CHECKS_EXPECTED" ] || [ "$CONTRACT_SEEN" -ne 1 ] \
+             || [ "$ST_SEEN" -ne 1 ] || [ "$POP_SEEN" -ne 1 ]; then
+            echo "issue-triage: a check did not run, or did not match this workflow's own literal"
+            exit 1
+          fi
+          exit "$rc"
+
+      # ROUND 4 — THIS LANE RUNS THE ROADMAP GATE'S LIVE ARMS TOO.
+      #
+      # BOUGHT 2026-09-21 (round-4 blind critic, Fable; #1207): arms (b) and
+      # (c) of tools/roadmap_check.sh — the milestone-set mirror and the
+      # reference resolver — were run against GitHub by NO automated caller
+      # anywhere. This job was the ONLY lane holding a token, and it ran only
+      # the labels gate. The dev image now carries `gh` and ci.yml's
+      # `linux / gcc` exports a token, and this daily lane runs the roadmap
+      # gate as well, so the mirror is checked twice a day rather than never.
+      #
+      # THE PIN HERE ADMITS NO SKIP. Unlike the suite's caller — which runs on
+      # macOS and sanitizer lanes that genuinely have no credentials — this job
+      # exists to make the API call, so `skipped:` is a failure and so is a
+      # reference walk that resolved nothing (`resolved=0`) or had to skip a
+      # reference (`skipped=N`). It also requires `repos=verified:N` — the
+      # KNOWN_REPOS verification is what makes "does not exist" and "is
+      # private" decidable, and until round 6 it left no trace on the OK line,
+      # so a listing that 403'd printed a byte-identical verdict (round-5 blind
+      # critic, Fable). The literals are THIS file's own copy; a
+      # separate check asserts the gate's --contract still equals the caller's
+      # skip-admitting form, so a drift is red by name and never auto-adopted.
+      - name: "ROADMAP.md is a milestone set (live arms, this lane holds the token)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROADMAP_CHECK_REPO: ${{ github.repository }}
+        run: |
+          set -u
+          ROADMAP_POP_RE_LIVE='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=gh-api:[^ ]+ refs=gh-api:[^ ]+ resolved=[1-9][0-9]* skipped=0 repos=verified:[1-9][0-9]*\)$'
+          ROADMAP_POP_RE_CONTRACT='^roadmap-check: OK \(examined=[1-9][0-9]* row\(s\), open=[1-9][0-9]*\) \(source: milestones=(gh-api|skipped):[^ ]+ refs=(gh-api|skipped):[^ ]+ resolved=[0-9]+ skipped=[0-9]+ repos=(verified:[0-9]+|skipped:[^ ]+)\)$'
+          ROADMAP_SELFTEST_CASES_PINNED=25
+
+          CONTRACT_SEEN=0
+          ST_SEEN=0
+          POP_SEEN=0
+          PROBE_SEEN=0
+          CHECKS=0
+          CHECKS_EXPECTED=5
+
+          # 0. THE SAME PROBE THE GATE USES. A lane that exports a token and
+          #    cannot reach GitHub has measured nothing, and this is the one
+          #    check that says so rather than accepting the gate's skip.
+          #    ROUND 5 (blind critic, Astra): `gh_probe_token_declared` now
+          #    tests PRESENCE, not non-emptiness. A step whose env maps
+          #    GH_TOKEN to a secret expression naming a secret that does not
+          #    exist exports an EMPTY string, not nothing, and round 4 read
+          #    that as "this lane declares no token" — the shape that let the
+          #    suite caller pass 11/11 with every GitHub arm skipped. An empty
+          #    export is a declaration of a credential this lane cannot use,
+          #    and it is named as such here.
+          CHECKS=$((CHECKS + 1))
+          . tools/gh_probe.sh
+          state=$(gh_probe_state) || true
+          echo "issue-triage: gh_probe_state=$state"
+          if gh_probe_token_declared && [ "$state" != "authenticated" ]; then
+            echo "issue-triage: this lane DECLARES GH_TOKEN/GITHUB_TOKEN (set, possibly EMPTY) and the shared probe still reports '$state' — a lane that declares a credential it cannot use has measured nothing, and this step exists to make the API call"
+          elif [ "$state" != "authenticated" ]; then
+            # BOTH VARIABLES ARE UNSET on this arm — `gh_probe_token_declared`
+            # just said so. Round 6 printed "this lane exports GH_TOKEN" here
+            # anyway, which sends a reader to look at a token that is not
+            # there (round-6 blind critics, ledger 6). The failure is the
+            # same; the diagnosis is what has to be true.
+            echo "issue-triage: this lane DECLARES NO TOKEN (GH_TOKEN and GITHUB_TOKEN are both UNSET) and the shared probe reports '$state' — the roadmap gate's live arms cannot run here, which is the whole reason this step exists; the step's env: block is what should be exporting one"
+          else
+            PROBE_SEEN=1
+          fi
+
+          # 1. the gate's published contract must EQUAL this file's copy.
+          CHECKS=$((CHECKS + 1))
+          contract=$(bash tools/roadmap_check.sh --contract 2>&1) || true
+          gate_re=$(printf '%s\n' "$contract" | sed -n 's/^POPULATION_RE=//p' | head -1)
+          gate_cases=$(printf '%s\n' "$contract" | sed -n 's/^SELFTEST_CASES=//p' | head -1)
+          if [ -z "$gate_re" ] || [ -z "$gate_cases" ]; then
+            echo "issue-triage: the roadmap gate publishes no --contract, so nothing here can assert that it measured anything"
+          elif [ "$gate_re" != "$ROADMAP_POP_RE_CONTRACT" ]; then
+            echo "issue-triage: roadmap gate contract changed; re-pin this workflow deliberately — gate POPULATION_RE=[$gate_re] but this workflow pins [$ROADMAP_POP_RE_CONTRACT]"
+          elif [ "$gate_cases" != "$ROADMAP_SELFTEST_CASES_PINNED" ]; then
+            echo "issue-triage: roadmap gate contract changed; re-pin this workflow deliberately — gate SELFTEST_CASES=$gate_cases but this workflow pins $ROADMAP_SELFTEST_CASES_PINNED"
+          else
+            CONTRACT_SEEN=1
+            echo "issue-triage: roadmap gate contract equals this workflow's pin"
+          fi
+
+          # 2. the gate's own planted faults, against THIS file's pinned line.
+          CHECKS=$((CHECKS + 1))
+          st=$(mktemp)
+          rc=0
+          bash tools/roadmap_check.sh --selftest > "$st" 2>&1 || rc=$?
+          cat "$st"
+          want="SELFTEST: $ROADMAP_SELFTEST_CASES_PINNED case(s) run, $ROADMAP_SELFTEST_CASES_PINNED passed, 0 failed, 0 skipped"
+          if [ "$rc" -ne 0 ]; then
+            echo "issue-triage: the roadmap gate's own planted faults did not all go red"
+          elif [ "$(grep -cxF "$want" "$st")" -ne 1 ]; then
+            echo "issue-triage: the roadmap selftest line is not exactly this workflow's pin [$want] — a selftest that ran nothing also exits 0"
+          else
+            ST_SEEN=1
+          fi
+
+          # 3. the LIVE run, against the NO-SKIP pin.
+          CHECKS=$((CHECKS + 1))
+          out=$(mktemp)
+          rc=0
+          bash tools/roadmap_check.sh > "$out" 2>&1 || rc=$?
+          cat "$out"
+          # `|| true`, and it is load-bearing: this job runs under `bash -e`
+          # (Actions' default shell is `bash -e {0}`), and `grep -c` exits 1
+          # when the count is ZERO — which is exactly the failing case this
+          # line is measuring. Without it the step dies AT THE GREP, nonzero
+          # but SILENT, and the named diagnosis below never prints. Measured
+          # 2026-09-21 by running this step body under `bash -e` with
+          # GH_TOKEN="": it exited 1 after the contract check and said
+          # nothing about why.
+          hits=$(grep -cE "$ROADMAP_POP_RE_LIVE" "$out" || true)
+          if [ "$hits" -ne 1 ]; then
+            echo "issue-triage: the roadmap gate printed $hits line(s) matching this workflow's LIVE pin; exactly 1 is required. This lane holds a token, so a skipped: source, resolved=0, or any skipped reference is a failure here — the milestone mirror and the reference walk are what this step exists to run."
+            echo "issue-triage: caller pin: $ROADMAP_POP_RE_LIVE"
+          elif [ "$rc" -ne 0 ]; then
+            echo "issue-triage: the roadmap gate found problems (see above)"
+          else
+            POP_SEEN=1
+          fi
+
+          # 4. this step's own accounting.
+          CHECKS=$((CHECKS + 1))
+          echo "issue-triage: roadmap accounting — checks $CHECKS/$CHECKS_EXPECTED, probe $PROBE_SEEN/1, contract $CONTRACT_SEEN/1, selftest $ST_SEEN/1, population $POP_SEEN/1"
+          if [ "$CHECKS" -ne "$CHECKS_EXPECTED" ] || [ "$PROBE_SEEN" -ne 1 ] \
+             || [ "$CONTRACT_SEEN" -ne 1 ] || [ "$ST_SEEN" -ne 1 ] || [ "$POP_SEEN" -ne 1 ]; then
+            echo "issue-triage: a check did not run, or did not match this workflow's own literal"
+            exit 1
+          fi
+          exit "$rc"

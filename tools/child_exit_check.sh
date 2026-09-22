@@ -49,7 +49,7 @@ RUNNER="${RUNNER:-tests/run_all_tests.sh}"
 # two children on one line (`if bash A && bash B --selftest; then`), so the
 # true invocation count is higher. Lines are what this is measured in; do not
 # "correct" it to invocations without re-measuring.
-CHILD_SITES_DECLARED="${CHILD_SITES_DECLARED:-118}"
+CHILD_SITES_DECLARED="${CHILD_SITES_DECLARED:-125}"
 
 fail() { echo "GATE ERROR: $*" >&2; RC=1; }
 RC=0
