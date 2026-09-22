@@ -315,6 +315,59 @@ jobs:
           bash tools/section_plan.sh --skip-audit
           bash tools/section_plan.sh --probes
           bash tools/section_plan.sh --print-section-plan core
+      # Measured 211s / 239s / 273s on this 2-core/4 GB box (n=3) after the
+      # M1b round-3 plants; round 4 (86 plants, 53 transverse rows) measured
+      # 455 s / 326 s / 423 s; round 5 (93 plants, 58 transverse rows)
+      # measures SELFTEST_SECONDS below on the dev box with other agents
+      # running. The PATH farm now writes one two-line exec wrapper per
+      # inherited executable instead of one symlink: 2144 wrappers cost
+      # 0.57 s and 86 KB (8.6 MB of 4 KiB blocks) per harness RUN, measured
+      # -- with $(printf ...) instead of printf -v it was 4.5 s. Under 8
+      # minutes,
+      # so this stays on the PR job rather than splitting to nightly.yml. As
+      # root in this container the WHOLE self-test re-runs itself as an
+      # unprivileged user (a byte-identical copy of its tool tree in a drop
+      # root), or both unwritable plants SKIP by name and are counted in
+      # `skipped=2`.
+      # The extractor's YAML oracle is a FLOOR, and until round 9 it skipped
+      # on this lane: the image had no PyYAML, `--selftest` took the
+      # all-or-nothing SKIP arm and printed PASS, and a planted `runCmd` key
+      # rename was GREEN here (critic r8 ledger 3, measured on job
+      # 106492225359). `.devcontainer/Dockerfile` now installs python3-yaml,
+      # so this step is a no-op on an image built from THIS PR. It is not a
+      # no-op on a FORK PR, which runs in the rolling `ci-main` image built
+      # before the Dockerfile change -- and the harness sets
+      # CA_SELFTEST_REQUIRE_YAML=1 unconditionally, so a missing PyYAML is a
+      # named FAIL, never a quiet skip. mechanical-gates s37.
+      - if: needs.scope.outputs.code == 'true'
+        name: PyYAML for the runCmd extractor's YAML oracle
+        run: |
+          if python3 -c 'import yaml' 2>/dev/null; then
+            echo "PyYAML already present: $(python3 -c 'import yaml; print(yaml.__version__)')"
+          else
+            apt-get update && apt-get install -y --no-install-recommends python3-yaml
+          fi
+          python3 -c 'import yaml; print("yaml", yaml.__version__)'
+      - if: needs.scope.outputs.code == 'true'
+        name: Consumer-acceptance harness self-test (~7 min)
+        run: bash tools/consumer_acceptance.sh --self-test
+      - if: needs.scope.outputs.code == 'true'
+        name: Consumer-acceptance plan against fixture inventory
+        run: |
+          fx=$(mktemp -d)
+          printf 'fixture\n' > "$fx/.ca_fixture"
+          printf 'good_a\ngood_b\n' > "$fx/.ca_expected"
+          mkdir -p "$fx/good_a/.devcontainer" "$fx/good_a/.git" \
+                   "$fx/good_a/.github/workflows" \
+                   "$fx/good_b/.devcontainer" "$fx/good_b/.git" \
+                   "$fx/good_b/.github/workflows"
+          printf 'ARG EIGS_REF=v0.43.0\n' > "$fx/good_a/.devcontainer/Dockerfile"
+          printf 'ARG EIGS_REF=v0.43.0\n' > "$fx/good_b/.devcontainer/Dockerfile"
+          printf 'runCmd: eigenscript work.eigs\n' > "$fx/good_a/.github/workflows/ci.yml"
+          printf 'runCmd: eigenscript work.eigs\n' > "$fx/good_b/.github/workflows/ci.yml"
+          CA_ECO="$fx" bash tools/consumer_acceptance.sh plan > "$fx/plan.out"
+          cat "$fx/plan.out"
+          grep -q 'expected=[1-9]' "$fx/plan.out"
 
   # Linux build + full suite, inside the shared image, for gcc and clang.
   # gcc and clang shake out different warnings and codegen.

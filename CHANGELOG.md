@@ -319,6 +319,255 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **Consumer-acceptance harness (#1213, #1214, #1217).** `run` takes a
+  candidate set (`--full` / `--gfx`); a name a consumer invokes that the
+  set does not cover is `UNRUNNABLE|prereq:variant:<name>` with a 127-shim
+  on PATH. Variant discovery (`tools/_derive_variants.py`) takes a name
+  only from an INVOCATION POSITION -- the first word of a simple command
+  in shell text (`*.sh`, a `#!` script, Makefile recipes, a workflow
+  `runCmd`, a declared command), the word after
+  `exec`/`env`/`timeout N`/`xvfb-run`/`command -v`, an assignment or
+  `${VAR:-default}` value, a Python `subprocess`/`os.system`/`os.exec*`/
+  `shutil.which` first argument or `os.environ.get` default, and an
+  `.eigs` `exec_capture`/`proc_spawn` first string. Comments, heredoc
+  bodies, prose, JSON, non-`runCmd` YAML and anything with a `/` are not
+  invocations; every rejected occurrence is printed by `plan` as
+  `variants|<consumer>|excluded:<name>|<file>:<line>`. Scanning every
+  TOKEN instead had made a Dockerfile path, a skill name in CLAUDE.md,
+  bench-JSON keys, a comment and a release-asset URL into prerequisites of
+  ouroboros, iLambdaAi and Tidepool. The class is closed at EXECUTION time
+  too, by CONFINEMENT rather than by shadowing: a 127-shim earlier on
+  `PATH` is only as good as PATH ORDER, and PATH order belongs to the
+  consumer -- one `export PATH="$HOME/.local/bin:$PATH"` (the ordinary CI
+  idiom EigenGauntlet and EigenMiniSat already use via `$GITHUB_PATH`)
+  put a stale runtime back in front of the shim and the row still read
+  PASS. Each row therefore runs with `PATH=$SHIM:$FARM` and nothing else:
+  `$FARM` holds, for every executable found on the inherited PATH EXCEPT
+  every name matching `eigenscript*`, a two-line EXEC WRAPPER
+  (`#!/bin/sh` + `exec "<absolute original path>" "$@"`, mode 755), so
+  every tool runs AT ITS ORIGINAL LOCATION (`path_farm=`,
+  `path_dropped=`). A SYMLINK farm relocated the tool and broke
+  consumers: a virtualenv's `python3` reached through a link reports
+  `sys.prefix=/usr` (venv detection reads `pyvenv.cfg` beside the
+  executable's own path), so a dependency installed in the selected
+  virtualenv vanished and the row FAILed after the candidate call
+  succeeded. Farm construction is fail-closed by name (`cannot build the
+  PATH farm under <dir>`, exit 2) and `path_farm=N` must be at least the
+  number of executables the enumeration found -- a farm directory that
+  could not be written used to read `path_farm=0` under `VERDICT: PASS`.
+  `HOME` is an empty per-row scratch directory (`home_scratch=yes`) so a
+  prepend of `$HOME/.local/bin` adds an empty directory, while the named
+  build/tool CACHE variables (`GOPATH`, `GOMODCACHE`, `GOCACHE`,
+  `GOFLAGS`, `JAVA_HOME`, `ELLE_JAR`, `CARGO_HOME`, `RUSTUP_HOME`,
+  `PIP_CACHE_DIR`, `npm_config_cache`) pass through and the three Go ones
+  are derived from the real home when unset (`env_passthrough=`):
+  measured on eddy, a scratch HOME alone turned `GOPROXY=off go list -m
+  all` into `module lookup disabled`. A consumer PATH EDIT is a
+  finding of its own, and the rule matches the SUBSTRING, not the
+  syntactic position: `tools/_derive_variants.py` treats ANY occurrence
+  of `PATH=`, `PATH+=`, `PATH :=` or `PATH ?=` -- word-bounded on the
+  left, so `MANPATH`, `PYTHONPATH` and `GITHUB_PATH` do not match --
+  ANYWHERE in a scanned text line as a PATH edit, plus every
+  `$GITHUB_PATH` append. Comments and heredoc BODIES are scanned, a
+  Makefile is scanned in FULL (a top-level `export PATH := ...` sets
+  every recipe's PATH), `.eigs` string literals are scanned, and a
+  workflow is scanned at its `runCmd`. `plan` prints both the edits
+  (`path_edit|<consumer>|<component>|<file>:<line>`) and the scan's OWN
+  witness (`pathexamined|<consumer>|<files>|<edits>`), so "no edits" can
+  be told apart from "the scan examined nothing"; all 16 real consumers
+  report zero edits. A row whose edit adds a component that is a LITERAL
+  absolute directory existing on this box -- after `~` (the row's own
+  scratch `$HOME`, allowed) and `~user` (resolved from `getent passwd`)
+  expansion -- whose RESOLVED form is outside `$SHIM`, `$FARM`, the row's
+  scratch `$HOME` and its own checkout is `FAIL|path-edit:<resolved dir>`
+  before it runs, with a `log|<name>|preflight:` line that also carries
+  the WRITTEN form -- the shape that reached the developer's real
+  `~/.local/bin/eigenscript-full.stale` (`0.21.0`) under a PASS row.
+  Containment is decided on the RESOLVED form ONLY: while EITHER form
+  could buy the allowance, `<checkout>/../../<absdir>` and a symlink
+  inside the checkout pointing outside it both read PASS while the stale
+  binary ran; every allowed prefix is resolved on the same terms, so a
+  checkout or scratch reached THROUGH a symlink is still allowed. THE
+  PRICE, stated: the rule is over-broad in the SAFE direction -- a line
+  that merely NAMES a PATH edit (a comment, a usage string, a README
+  example living inside a `.sh`, a make variable holding one) refuses
+  that consumer's row BY NAME. It refuses a row it could have run; it
+  never runs a row it should have refused. The enumeration follows symlinked PATH directories
+  (`find -L`); an unreadable (0111) PATH directory contributes nothing and
+  is reachable from nothing. Names outside the candidate set keep their
+  127-shims in `$SHIM` (`path_masked=`) so the row is
+  `FAIL|undeclared-variant:<name>` by name, and a name that resolves
+  NOWHERE is recorded the same way by `command_not_found_handle` instead
+  of being a `127` the consumer can swallow with `|| true`. That handler
+  travels as `BASH_ENV`, so it reaches a non-interactive bash in the row
+  and not only the block shell; `export -f` alone does not travel,
+  because every command runs through a `#!/bin/sh` farm wrapper and dash
+  drops the `BASH_FUNC_…%%` entry (measured). It is reached ONLY where
+  bash itself resolves a simple command: a `#!/bin/sh` child and every
+  exec-family launcher (`timeout`, `env`, `xargs`, `xvfb-run`, `exec`, a
+  `make` recipe, `bash --posix`, python `subprocess`) execvp the name
+  themselves and never consult it. Those are caught instead by the row's
+  captured-output sweep (round 9 below); plant `not-found-child` now
+  carries a named row for each. `EIGS_DIR` is the twin of that PATH -- a
+  `cp -rL` copy of the candidate tree that used to hand out the sibling's
+  `src/eigenscript-full` -- so every `eigenscript*` file in the overlay is
+  a shim too (`overlay_shimmed=`). Three residuals remain, each named in
+  the header and each PINNED BY A PLANT that fires only while it holds: a
+  PATH edit the scanner cannot SEE -- the substring rule did not remove
+  that hole, it MOVED it from line POSITION to FILE KIND and COMPONENT
+  PARSE. The scan sees every scanned file kind (`.sh`, `.bash`, `.zsh`,
+  an extensionless file carrying a `#!` line, a `.yml` at its `runCmd`,
+  `Makefile` and `.mk`, and `.eigs`) and, inside those, every literal
+  component it can PARSE, which leaves three shapes: (a) file kinds
+  outside that list -- a `PATH=` shell string inside a `.py`, a
+  `Makefile.in`, a sourced extensionless file with no shebang; (b)
+  components the splitter cannot parse -- a `${PATH:+:$PATH}` suffix, a
+  line-continued value, `$'...'` quoting; (c) computed components --
+  `PATH="$(cat dir.txt):$PATH"`, a `$VAR` other than
+  `$HOME`/`$PWD`/`$PATH`, or `os.environ["PATH"]`. Measured over all 16
+  checkouts, every file kind, `.git` excluded, NO consumer has any of
+  them: the only `PATH=` lines in the ecosystem are five
+  `.devcontainer/Dockerfile` `ENV PATH=` lines (DMG, dynamics, eddy,
+  phugoid, Tidepool), and a Dockerfile is not the acceptance command. The
+  ledger is issue #1229. Then: a farmed, inherited wrapper that resolves
+  its own location
+  (`exec "$(dirname "$(readlink -f "$0")")/eigenscript"`) and so reaches
+  the stale `eigenscript` beside it -- the price of running tools in
+  place, closable only by an execve witness or a mount namespace, both
+  deferred; and a path the consumer computes INSIDE its checkout
+  (`./eigenscript-*`), which is not on PATH at all and reads UNEXERCISED,
+  never PASS. Scratch
+  creation is fail-closed: every `mktemp`/`mkdir` whose result the harness
+  writes into is checked, an unusable `$TMPDIR` exits 2 with `cannot
+  create scratch under <dir> (<why>)` BEFORE any shim is written, and a
+  shim is never written to a directory outside the run scratch -- the
+  unchecked `mktemp` this replaces let `SHIM` fall open to `/bin`, and a
+  round-2 run as root wrote stub shims into `/usr/bin` on a dev box.
+  Non-PASS rows keep the last 60 lines of the consumer log in the
+  record (`log|<name>|<line>`), or `log|<name>|preflight: <reason>` when
+  there is no consumer output; `CA_LOGS` copies logs before cleanup. The
+  inventory is a declared 16-name floor plus a committed-record floor: the
+  MAXIMUM row count over the DATED records whose header says
+  `status=COMPLETE`, excluding by realpath the file this run is writing,
+  and read BEFORE the run takes the record path. Reading the lexically
+  newest dated record at scan time let this run's own `INCOMPLETE` header
+  -- under the `reports/consumer_acceptance/<date>-<tag>.record`
+  convention this repo documents -- set the floor to 0, so a 2-consumer
+  inventory `PASS`ed beside a 3-row committed record. `run`
+  names a floor failure on its own `inventory floor: <why>` line, on
+  stdout before the verdict and in the record footer, while the
+  `VERDICT:` line itself stays exact. `_extract_runcmd.py`
+  matches YAML block-scalar chomping, folding, and relative indent.
+  Only a dated `YYYY-MM-DD-*.record` counts toward that floor; any other
+  `*.record` in the directory is `stray record file: <name>`, a FAIL by
+  name (a non-dated `smoke.record` used to LOWER the floor to its own row
+  count). `_extract_runcmd.py` matches YAML block-scalar chomping,
+  folding, and relative indent, keeps the trailing newlines `|+`/`>+`
+  keep, treats a MORE-INDENTED line in a folded scalar as literal (three
+  commands stayed three commands, so a failing one still fails the block)
+  and normalises CRLF. `set -f` around word splits including the variant
+  loop. A signal in the pause-before-rename window removes the rewrite
+  temp. `--self-test` is a `gate self-tests` CI step; the fixture `plan`
+  step asserts `expected=N` with N>0. A uid-0 self-test re-runs the WHOLE
+  self-test as an unprivileged user (a byte-identical copy of its tool
+  tree inside a drop root it chowns), or SKIPs both unwritable plants by
+  name; `plants + skipped` is pinned to a declared constant, so a gutted
+  SKIP counter or a deleted plant is red; and every child duplicates its
+  stderr into a capture file the `no-unbound-variable` check reads, so a
+  plant that discards both streams cannot hide a diagnostic. The drop is
+  tied to what actually RAN: the dropped process prints its own script's
+  sha256 as its first line and the outer compares it with the copy it
+  cmp'd, because a drop tool that rewrites the copy between the check and
+  the exec otherwise ran a different script under a "byte-identical"
+  banner; the copied tree's directories are read-only for the run, so the
+  file cannot be swapped for another inode either. Every scratch name the
+  self-test and its children create in the outer tmp carries that run's
+  token, and the hygiene scan asks only about entries tagged with it: a
+  CONCURRENT self-test's `/tmp/ca-st.*` used to be read as this run's
+  leftover and printed a false `SELF-TEST: FAIL`.
+
+- **Consumer-acceptance harness, round 9 (#1213, #1214, #1217, #1229).**
+  Five findings the fourth blind critic measured against round 8, each
+  closed with the plant that goes red if it returns.
+  **The record floor survives a same-path re-run.** The documented driver
+  convention is `CA_RECORD=<today>-<tag>.record`, so the ordinary "fix one
+  consumer, re-run the wave" loop lands on the same file -- and round 8's
+  realpath self-exclusion then discarded the only measurement the
+  ecosystem has (one 16-row `status=COMPLETE` record), leaving floor 0 and
+  a 2-consumer inventory printing `VERDICT: PASS`. The exclusion was
+  redundant for the case it was written for -- the floor is computed
+  BEFORE the header is written and an `INCOMPLETE` record is skipped, so
+  the file at `$RECORD` can only be a previous wave's -- and is gone.
+  Plant `record-floor-samepath` (the critic's fixture, 16 rows and all)
+  fires; mutation `record-samepath-exclude` puts the exclusion back and
+  silences it. The RUN record and `run`'s stdout now carry
+  `record_floor=/floor_records=/floor_witness=`, so a VACUOUS floor is
+  visible where the verdict is read rather than only in `plan`.
+  **The `runCmd` extractor's YAML oracle executes on the lane that gates
+  merges.** It cross-checks the hand-rolled block-scalar reader against
+  `yaml.safe_load`, and the CI image had no PyYAML -- so the whole floor
+  took its all-or-nothing SKIP arm and a planted `runCmd` key rename was
+  GREEN in CI. `python3-yaml` is in the dev/CI image, the CI step installs
+  it if an older rolling image lacks it, and `CA_SELFTEST_REQUIRE_YAML=1`
+  (set by the harness's own `--self-test`) turns the skip into a named
+  FAIL. Plant `yaml-required` runs the extractor against an
+  ImportError-raising `yaml` shim and requires the named FAIL, with the
+  same shim and the variable off as the control.
+  **A heredoc inside `$(...)` inside double quotes is an opener.** Round
+  8's quote tracking called `msg="$(cat <<EOF` text and DERIVED the
+  heredoc's body line, so a consumer whose usage string is built that way
+  went `UNRUNNABLE|prereq:variant:<word-from-prose>`. `_heredoc_delim` now
+  tracks the `$(` nesting `_subst_bodies` already tracked.
+  **A transverse mutant must still RUN.** The sanity-start checked that a
+  mutant emitted a `VERDICT` on `plan`; a mutant with every guard intact
+  whose run mode was dead passed it, and all 27 record-state rows would
+  have printed OK while certifying nothing. Each mutant now has to produce
+  a passing row on the control fixture, or its row is
+  `BROKEN-MUTANT  FAIL: mutant broke run mode`. Plant `mutant-run-sanity`
+  builds exactly that mutant and requires the rejection.
+  **An undeclared variant swallowed by a LAUNCHER is a named failure.**
+  `command_not_found_handle` is reached only where bash itself resolves a
+  simple command, which round 8's header did not say: measured, ten of
+  eleven launcher shapes (`timeout`, `env`, `xargs`, `xvfb-run`, `exec`, a
+  `make` recipe, `bash --posix`, a clobbered `BASH_ENV`, python
+  `subprocess`) read `PASS cand_calls=1`. Every one of them leaves the
+  launcher's own `<name>: command not found` / `not found` / `No such
+  file` in the row's captured output, so that output is swept and the row
+  becomes `FAIL|undeclared-variant:<name>`. The matcher was anchored on
+  captures from the real tools. The one shape that stays uncaught --
+  python `subprocess.run([...])` inside `try/except`, which emits nothing
+  -- is a PINNED row (`nf_py`, PASS on purpose), so a future closure claim
+  has to flip it.
+
+- **Consumer-acceptance harness, round 8 (#1213, #1214, #1217, #1229).**
+  Eight defects `/code-review` found against round 7, each fixed with the
+  plant that goes red if it returns. `command_not_found_handle` reaches
+  every non-interactive bash child via `BASH_ENV` (`export -f` alone is
+  dropped by the `#!/bin/sh` farm wrapper, measured) -- the `bash
+  tests/run.sh` shape every real consumer has used to swallow a computed
+  `eigenscript-$V` and read `PASS`. The record floor is the MAX row count
+  over DATED `status=COMPLETE` records, computed before the record path is
+  taken. (Round 8 also excluded the file at `$RECORD` by realpath; round 9
+  removed that -- see below.) `PASS|skips=N`
+  keeps its `log|` tail (it fails the wave, and the SKIP lines are the
+  evidence). `--gfx <binary>` is what `EIGENSCRIPT_GFX` names, recorded as
+  `eigenscript_gfx_exported=`; it used to name the headless base shim. The
+  `gfx` prerequisite is declared-only -- the old `*gfx*` substring made
+  `--no-gfx` a hard gfx requirement -- and no real consumer's acceptance
+  command contains `gfx` today. The bare-candidate refusal moved into the
+  usage-before-record block, so that exit 2 leaves the previous record
+  byte-identical. `path_dropped=` uses the farm's own `eigenscript*`
+  filter, so a hidden `eigenscript.old` is named. In the deriver, a
+  here-string (`<<<`) and a quoted `<<WORD` are no longer heredoc openers
+  that swallowed the rest of the file, `$(…)` bodies inside double quotes
+  are scanned recursively (`BIN="$(command -v eigenscript-full)"`), and a
+  `for` list of literal names is an invocation position. In
+  `_extract_runcmd.py`, a quoted inline scalar (`runCmd: 'make test'`)
+  loses its quotes -- `bash -c` used to run a command named `'make test'`
+  -- and the PyYAML cross-check has a floor: every row declared a valid
+  document by construction must reach the oracle, or the selftest fails
+  rather than printing `PASS yaml-oracle=0`.
+
 - **Consumer-acceptance `run` residuals (M1 round 7).** Self-test TMPDIR is
   private (concurrent self-tests no longer `rm -rf` each other's
   `ca-run.*`). The consumer process group is reaped after `wait` and the
@@ -343,9 +592,16 @@ All notable changes to EigenScript are documented here.
   `examined == inventory > 0` is required to pass; a missing checkout or
   missing command is UNRUNNABLE not a skip; rc 124/137 is HANG/KILLED by
   name; an interrupted run (INT/TERM/HUP) marks the record INCOMPLETE and
-  exits 2. Record class: at every moment the file at `CA_RECORD` is this
-  run's record in a truthful state, or absent — never a previous run's
-  PASS, never a foreign PASS. Exclusive ownership: a mkdir lock on
+  exits 2. Record class: ONCE THE RUN HAS TAKEN THE RECORD PATH (from the
+  record lock and the invalidate of the previous file, to exit) the file
+  at `CA_RECORD` is this run's record in a truthful state, or absent —
+  never a previous run's PASS, never a foreign PASS. BEFORE that point
+  the previous record is left BYTE-IDENTICAL on purpose: a usage error, a
+  second invocation on the same `CA_RECORD`, and a scratch refusal all
+  exit 2 having touched no record path, so an earlier run's
+  `VERDICT: PASS` is still there afterwards (plant `scratch-fail-closed`
+  asserts `record_unchanged=yes`). A wave driver must therefore read the
+  EXIT STATUS, never the file alone. Exclusive ownership: a mkdir lock on
   `<record>.lock.d` is taken before invalidate and held through cleanup;
   a second invocation on the same `CA_RECORD` refuses immediately (exit
   2, touches nothing); a stale lock (holder pid dead) is reclaimed with

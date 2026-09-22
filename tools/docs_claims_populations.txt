@@ -52,6 +52,6 @@ NAMES|ROADMAP.md|6
 # the class never visits it, and the declaration audit checks both directions,
 # so a row here for a class that does not walk the file would be red.
 NUMBERS|docs/CI.md|4
-PATHS|docs/CI.md|50
-TARGETS|docs/CI.md|2
+PATHS|docs/CI.md|53
+TARGETS|docs/CI.md|4
 NAMES|docs/CI.md|0
