@@ -399,11 +399,16 @@ All notable changes to EigenScript are documented here.
   `FAIL|undeclared-variant:<name>` by name, and a name that resolves
   NOWHERE is recorded the same way by `command_not_found_handle` instead
   of being a `127` the consumer can swallow with `|| true`. That handler
-  travels as `BASH_ENV`, so it reaches every non-interactive bash in the
-  row and not only the block shell; `export -f` alone does not travel,
+  travels as `BASH_ENV`, so it reaches a non-interactive bash in the row
+  and not only the block shell; `export -f` alone does not travel,
   because every command runs through a `#!/bin/sh` farm wrapper and dash
-  drops the `BASH_FUNC_…%%` entry (measured). A `#!/bin/sh` child reads
-  neither and is the stated residual, pinned by plant `not-found-child`. `EIGS_DIR` is the twin of that PATH -- a
+  drops the `BASH_FUNC_…%%` entry (measured). It is reached ONLY where
+  bash itself resolves a simple command: a `#!/bin/sh` child and every
+  exec-family launcher (`timeout`, `env`, `xargs`, `xvfb-run`, `exec`, a
+  `make` recipe, `bash --posix`, python `subprocess`) execvp the name
+  themselves and never consult it. Those are caught instead by the row's
+  captured-output sweep (round 9 below); plant `not-found-child` now
+  carries a named row for each. `EIGS_DIR` is the twin of that PATH -- a
   `cp -rL` copy of the candidate tree that used to hand out the sibling's
   `src/eigenscript-full` -- so every `eigenscript*` file in the overlay is
   a shim too (`overlay_shimmed=`). Three residuals remain, each named in
@@ -481,6 +486,59 @@ All notable changes to EigenScript are documented here.
   CONCURRENT self-test's `/tmp/ca-st.*` used to be read as this run's
   leftover and printed a false `SELF-TEST: FAIL`.
 
+- **Consumer-acceptance harness, round 9 (#1213, #1214, #1217, #1229).**
+  Five findings the fourth blind critic measured against round 8, each
+  closed with the plant that goes red if it returns.
+  **The record floor survives a same-path re-run.** The documented driver
+  convention is `CA_RECORD=<today>-<tag>.record`, so the ordinary "fix one
+  consumer, re-run the wave" loop lands on the same file -- and round 8's
+  realpath self-exclusion then discarded the only measurement the
+  ecosystem has (one 16-row `status=COMPLETE` record), leaving floor 0 and
+  a 2-consumer inventory printing `VERDICT: PASS`. The exclusion was
+  redundant for the case it was written for -- the floor is computed
+  BEFORE the header is written and an `INCOMPLETE` record is skipped, so
+  the file at `$RECORD` can only be a previous wave's -- and is gone.
+  Plant `record-floor-samepath` (the critic's fixture, 16 rows and all)
+  fires; mutation `record-samepath-exclude` puts the exclusion back and
+  silences it. The RUN record and `run`'s stdout now carry
+  `record_floor=/floor_records=/floor_witness=`, so a VACUOUS floor is
+  visible where the verdict is read rather than only in `plan`.
+  **The `runCmd` extractor's YAML oracle executes on the lane that gates
+  merges.** It cross-checks the hand-rolled block-scalar reader against
+  `yaml.safe_load`, and the CI image had no PyYAML -- so the whole floor
+  took its all-or-nothing SKIP arm and a planted `runCmd` key rename was
+  GREEN in CI. `python3-yaml` is in the dev/CI image, the CI step installs
+  it if an older rolling image lacks it, and `CA_SELFTEST_REQUIRE_YAML=1`
+  (set by the harness's own `--self-test`) turns the skip into a named
+  FAIL. Plant `yaml-required` runs the extractor against an
+  ImportError-raising `yaml` shim and requires the named FAIL, with the
+  same shim and the variable off as the control.
+  **A heredoc inside `$(...)` inside double quotes is an opener.** Round
+  8's quote tracking called `msg="$(cat <<EOF` text and DERIVED the
+  heredoc's body line, so a consumer whose usage string is built that way
+  went `UNRUNNABLE|prereq:variant:<word-from-prose>`. `_heredoc_delim` now
+  tracks the `$(` nesting `_subst_bodies` already tracked.
+  **A transverse mutant must still RUN.** The sanity-start checked that a
+  mutant emitted a `VERDICT` on `plan`; a mutant with every guard intact
+  whose run mode was dead passed it, and all 27 record-state rows would
+  have printed OK while certifying nothing. Each mutant now has to produce
+  a passing row on the control fixture, or its row is
+  `BROKEN-MUTANT  FAIL: mutant broke run mode`. Plant `mutant-run-sanity`
+  builds exactly that mutant and requires the rejection.
+  **An undeclared variant swallowed by a LAUNCHER is a named failure.**
+  `command_not_found_handle` is reached only where bash itself resolves a
+  simple command, which round 8's header did not say: measured, ten of
+  eleven launcher shapes (`timeout`, `env`, `xargs`, `xvfb-run`, `exec`, a
+  `make` recipe, `bash --posix`, a clobbered `BASH_ENV`, python
+  `subprocess`) read `PASS cand_calls=1`. Every one of them leaves the
+  launcher's own `<name>: command not found` / `not found` / `No such
+  file` in the row's captured output, so that output is swept and the row
+  becomes `FAIL|undeclared-variant:<name>`. The matcher was anchored on
+  captures from the real tools. The one shape that stays uncaught --
+  python `subprocess.run([...])` inside `try/except`, which emits nothing
+  -- is a PINNED row (`nf_py`, PASS on purpose), so a future closure claim
+  has to flip it.
+
 - **Consumer-acceptance harness, round 8 (#1213, #1214, #1217, #1229).**
   Eight defects `/code-review` found against round 7, each fixed with the
   plant that goes red if it returns. `command_not_found_handle` reaches
@@ -488,8 +546,9 @@ All notable changes to EigenScript are documented here.
   dropped by the `#!/bin/sh` farm wrapper, measured) -- the `bash
   tests/run.sh` shape every real consumer has used to swallow a computed
   `eigenscript-$V` and read `PASS`. The record floor is the MAX row count
-  over DATED `status=COMPLETE` records, excluding this run's own file by
-  realpath and computed before the record path is taken. `PASS|skips=N`
+  over DATED `status=COMPLETE` records, computed before the record path is
+  taken. (Round 8 also excluded the file at `$RECORD` by realpath; round 9
+  removed that -- see below.) `PASS|skips=N`
   keeps its `log|` tail (it fails the wave, and the SKIP lines are the
   evidence). `--gfx <binary>` is what `EIGENSCRIPT_GFX` names, recorded as
   `eigenscript_gfx_exported=`; it used to name the headless base shim. The

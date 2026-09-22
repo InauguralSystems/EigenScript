@@ -208,13 +208,41 @@ HEREDOC_RE = re.compile(r"<<[-~]?\s*([\"']?)([A-Za-z_][A-Za-z0-9_]*)\1")
 # file held no invocation. Two rules, both from the shell grammar:
 #   `<<<` is a HERE-STRING, not a heredoc (the `<<` is followed by `<`);
 #   `<<` inside quotes is text, so the scan tracks quote state.
+# ROUND 9 (critic r8 ledger 4, MEASURED): tracking only the OUTER quote
+# over-corrected. In `msg="$(cat <<EOF" ... EOF ... ")"` the body of a
+# command substitution is SHELL, not string data, however the substitution
+# itself is quoted -- so that `<<` is a real opener and the lines under it
+# are a heredoc BODY. Round 8 called it text and DERIVED the body line, so a
+# consumer whose usage text is built with `$(cat <<EOF ...)` went
+# UNRUNNABLE|prereq:variant:<word-from-prose>. The `$(` nesting is the same
+# one _subst_bodies already tracks; inside it the quote state resets, and a
+# depth counter keeps an ordinary `( )` from closing the substitution early.
 def _heredoc_delim(line):
     """The delimiter word of an UNQUOTED heredoc opener on this line, or None."""
     i = 0
     n = len(line)
     quote = None
+    # CA-GUARD:heredoc-subst-nesting
+    subst = []  # one [saved_quote, paren_depth] per open $( ... )
     while i < n:
         c = line[i]
+        if quote != "'" and c == "$" and line[i + 1:i + 2] == "(":
+            subst.append([quote, 0])
+            quote = None
+            i += 2
+            continue
+        if subst and quote is None and c == "(":
+            subst[-1][1] += 1
+            i += 1
+            continue
+        if subst and quote is None and c == ")":
+            if subst[-1][1] > 0:
+                subst[-1][1] -= 1
+            else:
+                quote = subst.pop()[0]
+            i += 1
+            continue
+        # CA-GUARD:end-heredoc-subst-nesting
         if quote:
             if c == "\\" and quote == '"' and i + 1 < n:
                 i += 2
@@ -948,6 +976,17 @@ def selftest():
             'echo "$(eigenscript-qt --version)"\n'
             'REF="`command -v eigenscript-qb`"\n'
         )}, {"eigenscript-qs", "eigenscript-qt", "eigenscript-qb"}),
+        # ROUND 9 (critic r8 ledger 4): `$(...)` inside double quotes is
+        # SHELL, so the `<<EOF` in it opens a heredoc whose body is data.
+        # Round 8 derived `eigenscript-indoc` from the body line.
+        ("quoted-subst-heredoc-body-is-data", {"run.sh": (
+            "#!/bin/sh\n"
+            'msg="$(cat <<EOF\n'
+            "eigenscript-indoc --help\n"
+            "EOF\n"
+            ')"\n'
+            "eigenscript-afterdoc work.eigs\n"
+        )}, {"eigenscript-afterdoc"}),
         ("for-list-of-names", {"run.sh": (
             "#!/bin/sh\n"
             'for b in eigenscript-fl1 eigenscript-fl2; do "$b" x; done\n'

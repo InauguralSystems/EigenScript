@@ -75,11 +75,20 @@
 #     Names outside the candidate set still get their 127-shims in $SHIM
 #     (path_masked=) -- those work for ANY shell, so they are what turns a
 #     computed name invoked from a `sh` script into a named failure -- and
-#     a name that resolves NOWHERE is recorded the same way by the block
-#     shell's command_not_found_handle rather than being a bare 127 the
-#     consumer can swallow with `|| true`. The row's own call log is then
-#     read back and any argv[0] basename outside the candidate set makes
-#     the row FAIL|undeclared-variant:<name>.
+#     a name that resolves NOWHERE is recorded the same way by
+#     command_not_found_handle rather than being a bare 127 the consumer
+#     can swallow with `|| true`. That handler is reached only where BASH
+#     ITSELF resolves a simple command (measured); an exec-family launcher
+#     -- timeout, env, xargs, xvfb-run, `exec`, a make recipe, `bash
+#     --posix`, python subprocess -- execvp's the name itself and never
+#     consults it, so the row's own CAPTURED OUTPUT is swept for the
+#     launcher's `<name>: command not found` / `not found` / `No such
+#     file` diagnostic as well. The row's call log is then read back and
+#     any argv[0] basename outside the candidate set makes the row
+#     FAIL|undeclared-variant:<name>. Residual: a launcher that emits NO
+#     diagnostic (python subprocess inside try/except) or a consumer that
+#     discards its child's stderr is still a swallowed miss -- plant
+#     not-found-child row nf_py pins it.
 #     EIGS_DIR is the TWIN of that PATH: it is a cp -rL copy of the
 #     candidate tree, so every eigenscript* file in the overlay is a shim
 #     too -- the candidate's counting shim when the set covers the name, a
@@ -1017,8 +1026,10 @@ build_candidate_overlay() {
 # unless $ECO/.ca_expected lists them. Production always uses the table.
 # Record floor (ROUND 8, finding 2 -- MEASURED on 21daf05): the floor is the
 # MAXIMUM row count over the DATED records in the directory whose header says
-# status=COMPLETE, EXCLUDING the file this run is writing (compared by
-# realpath), and it is computed BEFORE this run takes the record path.
+# status=COMPLETE, computed BEFORE this run takes the record path. The file
+# sitting at $RECORD counts like any other: at compute time it can only be a
+# PREVIOUS wave's record (ROUND 9, critic r8's largest gap -- see the
+# CA-GUARD:record-samepath note in compute_record_floor).
 # Round 7 read the LEXICALLY GREATEST dated name at scan time, which is
 # after write_record_header, so the ecosystem's own documented convention --
 # CA_RECORD=$ECO/reports/consumer_acceptance/<today>-<tag>.record -- made
@@ -1027,9 +1038,9 @@ build_candidate_overlay() {
 # The same mechanism let an INTERRUPTED wave's dated INCOMPLETE record with
 # N<16 rows lower the next run's floor to N. Three rules, each with its own
 # failure: status=COMPLETE (an interrupted record is not a measurement), the
-# realpath exclusion (a run cannot be its own floor), and MAX rather than
-# newest (a smaller later record cannot lower a floor the ecosystem already
-# reached). A non-dated *.record in the directory is still a stray -- a FAIL
+# ordering (the floor is read before this run writes anything), and MAX rather
+# than newest (a smaller later record cannot lower a floor the ecosystem
+# already reached). A non-dated *.record in the directory is still a stray -- a FAIL
 # by name, never a floor (Fable r2 03).
 # Fixtures read $ECO/reports/consumer_acceptance when that dir exists so
 # plant B3 can reach the floor; CA_FAULT=record_floor=N overrides.
@@ -1039,24 +1050,12 @@ RECORD_FLOOR_LOCKED=0
 RECORD_FLOOR_WITNESS=""
 RECORD_FLOOR_EXAMINED=0
 
-# Absolute, symlink-resolved path of $1 for identity comparison; prints the
-# input unchanged when it cannot be resolved (a record that does not exist
-# yet resolves through its directory).
-record_realpath() {
-  local p="${1:-}" d b
-  [ -n "$p" ] || return 0
-  d="$(dirname -- "$p")"
-  b="$(basename -- "$p")"
-  d="$(cd -P -- "$d" 2>/dev/null && pwd)" || { printf '%s' "$p"; return 0; }
-  printf '%s/%s' "$d" "$b"
-}
-
 # CA-GUARD:record-floor-compute
 compute_record_floor() {
   if [ "${RECORD_FLOOR_LOCKED:-0}" -eq 1 ]; then
     return 0
   fi
-  local rec_dir="" f rows b self="" fr
+  local rec_dir="" f rows b
   RECORD_FLOOR=0
   RECORD_STRAY=""
   RECORD_FLOOR_WITNESS=""
@@ -1080,10 +1079,6 @@ compute_record_floor() {
     computed="${rows:-0}"
     examined=1
   elif [ -n "$rec_dir" ]; then
-    # CA-GUARD:record-self-exclude
-    # The file THIS run writes is not evidence about the previous wave.
-    self="$(record_realpath "${RECORD:-}")"
-    # CA-GUARD:end-record-self-exclude
     for f in "$rec_dir"/*.record; do
       [ -f "$f" ] || continue
       b="$(basename "$f")"
@@ -1099,11 +1094,21 @@ compute_record_floor() {
           continue
           ;;
       esac
-      fr="$(record_realpath "$f")"
-      if [ -n "$self" ] && [ "$fr" = "$self" ]; then
-        RECORD_FLOOR_WITNESS="${RECORD_FLOOR_WITNESS:+$RECORD_FLOOR_WITNESS }$b:self"
-        continue
-      fi
+      # CA-GUARD:record-samepath
+      # ROUND 9 (critic r8, the round's largest gap, MEASURED): round 8
+      # skipped the file whose realpath equals $RECORD. The documented driver
+      # convention is CA_RECORD=<today>-<tag>.record, so the ordinary "fix one
+      # consumer, re-run the wave" loop lands on the SAME path -- and with the
+      # ecosystem's ONLY record (2026-09-20-main-fed280f.record, 16 rows,
+      # COMPLETE) at that path the floor fell to 0 and a 2-consumer inventory
+      # printed VERDICT: PASS. The exclusion was redundant for the case it was
+      # written for: this runs BEFORE write_record_header (CA-GUARD:
+      # floor-before-record) and an INCOMPLETE record is skipped below, so the
+      # file here can only be a PREVIOUS wave's evidence. There is no skip: a
+      # COMPLETE dated record at $RECORD counts toward the MAX like any other.
+      # Mutation kind record-samepath-exclude restores the exclusion; plant
+      # record-floor-samepath goes SILENT under it.
+      # CA-GUARD:end-record-samepath
       # CA-GUARD:record-floor-complete
       # An INCOMPLETE record is an interrupted wave, not a measurement.
       if ! grep -q '^status=COMPLETE$' "$f" 2>/dev/null; then
@@ -1926,6 +1931,7 @@ overlay=copy
 overlay_skipped=PENDING
 sibling_binary_present=PENDING
 logs_dir=${CA_LOGS:-}
+record_floor=${RECORD_FLOOR:-0} floor_records=${RECORD_FLOOR_EXAMINED:-0} floor_witness=${RECORD_FLOOR_WITNESS:-none}
 inventory=PENDING
 examined=PENDING
 status=INCOMPLETE
@@ -2309,7 +2315,13 @@ run_one() {
   # consumer's environment.
   local nf_handler=""
   # CA-GUARD:not-found-guard
-  if true; then
+  # ROUND 9 CORRECTION (the coordinator): CA_NF_HANDLER_OFF is an isolation
+  # switch a PLANT sets on itself, never a production input -- it lets a
+  # plant that targets the notfound-stderr-sweep mechanism specifically
+  # disable this handler so the two mechanisms are not both live at once
+  # (mechanical-gates s12: a cross-check is only as good as its
+  # independence on every axis). Unset, this is identical to `if true`.
+  if [ "${CA_NF_HANDLER_OFF:-0}" != "1" ]; then
     # CA-GUARD:not-found-export
     # ROUND 8, finding 1 (MEASURED by /code-review on 21daf05): the handler
     # was defined in the block shell and never EXPORTED, so it reached the
@@ -2335,14 +2347,20 @@ run_one() {
     # startup -- `bash tests/run.sh`, `#!/usr/bin/env bash` scripts and
     # `bash -c` alike. `export -f` is kept as well: it covers a bash reached
     # WITHOUT a wrapper, and it costs nothing.
-    # RESIDUAL, stated: `sh`/dash children read neither, so a computed name
-    # invoked from a `#!/bin/sh` script is still a bare 127. Those rely on
-    # the 127-shim sweep (path_masked=), which covers every eigenscript*
-    # name the inherited PATH holds; a name that exists NOWHERE and is
-    # invoked from a sub-`sh` remains uncaught. A consumer that sets its own
-    # BASH_ENV overrides ours, and is the same residual. Plant
-    # not-found-child pins both halves: the bash child FAILs by name, the
-    # sh child does not.
+    # RESIDUAL, as ROUND 9 MEASURED it (critic r8 ledger 2, not as round 8
+    # stated it): BASH_ENV plus `export -f` reaches a name only where BASH
+    # ITSELF resolves a simple command. `sh`/dash children read neither; and
+    # neither does any exec-family launcher -- `timeout`, `env`, `xargs`,
+    # `xvfb-run`, `exec`, a `make` recipe, `bash --posix`, `BASH_ENV=` before
+    # the command, python `subprocess` -- because each execvp's the name
+    # itself. Round 8's header said "every bash child" and named only the
+    # `sh` half; measured, ten of the critic's eleven launcher shapes read
+    # PASS. The handler is therefore no longer the only mechanism: those
+    # names are caught by CA-GUARD:notfound-stderr-sweep, which reads the
+    # launcher's OWN diagnostic out of the row's captured output. Plant
+    # not-found-child pins every arm -- the bash child, the sh child, the
+    # launcher family, and the ONE shape that stays uncaught (python
+    # subprocess in try/except, which emits nothing at all).
     nf_handler="$(printf 'command_not_found_handle() {\n  %q "$@"\n  return 127\n}\nexport -f command_not_found_handle 2>/dev/null || true' "${SHIM:-/nonexistent}/.ca_notfound")"
     # CA-GUARD:not-found-bashenv
     nf_handler="${nf_handler}"$'\n'"$(printf 'export BASH_ENV=%q' "${SHIM:-/nonexistent}/.ca_bashenv")"
@@ -2428,6 +2446,56 @@ run_one() {
     LAST_VERDICT="FAIL|undeclared-variant:$LAST_UNDECLARED"
   fi
   # CA-GUARD:end-undeclared-variant
+
+  # CA-GUARD:notfound-stderr-sweep
+  # ROUND 9 (critic r8 ledger 2, MEASURED): command_not_found_handle is
+  # reached ONLY when BASH ITSELF resolves a simple command. Every
+  # exec-family launcher -- timeout, env, xargs, xvfb-run, `exec`, a make
+  # recipe's /bin/sh, `bash --posix`, a consumer that clobbers BASH_ENV,
+  # python's subprocess -- does its own execvp and never consults it, and
+  # those are exactly the OPERAND_PREFIX shapes the deriver advertises as
+  # handled invocation positions. The critic's 11-shape fixture read
+  # PASS cand_calls=1 on ten of them.
+  # The closure is the row's own captured output: an execvp that cannot
+  # find the name LEAVES A DIAGNOSTIC NAMING IT, on every launcher above.
+  # The matcher is anchored on captures from the real tools (GNU coreutils
+  # and dash on this box and in CI), not on a guess -- see plant
+  # not-found-child's launcher rows. A name already caught by the call log
+  # above wins; this only speaks when the call log saw nothing.
+  # RESIDUAL, measured and PINNED (plant row nf_py): a launcher that emits
+  # NO diagnostic -- python `subprocess.run([...])` inside try/except
+  # raises FileNotFoundError in-process -- is still a swallowed miss, and
+  # so is any consumer that redirects the child's stderr to /dev/null.
+  # ROUND 9 CORRECTION (the coordinator): reading the launcher's OWN
+  # diagnostic out of a row's captured output means this sweep and the
+  # BASH_ENV/export-f handler above can now catch the SAME plant, so
+  # gutting either mechanism alone no longer silences a plant that only
+  # meant to test the other one (measured: not-found-guard and
+  # path-variant-sweep stopped going SILENT). CA_NF_SWEEP_OFF is the
+  # matching isolation switch a plant sets on itself to pin the OTHER
+  # mechanism's transverse test; unset, this is unchanged.
+  if [ "${CA_NF_SWEEP_OFF:-0}" != "1" ] && [ -z "$LAST_UNDECLARED" ] && [ -f "$log" ]; then
+    case "$LAST_VERDICT" in
+      HANG|KILLED|UNRUNNABLE|UNRUNNABLE\|*) ;;
+      *)
+        local _nfm _nfn
+        _nfm="$(grep -aoE 'eigenscript[A-Za-z0-9._-]*[^A-Za-z0-9: ]{0,3}: (command not found|not found|No such file)' "$log" 2>/dev/null | head -1 || true)"
+        if [ -n "$_nfm" ]; then
+          _nfn="$(sed -E 's/^(eigenscript[A-Za-z0-9._-]*).*/\1/' <<< "$_nfm")"
+          _nfn="${_nfn%%[!A-Za-z0-9]}"
+          case "$_nfn" in
+            eigenscript|eigenscript-*)
+              if ! is_candidate_name "$_nfn"; then
+                LAST_UNDECLARED="$_nfn"
+                LAST_VERDICT="FAIL|undeclared-variant:$_nfn"
+              fi
+              ;;
+          esac
+        fi
+        ;;
+    esac
+  fi
+  # CA-GUARD:end-notfound-stderr-sweep
 }
 
 finalize_run() {
@@ -2933,9 +3001,10 @@ run_mode() {
   # The floor is evidence about the PREVIOUS wave, so it is read while the
   # previous wave's files are still exactly as they were -- before the lock,
   # before invalidate_previous_record, before this run's own INCOMPLETE
-  # header exists. $RECORD is known here, so the self-exclusion can be made
-  # on realpath. Locked afterwards so scan_inventory's load_expected_list
-  # cannot recompute it against the file this run has since written.
+  # header exists. That ORDERING is what makes the file at $RECORD readable as
+  # the previous wave's evidence (CA-GUARD:record-samepath). Locked afterwards
+  # so scan_inventory's load_expected_list cannot recompute it against the
+  # file this run has since written.
   compute_record_floor
   RECORD_FLOOR_LOCKED=1
   # CA-GUARD:end-floor-before-record
@@ -3062,6 +3131,13 @@ run_mode() {
 
   # CA-GUARD:scan-inventory
   scan_inventory
+  # CA-GUARD:run-floor-disclosure
+  # mechanical-gates s11: a VACUOUS floor must be visible where the verdict
+  # is read. Until round 9 only `plan` printed these three numbers, so a PASS
+  # record written with floor 0 from 0 examined records said nothing about it
+  # (critic r8 ledger 6).
+  say "inventory_floor expected=${#EXPECTED_LIST[@]} scanned=$INVENTORY record_floor=${RECORD_FLOOR:-0} floor_records=${RECORD_FLOOR_EXAMINED:-0} floor_witness=${RECORD_FLOOR_WITNESS:-none}"
+  # CA-GUARD:end-run-floor-disclosure
   # CA-GUARD:end-scan-inventory
 
   if fixture_fault && [ "${CA_FAULT:-}" = "empty_skip_reason" ]; then
@@ -3376,6 +3452,80 @@ note_plant() {
   fi
   # CA-GUARD:end-unbound-witness
 }
+
+# CA-GUARD:mutant-run-sanity
+# ROUND 9 (critic r8 ledger 5, MEASURED): the acceptance rule for the
+# success/side-effect plants is `intact=FIRES && mutant != FIRES`, and a
+# mutant that broke RUN MODE OUTRIGHT satisfies it. The critic built one --
+# every CA-GUARD intact, `RUN_ID=...` replaced by `exit 9` -- and it still
+# emitted a VERDICT on `plan`, so the old sanity-start (which only ran
+# `plan`) passed it and all 27 record-state rows would have printed OK
+# while certifying nothing about their guard.
+# CORRECTION (the coordinator, after run 1 of the round-9 self-test):
+# demanding a PASSING ROW on `run` is too strong. Some guards' own SUBJECT
+# is the ability to run at all -- gutting the shim-write ordering, the
+# PATH-farm build, the pre-record candidate validation, or first-workflow-
+# wins correctly prevents every row on the control fixture too, and that
+# is the guard working, not an unrelated breakage. Four measured, each
+# reproduced by hand against the good-fixture control: gutting shim-write
+# ordering makes the row try to write the REAL /usr/bin/eigenscript and
+# die "consumer_acceptance: cannot write the shim ... Permission denied"
+# with NO VERDICT line at all (shim_die exits before the footer trap
+# runs); gutting the pre-record candidate check reaches the ordinary probe
+# with no candidate and prints "candidate_version: UNRUNNABLE (probe
+# rc=127)" then VERDICT: FAIL; gutting first-workflow-wins makes the only
+# workflow file (ci.yml) fall out of both the preferred list and the
+# "other" list, so no runCmd is derived and every row reads
+# "UNRUNNABLE|-|" then VERDICT: FAIL; gutting the PATH-farm build makes
+# farm_die() print "consumer_acceptance: cannot build the PATH farm
+# under ..." then VERDICT: INCOMPLETE. Each is distinguishable from the
+# critic's mutant, which prints NEITHER a VERDICT line NOR one of the
+# harness's own "consumer_acceptance: <message>" fatal-guard diagnostics
+# -- `exit 9` at RUN_ID fires before either can exist (measured: its
+# captured output is the empty string).
+# So a run producing zero PASS rows is ACCEPTABLE -- the sanity-start does
+# not veto it -- when the combined output shows either signal that the
+# run genuinely EXECUTED rather than dying blind:
+#   VERDICT-REACHED    a `VERDICT:` line -- a full row cycle completed,
+#                       even with 0 PASS rows (workflow-prefer, the
+#                       pre-record candidate check).
+#   GUARD-DIAGNOSED     a `consumer_acceptance: <message>` line -- one of
+#                       the harness's own fail-closed guards named its own
+#                       precondition failure before the footer trap could
+#                       even run (the shim guard, the PATH-farm guard).
+# It is a hard FAIL only when NEITHER exists (arm=NONE) -- exactly the
+# critic's `guard-intact-run-broken` signature (mechanical-gates s19: an
+# unstartable mutant is an invalid probe, reported as BROKEN; these arms
+# are how the probe proves it actually started, and MUTANT_SANITY_ARM
+# names which one decided the verdict so a reader does not have to
+# re-derive it from the raw output).
+MUTANT_SANITY_OUT=""
+MUTANT_SANITY_ROWS=0
+MUTANT_SANITY_ARM=""
+mutant_run_sanity_ok() {
+  local script="$1" eco="$2" stub="$3" rec="$4"
+  rm -f "$rec" "$rec.prev"
+  MUTANT_SANITY_OUT="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" \
+    "$script" run "$stub" 2>&1)" || true
+  MUTANT_SANITY_ROWS="$(grep -cE '^row\|[^|]+\|[^|]*\|PASS\|' "$rec" 2>/dev/null || true)"
+  MUTANT_SANITY_ROWS="${MUTANT_SANITY_ROWS:-0}"
+  rm -f "$rec" "$rec.prev"
+  if [ "$MUTANT_SANITY_ROWS" -gt 0 ]; then
+    MUTANT_SANITY_ARM="PASS-ROW"
+    return 0
+  fi
+  if grep -q '^VERDICT:' <<< "$MUTANT_SANITY_OUT"; then
+    MUTANT_SANITY_ARM="VERDICT-REACHED"
+    return 0
+  fi
+  if grep -q '^consumer_acceptance: ' <<< "$MUTANT_SANITY_OUT"; then
+    MUTANT_SANITY_ARM="GUARD-DIAGNOSED"
+    return 0
+  fi
+  MUTANT_SANITY_ARM="NONE"
+  return 1
+}
+# CA-GUARD:end-mutant-run-sanity
 
 mutant_not_fires_kind() {
   local rec="${LAST_PLANT_REC:-}" out="${LAST_PLANT_OUT:-}"
@@ -4268,10 +4418,8 @@ repls = {
         '  home_export=""',
     ),
     "not-found-guard": (
-        '  # CA-GUARD:not-found-guard\n'
-        '  if true; then',
-        '  # CA-GUARD:not-found-guard\n'
-        '  if false; then',
+        '  if [ "${CA_NF_HANDLER_OFF:-0}" != "1" ]; then\n',
+        '  if false; then\n',
     ),
     "scratch-fail-closed": (
         'scratch_die() {\n'
@@ -4604,9 +4752,19 @@ repls = {
         '      if [ "$rows" -gt "$computed" ]; then\n',
         '      if true; then\n',
     ),
-    "record-self-exclude": (
-        '    self="$(record_realpath "${RECORD:-}")"\n',
-        '    self=""\n',
+    "notfound-stderr-sweep": (
+        '  if [ "${CA_NF_SWEEP_OFF:-0}" != "1" ] && [ -z "$LAST_UNDECLARED" ] && [ -f "$log" ]; then\n',
+        '  if false; then\n',
+    ),
+    "run-broken-guards-intact": (
+        '  RUN_ID="$(date +%s).$$.${RANDOM:-0}"\n',
+        '  exit 9\n',
+    ),
+    "record-samepath-exclude": (
+        '      # CA-GUARD:record-samepath\n',
+        '      # CA-GUARD:record-samepath\n'
+        '      if [ -n "${RECORD:-}" ] && [ "$(cd -P -- "$(dirname -- "$f")" && pwd)/$(basename -- "$f")"'
+        ' = "$(cd -P -- "$(dirname -- "$RECORD")" 2>/dev/null && pwd)/$(basename -- "$RECORD")" ]; then continue; fi\n',
     ),
     "record-floor-complete": (
         '''      if ! grep -q '^status=COMPLETE$' "$f" 2>/dev/null; then\n''',
@@ -5013,11 +5171,13 @@ plant_b3_record_floor() {
   return 1
 }
 
-# ROUND 8 finding 2: the floor must not read THIS run's own record.
-# Arm (a) is the orchestrator's measured fixture: CA_RECORD inside the
-# ecosystem's reports/consumer_acceptance/ with a date newer than the
-# committed record. Arm (b) pre-seeds that same path with a COMPLETE 9-row
-# record, so only the realpath exclusion can keep the floor at 3.
+# ROUND 8 finding 2, as ROUND 9 re-states it: the floor is read BEFORE this
+# run writes anything, so a fresh CA_RECORD inside the ecosystem's
+# reports/consumer_acceptance/ cannot lower it (arm a, the orchestrator's
+# measured fixture). Arm (b) pre-seeds that same path with a COMPLETE 9-row
+# record: that file is the PREVIOUS wave's evidence, so the floor is 9, not
+# 3. Round 8 excluded it by realpath and pinned floor 3 as correct -- which
+# is what lost the floor on a same-day re-run (critic r8, largest gap).
 plant_record_floor_selfexclude() {
   local sh="$1" eco="$2" stub="$3"
   local rec="$eco/reports/consumer_acceptance/2026-09-22-cand.record"
@@ -5038,13 +5198,49 @@ plant_record_floor_selfexclude() {
     'row|s9|v|PASS|0|0' > "$rec"
   out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)" || true
   note_plant "$out" "$rec" 0
-  if grep -q '^inventory floor: inventory 2 < record floor 3' "$rec" \
+  if grep -q '^inventory floor: inventory 2 < record floor 9' "$rec" \
      && exact_verdict_file "$rec" FAIL; then
     b_ok=1
   fi
-  LAST_PLANT_DETAIL="fresh-in-reports[$a_ok] $a_detail | stale-9-row-at-\$RECORD[$b_ok] $(grep -E 'inventory floor|VERDICT' "$rec" 2>/dev/null | tr '\n' ' ')"
+  LAST_PLANT_DETAIL="fresh-in-reports[$a_ok] $a_detail | stale-9-row-at-\$RECORD-is-the-floor[$b_ok] $(grep -E 'inventory floor|VERDICT' "$rec" 2>/dev/null | tr '\n' ' ')"
   rm -f "$rec" "$rec.prev"
   [ "$a_ok" -eq 1 ] && [ "$b_ok" -eq 1 ] && return 0
+  return 1
+}
+
+# ROUND 9 (critic r8, the round's largest gap): the documented driver
+# convention is CA_RECORD=<today>-<tag>.record, so the ordinary "fix one
+# consumer, re-run the wave" loop lands on the SAME path as the previous
+# run. The real ecosystem has exactly ONE record -- 16 rows, COMPLETE -- and
+# with round 8's realpath exclusion a 2-consumer inventory re-run into that
+# file read floor 0 and printed VERDICT: PASS. The fixture is the critic's
+# fx/eco3d, name and row count included. Also the witness for the record
+# header's floor disclosure (mechanical-gates s11).
+plant_record_floor_samepath() {
+  local sh="$1" eco="$2" stub="$3"
+  local rec="$eco/reports/consumer_acceptance/2026-09-20-main-fed280f.record"
+  local out rc i
+  rm -f "$rec" "$rec.prev"
+  {
+    printf 'status=COMPLETE\n'
+    i=1
+    while [ "$i" -le 16 ]; do
+      printf 'row|c%02d|v|PASS|0|0\n' "$i"
+      i=$((i + 1))
+    done
+  } > "$rec"
+  out="$(CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rec=$(grep -E '^record_floor=|^inventory floor:|^VERDICT:' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  if [ "$rc" -eq 1 ] \
+     && grep -q '^inventory floor: inventory 2 < record floor 16' "$rec" \
+     && grep -q '^inventory floor: inventory 2 < record floor 16' <<< "$out" \
+     && grep -qx 'record_floor=16 floor_records=1 floor_witness=2026-09-20-main-fed280f.record:16' "$rec" \
+     && grep -q 'record_floor=16 floor_records=1 floor_witness=2026-09-20-main-fed280f.record:16' <<< "$out" \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
   return 1
 }
 
@@ -5407,7 +5603,15 @@ plant_variant_computed() {
   local sh="$1" eco="$2" stub="$3" rec="$4" stale_log="$5" stale_dir="$6"
   local out rc
   : > "$stale_log"
-  out="$(PATH="$stale_dir:$PATH" CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  # ROUND 9 CORRECTION (the coordinator): computed_user's name is invoked
+  # from `sh ./compute.sh` (dash), which command_not_found_handle can never
+  # reach, so the handler was always irrelevant here -- but dash prints its
+  # OWN native "<name>: not found" diagnostic when a command is missing
+  # regardless of masking, and the notfound-stderr-sweep now reads that out
+  # of the row's captured output too. Pin this plant to mask_path_variants
+  # alone (its actual two guards, per the header above) by disabling the
+  # sweep for the duration of the run.
+  out="$(PATH="$stale_dir:$PATH" CA_ECO="$eco" CA_TIMEOUT=5 CA_KILL_AFTER=1 CA_RECORD="$rec" CA_NF_SWEEP_OFF=1 "$sh" run "$stub" 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ') stale=$(wc -c < "$stale_log")"
   note_plant "$out" "$rec" "$rc"
@@ -5521,7 +5725,15 @@ plant_not_found_variant() {
     return 1
   fi
   : > "$decoy_log"
-  out="$(PATH="$decoy:$PATH" CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
+  # ROUND 9 CORRECTION (the coordinator): nf_user's `eigenscript-$V` runs
+  # directly in the block shell, so it is the not-found-guard handler that
+  # catches it (this plant's actual mutation partner). With the handler
+  # gutted, bash prints its OWN native "command not found" instead of the
+  # handler's silent 127 -- and the notfound-stderr-sweep then reads THAT
+  # and independently re-derives the same FAIL, so the plant no longer
+  # goes SILENT when not-found-guard is mutated. Disable the sweep so this
+  # plant pins the handler alone.
+  out="$(PATH="$decoy:$PATH" CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" CA_NF_SWEEP_OFF=1 "$sh" run "$stub" 2>&1)"
   rc=$?
   LAST_PLANT_DETAIL="rc=$rc nfname=$nfname decoy_ran=$(wc -c < "$decoy_log" 2>/dev/null || echo 0) rows=$(grep '^row|' "$rec" 2>/dev/null | tr '\n' ' ')"
   note_plant "$out" "$rec" "$rc"
@@ -5537,9 +5749,21 @@ plant_not_found_variant() {
 # ROUND 8 finding 1 (MEASURED by /code-review on 21daf05): the handler was
 # never exported, so a computed name invoked from `bash run.sh` -- the shape
 # every real consumer has -- was a bare 127 the row swallowed with `|| true`
-# and read PASS cand_calls=1. The bash child must now FAIL BY NAME. The
-# `sh` child is the STATED RESIDUAL and is pinned to PASS here on purpose:
-# the day a closure lands for sub-`sh`, this arm goes red and says so.
+# and read PASS cand_calls=1.
+# ROUND 9 (critic r8 ledger 2, MEASURED): round 8's residual was narrower
+# than the truth. The handler is reached only where BASH ITSELF resolves a
+# simple command, so `sh run.sh` AND every exec-family launcher swallowed
+# the name -- ten of the critic's eleven shapes read PASS cand_calls=1.
+# Every arm below is now a NAMED row rather than a sentence:
+#   nf_child   bash child        -> FAIL|undeclared-variant (the handler)
+#   nf_sh      #!/bin/sh child   -> FAIL|undeclared-variant (the sweep)
+#   nf_timeout timeout(1)        -> FAIL|undeclared-variant (the sweep)
+#   nf_env     env(1)            -> FAIL|undeclared-variant (the sweep)
+#   nf_make    make recipe (sh)  -> FAIL|undeclared-variant (the sweep)
+#   nf_py      python subprocess in try/except -> PASS, THE RESIDUAL
+# nf_py is pinned to PASS on purpose: it emits no diagnostic at all, so
+# neither mechanism can see it, and the day a closure lands for it this arm
+# goes red and says so.
 plant_not_found_child() {
   local sh="$1" eco="$2" stub="$3" rec="$4" nfname="$5"
   local out rc
@@ -5549,12 +5773,75 @@ plant_not_found_child() {
   fi
   out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" "$sh" run "$stub" 2>&1)"
   rc=$?
-  LAST_PLANT_DETAIL="rc=$rc rows=$(grep -E '^row\|nf_(child|sh)\|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep -E '^row\|nf_(child|sh|timeout|env|make|py)\|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  local _arm
+  for _arm in child sh timeout env make; do
+    grep -q "row|nf_${_arm}|v0.43.0|FAIL|undeclared-variant:$nfname|" "$rec" || return 1
+  done
+  if [ "$rc" -eq 1 ] \
+     && grep -q "row|nf_py|v0.43.0|PASS|0|" "$rec" \
+     && exact_verdict_file "$rec" FAIL; then
+    return 0
+  fi
+  return 1
+}
+
+# ROUND 9 CORRECTION (the coordinator, after run 1 of the round-9
+# self-test): plant_not_found_child above requires ALL FIVE rows FAIL, and
+# nf_sh/nf_timeout/nf_env/nf_make were ALREADY sweep-only (the handler
+# cannot reach a dash child or an exec-family launcher, measured in item
+# 5) -- so it was never transverse to `not-found-export` (which only guts
+# the BASH_ENV half of the handler, leaving export -f and the sweep both
+# live) OR to `not-found-guard` (which guts the whole handler but the
+# sweep independently re-derives the same FAIL from bash's own native
+# diagnostic once the handler stops suppressing it). Two narrower plants,
+# each pinned to ONE mechanism via the isolation switches above
+# (mechanical-gates s12), replace it for transverse purposes; the combined
+# plant above stays as the richer top-level FIRES report.
+#   plant_not_found_child_bashenv  sweep OFF -- asserts nf_child alone.
+#                                  Measured (not the header's claim):
+#                                  export -f alone does NOT reach nf_child
+#                                  in practice -- gutting BASH_ENV silences
+#                                  it even with export -f intact.
+#   plant_not_found_child_sweep    handler OFF -- asserts nf_timeout,
+#                                  nf_env, nf_make (the launcher family
+#                                  that can never reach the handler) plus
+#                                  nf_py staying PASS.
+plant_not_found_child_bashenv() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" nfname="$5"
+  local out rc
+  if command -v "$nfname" >/dev/null 2>&1; then
+    LAST_PLANT_DETAIL="the token-carrying fixture name $nfname EXISTS on PATH -- the plant cannot mean what it says"
+    return 1
+  fi
+  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" CA_NF_SWEEP_OFF=1 "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc row=$(grep -E '^row\|nf_child\|' "$rec" 2>/dev/null)"
   note_plant "$out" "$rec" "$rc"
   if [ "$rc" -eq 1 ] \
-     && grep -q "row|nf_child|v0.43.0|FAIL|undeclared-variant:$nfname|" "$rec" \
-     && grep -q "row|nf_sh|v0.43.0|PASS|0|" "$rec" \
-     && exact_verdict_file "$rec" FAIL; then
+     && grep -q "row|nf_child|v0.43.0|FAIL|undeclared-variant:$nfname|" "$rec"; then
+    return 0
+  fi
+  return 1
+}
+
+plant_not_found_child_sweep() {
+  local sh="$1" eco="$2" stub="$3" rec="$4" nfname="$5"
+  local out rc
+  if command -v "$nfname" >/dev/null 2>&1; then
+    LAST_PLANT_DETAIL="the token-carrying fixture name $nfname EXISTS on PATH -- the plant cannot mean what it says"
+    return 1
+  fi
+  out="$(CA_ECO="$eco" CA_TIMEOUT=10 CA_KILL_AFTER=1 CA_RECORD="$rec" CA_NF_HANDLER_OFF=1 "$sh" run "$stub" 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc rows=$(grep -E '^row\|nf_(timeout|env|make|py)\|' "$rec" 2>/dev/null | tr '\n' ' ')"
+  note_plant "$out" "$rec" "$rc"
+  local _arm
+  for _arm in timeout env make; do
+    grep -q "row|nf_${_arm}|v0.43.0|FAIL|undeclared-variant:$nfname|" "$rec" || return 1
+  done
+  if [ "$rc" -eq 1 ] && grep -q "row|nf_py|v0.43.0|PASS|0|" "$rec"; then
     return 0
   fi
   return 1
@@ -5581,8 +5868,24 @@ plant_scratch_fail_closed() {
   rm -f "$mark"
   LAST_PLANT_DETAIL="rc=$rc record_unchanged=$( [ "$before" = "$after" ] && echo yes || echo no ) created=$(printf '%s' "$created" | tr '\n' ' ') out=$(grep -m1 'cannot create scratch' <<< "$out" || true)"
   note_plant "$out" "" "$rc"
+  # ROUND 9 DIAGNOSIS (the coordinator flagged `intact=SILENT` on run 1):
+  # the run-1 detail line captured a GARBLED single line --
+  # "mktemp: consumer_acceptance: cannot create scratch under ... (mktemp
+  # -d ca-run failed)" -- with mktemp's own "failed to create directory
+  # via template ..." text missing entirely and "consumer_acceptance:"
+  # pushed off column 0 by mktemp's prefix on the SAME line. rc=2,
+  # record_unchanged=yes and created= were all correct; only the
+  # LINE-START anchor below failed, on a box this brief itself says other
+  # agents were building on concurrently. Two independent processes
+  # (mktemp's own stderr write and this script's `say`) writing to the
+  # same captured pipe under load is not something a bash script can
+  # order, so the anchor is the wrong tool: match the diagnostic as a
+  # substring anywhere in the captured output instead, which survives an
+  # interleaved neighbour without weakening what is being asserted (the
+  # phrase is long and specific enough that a substring match cannot be
+  # satisfied by anything else this plant could produce).
   if [ "$rc" -eq 2 ] \
-     && grep -q '^consumer_acceptance: cannot create scratch under ' <<< "$out" \
+     && grep -q 'consumer_acceptance: cannot create scratch under ' <<< "$out" \
      && [ "$before" = "$after" ] \
      && [ -z "$created" ]; then
     return 0
@@ -5978,7 +6281,7 @@ plant_plant_total() {
 # FAILs by name: gutting both ST_SKIP increments left `plants=67 skipped=0
 # SELF-TEST: PASS` (Fable r2), and a deleted plant is the same shape. Bump
 # this in the same commit as any plant change.
-ST_DECLARED_PLANTS=100
+ST_DECLARED_PLANTS=103
 # This run's scratch token: every ca-* name the self-test and its children
 # create in the OUTER tmp carries it, so the hygiene scan can tell THIS
 # run's leftovers from a concurrent tenant's (both critics, r3).
@@ -6199,11 +6502,37 @@ selftest() {
   mk_stub "$st_root/stub-bad" 1
   mk_stub_gfx "$st_root/stub-gfx"
 
+  # CA-GUARD:selftest-require-yaml
+  # ROUND 9 (critic r8 ledger 3): the extractor's yaml oracle is a FLOOR,
+  # and a floor that silently skips is not a floor. Everything the
+  # self-test runs the extractor under requires the oracle to have run.
+  export CA_SELFTEST_REQUIRE_YAML=1
+  # CA-GUARD:end-selftest-require-yaml
   local ex_out=""
   if ex_out="$(python3 "$HERE/tools/_extract_runcmd.py" --selftest)"; then
     plant_line "extract-runcmd" 0 "$ex_out"
   else
     plant_line "extract-runcmd" 1 "extractor --selftest failed"
+  fi
+  # --- plant yaml-required: the CI configuration (no PyYAML) must FAIL BY
+  # NAME under the variable, and the same shim without the variable is the
+  # control that still passes with a named SKIP.
+  local noyaml="$st_root/noyaml"
+  mkdir -p "$noyaml/yaml"
+  printf '%s\n' 'raise ImportError("no PyYAML (self-test stub)")' \
+    > "$noyaml/yaml/__init__.py"
+  local ny_req ny_req_rc ny_ctl ny_ctl_rc
+  ny_req="$(PYTHONPATH="$noyaml" CA_SELFTEST_REQUIRE_YAML=1 python3 "$HERE/tools/_extract_runcmd.py" --selftest 2>&1)"
+  ny_req_rc=$?
+  ny_ctl="$(PYTHONPATH="$noyaml" CA_SELFTEST_REQUIRE_YAML=0 python3 "$HERE/tools/_extract_runcmd.py" --selftest 2>&1)"
+  ny_ctl_rc=$?
+  if [ "$ny_req_rc" -ne 0 ] \
+     && grep -q '^FAIL yaml-oracle required: PyYAML absent' <<< "$ny_req" \
+     && [ "$ny_ctl_rc" -eq 0 ] \
+     && grep -q 'yaml-oracle: SKIP (no PyYAML)' <<< "$ny_ctl"; then
+    plant_line "yaml-required" 0 "no-PyYAML rc=$ny_req_rc $(grep -m1 '^FAIL yaml-oracle required' <<< "$ny_req"); control rc=$ny_ctl_rc $(grep -m1 SKIP <<< "$ny_ctl")"
+  else
+    plant_line "yaml-required" 1 "req rc=$ny_req_rc out=$(tr '\n' ' ' <<< "$ny_req" | tail -c 200); ctl rc=$ny_ctl_rc out=$(tr '\n' ' ' <<< "$ny_ctl" | tail -c 200)"
   fi
 
   # --- plan plant: ungated consumer must FAIL the plan (GAP + VERDICT: FAIL + nonzero).
@@ -7180,6 +7509,21 @@ EOS
     plant_line "record-floor-selfexclude" 1 "$LAST_PLANT_DETAIL"
   fi
 
+  # --- ROUND 9: a SAME-PATH re-run keeps the floor. The critic's fx/eco3d:
+  # 2 consumers, ONE dated COMPLETE 16-row record, CA_RECORD naming THAT
+  # file. Round 8 read floor 0 here and printed VERDICT: PASS.
+  local sp_eco="$st_root/sp-eco"
+  mkdir -p "$sp_eco/reports/consumer_acceptance"
+  printf 'fixture\n' > "$sp_eco/.ca_fixture"
+  printf '%s\n' spa spb > "$sp_eco/.ca_expected"
+  mk_consumer "$sp_eco" spa "eigenscript work.eigs"
+  mk_consumer "$sp_eco" spb "eigenscript work.eigs"
+  if plant_record_floor_samepath "$sh" "$sp_eco" "$st_root/stub-ok"; then
+    plant_line "record-floor-samepath" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "record-floor-samepath" 1 "$LAST_PLANT_DETAIL"
+  fi
+
   # --- ROUND 8 finding 2, second mechanism: an INTERRUPTED wave leaves a
   # dated record with status=INCOMPLETE. It is not a measurement, so it
   # neither raises nor lowers the floor.
@@ -7463,6 +7807,40 @@ EOS
     printf 'eigenscript work.eigs\n'
   } > "$nf_eco/nf_sh/run.sh"
   chmod +x "$nf_eco/nf_sh/run.sh"
+  # ROUND 9 (critic r8 ledger 2): the LAUNCHER family. Each execs the
+  # computed name itself, so command_not_found_handle never sees it; the
+  # closure is the launcher's own diagnostic in the row's captured output
+  # (CA-GUARD:notfound-stderr-sweep). The shapes and their messages were
+  # captured from the real tools on this box before the matcher was written.
+  mk_consumer_block "$nf_eco" nf_timeout \
+    "V=nf-$nf_tok" \
+    'timeout 5 eigenscript-$V work.eigs || true' \
+    'eigenscript work.eigs'
+  mk_consumer_block "$nf_eco" nf_env \
+    "V=nf-$nf_tok" \
+    'env eigenscript-$V work.eigs || true' \
+    'eigenscript work.eigs'
+  mk_consumer_block "$nf_eco" nf_make \
+    'make -s -f mk.mk test || true' \
+    'eigenscript work.eigs'
+  {
+    printf 'test:\n'
+    printf '\t@V=nf-%s; eigenscript-$$V work.eigs || true\n' "$nf_tok"
+  } > "$nf_eco/nf_make/mk.mk"
+  # THE RESIDUAL, pinned: python raises FileNotFoundError in-process and
+  # the try/except swallows it, so there is no diagnostic for any sweep to
+  # read. This row is PASS on purpose.
+  mk_consumer_block "$nf_eco" nf_py \
+    'python3 nf_py.py || true' \
+    'eigenscript work.eigs'
+  {
+    printf 'import subprocess\n'
+    printf 'V = "nf-%s"\n' "$nf_tok"
+    printf 'try:\n'
+    printf '    subprocess.run(["eigenscript-" + V, "work.eigs"])\n'
+    printf 'except Exception:\n'
+    printf '    pass\n'
+  } > "$nf_eco/nf_py/nf_py.py"
   printf '%s\n' '#!/bin/sh' "printf stale >> \"$nf_decoy_log\"" 'exit 0' \
     > "$nf_decoy/eigenscript-jit"
   chmod +x "$nf_decoy/eigenscript-jit"
@@ -7813,6 +8191,47 @@ EOS
     fi
   fi
 
+  # --- plant-of-plant (ROUND 9, critic r8 ledger 5): a mutant with every
+  # CA-GUARD intact whose RUN MODE is dead (`exit 9` where RUN_ID is set)
+  # still emits a VERDICT on `plan`, so the plan sanity-start admitted it and
+  # all 27 record-state rows would have printed OK over a mutant that proved
+  # nothing about their guard. The RUN sanity-start is what rejects it.
+  local rb_md="$st_root/mutants/run-broken-guards-intact" rb_mutant rb_plan
+  local rb_ctl=1 rb_mut=1 rb_rows_ctl=0 rb_rows_mut=0 rb_prev_cap
+  local rb_arm_ctl="" rb_arm_mut=""
+  if ! prep_mutant "$rb_md" run-broken-guards-intact; then
+    plant_line "mutant-run-sanity" 1 "run-broken-guards-intact mutation did not land"
+  else
+    rb_mutant="$rb_md/tools/consumer_acceptance.sh"
+    if mutant_run_sanity_ok "$sh" "$good_eco" "$st_root/stub-ok" "$st_root/rb-ctl.record"; then
+      rb_ctl=0
+    fi
+    rb_rows_ctl="$MUTANT_SANITY_ROWS"
+    rb_arm_ctl="$MUTANT_SANITY_ARM"
+    rb_prev_cap="${CA_STDERR_CAP:-}"
+    export CA_STDERR_CAP="$st_root/mutant-stderr.cap"
+    rb_plan="$(CA_ECO="$good_eco" "$rb_mutant" plan 2>&1)" || true
+    if mutant_run_sanity_ok "$rb_mutant" "$good_eco" "$st_root/stub-ok" "$st_root/rb-mut.record"; then
+      rb_mut=0
+    fi
+    rb_rows_mut="$MUTANT_SANITY_ROWS"
+    rb_arm_mut="$MUTANT_SANITY_ARM"
+    export CA_STDERR_CAP="$rb_prev_cap"
+    # The control must be accepted via the ordinary happy-path arm
+    # (PASS-ROW); the critic's mutant must be rejected via the arm that
+    # names an ACTUAL unrelated break (NONE: no VERDICT line, no
+    # consumer_acceptance: guard diagnostic) -- not merely "not PASS-ROW",
+    # which the corrected rule now also accepts via VERDICT-REACHED or
+    # GUARD-DIAGNOSED for a guard whose subject is the ability to run.
+    if grep -q '^VERDICT:' <<< "$rb_plan" \
+       && [ "$rb_ctl" -eq 0 ] && [ "$rb_arm_ctl" = PASS-ROW ] \
+       && [ "$rb_mut" -ne 0 ] && [ "$rb_arm_mut" = NONE ]; then
+      plant_line "mutant-run-sanity" 0 "guards intact, exit 9 at RUN_ID: plan STILL emits VERDICT (the old sanity-start admitted it); control arm=$rb_arm_ctl rows=$rb_rows_ctl, mutant arm=$rb_arm_mut rows=$rb_rows_mut (no VERDICT line, no consumer_acceptance: diagnostic) -> BROKEN-MUTANT, the row FAILs by name"
+    else
+      plant_line "mutant-run-sanity" 1 "plan_verdicts=$(grep -c '^VERDICT:' <<< "$rb_plan") ctl_ok=$rb_ctl ctl_arm=$rb_arm_ctl ctl_rows=$rb_rows_ctl mut_ok=$rb_mut mut_arm=$rb_arm_mut mut_rows=$rb_rows_mut"
+    fi
+  fi
+
   # --- transversality: gut each guard, require its plant SILENT.
   say ""
   say "transverse: gut each guard, require its plant SILENT (and intact FIRES)"
@@ -7855,6 +8274,7 @@ EOS
       noglob-split)     plant_noglob "$script" "$eco" "$ng_cwd" "$st_root/stub-ok" ;;
       record-floor)     plant_b3_record_floor "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       record-floor-selfexclude) plant_record_floor_selfexclude "$script" "$eco" "$st_root/stub-ok" ;;
+      record-floor-samepath)    plant_record_floor_samepath "$script" "$eco" "$st_root/stub-ok" ;;
       record-floor-incomplete)  plant_record_floor_incomplete "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       pause-before-rename) plant_j2_pause_rename "$script" "$eco" "$st_root/stub-ok" "$rec" ;;
       usage-no-candidate) plant_usage_no_candidate "$script" "$eco" "$rec" "$bs_eco" "$st_root/stub-ok" ;;
@@ -7874,6 +8294,8 @@ EOS
       home-scratch)     plant_home_scratch "$script" "$eco" "$st_root/stub-ok" "$rec" "$st_root/stale-home.log" "$st_root/fake-home" ;;
       not-found-variant) plant_not_found_variant "$script" "$eco" "$st_root/stub-ok" "$rec" "$nf_name" "$nf_decoy" "$nf_decoy_log" ;;
       not-found-child)   plant_not_found_child "$script" "$eco" "$st_root/stub-ok" "$rec" "$nf_name" ;;
+      not-found-child-bashenv) plant_not_found_child_bashenv "$script" "$eco" "$st_root/stub-ok" "$rec" "$nf_name" ;;
+      not-found-child-sweep)   plant_not_found_child_sweep "$script" "$eco" "$st_root/stub-ok" "$rec" "$nf_name" ;;
       farm-exec-wrapper) plant_farm_exec_wrapper "$script" "$eco" "$st_root/stub-ok" "$rec" "$venv_dir" "$venv_marker" ;;
       farm-fail-closed)  plant_farm_fail_closed "$script" "$eco" "$st_root/stub-ok" "$rec" "$ffc_inject" ;;
       path-edit-absolute) plant_path_edit_absolute "$script" "$eco" "$st_root/stub-ok" "$rec" "$pe_absbin" "$stale_pe" "$pe_real" "$pe_tilde_dir" ;;
@@ -7938,6 +8360,17 @@ EOS
       ST_FAIL=1
       return
     fi
+    # CA-GUARD:transverse-run-sanity
+    # The plan sanity-start above says the mutant PARSES. It does not say
+    # the mutant still RUNS, and every record-state row is judged on a RUN
+    # (critic r8 ledger 5 -- see CA-GUARD:mutant-run-sanity).
+    if ! mutant_run_sanity_ok "$mutant" "$good_eco" "$st_root/stub-ok" "$st_root/${rec_prefix}-sanity.record"; then
+      export CA_STDERR_CAP="$prev_cap"
+      say "transverse $kind / $plant: intact=$intact mutant=BROKEN-MUTANT  FAIL: mutant broke run mode, arm=$MUTANT_SANITY_ARM (no row|<consumer>|PASS, no VERDICT line, no consumer_acceptance: diagnostic on the control fixture; rows=$MUTANT_SANITY_ROWS out=$(printf '%s\n' "$MUTANT_SANITY_OUT" | tail -3 | tr '\n' '|'))"
+      ST_FAIL=1
+      return
+    fi
+    # CA-GUARD:end-transverse-run-sanity
     ST_IN_MUTANT=1
     if run_named_plant "$plant" "$mutant" "$eco" "$rec_m" "$extra"; then
       mutant_st=FIRES
@@ -7951,7 +8384,7 @@ EOS
     # (UNEXERCISED, FAIL after a refused append, etc.). The transverse
     # is that the plant no longer FIRE.
     case "$plant" in
-      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|record-floor-selfexclude|record-floor-incomplete|not-found-child|gfx-variant-export|gfx-prereq-nosubstring|gfx-selfskip|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy|farm-exec-wrapper|farm-fail-closed|shim-fail-closed|path-edit-absolute|drop-trust-root)
+      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|record-floor-selfexclude|record-floor-samepath|record-floor-incomplete|not-found-child|not-found-child-bashenv|not-found-child-sweep|gfx-variant-export|gfx-prereq-nosubstring|gfx-selfskip|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy|farm-exec-wrapper|farm-fail-closed|shim-fail-closed|path-edit-absolute|drop-trust-root)
         if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ]; then
           say "transverse $kind / $plant: intact=FIRES mutant=$mutant_st  OK"
         else
@@ -8032,7 +8465,8 @@ EOS
   transverse_one expected-floor          missing-declared "$b2_eco"   t-b2
   transverse_one record-floor            record-floor     "$b3_eco"   t-b3
   transverse_one record-floor-max        record-floor     "$b3_eco"   t-b3max
-  transverse_one record-self-exclude     record-floor-selfexclude "$sx_eco" t-sx
+  transverse_one record-floor            record-floor-selfexclude "$sx_eco" t-sx
+  transverse_one record-samepath-exclude record-floor-samepath    "$sp_eco" t-sp
   transverse_one record-floor-complete   record-floor-incomplete  "$ic_eco" t-ic
   transverse_one noglob-split            noglob-split     "$ng_eco"   t-ng
   transverse_one pause-before-rename     pause-before-rename "$j_eco" t-j2
@@ -8050,7 +8484,8 @@ EOS
   transverse_one path-farm               path-farm        "$farm_eco" t-farm
   transverse_one home-scratch            home-scratch     "$home_eco" t-home
   transverse_one not-found-guard         not-found-variant "$nf_eco"  t-nf
-  transverse_one not-found-export        not-found-child  "$nf_eco"   t-nfc
+  transverse_one not-found-export        not-found-child-bashenv "$nf_eco" t-nfc
+  transverse_one notfound-stderr-sweep   not-found-child-sweep   "$nf_eco" t-nfsw
   transverse_one gfx-variant-export      gfx-variant-export "$gx_eco" t-gx
   transverse_one gfx-declared-only       gfx-prereq-nosubstring "$ngfx_eco" t-ngfx
   transverse_one dropped-filter          path-dropped-decoy "$pd_eco" t-pd

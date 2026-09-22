@@ -26,6 +26,7 @@ Exits 0 and prints the command, or exits 1 if this file has no runCmd.
     tools/_extract_runcmd.py FILE
     tools/_extract_runcmd.py --selftest
 """
+import os
 import re
 import sys
 
@@ -406,6 +407,23 @@ def selftest():
             % (yaml_skip, len(cases))
         )
         failed += 1
+    # CA-GUARD:yaml-required
+    # ROUND 9 (critic r8 ledger 3, MEASURED on CI job 106492225359): the
+    # round-8 floor above is guarded by `yaml_skip == 0`, and the CI image
+    # had no PyYAML -- so on the lane that gates merges the whole oracle
+    # took the all-or-nothing SKIP arm and printed PASS. A planted
+    # `_find_runcmd` key rename was GREEN there. mechanical-gates s37: a
+    # SKIP is coverage loss, not an accommodation. Callers that require the
+    # oracle to have run set CA_SELFTEST_REQUIRE_YAML=1 (the harness's own
+    # --self-test does, and so does the CI step); the skip is then a named
+    # FAIL instead of a quiet pass.
+    if yaml_skip and os.environ.get("CA_SELFTEST_REQUIRE_YAML") == "1":
+        sys.stderr.write(
+            "FAIL yaml-oracle required: PyYAML absent, %d of %d rows skipped"
+            " (CA_SELFTEST_REQUIRE_YAML=1)\n" % (yaml_skip, len(cases))
+        )
+        failed += 1
+    # CA-GUARD:end-yaml-required
     if yaml_checked + yaml_skip + yaml_invalid != examined:
         sys.stderr.write(
             "FAIL yaml-oracle accounting: ok=%d skip=%d invalid=%d != examined=%d\n"

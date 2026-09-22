@@ -329,6 +329,25 @@ jobs:
       # unprivileged user (a byte-identical copy of its tool tree in a drop
       # root), or both unwritable plants SKIP by name and are counted in
       # `skipped=2`.
+      # The extractor's YAML oracle is a FLOOR, and until round 9 it skipped
+      # on this lane: the image had no PyYAML, `--selftest` took the
+      # all-or-nothing SKIP arm and printed PASS, and a planted `runCmd` key
+      # rename was GREEN here (critic r8 ledger 3, measured on job
+      # 106492225359). `.devcontainer/Dockerfile` now installs python3-yaml,
+      # so this step is a no-op on an image built from THIS PR. It is not a
+      # no-op on a FORK PR, which runs in the rolling `ci-main` image built
+      # before the Dockerfile change -- and the harness sets
+      # CA_SELFTEST_REQUIRE_YAML=1 unconditionally, so a missing PyYAML is a
+      # named FAIL, never a quiet skip. mechanical-gates s37.
+      - if: needs.scope.outputs.code == 'true'
+        name: PyYAML for the runCmd extractor's YAML oracle
+        run: |
+          if python3 -c 'import yaml' 2>/dev/null; then
+            echo "PyYAML already present: $(python3 -c 'import yaml; print(yaml.__version__)')"
+          else
+            apt-get update && apt-get install -y --no-install-recommends python3-yaml
+          fi
+          python3 -c 'import yaml; print("yaml", yaml.__version__)'
       - if: needs.scope.outputs.code == 'true'
         name: Consumer-acceptance harness self-test (~7 min)
         run: bash tools/consumer_acceptance.sh --self-test
