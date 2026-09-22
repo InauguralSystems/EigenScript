@@ -499,6 +499,20 @@ All notable changes to EigenScript are documented here.
   value-channel verdict differed from the unelided program until the missing
   sample aged out. Elision now suppresses the verdict, not the sample.
 
+  **The SPEC sentence was corrected to match (`Refs #1212`).** `docs/SPEC.md`
+  still said the block "suppresses observation and not assignment", which
+  pre-dates #1049 and reads as if `report` were suppressed too. It now says
+  what `docs/PREDICATES.md` says: the block elides the **entropy** half of
+  observation, not the value-channel sample, and points at
+  PREDICATES.md#inputs for the readers that can differ. Two executed fences
+  in SPEC.md pin the property as a PAIR — the same program with and without
+  the block — so `when` and `report` are compared byte-for-byte across the
+  boundary while `why` is shown to differ. **Consumers asserting
+  `report_after == report_before` across an `unobserved:` block are asserting
+  something the block no longer changes**: assert on `why`/`how` (or a
+  `trajectory` snapshot's `dh`/`dH`) instead, which is where elision is
+  observable. EigenGauntlet is migrated separately.
+
 - **Configurable observer window depth and a scale-free relative step
   (#1044, #1045).** Both were found by phugoid grading verdicts against a
   physical oracle: a fixed 10-deep window called an oscillation `stable`, and
@@ -1021,6 +1035,256 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **Three front-door claims that only EXECUTION could refute (#1209, #1210,
+  #1211).** Each was stated in `docs/llms.txt` — the file every agent primes
+  on — and each is now stated correctly with an executed fence beside it.
+  (1) "`what is e` is a COMPILE ERROR whether or not `e` is bound" was false:
+  `printf 'e is 1\nwhat is e\n'` exits 0. The refusal is at the DISCARD site,
+  so a bare interrogative is refused (`E004`) everywhere except as the last
+  statement of its block, which nothing pops; `--lint` flags both positions as
+  `W019`. The refused program is executed as
+  `examples/errors/interrogative_discarded.eigs` by suite section [90] (19 →
+  20 checks). (2) "Under-arity null-fills, silently" omitted the arity-1
+  carve-out (#733): `one of []` on `define one(a)` binds `a = []`, not
+  `a = null`, because the 1-parameter callee re-collects the argument list
+  whole; the null-fill is the 2+-parameter case. (3) "1/0 does NOT throw (it
+  warns and returns 0)" was a fossil of the pre-#975 fail-soft runtime —
+  division by zero raises a catchable `value` error, `division by zero`.
+  README.md carried the same interrogative error. The SPEC/COMPARISON/OBSERVER
+  wording was checked in the same pass and needed no change.
+
+- **ROADMAP.md is a milestone set, and issue labels are enforced (#1207,
+  #1155).** The file was a checkbox pile, most of it historical highlights
+  under `## Completed`, so anything counting "roadmap items" counted the past
+  (ROADMAP.md's header now derives both counts beside the commands that
+  produce them; the figures are deliberately not retyped anywhere else — the
+  first cut of this entry typed "112" for a file its own gate counts at 113); it also double-counted (#414 at
+  two lines, Windows as an umbrella plus three tiers), carried items execution
+  refutes (Public release, WASM, `utf8_encode`, the `eigenscript.h` line
+  count, the GET_LOCAL/SET_LOCAL premise, Tidepool GAP-002), carried two items
+  its own veto list contradicts, and omitted the concurrency foundation #1153
+  entirely. It is now ONE table — number, milestone, status, GitHub URL, DONE
+  clause — mirroring the nine open GitHub milestones, with the vetoed items as
+  `retired` rows and everything uncommitted under
+  `## Ideas and deferrals (uncounted)`. `tools/roadmap_check.sh` refuses any
+  checkbox anywhere in the file and any table set that diverges from the open
+  milestones; `tools/issue_labels_check.sh` refuses an open issue without an
+  `area:` label and a kind, and refuses a run that examined zero issues (the
+  backlog was essentially unlabelled on 2026-09-21; the "33 of 36" census that
+  first circulated is not reproducible from the API, and the figure of record
+  is the gate's first real run after the sweep, `examined=35 missing=0`).
+  `.github/workflows/issue-triage.yml` labels a new issue `needs-triage` when
+  it arrives without an `area:` and runs the audit daily. Both gates are suite
+  section `[99zd]` with pinned selftest case counts.
+
+  Round 2 closed what the blind critics found in round 1. A SUCCESSFUL EXIT IS
+  NOT A MEASUREMENT: both callers accepted `tools/issue_labels_check.sh`
+  gutted to `exit 0` (`exit=0 output=''`), and `[99zd]` read `TOTAL=4 PASS=4`
+  with only `tools/roadmap_check.sh`'s live-data walk removed. Each gate now
+  publishes a `--contract` — the population line it promises to print and its
+  pinned selftest case count — and the suite section and the workflow both
+  assert that contract by name instead of reading the exit status.
+  `tools/roadmap_check.sh` gained (b) a DONE-clause comparison against each
+  milestone's own DONE text (M7's row had shipped with
+  "Misleading diagnostics fixed or removed in the same change." missing off
+  the end) and (c) reference resolution for the table's evidence cells and
+  every repo-qualified reference in the file ("Tidepool PR #375" is
+  EigenScript PR #375; the Tidepool endpoint 404s). And
+  `tools/workflow_yaml_check.sh` loads every workflow: round 1 shipped
+  `.github/workflows/issue-triage.yml` with two step names of the shape
+  `- name: Every open issue carries an area: label and a kind` — a plain YAML
+  scalar containing `: ` — so the file was not loadable YAML and the daily
+  audit could never have run. Two blind critics quoted that workflow's
+  permissions and concurrency key back verbatim; neither parsed it.
+
+  Round 3 closed what round 2's critics found, all of it in the same layer.
+  THE CALLERS TRUSTED THE CONTRACT THEY WERE SUPPOSED TO POLICE: both read
+  `POPULATION_RE` and `SELFTEST_CASES` from the gate, so `POPULATION_RE=
+  examined=|.*` admitted empty output and a gate with every plant deleted and
+  `SELFTEST_CASES=1` passed the daily lane. "One regex per gate" was the wrong
+  invariant. Each caller now holds its OWN literal copy of both pins, asserts
+  the gate's output against that copy, and separately asserts the gate's
+  `--contract` EQUALS it — two copies kept equal by a test, with a drift red by
+  name and never auto-adopted. Both callers also require a LIVE source token,
+  because `examined=1 missing=0 (source: fixture ...)` used to pass (their
+  regex stopped before `(source:`); both require exactly ONE population line
+  with a non-zero count; and both count their own checks, so gutting an
+  assertion changes RESULTS. The round-2 substring vacuity guard
+  (`case "$re" in *examined=*`) is deleted — the caller's own pinned regex is
+  the guard.
+
+  THE PR LANE WAS RED ON EVERY SUITE LEG for three independent reasons, all
+  fixed here. `tools/workflow_yaml_check.sh --selftest` failed 2 of 5 because
+  two plants can only go red through arm (b) and NO runner had PyYAML: the
+  runners now install it (`python3-yaml` in `.devcontainer/Dockerfile`, a setup
+  step on the macOS lane) and the selftest is skip-aware, scoring a plant whose
+  arm skipped by name as `SKIP` rather than a failure. `tools/child_exit_check.sh`
+  declared 115 child sites (the value on `main`) for a tree that had grown to
+  121. And on macOS, where `gh` is
+  present but UNAUTHENTICATED, `tools/roadmap_check.sh` arm (c) reported all
+  seven references as "does not resolve — the endpoint 404s": both GitHub-facing
+  arms now check `gh auth status` and SKIP BY NAME, and within arm (c) a
+  genuine 404 is red with its HTTP status while a 401/403/429 or transport
+  error skips that one reference by name and is counted in `skipped=`.
+
+  Arm (a) of the YAML gate also stopped rejecting LEGAL YAML — a trailing
+  `# comment: detail`, a quoted scalar after extra spaces, and `name:` text
+  inside a `run: |` block scalar were all red; it now tokenises the scalar the
+  way YAML does, with those three as green controls. Arm (a) of the roadmap
+  gate counted a legal escaped pipe in a table cell as an extra cell. Arm (c)
+  now REFUSES a bare `#N` in a cell that also carries a qualified `Repo#M`:
+  M9's row read "Tidepool#43 and #59", the bare `#59` silently resolved against
+  EigenScript (a real, closed PR) and the row was green for a reference it does
+  not mean — the milestone description on GitHub and the row are both qualified
+  now. And an unknown repo-qualified reference is red wherever it appears, not
+  only inside the table. Finally, the two pre-PR checkbox counts in ROADMAP.md
+  are DERIVED (`D_ROADMAP_HIST_CHECKBOXES` / `D_ROADMAP_HIST_COMPLETED` in
+  `tools/docs_claims_check.sh`, deferring by name on a checkout too shallow to
+  reach the commit) rather than waived: changing the number AND its waiver
+  together used to stay green, because the derivation the waiver's reason
+  described was never executed.
+
+  Round 4 closed the caller/enrolment class for good. ROUND 3 TRUSTED THE
+  GATE'S OWN SKIP TOKEN, and NO LANE COULD DO ANYTHING BUT SKIP: the pinned
+  regex admitted `milestones=skipped:… refs=skipped:…`, so removing only the
+  live GitHub walk from `tools/roadmap_check.sh` and dressing it as a named
+  skip passed `[99zd]` on an authenticated box; and no `run_all_tests.sh` step
+  exported a token, the dev image had no `gh`, the macOS runner's `gh` is
+  unauthenticated, and the daily audit ran only the labels gate — so the
+  milestone-set mirror and the reference resolver, the whole point of #1207,
+  were executed against GitHub by nothing while the section printed
+  `population lines 3/3`. The probe now lives in ONE file, `tools/gh_probe.sh`,
+  sourced by the gates AND by their callers: when the CALLER reaches GitHub it
+  requires `milestones=gh-api:… refs=gh-api:… resolved=N skipped=0`, a
+  `gh-api:` labels line with no skip alternative, and `loader=pyyaml` whenever
+  its own `import yaml` succeeds; when it does not, it accepts the named skip
+  AND prints `[99zd] live arms: SKIPPED (no gh credentials on this lane)` so
+  the log says which lane measured what. A lane that EXPORTS a token and
+  cannot use it is red on an independent cross-check. `.devcontainer/Dockerfile`
+  installs `gh` from a pinned, checksummed release tarball, `ci.yml`'s
+  `linux / gcc` job exports `GH_TOKEN` with `issues: read`, and the daily
+  `issue-triage.yml` audit runs the roadmap gate too, with a pin that admits no
+  skip at all.
+
+  Four more, same round. The roadmap OK line carries `resolved=N skipped=M`,
+  because `refs=gh-api:…` named the endpoint the arm meant to call and not work
+  done — with every per-reference call answering HTTP 403 it was byte-identical
+  to a walk that resolved all seven. Arm (c) keeps an EXPLICIT OWNER whole:
+  `cli/Tidepool#59` used to extract as `Tidepool#59`, deduplicate against
+  `InauguralSystems/Tidepool#59` and be certified by resolving a different
+  organisation's repository; deduplication now keys on the owner/repo/number
+  triple and an unknown owner is red by name. `docs-claims: OK` carries
+  `history-deferred=N`, which was byte-identical whether the two ROADMAP-history
+  claims were derived or deferred. The `NAMES` class gained a BUILTIN FAMILIES
+  rule — a doc line naming a builtin family must find that family in
+  `eigenscript --api` — which is what ROADMAP.md's checked-off
+  "Raw TCP/UDP sockets" claim needed (#1227: `--api` has `net_*` and nothing carrying `udp`, and
+  docs/BUILTINS.md said so in prose). `tools/workflow_yaml_check.sh` held two
+  `[[ =~ ]]` regexes inline that bash 3.2 cannot PARSE; every runner reports
+  "NO OLD BASH ON THIS MACHINE" so `[99zb]` had always skipped.
+
+  Round 5 closed the layer under the caller; both blind critics converged on
+  the gates themselves. A DECLARED-BUT-EMPTY TOKEN IS A DECLARED TOKEN:
+  `gh_probe_token_declared` tested non-emptiness, so a lane exporting
+  `GH_TOKEN=""` — what a workflow produces when the secret is missing,
+  misspelled or scoped away — declared nothing, every GitHub arm took its named
+  skip, and `[99zd]` printed "this lane declares no token" and passed 11/11 on
+  a lane that measured nothing; the predicate now tests PRESENCE
+  (`${GH_TOKEN+x}`) and an UNSET token is the only shape that still permits the
+  skip. `KNOWN_REPOS` IS VERIFIED ONCE PER RUN: it named `EigenKB`, which does
+  not exist, and arm (c) mapped the repository-level 404 to "this token cannot
+  read the repository" — a fact about the run — so a roadmap citing `EigenKB#1`
+  printed `OK … skipped=1` on the organisation's most privileged token. One
+  `gh api orgs/<owner>/repos` call is now the discriminator: absent from a
+  SUCCESSFUL listing is `does not exist (KNOWN_REPOS is stale)`, present says
+  public or private, and a listing that fails leaves nothing decidable and
+  SKIPs by name. ROADMAP.md is PUBLIC, so a citation its readers cannot open is
+  not evidence: `EigenOS`, `eigen-site`, `DeslanStudio` and `iLambdaAi` (all
+  measured `.private == true`) moved to `PRIVATE_REPOS`, where citing one is
+  red for its real reason rather than as an unknown name. `--selftest` gained
+  the control that makes the discriminator load-bearing — the same missing
+  entry with the listing UNREADABLE is GREEN, so gutting the discriminator is
+  red in one direction and silent in the other. And
+  `[99zb]`'s skip reason was FALSE: its candidate list was `$PORTABILITY_BASH`
+  and two `bash32` paths, never `/bin/bash` — which on macOS, the one platform
+  the audit exists for, IS GNU bash 3.2.57. `/bin/bash` and `/usr/bin/bash` are
+  now candidates when their own `BASH_VERSINFO[0]` is 3 or lower, so the macOS
+  lane parses every tracked script and runs the five shell gates instead of
+  announcing a skip; the skip message names every candidate it tried.
+
+  Rounds 6 and 7 attacked the gates' own predicates, and round 7 folded in a
+  third critic (`/code-review 1226 medium`, run against the pushed head). THE
+  PRIVACY CLASSIFIER FAILED OPEN: `verify_known_repos` asked
+  `[ "$priv" = "true" ]` and treated every other value as PUBLIC, so an
+  organisation listing whose rows carry no `.private` at all — a projection, a
+  proxy, a `jq` answering `null` — produced `repos=verified:13` with not one
+  explicit `false` in it, and both callers accepted it (measured with a
+  13-row null fixture: the gate printed the byte-identical OK line and
+  `[99zd]` read 11/11). "Public" is now a positive fact the listing has to
+  state: `false` is public, `true` is private, anything else is UNKNOWN
+  VISIBILITY, red by name, and the run's token becomes
+  `repos=skipped:visibility-unknown:N`, which the live pin at both callers
+  refuses. The listing's token also carries its TYPE, because
+  `(.private|tostring)` maps the JSON string `"false"` onto the boolean. And
+  "absent" from a listing with NO private row at all is a PUBLIC-ONLY VIEW —
+  still red, but diagnosed "deleted, renamed, or now private", instead of
+  sending a maintainer to look for a repository that was merely turned
+  private.
+
+  `[99zb]` keyed its verdict on the WRONG THING: it parsed the oracle's major
+  version out of the GNU banner, so a bash 3.2 behind a wrapper whose banner
+  reads `Custom Bash 3.2.0` was failed by name while the fact was right there.
+  The gate now prints `portability-parse: oracle-major=N` from the selected
+  candidate's own `BASH_VERSINFO[0]`, the caller parses that and keeps its own
+  `<= 3` literal, and the arm carries three synthetic receipts as its own
+  planted faults — a bash 5 wearing a 3.2 banner (refused), a real 3.2 with a
+  vendor banner (accepted), and a completed audit with no identity line
+  (refused) — so the arm that had never fired on a healthy tree is now shown
+  to fire.
+
+  Three more from the third critic. THE TWO "DERIVED" ROADMAP-HISTORY NUMBERS
+  WERE DERIVED ON NO LANE AT ALL: every suite job checks out shallow, so the
+  base commit was unreachable and both claims deferred by name on every push
+  (verified in this PR's own logs — `linux/gcc` job 106465168161 and macOS job
+  106465087620 both printed `history-deferred=2`, and retyping 113 as 114
+  passed CI). `ci.yml`'s linux job now fetches that one commit — the SHA read
+  out of the gate, so there is no second home for it — and `[99za]` probes the
+  commit ITSELF, requiring `history-deferred=0` on a lane that holds it and
+  refusing a tree where the fetch has been removed. The row walk in
+  `tools/roadmap_check.sh` skipped any table row CONTAINING `---`, not only
+  the header separator, so a row whose DONE clause said `never --- see the
+  vetoes` was never counted and never checked; one anchored regex now serves
+  the separator count, the section-placement check and the walk. And
+  `docs/CI.md` — the page a contributor is sent to for "what runs on my PR" —
+  is now in the doc-claims doc set, where four of its hand-typed numbers were
+  already stale in the diff that wrote them; it is exempt from ONE class
+  (FLAGS, which asks `eigenscript --help` about flags that mostly belong to
+  other programs), the exemption is named and its reason written, and the gate
+  audits that the exemption exists, is enrolled elsewhere, and actually fired.
+
+  And the `[99za]` history check earned its place on its first CI run: with the
+  base commit fetched and present, the gate STILL deferred, because its
+  `git cat-file` was plain `git` and the CI container runs as a different uid
+  from the checkout's owner — "detected dubious ownership", swallowed by
+  `2>/dev/null` and indistinguishable from a shallow clone. The PATHS class's
+  `git ls-files` in the same file had carried `-c safe.directory='*'` all
+  along; its sibling three hundred lines away did not. One workaround, every
+  git call.
+
+  Smaller, same round: `gh api --paginate` already merges REST pages into one
+  array, so `issue_labels_check.sh`'s `sed 's/^\]\[/,/'` splice was dead — and
+  could not have worked anyway, since a raw concatenation puts the seam
+  mid-line where a `^`-anchored sed cannot reach it; the classifier now accepts
+  a merged array OR an array of pages and refuses anything else by name, with a
+  two-page fixture whose unlabelled issue is on the SECOND page. The shared
+  `gh` probe is memoised per process (16 `gh` invocations per roadmap-gate run
+  became 11, measured with a counting wrapper on PATH), and arm (c) no longer
+  re-probes a repository the organisation listing has already proved public.
+  `.devcontainer/Dockerfile` selected the `linux_amd64` gh tarball and checksum
+  unconditionally, so the whole dev image failed to build on an arm64 host; the
+  architecture comes from `dpkg --print-architecture` and each one carries its
+  own pinned checksum from the release's own `checksums.txt`.
+
 - **Layering has structure rather than convention (#744, closing #746).** The
   core no longer includes any extension's private header: `src/ext_register.h`
   carries the registrars and per-state teardowns as declarations only, so
@@ -1042,8 +1306,11 @@ All notable changes to EigenScript are documented here.
   pass vacuously on a machine that has it. Five build-source lists that nothing
   tied to the tree now derive from the Makefile or were corrected; one of them
   had been silently costing the language-server builtin index 19 signature
-  comments. Per-layer headers, and breaking up the 1253-line umbrella header,
-  are recorded in `ROADMAP.md` as their own round.
+  comments. Per-layer headers, and breaking up the `src/eigenscript.h` umbrella
+  header, are recorded in `ROADMAP.md` as their own round. (The "1253-line"
+  figure this entry used to carry was stale by ~900 lines; a line count of a
+  file under active edit rots by construction, so the measurement is
+  `wc -l src/eigenscript.h` and no number is retyped here. #1228.)
 
 - **The observer gate is hoisted ahead of the observe helpers, in both the
   interpreter and the JIT (#972).** With the gate closed, every assignment

@@ -157,8 +157,10 @@ eigs> why is signal      => -0.016…   — how fast that information is changin
 
 In a script an interrogative is an expression, so use it where a value
 goes — `print of (what is signal)`, `if (when is signal) > 2:`. A bare
-`what is signal` as a statement is refused, because its answer would be
-discarded:
+`what is signal` as a statement is refused (`E004`) wherever its answer
+would be **discarded** — which is everywhere except the last statement of
+its block, the one position nothing pops. Don't lean on that position:
+`--lint` flags the bare form (`W019`) in both:
 
 ```eigenscript check
 signal is 10
@@ -497,7 +499,7 @@ eigenscript examples/stem/greenhouse_controller.eigs # closed-loop STEM controll
 
 ```bash
 cd tests
-./run_all_tests.sh    # 260 test sections (minimal build; full build adds HTTP/DB/model suites)
+./run_all_tests.sh    # 261 test sections (minimal build; full build adds HTTP/DB/model suites)
 ```
 
 ### Writing your own tests
@@ -594,7 +596,7 @@ get made and how contributors can earn commit access over time.
 
 ```bash
 make                  # build
-make test             # build and run the full suite (260 test sections)
+make test             # build and run the full suite (261 test sections)
 make gfx              # build with SDL2 graphics (UI toolkit, games)
 make net              # build with raw TCP sockets (record/replay-able)
 make install          # install to ~/.local/bin

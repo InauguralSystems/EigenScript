@@ -106,8 +106,48 @@ printf 'docs-claims env: bash %s, %s, %s, EIGS=%s, %s=%s\n' \
        "build/release/eigenscript" \
        "$([ -f build/release/eigenscript ] && echo present || echo ABSENT)"
 
-DOC_FILES_DEFAULT="README.md docs/llms.txt CLAUDE.md docs/ARCHITECTURE.md docs/BUILTINS.md docs/CONCURRENCY.md"
+# ROUND 7 — docs/CI.md IS A FRONT DOOR TOO. It is the page a contributor is
+# sent to in order to learn what runs on their PR, and it was outside this
+# gate entirely: four hand-typed numbers in it were already stale in the very
+# diff that added them (third critic, `/code-review 1226 medium`, finding 7).
+DOC_FILES_DEFAULT="README.md docs/llms.txt CLAUDE.md docs/ARCHITECTURE.md docs/BUILTINS.md docs/CONCURRENCY.md ROADMAP.md docs/CI.md"
 DOC_FILES="${DOCS_CLAIMS_DOCS:-$DOC_FILES_DEFAULT}"
+
+# THE ONE CLASS docs/CI.md IS EXEMPT FROM, AND WHY. The FLAGS class asks
+# `eigenscript --help` about every `--flag` token it finds. That is the right
+# question for a document ABOUT EIGENSCRIPT; docs/CI.md is a document about
+# this repository's SHELL GATES, and 45 of its 50 flag tokens belong to other
+# programs (`--selftest`, `--contract`, `--print-section-plan`, `--paginate`,
+# `--without-bash-malloc`, ...). Enrolling it there would mean forty-five
+# waivers whose reason is the same sentence, and a gate whose failures are
+# mostly noise stops being read (mechanical-gates §13). So the exemption is
+# NAMED here, it is one class wide, and the audit below asserts every entry is
+# real, is enrolled for the other four classes, and actually fired — an
+# exemption nothing uses is a waiver covering something nobody agreed to
+# (§3). The other four classes DO walk it: PATHS, NUMBERS, MAKE TARGETS and
+# NAMES all ask questions that are true of any document in this tree.
+# The exemption is a property of the DOCUMENT, not of the run: it fires
+# whenever the named document is in the set being walked, including the
+# selftest's `DOCS_CLAIMS_DOCS="$DOC_FILES_DEFAULT"` control. Keying it on
+# "DOCS_CLAIMS_DOCS is unset" took that control red on forty-five flags in
+# this round's own first selftest — a gate whose own control cannot pass is
+# not a gate yet.
+DOC_FILES_FLAGS_EXEMPT_DEFAULT="docs/CI.md"
+DOC_FILES_FLAGS_EXEMPT=""
+for __x in $DOC_FILES_FLAGS_EXEMPT_DEFAULT; do
+    case " $DOC_FILES " in
+        *" $__x "*) DOC_FILES_FLAGS_EXEMPT="$DOC_FILES_FLAGS_EXEMPT $__x" ;;
+    esac
+done
+DOC_FILES_FLAGS=""
+for __d in $DOC_FILES; do
+    __skip=0
+    for __x in $DOC_FILES_FLAGS_EXEMPT; do
+        [ "$__d" = "$__x" ] && __skip=1
+    done
+    [ "$__skip" -eq 1 ] || DOC_FILES_FLAGS="$DOC_FILES_FLAGS $__d"
+done
+unset __d __x __skip
 # Whether this run covers the real doc set. The "a declared row was never
 # visited" half of the declaration audit only means something then; the
 # selftest drives copies of ONE document at a time and would otherwise drown
@@ -279,6 +319,17 @@ if [ "${1:-}" = "--selftest" ]; then
     st_case "planted wrong number goes red and names the line" \
             "$p" 1 "claims '44-widget' but D_WIDGETS derives 47"
 
+    # docs/CI.md IS WALKED — the enrolment of round 7, proven rather than
+    # declared. Until then the page a contributor is sent to for "what runs on
+    # my PR" was outside the gate, and four of its hand-typed numbers were
+    # stale in the diff that wrote them (third critic, `/code-review 1226
+    # medium`, finding 7). The planted number sits on the one line of that
+    # page the gate now DERIVES, so a doc set that quietly drops docs/CI.md
+    # takes this case green.
+    p=$(plant "CI.md" 's/All 261 test sections./All 999 test sections./' "docs/CI.md")
+    st_case "planted wrong number in the enrolled docs/CI.md goes red" \
+            "$p" 1 "claims '999 test sections' but D_SECTIONS derives"
+
     p=$(plant "README.md" 's|`src/embed_smoke.c`|`src/no_such_source.c`|')
     st_case "planted dangling path goes red and names the path" \
             "$p" 1 "references src/no_such_source.c, which git does not track and no Makefile rule produces"
@@ -294,6 +345,14 @@ if [ "${1:-}" = "--selftest" ]; then
     p=$(plant "README.md" 's/`sort_by of \[items, key_fn\]`/`no_such_builtin of [items, key_fn]`/' docs/llms.txt)
     st_case "planted unresolvable \`name of\` call goes red" \
             "$p" 1 "calls \`no_such_builtin of ...\`"
+
+    # BUILTIN FAMILIES (#1227). docs/BUILTINS.md's UDP sentence is a NEGATIVE
+    # claim and is waived by its exact line. Turn it into a shipping claim —
+    # the shape ROADMAP.md carried at 5213ba3 — and the waiver stops matching,
+    # so the family claim is judged and goes red by name against `--api`.
+    p=$(plant "BUILTINS.md" 's/UDP is not yet exposed/UDP datagram sockets are exposed and shipped/' docs/BUILTINS.md)
+    st_case "planted 'UDP shipped' family claim goes red" \
+            "$p" 1 "names the builtin family udp"
 
     # Zero population, one class at a time is not enough: a doc with NOTHING in
     # it must trip every class's guard, and each message is asserted by name.
@@ -742,8 +801,12 @@ import sys; raise SystemExit("planted: this counter cannot run")' \
             rm -f "$st_norecord/tools/docs_claims_check.sh"
             mv "$st_norecord/tools/docs_claims_check.sh.new" "$st_norecord/tools/docs_claims_check.sh"
             out=$(cd "$st_norecord" && bash tools/docs_claims_check.sh 2>&1); rc=$?
+            # The doc-set size is DERIVED from DOC_FILES_DEFAULT, not typed:
+            # enrolling ROADMAP.md (round 2 of #1207) turned a hand-typed "6"
+            # here into a selftest failure with nothing wrong in the tree.
+            st_docn=$(printf '%s\n' $DOC_FILES_DEFAULT | grep -c .)
             if [ "$rc" -ne 0 ] \
-               && grep -qF "recorded 0/6 declared row(s) — THE CLASS DID NOT RUN" <<< "$out" \
+               && grep -qF "recorded 0/$st_docn declared row(s) — THE CLASS DID NOT RUN" <<< "$out" \
                && grep -qF "docs-claims CLASS SUMMARY" <<< "$out"; then
                 printf '  selftest ok: a class that records nothing is named in ONE line by the summary printed LAST\n'
             else
@@ -1223,6 +1286,75 @@ D_LLMS_LINES=$(wc -l < docs/llms.txt | tr -d ' ')
 D_CHAN_ARMS=$(awk '/^static Value \*chan_clone_rec/,/^}/' src/eigenscript.c \
               | grep -c 'case VAL_' | tr -d ' ')
 
+# ROADMAP.md's two HISTORICAL counts — the pre-PR checkbox pile #1207 measured.
+#
+# BOUGHT 2026-09-21 (round-3 blind critic, Astra check 5): these two numbers
+# were WAIVED by exact line, so changing `113` to `114` AND its waiver together
+# stayed green — the derivation the waiver's reason described ("beside the
+# command that derives it") was never executed by anything. A waiver is a
+# promise; a derived unit is a measurement. The promise is now deleted and the
+# command runs here.
+#
+# The commit is the branch point this PR was measured against. A clone that
+# cannot reach it (a shallow CI checkout, a `git archive` scratch copy with no
+# `.git` at all) cannot derive the number, so the claim DEFERS by name into its
+# own declared class rather than silently dropping out of the population.
+#
+# WHAT A DEFERRAL COSTS (round-4 blind critic, Fable, check 1). A deferred
+# claim is NOT verified — it is verified NOWHERE until someone re-derives it.
+# The commit above is a HISTORICAL one: if the history is ever rewritten, or
+# the commit is garbage-collected, or CI switches to a shallow fetch, these two
+# claims defer on EVERY lane and stay unverified indefinitely, with the tree
+# still printing `docs-claims: OK`. Until round 4 the OK line was BYTE-IDENTICAL
+# whether the claims were derived or deferred, and the CI logs print only that
+# line — so whether CI measured them was unknowable from the lane. The OK line
+# now carries `history-deferred=N`. If N stops being 0 on a lane that used to
+# derive, re-pin DC_ROADMAP_HIST_COMMIT to a reachable commit (or restate the
+# two claims from a commit that is), rather than letting the deferral become
+# the normal state.
+#
+# ROUND 7 — AND A LANE THAT CANNOT REACH IT IS NOW A LANE THAT FETCHES IT.
+# The deferral above was not hypothetical: measured on this PR's own head
+# (linux/gcc job 106465168161, macOS job 106465087620), BOTH printed
+# `docs-claims: OK — NUMBERS 36 (history-deferred=2)`, because every suite
+# job's `actions/checkout` is shallow and the PR merge ref's parents are not
+# fetched. So these two claims were derived NOWHERE, on any lane, ever — and
+# retyping 113 as 114 passed CI (third critic, `/code-review 1226 medium`,
+# finding 5). `.github/workflows/ci.yml`'s `linux` job now fetches exactly
+# this one commit (`git fetch --depth=1 origin <sha>`, about a second), and
+# suite section [99za] probes the commit ITSELF and requires
+# `history-deferred=0` on any lane that holds it — so a lane that claims the
+# derivation without the history is red by name.
+#
+# THE FULL 40-CHARACTER SHA, not an abbreviation: `git fetch origin <sha>`
+# rejects an abbreviated object name outright (`couldn't find remote ref
+# b91768e`, measured), so the abbreviation could not be the thing a lane
+# fetches.
+DC_ROADMAP_HIST_COMMIT="${DC_ROADMAP_HIST_COMMIT:-b91768e23c5a874a64e76e4af9ab291e6aa49983}"
+D_ROADMAP_HIST_CHECKBOXES=""
+D_ROADMAP_HIST_COMPLETED=""
+DC_ROADMAP_HIST_WHY="SKIPPED BY NAME: commit $DC_ROADMAP_HIST_COMMIT is not reachable here (shallow checkout or no .git), so the pre-PR checkbox counts cannot be derived"
+#
+# `-c safe.directory='*'`, AND THE OMISSION COST A RED CI LANE. Bought
+# 2026-09-21, ON THE FIRST RUN OF THE [99za] CHECK ADDED THIS ROUND: the CI
+# container runs as a different uid from the checkout's owner, so PLAIN `git`
+# dies with "detected dubious ownership" — and this `cat-file` swallowed that
+# on stderr and deferred by name, exactly as it does for a genuinely shallow
+# clone. The PATHS class's `git ls-files` three hundred lines below already
+# carried the flag; its sibling here did not, which is §26's two-homes shape
+# inside one file. The lane HELD the commit (the caller read it with the flag)
+# and the gate still said it could not. One workaround, every git call.
+if git -c safe.directory='*' cat-file -e "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" 2>/dev/null; then
+    D_ROADMAP_HIST_CHECKBOXES=$(git -c safe.directory='*' show "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" \
+        | grep -cE '^[[:space:]]*- \[( |x|~)\]' | tr -d ' ')
+    D_ROADMAP_HIST_COMPLETED=$(git -c safe.directory='*' show "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" \
+        | sed -n '/^## Completed/,$p' \
+        | grep -cE '^[[:space:]]*- \[( |x|~)\]' | tr -d ' ')
+    DC_ROADMAP_HIST_WHY="git show $DC_ROADMAP_HIST_COMMIT:ROADMAP.md"
+fi
+D_ROADMAP_HIST_CHECKBOXES_WHY="$DC_ROADMAP_HIST_WHY"
+D_ROADMAP_HIST_COMPLETED_WHY="$DC_ROADMAP_HIST_WHY"
+
 note "docs-claims derivations (every number below comes from the tree, not from a document):"
 note "  widgets                 = $D_WIDGETS   (source grep)  /  $D_WIDGETS_RT (runtime registry)"
 note "  lib/*.eigs              = $D_LIB_FILES"
@@ -1238,6 +1370,7 @@ note "  suite sections          = $D_SECTIONS distinct  /  $D_SECTION_LINES labe
 note "  --api                   = $D_API_TOTAL ($D_API_CORE core + $D_API_EXT extensions)"
 note "  docs/llms.txt lines     = $D_LLMS_LINES"
 note "  chan_clone_rec arms     = $D_CHAN_ARMS (src/eigenscript.c, no default: — -Werror=switch forces the choice)"
+note "  ROADMAP pre-PR boxes    = ${D_ROADMAP_HIST_CHECKBOXES:-<deferred>} total / ${D_ROADMAP_HIST_COMPLETED:-<deferred>} under ## Completed  ($DC_ROADMAP_HIST_WHY)"
 
 plausible widgets       "$D_WIDGETS"      20
 plausible lib_files     "$D_LIB_FILES"    50
@@ -1354,7 +1487,7 @@ waivers_audit() {
         fail "the waiver table holds $n entries but $WAIVERS_DECLARED are declared — adding or removing a waiver is a deliberate edit"
     fi
 }
-WAIVERS_DECLARED=8
+WAIVERS_DECLARED=22
 
 # ---------------------------------------------------------------------------
 # 2b. DECLARED POPULATIONS (mechanical-gates §121 + §129, Astra G1).
@@ -1442,7 +1575,7 @@ EOF
 # `[A-Za-z0-9_]` itself. `\b` is a GNU extension, not POSIX ERE, and it means
 # a backspace inside an awk dynamic regex — a second portability question this
 # file is no longer asking anyone.
-UNIT_RE='[0-9][0-9,]*[ -]?(builtin functions|builtins?|module rows|modules?|rows|widgets?|checks?|test sections|sections?|lines?|line|K|files|core|extensions?|STEM|fragments?|arms?)'
+UNIT_RE='[0-9][0-9,]*[ -]?(builtin functions|builtins?|module rows|modules?|rows|widgets?|checkbox lines?|checkboxe?s?|checks?|test sections|sections?|lines?|line|K|files|core|extensions?|STEM|fragments?|arms?)'
 
 # Parameter expansion, not a pipeline: two processes per numeric claim, and
 # `grep -o` is exactly what this round is removing. `${t%%[!0-9,]*}` keeps the
@@ -1465,9 +1598,14 @@ NUMBER_RULES='
 ^[0-9]+ modules$::modules in .lib/.::D_LIB_FILES::0
 ^[0-9]+ builtins$::organized by module::D_API_TOTAL::0
 ^[0-9]+ arms$::switch has::D_CHAN_ARMS::0
+^[0-9,]+ checkbox lines$::carried [0-9,]+ checkbox lines in total::D_ROADMAP_HIST_CHECKBOXES::0
+^[0-9,]+ checkbox lines$::of those were historical highlights::D_ROADMAP_HIST_COMPLETED::0
 '
 
 num_examined=0; num_derived=0; num_waived=0; num_deferred=0; num_rules_fired=0
+hist_deferred=0
+# The two ROADMAP historical counts defer together or not at all.
+HIST_ONLY_DECLARED=2
 note ""
 note "docs-claims class NUMBERS:"
 for f in $DOC_FILES; do
@@ -1493,9 +1631,20 @@ for f in $DOC_FILES; do
             # A derivation that this lane cannot make DEFERS the claim; it never
             # drops it. The deferral is counted and the count is pinned below.
             if [ -z "$derived" ]; then
-                num_deferred=$((num_deferred + 1))
-                BIN_DEFERRED=1
-                note "  DEFERRED $f:$lineno  '$token' — $valname has no install-shaped binary to measure here: $SIZE_BIN_WHY"
+                case "$valname" in
+                    D_ROADMAP_HIST_*)
+                        # A SECOND deferral class, counted separately and
+                        # pinned separately: folding it into the binary-size
+                        # class would let either one hide inside the other's
+                        # allowance (mechanical-gates §129).
+                        hist_deferred=$((hist_deferred + 1))
+                        why=$(eval "printf '%s' \"\${${valname}_WHY:-}\"")
+                        note "  DEFERRED $f:$lineno  '$token' — $valname: ${why:-no reason recorded}" ;;
+                    *)
+                        num_deferred=$((num_deferred + 1))
+                        BIN_DEFERRED=1
+                        note "  DEFERRED $f:$lineno  '$token' — $valname has no install-shaped binary to measure here: $SIZE_BIN_WHY" ;;
+                esac
                 break
             fi
             if [ "$tolname" = "0" ]; then
@@ -1532,10 +1681,24 @@ done
 if [ "$num_examined" -eq 0 ]; then
     fail "class NUMBERS examined 0 claims — the enumeration found nothing, which is not the same as 'no drift' (mechanical-gates §121)"
 fi
-if [ "$num_examined" -ne $((num_derived + num_waived + num_deferred)) ] && [ "$red" -eq 0 ]; then
-    fail "class NUMBERS: examined $num_examined but accounted for $((num_derived + num_waived + num_deferred)) — an entry fell through the classification"
+if [ "$num_examined" -ne $((num_derived + num_waived + num_deferred + hist_deferred)) ] && [ "$red" -eq 0 ]; then
+    fail "class NUMBERS: examined $num_examined but accounted for $((num_derived + num_waived + num_deferred + hist_deferred)) — an entry fell through the classification"
 fi
-note "  NUMBERS: examined $num_examined, derived $num_derived, waived $num_waived, deferred $num_deferred"
+note "  NUMBERS: examined $num_examined, derived $num_derived, waived $num_waived, deferred $num_deferred, history-deferred $hist_deferred"
+
+# The ROADMAP-history deferral class, pinned the same way. Reachable commit =>
+# nothing may defer; unreachable => exactly the declared count defers.
+if [ -n "$D_ROADMAP_HIST_CHECKBOXES" ]; then
+    if [ "$hist_deferred" -ne 0 ]; then
+        fail "NUMBERS deferred $hist_deferred ROADMAP-history claim(s) although $DC_ROADMAP_HIST_COMMIT is reachable here — nothing may defer in a lane that can derive it"
+    else
+        note "  HISTORY: 0 deferred — $DC_ROADMAP_HIST_WHY derives $D_ROADMAP_HIST_CHECKBOXES total / $D_ROADMAP_HIST_COMPLETED under ## Completed"
+    fi
+elif [ "$hist_deferred" -ne "$HIST_ONLY_DECLARED" ]; then
+    fail "NUMBERS deferred $hist_deferred ROADMAP-history claim(s) but $HIST_ONLY_DECLARED are declared — a deferral was added or removed; update HIST_ONLY_DECLARED deliberately"
+else
+    note "  HISTORY: $hist_deferred claim(s) need $DC_ROADMAP_HIST_COMMIT, $HIST_ONLY_DECLARED declared, deferred here — $DC_ROADMAP_HIST_WHY"
+fi
 
 # The deferral class, pinned. A lane that cannot build release defers exactly
 # RELEASE_ONLY_DECLARED claim(s); anything else — a second deferral, or a
@@ -1844,11 +2007,16 @@ note "  PATHS: examined $path_examined, resolved $path_ok (of which $path_produc
 #    A population defined by the one spelling its author had in mind is the
 #    §60 blind spot; the token is the population now.
 # ---------------------------------------------------------------------------
+#
+#    ROUND 7: this class, alone, walks $DOC_FILES_FLAGS rather than
+#    $DOC_FILES — see DOC_FILES_FLAGS_EXEMPT at the top of this file for the
+#    one document it does not ask about and why. The audit at the end of the
+#    class is what stops that exemption from silently widening.
 HELP_TXT=$("$EIGS" --help 2>&1)
 flag_examined=0; flag_ok=0; flag_waived=0
 note ""
 note "docs-claims class FLAGS:"
-for f in $DOC_FILES; do
+for f in $DOC_FILES_FLAGS; do
     [ -f "$f" ] || continue
     per=0
     dc_extract "the --flag scan of $f" num '--[a-z][a-z0-9-]*' "$f"
@@ -1873,7 +2041,42 @@ for f in $DOC_FILES; do
     note "  population $f: $per flag mention(s)"
 done
 [ "$flag_examined" -eq 0 ] && fail "class FLAGS examined 0 flags — zero population (§121)"
-note "  FLAGS: examined $flag_examined, in --help $flag_ok, waived $flag_waived"
+# THE EXEMPTION AUDIT (mechanical-gates §3). Every exempt entry must be a real
+# document, must be enrolled for the OTHER classes, and must actually have
+# been held out of this one — an exemption naming a file nobody walks, or a
+# file that is not in the doc set at all, waives something nobody agreed to.
+# And the arithmetic is checked in both directions, so adding a name here
+# cannot quietly shrink the class.
+# First, the DECLARATION, independently of which doc set this run walks: every
+# name in it must be a real file AND must be enrolled by the default doc set.
+# An exemption for a document no class walks holds nothing out of anything.
+flag_exempt_declared=0
+for f in $DOC_FILES_FLAGS_EXEMPT_DEFAULT; do
+    flag_exempt_declared=$((flag_exempt_declared + 1))
+    [ -f "$f" ] || fail "DOC_FILES_FLAGS_EXEMPT_DEFAULT names '$f', which is not a file — an exemption for a document that does not exist covers nothing and hides the next one"
+    case " $DOC_FILES_DEFAULT " in
+        *" $f "*) : ;;
+        *) fail "DOC_FILES_FLAGS_EXEMPT_DEFAULT names '$f', which DOC_FILES_DEFAULT does not enrol — this list holds a document out of ONE class, it is not a way to leave a document unenrolled" ;;
+    esac
+done
+[ "$flag_exempt_declared" -eq 0 ] && fail "DOC_FILES_FLAGS_EXEMPT_DEFAULT is empty while this class still advertises an exemption — delete the mechanism or name what it covers"
+# Then this run: every entry that applied must actually have been held out.
+flag_exempt_n=0
+for f in $DOC_FILES_FLAGS_EXEMPT; do
+    flag_exempt_n=$((flag_exempt_n + 1))
+    case " $DOC_FILES_FLAGS " in
+        *" $f "*) fail "DOC_FILES_FLAGS_EXEMPT names '$f' and the FLAGS class walked it anyway — the exemption did not fire, so it is a comment, not a waiver" ;;
+    esac
+done
+if [ "$DOCSET_IS_DEFAULT" -eq 1 ] && [ "$flag_exempt_n" -ne "$flag_exempt_declared" ]; then
+    fail "the FLAGS class held out $flag_exempt_n document(s) but $flag_exempt_declared are declared exempt — an exemption that no longer fires must be red, not quiet"
+fi
+flag_docs_n=$(printf '%s\n' $DOC_FILES | grep -c .)
+flag_walked_n=$(printf '%s\n' $DOC_FILES_FLAGS | grep -c .)
+if [ "$DOCSET_IS_DEFAULT" -eq 1 ] && [ "$flag_walked_n" -ne $((flag_docs_n - flag_exempt_n)) ]; then
+    fail "class FLAGS walked $flag_walked_n document(s) of $flag_docs_n with $flag_exempt_n exempt — the arithmetic does not close, so the class is narrower than this file declares"
+fi
+note "  FLAGS: examined $flag_examined, in --help $flag_ok, waived $flag_waived (walked $flag_walked_n of $flag_docs_n document(s); $flag_exempt_n held out by name:${DOC_FILES_FLAGS_EXEMPT:- none})"
 
 # ---------------------------------------------------------------------------
 # 6. CLASS: MAKE TARGETS. Every `make <target>` must be a Makefile rule.
@@ -1996,6 +2199,79 @@ for f in $DOC_FILES; do
 done
 [ "$name_examined" -eq 0 ] && fail "class NAMES examined 0 calls — zero population (§121)"
 note "  NAMES: examined $name_examined, in the index $name_ok, defined locally $name_local, waived $name_waived"
+
+# ---------------------------------------------------------------------------
+# 7b. CLASS NAMES, subclass BUILTIN FAMILIES. A doc line that NAMES a builtin
+#     family claims a family of builtins exists; the index says whether it
+#     does.
+#
+#     BOUGHT 2026-09-21 (#1227, round-4 blind critic Fable's cold read):
+#     ROADMAP.md carried "**Raw TCP/UDP sockets** (#414) — shipped" under
+#     "### Shipped since this file last claimed them". Measured against the
+#     built binary: `--api` lists net_accept/close/dial/listen/port/recv/send
+#     and nothing else, `grep -i udp src/*.c src/*.h` is empty, and
+#     docs/BUILTINS.md says in prose that UDP is not exposed. The NAMES class
+#     could not see it, because the claim is not a `name of` call — it is a
+#     family name in English, and #414's title (TCP/UDP) is what the roadmap
+#     line was copied from.
+#
+#     THE RULE: a doc line naming a declared family keyword must find that
+#     family's MARKER among the names `eigenscript --api` prints, or carry an
+#     exact-line waiver. A line that states the family does NOT exist is the
+#     waived shape, and because a waiver is pinned to the EXACT line
+#     (mechanical-gates §125), re-asserting the family — putting "UDP" back
+#     into a shipped-claim sentence — drops the waiver and goes red by name.
+#
+#     Each row is `keyword|ERE|marker|what the family is`. The ERE is
+#     deliberately looser on its LEFT edge than the thing it polices (§12): the
+#     trailing word boundary is enforced, the leading one is not, so
+#     `SomethingUDP` is examined rather than missed.
+FAMILY_CLAIMS='udp|[Uu][Dd][Pp]|udp|UDP datagram sockets
+tcp|[Tt][Cc][Pp]|net_|TCP stream sockets'
+# Population, pinned like every other in this gate (§129) and counted in
+# MENTIONS, not lines: one sentence naming a family twice is two claims. A
+# keyword that stops appearing anywhere makes the class vacuous, so any
+# movement in either direction is a review event.
+FAMILY_CLAIMS_DECLARED=12
+
+family_examined=0; family_ok=0; family_waived=0
+note ""
+note "docs-claims class NAMES/BUILTIN FAMILIES:"
+FAMILY_API_NAMES=$(printf '%s\n' "$NAMES_API")
+while IFS='|' read -r fkw fre fmarker fwhat; do
+    [ -n "${fkw:-}" ] || continue
+    if grep -qi -- "$fmarker" <<< "$FAMILY_API_NAMES"; then
+        fpresent=1
+    else
+        fpresent=0
+    fi
+    note "  family $fkw ($fwhat): marker '$fmarker' is $([ "$fpresent" -eq 1 ] && echo 'IN' || echo 'NOT IN') the --api index"
+    for f in $DOC_FILES; do
+        [ -f "$f" ] || continue
+        dc_extract "the '$fkw' family scan of $f" numword "$fre" "$f"
+        while IFS= read -r hit; do
+            [ -z "$hit" ] && continue
+            lineno="${hit%%:*}"
+            fline=$(sed -n "${lineno}p" "$f")
+            family_examined=$((family_examined + 1))
+            if [ "$fpresent" -eq 1 ]; then
+                family_ok=$((family_ok + 1))
+            elif waiver_lookup "$f" "$fline"; then
+                family_waived=$((family_waived + 1))
+                note "  WAIVED  $f:$lineno  names the builtin family $fkw — $WAIVER_REASON"
+            else
+                fail "$f:$lineno names the builtin family $fkw ($fwhat), and no name in \`eigenscript --api\` carries '$fmarker' — the document claims a family of builtins this tree does not have"
+            fi
+        done < <(printf '%s\n' "$DC_SCAN_OUT")
+    done
+done <<EOF
+$FAMILY_CLAIMS
+EOF
+[ "$family_examined" -eq 0 ] && fail "class NAMES/BUILTIN FAMILIES examined 0 family mentions — zero population (§121)"
+if [ "$DOCSET_IS_DEFAULT" -eq 1 ] && [ "$family_examined" -ne "$FAMILY_CLAIMS_DECLARED" ]; then
+    fail "class NAMES/BUILTIN FAMILIES examined $family_examined family mention(s) but $FAMILY_CLAIMS_DECLARED are declared — a family claim was added or removed; update FAMILY_CLAIMS_DECLARED deliberately after reviewing which"
+fi
+note "  BUILTIN FAMILIES: examined $family_examined mention(s), family present $family_ok, waived $family_waived"
 
 # ---------------------------------------------------------------------------
 # 8. CLASS: DOC ENROLMENT (mechanical-gates §119 — a gate is only as wide as
@@ -2155,7 +2431,7 @@ class_summary
 
 note ""
 if [ "$red" -eq 0 ]; then
-    note "docs-claims: OK — NUMBERS $num_examined, PATHS $path_examined, FLAGS $flag_examined, MAKE TARGETS $tgt_examined, NAMES $name_examined, DOC ENROLMENT $enrol_examined (every class non-empty)"
+    note "docs-claims: OK — NUMBERS $num_examined (history-deferred=$hist_deferred), PATHS $path_examined, FLAGS $flag_examined, MAKE TARGETS $tgt_examined, NAMES $name_examined (families $family_examined), DOC ENROLMENT $enrol_examined (every class non-empty)"
 else
     note "docs-claims: FAILED (see RED lines above)"
 fi

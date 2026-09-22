@@ -1317,8 +1317,11 @@ load_file of "mymodule.eigs"     # definitions land in *your* scope
 Every observed variable can be interrogated. `what is x` is its value,
 `who is x` its name, `when is x` the number of times it has been
 assigned — **every** assignment, including those made inside an
-`unobserved:` block, which suppresses observation and not assignment
-(#908). (`where`, `why`, `how` return the observer's entropy,
+`unobserved:` block, which elides the **entropy** half of observation —
+not assignment, and not the O(1) value-window sample that `report`,
+`report_value` and the six predicates read on a numeric binding
+(#908/#1049); [PREDICATES.md](PREDICATES.md#inputs) lists the readers
+that can differ. (`where`, `why`, `how` return the observer's entropy,
 entropy-delta, and stability — see [OBSERVER.md](OBSERVER.md).)
 
 ```eigenscript
@@ -1632,6 +1635,49 @@ print of (what is c when 3)
 ```output
 4
 2
+```
+
+The two halves side by side. The first program elides two assignments;
+`when` still counts them, `why` is frozen at the value it had *before*
+the block (the entropy channel never moved), and `report` answers from
+the complete value window:
+
+```eigenscript check
+x is 8.0
+x is 4.0
+before is (why is x)
+unobserved:
+    x is x * 0.5
+    x is x * 0.5
+print of (when is x)
+print of before
+print of (why is x)
+print of (report of x)
+```
+```output
+4
+0.21866976011171657
+0.21866976011171657
+moving
+```
+
+The same program without the block. `when` and `report` are identical —
+that is the #1049 promise, and this pair is what pins it — while `why`
+differs, because the entropy channel is exactly what the block buys back:
+
+```eigenscript check
+x is 8.0
+x is 4.0
+x is x * 0.5
+x is x * 0.5
+print of (when is x)
+print of (why is x)
+print of (report of x)
+```
+```output
+4
+0.08170416594551044
+moving
 ```
 
 ## Temporal interrogatives

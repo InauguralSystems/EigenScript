@@ -325,6 +325,16 @@ jobs:
     permissions:
       contents: read
       packages: read
+      # THE LANE THAT HOLDS A TOKEN. Suite section [99zd] runs
+      # tools/roadmap_check.sh and tools/issue_labels_check.sh; their GitHub
+      # arms — the milestone-set mirror and the reference resolver, which are
+      # the whole point of #1207 — had no lane anywhere that could do anything
+      # but SKIP BY NAME (round-4 blind critic, Fable). `issues: read` is
+      # enough: milestones and issues of this repository are read through it,
+      # and the references arm resolves public repositories in the same
+      # organisation. The token is exported on the suite step below, and the
+      # section's own probe (tools/gh_probe.sh) makes a skip on this lane RED.
+      issues: read
     container:
       image: ${{ needs.dev-image.outputs.image }}
       credentials:
@@ -336,6 +346,39 @@ jobs:
         cc: [gcc, clang]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # THE LANE THAT HOLDS ROADMAP HISTORY.
+      #
+      # BOUGHT 2026-09-21 (third critic, `/code-review 1226 medium`, finding
+      # 5): ROADMAP.md's two pre-PR checkbox counts are DERIVED by
+      # tools/docs_claims_check.sh from `git show <base>:ROADMAP.md` — and
+      # every suite job's `actions/checkout` is shallow, so on a PR the merge
+      # ref's parents are absent and the base is unreachable. Measured on this
+      # PR's own head: linux/gcc job 106465168161 and macOS job 106465087620
+      # BOTH printed `docs-claims: OK — NUMBERS 36 (history-deferred=2)`. Two
+      # numbers presented as derived were derived on no lane at all, and
+      # retyping 113 as 114 passed CI.
+      #
+      # One commit, one second. The SHA is read out of the tool rather than
+      # copied here, so there is no second home for it to drift from; [99za]
+      # holds its own literal and cross-checks the gate's derivation line.
+      # A failure here is LOUD on purpose: a lane that silently cannot fetch
+      # the base is a lane where these claims quietly stop being checked.
+      - name: Fetch the ROADMAP-history base commit ([99za] derives from it)
+        run: |
+          set -eu
+          sha=$(sed -n 's/^DC_ROADMAP_HIST_COMMIT="${DC_ROADMAP_HIST_COMMIT:-\(.*\)}"$/\1/p' \
+                    tools/docs_claims_check.sh | head -1)
+          if [ -z "$sha" ]; then
+            echo "could not read DC_ROADMAP_HIST_COMMIT out of tools/docs_claims_check.sh"
+            exit 1
+          fi
+          echo "ROADMAP-history base: $sha"
+          if ! git -c safe.directory='*' cat-file -e "$sha:ROADMAP.md" 2>/dev/null; then
+            git -c safe.directory='*' fetch --depth=1 origin "$sha"
+            git -c safe.directory='*' cat-file -e "$sha:ROADMAP.md"
+          fi
+          echo "this lane HOLDS the base commit, so [99za] requires history-deferred=0 here"
 
       - name: Build
         run: CC=${{ matrix.cc }} ./build.sh
@@ -350,6 +393,11 @@ jobs:
         if: matrix.cc == 'gcc' || github.event_name == 'push'
         env:
           EIGS_SKIP_WERROR_AUDIT: 1
+          # [99zd]'s live arms. Without this the roadmap gate's milestone and
+          # reference walks skip by name on every lane, which is exactly the
+          # round-3 hole. With it, [99zd] REQUIRES `milestones=gh-api:…
+          # refs=gh-api:… resolved=N skipped=0` and a `gh-api:` labels line.
+          GH_TOKEN: ${{ github.token }}
         run: cd tests && bash run_all_tests.sh
 
       # clang on a PR: the value of this leg is the BUILD (-Werror fires at
@@ -362,6 +410,7 @@ jobs:
         env:
           EIGS_SUITE_SECTIONS: core
           EIGS_SKIP_WERROR_AUDIT: 1
+          GH_TOKEN: ${{ github.token }}
         run: cd tests && bash run_all_tests.sh
 
       # Cross-repo observer corpus (#262): real observer-using programs
@@ -525,6 +574,23 @@ jobs:
           [ "$rc" -eq 1 ]
           grep -qxF 'FAIL: cleanup deferral fault abandoned READY child after delivered signal and matching trap exit' "$result"
           ! grep -q '^ci-portability: checks=' "$result"
+
+      # The YAML loader behind suite section [99zd] (arm (b) of
+      # tools/workflow_yaml_check.sh). The Linux legs get it from the dev
+      # image (.devcontainer/Dockerfile, python3-yaml); this runner has no
+      # PyYAML, and without it two of that gate's planted faults cannot go
+      # red. Best-effort: the gate SKIPs the arm BY NAME if this fails, and
+      # the suite's caller allows that named skip only when PyYAML is
+      # genuinely absent — never a silent pass.
+      - if: needs.scope.outputs.code == 'true'
+        name: Install PyYAML (the workflow-YAML gate's loader arm)
+        run: |
+          set -u
+          python3 -m pip install --user --break-system-packages pyyaml \
+            || python3 -m pip install --user pyyaml \
+            || echo "PyYAML install failed; [99zd] arm (b) will SKIP BY NAME"
+          python3 -c 'import yaml; print("PyYAML", yaml.__version__)' \
+            || echo "PyYAML is not importable on this runner"
 
       - if: needs.scope.outputs.code == 'true'
         name: Build
