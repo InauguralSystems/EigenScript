@@ -882,6 +882,10 @@ All notable changes to EigenScript are documented here.
   witness. Three plants (`--self-test`, enrolled next to [45b] and pinned
   at 3 cases) prove both named failures and the 5 s late-start control.
   Closes #1165.
+- **`validate.is_number` requires a digit in a decimal string (#1235).**
+  `.` and `-.` passed the character scan, and `is_integer` then treated
+  `num` of them as zero. Both now reject those strings. `0`, `-1`, `.5`,
+  and `1.` are unchanged. Suite [50l].
 
 - **The string-scaling gate binds the runtime it measures, measures in
   interleaved rounds, and states the scope it actually has (#1188, #1189).** Both found by a blind critic, by
