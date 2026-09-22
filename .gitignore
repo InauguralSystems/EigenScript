@@ -61,3 +61,7 @@ __pycache__/
 
 # Consumer checkouts fetched by the CodSpeed lane (pinned in .github/workflows/codspeed.yml)
 .codspeed-consumers/
+
+# clangd (clangd-lsp plugin): index cache and the bear-generated compile database
+.cache/
+compile_commands.json
