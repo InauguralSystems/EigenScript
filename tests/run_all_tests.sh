@@ -115,6 +115,35 @@ LEAKED=0
 # absent is not reviewable.
 SKIPPED=0
 
+# ONE helper prints a section-level skip and counts it. Round 6 incremented
+# SKIPPED at exactly ONE site ([99i3], below) while this file has ~40 lines
+# that put a SKIP marker on a run's stdout — so the pushed head's own
+# `linux / gcc` log printed `RESULTS: 5282/5282 passed, 0 failed, 0 skipped`
+# beneath nine of them, including [99i]'s `SKIP: NOT MEASURED HERE` that
+# ci.yml forces on all ten suite jobs (measured by a blind critic, 2026-09-21).
+# A printed zero is a claim, and that one was false on every lane.
+#
+# WHAT GOES THROUGH HERE: a SECTION-LEVEL skip — one where the section's
+# verdict IS the skip, i.e. it contributed no PASS and no FAIL on this lane.
+# Several of those used to add PASSes instead (the bench asset, the --pkg
+# rows, [99c], [99d], [137]); a skip counted as a pass is the same disease one
+# layer down, so they are counted here and NOT in PASS.
+#
+# WHAT DOES NOT: a SUB-CHECK skip, one line inside a section that still PASSes
+# on its other checks. Ten of those remain, by design, and they are pinned by
+# NAME in tools/section_plan.sh --skip-audit (suite section [99w]), which fails
+# when a new bare `SKIP:` line appears in this file without a reviewed reason.
+# A relay hands this helper the child's own line; the prefix is normalised so
+# exactly one `  SKIP: ` is printed however the child spelled it.
+section_skip() {
+    local __sk_reason="$1"
+    __sk_reason=${__sk_reason#"${__sk_reason%%[! 	]*}"}
+    __sk_reason=${__sk_reason#SKIP:}
+    __sk_reason=${__sk_reason#"${__sk_reason%%[! 	]*}"}
+    echo "  SKIP: $__sk_reason"
+    SKIPPED=$((SKIPPED + 1))
+}
+
 # ---- per-section wall time (#1160 round 4) --------------------------------
 # Sharding the ASan suite across parallel CI jobs needs per-section COST, not
 # per-section count, and a cost nobody measures is a guess. `echo` is shadowed
@@ -861,9 +890,9 @@ if [ -f "$BENCH_FILE" ]; then
     BENCH2=$(./eigenscript "$BENCH_FILE" 2>&1)
     check "Bench deterministic" "$BENCH" "$BENCH2"
 else
-    echo "  SKIP: benchmark asset not found (archived)"
-    PASS=$((PASS+2))
-    TOTAL=$((TOTAL+2))
+    # Round 6 counted this skip as two PASSes; the asset is archived, so every
+    # lane banked two assertions nothing made. A skip is a skip.
+    section_skip "benchmark asset not found (archived)"
 fi
 echo ""
 
@@ -2874,8 +2903,8 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     TOTAL=$((TOTAL + SLST_PASS + SLST_FAIL))
     PASS=$((PASS + SLST_PASS))
     FAIL=$((FAIL + SLST_FAIL))
-    if [ "$SLST_FAIL" -gt 0 ] || [ "$SLST_PASS" -ne 3 ]; then
-        echo "  FAIL: HTTP slow-loris self-test (passed=$SLST_PASS want 3, failed=$SLST_FAIL)"
+    if [ "$SLST_FAIL" -gt 0 ] || [ "$SLST_PASS" -ne 4 ]; then
+        echo "  FAIL: HTTP slow-loris self-test (passed=$SLST_PASS want 4, failed=$SLST_FAIL)"
         echo "$SLST_OUTPUT" | grep "FAIL:" | head -8
         echo "$SLST_OUTPUT" | tail -8
     else
@@ -2900,13 +2929,15 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
         # Print WHY nothing ran. "PASS: all 0 checks" reads as a pass while
         # meaning the gate never executed — the skip is legitimate (sanitizer
         # build, no curl, no procfs) but it must not look like coverage.
-        echo "$RSS_OUTPUT" | grep "SKIP:" | head -1
+        rss_skip_line=$(echo "$RSS_OUTPUT" | grep "SKIP:" | head -1)
+        section_skip "$rss_skip_line"
     else
         echo "  PASS: all $RSS_PASS HTTP RSS-growth checks"
     fi
     echo ""
 else
     echo "[44-45/47] HTTP tests SKIPPED (binary built without EIGENSCRIPT_EXT_HTTP)"
+    section_skip "binary built without EIGENSCRIPT_EXT_HTTP"
     echo ""
 fi
 
@@ -2942,6 +2973,7 @@ if ! echo "$DB_PROBE_OUT" | grep -q "undefined variable"; then
     echo ""
 else
     echo "[46/47] DB tests SKIPPED (binary built without EIGENSCRIPT_EXT_DB)"
+    section_skip "binary built without EIGENSCRIPT_EXT_DB"
     echo ""
 fi
 
@@ -2990,7 +3022,8 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     echo "[47d/47] Model Incomplete-Checkpoint Rejection (#727, 5 checks)"
     MI_OUTPUT=$(bash "$TESTS_DIR/test_model_incomplete.sh" 2>&1)
     if echo "$MI_OUTPUT" | grep -q "SKIP:"; then
-        echo "$MI_OUTPUT" | grep "SKIP:"
+        mi_skip_line=$(echo "$MI_OUTPUT" | grep "SKIP:" | head -1)
+        section_skip "$mi_skip_line"
     else
         MI_PASS=$(echo "$MI_OUTPUT" | grep -c "PASS:" || true)
         MI_FAIL=$(echo "$MI_OUTPUT" | grep -c "FAIL:" || true)
@@ -3052,6 +3085,7 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     echo ""
 else
     echo "[47/47] Model roundtrip SKIPPED (binary built without EIGENSCRIPT_EXT_MODEL)"
+    section_skip "binary built without EIGENSCRIPT_EXT_MODEL"
     echo ""
 fi
 
@@ -3486,6 +3520,7 @@ if ! echo "$AUDIO_PROBE_OUT" | grep -q "undefined variable"; then
     echo ""
 else
     echo "[62] Audio tests SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
+    section_skip "binary built without EIGENSCRIPT_EXT_GFX"
     echo ""
 fi
 
@@ -3525,6 +3560,7 @@ if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
     echo ""
 else
     echo "[120b] Gfx text metrics SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
+    section_skip "binary built without EIGENSCRIPT_EXT_GFX"
     echo ""
 fi
 
@@ -3677,6 +3713,7 @@ READPROG
     echo ""
 else
     echo "[133] Gfx argument-type guards SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
+    section_skip "binary built without EIGENSCRIPT_EXT_GFX"
     echo ""
 fi
 
@@ -3785,6 +3822,7 @@ if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
     echo ""
 else
     echo "[134] Pointer-disclosure oracle SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
+    section_skip "binary built without EIGENSCRIPT_EXT_GFX"
     echo ""
 fi
 
@@ -3829,10 +3867,13 @@ AG_PASSED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: \([0-9]*\) passed.*/\1/p' |
 AG_FAILED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
 TOTAL=$((TOTAL + 1))
 if [ "$AG_RC" = "0" ] && [ "${AG_FAILED:-1}" = "0" ]; then
-    PASS=$((PASS + 1))
     if echo "$AG_OUTPUT" | grep -q "(skipped)"; then
-        echo "  PASS: $(echo "$AG_OUTPUT" | grep -m1 'SKIP:' | sed 's/^ *//')"
+        # Round 6 printed this as `PASS: SKIP: ...` and banked the assertion.
+        TOTAL=$((TOTAL - 1))
+        ag_skip_line=$(echo "$AG_OUTPUT" | grep -m1 'SKIP:' | sed 's/^ *//')
+        section_skip "$ag_skip_line"
     else
+        PASS=$((PASS + 1))
         echo "  PASS: ext_gfx.c is leak- and UB-clean over the gfx corpus" \
              "(${AG_PASSED:-?} checks, controls included)"
         echo "$AG_OUTPUT" | grep -m1 "NOTE:" || true
@@ -3864,7 +3905,8 @@ echo "[138] gfx pixel differential (#1007, no-baseline half)"
 #    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 GPD_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_pixel_differential.sh" --no-baseline 2>&1); GPD_RC=$?
 if echo "$GPD_OUTPUT" | grep -q "^SKIP:"; then
-    echo "  $(echo "$GPD_OUTPUT" | grep '^SKIP:' | head -1)"
+    gpd_skip_line=$(echo "$GPD_OUTPUT" | grep '^SKIP:' | head -1)
+    section_skip "$gpd_skip_line"
 else
     TOTAL=$((TOTAL + 1))
     if [ "$GPD_RC" = 0 ]; then
@@ -3905,7 +3947,8 @@ GSS_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_strict_sweep.sh" 2>&1); GSS_RC=$?
 # the sweep's own probe, so a lane with no gfx builtins has to be recognised
 # twice or the section reports a red selftest for a surface that is not there.
 if echo "$GSS_OUTPUT" | grep -q "^  SKIP:" && echo "$GSS_SELF" | grep -q "^  SKIP:"; then
-    echo "  $(echo "$GSS_OUTPUT" | grep '^  SKIP:' | head -1 | sed 's/^ *//')"
+    gss_skip_line=$(echo "$GSS_OUTPUT" | grep '^  SKIP:' | head -1 | sed 's/^ *//')
+    section_skip "$gss_skip_line"
 else
     TOTAL=$((TOTAL + 2))
     GSS_SELF_FAILED=$(echo "$GSS_SELF" | sed -n 's/^selftest: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
@@ -3960,7 +4003,8 @@ if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
         PASS=$((PASS + UC_N))
         echo "  PASS: real-pixel containment + overlay z-order + planted faults ($UC_N checks)"
     elif echo "$UC_OUTPUT" | grep -q "^SKIP:"; then
-        echo "  SKIP: $(echo "$UC_OUTPUT" | grep "^SKIP:" | head -1)"
+        uc_skip_line=$(echo "$UC_OUTPUT" | grep "^SKIP:" | head -1)
+        section_skip "$uc_skip_line"
     else
         TOTAL=$((TOTAL + UC_N))
         FAIL=$((FAIL + UC_N))
@@ -3970,6 +4014,7 @@ if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
     echo ""
 else
     echo "[132] UI containment oracle SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
+    section_skip "binary built without EIGENSCRIPT_EXT_GFX"
     echo ""
 fi
 
@@ -5582,7 +5627,7 @@ TOTAL=$((TOTAL + LG_PASS + LG_FAIL))
 PASS=$((PASS + LG_PASS))
 FAIL=$((FAIL + LG_FAIL))
 if echo "$LG_OUTPUT" | grep -q "skipped"; then
-    echo "  SKIP: AddressSanitizer not available — leak guard skipped"
+    section_skip "AddressSanitizer not available — leak guard skipped"
 elif [ "$LG_FAIL" -gt 0 ]; then
     echo "  FAIL: $LG_FAIL leak-guard check(s) failed"
     echo "$LG_OUTPUT" | grep "FAIL:" | head -5
@@ -5948,7 +5993,8 @@ LSP_OUTPUT=$(bash "$TESTS_DIR/test_lsp.sh" 2>&1)
 # silently rebuilt binary is the thing that made this section untrustworthy.
 echo "$LSP_OUTPUT" | grep "NOTE:.*rebuilding" || true
 if echo "$LSP_OUTPUT" | grep -q "SKIP:"; then
-    echo "$LSP_OUTPUT" | grep "SKIP:"
+    lsp_skip_line=$(echo "$LSP_OUTPUT" | grep "SKIP:" | head -1)
+    section_skip "$lsp_skip_line"
 else
     LSP_PASS=$(echo "$LSP_OUTPUT" | grep -c "PASS:" || true)
     LSP_FAIL=$(echo "$LSP_OUTPUT" | grep -c "FAIL:" || true)
@@ -5976,7 +6022,8 @@ DAPT_OUTPUT=$(bash "$TESTS_DIR/test_dap.sh" 2>&1)
 # See section [88]: surface the freshness gate's rebuild notice on green runs.
 echo "$DAPT_OUTPUT" | grep "NOTE:.*rebuilding" || true
 if echo "$DAPT_OUTPUT" | grep -q "SKIP:"; then
-    echo "$DAPT_OUTPUT" | grep "SKIP:"
+    dapt_skip_line=$(echo "$DAPT_OUTPUT" | grep "SKIP:" | head -1)
+    section_skip "$dapt_skip_line"
 else
     DAPT_PASS=$(echo "$DAPT_OUTPUT" | grep -c "PASS:" || true)
     DAPT_FAIL=$(echo "$DAPT_OUTPUT" | grep -c "FAIL:" || true)
@@ -6212,7 +6259,7 @@ if command -v python3 >/dev/null 2>&1; then
         printf '%s\n' "$FENCE_OUTPUT" | head -12
     fi
 else
-    echo "  SKIP: python3 not available"
+    section_skip "python3 not available"
 fi
 echo ""
 
@@ -6401,8 +6448,11 @@ if [ "$PKG2_RC" = "0" ] && [ "$PKG2_PASS" = "11" ]; then
     echo "$PKG2_OUT" | grep "^  PASS:"
     PASS=$((PASS + 11))
 elif [ "$PKG2_SKIP" -gt "0" ]; then
-    echo "$PKG2_OUT" | grep "^  SKIP:"
-    PASS=$((PASS + 11))
+    # Round 6 banked 11 passes for a run that asserted nothing. Counted as a
+    # skip now, and TOTAL gives the 11 back.
+    TOTAL=$((TOTAL - 11))
+    PKG2_SKIP_LINE=$(echo "$PKG2_OUT" | grep "^  SKIP:" | head -1)
+    section_skip "$PKG2_SKIP_LINE"
 else
     echo "  FAIL: --pkg fetch (rc=$PKG2_RC, passes=$PKG2_PASS)"
     echo "$PKG2_OUT" | head -20
@@ -6422,8 +6472,11 @@ if [ "$PKG3_RC" = "0" ] && [ "$PKG3_PASS" = "7" ]; then
     echo "$PKG3_OUT" | grep "^  PASS:"
     PASS=$((PASS + 7))
 elif [ "$PKG3_SKIP" -gt "0" ]; then
-    echo "$PKG3_OUT" | grep "^  SKIP:"
-    PASS=$((PASS + 7))
+    # Round 6 banked 7 passes for a run that asserted nothing. Counted as a
+    # skip now, and TOTAL gives the 7 back.
+    TOTAL=$((TOTAL - 7))
+    PKG3_SKIP_LINE=$(echo "$PKG3_OUT" | grep "^  SKIP:" | head -1)
+    section_skip "$PKG3_SKIP_LINE"
 else
     echo "  FAIL: --pkg verify+update (rc=$PKG3_RC, passes=$PKG3_PASS)"
     echo "$PKG3_OUT" | head -30
@@ -6445,8 +6498,11 @@ if [ "$PKG4_RC" = "0" ] && [ "$PKG4_PASS" = "3" ]; then
     echo "$PKG4_OUT" | grep "^  PASS:"
     PASS=$((PASS + 3))
 elif [ "$PKG4_SKIP" -gt "0" ]; then
-    echo "$PKG4_OUT" | grep "^  SKIP:"
-    PASS=$((PASS + 3))
+    # Round 6 banked 3 passes for a run that asserted nothing. Counted as a
+    # skip now, and TOTAL gives the 3 back.
+    TOTAL=$((TOTAL - 3))
+    PKG4_SKIP_LINE=$(echo "$PKG4_OUT" | grep "^  SKIP:" | head -1)
+    section_skip "$PKG4_SKIP_LINE"
 else
     echo "  FAIL: --pkg argv injection (rc=$PKG4_RC, passes=$PKG4_PASS)"
     echo "$PKG4_OUT" | head -20
@@ -6766,13 +6822,37 @@ else
 fi
 echo ""
 
-echo "[99w] Suite section labels are unique (#1025)"
+echo "[99w] Suite section labels + skip accounting (#1025, #1225)"
 TOTAL=$((TOTAL + 1))
 if bash "$TESTS_DIR/../tools/suite_label_check.sh"; then
     PASS=$((PASS + 1))
 else
     FAIL=$((FAIL + 1))
     echo "  FAIL: two suite sections print the same [label] (see FAIL lines above) -- rename one"
+fi
+# The RESULTS line below prints `N skipped`, and the comment at that counter
+# says a printed zero is a claim. Round 6 incremented it at ONE site while this
+# file had ~40 lines that put a SKIP marker on stdout, so `linux / gcc` printed
+# `0 skipped` under nine of them — including [99i]'s, which ci.yml forces on
+# all ten suite jobs. Every SECTION-LEVEL skip now goes through section_skip(),
+# which prints AND counts; this is the structural half, run here so the claim
+# is checked on the same lane that makes it. Both halves are asserted: the
+# audit, and its own planted-fault arms (a bare `SKIP:` echo, an un-routed
+# section skip, a stale waiver) — "exit 0" is what a gutted audit prints too.
+# The variable is NOT named *SKIP*: this section's own consumer lines are read
+# by the very matcher the audit runs, and the first version of this block
+# reported ITSELF as three unaccounted emitters (mechanical-gates §24 — a
+# detector must not match its own pattern in what it scans). Same reason the
+# FAIL line below says "skip" in lower case.
+TOTAL=$((TOTAL + 1))
+SKAUD_OUT=$(bash "$TESTS_DIR/../tools/section_plan.sh" --skip-audit 2>&1); SKAUD_RC=$?
+if [ "$SKAUD_RC" -eq 0 ] && grep -q '^SKIP AUDIT: .* unaccounted=0$' <<<"$SKAUD_OUT"; then
+    PASS=$((PASS + 1))
+    printf '%s\n' "$SKAUD_OUT" | sed 's/^/  /'
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: a skip line in this runner is neither counted nor reasoned (audit exit $SKAUD_RC)"
+    printf '%s\n' "$SKAUD_OUT" | sed 's/^/      /'
 fi
 echo ""
 
@@ -6972,8 +7052,9 @@ SELFTEST_COUNT=1
 # false failure. Otherwise take the guard's binary (timeout|gtimeout).
 SELFTEST_TMO="${EIGS_TMO%% *}"
 if [ -z "$SELFTEST_TMO" ]; then
-    PASS=$((PASS + 1))
-    echo "  SKIP: no timeout/gtimeout on PATH — guard and self-test both degrade to no-wrapper (counted as pass)"
+    # Round 6 counted this as a pass; the section's only check did not run.
+    TOTAL=$((TOTAL - 1))
+    section_skip "no timeout/gtimeout on PATH — guard and self-test both degrade to no-wrapper"
 else
     # Export the real guard machinery into the child shell, drive the fixture
     # with a 2s inner budget under a 10s outer bound (-k 3: SIGKILL 3s after
@@ -7022,8 +7103,9 @@ echo ""
 echo "[99d] Binary-fingerprint guard self-test (#681)"
 TOTAL=$((TOTAL + 1))
 if [ ! -f "$EIGS_BIN" ]; then
-    PASS=$((PASS + 1))
-    echo "  SKIP: no binary to fingerprint"
+    # Round 6 counted this as a pass; the section's only check did not run.
+    TOTAL=$((TOTAL - 1))
+    section_skip "no binary to fingerprint"
 else
     source "$TESTS_DIR/binary_swap.sh"
     SELFTEST_OUT=$(eigs_binary_swap_selftest 2>&1)
@@ -7483,7 +7565,7 @@ echo ""
 # variable unset — every local run — the section runs in full.
 echo "[99i] werror-switch compile-line gate (#817/#835)"
 if [ "${EIGS_SKIP_WERROR_AUDIT:-0}" = "1" ]; then
-    echo "  SKIP: NOT MEASURED HERE — the dedicated 'werror audit' CI job owns this"
+    section_skip "NOT MEASURED HERE — the dedicated 'werror audit' CI job owns this"
     echo "        section for this run (EIGS_SKIP_WERROR_AUDIT=1, #1160). Unset the"
     echo "        variable to run the audit + self-test in this suite."
     echo ""
@@ -7582,9 +7664,8 @@ printf '%s\n' "$ilp32_audit_out"
 # in [99i].
 if [ "$ilp32_audit_rc" -eq 0 ] && grep -q '^SKIP:' <<<"$ilp32_audit_out"; then
     TOTAL=$((TOTAL - 1))
-    SKIPPED=$((SKIPPED + 1))
     ilp32_skip_line=$(printf '%s\n' "$ilp32_audit_out" | grep -m1 '^SKIP:')
-    echo "  $ilp32_skip_line"
+    section_skip "$ilp32_skip_line"
 else
     ilp32_selftest_out=$(bash "$TESTS_DIR/../tools/ilp32_syntax_check.sh" --selftest 2>&1)
     ilp32_selftest_rc=$?
@@ -7600,27 +7681,40 @@ else
     # `classifier: dropped=` (the operands the driver cross-check could not be
     # fed), `macro_parity: ... values=N/M` (the macro world, derived in NAME
     # and in VALUE — round 4 printed `reconciled=48` with not one value
-    # compared), and `OK: examined N`. 46 = plants 1, 1b, 1c, 1d
+    # compared), and `OK: examined N`. 55 = plants 1, 1b, 1c, 1d
     # (the entry point and the header), 2q, 2s, 2v, 2x, 2m, 2o (six argv
-    # shapes a text parser reads wrong), 2f, 2p, 2r, 2n, 2i, 2u, 2e (seven
-    # shapes a typed OPTION GRAMMAR reads wrong: a TU after `--emrun` and
-    # after `--proxy-to-worker`, a TU inside an `@response-file`, response
-    # files nested three deep, a TU on stdin, a `-x c` unit with a non-TU
-    # suffix, and the over-inclusion control), 2c, 2ca, 2cz, 2b (the RECORDER:
-    # a TU compiled by an earlier invocation than the link line, a pure
-    # compile-then-link recipe whose call count and population are both
-    # asserted, a recipe with ZERO invocations, and an EMPTY TU produced by
-    # one call and compiled by the next — round 5 counted scanned files with
-    # awk's `FNR == 1`, which an empty file never reaches, and answered "the
-    # tested-macro population shrank silently"), 3s, 3sj, 3st (the DRIVER
+    # shapes a text parser reads wrong), 2f, 2p, 2r, 2n, 2i, 12es, 2u, 2e
+    # (eight shapes a typed OPTION GRAMMAR reads wrong: a TU after `--emrun`
+    # and after `--proxy-to-worker`, a TU inside an `@response-file`, response
+    # files nested three deep, a TU on stdin, EMPTY stdin as a valid empty
+    # unit (#1232 item 12 — `[ -s ]` read an empty capture as "nothing
+    # captured" and refused a recipe emcc builds fine), a `-x c` unit with a
+    # non-TU suffix, and the over-inclusion control), 2c, 2ca, 2cz, 2b, 9e
+    # (the RECORDER: a TU compiled by an earlier invocation than the link
+    # line, a pure compile-then-link recipe whose call count and population
+    # are both asserted, a recipe with ZERO invocations, an EMPTY TU produced
+    # by one call and compiled by the next — round 5 counted scanned files
+    # with awk's `FNR == 1`, which an empty file never reaches, and answered
+    # "the tested-macro population shrank silently" — and a recipe line
+    # reaching `em++` rather than `emcc`, #1232 item 9), 3s, 3sj, 3st (the DRIVER
     # OPERANDS: emcc's spaced setting form dropped and reported, the glued
     # form as its control, and a `.c` token naming no existing file still FAIL
-    # by name), 2w (a recipe writing `src/` must not reach the working tree),
-    # 4m/4mc, 4e, 4z, 4v/4vc, 4w, 4y, 2t
+    # by name), 3stx (the same rule on the axis a SUFFIX cannot express: a
+    # `-x c <unit>` naming no existing file was DROPPED and green at round 6),
+    # 2w and 2wp (a recipe writing `src/` must not reach the working tree —
+    # 2w after the recipe's own `cd`, 2wp BEFORE it, which is the side round 6
+    # left open because it ran the recipe from the gate's cwd),
+    # 4m/4mc, 4e, 4z, 4v/4vc, 4w, 4y, 8o/8oc, 8d, 2t
     # (the macro world: an arm only the target takes and its control, parity
     # with no reconciliation flags, an empty tested population, a VALUE
     # comparison and its control, a value glibc refuses, an unreconcilable
-    # value a conditional reads, and a TU path with a space that must not
+    # value a conditional reads, an arm only taken under the recipe's OWN
+    # -O2 with its transverse control (the recorded call's flags were
+    # discarded after classification, not carried into the macro-world
+    # derivation or the TU compile — #1232, filed by a blind critic through
+    # the real section, 46/46 self-test green), a fault visible only under an
+    # EARLIER call's own -D reaching the compile (per-call, not a flat
+    # merge), and a TU path with a space that must not
     # shrink the tested population), 2, 3, 3b (empty, shrunk and
     # entry-point-less inventories), plus two controls: a reformatted SOURCES
     # array yields the identical inventory, and the live inventory stays green
@@ -7632,6 +7726,10 @@ else
     # control and the three apparatus breaks a blind critic drove to a green
     # skip on Linux (no compiler on PATH, the gate's own stub missing, the
     # system include directory pointing nowhere) each FAIL by name; and the
+    # pair 5s2/5sg on the SDK's second measured wording (macos-latest emits
+    # `Unsupported architecture` AND `architecture not supported` in one
+    # probe; 5s2 requires the second alone to skip, 5sg requires glibc's
+    # `You need a ISO C` to still FAIL); and the
     # pair 5r/5rs at the macro-world stage, which is the stage macos-latest
     # actually reaches — its availability probe PASSES and the SDK refuses
     # only once the reconciliation has replaced `__i386__`/`__APPLE__`, so the
@@ -7640,7 +7738,7 @@ else
     # control 5rc is no longer a --selftest case: it runs in the LIVE path,
     # before that verdict, because a control that only runs in the non-skip
     # branch never runs on the run that skipped.
-    ILP32_SELFTEST_CASES=46
+    ILP32_SELFTEST_CASES=55
     ilp32_ok_lines=$(printf '%s\n' "$ilp32_selftest_out" | grep -c '^selftest ok:')
     if [ "$ilp32_audit_rc" -eq 0 ] && [ "$ilp32_selftest_rc" -eq 0 ] \
        && grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out" \

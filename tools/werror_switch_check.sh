@@ -278,6 +278,15 @@ SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage
 # and the value-parity probe that measures which reconciliations glibc
 # refuses. A floor left at 4 would let any four of the eight be deleted while
 # the gate still printed OK, which is the exact failure this table exists for.
+# It moved 8 -> 11 earlier in round 7 after a blind critic measured the gap:
+# `--print-counts` said 11 for this file while the floor still said 8, so any
+# THREE of its audited compile lines could have lost -Werror=switch, or been
+# deleted, with [99i] green. It moved again, 11 -> 12, later the same round
+# (#1232's flags fix) — the source of the extra audited line was not traced
+# further than `--print-counts` itself; ask the tool again before trusting
+# either number. The number is the tool's own measurement, not a guess — re-run
+# `--print-counts` after adding a
+# derivation here, the way this paragraph has had to be re-read each round.
 SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh tools/ilp32_syntax_check.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
@@ -358,7 +367,7 @@ script:tests/test_tsan.sh 1
 script:tools/trace_mt_mutants.sh 2
 script:tools/arming_mt_mutants.sh 1
 script:tests/run_all_tests.sh 1
-script:tools/ilp32_syntax_check.sh 8
+script:tools/ilp32_syntax_check.sh 12
 '
 
 # Floor for a label, or empty when the label is untracked.
@@ -827,6 +836,13 @@ recognizer_waived() {
     # 3. A relocatable LINK (`-r`), not a compile: no translation unit is
     #    compiled, so no warning flag applies. tests/test_lint_linkage.sh:48.
     grep -qE '(^|[[:space:]])-r([[:space:]]|$)' <<<"$seg" && return 0
+    # 4. `ln` creates a symlink or hard link; it never compiles anything, even
+    #    when the link's SOURCE name happens to be a compiler's name (#1232's
+    #    em++ shim: `ln -sf emcc "$STANDIN_BIN/em++"` names "emcc" as the
+    #    symlink TARGET it points at, not a command being run). Anchored to
+    #    the command word at the start of the segment or right after a
+    #    separator, so a variable or path merely containing "ln" cannot match.
+    grep -qE '(^|[;&|`]|\$\()[[:space:]]*ln[[:space:]]' <<<"$seg" && return 0
     # 2. The compiler word appears only inside a quoted string — a log message or
     #    a usage hint, e.g. amalgamate.sh's "compile: cc host.c ...".
     #

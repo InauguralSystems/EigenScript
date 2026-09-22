@@ -86,11 +86,36 @@ gate drops it and prints it on `classifier: dropped=` — while a refused
 operand whose suffix is a `.c` stays red by name, because that is a recipe
 naming a unit that does not exist.
 
+Recording a call's argv is not enough on its own: the call's own FLAGS shape
+what the real compiler does too, and round 6/7 discarded them after
+classification (#1232). The live recipe compiles at `-O2`, which defines
+`__OPTIMIZE__` on the real target — a gate that derived the macro world and
+compiled every TU without it took a DIFFERENT arm than the lane it stands in
+for, silently. Each recorded call's accepted option tokens — optimisation
+level, every `-D`/`-U`, `-std=`, `-f*`, `-W*`, filtered through the same
+accepted-option set the driver cross-check already measures — are tracked per
+call and printed as `classifier: flags=N per call`; they reach both the
+macro-world derivation (so `__OPTIMIZE__` agrees with the real build) and the
+compile of the TU that call recorded, so a TU compiled once under one call's
+own `-D` and again — unqualified — inside a later call's SOURCES is examined
+under the call that actually shaped it. Both `emcc` and `em++` are shimmed,
+not only `emcc`; empty stdin (`-x c -` with nothing piped) is a valid empty
+TU, not a rejected recipe. Two residuals are stated: the recorded input is
+read after the WHOLE recipe finishes rather than snapshotted at its own call
+(a `#error` compiled early and overwritten with valid C before a later call
+would be examined on the later bytes), and an INVALID option the driver
+rejects is indistinguishable from a legitimate emcc-only one and is silently
+dropped rather than failed — the recipe's real build is the oracle for the
+recipe's own validity, not this gate.
+
 It compiles with the wasm32-emscripten target's macro world **derived**, never
 typed: both worlds' predefines are read with `-E -dM`
 (`clang --target=wasm32-unknown-emscripten` and `clang -m32`), every difference
-in NAME is reconciled with a `-U` or a `-D`, every difference in VALUE — 32 of
-them, including `__SIZEOF_LONG_DOUBLE__` at 16 on the target and 12 on the
+in NAME is reconciled with a `-U` or a `-D`, every difference in VALUE —
+however many the two toolchains disagree on, printed by the gate itself as
+`macro_parity: ... values=N/M` (32 on this dev box, 33 on the `linux / gcc`
+runner, measured 2026-09-21; the toolchain decides the number, not this page)
+and including `__SIZEOF_LONG_DOUBLE__` at 16 on the target and 12 on the
 host — gets the target's own value, and which of those glibc's `-m32` headers
 refuse is measured rather than assumed. Three hand-typed predefines were not
 enough: under them the gate took the `#elif defined(__linux__)` arm at
@@ -116,6 +141,24 @@ the verdict is taken either way. The suite's RESULTS line prints
 `passed, failed, skipped` on every lane, `skipped=0` included, so a lane that
 examined 23 translation units last week and 0 this week is visible in the
 verdict and not only in the log.
+
+`skipped` counts SECTION-LEVEL skips: sections whose verdict is the skip,
+which contributed no PASS and no FAIL on that lane. Round 6 shipped the counter
+incremented at one site, and `linux / gcc` printed `0 skipped` beneath nine
+`SKIP` lines — including `[99i]`'s `SKIP: NOT MEASURED HERE`, which `ci.yml`
+sets on all ten suite jobs. Every one of those sections now goes through a
+single `section_skip` helper that prints the line **and** counts it, and
+several that used to bank PASSes for a run that asserted nothing (the archived
+benchmark asset, the three `--pkg` sections, `[99c]`, `[99d]`, `[137]`) are
+counted as skips instead. What is deliberately NOT counted is a SUB-CHECK
+skip — one line inside a section that still PASSes on its other checks on the
+same lane (ten of them, e.g. the JIT thunk gate on a non-x86_64 host). The
+split is enforced, not described: `tools/section_plan.sh --skip-audit`
+enumerates every `SKIP`-emitting line in the runner, requires each to be either
+routed through the helper or named with a reviewed reason, and is run by suite
+section `[99w]` and by CI. A new bare `SKIP:` line fails it by name; so does
+un-routing a section-level skip, and so does a reason that no longer matches
+any line.
 
 `tests/test_string_scaling.sh` is the missing instrument, run by the suite as
 section **[99zc]**:

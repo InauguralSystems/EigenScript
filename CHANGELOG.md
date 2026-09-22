@@ -560,6 +560,110 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The ILP32 gate carries the recorded call's own FLAGS into both the
+  macro-world derivation and the TU compile, instead of recording them and
+  then discarding them (#1232).** The live recipe compiles at `-O2`, which
+  defines `__OPTIMIZE__` in the real target's macro world; round 6/7 derived
+  both worlds and compiled every TU with neither the target's optimisation
+  level nor any recorded `-D`, so `#if defined(__wasm__) &&
+  defined(__OPTIMIZE__)` compiled clean under the gate and was RED under real
+  wasm clang at `-O2` (measured by a blind critic through the real `[99i3]`
+  section — 46/46 self-test cases green — and reproduced again here through
+  the actual runner: `FAIL: .../src/fsutil.c ... error: R6_OPTIMIZATION_WORLD`
+  after the fix, silent before it). Each recorded call's accepted option
+  tokens — optimisation level, every `-D`/`-U`, `-std=`, `-f*`, `-W*`, through
+  the SAME accepted-option set the driver cross-check already measures — are
+  now tracked per call (`classifier: flags=N per call`) and reach the compile
+  of the TU that call recorded; a TU compiled once under one call's own `-D`
+  and again — unqualified — inside a later call's SOURCES is examined under
+  the call that actually shaped it (verified against a second plant, a
+  per-call-only `-D`: the fault is invisible unless the isolation holds, and
+  it now reproduces `FAIL: .../web/percall.c ... error: R6_PER_CALL_DEFINE`).
+  Both `emcc` and `em++` are shimmed now, not only `emcc` — a recipe line
+  reaching `em++` was recorded nowhere and silently skipped on this box (no
+  emsdk), which the gate reported as a clean recipe. Two residuals are stated
+  rather than silently absent: the recorded input is read after the WHOLE
+  recipe finishes, not snapshotted at the call that produced it (a `#error`
+  compiled by an early call and overwritten with valid C before a later one
+  would be examined on the later bytes); and an INVALID option the driver
+  rejects is indistinguishable from a legitimate emcc-only one and is
+  silently dropped rather than failed. Also: empty stdin (`-x c -` with
+  nothing piped) is a valid empty translation unit — `[ -s ]` read the empty
+  capture as "nothing was captured" and refused a recipe the real compiler
+  builds fine; and the self-test's own `argv_plant` helper now asserts
+  `CLASSIFIER_DROPPED` RELATIVE to the live recipe's own baseline rather than
+  requiring it to be empty, so a legitimate spaced `-s X=Y` the live recipe
+  picks up someday does not fail every unrelated plant (verified against a
+  tree where the live recipe carries one: the audit and all 55 self-test
+  cases stay green). Five new self-test plants/controls (8o/8oc, 8d, 9e,
+  12es); `--selftest` is 55 cases, up from 50.
+
+- **`RESULTS: ... N skipped` counts every section that measured nothing, not
+  one of them (#1225).** The counter shipped in round 6 with the comment "a
+  zero that is printed is a claim" and exactly ONE increment site (`[99i3]`),
+  while `tests/run_all_tests.sh` had ~40 lines that put a `SKIP` marker on a
+  run's stdout. Measured on the pushed head 1b5c64d: `linux / gcc` printed
+  `RESULTS: 5282/5282 passed, 0 failed, 0 skipped` beneath nine of them,
+  including `[99i]`'s `SKIP: NOT MEASURED HERE`, which `ci.yml` forces on all
+  ten suite jobs. The claim was false on every lane. Every SECTION-LEVEL skip —
+  the section's verdict IS the skip, it contributed no PASS and no FAIL — now
+  goes through one `section_skip` helper that prints the line and increments
+  the counter (26 sites). Six of those used to bank PASSES for a run that
+  asserted nothing: the archived benchmark asset (+2), the three `--pkg`
+  sections (+11/+7/+3), `[99c]`, `[99d]` and `[137]`; a skip counted as a pass
+  is the same disease one layer down. SUB-CHECK skips — one line inside a
+  section that still PASSes on its other checks — are deliberately not counted,
+  and the split is ENFORCED rather than described:
+  `tools/section_plan.sh --skip-audit` enumerates every `SKIP`-emitting line in
+  the runner with a deliberately over-broad matcher, requires each to be routed
+  through the helper or named in a content-pinned waiver table with its reason,
+  floors both populations, and is run by suite section `[99w]` and by the
+  section-plan CI job. Its three planted faults: a new bare `SKIP:` echo is
+  unaccounted BY NAME, a section-level skip un-routed drops through the routed
+  floor, and a waiver that no longer matches any line is a hard failure.
+  Verified by extracting `[99i]` + the RESULTS line verbatim and running them
+  under the variable CI sets: `RESULTS: 0/0 passed, 0 failed, 1 skipped`.
+
+- **`[45b]`'s slow-loris control no longer binds a guessed port (#1231).**
+  Plant 3 runs the whole script a second time while the live section's server
+  is up, and both drew from `(RANDOM % 10000) + 50000`: on PR #1225's first CI
+  pass, two `extensions` jobs failed inside the section's own self-test with
+  `bind: Address already in use` on port 53632 while the four LIVE checks were
+  green — a control going red for a reason unrelated to its claim. The port now
+  comes from the kernel (bind to port 0, read it back), and because that is
+  still a race against any other process the start is RETRIED ONCE on
+  `EADDRINUSE` with the retry printed. New self-test plant 4 holds a real port
+  and hands it to the first attempt: the retry must recover and the four live
+  checks must still pass, so the plant measures the recovery and not just the
+  diagnosis. The failure this must never swallow is pinned by plants 1 and 2 —
+  a server that never binds still fails by name on the deadline, and one that
+  exits still fails by name with its status, first time, no retry.
+
+- **A `-x c <unit>` naming no existing file is FAIL by name in the ILP32 gate,
+  not a dropped operand.** Round 6 keyed that rule on the C-family SUFFIX, so
+  `-x c web/missing.inc -x none` — a unit the recipe names, `emcc` would refuse
+  and the gate can never examine — was dropped and the run printed
+  `OK: examined 23`, rc 0. The language in effect is now read from the recorded
+  argv the way the driver reads it (`-x c` and the glued `-xc`, `-x none`
+  turning it off); plant 3stx is the missing twin of plant 2u.
+
+- **The ILP32 gate's SDK-refusal match covers both wordings macOS emits.**
+  The macos-latest log at 1b5c64d shows `sys/cdefs.h:1068:2: error: Unsupported
+  architecture` AND `machine/_types.h:36:2: error: architecture not supported`
+  in the SAME probe; round 6 matched only the first, so a header or SDK reorder
+  leaving only the second would have turned that lane RED by name. Plant 5s2
+  requires the second wording alone to skip; control 5sg requires glibc's
+  `You need a ISO C` refusal to still FAIL, so the widening did not admit a
+  non-SDK break. The gate's header now also STATES the residuals the loop
+  measured and it does not close: only `emcc` is shimmed (a recipe reaching
+  `em++` is loud rc 127 on every box without emsdk and unrecorded on one with
+  it), `value_parity_unreconciled` is exercised only by plants 4w/4y, a
+  DIRECTORY named `*.c` and an unreadable `*.c` go red for the apparatus's
+  reason rather than the unit's, and `EIGS_ILP32_TU_FLOOR` can be exported to 0
+  on a standalone invocation. `tools/werror_switch_check.sh`'s floor for that
+  file is re-pinned 8 -> 11, the count its own `--print-counts` measures (it
+  moved again to 12 later the same round, with #1232's flags fix below).
+
 - **The Value-union size assert is the #1183 claim that holds at every
   pointer width, so the Docs-site wasm32 lane (pages.yml) compiles again
   (#1185).** `sizeof(data) == sizeof(data.fn)` was a 64-bit accident (`fn`
@@ -613,7 +717,12 @@ All notable changes to EigenScript are documented here.
   claimed otherwise; the gate now makes one pristine copy of the repo (21 MB,
   1.9 s measured), makes its files read-only, and hard-links a clone per
   sandbox (0.4 s), so a created file lands in the sandbox and an overwrite of
-  an existing one is EPERM. The entry
+  an existing one is EPERM — and the recipe is RUN from the sandbox rather
+  than from the gate's own directory, so the protection starts at the first
+  line of the recipe instead of at the recipe's own `cd` (round 6 relied on
+  that `cd`: a write placed above it landed two files in the real working tree
+  with the gate printing `OK: examined 23`, rc 0; plants 2w and 2wp now pin
+  both sides of that line). The entry
   point is compiled against a stub `<emscripten.h>` carrying
   `EMSCRIPTEN_KEEPALIVE` exactly as emscripten's `em_macros.h` defines it —
   `__attribute__((used))`, not a no-op, because an empty macro accepts
@@ -652,13 +761,16 @@ All notable changes to EigenScript are documented here.
   and the conditional lines it matched are cross-checked against an independent
   `grep -c` over the same list.
   This is PREDEFINE parity — a macro a system header supplies (`__GLIBC__`,
-  from glibc's features.h) is outside it, and the gate says so. **Forty-six**
+  from glibc's features.h) is outside it, and the gate says so. **Fifty**
   self-test plants and controls hold all of it: the six argv shapes; seven
   option-grammar shapes (a TU after `--emrun` and after `--proxy-to-worker`, a
   TU named only inside an `@response-file`, response files nested three deep, a
   TU on stdin, a `-x c` unit with a non-TU suffix, and the `--embed-file`
-  over-inclusion control); a recipe line writing `src/` that must not reach the
-  working tree; a syntax error in the entry point, an `#ifdef __EMSCRIPTEN__`
+  over-inclusion control); a `-x c` unit naming no existing file, which must
+  FAIL by name like its `.c`-suffixed twin; two recipe lines writing `src/`
+  that must not reach the working tree, one after the recipe's own `cd` and one
+  before it; the SDK's second measured refusal wording, with glibc's own
+  refusal as the control that must still FAIL; a syntax error in the entry point, an `#ifdef __EMSCRIPTEN__`
   arm, a misplaced `EMSCRIPTEN_KEEPALIVE`; an arm the wasm32 target takes and
   the host does not (with its opposite as a control), a conditional comparing a
   VALUE that differs (with its opposite as a control), a value reconciliation
@@ -730,8 +842,8 @@ All notable changes to EigenScript are documented here.
   the section runs `--selftest` only in the non-skip branch, so on the very
   run that skipped the control never executed. The suite's
   RESULTS line prints `passed, failed, skipped` on every lane, `skipped=0`
-  included, and `[99i3]`'s skip increments it: a section that measured nothing
-  is now a number on the verdict line and not only a line in the log. The gate
+  included, and EVERY section-level skip increments it: a section that measured
+  nothing is a number on the verdict line and not only a line in the log. The gate
   is also bash-3.2 clean — no `declare -A`, no `mapfile`, no `grep -z` —
   because macOS is where it has to reach its own probe.
 

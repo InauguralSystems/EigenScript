@@ -312,6 +312,7 @@ jobs:
         name: The derived plans, printed (the numbers a reviewer checks)
         run: |
           bash tools/section_plan.sh --gate-audit
+          bash tools/section_plan.sh --skip-audit
           bash tools/section_plan.sh --probes
           bash tools/section_plan.sh --print-section-plan core
 
