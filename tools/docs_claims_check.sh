@@ -326,7 +326,12 @@ if [ "${1:-}" = "--selftest" ]; then
     # medium`, finding 7). The planted number sits on the one line of that
     # page the gate now DERIVES, so a doc set that quietly drops docs/CI.md
     # takes this case green.
-    p=$(plant "CI.md" 's/All 261 test sections./All 999 test sections./' "docs/CI.md")
+    # The pattern matches the NUMBER, not one value of it: a plant that
+    # hardcodes today's count breaks the moment a PR adds a test section, and
+    # then reports "the fault was never planted" — which is what happened to
+    # the next PR that added one (261 -> 262). A plant may not hand-type a
+    # number the gate derives, for the same reason a doc may not.
+    p=$(plant "CI.md" 's/All [0-9][0-9]* test sections\./All 999 test sections./' "docs/CI.md")
     st_case "planted wrong number in the enrolled docs/CI.md goes red" \
             "$p" 1 "claims '999 test sections' but D_SECTIONS derives"
 
