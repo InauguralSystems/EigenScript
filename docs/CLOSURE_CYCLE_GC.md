@@ -157,6 +157,30 @@ as a force-destroy escape hatch (no current callers in main).
   the exit sweep once the workers are joined (#297). Cross-thread
   refcounts stay correct (atomic).
 
+### Multithreaded and handle-table leaks
+
+The runner's tolerated-leak tally (`rc_ok`, "NOTE: N test program(s)…") is
+0. Every program that used to sit in it was a spawn/channel program, and
+three mechanisms closed them:
+
+1. **Handle-table resources.** Channel structs and ThreadHandles live in the
+   process handle table keyed by id, not on a GC'd Value, so no refcount
+   ever reaches them. `handle_table_drain` reclaims them deterministically
+   once the program finishes (and clears `multithreaded`).
+2. **Worker return value.** `thread_entry` no longer increfs the worker's
+   return value a second time.
+3. **Threaded cycle-GC.** The candidate registry is per-state under
+   `gc_lock` (see "Threads" above), so env↔closure cycles created on any
+   thread stay candidates and the exit sweep reclaims them once workers are
+   joined. Section [101] (`test_spawn_gc`, worker-created cycles) is
+   leak-gated, and `test_concurrent` is clean.
+
+Parallel shared-chunk execution is TSan-clean (#297): the multithreaded flag
+is written once on the 0→1 transition, the JIT counters / OSR /
+inline-cache writes / trace-line are gated off under MT, and name hashes are
+precomputed at compile time. ThreadSanitizer here needs `setarch -R` to
+disable ASLR.
+
 ### Maintainer invariants (violations are UAF or silent leaks)
 
 - **Every owning edge into an `Env` must go through
