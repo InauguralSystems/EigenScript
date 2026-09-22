@@ -497,8 +497,10 @@ if [ "${1:-}" = "--selftest" ]; then
     if st_copy_tree "$ROOT" "$st_rel"; then
         # The variant-alias state: no release objdir, and src/eigenscript IS
         # the asan variant's binary. `ln` (not cp) is the point — the whole
-        # decision is an inode identity.
-        rm -rf "$st_rel/build/release"
+        # decision is an inode identity. Remove every inherited variant first:
+        # on an asan-http lane its alias would otherwise sort before our asan
+        # fixture and correctly be named by the gate, failing this control.
+        rm -rf "$st_rel/build"
         mkdir -p "$st_rel/build/asan"
         rm -f "$st_rel/build/asan/eigenscript"
         ln "$st_rel/src/eigenscript" "$st_rel/build/asan/eigenscript"

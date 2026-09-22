@@ -830,6 +830,10 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Doc-claims selftest isolates its variant alias.** The fixture now removes
+  inherited build variants before creating its `asan` alias, so an `asan-http`
+  build cannot cause a false failure by being the first matching hard link.
+
 - **The ILP32 gate carries the recorded call's own FLAGS into both the
   macro-world derivation and the TU compile, instead of recording them and
   then discarding them (#1232).** The live recipe compiles at `-O2`, which
