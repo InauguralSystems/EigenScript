@@ -4760,6 +4760,14 @@ repls = {
         '  RUN_ID="$(date +%s).$$.${RANDOM:-0}"\n',
         '  exit 9\n',
     ),
+    "root-drop-refuse": (
+        '    say "SELF-TEST: FAIL -- refusing to run as uid 0 without a drop root'
+        ' plants=0 skipped=0 transverse_skipped=0"\n'
+        '    exit 2\n',
+        '    say "SELF-TEST: FAIL -- refusing to run as uid 0 without a drop root'
+        ' plants=0 skipped=0 transverse_skipped=0"\n'
+        '    ST_AS_ROOT=1\n',
+    ),
     "record-samepath-exclude": (
         '      # CA-GUARD:record-samepath\n',
         '      # CA-GUARD:record-samepath\n'
@@ -6281,7 +6289,7 @@ plant_plant_total() {
 # FAILs by name: gutting both ST_SKIP increments left `plants=67 skipped=0
 # SELF-TEST: PASS` (Fable r2), and a deleted plant is the same shape. Bump
 # this in the same commit as any plant change.
-ST_DECLARED_PLANTS=103
+ST_DECLARED_PLANTS=104
 # This run's scratch token: every ca-* name the self-test and its children
 # create in the OUTER tmp carries it, so the hygiene scan can tell THIS
 # run's leftovers from a concurrent tenant's (both critics, r3).
@@ -6359,10 +6367,28 @@ selftest_drop_privileges() {
     ST_DROP_WHY="no runuser/setpriv with a nobody user"
     return 1
   fi
-  root="$(mktemp -d "${TMPDIR:-/tmp}/ca-stdrop.$(scratch_tag)XXXXXX")" || {
-    ST_DROP_WHY="cannot create a drop root under ${TMPDIR:-/tmp}"
+  # ROUND 10 (#1258): the drop root must not depend SOLELY on the
+  # caller's TMPDIR choice -- a root-owned, non-nobody-traversable (or, as
+  # measured, simply nonexistent) TMPDIR the caller passes used to make
+  # this single mktemp the whole reason the drop failed, and failure here
+  # used to mean the self-test ran on unconfined as root (fixed above,
+  # CA-GUARD:root-drop). Try the caller's TMPDIR first -- a private
+  # scratch is nicer when it works -- and if creating a drop root there
+  # fails for ANY reason, fall back to the one location every box in this
+  # fleet has and cannot degrade: the system /tmp. The chmod/chown below
+  # already make whatever is created here nobody-traversable; this only
+  # widens WHERE that attempt is allowed to land.
+  local drop_base tried=""
+  for drop_base in "${TMPDIR:-/tmp}" /tmp; do
+    case " $tried " in *" $drop_base "*) continue ;; esac
+    tried="$tried $drop_base"
+    root="$(mktemp -d "$drop_base/ca-stdrop.$(scratch_tag)XXXXXX" 2>/dev/null)" && break
+    root=""
+  done
+  if [ -z "$root" ]; then
+    ST_DROP_WHY="cannot create a drop root under any of:$tried"
     return 1
-  }
+  fi
   # The dropped user must reach the script, the deriver, the extractor and
   # a writable TMPDIR. A repo under a 0750 home is unreachable to nobody,
   # so the self-test runs a BYTE-IDENTICAL COPY of its own tool tree inside
@@ -6438,6 +6464,35 @@ selftest_drop_privileges() {
   return 0
 }
 
+# ROUND 10 (#1258): a `--self-test` that cannot establish a drop root must
+# REFUSE by name, not run on unconfined as uid 0 (CA-GUARD:root-drop). Real
+# root is not available to plant this directly, so the fixture takes the
+# SAME decision branch `plant_stale_unwritable` already uses for its own
+# pretend-root plant: `CA_FAULT=pretend_root` plus a fixture-gated
+# `CA_DROP_CMD` that makes `ca_drop_override` succeed. `CA_DROP_CMD=false`
+# reaches `selftest_drop_privileges`'s drop-root creation NORMALLY (a good
+# TMPDIR, so that step and the copy/sha steps all succeed) and fails
+# cleanly at the unprivileged PROBE -- `false` never runs the probe
+# command, so `$drop sh -c '...'` exits nonzero regardless of what it was
+# given. That keeps this plant independent of the OTHER round-10 fix
+# (CA-GUARD:selftest-root-scratch): a bad TMPDIR would trip that guard
+# too and the two could not be told apart.
+plant_root_drop_refuse() {
+  local sh="$1" eco="$2"
+  local out rc
+  out="$(CA_ECO="$eco" CA_FAULT=pretend_root CA_DROP_CMD=false timeout 20 "$sh" --self-test 2>&1)"
+  rc=$?
+  LAST_PLANT_DETAIL="rc=$rc plant_lines=$(grep -c '^plant ' <<< "$out") refused=$(grep -c '^SELF-TEST: FAIL -- refusing to run as uid 0' <<< "$out")"
+  note_plant "$out" "" "$rc"
+  if [ "$rc" -eq 2 ] \
+     && grep -q '^self-test: uid 0 and no usable drop' <<< "$out" \
+     && grep -q '^SELF-TEST: FAIL -- refusing to run as uid 0 without a drop root' <<< "$out" \
+     && [ "$(grep -c '^plant ' <<< "$out")" -eq 0 ]; then
+    return 0
+  fi
+  return 1
+}
+
 selftest() {
   local st_root rec out rc pid outer_tmp
   # REAL_HOME / ENV_PASS_* are wanted by the round-5 fixtures as well.
@@ -6478,15 +6533,49 @@ selftest() {
     if selftest_drop_privileges "$self_sh"; then
       exit "$ST_DROP_EXIT"
     fi
-    ST_AS_ROOT=1
-    say "self-test: uid 0 and no usable drop ($ST_DROP_WHY) -- the two unwritable plants SKIP by name"
+    # ROUND 10 (#1258, MEASURED): this used to set ST_AS_ROOT=1 and fall
+    # through into the rest of the self-test as uid 0. Two things follow
+    # from that, and the second one is what actually shipped: (1) root
+    # ignores permission bits, so EVERY fail-closed plant is unfalsifiable
+    # under uid 0 -- not just the two that SKIP by name (F, I); the real
+    # root run also read `farm-fail-closed`/`shim-fail-closed` as SILENT
+    # with rc=0 and VERDICT: PASS, i.e. the tool reported passing gates it
+    # had not tested at all. (2) the SAME run, on the SAME box, wrote
+    # root-owned .ca_bashenv/eigenscript/eigenscript-full/eigenscript-gfx
+    # into /usr/bin -- traced to the unguarded `st_root=$(mktemp ...)`
+    # a few lines below (no `||`, unlike every OTHER mktemp in this file):
+    # when the caller's TMPDIR cannot be used, that mktemp silently
+    # returns an EMPTY string, and every `"$st_root/..."` path built from
+    # it downstream (TMPDIR, the stderr capture, every self-test fixture
+    # directory) becomes a FILESYSTEM-ROOT-RELATIVE path instead of a
+    # scratch one -- root can write there without complaint. A partial
+    # degrade that still runs plants is not an acceptable outcome for a
+    # gate whose whole job is proving what does and does not hold: refuse
+    # by name, exit non-zero, and touch nothing beyond this point.
+    say "self-test: uid 0 and no usable drop ($ST_DROP_WHY) -- refusing rather than running unfalsifiable and unconfined as root"
+    say "SELF-TEST: FAIL -- refusing to run as uid 0 without a drop root plants=0 skipped=0 transverse_skipped=0"
+    exit 2
   fi
   # CA-GUARD:end-root-drop
   outer_tmp="${TMPDIR:-/tmp}"
   # CA-GUARD:scratch-token
   ST_TOKEN="t$$x${RANDOM:-0}"
   export CA_SCRATCH_TAG="$ST_TOKEN."
-  st_root="$(mktemp -d "${outer_tmp}/ca-st.$ST_TOKEN.XXXXXX")"
+  # CA-GUARD:selftest-root-scratch
+  # ROUND 10 (#1258): the one mktemp -d in this file with no `||` guard.
+  # An empty st_root turns every "$st_root/..." path below into a
+  # filesystem-root-relative one (TMPDIR becomes literally "/tmp", the
+  # stderr capture becomes "/stderr.cap", every fixture eco becomes
+  # "/good-eco" and so on) -- root can write any of those without a
+  # complaint, which is the second half of #1258's finding. Fail closed,
+  # by name, exactly like every other scratch directory this script
+  # creates (mechanical-gates: a shim directory is never written anywhere
+  # else).
+  st_root="$(mktemp -d "${outer_tmp}/ca-st.$ST_TOKEN.XXXXXX")" || {
+    say "consumer_acceptance: cannot create self-test scratch under $outer_tmp"
+    exit 2
+  }
+  # CA-GUARD:end-selftest-root-scratch
   ST_ROOT="$st_root"
   mkdir -p "$st_root/tmp"
   : > "$st_root/.stmark"
@@ -8090,6 +8179,17 @@ EOS
     plant_line "drop-trust-root" 1 "$LAST_PLANT_DETAIL"
   fi
 
+  # --- ROUND 10 (#1258): a `--self-test` that cannot establish a drop
+  # root refuses by name instead of running unconfined as uid 0.
+  local rd_eco="$st_root/rootdrop-eco"
+  mkdir -p "$rd_eco"
+  printf 'fixture\n' > "$rd_eco/.ca_fixture"
+  if plant_root_drop_refuse "$sh" "$rd_eco"; then
+    plant_line "root-drop-refuse" 0 "$LAST_PLANT_DETAIL"
+  else
+    plant_line "root-drop-refuse" 1 "$LAST_PLANT_DETAIL"
+  fi
+
   # --- round 4 fix 2: an unusable $TMPDIR is a FAIL-CLOSED by name.
   rec="$st_root/scratch-fc.record"
   if plant_scratch_fail_closed "$sh" "$good_eco" "$st_root/stub-ok" "$rec" "$st_root"; then
@@ -8307,6 +8407,7 @@ EOS
       drop-sha)         plant_drop_sha "$script" "$st_root/dropsha-t" ;;
       outer-tmp-decoy)  plant_outer_tmp_decoy "$script" "$outer_tmp" "$st_root" "$ST_TOKEN" ;;
       plant-total)      plant_plant_total "$script" ;;
+      root-drop-refuse) plant_root_drop_refuse "$script" "$eco" ;;
       *)                return 2 ;;
     esac
   }
@@ -8384,7 +8485,7 @@ EOS
     # (UNEXERCISED, FAIL after a refused append, etc.). The transverse
     # is that the plant no longer FIRE.
     case "$plant" in
-      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|record-floor-selfexclude|record-floor-samepath|record-floor-incomplete|not-found-child|not-found-child-bashenv|not-found-child-sweep|gfx-variant-export|gfx-prereq-nosubstring|gfx-selfskip|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy|farm-exec-wrapper|farm-fail-closed|shim-fail-closed|path-edit-absolute|drop-trust-root)
+      tree-consumer|bin-routing|overlay-write|clobber-symlink|overlay-partial|usage-no-candidate|log-tail|variant-missing|record-floor|record-floor-selfexclude|record-floor-samepath|record-floor-incomplete|not-found-child|not-found-child-bashenv|not-found-child-sweep|gfx-variant-export|gfx-prereq-nosubstring|gfx-selfskip|variant-prose|unbound-capture|plant-total|home-scratch|scratch-fail-closed|drop-sha|outer-tmp-decoy|farm-exec-wrapper|farm-fail-closed|shim-fail-closed|path-edit-absolute|drop-trust-root|root-drop-refuse)
         if [ "$intact" = FIRES ] && [ "$mutant_st" != FIRES ]; then
           say "transverse $kind / $plant: intact=FIRES mutant=$mutant_st  OK"
         else
@@ -8510,6 +8611,7 @@ EOS
   # measured, so the class change is what holds the plant up.
   transverse_one path-edit-substring     path-edit-absolute "$pe_eco" t-pes
   transverse_one drop-fixture-gate       drop-trust-root  "$nf_eco"   t-dtr
+  transverse_one root-drop-refuse        root-drop-refuse "$rd_eco"   t-rdr
   if [ -n "$go_bin" ]; then
     transverse_one env-passthrough       env-passthrough-go "$go_eco" t-epg
   else
