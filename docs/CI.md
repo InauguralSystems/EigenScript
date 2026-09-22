@@ -680,8 +680,8 @@ as what is now TRUE, with the plant that goes red if it stops being true.
    and writes no `.prev`, like every other exit-2 usage error. Plant
    `usage-no-candidate` has both rows.
 9. **A `gfx` prerequisite is DECLARED, never a substring of the command.**
-   `case "$cmd" in *gfx*)` made `--no-gfx`, or a path like
-   `tests/gfx_smoke.sh`, a hard gfx-build prerequisite and refused a headless
+   `case "$cmd" in *gfx*)` made `--no-gfx`, or any path whose own name
+   contains those three letters, a hard gfx-build prerequisite and refused a headless
    row that would have passed. Measured: no acceptance command of the 16 real
    consumers contains `gfx` today, so this changes no real row; `dynamics`
    keeps its declared `gfx` in `PREREQS`.
@@ -720,7 +720,7 @@ direction. Plant `path-edit-absolute` carries both escapes (`pe_dotdot`,
 
 **The price, stated:** the rule is over-broad in the SAFE direction. A line
 that merely *names* a PATH edit — a comment, a usage string, a README
-example living inside a `.sh`, a make variable holding one — refuses that
+example living inside a `.sh`, a Makefile variable holding one — refuses that
 consumer's row by name. It refuses a row it could have run; it never runs a
 row it should have refused. The deriver's selftest row
 `path-edit-comment-is-over-broad` documents exactly that. What remains a
@@ -753,8 +753,8 @@ and each **pinned by a plant that fires only while it holds**:
    `UNEXERCISED`, never `PASS`.
 
 `EIGS_DIR` is the twin of that PATH: it is a `cp -rL` copy of the
-candidate tree, so it used to hand the consumer the sibling's
-`src/eigenscript-full`. Every `eigenscript*` file in the overlay is now a
+candidate tree, so it used to hand the consumer the sibling's own
+`-full` variant binary. Every `eigenscript*` file in the overlay is now a
 shim too — the candidate's counting shim when the candidate set covers
 the name, a 127-shim when it does not (`overlay_shimmed=`).
 
