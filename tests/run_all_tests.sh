@@ -3259,6 +3259,11 @@ check_eigs_suite "utf8: decode/len/at/char_at over byte strings + structural val
     "test_utf8.eigs" "UTF8_ALL_PASS" 1
 echo ""
 
+echo "[50l] Numeric validators (36 checks)"
+check_eigs_suite "validate.is_number/is_integer: a decimal string needs a digit (#1235)" \
+    "test_validate.eigs" "VALIDATE_ALL_PASS" 36
+echo ""
+
 # [51] Unobserved block
 echo "[51] Unobserved Block"
 UN_OUTPUT=$(./eigenscript ../tests/test_unobserved.eigs 2>&1); UN_OUTPUT_RC=$?

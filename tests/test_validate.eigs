@@ -1,0 +1,93 @@
+# validate.is_number / is_integer — a decimal string needs a digit (#1235).
+# '.' and '-.' used to pass the character scan, and is_integer then treated
+# num-of-them as zero. All-pass prints VALIDATE_ALL_PASS.
+import validate
+
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+print of "=== VALIDATE (lib/validate.eigs) ==="
+
+# The pre-#1235 rule: optional leading '-', at most one '.', digits or a
+# dot, and no requirement that a digit appear. '.' and '-.' return 1, and
+# the integer path accepts them because num of them is 0. The library must
+# disagree with this scan on those two strings.
+define _pre1235_is_number(value) as:
+    if (type of value) != "str":
+        return 0
+    if (len of value) == 0:
+        return 0
+    local has_dot is 0
+    local start is 0
+    if (char_at of [value, 0]) == "-":
+        if (len of value) == 1:
+            return 0
+        start is 1
+    for i in range of ((len of value) - start):
+        c is char_at of [value, i + start]
+        if c == ".":
+            if has_dot == 1:
+                return 0
+            has_dot is 1
+        elif (contains of ["0123456789", c]) == 0:
+            return 0
+    return 1
+
+define _pre1235_is_integer(value) as:
+    if (_pre1235_is_number of value) == 0:
+        return 0
+    local val is num of value
+    return val == (floor of val)
+
+check of ["pre-fix scan accepts '.'", _pre1235_is_number of ".", 1]
+check of ["pre-fix scan accepts '-.'", _pre1235_is_number of "-.", 1]
+check of ["pre-fix is_integer accepts '.' as zero", _pre1235_is_integer of ".", 1]
+check of ["pre-fix is_integer accepts '-.' as zero", _pre1235_is_integer of "-.", 1]
+
+check of ["is_number rejects '.'", validate.is_number of ".", 0]
+check of ["is_number rejects '-.'", validate.is_number of "-.", 0]
+check of ["is_integer rejects '.'", validate.is_integer of ".", 0]
+check of ["is_integer rejects '-.'", validate.is_integer of "-.", 0]
+
+check of ["is_number accepts '0'", validate.is_number of "0", 1]
+check of ["is_number accepts '-1'", validate.is_number of "-1", 1]
+check of ["is_number accepts '.5'", validate.is_number of ".5", 1]
+check of ["is_number accepts '1.'", validate.is_number of "1.", 1]
+check of ["is_integer accepts '0'", validate.is_integer of "0", 1]
+check of ["is_integer accepts '-1'", validate.is_integer of "-1", 1]
+check of ["is_integer accepts '1.'", validate.is_integer of "1.", 1]
+check of ["is_integer rejects '.5'", validate.is_integer of ".5", 0]
+
+check of ["is_number rejects empty", validate.is_number of "", 0]
+check of ["is_number rejects '-'", validate.is_number of "-", 0]
+check of ["is_number rejects two dots", validate.is_number of "1.2.3", 0]
+check of ["is_number rejects letters", validate.is_number of "abc", 0]
+check of ["is_number rejects an exponent", validate.is_number of "1e2", 0]
+check of ["is_number rejects whitespace", validate.is_number of " 1", 0]
+check of ["is_number rejects hex", validate.is_number of "0x10", 0]
+
+check of ["is_number accepts a number", validate.is_number of 3.5, 1]
+check of ["is_number accepts a negative number", validate.is_number of (0 - 2), 1]
+check of ["is_integer accepts an integer", validate.is_integer of 4, 1]
+check of ["is_integer accepts a negative integer", validate.is_integer of (0 - 3), 1]
+check of ["is_integer rejects a fraction", validate.is_integer of 3.5, 0]
+check of ["is_number accepts '.0'", validate.is_number of ".0", 1]
+check of ["is_integer accepts '.0'", validate.is_integer of ".0", 1]
+check of ["is_number accepts '-.5'", validate.is_number of "-.5", 1]
+check of ["is_integer rejects '-.5'", validate.is_integer of "-.5", 0]
+
+check of ["is_integer rejects empty", validate.is_integer of "", 0]
+check of ["is_integer rejects '-'", validate.is_integer of "-", 0]
+check of ["is_integer rejects letters", validate.is_integer of "abc", 0]
+check of ["is_integer rejects two dots", validate.is_integer of "1.2.3", 0]
+
+if fails == 0:
+    print of "VALIDATE_ALL_PASS"
+if fails > 0:
+    print of f"{str of fails} FAILURES"
+    throw of "validate tests failed"
