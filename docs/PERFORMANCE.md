@@ -50,6 +50,116 @@ quadratic term is invisible at one point. It surfaced only as a number nobody
 had a gate for: **39% of the self-hosting compiler's runtime was
 `__strlen_sse2`**, in a lexer that reads source text one character at a time.
 
+The compile-time pin of "caching the length cost zero bytes" was written as
+`sizeof(data) == sizeof(data.fn)`. That equality is a 64-bit accident — at
+32-bit pointers `data` is 36 bytes and `fn` is 28 — and it broke the Docs-site
+wasm32 build (pages.yml) from #1185. The claim that holds on every pointer
+width is `sizeof(data.strv) <= sizeof(data.fn)`. Suite `[99i3]` compiles every
+translation unit `web/build.sh` hands to emcc — the runtime `src/*.c` units and
+`web/eigs_wasm.c`, the playground entry point — at `-m32`, so that lane cannot
+go red unnoticed. The gate prints the population it examined rather than
+asserting a typed-in number, and floors it so a shrinking SOURCES array is a
+deliberate re-pin.
+
+That population is not a reading of the script. The gate runs the real
+`web/build.sh` in a scratch sandbox with a stand-in `emcc` first on `PATH`
+that records, **for every invocation**, its argv, its cwd, the files that call
+created and any unit handed to it on stdin; bash has already resolved quoting,
+`$(...)`, variables and array shape by then. Every call is kept and the
+population is their union, printed as `N call(s) recorded`: a stand-in that
+recorded only the last call made compile-then-link — the canonical build
+shape — invisible, and a unit compiled by a first `emcc -c` call was outside
+the population while the gate printed `OK`. The recorded argv is classified by
+the **filesystem**, not by a model of emcc's option grammar: `@response-files`
+are expanded first (as emcc expands them), and an input is any token naming an
+existing regular file that call's compiler did not itself write whose suffix
+is a C-family translation unit. That rule is position-independent, so a unit
+after a flag that takes no operand — `--emrun`, `--proxy-to-worker` — is
+counted, where a typed operand table dropped it. The two shapes a suffix
+cannot see, a unit on stdin (`-x c -`) and a unit with a non-TU suffix
+(`-x c web/unit.inc`), are decided by asking the real clang driver for its own
+`-x c` inputs; the gate examines the **union** of the two derivations and goes
+red by name when they disagree. That driver is fed only operands it can open:
+emcc's spaced setting form `-s TOTAL_MEMORY=64MB` is an input clang cannot
+open, so the driver's own "no such file or directory" diagnostic names it, the
+gate drops it and prints it on `classifier: dropped=` — while a refused
+operand whose suffix is a `.c` stays red by name, because that is a recipe
+naming a unit that does not exist.
+
+Recording a call's argv is not enough on its own: the call's own FLAGS shape
+what the real compiler does too, and round 6/7 discarded them after
+classification (#1232). The live recipe compiles at `-O2`, which defines
+`__OPTIMIZE__` on the real target — a gate that derived the macro world and
+compiled every TU without it took a DIFFERENT arm than the lane it stands in
+for, silently. Each recorded call's accepted option tokens — optimisation
+level, every `-D`/`-U`, `-std=`, `-f*`, `-W*`, filtered through the same
+accepted-option set the driver cross-check already measures — are tracked per
+call and printed as `classifier: flags=N per call`; they reach both the
+macro-world derivation (so `__OPTIMIZE__` agrees with the real build) and the
+compile of the TU that call recorded, so a TU compiled once under one call's
+own `-D` and again — unqualified — inside a later call's SOURCES is examined
+under the call that actually shaped it. Both `emcc` and `em++` are shimmed,
+not only `emcc`; empty stdin (`-x c -` with nothing piped) is a valid empty
+TU, not a rejected recipe. Two residuals are stated: the recorded input is
+read after the WHOLE recipe finishes rather than snapshotted at its own call
+(a `#error` compiled early and overwritten with valid C before a later call
+would be examined on the later bytes), and an INVALID option the driver
+rejects is indistinguishable from a legitimate emcc-only one and is silently
+dropped rather than failed — the recipe's real build is the oracle for the
+recipe's own validity, not this gate.
+
+It compiles with the wasm32-emscripten target's macro world **derived**, never
+typed: both worlds' predefines are read with `-E -dM`
+(`clang --target=wasm32-unknown-emscripten` and `clang -m32`), every difference
+in NAME is reconciled with a `-U` or a `-D`, every difference in VALUE —
+however many the two toolchains disagree on, printed by the gate itself as
+`macro_parity: ... values=N/M` (32 on this dev box, 33 on the `linux / gcc`
+runner, measured 2026-09-21; the toolchain decides the number, not this page)
+and including `__SIZEOF_LONG_DOUBLE__` at 16 on the target and 12 on the
+host — gets the target's own value, and which of those glibc's `-m32` headers
+refuse is measured rather than assumed. Three hand-typed predefines were not
+enough: under them the gate took the `#elif defined(__linux__)` arm at
+`src/fsutil.c:69` on a lane that has no `__linux__` at all, i.e. it stood in
+for the lane while compiling the other branch. Availability is probed by
+EXECUTION and the probe asks for the capability the gate uses — it compiles a
+32-bit TU **that includes the C library**, because a probe with no includes
+passes on an arm64 mac that has no 32-bit SDK and lets the gate go red on
+every TU instead of skipping. **Exactly one outcome may skip**, and the suite
+counts it: a C library with no 32-bit target for its own headers, which says
+so in its own words (`#error Unsupported architecture` on the macOS SDK) — the
+gate matches that diagnostic, at either of the two stages that can hit it, and
+prints it. macos-latest is the measured case, and it passes the availability
+probe: the SDK refuses only once the reconciliation has replaced `__i386__`
+and `__APPLE__` with the target's world, which is the reconciliation doing its
+job. Everything else fails by name, because everything else is the gate's own
+apparatus: no compiler on `PATH`, the gate's own `<gnu/stubs-32.h>` stub
+missing, a system include directory that does not exist, and a derived macro
+world this C library refuses for a reason that is *not* the SDK's — a broken
+derivation, which round 5 reported as a skip. The control for that verdict —
+the same headers *without* the reconciliation — runs in the live path before
+the verdict is taken either way. The suite's RESULTS line prints
+`passed, failed, skipped` on every lane, `skipped=0` included, so a lane that
+examined 23 translation units last week and 0 this week is visible in the
+verdict and not only in the log.
+
+`skipped` counts SECTION-LEVEL skips: sections whose verdict is the skip,
+which contributed no PASS and no FAIL on that lane. Round 6 shipped the counter
+incremented at one site, and `linux / gcc` printed `0 skipped` beneath nine
+`SKIP` lines — including `[99i]`'s `SKIP: NOT MEASURED HERE`, which `ci.yml`
+sets on all ten suite jobs. Every one of those sections now goes through a
+single `section_skip` helper that prints the line **and** counts it, and
+several that used to bank PASSes for a run that asserted nothing (the archived
+benchmark asset, the three `--pkg` sections, `[99c]`, `[99d]`, `[137]`) are
+counted as skips instead. What is deliberately NOT counted is a SUB-CHECK
+skip — one line inside a section that still PASSes on its other checks on the
+same lane (ten of them, e.g. the JIT thunk gate on a non-x86_64 host). The
+split is enforced, not described: `tools/section_plan.sh --skip-audit`
+enumerates every `SKIP`-emitting line in the runner, requires each to be either
+routed through the helper or named with a reviewed reason, and is run by suite
+section `[99w]` and by CI. A new bare `SKIP:` line fails it by name; so does
+un-routing a section-level skip, and so does a reason that no longer matches
+any line.
+
 `tests/test_string_scaling.sh` is the missing instrument, run by the suite as
 section **[99zc]**:
 

@@ -265,7 +265,29 @@ SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage
 # interpreter (deliberately not via `make`, which would re-point
 # src/eigenscript under the suite) plus two leak controls, so four real
 # compile invocations that no make target covers.
-SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh"
+# tools/ilp32_syntax_check.sh joined with [99i3]: clang -m32 -fsyntax-only
+# over the playground TUs (pages.yml wasm32 stand-in). Its floor moved 2 -> 4
+# when that gate stopped hand-typing the wasm32 predefines: the two `-E -dM`
+# derivations that read the target's and the host's macro worlds are compile
+# invocations by this recognizer (`-x c`), so a floor of 2 would have let both
+# of them be deleted while still printing OK. It moved 4 -> 8 when that gate
+# stopped hand-typing emcc's OPTION grammar and started measuring instead:
+# each new derivation is a compile line this recognizer sees — the `-###`
+# probe that asks whether the clang driver knows a token, the `-###` run that
+# reads back the driver's own `-x c` inputs, the per-header availability probe
+# and the value-parity probe that measures which reconciliations glibc
+# refuses. A floor left at 4 would let any four of the eight be deleted while
+# the gate still printed OK, which is the exact failure this table exists for.
+# It moved 8 -> 11 earlier in round 7 after a blind critic measured the gap:
+# `--print-counts` said 11 for this file while the floor still said 8, so any
+# THREE of its audited compile lines could have lost -Werror=switch, or been
+# deleted, with [99i] green. It moved again, 11 -> 12, later the same round
+# (#1232's flags fix) — the source of the extra audited line was not traced
+# further than `--print-counts` itself; ask the tool again before trusting
+# either number. The number is the tool's own measurement, not a guess — re-run
+# `--print-counts` after adding a
+# derivation here, the way this paragraph has had to be re-read each round.
+SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh tools/ilp32_syntax_check.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
 # compile line is not a compile.
@@ -345,6 +367,7 @@ script:tests/test_tsan.sh 1
 script:tools/trace_mt_mutants.sh 2
 script:tools/arming_mt_mutants.sh 1
 script:tests/run_all_tests.sh 1
+script:tools/ilp32_syntax_check.sh 12
 '
 
 # Floor for a label, or empty when the label is untracked.
@@ -813,6 +836,13 @@ recognizer_waived() {
     # 3. A relocatable LINK (`-r`), not a compile: no translation unit is
     #    compiled, so no warning flag applies. tests/test_lint_linkage.sh:48.
     grep -qE '(^|[[:space:]])-r([[:space:]]|$)' <<<"$seg" && return 0
+    # 4. `ln` creates a symlink or hard link; it never compiles anything, even
+    #    when the link's SOURCE name happens to be a compiler's name (#1232's
+    #    em++ shim: `ln -sf emcc "$STANDIN_BIN/em++"` names "emcc" as the
+    #    symlink TARGET it points at, not a command being run). Anchored to
+    #    the command word at the start of the segment or right after a
+    #    separator, so a variable or path merely containing "ln" cannot match.
+    grep -qE '(^|[;&|`]|\$\()[[:space:]]*ln[[:space:]]' <<<"$seg" && return 0
     # 2. The compiler word appears only inside a quoted string — a log message or
     #    a usage hint, e.g. amalgamate.sh's "compile: cc host.c ...".
     #
@@ -1179,6 +1209,18 @@ if [ "${1:-}" = "--selftest" ]; then
         # which is what the failure actually reported (#1007, adding asan-gfx).
         # The check must be keyed to the tree under test, not to HEAD.
         cp Makefile "$root/Makefile"
+        # SCRIPT_AUDITS members too: the live gate lists them, so they must
+        # exist in the fault tree or the nested run dies on "script not found"
+        # before reaching the planted header — same class as the Makefile
+        # overlay (adding a compile-bearing script and its enrollment in ONE
+        # change). Overlay from the working tree; skip any path that is not
+        # a file yet (a typo in SCRIPT_AUDITS is still the live gate's job).
+        local sc
+        for sc in $SCRIPT_AUDITS; do
+            [ -f "$sc" ] || continue
+            mkdir -p "$root/$(dirname "$sc")"
+            cp "$sc" "$root/$sc"
+        done
         # New auxiliary targets can also depend on not-yet-committed C inputs.
         # Copying only their recipe/enrollment left `embed-roads` without its
         # source and aborted the dry run before the planted header (#1056).

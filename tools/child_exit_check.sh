@@ -49,7 +49,7 @@ RUNNER="${RUNNER:-tests/run_all_tests.sh}"
 # two children on one line (`if bash A && bash B --selftest; then`), so the
 # true invocation count is higher. Lines are what this is measured in; do not
 # "correct" it to invocations without re-measuring.
-CHILD_SITES_DECLARED="${CHILD_SITES_DECLARED:-121}"
+CHILD_SITES_DECLARED="${CHILD_SITES_DECLARED:-125}"
 
 fail() { echo "GATE ERROR: $*" >&2; RC=1; }
 RC=0
@@ -200,7 +200,7 @@ fi
 # section is for. Both halves are required -- the binding must be DERIVED from
 # $EIGS_BIN (a hard-coded path would drift from the variant under test) and it
 # must be EXPORTED (an unexported binding reaches no child at all).
-ENV_RUNTIME_CHILDREN_DECLARED="${ENV_RUNTIME_CHILDREN_DECLARED:-7}"
+ENV_RUNTIME_CHILDREN_DECLARED="${ENV_RUNTIME_CHILDREN_DECLARED:-8}"
 if ! grep -qE '^EIGS="\$PWD/\$\{EIGS_BIN#\./\}"$' "$RUNNER"; then
     fail "$RUNNER no longer binds EIGS to \$EIGS_BIN — every child that resolves \${EIGS:-...} now measures whatever the environment says (#1188)"
 elif ! grep -qE '^export EIGS$' "$RUNNER"; then

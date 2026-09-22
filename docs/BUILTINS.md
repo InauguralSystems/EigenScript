@@ -845,14 +845,22 @@ revoked permission *and* an empty table alike, so a reporting script kept
 printing "0 rows" forever after a schema change and a migration that did
 nothing looked healthy in CI.
 
+The core build (`make build`) has no db builtins, so the call below raises
+as an undefined variable. The db build (`make full`) raises a catchable
+`io` error when there is no connection (`db: not connected — call db_connect
+first`). Both paths are a failure of the query, so the executed example
+prints only the prefix — `e.message` is one of the two strings above,
+depending on which binary you run it on, and pinning either one here would
+document the other build's absence.
+
 ```eigenscript
 try:
     rows is json_decode of (db_query_json of "SELECT * FROM orders")
 catch e:
-    print of ("query failed: " + e.message)   # e.kind is "io"
+    print of "query failed"
 ```
 ```output
-query failed: undefined variable 'db_query_json'
+query failed
 ```
 
 ### SQL types survive the trip (#887)
