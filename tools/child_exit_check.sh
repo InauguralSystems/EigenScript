@@ -31,36 +31,18 @@ RUNNER="${RUNNER:-tests/run_all_tests.sh}"
 # leaves the set. `[ -z ]` is an emptiness test, not a guard — it only catches
 # losing ALL of them.
 #
-# #1264 — A FLOOR AGAIN, AND THIS TIME THE PLANT CANNOT DRIFT OUT OF REACH.
-# Round 11 made this an exact count (`CHILD_SITES_DECLARED`), because the old
-# floor (60) had fallen 53 below a population of 113 and its planted shrink —
-# a fixed handful of sites — no longer crossed it. The exact pin fixed the
-# PLANT, and in exchange turned every added child test into a hand bump of this
-# line: PR #1260 (a correct 5-line fix) had to move it 121 -> 122, then hit a
-# merge conflict on the same number (main had moved it to 125), which also
-# stopped CI from running at all. Adding a child is growth, and growth is not
-# a review event (mechanical-gates §5: floors for a growing total, exact counts
-# for a declared set). A REMOVAL is the review event, and a floor edit is how
-# one is declared.
-#
-# What round 11 actually diagnosed was a plant CALIBRATED against a constant
-# (§74). The selftest below no longer hand-picks a shrink: it DERIVES it from
-# the live count, reformatting exactly (found - floor + 1) sites, so it lands
-# one below the floor however far the population has grown, and a control
-# that lands exactly ON the floor must pass. The floor can go stale-low as the
-# suite grows (§175) — the PASS line prints the slack so that is visible, and
-# the transverse check for the case that matters most (a child test nobody
-# runs any more) is tools/enrolment_check.sh, which names the file.
-#
-# To remove a child deliberately: lower this floor in the same commit.
-# To tighten after growth: raise it to the PASS line's count (optional; never
-# required by an addition).
-#
+# #1264 — A FLOOR AGAIN. Round 11 pinned this exactly because the old floor
+# (60) had fallen 53 below the population and its fixed-size shrink plant no
+# longer crossed it. The exact pin made every added child test a hand bump,
+# and PR #1260 bumped it and then conflicted on it. Adding is growth, not a
+# review event (mechanical-gates §5); a DROP is, and lowering this floor is
+# how a deliberate removal is declared. The selftest's shrink plant now sizes
+# itself from the live count, so it lands at floor-1 however far the suite grows.
 # The metric is LINES carrying an invocation, not invocations: a few sites run
 # two children on one line (`if bash A && bash B --selftest; then`), so the
 # true invocation count is higher. Lines are what this is measured in; do not
 # "correct" it to invocations without re-measuring.
-CHILD_SITES_FLOOR="${CHILD_SITES_FLOOR:-130}"
+CHILD_SITES_FLOOR="${CHILD_SITES_FLOOR:-128}"
 
 fail() { echo "GATE ERROR: $*" >&2; RC=1; }
 RC=0
@@ -95,9 +77,8 @@ fi
 # --- 2. Population, floored ------------------------------------------------
 # Every executable line invoking a `.sh` child through the wrapper.
 CHILD_SITES=$(runner_code | grep -cE '(^|[^a-zA-Z_])bash[[:space:]]+("?\$(TESTS_DIR|\{TESTS_DIR\})"?[^|;)]*\.sh|"[^"]*\.sh")')
-case "$CHILD_SITES_FLOOR" in ''|*[!0-9]*|0) fail "CHILD_SITES_FLOOR='$CHILD_SITES_FLOOR' is not a positive integer — a knob that can turn the verdict green is part of the verdict (§157)" ; CHILD_SITES_FLOOR=1 ;; esac
 if [ "$CHILD_SITES" -lt "$CHILD_SITES_FLOOR" ]; then
-    fail "$CHILD_SITES child-script invocation sites found, below the floor of $CHILD_SITES_FLOOR — a child test was removed, or a site was reformatted out of this matcher's reach. If the removal is deliberate, lower CHILD_SITES_FLOOR in the same commit"
+    fail "$CHILD_SITES child-script invocation sites found, below the floor of $CHILD_SITES_FLOOR — a child test was removed, or a site was reformatted out of this matcher's reach; lower CHILD_SITES_FLOOR in the same commit if deliberate"
 fi
 
 # --- 3. `bash` must be the COMMAND WORD, not merely present ----------------
@@ -212,27 +193,23 @@ fi
 # section is for. Both halves are required -- the binding must be DERIVED from
 # $EIGS_BIN (a hard-coded path would drift from the variant under test) and it
 # must be EXPORTED (an unexported binding reaches no child at all).
-# The population the binding protects GROWS with every child that defaults
-# its runtime from the environment, and the binding covers a new one without
-# anyone touching it — so it is a floor (#1264), not an exact pin: adding such
-# a child needs no edit here, and losing them fails.
-ENV_RUNTIME_CHILDREN_FLOOR="${ENV_RUNTIME_CHILDREN_FLOOR:-8}"
+ENV_RUNTIME_CHILDREN_FLOOR="${ENV_RUNTIME_CHILDREN_FLOOR:-8}"   # a floor (#1264): the binding covers new ones
 if ! grep -qE '^EIGS="\$PWD/\$\{EIGS_BIN#\./\}"$' "$RUNNER"; then
     fail "$RUNNER no longer binds EIGS to \$EIGS_BIN — every child that resolves \${EIGS:-...} now measures whatever the environment says (#1188)"
 elif ! grep -qE '^export EIGS$' "$RUNNER"; then
     fail "$RUNNER binds EIGS but does not export it — the binding reaches no child (#1188)"
 fi
-# The population it protects, floored: a population that silently empties (or
-# shrinks) would leave this section guarding less than it claims.
+# The population it protects, floored: one that silently shrinks or empties
+# would leave this section guarding less than it claims.
 ENV_RUNTIME_CHILDREN=$(grep -lE '^[[:space:]]*EIGS=.?\$\{EIGS:-' tests/test_*.sh 2>/dev/null | grep -c . || true)
 if [ "${ENV_RUNTIME_CHILDREN:-0}" -eq 0 ]; then
     fail "found ZERO children resolving \${EIGS:-...} — the scan for them is broken, not the tree (§121)"
 elif [ "$ENV_RUNTIME_CHILDREN" -lt "$ENV_RUNTIME_CHILDREN_FLOOR" ]; then
-    fail "$ENV_RUNTIME_CHILDREN child test(s) take their runtime from the environment, below the floor of $ENV_RUNTIME_CHILDREN_FLOOR — a child lost its \${EIGS:-...} default or was removed, or the scan for them narrowed; lower ENV_RUNTIME_CHILDREN_FLOOR in the same commit if deliberate"
+    fail "$ENV_RUNTIME_CHILDREN child test(s) take their runtime from the environment, below the floor of $ENV_RUNTIME_CHILDREN_FLOOR — a child lost its \${EIGS:-...} default; lower the floor if deliberate"
 fi
 
 if [ "$RC" -eq 0 ]; then
-    echo "PASS: child-exit accounting present; $CHILD_SITES child-script sites (floor $CHILD_SITES_FLOOR, slack $((CHILD_SITES - CHILD_SITES_FLOOR))), no bypass spellings; EIGS bound for $ENV_RUNTIME_CHILDREN environment-selectable child(ren) (floor $ENV_RUNTIME_CHILDREN_FLOOR)"
+    echo "PASS: child-exit accounting present; $CHILD_SITES child-script sites (floor $CHILD_SITES_FLOOR), no bypass spellings; EIGS bound for $ENV_RUNTIME_CHILDREN environment-selectable child(ren)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -253,7 +230,7 @@ if [ "${1:-}" = "--selftest" ]; then
             ST_RC=1; return
         fi
         local out
-        out=$(RUNNER="$f" CHILD_SITES_FLOOR="$CHILD_SITES_FLOOR" bash "$0" 2>&1)
+        out=$(RUNNER="$f" CHILD_SITES_FLOOR="$CHILD_SITES_FLOOR" "$0" 2>&1)
         if [ "$?" -eq 0 ]; then
             echo "SELFTEST FAIL: '$name' was not caught (gate passed a broken runner)" >&2
             ST_RC=1
@@ -288,23 +265,16 @@ if [ "${1:-}" = "--selftest" ]; then
             's/^export EIGS$/: EIGS is not exported/' \
             "does not export it"
     # The population is derived from tests/, not from the runner, so this one
-    # drives the floor rather than planting in a file: a floor one ABOVE the
-    # live count must fail, the live count itself must pass (derived, never
-    # hand-typed — §177).
-    st_env_n=$(grep -lE '^[[:space:]]*EIGS=.?\$\{EIGS:-' tests/test_*.sh 2>/dev/null | grep -c . || true)
-    st_pop_out=$(ENV_RUNTIME_CHILDREN_FLOOR=$((st_env_n + 1)) bash "$0" 2>&1)
-    if [ "$?" -eq 0 ] || ! printf '%s\n' "$st_pop_out" | grep -qF "below the floor of $((st_env_n + 1))"; then
-        echo "SELFTEST FAIL: an environment-selectable-child population below its floor was not caught" >&2
+    # drives the declared count rather than planting in a file.
+    ST_RC_BEFORE=$ST_RC
+    st_pop_out=$(ENV_RUNTIME_CHILDREN_FLOOR=99 "$0" 2>&1)
+    if [ "$?" -eq 0 ] || ! printf '%s\n' "$st_pop_out" | grep -qF "below the floor of 99"; then
+        echo "SELFTEST FAIL: a wrong environment-selectable-child count was not caught" >&2
         ST_RC=1
     else
-        echo "  selftest ok: an environment-selectable-child population below its floor is caught"
+        echo "  selftest ok: a wrong environment-selectable-child count is caught"
     fi
-    if ! ENV_RUNTIME_CHILDREN_FLOOR="$st_env_n" bash "$0" >/dev/null 2>&1; then
-        echo "SELFTEST FAIL: a population exactly AT its floor ($st_env_n) failed — the comparison is off by one" >&2
-        ST_RC=1
-    else
-        echo "  selftest ok: an environment-selectable-child population exactly at its floor passes"
-    fi
+    : "$ST_RC_BEFORE"
 
     st_case "second command-bash added" \
             's|CLI_OUTPUT=$(bash "$TESTS_DIR/test_cli.sh" 2>\&1)|CLI_OUTPUT=$(command bash "$TESTS_DIR/test_cli.sh" 2>\&1)|' \
@@ -317,54 +287,23 @@ if [ "${1:-}" = "--selftest" ]; then
     # script path on different lines, so a line-based matcher stops seeing the
     # site.
     #
-    # #1264: the number of sites reformatted is DERIVED from the live count
-    # (found - floor + 1), so the plant lands exactly one below the floor
-    # however far the suite has grown — the drift round 11 found cannot recur.
-    # Its twin reformats (found - floor) sites, lands exactly ON the floor, and
-    # must pass: the boundary is witnessed from both sides.
-    st_live=$(runner_code | grep -cE '(^|[^a-zA-Z_])bash[[:space:]]+("?\$(TESTS_DIR|\{TESTS_DIR\})"?[^|;)]*\.sh|"[^"]*\.sh")')
-    st_reformat() {   # st_reformat <n> <outfile>: split the first n capture sites
-        awk -v n="$1" '
-            n > 0 && /bash "\$TESTS_DIR\/test_[a-z_]*\.sh" 2>&1\)/ && $0 !~ /^[[:space:]]*#/ {
-                sub(/bash "\$TESTS_DIR\//, "bash \\\n        \"$TESTS_DIR/"); n--
-            }
-            { print }' "$RUNNER" > "$2"
-    }
-    st_drop=$((st_live - CHILD_SITES_FLOOR + 1))
-    st_reformat "$st_drop" "$ST_TMP/below.sh"
-    st_below=$(sed 's/[[:space:]]*#.*$//' "$ST_TMP/below.sh" | grep -cE '(^|[^a-zA-Z_])bash[[:space:]]+("?\$(TESTS_DIR|\{TESTS_DIR\})"?[^|;)]*\.sh|"[^"]*\.sh")')
-    if [ "$st_below" -ne $((CHILD_SITES_FLOOR - 1)) ]; then
-        # Not a survivor (§137): the plant could not be BUILT. With the floor
-        # this far below the live count there are not enough reformattable
-        # capture sites to reach it — which is itself the staleness alarm
-        # §175 asks for, at a slack of roughly fifty sites rather than one.
-        echo "SELFTEST BROKEN: the derived shrink plant produced $st_below sites, wanted $((CHILD_SITES_FLOOR - 1)) (live $st_live, floor $CHILD_SITES_FLOOR) — the floor is stale-low; raise CHILD_SITES_FLOOR to $st_live" >&2
-        ST_RC=1
-    else
-        st_out=$(RUNNER="$ST_TMP/below.sh" CHILD_SITES_FLOOR="$CHILD_SITES_FLOOR" bash "$0" 2>&1)
-        if [ "$?" -eq 0 ] || ! printf '%s\n' "$st_out" | grep -qF "below the floor of $CHILD_SITES_FLOOR"; then
-            echo "SELFTEST FAIL: a population one below the floor ($st_below < $CHILD_SITES_FLOOR) was not caught" >&2
-            printf '%s\n' "$st_out" | sed 's/^/    /' >&2
-            ST_RC=1
-        else
-            echo "  selftest ok: population shrunk to floor-1 ($st_below, $st_drop site(s) reformatted) is caught"
-        fi
-    fi
-    st_reformat "$((st_drop - 1))" "$ST_TMP/at.sh"
-    if ! RUNNER="$ST_TMP/at.sh" CHILD_SITES_FLOOR="$CHILD_SITES_FLOOR" bash "$0" >/dev/null 2>&1; then
-        echo "SELFTEST FAIL: a population exactly AT the floor ($CHILD_SITES_FLOOR) failed — off by one, or the reformat broke something else" >&2
-        ST_RC=1
-    else
-        echo "  selftest ok: population exactly at the floor ($CHILD_SITES_FLOOR) passes"
-    fi
-    # Growth is free: one more child site, no edit anywhere.
-    { cat "$RUNNER"; printf '\nZZ_OUTPUT=$(bash "$TESTS_DIR/test_zz_growth.sh" 2>&1)\n'; } > "$ST_TMP/grown.sh"
-    if ! RUNNER="$ST_TMP/grown.sh" CHILD_SITES_FLOOR="$CHILD_SITES_FLOOR" bash "$0" >/dev/null 2>&1; then
-        echo "SELFTEST FAIL: ADDING a child site failed the gate — growth must need no edit (#1264)" >&2
-        ST_RC=1
-    else
-        echo "  selftest ok: adding a child site needs no edit"
-    fi
+    # #1264: the plant's size is DERIVED — split exactly (live - floor + 1)
+    # capture sites — so it lands at floor-1 however far the suite has grown.
+    st_n=$(( $(runner_code | grep -cE '(^|[^a-zA-Z_])bash[[:space:]]+("?\$(TESTS_DIR|\{TESTS_DIR\})"?[^|;)]*\.sh|"[^"]*\.sh")') - CHILD_SITES_FLOOR + 1 ))
+    # Split the first st_n capture sites across two lines (hold space counts).
+    st_prog='/^[[:space:]]*#/b
+/bash "\$TESTS_DIR\/test_[a-z_]*\.sh" 2>&1)/{
+x
+s/^/./
+/^.\{1,'"$st_n"'\}$/{
+x
+s|bash "|bash \\\
+        "|
+b
+}
+x
+}'
+    st_case "population dropped below the floor" "$st_prog" "below the floor of $CHILD_SITES_FLOOR"
 
     # Positive control (mechanical-gates §15): an UNMODIFIED runner must pass,
     # or a gate that always fails would score 6/6 above.

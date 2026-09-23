@@ -18,21 +18,14 @@ Requires only `gcc` — no external dependencies.
 1. Fork the repository
 2. Create a branch from `main`
 3. Make your changes
-4. **Run `make precheck`** (or `bash tools/precheck.sh`) — the repo's static
-   gates in under a minute, no build needed, one line per gate. These are the
-   checks that otherwise surface one at a time after a ~45-minute CI run:
-   pipeline verdicts under `pipefail`, suite label clashes, child-script exit
-   accounting, the CI shard plan, and **test enrolment** — a new
-   `tests/*.sh` or `tests/*.py` that no suite section (or workflow step)
-   invokes fails, by name. After a `make` it also checks the documentation
-   claims.
+4. Run `make precheck` — the static gates CI runs, in under a minute, no build
+   needed. It catches pipefail verdicts, section-label clashes, child-exit
+   accounting, the shard plan, and a new test that no suite section runs.
 5. Run the test suite: `cd tests && bash run_all_tests.sh`
 6. Open a pull request
 
-Adding a test is: the test file, plus its section in `tests/run_all_tests.sh`.
-Nothing else — no counts to bump and no documentation numbers to edit (counts
-that grow with the suite are floors, not pins, and the docs do not state the
-section count).
+Adding a test is the test file plus its section in `tests/run_all_tests.sh` —
+no counts to bump, no documentation numbers to edit.
 
 Two gates worth knowing before you push:
 

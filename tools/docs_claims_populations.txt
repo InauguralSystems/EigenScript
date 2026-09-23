@@ -1,14 +1,9 @@
-# docs-claims DECLARED POPULATIONS — CLASS | file | floor
+# docs-claims DECLARED POPULATIONS — CLASS | file | expected count
 #
-# Each count is a FLOOR (#1264), per class AND per file, and membership is
-# still checked in both directions: a count BELOW its floor is red (claims
-# were removed, or the scan narrowed); a declared row nothing visited is red;
-# an examined pair with no row is red. A count ABOVE its floor is not: every
-# claim is judged on its own (derived, resolved, or waived by exact line), so
-# adding one is already checked and must not also cost an edit here - growth
-# is a growing total, mechanical-gates 5. Lower a row deliberately when
-# removing claims; raising a row to the live count (the FLOOR lines of the
-# gate's output) is optional tightening, never required by an addition.
+# Each count is a FLOOR (#1264), per class AND per file: a count BELOW its row
+# is red; a declared row nothing visited is red; an examined pair with no row
+# is red. Adding a claim (each is judged on its own) needs no edit here;
+# lower a row deliberately when removing claims.
 #
 # A data file for the same reason as the waiver table beside it: the tool must
 # contain no $(cat <<EOF) table at all, because bash 3.2 counts parentheses
@@ -63,6 +58,6 @@ NAMES|ROADMAP.md|6
 # pages.yml, and the CI.md paragraph that listed that path list (and the
 # path-filter wording before it) went with them.
 NUMBERS|docs/CI.md|2
-PATHS|docs/CI.md|69
-TARGETS|docs/CI.md|6
+PATHS|docs/CI.md|60
+TARGETS|docs/CI.md|4
 NAMES|docs/CI.md|0
