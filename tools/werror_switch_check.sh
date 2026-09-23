@@ -284,7 +284,17 @@ SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage
 # deleted, with [99i] green. It moved again, 11 -> 12, later the same round
 # (#1232's flags fix) — the source of the extra audited line was not traced
 # further than `--print-counts` itself; ask the tool again before trusting
-# either number. The number is the tool's own measurement, not a guess — re-run
+# either number. It moved 12 -> 14 with #1255, both lines traced: compile_tu's
+# `real` arm (the real emcc -fsyntax-only over each recorded TU when emcc is on
+# PATH) and self-test plant 1wt (clang --target=wasm32-unknown-emscripten over
+# the header-free layout probe); `--print-counts` said 14 after that change.
+# It moved 14 -> 13 in #1255 round 2: the real-driver arm no longer has a
+# compile line of its own — it replays the RECIPE'S recorded argv through the
+# driver path resolved at startup, carrying no flag of its own, because every
+# injected flag (-Isrc, -D, even the -Werror trio) was a way for the gate to
+# compile something the recipe does not; the recipe's own line, in
+# web/build.sh, is the audited one. `--print-counts` said 13.
+# The number is the tool's own measurement, not a guess — re-run
 # `--print-counts` after adding a
 # derivation here, the way this paragraph has had to be re-read each round.
 SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh tools/ilp32_syntax_check.sh"
@@ -367,7 +377,7 @@ script:tests/test_tsan.sh 1
 script:tools/trace_mt_mutants.sh 2
 script:tools/arming_mt_mutants.sh 1
 script:tests/run_all_tests.sh 1
-script:tools/ilp32_syntax_check.sh 12
+script:tools/ilp32_syntax_check.sh 13
 '
 
 # Floor for a label, or empty when the label is untracked.

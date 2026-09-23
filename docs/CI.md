@@ -54,6 +54,73 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
   `macos-15-intel` is not on this lane.
 - Fast gates unchanged: jit differential, replay differential, freestanding,
   tsan, install smoke, bench, CodeQL, `gate self-tests`.
+- **The playground's real wasm32 build** — a separate workflow,
+  `.github/workflows/pages.yml`, which runs on **every** pull request and
+  reports the check `playground (real emcc wasm32 build)`: the real emcc build
+  of `web/build.sh`, every time, whatever the PR changed. See **The playground: the real wasm32 build, on
+  the PR** below.
+
+## The playground: the real wasm32 build, on the PR
+
+The browser playground is `web/build.sh` compiled by emcc (wasm32). Until #1255
+the only place that ran was `.github/workflows/pages.yml` on **push to
+`main`** — after the merge. It was red on `main` for five commits in a row
+(517cf08 back to 0ac8a9b) before anyone looked, because nothing on a pull
+request compiled for the real target.
+
+The local gate did not catch it either, and could not. Suite `[99i3]`
+(`tools/ilp32_syntax_check.sh`) compiles every translation unit the recipe
+hands the compiler with host `clang -m32` — the **i386** ABI. i386 aligns
+`double` to 4 inside a struct; wasm32 aligns it to 8. The Value union was 36
+bytes under `-m32` and 40 under emcc, so a layout `_Static_assert` held under
+the gate and failed the real build. `[99i3]` was labelled "the playground's
+wasm32 build cannot break unnoticed"; that was false as stated.
+
+What is true now:
+
+- **pages.yml builds the playground on every pull request and every push to
+  `main`, and nothing decides whether to.** There is no path filter and no
+  "was the playground touched?" step. Round 1 of #1255 path-filtered the
+  trigger (so the check could not be required); round 2 replaced that with a
+  `scope` job reading `git diff --name-only`, which under git's default rename
+  detection lists only a renamed file's NEW path — moving `src/trace.h` to
+  `attic/trace.h` read as "untouched", skipped the build, and passed a recipe
+  that no longer compiles. Two rounds, one class, and the build costs ~72 s
+  against a ~45-minute CI run, so the decision is gone rather than patched:
+  - `playground / build (real emcc, web/build.sh) + docs site` is the worker.
+    It runs the **same** `bash web/build.sh` — one recipe, no second copy of
+    the emcc flags — unconditionally, and it leaves a receipt (`built=true`)
+    only after the build exited 0 and produced the wasm module and its loader.
+  - **`playground (real emcc wasm32 build)`** is the aggregator (`if:
+    always()`, the shape of ci.yml's aggregators, see **The PR-lane job set,
+    and which are aggregators** below). It succeeds only when the worker
+    succeeded AND left the receipt. With no scope left to combine it still
+    earns its place: a skipped job reads as passing to a required-check rule
+    and a cancelled one leaves nothing, and the aggregator makes both a
+    failure; it also keeps the requirable NAME independent of the worker's.
+    It reports on **every** PR, so it can be required.
+
+  Configure Pages, the artifact upload and the `deploy` job are gated to
+  non-PR events, so deploy still happens only from `main`. A PR gets its own
+  concurrency group, so a PR push can never cancel a `main` deploy. Measured
+  on `main`, the build job is about 72 s with the emsdk cache warm, and every
+  PR pays it.
+- **`[99i3]` says what it is.** With emcc on `PATH` the gate REPLAYS each
+  recorded emcc call — the recipe's own argv, plus `-fsyntax-only`, minus the
+  `-o` operand and the call's other translation units, and nothing else — and
+  prints `verdict: AUTHORITATIVE`. (Round 1 compiled with an injected `-Isrc`
+  and `-DEIGENSCRIPT_VERSION`, so a recipe emcc rejects could print
+  AUTHORITATIVE; self-test plants `10i`/`10d` are that class, under both arms.)
+  Without it (every CI suite leg, and the dev box) it runs the `-m32` arm and
+  prints `verdict: APPROXIMATION`, and its OK line names pages.yml as the
+  authority. Its self-test pins the limit from both sides: control `1w`
+  requires the `-m32` arm to pass a layout assert that is 12 bytes at i386
+  and 16 at wasm32, and `1wt` requires clang's wasm32 frontend to refuse it.
+
+**The check to require on `main` is `playground (real emcc wasm32 build)`**
+— the aggregator, never the worker alone (a skipped worker reads as
+passing). Until it is in the ruleset, a red wasm build is visible on the PR
+but does not block the merge.
 
 ## The doc gates — where they run, and why they are cheap
 
@@ -1015,6 +1082,8 @@ On a pull request, `ci.yml` produces these checks:
 | `install.sh (interpreter + eigenlsp on PATH)` | gate |
 | `bench (instruction-count regression gate)` | gate |
 | `Analyze C` (workflow `CodeQL`) | gate, separate workflow |
+| `playground (real emcc wasm32 build)` (workflow `Docs site`) | **aggregator** over the worker below; reports on every PR |
+| `playground / build (real emcc, web/build.sh) + docs site` | worker |
 
 `macos / macos-15-intel` runs **only** in nightly (#1264): on the main lane it hit its
 45-minute timeout on nearly every push, so main CI never finished green.
@@ -1033,7 +1102,9 @@ The set worth requiring, if someone tightens the ruleset, is: `scope`,
 `freestanding`, `tsan`, `install.sh`, `bench`, `valgrind` and `Analyze C`.
 **Never** `macos / macos-15-intel`: it does not run on pull requests, and a
 required check that never reports blocks the merge forever — the same trap the
-`scope` job's comment in `ci.yml` describes.
+`scope` job's comment in `ci.yml` describes. Add `playground (real emcc
+wasm32 build)` — it reports on every pull request, success only when the
+real emcc build of `web/build.sh` ran and passed, failure otherwise.
 
 ## The risk this accepts
 

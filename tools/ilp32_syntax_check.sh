@@ -1,11 +1,32 @@
 #!/usr/bin/env bash
-# ILP32 syntax gate — the playground's wasm32 build cannot break unnoticed.
+# ILP32 syntax gate — a LOCAL APPROXIMATION of the playground's wasm32 build,
+# and the real thing when emcc is on PATH. It is NOT the authority.
 #
 # pages.yml compiles the web/build.sh sources with emcc (wasm32). A
 # _Static_assert that was true only at 64-bit pointer width (#1183's "union
 # sized by fn") kept that lane red from bcdd99f (#1185). This gate runs the
-# same recipe locally without emcc: clang -m32 -fsyntax-only over EVERY
-# translation unit the recipe hands the compiler.
+# same recipe locally: every translation unit the recipe hands the compiler is
+# compiled -fsyntax-only by
+#
+#   * the REAL emcc, when `emcc` is on PATH — that is then the verdict, and the
+#     OK line says `wasm32 TUs under the REAL emcc ... authoritative`. It is
+#     handed the RECIPE'S OWN recorded argv per TU (replay_argv_for_tu:
+#     + -fsyntax-only, - the -o operand, - the call's sibling TUs, each argued
+#     there) and nothing else — round 1 injected -Isrc/-D/-Werror and printed
+#     AUTHORITATIVE on a recipe the driver rejects (plants 10i/10d); or
+#   * clang -m32 otherwise (every CI suite leg, and this dev box, which has no
+#     emsdk). -m32 is the i386 ABI, NOT wasm32 — see LIMIT below — so the OK
+#     line and the `verdict:` line both say APPROXIMATION and name the lane
+#     that IS authoritative.
+#
+# THE AUTHORITATIVE CHECK is pages.yml's `build` job, which runs the real
+# `bash web/build.sh` under emcc on EVERY pull request and every push to main,
+# with no path filter and no "was it touched?" decision, reported through the
+# check `playground (real emcc wasm32 build)` (#1255). Until #1255 that job ran on
+# push-to-main only, and it was red on main for five commits while this gate
+# printed OK: #1183's Value-union assert was 36 bytes at -m32 and 40 under
+# emcc. This gate's old first line, "the playground's wasm32 build cannot break
+# unnoticed", was false as stated; it now claims only what it can show.
 #
 # POPULATION = THE RECORDED ARGV, NOT A READING OF THE SCRIPT. Three rounds in
 # a row derived the population by TEXT matching and three rounds in a row a
@@ -127,9 +148,14 @@
 # the stub with the real declaration, not to silence it.
 #
 # LIMIT, not a fix: -m32 is the i386 ABI, NOT wasm32. `double` aligns to 4 on
-# i386 and to 8 on wasm32, so this stand-in catches pointer-width breaks — the
-# #1185 class, and what kept the lane red — not every layout difference the
-# real emcc build can hit.
+# i386 and to 8 on wasm32 (measured, clang 18: `struct { int t; union { double
+# d; struct { char *a; int b; } x; } u; }` is 12 bytes at -m32 and 16 at
+# --target=wasm32), so the -m32 arm catches pointer-width breaks — the #1185
+# class — and NOT every layout difference the real emcc build can hit. That
+# limit is PINNED, not only stated: self-test control 1w requires the -m32 arm
+# to compile that 12-vs-16 assert clean, and 1wt requires the wasm32 target
+# frontend to refuse it. The macro-parity machinery below reconciles the
+# PREPROCESSOR world; nothing reconciles the ABI, and nothing can at -m32.
 #
 # RESIDUALS THE LOOP MEASURED AND THIS GATE DOES NOT CLOSE. Each was reached by
 # a blind critic on a real run (2026-09-21) and is written here rather than
@@ -157,9 +183,9 @@
 #     accepts": `-fR6-invalid-option` is classified emcc-only and dropped from
 #     the driver cross-check the same way `-sTOTAL_MEMORY=64MB` legitimately
 #     is, so the gate passes a recipe the real frontend — emcc, which shares
-#     clang's own diagnoser — would refuse. The recipe's real build (the pages
-#     lane, once buildable) is the oracle for the recipe's own validity; this
-#     gate is not.
+#     clang's own diagnoser — would refuse. The recipe's real build (pages.yml's
+#     `build` job, which runs on every pull request since #1255) is the oracle
+#     for the recipe's own validity; this gate's -m32 arm is not.
 #   * `value_parity_unreconciled=` is exercised only by self-test plants 4w and
 #     4y. On this box and in CI the live line prints `value_parity_unreconciled=
 #     none`, so the real population has never driven that branch; the plants are
@@ -179,9 +205,19 @@
 #     the tool directly.
 #
 # Usage: tools/ilp32_syntax_check.sh [--selftest]
-#   --selftest : plant 55 faults through the REAL derive/record/classify/
+#   --selftest : plant 62 faults through the REAL derive/record/classify/
 #                compile/examine functions, and require each one RED for its
 #                own stated reason:
+#                  the LIMIT of the -m32 arm, both sides (#1255)  (1w) a layout
+#                    assert true at i386 and false at wasm32 must compile CLEAN
+#                    under the approximation, and (1wt) the wasm32 target
+#                    frontend must REFUSE it; with emcc on PATH the real arm is
+#                    also driven and must be RED (uncounted: box-dependent);
+#                  NOTHING THE RECIPE DOES NOT PASS (#1255 round 2)  (10i) a
+#                    header reachable only through an injected -Isrc and (10d)
+#                    a unit needing an injected -DEIGENSCRIPT_VERSION, each RED
+#                    under the real-driver arm, with (10c) its green control,
+#                    and (10im, 10dm) the same two under the -m32 arm;
 #                  source faults   (1) the old sizeof(data)==sizeof(fn) assert,
 #                    (1b) a syntax error in the playground entry point,
 #                    (1c) an emcc-only #ifdef __EMSCRIPTEN__ arm,
@@ -278,6 +314,25 @@ EIGS_VERSION=$(cat "$REPO/VERSION" 2>/dev/null || echo dev)
 SELFTEST=0
 [ "${1:-}" = "--selftest" ] && SELFTEST=1
 
+# WHICH COMPILER DECIDES (#1255). If the real wasm32 driver is on PATH, it is
+# the verdict: every TU in the recorded population goes through emcc
+# -fsyntax-only (compile_tu's `real` arm) and the -m32 availability probe and
+# macro reconciliation are not run, because there is nothing left to
+# approximate. If it is not — CI's suite legs and this dev box have no emsdk —
+# the gate runs the -m32 arm and SAYS it is an approximation on its OK line and
+# on the `verdict:` line, naming the lane that is authoritative: pages.yml's
+# build job, which runs the real `bash web/build.sh` on every pull request.
+# Decided by PATH alone, before the stand-in exists; there is no knob that
+# can force the approximation while the real driver is present (a knob that
+# can turn the verdict green is part of the verdict). --selftest always runs
+# the approximation arm — its plants test that machinery — and additionally
+# drives control 1w through the real driver when there is one.
+EIGS_ILP32_REAL_DRIVER=emcc
+REAL_DRIVER_PATH=$(command -v "$EIGS_ILP32_REAL_DRIVER" 2>/dev/null || true)
+ILP32_MODE=approx
+[ -n "$REAL_DRIVER_PATH" ] && ILP32_MODE=real
+[ "$SELFTEST" -eq 1 ] && ILP32_MODE=approx
+
 # Floor on the derived population. Measured 2026-09-21: the playground recipe
 # hands the compiler 23 translation units and all 23 are examined — the 22
 # src/*.c runtime units plus web/eigs_wasm.c, the playground entry point on the
@@ -331,6 +386,9 @@ TU_LANG_MAP=''
 # genuinely divergent optimisation levels is a residual this file states.
 TU_CALL_DIR_MAP=''
 CALL_FLAGS_ALL=()
+# The derived population of the last recorded recipe run (#1255 round 2): the
+# real-driver replay removes a call's OTHER TUs from its argv against it.
+POP_FILE=''
 # Cross-counts for the conditional scan (see tested_macros).
 TESTED_CONDITIONAL_LINES=0
 TESTED_SCAN_FILES=0
@@ -777,6 +835,75 @@ call_flags_for_tu() {
     return 0
 }
 
+# ---- the real-driver replay (#1255 round 2) ------------------------------
+# $1 = a TU path. Prints the call directory that recorded it, or nothing.
+call_dir_for_tu() {
+    awk -F'\t' -v T="$1" '$1 == T { print $2; exit }' "$TU_CALL_DIR_MAP" 2>/dev/null
+}
+replay_cwd_for_tu() {
+    local d
+    d=$(call_dir_for_tu "$1")
+    if [ -n "$d" ] && [ -f "$d/cwd" ]; then cat "$d/cwd"; else printf '%s' "$REPO"; fi
+}
+# The stdin capture, only when THIS TU is the call's stdin unit.
+replay_stdin_for_tu() {
+    local d
+    d=$(call_dir_for_tu "$1")
+    [ -n "$d" ] && [ "$1" = "$d/stdin.c" ] && printf '%s' "$d/stdin.c"
+    return 0
+}
+# $1 = a TU path. Prints, one per NUL, the argv the real driver is handed for
+# it: the RECORDED call's own expanded argv (response files expanded exactly
+# as emcc expands them before parsing anything), changed in exactly three
+# ways. Each is argued here, because each is a place where a replay could
+# stop being the recipe:
+#   + `-fsyntax-only` is ADDED. emcc routes any argv carrying it to its
+#     preprocess-only mode, which execs clang over the inputs with the call's
+#     own compile flags (emcc.py 3.1.74, `'-fsyntax-only' in newargs`); it
+#     selects how much of the pipeline runs, never which headers, macros or
+#     options the front end sees — so it cannot make a failing TU compile.
+#   - `-o <out>` (and the glued `-o<out>`) is REMOVED. It names where output
+#     would go; -fsyntax-only produces none, and nothing a compiler reads
+#     depends on the output path. Keeping it would hand clang the recipe's
+#     `web/dist/eigs.js` as an output of a preprocess-only run.
+#   - the OTHER translation units of the same call are REMOVED (a token that
+#     resolves, from the recorded cwd, to a DIFFERENT member of the derived
+#     population; a `-` when this TU is not the call's stdin unit). Each is
+#     replayed on its own, so a failure is charged to the TU that failed and
+#     `examined == len(population)` still counts units. A C translation unit
+#     cannot change how a sibling on the same command line compiles.
+# Nothing is ADDED beyond -fsyntax-only: no -I, no -D, no -Werror, no -c.
+# A TU with no recorded call (a self-test probe, never a recipe unit) is
+# handed only `-fsyntax-only <tu>`: there is no recipe flag to replay.
+replay_argv_for_tu() {
+    local tu="$1" d root tok path skip_next=0
+    d=$(call_dir_for_tu "$tu")
+    printf '%s\0' -fsyntax-only
+    if [ -z "$d" ]; then
+        printf '%s\0' "$tu"
+        return 0
+    fi
+    [ -f "$d/argv-expanded" ] || return 1
+    root=$(cat "$d/cwd" 2>/dev/null)
+    [ -n "$root" ] || return 1
+    while IFS= read -r -d '' tok; do
+        if [ "$skip_next" -eq 1 ]; then skip_next=0; continue; fi
+        case "$tok" in
+            -o)   skip_next=1; continue ;;
+            -o?*) continue ;;
+            -)    [ "$tu" = "$d/stdin.c" ] || continue
+                  printf '%s\0' "$tok"; continue ;;
+            /*)   path="$tok" ;;
+            *)    path="$root/$tok" ;;
+        esac
+        if [ "$path" != "$tu" ] && [ -n "$POP_FILE" ] && grep -qxF -- "$path" "$POP_FILE"; then
+            continue
+        fi
+        printf '%s\0' "$tok"
+    done < "$d/argv-expanded"
+}
+
+
 # ---- the sandbox: nothing the recipe writes reaches the tree --------------
 #
 # Round 4 SYMLINKED every top-level entry, which protected `web/` and nothing
@@ -935,6 +1062,8 @@ sandbox_record_inputs() {
     sort -u "$RUN/fs.raw" > "$RUN/fs.inputs"
     sort -u "$RUN/drv.raw" > "$RUN/drv.inputs"
     sort -u "$RUN/fs.inputs" "$RUN/drv.inputs" > "$out"
+    # The population the real-driver replay subtracts sibling TUs against.
+    POP_FILE="$out"
     CLASSIFIER_N_FS=$(grep -c . "$RUN/fs.inputs")
     CLASSIFIER_N_DRV=$(grep -c . "$RUN/drv.inputs")
     CLASSIFIER_DROPPED=${CLASSIFIER_DROPPED# }
@@ -1381,8 +1510,19 @@ compile_tu() {
     local tu="$1" extra_i="${2:-}" stubdir="${3:-${STUB:-}}"
     local out st inc lang cf
     local -a xlang=() callflags=()
-    inc="-Isrc"
-    [ -n "$extra_i" ] && inc="-I$extra_i -Isrc"
+    # No `-Isrc` and no injected -DEIGENSCRIPT_* (#1255 round 2): the recipe
+    # passes no -I, and its -D set arrives through the recorded call's flags
+    # ($callflags). An injected include path or define is a way to be green
+    # where the recipe is red — `#include "vm.h"` in web/eigs_wasm.c resolved
+    # only through the old `-Isrc`, and deleting -DEIGENSCRIPT_VERSION from
+    # web/build.sh stayed green here through the old injected copy. The same
+    # argument that strips them from the real-driver arm applies to this one.
+    # What this arm still ADDS is the approximation itself (the stub dir, the
+    # host include dir, the derived macro reconciliation) and the -Werror trio,
+    # which the recipe's own line carries too. $extra_i is a SELF-TEST hook (a
+    # planted header dir), never set on the live path.
+    inc=''
+    [ -n "$extra_i" ] && inc="-I$extra_i"
     lang=$(tu_language "$tu")
     [ -n "$lang" ] && xlang=(-x "$lang")
     # #1232: this TU's OWN call's accepted flags (optimisation level, -D/-U,
@@ -1392,6 +1532,43 @@ compile_tu() {
     # parity scan pulled in, not a compiled TU).
     while IFS= read -r -d '' cf; do callflags+=("$cf"); done < <(call_flags_for_tu "$tu")
     [ "${#callflags[@]}" -eq 0 ] && callflags=(${CALL_FLAGS_ALL[@]+"${CALL_FLAGS_ALL[@]}"})
+    # #1255: the REAL target decides when it is here — and it is handed the
+    # RECIPE'S OWN ARGV, not a second copy of the recipe. Round 1 of #1255
+    # compiled each TU as `emcc -fsyntax-only -c -Werror=... -Isrc
+    # -DEIGENSCRIPT_EXT_*=0 -DEIGENSCRIPT_VERSION=... <accepted flags> tu`,
+    # and every one of those injected tokens was a way to be GREEN where the
+    # recipe is RED: `#include "vm.h"` in web/eigs_wasm.c resolves only
+    # through the injected -Isrc (the recipe passes no -I), and deleting
+    # -DEIGENSCRIPT_VERSION from web/build.sh broke the recipe while the gate
+    # printed `verdict: AUTHORITATIVE`, rc 0 (a blind critic, 2026-09-22).
+    # So this arm now REPLAYS the recorded call (replay_argv_for_tu): its
+    # expanded argv, from its recorded cwd, with its captured stdin, changed
+    # in exactly the ways listed there, each of which is argued not to change
+    # what compiles. Self-test plants 10i/10d are the injected-flag class and
+    # 10c is their control. The driver is invoked by the path resolved at
+    # startup, so the replay line carries no flag of its own — not even the
+    # -Werror trio (tools/werror_switch_check.sh audits web/build.sh's line,
+    # which is where those flags are the recipe's).
+    if [ "$ILP32_MODE" = real ]; then
+        local -a replay=()
+        local rcwd rstdin
+        if ! replay_argv_for_tu "$tu" > "$RUN/replay.argv"; then
+            echo "FAIL: $tu — could not rebuild the recorded call that compiles it" >&2
+            return 1
+        fi
+        while IFS= read -r -d '' cf; do replay+=("$cf"); done < "$RUN/replay.argv"
+        rcwd=$(replay_cwd_for_tu "$tu")
+        rstdin=$(replay_stdin_for_tu "$tu")
+        [ -n "$rstdin" ] || rstdin=/dev/null
+        out=$(cd "$rcwd" && "$REAL_DRIVER_PATH" ${replay[@]+"${replay[@]}"} < "$rstdin" 2>&1)
+        st=$?
+        if [ "$st" -ne 0 ]; then
+            echo "FAIL: $tu (the real wasm32 driver, replaying the recipe's own recorded call)" >&2
+            printf '%s\n' "$out" | sed 's/^/      /' >&2
+            return 1
+        fi
+        return 0
+    fi
     # Status captured DIRECTLY. $? after a pipeline is the last stage.
     # Flag literals (not $VAR) so tools/werror_switch_check.sh can see them.
     # -c is load-bearing for that recognizer; -fsyntax-only is the actual work.
@@ -1401,13 +1578,18 @@ compile_tu() {
     # duplicate -D of an identical value is harmless; a real divergence
     # (this TU's call carries its own -D the shared SOURCES call does not)
     # is exactly what must reach the compile, so it is appended LAST.
-    out=$(clang -m32 -fsyntax-only -c \
+    #
+    # From the recorded call's OWN cwd (#1255 round 2), as the real-driver arm
+    # does, so any relative path the recipe passes resolves where the recipe
+    # resolved it — and so plant 10im is transverse: with the old `-Isrc`
+    # re-injected, it resolves into the sandbox the plant wrote to and 10im
+    # turns green (measured; from the gate's cwd it silently resolved into the
+    # working tree instead and 10im could not see the gut).
+    out=$(cd "$(replay_cwd_for_tu "$tu")" && clang -m32 -fsyntax-only -c \
         -Werror=switch -Werror=comment -Werror=misleading-indentation \
         -isystem "$stubdir" -isystem /usr/include/x86_64-linux-gnu \
         $inc \
-        -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
         ${MACRO_PARITY_FLAGS[@]+"${MACRO_PARITY_FLAGS[@]}"} \
-        -DEIGENSCRIPT_VERSION="\"$EIGS_VERSION\"" \
         ${callflags[@]+"${callflags[@]}"} \
         ${xlang[@]+"${xlang[@]}"} "$tu" 2>&1)
     st=$?
@@ -1452,7 +1634,11 @@ examine_tus() {
         echo "FAIL: examined $n TUs, $n_ok ok, $n_fail failed (want examined == len(list) > 0)" >&2
         return 1
     fi
-    echo "OK: examined $n ILP32 TUs (every input the playground recipe hands the compiler)"
+    if [ "$ILP32_MODE" = real ]; then
+        echo "OK: examined $n wasm32 TUs under the REAL emcc (every input the playground recipe hands the compiler) — authoritative"
+    else
+        echo "OK: examined $n ILP32 TUs under clang -m32 (every input the playground recipe hands the compiler) — an APPROXIMATION of wasm32, not the target: i386 aligns double to 4 inside a struct and wasm32 to 8, so a layout assert can pass here and fail emcc. Authoritative: the real emcc build of web/build.sh, pages.yml's build job, on every pull request"
+    fi
     return 0
 }
 
@@ -1565,7 +1751,15 @@ ilp32_availability_verdict() {
     return 1
 }
 
-if ! avail_err=$(ilp32_capability_probe "$STUB" "$SYS_INCLUDE_DIR"); then
+if [ "$ILP32_MODE" = real ]; then
+    echo "verdict: AUTHORITATIVE — the real wasm32 driver is on PATH ($REAL_DRIVER_PATH); every recorded TU is compiled by it"
+elif [ -n "$REAL_DRIVER_PATH" ]; then
+    echo "verdict: APPROXIMATION (--selftest) — the self-test plants exercise the clang -m32 arm, and the real driver on PATH ($REAL_DRIVER_PATH) is driven by the layout probe only. Run without --selftest for the authoritative verdict"
+else
+    echo "verdict: APPROXIMATION — no emcc on PATH, so the recorded TUs are compiled by clang -m32 (i386), which catches pointer-width breaks and NOT wasm32 layout (double aligns to 4 on i386, 8 on wasm32). Authoritative: pages.yml's build job runs the real web/build.sh under emcc on every pull request"
+fi
+
+if [ "$ILP32_MODE" = approx ] && ! avail_err=$(ilp32_capability_probe "$STUB" "$SYS_INCLUDE_DIR"); then
     if ilp32_availability_verdict "$STUB" "$SYS_INCLUDE_DIR" "$avail_err"; then
         exit 0
     fi
@@ -1600,7 +1794,12 @@ echo "classifier: flags=${#CALL_FLAGS_ALL[@]} per call"
 # a finding about it.
 LIVE_DROPPED="$CLASSIFIER_DROPPED"
 
-if ! macro_parity_init "$LIVE_TUS"; then
+if [ "$ILP32_MODE" = real ]; then
+    # The real driver compiles against its OWN target's predefines; there is
+    # no host world to reconcile. Said, not left blank, so the section can
+    # tell "not applicable" from "did not run".
+    echo "macro_parity: not applicable — the real wasm32 driver compiles with the target's own predefines"
+elif ! macro_parity_init "$LIVE_TUS"; then
     # The ONLY skip left at this stage, and the same one the availability
     # probe names: the SDK refuses the architecture once its own arch macros
     # are replaced by the target's. Everything else macro_parity_init already
@@ -1611,8 +1810,9 @@ if ! macro_parity_init "$LIVE_TUS"; then
         exit 0
     fi
     exit 1
+else
+    echo "$MACRO_PARITY_REPORT"
 fi
-echo "$MACRO_PARITY_REPORT"
 
 if [ "$SELFTEST" -eq 0 ]; then
     # Examine FIRST: a disagreement between the two derivations is reported on
@@ -1654,41 +1854,121 @@ expect_tu_red() {
 
 # Plant 1: copy the tree's eigenscript.h, re-insert the OLD assert
 #   sizeof(((Value *)0)->data) == sizeof(((Value *)0)->data.fn)
-# then compile src/eigenscript.c with -I<scratch> first. The gate's compile_tu
-# must go RED. (Do not restore from git — the live header is already the fix.)
-cp "$REPO/src/eigenscript.h" "$WORK/eigenscript.h"
+# then compile a probe including it through the gate's compile_tu. It must go
+# RED — for exactly ONE reason. (Do not restore from git — the live header is
+# already the fix.)
+#
+# STAGED WITH ITS SIBLINGS (#1255 code review). eigenscript.h includes
+# "value_slot.h" (and may grow more quoted includes); the recipe resolves
+# those from src/, the header's own directory. Round 2 took `-Isrc` out of
+# the -m32 arm (an injected flag the recipe never passes), after which the
+# lone planted copy could not find value_slot.h: the plant was red TWICE —
+# the static assert, and a fatal missing-include that stopped every line past
+# it from compiling, masking any future plant placed there. So the plant dir
+# is a copy of src/'s headers (the same resolution the recipe gets, with no
+# -I re-injected into compile_tu), the UNPLANTED copy must compile clean
+# there first (control: the staging, not the fault, decides nothing), and the
+# planted compile must produce exactly ONE error, the intended one.
+P1="$WORK/plant1"
+mkdir -p "$P1"
+cp "$REPO"/src/*.h "$P1"/
+printf '%s\n' '#include "eigenscript.h"' > "$P1/probe.c"
+if ! compile_tu "$P1/probe.c" "$P1" "$STUB" 2>"$WORK/plant1.control.err"; then
+    echo "selftest FAIL: plant 1 control — the UNPLANTED header does not compile in the plant's staging dir, so a red plant would prove nothing:"
+    sed 's/^/      /' "$WORK/plant1.control.err"
+    fails=1
 # Unique substring: only the third _Static_assert uses `data.strv) <=`.
-if ! grep -q 'data\.strv) <= sizeof' "$WORK/eigenscript.h"; then
+elif ! grep -q 'data\.strv) <= sizeof' "$P1/eigenscript.h"; then
     echo "selftest FAIL: live header does not carry the ILP32-safe assert — plant cannot be installed"
     fails=1
 else
     # portable sed: write-to-temp + mv, then cmp-verify the edit landed.
-    sed 's/data\.strv) <= sizeof/data) == sizeof/' "$WORK/eigenscript.h" > "$WORK/eigenscript.h.planted"
-    if cmp -s "$WORK/eigenscript.h" "$WORK/eigenscript.h.planted"; then
+    sed 's/data\.strv) <= sizeof/data) == sizeof/' "$P1/eigenscript.h" > "$P1/eigenscript.h.planted"
+    if cmp -s "$P1/eigenscript.h" "$P1/eigenscript.h.planted"; then
         echo "selftest FAIL: plant 1 sed was a no-op — the old assert was not inserted"
         fails=1
     else
-        mv "$WORK/eigenscript.h.planted" "$WORK/eigenscript.h"
-        if grep -q 'data\.strv) <= sizeof' "$WORK/eigenscript.h"; then
+        mv "$P1/eigenscript.h.planted" "$P1/eigenscript.h"
+        if grep -q 'data\.strv) <= sizeof' "$P1/eigenscript.h"; then
             echo "selftest FAIL: plant 1 still has the live assert after the rewrite"
             fails=1
         else
             # Probe lives next to the planted header so "eigenscript.h" resolves
             # to the mutant (quoted includes search the source file's directory
             # before -I). The recipe is compile_tu — not a re-typed clang line.
-            printf '%s\n' '#include "eigenscript.h"' > "$WORK/probe.c"
-            if compile_tu "$WORK/probe.c" "$WORK" "$STUB" 2>"$WORK/plant1.err"; then
+            p1_errs=0
+            if compile_tu "$P1/probe.c" "$P1" "$STUB" 2>"$WORK/plant1.err"; then
                 echo "selftest FAIL: plant 1 (old sizeof(data)==sizeof(fn) assert) compiled clean — the ILP32 check did not go RED"
                 fails=1
-            elif grep -q 'static assertion failed' "$WORK/plant1.err"; then
-                echo "selftest ok: plant 1 old sizeof(data)==sizeof(fn) assert is RED at ILP32"
             else
-                echo "selftest FAIL: plant 1 went red for the wrong reason:"
-                sed 's/^/      /' "$WORK/plant1.err"
-                fails=1
+                p1_errs=$(grep -c 'error:' "$WORK/plant1.err")
+                if [ "$p1_errs" -eq 1 ] \
+                   && grep -q 'error: static assertion failed.*data) == sizeof' "$WORK/plant1.err"; then
+                    echo "selftest ok: plant 1 old sizeof(data)==sizeof(fn) assert is RED at ILP32 (its only error)"
+                else
+                    echo "selftest FAIL: plant 1 must be red for exactly ONE reason, the planted assert; it produced $p1_errs error(s):"
+                    sed 's/^/      /' "$WORK/plant1.err"
+                    fails=1
+                fi
             fi
         fi
     fi
+fi
+
+# ---- control 1w / plant 1wt: the LIMIT of the -m32 arm, measured (#1255) --
+# The -m32 arm is i386, not wasm32. i386 aligns `double` to 4 inside a struct
+# and wasm32 aligns it to 8, so this header-free struct is 12 bytes at -m32 and
+# 16 at wasm32 (clang 18, measured 2026-09-22; the Value union was 36 vs 40 the
+# same way). The claim "approximation" on the OK line is only honest if it is
+# pinned from BOTH sides:
+#   1w  the approximation arm (compile_tu, the real function) compiles the
+#       wasm32-false assert CLEAN. If this ever goes red, the limit moved and
+#       the verdict line and header are stale — re-measure, do not delete.
+#   1wt the target frontend itself (clang --target=wasm32-unknown-emscripten,
+#       header-free so no sysroot is needed) REFUSES the same probe, so 1w is a
+#       real divergence and not a probe that nothing can fail.
+# When the real driver is on PATH, the SAME probe is also driven through
+# compile_tu's `real` arm and must be RED; that line is not a counted case
+# because it depends on the box, but its failure fails the self-test.
+printf '%s\n' \
+    'struct eigs_ilp32_layout_probe { int t; union { double d; struct { char *a; int b; } x; } u; };' \
+    '_Static_assert(sizeof(struct eigs_ilp32_layout_probe) == 12,' \
+    '               "EIGS_WASM32_LAYOUT_PLANT: 12 bytes at i386, 16 at wasm32 (double aligns to 8)");' \
+    > "$WORK/layout_probe.c"
+if compile_tu "$WORK/layout_probe.c" "" "$STUB" 2>"$WORK/1w.err"; then
+    echo "selftest ok: control 1w a layout assert TRUE at i386 and FALSE at wasm32 compiles clean under the -m32 approximation (the limit the verdict line names)"
+else
+    echo "selftest FAIL: control 1w — the -m32 approximation now REFUSES the i386-true layout probe, so the stated limit moved; re-measure and update the verdict line and header rather than deleting this control:"
+    sed 's/^/      /' "$WORK/1w.err"
+    fails=1
+fi
+if out1wt=$(clang --target=wasm32-unknown-emscripten -fsyntax-only -c \
+        -Werror=switch -Werror=comment -Werror=misleading-indentation \
+        "$WORK/layout_probe.c" 2>&1); then
+    echo "selftest FAIL: plant 1wt — the wasm32 target frontend ACCEPTS the layout probe, so control 1w proves nothing about the approximation's blind spot"
+    fails=1
+elif grep -qF 'EIGS_WASM32_LAYOUT_PLANT' <<<"$out1wt"; then
+    echo "selftest ok: plant 1wt the wasm32 target frontend refuses the same layout probe (the divergence 1w relies on is real)"
+else
+    echo "selftest FAIL: plant 1wt went red for the wrong reason:"
+    printf '%s\n' "$out1wt" | sed 's/^/      /'
+    fails=1
+fi
+if [ -n "$REAL_DRIVER_PATH" ]; then
+    ILP32_MODE=real
+    if compile_tu "$WORK/layout_probe.c" "" "$STUB" 2>"$WORK/1wr.err"; then
+        echo "selftest FAIL: real-driver arm — $REAL_DRIVER_PATH compiled the wasm32-false layout probe clean through compile_tu, so the authoritative arm is not the target"
+        fails=1
+    elif grep -qF 'EIGS_WASM32_LAYOUT_PLANT' "$WORK/1wr.err"; then
+        echo "selftest real: the real-driver arm of compile_tu ($REAL_DRIVER_PATH) is RED on the layout probe"
+    else
+        echo "selftest FAIL: real-driver arm went red for the wrong reason:"
+        sed 's/^/      /' "$WORK/1wr.err"
+        fails=1
+    fi
+    ILP32_MODE=approx
+else
+    echo "selftest real: no real wasm32 driver on PATH — the real-driver arm of compile_tu ran only against the wasm32 clang stand-in (rows 10c/10i/10d), never against emcc itself on this box (pages.yml's pull_request build is the authoritative lane)"
 fi
 
 # ---- the three entry-point mutants (1b, 1c, 1d) --------------------------
@@ -2730,6 +3010,96 @@ else
 fi
 HEADER_PROBE="$HEADER_PROBE_SAVED"
 MACRO_PARITY_SKIP_REASON=''
+
+# ---- #1255 round 2: NOTHING THE RECIPE DOES NOT PASS (10c, 10i, 10d, 10im, 10dm)
+# Round 1's real-driver arm compiled each TU with `-Isrc -DEIGENSCRIPT_EXT_*=0
+# -DEIGENSCRIPT_VERSION=... -Werror=...` that web/build.sh never passes, so a
+# recipe the driver REJECTS printed `verdict: AUTHORITATIVE`, rc 0 (a blind
+# critic, 2026-09-22: `#include "vm.h"` in web/eigs_wasm.c; deleting
+# -DEIGENSCRIPT_VERSION from web/build.sh). The -m32 arm injected the same
+# flags. Each row below runs a scratch recipe through the REAL
+# sandbox_prepare / sandbox_record_inputs / examine_tus, whose one unit
+# compiles ONLY under a flag the recipe does not pass:
+#   10i  its header sits in src/, reachable only through an injected -Isrc;
+#   10d  it needs EIGENSCRIPT_VERSION, which only an injected -D defines;
+# each under the REAL-driver arm (10i, 10d) and the -m32 arm (10im, 10dm).
+# The verdict that must turn red is examine_tus's `FAIL: examined N TUs, ...
+# failed` (rc 1) — the same check the live run reports on. 10c is the control:
+# the same recipe with the header NEXT TO the unit must be GREEN under the
+# real-driver arm, or a red 10i could be the fake driver failing on anything.
+# The real-driver arm runs against a stand-in driver that IS the wasm32 target
+# frontend: a symlink to clang named `wasm32-unknown-emscripten-clang`, which
+# clang's driver reads as its target triple. It accepts clang options only,
+# so these recipes pass no emcc settings; it proves the REPLAY (what argv
+# reaches the driver), not emcc.
+mkdir -p "$WORK/r2drv"
+ln -sf "$(command -v clang)" "$WORK/r2drv/wasm32-unknown-emscripten-clang"
+# $1 key, $2 label, $3 mode (real|approx), $4 want (red|green), $5 header dir
+# relative to the sandbox root (web|src), $6 unit body kind (include|define).
+r2_plant() {
+    local key="$1" label="$2" mode="$3" want="$4" hdir="$5" kind="$6"
+    local script="$WORK/$key.build.sh" sbx="$RUN/sbx-$key" rc
+    {
+        printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'cd "$(dirname "$0")/.."' 'mkdir -p web/dist'
+        if [ "$kind" = include ]; then
+            printf '%s\n' "printf '%s\\n' 'int eigs_r2_plant_value;' > $hdir/eigs_r2_plant.h"
+            printf '%s\n' "printf '%s\\n' '#include \"eigs_r2_plant.h\"' 'int eigs_r2_unit(void) { return eigs_r2_plant_value; }' > web/eigs_r2_unit.c"
+        else
+            printf '%s\n' "printf '%s\\n' '#ifndef EIGENSCRIPT_VERSION' '#error EIGS_R2_PLANT_NO_VERSION_DEFINE' '#endif' 'const char *eigs_r2_unit = EIGENSCRIPT_VERSION;' > web/eigs_r2_unit.c"
+        fi
+        # The driver NAME comes from the variable the mode detection uses, so
+        # this generator line is not itself a compile line to the -Werror
+        # recognizer (the recipe it writes carries the trio anyway).
+        printf '%s\n' "$EIGS_ILP32_REAL_DRIVER -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 web/eigs_r2_unit.c -o web/dist/plant.js"
+    } > "$script"
+    if ! sandbox_prepare "$sbx" "$script" 2>"$WORK/$key.prep.err" \
+       || ! sandbox_record_inputs "$sbx" "$WORK/$key.tus" 2>"$WORK/$key.rec.err"; then
+        echo "selftest FAIL: $label could not be staged:"
+        sed 's/^/      /' "$WORK/$key.prep.err" "$WORK/$key.rec.err" 2>/dev/null
+        fails=1
+        return
+    fi
+    if [ "$(grep -c . "$WORK/$key.tus")" -ne 1 ]; then
+        echo "selftest FAIL: $label — the scratch recipe's population is not exactly its one unit:"
+        sed 's/^/      /' "$WORK/$key.tus"
+        fails=1
+        return
+    fi
+    local saved_mode="$ILP32_MODE" saved_drv="$REAL_DRIVER_PATH"
+    ILP32_MODE="$mode"
+    REAL_DRIVER_PATH="$WORK/r2drv/wasm32-unknown-emscripten-clang"
+    examine_tus "$WORK/$key.tus" "" "$STUB" 1 >"$WORK/$key.out" 2>&1
+    rc=$?
+    ILP32_MODE="$saved_mode"
+    REAL_DRIVER_PATH="$saved_drv"
+    if [ "$want" = green ]; then
+        if [ "$rc" -eq 0 ]; then
+            echo "selftest ok: $label"
+        else
+            echo "selftest FAIL: $label — the control is not green, so a red plant beside it proves nothing:"
+            sed 's/^/      /' "$WORK/$key.out"
+            fails=1
+        fi
+        return
+    fi
+    if [ "$rc" -eq 0 ]; then
+        echo "selftest FAIL: $label — examined clean; the gate compiled with a flag the recipe does not pass"
+        sed 's/^/      /' "$WORK/$key.out"
+        fails=1
+    elif grep -q '^FAIL: examined 1 TUs, 0 ok, 1 failed' "$WORK/$key.out" \
+         && grep -qE "eigs_r2_plant\.h' file not found|EIGS_R2_PLANT_NO_VERSION_DEFINE" "$WORK/$key.out"; then
+        echo "selftest ok: $label"
+    else
+        echo "selftest FAIL: $label went red for the wrong reason:"
+        sed 's/^/      /' "$WORK/$key.out"
+        fails=1
+    fi
+}
+r2_plant 10c "control 10c a unit whose header sits next to it compiles GREEN under the real-driver replay" real green web include
+r2_plant 10i "plant 10i a header reachable only through an -Isrc the recipe does not pass is RED under the real-driver arm" real red src include
+r2_plant 10d "plant 10d a unit needing an EIGENSCRIPT_VERSION the recipe does not define is RED under the real-driver arm" real red web define
+r2_plant 10im "plant 10im the same -Isrc-only header is RED under the -m32 approximation arm" approx red src include
+r2_plant 10dm "plant 10dm the same undefined EIGENSCRIPT_VERSION is RED under the -m32 approximation arm" approx red web define
 
 # Control: the live inventory must still be green, or the selftest has broken
 # the compile function. Re-derive from the recipe, same as production.

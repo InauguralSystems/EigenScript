@@ -3,32 +3,75 @@
 # site on first run (enablement: true), so no manual settings step is
 # needed — but note GitHub Pages requires the repository to be public
 # (or a paid plan for private repos).
+#
+# THE PLAYGROUND IS BUILT ON PULL REQUESTS, AND ITS VERDICT CAN BLOCK A MERGE
+# (#1255). This workflow used to run on push-to-main only, so the real wasm32
+# build (emcc, `web/build.sh`) was first attempted AFTER a merge — and it sat
+# red on main for five commits (517cf08..0ac8a9b) while the local stand-in
+# (tools/ilp32_syntax_check.sh, suite [99i3], clang -m32) was green: i386
+# aligns `double` to 4 inside a struct and wasm32 aligns it to 8, so a layout
+# `_Static_assert` can hold under the stand-in and fail the real target.
+#
+# Round 1 of #1255 added a path-filtered `pull_request` trigger, which cannot
+# be a REQUIRED check (on a PR outside its paths it never reports). Round 2
+# replaced it with a `scope` job that decided "was a playground input
+# touched?" from `git diff --name-only` — and under git's default rename
+# detection that lists only a renamed file's NEW path, so moving `src/trace.h`
+# to `attic/trace.h` read as "untouched", the build was skipped and the
+# check passed on a recipe that no longer compiles (both blind critics,
+# 2026-09-22). Two rounds, one class: a "was the playground touched?"
+# decision upstream of the build is a way to be green without building.
+# The build takes ~72 s against a ~45 min CI run, so there is NO such
+# decision any more — on EVERY pull request and every push to main:
+#
+#   build       the worker: one recipe, `bash web/build.sh`, never a second
+#               copy of the emcc flags. No step and no job is conditional on
+#               what the PR changed; the only conditions left gate the Pages
+#               steps to non-PR events. It leaves a RECEIPT (`built=true`)
+#               only after web/build.sh exited 0 and produced its outputs.
+#   playground  the aggregator, `if: always()`, with the stable check name
+#               `playground (real emcc wasm32 build)`. Success only when the
+#               worker succeeded AND left the receipt. It still earns its
+#               place with no scope to combine: a SKIPPED job reads as passing
+#               to a required-check rule, and a cancelled one leaves nothing;
+#               the aggregator turns both into a failure, and it pins the
+#               check NAME independently of the worker's. THIS is the check
+#               to require on main.
+#
+# Deploy is unchanged: Configure Pages, the artifact upload and the `deploy`
+# job run only on push/dispatch, never on a pull request, and deploy needs
+# the aggregator.
 name: Docs site
 
 on:
   push:
     branches: [main]
-    paths:
-      - "docs/**"
-      - "web/**"
-      - "src/**"
-      - "VERSION"
-      - ".github/workflows/pages.yml"
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Deploys from main still serialize on ONE group, so a newer main push
+# supersedes an older deploy. A pull request gets a group of its OWN ref:
+# sharing `pages` would let every PR push cancel an in-flight main deploy.
 concurrency:
-  group: pages
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.ref) || 'pages' }}
   cancel-in-progress: true
 
 jobs:
   build:
+    # The worker. Nothing here depends on what the PR changed (#1255 round 3).
+    name: playground / build (real emcc, web/build.sh) + docs site
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      built: ${{ steps.receipt.outputs.built }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Configure Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
         with:
           enablement: true
@@ -42,18 +85,55 @@ jobs:
         with:
           version: 3.1.74
           actions-cache-folder: emsdk-cache
+      # The authoritative wasm32 check: the real emcc over the real recipe.
+      # set -euo pipefail in web/build.sh makes a failed compile fail this step.
       - name: Build WASM playground
         run: bash web/build.sh
+      # The receipt. Written only when the build step above ran and left its
+      # output; the aggregator requires it, so a build step that was skipped or
+      # never reached cannot read as a passing build.
+      - id: receipt
+        name: Receipt — the real build ran
+        run: |
+          set -euo pipefail
+          test -s web/dist/eigs.wasm
+          test -s web/dist/eigs.js
+          echo "built=true" >> "$GITHUB_OUTPUT"
       - name: Stage playground under _site/playground
         run: |
           sudo mkdir -p _site/playground
           sudo cp -v web/dist/* _site/playground/
           sudo chown -R "$(id -u):$(id -g)" _site/playground
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
 
+  # The stable, requirable check. Same shape as ci.yml's `extensions` and
+  # `asan + ubsan (full suite)` aggregators: `if: always()` so it reports even
+  # when the worker failed, and a failed/cancelled/skipped worker, or one with
+  # no receipt, is never success.
+  playground:
+    name: playground (real emcc wasm32 build)
+    needs: [build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the real wasm32 build to have run and passed
+        shell: bash
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          BUILT: ${{ needs.build.outputs.built }}
+        run: |
+          set -euo pipefail
+          echo "build=$BUILD_RESULT built=$BUILT"
+          [ "$BUILD_RESULT" = success ] || { echo "FAIL: the playground build job did not succeed ($BUILD_RESULT)"; exit 1; }
+          [ "$BUILT" = true ] || { echo "FAIL: the build job left no receipt — the real emcc build did not run"; exit 1; }
+          echo "OK: the real emcc build of web/build.sh passed"
+
   deploy:
-    needs: build
+    if: github.event_name != 'pull_request'
+    needs: playground
     runs-on: ubuntu-latest
     permissions:
       pages: write

@@ -51,7 +51,13 @@ NAMES|ROADMAP.md|6
 # exemption and its reason. There is deliberately NO `FLAGS|docs/CI.md` row —
 # the class never visits it, and the declaration audit checks both directions,
 # so a row here for a class that does not walk the file would be red.
+# PATHS 53 -> 63 with #1255: the new "playground: the real wasm32 build, on
+# the PR" section and its table row cite pages.yml, web/build.sh,
+# tools/ilp32_syntax_check.sh, src/** and web/** (10 path claims, all resolved).
+# 63 -> 60 in #1255 round 3: the scope job and its path list were deleted from
+# pages.yml, and the CI.md paragraph that listed that path list (and the
+# path-filter wording before it) went with them.
 NUMBERS|docs/CI.md|4
-PATHS|docs/CI.md|53
+PATHS|docs/CI.md|60
 TARGETS|docs/CI.md|4
 NAMES|docs/CI.md|0

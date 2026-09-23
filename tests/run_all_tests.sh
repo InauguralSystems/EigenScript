@@ -8234,7 +8234,17 @@ fi  # EIGS_SKIP_WERROR_AUDIT
 # CRLF #880). pages.yml compiles the playground with emcc (wasm32); a
 # 64-bit-only sizeof(data)==sizeof(fn) assert kept that lane red from #1185.
 # The gate runs clang -m32 -fsyntax-only over every translation unit the
-# playground recipe hands the compiler. That population is the RECORDED ARGV
+# playground recipe hands the compiler — or the REAL emcc when one is on PATH.
+# The -m32 arm is an APPROXIMATION and says so (#1255): i386 aligns `double`
+# to 4 inside a struct and wasm32 to 8, so #1183's Value-union assert was 36
+# bytes here and 40 under emcc, and main's pages.yml was red for five commits
+# while this section passed under the label "the playground's wasm32 build
+# cannot break unnoticed". That label was false. The AUTHORITATIVE check is
+# pages.yml's `build` job, which now runs the real `bash web/build.sh` on
+# every pull request; this section catches the pointer-width class locally,
+# before a push, and its self-test pins the limit from both sides (1w: the
+# -m32 arm passes a wasm32-false layout assert; 1wt: the wasm32 frontend
+# refuses it). That population is the RECORDED ARGV
 # of a stand-in compiler put first on PATH while the real web/build.sh runs in
 # a scratch sandbox — not a reading of the script — and it is CLASSIFIED by
 # the filesystem, not by a model of emcc's option grammar. Four rounds in a
@@ -8275,7 +8285,7 @@ fi  # EIGS_SKIP_WERROR_AUDIT
 # now, and the reconciled-world refusal runs its control (the same headers
 # WITHOUT the reconciliation) before deciding either way, in the live path
 # rather than in --selftest.
-echo "[99i3] ILP32 syntax gate (the playground's wasm32 build cannot break unnoticed)"
+echo "[99i3] ILP32 syntax gate (pointer-width approximation of the playground's wasm32 build; authoritative: pages.yml build on every PR)"
 TOTAL=$((TOTAL + 1))
 ilp32_audit_out=$(bash "$TESTS_DIR/../tools/ilp32_syntax_check.sh" 2>&1)
 ilp32_audit_rc=$?
@@ -8312,8 +8322,22 @@ else
     # `classifier: dropped=` (the operands the driver cross-check could not be
     # fed), `macro_parity: ... values=N/M` (the macro world, derived in NAME
     # and in VALUE — round 4 printed `reconciled=48` with not one value
-    # compared), and `OK: examined N`. 55 = plants 1, 1b, 1c, 1d
-    # (the entry point and the header), 2q, 2s, 2v, 2x, 2m, 2o (six argv
+    # compared), and `OK: examined N`. A sixth, `verdict:`, says which
+    # compiler decided — APPROXIMATION (clang -m32) or AUTHORITATIVE (the real
+    # emcc on PATH) — and the OK / macro_parity lines are read for THAT mode
+    # only: `wasm32 TUs` and `macro_parity: not applicable` are accepted
+    # exactly when the verdict line says AUTHORITATIVE, so a gate that dropped
+    # its reconciliation cannot hide behind the real-driver spelling.
+    # 62 = 10c, 10i, 10d, 10im, 10dm (#1255 round 2: NOTHING THE RECIPE DOES
+    # NOT PASS — round 1's real-emcc arm, and the -m32 arm, compiled with an
+    # injected -Isrc and -DEIGENSCRIPT_VERSION the recipe never passes, so a
+    # recipe the driver rejects printed AUTHORITATIVE, rc 0; a header only an
+    # -Isrc reaches and a unit only an injected -D satisfies are now RED under
+    # both arms, with a green control), 1w and 1wt (the LIMIT of the -m32 arm
+    # from both sides, #1255: a layout assert true at i386 and false at
+    # wasm32 compiles clean under the approximation, and the wasm32 target
+    # frontend refuses it), plants 1, 1b,
+    # 1c, 1d (the entry point and the header), 2q, 2s, 2v, 2x, 2m, 2o (six argv
     # shapes a text parser reads wrong), 2f, 2p, 2r, 2n, 2i, 12es, 2u, 2e
     # (eight shapes a typed OPTION GRAMMAR reads wrong: a TU after `--emrun`
     # and after `--proxy-to-worker`, a TU inside an `@response-file`, response
@@ -8369,25 +8393,39 @@ else
     # control 5rc is no longer a --selftest case: it runs in the LIVE path,
     # before that verdict, because a control that only runs in the non-skip
     # branch never runs on the run that skipped.
-    ILP32_SELFTEST_CASES=55
+    ILP32_SELFTEST_CASES=62
     ilp32_ok_lines=$(printf '%s\n' "$ilp32_selftest_out" | grep -c '^selftest ok:')
+    if grep -q '^verdict: AUTHORITATIVE' <<<"$ilp32_audit_out"; then
+        ilp32_ok_re='^OK: examined [0-9]+ wasm32 TUs under the REAL .* authoritative'
+        ilp32_parity_re='^macro_parity: not applicable'
+    else
+        ilp32_ok_re='^OK: examined [0-9]+ ILP32 TUs under .* APPROXIMATION'
+        ilp32_parity_re='^macro_parity: tested=[0-9]+ reconciled=[0-9]+ values=[0-9]+/[0-9]+'
+    fi
     if [ "$ilp32_audit_rc" -eq 0 ] && [ "$ilp32_selftest_rc" -eq 0 ] \
-       && grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out" \
-       && grep -qE '^macro_parity: tested=[0-9]+ reconciled=[0-9]+ values=[0-9]+/[0-9]+' <<<"$ilp32_audit_out" \
+       && grep -qE '^verdict: (APPROXIMATION|AUTHORITATIVE)' <<<"$ilp32_audit_out" \
+       && grep -qE "$ilp32_ok_re" <<<"$ilp32_audit_out" \
+       && grep -qE "$ilp32_parity_re" <<<"$ilp32_audit_out" \
        && grep -qE '^classifier: [0-9]+ call\(s\) recorded' <<<"$ilp32_audit_out" \
        && grep -qE '^classifier: dropped=' <<<"$ilp32_audit_out" \
        && grep -qE '^classifier: [0-9]+ input\(s\) by suffix\+filesystem, [0-9]+ by the driver derivation, [0-9]+ in the union examined' <<<"$ilp32_audit_out" \
        && [ "$ilp32_ok_lines" -eq "$ILP32_SELFTEST_CASES" ]; then
         PASS=$((PASS + 1))
-        echo "  PASS: every playground TU emcc compiles is ILP32-clean ($ilp32_ok_lines/$ILP32_SELFTEST_CASES gate self-test cases green)"
+        ilp32_verdict=$(grep -m1 '^verdict: ' <<<"$ilp32_audit_out")
+        ilp32_verdict=${ilp32_verdict#verdict: }
+        ilp32_verdict=${ilp32_verdict%% *}
+        echo "  PASS: every playground TU the recipe compiles is clean under the gate's compiler, verdict $ilp32_verdict ($ilp32_ok_lines/$ILP32_SELFTEST_CASES gate self-test cases green)"
     else
         FAIL=$((FAIL + 1))
         if [ "$ilp32_audit_rc" -ne 0 ]; then
             echo "  FAIL: a playground TU does not compile at 32-bit pointer width (audit exit $ilp32_audit_rc)"
-        elif ! grep -qE '^OK: examined [0-9]+ ILP32 TUs' <<<"$ilp32_audit_out"; then
-            echo "  FAIL: the ILP32 gate exited 0 without reporting how many TUs it examined; its output:"
+        elif ! grep -qE '^verdict: (APPROXIMATION|AUTHORITATIVE)' <<<"$ilp32_audit_out"; then
+            echo "  FAIL: the ILP32 gate exited 0 without saying which compiler decided (no verdict: line), so an approximation could read as the target; its output:"
             printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
-        elif ! grep -qE '^macro_parity: tested=[0-9]+ reconciled=[0-9]+ values=[0-9]+/[0-9]+' <<<"$ilp32_audit_out"; then
+        elif ! grep -qE "$ilp32_ok_re" <<<"$ilp32_audit_out"; then
+            echo "  FAIL: the ILP32 gate exited 0 without reporting how many TUs it examined under the compiler its verdict line names; its output:"
+            printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
+        elif ! grep -qE "$ilp32_parity_re" <<<"$ilp32_audit_out"; then
             echo "  FAIL: the ILP32 gate exited 0 without reporting macro parity in BOTH name and value, so its -D/-U set was not derived from the target; its output:"
             printf '%s\n' "$ilp32_audit_out" | sed 's/^/      /'
         elif ! grep -qE '^classifier: [0-9]+ input\(s\) by suffix\+filesystem, [0-9]+ by the driver derivation, [0-9]+ in the union examined' <<<"$ilp32_audit_out"; then

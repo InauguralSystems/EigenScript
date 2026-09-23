@@ -830,6 +830,29 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The playground's real wasm32 build runs on every pull request (#1255).**
+  `.github/workflows/pages.yml` ran only on push to `main`, so the emcc build
+  of `web/build.sh` was first attempted after a merge and sat red on `main` for
+  five commits. The workflow now builds on EVERY pull request and push, with
+  no path filter and no "was the playground touched?" decision (a path filter
+  cannot be required, and a `git diff --name-only` scope step read a rename
+  away from `src/` as untouched): a worker running the one `bash web/build.sh`
+  and an aggregator, `playground (real emcc wasm32 build)`, that is success
+  only when that build ran and passed — failed, cancelled, skipped or without
+  its receipt is failure — so it can be a required check.
+  Configure Pages, the artifact upload and `deploy` stay push-only, and a PR
+  has its own concurrency group so it cannot cancel a `main` deploy. Suite
+  `[99i3]` (`tools/ilp32_syntax_check.sh`) no longer claims the wasm32 build
+  "cannot break unnoticed": with emcc on `PATH` it replays each recorded emcc
+  call — the recipe's own argv plus `-fsyntax-only`, minus `-o` and sibling
+  units, nothing injected (`verdict: AUTHORITATIVE`) — and neither arm injects
+  `-Isrc` or `-DEIGENSCRIPT_*` any more (plants 10i/10d/10im/10dm, control
+  10c); otherwise it runs `clang -m32`
+  and says `verdict: APPROXIMATION`, naming pages.yml as the authority — i386
+  aligns `double` to 4 inside a struct and wasm32 to 8, so a layout assert can
+  pass `-m32` and fail emcc. Self-test control `1w` pins that blind spot and
+  `1wt` pins that the wasm32 frontend sees it (62 cases, was 55).
+
 - **Doc-claims selftest isolates its variant alias.** The fixture now removes
   inherited build variants before creating its `asan` alias, so an `asan-http`
   build cannot cause a false failure by being the first matching hard link.
