@@ -118,8 +118,9 @@ What is true now:
   and 16 at wasm32, and `1wt` requires clang's wasm32 frontend to refuse it.
 
 **The check to require on `main` is `playground (real emcc wasm32 build)`**
-— the aggregator, never the worker or `scope` alone. Until it is in the
-ruleset, a red wasm build is visible on the PR but does not block the merge.
+— the aggregator, never the worker alone (a skipped worker reads as
+passing). Until it is in the ruleset, a red wasm build is visible on the PR
+but does not block the merge.
 
 ## The doc gates — where they run, and why they are cheap
 

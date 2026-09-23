@@ -20,8 +20,9 @@
 #     that IS authoritative.
 #
 # THE AUTHORITATIVE CHECK is pages.yml's `build` job, which runs the real
-# `bash web/build.sh` under emcc on every pull request that touches src/**,
-# web/**, docs/**, VERSION or the workflow (#1255). Until #1255 that job ran on
+# `bash web/build.sh` under emcc on EVERY pull request and every push to main,
+# with no path filter and no "was it touched?" decision, reported through the
+# check `playground (real emcc wasm32 build)` (#1255). Until #1255 that job ran on
 # push-to-main only, and it was red on main for five commits while this gate
 # printed OK: #1183's Value-union assert was 36 bytes at -m32 and 40 under
 # emcc. This gate's old first line, "the playground's wasm32 build cannot break
@@ -1853,38 +1854,62 @@ expect_tu_red() {
 
 # Plant 1: copy the tree's eigenscript.h, re-insert the OLD assert
 #   sizeof(((Value *)0)->data) == sizeof(((Value *)0)->data.fn)
-# then compile src/eigenscript.c with -I<scratch> first. The gate's compile_tu
-# must go RED. (Do not restore from git — the live header is already the fix.)
-cp "$REPO/src/eigenscript.h" "$WORK/eigenscript.h"
+# then compile a probe including it through the gate's compile_tu. It must go
+# RED — for exactly ONE reason. (Do not restore from git — the live header is
+# already the fix.)
+#
+# STAGED WITH ITS SIBLINGS (#1255 code review). eigenscript.h includes
+# "value_slot.h" (and may grow more quoted includes); the recipe resolves
+# those from src/, the header's own directory. Round 2 took `-Isrc` out of
+# the -m32 arm (an injected flag the recipe never passes), after which the
+# lone planted copy could not find value_slot.h: the plant was red TWICE —
+# the static assert, and a fatal missing-include that stopped every line past
+# it from compiling, masking any future plant placed there. So the plant dir
+# is a copy of src/'s headers (the same resolution the recipe gets, with no
+# -I re-injected into compile_tu), the UNPLANTED copy must compile clean
+# there first (control: the staging, not the fault, decides nothing), and the
+# planted compile must produce exactly ONE error, the intended one.
+P1="$WORK/plant1"
+mkdir -p "$P1"
+cp "$REPO"/src/*.h "$P1"/
+printf '%s\n' '#include "eigenscript.h"' > "$P1/probe.c"
+if ! compile_tu "$P1/probe.c" "$P1" "$STUB" 2>"$WORK/plant1.control.err"; then
+    echo "selftest FAIL: plant 1 control — the UNPLANTED header does not compile in the plant's staging dir, so a red plant would prove nothing:"
+    sed 's/^/      /' "$WORK/plant1.control.err"
+    fails=1
 # Unique substring: only the third _Static_assert uses `data.strv) <=`.
-if ! grep -q 'data\.strv) <= sizeof' "$WORK/eigenscript.h"; then
+elif ! grep -q 'data\.strv) <= sizeof' "$P1/eigenscript.h"; then
     echo "selftest FAIL: live header does not carry the ILP32-safe assert — plant cannot be installed"
     fails=1
 else
     # portable sed: write-to-temp + mv, then cmp-verify the edit landed.
-    sed 's/data\.strv) <= sizeof/data) == sizeof/' "$WORK/eigenscript.h" > "$WORK/eigenscript.h.planted"
-    if cmp -s "$WORK/eigenscript.h" "$WORK/eigenscript.h.planted"; then
+    sed 's/data\.strv) <= sizeof/data) == sizeof/' "$P1/eigenscript.h" > "$P1/eigenscript.h.planted"
+    if cmp -s "$P1/eigenscript.h" "$P1/eigenscript.h.planted"; then
         echo "selftest FAIL: plant 1 sed was a no-op — the old assert was not inserted"
         fails=1
     else
-        mv "$WORK/eigenscript.h.planted" "$WORK/eigenscript.h"
-        if grep -q 'data\.strv) <= sizeof' "$WORK/eigenscript.h"; then
+        mv "$P1/eigenscript.h.planted" "$P1/eigenscript.h"
+        if grep -q 'data\.strv) <= sizeof' "$P1/eigenscript.h"; then
             echo "selftest FAIL: plant 1 still has the live assert after the rewrite"
             fails=1
         else
             # Probe lives next to the planted header so "eigenscript.h" resolves
             # to the mutant (quoted includes search the source file's directory
             # before -I). The recipe is compile_tu — not a re-typed clang line.
-            printf '%s\n' '#include "eigenscript.h"' > "$WORK/probe.c"
-            if compile_tu "$WORK/probe.c" "$WORK" "$STUB" 2>"$WORK/plant1.err"; then
+            p1_errs=0
+            if compile_tu "$P1/probe.c" "$P1" "$STUB" 2>"$WORK/plant1.err"; then
                 echo "selftest FAIL: plant 1 (old sizeof(data)==sizeof(fn) assert) compiled clean — the ILP32 check did not go RED"
                 fails=1
-            elif grep -q 'static assertion failed' "$WORK/plant1.err"; then
-                echo "selftest ok: plant 1 old sizeof(data)==sizeof(fn) assert is RED at ILP32"
             else
-                echo "selftest FAIL: plant 1 went red for the wrong reason:"
-                sed 's/^/      /' "$WORK/plant1.err"
-                fails=1
+                p1_errs=$(grep -c 'error:' "$WORK/plant1.err")
+                if [ "$p1_errs" -eq 1 ] \
+                   && grep -q 'error: static assertion failed.*data) == sizeof' "$WORK/plant1.err"; then
+                    echo "selftest ok: plant 1 old sizeof(data)==sizeof(fn) assert is RED at ILP32 (its only error)"
+                else
+                    echo "selftest FAIL: plant 1 must be red for exactly ONE reason, the planted assert; it produced $p1_errs error(s):"
+                    sed 's/^/      /' "$WORK/plant1.err"
+                    fails=1
+                fi
             fi
         fi
     fi
