@@ -460,7 +460,7 @@ of each as `[99zd]`.
 
 ## Main lane (push to `main`) — the full matrix
 
-Everything above runs in full: both macOS runners, every variant job on the
+Everything above runs in full: macOS (`macos-latest`), every variant job on the
 complete suite, `linux / clang` on the complete suite. The only thing that does
 not run ten times is [99i], which the `werror audit` job owns.
 
@@ -1016,7 +1016,8 @@ On a pull request, `ci.yml` produces these checks:
 | `bench (instruction-count regression gate)` | gate |
 | `Analyze C` (workflow `CodeQL`) | gate, separate workflow |
 
-`macos / macos-15-intel` appears **only** on a push to `main`, and nightly.
+`macos / macos-15-intel` runs **only** in nightly (#1264): on the main lane it hit its
+45-minute timeout on nearly every push, so main CI never finished green.
 
 An aggregator exists so that a *required* check name can survive the job being
 split into parallel workers: it fails unless every worker succeeded, and it

@@ -13,8 +13,9 @@ name: nightly
 #     the PR lane runs
 # What each lane's relationship to `main` actually is — stated exactly, because
 # round 1 claimed both of these also ran on main and only one does:
-#   * macos-15-intel DOES also run on every push to `main` (ci.yml's macOS
-#     matrix is the full pair on a push, macos-latest only on a pull request).
+#   * macos-15-intel runs ONLY here (#1264). It used to run on every push to
+#     `main` too, where it hit its 45-minute timeout on nearly every push and
+#     kept main CI from ever finishing green.
 #   * the FULL valgrind corpus runs ONLY here. `main` and the PR lane both run
 #     tests/valgrind_smoke.sh WITHOUT --full, i.e. the fixed smoke spread. So
 #     this nightly IS the sole owner of the full-corpus pass — which is the

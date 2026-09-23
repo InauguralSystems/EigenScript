@@ -43,8 +43,8 @@ the short version:
 - **Your PR** runs one full suite (`linux / gcc`), the fast differential and
   sanitizer gates, `macos-latest`, and a *derived section plan* for each
   extension variant — a zlib build runs the zlib sections plus a small core
-  smoke, not all 263 sections a second time.
-- **Merging to `main`** runs the whole matrix: both macOS runners, every
+  smoke, not the whole suite a second time.
+- **Merging to `main`** runs the whole matrix: macOS (`macos-latest`), every
   variant on the complete suite. That is the real exit gate, and the person
   merging waits for it, not you.
 - **Nightly** runs `macos-15-intel` and a full-corpus valgrind pass, and files

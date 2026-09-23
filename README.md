@@ -8,6 +8,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
   <a href="https://github.com/InauguralSystems/EigenScript/stargazers"><img src="https://img.shields.io/github/stars/InauguralSystems/EigenScript?cacheSeconds=3600" alt="Stars"></a>
   <a href="https://www.bestpractices.dev/projects/13187"><img src="https://www.bestpractices.dev/projects/13187/badge" alt="OpenSSF Best Practices"></a>
+  <a href="https://codspeed.io/InauguralSystems/EigenScript"><img src="https://img.shields.io/endpoint?url=https://codspeed.io/badge.json" alt="CodSpeed"></a>
   <a href="https://github.com/InauguralSystems/EigenScript/actions/workflows/codeql.yml"><img src="https://github.com/InauguralSystems/EigenScript/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/InauguralSystems/EigenScript"><img src="https://api.securityscorecards.dev/projects/github.com/InauguralSystems/EigenScript/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://codespaces.new/InauguralSystems/EigenScript"><img src="https://github.com/codespaces/badge.svg" alt="Open in GitHub Codespaces" height="20"></a>
