@@ -1386,6 +1386,17 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **The GitHub-state gates left the test suite (#1275).**
+  `tools/issue_labels_check.sh` and `tools/roadmap_check.sh` read live
+  repository state, so as suite section `[99zd]` an unrelated issue filed
+  without labels turned every pull request red and ejected queued merges
+  (#1279, #1168). They now run only in `.github/workflows/issue-triage.yml`:
+  daily, on demand, and as an advisory, never-required check on pull requests
+  that change them, `tools/gh_probe.sh` or `ROADMAP.md`. `[99zd]` keeps the
+  one part that reads only the tree, `tools/workflow_yaml_check.sh`. The
+  Linux suite lanes no longer hold an `issues: read` token, and the dev image
+  no longer installs `gh`.
+
 - **Three front-door claims that only EXECUTION could refute (#1209, #1210,
   #1211).** Each was stated in `docs/llms.txt` — the file every agent primes
   on — and each is now stated correctly with an executed fence beside it.
@@ -1425,8 +1436,9 @@ All notable changes to EigenScript are documented here.
   first circulated is not reproducible from the API, and the figure of record
   is the gate's first real run after the sweep, `examined=35 missing=0`).
   `.github/workflows/issue-triage.yml` labels a new issue `needs-triage` when
-  it arrives without an `area:` and runs the audit daily. Both gates are suite
-  section `[99zd]` with pinned selftest case counts.
+  it arrives without an `area:` and runs the audit daily. Both gates ran as
+  suite section `[99zd]` with pinned selftest case counts until #1275 moved
+  them out of the suite (see the first entry under Changed).
 
   Round 2 closed what the blind critics found in round 1. A SUCCESSFUL EXIT IS
   NOT A MEASUREMENT: both callers accepted `tools/issue_labels_check.sh`
@@ -1512,8 +1524,8 @@ All notable changes to EigenScript are documented here.
   AND prints `[99zd] live arms: SKIPPED (no gh credentials on this lane)` so
   the log says which lane measured what. A lane that EXPORTS a token and
   cannot use it is red on an independent cross-check. `.devcontainer/Dockerfile`
-  installs `gh` from a pinned, checksummed release tarball, `ci.yml`'s
-  `linux / gcc` job exports `GH_TOKEN` with `issues: read`, and the daily
+  installed `gh` and `ci.yml`'s `linux / gcc` job exported `GH_TOKEN` with
+  `issues: read` (both removed again in #1275), and the daily
   `issue-triage.yml` audit runs the roadmap gate too, with a pin that admits no
   skip at all.
 

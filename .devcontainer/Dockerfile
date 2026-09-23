@@ -41,8 +41,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 #                           GREEN on the merge-gating lane (critic r8 ledger
 #                           3, measured on CI job 106492225359).
 #   gdb              -> the JIT debugging workflow (see CLAUDE.md)
-#   curl             -> exercising the http extension by hand; ALSO how `gh`
-#                       is fetched below
+#   curl             -> exercising the http extension by hand
 # SDL2 is deliberately absent: `make gfx` dlopen's it at runtime and compiles
 # against typedefs only, so no -dev headers are needed to build it.
 RUN apt-get update \
@@ -59,49 +58,5 @@ RUN apt-get update \
         gdb \
         curl \
  && rm -rf /var/lib/apt/lists/*
-
-# `gh` — the GitHub CLI, the LIVE arm of suite section [99zd].
-#
-# BOUGHT 2026-09-21 (round-4 blind critic, Fable; #1207): arms (b) and (c) of
-# tools/roadmap_check.sh — the milestone-set mirror and the reference resolver,
-# the whole point of the issue — were executed against GitHub by NO automated
-# caller anywhere. This image had no `gh`, so the Linux legs SKIPPED BY NAME;
-# the macOS runner has `gh` with no credentials, so it skipped too; and the
-# daily audit ran only the labels gate. "CI 31/31 green" measured the
-# structural arm alone while the section reported `population lines 3/3`. A
-# mirror nobody checks is the failure #1207 was filed about.
-#
-# THE RELEASE TARBALL, not GitHub's apt repository: one pinned version with a
-# checksum this Dockerfile verifies, rather than a third-party apt source whose
-# key rotation is another thing that can silently change what CI runs. The
-# version and the per-architecture SHA-256s are a deliberate edit; `gh --version` is asserted at
-# build time so a bad extraction fails HERE and not as a mystery skip in the
-# suite.
-# ONE ARCHITECTURE WAS HARD-CODED, AND arm64 IS NOT HYPOTHETICAL. Bought
-# 2026-09-21 (third critic, `/code-review 1226 medium`, finding 9): the
-# tarball name, the checksum and the extracted directory all said
-# `linux_amd64`, so on an arm64 Docker host (an Apple-silicon dev machine, a
-# Graviton runner) the checksum fails and the WHOLE image build dies — not the
-# gh step, the image. The architecture is now asked of dpkg and each one
-# carries its own pinned checksum, both taken from the release's own
-# `gh_${GH_VERSION}_checksums.txt`; an architecture with no pin here fails by
-# name rather than by checksum mismatch.
-ARG GH_VERSION=2.101.0
-ARG GH_SHA256_AMD64=9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8
-ARG GH_SHA256_ARM64=b57e8063f18862647c9d22727c32e9da1b963f8bf9db648fe123a6975695640f
-RUN set -eu \
- && arch="$(dpkg --print-architecture)" \
- && case "$arch" in \
-        amd64) sha="${GH_SHA256_AMD64}" ;; \
-        arm64) sha="${GH_SHA256_ARM64}" ;; \
-        *) echo "gh ${GH_VERSION}: no pinned checksum for dpkg architecture '$arch' — add one from gh_${GH_VERSION}_checksums.txt rather than letting the build fail on a mismatch" >&2; exit 1 ;; \
-    esac \
- && curl -fsSL -o /tmp/gh.tar.gz \
-        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz" \
- && echo "${sha}  /tmp/gh.tar.gz" | sha256sum -c - \
- && tar -xzf /tmp/gh.tar.gz -C /tmp \
- && install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /usr/local/bin/gh \
- && rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_${arch}" \
- && gh --version
 
 WORKDIR /workspaces/EigenScript

@@ -49,8 +49,8 @@
 # `examined=N` and refuse when N is 0 or when N != the table size. "Some rows
 # were checked" is what a gutted walk also prints.
 #
-# WHAT A CALLER OF THIS GATE CAN AND CANNOT PROVE. A caller ([99zd] in
-# tests/run_all_tests.sh, the audit in .github/workflows/issue-triage.yml)
+# WHAT A CALLER OF THIS GATE CAN AND CANNOT PROVE. The caller (the audit in
+# .github/workflows/issue-triage.yml; the suite stopped calling it in #1275)
 # verifies that this gate printed a population line it could only have produced
 # by running its live arm ON THAT LANE — the source token is pinned to
 # `gh-api:` and `skipped=0` whenever the CALLER'S OWN probe (tools/gh_probe.sh)
@@ -75,8 +75,7 @@ SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # The `gh` reachability probe lives in ONE file, sourced by this gate AND by
-# its callers ([99zd] in tests/run_all_tests.sh, the daily audit in
-# .github/workflows/issue-triage.yml). Round 3 let this gate decide alone
+# its caller (the audit in .github/workflows/issue-triage.yml). Round 3 let this gate decide alone
 # whether GitHub was reachable, and the callers believed the answer: a gate
 # whose probe always said "no" passed on an authenticated box (round-4 blind
 # critic, Fable). Two readers of one probe cannot disagree.
@@ -138,12 +137,12 @@ KNOWN_OWNERS="${ROADMAP_CHECK_OWNERS:-$OWNER}"
 # ---------------------------------------------------------------------------
 # THE CONTRACT — the population line this gate promises to print, and how many
 # planted faults its selftest runs. Defined ONCE, here, and printed by
-# `--contract`, so that every caller (the `[99zd]` suite section) asserts the
+# `--contract`, so that every caller (the issue-triage audit step) asserts the
 # SAME regex this gate prints and the two cannot drift apart.
 #
 # BOUGHT 2026-09-21 (round-2 blind critic, Astra): removing ONLY the live-data
 # walk from this script — leaving its fixture selftest fully intact — was
-# accepted by `[99zd]`, which read `TOTAL=4 PASS=4`. A successful exit is not a
+# accepted by the then-suite caller `[99zd]`, which read `TOTAL=4 PASS=4`. A successful exit is not a
 # measurement (mechanical-gates §121): the caller must require the POSITIVE
 # POPULATION LINE, by regex, and fail by name when it is absent.
 #
@@ -168,9 +167,9 @@ KNOWN_OWNERS="${ROADMAP_CHECK_OWNERS:-$OWNER}"
 # that makes every "does not exist" and every "is private" decidable — left NO
 # TRACE on the OK line. A run whose organisation listing 403'd, came back
 # empty, or was gutted printed `(c) SKIPPED BY NAME: …` into the body and then
-# an OK line BYTE-IDENTICAL to a fully verified run, so `[99zd]` passed 11/11
+# an OK line BYTE-IDENTICAL to a fully verified run, so the then-suite caller passed 11/11
 # on a token-holding lane with the verification doing nothing
-# (`ROADMAP_CHECK_ORG_FIXTURE=<UNLISTABLE> bash run_99zd.sh`). The line now
+# (`ROADMAP_CHECK_ORG_FIXTURE=<UNLISTABLE>`). The line now
 # carries `repos=verified:N` (N = KNOWN_REPOS entries confirmed PUBLIC against
 # the listing) or `repos=skipped:<why>`. The contract ADMITS both, because a
 # lane with no credentials legitimately skips; it is the CALLER that requires

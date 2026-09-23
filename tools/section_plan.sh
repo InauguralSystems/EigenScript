@@ -255,13 +255,6 @@ cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT
 89b7a01ff1a79ece|(b) the continuation line of [99i] own skip message; the first line went through section_skip and was counted
 27cfdaf9128456df|(b) the RESULTS line itself, which PRINTS the skipped count
 43af9bdd1c5e1f94|(c) sub-check: [99zb] relays the portability tool own population/oracle line (widened by #1226 to include NO OLD BASH and other arm wordings); the section fails unless the tool reports OK or one of those named arms — supersedes the pre-#1226 row for this same relay
-3291768189ac4afa|(c) sub-check: [99zd] GitHub-live arms (roadmap-check, issue-labels-check) skip by name without gh credentials on this lane; arm (a), the structural check, still asserts on every lane
-6a218178486c9285|(b) a [99zd] FAIL-branch diagnostic ("THE GATE SKIPPED ANYWAY") for the roadmap population-line count; printed only when that check is already red
-3130e30d76d78869|(c) sub-check: [99zd] relays the roadmap-check own three arm lines by name, one of which may read SKIPPED BY NAME; the section still asserts the other arms and the exact-one-hit count
-57a371d78afdfb95|(b) a [99zd] FAIL-branch diagnostic ("THE GATE SKIPPED ANYWAY") for the issue-labels population-line count; printed only when that check is already red
-1975191690c57c25|(c) sub-check: [99zd] relays the workflow-yaml-check own OK/SKIPPED BY NAME line on the PASS path; the section still asserts the caller-pinned population regex
-3e698b2765ba444e|(c) sub-check: the [99zd] workflow-yaml selftest PASS line reports its own planted skipped-by-name count, probed against this caller own PyYAML import; the section still asserts the pinned expected count
-8805589172535e06|(c) sub-check: [99zd] relays the workflow-yaml selftest own SKIPPED BY NAME lines (its planted faults); the section still asserts the pinned pass/skip counts above
 '
 
 # ---------------------------------------------------------------------------

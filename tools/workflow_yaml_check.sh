@@ -60,8 +60,6 @@
 # Usage:
 #   bash tools/workflow_yaml_check.sh              # .github/workflows
 #   bash tools/workflow_yaml_check.sh --selftest   # planted faults, each red
-#   bash tools/workflow_yaml_check.sh --contract   # the population regex and
-#                                                  # the pinned case count
 #   WORKFLOW_CHECK_DIR=/path/to/dir bash tools/workflow_yaml_check.sh
 set -u
 
@@ -74,13 +72,11 @@ WF_DIR="${WORKFLOW_CHECK_DIR:-$ROOT/.github/workflows}"
 # counts 0 and passes the guard built on that count.
 exec 0</dev/null
 
-# THE CONTRACT — printed by `--contract`. Every CALLER holds its OWN literal
-# copy of both values and asserts the gate's output against ITS copy; a
-# separate caller check asserts this contract EQUALS the caller's copy, so a
-# drift is red by name and is never auto-adopted (round-3 rule: the caller is
-# the independent witness, not a reader of the thing it polices).
+# The OK line this gate must print; it checks its own output against this.
+# The caller (suite [99zd]) holds its OWN literal copy of the line and of the
+# SELFTEST line, so a drift here is red there by name. `--contract` was
+# removed in #1275: after the GitHub-state gates left the suite, nothing read it.
 POPULATION_RE='^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), [1-9][0-9]* name\(s\), loader=(pyyaml|skipped:[a-z0-9-]+)\)$'
-SELFTEST_CASES=8
 
 RED=0
 red() { echo "RED: $*"; RED=$((RED + 1)); }
@@ -403,9 +399,6 @@ EOF
 
 case "${1:-}" in
     --selftest) selftest; exit $? ;;
-    --contract) printf 'POPULATION_RE=%s\n' "$POPULATION_RE"
-                printf 'SELFTEST_CASES=%s\n' "$SELFTEST_CASES"
-                exit 0 ;;
     "") run_live; exit $? ;;
-    *) echo "usage: $0 [--selftest|--contract]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--selftest]" >&2; exit 2 ;;
 esac
