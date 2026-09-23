@@ -64,6 +64,6 @@ NAMES|ROADMAP.md|6
 # NUMBERS 4 -> 2 with #1264 PR-B: the hand-stated test-section counts were
 # removed from docs/CI.md on purpose (derived numbers only).
 NUMBERS|docs/CI.md|2
-PATHS|docs/CI.md|63
-TARGETS|docs/CI.md|4
+PATHS|docs/CI.md|68
+TARGETS|docs/CI.md|6
 NAMES|docs/CI.md|0

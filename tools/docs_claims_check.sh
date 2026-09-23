@@ -252,6 +252,7 @@ if [ "${1:-}" = "--selftest" ]; then
         st_cases=$((st_cases + 1))
         local name="$1" docs="$2" want_rc="$3" want_txt="$4" out got_rc
         out=$(DOCS_CLAIMS_DOCS="$docs" bash "$SELF" 2>&1); got_rc=$?
+        st_last_out="$out"   # the control's run gives the plants the LIVE counts
         if [ "$got_rc" -eq "$want_rc" ] && grep -qF -- "$want_txt" <<< "$out"; then
             printf '  selftest ok: %s\n' "$name"
         else
@@ -314,6 +315,7 @@ if [ "${1:-}" = "--selftest" ]; then
     # Control FIRST: the real doc set is green. Without it every row below
     # would also pass against a gate that always failed.
     st_case "control: the real doc set passes" "$DOC_FILES_DEFAULT" 0 "docs-claims: OK"
+    st_ctl_out="$st_last_out"
 
     p=$(plant "README.md" 's/47-widget GUI toolkit, embedded/44-widget GUI toolkit, embedded/')
     st_case "planted wrong number goes red and names the line" \
@@ -379,15 +381,23 @@ All 999 test sections.' "docs/CI.md")
     # The r1 gate asserted "everything found is accounted for" and never "the
     # count is the DECLARED one", so deleting a waived line took NUMBERS from
     # 24 to 23 and the gate still exited 0. Four plants, one per direction.
-    st_fl_readme=$(awk -F'|' '$1 == "NUMBERS" && $2 == "README.md" { print $3 }' tools/docs_claims_populations.txt)
-    st_fl_claude=$(awk -F'|' '$1 == "NUMBERS" && $2 == "CLAUDE.md" { print $3 }' tools/docs_claims_populations.txt)
-    p=$(plant "README.md" '/a 47-widget GUI toolkit, embedded database, tensor math,/d')
-    st_case "DELETING a derived claim goes red (the population shrank)" \
-            "$p" 1 "NUMBERS/README.md found $((st_fl_readme - 1)), below the floor of $st_fl_readme"
-
+    # The rows are FLOORS, so a one-line deletion crosses one only when the
+    # floor sits at the live count. Each plant builds its own crossing: a tree
+    # copy whose table row is set to the LIVE count (read from the control run
+    # above), so it reds for ANY live >= floor with nothing hand-typed (§177).
+    st_live() { sed -n "s|^  population $1: \\([0-9]*\\) numeric claim(s)$|\\1|p" <<< "$st_ctl_out"; }
+    st_cross() { # rel pattern live -> tree copy: FIRST matching line deleted, row=live
+        local d; d=$(plant_tree "$1" "$(grep -n -- "$2" "$1" | head -1 | cut -d: -f1)d"); rm -f "$d/$POP_REL"
+        sed "s#^NUMBERS|$1|.*#NUMBERS|$1|$3#" "$ROOT/$POP_REL" > "$d/$POP_REL"; printf '%s' "$d"
+    }
+    POP_REL=tools/docs_claims_populations.txt; st_lr=$(st_live README.md); st_lc=$(st_live CLAUDE.md)
+    d=$(st_cross README.md 'a 47-widget GUI toolkit, embedded database, tensor math,' "$st_lr")
+    st_case_tree "DELETING a derived claim goes red (the population shrank)" \
+            "$d" 1 "NUMBERS/README.md found $((st_lr - 1)), below the floor of $st_lr"
+    d=$(st_cross CLAUDE.md '^DMG is 3,288 lines, of which 818 are compiled' "$st_lc")
+    st_case_tree "DELETING a waived claim goes red (the population shrank)" \
+            "$d" 1 "NUMBERS/CLAUDE.md found $((st_lc - 1)), below the floor of $st_lc"
     p=$(plant "CLAUDE.md" '/^DMG is 3,288 lines, of which 818 are compiled/d' CLAUDE.md)
-    st_case "DELETING a waived claim goes red (the population shrank)" \
-            "$p" 1 "NUMBERS/CLAUDE.md found $((st_fl_claude - 1)), below the floor of $st_fl_claude"
     st_case "...and the now-unmatched waiver is named with its line" \
             "$p" 1 "matched NOTHING — the reviewed line is gone or edited"
 
