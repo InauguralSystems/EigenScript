@@ -56,8 +56,15 @@ The compile-time pin of "caching the length cost zero bytes" was written as
 wasm32 build (pages.yml) from #1185. The claim that holds on every pointer
 width is `sizeof(data.strv) <= sizeof(data.fn)`. Suite `[99i3]` compiles every
 translation unit `web/build.sh` hands to emcc — the runtime `src/*.c` units and
-`web/eigs_wasm.c`, the playground entry point — at `-m32`, so that lane cannot
-go red unnoticed. The gate prints the population it examined rather than
+`web/eigs_wasm.c`, the playground entry point — at `-m32`. That catches the
+pointer-width class before a push; it is an APPROXIMATION, not the target, and
+says so on its own output: i386 aligns `double` to 4 inside a struct and wasm32
+to 8, so the union measured 36 bytes there and 40 under emcc, and a layout
+assert can pass `[99i3]` and fail the real build (#1255 — the lane stayed red on
+`main` for five commits with `[99i3]` green). The authoritative check is
+`.github/workflows/pages.yml`, whose build job now runs the real `web/build.sh`
+under emcc on every pull request; with emcc on `PATH`, `[99i3]` itself compiles
+with it instead. The gate prints the population it examined rather than
 asserting a typed-in number, and floors it so a shrinking SOURCES array is a
 deliberate re-pin.
 

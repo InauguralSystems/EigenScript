@@ -830,6 +830,21 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **The playground's real wasm32 build runs on every pull request (#1255).**
+  `.github/workflows/pages.yml` ran only on push to `main`, so the emcc build
+  of `web/build.sh` was first attempted after a merge and sat red on `main` for
+  five commits. Its build job now runs on `pull_request` (same path filter,
+  same `bash web/build.sh`, no second copy of the emcc flags); Configure Pages,
+  the artifact upload and `deploy` stay push-only, and a PR has its own
+  concurrency group so it cannot cancel a `main` deploy. Suite `[99i3]`
+  (`tools/ilp32_syntax_check.sh`) no longer claims the wasm32 build "cannot
+  break unnoticed": with emcc on `PATH` it compiles the recorded population with
+  the real emcc (`verdict: AUTHORITATIVE`), and otherwise it runs `clang -m32`
+  and says `verdict: APPROXIMATION`, naming pages.yml as the authority — i386
+  aligns `double` to 4 inside a struct and wasm32 to 8, so a layout assert can
+  pass `-m32` and fail emcc. Self-test control `1w` pins that blind spot and
+  `1wt` pins that the wasm32 frontend sees it (57 cases, was 55).
+
 - **Doc-claims selftest isolates its variant alias.** The fixture now removes
   inherited build variants before creating its `asan` alias, so an `asan-http`
   build cannot cause a false failure by being the first matching hard link.

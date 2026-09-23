@@ -3,10 +3,37 @@
 # site on first run (enablement: true), so no manual settings step is
 # needed — but note GitHub Pages requires the repository to be public
 # (or a paid plan for private repos).
+#
+# THE PLAYGROUND IS BUILT ON EVERY PULL REQUEST, NOT ONLY ON MAIN (#1255).
+# This workflow used to run on push-to-main only, so the real wasm32 build
+# (emcc, `web/build.sh`) was first attempted AFTER a merge — and it sat red on
+# main for five commits (517cf08..0ac8a9b) before anyone looked, while the
+# local stand-in (tools/ilp32_syntax_check.sh, suite [99i3], clang -m32) was
+# green: i386 aligns `double` to 4 inside a struct and wasm32 aligns it to 8,
+# so a layout `_Static_assert` can hold under the stand-in and fail the real
+# target. So the `build` job below runs on `pull_request` too, with the SAME
+# steps — one recipe, `bash web/build.sh`, never a second copy of the emcc
+# flags — and a failing emcc compile fails the PR's `build` check. What
+# differs on a pull request is only what touches Pages: configure-pages,
+# the artifact upload and the whole `deploy` job are gated to non-PR events,
+# so a PR never publishes and never needs the Pages permissions. Measured on
+# main: the whole build job (emsdk setup cached + Jekyll + web/build.sh) is
+# ~72 s.
 name: Docs site
 
 on:
   push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "web/**"
+      - "src/**"
+      - "VERSION"
+      - ".github/workflows/pages.yml"
+  # Same path set as the push trigger: anything that can change what
+  # web/build.sh compiles (src/**, web/**, VERSION feeds -DEIGENSCRIPT_VERSION),
+  # what Jekyll renders (docs/**), or this workflow itself.
+  pull_request:
     branches: [main]
     paths:
       - "docs/**"
@@ -19,16 +46,23 @@ on:
 permissions:
   contents: read
 
+# Deploys from main still serialize on ONE group, so a newer main push
+# supersedes an older deploy. A pull request gets a group of its OWN ref:
+# sharing `pages` would let every PR push cancel an in-flight main deploy.
 concurrency:
-  group: pages
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.ref) || 'pages' }}
   cancel-in-progress: true
 
 jobs:
   build:
+    # Named for what it proves on a pull request. The job id stays `build`
+    # (`deploy` needs it).
+    name: playground wasm32 build (real emcc, web/build.sh) + docs site
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Configure Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
         with:
           enablement: true
@@ -42,6 +76,8 @@ jobs:
         with:
           version: 3.1.74
           actions-cache-folder: emsdk-cache
+      # The authoritative wasm32 check: the real emcc over the real recipe.
+      # set -euo pipefail in web/build.sh makes a failed compile fail this step.
       - name: Build WASM playground
         run: bash web/build.sh
       - name: Stage playground under _site/playground
@@ -50,9 +86,11 @@ jobs:
           sudo cp -v web/dist/* _site/playground/
           sudo chown -R "$(id -u):$(id -g)" _site/playground
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:

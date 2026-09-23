@@ -54,6 +54,49 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
   `macos-15-intel` is not on this lane.
 - Fast gates unchanged: jit differential, replay differential, freestanding,
   tsan, install smoke, bench, CodeQL, `gate self-tests`.
+- **The playground's real wasm32 build** — a separate workflow,
+  `.github/workflows/pages.yml`, whose build job runs on pull requests that
+  touch `src/**`, `web/**`, `docs/**`, `VERSION` or the workflow itself. See
+  **The playground: the real wasm32 build, on the PR** below.
+
+## The playground: the real wasm32 build, on the PR
+
+The browser playground is `web/build.sh` compiled by emcc (wasm32). Until #1255
+the only place that ran was `.github/workflows/pages.yml` on **push to
+`main`** — after the merge. It was red on `main` for five commits in a row
+(517cf08 back to 0ac8a9b) before anyone looked, because nothing on a pull
+request compiled for the real target.
+
+The local gate did not catch it either, and could not. Suite `[99i3]`
+(`tools/ilp32_syntax_check.sh`) compiles every translation unit the recipe
+hands the compiler with host `clang -m32` — the **i386** ABI. i386 aligns
+`double` to 4 inside a struct; wasm32 aligns it to 8. The Value union was 36
+bytes under `-m32` and 40 under emcc, so a layout `_Static_assert` held under
+the gate and failed the real build. `[99i3]` was labelled "the playground's
+wasm32 build cannot break unnoticed"; that was false as stated.
+
+What is true now:
+
+- **pages.yml's build job runs on `pull_request`** with the same path filter
+  as the push trigger, and runs the **same** `bash web/build.sh` — one recipe,
+  no second copy of the emcc flags. A failed emcc compile fails the check
+  (`playground wasm32 build (real emcc, web/build.sh) + docs site`). Configure
+  Pages, the artifact upload and the `deploy` job are gated to non-PR events,
+  so deploy still happens only from `main`. A PR gets its own concurrency
+  group, so a PR push can never cancel a `main` deploy. Measured on `main`,
+  the whole job is about 72 s with the emsdk cache warm.
+- **`[99i3]` says what it is.** With emcc on `PATH` the gate compiles the
+  recorded population with the real emcc and prints `verdict: AUTHORITATIVE`;
+  without it (every CI suite leg, and the dev box) it runs the `-m32` arm and
+  prints `verdict: APPROXIMATION`, and its OK line names pages.yml as the
+  authority. Its self-test pins the limit from both sides: control `1w`
+  requires the `-m32` arm to pass a layout assert that is 12 bytes at i386
+  and 16 at wasm32, and `1wt` requires clang's wasm32 frontend to refuse it.
+
+The pages check is **not required** by the ruleset (see **Required status
+checks** below), and it must not be made required while it is path-filtered:
+a required check that never reports on a PR outside its paths blocks the
+merge forever.
 
 ## The doc gates — where they run, and why they are cheap
 
@@ -1015,6 +1058,7 @@ On a pull request, `ci.yml` produces these checks:
 | `install.sh (interpreter + eigenlsp on PATH)` | gate |
 | `bench (instruction-count regression gate)` | gate |
 | `Analyze C` (workflow `CodeQL`) | gate, separate workflow |
+| `playground wasm32 build (real emcc, web/build.sh) + docs site` (workflow `Docs site`) | gate, separate workflow, path-filtered |
 
 `macos / macos-15-intel` runs **only** in nightly (#1264): on the main lane it hit its
 45-minute timeout on nearly every push, so main CI never finished green.
@@ -1033,7 +1077,9 @@ The set worth requiring, if someone tightens the ruleset, is: `scope`,
 `freestanding`, `tsan`, `install.sh`, `bench`, `valgrind` and `Analyze C`.
 **Never** `macos / macos-15-intel`: it does not run on pull requests, and a
 required check that never reports blocks the merge forever — the same trap the
-`scope` job's comment in `ci.yml` describes.
+`scope` job's comment in `ci.yml` describes. The same holds for the `Docs site`
+playground check while it carries a path filter: it does not report on a PR
+outside `src/**`, `web/**`, `docs/**`, `VERSION` and its own workflow.
 
 ## The risk this accepts
 

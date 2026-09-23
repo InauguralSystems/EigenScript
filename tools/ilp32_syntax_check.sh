@@ -1,11 +1,27 @@
 #!/usr/bin/env bash
-# ILP32 syntax gate — the playground's wasm32 build cannot break unnoticed.
+# ILP32 syntax gate — a LOCAL APPROXIMATION of the playground's wasm32 build,
+# and the real thing when emcc is on PATH. It is NOT the authority.
 #
 # pages.yml compiles the web/build.sh sources with emcc (wasm32). A
 # _Static_assert that was true only at 64-bit pointer width (#1183's "union
 # sized by fn") kept that lane red from bcdd99f (#1185). This gate runs the
-# same recipe locally without emcc: clang -m32 -fsyntax-only over EVERY
-# translation unit the recipe hands the compiler.
+# same recipe locally: every translation unit the recipe hands the compiler is
+# compiled -fsyntax-only by
+#
+#   * the REAL emcc, when `emcc` is on PATH — that is then the verdict, and the
+#     OK line says `wasm32 TUs under the REAL emcc ... authoritative`; or
+#   * clang -m32 otherwise (every CI suite leg, and this dev box, which has no
+#     emsdk). -m32 is the i386 ABI, NOT wasm32 — see LIMIT below — so the OK
+#     line and the `verdict:` line both say APPROXIMATION and name the lane
+#     that IS authoritative.
+#
+# THE AUTHORITATIVE CHECK is pages.yml's `build` job, which runs the real
+# `bash web/build.sh` under emcc on every pull request that touches src/**,
+# web/**, docs/**, VERSION or the workflow (#1255). Until #1255 that job ran on
+# push-to-main only, and it was red on main for five commits while this gate
+# printed OK: #1183's Value-union assert was 36 bytes at -m32 and 40 under
+# emcc. This gate's old first line, "the playground's wasm32 build cannot break
+# unnoticed", was false as stated; it now claims only what it can show.
 #
 # POPULATION = THE RECORDED ARGV, NOT A READING OF THE SCRIPT. Three rounds in
 # a row derived the population by TEXT matching and three rounds in a row a
@@ -127,9 +143,14 @@
 # the stub with the real declaration, not to silence it.
 #
 # LIMIT, not a fix: -m32 is the i386 ABI, NOT wasm32. `double` aligns to 4 on
-# i386 and to 8 on wasm32, so this stand-in catches pointer-width breaks — the
-# #1185 class, and what kept the lane red — not every layout difference the
-# real emcc build can hit.
+# i386 and to 8 on wasm32 (measured, clang 18: `struct { int t; union { double
+# d; struct { char *a; int b; } x; } u; }` is 12 bytes at -m32 and 16 at
+# --target=wasm32), so the -m32 arm catches pointer-width breaks — the #1185
+# class — and NOT every layout difference the real emcc build can hit. That
+# limit is PINNED, not only stated: self-test control 1w requires the -m32 arm
+# to compile that 12-vs-16 assert clean, and 1wt requires the wasm32 target
+# frontend to refuse it. The macro-parity machinery below reconciles the
+# PREPROCESSOR world; nothing reconciles the ABI, and nothing can at -m32.
 #
 # RESIDUALS THE LOOP MEASURED AND THIS GATE DOES NOT CLOSE. Each was reached by
 # a blind critic on a real run (2026-09-21) and is written here rather than
@@ -157,9 +178,9 @@
 #     accepts": `-fR6-invalid-option` is classified emcc-only and dropped from
 #     the driver cross-check the same way `-sTOTAL_MEMORY=64MB` legitimately
 #     is, so the gate passes a recipe the real frontend — emcc, which shares
-#     clang's own diagnoser — would refuse. The recipe's real build (the pages
-#     lane, once buildable) is the oracle for the recipe's own validity; this
-#     gate is not.
+#     clang's own diagnoser — would refuse. The recipe's real build (pages.yml's
+#     `build` job, which runs on every pull request since #1255) is the oracle
+#     for the recipe's own validity; this gate's -m32 arm is not.
 #   * `value_parity_unreconciled=` is exercised only by self-test plants 4w and
 #     4y. On this box and in CI the live line prints `value_parity_unreconciled=
 #     none`, so the real population has never driven that branch; the plants are
@@ -179,9 +200,14 @@
 #     the tool directly.
 #
 # Usage: tools/ilp32_syntax_check.sh [--selftest]
-#   --selftest : plant 55 faults through the REAL derive/record/classify/
+#   --selftest : plant 57 faults through the REAL derive/record/classify/
 #                compile/examine functions, and require each one RED for its
 #                own stated reason:
+#                  the LIMIT of the -m32 arm, both sides (#1255)  (1w) a layout
+#                    assert true at i386 and false at wasm32 must compile CLEAN
+#                    under the approximation, and (1wt) the wasm32 target
+#                    frontend must REFUSE it; with emcc on PATH the real arm is
+#                    also driven and must be RED (uncounted: box-dependent);
 #                  source faults   (1) the old sizeof(data)==sizeof(fn) assert,
 #                    (1b) a syntax error in the playground entry point,
 #                    (1c) an emcc-only #ifdef __EMSCRIPTEN__ arm,
@@ -277,6 +303,25 @@ EIGS_VERSION=$(cat "$REPO/VERSION" 2>/dev/null || echo dev)
 
 SELFTEST=0
 [ "${1:-}" = "--selftest" ] && SELFTEST=1
+
+# WHICH COMPILER DECIDES (#1255). If the real wasm32 driver is on PATH, it is
+# the verdict: every TU in the recorded population goes through emcc
+# -fsyntax-only (compile_tu's `real` arm) and the -m32 availability probe and
+# macro reconciliation are not run, because there is nothing left to
+# approximate. If it is not — CI's suite legs and this dev box have no emsdk —
+# the gate runs the -m32 arm and SAYS it is an approximation on its OK line and
+# on the `verdict:` line, naming the lane that is authoritative: pages.yml's
+# build job, which runs the real `bash web/build.sh` on every pull request.
+# Decided by PATH alone, before the stand-in exists; there is no knob that
+# can force the approximation while the real driver is present (a knob that
+# can turn the verdict green is part of the verdict). --selftest always runs
+# the approximation arm — its plants test that machinery — and additionally
+# drives control 1w through the real driver when there is one.
+EIGS_ILP32_REAL_DRIVER=emcc
+REAL_DRIVER_PATH=$(command -v "$EIGS_ILP32_REAL_DRIVER" 2>/dev/null || true)
+ILP32_MODE=approx
+[ -n "$REAL_DRIVER_PATH" ] && ILP32_MODE=real
+[ "$SELFTEST" -eq 1 ] && ILP32_MODE=approx
 
 # Floor on the derived population. Measured 2026-09-21: the playground recipe
 # hands the compiler 23 translation units and all 23 are examined — the 22
@@ -777,6 +822,38 @@ call_flags_for_tu() {
     return 0
 }
 
+# #1255: the same lookup for the call's own emcc SETTINGS (`-sFOO=...`, and the
+# spaced `-s FOO=...` form as its two tokens), which only the real-driver arm
+# of compile_tu hands on — clang has no such option, so the -m32 arm cannot.
+call_settings_for_tu() {
+    local tu="$1" d
+    d=$(awk -F'\t' -v T="$tu" '$1 == T { print $2; exit }' "$TU_CALL_DIR_MAP" 2>/dev/null)
+    [ -n "$d" ] && [ -f "$d/settings" ] && cat "$d/settings"
+    return 0
+}
+
+# $1 = the expanded NUL-separated argv of ONE call. Prints, one per NUL, the
+# call's emcc settings exactly as written: every glued `-s<NAME>` token, and the
+# spaced `-s <X>` pair (emcc's documented spelling). Nothing else: those are
+# the only emcc-only tokens that can shape a COMPILE (`-sMEMORY64`, say); the
+# rest of emcc's own options are link-time and meaningless to -fsyntax-only.
+call_emcc_settings() {
+    local argv="$1" tok pending=0
+    while IFS= read -r -d '' tok; do
+        if [ "$pending" -eq 1 ]; then
+            printf '%s\0%s\0' -s "$tok"
+            pending=0
+            continue
+        fi
+        # Uppercase only: every emcc setting is an uppercase name, and a bare
+        # `-s?*` would swallow `-std=`, `-shared`, `-static`.
+        case "$tok" in
+            -s)   pending=1 ;;
+            -s[A-Z]*) printf '%s\0' "$tok" ;;
+        esac
+    done < "$argv"
+}
+
 # ---- the sandbox: nothing the recipe writes reaches the tree --------------
 #
 # Round 4 SYMLINKED every top-level entry, which protected `web/` and nothing
@@ -918,6 +995,7 @@ sandbox_record_inputs() {
             [ -n "$p" ] && printf '%s\t%s\n' "$p" "$d" >> "$TU_CALL_DIR_MAP"
         done < "$d/drv.inputs"
         call_accepted_flags "$exp" > "$d/flags"
+        call_emcc_settings "$exp" > "$d/settings"
         local cf cf_seen cf_old
         while IFS= read -r -d '' cf; do
             cf_seen=0
@@ -1392,6 +1470,34 @@ compile_tu() {
     # parity scan pulled in, not a compiled TU).
     while IFS= read -r -d '' cf; do callflags+=("$cf"); done < <(call_flags_for_tu "$tu")
     [ "${#callflags[@]}" -eq 0 ] && callflags=(${CALL_FLAGS_ALL[@]+"${CALL_FLAGS_ALL[@]}"})
+    # #1255: the REAL target decides when it is here. With emcc on PATH the
+    # verdict is emcc's own -fsyntax-only over the same TU, under the same
+    # recorded call's accepted flags PLUS that call's own emcc settings
+    # (`-sFOO=...`, which the -m32 arm cannot honour and drops). No macro
+    # reconciliation, no stub header, no host include dir: the real driver
+    # brings its own target, predefines, sysroot and <emscripten.h>, and its
+    # layout rules — which is the whole point (i386 aligns `double` to 4
+    # inside a struct, wasm32 to 8; control 1w pins that the -m32 arm below
+    # cannot see it).
+    if [ "$ILP32_MODE" = real ]; then
+        local -a settings=()
+        while IFS= read -r -d '' cf; do settings+=("$cf"); done < <(call_settings_for_tu "$tu")
+        out=$(emcc -fsyntax-only -c \
+            -Werror=switch -Werror=comment -Werror=misleading-indentation \
+            $inc \
+            -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+            -DEIGENSCRIPT_VERSION="\"$EIGS_VERSION\"" \
+            ${callflags[@]+"${callflags[@]}"} \
+            ${settings[@]+"${settings[@]}"} \
+            ${xlang[@]+"${xlang[@]}"} "$tu" 2>&1)
+        st=$?
+        if [ "$st" -ne 0 ]; then
+            echo "FAIL: $tu (the real emcc, wasm32)" >&2
+            printf '%s\n' "$out" | sed 's/^/      /' >&2
+            return 1
+        fi
+        return 0
+    fi
     # Status captured DIRECTLY. $? after a pipeline is the last stage.
     # Flag literals (not $VAR) so tools/werror_switch_check.sh can see them.
     # -c is load-bearing for that recognizer; -fsyntax-only is the actual work.
@@ -1452,7 +1558,11 @@ examine_tus() {
         echo "FAIL: examined $n TUs, $n_ok ok, $n_fail failed (want examined == len(list) > 0)" >&2
         return 1
     fi
-    echo "OK: examined $n ILP32 TUs (every input the playground recipe hands the compiler)"
+    if [ "$ILP32_MODE" = real ]; then
+        echo "OK: examined $n wasm32 TUs under the REAL emcc (every input the playground recipe hands the compiler) — authoritative"
+    else
+        echo "OK: examined $n ILP32 TUs under clang -m32 (every input the playground recipe hands the compiler) — an APPROXIMATION of wasm32, not the target: i386 aligns double to 4 inside a struct and wasm32 to 8, so a layout assert can pass here and fail emcc. Authoritative: the real emcc build of web/build.sh, pages.yml's build job, on every pull request"
+    fi
     return 0
 }
 
@@ -1565,7 +1675,15 @@ ilp32_availability_verdict() {
     return 1
 }
 
-if ! avail_err=$(ilp32_capability_probe "$STUB" "$SYS_INCLUDE_DIR"); then
+if [ "$ILP32_MODE" = real ]; then
+    echo "verdict: AUTHORITATIVE — the real wasm32 driver is on PATH ($REAL_DRIVER_PATH); every recorded TU is compiled by it"
+elif [ -n "$REAL_DRIVER_PATH" ]; then
+    echo "verdict: APPROXIMATION (--selftest) — the self-test plants exercise the clang -m32 arm, and the real driver on PATH ($REAL_DRIVER_PATH) is driven by the layout probe only. Run without --selftest for the authoritative verdict"
+else
+    echo "verdict: APPROXIMATION — no emcc on PATH, so the recorded TUs are compiled by clang -m32 (i386), which catches pointer-width breaks and NOT wasm32 layout (double aligns to 4 on i386, 8 on wasm32). Authoritative: pages.yml's build job runs the real web/build.sh under emcc on every pull request"
+fi
+
+if [ "$ILP32_MODE" = approx ] && ! avail_err=$(ilp32_capability_probe "$STUB" "$SYS_INCLUDE_DIR"); then
     if ilp32_availability_verdict "$STUB" "$SYS_INCLUDE_DIR" "$avail_err"; then
         exit 0
     fi
@@ -1600,7 +1718,12 @@ echo "classifier: flags=${#CALL_FLAGS_ALL[@]} per call"
 # a finding about it.
 LIVE_DROPPED="$CLASSIFIER_DROPPED"
 
-if ! macro_parity_init "$LIVE_TUS"; then
+if [ "$ILP32_MODE" = real ]; then
+    # The real driver compiles against its OWN target's predefines; there is
+    # no host world to reconcile. Said, not left blank, so the section can
+    # tell "not applicable" from "did not run".
+    echo "macro_parity: not applicable — the real wasm32 driver compiles with the target's own predefines"
+elif ! macro_parity_init "$LIVE_TUS"; then
     # The ONLY skip left at this stage, and the same one the availability
     # probe names: the SDK refuses the architecture once its own arch macros
     # are replaced by the target's. Everything else macro_parity_init already
@@ -1611,8 +1734,9 @@ if ! macro_parity_init "$LIVE_TUS"; then
         exit 0
     fi
     exit 1
+else
+    echo "$MACRO_PARITY_REPORT"
 fi
-echo "$MACRO_PARITY_REPORT"
 
 if [ "$SELFTEST" -eq 0 ]; then
     # Examine FIRST: a disagreement between the two derivations is reported on
@@ -1689,6 +1813,62 @@ else
             fi
         fi
     fi
+fi
+
+# ---- control 1w / plant 1wt: the LIMIT of the -m32 arm, measured (#1255) --
+# The -m32 arm is i386, not wasm32. i386 aligns `double` to 4 inside a struct
+# and wasm32 aligns it to 8, so this header-free struct is 12 bytes at -m32 and
+# 16 at wasm32 (clang 18, measured 2026-09-22; the Value union was 36 vs 40 the
+# same way). The claim "approximation" on the OK line is only honest if it is
+# pinned from BOTH sides:
+#   1w  the approximation arm (compile_tu, the real function) compiles the
+#       wasm32-false assert CLEAN. If this ever goes red, the limit moved and
+#       the verdict line and header are stale — re-measure, do not delete.
+#   1wt the target frontend itself (clang --target=wasm32-unknown-emscripten,
+#       header-free so no sysroot is needed) REFUSES the same probe, so 1w is a
+#       real divergence and not a probe that nothing can fail.
+# When the real driver is on PATH, the SAME probe is also driven through
+# compile_tu's `real` arm and must be RED; that line is not a counted case
+# because it depends on the box, but its failure fails the self-test.
+printf '%s\n' \
+    'struct eigs_ilp32_layout_probe { int t; union { double d; struct { char *a; int b; } x; } u; };' \
+    '_Static_assert(sizeof(struct eigs_ilp32_layout_probe) == 12,' \
+    '               "EIGS_WASM32_LAYOUT_PLANT: 12 bytes at i386, 16 at wasm32 (double aligns to 8)");' \
+    > "$WORK/layout_probe.c"
+if compile_tu "$WORK/layout_probe.c" "" "$STUB" 2>"$WORK/1w.err"; then
+    echo "selftest ok: control 1w a layout assert TRUE at i386 and FALSE at wasm32 compiles clean under the -m32 approximation (the limit the verdict line names)"
+else
+    echo "selftest FAIL: control 1w — the -m32 approximation now REFUSES the i386-true layout probe, so the stated limit moved; re-measure and update the verdict line and header rather than deleting this control:"
+    sed 's/^/      /' "$WORK/1w.err"
+    fails=1
+fi
+if out1wt=$(clang --target=wasm32-unknown-emscripten -fsyntax-only -c \
+        -Werror=switch -Werror=comment -Werror=misleading-indentation \
+        "$WORK/layout_probe.c" 2>&1); then
+    echo "selftest FAIL: plant 1wt — the wasm32 target frontend ACCEPTS the layout probe, so control 1w proves nothing about the approximation's blind spot"
+    fails=1
+elif grep -qF 'EIGS_WASM32_LAYOUT_PLANT' <<<"$out1wt"; then
+    echo "selftest ok: plant 1wt the wasm32 target frontend refuses the same layout probe (the divergence 1w relies on is real)"
+else
+    echo "selftest FAIL: plant 1wt went red for the wrong reason:"
+    printf '%s\n' "$out1wt" | sed 's/^/      /'
+    fails=1
+fi
+if [ -n "$REAL_DRIVER_PATH" ]; then
+    ILP32_MODE=real
+    if compile_tu "$WORK/layout_probe.c" "" "$STUB" 2>"$WORK/1wr.err"; then
+        echo "selftest FAIL: real-driver arm — $REAL_DRIVER_PATH compiled the wasm32-false layout probe clean through compile_tu, so the authoritative arm is not the target"
+        fails=1
+    elif grep -qF 'EIGS_WASM32_LAYOUT_PLANT' "$WORK/1wr.err"; then
+        echo "selftest real: the real-driver arm of compile_tu ($REAL_DRIVER_PATH) is RED on the layout probe"
+    else
+        echo "selftest FAIL: real-driver arm went red for the wrong reason:"
+        sed 's/^/      /' "$WORK/1wr.err"
+        fails=1
+    fi
+    ILP32_MODE=approx
+else
+    echo "selftest real: no real wasm32 driver on PATH — the real-driver arm of compile_tu was not exercised on this box (pages.yml's pull_request build is the authoritative lane)"
 fi
 
 # ---- the three entry-point mutants (1b, 1c, 1d) --------------------------
