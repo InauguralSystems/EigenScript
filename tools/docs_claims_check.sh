@@ -331,7 +331,13 @@ if [ "${1:-}" = "--selftest" ]; then
     # then reports "the fault was never planted" — which is what happened to
     # the next PR that added one (261 -> 262). A plant may not hand-type a
     # number the gate derives, for the same reason a doc may not.
-    p=$(plant "CI.md" 's/All [0-9][0-9]* test sections\./All 999 test sections./' "docs/CI.md")
+    #
+    # #1264: the docs no longer STATE the section count at all ("the full
+    # suite"), so there is no live line to corrupt. The plant APPENDS a wrong
+    # count instead: the rule stays armed for anyone who writes a number, and
+    # the gate still has to walk docs/CI.md to see it.
+    p=$(plant "CI.md" '$a\
+All 999 test sections.' "docs/CI.md")
     st_case "planted wrong number in the enrolled docs/CI.md goes red" \
             "$p" 1 "claims '999 test sections' but D_SECTIONS derives"
 
@@ -359,6 +365,30 @@ if [ "${1:-}" = "--selftest" ]; then
     st_case "planted 'UDP shipped' family claim goes red" \
             "$p" 1 "names the builtin family udp"
 
+    # #1264: the family-mention count is a FLOOR (a growing total). Two cases,
+    # both on the DEFAULT doc set (the only one the floor applies to, so
+    # DOCS_CLAIMS_DOCS is left unset): a floor above the live count must go red
+    # by name — without hand-typing the live count (§177) — and the override
+    # knob must refuse to LOWER the checked-in floor (§157).
+    st_cases=$((st_cases + 1))
+    st_fam_out=$(DC_FAMILY_FLOOR=999999 bash "$SELF" 2>&1); st_fam_rc=$?
+    if [ "$st_fam_rc" -eq 1 ] && grep -qF "below the floor of 999999" <<< "$st_fam_out"; then
+        printf '  selftest ok: %s\n' "family mentions below their floor go red"
+    else
+        printf '  SELFTEST FAIL: %s -- rc=%d\n' "family mentions below their floor go red" "$st_fam_rc"
+        grep -E '^(RED|docs-claims:)' <<< "$st_fam_out" | head -4 | sed 's/^/        /'
+        st_rc=1; st_failed=$((st_failed + 1))
+    fi
+    st_cases=$((st_cases + 1))
+    st_fam_out=$(DC_FAMILY_FLOOR=0 bash "$SELF" 2>&1); st_fam_rc=$?
+    if [ "$st_fam_rc" -eq 1 ] && grep -qF "would LOWER the checked-in floor" <<< "$st_fam_out"; then
+        printf '  selftest ok: %s\n' "an override that lowers the family floor is refused"
+    else
+        printf '  SELFTEST FAIL: %s -- rc=%d\n' "an override that lowers the family floor is refused" "$st_fam_rc"
+        grep -E '^(RED|docs-claims:)' <<< "$st_fam_out" | head -4 | sed 's/^/        /'
+        st_rc=1; st_failed=$((st_failed + 1))
+    fi
+
     # Zero population, one class at a time is not enough: a doc with NOTHING in
     # it must trip every class's guard, and each message is asserted by name.
     : > "$st_dir/EMPTY.md"
@@ -377,19 +407,52 @@ if [ "${1:-}" = "--selftest" ]; then
     # The r1 gate asserted "everything found is accounted for" and never "the
     # count is the DECLARED one", so deleting a waived line took NUMBERS from
     # 24 to 23 and the gate still exited 0. Four plants, one per direction.
+    # #1264: the rows are FLOORS now, so a deletion reds only while the floor
+    # sits at the live count. Rather than hand-type that count (§177) or rely
+    # on the floor being tight, the plants PUT the floor at the live count
+    # with DC_POPULATION_RAISE (a knob that can only raise), reading the live
+    # count from a clean run's FLOOR line.
+    st_live_out=$(bash "$SELF" 2>&1)
+    st_live_readme=$(printf '%s\n' "$st_live_out" | sed -n 's|^  FLOOR NUMBERS/README.md found \([0-9]*\) .*|\1|p' | head -1)
+    st_live_claude=$(printf '%s\n' "$st_live_out" | sed -n 's|^  FLOOR NUMBERS/CLAUDE.md found \([0-9]*\) .*|\1|p' | head -1)
+    st_raise_case() { # name  raise-row  doc-set  want-rc  want-substring
+        st_cases=$((st_cases + 1))
+        local out got_rc
+        out=$(DC_POPULATION_RAISE="$2" DOCS_CLAIMS_DOCS="$3" bash "$SELF" 2>&1); got_rc=$?
+        if [ "$got_rc" -eq "$4" ] && grep -qF -- "$5" <<< "$out"; then
+            printf '  selftest ok: %s\n' "$1"
+        else
+            printf '  SELFTEST FAIL: %s -- rc=%d (want %d), wanted %s\n' "$1" "$got_rc" "$4" "$5"
+            grep -E '^(RED|docs-claims:)' <<< "$out" | head -4 | sed 's/^/        /'
+            st_rc=1; st_failed=$((st_failed + 1))
+        fi
+    }
     p=$(plant "README.md" '/a 47-widget GUI toolkit, embedded database, tensor math,/d')
-    st_case "DELETING a derived claim goes red (the population shrank)" \
-            "$p" 1 "NUMBERS/README.md found 12 but 13 is declared"
+    st_raise_case "DELETING a derived claim goes red (the population fell below its floor)" \
+            "NUMBERS|README.md|${st_live_readme:-x}" "$p" 1 \
+            "NUMBERS/README.md found $((${st_live_readme:-0} - 1)), below the floor of ${st_live_readme:-x}"
 
     p=$(plant "CLAUDE.md" '/^DMG is 3,288 lines, of which 818 are compiled/d' CLAUDE.md)
-    st_case "DELETING a waived claim goes red (the population shrank)" \
-            "$p" 1 "NUMBERS/CLAUDE.md found 2 but 3 is declared"
+    st_raise_case "DELETING a waived claim goes red (the population fell below its floor)" \
+            "NUMBERS|CLAUDE.md|${st_live_claude:-x}" "$p" 1 \
+            "NUMBERS/CLAUDE.md found $((${st_live_claude:-0} - 1)), below the floor of ${st_live_claude:-x}"
     st_case "...and the now-unmatched waiver is named with its line" \
             "$p" 1 "matched NOTHING — the reviewed line is gone or edited"
 
+    # Adding a number: the FLOOR does not object (growth is free), and the
+    # per-claim rule still does — an unclaimed, unwaived number is red by name.
     p=$(plant "README.md" 's|^This builds a ~940K minimal binary|It ships 4 widgets extra. This builds a ~940K minimal binary|')
-    st_case "ADDING a number is red until it is declared" \
-            "$p" 1 "NUMBERS/README.md found 14 but 13 is declared"
+    st_case "ADDING an unclaimed number is red by the per-claim rule, not a count" \
+            "$p" 1 "has a hand-typed number '4 widgets' that no derivation claims"
+    # ...and adding a DERIVED number costs nothing: no table edit. A whole-tree
+    # copy (default doc set), because a bare-tempdir README has every relative
+    # link dangling and cannot host a case that must PASS.
+    d=$(plant_tree "README.md" '/a 47-widget GUI toolkit, embedded database, tensor math,/p')
+    st_case_tree "ADDING a derived claim needs no table edit (growth is free)" \
+            "$d" 0 "docs-claims: OK"
+    # The knob cannot lower a floor.
+    st_raise_case "DC_POPULATION_RAISE refuses to LOWER a floor" \
+            "NUMBERS|README.md|0" "$DOC_FILES_DEFAULT" 1 "would LOWER NUMBERS/README.md"
 
     # ---- ROUND 2 (Astra G6): the two widened populations ----
     p=$(plant "README.md" '/^## Install$/a\'$'\n''Pass --ver to print the version.')
@@ -1513,6 +1576,25 @@ if [ ! -f "$POPULATIONS_FILE" ]; then
     exit 1
 fi
 DECLARED_POPULATIONS=$(grep -v '^[[:space:]]*#' "$POPULATIONS_FILE" | grep -v '^[[:space:]]*$')
+# #1264: each row is a FLOOR. DC_POPULATION_RAISE ("CLASS|file|N", one row) may
+# RAISE one row's floor — the selftest uses it to put a floor exactly at the
+# live count without hand-typing that count — and a value that would LOWER a
+# floor is refused, so the knob cannot turn a red green (mechanical-gates §157).
+if [ -n "${DC_POPULATION_RAISE:-}" ]; then
+    IFS='|' read -r _rc _rf _rn <<< "$DC_POPULATION_RAISE"
+    _rb=$(basename "${_rf:-x}")
+    _cur=$(awk -F'|' -v c="$_rc" -v b="$_rb" 'NF >= 3 { n = split($2, a, "/"); if ($1 == c && a[n] == b) { print $3 + 0; exit } }' <<< "$DECLARED_POPULATIONS")
+    case "${_rn:-}" in ''|*[!0-9]*) _cur="" ;; esac
+    if [ -z "$_cur" ]; then
+        echo "docs-claims: ABORTED: DC_POPULATION_RAISE='$DC_POPULATION_RAISE' names no declared row, or its count is not a number" >&2
+        DC_VERDICT_PRINTED=1; exit 1
+    elif [ "$_rn" -lt "$_cur" ]; then
+        echo "docs-claims: ABORTED: DC_POPULATION_RAISE would LOWER $_rc/$_rf from $_cur to $_rn — refused; edit $POPULATIONS_FILE instead" >&2
+        DC_VERDICT_PRINTED=1; exit 1
+    fi
+    DECLARED_POPULATIONS=$(awk -F'|' -v c="$_rc" -v b="$_rb" -v n="$_rn" 'BEGIN { OFS = "|" }
+        NF >= 3 { k = split($2, a, "/"); if ($1 == c && a[k] == b) $3 = n } { print }' <<< "$DECLARED_POPULATIONS")
+fi
 
 FOUND=""   # newline-delimited "CLASS|basename|count" rows
 # Keyed by BASENAME: the declared row must still apply when the selftest drives
@@ -1527,7 +1609,7 @@ found_count() { # class|basename -> echoes the count, or nothing
 declarations_audit() {
     local rows=0 visited=0
     note ""
-    note "docs-claims declared-population audit (found == declared, both directions):"
+    note "docs-claims declared-population audit (found >= floor per row; every examined pair has a row; every row is visited):"
     while IFS='|' read -r dclass dfile dcount; do
         [ -z "${dclass:-}" ] && continue
         rows=$((rows + 1))
@@ -1540,9 +1622,15 @@ declarations_audit() {
             continue
         fi
         visited=$((visited + 1))
-        if [ "$got" -ne "$dcount" ]; then
-            fail "$dclass/$dfile found $got but $dcount is declared — a claim was added or removed; update DECLARED_POPULATIONS deliberately"
+        # #1264: a FLOOR. Every claim in these populations is judged on its own
+        # (derived from the tree, resolved, or waived by exact line), so an
+        # ADDED claim is already checked and is not a review event; a SHRINK
+        # is — the scan narrowed, or claims were deleted — and a floor edit is
+        # how a deliberate removal is declared.
+        if [ "$got" -lt "$dcount" ]; then
+            fail "$dclass/$dfile found $got, below the floor of $dcount — a claim was removed or the scan narrowed; if deliberate, lower that row in $POPULATIONS_FILE"
         fi
+        note "  FLOOR $dclass/$(basename "$dfile") found $got (floor $dcount, slack $((got - dcount)))"
     done <<< "$DECLARED_POPULATIONS"
     # The reverse direction: a (class, file) pair that was examined and never
     # declared. Compare on the SAME normalised key the rows were recorded
@@ -2235,11 +2323,27 @@ note "  NAMES: examined $name_examined, in the index $name_ok, defined locally $
 #     `SomethingUDP` is examined rather than missed.
 FAMILY_CLAIMS='udp|[Uu][Dd][Pp]|udp|UDP datagram sockets
 tcp|[Tt][Cc][Pp]|net_|TCP stream sockets'
-# Population, pinned like every other in this gate (§129) and counted in
-# MENTIONS, not lines: one sentence naming a family twice is two claims. A
-# keyword that stops appearing anywhere makes the class vacuous, so any
-# movement in either direction is a review event.
-FAMILY_CLAIMS_DECLARED=12
+# Population, counted in MENTIONS, not lines: one sentence naming a family
+# twice is two claims. #1264: a FLOOR, not an exact pin. The mentions are a
+# GROWING total — every new doc sentence about TCP grows it — and each one is
+# already judged on its own (family present, or an exact-line waiver), so an
+# added mention is not a review event and must not cost a hand edit here. What
+# the pin was for — a keyword that stops appearing makes the class vacuous — is
+# a SHRINK, and the floor still catches it. Lower the floor deliberately when
+# removing mentions. DC_FAMILY_FLOOR may RAISE it (the selftest does); a value
+# below the checked-in floor is refused, so the knob cannot turn a red green
+# (mechanical-gates §157).
+FAMILY_CLAIMS_FLOOR=12
+if [ -n "${DC_FAMILY_FLOOR:-}" ]; then
+    case "$DC_FAMILY_FLOOR" in
+        *[!0-9]*) fail "DC_FAMILY_FLOOR='$DC_FAMILY_FLOOR' is not a number" ;;
+        *) if [ "$DC_FAMILY_FLOOR" -lt "$FAMILY_CLAIMS_FLOOR" ]; then
+               fail "DC_FAMILY_FLOOR=$DC_FAMILY_FLOOR would LOWER the checked-in floor $FAMILY_CLAIMS_FLOOR — refused; lower FAMILY_CLAIMS_FLOOR in the source instead"
+           else
+               FAMILY_CLAIMS_FLOOR="$DC_FAMILY_FLOOR"
+           fi ;;
+    esac
+fi
 
 family_examined=0; family_ok=0; family_waived=0
 note ""
@@ -2275,10 +2379,10 @@ done <<EOF
 $FAMILY_CLAIMS
 EOF
 [ "$family_examined" -eq 0 ] && fail "class NAMES/BUILTIN FAMILIES examined 0 family mentions — zero population (§121)"
-if [ "$DOCSET_IS_DEFAULT" -eq 1 ] && [ "$family_examined" -ne "$FAMILY_CLAIMS_DECLARED" ]; then
-    fail "class NAMES/BUILTIN FAMILIES examined $family_examined family mention(s) but $FAMILY_CLAIMS_DECLARED are declared — a family claim was added or removed; update FAMILY_CLAIMS_DECLARED deliberately after reviewing which"
+if [ "$DOCSET_IS_DEFAULT" -eq 1 ] && [ "$family_examined" -lt "$FAMILY_CLAIMS_FLOOR" ]; then
+    fail "class NAMES/BUILTIN FAMILIES examined $family_examined family mention(s), below the floor of $FAMILY_CLAIMS_FLOOR — family claims were removed or the scan narrowed; lower FAMILY_CLAIMS_FLOOR deliberately if the removal is intended"
 fi
-note "  BUILTIN FAMILIES: examined $family_examined mention(s), family present $family_ok, waived $family_waived"
+note "  BUILTIN FAMILIES: examined $family_examined mention(s) (floor $FAMILY_CLAIMS_FLOOR), family present $family_ok, waived $family_waived"
 
 # ---------------------------------------------------------------------------
 # 8. CLASS: DOC ENROLMENT (mechanical-gates §119 — a gate is only as wide as

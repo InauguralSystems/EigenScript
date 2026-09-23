@@ -1,0 +1,9 @@
+# Test scripts that NOTHING in CI runs, on purpose. Read by
+# tools/test_enrolment_check.sh (#1264). Format: `path | reason`.
+#
+# Every row is a waiver: it must name a file that exists, carry a reason, and
+# be NEEDED -- a row for a script that some suite section or workflow step
+# does invoke is stale and fails the gate. Adding a row is the review event;
+# prefer enrolling the test (a suite section) over exempting it.
+
+tests/test_gc_runner_controls.py | manual deferred control for the GC traversal runner (tests/GC_TRAVERSAL.md): spawns forked child sessions and must run with the heavy slot released, so it is invoked by hand, never inside the suite

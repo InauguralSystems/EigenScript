@@ -6689,7 +6689,7 @@ fi
 # a case that had been DELETED, and the operator who read it looked for a
 # missing case instead of a failing one. A count that changes meaning when
 # something fails is not a population count (§121).
-CLAIMS_SELFTEST_EXPECTED=40
+CLAIMS_SELFTEST_EXPECTED=44
 CLAIMS_ST=$(bash "$TESTS_DIR/../tools/docs_claims_check.sh" --selftest 2>&1)
 CLAIMS_ST_RC=$?
 CLAIMS_ST_RUN=$(printf '%s\n' "$CLAIMS_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
@@ -8532,6 +8532,36 @@ else
         echo "  FAIL: the gate self-test broke or shrank (exit $pfv_self_rc, checks=${PFV_COUNT:-none}, expected $PFV_EXPECTED):"
         printf '%s\n' "$pfv_self_out" | sed 's/^/      /'
     fi
+fi
+echo ""
+
+# [99ab] Test enrolment + precheck drift (#1264). A tests/*.sh or tests/*.py
+# that no suite section, no workflow step and no enrolled script INVOKES is
+# red, by name (tools/test_enrolment_check.sh; exemptions with reasons in
+# tests/enrolment_exemptions.txt, a stale one is red). PR #1260's test sat
+# unrun until a maintainer noticed by hand. The same section runs
+# `tools/precheck.sh --check`: every tools/ script CI invokes must be
+# classified by the contributor precheck (run / bin / ci-only + reason), and
+# the precheck may not run a gate CI no longer runs. Both self-test counts are
+# pinned (a declared set of planted faults — the [99o] lesson).
+echo "[99ab] test enrolment + precheck manifest drift (#1264)"
+TOTAL=$((TOTAL + 1))
+ENROL_ST_EXPECTED=12
+PRECHECK_ST_EXPECTED=4
+enrol_out=$(bash "$TESTS_DIR/../tools/test_enrolment_check.sh" 2>&1); enrol_rc=$?
+enrol_st_out=$(bash "$TESTS_DIR/../tools/test_enrolment_check.sh" --selftest 2>&1); enrol_st_rc=$?
+pc_out=$(bash "$TESTS_DIR/../tools/precheck.sh" --check 2>&1); pc_rc=$?
+pc_st_out=$(bash "$TESTS_DIR/../tools/precheck.sh" --selftest 2>&1); pc_st_rc=$?
+ENROL_ST_N=$(printf '%s\n' "$enrol_st_out" | sed -n 's/^  checks=\([0-9]*\)$/\1/p')
+PC_ST_N=$(printf '%s\n' "$pc_st_out" | sed -n 's/^  checks=\([0-9]*\)$/\1/p')
+if [ "$enrol_rc" -eq 0 ] && [ "$enrol_st_rc" -eq 0 ] && [ "${ENROL_ST_N:-0}" -eq "$ENROL_ST_EXPECTED" ] \
+   && [ "$pc_rc" -eq 0 ] && [ "$pc_st_rc" -eq 0 ] && [ "${PC_ST_N:-0}" -eq "$PRECHECK_ST_EXPECTED" ]; then
+    PASS=$((PASS + 1))
+    printf '  %s\n' "$enrol_out" "$pc_out"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: enrolment (rc=$enrol_rc, selftest rc=$enrol_st_rc checks=${ENROL_ST_N:-none}/$ENROL_ST_EXPECTED) / precheck drift (rc=$pc_rc, selftest rc=$pc_st_rc checks=${PC_ST_N:-none}/$PRECHECK_ST_EXPECTED):"
+    printf '%s\n' "$enrol_out" "$enrol_st_out" "$pc_out" "$pc_st_out" | grep -E 'FAIL|BROKEN|ABORT' | head -12 | sed 's/^/      /'
 fi
 echo ""
 

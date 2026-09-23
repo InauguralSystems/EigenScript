@@ -24,7 +24,7 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 
 35 minutes of wall clock, about 200 machine-minutes. Two findings:
 
-1. **The same suite — 264 test sections today — ran in TEN jobs** — gcc, clang, zlib, net,
+1. **The same full suite ran in TEN jobs** — gcc, clang, zlib, net,
    gfx, http, db, asan-core, asan-http, two macOS — differing only in the
    extension surface of the binary they built. A zlib build has exactly one
    section the gcc build does not; it paid for all of them.
@@ -40,7 +40,7 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 - `scope` decides whether the PR touches anything but `*.md`. A docs-only PR
   reports green in seconds. (The doc gates themselves are not skipped — see
   **The doc gates** below.)
-- **One full suite: `linux / gcc`.** All 264 test sections.
+- **One full suite: `linux / gcc`.** Every test section.
 - **`werror audit`** runs [99i] once, cached (see below). The suite jobs set
   `EIGS_SKIP_WERROR_AUDIT=1`, and [99i] then prints a `SKIP:` line naming this
   job — it never silently disappears.
@@ -130,7 +130,7 @@ anything of its own, so a docs PR pays seconds, not minutes.
 | Section | Tool | What it refuses |
 |---|---|---|
 | **[89]** | `tests/test_doc_examples.py` | an eigenscript fence that is not executed. Opt-OUT: paired with an `output` block (byte-compared), tagged `eigenscript fragment k=v ...` (free names declared in the tag, resolved STATICALLY through `--lint` E003 so a name hiding in a dead branch still counts, then run and required to finish clean), or tagged `eigenscript nocheck <reason>`. Anything else is red. It also refuses a **value stated in a comment** inside an executed example — that is a claim wearing a checked example's clothes. Per-file populations are pinned and cross-checked against an independent line scan. |
-| **[99za]** | `tools/docs_claims_check.sh` | a hand-typed number, a dangling repo path **or Markdown link target** (resolved against the LINKING FILE's directory only — no repo-root fallback, because a link that resolves only at the root is a broken link). A path is classified before it is checked: `git ls-files` says SOURCE (must be tracked and present), `make -p` says BUILD PRODUCT (must be produced by a rule; its **existence is never consulted**, so `make lsp` cannot change the verdict), neither is red, **any** `--flag` token not in `--help`, a `make <target>` that is not a rule, a backticked ``<builtin> of …`` call that resolves nowhere. Each is derived from the tree or waived by its exact line content with a reason. Every class carries a DECLARED per-file count (found == declared, both ways), and a waiver that matches nothing is red — so a claim cannot be deleted, and coverage cannot shrink, without a failure. Three rules bought on macOS: **no scan that feeds a population suppresses its stderr** (a rejected pattern used to read as "nothing found"); the **fence count comes from `tests/test_doc_examples.py --count`**, the gate that executes the fences — one grammar, not two; and **nothing in the tool extracts with `grep -o`** — grep finds lines, POSIX awk `match()`/`RSTART`/`RLENGTH` extracts, because `grep -o` is not in POSIX and GNU and BSD differ on it. A scan that matches ZERO times where a count is declared is a RED **at the scan**, quoting the command and its exit status, not a "was never visited" three hundred lines later. And the gate prints a **per-class summary LAST** — examined count, files recorded, declared rows — so a class that silently did not run is one named line rather than six consequence-REDs; the runner prints the gate's **entire** captured output on failure (bounded at a fixed line count, and when that bites it keeps the head AND the tail, never a bare tail). The **binary-size** claim is measured against whichever install-shaped binary the lane actually has, decided by inode: `build/release/eigenscript` if present, else `src/eigenscript` when no `build/*/eigenscript` shares its inode (the `./build.sh` product, which is what every CI leg builds and what `install.sh` installs); a `src/eigenscript` that IS a variant alias, or a non-Linux lane, defers with the reason named and the deferral count pinned. |
+| **[99za]** | `tools/docs_claims_check.sh` | a hand-typed number, a dangling repo path **or Markdown link target** (resolved against the LINKING FILE's directory only — no repo-root fallback, because a link that resolves only at the root is a broken link). A path is classified before it is checked: `git ls-files` says SOURCE (must be tracked and present), `make -p` says BUILD PRODUCT (must be produced by a rule; its **existence is never consulted**, so `make lsp` cannot change the verdict), neither is red, **any** `--flag` token not in `--help`, a `make <target>` that is not a rule, a backticked ``<builtin> of …`` call that resolves nowhere. Each is derived from the tree or waived by its exact line content with a reason. Every class carries a per-file FLOOR (#1264: found >= floor; a declared row nothing visited and an examined pair with no row are both red), and a waiver that matches nothing is red — so coverage cannot shrink below its floor without a failure, while adding a claim, already judged on its own, needs no table edit. Three rules bought on macOS: **no scan that feeds a population suppresses its stderr** (a rejected pattern used to read as "nothing found"); the **fence count comes from `tests/test_doc_examples.py --count`**, the gate that executes the fences — one grammar, not two; and **nothing in the tool extracts with `grep -o`** — grep finds lines, POSIX awk `match()`/`RSTART`/`RLENGTH` extracts, because `grep -o` is not in POSIX and GNU and BSD differ on it. A scan that matches ZERO times where a count is declared is a RED **at the scan**, quoting the command and its exit status, not a "was never visited" three hundred lines later. And the gate prints a **per-class summary LAST** — examined count, files recorded, declared rows — so a class that silently did not run is one named line rather than six consequence-REDs; the runner prints the gate's **entire** captured output on failure (bounded at a fixed line count, and when that bites it keeps the head AND the tail, never a bare tail). The **binary-size** claim is measured against whichever install-shaped binary the lane actually has, decided by inode: `build/release/eigenscript` if present, else `src/eigenscript` when no `build/*/eigenscript` shares its inode (the `./build.sh` product, which is what every CI leg builds and what `install.sh` installs); a `src/eigenscript` that IS a variant alias, or a non-Linux lane, defers with the reason named and the deferral count pinned. |
 | **[99zb]** | `tools/portability_parse_check.sh` | a tracked `*.sh` that the OLDEST bash on the machine cannot parse — **or a shell gate it cannot RUN**. macOS ships **bash 3.2 (2007)**, and three CI rounds were spent guessing at what it rejects — twice wrongly. The dev box now carries a real one at **`~/.local/bin/bash32`**, built from GNU bash 3.2.0 source with `./configure --without-bash-malloc --disable-nls && make` (~4 min); `bash32 -n <file>` settles any portability question in a second, and the whole repo in under two. Parsing was never enough: bash 3.2 scans `<( … )` for its closing paren **without honouring comments**, so an apostrophe in a comment inside one opens a quote that never closes — at RUNTIME, which `bash -n` calls clean. That kept the macOS lane red for four rounds. The audit therefore also EXECUTES five tracked shell gates (`docs_claims_check.sh`, `child_exit_check.sh`, `suite_label_check.sh`, `doc_drift_check.sh`, and `tests/test_string_scaling.sh --selftest` — the one `tests/` entry, 23 stub-driven cases of string-splitting bash) under the old bash and requires rc 0, with the run count pinned. `PORTABILITY_RUN_SELFTEST=1` adds the claims selftest (~3 min, driver-only extra coverage — its children still spawn through `#!/usr/bin/env bash`). When no old bash is present the check **announces the skip and prints both counts** AND names every candidate it looked at, so it can never read as a completed audit. The file count, the gate count and the oracle are printed by the check itself (`portability: OK: files=… checked=… parse-failures=0; gates-run=…/… run-failures=0 (oracle …)`) rather than typed here, because a number typed into a page about a count that moves is a number that rots. **The system shell is a candidate when it IS old** (round-5 blind critic, Fable): until then the candidate list was `$PORTABILITY_BASH` and the two `bash32` oracle paths and nothing else, so on the one platform this audit exists for — the macOS runner, whose default `/bin/bash` IS GNU bash 3.2.57 — it found no old bash and skipped with "NO OLD BASH ON THIS MACHINE". That reason was false; the list simply never tried `/bin/bash`. `/bin/bash` and `/usr/bin/bash` are now candidates **when their own `BASH_VERSINFO[0]` is ≤ 3**, so the macOS lane runs the real audit and a Linux runner's bash 5 is never mistaken for an oracle. **Round 6: EVERY candidate is asked its own version, including the declared ones** — `$PORTABILITY_BASH` and the two `bash32` paths were trusted BY NAME, and a file called `bash32` is not bash 3.2 (a symlink to the system shell, or a rebuild that picked up a modern source), so the gate could print a truthful `oracle=… version 5.x` receipt for an audit that models nothing; a name is a hint, `BASH_VERSINFO[0]` is the fact. The skip line names every candidate it looked at AND every one it rejected by version, and those lines now reach the CI log. **The CALLER pins the identity too, and it keys on the FACT rather than the banner**: the gate prints `portability-parse: oracle-major=N` from the SELECTED candidate's own `BASH_VERSINFO[0]`, and `[99zb]` parses THAT line while holding its own `≤ 3` literal. Round 6 read the major version out of the GNU version banner instead, so a real bash 3.2 behind a wrapper whose banner says `Custom Bash 3.2.0` yielded no number at all and was failed BY NAME (round-6 blind critic, Fable) — a banner is prose, a version is a fact. A gutted selection is still red by name (`the portability gate measured under bash 5 — that is not the old shell it exists to model`) rather than passing on rc 0 and a verdict prefix. And because that arm never fires on a healthy tree, `[99zb]` now drives it over THREE SYNTHETIC RECEIPTS as its own planted faults — a bash 5 wearing a 3.2 banner must be refused, a real 3.2 with a vendor banner must be accepted, and a completed audit with no identity line must be refused — both halves of the control, judged by the same function that judges the real receipt. |
 **`make -p` across GNU Make releases — measured, not assumed.** macOS runners carry
 **GNU Make 3.81** (2006); this box has 4.3, and [99za]'s build-product
@@ -873,7 +873,7 @@ headers that will EXECUTE — a probe gate's else-branch twin
 capability, and counting it made round 1 promise 18 for a run that printed 16.
 
 ```
-SECTION PLAN: PLAN: sections=6 (of 264) chunks=5 plan=zlib capabilities=1 (floor 1) gated-chunks=1 (floor 1)
+SECTION PLAN: PLAN: sections=6 (of N) chunks=5 plan=zlib capabilities=1 (floor 1) gated-chunks=1 (floor 1)
 ```
 
 A plan of zero sections is a hard failure, and so is a RUN of zero assertions:
@@ -1114,3 +1114,41 @@ core-smoke plan does not cover. Main runs the full matrix before anything is
 released, so the window is between merge and the next main run, and nothing
 ships through it. That trade is deliberate: it buys back roughly half the
 machine-minutes and more than half the contributor wait.
+
+## Before you push: `make precheck`, and test enrolment (#1264)
+
+PR #1260 was a correct five-line fix whose landing cost four gate failures, each
+surfaced only after a ~45-minute CI run, and each decidable from the source
+tree alone. `make precheck` (`tools/precheck.sh`) runs those static gates
+locally — one line per gate, nonzero exit on any failure, no build needed (the
+docs-claims gate joins in when a binary exists). `bash tools/precheck.sh --list`
+prints the manifest: every tools/ script CI invokes, classified as `run`
+(static), `bin` (needs a binary) or `ci` (network, toolchains, runtime
+differentials — each with its reason).
+
+The manifest cannot drift from CI silently. `tools/precheck.sh --check`
+derives the set of tools/ scripts that `tests/run_all_tests.sh` and
+`.github/workflows/*.yml` invoke, and fails if CI runs one the manifest does
+not classify or the manifest names one CI no longer runs. It runs inside every
+precheck and in suite section `[99ab]`.
+
+**Test enrolment.** `tools/test_enrolment_check.sh` (also `[99ab]`) fails when a
+`tests/*.sh` or `tests/*.py` is invoked by nothing: no suite section, no
+workflow step, and no enrolled script that runs it (`test_dap.py` is enrolled
+through `test_dap.sh`). "Invoked" means the script is what a shell segment
+RUNS — a section's failure message that merely names the file does not count.
+Deliberate exceptions live in `tests/enrolment_exemptions.txt`, one
+`path | reason` row each; a row for a file that is enrolled, or missing, fails.
+`tests/*.eigs` are out of scope: they are consumed through too many mechanisms
+(imports, globbed directories, mutant harnesses, python drivers) for
+"invoked" to have one syntactic meaning.
+
+**Growing totals are floors.** A count that grows when someone adds a test —
+child-script sites (`tools/child_exit_check.sh`), environment-selectable
+children, builtin-family doc mentions — fails only if it DROPS below its
+checked-in floor; adding needs no edit and cannot conflict. A floor edit is how
+a removal is declared. Declared sets (a self-test's planted cases, a waiver
+table, a pinned target list) keep exact counts. The docs no longer state the
+suite's section count; the docs-claims rule for it stays armed, so a number
+someone writes is still derived and checked.
+
