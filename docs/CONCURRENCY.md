@@ -325,7 +325,8 @@ see it — and returned `null`, so 300 unjoined spawns reported
 nothing carried on with 45 workers it had never started.
 
 Gated by `tests/test_handles_mt.sh` (suite [42l]), its rows in
-`tests/test_tsan.sh`, and the mutation train `tools/handles_mt_mutants.sh`.
+`tests/test_tsan.sh`, and the mutation train in `tools/mutants.sh`
+(run `bash tools/mutants.sh handles_mt`).
 
 ## Shared envs under MT are named, not inferred (#1161)
 

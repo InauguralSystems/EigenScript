@@ -265,7 +265,7 @@ SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage
 # interpreter (deliberately not via `make`, which would re-point
 # src/eigenscript under the suite) plus two leak controls, so four real
 # compile invocations that no make target covers.
-SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh"
+SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
 # compile line is not a compile.
@@ -342,8 +342,7 @@ script:web/build.sh 1
 script:tests/test_leak_guard.sh 2
 script:tests/test_asan_gfx.sh 4
 script:tests/test_tsan.sh 1
-script:tools/trace_mt_mutants.sh 2
-script:tools/arming_mt_mutants.sh 1
+script:tools/mutants.sh 1
 script:tests/run_all_tests.sh 1
 '
 

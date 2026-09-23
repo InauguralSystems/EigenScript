@@ -1,5 +1,5 @@
 # file: src/trace.c
-# fable's own arming mutant (NOT in tools/arming_mt_mutants.sh): the HISTORY tier's writer
+# fable's own arming mutant (NOT in tools/mutants.sh arming_mt): the HISTORY tier's writer
 # (trace_arm_history_name) drops its hold while arm_lock()/arm_unlock() stay real and every
 # other site stays locked — the two-state `prev of` shape reallocs g_arm_names unguarded.
 /^void trace_arm_history_name(const char \*name) {$/,/^}$/ {

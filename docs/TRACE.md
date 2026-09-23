@@ -495,7 +495,7 @@ embed-concurrent` (sink byte accounting, per-state `O cfg`, close-while-
 other-runs, concurrent close, owner-only take, shutdown-while-sibling,
 serialized take, take-under-lock, set-sink header, sink-only memory bound,
 exit-tail), `tests/test_tsan.sh` (worker-tape with `EIGS_TRACE`,
-replay-workers, embed-concurrent), `tools/trace_mt_mutants.sh` (fourteen
+replay-workers, embed-concurrent), `tools/mutants.sh` (`bash tools/mutants.sh trace_mt`; fourteen
 mutants, each killed 10/10). The sink and `O cfg` cases force the two
 states to overlap with a per-round barrier and FAIL with a named
 "no interleaving observed = inconclusive run" verdict rather than passing

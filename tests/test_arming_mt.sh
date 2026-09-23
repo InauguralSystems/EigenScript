@@ -50,7 +50,7 @@ TMPDIR=$(mktemp -d -t eigs_arming_mt.XXXXXX)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
-# The trailing colon is load-bearing: tools/*_mt_mutants.sh derives WHICH
+# The trailing colon is load-bearing: tools/mutants.sh arming_mt derives WHICH
 # check killed a mutant with `s/^  FAIL: \([^:]*\):.*/\1/`, so a row whose
 # name is not colon-terminated is invisible in the kill reason (§21). Every
 # row name above is therefore a single token before its first colon.
