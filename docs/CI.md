@@ -525,14 +525,16 @@ All three tools carry a planted-fault `--selftest` with a pinned case count and
 a `--contract`, and the suite runs the live pass, the contract and the selftest
 of each as `[99zd]`.
 
-## Main lane (push to `main`) — the full matrix
+## Main lane (the merge queue, then push to `main`) — the full matrix
 
 Everything above runs in full: macOS (`macos-latest`), every variant job on the
 complete suite, `linux / clang` on the complete suite. The only thing that does
 not run ten times is [99i], which the `werror audit` job owns.
 
-This is the real exit gate. #1138 and #1158 both carried lanes only CI could
-run. Contributors never wait on it; whoever merges does.
+This is the real exit gate, and it runs **in the merge queue** (`merge_group`)
+on the commit that will land, before it lands — see **Platform tiers** below.
+#1138 and #1158 both carried lanes only CI could run. Contributors never wait
+on it and never rebase to satisfy it; the queue does both.
 
 ## Nightly (`.github/workflows/nightly.yml`)
 
@@ -925,8 +927,8 @@ tools/section_plan.sh --shards 3 --shard 2   # that shard's plan line
 EIGS_SUITE_SHARD=2/3 bash tests/run_all_tests.sh
 ```
 
-The aggregator `asan + ubsan (full suite)` — still the only ruleset-required
-check, and still that name — does four things no shard can do for itself: it
+The aggregator `asan + ubsan (full suite)` — a ruleset-required check (see
+**Platform tiers**), and still that name — does four things no shard can do for itself: it
 requires every matrix leg green, re-runs `--shards 3 --check`, requires one
 **receipt** per shard carrying that shard's `PLAN: shard=k/3 …` line, and
 **sums the LeakSanitizer tallies and requires 0**. Splitting the job must not
@@ -1032,85 +1034,133 @@ whose inputs really are the Makefile and the tracked scripts). A local
 does the suite's [99i]. `werror_cache_key.sh --selftest` reads both `ci.yml`
 and the audit script and fails if the split stops being used.
 
-## Required status checks — what is actually required today
+## Platform tiers — what blocks a merge, and what decides main's colour (#1264)
 
-Read off the live repo (`gh api repos/InauguralSystems/EigenScript/rulesets`,
-2026-09-15), because round 1 of this change documented a list that does not
-exist:
+Main CI did not finish green from 2026-09-16 to 2026-09-22 although every
+required check passed on every merge: one lane that no pull request had to pass
+(`macos / macos-15-intel`, main lane only) hit its timeout on nearly every
+push. The README badge is the status of the whole `ci.yml` workflow on `main`,
+so **any** `ci.yml` job that can fail there colours it, required or not.
 
-- Classic branch protection on `main`: **not enabled** (`branches/main/protection`
-  returns 404, "Branch not protected").
-- Ruleset **"Protection"** (active, `~DEFAULT_BRANCH`) requires exactly **one**
-  status check: `asan + ubsan (full suite)`.
-- Ruleset **"Main"** (active) targets `refs/heads/Main` — a branch with a
-  capital M that does not exist — and requires `Black`. It is inert.
+The fix copies Rust (tiers plus a merge queue), CPython and Go:
 
-So `macos / macos-15-intel` was never in a required list, and nothing here
-"must be removed" for the merge to work. What matters instead is the reverse:
-**`asan + ubsan (full suite)` is the only gate the ruleset enforces**, and it
-is an *aggregator* — it reports success only when both sanitizer workers
-succeed (see below). That single rule keeps working unchanged under this
-change.
+- **Tier 1** — the checks listed in `.github/required-checks.txt`. They block
+  a merge, and they are evaluated **in the merge queue**.
+- **The merge queue.** A PR that passed the fast PR lane joins GitHub's merge
+  queue. The queue builds a candidate commit (current `main` + the PRs queued
+  ahead of it + this PR) and runs the **full main lane** on it (the
+  `merge_group` event). Nothing lands unless every required check is green
+  there, so `main` is green by construction, and **contributors never rebase
+  just to update a PR** — the queue tests the combination for them. Every
+  workflow that produces a required check (`ci.yml`, `codeql.yml`,
+  `pages.yml`) triggers on `merge_group`, and every main-lane-only step is
+  gated `github.event_name != 'pull_request'` (true on push *and* in the
+  queue), never `== 'push'`.
+- **The post-merge push run** re-tests the commit the queue already tested. It
+  stays: the README badge reads it, it publishes the rolling `ci-main` dev
+  image that fork PRs run in, and `pages.yml` deploys the site only on push
+  (never from a queue candidate that may still be rejected).
+- **Tier 2** — slow and port lanes, in `.github/workflows/nightly.yml`
+  (today `macos-15-intel` and the full valgrind corpus). They never colour
+  `main`; a failure opens or appends to one tracking issue.
 
-### The PR-lane job set, and which are aggregators
+### The source of truth: `.github/required-checks.txt`
 
-On a pull request, `ci.yml` produces these checks:
+One exact check-run name per line; a line starting with `#` is a comment giving
+the reason for a non-obvious entry. The ruleset **"Protection"**
+(`~DEFAULT_BRANCH`) is synced *from* this file, never edited by hand. To change
+tier 1: edit the file in a PR, merge, and the orchestrator syncs the ruleset;
+`bash tools/ci_tier_check.sh --live` (read-only) then prints OK. Between merge
+and sync it names the drift — expected, which is why CI does not run `--live`.
 
-| Check | Kind |
-|---|---|
-| `scope` | gate; decides docs-only |
-| `build dev/ci image` | prerequisite; every Linux leg runs inside it |
-| `werror audit ([99i], cached)` | gate |
-| `gate self-tests (section plan + audit cache key)` | gate |
-| `linux / gcc` | the one full suite |
-| `linux / clang` | build + derived core smoke |
-| `macos / macos-latest` | full suite (code PRs only) |
-| `extensions (http+model+gfx suite; embed/lsp/jit-smoke)` | **aggregator** over the four workers below |
-| `extensions / http+model and ancillary checks` | worker |
-| `extensions / gfx suite` | worker |
-| `extensions / zlib suite` | worker |
-| `extensions / net suite` | worker |
-| `asan + ubsan (full suite)` | **aggregator** over the two workers below |
-| `asan + ubsan / core and LSP` | worker |
-| `asan + ubsan / HTTP and model suite` | worker |
-| `db extension (postgres service)` | gate |
-| `jit differential (interpreter oracle, tape-replayed)` | gate |
-| `replay differential (same-binary tape fidelity)` | gate |
-| `freestanding profile (symbol gate + smoke)` | gate |
-| `valgrind (memcheck smoke, JIT off)` | gate (the smoke spread; the job prints its size) |
-| `tsan (concurrency race gate)` | gate |
-| `install.sh (interpreter + eigenlsp on PATH)` | gate |
-| `bench (instruction-count regression gate)` | gate |
-| `Analyze C` (workflow `CodeQL`) | gate, separate workflow |
-| `playground (real emcc wasm32 build)` (workflow `Docs site`) | **aggregator** over the worker below; reports on every PR |
-| `playground / build (real emcc, web/build.sh) + docs site` | worker |
+### What `tools/ci_tier_check.sh` enforces
 
-`macos / macos-15-intel` runs **only** in nightly (#1264): on the main lane it hit its
-45-minute timeout on nearly every push, so main CI never finished green.
+Only what the queue cannot guarantee by itself. It runs in the `gate
+self-tests` job, followed by its `--selftest` (each planted fault must go red
+through its named check). A missing PyYAML is exit 2, never a pass.
 
-An aggregator exists so that a *required* check name can survive the job being
-split into parallel workers: it fails unless every worker succeeded, and it
-treats `skipped`, `cancelled` and missing results as failure. A worker is not
-separately required; it is required *through* its aggregator.
+- `[unproduced]` / `[ambiguous]` — a required name is produced by no job, or by
+  more than one.
+- `[not-on-pr]` / `[not-in-queue]` — the producing workflow does not trigger on
+  `pull_request` to `main` (or is path-filtered), or does not trigger on
+  `merge_group`. Either way the check never *reports* there, and a required
+  check that never reports blocks every merge until someone overrides it.
+- `[event-condition]` — on a required path (a required job, the jobs it
+  transitively needs, and the `ci.yml` workers), a condition could run work on
+  push that the queue skips. A job-level `if:` may not mention the event at
+  all: a job **skipped** by its `if:` reports a *satisfied* required check, so a
+  job-level event filter lets a merge through untested. A step `if:` may
+  mention the event only as `github.event_name ==/!= 'pull_request'`, or via
+  the PR payload `github.event.pull_request.*` (empty on push and in the
+  queue alike). Dot and bracket syntax are both read. The same rule covers
+  indirection: an `env`, job `outputs`, workflow `env` or matrix value on a
+  required path may not read the event (outside those two forms), and an
+  `if:` that reads `env.*`, `needs.*.outputs` or `steps.*.outputs` is traced
+  to where the value is set — unresolvable is red, `vars.*` is always red.
+  Two reviewed step outputs are waived by a hash of their step (`scope`'s
+  docs-only check, the `werror audit` cache restore); a waiver that matches
+  nothing is red.
+- `[continue-on-error]` — a job or step on a required path sets it, so its
+  failure would not fail the check.
+- `[uncovered]` — a `ci.yml` job is neither required nor the worker of exactly
+  one required `if: always()` aggregator. A failing non-required job does not
+  stop the queue, yet it colours the badge: the `macos-15-intel` shape.
 
-### If the required set is ever widened
+Whether an aggregator's script really fails on every non-success worker
+result is a code-review question, not this gate's. The gate's other accepted
+limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
+`schedule:` triggers) are listed in #1278.
 
-The set worth requiring, if someone tightens the ruleset, is: `scope`,
-`linux / gcc`, `extensions (…)`, `asan + ubsan (full suite)`,
-`db extension (postgres service)`, `macos / macos-latest`,
-`werror audit ([99i], cached)`, `gate self-tests (…)`, the two differentials,
-`freestanding`, `tsan`, `install.sh`, `bench`, `valgrind` and `Analyze C`.
-**Never** `macos / macos-15-intel`: it does not run on pull requests, and a
-required check that never reports blocks the merge forever — the same trap the
-`scope` job's comment in `ci.yml` describes. Add `playground (real emcc
-wasm32 build)` — it reports on every pull request, success only when the
-real emcc build of `web/build.sh` ran and passed, failure otherwise.
+### Every `ci.yml` job, classified
+
+| Job (check name) | Tier | Why |
+|---|---|---|
+| `scope` | 1 | decides docs-only; the runtime legs read its output |
+| `build dev/ci image` | 1 | the image every `container:` job (the Linux legs, the extension/ASan workers, db, the audits, the differentials, freestanding) runs inside; required because required jobs `needs` it, and a failed prerequisite *skips* them — added by #1264 |
+| `werror audit ([99i], cached)` | 1 | gate |
+| `gate self-tests (section plan + audit cache key)` | 1 | gate; runs this checker |
+| `linux / gcc` | 1 | the one full suite on a PR |
+| `linux / clang` | 1 | clang `-Werror` build + core smoke on a PR, full suite on the main lane — added by #1264 (tier 1 is "Linux gcc/clang") |
+| `macos / macos-latest` | 1 | the one macOS leg; full suite with [99i] on the main lane |
+| `extensions (http+model+gfx suite; embed/lsp/jit-smoke)` | 1 | **aggregator** |
+| `extensions / http+model and ancillary checks`, `/ gfx suite`, `/ zlib suite`, `/ net suite` | 1, via the aggregator | workers |
+| `asan + ubsan (full suite)` | 1 | **aggregator**; also re-derives shard coverage and sums the leak tally |
+| `asan + ubsan / core and LSP (shard k/3)`, `asan + ubsan / HTTP and model suite` | 1, via the aggregator | workers |
+| `db extension (postgres service)` | 1 | gate |
+| `jit differential (…)`, `replay differential (…)` | 1 | gates |
+| `freestanding profile (symbol gate + smoke)` | 1 | gate |
+| `valgrind (memcheck smoke, JIT off)` | 1 | the smoke spread (the full corpus is tier 2) |
+| `tsan (concurrency race gate)` | 1 | gate |
+| `install.sh (interpreter + eigenlsp on PATH)` | 1 | gate |
+| `bench (instruction-count regression gate)` | 1 | gate (baseline: `origin/main` on a PR; the candidate's `merge_group.base_sha` in the queue, so a PR is never charged for the PRs queued ahead of it) |
+| `nightly / macos-15-intel full suite` | **2** (`nightly.yml`) | port lane, slow: hit its timeout on nearly every main push (#1265) |
+| `nightly / valgrind (full corpus, JIT off)` | **2** (`nightly.yml`) | slow; the PR and main lanes run the smoke spread |
+
+No `ci.yml` job moved to nightly in #1264 beyond `macos-15-intel` (#1265):
+every other job already runs on pull requests, so each was made tier 1.
+
+### Checks from other workflows
+
+They do not affect the `ci.yml` badge. Each is required or advisory by the same
+file:
+
+| Check (workflow) | Tier | Why |
+|---|---|---|
+| `Analyze C` (`codeql.yml`) | 1 | runs on every PR to `main` and in the queue, no path filter |
+| `playground (real emcc wasm32 build)` (`pages.yml`) | 1 | **aggregator** over `playground / build (…)`; reports on every PR and in the queue |
+| `playground / build (real emcc, web/build.sh) + docs site` (`pages.yml`) | advisory | the worker; required through the aggregator |
+| `deploy` (`pages.yml`) | advisory | runs only on push and `workflow_dispatch` — it publishes, it does not test |
+| `codspeed (simulation)` (`codspeed.yml`), and the CodSpeed app's `CodSpeed Performance Analysis` | advisory | path-filtered (`paths-ignore: '**.md'`), so it never reports on a docs-only PR; the instruction-count gate that blocks is `bench` |
+| `build` (`docker.yml`) | advisory | runs on push to `main`, `v*` tags and `workflow_dispatch`, never on a PR |
+| `Scorecard analysis` (`scorecard.yml`) | advisory | runs on push, schedule and `branch_protection_rule`, never on a PR; a posture score |
+| `Analyze (python)`, `Analyze (javascript-typescript)` | advisory | CodeQL *default setup* (a GitHub app, not a workflow file) over the repo's non-C code; the C analysis that blocks is `Analyze C` |
+| `issue-triage / …` (`issue-triage.yml`), `release.yml` jobs | advisory | not triggered by PRs or pushes to `main` |
 
 ## The risk this accepts
 
-A variant-specific regression in a *non-variant* section reaches `main` before
-anything catches it — for example a clang-only miscompile in a section the
-core-smoke plan does not cover. Main runs the full matrix before anything is
-released, so the window is between merge and the next main run, and nothing
-ships through it. That trade is deliberate: it buys back roughly half the
-machine-minutes and more than half the contributor wait.
+A variant-specific regression in a *non-variant* section — for example a
+clang-only miscompile in a section the core-smoke plan does not cover — passes
+the fast PR lane. It is caught in the merge queue, which runs the full matrix
+before the PR lands, so it never reaches `main`; the cost is a rejected queue
+entry instead of a red PR check. That trade is deliberate: it buys back roughly
+half the machine-minutes and more than half the contributor wait.
