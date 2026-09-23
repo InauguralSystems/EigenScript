@@ -841,63 +841,17 @@ All notable changes to EigenScript are documented here.
   only when that build ran and passed — failed, cancelled, skipped or without
   its receipt is failure — so it can be a required check.
   Configure Pages, the artifact upload and `deploy` stay push-only, and a PR
-  has its own concurrency group so it cannot cancel a `main` deploy. Suite
-  `[99i3]` (`tools/ilp32_syntax_check.sh`) no longer claims the wasm32 build
-  "cannot break unnoticed": with emcc on `PATH` it replays each recorded emcc
-  call — the recipe's own argv plus `-fsyntax-only`, minus `-o` and sibling
-  units, nothing injected (`verdict: AUTHORITATIVE`) — and neither arm injects
-  `-Isrc` or `-DEIGENSCRIPT_*` any more (plants 10i/10d/10im/10dm, control
-  10c); otherwise it runs `clang -m32`
-  and says `verdict: APPROXIMATION`, naming pages.yml as the authority — i386
-  aligns `double` to 4 inside a struct and wasm32 to 8, so a layout assert can
-  pass `-m32` and fail emcc. Self-test control `1w` pins that blind spot and
-  `1wt` pins that the wasm32 frontend sees it (62 cases, was 55).
+  has its own concurrency group so it cannot cancel a `main` deploy. The host
+  `clang -m32` approximation that had stood in for this build was later
+  deleted (#1274).
 
 - **Doc-claims selftest isolates its variant alias.** The fixture now removes
   inherited build variants before creating its `asan` alias, so an `asan-http`
   build cannot cause a false failure by being the first matching hard link.
 
-- **The ILP32 gate carries the recorded call's own FLAGS into both the
-  macro-world derivation and the TU compile, instead of recording them and
-  then discarding them (#1232).** The live recipe compiles at `-O2`, which
-  defines `__OPTIMIZE__` in the real target's macro world; round 6/7 derived
-  both worlds and compiled every TU with neither the target's optimisation
-  level nor any recorded `-D`, so `#if defined(__wasm__) &&
-  defined(__OPTIMIZE__)` compiled clean under the gate and was RED under real
-  wasm clang at `-O2` (measured by a blind critic through the real `[99i3]`
-  section — 46/46 self-test cases green — and reproduced again here through
-  the actual runner: `FAIL: .../src/fsutil.c ... error: R6_OPTIMIZATION_WORLD`
-  after the fix, silent before it). Each recorded call's accepted option
-  tokens — optimisation level, every `-D`/`-U`, `-std=`, `-f*`, `-W*`, through
-  the SAME accepted-option set the driver cross-check already measures — are
-  now tracked per call (`classifier: flags=N per call`) and reach the compile
-  of the TU that call recorded; a TU compiled once under one call's own `-D`
-  and again — unqualified — inside a later call's SOURCES is examined under
-  the call that actually shaped it (verified against a second plant, a
-  per-call-only `-D`: the fault is invisible unless the isolation holds, and
-  it now reproduces `FAIL: .../web/percall.c ... error: R6_PER_CALL_DEFINE`).
-  Both `emcc` and `em++` are shimmed now, not only `emcc` — a recipe line
-  reaching `em++` was recorded nowhere and silently skipped on this box (no
-  emsdk), which the gate reported as a clean recipe. Two residuals are stated
-  rather than silently absent: the recorded input is read after the WHOLE
-  recipe finishes, not snapshotted at the call that produced it (a `#error`
-  compiled by an early call and overwritten with valid C before a later one
-  would be examined on the later bytes); and an INVALID option the driver
-  rejects is indistinguishable from a legitimate emcc-only one and is
-  silently dropped rather than failed. Also: empty stdin (`-x c -` with
-  nothing piped) is a valid empty translation unit — `[ -s ]` read the empty
-  capture as "nothing was captured" and refused a recipe the real compiler
-  builds fine; and the self-test's own `argv_plant` helper now asserts
-  `CLASSIFIER_DROPPED` RELATIVE to the live recipe's own baseline rather than
-  requiring it to be empty, so a legitimate spaced `-s X=Y` the live recipe
-  picks up someday does not fail every unrelated plant (verified against a
-  tree where the live recipe carries one: the audit and all 55 self-test
-  cases stay green). Five new self-test plants/controls (8o/8oc, 8d, 9e,
-  12es); `--selftest` is 55 cases, up from 50.
-
 - **`RESULTS: ... N skipped` counts every section that measured nothing, not
   one of them (#1225).** The counter shipped in round 6 with the comment "a
-  zero that is printed is a claim" and exactly ONE increment site (`[99i3]`),
+  zero that is printed is a claim" and exactly ONE increment site (the since-deleted ILP32 gate),
   while `tests/run_all_tests.sh` had ~40 lines that put a `SKIP` marker on a
   run's stdout. Measured on the pushed head 1b5c64d: `linux / gcc` printed
   `RESULTS: 5282/5282 passed, 0 failed, 0 skipped` beneath nine of them,
@@ -936,213 +890,14 @@ All notable changes to EigenScript are documented here.
   a server that never binds still fails by name on the deadline, and one that
   exits still fails by name with its status, first time, no retry.
 
-- **A `-x c <unit>` naming no existing file is FAIL by name in the ILP32 gate,
-  not a dropped operand.** Round 6 keyed that rule on the C-family SUFFIX, so
-  `-x c web/missing.inc -x none` — a unit the recipe names, `emcc` would refuse
-  and the gate can never examine — was dropped and the run printed
-  `OK: examined 23`, rc 0. The language in effect is now read from the recorded
-  argv the way the driver reads it (`-x c` and the glued `-xc`, `-x none`
-  turning it off); plant 3stx is the missing twin of plant 2u.
-
-- **The ILP32 gate's SDK-refusal match covers both wordings macOS emits.**
-  The macos-latest log at 1b5c64d shows `sys/cdefs.h:1068:2: error: Unsupported
-  architecture` AND `machine/_types.h:36:2: error: architecture not supported`
-  in the SAME probe; round 6 matched only the first, so a header or SDK reorder
-  leaving only the second would have turned that lane RED by name. Plant 5s2
-  requires the second wording alone to skip; control 5sg requires glibc's
-  `You need a ISO C` refusal to still FAIL, so the widening did not admit a
-  non-SDK break. The gate's header now also STATES the residuals the loop
-  measured and it does not close: only `emcc` is shimmed (a recipe reaching
-  `em++` is loud rc 127 on every box without emsdk and unrecorded on one with
-  it), `value_parity_unreconciled` is exercised only by plants 4w/4y, a
-  DIRECTORY named `*.c` and an unreadable `*.c` go red for the apparatus's
-  reason rather than the unit's, and `EIGS_ILP32_TU_FLOOR` can be exported to 0
-  on a standalone invocation. `tools/werror_switch_check.sh`'s floor for that
-  file is re-pinned 8 -> 11, the count its own `--print-counts` measures (it
-  moved again to 12 later the same round, with #1232's flags fix below).
-
 - **The Value-union size assert is the #1183 claim that holds at every
   pointer width, so the Docs-site wasm32 lane (pages.yml) compiles again
   (#1185).** `sizeof(data) == sizeof(data.fn)` was a 64-bit accident (`fn`
   and `dict` are both 56 bytes there; at 32-bit pointers `data` is 36 and
   `fn` is 28). The real claim is that caching the string length added no
-  bytes to the union: `sizeof(data.strv) <= sizeof(data.fn)`. Gated by
-  suite `[99i3]` (`tools/ilp32_syntax_check.sh`): clang `-m32 -fsyntax-only`
-  over **every translation unit the playground recipe hands the compiler** —
-  23 today, printed by the gate rather than typed, and floored, so a shrinking
-  population is a deliberate re-pin rather than a quiet green. That population
-  is **the recorded argv of a stand-in compiler**, not a reading of
-  `web/build.sh`: the gate stages the repo in a scratch sandbox, puts a
-  recorder first on PATH, runs the real recipe, and classifies the arguments
-  bash actually produced. Three rounds derived it by text and a blind critic
-  broke each one — a `src/*.c` filter examined 22 of 23 (the playground entry
-  point `web/eigs_wasm.c` sat outside the gate AND its self-test, and a
-  compile error planted there passed both), and the `.c`-token audit that
-  replaced it was blind to a single-quoted `'web/x.c'` literal, a `$(...)`
-  substitution, an array entry behind a variable and `.C`/`.cc` units, while
-  counting a comment line inside `SOURCES=(` as a source and an `-o out.c`
-  operand as one too. Six self-test plants pin exactly those shapes.
-  Recording argv was not enough on its own: round 4 then classified it with a
-  hand-typed model of emcc's option grammar, and the model was wrong in the
-  direction that HIDES inputs — `--emrun`, `--proxy-to-worker` and
-  `--default-obj-ext` take NO operand in emcc (`cmdline.py`'s `check_flag` and
-  `LEGACY_FLAGS`), so a translation unit sitting after one of them was dropped
-  from the population while emcc compiled it, and the gate still printed
-  `OK: examined 23`; `@response-files`, which emcc expands before it parses
-  anything, and `-x c <unit>` were uncounted for the same reason. **There is
-  no operand model left.** Response files are expanded first (two levels; a
-  third is fail-by-name), and an INPUT is any token that names an existing
-  regular file under the sandbox — relative to the cwd the stand-in recorded —
-  which the compiler did not itself write and whose suffix is a C-family
-  translation unit. That rule is position-independent, so no argument's meaning
-  depends on the one before it. The two shapes a suffix cannot see, a unit on
-  stdin (`-x c -`, captured by the stand-in) and a unit whose suffix is not a
-  TU suffix (`-x c web/unit.inc`), are decided by asking the REAL driver: clang
-  is handed the recorded argv with emcc's own options removed and its
-  `-x <lang> <file>` cc1 inputs are read back, where "emcc's own options" is
-  itself measured — a token is emcc's exactly when
-  `clang -m32 -fsyntax-only -### <token> /dev/null` rejects it as unknown. Both
-  derivations are printed (`classifier: N by suffix+filesystem, M by the clang
-  driver, K in the union examined`), the gate examines their UNION, and a
-  DISAGREEMENT is fail-by-name in both directions. The stated residual is the
-  over-inclusion direction: the operand of an emcc-only option stays on the
-  line, so `--embed-file web/data.c` — a data file that happens to be named
-  `.c` — is counted by both derivations and goes red by name, loudly rather
-  than silently (self-test control 2e). Nothing the recipe writes reaches the
-  tree any more either: round 4 symlinked every top-level entry, so a recipe
-  line writing `src/x.h` wrote through into the real `src/` while the header
-  claimed otherwise; the gate now makes one pristine copy of the repo (21 MB,
-  1.9 s measured), makes its files read-only, and hard-links a clone per
-  sandbox (0.4 s), so a created file lands in the sandbox and an overwrite of
-  an existing one is EPERM — and the recipe is RUN from the sandbox rather
-  than from the gate's own directory, so the protection starts at the first
-  line of the recipe instead of at the recipe's own `cd` (round 6 relied on
-  that `cd`: a write placed above it landed two files in the real working tree
-  with the gate printing `OK: examined 23`, rc 0; plants 2w and 2wp now pin
-  both sides of that line). The entry
-  point is compiled against a stub `<emscripten.h>` carrying
-  `EMSCRIPTEN_KEEPALIVE` exactly as emscripten's `em_macros.h` defines it —
-  `__attribute__((used))`, not a no-op, because an empty macro accepts
-  `EMSCRIPTEN_KEEPALIVE return x;` which the real header rejects (`'used'
-  attribute cannot be applied to a statement`). The `-D`/`-U` set is
-  **derived, not typed**: the gate reads both worlds' predefines with
-  `-E -dM` (`clang --target=wasm32-unknown-emscripten` and `clang -m32`),
-  reconciles every difference — measured 2026-09-21 as 39, the 30 macros the
-  host adds and the 9 the target adds — re-derives the host world under those
-  flags, and asserts defined-ness parity for every macro any conditional in
-  the population tests, failing by name on one it cannot reconcile. Round 3
-  hand-typed `__EMSCRIPTEN__ __wasm__ __wasm32__` and called them "the
-  target's own predefines"; they were 3 of the 9 additions and none of the 30
-  removals, so `src/fsutil.c:69 #elif defined(__linux__)` compiled the Linux
-  arm under a gate standing in for a lane that has no `__linux__` at all.
-  Reconciling NAMES was not enough either: 32 predefines are defined in both
-  worlds with DIFFERENT values — `__SIZEOF_LONG_DOUBLE__` is 16 on the target
-  and 12 on the `-m32` host, `__INTPTR_TYPE__` is `long int` vs `int`,
-  `__SIZE_TYPE__`, the whole `__LDBL_*` family — so
-  `#if __SIZEOF_LONG_DOUBLE__ == 16` was red on the real target and green under
-  a gate reporting `reconciled=48`. Each of those now carries the target's own
-  value too, and WHICH of them glibc's `-m32` headers refuse is MEASURED, not
-  assumed: the gate builds a probe from the system headers the population
-  itself includes, compiles it under the candidate set, and bisects by name;
-  the survivors are applied, the refusals are printed as
-  `value_parity_unreconciled=`, and a conditional that READS one of them is
-  fail-by-name. The report line separates the two claims —
-  `macro_parity: tested=N reconciled=N values=N/M` — because round 4 said
-  "reconciled" of 48 macros with not one value compared. The conditionals keyed
-  on this world are **printed** by the gate rather than listed in a comment:
-  two today, `src/fsutil.c:69` on `__linux__` and `src/jit.c:110` on
-  `__wasm__`. The tested-macro population cannot shrink silently either: round
-  4 scanned the TU list with an unquoted `$(cat "$files")` and no status check,
-  so one path containing a space made `tested=48` become `tested=19` at exit 0;
-  the list is read NUL-safely, awk's status is checked, and the files it opened
-  and the conditional lines it matched are cross-checked against an independent
-  `grep -c` over the same list.
-  This is PREDEFINE parity — a macro a system header supplies (`__GLIBC__`,
-  from glibc's features.h) is outside it, and the gate says so. **Fifty**
-  self-test plants and controls hold all of it: the six argv shapes; seven
-  option-grammar shapes (a TU after `--emrun` and after `--proxy-to-worker`, a
-  TU named only inside an `@response-file`, response files nested three deep, a
-  TU on stdin, a `-x c` unit with a non-TU suffix, and the `--embed-file`
-  over-inclusion control); a `-x c` unit naming no existing file, which must
-  FAIL by name like its `.c`-suffixed twin; two recipe lines writing `src/`
-  that must not reach the working tree, one after the recipe's own `cd` and one
-  before it; the SDK's second measured refusal wording, with glibc's own
-  refusal as the control that must still FAIL; a syntax error in the entry point, an `#ifdef __EMSCRIPTEN__`
-  arm, a misplaced `EMSCRIPTEN_KEEPALIVE`; an arm the wasm32 target takes and
-  the host does not (with its opposite as a control), a conditional comparing a
-  VALUE that differs (with its opposite as a control), a value reconciliation
-  glibc refuses (must be measured and named), an unreconcilable value a
-  conditional reads (must fail by name), the parity assertion run with no
-  reconciliation flags and with an empty tested population, a TU path with a
-  space that must not shrink the tested population; an empty inventory, a
-  1-entry population, the entry point dropped from the inventory (23 → 22,
-  below the floor), the old 64-bit assert — plus a REFORMATTED SOURCES array
-  that must yield the identical inventory (the round-2 plant edited the array's
-  TEXT and so went falsely red on a reflow) and the live inventory staying
-  green.
-  The RECORDER keeps EVERY invocation. Round 5's stand-in wrote its records
-  with `>`, so a recipe that called the compiler twice was recorded once: a
-  planted `#error` unit compiled by a first `emcc -c web/x.c -o web/dist/x.o`
-  and linked by the second call sat outside the population entirely while the
-  gate printed `OK: examined 23` and the real wasm32 target was RED (a blind
-  critic, by execution). Compile-then-link is the canonical build shape. Each
-  call now appends its own record — argv, cwd, the files THAT call created,
-  its stdin unit — the population is the union across calls, `classifier: N
-  call(s) recorded` is printed every run, and a recipe with zero invocations
-  is fail-by-name. The assumption that is now true, stated: every invocation
-  of the stand-in is recorded. Plants 2c, 2ca, 2cz and 2b hold it. The driver
-  cross-check is also fed only operands the driver can OPEN: emcc's documented
-  spaced form `-s TOTAL_MEMORY=64MB` reached clang as an input (bare `-s` is
-  clang's strip flag), clang answered `no such file or directory:
-  'TOTAL_MEMORY=64MB'`, and the gate called a recipe emcc builds fine RED. The
-  operand to drop is MEASURED from the driver's own diagnostic rather than
-  typed — a rule of the form "a non-option token that is not a file is a
-  setting" would eat the `c` in `-x c web/unit.inc` — every dropped token is
-  printed on `classifier: dropped=`, and a refused operand whose suffix is a
-  `.c` is still fail-by-name, because that is a recipe naming a unit that does
-  not exist (plants 3s, 3sj, 3st). And an EMPTY translation unit is examined
-  and counted: the conditional scan counted files with awk's `FNR == 1`, which
-  an empty file never reaches, so a `.c` produced by one call's `-o` and
-  compiled by the next made the gate answer "the tested-macro population
-  shrank silently" — loud, and wrong. The scan counts by enumeration now.
-  `-m32` is the i386 ABI, not wasm32 — it catches pointer-width breaks, the
-  `#1185` class, not every layout difference. Availability is probed by
-  EXECUTION, not by the compiler's name, and EXACTLY ONE outcome may skip: a C
-  library with no 32-bit target for its own headers, which says so in its own
-  words, at whichever of the two stages it says so. That probe
-  had to ASK FOR THE CAPABILITY THE GATE USES: the first version compiled a
-  one-line TU with no includes, which clang accepts at `-m32` on an arm64 mac
-  because it never reaches a header — so the gate passed its own availability
-  check on macos-latest and then went red on all 23 TUs with
-  `MacOSX.sdk/usr/include/sys/cdefs.h:1068: error: Unsupported architecture`,
-  becoming exactly the new red lane on a runner it has nothing to say about
-  that the probe exists to prevent. The probe now includes the C library, and
-  it MATCHES the SDK's own diagnostic, at either stage that can hit it: round
-  5 skipped on ANY probe failure, and a blind critic reached that branch four
-  ways on a LINUX box — no compiler on `PATH`, the gate's own
-  `<gnu/stubs-32.h>` stub deleted, `-isystem /usr/include/x86_64-linux-gnu`
-  pointing nowhere, and a broken reconciliation derivation — each printing
-  `SKIP:`, exiting 0, contributing `TOTAL=0`, with no tally anywhere to
-  notice. Every one of those is the GATE'S OWN APPARATUS breaking, so every
-  one of them is now FAIL BY NAME (plants 5b1, 5b2, 5b3), and the one case
-  that may skip is held by 5s/5sc (a stub answering `#error Unsupported
-  architecture` must SKIP by name; the live toolchain must be reported
-  available). macos-latest reaches that verdict one stage LATER — measured in
-  CI: its availability probe passes, and the SDK refuses only once the
-  reconciliation has replaced `__i386__`/`__APPLE__`, which is the
-  reconciliation doing its job — so the same diagnostic decides there too:
-  the SDK's own words are a skip (plant 5rs), and any OTHER refusal of the
-  derived macro world is the derivation being wrong and so a FAIL by name
-  (plant 5r; round 5 skipped on both). The control for that verdict — the
-  same headers *without* the reconciliation — runs in the LIVE path before it
-  is taken either way, because round 5's control was a `--selftest` case and
-  the section runs `--selftest` only in the non-skip branch, so on the very
-  run that skipped the control never executed. The suite's
-  RESULTS line prints `passed, failed, skipped` on every lane, `skipped=0`
-  included, and EVERY section-level skip increments it: a section that measured
-  nothing is a number on the verdict line and not only a line in the log. The gate
-  is also bash-3.2 clean — no `declare -A`, no `mapfile`, no `grep -z` —
-  because macOS is where it has to reach its own probe.
+  bytes to the union: `sizeof(data.strv) <= sizeof(data.fn)`. Gated by the
+  real wasm32 build, `playground (real emcc wasm32 build)`, required on every
+  pull request.
 
 - **The db-extension error-path example in `docs/BUILTINS.md` no longer
   pins the core build's "undefined variable" output.** Section [89] on
