@@ -3,40 +3,25 @@
 # cannot guarantee by itself.
 #
 # Tier 1 = the names in .github/required-checks.txt (the ruleset is synced from
-# that file). The merge queue runs the full main lane on `merge_group` and
-# lands nothing that is not green there, so main is green by construction —
-# PROVIDED the required checks report in the queue and test what push tests.
-# That proviso is what this gate pins:
-#   [unproduced]/[ambiguous]  every required name is produced by exactly one
-#                             job in .github/workflows/;
-#   [not-on-pr]/[not-in-queue] its workflow triggers on pull_request (for main,
-#                             no path filter) AND on merge_group;
-#   [event-condition]         on a REQUIRED PATH (a required job, the jobs it
-#                             transitively needs, and ci.yml workers) no
-#                             condition can run work on push but not in the
-#                             queue. Job-level `if:` may not mention the event
-#                             at all; a step `if:` may mention it only as
-#                             `github.event_name ==/!= 'pull_request'` (same
-#                             truth on push and merge_group) or through the
-#                             PR payload `github.event.pull_request.*` (empty on
-#                             both). Dot and bracket syntax, any case;
-#   [continue-on-error]       no job or step on a required path sets it — a
-#                             failure there would not fail the check;
-#   [uncovered]               every ci.yml job is required, or a worker whose
-#                             ONE consumer is a required `if: always()` job (a
-#                             non-required job that fails does not block the
-#                             queue, yet colours main's badge).
-# Whether an aggregator's script really fails on a bad worker result is a
-# code-review question, not this gate's. Populations: the loader's ci.yml job
-# count == an awk count > 0; required names == a grep count > 0.
-#
-# Usage: tools/ci_tier_check.sh [--selftest | --live]
-#   (no flag)   exit 0 OK, 1 violation, 2 instrument error (no PyYAML, a file
-#               that does not load) — never a verdict
-#   --selftest  plants each class in a copy of .github/ and requires the named
-#               check to go red
-#   --live      read-only diff of required-checks.txt against the live ruleset
-#               (not run in CI: the ruleset is synced after merge)
+# it). The merge queue runs the full main lane on merge_group and lands nothing
+# that is not green there — PROVIDED the required checks report in the queue
+# and test what push tests. This gate pins that proviso:
+#   [unproduced]/[ambiguous]    each required name has exactly one producing job;
+#   [not-on-pr]/[not-in-queue]  on pull_request (main, unfiltered) AND merge_group;
+#   [event-condition]  on a REQUIRED PATH (required jobs, ci.yml workers, their
+#       needs-closure) nothing may differ between push and merge_group: a job
+#       `if:` may not read the event at all; a step `if:` only as
+#       `github.event_name ==/!= 'pull_request'` or the PR payload
+#       `github.event.pull_request.*` (dot or bracket syntax, any case); env /
+#       outputs / matrix values may not derive from the event; an `if:` that
+#       reads env.*, vars.*, needs.*.outputs or steps.*.outputs must resolve to
+#       such values (unresolvable = red; step outputs only via a pinned WAIVE);
+#   [continue-on-error] set on no job or step of a required path;
+#   [uncovered]  every ci.yml job is required or the worker of ONE required
+#                `if: always()` job (else it colours the badge, blocking nothing).
+# Aggregator scripts are code review's. Populations: loader ci.yml jobs == awk
+# count > 0; names == grep count > 0. [--selftest|--live]; exit 1 violation, 2
+# instrument error. --live: read-only diff vs the ruleset (not in CI: synced post-merge).
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WF_DIR="${CI_TIER_WF_DIR:-$ROOT/.github/workflows}"
@@ -49,7 +34,7 @@ check() {
     CT_AWK=$(awk '/^jobs:/ {j=1; next} j && /^[^ #]/ {j=0}
                   j && /^  [A-Za-z0-9_-]+:[[:space:]]*(#.*)?$/ {n++} END {print n+0}' "$WF_DIR/ci.yml") \
     CT_GREP=$(grep -cvE '^(#|$)' "$REQ_FILE") CT_WF="$WF_DIR" CT_REQ="$REQ_FILE" python3 - <<'PY'
-import itertools, os, re, sys
+import hashlib, itertools, os, re, sys
 from fnmatch import fnmatchcase
 def instrument(m): print(f"ci-tier: INSTRUMENT ERROR — {m}; nothing was checked"); sys.exit(2)
 try:
@@ -73,7 +58,7 @@ for fn in sorted(os.listdir(os.environ["CT_WF"])):
     on = doc.get("on", doc.get(True))           # YAML 1.1 reads bare `on` as True
     on = {on: {}} if isinstance(on, str) else {str(k): {} for k in on} if isinstance(on, list) else \
          {str(k): (v if isinstance(v, dict) else {}) for k, v in (on or {}).items()}
-    W[fn] = (on, doc["jobs"])
+    W[fn] = (on, doc["jobs"], doc.get("env") or {})
 
 def triggers(on, ev):
     if ev not in on: return False
@@ -90,9 +75,42 @@ def always(j): return cond(j.get("if", "")) == "always()"
 G = r"github\s*(?:\.\s*{0}\b|\[\s*['\"]{0}['\"]\s*\])"
 PR_ATOM = re.compile(G.format("event_name") + r"\s*[=!]=\s*['\"]pull_request['\"]|['\"]pull_request['\"]\s*[=!]=\s*" + G.format("event_name"), re.I)
 PR_BODY = re.compile(G.format("event") + r"\s*(?:\.\s*pull_request\b|\[\s*['\"]pull_request['\"]\s*\])", re.I)
-def github_refs(s, step):
-    if step: s = PR_BODY.sub("_", PR_ATOM.sub("_", s))
-    return re.search(r"\bgithub\b", s, re.I)
+EVP = r"(?:event_name|event|ref|ref_name|ref_type|head_ref|base_ref)\b"
+EV = re.compile(r"\bgithub\b(?!\s*(?:\.\s*(?!" + EVP + r")\w|\[\s*['\"](?!" + EVP + r")\w+['\"]\s*\]))", re.I)
+IND = re.compile(r"\b(env|vars)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?|\b(needs|steps)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?"
+                 r"\s*(?:\.\s*|\[\s*['\"])(outputs|result|outcome|conclusion)['\"]?\s*\]?(?:\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?)?", re.I)
+# Step outputs an `if:` reads, reviewed as the same on push and merge_group:
+# scope's `code` (true on every non-PR event) and the [99i] cache restore (keyed
+# on audit inputs only). Pinned to the reviewed STEP — any edit is red until
+# re-reviewed and re-pinned (sha256 of yaml.safe_dump(step, sort_keys=True)).
+WAIVE = {("ci.yml", "scope", "detect"): "6611d97dc6f0b4e7", ("ci.yml", "werror-audit", "restore"): "fd12b71bc65e9a90"}
+used = set()
+def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)
+def bad_expr(e, wf, jid, pr_ok, depth=0):
+    """Why expression `e` (in wf:jid) may differ between push and merge_group, or None."""
+    t = PR_BODY.sub("_", PR_ATOM.sub("_", e)) if pr_ok else e
+    if EV.search(t): return f"`{e.strip()}` reads the event"
+    if re.search(r"\b(env|vars|steps|needs)\b", IND.sub("_", t), re.I): return f"`{e.strip()}` reads a context this gate cannot resolve"
+    for m in IND.finditer(t):
+        (ctx, name, kind, job, field, key), j = m.groups(), W[wf][1].get(jid, {})
+        if ctx == "vars" or depth > 4: return f"`{m.group(0)}` cannot be resolved"
+        if ctx == "env":
+            vals = [str(d[name]) for d in [s.get("env") for s in j.get("steps") or [] if isinstance(s, dict)] + [j.get("env"), W[wf][2]]
+                    if isinstance(d, dict) and name in d]
+            if not vals: return f"`env.{name}` is not declared in {wf}:{jid}"
+            why = next((w for v in vals for x in exprs(v) for w in [bad_expr(x, wf, jid, pr_ok, depth + 1)] if w), None)
+        elif field in ("result", "outcome", "conclusion"): continue
+        elif kind == "needs":
+            v = (W[wf][1].get(job, {}).get("outputs") or {}).get(key)
+            if v is None: return f"`needs.{job}.outputs.{key}` is not declared"
+            why = next((w for x in exprs(v) for w in [bad_expr(x, wf, job, pr_ok, depth + 1)] if w), None)
+        else:
+            src = next((yaml.safe_dump(s, sort_keys=True) for s in j.get("steps") or [] if isinstance(s, dict) and s.get("id") == job), None)
+            pin = WAIVE.get((wf, jid, job))
+            if pin and src is not None and hashlib.sha256(src.encode()).hexdigest()[:16] == pin: used.add((wf, jid, job)); continue
+            return f"`steps.{job}.outputs.{key}` comes from a script (not waived, or the waived script changed)"
+        if why: return f"{m.group(0).strip()} -> {why}"
+    return None
 
 def names(jid, j):
     m = (j.get("strategy") or {}).get("matrix") if isinstance(j.get("strategy"), dict) else None
@@ -106,7 +124,7 @@ def names(jid, j):
         n = re.sub(r"\$\{\{\s*matrix\.([\w-]+)\s*\}\}", lambda mo: str(c.get(mo.group(1), "?")), str(j.get("name", jid)))
         if n not in out: out.append(n)
     return out
-NAMES = {(wf, jid): names(jid, j) for wf, (_, js) in W.items() for jid, j in js.items()}
+NAMES = {(wf, jid): names(jid, j) for wf, (_, js, _e) in W.items() for jid, j in js.items()}
 PROD = {}
 for k, ns in NAMES.items():
     for n in ns: PROD.setdefault(n, []).append(k)
@@ -142,17 +160,24 @@ for jid, j in ci.items():
 # (b) + (c) on every job of a required path
 for wf, jid in sorted(path):
     j = W[wf][1][jid]
-    if github_refs(cond(j.get("if", "")), False):
-        V("event-condition", f"{wf}:{jid}: job-level `if: {cond(j['if'])}` mentions the event — it may skip in the queue or on a PR")
-    if j.get("continue-on-error") not in (None, False):
-        V("continue-on-error", f"{wf}:{jid} sets continue-on-error: its failure would not fail the check")
+    why = bad_expr(cond(j.get("if", "")), wf, jid, False)
+    if why: V("event-condition", f"{wf}:{jid}: job-level `if:` — {why}; a job skipped in the queue or on a PR is a satisfied check")
+    # values an `if:` may read through indirection: event-free or PR-shaped only
+    vals = [(k, v) for d in (j.get("env"), j.get("outputs"), W[wf][2]) if isinstance(d, dict) for k, v in d.items()]
+    vals += [("strategy", yaml.safe_dump(j.get("strategy") or {}))] + [(k, v) for st in j.get("steps") or []
+             if isinstance(st, dict) for k, v in (st.get("env") or {}).items()]
+    for k, v in vals:
+        for x in exprs(v):
+            if EV.search(PR_BODY.sub("_", PR_ATOM.sub("_", x))):
+                V("event-condition", f"{wf}:{jid}: `{k}: ${{{{{x}}}}}` derives a value from the event")
+    if j.get("continue-on-error") not in (None, False): V("continue-on-error", f"{wf}:{jid} sets continue-on-error: its failure would not fail the check")
     for i, st in enumerate(j.get("steps") or []):
         if not isinstance(st, dict): continue
-        if github_refs(cond(st.get("if", "")), True):
-            V("event-condition", f"{wf}:{jid} step {i} ({st.get('name', st.get('uses', '?'))}): `if: {cond(st['if'])}` — only `github.event_name ==/!= 'pull_request'` may select the lane (never `== 'push'`)")
-        if st.get("continue-on-error") not in (None, False):
-            V("continue-on-error", f"{wf}:{jid} step {i} ({st.get('name', '?')}) sets continue-on-error")
+        why = bad_expr(cond(st.get("if", "")), wf, jid, True)
+        if why: V("event-condition", f"{wf}:{jid} step {i} ({st.get('name', st.get('uses', '?'))}): `if:` — {why}; only `github.event_name ==/!= 'pull_request'` may select the lane")
+        if st.get("continue-on-error") not in (None, False): V("continue-on-error", f"{wf}:{jid} step {i} ({st.get('name', '?')}) sets continue-on-error")
 
+if set(WAIVE) - used: V("event-condition", f"waiver(s) {sorted(set(WAIVE) - used)} matched nothing — stale; remove or re-pin")
 if bad: print(f"ci-tier: FAIL — {len(bad)} violation(s): {' '.join(sorted(set(bad)))}"); sys.exit(1)
 print(f"ci-tier: OK — ci.yml jobs={len(ci)} (awk={os.environ['CT_AWK']}) required={counts['required']} worker={counts['worker']}; "
       f"{len(req)} required names, each produced once on pull_request+merge_group; {len(path)} jobs on required paths, no push-only condition, no continue-on-error")
@@ -175,9 +200,9 @@ selftest() {
     trap 'rm -rf "$t"' RETURN
     fresh() { rm -rf "$t/w"; cp -R "$ROOT/.github/workflows" "$t/w"; cp "$ROOT/.github/required-checks.txt" "$t/req"; }
     sub() { python3 -c 'import sys; p,o,n=sys.argv[1:]; s=open(p).read(); assert s.count(o)==1 and o!=n, o; open(p,"w").write(s.replace(o,n))' "$@"; }
-    expect() {  # expect DESC CODE — the plant must be live (sub succeeded) and red via CODE
+    expect() {  # expect DESC CODE [LIT [LIT]] — the plant is live (sub succeeded), red via CODE (and LITERAL)
         local rc=0; CI_TIER_WF_DIR="$t/w" CI_TIER_REQUIRED="$t/req" bash "$SELF" > "$t/out" 2>&1 || rc=$?
-        if { [ "$2" = OK ] && [ $rc -eq 0 ]; } || { [ $rc -eq 1 ] && grep -qF "FAIL [$2]" "$t/out"; }; then
+        if { [ "$2" = OK ] && [ $rc -eq 0 ]; } || { [ $rc -eq 1 ] && grep -qF "FAIL [$2]" "$t/out" && grep -qF -- "${3:-FAIL}" "$t/out" && grep -qF -- "${4:-FAIL}" "$t/out"; }; then
             pass=$((pass + 1)); echo "  PASS  $1 -> ${2}"
         else fail=$((fail + 1)); echo "  FAIL  $1: expected [$2], rc=$rc"; tail -4 "$t/out"; fi
     }
@@ -205,6 +230,14 @@ selftest() {
     fresh; sub "$CI" "if: matrix.cc == 'gcc' || github.event_name != 'pull_request'" \
                      "if: matrix.cc == 'gcc' || github['EVENT_NAME'] == 'push'" \
         && expect "(b) bracket syntax, push-only step" event-condition || broken bracket
+    # round-2 critic: a push-only value reached through env (the `if:` itself must red)
+    fresh; sub "$CI" "$TS" "$TS    env:
+      RUN_MAIN_CHECK: \${{ github.event_name == 'push' }}
+" && sub "$CI" "        run: make tsan
+" "        run: make tsan
+      - if: env.RUN_MAIN_CHECK == 'true'
+        run: exit 1
+" && expect "(b) env alias of a push-only value" event-condition "env.RUN_MAIN_CHECK -> " "derives a value from the event" || broken alias
     fresh; sub "$CI" "Require complete sanitizer coverage
 " "Require complete sanitizer coverage
         continue-on-error: true
@@ -219,12 +252,9 @@ selftest() {
     expect "new ci.yml job, neither required nor a worker" uncovered
     fresh; mkdir -p "$t/ny"; echo 'raise ImportError("planted")' > "$t/ny/yaml.py"
     local rc=0; PYTHONPATH="$t/ny" CI_TIER_WF_DIR="$t/w" CI_TIER_REQUIRED="$t/req" bash "$SELF" > "$t/out" 2>&1 || rc=$?
-    if [ $rc -eq 2 ]; then pass=$((pass + 1)); echo "  PASS  no PyYAML -> rc 2 INSTRUMENT ERROR"; else fail=$((fail + 1)); echo "  FAIL  no PyYAML: rc=$rc"; fi
+    [ $rc -eq 2 ] && { pass=$((pass + 1)); echo "  PASS  no PyYAML -> rc 2"; } || { fail=$((fail + 1)); echo "  FAIL  no PyYAML: rc=$rc"; }
     echo "ci_tier_check selftest: checks=$((pass + fail)) failures=$fail"
     [ $fail -eq 0 ]
 }
 
-case "${1:-}" in
-    "") check ;; --selftest) selftest ;; --live) live ;;
-    *) echo "usage: $0 [--selftest|--live]" >&2; exit 2 ;;
-esac
+case "${1:-}" in "") check ;; --selftest) selftest ;; --live) live ;; *) echo "usage: $0 [--selftest|--live]" >&2; exit 2 ;; esac

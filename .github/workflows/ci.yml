@@ -163,13 +163,15 @@ jobs:
         env:
           OWNER: ${{ github.repository_owner }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork == true }}
-          EVENT: ${{ github.event_name }}
+        # The event is read from the runner's GITHUB_EVENT_NAME, not an
+        # expression: tools/ci_tier_check.sh reds event-derived expression
+        # values on a required path (#1264). Only push advances ci-main.
         run: |
           BASE="ghcr.io/${OWNER,,}/eigenscript-dev"
           if [ "$IS_FORK" = "true" ]; then
             echo "image=$BASE:ci-main" >> "$GITHUB_OUTPUT"
             echo "tags=" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT" = "push" ]; then
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
             echo "image=$BASE:ci-${{ github.sha }}" >> "$GITHUB_OUTPUT"
             echo "tags=$BASE:ci-${{ github.sha }},$BASE:ci-main" >> "$GITHUB_OUTPUT"
           else
