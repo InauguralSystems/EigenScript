@@ -499,7 +499,7 @@ eigenscript examples/stem/greenhouse_controller.eigs # closed-loop STEM controll
 
 ```bash
 cd tests
-./run_all_tests.sh    # 261 test sections (minimal build; full build adds HTTP/DB/model suites)
+./run_all_tests.sh    # 263 test sections (minimal build; full build adds HTTP/DB/model suites)
 ```
 
 ### Writing your own tests
@@ -596,7 +596,7 @@ get made and how contributors can earn commit access over time.
 
 ```bash
 make                  # build
-make test             # build and run the full suite (261 test sections)
+make test             # build and run the full suite (263 test sections)
 make gfx              # build with SDL2 graphics (UI toolkit, games)
 make net              # build with raw TCP sockets (record/replay-able)
 make install          # install to ~/.local/bin

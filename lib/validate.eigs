@@ -32,9 +32,12 @@ define is_number(value) as:
     if (type of value) == "str":
         if (len of value) == 0:
             return 0
-        # Try parsing: check each character
-        has_dot is 0
-        start is 0
+        # Optional leading '-', at most one '.', and at least one digit.
+        # A dot alone ('.' / '-.') used to pass this scan; is_integer then
+        # treated num-of-that as zero (#1235).
+        local has_dot is 0
+        local has_digit is 0
+        local start is 0
         if (char_at of [value, 0]) == "-":
             if (len of value) == 1:
                 return 0
@@ -46,27 +49,29 @@ define is_number(value) as:
                     return 0
                 has_dot is 1
             elif c == "0":
-                i is i
+                has_digit is 1
             elif c == "1":
-                i is i
+                has_digit is 1
             elif c == "2":
-                i is i
+                has_digit is 1
             elif c == "3":
-                i is i
+                has_digit is 1
             elif c == "4":
-                i is i
+                has_digit is 1
             elif c == "5":
-                i is i
+                has_digit is 1
             elif c == "6":
-                i is i
+                has_digit is 1
             elif c == "7":
-                i is i
+                has_digit is 1
             elif c == "8":
-                i is i
+                has_digit is 1
             elif c == "9":
-                i is i
+                has_digit is 1
             else:
                 return 0
+        if has_digit == 0:
+            return 0
         return 1
     return 0
 

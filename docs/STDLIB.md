@@ -1012,7 +1012,7 @@ Levels: debug < info < warn < error < silent. Default: info.
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `is_nonempty` | `is_nonempty of value` | Non-empty string/list |
-| `is_number` | `is_number of value` | Numeric or parseable |
+| `is_number` | `is_number of value` | Number, or a decimal string with a digit |
 | `is_integer` | `is_integer of value` | Whole number |
 | `in_range` | `in_range of [val, lo, hi]` | Within bounds |
 | `is_one_of` | `is_one_of of [val, list]` | Value in allowed list |
@@ -1021,6 +1021,8 @@ Levels: debug < info < warn < error < silent. Default: info.
 | `is_alphanumeric` | `is_alphanumeric of string` | Letters and digits |
 | `is_url` | `is_url of string` | Basic URL format |
 | `validate_all` | `validate_all of checks` | Run multiple checks |
+
+A decimal string is an optional leading `-`, at most one `.`, and at least one digit (`0`, `-1`, `.5`, `1.`). A dot with no digit (`.` and `-.`) is not a number, and `is_integer` does not treat it as zero.
 
 ### lib/http.eigs — HTTP Client and Server Helpers
 

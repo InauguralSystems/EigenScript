@@ -47,6 +47,9 @@
 #       print the plan for <variant>: capabilities, sections, counts, floors
 #   tools/section_plan.sh --emit <variant> <outfile> [--binary B]
 #       write the filtered runner for <variant>
+#   tools/section_plan.sh --skip-audit [--runner F]
+#       every SKIP-emitting line in the runner is routed through section_skip()
+#       or carries a reviewed reason (the RESULTS line's `N skipped` is a claim)
 #   tools/section_plan.sh --selftest
 #       planted-fault mutation train (runs against COPIES, never the tree)
 #
@@ -176,6 +179,89 @@ tools/strict_differential.sh|2d366ac396e7a318|CLASSIFIES variant-only names as a
 tools/suite_label_check.sh|4b33c19d8075f5f6|prose describing the twin-label phrasing that check allows
 tools/suite_label_check.sh|2cc9024e404127f3|prose listing those twin phrasings
 tools/docs_claims_check.sh|fd05073ec7e4e3b8|prose in the docs-claims gate QUOTING the SKIPPED-twin wording used by the runner, to explain why the runner has more labelled echo lines (267) than distinct sections (258). A comment about the label grammar, not a capability gate; same class as the two tools/suite_label_check.sh rows above. No apostrophe in this reason: GATE_WAIVERS is a single-quoted string and one would close it
+'
+
+# ---------------------------------------------------------------------------
+# SKIP ACCOUNTING (#1225 round 7). The suite's RESULTS line prints
+# `N skipped`, and the runner's own comment at the counter says "a zero that is
+# printed is a claim". Round 6 incremented that counter at exactly ONE site
+# ([99i3]) while the runner had ~40 lines that put a SKIP marker on stdout, so
+# `linux / gcc` printed `0 skipped` beneath nine of them — including [99i]'s
+# `SKIP: NOT MEASURED HERE`, which ci.yml forces on all ten suite jobs
+# (measured by a blind critic on the pushed head 1b5c64d, 2026-09-21). The
+# claim was false on every lane.
+#
+# The runner now routes every SECTION-LEVEL skip through one `section_skip`
+# helper that prints AND counts. This audit is the structural half: it
+# enumerates every line of the runner that can put a SKIP marker on stdout,
+# subtracts the ones routed through the helper (they do not match — the helper
+# is the only place the literal is written), and requires each remaining line
+# to carry a reviewed reason here. A new bare `SKIP:` echo therefore fails BY
+# NAME instead of silently joining the uncounted.
+#
+# The matcher is deliberately OVER-BROAD on the axis it polices, the SPELLING
+# (mechanical-gates §12): any `echo`/`printf` whose arguments mention SKIP at
+# all, including the section-header twins that say `SKIPPED (binary built
+# without ...)` and the relays that grep a child's SKIP line out. It is
+# anchored to a command word so it does not fire on prose in comments
+# (mechanical-gates §13).
+SKIP_EMIT_RE='^[[:space:]]*(echo|printf)[[:space:]].*SKIP'
+SKIP_ROUTE_RE='^[[:space:]]*section_skip[[:space:]]'
+# Floors, not exact pins, on the two populations — a floor moves only when
+# coverage is REMOVED (mechanical-gates §5), and both failure modes here are
+# removals: un-routing a section-level skip drops the routed count AND adds an
+# unaccounted emitter, so the two halves catch it independently.
+SKIP_ROUTED_FLOOR=26
+SKIP_EMIT_FLOOR=20
+# Each row is "<16-hex sha256 of the EXACT line>|<reason>". The hash is the
+# pin: edit the line and the row stops matching, so the reason gets re-read.
+# A row that matches nothing is a hard failure (mechanical-gates §3: an
+# exemption that no longer fires must fail, not pass quietly). Regenerate
+# candidates with `--skip-audit --print-waivers`, which prints paste-ready rows
+# for the UNACCOUNTED lines and writes nothing; the reason is a human's.
+#
+# THE INVENTORY, classified. Three kinds live here and nothing else may:
+#   (a) the helper's own print — it IS the counter;
+#   (b) lines that mention SKIP without emitting a section verdict: a FAIL
+#       line quoting a skip tally, a section TITLE, a PASS line, the RESULTS
+#       line itself;
+#   (c) SUB-CHECK skips: one line inside a section that still PASSes on its
+#       other checks on the same lane. Ten of these remain. They are NOT
+#       counted in `skipped`, because `skipped` answers "how many sections
+#       measured nothing"; each states which section keeps measuring.
+SKIP_WAIVERS='
+6ef6a1325edf0172|(a) the section_skip helper own print — this IS the counter the audit polices
+d8bbaacdbda76484|(b) the [99n] classifier-gate FAIL line, which QUOTES its own skipped tally; that section fails on any skip
+e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check there is coverage loss
+69614d3ef6dc2f30|(c) sub-check: [17] TR6/TR7 have no old model to reject; the rest of the transformer section still asserts
+3f50de963077a3a2|(b) the [119] section TITLE, which names the sanitizer-only half in its own heading
+86e12c645c5ad672|(c) sub-check: [119] Part B (the #548 borrow guard) is compiled out on a release build; Part A runs on every build and its PASS/FAIL lines are tallied
+ae2397a52e6bf606|(b) the [44] HTTP-readiness FAIL line, which quotes skipped= in its verdict; two skips are the expected witnesses and any other count is already a FAIL there
+a3800f950b3f48eb|(b) a diagnostic inside that FAIL branch, printed only when the section is already red
+4f08061db27787e7|(b) the [44-45/47] twin section LABEL; the skip beneath it is counted by section_skip
+1a610a50ab85b616|(b) the [46/47] twin section LABEL; the skip beneath it is counted by section_skip
+b9479b955a96ec10|(b) the [47/47] twin section LABEL; the skip beneath it is counted by section_skip
+fab55a18d8a45227|(b) the [62] twin section LABEL; the skip beneath it is counted by section_skip
+5ab04254fb943d66|(b) the [120b] twin section LABEL; the skip beneath it is counted by section_skip
+8daea9a26364c262|(b) the [133] twin section LABEL; the skip beneath it is counted by section_skip
+114496ab68d516e9|(b) the [134] twin section LABEL; the skip beneath it is counted by section_skip
+512ecfac87c5101b|(b) the [132] twin section LABEL; the skip beneath it is counted by section_skip
+2b1cec4b6df93886|(c) sub-check: [70d] relays the child rows verbatim, one of which SKIPs when GNU time -f is absent; the section still asserts its other two checks
+cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT section asserts its fast-path checks on every host
+00fd233b835a1ddb|(c) sub-check: the EIGS_JIT_HOT gate on a non-x86_64 host; same section, same reason
+1d4789fa9df25921|(c) sub-check: --api --json validation needs python3; the --api section asserts its other rows without it
+4fd0c1454b26ae7a|(b) an examples-section PASS line that reports how many demos were skipped for want of a gfx build
+62be8333b50e395a|(b) the same PASS line on the no-gfx-build arm
+89b7a01ff1a79ece|(b) the continuation line of [99i] own skip message; the first line went through section_skip and was counted
+27cfdaf9128456df|(b) the RESULTS line itself, which PRINTS the skipped count
+43af9bdd1c5e1f94|(c) sub-check: [99zb] relays the portability tool own population/oracle line (widened by #1226 to include NO OLD BASH and other arm wordings); the section fails unless the tool reports OK or one of those named arms — supersedes the pre-#1226 row for this same relay
+3291768189ac4afa|(c) sub-check: [99zd] GitHub-live arms (roadmap-check, issue-labels-check) skip by name without gh credentials on this lane; arm (a), the structural check, still asserts on every lane
+6a218178486c9285|(b) a [99zd] FAIL-branch diagnostic ("THE GATE SKIPPED ANYWAY") for the roadmap population-line count; printed only when that check is already red
+3130e30d76d78869|(c) sub-check: [99zd] relays the roadmap-check own three arm lines by name, one of which may read SKIPPED BY NAME; the section still asserts the other arms and the exact-one-hit count
+57a371d78afdfb95|(b) a [99zd] FAIL-branch diagnostic ("THE GATE SKIPPED ANYWAY") for the issue-labels population-line count; printed only when that check is already red
+1975191690c57c25|(c) sub-check: [99zd] relays the workflow-yaml-check own OK/SKIPPED BY NAME line on the PASS path; the section still asserts the caller-pinned population regex
+3e698b2765ba444e|(c) sub-check: the [99zd] workflow-yaml selftest PASS line reports its own planted skipped-by-name count, probed against this caller own PyYAML import; the section still asserts the pinned expected count
+8805589172535e06|(c) sub-check: [99zd] relays the workflow-yaml selftest own SKIPPED BY NAME lines (its planted faults); the section still asserts the pinned pass/skip counts above
 '
 
 # ---------------------------------------------------------------------------
@@ -988,6 +1074,73 @@ EOF
     SP_WAIVERS_USED=$(sort -u "$work/waivers_used" | grep -c .)
 }
 
+# Enumerate every SKIP-emitting line in the runner and require each one to be
+# either routed through section_skip() or named in SKIP_WAIVERS with a reason.
+# Sets SP_SKIP_EMITS, SP_SKIP_ROUTED, SP_SKIP_WAIVERS_USED. Dies on anything
+# unaccounted, on an unused waiver, and on either population falling through
+# its floor (a scan that found almost nothing is vacuous, not clean).
+skip_audit() {
+    local f="$1" work="$2"
+    local hits="$work/skip_hits" unacct="$work/skip_unaccounted" used="$work/skip_waivers_used"
+    : > "$hits"; : > "$unacct"; : > "$used"
+
+    grep -nE "$SKIP_EMIT_RE" "$f" >> "$hits"
+    SP_SKIP_EMITS=$(grep -c . "$hits")
+    [ "$SP_SKIP_EMITS" -ge "$SKIP_EMIT_FLOOR" ] || \
+        die "the skip enumeration found only $SP_SKIP_EMITS SKIP-emitting lines in $f (floor $SKIP_EMIT_FLOOR) — the scan is vacuous, not the runner clean"
+
+    SP_SKIP_ROUTED=$(grep -cE "$SKIP_ROUTE_RE" "$f")
+    [ "$SP_SKIP_ROUTED" -ge "$SKIP_ROUTED_FLOOR" ] || \
+        die "only $SP_SKIP_ROUTED section-level skip(s) are routed through section_skip() (floor $SKIP_ROUTED_FLOOR) — a section whose verdict is a skip and which does not go through the helper is invisible on the RESULTS line, which is the defect this floor exists for"
+
+    local hit lineno text thash whash wreason ok
+    while IFS= read -r hit; do
+        [ -n "$hit" ] || continue
+        lineno=${hit%%:*}; text=${hit#*:}
+        thash=$(sp_line_hash "$text")
+        ok=""
+        while IFS='|' read -r whash wreason; do
+            [ -n "${whash:-}" ] || continue
+            if [ "$whash" = "$thash" ]; then
+                ok="waiver"; printf '%s\n' "$whash" >> "$used"; break
+            fi
+        done <<EOF
+$SKIP_WAIVERS
+EOF
+        [ -n "$ok" ] || printf '%s:%s\n' "$lineno" "$text" >> "$unacct"
+    done < "$hits"
+
+    if [ -s "$unacct" ] && [ "${SP_PRINT_WAIVERS:-0}" = "1" ]; then
+        echo "# Paste-ready SKIP_WAIVERS rows for the UNACCOUNTED lines below."
+        echo "# Each needs a REASON written by a reviewer; a bare hash is not a waiver."
+        while IFS= read -r hit; do
+            [ -n "$hit" ] || continue
+            lineno=${hit%%:*}; text=${hit#*:}
+            printf '%s|REASON HERE — line %s: %.70s\n' "$(sp_line_hash "$text")" "$lineno" "$text"
+        done < "$unacct"
+        die "$(grep -c . "$unacct") unaccounted SKIP line(s); rows printed above, nothing was written"
+    fi
+    if [ -s "$unacct" ]; then
+        echo "section_plan: ERROR: SKIP-emitting line(s) in $f that neither go through section_skip() nor carry a reviewed reason:" >&2
+        sed 's/^/    /' "$unacct" >&2
+        die "a section whose verdict is a skip must call section_skip (it prints AND counts, so the RESULTS line's 'N skipped' is true); a sub-check skip must be listed in SKIP_WAIVERS with the section that still measures"
+    fi
+
+    local unused=""
+    while IFS='|' read -r whash wreason; do
+        [ -n "${whash:-}" ] || continue
+        grep -qxF "$whash" "$used" || unused="$unused
+    $whash|$wreason"
+    done <<EOF
+$SKIP_WAIVERS
+EOF
+    if [ -n "$unused" ]; then
+        echo "section_plan: ERROR: SKIP_WAIVERS entries that matched nothing:$unused" >&2
+        die "an unused skip waiver means the line it described changed shape — re-read it and decide again whether that skip is section-level (route it) or a sub-check (re-pin it)"
+    fi
+    SP_SKIP_WAIVERS_USED=$(sort -u "$used" | grep -c .)
+}
+
 # ---------------------------------------------------------------------------
 # Probe derivation. Structure, not guesswork: a chunk that mentions a
 # *_PROBE_OUT must yield all three parts or the tool fails loudly.
@@ -1481,6 +1634,51 @@ selftest() {
         "no EIGS-CAP-GATE marker and no waiver accounts for" \
         "$0" --gate-audit --quiet --runner "$dir/new_spelling.sh"
 
+    # 6h. SKIP ACCOUNTING (#1225 round 7). Three arms, each transverse to a
+    #     different half of the mechanism, plus the control. Round 6's counter
+    #     was incremented at ONE site while nine other SKIP lines printed on
+    #     the same lane, so `0 skipped` was false on every job.
+    expect_ok "control: the real runner's SKIP lines are all routed or reasoned" \
+        "$0" --skip-audit --quiet
+
+    #     (i) a NEW bare `SKIP:` echo entering a section: unaccounted, by name.
+    cp "$RUNNER" "$dir/bare_skip.sh"
+    sed -i 's|^echo "\[0\] Opcode ABI Guard"$|echo "[0] Opcode ABI Guard"\necho "  SKIP: planted bare skip that nothing counts"|' "$dir/bare_skip.sh"
+    if cmp -s "$RUNNER" "$dir/bare_skip.sh"; then
+        echo "  FAIL: planted: a bare SKIP: echo — the plant was a no-op, the anchor did not match"; fail=$((fail + 1))
+    else
+        expect_red "planted: a NEW bare SKIP: echo -> the skip audit refuses" \
+            "neither go through section_skip() nor carry a reviewed reason" \
+            "$0" --skip-audit --quiet --runner "$dir/bare_skip.sh"
+    fi
+
+    #     (ii) a section-level skip UN-ROUTED back to a bare echo: the routed
+    #          floor answers even before the waiver table does. Both halves
+    #          fire on this one input; the floor is checked first, so that is
+    #          the message pinned here.
+    cp "$RUNNER" "$dir/unrouted_skip.sh"
+    sed -i 's|^    section_skip "binary built without EIGENSCRIPT_EXT_HTTP"$|    echo "  SKIP: binary built without EIGENSCRIPT_EXT_HTTP"|' "$dir/unrouted_skip.sh"
+    if cmp -s "$RUNNER" "$dir/unrouted_skip.sh"; then
+        echo "  FAIL: planted: an un-routed section skip — the plant was a no-op"; fail=$((fail + 1))
+    else
+        expect_red "planted: a section-level skip un-routed -> the routed floor refuses" \
+            "routed through section_skip() (floor" \
+            "$0" --skip-audit --quiet --runner "$dir/unrouted_skip.sh"
+    fi
+
+    #     (iii) a waived sub-check line deleted: the waiver stops matching, and
+    #           an exemption that no longer fires must FAIL, not pass quietly
+    #           (mechanical-gates §3).
+    cp "$RUNNER" "$dir/stale_waiver.sh"
+    sed -i '/^echo "\$BG_OUTPUT" | grep "SKIP:" || true$/d' "$dir/stale_waiver.sh"
+    if cmp -s "$RUNNER" "$dir/stale_waiver.sh"; then
+        echo "  FAIL: planted: a stale skip waiver — the plant was a no-op"; fail=$((fail + 1))
+    else
+        expect_red "planted: a waived sub-check skip deleted -> the stale waiver refuses" \
+            "SKIP_WAIVERS entries that matched nothing" \
+            "$0" --skip-audit --quiet --runner "$dir/stale_waiver.sh"
+    fi
+
     # 6f. The run-level vacuity hole (round 2, G4): preamble + epilogue with no
     #     sections at all used to print "RESULTS: 0/0 passed, 0 failed" and exit
     #     0. Built here directly, because no legal plan can produce it.
@@ -1899,7 +2097,7 @@ while [ "$#" -gt 0 ]; do
         --root) SP_ROOT=$(cd "$2" && pwd); [ "$SP_ROOT_RUNNER_SET" = "1" ] || RUNNER="$SP_ROOT/tests/run_all_tests.sh"; shift 2 ;;
         --binary) BINARY="$2"; shift 2 ;;
         --quiet)  VERBOSE=0; shift ;;
-        --chunks|--probes|--markers|--gate-audit|--selftest) MODE="$1"; shift ;;
+        --chunks|--probes|--markers|--gate-audit|--skip-audit|--selftest) MODE="$1"; shift ;;
         --shards) SP_SHARDS="$2"; shift 2 ;;
         --shard) SP_SHARD_K="$2"; shift 2 ;;
         --check) MODE="--shard-check"; shift ;;
@@ -1950,6 +2148,11 @@ case "$MODE" in
         else
             echo "MARKERS: $n (floor $CAP_MARKER_FLOOR)"
         fi
+        ;;
+    --skip-audit)
+        W=$(sp_workdir mode)
+        skip_audit "$RUNNER" "$W"
+        echo "SKIP AUDIT: $SP_SKIP_EMITS SKIP-emitting line(s) enumerated (floor $SKIP_EMIT_FLOOR); $SP_SKIP_ROUTED section-level skip(s) routed through section_skip() (floor $SKIP_ROUTED_FLOOR); $SP_SKIP_WAIVERS_USED reviewed reason(s) used; unaccounted=0"
         ;;
     --probes)
         W=$(sp_workdir mode)

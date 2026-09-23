@@ -319,6 +319,255 @@ All notable changes to EigenScript are documented here.
 
 ### Added
 
+- **Consumer-acceptance harness (#1213, #1214, #1217).** `run` takes a
+  candidate set (`--full` / `--gfx`); a name a consumer invokes that the
+  set does not cover is `UNRUNNABLE|prereq:variant:<name>` with a 127-shim
+  on PATH. Variant discovery (`tools/_derive_variants.py`) takes a name
+  only from an INVOCATION POSITION -- the first word of a simple command
+  in shell text (`*.sh`, a `#!` script, Makefile recipes, a workflow
+  `runCmd`, a declared command), the word after
+  `exec`/`env`/`timeout N`/`xvfb-run`/`command -v`, an assignment or
+  `${VAR:-default}` value, a Python `subprocess`/`os.system`/`os.exec*`/
+  `shutil.which` first argument or `os.environ.get` default, and an
+  `.eigs` `exec_capture`/`proc_spawn` first string. Comments, heredoc
+  bodies, prose, JSON, non-`runCmd` YAML and anything with a `/` are not
+  invocations; every rejected occurrence is printed by `plan` as
+  `variants|<consumer>|excluded:<name>|<file>:<line>`. Scanning every
+  TOKEN instead had made a Dockerfile path, a skill name in CLAUDE.md,
+  bench-JSON keys, a comment and a release-asset URL into prerequisites of
+  ouroboros, iLambdaAi and Tidepool. The class is closed at EXECUTION time
+  too, by CONFINEMENT rather than by shadowing: a 127-shim earlier on
+  `PATH` is only as good as PATH ORDER, and PATH order belongs to the
+  consumer -- one `export PATH="$HOME/.local/bin:$PATH"` (the ordinary CI
+  idiom EigenGauntlet and EigenMiniSat already use via `$GITHUB_PATH`)
+  put a stale runtime back in front of the shim and the row still read
+  PASS. Each row therefore runs with `PATH=$SHIM:$FARM` and nothing else:
+  `$FARM` holds, for every executable found on the inherited PATH EXCEPT
+  every name matching `eigenscript*`, a two-line EXEC WRAPPER
+  (`#!/bin/sh` + `exec "<absolute original path>" "$@"`, mode 755), so
+  every tool runs AT ITS ORIGINAL LOCATION (`path_farm=`,
+  `path_dropped=`). A SYMLINK farm relocated the tool and broke
+  consumers: a virtualenv's `python3` reached through a link reports
+  `sys.prefix=/usr` (venv detection reads `pyvenv.cfg` beside the
+  executable's own path), so a dependency installed in the selected
+  virtualenv vanished and the row FAILed after the candidate call
+  succeeded. Farm construction is fail-closed by name (`cannot build the
+  PATH farm under <dir>`, exit 2) and `path_farm=N` must be at least the
+  number of executables the enumeration found -- a farm directory that
+  could not be written used to read `path_farm=0` under `VERDICT: PASS`.
+  `HOME` is an empty per-row scratch directory (`home_scratch=yes`) so a
+  prepend of `$HOME/.local/bin` adds an empty directory, while the named
+  build/tool CACHE variables (`GOPATH`, `GOMODCACHE`, `GOCACHE`,
+  `GOFLAGS`, `JAVA_HOME`, `ELLE_JAR`, `CARGO_HOME`, `RUSTUP_HOME`,
+  `PIP_CACHE_DIR`, `npm_config_cache`) pass through and the three Go ones
+  are derived from the real home when unset (`env_passthrough=`):
+  measured on eddy, a scratch HOME alone turned `GOPROXY=off go list -m
+  all` into `module lookup disabled`. A consumer PATH EDIT is a
+  finding of its own, and the rule matches the SUBSTRING, not the
+  syntactic position: `tools/_derive_variants.py` treats ANY occurrence
+  of `PATH=`, `PATH+=`, `PATH :=` or `PATH ?=` -- word-bounded on the
+  left, so `MANPATH`, `PYTHONPATH` and `GITHUB_PATH` do not match --
+  ANYWHERE in a scanned text line as a PATH edit, plus every
+  `$GITHUB_PATH` append. Comments and heredoc BODIES are scanned, a
+  Makefile is scanned in FULL (a top-level `export PATH := ...` sets
+  every recipe's PATH), `.eigs` string literals are scanned, and a
+  workflow is scanned at its `runCmd`. `plan` prints both the edits
+  (`path_edit|<consumer>|<component>|<file>:<line>`) and the scan's OWN
+  witness (`pathexamined|<consumer>|<files>|<edits>`), so "no edits" can
+  be told apart from "the scan examined nothing"; all 16 real consumers
+  report zero edits. A row whose edit adds a component that is a LITERAL
+  absolute directory existing on this box -- after `~` (the row's own
+  scratch `$HOME`, allowed) and `~user` (resolved from `getent passwd`)
+  expansion -- whose RESOLVED form is outside `$SHIM`, `$FARM`, the row's
+  scratch `$HOME` and its own checkout is `FAIL|path-edit:<resolved dir>`
+  before it runs, with a `log|<name>|preflight:` line that also carries
+  the WRITTEN form -- the shape that reached the developer's real
+  `~/.local/bin/eigenscript-full.stale` (`0.21.0`) under a PASS row.
+  Containment is decided on the RESOLVED form ONLY: while EITHER form
+  could buy the allowance, `<checkout>/../../<absdir>` and a symlink
+  inside the checkout pointing outside it both read PASS while the stale
+  binary ran; every allowed prefix is resolved on the same terms, so a
+  checkout or scratch reached THROUGH a symlink is still allowed. THE
+  PRICE, stated: the rule is over-broad in the SAFE direction -- a line
+  that merely NAMES a PATH edit (a comment, a usage string, a README
+  example living inside a `.sh`, a make variable holding one) refuses
+  that consumer's row BY NAME. It refuses a row it could have run; it
+  never runs a row it should have refused. The enumeration follows symlinked PATH directories
+  (`find -L`); an unreadable (0111) PATH directory contributes nothing and
+  is reachable from nothing. Names outside the candidate set keep their
+  127-shims in `$SHIM` (`path_masked=`) so the row is
+  `FAIL|undeclared-variant:<name>` by name, and a name that resolves
+  NOWHERE is recorded the same way by `command_not_found_handle` instead
+  of being a `127` the consumer can swallow with `|| true`. That handler
+  travels as `BASH_ENV`, so it reaches a non-interactive bash in the row
+  and not only the block shell; `export -f` alone does not travel,
+  because every command runs through a `#!/bin/sh` farm wrapper and dash
+  drops the `BASH_FUNC_…%%` entry (measured). It is reached ONLY where
+  bash itself resolves a simple command: a `#!/bin/sh` child and every
+  exec-family launcher (`timeout`, `env`, `xargs`, `xvfb-run`, `exec`, a
+  `make` recipe, `bash --posix`, python `subprocess`) execvp the name
+  themselves and never consult it. Those are caught instead by the row's
+  captured-output sweep (round 9 below); plant `not-found-child` now
+  carries a named row for each. `EIGS_DIR` is the twin of that PATH -- a
+  `cp -rL` copy of the candidate tree that used to hand out the sibling's
+  `src/eigenscript-full` -- so every `eigenscript*` file in the overlay is
+  a shim too (`overlay_shimmed=`). Three residuals remain, each named in
+  the header and each PINNED BY A PLANT that fires only while it holds: a
+  PATH edit the scanner cannot SEE -- the substring rule did not remove
+  that hole, it MOVED it from line POSITION to FILE KIND and COMPONENT
+  PARSE. The scan sees every scanned file kind (`.sh`, `.bash`, `.zsh`,
+  an extensionless file carrying a `#!` line, a `.yml` at its `runCmd`,
+  `Makefile` and `.mk`, and `.eigs`) and, inside those, every literal
+  component it can PARSE, which leaves three shapes: (a) file kinds
+  outside that list -- a `PATH=` shell string inside a `.py`, a
+  `Makefile.in`, a sourced extensionless file with no shebang; (b)
+  components the splitter cannot parse -- a `${PATH:+:$PATH}` suffix, a
+  line-continued value, `$'...'` quoting; (c) computed components --
+  `PATH="$(cat dir.txt):$PATH"`, a `$VAR` other than
+  `$HOME`/`$PWD`/`$PATH`, or `os.environ["PATH"]`. Measured over all 16
+  checkouts, every file kind, `.git` excluded, NO consumer has any of
+  them: the only `PATH=` lines in the ecosystem are five
+  `.devcontainer/Dockerfile` `ENV PATH=` lines (DMG, dynamics, eddy,
+  phugoid, Tidepool), and a Dockerfile is not the acceptance command. The
+  ledger is issue #1229. Then: a farmed, inherited wrapper that resolves
+  its own location
+  (`exec "$(dirname "$(readlink -f "$0")")/eigenscript"`) and so reaches
+  the stale `eigenscript` beside it -- the price of running tools in
+  place, closable only by an execve witness or a mount namespace, both
+  deferred; and a path the consumer computes INSIDE its checkout
+  (`./eigenscript-*`), which is not on PATH at all and reads UNEXERCISED,
+  never PASS. Scratch
+  creation is fail-closed: every `mktemp`/`mkdir` whose result the harness
+  writes into is checked, an unusable `$TMPDIR` exits 2 with `cannot
+  create scratch under <dir> (<why>)` BEFORE any shim is written, and a
+  shim is never written to a directory outside the run scratch -- the
+  unchecked `mktemp` this replaces let `SHIM` fall open to `/bin`, and a
+  round-2 run as root wrote stub shims into `/usr/bin` on a dev box.
+  Non-PASS rows keep the last 60 lines of the consumer log in the
+  record (`log|<name>|<line>`), or `log|<name>|preflight: <reason>` when
+  there is no consumer output; `CA_LOGS` copies logs before cleanup. The
+  inventory is a declared 16-name floor plus a committed-record floor: the
+  MAXIMUM row count over the DATED records whose header says
+  `status=COMPLETE`, excluding by realpath the file this run is writing,
+  and read BEFORE the run takes the record path. Reading the lexically
+  newest dated record at scan time let this run's own `INCOMPLETE` header
+  -- under the `reports/consumer_acceptance/<date>-<tag>.record`
+  convention this repo documents -- set the floor to 0, so a 2-consumer
+  inventory `PASS`ed beside a 3-row committed record. `run`
+  names a floor failure on its own `inventory floor: <why>` line, on
+  stdout before the verdict and in the record footer, while the
+  `VERDICT:` line itself stays exact. `_extract_runcmd.py`
+  matches YAML block-scalar chomping, folding, and relative indent.
+  Only a dated `YYYY-MM-DD-*.record` counts toward that floor; any other
+  `*.record` in the directory is `stray record file: <name>`, a FAIL by
+  name (a non-dated `smoke.record` used to LOWER the floor to its own row
+  count). `_extract_runcmd.py` matches YAML block-scalar chomping,
+  folding, and relative indent, keeps the trailing newlines `|+`/`>+`
+  keep, treats a MORE-INDENTED line in a folded scalar as literal (three
+  commands stayed three commands, so a failing one still fails the block)
+  and normalises CRLF. `set -f` around word splits including the variant
+  loop. A signal in the pause-before-rename window removes the rewrite
+  temp. `--self-test` is a `gate self-tests` CI step; the fixture `plan`
+  step asserts `expected=N` with N>0. A uid-0 self-test re-runs the WHOLE
+  self-test as an unprivileged user (a byte-identical copy of its tool
+  tree inside a drop root it chowns), or SKIPs both unwritable plants by
+  name; `plants + skipped` is pinned to a declared constant, so a gutted
+  SKIP counter or a deleted plant is red; and every child duplicates its
+  stderr into a capture file the `no-unbound-variable` check reads, so a
+  plant that discards both streams cannot hide a diagnostic. The drop is
+  tied to what actually RAN: the dropped process prints its own script's
+  sha256 as its first line and the outer compares it with the copy it
+  cmp'd, because a drop tool that rewrites the copy between the check and
+  the exec otherwise ran a different script under a "byte-identical"
+  banner; the copied tree's directories are read-only for the run, so the
+  file cannot be swapped for another inode either. Every scratch name the
+  self-test and its children create in the outer tmp carries that run's
+  token, and the hygiene scan asks only about entries tagged with it: a
+  CONCURRENT self-test's `/tmp/ca-st.*` used to be read as this run's
+  leftover and printed a false `SELF-TEST: FAIL`.
+
+- **Consumer-acceptance harness, round 9 (#1213, #1214, #1217, #1229).**
+  Five findings the fourth blind critic measured against round 8, each
+  closed with the plant that goes red if it returns.
+  **The record floor survives a same-path re-run.** The documented driver
+  convention is `CA_RECORD=<today>-<tag>.record`, so the ordinary "fix one
+  consumer, re-run the wave" loop lands on the same file -- and round 8's
+  realpath self-exclusion then discarded the only measurement the
+  ecosystem has (one 16-row `status=COMPLETE` record), leaving floor 0 and
+  a 2-consumer inventory printing `VERDICT: PASS`. The exclusion was
+  redundant for the case it was written for -- the floor is computed
+  BEFORE the header is written and an `INCOMPLETE` record is skipped, so
+  the file at `$RECORD` can only be a previous wave's -- and is gone.
+  Plant `record-floor-samepath` (the critic's fixture, 16 rows and all)
+  fires; mutation `record-samepath-exclude` puts the exclusion back and
+  silences it. The RUN record and `run`'s stdout now carry
+  `record_floor=/floor_records=/floor_witness=`, so a VACUOUS floor is
+  visible where the verdict is read rather than only in `plan`.
+  **The `runCmd` extractor's YAML oracle executes on the lane that gates
+  merges.** It cross-checks the hand-rolled block-scalar reader against
+  `yaml.safe_load`, and the CI image had no PyYAML -- so the whole floor
+  took its all-or-nothing SKIP arm and a planted `runCmd` key rename was
+  GREEN in CI. `python3-yaml` is in the dev/CI image, the CI step installs
+  it if an older rolling image lacks it, and `CA_SELFTEST_REQUIRE_YAML=1`
+  (set by the harness's own `--self-test`) turns the skip into a named
+  FAIL. Plant `yaml-required` runs the extractor against an
+  ImportError-raising `yaml` shim and requires the named FAIL, with the
+  same shim and the variable off as the control.
+  **A heredoc inside `$(...)` inside double quotes is an opener.** Round
+  8's quote tracking called `msg="$(cat <<EOF` text and DERIVED the
+  heredoc's body line, so a consumer whose usage string is built that way
+  went `UNRUNNABLE|prereq:variant:<word-from-prose>`. `_heredoc_delim` now
+  tracks the `$(` nesting `_subst_bodies` already tracked.
+  **A transverse mutant must still RUN.** The sanity-start checked that a
+  mutant emitted a `VERDICT` on `plan`; a mutant with every guard intact
+  whose run mode was dead passed it, and all 27 record-state rows would
+  have printed OK while certifying nothing. Each mutant now has to produce
+  a passing row on the control fixture, or its row is
+  `BROKEN-MUTANT  FAIL: mutant broke run mode`. Plant `mutant-run-sanity`
+  builds exactly that mutant and requires the rejection.
+  **An undeclared variant swallowed by a LAUNCHER is a named failure.**
+  `command_not_found_handle` is reached only where bash itself resolves a
+  simple command, which round 8's header did not say: measured, ten of
+  eleven launcher shapes (`timeout`, `env`, `xargs`, `xvfb-run`, `exec`, a
+  `make` recipe, `bash --posix`, a clobbered `BASH_ENV`, python
+  `subprocess`) read `PASS cand_calls=1`. Every one of them leaves the
+  launcher's own `<name>: command not found` / `not found` / `No such
+  file` in the row's captured output, so that output is swept and the row
+  becomes `FAIL|undeclared-variant:<name>`. The matcher was anchored on
+  captures from the real tools. The one shape that stays uncaught --
+  python `subprocess.run([...])` inside `try/except`, which emits nothing
+  -- is a PINNED row (`nf_py`, PASS on purpose), so a future closure claim
+  has to flip it.
+
+- **Consumer-acceptance harness, round 8 (#1213, #1214, #1217, #1229).**
+  Eight defects `/code-review` found against round 7, each fixed with the
+  plant that goes red if it returns. `command_not_found_handle` reaches
+  every non-interactive bash child via `BASH_ENV` (`export -f` alone is
+  dropped by the `#!/bin/sh` farm wrapper, measured) -- the `bash
+  tests/run.sh` shape every real consumer has used to swallow a computed
+  `eigenscript-$V` and read `PASS`. The record floor is the MAX row count
+  over DATED `status=COMPLETE` records, computed before the record path is
+  taken. (Round 8 also excluded the file at `$RECORD` by realpath; round 9
+  removed that -- see below.) `PASS|skips=N`
+  keeps its `log|` tail (it fails the wave, and the SKIP lines are the
+  evidence). `--gfx <binary>` is what `EIGENSCRIPT_GFX` names, recorded as
+  `eigenscript_gfx_exported=`; it used to name the headless base shim. The
+  `gfx` prerequisite is declared-only -- the old `*gfx*` substring made
+  `--no-gfx` a hard gfx requirement -- and no real consumer's acceptance
+  command contains `gfx` today. The bare-candidate refusal moved into the
+  usage-before-record block, so that exit 2 leaves the previous record
+  byte-identical. `path_dropped=` uses the farm's own `eigenscript*`
+  filter, so a hidden `eigenscript.old` is named. In the deriver, a
+  here-string (`<<<`) and a quoted `<<WORD` are no longer heredoc openers
+  that swallowed the rest of the file, `$(…)` bodies inside double quotes
+  are scanned recursively (`BIN="$(command -v eigenscript-full)"`), and a
+  `for` list of literal names is an invocation position. In
+  `_extract_runcmd.py`, a quoted inline scalar (`runCmd: 'make test'`)
+  loses its quotes -- `bash -c` used to run a command named `'make test'`
+  -- and the PyYAML cross-check has a floor: every row declared a valid
+  document by construction must reach the oracle, or the selftest fails
+  rather than printing `PASS yaml-oracle=0`.
+
 - **Consumer-acceptance `run` residuals (M1 round 7).** Self-test TMPDIR is
   private (concurrent self-tests no longer `rm -rf` each other's
   `ca-run.*`). The consumer process group is reaped after `wait` and the
@@ -343,9 +592,16 @@ All notable changes to EigenScript are documented here.
   `examined == inventory > 0` is required to pass; a missing checkout or
   missing command is UNRUNNABLE not a skip; rc 124/137 is HANG/KILLED by
   name; an interrupted run (INT/TERM/HUP) marks the record INCOMPLETE and
-  exits 2. Record class: at every moment the file at `CA_RECORD` is this
-  run's record in a truthful state, or absent — never a previous run's
-  PASS, never a foreign PASS. Exclusive ownership: a mkdir lock on
+  exits 2. Record class: ONCE THE RUN HAS TAKEN THE RECORD PATH (from the
+  record lock and the invalidate of the previous file, to exit) the file
+  at `CA_RECORD` is this run's record in a truthful state, or absent —
+  never a previous run's PASS, never a foreign PASS. BEFORE that point
+  the previous record is left BYTE-IDENTICAL on purpose: a usage error, a
+  second invocation on the same `CA_RECORD`, and a scratch refusal all
+  exit 2 having touched no record path, so an earlier run's
+  `VERDICT: PASS` is still there afterwards (plant `scratch-fail-closed`
+  asserts `record_unchanged=yes`). A wave driver must therefore read the
+  EXIT STATUS, never the file alone. Exclusive ownership: a mkdir lock on
   `<record>.lock.d` is taken before invalidate and held through cleanup;
   a second invocation on the same `CA_RECORD` refuses immediately (exit
   2, touches nothing); a stale lock (holder pid dead) is reclaimed with
@@ -573,6 +829,323 @@ All notable changes to EigenScript are documented here.
   clip's four registry opt-outs are gone.
 
 ### Fixed
+
+- **Doc-claims selftest isolates its variant alias.** The fixture now removes
+  inherited build variants before creating its `asan` alias, so an `asan-http`
+  build cannot cause a false failure by being the first matching hard link.
+
+- **The ILP32 gate carries the recorded call's own FLAGS into both the
+  macro-world derivation and the TU compile, instead of recording them and
+  then discarding them (#1232).** The live recipe compiles at `-O2`, which
+  defines `__OPTIMIZE__` in the real target's macro world; round 6/7 derived
+  both worlds and compiled every TU with neither the target's optimisation
+  level nor any recorded `-D`, so `#if defined(__wasm__) &&
+  defined(__OPTIMIZE__)` compiled clean under the gate and was RED under real
+  wasm clang at `-O2` (measured by a blind critic through the real `[99i3]`
+  section — 46/46 self-test cases green — and reproduced again here through
+  the actual runner: `FAIL: .../src/fsutil.c ... error: R6_OPTIMIZATION_WORLD`
+  after the fix, silent before it). Each recorded call's accepted option
+  tokens — optimisation level, every `-D`/`-U`, `-std=`, `-f*`, `-W*`, through
+  the SAME accepted-option set the driver cross-check already measures — are
+  now tracked per call (`classifier: flags=N per call`) and reach the compile
+  of the TU that call recorded; a TU compiled once under one call's own `-D`
+  and again — unqualified — inside a later call's SOURCES is examined under
+  the call that actually shaped it (verified against a second plant, a
+  per-call-only `-D`: the fault is invisible unless the isolation holds, and
+  it now reproduces `FAIL: .../web/percall.c ... error: R6_PER_CALL_DEFINE`).
+  Both `emcc` and `em++` are shimmed now, not only `emcc` — a recipe line
+  reaching `em++` was recorded nowhere and silently skipped on this box (no
+  emsdk), which the gate reported as a clean recipe. Two residuals are stated
+  rather than silently absent: the recorded input is read after the WHOLE
+  recipe finishes, not snapshotted at the call that produced it (a `#error`
+  compiled by an early call and overwritten with valid C before a later one
+  would be examined on the later bytes); and an INVALID option the driver
+  rejects is indistinguishable from a legitimate emcc-only one and is
+  silently dropped rather than failed. Also: empty stdin (`-x c -` with
+  nothing piped) is a valid empty translation unit — `[ -s ]` read the empty
+  capture as "nothing was captured" and refused a recipe the real compiler
+  builds fine; and the self-test's own `argv_plant` helper now asserts
+  `CLASSIFIER_DROPPED` RELATIVE to the live recipe's own baseline rather than
+  requiring it to be empty, so a legitimate spaced `-s X=Y` the live recipe
+  picks up someday does not fail every unrelated plant (verified against a
+  tree where the live recipe carries one: the audit and all 55 self-test
+  cases stay green). Five new self-test plants/controls (8o/8oc, 8d, 9e,
+  12es); `--selftest` is 55 cases, up from 50.
+
+- **`RESULTS: ... N skipped` counts every section that measured nothing, not
+  one of them (#1225).** The counter shipped in round 6 with the comment "a
+  zero that is printed is a claim" and exactly ONE increment site (`[99i3]`),
+  while `tests/run_all_tests.sh` had ~40 lines that put a `SKIP` marker on a
+  run's stdout. Measured on the pushed head 1b5c64d: `linux / gcc` printed
+  `RESULTS: 5282/5282 passed, 0 failed, 0 skipped` beneath nine of them,
+  including `[99i]`'s `SKIP: NOT MEASURED HERE`, which `ci.yml` forces on all
+  ten suite jobs. The claim was false on every lane. Every SECTION-LEVEL skip —
+  the section's verdict IS the skip, it contributed no PASS and no FAIL — now
+  goes through one `section_skip` helper that prints the line and increments
+  the counter (26 sites). Six of those used to bank PASSES for a run that
+  asserted nothing: the archived benchmark asset (+2), the three `--pkg`
+  sections (+11/+7/+3), `[99c]`, `[99d]` and `[137]`; a skip counted as a pass
+  is the same disease one layer down. SUB-CHECK skips — one line inside a
+  section that still PASSes on its other checks — are deliberately not counted,
+  and the split is ENFORCED rather than described:
+  `tools/section_plan.sh --skip-audit` enumerates every `SKIP`-emitting line in
+  the runner with a deliberately over-broad matcher, requires each to be routed
+  through the helper or named in a content-pinned waiver table with its reason,
+  floors both populations, and is run by suite section `[99w]` and by the
+  section-plan CI job. Its three planted faults: a new bare `SKIP:` echo is
+  unaccounted BY NAME, a section-level skip un-routed drops through the routed
+  floor, and a waiver that no longer matches any line is a hard failure.
+  Verified by extracting `[99i]` + the RESULTS line verbatim and running them
+  under the variable CI sets: `RESULTS: 0/0 passed, 0 failed, 1 skipped`.
+
+- **`[45b]`'s slow-loris control no longer binds a guessed port (#1231).**
+  Plant 3 runs the whole script a second time while the live section's server
+  is up, and both drew from `(RANDOM % 10000) + 50000`: on PR #1225's first CI
+  pass, two `extensions` jobs failed inside the section's own self-test with
+  `bind: Address already in use` on port 53632 while the four LIVE checks were
+  green — a control going red for a reason unrelated to its claim. The port now
+  comes from the kernel (bind to port 0, read it back), and because that is
+  still a race against any other process the start is RETRIED ONCE on
+  `EADDRINUSE` with the retry printed. New self-test plant 4 holds a real port
+  and hands it to the first attempt: the retry must recover and the four live
+  checks must still pass, so the plant measures the recovery and not just the
+  diagnosis. The failure this must never swallow is pinned by plants 1 and 2 —
+  a server that never binds still fails by name on the deadline, and one that
+  exits still fails by name with its status, first time, no retry.
+
+- **A `-x c <unit>` naming no existing file is FAIL by name in the ILP32 gate,
+  not a dropped operand.** Round 6 keyed that rule on the C-family SUFFIX, so
+  `-x c web/missing.inc -x none` — a unit the recipe names, `emcc` would refuse
+  and the gate can never examine — was dropped and the run printed
+  `OK: examined 23`, rc 0. The language in effect is now read from the recorded
+  argv the way the driver reads it (`-x c` and the glued `-xc`, `-x none`
+  turning it off); plant 3stx is the missing twin of plant 2u.
+
+- **The ILP32 gate's SDK-refusal match covers both wordings macOS emits.**
+  The macos-latest log at 1b5c64d shows `sys/cdefs.h:1068:2: error: Unsupported
+  architecture` AND `machine/_types.h:36:2: error: architecture not supported`
+  in the SAME probe; round 6 matched only the first, so a header or SDK reorder
+  leaving only the second would have turned that lane RED by name. Plant 5s2
+  requires the second wording alone to skip; control 5sg requires glibc's
+  `You need a ISO C` refusal to still FAIL, so the widening did not admit a
+  non-SDK break. The gate's header now also STATES the residuals the loop
+  measured and it does not close: only `emcc` is shimmed (a recipe reaching
+  `em++` is loud rc 127 on every box without emsdk and unrecorded on one with
+  it), `value_parity_unreconciled` is exercised only by plants 4w/4y, a
+  DIRECTORY named `*.c` and an unreadable `*.c` go red for the apparatus's
+  reason rather than the unit's, and `EIGS_ILP32_TU_FLOOR` can be exported to 0
+  on a standalone invocation. `tools/werror_switch_check.sh`'s floor for that
+  file is re-pinned 8 -> 11, the count its own `--print-counts` measures (it
+  moved again to 12 later the same round, with #1232's flags fix below).
+
+- **The Value-union size assert is the #1183 claim that holds at every
+  pointer width, so the Docs-site wasm32 lane (pages.yml) compiles again
+  (#1185).** `sizeof(data) == sizeof(data.fn)` was a 64-bit accident (`fn`
+  and `dict` are both 56 bytes there; at 32-bit pointers `data` is 36 and
+  `fn` is 28). The real claim is that caching the string length added no
+  bytes to the union: `sizeof(data.strv) <= sizeof(data.fn)`. Gated by
+  suite `[99i3]` (`tools/ilp32_syntax_check.sh`): clang `-m32 -fsyntax-only`
+  over **every translation unit the playground recipe hands the compiler** —
+  23 today, printed by the gate rather than typed, and floored, so a shrinking
+  population is a deliberate re-pin rather than a quiet green. That population
+  is **the recorded argv of a stand-in compiler**, not a reading of
+  `web/build.sh`: the gate stages the repo in a scratch sandbox, puts a
+  recorder first on PATH, runs the real recipe, and classifies the arguments
+  bash actually produced. Three rounds derived it by text and a blind critic
+  broke each one — a `src/*.c` filter examined 22 of 23 (the playground entry
+  point `web/eigs_wasm.c` sat outside the gate AND its self-test, and a
+  compile error planted there passed both), and the `.c`-token audit that
+  replaced it was blind to a single-quoted `'web/x.c'` literal, a `$(...)`
+  substitution, an array entry behind a variable and `.C`/`.cc` units, while
+  counting a comment line inside `SOURCES=(` as a source and an `-o out.c`
+  operand as one too. Six self-test plants pin exactly those shapes.
+  Recording argv was not enough on its own: round 4 then classified it with a
+  hand-typed model of emcc's option grammar, and the model was wrong in the
+  direction that HIDES inputs — `--emrun`, `--proxy-to-worker` and
+  `--default-obj-ext` take NO operand in emcc (`cmdline.py`'s `check_flag` and
+  `LEGACY_FLAGS`), so a translation unit sitting after one of them was dropped
+  from the population while emcc compiled it, and the gate still printed
+  `OK: examined 23`; `@response-files`, which emcc expands before it parses
+  anything, and `-x c <unit>` were uncounted for the same reason. **There is
+  no operand model left.** Response files are expanded first (two levels; a
+  third is fail-by-name), and an INPUT is any token that names an existing
+  regular file under the sandbox — relative to the cwd the stand-in recorded —
+  which the compiler did not itself write and whose suffix is a C-family
+  translation unit. That rule is position-independent, so no argument's meaning
+  depends on the one before it. The two shapes a suffix cannot see, a unit on
+  stdin (`-x c -`, captured by the stand-in) and a unit whose suffix is not a
+  TU suffix (`-x c web/unit.inc`), are decided by asking the REAL driver: clang
+  is handed the recorded argv with emcc's own options removed and its
+  `-x <lang> <file>` cc1 inputs are read back, where "emcc's own options" is
+  itself measured — a token is emcc's exactly when
+  `clang -m32 -fsyntax-only -### <token> /dev/null` rejects it as unknown. Both
+  derivations are printed (`classifier: N by suffix+filesystem, M by the clang
+  driver, K in the union examined`), the gate examines their UNION, and a
+  DISAGREEMENT is fail-by-name in both directions. The stated residual is the
+  over-inclusion direction: the operand of an emcc-only option stays on the
+  line, so `--embed-file web/data.c` — a data file that happens to be named
+  `.c` — is counted by both derivations and goes red by name, loudly rather
+  than silently (self-test control 2e). Nothing the recipe writes reaches the
+  tree any more either: round 4 symlinked every top-level entry, so a recipe
+  line writing `src/x.h` wrote through into the real `src/` while the header
+  claimed otherwise; the gate now makes one pristine copy of the repo (21 MB,
+  1.9 s measured), makes its files read-only, and hard-links a clone per
+  sandbox (0.4 s), so a created file lands in the sandbox and an overwrite of
+  an existing one is EPERM — and the recipe is RUN from the sandbox rather
+  than from the gate's own directory, so the protection starts at the first
+  line of the recipe instead of at the recipe's own `cd` (round 6 relied on
+  that `cd`: a write placed above it landed two files in the real working tree
+  with the gate printing `OK: examined 23`, rc 0; plants 2w and 2wp now pin
+  both sides of that line). The entry
+  point is compiled against a stub `<emscripten.h>` carrying
+  `EMSCRIPTEN_KEEPALIVE` exactly as emscripten's `em_macros.h` defines it —
+  `__attribute__((used))`, not a no-op, because an empty macro accepts
+  `EMSCRIPTEN_KEEPALIVE return x;` which the real header rejects (`'used'
+  attribute cannot be applied to a statement`). The `-D`/`-U` set is
+  **derived, not typed**: the gate reads both worlds' predefines with
+  `-E -dM` (`clang --target=wasm32-unknown-emscripten` and `clang -m32`),
+  reconciles every difference — measured 2026-09-21 as 39, the 30 macros the
+  host adds and the 9 the target adds — re-derives the host world under those
+  flags, and asserts defined-ness parity for every macro any conditional in
+  the population tests, failing by name on one it cannot reconcile. Round 3
+  hand-typed `__EMSCRIPTEN__ __wasm__ __wasm32__` and called them "the
+  target's own predefines"; they were 3 of the 9 additions and none of the 30
+  removals, so `src/fsutil.c:69 #elif defined(__linux__)` compiled the Linux
+  arm under a gate standing in for a lane that has no `__linux__` at all.
+  Reconciling NAMES was not enough either: 32 predefines are defined in both
+  worlds with DIFFERENT values — `__SIZEOF_LONG_DOUBLE__` is 16 on the target
+  and 12 on the `-m32` host, `__INTPTR_TYPE__` is `long int` vs `int`,
+  `__SIZE_TYPE__`, the whole `__LDBL_*` family — so
+  `#if __SIZEOF_LONG_DOUBLE__ == 16` was red on the real target and green under
+  a gate reporting `reconciled=48`. Each of those now carries the target's own
+  value too, and WHICH of them glibc's `-m32` headers refuse is MEASURED, not
+  assumed: the gate builds a probe from the system headers the population
+  itself includes, compiles it under the candidate set, and bisects by name;
+  the survivors are applied, the refusals are printed as
+  `value_parity_unreconciled=`, and a conditional that READS one of them is
+  fail-by-name. The report line separates the two claims —
+  `macro_parity: tested=N reconciled=N values=N/M` — because round 4 said
+  "reconciled" of 48 macros with not one value compared. The conditionals keyed
+  on this world are **printed** by the gate rather than listed in a comment:
+  two today, `src/fsutil.c:69` on `__linux__` and `src/jit.c:110` on
+  `__wasm__`. The tested-macro population cannot shrink silently either: round
+  4 scanned the TU list with an unquoted `$(cat "$files")` and no status check,
+  so one path containing a space made `tested=48` become `tested=19` at exit 0;
+  the list is read NUL-safely, awk's status is checked, and the files it opened
+  and the conditional lines it matched are cross-checked against an independent
+  `grep -c` over the same list.
+  This is PREDEFINE parity — a macro a system header supplies (`__GLIBC__`,
+  from glibc's features.h) is outside it, and the gate says so. **Fifty**
+  self-test plants and controls hold all of it: the six argv shapes; seven
+  option-grammar shapes (a TU after `--emrun` and after `--proxy-to-worker`, a
+  TU named only inside an `@response-file`, response files nested three deep, a
+  TU on stdin, a `-x c` unit with a non-TU suffix, and the `--embed-file`
+  over-inclusion control); a `-x c` unit naming no existing file, which must
+  FAIL by name like its `.c`-suffixed twin; two recipe lines writing `src/`
+  that must not reach the working tree, one after the recipe's own `cd` and one
+  before it; the SDK's second measured refusal wording, with glibc's own
+  refusal as the control that must still FAIL; a syntax error in the entry point, an `#ifdef __EMSCRIPTEN__`
+  arm, a misplaced `EMSCRIPTEN_KEEPALIVE`; an arm the wasm32 target takes and
+  the host does not (with its opposite as a control), a conditional comparing a
+  VALUE that differs (with its opposite as a control), a value reconciliation
+  glibc refuses (must be measured and named), an unreconcilable value a
+  conditional reads (must fail by name), the parity assertion run with no
+  reconciliation flags and with an empty tested population, a TU path with a
+  space that must not shrink the tested population; an empty inventory, a
+  1-entry population, the entry point dropped from the inventory (23 → 22,
+  below the floor), the old 64-bit assert — plus a REFORMATTED SOURCES array
+  that must yield the identical inventory (the round-2 plant edited the array's
+  TEXT and so went falsely red on a reflow) and the live inventory staying
+  green.
+  The RECORDER keeps EVERY invocation. Round 5's stand-in wrote its records
+  with `>`, so a recipe that called the compiler twice was recorded once: a
+  planted `#error` unit compiled by a first `emcc -c web/x.c -o web/dist/x.o`
+  and linked by the second call sat outside the population entirely while the
+  gate printed `OK: examined 23` and the real wasm32 target was RED (a blind
+  critic, by execution). Compile-then-link is the canonical build shape. Each
+  call now appends its own record — argv, cwd, the files THAT call created,
+  its stdin unit — the population is the union across calls, `classifier: N
+  call(s) recorded` is printed every run, and a recipe with zero invocations
+  is fail-by-name. The assumption that is now true, stated: every invocation
+  of the stand-in is recorded. Plants 2c, 2ca, 2cz and 2b hold it. The driver
+  cross-check is also fed only operands the driver can OPEN: emcc's documented
+  spaced form `-s TOTAL_MEMORY=64MB` reached clang as an input (bare `-s` is
+  clang's strip flag), clang answered `no such file or directory:
+  'TOTAL_MEMORY=64MB'`, and the gate called a recipe emcc builds fine RED. The
+  operand to drop is MEASURED from the driver's own diagnostic rather than
+  typed — a rule of the form "a non-option token that is not a file is a
+  setting" would eat the `c` in `-x c web/unit.inc` — every dropped token is
+  printed on `classifier: dropped=`, and a refused operand whose suffix is a
+  `.c` is still fail-by-name, because that is a recipe naming a unit that does
+  not exist (plants 3s, 3sj, 3st). And an EMPTY translation unit is examined
+  and counted: the conditional scan counted files with awk's `FNR == 1`, which
+  an empty file never reaches, so a `.c` produced by one call's `-o` and
+  compiled by the next made the gate answer "the tested-macro population
+  shrank silently" — loud, and wrong. The scan counts by enumeration now.
+  `-m32` is the i386 ABI, not wasm32 — it catches pointer-width breaks, the
+  `#1185` class, not every layout difference. Availability is probed by
+  EXECUTION, not by the compiler's name, and EXACTLY ONE outcome may skip: a C
+  library with no 32-bit target for its own headers, which says so in its own
+  words, at whichever of the two stages it says so. That probe
+  had to ASK FOR THE CAPABILITY THE GATE USES: the first version compiled a
+  one-line TU with no includes, which clang accepts at `-m32` on an arm64 mac
+  because it never reaches a header — so the gate passed its own availability
+  check on macos-latest and then went red on all 23 TUs with
+  `MacOSX.sdk/usr/include/sys/cdefs.h:1068: error: Unsupported architecture`,
+  becoming exactly the new red lane on a runner it has nothing to say about
+  that the probe exists to prevent. The probe now includes the C library, and
+  it MATCHES the SDK's own diagnostic, at either stage that can hit it: round
+  5 skipped on ANY probe failure, and a blind critic reached that branch four
+  ways on a LINUX box — no compiler on `PATH`, the gate's own
+  `<gnu/stubs-32.h>` stub deleted, `-isystem /usr/include/x86_64-linux-gnu`
+  pointing nowhere, and a broken reconciliation derivation — each printing
+  `SKIP:`, exiting 0, contributing `TOTAL=0`, with no tally anywhere to
+  notice. Every one of those is the GATE'S OWN APPARATUS breaking, so every
+  one of them is now FAIL BY NAME (plants 5b1, 5b2, 5b3), and the one case
+  that may skip is held by 5s/5sc (a stub answering `#error Unsupported
+  architecture` must SKIP by name; the live toolchain must be reported
+  available). macos-latest reaches that verdict one stage LATER — measured in
+  CI: its availability probe passes, and the SDK refuses only once the
+  reconciliation has replaced `__i386__`/`__APPLE__`, which is the
+  reconciliation doing its job — so the same diagnostic decides there too:
+  the SDK's own words are a skip (plant 5rs), and any OTHER refusal of the
+  derived macro world is the derivation being wrong and so a FAIL by name
+  (plant 5r; round 5 skipped on both). The control for that verdict — the
+  same headers *without* the reconciliation — runs in the LIVE path before it
+  is taken either way, because round 5's control was a `--selftest` case and
+  the section runs `--selftest` only in the non-skip branch, so on the very
+  run that skipped the control never executed. The suite's
+  RESULTS line prints `passed, failed, skipped` on every lane, `skipped=0`
+  included, and EVERY section-level skip increments it: a section that measured
+  nothing is a number on the verdict line and not only a line in the log. The gate
+  is also bash-3.2 clean — no `declare -A`, no `mapfile`, no `grep -z` —
+  because macOS is where it has to reach its own probe.
+
+- **The db-extension error-path example in `docs/BUILTINS.md` no longer
+  pins the core build's "undefined variable" output.** Section [89] on
+  `make full` was red since 9d503d5 (#1175): the executed fence expected
+  `query failed: undefined variable 'db_query_json'` while the db build
+  raises `db: not connected — call db_connect first`. The example now
+  prints a prefix that holds on both binaries; the prose next to it says
+  what each build actually raises.
+
+- **HTTP slow-loris readiness waits 30 s and fails by name (#1165).**
+  `tests/test_http_slowloris.sh` polled curl 30 × 0.1 s then printed
+  `FAIL: server never came up` — a cold-start race on shared runners, not
+  a sanitizer effect (ASan run 35048451582 and the postgres lane on
+  #1187, both green on rerun). The wait now polls every 100 ms against a
+  WALL-CLOCK deadline and names `server exited rc=N before it was ready` vs
+  `server not ready within 30 s`. The bound is a deadline rather than an
+  iteration count because a refused-connection round costs ~0.155 s, not
+  0.1 s: measured, the iteration-count draft took 47 s to print "within
+  30 s", and a failure line that names a number it does not keep is not a
+  witness. Three plants (`--self-test`, enrolled next to [45b] and pinned
+  at 3 cases) prove both named failures and the 5 s late-start control.
+  Closes #1165.
+- **`validate.is_number` requires a digit in a decimal string (#1235).**
+  `.` and `-.` passed the character scan, and `is_integer` then treated
+  `num` of them as zero. Both now reject those strings. `0`, `-1`, `.5`,
+  and `1.` are unchanged. Suite [50l].
 
 - **The string-scaling gate binds the runtime it measures, measures in
   interleaved rounds, and states the scope it actually has (#1188, #1189).** Both found by a blind critic, by

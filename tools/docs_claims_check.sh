@@ -326,7 +326,12 @@ if [ "${1:-}" = "--selftest" ]; then
     # medium`, finding 7). The planted number sits on the one line of that
     # page the gate now DERIVES, so a doc set that quietly drops docs/CI.md
     # takes this case green.
-    p=$(plant "CI.md" 's/All 261 test sections./All 999 test sections./' "docs/CI.md")
+    # The pattern matches the NUMBER, not one value of it: a plant that
+    # hardcodes today's count breaks the moment a PR adds a test section, and
+    # then reports "the fault was never planted" — which is what happened to
+    # the next PR that added one (261 -> 262). A plant may not hand-type a
+    # number the gate derives, for the same reason a doc may not.
+    p=$(plant "CI.md" 's/All [0-9][0-9]* test sections\./All 999 test sections./' "docs/CI.md")
     st_case "planted wrong number in the enrolled docs/CI.md goes red" \
             "$p" 1 "claims '999 test sections' but D_SECTIONS derives"
 
@@ -492,8 +497,10 @@ if [ "${1:-}" = "--selftest" ]; then
     if st_copy_tree "$ROOT" "$st_rel"; then
         # The variant-alias state: no release objdir, and src/eigenscript IS
         # the asan variant's binary. `ln` (not cp) is the point — the whole
-        # decision is an inode identity.
-        rm -rf "$st_rel/build/release"
+        # decision is an inode identity. Remove every inherited variant first:
+        # on an asan-http lane its alias would otherwise sort before our asan
+        # fixture and correctly be named by the gate, failing this control.
+        rm -rf "$st_rel/build"
         mkdir -p "$st_rel/build/asan"
         rm -f "$st_rel/build/asan/eigenscript"
         ln "$st_rel/src/eigenscript" "$st_rel/build/asan/eigenscript"

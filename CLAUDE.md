@@ -55,23 +55,14 @@ bash tools/consumer_acceptance.sh run src/eigenscript   # run them serially agai
   (`test_closure_cycles.eigs`) is gated **strictly** leak-clean — a
   LeakSanitizer exit there is a collector regression. The runner's `rc_ok`
   tolerates LeakSanitizer exits elsewhere and tallies them ("NOTE: N test
-  program(s)…"): **currently 0** (was 4). **A jump in the tally means a new
-  leak.** Any other nonzero exit — crash, assert, UBSan — fails. The old floor-4
-  was all spawn/channel programs; three fixes cleared it: (1) channel + thread
-  *handle*-table resources (Channel structs + ThreadHandles live in the process
-  handle table keyed by id, not on a GC'd Value) are reclaimed deterministically
-  by `handle_table_drain` once the program finishes; (2) the worker's return
-  value was over-incref'd in `thread_entry` (removed); (3) **threaded cycle-GC** —
-  the collector's candidate registry moved per-thread→per-state (lock-guarded,
-  `gc_lock`), so env↔closure cycles created on any thread during the MT window
-  stay collection candidates and the exit collector sweeps them once workers are
-  joined (`handle_table_drain` clears `multithreaded`). So MT-created cycles no
-  longer leak — `test_concurrent` is clean, and section [101] (`test_spawn_gc`,
-  worker-created cycles) is leak-gated. (#297 then made parallel shared-chunk
-  execution TSan-clean: the multithreaded flag is written once on the 0→1
-  transition, and the JIT counters / OSR / inline-cache writes / trace-line are
-  gated off under MT, name hashes precomputed at compile time. ThreadSanitizer
-  here needs `setarch -R` to disable ASLR.)
+  program(s)…"): **currently 0**. **A jump in the tally means a new
+  leak.** Any other nonzero exit — crash, assert, UBSan — fails. Cycles
+  created on worker threads are collected too: section [101]
+  (`test_spawn_gc`) is leak-gated, and channel/thread handles are reclaimed
+  by `handle_table_drain` (mechanism: docs/CLOSURE_CYCLE_GC.md). Under MT
+  the JIT counters / OSR / inline-cache writes / trace-line are gated off
+  for TSan-cleanliness; ThreadSanitizer here needs `setarch -R` to disable
+  ASLR.
 - Variants build into per-variant `build/<variant>/` objdirs (#740) and
   coexist; `src/eigenscript` is a hard link to the last `make` target
   (hard, not symbolic — `/proc/self/exe`-relative stdlib resolution must
@@ -105,7 +96,7 @@ Always-on:
   EVERY count — `f of []` zero args, `f of [x]` one arg (the element,
   not the list), `f of [a, b]` two. To pass a literal list whole,
   parenthesise (#355): `f of ([x])`. Lint W017 flags the 1-element bare
-  form (pre-#405 it meant the opposite). **Arity-1 carve-out (#733)**:
+  form. **Arity-1 carve-out (#733)**:
   that rule describes the call site, not the binding — a 1-parameter
   callee re-collects a 2+-element arg list WHOLE (`one of [5, 6]` binds
   `a = [5, 6]`, not `a = 5`; this is what keeps `len of [1, 2]`
@@ -167,7 +158,6 @@ model — don't work around a gap, surface it).
   written in EigenScript) **and the AOT native compiler** (`aot/`,
   transpile-to-C; the VM is its byte-exact oracle). This — not the JIT — is
   the native-perf path. Changing it → the **`aot-differential`** skill.
-  (No CLAUDE.md of its own yet.)
 - **Consumer / forcing-function projects** (validate the language, drive
   primitives):
   - **iLambdaAi** — research system whose ternary transformer *generates*
@@ -198,15 +188,16 @@ Y."* Stop there and ask whether Y is a **law** — language semantics, a
 physical constant, an external contract — or a **decision**. If it is a
 decision, price the alternative before designing around it.
 
-Bought 2026-08-28 (ouroboros#127 / DMG). The AOT compiles the main file to
-C but emits `load_file` as a runtime call, so loaded modules are parsed and
-interpreted by the linked VM. A real bug lived in that seam and was found,
+Bought 2026-08-28 (ouroboros#127 / DMG). The AOT then compiled the main file
+to C but emitted `load_file` as a runtime call, so loaded modules were parsed
+and interpreted by the linked VM (since fixed, ouroboros#129 — the reasoning
+is the lesson, not the state). A real bug lived in that seam and was found,
 minimised, fixed and verified. It was also reported as "unlocking the AOT
 multiplier for DMG" — until the design itself was questioned. Measured:
 DMG is 3,288 lines, of which 818 are compiled and 2,470 interpreted,
 including the 837-line, 128-function opcode dispatch. Every emulated
-instruction dispatches into interpreted code, so the fix makes DMG *run*
-and cannot make it meaningfully *faster*.
+instruction dispatched into interpreted code, so the fix made DMG *run*
+and could not make it meaningfully *faster*.
 
 An entire investigation cycle had treated "loaded modules are interpreted"
 as terrain, including rejecting the alternative as unbuildable. The
