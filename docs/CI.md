@@ -1092,7 +1092,14 @@ through its named check). A missing PyYAML is exit 2, never a pass.
   job-level event filter lets a merge through untested. A step `if:` may
   mention the event only as `github.event_name ==/!= 'pull_request'`, or via
   the PR payload `github.event.pull_request.*` (empty on push and in the
-  queue alike). Dot and bracket syntax are both read.
+  queue alike). Dot and bracket syntax are both read. The same rule covers
+  indirection: an `env`, job `outputs`, workflow `env` or matrix value on a
+  required path may not read the event (outside those two forms), and an
+  `if:` that reads `env.*`, `needs.*.outputs` or `steps.*.outputs` is traced
+  to where the value is set — unresolvable is red, `vars.*` is always red.
+  Two reviewed step outputs are waived by a hash of their step (`scope`'s
+  docs-only check, the `werror audit` cache restore); a waiver that matches
+  nothing is red.
 - `[continue-on-error]` — a job or step on a required path sets it, so its
   failure would not fail the check.
 - `[uncovered]` — a `ci.yml` job is neither required nor the worker of exactly
@@ -1100,7 +1107,9 @@ through its named check). A missing PyYAML is exit 2, never a pass.
   stop the queue, yet it colours the badge: the `macos-15-intel` shape.
 
 Whether an aggregator's script really fails on every non-success worker
-result is a code-review question, not this gate's.
+result is a code-review question, not this gate's. The gate's other accepted
+limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
+`schedule:` triggers) are listed in #1278.
 
 ### Every `ci.yml` job, classified
 
