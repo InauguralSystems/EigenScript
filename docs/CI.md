@@ -24,7 +24,7 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 
 35 minutes of wall clock, about 200 machine-minutes. Two findings:
 
-1. **The same suite — 263 test sections today — ran in TEN jobs** — gcc, clang, zlib, net,
+1. **The same suite — 264 test sections today — ran in TEN jobs** — gcc, clang, zlib, net,
    gfx, http, db, asan-core, asan-http, two macOS — differing only in the
    extension surface of the binary they built. A zlib build has exactly one
    section the gcc build does not; it paid for all of them.
@@ -40,7 +40,7 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 - `scope` decides whether the PR touches anything but `*.md`. A docs-only PR
   reports green in seconds. (The doc gates themselves are not skipped — see
   **The doc gates** below.)
-- **One full suite: `linux / gcc`.** All 263 test sections.
+- **One full suite: `linux / gcc`.** All 264 test sections.
 - **`werror audit`** runs [99i] once, cached (see below). The suite jobs set
   `EIGS_SKIP_WERROR_AUDIT=1`, and [99i] then prints a `SKIP:` line naming this
   job — it never silently disappears.
@@ -806,7 +806,7 @@ headers that will EXECUTE — a probe gate's else-branch twin
 capability, and counting it made round 1 promise 18 for a run that printed 16.
 
 ```
-SECTION PLAN: PLAN: sections=6 (of 263) chunks=5 plan=zlib capabilities=1 (floor 1) gated-chunks=1 (floor 1)
+SECTION PLAN: PLAN: sections=6 (of 264) chunks=5 plan=zlib capabilities=1 (floor 1) gated-chunks=1 (floor 1)
 ```
 
 A plan of zero sections is a hard failure, and so is a RUN of zero assertions:
