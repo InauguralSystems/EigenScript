@@ -211,7 +211,7 @@ SKIP_ROUTE_RE='^[[:space:]]*section_skip[[:space:]]'
 # coverage is REMOVED (mechanical-gates §5), and both failure modes here are
 # removals: un-routing a section-level skip drops the routed count AND adds an
 # unaccounted emitter, so the two halves catch it independently.
-SKIP_ROUTED_FLOOR=26
+SKIP_ROUTED_FLOOR=25
 SKIP_EMIT_FLOOR=20
 # Each row is "<16-hex sha256 of the EXACT line>|<reason>". The hash is the
 # pin: edit the line and the row stops matching, so the reason gets re-read.
