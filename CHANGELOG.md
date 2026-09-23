@@ -1438,7 +1438,7 @@ All notable changes to EigenScript are documented here.
   `.github/workflows/issue-triage.yml` labels a new issue `needs-triage` when
   it arrives without an `area:` and runs the audit daily. Both gates ran as
   suite section `[99zd]` with pinned selftest case counts until #1275 moved
-  them out of the suite (see below).
+  them out of the suite (see the first entry under Changed).
 
   Round 2 closed what the blind critics found in round 1. A SUCCESSFUL EXIT IS
   NOT A MEASUREMENT: both callers accepted `tools/issue_labels_check.sh`

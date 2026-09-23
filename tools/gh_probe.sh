@@ -29,7 +29,7 @@
 # answer "did that other process actually call GitHub": a gate that prints a
 # `gh-api:` token without making a call is outside the reach of any caller.
 # That is what the blind-critic rounds and the gates' own planted faults are
-# for. See docs/CI.md, "What the caller can and cannot prove".
+# for.
 #
 # Usage:
 #   . tools/gh_probe.sh            # sourced: defines the three functions below
