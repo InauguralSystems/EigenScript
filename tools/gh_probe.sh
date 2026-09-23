@@ -6,7 +6,7 @@
 # rounds 1-3 built a caller that asserts a gate's population line. Round 3's
 # caller accepted the gate's OWN SKIP TOKEN as a population line — so removing
 # only the live GitHub walk from tools/roadmap_check.sh and dressing it as a
-# named skip (`gh_authenticated() { return 1; }`) passed `[99zd]` ON A BOX
+# named skip (`gh_authenticated() { return 1; }`) passed the then-suite caller `[99zd]` ON A BOX
 # WHERE `gh` IS AUTHENTICATED. The caller had no opinion about whether the skip
 # was TRUE, because it had no probe of its own: it already probed PyYAML for
 # itself and simply believed the gate about `gh`.

@@ -209,6 +209,22 @@ Two things that were kept by memory are now kept by a gate, both bought the
 same day (2026-09-21, #1207/#1155 and the maintainer's "we aren't labeling
 issues").
 
+**Where they run: not in the test suite.** `tools/issue_labels_check.sh` and
+`tools/roadmap_check.sh` read LIVE repository state (open issues, milestones,
+other repositories), so their verdict can change without any commit. While
+they ran as a suite section, an unrelated issue filed without labels turned
+every pull request red and ejected queued merges (#1279, #1168). They run in
+`.github/workflows/issue-triage.yml` instead (#1275): daily, on
+`workflow_dispatch`, and on any pull request that changes one of them,
+`tools/gh_probe.sh`, `ROADMAP.md` or the workflow itself. That PR run is
+advisory and never a required check. Its audit step holds its OWN literal copy
+of each gate's population regex and selftest case count, asserts the gate's
+output against that copy, and asserts the gate's `--contract` equals it; a
+difference is red by name and never auto-adopted, and a named skip is red
+because that lane exists to make the API call. Run either gate locally with an
+authenticated `gh`: `bash tools/issue_labels_check.sh`,
+`bash tools/roadmap_check.sh` (each also takes `--selftest`).
+
 **Issue labels.** The scheme on the repository is `area:<subsystem>`
 (runtime-vm, jit, concurrency, observer, memory, trace-tape, packages, http,
 gfx, embed, docs, ci, gates, lint-tooling, consumer, aot, stdlib), a KIND
@@ -219,8 +235,7 @@ gfx, embed, docs, ci, gates, lint-tooling, consumer, aot, stdlib), a KIND
 a kind.** `tools/issue_labels_check.sh` enumerates every open ISSUE (never a
 pull request), prints `examined=N missing=M` with the offending numbers, and
 fails when M > 0 **or when N == 0** — an empty enumeration satisfies "nothing
-is missing" without checking anything. Without `gh` it SKIPs by name; it never
-turns a missing credential into a pass. `.github/workflows/issue-triage.yml`
+is missing" without checking anything. `.github/workflows/issue-triage.yml`
 runs it daily and, on `issues: [opened, reopened]`, puts `needs-triage` on
 anything that arrives without an `area:` label. The backlog was essentially
 unlabelled before the sweep; the often-quoted "33 of 36" census is not
@@ -259,108 +274,6 @@ hundred lines away, had carried `-c safe.directory='*'` for months. One
 workaround, every git call — and the caller that probes with the flag is what
 makes a gate that cannot agree with it red by name.
 
-**`gh api --paginate` returns ONE array, so the labels gate stopped splicing
-one.** `issue_labels_check.sh` carried `sed 's/^\]\[/,/' | tr -d '\n'` to join
-per-page arrays. Measured with `per_page=3` over four pages: `gh` merges them
-itself and there is no `][` seam at all — and on a `gh` that DID concatenate
-raw bodies the seam would sit mid-line, where a `^`-anchored sed cannot reach
-it. A dead repair that reads as a live one is worse than none. The splice is
-gone; the Python classifier accepts EITHER a merged array or an array of pages
-and refuses anything else by name, with a two-page fixture whose unlabelled
-issue is on the SECOND page. `--slurp` would state the shape explicitly and is
-deliberately not used: `gh` 2.45.0 (Ubuntu's package, what the dev box has)
-answers `unknown flag: --slurp`, which would turn the gate into a named SKIP —
-red at a live caller — on every lane whose `gh` predates the flag.
-
-**The caller holds its own copy of every pin.** Round 1 accepted the gate
-gutted to `exit 0` — `exit=0 output=''` passed both boundaries — so round 2 had
-each gate publish a contract (`--contract`: the population line it promises,
-`POPULATION_RE`, and how many planted faults its selftest runs,
-`SELFTEST_CASES`) and had both callers READ it. That made the thing being
-policed supply the yardstick: `POPULATION_RE=examined=|.*` admitted empty
-output, and a gate that deleted its plants and lowered `SELFTEST_CASES` passed
-the daily lane. Round 3 keeps TWO copies, kept equal by a test. Each caller —
-`[99zd]` in `tests/run_all_tests.sh` and the audit step in
-`.github/workflows/issue-triage.yml` — holds the population regex and the
-selftest case count as LITERALS, asserts the gate's output against its own
-copy, and separately asserts that the gate's `--contract` equals that copy
-verbatim. A difference is red by name ("gate contract changed; re-pin the
-caller deliberately") and is never auto-adopted. Three consequences worth
-knowing:
-
-* the population count group is `[1-9][0-9]*` and exactly ONE matching line is
-  required, so an empty enumeration and a duplicated line are both red;
-* the source is a machine-readable token (`gh-api:` / `fixture:` /
-  `skipped:`), because both callers used to accept `(source: fixture ...)` as a
-  live measurement — their regex stopped before `(source:`. The pins admit NO
-  `fixture:` source anywhere. Whether they also require a LIVE `gh-api:` token
-  depends on the lane, and each caller decides that FOR ITSELF, never from the
-  gate's claim: each runs the shared probe `tools/gh_probe.sh` (the same code
-  the gates run), and when the probe reaches GitHub the pin requires
-  `milestones=gh-api:… refs=gh-api:… resolved=N skipped=0`, a `gh-api:` labels
-  line with no `SKIPPED BY NAME` alternative, and — when the caller's own
-  `python3 -c 'import yaml'` succeeds — `loader=pyyaml`. When the probe does
-  NOT reach GitHub the named skip is accepted and the caller prints its own
-  line (`[99zd] live arms: SKIPPED (no gh credentials on this lane)`), so the
-  log says which lanes measured what. Round 3 stated flatly that "the pinned
-  regexes require a LIVE source token"; that was false for two of the three
-  pins, which is what let a gate whose GitHub arms never ran pass on an
-  authenticated box;
-* each caller counts its own work. Every assertion that reached a verdict the
-  caller accepts increments a witness, and a final check compares the witnesses
-  and the caller's check count with pinned literals — so deleting or
-  short-circuiting a check changes RESULTS instead of quietly measuring less.
-
-A successful exit is not a measurement, and neither is a contract the gate
-wrote for itself.
-
-**A declared-but-empty token is a declared token.** Each caller cross-checks
-the probe against an INDEPENDENT signal — does this lane DECLARE a credential?
-— and a lane that declares one and cannot reach GitHub is red by name rather
-than allowed its skip. Round 4 asked that question with `[ -n "$GH_TOKEN" ]`,
-so a lane exporting `GH_TOKEN=""` declared nothing by it. That is not a
-hypothetical shape: `env: GH_TOKEN: ${{ secrets.TYPO }}` exports an EMPTY
-string, not nothing, and a secret that is missing, misspelled or scoped away
-produces exactly it. With an empty token the probe reported
-`gh-unauthenticated`, every GitHub-facing arm took its named skip, and the
-suite caller's eleventh check printed "this lane declares no token" and passed
-**11/11** on a lane that measured nothing (round-5 blind critic, Astra).
-`gh_probe_token_declared` now tests PRESENCE (`${GH_TOKEN+x}`): an empty export
-is a credential this lane was written to hold and cannot use, which is the
-finding. An UNSET token — the dev box's keyring login, the macOS runner, the
-sanitizer shards — is the only shape that still permits the named skip.
-
-**What the caller can and cannot prove.** A caller verifies that a gate printed
-a population line it could only have produced by running its live arm ON THIS
-LANE (token-pinned, against the caller's own probe), and that the gate's
-selftest ran with the pinned count. A gate that FABRICATES its own output —
-printing the population line and the selftest line with no work behind them —
-is outside the caller's power to detect: a forged receipt reads exactly like a
-true one, and a round-4 blind critic scored 10/10 against print-only stubs. That
-is what the blind-critic rounds and each gate's own transverse mutations are
-for. The caller's job is to make the receipt SPECIFIC enough that forging it is
-a deliberate lie about a checkable thing, not to render forgery impossible.
-
-**Which lanes run the live arms.** `ci.yml`'s `linux / gcc` job (and `clang` on
-a push) runs the full suite inside the dev image, which now installs `gh` from
-a pinned, checksummed release tarball (`.devcontainer/Dockerfile`), and its
-suite step exports `GH_TOKEN: ${{ github.token }}` with `issues: read` on the
-job. `.github/workflows/issue-triage.yml`'s daily audit runs BOTH the labels
-gate and `tools/roadmap_check.sh`, with a pin that admits no skip at all —
-that lane exists to make the API call. Every other lane (macOS, the sanitizer
-shards) declares no token, skips the GitHub arms BY NAME, and says so on the
-caller's own line. **The sanitizer shards could hold a token and deliberately
-do not**: all three run the same dev image as `linux / gcc`, so `gh` is there
-and `${{ github.token }}` would work — they would simply add three more
-`gh api` walks per push (a milestone read, an organisation listing and a
-reference walk each) for an answer `linux / gcc` and `linux / clang` have
-already produced on that same commit. The live arms are about the CONTENT of
-ROADMAP.md, which is identical across shards; running them once per push is the
-measurement, and running them four times is rate limit. Before round 4 no lane anywhere could do anything but skip:
-the milestone mirror and the reference resolver — the whole point of #1207 —
-were executed against GitHub by nothing, while `[99zd]` reported
-`population lines 3/3`.
-
 **ROADMAP.md.** `tools/roadmap_check.sh` refuses (a) any `- [ ]`/`- [x]`/`- [~]`
 line anywhere in the file and anything other than exactly one table, inside
 `## Milestones`, with five cells and a known status per row; and (b) — with
@@ -391,93 +304,9 @@ by the default. Arm (a) never
 skips. Arm (c) also REFUSES a bare `#N` in a cell that also carries a qualified
 `Repo#M`: M9's row read "Tidepool#43 and #59", the bare `#59` silently resolved
 against EigenScript (a real, closed PR), and the row was green for a reference
-it does not mean.
-
-**`KNOWN_REPOS` is verified once per run, and a private repository is not
-evidence.** Round 4's list named `EigenKB`, which **does not exist** — a 404 on
-every token, including the organisation's most privileged one — and arm (c)
-mapped a repository-level 404 to "this token cannot read the repository", a
-statement about the run, so `EigenKB#1` in the roadmap SKIPPED BY NAME and the
-gate printed `OK … skipped=1` (round-5 blind critic, Fable). A membership list
-nothing verifies certifies whatever is typed into it. Arm (c) now makes ONE
-call, `gh api orgs/<owner>/repos --paginate` (one page; how many rows come back
-depends on the token — a repo-scoped `${{ github.token }}` sees the public
-half only), and that
-listing is the discriminator: name absent from a SUCCESSFUL listing → the
-repository **does not exist**, red by name, `KNOWN_REPOS is stale`; name
-present → `.private` decides which list it belongs on; listing fails or returns
-empty → nothing is decidable and the verification **SKIPs by name** (the
-reference walk still runs, exactly as before).
-
-**The classifier fails CLOSED, and "public" is a positive fact the listing has
-to state.** Round 6 asked `[ "$priv" = "true" ]` and called everything else
-public — so a listing whose rows carry no `.private` at all (a projection, a
-proxy, an API change, a `jq` that answered `null`) certified every entry as
-public and printed `repos=verified:13` with not one explicit `false` in it.
-Measured with a 13-row null fixture: the gate printed the byte-identical OK
-line and `[99zd]` read 11/11 (round-6 blind critics, Astra and Fable,
-converging). Now `false` is public, `true` is private, and **anything else is
-UNKNOWN VISIBILITY** — red by name ("the organisation listing carries no
-visibility for `<owner>/<repo>`; refusing to certify it public") with the run's
-token set to `repos=skipped:visibility-unknown:N`, which the live pin refuses
-at both callers. The token the shell classifies also carries its TYPE, because
-`(.private|tostring)` maps the JSON **string** `"false"` onto the boolean; a
-non-boolean arrives as `non-boolean:<type>` and cannot masquerade.
-
-**"Absent" means absent-or-private when the view is public-only.** A
-repo-scoped `${{ github.token }}` sees only the organisation's public half, so
-on that lane a listing naming no private repository at all cannot tell a
-DELETED repository from one that was turned private. The verdict is red either
-way; the diagnosis changes — "absent from a public-only listing: deleted,
-renamed, or now private — check with a token that can see private
-repositories" — because sending a maintainer to look for a deleted repository
-is the same false accusation in the other direction (round-6 blind critics,
-ledger 4).
-
-**A table row is not a separator because it contains `---`.** The row walk
-skipped any row containing that substring anywhere, not only the header
-separator, so a data row whose DONE clause read `never --- see the vetoes` was
-never counted in `examined=` and never checked for cells, status or milestone
-number (third critic, `/code-review 1226 medium`). One anchored regex,
-`RC_SEP_RE`, now serves the separator COUNT, the section-placement check and
-the walk — two spellings of one rule is how they disagree.
-
-**Which of the listing outcomes above happened is on the OK line**, as
-`repos=verified:N` or `repos=skipped:<why>` (round-5 blind
-critic, Fable): until round 6 the verification left no trace there, so a run
-whose listing 403'd, came back empty or was gutted printed a line
-BYTE-IDENTICAL to a verified one and `[99zd]` passed 11/11 on a token-holding
-lane. The contract admits both tokens; both callers require
-`repos=verified:[1-9][0-9]*` once they have established for themselves that
-GitHub is reachable. A `KNOWN_REPOS` entry the listing marks PRIVATE is told
-apart from one that is ABSENT — "is now private (move it to PRIVATE_REPOS)"
-versus "does not exist (KNOWN_REPOS is stale)" — and the selftest asserts each
-plant's own diagnosis, not merely that arm (c) went red (round-5 blind critic,
-Astra). A repo-scoped
-`${{ github.token }}` sees only the organisation's public repositories, so for
-a `PRIVATE_REPOS` entry "absent" and "private" are the same answer and both are
-fine; an entry that shows up **public** is the stale direction and is red too.
-`ROADMAP.md` is a PUBLIC document, so a citation its readers cannot open is not
-evidence: `EigenOS`, `eigen-site`, `DeslanStudio` and `iLambdaAi` (measured
-2026-09-21: `.private` is true on all four) moved out of `KNOWN_REPOS` into
-`PRIVATE_REPOS`, which keeps them recognisable so that citing one is red for
-its REAL reason ("private repository is not evidence in a public roadmap")
-rather than red as an unrecognised name. Under round 4 those citations RESOLVED
-on a maintainer's token and were counted as evidence, and would have been
-`skipped=1` — and therefore red at the token-holding daily lane, for the wrong
-reason — under `${{ github.token }}`. The selftest drives all of this through
-an organisation-listing fixture, offline: a missing entry, a private entry, a
-cited private repository, and the CONTROL that makes the discriminator load-
-bearing — the same missing entry with the listing UNREADABLE is **green**, so
-gutting the discriminator is red in one direction and silent in the other, and
-the pair catches both. Round 7 added four more: a listing with no visibility
-at all, a `.private` that is a string rather than a boolean, an entry absent
-from a public-only view, and a data row whose cell contains `---`. The case
-count is PUBLISHED by `--selftest`'s summary line and by `--contract`, and the
-**two** callers — `[99zd]` in `tests/run_all_tests.sh` and the roadmap step in
-`.github/workflows/issue-triage.yml` — each pin their own copy of it, so a
-count that moves is a deliberate edit in three places rather than a silent
-adoption.
+it does not mean. Each gate's header documents the rest: repository visibility
+(`KNOWN_REPOS` / `PRIVATE_REPOS`), what each listing outcome prints, and the
+selftest's planted faults.
 
 The old file was a checkbox pile, most of it historical highlights under
 `## Completed`, so every counter of "roadmap items" was counting the past.
@@ -510,9 +339,8 @@ runs (`python3-yaml` in `.devcontainer/Dockerfile` for every Linux leg, a setup
 step on the macOS lane); when it is absent anyway, the CALLER probes for PyYAML
 itself and allows exactly the pinned named-skip count, for that gate alone.
 
-All three tools carry a planted-fault `--selftest` with a pinned case count and
-a `--contract`, and the suite runs the live pass, the contract and the selftest
-of each as `[99zd]`.
+The suite runs `tools/workflow_yaml_check.sh` and its selftest as `[99zd]`,
+the only part of that section that reads nothing but the tree.
 
 ## Main lane (the merge queue, then push to `main`) — the full matrix
 

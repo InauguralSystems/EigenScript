@@ -40,6 +40,17 @@ on:
     # behind everyone else's midnight cron on the shared runner pool.
     - cron: '23 5 * * *'
   workflow_dispatch:
+  # These gates read LIVE repository state, so they are not in the test suite
+  # (#1275): an unrelated unlabelled issue failed every PR there and ejected
+  # queued merges (#1279, #1168). A PR that changes a gate or ROADMAP.md still
+  # runs them here, as an advisory check that is never required.
+  pull_request:
+    paths:
+      - ROADMAP.md
+      - tools/issue_labels_check.sh
+      - tools/roadmap_check.sh
+      - tools/gh_probe.sh
+      - .github/workflows/issue-triage.yml
 
 permissions:
   contents: read

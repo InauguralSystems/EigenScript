@@ -23,8 +23,8 @@
 # issues: an empty enumeration satisfies "nothing is missing" and is the
 # vacuity mechanical-gates §121 exists to stop, so it fails too.
 #
-# WHAT A CALLER OF THIS GATE CAN AND CANNOT PROVE. A caller ([99zd] in
-# tests/run_all_tests.sh, the audit in .github/workflows/issue-triage.yml)
+# WHAT A CALLER OF THIS GATE CAN AND CANNOT PROVE. The caller (the audit in
+# .github/workflows/issue-triage.yml; the suite stopped calling it in #1275)
 # verifies that this gate printed a population line it could only have produced
 # by running its live arm ON THAT LANE — the source token is pinned to
 # `gh-api:` with no `SKIPPED BY NAME` alternative whenever the CALLER'S OWN
@@ -52,7 +52,7 @@ SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 REPO="${ISSUE_LABELS_REPO:-InauguralSystems/EigenScript}"
 
 # The `gh` reachability probe lives in ONE file, sourced by this gate AND by
-# its callers ([99zd] in tests/run_all_tests.sh and the audit step in
+# its caller (the audit step in
 # .github/workflows/issue-triage.yml). Round 3 let each gate decide alone
 # whether GitHub was reachable and had the callers believe the answer, so a
 # gate whose probe always said "no" passed on an authenticated box (round-4
@@ -63,7 +63,7 @@ REPO="${ISSUE_LABELS_REPO:-InauguralSystems/EigenScript}"
 # ---------------------------------------------------------------------------
 # THE CONTRACT — the population line this gate promises to print, and how many
 # planted faults its selftest runs. Defined ONCE, here, and printed by
-# `--contract`, so that every caller (the `[99zd]` suite section and
+# `--contract`, so that every caller (the audit step in
 # `.github/workflows/issue-triage.yml`) asserts the SAME regex this gate
 # prints and the two cannot drift apart.
 #
