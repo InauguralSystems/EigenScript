@@ -12,32 +12,35 @@
 # aligns `double` to 4 inside a struct and wasm32 aligns it to 8, so a layout
 # `_Static_assert` can hold under the stand-in and fail the real target.
 #
-# Round 1 of #1255 added a path-filtered `pull_request` trigger. A
-# path-filtered workflow cannot be a REQUIRED check — on a PR outside its
-# paths it never reports, and a required check that never reports blocks the
-# merge forever — so a red wasm build could still merge. So this workflow now
-# has the same shape ci.yml uses for its required checks (docs/CI.md,
-# "aggregators"): it runs on EVERY pull request, unfiltered, and
+# Round 1 of #1255 added a path-filtered `pull_request` trigger, which cannot
+# be a REQUIRED check (on a PR outside its paths it never reports). Round 2
+# replaced it with a `scope` job that decided "was a playground input
+# touched?" from `git diff --name-only` — and under git's default rename
+# detection that lists only a renamed file's NEW path, so moving `src/trace.h`
+# to `attic/trace.h` read as "untouched", the build was skipped and the
+# check passed on a recipe that no longer compiles (both blind critics,
+# 2026-09-22). Two rounds, one class: a "was the playground touched?"
+# decision upstream of the build is a way to be green without building.
+# The build takes ~72 s against a ~45 min CI run, so there is NO such
+# decision any more — on EVERY pull request and every push to main:
 #
-#   scope       decides whether the PR touches a playground input (the ONE
-#               place the path list lives; ci.yml's `scope` is the pattern);
-#   build       the worker: the SAME steps as always — one recipe,
-#               `bash web/build.sh`, never a second copy of the emcc flags —
-#               each guarded on scope, so an untouched PR finishes in seconds;
-#               it leaves a RECEIPT (`built=true`) only after web/build.sh
-#               exited 0 and produced web/dist/eigs.wasm;
+#   build       the worker: one recipe, `bash web/build.sh`, never a second
+#               copy of the emcc flags. No step and no job is conditional on
+#               what the PR changed; the only conditions left gate the Pages
+#               steps to non-PR events. It leaves a RECEIPT (`built=true`)
+#               only after web/build.sh exited 0 and produced its outputs.
 #   playground  the aggregator, `if: always()`, with the stable check name
-#               `playground (real emcc wasm32 build)`. It is success only when
-#               scope succeeded with a known answer AND the worker succeeded
-#               AND, if the inputs were touched, the receipt says the build ran.
-#               A failed, cancelled or skipped worker is never success. THIS is
-#               the check to require on main.
+#               `playground (real emcc wasm32 build)`. Success only when the
+#               worker succeeded AND left the receipt. It still earns its
+#               place with no scope to combine: a SKIPPED job reads as passing
+#               to a required-check rule, and a cancelled one leaves nothing;
+#               the aggregator turns both into a failure, and it pins the
+#               check NAME independently of the worker's. THIS is the check
+#               to require on main.
 #
 # Deploy is unchanged: Configure Pages, the artifact upload and the `deploy`
-# job run only on push/dispatch, never on a pull request. Measured on main:
-# the build job (emsdk setup cached + Jekyll + web/build.sh) is ~72 s. Main
-# now builds on every push (no path filter there either, so the path list has
-# one home); that costs ~72 s per push and keeps the published site current.
+# job run only on push/dispatch, never on a pull request, and deploy needs
+# the aggregator.
 name: Docs site
 
 on:
@@ -58,46 +61,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  scope:
-    name: playground / scope
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      playground: ${{ steps.detect.outputs.playground }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          fetch-depth: 0
-      - id: detect
-        name: Detect whether the PR touches a playground or docs-site input
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT" != "pull_request" ]; then
-            echo "not a PR — build and (on main) deploy"
-            echo "playground=true" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          files=$(git diff --name-only "$BASE" "$HEAD")
-          echo "changed files:"; printf '%s\n' "$files" | sed 's/^/  /'
-          # THE path list: what web/build.sh compiles (src/, web/), what feeds
-          # -DEIGENSCRIPT_VERSION (VERSION), what Jekyll renders (docs/), and
-          # this workflow. Over-inclusion only costs a ~72 s build.
-          if grep -qE '^(src/|web/|docs/|VERSION$|\.github/workflows/pages\.yml$)' <<<"$files"; then
-            echo "-> playground input touched: the real emcc build runs"
-            echo "playground=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "-> no playground input touched: the worker reports green without building"
-            echo "playground=false" >> "$GITHUB_OUTPUT"
-          fi
-
   build:
-    # The worker. Its steps are guarded, not the job: a job-level skip would
-    # read as `skipped`, which the aggregator treats as failure.
+    # The worker. Nothing here depends on what the PR changed (#1255 round 3).
     name: playground / build (real emcc, web/build.sh) + docs site
-    needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -105,18 +71,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Configure Pages
-        if: needs.scope.outputs.playground == 'true' && github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
         with:
           enablement: true
       - name: Build with Jekyll
-        if: needs.scope.outputs.playground == 'true'
         uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697  # v1.0.13
         with:
           source: ./docs
           destination: ./_site
       - name: Setup Emscripten
-        if: needs.scope.outputs.playground == 'true'
         uses: mymindstorm/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984  # v16
         with:
           version: 3.1.74
@@ -124,64 +88,48 @@ jobs:
       # The authoritative wasm32 check: the real emcc over the real recipe.
       # set -euo pipefail in web/build.sh makes a failed compile fail this step.
       - name: Build WASM playground
-        if: needs.scope.outputs.playground == 'true'
         run: bash web/build.sh
       # The receipt. Written only when the build step above ran and left its
-      # output; the aggregator requires it whenever scope said "touched", so a
-      # build step skipped by a wrong guard cannot read as a passing build.
+      # output; the aggregator requires it, so a build step that was skipped or
+      # never reached cannot read as a passing build.
       - id: receipt
         name: Receipt — the real build ran
-        if: needs.scope.outputs.playground == 'true'
         run: |
           set -euo pipefail
           test -s web/dist/eigs.wasm
           test -s web/dist/eigs.js
           echo "built=true" >> "$GITHUB_OUTPUT"
       - name: Stage playground under _site/playground
-        if: needs.scope.outputs.playground == 'true'
         run: |
           sudo mkdir -p _site/playground
           sudo cp -v web/dist/* _site/playground/
           sudo chown -R "$(id -u):$(id -g)" _site/playground
       - name: Upload artifact
-        if: needs.scope.outputs.playground == 'true' && github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
 
   # The stable, requirable check. Same shape as ci.yml's `extensions` and
   # `asan + ubsan (full suite)` aggregators: `if: always()` so it reports even
-  # when a need failed, and a failed/cancelled/skipped need is never success.
+  # when the worker failed, and a failed/cancelled/skipped worker, or one with
+  # no receipt, is never success.
   playground:
     name: playground (real emcc wasm32 build)
-    needs: [scope, build]
+    needs: [build]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require the real wasm32 build when its inputs changed
+      - name: Require the real wasm32 build to have run and passed
         shell: bash
         env:
-          SCOPE_RESULT: ${{ needs.scope.result }}
-          PLAYGROUND: ${{ needs.scope.outputs.playground }}
           BUILD_RESULT: ${{ needs.build.result }}
           BUILT: ${{ needs.build.outputs.built }}
         run: |
           set -euo pipefail
-          echo "scope=$SCOPE_RESULT playground=$PLAYGROUND build=$BUILD_RESULT built=$BUILT"
-          [ "$SCOPE_RESULT" = success ] || { echo "FAIL: scope did not succeed ($SCOPE_RESULT)"; exit 1; }
-          case "$PLAYGROUND" in
-            true|false) ;;
-            *) echo "FAIL: scope gave no playground answer ('$PLAYGROUND')"; exit 1 ;;
-          esac
+          echo "build=$BUILD_RESULT built=$BUILT"
           [ "$BUILD_RESULT" = success ] || { echo "FAIL: the playground build job did not succeed ($BUILD_RESULT)"; exit 1; }
-          if [ "$PLAYGROUND" = true ] && [ "$BUILT" != true ]; then
-            echo "FAIL: playground inputs changed but the build left no receipt — the real emcc build did not run"
-            exit 1
-          fi
-          if [ "$PLAYGROUND" = true ]; then
-            echo "OK: the real emcc build of web/build.sh passed"
-          else
-            echo "OK: no playground input changed; nothing to build"
-          fi
+          [ "$BUILT" = true ] || { echo "FAIL: the build job left no receipt — the real emcc build did not run"; exit 1; }
+          echo "OK: the real emcc build of web/build.sh passed"
 
   deploy:
     if: github.event_name != 'pull_request'

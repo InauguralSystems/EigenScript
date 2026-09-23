@@ -54,7 +54,10 @@ NAMES|ROADMAP.md|6
 # PATHS 53 -> 63 with #1255: the new "playground: the real wasm32 build, on
 # the PR" section and its table row cite pages.yml, web/build.sh,
 # tools/ilp32_syntax_check.sh, src/** and web/** (10 path claims, all resolved).
+# 63 -> 60 in #1255 round 3: the scope job and its path list were deleted from
+# pages.yml, and the CI.md paragraph that listed that path list (and the
+# path-filter wording before it) went with them.
 NUMBERS|docs/CI.md|4
-PATHS|docs/CI.md|63
+PATHS|docs/CI.md|60
 TARGETS|docs/CI.md|4
 NAMES|docs/CI.md|0

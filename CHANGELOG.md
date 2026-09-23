@@ -833,11 +833,13 @@ All notable changes to EigenScript are documented here.
 - **The playground's real wasm32 build runs on every pull request (#1255).**
   `.github/workflows/pages.yml` ran only on push to `main`, so the emcc build
   of `web/build.sh` was first attempted after a merge and sat red on `main` for
-  five commits. The workflow now runs on every pull request, unfiltered, as
-  scope + worker + aggregator (ci.yml's pattern): the check
-  `playground (real emcc wasm32 build)` reports on every PR — success when no
-  playground input changed or the real `bash web/build.sh` passed, failure when
-  it failed, was cancelled or skipped — so it can be a required check.
+  five commits. The workflow now builds on EVERY pull request and push, with
+  no path filter and no "was the playground touched?" decision (a path filter
+  cannot be required, and a `git diff --name-only` scope step read a rename
+  away from `src/` as untouched): a worker running the one `bash web/build.sh`
+  and an aggregator, `playground (real emcc wasm32 build)`, that is success
+  only when that build ran and passed — failed, cancelled, skipped or without
+  its receipt is failure — so it can be a required check.
   Configure Pages, the artifact upload and `deploy` stay push-only, and a PR
   has its own concurrency group so it cannot cancel a `main` deploy. Suite
   `[99i3]` (`tools/ilp32_syntax_check.sh`) no longer claims the wasm32 build
