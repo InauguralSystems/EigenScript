@@ -219,16 +219,18 @@ selftest() {
     # job-level: even the lane atom is red (a PR would SKIP the job = satisfied)
     fresh; sub "$CI" "$TS" "$TS    if: github.event_name != 'pull_request'
 " && expect "(b) required job skipped on PRs (job-level lane atom)" event-condition || broken job-push
-    fresh; sub "$CI" "        name: Compile-check LSP (macOS)
-        run: make lsp CC=clang
-" "        name: Compile-check LSP (macOS)
-        run: make lsp CC=clang
+    fresh; sub "$CI" "        name: Run test suite (main lane, [99i] included)
+        run: cd tests && bash run_all_tests.sh
+" "        name: Run test suite (main lane, [99i] included)
+        run: cd tests && bash run_all_tests.sh
       - if: github.event_name == 'push'
         name: planted main-only step
         run: exit 1
 " && expect "(b) P1: push-only failing step in a required job" event-condition || broken p1
-    fresh; sub "$CI" "if: matrix.cc == 'gcc' || github.event_name != 'pull_request'" \
-                     "if: matrix.cc == 'gcc' || github['EVENT_NAME'] == 'push'" \
+    fresh; sub "$CI" "&& github.event_name != 'pull_request'
+        name: Run test suite (main lane, [99i] included)" \
+                     "&& github['EVENT_NAME'] == 'push'
+        name: Run test suite (main lane, [99i] included)" \
         && expect "(b) bracket syntax, push-only step" event-condition || broken bracket
     # round-2 critic: a push-only value reached through env (the `if:` itself must red)
     fresh; sub "$CI" "$TS" "$TS    env:
