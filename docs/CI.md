@@ -55,9 +55,11 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 - Fast gates unchanged: jit differential, replay differential, freestanding,
   tsan, install smoke, bench, CodeQL, `gate self-tests`.
 - **The playground's real wasm32 build** — a separate workflow,
-  `.github/workflows/pages.yml`, whose build job runs on pull requests that
-  touch `src/**`, `web/**`, `docs/**`, `VERSION` or the workflow itself. See
-  **The playground: the real wasm32 build, on the PR** below.
+  `.github/workflows/pages.yml`, which runs on **every** pull request and
+  reports the check `playground (real emcc wasm32 build)`: the real emcc build
+  when the PR touches `src/**`, `web/**`, `docs/**`, `VERSION` or the workflow,
+  green in seconds otherwise. See **The playground: the real wasm32 build, on
+  the PR** below.
 
 ## The playground: the real wasm32 build, on the PR
 
@@ -77,26 +79,43 @@ wasm32 build cannot break unnoticed"; that was false as stated.
 
 What is true now:
 
-- **pages.yml's build job runs on `pull_request`** with the same path filter
-  as the push trigger, and runs the **same** `bash web/build.sh` — one recipe,
-  no second copy of the emcc flags. A failed emcc compile fails the check
-  (`playground wasm32 build (real emcc, web/build.sh) + docs site`). Configure
-  Pages, the artifact upload and the `deploy` job are gated to non-PR events,
-  so deploy still happens only from `main`. A PR gets its own concurrency
-  group, so a PR push can never cancel a `main` deploy. Measured on `main`,
-  the whole job is about 72 s with the emsdk cache warm.
-- **`[99i3]` says what it is.** With emcc on `PATH` the gate compiles the
-  recorded population with the real emcc and prints `verdict: AUTHORITATIVE`;
+- **pages.yml runs on every pull request, with no path filter**, in the
+  shape ci.yml uses for its required checks (see **The PR-lane job set, and
+  which are aggregators** below):
+  - `playground / scope` decides whether the PR touches a playground input.
+    The path list lives there and nowhere else: `src/`, `web/`, `docs/`,
+    `VERSION`, the workflow.
+  - `playground / build (real emcc, web/build.sh) + docs site` is the worker.
+    It runs the **same** `bash web/build.sh` — one recipe, no second copy of
+    the emcc flags — with every step guarded on scope, and it leaves a receipt
+    (`built=true`) only after the build exited 0 and produced the wasm
+    module and its loader.
+  - **`playground (real emcc wasm32 build)`** is the aggregator (`if:
+    always()`). It succeeds only when scope succeeded with an answer, the
+    worker succeeded, and — if the inputs were touched — the receipt says the
+    build ran. A failed, cancelled or skipped worker is a failure, never a
+    pass. It reports on **every** PR, so it can be required.
+
+  Configure Pages, the artifact upload and the `deploy` job are gated to
+  non-PR events, so deploy still happens only from `main`. A PR gets its own
+  concurrency group, so a PR push can never cancel a `main` deploy. Measured
+  on `main`, the build job is about 72 s with the emsdk cache warm; an
+  untouched PR pays one checkout and a `git diff`.
+- **`[99i3]` says what it is.** With emcc on `PATH` the gate REPLAYS each
+  recorded emcc call — the recipe's own argv, plus `-fsyntax-only`, minus the
+  `-o` operand and the call's other translation units, and nothing else — and
+  prints `verdict: AUTHORITATIVE`. (Round 1 compiled with an injected `-Isrc`
+  and `-DEIGENSCRIPT_VERSION`, so a recipe emcc rejects could print
+  AUTHORITATIVE; self-test plants `10i`/`10d` are that class, under both arms.)
   without it (every CI suite leg, and the dev box) it runs the `-m32` arm and
   prints `verdict: APPROXIMATION`, and its OK line names pages.yml as the
   authority. Its self-test pins the limit from both sides: control `1w`
   requires the `-m32` arm to pass a layout assert that is 12 bytes at i386
   and 16 at wasm32, and `1wt` requires clang's wasm32 frontend to refuse it.
 
-The pages check is **not required** by the ruleset (see **Required status
-checks** below), and it must not be made required while it is path-filtered:
-a required check that never reports on a PR outside its paths blocks the
-merge forever.
+**The check to require on `main` is `playground (real emcc wasm32 build)`**
+— the aggregator, never the worker or `scope` alone. Until it is in the
+ruleset, a red wasm build is visible on the PR but does not block the merge.
 
 ## The doc gates — where they run, and why they are cheap
 
@@ -1058,7 +1077,9 @@ On a pull request, `ci.yml` produces these checks:
 | `install.sh (interpreter + eigenlsp on PATH)` | gate |
 | `bench (instruction-count regression gate)` | gate |
 | `Analyze C` (workflow `CodeQL`) | gate, separate workflow |
-| `playground wasm32 build (real emcc, web/build.sh) + docs site` (workflow `Docs site`) | gate, separate workflow, path-filtered |
+| `playground (real emcc wasm32 build)` (workflow `Docs site`) | **aggregator** over the two below; reports on every PR |
+| `playground / scope` | gate; decides whether a playground input changed |
+| `playground / build (real emcc, web/build.sh) + docs site` | worker |
 
 `macos / macos-15-intel` runs **only** in nightly (#1264): on the main lane it hit its
 45-minute timeout on nearly every push, so main CI never finished green.
@@ -1077,9 +1098,9 @@ The set worth requiring, if someone tightens the ruleset, is: `scope`,
 `freestanding`, `tsan`, `install.sh`, `bench`, `valgrind` and `Analyze C`.
 **Never** `macos / macos-15-intel`: it does not run on pull requests, and a
 required check that never reports blocks the merge forever — the same trap the
-`scope` job's comment in `ci.yml` describes. The same holds for the `Docs site`
-playground check while it carries a path filter: it does not report on a PR
-outside `src/**`, `web/**`, `docs/**`, `VERSION` and its own workflow.
+`scope` job's comment in `ci.yml` describes. Add `playground (real emcc
+wasm32 build)` — it reports on every pull request, success when no playground
+input changed or the real emcc build passed, failure otherwise.
 
 ## The risk this accepts
 

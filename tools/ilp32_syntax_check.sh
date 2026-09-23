@@ -9,7 +9,11 @@
 # compiled -fsyntax-only by
 #
 #   * the REAL emcc, when `emcc` is on PATH — that is then the verdict, and the
-#     OK line says `wasm32 TUs under the REAL emcc ... authoritative`; or
+#     OK line says `wasm32 TUs under the REAL emcc ... authoritative`. It is
+#     handed the RECIPE'S OWN recorded argv per TU (replay_argv_for_tu:
+#     + -fsyntax-only, - the -o operand, - the call's sibling TUs, each argued
+#     there) and nothing else — round 1 injected -Isrc/-D/-Werror and printed
+#     AUTHORITATIVE on a recipe the driver rejects (plants 10i/10d); or
 #   * clang -m32 otherwise (every CI suite leg, and this dev box, which has no
 #     emsdk). -m32 is the i386 ABI, NOT wasm32 — see LIMIT below — so the OK
 #     line and the `verdict:` line both say APPROXIMATION and name the lane
@@ -200,7 +204,7 @@
 #     the tool directly.
 #
 # Usage: tools/ilp32_syntax_check.sh [--selftest]
-#   --selftest : plant 57 faults through the REAL derive/record/classify/
+#   --selftest : plant 62 faults through the REAL derive/record/classify/
 #                compile/examine functions, and require each one RED for its
 #                own stated reason:
 #                  the LIMIT of the -m32 arm, both sides (#1255)  (1w) a layout
@@ -208,6 +212,11 @@
 #                    under the approximation, and (1wt) the wasm32 target
 #                    frontend must REFUSE it; with emcc on PATH the real arm is
 #                    also driven and must be RED (uncounted: box-dependent);
+#                  NOTHING THE RECIPE DOES NOT PASS (#1255 round 2)  (10i) a
+#                    header reachable only through an injected -Isrc and (10d)
+#                    a unit needing an injected -DEIGENSCRIPT_VERSION, each RED
+#                    under the real-driver arm, with (10c) its green control,
+#                    and (10im, 10dm) the same two under the -m32 arm;
 #                  source faults   (1) the old sizeof(data)==sizeof(fn) assert,
 #                    (1b) a syntax error in the playground entry point,
 #                    (1c) an emcc-only #ifdef __EMSCRIPTEN__ arm,
@@ -376,6 +385,9 @@ TU_LANG_MAP=''
 # genuinely divergent optimisation levels is a residual this file states.
 TU_CALL_DIR_MAP=''
 CALL_FLAGS_ALL=()
+# The derived population of the last recorded recipe run (#1255 round 2): the
+# real-driver replay removes a call's OTHER TUs from its argv against it.
+POP_FILE=''
 # Cross-counts for the conditional scan (see tested_macros).
 TESTED_CONDITIONAL_LINES=0
 TESTED_SCAN_FILES=0
@@ -822,37 +834,74 @@ call_flags_for_tu() {
     return 0
 }
 
-# #1255: the same lookup for the call's own emcc SETTINGS (`-sFOO=...`, and the
-# spaced `-s FOO=...` form as its two tokens), which only the real-driver arm
-# of compile_tu hands on — clang has no such option, so the -m32 arm cannot.
-call_settings_for_tu() {
-    local tu="$1" d
-    d=$(awk -F'\t' -v T="$tu" '$1 == T { print $2; exit }' "$TU_CALL_DIR_MAP" 2>/dev/null)
-    [ -n "$d" ] && [ -f "$d/settings" ] && cat "$d/settings"
+# ---- the real-driver replay (#1255 round 2) ------------------------------
+# $1 = a TU path. Prints the call directory that recorded it, or nothing.
+call_dir_for_tu() {
+    awk -F'\t' -v T="$1" '$1 == T { print $2; exit }' "$TU_CALL_DIR_MAP" 2>/dev/null
+}
+replay_cwd_for_tu() {
+    local d
+    d=$(call_dir_for_tu "$1")
+    if [ -n "$d" ] && [ -f "$d/cwd" ]; then cat "$d/cwd"; else printf '%s' "$REPO"; fi
+}
+# The stdin capture, only when THIS TU is the call's stdin unit.
+replay_stdin_for_tu() {
+    local d
+    d=$(call_dir_for_tu "$1")
+    [ -n "$d" ] && [ "$1" = "$d/stdin.c" ] && printf '%s' "$d/stdin.c"
     return 0
 }
-
-# $1 = the expanded NUL-separated argv of ONE call. Prints, one per NUL, the
-# call's emcc settings exactly as written: every glued `-s<NAME>` token, and the
-# spaced `-s <X>` pair (emcc's documented spelling). Nothing else: those are
-# the only emcc-only tokens that can shape a COMPILE (`-sMEMORY64`, say); the
-# rest of emcc's own options are link-time and meaningless to -fsyntax-only.
-call_emcc_settings() {
-    local argv="$1" tok pending=0
+# $1 = a TU path. Prints, one per NUL, the argv the real driver is handed for
+# it: the RECORDED call's own expanded argv (response files expanded exactly
+# as emcc expands them before parsing anything), changed in exactly three
+# ways. Each is argued here, because each is a place where a replay could
+# stop being the recipe:
+#   + `-fsyntax-only` is ADDED. emcc routes any argv carrying it to its
+#     preprocess-only mode, which execs clang over the inputs with the call's
+#     own compile flags (emcc.py 3.1.74, `'-fsyntax-only' in newargs`); it
+#     selects how much of the pipeline runs, never which headers, macros or
+#     options the front end sees — so it cannot make a failing TU compile.
+#   - `-o <out>` (and the glued `-o<out>`) is REMOVED. It names where output
+#     would go; -fsyntax-only produces none, and nothing a compiler reads
+#     depends on the output path. Keeping it would hand clang the recipe's
+#     `web/dist/eigs.js` as an output of a preprocess-only run.
+#   - the OTHER translation units of the same call are REMOVED (a token that
+#     resolves, from the recorded cwd, to a DIFFERENT member of the derived
+#     population; a `-` when this TU is not the call's stdin unit). Each is
+#     replayed on its own, so a failure is charged to the TU that failed and
+#     `examined == len(population)` still counts units. A C translation unit
+#     cannot change how a sibling on the same command line compiles.
+# Nothing is ADDED beyond -fsyntax-only: no -I, no -D, no -Werror, no -c.
+# A TU with no recorded call (a self-test probe, never a recipe unit) is
+# handed only `-fsyntax-only <tu>`: there is no recipe flag to replay.
+replay_argv_for_tu() {
+    local tu="$1" d root tok path skip_next=0
+    d=$(call_dir_for_tu "$tu")
+    printf '%s\0' -fsyntax-only
+    if [ -z "$d" ]; then
+        printf '%s\0' "$tu"
+        return 0
+    fi
+    [ -f "$d/argv-expanded" ] || return 1
+    root=$(cat "$d/cwd" 2>/dev/null)
+    [ -n "$root" ] || return 1
     while IFS= read -r -d '' tok; do
-        if [ "$pending" -eq 1 ]; then
-            printf '%s\0%s\0' -s "$tok"
-            pending=0
+        if [ "$skip_next" -eq 1 ]; then skip_next=0; continue; fi
+        case "$tok" in
+            -o)   skip_next=1; continue ;;
+            -o?*) continue ;;
+            -)    [ "$tu" = "$d/stdin.c" ] || continue
+                  printf '%s\0' "$tok"; continue ;;
+            /*)   path="$tok" ;;
+            *)    path="$root/$tok" ;;
+        esac
+        if [ "$path" != "$tu" ] && [ -n "$POP_FILE" ] && grep -qxF -- "$path" "$POP_FILE"; then
             continue
         fi
-        # Uppercase only: every emcc setting is an uppercase name, and a bare
-        # `-s?*` would swallow `-std=`, `-shared`, `-static`.
-        case "$tok" in
-            -s)   pending=1 ;;
-            -s[A-Z]*) printf '%s\0' "$tok" ;;
-        esac
-    done < "$argv"
+        printf '%s\0' "$tok"
+    done < "$d/argv-expanded"
 }
+
 
 # ---- the sandbox: nothing the recipe writes reaches the tree --------------
 #
@@ -995,7 +1044,6 @@ sandbox_record_inputs() {
             [ -n "$p" ] && printf '%s\t%s\n' "$p" "$d" >> "$TU_CALL_DIR_MAP"
         done < "$d/drv.inputs"
         call_accepted_flags "$exp" > "$d/flags"
-        call_emcc_settings "$exp" > "$d/settings"
         local cf cf_seen cf_old
         while IFS= read -r -d '' cf; do
             cf_seen=0
@@ -1013,6 +1061,8 @@ sandbox_record_inputs() {
     sort -u "$RUN/fs.raw" > "$RUN/fs.inputs"
     sort -u "$RUN/drv.raw" > "$RUN/drv.inputs"
     sort -u "$RUN/fs.inputs" "$RUN/drv.inputs" > "$out"
+    # The population the real-driver replay subtracts sibling TUs against.
+    POP_FILE="$out"
     CLASSIFIER_N_FS=$(grep -c . "$RUN/fs.inputs")
     CLASSIFIER_N_DRV=$(grep -c . "$RUN/drv.inputs")
     CLASSIFIER_DROPPED=${CLASSIFIER_DROPPED# }
@@ -1459,8 +1509,19 @@ compile_tu() {
     local tu="$1" extra_i="${2:-}" stubdir="${3:-${STUB:-}}"
     local out st inc lang cf
     local -a xlang=() callflags=()
-    inc="-Isrc"
-    [ -n "$extra_i" ] && inc="-I$extra_i -Isrc"
+    # No `-Isrc` and no injected -DEIGENSCRIPT_* (#1255 round 2): the recipe
+    # passes no -I, and its -D set arrives through the recorded call's flags
+    # ($callflags). An injected include path or define is a way to be green
+    # where the recipe is red — `#include "vm.h"` in web/eigs_wasm.c resolved
+    # only through the old `-Isrc`, and deleting -DEIGENSCRIPT_VERSION from
+    # web/build.sh stayed green here through the old injected copy. The same
+    # argument that strips them from the real-driver arm applies to this one.
+    # What this arm still ADDS is the approximation itself (the stub dir, the
+    # host include dir, the derived macro reconciliation) and the -Werror trio,
+    # which the recipe's own line carries too. $extra_i is a SELF-TEST hook (a
+    # planted header dir), never set on the live path.
+    inc=''
+    [ -n "$extra_i" ] && inc="-I$extra_i"
     lang=$(tu_language "$tu")
     [ -n "$lang" ] && xlang=(-x "$lang")
     # #1232: this TU's OWN call's accepted flags (optimisation level, -D/-U,
@@ -1470,29 +1531,38 @@ compile_tu() {
     # parity scan pulled in, not a compiled TU).
     while IFS= read -r -d '' cf; do callflags+=("$cf"); done < <(call_flags_for_tu "$tu")
     [ "${#callflags[@]}" -eq 0 ] && callflags=(${CALL_FLAGS_ALL[@]+"${CALL_FLAGS_ALL[@]}"})
-    # #1255: the REAL target decides when it is here. With emcc on PATH the
-    # verdict is emcc's own -fsyntax-only over the same TU, under the same
-    # recorded call's accepted flags PLUS that call's own emcc settings
-    # (`-sFOO=...`, which the -m32 arm cannot honour and drops). No macro
-    # reconciliation, no stub header, no host include dir: the real driver
-    # brings its own target, predefines, sysroot and <emscripten.h>, and its
-    # layout rules — which is the whole point (i386 aligns `double` to 4
-    # inside a struct, wasm32 to 8; control 1w pins that the -m32 arm below
-    # cannot see it).
+    # #1255: the REAL target decides when it is here — and it is handed the
+    # RECIPE'S OWN ARGV, not a second copy of the recipe. Round 1 of #1255
+    # compiled each TU as `emcc -fsyntax-only -c -Werror=... -Isrc
+    # -DEIGENSCRIPT_EXT_*=0 -DEIGENSCRIPT_VERSION=... <accepted flags> tu`,
+    # and every one of those injected tokens was a way to be GREEN where the
+    # recipe is RED: `#include "vm.h"` in web/eigs_wasm.c resolves only
+    # through the injected -Isrc (the recipe passes no -I), and deleting
+    # -DEIGENSCRIPT_VERSION from web/build.sh broke the recipe while the gate
+    # printed `verdict: AUTHORITATIVE`, rc 0 (a blind critic, 2026-09-22).
+    # So this arm now REPLAYS the recorded call (replay_argv_for_tu): its
+    # expanded argv, from its recorded cwd, with its captured stdin, changed
+    # in exactly the ways listed there, each of which is argued not to change
+    # what compiles. Self-test plants 10i/10d are the injected-flag class and
+    # 10c is their control. The driver is invoked by the path resolved at
+    # startup, so the replay line carries no flag of its own — not even the
+    # -Werror trio (tools/werror_switch_check.sh audits web/build.sh's line,
+    # which is where those flags are the recipe's).
     if [ "$ILP32_MODE" = real ]; then
-        local -a settings=()
-        while IFS= read -r -d '' cf; do settings+=("$cf"); done < <(call_settings_for_tu "$tu")
-        out=$(emcc -fsyntax-only -c \
-            -Werror=switch -Werror=comment -Werror=misleading-indentation \
-            $inc \
-            -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
-            -DEIGENSCRIPT_VERSION="\"$EIGS_VERSION\"" \
-            ${callflags[@]+"${callflags[@]}"} \
-            ${settings[@]+"${settings[@]}"} \
-            ${xlang[@]+"${xlang[@]}"} "$tu" 2>&1)
+        local -a replay=()
+        local rcwd rstdin
+        if ! replay_argv_for_tu "$tu" > "$RUN/replay.argv"; then
+            echo "FAIL: $tu — could not rebuild the recorded call that compiles it" >&2
+            return 1
+        fi
+        while IFS= read -r -d '' cf; do replay+=("$cf"); done < "$RUN/replay.argv"
+        rcwd=$(replay_cwd_for_tu "$tu")
+        rstdin=$(replay_stdin_for_tu "$tu")
+        [ -n "$rstdin" ] || rstdin=/dev/null
+        out=$(cd "$rcwd" && "$REAL_DRIVER_PATH" ${replay[@]+"${replay[@]}"} < "$rstdin" 2>&1)
         st=$?
         if [ "$st" -ne 0 ]; then
-            echo "FAIL: $tu (the real emcc, wasm32)" >&2
+            echo "FAIL: $tu (the real wasm32 driver, replaying the recipe's own recorded call)" >&2
             printf '%s\n' "$out" | sed 's/^/      /' >&2
             return 1
         fi
@@ -1507,13 +1577,18 @@ compile_tu() {
     # duplicate -D of an identical value is harmless; a real divergence
     # (this TU's call carries its own -D the shared SOURCES call does not)
     # is exactly what must reach the compile, so it is appended LAST.
-    out=$(clang -m32 -fsyntax-only -c \
+    #
+    # From the recorded call's OWN cwd (#1255 round 2), as the real-driver arm
+    # does, so any relative path the recipe passes resolves where the recipe
+    # resolved it — and so plant 10im is transverse: with the old `-Isrc`
+    # re-injected, it resolves into the sandbox the plant wrote to and 10im
+    # turns green (measured; from the gate's cwd it silently resolved into the
+    # working tree instead and 10im could not see the gut).
+    out=$(cd "$(replay_cwd_for_tu "$tu")" && clang -m32 -fsyntax-only -c \
         -Werror=switch -Werror=comment -Werror=misleading-indentation \
         -isystem "$stubdir" -isystem /usr/include/x86_64-linux-gnu \
         $inc \
-        -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
         ${MACRO_PARITY_FLAGS[@]+"${MACRO_PARITY_FLAGS[@]}"} \
-        -DEIGENSCRIPT_VERSION="\"$EIGS_VERSION\"" \
         ${callflags[@]+"${callflags[@]}"} \
         ${xlang[@]+"${xlang[@]}"} "$tu" 2>&1)
     st=$?
@@ -1868,7 +1943,7 @@ if [ -n "$REAL_DRIVER_PATH" ]; then
     fi
     ILP32_MODE=approx
 else
-    echo "selftest real: no real wasm32 driver on PATH — the real-driver arm of compile_tu was not exercised on this box (pages.yml's pull_request build is the authoritative lane)"
+    echo "selftest real: no real wasm32 driver on PATH — the real-driver arm of compile_tu ran only against the wasm32 clang stand-in (rows 10c/10i/10d), never against emcc itself on this box (pages.yml's pull_request build is the authoritative lane)"
 fi
 
 # ---- the three entry-point mutants (1b, 1c, 1d) --------------------------
@@ -2910,6 +2985,96 @@ else
 fi
 HEADER_PROBE="$HEADER_PROBE_SAVED"
 MACRO_PARITY_SKIP_REASON=''
+
+# ---- #1255 round 2: NOTHING THE RECIPE DOES NOT PASS (10c, 10i, 10d, 10im, 10dm)
+# Round 1's real-driver arm compiled each TU with `-Isrc -DEIGENSCRIPT_EXT_*=0
+# -DEIGENSCRIPT_VERSION=... -Werror=...` that web/build.sh never passes, so a
+# recipe the driver REJECTS printed `verdict: AUTHORITATIVE`, rc 0 (a blind
+# critic, 2026-09-22: `#include "vm.h"` in web/eigs_wasm.c; deleting
+# -DEIGENSCRIPT_VERSION from web/build.sh). The -m32 arm injected the same
+# flags. Each row below runs a scratch recipe through the REAL
+# sandbox_prepare / sandbox_record_inputs / examine_tus, whose one unit
+# compiles ONLY under a flag the recipe does not pass:
+#   10i  its header sits in src/, reachable only through an injected -Isrc;
+#   10d  it needs EIGENSCRIPT_VERSION, which only an injected -D defines;
+# each under the REAL-driver arm (10i, 10d) and the -m32 arm (10im, 10dm).
+# The verdict that must turn red is examine_tus's `FAIL: examined N TUs, ...
+# failed` (rc 1) — the same check the live run reports on. 10c is the control:
+# the same recipe with the header NEXT TO the unit must be GREEN under the
+# real-driver arm, or a red 10i could be the fake driver failing on anything.
+# The real-driver arm runs against a stand-in driver that IS the wasm32 target
+# frontend: a symlink to clang named `wasm32-unknown-emscripten-clang`, which
+# clang's driver reads as its target triple. It accepts clang options only,
+# so these recipes pass no emcc settings; it proves the REPLAY (what argv
+# reaches the driver), not emcc.
+mkdir -p "$WORK/r2drv"
+ln -sf "$(command -v clang)" "$WORK/r2drv/wasm32-unknown-emscripten-clang"
+# $1 key, $2 label, $3 mode (real|approx), $4 want (red|green), $5 header dir
+# relative to the sandbox root (web|src), $6 unit body kind (include|define).
+r2_plant() {
+    local key="$1" label="$2" mode="$3" want="$4" hdir="$5" kind="$6"
+    local script="$WORK/$key.build.sh" sbx="$RUN/sbx-$key" rc
+    {
+        printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'cd "$(dirname "$0")/.."' 'mkdir -p web/dist'
+        if [ "$kind" = include ]; then
+            printf '%s\n' "printf '%s\\n' 'int eigs_r2_plant_value;' > $hdir/eigs_r2_plant.h"
+            printf '%s\n' "printf '%s\\n' '#include \"eigs_r2_plant.h\"' 'int eigs_r2_unit(void) { return eigs_r2_plant_value; }' > web/eigs_r2_unit.c"
+        else
+            printf '%s\n' "printf '%s\\n' '#ifndef EIGENSCRIPT_VERSION' '#error EIGS_R2_PLANT_NO_VERSION_DEFINE' '#endif' 'const char *eigs_r2_unit = EIGENSCRIPT_VERSION;' > web/eigs_r2_unit.c"
+        fi
+        # The driver NAME comes from the variable the mode detection uses, so
+        # this generator line is not itself a compile line to the -Werror
+        # recognizer (the recipe it writes carries the trio anyway).
+        printf '%s\n' "$EIGS_ILP32_REAL_DRIVER -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 web/eigs_r2_unit.c -o web/dist/plant.js"
+    } > "$script"
+    if ! sandbox_prepare "$sbx" "$script" 2>"$WORK/$key.prep.err" \
+       || ! sandbox_record_inputs "$sbx" "$WORK/$key.tus" 2>"$WORK/$key.rec.err"; then
+        echo "selftest FAIL: $label could not be staged:"
+        sed 's/^/      /' "$WORK/$key.prep.err" "$WORK/$key.rec.err" 2>/dev/null
+        fails=1
+        return
+    fi
+    if [ "$(grep -c . "$WORK/$key.tus")" -ne 1 ]; then
+        echo "selftest FAIL: $label — the scratch recipe's population is not exactly its one unit:"
+        sed 's/^/      /' "$WORK/$key.tus"
+        fails=1
+        return
+    fi
+    local saved_mode="$ILP32_MODE" saved_drv="$REAL_DRIVER_PATH"
+    ILP32_MODE="$mode"
+    REAL_DRIVER_PATH="$WORK/r2drv/wasm32-unknown-emscripten-clang"
+    examine_tus "$WORK/$key.tus" "" "$STUB" 1 >"$WORK/$key.out" 2>&1
+    rc=$?
+    ILP32_MODE="$saved_mode"
+    REAL_DRIVER_PATH="$saved_drv"
+    if [ "$want" = green ]; then
+        if [ "$rc" -eq 0 ]; then
+            echo "selftest ok: $label"
+        else
+            echo "selftest FAIL: $label — the control is not green, so a red plant beside it proves nothing:"
+            sed 's/^/      /' "$WORK/$key.out"
+            fails=1
+        fi
+        return
+    fi
+    if [ "$rc" -eq 0 ]; then
+        echo "selftest FAIL: $label — examined clean; the gate compiled with a flag the recipe does not pass"
+        sed 's/^/      /' "$WORK/$key.out"
+        fails=1
+    elif grep -q '^FAIL: examined 1 TUs, 0 ok, 1 failed' "$WORK/$key.out" \
+         && grep -qE "eigs_r2_plant\.h' file not found|EIGS_R2_PLANT_NO_VERSION_DEFINE" "$WORK/$key.out"; then
+        echo "selftest ok: $label"
+    else
+        echo "selftest FAIL: $label went red for the wrong reason:"
+        sed 's/^/      /' "$WORK/$key.out"
+        fails=1
+    fi
+}
+r2_plant 10c "control 10c a unit whose header sits next to it compiles GREEN under the real-driver replay" real green web include
+r2_plant 10i "plant 10i a header reachable only through an -Isrc the recipe does not pass is RED under the real-driver arm" real red src include
+r2_plant 10d "plant 10d a unit needing an EIGENSCRIPT_VERSION the recipe does not define is RED under the real-driver arm" real red web define
+r2_plant 10im "plant 10im the same -Isrc-only header is RED under the -m32 approximation arm" approx red src include
+r2_plant 10dm "plant 10dm the same undefined EIGENSCRIPT_VERSION is RED under the -m32 approximation arm" approx red web define
 
 # Control: the live inventory must still be green, or the selftest has broken
 # the compile function. Re-derive from the recipe, same as production.

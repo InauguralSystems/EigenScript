@@ -8328,9 +8328,15 @@ else
     # only: `wasm32 TUs` and `macro_parity: not applicable` are accepted
     # exactly when the verdict line says AUTHORITATIVE, so a gate that dropped
     # its reconciliation cannot hide behind the real-driver spelling.
-    # 57 = 1w and 1wt (the LIMIT of the -m32 arm from both sides, #1255: a
-    # layout assert true at i386 and false at wasm32 compiles clean under the
-    # approximation, and the wasm32 target frontend refuses it), plants 1, 1b,
+    # 62 = 10c, 10i, 10d, 10im, 10dm (#1255 round 2: NOTHING THE RECIPE DOES
+    # NOT PASS — round 1's real-emcc arm, and the -m32 arm, compiled with an
+    # injected -Isrc and -DEIGENSCRIPT_VERSION the recipe never passes, so a
+    # recipe the driver rejects printed AUTHORITATIVE, rc 0; a header only an
+    # -Isrc reaches and a unit only an injected -D satisfies are now RED under
+    # both arms, with a green control), 1w and 1wt (the LIMIT of the -m32 arm
+    # from both sides, #1255: a layout assert true at i386 and false at
+    # wasm32 compiles clean under the approximation, and the wasm32 target
+    # frontend refuses it), plants 1, 1b,
     # 1c, 1d (the entry point and the header), 2q, 2s, 2v, 2x, 2m, 2o (six argv
     # shapes a text parser reads wrong), 2f, 2p, 2r, 2n, 2i, 12es, 2u, 2e
     # (eight shapes a typed OPTION GRAMMAR reads wrong: a TU after `--emrun`
@@ -8387,7 +8393,7 @@ else
     # control 5rc is no longer a --selftest case: it runs in the LIVE path,
     # before that verdict, because a control that only runs in the non-skip
     # branch never runs on the run that skipped.
-    ILP32_SELFTEST_CASES=57
+    ILP32_SELFTEST_CASES=62
     ilp32_ok_lines=$(printf '%s\n' "$ilp32_selftest_out" | grep -c '^selftest ok:')
     if grep -q '^verdict: AUTHORITATIVE' <<<"$ilp32_audit_out"; then
         ilp32_ok_re='^OK: examined [0-9]+ wasm32 TUs under the REAL .* authoritative'
