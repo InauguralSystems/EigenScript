@@ -252,6 +252,7 @@ if [ "${1:-}" = "--selftest" ]; then
         st_cases=$((st_cases + 1))
         local name="$1" docs="$2" want_rc="$3" want_txt="$4" out got_rc
         out=$(DOCS_CLAIMS_DOCS="$docs" bash "$SELF" 2>&1); got_rc=$?
+        st_last_out="$out"   # the control's run gives the plants the LIVE counts
         if [ "$got_rc" -eq "$want_rc" ] && grep -qF -- "$want_txt" <<< "$out"; then
             printf '  selftest ok: %s\n' "$name"
         else
@@ -314,6 +315,7 @@ if [ "${1:-}" = "--selftest" ]; then
     # Control FIRST: the real doc set is green. Without it every row below
     # would also pass against a gate that always failed.
     st_case "control: the real doc set passes" "$DOC_FILES_DEFAULT" 0 "docs-claims: OK"
+    st_ctl_out="$st_last_out"
 
     p=$(plant "README.md" 's/47-widget GUI toolkit, embedded/44-widget GUI toolkit, embedded/')
     st_case "planted wrong number goes red and names the line" \
@@ -331,7 +333,9 @@ if [ "${1:-}" = "--selftest" ]; then
     # then reports "the fault was never planted" — which is what happened to
     # the next PR that added one (261 -> 262). A plant may not hand-type a
     # number the gate derives, for the same reason a doc may not.
-    p=$(plant "CI.md" 's/All [0-9][0-9]* test sections\./All 999 test sections./' "docs/CI.md")
+    # #1264: the docs no longer state the count, so the plant APPENDS one.
+    p=$(plant "CI.md" '$a\
+All 999 test sections.' "docs/CI.md")
     st_case "planted wrong number in the enrolled docs/CI.md goes red" \
             "$p" 1 "claims '999 test sections' but D_SECTIONS derives"
 
@@ -377,19 +381,29 @@ if [ "${1:-}" = "--selftest" ]; then
     # The r1 gate asserted "everything found is accounted for" and never "the
     # count is the DECLARED one", so deleting a waived line took NUMBERS from
     # 24 to 23 and the gate still exited 0. Four plants, one per direction.
-    p=$(plant "README.md" '/a 47-widget GUI toolkit, embedded database, tensor math,/d')
-    st_case "DELETING a derived claim goes red (the population shrank)" \
-            "$p" 1 "NUMBERS/README.md found 12 but 13 is declared"
-
+    # The rows are FLOORS, so a one-line deletion crosses one only when the
+    # floor sits at the live count. Each plant builds its own crossing: a tree
+    # copy whose table row is set to the LIVE count (read from the control run
+    # above), so it reds for ANY live >= floor with nothing hand-typed (§177).
+    st_live() { sed -n "s|^  population $1: \\([0-9]*\\) numeric claim(s)$|\\1|p" <<< "$st_ctl_out"; }
+    st_cross() { # rel pattern live -> tree copy: FIRST matching line deleted, row=live
+        local d; d=$(plant_tree "$1" "$(grep -n -- "$2" "$1" | head -1 | cut -d: -f1)d"); rm -f "$d/$POP_REL"
+        sed "s#^NUMBERS|$1|.*#NUMBERS|$1|$3#" "$ROOT/$POP_REL" > "$d/$POP_REL"; printf '%s' "$d"
+    }
+    POP_REL=tools/docs_claims_populations.txt; st_lr=$(st_live README.md); st_lc=$(st_live CLAUDE.md)
+    d=$(st_cross README.md 'a 47-widget GUI toolkit, embedded database, tensor math,' "$st_lr")
+    st_case_tree "DELETING a derived claim goes red (the population shrank)" \
+            "$d" 1 "NUMBERS/README.md found $((st_lr - 1)), below the floor of $st_lr"
+    d=$(st_cross CLAUDE.md '^DMG is 3,288 lines, of which 818 are compiled' "$st_lc")
+    st_case_tree "DELETING a waived claim goes red (the population shrank)" \
+            "$d" 1 "NUMBERS/CLAUDE.md found $((st_lc - 1)), below the floor of $st_lc"
     p=$(plant "CLAUDE.md" '/^DMG is 3,288 lines, of which 818 are compiled/d' CLAUDE.md)
-    st_case "DELETING a waived claim goes red (the population shrank)" \
-            "$p" 1 "NUMBERS/CLAUDE.md found 2 but 3 is declared"
     st_case "...and the now-unmatched waiver is named with its line" \
             "$p" 1 "matched NOTHING — the reviewed line is gone or edited"
 
     p=$(plant "README.md" 's|^This builds a ~940K minimal binary|It ships 4 widgets extra. This builds a ~940K minimal binary|')
-    st_case "ADDING a number is red until it is declared" \
-            "$p" 1 "NUMBERS/README.md found 14 but 13 is declared"
+    st_case "ADDING an unclaimed number is red (per claim; the count is a floor)" \
+            "$p" 1 "has a hand-typed number '4 widgets' that no derivation claims"
 
     # ---- ROUND 2 (Astra G6): the two widened populations ----
     p=$(plant "README.md" '/^## Install$/a\'$'\n''Pass --ver to print the version.')
@@ -1498,8 +1512,8 @@ WAIVERS_DECLARED=22
 
 # ---------------------------------------------------------------------------
 # 2b. DECLARED POPULATIONS (mechanical-gates §121 + §129, Astra G1).
-#     found == declared, per class AND per file, in BOTH directions:
-#       * a found count that differs from its declared row is RED
+#     found >= floor (#1264), per class AND per file, in BOTH directions:
+#       * a found count BELOW its row (a floor) is RED
 #       * a declared row nothing visited is RED (a file silently dropped)
 #       * a (class, file) pair that is found but never declared is RED
 #     A non-zero population was never the assertion; the DECLARED one is.
@@ -1527,7 +1541,7 @@ found_count() { # class|basename -> echoes the count, or nothing
 declarations_audit() {
     local rows=0 visited=0
     note ""
-    note "docs-claims declared-population audit (found == declared, both directions):"
+    note "docs-claims declared-population audit (found >= floor; rows and pairs both ways):"
     while IFS='|' read -r dclass dfile dcount; do
         [ -z "${dclass:-}" ] && continue
         rows=$((rows + 1))
@@ -1540,8 +1554,10 @@ declarations_audit() {
             continue
         fi
         visited=$((visited + 1))
-        if [ "$got" -ne "$dcount" ]; then
-            fail "$dclass/$dfile found $got but $dcount is declared — a claim was added or removed; update DECLARED_POPULATIONS deliberately"
+        # #1264: a FLOOR. Each claim is judged on its own, so an added one is
+        # already checked; a drop (claims deleted, scan narrowed) is the event.
+        if [ "$got" -lt "$dcount" ]; then
+            fail "$dclass/$dfile found $got, below the floor of $dcount — a claim was removed or the scan narrowed; lower that row in $POPULATIONS_FILE if deliberate"
         fi
     done <<< "$DECLARED_POPULATIONS"
     # The reverse direction: a (class, file) pair that was examined and never
@@ -2237,9 +2253,9 @@ FAMILY_CLAIMS='udp|[Uu][Dd][Pp]|udp|UDP datagram sockets
 tcp|[Tt][Cc][Pp]|net_|TCP stream sockets'
 # Population, pinned like every other in this gate (§129) and counted in
 # MENTIONS, not lines: one sentence naming a family twice is two claims. A
-# keyword that stops appearing anywhere makes the class vacuous, so any
-# movement in either direction is a review event.
-FAMILY_CLAIMS_DECLARED=12
+# keyword that stops appearing anywhere makes the class vacuous. A FLOOR
+# (#1264): each mention is judged on its own, so only a drop is a review event.
+FAMILY_CLAIMS_FLOOR=12
 
 family_examined=0; family_ok=0; family_waived=0
 note ""
@@ -2275,8 +2291,8 @@ done <<EOF
 $FAMILY_CLAIMS
 EOF
 [ "$family_examined" -eq 0 ] && fail "class NAMES/BUILTIN FAMILIES examined 0 family mentions — zero population (§121)"
-if [ "$DOCSET_IS_DEFAULT" -eq 1 ] && [ "$family_examined" -ne "$FAMILY_CLAIMS_DECLARED" ]; then
-    fail "class NAMES/BUILTIN FAMILIES examined $family_examined family mention(s) but $FAMILY_CLAIMS_DECLARED are declared — a family claim was added or removed; update FAMILY_CLAIMS_DECLARED deliberately after reviewing which"
+if [ "$DOCSET_IS_DEFAULT" -eq 1 ] && [ "$family_examined" -lt "$FAMILY_CLAIMS_FLOOR" ]; then
+    fail "class NAMES/BUILTIN FAMILIES examined $family_examined family mention(s), below the floor of $FAMILY_CLAIMS_FLOOR — family claims were removed or the scan narrowed; lower FAMILY_CLAIMS_FLOOR if deliberate"
 fi
 note "  BUILTIN FAMILIES: examined $family_examined mention(s), family present $family_ok, waived $family_waived"
 

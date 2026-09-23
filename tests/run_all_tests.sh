@@ -8535,6 +8535,24 @@ else
 fi
 echo ""
 
+# [99ab] Test enrolment (#1264): a tests/*.sh or tests/*.py that no section,
+# workflow step or enrolled script invokes is red, by name. PR #1260's test sat
+# unrun until a maintainer noticed. Self-test case count pinned ([99o] lesson).
+echo "[99ab] test enrolment (#1264)"
+TOTAL=$((TOTAL + 1))
+ENROL_ST_EXPECTED=4
+enrol_out=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" 2>&1); enrol_rc=$?
+enrol_st=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" --selftest 2>&1); enrol_st_rc=$?
+ENROL_ST_N=$(printf '%s\n' "$enrol_st" | sed -n 's/^  checks=\([0-9]*\)$/\1/p')
+if [ "$enrol_rc" -eq 0 ] && [ "$enrol_st_rc" -eq 0 ] && [ "${ENROL_ST_N:-0}" -eq "$ENROL_ST_EXPECTED" ]; then
+    PASS=$((PASS + 1)); echo "  $enrol_out"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: test enrolment (rc=$enrol_rc, selftest rc=$enrol_st_rc checks=${ENROL_ST_N:-none}/$ENROL_ST_EXPECTED)"
+    printf '%s\n' "$enrol_out" "$enrol_st" | grep -E 'FAIL|ABORT' | head -8 | sed 's/^/      /'
+fi
+echo ""
+
 # [99p] Child-script exit-status ledger (#988). The synthetic FAIL: markers
 # emitted by the `bash` wrapper already fail each affected section; this is the
 # roster, so a reader sees WHICH children died rather than inferring it from

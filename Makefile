@@ -70,7 +70,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx nativefn-test arming-mt-test embed-roads print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx nativefn-test arming-mt-test embed-roads print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -279,6 +279,11 @@ gfx: build/gfx/eigenscript
 test: build sandbox-intern-test
 	$(AUX_REFRESH)
 	cd tests && bash run_all_tests.sh
+
+# Contributor precheck (#1264): the repo's static gates in well under a minute,
+# one line per gate. Needs no build (gates that need a binary SKIP without one).
+precheck:
+	bash tools/precheck.sh
 
 install-gfx: gfx lsp
 	mkdir -p $(PREFIX)/bin

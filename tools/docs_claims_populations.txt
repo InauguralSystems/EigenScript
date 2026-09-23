@@ -1,16 +1,16 @@
 # docs-claims DECLARED POPULATIONS — CLASS | file | expected count
 #
-# found == declared, per class AND per file, in BOTH directions (a differing
-# count is red; a declared row nothing visited is red; an examined pair with
-# no row is red). A non-zero population was never the assertion; the DECLARED
-# one is - mechanical-gates 121 and 129.
+# Each count is a FLOOR (#1264), per class AND per file: a count BELOW its row
+# is red; a declared row nothing visited is red; an examined pair with no row
+# is red. Adding a claim (each is judged on its own) needs no edit here;
+# lower a row deliberately when removing claims.
 #
 # A data file for the same reason as the waiver table beside it: the tool must
 # contain no $(cat <<EOF) table at all, because bash 3.2 counts parentheses
 # inside a quoted heredoc body and a future row with one would break the macOS
 # lane again. Lines beginning with # and blank lines are ignored.
 #
-NUMBERS|README.md|13
+NUMBERS|README.md|11
 NUMBERS|docs/llms.txt|3
 NUMBERS|CLAUDE.md|3
 NUMBERS|docs/ARCHITECTURE.md|1
@@ -61,7 +61,9 @@ NAMES|ROADMAP.md|6
 # status checks — what is actually required today") cites
 # .github/required-checks.txt, tools/ci_tier_check.sh and nightly.yml where the
 # old section cited fewer paths (all resolved).
-NUMBERS|docs/CI.md|4
-PATHS|docs/CI.md|63
-TARGETS|docs/CI.md|4
+# NUMBERS 4 -> 2 with #1264 PR-B: the hand-stated test-section counts were
+# removed from docs/CI.md on purpose (derived numbers only).
+NUMBERS|docs/CI.md|2
+PATHS|docs/CI.md|68
+TARGETS|docs/CI.md|6
 NAMES|docs/CI.md|0

@@ -1,0 +1,3 @@
+# Test scripts nothing in CI runs, on purpose (tools/enrolment_check.sh, #1264).
+# `path | reason`. A row for a missing or invoked file fails; prefer a section.
+tests/test_gc_runner_controls.py | manual deferred control for the GC traversal runner (tests/GC_TRAVERSAL.md); forks child sessions and must run with the heavy slot released, so it is run by hand

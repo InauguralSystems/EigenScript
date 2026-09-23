@@ -18,8 +18,14 @@ Requires only `gcc` — no external dependencies.
 1. Fork the repository
 2. Create a branch from `main`
 3. Make your changes
-4. Run the test suite: `cd tests && bash run_all_tests.sh`
-5. Open a pull request
+4. Run `make precheck` — the static gates CI runs, in under a minute, no build
+   needed. It catches pipefail verdicts, section-label clashes, child-exit
+   accounting, the shard plan, and a new test that no suite section runs.
+5. Run the test suite: `cd tests && bash run_all_tests.sh`
+6. Open a pull request
+
+Adding a test is the test file plus its section in `tests/run_all_tests.sh` —
+no counts to bump, no documentation numbers to edit.
 
 Two gates worth knowing before you push:
 
