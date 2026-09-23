@@ -1132,7 +1132,7 @@ limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
 | `valgrind (memcheck smoke, JIT off)` | 1 | the smoke spread (the full corpus is tier 2) |
 | `tsan (concurrency race gate)` | 1 | gate |
 | `install.sh (interpreter + eigenlsp on PATH)` | 1 | gate |
-| `bench (instruction-count regression gate)` | 1 | gate (compares against `origin/main`, in the queue too) |
+| `bench (instruction-count regression gate)` | 1 | gate (baseline: `origin/main` on a PR; the candidate's `merge_group.base_sha` in the queue, so a PR is never charged for the PRs queued ahead of it) |
 | `nightly / macos-15-intel full suite` | **2** (`nightly.yml`) | port lane, slow: hit its timeout on nearly every main push (#1265) |
 | `nightly / valgrind (full corpus, JIT off)` | **2** (`nightly.yml`) | slow; the PR and main lanes run the smoke spread |
 

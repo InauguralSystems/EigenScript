@@ -1577,10 +1577,23 @@ jobs:
         run: ./build.sh
 
       - if: needs.scope.outputs.code == 'true'
-        name: Build origin/main in a worktree (same environment)
+        name: Build the baseline in a worktree (same environment)
+        # In the merge queue the candidate is main + the PRs queued AHEAD + this
+        # one, so the baseline is the candidate's base (merge_group.base_sha),
+        # not origin/main — otherwise a PR is charged for the Ir cost of the PRs
+        # ahead of it and falsely rejected (#1273 code review). Read from the
+        # event payload inside the script, never via ${{ }} (tier gate rule).
         run: |
-          git fetch --no-tags --depth=1 origin main
-          git worktree add /tmp/main-ref origin/main
+          base=origin/main
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then
+            base=$(jq -r '.merge_group.base_sha' "$GITHUB_EVENT_PATH")
+            [ -n "$base" ] && [ "$base" != null ] || { echo "merge_group event without base_sha"; exit 1; }
+            git fetch --no-tags --depth=1 origin "$base"
+          else
+            git fetch --no-tags --depth=1 origin main
+          fi
+          echo "baseline: $base"
+          git worktree add /tmp/main-ref "$base"
           ( cd /tmp/main-ref && ./build.sh )
 
       - if: needs.scope.outputs.code == 'true'
@@ -1588,5 +1601,5 @@ jobs:
         run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --selftest
 
       - if: needs.scope.outputs.code == 'true'
-        name: Regression gate — Ir of this commit vs origin/main
+        name: Regression gate — Ir of this commit vs its baseline
         run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --vs /tmp/main-ref/src/eigenscript
