@@ -43,11 +43,11 @@ concurrency:
 #     probe gates (never a hand-written list). [99i] runs ONCE, in the
 #     `werror audit` job, cached on the audit's inputs. macos-15-intel is
 #     not on this lane.
-#   main lane (push to main) — the full matrix, exactly as before, except
-#     that [99i] is owned by the one `werror audit` job instead of being
-#     repeated ten times. The merge-er waits for this; contributors do not.
-#   nightly (.github/workflows/nightly.yml) — macos-15-intel and the full
-#     valgrind corpus, with a tracking issue on failure.
+#   main lane (push to main) — the full matrix except macos-15-intel, with
+#     [99i] owned by the one `werror audit` job instead of being repeated ten
+#     times. The merge-er waits for this; contributors do not.
+#   nightly (.github/workflows/nightly.yml) — macos-15-intel (ONLY here, #1264)
+#     and the full valgrind corpus, with a tracking issue on failure.
 #
 # The risk this accepts, stated: a variant-specific regression in a
 # NON-variant section reaches main before it is caught. Main still runs the
@@ -600,15 +600,16 @@ jobs:
     # Intel completed the gfx gate and 540 compiler audit calls but reached
     # 30 minutes in the audit's fault controls (#1130). Keep the full suite.
     timeout-minutes: 45
-    # macos-15-intel was the 35-minute job that SET the PR wall clock on
-    # #1158. It is the slowest runner in the pool and it catches Intel-mac-only
-    # shapes — worth having, and able to lag a day. On a push to `main` the
-    # matrix is unchanged; on a pull request it is macos-latest only, and
-    # macos-15-intel runs in .github/workflows/nightly.yml.
+    # macos-15-intel runs ONLY in .github/workflows/nightly.yml (#1264). On the
+    # main lane it hit this job's 45-minute timeout on nearly every push, which
+    # GitHub reports as `cancelled`, so main CI had not finished green since
+    # 2026-09-16 even when every other check passed (01e2b4a: 6126/6126). A lane
+    # that is red by default hides real regressions; Intel-mac-only shapes can
+    # lag a day, and nightly files a tracking issue when they appear.
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' && fromJSON('["macos-latest","macos-15-intel"]') || fromJSON('["macos-latest"]') }}
+        os: ["macos-latest"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
