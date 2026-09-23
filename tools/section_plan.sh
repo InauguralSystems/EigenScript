@@ -185,7 +185,7 @@ tools/docs_claims_check.sh|fd05073ec7e4e3b8|prose in the docs-claims gate QUOTIN
 # SKIP ACCOUNTING (#1225 round 7). The suite's RESULTS line prints
 # `N skipped`, and the runner's own comment at the counter says "a zero that is
 # printed is a claim". Round 6 incremented that counter at exactly ONE site
-# ([99i3]) while the runner had ~40 lines that put a SKIP marker on stdout, so
+# (the since-deleted ILP32 gate, #1274) while the runner had ~40 lines that put a SKIP marker on stdout, so
 # `linux / gcc` printed `0 skipped` beneath nine of them — including [99i]'s
 # `SKIP: NOT MEASURED HERE`, which ci.yml forces on all ten suite jobs
 # (measured by a blind critic on the pushed head 1b5c64d, 2026-09-21). The
@@ -211,7 +211,7 @@ SKIP_ROUTE_RE='^[[:space:]]*section_skip[[:space:]]'
 # coverage is REMOVED (mechanical-gates §5), and both failure modes here are
 # removals: un-routing a section-level skip drops the routed count AND adds an
 # unaccounted emitter, so the two halves catch it independently.
-SKIP_ROUTED_FLOOR=26
+SKIP_ROUTED_FLOOR=25
 SKIP_EMIT_FLOOR=20
 # Each row is "<16-hex sha256 of the EXACT line>|<reason>". The hash is the
 # pin: edit the line and the row stops matching, so the reason gets re-read.

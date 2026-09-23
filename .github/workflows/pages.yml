@@ -8,7 +8,7 @@
 # (#1255). This workflow used to run on push-to-main only, so the real wasm32
 # build (emcc, `web/build.sh`) was first attempted AFTER a merge — and it sat
 # red on main for five commits (517cf08..0ac8a9b) while the local stand-in
-# (tools/ilp32_syntax_check.sh, suite [99i3], clang -m32) was green: i386
+# (a clang -m32 approximation, deleted in #1274) was green: i386
 # aligns `double` to 4 inside a struct and wasm32 aligns it to 8, so a layout
 # `_Static_assert` can hold under the stand-in and fail the real target.
 #

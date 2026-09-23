@@ -265,39 +265,7 @@ SCRIPT_ENROLL_PINS="tools/amalgamate.sh:254253ab8bb08531 tests/test_lint_linkage
 # interpreter (deliberately not via `make`, which would re-point
 # src/eigenscript under the suite) plus two leak controls, so four real
 # compile invocations that no make target covers.
-# tools/ilp32_syntax_check.sh joined with [99i3]: clang -m32 -fsyntax-only
-# over the playground TUs (pages.yml wasm32 stand-in). Its floor moved 2 -> 4
-# when that gate stopped hand-typing the wasm32 predefines: the two `-E -dM`
-# derivations that read the target's and the host's macro worlds are compile
-# invocations by this recognizer (`-x c`), so a floor of 2 would have let both
-# of them be deleted while still printing OK. It moved 4 -> 8 when that gate
-# stopped hand-typing emcc's OPTION grammar and started measuring instead:
-# each new derivation is a compile line this recognizer sees — the `-###`
-# probe that asks whether the clang driver knows a token, the `-###` run that
-# reads back the driver's own `-x c` inputs, the per-header availability probe
-# and the value-parity probe that measures which reconciliations glibc
-# refuses. A floor left at 4 would let any four of the eight be deleted while
-# the gate still printed OK, which is the exact failure this table exists for.
-# It moved 8 -> 11 earlier in round 7 after a blind critic measured the gap:
-# `--print-counts` said 11 for this file while the floor still said 8, so any
-# THREE of its audited compile lines could have lost -Werror=switch, or been
-# deleted, with [99i] green. It moved again, 11 -> 12, later the same round
-# (#1232's flags fix) — the source of the extra audited line was not traced
-# further than `--print-counts` itself; ask the tool again before trusting
-# either number. It moved 12 -> 14 with #1255, both lines traced: compile_tu's
-# `real` arm (the real emcc -fsyntax-only over each recorded TU when emcc is on
-# PATH) and self-test plant 1wt (clang --target=wasm32-unknown-emscripten over
-# the header-free layout probe); `--print-counts` said 14 after that change.
-# It moved 14 -> 13 in #1255 round 2: the real-driver arm no longer has a
-# compile line of its own — it replays the RECIPE'S recorded argv through the
-# driver path resolved at startup, carrying no flag of its own, because every
-# injected flag (-Isrc, -D, even the -Werror trio) was a way for the gate to
-# compile something the recipe does not; the recipe's own line, in
-# web/build.sh, is the audited one. `--print-counts` said 13.
-# The number is the tool's own measurement, not a guess — re-run
-# `--print-counts` after adding a
-# derivation here, the way this paragraph has had to be re-read each round.
-SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh tools/ilp32_syntax_check.sh"
+SCRIPT_AUDITS="build.sh tests/test_tsan.sh tools/trace_mt_mutants.sh tools/arming_mt_mutants.sh tools/freestanding_check.sh tools/freestanding_smoke.sh tools/embed_stack_soak.sh tools/core_ext_boundary_check.sh web/build.sh tests/test_leak_guard.sh tests/test_asan_gfx.sh tests/run_all_tests.sh"
 
 # Comment lines must not be examined: a script comment QUOTING a bare
 # compile line is not a compile.
@@ -377,7 +345,6 @@ script:tests/test_tsan.sh 1
 script:tools/trace_mt_mutants.sh 2
 script:tools/arming_mt_mutants.sh 1
 script:tests/run_all_tests.sh 1
-script:tools/ilp32_syntax_check.sh 13
 '
 
 # Floor for a label, or empty when the label is untracked.
