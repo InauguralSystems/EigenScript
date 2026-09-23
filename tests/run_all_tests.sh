@@ -7079,14 +7079,21 @@ echo "[99zd] Workflow files load as YAML (#1207)"
 TOTAL=$((TOTAL + 1))
 WORKFLOW_OUTPUT=$(bash "$TESTS_DIR/../tools/workflow_yaml_check.sh" 2>&1); WORKFLOW_RC=$?
 WORKFLOW_ST=$(bash "$TESTS_DIR/../tools/workflow_yaml_check.sh" --selftest 2>&1); WORKFLOW_ST_RC=$?
-if python3 -c 'import yaml' >/dev/null 2>&1; then WORKFLOW_LOADER=pyyaml; else WORKFLOW_LOADER='skipped:[a-z0-9-]+'; fi
+# The selftest line is pinned EXACTLY, and the caller decides the skip count
+# from its own PyYAML probe: 8 planted faults, 2 of which can only go red
+# through the loader arm (round-4 mutation M2: a loader skip on a lane that
+# HAS PyYAML must be red). An exit code alone accepts a gutted selftest.
+if python3 -c 'import yaml' >/dev/null 2>&1; then WORKFLOW_LOADER=pyyaml; WORKFLOW_ST_SKIP=0
+else WORKFLOW_LOADER='skipped:[a-z0-9-]+'; WORKFLOW_ST_SKIP=2; fi
+WORKFLOW_ST_WANT="SELFTEST: 8 case(s) run, $((8 - WORKFLOW_ST_SKIP)) passed, 0 failed, $WORKFLOW_ST_SKIP skipped"
 if [ "$WORKFLOW_RC" -eq 0 ] && [ "$WORKFLOW_ST_RC" -eq 0 ] \
+   && [ "$(grep -cxF "$WORKFLOW_ST_WANT" <<<"$WORKFLOW_ST")" -eq 1 ] \
    && grep -qE "^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), [1-9][0-9]* name\(s\), loader=$WORKFLOW_LOADER\)\$" <<<"$WORKFLOW_OUTPUT"; then
     PASS=$((PASS + 1))
     printf '%s\n' "$WORKFLOW_OUTPUT" | grep -E '^workflow-yaml: OK'
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: workflow-yaml gate (rc=$WORKFLOW_RC, selftest rc=$WORKFLOW_ST_RC, loader wanted=$WORKFLOW_LOADER); output follows"
+    echo "  FAIL: workflow-yaml gate (rc=$WORKFLOW_RC, selftest rc=$WORKFLOW_ST_RC, loader wanted=$WORKFLOW_LOADER, selftest line wanted [$WORKFLOW_ST_WANT]); output follows"
     print_captured "workflow-yaml gate, VERBATIM" "$WORKFLOW_OUTPUT"
     print_captured "workflow-yaml selftest, VERBATIM" "$WORKFLOW_ST"
 fi

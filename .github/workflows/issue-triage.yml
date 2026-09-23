@@ -223,13 +223,16 @@ jobs:
       # (c) of tools/roadmap_check.sh — the milestone-set mirror and the
       # reference resolver — were run against GitHub by NO automated caller
       # anywhere. This job was the ONLY lane holding a token, and it ran only
-      # the labels gate. The dev image now carries `gh` and ci.yml's
-      # `linux / gcc` exports a token, and this daily lane runs the roadmap
-      # gate as well, so the mirror is checked twice a day rather than never.
+      # the labels gate. It runs the roadmap gate as well now, and since #1275
+      # it is the gate's ONLY caller: the test suite no longer runs either
+      # GitHub-state gate.
       #
-      # THE PIN HERE ADMITS NO SKIP. Unlike the suite's caller — which runs on
-      # macOS and sanitizer lanes that genuinely have no credentials — this job
-      # exists to make the API call, so `skipped:` is a failure and so is a
+      # `!cancelled()`: the labels step above exits 1 whenever ANY open issue
+      # lacks a label, and without this guard that skipped the roadmap gate
+      # too, so a PR editing tools/roadmap_check.sh or ROADMAP.md ran nothing
+      # while an unrelated issue was unlabelled (/code-review on #1284).
+      #
+      # THE PIN HERE ADMITS NO SKIP. This job exists to make the API call, so `skipped:` is a failure and so is a
       # reference walk that resolved nothing (`resolved=0`) or had to skip a
       # reference (`skipped=N`). It also requires `repos=verified:N` — the
       # KNOWN_REPOS verification is what makes "does not exist" and "is
@@ -239,6 +242,7 @@ jobs:
       # separate check asserts the gate's --contract still equals the caller's
       # skip-admitting form, so a drift is red by name and never auto-adopted.
       - name: "ROADMAP.md is a milestone set (live arms, this lane holds the token)"
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
           ROADMAP_CHECK_REPO: ${{ github.repository }}
