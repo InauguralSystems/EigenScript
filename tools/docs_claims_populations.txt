@@ -57,7 +57,11 @@ NAMES|ROADMAP.md|6
 # 63 -> 60 in #1255 round 3: the scope job and its path list were deleted from
 # pages.yml, and the CI.md paragraph that listed that path list (and the
 # path-filter wording before it) went with them.
+# 60 -> 63 with #1264: the "Platform tiers" section (which replaced "Required
+# status checks — what is actually required today") cites
+# .github/required-checks.txt, tools/ci_tier_check.sh and nightly.yml where the
+# old section cited fewer paths (all resolved).
 NUMBERS|docs/CI.md|4
-PATHS|docs/CI.md|60
+PATHS|docs/CI.md|63
 TARGETS|docs/CI.md|4
 NAMES|docs/CI.md|0

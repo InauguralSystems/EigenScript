@@ -46,6 +46,11 @@ concurrency:
 #   main lane (push to main) — the full matrix except macos-15-intel, with
 #     [99i] owned by the one `werror audit` job instead of being repeated ten
 #     times. The merge-er waits for this; contributors do not.
+#     TIERS (#1264): every job in this file is TIER 1 — listed in
+#     .github/required-checks.txt, or a worker of an aggregator listed there.
+#     A job that is neither must go to nightly.yml; tools/ci_tier_check.sh
+#     (the `gate self-tests` job) fails otherwise. Adding a job here means
+#     adding its check name to that file (the ruleset is synced from it).
 #   nightly (.github/workflows/nightly.yml) — macos-15-intel (ONLY here, #1264)
 #     and the full valgrind corpus, with a tracking issue on failure.
 #
@@ -348,6 +353,17 @@ jobs:
             apt-get update && apt-get install -y --no-install-recommends python3-yaml
           fi
           python3 -c 'import yaml; print("yaml", yaml.__version__)'
+      # Platform tiers (#1264): every name in .github/required-checks.txt is
+      # produced by one job that reports on pull_request, and every job in
+      # THIS file that runs on a push to main is required or a worker of a
+      # required aggregator — so main's colour is decided by the merge gate.
+      # ~1 s + ~15 s of planted faults. Needs the PyYAML installed above; a
+      # missing loader is exit 2 (instrument error), never a pass.
+      - if: needs.scope.outputs.code == 'true'
+        name: Platform tiers — required-checks.txt vs the workflows (#1264)
+        run: |
+          bash tools/ci_tier_check.sh
+          bash tools/ci_tier_check.sh --selftest
       - if: needs.scope.outputs.code == 'true'
         name: Consumer-acceptance harness self-test (~7 min)
         run: bash tools/consumer_acceptance.sh --self-test
