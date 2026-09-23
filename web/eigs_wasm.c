@@ -24,6 +24,17 @@
 #include "../src/vm.h"
 #include "../src/trace.h"
 
+/* #1255 PLANT — DO NOT MERGE. A layout assert TRUE under i386 (clang -m32,
+ * suite [99i3]'s approximation: double aligns to 4 inside a struct, 12 bytes)
+ * and FALSE on wasm32 (emcc: double aligns to 8, 16 bytes). [99i3] must stay
+ * green on this and pages.yml's pull_request build must go RED on it.
+ * Guarded to 32-bit pointers so no 64-bit compile of this file can see it. */
+#if __SIZEOF_POINTER__ == 4
+struct eigs_wasm32_layout_plant { int t; union { double d; struct { char *a; int b; } x; } u; };
+_Static_assert(sizeof(struct eigs_wasm32_layout_plant) == 12,
+               "EIGS_WASM32_LAYOUT_PLANT: 12 bytes at i386, 16 at wasm32 (double aligns to 8)");
+#endif
+
 static int g_initialized = 0;
 
 static void ensure_init(void) {
