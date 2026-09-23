@@ -8540,7 +8540,7 @@ echo ""
 # unrun until a maintainer noticed. Self-test case count pinned ([99o] lesson).
 echo "[99ab] test enrolment (#1264)"
 TOTAL=$((TOTAL + 1))
-ENROL_ST_EXPECTED=3
+ENROL_ST_EXPECTED=4
 enrol_out=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" 2>&1); enrol_rc=$?
 enrol_st=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" --selftest 2>&1); enrol_st_rc=$?
 ENROL_ST_N=$(printf '%s\n' "$enrol_st" | sed -n 's/^  checks=\([0-9]*\)$/\1/p')

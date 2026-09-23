@@ -38,6 +38,11 @@ if [ "${1:-}" = "--selftest" ]; then
     printf '#!/bin/bash\necho "PASS: x"\n' > "$ST/tests/test_zz_plant.sh"
     case_ "an uninvoked tests/test_zz_plant.sh is red and named" 1 "tests/test_zz_plant.sh is invoked by nothing"
     rm "$ST/tests/test_zz_plant.sh"
+    # test_child_exit.sh runs a temp "$WORK/test_clean.sh": same basename, other dir.
+    grep -q 'bash "$WORK/test_clean.sh"' tests/test_child_exit.sh || { echo "  SELFTEST BROKEN: the temp-path shape is gone from test_child_exit.sh"; bad=1; }
+    printf '#!/bin/bash\n' > "$ST/tests/test_clean.sh"
+    case_ "a same-named temp path elsewhere does not enrol tests/test_clean.sh" 1 "tests/test_clean.sh is invoked by nothing"
+    rm "$ST/tests/test_clean.sh"
     echo 'tests/test_cli.sh | planted: test_cli.sh IS invoked' >> "$ST/$EXEMPT"
     case_ "an exemption for an invoked script is stale: red" 1 "exempts tests/test_cli.sh, which IS invoked"
     echo "  checks=$n"
@@ -79,8 +84,11 @@ function strip(s,   c) {
             while (s ~ /^-[A-Za-z]+[[:space:]]/) sub(/^-[A-Za-z]+[[:space:]]+/, "", s)
             w = s; sub(/[[:space:]].*/, "", w); gsub(/["\047]/, "", w)
         } else if (closed && s !~ /[[:space:]]/) continue   # `x.sh)` is a case pattern
-        b = w; sub(/.*\//, "", b)
-        if (w !~ /tools\// && w ~ /\.(sh|py)$/ && index(known, " " b " ")) print FILENAME "\ttests/" b
+        b = w; sub(/.*\//, "", b); d = w; sub(/\/?[^\/]*$/, "", d)
+        # Only a path that RESOLVES under tests/ counts: tests/x, ../tests/x, $TESTS_DIR/x,
+        # the dir of a tests/ script, or a bare name after `cd tests` — never $WORK/x (#1264 r2).
+        intests = (d ~ /(^|\/)tests$|TESTS_DIR\}?$/) || (d == "$DIR" && FILENAME ~ /^tests\//) || (d == "" && FILENAME !~ /^tools\//)
+        if (w !~ /tools\// && w ~ /\.(sh|py)$/ && intests && index(known, " " b " ")) print FILENAME "\ttests/" b
         else if (w ~ /tools\/[^\/]*\.sh$/) print FILENAME "\ttools/" b
     }
 }' tests/run_all_tests.sh .github/workflows/*.yml tests/*.sh tools/*.sh | sort -u > "$EDGES"
