@@ -8537,7 +8537,7 @@ echo ""
 
 # [99ab] Test enrolment + precheck drift (#1264). A tests/*.sh or tests/*.py
 # that no suite section, no workflow step and no enrolled script INVOKES is
-# red, by name (tools/test_enrolment_check.sh; exemptions with reasons in
+# red, by name (tools/enrolment_check.sh; exemptions with reasons in
 # tests/enrolment_exemptions.txt, a stale one is red). PR #1260's test sat
 # unrun until a maintainer noticed by hand. The same section runs
 # `tools/precheck.sh --check`: every tools/ script CI invokes must be
@@ -8548,8 +8548,8 @@ echo "[99ab] test enrolment + precheck manifest drift (#1264)"
 TOTAL=$((TOTAL + 1))
 ENROL_ST_EXPECTED=12
 PRECHECK_ST_EXPECTED=4
-enrol_out=$(bash "$TESTS_DIR/../tools/test_enrolment_check.sh" 2>&1); enrol_rc=$?
-enrol_st_out=$(bash "$TESTS_DIR/../tools/test_enrolment_check.sh" --selftest 2>&1); enrol_st_rc=$?
+enrol_out=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" 2>&1); enrol_rc=$?
+enrol_st_out=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" --selftest 2>&1); enrol_st_rc=$?
 pc_out=$(bash "$TESTS_DIR/../tools/precheck.sh" --check 2>&1); pc_rc=$?
 pc_st_out=$(bash "$TESTS_DIR/../tools/precheck.sh" --selftest 2>&1); pc_st_rc=$?
 ENROL_ST_N=$(printf '%s\n' "$enrol_st_out" | sed -n 's/^  checks=\([0-9]*\)$/\1/p')

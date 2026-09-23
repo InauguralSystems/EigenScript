@@ -1,5 +1,5 @@
 # Test scripts that NOTHING in CI runs, on purpose. Read by
-# tools/test_enrolment_check.sh (#1264). Format: `path | reason`.
+# tools/enrolment_check.sh (#1264). Format: `path | reason`.
 #
 # Every row is a waiver: it must name a file that exists, carry a reason, and
 # be NEEDED -- a row for a script that some suite section or workflow step

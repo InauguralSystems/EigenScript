@@ -1132,7 +1132,7 @@ derives the set of tools/ scripts that `tests/run_all_tests.sh` and
 not classify or the manifest names one CI no longer runs. It runs inside every
 precheck and in suite section `[99ab]`.
 
-**Test enrolment.** `tools/test_enrolment_check.sh` (also `[99ab]`) fails when a
+**Test enrolment.** `tools/enrolment_check.sh` (also `[99ab]`) fails when a
 `tests/*.sh` or `tests/*.py` is invoked by nothing: no suite section, no
 workflow step, and no enrolled script that runs it (`test_dap.py` is enrolled
 through `test_dap.sh`). "Invoked" means the script is what a shell segment

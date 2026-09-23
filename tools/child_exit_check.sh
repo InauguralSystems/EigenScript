@@ -50,7 +50,7 @@ RUNNER="${RUNNER:-tests/run_all_tests.sh}"
 # that lands exactly ON the floor must pass. The floor can go stale-low as the
 # suite grows (§175) — the PASS line prints the slack so that is visible, and
 # the transverse check for the case that matters most (a child test nobody
-# runs any more) is tools/test_enrolment_check.sh, which names the file.
+# runs any more) is tools/enrolment_check.sh, which names the file.
 #
 # To remove a child deliberately: lower this floor in the same commit.
 # To tighten after growth: raise it to the PASS line's count (optional; never

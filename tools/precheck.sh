@@ -22,7 +22,7 @@
 # DRIFT IS GATED, NOT HAND-SYNCED. `--check` derives the set of tools/ scripts
 # CI invokes — from tests/run_all_tests.sh and .github/workflows/*.yml, with
 # the SAME invocation matcher the test-enrolment gate uses
-# (tools/test_enrolment_check.sh --invocations) — and fails if CI runs a tool
+# (tools/enrolment_check.sh --invocations) — and fails if CI runs a tool
 # this manifest does not classify, or the manifest names a tool CI no longer
 # runs. The suite runs `--check` (section [99ab]), so a new gate added to CI
 # without a precheck decision is red on the PR that adds it. `--check` runs
@@ -56,7 +56,7 @@ tools/suite_label_check.sh        | run |                                  | 1
 tools/child_exit_check.sh         | run |                                  | 1
 tools/child_exit_check.sh         | run | --selftest                       | 4
 tools/section_plan.sh             | run | --shards @ASAN_SHARDS@ --check   | 11
-tools/test_enrolment_check.sh     | run |                                  | 1
+tools/enrolment_check.sh          | run |                                  | 1
 tools/doc_drift_check.sh          | run |                                  | 1
 tools/core_ext_boundary_check.sh  | run |                                  | 17
 tools/obs_marker_check.sh         | run |                                  | 1
@@ -69,7 +69,7 @@ tools/workflow_yaml_check.sh      | run |                                  | 5
 tools/codspeed_targets_check.sh   | run |                                  | 1
 tools/gfx_guard_order_check.sh    | run |                                  | 1
 tools/docs_claims_check.sh        | bin |                                  | 10
-tools/precheck.sh                 | ci  | itself: --check runs inside every precheck; --selftest (and test_enrolment_check.sh --selftest) run in suite [99ab]
+tools/precheck.sh                 | ci  | itself: --check runs inside every precheck; --selftest (and enrolment_check.sh --selftest) run in suite [99ab]
 tools/portability_parse_check.sh  | ci  | runs docs_claims and a runtime child under an old bash (3.2); needs a binary and a bash32 oracle, ~1 min
 tools/consumer_acceptance.sh      | ci  | clones and runs sibling consumer repos
 tools/embed_roads.py              | ci  | runtime differential; part of suite section [99z]
@@ -111,7 +111,7 @@ do_check() {
     if [ -z "$ASAN_SHARDS" ]; then
         echo "precheck --check: FAIL: could not derive ASAN_SHARDS from .github/workflows/ci.yml"; return 1
     fi
-    ci_tools=$(ENROL_ROOT="$ROOT" bash "$ROOT/tools/test_enrolment_check.sh" --invocations \
+    ci_tools=$(ENROL_ROOT="$ROOT" bash "$ROOT/tools/enrolment_check.sh" --invocations \
                    tests/run_all_tests.sh .github/workflows/*.yml | grep '^tools/' | sort -u)
     n_ci=$(printf '%s\n' "$ci_tools" | grep -c .)
     if [ "$n_ci" -eq 0 ]; then

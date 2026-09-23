@@ -43,9 +43,9 @@
 # residual, not solved.
 #
 # Usage:
-#   tools/test_enrolment_check.sh               audit the tree (exit 0 / 1)
-#   tools/test_enrolment_check.sh --selftest    plant each fault in a copy
-#   tools/test_enrolment_check.sh --invocations FILE...
+#   tools/enrolment_check.sh               audit the tree (exit 0 / 1)
+#   tools/enrolment_check.sh --selftest    plant each fault in a copy
+#   tools/enrolment_check.sh --invocations FILE...
 #       print, one per line, the repo-relative tests/ or tools/ script each
 #       FILE invokes (the same matcher the audit uses). tools/precheck.sh
 #       derives "the tools CI runs" from this, so the two cannot disagree
