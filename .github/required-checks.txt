@@ -1,0 +1,39 @@
+# TIER 1 (#1264) — the checks that block a merge to main. THE source of truth:
+# the "Protection" ruleset (id 17713865) is synced FROM this file after merge,
+# never edited by hand. Required checks are evaluated in the MERGE QUEUE
+# (merge_group), which runs the full main lane before anything lands.
+# tools/ci_tier_check.sh gates this file against the workflows (each name is
+# produced by exactly one job that reports on pull_request AND merge_group;
+# no required path runs work only on push); `--live` diffs it against the
+# ruleset.
+#
+# Format: one exact check-run name per line. A line starting with `#` is a
+# comment (give the reason for a non-obvious entry). No trailing blanks.
+#
+# ci.yml
+scope
+# Every `container:` job runs inside this image; a failed prerequisite SKIPS the
+# required jobs that need it, and GitHub counts a skipped required check as
+# passing — so it is required like the jobs that need it (#1264).
+build dev/ci image
+werror audit ([99i], cached)
+gate self-tests (section plan + audit cache key)
+linux / gcc
+# The clang leg: -Werror at compile time + clang codegen (#1264: tier 1 is
+# "Linux gcc/clang"). Core smoke on a PR, the full suite on main.
+linux / clang
+macos / macos-latest
+extensions (http+model+gfx suite; embed/lsp/jit-smoke)
+asan + ubsan (full suite)
+db extension (postgres service)
+jit differential (interpreter oracle, tape-replayed)
+replay differential (same-binary tape fidelity)
+freestanding profile (symbol gate + smoke)
+tsan (concurrency race gate)
+install.sh (interpreter + eigenlsp on PATH)
+bench (instruction-count regression gate)
+valgrind (memcheck smoke, JIT off)
+# codeql.yml (workflow "CodeQL")
+Analyze C
+# pages.yml (workflow "Docs site") — the aggregator over the real emcc build
+playground (real emcc wasm32 build)

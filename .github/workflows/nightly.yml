@@ -178,7 +178,7 @@ jobs:
 
           Run: $RUN_URL
 
-          These lanes moved off the PR path in #1160. \`macos-15-intel\` also runs on every push to \`main\`; the FULL valgrind corpus runs HERE ONLY (the PR lane and \`main\` both run the smoke spread), so a red \`valgrind-full\` is a finding nothing else will report. This thread exists so a nightly failure between main pushes is not silent."
+          These lanes moved off the PR path in #1160 and are tier 2 (#1264): they never colour \`main\`. \`macos-15-intel\` runs HERE ONLY; the FULL valgrind corpus runs HERE ONLY (the PR lane and \`main\` both run the smoke spread), so a red \`valgrind-full\` is a finding nothing else will report. This thread exists so a nightly failure between main pushes is not silent."
 
           if [ -n "$num" ]; then
             # Reopen first: a closed thread that starts failing again is the

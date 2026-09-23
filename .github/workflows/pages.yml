@@ -38,9 +38,10 @@
 #               check NAME independently of the worker's. THIS is the check
 #               to require on main.
 #
-# Deploy is unchanged: Configure Pages, the artifact upload and the `deploy`
-# job run only on push/dispatch, never on a pull request, and deploy needs
-# the aggregator.
+# Deploy: Configure Pages and the artifact upload run on every non-PR event
+# (push, dispatch, and the merge queue, so the queue exercises exactly what a
+# push will); the `deploy` job runs only on push/dispatch — never from a PR or
+# a queue candidate — and needs the aggregator.
 name: Docs site
 
 on:
@@ -48,16 +49,19 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  merge_group:            # the merge queue (#1264): a required check must report there
+    types: [checks_requested]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 # Deploys from main still serialize on ONE group, so a newer main push
-# supersedes an older deploy. A pull request gets a group of its OWN ref:
-# sharing `pages` would let every PR push cancel an in-flight main deploy.
+# supersedes an older deploy. A pull request or a merge-queue candidate gets a
+# group of its OWN ref: sharing `pages` would let it cancel an in-flight main
+# deploy.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.ref) || 'pages' }}
+  group: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && format('pages-pr-{0}', github.ref) || 'pages' }}
   cancel-in-progress: true
 
 jobs:
@@ -132,7 +136,9 @@ jobs:
           echo "OK: the real emcc build of web/build.sh passed"
 
   deploy:
-    if: github.event_name != 'pull_request'
+    # Publish only what LANDED: never from a pull request, and never from a
+    # merge-queue candidate that may still be rejected (#1264).
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: playground
     runs-on: ubuntu-latest
     permissions:
