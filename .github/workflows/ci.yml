@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The merge queue (#1264, Rust's model): the FULL main lane runs on the
+  # queue's candidate (current main + the PRs queued ahead + this one) before
+  # anything lands, so main is green by construction. Every step below that
+  # is main-lane-only is gated `github.event_name != 'pull_request'`, which is
+  # true on push AND on merge_group — never `== 'push'`.
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
@@ -43,20 +50,28 @@ concurrency:
 #     probe gates (never a hand-written list). [99i] runs ONCE, in the
 #     `werror audit` job, cached on the audit's inputs. macos-15-intel is
 #     not on this lane.
-#   main lane (push to main) — the full matrix except macos-15-intel, with
-#     [99i] owned by the one `werror audit` job instead of being repeated ten
-#     times. The merge-er waits for this; contributors do not.
+#   main lane (merge_group AND push to main) — the full matrix except
+#     macos-15-intel. It runs in the MERGE QUEUE (#1264, Rust's model) on the
+#     candidate commit (main + the PRs queued ahead + this one) and nothing
+#     lands unless it is green, so main is green by construction and nobody
+#     rebases a PR to "update" it. Main-lane-only steps are gated
+#     `github.event_name != 'pull_request'` (true on push and merge_group),
+#     never `== 'push'`. The post-merge push run re-tests the commit the queue
+#     already tested: it is kept because the README badge reads it and it
+#     publishes the rolling `ci-main` dev image that fork PRs run in.
 #     TIERS (#1264): every job in this file is TIER 1 — listed in
 #     .github/required-checks.txt, or a worker of an aggregator listed there.
 #     A job that is neither must go to nightly.yml; tools/ci_tier_check.sh
-#     (the `gate self-tests` job) fails otherwise. Adding a job here means
-#     adding its check name to that file (the ruleset is synced from it).
+#     (the `gate self-tests` job) fails otherwise, and also fails on a step
+#     whose condition would run it on push but not in the queue. Adding a job
+#     here means adding its check name to that file (the ruleset is synced
+#     from it).
 #   nightly (.github/workflows/nightly.yml) — macos-15-intel (ONLY here, #1264)
 #     and the full valgrind corpus, with a tracking issue on failure.
 #
 # The risk this accepts, stated: a variant-specific regression in a
-# NON-variant section reaches main before it is caught. Main still runs the
-# full matrix before anything is released.
+# NON-variant section passes the PR lane and is caught in the queue, before
+# it lands; the contributor waits only for the fast lane.
 
 jobs:
   # Is this PR docs-only? A change touching nothing but *.md cannot alter C or
@@ -354,11 +369,11 @@ jobs:
           fi
           python3 -c 'import yaml; print("yaml", yaml.__version__)'
       # Platform tiers (#1264): every name in .github/required-checks.txt is
-      # produced by one job that reports on pull_request, and every job in
-      # THIS file that runs on a push to main is required or a worker of a
-      # required aggregator — so main's colour is decided by the merge gate.
-      # ~1 s + ~15 s of planted faults. Needs the PyYAML installed above; a
-      # missing loader is exit 2 (instrument error), never a pass.
+      # produced by one job that reports on pull_request AND merge_group, no
+      # required path runs work only on push, and every job in THIS file is
+      # required or a worker of a required aggregator. ~1 s + ~10 s of planted
+      # faults. Needs the PyYAML installed above; a missing loader is exit 2
+      # (instrument error), never a pass.
       - if: needs.scope.outputs.code == 'true'
         name: Platform tiers — required-checks.txt vs the workflows (#1264)
         run: |
@@ -460,7 +475,7 @@ jobs:
       # only thing it no longer runs is [99i], which the `werror audit` job
       # owns for this run and which prints a SKIP naming that job.
       - name: Run test suite (full)
-        if: matrix.cc == 'gcc' || github.event_name == 'push'
+        if: matrix.cc == 'gcc' || github.event_name != 'pull_request'
         env:
           EIGS_SKIP_WERROR_AUDIT: 1
           # [99zd]'s live arms. Without this the roadmap gate's milestone and
@@ -473,10 +488,10 @@ jobs:
       # clang on a PR: the value of this leg is the BUILD (-Werror fires at
       # compile time, and clang's codegen differs), not a tenth execution of
       # the same ~263 sections the gcc leg just ran on the same commit. It
-      # runs the derived core-smoke plan instead. On a push to main it runs
+      # runs the derived core-smoke plan instead. On the main lane (queue, push) it runs
       # the full suite like every other leg.
       - name: Run test suite (derived core-smoke plan)
-        if: matrix.cc == 'clang' && github.event_name != 'push'
+        if: matrix.cc == 'clang' && github.event_name == 'pull_request'
         env:
           EIGS_SUITE_SECTIONS: core
           EIGS_SKIP_WERROR_AUDIT: 1
@@ -703,15 +718,15 @@ jobs:
       # self-test (11 min) — the single largest block of this leg's 15 min.
       # Its verdict cannot differ by platform anyway: the only conditional in
       # the Makefile is LDFLAGS, a LINK flag, and the audit reads COMPILE
-      # invocations. On a push to main it still runs here in full, so the
+      # invocations. On the main lane (queue, push) it still runs here in full, so the
       # gate's BSD-userland portability keeps an exercise at merge time.
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
         name: Run test suite (PR lane; [99i] owned by the werror audit job)
         env:
           EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run test suite (main lane, [99i] included)
         run: cd tests && bash run_all_tests.sh
 
@@ -833,14 +848,14 @@ jobs:
       # decide whether to skip — plus a fixed core smoke, and the job fails if
       # the http binary unlocks fewer probe-gated chunks than its floor (a
       # broken registration otherwise collapses the plan silently).
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
         name: Run derived http+model section plan
         env:
           EIGS_SUITE_SECTIONS: http
           EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run full suite against http+model build
         env:
           EIGS_SKIP_WERROR_AUDIT: 1
@@ -881,14 +896,14 @@ jobs:
         name: Build gfx variant
         run: make gfx
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
         name: Run derived gfx section plan (audio [62], [120b], [132], [133], [134])
         env:
           EIGS_SUITE_SECTIONS: gfx
           EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run full suite against gfx build (audio [62], containment [132], gfx examples [97])
         env:
           EIGS_SKIP_WERROR_AUDIT: 1
@@ -915,14 +930,14 @@ jobs:
         name: Build zlib variant
         run: make zlib
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
         name: Run derived zlib section plan (executes DEFLATE section [124b])
         env:
           EIGS_SUITE_SECTIONS: zlib
           EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run full suite against zlib build (executes DEFLATE section [124])
         env:
           EIGS_SKIP_WERROR_AUDIT: 1
@@ -949,14 +964,14 @@ jobs:
         name: Build net variant
         run: make net
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
         name: Run derived net section plan (executes network section [125])
         env:
           EIGS_SUITE_SECTIONS: net
           EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run full suite against net build (executes network section [125])
         env:
           EIGS_SKIP_WERROR_AUDIT: 1
@@ -1002,7 +1017,7 @@ jobs:
         name: Build full variant (http+model+db)
         run: make full
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
         name: Run derived full-variant section plan with live DATABASE_URL
         env:
           DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
@@ -1010,7 +1025,7 @@ jobs:
           EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run full suite with live DATABASE_URL
         env:
           DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
@@ -1302,7 +1317,7 @@ jobs:
       # sanitizers. This job was 26 min on #1158 — the second-longest on the
       # board — and the core sections it shared with `asan + ubsan / core and
       # LSP` are already sanitized there on the same commit.
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
         name: Run derived asan-http section plan under sanitizers
         env:
           ASAN_OPTIONS: detect_leaks=1
@@ -1311,7 +1326,7 @@ jobs:
           EIGS_SKIP_WERROR_AUDIT: 1
         run: make asan-http && cd tests && bash run_all_tests.sh
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'push'
+      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run suite under sanitizers with the HTTP+model extensions
         env:
           ASAN_OPTIONS: detect_leaks=1
