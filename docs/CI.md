@@ -68,13 +68,14 @@ the only place that ran was `.github/workflows/pages.yml` on **push to
 (517cf08 back to 0ac8a9b) before anyone looked, because nothing on a pull
 request compiled for the real target.
 
-The local gate did not catch it either, and could not. Suite `[99i3]`
-(`tools/ilp32_syntax_check.sh`) compiles every translation unit the recipe
-hands the compiler with host `clang -m32` — the **i386** ABI. i386 aligns
-`double` to 4 inside a struct; wasm32 aligns it to 8. The Value union was 36
-bytes under `-m32` and 40 under emcc, so a layout `_Static_assert` held under
-the gate and failed the real build. `[99i3]` was labelled "the playground's
-wasm32 build cannot break unnoticed"; that was false as stated.
+The local gate did not catch it either, and could not. The suite's ILP32
+gate compiled every translation unit the recipe hands the compiler with host
+`clang -m32` — the **i386** ABI. i386 aligns `double` to 4 inside a struct;
+wasm32 aligns it to 8. The Value union was 36 bytes under `-m32` and 40 under
+emcc, so a layout `_Static_assert` held under the gate and failed the real
+build. That approximation was deleted in #1274: the real build below runs on
+every change it could have guarded, and an approximation of a required target
+is a second, weaker answer to the same question.
 
 What is true now:
 
@@ -105,22 +106,10 @@ What is true now:
   concurrency group, so a PR push can never cancel a `main` deploy. Measured
   on `main`, the build job is about 72 s with the emsdk cache warm, and every
   PR pays it.
-- **`[99i3]` says what it is.** With emcc on `PATH` the gate REPLAYS each
-  recorded emcc call — the recipe's own argv, plus `-fsyntax-only`, minus the
-  `-o` operand and the call's other translation units, and nothing else — and
-  prints `verdict: AUTHORITATIVE`. (Round 1 compiled with an injected `-Isrc`
-  and `-DEIGENSCRIPT_VERSION`, so a recipe emcc rejects could print
-  AUTHORITATIVE; self-test plants `10i`/`10d` are that class, under both arms.)
-  Without it (every CI suite leg, and the dev box) it runs the `-m32` arm and
-  prints `verdict: APPROXIMATION`, and its OK line names pages.yml as the
-  authority. Its self-test pins the limit from both sides: control `1w`
-  requires the `-m32` arm to pass a layout assert that is 12 bytes at i386
-  and 16 at wasm32, and `1wt` requires clang's wasm32 frontend to refuse it.
 
-**The check to require on `main` is `playground (real emcc wasm32 build)`**
-— the aggregator, never the worker alone (a skipped worker reads as
-passing). Until it is in the ruleset, a red wasm build is visible on the PR
-but does not block the merge.
+**The required check is `playground (real emcc wasm32 build)`** — the
+aggregator, never the worker alone (a skipped worker reads as passing). It is
+listed in `.github/required-checks.txt`, so a red wasm build blocks the merge.
 
 ## The doc gates — where they run, and why they are cheap
 
