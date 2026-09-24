@@ -352,8 +352,8 @@ jobs:
             apt-get update && apt-get install -y --no-install-recommends python3-yaml
           fi
           python3 -c 'import yaml; print("yaml", yaml.__version__)'
-          if ! command -v valgrind >/dev/null; then
-            apt-get update && apt-get install -y --no-install-recommends valgrind
+          if ! command -v valgrind >/dev/null || [ ! -x /usr/bin/time ]; then
+            apt-get update && apt-get install -y --no-install-recommends valgrind time
           fi
       # Platform tiers (#1264): every name in .github/required-checks.txt is
       # produced by one job that reports on pull_request AND merge_group, no
