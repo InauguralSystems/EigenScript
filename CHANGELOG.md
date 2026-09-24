@@ -830,6 +830,14 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`json.json_merge` merges objects (#1248).** It started from a list and
+  indexed the decoded objects by integer, so any nonempty object died with
+  `cannot index dict`, and two empty objects silently merged to `[]`. It now
+  builds a dict: keys of the second object win, nested values are replaced
+  whole (a flat merge, as documented), `{}` + `{}` is `{}`, and a non-object
+  input raises instead of merging as empty. `tests/test_json_merge.eigs`
+  compares decoded dicts.
+
 - **The playground's real wasm32 build runs on every pull request (#1255).**
   `.github/workflows/pages.yml` ran only on push to `main`, so the emcc build
   of `web/build.sh` was first attempted after a merge and sat red on `main` for

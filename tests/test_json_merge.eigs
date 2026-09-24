@@ -1,0 +1,48 @@
+# lib/json.eigs json_merge (#1248): a flat object merge where the second
+# object wins. Results are compared as DECODED dicts, so key order and
+# serializer whitespace are not the oracle.
+import json
+
+fails is 0
+checks is 0
+define expect(tag, got, want) as:
+    checks is checks + 1
+    if got == want:
+        print of f"  PASS: {tag}"
+    else:
+        print of f"  FAIL: {tag} (got {json_encode of got}, want {json_encode of want})"
+        fails is fails + 1
+
+define merged(a, b) as:
+    return json_decode of (json.json_merge of [a, b])
+
+print of "=== json_merge (lib/json.eigs) ==="
+
+expect of ["disjoint keys", merged of ["{\"a\":1}", "{\"b\":2}"], {"a": 1, "b": 2}]
+expect of ["second wins on conflict", merged of ["{\"a\":1,\"k\":1}", "{\"k\":2}"], {"a": 1, "k": 2}]
+expect of ["conflict keeps first-only keys", merged of ["{\"k\":\"x\",\"z\":0}", "{\"k\":null}"], {"k": null, "z": 0}]
+expect of ["left empty", merged of ["{}", "{\"b\":2}"], {"b": 2}]
+expect of ["right empty", merged of ["{\"a\":1}", "{}"], {"a": 1}]
+
+both is json.json_merge of ["{}", "{}"]
+expect of ["both empty decodes to a dict", type of (json_decode of both), "dict"]
+expect of ["both empty is {}", both, "{}"]
+
+# Flat merge: a nested object on the right replaces, never deep-merges.
+expect of ["nested value replaced whole", merged of ["{\"n\":{\"x\":1,\"y\":2}}", "{\"n\":{\"x\":9}}"], {"n": {"x": 9}}]
+expect of ["nested list carried", merged of ["{\"l\":[1,2]}", "{\"m\":[3]}"], {"l": [1, 2], "m": [3]}]
+
+# A non-object input is refused loudly instead of silently merging as {}.
+refused is ""
+try:
+    json.json_merge of ["[1,2]", "{}"]
+catch err:
+    refused is err
+expect of ["array input raises", refused, "json_merge: both arguments must be JSON objects"]
+
+print of f"Tests: {checks}"
+if fails == 0:
+    print of "JSON_MERGE_ALL_PASS"
+else:
+    print of f"{str of fails} FAILURES"
+    throw of "json_merge tests failed"
