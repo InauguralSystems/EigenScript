@@ -854,6 +854,16 @@ All notable changes to EigenScript are documented here.
   `clang -m32` approximation that had stood in for this build was later
   deleted (#1274).
 
+- **`data.df_from_csv` keeps text cells as text (#1247).** It converted
+  every cell with `num of` and kept the result whenever it had type `num`,
+  which is always true, because `num of` maps text with no leading number to
+  `0`. So names, empty cells and tokens like `x12` all imported as `0`. A cell
+  now becomes a number only when the WHOLE trimmed cell is numeric under
+  `validate.is_number`'s rule (optional `-`, digits, at most one `.`).
+  Numeric-prefix text like `12abc` stays the string `"12abc"` rather than
+  becoming `12`. `tests/test_data.eigs` reads a real CSV file and asserts value
+  and type for each case.
+
 - **Doc-claims selftest isolates its variant alias.** The fixture now removes
   inherited build variants before creating its `asan` alias, so an `asan-http`
   build cannot cause a false failure by being the first matching hard link.

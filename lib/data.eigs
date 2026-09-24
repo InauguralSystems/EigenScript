@@ -13,9 +13,14 @@
 #   filtered is data.df_where of [df, pred]
 #   data.df_sum of [df, "age"]  # 55
 
+import validate
+
 # ---- Construction ----
 
-# df_from_csv: read CSV file, first row is headers, returns list of dicts
+# df_from_csv: read CSV file, first row is headers, returns list of dicts.
+# A cell converts to a number only when the whole trimmed cell is numeric
+# (validate.is_number: optional '-', digits, at most one '.'); everything
+# else, including "" and numeric-prefix text like "12abc", stays a string.
 define df_from_csv(path) as:
     text is read_text of path
     if text == "":
@@ -37,10 +42,13 @@ define df_from_csv(path) as:
                 val is ""
                 if c < (len of vals):
                     val is trim of vals[c]
-                # Try to convert numeric-looking values
-                nval is num of val
-                if (type of nval) == "num":
-                    dict_set of [row, headers[c], nval]
+                # A cell is a number only if the WHOLE cell is one, under
+                # validate.is_number's rule (optional '-', digits, at most
+                # one '.'). `num of` alone cannot decide this: it maps text
+                # with no leading number to 0 and reads "12abc" as 12, so
+                # names, empty cells and mixed tokens stay strings (#1247).
+                if validate.is_number of val:
+                    dict_set of [row, headers[c], num of val]
                 else:
                     dict_set of [row, headers[c], val]
             append of [result, row]

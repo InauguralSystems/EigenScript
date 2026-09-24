@@ -19,6 +19,31 @@ cols is data.df_columns of df
 assert_eq of [len of cols, 3, "df_columns length"]
 assert_eq of [cols[0], "name", "df_columns first"]
 
+# df_from_csv (#1247): text, empty cells and numeric-prefix text stay
+# strings; only a wholly numeric cell becomes a number. Assert type AND value.
+csv_path is "/tmp/eigs_test_data_1247.csv"
+write_text of [csv_path, "name,age,note\nAlice,30,\nBob,0,x12\nCarol,-4,12abc\nDan,2.5,7\n"]
+cdf is data.df_from_csv of csv_path
+remove_file of csv_path
+assert_eq of [len of cdf, 4, "df_from_csv row count"]
+assert_eq of [type of cdf[0]["name"], "str", "df_from_csv text cell is str"]
+assert_eq of [cdf[0]["name"], "Alice", "df_from_csv text cell kept"]
+assert_eq of [cdf[1]["name"], "Bob", "df_from_csv second text cell kept"]
+assert_eq of [type of cdf[0]["note"], "str", "df_from_csv empty cell is str"]
+assert_eq of [cdf[0]["note"], "", "df_from_csv empty cell stays empty"]
+assert_eq of [type of cdf[1]["note"], "str", "df_from_csv alnum cell is str"]
+assert_eq of [cdf[1]["note"], "x12", "df_from_csv alnum cell kept"]
+assert_eq of [type of cdf[2]["note"], "str", "df_from_csv numeric-prefix cell is str"]
+assert_eq of [cdf[2]["note"], "12abc", "df_from_csv numeric-prefix cell kept"]
+assert_eq of [type of cdf[0]["age"], "num", "df_from_csv number cell is num"]
+assert_eq of [cdf[0]["age"], 30, "df_from_csv nonzero number"]
+assert_eq of [type of cdf[1]["age"], "num", "df_from_csv zero cell is num"]
+assert_eq of [cdf[1]["age"], 0, "df_from_csv zero number"]
+assert_eq of [cdf[2]["age"], -4, "df_from_csv negative number"]
+assert_eq of [cdf[3]["age"], 2.5, "df_from_csv decimal number"]
+assert_eq of [type of cdf[3]["note"], "num", "df_from_csv digit-only cell is num"]
+assert_eq of [cdf[3]["note"], 7, "df_from_csv digit-only cell value"]
+
 # df_column
 ages is data.df_column of [df, "age"]
 assert_eq of [ages[0], 30, "df_column first"]
