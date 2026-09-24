@@ -830,6 +830,16 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`data.df_from_csv` keeps text cells as text (#1247).** It converted
+  every cell with `num of` and kept the result whenever it had type `num`,
+  which is always true, because `num of` maps text with no leading number to
+  `0`. So names, empty cells and tokens like `x12` all imported as `0`. A cell
+  now becomes a number only when the WHOLE trimmed cell is numeric under
+  `validate.is_number`'s rule (optional `-`, digits, at most one `.`).
+  Numeric-prefix text like `12abc` stays the string `"12abc"` rather than
+  becoming `12`. `tests/test_data.eigs` reads a real CSV file and asserts value
+  and type for each case.
+
 - **The playground's real wasm32 build runs on every pull request (#1255).**
   `.github/workflows/pages.yml` ran only on push to `main`, so the emcc build
   of `web/build.sh` was first attempted after a merge and sat red on `main` for

@@ -1261,7 +1261,7 @@ DataFrame operations on lists of dicts (each dict is a row with the same keys).
 
 | Function | Signature | Description |
 |---|---|---|
-| `df_from_csv` | `df_from_csv of path` | read CSV file, first row is headers, returns list of dicts |
+| `df_from_csv` | `df_from_csv of path` | read CSV file, first row is headers, returns list of dicts. A cell becomes a number only when the whole cell is numeric (`validate.is_number`: optional `-`, digits, at most one `.`); text, empty cells and numeric-prefix text like `12abc` stay strings |
 | `df_from_rows` | `df_from_rows of [headers, rows]` | headers is list of strings, rows is list of lists |
 | `df_new` | `df_new of _headers` | empty dataframe (returns empty list) |
 | `df_select` | `df_select of [df, columns]` | returns new df with only specified columns |
