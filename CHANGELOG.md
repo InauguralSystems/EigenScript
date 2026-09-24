@@ -830,14 +830,6 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
-- **`json.json_merge` merges objects (#1248).** It started from a list and
-  indexed the decoded objects by integer, so any nonempty object died with
-  `cannot index dict`, and two empty objects silently merged to `[]`. It now
-  builds a dict: keys of the second object win, nested values are replaced
-  whole (a flat merge, as documented), `{}` + `{}` is `{}`, and a non-object
-  input raises instead of merging as empty. `tests/test_json_merge.eigs`
-  compares decoded dicts.
-
 - **The playground's real wasm32 build runs on every pull request (#1255).**
   `.github/workflows/pages.yml` ran only on push to `main`, so the emcc build
   of `web/build.sh` was first attempted after a merge and sat red on `main` for
@@ -856,6 +848,14 @@ All notable changes to EigenScript are documented here.
 - **Doc-claims selftest isolates its variant alias.** The fixture now removes
   inherited build variants before creating its `asan` alias, so an `asan-http`
   build cannot cause a false failure by being the first matching hard link.
+
+- **`json.json_merge` merges objects (#1248).** It started from a list and
+  indexed the decoded objects by integer, so any nonempty object died with
+  `cannot index dict`, and two empty objects silently merged to `[]`. It now
+  builds a dict: keys of the second object win, nested values are replaced
+  whole (a flat merge, as documented), `{}` + `{}` is `{}`, and a non-object
+  input raises instead of merging as empty. `tests/test_json_merge.eigs`
+  compares decoded dicts.
 
 - **`RESULTS: ... N skipped` counts every section that measured nothing, not
   one of them (#1225).** The counter shipped in round 6 with the comment "a
