@@ -41,8 +41,11 @@ jobs:
           ISSUE: ${{ github.event.issue.number }}
         run: |
           set -u
-          gh label create needs-triage --repo "$GITHUB_REPOSITORY" --force \
-            --color ededed --description "Needs an area: label and a kind"
+          # Create the label only if it is missing, so a maintainer's edit to it survives.
+          gh label list --repo "$GITHUB_REPOSITORY" --search needs-triage --json name \
+              --jq '.[].name' | grep -qx needs-triage \
+            || gh label create needs-triage --repo "$GITHUB_REPOSITORY" --color ededed \
+                 --description "Filed without an area: label; triage and label it"
           labels=$(gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" \
                      --json labels --jq '.labels[].name')
           echo "issue #$ISSUE labels: ${labels:-<none>}"

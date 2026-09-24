@@ -25,7 +25,7 @@ graduates by becoming a GitHub milestone with a bar.
   stays here rather than pretending to be a rung.
 - **GitHub Linguist submission.** Its condition (2K+ `.eigs` files across public
   repositories) is not ours to set and not measured here; if it ever becomes
-  reachable it gets a row with the derived count in it.
+  reachable it becomes a milestone with the derived count in its bar.
 
 ### Deliberately NOT doing (standing vetoes — don't re-propose without new facts)
 
@@ -263,8 +263,8 @@ when picked up:
     This is the 80/20 for adoption — `eigenscript foo.eigs` on
     Windows without WSL.
   - Tier 2: JIT on Windows — **RETIRED**, not pending. It contradicts the
-    standing veto above on grinding the JIT toward native claims, and it
-    has the retired row in the milestone table. Listing it as an
+    standing veto above on grinding the JIT toward native claims, and its
+    milestone was retired (#419). Listing it as an
     unchecked tier is what made it read as planned work.
   - Tier 3: extensions on Windows — HTTP server (Winsock +
     `WSAStartup`) and gfx/SDL (`dlopen` → `LoadLibrary`). Per-file,
@@ -293,8 +293,7 @@ when picked up:
 Condensed highlights; see [CHANGELOG.md](CHANGELOG.md) for the full
 per-version record. These are HISTORY, deliberately written as a plain list:
 most of them used to be `- [x]` checkboxes, which is how a counter came to
-report the past as roadmap items "done" (the header above derives both counts
-with the commands that produce them; no number is retyped here).
+report the past as roadmap items "done".
 
 ### Shipped since this file last claimed them (corrected 2026-09-21, #1207)
 
