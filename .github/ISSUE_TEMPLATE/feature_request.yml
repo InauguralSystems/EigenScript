@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a new feature or builtin
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The use case, concretely.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How it would look in EigenScript.
+      render: eigenscript
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: A checklist someone else could verify. If it needs more than a handful of items, it is probably several issues.
+      value: |
+        - [ ] 
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

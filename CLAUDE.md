@@ -10,8 +10,10 @@ trace tape, deterministic replay).
 
 Working here you WILL hit a missing feature, a rough edge, or a bug. The
 standing rule for every agent and contributor: **surface the gap, don't work
-around it silently.** Open a GitHub issue with a minimal repro
-(`gh issue create`), or fold the fix into your PR and reference it. A silent
+around it silently.** Open a GitHub issue with a minimal repro and a
+**"Done when" checklist** someone else could verify (`gh issue create`), or
+fold the fix into your PR and reference it. If you cannot write the checklist,
+the issue is several issues: file those instead, each with its own. A silent
 workaround discards the one signal this project runs on — real use finding real
 gaps. This is the forcing-function model (see Ecosystem) applied to your own
 session: a gap you route upstream is a contribution; a gap you paper over is
