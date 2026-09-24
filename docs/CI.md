@@ -330,265 +330,6 @@ The same job runs the live consumer-acceptance `plan` against a fixture
 inventory whose declared set is the fixture's own (never the real ecosystem);
 the step asserts `expected=N` with N>0.
 
-`run` confines each consumer row rather than out-ordering it. Shadowing a
-stale binary with a 127-shim earlier on `PATH` is only as good as PATH
-ORDER, and PATH order belongs to the consumer: one
-`export PATH="$HOME/.local/bin:$PATH"` — the ordinary CI idiom
-EigenGauntlet and EigenMiniSat already use via `$GITHUB_PATH` — puts the
-developer's stale runtime back in front of the shim, and the row still
-read `PASS`. So the row now runs with `PATH=$SHIM:$FARM` and nothing
-else: `$FARM` holds, for every executable found on the INHERITED `PATH`
-**except** every name matching `eigenscript*`, a two-line EXEC WRAPPER
-(`#!/bin/sh` + `exec "<absolute original path>" "$@"`, mode 755), so
-every tool runs **at its original location** (`path_farm=` /
-`path_dropped=` in the record header). A SYMLINK farm relocated the tool
-and broke consumers: a virtualenv's `python3` reached through a link
-reports `sys.prefix=/usr`, because venv detection reads `pyvenv.cfg`
-beside the executable's own path — a dependency installed in the selected
-virtualenv vanished and the row FAILed *after* the candidate call
-succeeded. Farm construction is fail-closed by name (`cannot build the
-PATH farm under <dir>`, exit 2), and `path_farm=N` must be at least the
-number of executables the enumeration found: a farm directory that could
-not be written used to swallow every failure and read `path_farm=0` under
-`VERDICT: PASS`. Two measured costs of running tools in place, stated
-rather than hidden: the wrapper adds **+2–7 ms per farmed call** on this
-box (1000 `git --version`: direct 9.99 s / farmed 16.83 s, then 15.82 s /
-17.72 s), so a consumer making hundreds of `cc` calls pays seconds; and
-the wrapper is `#!/bin/sh` while the original path is bash-`%q` quoted, so
-an inherited `PATH` directory whose name holds a TAB or (under `LC_ALL=C`)
-a non-ASCII byte yields `exec: $/…: not found` and the row reads
-`FAIL|127` — fail-closed, never `PASS`, and no such directory is on this
-box's or CI's `PATH`. `HOME` is a
-scratch directory per row (`home_scratch=yes`) containing empty
-`.local/bin` and `bin`, so a prepend adds an empty directory — but the
-named build/tool CACHE variables survive it (`env_passthrough=`):
-`GOPATH`, `GOMODCACHE`, `GOCACHE`, `GOFLAGS`, `JAVA_HOME`, `ELLE_JAR`,
-`CARGO_HOME`, `RUSTUP_HOME`, `PIP_CACHE_DIR`, `npm_config_cache`, with
-the three Go ones derived from the real home when unset. Measured on
-eddy: with the scratch HOME alone, `GOPROXY=off go list -m all` returns
-`module lookup disabled by GOPROXY=off` where the real HOME returns rc 0,
-so every run would re-download its modules and fail without a network.
-A consumer **PATH EDIT** is a finding of its own, and the rule matches the
-**substring, not the syntactic position**. `tools/_derive_variants.py`
-treats ANY occurrence of `PATH=`, `PATH+=`, `PATH :=` or `PATH ?=` —
-word-bounded on the left, so `MANPATH`/`PYTHONPATH`/`GITHUB_PATH` do not
-match — **anywhere in a scanned text line** as a PATH edit, plus every
-`$GITHUB_PATH` append. Comments and **heredoc bodies** are scanned, a
-Makefile is scanned in **full** (a top-level `export PATH := …` sets every
-recipe's PATH), `.eigs` **string literals** are scanned, and a workflow is
-scanned at its `runCmd`. Round 5 matched a position list instead (line
-start, `;&|(`, `export`/`declare -x`/`typeset -x`) and claimed "a LITERAL
-absolute component is no longer a residual"; Fable r5 walked through six
-positions that list did not name — `env PATH=/abs:$PATH cmd`,
-`exec env PATH=…`, `bash -c 'PATH=/abs:$PATH cmd'`, a heredoc body fed to
-`bash`, a Makefile top-level `export PATH := /abs:$(PATH)`, and
-`export PATH=~user/…` — every one of them `PASS` while the stale binary
-ran. The substring rule is not a claim that nothing is left: it MOVED the
-hole from line position to **file kind** and **component parse**. What the
-scan sees, measured: every SCANNED FILE KIND — `.sh`, `.bash`, `.zsh`, an
-extensionless file carrying a `#!` line, a workflow `.yml` at its
-`runCmd`, `Makefile` and `.mk`, and `.eigs` — and, inside those, every
-literal component the splitter can PARSE. Three residual SHAPES are left,
-each walked end to end by a blind critic and filed as issue
-[#1229](https://github.com/InauguralSystems/EigenScript/issues/1229):
-
-1. **file kinds outside that list** — a PATH edit inside a shell string in
-   a `.py` file (`subprocess.run("PATH=/abs:$PATH …", shell=True)`), a
-   `Makefile.in` the row itself copies to `Makefile`, and an extensionless
-   file with no shebang that the row `source`s;
-2. **components the splitter cannot parse** —
-   `export PATH="/abs${PATH:+:$PATH}"` (the "append only if set" idiom:
-   the first component reads as `/abs${PATH`, which contains `$` and so is
-   treated as computed), a value continued onto the next physical line
-   with a trailing `\`, and `$'…'` ANSI-C quoting;
-3. **computed components** — `$(cat dir.txt)`, a `$VAR` other than
-   `$HOME`/`$PWD`/`$PATH`, or an edit made through a non-shell API
-   (`os.environ["PATH"]`).
-
-None of the 16 real consumers has ANY of those shapes. Measured over all
-16 checkouts, every file kind, `.git` excluded: the only `PATH=` lines in
-the ecosystem are five `.devcontainer/Dockerfile` `ENV PATH=` lines (DMG,
-dynamics, eddy, phugoid, Tidepool), and a Dockerfile is not the acceptance
-command; there is no `shell=True` PATH string, no `Makefile.in`, no
-`${PATH:+`, and no `runCmd` that sources an extensionless file.
-
-### Round 8 — what the third critic found, and what is now true
-
-`/code-review 1224 medium` (the third critic family, run once before merge)
-returned ten findings against `21daf05`. Eight are fixed here; each is stated
-as what is now TRUE, with the plant that goes red if it stops being true.
-
-1. **The not-found handler reaches every bash child.** It used to be defined
-   in the block shell and nowhere else, so the shape every real consumer has
-   — `bash tests/run.sh` — swallowed a computed `eigenscript-$V` as a bare
-   `127` and the row read `PASS cand_calls=1` while this document claimed
-   `FAIL|undeclared-variant`. `export -f` is NOT enough and that is measured,
-   not assumed: every command in a row goes through a farm wrapper whose
-   first line is `#!/bin/sh`, `/bin/sh` is dash, and dash drops the
-   `BASH_FUNC_command_not_found_handle%%` environment entry (`env | grep -c
-   BASH_FUNC`: 1 directly, 0 through the wrapper). The handler therefore
-   travels as `BASH_ENV`, which every non-interactive bash sources. Residual,
-   pinned: a `#!/bin/sh` child reads neither, so plant `not-found-child`
-   asserts the bash row `FAIL`s by name AND that the `sh` row still `PASS`es.
-2. **The inventory floor cannot read this run's own record.** With
-   `CA_RECORD` inside `reports/consumer_acceptance/` — the convention this
-   repo's own README states — the run's `INCOMPLETE` header was the newest
-   dated record by the time the floor was read, so the floor was 0 and a
-   2-consumer inventory `PASS`ed beside a 3-row committed record (measured).
-   The floor is now the MAX row count over the DATED records whose header
-   says `status=COMPLETE`, excluding the file at `$RECORD` by realpath, read
-   BEFORE the run takes the record path. Plants: `record-floor-selfexclude`
-   (the measured fixture, plus a stale 9-row `COMPLETE` record already at
-   `$RECORD` that must not become the floor), `record-floor-incomplete` (an
-   interrupted wave's 9-row `INCOMPLETE` record does not raise it), and `B3`
-   (a lexically newer 1-row `COMPLETE` record does not lower it).
-3. **`PASS|skips=N` carries its `log|` tail.** That verdict sets `ANY_BAD`
-   and fails the wave, and its evidence IS the consumer's `SKIP` lines — yet
-   the `PASS|*` exemption dropped exactly that row's tail. #1214 as written:
-   every row that is not a bare `PASS` is followed by `log|<name>|<line>`.
-4. **A here-string is not a heredoc.** `tr a-z A-Z <<< hello`, and a quoted
-   `"see <<EOF above"`, were read as heredoc openers and the deriver
-   swallowed the rest of the file as a body — deriving `[]` and reporting no
-   exclusions, so its own witness lied.
-5. **A quoted `$(…)` is scanned.** `BIN="$(command -v eigenscript-full)"`
-   derived nothing while the unquoted spelling derived the name; a `for` list
-   of literal names derived nothing either. Substitution bodies are now
-   scanned recursively inside double quotes, and a `for`/`select` list is an
-   invocation position.
-6. **`--gfx <binary>` is what `EIGENSCRIPT_GFX` names.** It pointed at the
-   headless base shim, so a consumer honouring the variable ran its gfx suite
-   against the wrong binary. Plant `gfx-variant-export` runs a base stub that
-   lacks `gfx_open` and a gfx stub that has it, and asserts that only the gfx
-   stub was executed and that `cand_calls` was credited to `eigenscript-gfx`.
-   The value is in the record header as `eigenscript_gfx_exported=`.
-7. **The runCmd extractor's YAML oracle has a floor**, and a quoted inline
-   scalar loses its quotes. `yaml_checked` had none and `invalid` counted as
-   neither, so the cross-check could examine zero documents and still print
-   `SELFTEST: PASS`; and `runCmd: 'make test'` extracted the quotes, so
-   `bash -c` ran a command named `'make test'` → 127.
-8. **The bare-candidate refusal is a usage error and now happens before the
-   record path is taken**, so it leaves the previous record byte-identical
-   and writes no `.prev`, like every other exit-2 usage error. Plant
-   `usage-no-candidate` has both rows.
-9. **A `gfx` prerequisite is DECLARED, never a substring of the command.**
-   `case "$cmd" in *gfx*)` made `--no-gfx`, or any path whose own name
-   contains those three letters, a hard gfx-build prerequisite and refused a headless
-   row that would have passed. Measured: no acceptance command of the 16 real
-   consumers contains `gfx` today, so this changes no real row; `dynamics`
-   keeps its declared `gfx` in `PREREQS`.
-10. **`path_dropped=` uses the farm's own filter.** The farm takes every
-    `eigenscript*` file out of reach but the header listed only `eigenscript`
-    and `eigenscript-*`, so a stale `eigenscript.old` was hidden without
-    being named. On this box the witness lists `eigenscript-full.stale`,
-    `eigenscript-full.0.16.3.bak` and `eigenscript-full.pre291.bak`.
-
-`plan` prints the edits as `path_edit|<consumer>|<component>|<file>:<line>`
-and the scan's **own witness** as `pathexamined|<consumer>|<files>|<edits>`,
-so "no edits" can be told apart from "the scan examined nothing". All 16
-real consumers report zero edits under the new rule (the two
-`$GITHUB_PATH` appends in EigenGauntlet's and EigenMiniSat's CI are
-ordinary `run:` steps, not the `runCmd`, and the `ENV PATH=` lines are
-Dockerfile, which is not the acceptance command). A row whose edit adds a
-component that is a LITERAL absolute directory existing on this box —
-after `~` (the row's own scratch `$HOME`, allowed) and `~user` (resolved
-from `getent passwd`) expansion — outside `$SHIM`, `$FARM`, the row's
-scratch `$HOME` and its own checkout is `FAIL|path-edit:<resolved dir>`
-**before it runs**, with a `log|<name>|preflight:` line that also carries
-the WRITTEN form. That is the shape that reached
-the developer's real `~/.local/bin/eigenscript-full.stale` (`0.21.0`) under
-a `PASS` row.
-
-Containment is decided on the **resolved** form only, and the offender is
-named by it. Round 6 kept the allowance when EITHER the written OR the
-resolved form sat under an allowed prefix, so `<checkout>/../../<absdir>`
-and a symlink inside the checkout pointing outside it both read `PASS`
-while the stale binary in `<absdir>` ran (Astra r6). Every allowed prefix
-is resolved on the same terms, so a checkout or a scratch reached THROUGH
-a symlink is still allowed — containment is not a spelling test in either
-direction. Plant `path-edit-absolute` carries both escapes (`pe_dotdot`,
-`pe_symlink`) and both in-checkout controls (`pe_relbin` written `./bin`,
-`pe_inrepo` written absolute).
-
-**The price, stated:** the rule is over-broad in the SAFE direction. A line
-that merely *names* a PATH edit — a comment, a usage string, a README
-example living inside a `.sh`, a Makefile variable holding one — refuses that
-consumer's row by name. It refuses a row it could have run; it never runs a
-row it should have refused. The deriver's selftest row
-`path-edit-comment-is-over-broad` documents exactly that. What remains a
-residual is only a component the scanner cannot resolve because it is
-COMPUTED (`$(…)`, a `$VAR` other than `$HOME`/`$PWD`/`$PATH`) or an edit
-made through a non-shell API. The
-enumeration follows symlinked `PATH` directories (`find -L`); a directory
-that is executable but not readable contributes nothing and is reachable
-from nothing. What the claim now is, exactly: **no stale `eigenscript*`
-file is on the row's `PATH` at all**, and a name that resolves nowhere is
-`FAIL|undeclared-variant:<name>` (`command_not_found_handle` records it)
-rather than a `127` the consumer can swallow with `|| true`. Three residuals stay, stated in the header
-and each **pinned by a plant that fires only while it holds**:
-
-1. a PATH edit the scanner cannot see because the consumer COMPUTES it at
-   run time (`PATH="$(cat dir.txt):$PATH"`, a `$VAR` other than
-   `$HOME`/`$PWD`/`$PATH`, or `os.environ["PATH"]`) — together with the
-   unscanned file kinds and the unparsed component shapes listed above,
-   which are the same residual class reached by a different layer;
-2. a farmed, inherited wrapper that resolves its OWN location
-   (`exec "$(dirname "$(readlink -f "$0")")/eigenscript"`) still reaches
-   the stale `eigenscript` sitting beside it in the inherited directory —
-   that is the price of running tools in place, and running them in place
-   is what keeps a virtualenv working. The only closures are an execve
-   WITNESS (an `LD_PRELOAD` interposer that fails the row on an
-   `eigenscript*` target) or a MOUNT NAMESPACE; both are deferred. No
-   consumer ships such a wrapper;
-3. a path the consumer computes INSIDE its own checkout
-   (`./eigenscript-*`) is not on `PATH` at all, so that row reads
-   `UNEXERCISED`, never `PASS`.
-
-`EIGS_DIR` is the twin of that PATH: it is a `cp -rL` copy of the
-candidate tree, so it used to hand the consumer the sibling's own
-`-full` variant binary. Every `eigenscript*` file in the overlay is now a
-shim too — the candidate's counting shim when the candidate set covers
-the name, a 127-shim when it does not (`overlay_shimmed=`).
-
-Scratch creation is fail-closed: an unusable `$TMPDIR` exits 2 with
-`cannot create scratch under …` **before** any shim is written, and a
-shim is never written to a directory outside the run scratch. A `$SHIM`
-directory that exists but cannot be WRITTEN (Astra's `readonly-bin`, mode
-`555`) is now named too — `cannot write the shim …`, exit 2, no row at
-all — where round 5 swallowed every shim write and the row read a generic
-`FAIL|127 cand_calls=0` under a fail-closed claim (plant
-`shim-fail-closed`). The
-unchecked `mktemp` this replaces had `SHIM` fall open to `/bin`, and a
-round-2 run as root wrote stub shims into `/usr/bin` on a dev box.
-The job runs as uid 0 in the container, where a `chmod a-w` directory is
-still writable and no plant that depends on "cannot write" can be planted.
-So the **whole** self-test re-runs itself as an unprivileged user
-(`runuser`/`setpriv` + `nobody`, a drop root it chowns, `TMPDIR` inside
-it; stdout and exit status propagate unchanged) — every plant then runs
-exactly as it does on a developer box. Per-plant drops were the wrong
-layer: round 2 dropped only for `stale-unwritable` and CI still recorded
-`VERDICT: PASS` for it. If no drop is possible, BOTH unwritable plants
-(`F unwritable-record`, `I stale-unwritable`) SKIP **by name** and the
-final line reports `plants=N skipped=2` — never a silent OK. The drop is
-tied to what actually RAN: the dropped process prints its own script's
-sha256 as its first line and the outer compares it with the copy it
-checked, because a drop tool that rewrites the copy between the check and
-the `exec` otherwise ran a different script under a "byte-identical"
-banner. The TRUST ROOT is the drop TOOL this script chooses (`runuser`,
-then `setpriv`) — never a command handed in from the environment: a
-read-back of a LINE cannot authenticate a PROCESS, and both critics built
-a wrapper that emitted the honest first line and then ran a substitute
-verdict producer. `CA_DROP_CMD` exists only so the fixture-gated
-self-test can drive the drop path on a non-root box; it is honoured only
-when `$CA_ECO/.ca_fixture` exists, is otherwise IGNORED (`--drop-tool`
-prints the tool actually chosen), and a `--self-test` started with an
-ungated `CA_DROP_CMD` is refused with exit 2 rather than quietly running
-seven minutes that tested nothing. Every scratch name the self-test and its children create in the
-outer tmp carries that run's token, so a CONCURRENT self-test's
-`/tmp/ca-st.*` is no longer read as this run's leftover (it was, and it
-printed a false `SELF-TEST: FAIL`). That line
-also pins `plants + skipped` to a declared constant in the script, so a
-gutted SKIP counter or a deleted plant turns the self-test red.
-
 Every plan run prints one line, and the runner CHECKS it: after the plan runs,
 the dispatcher counts the `[...]` section headers the run actually printed and
 fails if that differs from the number the plan promised. `sections=` counts the
@@ -603,6 +344,54 @@ SECTION PLAN: PLAN: sections=6 (of N) chunks=5 plan=zlib capabilities=1 (floor 1
 A plan of zero sections is a hard failure, and so is a RUN of zero assertions:
 `RESULTS: 0/0 passed, 0 failed` used to exit 0, which is indistinguishable from
 a clean run.
+
+### Consumer acceptance wave
+
+`CA_ECO=... bash tools/consumer_acceptance.sh plan` scans pinned sibling
+checkouts. `plan --cmd <consumer>` prints that consumer's complete acceptance
+command, taken from its CI workflow `runCmd` or the four declared commands.
+The scanned inventory must cover the recorded inventory floor, and every
+consumer needs a command. The 16 real commands are compared byte for byte
+with the pre-change oracle when this gate changes.
+
+`run <tree-or-binary> [--full binary] [--gfx binary]` runs each command in its
+checkout. A tree argument selects `src/eigenscript`; a binary symlink is
+resolved before walking to its candidate tree. When a source tree is found,
+its `src/eigenscript` or `build/release/eigenscript` must match the resolved
+binary by inode or SHA256. A standalone binary gets a minimal overlay;
+`CA_TREE=<dir>` explicitly overrides the tree check and is recorded.
+The base and supplied variant binaries are hashed before the rows start. A
+shim directory is first on the inherited
+`PATH`; its `eigenscript`, `eigenscript-full` and `eigenscript-gfx` entries
+execute the original resolved binary paths and log calls, preserving
+executable-relative standard-library loading. Each supplied binary is hashed
+again after every row; a changed hash makes that row `FAIL` with
+`candidate-mutated:<name>`. An unsupported runtime variant is
+`UNRUNNABLE` by name. `EIGS_DIR` and `EIGENSCRIPT_DIR` point to a private
+copy of the candidate tree's `src/`, `lib/` and top-level regular files;
+`build/` is not linked in. Its extensionless runtime executable slots use
+the same counting shims, while `.c` and `.h` source files remain intact.
+Consumer writes and builds there do not alter the candidate tree. Named
+external tools and the gfx capability are probed before affected rows;
+missing prerequisites yield `UNRUNNABLE|prereq=<name>`. The harness no longer
+builds a PATH farm or changes `HOME`.
+
+Every row records its verdict, exit code, elapsed seconds and candidate call
+counts. A command that exits zero without a candidate call fails. A timeout
+is `HANG` with rc 124 or 137. The floor is read from completed records,
+including the target record, before that target is marked `INCOMPLETE`.
+Traps are then installed before the first candidate hash, tree inspection,
+git metadata, scratch and shim setup;
+a signal leaves `VERDICT: INCOMPLETE` as the final line. A complete record
+is published by atomic replacement and passes only
+when `examined == inventory > 0`, all required consumers are present, and
+every row passes. Without `CA_RECORD`, the record survives under
+`reports/consumer_acceptance/<UTC date>-candidate.record`; the candidate
+tree's short git SHA is recorded in `candidate_git_sha=` when available.
+The existing
+2026-09-20 wave record remains readable with the same `row|` columns and
+header/footer format. `--self-test` plants fifteen faults once when the harness
+changes; it is not a permanent check of every internal branch.
 
 ## The ASan suite runs in shards
 
@@ -909,4 +698,3 @@ joins when a binary exists. Its gate list is the only copy: the
 exceptions live in `tests/enrolment_exemptions.txt` with a reason each.
 Counts that grow with the suite (child-script sites, doc-claim populations)
 are floors: adding a test needs no count edit, a drop is red.
-
