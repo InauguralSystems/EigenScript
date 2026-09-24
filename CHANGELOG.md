@@ -839,6 +839,16 @@ All notable changes to EigenScript are documented here.
   success on the last attempt and a `null` callback, all with counters
   (section [50f], 7 → 20 checks).
 
+- **`json.json_pretty` no longer formats inside strings (#1249).** It
+  reacted to every `{`, `}`, `[`, `]` and `,`, including those inside JSON
+  string tokens, so `{"s":"a,b"}` came out with a raw newline and indent
+  inside `"a,b"`. That is invalid JSON, and EigenScript's permissive decoder
+  read it back as a changed value. It now tracks string state and escapes
+  (`\"`, `\\`) and copies string tokens verbatim.
+  `tests/test_json_pretty.eigs` checks each case two ways: the decoded value
+  is unchanged, and an independent scanner finds no raw control character
+  inside any string token.
+
 - **The playground's real wasm32 build runs on every pull request (#1255).**
   `.github/workflows/pages.yml` ran only on push to `main`, so the emcc build
   of `web/build.sh` was first attempted after a merge and sat red on `main` for

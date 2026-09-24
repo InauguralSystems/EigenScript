@@ -485,7 +485,7 @@ registers into epoch seconds with these and no host clock.
 | `json_has` | `json_has of [json, "key"]` | 1 if key exists |
 | `json_from_pairs` | `json_from_pairs of pairs` | [[k,v],...] to JSON |
 | `json_merge` | `json_merge of [json_a, json_b]` | Flat-merge two objects (keys of `json_b` win; nested values replace whole); raises if either is not an object |
-| `json_pretty` | `json_pretty of json_str` | Indented output |
+| `json_pretty` | `json_pretty of json_str` | Indented output; layout is added only outside string tokens, so string values come through byte-for-byte |
 
 ### lib/test.eigs — Test Runner
 
