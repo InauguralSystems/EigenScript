@@ -55,7 +55,9 @@ define json_merge(a, b) as:
     return json_encode of merged
 
 # ---- json_pretty: simple indented JSON output ----
-# Produces readable output for printing
+# Produces readable output for printing. Layout is inserted only OUTSIDE
+# string tokens: inside a string every character, including `,{}[]` and
+# escapes like \" and \\, is copied verbatim (#1249).
 define json_pretty(x) as:
     s is x
     if (type of s) != "str":
@@ -64,9 +66,22 @@ define json_pretty(x) as:
     indent is 0
     i is 0
     length is len of s
+    local in_str is 0
+    local escaped is 0
     loop while i < length:
         c is char_at of [s, i]
-        if c == "{":
+        if in_str == 1:
+            result is result + c
+            if escaped == 1:
+                escaped is 0
+            elif c == "\\":
+                escaped is 1
+            elif c == "\"":
+                in_str is 0
+        elif c == "\"":
+            in_str is 1
+            result is result + c
+        elif c == "{":
             indent is indent + 2
             result is result + "{\n"
             for sp in range of indent:

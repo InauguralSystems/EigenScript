@@ -5777,6 +5777,7 @@ check_eigs_suite "JIT and/or heap-operand decref (no per-iteration leak)" test_j
 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
 check_eigs_suite "json roundtrip" test_json_roundtrip.eigs "json roundtrip: all passed" 1
 check_eigs_suite "json.json_merge flat object merge (#1248)" test_json_merge.eigs "JSON_MERGE_ALL_PASS" 10
+check_eigs_suite "json.json_pretty leaves string tokens intact (#1249)" test_json_pretty.eigs "JSON_PRETTY_ALL_PASS" 17
 check_eigs_suite "observer interactions" test_observer_interactions.eigs "observer interactions: all passed" 1
 check_eigs_suite "osr observe-assign (#231)" test_osr_observe_assign.eigs "osr observe-assign: all passed" 1
 check_eigs_suite "scope semantics" test_scope_semantics.eigs "scope semantics: all passed" 1

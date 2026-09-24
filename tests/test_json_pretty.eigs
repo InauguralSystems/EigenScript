@@ -1,0 +1,67 @@
+# lib/json.eigs json_pretty (#1249): layout goes only OUTSIDE string tokens.
+# Two independent oracles per case: the decoded value must equal the
+# decoded input, and a scanner (not the permissive decoder) must find no
+# raw control character inside any string token of the output.
+import json
+
+fails is 0
+checks is 0
+define expect(tag, got, want) as:
+    checks is checks + 1
+    if got == want:
+        print of f"  PASS: {tag}"
+    else:
+        print of f"  FAIL: {tag} (got {json_encode of got}, want {json_encode of want})"
+        fails is fails + 1
+
+# Count characters with code < 32 that sit inside a JSON string token.
+# Independent of json_decode, which accepts a raw newline in a string.
+define raw_controls_in_strings(text) as:
+    local bad is 0
+    local in_str is 0
+    local escaped is 0
+    local k is 0
+    local n is len of text
+    loop while k < n:
+        local c is char_at of [text, k]
+        if in_str == 1:
+            if (ord of c) < 32:
+                bad is bad + 1
+            if escaped == 1:
+                escaped is 0
+            elif c == "\\":
+                escaped is 1
+            elif c == "\"":
+                in_str is 0
+        elif c == "\"":
+            in_str is 1
+        k is k + 1
+    return bad
+
+define check_case(tag, src) as:
+    local pretty is json.json_pretty of src
+    expect of [tag + ": value preserved", json_decode of pretty, json_decode of src]
+    expect of [tag + ": no raw control chars in strings", raw_controls_in_strings of pretty, 0]
+
+print of "=== json_pretty (lib/json.eigs) ==="
+
+check_case of ["comma in string", "{\"s\":\"a,b\"}"]
+check_case of ["braces and brackets in string", "{\"s\":\"{x}[y]\",\"t\":\"]}\"}"]
+check_case of ["escaped quote in string", "{\"s\":\"say \\\"a,b\\\" now\"}"]
+check_case of ["backslash then comma", "{\"s\":\"c:\\\\dir,x\"}"]
+check_case of ["string ending in backslash", "{\"s\":\"end\\\\\",\"t\":[1,2]}"]
+check_case of ["punctuation in keys and arrays", "{\"k,{\":[\"a,b\",\"[c]\",3]}"]
+check_case of ["non-string input", json_encode of {"s": "x,y", "l": [1, 2]}]
+native is {"s": "x,y", "l": [1, 2]}
+expect of ["dict input pretty-prints its encoding", json.json_pretty of native, json.json_pretty of (json_encode of native)]
+
+# Real structure is still indented, and the string bytes come through exact.
+expect of ["object layout", json.json_pretty of "{\"s\":\"a,b\",\"n\":1}", "{\n  \"s\":\"a,b\",\n  \"n\":1\n}"]
+expect of ["nested array layout", json.json_pretty of "{\"l\":[1,\"x]\"]}", "{\n  \"l\":[\n    1,\n    \"x]\"\n  ]\n}"]
+
+print of f"Tests: {checks}"
+if fails == 0:
+    print of "JSON_PRETTY_ALL_PASS"
+else:
+    print of f"{str of fails} FAILURES"
+    throw of "json_pretty tests failed"
