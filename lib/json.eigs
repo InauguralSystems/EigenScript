@@ -39,15 +39,19 @@ define json_from_pairs(pairs) as:
     return json_build of flat
 
 # ---- json_merge: merge two JSON objects (b overwrites a) ----
-# Simple merge using re-encoding. Works for flat objects.
+# Flat merge: top-level keys of b replace those of a; nested values are
+# carried whole, never deep-merged. Returns a JSON object, `{}` when both
+# are empty (#1248 — this used to build a list and integer-index dicts).
 define json_merge(a, b) as:
-    obj_a is json_decode of a
-    obj_b is json_decode of b
-    merged is []
-    for i in range of (len of obj_a):
-        append of [merged, obj_a[i]]
-    for i in range of (len of obj_b):
-        append of [merged, obj_b[i]]
+    local obj_a is json_decode of a
+    local obj_b is json_decode of b
+    if (type of obj_a) != "dict" or (type of obj_b) != "dict":
+        throw of "json_merge: both arguments must be JSON objects"
+    local merged is {}
+    for k in keys of obj_a:
+        dict_set of [merged, k, obj_a[k]]
+    for k in keys of obj_b:
+        dict_set of [merged, k, obj_b[k]]
     return json_encode of merged
 
 # ---- json_pretty: simple indented JSON output ----

@@ -5776,6 +5776,7 @@ check_eigs_suite "sandbox fail-closed allowlist (no host-global escape)" test_sa
 check_eigs_suite "JIT and/or heap-operand decref (no per-iteration leak)" test_jit_andor_leak.eigs "jit-and-or-ok" 1
 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
 check_eigs_suite "json roundtrip" test_json_roundtrip.eigs "json roundtrip: all passed" 1
+check_eigs_suite "json.json_merge flat object merge (#1248)" test_json_merge.eigs "JSON_MERGE_ALL_PASS" 10
 check_eigs_suite "observer interactions" test_observer_interactions.eigs "observer interactions: all passed" 1
 check_eigs_suite "osr observe-assign (#231)" test_osr_observe_assign.eigs "osr observe-assign: all passed" 1
 check_eigs_suite "scope semantics" test_scope_semantics.eigs "scope semantics: all passed" 1

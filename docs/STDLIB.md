@@ -484,7 +484,7 @@ registers into epoch seconds with these and no host clock.
 | `json_get_path` | `json_get_path of [json, "a.b"]` | Extract nested value |
 | `json_has` | `json_has of [json, "key"]` | 1 if key exists |
 | `json_from_pairs` | `json_from_pairs of pairs` | [[k,v],...] to JSON |
-| `json_merge` | `json_merge of [json_a, json_b]` | Merge two objects |
+| `json_merge` | `json_merge of [json_a, json_b]` | Flat-merge two objects (keys of `json_b` win; nested values replace whole); raises if either is not an object |
 | `json_pretty` | `json_pretty of json_str` | Indented output |
 
 ### lib/test.eigs — Test Runner

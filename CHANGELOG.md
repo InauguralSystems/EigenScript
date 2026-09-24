@@ -868,6 +868,14 @@ All notable changes to EigenScript are documented here.
   inherited build variants before creating its `asan` alias, so an `asan-http`
   build cannot cause a false failure by being the first matching hard link.
 
+- **`json.json_merge` merges objects (#1248).** It started from a list and
+  indexed the decoded objects by integer, so any nonempty object died with
+  `cannot index dict`, and two empty objects silently merged to `[]`. It now
+  builds a dict: keys of the second object win, nested values are replaced
+  whole (a flat merge, as documented), `{}` + `{}` is `{}`, and a non-object
+  input raises instead of merging as empty. `tests/test_json_merge.eigs`
+  compares decoded dicts.
+
 - **`RESULTS: ... N skipped` counts every section that measured nothing, not
   one of them (#1225).** The counter shipped in round 6 with the comment "a
   zero that is printed is a claim" and exactly ONE increment site (the since-deleted ILP32 gate),
