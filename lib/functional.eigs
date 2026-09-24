@@ -100,7 +100,8 @@ define iterate(fn, val, count) as:
 # ---- wait_until: bounded retry on a predicate ----
 # wait_until of [pred, tries, sleep_fn] -> 1 the first time `pred of []`
 # is truthy, 0 after `tries` attempts. `sleep_fn` runs between attempts
-# (pass null for a busy retry) — the delay primitive is the caller's
+# only — never after the final failed one, so a timeout costs tries-1
+# delays, not tries (#1237). Pass null for a busy retry — the delay primitive is the caller's
 # because it differs by host: sleep_ms hosted, gfx_delay on EigenOS.
 # Every bounded poll loop in the ecosystem (IRQ ring drains, RTC
 # update-in-progress waits, subprocess readiness) is this shape.
@@ -109,7 +110,7 @@ define wait_until(pred, tries, sleep_fn) as:
     loop while i < tries:
         if pred of []:
             return 1
-        if sleep_fn != null:
-            sleep_fn of []
         i is i + 1
+        if sleep_fn != null and i < tries:
+            sleep_fn of []
     return 0

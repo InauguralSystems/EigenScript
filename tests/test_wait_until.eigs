@@ -32,6 +32,35 @@ define never() as:
     return 0
 check of ["times out at the bound", wait_until of [never, 5, nap], 0]
 check of ["exactly tries attempts", calls, 5]
+# #1237: sleep_fn runs BETWEEN attempts, never after the last failed one.
+check of ["timeout slept tries-1 times", naps, 4]
+
+calls is 0
+naps is 0
+check of ["single failed attempt times out", wait_until of [never, 1, nap], 0]
+check of ["single attempt called pred once", calls, 1]
+check of ["single failed attempt never sleeps", naps, 0]
+
+calls is 0
+naps is 0
+check of ["zero tries times out", wait_until of [never, 0, nap], 0]
+check of ["zero tries never calls pred", calls, 0]
+check of ["zero tries never sleeps", naps, 0]
+
+calls is 0
+naps is 0
+define ready_now() as:
+    calls is calls + 1
+    return 1
+check of ["immediate success", wait_until of [ready_now, 5, nap], 1]
+check of ["immediate success called pred once", calls, 1]
+check of ["immediate success never sleeps", naps, 0]
+
+calls is 0
+naps is 0
+check of ["success on the last attempt", wait_until of [ready_on_third, 3, nap], 1]
+check of ["last-attempt success called pred 3 times", calls, 3]
+check of ["last-attempt success slept between attempts", naps, 2]
 
 calls is 0
 check of ["null sleep_fn busy-retries", wait_until of [never, 3, null], 0]

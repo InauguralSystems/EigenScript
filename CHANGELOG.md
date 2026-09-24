@@ -830,6 +830,15 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`functional.wait_until` no longer sleeps after its final failed attempt
+  (#1237).** `sleep_fn` ran after every failed attempt, including the last
+  one, so a timeout after `tries` attempts paid `tries` delays instead of
+  `tries - 1`. It now runs only when another attempt remains. Predicate call
+  counts and return values are unchanged. `tests/test_wait_until.eigs` covers
+  zero tries, one failed attempt, a five-attempt timeout, immediate success,
+  success on the last attempt and a `null` callback, all with counters
+  (section [50f], 7 → 20 checks).
+
 - **The playground's real wasm32 build runs on every pull request (#1255).**
   `.github/workflows/pages.yml` ran only on push to `main`, so the emcc build
   of `web/build.sh` was first attempted after a merge and sat red on `main` for

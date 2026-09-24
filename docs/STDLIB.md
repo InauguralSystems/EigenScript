@@ -528,7 +528,9 @@ print of (adler32 of "Wikipedia")    # 300286872
 `format.eigs` also ships `hexdump of data` (string or buffer → classic
 offset/hex/ascii rows), and `functional.eigs` ships
 `wait_until of [pred, tries, sleep_fn]` — the bounded-poll shape every
-IRQ drain and readiness check re-derives.
+IRQ drain and readiness check re-derives. `sleep_fn` runs only *between*
+attempts: a timeout after `tries` attempts costs `tries - 1` delays, and
+success on the first attempt costs none.
 
 ### lib/sort.eigs — Sorting Utilities
 
