@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a bug in EigenScript
+labels: [bug]
+body:
+  - type: textarea
+    id: repro
+    attributes:
+      label: To reproduce
+      description: The smallest EigenScript program that shows the bug.
+      render: eigenscript
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen, as exact output where you can.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happens instead, with any error output.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: A checklist someone else could verify, e.g. "the repro prints X" and "a regression test fails without the fix". If you can't write one, say what is unclear; the issue may need splitting.
+      value: |
+        - [ ] 
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: EigenScript version
+      description: Output of `eigenscript --version`, plus OS.
