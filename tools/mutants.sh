@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manual mutation trains: bash tools/mutants.sh <train> [mutant] | --selftest.
+# Manual mutation trains: bash tools/mutants.sh <train> [mutant] | --selftest [train|all].
 # Configs contain the ordered population, commands, bounds and lane accounting.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -112,9 +112,12 @@ classify_kill() {
     else return 1; fi
 }
 
-oracle_completed() {
-    local pattern
-    for pattern in "${COMPLETED[@]}"; do grep -Eq "$pattern" "$1" || return 1; done
+oracle_completed() {   # the LAST summary line (same prefix) must match, as the old scripts read it
+    local pattern last
+    for pattern in "${COMPLETED[@]}"; do
+        last=$(grep -E "${pattern%% *}" "$1" | tail -n 1)
+        [ -n "$last" ] && grep -Eq "$pattern" <<< "$last" || return 1
+    done
 }
 
 run_tsan() {
@@ -151,9 +154,15 @@ run_one() {
             echo "MUTANT $spec: BROKEN on run $i — oracle rc=$rc with no FAIL line and no completion marker"; return 2
         else survived=1; break; fi
     done
-    if [ "$control" -eq 1 ]; then
-        if [ "$survived" -eq 0 ]; then echo "MUTANT $spec: KILLED by $reason"; return 0; fi
-        echo "MUTANT $spec: SURVIVED (oracle completed, no FAIL line)"; return 1
+    if [ "$control" -eq 1 ]; then   # each control has ONE right answer; anything else is a broken train
+        if [ "$survived" -eq 0 ]; then
+            echo "MUTANT $spec: KILLED by $reason"
+            case "$spec:$reason" in oracle-abort:crash\(rc=*) return 0;; esac
+            fail "$spec: control must be KILLED by crash(rc=...), got '$reason'"; return 2
+        fi
+        echo "MUTANT $spec: SURVIVED (oracle completed, no FAIL line)"
+        [ "$spec" = comment-only-equivalent ] && return 1
+        fail "$spec: control must be KILLED by crash, but SURVIVED"; return 2
     fi
     local row mutant stem='' fixture bound hits=0 note
     for row in ${WITNESSES[@]+"${WITNESSES[@]}"}; do
@@ -180,8 +189,8 @@ run_one() {
     echo "MUTANT $spec: KILLED by $reason$note"
 }
 
-selftest() (
-    load_train dict_keys
+selftest() (   # $1 = train whose two controls are asserted (default dict_keys, the fastest)
+    load_train "${1:-dict_keys}"
     population
     local log="$SCRATCH/selftest.log" rc spec
     for spec in oracle-abort comment-only-equivalent; do
@@ -219,8 +228,13 @@ selftest() (
     echo 'MUTANTS_SELFTEST: all checks passed'
 )
 
-if [ "$#" -eq 1 ] && [ "$1" = --selftest ]; then selftest; exit; fi
-[ "$#" -ge 1 ] && [ "$#" -le 2 ] || { fail "usage: $0 <train> [mutant] | --selftest"; exit 2; }
+if [ "${1:-}" = --selftest ]; then
+    if [ "${2:-}" = all ]; then
+        for f in "$ROOT"/tests/*_mutants/train.conf; do t=${f%_mutants/train.conf}; selftest "${t##*/}" || exit 2; done; exit 0
+    fi
+    selftest "${2:-}"; exit
+fi
+[ "$#" -ge 1 ] && [ "$#" -le 2 ] || { fail "usage: $0 <train> [mutant] | --selftest [train|all]"; exit 2; }
 load_train "$1"
 population || exit 2
 if [ "$#" -eq 2 ]; then
