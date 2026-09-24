@@ -41,12 +41,15 @@
 #     fixture pins the boundary: prose mentioning the marker mid-line does not
 #     count, a whole marker line does.
 #
-# Usage: test_lsan_classify.sh [path-to-classifier]
+# Usage: test_lsan_classify.sh [--selftest] [path-to-classifier]
+# Default runs the live checks; --selftest also calibrates them with mutations.
 
 set -u
 
 TESTS_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$TESTS_DIR/.." && pwd)
+SELFTEST=0
+if [ "${1:-}" = "--selftest" ]; then SELFTEST=1; shift; fi
 CLASSIFIER="${1:-$TESTS_DIR/lsan_classify.sh}"
 CORPUS="$TESTS_DIR/fixtures/lsan_classify"
 
@@ -204,9 +207,10 @@ fi
 #             file, so a rotted sed cannot masquerade as a successful probe.
 #   SURVIVED— mutant ran and the corpus stayed green; the gate gates nothing
 # ---------------------------------------------------------------------------
-echo "[lsan-classify] mutation"
 MUTANT_DIR=$(mktemp -d)
 trap 'rm -rf "${MUTANT_DIR:-}"' EXIT
+if [ "$SELFTEST" -eq 1 ]; then
+echo "[lsan-classify] mutation"
 
 run_mutation() {
     local name="$1" sed_prog="$2" must_break="$3" bug="$4"
@@ -364,6 +368,7 @@ if run_corpus "$CONTROL" >/dev/null 2>&1; then
     pass "control: an unmutated copy passes the same corpus"
 else
     fail "control: an UNMUTATED copy failed the corpus — the mutation results above are meaningless"
+fi
 fi
 
 # ---------------------------------------------------------------------------

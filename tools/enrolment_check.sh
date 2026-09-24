@@ -26,7 +26,7 @@ if [ "${1:-}" = "--selftest" ]; then
     ST=$(mktemp -d "${TMPDIR:-/tmp}/eigs_enrol_st.XXXXXX") || exit 2
     trap 'rm -rf "$ST"' EXIT
     mkdir -p "$ST/tests" "$ST/tools" "$ST/.github"
-    cp tests/*.sh tests/*.py "$EXEMPT" "$ST/tests/" && cp tools/*.sh "$ST/tools/" && cp -R .github/workflows "$ST/.github/"
+    cp tests/*.sh tests/*.py "$EXEMPT" "$ST/tests/" && cp tools/*.sh tools/selftests.txt "$ST/tools/" && cp -R .github/workflows "$ST/.github/"
     n=0; bad=0
     case_() {   # case_ <name> <want-rc> <want-substring>
         local out rc; n=$((n + 1))
@@ -92,6 +92,11 @@ function strip(s,   c) {
         else if (w ~ /tools\/[^\/]*\.sh$/) print FILENAME "\ttools/" b
     }
 }' tests/run_all_tests.sh .github/workflows/*.yml tests/*.sh tools/*.sh | sort -u > "$EDGES"
+# Commands in the self-test table are reachable through its driver.
+awk -F '[|]' '$0 !~ /^#/ {
+    n = split($2, a, /[[:space:]]+/)
+    for (i = 1; i <= n; i++) if (a[i] ~ /^tests\/.*\.(sh|py)$/) print "tools/selftests.sh\t" a[i]
+}' tools/selftests.txt >> "$EDGES"
 REACHED=$(awk -F'\t' '{ adj[$1] = adj[$1] " " $2 }
     END { q[1] = "tests/run_all_tests.sh"; n = 1
           for (f in adj) if (f ~ /^\.github\//) q[++n] = f

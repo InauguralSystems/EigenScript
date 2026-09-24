@@ -1,0 +1,54 @@
+# Gate self-tests (#1275): trigger globs | timeout SECONDS command | optional JSON pins.
+# Globs match repository-relative paths (including /); include fixtures and sourced helpers.
+# Bounds are measured locally with margin; command timeout rc 124 is FAIL.
+# Pins come from the former suite/CI callers; floor=true preserves an existing floor.
+# issue-triage.yml keeps its own advisory pins unchanged. Runtime mutation trains
+# (tools/mutants.sh) and builtin fixtures test the product, not a checker. Product inputs a self-test
+# also reads (lib/*, src/*, the binary) are not triggers: they change on most PRs, and nightly --all covers them.
+# The runner-guard calibrations [99c]/[99d] stay in the suite until the runner is split (#1275 plan, step 3).
+bench/check_regression.sh bench/scalar_loop.eigs src/* lib/* Makefile VERSION | timeout 30 bash bench/check_regression.sh --selftest
+tests/http_readiness.py tests/test_http_readiness.sh | timeout 60 python3 tests/http_readiness.py --selftest | [{"pattern":"PASS:","count":510},{"pattern":"^HTTP_READINESS_SELFTEST: 510 passed, 0 failed$","count":1},{"pattern":"FAIL:","count":0}]
+tests/test_arming_mt.sh tests/arming_mt_fixtures/* | timeout 30 bash tests/test_arming_mt.sh --selftest | [{"pattern":"  PASS:","count":5},{"pattern":"  FAIL:","count":0}]
+tests/test_child_exit.sh tests/run_all_tests.sh | timeout 30 bash tests/test_child_exit.sh --selftest
+tests/test_dict_keys_mt.sh tests/dict_keys_mt_fixtures/* | timeout 30 bash tests/test_dict_keys_mt.sh --selftest | [{"pattern":"  PASS:","count":8},{"pattern":"  FAIL:","count":0}]
+tests/test_doc_examples.py README.md Makefile VERSION | timeout 30 python3 tests/test_doc_examples.py --selftest | [{"pattern":"  selftest ok:","count":29}]
+tests/test_doc_examples_markers.py tests/test_doc_examples.py tests/lsan_classify.sh | timeout 30 python3 tests/test_doc_examples_markers.py --selftest
+tests/test_handles_mt.sh tests/handles_mt_fixtures/* | timeout 30 bash tests/test_handles_mt.sh --selftest | [{"pattern":"  PASS:","count":11},{"pattern":"  FAIL:","count":0}]
+tests/test_http_rss_growth.sh | timeout 30 bash tests/test_http_rss_growth.sh --selftest
+tests/test_http_slowloris.sh src/* lib/* Makefile VERSION | timeout 90 bash tests/test_http_slowloris.sh --self-test | [{"pattern":"^  PASS: plant ","count":4},{"pattern":"^  FAIL: plant ","count":0}]
+tests/test_loader_mt.sh tests/loader_mt_fixtures/* | timeout 30 bash tests/test_loader_mt.sh --selftest | [{"pattern":"  PASS:","count":6},{"pattern":"  FAIL:","count":0}]
+tests/test_string_scaling.sh | timeout 150 bash tests/test_string_scaling.sh --selftest | [{"pattern":"^== selftest 26 run, 26 passed, 0 failed ==$","count":1}]
+tests/test_trace_mt.sh src/* lib/* Makefile VERSION | timeout 30 bash tests/test_trace_mt.sh --selftest | [{"pattern":"  PASS:","count":6},{"pattern":"  FAIL:","count":0}]
+tools/_derive_variants.py tools/_extract_runcmd.py CLAUDE.md Dockerfile Makefile | timeout 30 python3 tools/_derive_variants.py --selftest
+tools/_extract_runcmd.py | timeout 30 python3 tools/_extract_runcmd.py --selftest
+tools/child_exit_check.sh tests/*.sh | timeout 30 bash tools/child_exit_check.sh --selftest
+tools/ci_tier_check.sh .github/workflows/* .github/required-checks.txt | timeout 30 bash tools/ci_tier_check.sh --selftest
+tools/codspeed_targets_check.sh codspeed.yml .github/workflows/codspeed.yml | timeout 30 bash tools/codspeed_targets_check.sh --selftest
+tools/consumer_acceptance.sh tools/_derive_variants.py tools/_extract_runcmd.py reports/consumer_acceptance/* | timeout 2160 bash tools/consumer_acceptance.sh --self-test
+tools/core_ext_boundary_check.sh src/* Makefile VERSION | timeout 30 bash tools/core_ext_boundary_check.sh --selftest
+tools/docs_claims_check.sh tools/* tests/* bench/* src/* lib/* docs/* .github/* Makefile build.sh install.sh VERSION README.md CLAUDE.md ROADMAP.md CHANGELOG.md | timeout 840 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 40 case\\(s\\) run, 40 passed, 0 failed$","count":1}]
+tools/embed_roads.py tests/embed_roads/* src/* Makefile VERSION | timeout 30 python3 tools/embed_roads.py --selftest
+tools/enrolment_check.sh tests/*.sh tests/*.py tests/enrolment_exemptions.txt tools/*.sh .github/workflows/* tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=4$","count":1}]
+tools/failsoft_classify_check.sh src/*.c src/*.h Makefile | timeout 390 bash tools/failsoft_classify_check.sh --selftest
+tools/fmt_operator_sync_check.sh src/lexer.c src/fmt.c | timeout 30 bash tools/fmt_operator_sync_check.sh --selftest
+tools/gfx_strict_sweep.sh src/ext_gfx.c src/* lib/* Makefile VERSION | timeout 30 bash tools/gfx_strict_sweep.sh --selftest | [{"pattern":"^(?:selftest: [0-9]+ passed, 0 failed.*|  SKIP:.*)$","count":1}]
+tools/issue_labels_check.sh tools/gh_probe.sh | timeout 30 bash tools/issue_labels_check.sh --selftest | [{"pattern":"^SELFTEST: 7 case\\(s\\) run, 7 passed, 0 failed, 0 skipped$","count":1}]
+tools/jit_fleet_bench.sh src/* lib/* Makefile VERSION | timeout 90 bash tools/jit_fleet_bench.sh --selftest
+tools/lint_message_utf8_check.sh tools/lint_source_byte_sweep.py tools/lint_path_fixture.py src/lint.c src/lint_host.c docs/DIAGNOSTICS.md tests/lint_utf8/* src/* lib/* Makefile VERSION | timeout 30 bash tools/lint_message_utf8_check.sh --selftest
+tools/lint_source_byte_sweep.py tools/lint_path_fixture.py src/* lib/* Makefile VERSION | timeout 30 python3 tools/lint_source_byte_sweep.py src/eigenscript --selftest-paths
+tools/obs_marker_check.sh src/vm.h | timeout 30 bash tools/obs_marker_check.sh --selftest
+tools/obs_reader_sync_check.sh src/vm.h src/chunk.c tools/obs_marker_check.sh | timeout 30 bash tools/obs_reader_sync_check.sh --selftest | [{"pattern":"^SELFTEST: ([0-9]+) passed.*$","count":11,"floor":true,"value":true}]
+tools/observer_gate_diff.sh *.eigs | timeout 60 bash tools/observer_gate_diff.sh selftest | [{"pattern":"^SELFTEST: 9 ok, 0 failed \\(of 9\\)$","count":1}]
+tools/pipefail_verdict_check.sh | timeout 30 bash tools/pipefail_verdict_check.sh --selftest | [{"pattern":"^  checks=34 ","count":1}]
+tools/replay_diff.sh src/* lib/* Makefile VERSION | timeout 30 bash tools/replay_diff.sh --selftest | [{"pattern":"  selftest ok:","count":11},{"pattern":"^SELFTEST: all planted faults caught","count":1}]
+tools/road_diff.py tools/road_diff.sh src/* lib/* Makefile VERSION | timeout 30 python3 tools/road_diff.py --selftest
+tools/roadmap_check.sh tools/gh_probe.sh | timeout 30 bash tools/roadmap_check.sh --selftest | [{"pattern":"^SELFTEST: 25 case\\(s\\) run, 25 passed, 0 failed, 0 skipped$","count":1}]
+tools/section_plan.sh tests/* tools/* .github/* docs/* CHANGELOG.md | timeout 1860 bash tools/section_plan.sh --selftest
+tools/stdlib_index_check.sh src/builtins.c docs/BUILTINS.md docs/SPEC.md docs/STDLIB.md | timeout 30 bash tools/stdlib_index_check.sh --selftest
+tools/strict_differential.sh | timeout 30 bash tools/strict_differential.sh --selftest
+tools/vm_operand_width_check.sh src/vm.h src/vm.c src/chunk.c | timeout 30 bash tools/vm_operand_width_check.sh --selftest
+tools/werror_cache_key.sh tools/werror_switch_check.sh .github/workflows/ci.yml Makefile README.md | timeout 30 bash tools/werror_cache_key.sh --selftest
+tools/werror_switch_check.sh *.sh *.c *.h Makefile VERSION lib/* | timeout 3660 bash tools/werror_switch_check.sh --selftest
+tools/workflow_yaml_check.sh | timeout 30 bash tools/workflow_yaml_check.sh --selftest | [{"pattern":"^SELFTEST: 8 case\\(s\\) run, 8 passed, 0 failed, 0 skipped$","count":1,"without_yaml":"^SELFTEST: 8 case\\(s\\) run, 6 passed, 0 failed, 2 skipped$"}]
+tools/portability_parse_check.sh tests/run_all_tests.sh | timeout 30 bash tools/portability_parse_check.sh --selftest | [{"pattern":"^  PASS: portability identity arm, 3/3 synthetic receipts judged correctly", "count":1}]
+tests/test_lsan_classify.sh tests/lsan_classify.sh tests/fixtures/lsan_classify/* tests/test_doc_examples.py tests/run_all_tests.sh | timeout 60 bash tests/test_lsan_classify.sh --selftest | [{"pattern":"^  PASS:","count":22},{"pattern":"^  FAIL:","count":0},{"pattern":"^  SKIP:","count":0}]

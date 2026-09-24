@@ -1386,6 +1386,11 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- Gate self-tests run when their script, fixtures or helpers change, and nightly,
+  through `tools/selftests.sh` and `tools/selftests.txt` (#1275). The suite keeps
+  the live checks; `make precheck` includes the branch's changed self-tests.
+
+
 - **The GitHub-state gates left the test suite (#1275).**
   `tools/issue_labels_check.sh` and `tools/roadmap_check.sh` read live
   repository state, so as suite section `[99zd]` an unrelated issue filed

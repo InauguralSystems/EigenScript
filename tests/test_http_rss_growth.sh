@@ -63,6 +63,80 @@ FAIL=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
 
+median3() { printf '%s\n%s\n%s\n' "$1" "$2" "$3" | sort -n | sed -n 2p; }
+max3()    { printf '%s\n%s\n%s\n' "$1" "$2" "$3" | sort -n | tail -1; }
+
+# Verdict over three consecutive measured batches (kB each), against the
+# threshold of the leg being judged ($1). Echoes the reason and returns
+# 0 = clean, 1 = leak. Kept as a pure function of the four numbers so it can
+# be self-tested against planted faults below without a server.
+leak_verdict() {
+    local thr="$1" g1="$2" g2="$3" g3="$4" med hi
+    med=$(median3 "$g1" "$g2" "$g3")
+    hi=$(max3 "$g1" "$g2" "$g3")
+    if [ "$med" -gt "$thr" ]; then
+        echo "leaked ${med} kB over ${MEASURE} reqs ($(( med * 1024 / MEASURE )) B/req; threshold ${thr} kB; batches ${g1}/${g2}/${g3} kB — the median batch grew, so this is a leak, not a one-off step)"
+        return 1
+    fi
+    if [ "$hi" -gt "$thr" ]; then
+        echo "steady-state growth ${med} kB over ${MEASURE} reqs (<= ${thr} kB; batches ${g1}/${g2}/${g3} kB — the ${hi} kB batch is one-off startup growth, absorbed by the median)"
+    else
+        echo "steady-state growth ${med} kB over ${MEASURE} reqs (<= ${thr} kB; batches ${g1}/${g2}/${g3} kB)"
+    fi
+    return 0
+}
+
+# The verdict calibration runs independently of the live HTTP workload.
+if [ "${1:-}" = --selftest ]; then
+    MEASURE=2000
+    # Self-test the verdict against planted faults, in BOTH directions and on BOTH
+    # legs. A gate is only evidence if a real fault turns it red and a known
+    # non-fault does not, and neither half can be checked by watching it pass on a
+    # healthy binary: #765 shipped a rule that was green here and false-failed CI
+    # within a day. These are the real numbers — the two leak rates this gate was
+    # built to catch, the one-off step that produced run 30439602640's phantom
+    # leak, and the non-arena mmap class that is the heap leg's documented blind
+    # spot (#770).
+    st_fail=0
+    expect_verdict() { # $1 = threshold kB, $2 = clean|leak, $3 = label, $4 $5 $6 = batch kB
+        local thr="$1" want="$2" label="$3" got
+        if leak_verdict "$thr" "$4" "$5" "$6" >/dev/null 2>&1; then got=clean; else got=leak; fi
+        if [ "$got" != "$want" ]; then
+            echo "    verdict self-test: '$label' (thr $thr, ${4}/${5}/${6} kB) expected $want, got $got"
+            st_fail=$((st_fail + 1))
+        fi
+    }
+    # Heap leg (threshold 64 kB): the arena class it must catch, and the one-off
+    # growth it must absorb.
+    expect_verdict 64 clean "flat, leak-free"                          0 0 0
+    expect_verdict 64 clean "sub-threshold page jitter"                8 0 16
+    expect_verdict 64 clean "arena step in batch 1"                 2856 0 0
+    expect_verdict 64 clean "arena step in batch 2 (run 30439602640)"  0 2876 0
+    expect_verdict 64 clean "arena step in batch 3"                   0 0 2668
+    expect_verdict 64 clean "RSS can fall as well as rise"         -1204 0 1204
+    expect_verdict 64 leak  "#731 shared_incr, 160 B/req"            312 312 312
+    expect_verdict 64 leak  "#752 authed route, 136 B/req"           265 265 265
+    expect_verdict 64 leak  "a real leak WITH a step on top"         312 3000 312
+    expect_verdict 64 leak  "leak at 1472 B/req sustained"          2876 2876 2876
+    # RSS leg (threshold 4096 kB): the non-arena class it must catch, and the
+    # arena-step class it must NOT catch even when steps land in two batches.
+    expect_verdict 4096 clean "arena steps in two batches"          2876 2876 0
+    expect_verdict 4096 clean "sub-threshold RSS drift"             1000 2000 500
+    expect_verdict 4096 clean "single arena step"                      0 2856 0
+    expect_verdict 4096 leak  "512 kB/req direct-mmap leak (#770)"  1024000 1024000 1024000
+    expect_verdict 4096 leak  "mmap leak with an arena step on top" 1024000 2876 1024000
+    if [ "$st_fail" -eq 0 ]; then
+        ok "verdict self-test: 15 planted faults classified correctly (9 clean, 6 leak)"
+    else
+        fail "verdict self-test: $st_fail planted fault(s) misclassified" \
+             "the gate's decision rule is wrong — its verdicts above are not evidence"
+    fi
+
+    echo "HTTP_RSS_SELFTEST: $PASS passed, $FAIL failed"
+    [ "$FAIL" -eq 0 ]
+    exit $?
+fi
+
 if ! command -v curl >/dev/null 2>&1; then
     echo "  SKIP: curl not available"
     echo "HTTP_RSS: 0 passed, 0 failed (skipped)"
@@ -213,29 +287,6 @@ check_identity() { # $1 = label, $2 = port, $3 = server pid
 # byte. That matters: this is the only instrument that sees per-request leaks
 # at all (LSan never runs in a signal-killed server), so a gate that cries
 # wolf gets quietened, and then the class goes unwatched.
-
-median3() { printf '%s\n%s\n%s\n' "$1" "$2" "$3" | sort -n | sed -n 2p; }
-max3()    { printf '%s\n%s\n%s\n' "$1" "$2" "$3" | sort -n | tail -1; }
-
-# Verdict over three consecutive measured batches (kB each), against the
-# threshold of the leg being judged ($1). Echoes the reason and returns
-# 0 = clean, 1 = leak. Kept as a pure function of the four numbers so it can
-# be self-tested against planted faults below without a server.
-leak_verdict() {
-    local thr="$1" g1="$2" g2="$3" g3="$4" med hi
-    med=$(median3 "$g1" "$g2" "$g3")
-    hi=$(max3 "$g1" "$g2" "$g3")
-    if [ "$med" -gt "$thr" ]; then
-        echo "leaked ${med} kB over ${MEASURE} reqs ($(( med * 1024 / MEASURE )) B/req; threshold ${thr} kB; batches ${g1}/${g2}/${g3} kB — the median batch grew, so this is a leak, not a one-off step)"
-        return 1
-    fi
-    if [ "$hi" -gt "$thr" ]; then
-        echo "steady-state growth ${med} kB over ${MEASURE} reqs (<= ${thr} kB; batches ${g1}/${g2}/${g3} kB — the ${hi} kB batch is one-off startup growth, absorbed by the median)"
-    else
-        echo "steady-state growth ${med} kB over ${MEASURE} reqs (<= ${thr} kB; batches ${g1}/${g2}/${g3} kB)"
-    fi
-    return 0
-}
 
 # Pick a listen port BELOW the kernel's ephemeral range (#760, ported from
 # test_http_server.sh). The old `(RANDOM % 10000) + 51000/52000` windows sit
@@ -394,48 +445,6 @@ kill "$AUTH_PID" 2>/dev/null || true
 wait "$AUTH_PID" 2>/dev/null || true
 rm -f "$AUTH_SRV" "/tmp/eigs_rss_auth_$$.log"
 
-# Self-test the verdict against planted faults, in BOTH directions and on BOTH
-# legs. A gate is only evidence if a real fault turns it red and a known
-# non-fault does not, and neither half can be checked by watching it pass on a
-# healthy binary: #765 shipped a rule that was green here and false-failed CI
-# within a day. These are the real numbers — the two leak rates this gate was
-# built to catch, the one-off step that produced run 30439602640's phantom
-# leak, and the non-arena mmap class that is the heap leg's documented blind
-# spot (#770).
-st_fail=0
-expect_verdict() { # $1 = threshold kB, $2 = clean|leak, $3 = label, $4 $5 $6 = batch kB
-    local thr="$1" want="$2" label="$3" got
-    if leak_verdict "$thr" "$4" "$5" "$6" >/dev/null 2>&1; then got=clean; else got=leak; fi
-    if [ "$got" != "$want" ]; then
-        echo "    verdict self-test: '$label' (thr $thr, ${4}/${5}/${6} kB) expected $want, got $got"
-        st_fail=$((st_fail + 1))
-    fi
-}
-# Heap leg (threshold 64 kB): the arena class it must catch, and the one-off
-# growth it must absorb.
-expect_verdict 64 clean "flat, leak-free"                          0 0 0
-expect_verdict 64 clean "sub-threshold page jitter"                8 0 16
-expect_verdict 64 clean "arena step in batch 1"                 2856 0 0
-expect_verdict 64 clean "arena step in batch 2 (run 30439602640)"  0 2876 0
-expect_verdict 64 clean "arena step in batch 3"                   0 0 2668
-expect_verdict 64 clean "RSS can fall as well as rise"         -1204 0 1204
-expect_verdict 64 leak  "#731 shared_incr, 160 B/req"            312 312 312
-expect_verdict 64 leak  "#752 authed route, 136 B/req"           265 265 265
-expect_verdict 64 leak  "a real leak WITH a step on top"         312 3000 312
-expect_verdict 64 leak  "leak at 1472 B/req sustained"          2876 2876 2876
-# RSS leg (threshold 4096 kB): the non-arena class it must catch, and the
-# arena-step class it must NOT catch even when steps land in two batches.
-expect_verdict 4096 clean "arena steps in two batches"          2876 2876 0
-expect_verdict 4096 clean "sub-threshold RSS drift"             1000 2000 500
-expect_verdict 4096 clean "single arena step"                      0 2856 0
-expect_verdict 4096 leak  "512 kB/req direct-mmap leak (#770)"  1024000 1024000 1024000
-expect_verdict 4096 leak  "mmap leak with an arena step on top" 1024000 2876 1024000
-if [ "$st_fail" -eq 0 ]; then
-    ok "verdict self-test: 15 planted faults classified correctly (9 clean, 6 leak)"
-else
-    fail "verdict self-test: $st_fail planted fault(s) misclassified" \
-         "the gate's decision rule is wrong — its verdicts above are not evidence"
-fi
 
 echo "HTTP_RSS: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

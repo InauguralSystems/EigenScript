@@ -276,12 +276,10 @@ jobs:
         run: |
           set -euo pipefail
           echo "werror audit: CACHE MISS on werror-audit-v1-${{ steps.key.outputs.key }} — running the audit"
-          # The planted-fault self-test (proving the classifier is not
-          # vacuously green) and the dry-run audit. `--no-headers`: the
+          # The live dry-run audit. `--no-headers`: the
           # generated-header probes ran UNCACHED in the step above, because
           # their verdict moves with C-source content that this cache key
           # deliberately does not hash.
-          bash tools/werror_switch_check.sh --selftest
           bash tools/werror_switch_check.sh --no-headers
           {
             echo "werror audit passed"
@@ -299,16 +297,12 @@ jobs:
           path: .werror-audit-ok
           key: werror-audit-v1-${{ steps.key.outputs.key }}
 
-  # The new gates in this change are gates, so they get the treatment every
-  # other gate here gets: their planted-fault trains run in CI, on every run,
-  # cheaply. Without this the section-plan derivation and the cache key would
-  # be the only checks in the tree whose "it goes red when it should" claim
-  # rests on a local run.
+  # Calibrate changed gates here; calibrate every gate nightly (#1275).
   gate-selftests:
     name: gate self-tests (section plan + audit cache key)
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: read
@@ -319,22 +313,15 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - if: needs.scope.outputs.code == 'true'
-        name: Build (the section plan runs the suite's own probes)
+        with:
+          fetch-depth: 0
+      - name: Build (the section plan runs the suite's own probes)
         run: ./build.sh
-      - if: needs.scope.outputs.code == 'true'
-        name: Audit cache-key planted-invalidation controls
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          bash tools/werror_cache_key.sh --selftest
       # The contributor precheck's gate list is the only copy (#1264): CI runs
       # the same script, so `make precheck` cannot drift from CI.
       - if: needs.scope.outputs.code == 'true'
         name: Contributor precheck (tools/precheck.sh)
-        run: bash tools/precheck.sh
-      - if: needs.scope.outputs.code == 'true'
-        name: Section-plan derivation controls
-        run: bash tools/section_plan.sh --selftest
+        run: PRECHECK_SELFTESTS=0 bash tools/precheck.sh
       - if: needs.scope.outputs.code == 'true'
         name: The derived plans, printed (the numbers a reviewer checks)
         run: |
@@ -342,32 +329,7 @@ jobs:
           bash tools/section_plan.sh --skip-audit
           bash tools/section_plan.sh --probes
           bash tools/section_plan.sh --print-section-plan core
-      # Measured 211s / 239s / 273s on this 2-core/4 GB box (n=3) after the
-      # M1b round-3 plants; round 4 (86 plants, 53 transverse rows) measured
-      # 455 s / 326 s / 423 s; round 5 (93 plants, 58 transverse rows)
-      # measures SELFTEST_SECONDS below on the dev box with other agents
-      # running. The PATH farm now writes one two-line exec wrapper per
-      # inherited executable instead of one symlink: 2144 wrappers cost
-      # 0.57 s and 86 KB (8.6 MB of 4 KiB blocks) per harness RUN, measured
-      # -- with $(printf ...) instead of printf -v it was 4.5 s. Under 8
-      # minutes,
-      # so this stays on the PR job rather than splitting to nightly.yml. As
-      # root in this container the WHOLE self-test re-runs itself as an
-      # unprivileged user (a byte-identical copy of its tool tree in a drop
-      # root), or both unwritable plants SKIP by name and are counted in
-      # `skipped=2`.
-      # The extractor's YAML oracle is a FLOOR, and until round 9 it skipped
-      # on this lane: the image had no PyYAML, `--selftest` took the
-      # all-or-nothing SKIP arm and printed PASS, and a planted `runCmd` key
-      # rename was GREEN here (critic r8 ledger 3, measured on job
-      # 106492225359). `.devcontainer/Dockerfile` now installs python3-yaml,
-      # so this step is a no-op on an image built from THIS PR. It is not a
-      # no-op on a FORK PR, which runs in the rolling `ci-main` image built
-      # before the Dockerfile change -- and the harness sets
-      # CA_SELFTEST_REQUIRE_YAML=1 unconditionally, so a missing PyYAML is a
-      # named FAIL, never a quiet skip. mechanical-gates s37.
-      - if: needs.scope.outputs.code == 'true'
-        name: PyYAML for the runCmd extractor's YAML oracle
+      - name: Self-test prerequisites (PyYAML and Cachegrind)
         run: |
           if python3 -c 'import yaml' 2>/dev/null; then
             echo "PyYAML already present: $(python3 -c 'import yaml; print(yaml.__version__)')"
@@ -375,20 +337,24 @@ jobs:
             apt-get update && apt-get install -y --no-install-recommends python3-yaml
           fi
           python3 -c 'import yaml; print("yaml", yaml.__version__)'
+          if ! command -v valgrind >/dev/null; then
+            apt-get update && apt-get install -y --no-install-recommends valgrind
+          fi
       # Platform tiers (#1264): every name in .github/required-checks.txt is
       # produced by one job that reports on pull_request AND merge_group, no
       # required path runs work only on push, and every job in THIS file is
-      # required or a worker of a required aggregator. ~1 s + ~10 s of planted
-      # faults. Needs the PyYAML installed above; a missing loader is exit 2
+      # required or a worker of a required aggregator. Needs the PyYAML
+      # installed above; a missing loader is exit 2
       # (instrument error), never a pass.
       - if: needs.scope.outputs.code == 'true'
         name: Platform tiers — required-checks.txt vs the workflows (#1264)
         run: |
           bash tools/ci_tier_check.sh
-          bash tools/ci_tier_check.sh --selftest
-      - if: needs.scope.outputs.code == 'true'
-        name: Consumer-acceptance harness self-test (~7 min)
-        run: bash tools/consumer_acceptance.sh --self-test
+      - name: Self-tests for changed gates
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          base='${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
+          bash tools/selftests.sh --changed "$base"
       - if: needs.scope.outputs.code == 'true'
         name: Consumer-acceptance plan against fixture inventory
         run: |
@@ -705,8 +671,8 @@ jobs:
         run: bash tests/test_asan_gfx.sh --toolchain-only
 
       # PR lane: [99i] is owned by the `werror audit` job. Measured on the dev
-      # box, that one section is the audit (6 min) plus its planted-fault
-      # self-test (11 min) — the single largest block of this leg's 15 min.
+      # box, that live audit takes about 6 min. Its calibration runs through
+      # the changed-gate driver and nightly.
       # Its verdict cannot differ by platform anyway: the only conditional in
       # the Makefile is LDFLAGS, a LINK flag, and the audit reads COMPILE
       # invocations. On the main lane (queue, push) it still runs here in full, so the
@@ -1585,9 +1551,6 @@ jobs:
           git worktree add /tmp/main-ref "$base"
           ( cd /tmp/main-ref && ./build.sh )
 
-      - if: needs.scope.outputs.code == 'true'
-        name: Gate self-test (a 2x pessimization must fail the gate)
-        run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --selftest
 
       - if: needs.scope.outputs.code == 'true'
         name: Regression gate — Ir of this commit vs its baseline

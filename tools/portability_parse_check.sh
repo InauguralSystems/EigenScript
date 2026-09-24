@@ -52,6 +52,60 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" || { echo "portability-parse: ABORTED: cannot cd to '$ROOT'" >&2; exit 1; }
 
+# Calibrate the suite's real receipt classifier without running the suite.
+if [ "${1:-}" = "--selftest" ]; then
+    PASS=0; FAIL=0
+    eval "$(sed -n '/^PORT_OLD_MAJOR_MAX=/p; /^port_identity_verdict() {/,/^}/p' tests/run_all_tests.sh)"
+    # THE IDENTITY ARM'S OWN PLANTED FAULTS. The arm above fires only when the
+    # gate misbehaves, so on a healthy tree it has never been observed to work —
+    # which is the definition of a gate nobody has shown to be a gate
+    # (mechanical-gates §19). These three synthetic receipts drive the SAME
+    # function the real verdict used, and both halves are present: a receipt that
+    # must be refused, and one that must be accepted (§15).
+    #
+    #   1. bash 5 wearing a bash 3.2 BANNER  -> refused. Round 6 accepted this,
+    #      because it read the banner and not the fact.
+    #   2. a real bash 3.2 with a VENDOR banner -> accepted. Round 6 refused this.
+    #   3. a completed audit with no identity line at all -> refused.
+    PORT_CTRL_OK=0
+    PORT_CTRL_WHY=""
+    PORT_SYNTH_5="portability-parse: oracle=/bin/bash (GNU bash, version 3.2.57(1)-release (x86_64-apple-darwin23))
+portability-parse: oracle-major=5
+portability: OK: files=128 checked=128 parse-failures=0; gates-run=5/5 run-failures=0"
+    PORT_SYNTH_3="portability-parse: oracle=/opt/vendor/bash (Custom Bash 3.2.0, same GNU Bash 3.2 engine)
+portability-parse: oracle-major=3
+portability: OK: files=128 checked=128 parse-failures=0; gates-run=5/5 run-failures=0"
+    PORT_SYNTH_NONE="portability-parse: oracle=/bin/bash (GNU bash, version 3.2.57(1)-release)
+portability: OK: files=128 checked=128 parse-failures=0; gates-run=5/5 run-failures=0"
+    port_identity_verdict "$PORT_SYNTH_5"
+    if [ -n "$PORT_IDENTITY_VERDICT" ]; then
+        PORT_CTRL_OK=$((PORT_CTRL_OK + 1))
+    else
+        PORT_CTRL_WHY="$PORT_CTRL_WHY [a bash-5 oracle wearing a bash 3.2 banner was ACCEPTED]"
+    fi
+    port_identity_verdict "$PORT_SYNTH_3"
+    if [ -z "$PORT_IDENTITY_VERDICT" ]; then
+        PORT_CTRL_OK=$((PORT_CTRL_OK + 1))
+    else
+        PORT_CTRL_WHY="$PORT_CTRL_WHY [a real bash 3.2 with a vendor banner was REFUSED: $PORT_IDENTITY_VERDICT]"
+    fi
+    port_identity_verdict "$PORT_SYNTH_NONE"
+    if [ -n "$PORT_IDENTITY_VERDICT" ]; then
+        PORT_CTRL_OK=$((PORT_CTRL_OK + 1))
+    else
+        PORT_CTRL_WHY="$PORT_CTRL_WHY [a completed audit with no oracle-major line was ACCEPTED]"
+    fi
+    if [ "$PORT_CTRL_OK" -eq 3 ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: portability identity arm, 3/3 synthetic receipts judged correctly (bash-5-in-a-3.2-banner refused, vendor-bannered 3.2 accepted, identity-less audit refused)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: portability identity arm judged $PORT_CTRL_OK/3 synthetic receipts correctly —$PORT_CTRL_WHY"
+    fi
+    [ "$FAIL" -eq 0 ]
+    exit $?
+fi
+
 # The pinned population. A tracked-file count that drops is a shrinking audit,
 # which is the failure this whole class of gate exists to refuse; a floor, not
 # an exact pin, because adding a script must not require editing this line.
@@ -65,21 +119,9 @@ FILE_FLOOR=110
 # printing OK while executing nothing, which is the exact failure the parse
 # half was written to refuse (mechanical-gates §121).
 #
-# docs_claims_check.sh --selftest is deliberately NOT here. Measured: ~3 min
-# under 3.2 against ~17 s for the gate itself, and what those 3 minutes add is
-# the SELFTEST DRIVER's own body under 3.2 — its children are spawned through
-# `bash`, the modern one, so the extra coverage is one file's second half.
-# Set PORTABILITY_RUN_SELFTEST=1 to include it when that half is what changed.
-#
-# tests/test_string_scaling.sh --selftest IS here, and it is the only tests/
-# entry: it is a gate whose own header cites three CI rounds lost to BSD
-# `mktemp` on a sibling, it runs entirely on stubs, and 23 of its
-# cases are string-manipulation-heavy bash (`${case%%:*}` splitting, awk
-# ratios) -- exactly the shape 3.2 breaks on. The GATE half is not here: it
-# needs a built runtime and measures wall-clock, which is not what this audit
-# is asking about.
-RUN_TARGETS="tools/docs_claims_check.sh tools/child_exit_check.sh tools/suite_label_check.sh tools/doc_drift_check.sh tests/test_string_scaling.sh|--selftest"
-RUN_TARGETS_DECLARED=5
+# Checker calibration belongs to tools/selftests.sh; this audits live gates.
+RUN_TARGETS="tools/docs_claims_check.sh tools/child_exit_check.sh tools/suite_label_check.sh tools/doc_drift_check.sh"
+RUN_TARGETS_DECLARED=4
 
 # Candidates, oldest first. $PORTABILITY_BASH overrides for a test.
 #
@@ -201,9 +243,7 @@ fi
 # one place a `<( … )`-class runtime break can be seen before CI sees it.
 # ---------------------------------------------------------------------------
 run_list="$RUN_TARGETS"
-[ -n "${PORTABILITY_RUN_SELFTEST:-}" ] && run_list="$run_list tools/docs_claims_check.sh|--selftest"
 run_declared=$RUN_TARGETS_DECLARED
-[ -n "${PORTABILITY_RUN_SELFTEST:-}" ] && run_declared=$((run_declared + 1))
 
 run_done=0
 run_bad=0
