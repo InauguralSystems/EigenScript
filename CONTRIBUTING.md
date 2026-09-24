@@ -18,7 +18,7 @@ Requires only `gcc` — no external dependencies.
 1. Fork the repository
 2. Create a branch from `main`
 3. Make your changes
-4. Run `make precheck` — the static gates CI runs, in under a minute, no build
+4. Run `make precheck` — the static gates CI runs and self-tests for gates changed against `origin/main`, no suite
    needed. It catches pipefail verdicts, section-label clashes, child-exit
    accounting, the shard plan, and a new test that no suite section runs.
 5. Run the test suite: `cd tests && bash run_all_tests.sh`

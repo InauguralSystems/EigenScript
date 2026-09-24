@@ -8,6 +8,7 @@ name: nightly
 # catching, but they can lag a day; they do not need to gate a pull request.
 #
 # What runs here:
+#   * all gate self-tests (changed gates also run on pull requests)
 #   * macos-15-intel, the full suite (the 35-min job, off the PR lane)
 #   * valgrind over the WHOLE runnable .eigs corpus, not the fixed smoke spread
 #     the PR lane runs
@@ -122,9 +123,24 @@ jobs:
       - name: Valgrind memcheck, full corpus
         run: cd tests && bash valgrind_smoke.sh --full
 
+  gate-selftests:
+    name: nightly / gate self-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Self-test prerequisites
+        run: sudo apt-get update && sudo apt-get install -y valgrind python3-yaml time
+      - name: Build
+        run: make
+      - name: Calibrate all gates
+        run: bash tools/selftests.sh --all
+
   report:
     name: nightly / tracking issue on failure
-    needs: [macos-intel, valgrind-full]
+    needs: [macos-intel, valgrind-full, gate-selftests]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -144,12 +160,14 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           MAC_RESULT: ${{ needs.macos-intel.result }}
           VG_RESULT: ${{ needs.valgrind-full.result }}
+          ST_RESULT: ${{ needs.gate-selftests.result }}
         run: |
           set -euo pipefail
           TITLE="nightly lane: macos-15-intel / valgrind-full failures"
           failed=""
           [ "$MAC_RESULT" = success ] || failed="$failed macos-15-intel($MAC_RESULT)"
           [ "$VG_RESULT" = success ] || failed="$failed valgrind-full($VG_RESULT)"
+          [ "$ST_RESULT" = success ] || failed="$failed gate-selftests($ST_RESULT)"
 
           # Find the tracking issue by TITLE, across open AND closed, and not
           # only in the newest 50 open issues: a thread that was closed last
@@ -163,10 +181,10 @@ jobs:
                   --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
 
           if [ -z "$failed" ]; then
-            echo "nightly green (macos-15-intel=$MAC_RESULT valgrind-full=$VG_RESULT)"
+            echo "nightly green (macos-15-intel=$MAC_RESULT valgrind-full=$VG_RESULT gate-selftests=$ST_RESULT)"
             if [ -n "$num" ]; then
               gh issue comment "$num" --repo "$REPO" \
-                --body "Nightly GREEN again: macos-15-intel=$MAC_RESULT, valgrind-full=$VG_RESULT. Run: $RUN_URL"
+                --body "Nightly GREEN again: macos-15-intel=$MAC_RESULT, valgrind-full=$VG_RESULT, gate-selftests=$ST_RESULT. Run: $RUN_URL"
             fi
             exit 0
           fi
@@ -175,6 +193,7 @@ jobs:
 
           macos-15-intel: \`$MAC_RESULT\`
           valgrind-full: \`$VG_RESULT\`
+          gate-selftests: \`$ST_RESULT\`
 
           Run: $RUN_URL
 
@@ -209,7 +228,7 @@ jobs:
 
       # The report step must not be the thing that turns a red nightly green.
       - name: Fail the run when a nightly lane failed
-        if: needs.macos-intel.result != 'success' || needs.valgrind-full.result != 'success'
+        if: needs.macos-intel.result != 'success' || needs.valgrind-full.result != 'success' || needs.gate-selftests.result != 'success'
         run: |
-          echo "macos-intel=${{ needs.macos-intel.result }} valgrind-full=${{ needs.valgrind-full.result }}"
+          echo "macos-intel=${{ needs.macos-intel.result }} valgrind-full=${{ needs.valgrind-full.result }} gate-selftests=${{ needs.gate-selftests.result }}"
           exit 1

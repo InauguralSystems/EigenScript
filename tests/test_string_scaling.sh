@@ -233,6 +233,7 @@ done
 # BSD mktemp has no -p and its -t takes a prefix, not a template, so a full
 # path template is the only portable spelling (macOS runners ship BSD
 # userland; this cost three CI rounds on a sibling gate).
+mkdir -p "$ROOT/build" || fail "cannot make $ROOT/build"   # absent after build.sh (only make creates it)
 WORK=$(mktemp -d "$ROOT/build/strscale.XXXXXX") || fail "cannot make a scratch dir"
 trap 'rm -rf "$WORK"' EXIT
 

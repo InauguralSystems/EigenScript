@@ -67,6 +67,6 @@ NAMES|ROADMAP.md|6
 NUMBERS|docs/CI.md|2
 # PATHS 68 -> 65 with #1275: the issue-labels/roadmap section dropped its
 # suite-caller and token-lane paragraphs when those gates left the suite.
-PATHS|docs/CI.md|65
+PATHS|docs/CI.md|64
 TARGETS|docs/CI.md|6
 NAMES|docs/CI.md|0

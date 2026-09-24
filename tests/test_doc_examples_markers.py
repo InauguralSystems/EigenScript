@@ -846,4 +846,6 @@ class DocExampleMarkerTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--selftest"]:
+        sys.argv.pop()
     unittest.main()

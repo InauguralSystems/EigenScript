@@ -802,7 +802,7 @@ echo ""
 # nonzero exit is a real failure; a machine that cannot verify it cannot be told
 # the suite is green. Bump the count only when a check is deliberately added or
 # removed.
-CLS_EXPECTED_CHECKS=22
+CLS_EXPECTED_CHECKS=6
 CLS_OUTPUT=$(bash "$TESTS_DIR/test_lsan_classify.sh" 2>&1)
 CLS_RC=$?
 CLS_PASS=$(echo "$CLS_OUTPUT" | grep -c "^  PASS:" || true)
@@ -2461,25 +2461,19 @@ echo ""
 # "at least one check passed" is satisfied by a gate reduced to a single echo.
 echo "[42h] Trace tape MT (#1142/#1143)"
 TMT_EXPECTED=17
-TMT_SELFTEST_EXPECTED=6
 TMT_OUTPUT=$(bash "$TESTS_DIR/test_trace_mt.sh" 2>&1); TMT_RC=$?
 TMT_PASS=$(echo "$TMT_OUTPUT" | grep -c "  PASS:" || true)
 TMT_FAIL=$(echo "$TMT_OUTPUT" | grep -c "  FAIL:" || true)
-TMT_ST_OUTPUT=$(bash "$TESTS_DIR/test_trace_mt.sh" --selftest 2>&1); TMT_ST_RC=$?
-TMT_ST_PASS=$(echo "$TMT_ST_OUTPUT" | grep -c "  PASS:" || true)
-TMT_ST_FAIL=$(echo "$TMT_ST_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$TMT_RC" -eq 0 ] && [ "$TMT_FAIL" -eq 0 ] && [ "$TMT_PASS" -eq "$TMT_EXPECTED" ] \
-   && [ "$TMT_ST_RC" -eq 0 ] && [ "$TMT_ST_FAIL" -eq 0 ] && [ "$TMT_ST_PASS" -eq "$TMT_SELFTEST_EXPECTED" ]; then
-    TOTAL=$((TOTAL + TMT_PASS + TMT_ST_PASS))
-    PASS=$((PASS + TMT_PASS + TMT_ST_PASS))
-    echo "  PASS: all $TMT_PASS tape-MT checks + $TMT_ST_PASS selftest"
+if [ "$TMT_RC" -eq 0 ] && [ "$TMT_FAIL" -eq 0 ] && [ "$TMT_PASS" -eq "$TMT_EXPECTED" ]; then
+    TOTAL=$((TOTAL + TMT_PASS))
+    PASS=$((PASS + TMT_PASS))
+    echo "  PASS: all $TMT_PASS tape-MT checks"
 else
-    TOTAL=$((TOTAL + TMT_PASS + TMT_FAIL + TMT_ST_PASS + TMT_ST_FAIL + 1))
-    PASS=$((PASS + TMT_PASS + TMT_ST_PASS))
-    FAIL=$((FAIL + TMT_FAIL + TMT_ST_FAIL + 1))
-    echo "  FAIL: tape-MT (live rc=$TMT_RC $TMT_PASS/$TMT_EXPECTED, selftest rc=$TMT_ST_RC $TMT_ST_PASS/$TMT_SELFTEST_EXPECTED)"
+    TOTAL=$((TOTAL + TMT_PASS + TMT_FAIL + 1))
+    PASS=$((PASS + TMT_PASS))
+    FAIL=$((FAIL + TMT_FAIL + 1))
+    echo "  FAIL: tape-MT (live rc=$TMT_RC $TMT_PASS/$TMT_EXPECTED)"
     echo "$TMT_OUTPUT" | grep "FAIL:" | head -5
-    echo "$TMT_ST_OUTPUT" | grep "FAIL:" | head -5
 fi
 echo ""
 
@@ -2488,25 +2482,19 @@ echo ""
 # satisfied by a gate reduced to a single echo (mechanical-gates §37).
 echo "[42i] Dict keys across threads (#1141)"
 DKM_EXPECTED=19
-DKM_SELFTEST_EXPECTED=8
 DKM_OUTPUT=$(bash "$TESTS_DIR/test_dict_keys_mt.sh" 2>&1); DKM_RC=$?
 DKM_PASS=$(echo "$DKM_OUTPUT" | grep -c "  PASS:" || true)
 DKM_FAIL=$(echo "$DKM_OUTPUT" | grep -c "  FAIL:" || true)
-DKM_ST_OUTPUT=$(bash "$TESTS_DIR/test_dict_keys_mt.sh" --selftest 2>&1); DKM_ST_RC=$?
-DKM_ST_PASS=$(echo "$DKM_ST_OUTPUT" | grep -c "  PASS:" || true)
-DKM_ST_FAIL=$(echo "$DKM_ST_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$DKM_RC" -eq 0 ] && [ "$DKM_FAIL" -eq 0 ] && [ "$DKM_PASS" -eq "$DKM_EXPECTED" ] \
-   && [ "$DKM_ST_RC" -eq 0 ] && [ "$DKM_ST_FAIL" -eq 0 ] && [ "$DKM_ST_PASS" -eq "$DKM_SELFTEST_EXPECTED" ]; then
-    TOTAL=$((TOTAL + DKM_PASS + DKM_ST_PASS))
-    PASS=$((PASS + DKM_PASS + DKM_ST_PASS))
-    echo "  PASS: all $DKM_PASS dict-key-MT checks + $DKM_ST_PASS selftest"
+if [ "$DKM_RC" -eq 0 ] && [ "$DKM_FAIL" -eq 0 ] && [ "$DKM_PASS" -eq "$DKM_EXPECTED" ]; then
+    TOTAL=$((TOTAL + DKM_PASS))
+    PASS=$((PASS + DKM_PASS))
+    echo "  PASS: all $DKM_PASS dict-key-MT checks"
 else
-    TOTAL=$((TOTAL + DKM_PASS + DKM_FAIL + DKM_ST_PASS + DKM_ST_FAIL + 1))
-    PASS=$((PASS + DKM_PASS + DKM_ST_PASS))
-    FAIL=$((FAIL + DKM_FAIL + DKM_ST_FAIL + 1))
-    echo "  FAIL: dict-key-MT (live rc=$DKM_RC $DKM_PASS/$DKM_EXPECTED, selftest rc=$DKM_ST_RC $DKM_ST_PASS/$DKM_SELFTEST_EXPECTED)"
+    TOTAL=$((TOTAL + DKM_PASS + DKM_FAIL + 1))
+    PASS=$((PASS + DKM_PASS))
+    FAIL=$((FAIL + DKM_FAIL + 1))
+    echo "  FAIL: dict-key-MT (live rc=$DKM_RC $DKM_PASS/$DKM_EXPECTED)"
     echo "$DKM_OUTPUT" | grep "FAIL:" | head -5
-    echo "$DKM_ST_OUTPUT" | grep "FAIL:" | head -5
 fi
 echo ""
 
@@ -2514,25 +2502,19 @@ echo ""
 # reason [42i] pins them.
 echo "[42j] Loader under concurrency (#1144)"
 LMT_EXPECTED=15
-LMT_SELFTEST_EXPECTED=6
 LMT_OUTPUT=$(bash "$TESTS_DIR/test_loader_mt.sh" 2>&1); LMT_RC=$?
 LMT_PASS=$(echo "$LMT_OUTPUT" | grep -c "  PASS:" || true)
 LMT_FAIL=$(echo "$LMT_OUTPUT" | grep -c "  FAIL:" || true)
-LMT_ST_OUTPUT=$(bash "$TESTS_DIR/test_loader_mt.sh" --selftest 2>&1); LMT_ST_RC=$?
-LMT_ST_PASS=$(echo "$LMT_ST_OUTPUT" | grep -c "  PASS:" || true)
-LMT_ST_FAIL=$(echo "$LMT_ST_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$LMT_RC" -eq 0 ] && [ "$LMT_FAIL" -eq 0 ] && [ "$LMT_PASS" -eq "$LMT_EXPECTED" ] \
-   && [ "$LMT_ST_RC" -eq 0 ] && [ "$LMT_ST_FAIL" -eq 0 ] && [ "$LMT_ST_PASS" -eq "$LMT_SELFTEST_EXPECTED" ]; then
-    TOTAL=$((TOTAL + LMT_PASS + LMT_ST_PASS))
-    PASS=$((PASS + LMT_PASS + LMT_ST_PASS))
-    echo "  PASS: all $LMT_PASS loader-MT checks + $LMT_ST_PASS selftest"
+if [ "$LMT_RC" -eq 0 ] && [ "$LMT_FAIL" -eq 0 ] && [ "$LMT_PASS" -eq "$LMT_EXPECTED" ]; then
+    TOTAL=$((TOTAL + LMT_PASS))
+    PASS=$((PASS + LMT_PASS))
+    echo "  PASS: all $LMT_PASS loader-MT checks"
 else
-    TOTAL=$((TOTAL + LMT_PASS + LMT_FAIL + LMT_ST_PASS + LMT_ST_FAIL + 1))
-    PASS=$((PASS + LMT_PASS + LMT_ST_PASS))
-    FAIL=$((FAIL + LMT_FAIL + LMT_ST_FAIL + 1))
-    echo "  FAIL: loader-MT (live rc=$LMT_RC $LMT_PASS/$LMT_EXPECTED, selftest rc=$LMT_ST_RC $LMT_ST_PASS/$LMT_SELFTEST_EXPECTED)"
+    TOTAL=$((TOTAL + LMT_PASS + LMT_FAIL + 1))
+    PASS=$((PASS + LMT_PASS))
+    FAIL=$((FAIL + LMT_FAIL + 1))
+    echo "  FAIL: loader-MT (live rc=$LMT_RC $LMT_PASS/$LMT_EXPECTED)"
     echo "$LMT_OUTPUT" | grep "FAIL:" | head -5
-    echo "$LMT_ST_OUTPUT" | grep "FAIL:" | head -5
 fi
 echo ""
 
@@ -2541,25 +2523,19 @@ echo ""
 # widening can reach it). PINNED totals.
 echo "[42k] Observer arming sets under concurrency (#1145)"
 AMT_EXPECTED=9
-AMT_SELFTEST_EXPECTED=5
 AMT_OUTPUT=$(bash "$TESTS_DIR/test_arming_mt.sh" 2>&1); AMT_RC=$?
 AMT_PASS=$(echo "$AMT_OUTPUT" | grep -c "  PASS:" || true)
 AMT_FAIL=$(echo "$AMT_OUTPUT" | grep -c "  FAIL:" || true)
-AMT_ST_OUTPUT=$(bash "$TESTS_DIR/test_arming_mt.sh" --selftest 2>&1); AMT_ST_RC=$?
-AMT_ST_PASS=$(echo "$AMT_ST_OUTPUT" | grep -c "  PASS:" || true)
-AMT_ST_FAIL=$(echo "$AMT_ST_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$AMT_RC" -eq 0 ] && [ "$AMT_FAIL" -eq 0 ] && [ "$AMT_PASS" -eq "$AMT_EXPECTED" ] \
-   && [ "$AMT_ST_RC" -eq 0 ] && [ "$AMT_ST_FAIL" -eq 0 ] && [ "$AMT_ST_PASS" -eq "$AMT_SELFTEST_EXPECTED" ]; then
-    TOTAL=$((TOTAL + AMT_PASS + AMT_ST_PASS))
-    PASS=$((PASS + AMT_PASS + AMT_ST_PASS))
-    echo "  PASS: all $AMT_PASS arming-MT checks + $AMT_ST_PASS selftest"
+if [ "$AMT_RC" -eq 0 ] && [ "$AMT_FAIL" -eq 0 ] && [ "$AMT_PASS" -eq "$AMT_EXPECTED" ]; then
+    TOTAL=$((TOTAL + AMT_PASS))
+    PASS=$((PASS + AMT_PASS))
+    echo "  PASS: all $AMT_PASS arming-MT checks"
 else
-    TOTAL=$((TOTAL + AMT_PASS + AMT_FAIL + AMT_ST_PASS + AMT_ST_FAIL + 1))
-    PASS=$((PASS + AMT_PASS + AMT_ST_PASS))
-    FAIL=$((FAIL + AMT_FAIL + AMT_ST_FAIL + 1))
-    echo "  FAIL: arming-MT (live rc=$AMT_RC $AMT_PASS/$AMT_EXPECTED, selftest rc=$AMT_ST_RC $AMT_ST_PASS/$AMT_SELFTEST_EXPECTED)"
+    TOTAL=$((TOTAL + AMT_PASS + AMT_FAIL + 1))
+    PASS=$((PASS + AMT_PASS))
+    FAIL=$((FAIL + AMT_FAIL + 1))
+    echo "  FAIL: arming-MT (live rc=$AMT_RC $AMT_PASS/$AMT_EXPECTED)"
     echo "$AMT_OUTPUT" | grep "FAIL:" | head -5
-    echo "$AMT_ST_OUTPUT" | grep "FAIL:" | head -5
 fi
 echo ""
 
@@ -2568,25 +2544,19 @@ echo ""
 # a silently shrunk row count reads as green.
 echo "[42l] Thread handles + module-env lock under concurrency (#1146, #1161)"
 HMT_EXPECTED=16
-HMT_SELFTEST_EXPECTED=11
 HMT_OUTPUT=$(bash "$TESTS_DIR/test_handles_mt.sh" 2>&1); HMT_RC=$?
 HMT_PASS=$(echo "$HMT_OUTPUT" | grep -c "  PASS:" || true)
 HMT_FAIL=$(echo "$HMT_OUTPUT" | grep -c "  FAIL:" || true)
-HMT_ST_OUTPUT=$(bash "$TESTS_DIR/test_handles_mt.sh" --selftest 2>&1); HMT_ST_RC=$?
-HMT_ST_PASS=$(echo "$HMT_ST_OUTPUT" | grep -c "  PASS:" || true)
-HMT_ST_FAIL=$(echo "$HMT_ST_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$HMT_RC" -eq 0 ] && [ "$HMT_FAIL" -eq 0 ] && [ "$HMT_PASS" -eq "$HMT_EXPECTED" ] \
-   && [ "$HMT_ST_RC" -eq 0 ] && [ "$HMT_ST_FAIL" -eq 0 ] && [ "$HMT_ST_PASS" -eq "$HMT_SELFTEST_EXPECTED" ]; then
-    TOTAL=$((TOTAL + HMT_PASS + HMT_ST_PASS))
-    PASS=$((PASS + HMT_PASS + HMT_ST_PASS))
-    echo "  PASS: all $HMT_PASS handle-MT checks + $HMT_ST_PASS selftest"
+if [ "$HMT_RC" -eq 0 ] && [ "$HMT_FAIL" -eq 0 ] && [ "$HMT_PASS" -eq "$HMT_EXPECTED" ]; then
+    TOTAL=$((TOTAL + HMT_PASS))
+    PASS=$((PASS + HMT_PASS))
+    echo "  PASS: all $HMT_PASS handle-MT checks"
 else
-    TOTAL=$((TOTAL + HMT_PASS + HMT_FAIL + HMT_ST_PASS + HMT_ST_FAIL + 1))
-    PASS=$((PASS + HMT_PASS + HMT_ST_PASS))
-    FAIL=$((FAIL + HMT_FAIL + HMT_ST_FAIL + 1))
-    echo "  FAIL: handle-MT (live rc=$HMT_RC $HMT_PASS/$HMT_EXPECTED, selftest rc=$HMT_ST_RC $HMT_ST_PASS/$HMT_SELFTEST_EXPECTED)"
+    TOTAL=$((TOTAL + HMT_PASS + HMT_FAIL + 1))
+    PASS=$((PASS + HMT_PASS))
+    FAIL=$((FAIL + HMT_FAIL + 1))
+    echo "  FAIL: handle-MT (live rc=$HMT_RC $HMT_PASS/$HMT_EXPECTED)"
     echo "$HMT_OUTPUT" | grep "FAIL:" | head -5
-    echo "$HMT_ST_OUTPUT" | grep "FAIL:" | head -5
 fi
 echo ""
 
@@ -2838,46 +2808,36 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
-    # [45a] Readiness and response attribution, including planted-fault controls.
+    # [45a] Readiness and response attribution.
     echo "[45a/47] HTTP Readiness and Response Headers"
-    for HR_MODE in live selftest; do
-        HR_ARGS=()
-        if [ "$HR_MODE" = selftest ]; then HR_ARGS=(--selftest); fi
-        HR_OUTPUT=$(bash "$TESTS_DIR/test_http_readiness.sh" "${HR_ARGS[@]}" 2>&1); HR_RC=$?
-        HR_PASS=$(echo "$HR_OUTPUT" | grep -c "PASS:" || true)
-        HR_FAIL=$(echo "$HR_OUTPUT" | grep -c "FAIL:" || true)
-        HR_SKIP=$(echo "$HR_OUTPUT" | grep -c "SKIP:" || true)
-        TOTAL=$((TOTAL + HR_PASS + HR_FAIL + HR_SKIP))
-        PASS=$((PASS + HR_PASS))
-        FAIL=$((FAIL + HR_FAIL))
-        if [ "$HR_MODE" = live ]; then
-            HR_LABEL='HTTP_READINESS'
-            HR_WANT=133
-            # Two SKIPs are the nonblocking witnesses (no cc / not Linux);
-            # they are counted, not a pass. Any other SKIP count is a shrink.
-            if [ "$HR_SKIP" -eq 2 ]; then HR_WANT=131; fi
-        else
-            HR_LABEL='HTTP_READINESS_SELFTEST'
-            HR_WANT=510
-        fi
-        if [ "$HR_RC" -ne 0 ] || [ "$HR_PASS" -ne "$HR_WANT" ] || [ "$HR_FAIL" -ne 0 ] \
-           || [ "$HR_SKIP" -gt 2 ] ||
-           ! echo "$HR_OUTPUT" | grep -qx "${HR_LABEL}: ${HR_WANT} passed, 0 failed"; then
-            TOTAL=$((TOTAL + 1)); FAIL=$((FAIL + 1))
-            echo "  FAIL: HTTP readiness $HR_MODE (exit=$HR_RC, passed=$HR_PASS, failed=$HR_FAIL, skipped=$HR_SKIP, want=$HR_WANT)"
-            echo "$HR_OUTPUT" | grep 'FAIL:' | head -5
-            echo "$HR_OUTPUT" | grep 'SKIP:' | head -5
-            echo "$HR_OUTPUT" | tail -5
-        else
-            echo "  PASS: all $HR_PASS HTTP readiness $HR_MODE checks"
-        fi
-    done
+    HR_OUTPUT=$(bash "$TESTS_DIR/test_http_readiness.sh" 2>&1); HR_RC=$?
+    HR_PASS=$(echo "$HR_OUTPUT" | grep -c "PASS:" || true)
+    HR_FAIL=$(echo "$HR_OUTPUT" | grep -c "FAIL:" || true)
+    HR_SKIP=$(echo "$HR_OUTPUT" | grep -c "SKIP:" || true)
+    TOTAL=$((TOTAL + HR_PASS + HR_FAIL + HR_SKIP))
+    PASS=$((PASS + HR_PASS))
+    FAIL=$((FAIL + HR_FAIL))
+    HR_LABEL='HTTP_READINESS'
+    HR_WANT=133
+    # Two SKIPs are the nonblocking witnesses (no cc / not Linux).
+    if [ "$HR_SKIP" -eq 2 ]; then HR_WANT=131; fi
+    if [ "$HR_RC" -ne 0 ] || [ "$HR_PASS" -ne "$HR_WANT" ] || [ "$HR_FAIL" -ne 0 ] \
+       || [ "$HR_SKIP" -gt 2 ] ||
+       ! echo "$HR_OUTPUT" | grep -qx "${HR_LABEL}: ${HR_WANT} passed, 0 failed"; then
+        TOTAL=$((TOTAL + 1)); FAIL=$((FAIL + 1))
+        echo "  FAIL: HTTP readiness live (exit=$HR_RC, passed=$HR_PASS, failed=$HR_FAIL, skipped=$HR_SKIP, want=$HR_WANT)"
+        echo "$HR_OUTPUT" | grep 'FAIL:' | head -5
+        echo "$HR_OUTPUT" | grep 'SKIP:' | head -5
+        echo "$HR_OUTPUT" | tail -5
+    else
+        echo "  PASS: all $HR_PASS HTTP readiness live checks"
+    fi
     echo ""
 
     # [45b] HTTP slow-loris hardening (per-IP cap + header-phase timeout/min-rate)
     # The #988 wrapper still treats a non-completing child as untrustworthy —
     # do not route this through env/timeout/$EIGS_TMO; bash must be the command
-    # word. The self-test is a second invocation of the same script, counted.
+    # word.
     echo "[45b/47] HTTP slow-loris hardening (4 checks)"
     SL_OUTPUT=$(bash "$TESTS_DIR/test_http_slowloris.sh" 2>&1)
     SL_PASS=$(echo "$SL_OUTPUT" | grep -c "PASS:" || true)
@@ -2891,31 +2851,12 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     else
         echo "  PASS: all $SL_PASS HTTP slow-loris checks"
     fi
-    SLST_OUTPUT=$(bash "$TESTS_DIR/test_http_slowloris.sh" --self-test 2>&1)
-    # Count the PLANT VERDICT lines only. A red plant dumps the tail of the
-    # inner run, and that dump carries the inner script's own "FAIL:" lines —
-    # so a bare grep -c "FAIL:" reported failed=2 for ONE failing plant
-    # (over-count on the failing side; measured 2026-09-21). The verdict lines
-    # are the self-test's own, "  PASS: plant N …" / "  FAIL: plant N …", and
-    # the dump is indented past them.
-    SLST_PASS=$(echo "$SLST_OUTPUT" | grep -c "^  PASS: plant " || true)
-    SLST_FAIL=$(echo "$SLST_OUTPUT" | grep -c "^  FAIL: plant " || true)
-    TOTAL=$((TOTAL + SLST_PASS + SLST_FAIL))
-    PASS=$((PASS + SLST_PASS))
-    FAIL=$((FAIL + SLST_FAIL))
-    if [ "$SLST_FAIL" -gt 0 ] || [ "$SLST_PASS" -ne 4 ]; then
-        echo "  FAIL: HTTP slow-loris self-test (passed=$SLST_PASS want 4, failed=$SLST_FAIL)"
-        echo "$SLST_OUTPUT" | grep "FAIL:" | head -8
-        echo "$SLST_OUTPUT" | tail -8
-    else
-        echo "  PASS: all $SLST_PASS HTTP slow-loris readiness plants"
-    fi
     echo ""
 
     # [45c] Per-request leak gate by RSS growth (#731, #752). Not covered by the
     # ASan job: LSan runs atexit and the test server is killed, so a per-request
     # leak in ext_http.c is invisible to every sanitizer build.
-    echo "[45c/47] HTTP per-request leak gate (RSS growth, 2 checks + verdict self-test)"
+    echo "[45c/47] HTTP per-request leak gate (RSS growth, 2 checks)"
     RSS_OUTPUT=$(bash "$TESTS_DIR/test_http_rss_growth.sh" 2>&1)
     RSS_PASS=$(echo "$RSS_OUTPUT" | grep -c "PASS:" || true)
     RSS_FAIL=$(echo "$RSS_OUTPUT" | grep -c "FAIL:" || true)
@@ -3958,25 +3899,12 @@ echo "[139] ext_gfx container-shape sweep (#1007)"
 # EIGS-CAP-GATE: gfx — tools/gfx_strict_sweep.sh self-skips: "built without EIGENSCRIPT_EXT_GFX"
 #   (the section below behaves differently on a binary with this capability;
 #    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
-GSS_SELF=$(bash "$TESTS_DIR/../tools/gfx_strict_sweep.sh" --selftest 2>&1); GSS_SELF_RC=$?
 GSS_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_strict_sweep.sh" 2>&1); GSS_RC=$?
-# BOTH halves must have skipped, not just the sweep: --selftest returns before
-# the sweep's own probe, so a lane with no gfx builtins has to be recognised
-# twice or the section reports a red selftest for a surface that is not there.
-if echo "$GSS_OUTPUT" | grep -q "^  SKIP:" && echo "$GSS_SELF" | grep -q "^  SKIP:"; then
+if echo "$GSS_OUTPUT" | grep -q "^  SKIP:"; then
     gss_skip_line=$(echo "$GSS_OUTPUT" | grep '^  SKIP:' | head -1 | sed 's/^ *//')
     section_skip "$gss_skip_line"
 else
-    TOTAL=$((TOTAL + 2))
-    GSS_SELF_FAILED=$(echo "$GSS_SELF" | sed -n 's/^selftest: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
-    if [ "$GSS_SELF_RC" = 0 ] && [ "${GSS_SELF_FAILED:-1}" = "0" ]; then
-        PASS=$((PASS + 1))
-        echo "  PASS: $(echo "$GSS_SELF" | grep '^selftest:' | head -1) (arity parser, short-list builder, population, verdict classifier)"
-    else
-        FAIL=$((FAIL + 1))
-        echo "  FAIL: the sweep's own selftest is red — its verdicts mean nothing"
-        echo "$GSS_SELF" | grep '  FAIL' | head -4 | sed 's/^/    /'
-    fi
+    TOTAL=$((TOTAL + 1))
     if [ "$GSS_RC" = 0 ]; then
         PASS=$((PASS + 1))
         echo "  PASS: $(echo "$GSS_OUTPUT" | grep -E '^  guarded names=' | head -1 | sed 's/^ *//')"
@@ -4473,7 +4401,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=50
+OBS_GATE_EXPECTED_CHECKS=49
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -4792,26 +4720,6 @@ OBS_G23=$(obs_gate_answer "$OBS_GATE_TMP/desc_arm.eigs" tail)
 # the descriptor's arming is irrelevant and the check is back to decoration.
 [ "$OBS_DESC_GATE" = "0" ] || OBS_G23="host-opened-the-gate($OBS_DESC_GATE)"
 check "a descriptor ARMS the observer for its OWN writes (gate-sensitive)" "$OBS_G23" "diverging"
-# 25. The sync gate's own mutation train. Without this the gate is a claim: a
-#     blind critic gutted each of its four assertion bodies in turn and it
-#     printed PASS every time on a tree carrying that assertion's fault. The
-#     WITNESS half is the part that matters — it requires the fault to SURVIVE
-#     when its assertion is gutted, which is what proves the assertion, and not
-#     a neighbouring floor, is doing the work (mechanical-gates §19/§21/§66).
-TOTAL=$((TOTAL + 1))
-OBS_ST_N=0
-if OBS_ST_OUT=$("$TESTS_DIR/../tools/obs_reader_sync_check.sh" --selftest 2>&1); then
-    # rc 0 alone is not enough: shrinking the selftest to one row also exits 0.
-    # Floor the number of rows it actually ran (§37 at the integration point).
-    OBS_ST_N=$(printf '%s\n' "$OBS_ST_OUT" | sed -n 's/^SELFTEST: \([0-9]*\) passed.*/\1/p')
-    : "${OBS_ST_N:=0}"
-fi
-if [ "$OBS_ST_N" -ge 11 ]; then
-    PASS=$((PASS + 1)); echo "  PASS: observer-reader sync gate self-test ($OBS_ST_N rows)"
-else
-    FAIL=$((FAIL + 1)); echo "  FAIL: observer-reader sync gate self-test ($OBS_ST_N rows, floor 11)"
-    echo "$OBS_ST_OUT" | sed 's/^/    /'
-fi
 # 26-27. The eager pre-pass must not WRITE to the program's world. It mutes fd 2
 #     already; it also runs the real compiler, and compile_node ARMS the trace
 #     history channel as a side effect. Unrestored, merely SCANNING a module
@@ -5701,13 +5609,12 @@ echo ""
 # and requires each to be caught.
 echo "[81u] lint diagnostic UTF-8 gate (#1048)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" >/dev/null 2>&1 && \
-   bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" --selftest >/dev/null 2>&1; then
+if bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" >/dev/null 2>&1; then
     PASS=$((PASS + 1))
-    echo "  PASS: no lint diagnostic can be malformed UTF-8, whatever its rule or its source interpolates (gate self-test green)"
+    echo "  PASS: no lint diagnostic can be malformed UTF-8, whatever its rule or its source interpolates"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: a lint diagnostic is malformed UTF-8, or the gate self-test broke"
+    echo "  FAIL: a lint diagnostic is malformed UTF-8"
     bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" 2>&1 | grep -E "^FAIL|SELFTEST-FAIL" | head -10
 fi
 echo ""
@@ -6238,43 +6145,6 @@ if command -v python3 >/dev/null 2>&1; then
         printf '%s\n' "$DOC_OUTPUT" | grep -E "populations pinned|population " | head -14
     fi
 
-    # The marker self-test keeps the README opt-in and zero-count safeguards
-    # executable; it uses a temporary fake interpreter and is independent of
-    # the documentation examples above.
-    MARKER_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples_markers.py" 2>&1)
-    MARKER_RC=$?
-    TOTAL=$((TOTAL + 1))
-    if [ "$MARKER_RC" -eq 0 ]; then
-        PASS=$((PASS + 1))
-        echo "  PASS: README marker/zero-count self-test"
-    else
-        FAIL=$((FAIL + 1))
-        echo "  FAIL: README marker/zero-count self-test (rc=$MARKER_RC)"
-        echo "$MARKER_OUTPUT"
-    fi
-
-    # #946: the fence PARSER's own self-test. The gate above can only check
-    # examples it can SEE, and it used to be blind to any fence that was
-    # indented or nested in a blockquote — those blocks were never run, never
-    # compared, and never mentioned. This proves each shape is recognised, that
-    # an example's own indentation survives the dedent (EigenScript is
-    # indentation-sensitive, so over-stripping rewrites the program under
-    # test), and that a fence the parser still cannot read is REPORTED rather
-    # than dropped. The case COUNT is pinned: "exit 0" is also what a
-    # self-test reduced to a single echo prints.
-    FENCE_EXPECTED=29
-    FENCE_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" --selftest 2>&1)
-    FENCE_RC=$?
-    FENCE_OK=$(printf '%s\n' "$FENCE_OUTPUT" | grep -c "  selftest ok:" || true)
-    TOTAL=$((TOTAL + 1))
-    if [ "$FENCE_RC" -eq 0 ] && [ "$FENCE_OK" -eq "$FENCE_EXPECTED" ]; then
-        PASS=$((PASS + 1))
-        echo "  PASS: doc-fence parser self-test ($FENCE_OK shapes recognised)"
-    else
-        FAIL=$((FAIL + 1))
-        echo "  FAIL: doc-fence parser self-test (rc=$FENCE_RC, cases=$FENCE_OK, expected $FENCE_EXPECTED)"
-        printf '%s\n' "$FENCE_OUTPUT" | head -12
-    fi
 else
     section_skip "python3 not available"
 fi
@@ -6681,34 +6551,6 @@ else
     print_captured "doc-claims gate, VERBATIM" "$CLAIMS_OUTPUT"
 fi
 
-# Its planted-fault selftest. The case COUNT is pinned: "exit 0" is also what
-# a selftest reduced to a single echo prints (mechanical-gates §121).
-# ROUND 4: pin the number of cases RUN, and require zero failures, as two
-# separate conditions. The first cut pinned the count of "selftest ok" lines,
-# so one failing case printed "cases=20, expected 21" — indistinguishable from
-# a case that had been DELETED, and the operator who read it looked for a
-# missing case instead of a failing one. A count that changes meaning when
-# something fails is not a population count (§121).
-CLAIMS_SELFTEST_EXPECTED=40
-CLAIMS_ST=$(bash "$TESTS_DIR/../tools/docs_claims_check.sh" --selftest 2>&1)
-CLAIMS_ST_RC=$?
-CLAIMS_ST_RUN=$(printf '%s\n' "$CLAIMS_ST" | sed -nE 's/^SELFTEST: ([0-9]+) case\(s\) run.*/\1/p' | tail -1)
-CLAIMS_ST_FAILED=$(printf '%s\n' "$CLAIMS_ST" | sed -nE 's/^SELFTEST: [0-9]+ case\(s\) run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
-TOTAL=$((TOTAL + 1))
-if [ "${CLAIMS_ST_RUN:-0}" -ne "$CLAIMS_SELFTEST_EXPECTED" ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: doc-claims selftest ran ${CLAIMS_ST_RUN:-0} case(s), $CLAIMS_SELFTEST_EXPECTED are pinned (rc=$CLAIMS_ST_RC) — a case was added, deleted, or the run never reached its summary; its ENTIRE output follows verbatim"
-    print_captured "doc-claims selftest, VERBATIM" "$CLAIMS_ST"
-elif [ "$CLAIMS_ST_RC" -ne 0 ] || [ "${CLAIMS_ST_FAILED:-1}" -ne 0 ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: doc-claims selftest: ${CLAIMS_ST_FAILED:-?} of $CLAIMS_ST_RUN planted fault(s) did NOT go red (rc=$CLAIMS_ST_RC)"
-    printf '%s\n' "$CLAIMS_ST" | grep -E "SELFTEST FAIL" | head -8
-    print_captured "doc-claims selftest, VERBATIM" "$CLAIMS_ST"
-else
-    PASS=$((PASS + 1))
-    echo "  PASS: doc-claims selftest ($CLAIMS_ST_RUN planted faults, all red)"
-fi
-
 # THE TWO "DERIVED" ROADMAP-HISTORY NUMBERS WERE DERIVED ON NO LANE AT ALL.
 #
 # BOUGHT 2026-09-21 (third critic, `/code-review 1226 medium`, finding 5):
@@ -6813,7 +6655,7 @@ PORT_OLD_MAJOR_MAX=3
 # port_identity_verdict <gate output>
 #   Sets PORT_IDENTITY_VERDICT: empty when the receipt is acceptable, else the
 #   named reason. ONE implementation, used on the real run and on the three
-#   synthetic receipts below, so the controls exercise the code that judges.
+#   synthetic receipts in tools/portability_parse_check.sh --selftest, so the controls exercise the code that judges.
 port_identity_verdict() {
     local out="$1" major measured
     measured=0
@@ -6849,55 +6691,6 @@ else
     print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
 fi
 
-# THE IDENTITY ARM'S OWN PLANTED FAULTS. The arm above fires only when the
-# gate misbehaves, so on a healthy tree it has never been observed to work —
-# which is the definition of a gate nobody has shown to be a gate
-# (mechanical-gates §19). These three synthetic receipts drive the SAME
-# function the real verdict used, and both halves are present: a receipt that
-# must be refused, and one that must be accepted (§15).
-#
-#   1. bash 5 wearing a bash 3.2 BANNER  -> refused. Round 6 accepted this,
-#      because it read the banner and not the fact.
-#   2. a real bash 3.2 with a VENDOR banner -> accepted. Round 6 refused this.
-#   3. a completed audit with no identity line at all -> refused.
-PORT_CTRL_OK=0
-PORT_CTRL_WHY=""
-PORT_SYNTH_5="portability-parse: oracle=/bin/bash (GNU bash, version 3.2.57(1)-release (x86_64-apple-darwin23))
-portability-parse: oracle-major=5
-portability: OK: files=128 checked=128 parse-failures=0; gates-run=5/5 run-failures=0"
-PORT_SYNTH_3="portability-parse: oracle=/opt/vendor/bash (Custom Bash 3.2.0, same GNU Bash 3.2 engine)
-portability-parse: oracle-major=3
-portability: OK: files=128 checked=128 parse-failures=0; gates-run=5/5 run-failures=0"
-PORT_SYNTH_NONE="portability-parse: oracle=/bin/bash (GNU bash, version 3.2.57(1)-release)
-portability: OK: files=128 checked=128 parse-failures=0; gates-run=5/5 run-failures=0"
-port_identity_verdict "$PORT_SYNTH_5"
-if [ -n "$PORT_IDENTITY_VERDICT" ]; then
-    PORT_CTRL_OK=$((PORT_CTRL_OK + 1))
-else
-    PORT_CTRL_WHY="$PORT_CTRL_WHY [a bash-5 oracle wearing a bash 3.2 banner was ACCEPTED]"
-fi
-port_identity_verdict "$PORT_SYNTH_3"
-if [ -z "$PORT_IDENTITY_VERDICT" ]; then
-    PORT_CTRL_OK=$((PORT_CTRL_OK + 1))
-else
-    PORT_CTRL_WHY="$PORT_CTRL_WHY [a real bash 3.2 with a vendor banner was REFUSED: $PORT_IDENTITY_VERDICT]"
-fi
-port_identity_verdict "$PORT_SYNTH_NONE"
-if [ -n "$PORT_IDENTITY_VERDICT" ]; then
-    PORT_CTRL_OK=$((PORT_CTRL_OK + 1))
-else
-    PORT_CTRL_WHY="$PORT_CTRL_WHY [a completed audit with no oracle-major line was ACCEPTED]"
-fi
-# Restore the verdict for anything downstream that reads it.
-port_identity_verdict "$PORT_OUTPUT"
-TOTAL=$((TOTAL + 1))
-if [ "$PORT_CTRL_OK" -eq 3 ]; then
-    PASS=$((PASS + 1))
-    echo "  PASS: portability identity arm, 3/3 synthetic receipts judged correctly (bash-5-in-a-3.2-banner refused, vendor-bannered 3.2 accepted, identity-less audit refused)"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: portability identity arm judged $PORT_CTRL_OK/3 synthetic receipts correctly —$PORT_CTRL_WHY"
-fi
 echo ""
 
 # [99zc] String index/scan must scale LINEARLY (#1183).
@@ -6938,33 +6731,6 @@ else
     FAIL=$((FAIL + 1))
     echo "  FAIL: string index/scan growth is superlinear, or the gate never reached a verdict (rc=$SCALE_RC)"
     print_captured "string-scaling gate, VERBATIM" "$SCALE_OUTPUT"
-fi
-
-# Its planted-fault selftest. The case COUNT is pinned, and "how many failed"
-# is a SEPARATE condition: a count that changes meaning when a case fails is
-# not a population count (mechanical-gates §121). Most of these 23 cases are
-# ways a blind critic made this gate report PASS on the still-quadratic binary
-# -- a stderr diagnostic taken as the reading, an EIGS_REPLAY tape supplying
-# both clock readings, readings of `e`, `-1`, `0` and the wrong length, and a
-# runtime that is quadratic on four invocations in five.
-SCALE_SELFTEST_EXPECTED=26
-SCALE_ST=$(EIGS="$SCALE_EIGS" bash "$TESTS_DIR/test_string_scaling.sh" --selftest 2>&1)
-SCALE_ST_RC=$?
-SCALE_ST_RUN=$(printf '%s\n' "$SCALE_ST" | sed -nE 's/^== selftest ([0-9]+) run.*/\1/p' | tail -1)
-SCALE_ST_FAILED=$(printf '%s\n' "$SCALE_ST" | sed -nE 's/^== selftest [0-9]+ run, [0-9]+ passed, ([0-9]+) failed.*/\1/p' | tail -1)
-TOTAL=$((TOTAL + 1))
-if [ "${SCALE_ST_RUN:-0}" -ne "$SCALE_SELFTEST_EXPECTED" ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: string-scaling selftest ran ${SCALE_ST_RUN:-0} case(s), $SCALE_SELFTEST_EXPECTED are pinned (rc=$SCALE_ST_RC) — a case was added, deleted, or the run never reached its summary; its ENTIRE output follows verbatim"
-    print_captured "string-scaling selftest, VERBATIM" "$SCALE_ST"
-elif [ "$SCALE_ST_RC" -ne 0 ] || [ "${SCALE_ST_FAILED:-1}" -ne 0 ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: string-scaling selftest: ${SCALE_ST_FAILED:-?} of $SCALE_ST_RUN case(s) did not behave (rc=$SCALE_ST_RC)"
-    printf '%s\n' "$SCALE_ST" | grep -E "MISS" | head -8
-    print_captured "string-scaling selftest, VERBATIM" "$SCALE_ST"
-else
-    PASS=$((PASS + 1))
-    echo "  PASS: string-scaling selftest ($SCALE_ST_RUN cases, every planted false-green refused)"
 fi
 
 # The binding, VERIFIED (#1188). The child names the runtime it used on its
@@ -7078,74 +6844,39 @@ echo ""
 echo "[99zd] Workflow files load as YAML (#1207)"
 TOTAL=$((TOTAL + 1))
 WORKFLOW_OUTPUT=$(bash "$TESTS_DIR/../tools/workflow_yaml_check.sh" 2>&1); WORKFLOW_RC=$?
-WORKFLOW_ST=$(bash "$TESTS_DIR/../tools/workflow_yaml_check.sh" --selftest 2>&1); WORKFLOW_ST_RC=$?
-# The selftest line is pinned EXACTLY, and the caller decides the skip count
-# from its own PyYAML probe: 8 planted faults, 2 of which can only go red
-# through the loader arm (round-4 mutation M2: a loader skip on a lane that
-# HAS PyYAML must be red). An exit code alone accepts a gutted selftest.
-if python3 -c 'import yaml' >/dev/null 2>&1; then WORKFLOW_LOADER=pyyaml; WORKFLOW_ST_SKIP=0
-else WORKFLOW_LOADER='skipped:[a-z0-9-]+'; WORKFLOW_ST_SKIP=2; fi
-WORKFLOW_ST_WANT="SELFTEST: 8 case(s) run, $((8 - WORKFLOW_ST_SKIP)) passed, 0 failed, $WORKFLOW_ST_SKIP skipped"
-if [ "$WORKFLOW_RC" -eq 0 ] && [ "$WORKFLOW_ST_RC" -eq 0 ] \
-   && [ "$(grep -cxF "$WORKFLOW_ST_WANT" <<<"$WORKFLOW_ST")" -eq 1 ] \
+if python3 -c 'import yaml' >/dev/null 2>&1; then WORKFLOW_LOADER=pyyaml
+else WORKFLOW_LOADER='skipped:[a-z0-9-]+'; fi
+if [ "$WORKFLOW_RC" -eq 0 ] \
    && grep -qE "^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), [1-9][0-9]* name\(s\), loader=$WORKFLOW_LOADER\)\$" <<<"$WORKFLOW_OUTPUT"; then
     PASS=$((PASS + 1))
     printf '%s\n' "$WORKFLOW_OUTPUT" | grep -E '^workflow-yaml: OK'
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: workflow-yaml gate (rc=$WORKFLOW_RC, selftest rc=$WORKFLOW_ST_RC, loader wanted=$WORKFLOW_LOADER, selftest line wanted [$WORKFLOW_ST_WANT]); output follows"
+    echo "  FAIL: workflow-yaml gate (rc=$WORKFLOW_RC, loader wanted=$WORKFLOW_LOADER); output follows"
     print_captured "workflow-yaml gate, VERBATIM" "$WORKFLOW_OUTPUT"
-    print_captured "workflow-yaml selftest, VERBATIM" "$WORKFLOW_ST"
 fi
 echo ""
 
 echo "[99z] File semantics across main/load_file/import (#1056)"
 TOTAL=$((TOTAL + 1))
 if bash "$TESTS_DIR/../tools/road_diff.sh" && \
-   bash "$TESTS_DIR/../tools/road_diff.sh" --selftest && \
-   python3 "$TESTS_DIR/../tools/embed_roads.py" --selftest; then
+   python3 "$TESTS_DIR/../tools/embed_roads.py"; then
     PASS=$((PASS + 1))
-    echo "  PASS: road differential and planted faults"
+    echo "  PASS: road differential"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: road differential or planted faults"
-fi
-echo ""
-
-# #1112: the same-binary replay differential (CI job `replay-differential`)
-# classified a replay arm that printed the boundary diagnostic and then died
-# by SIGSEGV as "at the boundary" and said OK. A signal exit in either arm is
-# now the first verdict; the selftest plants that witness and an identical
-# crash in both arms through a wrapper binary (each must FAIL, attributed),
-# proves --record refuses over a crash, keeps a real clean boundary refusal
-# classified as boundary (positive control), and pins that a NON-signal
-# nonzero rc (120) still diffs into a row. Five further cases require
-# exit124 to fail before any self-check/equality/boundary/ledger classification.
-# The full corpus run stays a
-# CI job, not a suite section. The case count is pinned, not ">0": a gate
-# reduced to one echo satisfies "at least one case passed".
-echo "[136] replay_diff crash/timeout gate: neither is a boundary (#1112)"
-TOTAL=$((TOTAL + 1))
-RDS_OUTPUT=$(bash "$TESTS_DIR/../tools/replay_diff.sh" --selftest 2>&1); RDS_RC=$?
-RDS_OK=$(printf '%s\n' "$RDS_OUTPUT" | grep -c "  selftest ok:" || true)
-if [ "$RDS_RC" -eq 0 ] && [ "$RDS_OK" -eq 11 ] && printf '%s\n' "$RDS_OUTPUT" | grep -q "^SELFTEST: all planted faults caught"; then
-    PASS=$((PASS + 1))
-    echo "  PASS: replay_diff selftest (all $RDS_OK planted/control cases)"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: replay_diff selftest (rc=$RDS_RC, $RDS_OK of 11 ok cases)"
-    printf '%s\n' "$RDS_OUTPUT" | grep -v "selftest ok" | head -8
+    echo "  FAIL: road differential"
 fi
 echo ""
 
 echo "[99b] Stdlib/builtin discoverability (#393)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/stdlib_index_check.sh" && bash "$TESTS_DIR/../tools/stdlib_index_check.sh" --selftest >/dev/null; then
+if bash "$TESTS_DIR/../tools/stdlib_index_check.sh"; then
     PASS=$((PASS + 1))
-    echo "  PASS: every registered builtin + lib module is documented (gate self-test green)"
+    echo "  PASS: every registered builtin + lib module is documented"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: undocumented builtin/module, or gate self-test broke (see lines above)"
+    echo "  FAIL: undocumented builtin/module (see lines above)"
 fi
 echo ""
 
@@ -7157,13 +6888,12 @@ echo ""
 # is right is what [99s]'s pins assert.
 echo "[99r] Fail-soft classification gate (#971)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" >/dev/null && \
-   bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" --selftest >/dev/null; then
+if bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" >/dev/null; then
     PASS=$((PASS + 1))
-    echo "  PASS: every fail-soft return is classified (gate self-test green)"
+    echo "  PASS: every fail-soft return is classified"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: an unclassified fail-soft return, or the gate self-test broke"
+    echo "  FAIL: an unclassified fail-soft return"
     bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" 2>&1 | sed -n '1,12p'
 fi
 echo ""
@@ -7185,34 +6915,16 @@ echo ""
 # "FAIL: a guard went silent..." followed by a completely clean report ending
 # in "OK", which is unreadable and untriageable — the one run that knew what
 # happened was discarded. Capture once; print what THAT run said.
-# THE HARNESS FIRST (#1120). Every verdict that tool prints is a string match,
-# and several of them were spelled `printf ... | grep -q`, which under
-# `set -o pipefail` reports a FAILED match whenever the reader exits early and
-# the writer is still writing: grep -q matches, closes the pipe, printf takes
-# SIGPIPE, and the pipeline's status is 141. That flaked THIS section red on a
-# green tree — measured 18 times in 186 runs under load with the pipe form in
-# place — and the accusation it printed ("raised by the wrong guard") was
-# refuted by the diagnostic two lines below it, which contained the guard's own
-# message. --selftest pins the fork-free matchers that replaced it and
-# reproduces the race deterministically, so the regression cannot return
-# quietly. It measures the script, not the build: ~0.1s, no binary needed.
 echo "[99s] Strict argument-guard differential (#971, no-baseline half)"
 TOTAL=$((TOTAL + 1))
-STRICT_SELF_OUT="$(bash "$TESTS_DIR/../tools/strict_differential.sh" --selftest 2>&1)"
-STRICT_SELF_RC=$?
 STRICT_DIFF_OUT="$(bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline 2>&1)"
 STRICT_DIFF_RC=$?
-if [ "$STRICT_SELF_RC" = 0 ] && [ "$STRICT_DIFF_RC" = 0 ]; then
+if [ "$STRICT_DIFF_RC" = 0 ]; then
     PASS=$((PASS + 1))
-    echo "  PASS: the harness's own matchers hold; every guard raises from its own"
+    echo "  PASS: every guard raises from its own"
     echo "        guard; every answer stays quiet"
 else
     FAIL=$((FAIL + 1))
-    if [ "$STRICT_SELF_RC" != 0 ]; then
-        echo "  FAIL: the differential's OWN matchers broke (exit $STRICT_SELF_RC) — nothing"
-        echo "        below this line is a finding about a guard until that is fixed"
-        printf '%s\n' "$STRICT_SELF_OUT" | sed -n '1,20p'
-    fi
     if [ "$STRICT_DIFF_RC" != 0 ]; then
         echo "  FAIL: a guard went silent, raised from the wrong place, a pin broke,"
         echo "        a guard has no probe, or a probe did not run (exit $STRICT_DIFF_RC)"
@@ -7644,13 +7356,12 @@ echo ""
 # convention to keep them in sync.
 echo "[99l] fmt/lexer operator-table sync gate (#729/#750)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" >/dev/null 2>&1 && \
-   bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" --selftest >/dev/null 2>&1; then
+if bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" >/dev/null 2>&1; then
     PASS=$((PASS + 1))
-    echo "  PASS: every lexer multi-char operator is covered by fmt.c MULTI_OPS (gate self-test green)"
+    echo "  PASS: every lexer multi-char operator is covered by fmt.c MULTI_OPS"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: fmt.c MULTI_OPS has drifted from the lexer, or the gate self-test broke"
+    echo "  FAIL: fmt.c MULTI_OPS has drifted from the lexer"
     bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" 2>&1 | head -6
 fi
 echo ""
@@ -7662,13 +7373,12 @@ echo ""
 # happen to be present.
 echo "[99n] VM operand-width comment drift gate (#958)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/vm_operand_width_check.sh" && \
-   bash "$TESTS_DIR/../tools/vm_operand_width_check.sh" --selftest >/dev/null; then
+if bash "$TESTS_DIR/../tools/vm_operand_width_check.sh"; then
     PASS=$((PASS + 1))
-    echo "  PASS: VM kind comments match decoder/verifier widths (gate self-test green)"
+    echo "  PASS: VM kind comments match decoder/verifier widths"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: vm.h kind-width comments drift from vm.c/chunk.c, or the gate self-test broke"
+    echo "  FAIL: vm.h kind-width comments drift from vm.c/chunk.c"
     bash "$TESTS_DIR/../tools/vm_operand_width_check.sh" 2>&1 | sed -n '1,8p'
 fi
 echo ""
@@ -7686,43 +7396,13 @@ echo ""
 # fixture (verified by neutering each check in a copy of the gate).
 echo "[99t] Observer-classification marker gate (#972)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/obs_marker_check.sh" && \
-   bash "$TESTS_DIR/../tools/obs_marker_check.sh" --selftest >/dev/null; then
+if bash "$TESTS_DIR/../tools/obs_marker_check.sh"; then
     PASS=$((PASS + 1))
-    echo "  PASS: every opcode carries an observer classification (gate self-test green)"
+    echo "  PASS: every opcode carries an observer classification"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: an opcode is unclassified, or the marker gate self-test broke"
+    echo "  FAIL: an opcode is unclassified"
     bash "$TESTS_DIR/../tools/obs_marker_check.sh" 2>&1 | sed -n '1,10p'
-fi
-echo ""
-
-# [99q] Observer-gate corpus diff: location normalisation self-test (#1115).
-# tools/observer_gate_diff.sh compares full-corpus captures byte-for-byte, and
-# an out-of-tree baseline binary echoes its own exe-dir into two shapes of
-# text (the stdlib-roots list in every "cannot read" error, and the project-
-# vs-stdlib import-shadow warning that fires only out of tree). Seven programs
-# mismatched on exactly those shapes across three critic rounds on #1038 and a
-# clean run read as a regression. The tool now canonicalises ONLY those two
-# shapes; this self-test drives the real `compare` entry point over synthetic
-# captures (no corpus run) and pins that (1) both shapes are absorbed and named,
-# (2) a different error message, a differently-named shadow, a project-file
-# shadow, a corpus-path difference and the root-exe-dir guard each still FAIL,
-# (3) the same-build-same-path and path-mismatched-reference refusals still
-# fire, (4) genuinely different builds still get PASS. The case count is
-# pinned (mechanical-gates §37): a self-test shrunk to one case also exits 0.
-echo "[99q] Observer-gate corpus diff location normalisation (#1115)"
-TOTAL=$((TOTAL + 1))
-OGD_EXPECTED=9
-OGD_OUT=$(bash "$TESTS_DIR/../tools/observer_gate_diff.sh" selftest 2>&1); OGD_RC=$?
-OGD_TALLY=$(printf '%s\n' "$OGD_OUT" | sed -n 's/^SELFTEST: \([0-9]*\) ok, \([0-9]*\) failed (of \([0-9]*\))$/\1 \2 \3/p')
-if [ "$OGD_RC" -eq 0 ] && [ "$OGD_TALLY" = "$OGD_EXPECTED 0 $OGD_EXPECTED" ]; then
-    PASS=$((PASS + 1))
-    echo "  PASS: exe-dir + import-shadow normalisation absorbs only the location shapes ($OGD_EXPECTED/$OGD_EXPECTED self-test cases)"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: observer_gate_diff.sh self-test broke or shrank (rc=$OGD_RC, tally='${OGD_TALLY:-none}', expected '$OGD_EXPECTED 0 $OGD_EXPECTED')"
-    printf '%s\n' "$OGD_OUT" | grep -E '^  FAIL|^SELFTEST|^FAIL' | head -8 | sed 's/^/      /'
 fi
 echo ""
 
@@ -7748,53 +7428,23 @@ echo ""
 # [99i] Uniform -Werror=switch gate (#817 follow-up; #835 extended it to
 # compile-bearing shell scripts). Dry-runs every compiling Makefile target
 # plus the audited scripts (tools/freestanding_check.sh) and asserts every
-# emitted compile line carries the flag; --selftest proves the checker
-# catches each planted fault shape (and that a zero-line audit is a hard
-# failure, not a silent pass).
-#
-# #1160: this one section is the most expensive thing the suite does — on the
-# dev box, ~6 min of audit plus ~11 min of self-test — and it was running
-# inside TEN CI jobs per PR for a property of the Makefile and the scripts
-# that cannot depend on which extensions the binary was built with. CI now
-# runs it once, in a dedicated cached job, and sets EIGS_SKIP_WERROR_AUDIT=1
-# here.
-#
-# The skip is LOUD and names its owner. A gate that elides a measurement must
-# not render "never measured" and "measured, found quiet" identically
-# (mechanical-gates §11), so this prints a SKIP: line, contributes nothing to
-# TOTAL, and is visible in every log that takes the shortcut. With the
-# variable unset — every local run — the section runs in full.
 echo "[99i] werror-switch compile-line gate (#817/#835)"
 if [ "${EIGS_SKIP_WERROR_AUDIT:-0}" = "1" ]; then
     section_skip "NOT MEASURED HERE — the dedicated 'werror audit' CI job owns this"
     echo "        section for this run (EIGS_SKIP_WERROR_AUDIT=1, #1160). Unset the"
-    echo "        variable to run the audit + self-test in this suite."
+    echo "        variable to run the audit in this suite."
     echo ""
 else
 TOTAL=$((TOTAL + 1))
-# The two halves are reported SEPARATELY (#971 round 2). They used to be one
-# `a && b >/dev/null` chain, which made a self-test failure unattributable:
-# the audit half prints its own "gate OK" line, so a log showing OK followed
-# by this section's FAIL looked self-contradictory, and the self-test's
-# diagnostics — the only thing that says WHICH planted fault shape stopped
-# being caught — had gone to /dev/null. Observed on this box under load
-# (a full-suite run where the audit printed OK and the section still failed);
-# with the output kept, the next occurrence names its own cause.
 werror_audit_rc=0
 bash "$TESTS_DIR/../tools/werror_switch_check.sh" || werror_audit_rc=$?
-werror_selftest_out=$(bash "$TESTS_DIR/../tools/werror_switch_check.sh" --selftest 2>&1)
-werror_selftest_rc=$?
-if [ "$werror_audit_rc" -eq 0 ] && [ "$werror_selftest_rc" -eq 0 ]; then
+if [ "$werror_audit_rc" -eq 0 ]; then
     PASS=$((PASS + 1))
-    echo "  PASS: every dry-run + audited-script compile line carries -Werror=switch (gate self-test green)"
+    echo "  PASS: every dry-run + audited-script compile line carries -Werror=switch"
 else
     FAIL=$((FAIL + 1))
     if [ "$werror_audit_rc" -ne 0 ]; then
         echo "  FAIL: a compile line lacks -Werror=switch (audit exit $werror_audit_rc; see lines above)"
-    fi
-    if [ "$werror_selftest_rc" -ne 0 ]; then
-        echo "  FAIL: the gate self-test broke (--selftest exit $werror_selftest_rc); its output:"
-        printf '%s\n' "$werror_selftest_out" | sed 's/^/      /'
     fi
 fi
 echo ""
@@ -7812,13 +7462,12 @@ fi  # EIGS_SKIP_WERROR_AUDIT
 # keeps the probe honest on a box that HAS libpq.
 echo "[99i2] Core/extension include boundary (#744)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/core_ext_boundary_check.sh" >/dev/null && \
-   bash "$TESTS_DIR/../tools/core_ext_boundary_check.sh" --selftest >/dev/null; then
+if bash "$TESTS_DIR/../tools/core_ext_boundary_check.sh" >/dev/null; then
     PASS=$((PASS + 1))
-    echo "  PASS: no core -> extension-private include edge (gate self-test green)"
+    echo "  PASS: no core -> extension-private include edge"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: a core TU includes an extension private header, or the gate self-test broke"
+    echo "  FAIL: a core TU includes an extension private header"
     bash "$TESTS_DIR/../tools/core_ext_boundary_check.sh" 2>&1 | head -8
 fi
 echo ""
@@ -7835,11 +7484,9 @@ CEXIT_EXPECTED=17
 CEXIT_OUT=$(bash "$TESTS_DIR/test_child_exit.sh" 2>&1); CEXIT_RC=$?
 CEXIT_COUNT=$(printf '%s\n' "$CEXIT_OUT" | sed -n 's/^RESULTS: \([0-9]*\)\/\([0-9]*\) passed.*/\2/p')
 if bash "$TESTS_DIR/../tools/child_exit_check.sh" >/dev/null \
-   && bash "$TESTS_DIR/../tools/child_exit_check.sh" --selftest >/dev/null \
-   && bash "$TESTS_DIR/test_child_exit.sh" --selftest >/dev/null \
    && [ "$CEXIT_RC" -eq 0 ] && [ "${CEXIT_COUNT:-0}" -eq "$CEXIT_EXPECTED" ]; then
     PASS=$((PASS + 1))
-    echo "  PASS: child .sh exit statuses are accounted for ($CEXIT_COUNT behavioural checks, static gate self-test green)"
+    echo "  PASS: child .sh exit statuses are accounted for ($CEXIT_COUNT behavioural checks)"
 else
     FAIL=$((FAIL + 1))
     echo "  FAIL: child-exit accounting is broken, bypassed, or shrank (rc=$CEXIT_RC, checks=${CEXIT_COUNT:-none}, expected $CEXIT_EXPECTED)"
@@ -7861,16 +7508,10 @@ echo ""
 # one. NOTE: run_all_tests.sh itself does not set pipefail, so its ~173
 # `| grep -q` sites are not exposed and are not subjects.
 #
-# Both halves are reported separately, and the self-test's check COUNT is
-# pinned rather than tested for ">0" — "at least one check passed" is satisfied
-# by a gate reduced to a single echo (the [99o] lesson).
 echo "[99aa] pipefail verdict-pipeline gate (#1122)"
 TOTAL=$((TOTAL + 1))
-PFV_EXPECTED=34
 pfv_audit_out=$(bash "$TESTS_DIR/../tools/pipefail_verdict_check.sh" 2>&1); pfv_audit_rc=$?
-pfv_self_out=$(bash "$TESTS_DIR/../tools/pipefail_verdict_check.sh" --selftest 2>&1); pfv_self_rc=$?
-PFV_COUNT=$(printf '%s\n' "$pfv_self_out" | sed -n 's/^  checks=\([0-9]*\) .*/\1/p')
-if [ "$pfv_audit_rc" -eq 0 ] && [ "$pfv_self_rc" -eq 0 ] && [ "${PFV_COUNT:-0}" -eq "$PFV_EXPECTED" ]; then
+if [ "$pfv_audit_rc" -eq 0 ]; then
     PASS=$((PASS + 1))
     printf '%s\n' "$pfv_audit_out"
 else
@@ -7878,10 +7519,6 @@ else
     if [ "$pfv_audit_rc" -ne 0 ]; then
         echo "  FAIL: a pipefail script decides a verdict with a pipeline (audit exit $pfv_audit_rc):"
         printf '%s\n' "$pfv_audit_out" | sed 's/^/      /'
-    fi
-    if [ "$pfv_self_rc" -ne 0 ] || [ "${PFV_COUNT:-0}" -ne "$PFV_EXPECTED" ]; then
-        echo "  FAIL: the gate self-test broke or shrank (exit $pfv_self_rc, checks=${PFV_COUNT:-none}, expected $PFV_EXPECTED):"
-        printf '%s\n' "$pfv_self_out" | sed 's/^/      /'
     fi
 fi
 echo ""
@@ -7891,16 +7528,13 @@ echo ""
 # unrun until a maintainer noticed. Self-test case count pinned ([99o] lesson).
 echo "[99ab] test enrolment (#1264)"
 TOTAL=$((TOTAL + 1))
-ENROL_ST_EXPECTED=4
 enrol_out=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" 2>&1); enrol_rc=$?
-enrol_st=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" --selftest 2>&1); enrol_st_rc=$?
-ENROL_ST_N=$(printf '%s\n' "$enrol_st" | sed -n 's/^  checks=\([0-9]*\)$/\1/p')
-if [ "$enrol_rc" -eq 0 ] && [ "$enrol_st_rc" -eq 0 ] && [ "${ENROL_ST_N:-0}" -eq "$ENROL_ST_EXPECTED" ]; then
+if [ "$enrol_rc" -eq 0 ]; then
     PASS=$((PASS + 1)); echo "  $enrol_out"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: test enrolment (rc=$enrol_rc, selftest rc=$enrol_st_rc checks=${ENROL_ST_N:-none}/$ENROL_ST_EXPECTED)"
-    printf '%s\n' "$enrol_out" "$enrol_st" | grep -E 'FAIL|ABORT' | head -8 | sed 's/^/      /'
+    echo "  FAIL: test enrolment (rc=$enrol_rc)"
+    printf '%s\n' "$enrol_out" | grep -E 'FAIL|ABORT' | head -8 | sed 's/^/      /'
 fi
 echo ""
 

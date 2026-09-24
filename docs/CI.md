@@ -38,8 +38,8 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 ## PR lane (`pull_request`) — target ≤ 15 minutes
 
 - `scope` decides whether the PR touches anything but `*.md`. A docs-only PR
-  reports green in seconds. (The doc gates themselves are not skipped — see
-  **The doc gates** below.)
+  skips the runtime matrix; doc gates and calibrations whose inputs changed
+  still run (see **The doc gates** below).
 - **One full suite: `linux / gcc`.** Every test section.
 - **`werror audit`** runs [99i] once, cached (see below). The suite jobs set
   `EIGS_SKIP_WERROR_AUDIT=1`, and [99i] then prints a `SKIP:` line naming this
@@ -113,14 +113,14 @@ listed in `.github/required-checks.txt`, so a red wasm build blocks the merge.
 
 ## The doc gates — where they run, and why they are cheap
 
-Three sections, all on the linux legs of the PR lane. None of them builds
-anything of its own, so a docs PR pays seconds, not minutes.
+These live checks run on the Linux legs of the PR lane. Changes to their
+inputs also select their separate checker calibrations.
 
 | Section | Tool | What it refuses |
 |---|---|---|
 | **[89]** | `tests/test_doc_examples.py` | an eigenscript fence that is not executed. Opt-OUT: paired with an `output` block (byte-compared), tagged `eigenscript fragment k=v ...` (free names declared in the tag, resolved STATICALLY through `--lint` E003 so a name hiding in a dead branch still counts, then run and required to finish clean), or tagged `eigenscript nocheck <reason>`. Anything else is red. It also refuses a **value stated in a comment** inside an executed example — that is a claim wearing a checked example's clothes. Per-file populations are pinned and cross-checked against an independent line scan. |
 | **[99za]** | `tools/docs_claims_check.sh` | a hand-typed number, a dangling repo path **or Markdown link target** (resolved against the LINKING FILE's directory only — no repo-root fallback, because a link that resolves only at the root is a broken link). A path is classified before it is checked: `git ls-files` says SOURCE (must be tracked and present), `make -p` says BUILD PRODUCT (must be produced by a rule; its **existence is never consulted**, so `make lsp` cannot change the verdict), neither is red, **any** `--flag` token not in `--help`, a `make <target>` that is not a rule, a backticked ``<builtin> of …`` call that resolves nowhere. Each is derived from the tree or waived by its exact line content with a reason. Every class carries a per-file FLOOR (#1264: found >= floor, rows and pairs checked both ways), and a waiver that matches nothing is red — so coverage cannot shrink without a failure, and adding a claim needs no table edit. Three rules bought on macOS: **no scan that feeds a population suppresses its stderr** (a rejected pattern used to read as "nothing found"); the **fence count comes from `tests/test_doc_examples.py --count`**, the gate that executes the fences — one grammar, not two; and **nothing in the tool extracts with `grep -o`** — grep finds lines, POSIX awk `match()`/`RSTART`/`RLENGTH` extracts, because `grep -o` is not in POSIX and GNU and BSD differ on it. A scan that matches ZERO times where a count is declared is a RED **at the scan**, quoting the command and its exit status, not a "was never visited" three hundred lines later. And the gate prints a **per-class summary LAST** — examined count, files recorded, declared rows — so a class that silently did not run is one named line rather than six consequence-REDs; the runner prints the gate's **entire** captured output on failure (bounded at a fixed line count, and when that bites it keeps the head AND the tail, never a bare tail). The **binary-size** claim is measured against whichever install-shaped binary the lane actually has, decided by inode: `build/release/eigenscript` if present, else `src/eigenscript` when no `build/*/eigenscript` shares its inode (the `./build.sh` product, which is what every CI leg builds and what `install.sh` installs); a `src/eigenscript` that IS a variant alias, or a non-Linux lane, defers with the reason named and the deferral count pinned. |
-| **[99zb]** | `tools/portability_parse_check.sh` | a tracked `*.sh` that the OLDEST bash on the machine cannot parse — **or a shell gate it cannot RUN**. macOS ships **bash 3.2 (2007)**, and three CI rounds were spent guessing at what it rejects — twice wrongly. The dev box now carries a real one at **`~/.local/bin/bash32`**, built from GNU bash 3.2.0 source with `./configure --without-bash-malloc --disable-nls && make` (~4 min); `bash32 -n <file>` settles any portability question in a second, and the whole repo in under two. Parsing was never enough: bash 3.2 scans `<( … )` for its closing paren **without honouring comments**, so an apostrophe in a comment inside one opens a quote that never closes — at RUNTIME, which `bash -n` calls clean. That kept the macOS lane red for four rounds. The audit therefore also EXECUTES five tracked shell gates (`docs_claims_check.sh`, `child_exit_check.sh`, `suite_label_check.sh`, `doc_drift_check.sh`, and `tests/test_string_scaling.sh --selftest` — the one `tests/` entry, 23 stub-driven cases of string-splitting bash) under the old bash and requires rc 0, with the run count pinned. `PORTABILITY_RUN_SELFTEST=1` adds the claims selftest (~3 min, driver-only extra coverage — its children still spawn through `#!/usr/bin/env bash`). When no old bash is present the check **announces the skip and prints both counts** AND names every candidate it looked at, so it can never read as a completed audit. The file count, the gate count and the oracle are printed by the check itself (`portability: OK: files=… checked=… parse-failures=0; gates-run=…/… run-failures=0 (oracle …)`) rather than typed here, because a number typed into a page about a count that moves is a number that rots. **The system shell is a candidate when it IS old** (round-5 blind critic, Fable): until then the candidate list was `$PORTABILITY_BASH` and the two `bash32` oracle paths and nothing else, so on the one platform this audit exists for — the macOS runner, whose default `/bin/bash` IS GNU bash 3.2.57 — it found no old bash and skipped with "NO OLD BASH ON THIS MACHINE". That reason was false; the list simply never tried `/bin/bash`. `/bin/bash` and `/usr/bin/bash` are now candidates **when their own `BASH_VERSINFO[0]` is ≤ 3**, so the macOS lane runs the real audit and a Linux runner's bash 5 is never mistaken for an oracle. **Round 6: EVERY candidate is asked its own version, including the declared ones** — `$PORTABILITY_BASH` and the two `bash32` paths were trusted BY NAME, and a file called `bash32` is not bash 3.2 (a symlink to the system shell, or a rebuild that picked up a modern source), so the gate could print a truthful `oracle=… version 5.x` receipt for an audit that models nothing; a name is a hint, `BASH_VERSINFO[0]` is the fact. The skip line names every candidate it looked at AND every one it rejected by version, and those lines now reach the CI log. **The CALLER pins the identity too, and it keys on the FACT rather than the banner**: the gate prints `portability-parse: oracle-major=N` from the SELECTED candidate's own `BASH_VERSINFO[0]`, and `[99zb]` parses THAT line while holding its own `≤ 3` literal. Round 6 read the major version out of the GNU version banner instead, so a real bash 3.2 behind a wrapper whose banner says `Custom Bash 3.2.0` yielded no number at all and was failed BY NAME (round-6 blind critic, Fable) — a banner is prose, a version is a fact. A gutted selection is still red by name (`the portability gate measured under bash 5 — that is not the old shell it exists to model`) rather than passing on rc 0 and a verdict prefix. And because that arm never fires on a healthy tree, `[99zb]` now drives it over THREE SYNTHETIC RECEIPTS as its own planted faults — a bash 5 wearing a 3.2 banner must be refused, a real 3.2 with a vendor banner must be accepted, and a completed audit with no identity line must be refused — both halves of the control, judged by the same function that judges the real receipt. |
+| **[99zb]** | `tools/portability_parse_check.sh` | a tracked `*.sh` that the OLDEST bash on the machine cannot parse — **or a shell gate it cannot RUN**. macOS ships **bash 3.2 (2007)**, and three CI rounds were spent guessing at what it rejects — twice wrongly. The dev box now carries a real one at **`~/.local/bin/bash32`**, built from GNU bash 3.2.0 source with `./configure --without-bash-malloc --disable-nls && make` (~4 min); `bash32 -n <file>` settles any portability question in a second, and the whole repo in under two. Parsing was never enough: bash 3.2 scans `<( … )` for its closing paren **without honouring comments**, so an apostrophe in a comment inside one opens a quote that never closes — at RUNTIME, which `bash -n` calls clean. That kept the macOS lane red for four rounds. The audit also executes the live gates listed in its `RUN_TARGETS` table under the old bash and requires rc 0, with the run count pinned. Checker calibration belongs to the change-selected driver. When no old bash is present the check **announces the skip and prints both counts** AND names every candidate it looked at, so it can never read as a completed audit. The file count, the gate count and the oracle are printed by the check itself (`portability: OK: files=… checked=… parse-failures=0; gates-run=…/… run-failures=0 (oracle …)`) rather than typed here, because a number typed into a page about a count that moves is a number that rots. **The system shell is a candidate when it IS old** (round-5 blind critic, Fable): until then the candidate list was `$PORTABILITY_BASH` and the two `bash32` oracle paths and nothing else, so on the one platform this audit exists for — the macOS runner, whose default `/bin/bash` IS GNU bash 3.2.57 — it found no old bash and skipped with "NO OLD BASH ON THIS MACHINE". That reason was false; the list simply never tried `/bin/bash`. `/bin/bash` and `/usr/bin/bash` are now candidates **when their own `BASH_VERSINFO[0]` is ≤ 3**, so the macOS lane runs the real audit and a Linux runner's bash 5 is never mistaken for an oracle. **Round 6: EVERY candidate is asked its own version, including the declared ones** — `$PORTABILITY_BASH` and the two `bash32` paths were trusted BY NAME, and a file called `bash32` is not bash 3.2 (a symlink to the system shell, or a rebuild that picked up a modern source), so the gate could print a truthful `oracle=… version 5.x` receipt for an audit that models nothing; a name is a hint, `BASH_VERSINFO[0]` is the fact. The skip line names every candidate it looked at AND every one it rejected by version, and those lines now reach the CI log. **The CALLER pins the identity too, and it keys on the FACT rather than the banner**: the gate prints `portability-parse: oracle-major=N` from the SELECTED candidate's own `BASH_VERSINFO[0]`, and `[99zb]` parses THAT line while holding its own `≤ 3` literal. Round 6 read the major version out of the GNU version banner instead, so a real bash 3.2 behind a wrapper whose banner says `Custom Bash 3.2.0` yielded no number at all and was failed BY NAME (round-6 blind critic, Fable) — a banner is prose, a version is a fact. A gutted selection is still red by name (`the portability gate measured under bash 5 — that is not the old shell it exists to model`) rather than passing on rc 0 and a verdict prefix. The portability checker's self-test drives the suite's real receipt-classifier function over synthetic positive and negative receipts when that checker or the suite changes, and nightly. |
 **`make -p` across GNU Make releases — measured, not assumed.** macOS runners carry
 **GNU Make 3.81** (2006); this box has 4.3, and [99za]'s build-product
 classifier parses `make -p -n --no-builtin-rules`. That was the leading
@@ -185,17 +185,10 @@ requires re-deriving every per-file declared count in the same commit.
 
 | **[99v]** | `tools/doc_drift_check.sh` | the staleness classes that are not numbers: a stdlib module with no `docs/STDLIB.md` entry, a stale "Latest release" line, a `VERSION` with no CHANGELOG section, an unstamped `docs/llms.txt`. |
 
-Both new gates carry a planted-fault selftest that the suite runs with a
-**pinned case count** — `--selftest` on each tool, 29 and 36 cases — so a
-selftest reduced to an echo is red, not green. Cost on the dev box, measured: [89]
-runs 180 example programs plus a `--lint` pass each in **3 s**; [99za]'s live
-pass is **4 s** (one `git ls-files`, one `make -p -n`, one `--api`, one
-`--help`, one `suite_label_check.sh`, one `lib/ui.eigs` load, one
-`test_doc_examples.py --count`) and its 36-case selftest is **~3 min**,
-because each case re-runs the whole gate through its public entry point and
-nine of them copy the tree to vary build state. That
-scratch copy is made NEXT TO the repo, not in `/tmp`: a hard link cannot cross a
-filesystem, and on a CI runner the workspace and `/tmp` are different mounts. Both belong on the PR lane; neither belongs nightly.
+The doc parser and doc-claims gates retain their planted-fault calibrations and
+existing result pins in the self-test table. Their live checks stay in the suite;
+the calibrations run on changed inputs or nightly. Scratch tree copies stay next
+to the repository so hard links do not cross a CI mount boundary.
 
 To add a document to [89]: add it to `DOC_FILES_ARG` in the runner AND a row to
 `POPULATION` in `tests/test_doc_examples.py`, and bump `DOC_POPULATIONS`. The
@@ -339,7 +332,7 @@ runs (`python3-yaml` in `.devcontainer/Dockerfile` for every Linux leg, a setup
 step on the macOS lane); when it is absent anyway, the CALLER probes for PyYAML
 itself and allows exactly the pinned named-skip count, for that gate alone.
 
-The suite runs `tools/workflow_yaml_check.sh` and its selftest as `[99zd]`,
+The suite runs the live `tools/workflow_yaml_check.sh` as `[99zd]`,
 the only part of that section that reads nothing but the tree.
 
 ## Main lane (the merge queue, then push to `main`) — the full matrix
@@ -363,6 +356,7 @@ on it and never rebase to satisfy it; the queue does both.
   is not written down anywhere — `valgrind_smoke.sh` prints `programs=<n>` from
   `${#PROGS[@]}`, because the last three documents that hard-coded it said 28
   when the list held 27.
+- All gate self-tests, including those unchanged since the previous night.
 - A failure opens — or appends to — a single tracking issue, so a nightly that
   nobody is watching still reaches someone. A green run after a red one
   comments on the same thread, which is what makes the thread closable.
@@ -420,10 +414,10 @@ EIGS_SUITE_SECTIONS=zlib bash tests/run_all_tests.sh   # run that plan
 
 `--selftest` takes about **7.5 minutes** on the dev box — six of its rows
 re-derive the 429-chunk table at ~15 s each — so it is a "before you push"
-check, not an inner-loop one. It runs on every CI run in `gate self-tests`.
-The same job also runs `tools/consumer_acceptance.sh --self-test` and
-`plan` against a fixture inventory whose declared set is the fixture's
-own (never the real ecosystem); the step asserts `expected=N` with N>0.
+check, not an inner-loop one. It runs when its inputs change or nightly.
+The same job runs the live consumer-acceptance `plan` against a fixture
+inventory whose declared set is the fixture's own (never the real ecosystem);
+the step asserts `expected=N` with N>0.
 
 `run` confines each consumer row rather than out-ordering it. Shadowing a
 stale binary with a 127-shim earlier on `PATH` is only as good as PATH
@@ -893,8 +887,7 @@ and sync it names the drift — expected, which is why CI does not run `--live`.
 ### What `tools/ci_tier_check.sh` enforces
 
 Only what the queue cannot guarantee by itself. It runs in the `gate
-self-tests` job, followed by its `--selftest` (each planted fault must go red
-through its named check). A missing PyYAML is exit 2, never a pass.
+self-tests` job; its calibration runs when its inputs change or nightly. A missing PyYAML is exit 2, never a pass.
 
 - `[unproduced]` / `[ambiguous]` — a required name is produced by no job, or by
   more than one.
@@ -951,6 +944,7 @@ limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
 | `install.sh (interpreter + eigenlsp on PATH)` | 1 | gate |
 | `bench (instruction-count regression gate)` | 1 | gate (baseline: `origin/main` on a PR; the candidate's `merge_group.base_sha` in the queue, so a PR is never charged for the PRs queued ahead of it) |
 | `nightly / macos-15-intel full suite` | **2** (`nightly.yml`) | port lane, slow: hit its timeout on nearly every main push (#1265) |
+| `nightly / gate self-tests` | **2** (`nightly.yml`) | calibrates every checker |
 | `nightly / valgrind (full corpus, JIT off)` | **2** (`nightly.yml`) | slow; the PR and main lanes run the smoke spread |
 
 No `ci.yml` job moved to nightly in #1264 beyond `macos-15-intel` (#1265):
@@ -982,10 +976,21 @@ before the PR lands, so it never reaches `main`; the cost is a rejected queue
 entry instead of a red PR check. That trade is deliberate: it buys back roughly
 half the machine-minutes and more than half the contributor wait.
 
+## Gate self-tests on change (#1275)
+
+The suite runs each gate's live check; `tools/selftests.sh --changed origin/main`
+runs checker self-tests whose scripts, fixtures or helpers changed, including
+uncommitted and untracked files, and `make precheck` includes that selection.
+The required `gate self-tests (section plan + audit cache key)` check uses the
+PR base SHA or merge-group base SHA, while nightly runs `tools/selftests.sh --all`
+and reports failures through its tracking issue.
+`tools/selftests.txt` owns the trigger globs, bounded commands and existing
+result pins; changing it or the driver selects every row.
+
 ## Before you push: `make precheck` (#1264)
 
 `make precheck` (`tools/precheck.sh`) runs the static gates — the ones that
-need no suite run — one line each, exit 1 on any failure; the docs-claims gate
+need no suite run — plus changed-gate self-tests, exit 1 on any failure; the docs-claims gate
 joins when a binary exists. Its gate list is the only copy: the
 `gate-selftests` CI job runs the same script. Among them,
 `tools/enrolment_check.sh` (also suite `[99ab]`) fails when a `tests/*.sh` or

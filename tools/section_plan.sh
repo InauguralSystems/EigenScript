@@ -236,8 +236,8 @@ e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check
 69614d3ef6dc2f30|(c) sub-check: [17] TR6/TR7 have no old model to reject; the rest of the transformer section still asserts
 3f50de963077a3a2|(b) the [119] section TITLE, which names the sanitizer-only half in its own heading
 86e12c645c5ad672|(c) sub-check: [119] Part B (the #548 borrow guard) is compiled out on a release build; Part A runs on every build and its PASS/FAIL lines are tallied
-ae2397a52e6bf606|(b) the [44] HTTP-readiness FAIL line, which quotes skipped= in its verdict; two skips are the expected witnesses and any other count is already a FAIL there
-a3800f950b3f48eb|(b) a diagnostic inside that FAIL branch, printed only when the section is already red
+459741ca98fe2fc5|(b) the [44] HTTP-readiness FAIL line, which quotes skipped= in its verdict; two skips are the expected witnesses and any other count is already a FAIL there
+23bf2806c94855bb|(b) a diagnostic inside that FAIL branch, printed only when the section is already red
 4f08061db27787e7|(b) the [44-45/47] twin section LABEL; the skip beneath it is counted by section_skip
 1a610a50ab85b616|(b) the [46/47] twin section LABEL; the skip beneath it is counted by section_skip
 b9479b955a96ec10|(b) the [47/47] twin section LABEL; the skip beneath it is counted by section_skip

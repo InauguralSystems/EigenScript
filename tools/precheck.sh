@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Contributor precheck (#1264): the repo's STATIC gates, locally, in under a
-# minute, one line per gate, exit 1 if any fails. `make precheck` runs this.
+# Contributor precheck (#1264): the repo's STATIC gates, locally, plus changed-gate self-tests, one line per gate, exit 1 if any fails. `make precheck` runs this.
 #
 # PR #1260 (a correct 5-line fix) met four of these gates one at a time, each
 # after a ~45-minute CI run, though every one is decidable from the tree.
@@ -27,7 +26,6 @@ run|tools/workflow_yaml_check.sh
 run|tools/ci_tier_check.sh
 run|tools/failsoft_classify_check.sh
 run|tools/child_exit_check.sh
-run|tools/child_exit_check.sh --selftest
 run|tools/enrolment_check.sh
 run|tools/suite_label_check.sh
 run|tools/doc_drift_check.sh
@@ -37,7 +35,8 @@ run|tools/vm_operand_width_check.sh
 run|tools/fmt_operator_sync_check.sh
 run|tools/stdlib_index_check.sh
 run|tools/codspeed_targets_check.sh
-run|tools/gfx_guard_order_check.sh"
+run|tools/gfx_guard_order_check.sh
+selftest|tools/selftests.sh --changed origin/main"
 
 if [ "${1:-}" = "--list" ]; then printf '%s\n' "$GATES" | tr '|' ' '; exit 0; fi
 [ -z "${1:-}" ] || { echo "usage: tools/precheck.sh [--list]" >&2; exit 2; }
@@ -50,7 +49,7 @@ T0=$(date +%s)
 
 run_gate() {   # run_gate <index> <class> <command...>
     local i="$1" class="$2" s rc; shift 2
-    if [ "$class" = bin ] && [ -z "$BIN" ]; then
+    if { [ "$class" = bin ] || [ "$class" = selftest ]; } && [ -z "$BIN" ]; then   # some self-tests run the binary
         echo "SKIP|0|no eigenscript binary (run make to include this gate)" > "$OUT/$i.st"; return
     fi
     s=$(date +%s)
@@ -64,13 +63,27 @@ run_gate() {   # run_gate <index> <class> <command...>
 lane() {   # two lanes (bash 3.2 has no `wait -n`): every other row
     local i=0 class cmd
     while IFS='|' read -r class cmd; do
-        [ $((i % 2)) -eq "$1" ] && run_gate "$i" "$class" $cmd
+        [ "$class" != selftest ] && [ $((i % 2)) -eq "$1" ] && run_gate "$i" "$class" $cmd
         i=$((i + 1))
     done <<< "$GATES"
 }
 lane 0 & p0=$!
 lane 1 & p1=$!
 wait "$p0" "$p1"
+# The self-tests can build scratch fixtures: run serially after the static lanes.
+# CI owns this row separately, with the event's base SHA rather than origin/main.
+i=0
+while IFS='|' read -r class cmd; do
+    if [ "$class" = selftest ]; then
+        if [ "${PRECHECK_SELFTESTS:-1}" = 0 ]; then
+            echo "SKIP|0|CI runs the driver separately with the event base SHA" > "$OUT/$i.st"
+        else
+            run_gate "$i" "$class" $cmd
+            cat "$OUT/$i.log"
+        fi
+    fi
+    i=$((i + 1))
+done <<< "$GATES"
 
 pass=0; fail=0; skip=0; i=0
 while IFS='|' read -r class cmd; do

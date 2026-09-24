@@ -83,7 +83,9 @@ IND = re.compile(r"\b(env|vars)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?|\b(ne
 # scope's `code` (true on every non-PR event) and the [99i] cache restore (keyed
 # on audit inputs only). Pinned to the reviewed STEP — any edit is red until
 # re-reviewed and re-pinned (sha256 of yaml.safe_dump(step, sort_keys=True)).
-WAIVE = {("ci.yml", "scope", "detect"): "6611d97dc6f0b4e7", ("ci.yml", "werror-audit", "restore"): "fd12b71bc65e9a90"}
+WAIVE = {("ci.yml", "scope", "detect"): "6611d97dc6f0b4e7", ("ci.yml", "werror-audit", "restore"): "fd12b71bc65e9a90",
+         # #1275: selection by the changed gates; same selection rule on pull_request and merge_group.
+         ("ci.yml", "gate-selftests", "select"): "411e6c561962764a"}
 used = set()
 def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)
 def bad_expr(e, wf, jid, pr_ok, depth=0):
