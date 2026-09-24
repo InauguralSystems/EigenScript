@@ -6553,68 +6553,6 @@ else
     print_captured "doc-claims gate, VERBATIM" "$CLAIMS_OUTPUT"
 fi
 
-# THE TWO "DERIVED" ROADMAP-HISTORY NUMBERS WERE DERIVED ON NO LANE AT ALL.
-#
-# BOUGHT 2026-09-21 (third critic, `/code-review 1226 medium`, finding 5):
-# ROADMAP.md's pre-PR checkbox counts are derived from `git show
-# <base>:ROADMAP.md`, and every suite job checks out shallow — so the base was
-# unreachable and BOTH claims deferred by name on every lane, on every push.
-# Measured in this PR's own head logs (linux/gcc job 106465168161, macOS job
-# 106465087620): `docs-claims: OK — NUMBERS 36 (history-deferred=2)`. A
-# deferral that is the permanent state is a claim nothing checks, and retyping
-# 113 as 114 passed CI.
-#
-# This caller PROBES THE COMMIT ITSELF — it does not ask the gate whether it
-# could — and on a lane that holds the history a `history-deferred` other than
-# 0 is red BY NAME. `.github/workflows/ci.yml`'s linux job fetches that one
-# commit before the suite, so the derivation happens on every push; the last
-# check below refuses a tree where that fetch has been removed, because a lane
-# list that silently empties is how this whole class comes back.
-ZA_HIST_COMMIT=b91768e23c5a874a64e76e4af9ab291e6aa49983
-ZA_HIST_HELD=0
-if git -C "$TESTS_DIR/.." -c safe.directory='*' cat-file -e "$ZA_HIST_COMMIT:ROADMAP.md" 2>/dev/null; then
-    ZA_HIST_HELD=1
-fi
-ZA_HIST_DEFERRED=$(printf '%s\n' "$CLAIMS_OUTPUT" | sed -n 's/^docs-claims: OK — NUMBERS [0-9][0-9]* (history-deferred=\([0-9][0-9]*\)).*/\1/p' | head -1)
-TOTAL=$((TOTAL + 1))
-if [ "$CLAIMS_RC" -ne 0 ]; then
-    # The gate already failed above and printed everything; do not double-report.
-    PASS=$((PASS + 1))
-    echo "  PASS: ROADMAP-history derivation not judged — the doc-claims gate itself failed above (see its verbatim output)"
-elif [ -z "$ZA_HIST_DEFERRED" ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: the doc-claims gate printed no 'history-deferred=N' on its OK line — this caller cannot tell whether the two ROADMAP-history claims were derived or deferred, which is the state that let them go unverified on every lane"
-elif [ "$ZA_HIST_HELD" -eq 1 ] && [ "$ZA_HIST_DEFERRED" -ne 0 ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: this lane HOLDS $ZA_HIST_COMMIT (this caller read it itself) and the doc-claims gate still deferred $ZA_HIST_DEFERRED ROADMAP-history claim(s) — a lane that can derive must derive, or a deferral becomes the permanent state"
-elif [ "$ZA_HIST_HELD" -eq 1 ] && ! printf '%s\n' "$CLAIMS_OUTPUT" | grep -qF "git show $ZA_HIST_COMMIT:ROADMAP.md"; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: this lane holds $ZA_HIST_COMMIT but the gate's derivation line does not name it — the gate derived from some other commit, or from nothing"
-elif [ "$ZA_HIST_HELD" -eq 1 ]; then
-    PASS=$((PASS + 1))
-    echo "  PASS: ROADMAP history derived on this lane — it holds $ZA_HIST_COMMIT and history-deferred=$ZA_HIST_DEFERRED"
-else
-    PASS=$((PASS + 1))
-    echo "  PASS: ROADMAP history DEFERRED on this lane BY NAME — this caller cannot read $ZA_HIST_COMMIT here (shallow checkout or no .git), so history-deferred=$ZA_HIST_DEFERRED is the honest answer and the two claims are verified on the lanes that fetch it"
-fi
-
-# ...and the fetch that makes a lane hold it must still exist. A per-lane
-# probe alone cannot notice that EVERY lane stopped holding the history: each
-# one would simply announce its honest skip and the class would go unchecked
-# again, silently (mechanical-gates §3 — an exemption that no longer fires
-# must fail, not pass quietly).
-ZA_CI_WORKFLOW="$TESTS_DIR/../.github/workflows/ci.yml"
-TOTAL=$((TOTAL + 1))
-if [ ! -f "$ZA_CI_WORKFLOW" ]; then
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: $ZA_CI_WORKFLOW does not exist, so nothing here can say whether any CI lane still holds the ROADMAP history"
-elif grep -q 'DC_ROADMAP_HIST_COMMIT' "$ZA_CI_WORKFLOW" && grep -q 'fetch --depth=1 origin' "$ZA_CI_WORKFLOW"; then
-    PASS=$((PASS + 1))
-    echo "  PASS: .github/workflows/ci.yml still fetches the ROADMAP-history base (it reads DC_ROADMAP_HIST_COMMIT out of the gate and fetches that one commit), so at least one lane derives these claims"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: .github/workflows/ci.yml no longer fetches the ROADMAP-history base commit — with it gone every lane defers by name, every lane's skip reads as honest, and the two derived ROADMAP numbers are checked nowhere (this is the state measured on 93ff029)"
-fi
 echo ""
 
 # [99zb] Portability audit — every tracked *.sh PARSED by the OLDEST bash on
@@ -6836,13 +6774,9 @@ else
 fi
 echo ""
 
-# [99zd] Every workflow file LOADS as YAML (#1207). The GitHub-state gates
-# that used to share this section (tools/roadmap_check.sh,
-# tools/issue_labels_check.sh) read LIVE repository state, so an unrelated
-# unlabelled issue turned every PR red and ejected queued merges (#1279,
-# #1168). They run in .github/workflows/issue-triage.yml instead: daily, on
-# demand, and on any PR that touches them or ROADMAP.md (#1275). With PyYAML
-# importable here the load arm must run, not skip by name.
+# [99zd] Every workflow file LOADS as YAML (#1207). Issue-label housekeeping
+# reads live GitHub state, so it runs only in issue-triage.yml (#1275). With
+# PyYAML importable here the load arm must run, not skip by name.
 echo "[99zd] Workflow files load as YAML (#1207)"
 TOTAL=$((TOTAL + 1))
 WORKFLOW_OUTPUT=$(bash "$TESTS_DIR/../tools/workflow_yaml_check.sh" 2>&1); WORKFLOW_RC=$?

@@ -1307,75 +1307,6 @@ D_LLMS_LINES=$(wc -l < docs/llms.txt | tr -d ' ')
 D_CHAN_ARMS=$(awk '/^static Value \*chan_clone_rec/,/^}/' src/eigenscript.c \
               | grep -c 'case VAL_' | tr -d ' ')
 
-# ROADMAP.md's two HISTORICAL counts — the pre-PR checkbox pile #1207 measured.
-#
-# BOUGHT 2026-09-21 (round-3 blind critic, Astra check 5): these two numbers
-# were WAIVED by exact line, so changing `113` to `114` AND its waiver together
-# stayed green — the derivation the waiver's reason described ("beside the
-# command that derives it") was never executed by anything. A waiver is a
-# promise; a derived unit is a measurement. The promise is now deleted and the
-# command runs here.
-#
-# The commit is the branch point this PR was measured against. A clone that
-# cannot reach it (a shallow CI checkout, a `git archive` scratch copy with no
-# `.git` at all) cannot derive the number, so the claim DEFERS by name into its
-# own declared class rather than silently dropping out of the population.
-#
-# WHAT A DEFERRAL COSTS (round-4 blind critic, Fable, check 1). A deferred
-# claim is NOT verified — it is verified NOWHERE until someone re-derives it.
-# The commit above is a HISTORICAL one: if the history is ever rewritten, or
-# the commit is garbage-collected, or CI switches to a shallow fetch, these two
-# claims defer on EVERY lane and stay unverified indefinitely, with the tree
-# still printing `docs-claims: OK`. Until round 4 the OK line was BYTE-IDENTICAL
-# whether the claims were derived or deferred, and the CI logs print only that
-# line — so whether CI measured them was unknowable from the lane. The OK line
-# now carries `history-deferred=N`. If N stops being 0 on a lane that used to
-# derive, re-pin DC_ROADMAP_HIST_COMMIT to a reachable commit (or restate the
-# two claims from a commit that is), rather than letting the deferral become
-# the normal state.
-#
-# ROUND 7 — AND A LANE THAT CANNOT REACH IT IS NOW A LANE THAT FETCHES IT.
-# The deferral above was not hypothetical: measured on this PR's own head
-# (linux/gcc job 106465168161, macOS job 106465087620), BOTH printed
-# `docs-claims: OK — NUMBERS 36 (history-deferred=2)`, because every suite
-# job's `actions/checkout` is shallow and the PR merge ref's parents are not
-# fetched. So these two claims were derived NOWHERE, on any lane, ever — and
-# retyping 113 as 114 passed CI (third critic, `/code-review 1226 medium`,
-# finding 5). `.github/workflows/ci.yml`'s `linux` job now fetches exactly
-# this one commit (`git fetch --depth=1 origin <sha>`, about a second), and
-# suite section [99za] probes the commit ITSELF and requires
-# `history-deferred=0` on any lane that holds it — so a lane that claims the
-# derivation without the history is red by name.
-#
-# THE FULL 40-CHARACTER SHA, not an abbreviation: `git fetch origin <sha>`
-# rejects an abbreviated object name outright (`couldn't find remote ref
-# b91768e`, measured), so the abbreviation could not be the thing a lane
-# fetches.
-DC_ROADMAP_HIST_COMMIT="${DC_ROADMAP_HIST_COMMIT:-b91768e23c5a874a64e76e4af9ab291e6aa49983}"
-D_ROADMAP_HIST_CHECKBOXES=""
-D_ROADMAP_HIST_COMPLETED=""
-DC_ROADMAP_HIST_WHY="SKIPPED BY NAME: commit $DC_ROADMAP_HIST_COMMIT is not reachable here (shallow checkout or no .git), so the pre-PR checkbox counts cannot be derived"
-#
-# `-c safe.directory='*'`, AND THE OMISSION COST A RED CI LANE. Bought
-# 2026-09-21, ON THE FIRST RUN OF THE [99za] CHECK ADDED THIS ROUND: the CI
-# container runs as a different uid from the checkout's owner, so PLAIN `git`
-# dies with "detected dubious ownership" — and this `cat-file` swallowed that
-# on stderr and deferred by name, exactly as it does for a genuinely shallow
-# clone. The PATHS class's `git ls-files` three hundred lines below already
-# carried the flag; its sibling here did not, which is §26's two-homes shape
-# inside one file. The lane HELD the commit (the caller read it with the flag)
-# and the gate still said it could not. One workaround, every git call.
-if git -c safe.directory='*' cat-file -e "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" 2>/dev/null; then
-    D_ROADMAP_HIST_CHECKBOXES=$(git -c safe.directory='*' show "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" \
-        | grep -cE '^[[:space:]]*- \[( |x|~)\]' | tr -d ' ')
-    D_ROADMAP_HIST_COMPLETED=$(git -c safe.directory='*' show "$DC_ROADMAP_HIST_COMMIT:ROADMAP.md" \
-        | sed -n '/^## Completed/,$p' \
-        | grep -cE '^[[:space:]]*- \[( |x|~)\]' | tr -d ' ')
-    DC_ROADMAP_HIST_WHY="git show $DC_ROADMAP_HIST_COMMIT:ROADMAP.md"
-fi
-D_ROADMAP_HIST_CHECKBOXES_WHY="$DC_ROADMAP_HIST_WHY"
-D_ROADMAP_HIST_COMPLETED_WHY="$DC_ROADMAP_HIST_WHY"
-
 note "docs-claims derivations (every number below comes from the tree, not from a document):"
 note "  widgets                 = $D_WIDGETS   (source grep)  /  $D_WIDGETS_RT (runtime registry)"
 note "  lib/*.eigs              = $D_LIB_FILES"
@@ -1391,7 +1322,6 @@ note "  suite sections          = $D_SECTIONS distinct  /  $D_SECTION_LINES labe
 note "  --api                   = $D_API_TOTAL ($D_API_CORE core + $D_API_EXT extensions)"
 note "  docs/llms.txt lines     = $D_LLMS_LINES"
 note "  chan_clone_rec arms     = $D_CHAN_ARMS (src/eigenscript.c, no default: — -Werror=switch forces the choice)"
-note "  ROADMAP pre-PR boxes    = ${D_ROADMAP_HIST_CHECKBOXES:-<deferred>} total / ${D_ROADMAP_HIST_COMPLETED:-<deferred>} under ## Completed  ($DC_ROADMAP_HIST_WHY)"
 
 plausible widgets       "$D_WIDGETS"      20
 plausible lib_files     "$D_LIB_FILES"    50
@@ -1621,14 +1551,9 @@ NUMBER_RULES='
 ^[0-9]+ modules$::modules in .lib/.::D_LIB_FILES::0
 ^[0-9]+ builtins$::organized by module::D_API_TOTAL::0
 ^[0-9]+ arms$::switch has::D_CHAN_ARMS::0
-^[0-9,]+ checkbox lines$::carried [0-9,]+ checkbox lines in total::D_ROADMAP_HIST_CHECKBOXES::0
-^[0-9,]+ checkbox lines$::of those were historical highlights::D_ROADMAP_HIST_COMPLETED::0
 '
 
 num_examined=0; num_derived=0; num_waived=0; num_deferred=0; num_rules_fired=0
-hist_deferred=0
-# The two ROADMAP historical counts defer together or not at all.
-HIST_ONLY_DECLARED=2
 note ""
 note "docs-claims class NUMBERS:"
 for f in $DOC_FILES; do
@@ -1654,20 +1579,9 @@ for f in $DOC_FILES; do
             # A derivation that this lane cannot make DEFERS the claim; it never
             # drops it. The deferral is counted and the count is pinned below.
             if [ -z "$derived" ]; then
-                case "$valname" in
-                    D_ROADMAP_HIST_*)
-                        # A SECOND deferral class, counted separately and
-                        # pinned separately: folding it into the binary-size
-                        # class would let either one hide inside the other's
-                        # allowance (mechanical-gates §129).
-                        hist_deferred=$((hist_deferred + 1))
-                        why=$(eval "printf '%s' \"\${${valname}_WHY:-}\"")
-                        note "  DEFERRED $f:$lineno  '$token' — $valname: ${why:-no reason recorded}" ;;
-                    *)
-                        num_deferred=$((num_deferred + 1))
-                        BIN_DEFERRED=1
-                        note "  DEFERRED $f:$lineno  '$token' — $valname has no install-shaped binary to measure here: $SIZE_BIN_WHY" ;;
-                esac
+                num_deferred=$((num_deferred + 1))
+                BIN_DEFERRED=1
+                note "  DEFERRED $f:$lineno  '$token' — $valname has no install-shaped binary to measure here: $SIZE_BIN_WHY"
                 break
             fi
             if [ "$tolname" = "0" ]; then
@@ -1704,24 +1618,10 @@ done
 if [ "$num_examined" -eq 0 ]; then
     fail "class NUMBERS examined 0 claims — the enumeration found nothing, which is not the same as 'no drift' (mechanical-gates §121)"
 fi
-if [ "$num_examined" -ne $((num_derived + num_waived + num_deferred + hist_deferred)) ] && [ "$red" -eq 0 ]; then
-    fail "class NUMBERS: examined $num_examined but accounted for $((num_derived + num_waived + num_deferred + hist_deferred)) — an entry fell through the classification"
+if [ "$num_examined" -ne $((num_derived + num_waived + num_deferred)) ] && [ "$red" -eq 0 ]; then
+    fail "class NUMBERS: examined $num_examined but accounted for $((num_derived + num_waived + num_deferred)) — an entry fell through the classification"
 fi
-note "  NUMBERS: examined $num_examined, derived $num_derived, waived $num_waived, deferred $num_deferred, history-deferred $hist_deferred"
-
-# The ROADMAP-history deferral class, pinned the same way. Reachable commit =>
-# nothing may defer; unreachable => exactly the declared count defers.
-if [ -n "$D_ROADMAP_HIST_CHECKBOXES" ]; then
-    if [ "$hist_deferred" -ne 0 ]; then
-        fail "NUMBERS deferred $hist_deferred ROADMAP-history claim(s) although $DC_ROADMAP_HIST_COMMIT is reachable here — nothing may defer in a lane that can derive it"
-    else
-        note "  HISTORY: 0 deferred — $DC_ROADMAP_HIST_WHY derives $D_ROADMAP_HIST_CHECKBOXES total / $D_ROADMAP_HIST_COMPLETED under ## Completed"
-    fi
-elif [ "$hist_deferred" -ne "$HIST_ONLY_DECLARED" ]; then
-    fail "NUMBERS deferred $hist_deferred ROADMAP-history claim(s) but $HIST_ONLY_DECLARED are declared — a deferral was added or removed; update HIST_ONLY_DECLARED deliberately"
-else
-    note "  HISTORY: $hist_deferred claim(s) need $DC_ROADMAP_HIST_COMMIT, $HIST_ONLY_DECLARED declared, deferred here — $DC_ROADMAP_HIST_WHY"
-fi
+note "  NUMBERS: examined $num_examined, derived $num_derived, waived $num_waived, deferred $num_deferred"
 
 # The deferral class, pinned. A lane that cannot build release defers exactly
 # RELEASE_ONLY_DECLARED claim(s); anything else — a second deferral, or a
@@ -2454,7 +2354,7 @@ class_summary
 
 note ""
 if [ "$red" -eq 0 ]; then
-    note "docs-claims: OK — NUMBERS $num_examined (history-deferred=$hist_deferred), PATHS $path_examined, FLAGS $flag_examined, MAKE TARGETS $tgt_examined, NAMES $name_examined (families $family_examined), DOC ENROLMENT $enrol_examined (every class non-empty)"
+    note "docs-claims: OK — NUMBERS $num_examined, PATHS $path_examined, FLAGS $flag_examined, MAKE TARGETS $tgt_examined, NAMES $name_examined (families $family_examined), DOC ENROLMENT $enrol_examined (every class non-empty)"
 else
     note "docs-claims: FAILED (see RED lines above)"
 fi

@@ -408,39 +408,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      # THE LANE THAT HOLDS ROADMAP HISTORY.
-      #
-      # BOUGHT 2026-09-21 (third critic, `/code-review 1226 medium`, finding
-      # 5): ROADMAP.md's two pre-PR checkbox counts are DERIVED by
-      # tools/docs_claims_check.sh from `git show <base>:ROADMAP.md` — and
-      # every suite job's `actions/checkout` is shallow, so on a PR the merge
-      # ref's parents are absent and the base is unreachable. Measured on this
-      # PR's own head: linux/gcc job 106465168161 and macOS job 106465087620
-      # BOTH printed `docs-claims: OK — NUMBERS 36 (history-deferred=2)`. Two
-      # numbers presented as derived were derived on no lane at all, and
-      # retyping 113 as 114 passed CI.
-      #
-      # One commit, one second. The SHA is read out of the tool rather than
-      # copied here, so there is no second home for it to drift from; [99za]
-      # holds its own literal and cross-checks the gate's derivation line.
-      # A failure here is LOUD on purpose: a lane that silently cannot fetch
-      # the base is a lane where these claims quietly stop being checked.
-      - name: Fetch the ROADMAP-history base commit ([99za] derives from it)
-        run: |
-          set -eu
-          sha=$(sed -n 's/^DC_ROADMAP_HIST_COMMIT="${DC_ROADMAP_HIST_COMMIT:-\(.*\)}"$/\1/p' \
-                    tools/docs_claims_check.sh | head -1)
-          if [ -z "$sha" ]; then
-            echo "could not read DC_ROADMAP_HIST_COMMIT out of tools/docs_claims_check.sh"
-            exit 1
-          fi
-          echo "ROADMAP-history base: $sha"
-          if ! git -c safe.directory='*' cat-file -e "$sha:ROADMAP.md" 2>/dev/null; then
-            git -c safe.directory='*' fetch --depth=1 origin "$sha"
-            git -c safe.directory='*' cat-file -e "$sha:ROADMAP.md"
-          fi
-          echo "this lane HOLDS the base commit, so [99za] requires history-deferred=0 here"
-
       - name: Build
         run: CC=${{ matrix.cc }} ./build.sh
 

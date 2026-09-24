@@ -28,12 +28,7 @@ README.md|docker run --rm -v "$PWD:/work" ghcr.io/inauguralsystems/eigenscript:l
 # release note - true of that release, not a claim about this tree - or a
 # figure quoted in order to disown it. Each waiver is the EXACT line, so
 # editing the line drops the waiver and the number goes red again.
-#
-# ROUND 3: the waiver for the two pre-PR checkbox counts (113 / 62) is GONE.
-# Its reason said the numbers sat "beside the command that derives it" - and
-# nothing ran that command, so changing 113 to 114 AND the waiver together
-# stayed green (blind critic Astra, check 5). They are now derived units
-# (D_ROADMAP_HIST_CHECKBOXES / D_ROADMAP_HIST_COMPLETED) in the gate itself.
+
 ROADMAP.md|- **GitHub Linguist submission.** Its condition (2K+ `.eigs` files across public|GitHub's threshold for its own Linguist submission, quoted; not ours to set, not measured here
 ROADMAP.md|  the 500K-cycle canary, EigenMiniSat DPLL/CDCL solves, EigenRegex S1–S12|the DMG consumer's canary length, a parameter of that repo's acceptance command, quoted inside the release-acceptance narrative
 ROADMAP.md|  "1253-line" figure this entry used to carry was stale by ~900 lines, and|a stale figure quoted in order to RETIRE it; the same sentence says the measurement is `wc -l src/eigenscript.h`

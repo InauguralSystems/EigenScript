@@ -32,7 +32,6 @@ tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | ti
 tools/failsoft_classify_check.sh | timeout 390 bash tools/failsoft_classify_check.sh --selftest
 tools/fmt_operator_sync_check.sh | timeout 30 bash tools/fmt_operator_sync_check.sh --selftest
 tools/gfx_strict_sweep.sh | timeout 30 bash tools/gfx_strict_sweep.sh --selftest | [{"pattern":"^(?:selftest: [0-9]+ passed, 0 failed.*|  SKIP:.*)$","count":1}]
-tools/issue_labels_check.sh tools/gh_probe.sh | timeout 30 bash tools/issue_labels_check.sh --selftest | [{"pattern":"^SELFTEST: 7 case\\(s\\) run, 7 passed, 0 failed, 0 skipped$","count":1}]
 tools/jit_fleet_bench.sh | timeout 90 bash tools/jit_fleet_bench.sh --selftest
 tools/lint_message_utf8_check.sh tools/lint_source_byte_sweep.py tools/lint_path_fixture.py tests/lint_utf8/* | timeout 30 bash tools/lint_message_utf8_check.sh --selftest
 tools/lint_source_byte_sweep.py tools/lint_path_fixture.py | timeout 30 python3 tools/lint_source_byte_sweep.py src/eigenscript --selftest-paths
@@ -42,7 +41,6 @@ tools/observer_gate_diff.sh | timeout 60 bash tools/observer_gate_diff.sh selfte
 tools/pipefail_verdict_check.sh | timeout 30 bash tools/pipefail_verdict_check.sh --selftest | [{"pattern":"^  checks=34 ","count":1}]
 tools/replay_diff.sh | timeout 30 bash tools/replay_diff.sh --selftest | [{"pattern":"  selftest ok:","count":11},{"pattern":"^SELFTEST: all planted faults caught","count":1}]
 tools/road_diff.py tools/road_diff.sh | timeout 30 python3 tools/road_diff.py --selftest
-tools/roadmap_check.sh tools/gh_probe.sh | timeout 30 bash tools/roadmap_check.sh --selftest | [{"pattern":"^SELFTEST: 25 case\\(s\\) run, 25 passed, 0 failed, 0 skipped$","count":1}]
 tools/section_plan.sh | timeout 1860 bash tools/section_plan.sh --selftest
 tools/stdlib_index_check.sh | timeout 30 bash tools/stdlib_index_check.sh --selftest
 tools/strict_differential.sh | timeout 30 bash tools/strict_differential.sh --selftest

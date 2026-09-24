@@ -40,9 +40,11 @@ NAMES|CLAUDE.md|6
 NAMES|docs/ARCHITECTURE.md|1
 NAMES|docs/BUILTINS.md|394
 NAMES|docs/CONCURRENCY.md|10
-NUMBERS|ROADMAP.md|11
-PATHS|ROADMAP.md|20
-FLAGS|ROADMAP.md|9
+# ROADMAP.md 11/20/9 -> 9/17/8 with #1275: the milestone table and the
+# checkbox-history header went; the file links GitHub milestones instead.
+NUMBERS|ROADMAP.md|9
+PATHS|ROADMAP.md|17
+FLAGS|ROADMAP.md|8
 TARGETS|ROADMAP.md|2
 NAMES|ROADMAP.md|6
 #
@@ -67,6 +69,8 @@ NAMES|ROADMAP.md|6
 NUMBERS|docs/CI.md|2
 # PATHS 68 -> 65 with #1275: the issue-labels/roadmap section dropped its
 # suite-caller and token-lane paragraphs when those gates left the suite.
-PATHS|docs/CI.md|64
+# 64 -> 56 with #1275: the issue-labels section no longer cites the three
+# deleted gate scripts or the ROADMAP-history derivation.
+PATHS|docs/CI.md|56
 TARGETS|docs/CI.md|6
 NAMES|docs/CI.md|0

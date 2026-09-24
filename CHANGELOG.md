@@ -1423,6 +1423,17 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **ROADMAP.md links the GitHub milestones instead of mirroring them, and the
+  gates that policed the mirror are gone (#1275).** Deleted:
+  `tools/roadmap_check.sh`, `tools/issue_labels_check.sh` and
+  `tools/gh_probe.sh` (1,970 lines). Also removed: the ROADMAP checkbox-history
+  derivation in `tools/docs_claims_check.sh`, its `[99za]` checks and the
+  `ci.yml` step that fetched a historical commit for it.
+  `.github/workflows/issue-triage.yml` now reads the open-issue list with
+  `gh` + `jq` in its own `audit` step (353 → 80 lines), with the same verdict
+  on the live list (examined 61, missing 0). It no longer runs on pull
+  requests.
+
 - Gate self-tests run when their script, fixtures or helpers change, and nightly,
   through `tools/selftests.sh` and `tools/selftests.txt` (#1275). The suite keeps
   the live checks; `make precheck` includes the branch's changed self-tests.

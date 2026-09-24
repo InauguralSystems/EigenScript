@@ -1,65 +1,22 @@
 # Roadmap
 
-**The milestone set lives on GitHub and this file MIRRORS it.** One table, one
-row per milestone; no checkboxes anywhere. `tools/roadmap_check.sh` fails if a
-`- [ ]`/`- [x]`/`- [~]` line appears anywhere in this file, and — when `gh` is
-available and authenticated — if the table's open rows stop matching the open
-milestones returned by
-`gh api repos/InauguralSystems/EigenScript/milestones`. That is the point of
-the rewrite (#1207/#1155).
-
-The previous version of this file carried 113 checkbox lines in total.
-62 checkbox lines of those were historical highlights under `## Completed`, so
-anything counting "roadmap items" was counting the past and double-counting the
-present (#414 appeared twice, Windows appeared as an umbrella plus three
-tiers). Neither number is typed on trust: `tools/docs_claims_check.sh` DERIVES
-both by running these two commands against that commit, and SKIPs them BY NAME
-on a checkout too shallow to reach it (round 3 — they used to be waived, and a
-waiver whose reason describes a derivation nobody runs is a promise, not a
-measurement):
-
-    git show b91768e23c5a874a64e76e4af9ab291e6aa49983:ROADMAP.md \
-        | grep -cE '^[[:space:]]*- \[( |x|~)\]'
-    git show b91768e23c5a874a64e76e4af9ab291e6aa49983:ROADMAP.md | sed -n '/^## Completed/,$p' \
-        | grep -cE '^[[:space:]]*- \[( |x|~)\]'
-
-**The counted population is the table, and nothing else.** Everything else here
-is either shipped (`## Completed`) or uncommitted
-(`## Ideas and deferrals (uncounted)`), and neither is a plan.
-
-Current version: see the "Latest release" line in CLAUDE.md (gated by
-`tools/doc_drift_check.sh`) and CHANGELOG.md — this file does not repeat the
-number, so it cannot fall behind it.
-
 ## Milestones
 
-| # | Milestone | Status | GitHub | DONE when |
-| --- | --- | --- | --- | --- |
-| 2 | M1 — Consumer acceptance for a release | active | https://github.com/InauguralSystems/EigenScript/milestone/2 | one complete release+pin wave whose record names the candidate, every consumer's result, and the originating gaps actually closed |
-| 3 | M2 — A safe hosted concurrency contract | active | https://github.com/InauguralSystems/EigenScript/milestone/3 | #1153's tier criteria met and the race gate covers them |
-| 4 | M3 — EigenMiniSat's next AOT rung inside the memory budget | active | https://github.com/InauguralSystems/EigenScript/milestone/4 | 5x6 completes under the cap with a verified certificate; ouroboros#231's iterator finding validated separately rather than assumed to explain the cliff |
-| 5 | M4 — One numeric validity contract | declared-not-started | https://github.com/InauguralSystems/EigenScript/milestone/5 | one contract, all producers agreeing, and the strict-default decision made rather than deferred again |
-| 6 | M5 — One demanding OS-thread consumer that also uses packages | active | https://github.com/InauguralSystems/EigenScript/milestone/6 | one small certified solve, with the consumer's GAPS.md recording the upstream findings. Hosted threading only — not an attempt to bypass EigenOS's SMP blocker |
-| 7 | M6 — The next justified AOT record specialization | declared-not-started | https://github.com/InauguralSystems/EigenScript/milestone/7 | the pre-declared prediction met or refuted on the record. Neither K~86 nor '15x' is an acceptance promise; flat unboxed records follow only when separately sized |
-| 8 | M7 — Make JIT selection pay on the measured fleet | active | https://github.com/InauguralSystems/EigenScript/milestone/8 | the intervention lands and the fleet re-measures net-positive — or it fails and an explicit retention/default decision is recorded instead. Misleading diagnostics fixed or removed in the same change |
-| 9 | M8 — Gates and claims that measure what they say | active | https://github.com/InauguralSystems/EigenScript/milestone/9 | each listed issue closed with its gate proven to fire, and no gate in the set examining fewer items than the previous run without saying so |
-| 10 | M9 — A gfx consumer that looks like 2026 | active | https://github.com/InauguralSystems/EigenScript/milestone/10 | InauguralSystems/EigenScript#1216 closed builtin by builtin with a Tidepool consumer commit per builtin; InauguralSystems/Tidepool#43 and InauguralSystems/Tidepool#59 closed; the M1 wave's Tidepool row carries a gfx oracle and PASSes on a gfx candidate |
-| — | Windows Tier 2 — JIT on the Windows x64 ABI | retired | [#419](https://github.com/InauguralSystems/EigenScript/issues/419) | never; it contradicts the standing veto on grinding the JIT toward native claims — native perf routes through the AOT (see the vetoes below) |
-| — | Package registry, version solver and `--pkg audit` lockfiles | retired | [#419](https://github.com/InauguralSystems/EigenScript/issues/419) | never; the SHA-pinned vendoring model is structurally sounder at this scale (see the vetoes below), and hq carries the same veto |
+**The milestone set lives on GitHub:**
+https://github.com/InauguralSystems/EigenScript/milestones. Each milestone's
+description states what forces it and its bar (the condition that closes it),
+and its issues are the work. This file does not mirror that list, so it cannot
+drift from it (#1275).
 
-Status words, and what each one commits to: `active` — a milestone with open
-issues being worked; `declared-not-started` — the contract is fixed in advance
-and no issue has been filed against it yet (the GitHub description says so in
-its own STATUS line); `blocked` — waiting on something named; `retired` — a
-superseded or vetoed item kept here so it is not re-proposed, never a plan;
-`completed` — closed on GitHub but still worth a row this cycle. Only the rows
-that are NOT `retired` or `completed` are compared against the open GitHub
-milestones, so a retired row can never smuggle itself back in as work.
+Current version: see the "Latest release" line in CLAUDE.md and CHANGELOG.md.
+
+Everything below is either uncommitted (`## Ideas and deferrals`) or shipped
+(`## Completed`); neither is a plan.
 
 ## Ideas and deferrals (uncounted)
 
 Nothing in this section is a commitment, a plan, or a countable item. An entry
-graduates by acquiring a milestone row above, with a DONE clause.
+graduates by becoming a GitHub milestone with a bar.
 
 ### Undecided — no closure condition, so not a milestone
 
@@ -85,16 +42,16 @@ graduates by acquiring a milestone row above, with a DONE clause.
 - Package registry + version solver, `--pkg audit` behavioral lockfiles —
   the SHA-pinned vendoring model is structurally sounder at this scale.
 
-The first two of those are the retired rows in the table above; they are listed
-in both places on purpose, because a veto that lives only in prose is the one
-that gets re-proposed.
+The JIT and package-registry vetoes retired two former milestones (#419); they
+stay listed here because a veto nobody can find is the one that gets
+re-proposed.
 
 ### Deferred with the evidence that deferred them
 
 These are open design questions, not scheduled work. Each states what was
 measured and what would have to be true to pick it up; most of them are the
-subject matter of M4 (the numeric validity contract) and will acquire their
-milestone row when an issue is filed against it.
+subject matter of M4 (the numeric validity contract) and will join that
+milestone when an issue is filed against them.
 
 - **Value-level invalidity taint for the observer** — **DEFERRED, by
   evidence, not omission.** #971 item 1 proposed threading
@@ -350,8 +307,8 @@ with the commands that produce them; no number is retyped here).
   ("`chr` can't emit bytes ≥ 0x80, so `utf8_encode` waits on that") was stale.
 - **Package manager, basic `--pkg`.** Namespaced deps, lockfile, commit/tree
   verify, install/update/verify — shipped. What was listed with it (registry,
-  version solver, audit lockfiles) is vetoed, not pending: it is the retired
-  row in the table above. The old `- [~]` was the only tri-state box in the
+  version solver, audit lockfiles) is vetoed, not pending (see the standing
+  vetoes above). The old `- [~]` was the only tri-state box in the
   file and meant neither.
 - **Raw TCP sockets** (#414) — shipped as the `net_*` extension
   (`eigenscript --api` is the index); it was listed twice in the old active

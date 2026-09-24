@@ -146,9 +146,9 @@ Use the [bug report template](https://github.com/InauguralSystems/EigenScript/is
 Every issue carries an `area:<subsystem>` label and a kind (`kind:*`, or the
 stock `bug`/`enhancement`). You do not have to label your own issue. Two
 mechanisms keep the backlog labelled, and both run from `main`
-(`.github/workflows/issue-triage.yml`): the **daily audit** runs
-`tools/issue_labels_check.sh` over every open issue and FAILS while any one of
-them is missing an `area:` label or a kind, and the **triage job** puts
+(`.github/workflows/issue-triage.yml`), never on your pull request: the
+**daily audit** FAILS while any open issue is missing an `area:` label or a
+kind, and the **triage job** puts
 `needs-triage` on a newly opened or reopened issue that arrives without an
 `area:` label and comments with the scheme, so you can add the right labels
 yourself if you know them. A maintainer replaces `needs-triage` either way.

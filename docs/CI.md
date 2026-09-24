@@ -196,120 +196,31 @@ checker refuses a document that carries fences and has no pinned row, and the
 suite refuses a run that covered fewer rows than are pinned — a file quietly
 dropped from either list is a failure at both ends.
 
-## Issue labels, and the roadmap that is a milestone set
+## Issue labels
 
-Two things that were kept by memory are now kept by a gate, both bought the
-same day (2026-09-21, #1207/#1155 and the maintainer's "we aren't labeling
-issues").
+**Every open issue carries an `area:` label and a kind.** The scheme is
+`area:<subsystem>` (runtime-vm, jit, concurrency, observer, memory,
+trace-tape, packages, http, gfx, embed, docs, ci, gates, lint-tooling,
+consumer, aot, stdlib) plus a KIND (`kind:silent-wrong`, `kind:gate-defect`,
+`kind:docs-drift`, `kind:flake`, `kind:tracking`, `kind:decision`, or the stock
+`bug`/`enhancement`); `found-by:*` and `blocks-release` are optional.
 
-**Where they run: not in the test suite.** `tools/issue_labels_check.sh` and
-`tools/roadmap_check.sh` read LIVE repository state (open issues, milestones,
-other repositories), so their verdict can change without any commit. While
-they ran as a suite section, an unrelated issue filed without labels turned
-every pull request red and ejected queued merges (#1279, #1168). They run in
-`.github/workflows/issue-triage.yml` instead (#1275): daily, on
-`workflow_dispatch`, and on any pull request that changes one of them,
-`tools/gh_probe.sh`, `ROADMAP.md` or the workflow itself. That PR run is
-advisory and never a required check. Its audit step holds its OWN literal copy
-of each gate's population regex and selftest case count, asserts the gate's
-output against that copy, and asserts the gate's `--contract` equals it; a
-difference is red by name and never auto-adopted, and a named skip is red
-because that lane exists to make the API call. Run either gate locally with an
-authenticated `gh`: `bash tools/issue_labels_check.sh`,
-`bash tools/roadmap_check.sh` (each also takes `--selftest`).
+`.github/workflows/issue-triage.yml` keeps it that way, reading GitHub's own
+issue list with `gh` and `jq`:
+- **`triage`**, on an issue opened or reopened, adds `needs-triage` when it
+  has no `area:` label, and comments with the scheme.
+- **`audit`** runs daily and on `workflow_dispatch`. It prints
+  `examined=N missing=M` and fails when any open issue lacks either label, or
+  when it listed no issues at all.
 
-**Issue labels.** The scheme on the repository is `area:<subsystem>`
-(runtime-vm, jit, concurrency, observer, memory, trace-tape, packages, http,
-gfx, embed, docs, ci, gates, lint-tooling, consumer, aot, stdlib), a KIND
-(`kind:silent-wrong`, `kind:gate-defect`, `kind:docs-drift`, `kind:flake`,
-`kind:tracking`, `kind:decision`, or the stock `bug`/`enhancement`),
-`found-by:*` (critic, wave, code-review, consumer, ci, cold-read) and
-`blocks-release`. The rule is: **every open issue carries an `area:` label and
-a kind.** `tools/issue_labels_check.sh` enumerates every open ISSUE (never a
-pull request), prints `examined=N missing=M` with the offending numbers, and
-fails when M > 0 **or when N == 0** — an empty enumeration satisfies "nothing
-is missing" without checking anything. `.github/workflows/issue-triage.yml`
-runs it daily and, on `issues: [opened, reopened]`, puts `needs-triage` on
-anything that arrives without an `area:` label. The backlog was essentially
-unlabelled before the sweep; the often-quoted "33 of 36" census is not
-reproducible from the API (the open set was 35 at the sweep and never 36), so
-the figure of record is whatever the gate prints on the day, not a number
-copied into this page: it reports `examined=N missing=M` on every run, and the
-build fails when M is not zero (or when N is zero, which is the vacuity that
-"nothing is missing" would otherwise satisfy).
+This is housekeeping, so it never runs in the test suite or on a pull request.
+While it was a suite section, one unrelated unlabelled issue turned every PR
+red and ejected queued merges (#1279, #1168).
 
-**One CI lane HOLDS the ROADMAP history, and `[99za]` checks that it did.**
-ROADMAP.md's two pre-PR checkbox counts are derived by running
-`git show <base>:ROADMAP.md` — and `actions/checkout` is shallow, so on a pull
-request the merge ref's parents are absent and the base is unreachable. Both
-claims therefore DEFERRED by name on every lane, on every push: measured in
-this PR's own logs (`linux / gcc` job 106465168161 and `macos` job
-106465087620 both printed `docs-claims: OK — NUMBERS 36
-(history-deferred=2)`), so retyping 113 as 114 passed CI (third critic,
-`/code-review 1226 medium`). The `linux` job now fetches that ONE commit
-before the suite — `git fetch --depth=1 origin <sha>`, about a second, with
-the SHA read out of `tools/docs_claims_check.sh` rather than copied into the
-workflow, so there is no second home for it to drift from. `[99za]` then
-PROBES the commit itself and requires `history-deferred=0` on a lane that
-holds it; on a lane that does not, it prints the deferral by name. And because
-a per-lane probe alone cannot notice that EVERY lane stopped holding the
-history, one more check refuses a tree whose `ci.yml` no longer fetches it.
-(The full 40-character SHA, not an abbreviation: `git fetch origin <sha>`
-rejects an abbreviated object name outright.)
-
-That check found a second cause on its FIRST CI run, which is the whole
-argument for it. With the commit fetched and demonstrably present — the caller
-read it — the gate still deferred, because the gate's `git cat-file` was PLAIN
-`git` and the container runs as a different uid from the checkout's owner, so
-git refuses with "detected dubious ownership" and the `2>/dev/null` made that
-indistinguishable from a shallow clone. `git ls-files` in the same file, three
-hundred lines away, had carried `-c safe.directory='*'` for months. One
-workaround, every git call — and the caller that probes with the flag is what
-makes a gate that cannot agree with it red by name.
-
-**ROADMAP.md.** `tools/roadmap_check.sh` refuses (a) any `- [ ]`/`- [x]`/`- [~]`
-line anywhere in the file and anything other than exactly one table, inside
-`## Milestones`, with five cells and a known status per row; and (b) — with
-`gh` present and authenticated — an open table row set that differs from the
-open GitHub milestones by number, or a milestone list that comes back empty.
-Arm (b) also compares each open row's DONE cell with that milestone's own DONE
-text (equality after whitespace normalisation — a PREFIX rule would call a
-truncation green, and a truncation is what round 1 shipped for M7); and a new
-arm (c) resolves every issue/PR reference in the table's cells plus every
-repo-qualified reference anywhere in the file, because round 1 credited
-"Tidepool PR #375" for a change that is EigenScript PR #375 and the Tidepool
-endpoint 404s. Arms (b) and (c) skip by name without `gh` — and also when `gh` is
-present but UNAUTHENTICATED, which is the state the macOS runner is in and
-which round 2 reported as seven 404s, taking that leg red on a tree whose
-references are all fine. Within arm (c), a genuine HTTP 404 is red with the
-status in the message; a 401/403/429, a transport error, or a repository this
-token cannot read AT ALL SKIPs that one reference by name and is counted in
-`skipped=` on the arm's line — and the OK line now carries `resolved=N
-skipped=M`, because `refs=gh-api:…` named the endpoint the arm meant to call
-and not work done: with every per-reference call answering HTTP 403 the line
-was byte-identical to a walk that resolved all seven. An authenticated caller
-requires `skipped=0`. Arm (c) also keeps an EXPLICIT OWNER whole: round 3
-extracted only the repository half, so `cli/Tidepool#59` deduplicated against
-`InauguralSystems/Tidepool#59` and was certified by resolving a different
-organisation's repository. Deduplication keys on the full owner/repo/number
-triple, and an owner outside `KNOWN_OWNERS` is red by name rather than replaced
-by the default. Arm (a) never
-skips. Arm (c) also REFUSES a bare `#N` in a cell that also carries a qualified
-`Repo#M`: M9's row read "Tidepool#43 and #59", the bare `#59` silently resolved
-against EigenScript (a real, closed PR), and the row was green for a reference
-it does not mean. Each gate's header documents the rest: repository visibility
-(`KNOWN_REPOS` / `PRIVATE_REPOS`), what each listing outcome prints, and the
-selftest's planted faults.
-
-The old file was a checkbox pile, most of it historical highlights under
-`## Completed`, so every counter of "roadmap items" was counting the past.
-ROADMAP.md's own header states both pre-PR counts beside the commands that
-produce them, and `tools/docs_claims_check.sh` RUNS those commands
-(`D_ROADMAP_HIST_CHECKBOXES` / `D_ROADMAP_HIST_COMPLETED`) rather than waiving
-them — a waiver whose reason describes a derivation nobody executes is a
-promise, not a measurement. On a checkout too shallow to reach the commit the
-two claims defer by name into their own declared class. This page deliberately
-does not retype either number.
+**ROADMAP.md does not mirror the milestones.** The milestone set, with each
+milestone's bar, lives on GitHub; ROADMAP.md links it and holds only
+uncommitted ideas, vetoes and shipped history. Nothing is copied, so there is
+nothing to check for drift (#1275).
 
 `tools/workflow_yaml_check.sh` loads every file under `.github/workflows/`:
 (a) no `name:` value is an unquoted plain scalar containing `: ` — the exact
