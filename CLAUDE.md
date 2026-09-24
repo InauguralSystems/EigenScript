@@ -6,6 +6,9 @@ copy-and-patch x86-64 JIT, an observer system (entropy/dH tracking on
 every assignment), and a reversibility layer (temporal interrogatives,
 trace tape, deterministic replay).
 
+**Design principles:** `docs/PRINCIPLES.md`. Every design decision is checked
+against it; cite a principle by name in decision issues and reviews.
+
 ## When you hit a gap, file an issue — proactively, without being asked
 
 Working here you WILL hit a missing feature, a rough edge, or a bug. The
