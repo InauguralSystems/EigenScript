@@ -3204,9 +3204,9 @@ check_eigs_suite "bcd: round-trips + loud invalid-nibble/fraction rejection" \
     "test_bcd.eigs" "BCD_ALL_PASS" 10
 echo ""
 
-echo "[50f] wait_until (7 checks)"
+echo "[50f] wait_until (20 checks)"
 check_eigs_suite "functional.wait_until: success timing, timeout, sleep cadence" \
-    "test_wait_until.eigs" "WAIT_UNTIL_ALL_PASS" 7
+    "test_wait_until.eigs" "WAIT_UNTIL_ALL_PASS" 20
 echo ""
 
 echo "[50g] hexdump (7 checks)"
