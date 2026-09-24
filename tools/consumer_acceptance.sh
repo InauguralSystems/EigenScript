@@ -191,9 +191,17 @@ plan() {
 }
 
 WORK=""; RECORD=""; ACTIVE=""; SHIM=""; CALL_LOG=""; OVERLAY=""
-cleanup() { [ -z "$WORK" ] || rm -rf "$WORK"; }
+stop_row_group() {
+  local pid="${ACTIVE:-}"
+  [ -n "$pid" ] || return 0
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  ACTIVE=""
+}
+cleanup() { stop_row_group; [ -z "$WORK" ] || rm -rf "$WORK"; }
 interrupted() {
-  [ -z "$ACTIVE" ] || kill "$ACTIVE" 2>/dev/null || true
+  stop_row_group
   if [ -n "$RECORD" ]; then
     # The initial record already ends this way. Re-arm it if a write was
     # interrupted before the marker reached disk.
@@ -303,6 +311,10 @@ unsupported_variant() {
 row() {
   local i="$1" name="${NAMES[i]}" pin="${PINS[i]}" cmd="${CMDS[i]}" kind="${KINDS[i]}"
   local verdict=PASS rc=- dur=0 calls=0 ok=0 fail=0 skips=0 prereq="" v log start end missing_variant="" actual mutated=""
+  local -a session=(setsid)
+  if ! command -v setsid >/dev/null 2>&1; then
+    session=(python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1],sys.argv[1:])')
+  fi
   log="$WORK/$name.log"
   : > "$CALL_LOG"
   if [ "$kind" = missing-inventory ] || [ -z "$cmd" ]; then verdict=UNRUNNABLE; prereq="$kind"
@@ -310,12 +322,12 @@ row() {
   elif v="$(probe_prereq "$name" "$cmd" "$candidate")" && [ -n "$v" ]; then verdict=UNRUNNABLE; prereq="$v"
   else
     start="$(date +%s)"
-    ( cd "$ECO/$name" && env PATH="$SHIM:$PATH" EIGS=eigenscript EIGENSCRIPT=eigenscript \
+    ( cd "$ECO/$name" && exec "${session[@]}" env PATH="$SHIM:$PATH" EIGS=eigenscript EIGENSCRIPT=eigenscript \
         EIGENSCRIPT_BIN="$SHIM/eigenscript" EIGS_DIR="$OVERLAY" EIGENSCRIPT_DIR="$OVERLAY" \
-        "${GFX_ENV[@]}" timeout --kill-after=2s "$BUDGET" bash -e -o pipefail -c "$cmd" ) > "$log" 2>&1 &
+        "${GFX_ENV[@]}" timeout --kill-after=2s "$BUDGET" bash -e -o pipefail -c "$cmd" ) < /dev/null > "$log" 2>&1 &
     ACTIVE=$!
     wait "$ACTIVE" && rc=0 || rc=$?
-    ACTIVE=""
+    stop_row_group
     end="$(date +%s)"; dur=$((end-start))
     while IFS='|' read -r v _rc _kind; do
       if [ "$_rc" -eq 127 ]; then
@@ -531,19 +543,39 @@ selftest() {
   printf 'hanging\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   st_check d timeout-hang 'row|hanging|v0.43.0|HANG|124|' "$st_record"
-  # (e) A signal during a wave cannot leave a PASS footer.
-  st_reset; st_consumer interrupted 'sleep 8'
+  # (e) A signal must stop the timeout and the consumer's own child.
+  st_reset; st_consumer interrupted 'printf "%s\n" "$PPID" > "$CA_TIMEOUT_PID_FILE"; sleep 31 & child=$!; printf "%s\n" "$child" > "$CA_SLEEP_PID_FILE"; wait "$child"'
   printf 'interrupted\n' > "$st_eco/.ca_expected"
-  rm -f "$st_record"; : > "$st_out"
-  CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=10 \
-    timeout 12 bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 &
+  local timeout_pid="" sleep_pid="" timeout_file="$st_root/timeout.pid" sleep_file="$st_root/sleep.pid" alive_timeout=0 alive_sleep=0
+  st_alive() {
+    local state
+    case "$1" in ''|*[!0-9]*) return 1 ;; esac
+    kill -0 "$1" 2>/dev/null || return 1
+    state="$(ps -o stat= -p "$1" 2>/dev/null)" || return 1
+    case "$state" in Z*|'') return 1 ;; *) return 0 ;; esac
+  }
+  rm -f "$st_record" "$timeout_file" "$sleep_file"; : > "$st_out"
+  CA_TIMEOUT_PID_FILE="$timeout_file" CA_SLEEP_PID_FILE="$sleep_file" \
+    CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=30 \
+    bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 &
   p=$!
   tries=0
-  while [ ! -f "$st_record" ] && [ "$tries" -lt 100 ]; do sleep 0.02; tries=$((tries+1)); done
-  sleep 0.2
+  while { [ ! -s "$timeout_file" ] || [ ! -s "$sleep_file" ]; } && [ "$tries" -lt 200 ]; do sleep 0.02; tries=$((tries+1)); done
+  [ ! -s "$timeout_file" ] || timeout_pid="$(cat "$timeout_file")"
+  [ ! -s "$sleep_file" ] || sleep_pid="$(cat "$sleep_file")"
   kill -TERM "$p" 2>/dev/null || true
-  st_rc=0; wait "$p" || st_rc=$?
-  st_check e interrupted-record 'VERDICT: INCOMPLETE' "$st_record"
+  tries=0
+  while { st_alive "$p" || st_alive "$timeout_pid" || st_alive "$sleep_pid"; } && [ "$tries" -lt 100 ]; do sleep 0.05; tries=$((tries+1)); done
+  st_alive "$timeout_pid" && alive_timeout=1
+  st_alive "$sleep_pid" && alive_sleep=1
+  if [ -n "$timeout_pid" ] && [ -n "$sleep_pid" ] && [ "$(tail -n 1 "$st_record" 2>/dev/null)" = 'VERDICT: INCOMPLETE' ] && [ "$alive_timeout" -eq 0 ] && [ "$alive_sleep" -eq 0 ]; then
+    echo 'plant e check=interrupt-process-group RED record=INCOMPLETE timeout=dead sleep=dead'
+  else echo "plant e check=interrupt-process-group SILENT timeout_alive=$alive_timeout sleep_alive=$alive_sleep"; st_bad=1; fi
+  if st_alive "$p"; then kill -KILL "$p" 2>/dev/null || true; fi
+  if [ "$alive_timeout" -eq 1 ] || [ "$alive_sleep" -eq 1 ]; then
+    kill -TERM -- "-$timeout_pid" 2>/dev/null || true; kill -KILL -- "-$timeout_pid" 2>/dev/null || true
+  fi
+  wait "$p" 2>/dev/null || true
   # (f) An uncovered eigenscript* invocation is a named refusal.
   st_reset; st_consumer variant 'eigenscript-gfx work.eigs'
   printf 'variant\n' > "$st_eco/.ca_expected"
