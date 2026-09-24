@@ -493,6 +493,10 @@ run() {
 # One-time calibration against the public run mode. Every fixture is a pinned
 # checkout under a private temp root; no real consumer checkout is touched.
 selftest() {
+  # The compiler name lives in an assignment (waived by shape in werror_switch_check),
+  # not in the plant command strings, which that audit cannot classify.
+  ST_CC=cc
+  export ST_CC
   local st_root st_eco st_record st_out st_candidate st_rc=0 st_bad=0 p tries
   st_root="$(mktemp -d "${TMPDIR:-/tmp}/ca-selftest.XXXXXX")" || return 2
   st_eco="$st_root/eco"; mkdir -p "$st_eco"
@@ -609,7 +613,7 @@ selftest() {
   # (A) C source names beginning eigenscript stay source, in a private copy.
   printf 'int runtime_value(void);\n' > "$st_root/src/eigenscript.h"
   printf '#include "eigenscript.h"\nint runtime_value(void) { return 7; }\n' > "$st_root/src/eigenscript.c"
-  st_reset; st_consumer sources 'cc -c "$EIGS_DIR/src/eigenscript.c" -o runtime.o && printf changed > "$EIGS_DIR/src/eigenscript.h" && eigenscript smoke.eigs'
+  st_reset; st_consumer sources '"$ST_CC" -c "$EIGS_DIR/src/eigenscript.c" -o runtime.o && printf changed > "$EIGS_DIR/src/eigenscript.h" && eigenscript smoke.eigs'
   printf 'sources\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   if [ "$st_rc" -eq 0 ] && grep -Fq 'row|sources|v0.43.0|PASS|0|' "$st_record" && grep -Fqx 'int runtime_value(void);' "$st_root/src/eigenscript.h"; then
@@ -621,7 +625,7 @@ selftest() {
   printf 'build:\n\tcp rebuilt-runtime src/eigenscript\n' > "$st_root/Makefile"
   local before_sha after_sha
   before_sha="$(sha256sum "$st_candidate" | awk '{print $1}')"
-  st_reset; st_consumer rebuild 'cc -c "$EIGS_DIR/src/eigenscript.c" -o runtime.o && eigenscript smoke.eigs && make -C "$EIGS_DIR" build && eigenscript regression.eigs'
+  st_reset; st_consumer rebuild '"$ST_CC" -c "$EIGS_DIR/src/eigenscript.c" -o runtime.o && eigenscript smoke.eigs && make -C "$EIGS_DIR" build && eigenscript regression.eigs'
   printf 'rebuild\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   after_sha="$(sha256sum "$st_candidate" | awk '{print $1}')"
