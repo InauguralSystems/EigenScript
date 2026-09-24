@@ -315,7 +315,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-      - name: Build (the section plan runs the suite's own probes)
+      # Select first: a PR that changes no gate selects 0 rows and skips the
+      # self-test build, prerequisites and run below (#1275).
+      - name: Select self-tests for changed gates
+        id: select
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          base='${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
+          bash tools/selftests.sh --changed "$base" --list > selection.txt
+          cat selection.txt
+          n=$(sed -n 's/^selftests: enrolment .*; \([0-9][0-9]*\) self-tests selected$/\1/p' selection.txt)
+          [ -n "$n" ] || { echo "selftests: no selection line"; exit 2; }
+          echo "n=$n" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+      - if: needs.scope.outputs.code == 'true' || steps.select.outputs.n != '0'
+        name: Build (the section plan runs the suite's own probes)
         run: ./build.sh
       # The contributor precheck's gate list is the only copy (#1264): CI runs
       # the same script, so `make precheck` cannot drift from CI.
@@ -329,7 +343,8 @@ jobs:
           bash tools/section_plan.sh --skip-audit
           bash tools/section_plan.sh --probes
           bash tools/section_plan.sh --print-section-plan core
-      - name: Self-test prerequisites (PyYAML and Cachegrind)
+      - if: steps.select.outputs.n != '0'
+        name: Self-test prerequisites (PyYAML and Cachegrind)
         run: |
           if python3 -c 'import yaml' 2>/dev/null; then
             echo "PyYAML already present: $(python3 -c 'import yaml; print(yaml.__version__)')"
@@ -350,11 +365,9 @@ jobs:
         name: Platform tiers — required-checks.txt vs the workflows (#1264)
         run: |
           bash tools/ci_tier_check.sh
-      - name: Self-tests for changed gates
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          base='${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
-          bash tools/selftests.sh --changed "$base"
+      - if: steps.select.outputs.n != '0'
+        name: Self-tests for changed gates
+        run: bash tools/selftests.sh --changed '${{ steps.select.outputs.base }}'
       - if: needs.scope.outputs.code == 'true'
         name: Consumer-acceptance plan against fixture inventory
         run: |

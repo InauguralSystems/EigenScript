@@ -49,7 +49,7 @@ T0=$(date +%s)
 
 run_gate() {   # run_gate <index> <class> <command...>
     local i="$1" class="$2" s rc; shift 2
-    if [ "$class" = bin ] && [ -z "$BIN" ]; then
+    if { [ "$class" = bin ] || [ "$class" = selftest ]; } && [ -z "$BIN" ]; then   # some self-tests run the binary
         echo "SKIP|0|no eigenscript binary (run make to include this gate)" > "$OUT/$i.st"; return
     fi
     s=$(date +%s)

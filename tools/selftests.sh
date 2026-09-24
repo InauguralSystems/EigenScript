@@ -87,30 +87,34 @@ def main():
             timeout = shutil.which('timeout') or shutil.which('gtimeout') or error('timeout/gtimeout missing')
             variant = {'tests/test_http_slowloris.sh': 'http', 'tools/gfx_strict_sweep.sh': 'gfx'}.get(target)
             cap = (lambda: resource.setrlimit(resource.RLIMIT_AS, (1536000000, 1536000000))) if variant == 'gfx' else None
-            if variant:
-                binary = env.get('SELFTEST_' + variant.upper())
-                if not binary:
-                    print(f'selftests: preparing isolated {variant} binary', flush=True)
-                    tree = Path(scratch) / variant
-                    tree.mkdir()
-                    for name in ('src', 'lib', 'tools'):
-                        shutil.copytree(name, tree / name, ignore=shutil.ignore_patterns('eigenscript*', '*.o'))
-                    for name in ('Makefile', 'VERSION'):
-                        shutil.copy(name, tree / name)
-                    # The C source/header share the binary prefix; copy those explicitly.
-                    for path in Path('src').glob('eigenscript.*'):
-                        shutil.copy(path, tree / path)
-                    subprocess.run([timeout, '-k', '5', '600', 'make', '-C', str(tree), variant], check=True, stdout=subprocess.DEVNULL, preexec_fn=cap)
-                    binary = str(tree / 'src/eigenscript')
-                env['EIGS' if variant == 'http' else 'EIGS_SWEEP_BIN'] = str(Path(binary).resolve())
-            # Real consumer fixtures are used by this benchmark's calibration.
-            if target == 'tools/jit_fleet_bench.sh' and not env.get('ECO'):
-                local = Path.home() / 'src/InauguralSystems/EigenScriptEcosystem'
-                if not (local / 'DMG').is_dir():
-                    local = Path(scratch) / 'ecosystem'
-                    for repo in ('DMG', 'liferaft', 'ouroboros', 'EigenMiniSat'):
-                        subprocess.run([timeout, '-k', '5', '120', 'git', 'clone', '--depth=1', 'https://github.com/InauguralSystems/' + repo, str(local / repo)], check=True, stdout=subprocess.DEVNULL)
-                env['ECO'] = str(local)
+            try:
+                if variant:
+                    binary = env.get('SELFTEST_' + variant.upper())
+                    if not binary:
+                        print(f'selftests: preparing isolated {variant} binary', flush=True)
+                        tree = Path(scratch) / variant
+                        tree.mkdir()
+                        for name in ('src', 'lib', 'tools'):
+                            shutil.copytree(name, tree / name, ignore=shutil.ignore_patterns('eigenscript*', '*.o'))
+                        for name in ('Makefile', 'VERSION'):
+                            shutil.copy(name, tree / name)
+                        # The C source/header share the binary prefix; copy those explicitly.
+                        for path in Path('src').glob('eigenscript.*'):
+                            shutil.copy(path, tree / path)
+                        subprocess.run([timeout, '-k', '5', '600', 'make', '-C', str(tree), variant], check=True, stdout=subprocess.DEVNULL, preexec_fn=cap)
+                        binary = str(tree / 'src/eigenscript')
+                    env['EIGS' if variant == 'http' else 'EIGS_SWEEP_BIN'] = str(Path(binary).resolve())
+                if target == 'tools/jit_fleet_bench.sh' and not env.get('ECO'):
+                    local = Path.home() / 'src/InauguralSystems/EigenScriptEcosystem'
+                    if not (local / 'DMG').is_dir():
+                        local = Path(scratch) / 'ecosystem'
+                        for repo in ('DMG', 'liferaft', 'ouroboros', 'EigenMiniSat'):
+                            subprocess.run([timeout, '-k', '5', '120', 'git', 'clone', '--depth=1', 'https://github.com/InauguralSystems/' + repo, str(local / repo)], check=True, stdout=subprocess.DEVNULL)
+                    env['ECO'] = str(local)
+            except (OSError, subprocess.SubprocessError) as exc:  # this row's setup failed: its FAIL, not the run's
+                failed += 1
+                print(f'FAIL: {target} setup: {exc}', flush=True)
+                continue
             # HTTP readiness's public wrapper uses src/ as cwd; call its implementation there.
             cwd = 'src' if target == 'tests/http_readiness.py' else '.'
             argv = shlex.split(command)
