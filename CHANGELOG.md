@@ -1423,6 +1423,20 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **Consumer acceptance is a small real-consumer gate (#1275).** The harness
+  drops its large self-test and PATH farm, HOME scratch, path-edit refusal,
+  and root drop. A private copy of the candidate's source and library tree
+  routes only runtime executable names through counting shims; consumer
+  rebuilds in the overlay cannot alter the candidate. The shims execute the
+  original resolved binary paths so executable-relative libraries come from
+  the candidate; a post-row hash detects mutation of any supplied binary.
+  Tree correspondence, completed-record floors and named tool or
+  gfx prerequisites are checked before rows. It keeps the 16 real CI acceptance
+  commands, named missing-command and unsupported-variant refusals, bounded
+  rows, and truthful wave records.
+  `tools/consumer_acceptance.sh` plus its two Python helpers shrank from
+  10,429 to 2,369 lines (658 shell lines). The earlier entries below describe the historical
+  implementation before this change.
 - **ROADMAP.md links the GitHub milestones instead of mirroring them, and the
   gates that policed the mirror are gone (#1275).** Deleted:
   `tools/roadmap_check.sh`, `tools/issue_labels_check.sh` and

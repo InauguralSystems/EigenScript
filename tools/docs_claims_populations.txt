@@ -69,8 +69,10 @@ NAMES|ROADMAP.md|6
 NUMBERS|docs/CI.md|2
 # PATHS 68 -> 65 with #1275: the issue-labels/roadmap section dropped its
 # suite-caller and token-lane paragraphs when those gates left the suite.
-# 64 -> 56 with #1275: the issue-labels section no longer cites the three
-# deleted gate scripts or the ROADMAP-history derivation.
-PATHS|docs/CI.md|56
-TARGETS|docs/CI.md|6
+# 64 -> 56 with #1275 (#1299): the issue-labels section no longer cites the
+# three deleted gate scripts or the ROADMAP-history derivation; 56 -> 53 PATHS
+# and 6 -> 5 TARGETS with #1275 item 1: the retired consumer-acceptance farm,
+# overlay and self-test walkthrough went.
+PATHS|docs/CI.md|53
+TARGETS|docs/CI.md|5
 NAMES|docs/CI.md|0
