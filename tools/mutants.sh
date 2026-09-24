@@ -95,7 +95,7 @@ run_oracle() {
         step_rc=0
         EIGS_BIN="$dest/src/eigenscript" env ${ORACLE_ENV[@]+"${ORACLE_ENV[@]}"} \
             "$TMO" -k 5 "$ORACLE_TIMEOUT" "$program" "$dest/$path" >> "$log" 2>&1 || step_rc=$?
-        case "$step_rc" in 124|137) echo "$step_rc"; return;; esac
+        [ "$step_rc" -ne 124 ] || { echo 124; return; }   # only a timeout skips the next oracle (old trace_mt)
         [ "$rc" -ne 0 ] || rc=$step_rc
     done
     echo "$rc"
@@ -103,11 +103,11 @@ run_oracle() {
 
 classify_kill() {
     local log=$1 rc=$2 killed
-    case "$rc" in 124|137) echo "hang(no exit in ${ORACLE_TIMEOUT}s)"; return;; esac
-    killed=$(LC_ALL=C sed -n 's/^  FAIL: \([^:]*\):.*/\1/p' "$log")
+    killed=$(LC_ALL=C sed -n 's/^  FAIL: \([^:]*\):.*/\1/p' "$log")   # named rows first, as the old trains did
     if [ "$FAIL_MODE" = first ]; then killed=$(printf '%s\n' "$killed" | sed -n '1p')
     else killed=$(printf '%s\n' "$killed" | LC_ALL=C sort -u | paste -sd+ -); fi
     if [ -n "$killed" ]; then echo "$killed"
+    elif [ "$rc" -eq 124 ]; then echo "hang(no exit in ${ORACLE_TIMEOUT}s)"
     elif [ "$rc" -ne 0 ]; then echo "crash(rc=$rc)"
     else return 1; fi
 }
@@ -230,7 +230,8 @@ selftest() (   # $1 = train whose two controls are asserted (default dict_keys, 
 
 if [ "${1:-}" = --selftest ]; then
     if [ "${2:-}" = all ]; then
-        for f in "$ROOT"/tests/*_mutants/train.conf; do t=${f%_mutants/train.conf}; selftest "${t##*/}" || exit 2; done; exit 0
+        # one PROCESS per train: calling selftest under `||` would switch off set -e inside it
+        for f in "$ROOT"/tests/*_mutants/train.conf; do t=${f%_mutants/train.conf}; bash "$0" --selftest "${t##*/}" || exit 2; done; exit 0
     fi
     selftest "${2:-}"; exit
 fi
