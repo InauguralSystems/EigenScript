@@ -16,9 +16,15 @@
 #   get_positional of parsed                # list of positional args
 #   has_flag of [parsed, "--help"]          # 1 or 0
 
+# Captured before `import args` installs the module namespace over the
+# `args` name: the module's own public name collides with the CLI-args
+# builtin it needs to call. Private (`_`-prefixed), so it is never
+# projected into the module's namespace dict.
+_args_builtin is args
+
 # ---- parse_args: parse CLI arguments into a map ----
 define parse_args as:
-    raw is args of null
+    raw is _args_builtin of null
     result is [["positional", []]]
     i is 0
     loop while i < (len of raw):

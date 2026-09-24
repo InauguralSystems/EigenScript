@@ -830,6 +830,20 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`args.parse_args` no longer breaks under `import args`.** The module's
+  own public name collided with the `args` builtin it calls internally: once
+  `import args` installed the namespace dict under the name `args`, the free
+  identifier `args` inside `parse_args` resolved to that dict instead of the
+  builtin, raising `cannot call dict`. The `load_file of "lib/args.eigs"`
+  form was unaffected — it binds unqualified names, not a dict named `args`.
+  Fixed by capturing the builtin in a private `_args_builtin` binding at
+  module load time, before `import` installs the namespace over the
+  colliding name; `_`-private bindings are never projected into a module's
+  namespace. `tests/run_all_tests.sh`'s Import System section ([36/36])
+  covers both `import args` and `load_file`, each a fresh interpreter
+  process, over an empty argv and one combining a positional argument, a
+  boolean flag, `--key=value` and `--key value`.
+
 - **`functional.wait_until` no longer sleeps after its final failed attempt
   (#1237).** `sleep_fn` ran after every failed attempt, including the last
   one, so a timeout after `tries` attempts paid `tries` delays instead of

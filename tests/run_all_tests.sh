@@ -2191,6 +2191,64 @@ else
     echo "  FAIL: installed stdlib is not a project file (#904) — warnings=$SH904_WARNS (want 0), math.abs of -5 = '$SH904_OUT' (want 5), real-shadow warnings=$SH904_SHADOW (want 1)"
 fi
 rm -rf "$SH904_DIR"
+
+# lib/args.eigs: `import args` used to make parse_args's own internal call
+# to the CLI-args builtin named `args` resolve to the freshly-installed
+# module namespace dict instead ("cannot call dict") — the module's public
+# name collided with the builtin it wraps. `load_file of "lib/args.eigs"`
+# never hit this (it binds unqualified names, not a dict named `args`).
+# Fixed by capturing the builtin in a private `_args_builtin` binding
+# before import installs the namespace. Runs both forms, each a fresh
+# interpreter process, over an empty argv and one exercising a positional
+# arg, a boolean flag, --key=value and --key value together.
+AI_DIR=$(mktemp -d /tmp/eigs_args_import_XXXXXX)
+AI_BIN="$PWD/eigenscript"
+cat > "$AI_DIR/import_check.eigs" <<'PROBE'
+import args
+p is args.parse_args of null
+pos is args.get_positional of p
+print of (len of pos)
+for x in pos:
+    print of x
+print of (args.get_flag of [p, "--verbose"])
+print of (args.get_opt of [p, "--output", "MISSING"])
+print of (args.get_opt of [p, "--input", "MISSING"])
+PROBE
+cat > "$AI_DIR/load_check.eigs" <<'PROBE'
+load_file of "lib/args.eigs"
+p is parse_args of null
+pos is get_positional of p
+print of (len of pos)
+for x in pos:
+    print of x
+print of (get_flag of [p, "--verbose"])
+print of (get_opt of [p, "--output", "MISSING"])
+print of (get_opt of [p, "--input", "MISSING"])
+PROBE
+AI_EXPECTED_FULL=$(printf '1\nextra.csv\n1\nresult.txt\ndata.csv')
+AI_EXPECTED_EMPTY=$(printf '0\n0\nMISSING\nMISSING')
+AI_IMPORT_FULL=$(cd "$AI_DIR" && "$AI_BIN" import_check.eigs --verbose --output=result.txt --input data.csv extra.csv 2>&1)
+AI_IMPORT_FULL_RC=$?
+AI_IMPORT_EMPTY=$(cd "$AI_DIR" && "$AI_BIN" import_check.eigs 2>&1)
+AI_IMPORT_EMPTY_RC=$?
+AI_LOAD_FULL=$(cd "$AI_DIR" && "$AI_BIN" load_check.eigs --verbose --output=result.txt --input data.csv extra.csv 2>&1)
+AI_LOAD_FULL_RC=$?
+AI_LOAD_EMPTY=$(cd "$AI_DIR" && "$AI_BIN" load_check.eigs 2>&1)
+AI_LOAD_EMPTY_RC=$?
+rm -rf "$AI_DIR"
+TOTAL=$((TOTAL + 4))
+if [ "$AI_IMPORT_FULL_RC" = 0 ] && [ "$AI_IMPORT_FULL" = "$AI_EXPECTED_FULL" ] \
+    && [ "$AI_IMPORT_EMPTY_RC" = 0 ] && [ "$AI_IMPORT_EMPTY" = "$AI_EXPECTED_EMPTY" ] \
+    && [ "$AI_LOAD_FULL_RC" = 0 ] && [ "$AI_LOAD_FULL" = "$AI_EXPECTED_FULL" ] \
+    && [ "$AI_LOAD_EMPTY_RC" = 0 ] && [ "$AI_LOAD_EMPTY" = "$AI_EXPECTED_EMPTY" ]; then
+    PASS=$((PASS + 4))
+    echo "  PASS: args.parse_args via import matches load_file (empty argv, positional/flag/--key=value/--key value)"
+else
+    FAIL=$((FAIL + 4))
+    echo "  FAIL: args import/load parity — import(full) rc=$AI_IMPORT_FULL_RC, import(empty) rc=$AI_IMPORT_EMPTY_RC, load(full) rc=$AI_LOAD_FULL_RC, load(empty) rc=$AI_LOAD_EMPTY_RC"
+    echo "--- import full ---"; printf '%s\n' "$AI_IMPORT_FULL"
+    echo "--- load full ---"; printf '%s\n' "$AI_LOAD_FULL"
+fi
 echo ""
 
 # [38] Pattern matching
