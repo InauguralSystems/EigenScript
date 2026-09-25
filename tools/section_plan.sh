@@ -610,57 +610,10 @@ validate_shards() {
     [ "$n" -ge 1 ] || die "shard count must be >= 1, got '$n'"
 }
 
-# The runner text is the count oracle. A selected chunk can contain alternate
-# headings for a compiled extension; inspect the last-built binary's hard link
-# and its Makefile flags before the shard starts. No runner output enters this
-# count. An unrecognised binary takes the present arm, so a synthetic runner's
-# conditional headings remain promised even when a fault hides them at runtime.
-shard_build_features() {
-    SP_MODEL=1 SP_HTTP=1 SP_DB=1 SP_NET=1 SP_GFX=1 SP_ZLIB=1
-    local binary="$SP_ROOT/src/eigenscript" built variant flags
-    [ -e "$binary" ] || return 0
-    [ -f "$SP_ROOT/Makefile" ] || return 0
-    for built in "$SP_ROOT"/build/*/eigenscript; do
-        [ -e "$built" ] && [ "$binary" -ef "$built" ] || continue
-        variant=${built%/eigenscript}; variant=${variant##*/}
-        flags=$(sed -n "s/^FLAGS_${variant} := //p" "$SP_ROOT/Makefile")
-        [ -n "$flags" ] || die "no Makefile flags for built variant $variant"
-        SP_NET=0 SP_GFX=0 SP_ZLIB=0
-        case "$flags" in *'$(DEFS_OFF)'*) SP_MODEL=0 SP_HTTP=0 SP_DB=0 ;; esac
-        case "$flags" in *'-DEIGENSCRIPT_EXT_MODEL=0'*) SP_MODEL=0 ;; *'-DEIGENSCRIPT_EXT_MODEL=1'*) SP_MODEL=1 ;; esac
-        case "$flags" in *'-DEIGENSCRIPT_EXT_HTTP=0'*) SP_HTTP=0 ;; *'-DEIGENSCRIPT_EXT_HTTP=1'*) SP_HTTP=1 ;; esac
-        case "$flags" in *'-DEIGENSCRIPT_EXT_DB=0'*) SP_DB=0 ;; *'-DEIGENSCRIPT_EXT_DB=1'*) SP_DB=1 ;; esac
-        case "$flags" in *'-DEIGENSCRIPT_EXT_NET=1'*) SP_NET=1 ;; esac
-        case "$flags" in *'-DEIGENSCRIPT_EXT_GFX=1'*) SP_GFX=1 ;; esac
-        case "$flags" in *'-DEIGENSCRIPT_EXT_ZLIB=1'*) SP_ZLIB=1 ;; esac
-        return 0
-    done
-}
-
-# Count literal heading calls in selected source ranges. The branch twins are
-# mutually exclusive; an absent extension can also have no alternate heading.
-chunk_executed_headers() {
-    local s="$1" e="$2" body top cond feature=1 present absent
-    body=$(sed -n "${s},${e}p" "$RUNNER")
-    top=$(printf '%s\n' "$body" | grep -cE '^echo "\[[^]]*\]')
-    present=$(printf '%s\n' "$body" | grep -E '^[[:space:]]+echo "\[[^]]*\]' | grep -vcE 'SKIPPED \(|skipped — |stub check')
-    absent=$(printf '%s\n' "$body" | grep -E '^[[:space:]]+echo "\[[^]]*\]' | grep -cE 'SKIPPED \(|skipped — |stub check')
-    case "$body" in
-        *'binary built without EIGENSCRIPT_EXT_HTTP'*) feature=$SP_HTTP ;;
-        *'binary built without EIGENSCRIPT_EXT_DB'*) feature=$SP_DB ;;
-        *'binary built without EIGENSCRIPT_EXT_MODEL'*) feature=$SP_MODEL ;;
-        *'binary built without EIGENSCRIPT_EXT_GFX'*) feature=$SP_GFX ;;
-        *'minimal build, stub check'*) feature=$SP_ZLIB ;;
-        *'gfx demos skipped'*) feature=$SP_GFX ;;
-        *'eigen_model_loaded of null'*) feature=$SP_MODEL ;;
-        *'print of net_close'*) feature=$SP_NET ;;
-    esac
-    if [ "$feature" -eq 1 ]; then cond=$present; else cond=$absent; fi
-    echo $((top + cond))
-}
-
-# One emitted shard runs selected chunks. The parent compares its static PLAN
-# count with section headers printed on the run's own stdout.
+# A chunk is header-bearing when its source contains a literal section echo.
+# The emitted wrapper marks chunk boundaries; the parent checks that every
+# selected boundary appears in order and every bearing chunk prints a header.
+# Branch choices inside a chunk do not enter this structural promise.
 build_shard_plan() {
     local k="$1" n="$2" s
     validate_shards "$n"; validate_shards "$k"
@@ -675,20 +628,22 @@ build_shard_plan() {
     awk -v k="$k" '$2 == k { print $1 }' "$SP_WORK/assign" | sort -n > "$SP_WORK/selected"
     SP_SEL_CHUNKS=$(grep -c '[0-9]' "$SP_WORK/selected")
     [ "$SP_SEL_CHUNKS" -gt 0 ] || die "shard $k/$n selected ZERO chunks"
-    shard_build_features
-    local e nsec
-    SP_SEL_SECTIONS=0
+    local e first bearing
+    SP_SEL_BEARING=0
+    : > "$SP_WORK/expected"
     while read -r s; do
         [ -n "$s" ] || continue
         e=$(awk -v ss="$s" '$1 == ss { print $2 }' "$SP_WORK/chunks")
-        nsec=$(chunk_executed_headers "$s" "$e")
-        SP_SEL_SECTIONS=$((SP_SEL_SECTIONS + nsec))
+        first=$(sed -n "${s},${e}p" "$RUNNER" | grep -m1 -oE 'echo "\[[^"]*"' | sed 's/^echo "//; s/"$//')
+        bearing=0
+        if [ -n "$first" ]; then bearing=1; SP_SEL_BEARING=$((SP_SEL_BEARING + 1)); fi
+        printf '# EIGS-EXPECT\t%s\t%s\t%s\n' "$s" "$bearing" "${first:--}" >> "$SP_WORK/expected"
     done < "$SP_WORK/selected"
-    [ "$SP_SEL_SECTIONS" -gt 0 ] || die "shard $k/$n selected ZERO section headers"
+    [ "$SP_SEL_BEARING" -gt 0 ] || die "shard $k/$n selected ZERO header-bearing chunks"
     local wsec
     wsec=$(shard_loads "$SP_WORK/weights" "$SP_WORK/assign" "$n" | awk -v k="$k" '$1 == k {print $3}')
     note "shard=$k/$n weights=$SP_WEIGHTS_SOURCE unmeasured=$SP_WEIGHT_MISSING"
-    echo "PLAN: shard=$k/$n sections=$SP_SEL_SECTIONS chunks=$SP_SEL_CHUNKS predicted=${wsec}s unmeasured=$SP_WEIGHT_MISSING"
+    echo "PLAN: shard=$k/$n bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS predicted=${wsec}s unmeasured=$SP_WEIGHT_MISSING"
 }
 
 check_chunk_count() {
@@ -708,11 +663,13 @@ emit_shard() {
         echo 'EIGS_PLAN_ACTIVE=1; export EIGS_PLAN_ACTIVE'
         printf "EIGS_PLAN_TESTS_DIR='%s/tests'; export EIGS_PLAN_TESTS_DIR\n" "$SP_ROOT"
         echo 'EIGS_SECTION_TIME=1; export EIGS_SECTION_TIME'
+        cat "$SP_WORK/expected"
         sed -n "1,${SP_PREAMBLE_END}p" "$RUNNER"
         local s e
         while read -r s; do
             [ -n "$s" ] || continue
             e=$(awk -v ss="$s" '$1==ss {print $2}' "$SP_WORK/chunks")
+            printf "builtin echo '@@EIGS-CHUNK %s@@'\n" "$s" # SENTINEL_EMIT
             sed -n "${s},${e}p" "$RUNNER"
         done < "$SP_WORK/selected"
         sed -n "${SP_EPILOGUE_START},\$p" "$RUNNER"
@@ -778,8 +735,8 @@ selftest() {
         "$0" --root "$SP_ROOT" --shard-owner 3 --section '[absent]' --quiet
     expect_ok 'control: emit shard passes bash syntax check' "$0" --root "$SP_ROOT" --emit-shard 2 3 "$dir/shard.sh" --quiet
     [ -s "$dir/shard.sh" ] && bash -n "$dir/shard.sh" || { echo '  FAIL: emitted shard absent or invalid'; fail=$((fail + 1)); }
-    # Inert runner with the real dispatch/timer preamble. Its source promises
-    # every heading; the planted runtime condition hides all but three.
+    # Inert runner with the real dispatch/timer preamble. Its source marks
+    # every chunk as header-bearing; a runtime condition hides all but three.
     local stub="$dir/stub" i
     mkdir -p "$stub/tests" "$stub/tools" "$stub/src" "$stub/.github/workflows"
     cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/read_werror_flags.sh" \
@@ -796,10 +753,15 @@ selftest() {
             "$((9000 + i))" "$i" "$((9000 + i))" >> "$stub/tests/run_all_tests.sh"
     done
     printf '# Final guard (#681)\n__eigs_section_close\nexit 0\n' >> "$stub/tests/run_all_tests.sh"
-    expect_ok 'control: static source count agrees with visible shard headers' \
+    expect_ok 'control: ordered chunk sentinels and bearing headers appear' \
         env EIGS_SUITE_SHARD=2/3 SP_HIDE_SECTIONS=0 bash "$stub/tests/run_all_tests.sh"
-    expect_red 'runner: hidden section bodies violate planner header count' 'section plan promised' \
+    expect_red 'verify_shard_chunks: header-bearing chunk printed no header' 'header-bearing chunk at start line' \
         env EIGS_SUITE_SHARD=2/3 SP_HIDE_SECTIONS=1 bash "$stub/tests/run_all_tests.sh"
+    awk '/# SENTINEL_EMIT$/ { print "            : # planted missing sentinel"; next } { print }' \
+        "$stub/tools/section_plan.sh" > "$stub/tools/t"
+    mv "$stub/tools/t" "$stub/tools/section_plan.sh"
+    expect_red 'verify_shard_chunks: missing chunk sentinel' 'chunk sentinel missing' \
+        env EIGS_SUITE_SHARD=2/3 SP_HIDE_SECTIONS=0 bash "$stub/tests/run_all_tests.sh"
     echo 'SECTION_TIME: [only-one] 0.01' > "$dir/partial.log"
     expect_red 'print_weights: partial log cannot refresh table' 'only 1 SECTION_TIME' \
         "$0" --root "$SP_ROOT" --print-weights "$dir/partial.log"

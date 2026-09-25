@@ -681,9 +681,10 @@ All notable changes to EigenScript are documented here.
     suite. `tools/section_plan.sh` derives complete top-level chunks from the
     runner, verifies their byte-for-byte partition, assigns them by measured
     `tests/section_weights.txt` costs, and checks the shard union and
-    disjointness. The planner counts the section headings promised by selected
-    source text before execution; the runner refuses a mismatch with headings
-    printed on its stdout. The required `asan + ubsan (full suite)` aggregator
+    disjointness. The planner marks chunks containing a literal section-header
+    echo; a wrapper emits a boundary sentinel before each selected chunk, and
+    the runner refuses missing or reordered sentinels or a bearing chunk that
+    prints no header. The required `asan + ubsan (full suite)` aggregator
     requires one receipt per shard, a zero summed leak tally, and exactly one
     claimant for each job-level collector and LSP check.
   - `tools/section_plan.sh --skip-audit` checks every section-level skip

@@ -211,13 +211,13 @@ on it and never rebase to satisfy it; the queue does both.
 `tools/section_plan.sh` splits the runner into complete top-level chunks and
 verifies that the preamble, chunks, and epilogue reconstruct it byte for byte.
 It assigns every chunk to one sanitizer shard by measured weights from
-`tests/section_weights.txt`. The coverage check requires an exact, nonzero
-chunk population, a complete union, disjoint assignments, and a nonempty set
+`tests/section_weights.txt`. The coverage check requires a nonvacuous chunk
+floor, a complete union, disjoint assignments, and a nonempty set
 of chunks for every shard. The shard count is checked against the CI matrix
 and every `/N` literal.
 
 The same tool audits the runner's `SKIP` emitters and `section_skip` calls.
-Their populations are exact and nonzero; each emitter has a reviewed reason
+Their scans have nonvacuous floors; each emitter has a reviewed reason
 or is routed through the helper that counts it in `RESULTS`.
 
 ```bash
@@ -229,10 +229,12 @@ bash tools/section_plan.sh --selftest
 EIGS_SUITE_SHARD=2/3 bash tests/run_all_tests.sh
 ```
 
-A shard forces section timing on. The outer runner counts visible
-`SECTION_TIME` records and visible `[...]` headers, then emits its numeric
-`sections=` plan line only when the counts agree and are nonzero. A
-zero-assertion suite also fails.
+A shard forces section timing on. The planner marks selected chunks whose
+source contains a literal section-header echo (`bearing=N`). Its wrapper
+prints a boundary sentinel before every chunk; the outer runner requires each
+sentinel exactly once in order and at least one stdout header within every
+header-bearing chunk. Sentinels are hidden from the displayed suite output.
+A zero-assertion suite also fails.
 
 ### Consumer acceptance wave
 

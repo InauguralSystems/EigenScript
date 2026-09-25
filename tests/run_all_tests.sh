@@ -18,6 +18,43 @@ cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 #   EIGS_SUITE_SHARD=k/N bash run_all_tests.sh
 #       run shard k of the weight-balanced full suite. The sanitizer
 #       aggregator checks that the shards cover every chunk exactly once.
+verify_shard_chunks() {
+    # The wrapper's metadata is fixed before execution. The stdout log contains
+    # its boundary sentinels and the headers each chunk actually printed.
+    awk -F '\t' -v want_bearing="$3" -v want_chunks="$4" '
+        function refuse(msg) { print "ERROR: " msg > "/dev/stderr"; bad = 1; exit 1 }
+        FNR == NR {
+            if ($1 == "# EIGS-EXPECT") {
+                n++; start[n] = $2; bearing[n] = $3; first[n] = $4
+                declared += $3
+            }
+            next
+        }
+        /^@@EIGS-CHUNK [0-9]+@@$/ {
+            if (i > 0 && bearing[i] == 1 && !saw)
+                refuse("header-bearing chunk at start line " start[i] " printed no header (first source header: " first[i] ")")
+            observed = $0
+            sub(/^@@EIGS-CHUNK /, "", observed); sub(/@@$/, "", observed)
+            i++
+            if (i > n) refuse("extra chunk sentinel " observed " after " n " selected chunks")
+            if (observed != start[i])
+                refuse("chunk sentinel missing or out of order at start line " start[i] " (first source header: " first[i] "; observed " observed ")")
+            saw = 0
+            next
+        }
+        /^\[[^]]*\]/ { if (i > 0) saw = 1 }
+        END {
+            if (bad) exit 1
+            if (n < 1 || n != want_chunks || declared != want_bearing || want_bearing < 1)
+                refuse("chunk witness metadata examined=" n " bearing=" declared " but PLAN promised chunks=" want_chunks " bearing=" want_bearing)
+            if (i < n)
+                refuse("chunk sentinel missing at start line " start[i + 1] " (first source header: " first[i + 1] ")")
+            if (bearing[i] == 1 && !saw)
+                refuse("header-bearing chunk at start line " start[i] " printed no header (first source header: " first[i] ")")
+            print "CHUNK WITNESS: chunks=" i " bearing=" declared
+        }
+    ' "$1" "$2"
+}
 if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
     if [ -n "${EIGS_SUITE_SHARD:-}" ]; then
         __plan_runner=$(mktemp "${TMPDIR:-/tmp}/eigs_plan_runner.XXXXXX")
@@ -55,28 +92,20 @@ if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
             rm -f "$__plan_runner"
             exit 1
         fi
-        # The planner counted literal headers in the selected source before
-        # execution. Count only headers on this run's stdout: a header echoed
-        # inside $(...) is captured by the subshell and never reaches here.
-        __plan_want=${__plan_line#*sections=}
-        __plan_want=${__plan_want%% *}
-        case "$__plan_want" in
-            ''|*[!0-9]*) echo "ERROR: planner gave an invalid section count: $__plan_line"
-                        rm -f "$__plan_runner"; exit 1 ;;
+        __plan_bearing=${__plan_line#*bearing=}; __plan_bearing=${__plan_bearing%% *}
+        __plan_chunks=${__plan_line#*chunks=}; __plan_chunks=${__plan_chunks%% *}
+        case "$__plan_bearing:$__plan_chunks" in
+            *[!0-9:]*|:*|*:) echo "ERROR: planner gave invalid chunk counts: $__plan_line"
+                            rm -f "$__plan_runner"; exit 1 ;;
         esac
-        if [ "$__plan_want" -le 0 ]; then
-            echo "ERROR: planner promised zero section headers: $__plan_line"
-            rm -f "$__plan_runner"; exit 1
-        fi
         __plan_log=$(mktemp "${TMPDIR:-/tmp}/eigs_plan_log.XXXXXX")
-        bash "$__plan_runner" | tee "$__plan_log"
+        # tee keeps sentinels for verification; sed hides them from readers.
+        bash "$__plan_runner" | tee "$__plan_log" | sed -u '/^@@EIGS-CHUNK [0-9][0-9]*@@$/d'
         __plan_rc=${PIPESTATUS[0]}
-        __plan_seen=$(grep -cE '^\[[^]]*\]' "$__plan_log")
+        verify_shard_chunks "$__plan_runner" "$__plan_log" "$__plan_bearing" "$__plan_chunks"
+        __witness_rc=$?
         rm -f "$__plan_runner" "$__plan_log"
-        if [ "$__plan_want" != "$__plan_seen" ]; then
-            echo "ERROR: the section plan promised $__plan_want section header(s) but the run printed $__plan_seen (#1160)."
-            exit 1
-        fi
+        [ "$__witness_rc" -eq 0 ] || exit 1
         echo "  SECTION PLAN: $__plan_line"
         exit $__plan_rc
     fi

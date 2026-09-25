@@ -944,6 +944,8 @@ jobs:
             plan=$(grep -o 'PLAN: shard=[0-9]*/[0-9]*' "$f" | head -1 || true)
             [ -n "$plan" ] || { echo "::error::shard $k reported no plan line at all"; exit 1; }
             [ "$plan" = "PLAN: shard=$k/$n" ] || { echo "::error::shard $k reported '$plan', expected 'PLAN: shard=$k/$n' — the shard ran a different split than this lane declares (ASAN_SHARDS=$n)"; exit 1; }
+            bearing=$(sed -n 's/.*PLAN: shard=[0-9]*\/[0-9]* bearing=\([0-9][0-9]*\) chunks=.*/\1/p' "$f" | head -1)
+            [ -n "$bearing" ] && [ "$bearing" -gt 0 ] || { echo "::error::shard $k reported no header-bearing chunks in its PLAN line"; exit 1; }
             leaked=$(sed -n 's/^leaked=\([0-9][0-9]*\)$/\1/p' "$f")
             [ -n "$leaked" ] || { echo "::error::shard $k did not report a leak tally"; exit 1; }
             total=$((total + leaked))
