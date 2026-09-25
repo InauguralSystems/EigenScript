@@ -688,7 +688,13 @@ def small_sndbuf_so():
     if not src.exists() or src.read_text() != _SNDBUF_INTERPOSER_C:
         src.write_text(_SNDBUF_INTERPOSER_C)
     if not so.exists() or so.stat().st_mtime < src.stat().st_mtime:
-        subprocess.check_call(['cc', '-shared', '-fPIC', '-o', str(so), str(src), '-ldl'])
+        try:
+            werror = (ROOT / 'tools' / 'werror_flags.txt').read_text().split()
+        except OSError as exc:
+            raise RuntimeError('werror flags: cannot read tools/werror_flags.txt') from exc
+        if not werror:
+            raise RuntimeError('werror flags: empty tools/werror_flags.txt')
+        subprocess.check_call(['cc', *werror, '-shared', '-fPIC', '-o', str(so), str(src), '-ldl'])
     _SNDBUF_SO = so
     return so
 

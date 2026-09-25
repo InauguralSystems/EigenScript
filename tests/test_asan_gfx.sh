@@ -1,4 +1,6 @@
 #!/bin/bash
+WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
+. "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # ext_gfx.c under AddressSanitizer + LeakSanitizer, over a gfx corpus (#1007).
 #
 # WHY THIS EXISTS. `make asan` compiles ext_gfx.c out entirely, so until
@@ -74,13 +76,10 @@ if ! python3 "$TESTS_DIR/test_gfx_timeout.py"; then
     exit 1
 fi
 
-# The -Werror trio is spelled out on every compiler line below rather than folded
-# into a variable: tools/werror_switch_check.sh reads the line, not the
-# expansion, and this script is enrolled in its SCRIPT_AUDITS with a floor of
-# four compile invocations.
+# The compiler lines below read the same warning-error flags as the Makefile.
 CC="${EIGS_ASAN_GFX_CC:-gcc}"
 ASAN_CFLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1"
-if ! echo 'int main(void){return 0;}' | "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $ASAN_CFLAGS -x c - -o /tmp/eigs_asan_gfx_probe 2>/tmp/eigs_asan_gfx_probe.log; then
+if ! echo 'int main(void){return 0;}' | "$CC" $WERROR_FLAGS $ASAN_CFLAGS -x c - -o /tmp/eigs_asan_gfx_probe 2>/tmp/eigs_asan_gfx_probe.log; then
     rm -f /tmp/eigs_asan_gfx_probe
     cat /tmp/eigs_asan_gfx_probe.log
     if [ -n "${EIGS_ASAN_GFX_CC:-}" ] || [ "$TOOLCHAIN_ONLY" -eq 1 ]; then
@@ -167,8 +166,8 @@ int main(void) {
 }
 CEOF
 CTRL_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g -O0"
-if "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_leak.c  -lpthread -o /tmp/eigs_asan_gfx_leak  2>/dev/null \
-&& "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $CTRL_CFLAGS /tmp/eigs_asan_gfx_clean.c -lpthread -o /tmp/eigs_asan_gfx_clean 2>/dev/null; then
+if "$CC" $WERROR_FLAGS $CTRL_CFLAGS /tmp/eigs_asan_gfx_leak.c  -lpthread -o /tmp/eigs_asan_gfx_leak  2>/dev/null \
+&& "$CC" $WERROR_FLAGS $CTRL_CFLAGS /tmp/eigs_asan_gfx_clean.c -lpthread -o /tmp/eigs_asan_gfx_clean 2>/dev/null; then
     # The integrated LSan control must finish with its expected failure exit;
     # printing a leak and then hanging or dying by signal is not a control pass.
     if leak_reported /tmp/eigs_asan_gfx_leak && [ "$LAST_RC" -eq 1 ]; then
@@ -229,7 +228,7 @@ else
         echo "ASan gfx: $PASS passed, $FAIL failed"
         exit 1
     fi
-    if ! ( cd "$ROOT" && "$CC" -Werror=switch -Werror=comment -Werror=misleading-indentation $ASAN_CFLAGS \
+    if ! ( cd "$ROOT" && "$CC" $WERROR_FLAGS $ASAN_CFLAGS \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
         -DEIGENSCRIPT_EXT_GFX=1 '-DEIGENSCRIPT_VERSION="asan_gfx_gate"' \
         $SRCS -o /tmp/eigs_asan_gfx -lm -lpthread -ldl ) 2>/tmp/eigs_asan_gfx.log; then

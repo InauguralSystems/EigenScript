@@ -28,12 +28,9 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
    gfx, http, db, asan-core, asan-http, two macOS — differing only in the
    extension surface of the binary they built. A zlib build has exactly one
    section the gcc build does not; it paid for all of them.
-2. **Section [99i] ran inside every one of those ten.** It is the `-Werror`
-   compile-line audit: dry runs of every rule in the Makefile, a scan of every tracked
-   shell script, and a planted-fault self-test. On the dev box that is ~6
-   minutes of audit plus ~11 minutes of self-test — for a property of the
-   Makefile and the scripts that cannot depend on which extensions were
-   compiled in.
+2. **Section [99i] ran a large compile-line audit inside every suite job.**
+   The old gate dry-ran Makefile targets and scanned scripts, adding minutes
+   per run for a property that now follows from one shared flags file.
 
 ## PR lane (`pull_request`) — target ≤ 15 minutes
 
@@ -41,9 +38,8 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
   skips the runtime matrix; doc gates and calibrations whose inputs changed
   still run (see **The doc gates** below).
 - **One full suite: `linux / gcc`.** Every test section.
-- **`werror audit`** runs [99i] once, cached (see below). The suite jobs set
-  `EIGS_SKIP_WERROR_AUDIT=1`, and [99i] then prints a `SKIP:` line naming this
-  job — it never silently disappears.
+- **`werror audit` and suite [99i]** run the same small source-text check
+  directly. It reads the shared flags file and tracked compile commands.
 - **Variant jobs run only the sections their binary unlocks.** zlib, net, gfx,
   http+model, the postgres `full` build and `asan-http` each run a *derived*
   section plan (below), not the whole suite.
@@ -249,8 +245,8 @@ the only part of that section that reads nothing but the tree.
 ## Main lane (the merge queue, then push to `main`) — the full matrix
 
 Everything above runs in full: macOS (`macos-latest`), every variant job on the
-complete suite, `linux / clang` on the complete suite. The only thing that does
-not run ten times is [99i], which the `werror audit` job owns.
+complete suite, `linux / clang` on the complete suite. [99i] is now cheap enough
+to run in each suite, as well as in its required CI job.
 
 This is the real exit gate, and it runs **in the merge queue** (`merge_group`)
 on the commit that will land, before it lands — see **Platform tiers** below.
@@ -516,34 +512,29 @@ The split is longest-processing-time greedy over (weight desc, chunk start asc)
 from the table takes a default weight and is **reported** (`unmeasured-sections=N`,
 with the roster printed), so a new section cannot silently unbalance a shard.
 
-## The [99i] cache
+## [99i]: one flags home and a compiler guard
 
-`tools/werror_cache_key.sh` hashes:
+`tools/werror_flags.txt` holds the three warning-error flags. The Makefile
+reads it into `WERROR_FLAGS` and puts it in `CFLAGS` and every variant flag
+bundle, including those consumed by Python build checks. Recipes using a
+bundle do not repeat it; direct recipes add it once. Shell scripts source
+`tools/read_werror_flags.sh`, which refuses a missing, unreadable or empty
+home before compiling. The suite runner resolves the home from `TESTS_DIR`,
+including when a section plan executes a copy under `/tmp`.
 
-- the **content** of `Makefile` and of every tracked `*.sh` (the audit scans
-  all of them, and the audit's own source is one of them);
-- the **names** of tracked files under `src/ tests/ tools/ web/ fuzz/`, because
-  adding a source file changes the compile lines even though no covered file's
-  content moved.
+`tools/werror_switch_check.sh` checks only static properties: the exact home,
+no literal copies in tracked build files, and no absolute compiler path that
+bypasses the guard. It uses Git's explicit safe-directory setting in CI.
+The required `werror audit` job and suite section [99i] run this small check
+directly; there is no cache.
 
-It deliberately does not cover `.c`/`.h` content or docs: those cannot change a
-compile *invocation*, and hashing them would miss the cache on every
-documentation PR — the contributor wait this change exists to remove.
-
-`tools/werror_cache_key.sh --selftest` carries both halves of the control: a
-one-line `Makefile` edit **misses** the cache, a docs-only edit **hits** it.
-
-**The gate is split, and that split is what makes the exclusion sound.**
-`tools/werror_switch_check.sh` also runs the two LSP index generators, and
-`gen_lsp_builtin_index.sh` reads reserved observer words out of `src/lexer.c`.
-A blind critic planted `return TOK_REPORT;` → `return (TOK_REPORT);` there: the
-audit failed ("could not regenerate builtin LSP index") behind a byte-identical
-key. So CI runs `--headers-only` (0.5 s, the generator probes) **uncached on
-every run**, and caches only `--no-headers` (the dry runs and script scans,
-whose inputs really are the Makefile and the tracked scripts). A local
-`bash tools/werror_switch_check.sh` with no flag still runs both halves, and so
-does the suite's [99i]. `werror_cache_key.sh --selftest` reads both `ci.yml`
-and the audit script and fails if the split stops being used.
+CI prepends `tools/cc-guard-bin` to `PATH` in each compiling job. The linked
+`gcc`, `cc`, `clang` and `emcc` wrappers inspect the actual argv of every C
+compile, reject a missing trio flag, and then execute the first real compiler
+later on `PATH`. Each job requires a nonzero `CC_GUARD_LOG` count. This
+compiler boundary covers commands assembled by Make, shell, Python and suite
+children without guessing their source syntax. `make lsp` generates both LSP
+index headers and compiles `eigenlsp.c` with the trio in its flag bundle.
 
 ## Platform tiers — what blocks a merge, and what decides main's colour (#1264)
 
@@ -607,9 +598,9 @@ self-tests` job; its calibration runs when its inputs change or nightly. A missi
   required path may not read the event (outside those two forms), and an
   `if:` that reads `env.*`, `needs.*.outputs` or `steps.*.outputs` is traced
   to where the value is set — unresolvable is red, `vars.*` is always red.
-  Two reviewed step outputs are waived by a hash of their step (`scope`'s
-  docs-only check, the `werror audit` cache restore); a waiver that matches
-  nothing is red.
+  Two reviewed step outputs are waived by a hash of their step (`scope`/`detect`
+  for docs-only classification and `gate-selftests`/`select` for changed-gate
+  selection); a waiver that matches nothing is red.
 - `[continue-on-error]` — a job or step on a required path sets it, so its
   failure would not fail the check.
 - `[uncovered]` — a `ci.yml` job is neither required nor the worker of exactly
@@ -627,8 +618,8 @@ limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
 |---|---|---|
 | `scope` | 1 | decides docs-only; the runtime legs read its output |
 | `build dev/ci image` | 1 | the image every `container:` job (the Linux legs, the extension/ASan workers, db, the audits, the differentials, freestanding) runs inside; required because required jobs `needs` it, and a failed prerequisite *skips* them — added by #1264 |
-| `werror audit ([99i], cached)` | 1 | gate |
-| `gate self-tests (section plan + audit cache key)` | 1 | gate; runs this checker |
+| `werror audit ([99i], cached)` | 1 | gate; name retained until the required-checks ruleset is renamed |
+| `gate self-tests (section plan + audit cache key)` | 1 | gate; name retained until the required-checks ruleset is renamed |
 | `linux / gcc` | 1 | the one full suite on a PR |
 | `linux / clang` | 1 | clang `-Werror` build + core smoke on a PR, full suite on the main lane — added by #1264 (tier 1 is "Linux gcc/clang") |
 | `macos / macos-latest` | 1 | the one macOS leg; full suite with [99i] on the main lane |

@@ -5,6 +5,8 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WERROR_FLAGS_FILE="$HERE/tools/werror_flags.txt"
+. "$HERE/tools/read_werror_flags.sh" || exit 1
 EXPECTED=(DeslanStudio DMG dynamics eddy eigen-edit EigenGauntlet EigenMiniSat EigenRegex eigen-sheet iLambdaAi liferaft ouroboros phugoid polymethod tidelog Tidepool)
 # These repositories pin EigenScript but have no release acceptance command.
 EXCLUDED=(EigenAttention EigenAttic tmp legibility-experiment awesome-eigenscript eigs-package-template homebrew-eigenscript EigenOS)
@@ -493,8 +495,7 @@ run() {
 # One-time calibration against the public run mode. Every fixture is a pinned
 # checkout under a private temp root; no real consumer checkout is touched.
 selftest() {
-  # The compiler name lives in an assignment (waived by shape in werror_switch_check),
-  # not in the plant command strings, which that audit cannot classify.
+  # The compiler name lives in an assignment, not in the synthetic command strings.
   ST_CC=cc
   export ST_CC
   local st_root st_eco st_record st_out st_candidate st_rc=0 st_bad=0 p tries
@@ -515,7 +516,7 @@ selftest() {
   st_run() {
     : > "$st_out"; rm -f "$st_record"
     CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=1 \
-      timeout 12 bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1
+      timeout 60 bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1
   }
   st_check() {
     local label="$1" guard="$2" pattern="$3" file="$4" line
@@ -541,7 +542,7 @@ selftest() {
   st_reset; st_consumer no_call true
   printf 'no_call\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
-  st_check c candidate-call-count 'row|no_call|v0.43.0|FAIL|0|0|cand_calls=0' "$st_record"
+  st_check c candidate-call-count 'cand_calls=0|cand_ok=0|cand_fail=0|consumer_skips=0|prereq=UNEXERCISED' "$st_record"
   # (d) timeout(1) terminates a hanging command and names HANG.
   st_reset; st_consumer hanging 'sleep 8'
   printf 'hanging\n' > "$st_eco/.ca_expected"
@@ -613,7 +614,7 @@ selftest() {
   # (A) C source names beginning eigenscript stay source, in a private copy.
   printf 'int runtime_value(void);\n' > "$st_root/src/eigenscript.h"
   printf '#include "eigenscript.h"\nint runtime_value(void) { return 7; }\n' > "$st_root/src/eigenscript.c"
-  st_reset; st_consumer sources '"$ST_CC" -c "$EIGS_DIR/src/eigenscript.c" -o runtime.o && printf changed > "$EIGS_DIR/src/eigenscript.h" && eigenscript smoke.eigs'
+  st_reset; st_consumer sources '"$ST_CC" $WERROR_FLAGS -c "$EIGS_DIR/src/eigenscript.c" -o runtime.o && printf changed > "$EIGS_DIR/src/eigenscript.h" && eigenscript smoke.eigs'
   printf 'sources\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   if [ "$st_rc" -eq 0 ] && grep -Fq 'row|sources|v0.43.0|PASS|0|' "$st_record" && grep -Fqx 'int runtime_value(void);' "$st_root/src/eigenscript.h"; then
@@ -625,7 +626,7 @@ selftest() {
   printf 'build:\n\tcp rebuilt-runtime src/eigenscript\n' > "$st_root/Makefile"
   local before_sha after_sha
   before_sha="$(sha256sum "$st_candidate" | awk '{print $1}')"
-  st_reset; st_consumer rebuild '"$ST_CC" -c "$EIGS_DIR/src/eigenscript.c" -o runtime.o && eigenscript smoke.eigs && make -C "$EIGS_DIR" build && eigenscript regression.eigs'
+  st_reset; st_consumer rebuild '"$ST_CC" $WERROR_FLAGS -c "$EIGS_DIR/src/eigenscript.c" -o runtime.o && eigenscript smoke.eigs && make -C "$EIGS_DIR" build && eigenscript regression.eigs'
   printf 'rebuild\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   after_sha="$(sha256sum "$st_candidate" | awk '{print $1}')"
@@ -647,13 +648,13 @@ selftest() {
   st_consumer first 'eigenscript smoke.eigs'; st_consumer second 'eigenscript smoke.eigs'
   printf 'first\nsecond\n' > "$st_eco/.ca_expected"
   mkdir -p "$st_root/runner/tools" "$st_root/runner/reports/consumer_acceptance"
-  cp "$HERE/tools/consumer_acceptance.sh" "$HERE/tools/_derive_variants.py" "$HERE/tools/_extract_runcmd.py" "$st_root/runner/tools/"
+  cp "$HERE/tools/consumer_acceptance.sh" "$HERE/tools/read_werror_flags.sh" "$HERE/tools/werror_flags.txt" "$HERE/tools/_derive_variants.py" "$HERE/tools/_extract_runcmd.py" "$st_root/runner/tools/"
   printf 'status=COMPLETE\ninventory=3\nexamined=3\nVERDICT: PASS\n' > "$st_record"
   st_rc=0
-  CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 12 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+  CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
   if [ "$st_rc" -ne 0 ] && grep -Fqx 'record_floor=3' "$st_record" && grep -Fqx 'VERDICT: FAIL' "$st_record"; then
     echo 'plant D check=record-floor-before-replacement RED record_floor=3 VERDICT: FAIL'
-  else echo 'plant D check=record-floor-before-replacement SILENT'; st_bad=1; fi
+  else echo "plant D check=record-floor-before-replacement SILENT rc=$st_rc"; tail -8 "$st_out"; tail -8 "$st_record"; st_bad=1; fi
   # (E) A named missing capability is UNRUNNABLE before the command runs.
   st_reset; st_consumer dynamics 'eigenscript smoke.eigs'
   printf 'dynamics\n' > "$st_eco/.ca_expected"

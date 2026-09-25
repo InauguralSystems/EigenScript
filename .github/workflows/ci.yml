@@ -39,16 +39,14 @@ concurrency:
 #
 # Measured on PR #1158 (head 8cc1f2d, 26 checks, all green): 35 min wall,
 # ~200 machine-minutes. The SAME ~240-section suite ran in TEN jobs that
-# differ only in the extension surface of the binary, and section [99i] (the
-# -Werror compile-line audit — dry runs of every make target plus a scan of
-# ~110 scripts; 6 min on the dev box, minutes on a runner) ran inside every
-# one of them, for a property that does not depend on the variant.
+# differ only in the extension surface of the binary. The old [99i] audit
+# added minutes per job before its replacement by the shared flags file.
 #
 #   PR lane (pull_request)  — target <= 15 min wall. ONE full suite
 #     (linux/gcc). Every variant job runs only the sections its binary
 #     unlocks, DERIVED by tools/section_plan.sh from the suite's own
-#     probe gates (never a hand-written list). [99i] runs ONCE, in the
-#     `werror audit` job, cached on the audit's inputs. macos-15-intel is
+#     probe gates (never a hand-written list). The small [99i] check runs
+#     inside the suite and in its required job. macos-15-intel is
 #     not on this lane.
 #   main lane (merge_group AND push to main) — the full matrix except
 #     macos-15-intel. It runs in the MERGE QUEUE (#1264, Rust's model) on the
@@ -191,24 +189,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # [99i], ONCE per run, cached (#1160).
-  #
-  # tools/werror_switch_check.sh asserts every compile invocation the Makefile
-  # and the tracked scripts emit carries -Werror=switch/comment/
-  # misleading-indentation. That is a property of the Makefile and the scripts:
-  # it cannot differ between a zlib build and a gfx build. It was nevertheless
-  # running inside all ten suite jobs (6 min on the dev box, minutes on a
-  # runner, ~500 compile invocations audited each time).
-  #
-  # Here it runs once, and the ten suite jobs set EIGS_SKIP_WERROR_AUDIT=1 so
-  # [99i] prints a SKIP naming this job rather than silently measuring less.
-  # Locally (no env var) run_all_tests.sh still runs it in full.
-  #
-  # The cache key is tools/werror_cache_key.sh: the Makefile's content, every
-  # tracked *.sh, and the NAMES of tracked files under src/ tests/ tools/ web/
-  # fuzz/ (a new source file changes the compile lines even though no covered
-  # file's content moved). Its --selftest carries both halves of the control:
-  # a one-line Makefile edit MISSES, a docs-only edit HITS.
+  # [99i] reads tracked source text and the shared warning flags directly.
+  # The name remains fixed until the required-checks ruleset is renamed.
   werror-audit:
     name: werror audit ([99i], cached)
     needs: [dev-image, scope]
@@ -225,77 +207,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      # A docs-only PR cannot change the Makefile or any tracked script, so it
-      # cannot change this audit's verdict. The job still REPORTS (a required
-      # check that never reports blocks the merge forever) — it just does not
-      # compute, restore or run anything.
-      - name: Docs-only — the audit's inputs cannot have changed
-        if: needs.scope.outputs.code != 'true'
-        run: |
-          echo "werror audit: docs-only change; the Makefile and every tracked *.sh are untouched, so [99i]'s verdict cannot have moved."
-
-      - name: Compute the audit cache key
-        if: needs.scope.outputs.code == 'true'
-        id: key
-        run: |
-          set -euo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          bash tools/werror_cache_key.sh --explain
-          echo "key=$(bash tools/werror_cache_key.sh)" >> "$GITHUB_OUTPUT"
-
-      # UNCACHED, every run, before the cache is consulted (#1160 round 2).
-      # The generated-header probes RUN the LSP index generators, and those
-      # read C sources — gen_lsp_builtin_index.sh reads the reserved observer
-      # words out of src/lexer.c. A blind critic planted `return (TOK_REPORT);`
-      # there and got a FAILING audit behind an UNCHANGED cache key. This half
-      # is 0.5 s measured, so it costs nothing to never cache it.
-      - name: Generated LSP header probes (uncached — they read C sources)
-        if: needs.scope.outputs.code == 'true'
-        run: bash tools/werror_switch_check.sh --headers-only
-
-      - name: Restore the audit result
-        if: needs.scope.outputs.code == 'true'
-        id: restore
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: .werror-audit-ok
-          key: werror-audit-v1-${{ steps.key.outputs.key }}
-
-      # A cache hit must SAY it skipped, and say what it skipped over — a log
-      # in which "audited 543 invocations" and "did not run" look the same is
-      # the failure this whole change is trying not to introduce.
-      - name: Cache HIT — the audit already passed for these exact inputs
-        if: needs.scope.outputs.code == 'true' && steps.restore.outputs.cache-hit == 'true'
-        run: |
-          echo "werror audit: CACHE HIT on werror-audit-v1-${{ steps.key.outputs.key }}"
-          echo "werror audit: [99i] NOT RUN this time; the stored result is:"
-          cat .werror-audit-ok
-
-      - name: Cache MISS — run the compile-line audit ([99i])
-        if: needs.scope.outputs.code == 'true' && steps.restore.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          echo "werror audit: CACHE MISS on werror-audit-v1-${{ steps.key.outputs.key }} — running the audit"
-          # The live dry-run audit. `--no-headers`: the
-          # generated-header probes ran UNCACHED in the step above, because
-          # their verdict moves with C-source content that this cache key
-          # deliberately does not hash.
-          bash tools/werror_switch_check.sh --no-headers
-          {
-            echo "werror audit passed"
-            echo "key=${{ steps.key.outputs.key }}"
-            echo "commit=$GITHUB_SHA"
-            echo "run=$GITHUB_RUN_ID"
-          } > .werror-audit-ok
-
-      # Saved only on the miss path, and only after the audit exited 0: a
-      # marker written unconditionally would cache a FAILURE as a pass.
-      - name: Save the audit result
-        if: needs.scope.outputs.code == 'true' && steps.restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: .werror-audit-ok
-          key: werror-audit-v1-${{ steps.key.outputs.key }}
+      - name: Check shared warning flags ([99i])
+        run: bash tools/werror_switch_check.sh
 
   # Calibrate changed gates here; calibrate every gate nightly (#1275).
   gate-selftests:
@@ -315,6 +228,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
       # Select first: a PR that changes no gate selects 0 rows and skips the
       # self-test build, prerequisites and run below (#1275).
       - name: Select self-tests for changed gates
@@ -386,6 +304,10 @@ jobs:
           cat "$fx/plan.out"
           grep -q 'expected=[1-9]' "$fx/plan.out"
 
+      - name: Require compiler guard activity
+        if: always() && (needs.scope.outputs.code == 'true' || steps.select.outputs.n != '0')
+        run: bash tools/cc_guard.sh --report
+
   # Linux build + full suite, inside the shared image, for gcc and clang.
   # gcc and clang shake out different warnings and codegen.
   build-and-test-linux:
@@ -407,6 +329,11 @@ jobs:
         cc: [gcc, clang]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - name: Build
         run: CC=${{ matrix.cc }} ./build.sh
@@ -414,13 +341,9 @@ jobs:
       - name: Verify binary
         run: ./src/eigenscript --version
 
-      # THE full suite of the PR lane. gcc always runs all ~263 sections; the
-      # only thing it no longer runs is [99i], which the `werror audit` job
-      # owns for this run and which prints a SKIP naming that job.
+      # THE full suite of the PR lane. gcc always runs all sections.
       - name: Run test suite (full)
         if: matrix.cc == 'gcc' || github.event_name != 'pull_request'
-        env:
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       # clang on a PR: the value of this leg is the BUILD (-Werror fires at
@@ -432,7 +355,6 @@ jobs:
         if: matrix.cc == 'clang' && github.event_name == 'pull_request'
         env:
           EIGS_SUITE_SECTIONS: core
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       # Cross-repo observer corpus (#262): real observer-using programs
@@ -463,6 +385,10 @@ jobs:
           path: failure-tapes/
           if-no-files-found: ignore
 
+      - name: Require compiler guard activity
+        if: always()
+        run: bash tools/cc_guard.sh --report
+
   # JIT differential oracle: the interpreter IS the JIT's oracle. Every corpus
   # program runs with the JIT off (recording a tape), then replays that tape
   # under the default JIT and under forced OSR; stdout+stderr+rc must be
@@ -487,10 +413,19 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
       - name: Build
         run: ./build.sh
       - name: JIT vs interpreter differential
         run: bash tools/jit_diff.sh
+
+      - name: Require compiler guard activity
+        if: always()
+        run: bash tools/cc_guard.sh --report
 
   # Tape replay fidelity (#1072): the tape's own contract is that a recording
   # replayed by the same binary reproduces stdout+stderr+rc, and jit_diff leans
@@ -516,10 +451,19 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
       - name: Build
         run: ./build.sh
       - name: Record-vs-replay differential
         run: bash tools/replay_diff.sh
+
+      - name: Require compiler guard activity
+        if: always()
+        run: bash tools/cc_guard.sh --report
 
   # Freestanding symbol gate: compiles the runtime with the freestanding
   # profile (-DEIGENSCRIPT_FREESTANDING=1) and asserts its undefined-symbol
@@ -542,6 +486,11 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Symbol gate (stage 1 profile, stage 2 mini-libc residue)
@@ -558,6 +507,10 @@ jobs:
       - if: needs.scope.outputs.code == 'true'
         name: Mini-libc differential vs glibc oracle
         run: make freestanding-libc-diff
+
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
 
   # macOS exercises the BSD/clang toolchain and (on arm64) the non-x86 JIT
   # fallback. Runs natively — a Linux container image can't host these.
@@ -580,6 +533,11 @@ jobs:
         os: ["macos-latest"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Shell harness portability controls
@@ -641,26 +599,22 @@ jobs:
           if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
             brew install --force-bottle coreutils
           fi
-          sanitizer_cc="$(brew --prefix "$formula")/bin/clang"
-          test -x "$sanitizer_cc"
-          "$sanitizer_cc" --version
-          echo "EIGS_ASAN_GFX_CC=$sanitizer_cc" >> "$GITHUB_ENV"
+          brewbin="$(brew --prefix "$formula")/bin"
+          test -x "$brewbin/clang"
+          export PATH="$GITHUB_WORKSPACE/tools/cc-guard-bin:$brewbin:$PATH"
+          clang --version
+          echo "PATH=$PATH" >> "$GITHUB_ENV"
+          echo "EIGS_ASAN_GFX_CC=clang" >> "$GITHUB_ENV"
 
       - if: needs.scope.outputs.code == 'true'
         name: Verify gfx sanitizer controls
-        run: bash tests/test_asan_gfx.sh --toolchain-only
+        run: |
+          test "$(command -v clang)" = "$GITHUB_WORKSPACE/tools/cc-guard-bin/clang"
+          bash tests/test_asan_gfx.sh --toolchain-only
 
-      # PR lane: [99i] is owned by the `werror audit` job. Measured on the dev
-      # box, that live audit takes about 6 min. Its calibration runs through
-      # the changed-gate driver and nightly.
-      # Its verdict cannot differ by platform anyway: the only conditional in
-      # the Makefile is LDFLAGS, a LINK flag, and the audit reads COMPILE
-      # invocations. On the main lane (queue, push) it still runs here in full, so the
-      # gate's BSD-userland portability keeps an exercise at merge time.
+      # The suite includes the small [99i] check on both lanes.
       - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
-        name: Run test suite (PR lane; [99i] owned by the werror audit job)
-        env:
-          EIGS_SKIP_WERROR_AUDIT: 1
+        name: Run test suite (PR lane)
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
@@ -672,6 +626,10 @@ jobs:
       - if: needs.scope.outputs.code == 'true'
         name: Compile-check LSP (macOS)
         run: make lsp CC=clang
+
+      - name: Require compiler guard activity
+        if: always()
+        run: bash tools/cc_guard.sh --report
 
   # Build the http+model variant and run the suite against it: the suite's
   # probe-gated sections ([44]-[45] HTTP, [47] model roundtrip/overflow,
@@ -728,6 +686,11 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Shell harness portability controls
@@ -789,13 +752,10 @@ jobs:
         name: Run derived http+model section plan
         env:
           EIGS_SUITE_SECTIONS: http
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run full suite against http+model build
-        env:
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true'
@@ -813,6 +773,9 @@ jobs:
         name: Fuzz smoke (ASan harness, curated corpus)
         run: make fuzz && bash fuzz/run_fuzz.sh
 
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
   extensions-gfx:
     name: extensions / gfx suite
     needs: [dev-image, scope]
@@ -828,6 +791,11 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Build gfx variant
@@ -837,16 +805,15 @@ jobs:
         name: Run derived gfx section plan (audio [62], [120b], [132], [133], [134])
         env:
           EIGS_SUITE_SECTIONS: gfx
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run full suite against gfx build (audio [62], containment [132], gfx examples [97])
-        env:
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
-
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
   extensions-zlib:
     name: extensions / zlib suite
     needs: [dev-image, scope]
@@ -862,6 +829,11 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Build zlib variant
@@ -871,16 +843,15 @@ jobs:
         name: Run derived zlib section plan (executes DEFLATE section [124b])
         env:
           EIGS_SUITE_SECTIONS: zlib
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run full suite against zlib build (executes DEFLATE section [124])
-        env:
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
-
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
   extensions-net:
     name: extensions / net suite
     needs: [dev-image, scope]
@@ -896,6 +867,11 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Build net variant
@@ -905,14 +881,15 @@ jobs:
         name: Run derived net section plan (executes network section [125])
         env:
           EIGS_SUITE_SECTIONS: net
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run full suite against net build (executes network section [125])
-        env:
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
+
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
 
 
   # Build the `full` variant (http+model+db) against a real PostgreSQL service
@@ -949,6 +926,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Build full variant (http+model+db)
@@ -959,15 +941,17 @@ jobs:
         env:
           DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
           EIGS_SUITE_SECTIONS: full
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
         name: Run full suite with live DATABASE_URL
         env:
           DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: cd tests && bash run_all_tests.sh
+
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
 
   # Run the entire suite under AddressSanitizer + UndefinedBehaviorSanitizer.
   # The net that catches use-after-free, buffer overflow, and UB the normal
@@ -1117,6 +1101,11 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Build with AddressSanitizer + UBSan
@@ -1149,10 +1138,6 @@ jobs:
           # teardown + birth-ref adoption fixes, so any new leak fails this job.
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-          # [99i] is a Makefile/script property, not a sanitizer property, and
-          # it is the most expensive thing this job did (it launches the
-          # sanitized binary for every dry run). The `werror audit` job owns it.
-          EIGS_SKIP_WERROR_AUDIT: 1
           EIGS_SUITE_SHARD: ${{ matrix.shard }}/3
         run: |
           set -o pipefail
@@ -1210,6 +1195,9 @@ jobs:
           path: shard-${{ matrix.shard }}.txt
           if-no-files-found: error
 
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
   sanitizers-http:
     name: asan + ubsan / HTTP and model suite
     needs: [dev-image, scope]
@@ -1232,6 +1220,11 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       # The extension surface under sanitizers. `make asan` above compiles the
       # HTTP + model extensions OUT, so ext_http.c — a network-facing server
@@ -1260,7 +1253,6 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
           EIGS_SUITE_SECTIONS: asan-http
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: make asan-http && cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
@@ -1268,8 +1260,11 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-          EIGS_SKIP_WERROR_AUDIT: 1
         run: make asan-http && cd tests && bash run_all_tests.sh
+
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
 
   # Valgrind/Memcheck over a representative spread of programs — the
   # uninitialised-read / use-after-free / definite+indirect-leak net at the
@@ -1289,6 +1284,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Install Valgrind
@@ -1343,6 +1343,10 @@ jobs:
         name: Valgrind memcheck smoke
         run: cd tests && bash valgrind_smoke.sh
 
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
+
   # ThreadSanitizer concurrency race gate (#401): the spawn/channel slice must
   # be data-race-free (the #297 property, now regression-gated), and a seeded
   # race must be caught so the gate can't rot. `setarch -R` disables ASLR, which
@@ -1358,6 +1362,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: ThreadSanitizer build
@@ -1366,6 +1375,10 @@ jobs:
       - if: needs.scope.outputs.code == 'true'
         name: Concurrency race gate (setarch -R)
         run: bash tests/test_tsan.sh
+
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
 
   # First-run tooling unification (#400): the VS Code tree is canonical and has
   # the LSP client, and a fresh install.sh leaves BOTH binaries on PATH.
@@ -1378,6 +1391,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Canonical VS Code tree has the LSP client (no drifted duplicate)
@@ -1446,6 +1464,10 @@ jobs:
           export EIGENSCRIPT="$HOME/.local/bin/eigenscript"
           bash tests/run_install_smoke_subset.sh
 
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
+
   # Performance regression gate (#398). Wall-clock flakes on shared runners, so
   # the gate compares deterministic cachegrind instruction counts (Ir) of THIS
   # commit against origin/main — both built in the same runner, so the diff is a
@@ -1461,6 +1483,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
         name: Install Valgrind
@@ -1535,3 +1562,7 @@ jobs:
       - if: needs.scope.outputs.code == 'true'
         name: Regression gate — Ir of this commit vs its baseline
         run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --vs /tmp/main-ref/src/eigenscript
+
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report

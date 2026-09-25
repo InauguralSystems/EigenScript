@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+WERROR_FLAGS_FILE="$(dirname "$0")/werror_flags.txt"
+. "$(dirname "$0")/read_werror_flags.sh" || exit 1
 # Embedded-stack soak gate: build the freestanding-profile runtime hosted
 # (as freestanding_smoke.sh does) with the REPL-soak harness, then run it
 # twice — once with the stack rlimit clamped to 64 KiB, once roomier.
@@ -64,7 +66,7 @@ CLI_ONLY=$(make --no-print-directory print-CLI_ONLY | tr ' ' '\n' | grep '\.c$')
 for u in $CLI_ONLY; do EMBED_SRC=$(printf '%s\n' $EMBED_SRC | grep -vx "$u"); done
 [ -n "$EMBED_SRC" ] || { echo "FAIL: derived an EMPTY source list from the Makefile" >&2; exit 1; }
 
-gcc -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 \
+gcc -Werror=implicit-function-declaration $WERROR_FLAGS -O2 \
     -DEIGENSCRIPT_FREESTANDING=1 \
     -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
     -o "$BUILD/embed_stack_soak" \

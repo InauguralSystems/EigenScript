@@ -1,4 +1,6 @@
 #!/bin/bash
+WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
+. "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # The lint split must not leak a generic helper symbol into an embedding
 # archive.  A host can legitimately have its own json_escape helper; the
 # archive link must remain collision-free.
@@ -34,15 +36,15 @@ EOF
 if [ -n "${LINT_OBJECT:-}" ]; then
     cp "$LINT_OBJECT" "$WORK/lint.o"
 else
-    "$CC" -std=gnu11 -O0 -w -I"$ROOT/src" -c "$ROOT/src/lint.c" -o "$WORK/lint.o"
+    "$CC" $WERROR_FLAGS -std=gnu11 -O0 -w -I"$ROOT/src" -c "$ROOT/src/lint.c" -o "$WORK/lint.o"
 fi
 if [ -n "${LINT_HOST_OBJECT:-}" ]; then
     cp "$LINT_HOST_OBJECT" "$WORK/lint_host.o"
 else
-    "$CC" -std=gnu11 -O0 -w -I"$ROOT/src" -c "$ROOT/src/lint_host.c" -o "$WORK/lint_host.o"
+    "$CC" $WERROR_FLAGS -std=gnu11 -O0 -w -I"$ROOT/src" -c "$ROOT/src/lint_host.c" -o "$WORK/lint_host.o"
 fi
-"$CC" -std=gnu11 -O0 -w -c "$WORK/collision.c" -o "$WORK/collision.o"
-"$CC" -std=gnu11 -O0 -w -c "$WORK/probe.c" -o "$WORK/probe.o"
+"$CC" $WERROR_FLAGS -std=gnu11 -O0 -w -c "$WORK/collision.c" -o "$WORK/collision.o"
+"$CC" $WERROR_FLAGS -std=gnu11 -O0 -w -c "$WORK/probe.c" -o "$WORK/probe.o"
 ar rcs "$WORK/liblint.a" "$WORK/lint.o" "$WORK/lint_host.o"
 
 if "$CC" -r -o "$WORK/linked.o" "$WORK/probe.o" "$WORK/collision.o" "$WORK/liblint.a"; then

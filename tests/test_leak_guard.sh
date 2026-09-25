@@ -1,4 +1,6 @@
 #!/bin/bash
+WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
+. "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # Regression guard for the builtin-return ref-protocol leak (fixed in 2f1e993).
 #
 # Pre-fix, every fresh-return builtin (range/make_str/keys/...) got an
@@ -28,7 +30,7 @@ ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
 
 # Probe ASan availability
-if ! echo 'int main(void){return 0;}' | gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -fsanitize=address -x c - -o /tmp/eigs_asan_probe 2>/dev/null; then
+if ! echo 'int main(void){return 0;}' | gcc $WERROR_FLAGS -fsanitize=address -x c - -o /tmp/eigs_asan_probe 2>/dev/null; then
     echo "  SKIP: AddressSanitizer not available in this toolchain"
     echo "Leak Guard: 0 passed, 0 failed (skipped)"
     rm -f /tmp/eigs_asan_probe
@@ -53,7 +55,7 @@ if [ -z "$SRCS" ]; then
     exit 0
 fi
 
-if ! gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -O1 -g -fsanitize=address -fno-omit-frame-pointer \
+if ! gcc $WERROR_FLAGS -O1 -g -fsanitize=address -fno-omit-frame-pointer \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
         '-DEIGENSCRIPT_VERSION="leak_guard"' \
         $SRCS -o $ASAN_BIN -lm -lpthread 2>$ASAN_LOG; then

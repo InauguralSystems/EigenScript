@@ -1,4 +1,6 @@
 #!/bin/bash
+WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
+. "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # Two-file amalgamation drop-in (#397): a fresh directory containing ONLY the
 # two generated files (eigenscript_all.c + eigs_embed.h) plus a tiny host
 # builds with `cc` alone — no -I, no -D, no source list — and runs eval. This
@@ -36,7 +38,7 @@ EOF
 
 # `cc` ALONE from the fresh dir: no -I (headers are inlined / in cwd), no -D
 # (extensions default off inside the amalgamation), no source list.
-if ( cd "$WORK" && "$CC" -O2 host.c eigenscript_all.c -lm -lpthread -o host ) 2>"$WORK/cc.err"; then
+if ( cd "$WORK" && "$CC" $WERROR_FLAGS -O2 host.c eigenscript_all.c -lm -lpthread -o host ) 2>"$WORK/cc.err"; then
     pass "fresh dir builds with cc alone (no -I, no -D, no source list)"
 else
     fail "compile failed"; head -5 "$WORK/cc.err"

@@ -45,14 +45,13 @@ paths:
 
   | population | what enrols you | how a new tool fails it | verify with |
   |---|---|---|---|
-  | `tools/werror_switch_check.sh` ([99i]) | being a TRACKED `*.sh` (`git ls-files '*.sh'`) | it emits a compile line and is not in `TARGETS`/`TARGET_BATCHES`/`TARGET_FLOORS` | `grep -nE '\b(gcc\|clang\|\$\(CC\)\|cc) ' tools/NEW.sh` — empty means nothing to enrol |
+  | `tools/werror_switch_check.sh` ([99i]) | being a tracked Makefile, `*.mk`, `*.sh`, `*.py` or workflow | a literal trio copy or absolute compiler path bypass | `bash tools/werror_switch_check.sh` — it reports the nonzero scanned population |
   | `tools/section_plan.sh --gate-audit` (#1160) | the runner dispatching you as `bash "$TESTS_DIR/../tools/NEW.sh"` | any line matching `GATE_ENUM_RE` — **including in a COMMENT** — with no `EIGS-CAP-GATE` marker and no `GATE_WAIVERS` row | `bash tools/section_plan.sh --gate-audit` → `unaccounted=0` |
   | `tools/section_plan.sh`'s child list | the same dispatch spelling | a tool invoked in ANY OTHER spelling is not scanned at all — invisible, not exempt | the audit prints `over the runner + N dispatched children`; N has a floor of 50 |
   | `tools/suite_label_check.sh` ([99w]) | adding a `[NN]` section to the runner | a label another section already echoes | `bash tools/suite_label_check.sh` |
 
   Plus the doc gates themselves: a backticked `tools/NEW.sh` in a front-door
   document must be git-tracked or produced by a Makefile rule
-  (`tools/docs_claims_check.sh`), and the suite wiring's pinned counts move
   with it.
 
   The one that surprises: **the gate-line audit reads your COMMENTS.** A
@@ -62,13 +61,12 @@ paths:
   reason rather than rewording — rewording makes the population depend on
   authors avoiding words, which is how a detector stops describing the tree.
 
-- **A new Makefile target that compiles anything must be enrolled in
-  `tools/werror_switch_check.sh`** -- in `TARGETS`, its own line in
-  `TARGET_BATCHES`, and a row in `TARGET_FLOORS` -- or section [99i] fails
-  with "target 'X' is not in TARGETS and emits a compile invocation that NO
-  audited target emits". Bought on PR #1084 (2026-09-03): `errline-test`, a
-  copy of the `sandbox-intern-test` recipe, passed its own section locally
-  and went red only on the CI werror leg.
+- **A new C compile must carry the trio at the compiler boundary.** In CI,
+  `tools/cc-guard-bin` precedes real compilers on `PATH`; `tools/cc_guard.sh`
+  rejects actual C compiler argv missing any flag and each compiling job
+  requires a nonzero count. [99i] checks the one home, literal copies and
+  absolute compiler paths. Makefile bundles and shell readers use
+  `tools/werror_flags.txt`; shell readers fail before compiling if it is absent.
 - **A child `.sh` must not call `timeout` bare.** The macOS CI runners do
   not ship coreutils' `timeout`, so a child that uses it dies rc 127 there
   on its first bounded run — `tests/test_file_exists_fifo.sh`'s first

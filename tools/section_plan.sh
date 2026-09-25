@@ -34,8 +34,7 @@
 #   4. emits a filtered runner containing the preamble, the chunks whose
 #      capability is present, the fixed core smoke, and the epilogue.
 #
-# Every count is printed and floored the way [99i] floors its per-target
-# examined counts: a plan that SHRINKS is a review event, and a plan of zero
+# Every count is printed and floored: a plan that SHRINKS is a review event, and a plan of zero
 # sections is a hard failure (a job that measured nothing must not be green).
 #
 # Usage:
@@ -186,8 +185,8 @@ tools/docs_claims_check.sh|fd05073ec7e4e3b8|prose in the docs-claims gate QUOTIN
 # `N skipped`, and the runner's own comment at the counter says "a zero that is
 # printed is a claim". Round 6 incremented that counter at exactly ONE site
 # (the since-deleted ILP32 gate, #1274) while the runner had ~40 lines that put a SKIP marker on stdout, so
-# `linux / gcc` printed `0 skipped` beneath nine of them — including [99i]'s
-# `SKIP: NOT MEASURED HERE`, which ci.yml forces on all ten suite jobs
+# `linux / gcc` printed `0 skipped` beneath nine of them (including the former
+# [99i] cache skip), which ci.yml forced on the suite jobs
 # (measured by a blind critic on the pushed head 1b5c64d, 2026-09-21). The
 # claim was false on every lane.
 #
@@ -211,7 +210,7 @@ SKIP_ROUTE_RE='^[[:space:]]*section_skip[[:space:]]'
 # coverage is REMOVED (mechanical-gates §5), and both failure modes here are
 # removals: un-routing a section-level skip drops the routed count AND adds an
 # unaccounted emitter, so the two halves catch it independently.
-SKIP_ROUTED_FLOOR=25
+SKIP_ROUTED_FLOOR=24
 SKIP_EMIT_FLOOR=20
 # Each row is "<16-hex sha256 of the EXACT line>|<reason>". The hash is the
 # pin: edit the line and the row stops matching, so the reason gets re-read.
@@ -252,7 +251,6 @@ cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT
 1d4789fa9df25921|(c) sub-check: --api --json validation needs python3; the --api section asserts its other rows without it
 4fd0c1454b26ae7a|(b) an examples-section PASS line that reports how many demos were skipped for want of a gfx build
 62be8333b50e395a|(b) the same PASS line on the no-gfx-build arm
-89b7a01ff1a79ece|(b) the continuation line of [99i] own skip message; the first line went through section_skip and was counted
 27cfdaf9128456df|(b) the RESULTS line itself, which PRINTS the skipped count
 43af9bdd1c5e1f94|(c) sub-check: [99zb] relays the portability tool own population/oracle line (widened by #1226 to include NO OLD BASH and other arm wordings); the section fails unless the tool reports OK or one of those named arms — supersedes the pre-#1226 row for this same relay
 '
@@ -1746,7 +1744,8 @@ selftest() {
     { grep -ohE 'section_plan\.sh --[a-z-]+' "$SP_ROOT/.github/workflows/"*.yml 2>/dev/null
       grep -ohE 'section_plan\.sh --[a-z-]+' "$SP_ROOT/docs/CI.md" 2>/dev/null
       grep -ohE 'run_all_tests\.sh --[a-z-]+' "$SP_ROOT/docs/CI.md" 2>/dev/null
-    } | sed 's/.*--/--/' | sort -u > "$modefile"
+    } > "$dir/modes.raw"
+    sed 's/.*--/--/' "$dir/modes.raw" | sort -u > "$modefile"
     # rc is NOT enough: a mode that prints NOTHING and exits 0 would pass an
     # rc-only check, and the round-3 version was exactly that — `--probes`
     # was caught by a neighbouring case, not by this one. Each mode must also
@@ -2192,4 +2191,3 @@ case "$MODE" in
         selftest
         ;;
 esac
-

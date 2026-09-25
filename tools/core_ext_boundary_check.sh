@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+WERROR_FLAGS_FILE="$(dirname "$0")/werror_flags.txt"
+. "$(dirname "$0")/read_werror_flags.sh" || exit 1
 # core_ext_boundary_check.sh — the core must not include an extension's
 # private header (#744 item 1).
 #
@@ -130,7 +132,7 @@ POISON
         # compiler's status — that mistake reads as "the probe is green".
         local out st
         out=$( cd "$tree" && gcc -c -o /dev/null -I"$poison" -Isrc \
-                 -Wall -Werror=switch -Werror=comment -Werror=misleading-indentation \
+                 -Wall $WERROR_FLAGS \
                  -Werror=implicit-function-declaration \
                  -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 \
                  -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 \
@@ -168,7 +170,7 @@ fi
 
 # ---- selftest: plant the fault, prove each leg fires on its own ----------
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
-cp -r "$REPO/src" "$REPO/Makefile" "$REPO/VERSION" "$WORK/" 2>/dev/null
+cp -r "$REPO/src" "$REPO/Makefile" "$REPO/VERSION" "$WORK/" 2>/dev/null; mkdir -p "$WORK/tools" && cp "$REPO/tools/werror_flags.txt" "$WORK/tools/"
 mkdir -p "$WORK/lib" && : > "$WORK/lib/.keep"
 fails=0
 

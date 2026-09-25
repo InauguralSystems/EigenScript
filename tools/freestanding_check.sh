@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+WERROR_FLAGS_FILE="$(dirname "$0")/werror_flags.txt"
+. "$(dirname "$0")/read_werror_flags.sh" || exit 1
 # Freestanding symbol gate — turns docs/FREESTANDING.md from a document
 # into a CI check.
 #
@@ -30,7 +32,7 @@ if [ -z "$SRC" ]; then
 fi
 for f in $SRC; do
     gcc -O2 -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE \
-        -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation \
+        -Werror=implicit-function-declaration $WERROR_FLAGS \
         -DEIGENSCRIPT_FREESTANDING=1 \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
         -c "src/$f.c" -o "$BUILD/$f.o"
@@ -65,7 +67,7 @@ echo "OK stage 1: freestanding import surface is within the ledger allowlist"
 for f in mini_libc mini_libm mini_fmt mini_strtod; do
     gcc -O2 -ffreestanding -fno-builtin -ffp-contract=off -fno-math-errno \
         -fno-stack-protector -U_FORTIFY_SOURCE \
-        -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation \
+        -Werror=implicit-function-declaration $WERROR_FLAGS \
         -DEIGS_MINI_STANDARD_NAMES=1 \
         -c "src/freestanding/$f.c" -o "$BUILD/$f.o"
 done

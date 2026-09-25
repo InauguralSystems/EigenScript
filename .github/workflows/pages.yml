@@ -91,8 +91,16 @@ jobs:
           actions-cache-folder: emsdk-cache
       # The authoritative wasm32 check: the real emcc over the real recipe.
       # set -euo pipefail in web/build.sh makes a failed compile fail this step.
+      # After emsdk setup, so the guard's emcc is first on PATH ahead of emsdk's.
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
       - name: Build WASM playground
         run: bash web/build.sh
+      - name: Require compiler guard activity
+        run: bash tools/cc_guard.sh --report
       # The receipt. Written only when the build step above ran and left its
       # output; the aggregator requires it, so a build step that was skipped or
       # never reached cannot read as a passing build.

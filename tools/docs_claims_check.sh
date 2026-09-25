@@ -1299,7 +1299,7 @@ D_API_TOTAL=$((D_API_CORE + D_API_EXT))
 D_LLMS_LINES=$(wc -l < docs/llms.txt | tr -d ' ')
 
 # ROUND 3 (Astra, H3): the copy-vs-share taxonomy docs/CONCURRENCY.md publishes
-# comes from ONE switch. `chan_clone_rec` has no `default:`, so -Werror=switch
+# comes from ONE switch. `chan_clone_rec` has no `default:`, so the switch warning error
 # already forces a new ValType to pick a side in C; this pins the same number
 # in the DOC, so adding a type fails the page as well as the compiler. The doc
 # listed "three things" and a reviewer found a fourth by sending a channel
@@ -1321,7 +1321,7 @@ fi
 note "  suite sections          = $D_SECTIONS distinct  /  $D_SECTION_LINES labelled lines  ($D_LABELCHECK per tools/suite_label_check.sh)"
 note "  --api                   = $D_API_TOTAL ($D_API_CORE core + $D_API_EXT extensions)"
 note "  docs/llms.txt lines     = $D_LLMS_LINES"
-note "  chan_clone_rec arms     = $D_CHAN_ARMS (src/eigenscript.c, no default: — -Werror=switch forces the choice)"
+note "  chan_clone_rec arms     = $D_CHAN_ARMS (src/eigenscript.c, no default: — switch warnings force the choice)"
 
 plausible widgets       "$D_WIDGETS"      20
 plausible lib_files     "$D_LIB_FILES"    50

@@ -181,7 +181,16 @@ for cand in "${PORTABILITY_BASH:-}" "$HOME/.local/bin/bash32" /usr/local/bin/bas
     OLD_BASH="$cand"; OLD_BASH_MAJOR="$cand_major"; break
 done
 
-files=$(git -c safe.directory='*' ls-files '*.sh' 2>/dev/null)
+# An uncommitted deletion is still in the index; parse the files that exist in
+# this worktree. The floor and checked==n assertion still guard lost coverage.
+indexed=$(git -c safe.directory='*' ls-files '*.sh' 2>/dev/null)
+files=''
+for f in $indexed; do
+    if [ -f "$f" ]; then
+        files="$files$f
+"
+    fi
+done
 n=$(printf '%s\n' "$files" | grep -c . || true)
 
 if [ "${n:-0}" -lt "$FILE_FLOOR" ]; then

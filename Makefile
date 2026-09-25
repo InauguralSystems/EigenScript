@@ -1,12 +1,16 @@
 VERSION := $(shell cat VERSION)
 CC      := gcc
+override WERROR_FLAGS := $(shell cat tools/werror_flags.txt)
+ifeq ($(strip $(WERROR_FLAGS)),)
+$(error missing, unreadable or empty tools/werror_flags.txt)
+endif
 # -Werror=implicit-function-declaration: an implicitly-declared function is
 # assumed to return int, so on 64-bit a pointer-returning libc/GNU function
 # (e.g. strcasestr without _GNU_SOURCE) has its return truncated to 32 bits —
 # a corrupted pointer that segfaults at runtime, layout-dependently (this hid
 # a remote-DoS in ext_http through CI; see #239). Make the whole class a hard
 # build error instead of an ignorable warning.
-CFLAGS  := -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+CFLAGS  := -Wall -Wextra -Werror=implicit-function-declaration $(WERROR_FLAGS) -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
 
 # RELRO/BIND_NOW are ELF concepts; macOS's ld64 rejects -z, and PIE is
 # already the default there. Without this split every Makefile link target
@@ -94,7 +98,7 @@ MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_tra
 # invariant is CHECKED in every debug variant rather than trusted — the full
 # suite runs under asan, so every string the suite touches is validated.
 STRLEN_CHECK := -DEIGS_STR_LEN_CHECK
-ASAN_FLAGS := -fsanitize=address,undefined,float-cast-overflow -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 $(STRLEN_CHECK)
+ASAN_FLAGS := -fsanitize=address,undefined,float-cast-overflow $(WERROR_FLAGS) -g -O1 $(STRLEN_CHECK)
 
 SRC_V_release := $(SOURCES)
 FLAGS_release := $(CFLAGS) $(DEFS_OFF) $(VERDEF)
@@ -133,15 +137,15 @@ FLAGS_asan-http := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODE
 LIBS_asan-http  := -lm -lpthread
 
 SRC_V_tsan := $(SOURCES)
-FLAGS_tsan := -fsanitize=thread -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 $(DEFS_OFF) $(VERDEF)
+FLAGS_tsan := -fsanitize=thread $(WERROR_FLAGS) -g -O1 $(DEFS_OFF) $(VERDEF)
 LIBS_tsan  := -lm -lpthread
 
 SRC_V_valgrind := $(SOURCES)
-FLAGS_valgrind := -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 -DEIGS_VALGRIND $(STRLEN_CHECK) $(DEFS_OFF) $(VERDEF)
+FLAGS_valgrind := $(WERROR_FLAGS) -g -O1 -DEIGS_VALGRIND $(STRLEN_CHECK) $(DEFS_OFF) $(VERDEF)
 LIBS_valgrind  := -lm -lpthread
 
 SRC_V_poison := $(SOURCES)
-FLAGS_poison := -Werror=switch -Werror=comment -Werror=misleading-indentation -g -O1 -DEIGS_POISON $(STRLEN_CHECK) $(DEFS_OFF) $(VERDEF)
+FLAGS_poison := $(WERROR_FLAGS) -g -O1 -DEIGS_POISON $(STRLEN_CHECK) $(DEFS_OFF) $(VERDEF)
 LIBS_poison  := -lm -lpthread
 
 VARIANTS := release full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison
@@ -150,7 +154,7 @@ VARIANTS := release full http zlib net gfx asan asan-http asan-gfx tsan valgrind
 # rebuilds; header edits are covered by the generated .d files.
 define VARIANT_RULES
 OBJ_$(1) := $$(patsubst $(SRC_DIR)/%.c,build/$(1)/%.o,$$(SRC_V_$(1)))
-build/$(1)/%.o: $(SRC_DIR)/%.c Makefile VERSION | build/$(1)
+build/$(1)/%.o: $(SRC_DIR)/%.c Makefile VERSION tools/werror_flags.txt | build/$(1)
 	$$(CC) $$(FLAGS_$(1)) -MMD -MP -c $$< -o $$@
 build/$(1)/eigenscript: $$(OBJ_$(1))
 	$$(CC) $$(FLAGS_$(1)) -o $$@ $$(OBJ_$(1)) $$(LIBS_$(1))
@@ -189,7 +193,7 @@ build: build/release/eigenscript
 # C test can inspect the internal thread-local intern accounting directly.
 SANDBOX_INTERN_TEST := build/release/test_sandbox_intern_lifetime
 SANDBOX_INTERN_TEST_OBJ := build/release/test_sandbox_intern_lifetime.o
-$(SANDBOX_INTERN_TEST_OBJ): tests/test_sandbox_intern_lifetime.c Makefile VERSION $(wildcard $(SRC_DIR)/*.h) | build/release
+$(SANDBOX_INTERN_TEST_OBJ): tests/test_sandbox_intern_lifetime.c Makefile VERSION tools/werror_flags.txt $(wildcard $(SRC_DIR)/*.h) | build/release
 	$(CC) $(FLAGS_release) -I$(SRC_DIR) -MMD -MP -c $< -o $@
 $(SANDBOX_INTERN_TEST): $(SANDBOX_INTERN_TEST_OBJ) $(filter-out build/release/main.o build/release/repl.o build/release/step.o build/release/tape_read.o build/release/bundle.o,$(OBJ_release))
 	$(CC) $(FLAGS_release) -o $@ $^ $(LIBS_release)
@@ -199,7 +203,7 @@ sandbox-intern-test: $(SANDBOX_INTERN_TEST)
 # #1082: a builtin's line-0 raise with no live VM frame reports the trace stamp
 ERRLINE_TEST := build/release/test_error_line_fallback
 ERRLINE_TEST_OBJ := build/release/test_error_line_fallback.o
-$(ERRLINE_TEST_OBJ): tests/test_error_line_fallback.c Makefile VERSION $(wildcard $(SRC_DIR)/*.h) | build/release
+$(ERRLINE_TEST_OBJ): tests/test_error_line_fallback.c Makefile VERSION tools/werror_flags.txt $(wildcard $(SRC_DIR)/*.h) | build/release
 	$(CC) $(FLAGS_release) -I$(SRC_DIR) -MMD -MP -c $< -o $@
 $(ERRLINE_TEST): $(ERRLINE_TEST_OBJ) $(filter-out build/release/main.o build/release/repl.o build/release/step.o build/release/tape_read.o build/release/bundle.o,$(OBJ_release))
 	$(CC) $(FLAGS_release) -o $@ $^ $(LIBS_release)
@@ -211,7 +215,7 @@ errline-test: $(ERRLINE_TEST)
 # runtime (the AOT) can make one.
 NATIVEFN_TEST := build/release/test_native_fn
 NATIVEFN_TEST_OBJ := build/release/test_native_fn.o
-$(NATIVEFN_TEST_OBJ): tests/test_native_fn.c Makefile VERSION $(wildcard $(SRC_DIR)/*.h) | build/release
+$(NATIVEFN_TEST_OBJ): tests/test_native_fn.c Makefile VERSION tools/werror_flags.txt $(wildcard $(SRC_DIR)/*.h) | build/release
 	$(CC) $(FLAGS_release) -I$(SRC_DIR) -MMD -MP -c $< -o $@
 $(NATIVEFN_TEST): $(NATIVEFN_TEST_OBJ) $(filter-out build/release/main.o build/release/repl.o build/release/step.o build/release/tape_read.o build/release/bundle.o,$(OBJ_release))
 	$(CC) $(FLAGS_release) -o $@ $^ $(LIBS_release)
@@ -225,7 +229,7 @@ nativefn-test: $(NATIVEFN_TEST)
 # never repoint the CLI alias.
 ARMING_MT_VARIANT ?= release
 ARMING_MT_OBJ := $(filter-out build/$(ARMING_MT_VARIANT)/main.o,$(OBJ_$(ARMING_MT_VARIANT)))
-build/$(ARMING_MT_VARIANT)/test_arming_two_states: tests/test_arming_two_states.c $(ARMING_MT_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile
+build/$(ARMING_MT_VARIANT)/test_arming_two_states: tests/test_arming_two_states.c $(ARMING_MT_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
 	$(CC) $(FLAGS_$(ARMING_MT_VARIANT)) -I$(SRC_DIR) -o $@ $< $(ARMING_MT_OBJ) $(LIBS_$(ARMING_MT_VARIANT))
 .PHONY: arming-mt-test
 arming-mt-test: build/$(ARMING_MT_VARIANT)/test_arming_two_states
@@ -234,7 +238,7 @@ arming-mt-test: build/$(ARMING_MT_VARIANT)/test_arming_two_states
 # #1038/#1028: same runtime variant as the suite; never repoint the CLI alias.
 EMBED_OBSERVER_VARIANT ?= release
 EMBED_OBSERVER_OBJ := $(filter-out build/$(EMBED_OBSERVER_VARIANT)/main.o,$(OBJ_$(EMBED_OBSERVER_VARIANT)))
-build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c $(EMBED_OBSERVER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile
+build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c $(EMBED_OBSERVER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
 	$(CC) $(FLAGS_$(EMBED_OBSERVER_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_OBSERVER_OBJ) $(LIBS_$(EMBED_OBSERVER_VARIANT))
 .PHONY: embed-observer-test
 embed-observer-test: build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer
@@ -243,7 +247,7 @@ embed-observer-test: build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer
 # #1056: use the same variant as the CLI under test, without relinking it.
 ROAD_VARIANT ?= release
 EMBED_ROADS_OBJ := $(filter-out build/$(ROAD_VARIANT)/main.o,$(OBJ_$(ROAD_VARIANT)))
-build/$(ROAD_VARIANT)/embed_roads: $(SRC_DIR)/embed_roads.c $(EMBED_ROADS_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile
+build/$(ROAD_VARIANT)/embed_roads: $(SRC_DIR)/embed_roads.c $(EMBED_ROADS_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
 	$(CC) $(FLAGS_$(ROAD_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_ROADS_OBJ) $(LIBS_$(ROAD_VARIANT))
 embed-roads: build/$(ROAD_VARIANT)/embed_roads
 	@echo "Embed road test built: $<"
@@ -328,7 +332,7 @@ $(SRC_DIR)/lsp_builtin_index.h: $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_host.c
 # Makefile, or VERSION change — so `make` after a VERSION bump relinks
 # them instead of leaving version-skewed binaries for the #411 tape gate
 # to refuse. `lsp`/`dap` stay as the phony entry points.
-$(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION
+$(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(LSP_BINARY) $(LSP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
@@ -339,7 +343,7 @@ $(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_built
 
 lsp: $(LSP_BINARY)
 
-$(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION
+$(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(DAP_BINARY) $(DAP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
@@ -351,7 +355,7 @@ $(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION
 dap: $(DAP_BINARY)
 
 jit-smoke:
-	$(CC) -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
+	$(CC) -Wall -Wextra $(WERROR_FLAGS) -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
 	/tmp/jit_smoke
 
 EMBED_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
@@ -505,7 +509,7 @@ coverage-clean:
 coverage: coverage-clean
 	@for src in $(SOURCES); do \
 		obj=$${src%.c}.o; \
-		$(CC) -O0 -g --coverage -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation -c $$src -o $$obj \
+		$(CC) -O0 -g --coverage -Wall -Wextra $(WERROR_FLAGS) -c $$src -o $$obj \
 			-DEIGENSCRIPT_EXT_HTTP=0 \
 			-DEIGENSCRIPT_EXT_MODEL=0 \
 			-DEIGENSCRIPT_EXT_DB=0 \
@@ -533,7 +537,7 @@ coverage: coverage-clean
 FUZZ_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
 
 fuzz: fuzz/fuzz_stdin.c $(FUZZ_SOURCES)
-	$(CC) -g -fsanitize=address,undefined -Werror=switch -Werror=comment -Werror=misleading-indentation -o fuzz/fuzz_stdin \
+	$(CC) -g -fsanitize=address,undefined $(WERROR_FLAGS) -o fuzz/fuzz_stdin \
 		fuzz/fuzz_stdin.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
@@ -550,7 +554,7 @@ fuzz-run: fuzz
 # $$LIB_FUZZING_ENGINE provides main(). Locally we just pass everything
 # explicitly so a clean clone can reproduce the OSS-Fuzz build.
 fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
-	clang -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all -Werror=switch -Werror=comment -Werror=misleading-indentation \
+	clang -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(WERROR_FLAGS) \
 		-o fuzz/fuzz_eigenscript \
 		fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
@@ -575,7 +579,7 @@ freestanding-check:
 # for mem/str/ctype/strtol/strtod/qsort/rand48/snprintf and the exact libm
 # subset; ulp-bounded for the transcendentals (bounds pinned in the harness).
 freestanding-libc-diff:
-	$(CC) -O2 -fno-builtin -ffp-contract=off -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation \
+	$(CC) -O2 -fno-builtin -ffp-contract=off -Wall -Wextra $(WERROR_FLAGS) \
 		-o /tmp/eigs_libc_diff tests/freestanding_libc_diff.c \
 		src/freestanding/mini_libc.c src/freestanding/mini_libm.c \
 		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
