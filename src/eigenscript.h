@@ -214,7 +214,7 @@ struct ASTNode {
         struct { ASTNode **try_body; int try_count; char *err_name; ASTNode **catch_body; int catch_count; } trycatch;
         struct { ASTNode **keys; ASTNode **vals; int count; } dict;
         struct { ASTNode *target; char *key; } dot;
-        struct { ASTNode *target; char *key; ASTNode *expr; } dot_assign;
+        struct { ASTNode *target; char *key; ASTNode *expr; char compound_op[4]; } dot_assign;
         struct { ASTNode *target; ASTNode *index; ASTNode *expr; char compound_op[4]; } index_assign;
         struct { char *module_name; } import;
         struct { ASTNode *expr; ASTNode **patterns; ASTNode ***bodies; int *body_counts; int case_count; } match;

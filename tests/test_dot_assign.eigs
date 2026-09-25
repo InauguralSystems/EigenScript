@@ -98,4 +98,57 @@ cnest is {"inner": {"n": 5}}
 cnest.inner.n += 1
 assert_eq of [cnest.inner.n, 6, "nested dot +="]
 
+# #1250: compound dot assignment evaluates its target ONCE and reads the
+# same object it writes. It used to desugar to `t.f is t.f + e`, running a
+# side-effecting target twice and mixing values from two different objects.
+ev_calls is 0
+ev_rows is [{"x": 1}, {"x": 10}]
+define ev_next() as:
+    ev_calls += 1
+    return ev_calls - 1
+ev_rows[ev_next of null].x += 2
+assert_eq of [ev_calls, 1, "dot += target evaluated once"]
+assert_eq of [ev_rows, [{"x": 3}, {"x": 10}], "dot += updates the selected row"]
+
+# Bracket form: the control that was already correct
+ev_calls is 0
+ev_rows is [{"x": 1}, {"x": 10}]
+ev_rows[ev_next of null]["x"] += 2
+assert_eq of [ev_calls, 1, "bracket += target evaluated once"]
+assert_eq of [ev_rows, [{"x": 3}, {"x": 10}], "bracket += matches dot"]
+
+# Plain dot assignment: also once
+ev_calls is 0
+ev_rows is [{"x": 1}, {"x": 10}]
+ev_rows[ev_next of null].x is 2
+assert_eq of [ev_calls, 1, "plain dot is: target evaluated once"]
+assert_eq of [ev_rows, [{"x": 2}, {"x": 10}], "plain dot is: row 0 set"]
+
+# The whole operator family shares the lowering
+ev_calls is 0
+ev_rows is [{"x": 12}, {"x": 100}, {"x": 7}, {"x": 5}, {"x": 6}]
+ev_rows[ev_next of null].x -= 2
+ev_rows[ev_next of null].x *= 3
+ev_rows[ev_next of null].x %= 4
+ev_rows[ev_next of null].x <<= 1
+ev_rows[ev_next of null].x ^= 3
+assert_eq of [ev_calls, 5, "one call per compound op"]
+assert_eq of [ev_rows, [{"x": 10}, {"x": 300}, {"x": 3}, {"x": 10}, {"x": 5}], "op family on the selected rows"]
+
+# Inside a function: the fused local / local[const] paths, and a hot loop
+# the JIT compiles (results must match the interpreter's)
+ev_calls is 0
+define ev_fn() as:
+    local rows is [{"x": 1}, {"x": 10}]
+    local d is {"n": 1}
+    local i is 0
+    loop while i < 3000:
+        d.n += 1
+        rows[0].x += 1
+        rows[ev_next of null].x += 2
+        ev_calls is 0
+        i += 1
+    return [d.n, rows]
+assert_eq of [ev_fn of null, [3001, [{"x": 9001}, {"x": 10}]], "compound dot in a hot fn loop"]
+
 test_summary of null

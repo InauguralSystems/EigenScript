@@ -606,6 +606,7 @@ static ASTNode *clone_ast(ASTNode *node) {
             n->data.dot_assign.target = clone_ast(node->data.dot_assign.target);
             n->data.dot_assign.key = xstrdup(node->data.dot_assign.key ? node->data.dot_assign.key : "");
             n->data.dot_assign.expr = clone_ast(node->data.dot_assign.expr);
+            memcpy(n->data.dot_assign.compound_op, node->data.dot_assign.compound_op, 4);
             break;
         case AST_BLOCK:
         case AST_UNOBSERVED:
@@ -624,6 +625,7 @@ static ASTNode *clone_ast(ASTNode *node) {
             n->data.index_assign.target = clone_ast(node->data.index_assign.target);
             n->data.index_assign.index = clone_ast(node->data.index_assign.index);
             n->data.index_assign.expr = clone_ast(node->data.index_assign.expr);
+            memcpy(n->data.index_assign.compound_op, node->data.index_assign.compound_op, 4);
             break;
         case AST_LIST_PATTERN_ASSIGN: {
             int nc = node->data.list_pattern_assign.name_count;
@@ -1934,27 +1936,20 @@ static ASTNode* parse_statement_inner(Parser *p) {
         ASTNode *target = parse_primary(p);
         if (target->type == AST_DOT && (p_cur(p)->type == TOK_IS || is_compound_assign(p_cur(p)->type))) {
             int compound = is_compound_assign(p_cur(p)->type);
-            char cop[4];
+            char cop[4] = {0};
             if (compound) compound_to_op(p_cur(p)->type, cop);
             p_advance(p); /* skip IS or compound op */
             ASTNode *rhs = parse_expression(p);
-            if (compound) {
-                /* Desugar obj.f += expr → obj.f is obj.f + expr */
-                ASTNode *read = make_node_col(AST_DOT, t->line, t->col);
-                read->data.dot.target = clone_ast(target->data.dot.target);
-                read->data.dot.key = xstrdup(target->data.dot.key);
-                read->name_hash = target->name_hash;
-                ASTNode *binop = make_node_col(AST_BINOP, t->line, t->col);
-                memcpy(binop->data.binop.op, cop, 4);
-                binop->data.binop.left = read;
-                binop->data.binop.right = rhs;
-                rhs = binop;
-            }
+            /* Compound `obj.f += expr` keeps its operator on the node (like
+             * AST_INDEX_ASSIGN) so the compiler evaluates the target ONCE and
+             * reuses it for the read and the write (#1250). Desugaring to
+             * `obj.f is obj.f + expr` ran a side-effecting target twice. */
             ASTNode *n = make_node_col(AST_DOT_ASSIGN, t->line, t->col);
             n->data.dot_assign.target = target->data.dot.target;
             n->data.dot_assign.key = xstrdup(target->data.dot.key);
             n->name_hash = target->name_hash;
             n->data.dot_assign.expr = rhs;
+            memcpy(n->data.dot_assign.compound_op, cop, 4);
             free(target->data.dot.key);
             free(target);
             p_end_statement(p);   /* #351: this path missed the #326 check */
