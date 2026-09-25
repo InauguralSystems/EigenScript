@@ -793,6 +793,13 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Compound dot assignment evaluates its target once (#1250).**
+  `rows[f of null].x += 2` desugared to `rows[f of null].x is rows[f of null].x + 2`,
+  so a side-effecting target ran twice and could read one object and write
+  another. The operator now stays on the assignment node and the compiler
+  reuses the evaluated target for the read and the write, as indexed compound
+  assignment already did. `tests/test_dot_assign.eigs` covers the family.
+
 - **`functional.wait_until` no longer sleeps after its final failed attempt
   (#1237).** `sleep_fn` ran after every failed attempt, including the last
   one, so a timeout after `tries` attempts paid `tries` delays instead of

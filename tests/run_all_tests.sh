@@ -2065,10 +2065,10 @@ else
 fi
 echo ""
 
-# [30] Dot-assignment (incl. compound `obj.f += e` desugaring/clone_ast)
+# [30] Dot-assignment (incl. compound `obj.f += e`: target evaluated once, #1250)
 echo "[30/31] Dot-Assignment"
 DA_OUTPUT=$(./eigenscript ../tests/test_dot_assign.eigs 2>&1); DA_OUTPUT_RC=$?
-DA_OUTPUT_N=$(derive_count "$DA_OUTPUT" 26 "[30/31] Dot-Assign")
+DA_OUTPUT_N=$(derive_count "$DA_OUTPUT" 35 "[30/31] Dot-Assign")
 if rc_ok "$DA_OUTPUT_RC" "$DA_OUTPUT" && echo "$DA_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + DA_OUTPUT_N))
     PASS=$((PASS + DA_OUTPUT_N))

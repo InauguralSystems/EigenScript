@@ -2962,6 +2962,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
     }
 
     case AST_DOT_ASSIGN: {
+        /* Compound `target.key op= expr` (#1250): the target is evaluated
+         * ONCE and reused for the read and the write, as AST_INDEX_ASSIGN
+         * does with OP_DUP2. The fused paths below have side-effect-free
+         * targets (a local, or local[const]), so re-reading them is exact. */
+        const char *cop = node->data.dot_assign.compound_op;
         /* Superinstruction: local[const].field = expr → OP_LOCAL_IDX_DOT_SET */
         if (c->enclosing && node->data.dot_assign.target->type == AST_INDEX) {
             ASTNode *idx_node = node->data.dot_assign.target;
@@ -2975,8 +2980,12 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                     if (th == 0) th = env_hash_name(tname);
                     int slot = resolve_local(c, tname, th);
                     if (slot >= 0) {
-                        compile_node(c, node->data.dot_assign.expr);
                         int name_idx = add_string_constant(c, node->data.dot_assign.key);
+                        if (cop[0])
+                            emit_op_u16_u16_u16(c, OP_LOCAL_IDX_DOT_GET,
+                                (uint16_t)slot, (uint16_t)iv, (uint16_t)name_idx, node->line);
+                        compile_node(c, node->data.dot_assign.expr);
+                        if (cop[0]) emit(c, binop_to_opcode(cop), node->line);
                         emit_op_u16_u16_u16(c, OP_LOCAL_IDX_DOT_SET,
                             (uint16_t)slot, (uint16_t)iv, (uint16_t)name_idx, node->line);
                         break;
@@ -2991,15 +3000,26 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             if (th == 0) th = env_hash_name(tname);
             int slot = resolve_local(c, tname, th);
             if (slot >= 0) {
-                compile_node(c, node->data.dot_assign.expr);
                 int idx = add_string_constant(c, node->data.dot_assign.key);
+                if (cop[0])
+                    emit_op_u16_u16(c, OP_LOCAL_DOT_GET, (uint16_t)slot, (uint16_t)idx, node->line);
+                compile_node(c, node->data.dot_assign.expr);
+                if (cop[0]) emit(c, binop_to_opcode(cop), node->line);
                 emit_op_u16_u16(c, OP_LOCAL_DOT_SET, (uint16_t)slot, (uint16_t)idx, node->line);
                 break;
             }
         }
         compile_node(c, node->data.dot_assign.target);
-        compile_node(c, node->data.dot_assign.expr);
         int idx = add_string_constant(c, node->data.dot_assign.key);
+        if (cop[0]) {
+            /* target → DUP → DOT_GET → expr → BINOP → DOT_SET */
+            emit(c, OP_DUP, node->line);
+            emit_op_u16(c, OP_DOT_GET, (uint16_t)idx, node->line);
+            compile_node(c, node->data.dot_assign.expr);
+            emit(c, binop_to_opcode(cop), node->line);
+        } else {
+            compile_node(c, node->data.dot_assign.expr);
+        }
         emit_op_u16(c, OP_DOT_SET, (uint16_t)idx, node->line);
         break;
     }
