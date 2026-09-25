@@ -11,7 +11,8 @@ cd EigenScript
 cd tests && bash run_all_tests.sh
 ```
 
-Requires only `gcc` — no external dependencies.
+Building needs only `gcc`. Running the test suite also needs `python3` with PyYAML
+(`apt install python3-yaml`, or `python3 -m pip install --user pyyaml`).
 
 ## Making Changes
 

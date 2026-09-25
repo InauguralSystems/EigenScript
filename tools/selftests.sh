@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")/.."
 command -v python3 >/dev/null 2>&1 || { echo 'selftests: INSTRUMENT ERROR: python3 missing'; exit 2; }
 exec python3 - "$@" <<'PY'
-import fnmatch, importlib.util, json, os, re, resource, shlex, shutil, subprocess, sys, tempfile, time
+import fnmatch, json, os, re, resource, shlex, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 def error(message):
@@ -121,8 +121,6 @@ def main():
             reasons = [] if result.returncode == 0 else [f'exit {result.returncode}' + (' (timeout)' if result.returncode == 124 else '')]
             for pin in pins:
                 pattern, wanted = pin['pattern'], pin['count']
-                if 'without_yaml' in pin and importlib.util.find_spec('yaml') is None:
-                    pattern = pin['without_yaml']
                 matches = re.findall(pattern, result.stdout, re.M)
                 found = (int(matches[0]) if len(matches) == 1 else -1) if pin.get('value') else len(matches)
                 if (found < wanted if pin.get('floor') else found != wanted):
