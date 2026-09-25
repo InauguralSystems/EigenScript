@@ -1,62 +1,9 @@
 #!/usr/bin/env bash
-# jit_fleet_bench.sh -- is the JIT worth having, measured on the ECOSYSTEM?
-#
-# The JIT's own benches (bench_idxset, bench_dmg_shape) show 2.0-2.3x. The
-# consumers do not: measured 2026-09-17 across 25 workloads in 24 repos, the
-# JIT is a COIN FLIP -- Tidepool +6.6%, DMG +4.5%, EigenMiniSat -2.4%,
-# ouroboros -4.7..-6.8%. This harness is that matrix made runnable, so a JIT
-# change is judged on consumer shapes instead of on benches written to suit
-# the emitter (EigenScript#1178).
-#
-# NOT ENROLLED IN THE SUITE, AND THAT IS A SCOPE STATEMENT, NOT AN OVERSIGHT.
-# An oracle nobody dispatches is a script in a directory (mechanical-gates
-# 151), so: this needs the CONSUMER CHECKOUTS -- $ECO/DMG, ouroboros,
-# EigenMiniSat, Tidepool, liferaft. The full matrix is ~12 minutes of wall-clock
-# timing that a shared runner cannot resolve anyway (see UNRESOLVED below).
-# The live benchmark is a MANUAL instrument, run deliberately when a JIT
-# change needs judging. tools/selftests.sh provisions the consumers needed
-# by its calibration, which runs on input changes and nightly (#1275).
-#
-#   bash tools/jit_fleet_bench.sh              # full matrix (~12 min)
-#   bash tools/jit_fleet_bench.sh --quick      # the two decisive rows (~3 min)
-#   bash tools/jit_fleet_bench.sh --selftest   # planted faults; must go red
-#
-# Verdicts are against PRE-REGISTERED floors (#1178), never against "better
-# than last time":
-#   WIN rows  stay at or above their floor  (keep the JIT's existing value)
-#   LOSS rows reach >= 0%                   (stop being a net loss)
-#   CONTROL   stays within +-1%             (it compiles nothing, so a reading
-#                                            outside that band means the
-#                                            HARNESS moved, not the JIT)
-#
-# ---------------------------------------------------------------------------
-# What this gate exists to stop (mechanical-gates section 97 -- name it, then
-# check every plant is an instance of it):
-#
-#   "A JIT change is declared good on a number that did not measure the JIT."
-#
-# Three ways that has actually happened, each encoded as a check:
-#
-# 1. THE JIT NEVER ENGAGED. A workload where nothing compiles yields an
-#    on/off delta that is pure scheduler noise and looks exactly like a
-#    measurement. EigenGauntlet was misread that way twice on 2026-09-17 --
-#    once as "compiles nothing" off a truncated multi-thread dump, once as a
-#    real -2.3%. Every non-control row asserts compiled>0.
-# 2. BOTH ARMS WERE THE SAME TIER. If EIGS_JIT_OFF stops disabling the JIT
-#    (the #1032 presence-vs-value class, which has happened in this repo),
-#    both arms run the JIT, every row reads ~0%, and every LOSS row PASSES
-#    its >=0 floor. So the off arm is asserted to compile NOTHING. This is
-#    mechanical-gates section 113: prove the arms differ in MECHANISM, not
-#    just that both ran.
-# 3. THE BINARY WAS NOT A PERFORMANCE BINARY. `make asan` OVERWRITES
-#    src/eigenscript with a ~5x slower build and --version does not say so;
-#    it produced a 6.5x error in a published figure on 2026-09-17. Refused.
-#
-# Residual (section 6 -- what this gate does NOT cover): it does not check
-# CORRECTNESS. tools/jit_diff.sh is the oracle for that and must be green
-# independently; a fast wrong JIT passes every row here. It also cannot see a
-# regression on a shape absent from the matrix -- the row set is the claim,
-# and ROW_COUNT below pins it so a row cannot be dropped silently.
+# Is the JIT worth having on consumer shapes, not on benches written for the
+# emitter (#1178)? Needs the ecosystem checkouts (DMG, ouroboros, EigenMiniSat).
+#   bash bench/jit_fleet_bench.sh           # full matrix
+#   bash bench/jit_fleet_bench.sh --quick   # two decisive rows
+# Floors are pre-registered. It does not check correctness (tools/jit_diff.sh).
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -80,13 +27,12 @@ else
   [ -n "$ECO" ] || { echo "jit_fleet_bench: FAIL: cannot locate the ecosystem root; set ECO=" >&2; exit 1; }
 fi
 N="${N:-5}"
-QUICK=0; SELFTEST=0; ONLY=""
+QUICK=0; ONLY=""
 for a in "$@"; do
   case "$a" in
     --quick)    QUICK=1 ;;
-    --selftest) SELFTEST=1 ;;
     --rows=*)   ONLY="${a#--rows=}" ;;
-    *) echo "usage: $0 [--quick] [--selftest]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--quick] [--rows=name,name]" >&2; exit 2 ;;
   esac
 done
 
@@ -267,87 +213,6 @@ run_row() {
     printf "%s ENGAGE=%s off=%.2f on=%.2f PAIRED=%+.1f SPREAD=%.1f FLOOR=%+.1f VERDICT=%s\n", n, con, o, m, pmed, spread, f+0, v
   }'
 }
-
-# ------------------------------------------------------------------ selftest
-# Section 97: every plant must be an instance of the defect class named in the
-# header -- "declared good on a number that did not measure the JIT".
-# Section 100: each plant gutts one mechanism and requires THAT row to red.
-if [ "$SELFTEST" = 1 ]; then
-  echo "== jit_fleet_bench selftest =="; banner; echo
-  run=0; bad=0
-  check() { # name, expected-substring, output
-    run=$((run+1))
-    case "$3" in *"$2"*) echo "   ok   $1" ;;
-      *) echo "   MISS $1 -- expected '$2'"; echo "        got: $3"; bad=$((bad+1)) ;;
-    esac
-  }
-  # P1: the "on" arm is secretly the interpreter. A WIN row must go red: with
-  # both arms identical the delta collapses to ~0, under a +3/+5 floor.
-  out=$(N=3 run_row "dmg-5M:$ECO/DMG:3:some:dmg.eigs roms/cpu_instrs.gb --cycles 1000000" 1)
-  # Must fail ON THE FLOOR, having produced a real PCT -- a missing-dir or
-  # no-timing FAIL would satisfy a bare VERDICT=FAIL and prove nothing.
-  check "P1 dead-JIT-arm measured a delta" "PAIRED=" "$out"
-  check "P1 dead-JIT-arm does not PASS the WIN floor" "FLOOR=+3.0 VERDICT=" "$out"
-  case "$out" in *"VERDICT=PASS"*) echo "   MISS P1 PASSED with a dead JIT arm"; bad=$((bad+1));; esac
-  run=$((run+1))
-
-  # P2: a workload the JIT never touches, timed as if it did. Must red BY
-  # REASON -- passing on a lucky percentage is the failure being prevented.
-  out=$(N=3 run_row "phantom:$ECO/liferaft:3:some:liferaft_sweep.eigs --seeds 5 --steps 50")
-  check "P2 non-engaging row reds by reason" "jit-never-engaged" "$out"
-
-  # P3: EIGS_JIT_OFF stops working, so both arms are the JIT. Simulated by
-  # asserting the off-arm check itself catches a nonzero compiled count --
-  # run a WIN row with the off-check ACTIVE but the on-arm forced off, which
-  # leaves compiled_off>0 only if the flag is broken. Instead, prove the
-  # assertion is live by feeding the control row a 'some' expectation: its
-  # off arm compiles nothing, so a broken assertion would be invisible.
-  out=$(N=3 run_row "offcheck:$ECO/DMG:3:some:dmg.eigs roms/cpu_instrs.gb --cycles 1000000" 0 1)
-  check "P3 clean WIN row measures a real PCT (positive control)" "ENGAGE=" "$out"
-
-  # P5: a workload that does not RUN must fail even on the control's
-  # expectation (compiled=0), where every other check is satisfied by death.
-  out=$(N=2 run_row "deadctl:$ECO/liferaft:-1:none:no_such_program_xyz.eigs")
-  check "P5 dead workload reds on the control expectation" "workload-exited-" "$out"
-  case "$out" in *VERDICT=PASS*) echo "   MISS P5 a DEAD program PASSED the control"; bad=$((bad+1));; esac
-  run=$((run+1))
-
-  # P6 (#1204): PASSES THE PROBE, FAILS THE TIMED RUNS. This is the gap P5
-  # does not cover -- P5's program does not exist, so the up-front rc probe
-  # catches it. The probe runs with a DIFFERENT environment from the runs it
-  # vouches for (no EIGS_JIT_OFF), so a workload can satisfy the probe and
-  # then die on every timed invocation. A blind critic did exactly that and
-  # this harness reported PASS, +71.4%, with its own selftest green.
-  #
-  # The plant is that shape in two lines: exit 0 when run plainly, exit 23
-  # when EIGS_JIT_OFF is set -- i.e. every off-arm timing is of a corpse.
-  p6dir=$(mktemp -d "${TMPDIR:-/tmp}/jitfleet.p6.XXXXXX")
-  # It must BURN TIME before dying. A plant that exits instantly is caught by
-  # the no-timing check instead, which passes the row for the wrong reason
-  # and proves nothing about rc (mechanical-gates section 41). With the loop,
-  # `/usr/bin/time` emits a plausible elapsed line that `tail -1` happily
-  # reads -- which is precisely how the critic's fixture got PASS, +71.4%.
-  printf 'v is env_get of "EIGS_JIT_OFF"\ni is 0\ns is 0\nloop while i < 300000:\n    s is s + i\n    i is i + 1\nif v != "":\n    exit of 23\nprint of s\n' > "$p6dir/p6.eigs"
-  # Registered as a LOSS row, not a control: as a control the
-  # compile-nothing assertion fires first and the row reds for a reason that
-  # says nothing about rc. With expect=some the mechanism checks are all
-  # SATISFIED -- the on arm compiles, the off arm does not -- so the only
-  # thing left standing between this corpse and a verdict is the rc check.
-  out=$(N=2 run_row "probepass:$p6dir:0:some:p6.eigs")
-  check "P6 a run that dies only when TIMED is caught" "timed-run-exited-23" "$out"
-  case "$out" in *VERDICT=PASS*) echo "   MISS P6 a workload dying on every timed run PASSED"; bad=$((bad+1));; esac
-  run=$((run+1))
-  rm -rf "$p6dir"
-
-  # P4: the population itself. A dropped row must fail, never shrink quietly.
-  sub=$(ROWS=("${ROWS[@]:0:3}"); echo "${#ROWS[@]}")
-  check "P4 ROW_COUNT pins the matrix size" "3" "$sub"
-
-  echo
-  echo "== selftest $run run, $((run-bad)) passed, $bad failed =="
-  [ "$bad" = 0 ] || exit 1
-  exit 0
-fi
 
 # ---------------------------------------------------------------------- run
 banner; echo

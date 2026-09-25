@@ -209,11 +209,10 @@ paths:
   now asked of the file that EXECUTES the fences, over a documented interface
   (`--count`, printing `path<TAB>n`).
   **A floor plus a plant calibrated against it drifts apart.**
-  `tools/child_exit_check.sh` held a floor of 60 while the population grew to
-  113, and its own "population shrunk" planted fault — which removes a fixed
-  handful of sites — quietly stopped crossing it. `found == declared` needs no
-  calibration and fires in both directions; prefer it to a floor whenever the
-  population is enumerable.
+  `tools/child_exit_check.sh` once held a floor of 60 while the population grew
+  past it, so a fixed-size shrink no longer crossed the floor. The live check
+  still floors the derived child-invocation count (a drop is a review, growth
+  is not). Prefer `found == declared` when the population is enumerable.
   **There is a real bash 3.2 on the dev box: `~/.local/bin/bash32`. Use it.**
   `bash32 -n <file>` answers every "is this portable?" question in one second,
   and `for f in $(git ls-files '*.sh'); do bash32 -n "$f"; done` audits the repo

@@ -6475,8 +6475,7 @@ printf '%s\n' "$PORT_OUTPUT" | grep -E "^portability(-parse|-run)?: (oracle|OK|o
 PORT_OLD_MAJOR_MAX=3
 # port_identity_verdict <gate output>
 #   Sets PORT_IDENTITY_VERDICT: empty when the receipt is acceptable, else the
-#   named reason. ONE implementation, used on the real run and on the three
-#   synthetic receipts in tools/portability_parse_check.sh --selftest, so the controls exercise the code that judges.
+#   named reason. The gate prints oracle-major from BASH_VERSINFO; this holds <= 3.
 port_identity_verdict() {
     local out="$1" major measured
     measured=0
@@ -6643,21 +6642,18 @@ else
 fi
 echo ""
 
-# [99zd] Every workflow file LOADS as YAML (#1207). Issue-label housekeeping
-# reads live GitHub state, so it runs only in issue-triage.yml (#1275). With
-# PyYAML importable here the load arm must run, not skip by name.
+# [99zd] Every workflow file LOADS as YAML and has a top-level jobs: mapping
+# (#1207). No PyYAML is red, not a skip.
 echo "[99zd] Workflow files load as YAML (#1207)"
 TOTAL=$((TOTAL + 1))
 WORKFLOW_OUTPUT=$(bash "$TESTS_DIR/../tools/workflow_yaml_check.sh" 2>&1); WORKFLOW_RC=$?
-if python3 -c 'import yaml' >/dev/null 2>&1; then WORKFLOW_LOADER=pyyaml
-else WORKFLOW_LOADER='skipped:[a-z0-9-]+'; fi
 if [ "$WORKFLOW_RC" -eq 0 ] \
-   && grep -qE "^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), [1-9][0-9]* name\(s\), loader=$WORKFLOW_LOADER\)\$" <<<"$WORKFLOW_OUTPUT"; then
+   && grep -qE "^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), loader=pyyaml\)\$" <<<"$WORKFLOW_OUTPUT"; then
     PASS=$((PASS + 1))
     printf '%s\n' "$WORKFLOW_OUTPUT" | grep -E '^workflow-yaml: OK'
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: workflow-yaml gate (rc=$WORKFLOW_RC, loader wanted=$WORKFLOW_LOADER); output follows"
+    echo "  FAIL: workflow-yaml gate (rc=$WORKFLOW_RC); output follows"
     print_captured "workflow-yaml gate, VERBATIM" "$WORKFLOW_OUTPUT"
 fi
 echo ""
@@ -7285,10 +7281,8 @@ echo ""
 # bytes it says are missing. This gate is static: it scans every .sh that
 # enables pipefail and fails on any early-exiting reader at the end of a pipe
 # whose STATUS picks a branch. File-reading greps, `grep -c`, `grep -vxF -f`
-# and diagnostic `| head` are all left alone, and --selftest proves both halves
-# of that — it FIRES on each banned spelling and stays QUIET on each legitimate
-# one. NOTE: run_all_tests.sh itself does not set pipefail, so its ~173
-# `| grep -q` sites are not exposed and are not subjects.
+# and diagnostic `| head` are left alone. This runner does not set pipefail,
+# so its own `| grep -q` sites are not subjects.
 #
 echo "[99aa] pipefail verdict-pipeline gate (#1122)"
 TOTAL=$((TOTAL + 1))

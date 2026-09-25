@@ -509,22 +509,19 @@ jobs:
           grep -qxF 'FAIL: cleanup deferral fault abandoned READY child after delivered signal and matching trap exit' "$result"
           ! grep -q '^ci-portability: checks=' "$result"
 
-      # The YAML loader behind suite section [99zd] (arm (b) of
-      # tools/workflow_yaml_check.sh). The Linux legs get it from the dev
-      # image (.devcontainer/Dockerfile, python3-yaml); this runner has no
-      # PyYAML, and without it two of that gate's planted faults cannot go
-      # red. Best-effort: the gate SKIPs the arm BY NAME if this fails, and
-      # the suite's caller allows that named skip only when PyYAML is
-      # genuinely absent — never a silent pass.
+      # The YAML loader behind suite section [99zd]
+      # (tools/workflow_yaml_check.sh). Linux legs get python3-yaml from the
+      # dev image (.devcontainer/Dockerfile). This runner does not. A failed
+      # install fails the job: the gate loads every workflow, and a missing
+      # loader is red, not a skip.
       - if: needs.scope.outputs.code == 'true'
         name: Install PyYAML (the workflow-YAML gate's loader arm)
         run: |
           set -u
-          python3 -m pip install --user --break-system-packages pyyaml \
-            || python3 -m pip install --user pyyaml \
-            || echo "PyYAML install failed; the workflow-YAML load arm will SKIP BY NAME"
-          python3 -c 'import yaml; print("PyYAML", yaml.__version__)' \
-            || echo "PyYAML is not importable on this runner"
+          python3 -c 'import yaml' 2>/dev/null \
+            || python3 -m pip install --user --break-system-packages pyyaml \
+            || python3 -m pip install --user pyyaml
+          python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
 
       - if: needs.scope.outputs.code == 'true'
         name: Build

@@ -4,6 +4,11 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+- Gate scripts shrink (#1275): `tools/*.sh` and `tools/*.py` go from 12342
+  lines to 10697. The workflow YAML check only loads files, the JIT fleet
+  benchmark moves to `bench/`, and the kept checks drop their permanent
+  self-tests.
+
 - The strict, container-shape and pixel differentials are one tool,
   `tools/strict_differential.sh` (suite `[99s]`). The fail-soft text
   classifier and the observer-gate diff and measure harnesses are removed;

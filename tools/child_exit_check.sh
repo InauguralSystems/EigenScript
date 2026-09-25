@@ -1,66 +1,15 @@
 #!/bin/bash
-# Child-script exit-status accounting gate (#988).
-#
-# tests/run_all_tests.sh runs ~45 child `.sh` tests as
-#     FOO_OUTPUT=$(bash "$TESTS_DIR/test_foo.sh" 2>&1)
-# A command substitution keeps the child's stdout and DISCARDS its exit
-# status, so the section's verdict came from `grep -c "FAIL:"` alone. A child
-# that printed two PASS: lines and then segfaulted reported a PASSING section;
-# a child that did not exist reported "0/0 passed, 0 failed", also a pass.
-# Reproduced at exit 139, 127 and 1 before the fix.
-#
-# The fix is a `bash` shell FUNCTION in run_all_tests.sh that emits a synthetic
-# FAIL: line and appends to $CHILD_LEDGER whenever a child script exits
-# nonzero. It is central precisely so no call site has to remember anything —
-# which means the whole mechanism dies silently if someone routes around the
-# function. This gate is what makes that loud.
-#
-# Usage: tools/child_exit_check.sh [--selftest]
-#   --selftest : plant each fault this gate exists to catch in a temporary
-#                copy and require the matching assertion to fire.
-# Exit 0 = the accounting is present and unbypassed.
-
+# Child-script exit status is discarded by a command substitution unless
+# run_all_tests.sh's bash() wrapper records it (#988). A launcher in front of
+# bash execs the real binary and the section goes back to marker-only. The
+# invocation count is floored: growth is free, a drop is a review. Zero is red.
 set -u
 cd "$(dirname "$0")/.." || exit 1
-
 RUNNER="${RUNNER:-tests/run_all_tests.sh}"
-
-# Declared population. The sites are DERIVED by matching invocations in the
-# runner, so the population can shrink without anything failing
-# (mechanical-gates §43): a site reformatted beyond the matcher's reach simply
-# leaves the set. `[ -z ]` is an emptiness test, not a guard — it only catches
-# losing ALL of them.
-#
-# #1264 — A FLOOR AGAIN. Round 11 pinned this exactly because the old floor
-# (60) had fallen 53 below the population and its fixed-size shrink plant no
-# longer crossed it. The exact pin made every added child test a hand bump,
-# and PR #1260 bumped it and then conflicted on it. Adding is growth, not a
-# review event (mechanical-gates §5); a DROP is, and lowering this floor is
-# how a deliberate removal is declared. The selftest's shrink plant now sizes
-# itself from the live count, so it lands at floor-1 however far the suite grows.
-# The metric is LINES carrying an invocation, not invocations: a few sites run
-# two children on one line (`if bash A && bash B --selftest; then`), so the
-# true invocation count is higher. Lines are what this is measured in; do not
-# "correct" it to invocations without re-measuring.
-# #1275 removes the variant-plan launcher and print-only child site.
 CHILD_SITES_FLOOR="${CHILD_SITES_FLOOR:-91}"
-
 fail() { echo "GATE ERROR: $*" >&2; RC=1; }
 RC=0
-
-# ---------------------------------------------------------------------------
-# Strip comments before enumerating (mechanical-gates §24). This gate reads a
-# file that DOCUMENTS the very pattern it searches for — the runner's #988
-# comment block contains a literal `$(bash "$TESTS_DIR/test_foo.sh" 2>&1)`
-# example. Counting that would inflate the population with the gate's own
-# reflection, and worse, would keep the floor satisfied after every real site
-# was gone. Only executable text is enumerated.
-# ---------------------------------------------------------------------------
 runner_code() { sed 's/[[:space:]]*#.*$//' "$RUNNER"; }
-
-# --- 1. The mechanism exists at all ---------------------------------------
-# Anchored on the three parts that make it work: the function, the ledger
-# append, and the synthetic marker. Any one missing is a dead mechanism.
 if ! grep -qE '^bash\(\)[[:space:]]*\{' <<< "$(runner_code)"; then
     fail "$RUNNER does not define the bash() accounting wrapper — every child's exit status is discarded again"
 fi
@@ -70,104 +19,47 @@ fi
 if ! grep -qF 'without completing — section verdict is not trustworthy (#988)' "$RUNNER"; then
     fail "$RUNNER no longer emits the synthetic FAIL: marker — sections go back to deciding on markers alone"
 fi
-# The ledger block must be CONSUMED, or the append is write-only.
 if ! grep -qF '[99p] Child-script exit-status ledger' "$RUNNER"; then
     fail "$RUNNER no longer runs the [99p] ledger section — nonzero children would be recorded and never reported"
 fi
-
-# --- 2. Population, floored ------------------------------------------------
-# Every executable line invoking a `.sh` child through the wrapper.
 CHILD_SITES=$(runner_code | grep -cE '(^|[^a-zA-Z_])bash[[:space:]]+("?\$(TESTS_DIR|\{TESTS_DIR\})"?[^|;)]*\.sh|"[^"]*\.sh")')
 if [ "$CHILD_SITES" -lt "$CHILD_SITES_FLOOR" ]; then
     fail "$CHILD_SITES child-script invocation sites found, below the floor of $CHILD_SITES_FLOOR — a child test was removed, or a site was reformatted out of this matcher's reach; lower CHILD_SITES_FLOOR in the same commit if deliberate"
 fi
-
-# --- 3. `bash` must be the COMMAND WORD, not merely present ----------------
-# This is the check the obvious design gets wrong. The wrapper is a shell
-# FUNCTION, and a function is consulted only when `bash` is the command word of
-# a simple command. Put ANY external launcher in front of it —
-#     env bash "$TESTS_DIR/test_x.sh"
-#     timeout 60 bash "$TESTS_DIR/test_x.sh"
-#     $EIGS_TMO bash "$TESTS_DIR/test_x.sh"
-# — and the real /usr/bin/bash is exec'd: no synthetic FAIL:, no ledger row,
-# section silently back to marker-only. Every one of those spellings still
-# matches the population matcher above, so the declared count stays satisfied
-# and nothing else notices.
-#
-# A denylist of known-bad launchers cannot work (the list is unbounded, and
-# `env` and `$EIGS_TMO` both already appear in this runner for other reasons).
-# So the check is ALLOWLIST-shaped and positive: split each population line on
-# command separators, and require the segment carrying the `.sh` to begin with
-# `bash` — optionally preceded only by VAR=value assignment prefixes, which is
-# the one thing the shell still treats as the same simple command.
-#
-# Being positive also removes a false-alarm class the denylist had: a
-# diagnostic like `echo "reproduce with: sh tests/test_cli.sh"` is a segment
-# whose first word is `echo`, so it carries no invocation and is not judged.
 BADWORD=$(runner_code | awk '
     {
         line = $0
-        # Split on command separators into candidate simple commands.
         gsub(/\$\(/, "\n", line)
         gsub(/[();`]|&&|\|\||\|/, "\n", line)
         n = split(line, seg, "\n")
         for (i = 1; i <= n; i++) {
             s = seg[i]
             if (s !~ /\.sh/) continue
-            # Strip leading whitespace, shell keywords, and VAR=value prefixes
-            # (a VAR=value prefix is still the SAME simple command).
             sub(/^[[:space:]]+/, "", s)
             while (s ~ /^(if|then|elif|else|do|while|until|!)[[:space:]]+/)
                 sub(/^(if|then|elif|else|do|while|until|!)[[:space:]]+/, "", s)
-            # The value may be quoted (`EIGENSCRIPT="./eigenscript" bash ...`),
-            # so the unquoted form alone leaves a real call site looking like a
-            # launcher — a false alarm in the check whose whole value is that
-            # its failures are believed.
             while (s ~ /^[A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]*)[[:space:]]+/)
                 sub(/^[A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]*)[[:space:]]+/, "", s)
             first = s; sub(/[[:space:]].*$/, "", first)
-
-            # (a) The correct shape: the wrapper is the command word.
             if (first == "bash" || first == "command") continue
-
-            # (b) A non-bash shell reaching a .sh — the wrapper is a `bash`
-            #     function, so these are invisible to it by construction.
             if (first ~ /^(sh|dash|zsh|ksh|\/bin\/sh|\/bin\/bash|\/usr\/bin\/bash|\/usr\/bin\/sh)$/) {
                 printf "%d:%s\n", NR, $0
                 continue
             }
-
-            # (c) Some OTHER command word with `bash` after it — a launcher
-            #     (env / timeout / $EIGS_TMO / …) that execs the real binary.
-            #     This is the case a denylist of names cannot bound.
             if (s ~ /(^|[[:space:]])bash[[:space:]]/) {
                 printf "%d:%s\n", NR, $0
                 continue
             }
-
-            # Otherwise this segment merely MENTIONS a .sh (a case pattern, a
-            # variable holding filenames, an echo of a reproduce hint). Not an
-            # invocation, so not judged — this is what keeps the check from
-            # crying wolf on the next error-message edit.
         }
     }' || true)
 if [ -n "$BADWORD" ]; then
     fail "child script(s) reached through something other than the bash() wrapper (bash must be the COMMAND WORD — a launcher in front of it execs the real binary and leaves the mechanism entirely):"
     printf '%s\n' "$BADWORD" | sed 's/^/    /' >&2
 fi
-# `command bash` is legitimate exactly 3 times — the wrapper's call-through
-# sites (non-script passthrough, captured test_*, uncaptured tools). Pinned so an
-# extra one is a review event.
 CMD_BASH=$(runner_code | grep -cE '(^|[^a-zA-Z_])command[[:space:]]+bash' || true)
 if [ "$CMD_BASH" -ne 3 ]; then
     fail "expected exactly 3 'command bash' (the wrapper's own call-throughs), found $CMD_BASH — an extra one bypasses accounting"
 fi
-
-# --- 4. The vacuity waiver list is pinned to the tree ----------------------
-# CHILD_NO_MARKERS exempts children that legitimately print no PASS:/FAIL:.
-# An exemption that no longer fires must FAIL, not pass quietly: if a listed
-# child gains markers, or disappears, the waiver is covering something nobody
-# agreed to.
 NO_MARKER_LIST=$(sed -n 's/^CHILD_NO_MARKERS="\(.*\)"$/\1/p' "$RUNNER")
 if [ -z "$NO_MARKER_LIST" ]; then
     fail "$RUNNER no longer declares CHILD_NO_MARKERS — the vacuity rule's waiver list is gone"
@@ -180,143 +72,19 @@ else
         fi
     done
 fi
-
-# --- 5. Every child measures the binary UNDER TEST (#1188) -----------------
-# A child that resolves its runtime as `${EIGS:-<default>}` lets the
-# ENVIRONMENT choose which binary it measures. A blind critic exported EIGS at
-# a healthy build, ran the suite's own string-scaling section against the
-# pre-fix quadratic tree, and got a clean PASS -- the section was measuring a
-# different program than the one under test and could not tell.
-#
-# The fix is central, like the wrapper above: the runner binds EIGS to
-# $EIGS_BIN once and exports it, so no dispatch site has to remember. Central
-# also means it dies silently if someone removes it, which is what this
-# section is for. Both halves are required -- the binding must be DERIVED from
-# $EIGS_BIN (a hard-coded path would drift from the variant under test) and it
-# must be EXPORTED (an unexported binding reaches no child at all).
 ENV_RUNTIME_CHILDREN_FLOOR="${ENV_RUNTIME_CHILDREN_FLOOR:-8}"   # a floor (#1264): the binding covers new ones
 if ! grep -qE '^EIGS="\$PWD/\$\{EIGS_BIN#\./\}"$' "$RUNNER"; then
     fail "$RUNNER no longer binds EIGS to \$EIGS_BIN — every child that resolves \${EIGS:-...} now measures whatever the environment says (#1188)"
 elif ! grep -qE '^export EIGS$' "$RUNNER"; then
     fail "$RUNNER binds EIGS but does not export it — the binding reaches no child (#1188)"
 fi
-# The population it protects, floored: one that silently shrinks or empties
-# would leave this section guarding less than it claims.
 ENV_RUNTIME_CHILDREN=$(grep -lE '^[[:space:]]*EIGS=.?\$\{EIGS:-' tests/test_*.sh 2>/dev/null | grep -c . || true)
 if [ "${ENV_RUNTIME_CHILDREN:-0}" -eq 0 ]; then
     fail "found ZERO children resolving \${EIGS:-...} — the scan for them is broken, not the tree (§121)"
 elif [ "$ENV_RUNTIME_CHILDREN" -lt "$ENV_RUNTIME_CHILDREN_FLOOR" ]; then
     fail "$ENV_RUNTIME_CHILDREN child test(s) take their runtime from the environment, below the floor of $ENV_RUNTIME_CHILDREN_FLOOR — a child lost its \${EIGS:-...} default; lower the floor if deliberate"
 fi
-
 if [ "$RC" -eq 0 ]; then
     echo "PASS: child-exit accounting present; $CHILD_SITES child-script sites (floor $CHILD_SITES_FLOOR), no bypass spellings; EIGS bound for $ENV_RUNTIME_CHILDREN environment-selectable child(ren)"
 fi
-
-# ---------------------------------------------------------------------------
-# --selftest: plant each fault and require the matching assertion to fire.
-# Every fault REPLACES text rather than deleting a line (mechanical-gates §41),
-# so no length- or count-based neighbour can reject on the target's behalf.
-# ---------------------------------------------------------------------------
-if [ "${1:-}" = "--selftest" ]; then
-    ST_TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs_childgate.XXXXXX") || exit 1
-    trap 'rm -rf "$ST_TMP"' EXIT
-    ST_RC=0
-    st_case() {   # st_case <name> <sed-program> <expected-substring>
-        local name="$1" prog="$2" want="$3"
-        local f="$ST_TMP/runner.sh"
-        sed "$prog" "$RUNNER" > "$f"
-        if cmp -s "$f" "$RUNNER"; then
-            echo "SELFTEST BROKEN: '$name' did not modify the runner — the fault never existed" >&2
-            ST_RC=1; return
-        fi
-        local out
-        out=$(RUNNER="$f" CHILD_SITES_FLOOR="$CHILD_SITES_FLOOR" "$0" 2>&1)
-        if [ "$?" -eq 0 ]; then
-            echo "SELFTEST FAIL: '$name' was not caught (gate passed a broken runner)" >&2
-            ST_RC=1
-        elif ! printf '%s\n' "$out" | grep -qF "$want"; then
-            # Attribution matters (mechanical-gates §19): a nonzero exit for
-            # some OTHER reason is not this case passing.
-            echo "SELFTEST FAIL: '$name' failed for the wrong reason; wanted '$want', got:" >&2
-            printf '%s\n' "$out" | sed 's/^/    /' >&2
-            ST_RC=1
-        else
-            echo "  selftest ok: $name"
-        fi
-    }
-
-    st_case "wrapper removed" \
-            's/^bash() {/bash_disabled() {/' \
-            "does not define the bash() accounting wrapper"
-    st_case "synthetic marker reworded away" \
-            's/without completing — section verdict is not trustworthy (#988)/completed fine/' \
-            "no longer emits the synthetic FAIL: marker"
-    st_case "ledger section removed" \
-            's/\[99p\] Child-script exit-status ledger/[99p] something else/' \
-            "no longer runs the [99p] ledger section"
-    st_case "bypass spelling introduced" \
-            's|LG_OUTPUT=$(bash "$TESTS_DIR/test_leak_guard.sh" 2>\&1)|LG_OUTPUT=$(/bin/bash "$TESTS_DIR/test_leak_guard.sh" 2>\&1)|' \
-            "reached through something other than the bash() wrapper"
-    # #1188: the central runtime binding, both halves and its population.
-    st_case "runtime binding removed" \
-            's|^EIGS="\$PWD/\${EIGS_BIN#\./}"$|EIGS="/some/other/eigenscript"|' \
-            "no longer binds EIGS to \$EIGS_BIN"
-    st_case "runtime binding not exported" \
-            's/^export EIGS$/: EIGS is not exported/' \
-            "does not export it"
-    # The population is derived from tests/, not from the runner, so this one
-    # drives the declared count rather than planting in a file.
-    ST_RC_BEFORE=$ST_RC
-    st_pop_out=$(ENV_RUNTIME_CHILDREN_FLOOR=99 "$0" 2>&1)
-    if [ "$?" -eq 0 ] || ! printf '%s\n' "$st_pop_out" | grep -qF "below the floor of 99"; then
-        echo "SELFTEST FAIL: a wrong environment-selectable-child count was not caught" >&2
-        ST_RC=1
-    else
-        echo "  selftest ok: a wrong environment-selectable-child count is caught"
-    fi
-    : "$ST_RC_BEFORE"
-
-    st_case "second command-bash added" \
-            's|CLI_OUTPUT=$(bash "$TESTS_DIR/test_cli.sh" 2>\&1)|CLI_OUTPUT=$(command bash "$TESTS_DIR/test_cli.sh" 2>\&1)|' \
-            "an extra one bypasses accounting"
-
-    # Two-sided loss (mechanical-gates §43): the site count is the ONLY thing
-    # that sees a site reformatted beyond the matcher's reach, so it gets its
-    # own planted fault rather than resting on the one-sided cases above.
-    # The realistic shape: an ordinary reformat puts the interpreter and the
-    # script path on different lines, so a line-based matcher stops seeing the
-    # site.
-    #
-    # #1264: the plant's size is DERIVED — split exactly (live - floor + 1)
-    # capture sites — so it lands at floor-1 however far the suite has grown.
-    st_n=$(( $(runner_code | grep -cE '(^|[^a-zA-Z_])bash[[:space:]]+("?\$(TESTS_DIR|\{TESTS_DIR\})"?[^|;)]*\.sh|"[^"]*\.sh")') - CHILD_SITES_FLOOR + 1 ))
-    # Split the first st_n capture sites across two lines (hold space counts).
-    st_prog='/^[[:space:]]*#/b
-/bash "\$TESTS_DIR\/test_[a-z_]*\.sh" 2>&1)/{
-x
-s/^/./
-/^.\{1,'"$st_n"'\}$/{
-x
-s|bash "|bash \\\
-        "|
-b
-}
-x
-}'
-    st_case "population dropped below the floor" "$st_prog" "below the floor of $CHILD_SITES_FLOOR"
-
-    # Positive control (mechanical-gates §15): an UNMODIFIED runner must pass,
-    # or a gate that always fails would score 6/6 above.
-    if ! RUNNER="$RUNNER" "$0" >/dev/null 2>&1; then
-        echo "SELFTEST FAIL: the unmodified runner does not pass — gate fails open-loop" >&2
-        ST_RC=1
-    else
-        echo "  selftest ok: clean control passes"
-    fi
-
-    [ "$ST_RC" -eq 0 ] && echo "SELFTEST: all planted faults caught"
-    exit "$ST_RC"
-fi
-
 exit "$RC"

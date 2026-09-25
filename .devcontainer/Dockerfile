@@ -25,14 +25,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   python3-yaml     -> TWO independent YAML-oracle gates need it, and each
 #                       one taking a silent SKIP without it has already cost
 #                       a real incident:
-#                       (a) tools/workflow_yaml_check.sh arm (b), the REAL
-#                           YAML loader behind suite section [99zd]. Without
-#                           it that arm SKIPs BY NAME and two of the gate's
-#                           planted faults cannot go red: on 538288c that took
-#                           linux/gcc, macOS and ASan shard 2/3 red at once
-#                           (CI run 35599371704). A gate whose second arm
-#                           never runs on the lane is the round-1 "a lane that
-#                           never ran" failure in a new hat.
+#                       (a) tools/workflow_yaml_check.sh, the loader behind
+#                           suite section [99zd]. Without PyYAML that gate is
+#                           red, not a skip: a lane that never loaded the
+#                           workflows is the failure it exists to catch.
 #                       (b) tools/_extract_runcmd.py's YAML oracle. Its
 #                           --selftest cross-checks the hand-rolled
 #                           block-scalar reader against yaml.safe_load;

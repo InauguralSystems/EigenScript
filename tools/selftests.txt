@@ -21,27 +21,20 @@ tests/test_string_scaling.sh | timeout 150 bash tests/test_string_scaling.sh --s
 tests/test_trace_mt.sh | timeout 30 bash tests/test_trace_mt.sh --selftest | [{"pattern":"  PASS:","count":6},{"pattern":"  FAIL:","count":0}]
 tools/_derive_variants.py tools/_extract_runcmd.py | timeout 30 python3 tools/_derive_variants.py --selftest
 tools/_extract_runcmd.py | timeout 30 python3 tools/_extract_runcmd.py --selftest
-tools/child_exit_check.sh | timeout 30 bash tools/child_exit_check.sh --selftest
-tools/ci_tier_check.sh | timeout 30 bash tools/ci_tier_check.sh --selftest
 tools/codspeed_targets_check.sh codspeed.yml | timeout 30 bash tools/codspeed_targets_check.sh --selftest
 tools/consumer_acceptance.sh tools/_derive_variants.py tools/_extract_runcmd.py reports/consumer_acceptance/* | timeout 25 bash tools/consumer_acceptance.sh --self-test
-tools/core_ext_boundary_check.sh | timeout 30 bash tools/core_ext_boundary_check.sh --selftest
 tools/docs_claims_check.sh | timeout 14 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 7 case\\(s\\) run, 7 passed, 0 failed$","count":1}]
 tools/embed_roads.py tests/embed_roads/* | timeout 30 python3 tools/embed_roads.py --selftest
 tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=4$","count":1}]
 tools/fmt_operator_sync_check.sh | timeout 30 bash tools/fmt_operator_sync_check.sh --selftest
-tools/jit_fleet_bench.sh | timeout 90 bash tools/jit_fleet_bench.sh --selftest
 tools/lint_message_utf8_check.sh tools/lint_source_byte_sweep.py tools/lint_path_fixture.py tests/lint_utf8/* | timeout 30 bash tools/lint_message_utf8_check.sh --selftest
 tools/lint_source_byte_sweep.py tools/lint_path_fixture.py | timeout 30 python3 tools/lint_source_byte_sweep.py src/eigenscript --selftest-paths
 tools/obs_marker_check.sh | timeout 30 bash tools/obs_marker_check.sh --selftest
 tools/obs_reader_sync_check.sh tools/obs_marker_check.sh | timeout 30 bash tools/obs_reader_sync_check.sh --selftest | [{"pattern":"^SELFTEST: ([0-9]+) passed.*$","count":11,"floor":true,"value":true}]
-tools/pipefail_verdict_check.sh | timeout 30 bash tools/pipefail_verdict_check.sh --selftest | [{"pattern":"^  checks=34 ","count":1}]
 tools/replay_diff.sh | timeout 30 bash tools/replay_diff.sh --selftest | [{"pattern":"  selftest ok:","count":11},{"pattern":"^SELFTEST: all planted faults caught","count":1}]
 tools/road_diff.py tools/road_diff.sh | timeout 30 python3 tools/road_diff.py --selftest
 tools/section_plan.sh tests/run_all_tests.sh .github/workflows/ci.yml | timeout 1860 bash tools/section_plan.sh --selftest
 tools/stdlib_index_check.sh | timeout 30 bash tools/stdlib_index_check.sh --selftest
 tools/vm_operand_width_check.sh | timeout 30 bash tools/vm_operand_width_check.sh --selftest
 tools/werror_switch_check.sh tools/cc_guard.sh tools/cc-guard-bin/cc tools/cc-guard-bin/gcc tools/cc-guard-bin/clang tools/cc-guard-bin/emcc tools/werror_flags.txt | timeout 60 bash tools/werror_switch_check.sh --selftest
-tools/workflow_yaml_check.sh | timeout 30 bash tools/workflow_yaml_check.sh --selftest | [{"pattern":"^SELFTEST: 8 case\\(s\\) run, 8 passed, 0 failed, 0 skipped$","count":1,"without_yaml":"^SELFTEST: 8 case\\(s\\) run, 6 passed, 0 failed, 2 skipped$"}]
-tools/portability_parse_check.sh tests/run_all_tests.sh | timeout 30 bash tools/portability_parse_check.sh --selftest | [{"pattern":"^  PASS: portability identity arm, 3/3 synthetic receipts judged correctly", "count":1}]
 tests/test_lsan_classify.sh tests/lsan_classify.sh tests/fixtures/lsan_classify/* tests/test_doc_examples.py tests/run_all_tests.sh | timeout 60 bash tests/test_lsan_classify.sh --selftest | [{"pattern":"^  PASS:","count":22},{"pattern":"^  FAIL:","count":0},{"pattern":"^  SKIP:","count":0}]
