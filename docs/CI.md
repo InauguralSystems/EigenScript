@@ -229,11 +229,12 @@ bash tools/section_plan.sh --selftest
 EIGS_SUITE_SHARD=2/3 bash tests/run_all_tests.sh
 ```
 
-A shard forces section timing on. The planner marks selected chunks whose
-source contains a literal section-header echo (`bearing=N`). Its wrapper
-prints a boundary sentinel before every chunk; the outer runner requires each
-sentinel exactly once in order and at least one stdout header within every
-header-bearing chunk. Sentinels are hidden from the displayed suite output.
+A shard forces section timing on. The planner marks selected chunks with a
+complete, top-level section-header echo (`bearing=N`) and rejects wrapped or
+conditional-only headers. Its wrapper prints a boundary sentinel before every
+chunk; the outer runner requires each sentinel exactly once in order and at
+least one stdout header within every header-bearing chunk. Sentinels are visible
+in shard logs.
 A zero-assertion suite also fails.
 
 ### Consumer acceptance wave

@@ -12,12 +12,14 @@ VERBOSE=1
 # A floor below the normal chunk population catches a collapsed scan while allowing growth.
 CHUNK_FLOOR=400
 # A floor below the normal emitter population catches a vacuous audit while allowing growth.
-SKIP_EMIT_FLOOR=20
+SKIP_EMIT_FLOOR=10
 # A floor below the normal route population catches a lost scan while allowing growth.
 SKIP_ROUTED_FLOOR=20
 CI_FILE="$SP_ROOT/.github/workflows/ci.yml"
+# One printed-header predicate, shared by source validation, bearing, and witness.
+SP_HEADER_TEXT_RE='^[[][^]]+[]] .+$'
+SP_HEADER_START_RE='echo "[[]'
 
-#
 # Match executable SKIP emitters; the helper owns section-level counts.
 SKIP_EMIT_RE='^[[:space:]]*(echo|printf)[[:space:]].*SKIP'
 SKIP_ROUTE_RE='^[[:space:]]*section_skip[[:space:]]'
@@ -31,14 +33,6 @@ e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check
 86e12c645c5ad672|(c) sub-check: [119] Part B (the #548 borrow guard) is compiled out on a release build; Part A runs on every build and its PASS/FAIL lines are tallied
 459741ca98fe2fc5|(b) the [44] HTTP-readiness FAIL line, which quotes skipped= in its verdict; two skips are the expected witnesses and any other count is already a FAIL there
 23bf2806c94855bb|(b) a diagnostic inside that FAIL branch, printed only when the section is already red
-4f08061db27787e7|(b) the [44-45/47] twin section LABEL; the skip beneath it is counted by section_skip
-1a610a50ab85b616|(b) the [46/47] twin section LABEL; the skip beneath it is counted by section_skip
-b9479b955a96ec10|(b) the [47/47] twin section LABEL; the skip beneath it is counted by section_skip
-fab55a18d8a45227|(b) the [62] twin section LABEL; the skip beneath it is counted by section_skip
-5ab04254fb943d66|(b) the [120b] twin section LABEL; the skip beneath it is counted by section_skip
-8daea9a26364c262|(b) the [133] twin section LABEL; the skip beneath it is counted by section_skip
-114496ab68d516e9|(b) the [134] twin section LABEL; the skip beneath it is counted by section_skip
-512ecfac87c5101b|(b) the [132] twin section LABEL; the skip beneath it is counted by section_skip
 2b1cec4b6df93886|(c) sub-check: [70d] relays the child rows verbatim, one of which SKIPs when GNU time -f is absent; the section still asserts its other two checks
 cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT section asserts its fast-path checks on every host
 00fd233b835a1ddb|(c) sub-check: the EIGS_JIT_HOT gate on a non-x86_64 host; same section, same reason
@@ -118,7 +112,7 @@ derive_chunks() {
     # segment instead of the whole prefix turns 600 parses of a 7,000-line file
     # into 600 parses of ~15 lines.
     local cand boundaries="" L prev=""
-    cand=$(grep -nE '^(echo "\[|# \[[0-9]|[A-Za-z_][A-Za-z0-9_]*_FILE=)' "$f" | cut -d: -f1)
+    cand=$(grep -nE "^($SP_HEADER_START_RE|# \[[0-9]|[A-Za-z_][A-Za-z0-9_]*_FILE=)" "$f" | cut -d: -f1)
     for L in $cand; do
         [ "$L" -lt "$SP_EPILOGUE_START" ] || continue
         [ "$L" -gt 1 ] || continue
@@ -146,7 +140,7 @@ derive_chunks() {
         start="$1"; shift
         if [ "$#" -gt 0 ]; then end=$(( $1 - 1 )); else end=$(( SP_EPILOGUE_START - 1 )); fi
         ids=$(sed -n "${start},${end}p" "$f" \
-              | grep -oE 'echo "\[[^]]*\]' \
+              | grep -oE "$SP_HEADER_START_RE[^]]*]" \
               | sed 's/^echo "//' \
               | tr '\n' ' ')
         printf '%s %s %s\n' "$start" "$end" "$ids"
@@ -175,26 +169,30 @@ verify_partition() {
 
 # Refuse conditional-only headings; an untaken branch would break the witness.
 check_header_shape() {
-    local table="$1"
-    awk '
+    local table="$1" roster="${2:-/dev/null}"
+    awk -v hdr="$SP_HEADER_TEXT_RE" -v prefix="$SP_HEADER_START_RE" -v roster="$roster" '
         FNR == NR { n++; start[n] = $1; end[n] = $2; next }
         {
             while (c < n && FNR > end[c]) c++
             if (c < 1 || FNR < start[c] || FNR > end[c]) next
-            if ($0 ~ /^echo "\[[^]]*\]/) top[c] = 1
-            else if ($0 ~ /^[[:space:]]+echo "\[[^]]*\]/ && !(c in nested)) nested[c] = $0
+            if ($0 !~ ("^[[:space:]]*" prefix)) next
+            title = $0
+            if (title !~ /"$/ || title ~ /\\/) { error = "incomplete section header in chunk start line " start[c] ": " $0; exit 1 }
+            sub(/^[[:space:]]*echo "/, "", title); sub(/"$/, "", title)
+            if (title !~ hdr) { error = "invalid section header in chunk start line " start[c] ": " $0; exit 1 }
+            if (FNR == start[c]) { if (!(c in top)) top[c] = title }
+            else if (!(c in nested)) nested[c] = title
         }
         END {
-            for (i = 1; i <= n; i++) if ((i in nested) && !(i in top)) {
-                header = nested[i]
-                sub(/^[[:space:]]+echo "/, "", header); sub(/".*/, "", header)
-                print "section_plan: ERROR: conditional-only section header in chunk start line " start[i] ": " header > "/dev/stderr"
-                exit 1
-            }
+            if (error == "") for (i = 1; i <= n; i++)
+                if ((i in nested) && !(i in top)) {
+                    error = "conditional-only section header in chunk start line " start[i] ": " nested[i]; break
+                }
+            if (error != "") { print "section_plan: ERROR: " error > "/dev/stderr"; exit 1 }
+            for (i = 1; i <= n; i++) print start[i] "\t" ((i in top) ? top[i] : "-") > roster
         }
     ' "$table" "$RUNNER"
 }
-
 # Measured weights balance whole-runner chunks; missing labels use a reported
 # default. The assignment is deterministic and checked as a disjoint union.
 WEIGHTS_FILE_DEFAULT="tests/section_weights.txt"
@@ -357,7 +355,6 @@ derive_chunk_groups() {
     SP_GROUP_MERGE_LIST=$(sed -n 's/^MERGE /  merged: /p' "$out.merges")
     SP_GROUPS=$(cut -d' ' -f2 "$out" | sort -u | grep -c .)
 }
-
 
 # Deterministic longest-processing-time greedy. Emits "<chunk-start> <shard>".
 derive_shard_assignment() {
@@ -632,9 +629,7 @@ validate_shards() {
     [ "$n" -ge 1 ] || die "shard count must be >= 1, got '$n'"
 }
 
-# A top-level echo marks a header-bearing chunk. The wrapper marks boundaries;
-# the parent checks their order and a printed header for every bearing chunk.
-# Branch choices inside a chunk do not enter this structural promise.
+# A validated top-level echo marks bearing; the wrapper checks boundaries and printed headers without interpreting branches.
 build_shard_plan() {
     local k="$1" n="$2" s
     validate_shards "$n"; validate_shards "$k"
@@ -643,22 +638,21 @@ build_shard_plan() {
     derive_chunks "$RUNNER" > "$SP_WORK/chunks"
     verify_partition "$RUNNER" "$SP_WORK/chunks"
     check_chunk_count "$SP_WORK/chunks"
-    check_header_shape "$SP_WORK/chunks" || die "section header shape refused"
+    check_header_shape "$SP_WORK/chunks" "$SP_WORK/headers" || die "section header shape refused"
     derive_chunk_weights "$SP_WORK/chunks" "$SP_WORK/weights" "$SP_WORK/missing"
     derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
     derive_shard_assignment "$n" "$SP_WORK/weights" "$SP_WORK/assign" "$SP_WORK/groups"
     awk -v k="$k" '$2 == k { print $1 }' "$SP_WORK/assign" | sort -n > "$SP_WORK/selected"
     SP_SEL_CHUNKS=$(grep -c '[0-9]' "$SP_WORK/selected")
     [ "$SP_SEL_CHUNKS" -gt 0 ] || die "shard $k/$n selected ZERO chunks"
-    local e first bearing
+    local first bearing
     SP_SEL_BEARING=0
     : > "$SP_WORK/expected"
     while read -r s; do
         [ -n "$s" ] || continue
-        e=$(awk -v ss="$s" '$1 == ss { print $2 }' "$SP_WORK/chunks")
-        first=$(sed -n "${s},${e}p" "$RUNNER" | grep -m1 -oE '^echo "\[[^"]*"' | sed 's/^echo "//; s/"$//')
+        first=$(awk -F '\t' -v ss="$s" '$1 == ss { print $2 }' "$SP_WORK/headers")
         bearing=0
-        if [ -n "$first" ]; then bearing=1; SP_SEL_BEARING=$((SP_SEL_BEARING + 1)); fi
+        if [ "$first" != - ]; then bearing=1; SP_SEL_BEARING=$((SP_SEL_BEARING + 1)); fi
         printf '# EIGS-EXPECT\t%s\t%s\t%s\n' "$s" "$bearing" "${first:--}" >> "$SP_WORK/expected"
     done < "$SP_WORK/selected"
     [ "$SP_SEL_BEARING" -gt 0 ] || die "shard $k/$n selected ZERO header-bearing chunks"
@@ -729,10 +723,16 @@ selftest() {
     cp "$RUNNER" "$dir/no_anchor.sh"
     sed 's/^# Final guard (#681)/# Final guard/' "$dir/no_anchor.sh" > "$dir/t"; mv "$dir/t" "$dir/no_anchor.sh"
     expect_red 'derive_chunks: missing epilogue anchor' 'epilogue anchor' "$0" --root "$SP_ROOT" --chunks --runner "$dir/no_anchor.sh" --quiet
-    awk '/^echo "\[17\/17\] Transformer Smoke/ { print "if true; then"; print "    " $0; print "fi"; next } { print }' \
+    awk '/^echo / && index($0, "[17/17] Transformer Smoke") { print "if true; then"; print "    " $0; print "fi"; next } { print }' \
         "$RUNNER" > "$dir/conditional-header.sh"
     expect_red 'check_header_shape: indented-only section header is refused' 'conditional-only section header in chunk start line' \
         "$0" --root "$SP_ROOT" --runner "$dir/conditional-header.sh" --shards 3 --check --quiet
+    awk '/^echo / && index($0, "[17/17] Transformer Smoke") { print "if true; then"; print; print "fi"; next } { print }' "$RUNNER" > "$dir/column-zero-branch.sh"
+    expect_red 'check_header_shape: column-zero branch header is refused' 'conditional-only section header in chunk start line' "$0" --root "$SP_ROOT" --runner "$dir/column-zero-branch.sh" --shards 3 --check --quiet
+    awk '/^echo / && index($0, "[17/17] Transformer Smoke") { sub(/"$/, ""); print; print "wrapped\""; next } { print }' \
+        "$RUNNER" > "$dir/wrapped-header.sh"
+    expect_red 'check_header_shape: wrapped section header is refused' 'incomplete section header in chunk start line' \
+        "$0" --root "$SP_ROOT" --runner "$dir/wrapped-header.sh" --shards 3 --check --quiet
     sed 's/^CHUNK_FLOOR=400$/CHUNK_FLOOR=999999/' "$0" > "$dir/bad-count.sh"
     chmod +x "$dir/bad-count.sh"
     expect_red 'check_chunk_count: vacuous chunk population falls below floor' 'chunk enumeration examined' \
@@ -750,7 +750,7 @@ selftest() {
     echo 'echo "  SKIP: planted bare emitter"' >> "$dir/bad-skip.sh"
     expect_red 'skip_audit: new bare SKIP emitter is unaccounted' 'SKIP-emitting line' \
         "$0" --root "$SP_ROOT" --runner "$dir/bad-skip.sh" --skip-audit
-    sed 's/^SKIP_EMIT_FLOOR=20$/SKIP_EMIT_FLOOR=999999/' "$0" > "$dir/bad-skip-count.sh"
+    sed 's/^SKIP_EMIT_FLOOR=10$/SKIP_EMIT_FLOOR=999999/' "$0" > "$dir/bad-skip-count.sh"
     chmod +x "$dir/bad-skip-count.sh"
     expect_red 'skip_audit: vacuous emitter scan falls below floor' 'skip emitter enumeration' \
         "$dir/bad-skip-count.sh" --root "$SP_ROOT" --skip-audit
@@ -814,7 +814,7 @@ while [ "$#" -gt 0 ]; do
         --runner) RUNNER="$2"; shift 2 ;;
         --ci-file) CI_FILE="$2"; shift 2 ;;
         --quiet) VERBOSE=0; shift ;;
-        --chunks|--skip-audit|--selftest) MODE="$1"; shift ;;
+        --chunks|--skip-audit|--selftest|--header-regex) MODE="$1"; shift ;;
         --shards) SP_SHARDS="$2"; shift 2 ;;
         --shard) SP_SHARD_K="$2"; shift 2 ;;
         --check) MODE='--shard-check'; shift ;;
@@ -840,6 +840,7 @@ case "$MODE" in
     --skip-audit)
         W=$(sp_workdir audit); skip_audit "$RUNNER" "$W"
         echo "SKIP AUDIT: emitters examined=$SP_SKIP_EMITS floor=$SKIP_EMIT_FLOOR; routes examined=$SP_SKIP_ROUTED floor=$SKIP_ROUTED_FLOOR; waivers=$SP_SKIP_WAIVERS_USED; unaccounted=0" ;;
+    --header-regex) printf '%s\n' "$SP_HEADER_TEXT_RE" ;;
     --shard-check) [ -n "$SP_SHARDS" ] || die '--check needs --shards N'; shard_check "$SP_SHARDS" ;;
     --shard-plan) build_shard_plan "$SP_SHARD_K" "$SP_SHARDS" ;;
     --shard-owner) shard_owner "$ARG1" "$ARG2" ;;

@@ -21,7 +21,9 @@ cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 verify_shard_chunks() {
     # The wrapper's metadata is fixed before execution. The stdout log contains
     # its boundary sentinels and the headers each chunk actually printed.
-    awk -F '\t' -v want_bearing="$3" -v want_chunks="$4" '
+    local header_re
+    header_re=$(bash "$TESTS_DIR/../tools/section_plan.sh" --header-regex) || return 1
+    awk -F '\t' -v header_re="$header_re" -v want_bearing="$3" -v want_chunks="$4" '
         function refuse(msg) { print "ERROR: " msg > "/dev/stderr"; bad = 1; exit 1 }
         FNR == NR {
             if ($1 == "# EIGS-EXPECT") {
@@ -42,7 +44,7 @@ verify_shard_chunks() {
             saw = 0
             next
         }
-        /^\[[^]]*\]/ { if (i > 0) saw = 1 }
+        $0 ~ header_re { if (i > 0) saw = 1 }
         END {
             if (bad) exit 1
             if (n < 1 || n != want_chunks || declared != want_bearing || want_bearing < 1)
@@ -1517,7 +1519,7 @@ PROBE_OUT=$(./eigenscript "$PROBE_FILE" 2>&1)
 rm -f "$PROBE_FILE"
 
 # Model extension present only if no "undefined variable" error
-echo "[17/17] Transformer Smoke (7 checks)"
+echo "[17/17] Transformer Smoke"
 if ! echo "$PROBE_OUT" | grep -q "undefined variable"; then
 
     # Generate tiny v1 model
@@ -2779,7 +2781,7 @@ PROBE
 HTTP_PROBE_OUT=$(./eigenscript "$HTTP_PROBE_FILE" 2>&1)
 rm -f "$HTTP_PROBE_FILE"
 
-echo "[44/47] HTTP Builtins (18 checks)"
+echo "[44/47] HTTP Builtins"
 if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     HTTP_OUTPUT=$(./eigenscript ../tests/test_http.eigs 2>&1); HTTP_OUTPUT_RC=$?
     if rc_ok "$HTTP_OUTPUT_RC" "$HTTP_OUTPUT" && echo "$HTTP_OUTPUT" | grep -q "All tests passed"; then
@@ -2879,7 +2881,6 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 else
-    echo "[44-45/47] HTTP tests SKIPPED (binary built without EIGENSCRIPT_EXT_HTTP)"
     section_skip "binary built without EIGENSCRIPT_EXT_HTTP"
     echo ""
 fi
@@ -2893,7 +2894,7 @@ PROBE
 DB_PROBE_OUT=$(./eigenscript "$DB_PROBE_FILE" 2>&1)
 rm -f "$DB_PROBE_FILE"
 
-echo "[46/47] DB Builtins (8 checks + 7 live-DB when connected)"
+echo "[46/47] DB Builtins"
 if ! echo "$DB_PROBE_OUT" | grep -q "undefined variable"; then
     DB_OUTPUT=$(./eigenscript ../tests/test_db.eigs 2>&1); DB_OUTPUT_RC=$?
     if rc_ok "$DB_OUTPUT_RC" "$DB_OUTPUT" && echo "$DB_OUTPUT" | grep -q "All db tests passed"; then
@@ -2912,7 +2913,6 @@ if ! echo "$DB_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 else
-    echo "[46/47] DB tests SKIPPED (binary built without EIGENSCRIPT_EXT_DB)"
     section_skip "binary built without EIGENSCRIPT_EXT_DB"
     echo ""
 fi
@@ -2925,7 +2925,7 @@ PROBE
 MODEL_PROBE_OUT=$(./eigenscript "$MODEL_PROBE_FILE" 2>&1)
 rm -f "$MODEL_PROBE_FILE"
 
-echo "[47/47] Model Save/Load Roundtrip (17 checks)"
+echo "[47/47] Model Save/Load Roundtrip"
 if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     MRT_OUTPUT=$(bash "$TESTS_DIR/test_model_roundtrip.sh" 2>&1)
     MRT_PASS=$(echo "$MRT_OUTPUT" | grep -c "PASS:" || true)
@@ -3021,7 +3021,6 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 else
-    echo "[47/47] Model roundtrip SKIPPED (binary built without EIGENSCRIPT_EXT_MODEL)"
     section_skip "binary built without EIGENSCRIPT_EXT_MODEL"
     echo ""
 fi
@@ -3455,7 +3454,7 @@ PROBE
 AUDIO_PROBE_OUT=$(./eigenscript "$AUDIO_PROBE_FILE" 2>&1)
 rm -f "$AUDIO_PROBE_FILE"
 
-echo "[62] Audio Synthesis (38 checks)"
+echo "[62] Audio Synthesis"
 if ! echo "$AUDIO_PROBE_OUT" | grep -q "undefined variable"; then
     AU_OUTPUT=$(./eigenscript ../tests/test_audio.eigs 2>&1); AU_OUTPUT_RC=$?
     if rc_ok "$AU_OUTPUT_RC" "$AU_OUTPUT" && echo "$AU_OUTPUT" | grep -q "All tests passed"; then
@@ -3470,7 +3469,6 @@ if ! echo "$AUDIO_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 else
-    echo "[62] Audio tests SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
     section_skip "binary built without EIGENSCRIPT_EXT_GFX"
     echo ""
 fi
@@ -3488,7 +3486,7 @@ PROBE
 GT_PROBE_OUT=$(./eigenscript "$GT_PROBE_FILE" 2>&1)
 rm -f "$GT_PROBE_FILE"
 
-echo "[120b] Gfx Text Metrics (2 runs)"
+echo "[120b] Gfx Text Metrics"
 if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
     GT_FB=$(SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
     GT_DEF=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
@@ -3507,7 +3505,6 @@ if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 else
-    echo "[120b] Gfx text metrics SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
     section_skip "binary built without EIGENSCRIPT_EXT_GFX"
     echo ""
 fi
@@ -3559,7 +3556,7 @@ PROBE
 GA_PROBE_OUT=$(./eigenscript "$GA_PROBE_FILE" 2>&1)
 rm -f "$GA_PROBE_FILE"
 
-echo "[133] Gfx Argument-Type Guards (2 passes)"
+echo "[133] Gfx Argument-Type Guards"
 if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
     GA_PLAIN=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
     GA_STRICT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
@@ -3657,7 +3654,6 @@ READPROG
     fi
     echo ""
 else
-    echo "[133] Gfx argument-type guards SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
     section_skip "binary built without EIGENSCRIPT_EXT_GFX"
     echo ""
 fi
@@ -3763,7 +3759,6 @@ if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 else
-    echo "[134] Pointer-disclosure oracle SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
     section_skip "binary built without EIGENSCRIPT_EXT_GFX"
     echo ""
 fi
@@ -3933,7 +3928,6 @@ if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 else
-    echo "[132] UI containment oracle SKIPPED (binary built without EIGENSCRIPT_EXT_GFX)"
     section_skip "binary built without EIGENSCRIPT_EXT_GFX"
     echo ""
 fi
@@ -4039,7 +4033,7 @@ PROBE
 ZLIB_PROBE_OUT=$(./eigenscript "$ZLIB_PROBE_FILE" 2>&1)
 rm -f "$ZLIB_PROBE_FILE"
 
-echo "[124b] DEFLATE Codecs (#684, 24 checks)"
+echo "[124b] DEFLATE Codecs (#684)"
 if ! echo "$ZLIB_PROBE_OUT" | grep -q "compiled without zlib support"; then
     INF_OUTPUT=$(./eigenscript ../tests/test_inflate.eigs 2>&1); INF_OUTPUT_RC=$?
     if rc_ok "$INF_OUTPUT_RC" "$INF_OUTPUT" && echo "$INF_OUTPUT" | grep -q "DEFLATE_ALL_PASS"; then
@@ -4056,7 +4050,6 @@ if ! echo "$ZLIB_PROBE_OUT" | grep -q "compiled without zlib support"; then
 else
     # Minimal build: the four names stay registered but must raise the
     # documented catchable error (the zero-dependency gating contract).
-    echo "[124b] DEFLATE Codecs (#684) — minimal build, stub check (1 check)"
     TOTAL=$((TOTAL + 1))
     if echo "$ZLIB_PROBE_OUT" | grep -q "deflate: compiled without zlib support"; then
         PASS=$((PASS + 1))
@@ -4083,7 +4076,7 @@ PROBE
 NET_PROBE_OUT=$(./eigenscript "$NET_PROBE_FILE" 2>&1)
 rm -f "$NET_PROBE_FILE"
 
-echo "[125] Network Extension (#414, 25 checks + record/replay)"
+echo "[125] Network Extension (#414)"
 if ! echo "$NET_PROBE_OUT" | grep -q "ndefined variable"; then
     NET_OUTPUT=$(./eigenscript ../tests/test_net.eigs 2>&1); NET_OUTPUT_RC=$?
     if rc_ok "$NET_OUTPUT_RC" "$NET_OUTPUT" && echo "$NET_OUTPUT" | grep -q "All net tests passed"; then
@@ -6436,10 +6429,7 @@ echo 'print of (gfx_text_width of ["m", 1])' > "$EX_GFX_PROBE"
 EX_HAS_GFX=0
 if ! ./eigenscript "$EX_GFX_PROBE" 2>&1 | grep -q "undefined variable"; then EX_HAS_GFX=1; fi
 rm -f "$EX_GFX_PROBE"
-echo "[97] Example programs (examples/*.eigs; gfx demos INCLUDED)"
-if [ "$EX_HAS_GFX" != "1" ]; then
-    echo "[97] Example programs (examples/*.eigs; gfx demos skipped — no gfx build)"
-fi
+echo "[97] Example programs (examples/*.eigs)"
 EX_PASS=0; EX_FAIL=0; EX_SKIP=0
 EIGS_ABS="$(pwd)/eigenscript"
 # Runaway guard reuses the shared $EIGS_TMO (defined near the top). The old
