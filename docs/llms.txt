@@ -1,6 +1,6 @@
 # EigenScript — single-file reference for language models
 
-> EigenScript v0.43.0. A small dynamically-typed language with one distinctive
+> EigenScript is a small dynamically-typed language with one distinctive
 > feature: an **observer** tracks every value's entropy/trend on each
 > assignment, so convergence, stability, and oscillation are first-class. This
 > file is the whole surface you need to generate correct `.eigs`. Models
@@ -293,7 +293,7 @@ division by zero
 
 ## Before hand-rolling a helper
 
-The runtime has 349 builtin functions (261 core + 88 extensions) and `lib/` covers a lot. `ord`/`chr`/`str_lower`/
+The runtime publishes its builtin index with `eigenscript --api`, and `lib/` covers a lot. `ord`/`chr`/`str_lower`/
 `str_upper`/`char_at`/`index_of`/`hex of [n, nibbles]`/`sort_by` are builtins
 (there is no bare `lower` — it's `str_lower`; `sort_by of [items, key_fn]` is
 the record-shaped sort and needs no import). `lib/` has `string.pad_left`,

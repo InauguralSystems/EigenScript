@@ -8,7 +8,7 @@ description states what forces it and its bar (the condition that closes it),
 and its issues are the work. This file does not mirror that list, so it cannot
 drift from it (#1275).
 
-Current version: see the "Latest release" line in CLAUDE.md and CHANGELOG.md.
+Current and past versions: see CHANGELOG.md and `git tag`.
 
 Everything below is either uncommitted (`## Ideas and deferrals`) or shipped
 (`## Completed`); neither is a plan.
@@ -158,23 +158,24 @@ milestone when an issue is filed against them.
   `trace.h`, `state.h` (plus, since #744, `fsutil.h`, `task.h` and
   `ext_register.h`). `eigenscript.h` spans the tokenizer, the AST, values,
   the arena, `EigsThread`, env, the parser, registration, the MODEL tensor
-  kernels, the handle table, the store, step, and fmt+lint: **26 structs
-  with every field visible, 167 declarations, included by 29 of ~30 TUs**.
+  kernels, the handle table, the store, step, and fmt+lint: structures and
+  declarations in `src/eigenscript.h` visible across the runtime.
   Two consequences are measured, not asserted: a lexer change forces a full
   rebuild of everything, and the layer order is violable and violated —
   `compiler.c` increments the PARSER's `g_parse_depth` `EigsThread` field
   as its own recursion guard, and lexer, parser and compiler all write
   `g_parse_errors`, the front end mutating runtime thread state.
-  What makes this its own round rather than a follow-up commit: 29 TUs,
+  What makes this its own round rather than a follow-up commit: the source files
+  that include `src/eigenscript.h`,
   `tools/amalgamate.sh` (which concatenates them in SOURCES order and would
   have to keep an acyclic include order across the split), and the
   freestanding profile's two-stage symbol gate. Note the header GRAPH is
   already clean and acyclic (`eigenscript.h -> value_slot.h`, `vm.h ->
   value_slot.h`, everything else -> `eigenscript.h`), so this is a hub
   problem, not a tangle — the split is mechanical once someone commits to
-  doing all 29 at once. `#744` showed the cheap version works: `fsutil.h`
-  moved 8 declarations out of the umbrella and 7 TUs now say they read
-  files, and nothing else changed.
+  doing the split across those files at once. `#744` showed the cheap version
+  works: `fsutil.h` moved declarations out of the umbrella and the includes now identify
+  filesystem readers, without changing behavior.
 
 - **Container-keyed observer trajectory** — dict fields and list
   elements carrying their own observer slot, keyed by (container

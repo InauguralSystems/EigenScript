@@ -28,7 +28,6 @@ run|tools/failsoft_classify_check.sh
 run|tools/child_exit_check.sh
 run|tools/enrolment_check.sh
 run|tools/suite_label_check.sh
-run|tools/doc_drift_check.sh
 run|tools/obs_marker_check.sh
 run|tools/obs_reader_sync_check.sh
 run|tools/vm_operand_width_check.sh

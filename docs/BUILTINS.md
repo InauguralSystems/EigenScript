@@ -1,6 +1,6 @@
 # EigenScript Builtin Reference
 
-349 builtins organized by module (261 core + 88 extensions). `eigenscript --api` prints the live index; the counts here are derived by tools/docs_claims_check.sh, never typed by hand.
+Builtins are organized by module. `eigenscript --api` prints the live index.
 Core builtins are always available; extension builtins (HTTP, DB, model,
 gfx, audio) require a full build or the `gfx` target.
 
@@ -212,9 +212,9 @@ list of ints 0–255. Corrupt or truncated input raises a catchable
 zip-bomb bound).
 
 Requires the `zlib` build (`make zlib`, `-DEIGENSCRIPT_EXT_ZLIB=1
--lz`) — the minimal build stays zero-dependency: the four names are
-still registered there (so `type of inflate` is `builtin` and the
-sandbox allowlist can name them) but every call raises `value`:
+-lz`) — the minimal build stays zero-dependency: the zlib names listed by
+`eigenscript --api` are still registered there (so `type of inflate` is
+`builtin` and the sandbox allowlist can name them) but every call raises `value`:
 "compiled without zlib support". Feature-detect with try/catch.
 
 | Name | Signature | Description |
@@ -487,7 +487,7 @@ heterogeneous or nested data.
 | `pow` | `pow of [base, exp]` | Element-wise exponentiation; overflow saturates. A negative base with a fractional exponent is `NaN` and collapses to `0` (sets `math_flags.invalid`); under `EIGS_STRICT=1` it raises a `value` error naming `pow` (#971). |
 | `negative` | `negative of t` | Element-wise negation |
 
-All five arithmetic builtins take shaped **buffers** wherever they take a flat
+The arithmetic builtins listed above take shaped **buffers** wherever they take a flat
 numeric list (#1093/#973), through **one** implementation — the same
 `tensor_elementwise` shape algebra, container for container, so every rule
 below reads the same for buffers and lists: two operands of equal count are

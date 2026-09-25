@@ -42,7 +42,7 @@ RUNNER="${RUNNER:-tests/run_all_tests.sh}"
 # two children on one line (`if bash A && bash B --selftest; then`), so the
 # true invocation count is higher. Lines are what this is measured in; do not
 # "correct" it to invocations without re-measuring.
-CHILD_SITES_FLOOR="${CHILD_SITES_FLOOR:-97}"
+CHILD_SITES_FLOOR="${CHILD_SITES_FLOOR:-96}"
 
 fail() { echo "GATE ERROR: $*" >&2; RC=1; }
 RC=0
@@ -60,7 +60,7 @@ runner_code() { sed 's/[[:space:]]*#.*$//' "$RUNNER"; }
 # --- 1. The mechanism exists at all ---------------------------------------
 # Anchored on the three parts that make it work: the function, the ledger
 # append, and the synthetic marker. Any one missing is a dead mechanism.
-if ! runner_code | grep -qE '^bash\(\)[[:space:]]*\{'; then
+if ! grep -qE '^bash\(\)[[:space:]]*\{' <<< "$(runner_code)"; then
     fail "$RUNNER does not define the bash() accounting wrapper — every child's exit status is discarded again"
 fi
 if ! grep -qF 'CHILD_LEDGER"' "$RUNNER"; then

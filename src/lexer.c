@@ -9,6 +9,13 @@
  * now lives on EigsThread (Phase 8); the identifier is a bridge macro. */
 #define MAX_TOKENIZE_DEPTH 64
 
+/* A lexer error always updates both the LSP's first diagnostic and the
+ * parser's error tally. Keep those effects inseparable at every call site. */
+static void lexer_error_at(int line, int col, const char *message) {
+    eigs_record_first_error_at(line, col, 1, message);
+    g_parse_errors++;
+}
+
 static void tok_add(TokenList *tl, TokType type, double num, const char *str, int line, int col) {
     if (tl->count >= tl->capacity) {
         tl->capacity *= 2;
@@ -234,8 +241,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
         char msg[64];
         snprintf(msg, sizeof(msg), "f-string nesting too deep (max %d levels)",
                  MAX_TOKENIZE_DEPTH);
-        eigs_record_first_error_at(initial_line, initial_col, 1, msg);
-        g_parse_errors++;
+        lexer_error_at(initial_line, initial_col, msg);
         tok_add(&tl, TOK_EOF, 0, NULL, initial_line, initial_col);
         return tl;
     }
@@ -280,8 +286,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     char msg[64];
                     snprintf(msg, sizeof(msg), "indent too deep (max %d levels)",
                              MAX_INDENT);
-                    eigs_record_first_error_at(line, col, 1, msg);
-                    g_parse_errors++;
+                    lexer_error_at(line, col, msg);
                 } else {
                     indent_top++;
                     indent_stack[indent_top] = spaces;
@@ -294,9 +299,8 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 }
                 if (spaces != indent_stack[indent_top]) {
                     fprintf(stderr, "Syntax error line %d: indentation does not match any outer level\n", line);
-                    eigs_record_first_error_at(line, col, 1,
-                                               "indentation does not match any outer level");
-                    g_parse_errors++;
+                    lexer_error_at(line, col,
+                                   "indentation does not match any outer level");
                 }
             }
             at_line_start = 0;
@@ -427,9 +431,8 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     if (*p == '}') { p++; col++; }
                     else {
                         fprintf(stderr, "Syntax error line %d: unterminated f-string expression\n", line);
-                        eigs_record_first_error_at(line, tok_col, 1,
-                                                   "unterminated f-string expression");
-                        g_parse_errors++;
+                        lexer_error_at(line, tok_col,
+                                       "unterminated f-string expression");
                     }
 
                     /* Tokenize the inner expression and splice tokens in */
@@ -469,9 +472,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             if (*p == '"') { p++; col++; }
             else {
                 fprintf(stderr, "Syntax error line %d: unterminated f-string\n", line);
-                eigs_record_first_error_at(line, tok_col, 1,
-                                           "unterminated f-string");
-                g_parse_errors++;
+                lexer_error_at(line, tok_col, "unterminated f-string");
             }
             strbuf_free(&buf);
             continue;
@@ -507,9 +508,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             if (*p == '"') { p++; col++; }
             else {
                 fprintf(stderr, "Syntax error line %d: unterminated string\n", line);
-                eigs_record_first_error_at(line, tok_col, 1,
-                                           "unterminated string");
-                g_parse_errors++;
+                lexer_error_at(line, tok_col, "unterminated string");
             }
             tok_add(&tl, TOK_STR, 0, buf.data, line, tok_col);
             tl.tokens[tl.count - 1].len = (int)(p - str_start);  /* true source span */
@@ -622,9 +621,8 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 if (*(p+1) == '=') { tok_add(&tl, TOK_NE, 0, NULL, line, tok_col); p += 2; col += 2; }
                 else {
                     fprintf(stderr, "Syntax error line %d: expected '!=' after '!'\n", line);
-                    eigs_record_first_error_at(line, tok_col, 1,
-                                               "expected '!=' after '!'");
-                    g_parse_errors++; p++; col++;
+                    lexer_error_at(line, tok_col, "expected '!=' after '!'");
+                    p++; col++;
                 }
                 break;
             case '=':
@@ -663,10 +661,9 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     }
                     char m[64];
                     snprintf(m, sizeof(m), "unexpected character '%s'", shown);
-                    eigs_record_first_error_at(line, tok_col, 1, m);
+                    lexer_error_at(line, tok_col, m);
                     fprintf(stderr, "Syntax error line %d: unexpected character '%s'\n", line, shown);
                 }
-                g_parse_errors++;
                 p++; col++;
                 break;
         }

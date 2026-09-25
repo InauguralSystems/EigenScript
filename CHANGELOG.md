@@ -1423,6 +1423,14 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **Front-door docs no longer hand-type counts of the tree (#1275).** They
+  direct readers to `eigenscript --api`, CHANGELOG.md, `git tag`, or source
+  listings for current facts. `tools/docs_claims_check.sh` now checks paths,
+  Makefile targets, CLI flags, callable names and doc-example enrolment against
+  their sources, shrinking from 2,362 to 382 lines. Across `tools/*.sh` and
+  `tools/*.py`, the line count drops from 18,286 to 16,194. The former numeric
+  waiver table and separate doc-drift checker are retired.
+
 - **The warning-error trio has one home and a compiler boundary (#1275).**
   `tools/werror_flags.txt` feeds Makefile bundles, shell builds and Python
   callers. CI puts `tools/cc-guard-bin` first on `PATH`: each C compile must

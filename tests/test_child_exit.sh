@@ -61,7 +61,7 @@ run_capture_section() {   # <child-path>
 }
 
 # Idiom B — decide purely on the child's RETURN STATUS. Roughly ten sites use
-# this (`if bash tools/doc_drift_check.sh; then`, the four --selftest gates,
+# this (`if bash tools/docs_claims_check.sh; then`, the self-test gates,
 # test_lint_linkage.sh, test_module_resolve_base.sh, and [99o] itself). It has
 # a different witness: the wrapper must PROPAGATE the status, not just print.
 run_status_section() {   # <child-path>

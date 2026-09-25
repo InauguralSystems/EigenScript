@@ -117,13 +117,11 @@ paths:
   The detector is the same expression the class was enumerated with, so a hand
   `grep -nE '#.*(after|gives|prints|≈|~) *[0-9]'` and the gate cannot disagree
   about what the class is.
-- **Never hand-type a number into a document.** `tools/docs_claims_check.sh`
-  (suite [99za]) derives every numeric claim, repo path, `eigenscript --flag`,
-  `make <target>` and backticked `name of` call in README.md, docs/llms.txt,
-  CLAUDE.md, docs/ARCHITECTURE.md and docs/BUILTINS.md. Add a derivation rule
-  to `NUMBER_RULES`, or waive the EXACT line with a reason. The three numeric
-  checks that used to live in `tools/doc_drift_check.sh` moved there; do not
-  re-add a number check to `doc_drift_check.sh`.
+- **Do not hand-type derived counts into front-door documents.**
+  `tools/docs_claims_check.sh` (suite [99za]) checks paths, CLI flags,
+  `make` targets, stdlib/builtin calls and doc-example enrolment against
+  their real sources. Point readers to `eigenscript --api`, CHANGELOG.md,
+  `git tag` or the source tree for current totals.
   **A failing gate must print the tool's OWN WORDS, never a grep for the
   failure you expected.** The macOS job sat at `rc=2` with 28 of 30 plants
   "ABSENT" for two rounds and the reason never reached the log: the section
@@ -134,28 +132,12 @@ paths:
   trustworthy") applies to a gate as much as to a test. Two companions:
   every non-zero exit path in the tool prints one line naming itself, and an
   EXIT trap reports a death that never reached a verdict, with `$BASH_COMMAND`.
-  **Every gate prints a one-line ENVIRONMENT BANNER on every run** — shell
-  version, make version, `uname`, the binary it selected, whether the release
-  binary is present. It is one line in a green log and it is the whole
-  diagnosis in a red one; this one would have named the macOS problem in round
-  6 instead of round 8.
-  **A claim about a BUILD ARTEFACT names its variant; never `src/eigenscript`.**
-  That path is a hard link to the LAST-BUILT variant (#740), so a gate that
-  measures it measures whatever the job built last: the ASan shard reported
-  `claims '940K' but D_BIN_K derives 28721` for the README's binary size
-  (2026-09-16, CI). The claim is verified against `build/release/eigenscript`,
-  and a lane that did not build release DEFERS it — a named class with a
-  declared count (`RELEASE_ONLY_DECLARED`), so a deferral cannot multiply
-  unnoticed. A silent skip would have been the easy fix and the wrong one.
-  **But "the other lanes verify it" is a claim, and it was FALSE.** Round 7
-  wrote that sentence without reading `ci.yml`: every leg builds with
-  `./build.sh`, which writes `src/eigenscript` directly, so
-  `build/release/eigenscript` never existed in CI and the claim deferred on
-  every lane for three rounds. **Before you defer a check to somebody else,
-  name the lane and read its steps.** The binary is now identified by INODE
-  (`test -ef` compares device and inode): an alias to `build/<v>/eigenscript`
-  names its own variant, and a `src/eigenscript` matching none is the
-  `./build.sh` product — the install-shaped binary — and is measured.
+  **Current [99za] is a reference checker.** It prints examined populations
+  and a final verdict; it does not print an environment banner or measure
+  binary size. It checks paths against the Git index and Makefile products,
+  flags against `eigenscript --help`, callable names against `--api`, and
+  executable-fence enrolment against an independently declared document set.
+  Its self-test copies only the files those checks read.
   **Never suppress the stderr of a scan that feeds a population.** The
   DOC ENROLMENT class ran an ERE through `grep ... 2>/dev/null`; BSD grep
   REJECTED that ERE, so on macOS every document counted 0 fences, the
@@ -193,11 +175,6 @@ paths:
   Use a HERE-STRING (`grep -q PAT <<< "$var"`) — it is a temp file, so there is
   no pipe to break. Same family as tools/pipefail_verdict_check.sh (#1122),
   which polices the pipefail half of it.
-  **A selftest row must assert what the PLATFORM does, not what one platform
-  does.** The binary-size claim defers off Linux by design; four rows went on
-  asserting measurement there and failed for being right. Branch the row, keep
-  BOTH branches counted, and print which one ran — a row that silently does not
-  apply makes the pinned case count a lie.
   **PARSING IS NOT RUNNING. Run the gate under the old bash, not just
   `bash32 -n`.** The oracle was built in round 10 and used only as a parser for
   three more rounds, each of which shipped a fix for a macOS failure that `-n`
@@ -237,13 +214,6 @@ paths:
   and count the elision. Better still, make the last lines diagnostic by
   construction: a per-class summary printed LAST survives any window, and turns
   six consequence-REDs into one sentence naming the class that did not run.
-  **A selftest row must build its own premise.** The row asserting "a bare
-  src/eigenscript is measured as the build.sh product" ran against the tree's
-  real README, whose size describes a RELEASE binary; on the ASan shard
-  src/eigenscript is the 28 MB sanitizer build, so the gate measured it,
-  disagreed with the document correctly, and the row failed for being right.
-  It now derives the number it plants FROM THE BINARY THAT LANE HAS. A row
-  that depends on the lane's build state is testing the lane.
   **One grammar, one implementation.** That same class re-implemented
   `tests/test_doc_examples.py`'s fence grammar in shell so it could count
   fences. Two implementations of one grammar exist to disagree. The count is
@@ -274,8 +244,7 @@ paths:
   `TABLE=$(cat <<'EOF' … )` breaks the moment a row contains an unbalanced
   `(` — and a row of REVIEWED PROSE quoting someone else's document eventually
   will. **A data table belongs in a data file** (mechanical-gates §53's
-  family): `tools/docs_claims_waivers.txt` and
-  `tools/docs_claims_populations.txt` are immune to apostrophes, backticks and
+  family): `tools/docs_claims_populations.txt` is immune to apostrophes, backticks and
   parentheses at once, and a reviewed exemption list is a reviewable artifact.
   That one table produced three quoting traps in three rounds before it moved.
   **An unquoted `(` group inside a `[[ =~ ]]` pattern is a bash 3.2 syntax
@@ -320,13 +289,12 @@ paths:
   `docs/BUILTINS.md` (= `docs/docs/STDLIB.md`, which does not exist) and exited
   0 (blind critic, 2026-09-16). If a link needs the fallback, the link is
   broken; fix it, do not waive it.
-  Every class also carries a DECLARED per-file count in `DECLARED_POPULATIONS`
-  — found == declared, in BOTH directions — because "everything found is
-  accounted for" let the population SHRINK: deleting one waived line took
-  NUMBERS from 24 to 23 and the gate still exited 0 (blind critic,
-  2026-09-16; mechanical-gates §129). Adding or deleting a claim is therefore
-  a deliberate edit to that table, and a waiver that matches nothing is red
-  with its line quoted.
+  Current [99za] uses per-document floors in
+  `tools/docs_claims_populations.txt` for paths, flags, make targets and
+  callable names. DOC ENROLMENT uses an exact declared set there: it must
+  equal both the documents with executable fences and the POPULATION rows in
+  `tests/test_doc_examples.py`. A document disappearing from any set is red
+  by name.
 - **The suite asks the build system whether `src/eigenscript` is current
   before it records the #681 fingerprint (#1089).** A `make` that fails
   partway leaves the PREVIOUS binary linked; a suite launched afterwards

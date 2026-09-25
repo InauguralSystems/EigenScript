@@ -126,12 +126,11 @@ channel handle SHARES
 **The rows the table cannot construct in three lines, and why they behave the
 way they do.** `chan_clone_rec` (src/eigenscript.c) switches on `ValType` with
 no `default:`, so `-Werror=switch` forces every new type to choose a side; the
-switch has **10 arms** — `VAL_NUM`, `VAL_NULL`, `VAL_STR`, `VAL_LIST`,
+switch handles each type explicitly: `VAL_NUM`, `VAL_NULL`, `VAL_STR`, `VAL_LIST`,
 `VAL_DICT` are rebuilt (copy), and `VAL_FN`, `VAL_BUILTIN`, `VAL_BUFFER`,
 `VAL_TEXT_BUILDER`, `VAL_JSON_RAW` take a refcount (share).
-`tools/docs_claims_check.sh` pins that arm count, so adding a `ValType` fails
-this page as well as the compiler. Two kinds are not in the table: `null` and a
-builtin have no mutable state, so there is nothing to observe. And a **store
+A new `ValType` must choose a side in the switch for the compiler to accept it.
+Two kinds are not in the table: `null` and a builtin have no mutable state, so there is nothing to observe. And a **store
 handle** and a **thread handle** behave exactly like the channel row: they are
 `VAL_NUM` ids into the process handle table (CLAUDE.md, leak tally), so the
 NUMBER copies while the resource it names is shared — which is why the channel
@@ -343,10 +342,10 @@ findings — 77 of whose stack frames named `env_set_local_hashed` and 64
 `dict_set_hashed_raw`, which is why locking only the env would not have been
 enough.
 
-The predicate is now a property the env carries (`Env::mt_shared`), set in
-exactly two places: a root env at creation, and a module namespace when it is
-attached. Every MT-only env guard reads that one predicate, so a new kind of
-cross-thread env is one call rather than a second definition of "shared".
+The predicate is now a property the env carries (`Env::mt_shared`), set
+at a root env's creation and when a module namespace is attached. Every
+MT-only env guard reads that predicate, so a new kind of cross-thread env
+is one call rather than a second definition of "shared".
 
 A module namespace is **two** structures — the module env, which is the
 authority, and the dict mirror that whole-dict readers (`keys of M`, `len of`,

@@ -63,7 +63,7 @@ Source code (.eigs)
   Lexer          tokenize() → token array
     │
     ▼
-  Parser         parse() → AST (33 node types)
+  Parser         parse() → AST (`ASTType` in `src/eigenscript.h`)
     │
     ▼
   Compiler       compile_ast() → EigsChunk (bytecode + constant pool)
@@ -85,14 +85,16 @@ tracks indent depth and emits INDENT/DEDENT tokens.
 
 ### Parser
 
-The recursive-descent parser (`parse()`) builds an AST with 33 node types.
+The recursive-descent parser (`parse()`) builds an AST whose node kinds are
+defined by `ASTType` in `src/eigenscript.h`.
 Each node has a type (assignment, if, for, while, define, return, etc.) and
 child expressions. Expressions use a Pratt-style precedence parser.
 
 ### Compiler
 
 The compiler (`compile_ast()` in `compiler.c`) walks the AST and emits a
-flat bytecode array with 60+ opcodes into an `EigsChunk`. Each chunk has:
+flat bytecode array into an `EigsChunk`. The opcode set is defined by
+`OpCode` in `src/vm.h`. Each chunk has:
 
 - **Bytecode array** — compact `[op:8][arg:16LE]` encoding
 - **Constant pool** — deduplicated numbers and strings
@@ -256,7 +258,7 @@ The minimal build (`make build`) sets all flags to 0. The full build
 
 ## Standard Library
 
-The 78 modules in `lib/` are pure EigenScript — no C code. They are loaded at
+The modules in `lib/` are pure EigenScript — no C code. They are loaded at
 runtime via `load_file of "lib/module.eigs"`. Both loaders use absolute paths
 as-is; relative paths search the containing file's directory, the `eigs_modules`
 walk, the nearest `eigs.json` project root, then the executable-relative and

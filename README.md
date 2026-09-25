@@ -23,8 +23,8 @@ through a channel, while closures and `buffer`/`text_builder` HANDLES are
 shared by reference, the last of which is the open defect
 [#1148](https://github.com/InauguralSystems/EigenScript/issues/1148) under
 [#1153](https://github.com/InauguralSystems/EigenScript/issues/1153)),
-a 47-widget GUI toolkit, embedded database, tensor math,
-and a 78-module standard library (17 STEM) — all in a single zero-dependency C binary.
+a GUI toolkit, embedded database, tensor math,
+and a standard library with STEM modules — all in a single zero-dependency C binary.
 
 ## Try it in your browser
 
@@ -41,7 +41,7 @@ cd EigenScript
 ./install.sh
 ```
 
-This builds a ~940K minimal binary and installs it to `~/.local/bin/eigenscript`.
+This builds the minimal binary and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
 Run `./install.sh full` to also build the optional HTTP/DB/model binary
@@ -348,7 +348,7 @@ Pure EigenScript libraries under `lib/`:
 | `lib/concurrent.eigs` | `future`, `await_all`, `parallel_map`, `parallel_each`, `worker_pool` |
 | `lib/sync.eigs` | `lock_new`, `lock_acquire`, `lock_release`, `with_lock` |
 | `lib/store.eigs` | `open`, `put`, `get`, `find`, `upsert`, `bulk_put`, `to_dataframe` |
-| `lib/ui.eigs` | 47-widget GUI toolkit (buttons, sliders, tables, charts, trees, etc.) |
+| `lib/ui.eigs` | GUI toolkit (buttons, sliders, tables, charts, trees, etc.) |
 | `lib/physics.eigs` | Kinematics, forces, waves, thermodynamics, EM, optics, relativity, quantum |
 | `lib/chemistry.eigs` | Periodic table, molecular weight, stoichiometry, gas laws, pH, Gibbs |
 | `lib/biology.eigs` | Population dynamics, genetics, DNA/RNA/codons, enzyme kinetics, ecology |
@@ -378,11 +378,9 @@ Pure EigenScript libraries under `lib/`:
 | `lib/utf8.eigs` | UTF-8 codepoint semantics over byte strings |
 | `lib/pkg.eigs` | `--pkg` runtime half (eigs.json, SHA-pinned lockfiles) |
 
-The table above has 60 module rows. The other 18 files in `lib/` are the
-`lib/ui_*.eigs` **fragments of `lib/ui.eigs`**, composed by it rather than
-imported directly, so they have no row of their own; together they make up the
-78-module standard library in the headline. `tools/docs_claims_check.sh`
-derives all three numbers and fails if they stop adding up.
+The table names importable modules. The `lib/ui_*.eigs` files are
+**fragments of `lib/ui.eigs`**, composed by it rather than imported directly,
+so they have no row of their own. Inspect `lib/` for the current module set.
 
 ```eigenscript fragment
 load_file of "lib/list.eigs"
@@ -546,7 +544,7 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/SYNTAX.md](docs/SYNTAX.md) — tutorial-style language guide
 - [docs/GRAMMAR.md](docs/GRAMMAR.md) — formal EBNF grammar
 - [docs/LANGUAGE_CONTRACT.md](docs/LANGUAGE_CONTRACT.md) — edge-case promises
-- [docs/BUILTINS.md](docs/BUILTINS.md) — 349 builtin functions (261 core + 88 extensions; `eigenscript --api` prints the live index)
+- [docs/BUILTINS.md](docs/BUILTINS.md) — builtin functions; `eigenscript --api` prints the live index
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
 - [docs/TRACE.md](docs/TRACE.md) — execution trace, deterministic replay, temporal interrogatives
