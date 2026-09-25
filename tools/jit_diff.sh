@@ -22,7 +22,8 @@ EIG="${EIGS_BIN:-./eigenscript}"
 BASE="$ROOT/tests/jit_diff_expected.txt"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; adjudicated=0
-norm() { sed -E 's/0x[0-9a-f]+/0xADDR/g' "$1"; }
+# Only address-shaped hex (8+ digits) is noise; a short 0x1 vs 0x0 is data.
+norm() { sed -E 's/0x[0-9a-f]{8,}/0xADDR/g' "$1"; }
 # Flags are on when non-empty and not "0". GNU env takes -u BEFORE assignments.
 REF=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_JIT_OFF=1)
 JIT=(-u EIGS_JIT_OFF -u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS)
