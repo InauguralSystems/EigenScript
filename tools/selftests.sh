@@ -85,7 +85,7 @@ def main():
         for _, command, target, pins in selected:
             env = dict(os.environ)
             timeout = shutil.which('timeout') or shutil.which('gtimeout') or error('timeout/gtimeout missing')
-            variant = {'tests/test_http_slowloris.sh': 'http', 'tools/gfx_strict_sweep.sh': 'gfx'}.get(target)
+            variant = {'tests/test_http_slowloris.sh': 'http'}.get(target)
             cap = (lambda: resource.setrlimit(resource.RLIMIT_AS, (1536000000, 1536000000))) if variant == 'gfx' else None
             try:
                 if variant:

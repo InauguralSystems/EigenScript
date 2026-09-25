@@ -174,7 +174,7 @@ if env_get of "EIGS_STRICT" == "1":
     assert_eq of [strict_kind of ((_) => audio_play of 42), "type_mismatch", "#1007 strict: audio_play raises on a non-list samples argument"]
     assert_eq of [strict_kind of ((_) => audio_play of "zzz"), "type_mismatch", "#1007 strict: audio_play raises on a string samples argument"]
     assert_eq of [strict_kind of ((_) => audio_stream_push of 42), "type_mismatch", "#1007 strict: audio_stream_push raises on a non-list samples argument"]
-    # The NESTED slot, which the container sweep in tools/gfx_strict_sweep.sh
+    # The NESTED slot, which the container sweep in tools/strict_differential.sh
     # deliberately does not reach: the top-level argument here is a well-formed
     # two-element list and only slot 0 is wrong. Pinned by hand for that reason.
     assert_eq of [strict_kind of ((_) => audio_play_loop of [42, 2]), "type_mismatch", "#1007 strict: audio_play_loop raises on a non-list samples SLOT"]

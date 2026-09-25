@@ -241,8 +241,8 @@ paths:
   `re='^a(b)c$'; [[ $x =~ $re ]]`.
   **Portable shell is not optional: macOS runners ship bash 3.2 and BSD
   userland.** Three constructs killed `tools/docs_claims_check.sh` there with
-  rc 2 before it did anything — `declare -A` (a SYNTAX error in bash 3.2,
-  which `tools/failsoft_classify_check.sh` already records), `mktemp -d -p DIR
+  rc 2 before it did anything — `declare -A` (a SYNTAX error in bash 3.2),
+  `mktemp -d -p DIR
   TEMPLATE` (BSD mktemp has no `-p`, and its `-t` takes a prefix, not a
   template) and `stat -c %d` (BSD spells it `-f %d`). Use a full path template
   for `mktemp`; use newline-delimited strings plus a `case` substring test

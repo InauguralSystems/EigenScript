@@ -40,7 +40,7 @@
 #
 # A missing marker is a loud unanswered question at the moment an opcode is
 # added, which is exactly when its author knows the answer and nobody else ever
-# will. Same shape, and same reason, as tools/failsoft_classify_check.sh.
+# will. Same shape: the marker is a recorded decision, not a derived fact.
 #
 # WHAT A MARKER MEANS
 #

@@ -15,8 +15,8 @@ cd "$(dirname "$0")/.."
 # test. `grep -q` exits the instant it matches and closes the read end; the
 # still-writing `printf` then takes SIGPIPE and exits 141; pipefail reports
 # the PIPELINE as 141 — a failed match — while grep's own status was 0,
-# MATCHED. `tools/strict_differential.sh --selftest` reproduces it
-# deterministically on a capture larger than the pipe buffer.
+# MATCHED. Verdicts here use bash case-globs, so that race has no status
+# to misread.
 #
 # The matcher below is bash's own: no fork, no pipe, no status to misread.
 # The needle is QUOTED inside the pattern, so a glob character in it is a

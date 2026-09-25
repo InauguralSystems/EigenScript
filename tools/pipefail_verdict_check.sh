@@ -36,11 +36,9 @@
 #     no `.sh` extension is not a subject.
 #   * Verdict position means an `if`/`elif`/`while`/`until` head or an `&&`/`||`
 #     arm. A BARE pipeline whose status becomes a function's return value, or
-#     which `set -e` acts on, is NOT flagged. That is deliberate:
-#     `tools/strict_differential.sh --selftest` must RUN the banned construct to
-#     demonstrate the race, and does so as a bare pipeline. The price is that a
-#     real matcher written as the last bare statement of a function slips
-#     through — that shape is a review question, not one this gate answers.
+#     which `set -e` acts on, is NOT flagged. A bare pipeline is a review
+#     question, not one this gate answers. The strict differential's verdicts
+#     are case-globs, not pipelines.
 #   * Pipes inside `$( )` or backticks are skipped whole: only their TEXT
 #     reaches the enclosing test, never their status. `$(cmd | grep -q x; echo
 #     $?)` would therefore be missed.
@@ -50,10 +48,8 @@
 #   * It does not judge whether a REPLACEMENT is correct. A converted site with
 #     a silently WIDER matcher is a review question. What it does pin is that
 #     every `str_has*` copy in the tree is byte-identical to the canonical
-#     one-liner — which is what makes `tools/strict_differential.sh --selftest`
-#     (suite [99s]) load-bearing for all of them: that selftest pins those three
-#     matchers' positive AND negative behaviour, and this gate pins that no copy
-#     has drifted away from the ones it tested.
+#     one-liner. This gate pins that no copy has drifted. Positive and negative
+#     behaviour of the matchers is not re-checked here.
 #
 # Cost: ~1.0 s wall over 18 pipefail scripts / ~5,100 logical lines. Pure bash;
 # the scan loop forks nothing.

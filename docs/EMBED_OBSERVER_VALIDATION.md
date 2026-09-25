@@ -131,9 +131,11 @@ snapshot for both arms.
 
 Completed timing command:
 
+Historical timing command (the one-off harness is retired; the live corpus
+check is `bash tools/jit_diff.sh`):
+
 ```bash
-EMS="$PWD/build/observer-EigenMiniSat" N=5 ROWS=4 COLS=4 \
-    bash tools/observer_gate_measure.sh
+EMS="$PWD/build/observer-EigenMiniSat" N=5 ROWS=4 COLS=4
 ```
 
 ```text
@@ -160,7 +162,7 @@ Commands run sequentially in the worktree:
 | `make && (cd tests && bash run_all_tests.sh)` | 4259/4259 passed, 0 failed; all child tests completed. |
 | `make asan && (cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh)` | 4248/4248 passed, 0 failed; no leak reports; C contract 28/28. |
 | `make tsan && bash tests/test_tsan.sh` | 14 passed, 0 failed: 13 race-free programs, including `test_obs_mt_race`, and the live seeded-race control. |
-| `bash tools/observer_gate_diff.sh capture main`, `capture main2`, then `capture branch` and `compare main branch` | 521 captured, 5 denied; 497 byte-identical (399 informative, 98 silent), 24 excluded by baseline self-difference, 0 mismatches. |
+| Historical full-corpus observer differential (retired; live check is the OBS arm of `bash tools/jit_diff.sh`) | 521 captured, 5 denied; 497 byte-identical (399 informative, 98 silent), 24 excluded by baseline self-difference, 0 mismatches. |
 | `bash tools/jit_diff.sh` | 230 programs against interpreter, 4 arms adjudicated by replay, 0 ledgered differences. |
 
 Both full suites include the fail-soft classification, strict argument-guard
@@ -269,11 +271,11 @@ import diagnostics (two shadow warnings and five missing-file diagnostics).
 No output normalization or exclusion rule was changed to remove those
 differences.
 
-With `EIGS_GATE_DIFF_DIR="$PWD/build/observer-r2-captures"` and
-`EIGS_GATE_DIFF_BIN=/tmp/es1038-r2-main/src/eigenscript`, ran
-`bash tools/observer_gate_diff.sh capture main`, `capture main2`, then, after
-the in-place branch rebuild, `capture branch_samepath` and
-`compare main branch_samepath`. Each capture reported **521 programs, 5 denied**.
+With captures under `build/observer-r2-captures` and the baseline binary at
+`/tmp/es1038-r2-main/src/eigenscript`, the historical corpus differential
+captured `main` and `main2`, then, after the in-place branch rebuild,
+`branch_samepath`, and compared them. Each capture reported **521 programs, 5 denied**.
+That harness is retired; the live check is the OBS arm of `bash tools/jit_diff.sh`.
 The comparison exited 0:
 
 ```text
@@ -384,11 +386,10 @@ release SHA-256 above. The capture manifest's `rev` identifies the calling
 worktree (`babd15f`); the source comparison and binary SHA identify the actual
 baseline executable. The canonical checkout was not built or used.
 
-From the original worktree, with
-`EIGS_GATE_DIFF_DIR="$PWD/build/observer-r3-captures"` and
-`EIGS_GATE_DIFF_BIN=/tmp/es1038-r3-oracle/src/eigenscript`, ran
-`bash tools/observer_gate_diff.sh capture main`, `capture main2`, then after
-the branch rebuild, `capture branch` and `compare main branch`. Captures unset
+From the original worktree, with captures under `build/observer-r3-captures`
+and the baseline binary at `/tmp/es1038-r3-oracle/src/eigenscript`, the
+historical corpus differential captured `main` and `main2`, then after the
+branch rebuild, `branch`, and compared them. Captures unset
 `EIGS_OBS_FORCE`, `EIGS_OBS_GATE_STATS`, `EIGS_TRACE`, `EIGS_REPLAY` and
 `EIGS_JIT_OFF`; both baseline captures reported **521 programs, 5 denied**.
 

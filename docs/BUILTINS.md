@@ -759,7 +759,7 @@ wider than it is. A builtin that takes **no** argument (`gfx_poll`,
 `audio_stream_clear`, `audio_stream_queued`, `audio_queue_size`,
 `audio_music_stop`) ignores one entirely, and a **surplus trailing** argument
 to a fixed-arity builtin is dropped — both are the general over-arity
-question, which is #989's, not this extension's. `tools/gfx_strict_sweep.sh`
+question, which is #989's, not this extension's. `tools/strict_differential.sh`
 crosses every guarded builtin in the extension with the wrong-container
 shapes and requires each pair to raise or to carry a reason in its allowlist,
 so this paragraph is checked against the binary rather than asserted.
@@ -778,11 +778,11 @@ coordinate 0, in colour 0, or at scale 1, and this build paints nothing at
 all. The same applies to the one drawing-surface builtin that answers with
 data: with a window open, `gfx_read of ["1", 1]` used to hand back the pixel
 at (0, 1) — the punned 0 — and now answers `null`.
-`tools/gfx_pixel_differential.sh` measures exactly that surface (it opens a
-window under the dummy driver and diffs a readback digest against a build of
-the parent commit) and requires every such divergence to carry an executed
-proof that the parent's answer was the punned zero and that this build's
-rejected call draws nothing else instead.
+`tools/strict_differential.sh` measures exactly that surface on a gfx build
+(it opens a window under the dummy driver and diffs a readback digest against
+a build of the parent commit) and requires every such divergence to carry an
+executed proof that the parent's answer was the punned zero and that this
+build's rejected call draws nothing else instead.
 
 **A wrong-typed OPTIONAL argument follows the same rule, which makes the three
 text builtins differ on purpose.** `gfx_text_width` and `gfx_text_height`
@@ -801,9 +801,9 @@ its answer on every path), `gfx_poll` answers `null` for "no event",
 `gfx_rrect`/`gfx_fb` answer `null` for a zero or negative width/height/scale
 (degenerate geometry covers no pixels), and every device builtin answers `0`
 when libSDL2 or the device is unavailable — environment state, not a caller
-mistake. The distinction is recorded per site in `src/ext_gfx.c` and enforced
-by `tools/failsoft_classify_check.sh`, whose `make_null()` population is
-scoped to that file (see its header for why it is not repo-wide).
+mistake. The distinction is recorded per site in `src/ext_gfx.c`. What is
+checked against the binary is `tools/strict_differential.sh`: a guard probe
+raises under `EIGS_STRICT`, and a pinned documented answer does not.
 
 **Text rendering and fonts (#593).** `gfx_text` lazily loads
 `libSDL2_ttf-2.0.so.0` on first use and renders proportional antialiased
