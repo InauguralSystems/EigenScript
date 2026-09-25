@@ -793,6 +793,13 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Nested f-strings accept brace-bearing strings in their interpolations
+  (#1253).** `f"outer:{f"inner:{"a}b"}"}"` failed with four parse errors:
+  the outer interpolation scanner treated the nested f-string as a plain
+  string, stopped at the inner literal's opening quote and counted its `}` as
+  nesting. The scanner now walks a nested f-string by its own rules (literal
+  text, escapes, and its interpolations, recursively).
+
 - **`functional.wait_until` no longer sleeps after its final failed attempt
   (#1237).** `sleep_fn` ran after every failed attempt, including the last
   one, so a timeout after `tries` attempts paid `tries` delays instead of
