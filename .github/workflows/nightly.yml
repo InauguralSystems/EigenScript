@@ -82,7 +82,16 @@ jobs:
 
       # The FULL suite, [99i] included: this lane has the wall clock for it,
       # and unlike the ten PR-lane jobs it is the only one running here, so
-      # the audit is not being repeated.
+      # the audit is not being repeated. [99zd] loads every workflow; this
+      # runner has no PyYAML. A failed install fails the job.
+      - name: Install PyYAML (the workflow-YAML gate's loader arm)
+        run: |
+          set -u
+          python3 -c 'import yaml' 2>/dev/null \
+            || python3 -m pip install --user --break-system-packages pyyaml \
+            || python3 -m pip install --user pyyaml
+          python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
+
       - name: Run test suite
         run: cd tests && bash run_all_tests.sh
 

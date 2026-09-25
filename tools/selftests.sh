@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")/.."
 command -v python3 >/dev/null 2>&1 || { echo 'selftests: INSTRUMENT ERROR: python3 missing'; exit 2; }
 exec python3 - "$@" <<'PY'
-import fnmatch, importlib.util, json, os, re, resource, shlex, shutil, subprocess, sys, tempfile, time
+import fnmatch, json, os, re, resource, shlex, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 def error(message):
@@ -104,13 +104,6 @@ def main():
                         subprocess.run([timeout, '-k', '5', '600', 'make', '-C', str(tree), variant], check=True, stdout=subprocess.DEVNULL, preexec_fn=cap)
                         binary = str(tree / 'src/eigenscript')
                     env['EIGS' if variant == 'http' else 'EIGS_SWEEP_BIN'] = str(Path(binary).resolve())
-                if target == 'tools/jit_fleet_bench.sh' and not env.get('ECO'):
-                    local = Path.home() / 'src/InauguralSystems/EigenScriptEcosystem'
-                    if not (local / 'DMG').is_dir():
-                        local = Path(scratch) / 'ecosystem'
-                        for repo in ('DMG', 'liferaft', 'ouroboros', 'EigenMiniSat'):
-                            subprocess.run([timeout, '-k', '5', '120', 'git', 'clone', '--depth=1', 'https://github.com/InauguralSystems/' + repo, str(local / repo)], check=True, stdout=subprocess.DEVNULL)
-                    env['ECO'] = str(local)
             except (OSError, subprocess.SubprocessError) as exc:  # this row's setup failed: its FAIL, not the run's
                 failed += 1
                 print(f'FAIL: {target} setup: {exc}', flush=True)
@@ -128,8 +121,6 @@ def main():
             reasons = [] if result.returncode == 0 else [f'exit {result.returncode}' + (' (timeout)' if result.returncode == 124 else '')]
             for pin in pins:
                 pattern, wanted = pin['pattern'], pin['count']
-                if 'without_yaml' in pin and importlib.util.find_spec('yaml') is None:
-                    pattern = pin['without_yaml']
                 matches = re.findall(pattern, result.stdout, re.M)
                 found = (int(matches[0]) if len(matches) == 1 else -1) if pin.get('value') else len(matches)
                 if (found < wanted if pin.get('floor') else found != wanted):
