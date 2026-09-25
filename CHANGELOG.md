@@ -806,6 +806,14 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **LSP rename edits identifiers inside f-string interpolations in place
+  (#1244).** The lexer spliced an interpolation's tokens at the column after
+  its closing `}`, so renaming `count` in `f"value={count}"` wrote over the
+  closing quote and left an unterminated f-string. Interpolated tokens now
+  keep their own source line, column and length. The tokens the lowering
+  synthesizes (`(`, `str of`, `+`, literal segments) are marked as having no
+  source span, and rename, cursor lookup and semantic tokens skip them.
+
 - **LSP rename respects lambda parameter scopes (#1243).** A lambda's
   parameters resolved to the same-named global, so renaming the global also
   rewrote the lambda's signature and body. Renaming `x` to `other` in

@@ -102,6 +102,15 @@ static const char *fstr_interp_end(const char *p) {
     return p;
 }
 
+/* A token the f-string lowering synthesizes (the wrapper parens, `+`,
+ * `str of`, the literal segments) has no source span of its own: len 0
+ * marks it, so position consumers (the LSP's rename, hover, semantic
+ * tokens) never treat it as an editable source occurrence (#1244). */
+static void tok_add_synth(TokenList *tl, TokType type, const char *str, int line, int col) {
+    tok_add(tl, type, 0, str, line, col);
+    tl->tokens[tl->count - 1].len = 0;
+}
+
 static TokType keyword_type(const char *word) {
     switch (word[0]) {
     case 'a':
@@ -493,7 +502,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
              * expression binds as one primary. Without this, `eval of f"..."`
              * parses as `(eval of <first-segment>) + <rest>` because `of`'s
              * RHS only consumes a unary-or-tighter expression. */
-            tok_add(&tl, TOK_LPAREN, 0, NULL, line, tok_col);
+            tok_add_synth(&tl, TOK_LPAREN, NULL, line, tok_col);
 
             while (*p && *p != '"') {
                 if (*p == '\\' && (*(p+1) == '{' || *(p+1) == '}')) {
@@ -522,8 +531,8 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 if (*p == '{') {
                     /* Emit accumulated literal and + operator */
                     if (buf.len > 0 || !has_segments) {
-                        if (has_segments) tok_add(&tl, TOK_PLUS, 0, NULL, line, tok_col);
-                        tok_add(&tl, TOK_STR, 0, buf.data, line, tok_col);
+                        if (has_segments) tok_add_synth(&tl, TOK_PLUS, NULL, line, tok_col);
+                        tok_add_synth(&tl, TOK_STR, buf.data, line, tok_col);
                         has_segments = 1;
                     }
                     buf.len = 0;
@@ -532,12 +541,12 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     p++; col++; /* skip { */
 
                     /* Emit: + (str of (expr)) */
-                    if (has_segments) tok_add(&tl, TOK_PLUS, 0, NULL, line, col);
+                    if (has_segments) tok_add_synth(&tl, TOK_PLUS, NULL, line, col);
                     else has_segments = 1;
-                    tok_add(&tl, TOK_LPAREN, 0, NULL, line, col);
-                    tok_add(&tl, TOK_IDENT, 0, "str", line, col);
-                    tok_add(&tl, TOK_OF, 0, NULL, line, col);
-                    tok_add(&tl, TOK_LPAREN, 0, NULL, line, col);
+                    tok_add_synth(&tl, TOK_LPAREN, NULL, line, col);
+                    tok_add_synth(&tl, TOK_IDENT, "str", line, col);
+                    tok_add_synth(&tl, TOK_OF, NULL, line, col);
+                    tok_add_synth(&tl, TOK_LPAREN, NULL, line, col);
 
                     /* Tokenize the expression inside braces. Its extent is
                      * decided by fstr_interp_end, the one scanner used at
@@ -569,13 +578,18 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                         if (inner.tokens[ti].type == TOK_NEWLINE ||
                             inner.tokens[ti].type == TOK_INDENT ||
                             inner.tokens[ti].type == TOK_DEDENT) continue;
+                        /* Keep the inner token's own source position and
+                         * span: it IS source text (#1244 — splicing it at
+                         * the post-`}` column sent LSP rename edits onto
+                         * the closing quote). */
                         Token *it = &inner.tokens[ti];
-                        tok_add(&tl, it->type, it->num_val, it->str_val, line, col);
+                        tok_add(&tl, it->type, it->num_val, it->str_val, it->line, it->col);
+                        tl.tokens[tl.count - 1].len = it->len;
                     }
                     free_tokenlist(&inner);
 
-                    tok_add(&tl, TOK_RPAREN, 0, NULL, line, col);
-                    tok_add(&tl, TOK_RPAREN, 0, NULL, line, col);
+                    tok_add_synth(&tl, TOK_RPAREN, NULL, line, col);
+                    tok_add_synth(&tl, TOK_RPAREN, NULL, line, col);
                     continue;
                 }
                 strbuf_append_char(&buf, *p++);
@@ -583,14 +597,14 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             }
             /* Emit trailing literal */
             if (buf.len > 0) {
-                if (has_segments) tok_add(&tl, TOK_PLUS, 0, NULL, line, tok_col);
-                tok_add(&tl, TOK_STR, 0, buf.data, line, tok_col);
+                if (has_segments) tok_add_synth(&tl, TOK_PLUS, NULL, line, tok_col);
+                tok_add_synth(&tl, TOK_STR, buf.data, line, tok_col);
             } else if (!has_segments) {
                 /* empty f-string: f"" */
-                tok_add(&tl, TOK_STR, 0, "", line, tok_col);
+                tok_add_synth(&tl, TOK_STR, "", line, tok_col);
             }
             /* Close the outer wrapper paren */
-            tok_add(&tl, TOK_RPAREN, 0, NULL, line, tok_col);
+            tok_add_synth(&tl, TOK_RPAREN, NULL, line, tok_col);
             if (*p == '"') { p++; col++; }
             else {
                 fprintf(stderr, "Syntax error line %d: unterminated f-string\n", line);
