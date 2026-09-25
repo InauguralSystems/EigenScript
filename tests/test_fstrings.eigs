@@ -50,4 +50,18 @@ assert_eq of [f"{"c{d"}", "c{d", "opening brace inside string"]
 # nested f-strings still balance via depth counting
 assert_eq of [f"a{f"inner{w}"}b", "ainner5b", "nested f-string"]
 
+# --- #1253: a brace-bearing string inside a NESTED f-string's interpolation.
+# The outer scanner used to treat the nested f"..." as a plain string, stop at
+# the inner string's opening quote, and count its brace as nesting. ---
+assert_eq of [f"outer:{f"inner:{"a}b"}"}", "outer:inner:a}b", "closing brace in nested string"]
+assert_eq of [f"outer:{f"inner:{"a{b"}"}", "outer:inner:a{b", "opening brace in nested string"]
+assert_eq of [f"outer:{f"inner:{"abc"}"}", "outer:inner:abc", "control: brace-free nested string"]
+assert_eq of [f"<{f"[{f"({"}"})"}]"}>", "<[(})]>", "three levels deep"]
+assert_eq of [f"{f"q\"{"}"}\"" + "!"}", "q\"}\"!", "escaped quotes in nested literal text"]
+assert_eq of [f"{f"\\{w}"}", "\\5", "escaped backslash before nested interpolation"]
+assert_eq of [f"{f"\{x\}"}", "{x}", "escaped braces in nested literal text"]
+assert_eq of [f"{f"{ {"k}": w}["k}"] }"}", "5", "dict with brace-bearing keys in nested f-string"]
+# malformed nesting still fails with a diagnostic
+assert_eq of [try_parse of "print of f\"outer:{f\"inner:{\"a}b\"}\"}", 0, "unterminated nested f-string is loud"]
+
 test_summary of null
