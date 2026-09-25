@@ -9,11 +9,11 @@ set -u
 SP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUNNER="$SP_ROOT/tests/run_all_tests.sh"
 VERBOSE=1
-# A floor below today's 443 chunks catches a collapsed scan while allowing new sections.
+# A floor below the normal chunk population catches a collapsed scan while allowing growth.
 CHUNK_FLOOR=400
-# A floor below today's 24 emitters catches a vacuous audit while allowing additions.
+# A floor below the normal emitter population catches a vacuous audit while allowing growth.
 SKIP_EMIT_FLOOR=20
-# A floor below today's 24 routes catches a lost routing scan while allowing additions.
+# A floor below the normal route population catches a lost scan while allowing growth.
 SKIP_ROUTED_FLOOR=20
 CI_FILE="$SP_ROOT/.github/workflows/ci.yml"
 
@@ -76,10 +76,9 @@ shard_count_sync() {
     # let any ONE of the three be DELETED. Deleting the env-value one was the
     # dangerous case — `EIGS_SUITE_SHARD: ${{ matrix.shard }}` makes a job
     # still named "shard 1/3" run the WHOLE suite, with this check, the
-    # aggregator and the receipts all still green. So the POPULATION is pinned
-    # the way CAP_MARKER_FLOOR pins its own (a count that may only be changed
-    # deliberately), and the load-bearing spelling — the env value the runner
-    # actually parses — is required by name.
+    # aggregator and the receipts all still green. So the /N literal population
+    # is pinned independently, and the load-bearing spelling — the env value
+    # the runner actually parses — is required by name.
     n_lit=$(grep -coE 'matrix\.shard \}\}/[0-9]+' "$ci")
     n_bad=$(grep -oE 'matrix\.shard \}\}/[0-9]+' "$ci" | grep -vc "/$n_env\$")
     n_envval=$(grep -c "EIGS_SUITE_SHARD: \${{ matrix.shard }}/$n_env\$" "$ci")
@@ -172,6 +171,28 @@ verify_partition() {
         die "chunk table is not a partition of $f (preamble+chunks+epilogue != file)"
     fi
     rm -f "$tmp"
+}
+
+# Refuse conditional-only headings; an untaken branch would break the witness.
+check_header_shape() {
+    local table="$1"
+    awk '
+        FNR == NR { n++; start[n] = $1; end[n] = $2; next }
+        {
+            while (c < n && FNR > end[c]) c++
+            if (c < 1 || FNR < start[c] || FNR > end[c]) next
+            if ($0 ~ /^echo "\[[^]]*\]/) top[c] = 1
+            else if ($0 ~ /^[[:space:]]+echo "\[[^]]*\]/ && !(c in nested)) nested[c] = $0
+        }
+        END {
+            for (i = 1; i <= n; i++) if ((i in nested) && !(i in top)) {
+                header = nested[i]
+                sub(/^[[:space:]]+echo "/, "", header); sub(/".*/, "", header)
+                print "section_plan: ERROR: conditional-only section header in chunk start line " start[i] ": " header > "/dev/stderr"
+                exit 1
+            }
+        }
+    ' "$table" "$RUNNER"
 }
 
 # Measured weights balance whole-runner chunks; missing labels use a reported
@@ -397,6 +418,7 @@ shard_check() {
     derive_chunks "$RUNNER" > "$W/chunks"
     verify_partition "$RUNNER" "$W/chunks"
     check_chunk_count "$W/chunks"
+    check_header_shape "$W/chunks" || die "section header shape refused"
     shard_count_sync "$CI_FILE" || die "ASan shard count is not synchronized"
     derive_chunk_weights "$W/chunks" "$W/weights" "$W/missing"
     derive_chunk_groups "$W/chunks" "$W/groups"
@@ -462,6 +484,7 @@ shard_owner() {
     SP_WORK="${SP_WORK:-$(sp_workdir owner)}"
     derive_chunks "$RUNNER" > "$SP_WORK/chunks"
     check_chunk_count "$SP_WORK/chunks"
+    check_header_shape "$SP_WORK/chunks" || die "section header shape refused"
     derive_chunk_weights "$SP_WORK/chunks" "$SP_WORK/weights" "$SP_WORK/missing"
     derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
     derive_shard_assignment "$n" "$SP_WORK/weights" "$SP_WORK/assign" "$SP_WORK/groups"
@@ -599,7 +622,6 @@ EOF
     fi
     SP_SKIP_WAIVERS_USED=$(sort -u "$used" | grep -c .)
 }
-
 # ---------------------------------------------------------------------------
 # Reject empty and malformed shard populations before enumeration.
 validate_shards() {
@@ -610,9 +632,8 @@ validate_shards() {
     [ "$n" -ge 1 ] || die "shard count must be >= 1, got '$n'"
 }
 
-# A chunk is header-bearing when its source contains a literal section echo.
-# The emitted wrapper marks chunk boundaries; the parent checks that every
-# selected boundary appears in order and every bearing chunk prints a header.
+# A top-level echo marks a header-bearing chunk. The wrapper marks boundaries;
+# the parent checks their order and a printed header for every bearing chunk.
 # Branch choices inside a chunk do not enter this structural promise.
 build_shard_plan() {
     local k="$1" n="$2" s
@@ -622,6 +643,7 @@ build_shard_plan() {
     derive_chunks "$RUNNER" > "$SP_WORK/chunks"
     verify_partition "$RUNNER" "$SP_WORK/chunks"
     check_chunk_count "$SP_WORK/chunks"
+    check_header_shape "$SP_WORK/chunks" || die "section header shape refused"
     derive_chunk_weights "$SP_WORK/chunks" "$SP_WORK/weights" "$SP_WORK/missing"
     derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
     derive_shard_assignment "$n" "$SP_WORK/weights" "$SP_WORK/assign" "$SP_WORK/groups"
@@ -634,7 +656,7 @@ build_shard_plan() {
     while read -r s; do
         [ -n "$s" ] || continue
         e=$(awk -v ss="$s" '$1 == ss { print $2 }' "$SP_WORK/chunks")
-        first=$(sed -n "${s},${e}p" "$RUNNER" | grep -m1 -oE 'echo "\[[^"]*"' | sed 's/^echo "//; s/"$//')
+        first=$(sed -n "${s},${e}p" "$RUNNER" | grep -m1 -oE '^echo "\[[^"]*"' | sed 's/^echo "//; s/"$//')
         bearing=0
         if [ -n "$first" ]; then bearing=1; SP_SEL_BEARING=$((SP_SEL_BEARING + 1)); fi
         printf '# EIGS-EXPECT\t%s\t%s\t%s\n' "$s" "$bearing" "${first:--}" >> "$SP_WORK/expected"
@@ -669,7 +691,9 @@ emit_shard() {
         while read -r s; do
             [ -n "$s" ] || continue
             e=$(awk -v ss="$s" '$1==ss {print $2}' "$SP_WORK/chunks")
+            echo '__eigs_chunk_status=$?'
             printf "builtin echo '@@EIGS-CHUNK %s@@'\n" "$s" # SENTINEL_EMIT
+            echo '(exit "$__eigs_chunk_status")'
             sed -n "${s},${e}p" "$RUNNER"
         done < "$SP_WORK/selected"
         sed -n "${SP_EPILOGUE_START},\$p" "$RUNNER"
@@ -705,6 +729,10 @@ selftest() {
     cp "$RUNNER" "$dir/no_anchor.sh"
     sed 's/^# Final guard (#681)/# Final guard/' "$dir/no_anchor.sh" > "$dir/t"; mv "$dir/t" "$dir/no_anchor.sh"
     expect_red 'derive_chunks: missing epilogue anchor' 'epilogue anchor' "$0" --root "$SP_ROOT" --chunks --runner "$dir/no_anchor.sh" --quiet
+    awk '/^echo "\[17\/17\] Transformer Smoke/ { print "if true; then"; print "    " $0; print "fi"; next } { print }' \
+        "$RUNNER" > "$dir/conditional-header.sh"
+    expect_red 'check_header_shape: indented-only section header is refused' 'conditional-only section header in chunk start line' \
+        "$0" --root "$SP_ROOT" --runner "$dir/conditional-header.sh" --shards 3 --check --quiet
     sed 's/^CHUNK_FLOOR=400$/CHUNK_FLOOR=999999/' "$0" > "$dir/bad-count.sh"
     chmod +x "$dir/bad-count.sh"
     expect_red 'check_chunk_count: vacuous chunk population falls below floor' 'chunk enumeration examined' \
@@ -735,8 +763,8 @@ selftest() {
         "$0" --root "$SP_ROOT" --shard-owner 3 --section '[absent]' --quiet
     expect_ok 'control: emit shard passes bash syntax check' "$0" --root "$SP_ROOT" --emit-shard 2 3 "$dir/shard.sh" --quiet
     [ -s "$dir/shard.sh" ] && bash -n "$dir/shard.sh" || { echo '  FAIL: emitted shard absent or invalid'; fail=$((fail + 1)); }
-    # Inert runner with the real dispatch/timer preamble. Its source marks
-    # every chunk as header-bearing; a runtime condition hides all but three.
+    # Inert runner with the real dispatch/timer preamble. Every source header
+    # is top-level; a test-only echo override hides all but three at runtime.
     local stub="$dir/stub" i
     mkdir -p "$stub/tests" "$stub/tools" "$stub/src" "$stub/.github/workflows"
     cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/read_werror_flags.sh" \
@@ -748,9 +776,19 @@ selftest() {
     awk '/^PASS=0$/{exit} {print}' "$RUNNER" > "$stub/tests/run_all_tests.sh"
     awk '/^: "\$\{EIGS_SECTION_TIME:=1\}"/{copy=1} /^# Runaway guard/{copy=0} copy{print}' \
         "$RUNNER" >> "$stub/tests/run_all_tests.sh"
+    cat >> "$stub/tests/run_all_tests.sh" <<'STUB_ECHO'
+echo() {
+    case "${1:-}" in
+        \[9*) if [ "${SP_HIDE_SECTIONS:-0}" = 1 ]; then
+                 case "$1" in '[9001]'*|'[9002]'*|'[9003]'*) ;; *) return 0 ;; esac
+             fi ;;
+    esac
+    builtin echo "$@"
+}
+STUB_ECHO
     for i in $(seq 1 "$CHUNK_FLOOR"); do
-        printf '# [%s] Stub\nif [ %s -le 3 ] || [ "${SP_HIDE_SECTIONS:-0}" = 0 ]; then\n    echo "[%s] Stub"\nfi\n' \
-            "$((9000 + i))" "$i" "$((9000 + i))" >> "$stub/tests/run_all_tests.sh"
+        printf '# [%s] Stub\necho "[%s] Stub"\n' \
+            "$((9000 + i))" "$((9000 + i))" >> "$stub/tests/run_all_tests.sh"
     done
     printf '# Final guard (#681)\n__eigs_section_close\nexit 0\n' >> "$stub/tests/run_all_tests.sh"
     expect_ok 'control: ordered chunk sentinels and bearing headers appear' \

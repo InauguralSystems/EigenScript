@@ -99,8 +99,9 @@ if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
                             rm -f "$__plan_runner"; exit 1 ;;
         esac
         __plan_log=$(mktemp "${TMPDIR:-/tmp}/eigs_plan_log.XXXXXX")
-        # tee keeps sentinels for verification; sed hides them from readers.
-        bash "$__plan_runner" | tee "$__plan_log" | sed -u '/^@@EIGS-CHUNK [0-9][0-9]*@@$/d'
+        # Sentinels stay visible: tee is the only display path, so a failed
+        # filter cannot silently hide the LeakSanitizer tally from CI logs.
+        bash "$__plan_runner" | tee "$__plan_log"
         __plan_rc=${PIPESTATUS[0]}
         verify_shard_chunks "$__plan_runner" "$__plan_log" "$__plan_bearing" "$__plan_chunks"
         __witness_rc=$?
@@ -1516,8 +1517,8 @@ PROBE_OUT=$(./eigenscript "$PROBE_FILE" 2>&1)
 rm -f "$PROBE_FILE"
 
 # Model extension present only if no "undefined variable" error
+echo "[17/17] Transformer Smoke (7 checks)"
 if ! echo "$PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[17/17] Transformer Smoke (7 checks)"
 
     # Generate tiny v1 model
     ./eigenscript ../tests/gen_tiny_model.eigs > /tmp/eigs_tiny_v1.json 2>/dev/null
@@ -1584,6 +1585,8 @@ V0TEST
 
     rm -f /tmp/eigs_tiny_v1.json
     echo ""
+else
+    section_skip "binary built without model support"
 fi
 
 # [18] File I/O builtins: read_text, write_text, exec_capture
@@ -2776,8 +2779,8 @@ PROBE
 HTTP_PROBE_OUT=$(./eigenscript "$HTTP_PROBE_FILE" 2>&1)
 rm -f "$HTTP_PROBE_FILE"
 
+echo "[44/47] HTTP Builtins (18 checks)"
 if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[44/47] HTTP Builtins (18 checks)"
     HTTP_OUTPUT=$(./eigenscript ../tests/test_http.eigs 2>&1); HTTP_OUTPUT_RC=$?
     if rc_ok "$HTTP_OUTPUT_RC" "$HTTP_OUTPUT" && echo "$HTTP_OUTPUT" | grep -q "All tests passed"; then
         TOTAL=$((TOTAL + 18))
@@ -2890,8 +2893,8 @@ PROBE
 DB_PROBE_OUT=$(./eigenscript "$DB_PROBE_FILE" 2>&1)
 rm -f "$DB_PROBE_FILE"
 
+echo "[46/47] DB Builtins (8 checks + 7 live-DB when connected)"
 if ! echo "$DB_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[46/47] DB Builtins (8 checks + 7 live-DB when connected)"
     DB_OUTPUT=$(./eigenscript ../tests/test_db.eigs 2>&1); DB_OUTPUT_RC=$?
     if rc_ok "$DB_OUTPUT_RC" "$DB_OUTPUT" && echo "$DB_OUTPUT" | grep -q "All db tests passed"; then
         TOTAL=$((TOTAL + 8))
@@ -2922,8 +2925,8 @@ PROBE
 MODEL_PROBE_OUT=$(./eigenscript "$MODEL_PROBE_FILE" 2>&1)
 rm -f "$MODEL_PROBE_FILE"
 
+echo "[47/47] Model Save/Load Roundtrip (17 checks)"
 if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[47/47] Model Save/Load Roundtrip (17 checks)"
     MRT_OUTPUT=$(bash "$TESTS_DIR/test_model_roundtrip.sh" 2>&1)
     MRT_PASS=$(echo "$MRT_OUTPUT" | grep -c "PASS:" || true)
     MRT_FAIL=$(echo "$MRT_OUTPUT" | grep -c "FAIL:" || true)
@@ -3452,8 +3455,8 @@ PROBE
 AUDIO_PROBE_OUT=$(./eigenscript "$AUDIO_PROBE_FILE" 2>&1)
 rm -f "$AUDIO_PROBE_FILE"
 
+echo "[62] Audio Synthesis (38 checks)"
 if ! echo "$AUDIO_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[62] Audio Synthesis (38 checks)"
     AU_OUTPUT=$(./eigenscript ../tests/test_audio.eigs 2>&1); AU_OUTPUT_RC=$?
     if rc_ok "$AU_OUTPUT_RC" "$AU_OUTPUT" && echo "$AU_OUTPUT" | grep -q "All tests passed"; then
         TOTAL=$((TOTAL + 38))
@@ -3485,8 +3488,8 @@ PROBE
 GT_PROBE_OUT=$(./eigenscript "$GT_PROBE_FILE" 2>&1)
 rm -f "$GT_PROBE_FILE"
 
+echo "[120b] Gfx Text Metrics (2 runs)"
 if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[120b] Gfx Text Metrics (2 runs)"
     GT_FB=$(SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
     GT_DEF=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
     if rc_ok "$GT_FB_RC" "$GT_FB" && echo "$GT_FB" | grep -q "All tests passed" \
@@ -3556,8 +3559,8 @@ PROBE
 GA_PROBE_OUT=$(./eigenscript "$GA_PROBE_FILE" 2>&1)
 rm -f "$GA_PROBE_FILE"
 
+echo "[133] Gfx Argument-Type Guards (2 passes)"
 if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[133] Gfx Argument-Type Guards (2 passes)"
     GA_PLAIN=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
     GA_STRICT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
 
@@ -3690,8 +3693,8 @@ PROBE
 GD_PROBE_OUT=$(./eigenscript "$GD_PROBE_FILE" 2>&1)
 rm -f "$GD_PROBE_FILE"
 
+echo "[134] Pointer-Disclosure Oracle (#1007)"
 if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[134] Pointer-Disclosure Oracle (#1007)"
     GD_DIR=$(mktemp -d /tmp/eigs_gd_XXXXXX)
     GD_LEAKS=""; GD_RUN=0; GD_EMPTY=""
     gd_probe() {   # <name> <program> <expect: same|differ>
@@ -3911,8 +3914,8 @@ PROBE
 UC_PROBE_OUT=$(./eigenscript "$UC_PROBE_FILE" 2>&1)
 rm -f "$UC_PROBE_FILE"
 
+echo "[132] UI Containment Render-Decode Oracle"
 if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
-    echo "[132] UI Containment Render-Decode Oracle"
     UC_OUTPUT=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_ui_containment_gfx.eigs 2>&1); UC_RC=$?
     UC_N=$(derive_count "$UC_OUTPUT" 25 "[132] UI Containment Render-Decode Oracle")
     if rc_ok "$UC_RC" "$UC_OUTPUT" && echo "$UC_OUTPUT" | grep -q "All tests passed"; then
@@ -4036,8 +4039,8 @@ PROBE
 ZLIB_PROBE_OUT=$(./eigenscript "$ZLIB_PROBE_FILE" 2>&1)
 rm -f "$ZLIB_PROBE_FILE"
 
+echo "[124b] DEFLATE Codecs (#684, 24 checks)"
 if ! echo "$ZLIB_PROBE_OUT" | grep -q "compiled without zlib support"; then
-    echo "[124b] DEFLATE Codecs (#684, 24 checks)"
     INF_OUTPUT=$(./eigenscript ../tests/test_inflate.eigs 2>&1); INF_OUTPUT_RC=$?
     if rc_ok "$INF_OUTPUT_RC" "$INF_OUTPUT" && echo "$INF_OUTPUT" | grep -q "DEFLATE_ALL_PASS"; then
         TOTAL=$((TOTAL + 24))
@@ -4080,8 +4083,8 @@ PROBE
 NET_PROBE_OUT=$(./eigenscript "$NET_PROBE_FILE" 2>&1)
 rm -f "$NET_PROBE_FILE"
 
+echo "[125] Network Extension (#414, 25 checks + record/replay)"
 if ! echo "$NET_PROBE_OUT" | grep -q "ndefined variable"; then
-    echo "[125] Network Extension (#414, 25 checks + record/replay)"
     NET_OUTPUT=$(./eigenscript ../tests/test_net.eigs 2>&1); NET_OUTPUT_RC=$?
     if rc_ok "$NET_OUTPUT_RC" "$NET_OUTPUT" && echo "$NET_OUTPUT" | grep -q "All net tests passed"; then
         TOTAL=$((TOTAL + 25))
@@ -4122,6 +4125,8 @@ if ! echo "$NET_PROBE_OUT" | grep -q "ndefined variable"; then
         echo "  FAIL: tape N-record count $NET_NREC != 17 (accounting drift)"
     fi
     echo ""
+else
+    section_skip "binary built without network support"
 fi
 
 # [65] sort_by builtin
@@ -6431,9 +6436,8 @@ echo 'print of (gfx_text_width of ["m", 1])' > "$EX_GFX_PROBE"
 EX_HAS_GFX=0
 if ! ./eigenscript "$EX_GFX_PROBE" 2>&1 | grep -q "undefined variable"; then EX_HAS_GFX=1; fi
 rm -f "$EX_GFX_PROBE"
-if [ "$EX_HAS_GFX" = "1" ]; then
-    echo "[97] Example programs (examples/*.eigs; gfx demos INCLUDED)"
-else
+echo "[97] Example programs (examples/*.eigs; gfx demos INCLUDED)"
+if [ "$EX_HAS_GFX" != "1" ]; then
     echo "[97] Example programs (examples/*.eigs; gfx demos skipped — no gfx build)"
 fi
 EX_PASS=0; EX_FAIL=0; EX_SKIP=0
