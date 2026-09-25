@@ -4076,9 +4076,9 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * the gate OPEN, i.e. do exactly what `=1` does, inverting a documented
      * control for anyone who spells "off" the obvious way.
      *
-     * It also silently laundered the corpus oracle. tools/observer_gate_diff.sh
-     * records `force=${EIGS_OBS_FORCE:-0}` in each capture's manifest, which
-     * collapses "unset" and "=0" — two settings that behaved OPPOSITELY — so a
+     * It also silently laundered the corpus oracle. A manifest that recorded
+     * `force=${EIGS_OBS_FORCE:-0}` collapses "unset" and "=0" — two settings
+     * that behaved OPPOSITELY — so a
      * "gated" arm captured with EIGS_OBS_FORCE=0 actually ran the BASELINE while
      * the manifest recorded force=0, and compare printed a provenance line
      * byte-identical to an honest run. Executed on a build with

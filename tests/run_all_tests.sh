@@ -3536,8 +3536,8 @@ fi
 # gfx_text answered a wrong-typed argument by silently drawing nothing — is
 # in it since #1007's second pass, and so are the COERCION shapes
 # (gfx_text_width's scale, audio_pause's flag, audio_mix's sample elements),
-# which have no stand-in return and are invisible to
-# tools/failsoft_classify_check.sh by construction.
+# which have no stand-in return. The strict differential's pins are what
+# say a quiet answer is the documented one.
 #
 # The load-bearing row is the PIXEL PROOF in the non-strict pass, gated on a
 # real renderer: pre-fix, a wrong-typed colour painted BLACK over the cleared
@@ -3546,9 +3546,8 @@ fi
 # other non-strict row asserts the answer is UNCHANGED, which is the
 # byte-identity half of the claim. The strict pass discriminates without SDL.
 #
-# Still NOT covered: whether the classifications recorded in ext_gfx.c are
-# RIGHT ([99r]'s population plus this section's pins together), and leaks on
-# those paths ([137]).
+# Still NOT covered: leaks on those paths ([137]). The container-shape and
+# readback halves live in [99s].
 GA_PROBE_FILE=$(mktemp /tmp/eigs_ga_probe_XXXXXX.eigs)
 cat > "$GA_PROBE_FILE" <<'PROBE'
 print of (gfx_text_width of ["m", 1])
@@ -3820,75 +3819,6 @@ else
     echo "  FAIL: a leak or sanitizer error in the gfx corpus, or the gate's own"
     echo "        leak controls did not fire"
     echo "$AG_OUTPUT" | grep -E "FAIL:|SUMMARY|runtime error:" | head -8 | sed 's/^/    /'
-fi
-echo ""
-
-# [138] gfx PIXEL differential (#1007 round 2), --no-baseline half.
-# [99s] compares the RETURNED VALUE of a probe. Every drawing builtin returns
-# null on every path and every gfx probe there runs with no window open, so for
-# the whole drawing surface its "identical-when-off" line was measured in the
-# one state where it could not fail. A blind review found the consequence by
-# hand: a wrong-typed OPTIONAL scale changed what gfx_text painted, and nothing
-# in the change could see it. This section runs the readback oracle that can.
-# The two-binary identity half is a pre-landing step (it needs a `make gfx`
-# build of the parent); what runs here is the rest — every wrong-typed slot
-# still raises from its own guard, every VALID call is untouched by strict, no
-# valid row has decayed into drawing nothing, and the row set still covers
-# every guarded renderer builtin and every gfx_nums slot boundary derived from
-# src/ext_gfx.c.
-echo "[138] gfx pixel differential (#1007, no-baseline half)"
-GPD_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_pixel_differential.sh" --no-baseline 2>&1); GPD_RC=$?
-if echo "$GPD_OUTPUT" | grep -q "^SKIP:"; then
-    gpd_skip_line=$(echo "$GPD_OUTPUT" | grep '^SKIP:' | head -1)
-    section_skip "$gpd_skip_line"
-else
-    TOTAL=$((TOTAL + 1))
-    if [ "$GPD_RC" = 0 ]; then
-        PASS=$((PASS + 1))
-        echo "  PASS: $(echo "$GPD_OUTPUT" | grep -E '^  rows=' | head -1)"
-        echo "        $(echo "$GPD_OUTPUT" | grep -E '^  raises-under-strict' | head -1 | sed 's/^ *//')"
-    else
-        FAIL=$((FAIL + 1))
-        echo "  FAIL: a wrong-typed slot went silent, a valid call changed under"
-        echo "        strict, a row stopped drawing, or a guarded slot has no row"
-        echo "$GPD_OUTPUT" | sed -n '1,16p'
-    fi
-fi
-echo ""
-
-# [139] ext_gfx container-shape sweep (#1007 round 3). The gate that replaces
-# a hand-written probe row per bug. #1007 landed three times, and each time a
-# blind review found one more builtin silent under strict on the SAME axis --
-# the argument CONTAINER (its arity and type) rather than its elements: the
-# generators' short list, then the three audio *_open builtins' short/non-list
-# argument (which answered a REAL DEVICE ID at the 44100/1 defaults), then
-# audio_play/audio_stream_push's non-list samples. [133] and [99s] were green
-# through all three, because every row in them held the arity right and varied
-# only the element type -- the question was asked in the one state where it
-# could not fail. This section derives the guarded names AND their required
-# arity from src/ext_gfx.c and crosses each with the container shapes, so the
-# population grows with the file instead of with the bug reports. Its
-# allowlist of deliberately-quiet pairs is staleness-checked: a pair that
-# starts raising fails the section. Not probe-gated on the binary here -- the
-# tool skips cleanly by itself when the build has no EXT_GFX.
-echo "[139] ext_gfx container-shape sweep (#1007)"
-GSS_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_strict_sweep.sh" 2>&1); GSS_RC=$?
-if echo "$GSS_OUTPUT" | grep -q "^  SKIP:"; then
-    gss_skip_line=$(echo "$GSS_OUTPUT" | grep '^  SKIP:' | head -1 | sed 's/^ *//')
-    section_skip "$gss_skip_line"
-else
-    TOTAL=$((TOTAL + 1))
-    if [ "$GSS_RC" = 0 ]; then
-        PASS=$((PASS + 1))
-        echo "  PASS: $(echo "$GSS_OUTPUT" | grep -E '^  guarded names=' | head -1 | sed 's/^ *//')"
-        echo "        $(echo "$GSS_OUTPUT" | grep -E '^  raises-under-strict' | head -1 | sed 's/^ *//')"
-    else
-        FAIL=$((FAIL + 1))
-        echo "  FAIL: a guarded builtin is silent under strict for a wrong-shaped"
-        echo "        argument container, an allowlist entry has gone stale, or a"
-        echo "        probe never ran (did-not-run is not a guard verdict — #988)"
-        echo "$GSS_OUTPUT" | sed -n '1,16p'
-    fi
 fi
 echo ""
 
@@ -4723,8 +4653,8 @@ fi
 check "asking the observer MORE does not yield LESS history" "$OBS_G25" "agree"
 # 28-29. Two mechanisms that had NO check at all until a blind critic mutated
 #     them away with the section still 27/27 green. (The third, the memo that
-#     fixed a measured 7x DAG regression, is covered by tools/observer_gate_measure.sh
-#     rather than here: distinguishing it needs a timing ratio, and a timing
+#     fixed a measured 7x DAG regression, was a one-off timing harness, now
+#     retired: distinguishing it needs a timing ratio, and a timing
 #     assertion in this suite would be flaky on a loaded 2-core box. Recorded
 #     rather than faked.)
 # 28. The speculative read is BOUNDED. Without the stat/S_ISREG guard a literal
@@ -4852,12 +4782,13 @@ check "the largest real module tree (lib/ui) still gates closed" "$OBS_G32" "clo
 #     `EIGS_OBS_FORCE=` forced the gate OPEN — a documented control doing
 #     exactly the opposite of what it says for anyone who spells "off" the
 #     obvious way, while EIGS_STRICT and EIGS_VERIFY_SELF both got it right.
-#     It also laundered the corpus oracle: tools/observer_gate_diff.sh recorded
+#     A bare getenv also laundered the old corpus oracle: its manifest recorded
 #     force=${EIGS_OBS_FORCE:-0}, collapsing "unset" and "=0", so a "gated" arm
 #     captured with EIGS_OBS_FORCE=0 ran the BASELINE and printed a provenance
 #     line byte-identical to an honest run (found by a blind critic, executed
 #     against a build with case OP_REPORT_NAME: deleted: honest 3 mismatches
-#     rc=1, laundered "415 byte-identical" rc=0).
+#     rc=1, laundered "415 byte-identical" rc=0). The live corpus check is the
+#     OBS arm of tools/jit_diff.sh.
 #     All four spellings asserted in ONE verdict so a half-fix cannot pass.
 OBS_FORCE_V=""
 for OBS_FV in unset 0 EMPTY 1; do
@@ -6754,24 +6685,6 @@ else
 fi
 echo ""
 
-# [99r] Fail-soft classification gate (#971).  Every `return make_num(0)` /
-# `return make_str("")` in the builtin surface must carry a written fs: tag,
-# because the distinction between a fail-soft guard and a documented ANSWER is
-# not derivable from the code — `task_alive` has one of each, four lines apart.
-# The gate proves a DECISION WAS RECORDED, nothing more; whether the decision
-# is right is what [99s]'s pins assert.
-echo "[99r] Fail-soft classification gate (#971)"
-TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" >/dev/null; then
-    PASS=$((PASS + 1))
-    echo "  PASS: every fail-soft return is classified"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: an unclassified fail-soft return"
-    bash "$TESTS_DIR/../tools/failsoft_classify_check.sh" 2>&1 | sed -n '1,12p'
-fi
-echo ""
-
 # [99s] Strict argument-guard differential (#971), --no-baseline half.
 # The full tool diffs against a build of the parent commit to prove the default
 # path is byte-identical; that half needs two binaries and is a pre-landing
@@ -6780,7 +6693,9 @@ echo ""
 # OWN GUARD (a probe that raises elsewhere scored as coverage until this check
 # existed — one probe named a builtin that does not exist and passed on
 # "undefined variable"), every documented ANSWER must stay quiet, and every
-# guard must have a probe.
+# guard must have a probe. On a gfx build the same run also sweeps wrong
+# containers and diffs pixel digests; any other build prints one
+# "SKIP: not a gfx build" line for those halves.
 # RUN ONCE, REPORT THAT RUN. The first version threw the failing run's output
 # away (`>/dev/null`) and re-ran the tool to produce a diagnostic — so the
 # evidence printed under a FAIL banner came from a DIFFERENT run, and if the
@@ -6797,13 +6712,15 @@ if [ "$STRICT_DIFF_RC" = 0 ]; then
     PASS=$((PASS + 1))
     echo "  PASS: every guard raises from its own"
     echo "        guard; every answer stays quiet"
+    case "$STRICT_DIFF_OUT" in *"SKIP: not a gfx build"*)
+        echo "  SKIP: gfx sweep and pixel halves (not a gfx build)" ;; esac
 else
     FAIL=$((FAIL + 1))
     if [ "$STRICT_DIFF_RC" != 0 ]; then
         echo "  FAIL: a guard went silent, raised from the wrong place, a pin broke,"
-        echo "        a guard has no probe, or a probe did not run (exit $STRICT_DIFF_RC)"
+        echo "        a guard has no probe, a gfx half failed, or a probe did not run (exit $STRICT_DIFF_RC)"
         echo "  --- output of the run that failed (not a re-run) ---"
-        printf '%s\n' "$STRICT_DIFF_OUT" | sed -n '1,32p'
+        printf '%s\n' "$STRICT_DIFF_OUT" | sed -n '1,80p'
     fi
 fi
 echo ""

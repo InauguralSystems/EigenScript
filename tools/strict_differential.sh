@@ -1,127 +1,52 @@
 #!/usr/bin/env bash
-# #971 Phase B: the differential that backs the safety claim.
+# strict_differential.sh — one argument-guard differential.
 #
-# The claim this change makes is narrow and total: converting a fail-soft
-# guard to ARG_GUARD changes NOTHING when EIGS_STRICT is unset, and makes
-# the same mistake LOUD when it is set. Both halves need an oracle, and
-# the first half's oracle is the previous binary.
+# Subject binary: ./src/eigenscript, or EIGS_DIFF_NEW. Optional baseline
+# argument is the other binary. --no-baseline skips only identical-when-off
+# and says so. Without either, the run is incomplete and exits 1.
 #
-#   identical-when-off   baseline vs new, EIGS_STRICT unset, byte-for-byte
-#                        over stdout+stderr+exit code
-#   raises-under-strict  new binary, EIGS_STRICT=1, must exit nonzero and
-#                        name the builtin
-#   pins                 fs:ANSWER sites must NOT raise under strict — the
-#                        half that stops the reform overshooting into the
-#                        documented answers
+# Halves, in order:
+#   raises-under-strict     EIGS_STRICT=1, nonzero, and the row's expect
+#                           substring (default "<name>: expected")
+#   guarded-name cross-check  names derived from ARG_GUARD / ARG_GUARD_TAPED /
+#                           ARG_GUARD_PRETAKE / STRICT_REQUIRE / STRICT_DOMAIN /
+#                           num_guard_named; a guarded name with no probe fails
+#   pins                    documented answers must not raise under strict
+#   identical-when-off      baseline vs subject, flag unset, stdout+stderr+rc;
+#                           valid-input rows in both modes when a baseline is given
+#   gfx container-shape sweep   ext_gfx.c want-strings, wrong containers
+#   gfx pixel differential  canvas digests and source coverage. Every pixel
+#                           row is compared with the flag off; a flag-off
+#                           canvas change is a difference, with no waiver.
+#   binary-held-still       cksum+size+mtime of the subject (and baseline)
+# A build without gfx builtins prints one line, "SKIP: not a gfx build",
+# and does not treat the gfx halves as a pass.
 #
-# The probe table below is hand-written (a call needs the right arity, and
-# `--api` does not carry arity), which makes it exactly the sibling list
-# §1 of mechanical-gates warns about. So it is CROSS-CHECKED: the set of
-# builtin names appearing in an ARG_GUARD is derived from the source, and
-# any guarded builtin with no probe FAILS this script. Adding a guard
-# without a probe goes red rather than passing quietly.
-#
-# Usage: bash tools/strict_differential.sh <baseline-binary>
-#   <baseline-binary> is a build of the PARENT commit. Build one with:
-#     git worktree add --detach /tmp/base <sha> && make -C /tmp/base
-#   Without it, the identical-when-off half is skipped and the script says
-#   so and exits 1 — a differential with no reference is not a pass.
-#   --no-baseline accepts that deliberately (what CI runs).
-#
-# WHAT THIS DOES NOT COVER, stated so the next reader does not assume it:
-#   - UNPROBEABLE is an escape hatch. A name added there leaves the
-#     "guarded but unprobed" set with no proof of unreachability; the only
-#     thing bounding it is the staleness check, which fires if the guard it
-#     excuses disappears entirely. Adding a name is a review event.
-#   - The probe table is hand-written. The cross-check makes an UNPROBED
-#     guard fail, but it cannot make a BADLY CHOSEN probe fail beyond the
-#     attribution check — and that check only proves the raise came from
-#     the named guard, not that the probe exercises the interesting branch.
-#   - --sweep is discovery, not a gate: it has no allowlist, so nothing
-#     fails when a new laundering builtin appears. Making it a gate needs a
-#     pinned expected-quiet list, which nobody has written.
-# UNDER LOAD. Every measurement here is one short child process, and the tool
-# makes no timing assumption: nothing is backgrounded, nothing polls, no probe
-# depends on scheduling order, and a probe that hangs hangs (it is not raced
-# against a timer, so a slow box cannot turn a pass into a fail). What a loaded
-# box CAN do is stop a child from running at all — a fork that fails, a kill, a
-# binary relinked underneath the run — and until 2026-09-07 that arrived as a
-# finding ABOUT THE CODE: a probe killed by a signal exits nonzero, so it was
-# scored "raised, but not by its own guard", and a harness that died mid-run
-# printed no verdict at all while still exiting nonzero. Both now say what they
-# are: `probes that did not run` is its own bucket, naming the exit status, and
-# the EXIT trap prints ABORTED when the script exits before its verdict line.
-# A red from either is still a red — nothing is retried, and a crash (signal)
-# is reported as a crash — but it names the environment instead of the table.
-#
-#   - The probe row's THIRD field (#971 Phase C/D + NaN) is the substring
-#     the strict raise must carry; it defaults to "<who>: expected", the
-#     shape ARG_GUARD/STRICT_REQUIRE emit. A NaN source (num_guard_named)
-#     raises "<who>: result is not a number"; a STRICT_DOMAIN site raises
-#     "<who>: <what>"; json_path raises "json_path: invalid JSON". The
-#     cross-check derives its name set from ALL of those spellings, so a
-#     guard of any kind without a probe row still goes red — but a row
-#     whose expect field is too loose (a bare builtin name) is the same
-#     vacuity the "<name>: expected" rule closed, and nothing here
-#     catches it beyond review.
-
+#   bash tools/strict_differential.sh <baseline-binary>
+#   bash tools/strict_differential.sh --no-baseline
 set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
-# EIGS_DIFF_NEW lets the harness be pointed at another build, which is how
-# it is validated: run it with NEW := the previous release's binary and the
-# loudness detector must fire, because that binary lacks the guards this
-# tree added. Measured 2026-09-07 against the v0.43.0 build:
-# `raises-under-strict: 77 silent: 21` and FAIL, where this tree scores
-# 98/0 and OK. The identical-when-off half is exercised the other way: put a
-# default-path change back into a converted site and it reports
-# `differing: 1` and FAILs — there is no exemption list that could absorb it
-# (see the waiver block below). A harness that has never failed has not been
-# shown to work.
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
 BASE="${1:-}"
-
-# #1007 put probes on the gfx/audio surface. They never open a window (the
-# guards all sit ABOVE the SDL load, which is the point of #1018's [135]
-# gate), but SDL is dlopen'd lazily and a probe that DID reach it must not
-# block on a real display or sound card. Only set when unset, so a caller
-# can still point the harness at a real driver.
+NO_BASELINE=0
+if [ "$BASE" = "--no-baseline" ]; then NO_BASELINE=1; BASE=""; fi
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-dummy}"
 
-# --no-baseline runs every half EXCEPT identical-when-off, and passes on those.
-# It exists so CI has something: without it this tool only ever runs on a dev
-# box that happens to have built the parent commit, and a harness nobody runs
-# rots. The half it drops is the one that needs two binaries; the halves it
-# keeps (does every guard still raise, does it raise from its OWN guard, do the
-# documented answers stay quiet, is every guard probed) catch a removed guard,
-# a broken pin and an unprobed guard on their own.
-NO_BASELINE=0
-if [ "$BASE" = "--no-baseline" ]; then NO_BASELINE=1; BASE=""; fi
-# --selftest measures THIS SCRIPT, not the build: it needs no binary and runs
-# in a tenth of a second. See the selftest block below for what it pins.
-SELFTEST=0
-if [ "$BASE" = "--selftest" ]; then SELFTEST=1; BASE=""; fi
+# Matchers are bash case-globs: no pipe, so pipefail cannot invert a match.
+# Bodies are pinned byte-for-byte (tools/pipefail_verdict_check.sh).
+str_has()      { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
+str_has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1 ; }
+str_has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1 ; }
 
-[ "$SELFTEST" = "1" ] || [ -x "$NEW" ] || { echo "FAIL: no built binary at $NEW"; exit 1; }
+[ -x "$NEW" ] || { echo "FAIL: no built binary at $NEW"; exit 1; }
+if [ -z "$BASE" ] && [ "$NO_BASELINE" = 0 ]; then
+    echo "FAIL: no baseline binary. Pass one, or --no-baseline to skip identical-when-off."
+    exit 1
+fi
 
-# ------------------------------------------------ did the binary hold still?
-# $NEW is a PATH, opened afresh for each of ~130 probes, and in this tree
-# src/eigenscript is a hard link to build/<variant>/eigenscript (#740): a
-# `make` anywhere in the same worktree re-points it mid-run. Two probes in one
-# run then measure two different binaries, and the report reads as a finding
-# about a guard — "silent" if the new binary lacks it, "raised by the wrong
-# guard" if it words the message differently. run_all_tests.sh has carried the
-# #681 fingerprint guard for exactly this since 2026, but it re-checks at
-# SECTION SEAMS, which is after this tool has already printed its verdict; and
-# this tool is also run standalone, where nothing checks at all. So it now
-# checks its own subject, with the same fingerprint shape #681 uses. Cost: two
-# cksums of a ~1 MB file per run.
-# (This is NOT the cause of #1120 — a swapped binary cannot produce a capture
-# that CONTAINS the message the matcher says is absent — but it is a
-# neighbouring way to get a confusing red out of a green tree, and it is
-# cheaper to rule out by construction than to argue about after the fact.)
-bin_fingerprint() {   # <path> -> "cksum size mtime", or "" if unreadable
+bin_fingerprint() {
     local f="$1" ck sz mt
     [ -e "$f" ] || { printf ''; return 0; }
     ck=$(cksum "$f" 2>/dev/null) || ck="?"
@@ -132,77 +57,15 @@ bin_fingerprint() {   # <path> -> "cksum size mtime", or "" if unreadable
     fi
     printf '%s %s %s' "$ck" "${sz:-?}" "${mt:-?}"
 }
-FP_NEW_START=""; FP_BASE_START=""
-if [ "$SELFTEST" != "1" ]; then
-    FP_NEW_START="$(bin_fingerprint "$NEW")"
-    [ -n "$BASE" ] && FP_BASE_START="$(bin_fingerprint "$BASE")"
-fi
-
-# ------------------------------------------------- how this script matches (#1120)
-# EVERY verdict below is a string match, and until #1120 several of them were
-# spelled `printf ... | grep -q ...`. Under `set -o pipefail` that is a RACE,
-# not a test: `grep -q` exits the instant it matches and closes the read end,
-# the writer then takes SIGPIPE and exits 141, and pipefail reports the
-# PIPELINE as 141 — a failed match — while grep's own status was 0, MATCHED.
-# The verdict then contradicts the evidence printed beside it, which is exactly
-# what #1120 reported: a probe scored "raised by the wrong guard" whose own
-# diagnostic contained the guard's message.
-#
-# Measured on this tree, 4-core box at load 12-16:
-#   isolated  `printf | grep -qF` on a 157-byte capture: 21 false no-matches in
-#             20,000 evaluations, every one rc=141 (SIGPIPE).
-#   this tool with the pipe form restored at the probe matcher: 18 red runs in
-#             186, all misattributions, spread over 18 DIFFERENT probes — a
-#             uniform spray across the table is the signature of a harness
-#             race, not of a guard.
-#   this tool as it stands: 0 red in 300.
-# The race becomes CERTAIN once the capture exceeds the pipe buffer: the writer
-# must block, so it is always still writing when the reader exits. `--selftest`
-# pins that shape, so the regression cannot come back quietly.
-#
-# So no pipeline decides anything here. These three do the whole job with
-# bash's own matcher: no fork, no pipe, no status to misread. They are also
-# what --selftest exercises, so the selftest and the probes share one matcher.
-# str_has      <haystack> <needle>     substring, what `grep -qF` meant
-# str_has_line <haystack> <whole line>  what `grep -qxF` meant
-# str_has_word <space list> <name>      what `grep -qw` meant on these lists
-# The needles are QUOTED inside the patterns, so a glob character in one is a
-# literal — the same promise -F made.
-str_has()      { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
-str_has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1 ; }
-str_has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1 ; }
-
-# The probe table is also read without a pipeline: `grep -F "$w|" | head -1`
-# put the same SIGPIPE on grep. Nothing consulted its status, so it was never a
-# false verdict — but leaving the construct in a file whose header now bans it
-# is how it comes back.
-probe_prog_for() {   # <probe name> -> that row's program field, or ""
-    local want="$1" _who _prog _rest
-    while IFS='|' read -r _who _prog _rest; do
-        if [ "$_who" = "$want" ]; then printf '%s' "$_prog"; return 0; fi
-    done <<<"$PROBES"
-    return 1
-}
+FP_NEW_START="$(bin_fingerprint "$NEW")"
+FP_BASE_START=""
+[ -n "$BASE" ] && FP_BASE_START="$(bin_fingerprint "$BASE")"
 
 TMP="$(mktemp -d)"
-# ONE trap (a second EXIT trap would silently replace this one). It cleans up
-# and then answers the question a bare nonzero exit cannot: did this script
-# reach its verdict? A run killed mid-way, or aborted by `set -u` on an unbound
-# name, exits nonzero having printed no finding — which reads downstream as
-# "the gate found something" and sends the next person hunting a guard that is
-# fine. Seen once in a full-suite run (2026-09-06): [99s] printed FAIL and its
-# diagnostic re-run printed a completely clean report, because the failing run
-# was discarded rather than shown. If that happens again this line says so.
 verdict_printed=0
 _sd_main_depth=$BASH_SUBSHELL
 _sd_exit() {
     local es=$?
-    # ONLY the top-level shell. bash runs an EXIT trap in a subshell that is
-    # killed by a signal too, and this trap both deletes $TMP and speaks: a
-    # signalled command substitution would otherwise remove the temp dir out
-    # from under the still-running parent and print ABORTED before the parent
-    # reaches its verdict. Bash 3 supplies BASH_SUBSHELL; $$ cannot distinguish
-    # these inherited subshells, and BASHPID requires a newer Bash.
     [ "$BASH_SUBSHELL" = "${_sd_main_depth:-}" ] || return 0
     rm -rf "${TMP:-}"
     if [ "${verdict_printed:-0}" != "1" ]; then
@@ -211,33 +74,11 @@ _sd_exit() {
         else
             echo "  ABORTED: this differential exited (rc=$es) before printing a verdict."
         fi
-        echo "           Nothing above is a finding about the code under test —"
-        echo "           the harness itself did not finish (killed, or an unbound"
-        echo "           name under 'set -u'). Re-run it; if it aborts again, the"
-        echo "           abort is the bug."
     fi
 }
 trap _sd_exit EXIT
 
-# ---------------------------------------------------------------- probes
-# name|program[|expect]
-# Each program calls the builtin with a WRONG-TYPED argument at the right
-# arity, so the guard under test is the one that fires. `who` is the name
-# ARG_GUARD reports, which is what the cross-check below matches on. The
-# optional third field is the message substring the raise must carry when
-# it is not ARG_GUARD's "<who>: expected" (the NaN and domain rows).
-#
-# A name may appear on MORE THAN ONE row, and for the three audio *_open
-# builtins it must. Holding arity right and varying only the element TYPE
-# measures exactly one axis, and #1007 shipped a first version whose guards
-# were NESTED inside a `count >= 2` shape test: every wrong-typed row went
-# loud while a SHORT list walked past the guard, opened the device at the
-# 44100/1 defaults and answered a real device id. `raises-under-strict: N,
-# silent: 0` was true and the surface was still silently succeeding, because
-# the table only ever asked the question in the state where it could not
-# fail. So the openers carry a short-list row (and audio_open a non-list
-# row) beside the wrong-typed one, and the well-formed `of null` /
-# `of [freq, channels]` forms sit in VALID below as the over-broad control.
+# name|program[|expect]  — wrong-typed call; expect defaults to "<name>: expected"
 PROBES=$(cat <<'EOF'
 abs|print of (abs of "x")
 acos|print of (acos of "x")
@@ -381,19 +222,9 @@ gfx_title|print of (gfx_title of 42)
 ppu_render_frame|print of (ppu_render_frame of [1, 2])
 EOF
 )
-# A probe that needs a real resource must build it under this run's own $TMP,
-# which the EXIT trap removes. The heredoc above is quoted (so a program can
-# contain a literal $ safely), hence the placeholder rather than direct
-# expansion. Bought by the store_update key probe: pointed at a fixed
-# /tmp path it left a database behind, and a leftover unreadable file there
-# wedged the gate for every later run — `store_open` refused it, the probe
-# raised from the wrong place, and the tool reported `misattributed: 1`
-# forever with nothing to do with the code under test.
 PROBES="${PROBES//@TMP@/$TMP}"
 
-# fs:ANSWER pins — a 0/"" that is the documented RESULT. Strict must leave
-# these alone. Without this half the reform has no failure mode: converting
-# everything would score a perfect "raises-under-strict".
+# label|program — must exit 0 under EIGS_STRICT=1
 PINS=$(cat <<'EOF'
 task_alive of an unknown id is 0, not an error|print of (task_alive of 999)
 list_contains that finds nothing is 0|print of (list_contains of [[1, 2], 9])
@@ -429,13 +260,7 @@ random_hex of 0 is ""|print of f"[{random_hex of 0}]"
 EOF
 )
 
-# VALID-input rows. Every probe above hands a builtin a WRONG argument, so the
-# whole harness was structurally blind to a regression on CORRECT input: a
-# guard whose condition is too broad, a split that reordered a real branch, an
-# off-by-one in a hoisted check would all pass every row above. These run the
-# same program on BOTH binaries in BOTH modes and require byte-identical
-# output — including under strict, which is where an over-broad guard shows up
-# as a raise on a legitimate call. Found missing by a blind review.
+# programs run on both binaries in both modes when a baseline is given
 VALID=$(cat <<'EOF'
 print of (sum of [1, 2, 3.5])
 print of (mean of [2, 4, 6])
@@ -525,85 +350,7 @@ print of (audio_play of [0.1, 0.2])
 EOF
 )
 
-# --------------------------------------- no divergence-waiver mechanism
-# There is deliberately NO way to exempt a probe from the default-path
-# comparison. `differing-when-off: 0` is the single claim this tool exists to
-# make, and an exemption path is that claim with a hole in it.
-#
-# There used to be one (EXPECTED_DIVERGE_FIXED / _UNSTABLE), and it is gone
-# because both of its failure modes were paid for:
-#
-#   Waivers are PR-scoped, and nothing enforces that. An entry is live for
-#   exactly one review — while the change is unmerged and the parent still
-#   lacks it. The moment it lands, the parent HAS the fix, the probe stops
-#   diverging, and the entry is SPENT: inert, pure debris. Bought (#1016):
-#   `sign_extend`'s waiver was written for #971 Phase B and left behind when
-#   #1015 landed, so the documented pre-land command returned FAIL on a clean
-#   tree for every run between #1015 and #1016 while the half it measures was
-#   green. A gate that always fails is ignored as fast as one that never fires.
-#
-#   And a waiver hides exactly what the tool is for. #971 (NaN enumeration)
-#   ALMOST kept one. matmul's BUFFER path stores the kernel's raw inf-inf NaN,
-#   and a raw NaN in a buffer is not a number the program can see — its bit
-#   pattern is a NaN-boxed slot tag, so `r[0]` reads back as `null`
-#   (0xFFF8... is SLOT_NULL_BITS). Collapsing it to 0 the way the list path
-#   does looked like a free fix; it was written, waived, and proven. But a
-#   PROVEN waiver is still a hole in "with the flag off, nothing changed", and
-#   that claim is worth more than the incidental fix. The strict half now
-#   raises through STRICT_DOMAIN, which cannot touch the soft path; `r[0]`
-#   still reads `null` with the flag off; the pre-existing `null` read is
-#   recorded in ROADMAP.md as its own change with its own differential.
-#
-# So: if a future change genuinely must move a default-path answer, it is a
-# SEMANTICS CHANGE, not a waiver. It belongs in docs/SPEC.md + COMPARISON.md +
-# BUILTINS.md with a fixture pinning the new behaviour and a CHANGELOG line
-# that says so plainly — and this tool should go red until that is done.
-
-
-# Guards that CANNOT be probed, named with the reason. Without this list they
-# would sit in "GUARDED BUT UNPROBED" forever and train the reader to ignore
-# that section — which is how a real gap gets missed.
-#
-#   (currently empty)
-#
-#   store_update was waived here until #1006. The waiver's reason was that its
-#   key-type guard was unreachable — store_update called store_delete first
-#   with the same [handle, collection, key] triple, so a bad key was rejected
-#   there and the raise named store_delete. #1006 removed that delegation (the
-#   delete had to be split so a failed replace could be undone), which made
-#   both of store_update's guards reachable and self-naming. The waiver named
-#   its own trigger — "if it is ever made reachable it must gain a probe here"
-#   — and this is that: two probes below, no waiver.
-UNPROBEABLE=""
-
-run_capture() {   # <binary> <env-strict|-> <file>  -> prints "rc\nstdout+stderr"
-    local bin="$1" strict="$2" f="$3" out rc
-    if [ "$strict" = "-" ]; then
-        out="$("$bin" "$f" 2>&1)"; rc=$?
-    else
-        out="$(EIGS_STRICT="$strict" "$bin" "$f" 2>&1)"; rc=$?
-    fi
-    printf '%s\n%s' "$rc" "$out"
-}
-
-# Did this run MEASURE anything? A guard raise exits 1. Exit 126/127 means the
-# process could not be executed, and >= 128 means it was killed by a signal —
-# neither is a statement about a guard, and scoring them as one is how a loaded
-# box produces a finding about code that is fine. Returns the reason, or "" when
-# the run is a legitimate measurement.
-#
-# WHAT $? CAN AND CANNOT SAY. A shell reports a signalled child as 128+N and a
-# child that called exit(128+N) as the same number; POSIX exposes no way to
-# tell them apart from `$?` alone — only a waitpid caller sees WIFSIGNALED. So
-# this names the signal it WOULD be and says which reading it is taking. That
-# reading is safe HERE for a reason worth writing down: the probe programs
-# never call `exit`, and the runtime's own exits are 0, 1 and 2 — so 126, 127
-# and >= 128 cannot be the program's own choice in this harness. The argument
-# is what makes the classification sound; it is not a general one, and a probe
-# row that ever calls `exit of N` breaks it.
-# (Seen on this box 2026-09-07: a suite child died with 143 = SIGTERM, sent
-# from outside the suite entirely. Nothing in this script signals anything.)
-sig_name() {   # <signal number> -> TERM / KILL / ... or the number
+sig_name() {
     case "$1" in
         1) printf 'HUP' ;;  2) printf 'INT' ;;  3) printf 'QUIT' ;;
         6) printf 'ABRT' ;; 8) printf 'FPE' ;;  9) printf 'KILL' ;;
@@ -612,7 +359,9 @@ sig_name() {   # <signal number> -> TERM / KILL / ... or the number
         *) printf '%s' "$1" ;;
     esac
 }
-run_did_not_measure() {   # <rc>
+# Probe programs do not call exit, and the runtime exits 0, 1 or 2, so
+# 126/127 and >=128 are "did not run", not a guard verdict.
+run_did_not_measure() {
     case "$1" in
         126|127) printf 'the process could not be executed (exit %s)' "$1" ;;
         1[3-9][0-9]|12[89]) printf 'killed by SIG%s (%s = 128+%s) — a crash, not a guard' \
@@ -620,194 +369,14 @@ run_did_not_measure() {   # <rc>
         *) printf '' ;;
     esac
 }
-
-# --------------------------------------------------------------- selftest
-# What this proves, and what it deliberately does not. It measures the
-# MATCHERS this script decides with — not a guard, not the build. It exists
-# because #1120's flake was invisible to every check in here: the tool went
-# red on a green tree ~10% of the time under load, and the accusation it
-# printed was refuted by its own diagnostic two lines later.
-#
-# Four things, and the last is the one that makes the rest non-vacuous:
-#   1. the three matchers answer correctly on ordinary input (positive AND
-#      negative cases — a matcher that always says yes passes only the first);
-#   2. they answer correctly on a capture larger than the pipe buffer, which
-#      is where the construct they replaced fails;
-#   3. a deliberately WRONG matcher fails the same battery, so the battery is
-#      shown to discriminate rather than to accept anything;
-#   4. the construct they replaced — `printf | grep -q` under pipefail — is
-#      shown to report NO-MATCH on input the shell matcher matches. That is
-#      #1120 itself, reproduced deterministically. The pad grows until the
-#      writer must block, so the assertion does not depend on knowing any
-#      platform's pipe-buffer size.
-if [ "$SELFTEST" = "1" ]; then
-    echo "== strict_differential selftest (#1120: the matchers, not the guards) =="
-    st_n=0; st_fail=0
-    st_ok()  { st_n=$((st_n + 1)); printf '  ok    %s\n' "$1"; }
-    st_bad() { st_n=$((st_n + 1)); st_fail=$((st_fail + 1)); printf '  FAIL  %s\n' "$1"; }
-    st_is()  {   # <want-status> <got-status, pass $? here> <label>
-        if [ "$1" = "$2" ]; then st_ok "$3"; else st_bad "$3 (got $2, want $1)"; fi
-    }
-
-    hay="1
-Error line 1: abs: expected a number
-     1 | print of (abs of \"x\")"
-    str_has "$hay" "abs: expected";  st_is 0 $? "str_has finds a guard message in a capture"
-    str_has "$hay" "ceil: expected"; st_is 1 $? "str_has rejects a message that is not there"
-
-    lines="src/vm.c
-src/jit.c"
-    str_has_line "$lines" "src/jit.c"; st_is 0 $? "str_has_line finds a whole line"
-    str_has_line "$lines" "src/jit";   st_is 1 $? "str_has_line rejects a PREFIX of a line"
-    str_has_line "$lines" "vm.c";      st_is 1 $? "str_has_line rejects a SUFFIX of a line"
-
-    str_has_word " abs ceil " "ceil";  st_is 0 $? "str_has_word finds a name in a space list"
-    str_has_word " abs ceil " "ceil2"; st_is 1 $? "str_has_word rejects a longer name"
-    str_has_word " abs ceil " "eil";   st_is 1 $? "str_has_word rejects an infix"
-
-    # (2) and (4): ONE input, both forms, same needle.
-    # The capture has the SHAPE a real one has — the guard message on a
-    # complete first line, more text behind it — because both halves matter.
-    # The newline is what lets a line-oriented reader decide early (with no
-    # newline anywhere, grep buffers the whole input and the race disappears,
-    # which is how the first draft of this check passed at 4 MB); the bulk is
-    # what makes the writer block. Grow until the race shows, so nothing here
-    # depends on knowing a platform's pipe-buffer size.
-    _chunk='xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-'
-    pad_len=262144; racy=0; big=""
-    while :; do
-        _pad="$_chunk"
-        while [ "${#_pad}" -lt "$pad_len" ]; do _pad="$_pad$_pad"; done
-        big="Error line 1: abs: expected a number
-$_pad"
-        printf '%s' "$big" | grep -qF "abs: expected"
-        racy=$?
-        [ "$racy" != "0" ] && break
-        [ "$pad_len" -ge 8388608 ] && break
-        pad_len=$((pad_len * 4))
-    done
-    str_has "$big" "abs: expected"
-    st_is 0 $? "str_has finds the needle in a ${#big}-byte capture"
-    if [ "$racy" != "0" ]; then
-        st_ok "the construct this replaced reports NO-MATCH (rc=$racy) on that same capture — #1120 reproduced"
-    else
-        st_bad "\`printf | grep -q\` still matched a ${#big}-byte capture, so this selftest
-        is no longer demonstrating the #1120 race. Raise the ceiling above this
-        platform's pipe-buffer size (or its reader stopped exiting early). The
-        shell matchers above are required either way — do NOT bring the
-        pipeline back on the strength of this line."
-    fi
-
-    # (3) the battery must be able to fail: a broken matcher must not pass it.
-    str_has_broken() { case "$1" in "$2"*) return 0 ;; esac; return 1 ; }
-    if str_has_broken "$hay" "abs: expected"; then
-        st_bad "a prefix-only matcher passed the positive case — the battery does not discriminate"
-    else
-        st_ok "a deliberately broken matcher fails this battery (the battery discriminates)"
-    fi
-
-    # Vacuity: a selftest that measured nothing is not a pass.
-    if [ "$st_n" -lt 11 ]; then
-        echo "  VACUOUS: only $st_n checks ran — the selftest itself broke"
-        st_fail=$((st_fail + 1))
-    fi
-    echo "  checks=$st_n failed=$st_fail"
-    verdict_printed=1
-    [ "$st_fail" = "0" ] && { echo "OK"; exit 0; }
-    echo "FAIL"; exit 1
-fi
-
-# ------------------------------------------------------ evidence for next time
-# #1120 stayed unnamed for a day because a red verdict carried 70 truncated
-# characters of the capture it disagreed with, and the failing run's own bytes
-# were gone by the time anyone read the log. Any run that finds SOMETHING now
-# writes the whole capture, its exit status, the pattern that was matched
-# against, and — the line that names a harness bug on sight — whether the
-# pattern is in those bytes after all. A green run writes nothing and leaves
-# no directory behind. The path carries the PID, so two suites in two
-# worktrees cannot land in the same place.
-EV_DIR="${EIGS_DIFF_EVIDENCE:-${TMPDIR:-/tmp}/eigs-strictdiff-evidence.$$}"
-ev_n=0
-record_evidence() {   # <kind> <name> <pattern> <capture: "rc\nbytes">
-    mkdir -p "$EV_DIR" 2>/dev/null || return 0
-    ev_n=$((ev_n + 1))
-    local safe="${2//[^A-Za-z0-9_.-]/_}" file _ev_why
-    file="$(printf '%s/%03d-%s-%s.txt' "$EV_DIR" "$ev_n" "$1" "$safe")"
-    {
-        printf 'kind:     %s\n' "$1"
-        printf 'name:     %s\n' "$2"
-        printf 'pattern:  %s\n' "$3"
-        printf 'exit:     %s\n' "${4%%$'\n'*}"
-        _ev_why="$(run_did_not_measure "${4%%$'\n'*}")"
-        if [ -n "$_ev_why" ]; then
-            printf 'status:   %s\n' "$_ev_why"
-            printf '          (a shell reports a signalled child and an exit(128+N) as\n'
-            printf '           the same number; the probe programs never call exit and\n'
-            printf '           the runtime exits 0/1/2, so this reads as a signal.)\n'
-        else
-            printf 'status:   ordinary exit — the process ran to completion\n'
-        fi
-        printf 'bytes:    %s (whole capture, including the exit-status line)\n' "${#4}"
-        if [ -n "$3" ] && str_has "$4" "$3"; then
-            printf 'recheck:  PRESENT — the pattern IS in the bytes below.\n'
-            if [ "$1" = "misattributed" ]; then
-                printf '          This verdict and its own evidence DISAGREE, so it is a\n'
-                printf '          HARNESS bug, not a finding about a guard. See #1120: a\n'
-                printf '          matcher that goes through a pipe under `set -o pipefail`\n'
-                printf '          reports no-match whenever the reader exits first.\n'
-            else
-                printf '          (Consistent with this verdict: the guard did name itself\n'
-                printf '           before whatever is recorded above happened to the run.)\n'
-            fi
-        elif [ -n "$3" ]; then
-            printf 'recheck:  ABSENT — the pattern is genuinely not in the bytes below.\n'
-        fi
-        printf -- '--- raw capture, verbatim (first line is the exit status) ---\n'
-        printf '%s\n' "$4"
-    } > "$file" 2>/dev/null
+run_capture() {   # <binary> <strict-or-dash> <file> -> "rc\noutput"
+    local bin="$1" strict="$2" f="$3" out rc
+    if [ "$strict" = "-" ]; then out="$("$bin" "$f" 2>&1)"; rc=$?
+    else out="$(EIGS_STRICT="$strict" "$bin" "$f" 2>&1)"; rc=$?; fi
+    printf '%s\n%s' "$rc" "$out"
 }
+clip() { printf '%s' "$1" | tr '\n' ' ' | cut -c1-"${2:-80}"; }
 
-# rc is initialised ONCE, here, before any check can run. It used to be
-# assigned rc=0 down in the summary block — AFTER the cross-check section had
-# already set rc=1 — so a STALE UNPROBEABLE WAIVER finding printed and the
-# script still exited 0. A check that fires and returns success is the exact
-# false green this repo keeps a hook for, and it was living in the tool built
-# to prevent them. Do not reset rc anywhere below.
-rc=0
-n_probe=0 n_ident=0 n_differ=0 n_raise=0 n_silent=0
-n_pin=0 n_pin_ok=0 n_pin_broke=0 n_misattr=0
-n_unrun=0 unrun_list=""
-differ_list="" silent_list="" pin_list="" misattr_list=""
-n_skipped=0 skipped_list=""
-
-# Which guarded builtins live in a VARIANT-ONLY translation unit? #1007 put
-# the first ARG_GUARDs in ext_gfx.c, which `make` compiles out entirely, so a
-# probe for one of them in a default build fails as "undefined variable" — a
-# silent guard for a reason that has nothing to do with the guard.
-#
-# The population is derived from the source (same extractor as the
-# cross-check), and PRESENCE is decided by RUNNING the name, not by reading
-# `--api`. `--api` reports the documented surface, not the linked one: a
-# release binary lists `extension gfx gfx_open` while `gfx_open` is an
-# undefined variable at runtime (measured 2026-08-20). Executing costs one
-# process per variant-only name — three today — and cannot disagree with the
-# build.
-# WHICH FILES ARE VARIANT-ONLY? Ask the build system, not a hand-list. A file
-# the RELEASE variant does not compile is variant-only by definition, and
-# `make print-SRC_V_release` is the Makefile's own post-expansion answer.
-#
-# The first version hard-coded /ext_(gfx|http|db|net)\.c$/ and therefore
-# missed `model_infer.c`, which is just as variant-only (EIGENSCRIPT_EXT_MODEL)
-# — `eigen_eval_loss` reported as "raised by the wrong guard: undefined
-# variable" in a default build. A sibling list of file names drifts from the
-# Makefile exactly the way §1 of mechanical-gates describes.
-# The guarded-name extractor, shared by the variant-only scan and the
-# cross-check so the two cannot disagree about what a guard looks like.
-# Every strict spelling counts: ARG_GUARD and its taped forms, the coercion
-# shape STRICT_REQUIRE (#971 Phase B — sites the classifier cannot see), the
-# domain shape STRICT_DOMAIN and the NaN sources num_guard_named (#971
-# NaN enumeration). The first quoted string in the call is the name.
 extract_guard_names() {
     awk '
     /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named)\(/ { acc = ""; collecting = 1 }
@@ -819,54 +388,21 @@ extract_guard_names() {
     ' "$@"
 }
 
-release_srcs="$(make print-SRC_V_release 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u)"
-variant_only=""
-absent_here=""
+rc=0
+n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0
+n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
+differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 
-# PRESENCE IS PROBED ONCE PER FILE, NOT ONCE PER NAME, and the probe carries
-# a SENTINEL (#1007). Both halves were bought on the same run.
-#
-# Per file: every builtin in a translation unit is registered together (one
-# `register_*_builtins` seam behind one -D flag), so a name's presence is a
-# property of its FILE. #1007 took ext_gfx.c's guarded-name count from 3 to
-# 33, which turned this loop from 3 interpreter launches into 34 — on a
-# loaded box, under ASan, 34 chances for one launch to come back wrong.
-#
-# Sentinel: without it, "the output does not say 'undefined variable'" was
-# read as "the name is present", so a launch that produced NO output at all
-# — killed, out of memory, a sanitizer abort — silently classified every
-# name in the file as present, its probe then failed with "undefined
-# variable", and the tool reported `misattributed` for a reason that has
-# nothing to do with the code under test. Observed once in a full ASan suite
-# run (2026-09-07) and green on the diagnostic re-run, which is exactly the
-# shape of a flake nobody can act on. An exit status can miss that shape (a
-# child killed after its parent has already read a clean 0), so BOTH tests
-# run and either one puts the file in the DID NOT RUN bucket below, which is
-# red and names the environment rather than a guard.
+release_srcs="$(make print-SRC_V_release 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u)"
+absent_here=""
 if [ -n "$release_srcs" ]; then
     for f in src/*.c; do
         str_has_line "$release_srcs" "$f" && continue
-        # The slash forms ("sqrt/exp/log/negative") are trimmed to the first
-        # component here, because that is the spelling a program can call and
-        # the spelling probe_builtin_present compares against.
         f_names="$(extract_guard_names "$f" | sed 's,/.*,,' | sed '/^$/d' | sort -u)"
         [ -z "$f_names" ] && continue
-        variant_only="$variant_only
-$f_names"
         rep="$(printf '%s\n' "$f_names" | head -1)"
         printf 'print of "eigs-probe-ran"\nprint of %s\n' "$rep" > "$TMP/present.eigs"
-        # Capture, THEN match. Under `set -o pipefail` a pipeline reports the
-        # rightmost nonzero status, and the probe program exits 1 by design
-        # when the name is undefined — so `prog | grep -q` returned 1 on a
-        # successful match and every absent builtin read as present.
         _present_out="$("$NEW" "$TMP/present.eigs" 2>&1)"; _present_rc=$?
-        # A presence check that did not RUN is not a "present" answer, and it
-        # is not an "absent" one either. Assuming present sends every probe in
-        # the file to a guard that is not there, where it dies "undefined
-        # variable" and is scored RAISED BY THE WRONG GUARD — an environment
-        # fact charged to a guard, which is the #1120 shape arriving by a
-        # second road. Same bucket as an unrun probe: named, red, and not a
-        # finding about the code.
         _why="$(run_did_not_measure "$_present_rc")"
         if [ -z "$_why" ] && ! str_has "$_present_out" "eigs-probe-ran"; then
             _why="the probe printed no sentinel, so it never reached its first statement"
@@ -875,24 +411,15 @@ $f_names"
             n_unrun=$((n_unrun + 1))
             unrun_list="$unrun_list
     presence check for $f (representative: $rep) — $_why"
-            record_evidence unrun "presence:$f" "" "$_present_rc
-$_present_out"
             continue
         fi
         if str_has "$_present_out" "undefined variable"; then
             absent_here="$absent_here $(printf '%s\n' "$f_names" | tr '\n' ' ')"
         fi
     done
-    variant_only="$(printf '%s\n' "$variant_only" | sed '/^$/d' | sort -u)"
 else
-    # No answer from make: fall back to running every probe rather than
-    # silently skipping the whole variant-only set (a skip that cannot be
-    # justified is worse than a probe that fails loudly).
     echo "  NOTE: 'make print-SRC_V_release' gave nothing — variant-only detection off"
 fi
-
-# A probe is runnable unless its builtin is a variant-only one this build
-# does not contain.
 probe_builtin_present() {
     local first="${1%%/*}"
     case " $absent_here " in *" $first "*) return 1 ;; esac
@@ -902,156 +429,65 @@ probe_builtin_present() {
 while IFS='|' read -r who prog expect; do
     [ -z "${who:-}" ] && continue
     expect="${expect:-$who: expected}"
-    # A probe for a builtin this build does not contain would "not raise" for
-    # the uninteresting reason that the name is undefined, which reads as a
-    # guard that went silent. Skip it, and COUNT the skip — a probe that
-    # quietly stops running is the vacuity this tool exists to prevent.
     if ! probe_builtin_present "$who"; then
         n_skipped=$((n_skipped + 1))
         skipped_list="$skipped_list $who"
         continue
     fi
     n_probe=$((n_probe + 1))
-    f="$TMP/p.eigs"; printf '%b\n' "$prog" > "$f"
-
+    printf '%b\n' "$prog" > "$TMP/p.eigs"
     if [ -n "$BASE" ]; then
-        a="$(run_capture "$BASE" - "$f")"
-        b="$(run_capture "$NEW" - "$f")"
-        if [ "$a" = "$b" ]; then
-            n_ident=$((n_ident + 1))
+        a="$(run_capture "$BASE" - "$TMP/p.eigs")"
+        b="$(run_capture "$NEW" - "$TMP/p.eigs")"
+        if [ "$a" = "$b" ]; then n_ident=$((n_ident + 1))
         else
             n_differ=$((n_differ + 1))
             differ_list="$differ_list
     $who
-      baseline: $(printf '%s' "$a" | tr '\n' ' ' | cut -c1-90)
-      new     : $(printf '%s' "$b" | tr '\n' ' ' | cut -c1-90)"
+      baseline: $(clip "$a" 90)
+      new     : $(clip "$b" 90)"
         fi
     fi
-
-    s="$(run_capture "$NEW" 1 "$f")"
+    s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     s_rc="${s%%$'\n'*}"
     why="$(run_did_not_measure "$s_rc")"
     if [ -n "$why" ]; then
         n_unrun=$((n_unrun + 1))
-        record_evidence unrun "$who" "$expect" "$s"
         unrun_list="$unrun_list
-    $who — $why: $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-70)"
+    $who — $why: $(clip "$s" 70)"
     elif [ "$s_rc" != "0" ]; then
-        # A nonzero exit is NOT enough. A probe that raises somewhere else
-        # entirely — an arity error before the type guard, an unconditional
-        # rt_error higher up — scores as coverage while testing nothing. So
-        # the message must NAME this guard: the builtin, and the word the
-        # ARG_GUARD macro emits. (For the shared tensor helpers, `who` is a
-        # slash-joined set like "sqrt/exp/log/negative", so the first
-        # component is matched.)
-        # Match "<name>: expected", the exact shape ARG_GUARD emits. Bare
-        # `grep -F "$name"` was VACUOUS: the runtime echoes the offending
-        # source line under the error, and that line always contains the
-        # builtin being called — so a probe rewritten to call something else
-        # entirely still matched. Demonstrated by a blind review: probe `abs`
-        # rewritten as `cos of "abs"` scored as coverage.
-        # The FULL who, not its first component: the shared tensor helpers
-        # are registered as "sqrt/exp/log/negative" and emit that verbatim,
-        # so trimming at the slash made the matcher miss its own message.
-        # str_has, never a pipeline. This was `printf ... | grep -qF`, and
-        # under `set -o pipefail` that is the #1120 race: grep -q exits on its
-        # first match and closes the pipe, the still-writing printf takes
-        # SIGPIPE and exits 141, pipefail reports 141 — no match — while grep
-        # itself returned 0. The probe was then scored MISATTRIBUTED with a
-        # diagnostic quoting the message the matcher had just matched.
-        # Measured with the pipe form restored here: 18 red runs in 186 under
-        # load, over 18 different probes. Nothing about this decision may go
-        # through a pipe; see the matcher block near the top, and --selftest,
-        # which reproduces the race deterministically.
-        if str_has "$s" "$expect"; then
-            n_raise=$((n_raise + 1))
+        if str_has "$s" "$expect"; then n_raise=$((n_raise + 1))
         else
             n_misattr=$((n_misattr + 1))
-            record_evidence misattributed "$who" "$expect" "$s"
             misattr_list="$misattr_list
-    $who — raised, but not by its own guard: $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-70)"
+    $who — raised, but not by its own guard: $(clip "$s" 70)"
         fi
     else
         n_silent=$((n_silent + 1))
-        record_evidence silent "$who" "$expect" "$s"
         silent_list="$silent_list
-    $who — still silent under EIGS_STRICT=1: $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-70)"
+    $who — still silent under EIGS_STRICT=1: $(clip "$s" 70)"
     fi
 done <<<"$PROBES"
 
 while IFS='|' read -r label prog; do
     [ -z "${label:-}" ] && continue
     n_pin=$((n_pin + 1))
-    f="$TMP/pin.eigs"; printf '%s\n' "$prog" > "$f"
-    s="$(run_capture "$NEW" 1 "$f")"
+    printf '%s\n' "$prog" > "$TMP/pin.eigs"
+    s="$(run_capture "$NEW" 1 "$TMP/pin.eigs")"
     why="$(run_did_not_measure "${s%%$'\n'*}")"
     if [ -n "$why" ]; then
         n_unrun=$((n_unrun + 1))
-        record_evidence unrun "pin:$label" "" "$s"
         unrun_list="$unrun_list
     pin: $label — $why"
-    elif [ "${s%%$'\n'*}" = "0" ]; then
-        n_pin_ok=$((n_pin_ok + 1))
+    elif [ "${s%%$'\n'*}" = "0" ]; then n_pin_ok=$((n_pin_ok + 1))
     else
         n_pin_broke=$((n_pin_broke + 1))
-        record_evidence pin-broken "$label" "" "$s"
         pin_list="$pin_list
-    $label — strict RAISED on a documented answer: $(printf '%s' "$s" | tr '\n' ' ' | cut -c1-70)"
+    $label — strict RAISED on a documented answer: $(clip "$s" 70)"
     fi
 done <<<"$PINS"
 
-# ------------------------------------------------------------------- sweep
-# A DISCOVERY instrument, not a gate — and it exists because of a structural
-# hole a blind review found in the cross-check below.
-#
-# That cross-check derives its expected probe set from the names appearing in
-# an `ARG_GUARD(` call. So it can only ever measure builtins that were ALREADY
-# converted: a builtin that launders a wrong-typed argument and was never
-# touched is invisible to it BY CONSTRUCTION. That is the sibling-list disease
-# one level up — the check shares the very assumption that is drifting.
-#
-# It cost real coverage. `sum of "hello"` was 0 under strict while
-# `sqrt of "hello"` raised — same file, same commit — and nothing here could
-# say so, because `sum` had no guard and therefore no probe.
-#
-# This sweep asks the opposite question: hand EVERY builtin a wrong-typed
-# argument and list the ones that answer QUIETLY under strict. Its output is a
-# list for a human to read, not a pass/fail — most entries are legitimate
-# (a builtin that genuinely takes a string, a documented coercion). It is the
-# instrument that finds candidates; classification still happens by reading.
-#
-# Side-effecting and blocking builtins are skipped by name, listed here so the
-# exclusion is visible rather than implied.
-if [ "${1:-}" = "--sweep" ] || [ "${2:-}" = "--sweep" ]; then
-    SKIP='^(exit|throw|usleep|sleep|task_sleep|screen_end|screen_clear|screen_render|input|read_line|raw_key|http_serve|serve|listen|gfx_.*|audio_.*|spawn|task_spawn|task_yield|task_recv|proc_.*|exec|system|rm|rmdir|remove_file|rename|chdir|mkdir|write.*|store_.*|db_.*|stream_.*|tensor_save|flush|assert)$'
-    echo "== wrong-typed-argument sweep (discovery, not a gate) =="
-    quiet=0; loud=0; skipped=0
-    for b in $("$NEW" --api --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print("\n".join(d.get("builtins",[])))'); do
-        # bash's own regex match: no fork, no pipe. $SKIP is deliberately
-        # unquoted here — quoting it inside [[ =~ ]] makes it a literal.
-        if [[ "$b" =~ $SKIP ]]; then skipped=$((skipped+1)); continue; fi
-        # A DICT is the probe value: it is a wrong argument for very nearly
-        # every builtin in the surface, where a string is the RIGHT argument
-        # for dozens (sha256, read_text, file_exists...) and those all read as
-        # false "quiet" rows. Picking the probe type is most of this
-        # instrument's precision.
-        printf 'print of (%s of ({"eigs_sweep_probe": 1}))\n' "$b" > "$TMP/sw.eigs"
-        out="$(EIGS_STRICT=1 timeout 5 "$NEW" "$TMP/sw.eigs" 2>&1)"; src=$?
-        if [ "$src" = "0" ]; then
-            quiet=$((quiet+1))
-            printf '  QUIET  %-24s -> %s\n' "$b" "$(printf '%s' "$out" | head -1 | cut -c1-40)"
-        else
-            loud=$((loud+1))
-        fi
-    done
-    echo "  quiet=$quiet loud=$loud skipped=$skipped (skipped = side-effecting/blocking, see SKIP above)"
-    echo "  A QUIET row is a CANDIDATE, not a defect: read the function before acting."
-    verdict_printed=1   # the sweep's verdict IS its listing; it is not a gate
-    exit 0
-fi
-
-# --------------------------------------------------- valid-input differential
-n_valid=0 n_valid_same=0 valid_list=""
+n_valid=0; n_valid_bad=0; valid_list=""
 if [ -n "$BASE" ]; then
     while IFS= read -r prog; do
         [ -z "$prog" ] && continue
@@ -1059,114 +495,416 @@ if [ -n "$BASE" ]; then
         printf '%b\n' "$prog" > "$TMP/v.eigs"
         for mode in - 1; do
             a="$(run_capture "$BASE" "$mode" "$TMP/v.eigs")"
-            b="$(run_capture "$NEW"  "$mode" "$TMP/v.eigs")"
+            b="$(run_capture "$NEW" "$mode" "$TMP/v.eigs")"
             if [ "$a" != "$b" ]; then
+                n_valid_bad=$((n_valid_bad + 1))
                 valid_list="$valid_list
     [strict=${mode}] $prog
-      baseline: $(printf '%s' "$a" | tr '\n' ' ' | cut -c1-80)
-      new     : $(printf '%s' "$b" | tr '\n' ' ' | cut -c1-80)"
+      baseline: $(clip "$a" 80)
+      new     : $(clip "$b" 80)"
             fi
         done
-        [ -z "$valid_list" ] && n_valid_same=$((n_valid_same + 1))
     done <<<"$VALID"
 fi
 
-# ------------------------------------------------ cross-check the probe list
-# The guarded-name set is DERIVED from the source. A guard whose builtin has
-# no probe is unmeasured, and an unmeasured guard is indistinguishable from
-# one that does not fire.
-# The name extractor JOINS continuation lines. Its first version read one
-# physical line, so a guard wrapped across two — condition on the first line,
-# strings on the second, which is how the long ones are formatted — yielded no
-# name at all and vanished from the expected-probe set. That is precisely the
-# "guarded but unprobed" hole this cross-check exists to detect, living inside
-# the cross-check. Caught when three freshly added guards reported as STALE
-# PROBES rather than as newly covered ones.
 guarded="$(extract_guard_names src/*.c | sed '/^$/d' | sort -u)"
 probed="$(printf '%s\n' "$PROBES" | cut -d'|' -f1 | sed '/^$/d' | sort -u)"
-
-# Names absent from THIS build (computed above by execution) are excused for
-# this run only — never by a waiver anyone maintains.
-# The `grep -vxF` below is a SET DIFFERENCE, not a verdict, and it is the
-# exception the #1120 rule allows: `-v` has no early exit, so it consumes its
-# input to EOF and cannot SIGPIPE the writer. The same is true of the `grep -c`
-# in the summary. Anything that decides pass/fail uses str_has* instead.
+n_guarded=$(printf '%s\n' "$guarded" | sed '/^$/d' | wc -l | tr -d ' ')
 missing="$(comm -23 <(printf '%s\n' "$guarded") <(printf '%s\n' "$probed") \
-    | grep -vxF -f <(printf '%s\n' $UNPROBEABLE $absent_here) || true)"
+    | grep -vxF -f <(printf '%s\n' $absent_here) || true)"
 stale="$(comm -13 <(printf '%s\n' "$guarded") <(printf '%s\n' "$probed"))"
-# A waived-as-unprobeable name that is no longer guarded at all is a stale
-# waiver: the guard it excused is gone.
-for u in $UNPROBEABLE; do
-    str_has_line "$guarded" "$u" || {
-        echo "  STALE UNPROBEABLE WAIVER: $u is waived but carries no guard"; rc=1; }
-done
 
-echo "== #971 strict differential =="
-echo "  probes=$n_probe pins=$n_pin"
+echo "== strict differential =="
+echo "  probes=$n_probe pins=$n_pin guarded-names=$n_guarded"
 if [ "$n_skipped" -gt 0 ]; then
-    # Not a failure: these guards are compiled out of THIS build. Named, so a
-    # reader can see which are unmeasured here and run the variant build.
     echo "  probes skipped (builtin not in this build): $n_skipped —$skipped_list"
 fi
-if [ -n "$BASE" ]; then
-    echo "  identical-when-off: $n_ident   differing: $n_differ"
-else
-    echo "  identical-when-off: SKIPPED (no baseline binary given)"
-fi
+if [ -n "$BASE" ]; then echo "  identical-when-off: $n_ident   differing: $n_differ"
+else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
 echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_misattr"
 [ "$n_unrun" -gt 0 ] && echo "  probes that did not run: $n_unrun"
 echo "  answer-pins held: $n_pin_ok   broken: $n_pin_broke"
 if [ -n "$BASE" ]; then
-    echo "  valid-input rows unchanged in BOTH modes: $((n_valid * 2 - $(printf '%s' "$valid_list" | grep -c '\[strict=' || true))) / $((n_valid * 2))"
+    echo "  valid-input rows unchanged in BOTH modes: $((n_valid * 2 - n_valid_bad)) / $((n_valid * 2))"
 fi
-
-# NOTE: rc is NOT reset here. It is initialised once above, because the
-# cross-check section runs BEFORE this block and can already have set it.
 [ -n "$differ_list" ] && { echo "  DIFFERING (the default path was NOT preserved):$differ_list"; rc=1; }
 [ -n "$silent_list" ] && { echo "  SILENT UNDER STRICT:$silent_list"; rc=1; }
 [ -n "$misattr_list" ] && { echo "  RAISED BY THE WRONG GUARD (probe does not reach its target):$misattr_list"; rc=1; }
-# NOT a finding about a guard, and said in those words so the reader goes to the
-# machine and not to the probe table. Still red: an unmeasured probe leaves the
-# invariant unproven, and this tool does not go green on unmeasured population.
-[ -n "$unrun_list" ]  && { echo "  DID NOT RUN (the environment, not a guard — nothing is retried):$unrun_list"; rc=1; }
-[ -n "$valid_list" ]  && { echo "  VALID INPUT CHANGED (a guard is too broad, or a split reordered a real branch):$valid_list"; rc=1; }
-[ -n "$pin_list" ]    && { echo "  PIN BROKEN (the reform overshot into a documented answer):$pin_list"; rc=1; }
-[ -n "$missing" ]     && { echo "  GUARDED BUT UNPROBED:"; printf '    %s\n' $missing; rc=1; }
-[ -n "$stale" ]       && { echo "  PROBED BUT NO LONGER GUARDED (stale probe):"; printf '    %s\n' $stale; rc=1; }
-
-# Vacuity: this script cannot be green having measured nothing.
+[ -n "$unrun_list" ] && { echo "  DID NOT RUN (the environment, not a guard — nothing is retried):$unrun_list"; rc=1; }
+[ -n "$valid_list" ] && { echo "  VALID INPUT CHANGED:$valid_list"; rc=1; }
+[ -n "$pin_list" ] && { echo "  PIN BROKEN (strict raised on a documented answer):$pin_list"; rc=1; }
+[ -n "$missing" ] && { echo "  GUARDED BUT UNPROBED:"; printf '    %s\n' $missing; rc=1; }
+[ -n "$stale" ] && { echo "  PROBED BUT NO LONGER GUARDED (stale probe):"; printf '    %s\n' $stale; rc=1; }
 if [ "$n_probe" -lt 55 ] || [ "$n_pin" -lt 14 ] || { [ -n "$BASE" ] && [ "$n_valid" -lt 25 ]; }; then
-    echo "  VACUOUS: probes=$n_probe pins=$n_pin valid=$n_valid — below a floor; the tables"
-    echo "           or the reader broke."
-    rc=1
-fi
-if [ -z "$BASE" ] && [ "$NO_BASELINE" = 0 ]; then
-    echo "  INCOMPLETE: no baseline binary, so the load-bearing half of this"
-    echo "              differential did not run. Not a pass. (Pass"
-    echo "              --no-baseline to accept that deliberately.)"
+    echo "  VACUOUS: probes=$n_probe pins=$n_pin valid=$n_valid — below a floor"
     rc=1
 fi
 if [ "$NO_BASELINE" = 1 ]; then
     echo "  NOTE: identical-when-off was NOT measured (no baseline binary)."
-    echo "        Before landing a change to any guard, run this with a build"
-    echo "        of the parent commit — that half is the safety claim."
 fi
 
-# Did the subject hold still? Checked LAST, so it speaks about the whole run.
-# A changed binary is not a finding about a guard, and it invalidates every row
-# above it — so it is loud, it is red, and it says which reading to take.
+# ------------------------------------------------ gfx capability
+printf 'print of (gfx_text_width of ["m", 1])\n' > "$TMP/gfxprobe.eigs"
+gfx_probe_out="$("$NEW" "$TMP/gfxprobe.eigs" 2>&1 || true)"
+case "$gfx_probe_out" in
+    *"undefined variable"*)
+        echo "SKIP: not a gfx build"
+        gfx_on=0 ;;
+    *) gfx_on=1 ;;
+esac
+
+if [ "$gfx_on" = 1 ]; then
+# name|shape-id|reason. A pair that raises is stale; a pair nothing probes is dead.
+ALLOW=$(cat <<'EOF'
+gfx_text_height|scalar|the scale slot is documented as `gfx_text_height of 2`, a bare number
+gfx_text_height|list2|[scale] with a numeric first slot is the documented list form; the surplus slot is #989
+gfx_text_width|string|`gfx_text_width of "hello"` is the documented one-argument form
+audio_pause|scalar|`audio_pause of 1` is the documented flag form
+audio_stop|scalar|`audio_stop of 1` is the documented channel form
+audio_music_volume|scalar|`audio_music_volume of 96` is the documented form
+audio_music_volume|list2|[volume] with a numeric first slot is the documented list form; the surplus slot is #989
+gfx_delay|scalar|`gfx_delay of 16` is the documented one-argument form
+gfx_title|string|`gfx_title of "name"` is the documented one-argument form
+audio_play|list2|a 2-element numeric list IS a sample list -- the valid call
+audio_stream_push|list2|a 2-element numeric list IS a sample list -- the valid call
+EOF
+)
+REQUIRED_NAMES="audio_capture_open audio_envelope audio_gain audio_mix audio_music_play
+audio_music_volume audio_noise audio_open audio_pause audio_play
+audio_play_loop audio_saw audio_sine audio_square audio_stop
+audio_stream_open audio_stream_push audio_sweep audio_volume gfx_circle
+gfx_clear gfx_clip gfx_delay gfx_fb gfx_line
+gfx_open gfx_point gfx_read gfx_rect gfx_rrect
+gfx_text gfx_text_height gfx_text_width gfx_title ppu_render_frame"
+POP="$(tr '\n' ' ' < src/ext_gfx.c \
+  | grep -oE '(ARG_GUARD|ARG_GUARD_TAPED|ARG_GUARD_PRETAKE|STRICT_REQUIRE)\([^;]*;' \
+  | grep -oE '"(gfx|audio|ppu)_[a-z_]+", *"[^"]*"' \
+  | sed 's/", *"/|/; s/^"//; s/"$//')"
+NAMES="$(printf '%s\n' "$POP" | cut -d'|' -f1 | sort -u)"
+n_names=$(printf '%s\n' "$NAMES" | sed '/^$/d' | wc -l | tr -d ' ')
+name_in_population() {
+    case "
+$NAMES
+" in *"
+$1
+"*) return 0 ;; esac
+    return 1
+}
+MISSING=""
+for req in $REQUIRED_NAMES; do
+    name_in_population "$req" || MISSING="$MISSING $req"
+done
+arity_of() {
+    printf '%s\n' "$POP" | awk -F'|' -v n="$1" '
+        $1 == n {
+            w = $2
+            if (match(w, /\[[^]]*\]/)) {
+                g = substr(w, RSTART + 1, RLENGTH - 2)
+                k = 1
+                for (i = 1; i <= length(g); i++) if (substr(g, i, 1) == ",") k++
+                if (best == 0 || k < best) best = k
+            }
+        }
+        END { print best + 0 }'
+}
+shape_text() {
+    case "$1" in
+        scalar) echo '42' ;;
+        string) echo '"zzz"' ;;
+        dict)   echo '{"k": 1}' ;;
+        list2)  echo '[1, 2]' ;;
+        short)  k=$(( $2 - 1 ))
+                if [ "$k" -le 0 ]; then echo ''
+                elif [ "$k" -eq 1 ]; then echo '([1])'
+                else printf '['; i=1; while [ "$i" -le "$k" ]; do
+                         [ "$i" -gt 1 ] && printf ', '; printf '%d' "$i"; i=$((i + 1)); done; printf ']\n'
+                fi ;;
+    esac
+}
+sweep_verdict() {   # $1 name, $2 argument text
+    printf 'ignore is %s of %s\n' "$1" "$2" > "$TMP/p.eigs"
+    tries=0
+    while [ "$tries" -lt 3 ]; do
+        tries=$((tries + 1))
+        out="$(EIGS_STRICT=1 "$NEW" "$TMP/p.eigs" 2>&1)"; src=$?
+        printf '%s\n' "$out" > "$TMP/last.out"
+        if [ "$src" -eq 0 ]; then echo SILENT; return; fi
+        case "$out" in
+            "Error line 1: $1:"*|*"
+Error line 1: $1:"*) echo RAISED-OWN; return ;;
+        esac
+        case "$out" in
+            "Error line "*|*"
+Error line "*) echo RAISED-OTHER; return ;;
+        esac
+        echo "retry: $1 of $2 (exit $src, no runtime error printed)" >> "$TMP/retries"
+    done
+    echo UNRUN
+}
+
+echo "== container-shape sweep =="
+ALLOW_NL="
+$ALLOW"
+PROBED_PAIRS=""
+n_rows=0; n_sraised=0; n_ssilent=0; n_sother=0; n_allowed=0; n_sunrun=0
+ssilent_list=""; sother_list=""
+for name in $NAMES; do
+    ar=$(arity_of "$name")
+    case "$ar" in
+        ''|*[!0-9]*) echo "  FAIL: could not derive an arity for $name (got '$ar')"; rc=1; continue ;;
+    esac
+    if [ "$ar" -ge 2 ]; then shapes="short scalar string dict"
+    else shapes="scalar string dict list2"; fi
+    for sh in $shapes; do
+        txt="$(shape_text "$sh" "$ar")"
+        [ -z "$txt" ] && continue
+        n_rows=$((n_rows + 1))
+        PROBED_PAIRS="$PROBED_PAIRS
+$name|$sh"
+        v="$(sweep_verdict "$name" "$txt")"
+        allowed=""
+        case "$ALLOW_NL" in
+            *"
+$name|$sh|"*) rest="${ALLOW_NL#*"
+$name|$sh|"}"; allowed="${rest%%
+*}" ;;
+        esac
+        case "$v" in
+            RAISED-OWN)
+                n_sraised=$((n_sraised + 1))
+                if [ -n "$allowed" ]; then
+                    sother_list="$sother_list
+    STALE ALLOWLIST $name|$sh — it raises now; delete the entry"
+                    rc=1
+                fi ;;
+            RAISED-OTHER)
+                n_sother=$((n_sother + 1))
+                sother_list="$sother_list
+    MISATTRIBUTED $name of $txt — raised, but not from $name's own guard"
+                rc=1 ;;
+            UNRUN)
+                n_sunrun=$((n_sunrun + 1))
+                sother_list="$sother_list
+    DID NOT RUN $name of $txt — nonzero exit, no runtime error, 3 attempts"
+                rc=1 ;;
+            SILENT)
+                if [ -n "$allowed" ]; then n_allowed=$((n_allowed + 1))
+                else
+                    n_ssilent=$((n_ssilent + 1))
+                    ssilent_list="$ssilent_list
+    SILENT UNDER STRICT: $name of $txt"
+                    rc=1
+                fi ;;
+        esac
+    done
+done
+echo "  guarded names=$n_names  rows=$n_rows"
+echo "  raises-under-strict: $n_sraised   silent: $n_ssilent   misattributed: $n_sother   did-not-run: $n_sunrun"
+echo "  quiet on purpose (allowlisted): $n_allowed"
+[ -n "$ssilent_list" ] && echo "$ssilent_list"
+[ -n "$sother_list" ] && echo "$sother_list"
+while IFS= read -r entry; do
+    [ -z "$entry" ] && continue
+    key="${entry%%|*}"; rest="${entry#*|}"; key="$key|${rest%%|*}"
+    case "$PROBED_PAIRS" in
+        *"
+$key"*) ;;
+        *) echo "  DEAD ALLOWLIST $key — no probe ever asks this pair"; rc=1 ;;
+    esac
+done <<EOF
+$ALLOW
+EOF
+if [ -n "$MISSING" ]; then
+    echo "  GUARD REMOVED — pinned builtins no longer carry any guard in src/ext_gfx.c:$MISSING"
+    rc=1
+fi
+if [ "$n_names" -lt 25 ] || [ "$n_rows" -lt 90 ] || [ "$n_sraised" -lt 70 ]; then
+    echo "  VACUOUS: names=$n_names rows=$n_rows raised=$n_sraised — below the floor"
+    rc=1
+fi
+
+# ------------------------------------------------ pixel differential
+printf 'print of (gfx_open of [8, 8, "pixdiff-probe"])\n' > "$TMP/open.eigs"
+NO_RENDERER=0
+if [ "$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)" != "1" ]; then
+    NO_RENDERER=1
+    echo "  NOTE: no renderer — pixel identity is OFF; strict-raise and coverage still run."
+fi
+HEAD='ignore is gfx_open of [32, 32, "pixdiff"]
+ignore is gfx_clear of [0, 0, 0]'
+TAIL='total is 0
+lit is 0
+for py in range of 32:
+    for px in range of 32:
+        c is gfx_read of [px, py]
+        if c != null:
+            total is total + (c[0] * 7 + c[1] * 13 + c[2] * 17) * (px + py * 32 + 1)
+            if c[0] + c[1] + c[2] > 0:
+                lit is lit + 1
+print of f"digest={total} lit={lit}"'
+ROWS=$(cat <<'EOF'
+valid-rect|gfx_rect|-|ignore is gfx_rect of [4, 4, 10, 10, 255, 0, 0]
+valid-rect-alpha|gfx_rect|-|ignore is gfx_rect of [4, 4, 10, 10, 255, 0, 0, 128]
+valid-rrect|gfx_rrect|-|ignore is gfx_rrect of [4, 4, 12, 12, 3, 0, 255, 0]
+valid-circle|gfx_circle|-|ignore is gfx_circle of [16, 16, 7, 0, 0, 255]
+valid-line|gfx_line|-|ignore is gfx_line of [0, 0, 30, 30, 255, 255, 0]
+valid-point|gfx_point|-|ignore is gfx_point of [5, 5, 255, 0, 255]
+valid-clear|gfx_clear|-|ignore is gfx_clear of [10, 20, 30]
+valid-clip|gfx_clip|-|ignore is gfx_clip of [2, 2, 8, 8]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
+valid-clip-null|gfx_clip|-|ignore is gfx_clip of null\nignore is gfx_rect of [0, 0, 8, 8, 255, 0, 0]
+valid-text|gfx_text|-|ignore is gfx_text of [0, 0, "H", 255, 255, 255]
+valid-text-scale|gfx_text|-|ignore is gfx_text of [0, 0, "H", 255, 255, 255, 2]
+valid-fb|gfx_fb|-|fb is buffer of 16\nignore is buf_fill of [fb, 0, 16, 0]\nignore is gfx_fb of [fb, 4, 4, 0, 0, 2]
+valid-read|gfx_read|-|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of [1, 1])
+valid-open-title|gfx_open|-|ignore is gfx_title of "pixdiff2"\nignore is gfx_rect of [1, 1, 3, 3, 9, 9, 9]
+wrong-rect-slot0|gfx_rect|0|ignore is gfx_rect of ["4", 4, 10, 10, 255, 0, 0]
+wrong-rect-slot7|gfx_rect|7|ignore is gfx_rect of [4, 4, 10, 10, 255, 0, 0, "128"]
+wrong-rrect-slot0|gfx_rrect|0|ignore is gfx_rrect of ["4", 4, 12, 12, 3, 0, 255, 0]
+wrong-rrect-slot8|gfx_rrect|8|ignore is gfx_rrect of [4, 4, 12, 12, 3, 0, 255, 0, "128"]
+wrong-circle-slot0|gfx_circle|0|ignore is gfx_circle of ["16", 16, 7, 0, 0, 255]
+wrong-circle-slot6|gfx_circle|6|ignore is gfx_circle of [16, 16, 7, 0, 0, 255, "128"]
+wrong-line-slot0|gfx_line|0|ignore is gfx_line of ["0", 0, 30, 30, 255, 255, 0]
+wrong-line-slot6|gfx_line|6|ignore is gfx_line of [0, 0, 30, 30, 255, 255, "0"]
+wrong-point-slot0|gfx_point|0|ignore is gfx_point of ["5", 5, 255, 0, 255]
+wrong-point-slot4|gfx_point|4|ignore is gfx_point of [5, 5, 255, 0, "255"]
+wrong-clear-slot0|gfx_clear|0|ignore is gfx_clear of ["10", 20, 30]
+wrong-clear-slot2|gfx_clear|2|ignore is gfx_clear of [10, 20, "30"]
+wrong-clip-slot0|gfx_clip|0|ignore is gfx_clip of ["2", 2, 8, 8]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
+wrong-clip-slot3|gfx_clip|3|ignore is gfx_clip of [2, 2, 8, "8"]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
+wrong-text-slot0|gfx_text|0|ignore is gfx_text of ["0", 0, "H", 255, 255, 255]
+wrong-text-slot1|gfx_text|1|ignore is gfx_text of [0, "0", "H", 255, 255, 255]
+wrong-text-slot3|gfx_text|3|ignore is gfx_text of [0, 0, "H", "255", 255, 255]
+wrong-text-slot6|gfx_text|6|ignore is gfx_text of [0, 0, "H", 255, 255, 255, "2"]
+wrong-read-slot0|gfx_read|0|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of ["1", 1])
+wrong-read-slot1|gfx_read|1|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of [1, "1"])
+wrong-fb-slot1|gfx_fb|1|fb is buffer of 16\nignore is buf_fill of [fb, 0, 16, 0]\nignore is gfx_fb of [fb, "4", 4, 0, 0, 2]
+wrong-fb-slot5|gfx_fb|5|fb is buffer of 16\nignore is buf_fill of [fb, 0, 16, 0]\nignore is gfx_fb of [fb, 4, 4, 0, 0, "2"]
+wrong-open-slot0|gfx_open|0|ignore is gfx_open of ["16", 16, "reopen"]\nignore is gfx_rect of [0, 0, 8, 8, 255, 0, 0]
+EOF
+)
+mkprog() { printf '%s\n' "$HEAD" > "$1"; printf '%b\n' "$2" >> "$1"; printf '%s\n' "$TAIL" >> "$1"; }
+n_prow=0; n_pvalid=0; n_pwrong=0; n_pident=0; n_pdiffer=0
+n_praise=0; n_psilent=0; n_pmis=0
+pdiffer=""; psilent=""; pmis=""; pvac=""
+covered_names=""; covered_slots=""
+blank_digest=""
+if [ "$NO_RENDERER" = 0 ]; then
+    mkprog "$TMP/blank.eigs" "ignore is gfx_delay of 0"
+    blank="$(run_capture "$NEW" - "$TMP/blank.eigs")"
+    blank_digest="${blank#*$'\n'}"
+fi
+PIXBASE="$BASE"
+[ "$NO_RENDERER" = 1 ] && PIXBASE=""
+while IFS='|' read -r label who slot prog; do
+    [ -z "${label:-}" ] && continue
+    n_prow=$((n_prow + 1))
+    covered_names="$covered_names $who"
+    [ "$slot" != "-" ] && covered_slots="$covered_slots $who:$slot"
+    mkprog "$TMP/p.eigs" "$prog"
+    b="$(run_capture "$NEW" - "$TMP/p.eigs")"
+    if [ "$slot" = "-" ]; then
+        n_pvalid=$((n_pvalid + 1))
+        if [ "$NO_RENDERER" = 0 ] && [ "$who" != "gfx_read" ] && [ "${b#*$'\n'}" = "$blank_digest" ]; then
+            pvac="$pvac
+    $label — draws nothing: identical to the blank canvas"
+        fi
+        s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
+        if [ "$s" != "$b" ]; then
+            pdiffer="$pdiffer
+    $label [strict vs plain, same binary] — a guard rejects a LEGITIMATE call
+      plain : $(clip "$b" 80)
+      strict: $(clip "$s" 80)"
+            rc=1
+        fi
+    else
+        n_pwrong=$((n_pwrong + 1))
+        s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
+        if [ "${s%%$'\n'*}" = "0" ]; then
+            n_psilent=$((n_psilent + 1))
+            psilent="$psilent
+    $label — still silent under EIGS_STRICT=1: $(clip "$s" 70)"
+        elif str_has "$s" "$who: expected"; then n_praise=$((n_praise + 1))
+        else
+            n_pmis=$((n_pmis + 1))
+            pmis="$pmis
+    $label — raised, but not by $who's own guard: $(clip "$s" 70)"
+        fi
+    fi
+    [ -z "$PIXBASE" ] && continue
+    a="$(run_capture "$PIXBASE" - "$TMP/p.eigs")"
+    if [ "$a" = "$b" ]; then n_pident=$((n_pident + 1))
+    else
+        n_pdiffer=$((n_pdiffer + 1))
+        pdiffer="$pdiffer
+    $label — the default path was NOT preserved
+      baseline: $(clip "$a" 80)
+      new     : $(clip "$b" 80)"
+        rc=1
+    fi
+done <<<"$ROWS"
+
+guarded_renderer="$(awk '
+    /^Value\* builtin_/ { name = $0; sub(/.*builtin_/, "", name); sub(/\(.*/, "", name); has = 0; g = 0 }
+    /g_renderer/        { if (name != "") has = 1 }
+    /(ARG_GUARD|STRICT_REQUIRE)\(/ { if (name != "") g = 1 }
+    /^}/                { if (name != "" && has && g) print name; name = "" }
+' src/ext_gfx.c | sort -u)"
+missing_names=""
+for nm in $guarded_renderer; do
+    case " $covered_names " in *" $nm "*) ;; *) missing_names="$missing_names $nm" ;; esac
+done
+missing_slots=""
+awk '
+    /^Value\* builtin_/ { name = $0; sub(/.*builtin_/, "", name); sub(/\(.*/, "", name) }
+    match($0, /gfx_nums\(arg, [0-9]+, [0-9]+\)/) {
+        s = substr($0, RSTART, RLENGTH); gsub(/[^0-9 ]/, " ", s)
+        n = split(s, f, " "); lo = ""; hi = ""
+        for (i = 1; i <= n; i++) if (f[i] != "") { if (lo == "") lo = f[i]; else hi = f[i] }
+        if (name != "" && lo != "" && hi != "") print name, lo, hi
+    }
+' src/ext_gfx.c | sort -u > "$TMP/slots"
+while read -r nm a b; do
+    [ -z "${nm:-}" ] && continue
+    last=$((b - 1))
+    for want in "$a" "$last"; do
+        case " $covered_slots " in *" $nm:$want "*) ;; *) missing_slots="$missing_slots $nm:$want" ;; esac
+    done
+done < "$TMP/slots"
+
+echo "== gfx pixel differential =="
+echo "  rows=$n_prow (valid=$n_pvalid wrong=$n_pwrong)"
+if [ -n "$PIXBASE" ]; then
+    echo "  identical-when-off: $n_pident   differing: $n_pdiffer"
+elif [ "$NO_RENDERER" = 1 ]; then
+    echo "  identical-when-off: SKIPPED (no renderer)"
+else
+    echo "  identical-when-off: SKIPPED (--no-baseline)"
+fi
+echo "  raises-under-strict: $n_praise   silent: $n_psilent   misattributed: $n_pmis"
+[ "$NO_RENDERER" = 0 ] && echo "  blank canvas: $blank_digest"
+[ -n "$pdiffer" ] && { echo "  DIFFERING:$pdiffer"; rc=1; }
+[ -n "$psilent" ] && { echo "  SILENT UNDER STRICT:$psilent"; rc=1; }
+[ -n "$pmis" ] && { echo "  RAISED BY THE WRONG GUARD:$pmis"; rc=1; }
+[ -n "$pvac" ] && { echo "  VACUOUS ROW:$pvac"; rc=1; }
+if [ -n "$missing_names" ]; then
+    echo "  GUARDED, TOUCHES THE RENDERER, NO PIXEL ROW:"
+    printf '    %s\n' $missing_names
+    rc=1
+fi
+if [ -n "$missing_slots" ]; then
+    echo "  GUARDED SLOT WITH NO WRONG-TYPED ROW (first/last of a gfx_nums range):"
+    printf '    %s\n' $missing_slots
+    rc=1
+fi
+if [ "$n_prow" -lt 1 ]; then echo "  VACUOUS: pixel rows=0"; rc=1; fi
+fi
+
 if [ -n "$FP_NEW_START" ]; then
     _fp_now="$(bin_fingerprint "$NEW")"
     if [ "$_fp_now" != "$FP_NEW_START" ]; then
         echo "  BINARY CHANGED UNDER THIS RUN: $NEW"
         echo "                 at start: $FP_NEW_START"
         echo "                 at end:   $_fp_now"
-        echo "           Probes before and after the change measured DIFFERENT"
-        echo "           binaries, so nothing above is a finding about a guard."
-        echo "           Something rebuilt or re-pointed the binary mid-run"
-        echo "           (src/eigenscript is a hard link to build/<variant>/, so"
-        echo "           any 'make' in this worktree does it). Re-run when the"
-        echo "           tree is quiet; nothing here is retried."
         rc=1
     fi
 fi
@@ -1174,27 +912,10 @@ if [ -n "$FP_BASE_START" ]; then
     _fp_now="$(bin_fingerprint "$BASE")"
     if [ "$_fp_now" != "$FP_BASE_START" ]; then
         echo "  BASELINE BINARY CHANGED UNDER THIS RUN: $BASE"
-        echo "                 at start: $FP_BASE_START"
-        echo "                 at end:   $_fp_now"
-        echo "           The identical-when-off half compared against a moving"
-        echo "           reference; nothing above is a finding about a guard."
         rc=1
     fi
 fi
-
-# The evidence a red run leaves behind. #1120 could not be named from the log
-# because the log carried 70 truncated characters of a capture that was already
-# gone. It is deliberately NOT cleaned up: a red run's bytes outlive the run.
-if [ "$ev_n" -gt 0 ]; then
-    echo "  evidence: $ev_n capture(s) kept, whole and verbatim, under"
-    echo "            $EV_DIR"
-    echo "            Each names the pattern it was matched against and says"
-    echo "            whether that pattern is in the bytes after all. A file"
-    echo "            saying 'recheck: PRESENT' is a HARNESS bug (#1120), not"
-    echo "            a finding about a guard. Set EIGS_DIFF_EVIDENCE to place"
-    echo "            them somewhere a CI run will keep."
-fi
-
 verdict_printed=1
-[ "$rc" = 0 ] && echo "OK" || echo "FAIL"
-exit $rc
+if [ "$rc" = 0 ]; then echo "OK"; exit 0; fi
+echo "FAIL"
+exit 1

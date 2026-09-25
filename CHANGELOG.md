@@ -4,6 +4,11 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+- The strict, container-shape and pixel differentials are one tool,
+  `tools/strict_differential.sh` (suite `[99s]`). The fail-soft text
+  classifier and the observer-gate diff and measure harnesses are removed;
+  forcing the observer gate open is an arm of `tools/jit_diff.sh`. (#1275)
+
 - CI runs the full suite for every extension variant on pull requests. The
   HTTP+model ASan build runs the full suite in shards, replacing separate core
   and HTTP sanitizer workers. `section_plan.sh` now handles only sharding,

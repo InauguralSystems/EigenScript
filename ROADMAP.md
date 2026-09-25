@@ -132,9 +132,9 @@ milestone when an issue is filed against them.
   it PINS the soft answers (`sqrt of -1` is `0`, `cos of "hello"` is
   `0`, the `fs:ANSWER` pins) in dozens of sections, so flipping the
   default means rewriting those pins as `EIGS_STRICT=0` rows and
-  re-deciding which stand-ins survive as documented answers (the
-  classification ledger in `tools/failsoft_classify_check.sh` is the
-  input). Two things must land first: the AOT mirror (ouroboros
+  re-deciding which stand-ins survive as documented answers (the pins in
+  `tools/strict_differential.sh` are the executed record of that
+  decision). Two things must land first: the AOT mirror (ouroboros
   `aot_rt.h` carries its own inlined `num_guard`, `op_div`-shaped
   `aot_ddiv` and a raw-`inf` matmul read pinned by its round-187
   fixture — a default flip without the mirror flipping recreates the

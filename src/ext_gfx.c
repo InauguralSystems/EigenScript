@@ -982,8 +982,8 @@ Value* builtin_gfx_text(Value *arg) {
      * Unchecked reads are refused; checked coercions are preserved. A blind
      * review read gfx_text_width's checked line as this one's and called the
      * refusal a regression: tests/test_gfx_argtypes.eigs pins both shapes in
-     * pixels, and tools/gfx_pixel_differential.sh proves the parent's answer
-     * here was the punned zero. */
+     * pixels. tools/strict_differential.sh's pixel half compares the canvas
+     * to a parent build. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 6
               || !gfx_nums(arg, 0, 2)
               || arg->data.list.items[2]->type != VAL_STR

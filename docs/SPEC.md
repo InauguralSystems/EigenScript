@@ -266,9 +266,9 @@ consequences are contracts you can rely on:
   contract, not a guard).
   The distinction is not derivable from the code: `task_alive` has two
   `return make_num(0)` lines four apart, one a type guard and one the
-  documented answer. Every site in the surface therefore carries a written
-  classification, mechanically enforced by
-  `tools/failsoft_classify_check.sh`.
+  documented answer. `tools/strict_differential.sh` checks the distinction
+  that can be executed: a guard probe must raise under `EIGS_STRICT`, and a
+  pinned documented answer must not.
   Three further classes are loud under the same flag and unchanged without it:
   - **The `NaN`→`0` collapse.** With the flag off a `NaN` still collapses to
     `0` and sets `math_flags.invalid`. Under strict every reachable `NaN`

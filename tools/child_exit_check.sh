@@ -43,7 +43,7 @@ RUNNER="${RUNNER:-tests/run_all_tests.sh}"
 # true invocation count is higher. Lines are what this is measured in; do not
 # "correct" it to invocations without re-measuring.
 # #1275 removes the variant-plan launcher and print-only child site.
-CHILD_SITES_FLOOR="${CHILD_SITES_FLOOR:-94}"
+CHILD_SITES_FLOOR="${CHILD_SITES_FLOOR:-91}"
 
 fail() { echo "GATE ERROR: $*" >&2; RC=1; }
 RC=0

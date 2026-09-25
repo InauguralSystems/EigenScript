@@ -39,6 +39,7 @@ cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT
 1d4789fa9df25921|(c) sub-check: --api --json validation needs python3; the --api section asserts its other rows without it
 4fd0c1454b26ae7a|(b) an examples-section PASS line that reports how many demos were skipped for want of a gfx build
 62be8333b50e395a|(b) the same PASS line on the no-gfx-build arm
+21d7909a4df0a664|(c) sub-check: [99s] on a non-gfx build, the gfx sweep and pixel halves; the core strict halves still assert
 27cfdaf9128456df|(b) the RESULTS line itself, which PRINTS the skipped count
 43af9bdd1c5e1f94|(c) sub-check: [99zb] relays the portability tool own population/oracle line (widened by #1226 to include NO OLD BASH and other arm wordings); the section fails unless the tool reports OK or one of those named arms — supersedes the pre-#1226 row for this same relay
 '

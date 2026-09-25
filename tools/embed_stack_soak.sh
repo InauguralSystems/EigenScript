@@ -45,7 +45,7 @@ cd "$(dirname "$0")/.."
 # Measured there: 21 false no-matches in 20,000 evaluations on a 157-byte
 # capture, and CERTAIN once the capture exceeds the pipe buffer, because the
 # writer must block and is therefore still writing when the reader exits.
-# `tools/strict_differential.sh --selftest` reproduces that deterministically.
+# Verdicts here use a bash case-glob, so that race has no status to misread.
 #
 # So the three verdict sites below match with bash's own matcher: no fork, no
 # pipe, no status to misread. The needle is QUOTED inside the pattern, so a

@@ -24,7 +24,6 @@ bin|tools/docs_claims_check.sh
 run|tools/section_plan.sh --shards $SHARDS --check
 run|tools/workflow_yaml_check.sh
 run|tools/ci_tier_check.sh
-run|tools/failsoft_classify_check.sh
 run|tools/child_exit_check.sh
 run|tools/enrolment_check.sh
 run|tools/suite_label_check.sh

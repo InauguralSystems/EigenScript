@@ -18,8 +18,7 @@ set -euo pipefail
 # still-writing `echo` then takes SIGPIPE and exits 141; pipefail reports the
 # PIPELINE as 141 — a failed match — while grep's own status was 0, MATCHED.
 # The test then goes red while printing the very output it says is missing.
-# `tools/strict_differential.sh --selftest` reproduces that deterministically
-# on a capture larger than the pipe buffer.
+# Verdicts here use a bash case-glob, so that race has no status to misread.
 #
 # str_has is bash's own matcher: no fork, no pipe, no status to misread. The
 # needle is QUOTED inside the pattern, so a glob character in it is a literal —
