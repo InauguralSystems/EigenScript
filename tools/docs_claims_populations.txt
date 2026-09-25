@@ -28,8 +28,8 @@ PATHS|ROADMAP.md|17
 FLAGS|ROADMAP.md|8
 TARGETS|ROADMAP.md|2
 NAMES|ROADMAP.md|6
-PATHS|docs/CI.md|41
-TARGETS|docs/CI.md|5
+PATHS|docs/CI.md|38
+TARGETS|docs/CI.md|4
 NAMES|docs/CI.md|0
 # Exact declared set for executable doc fences.
 DOC ENROLMENT|README.md|1

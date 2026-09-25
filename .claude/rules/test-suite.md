@@ -40,26 +40,15 @@ paths:
   detects a changed BINARY and aborts loudly; nothing detects a changed
   RUNNER. Queue the edit and apply it after the run (2026-08-19, PR #996 —
   two comment additions had to be deferred for exactly this reason).
-- **A new file under `tools/` joins FOUR populations, not one.** This branch
-  hit three of them in three separate rounds, each as a red CI job:
-
-  | population | what enrols you | how a new tool fails it | verify with |
-  |---|---|---|---|
-  | `tools/werror_switch_check.sh` ([99i]) | being a tracked Makefile, `*.mk`, `*.sh`, `*.py` or workflow | a literal trio copy or absolute compiler path bypass | `bash tools/werror_switch_check.sh` — it reports the nonzero scanned population |
-  | `tools/section_plan.sh --gate-audit` (#1160) | the runner dispatching you as `bash "$TESTS_DIR/../tools/NEW.sh"` | any line matching `GATE_ENUM_RE` — **including in a COMMENT** — with no `EIGS-CAP-GATE` marker and no `GATE_WAIVERS` row | `bash tools/section_plan.sh --gate-audit` → `unaccounted=0` |
-  | `tools/section_plan.sh`'s child list | the same dispatch spelling | a tool invoked in ANY OTHER spelling is not scanned at all — invisible, not exempt | the audit prints `over the runner + N dispatched children`; N has a floor of 50 |
-  | `tools/suite_label_check.sh` ([99w]) | adding a `[NN]` section to the runner | a label another section already echoes | `bash tools/suite_label_check.sh` |
+- **A new file under `tools/` joins the source and suite-label scans.**
+  Run `tools/werror_switch_check.sh` for tracked shell/Python compiler flags
+  and `tools/suite_label_check.sh` when adding a runner section. The section
+  planner checks whole-suite shard coverage and the runner's SKIP accounting;
+  it no longer audits extension capability gates.
 
   Plus the doc gates themselves: a backticked `tools/NEW.sh` in a front-door
   document must be git-tracked or produced by a Makefile rule
   with it.
-
-  The one that surprises: **the gate-line audit reads your COMMENTS.** A
-  comment quoting the suite's own skip wording counts as an unaccounted
-  capability gate, because the audit is deliberately over-broad on spelling
-  (mechanical-gates §12) and cannot tell prose from a gate. Waive it with a
-  reason rather than rewording — rewording makes the population depend on
-  authors avoiding words, which is how a detector stops describing the tree.
 
 - **A new C compile must carry the trio at the compiler boundary.** In CI,
   `tools/cc-guard-bin` precedes real compilers on `PATH`; `tools/cc_guard.sh`

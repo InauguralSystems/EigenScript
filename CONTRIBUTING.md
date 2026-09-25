@@ -30,7 +30,7 @@ no counts to bump, no documentation numbers to edit.
 Two gates worth knowing before you push:
 
 - **The suite must also pass under sanitizers** (CI enforces it):
-  `make asan && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh`.
+  `make asan-http && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh`.
   The final summary prints a tolerated-leak tally (currently 0 — see
   `docs/CLOSURE_CYCLE_GC.md`) — if your change makes that
   number jump, you've introduced a leak.
@@ -46,23 +46,20 @@ Two gates worth knowing before you push:
 touched `*.md`). Full detail, and the reasoning, is in [docs/CI.md](docs/CI.md);
 the short version:
 
-- **Your PR** runs one full suite (`linux / gcc`), the fast differential and
-  sanitizer gates, `macos-latest`, and a *derived section plan* for each
-  extension variant — a zlib build runs the zlib sections plus a small core
-  smoke, not the whole suite a second time.
-- **Merging to `main`** runs the whole matrix: macOS (`macos-latest`), every
-  variant on the complete suite. That is the real exit gate, and the person
-  merging waits for it, not you.
+- **Your PR** runs the complete suite on gcc, clang, and each extension
+  variant. The HTTP+model ASan build runs the complete suite in shards, with
+  leak detection on and an aggregator that checks their coverage.
+- **Merging to `main`** reruns the same complete variant matrix in the merge
+  queue, then on the main push.
 - **Nightly** runs `macos-15-intel` and a full-corpus valgrind pass, and files
   a tracking issue if either goes red.
 
-Locally nothing changes — `cd tests && bash run_all_tests.sh` still runs
-everything, including the `-Werror` compile-line audit that CI now runs once in
-its own cached job. If you want to reproduce what a variant job does:
+Locally, `cd tests && bash run_all_tests.sh` runs the complete suite. To
+reproduce a sanitizer shard's suite selection:
 
 ```bash
-bash tests/run_all_tests.sh --print-section-plan zlib   # what it would run, and why
-EIGS_SUITE_SECTIONS=zlib bash tests/run_all_tests.sh    # run exactly that
+bash tools/section_plan.sh --shards 3 --check
+EIGS_SUITE_SHARD=2/3 bash tests/run_all_tests.sh
 ```
 
 ## Code Style

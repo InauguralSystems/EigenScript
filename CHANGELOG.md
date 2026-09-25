@@ -4,6 +4,11 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+- CI runs the full suite for every extension variant on pull requests. The
+  HTTP+model ASan build runs the full suite in shards, replacing separate core
+  and HTTP sanitizer workers. `section_plan.sh` now handles only sharding,
+  measured weights, and skip accounting; variant section plans are removed.
+
 ### Breaking changes
 
 - **A thread handle is joined exactly once, and a full handle table raises
@@ -682,8 +687,8 @@ All notable changes to EigenScript are documented here.
     the binary under test. The marker population is pinned against an
     independent over-broad grep across the runner AND every child script the
     runner dispatches, so a capability gate spelled a new way is a hard
-    failure rather than a section that silently leaves every plan. `EIGS_SUITE_SECTIONS=<variant> bash
-    tests/run_all_tests.sh` runs the derived plan; `bash
+    failure rather than a section that silently leaves every plan. The former
+    per-variant environment selector ran the derived plan; `bash
     tests/run_all_tests.sh --print-section-plan <variant>` prints it with its
     counts and floors. Measured locally: the `http` plan is 16 sections / 862
     checks in 2m09 against 35m25 for the full suite.

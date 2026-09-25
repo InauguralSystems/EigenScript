@@ -245,9 +245,9 @@ selftest() {
 " "Require complete sanitizer coverage
         continue-on-error: true
 " && expect "(c) P2: aggregator step continue-on-error" continue-on-error || broken p2
-    fresh; sub "$CI" "    needs: [scope, sanitizers-core, sanitizers-http]
+    fresh; sub "$CI" "    needs: [scope, sanitizers-core]
     if: always()
-" "    needs: [scope, sanitizers-core, sanitizers-http]
+" "    needs: [scope, sanitizers-core]
     if: always()
     continue-on-error: true
 " && expect "(c) P4: required aggregator continue-on-error" continue-on-error || broken p4

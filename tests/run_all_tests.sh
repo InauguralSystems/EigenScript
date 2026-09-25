@@ -14,39 +14,13 @@ export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/failure_output.sh" || exit 1
 cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 
-# ---- Section-plan mode (#1160) --------------------------------------------
-# A CI variant job (zlib, net, gfx, http, the postgres `full` build,
-# asan-http) has exactly one reason to exist: the handful of sections its
-# binary unlocks. Running all ~263 for that was measured at 12-13 min per job,
-# ten jobs per PR.
-#
-#   EIGS_SUITE_SECTIONS=<variant> bash run_all_tests.sh
-#       derive the plan for <variant> and run ONLY it
+# ---- Full-suite shard mode (#1160, #1275) ----------------------------------
 #   EIGS_SUITE_SHARD=k/N bash run_all_tests.sh
-#       run shard k of an N-way weight-balanced split of the WHOLE suite
-#       (#1160 round 4 — the ASan lane; the union of the N shards is pinned to
-#       the full chunk list by `tools/section_plan.sh --shards N --check`)
-#   bash run_all_tests.sh --print-section-plan <variant>
-#       print the plan, its counts and its floors, and run nothing
-#
-# The plan is DERIVED by tools/section_plan.sh from this file's own probe
-# gates — the `http_route` / `db_connect` / zlib-stub probes below — never
-# from a hand-written list, and a plan of zero sections is a hard failure.
-# Unset (the local loop, and the `linux / gcc` CI leg) nothing changes.
+#       run shard k of the weight-balanced full suite. The sanitizer
+#       aggregator checks that the shards cover every chunk exactly once.
 if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
-    if [ "${1:-}" = "--print-section-plan" ]; then
-        # Plain `bash`, never `exec bash`: tools/child_exit_check.sh requires
-        # `bash` to be the COMMAND WORD at every child call site in this file,
-        # because the runner shadows `bash` with a function and any launcher in
-        # front of it (`exec`, `env`, `timeout`) execs the real binary and
-        # leaves the accounting mechanism entirely (#988, mechanical-gates §45).
-        # The gate caught this line's first draft.
-        bash "$TESTS_DIR/../tools/section_plan.sh" --print-section-plan "${2:-core}"
-        exit $?
-    fi
-    if [ -n "${EIGS_SUITE_SECTIONS:-}" ] || [ -n "${EIGS_SUITE_SHARD:-}" ]; then
+    if [ -n "${EIGS_SUITE_SHARD:-}" ]; then
         __plan_runner=$(mktemp "${TMPDIR:-/tmp}/eigs_plan_runner.XXXXXX")
-        if [ -n "${EIGS_SUITE_SHARD:-}" ]; then
             # EIGS_SUITE_SHARD=k/N (#1160 round 4). A shard is a subset of the
             # chunk list; the aggregator pins the union to the whole list.
             #
@@ -72,34 +46,28 @@ if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
                 echo "ERROR: EIGS_SUITE_SHARD='$EIGS_SUITE_SHARD' is out of range — need 1 <= k <= N (#1160)"
                 rm -f "$__plan_runner"; exit 1
             fi
-            __plan_line=$(bash "$TESTS_DIR/../tools/section_plan.sh" --emit-shard "$__shard_k" "$__shard_n" "$__plan_runner")
-        else
-            __plan_line=$(bash "$TESTS_DIR/../tools/section_plan.sh" --emit "$EIGS_SUITE_SECTIONS" "$__plan_runner")
-        fi
+        __plan_line=$(bash "$TESTS_DIR/../tools/section_plan.sh" --emit-shard "$__shard_k" "$__shard_n" "$__plan_runner")
         __plan_emit_rc=$?
         # Both conditions: a floor failure prints a PLAN: line on its way out,
         # so "non-empty output" alone would let a refused plan run anyway.
         if [ "$__plan_emit_rc" -ne 0 ] || [ -z "$__plan_line" ]; then
-            echo "ERROR: could not derive the section plan for '${EIGS_SUITE_SECTIONS:-shard ${EIGS_SUITE_SHARD:-}}' -- refusing to run a suite that would measure nothing (#1160)"
+            echo "ERROR: could not derive shard ${EIGS_SUITE_SHARD:-} -- refusing to run a suite that would measure nothing (#1160)"
             rm -f "$__plan_runner"
             exit 1
         fi
-        # The plan line and the run must AGREE on how many section headers
-        # were executed. Round 1 printed `sections=18` for a run that emitted
-        # 16 headers (it counted each probe gate's else-branch twin as well),
-        # and a count nobody can check is decoration. The run is teed so the
-        # headers can be counted without buffering the job's output.
+        # Timing records and headers are two independently visible witnesses.
+        # Captured subshell output never reaches either population in this log.
         __plan_log=$(mktemp "${TMPDIR:-/tmp}/eigs_plan_log.XXXXXX")
         bash "$__plan_runner" 2>&1 | tee "$__plan_log"
         __plan_rc=${PIPESTATUS[0]}
-        __plan_want=$(printf '%s' "$__plan_line" | sed -n 's/.*sections=\([0-9][0-9]*\) .*/\1/p')
+        __plan_want=$(grep -c '^SECTION_TIME: ' "$__plan_log")
         __plan_seen=$(grep -cE '^\[[^]]*\]' "$__plan_log")
         rm -f "$__plan_runner" "$__plan_log"
-        if [ -n "$__plan_want" ] && [ "$__plan_want" != "$__plan_seen" ]; then
-            echo "ERROR: the section plan promised sections=$__plan_want but the run printed $__plan_seen section header(s) (#1160)."
-            echo "       A plan whose count nobody checks is decoration; refusing to report this run."
+        if [ "$__plan_want" -le 0 ] || [ "$__plan_want" != "$__plan_seen" ]; then
+            echo "ERROR: the shard produced $__plan_want timing record(s) but $__plan_seen section header(s) (#1160)."
             exit 1
         fi
+        echo "  SECTION PLAN: ${__plan_line/sections=runtime/sections=$__plan_want}"
         exit $__plan_rc
     fi
 fi
@@ -1506,9 +1474,6 @@ loaded is eigen_model_loaded of null
 print of "yes"
 PROBE
 PROBE_OUT=$(./eigenscript "$PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: model — the transformer smoke needs EIGENSCRIPT_EXT_MODEL
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$PROBE_FILE"
 
 # Model extension present only if no "undefined variable" error
@@ -2355,10 +2320,6 @@ echo ""
 # [42a] Replay tape (record/replay determinism for list/dict/buffer)
 echo "[42a/47] Replay Tape (6 checks)"
 RP_OUTPUT=$(bash "$TESTS_DIR/test_replay.sh" 2>&1)
-# EIGS-CAP-GATE: gfx — test_replay.sh gates its audio-capture replay checks on the gfx
-#     builtins, so this section MEASURES MORE on a gfx build
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 RP_PASS=$(echo "$RP_OUTPUT" | grep -c "PASS:" || true)
 RP_FAIL=$(echo "$RP_OUTPUT" | grep -c "FAIL:" || true)
 TOTAL=$((TOTAL + RP_PASS + RP_FAIL))
@@ -2774,9 +2735,6 @@ r is http_route of ["GET", "/probe", "probe"]
 print of r
 PROBE
 HTTP_PROBE_OUT=$(./eigenscript "$HTTP_PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: http — http_route etc. need EIGENSCRIPT_EXT_HTTP
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$HTTP_PROBE_FILE"
 
 if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
@@ -2891,9 +2849,6 @@ r is db_connect of null
 print of "probed"
 PROBE
 DB_PROBE_OUT=$(./eigenscript "$DB_PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: db — db_connect needs EIGENSCRIPT_EXT_DB
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$DB_PROBE_FILE"
 
 if ! echo "$DB_PROBE_OUT" | grep -q "undefined variable"; then
@@ -2926,9 +2881,6 @@ cat > "$MODEL_PROBE_FILE" <<'PROBE'
 print of (eigen_model_loaded of null)
 PROBE
 MODEL_PROBE_OUT=$(./eigenscript "$MODEL_PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: model — the model round-trip needs EIGENSCRIPT_EXT_MODEL
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$MODEL_PROBE_FILE"
 
 if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
@@ -3459,9 +3411,6 @@ s is audio_sine of [440, 0.01, 0.5]
 print of (len of s)
 PROBE
 AUDIO_PROBE_OUT=$(./eigenscript "$AUDIO_PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: gfx — the audio builtins live in ext_gfx.c (EIGENSCRIPT_EXT_GFX)
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$AUDIO_PROBE_FILE"
 
 if ! echo "$AUDIO_PROBE_OUT" | grep -q "undefined variable"; then
@@ -3495,9 +3444,6 @@ cat > "$GT_PROBE_FILE" <<'PROBE'
 print of (gfx_text_width of ["m", 1])
 PROBE
 GT_PROBE_OUT=$(./eigenscript "$GT_PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: gfx — gfx text metrics need EIGENSCRIPT_EXT_GFX
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$GT_PROBE_FILE"
 
 if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
@@ -3569,9 +3515,6 @@ cat > "$GA_PROBE_FILE" <<'PROBE'
 print of (gfx_text_width of ["m", 1])
 PROBE
 GA_PROBE_OUT=$(./eigenscript "$GA_PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: gfx — the gfx argument guards need EIGENSCRIPT_EXT_GFX
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$GA_PROBE_FILE"
 
 if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
@@ -3706,9 +3649,6 @@ cat > "$GD_PROBE_FILE" <<'PROBE'
 print of (gfx_text_width of ["m", 1])
 PROBE
 GD_PROBE_OUT=$(./eigenscript "$GD_PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: gfx — the pointer-disclosure oracle needs EIGENSCRIPT_EXT_GFX
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$GD_PROBE_FILE"
 
 if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
@@ -3860,9 +3800,6 @@ echo ""
 # every guarded renderer builtin and every gfx_nums slot boundary derived from
 # src/ext_gfx.c.
 echo "[138] gfx pixel differential (#1007, no-baseline half)"
-# EIGS-CAP-GATE: gfx — tools/gfx_pixel_differential.sh self-skips: "built without EIGENSCRIPT_EXT_GFX"
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 GPD_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_pixel_differential.sh" --no-baseline 2>&1); GPD_RC=$?
 if echo "$GPD_OUTPUT" | grep -q "^SKIP:"; then
     gpd_skip_line=$(echo "$GPD_OUTPUT" | grep '^SKIP:' | head -1)
@@ -3898,9 +3835,6 @@ echo ""
 # starts raising fails the section. Not probe-gated on the binary here -- the
 # tool skips cleanly by itself when the build has no EXT_GFX.
 echo "[139] ext_gfx container-shape sweep (#1007)"
-# EIGS-CAP-GATE: gfx — tools/gfx_strict_sweep.sh self-skips: "built without EIGENSCRIPT_EXT_GFX"
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 GSS_OUTPUT=$(bash "$TESTS_DIR/../tools/gfx_strict_sweep.sh" 2>&1); GSS_RC=$?
 if echo "$GSS_OUTPUT" | grep -q "^  SKIP:"; then
     gss_skip_line=$(echo "$GSS_OUTPUT" | grep '^  SKIP:' | head -1 | sed 's/^ *//')
@@ -3936,9 +3870,6 @@ cat > "$UC_PROBE_FILE" <<'PROBE'
 print of (gfx_text_width of ["m", 1])
 PROBE
 UC_PROBE_OUT=$(./eigenscript "$UC_PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: gfx — the UI containment oracle needs EIGENSCRIPT_EXT_GFX
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$UC_PROBE_FILE"
 
 if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
@@ -4064,9 +3995,6 @@ d is deflate of [0]
 print of d
 PROBE
 ZLIB_PROBE_OUT=$(./eigenscript "$ZLIB_PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: zlib — the DEFLATE codecs need EIGENSCRIPT_EXT_ZLIB (stubs otherwise)
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$ZLIB_PROBE_FILE"
 
 if ! echo "$ZLIB_PROBE_OUT" | grep -q "compiled without zlib support"; then
@@ -4111,9 +4039,6 @@ cat > "$NET_PROBE_FILE" <<'PROBE'
 print of net_close
 PROBE
 NET_PROBE_OUT=$(./eigenscript "$NET_PROBE_FILE" 2>&1)
-# EIGS-CAP-GATE: net — the TCP builtins need EIGENSCRIPT_EXT_NET
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$NET_PROBE_FILE"
 
 if ! echo "$NET_PROBE_OUT" | grep -q "ndefined variable"; then
@@ -6466,10 +6391,6 @@ EX_GFX_PROBE=$(mktemp /tmp/eigs_ex_gfx_XXXXXX.eigs)
 echo 'print of (gfx_text_width of ["m", 1])' > "$EX_GFX_PROBE"
 EX_HAS_GFX=0
 if ! ./eigenscript "$EX_GFX_PROBE" 2>&1 | grep -q "undefined variable"; then EX_HAS_GFX=1; fi
-# EIGS-CAP-GATE: gfx — [97] runs the gfx DEMOS only on a gfx build - the gate is
-#     spelled inline (EX_HAS_GFX), not as one of the probe-capture blocks
-#   (the section below behaves differently on a binary with this capability;
-#    tools/section_plan.sh reads these markers to build a variant's section plan, #1160)
 rm -f "$EX_GFX_PROBE"
 if [ "$EX_HAS_GFX" = "1" ]; then
     echo "[97] Example programs (examples/*.eigs; gfx demos INCLUDED)"
