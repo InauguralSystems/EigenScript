@@ -1235,10 +1235,8 @@ extern __thread EigsThread *eigs_current;
  * simple early return. The raise still returns, so the caller stops before
  * consuming the coerced value.
  *
- * These sites are invisible to tools/failsoft_classify_check.sh: they have
- * no `return make_num(0)` to enumerate. Found by the differential instead
- * (a probe that stayed silent under strict), which is why that harness
- * exists as well as the classifier. */
+ * These sites have no `return make_num(0)` to enumerate. A probe that
+ * stays silent under strict is what tools/strict_differential.sh catches. */
 /* PLACEMENT IS LOAD-BEARING: this RETURNS, so it must sit BEFORE anything the
  * function has allocated and still owns, or the raise abandons it. Put the
  * guard above the allocation where the inputs allow it (the three scan_*

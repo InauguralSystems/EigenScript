@@ -15,7 +15,9 @@
 #   identical-when-off      baseline vs subject, flag unset, stdout+stderr+rc;
 #                           valid-input rows in both modes when a baseline is given
 #   gfx container-shape sweep   ext_gfx.c want-strings, wrong containers
-#   gfx pixel differential  canvas digests, waiver proofs, source coverage
+#   gfx pixel differential  canvas digests and source coverage. Every pixel
+#                           row is compared with the flag off; a flag-off
+#                           canvas change is a difference, with no waiver.
 #   binary-held-still       cksum+size+mtime of the subject (and baseline)
 # A build without gfx builtins prints one line, "SKIP: not a gfx build",
 # and does not treat the gfx halves as a pass.
@@ -741,49 +743,49 @@ for py in range of 32:
                 lit is lit + 1
 print of f"digest={total} lit={lit}"'
 ROWS=$(cat <<'EOF'
-valid-rect|gfx_rect|-|ignore is gfx_rect of [4, 4, 10, 10, 255, 0, 0]|
-valid-rect-alpha|gfx_rect|-|ignore is gfx_rect of [4, 4, 10, 10, 255, 0, 0, 128]|
-valid-rrect|gfx_rrect|-|ignore is gfx_rrect of [4, 4, 12, 12, 3, 0, 255, 0]|
-valid-circle|gfx_circle|-|ignore is gfx_circle of [16, 16, 7, 0, 0, 255]|
-valid-line|gfx_line|-|ignore is gfx_line of [0, 0, 30, 30, 255, 255, 0]|
-valid-point|gfx_point|-|ignore is gfx_point of [5, 5, 255, 0, 255]|
-valid-clear|gfx_clear|-|ignore is gfx_clear of [10, 20, 30]|
-valid-clip|gfx_clip|-|ignore is gfx_clip of [2, 2, 8, 8]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]|
-valid-clip-null|gfx_clip|-|ignore is gfx_clip of null\nignore is gfx_rect of [0, 0, 8, 8, 255, 0, 0]|
-valid-text|gfx_text|-|ignore is gfx_text of [0, 0, "H", 255, 255, 255]|
-valid-text-scale|gfx_text|-|ignore is gfx_text of [0, 0, "H", 255, 255, 255, 2]|
-valid-fb|gfx_fb|-|fb is buffer of 16\nignore is buf_fill of [fb, 0, 16, 0]\nignore is gfx_fb of [fb, 4, 4, 0, 0, 2]|
-valid-read|gfx_read|-|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of [1, 1])|
-valid-open-title|gfx_open|-|ignore is gfx_title of "pixdiff2"\nignore is gfx_rect of [1, 1, 3, 3, 9, 9, 9]|
-wrong-rect-slot0|gfx_rect|0|ignore is gfx_rect of ["4", 4, 10, 10, 255, 0, 0]|ignore is gfx_rect of [0, 4, 10, 10, 255, 0, 0]
-wrong-rect-slot7|gfx_rect|7|ignore is gfx_rect of [4, 4, 10, 10, 255, 0, 0, "128"]|
-wrong-rrect-slot0|gfx_rrect|0|ignore is gfx_rrect of ["4", 4, 12, 12, 3, 0, 255, 0]|ignore is gfx_rrect of [0, 4, 12, 12, 3, 0, 255, 0]
-wrong-rrect-slot8|gfx_rrect|8|ignore is gfx_rrect of [4, 4, 12, 12, 3, 0, 255, 0, "128"]|
-wrong-circle-slot0|gfx_circle|0|ignore is gfx_circle of ["16", 16, 7, 0, 0, 255]|ignore is gfx_circle of [0, 16, 7, 0, 0, 255]
-wrong-circle-slot6|gfx_circle|6|ignore is gfx_circle of [16, 16, 7, 0, 0, 255, "128"]|
-wrong-line-slot0|gfx_line|0|ignore is gfx_line of ["0", 0, 30, 30, 255, 255, 0]|ignore is gfx_line of [0, 0, 30, 30, 255, 255, 0]
-wrong-line-slot6|gfx_line|6|ignore is gfx_line of [0, 0, 30, 30, 255, 255, "0"]|ignore is gfx_line of [0, 0, 30, 30, 255, 255, 0]
-wrong-point-slot0|gfx_point|0|ignore is gfx_point of ["5", 5, 255, 0, 255]|ignore is gfx_point of [0, 5, 255, 0, 255]
-wrong-point-slot4|gfx_point|4|ignore is gfx_point of [5, 5, 255, 0, "255"]|ignore is gfx_point of [5, 5, 255, 0, 0]
-wrong-clear-slot0|gfx_clear|0|ignore is gfx_clear of ["10", 20, 30]|ignore is gfx_clear of [0, 20, 30]
-wrong-clear-slot2|gfx_clear|2|ignore is gfx_clear of [10, 20, "30"]|ignore is gfx_clear of [10, 20, 0]
-wrong-clip-slot0|gfx_clip|0|ignore is gfx_clip of ["2", 2, 8, 8]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]|ignore is gfx_clip of [0, 2, 8, 8]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
-wrong-clip-slot3|gfx_clip|3|ignore is gfx_clip of [2, 2, 8, "8"]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]|ignore is gfx_clip of [2, 2, 8, 0]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
-wrong-text-slot0|gfx_text|0|ignore is gfx_text of ["0", 0, "H", 255, 255, 255]|ignore is gfx_text of [0, 0, "H", 255, 255, 255]
-wrong-text-slot1|gfx_text|1|ignore is gfx_text of [0, "0", "H", 255, 255, 255]|ignore is gfx_text of [0, 0, "H", 255, 255, 255]
-wrong-text-slot3|gfx_text|3|ignore is gfx_text of [0, 0, "H", "255", 255, 255]|ignore is gfx_text of [0, 0, "H", 0, 255, 255]
-wrong-text-slot6|gfx_text|6|ignore is gfx_text of [0, 0, "H", 255, 255, 255, "2"]|ignore is gfx_text of [0, 0, "H", 255, 255, 255, 0]
-wrong-read-slot0|gfx_read|0|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of ["1", 1])|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of [0, 1])
-wrong-read-slot1|gfx_read|1|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of [1, "1"])|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of [1, 0])
-wrong-fb-slot1|gfx_fb|1|fb is buffer of 16\nignore is buf_fill of [fb, 0, 16, 0]\nignore is gfx_fb of [fb, "4", 4, 0, 0, 2]|
-wrong-fb-slot5|gfx_fb|5|fb is buffer of 16\nignore is buf_fill of [fb, 0, 16, 0]\nignore is gfx_fb of [fb, 4, 4, 0, 0, "2"]|
-wrong-open-slot0|gfx_open|0|ignore is gfx_open of ["16", 16, "reopen"]\nignore is gfx_rect of [0, 0, 8, 8, 255, 0, 0]|
+valid-rect|gfx_rect|-|ignore is gfx_rect of [4, 4, 10, 10, 255, 0, 0]
+valid-rect-alpha|gfx_rect|-|ignore is gfx_rect of [4, 4, 10, 10, 255, 0, 0, 128]
+valid-rrect|gfx_rrect|-|ignore is gfx_rrect of [4, 4, 12, 12, 3, 0, 255, 0]
+valid-circle|gfx_circle|-|ignore is gfx_circle of [16, 16, 7, 0, 0, 255]
+valid-line|gfx_line|-|ignore is gfx_line of [0, 0, 30, 30, 255, 255, 0]
+valid-point|gfx_point|-|ignore is gfx_point of [5, 5, 255, 0, 255]
+valid-clear|gfx_clear|-|ignore is gfx_clear of [10, 20, 30]
+valid-clip|gfx_clip|-|ignore is gfx_clip of [2, 2, 8, 8]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
+valid-clip-null|gfx_clip|-|ignore is gfx_clip of null\nignore is gfx_rect of [0, 0, 8, 8, 255, 0, 0]
+valid-text|gfx_text|-|ignore is gfx_text of [0, 0, "H", 255, 255, 255]
+valid-text-scale|gfx_text|-|ignore is gfx_text of [0, 0, "H", 255, 255, 255, 2]
+valid-fb|gfx_fb|-|fb is buffer of 16\nignore is buf_fill of [fb, 0, 16, 0]\nignore is gfx_fb of [fb, 4, 4, 0, 0, 2]
+valid-read|gfx_read|-|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of [1, 1])
+valid-open-title|gfx_open|-|ignore is gfx_title of "pixdiff2"\nignore is gfx_rect of [1, 1, 3, 3, 9, 9, 9]
+wrong-rect-slot0|gfx_rect|0|ignore is gfx_rect of ["4", 4, 10, 10, 255, 0, 0]
+wrong-rect-slot7|gfx_rect|7|ignore is gfx_rect of [4, 4, 10, 10, 255, 0, 0, "128"]
+wrong-rrect-slot0|gfx_rrect|0|ignore is gfx_rrect of ["4", 4, 12, 12, 3, 0, 255, 0]
+wrong-rrect-slot8|gfx_rrect|8|ignore is gfx_rrect of [4, 4, 12, 12, 3, 0, 255, 0, "128"]
+wrong-circle-slot0|gfx_circle|0|ignore is gfx_circle of ["16", 16, 7, 0, 0, 255]
+wrong-circle-slot6|gfx_circle|6|ignore is gfx_circle of [16, 16, 7, 0, 0, 255, "128"]
+wrong-line-slot0|gfx_line|0|ignore is gfx_line of ["0", 0, 30, 30, 255, 255, 0]
+wrong-line-slot6|gfx_line|6|ignore is gfx_line of [0, 0, 30, 30, 255, 255, "0"]
+wrong-point-slot0|gfx_point|0|ignore is gfx_point of ["5", 5, 255, 0, 255]
+wrong-point-slot4|gfx_point|4|ignore is gfx_point of [5, 5, 255, 0, "255"]
+wrong-clear-slot0|gfx_clear|0|ignore is gfx_clear of ["10", 20, 30]
+wrong-clear-slot2|gfx_clear|2|ignore is gfx_clear of [10, 20, "30"]
+wrong-clip-slot0|gfx_clip|0|ignore is gfx_clip of ["2", 2, 8, 8]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
+wrong-clip-slot3|gfx_clip|3|ignore is gfx_clip of [2, 2, 8, "8"]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
+wrong-text-slot0|gfx_text|0|ignore is gfx_text of ["0", 0, "H", 255, 255, 255]
+wrong-text-slot1|gfx_text|1|ignore is gfx_text of [0, "0", "H", 255, 255, 255]
+wrong-text-slot3|gfx_text|3|ignore is gfx_text of [0, 0, "H", "255", 255, 255]
+wrong-text-slot6|gfx_text|6|ignore is gfx_text of [0, 0, "H", 255, 255, 255, "2"]
+wrong-read-slot0|gfx_read|0|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of ["1", 1])
+wrong-read-slot1|gfx_read|1|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of [1, "1"])
+wrong-fb-slot1|gfx_fb|1|fb is buffer of 16\nignore is buf_fill of [fb, 0, 16, 0]\nignore is gfx_fb of [fb, "4", 4, 0, 0, 2]
+wrong-fb-slot5|gfx_fb|5|fb is buffer of 16\nignore is buf_fill of [fb, 0, 16, 0]\nignore is gfx_fb of [fb, 4, 4, 0, 0, "2"]
+wrong-open-slot0|gfx_open|0|ignore is gfx_open of ["16", 16, "reopen"]\nignore is gfx_rect of [0, 0, 8, 8, 255, 0, 0]
 EOF
 )
 mkprog() { printf '%s\n' "$HEAD" > "$1"; printf '%b\n' "$2" >> "$1"; printf '%s\n' "$TAIL" >> "$1"; }
-n_prow=0; n_pvalid=0; n_pwrong=0; n_pident=0; n_pdiffer=0; n_pwaived=0
+n_prow=0; n_pvalid=0; n_pwrong=0; n_pident=0; n_pdiffer=0
 n_praise=0; n_psilent=0; n_pmis=0
-pdiffer=""; psilent=""; pwaiver=""; pmis=""; pvac=""
+pdiffer=""; psilent=""; pmis=""; pvac=""
 covered_names=""; covered_slots=""
 blank_digest=""
 if [ "$NO_RENDERER" = 0 ]; then
@@ -793,7 +795,7 @@ if [ "$NO_RENDERER" = 0 ]; then
 fi
 PIXBASE="$BASE"
 [ "$NO_RENDERER" = 1 ] && PIXBASE=""
-while IFS='|' read -r label who slot prog zero; do
+while IFS='|' read -r label who slot prog; do
     [ -z "${label:-}" ] && continue
     n_prow=$((n_prow + 1))
     covered_names="$covered_names $who"
@@ -830,57 +832,14 @@ while IFS='|' read -r label who slot prog zero; do
     fi
     [ -z "$PIXBASE" ] && continue
     a="$(run_capture "$PIXBASE" - "$TMP/p.eigs")"
-    if [ "$a" = "$b" ]; then
-        n_pident=$((n_pident + 1))
-        if [ -n "${zero:-}" ]; then
-            pwaiver="$pwaiver
-    SPENT: $label carries a zero-variant waiver but does not diverge. Remove it."
-            rc=1
-        fi
-        continue
-    fi
-    if [ -z "${zero:-}" ]; then
+    if [ "$a" = "$b" ]; then n_pident=$((n_pident + 1))
+    else
         n_pdiffer=$((n_pdiffer + 1))
         pdiffer="$pdiffer
-    $label — the default path was NOT preserved, and no waiver claims it
+    $label — the default path was NOT preserved
       baseline: $(clip "$a" 80)
       new     : $(clip "$b" 80)"
         rc=1
-        continue
-    fi
-    a2="$(run_capture "$PIXBASE" - "$TMP/p.eigs")"
-    mkprog "$TMP/z.eigs" "$zero"
-    z="$(run_capture "$PIXBASE" - "$TMP/z.eigs")"
-    if [ "$a" != "$a2" ]; then
-        pwaiver="$pwaiver
-    UNPROVEN: $label — the baseline is not stable across two runs"
-        rc=1
-    elif [ "$a" != "$z" ]; then
-        pwaiver="$pwaiver
-    UNPROVEN: $label — the baseline's wrong-typed answer is not its answer to 0
-      wrong-typed: $(clip "$a" 70)
-      literal 0  : $(clip "$z" 70)"
-        rc=1
-    else
-        noeffect="$(printf '%b\n' "$prog" | awk -v w="$who of" 'index($0, w) && !done { done = 1; next } { print }')"
-        mkprog "$TMP/n.eigs" "$noeffect"
-        ne="$(run_capture "$NEW" - "$TMP/n.eigs")"
-        if [ "$who" = "gfx_read" ]; then
-            if ! str_has "$b" "null"; then
-                pwaiver="$pwaiver
-    UNPROVEN: $label — new answer is not gfx_read's rejection stand-in (null): $(clip "$b" 70)"
-                rc=1
-                continue
-            fi
-        elif [ "$b" != "$ne" ]; then
-            pwaiver="$pwaiver
-    UNPROVEN: $label — the rejected call did not draw nothing
-      with the call: $(clip "$b" 70)
-      call deleted : $(clip "$ne" 70)"
-            rc=1
-            continue
-        fi
-        n_pwaived=$((n_pwaived + 1))
     fi
 done <<<"$ROWS"
 
@@ -915,7 +874,7 @@ done < "$TMP/slots"
 echo "== gfx pixel differential =="
 echo "  rows=$n_prow (valid=$n_pvalid wrong=$n_pwrong)"
 if [ -n "$PIXBASE" ]; then
-    echo "  identical-when-off: $n_pident   differing: $n_pdiffer   waived (proven): $n_pwaived"
+    echo "  identical-when-off: $n_pident   differing: $n_pdiffer"
 elif [ "$NO_RENDERER" = 1 ]; then
     echo "  identical-when-off: SKIPPED (no renderer)"
 else
@@ -923,7 +882,6 @@ else
 fi
 echo "  raises-under-strict: $n_praise   silent: $n_psilent   misattributed: $n_pmis"
 [ "$NO_RENDERER" = 0 ] && echo "  blank canvas: $blank_digest"
-[ -n "$pwaiver" ] && echo "  WAIVERS:$pwaiver"
 [ -n "$pdiffer" ] && { echo "  DIFFERING:$pdiffer"; rc=1; }
 [ -n "$psilent" ] && { echo "  SILENT UNDER STRICT:$psilent"; rc=1; }
 [ -n "$pmis" ] && { echo "  RAISED BY THE WRONG GUARD:$pmis"; rc=1; }

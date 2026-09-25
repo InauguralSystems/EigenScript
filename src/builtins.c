@@ -222,9 +222,9 @@ Value* builtin_join(Value *arg) {
     ARG_GUARD(!list || list->type != VAL_LIST, "join", "a list as its first argument", make_str(""));
     /* Coercion, not a guard — a non-string separator silently became "" and
      * the elements ran together (`join of [["a","b"], 42]` was "ab"). Same
-     * class as str_replace, and it has no stand-in return, so it is invisible
-     * to tools/failsoft_classify_check.sh and needs STRICT_REQUIRE. Found by
-     * a blind review, not by either harness. */
+     * class as str_replace, and it has no stand-in return, so it needs
+     * STRICT_REQUIRE. tools/strict_differential.sh probes that the raise
+     * still names this builtin. */
     STRICT_REQUIRE(sep_val && sep_val->type != VAL_STR, "join", "a string separator");
     const char *sep = (sep_val && sep_val->type == VAL_STR) ? sep_val->data.str : "";
     size_t sep_len = strlen(sep);

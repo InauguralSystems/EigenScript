@@ -1,0 +1,4 @@
+# OBS rows: these programs assert gate-CLOSED behaviour by design, so forcing the gate open changes their
+# output. They are not defects to work down.
+test_chunk_verify_stack.eigs OBS
+test_desc_unrecorded_read.eigs OBS
