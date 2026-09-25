@@ -1957,7 +1957,7 @@ echo ""
 # [23] Named parameters
 echo "[23/27] Named Parameters"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?
-NP_OUTPUT_N=$(derive_count "$NP_OUTPUT" 9 "[23/27] Named Params")
+NP_OUTPUT_N=$(derive_count "$NP_OUTPUT" 27 "[23/27] Named Params")
 if rc_ok "$NP_OUTPUT_RC" "$NP_OUTPUT" && echo "$NP_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + NP_OUTPUT_N))
     PASS=$((PASS + NP_OUTPUT_N))

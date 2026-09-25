@@ -274,6 +274,24 @@ static void p_expect_dot_key(Parser *p) {
     p_advance(p);
 }
 
+/* #1254: parameters are `param { ',' param }` (docs/GRAMMAR.md). After a
+ * parameter (and its default), consume the comma; if the next token would
+ * start another parameter with no comma between, report it here. Any other
+ * token is left for the caller's closing-paren expectation, so each
+ * malformed signature reports once. */
+static void p_param_separator(Parser *p, const char *prev) {
+    if (p_cur(p)->type == TOK_COMMA) { p_advance(p); return; }
+    Token *nt = p_cur(p);
+    if (!tok_is_ident_like(nt->type) && !tok_is_report(nt->type)) return;
+    char m[192];
+    snprintf(m, sizeof(m), "expected ',' between parameters '%s' and '%s'",
+             prev ? prev : "", nt->str_val ? nt->str_val : "");
+    fprintf(stderr, "Parse error line %d:%d: %s\n", nt->line, nt->col + 1, m);
+    eigs_record_first_error_at(nt->line, nt->col, nt->len, m);
+    p_print_caret(nt->line, nt->col);
+    g_parse_errors++;
+}
+
 static void p_skip_newlines(Parser *p) {
     while (p_cur(p)->type == TOK_NEWLINE) p_advance(p);
 }
@@ -818,7 +836,7 @@ static ASTNode* parse_primary(Parser *p) {
                 }
                 params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
-                if (p_cur(p)->type == TOK_COMMA) p_advance(p);
+                p_param_separator(p, params[param_count - 1]);
             }
             if (param_count == 0) {
                 params[0] = xstrdup("n");
@@ -1344,7 +1362,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
                         p_cur(p)->line, params[slot]);
                     g_parse_errors++;
                 }
-                if (p_cur(p)->type == TOK_COMMA) p_advance(p);
+                p_param_separator(p, params[slot]);
             }
             p_expect(p, TOK_RPAREN);
         }

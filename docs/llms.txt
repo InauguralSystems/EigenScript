@@ -243,7 +243,7 @@ append of [xs, 4]                       # in-place
 doubled is [v * 2 for v in xs]          # comprehension (its var leaks!)
 evens is [v for v in xs if v % 2 == 0]  # comprehension filter clause
 inc is (x) => x + 1                     # lambda: params NEED the parens
-add is (a, b) => a + b
+add is (a, b) => a + b                  # params are comma-separated: (a b) is a parse error
 srt is sort_by of [xs, (v) => 0 - v]    # sort by key fn (builtin, no import)
 d is {"a": 1, "b": 2}
 print of d["a"]

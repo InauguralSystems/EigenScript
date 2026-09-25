@@ -77,7 +77,8 @@ console.log(add(3, 4));
 EigenScript — a bare literal list after `of` is the argument list, at
 every element count: `f of [a, b]` is two arguments, `f of [x]` is one.
 (Parentheses always mean one argument: `f of ([x])` passes a literal
-1-element list whole.)
+1-element list whole.) Parameters are comma-separated in `define` and in lambdas; a
+missing comma (`define add(a b)`) is a parse error, not a second parameter.
 
 ```eigenscript
 define add(a, b) as:

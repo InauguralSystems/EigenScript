@@ -40,4 +40,32 @@ result is use_a of 5
 assert_eq of [result, 6, "param doesn't leak"]
 assert_eq of [outer_a, 100, "outer unchanged"]
 
+# #1254: parameters are comma-separated. A missing comma is a parse error in
+# both named functions and lambdas (it used to run as if written).
+nl is "\n"
+assert_eq of [try_parse of ("define sub(a b) as:" + nl + "    return a - b"), 0, "fn: missing comma"]
+assert_eq of [try_parse of ("define sub(a is 7 b is 2) as:" + nl + "    return a - b"), 0, "fn: missing comma between defaults"]
+assert_eq of [try_parse of ("define sub(a, b c) as:" + nl + "    return a"), 0, "fn: missing comma after a comma"]
+assert_eq of [try_parse of ("define sub(a is 1 b) as:" + nl + "    return a"), 0, "fn: missing comma after default, required next"]
+assert_eq of [try_parse of "sub is (a b) => a - b", 0, "lambda: missing comma"]
+assert_eq of [try_parse of "sub is (a, b c) => a", 0, "lambda: missing comma after a comma"]
+# controls: separated, trailing-comma and implicit-n forms stay valid
+assert_eq of [try_parse of ("define sub(a, b) as:" + nl + "    return a - b"), 1, "fn: commas"]
+assert_eq of [try_parse of ("define sub(a is 7, b is 2) as:" + nl + "    return a - b"), 1, "fn: defaults with commas"]
+assert_eq of [try_parse of ("define sub(a, b,) as:" + nl + "    return a - b"), 1, "fn: trailing comma"]
+assert_eq of [try_parse of ("define sub() as:" + nl + "    return n"), 1, "fn: empty signature"]
+assert_eq of [try_parse of "sub is (a, b) => a - b", 1, "lambda: commas"]
+assert_eq of [try_parse of "sub is (a, b,) => a - b", 1, "lambda: trailing comma"]
+assert_eq of [try_parse of "sub is () => n", 1, "lambda: empty signature"]
+assert_eq of [try_parse of ("define sub(a is 7, b) as:" + nl + "    return a"), 0, "fn: required after default still rejected"]
+define sep_sub(a is 7, b is 2) as:
+    return a - b
+assert_eq of [sep_sub of [], 5, "defaults still apply"]
+assert_eq of [sep_sub of [9], 7, "earlier-parameter default override"]
+sep_lam is (a, b,) => a - b
+assert_eq of [sep_lam of [7, 2], 5, "trailing-comma lambda runs"]
+define sep_implicit() as:
+    return n * 2
+assert_eq of [sep_implicit of 4, 8, "implicit n"]
+
 test_summary of null
