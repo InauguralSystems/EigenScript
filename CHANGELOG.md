@@ -806,6 +806,16 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Editor grammars: complete numeric literals, `report`/`report_value`, and
+  escaped f-string braces (#1233, #1234, #1241).** The VS Code and Vim
+  grammars now highlight `0xFF`, `0X10`, `.5` and `1.` over their whole span.
+  They give `report` and `report_value` the interrogative group, including
+  inside f-string interpolations. They treat `\{`/`\}` in f-string text as
+  escapes rather than the start of an interpolation.
+  `tests/test_editor_grammars.sh` checks one fixture with Vim's syntax engine
+  and VS Code's TextMate engine (`vscode-textmate`); each half is skipped by
+  name when its engine is absent.
+
 - **LSP rename edits identifiers inside f-string interpolations in place
   (#1244).** The lexer spliced an interpolation's tokens at the column after
   its closing `}`, so renaming `count` in `f"value={count}"` wrote over the

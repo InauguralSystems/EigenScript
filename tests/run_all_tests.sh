@@ -5472,6 +5472,30 @@ else
 fi
 echo ""
 
+# [80b] Bundled editor grammars (#1233 numbers, #1234 report/report_value,
+# #1241 escaped f-string braces), checked by the real engines: Vim's syntax
+# engine and VS Code's TextMate engine. Each half declines by name when its
+# engine is absent (the TextMate half needs vscode-textmate + vscode-oniguruma,
+# see the script); the section skips only when BOTH decline.
+echo "[80b] Editor Grammars (#1233/#1234/#1241)"
+EG_OUTPUT=$(bash "$TESTS_DIR/test_editor_grammars.sh" </dev/null 2>&1); EG_RC=$?
+EG_PASS=$(grep -c "  PASS:" <<< "$EG_OUTPUT" || true)
+EG_FAIL=$(grep -c "  FAIL:" <<< "$EG_OUTPUT" || true)
+if [ "$EG_RC" -eq 0 ] && [ "$EG_FAIL" -eq 0 ] && [ "$EG_PASS" -gt 0 ]; then
+    TOTAL=$((TOTAL + EG_PASS))
+    PASS=$((PASS + EG_PASS))
+    printf '%s\n' "$EG_OUTPUT"
+elif [ "$EG_RC" -eq 0 ] && [ "$EG_FAIL" -eq 0 ]; then
+    section_skip "editor grammars: $(head -1 <<< "$EG_OUTPUT")"
+else
+    TOTAL=$((TOTAL + EG_PASS + EG_FAIL + 1))
+    PASS=$((PASS + EG_PASS))
+    FAIL=$((FAIL + EG_FAIL + 1))
+    echo "  FAIL: editor grammars (rc=$EG_RC)"
+    printf '%s\n' "$EG_OUTPUT" | head -20
+fi
+echo ""
+
 # [81] Linter (--lint) — exercises lint.c, which had zero suite coverage.
 echo "[81] Linter (test_lint.sh, counted dynamically)"
 LINT_OUTPUT=$(bash "$TESTS_DIR/test_lint.sh" </dev/null 2>&1)
