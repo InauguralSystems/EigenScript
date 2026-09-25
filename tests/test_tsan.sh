@@ -1,4 +1,5 @@
 #!/bin/bash
+WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
 # ThreadSanitizer concurrency race gate (#401). Two claims, both mechanical:
 #   1. the spawn/channel test slice is RACE-FREE (the #297 "TSan-clean" property,
 #      previously only a code comment — now regression-gated), and
@@ -131,7 +132,7 @@ ROOT="$TESTS_DIR/.."
 TSAN_OBJS=$(ls "$ROOT"/build/tsan/*.o 2>/dev/null | grep -v '/main.o$' || true)
 EC_BIN="$ROOT/build/tsan/embed_concurrent"
 if [ -n "$TSAN_OBJS" ]; then
-    gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -fsanitize=thread -g -O1 -o "$EC_BIN" \
+    gcc $WERROR_FLAGS -fsanitize=thread -g -O1 -o "$EC_BIN" \
         "$ROOT/src/embed_concurrent.c" $TSAN_OBJS -lm -lpthread \
         -I"$ROOT/src" -I"$ROOT/build"
     # halt_on_error=0: the original thresh_worker hits a pre-existing
@@ -359,7 +360,7 @@ fi
 ATS_SRC="$TESTS_DIR/test_arming_two_states.c"
 ATS_BIN="$ROOT/build/tsan/test_arming_two_states"
 if [ -n "$TSAN_OBJS" ] && [ -f "$ATS_SRC" ]; then
-    gcc -Werror=switch -Werror=comment -Werror=misleading-indentation -fsanitize=thread -g -O1 -o "$ATS_BIN" \
+    gcc $WERROR_FLAGS -fsanitize=thread -g -O1 -o "$ATS_BIN" \
         "$TESTS_DIR/test_arming_two_states.c" $TSAN_OBJS -lm -lpthread \
         -I"$ROOT/src" -I"$ROOT/build"
     TSAN_OPTIONS="halt_on_error=0 exitcode=0" \

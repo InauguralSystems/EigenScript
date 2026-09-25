@@ -493,8 +493,7 @@ run() {
 # One-time calibration against the public run mode. Every fixture is a pinned
 # checkout under a private temp root; no real consumer checkout is touched.
 selftest() {
-  # The compiler name lives in an assignment (waived by shape in werror_switch_check),
-  # not in the plant command strings, which that audit cannot classify.
+  # The compiler name lives in an assignment, not in the synthetic command strings.
   ST_CC=cc
   export ST_CC
   local st_root st_eco st_record st_out st_candidate st_rc=0 st_bad=0 p tries

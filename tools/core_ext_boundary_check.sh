@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+WERROR_FLAGS=$(cat "$(dirname "$0")/werror_flags.txt")
 # core_ext_boundary_check.sh — the core must not include an extension's
 # private header (#744 item 1).
 #
@@ -130,7 +131,7 @@ POISON
         # compiler's status — that mistake reads as "the probe is green".
         local out st
         out=$( cd "$tree" && gcc -c -o /dev/null -I"$poison" -Isrc \
-                 -Wall -Werror=switch -Werror=comment -Werror=misleading-indentation \
+                 -Wall $WERROR_FLAGS \
                  -Werror=implicit-function-declaration \
                  -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 \
                  -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 \

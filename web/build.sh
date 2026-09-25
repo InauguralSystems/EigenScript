@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
 # Build the EigenScript WASM playground module.
 #
 # Requires emcc (emscripten). Install:
@@ -39,7 +40,7 @@ VERSION=$(cat VERSION)
 EXPORTED_FUNCTIONS='["_eigs_run_source","_eigs_version","_malloc","_free"]'
 EXPORTED_RUNTIME='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8"]'
 
-emcc -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 \
+emcc $WERROR_FLAGS -O2 \
     -DEIGENSCRIPT_EXT_HTTP=0 \
     -DEIGENSCRIPT_EXT_MODEL=0 \
     -DEIGENSCRIPT_EXT_DB=0 \

@@ -1423,6 +1423,14 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
+- **The warning-error trio has one home (#1275).** `tools/werror_flags.txt`
+  feeds Makefile and shell compiles. Makefile recipes carry the trio once,
+  outside `CFLAGS` and variant flag bundles, so overriding one cannot drop it.
+  The old 1,922-line dry-run audit is a
+  110-line source-text check; its 254-line cache-key script is gone (2,176
+  combined lines before, 110 after). [99i] and its required CI job run the
+  small check directly. Real LSP builds cover the generated index headers.
+
 - **Consumer acceptance is a small real-consumer gate (#1275).** The harness
   drops its large self-test and PATH farm, HOME scratch, path-edit refusal,
   and root drop. A private copy of the candidate's source and library tree

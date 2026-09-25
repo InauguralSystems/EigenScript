@@ -1,4 +1,5 @@
 #!/bin/bash
+WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
 # Note: no `set -e`. This is a test runner — it must continue past a failing
 # command and report its own PASS/FAIL tally. With `set -e`, any .eigs program
 # that legitimately exits non-zero (an uncaught runtime error, or a probe that
@@ -119,8 +120,8 @@ SKIPPED=0
 # SKIPPED at exactly ONE site (the since-deleted ILP32 gate) while this file has ~40 lines
 # that put a SKIP marker on a run's stdout — so the pushed head's own
 # `linux / gcc` log printed `RESULTS: 5282/5282 passed, 0 failed, 0 skipped`
-# beneath nine of them, including [99i]'s `SKIP: NOT MEASURED HERE` that
-# ci.yml forces on all ten suite jobs (measured by a blind critic, 2026-09-21).
+# beneath nine of them, including the former [99i] cache skip
+# (measured by a blind critic, 2026-09-21).
 # A printed zero is a claim, and that one was false on every lane.
 #
 # WHAT GOES THROUGH HERE: a SECTION-LEVEL skip — one where the section's
@@ -631,7 +632,7 @@ record_binary_fingerprint
 echo "[0] Opcode ABI Guard"
 check_binary_fingerprint
 TOTAL=$((TOTAL + 1))
-OP_ABI_OUT=$(${CC:-gcc} -std=c11 -Werror=switch -Werror=comment -Werror=misleading-indentation -I. \
+OP_ABI_OUT=$(${CC:-gcc} -std=c11 $WERROR_FLAGS -I. \
     -DEIGENSCRIPT_EXT_HTTP=0 \
     -DEIGENSCRIPT_EXT_MODEL=0 \
     -DEIGENSCRIPT_EXT_DB=0 \
@@ -6712,8 +6713,8 @@ fi
 # The RESULTS line below prints `N skipped`, and the comment at that counter
 # says a printed zero is a claim. Round 6 incremented it at ONE site while this
 # file had ~40 lines that put a SKIP marker on stdout, so `linux / gcc` printed
-# `0 skipped` under nine of them — including [99i]'s, which ci.yml forces on
-# all ten suite jobs. Every SECTION-LEVEL skip now goes through section_skip(),
+# `0 skipped` under nine of them — including the former [99i] cache skip.
+# Every SECTION-LEVEL skip now goes through section_skip(),
 # which prints AND counts; this is the structural half, run here so the claim
 # is checked on the same lane that makes it. Both halves are asserted: the
 # audit, and its own planted-fault arms (a bare `SKIP:` echo, an un-routed
@@ -7361,30 +7362,21 @@ else
 fi
 echo ""
 
-# [99i] Uniform -Werror=switch gate (#817 follow-up; #835 extended it to
-# compile-bearing shell scripts). Dry-runs every compiling Makefile target
-# plus the audited scripts (tools/freestanding_check.sh) and asserts every
-echo "[99i] werror-switch compile-line gate (#817/#835)"
-if [ "${EIGS_SKIP_WERROR_AUDIT:-0}" = "1" ]; then
-    section_skip "NOT MEASURED HERE — the dedicated 'werror audit' CI job owns this"
-    echo "        section for this run (EIGS_SKIP_WERROR_AUDIT=1, #1160). Unset the"
-    echo "        variable to run the audit in this suite."
-    echo ""
-else
+# [99i] Shared warning-error flags: source-text drift check.
+echo "[99i] shared warning-error flags"
 TOTAL=$((TOTAL + 1))
 werror_audit_rc=0
 bash "$TESTS_DIR/../tools/werror_switch_check.sh" || werror_audit_rc=$?
 if [ "$werror_audit_rc" -eq 0 ]; then
     PASS=$((PASS + 1))
-    echo "  PASS: every dry-run + audited-script compile line carries -Werror=switch"
+    echo "  PASS: one warning-error home; compile invocations reference it"
 else
     FAIL=$((FAIL + 1))
     if [ "$werror_audit_rc" -ne 0 ]; then
-        echo "  FAIL: a compile line lacks -Werror=switch (audit exit $werror_audit_rc; see lines above)"
+        echo "  FAIL: warning-error flag check (exit $werror_audit_rc; see lines above)"
     fi
 fi
 echo ""
-fi  # EIGS_SKIP_WERROR_AUDIT
 
 # [99i2] Core -> extension boundary (#744). The core must not include an
 # extension's PRIVATE header. `ext_db_internal.h` pulls <libpq-fe.h>, so a

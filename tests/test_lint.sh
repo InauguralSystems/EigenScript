@@ -1,4 +1,5 @@
 #!/bin/bash
+WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
 # Test the EigenScript linter (--lint)
 set -e
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -784,7 +785,7 @@ void *realloc(void *ptr, size_t size) {
     return real_realloc_fn(ptr, size);
 }
 C
-    if "$ALLOC_CC" -shared -fPIC -O2 -Wall -Wextra -Werror -Werror=switch -o "$ALLOC_SO" "$ALLOC_SRC" -ldl; then
+    if "$ALLOC_CC" -shared -fPIC -O2 -Wall -Wextra -Werror $WERROR_FLAGS -o "$ALLOC_SO" "$ALLOC_SRC" -ldl; then
         TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
         cat > "$TMPFILE" << 'EIGS'
 t is 5

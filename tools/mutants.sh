@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+WERROR_FLAGS=$(cat "$(dirname "$0")/werror_flags.txt")
 # Manual mutation trains: bash tools/mutants.sh <train> [mutant] | --selftest [train|all].
 # Configs contain the ordered population, commands, bounds and lane accounting.
 set -euo pipefail
@@ -75,7 +76,7 @@ link_fixture() {
     for obj in "$dest/build/$variant/"*.o; do
         [ "${obj##*/}" = main.o ] || objs+=("$obj")
     done
-    gcc -Werror=switch -Werror=comment -Werror=misleading-indentation "${flags[@]}" \
+    gcc $WERROR_FLAGS "${flags[@]}" \
         -o "$dest/$binary" "$SOURCES" "${objs[@]}" -lm -lpthread -I"$dest/src" -I"$dest/build"
 }
 

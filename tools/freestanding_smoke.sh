@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+WERROR_FLAGS=$(cat "$(dirname "$0")/werror_flags.txt")
 # Hosted smoke of the freestanding profile: build a NORMAL hosted binary
 # with -DEIGENSCRIPT_FREESTANDING=1 and prove (a) the core language still
 # runs (interpreter-only), (b) the carved surfaces fail loudly, not
@@ -47,7 +48,7 @@ CLI_ONLY=$(make --no-print-directory print-CLI_ONLY | tr ' ' '\n' | grep '\.c$')
 for u in $CLI_ONLY; do EMBED_SRC=$(printf '%s\n' $EMBED_SRC | grep -vx "$u"); done
 [ -n "$EMBED_SRC" ] || { echo "FAIL: derived an EMPTY source list from the Makefile" >&2; exit 1; }
 
-gcc -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 \
+gcc -Werror=implicit-function-declaration $WERROR_FLAGS -O2 \
     -DEIGENSCRIPT_FREESTANDING=1 \
     -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
     -o "$BUILD/eigs_fs" \
