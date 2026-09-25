@@ -2,3 +2,6 @@
 # output. They are not defects to work down.
 test_chunk_verify_stack.eigs OBS
 test_desc_unrecorded_read.eigs OBS
+# OBS row, unadjudicable: nondeterministic (random across two workers) and its tape refuses replay by
+# design (docs/TRACE.md, concurrency boundary), so neither adjudication step can settle it.
+trace_mt_replay_workers.eigs OBS
