@@ -798,6 +798,12 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **LSP rename respects lambda parameter scopes (#1243).** A lambda's
+  parameters resolved to the same-named global, so renaming the global also
+  rewrote the lambda's signature and body. Renaming `x` to `other` in
+  `f is (x, other) => x + other` changed the program's output. Lambdas now
+  bind their parameters (or the implicit `n` of `() =>`) over their own body.
+
 - **One scanner decides where an f-string interpolation ends (#1252,
   #1253).** The lexer found an interpolation's closing `}` with a scan that
   skipped plain strings but knew neither comments nor nested f-strings. A `}`

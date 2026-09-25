@@ -1443,6 +1443,40 @@ static int find_innermost_scope(FnScope *scopes, int n, int idx) {
     return best;
 }
 
+/* If tk[i] opens a lambda `( IDENT {, IDENT} [,] ) => body` (the parser's
+ * own lookahead shape), fill *s with its scope and return 1, else 0. The
+ * scope spans the parameter list and the body expression; the body ends at
+ * the first depth-0 token parse_expression cannot consume: a closing
+ * bracket the lambda sits inside, a separating comma or colon, or the end
+ * of the line. A `() =>` lambda binds the implicit `n`, as in the parser. */
+static int lambda_scope(Token *tk, int count, int i, FnScope *s) {
+    int j = i + 1;
+    while (j < count && (tk[j].type == TOK_IDENT || tk[j].type == TOK_COMMA)) j++;
+    if (!(j + 1 < count && tk[j].type == TOK_RPAREN && tk[j + 1].type == TOK_ARROW))
+        return 0;
+    s->tok_start = i;
+    s->bind_count = 0;
+    s->excl_lo = -1;
+    s->excl_hi = -1;
+    int params = 0;
+    for (int k = i + 1; k < j; k++)
+        if (tk[k].type == TOK_IDENT) { scope_add_param(s, tk[k].str_val, i); params++; }
+    if (params == 0) scope_add_param(s, "n", i);
+    int k = j + 2, depth = 0;
+    for (; k < count; k++) {
+        TokType tt = tk[k].type;
+        if (tt == TOK_LPAREN || tt == TOK_LBRACKET || tt == TOK_LBRACE) depth++;
+        else if (tt == TOK_RPAREN || tt == TOK_RBRACKET || tt == TOK_RBRACE) {
+            if (depth == 0) break;
+            depth--;
+        } else if (tt == TOK_NEWLINE || tt == TOK_INDENT || tt == TOK_DEDENT ||
+                   tt == TOK_EOF) break;
+        else if (depth == 0 && (tt == TOK_COMMA || tt == TOK_COLON)) break;
+    }
+    s->tok_end = k;
+    return 1;
+}
+
 /* Build the binding scopes a rename must respect. The constructs that create
  * a child environment are `define` (params / implicit `n`) and a statement
  * `for` (its loop variable) — both verified against the scope-semantics suite.
@@ -1457,6 +1491,13 @@ static int build_scopes(Document *doc, FnScope *out, int max) {
         if (t == TOK_LBRACKET || t == TOK_LPAREN || t == TOK_LBRACE) bracket_depth++;
         else if (t == TOK_RBRACKET || t == TOK_RPAREN || t == TOK_RBRACE) {
             if (bracket_depth > 0) bracket_depth--;
+        }
+        if (t == TOK_LPAREN) {
+            /* A lambda `(a, b) => body` binds its parameters in its body
+             * only (#1243); without this scope a lambda parameter resolved
+             * to a same-named global and rename rewrote both. */
+            int le = lambda_scope(tk, count, i, &out[n]);
+            if (le > 0) { n++; continue; }
         }
         if (t != TOK_DEFINE && t != TOK_FOR) continue;
         if (t == TOK_FOR && bracket_depth > 0) continue;  /* comprehension, not a block */
