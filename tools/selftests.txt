@@ -45,7 +45,7 @@ tools/section_plan.sh | timeout 1860 bash tools/section_plan.sh --selftest
 tools/stdlib_index_check.sh | timeout 30 bash tools/stdlib_index_check.sh --selftest
 tools/strict_differential.sh | timeout 30 bash tools/strict_differential.sh --selftest
 tools/vm_operand_width_check.sh | timeout 30 bash tools/vm_operand_width_check.sh --selftest
-tools/werror_switch_check.sh tools/werror_flags.txt | timeout 60 bash tools/werror_switch_check.sh --selftest
+tools/werror_switch_check.sh tools/cc_guard.sh tools/cc-guard-bin/cc tools/cc-guard-bin/gcc tools/cc-guard-bin/clang tools/cc-guard-bin/emcc tools/werror_flags.txt | timeout 60 bash tools/werror_switch_check.sh --selftest
 tools/workflow_yaml_check.sh | timeout 30 bash tools/workflow_yaml_check.sh --selftest | [{"pattern":"^SELFTEST: 8 case\\(s\\) run, 8 passed, 0 failed, 0 skipped$","count":1,"without_yaml":"^SELFTEST: 8 case\\(s\\) run, 6 passed, 0 failed, 2 skipped$"}]
 tools/portability_parse_check.sh tests/run_all_tests.sh | timeout 30 bash tools/portability_parse_check.sh --selftest | [{"pattern":"^  PASS: portability identity arm, 3/3 synthetic receipts judged correctly", "count":1}]
 tests/test_lsan_classify.sh tests/lsan_classify.sh tests/fixtures/lsan_classify/* tests/test_doc_examples.py tests/run_all_tests.sh | timeout 60 bash tests/test_lsan_classify.sh --selftest | [{"pattern":"^  PASS:","count":22},{"pattern":"^  FAIL:","count":0},{"pattern":"^  SKIP:","count":0}]

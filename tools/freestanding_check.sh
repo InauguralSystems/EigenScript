@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/werror_flags.txt"
+. "$(dirname "$0")/read_werror_flags.sh" || exit 1
 # Freestanding symbol gate — turns docs/FREESTANDING.md from a document
 # into a CI check.
 #

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/werror_flags.txt"
+. "$(dirname "$0")/read_werror_flags.sh" || exit 1
 # Manual mutation trains: bash tools/mutants.sh <train> [mutant] | --selftest [train|all].
 # Configs contain the ordered population, commands, bounds and lane accounting.
 set -euo pipefail

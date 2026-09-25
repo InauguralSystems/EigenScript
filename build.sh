@@ -4,7 +4,8 @@
 set -e
 
 cd "$(dirname "$0")/src"
-WERROR_FLAGS=$(cat ../tools/werror_flags.txt)
+WERROR_FLAGS_FILE=../tools/werror_flags.txt
+. ../tools/read_werror_flags.sh || exit 1
 
 VERSION=$(cat ../VERSION)
 # Compiler is overridable (e.g. CC=clang ./build.sh) so CI can exercise

@@ -1,5 +1,4 @@
 #!/bin/bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
 # Note: no `set -e`. This is a test runner — it must continue past a failing
 # command and report its own PASS/FAIL tally. With `set -e`, any .eigs program
 # that legitimately exits non-zero (an uncaught runtime error, or a probe that
@@ -9,6 +8,8 @@ WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
 # told where tests/ is. Unset — every ordinary invocation — this resolves from
 # $0 exactly as before.
 TESTS_DIR="${EIGS_PLAN_TESTS_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
+. "$TESTS_DIR/../tools/read_werror_flags.sh" || exit 1
 export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/failure_output.sh" || exit 1
 cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }

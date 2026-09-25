@@ -1,5 +1,6 @@
 #!/bin/bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
+. "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # ext_gfx.c under AddressSanitizer + LeakSanitizer, over a gfx corpus (#1007).
 #
 # WHY THIS EXISTS. `make asan` compiles ext_gfx.c out entirely, so until

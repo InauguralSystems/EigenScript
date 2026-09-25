@@ -512,24 +512,29 @@ The split is longest-processing-time greedy over (weight desc, chunk start asc)
 from the table takes a default weight and is **reported** (`unmeasured-sections=N`,
 with the roster printed), so a new section cannot silently unbalance a shard.
 
-## [99i]: one flags home, a source-text check
+## [99i]: one flags home and a compiler guard
 
 `tools/werror_flags.txt` holds the three warning-error flags. The Makefile
-reads it into `WERROR_FLAGS`; shell build scripts read the same file. Every
-compiling Makefile recipe includes `$(WERROR_FLAGS)` once, outside flag bundles
-such as `CFLAGS`; overriding `CFLAGS` cannot drop it, and the default bundles
-do not duplicate it. Compiled objects
-depend on the home file, so an edit rebuilds them.
+reads it into `WERROR_FLAGS` and puts it in `CFLAGS` and every variant flag
+bundle, including those consumed by Python build checks. Recipes using a
+bundle do not repeat it; direct recipes add it once. Shell scripts source
+`tools/read_werror_flags.sh`, which refuses a missing, unreadable or empty
+home before compiling. The suite runner resolves the home from `TESTS_DIR`,
+including when a section plan executes a copy under `/tmp`.
 
-`tools/werror_switch_check.sh` reads tracked Makefile recipes, shell scripts
-and workflows. It checks the home, rejects literal copies, and checks that
-compile invocations reference `WERROR_FLAGS`. It reports the number examined
-and fails if coverage falls below its measured floor. The required `werror
-audit` job and suite section [99i] run this check directly. There is no cache.
+`tools/werror_switch_check.sh` checks only static properties: the exact home,
+no literal copies in tracked build files, and no absolute compiler path that
+bypasses the guard. It uses Git's explicit safe-directory setting in CI.
+The required `werror audit` job and suite section [99i] run this small check
+directly; there is no cache.
 
-`make lsp` generates both LSP index headers and compiles `eigenlsp.c` with
-`$(WERROR_FLAGS)` on the recipe. CI's install/LSP builds exercise that real
-path, so [99i] no longer runs separate generated-header probes.
+CI prepends `tools/cc-guard-bin` to `PATH` in each compiling job. The linked
+`gcc`, `cc`, `clang` and `emcc` wrappers inspect the actual argv of every C
+compile, reject a missing trio flag, and then execute the first real compiler
+later on `PATH`. Each job requires a nonzero `CC_GUARD_LOG` count. This
+compiler boundary covers commands assembled by Make, shell, Python and suite
+children without guessing their source syntax. `make lsp` generates both LSP
+index headers and compiles `eigenlsp.c` with the trio in its flag bundle.
 
 ## Platform tiers — what blocks a merge, and what decides main's colour (#1264)
 
@@ -593,9 +598,9 @@ self-tests` job; its calibration runs when its inputs change or nightly. A missi
   required path may not read the event (outside those two forms), and an
   `if:` that reads `env.*`, `needs.*.outputs` or `steps.*.outputs` is traced
   to where the value is set — unresolvable is red, `vars.*` is always red.
-  Two reviewed step outputs are waived by a hash of their step (`scope`'s
-  docs-only check); a waiver that matches
-  nothing is red.
+  Two reviewed step outputs are waived by a hash of their step (`scope`/`detect`
+  for docs-only classification and `gate-selftests`/`select` for changed-gate
+  selection); a waiver that matches nothing is red.
 - `[continue-on-error]` — a job or step on a required path sets it, so its
   failure would not fail the check.
 - `[uncovered]` — a `ci.yml` job is neither required nor the worker of exactly

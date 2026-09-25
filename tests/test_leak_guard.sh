@@ -1,5 +1,6 @@
 #!/bin/bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
+. "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # Regression guard for the builtin-return ref-protocol leak (fixed in 2f1e993).
 #
 # Pre-fix, every fresh-return builtin (range/make_str/keys/...) got an

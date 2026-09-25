@@ -1423,13 +1423,15 @@ All notable changes to EigenScript are documented here.
 
 ### Changed
 
-- **The warning-error trio has one home (#1275).** `tools/werror_flags.txt`
-  feeds Makefile and shell compiles. Makefile recipes carry the trio once,
-  outside `CFLAGS` and variant flag bundles, so overriding one cannot drop it.
-  The old 1,922-line dry-run audit is a
-  110-line source-text check; its 254-line cache-key script is gone (2,176
-  combined lines before, 110 after). [99i] and its required CI job run the
-  small check directly. Real LSP builds cover the generated index headers.
+- **The warning-error trio has one home and a compiler boundary (#1275).**
+  `tools/werror_flags.txt` feeds Makefile bundles, shell builds and Python
+  callers. CI puts `tools/cc-guard-bin` first on `PATH`: each C compile must
+  carry all three flags in its actual argv, and each compiling job requires a
+  nonzero guard count. [99i] checks the exact home, literal copies and absolute
+  compiler bypasses. The former 1,922-line dry-run audit and 254-line cache
+  key (2,176 lines combined) are replaced by a 100-line static check and
+  48-line compiler guard (148 combined). Real LSP builds cover the generated
+  index headers.
 
 - **Consumer acceptance is a small real-consumer gate (#1275).** The harness
   drops its large self-test and PATH farm, HOME scratch, path-edit refusal,

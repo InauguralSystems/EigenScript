@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/werror_flags.txt"
+. "$(dirname "$0")/read_werror_flags.sh" || exit 1
 # Embedded-stack soak gate: build the freestanding-profile runtime hosted
 # (as freestanding_smoke.sh does) with the REPL-soak harness, then run it
 # twice — once with the stack rlimit clamped to 64 KiB, once roomier.

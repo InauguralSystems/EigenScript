@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/werror_flags.txt"
+. "$(dirname "$0")/read_werror_flags.sh" || exit 1
 # core_ext_boundary_check.sh — the core must not include an extension's
 # private header (#744 item 1).
 #

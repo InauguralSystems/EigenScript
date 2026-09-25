@@ -70,10 +70,12 @@ jobs:
           if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
             brew install --force-bottle coreutils
           fi
-          sanitizer_cc="$(brew --prefix "$formula")/bin/clang"
-          test -x "$sanitizer_cc"
-          "$sanitizer_cc" --version
-          echo "EIGS_ASAN_GFX_CC=$sanitizer_cc" >> "$GITHUB_ENV"
+          brewbin="$(brew --prefix "$formula")/bin"
+          test -x "$brewbin/clang"
+          export PATH="$brewbin:$PATH"
+          clang --version
+          echo "PATH=$PATH" >> "$GITHUB_ENV"
+          echo "EIGS_ASAN_GFX_CC=clang" >> "$GITHUB_ENV"
 
       - name: Verify gfx sanitizer controls
         run: bash tests/test_asan_gfx.sh --toolchain-only

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
+. "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # Build the EigenScript WASM playground module.
 #
 # Requires emcc (emscripten). Install:

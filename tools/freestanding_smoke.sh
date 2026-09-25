@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/werror_flags.txt"
+. "$(dirname "$0")/read_werror_flags.sh" || exit 1
 # Hosted smoke of the freestanding profile: build a NORMAL hosted binary
 # with -DEIGENSCRIPT_FREESTANDING=1 and prove (a) the core language still
 # runs (interpreter-only), (b) the carved surfaces fail loudly, not

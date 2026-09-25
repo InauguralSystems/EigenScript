@@ -45,7 +45,7 @@ paths:
 
   | population | what enrols you | how a new tool fails it | verify with |
   |---|---|---|---|
-  | `tools/werror_switch_check.sh` ([99i]) | being a TRACKED `*.sh` (`git ls-files '*.sh'`) | a compile line omits the shared `WERROR_FLAGS` reference | `bash tools/werror_switch_check.sh` — its examined count must remain above the floor |
+  | `tools/werror_switch_check.sh` ([99i]) | being a tracked Makefile, `*.mk`, `*.sh`, `*.py` or workflow | a literal trio copy or absolute compiler path bypass | `bash tools/werror_switch_check.sh` — it reports the nonzero scanned population |
   | `tools/section_plan.sh --gate-audit` (#1160) | the runner dispatching you as `bash "$TESTS_DIR/../tools/NEW.sh"` | any line matching `GATE_ENUM_RE` — **including in a COMMENT** — with no `EIGS-CAP-GATE` marker and no `GATE_WAIVERS` row | `bash tools/section_plan.sh --gate-audit` → `unaccounted=0` |
   | `tools/section_plan.sh`'s child list | the same dispatch spelling | a tool invoked in ANY OTHER spelling is not scanned at all — invisible, not exempt | the audit prints `over the runner + N dispatched children`; N has a floor of 50 |
   | `tools/suite_label_check.sh` ([99w]) | adding a `[NN]` section to the runner | a label another section already echoes | `bash tools/suite_label_check.sh` |
@@ -61,10 +61,12 @@ paths:
   reason rather than rewording — rewording makes the population depend on
   authors avoiding words, which is how a detector stops describing the tree.
 
-- **A new compile command must reference `WERROR_FLAGS`.** `tools/werror_switch_check.sh`
-  scans tracked Makefile recipes and shell scripts for compiler commands; a new
-  command without that reference fails [99i]. The flags live in
-  `tools/werror_flags.txt` and Makefile objects depend on that file.
+- **A new C compile must carry the trio at the compiler boundary.** In CI,
+  `tools/cc-guard-bin` precedes real compilers on `PATH`; `tools/cc_guard.sh`
+  rejects actual C compiler argv missing any flag and each compiling job
+  requires a nonzero count. [99i] checks the one home, literal copies and
+  absolute compiler paths. Makefile bundles and shell readers use
+  `tools/werror_flags.txt`; shell readers fail before compiling if it is absent.
 - **A child `.sh` must not call `timeout` bare.** The macOS CI runners do
   not ship coreutils' `timeout`, so a child that uses it dies rc 127 there
   on its first bounded run — `tests/test_file_exists_fifo.sh`'s first

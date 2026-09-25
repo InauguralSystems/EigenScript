@@ -1,110 +1,100 @@
 #!/bin/sh
-# Source-text guard for the shared compile warning flags. Real builds remain
-# the expansion oracle. This check cannot infer compiles assembled at runtime.
+# Static claims only. tools/cc_guard.sh checks actual compiler invocations in CI.
 set -eu
 cd "$(dirname "$0")/.."
 python3 - "${1:-}" <<'PY'
-import pathlib
+import os
+from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 HOME = 'tools/werror_flags.txt'
 FLAGS = ('-Werror=switch', '-Werror=comment', '-Werror=misleading-indentation')
-FLOOR = 35  # Measured from the source-text population; drops below this are red.
 LITERAL = re.compile(r'-Werror=(?:switch|comment|misleading-indentation)(?![\w-])')
-COMPILER = re.compile(
-    r'(?<![\w./])(?:["\']?)(?:\$\$?\(CC\)|\$\{[A-Z_]*CC(?:[^}]*)\}'
-    r'|\$[A-Z_]*CC|gcc|clang|cc|emcc)(?:\.exe)?(?:["\']?)(?=\s)')
-SOURCE = re.compile(r'(?<!\S)-c(?=\s|$)|\.c(?=["\']?(?:\s|$))|'
-                    r'\$(?:\([A-Z_]*SOURCES\)|\{[A-Z_]*SOURCES(?:\[@\])?\}|[A-Z_]*SOURCES\b|[A-Z_]*SRC\b)')
-REFERENCE = re.compile(r'\$(?:\$?\(WERROR_FLAGS\)|\{WERROR_FLAGS\}|WERROR_FLAGS\b)')
-SPLIT = re.compile(r'&&|\|\||;|(?<!\|)\|(?!\|)')
-CONTROL = re.compile(r'[-+@]?\s*(?:(?:if|then|do|!|time|command|env)\s*|\(\s*)*')
-ASSIGN = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=\$\(\s*')
+ABS_CC = re.compile(r'(?<![\w/])/(?:[\w.+-]+/)*(?:gcc|cc|clang|emcc)(?=\s|["\']|$)')
+CHECK = 'tools/werror_switch_check.sh'
+GUARD = 'tools/cc_guard.sh'
 
 
-def logical_lines(text):
-    pending = ''
-    for line in text.splitlines():
-        if line.lstrip().startswith('#'):
+def check(files, home):
+    errors = []
+    if home.split() != list(FLAGS):
+        errors.append('home must hold exactly the three whole warning flags')
+    for path, source in files.items():
+        if path == CHECK:
             continue
-        pending += line.rstrip().removesuffix('\\') + ' '
-        if not line.rstrip().endswith('\\'):
-            yield pending
-            pending = ''
-    if pending:
-        yield pending
-
-
-def check(files, home, floor):
-    errors, examined = [], 0
-    words = home.split()
-    if len(words) != 3 or set(words) != set(FLAGS):
-        errors.append('home must define exactly the three whole warning flags')
-    for path, content in files.items():
-        if path == 'tools/werror_switch_check.sh':
-            continue  # This checker contains patterns and planted faults as data.
-        for number, line in enumerate(content.splitlines(), 1):
-            if LITERAL.search(line):
+        for number, line in enumerate(source.splitlines(), 1):
+            if path not in (HOME, GUARD) and LITERAL.search(line):
                 errors.append(f'{path}:{number}: literal warning flag outside home')
-        if path != 'Makefile' and not path.endswith('.sh'):
-            continue
-        for line in logical_lines(content):
-            for segment in SPLIT.split(line):
-                match = COMPILER.search(segment)
-                if not match or not SOURCE.search(segment[match.end():]):
-                    continue
-                prefix = segment[:match.start()].strip()
-                if not (CONTROL.fullmatch(prefix) or ASSIGN.fullmatch(prefix)):
-                    continue  # Compiler names in printed advice and fixture strings are data.
-                examined += 1
-                if not REFERENCE.search(segment[match.end():]):
-                    errors.append(f'{path}: compile lacks WERROR_FLAGS: {segment.strip()[:110]}')
-    if examined < floor:
-        errors.append(f'examined={examined} below floor={floor}')
-    return errors, examined
+            if path != HOME and not line.lstrip().startswith('#') and ABS_CC.search(line):
+                errors.append(f'{path}:{number}: absolute compiler path bypasses guard')
+    return errors
 
 
 def selftest():
-    good_home = ' '.join(FLAGS)
-    base = {'Makefile': '\t$(CC) $(WERROR_FLAGS) -c src/vm.c -o vm.o\n',
-            'tests/probe.sh': 'gcc $WERROR_FLAGS -c src/vm.c -o vm.o\n'}
-    cases = [
-        ('recipe compile without variable', {**base, 'Makefile': '\t$(CC) -c src/vm.c -o vm.o\n'}, good_home, True),
-        ('script compile without variable', {**base, 'tests/probe.sh': 'gcc -c src/vm.c -o vm.o\n'}, good_home, True),
-        ('literal switch flag in script', {**base, 'tests/probe.sh': 'gcc $WERROR_FLAGS -Werror=switch -c src/vm.c\n'}, good_home, True),
-        ('home missing comment flag', base, good_home.replace(FLAGS[1], ''), True),
-        ('switch-enum is not switch', base, good_home.replace(FLAGS[0], '-Werror=switch-enum'), True),
-        ('honest control', base, good_home, False),
-    ]
-    for name, files, home, should_fail in cases:
-        errors, n = check(files, home, 2)
-        if bool(errors) != should_fail or n != 2:
-            print(f'SELFTEST FAIL: {name}: examined={n}, errors={errors}')
-            return 1
+    good = ' '.join(FLAGS)
+    cases = [('missing home flag', {}, good.replace(FLAGS[1], ''), True),
+             ('switch-enum is not switch', {}, good.replace(FLAGS[0], '-Werror=switch-enum'), True),
+             ('literal in Python', {'tools/probe.py': f'cc {FLAGS[0]} -c a.c'}, good, True),
+             ('absolute compiler', {'tools/probe.sh': '/usr/bin/cc -c a.c'}, good, True),
+             ('honest text', {'Makefile': '$(CC) $(CFLAGS) -c a.c'}, good, False)]
+    for name, files, home, red in cases:
+        if bool(check(files, home)) != red:
+            sys.exit(f'SELFTEST FAIL: {name}')
         print(f'SELFTEST PASS: {name}')
-    print('SELFTEST: 6 cases passed')
-    return 0
+    with tempfile.TemporaryDirectory(prefix='cc-guard-selftest-') as temp:
+        root = Path(temp); guard = root/'guard'; real = root/'real'
+        guard.mkdir(); real.mkdir()
+        (guard/'cc').symlink_to((Path.cwd()/'tools/cc_guard.sh').resolve())
+        compiler = real/'cc'; compiler.write_text('#!/bin/sh\nexit 0\n'); compiler.chmod(0o755)
+        env = {**os.environ, 'PATH': f'{guard}:{real}:'+os.environ['PATH'], 'CC_GUARD_LOG': str(root/'count')}
+        probe = root/'a.c'; probe.write_text('int a;\n')
+        runs = [('compile without trio', ['-c', str(probe)], True),
+                ('link only', ['a.o', '-o', 'a'], False),
+                ('compile with trio', [*FLAGS, '-c', str(probe)], False),
+                ('stdin -x c without trio', ['-x', 'c', '-'], True),
+                ('switch-enum only', ['-Werror=switch-enum', *FLAGS[1:], '-c', str(probe)], True),
+                ('preprocess only', ['-E', str(probe)], False)]
+        for name, args, red in runs:
+            p = subprocess.run([str(guard/'cc'), *args], env=env, capture_output=True, text=True)
+            if (p.returncode != 0) != red or (red and 'cc-guard: compile without' not in p.stderr):
+                sys.exit(f'SELFTEST FAIL: {name}: {p.stderr}')
+            print(f'SELFTEST PASS: {name}')
+        bin_dir = root/'bin'; bin_dir.mkdir()
+        (bin_dir/'bash').symlink_to('/bin/bash')
+        env['PATH'] = f'{guard}:{bin_dir}'
+        p = subprocess.run([str(guard/'cc'), 'a.o'], env=env, capture_output=True, text=True)
+        if p.returncode == 0 or 'real compiler cc not found' not in p.stderr:
+            sys.exit('SELFTEST FAIL: guard never execs itself')
+        print('SELFTEST PASS: guard never execs itself')
+        (root/'count').write_text('')
+        env['PATH'] = os.environ['PATH']
+        p = subprocess.run(['/bin/bash', 'tools/cc_guard.sh', '--report'], env=env, capture_output=True, text=True)
+        if p.returncode == 0 or 'examined=0' not in p.stderr:
+            sys.exit('SELFTEST FAIL: zero guard count')
+        print('SELFTEST PASS: zero guard count')
+    print('SELFTEST: 13 cases passed')
 
 
-if len(sys.argv) > 1 and sys.argv[1] == '--selftest':
-    sys.exit(selftest())
-if len(sys.argv) > 1 and sys.argv[1]:
+if sys.argv[1] == '--selftest':
+    selftest(); sys.exit(0)
+if sys.argv[1]:
     sys.exit('usage: tools/werror_switch_check.sh [--selftest]')
-paths = subprocess.check_output(
-    ['git', 'ls-files', '-z', '--', 'Makefile', '*.sh', '.github/workflows/*.yml']).decode().split('\0')
-files = {p: pathlib.Path(p).read_text() for p in paths if p and pathlib.Path(p).is_file()}
-if len(files) < 1:
-    sys.exit('werror flags: no tracked source files examined')
-home = pathlib.Path(HOME)
+paths = subprocess.check_output(['git', '-c', "safe.directory=*", 'ls-files', '-z', '--',
+    'Makefile', '*.mk', '*.sh', '*.py', '.github/workflows/*.yml']).decode().split('\0')
+files = {p: Path(p).read_text() for p in paths if p and Path(p).is_file()}
+if not files:
+    sys.exit('werror flags: no tracked build files examined')
+home = Path(HOME)
 if not home.is_file():
     sys.exit(f'werror flags: missing home {HOME}')
-errors, examined = check(files, home.read_text(), FLOOR)
-print(f'examined={examined}')
+errors = check(files, home.read_text())
+print(f'examined={len(files)}')
 if errors:
     for error in errors:
         print('werror flags: FAIL:', error)
     sys.exit(1)
-print(f'werror flags: OK — one home {HOME}, {examined} compile invocations use it')
+print(f'werror flags: OK — one home {HOME}, {len(files)} tracked build files checked; compiler enforced in CI')
 PY

@@ -46,8 +46,13 @@ def main():
     def variable(name):
         d=run('make-'+name,['make','--no-print-directory','-s','print-'+name])
         return shlex.split((d/'stdout').read_text())
-    configuration={str(ROOT/n):sha(ROOT/n) for n in ['Makefile','VERSION']}
+    home=ROOT/'tools/werror_flags.txt'
+    try: werror=home.read_text().split()
+    except OSError as exc: raise RuntimeError('werror flags: cannot read tools/werror_flags.txt') from exc
+    if not werror: raise RuntimeError('werror flags: empty tools/werror_flags.txt')
+    configuration={str(ROOT/n):sha(ROOT/n) for n in ['Makefile','VERSION','tools/werror_flags.txt']}
     cc=variable('CC'); flags=variable('FLAGS_'+a.variant); libs=variable('LIBS_'+a.variant)
+    assert all(flags.count(flag)==1 for flag in werror), 'FLAGS variant lost the warning-error trio'
     all_objects=variable('OBJ_'+a.variant)
     sources=variable('SRC_V_'+a.variant)
     verify_inputs(configuration)
@@ -56,7 +61,7 @@ def main():
     assert objects and all(p.is_file() for p in objects),'build selected runtime variant first'
     flags=[f for f in flags if not f.startswith('-DEIGENSCRIPT_VERSION=')]
     flags+=['-DEIGENSCRIPT_VERSION="'+(ROOT/'VERSION').read_text().strip()+'"','-I'+str(ROOT/'src')]
-    inputs=[ROOT/'src/eigenscript.c',ROOT/'tests/test_gc_traversal.c',ROOT/'tests/lsan_classify.sh',Path(__file__),ROOT/'Makefile',ROOT/'VERSION',ROOT/'tools/bounded_process.py',*[ROOT/p for p in sources],*objects,*sorted((ROOT/'src').rglob('*.h'))]
+    inputs=[ROOT/'src/eigenscript.c',ROOT/'tests/test_gc_traversal.c',ROOT/'tests/lsan_classify.sh',Path(__file__),ROOT/'Makefile',ROOT/'VERSION',home,ROOT/'tools/bounded_process.py',*[ROOT/p for p in sources],*objects,*sorted((ROOT/'src').rglob('*.h'))]
     frozen={str(p):sha(p) for p in inputs}
     manifest['inputs']=frozen
     def verify():

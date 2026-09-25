@@ -1,5 +1,6 @@
 #!/bin/bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
+. "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # The lint split must not leak a generic helper symbol into an embedding
 # archive.  A host can legitimately have its own json_escape helper; the
 # archive link must remain collision-free.

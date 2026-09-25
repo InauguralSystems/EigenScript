@@ -1,5 +1,6 @@
 #!/bin/bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
+. "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # Two-file amalgamation drop-in (#397): a fresh directory containing ONLY the
 # two generated files (eigenscript_all.c + eigs_embed.h) plus a tiny host
 # builds with `cc` alone — no -I, no -D, no source list — and runs eval. This

@@ -1,5 +1,6 @@
 #!/bin/bash
-WERROR_FLAGS=$(cat "$(dirname "$0")/../tools/werror_flags.txt")
+WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
+. "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # ThreadSanitizer concurrency race gate (#401). Two claims, both mechanical:
 #   1. the spawn/channel test slice is RACE-FREE (the #297 "TSan-clean" property,
 #      previously only a code comment — now regression-gated), and
