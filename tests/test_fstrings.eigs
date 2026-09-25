@@ -75,6 +75,9 @@ assert_eq of [f"{f"{"a"}{"#"}"}", "a#", "hash string in a second nested interpol
 assert_eq of [f"{f"{1 # }
  + 2}"}", "3", "comment with a brace inside a nested interpolation"]
 assert_eq of [f"{f"n#{w}"}", "n#5", "hash in nested literal text is text"]
+# a same-line comment inside a NESTED interpolation is loud too (review of
+# #1325: it swallows the rest of the line, as at top level and in `(x # c)`)
+assert_eq of [try_parse of "print of f\"{f\"{w #c}\"}\"\nprint of 1", 0, "same-line comment in a nested interpolation is loud"]
 
 # --- #1253: a brace-bearing string inside a NESTED f-string's interpolation.
 # The outer scanner used to treat the nested f"..." as a plain string, stop at

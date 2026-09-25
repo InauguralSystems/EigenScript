@@ -809,7 +809,9 @@ All notable changes to EigenScript are documented here.
   literals, `#` comments to end of line, nested f-strings with their escapes,
   and brace depth. A comment on the same line as the closing `}`
   (`f"{x # c}"`) now consumes it, as the lexical rule says, and is a parse
-  error instead of a silently different value.
+  error instead of a silently different value. `lib/eigen.eigs` (the
+  meta-circular interpreter) scans f-strings with the same rules. It also
+  drops layout tokens inside an interpolation, as the C lexer does since #334.
 
 - **`--fmt` ignores `EIGS_TRACE` and `EIGS_REPLAY` (#1238).** The formatter
   ran after trace initialization, so an inherited replay path it could not
