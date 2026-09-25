@@ -128,17 +128,10 @@ int main(int argc, char **argv) {
         return rc;
     }
 
-    trace_init();
-    atexit(trace_shutdown);
-    /* #972: EIGS_OBS_GATE_STATS=1 also tallies observe-helper entries (the
-     * per-unit verdict lines come from compile_ast); reported at exit so a
-     * read-free program can be checked for `observe-calls 0`. */
-    if (eigs_env_flag("EIGS_OBS_GATE_STATS")) {
-        g_obs_count_observe_calls = 1;
-        atexit(eigs_obs_gate_stats_report);
-    }
-
-    /* --fmt is a pure source transformer; no VM, no arena, no state. */
+    /* --fmt is a pure source transformer; no VM, no arena, no state.
+     * Handled before trace_init like --step: nothing executes, so an
+     * inherited EIGS_REPLAY must not fail it and an inherited EIGS_TRACE
+     * must not truncate that tape file (#1238). */
     if (argc >= 2 && strcmp(argv[1], "--fmt") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Usage: eigenscript --fmt [--write] file.eigs\n");
@@ -153,6 +146,16 @@ int main(int argc, char **argv) {
             path = argv[2];
         }
         return eigenscript_fmt(path, write_mode);
+    }
+
+    trace_init();
+    atexit(trace_shutdown);
+    /* #972: EIGS_OBS_GATE_STATS=1 also tallies observe-helper entries (the
+     * per-unit verdict lines come from compile_ast); reported at exit so a
+     * read-free program can be checked for `observe-calls 0`. */
+    if (eigs_env_flag("EIGS_OBS_GATE_STATS")) {
+        g_obs_count_observe_calls = 1;
+        atexit(eigs_obs_gate_stats_report);
     }
 
     /* Everything below uses g_script_dir / g_exe_dir / g_global_env,
