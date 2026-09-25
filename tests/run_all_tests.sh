@@ -6712,6 +6712,8 @@ if [ "$STRICT_DIFF_RC" = 0 ]; then
     PASS=$((PASS + 1))
     echo "  PASS: every guard raises from its own"
     echo "        guard; every answer stays quiet"
+    case "$STRICT_DIFF_OUT" in *"SKIP: not a gfx build"*)
+        echo "  SKIP: gfx sweep and pixel halves (not a gfx build)" ;; esac
 else
     FAIL=$((FAIL + 1))
     if [ "$STRICT_DIFF_RC" != 0 ]; then

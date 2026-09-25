@@ -780,9 +780,9 @@ data: with a window open, `gfx_read of ["1", 1]` used to hand back the pixel
 at (0, 1) — the punned 0 — and now answers `null`.
 `tools/strict_differential.sh` measures exactly that surface on a gfx build
 (it opens a window under the dummy driver and diffs a readback digest against
-a build of the parent commit) and requires every such divergence to carry an
-executed proof that the parent's answer was the punned zero and that this
-build's rejected call draws nothing else instead.
+a baseline build). With the flag off every row must draw byte-identically to
+the baseline, and with `EIGS_STRICT=1` every wrong-typed row must raise from
+its own guard.
 
 **A wrong-typed OPTIONAL argument follows the same rule, which makes the three
 text builtins differ on purpose.** `gfx_text_width` and `gfx_text_height`

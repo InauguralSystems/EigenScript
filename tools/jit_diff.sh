@@ -35,8 +35,9 @@ run() { # $1 out-file, $2 seconds, rest = env args (options first)
 }
 arm_env() { case "$1" in
   jit) AE=("${JIT[@]}") ;; osr) AE=("${OSR[@]}") ;; obs) AE=("${OBS[@]}") ;; esac; }
-# tests/foo.eigs keeps the historical basename; anything else keeps its path.
-row_of() { case "$1" in tests/*) basename "$1" ;; *) printf '%s' "$1" ;; esac; }
+# Top-level tests/foo.eigs keeps the historical basename; anything deeper keeps
+# its path (nested fixtures share basenames: peer.eigs, entry.eigs, ...).
+row_of() { case "$1" in tests/*/*) printf '%s' "$1" ;; tests/*) basename "$1" ;; *) printf '%s' "$1" ;; esac; }
 # '#' lines and blank lines are reasons. Data rows are what the diff sees.
 ledger_data() { awk 'NF && substr($0,1,1) != "#" { print }' "$1" | sort; }
 ledger_count() { ledger_data "$1" | wc -l | tr -d ' '; }

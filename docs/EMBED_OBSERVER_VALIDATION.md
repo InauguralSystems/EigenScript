@@ -129,14 +129,9 @@ resolution. No benchmark/solver source changes. The small preflight then
 completed with `status=UNSAT`. The timing comparison uses this same configured
 snapshot for both arms.
 
-Completed timing command:
-
-Historical timing command (the one-off harness is retired; the live corpus
-check is `bash tools/jit_diff.sh`):
-
-```bash
-EMS="$PWD/build/observer-EigenMiniSat" N=5 ROWS=4 COLS=4
-```
+The timing run used a one-off harness, since retired, with
+`EMS="$PWD/build/observer-EigenMiniSat" N=5 ROWS=4 COLS=4`. The live corpus
+check for the gate is the observer arm of `bash tools/jit_diff.sh`.
 
 ```text
 base  median: 287.78 s   (289.21 288.18 287.78 285.53 285.97)
