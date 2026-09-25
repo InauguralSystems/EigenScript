@@ -805,6 +805,13 @@ All notable changes to EigenScript are documented here.
   reuses the evaluated target for the read and the write, as indexed compound
   assignment already did. `tests/test_dot_assign.eigs` covers the family.
 
+- **Trace tape: a scope record for a long function name keeps its newline
+  (#1157).** `S <fn> <depth> <serial>` was staged through a 128-byte buffer,
+  so a function name of 121 or more characters lost its tail and the record's
+  newline, and the next record was glued onto the same line. The name is now
+  written unstaged. `tests/test_trace_mt.sh` runs the writer with 5- to
+  1000-character names.
+
 - **`functional.wait_until` no longer sleeps after its final failed attempt
   (#1237).** `sleep_fn` ran after every failed attempt, including the last
   one, so a timeout after `tries` attempts paid `tries` delays instead of

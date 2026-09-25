@@ -268,6 +268,32 @@ else
          "rc=$src N=$snrec malformed=$smal examined=$sexamined"
 fi
 
+echo "=== long-scope-name (S record keeps its full name and newline, #1157) ==="
+# emit_scope_transition staged `S <fn> <depth> <serial>` through tp_printf's
+# 128-byte buffer: a name of 121+ chars lost its tail AND the newline, and
+# the next record was glued on (`S faaa…a 1 2A q=2`). Live writer runs: short
+# controls, the boundary on each side, and much longer names.
+for nlen in 5 120 121 160 1000; do
+    lname=$(awk -v n="$nlen" 'BEGIN { s = "f"; while (length(s) < n) s = s "a"; print s }')
+    printf '%s\n' "define $lname() as:" "    q is 2" "    return q" \
+        "print of ($lname of null)" > "$TMPDIR/longname.eigs"
+    ltape="$TMPDIR/longname_$nlen.tape"
+    EIGS_TRACE="$ltape" "$EIGS" "$TMPDIR/longname.eigs" \
+        >"$TMPDIR/longname.out" 2>"$TMPDIR/longname.err"
+    lrc=$?
+    read -r llines lwell lmal lnrec locfg lexamined <<< "$(parse_tape "$ltape")"
+    # The S record is exact (full spelling, depth, serial) and the record
+    # after it is the body's assignment, on its own line.
+    lnext=$(awk -v want="S $lname 1 2" '$0 == want { getline; print; exit }' "$ltape")
+    if [ "$lrc" -eq 0 ] && [ "$(cat "$TMPDIR/longname.out")" = "2" ] \
+       && [ "$lexamined" -gt 0 ] && [ "$lmal" -eq 0 ] && [ "$lnext" = "A q=2" ]; then
+        ok "long-scope-name: $nlen-char name, exact S record then A q=2 (examined=$lexamined)"
+    else
+        fail "long-scope-name: $nlen-char name, exact S record then A q=2" \
+             "rc=$lrc malformed=$lmal examined=$lexamined next='$lnext' S=$(grep '^S f' "$ltape" | cut -c1-40)"
+    fi
+done
+
 echo "=== replay-workers (must fail-loud, no signal) ==="
 # Build a synthetic tape with this binary's V header + 4000 N random=0.5.
 hdr="$TMPDIR/hdr.tape"
