@@ -55,19 +55,29 @@ if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
             rm -f "$__plan_runner"
             exit 1
         fi
-        # Timing records and headers are two independently visible witnesses.
-        # Captured subshell output never reaches either population in this log.
+        # The planner counted literal headers in the selected source before
+        # execution. Count only headers on this run's stdout: a header echoed
+        # inside $(...) is captured by the subshell and never reaches here.
+        __plan_want=${__plan_line#*sections=}
+        __plan_want=${__plan_want%% *}
+        case "$__plan_want" in
+            ''|*[!0-9]*) echo "ERROR: planner gave an invalid section count: $__plan_line"
+                        rm -f "$__plan_runner"; exit 1 ;;
+        esac
+        if [ "$__plan_want" -le 0 ]; then
+            echo "ERROR: planner promised zero section headers: $__plan_line"
+            rm -f "$__plan_runner"; exit 1
+        fi
         __plan_log=$(mktemp "${TMPDIR:-/tmp}/eigs_plan_log.XXXXXX")
-        bash "$__plan_runner" 2>&1 | tee "$__plan_log"
+        bash "$__plan_runner" | tee "$__plan_log"
         __plan_rc=${PIPESTATUS[0]}
-        __plan_want=$(grep -c '^SECTION_TIME: ' "$__plan_log")
         __plan_seen=$(grep -cE '^\[[^]]*\]' "$__plan_log")
         rm -f "$__plan_runner" "$__plan_log"
-        if [ "$__plan_want" -le 0 ] || [ "$__plan_want" != "$__plan_seen" ]; then
-            echo "ERROR: the shard produced $__plan_want timing record(s) but $__plan_seen section header(s) (#1160)."
+        if [ "$__plan_want" != "$__plan_seen" ]; then
+            echo "ERROR: the section plan promised $__plan_want section header(s) but the run printed $__plan_seen (#1160)."
             exit 1
         fi
-        echo "  SECTION PLAN: ${__plan_line/sections=runtime/sections=$__plan_want}"
+        echo "  SECTION PLAN: $__plan_line"
         exit $__plan_rc
     fi
 fi
@@ -6621,9 +6631,8 @@ fi
 # `0 skipped` under nine of them — including the former [99i] cache skip.
 # Every SECTION-LEVEL skip now goes through section_skip(),
 # which prints AND counts; this is the structural half, run here so the claim
-# is checked on the same lane that makes it. Both halves are asserted: the
-# audit, and its own planted-fault arms (a bare `SKIP:` echo, an un-routed
-# section skip, a stale waiver) — "exit 0" is what a gutted audit prints too.
+# is checked on the same lane that makes it. This section runs the audit;
+# tools/section_plan.sh --selftest runs its planted-fault arms separately.
 # The variable is NOT named *SKIP*: this section's own consumer lines are read
 # by the very matcher the audit runs, and the first version of this block
 # reported ITSELF as three unaccounted emitters (mechanical-gates §24 — a
