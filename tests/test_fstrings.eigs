@@ -50,6 +50,32 @@ assert_eq of [f"{"c{d"}", "c{d", "opening brace inside string"]
 # nested f-strings still balance via depth counting
 assert_eq of [f"a{f"inner{w}"}b", "ainner5b", "nested f-string"]
 
+# --- #1252: a comment inside an interpolation runs to end of line; braces in
+# it are comment text and must not close (or open) the interpolation ---
+assert_eq of [f"{1 # }
+ + 2}", "3", "closing brace in comment"]
+assert_eq of [f"{1 # {
+ + 2}", "3", "opening brace in comment"]
+assert_eq of [f"{w # }}{{ }
+ * 2}", "10", "several braces in comment"]
+assert_eq of [f"{1 # comment
+ + 2}", "3", "control: brace-free comment"]
+assert_eq of [f"{"a#b"}", "a#b", "hash inside a string is not a comment"]
+assert_eq of [f"{"#}" + "x"}", "#}x", "hash and brace inside a string"]
+assert_eq of [f"n#{w}#", "n#5#", "hash in literal text is text"]
+assert_eq of [f"{ {"k": w}["k"] }", "5", "genuine nested braces still balance"]
+# same-line comment swallows the closing brace and quote: loud, like `(x # c)`
+assert_eq of [try_parse of "print of f\"{w # c}\"", 0, "same-line comment is not a silent value"]
+# the two scanners must agree: a `#` or quote inside a NESTED f-string's
+# interpolation (review of #1324 — each worked on main and broke when only
+# one of the two scans learned comments)
+fs_s is "x"
+assert_eq of [f"{f"{"#" + fs_s}"}", "#x", "hash string inside a nested interpolation"]
+assert_eq of [f"{f"{"a"}{"#"}"}", "a#", "hash string in a second nested interpolation"]
+assert_eq of [f"{f"{1 # }
+ + 2}"}", "3", "comment with a brace inside a nested interpolation"]
+assert_eq of [f"{f"n#{w}"}", "n#5", "hash in nested literal text is text"]
+
 # --- #1253: a brace-bearing string inside a NESTED f-string's interpolation.
 # The outer scanner used to treat the nested f"..." as a plain string, stop at
 # the inner string's opening quote, and count its brace as nesting. ---

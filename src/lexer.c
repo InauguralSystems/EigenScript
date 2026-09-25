@@ -40,7 +40,11 @@ static void tok_add(TokenList *tl, TokType type, double num, const char *str, in
  * interpolations may contain quotes of their own). Treating a nested
  * `f"..."` as a plain string ended the skip at the first inner quote and
  * exposed a brace inside an inner string literal to the outer depth count.
- * Both helpers stop at NUL; the caller reports the unterminated form. */
+ * A `#` comment runs to end of line and its braces are comment text (#1252).
+ * fstr_interp_end is the ONE function that decides where an interpolation
+ * ends, at the top level and at every nesting level, so the two can never
+ * disagree about which quote or `#` is live. Both helpers stop at NUL; the
+ * caller reports the unterminated form. */
 static int fstr_ident_char(char ch) {
     return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
            (ch >= '0' && ch <= '9') || ch == '_';
@@ -535,49 +539,14 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     tok_add(&tl, TOK_OF, 0, NULL, line, col);
                     tok_add(&tl, TOK_LPAREN, 0, NULL, line, col);
 
-                    /* Tokenize the expression inside braces */
-                    int depth = 1;
+                    /* Tokenize the expression inside braces. Its extent is
+                     * decided by fstr_interp_end, the one scanner used at
+                     * every nesting level (#1252/#1253): string literals,
+                     * `#` comments and nested f-strings all hide braces. */
                     strbuf expr_buf;
                     strbuf_init(&expr_buf);
-                    while (*p && depth > 0) {
-                        /* A string literal inside the interpolation is copied
-                         * wholesale — braces inside it are text, not nesting
-                         * (#334: `f"{"a}b"}"` used to cut at the `}` inside
-                         * the string). Nested f-strings still balance via
-                         * depth counting, since their braces sit outside the
-                         * quotes we skip here. */
-                        /* A nested f-string is copied wholesale too: its
-                         * literal text and its own interpolations are
-                         * scanned by their own lexical rules (#1253). */
-                        if (*p == 'f' && *(p+1) == '"' &&
-                            !(expr_buf.len > 0 &&
-                              fstr_ident_char(expr_buf.data[expr_buf.len - 1]))) {
-                            const char *end = fstr_skip_fstring(p);
-                            while (p < end) {
-                                strbuf_append_char(&expr_buf, *p++);
-                                col++;
-                            }
-                            continue;
-                        }
-                        if (*p == '"') {
-                            strbuf_append_char(&expr_buf, *p++);
-                            col++;
-                            while (*p && *p != '"') {
-                                if (*p == '\\' && *(p+1)) {
-                                    strbuf_append_char(&expr_buf, *p++);
-                                    col++;
-                                }
-                                strbuf_append_char(&expr_buf, *p++);
-                                col++;
-                            }
-                            if (*p == '"') {
-                                strbuf_append_char(&expr_buf, *p++);
-                                col++;
-                            }
-                            continue;
-                        }
-                        if (*p == '{') depth++;
-                        else if (*p == '}') { depth--; if (depth == 0) break; }
+                    const char *expr_end = fstr_interp_end(p);
+                    while (p < expr_end) {
                         strbuf_append_char(&expr_buf, *p++);
                         col++;
                     }

@@ -1662,7 +1662,7 @@ echo ""
 echo "[22/27] F-String Interpolation"
 check_binary_fingerprint
 FS_OUTPUT=$(./eigenscript ../tests/test_fstrings.eigs 2>&1); FS_OUTPUT_RC=$?
-FS_OUTPUT_N=$(derive_count "$FS_OUTPUT" 24 "[22/27] F-Strings")
+FS_OUTPUT_N=$(derive_count "$FS_OUTPUT" 37 "[22/27] F-Strings")
 if rc_ok "$FS_OUTPUT_RC" "$FS_OUTPUT" && echo "$FS_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + FS_OUTPUT_N))
     PASS=$((PASS + FS_OUTPUT_N))
