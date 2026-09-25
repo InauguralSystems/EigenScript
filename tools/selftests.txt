@@ -41,7 +41,7 @@ tools/observer_gate_diff.sh | timeout 60 bash tools/observer_gate_diff.sh selfte
 tools/pipefail_verdict_check.sh | timeout 30 bash tools/pipefail_verdict_check.sh --selftest | [{"pattern":"^  checks=34 ","count":1}]
 tools/replay_diff.sh | timeout 30 bash tools/replay_diff.sh --selftest | [{"pattern":"  selftest ok:","count":11},{"pattern":"^SELFTEST: all planted faults caught","count":1}]
 tools/road_diff.py tools/road_diff.sh | timeout 30 python3 tools/road_diff.py --selftest
-tools/section_plan.sh | timeout 1860 bash tools/section_plan.sh --selftest
+tools/section_plan.sh tests/run_all_tests.sh .github/workflows/ci.yml | timeout 1860 bash tools/section_plan.sh --selftest
 tools/stdlib_index_check.sh | timeout 30 bash tools/stdlib_index_check.sh --selftest
 tools/strict_differential.sh | timeout 30 bash tools/strict_differential.sh --selftest
 tools/vm_operand_width_check.sh | timeout 30 bash tools/vm_operand_width_check.sh --selftest

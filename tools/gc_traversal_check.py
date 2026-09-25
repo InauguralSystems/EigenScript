@@ -21,7 +21,7 @@ def verify_inputs(frozen):
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--variant',choices=['release','asan'],required=True)
+    ap.add_argument('--variant',choices=['release','asan','asan-http'],required=True)
     ap.add_argument('--out',type=Path)
     ap.add_argument('--faults',action='store_true',help='also require two deliberate runtime faults to fail')
     a=ap.parse_args()

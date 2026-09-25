@@ -35,41 +35,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# TWO LANES (#1160).
-#
-# Measured on PR #1158 (head 8cc1f2d, 26 checks, all green): 35 min wall,
-# ~200 machine-minutes. The SAME ~240-section suite ran in TEN jobs that
-# differ only in the extension surface of the binary. The old [99i] audit
-# added minutes per job before its replacement by the shared flags file.
-#
-#   PR lane (pull_request)  — target <= 15 min wall. ONE full suite
-#     (linux/gcc). Every variant job runs only the sections its binary
-#     unlocks, DERIVED by tools/section_plan.sh from the suite's own
-#     probe gates (never a hand-written list). The small [99i] check runs
-#     inside the suite and in its required job. macos-15-intel is
-#     not on this lane.
-#   main lane (merge_group AND push to main) — the full matrix except
-#     macos-15-intel. It runs in the MERGE QUEUE (#1264, Rust's model) on the
-#     candidate commit (main + the PRs queued ahead + this one) and nothing
-#     lands unless it is green, so main is green by construction and nobody
-#     rebases a PR to "update" it. Main-lane-only steps are gated
-#     `github.event_name != 'pull_request'` (true on push and merge_group),
-#     never `== 'push'`. The post-merge push run re-tests the commit the queue
-#     already tested: it is kept because the README badge reads it and it
-#     publishes the rolling `ci-main` dev image that fork PRs run in.
-#     TIERS (#1264): every job in this file is TIER 1 — listed in
-#     .github/required-checks.txt, or a worker of an aggregator listed there.
-#     A job that is neither must go to nightly.yml; tools/ci_tier_check.sh
-#     (the `gate self-tests` job) fails otherwise, and also fails on a step
-#     whose condition would run it on push but not in the queue. Adding a job
-#     here means adding its check name to that file (the ruleset is synced
-#     from it).
-#   nightly (.github/workflows/nightly.yml) — macos-15-intel (ONLY here, #1264)
-#     and the full valgrind corpus, with a tracking issue on failure.
-#
-# The risk this accepts, stated: a variant-specific regression in a
-# NON-variant section passes the PR lane and is caught in the queue, before
-# it lands; the contributor waits only for the fast lane.
+# PRs, merge queue candidates, and main pushes run the full suite for every
+# built variant. The HTTP+model ASan build runs the suite in three shards; the
+# required sanitizer aggregator checks their union, receipts and leak tally.
+# Docs-only scope skips runtime steps. macos-15-intel remains nightly-only.
+# Every job here is required or a worker of a required aggregator (#1264).
 
 jobs:
   # Is this PR docs-only? A change touching nothing but *.md cannot alter C or
@@ -247,7 +217,7 @@ jobs:
           echo "n=$n" >> "$GITHUB_OUTPUT"
           echo "base=$base" >> "$GITHUB_OUTPUT"
       - if: needs.scope.outputs.code == 'true' || steps.select.outputs.n != '0'
-        name: Build (the section plan runs the suite's own probes)
+        name: Build
         run: ./build.sh
       # The contributor precheck's gate list is the only copy (#1264): CI runs
       # the same script, so `make precheck` cannot drift from CI.
@@ -255,12 +225,8 @@ jobs:
         name: Contributor precheck (tools/precheck.sh)
         run: PRECHECK_SELFTESTS=0 bash tools/precheck.sh
       - if: needs.scope.outputs.code == 'true'
-        name: The derived plans, printed (the numbers a reviewer checks)
-        run: |
-          bash tools/section_plan.sh --gate-audit
-          bash tools/section_plan.sh --skip-audit
-          bash tools/section_plan.sh --probes
-          bash tools/section_plan.sh --print-section-plan core
+        name: Section skip accounting
+        run: bash tools/section_plan.sh --skip-audit
       - if: steps.select.outputs.n != '0'
         name: Self-test prerequisites (PyYAML and Cachegrind)
         run: |
@@ -341,20 +307,7 @@ jobs:
       - name: Verify binary
         run: ./src/eigenscript --version
 
-      # THE full suite of the PR lane. gcc always runs all sections.
-      - name: Run test suite (full)
-        if: matrix.cc == 'gcc' || github.event_name != 'pull_request'
-        run: cd tests && bash run_all_tests.sh
-
-      # clang on a PR: the value of this leg is the BUILD (-Werror fires at
-      # compile time, and clang's codegen differs), not a tenth execution of
-      # the same ~263 sections the gcc leg just ran on the same commit. It
-      # runs the derived core-smoke plan instead. On the main lane (queue, push) it runs
-      # the full suite like every other leg.
-      - name: Run test suite (derived core-smoke plan)
-        if: matrix.cc == 'clang' && github.event_name == 'pull_request'
-        env:
-          EIGS_SUITE_SECTIONS: core
+      - name: Run full suite on gcc and clang
         run: cd tests && bash run_all_tests.sh
 
       # Cross-repo observer corpus (#262): real observer-using programs
@@ -742,20 +695,9 @@ jobs:
         name: Build http+model variant
         run: make http
 
-      # PR lane: only the sections this binary UNLOCKS. The list is derived
-      # by tools/section_plan.sh from the suite's own probe gates — the same
-      # `http_route` / `eigen_model_loaded` probes the suite already uses to
-      # decide whether to skip — plus a fixed core smoke, and the job fails if
-      # the http binary unlocks fewer probe-gated chunks than its floor (a
-      # broken registration otherwise collapses the plan silently).
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
-        name: Run derived http+model section plan
-        env:
-          EIGS_SUITE_SECTIONS: http
-        run: cd tests && bash run_all_tests.sh
-
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
-        name: Run full suite against http+model build
+      # Every variant exercises the complete suite on every code event.
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against http build
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true'
@@ -801,14 +743,8 @@ jobs:
         name: Build gfx variant
         run: make gfx
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
-        name: Run derived gfx section plan (audio [62], [120b], [132], [133], [134])
-        env:
-          EIGS_SUITE_SECTIONS: gfx
-        run: cd tests && bash run_all_tests.sh
-
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
-        name: Run full suite against gfx build (audio [62], containment [132], gfx examples [97])
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against gfx build
         run: cd tests && bash run_all_tests.sh
 
       - name: Require compiler guard activity
@@ -839,14 +775,8 @@ jobs:
         name: Build zlib variant
         run: make zlib
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
-        name: Run derived zlib section plan (executes DEFLATE section [124b])
-        env:
-          EIGS_SUITE_SECTIONS: zlib
-        run: cd tests && bash run_all_tests.sh
-
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
-        name: Run full suite against zlib build (executes DEFLATE section [124])
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against zlib build
         run: cd tests && bash run_all_tests.sh
 
       - name: Require compiler guard activity
@@ -877,14 +807,8 @@ jobs:
         name: Build net variant
         run: make net
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
-        name: Run derived net section plan (executes network section [125])
-        env:
-          EIGS_SUITE_SECTIONS: net
-        run: cd tests && bash run_all_tests.sh
-
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
-        name: Run full suite against net build (executes network section [125])
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against net build
         run: cd tests && bash run_all_tests.sh
 
       - name: Require compiler guard activity
@@ -936,15 +860,8 @@ jobs:
         name: Build full variant (http+model+db)
         run: make full
 
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
-        name: Run derived full-variant section plan with live DATABASE_URL
-        env:
-          DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
-          EIGS_SUITE_SECTIONS: full
-        run: cd tests && bash run_all_tests.sh
-
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
-        name: Run full suite with live DATABASE_URL
+      - if: needs.scope.outputs.code == 'true'
+        name: Run full suite against full build with live DATABASE_URL
         env:
           DATABASE_URL: postgres://eigs:eigs_test@db:5432/eigs_test
         run: cd tests && bash run_all_tests.sh
@@ -957,11 +874,10 @@ jobs:
   # The net that catches use-after-free, buffer overflow, and UB the normal
   # -O2 build silently tolerates. Per-iteration leak regressions are covered
   # separately by tests/test_leak_guard.sh.
-  # Keep the required status while both complete sanitizer variants run in
-  # independent checkouts. Docs-only workers skip code steps but must succeed.
+  # One HTTP+model ASan build per shard; docs-only workers skip code steps.
   sanitizers:
     name: asan + ubsan (full suite)
-    needs: [scope, sanitizers-core, sanitizers-http]
+    needs: [scope, sanitizers-core]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -976,16 +892,12 @@ jobs:
           SCOPE_RESULT: ${{ needs.scope.result }}
           CODE: ${{ needs.scope.outputs.code }}
           CORE_RESULT: ${{ needs.sanitizers-core.result }}
-          HTTP_RESULT: ${{ needs.sanitizers-http.result }}
         run: |
           set -euo pipefail
           [ "$SCOPE_RESULT" = success ]
           case "$CODE" in true|false) ;; *) exit 1;; esac
-          # A matrix job's aggregate result is success only when EVERY leg
-          # succeeded, so this covers all ASAN_SHARDS shards plus the http worker.
-          for result in "$CORE_RESULT" "$HTTP_RESULT"; do
-            [ "$result" = success ] || exit 1
-          done
+          # The matrix aggregate succeeds only when every shard succeeds.
+          [ "$CORE_RESULT" = success ] || exit 1
           echo "Sanitizer job results OK (code=$CODE)"
 
       # "Every leg was green" is NOT "every section ran". The core work is
@@ -1032,6 +944,8 @@ jobs:
             plan=$(grep -o 'PLAN: shard=[0-9]*/[0-9]*' "$f" | head -1 || true)
             [ -n "$plan" ] || { echo "::error::shard $k reported no plan line at all"; exit 1; }
             [ "$plan" = "PLAN: shard=$k/$n" ] || { echo "::error::shard $k reported '$plan', expected 'PLAN: shard=$k/$n' — the shard ran a different split than this lane declares (ASAN_SHARDS=$n)"; exit 1; }
+            bearing=$(sed -n 's/.*PLAN: shard=[0-9]*\/[0-9]* bearing=\([0-9][0-9]*\) chunks=.*/\1/p' "$f" | head -1)
+            [ -n "$bearing" ] && [ "$bearing" -gt 0 ] || { echo "::error::shard $k reported no header-bearing chunks in its PLAN line"; exit 1; }
             leaked=$(sed -n 's/^leaked=\([0-9][0-9]*\)$/\1/p' "$f")
             [ -n "$leaked" ] || { echo "::error::shard $k did not report a leak tally"; exit 1; }
             total=$((total + leaked))
@@ -1047,36 +961,14 @@ jobs:
           done
           echo "summed LeakSanitizer tally across $n shards: $total"
           [ "$total" -eq 0 ] || { echo "::error::leak tally is $total, expected 0 (CLAUDE.md: a jump in the tally means a new leak)"; exit 1; }
-          echo "Sanitizer coverage complete (code=${{ needs.scope.outputs.code }}; $n shards + the http worker)"
+          echo "Sanitizer coverage complete (code=${{ needs.scope.outputs.code }}; $n shards)"
 
-  # THE PR LANE'S CRITICAL PATH, SHARDED (#1160 round 4).
-  #
-  # Measured on run 34962403732 (head 25ade7e): the whole 21.1-min wall was this
-  # one job — 19.0 min, of which the suite step was 13.9 and the ASan build 4.7,
-  # behind ~2 min of queue. It stays FULL by design: it is the leak-tally gate
-  # (CLAUDE.md, "the suite must pass both release and ASan with leaks on"), so
-  # the only way under 15 min is to run it in parallel.
-  #
-  # ARITHMETIC for N (queue 2.0 + build 4.7 + 13.9/N):
-  #   N=1  20.6   N=2  13.7   N=3  11.3   N=4  10.2
-  # N=2 clears 15 by 1.3 min, which is inside the run-to-run noise on shared
-  # runners. N=3 clears it by 3.7. N=4 buys 1.1 min more for another 4.7
-  # build-minutes, because past N=3 the BUILD dominates, not the suite. N=3.
-  #
-  # The split is by MEASURED weight (tests/section_weights.txt), deterministic,
-  # and its union is pinned to the whole chunk list by the aggregator.
-  #
-  # WHY EACH SHARD BUILDS ITS OWN ASan BINARY (4.7 min x 3, in parallel) rather
-  # than downloading one artifact: the suite asks the BUILD SYSTEM whether
-  # src/eigenscript is current before it records the #681 fingerprint (#1089,
-  # `ensure_binary_current` runs `make -q build/asan/eigenscript`). An artifact
-  # download restores neither the objdir nor the mtimes make compares, so every
-  # shard would answer "needs remaking" and rebuild anyway — paying the 4.7 min
-  # PLUS the upload/download. The builds are parallel, so the wall cost is one
-  # build either way; only machine-minutes differ, and correctness of the
-  # staleness guard is worth more than 9 of them.
+  # One HTTP+model ASan build per shard. The union covers the complete suite,
+  # including core and extension sections, with leak detection enabled. Each
+  # checkout builds its own binary so the runner's make-based freshness check
+  # sees its actual object directory and hard-linked src/eigenscript alias.
   sanitizers-core:
-    name: asan + ubsan / core and LSP (shard ${{ matrix.shard }}/3)
+    name: asan + ubsan / shard ${{ matrix.shard }}/3 (http+model build)
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     strategy:
@@ -1109,7 +1001,7 @@ jobs:
 
       - if: needs.scope.outputs.code == 'true'
         name: Build with AddressSanitizer + UBSan
-        run: make asan
+        run: make asan-http
 
       # THE OWNER OF EACH JOB-LEVEL EXTRA IS DERIVED, NOT HARD-WIRED (#1160
       # round 6). Round 4 pinned both of these to shard 1 — which is by
@@ -1129,7 +1021,7 @@ jobs:
             exit 0
           fi
           echo "gc_traversal=yes" >> "$GITHUB_ENV"
-          python3 tools/gc_traversal_check.py --variant asan
+          python3 tools/gc_traversal_check.py --variant asan-http
 
       - if: needs.scope.outputs.code == 'true'
         name: Run shard ${{ matrix.shard }}/3 of the suite under sanitizers
@@ -1152,7 +1044,7 @@ jobs:
       # 3, the same step on shard 1 cost 267 s building eigenlsp from scratch.
       - if: needs.scope.outputs.code == 'true'
         name: Behavior-test the LSP under sanitizers (the shard running [88] owns it)
-        # `make asan` builds the interpreter, not eigenlsp — so the LSP would
+        # `make asan-http` builds the interpreter, not eigenlsp — so the LSP would
         # otherwise never run under a sanitizer in CI. This builds it with
         # ASan/UBSan and drives the JSON-RPC harness; test_lsp.py fails on any
         # sanitizer report from the LSP process (leaks, UB).
@@ -1198,74 +1090,6 @@ jobs:
       - name: Require compiler guard activity
         if: always() && needs.scope.outputs.code == 'true'
         run: bash tools/cc_guard.sh --report
-  sanitizers-http:
-    name: asan + ubsan / HTTP and model suite
-    needs: [dev-image, scope]
-    runs-on: ubuntu-latest
-    # 45, not 30: the green run before #915's [99u] section landed took 19m57,
-    # and that section legitimately adds minutes under ASan (it launches the
-    # sanitized binary ~60 times; sanitizer process startup dominates) — a slow
-    # runner then hit the old ceiling and the job rendered as CANCELLED at
-    # 30:02 with the suite mid-section. A timeout is not a verdict: the same
-    # tree's local ASan suite was 4117/4117. Headroom target ~2x the observed
-    # green duration, per the suite-runtime-baseline rule.
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ${{ needs.dev-image.outputs.image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Install compiler guard
-        run: |
-          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
-          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
-          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
-
-      # The extension surface under sanitizers. `make asan` above compiles the
-      # HTTP + model extensions OUT, so ext_http.c — a network-facing server
-      # and client, the most exposed code in the repo — was never sanitized
-      # anywhere. #239 (a remote DoS) reached main through a green CI for
-      # exactly this reason. The suite's HTTP sections [44]/[45]/[45b] are
-      # probe-gated on the binary exposing http_route, so building the http
-      # variant is all it takes to pull them in.
-      #
-      # NOTE on what this does and does not catch: ASan's immediate checks
-      # (use-after-free, buffer overflow, UB) report at the moment of the bug,
-      # so they fire here. LeakSanitizer runs atexit — and test_http_server.sh
-      # ends by `kill`ing the server, which installs no SIGTERM handler, so
-      # LSan never runs in the server process. Per-request leaks in a request
-      # path (#731) are therefore NOT caught by this step; that class needs an
-      # RSS-growth gate, measured separately.
-      #
-      # This worker owns its checkout and alias, independently of core ASan.
-      # PR lane: the sections the http+model surface unlocks, under the
-      # sanitizers. This job was 26 min on #1158 — the second-longest on the
-      # board — and the core sections it shared with `asan + ubsan / core and
-      # LSP` are already sanitized there on the same commit.
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
-        name: Run derived asan-http section plan under sanitizers
-        env:
-          ASAN_OPTIONS: detect_leaks=1
-          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-          EIGS_SUITE_SECTIONS: asan-http
-        run: make asan-http && cd tests && bash run_all_tests.sh
-
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
-        name: Run suite under sanitizers with the HTTP+model extensions
-        env:
-          ASAN_OPTIONS: detect_leaks=1
-          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: make asan-http && cd tests && bash run_all_tests.sh
-
-      - name: Require compiler guard activity
-        if: always() && needs.scope.outputs.code == 'true'
-        run: bash tools/cc_guard.sh --report
-
   # Valgrind/Memcheck over a representative spread of programs — the
   # uninitialised-read / use-after-free / definite+indirect-leak net at the
   # system-allocator granularity, complementing the ASan+UBSan job (and the

@@ -1,8 +1,7 @@
 # CI: what runs on your PR, what runs on main, what runs nightly
 
 Continuous integration here has three lanes. This page says which gate lives
-where, why, and what a contributor should expect to wait for. It exists because
-the answer stopped being "everything, everywhere" in #1160.
+where, why, and what a contributor should expect to wait for.
 
 ## The measurement that forced the split
 
@@ -32,29 +31,16 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
    The old gate dry-ran Makefile targets and scanned scripts, adding minutes
    per run for a property that now follows from one shared flags file.
 
-## PR lane (`pull_request`) — target ≤ 15 minutes
+## PR lane (`pull_request`)
 
-- `scope` decides whether the PR touches anything but `*.md`. A docs-only PR
-  skips the runtime matrix; doc gates and calibrations whose inputs changed
-  still run (see **The doc gates** below).
-- **One full suite: `linux / gcc`.** Every test section.
-- **`werror audit` and suite [99i]** run the same small source-text check
-  directly. It reads the shared flags file and tracked compile commands.
-- **Variant jobs run only the sections their binary unlocks.** zlib, net, gfx,
-  http+model, the postgres `full` build and `asan-http` each run a *derived*
-  section plan (below), not the whole suite.
-- **`linux / clang` runs the derived core smoke.** The value of that leg on a
-  PR is the build — `-Werror` fires at compile time and clang's codegen differs
-  — not a tenth execution of sections the gcc leg just ran on the same commit.
-- **macOS: `macos-latest` only**, and only when `scope.code` is true.
-  `macos-15-intel` is not on this lane.
-- Fast gates unchanged: jit differential, replay differential, freestanding,
-  tsan, install smoke, bench, CodeQL, `gate self-tests`.
-- **The playground's real wasm32 build** — a separate workflow,
-  `.github/workflows/pages.yml`, which runs on **every** pull request and
-  reports the check `playground (real emcc wasm32 build)`: the real emcc build
-  of `web/build.sh`, every time, whatever the PR changed. See **The playground: the real wasm32 build, on
-  the PR** below.
+- `scope` skips runtime steps for a docs-only PR. The doc gates still run.
+- Linux gcc and clang, HTTP+model, gfx, zlib, net, and the PostgreSQL full
+  build each run the complete suite against their own binary.
+- The HTTP+model ASan binary runs the complete suite across weight-balanced
+  shards. The required aggregator verifies coverage and the leak tally.
+- `macos-latest` runs on the PR; `macos-15-intel` runs nightly.
+- Differential, compiler, doc, and gate self-tests continue on their existing
+  jobs. The separate playground workflow builds real wasm32 on every PR.
 
 ## The playground: the real wasm32 build, on the PR
 
@@ -220,78 +206,36 @@ on it and never rebase to satisfy it; the queue does both.
   nobody is watching still reaches someone. A green run after a red one
   comments on the same thread, which is what makes the thread closable.
 
-## How a variant job knows which sections to run
+## Section planner and skip accounting
 
-`tools/section_plan.sh`. Nothing here is hand-listed:
+`tools/section_plan.sh` splits the runner into complete top-level chunks and
+verifies that the preamble, chunks, and epilogue reconstruct it byte for byte.
+It assigns every chunk to one sanitizer shard by measured weights from
+`tests/section_weights.txt`. The coverage check requires a nonvacuous chunk
+floor, a complete union, disjoint assignments, and a nonempty set
+of chunks for every shard. The shard count is checked against the CI matrix
+and every `/N` literal.
 
-1. It splits `tests/run_all_tests.sh` into top-level **chunks**, asking `bash
-   -n` where a top-level statement ends, and verifies that preamble + chunks +
-   epilogue reconstructs the file byte-for-byte. A boundary bug therefore
-   cannot silently drop sections.
-2. Every capability gate in the suite **declares itself** with a one-line
-   marker, `# EIGS-CAP-GATE: <capability>`. That is the normalised spelling:
-   the suite's gates are not all written the same way, and a parser that knew
-   only the `<NAME>_PROBE_OUT` block silently dropped four of them — `[97]`
-   (an inline `EX_HAS_GFX` probe), `[138]` and `[139]` (children that self-skip
-   with "built without EIGENSCRIPT_EXT_GFX") and `[42a]` (a child that gates
-   only its audio-capture replay checks).
-   The marker population is pinned against an **independent enumeration**:
-   `grep -nE 'ndefined variable|compiled without zlib|built without|no gfx
-   build'` over the runner and over every child script the runner dispatches
-   (the child list itself derived from the runner). Every hit must be inside a
-   marked chunk, dispatched from one, or named in a content-pinned waiver with
-   a reason — and a waiver that matches nothing is a hard failure too. So a new
-   gate spelling cannot enter the tree silently; it fails the audit.
-   A waiver pins the **exact line**, by content hash, not a substring: a
-   substring waiver let a real capability gate planted into an already-waived
-   file inherit a reason that was false for it. When the audit reports
-   unaccounted lines, `tools/section_plan.sh --gate-audit --print-waivers`
-   prints paste-ready rows for them and writes nothing — the reason is a
-   reviewer's to add.
-3. It **runs each probe program against the binary under test** and applies the
-   suite's own predicate. The plan is exactly "the sections this binary
-   unlocks", plus a small fixed core smoke.
-4. It floors the result. Every probe-idiom chunk must carry a marker and every
-   declared capability must have at least one probe provider (there is no
-   standalone probe-count floor — the number of providers is not an independent
-   fact); each
-   variant has a floor on how many capabilities its binary must actually
-   present. A `make http` whose `http_route` registration broke still builds
-   and still runs — and its plan collapses to the core smoke, which the floor
-   turns red instead of green.
-
-Useful locally:
+The same tool audits the runner's `SKIP` emitters and `section_skip` calls.
+Their scans have nonvacuous floors; each emitter has a reviewed reason
+or is routed through the helper that counts it in `RESULTS`.
 
 ```bash
-tools/section_plan.sh --markers                    # the declared capability gates
-tools/section_plan.sh --gate-audit                 # the marker population, pinned
-tools/section_plan.sh --probes                     # the derived probe table
-tools/section_plan.sh --print-section-plan zlib    # the plan, counts, floors
-tools/section_plan.sh --selftest                   # the planted-fault train
-EIGS_SUITE_SECTIONS=zlib bash tests/run_all_tests.sh   # run that plan
+bash tools/section_plan.sh --chunks
+bash tools/section_plan.sh --shards 3 --check
+bash tools/section_plan.sh --shard-owner 3 --section '[88]'
+bash tools/section_plan.sh --skip-audit
+bash tools/section_plan.sh --selftest
+EIGS_SUITE_SHARD=2/3 bash tests/run_all_tests.sh
 ```
 
-`--selftest` takes about **7.5 minutes** on the dev box — six of its rows
-re-derive the section table — so it is a "before you push"
-check, not an inner-loop one. It runs when its inputs change or nightly.
-The same job runs the live consumer-acceptance `plan` against a fixture
-inventory whose declared set is the fixture's own (never the real ecosystem);
-the step asserts `expected=N` with N>0.
-
-Every plan run prints one line, and the runner CHECKS it: after the plan runs,
-the dispatcher counts the `[...]` section headers the run actually printed and
-fails if that differs from the number the plan promised. `sections=` counts the
-headers that will EXECUTE — a probe gate's else-branch twin
-(`… SKIPPED (binary built without …)`) never runs on a binary that has the
-capability, and counting it made round 1 promise 18 for a run that printed 16.
-
-```
-SECTION PLAN: PLAN: sections=6 (of N) chunks=5 plan=zlib capabilities=1 (floor 1) gated-chunks=1 (floor 1)
-```
-
-A plan of zero sections is a hard failure, and so is a RUN of zero assertions:
-`RESULTS: 0/0 passed, 0 failed` used to exit 0, which is indistinguishable from
-a clean run.
+A shard forces section timing on. The planner marks selected chunks with a
+complete, top-level section-header echo (`bearing=N`) and rejects wrapped or
+conditional-only headers. Its wrapper prints a boundary sentinel before every
+chunk; the outer runner requires each sentinel exactly once in order and at
+least one stdout header within every header-bearing chunk. Sentinels are visible
+in shard logs.
+A zero-assertion suite also fails.
 
 ### Consumer acceptance wave
 
@@ -355,15 +299,15 @@ The whole critical path was one job:
 | `asan + ubsan / HTTP and model` | 7.8 |
 | everything else | ≤ 6.2 |
 
-That job stays **full** on purpose: it is the leak-tally gate (CLAUDE.md, "the
-suite must pass both release and ASan with leaks on"). So it runs in parallel
-shards instead. With ~2 min of queue and a 4.7-min ASan build in front,
+The leak-tally gate must cover the **full** suite, so the current HTTP+model
+ASan build runs it in parallel shards. In the original core-only measurement,
+with ~2 min of queue and a 4.7-min ASan build in front,
 `queue + build + 13.9/N` gives 20.6 / 13.7 / **11.3** / 10.2 for N = 1/2/3/4.
 N=2 clears 15 by 1.3 min, which is inside runner noise; N=3 clears it by 3.7;
 past N=3 the *build* dominates and a fourth shard buys 1.1 min for another 4.7
 build-minutes. **N = 3.**
 
-**MEASURED: 13.4 min wall on run 35020270020 (head c4c23ae), then 15.0 min on
+**Historical core-only shard measurement: 13.4 min wall on run 35020270020 (head c4c23ae), then 15.0 min on
 run 35036548663 (head 418d62d) — 35 → 21.1 → 13.4 → 15.0.** The regression was
 not the split: the runner-measured weights worked, and the three suite steps
 came in at 290 / 285 / 278 s against a predicted 319 / 272 / 272. It was the
@@ -371,7 +315,7 @@ job-level LSP step, hard-wired to shard 1, jumping from 1.5 s to 267 s (see
 below). With both extras' owners derived, the predicted lane is **~11.5–12.5
 min**, with the critical path moving off shard 1.
 
-The floor is now one section, not the arithmetic: `[137]` (the ext_gfx
+The historical lower bound was one section, not the arithmetic: `[137]` (the ext_gfx
 ASan/LSan corpus) costs **319 s of the 862 s** the whole sharded suite takes on
 the runner — 37% — and a section is indivisible, so no N can put the slowest
 shard below 319 s. N=4 would not help. Splitting `[137]` itself is the next
@@ -387,15 +331,15 @@ EIGS_SUITE_SHARD=2/3 bash tests/run_all_tests.sh
 ```
 
 The aggregator `asan + ubsan (full suite)` — a ruleset-required check (see
-**Platform tiers**), and still that name — does four things no shard can do for itself: it
+**Platform tiers**), and still that name — checks everything no shard can do for itself: it
 requires every matrix leg green, re-runs `--shards 3 --check`, requires one
-**receipt** per shard carrying that shard's `PLAN: shard=k/3 …` line, and
-**sums the LeakSanitizer tallies and requires 0**. Splitting the job must not
+**receipt** per shard carrying that shard's `PLAN: shard=k/3 …` line, **sums the LeakSanitizer tallies and requires 0**,
+and requires exactly one claimant for each job-level ASan extra. Splitting the job must not
 split the gate.
 
 ### The two ASan checks that are not suite sections
 
-`gc_traversal_check.py --variant asan` and the LSP behaviour test are job-level
+`gc_traversal_check.py --variant asan-http` and the LSP behaviour test are job-level
 steps, not sections, so somebody has to own them — and "it runs somewhere" is
 how a check goes missing when a job is split. They were pinned to shard 1,
 which is **by construction the heaviest shard**, so they landed on the critical
@@ -438,21 +382,21 @@ bootstrap for the very first split; the table itself comes from CI.
 Refresh it from the shard job logs of any green run:
 
 ```bash
-run=35020270020                     # the CI run id
+run=RUN_ID                           # a current HTTP+model shard run
+head=HEAD_SHA
 gh api repos/InauguralSystems/EigenScript/actions/runs/$run/jobs \
-  --jq '.jobs[] | select(.name | startswith("asan + ubsan / core and LSP")) | .id' \
+  --jq '.jobs[] | select(.name | startswith("asan + ubsan / shard ")) | .id' \
   | while read -r id; do
       gh api repos/InauguralSystems/EigenScript/actions/jobs/$id/logs
     done > /tmp/asan-shards.log
 tools/section_plan.sh --print-weights /tmp/asan-shards.log \
-    --run "$run" --head c4c23ae > tests/section_weights.txt
+    --run "$run" --head "$head" > tests/section_weights.txt
 ```
 
-`--run` and `--head` are what put the provenance INTO the file, so the command
-above reproduces the committed `tests/section_weights.txt` **byte-for-byte** —
-`diff` it, that is the check. Without them the header says so, loudly
-("PROVENANCE NOT STATED"): a table whose origin the regeneration step erases is
-a table nobody can check.
+`--run` and `--head` put provenance into the file. Review the resulting table
+and commit it with the new measurement; historical tables retain their
+original run IDs.
+Without provenance flags the header says "PROVENANCE NOT STATED".
 
 `--print-weights` accepts the raw job log — it tolerates the ISO timestamp
 prefix GitHub puts on every line, so there is no hand-stripping step to get
@@ -572,13 +516,13 @@ limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
 | `build dev/ci image` | 1 | the image every `container:` job (the Linux legs, the extension/ASan workers, db, the audits, the differentials, freestanding) runs inside; required because required jobs `needs` it, and a failed prerequisite *skips* them — added by #1264 |
 | `werror audit ([99i], cached)` | 1 | gate; name retained until the required-checks ruleset is renamed |
 | `gate self-tests (section plan + audit cache key)` | 1 | gate; name retained until the required-checks ruleset is renamed |
-| `linux / gcc` | 1 | the one full suite on a PR |
-| `linux / clang` | 1 | clang `-Werror` build + core smoke on a PR, full suite on the main lane — added by #1264 (tier 1 is "Linux gcc/clang") |
+| `linux / gcc` | 1 | full suite on every code event |
+| `linux / clang` | 1 | clang `-Werror` build and full suite on every code event |
 | `macos / macos-latest` | 1 | the one macOS leg; full suite with [99i] on the main lane |
 | `extensions (http+model+gfx suite; embed/lsp/jit-smoke)` | 1 | **aggregator** |
 | `extensions / http+model and ancillary checks`, `/ gfx suite`, `/ zlib suite`, `/ net suite` | 1, via the aggregator | workers |
 | `asan + ubsan (full suite)` | 1 | **aggregator**; also re-derives shard coverage and sums the leak tally |
-| `asan + ubsan / core and LSP (shard k/3)`, `asan + ubsan / HTTP and model suite` | 1, via the aggregator | workers |
+| `asan + ubsan / shard k/3 (http+model build)` | 1, via the aggregator | workers |
 | `db extension (postgres service)` | 1 | gate |
 | `jit differential (…)`, `replay differential (…)` | 1 | gates |
 | `freestanding profile (symbol gate + smoke)` | 1 | gate |
@@ -610,14 +554,11 @@ file:
 | `Analyze (python)`, `Analyze (javascript-typescript)` | advisory | CodeQL *default setup* (a GitHub app, not a workflow file) over the repo's non-C code; the C analysis that blocks is `Analyze C` |
 | `issue-triage / …` (`issue-triage.yml`), `release.yml` jobs | advisory | not triggered by PRs or pushes to `main` |
 
-## The risk this accepts
+## Coverage on pull requests
 
-A variant-specific regression in a *non-variant* section — for example a
-clang-only miscompile in a section the core-smoke plan does not cover — passes
-the fast PR lane. It is caught in the merge queue, which runs the full matrix
-before the PR lands, so it never reaches `main`; the cost is a rejected queue
-entry instead of a red PR check. That trade is deliberate: it buys back roughly
-half the machine-minutes and more than half the contributor wait.
+Every built variant runs the complete suite on the PR. The HTTP+model ASan
+workers partition that complete suite, and the required aggregator checks
+their coverage and leak tally before the PR can merge.
 
 ## Gate self-tests on change (#1275)
 
