@@ -8,7 +8,7 @@
 # told where tests/ is. Unset — every ordinary invocation — this resolves from
 # $0 exactly as before.
 TESTS_DIR="${EIGS_PLAN_TESTS_DIR:-$(cd "$(dirname "$0")" && pwd)}"
-WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
+export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 . "$TESTS_DIR/../tools/read_werror_flags.sh" || exit 1
 export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/failure_output.sh" || exit 1

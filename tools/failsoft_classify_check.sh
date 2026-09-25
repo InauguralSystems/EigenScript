@@ -466,7 +466,7 @@ if [ "$usage_mode" = "--selftest" ]; then
     # reports PASS against a build with the mechanism entirely removed.
     root="$tmp/tree"
     mkdir -p "$root/src"
-    cp "$SELF_ROOT/Makefile" "$root/Makefile"
+    cp "$SELF_ROOT/Makefile" "$root/Makefile"; mkdir -p "$root/tools" && cp "$SELF_ROOT/tools/werror_flags.txt" "$root/tools/"
     cp "$SELF_ROOT"/src/*.c "$SELF_ROOT"/src/*.h "$root/src/" 2>/dev/null
 
     before="$(cd "$SELF_ROOT" && cat src/*.c | md5sum)"

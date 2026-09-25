@@ -170,7 +170,7 @@ fi
 
 # ---- selftest: plant the fault, prove each leg fires on its own ----------
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
-cp -r "$REPO/src" "$REPO/Makefile" "$REPO/VERSION" "$WORK/" 2>/dev/null
+cp -r "$REPO/src" "$REPO/Makefile" "$REPO/VERSION" "$WORK/" 2>/dev/null; mkdir -p "$WORK/tools" && cp "$REPO/tools/werror_flags.txt" "$WORK/tools/"
 mkdir -p "$WORK/lib" && : > "$WORK/lib/.keep"
 fails=0
 

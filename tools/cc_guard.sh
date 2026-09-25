@@ -12,13 +12,18 @@ name=${0##*/}
 case "$name" in gcc|cc|clang|emcc) ;; *) echo "cc-guard: unknown compiler $name" >&2; exit 1;; esac
 compile=0 skip=0 want_x=0
 switch=0 comment=0 indent=0
-for arg do
+args=()
+for arg do  # a response file's arguments count as the command's own (one level)
+    if [[ $arg == @* && -r ${arg#@} ]]; then read -r -d '' -a more < "${arg#@}" || true; args+=("${more[@]}")
+    else args+=("$arg"); fi
+done
+for arg in "${args[@]}"; do
     if (( want_x )); then
         [[ $arg == c ]] && compile=1
         want_x=0
     fi
     case "$arg" in
-        -c|*.c|-xc) compile=1 ;;
+        -c|*.c|*.i|-xc) compile=1 ;;
         -x) want_x=1 ;;
         -E|-M|-MM|--version|-dumpversion|-dumpfullversion|-print-*) skip=1 ;;
         -Werror=switch) switch=1 ;;

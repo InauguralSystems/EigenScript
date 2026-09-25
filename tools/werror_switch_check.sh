@@ -50,13 +50,16 @@ def selftest():
         (guard/'cc').symlink_to((Path.cwd()/'tools/cc_guard.sh').resolve())
         compiler = real/'cc'; compiler.write_text('#!/bin/sh\nexit 0\n'); compiler.chmod(0o755)
         env = {**os.environ, 'PATH': f'{guard}:{real}:'+os.environ['PATH'], 'CC_GUARD_LOG': str(root/'count')}
-        probe = root/'a.c'; probe.write_text('int a;\n')
+        probe = root/'a.c'; probe.write_text('int a;\n'); (root/'a.i').write_text('int a;\n')
+        rsp = root/'rsp'; rsp.write_text(f'-c\n{probe}\n')
         runs = [('compile without trio', ['-c', str(probe)], True),
                 ('link only', ['a.o', '-o', 'a'], False),
                 ('compile with trio', [*FLAGS, '-c', str(probe)], False),
                 ('stdin -x c without trio', ['-x', 'c', '-'], True),
                 ('switch-enum only', ['-Werror=switch-enum', *FLAGS[1:], '-c', str(probe)], True),
-                ('preprocess only', ['-E', str(probe)], False)]
+                ('preprocess only', ['-E', str(probe)], False),
+                ('response file without trio', ['@'+str(rsp)], True),
+                ('preprocessed .i without trio', ['-c', str(root/'a.i')], True)]
         for name, args, red in runs:
             p = subprocess.run([str(guard/'cc'), *args], env=env, capture_output=True, text=True)
             if (p.returncode != 0) != red or (red and 'cc-guard: compile without' not in p.stderr):
@@ -75,7 +78,7 @@ def selftest():
         if p.returncode == 0 or 'examined=0' not in p.stderr:
             sys.exit('SELFTEST FAIL: zero guard count')
         print('SELFTEST PASS: zero guard count')
-    print('SELFTEST: 13 cases passed')
+    print('SELFTEST: 15 cases passed')
 
 
 if sys.argv[1] == '--selftest':
