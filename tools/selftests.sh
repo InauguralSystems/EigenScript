@@ -104,13 +104,6 @@ def main():
                         subprocess.run([timeout, '-k', '5', '600', 'make', '-C', str(tree), variant], check=True, stdout=subprocess.DEVNULL, preexec_fn=cap)
                         binary = str(tree / 'src/eigenscript')
                     env['EIGS' if variant == 'http' else 'EIGS_SWEEP_BIN'] = str(Path(binary).resolve())
-                if target == 'tools/jit_fleet_bench.sh' and not env.get('ECO'):
-                    local = Path.home() / 'src/InauguralSystems/EigenScriptEcosystem'
-                    if not (local / 'DMG').is_dir():
-                        local = Path(scratch) / 'ecosystem'
-                        for repo in ('DMG', 'liferaft', 'ouroboros', 'EigenMiniSat'):
-                            subprocess.run([timeout, '-k', '5', '120', 'git', 'clone', '--depth=1', 'https://github.com/InauguralSystems/' + repo, str(local / repo)], check=True, stdout=subprocess.DEVNULL)
-                    env['ECO'] = str(local)
             except (OSError, subprocess.SubprocessError) as exc:  # this row's setup failed: its FAIL, not the run's
                 failed += 1
                 print(f'FAIL: {target} setup: {exc}', flush=True)
