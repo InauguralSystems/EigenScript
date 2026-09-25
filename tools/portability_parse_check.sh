@@ -120,8 +120,8 @@ FILE_FLOOR=110
 # half was written to refuse (mechanical-gates §121).
 #
 # Checker calibration belongs to tools/selftests.sh; this audits live gates.
-RUN_TARGETS="tools/docs_claims_check.sh tools/child_exit_check.sh tools/suite_label_check.sh tools/doc_drift_check.sh"
-RUN_TARGETS_DECLARED=4
+RUN_TARGETS="tools/docs_claims_check.sh tools/child_exit_check.sh tools/suite_label_check.sh"
+RUN_TARGETS_DECLARED=3
 
 # Candidates, oldest first. $PORTABILITY_BASH overrides for a test.
 #

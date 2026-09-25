@@ -1,30 +1,14 @@
-# docs-claims DECLARED POPULATIONS — CLASS | file | expected count
-#
-# Each count is a FLOOR (#1264), per class AND per file: a count BELOW its row
-# is red; a declared row nothing visited is red; an examined pair with no row
-# is red. Adding a claim (each is judged on its own) needs no edit here;
-# lower a row deliberately when removing claims.
-#
-# A data file for the same reason as the waiver table beside it: the tool must
-# contain no $(cat <<EOF) table at all, because bash 3.2 counts parentheses
-# inside a quoted heredoc body and a future row with one would break the macOS
-# lane again. Lines beginning with # and blank lines are ignored.
-#
-NUMBERS|README.md|11
-NUMBERS|docs/llms.txt|3
-NUMBERS|CLAUDE.md|3
-NUMBERS|docs/ARCHITECTURE.md|1
-NUMBERS|docs/BUILTINS.md|4
-NUMBERS|docs/CONCURRENCY.md|1
-PATHS|README.md|101
+# Reference population floors: CLASS|document|minimum.
+# Re-pin after an intentional prose rewrite; adding references needs no edit.
+PATHS|README.md|100
 PATHS|docs/llms.txt|3
-PATHS|CLAUDE.md|16
+PATHS|CLAUDE.md|17
 PATHS|docs/ARCHITECTURE.md|6
 PATHS|docs/BUILTINS.md|21
-PATHS|docs/CONCURRENCY.md|16
+PATHS|docs/CONCURRENCY.md|15
 FLAGS|README.md|18
-FLAGS|docs/llms.txt|9
-FLAGS|CLAUDE.md|3
+FLAGS|docs/llms.txt|10
+FLAGS|CLAUDE.md|4
 FLAGS|docs/ARCHITECTURE.md|0
 FLAGS|docs/BUILTINS.md|4
 FLAGS|docs/CONCURRENCY.md|0
@@ -40,39 +24,10 @@ NAMES|CLAUDE.md|6
 NAMES|docs/ARCHITECTURE.md|1
 NAMES|docs/BUILTINS.md|394
 NAMES|docs/CONCURRENCY.md|10
-# ROADMAP.md 11/20/9 -> 9/17/8 with #1275: the milestone table and the
-# checkbox-history header went; the file links GitHub milestones instead.
-NUMBERS|ROADMAP.md|9
 PATHS|ROADMAP.md|17
 FLAGS|ROADMAP.md|8
 TARGETS|ROADMAP.md|2
 NAMES|ROADMAP.md|6
-#
-# docs/CI.md, enrolled 2026-09-21 (round 7 of #1207). Four classes, not five:
-# see DOC_FILES_FLAGS_EXEMPT in tools/docs_claims_check.sh for the FLAGS
-# exemption and its reason. There is deliberately NO `FLAGS|docs/CI.md` row —
-# the class never visits it, and the declaration audit checks both directions,
-# so a row here for a class that does not walk the file would be red.
-# PATHS 53 -> 63 with #1255: the new "playground: the real wasm32 build, on
-# the PR" section and its table row cite pages.yml, web/build.sh,
-# the ILP32 gate script (deleted in #1274; CI.md's path count stayed 68),
-# src/** and web/** (10 path claims, all resolved).
-# 63 -> 60 in #1255 round 3: the scope job and its path list were deleted from
-# pages.yml, and the CI.md paragraph that listed that path list (and the
-# path-filter wording before it) went with them.
-# 60 -> 63 with #1264: the "Platform tiers" section (which replaced "Required
-# status checks — what is actually required today") cites
-# .github/required-checks.txt, tools/ci_tier_check.sh and nightly.yml where the
-# old section cited fewer paths (all resolved).
-# NUMBERS 4 -> 2 with #1264 PR-B: the hand-stated test-section counts were
-# removed from docs/CI.md on purpose (derived numbers only).
-NUMBERS|docs/CI.md|2
-# PATHS 68 -> 65 with #1275: the issue-labels/roadmap section dropped its
-# suite-caller and token-lane paragraphs when those gates left the suite.
-# 64 -> 56 with #1275 (#1299): the issue-labels section no longer cites the
-# three deleted gate scripts or the ROADMAP-history derivation; 56 -> 53 PATHS
-# and 6 -> 5 TARGETS with #1275 item 1: the retired consumer-acceptance farm,
-# overlay and self-test walkthrough went.
-PATHS|docs/CI.md|53
+PATHS|docs/CI.md|41
 TARGETS|docs/CI.md|5
 NAMES|docs/CI.md|0

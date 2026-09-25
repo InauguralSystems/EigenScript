@@ -8,7 +8,7 @@ description states what forces it and its bar (the condition that closes it),
 and its issues are the work. This file does not mirror that list, so it cannot
 drift from it (#1275).
 
-Current version: see the "Latest release" line in CLAUDE.md and CHANGELOG.md.
+Current and past versions: see CHANGELOG.md and `git tag`.
 
 Everything below is either uncommitted (`## Ideas and deferrals`) or shipped
 (`## Completed`); neither is a plan.

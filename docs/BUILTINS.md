@@ -1,6 +1,6 @@
 # EigenScript Builtin Reference
 
-349 builtins organized by module (261 core + 88 extensions). `eigenscript --api` prints the live index; the counts here are derived by tools/docs_claims_check.sh, never typed by hand.
+Builtins are organized by module. `eigenscript --api` prints the live index.
 Core builtins are always available; extension builtins (HTTP, DB, model,
 gfx, audio) require a full build or the `gfx` target.
 

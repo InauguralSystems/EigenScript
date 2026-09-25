@@ -114,11 +114,10 @@ Always-on:
   because nothing executed them. The mechanism is mechanical, not a promise:
   `tests/test_doc_examples.py` EXECUTES every `eigenscript` fence in all four
   (suite [89]/[90]) — opt-OUT, so an untagged fence with no `output` block is
-  RED — and `tools/docs_claims_check.sh` (suite [99za]) derives every numeric
-  claim, repo path, CLI flag, `make` target and stdlib call in README.md +
-  docs/llms.txt + CLAUDE.md from the tree. **Never hand-type a number into a
-  doc**: add its derivation to that tool, or waive the exact line with a
-  reason.
+  RED — and `tools/docs_claims_check.sh` (suite [99za]) checks repo paths,
+  CLI flags, `make` targets and stdlib calls against the tree. **Do not write
+  derived counts into front-door docs**; point readers to `eigenscript --api`,
+  CHANGELOG.md or the relevant source instead.
 
 ## Task-specific procedures (skills — invoked on demand, not always loaded)
 
@@ -131,20 +130,18 @@ Always-on:
 - **Changing the AOT compiler** (separate `ouroboros` repo)? → the
   **`aot-differential`** skill (VM as byte-exact oracle).
 - **Writing `.eigs` code**? → the **`write-eigenscript`** skill, and
-  **`docs/llms.txt`** — the whole language in one 350-line file (call
+  **`docs/llms.txt`** — the whole language in one file (call
   syntax, scope, observer, validation ladder); an agent primed with it
   has written correct programs from it alone (#734). Resolve "does
   function X exist" with `eigenscript --api` (or `--api --json`) — the
   full builtin/extension/lib surface index in one call.
-- **Cutting a release** (tag/dispatch path, the doc-drift "Latest release"
-  gate, the tap)? → the **`release`** skill.
+- **Cutting a release** (tag/dispatch path, CHANGELOG.md, the tap)? →
+  the **`release`** skill.
 
 ## Current state & where the detail lives
 
-- **Latest release: v0.43.0** (2026-09-06). Unreleased work on `main`: see
-  CHANGELOG.md `[Unreleased]`. Full version history: **CHANGELOG.md** (don't
-  re-narrate it here — tools/doc_drift_check.sh FAILS the suite when this line
-  falls behind the latest tag). Roadmap: **ROADMAP.md**.
+- **Release history:** see **CHANGELOG.md** and `git tag` for published
+  versions; `[Unreleased]` records work on `main`. Roadmap: **ROADMAP.md**.
 - **Design phase:** the VM tier is the deliberate correctness-first phase —
   its malleability keeps semantics cheap to change; the native path is the
   **AOT compiler in the sibling `ouroboros` repo** (the VM is its byte-exact

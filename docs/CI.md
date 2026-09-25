@@ -115,76 +115,28 @@ inputs also select their separate checker calibrations.
 | Section | Tool | What it refuses |
 |---|---|---|
 | **[89]** | `tests/test_doc_examples.py` | an eigenscript fence that is not executed. Opt-OUT: paired with an `output` block (byte-compared), tagged `eigenscript fragment k=v ...` (free names declared in the tag, resolved STATICALLY through `--lint` E003 so a name hiding in a dead branch still counts, then run and required to finish clean), or tagged `eigenscript nocheck <reason>`. Anything else is red. It also refuses a **value stated in a comment** inside an executed example — that is a claim wearing a checked example's clothes. Per-file populations are pinned and cross-checked against an independent line scan. |
-| **[99za]** | `tools/docs_claims_check.sh` | a hand-typed number, a dangling repo path **or Markdown link target** (resolved against the LINKING FILE's directory only — no repo-root fallback, because a link that resolves only at the root is a broken link). A path is classified before it is checked: `git ls-files` says SOURCE (must be tracked and present), `make -p` says BUILD PRODUCT (must be produced by a rule; its **existence is never consulted**, so `make lsp` cannot change the verdict), neither is red, **any** `--flag` token not in `--help`, a `make <target>` that is not a rule, a backticked ``<builtin> of …`` call that resolves nowhere. Each is derived from the tree or waived by its exact line content with a reason. Every class carries a per-file FLOOR (#1264: found >= floor, rows and pairs checked both ways), and a waiver that matches nothing is red — so coverage cannot shrink without a failure, and adding a claim needs no table edit. Three rules bought on macOS: **no scan that feeds a population suppresses its stderr** (a rejected pattern used to read as "nothing found"); the **fence count comes from `tests/test_doc_examples.py --count`**, the gate that executes the fences — one grammar, not two; and **nothing in the tool extracts with `grep -o`** — grep finds lines, POSIX awk `match()`/`RSTART`/`RLENGTH` extracts, because `grep -o` is not in POSIX and GNU and BSD differ on it. A scan that matches ZERO times where a count is declared is a RED **at the scan**, quoting the command and its exit status, not a "was never visited" three hundred lines later. And the gate prints a **per-class summary LAST** — examined count, files recorded, declared rows — so a class that silently did not run is one named line rather than six consequence-REDs; the runner prints the gate's **entire** captured output on failure (bounded at a fixed line count, and when that bites it keeps the head AND the tail, never a bare tail). The **binary-size** claim is measured against whichever install-shaped binary the lane actually has, decided by inode: `build/release/eigenscript` if present, else `src/eigenscript` when no `build/*/eigenscript` shares its inode (the `./build.sh` product, which is what every CI leg builds and what `install.sh` installs); a `src/eigenscript` that IS a variant alias, or a non-Linux lane, defers with the reason named and the deferral count pinned. |
+| **[99za]** | `tools/docs_claims_check.sh` | dangling repo paths and Markdown links, unknown `eigenscript --flag` references, missing `make` targets, unresolved calls written with `of`, missing stdlib guide headings, and executable fences without enrolment. Paths come from `git ls-files` or Makefile products; flags from the real `--help`; names from `--api` and compiler vocabulary. Each reference class has a nonempty population and per-document floors in `tools/docs_claims_populations.txt`; fence enrolment has declared rows. Derived counts belong in commands, not prose. |
 | **[99zb]** | `tools/portability_parse_check.sh` | a tracked `*.sh` that the OLDEST bash on the machine cannot parse — **or a shell gate it cannot RUN**. macOS ships **bash 3.2 (2007)**, and three CI rounds were spent guessing at what it rejects — twice wrongly. The dev box now carries a real one at **`~/.local/bin/bash32`**, built from GNU bash 3.2.0 source with `./configure --without-bash-malloc --disable-nls && make` (~4 min); `bash32 -n <file>` settles any portability question in a second, and the whole repo in under two. Parsing was never enough: bash 3.2 scans `<( … )` for its closing paren **without honouring comments**, so an apostrophe in a comment inside one opens a quote that never closes — at RUNTIME, which `bash -n` calls clean. That kept the macOS lane red for four rounds. The audit also executes the live gates listed in its `RUN_TARGETS` table under the old bash and requires rc 0, with the run count pinned. Checker calibration belongs to the change-selected driver. When no old bash is present the check **announces the skip and prints both counts** AND names every candidate it looked at, so it can never read as a completed audit. The file count, the gate count and the oracle are printed by the check itself (`portability: OK: files=… checked=… parse-failures=0; gates-run=…/… run-failures=0 (oracle …)`) rather than typed here, because a number typed into a page about a count that moves is a number that rots. **The system shell is a candidate when it IS old** (round-5 blind critic, Fable): until then the candidate list was `$PORTABILITY_BASH` and the two `bash32` oracle paths and nothing else, so on the one platform this audit exists for — the macOS runner, whose default `/bin/bash` IS GNU bash 3.2.57 — it found no old bash and skipped with "NO OLD BASH ON THIS MACHINE". That reason was false; the list simply never tried `/bin/bash`. `/bin/bash` and `/usr/bin/bash` are now candidates **when their own `BASH_VERSINFO[0]` is ≤ 3**, so the macOS lane runs the real audit and a Linux runner's bash 5 is never mistaken for an oracle. **Round 6: EVERY candidate is asked its own version, including the declared ones** — `$PORTABILITY_BASH` and the two `bash32` paths were trusted BY NAME, and a file called `bash32` is not bash 3.2 (a symlink to the system shell, or a rebuild that picked up a modern source), so the gate could print a truthful `oracle=… version 5.x` receipt for an audit that models nothing; a name is a hint, `BASH_VERSINFO[0]` is the fact. The skip line names every candidate it looked at AND every one it rejected by version, and those lines now reach the CI log. **The CALLER pins the identity too, and it keys on the FACT rather than the banner**: the gate prints `portability-parse: oracle-major=N` from the SELECTED candidate's own `BASH_VERSINFO[0]`, and `[99zb]` parses THAT line while holding its own `≤ 3` literal. Round 6 read the major version out of the GNU version banner instead, so a real bash 3.2 behind a wrapper whose banner says `Custom Bash 3.2.0` yielded no number at all and was failed BY NAME (round-6 blind critic, Fable) — a banner is prose, a version is a fact. A gutted selection is still red by name (`the portability gate measured under bash 5 — that is not the old shell it exists to model`) rather than passing on rc 0 and a verdict prefix. The portability checker's self-test drives the suite's real receipt-classifier function over synthetic positive and negative receipts when that checker or the suite changes, and nightly. |
-**`make -p` across GNU Make releases — measured, not assumed.** macOS runners carry
-**GNU Make 3.81** (2006); this box has 4.3, and [99za]'s build-product
-classifier parses `make -p -n --no-builtin-rules`. That was the leading
-suspicion for the macOS PATHS failure, so it was tested rather than guessed at:
-GNU Make 3.81 built from source (`curl -O
-https://ftp.gnu.org/gnu/make/make-3.81.tar.gz`, `./configure`, then
-`make GLOBINC= GLOBLIB= CFLAGS=-O2` — the bundled `glob/` does not link against
-modern glibc, the system one does; ~90 s) produces, over this Makefile,
-**exactly the same 886 file targets and the same 898-entry producer set** as
-4.3. The only difference in the variable dump is `MAKE_HOST`, which no recipe
-uses. So the database parse is version-stable here and `make -p` is **not** the
-macOS cause. The tool still reports its two routes separately and falls back to
-the Makefile's own `^VAR := value` lines if a database ever yields none — but
-that is insurance, not a fix for a diagnosis.
 
-**The gate's output is deterministic, and that is a checked property.** A
-selftest row runs the gate twice — once with build products absent, once with
-them present — and requires the two outputs to be BYTE-IDENTICAL, because a
-verdict that moves with build state is a verdict that depends on what someone
-ran. That row failed on macOS for four rounds, and the cause was not build
-state at all: under **bash 3.2** a `printf … | grep -q` (or `| head -1`, or
-`| awk '… exit'`) makes the shell's own `printf` builtin take SIGPIPE when the
-reader exits first, and 3.2 PRINTS `printf: write error: Broken pipe` where
-bash 5 swallows it — nondeterministically, because it is a race. Every
-early-exiting reader in the gate is now fed by a **here-string** instead of a
-pipe (a here-string is a temp file; there is no pipe to break). Same family as
-`tools/pipefail_verdict_check.sh` (#1122).
+The reference checker reads source paths from `git ls-files`, build products
+from `make -p`, CLI flags from `eigenscript --help`, and call names from
+`eigenscript --api`. Its calibration plants one fault per class and checks
+an honest control. The live check stays in the suite; calibration runs when
+its inputs change or in nightly checks.
 
-**The doc set every [99za] class walks, named.** `tools/docs_claims_check.sh`
-examines `README.md`, `docs/llms.txt`, `CLAUDE.md`, `docs/ARCHITECTURE.md`,
-`docs/BUILTINS.md`, `docs/CONCURRENCY.md`, `ROADMAP.md` and **this page**
-(`DOC_FILES_DEFAULT` in the tool; the gate prints the list and the per-file
-counts on every run, so the set is never something this page asserts) — and
-every class, including
-**BUILTIN FAMILIES** (the class that refuses a doc line naming a builtin family
-`eigenscript --api` does not carry, bought by ROADMAP.md's "Raw TCP/UDP
-sockets", #1227), is only as wide as that list.
+**The doc set [99za] walks** is named in `tools/docs_claims_check.sh`:
+README.md, docs/llms.txt, CLAUDE.md, docs/ARCHITECTURE.md,
+docs/BUILTINS.md, docs/CONCURRENCY.md, ROADMAP.md and this page.
+This page is exempt from the FLAGS class because it documents flags for
+other tools; it remains enrolled for the other reference classes.
+The gate uses `tests/test_doc_examples.py --count` to find executable fences
+and checks that each document with one has a POPULATION row.
+Direct example-runner calls require file arguments; the suite supplies its
+declared POPULATION list.
 
-`docs/CI.md` was enrolled in round 7 of #1207 (third critic,
-`/code-review 1226 medium`, finding 7), because the page that tells a
-contributor what runs on their PR is a front door and four of its hand-typed
-numbers were already stale in the diff that wrote them. It is exempt from ONE
-class, **FLAGS**, and the exemption is named in `DOC_FILES_FLAGS_EXEMPT` with
-its reason: that class asks `eigenscript --help` about every `--flag` token,
-and almost every `--flag` token on this page belongs to another program
-(`--selftest`, `--contract`, `--paginate`, `--without-bash-malloc`, ...), so
-enrolling it there would mean a waiver per line, all carrying one sentence,
-and a gate whose failures are mostly noise. The gate AUDITS that exemption: every
-exempt entry must exist, must be enrolled for the other four classes, and must
-actually have been held out — an exemption that no longer fires is red, not
-quiet.
-
-The other documents are outside it deliberately: `docs/SPEC.md`, `docs/COMPARISON.md`, `docs/PREDICATES.md`,
-`docs/OBSERVER.md`, `docs/TRACE.md` and the rest are either **executed-example
-documents**, where section [89] runs every fence against the built binary and a
-false claim fails as a program rather than as prose, or prose about design that
-states no derived number. The cost of that boundary is exact and worth writing
-down: **a builtin-family claim in `docs/TRACE.md` is unseen by [99za]** — if
-`docs/TRACE.md` ever says the tape records UDP sockets, no class here will
-object. Widening `DOC_FILES_DEFAULT` is the fix when that becomes real, and it
-requires re-deriving every per-file declared count in the same commit.
-
-| **[99v]** | `tools/doc_drift_check.sh` | the staleness classes that are not numbers: a stdlib module with no `docs/STDLIB.md` entry, a stale "Latest release" line, a `VERSION` with no CHANGELOG section, an unstamped `docs/llms.txt`. |
-
-The doc parser and doc-claims gates retain their planted-fault calibrations and
-existing result pins in the self-test table. Their live checks stay in the suite;
-the calibrations run on changed inputs or nightly. Scratch tree copies stay next
-to the repository so hard links do not cross a CI mount boundary.
+The doc parser gate retains its calibration, and the reference checker has
+a planted-fault calibration in the self-test table. Their live checks stay in
+the suite; calibrations run when inputs change or in nightly checks.
 
 To add a document to [89]: add it to `DOC_FILES_ARG` in the runner AND a row to
 `POPULATION` in `tests/test_doc_examples.py`, and bump `DOC_POPULATIONS`. The

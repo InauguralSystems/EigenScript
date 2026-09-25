@@ -117,13 +117,11 @@ paths:
   The detector is the same expression the class was enumerated with, so a hand
   `grep -nE '#.*(after|gives|prints|≈|~) *[0-9]'` and the gate cannot disagree
   about what the class is.
-- **Never hand-type a number into a document.** `tools/docs_claims_check.sh`
-  (suite [99za]) derives every numeric claim, repo path, `eigenscript --flag`,
-  `make <target>` and backticked `name of` call in README.md, docs/llms.txt,
-  CLAUDE.md, docs/ARCHITECTURE.md and docs/BUILTINS.md. Add a derivation rule
-  to `NUMBER_RULES`, or waive the EXACT line with a reason. The three numeric
-  checks that used to live in `tools/doc_drift_check.sh` moved there; do not
-  re-add a number check to `doc_drift_check.sh`.
+- **Do not hand-type derived counts into front-door documents.**
+  `tools/docs_claims_check.sh` (suite [99za]) checks paths, CLI flags,
+  `make` targets, stdlib/builtin calls and doc-example enrolment against
+  their real sources. Point readers to `eigenscript --api`, CHANGELOG.md,
+  `git tag` or the source tree for current totals.
   **A failing gate must print the tool's OWN WORDS, never a grep for the
   failure you expected.** The macOS job sat at `rc=2` with 28 of 30 plants
   "ABSENT" for two rounds and the reason never reached the log: the section
@@ -274,8 +272,7 @@ paths:
   `TABLE=$(cat <<'EOF' … )` breaks the moment a row contains an unbalanced
   `(` — and a row of REVIEWED PROSE quoting someone else's document eventually
   will. **A data table belongs in a data file** (mechanical-gates §53's
-  family): `tools/docs_claims_waivers.txt` and
-  `tools/docs_claims_populations.txt` are immune to apostrophes, backticks and
+  family): `tools/docs_claims_populations.txt` is immune to apostrophes, backticks and
   parentheses at once, and a reviewed exemption list is a reviewable artifact.
   That one table produced three quoting traps in three rounds before it moved.
   **An unquoted `(` group inside a `[[ =~ ]]` pattern is a bash 3.2 syntax

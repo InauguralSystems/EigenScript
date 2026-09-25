@@ -6528,12 +6528,9 @@ else
 fi
 echo ""
 
-# [99za] Doc CLAIMS — no hand-typed number, no dangling reference. Every number
-# followed by a unit word, every backticked repo path, every `eigenscript
-# --flag`, every `make <target>` and every backticked `name of` call in the
-# front-door documents is DERIVED from the tree or waived by its exact line.
-# Fast (no build, no suite): it belongs in the PR lane. See docs/CI.md.
-echo "[99za] Doc claims (derived, not typed)"
+# [99za] Front-door reference checks: paths, CLI flags, Makefile targets,
+# stdlib/builtin calls and executable-fence enrolment. See docs/CI.md.
+echo "[99za] Doc references"
 TOTAL=$((TOTAL + 1))
 CLAIMS_OUTPUT=$(bash "$TESTS_DIR/../tools/docs_claims_check.sh" 2>&1)
 CLAIMS_RC=$?
@@ -6689,17 +6686,6 @@ if [ -n "$SCALE_RUNTIME" ] && [ "$SCALE_RUNTIME" -ef "$EIGS_BIN" ]; then
 else
     FAIL=$((FAIL + 1))
     echo "  FAIL: the gate reported runtime '${SCALE_RUNTIME:-<none>}', which is not $EIGS_BIN — the section measured a binary other than the one under test (#1188)"
-fi
-echo ""
-
-echo "[99v] Doc drift (mechanical)"
-TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/doc_drift_check.sh"; then
-    PASS=$((PASS + 1))
-    echo "  PASS: no mechanical doc drift (STDLIB coverage, release line, CHANGELOG section)"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: doc drift detected (see DRIFT lines above)"
 fi
 echo ""
 

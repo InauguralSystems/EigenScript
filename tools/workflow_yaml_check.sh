@@ -67,7 +67,7 @@ SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WF_DIR="${WORKFLOW_CHECK_DIR:-$ROOT/.github/workflows}"
 
-# Nothing on stdin, for the reason docs_claims_check.sh records: a counting
+# Nothing on stdin: a counting
 # pipeline that inherits an open stdin hangs; one that inherits /dev/null
 # counts 0 and passes the guard built on that count.
 exec 0</dev/null

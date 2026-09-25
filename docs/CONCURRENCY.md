@@ -126,12 +126,11 @@ channel handle SHARES
 **The rows the table cannot construct in three lines, and why they behave the
 way they do.** `chan_clone_rec` (src/eigenscript.c) switches on `ValType` with
 no `default:`, so `-Werror=switch` forces every new type to choose a side; the
-switch has **10 arms** — `VAL_NUM`, `VAL_NULL`, `VAL_STR`, `VAL_LIST`,
+switch handles each type explicitly: `VAL_NUM`, `VAL_NULL`, `VAL_STR`, `VAL_LIST`,
 `VAL_DICT` are rebuilt (copy), and `VAL_FN`, `VAL_BUILTIN`, `VAL_BUFFER`,
 `VAL_TEXT_BUILDER`, `VAL_JSON_RAW` take a refcount (share).
-`tools/docs_claims_check.sh` pins that arm count, so adding a `ValType` fails
-this page as well as the compiler. Two kinds are not in the table: `null` and a
-builtin have no mutable state, so there is nothing to observe. And a **store
+A new `ValType` must choose a side in the switch for the compiler to accept it.
+Two kinds are not in the table: `null` and a builtin have no mutable state, so there is nothing to observe. And a **store
 handle** and a **thread handle** behave exactly like the channel row: they are
 `VAL_NUM` ids into the process handle table (CLAUDE.md, leak tally), so the
 NUMBER copies while the resource it names is shared — which is why the channel
