@@ -1161,9 +1161,12 @@ static void emit_scope_transition(void) {
     CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
     if (f->call_serial == g_last_scope_serial) return;
     g_last_scope_serial = f->call_serial;
-    tp_printf("S %s %d %u\n",
-              (f->chunk && f->chunk->name) ? f->chunk->name : "?",
-              g_vm.frame_count - 1, f->call_serial);
+    /* The name is variable-length: write it with tp_puts, never through
+     * tp_printf's 128-byte staging, which truncated a name of 121+ chars
+     * together with the record's newline and glued the next record on (#1157). */
+    tp_puts("S ");
+    tp_puts((f->chunk && f->chunk->name) ? f->chunk->name : "?");
+    tp_printf(" %d %u\n", g_vm.frame_count - 1, f->call_serial);
 }
 
 /* ---- #1044/#1045 follow-up: the observer CONFIGURATION on the tape.
