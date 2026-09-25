@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -252,27 +253,32 @@ def enrolment():
         red('doc example POPULATION table missing')
         return
     rows = set(re.findall(r'^ *"([^"]+)":', population[1], re.M))
+    declared = {row.split('|')[1] for row in POP.read_text().splitlines()
+                if row.startswith('DOC ENROLMENT|')}
     files = sorted(set(['README.md', 'docs/llms.txt', *map(str, Path('docs').glob('*.md')),
-                        *rows]))
+                        *rows, *declared]))
     output = run('python3', 'tests/test_doc_examples.py', '--count', *files)
     answer = dict(row.split('\t') for row in output.splitlines())
     if len(answer) != len(files):
         red(f'doc fence count answered {len(answer)} of {len(files)} files')
-    enrolled = 0
+    fenced = set()
     for file in files:
         if file not in answer:
             red(f'no doc fence count for {file}')
-        elif int(answer[file]) and file not in rows:
-            red(f'{file} has eigenscript fences but no POPULATION row')
         elif int(answer[file]):
-            enrolled += 1
-    for file in rows:
-        if file not in answer or not int(answer[file]):
-            red(f'POPULATION row {file} has no eigenscript fences')
-    counts['DOC ENROLMENT'] = enrolled
-    if not enrolled:
+            fenced.add(file)
+    for file in sorted(rows | declared | fenced):
+        if file not in declared:
+            red(f'{file} has no DOC ENROLMENT declaration')
+        if file not in rows:
+            red(f'{file} has no POPULATION row')
+        if file not in fenced:
+            red(f'{file} has no eigenscript fences')
+        if file in fenced:
+            record('DOC ENROLMENT', file, 1)
+    if not fenced:
         red('DOC ENROLMENT examined 0 files')
-    print(f'  DOC ENROLMENT: examined {enrolled}, declared {len(rows)}')
+    print(f'  DOC ENROLMENT: examined {len(fenced)}, declared {len(declared)}')
 
 
 def stdlib_headings():
@@ -298,46 +304,92 @@ def changelog_version():
 
 def selftest():
     root = Path.cwd()
-    scratch = Path(tempfile.mkdtemp(prefix='es-docs-claims-'))
+    index = run('git', '-c', 'safe.directory=*', 'ls-files', '--stage')
+    tracked = {row.split('\t', 1)[1] for row in index.splitlines()}
+    content = set(DOCS) | {str(p) for p in Path('docs').glob('*.md')}
+    content |= {str(p) for p in Path('lib').glob('*.eigs')}
+    content |= {'Makefile', 'VERSION', 'CHANGELOG.md',
+                'tools/docs_claims_check.sh', 'tools/docs_claims_populations.txt',
+                'tools/werror_flags.txt', 'tests/test_doc_examples.py',
+                'src/eigenscript.c', 'src/lexer.c'}
+    # PATHS reads existence, not contents, of referenced tracked paths.
+    refs = set()
+    pat = r'`(?:' + '|'.join(map(re.escape, SEGMENTS)) + r')/[A-Za-z0-9_.*/-]*`'
+    for file in DOCS:
+        for line in Path(file).read_text().splitlines():
+            refs.update(x[1:-1] for x in matches(pat, line))
+            links = [x[2:-1] for x in matches(r'\]\([A-Za-z0-9_./#-]+\)', line)]
+            links += [x.split(':', 1)[1].strip() for x in
+                      matches(r'^\[[A-Za-z0-9_.-]+\]: +[A-Za-z0-9_./#-]+', line)]
+            refs.update(str(Path(file).parent / x.split('#', 1)[0]) for x in links if x)
+    refs = {x.removeprefix('./') for x in refs} & tracked
+    files = content | refs
+    previous = signal.getsignal(signal.SIGTERM)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     try:
-        shutil.copytree(root, scratch / 'tree', symlinks=True,
-                        ignore=shutil.ignore_patterns('*.o', '*.d', '*.a'), dirs_exist_ok=True)
-        tree = scratch / 'tree'
-        cases = [
-            ('path', 'README.md', '\n`docs/NO_SUCH_1275.md`\n', 'references'),
-            ('flag', 'docs/llms.txt', '\n`eigenscript --no-such-1275`\n', '--no-such-1275'),
-            ('target', 'CLAUDE.md', '\n`make no-such-1275`\n', 'make no-such-1275'),
-            ('name', 'README.md', '\n`no_such_1275 of null`\n', 'no_such_1275'),
-        ]
-        def gate():
-            return subprocess.run(['bash', 'tools/docs_claims_check.sh'], cwd=tree,
-                                  text=True, stdout=subprocess.PIPE,
-                                  stderr=subprocess.STDOUT, timeout=90)
-        result = gate()
-        passed = int(result.returncode == 0)
-        print(f'SELFTEST: control: {"PASS" if passed else "FAIL"}')
-        if not passed:
-            print('\n'.join(result.stdout.splitlines()[-12:]))
-        for label, file, plant, witness in cases:
-            p = tree / file
-            original = p.read_text()
-            p.write_text(original + plant)
+        with tempfile.TemporaryDirectory(prefix='es-docs-claims-') as scratch:
+            tree = Path(scratch) / 'tree'
+            tree.mkdir()
+            for file in sorted(files):
+                dst = tree / file
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if file in content:
+                    shutil.copy2(root / file, dst)
+                else:
+                    dst.touch()
+            shutil.copy2(root / 'src/eigenscript', tree / 'src/eigenscript')
+            subprocess.run(['git', '-c', 'safe.directory=*', 'init', '-q', str(tree)], check=True)
+            subprocess.run(['git', '-C', str(tree), '-c', 'safe.directory=*',
+                            'update-index', '--index-info'], input=index, text=True, check=True)
+            def gate():
+                return subprocess.run(['bash', 'tools/docs_claims_check.sh'], cwd=tree,
+                                      text=True, stdout=subprocess.PIPE,
+                                      stderr=subprocess.STDOUT, timeout=90)
+            passed = 0
             result = gate()
-            ok = result.returncode != 0 and witness in result.stdout
-            passed += int(ok)
-            print(f'SELFTEST: {label}: {"PASS" if ok else "FAIL"}')
+            ok = result.returncode == 0
+            passed += ok
+            print(f'SELFTEST: control: {"PASS" if ok else "FAIL"}')
+            if not ok:
+                print('\n'.join(x for x in result.stdout.splitlines() if x.startswith(('RED:', 'docs-claims:'))))
+            for label, file, plant, witness in [
+                ('path', 'README.md', '\n`docs/NO_SUCH_1275.md`\n', 'references'),
+                ('flag', 'docs/llms.txt', '\n`eigenscript --no-such-1275`\n', '--no-such-1275'),
+                ('target', 'CLAUDE.md', '\n`make no-such-1275`\n', 'make no-such-1275'),
+                ('name', 'README.md', '\n`no_such_1275 of null`\n', 'no_such_1275'),
+            ]:
+                p = tree / file
+                original = p.read_text()
+                p.write_text(original + plant)
+                result = gate()
+                ok = result.returncode != 0 and witness in result.stdout
+                passed += ok
+                print(f'SELFTEST: {label}: {"PASS" if ok else "FAIL"}')
+                p.write_text(original)
+            p = tree / 'tests/test_doc_examples.py'
+            original = p.read_text()
+            p.write_text(original.replace('"README.md":', '# "README.md":', 1))
+            result = gate()
+            ok = result.returncode != 0 and 'README.md has no POPULATION row' in result.stdout
+            passed += ok
+            print(f'SELFTEST: enrolment: {"PASS" if ok else "FAIL"}')
             p.write_text(original)
-        p = tree / 'tests/test_doc_examples.py'
-        original = p.read_text()
-        p.write_text(original.replace('"README.md":', '# "README.md":', 1))
-        result = gate()
-        ok = result.returncode != 0 and 'no POPULATION row' in result.stdout
-        passed += int(ok)
-        print(f'SELFTEST: enrolment: {"PASS" if ok else "FAIL"}')
-        print(f'SELFTEST: 6 case(s) run, {passed} passed, {6-passed} failed')
-        return 0 if passed == 6 else 1
+            p = tree / 'docs/PREDICATES.md'
+            original = p.read_text()
+            p.write_text(original.replace('```eigenscript', '```text'))
+            p = tree / 'tests/test_doc_examples.py'
+            table_text = p.read_text()
+            p.write_text(table_text.replace('"docs/PREDICATES.md":', '# "docs/PREDICATES.md":', 1))
+            result = gate()
+            ok = result.returncode != 0 and 'docs/PREDICATES.md has no' in result.stdout
+            passed += ok
+            print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
+            print('\n'.join(x for x in result.stdout.splitlines()
+                            if x.startswith('RED: docs/PREDICATES.md')))
+            print(f'SELFTEST: 7 case(s) run, {passed} passed, {7-passed} failed')
+            return 0 if passed == 7 else 1
     finally:
-        shutil.rmtree(scratch)
+        signal.signal(signal.SIGTERM, previous)
 
 
 def main():

@@ -115,7 +115,7 @@ inputs also select their separate checker calibrations.
 | Section | Tool | What it refuses |
 |---|---|---|
 | **[89]** | `tests/test_doc_examples.py` | an eigenscript fence that is not executed. Opt-OUT: paired with an `output` block (byte-compared), tagged `eigenscript fragment k=v ...` (free names declared in the tag, resolved STATICALLY through `--lint` E003 so a name hiding in a dead branch still counts, then run and required to finish clean), or tagged `eigenscript nocheck <reason>`. Anything else is red. It also refuses a **value stated in a comment** inside an executed example — that is a claim wearing a checked example's clothes. Per-file populations are pinned and cross-checked against an independent line scan. |
-| **[99za]** | `tools/docs_claims_check.sh` | dangling repo paths and Markdown links, unknown `eigenscript --flag` references, missing `make` targets, unresolved calls written with `of`, missing stdlib guide headings, and executable fences without enrolment. Paths come from `git ls-files` or Makefile products; flags from the real `--help`; names from `--api` and compiler vocabulary. Each reference class has a nonempty population and per-document floors in `tools/docs_claims_populations.txt`; fence enrolment has declared rows. Derived counts belong in commands, not prose. |
+| **[99za]** | `tools/docs_claims_check.sh` | dangling repo paths and Markdown links, unknown `eigenscript --flag` references, missing `make` targets, unresolved backticked calls written with `of`, missing stdlib guide headings, and executable fences without enrolment. Paths come from `git ls-files` or Makefile products; flags from the real `--help`; names from `--api` and compiler vocabulary. Each reference class has a nonempty population and per-document floors in `tools/docs_claims_populations.txt`; fence enrolment has declared rows. Derived counts belong in commands, not prose. |
 | **[99zb]** | `tools/portability_parse_check.sh` | a tracked `*.sh` that the OLDEST bash on the machine cannot parse — **or a shell gate it cannot RUN**. macOS ships **bash 3.2 (2007)**, and three CI rounds were spent guessing at what it rejects — twice wrongly. The dev box now carries a real one at **`~/.local/bin/bash32`**, built from GNU bash 3.2.0 source with `./configure --without-bash-malloc --disable-nls && make` (~4 min); `bash32 -n <file>` settles any portability question in a second, and the whole repo in under two. Parsing was never enough: bash 3.2 scans `<( … )` for its closing paren **without honouring comments**, so an apostrophe in a comment inside one opens a quote that never closes — at RUNTIME, which `bash -n` calls clean. That kept the macOS lane red for four rounds. The audit also executes the live gates listed in its `RUN_TARGETS` table under the old bash and requires rc 0, with the run count pinned. Checker calibration belongs to the change-selected driver. When no old bash is present the check **announces the skip and prints both counts** AND names every candidate it looked at, so it can never read as a completed audit. The file count, the gate count and the oracle are printed by the check itself (`portability: OK: files=… checked=… parse-failures=0; gates-run=…/… run-failures=0 (oracle …)`) rather than typed here, because a number typed into a page about a count that moves is a number that rots. **The system shell is a candidate when it IS old** (round-5 blind critic, Fable): until then the candidate list was `$PORTABILITY_BASH` and the two `bash32` oracle paths and nothing else, so on the one platform this audit exists for — the macOS runner, whose default `/bin/bash` IS GNU bash 3.2.57 — it found no old bash and skipped with "NO OLD BASH ON THIS MACHINE". That reason was false; the list simply never tried `/bin/bash`. `/bin/bash` and `/usr/bin/bash` are now candidates **when their own `BASH_VERSINFO[0]` is ≤ 3**, so the macOS lane runs the real audit and a Linux runner's bash 5 is never mistaken for an oracle. **Round 6: EVERY candidate is asked its own version, including the declared ones** — `$PORTABILITY_BASH` and the two `bash32` paths were trusted BY NAME, and a file called `bash32` is not bash 3.2 (a symlink to the system shell, or a rebuild that picked up a modern source), so the gate could print a truthful `oracle=… version 5.x` receipt for an audit that models nothing; a name is a hint, `BASH_VERSINFO[0]` is the fact. The skip line names every candidate it looked at AND every one it rejected by version, and those lines now reach the CI log. **The CALLER pins the identity too, and it keys on the FACT rather than the banner**: the gate prints `portability-parse: oracle-major=N` from the SELECTED candidate's own `BASH_VERSINFO[0]`, and `[99zb]` parses THAT line while holding its own `≤ 3` literal. Round 6 read the major version out of the GNU version banner instead, so a real bash 3.2 behind a wrapper whose banner says `Custom Bash 3.2.0` yielded no number at all and was failed BY NAME (round-6 blind critic, Fable) — a banner is prose, a version is a fact. A gutted selection is still red by name (`the portability gate measured under bash 5 — that is not the old shell it exists to model`) rather than passing on rc 0 and a verdict prefix. The portability checker's self-test drives the suite's real receipt-classifier function over synthetic positive and negative receipts when that checker or the suite changes, and nightly. |
 
 The reference checker reads source paths from `git ls-files`, build products
@@ -272,7 +272,7 @@ EIGS_SUITE_SECTIONS=zlib bash tests/run_all_tests.sh   # run that plan
 ```
 
 `--selftest` takes about **7.5 minutes** on the dev box — six of its rows
-re-derive the 429-chunk table at ~15 s each — so it is a "before you push"
+re-derive the section table — so it is a "before you push"
 check, not an inner-loop one. It runs when its inputs change or nightly.
 The same job runs the live consumer-acceptance `plan` against a fixture
 inventory whose declared set is the fixture's own (never the real ecosystem);
@@ -297,10 +297,10 @@ a clean run.
 
 `CA_ECO=... bash tools/consumer_acceptance.sh plan` scans pinned sibling
 checkouts. `plan --cmd <consumer>` prints that consumer's complete acceptance
-command, taken from its CI workflow `runCmd` or the four declared commands.
+command, taken from its CI workflow `runCmd` or the explicitly declared commands.
 The scanned inventory must cover the recorded inventory floor, and every
-consumer needs a command. The 16 real commands are compared byte for byte
-with the pre-change oracle when this gate changes.
+consumer needs a command. The commands returned by `plan` are compared
+byte for byte with the pre-change oracle when this gate changes.
 
 `run <tree-or-binary> [--full binary] [--gfx binary]` runs each command in its
 checkout. A tree argument selects `src/eigenscript`; a binary symlink is
@@ -338,7 +338,7 @@ every row passes. Without `CA_RECORD`, the record survives under
 tree's short git SHA is recorded in `candidate_git_sha=` when available.
 The existing
 2026-09-20 wave record remains readable with the same `row|` columns and
-header/footer format. `--self-test` plants fifteen faults once when the harness
+header/footer format. `--self-test` plants faults once when the harness
 changes; it is not a permanent check of every internal branch.
 
 ## The ASan suite runs in shards
@@ -466,7 +466,7 @@ with the roster printed), so a new section cannot silently unbalance a shard.
 
 ## [99i]: one flags home and a compiler guard
 
-`tools/werror_flags.txt` holds the three warning-error flags. The Makefile
+`tools/werror_flags.txt` holds the warning-error flags. The Makefile
 reads it into `WERROR_FLAGS` and puts it in `CFLAGS` and every variant flag
 bundle, including those consumed by Python build checks. Recipes using a
 bundle do not repeat it; direct recipes add it once. Shell scripts source

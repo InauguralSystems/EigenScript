@@ -342,10 +342,10 @@ findings — 77 of whose stack frames named `env_set_local_hashed` and 64
 `dict_set_hashed_raw`, which is why locking only the env would not have been
 enough.
 
-The predicate is now a property the env carries (`Env::mt_shared`), set in
-exactly two places: a root env at creation, and a module namespace when it is
-attached. Every MT-only env guard reads that one predicate, so a new kind of
-cross-thread env is one call rather than a second definition of "shared".
+The predicate is now a property the env carries (`Env::mt_shared`), set
+at a root env's creation and when a module namespace is attached. Every
+MT-only env guard reads that predicate, so a new kind of cross-thread env
+is one call rather than a second definition of "shared".
 
 A module namespace is **two** structures — the module env, which is the
 authority, and the dict mirror that whole-dict readers (`keys of M`, `len of`,

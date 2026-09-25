@@ -6534,9 +6534,6 @@ echo "[99za] Doc references"
 TOTAL=$((TOTAL + 1))
 CLAIMS_OUTPUT=$(bash "$TESTS_DIR/../tools/docs_claims_check.sh" 2>&1)
 CLAIMS_RC=$?
-# The tool prints an env banner on every run — echo it even on success, because
-# it is the line that identifies a platform problem before it becomes a mystery.
-printf '%s\n' "$CLAIMS_OUTPUT" | grep -E "^docs-claims env:" | head -1
 if [ "$CLAIMS_RC" -eq 0 ]; then
     PASS=$((PASS + 1))
     printf '%s\n' "$CLAIMS_OUTPUT" | grep -E "^docs-claims: OK"

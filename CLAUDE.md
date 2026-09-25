@@ -117,7 +117,9 @@ Always-on:
   RED — and `tools/docs_claims_check.sh` (suite [99za]) checks repo paths,
   CLI flags, `make` targets and stdlib calls against the tree. **Do not write
   derived counts into front-door docs**; point readers to `eigenscript --api`,
-  CHANGELOG.md or the relevant source instead.
+  CHANGELOG.md or the relevant source instead. Historical measurements in
+  CLAUDE.md's DMG incident, CHANGELOG.md and ROADMAP.md's Completed section
+  describe their own past events rather than the current tree.
 
 ## Task-specific procedures (skills — invoked on demand, not always loaded)
 
