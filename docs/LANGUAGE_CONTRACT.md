@@ -123,7 +123,7 @@ inside a function is loop-scoped like any other, and reading it after the loop
 raises `undefined variable` on every road. A pre-existing parameter, `local`
 or module binding is restored. See the scope notes below.
 
-**Status:** Enforced — `tools/road_diff.sh` and `tests/roads/`, `tests/test_import.eigs`,
+**Status:** Enforced — `tools/road_diff.py` and `tests/roads/`, `tests/test_import.eigs`,
 `tests/test_import_errors.eigs` (parse-error surfacing for `import` /
 `load_file` / `eval`) (stdlib + user modules,
 namespacing, `_` privacy, missing-module error),

@@ -6650,7 +6650,7 @@ echo ""
 
 echo "[99z] File semantics across main/load_file/import (#1056)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/road_diff.sh" && \
+if python3 "$TESTS_DIR/../tools/road_diff.py" && \
    python3 "$TESTS_DIR/../tools/embed_roads.py"; then
     PASS=$((PASS + 1))
     echo "  PASS: road differential"

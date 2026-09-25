@@ -1781,7 +1781,7 @@ All notable changes to EigenScript are documented here.
   retain the containing file's directory. Errors identify the roots tried.
   Imported top-level `for` bodies now retain their plain `is` bindings in the
   module, matching main and load_file; the loop binder remains loop-scoped.
-  `tools/road_diff.sh` gates all three roads and proves its own failure paths.
+  `tools/road_diff.py` gates all three roads.
 
 ### Added
 

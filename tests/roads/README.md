@@ -1,6 +1,6 @@
 # The three-road oracle
 
-`bash tools/road_diff.sh` enumerates every `*.eigs` directly in this directory.
+`python3 tools/road_diff.py` enumerates every `*.eigs` directly in this directory.
 Each fixture runs as main, through `load_file`, and through `import`, from two
 working directories. Support files live under `assets/` and `eigs_modules/`, reached by the
 fixtures; they are not independent oracle programs. Each run gets a private copy
@@ -195,21 +195,14 @@ independent value oracle; existing goldens are unchanged.
 
 ## Embed provenance and override audit
 
-`python3 tools/embed_roads.py --selftest` builds `make embed-roads` without
-relinking the CLI. A unique objdir inode match reuses that build variant.
-A standalone `build.sh` CLI or ambiguous match uses the plain SOURCES list
-through the release objects, or ASan objects when ASAN_OPTIONS is set.
-The test covers provenance semantics with either layout; it does not infer
-an unidentified CLI's compiler flags. Four metadata controls exercise zero,
-one, and multiple matches, including the sanitizer fallback.
-Its C harness checks `eigs_eval_file`, successive `eigs_eval_string` calls,
-loaded helpers, imported wrappers, and restoration to no-file string eval.
-A registered host probe checks the compile override while each file executes.
-A wrong helper peer, a missing fixture tree, a nonzero exit, stderr, zero
-checks, and a compile override planted only during a host probe must fail its
-selftest. The scope plant leaves file lookup and ordinary values untouched,
-so gutting host_scope_clean makes the selftest fail. Process plants must retain the healthy C result
-and produce exactly their intended symptom.
+`python3 tools/embed_roads.py` builds `make embed-roads` without relinking
+the CLI and runs the C harness. A unique objdir inode match reuses that
+build variant. A standalone `build.sh` CLI or ambiguous match uses the
+plain SOURCES list through the release objects, or ASan objects when
+ASAN_OPTIONS is set. The harness checks `eigs_eval_file`, successive
+`eigs_eval_string` calls, loaded helpers, imported wrappers, and
+restoration to no-file string eval. A registered host probe checks the
+compile override while each file executes.
 
 | Directory state | Lifetime and regression coverage |
 |---|---|
