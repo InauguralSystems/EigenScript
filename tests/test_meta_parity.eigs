@@ -337,6 +337,25 @@ parity of ["nested f-string: same-line comment inside is loud",
 parity of ["nested f-string: simple nesting",
     "f\"a{f\"inner{2}\"}b\"", ["ok", "ainner2b"]]
 
+# --- #1254: parameters are comma-separated in define and in lambdas; a
+# missing comma is a parse error on both sides, not a silent second parameter ---
+parity of ["define: missing comma raises",
+    "define sub1254(a b) as:\n    return a - b\nsub1254 of [7, 2]", ["err"]]
+parity of ["define: missing comma after a comma raises",
+    "define sub1254b(a, b c) as:\n    return a\nsub1254b of [7, 2, 1]", ["err"]]
+parity of ["lambda: missing comma raises",
+    "sub1254c is (a b) => a - b\nsub1254c of [7, 2]", ["err"]]
+parity of ["define: commas still bind two params",
+    "define sub1254d(a, b) as:\n    return a - b\nsub1254d of [7, 2]", ["ok", 5]]
+parity of ["define: trailing comma still accepted",
+    "define sub1254e(a, b,) as:\n    return a - b\nsub1254e of [7, 2]", ["ok", 5]]
+parity of ["lambda: commas still bind two params",
+    "sub1254f is (a, b) => a - b\nsub1254f of [7, 2]", ["ok", 5]]
+parity of ["lambda: trailing comma still accepted",
+    "sub1254g is (a, b,) => a - b\nsub1254g of [7, 2]", ["ok", 5]]
+parity of ["lambda: empty signature binds implicit n",
+    "dbl1254 is () => n * 2\ndbl1254 of 4", ["ok", 8]]
+
 if checks == passed:
     print of "All tests passed"
 else:

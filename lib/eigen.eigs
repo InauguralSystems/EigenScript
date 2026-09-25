@@ -610,6 +610,16 @@ define _p_expect(p, ttype) as:
     _p_advance of p
     return tok
 
+# C-parity (#1254): parameters are `param { ',' param }`. After a parameter,
+# consume the comma; a following parameter with no comma between is a parse
+# error, as in parser.c's p_param_separator. Anything else is left to the
+# caller's closing-paren check.
+define _p_param_sep(p, tok, prev) as:
+    if tok[0] == "comma":
+        _p_advance of p
+    elif tok[0] == "ident":
+        throw of f"parse error: expected ',' between parameters '{prev}' and '{tok[1]}' at line {tok[2]}"
+
 define _p_skip_newlines(p) as:
     loop while (_p_peek_type of p) == "newline":
         _p_advance of p
@@ -674,8 +684,7 @@ define _p_parse_statement(p) as:
                 loop while (_p_peek_type of p) == "ident":
                     append of [params, (_p_cur of p)[1]]
                     _p_advance of p
-                    if (_p_peek_type of p) == "comma":
-                        _p_advance of p
+                    _p_param_sep of [p, (_p_cur of p), params[(len of params) - 1]]
                 _p_expect of [p, "rparen"]
             if (len of params) == 0:
                 params is ["n"]
@@ -1102,8 +1111,7 @@ define _p_parse_primary(p) as:
             loop while (_p_peek_type of p) == "ident":
                 append of [params, (_p_cur of p)[1]]
                 _p_advance of p
-                if (_p_peek_type of p) == "comma":
-                    _p_advance of p
+                _p_param_sep of [p, (_p_cur of p), params[(len of params) - 1]]
             if (len of params) == 0:
                 params is ["n"]
             _p_expect of [p, "rparen"]

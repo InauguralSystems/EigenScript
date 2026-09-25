@@ -25,7 +25,8 @@ All notable changes to EigenScript are documented here.
   `define sub(a b)`, `define sub(a is 7 b is 2)` and `(a b) => a - b` used to
   run as if the commas were written. Both the named-function and the lambda
   parameter loops now report `expected ',' between parameters` and the program
-  does not run. Comma-separated, trailing-comma and empty signatures are
+  does not run. `lib/eigen.eigs` (the meta-circular interpreter) enforces the
+  same rule. Comma-separated, trailing-comma and empty signatures are
   unchanged. A program that relied on the old leniency must add the commas.
 
 - **A thread handle is joined exactly once, and a full handle table raises
