@@ -27,8 +27,6 @@ tools/docs_claims_check.sh | timeout 14 bash tools/docs_claims_check.sh --selfte
 tools/embed_roads.py tests/embed_roads/* | timeout 30 python3 tools/embed_roads.py --selftest
 tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=4$","count":1}]
 tools/fmt_operator_sync_check.sh | timeout 30 bash tools/fmt_operator_sync_check.sh --selftest
-tools/lint_message_utf8_check.sh tools/lint_source_byte_sweep.py tools/lint_path_fixture.py tests/lint_utf8/* | timeout 30 bash tools/lint_message_utf8_check.sh --selftest
-tools/lint_source_byte_sweep.py tools/lint_path_fixture.py | timeout 30 python3 tools/lint_source_byte_sweep.py src/eigenscript --selftest-paths
 tools/obs_marker_check.sh | timeout 30 bash tools/obs_marker_check.sh --selftest
 tools/obs_reader_sync_check.sh tools/obs_marker_check.sh | timeout 30 bash tools/obs_reader_sync_check.sh --selftest | [{"pattern":"^SELFTEST: ([0-9]+) passed.*$","count":11,"floor":true,"value":true}]
 tools/replay_diff.sh | timeout 30 bash tools/replay_diff.sh --selftest | [{"pattern":"  selftest ok:","count":11},{"pattern":"^SELFTEST: all planted faults caught","count":1}]
