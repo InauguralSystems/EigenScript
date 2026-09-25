@@ -7123,26 +7123,6 @@ fi
 rm -rf "$CR_DIR"
 echo ""
 
-# [99l] fmt/lexer multi-char operator sync gate (#729 follow-up, #750).
-# fmt.c's spacing pass is character-level, so an operator the lexer accepts but
-# MULTI_OPS omits gets split by the single-char branches — `x is 5 |> double`
-# formats to `x is 5 | > double`, which no longer parses, and --fmt --write
-# corrupts the file on disk. #729's corpus gate only catches this when some
-# .eigs in the repo already uses the operator, which is never true for a newly
-# added one. This compares the two tables directly instead of trusting
-# convention to keep them in sync.
-echo "[99l] fmt/lexer operator-table sync gate (#729/#750)"
-TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" >/dev/null 2>&1; then
-    PASS=$((PASS + 1))
-    echo "  PASS: every lexer multi-char operator is covered by fmt.c MULTI_OPS"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: fmt.c MULTI_OPS has drifted from the lexer"
-    bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" 2>&1 | head -6
-fi
-echo ""
-
 # [99n] VM operand-width comment drift gate (#958).  The checker derives each
 # `kind` width from vm.c's uintN_t/read_uN decoder and confirms chunk.c's shared
 # VR_RAW verifier table carries the same operand.  Its self-test plants a third

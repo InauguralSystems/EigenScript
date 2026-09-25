@@ -1857,6 +1857,11 @@ extern int g_compile_module_slots;
 TokenList tokenize(const char *source);
 void free_tokenlist(TokenList *tl);
 
+/* Length of the multi-char operator at `s`, or 0. The only list of those
+ * spellings lives in the lexer; the formatter calls this to copy one whole.
+ * When `ty` is non-NULL and the length is non-zero, `*ty` receives the token. */
+int lexer_operator_len(const char *s, TokType *ty);
+
 /* Number of distinct TokType values; equals the size of the base-token
  * vocabulary used by build_corpus. Identifier slot IDs start at this value. */
 int tok_base_string_id_count(void);

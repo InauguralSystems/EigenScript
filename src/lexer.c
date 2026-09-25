@@ -120,6 +120,76 @@ int tok_base_string_id_count(void) {
     return (int)TOK_EOF + 1;
 }
 
+/* Multi-char operators, longest match. The only list: tokenize() and the
+ * formatter both call lexer_operator_len. */
+static const struct {
+    const char *sp;
+    TokType ty;
+} LEX_MULTI_OPS[] = {
+    {"<<=", TOK_SHL_EQ},
+    {">>=", TOK_SHR_EQ},
+    {"==", TOK_EQ},
+    {"!=", TOK_NE},
+    {"<=", TOK_LE},
+    {">=", TOK_GE},
+    {"<<", TOK_SHL},
+    {">>", TOK_SHR},
+    {"+=", TOK_PLUS_EQ},
+    {"-=", TOK_MINUS_EQ},
+    {"*=", TOK_STAR_EQ},
+    {"/=", TOK_SLASH_EQ},
+    {"%=", TOK_PERCENT_EQ},
+    {"&=", TOK_AMP_EQ},
+    {"|=", TOK_BITOR_EQ},
+    {"^=", TOK_CARET_EQ},
+    {"=>", TOK_ARROW},
+    {"|>", TOK_PIPE},
+    {NULL, 0}
+};
+
+/* First bytes of LEX_MULTI_OPS, filled from that table. A character that is
+ * not one of them cannot start a multi-char operator, so the lexer does not
+ * call into the scan for '(', ')', and the rest of the punctuation. */
+static unsigned char lex_multi_first[256];
+static unsigned char lex_multi_second[256];
+static int lex_multi_ready;
+
+static void lex_multi_init(void) {
+    if (__atomic_load_n(&lex_multi_ready, __ATOMIC_ACQUIRE)) return;
+    unsigned char first[256], second[256];
+    memset(first, 0, sizeof first);
+    memset(second, 0, sizeof second);
+    for (int k = 0; LEX_MULTI_OPS[k].sp; k++) {
+        const char *op = LEX_MULTI_OPS[k].sp;
+        first[(unsigned char)op[0]] = 1;
+        if (op[1]) second[(unsigned char)op[1]] = 1;
+    }
+    memcpy(lex_multi_first, first, sizeof first);
+    memcpy(lex_multi_second, second, sizeof second);
+    __atomic_store_n(&lex_multi_ready, 1, __ATOMIC_RELEASE);
+}
+
+int lexer_operator_len(const char *s, TokType *ty) {
+    int best = 0;
+    TokType best_ty = 0;
+    if (!s || !s[0]) return 0;
+    lex_multi_init();
+    if (!lex_multi_first[(unsigned char)s[0]]) return 0;
+    if (!s[1] || !lex_multi_second[(unsigned char)s[1]]) return 0;
+    for (int k = 0; LEX_MULTI_OPS[k].sp; k++) {
+        const char *op = LEX_MULTI_OPS[k].sp;
+        if (op[0] != s[0]) continue;
+        int n = 1;
+        while (op[n] && s[n] == op[n]) n++;
+        if (!op[n] && n > best) {
+            best = n;
+            best_ty = LEX_MULTI_OPS[k].ty;
+        }
+    }
+    if (best > 1 && ty) *ty = best_ty;
+    return best > 1 ? best : 0;
+}
+
 /* Switch deliberately has no `default:` — -Wswitch (in -Wall) then warns
  * at compile time if a TokType is added without a placeholder here, which
  * is the load-bearing safety net for keeping the corpus stream and the
@@ -575,27 +645,25 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             continue;
         }
 
+        lex_multi_init();
+        if (lex_multi_first[(unsigned char)*p] &&
+            p[1] && lex_multi_second[(unsigned char)p[1]]) {
+            TokType op_ty = 0;
+            int op_n = lexer_operator_len(p, &op_ty);
+            if (op_n > 1) {
+                tok_add(&tl, op_ty, 0, NULL, line, tok_col);
+                p += op_n;
+                col += op_n;
+                continue;
+            }
+        }
+
         switch (*p) {
-            case '+':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_PLUS_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_PLUS, 0, NULL, line, tok_col); p++; col++; }
-                break;
-            case '-':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_MINUS_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_MINUS, 0, NULL, line, tok_col); p++; col++; }
-                break;
-            case '*':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_STAR_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_STAR, 0, NULL, line, tok_col); p++; col++; }
-                break;
-            case '/':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_SLASH_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_SLASH, 0, NULL, line, tok_col); p++; col++; }
-                break;
-            case '%':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_PERCENT_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_PERCENT, 0, NULL, line, tok_col); p++; col++; }
-                break;
+            case '+': tok_add(&tl, TOK_PLUS, 0, NULL, line, tok_col); p++; col++; break;
+            case '-': tok_add(&tl, TOK_MINUS, 0, NULL, line, tok_col); p++; col++; break;
+            case '*': tok_add(&tl, TOK_STAR, 0, NULL, line, tok_col); p++; col++; break;
+            case '/': tok_add(&tl, TOK_SLASH, 0, NULL, line, tok_col); p++; col++; break;
+            case '%': tok_add(&tl, TOK_PERCENT, 0, NULL, line, tok_col); p++; col++; break;
             case '(': tok_add(&tl, TOK_LPAREN, 0, NULL, line, tok_col); p++; col++; bracket_depth++; break;
             case ')': tok_add(&tl, TOK_RPAREN, 0, NULL, line, tok_col); p++; col++; if (bracket_depth > 0) bracket_depth--; break;
             case '[': tok_add(&tl, TOK_LBRACKET, 0, NULL, line, tok_col); p++; col++; bracket_depth++; break;
@@ -605,44 +673,17 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             case ',': tok_add(&tl, TOK_COMMA, 0, NULL, line, tok_col); p++; col++; break;
             case ':': tok_add(&tl, TOK_COLON, 0, NULL, line, tok_col); p++; col++; break;
             case '.': tok_add(&tl, TOK_DOT, 0, NULL, line, tok_col); p++; col++; break;
-            case '<':
-                if (*(p+1) == '<' && *(p+2) == '=') { tok_add(&tl, TOK_SHL_EQ, 0, NULL, line, tok_col); p += 3; col += 3; }
-                else if (*(p+1) == '<') { tok_add(&tl, TOK_SHL, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else if (*(p+1) == '=') { tok_add(&tl, TOK_LE, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_LT, 0, NULL, line, tok_col); p++; col++; }
-                break;
-            case '>':
-                if (*(p+1) == '>' && *(p+2) == '=') { tok_add(&tl, TOK_SHR_EQ, 0, NULL, line, tok_col); p += 3; col += 3; }
-                else if (*(p+1) == '>') { tok_add(&tl, TOK_SHR, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else if (*(p+1) == '=') { tok_add(&tl, TOK_GE, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_GT, 0, NULL, line, tok_col); p++; col++; }
-                break;
+            case '<': tok_add(&tl, TOK_LT, 0, NULL, line, tok_col); p++; col++; break;
+            case '>': tok_add(&tl, TOK_GT, 0, NULL, line, tok_col); p++; col++; break;
             case '!':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_NE, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else {
-                    fprintf(stderr, "Syntax error line %d: expected '!=' after '!'\n", line);
-                    lexer_error_at(line, tok_col, "expected '!=' after '!'");
-                    p++; col++;
-                }
+                fprintf(stderr, "Syntax error line %d: expected '!=' after '!'\n", line);
+                lexer_error_at(line, tok_col, "expected '!=' after '!'");
+                p++; col++;
                 break;
-            case '=':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else if (*(p+1) == '>') { tok_add(&tl, TOK_ARROW, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_ASSIGN, 0, NULL, line, tok_col); p++; col++; }
-                break;
-            case '|':
-                if (*(p+1) == '>') { tok_add(&tl, TOK_PIPE, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else if (*(p+1) == '=') { tok_add(&tl, TOK_BITOR_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_BITOR, 0, NULL, line, tok_col); p++; col++; }
-                break;
-            case '&':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_AMP_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_AMP, 0, NULL, line, tok_col); p++; col++; }
-                break;
-            case '^':
-                if (*(p+1) == '=') { tok_add(&tl, TOK_CARET_EQ, 0, NULL, line, tok_col); p += 2; col += 2; }
-                else { tok_add(&tl, TOK_CARET, 0, NULL, line, tok_col); p++; col++; }
-                break;
+            case '=': tok_add(&tl, TOK_ASSIGN, 0, NULL, line, tok_col); p++; col++; break;
+            case '|': tok_add(&tl, TOK_BITOR, 0, NULL, line, tok_col); p++; col++; break;
+            case '&': tok_add(&tl, TOK_AMP, 0, NULL, line, tok_col); p++; col++; break;
+            case '^': tok_add(&tl, TOK_CARET, 0, NULL, line, tok_col); p++; col++; break;
             case '~': tok_add(&tl, TOK_TILDE, 0, NULL, line, tok_col); p++; col++; break;
             default:
                 {

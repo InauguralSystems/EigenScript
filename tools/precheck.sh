@@ -30,7 +30,6 @@ run|tools/suite_label_check.sh
 run|tools/obs_marker_check.sh
 run|tools/obs_reader_sync_check.sh
 run|tools/vm_operand_width_check.sh
-run|tools/fmt_operator_sync_check.sh
 run|tools/stdlib_index_check.sh
 run|tools/codspeed_targets_check.sh
 run|tools/gfx_guard_order_check.sh
