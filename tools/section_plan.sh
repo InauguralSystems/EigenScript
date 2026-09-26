@@ -736,8 +736,14 @@ build_changed_plan() {
     while read -r p; do
         [ -n "$p" ] && [ "$p" != tests/run_all_tests.sh ] || continue
         tok=$(basename "$p")
-        grep -qxF -- "$tok" "$SP_WORK/dupnames" && tok="$(basename "$(dirname "$p")")/$tok"
+        # (A top-level file keeps its bare name: `./README.md` matches nothing.)
+        case "$p" in */*) grep -qxF -- "$tok" "$SP_WORK/dupnames" && tok="$(basename "$(dirname "$p")")/$tok" ;; esac
         lines=$(sp_select "$tok")
+        # A test script may build its program names from the stem
+        # (`dict_keys_mt_single|expect.out` -> "$probe.eigs"), so a tests/
+        # file is also looked up by its stem.
+        case "$p" in tests/*.*) lines="$lines
+$(sp_select "${tok%.*}")" ;; esac
         d=$(dirname "$p")
         while [ "$d" != . ]; do
             case "$d" in
@@ -784,11 +790,15 @@ $(sp_refs "$RUNNER" "$d")" ;;
     wsec=$(awk 'FNR == NR { sel[$1] = 1; next } ($2 in sel) { t += $1 } END { printf "%.0f", t / 100 }' \
         "$SP_WORK/selected" "$SP_WORK/weights")
     paths=$(grep -c . "$SP_WORK/paths"); unm=$(grep -c . "$SP_WORK/unmatched"); rt=$(grep -c . "$SP_WORK/runtime")
-    while read -r p; do [ -z "$p" ] || note "  unmatched: $p (no section names it; the floor and CI's full suite cover it)"; done < "$SP_WORK/unmatched"
+    while read -r p; do [ -z "$p" ] || note "  unmatched: $p (no section references it: nothing here ran it; CI checks it)"; done < "$SP_WORK/unmatched"
     while read -r p; do [ -z "$p" ] || note "  runtime: $p (every section exercises it; only CI's full suite covers it)"; done < "$SP_WORK/runtime"
+    # The same paths close the PLAN line, which the runner prints LAST, so the
+    # report sits where the contributor reads the verdict.
+    local notlocal
+    notlocal=$(cat "$SP_WORK/unmatched" "$SP_WORK/runtime" | grep . | tr '\n' ' ' | sed 's/ $//')
     while read -r p; do [ -z "$p" ] || note "  sourced: $p (the runner preamble sources it: the whole suite runs)"; done < "$SP_WORK/sourced"
     [ -n "$SP_CHANGED_FULL" ] || note "  selected: $(cut -f4 "$SP_WORK/expected" | grep -o '^[[][^]]*[]]' | tr '\n' ' ')"
-    echo "PLAN: changed=$base paths=$paths unmatched=$unm runtime=$rt full=${SP_CHANGED_FULL:-no} bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS predicted=${wsec}s"
+    echo "PLAN: changed=$base paths=$paths unmatched=$unm runtime=$rt full=${SP_CHANGED_FULL:-no} bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS predicted=${wsec}s${notlocal:+ not-run-locally: $notlocal}"
 }
 
 emit_plan() {   # emit_plan <out> <plan builder> <args...>
@@ -906,6 +916,10 @@ selftest() {
     expect_plan 'changed: a preamble edit selects the whole suite' 'full=yes'
     : > "$dir/cl/zz_named_by_nothing.txt"
     expect_plan 'changed: an untracked file no section names is reported' 'unmatched: zz_named_by_nothing.txt'
+    printf '\n' >> "$dir/cl/tests/dict_keys_mt_single.eigs"
+    expect_plan 'changed: a program a script names by stem selects its section' '[42i]'
+    printf '\n' >> "$dir/cl/README.md"
+    expect_plan 'changed: a top-level file whose name recurs selects its section' '[89]'
     printf '\n' >> "$dir/cl/src/lint.c"
     expect_plan 'changed: a src/ file is always reported as runtime' 'runtime: src/lint.c'
     printf '\n' >> "$dir/cl/tests/failure_output.sh"
