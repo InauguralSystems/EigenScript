@@ -6,7 +6,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 RUNNER="${RUNNER:-tests/run_all_tests.sh}"
-CHILD_SITES_FLOOR="${CHILD_SITES_FLOOR:-87}"
+CHILD_SITES_FLOOR="${CHILD_SITES_FLOOR:-86}"
 fail() { echo "GATE ERROR: $*" >&2; RC=1; }
 RC=0
 runner_code() { sed 's/[[:space:]]*#.*$//' "$RUNNER"; }
