@@ -707,7 +707,7 @@ sp_select() {
 # the WORKING TREE plus untracked files against the merge base, because an
 # uncommitted fix is exactly what this gate is run on.
 build_changed_plan() {
-    local base="$1" mb p tok d lines
+    local base="$1" mb p tok d m lines
     SP_WORK=$(sp_workdir changed)
     derive_chunks "$RUNNER" > "$SP_WORK/chunks"
     verify_partition "$RUNNER" "$SP_WORK/chunks"
@@ -744,6 +744,11 @@ build_changed_plan() {
         # file is also looked up by its stem.
         case "$p" in tests/*.*) lines="$lines
 $(sp_select "${tok%.*}")" ;; esac
+        # A module is loaded by NAME (`import math`), not by file: every test
+        # file that imports it selects the sections that run that file.
+        case "$p" in lib/*.eigs) m=$(basename "$p" .eigs); lines="$lines
+$(git -C "$SP_ROOT" grep -lE "^[[:space:]]*import[[:space:]]+$m([^A-Za-z0-9_]|\$)" -- tests 2>/dev/null \
+    | while IFS= read -r t; do t=$(basename "$t"); sp_select "$t"; sp_select "${t%.*}"; done)" ;; esac
         d=$(dirname "$p")
         while [ "$d" != . ]; do
             case "$d" in
@@ -918,6 +923,8 @@ selftest() {
     expect_plan 'changed: an untracked file no section names is reported' 'unmatched: zz_named_by_nothing.txt'
     printf '\n' >> "$dir/cl/tests/dict_keys_mt_single.eigs"
     expect_plan 'changed: a program a script names by stem selects its section' '[42i]'
+    printf '\n' >> "$dir/cl/lib/math.eigs"
+    expect_plan 'changed: a lib module selects the sections of the tests that import it' '[Call Semantics]'
     printf '\n' >> "$dir/cl/README.md"
     expect_plan 'changed: a top-level file whose name recurs selects its section' '[89]'
     printf '\n' >> "$dir/cl/src/lint.c"
