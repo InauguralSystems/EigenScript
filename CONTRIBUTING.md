@@ -24,9 +24,10 @@ Building needs only `gcc`. Running the test suite also needs `python3` with PyYA
    accounting, the shard plan, and a new test that no suite section runs.
 5. Run `make test-changed` — the suite sections your change touches, picked
    from your diff against `origin/main` (uncommitted and untracked files
-   included; `BASE=<ref>` to change it). It prints the files no section names;
-   those, and the rest of the suite, are covered by CI on your PR. A change to
-   the suite runner's shared preamble selects the whole suite.
+   included; `BASE=<ref>` to change it). It prints the files no section names
+   and every `src/` file as `runtime:`. The C runtime is exercised by every
+   section, so for those only CI's full suite on your PR is the real check.
+   A change to the suite runner's shared preamble selects the whole suite.
 6. Open a pull request
 
 The complete suite (`make test`) takes much longer than that and is not a

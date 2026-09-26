@@ -19,8 +19,8 @@ SKIP_ROUTED_FLOOR=20
 CI_FILE="$SP_ROOT/.github/workflows/ci.yml"
 # The changed-sections plan always adds the numbered core-language series
 # ([1/15]..[16/16]), so a src/ change no section names still runs the
-# language's basic tests locally (#1347). Residual: a src/ file no section or
-# test script names is covered only by CI's full suite; the plan prints it.
+# language's basic tests locally (#1347). Residual: a src/ change is covered
+# only by CI's full suite; the plan prints every one as `runtime:`.
 CHANGED_FLOOR_RE='\\[[0-9]+/1[56]\\]'
 # One printed-header predicate, shared by source validation, bearing, and witness.
 SP_HEADER_TEXT_RE='^[[][^]]+[]] .+$'
@@ -719,7 +719,7 @@ build_changed_plan() {
     # --no-renames: a rename counts both sides, or a moved fixture selects nothing.
     { git -C "$SP_ROOT" diff --no-renames --name-only "$mb" --; git -C "$SP_ROOT" ls-files --others --exclude-standard; } \
         | sort -u > "$SP_WORK/paths"
-    : > "$SP_WORK/lines"; : > "$SP_WORK/unmatched"; SP_CHANGED_FULL=''
+    : > "$SP_WORK/lines"; : > "$SP_WORK/unmatched"; : > "$SP_WORK/sourced"; : > "$SP_WORK/runtime"; SP_CHANGED_FULL=''
     # Runner hunks select the chunk each changed line lands in (new-side
     # numbering; a pure deletion selects the chunk holding the line before it).
     git -C "$SP_ROOT" diff -U0 "$mb" -- tests/run_all_tests.sh \
@@ -751,14 +751,25 @@ $(sp_refs "$RUNNER" "$d")" ;;
             esac
             d=$(dirname "$d")
         done
-        lines=$(printf '%s\n' "$lines" | grep .)
-        if [ -n "$lines" ]; then printf '%s\n' "$lines" >> "$SP_WORK/lines"
+        # A reference outside every chunk (a preamble list) selects nothing,
+        # so it does not count as a match.
+        lines=$(printf '%s\n' "$lines" | awk -v pre="$SP_PREAMBLE_END" -v epi="$SP_EPILOGUE_START" '$1 > pre && $1 < epi')
+        # A file the preamble SOURCES runs inside every section.
+        if sed -n "1,${SP_PREAMBLE_END}p" "$RUNNER" | grep -E '^[[:space:]]*(\.|source)[[:space:]]' \
+            | grep -qE "$(sp_token_re "$(basename "$p")")"; then echo "$p" >> "$SP_WORK/sourced"
+        elif [ -n "$lines" ]; then printf '%s\n' "$lines" >> "$SP_WORK/lines"
         else echo "$p" >> "$SP_WORK/unmatched"; fi
+        # The C runtime is exercised by every section, so no name lookup maps
+        # a src/ file to its tests (src/lint.c is named only by a linkage
+        # check, not by [81]): it is always reported, and the full suite that
+        # covers it is CI's.
+        case "$p" in src/*) echo "$p" >> "$SP_WORK/runtime" ;; esac
     done < "$SP_WORK/paths"
-    # An EDIT to the preamble or epilogue changes every section: run them all.
-    # (A name the preamble merely lists selects nothing: no chunk holds it.)
+    # An EDIT to the preamble or epilogue, or to a file it sources, changes
+    # every section: run them all.
     SP_CHANGED_FULL=$(awk -v pre="$SP_PREAMBLE_END" -v epi="$SP_EPILOGUE_START" \
         '$1 <= pre || $1 >= epi { print "yes"; exit }' "$SP_WORK/hunks")
+    [ ! -s "$SP_WORK/sourced" ] || SP_CHANGED_FULL=yes
     # line -> chunk, then widen to each chunk's dependency group, plus the floor.
     awk -v full="$SP_CHANGED_FULL" -v floor_re="$CHANGED_FLOOR_RE" '
         FILENAME == ARGV[1] { n++; cs[n] = $1; ce[n] = $2; ids[n] = $0; next }
@@ -772,10 +783,12 @@ $(sp_refs "$RUNNER" "$d")" ;;
     local wsec paths unm
     wsec=$(awk 'FNR == NR { sel[$1] = 1; next } ($2 in sel) { t += $1 } END { printf "%.0f", t / 100 }' \
         "$SP_WORK/selected" "$SP_WORK/weights")
-    paths=$(grep -c . "$SP_WORK/paths"); unm=$(grep -c . "$SP_WORK/unmatched")
+    paths=$(grep -c . "$SP_WORK/paths"); unm=$(grep -c . "$SP_WORK/unmatched"); rt=$(grep -c . "$SP_WORK/runtime")
     while read -r p; do [ -z "$p" ] || note "  unmatched: $p (no section names it; the floor and CI's full suite cover it)"; done < "$SP_WORK/unmatched"
+    while read -r p; do [ -z "$p" ] || note "  runtime: $p (every section exercises it; only CI's full suite covers it)"; done < "$SP_WORK/runtime"
+    while read -r p; do [ -z "$p" ] || note "  sourced: $p (the runner preamble sources it: the whole suite runs)"; done < "$SP_WORK/sourced"
     [ -n "$SP_CHANGED_FULL" ] || note "  selected: $(cut -f4 "$SP_WORK/expected" | grep -o '^[[][^]]*[]]' | tr '\n' ' ')"
-    echo "PLAN: changed=$base paths=$paths unmatched=$unm full=${SP_CHANGED_FULL:-no} bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS predicted=${wsec}s"
+    echo "PLAN: changed=$base paths=$paths unmatched=$unm runtime=$rt full=${SP_CHANGED_FULL:-no} bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS predicted=${wsec}s"
 }
 
 emit_plan() {   # emit_plan <out> <plan builder> <args...>
@@ -884,7 +897,7 @@ selftest() {
         git -C "$dir/cl" checkout -q -- . && git -C "$dir/cl" clean -qfd
     }
     git clone -q --shared "$SP_ROOT" "$dir/cl" || { echo '  FAIL: clone for the changed plan'; fail=$((fail + 1)); }
-    expect_plan 'control: an empty diff selects the core floor alone' 'paths=0 unmatched=0 full=no '
+    expect_plan 'control: an empty diff selects the core floor alone' 'paths=0 unmatched=0 runtime=0 full=no '
     printf '\n' >> "$dir/cl/tests/test_trace_mt.sh"
     expect_plan 'changed: an edited test script selects its section' '[42h]'
     sed -i.bak 's/^\(echo "\[17\/17\] Transformer Smoke.*\)$/\1 # edited/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
@@ -893,6 +906,10 @@ selftest() {
     expect_plan 'changed: a preamble edit selects the whole suite' 'full=yes'
     : > "$dir/cl/zz_named_by_nothing.txt"
     expect_plan 'changed: an untracked file no section names is reported' 'unmatched: zz_named_by_nothing.txt'
+    printf '\n' >> "$dir/cl/src/lint.c"
+    expect_plan 'changed: a src/ file is always reported as runtime' 'runtime: src/lint.c'
+    printf '\n' >> "$dir/cl/tests/failure_output.sh"
+    expect_plan 'changed: a file the preamble sources selects the whole suite' 'full=yes'
     printf '\n' >> "$dir/cl/tests/test_tasks.eigs"
     expect_plan 'changed: a program the runner names also selects the section whose script re-runs it' '[104b]'
     printf '\n' >> "$dir/cl/examples/functional.eigs"
