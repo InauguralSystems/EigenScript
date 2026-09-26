@@ -802,7 +802,9 @@ All notable changes to EigenScript are documented here.
   parameters resolved to the same-named global, so renaming the global also
   rewrote the lambda's signature and body. Renaming `x` to `other` in
   `f is (x, other) => x + other` changed the program's output. Lambdas now
-  bind their parameters (or the implicit `n` of `() =>`) over their own body.
+  bind their parameters (or the implicit `n` of `() =>`) over their own body,
+  recognized with the parser's own parameter tokens (soft keywords included),
+  and a body ends where the parser ends it (a comprehension's `for`/`if`).
 
 - **One scanner decides where an f-string interpolation ends (#1252,
   #1253).** The lexer found an interpolation's closing `}` with a scan that

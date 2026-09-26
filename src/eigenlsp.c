@@ -1443,15 +1443,23 @@ static int find_innermost_scope(FnScope *scopes, int n, int idx) {
     return best;
 }
 
-/* If tk[i] opens a lambda `( IDENT {, IDENT} [,] ) => body` (the parser's
+/* If tk[i] opens a lambda `( PARAM {, PARAM} [,] ) => body` (the parser's
  * own lookahead shape), fill *s with its scope and return 1, else 0. The
  * scope spans the parameter list and the body expression; the body ends at
  * the first depth-0 token parse_expression cannot consume: a closing
- * bracket the lambda sits inside, a separating comma or colon, or the end
- * of the line. A `() =>` lambda binds the implicit `n`, as in the parser. */
+ * bracket the lambda sits inside, a separating comma or colon, a
+ * comprehension's `for`/`if`, or the end of the line. A `() =>` lambda binds the implicit `n`, as in the parser. */
+/* The parser's lambda parameter tokens (parser.c tok_is_ident_like +
+ * tok_is_report): identifiers and the soft keywords usable as binders. */
+static int lambda_param_tok(TokType t) {
+    return t == TOK_IDENT || t == TOK_PREV || t == TOK_AT ||
+           (t >= TOK_WHAT && t <= TOK_HOW) ||
+           t == TOK_REPORT || t == TOK_REPORT_VALUE;
+}
+
 static int lambda_scope(Token *tk, int count, int i, FnScope *s) {
     int j = i + 1;
-    while (j < count && (tk[j].type == TOK_IDENT || tk[j].type == TOK_COMMA)) j++;
+    while (j < count && (lambda_param_tok(tk[j].type) || tk[j].type == TOK_COMMA)) j++;
     if (!(j + 1 < count && tk[j].type == TOK_RPAREN && tk[j + 1].type == TOK_ARROW))
         return 0;
     s->tok_start = i;
@@ -1460,7 +1468,10 @@ static int lambda_scope(Token *tk, int count, int i, FnScope *s) {
     s->excl_hi = -1;
     int params = 0;
     for (int k = i + 1; k < j; k++)
-        if (tk[k].type == TOK_IDENT) { scope_add_param(s, tk[k].str_val, i); params++; }
+        if (tk[k].type != TOK_COMMA) {
+            if (tk[k].str_val) scope_add_param(s, tk[k].str_val, i);
+            params++;
+        }
     if (params == 0) scope_add_param(s, "n", i);
     int k = j + 2, depth = 0;
     for (; k < count; k++) {
@@ -1471,7 +1482,11 @@ static int lambda_scope(Token *tk, int count, int i, FnScope *s) {
             depth--;
         } else if (tt == TOK_NEWLINE || tt == TOK_INDENT || tt == TOK_DEDENT ||
                    tt == TOK_EOF) break;
-        else if (depth == 0 && (tt == TOK_COMMA || tt == TOK_COLON)) break;
+        else if (depth == 0 && (tt == TOK_COMMA || tt == TOK_COLON ||
+                                tt == TOK_FOR || tt == TOK_IF)) break;
+        /* `for`/`if` at depth 0 can only open a comprehension clause (the
+         * language has no inline conditional expression), which ends the
+         * lambda's body in the parser too. */
     }
     s->tok_end = k;
     return 1;

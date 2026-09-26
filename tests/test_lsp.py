@@ -647,6 +647,29 @@ def main():
     check("rename global n skips a zero-param lambda's implicit n",
           applied == "m is 4\nz is () => n * 2\nprint of m\n")
 
+    # Round-2 review of #1330: the lambda recognizer must accept the parser's
+    # parameter tokens (soft keywords such as `at`), and a lambda body ends
+    # where the parser ends it, at a comprehension's `for`/`if`.
+    sk_doc = ("x is 3\nf is (x, other, at) => x + other + at\n"
+              "print of (f of [1, 2, 4])\nprint of x\n")
+    applied = rename_at(sk_doc, 37, 0, 0, "other")
+    check("rename global skips a lambda whose params include a soft keyword",
+          applied == "other is 3\nf is (x, other, at) => x + other + at\n"
+                     "print of (f of [1, 2, 4])\nprint of other\n"
+          and run_eigs(sk_doc) == (0, "7\n3\n") and run_eigs(applied) == (0, "7\n3\n"))
+    cf_doc = "xs is [1, 2]\nfs is [(xs) => xs * 2 for v in xs]\nprint of (len of fs)\n"
+    applied = rename_at(cf_doc, 38, 0, 0, "ys")
+    check("lambda body ends at a comprehension's `for` (iterable is outer)",
+          applied == "ys is [1, 2]\nfs is [(xs) => xs * 2 for v in ys]\nprint of (len of fs)\n"
+          and run_eigs(cf_doc) == (0, "2\n") and run_eigs(applied) == (0, "2\n"))
+    # A lambda as the iterable, followed by a filter: the filter's `xs` is the
+    # outer binding. (It parses; it cannot run, since iterating a function
+    # raises, so this row checks the edit text only.)
+    ci_doc = "xs is 1\nfs is [v for v in (xs) => [xs] if xs]\n"
+    applied = rename_at(ci_doc, 39, 0, 0, "ys")
+    check("lambda body ends at a comprehension's `if` (filter is outer)",
+          applied == "ys is 1\nfs is [v for v in (xs) => [xs] if ys]\n")
+
     # --- rename of a builtin/keyword is refused (null) ---
     rn_kw = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/rename",
              "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 0},
