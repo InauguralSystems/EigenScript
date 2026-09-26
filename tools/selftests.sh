@@ -15,6 +15,8 @@ def error(message):
 def git(*args):
     return subprocess.check_output(['git', '-c', 'safe.directory=*', *args]).decode().split('\0')
 
+PRODUCT_TRIGGER_MAX_S = 60
+
 def main():
     args = sys.argv[1:]
     listing = '--list' in args
@@ -39,7 +41,20 @@ def main():
             code = '\n'.join(s for s in source.splitlines() if not s.lstrip().startswith('#'))
             if dispatch.search(code):
                 implemented.add(path.as_posix())
-    rows, enrolled = [], set()
+    # Product files change on most PRs, so a row triggered by one runs on most
+    # PRs (#1352). Allowed only when its own timeout bound keeps that cheap:
+    # the section_plan row keyed on the runner (bound 1860s) made precheck take
+    # 8 minutes for every contribution that added a test (#1347 run 3).
+    # The runner and top-level tests/test_* count too: a contribution that
+    # adds a test adds tests/test_x.eigs and a runner section. Helpers
+    # (suite_plan.sh, lsan_classify.sh) and fixture dirs are checker inputs.
+    # A row's own command scripts are exempt for that row.
+    product = [f for f in git('ls-files', '-z') if f in ('tests/run_all_tests.sh', 'CHANGELOG.md', 'README.md')
+               or f.startswith(('src/', 'lib/', 'docs/', 'examples/'))
+               or (f.startswith('tests/test_') and f.count('/') == 1)]
+    if len(product) < 100:
+        error(f'product population examined={len(product)} is below 100 (git ls-files failed?)')
+    rows, enrolled, product_rows = [], set(), 0
     for n, line in enumerate(Path('tools/selftests.txt').read_text().splitlines(), 1):
         if not line.strip() or line.startswith('#'):
             continue
@@ -55,6 +70,11 @@ def main():
             error(f'selftests.txt:{n}: command does not name an existing script')
         if not any(re.fullmatch(mode, a) for a in argv):
             error(f'selftests.txt:{n}: command lacks a self-test mode')
+        hit = next((f for g in triggers.split() for f in product if f not in scripts and fnmatch.fnmatchcase(f, g)), None)
+        if hit and int(argv[1]) > PRODUCT_TRIGGER_MAX_S:
+            error(f'selftests.txt:{n}: trigger matches product file {hit} but the row\'s bound is {argv[1]}s '
+                  f'(> {PRODUCT_TRIGGER_MAX_S}s): it would run on most PRs; key it on the checker and its helpers (#1352)')
+        product_rows += bool(hit)
         target = scripts[0]
         if target in enrolled or target not in implemented:
             error(f'selftests.txt:{n}: duplicate or non-self-test command: {target}')
@@ -75,7 +95,7 @@ def main():
         changed.update(git('ls-files', '--others', '--exclude-standard', '-z'))
     all_rows = args[0] != '--changed' or bool(changed & {'tools/selftests.sh', 'tools/selftests.txt'})
     selected = [r for r in rows if all_rows or any(fnmatch.fnmatchcase(f, p) for f in changed for p in r[0])]
-    print(f'selftests: enrolment {len(enrolled)}/{len(implemented)}; {len(selected)} self-tests selected', flush=True)
+    print(f'selftests: enrolment {len(enrolled)}/{len(implemented)}; product-triggered rows {product_rows} (bound <= {PRODUCT_TRIGGER_MAX_S}s each); {len(selected)} self-tests selected', flush=True)
     if listing:
         for _, cmd, _, _ in selected:
             print(cmd)
