@@ -498,8 +498,8 @@ limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
 |---|---|---|
 | `scope` | 1 | decides docs-only; the runtime legs read its output |
 | `build dev/ci image` | 1 | the image every `container:` job (the Linux legs, the extension/ASan workers, db, the audits, the differentials, freestanding) runs inside; required because required jobs `needs` it, and a failed prerequisite *skips* them — added by #1264 |
-| `werror audit ([99i], cached)` | 1 | gate; name retained until the required-checks ruleset is renamed |
-| `gate self-tests (section plan + audit cache key)` | 1 | gate; name retained until the required-checks ruleset is renamed |
+| `werror flags ([99i])` | 1 | gate |
+| `gate self-tests (changed rows)` | 1 | gate |
 | `linux / gcc` | 1 | full suite on every code event |
 | `linux / clang` | 1 | clang `-Werror` build and full suite on every code event |
 | `macos / macos-latest` | 1 | the one macOS leg; full suite with [99i] on the main lane |
@@ -549,7 +549,7 @@ their coverage and leak tally before the PR can merge.
 The suite runs each gate's live check; `tools/selftests.sh --changed origin/main`
 runs checker self-tests whose scripts, fixtures or helpers changed, including
 uncommitted and untracked files, and `make precheck` includes that selection.
-The required `gate self-tests (section plan + audit cache key)` check uses the
+The required `gate self-tests (changed rows)` check uses the
 PR base SHA or merge-group base SHA, while nightly runs `tools/selftests.sh --all`
 and reports failures through its tracking issue.
 `tools/selftests.txt` owns the trigger globs, bounded commands and existing
