@@ -5,7 +5,8 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 - `tools/selftests.sh` refuses a self-test trigger that matches a product
-  file (`src/`, `lib/`, `docs/`, `examples/`, the suite runner, README or
+  file (`src/`, `lib/`, `docs/`, `examples/`, the suite runner,
+  top-level `tests/test_*` files other than the row's own scripts, README or
   CHANGELOG) unless the row's timeout bound is at most 60 seconds (#1352).
   Such a trigger runs its self-test on most PRs: the planner self-test keyed
   on the runner made `make precheck` take 8 minutes for every contribution

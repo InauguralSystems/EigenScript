@@ -45,8 +45,13 @@ def main():
     # PRs (#1352). Allowed only when its own timeout bound keeps that cheap:
     # the section_plan row keyed on the runner (bound 1860s) made precheck take
     # 8 minutes for every contribution that added a test (#1347 run 3).
+    # The runner and top-level tests/test_* count too: a contribution that
+    # adds a test adds tests/test_x.eigs and a runner section. Helpers
+    # (suite_plan.sh, lsan_classify.sh) and fixture dirs are checker inputs.
+    # A row's own command scripts are exempt for that row.
     product = [f for f in git('ls-files', '-z') if f in ('tests/run_all_tests.sh', 'CHANGELOG.md', 'README.md')
-               or f.startswith(('src/', 'lib/', 'docs/', 'examples/'))]
+               or f.startswith(('src/', 'lib/', 'docs/', 'examples/'))
+               or (f.startswith('tests/test_') and f.count('/') == 1)]
     if len(product) < 100:
         error(f'product population examined={len(product)} is below 100 (git ls-files failed?)')
     rows, enrolled, product_rows = [], set(), 0
@@ -65,7 +70,7 @@ def main():
             error(f'selftests.txt:{n}: command does not name an existing script')
         if not any(re.fullmatch(mode, a) for a in argv):
             error(f'selftests.txt:{n}: command lacks a self-test mode')
-        hit = next((f for g in triggers.split() for f in product if fnmatch.fnmatchcase(f, g)), None)
+        hit = next((f for g in triggers.split() for f in product if f not in scripts and fnmatch.fnmatchcase(f, g)), None)
         if hit and int(argv[1]) > PRODUCT_TRIGGER_MAX_S:
             error(f'selftests.txt:{n}: trigger matches product file {hit} but the row\'s bound is {argv[1]}s '
                   f'(> {PRODUCT_TRIGGER_MAX_S}s): it would run on most PRs; key it on the checker and its helpers (#1352)')
