@@ -16,9 +16,14 @@
 #   get_positional of parsed                # list of positional args
 #   has_flag of [parsed, "--help"]          # 1 or 0
 
+# Private capture of the builtin `args` (raw CLI argv), taken before this
+# module's own public name `args.parse_args` installs a namespace that would
+# otherwise shadow the builtin under `import args` (#1236).
+_raw_args_builtin is args
+
 # ---- parse_args: parse CLI arguments into a map ----
 define parse_args as:
-    raw is args of null
+    raw is _raw_args_builtin of null
     result is [["positional", []]]
     i is 0
     loop while i < (len of raw):

@@ -2107,6 +2107,56 @@ fi
 rm -rf "$SH904_DIR"
 echo ""
 
+# [37] Args library: `import args` must not shadow the `args` builtin
+# (#1236). lib/args.eigs's own parse_args calls the raw-argv builtin `args`
+# internally; before the fix, `import args` rebinds the name `args` in
+# g_global_env to the module's namespace dict, so parse_args's own lookup of
+# `args` (its closure chains up through the module env to the same global
+# slot) resolved to the dict instead of the builtin and raised "cannot call
+# dict". test_args_lib_import.eigs and test_args_lib_load.eigs are identical
+# except for `import args` + `args.foo` vs `load_file of "lib/args.eigs"` +
+# bare `foo`; each case below runs BOTH forms in fresh processes with the
+# same CLI args and requires byte-identical output.
+echo "[37] Args Library (import vs load_file, #1236)"
+ARGSLIB_FAIL=0
+check_args_lib_case() {
+    local desc="$1"; shift
+    local import_out load_out import_rc load_rc
+    import_out=$(./eigenscript ../tests/test_args_lib_import.eigs "$@" 2>&1); import_rc=$?
+    load_out=$(./eigenscript ../tests/test_args_lib_load.eigs "$@" 2>&1); load_rc=$?
+    TOTAL=$((TOTAL + 1))
+    if [ "$import_rc" = "0" ] && [ "$load_rc" = "0" ] && [ "$import_out" = "$load_out" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: $desc"
+    else
+        FAIL=$((FAIL + 1))
+        ARGSLIB_FAIL=1
+        echo "  FAIL: $desc (import rc=$import_rc, load rc=$load_rc)"
+        echo "    import: $import_out"
+        echo "    load:   $load_out"
+    fi
+}
+check_args_lib_case "empty arguments"
+check_args_lib_case "positional argument" input.csv
+check_args_lib_case "boolean flag" --verbose
+check_args_lib_case "--key=value" --output=a.txt
+check_args_lib_case "--key value" --output a.txt
+if [ "$ARGSLIB_FAIL" = "0" ]; then
+    IMPORT_POS_OUT=$(./eigenscript ../tests/test_args_lib_import.eigs --output=a input.csv 2>&1)
+    TOTAL=$((TOTAL + 1))
+    if [ "$IMPORT_POS_OUT" = 'verbose=0
+output=a
+positional=["input.csv"]' ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: import form parses the issue's exact repro"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: import form parses the issue's exact repro — got: $IMPORT_POS_OUT"
+    fi
+fi
+unset -f check_args_lib_case
+echo ""
+
 # [38] Pattern matching
 echo "[38/38] Pattern Matching"
 PM_OUTPUT=$(./eigenscript ../tests/test_match.eigs 2>&1); PM_OUTPUT_RC=$?

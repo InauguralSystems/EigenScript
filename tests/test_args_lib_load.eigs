@@ -1,0 +1,9 @@
+# load_file control for #1236 — same checks as test_args_lib_import.eigs but
+# through the older, non-namespaced `load_file` form, which never shadowed
+# the `args` builtin. Run with the same CLI args by run_all_tests.sh so the
+# two forms' output can be diffed.
+load_file of "lib/args.eigs"
+p is parse_args of null
+print of ("verbose=" + (str of (get_flag of [p, "--verbose"])))
+print of ("output=" + (get_opt of [p, "--output", "none"]))
+print of ("positional=" + (str of (get_positional of p)))

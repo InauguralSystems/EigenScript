@@ -4,6 +4,13 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+- `import args` no longer shadows the `args` builtin that `lib/args.eigs`'s
+  own `parse_args` calls internally (#1236). Importing bound the module's
+  namespace over the same global name the builtin used, so `parse_args`
+  raised "cannot call dict" under `import args` while the older `load_file`
+  form kept working; `parse_args` now goes through a private
+  `_raw_args_builtin` reference captured before the namespace is installed.
+
 - The suite runner's shard and changed-sections dispatch lives in
   `tests/suite_plan.sh`, which the runner sources (#1347). The planner's
   self-test now triggers on that file rather than on every edit to

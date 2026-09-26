@@ -1,0 +1,9 @@
+# Regression for #1236: `import args` must not shadow the `args` builtin
+# that lib/args.eigs's own parse_args calls internally. Run with real CLI
+# args by tests/run_all_tests.sh (Args Library section) — this file has no
+# self-checks of its own, only structured output the runner compares.
+import args
+p is args.parse_args of null
+print of ("verbose=" + (str of (args.get_flag of [p, "--verbose"])))
+print of ("output=" + (args.get_opt of [p, "--output", "none"]))
+print of ("positional=" + (str of (args.get_positional of p)))
