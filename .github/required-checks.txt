@@ -16,8 +16,8 @@ scope
 # required jobs that need it, and GitHub counts a skipped required check as
 # passing — so it is required like the jobs that need it (#1264).
 build dev/ci image
-werror audit ([99i], cached)
-gate self-tests (section plan + audit cache key)
+werror flags ([99i])
+gate self-tests (changed rows)
 linux / gcc
 # The clang leg: -Werror at compile time + clang codegen (#1264: tier 1 is
 # "Linux gcc/clang"). Core smoke on a PR, the full suite on main.

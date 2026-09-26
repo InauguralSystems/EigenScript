@@ -162,7 +162,7 @@ jobs:
   # [99i] reads tracked source text and the shared warning flags directly.
   # The name remains fixed until the required-checks ruleset is renamed.
   werror-audit:
-    name: werror audit ([99i], cached)
+    name: werror flags ([99i])
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -182,7 +182,7 @@ jobs:
 
   # Calibrate changed gates here; calibrate every gate nightly (#1275).
   gate-selftests:
-    name: gate self-tests (section plan + audit cache key)
+    name: gate self-tests (changed rows)
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 90
