@@ -18,6 +18,9 @@ cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 #   EIGS_SUITE_SHARD=k/N bash run_all_tests.sh
 #       run shard k of the weight-balanced full suite. The sanitizer
 #       aggregator checks that the shards cover every chunk exactly once.
+#   EIGS_SUITE_CHANGED=origin/main bash run_all_tests.sh   (make test-changed)
+#       run only the sections the diff against that base touches (#1347):
+#       the contributor's fast local gate. CI runs the whole suite.
 verify_shard_chunks() {
     # The wrapper's metadata is fixed before execution. The stdout log contains
     # its boundary sentinels and the headers each chunk actually printed.
@@ -58,8 +61,15 @@ verify_shard_chunks() {
     ' "$1" "$2"
 }
 if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
-    if [ -n "${EIGS_SUITE_SHARD:-}" ]; then
+    if [ -n "${EIGS_SUITE_SHARD:-}" ] && [ -n "${EIGS_SUITE_CHANGED:-}" ]; then
+        echo "ERROR: EIGS_SUITE_SHARD and EIGS_SUITE_CHANGED are exclusive -- set one (#1347)"; exit 1
+    fi
+    if [ -n "${EIGS_SUITE_SHARD:-}" ] || [ -n "${EIGS_SUITE_CHANGED:-}" ]; then
         __plan_runner=$(mktemp "${TMPDIR:-/tmp}/eigs_plan_runner.XXXXXX")
+      if [ -n "${EIGS_SUITE_CHANGED:-}" ]; then
+        __plan_line=$(bash "$TESTS_DIR/../tools/section_plan.sh" --emit-changed "$EIGS_SUITE_CHANGED" "$__plan_runner")
+        __plan_emit_rc=$?
+      else
             # EIGS_SUITE_SHARD=k/N (#1160 round 4). A shard is a subset of the
             # chunk list; the aggregator pins the union to the whole list.
             #
@@ -87,10 +97,11 @@ if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
             fi
         __plan_line=$(bash "$TESTS_DIR/../tools/section_plan.sh" --emit-shard "$__shard_k" "$__shard_n" "$__plan_runner")
         __plan_emit_rc=$?
+      fi
         # Both conditions: a floor failure prints a PLAN: line on its way out,
         # so "non-empty output" alone would let a refused plan run anyway.
         if [ "$__plan_emit_rc" -ne 0 ] || [ -z "$__plan_line" ]; then
-            echo "ERROR: could not derive shard ${EIGS_SUITE_SHARD:-} -- refusing to run a suite that would measure nothing (#1160)"
+            echo "ERROR: could not derive plan ${EIGS_SUITE_SHARD:-}${EIGS_SUITE_CHANGED:-} -- refusing to run a suite that would measure nothing (#1160)"
             rm -f "$__plan_runner"
             exit 1
         fi

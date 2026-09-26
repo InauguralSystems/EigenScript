@@ -38,6 +38,7 @@ ours onto the new main. Rebasing our own costs nothing; asking them does. (Only
 ```
 make            # release build -> build/release/, src/eigenscript hard-links to it (HTTP/MODEL/DB off)
 make test       # build + full suite (tests/run_all_tests.sh)
+make test-changed  # only the sections your diff vs origin/main touches (#1347; CI runs the rest)
 make asan       # ASan+UBSan build — extensions OFF
 make asan-http  # ASan+UBSan *with* ext_http+model (CI gate; leaks still need RSS, see #731)
 make http       # http+model variant — run tests/test_http_server.sh

@@ -4,6 +4,13 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+- `make test-changed` runs only the suite sections a change touches (#1347).
+  They are picked from the diff against `origin/main`, including uncommitted and
+  untracked files, plus the core language sections, and checked by the same
+  chunk witness as a sanitizer shard. CONTRIBUTING now makes it the local step
+  and leaves the full suite to CI. The full suite takes about 17 minutes on the
+  dev box, longer than an agent's two-minute tool call.
+
 - Gate scripts shrink (#1275): `tools/*.sh` and `tools/*.py` go from 12342
   lines to 10697. The workflow YAML check only loads files, the JIT fleet
   benchmark moves to `bench/`, and the kept checks drop their permanent
