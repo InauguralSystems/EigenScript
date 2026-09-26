@@ -681,12 +681,31 @@ check_chunk_count() {
         die "chunk enumeration examined=$examined floor=$CHUNK_FLOOR (scan is vacuous below floor)"
 }
 
+# Line numbers of the executable (non-comment) lines of FILE naming TOKEN as a
+# whole path component.
+sp_refs() {
+    local re
+    re=$(printf '%s' "$2" | sed 's/[][\.*^$+?(){}|/]/\\&/g')
+    grep -nE "(^|[^A-Za-z0-9_.-])$re([^A-Za-z0-9_-]|\$)" "$1" | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1
+}
+
+# Runner lines referencing TOKEN, else (one hop) the lines referencing a test
+# script that does: a helper no section names (test_lsp.py, lint_fixtures/)
+# selects through the script that uses it (test_lsp.sh, test_lint.sh).
+sp_select() {
+    local l
+    l=$(sp_refs "$RUNNER" "$1")
+    [ -n "$l" ] || l=$(git -C "$SP_ROOT" grep -l -F -- "$1" -- tests ':!tests/run_all_tests.sh' 2>/dev/null \
+        | while IFS= read -r t; do sp_refs "$RUNNER" "$(basename "$t")"; done)
+    printf '%s\n' "$l"
+}
+
 # Changed-sections plan (#1347): the chunks a diff against BASE touches, for
 # the contributor's fast local gate. CI still runs the whole suite. The diff is
 # the WORKING TREE plus untracked files against the merge base, because an
 # uncommitted fix is exactly what this gate is run on.
 build_changed_plan() {
-    local base="$1" mb p tok re lines
+    local base="$1" mb p tok d lines
     SP_WORK=$(sp_workdir changed)
     derive_chunks "$RUNNER" > "$SP_WORK/chunks"
     verify_partition "$RUNNER" "$SP_WORK/chunks"
@@ -705,29 +724,25 @@ build_changed_plan() {
         | sed -n 's/^@@ -[0-9,]* +\([0-9][0-9]*\)\(,\([0-9][0-9]*\)\)\{0,1\} @@.*/\1 \3/p' \
         | awk '{ n = ($2 == "") ? 1 : $2; if (n == 0) n = 1; for (i = 0; i < n; i++) print $1 + i }' > "$SP_WORK/hunks"
     cat "$SP_WORK/hunks" >> "$SP_WORK/lines"
-    # Every other changed file selects the chunks that name it: its basename,
-    # else a NESTED parent (a fixture dir one section globs). A top-level dir
-    # never stands in: `src` is named by the preamble and would select all.
+    # Every other changed file selects the chunks that reference it: by its
+    # basename when that is unique in the tree (a test is named by basename),
+    # else by parent/basename, since examples/functional.eigs and
+    # lib/functional.eigs are different files. Plus every ancestor dir a
+    # section globs (examples/, lib/, a fixture dir), except src/ and tests/,
+    # which nearly every section names.
+    git -C "$SP_ROOT" ls-files | sed 's#.*/##' | sort | uniq -d > "$SP_WORK/dupnames"
     while read -r p; do
         [ -n "$p" ] && [ "$p" != tests/run_all_tests.sh ] || continue
-        lines=''
-        for tok in "$(basename "$p")" "$(basename "$(dirname "$p")")"; do
-            case "$(dirname "$p")" in */*) ;; *) [ "$tok" = "$(basename "$p")" ] || continue ;; esac
-            re=$(printf '%s' "$tok" | sed 's/[][\.*^$+?(){}|/]/\\&/g')
-            lines=$(grep -nE "(^|[^A-Za-z0-9_.-])$re([^A-Za-z0-9_-]|\$)" "$RUNNER" \
-                    | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1)   # executable references only
-            [ -z "$lines" ] || break
+        tok=$(basename "$p")
+        grep -qxF -- "$tok" "$SP_WORK/dupnames" && tok="$(basename "$(dirname "$p")")/$tok"
+        lines=$(sp_select "$tok")
+        d=$(dirname "$p")
+        while [ "$d" != . ]; do
+            case "$d" in src|tests) break ;; esac
+            lines="$lines
+$(sp_select "$(basename "$d")")"; d=$(dirname "$d")
         done
-        # One hop: a helper no section names (test_lsp.py) selects through the
-        # test scripts that name it (test_lsp.sh).
-        if [ -z "$lines" ]; then
-            lines=$(git -C "$SP_ROOT" grep -l -F "$(basename "$p")" -- tests ':!tests/run_all_tests.sh' 2>/dev/null \
-                | while IFS= read -r tok; do
-                      re=$(basename "$tok" | sed 's/[][\.*^$+?(){}|/]/\\&/g')
-                      grep -nE "(^|[^A-Za-z0-9_.-])$re([^A-Za-z0-9_-]|\$)" "$RUNNER" \
-                          | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1
-                  done)
-        fi
+        lines=$(printf '%s\n' "$lines" | grep .)
         if [ -n "$lines" ]; then printf '%s\n' "$lines" >> "$SP_WORK/lines"
         else echo "$p" >> "$SP_WORK/unmatched"; fi
     done < "$SP_WORK/paths"
@@ -869,6 +884,8 @@ selftest() {
     expect_plan 'changed: a preamble edit selects the whole suite' 'full=yes'
     : > "$dir/cl/zz_named_by_nothing.txt"
     expect_plan 'changed: an untracked file no section names is reported' 'unmatched: zz_named_by_nothing.txt'
+    printf '\n' >> "$dir/cl/examples/functional.eigs"
+    expect_plan 'changed: a file shares a name elsewhere; the section globbing its dir is selected' '[97]'
     # Inert runner with the real dispatch/timer preamble. Every source header
     # is top-level; a test-only echo override hides all but three at runtime.
     local stub="$dir/stub" i
