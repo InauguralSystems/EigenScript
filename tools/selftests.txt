@@ -23,7 +23,7 @@ tools/_derive_variants.py tools/_extract_runcmd.py | timeout 30 python3 tools/_d
 tools/_extract_runcmd.py | timeout 30 python3 tools/_extract_runcmd.py --selftest
 tools/codspeed_targets_check.sh codspeed.yml | timeout 30 bash tools/codspeed_targets_check.sh --selftest
 tools/consumer_acceptance.sh tools/_derive_variants.py tools/_extract_runcmd.py reports/consumer_acceptance/* | timeout 25 bash tools/consumer_acceptance.sh --self-test
-tools/docs_claims_check.sh | timeout 14 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 7 case\\(s\\) run, 7 passed, 0 failed$","count":1}]
+tools/docs_claims_check.sh | timeout 14 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 8 case\\(s\\) run, 8 passed, 0 failed$","count":1}]
 tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=4$","count":1}]
 tools/obs_marker_check.sh | timeout 30 bash tools/obs_marker_check.sh --selftest
 tools/obs_reader_sync_check.sh tools/obs_marker_check.sh | timeout 30 bash tools/obs_reader_sync_check.sh --selftest | [{"pattern":"^SELFTEST: ([0-9]+) passed.*$","count":11,"floor":true,"value":true}]

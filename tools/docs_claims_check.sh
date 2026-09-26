@@ -60,20 +60,29 @@ def record(kind, file, n):
 
 
 # #1051: a hand-typed inventory count ("The 76 modules in `lib/`") went stale.
-# #1309 took counts out of these pages; this keeps them out (history pages
-# such as ROADMAP's Completed section and docs/CI.md may keep theirs).
-COUNT_DOCS = ('README.md docs/llms.txt docs/SPEC.md docs/COMPARISON.md '
-              'docs/ARCHITECTURE.md CLAUDE.md').split()
-COUNT_RE = re.compile(r'\b\d[\d,]*\+? +(?:stdlib +|library +)?(?:modules|builtins|widgets'
-                      r'|checks|tests|functions|libraries|examples|diagnostic codes|lint rules|opcodes)\b')
+# #1309 took counts out of these pages; this keeps them out. The text is
+# scanned with line breaks folded, so a count wrapped across lines is seen.
+# Two+ digits: an inventory count, not semantics ("a 1-parameter function").
+# History pages (ROADMAP Completed, docs/CI.md, CLAUDE.md's DMG incident) keep
+# their measurements.
+COUNT_DOCS = 'README.md docs/llms.txt docs/SPEC.md docs/COMPARISON.md docs/ARCHITECTURE.md'.split()
+COUNT_RE = re.compile(r'(?<![\w.])\**~?\d[\d,]*\d\+?\**(?:-| +)(?:[\w`/()*.+-]+ +){0,2}?'
+                      r'(?:modules?|builtins?|widgets?|node types?|opcodes?|functions?|librar(?:y|ies)'
+                      r'|examples?|tests?|checks?|files?|rows?|diagnostic codes?|lint rules?)\b', re.I)
 
 
 def derived_counts():
+    examined = 0
     for file in COUNT_DOCS:
-        for i, line in enumerate(Path(file).read_text(encoding='utf-8').splitlines(), 1):
-            for m in COUNT_RE.finditer(line):
-                red(f'{file}:{i}: hand-typed count "{m.group()}"; point to its source '
-                    '(eigenscript --api, CHANGELOG.md) instead (#1051)')
+        text = Path(file).read_text(encoding='utf-8')
+        examined += 1
+        for m in COUNT_RE.finditer(re.sub(r'\s', ' ', text)):
+            line = text.count('\n', 0, m.start()) + 1
+            red(f'{file}:{line}: hand-typed count "{" ".join(m.group().split())}"; point to its '
+                'source (eigenscript --api, CHANGELOG.md) instead (#1051)')
+    print(f'  COUNTS: examined {examined} front-door page(s)')
+    if examined == 0:
+        red('COUNTS examined 0')
 
 
 def check_floors():
@@ -374,6 +383,8 @@ def selftest():
                 ('flag', 'docs/llms.txt', '\n`eigenscript --no-such-1275`\n', '--no-such-1275'),
                 ('target', 'CLAUDE.md', '\n`make no-such-1275`\n', 'make no-such-1275'),
                 ('name', 'README.md', '\n`no_such_1275 of null`\n', 'no_such_1275'),
+                ('count', 'docs/ARCHITECTURE.md', '\nThe 77\n`lib/` modules and a 47-widget toolkit.\n',
+                 'hand-typed count "77 `lib/` modules"'),
             ]:
                 p = tree / file
                 original = p.read_text()
@@ -403,8 +414,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 7 case(s) run, {passed} passed, {7-passed} failed')
-            return 0 if passed == 7 else 1
+            print(f'SELFTEST: 8 case(s) run, {passed} passed, {8-passed} failed')
+            return 0 if passed == 8 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
