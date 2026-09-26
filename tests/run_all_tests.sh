@@ -2692,6 +2692,22 @@ check_eigs_suite "module-boundary write insulation (#373)" test_module_scope.eig
 check_eigs_suite "import top-level scope insulation vs load_file current-scope contract (#589)" test_import_toplevel_scope.eigs "All import top-level scope tests passed" 11
 check_eigs_suite "module namespace is a LIVE VIEW of the module env (#1057)" test_module_live_view.eigs "All tests passed" 30
 
+# [43a2a] lib/args.eigs works through `import args`, not just `load_file` (#1236)
+echo "[43a2a] args library: import vs load_file parity (12 checks)"
+ARGSLIB_OUTPUT=$(bash "$TESTS_DIR/test_args_lib.sh" 2>&1)
+ARGSLIB_PASS=$(echo "$ARGSLIB_OUTPUT" | grep -c "PASS:" || true)
+ARGSLIB_FAIL=$(echo "$ARGSLIB_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + ARGSLIB_PASS + ARGSLIB_FAIL))
+PASS=$((PASS + ARGSLIB_PASS))
+FAIL=$((FAIL + ARGSLIB_FAIL))
+if [ "$ARGSLIB_FAIL" -gt 0 ]; then
+    echo "  FAIL: $ARGSLIB_FAIL args-lib check(s) failed"
+    echo "$ARGSLIB_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $ARGSLIB_PASS args-lib checks"
+fi
+echo ""
+
 echo "[43a2b] build_corpus slot-mode identifier encoding (6 checks)"
 CS_OUTPUT=$(bash "$TESTS_DIR/test_corpus_slots.sh" 2>&1)
 CS_PASS=$(echo "$CS_OUTPUT" | grep -c "PASS:" || true)

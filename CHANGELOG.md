@@ -825,6 +825,16 @@ All notable changes to EigenScript are documented here.
   recognized with the parser's own parameter tokens (soft keywords included),
   and a body ends where the parser ends it (a comprehension's `for`/`if`).
 
+- **`args.parse_args` works through `import args`, not just `load_file`
+  (#1236).** The library's `parse_args` called the builtin `args` by its
+  public name; `import args` binds the module's own namespace to that same
+  name in the shared global scope, so by the time `parse_args` ran, `args`
+  resolved to the namespace dict instead of the builtin (`cannot call
+  dict`). `lib/args.eigs` now captures the builtin into a private
+  `_args_builtin` binding at module top level — which runs before the
+  importer installs the namespace — and `parse_args` calls that instead.
+  The `load_file` form, which never installs a namespace, is unaffected.
+
 - **One scanner decides where an f-string interpolation ends (#1252,
   #1253).** The lexer found an interpolation's closing `}` with a scan that
   skipped plain strings but knew neither comments nor nested f-strings. A `}`

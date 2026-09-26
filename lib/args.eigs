@@ -16,9 +16,17 @@
 #   get_positional of parsed                # list of positional args
 #   has_flag of [parsed, "--help"]          # 1 or 0
 
+# `import args` binds the module namespace to the name `args` in the same
+# scope the `args` builtin lives in, so by the time parse_args runs, the
+# builtin is gone. Capture it here — a top-level assignment runs (and
+# resolves the builtin) before the caller's `import` finishes and installs
+# the namespace, and the leading underscore keeps it out of the exported
+# dict (#1236).
+_args_builtin is args
+
 # ---- parse_args: parse CLI arguments into a map ----
 define parse_args as:
-    raw is args of null
+    raw is _args_builtin of null
     result is [["positional", []]]
     i is 0
     loop while i < (len of raw):
