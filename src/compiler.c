@@ -3925,6 +3925,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * disable this pass. */
         int saved_fe_line = g_first_error_line, saved_fe_col = g_first_error_col;
         int saved_fe_len = g_first_error_len, saved_fe_known = g_first_error_col_known;
+        int saved_fe_lexer = g_first_error_from_lexer;
         char saved_fe_msg[256];
         snprintf(saved_fe_msg, sizeof saved_fe_msg, "%s", g_first_error_msg);
         int saved_errors = g_parse_errors;
@@ -3936,6 +3937,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
             free_ast(mast); free_tokenlist(&tl); free(source);
             g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
             g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
+            g_first_error_from_lexer = saved_fe_lexer;
             snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
                      "%s", saved_fe_msg);
             obs_gate_unmute_stderr(muted);   /* every exit from here unmutes */
@@ -3956,6 +3958,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
         if (obs_ast_scan(mast, &L) || L.overflow) eigs_obs_enable_runtime();
         g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
         g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
+        g_first_error_from_lexer = saved_fe_lexer;
         snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
                  "%s", saved_fe_msg);
         if (g_parse_errors > 0) eigs_obs_enable_runtime();

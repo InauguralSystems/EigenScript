@@ -924,8 +924,9 @@ def main():
     check("semanticTokens carries accurate lengths (22 → len 2)",
           any(ty == ni and L == 2 for (_, _, L, ty) in toks))
 
-    # #1244: f-string lowering tokens carry no span, so the stream stays in
-    # source order and the interpolated identifier sits at its real column.
+    # #1244: f-string lowering tokens are flagged synthetic and skipped, so
+    # the stream stays in source order and the interpolated identifier sits
+    # at its real column.
     fst = {"jsonrpc": "2.0", "id": 44, "method": "textDocument/semanticTokens/full",
            "params": {"textDocument": {"uri": URI}}}
     r = converse([INIT, did_open('count is 7\nprint of f"value={count}"\n'), fst,
@@ -942,6 +943,37 @@ def main():
           (1, 18, 5) in ftoks and
           all(a[0] < b[0] or (a[0] == b[0] and a[1] + a[2] <= b[1])
               for a, b in zip(ftoks, ftoks[1:])))
+
+    # #1244: a parse error ON a synthesized token (the `)` closing the lowered
+    # interpolation) still reports a real source column in `--lint --json`,
+    # not column 1; the depth-limit lexer error is not displaced by the parse
+    # errors it causes on the same line.
+    import tempfile
+    for src, want_col, label in (
+            ('x is 1\ny is f"{[x}"\n', 12, "unclosed list"),
+            ('x is 1\ny is f"{x.}"\n', 12, "dangling dot"),
+            (deep_fstring + "\n", None, "depth limit")):
+        with tempfile.NamedTemporaryFile("w", suffix=".eigs", delete=False) as tf:
+            tf.write(src)
+        try:
+            p = subprocess.run([EIGS, "--lint", "--json", tf.name], capture_output=True,
+                               text=True, timeout=15, stdin=subprocess.DEVNULL)
+        finally:
+            os.unlink(tf.name)
+        try:
+            ds = json.loads(p.stdout)
+        except ValueError:
+            ds = []
+        e = [d for d in ds if d.get("severity") == "error"]
+        if want_col is None:
+            ok = (len(e) == 1 and e[0].get("line") == 1 and
+                  e[0].get("message") == "f-string nesting too deep (max 64 levels)")
+        else:
+            ok = len(e) == 1 and e[0].get("line") == 2 and e[0].get("column") == want_col
+        check(f"--lint --json error on a synthesized token keeps its column: {label} (#1244)",
+              ok)
+        if not ok:
+            print("    got:", p.stdout[:300])
 
     # #880: a CRLF document must behave exactly like the LF one. The
     # JSON-RPC unescaper used to drop \r (re-emitting the backslash), so a

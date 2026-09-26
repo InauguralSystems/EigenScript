@@ -12,7 +12,7 @@
 /* A lexer error always updates both the LSP's first diagnostic and the
  * parser's error tally. Keep those effects inseparable at every call site. */
 static void lexer_error_at(int line, int col, const char *message) {
-    eigs_record_first_error_at(line, col, 1, message);
+    eigs_record_lexer_error_at(line, col, 1, message);
     g_parse_errors++;
 }
 
@@ -31,6 +31,7 @@ static void tok_add(TokenList *tl, TokType type, double num, const char *str, in
      * numbers and strings overwrite this with their true source length at
      * the emission site, since their lexeme differs from str_val. */
     t->len = str ? (int)strlen(str) : 1;
+    t->synth = 0;
 }
 
 /* Nested f-string boundary scanning (#1253). An interpolation's extent is
@@ -103,12 +104,15 @@ static const char *fstr_interp_end(const char *p) {
 }
 
 /* A token the f-string lowering synthesizes (the wrapper parens, `+`,
- * `str of`, the literal segments) has no source span of its own: len 0
- * marks it, so position consumers (the LSP's rename, hover, semantic
- * tokens) never treat it as an editable source occurrence (#1244). */
+ * `str of`, the literal segments) has no source span of its own. `synth`
+ * marks it, so position consumers (the LSP's rename, cursor lookup and
+ * semantic tokens) never treat it as an editable source occurrence (#1244).
+ * Its line/col/len stay as before: a parse error that lands on one still
+ * reports the post-`}` column, since a zero length would read as
+ * "column unknown" to the error recorder. */
 static void tok_add_synth(TokenList *tl, TokType type, const char *str, int line, int col) {
     tok_add(tl, type, 0, str, line, col);
-    tl->tokens[tl->count - 1].len = 0;
+    tl->tokens[tl->count - 1].synth = 1;
 }
 
 static TokType keyword_type(const char *word) {
@@ -585,6 +589,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                         Token *it = &inner.tokens[ti];
                         tok_add(&tl, it->type, it->num_val, it->str_val, it->line, it->col);
                         tl.tokens[tl.count - 1].len = it->len;
+                        tl.tokens[tl.count - 1].synth = it->synth;
                     }
                     free_tokenlist(&inner);
 

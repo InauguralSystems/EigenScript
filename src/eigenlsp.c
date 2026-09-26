@@ -650,7 +650,7 @@ static Token* find_token_at(Document *doc, int line, int col) {
         Token *t = &doc->tokens.tokens[i];
         if (t->type == TOK_EOF || t->type == TOK_NEWLINE ||
             t->type == TOK_INDENT || t->type == TOK_DEDENT) continue;
-        if (t->len == 0) continue;  /* f-string lowering: no source span (#1244) */
+        if (t->synth) continue;  /* f-string lowering: no source span (#1244) */
         if (t->line != target_line) continue;
         int tok_len = t->len > 0 ? t->len : 1;  /* accurate lexeme span */
         /* Strict containment [col, col+len): each column belongs to exactly
@@ -1670,7 +1670,7 @@ static void handle_rename(int id, const char *params) {
     for (int i = 0; i < doc->tokens.count; i++) {
         Token *t = &doc->tokens.tokens[i];
         if (t->type != TOK_IDENT || !t->str_val || strcmp(t->str_val, name) != 0) continue;
-        if (t->len == 0) continue;  /* synthesized by f-string lowering, not source (#1244) */
+        if (t->synth) continue;  /* synthesized by f-string lowering, not source (#1244) */
         if (i > 0 && doc->tokens.tokens[i - 1].type == TOK_DOT) continue;  /* member access */
         int ts, tf;
         resolve_binding(scopes, nscopes, i, name, &ts, &tf);
@@ -1855,7 +1855,7 @@ static void handle_semantic_tokens(int id, const char *params) {
     int prev_line = 0, prev_col = 0, first = 1;
     for (int i = 0; i < doc->tokens.count; i++) {
         Token *t = &doc->tokens.tokens[i];
-        if (t->len == 0) continue;  /* f-string lowering: no source span (#1244) */
+        if (t->synth) continue;  /* f-string lowering: no source span (#1244) */
         int stype = semantic_type_for(doc, t);
         if (stype < 0) continue;
         int line0 = t->line - 1;
