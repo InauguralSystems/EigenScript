@@ -118,6 +118,15 @@ if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
         __plan_rc=${PIPESTATUS[0]}
         verify_shard_chunks "$__plan_runner" "$__plan_log" "$__plan_bearing" "$__plan_chunks"
         __witness_rc=$?
+        # A selected section that SKIPPED here (an extension this build lacks:
+        # http, db, gfx...) measured nothing for the change that selected it,
+        # and RESULTS shows only a count. Name each one beside the verdict.
+        if [ -n "${EIGS_SUITE_CHANGED:-}" ]; then
+            __plan_skips=$(awk -v hre="$(bash "$TESTS_DIR/../tools/section_plan.sh" --header-regex)" '
+                $0 ~ hre { h = $0; sub(/\].*/, "]", h) }
+                /^  SKIP: / { r = $0; sub(/^  SKIP: /, "", r); print "    " h " " r }' "$__plan_log")
+            [ -z "$__plan_skips" ] || printf '  NOT RUN LOCALLY (skipped on this build; CI runs them):\n%s\n' "$__plan_skips"
+        fi
         rm -f "$__plan_runner" "$__plan_log"
         [ "$__witness_rc" -eq 0 ] || exit 1
         echo "  SECTION PLAN: $__plan_line"

@@ -27,6 +27,8 @@ Building needs only `gcc`. Running the test suite also needs `python3` with PyYA
    included; `BASE=<ref>` to change it). It prints the files no section names
    and every `src/` file as `runtime:`. The C runtime is exercised by every
    section, so for those only CI's full suite on your PR is the real check.
+   A selected section that skips on your build (an extension such as HTTP or
+   gfx that `make` leaves out) is listed as NOT RUN LOCALLY after the results.
    A change to the suite runner's shared preamble selects the whole suite.
 6. Open a pull request
 
