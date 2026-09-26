@@ -684,20 +684,22 @@ check_chunk_count() {
 # Line numbers of the executable (non-comment) lines of FILE naming TOKEN as a
 # whole path component.
 sp_refs() {
-    local re
-    re=$(printf '%s' "$2" | sed 's/[][\.*^$+?(){}|/]/\\&/g')
-    grep -nE "(^|[^A-Za-z0-9_.-])$re([^A-Za-z0-9_-]|\$)" "$1" | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1
+    grep -nE "$(sp_token_re "$2")" "$1" | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1
+}
+sp_token_re() {
+    printf '(^|[^A-Za-z0-9_.-])%s([^A-Za-z0-9_-]|$)' "$(printf '%s' "$1" | sed 's/[][\.*^$+?(){}|/]/\\&/g')"
 }
 
-# Runner lines referencing TOKEN, else (one hop) the lines referencing a test
-# script that does: a helper no section names (test_lsp.py, lint_fixtures/)
-# selects through the script that uses it (test_lsp.sh, test_lint.sh).
+# Runner lines referencing TOKEN, plus (one hop) the lines referencing each
+# test script that does: a helper (test_lsp.py, lint_fixtures/) selects
+# through the script that uses it (test_lsp.sh, test_lint.sh), and a program
+# the runner names in one section still selects the other section whose
+# script re-runs it (test_tasks.eigs -> test_task_sched_trace.sh, [104b]).
 sp_select() {
-    local l
-    l=$(sp_refs "$RUNNER" "$1")
-    [ -n "$l" ] || l=$(git -C "$SP_ROOT" grep -l -F -- "$1" -- tests ':!tests/run_all_tests.sh' 2>/dev/null \
-        | while IFS= read -r t; do sp_refs "$RUNNER" "$(basename "$t")"; done)
-    printf '%s\n' "$l"
+    sp_refs "$RUNNER" "$1"
+    git -C "$SP_ROOT" grep -nE -- "$(sp_token_re "$1")" -- tests ':!tests/run_all_tests.sh' 2>/dev/null \
+        | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | cut -d: -f1 | sort -u \
+        | while IFS= read -r t; do sp_refs "$RUNNER" "$(basename "$t")"; done
 }
 
 # Changed-sections plan (#1347): the chunks a diff against BASE touches, for
@@ -738,9 +740,16 @@ build_changed_plan() {
         lines=$(sp_select "$tok")
         d=$(dirname "$p")
         while [ "$d" != . ]; do
-            case "$d" in src|tests) break ;; esac
-            lines="$lines
-$(sp_select "$(basename "$d")")"; d=$(dirname "$d")
+            case "$d" in
+                src|tests) break ;;
+                # A top-level dir (lib/) is named by nearly every test script
+                # that loads a module: only the runner's own globs count.
+                */*) lines="$lines
+$(sp_select "$(basename "$d")")" ;;
+                *) lines="$lines
+$(sp_refs "$RUNNER" "$d")" ;;
+            esac
+            d=$(dirname "$d")
         done
         lines=$(printf '%s\n' "$lines" | grep .)
         if [ -n "$lines" ]; then printf '%s\n' "$lines" >> "$SP_WORK/lines"
@@ -884,6 +893,8 @@ selftest() {
     expect_plan 'changed: a preamble edit selects the whole suite' 'full=yes'
     : > "$dir/cl/zz_named_by_nothing.txt"
     expect_plan 'changed: an untracked file no section names is reported' 'unmatched: zz_named_by_nothing.txt'
+    printf '\n' >> "$dir/cl/tests/test_tasks.eigs"
+    expect_plan 'changed: a program the runner names also selects the section whose script re-runs it' '[104b]'
     printf '\n' >> "$dir/cl/examples/functional.eigs"
     expect_plan 'changed: a file shares a name elsewhere; the section globbing its dir is selected' '[97]'
     # Inert runner with the real dispatch/timer preamble. Every source header
