@@ -798,6 +798,21 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **One scanner decides where an f-string interpolation ends (#1252,
+  #1253).** The lexer found an interpolation's closing `}` with a scan that
+  skipped plain strings but knew neither comments nor nested f-strings. A `}`
+  in a comment closed the interpolation early, so `f"{1 # }` + newline +
+  ` + 2}"` printed `1\n + 2}` instead of `3`. A nested f-string was skipped as
+  a plain string, so `f"outer:{f"inner:{"a}b"}"}"` failed with four parse
+  errors. One function (`fstr_interp_end`) now decides every interpolation
+  boundary, at the top level and inside nested f-strings. It honours string
+  literals, `#` comments to end of line, nested f-strings with their escapes,
+  and brace depth. A comment on the same line as the closing `}`
+  (`f"{x # c}"`) now consumes it, as the lexical rule says, and is a parse
+  error instead of a silently different value. `lib/eigen.eigs` (the
+  meta-circular interpreter) scans f-strings with the same rules. It also
+  drops layout tokens inside an interpolation, as the C lexer does since #334.
+
 - **`--fmt` ignores `EIGS_TRACE` and `EIGS_REPLAY` (#1238).** The formatter
   ran after trace initialization, so an inherited replay path it could not
   open failed formatting with exit 3, and an inherited trace path was

@@ -311,6 +311,32 @@ check of ["GAP: a meta module function cannot read a module global",
 check of ["VM: the same module function call succeeds",
     vm_probe of "import log\nlog.log_level of \"warn\"", ["ok", null]]
 
+# --- #1252/#1253: one scanner decides where an f-string interpolation ends,
+# in lib/eigen.eigs as in src/lexer.c: string literals, `#` comments and
+# nested f-strings hide braces; layout tokens inside a splice are dropped ---
+parity of ["f-string: brace inside a string in an interpolation",
+    "f\"{\"a}b\"}\"", ["ok", "a}b"]]
+parity of ["f-string: spaces inside the braces",
+    "w1252 is 5\nf\"{ w1252 }\"", ["ok", "5"]]
+parity of ["f-string: closing brace inside a comment",
+    "f\"{1 # }\n + 2}\"", ["ok", "3"]]
+parity of ["f-string: opening brace inside a comment",
+    "f\"{1 # {\n + 2}\"", ["ok", "3"]]
+parity of ["f-string: hash inside a string is not a comment",
+    "f\"{\"a#b\"}\"", ["ok", "a#b"]]
+parity of ["f-string: same-line comment swallows the closing brace (loud)",
+    "w1252b is 5\nf\"{w1252b # c}\"", ["err"]]
+parity of ["nested f-string: brace-bearing string in the inner interpolation",
+    "f\"outer:{f\"inner:{\"a}b\"}\"}\"", ["ok", "outer:inner:a}b"]]
+parity of ["nested f-string: hash string in the inner interpolation",
+    "s1252 is \"x\"\nf\"{f\"{\"#\" + s1252}\"}\"", ["ok", "#x"]]
+parity of ["nested f-string: hash string in a second inner interpolation",
+    "f\"{f\"{\"a\"}{\"#\"}\"}\"", ["ok", "a#"]]
+parity of ["nested f-string: same-line comment inside is loud",
+    "x1252 is 5\nf\"{f\"{x1252 #c}\"}\"", ["err"]]
+parity of ["nested f-string: simple nesting",
+    "f\"a{f\"inner{2}\"}b\"", ["ok", "ainner2b"]]
+
 if checks == passed:
     print of "All tests passed"
 else:

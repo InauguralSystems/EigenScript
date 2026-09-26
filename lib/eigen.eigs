@@ -61,6 +61,63 @@ define _is_alnum(c) as:
         return 1
     return _is_digit of c
 
+# f-string interpolation extent (#1252/#1253 parity with src/lexer.c's
+# fstr_interp_end / fstr_skip_fstring): ONE scanner decides where an
+# interpolation ends, at every nesting level. String literals, `#` comments
+# (to end of line) and nested f-strings all hide braces.
+# _fstr_interp_end: pos is just past the `{`; returns the index of the
+# matching `}`, or len of source when unterminated.
+define _fstr_interp_end(source, pos) as:
+    local n is len of source
+    local start is pos
+    local depth is 1
+    local c is ""
+    loop while pos < n:
+        c is char_at of [source, pos]
+        if (c == "f") and ((pos + 1) < n) and ((char_at of [source, pos + 1]) == "\"") and ((pos == start) or ((_is_alnum of (char_at of [source, pos - 1])) == 0)):
+            pos is _fstr_skip_fstring of [source, pos]
+        elif c == "\"":
+            pos is pos + 1
+            loop while (pos < n) and ((char_at of [source, pos]) != "\""):
+                if ((char_at of [source, pos]) == "\\") and ((pos + 1) < n):
+                    pos is pos + 1
+                pos is pos + 1
+            if pos < n:
+                pos is pos + 1
+        elif c == "#":
+            loop while (pos < n) and ((char_at of [source, pos]) != "\n"):
+                pos is pos + 1
+        elif c == "{":
+            depth is depth + 1
+            pos is pos + 1
+        elif c == "}":
+            depth is depth - 1
+            if depth == 0:
+                return pos
+            pos is pos + 1
+        else:
+            pos is pos + 1
+    return pos
+
+# pos at the `f` of f"...": returns the index just past the closing quote.
+define _fstr_skip_fstring(source, pos) as:
+    local n is len of source
+    local c is ""
+    pos is pos + 2
+    loop while (pos < n) and ((char_at of [source, pos]) != "\""):
+        c is char_at of [source, pos]
+        if c == "\\":
+            pos is pos + 2
+        elif c == "{":
+            pos is _fstr_interp_end of [source, pos + 1]
+            if pos < n:
+                pos is pos + 1
+        else:
+            pos is pos + 1
+    if pos < n:
+        pos is pos + 1
+    return pos
+
 define _is_space(c) as:
     if c == " ":
         return 1
@@ -257,30 +314,21 @@ define eigen_tokenize(source) as:
                             append of [tokens, ["ident", "str", line]]
                             append of [tokens, ["kw", "of", line]]
                             append of [tokens, ["lparen", null, line]]
-                            # Collect expression text inside braces
-                            depth is 1
-                            expr_buf is ""
-                            loop while (pos < src_len) and (depth > 0):
-                                bc is char_at of [source, pos]
-                                if bc == "{":
-                                    depth is depth + 1
-                                    expr_buf is expr_buf + bc
-                                    pos is pos + 1
-                                elif bc == "}":
-                                    depth is depth - 1
-                                    if depth > 0:
-                                        expr_buf is expr_buf + bc
-                                    pos is pos + 1
-                                else:
-                                    expr_buf is expr_buf + bc
-                                    pos is pos + 1
+                            # Collect expression text inside braces: its
+                            # extent comes from the one shared scanner
+                            iend is _fstr_interp_end of [source, pos]
+                            if iend >= src_len:
+                                throw of f"parse error line {line}: unterminated f-string expression"
+                            expr_buf is source[pos:iend]
+                            pos is iend + 1
                             # Recursively tokenize the inner expression
                             inner_tokens is eigen_tokenize of expr_buf
                             for iti in range of (len of inner_tokens):
                                 itok is inner_tokens[iti]
-                                if itok[0] != "eof":
-                                    if itok[0] != "newline":
-                                        append of [tokens, itok]
+                                # Layout tokens are meaningless inside a
+                                # spliced expression (C parity, #334)
+                                if (itok[0] != "eof") and (itok[0] != "newline") and (itok[0] != "indent") and (itok[0] != "dedent"):
+                                    append of [tokens, itok]
                             append of [tokens, ["rparen", null, line]]
                             append of [tokens, ["rparen", null, line]]
                         else:

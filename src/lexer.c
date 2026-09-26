@@ -33,6 +33,75 @@ static void tok_add(TokenList *tl, TokType type, double num, const char *str, in
     t->len = str ? (int)strlen(str) : 1;
 }
 
+/* Nested f-string boundary scanning (#1253). An interpolation's extent is
+ * found before its text is re-tokenized, so the scanner must know every
+ * lexical state that can hide a brace: a string literal, a comment, and a
+ * nested f-string, whose literal text is not an ordinary string (its
+ * interpolations may contain quotes of their own). Treating a nested
+ * `f"..."` as a plain string ended the skip at the first inner quote and
+ * exposed a brace inside an inner string literal to the outer depth count.
+ * A `#` comment runs to end of line and its braces are comment text (#1252).
+ * fstr_interp_end is the ONE function that decides where an interpolation
+ * ends, at the top level and at every nesting level, so the two can never
+ * disagree about which quote or `#` is live. Both helpers stop at NUL; the
+ * caller reports the unterminated form. */
+static int fstr_ident_char(char ch) {
+    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+           (ch >= '0' && ch <= '9') || ch == '_';
+}
+
+static const char *fstr_interp_end(const char *p);
+
+/* p at the `f` of f"...": returns the position just past the closing quote. */
+static const char *fstr_skip_fstring(const char *p) {
+    p += 2; /* skip f" */
+    while (*p && *p != '"') {
+        if (*p == '\\') {
+            p++;
+            if (*p) p++;
+            continue;
+        }
+        if (*p == '{') {
+            p = fstr_interp_end(p + 1);
+            if (*p == '}') p++;
+            continue;
+        }
+        p++;
+    }
+    if (*p == '"') p++;
+    return p;
+}
+
+/* p just past an interpolation's `{`: returns the position of its matching
+ * `}` (or the NUL terminator). */
+static const char *fstr_interp_end(const char *p) {
+    const char *start = p;
+    int depth = 1;
+    while (*p) {
+        if (*p == 'f' && p[1] == '"' && (p == start || !fstr_ident_char(p[-1]))) {
+            p = fstr_skip_fstring(p);
+            continue;
+        }
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"') {
+                if (*p == '\\' && p[1]) p++;
+                p++;
+            }
+            if (*p == '"') p++;
+            continue;
+        }
+        if (*p == '#') {
+            while (*p && *p != '\n') p++;
+            continue;
+        }
+        if (*p == '{') depth++;
+        else if (*p == '}' && --depth == 0) break;
+        p++;
+    }
+    return p;
+}
+
 static TokType keyword_type(const char *word) {
     switch (word[0]) {
     case 'a':
@@ -470,36 +539,14 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     tok_add(&tl, TOK_OF, 0, NULL, line, col);
                     tok_add(&tl, TOK_LPAREN, 0, NULL, line, col);
 
-                    /* Tokenize the expression inside braces */
-                    int depth = 1;
+                    /* Tokenize the expression inside braces. Its extent is
+                     * decided by fstr_interp_end, the one scanner used at
+                     * every nesting level (#1252/#1253): string literals,
+                     * `#` comments and nested f-strings all hide braces. */
                     strbuf expr_buf;
                     strbuf_init(&expr_buf);
-                    while (*p && depth > 0) {
-                        /* A string literal inside the interpolation is copied
-                         * wholesale — braces inside it are text, not nesting
-                         * (#334: `f"{"a}b"}"` used to cut at the `}` inside
-                         * the string). Nested f-strings still balance via
-                         * depth counting, since their braces sit outside the
-                         * quotes we skip here. */
-                        if (*p == '"') {
-                            strbuf_append_char(&expr_buf, *p++);
-                            col++;
-                            while (*p && *p != '"') {
-                                if (*p == '\\' && *(p+1)) {
-                                    strbuf_append_char(&expr_buf, *p++);
-                                    col++;
-                                }
-                                strbuf_append_char(&expr_buf, *p++);
-                                col++;
-                            }
-                            if (*p == '"') {
-                                strbuf_append_char(&expr_buf, *p++);
-                                col++;
-                            }
-                            continue;
-                        }
-                        if (*p == '{') depth++;
-                        else if (*p == '}') { depth--; if (depth == 0) break; }
+                    const char *expr_end = fstr_interp_end(p);
+                    while (p < expr_end) {
                         strbuf_append_char(&expr_buf, *p++);
                         col++;
                     }
