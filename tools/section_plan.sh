@@ -701,7 +701,16 @@ sp_select() {
     # shellcheck disable=SC2086
     git -C "$SP_ROOT" grep -nE -- "$(sp_token_re "$1")" -- $SP_HOP_DIRS ':!tests/run_all_tests.sh' ':!tools/section_plan.sh' 2>/dev/null \
         | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | cut -d: -f1 | sort -u \
-        | while IFS= read -r t; do sp_refs "$RUNNER" "$(basename "$t")"; done
+        | while IFS= read -r t; do sp_refs "$RUNNER" "$(sp_file_token "$t")"; done
+}
+# How a path is named: its basename when that is unique in the tree, else
+# parent/basename (examples/functional.eigs vs lib/functional.eigs, and a
+# tests/roads/README.md is not the top-level README.md).
+sp_file_token() {
+    local b
+    b=$(basename "$1")
+    case "$1" in */*) grep -qxF -- "$b" "$SP_WORK/dupnames" && b="$(basename "$(dirname "$1")")/$b" ;; esac
+    printf '%s' "$b"
 }
 
 # Module names whose loading reaches lib/M.eigs: M, then every lib module
@@ -758,9 +767,7 @@ build_changed_plan() {
         # checks README.md for [99za]); a src/ file is reported as runtime
         # anyway, and tools/ naming it (consumer_acceptance) only adds cost.
         case "$p" in src/*) SP_HOP_DIRS=tests ;; *) SP_HOP_DIRS='tests tools' ;; esac
-        tok=$(basename "$p")
-        # (A top-level file keeps its bare name: `./README.md` matches nothing.)
-        case "$p" in */*) grep -qxF -- "$tok" "$SP_WORK/dupnames" && tok="$(basename "$(dirname "$p")")/$tok" ;; esac
+        tok=$(sp_file_token "$p")
         lines=$(sp_select "$tok")
         # A test script may build its program names from the stem
         # (`dict_keys_mt_single|expect.out` -> "$probe.eigs"), so a tests/
@@ -774,8 +781,12 @@ $(sp_select "${tok%.*}")" ;; esac
         case "$p" in lib/*.eigs) lines="$lines
 $(sp_lib_closure "$(basename "$p" .eigs)" | while IFS= read -r m; do
       sp_select "$m.eigs"
-      git -C "$SP_ROOT" grep -lE "^[[:space:]]*import[[:space:]]+$m([^A-Za-z0-9_]|\$)" -- tests 2>/dev/null \
-          | while IFS= read -r t; do t=$(basename "$t"); sp_select "$t"; sp_select "${t%.*}"; done
+      # Importers: tests, the doc fences [89] runs, the programs [97] runs.
+      git -C "$SP_ROOT" grep -lE "^[[:space:]]*import[[:space:]]+$m([^A-Za-z0-9_]|\$)" -- tests docs examples README.md 2>/dev/null \
+          | while IFS= read -r t; do
+                case "$t" in examples/*) sp_refs "$RUNNER" examples ;; esac
+                t=$(sp_file_token "$t"); sp_select "$t"; sp_select "${t%.*}"
+            done
   done)" ;; esac
         # Dirs the file sits in add the sections that glob them. A nested dir
         # (a fixture dir) identifies the file; a top-level one (lib/,
@@ -785,7 +796,7 @@ $(sp_lib_closure "$(basename "$p" .eigs)" | while IFS= read -r m; do
         d=$(dirname "$p")
         while [ "$d" != . ]; do
             case "$d" in
-                src|tests) break ;;
+                src|tests|tools) break ;;   # named by nearly every section
                 */*) lines="$lines
 $(sp_select "$(basename "$d")")" ;;
                 *) dlines=$(sp_refs "$RUNNER" "$d") ;;
@@ -834,7 +845,9 @@ $(sp_select "$(basename "$d")")" ;;
     notlocal=$(cat "$SP_WORK/unmatched" "$SP_WORK/runtime" | grep . | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//')
     while read -r p; do [ -z "$p" ] || note "  sourced: $p (the runner preamble sources it: the whole suite runs)"; done < "$SP_WORK/sourced"
     [ -n "$SP_CHANGED_FULL" ] || note "  selected: $(cut -f4 "$SP_WORK/expected" | grep -o '^[[][^]]*[]]' | tr '\n' ' ')"
-    echo "PLAN: changed=$base paths=$paths unmatched=$unm runtime=$rt full=${SP_CHANGED_FULL:-no} bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS predicted=${wsec}s${notlocal:+ not-run-locally: $notlocal}"
+    # The weights are CI ASan wall seconds, not a local prediction ([81u] is
+    # 122s there, under 1s here), so the field says what it is.
+    echo "PLAN: changed=$base paths=$paths unmatched=$unm runtime=$rt full=${SP_CHANGED_FULL:-no} bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS ci_asan_weight=${wsec}s${notlocal:+ not-run-locally: $notlocal}"
 }
 
 emit_plan() {   # emit_plan <out> <plan builder> <args...>
@@ -962,6 +975,8 @@ selftest() {
     expect_plan 'changed: a lib file nothing loads is reported, not masked by the lib/ glob' 'not-run-locally: lib/zz_loaded_by_nothing.eigs'
     printf '\n' >> "$dir/cl/README.md"
     expect_plan 'changed: a top-level file whose name recurs selects its section' '[89]'
+    printf '\n' >> "$dir/cl/lib/stats.eigs"
+    expect_plan 'changed: a lib module selects the doc-fence section whose docs import it' '[89]'
     printf '\n' >> "$dir/cl/README.md"
     expect_plan 'changed: a doc selects the section whose tools/ gate checks it' '[99za]'
     printf '\n' >> "$dir/cl/src/lint.c"
