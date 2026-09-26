@@ -4,9 +4,11 @@
 # disjointness, and nonempty populations are checked before it runs.
 # Usage: --chunks | --shards N --check | --shards N --shard K |
 #        --shard-owner N [--section ID] | --emit-shard K N OUT |
+#        --changed BASE | --emit-changed BASE OUT |
 #        --print-weights LOG [--run ID --head SHA] | --skip-audit | --selftest
 set -u
 SP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SP_HOP_DIRS=tests
 RUNNER="$SP_ROOT/tests/run_all_tests.sh"
 VERBOSE=1
 # A floor below the normal chunk population catches a collapsed scan while allowing growth.
@@ -16,6 +18,11 @@ SKIP_EMIT_FLOOR=10
 # A floor below the normal route population catches a lost scan while allowing growth.
 SKIP_ROUTED_FLOOR=20
 CI_FILE="$SP_ROOT/.github/workflows/ci.yml"
+# The changed-sections plan always adds the numbered core-language series
+# ([1/15]..[16/16]), so a src/ change no section names still runs the
+# language's basic tests locally (#1347). Residual: a src/ change is covered
+# only by CI's full suite; the plan prints every one as `runtime:`.
+CHANGED_FLOOR_RE='\\[[0-9]+/1[56]\\]'
 # One printed-header predicate, shared by source validation, bearing, and witness.
 SP_HEADER_TEXT_RE='^[[][^]]+[]] .+$'
 SP_HEADER_START_RE='echo "[[]'
@@ -644,9 +651,18 @@ build_shard_plan() {
     derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
     derive_shard_assignment "$n" "$SP_WORK/weights" "$SP_WORK/assign" "$SP_WORK/groups"
     awk -v k="$k" '$2 == k { print $1 }' "$SP_WORK/assign" | sort -n > "$SP_WORK/selected"
+    finish_plan "shard $k/$n"
+    local wsec
+    wsec=$(shard_loads "$SP_WORK/weights" "$SP_WORK/assign" "$n" | awk -v k="$k" '$1 == k {print $3}')
+    note "shard=$k/$n weights=$SP_WEIGHTS_SOURCE unmeasured=$SP_WEIGHT_MISSING"
+    echo "PLAN: shard=$k/$n bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS predicted=${wsec}s unmeasured=$SP_WEIGHT_MISSING"
+}
+
+# The selected chunks' witness metadata, shared by every plan kind.
+finish_plan() {
+    local what="$1" s first bearing
     SP_SEL_CHUNKS=$(grep -c '[0-9]' "$SP_WORK/selected")
-    [ "$SP_SEL_CHUNKS" -gt 0 ] || die "shard $k/$n selected ZERO chunks"
-    local first bearing
+    [ "$SP_SEL_CHUNKS" -gt 0 ] || die "$what selected ZERO chunks"
     SP_SEL_BEARING=0
     : > "$SP_WORK/expected"
     while read -r s; do
@@ -656,11 +672,7 @@ build_shard_plan() {
         if [ "$first" != - ]; then bearing=1; SP_SEL_BEARING=$((SP_SEL_BEARING + 1)); fi
         printf '# EIGS-EXPECT\t%s\t%s\t%s\n' "$s" "$bearing" "${first:--}" >> "$SP_WORK/expected"
     done < "$SP_WORK/selected"
-    [ "$SP_SEL_BEARING" -gt 0 ] || die "shard $k/$n selected ZERO header-bearing chunks"
-    local wsec
-    wsec=$(shard_loads "$SP_WORK/weights" "$SP_WORK/assign" "$n" | awk -v k="$k" '$1 == k {print $3}')
-    note "shard=$k/$n weights=$SP_WEIGHTS_SOURCE unmeasured=$SP_WEIGHT_MISSING"
-    echo "PLAN: shard=$k/$n bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS predicted=${wsec}s unmeasured=$SP_WEIGHT_MISSING"
+    [ "$SP_SEL_BEARING" -gt 0 ] || die "$what selected ZERO header-bearing chunks"
 }
 
 check_chunk_count() {
@@ -670,9 +682,179 @@ check_chunk_count() {
         die "chunk enumeration examined=$examined floor=$CHUNK_FLOOR (scan is vacuous below floor)"
 }
 
-emit_shard() {
-    local k="$1" n="$2" out="$3" planline
-    build_shard_plan "$k" "$n" > "$SP_TMPROOT/plan.line"
+# Line numbers of the executable (non-comment) lines of FILE naming TOKEN as a
+# whole path component.
+sp_refs() {
+    grep -nE "$(sp_token_re "$2")" "$1" | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1
+}
+sp_token_re() {
+    printf '(^|[^A-Za-z0-9_.-])%s([^A-Za-z0-9_-]|$)' "$(printf '%s' "$1" | sed 's/[][\.*^$+?(){}|/]/\\&/g')"
+}
+
+# Runner lines referencing TOKEN, plus (one hop) the lines referencing each
+# test script or tool that does: a helper (test_lsp.py, lint_fixtures/) selects
+# through the script that uses it (test_lsp.sh, test_lint.sh), and a program
+# the runner names in one section still selects the other section whose
+# script re-runs it (test_tasks.eigs -> test_task_sched_trace.sh, [104b]).
+sp_select() {
+    sp_refs "$RUNNER" "$1"
+    # shellcheck disable=SC2086
+    git -C "$SP_ROOT" grep -nE -- "$(sp_token_re "$1")" -- $SP_HOP_DIRS ':!tests/run_all_tests.sh' ':!tools/section_plan.sh' 2>/dev/null \
+        | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | cut -d: -f1 | sort -u \
+        | while IFS= read -r t; do sp_refs "$RUNNER" "$(sp_file_token "$t")"; done
+}
+# How a path is named: its basename when that is unique in the tree, else
+# parent/basename (examples/functional.eigs vs lib/functional.eigs, and a
+# tests/roads/README.md is not the top-level README.md).
+sp_file_token() {
+    local b
+    b=$(basename "$1")
+    case "$1" in */*) grep -qxF -- "$b" "$SP_WORK/dupnames" && b="$(basename "$(dirname "$1")")/$b" ;; esac
+    printf '%s' "$b"
+}
+
+# Module names whose loading reaches lib/M.eigs: M, then every lib module
+# that imports or load_files one already in the set, to a fixed point.
+sp_lib_closure() {
+    local set=" $1 " frontier="$1" next m f
+    while [ -n "$frontier" ]; do
+        next=''
+        for m in $frontier; do
+            for f in $(git -C "$SP_ROOT" grep -lE "(^[[:space:]]*import[[:space:]]+$m([^A-Za-z0-9_]|\$))|lib/$m\.eigs" -- 'lib/*.eigs' 2>/dev/null); do
+                f=$(basename "$f" .eigs)
+                case "$set" in *" $f "*) ;; *) set="$set$f "; next="$next $f" ;; esac
+            done
+        done
+        frontier=$next
+    done
+    printf '%s\n' $set
+}
+
+# Changed-sections plan (#1347): the chunks a diff against BASE touches, for
+# the contributor's fast local gate. CI still runs the whole suite. The diff is
+# the WORKING TREE plus untracked files against the merge base, because an
+# uncommitted fix is exactly what this gate is run on.
+build_changed_plan() {
+    local base="$1" mb p tok d lines dlines
+    SP_WORK=$(sp_workdir changed)
+    derive_chunks "$RUNNER" > "$SP_WORK/chunks"
+    verify_partition "$RUNNER" "$SP_WORK/chunks"
+    check_chunk_count "$SP_WORK/chunks"
+    check_header_shape "$SP_WORK/chunks" "$SP_WORK/headers" || die "section header shape refused"
+    derive_chunk_weights "$SP_WORK/chunks" "$SP_WORK/weights" "$SP_WORK/missing"
+    derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
+    mb=$(git -C "$SP_ROOT" merge-base "$base" HEAD 2>/dev/null) || die "no merge base between '$base' and HEAD"
+    # --no-renames: a rename counts both sides, or a moved fixture selects nothing.
+    { git -C "$SP_ROOT" diff --no-renames --name-only "$mb" --; git -C "$SP_ROOT" ls-files --others --exclude-standard; } \
+        | sort -u > "$SP_WORK/paths"
+    : > "$SP_WORK/lines"; : > "$SP_WORK/unmatched"; : > "$SP_WORK/sourced"; : > "$SP_WORK/runtime"; SP_CHANGED_FULL=''
+    # Runner hunks select the chunk each changed line lands in (new-side
+    # numbering; a pure deletion selects the chunk holding the line before it).
+    git -C "$SP_ROOT" diff -U0 "$mb" -- tests/run_all_tests.sh \
+        | sed -n 's/^@@ -[0-9,]* +\([0-9][0-9]*\)\(,\([0-9][0-9]*\)\)\{0,1\} @@.*/\1 \3/p' \
+        | awk '{ n = ($2 == "") ? 1 : $2; if (n == 0) n = 1; for (i = 0; i < n; i++) print $1 + i }' > "$SP_WORK/hunks"
+    cat "$SP_WORK/hunks" >> "$SP_WORK/lines"
+    # Every other changed file selects the chunks that reference it: by its
+    # basename when that is unique in the tree (a test is named by basename),
+    # else by parent/basename, since examples/functional.eigs and
+    # lib/functional.eigs are different files. Plus every ancestor dir a
+    # section globs (examples/, lib/, a fixture dir), except src/ and tests/,
+    # which nearly every section names.
+    git -C "$SP_ROOT" ls-files | sed 's#.*/##' | sort | uniq -d > "$SP_WORK/dupnames"
+    while read -r p; do
+        [ -n "$p" ] && [ "$p" != tests/run_all_tests.sh ] || continue
+        # The hop also reads the tools/ gates the runner calls (docs_claims
+        # checks README.md for [99za]); a src/ file is reported as runtime
+        # anyway, and tools/ naming it (consumer_acceptance) only adds cost.
+        case "$p" in src/*) SP_HOP_DIRS=tests ;; *) SP_HOP_DIRS='tests tools' ;; esac
+        tok=$(sp_file_token "$p")
+        lines=$(sp_select "$tok")
+        # A test script may build its program names from the stem
+        # (`dict_keys_mt_single|expect.out` -> "$probe.eigs"), so a tests/
+        # file is also looked up by its stem. (Not examples/: a stem such as
+        # `hello` is a common word, and selected 64 chunks.)
+        case "$p" in tests/*.*) lines="$lines
+$(sp_select "${tok%.*}")" ;; esac
+        # A module is loaded by NAME (`import math`) or through another module
+        # (ui.eigs loads ui_theme.eigs): close over lib/ importers, then every
+        # test file that imports a module in the closure selects the sections
+        # that run it.
+        case "$p" in lib/*.eigs) lines="$lines
+$(sp_lib_closure "$(basename "$p" .eigs)" | while IFS= read -r m; do
+      sp_select "$m.eigs"
+      # Importers: tests (also programs held in string literals, "...\nimport
+      # log"), the doc fences [89] runs, the programs [97] runs.
+      git -C "$SP_ROOT" grep -lE "(^|[^A-Za-z0-9_]|\\\\n)import[[:space:]]+$m([^A-Za-z0-9_]|\$)" -- tests docs examples README.md 2>/dev/null \
+          | while IFS= read -r t; do
+                case "$t" in examples/*) sp_refs "$RUNNER" examples ;; esac
+                t=$(sp_file_token "$t"); sp_select "$t"; sp_select "${t%.*}"
+            done
+  done)" ;; esac
+        # Dirs the file sits in add the sections that glob them. A nested dir
+        # (a fixture dir) identifies the file; a top-level one (lib/,
+        # examples/) does not: any `lib/...` path matches it, so those lines
+        # select sections but never count as mapping the file.
+        dlines=''
+        d=$(dirname "$p")
+        while [ "$d" != . ]; do
+            case "$d" in
+                src|tests|tools) break ;;   # named by nearly every section
+                */*) lines="$lines
+$(sp_select "$(basename "$d")")" ;;
+                *) dlines=$(sp_refs "$RUNNER" "$d") ;;
+            esac
+            d=$(dirname "$d")
+        done
+        printf '%s\n' "$dlines" | grep . >> "$SP_WORK/lines"
+        # A reference outside every chunk (a preamble list) selects nothing,
+        # so it does not count as a match.
+        lines=$(printf '%s\n' "$lines" | awk -v pre="$SP_PREAMBLE_END" -v epi="$SP_EPILOGUE_START" '$1 > pre && $1 < epi')
+        # A file the preamble SOURCES runs inside every section.
+        if sed -n "1,${SP_PREAMBLE_END}p" "$RUNNER" | grep -E '^[[:space:]]*(\.|source)[[:space:]]' \
+            | grep -qE "$(sp_token_re "$(basename "$p")")"; then echo "$p" >> "$SP_WORK/sourced"
+        elif [ -n "$lines" ]; then printf '%s\n' "$lines" >> "$SP_WORK/lines"
+        else echo "$p" >> "$SP_WORK/unmatched"; fi
+        # The C runtime (and the build files that make it) is exercised by
+        # every section, so no name lookup maps a src/ file to its tests (src/lint.c is named only by a linkage
+        # check, not by [81]): it is always reported, and the full suite that
+        # covers it is CI's.
+        case "$p" in src/*|Makefile|build.sh) echo "$p" >> "$SP_WORK/runtime" ;; esac
+    done < "$SP_WORK/paths"
+    # An EDIT to the preamble or epilogue, or to a file it sources, changes
+    # every section: run them all.
+    SP_CHANGED_FULL=$(awk -v pre="$SP_PREAMBLE_END" -v epi="$SP_EPILOGUE_START" \
+        '$1 <= pre || $1 >= epi { print "yes"; exit }' "$SP_WORK/hunks")
+    [ ! -s "$SP_WORK/sourced" ] || SP_CHANGED_FULL=yes
+    # line -> chunk, then widen to each chunk's dependency group, plus the floor.
+    awk -v full="$SP_CHANGED_FULL" -v floor_re="$CHANGED_FLOOR_RE" '
+        FILENAME == ARGV[1] { n++; cs[n] = $1; ce[n] = $2; ids[n] = $0; next }
+        FILENAME == ARGV[2] { lead[$1] = $2; next }
+        { for (i = 1; i <= n; i++) if ($1 >= cs[i] && $1 <= ce[i]) hit[lead[cs[i]]] = 1 }
+        END {
+            for (i = 1; i <= n; i++) if (full != "" || ids[i] ~ floor_re) hit[lead[cs[i]]] = 1
+            for (i = 1; i <= n; i++) if (lead[cs[i]] in hit) print cs[i]
+        }' "$SP_WORK/chunks" "$SP_WORK/groups" "$SP_WORK/lines" | sort -n > "$SP_WORK/selected"
+    finish_plan "changed-sections plan"
+    local wsec paths unm
+    wsec=$(awk 'FNR == NR { sel[$1] = 1; next } ($2 in sel) { t += $1 } END { printf "%.0f", t / 100 }' \
+        "$SP_WORK/selected" "$SP_WORK/weights")
+    paths=$(grep -c . "$SP_WORK/paths"); unm=$(grep -c . "$SP_WORK/unmatched"); rt=$(grep -c . "$SP_WORK/runtime")
+    while read -r p; do [ -z "$p" ] || note "  unmatched: $p (no section names it; a dir glob may still run it, CI checks it)"; done < "$SP_WORK/unmatched"
+    while read -r p; do [ -z "$p" ] || note "  runtime: $p (every section exercises it; only CI's full suite covers it)"; done < "$SP_WORK/runtime"
+    # The same paths close the PLAN line, which the runner prints LAST, so the
+    # report sits where the contributor reads the verdict.
+    local notlocal
+    notlocal=$(cat "$SP_WORK/unmatched" "$SP_WORK/runtime" | grep . | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//')
+    while read -r p; do [ -z "$p" ] || note "  sourced: $p (the runner preamble sources it: the whole suite runs)"; done < "$SP_WORK/sourced"
+    [ -n "$SP_CHANGED_FULL" ] || note "  selected: $(cut -f4 "$SP_WORK/expected" | grep -o '^[[][^]]*[]]' | tr '\n' ' ')"
+    # The weights are CI ASan wall seconds, not a local prediction ([81u] is
+    # 122s there, under 1s here), so the field says what it is.
+    echo "PLAN: changed=$base paths=$paths unmatched=$unm runtime=$rt full=${SP_CHANGED_FULL:-no} bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS ci_asan_weight=${wsec}s${notlocal:+ not-run-locally: $notlocal}"
+}
+
+emit_plan() {   # emit_plan <out> <plan builder> <args...>
+    local out="$1" planline; shift
+    "$@" > "$SP_TMPROOT/plan.line"
     planline=$(cat "$SP_TMPROOT/plan.line")
     {
         echo '#!/bin/bash'
@@ -764,6 +946,51 @@ selftest() {
         "$0" --root "$SP_ROOT" --shard-owner 3 --section '[absent]' --quiet
     expect_ok 'control: emit shard passes bash syntax check' "$0" --root "$SP_ROOT" --emit-shard 2 3 "$dir/shard.sh" --quiet
     [ -s "$dir/shard.sh" ] && bash -n "$dir/shard.sh" || { echo '  FAIL: emitted shard absent or invalid'; fail=$((fail + 1)); }
+    # Changed-sections plan (#1347): a throwaway clone, one uncommitted edit
+    # per selection rule, each read back from the plan's own report.
+    expect_plan() {
+        label="$1" want="$2"; shift 2
+        out=$("$0" --root "$dir/cl" --changed HEAD 2>&1)
+        case "$out" in
+            *"$want"*) echo "  PASS: $label"; pass=$((pass + 1)) ;;
+            *) echo "  FAIL: $label (want '$want')"; printf '%s\n' "$out" | tail -4; fail=$((fail + 1)) ;;
+        esac
+        git -C "$dir/cl" checkout -q -- . && git -C "$dir/cl" clean -qfd
+    }
+    git clone -q --shared "$SP_ROOT" "$dir/cl" || { echo '  FAIL: clone for the changed plan'; fail=$((fail + 1)); }
+    expect_plan 'control: an empty diff selects the core floor alone' 'paths=0 unmatched=0 runtime=0 full=no '
+    printf '\n' >> "$dir/cl/tests/test_trace_mt.sh"
+    expect_plan 'changed: an edited test script selects its section' '[42h]'
+    sed -i.bak 's/^\(echo "\[17\/17\] Transformer Smoke.*\)$/\1 # edited/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    expect_plan 'changed: a runner hunk selects the chunk it lands in' '[17/17]'
+    sed -i.bak '1s/$/ /' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    expect_plan 'changed: a preamble edit selects the whole suite' 'full=yes'
+    : > "$dir/cl/zz_named_by_nothing.txt"
+    expect_plan 'changed: an untracked file no section names is reported' 'unmatched: zz_named_by_nothing.txt'
+    printf '\n' >> "$dir/cl/tests/dict_keys_mt_single.eigs"
+    expect_plan 'changed: a program a script names by stem selects its section' '[42i]'
+    printf '\n' >> "$dir/cl/lib/math.eigs"
+    expect_plan 'changed: a lib module selects the sections of the tests that import it' '[Call Semantics]'
+    sed -i.bak '1s/^/# edited\n/' "$dir/cl/lib/ui_theme.eigs"; rm -f "$dir/cl/lib/ui_theme.eigs.bak"
+    expect_plan 'changed: a lib module loaded only through another module selects that importer'"'"'s tests' '[63]'
+    : > "$dir/cl/lib/zz_loaded_by_nothing.eigs"
+    expect_plan 'changed: a lib file nothing loads is reported, not masked by the lib/ glob' 'not-run-locally: lib/zz_loaded_by_nothing.eigs'
+    printf '\n' >> "$dir/cl/README.md"
+    expect_plan 'changed: a top-level file whose name recurs selects its section' '[89]'
+    sed -i.bak 's/^define log_info(msg) as:/define log_infox(msg) as:/' "$dir/cl/lib/log.eigs"; rm -f "$dir/cl/lib/log.eigs.bak"
+    expect_plan 'changed: a lib module imported inside a test string literal selects that section' '[107]'
+    printf '\n' >> "$dir/cl/lib/stats.eigs"
+    expect_plan 'changed: a lib module selects the doc-fence section whose docs import it' '[89]'
+    printf '\n' >> "$dir/cl/README.md"
+    expect_plan 'changed: a doc selects the section whose tools/ gate checks it' '[99za]'
+    printf '\n' >> "$dir/cl/src/lint.c"
+    expect_plan 'changed: a src/ file is always reported as runtime' 'runtime: src/lint.c'
+    printf '\n' >> "$dir/cl/tests/failure_output.sh"
+    expect_plan 'changed: a file the preamble sources selects the whole suite' 'full=yes'
+    printf '\n' >> "$dir/cl/tests/test_tasks.eigs"
+    expect_plan 'changed: a program the runner names also selects the section whose script re-runs it' '[104b]'
+    printf '\n' >> "$dir/cl/examples/functional.eigs"
+    expect_plan 'changed: a file shares a name elsewhere; the section globbing its dir is selected' '[97]'
     # Inert runner with the real dispatch/timer preamble. Every source header
     # is top-level; a test-only echo override hides all but three at runtime.
     local stub="$dir/stub" i
@@ -825,6 +1052,8 @@ while [ "$#" -gt 0 ]; do
         --head) WEIGHTS_HEAD="$2"; shift 2 ;;
         --weights-file) WEIGHTS_FILE="$2"; shift 2 ;;
         --emit-shard) MODE="$1"; ARG1="$2"; ARG2="$3"; ARG3="$4"; shift 4 ;;
+        --changed) MODE="$1"; ARG1="$2"; shift 2 ;;
+        --emit-changed) MODE="$1"; ARG1="$2"; ARG2="$3"; shift 3 ;;
         --print-waivers) SP_PRINT_WAIVERS=1; shift ;;
         *) die "unknown argument '$1'" ;;
     esac
@@ -846,6 +1075,8 @@ case "$MODE" in
     --shard-plan) build_shard_plan "$SP_SHARD_K" "$SP_SHARDS" ;;
     --shard-owner) shard_owner "$ARG1" "$ARG2" ;;
     --print-weights) print_weights "$ARG1" ;;
-    --emit-shard) emit_shard "$ARG1" "$ARG2" "$ARG3" ;;
+    --emit-shard) emit_plan "$ARG3" build_shard_plan "$ARG1" "$ARG2" ;;
+    --changed) build_changed_plan "$ARG1" ;;
+    --emit-changed) emit_plan "$ARG2" build_changed_plan "$ARG1" ;;
     --selftest) selftest ;;
 esac

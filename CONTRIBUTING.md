@@ -22,8 +22,19 @@ Building needs only `gcc`. Running the test suite also needs `python3` with PyYA
 4. Run `make precheck` — the static gates CI runs and self-tests for gates changed against `origin/main`, no suite
    needed. It catches pipefail verdicts, section-label clashes, child-exit
    accounting, the shard plan, and a new test that no suite section runs.
-5. Run the test suite: `cd tests && bash run_all_tests.sh`
+5. Run `make test-changed` — the suite sections your change touches, picked
+   from your diff against `origin/main` (uncommitted and untracked files
+   included; `BASE=<ref>` to change it). It prints the files no section names
+   and every `src/` file as `runtime:`. The C runtime is exercised by every
+   section, so for those only CI's full suite on your PR is the real check.
+   A selected section that skips on your build (an extension such as HTTP or
+   gfx that `make` leaves out) is listed as NOT RUN LOCALLY after the results.
+   A change to the suite runner's shared preamble selects the whole suite.
 6. Open a pull request
+
+The complete suite (`make test`) takes much longer than that and is not a
+required local step: CI runs it on every PR and again in the merge queue.
+
 
 Adding a test is the test file plus its section in `tests/run_all_tests.sh` —
 no counts to bump, no documentation numbers to edit.
