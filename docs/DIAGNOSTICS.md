@@ -336,11 +336,15 @@ so `--lint --json 2>/dev/null` is pure JSON). Each element is:
   strict decoders reject while `jq` silently substituted U+FFFD, and
   `eigenlsp` publishes the same strings over JSON-RPC.
   `tools/lint_diag_writers.sh` fails if `src/` stores a diagnostic message
-  or prints a `--lint --json` string without `eigs_utf8_sanitize` (what
-  `lint_vdiag` copies through) or `lint_json_escape`. The cut itself is
-  `tests/test_lint.sh`: a long identifier that puts the em dash on the
-  256-byte boundary, decoded with `python3` (`bytes.decode` and
-  `json.loads`, never `jq`) on both channels.
+  outside `eigs_utf8_sanitize` (what `lint_vdiag` copies through). For each
+  `--lint --json` printf that carries both `severity` and `message`, every
+  identifier left after string literals are stripped must be a whole-word
+  `lint_json_escape` destination (`esc` does not match inside `pesc`). A
+  literal is ignored. The other exceptions are the fixed `.code` / `.level`
+  / first-error-code fields and the line and count arguments.
+  `tests/test_lint.sh` sweeps the identifier lengths that put each byte of
+  the em dash on that clip, including the `...` back-up, and decodes both
+  channels with `python3` (`bytes.decode` and `json.loads`, never `jq`).
   The same sanitizing applies to the human `--lint` line and to the
   parse-error source excerpt, where a byte that cannot be decoded prints as
   `?` so the caret below it still lines up. It covers the lint channels; other
