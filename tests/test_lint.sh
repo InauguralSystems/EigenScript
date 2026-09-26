@@ -2396,6 +2396,32 @@ check_contains "#1048 the chokepoint clipped the over-long message" "$OUTPUT" "\
 check_contains "#1048 W023 still reports the long binding" "$OUTPUT" "warning\[W023\]"
 rm -f "$TMPFILE"
 
+# U+2014's bytes on the 256-byte clip, and the "..." back-up (W015 72, W018 195/196, W023 158/159).
+TOTAL=$((TOTAL + 1))
+if SWEEP=$(python3 - "$EIGS" << 'PY'
+import json, os, subprocess, sys, tempfile
+eigs, bad = sys.argv[1], []
+spec = [("W015", range(72, 75), "define %s() as:\n    return 1\ndefine g() as:\n    %s is 5\n    return %s\n"),
+ ("W018", range(195, 200), "try:\n    print of ([] of 1)\ncatch %s:\n    if %s.kind == \"IO\":\n        print of 1\n"),
+ ("W023", range(158, 163), "%s is 5\ndefine f(flag) as:\n    if flag == 1:\n        local %s is 1\n    else:\n        %s is 2\n    return %s\n")]
+for code, lens, fmt in spec:
+    for n in lens:
+        a = "q" + "z" * (n - 1)
+        fd, path = tempfile.mkstemp(suffix=".eigs"); os.write(fd, (fmt % ((a,) * fmt.count("%s"))).encode()); os.close(fd)
+        try:
+            for jm in (0, 1):
+                r = subprocess.run([eigs, "--lint"] + (["--json"] if jm else []) + [path], capture_output=True)
+                raw, ch = (r.stdout, "json") if jm else (r.stderr, "human")
+                if code.encode() not in raw: bad.append("%s len=%d %s did not fire" % (code, n, ch)); continue
+                try: text = raw.decode("utf-8"); json.loads(text) if jm else None
+                except (UnicodeDecodeError, json.JSONDecodeError) as e: bad.append("%s len=%d %s MALFORMED %s" % (code, n, ch, e))
+        finally: os.unlink(path)
+sys.stdout.write("OK" if not bad else "\n".join("FAIL: #1048 sweep " + b for b in bad))
+raise SystemExit(bool(bad))
+PY
+); then echo "  PASS: #1048 em-dash clip lengths decode on both channels"; PASS=$((PASS + 1))
+else echo "  FAIL: #1048 em-dash clip length sweep"; FAIL=$((FAIL + 1)); printf '%s\n' "$SWEEP"; fi
+
 # The `for`-body-local messages take the same identifier budget.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 LONGV="w$(printf 'x%.0s' $(seq 1 199))"
