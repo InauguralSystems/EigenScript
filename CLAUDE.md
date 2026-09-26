@@ -116,7 +116,8 @@ Always-on:
   (suite [89]/[90]) — opt-OUT, so an untagged fence with no `output` block is
   RED — and `tools/docs_claims_check.sh` (suite [99za]) checks repo paths,
   CLI flags, `make` targets and stdlib calls against the tree. **Do not write
-  derived counts into front-door docs**; point readers to `eigenscript --api`,
+  derived counts into front-door docs** (`docs_claims_check.sh` refuses an
+  inventory count there); point readers to `eigenscript --api`,
   CHANGELOG.md or the relevant source instead. Historical measurements in
   CLAUDE.md's DMG incident, CHANGELOG.md and ROADMAP.md's Completed section
   describe their own past events rather than the current tree.
