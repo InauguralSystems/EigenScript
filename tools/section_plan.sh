@@ -795,7 +795,7 @@ $(sp_refs "$RUNNER" "$d")" ;;
     # The same paths close the PLAN line, which the runner prints LAST, so the
     # report sits where the contributor reads the verdict.
     local notlocal
-    notlocal=$(cat "$SP_WORK/unmatched" "$SP_WORK/runtime" | grep . | tr '\n' ' ' | sed 's/ $//')
+    notlocal=$(cat "$SP_WORK/unmatched" "$SP_WORK/runtime" | grep . | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//')
     while read -r p; do [ -z "$p" ] || note "  sourced: $p (the runner preamble sources it: the whole suite runs)"; done < "$SP_WORK/sourced"
     [ -n "$SP_CHANGED_FULL" ] || note "  selected: $(cut -f4 "$SP_WORK/expected" | grep -o '^[[][^]]*[]]' | tr '\n' ' ')"
     echo "PLAN: changed=$base paths=$paths unmatched=$unm runtime=$rt full=${SP_CHANGED_FULL:-no} bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS predicted=${wsec}s${notlocal:+ not-run-locally: $notlocal}"
