@@ -699,7 +699,7 @@ sp_token_re() {
 sp_select() {
     sp_refs "$RUNNER" "$1"
     # shellcheck disable=SC2086
-    git -C "$SP_ROOT" grep -nE -- "$(sp_token_re "$1")" -- $SP_HOP_DIRS ':!tests/run_all_tests.sh' 2>/dev/null \
+    git -C "$SP_ROOT" grep -nE -- "$(sp_token_re "$1")" -- $SP_HOP_DIRS ':!tests/run_all_tests.sh' ':!tools/section_plan.sh' 2>/dev/null \
         | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | cut -d: -f1 | sort -u \
         | while IFS= read -r t; do sp_refs "$RUNNER" "$(basename "$t")"; done
 }
