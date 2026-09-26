@@ -120,68 +120,73 @@ int tok_base_string_id_count(void) {
     return (int)TOK_EOF + 1;
 }
 
-/* Multi-char operators, longest match. The only list: tokenize() and the
- * formatter both call lexer_operator_len. */
+/* Recognised multi-char operators. Each operator is spelled once, as
+ * characters. The table and both byte filters are that list. */
+#define LEX_MULTI_OP_MAP(X2, X3) \
+    X3(TOK_SHL_EQ, '<', '<', '=') \
+    X3(TOK_SHR_EQ, '>', '>', '=') \
+    X2(TOK_EQ, '=', '=') \
+    X2(TOK_NE, '!', '=') \
+    X2(TOK_LE, '<', '=') \
+    X2(TOK_GE, '>', '=') \
+    X2(TOK_SHL, '<', '<') \
+    X2(TOK_SHR, '>', '>') \
+    X2(TOK_PLUS_EQ, '+', '=') \
+    X2(TOK_MINUS_EQ, '-', '=') \
+    X2(TOK_STAR_EQ, '*', '=') \
+    X2(TOK_SLASH_EQ, '/', '=') \
+    X2(TOK_PERCENT_EQ, '%', '=') \
+    X2(TOK_AMP_EQ, '&', '=') \
+    X2(TOK_BITOR_EQ, '|', '=') \
+    X2(TOK_CARET_EQ, '^', '=') \
+    X2(TOK_ARROW, '=', '>') \
+    X2(TOK_PIPE, '|', '>')
+
 static const struct {
-    const char *sp;
+    char sp[4];
+    unsigned char len;
     TokType ty;
 } LEX_MULTI_OPS[] = {
-    {"<<=", TOK_SHL_EQ},
-    {">>=", TOK_SHR_EQ},
-    {"==", TOK_EQ},
-    {"!=", TOK_NE},
-    {"<=", TOK_LE},
-    {">=", TOK_GE},
-    {"<<", TOK_SHL},
-    {">>", TOK_SHR},
-    {"+=", TOK_PLUS_EQ},
-    {"-=", TOK_MINUS_EQ},
-    {"*=", TOK_STAR_EQ},
-    {"/=", TOK_SLASH_EQ},
-    {"%=", TOK_PERCENT_EQ},
-    {"&=", TOK_AMP_EQ},
-    {"|=", TOK_BITOR_EQ},
-    {"^=", TOK_CARET_EQ},
-    {"=>", TOK_ARROW},
-    {"|>", TOK_PIPE},
-    {NULL, 0}
+#define X3(ty, a, b, c) { {a, b, c, 0}, 3, ty },
+#define X2(ty, a, b)    { {a, b, 0, 0}, 2, ty },
+    LEX_MULTI_OP_MAP(X2, X3)
+#undef X2
+#undef X3
 };
 
-/* First bytes of LEX_MULTI_OPS, filled from that table. A character that is
- * not one of them cannot start a multi-char operator, so the lexer does not
- * call into the scan for '(', ')', and the rest of the punctuation. */
-static unsigned char lex_multi_first[256];
-static unsigned char lex_multi_second[256];
-static int lex_multi_ready;
-
-static void lex_multi_init(void) {
-    if (__atomic_load_n(&lex_multi_ready, __ATOMIC_ACQUIRE)) return;
-    unsigned char first[256], second[256];
-    memset(first, 0, sizeof first);
-    memset(second, 0, sizeof second);
-    for (int k = 0; LEX_MULTI_OPS[k].sp; k++) {
-        const char *op = LEX_MULTI_OPS[k].sp;
-        first[(unsigned char)op[0]] = 1;
-        if (op[1]) second[(unsigned char)op[1]] = 1;
-    }
-    memcpy(lex_multi_first, first, sizeof first);
-    memcpy(lex_multi_second, second, sizeof second);
-    __atomic_store_n(&lex_multi_ready, 1, __ATOMIC_RELEASE);
-}
+/* Several operators share a first or second byte, so a designator repeats.
+ * The value is the same either way. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Woverride-init"
+static const unsigned char lex_multi_first[256] = {
+#define X3(ty, a, b, c) [(unsigned char)(a)] = 1,
+#define X2(ty, a, b)    [(unsigned char)(a)] = 1,
+    LEX_MULTI_OP_MAP(X2, X3)
+#undef X2
+#undef X3
+};
+static const unsigned char lex_multi_second[256] = {
+#define X3(ty, a, b, c) [(unsigned char)(b)] = 1,
+#define X2(ty, a, b)    [(unsigned char)(b)] = 1,
+    LEX_MULTI_OP_MAP(X2, X3)
+#undef X2
+#undef X3
+};
+#pragma GCC diagnostic pop
 
 int lexer_operator_len(const char *s, TokType *ty) {
     int best = 0;
     TokType best_ty = 0;
-    if (!s || !s[0]) return 0;
-    lex_multi_init();
+    if (!s || !s[0] || !s[1]) return 0;
     if (!lex_multi_first[(unsigned char)s[0]]) return 0;
-    if (!s[1] || !lex_multi_second[(unsigned char)s[1]]) return 0;
-    for (int k = 0; LEX_MULTI_OPS[k].sp; k++) {
+    if (!lex_multi_second[(unsigned char)s[1]]) return 0;
+    for (size_t k = 0; k < sizeof LEX_MULTI_OPS / sizeof LEX_MULTI_OPS[0]; k++) {
         const char *op = LEX_MULTI_OPS[k].sp;
+        int n = LEX_MULTI_OPS[k].len;
         if (op[0] != s[0]) continue;
-        int n = 1;
-        while (op[n] && s[n] == op[n]) n++;
-        if (!op[n] && n > best) {
+        int i = 1;
+        while (i < n && s[i] == op[i]) i++;
+        if (i == n && n > best) {
             best = n;
             best_ty = LEX_MULTI_OPS[k].ty;
         }
@@ -645,7 +650,6 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             continue;
         }
 
-        lex_multi_init();
         if (lex_multi_first[(unsigned char)*p] &&
             p[1] && lex_multi_second[(unsigned char)p[1]]) {
             TokType op_ty = 0;
