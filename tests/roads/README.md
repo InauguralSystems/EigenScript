@@ -1,6 +1,6 @@
 # The three-road oracle
 
-`bash tools/road_diff.sh` enumerates every `*.eigs` directly in this directory.
+`python3 tools/road_diff.py` enumerates every `*.eigs` directly in this directory.
 Each fixture runs as main, through `load_file`, and through `import`, from two
 working directories. Support files live under `assets/` and `eigs_modules/`, reached by the
 fixtures; they are not independent oracle programs. Each run gets a private copy
@@ -48,40 +48,12 @@ sanitizers). An error on all three roads cannot masquerade as agreement. Missing
 metadata, missing expected files, timeouts and zero fixtures fail. `--fixture
 blocks` selects a single diagnostic repro; the suite always runs the whole set.
 
-`--selftest` starts with five green controls: a numeric value, a literal `"<missing>"`
-created in a `for` body, and fixtures rebinding `print`, `has_key`/`keys`, and
-`throw`, plus a native loop with compilation statistics, an ARM64-policy control,
-and a check that the lowered threshold reaches the child. On x86-64, sixteen
-faults must go red: cwd divergence; deletion of the sentinel
-assignment; forged absence goldens for both readback-rebinding fixtures;
-incorrect return metadata despite a rebound `throw`; genuine absence where
-present `null` is expected; a nonzero exit alone; stderr alone; exit before readback; an invalid binding
-identifier; forced-off native arms; missing JIT statistics; a removed lowered
-threshold; an invalid native-header value; duplicate native headers; and zero fixtures.
-The membership control also calls the shared namespace-snapshot emitter from
-within a scope that rebinds `has_key`/`keys`, so module isolation cannot conceal
-a missing capture. The suite runs the ordinary gate and selftest.
-
-`--selftest --bad-binary /path/to/known-bad/eigenscript` replaces the assignment
-deletion and two forged goldens with execution of the unchanged sentinel,
-print-rebinding and membership-rebinding fixtures on a runtime that drops
-imported `for`-body bindings. Each plant must have clean child exits and exactly
-two import-only presence mismatches, so an unavailable or crashing binary is
-not accepted as a detected regression. The default selftest uses no external
-checkout or compiler build.
-
-The exit/stderr plants run the real binary through a bounded Python wrapper
-that changes only its process status or stderr after successful evaluation.
-Stdout must still match exactly. All six exit-plant runs return the same 17:
-cross-road status comparison must not hide a missing absolute exit check.
-
-Bought in #1056 round 3: rebinding `print` forged an absent-binding snapshot on
-the known-bad runtime, and deleting either the exit or stderr check survived
-the old selftest. The driver captures and independent process-result plants
-close those holes. Reverting the print or membership capture, delaying main's
-captures until after the fixture, using the rebound `throw`, or removing either
-process-result check now fails selftest. Existing fixture goldens are unchanged
-in this round.
+`python3 tools/road_diff.py` has no `--selftest` and no `--bad-binary`. The
+suite runs that command on the whole fixture set. A road or cwd that prints
+differently, a missing or empty golden, a nonzero child, stderr, a missing
+completion marker, bad metadata, or zero fixtures fails the run and names the
+fixture. The driver still captures `print`, `has_key`, `load_file` and `throw`
+before the fixture, and still requires the completion marker exactly once.
 
 Bought in #1056 round 2: the old `[name, "<missing>"]` representation gave a
 false green on the known-bad runtime when the actual value was that same string.
@@ -166,13 +138,10 @@ OSR. The reference requires `compiled=0`; each
 native arm requires `compiled>0`. On ARM64, which has no JIT emitter, the gate
 prints an explicit notice and runs only the reference tier (still requiring
 its stats and `compiled=0`) on all roads/cwds. This does not waive a zero-compilation
-native arm on x86-64. A separate selftest simulates this ARM64 policy.
-The gate strips only that recognized stats
-line from stderr; every other diagnostic still fails. The selftest runs a
-known native loop, then forces JIT off or removes its stats through child
-wrappers and requires named failures with matching stdout. Another wrapper
-checks the child environment for the lowered threshold; removing that setting
-must fail even when compilation statistics and stdout stay identical.
+native arm on x86-64. The gate strips only that recognized
+stats line from stderr; every other diagnostic still fails. The reference arm
+sets `EIGS_JIT_OFF=1` and the `osr` arm sets `EIGS_JIT_OSR_THRESHOLD=1` on the
+child. There is no separate self-test of those arms.
 
 `native_alternate`, `native_late`, `native_outer`, `native_match`, and
 `native_catch` use the critic's compilable inner loops to exercise the helper
@@ -195,21 +164,14 @@ independent value oracle; existing goldens are unchanged.
 
 ## Embed provenance and override audit
 
-`python3 tools/embed_roads.py --selftest` builds `make embed-roads` without
-relinking the CLI. A unique objdir inode match reuses that build variant.
-A standalone `build.sh` CLI or ambiguous match uses the plain SOURCES list
-through the release objects, or ASan objects when ASAN_OPTIONS is set.
-The test covers provenance semantics with either layout; it does not infer
-an unidentified CLI's compiler flags. Four metadata controls exercise zero,
-one, and multiple matches, including the sanitizer fallback.
-Its C harness checks `eigs_eval_file`, successive `eigs_eval_string` calls,
-loaded helpers, imported wrappers, and restoration to no-file string eval.
-A registered host probe checks the compile override while each file executes.
-A wrong helper peer, a missing fixture tree, a nonzero exit, stderr, zero
-checks, and a compile override planted only during a host probe must fail its
-selftest. The scope plant leaves file lookup and ordinary values untouched,
-so gutting host_scope_clean makes the selftest fail. Process plants must retain the healthy C result
-and produce exactly their intended symptom.
+`python3 tools/embed_roads.py` builds `make embed-roads` without relinking
+the CLI and runs the C harness. A unique objdir inode match reuses that
+build variant. A standalone `build.sh` CLI or ambiguous match uses the
+plain SOURCES list through the release objects, or ASan objects when
+ASAN_OPTIONS is set. The harness checks `eigs_eval_file`, successive
+`eigs_eval_string` calls, loaded helpers, imported wrappers, and
+restoration to no-file string eval. A registered host probe checks the
+compile override while each file executes.
 
 | Directory state | Lifetime and regression coverage |
 |---|---|

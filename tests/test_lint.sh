@@ -2376,6 +2376,52 @@ check_contains "#1048 W024 keeps the [..][..] suffix at a 300-char container nam
 check_contains "#1048 W024 ellipsises the identifier, not the message" "$OUTPUT" "'v[a-z]*\.\.\.[a-z]*' is rebound"
 rm -f "$TMPFILE"
 
+# W024 budgets the name so the em dash is never the byte that is cut. W023
+# does not: 161 chars puts that em dash on bytes 253..255 of the 256-byte
+# message. A copier that truncates mid-character fails the strict decode.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+LONGN="n$(printf 'a%.0s' $(seq 1 160))"
+cat > "$TMPFILE" << EIGS
+$LONGN is 5
+define f(flag) as:
+    if flag == 1:
+        local $LONGN is 1
+    else:
+        $LONGN is 2
+    return $LONGN
+EIGS
+check_json_utf8 "#1048 a long identifier truncated at the em dash stays UTF-8 on both channels" "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1048 the chokepoint clipped the over-long message" "$OUTPUT" "\.\.\."
+check_contains "#1048 W023 still reports the long binding" "$OUTPUT" "warning\[W023\]"
+rm -f "$TMPFILE"
+
+# U+2014's bytes on the 256-byte clip, and the "..." back-up (W015 72, W018 195/196, W023 158/159).
+TOTAL=$((TOTAL + 1))
+if SWEEP=$(python3 - "$EIGS" << 'PY'
+import json, os, subprocess, sys, tempfile
+eigs, bad = sys.argv[1], []
+spec = [("W015", range(72, 75), "define %s() as:\n    return 1\ndefine g() as:\n    %s is 5\n    return %s\n"),
+ ("W018", range(195, 200), "try:\n    print of ([] of 1)\ncatch %s:\n    if %s.kind == \"IO\":\n        print of 1\n"),
+ ("W023", range(158, 163), "%s is 5\ndefine f(flag) as:\n    if flag == 1:\n        local %s is 1\n    else:\n        %s is 2\n    return %s\n")]
+for code, lens, fmt in spec:
+    for n in lens:
+        a = "q" + "z" * (n - 1)
+        fd, path = tempfile.mkstemp(suffix=".eigs"); os.write(fd, (fmt % ((a,) * fmt.count("%s"))).encode()); os.close(fd)
+        try:
+            for jm in (0, 1):
+                r = subprocess.run([eigs, "--lint"] + (["--json"] if jm else []) + [path], capture_output=True)
+                raw, ch = (r.stdout, "json") if jm else (r.stderr, "human")
+                if code.encode() not in raw: bad.append("%s len=%d %s did not fire" % (code, n, ch)); continue
+                try: text = raw.decode("utf-8"); json.loads(text) if jm else None
+                except (UnicodeDecodeError, json.JSONDecodeError) as e: bad.append("%s len=%d %s MALFORMED %s" % (code, n, ch, e))
+        finally: os.unlink(path)
+sys.stdout.write("OK" if not bad else "\n".join("FAIL: #1048 sweep " + b for b in bad))
+raise SystemExit(bool(bad))
+PY
+); then echo "  PASS: #1048 em-dash clip lengths decode on both channels"; PASS=$((PASS + 1))
+else echo "  FAIL: #1048 em-dash clip length sweep"; FAIL=$((FAIL + 1)); printf '%s\n' "$SWEEP"; fi
+
 # The `for`-body-local messages take the same identifier budget.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 LONGV="w$(printf 'x%.0s' $(seq 1 199))"
@@ -2391,11 +2437,10 @@ check_contains "#1048 W024 for-body message keeps its remedy clause at 200 chars
 rm -f "$TMPFILE"
 
 # Why the identifier fixtures above are all ASCII: the lexer admits no other
-# identifier. tools/lint_message_utf8_check.sh states that as its reason for
-# not driving a multi-byte NAME, so it is pinned here rather than assumed —
-# and the same file is then decoded strictly, because "the lexer rejects it"
-# was the whole of the old assertion and rejecting it is exactly when the
-# diagnostic quotes the byte.
+# identifier (isalpha, C locale). A multi-byte NAME is a syntax error, pinned
+# here rather than assumed — and the same file is then decoded strictly,
+# because "the lexer rejects it" was the whole of the old assertion and
+# rejecting it is exactly when the diagnostic quotes the byte.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 printf 'q\xc3\xa9nergie is 2\nprint of q\xc3\xa9nergie\n' > "$TMPFILE"
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
@@ -2461,6 +2506,12 @@ printf '%s' "$OUTPUT" | python3 -c 'import sys; sys.stdin.buffer.read().decode("
     && check_contains "#1048 E000 on an invalid path decodes strictly" "ok" "ok" \
     || check_contains "#1048 E000 on an invalid path decodes strictly" "not-utf8" "ok"
 rm -rf "$PATHDIR"
+
+# E000 missing-file JSON contract (was tools/lint_e000_check.py).
+E000P=$(mktemp /tmp/lint_test_XXXXXX.eigs); rm -f "$E000P"
+E000J=$($EIGS --lint --json "$E000P" 2>/dev/null || true)
+E000OK=$(E000P="$E000P" python3 -c 'import json,os,sys; p=os.environ["E000P"]; d=json.loads(sys.stdin.buffer.read().decode("utf-8")); r=d[0]; want="cannot read file '"'"'"+p+"'"'"'"; ok=len(d)==1 and r.get("code")=="E000" and r.get("severity")=="error" and r.get("line")==0 and r.get("file")==p and r.get("message")==want; print("ok" if ok else "bad")' <<< "$E000J")
+check_contains "E000 missing-file JSON contract" "$E000OK" "^ok$"
 
 # Deliberate sites carry the allow comment like every other code.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)

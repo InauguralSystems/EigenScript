@@ -3307,9 +3307,10 @@ typedef enum {
 /* Emit, shrinking the identifier budget until the whole message fits
  * LintWarning.message. The literals below are the contract this loop keeps:
  * the smallest budget must fit them with room for both names, the read form
- * and the spelling — asserted by the fixtures in tests/test_lint.sh (a
- * 200-character identifier) and by tools/lint_message_utf8_check.sh, which
- * decodes `--lint --json` strictly for every registered code. */
+ * and the spelling — asserted by the long-identifier fixtures in
+ * tests/test_lint.sh. This loop keeps W024 off the copier's truncation;
+ * a name that does land the em dash on the buffer boundary is a separate
+ * fixture there. */
 static void w024_emit(LintContext *ctx, int line, W024Msg kind,
                       const char *name, const char *rhs, const char *read_form) {
     static const size_t budgets[] = { 128, 96, 64, 48, 32, 24, 16, 12, 8 };

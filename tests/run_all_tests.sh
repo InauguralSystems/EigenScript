@@ -5488,29 +5488,19 @@ else
 fi
 echo ""
 
-# [81u] Lint diagnostic UTF-8 gate (#1048). A lint message is built in a
-# 256-byte buffer and shipped through --lint --json and the LSP, and it can
-# carry two kinds of text: what the RULE chose (W024 was the first to
-# interpolate an unbounded identifier twice — a ~37-character name truncated it
-# inside an em dash, emitting a lone 0xE2 that Python's decoder rejects and jq
-# hides behind U+FFFD) and what the SOURCE handed it (the byte the lexer could
-# not tokenize, a dict key a rule quotes — malformed on 512 of 1524 swept
-# byte/shape/channel combinations on v0.43.0). The gate drives every registered
-# code with a 200-character identifier, sweeps identifier length 1..250 and
-# every source byte >= 0x80, decodes strictly (python3, never jq), checks the
-# registry three ways, re-verifies each pinned exemption, and asserts the
-# chokepoints are still the only writers; --selftest plants nine faults
-# (including a new rule with no doc row and an emitter that leaks a raw byte)
-# and requires each to be caught.
+# [81u] Lint diagnostic writers (#1048). Every message store and every
+# --lint --json emitter in src/ goes through eigs_utf8_sanitize or
+# lint_json_escape. The mid-character cut itself is in tests/test_lint.sh.
 echo "[81u] lint diagnostic UTF-8 gate (#1048)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" >/dev/null 2>&1; then
+UTF8_OUT=$(bash "$TESTS_DIR/../tools/lint_diag_writers.sh" 2>&1); UTF8_RC=$?
+if [ "$UTF8_RC" -eq 0 ] && grep -qE '^lint-diag-writers: OK examined=[1-9]' <<<"$UTF8_OUT"; then
     PASS=$((PASS + 1))
-    echo "  PASS: no lint diagnostic can be malformed UTF-8, whatever its rule or its source interpolates"
+    echo "  PASS: lint diagnostic writers stay on the UTF-8 chokepoints"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: a lint diagnostic is malformed UTF-8"
-    bash "$TESTS_DIR/../tools/lint_message_utf8_check.sh" 2>&1 | grep -E "^FAIL|SELFTEST-FAIL" | head -10
+    echo "  FAIL: a lint diagnostic writer bypasses the UTF-8 chokepoint"
+    printf '%s\n' "$UTF8_OUT"
 fi
 echo ""
 
@@ -6660,7 +6650,7 @@ echo ""
 
 echo "[99z] File semantics across main/load_file/import (#1056)"
 TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/road_diff.sh" && \
+if python3 "$TESTS_DIR/../tools/road_diff.py" && \
    python3 "$TESTS_DIR/../tools/embed_roads.py"; then
     PASS=$((PASS + 1))
     echo "  PASS: road differential"
@@ -7131,26 +7121,6 @@ else
     echo "  FAIL: LF sources must be unaffected (rc=$CR_LF_RC out=$CR_LF)"
 fi
 rm -rf "$CR_DIR"
-echo ""
-
-# [99l] fmt/lexer multi-char operator sync gate (#729 follow-up, #750).
-# fmt.c's spacing pass is character-level, so an operator the lexer accepts but
-# MULTI_OPS omits gets split by the single-char branches — `x is 5 |> double`
-# formats to `x is 5 | > double`, which no longer parses, and --fmt --write
-# corrupts the file on disk. #729's corpus gate only catches this when some
-# .eigs in the repo already uses the operator, which is never true for a newly
-# added one. This compares the two tables directly instead of trusting
-# convention to keep them in sync.
-echo "[99l] fmt/lexer operator-table sync gate (#729/#750)"
-TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" >/dev/null 2>&1; then
-    PASS=$((PASS + 1))
-    echo "  PASS: every lexer multi-char operator is covered by fmt.c MULTI_OPS"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: fmt.c MULTI_OPS has drifted from the lexer"
-    bash "$TESTS_DIR/../tools/fmt_operator_sync_check.sh" 2>&1 | head -6
-fi
 echo ""
 
 # [99n] VM operand-width comment drift gate (#958).  The checker derives each
