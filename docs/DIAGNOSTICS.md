@@ -335,8 +335,10 @@ so `--lint --json 2>/dev/null` is pure JSON). Each element is:
   This is a consumer-visible contract: a byte-level cut produced a payload
   strict decoders reject while `jq` silently substituted U+FFFD, and
   `eigenlsp` publishes the same strings over JSON-RPC.
-  `tools/lint_diag_writers.sh` fails if `src/` stores a diagnostic message
-  outside `eigs_utf8_sanitize` (what `lint_vdiag` copies through). For each
+  `tools/lint_diag_writers.sh` is a textual check of the writers: it fails
+  when a one-line copy call (`snprintf`, `strcpy`, `memcpy`, ...) stores a
+  diagnostic message outside `eigs_utf8_sanitize` (what `lint_vdiag` copies
+  through). Its stated residuals are in its header. For each
   `--lint --json` printf that carries both `severity` and `message`, every
   identifier left after string literals are stripped must be a whole-word
   `lint_json_escape` destination (`esc` does not match inside `pesc`). A

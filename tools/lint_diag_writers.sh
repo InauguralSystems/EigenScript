@@ -2,8 +2,9 @@
 # Message stores use eigs_utf8_sanitize. Each --lint --json %s is a whole
 # lint_json_escape destination, or a literal / .code / .level / error-code
 # field (`esc` does not match inside `pesc`). Zero writers is RED.
-# Residual: pointer aliases, and a printf whose severity and message sit
-# more than 8 lines apart.
+# Residual (a textual check, not a proof): pointer aliases; a store call split
+# across lines; strcat/strncat/memmove/stpcpy or indexed stores into .message;
+# a printf whose severity and message sit more than 8 lines apart.
 set -eu
 cd "$(dirname "$0")/.."
 exec python3 - << 'PY'
