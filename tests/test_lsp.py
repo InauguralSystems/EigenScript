@@ -119,6 +119,27 @@ def did_open(text, version=1):
                                         "version": version, "text": text}}}
 
 
+EIGS = os.environ.get("EIGENSCRIPT", os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "src", "eigenscript"))
+
+
+def run_eigs(src):
+    """Run `src` with the CLI and return (rc, stdout) — an applied rename is
+    judged by what the edited program PRINTS, not only by its text."""
+    p = subprocess.run([EIGS, "-e", src], capture_output=True, text=True,
+                       timeout=15, stdin=subprocess.DEVNULL)
+    return p.returncode, p.stdout
+
+
+def rename_at(doc, rid, line, character, new_name):
+    rq = {"jsonrpc": "2.0", "id": rid, "method": "textDocument/rename",
+          "params": {"textDocument": {"uri": URI},
+                     "position": {"line": line, "character": character},
+                     "newName": new_name}}
+    r = converse([INIT, did_open(doc), rq, SHUTDOWN, EXIT])
+    return apply_rename(doc, (by_id(r, rid) or {}).get("result"))
+
+
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
 SHUTDOWN = {"jsonrpc": "2.0", "id": 99, "method": "shutdown"}
 EXIT = {"jsonrpc": "2.0", "method": "exit"}
@@ -580,6 +601,74 @@ def main():
     applied = apply_rename(defp2_doc, (by_id(r, 25) or {}).get("result"))
     check("rename param renames a default expr that references it",
           applied == "define g(p, y is p) as:\n    return p + y\n")
+
+    # --- #1243: a lambda parameter is its own binding. Renaming the global
+    # must leave a shadowing lambda's signature and body alone — renaming x to
+    # `other` used to capture the lambda's second parameter and change 16 to 18.
+    lam_doc = ("x is 3\nf is (x, other) => x + other\n"
+               "print of (f of [7, 9])\nprint of x\n")
+    applied = rename_at(lam_doc, 30, 0, 0, "other")
+    check("rename global skips a shadowing lambda param (#1243)",
+          applied == "other is 3\nf is (x, other) => x + other\n"
+                     "print of (f of [7, 9])\nprint of other\n")
+    check("renamed program prints what the original printed (#1243)",
+          run_eigs(lam_doc) == (0, "16\n3\n") and
+          run_eigs(applied or "") == (0, "16\n3\n"))
+    # renaming the lambda parameter touches only that lambda
+    sib_doc = ("x is 3\nf is (x, other) => x + other\ng is (x) => x * 2\n"
+               "print of x\n")
+    applied = rename_at(sib_doc, 31, 1, 6, "y")
+    check("rename lambda param stays in its lambda (global, sibling untouched)",
+          applied == "x is 3\nf is (y, other) => y + other\ng is (x) => x * 2\n"
+                     "print of x\n")
+    # nested lambdas: the outer parameter is captured by the inner body
+    nest_doc = "a is 1\nk is (a) => (b) => a + b\nm is (a) => a\nprint of a\n"
+    applied = rename_at(nest_doc, 32, 1, 6, "q")
+    check("rename outer lambda param follows the capture into a nested lambda",
+          applied == "a is 1\nk is (q) => (b) => q + b\nm is (a) => a\nprint of a\n")
+    applied = rename_at(nest_doc, 33, 0, 0, "g")
+    check("rename global skips nested shadowing lambdas",
+          applied == "g is 1\nk is (a) => (b) => a + b\nm is (a) => a\nprint of g\n")
+    # a global captured by a lambda body IS renamed; the lambda body ends at
+    # the list comma, so a later same-named element is the global again
+    cap_doc = ("base is 10\nadd is (v) => v + base\nv is 5\n"
+               "ps is [(v) => v + base, v]\n")
+    applied = rename_at(cap_doc, 34, 0, 0, "root")
+    check("rename global follows captures inside lambda bodies",
+          applied == "root is 10\nadd is (v) => v + root\nv is 5\n"
+                     "ps is [(v) => v + root, v]\n")
+    applied = rename_at(cap_doc, 35, 2, 0, "w")
+    check("lambda body ends at the list comma (outer element renamed)",
+          applied == "base is 10\nadd is (v) => v + base\nw is 5\n"
+                     "ps is [(v) => v + base, w]\n")
+    # () => ... binds the implicit n, like a no-arg define
+    impl_doc = "n is 4\nz is () => n * 2\nprint of n\n"
+    applied = rename_at(impl_doc, 36, 0, 0, "m")
+    check("rename global n skips a zero-param lambda's implicit n",
+          applied == "m is 4\nz is () => n * 2\nprint of m\n")
+
+    # Round-2 review of #1330: the lambda recognizer must accept the parser's
+    # parameter tokens (soft keywords such as `at`), and a lambda body ends
+    # where the parser ends it, at a comprehension's `for`/`if`.
+    sk_doc = ("x is 3\nf is (x, other, at) => x + other + at\n"
+              "print of (f of [1, 2, 4])\nprint of x\n")
+    applied = rename_at(sk_doc, 37, 0, 0, "other")
+    check("rename global skips a lambda whose params include a soft keyword",
+          applied == "other is 3\nf is (x, other, at) => x + other + at\n"
+                     "print of (f of [1, 2, 4])\nprint of other\n"
+          and run_eigs(sk_doc) == (0, "7\n3\n") and run_eigs(applied) == (0, "7\n3\n"))
+    cf_doc = "xs is [1, 2]\nfs is [(xs) => xs * 2 for v in xs]\nprint of (len of fs)\n"
+    applied = rename_at(cf_doc, 38, 0, 0, "ys")
+    check("lambda body ends at a comprehension's `for` (iterable is outer)",
+          applied == "ys is [1, 2]\nfs is [(xs) => xs * 2 for v in ys]\nprint of (len of fs)\n"
+          and run_eigs(cf_doc) == (0, "2\n") and run_eigs(applied) == (0, "2\n"))
+    # A lambda as the iterable, followed by a filter: the filter's `xs` is the
+    # outer binding. (It parses; it cannot run, since iterating a function
+    # raises, so this row checks the edit text only.)
+    ci_doc = "xs is 1\nfs is [v for v in (xs) => [xs] if xs]\n"
+    applied = rename_at(ci_doc, 39, 0, 0, "ys")
+    check("lambda body ends at a comprehension's `if` (filter is outer)",
+          applied == "ys is 1\nfs is [v for v in (xs) => [xs] if ys]\n")
 
     # --- rename of a builtin/keyword is refused (null) ---
     rn_kw = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/rename",
