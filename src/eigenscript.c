@@ -50,12 +50,19 @@
  * four siblings (#955) — per-context, so two EigsStates on one thread
  * cannot cross-read known-ness. */
 
-void eigs_record_first_error_code_at(int line, int col, int len,
-                                     const char *code, const char *msg) {
+static void record_first_error(int line, int col, int len, const char *code,
+                               const char *msg, int from_lexer, int on_synth) {
     int candidate_col_known = col >= 0 && len > 0;
     if (g_first_error_line > 0) {
         if (line <= 0 || line > g_first_error_line) return;
         if (line == g_first_error_line) {
+            /* A token the f-string lowering synthesized exists only because
+             * the lexer lowered that f-string; once the lexer has failed on
+             * this line (e.g. its nesting limit), an error on that
+             * scaffolding is the lexer error's cascade, however early its
+             * column (#1244). Errors on real source tokens still compete by
+             * column. */
+            if (g_first_error_from_lexer && on_synth) return;
             if (!g_first_error_col_known || !candidate_col_known ||
                 col >= g_first_error_col) return;
         }
@@ -65,7 +72,22 @@ void eigs_record_first_error_code_at(int line, int col, int len,
     g_first_error_col = candidate_col_known ? col : 0;
     g_first_error_len = len;
     g_first_error_col_known = candidate_col_known;
+    g_first_error_from_lexer = from_lexer;
     snprintf(g_first_error_msg, sizeof(g_first_error_msg), "%s", msg ? msg : "syntax error");
+}
+
+void eigs_record_first_error_code_at(int line, int col, int len,
+                                     const char *code, const char *msg) {
+    record_first_error(line, col, len, code, msg, 0, 0);
+}
+
+void eigs_record_synth_error_code_at(int line, int col, int len,
+                                     const char *code, const char *msg) {
+    record_first_error(line, col, len, code, msg, 0, 1);
+}
+
+void eigs_record_lexer_error_at(int line, int col, int len, const char *msg) {
+    record_first_error(line, col, len, "E002", msg, 1, 0);
 }
 
 void eigs_record_first_error_at(int line, int col, int len, const char *msg) {

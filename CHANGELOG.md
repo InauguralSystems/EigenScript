@@ -806,6 +806,17 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **LSP rename edits identifiers inside f-string interpolations in place
+  (#1244).** The lexer spliced an interpolation's tokens at the column after
+  its closing `}`, so renaming `count` in `f"value={count}"` wrote over the
+  closing quote and left an unterminated f-string. Interpolated tokens now
+  keep their own source line, column and length. The tokens the lowering
+  synthesizes (`(`, `str of`, `+`, literal segments) carry a `synth` flag,
+  and rename, cursor lookup and semantic tokens skip them. They keep a real
+  column, so a parse error on one still reports its position in
+  `--lint --json`; an error on such a token does not displace a lexer error
+  already recorded on its line (the f-string nesting-limit message).
+
 - **LSP rename respects lambda parameter scopes (#1243).** A lambda's
   parameters resolved to the same-named global, so renaming the global also
   rewrote the lambda's signature and body. Renaming `x` to `other` in

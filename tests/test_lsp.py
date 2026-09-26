@@ -131,13 +131,39 @@ def run_eigs(src):
     return p.returncode, p.stdout
 
 
-def rename_at(doc, rid, line, character, new_name):
+def rename_result(doc, rid, line, character, new_name):
     rq = {"jsonrpc": "2.0", "id": rid, "method": "textDocument/rename",
           "params": {"textDocument": {"uri": URI},
                      "position": {"line": line, "character": character},
                      "newName": new_name}}
     r = converse([INIT, did_open(doc), rq, SHUTDOWN, EXIT])
-    return apply_rename(doc, (by_id(r, rid) or {}).get("result"))
+    return (by_id(r, rid) or {}).get("result")
+
+
+def rename_at(doc, rid, line, character, new_name):
+    return apply_rename(doc, rename_result(doc, rid, line, character, new_name))
+
+
+def apply_rename_bytes(doc, result):
+    """apply_rename, with ranges taken as UTF-8 BYTE offsets (the server
+    advertises utf-8 positions), and refusing an out-of-bounds range —
+    an edit past the end of its line is a server bug, not a no-op."""
+    if not isinstance(result, dict):
+        return None
+    edits = result.get("changes", {}).get(URI)
+    if not isinstance(edits, list):
+        return None
+    lines = [l.encode("utf-8") for l in doc.split("\n")]
+    for e in sorted(edits, key=lambda e: (e["range"]["start"]["line"],
+                                          e["range"]["start"]["character"]),
+                    reverse=True):
+        s, en = e["range"]["start"], e["range"]["end"]
+        ln = s["line"]
+        if s["line"] != en["line"] or en["character"] > len(lines[ln]):
+            return None
+        lines[ln] = (lines[ln][:s["character"]] + e["newText"].encode("utf-8") +
+                     lines[ln][en["character"]:])
+    return "\n".join(l.decode("utf-8") for l in lines)
 
 
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
@@ -670,6 +696,37 @@ def main():
     check("lambda body ends at a comprehension's `if` (filter is outer)",
           applied == "ys is 1\nfs is [v for v in (xs) => [xs] if ys]\n")
 
+    # --- #1244: identifiers inside an f-string interpolation keep their own
+    # source span. They used to be spliced at the column after `}`, so the
+    # edit landed on the closing quote and broke the program.
+    fs_doc = 'count is 7\nprint of f"value={count}"\n'
+    applied = apply_rename_bytes(fs_doc, rename_result(fs_doc, 40, 0, 0, "total"))
+    check("rename inside an f-string interpolation edits the identifier (#1244)",
+          applied == 'total is 7\nprint of f"value={total}"\n')
+    check("f-string rename keeps the program's output (#1244)",
+          run_eigs(fs_doc) == (0, "value=7\n") and
+          run_eigs(applied or "") == (0, "value=7\n"))
+    # several interpolations, surrounding text, non-ASCII literal text before
+    # an identifier (UTF-8 byte positions), and a plain reference as control
+    fs2_doc = ('count is 7\nprint of f"a {count} b {count + 1} \u00e9 {count}!"\n'
+               'print of ("v=" + (str of count))\n')
+    applied = apply_rename_bytes(fs2_doc, rename_result(fs2_doc, 41, 0, 0, "total"))
+    check("rename hits every interpolation, incl. after non-ASCII text (#1244)",
+          applied == ('total is 7\nprint of f"a {total} b {total + 1} \u00e9 {total}!"\n'
+                      'print of ("v=" + (str of total))\n'))
+    check("multi-interpolation rename keeps the output (#1244)",
+          run_eigs(fs2_doc)[1] == run_eigs(applied or "")[1] == "a 7 b 8 \u00e9 7!\nv=7\n")
+    # rename started FROM the interpolated occurrence resolves the same binding
+    applied = apply_rename_bytes(fs_doc, rename_result(fs_doc, 42, 1, 19, "total"))
+    check("rename from inside the interpolation (#1244)",
+          applied == 'total is 7\nprint of f"value={total}"\n')
+    # the f-string lowering's own `str` is not a source occurrence: a user
+    # binding named str is renamed only where the source says str
+    str_doc = 'str is 3\nprint of f"<{str}>"\n'
+    applied = apply_rename_bytes(str_doc, rename_result(str_doc, 43, 0, 0, "s"))
+    check("synthetic `str of` from f-string lowering is never renamed (#1244)",
+          applied == 's is 3\nprint of f"<{s}>"\n')
+
     # --- rename of a builtin/keyword is refused (null) ---
     rn_kw = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/rename",
              "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 0},
@@ -866,6 +923,57 @@ def main():
           any(ty == fi for (_, _, _, ty) in toks))
     check("semanticTokens carries accurate lengths (22 → len 2)",
           any(ty == ni and L == 2 for (_, _, L, ty) in toks))
+
+    # #1244: f-string lowering tokens are flagged synthetic and skipped, so
+    # the stream stays in source order and the interpolated identifier sits
+    # at its real column.
+    fst = {"jsonrpc": "2.0", "id": 44, "method": "textDocument/semanticTokens/full",
+           "params": {"textDocument": {"uri": URI}}}
+    r = converse([INIT, did_open('count is 7\nprint of f"value={count}"\n'), fst,
+                  SHUTDOWN, EXIT])
+    fres = (by_id(r, 44) or {}).get("result")
+    fdata = fres.get("data") if isinstance(fres, dict) else []
+    ftoks, ln, ch = [], 0, 0
+    for i in range(0, len(fdata or []), 5):
+        dl, dc, L, ty, _mod = fdata[i:i + 5]
+        ln += dl
+        ch = (ch + dc) if dl == 0 else dc
+        ftoks.append((ln, ch, L))
+    check("semanticTokens place an interpolated name at its source span (#1244)",
+          (1, 18, 5) in ftoks and
+          all(a[0] < b[0] or (a[0] == b[0] and a[1] + a[2] <= b[1])
+              for a, b in zip(ftoks, ftoks[1:])))
+
+    # #1244: a parse error ON a synthesized token (the `)` closing the lowered
+    # interpolation) still reports a real source column in `--lint --json`,
+    # not column 1; the depth-limit lexer error is not displaced by the parse
+    # errors it causes on the same line.
+    import tempfile
+    for src, want_col, label in (
+            ('x is 1\ny is f"{[x}"\n', 12, "unclosed list"),
+            ('x is 1\ny is f"{x.}"\n', 12, "dangling dot"),
+            (deep_fstring + "\n", None, "depth limit")):
+        with tempfile.NamedTemporaryFile("w", suffix=".eigs", delete=False) as tf:
+            tf.write(src)
+        try:
+            p = subprocess.run([EIGS, "--lint", "--json", tf.name], capture_output=True,
+                               text=True, timeout=15, stdin=subprocess.DEVNULL)
+        finally:
+            os.unlink(tf.name)
+        try:
+            ds = json.loads(p.stdout)
+        except ValueError:
+            ds = []
+        e = [d for d in ds if d.get("severity") == "error"]
+        if want_col is None:
+            ok = (len(e) == 1 and e[0].get("line") == 1 and
+                  e[0].get("message") == "f-string nesting too deep (max 64 levels)")
+        else:
+            ok = len(e) == 1 and e[0].get("line") == 2 and e[0].get("column") == want_col
+        check(f"--lint --json error on a synthesized token keeps its column: {label} (#1244)",
+              ok)
+        if not ok:
+            print("    got:", p.stdout[:300])
 
     # #880: a CRLF document must behave exactly like the LF one. The
     # JSON-RPC unescaper used to drop \r (re-emitting the backslash), so a

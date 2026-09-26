@@ -114,6 +114,14 @@ static void p_print_caret(int line, int col) {
 static __thread int g_stmt_err_base  = 0;
 static __thread int g_stmt_start_pos = -1;
 
+/* Record a parse error located at token `t`. A synthesized f-string token
+ * (#1244) reports its real column but does not displace a lexer error on
+ * its line: see record_first_error in eigenscript.c. */
+static void p_record_tok_error(const Token *t, const char *code, const char *msg) {
+    if (t->synth) eigs_record_synth_error_code_at(t->line, t->col, t->len, code, msg);
+    else eigs_record_first_error_code_at(t->line, t->col, t->len, code, msg);
+}
+
 static void p_end_statement(Parser *p) {
     if (p_match(p, TOK_NEWLINE)) return;
     TokType t = p_cur(p)->type;
@@ -173,7 +181,7 @@ static void p_end_statement(Parser *p) {
         char m[160];
         snprintf(m, sizeof(m), "unexpected %s after statement",
                  tok_type_name(tok->type));
-        eigs_record_first_error_at(tok->line, tok->col, tok->len, m);
+        p_record_tok_error(tok, "E002", m);
     }
     p_print_caret(tok->line, tok->col);
     g_parse_errors++;
@@ -199,7 +207,7 @@ static int p_report_error(Token *t, int operand) {
                              : "use it with 'of variable', never as a binding");
     fprintf(stderr, "Parse error line %d:%d: %s [E005]\n",
             t->line, t->col + 1, msg);
-    eigs_record_first_error_code_at(t->line, t->col, t->len, "E005", msg);
+    p_record_tok_error(t, "E005", msg);
     p_print_caret(t->line, t->col);
     g_parse_errors++;
     return 1;
@@ -219,8 +227,7 @@ static void p_expect(Parser *p, TokType type) {
             char m[160];
             snprintf(m, sizeof(m), "expected %s, got %s",
                      tok_type_name(type), tok_type_name(p_cur(p)->type));
-            eigs_record_first_error_at(p_cur(p)->line, p_cur(p)->col,
-                                       p_cur(p)->len, m);
+            p_record_tok_error(p_cur(p), "E002", m);
         }
         p_print_caret(p_cur(p)->line, p_cur(p)->col);
         g_parse_errors++;

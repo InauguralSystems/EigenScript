@@ -155,6 +155,8 @@ typedef struct {
     int line;
     int col;    /* 0-based column offset */
     int len;    /* source lexeme length (for spans: semantic tokens, hover) */
+    unsigned char synth;  /* 1 = synthesized by f-string lowering: no source
+                           * span of its own; position consumers skip it (#1244) */
 } Token;
 
 typedef struct {
@@ -881,6 +883,9 @@ struct EigsThread {
     int          first_error_col_known; /* first_error_col came with a real
                                      * column (col >= 0 && len > 0), not the
                                      * legacy line-only recorder (#955) */
+    int          first_error_from_lexer; /* first error came from the lexer;
+                                     * a parse error on a synthesized token
+                                     * of the same line does not displace it */
     /* #407 residual: uncaught-error printing raised during VM dispatch is
      * deferred to the dispatch loop's CHECK_ERROR, which knows the failing
      * instruction's bytecode offset (→ column) — rt_error/builtin_throw
@@ -1142,6 +1147,7 @@ extern __thread EigsThread *eigs_current;
 #define g_first_error_col   (eigs_current->first_error_col)
 #define g_first_error_len   (eigs_current->first_error_len)
 #define g_first_error_col_known (eigs_current->first_error_col_known)
+#define g_first_error_from_lexer (eigs_current->first_error_from_lexer)
 #define g_error_print_pending (eigs_current->error_print_pending)
 #define g_error_msg         (eigs_current->error_msg)
 #define g_first_error_code  (eigs_current->first_error_code)
@@ -1968,6 +1974,9 @@ void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-o
 int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
 void eigs_record_first_error(int line, const char *msg);
 void eigs_record_first_error_at(int line, int col, int len, const char *msg);
+void eigs_record_lexer_error_at(int line, int col, int len, const char *msg);
+void eigs_record_synth_error_code_at(int line, int col, int len,
+                                     const char *code, const char *msg);
 void eigs_record_first_error_code_at(int line, int col, int len,
                                      const char *code, const char *msg);
 /* #407: one-line source excerpt + `^` caret under `col` (0-based), the
