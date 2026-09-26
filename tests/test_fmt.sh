@@ -156,6 +156,37 @@ check ">> spaced, not split" "$ACTUAL" "$(printf 'y is a >> b\n')"
 ACTUAL=$(fmt_str "$(printf 'f is (n)=>n+1\n')")
 check "=> spaced, not split" "$ACTUAL" "$(printf 'f is (n) => n + 1\n')"
 
+# --- #1238: trace/replay environment is irrelevant to --fmt ---
+# Nothing executes under --fmt, so an inherited EIGS_REPLAY must not fail it
+# and an inherited EIGS_TRACE must not create or truncate a tape. Exit status
+# is captured directly: fmt_str's trailing rm would hide it.
+TR_DIR=$(mktemp -d /tmp/fmt_trace_XXXXXX)
+printf 'x is 1+2\nprint of x\n' > "$TR_DIR/input.eigs"
+TR_WANT=$(printf 'x is 1 + 2\nprint of x\n')
+TR_OUT=$(env -u EIGS_TRACE EIGS_REPLAY="$TR_DIR/missing.tape" $EIGS --fmt "$TR_DIR/input.eigs" 2>"$TR_DIR/err"); TR_RC=$?
+check "--fmt ignores a missing EIGS_REPLAY tape" "rc=$TR_RC err=$(cat "$TR_DIR/err")|$TR_OUT" "rc=0 err=|$TR_WANT"
+printf 'DO-NOT-OVERWRITE\n' > "$TR_DIR/sentinel.tape"
+TR_OUT=$(env -u EIGS_REPLAY EIGS_TRACE="$TR_DIR/sentinel.tape" $EIGS --fmt "$TR_DIR/input.eigs" 2>/dev/null); TR_RC=$?
+check "--fmt leaves an existing EIGS_TRACE file unchanged" "rc=$TR_RC tape=$(cat "$TR_DIR/sentinel.tape")|$TR_OUT" "rc=0 tape=DO-NOT-OVERWRITE|$TR_WANT"
+env -u EIGS_REPLAY EIGS_TRACE="$TR_DIR/fresh.tape" $EIGS --fmt "$TR_DIR/input.eigs" >/dev/null 2>&1; TR_RC=$?
+check "--fmt creates no EIGS_TRACE file" "rc=$TR_RC exists=$([ -e "$TR_DIR/fresh.tape" ] && echo yes || echo no)" "rc=0 exists=no"
+# --fmt --write under both variables: only the source file changes
+cp "$TR_DIR/input.eigs" "$TR_DIR/w.eigs"
+EIGS_REPLAY="$TR_DIR/missing.tape" EIGS_TRACE="$TR_DIR/sentinel.tape" $EIGS --fmt --write "$TR_DIR/w.eigs" >/dev/null 2>&1; TR_RC=$?
+check "--fmt --write ignores trace/replay and rewrites only the source" \
+      "rc=$TR_RC tape=$(cat "$TR_DIR/sentinel.tape") src=$(cat "$TR_DIR/w.eigs") files=$(ls "$TR_DIR" | tr '\n' ' ')" \
+      "rc=0 tape=DO-NOT-OVERWRITE src=$TR_WANT files=err input.eigs sentinel.tape w.eigs "
+# a formatter error (unreadable input) keeps its own nonzero status
+env -u EIGS_TRACE -u EIGS_REPLAY $EIGS --fmt "$TR_DIR/absent.eigs" >/dev/null 2>&1; TR_BASE=$?
+EIGS_REPLAY="$TR_DIR/missing.tape" EIGS_TRACE="$TR_DIR/sentinel.tape" $EIGS --fmt "$TR_DIR/absent.eigs" >/dev/null 2>&1; TR_RC=$?
+check "--fmt error status unchanged by trace/replay env" "base_nonzero=$([ "$TR_BASE" -ne 0 ] && echo yes) rc=$TR_RC tape=$(cat "$TR_DIR/sentinel.tape")" "base_nonzero=yes rc=$TR_BASE tape=DO-NOT-OVERWRITE"
+# control: a normal script run still records under EIGS_TRACE
+env -u EIGS_REPLAY EIGS_TRACE="$TR_DIR/run.tape" $EIGS "$TR_DIR/input.eigs" >/dev/null 2>&1; TR_RC=$?
+check "control: running a script still records a tape" "rc=$TR_RC v=$(head -c 2 "$TR_DIR/run.tape" 2>/dev/null)" "rc=0 v=V "
+env -u EIGS_TRACE EIGS_REPLAY="$TR_DIR/run.tape" $EIGS "$TR_DIR/input.eigs" > "$TR_DIR/replay.out" 2>&1; TR_RC=$?
+check "control: and replays it" "rc=$TR_RC out=$(cat "$TR_DIR/replay.out")" "rc=0 out=3"
+rm -rf "$TR_DIR"
+
 # --- Corpus property: formatting a valid program must leave it valid (#729) ---
 # The unit cases above cover the operators we know about; this covers the ones
 # we don't. A character-level formatter regenerates this bug class easily, so

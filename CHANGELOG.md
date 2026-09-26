@@ -798,6 +798,13 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **`--fmt` ignores `EIGS_TRACE` and `EIGS_REPLAY` (#1238).** The formatter
+  ran after trace initialization, so an inherited replay path it could not
+  open failed formatting with exit 3, and an inherited trace path was
+  truncated to a bare `V` header although nothing executed. `--fmt` and
+  `--fmt --write` are now handled before trace initialization, as `--step`
+  is.
+
 - **Compound dot assignment evaluates its target once (#1250).**
   `rows[f of null].x += 2` desugared to `rows[f of null].x is rows[f of null].x + 2`,
   so a side-effecting target ran twice and could read one object and write
