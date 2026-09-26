@@ -5476,17 +5476,24 @@ echo ""
 # #1241 escaped f-string braces), checked by the real engines: Vim's syntax
 # engine and VS Code's TextMate engine. Each half declines by name when its
 # engine is absent (the TextMate half needs vscode-textmate + vscode-oniguruma,
-# see the script); the section skips only when BOTH decline.
+# see the script). Every declined half is counted through section_skip with its
+# own reason, whether or not the other half ran. CI runs the Vim half only
+# where vim is on PATH (the macOS lane) and no lane installs the TextMate
+# engine, so CI does not check the VS Code grammar.
 echo "[80b] Editor Grammars (#1233/#1234/#1241)"
 EG_OUTPUT=$(bash "$TESTS_DIR/test_editor_grammars.sh" </dev/null 2>&1); EG_RC=$?
 EG_PASS=$(grep -c "  PASS:" <<< "$EG_OUTPUT" || true)
 EG_FAIL=$(grep -c "  FAIL:" <<< "$EG_OUTPUT" || true)
-if [ "$EG_RC" -eq 0 ] && [ "$EG_FAIL" -eq 0 ] && [ "$EG_PASS" -gt 0 ]; then
+EG_SKIP=$(grep -c "^  SKIP:" <<< "$EG_OUTPUT" || true)
+if [ "$EG_RC" -eq 0 ] && [ "$EG_FAIL" -eq 0 ] && [ $((EG_PASS + EG_SKIP)) -gt 0 ]; then
     TOTAL=$((TOTAL + EG_PASS))
     PASS=$((PASS + EG_PASS))
-    printf '%s\n' "$EG_OUTPUT"
-elif [ "$EG_RC" -eq 0 ] && [ "$EG_FAIL" -eq 0 ]; then
-    section_skip "editor grammars: $(head -1 <<< "$EG_OUTPUT")"
+    grep -v "^  SKIP:" <<< "$EG_OUTPUT" || true
+    EG_SKIPS=$(grep "^  SKIP:" <<< "$EG_OUTPUT" || true)
+    while IFS= read -r eg_line; do
+        [ -n "$eg_line" ] || continue
+        section_skip "editor grammars: ${eg_line#  SKIP: }"
+    done <<< "$EG_SKIPS"
 else
     TOTAL=$((TOTAL + EG_PASS + EG_FAIL + 1))
     PASS=$((PASS + EG_PASS))

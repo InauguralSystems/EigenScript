@@ -10,7 +10,13 @@
 # Either half SKIPs by name when its engine is absent: vim not on PATH, or the
 # two npm modules not resolvable (set EIGS_TM_NODE_MODULES to a node_modules
 # directory that holds them). Cwd-independent. Prints PASS:/FAIL:/SKIP: lines;
-# exit 0 iff no FAIL.
+# exit 0 iff no FAIL. The runner ([80b]) counts each SKIP line as a skip.
+#
+# CI coverage: the Vim half runs only on lanes with vim on PATH (the macOS
+# lane); no CI lane installs the TextMate engine, so CI does NOT check the
+# VS Code grammar. Run that half locally:
+#   npm install --prefix DIR vscode-textmate vscode-oniguruma
+#   EIGS_TM_NODE_MODULES=DIR/node_modules bash tests/test_editor_grammars.sh
 #
 # EIGS_GRAMMAR_ROOT overrides the directory holding vim/ and vscode/ (default:
 # the repo's editors/), so the old grammars can be checked by the same rows.

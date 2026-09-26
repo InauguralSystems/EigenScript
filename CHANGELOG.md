@@ -813,8 +813,11 @@ All notable changes to EigenScript are documented here.
   inside f-string interpolations. They treat `\{`/`\}` in f-string text as
   escapes rather than the start of an interpolation.
   `tests/test_editor_grammars.sh` checks one fixture with Vim's syntax engine
-  and VS Code's TextMate engine (`vscode-textmate`); each half is skipped by
-  name when its engine is absent.
+  and VS Code's TextMate engine (`vscode-textmate`). Each half is skipped by
+  name when its engine is absent, and each skip is counted. CI runs only the
+  Vim half, on the macOS lane; no lane installs the TextMate engine, so CI
+  does not check the VS Code grammar (the script header gives the local
+  command).
 
 - **LSP rename edits identifiers inside f-string interpolations in place
   (#1244).** The lexer spliced an interpolation's tokens at the column after
