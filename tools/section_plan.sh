@@ -997,7 +997,7 @@ selftest() {
     mkdir -p "$stub/tests" "$stub/tools" "$stub/src" "$stub/.github/workflows"
     cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/read_werror_flags.sh" \
        "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
-    cp "$SP_ROOT/tests/failure_output.sh" "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
+    cp "$SP_ROOT/tests/failure_output.sh" "$SP_ROOT/tests/suite_plan.sh" "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
     cp "$CI_FILE" "$stub/.github/workflows/ci.yml"
     printf '#!/bin/sh\nexit 0\n' > "$stub/src/eigenscript"
     chmod +x "$stub/src/eigenscript"

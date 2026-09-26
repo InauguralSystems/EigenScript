@@ -4,6 +4,12 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+- The suite runner's shard and changed-sections dispatch lives in
+  `tests/suite_plan.sh`, which the runner sources (#1347). The planner's
+  self-test now triggers on that file rather than on every edit to
+  `tests/run_all_tests.sh`. Before, adding a test section re-ran it inside
+  `make precheck`, which took 8 minutes on the dev box.
+
 - `make test-changed` runs only the suite sections a change touches (#1347).
   They are picked from the diff against `origin/main`, including uncommitted and
   untracked files, plus the core language sections, and checked by the same
