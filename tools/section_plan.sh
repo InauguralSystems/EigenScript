@@ -702,12 +702,29 @@ sp_select() {
         | while IFS= read -r t; do sp_refs "$RUNNER" "$(basename "$t")"; done
 }
 
+# Module names whose loading reaches lib/M.eigs: M, then every lib module
+# that imports or load_files one already in the set, to a fixed point.
+sp_lib_closure() {
+    local set=" $1 " frontier="$1" next m f
+    while [ -n "$frontier" ]; do
+        next=''
+        for m in $frontier; do
+            for f in $(git -C "$SP_ROOT" grep -lE "(^[[:space:]]*import[[:space:]]+$m([^A-Za-z0-9_]|\$))|lib/$m\.eigs" -- 'lib/*.eigs' 2>/dev/null); do
+                f=$(basename "$f" .eigs)
+                case "$set" in *" $f "*) ;; *) set="$set$f "; next="$next $f" ;; esac
+            done
+        done
+        frontier=$next
+    done
+    printf '%s\n' $set
+}
+
 # Changed-sections plan (#1347): the chunks a diff against BASE touches, for
 # the contributor's fast local gate. CI still runs the whole suite. The diff is
 # the WORKING TREE plus untracked files against the merge base, because an
 # uncommitted fix is exactly what this gate is run on.
 build_changed_plan() {
-    local base="$1" mb p tok d m lines
+    local base="$1" mb p tok d lines dlines
     SP_WORK=$(sp_workdir changed)
     derive_chunks "$RUNNER" > "$SP_WORK/chunks"
     verify_partition "$RUNNER" "$SP_WORK/chunks"
@@ -744,24 +761,32 @@ build_changed_plan() {
         # file is also looked up by its stem.
         case "$p" in tests/*.*) lines="$lines
 $(sp_select "${tok%.*}")" ;; esac
-        # A module is loaded by NAME (`import math`), not by file: every test
-        # file that imports it selects the sections that run that file.
-        case "$p" in lib/*.eigs) m=$(basename "$p" .eigs); lines="$lines
-$(git -C "$SP_ROOT" grep -lE "^[[:space:]]*import[[:space:]]+$m([^A-Za-z0-9_]|\$)" -- tests 2>/dev/null \
-    | while IFS= read -r t; do t=$(basename "$t"); sp_select "$t"; sp_select "${t%.*}"; done)" ;; esac
+        # A module is loaded by NAME (`import math`) or through another module
+        # (ui.eigs loads ui_theme.eigs): close over lib/ importers, then every
+        # test file that imports a module in the closure selects the sections
+        # that run it.
+        case "$p" in lib/*.eigs) lines="$lines
+$(sp_lib_closure "$(basename "$p" .eigs)" | while IFS= read -r m; do
+      sp_select "$m.eigs"
+      git -C "$SP_ROOT" grep -lE "^[[:space:]]*import[[:space:]]+$m([^A-Za-z0-9_]|\$)" -- tests 2>/dev/null \
+          | while IFS= read -r t; do t=$(basename "$t"); sp_select "$t"; sp_select "${t%.*}"; done
+  done)" ;; esac
+        # Dirs the file sits in add the sections that glob them. A nested dir
+        # (a fixture dir) identifies the file; a top-level one (lib/,
+        # examples/) does not: any `lib/...` path matches it, so those lines
+        # select sections but never count as mapping the file.
+        dlines=''
         d=$(dirname "$p")
         while [ "$d" != . ]; do
             case "$d" in
                 src|tests) break ;;
-                # A top-level dir (lib/) is named by nearly every test script
-                # that loads a module: only the runner's own globs count.
                 */*) lines="$lines
 $(sp_select "$(basename "$d")")" ;;
-                *) lines="$lines
-$(sp_refs "$RUNNER" "$d")" ;;
+                *) dlines=$(sp_refs "$RUNNER" "$d") ;;
             esac
             d=$(dirname "$d")
         done
+        printf '%s\n' "$dlines" | grep . >> "$SP_WORK/lines"
         # A reference outside every chunk (a preamble list) selects nothing,
         # so it does not count as a match.
         lines=$(printf '%s\n' "$lines" | awk -v pre="$SP_PREAMBLE_END" -v epi="$SP_EPILOGUE_START" '$1 > pre && $1 < epi')
@@ -795,7 +820,7 @@ $(sp_refs "$RUNNER" "$d")" ;;
     wsec=$(awk 'FNR == NR { sel[$1] = 1; next } ($2 in sel) { t += $1 } END { printf "%.0f", t / 100 }' \
         "$SP_WORK/selected" "$SP_WORK/weights")
     paths=$(grep -c . "$SP_WORK/paths"); unm=$(grep -c . "$SP_WORK/unmatched"); rt=$(grep -c . "$SP_WORK/runtime")
-    while read -r p; do [ -z "$p" ] || note "  unmatched: $p (no section references it: nothing here ran it; CI checks it)"; done < "$SP_WORK/unmatched"
+    while read -r p; do [ -z "$p" ] || note "  unmatched: $p (no section names it; a dir glob may still run it, CI checks it)"; done < "$SP_WORK/unmatched"
     while read -r p; do [ -z "$p" ] || note "  runtime: $p (every section exercises it; only CI's full suite covers it)"; done < "$SP_WORK/runtime"
     # The same paths close the PLAN line, which the runner prints LAST, so the
     # report sits where the contributor reads the verdict.
@@ -925,6 +950,10 @@ selftest() {
     expect_plan 'changed: a program a script names by stem selects its section' '[42i]'
     printf '\n' >> "$dir/cl/lib/math.eigs"
     expect_plan 'changed: a lib module selects the sections of the tests that import it' '[Call Semantics]'
+    sed -i.bak '1s/^/# edited\n/' "$dir/cl/lib/ui_theme.eigs"; rm -f "$dir/cl/lib/ui_theme.eigs.bak"
+    expect_plan 'changed: a lib module loaded only through another module selects that importer'"'"'s tests' '[63]'
+    : > "$dir/cl/lib/zz_loaded_by_nothing.eigs"
+    expect_plan 'changed: a lib file nothing loads is reported, not masked by the lib/ glob' 'not-run-locally: lib/zz_loaded_by_nothing.eigs'
     printf '\n' >> "$dir/cl/README.md"
     expect_plan 'changed: a top-level file whose name recurs selects its section' '[89]'
     printf '\n' >> "$dir/cl/src/lint.c"
