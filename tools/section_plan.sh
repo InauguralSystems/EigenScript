@@ -771,7 +771,8 @@ build_changed_plan() {
         lines=$(sp_select "$tok")
         # A test script may build its program names from the stem
         # (`dict_keys_mt_single|expect.out` -> "$probe.eigs"), so a tests/
-        # file is also looked up by its stem.
+        # file is also looked up by its stem. (Not examples/: a stem such as
+        # `hello` is a common word, and selected 64 chunks.)
         case "$p" in tests/*.*) lines="$lines
 $(sp_select "${tok%.*}")" ;; esac
         # A module is loaded by NAME (`import math`) or through another module
@@ -781,8 +782,9 @@ $(sp_select "${tok%.*}")" ;; esac
         case "$p" in lib/*.eigs) lines="$lines
 $(sp_lib_closure "$(basename "$p" .eigs)" | while IFS= read -r m; do
       sp_select "$m.eigs"
-      # Importers: tests, the doc fences [89] runs, the programs [97] runs.
-      git -C "$SP_ROOT" grep -lE "^[[:space:]]*import[[:space:]]+$m([^A-Za-z0-9_]|\$)" -- tests docs examples README.md 2>/dev/null \
+      # Importers: tests (also programs held in string literals, "...\nimport
+      # log"), the doc fences [89] runs, the programs [97] runs.
+      git -C "$SP_ROOT" grep -lE "(^|[^A-Za-z0-9_]|\\\\n)import[[:space:]]+$m([^A-Za-z0-9_]|\$)" -- tests docs examples README.md 2>/dev/null \
           | while IFS= read -r t; do
                 case "$t" in examples/*) sp_refs "$RUNNER" examples ;; esac
                 t=$(sp_file_token "$t"); sp_select "$t"; sp_select "${t%.*}"
@@ -812,11 +814,11 @@ $(sp_select "$(basename "$d")")" ;;
             | grep -qE "$(sp_token_re "$(basename "$p")")"; then echo "$p" >> "$SP_WORK/sourced"
         elif [ -n "$lines" ]; then printf '%s\n' "$lines" >> "$SP_WORK/lines"
         else echo "$p" >> "$SP_WORK/unmatched"; fi
-        # The C runtime is exercised by every section, so no name lookup maps
-        # a src/ file to its tests (src/lint.c is named only by a linkage
+        # The C runtime (and the build files that make it) is exercised by
+        # every section, so no name lookup maps a src/ file to its tests (src/lint.c is named only by a linkage
         # check, not by [81]): it is always reported, and the full suite that
         # covers it is CI's.
-        case "$p" in src/*) echo "$p" >> "$SP_WORK/runtime" ;; esac
+        case "$p" in src/*|Makefile|build.sh) echo "$p" >> "$SP_WORK/runtime" ;; esac
     done < "$SP_WORK/paths"
     # An EDIT to the preamble or epilogue, or to a file it sources, changes
     # every section: run them all.
@@ -975,6 +977,8 @@ selftest() {
     expect_plan 'changed: a lib file nothing loads is reported, not masked by the lib/ glob' 'not-run-locally: lib/zz_loaded_by_nothing.eigs'
     printf '\n' >> "$dir/cl/README.md"
     expect_plan 'changed: a top-level file whose name recurs selects its section' '[89]'
+    sed -i.bak 's/^define log_info(msg) as:/define log_infox(msg) as:/' "$dir/cl/lib/log.eigs"; rm -f "$dir/cl/lib/log.eigs.bak"
+    expect_plan 'changed: a lib module imported inside a test string literal selects that section' '[107]'
     printf '\n' >> "$dir/cl/lib/stats.eigs"
     expect_plan 'changed: a lib module selects the doc-fence section whose docs import it' '[89]'
     printf '\n' >> "$dir/cl/README.md"
