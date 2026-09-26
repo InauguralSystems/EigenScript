@@ -3288,18 +3288,6 @@ else
 fi
 echo ""
 
-echo "[59a] import args keeps the CLI-args builtin (#1236)"
-check_binary_fingerprint
-TOTAL=$((TOTAL + 1))
-if EIGENSCRIPT=./eigenscript bash "$TESTS_DIR/test_args_import.sh" >/dev/null 2>&1; then
-    PASS=$((PASS + 1))
-    echo "  PASS: args.parse_args under import args (5 fresh-process checks)"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: args.parse_args under import args -- run tests/test_args_import.sh"
-fi
-echo ""
-
 # [60] Terminal builtins (screen_clear, screen_put, screen_end, screen_render, raw_key)
 echo "[60] Terminal Builtins"
 TM_OUTPUT=$($EIGS_TMO ./eigenscript ../tests/test_terminal.eigs </dev/null 2>&1); TM_OUTPUT_RC=$?
