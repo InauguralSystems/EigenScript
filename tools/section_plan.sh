@@ -8,6 +8,7 @@
 #        --print-weights LOG [--run ID --head SHA] | --skip-audit | --selftest
 set -u
 SP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SP_HOP_DIRS=tests
 RUNNER="$SP_ROOT/tests/run_all_tests.sh"
 VERBOSE=1
 # A floor below the normal chunk population catches a collapsed scan while allowing growth.
@@ -691,13 +692,14 @@ sp_token_re() {
 }
 
 # Runner lines referencing TOKEN, plus (one hop) the lines referencing each
-# test script that does: a helper (test_lsp.py, lint_fixtures/) selects
+# test script or tool that does: a helper (test_lsp.py, lint_fixtures/) selects
 # through the script that uses it (test_lsp.sh, test_lint.sh), and a program
 # the runner names in one section still selects the other section whose
 # script re-runs it (test_tasks.eigs -> test_task_sched_trace.sh, [104b]).
 sp_select() {
     sp_refs "$RUNNER" "$1"
-    git -C "$SP_ROOT" grep -nE -- "$(sp_token_re "$1")" -- tests ':!tests/run_all_tests.sh' 2>/dev/null \
+    # shellcheck disable=SC2086
+    git -C "$SP_ROOT" grep -nE -- "$(sp_token_re "$1")" -- $SP_HOP_DIRS ':!tests/run_all_tests.sh' 2>/dev/null \
         | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | cut -d: -f1 | sort -u \
         | while IFS= read -r t; do sp_refs "$RUNNER" "$(basename "$t")"; done
 }
@@ -752,6 +754,10 @@ build_changed_plan() {
     git -C "$SP_ROOT" ls-files | sed 's#.*/##' | sort | uniq -d > "$SP_WORK/dupnames"
     while read -r p; do
         [ -n "$p" ] && [ "$p" != tests/run_all_tests.sh ] || continue
+        # The hop also reads the tools/ gates the runner calls (docs_claims
+        # checks README.md for [99za]); a src/ file is reported as runtime
+        # anyway, and tools/ naming it (consumer_acceptance) only adds cost.
+        case "$p" in src/*) SP_HOP_DIRS=tests ;; *) SP_HOP_DIRS='tests tools' ;; esac
         tok=$(basename "$p")
         # (A top-level file keeps its bare name: `./README.md` matches nothing.)
         case "$p" in */*) grep -qxF -- "$tok" "$SP_WORK/dupnames" && tok="$(basename "$(dirname "$p")")/$tok" ;; esac
@@ -956,6 +962,8 @@ selftest() {
     expect_plan 'changed: a lib file nothing loads is reported, not masked by the lib/ glob' 'not-run-locally: lib/zz_loaded_by_nothing.eigs'
     printf '\n' >> "$dir/cl/README.md"
     expect_plan 'changed: a top-level file whose name recurs selects its section' '[89]'
+    printf '\n' >> "$dir/cl/README.md"
+    expect_plan 'changed: a doc selects the section whose tools/ gate checks it' '[99za]'
     printf '\n' >> "$dir/cl/src/lint.c"
     expect_plan 'changed: a src/ file is always reported as runtime' 'runtime: src/lint.c'
     printf '\n' >> "$dir/cl/tests/failure_output.sh"
