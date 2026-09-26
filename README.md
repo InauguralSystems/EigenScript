@@ -76,7 +76,7 @@ eigenscript --version
 x is 42
 name is "hello"
 
-# Functions with named parameters
+# Functions with named parameters (comma-separated; `add(a b)` is a parse error)
 define add(a, b) as:
     return a + b
 

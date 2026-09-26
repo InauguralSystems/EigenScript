@@ -53,6 +53,10 @@ shapes = [
     ('lambda parameter', 'f is (NAME) => 0\n', 1),
     ('second lambda parameter', 'f is (a, NAME) => 0\n', 1),
     ('multiline lambda parameter', 'f is (a,\n    NAME) => 0\n', 2),
+    # #1254: a reserved name where a comma is missing reports only E005, the
+    # stable diagnostic (not the generic missing-separator error), exactly once.
+    ('missing-comma parameter', 'define f(a NAME) as:\n    return 0\n', 1),
+    ('missing-comma lambda parameter', 'f is (a NAME) => 0\n', 1),
     ('for binder', 'for NAME in [1, 2]:\n    0\n', 1),
     ('catch binder', 'try:\n    0\ncatch NAME:\n    0\n', 3),
     ('list match name', 'match [1, 2]:\n    case [NAME, tail]:\n        0\n', 2),
@@ -77,6 +81,8 @@ with tempfile.TemporaryDirectory(prefix='eigs_report_reserved_') as tmp:
             control = 'user_report is 1\nhead is 1\ntail is 2\n' + control
         if label == 'compound assignment':
             control = 'user_report is 0\n' + control
+        if label.startswith('missing-comma'):
+            control = control.replace('(a user_report)', '(a, user_report)')
         source_file.write_text(control)
         r = run([str(source_file)])
         check('control ' + label, r.returncode == 0 and clean(r), r)
@@ -96,6 +102,8 @@ with tempfile.TemporaryDirectory(prefix='eigs_report_reserved_') as tmp:
                         ok = False
                 else:
                     ok &= r.stdout == '' and re.search(rf'^Parse error line {line + 1}:\d+: \'{name}\' is a reserved observer form.*\[E005\]$', r.stderr, re.M) is not None
+                    if label.startswith('missing-comma'):
+                        ok &= r.stderr.count('Parse error') == 1
                 check(f'{name}: {label} / {mode}', ok, r)
 
     # All RHS shapes other than an optionally parenthesized identifier are

@@ -62,6 +62,27 @@ check "64-case match parses clean" \
     "$(mk_match 64)
 print of \"ok\"" 0 "" 0
 
+# --- #1254: a missing comma between parameters is ONE diagnostic per
+# signature, whatever else is wrong with the same signature ---
+check "define: three params, no commas: one error" \
+    "define f(a b c) as:
+    return a
+print of \"EXECUTED\"" 1 "expected ',' between parameters 'a' and 'b'" 1
+
+check "lambda: three params, no commas: one error" \
+    "f is (a b c) => a
+print of \"EXECUTED\"" 1 "expected ',' between parameters 'a' and 'b'" 1
+
+check "define: missing comma after a default, required next: one error" \
+    "define f(a is 1 b) as:
+    return a
+print of \"EXECUTED\"" 1 "expected ',' between parameters 'a' and 'b'" 1
+
+check "define: required after default (commas present) still reported once" \
+    "define f(a is 1, b) as:
+    return a
+print of \"EXECUTED\"" 1 "required parameter 'b' cannot follow" 1
+
 if [ "$fails" -ne 0 ]; then
     echo "FAIL: parse caps"
     exit 1

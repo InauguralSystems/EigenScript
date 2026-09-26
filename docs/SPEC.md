@@ -669,7 +669,10 @@ print of ev.loop
 ## Functions
 
 `define name(params) as:` introduces a function. `return` exits with a
-value; falling off the end returns `null`. Calling conventions:
+value; falling off the end returns `null`. Parameters are separated by
+commas, in `define` and in lambdas alike: `define f(a b)` and `(a b) => e`
+are parse errors (a trailing comma, `define f(a, b,)`, is accepted).
+Calling conventions:
 
 - `f of x` — one argument.
 - `f of [a, b, c]` — a **bare literal** list after `of` is always an

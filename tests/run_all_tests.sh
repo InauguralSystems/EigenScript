@@ -1957,7 +1957,7 @@ echo ""
 # [23] Named parameters
 echo "[23/27] Named Parameters"
 NP_OUTPUT=$(./eigenscript ../tests/test_named_params.eigs 2>&1); NP_OUTPUT_RC=$?
-NP_OUTPUT_N=$(derive_count "$NP_OUTPUT" 9 "[23/27] Named Params")
+NP_OUTPUT_N=$(derive_count "$NP_OUTPUT" 27 "[23/27] Named Params")
 if rc_ok "$NP_OUTPUT_RC" "$NP_OUTPUT" && echo "$NP_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + NP_OUTPUT_N))
     PASS=$((PASS + NP_OUTPUT_N))
@@ -2276,12 +2276,12 @@ REPORT_OUT=$(bash "$TESTS_DIR/test_report_reserved.sh" 2>&1); REPORT_RC=$?
 REPORT_PASS=$(echo "$REPORT_OUT" | grep -c "^PASS:" || true)
 REPORT_FAIL=$(echo "$REPORT_OUT" | grep -c "^FAIL:" || true)
 TOTAL=$((TOTAL + 1))
-if [ "$REPORT_RC" -eq 0 ] && [ "$REPORT_PASS" -eq 209 ] && [ "$REPORT_FAIL" -eq 0 ]; then
+if [ "$REPORT_RC" -eq 0 ] && [ "$REPORT_PASS" -eq 223 ] && [ "$REPORT_FAIL" -eq 0 ]; then
     PASS=$((PASS + 1))
     echo "  PASS: all $REPORT_PASS reserved observer checks"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: reserved observer forms (rc=$REPORT_RC, $REPORT_PASS/209 checks passed)"
+    echo "  FAIL: reserved observer forms (rc=$REPORT_RC, $REPORT_PASS/223 checks passed)"
     echo "$REPORT_OUT" | tail -20
 fi
 echo ""

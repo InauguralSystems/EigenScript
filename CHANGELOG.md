@@ -21,6 +21,14 @@ All notable changes to EigenScript are documented here.
 
 ### Breaking changes
 
+- **A missing comma between parameters is a parse error (#1254).**
+  `define sub(a b)`, `define sub(a is 7 b is 2)` and `(a b) => a - b` used to
+  run as if the commas were written. Both the named-function and the lambda
+  parameter loops now report `expected ',' between parameters` and the program
+  does not run. `lib/eigen.eigs` (the meta-circular interpreter) enforces the
+  same rule. Comma-separated, trailing-comma and empty signatures are
+  unchanged. A program that relied on the old leniency must add the commas.
+
 - **A thread handle is joined exactly once, and a full handle table raises
   (#1146).** `thread_join` now *claims* the handle — it resolves the id and
   detaches the table slot under one hold of the handle mutex, then waits
