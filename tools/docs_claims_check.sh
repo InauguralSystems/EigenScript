@@ -59,6 +59,23 @@ def record(kind, file, n):
     print(f'  population {file}: {n} {kind.lower()} reference(s)')
 
 
+# #1051: a hand-typed inventory count ("The 76 modules in `lib/`") went stale.
+# #1309 took counts out of these pages; this keeps them out (history pages
+# such as ROADMAP's Completed section and docs/CI.md may keep theirs).
+COUNT_DOCS = ('README.md docs/llms.txt docs/SPEC.md docs/COMPARISON.md '
+              'docs/ARCHITECTURE.md CLAUDE.md').split()
+COUNT_RE = re.compile(r'\b\d[\d,]*\+? +(?:stdlib +|library +)?(?:modules|builtins|widgets'
+                      r'|checks|tests|functions|libraries|examples|diagnostic codes|lint rules|opcodes)\b')
+
+
+def derived_counts():
+    for file in COUNT_DOCS:
+        for i, line in enumerate(Path(file).read_text(encoding='utf-8').splitlines(), 1):
+            for m in COUNT_RE.finditer(line):
+                red(f'{file}:{i}: hand-typed count "{m.group()}"; point to its source '
+                    '(eigenscript --api, CHANGELOG.md) instead (#1051)')
+
+
 def check_floors():
     declared = {}
     for row in POP.read_text().splitlines():
@@ -414,6 +431,7 @@ def main():
     enrolment()
     stdlib_headings()
     changelog_version()
+    derived_counts()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):
         if counts[kind] == 0:
