@@ -89,7 +89,8 @@ for f in "$ROOT"/tests/test_*.eigs; do
     consider "$arm" 180
   done
 done
-# Denied up front: *gfx*|*paint*|*_game* opens a window; *seeded_race* is
+# Denied up front: *gfx*|*paint*|*_game* opens a window; *seeded_race* and
+# *userrace* (a user data race: undefined, can crash either side, #1171) are
 # nondeterministic on purpose; *state_at*|*statedump* prints hash-order output.
 obs_files=$(git -C "$ROOT" ls-files '*.eigs' 2>/dev/null || true)
 if [ -z "$obs_files" ]; then
@@ -100,7 +101,7 @@ fi
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
   case "$rel" in
-    *gfx*|*paint*|*_game*|*seeded_race*|*state_at*|*statedump*) n_deny=$((n_deny + 1)); continue ;;
+    *gfx*|*paint*|*_game*|*seeded_race*|*userrace*|*state_at*|*statedump*) n_deny=$((n_deny + 1)); continue ;;
   esac
   [ -f "$ROOT/$rel" ] || { echo "jit_diff: FAIL: OBS corpus entry missing: $rel" >&2; exit 1; }
   n_obs=$((n_obs + 1)); row=$(row_of "$rel"); prog="$ROOT/$rel"
