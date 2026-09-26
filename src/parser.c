@@ -276,13 +276,17 @@ static void p_expect_dot_key(Parser *p) {
 
 /* #1254: parameters are `param { ',' param }` (docs/GRAMMAR.md). After a
  * parameter (and its default), consume the comma; if the next token would
- * start another parameter with no comma between, report it here. Any other
- * token is left for the caller's closing-paren expectation, so each
- * malformed signature reports once. */
-static void p_param_separator(Parser *p, const char *prev) {
+ * start another parameter with no comma between, report it here. Each
+ * malformed signature reports ONCE: `sig_err_base` is g_parse_errors at the
+ * signature's start, and nothing is reported once it has moved. A reserved
+ * observer form in that position is left to the loop's own E005 (the stable
+ * diagnostic for `define f(a report)`), and any other token is left for the
+ * caller's closing-paren expectation. */
+static void p_param_separator(Parser *p, const char *prev, int sig_err_base) {
     if (p_cur(p)->type == TOK_COMMA) { p_advance(p); return; }
     Token *nt = p_cur(p);
-    if (!tok_is_ident_like(nt->type) && !tok_is_report(nt->type)) return;
+    if (!tok_is_ident_like(nt->type)) return;
+    if (g_parse_errors != sig_err_base) return;
     char m[192];
     snprintf(m, sizeof(m), "expected ',' between parameters '%s' and '%s'",
              prev ? prev : "", nt->str_val ? nt->str_val : "");
@@ -820,6 +824,7 @@ static ASTNode* parse_primary(Parser *p) {
             char **params = xmalloc_array(MAX_PARAMS, sizeof(char*));
             int param_count = 0;
             int lambda_cap_reported = 0;
+            int sig_err_base = g_parse_errors;
             while (tok_is_ident_like(p_cur(p)->type) || tok_is_report(p_cur(p)->type)) {
                 p_report_error(p_cur(p), 0);
                 if (param_count >= MAX_PARAMS) {
@@ -836,7 +841,7 @@ static ASTNode* parse_primary(Parser *p) {
                 }
                 params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
-                p_param_separator(p, params[param_count - 1]);
+                p_param_separator(p, params[param_count - 1], sig_err_base);
             }
             if (param_count == 0) {
                 params[0] = xstrdup("n");
@@ -1330,6 +1335,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             params = xmalloc_array(MAX_PARAMS, sizeof(char*));
             defaults = xcalloc(MAX_PARAMS, sizeof(ASTNode*));
             int param_cap_reported = 0;
+            int sig_err_base = g_parse_errors;
             while (tok_is_ident_like(p_cur(p)->type) || tok_is_report(p_cur(p)->type)) {
                 p_report_error(p_cur(p), 0);
                 if (param_count >= MAX_PARAMS) {
@@ -1356,13 +1362,13 @@ static ASTNode* parse_statement_inner(Parser *p) {
                     p_advance(p);
                     defaults[slot] = parse_expression(p);
                     if (first_default < 0) first_default = slot;
-                } else if (first_default >= 0) {
+                } else if (first_default >= 0 && g_parse_errors == sig_err_base) {
                     fprintf(stderr,
                         "Parse error line %d: required parameter '%s' cannot follow a parameter with a default\n",
                         p_cur(p)->line, params[slot]);
                     g_parse_errors++;
                 }
-                p_param_separator(p, params[slot]);
+                p_param_separator(p, params[slot], sig_err_base);
             }
             p_expect(p, TOK_RPAREN);
         }
