@@ -197,6 +197,7 @@ if [ -n "$TSAN_OBJS" ] && [ -f "$EC_SUPP" ]; then
     # 5 of 5 runs exit 66 while the full run above still passed.
     FU_RUNS=${TSAN_FIRST_USE_RUNS:-5}
     FU_CLEAN=0; FU_FIRST_BAD=""
+    rm -f "$ROOT/build/tsan_first_use.bad.err" "$ROOT/build/tsan_first_use.bad.out"
     fu=0
     while [ "$fu" -lt "$FU_RUNS" ]; do
         fu=$((fu + 1))
