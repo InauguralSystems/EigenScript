@@ -57,9 +57,11 @@ pthread_condattr_destroy
 pthread_condattr_setclock
 # Thread IDENTITY, not scheduling: #1142's replay tape records which OS
 # thread opened it (g_replay_owner_tid) so a take from any other thread
-# fails loud instead of silently mixing taped and live values. EigenOS's
-# cooperative scheduler already owns the pthread roots above; the identity
-# pair is the same HAL story — a task handle the kernel can compare.
+# fails loud instead of silently mixing taped and live values. EigenOS
+# defines it as a constant: every task runs on its one CPU thread, and the
+# replay check keys the owning state separately. That EigenOS defines EVERY
+# root in tools/freestanding_hal_roots.txt is checked on its side
+# (EigenOS tools/hal_roots_check.sh, run before each kernel link; #1181).
 # (pthread_equal is a one-line comparison and is not listed because glibc
 # expands it inline; if a toolchain emits it as an import, it belongs here
 # for the same reason.)
