@@ -1861,13 +1861,89 @@ static void test_replay_take_under_lock(void) {
     free(tape);
 }
 
+/* ------------------------------------------------------------------ FU */
+/* #1334: FIRST USE, concurrently. Every other case here runs after something
+ * has already lexed, compiled and evaluated in this process, so any runtime
+ * table filled lazily on first use is filled single-threaded before a second
+ * thread can reach it. PR #1332 shipped exactly that race (a lexer operator
+ * table filled on first call) and this binary could not see it. This case runs
+ * ALONE in a fresh process (EMBED_CONCURRENT_ONLY=first-use): nothing runs on
+ * the main thread before the workers, which open their states and then lex,
+ * compile and evaluate for the first time, each pair of steps released by a
+ * barrier so the first uses overlap. test_tsan.sh runs it several times,
+ * because a process gets exactly one first use. */
+#define FU_THREADS 4
+static pthread_barrier_t fu_open_barrier, fu_eval_barrier;
+
+/* Covers the multi-byte operators, an f-string, a user function, a loop, a
+ * dict and a list, so the lexer, parser, compiler and VM all take their first
+ * path on a worker. Expected value computed by hand: squares of 0,1,2,4,5 = 46,
+ * + len("v=46") = 4, + (3 << 1) = 6 -> 56. */
+static const char FU_SRC[] =
+    "define sq(x) as:\n"
+    "    return x * x\n"
+    "total is 0\n"
+    "for i in range of 10:\n"
+    "    if i <= 5 and i != 3 and i >= 0:\n"
+    "        total is total + (sq of i)\n"
+    "d is {\"a\": total, \"b\": [1, 2, 3]}\n"
+    "s is f\"v={total}\"\n"
+    "total += len of s\n"
+    "total is total + (d[\"b\"][2] << 1)\n";
+
+typedef struct { int opened; double got; } FuArg;
+
+static void *fu_worker(void *p) {
+    FuArg *a = (FuArg *)p;
+    pthread_barrier_wait(&fu_open_barrier);
+    EigsState *st = eigs_open();
+    a->opened = st != NULL;
+    pthread_barrier_wait(&fu_eval_barrier);
+    if (!st) return NULL;
+    EigsValue *v = eigs_eval_string(FU_SRC);
+    if (v) eigs_value_release(v);
+    EigsValue *t = eigs_eval_string("total");
+    if (t) { a->got = eigs_value_as_num(t); eigs_value_release(t); }
+    eigs_close(st);
+    return NULL;
+}
+
+static void test_first_use_concurrent(void) {
+    FuArg args[FU_THREADS];
+    pthread_t th[FU_THREADS];
+    memset(args, 0, sizeof args);
+    pthread_barrier_init(&fu_open_barrier, NULL, FU_THREADS);
+    pthread_barrier_init(&fu_eval_barrier, NULL, FU_THREADS);
+    for (int i = 0; i < FU_THREADS; i++) pthread_create(&th[i], NULL, fu_worker, &args[i]);
+    for (int i = 0; i < FU_THREADS; i++) pthread_join(th[i], NULL);
+    pthread_barrier_destroy(&fu_open_barrier);
+    pthread_barrier_destroy(&fu_eval_barrier);
+    int opened = 0, right = 0;
+    for (int i = 0; i < FU_THREADS; i++) {
+        opened += args[i].opened;
+        right += args[i].got == 56.0;
+    }
+    check(opened == FU_THREADS, "first-use: every worker opened its own state");
+    check(right == FU_THREADS, "first-use: every worker's first lex/compile/eval returned 56");
+    if (right != FU_THREADS)
+        for (int i = 0; i < FU_THREADS; i++)
+            printf("        worker %d: opened=%d got=%g\n", i, args[i].opened, args[i].got);
+}
+
 int main(void) {
     printf("embed concurrent multi-state (#885/#1142/#1143)\n");
     /* EMBED_CONCURRENT_ONLY: the TSan mutant oracle runs just the take
      * case with halt_on_error=1 so a data race exits instead of hanging
      * in an unlocked take that never reaches EOF. */
     const char *only = getenv("EMBED_CONCURRENT_ONLY");
-    if (only && strcmp(only, "replay-take") == 0) {
+    if (only && strcmp(only, "first-use") == 0) {
+        /* Must stay the first thing this process evaluates: no warm-up. */
+        test_first_use_concurrent();
+        if (checks_run != 2) {
+            printf("  FAIL: first-use population: %d checks ran, expected 2\n", checks_run);
+            failures++;
+        }
+    } else if (only && strcmp(only, "replay-take") == 0) {
         /* The mutation train's replay-take-unlocked kill is a SANITIZER
          * report, and a sanitizer report is probabilistic: with a single
          * pass the mutant survived 6 of 20 isolated runs on this box even

@@ -67,7 +67,12 @@ independence is tested, not just asserted — `make embed-concurrent`
 thresholds, global bindings and the error flag each stay with their own
 state. It carries its own control row: a deliberately shared file-scope
 global that MUST show cross-talk under the same harness, so a green run
-cannot mean "the threads never actually raced". Inside a
+cannot mean "the threads never actually raced". Under ThreadSanitizer
+(`tests/test_tsan.sh`) that run fails on any report outside the control,
+and a separate mode (`EMBED_CONCURRENT_ONLY=first-use`) opens several
+states and runs their FIRST lex, compile and eval on barrier-released
+workers in a fresh process, so a table the runtime fills lazily on first
+use cannot hide behind an earlier single-threaded warm-up (#1334). Inside a
 state, multiple OS threads can attach (one `EigsThread` each) and share
 the state's global env, but only one of them executes script code at a
 time per state (the VM is not internally re-entrant per state).

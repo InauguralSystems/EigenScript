@@ -128,32 +128,77 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-echo "=== embed-concurrent under TSan (shutdown-while-sibling) ==="
+echo "=== embed-concurrent under TSan: ANY report fails (#1334) ==="
 ROOT="$TESTS_DIR/.."
 TSAN_OBJS=$(ls "$ROOT"/build/tsan/*.o 2>/dev/null | grep -v '/main.o$' || true)
 EC_BIN="$ROOT/build/tsan/embed_concurrent"
-if [ -n "$TSAN_OBJS" ]; then
+EC_SUPP="$TESTS_DIR/tsan_embed_concurrent.supp"
+if [ -n "$TSAN_OBJS" ] && [ -f "$EC_SUPP" ]; then
     gcc $WERROR_FLAGS -fsanitize=thread -g -O1 -o "$EC_BIN" \
         "$ROOT/src/embed_concurrent.c" $TSAN_OBJS -lm -lpthread \
         -I"$ROOT/src" -I"$ROOT/build"
-    # halt_on_error=0: the original thresh_worker hits a pre-existing
-    # compile_ast verify_self race (compiler.c). The claim here is that
-    # the tape/shutdown paths in src/trace.c are quiet.
-    TSAN_OPTIONS="halt_on_error=0 exitcode=0" \
+    # Until #1334 this row counted only reports whose stack was in
+    # src/trace.c, so a race anywhere else in the runtime passed. Now every
+    # report fails it. The one deliberate race (the harness's own control) is
+    # suppressed in $EC_SUPP with its reason, and the suppression must MATCH:
+    # an unused one means that case stopped running.
+    TSAN_OPTIONS="halt_on_error=0 exitcode=66 suppressions=$EC_SUPP print_suppressions=1" \
         timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EC_BIN" \
         >"$ROOT/build/tsan_embed_concurrent.out" 2>"$ROOT/build/tsan_embed_concurrent.err"
     LAST_RC=$?
-    TRACE_RACE=$(grep -c 'src/trace.c' "$ROOT/build/tsan_embed_concurrent.err" 2>/dev/null || true)
-    if grep -q 'EMBED_CONCURRENT_OK' "$ROOT/build/tsan_embed_concurrent.out" \
-       && [ "${TRACE_RACE:-0}" -eq 0 ]; then
-        echo "  PASS: embed-concurrent TSan-clean (shutdown-while-sibling, 0 trace.c reports)"; PASS=$((PASS + 1))
+    EC_W=$(grep -c 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_embed_concurrent.err" 2>/dev/null || true)
+    EC_PLANT=$(sed -n 's/^\([0-9][0-9]*\) race:planted_worker$/\1/p' "$ROOT/build/tsan_embed_concurrent.err" | head -1)
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: embed-concurrent HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$LAST_RC" -eq 0 ] && [ "${EC_W:-0}" -eq 0 ] && [ "${EC_PLANT:-0}" -gt 0 ] \
+         && grep -q 'EMBED_CONCURRENT_OK' "$ROOT/build/tsan_embed_concurrent.out"; then
+        echo "  PASS: embed-concurrent TSan-clean (0 reports; the planted control's race matched its suppression $EC_PLANT time(s))"
+        PASS=$((PASS + 1))
     else
-        echo "  FAIL: embed-concurrent tsan rc=$LAST_RC trace.c-reports=$TRACE_RACE"
+        echo "  FAIL: embed-concurrent rc=$LAST_RC reports=${EC_W:-0} planted-suppression-matches=${EC_PLANT:-0} (want rc 0, 0 reports, >= 1 match)"
         FAIL=$((FAIL + 1))
-        grep -A2 'src/trace.c' "$ROOT/build/tsan_embed_concurrent.err" | head -12
+        grep -A3 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_embed_concurrent.err" | head -16
+        grep -v '^[[:space:]]*PASS:' "$ROOT/build/tsan_embed_concurrent.out" | tail -5
+    fi
+
+    # FIRST USE, concurrently (#1334). The full run above warms every
+    # lazily-built table on its first case, so a first-use race in the lexer,
+    # compiler or VM (PR #1332 shipped one) can never show there. This mode
+    # opens states and runs the first lex/compile/eval on workers released by
+    # a barrier, with nothing evaluated on the main thread first. A process
+    # gets exactly one first use, so it runs FU_RUNS separate processes, and
+    # the first report halts each one. No suppressions: nothing planted runs.
+    # Calibrated once (PR for #1334): a lexer table filled on first call made
+    # 5 of 5 runs exit 66 while the full run above still passed.
+    FU_RUNS=${TSAN_FIRST_USE_RUNS:-5}
+    FU_CLEAN=0; FU_FIRST_BAD=""
+    fu=0
+    while [ "$fu" -lt "$FU_RUNS" ]; do
+        fu=$((fu + 1))
+        EMBED_CONCURRENT_ONLY=first-use TSAN_OPTIONS="halt_on_error=1 exitcode=66" \
+            timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EC_BIN" \
+            >"$ROOT/build/tsan_first_use.out" 2>"$ROOT/build/tsan_first_use.err"
+        LAST_RC=$?
+        if [ "$LAST_RC" -eq 0 ] && grep -q 'EMBED_CONCURRENT_OK' "$ROOT/build/tsan_first_use.out" \
+           && ! grep -q 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_first_use.err"; then
+            FU_CLEAN=$((FU_CLEAN + 1))
+        elif [ -z "$FU_FIRST_BAD" ]; then
+            FU_FIRST_BAD="run $fu rc=$LAST_RC"
+            [ "$LAST_RC" -eq 124 ] && FU_FIRST_BAD="$FU_FIRST_BAD (HUNG)"
+            cp "$ROOT/build/tsan_first_use.err" "$ROOT/build/tsan_first_use.bad.err"
+            cp "$ROOT/build/tsan_first_use.out" "$ROOT/build/tsan_first_use.bad.out"
+        fi
+    done
+    if [ "$FU_RUNS" -gt 0 ] && [ "$FU_CLEAN" -eq "$FU_RUNS" ]; then
+        echo "  PASS: concurrent first use TSan-clean ($FU_CLEAN/$FU_RUNS fresh processes, no warm-up)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: concurrent first use: $FU_CLEAN/$FU_RUNS runs clean; first bad: ${FU_FIRST_BAD:-none (FU_RUNS=$FU_RUNS)}"
+        FAIL=$((FAIL + 1))
+        grep -A3 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_first_use.bad.err" 2>/dev/null | head -16
+        grep 'FAIL' "$ROOT/build/tsan_first_use.bad.out" 2>/dev/null | head -5
     fi
 else
-    echo "  FAIL: tsan objects missing"
+    echo "  FAIL: tsan objects or $EC_SUPP missing"
     FAIL=$((FAIL + 1))
 fi
 

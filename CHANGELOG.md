@@ -4,6 +4,15 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+- The ThreadSanitizer embed row in `tests/test_tsan.sh` fails on any report,
+  not only those in `src/trace.c` (#1334). The harness's one deliberate race
+  is suppressed in `tests/tsan_embed_concurrent.supp` with its reason, and the
+  row requires that suppression to match. A new row runs
+  `EMBED_CONCURRENT_ONLY=first-use` in five fresh processes: several states
+  lex, compile and evaluate for the first time at once, with no warm-up on the
+  main thread. A lexer table filled lazily on first call, the race in PR
+  #1332, turned it red in every run; the old row passed it.
+
 - Suite section `[99zb]` counts a run with no bash 3.x as a skip in the
   RESULTS line's `N skipped`, not as a pass (#1326). Before, a lane that never
   ran the old-bash portability audit reported the same pass as one that did.
