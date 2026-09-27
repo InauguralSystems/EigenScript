@@ -147,15 +147,23 @@ if [ -n "$TSAN_OBJS" ] && [ -f "$EC_SUPP" ]; then
         >"$ROOT/build/tsan_embed_concurrent.out" 2>"$ROOT/build/tsan_embed_concurrent.err"
     LAST_RC=$?
     EC_W=$(grep -c 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_embed_concurrent.err" 2>/dev/null || true)
-    EC_PLANT=$(sed -n 's/^\([0-9][0-9]*\) race:planted_worker$/\1/p' "$ROOT/build/tsan_embed_concurrent.err" | head -1)
+    # Every entry in the file must appear in TSan's "Matched" block (it lists
+    # only the templates that matched), so an entry nothing hits is a FAIL.
+    EC_ENTRIES=0; EC_UNUSED=""
+    while IFS= read -r ent; do
+        case "$ent" in ''|'#'*) continue ;; esac
+        EC_ENTRIES=$((EC_ENTRIES + 1))
+        awk -v e="$ent" '$1 ~ /^[0-9]+$/ && substr($0, length($1) + 2) == e { f = 1 } END { exit !f }' \
+            "$ROOT/build/tsan_embed_concurrent.err" || EC_UNUSED="$EC_UNUSED $ent"
+    done < "$EC_SUPP"
     if [ "$LAST_RC" -eq 124 ]; then
         echo "  FAIL: embed-concurrent HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
-    elif [ "$LAST_RC" -eq 0 ] && [ "${EC_W:-0}" -eq 0 ] && [ "${EC_PLANT:-0}" -gt 0 ] \
+    elif [ "$LAST_RC" -eq 0 ] && [ "${EC_W:-0}" -eq 0 ] && [ "$EC_ENTRIES" -gt 0 ] && [ -z "$EC_UNUSED" ] \
          && grep -q 'EMBED_CONCURRENT_OK' "$ROOT/build/tsan_embed_concurrent.out"; then
-        echo "  PASS: embed-concurrent TSan-clean (0 reports; the planted control's race matched its suppression $EC_PLANT time(s))"
+        echo "  PASS: embed-concurrent TSan-clean (0 reports; all $EC_ENTRIES suppression(s) matched)"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: embed-concurrent rc=$LAST_RC reports=${EC_W:-0} planted-suppression-matches=${EC_PLANT:-0} (want rc 0, 0 reports, >= 1 match)"
+        echo "  FAIL: embed-concurrent rc=$LAST_RC reports=${EC_W:-0} suppressions=$EC_ENTRIES unused:${EC_UNUSED:- none} (want rc 0, 0 reports, every suppression matched)"
         FAIL=$((FAIL + 1))
         grep -A3 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_embed_concurrent.err" | head -16
         grep -v '^[[:space:]]*PASS:' "$ROOT/build/tsan_embed_concurrent.out" | tail -5
@@ -168,6 +176,9 @@ if [ -n "$TSAN_OBJS" ] && [ -f "$EC_SUPP" ]; then
     # a barrier, with nothing evaluated on the main thread first. A process
     # gets exactly one first use, so it runs FU_RUNS separate processes, and
     # the first report halts each one. No suppressions: nothing planted runs.
+    # Five, not one: a table filled after a lock that orders the workers (e.g.
+    # builtins registration after the attach lock) is caught per process only
+    # when two workers reach it before either finishes, measured at 4 of 5.
     # Calibrated once (PR for #1334): a lexer table filled on first call made
     # 5 of 5 runs exit 66 while the full run above still passed.
     FU_RUNS=${TSAN_FIRST_USE_RUNS:-5}
