@@ -6427,6 +6427,27 @@ elif [ "$PORT_RC" -eq 0 ] && [ -n "$PORT_IDENTITY_VERDICT" ]; then
     FAIL=$((FAIL + 1))
     echo "  FAIL: $PORT_IDENTITY_VERDICT"
     print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
+elif [ "$PORT_RC" -eq 0 ] \
+     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability-parse: SKIPPED" \
+     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability: OK:"; then
+    # Both verdicts at once is a tool that cannot say what it did.
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: the portability audit printed BOTH a skip and a completed-audit verdict"
+    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
+elif [ "$PORT_RC" -eq 0 ] && [ "$(uname -s)" = "Darwin" ] \
+     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability-parse: SKIPPED"; then
+    # macOS ships bash 3.2 as /bin/bash, so this lane is always provisioned;
+    # a skip here is a broken candidate walk, never a missing shell.
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: the portability audit skipped on macOS, whose /bin/bash IS the old shell it exists to model"
+    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
+elif [ "$PORT_RC" -eq 0 ] \
+     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability-parse: SKIPPED"; then
+    # #1326: no old bash here, so nothing was parsed or run under one. That
+    # used to count as a PASS, indistinguishable from a lane that ran the
+    # audit; it is a section-level skip and is tallied as one.
+    TOTAL=$((TOTAL - 1))
+    section_skip "no bash <= $PORT_OLD_MAJOR_MAX on this machine — portability audit not run (install one at ~/.local/bin/bash32)"
 elif [ "$PORT_RC" -eq 0 ]; then
     PASS=$((PASS + 1))
 else
