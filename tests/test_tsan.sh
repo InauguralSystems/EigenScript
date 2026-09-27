@@ -149,12 +149,26 @@ if [ -n "$TSAN_OBJS" ] && [ -f "$EC_SUPP" ]; then
     EC_W=$(grep -c 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_embed_concurrent.err" 2>/dev/null || true)
     # Every entry in the file must appear in TSan's "Matched" block (it lists
     # only the templates that matched), so an entry nothing hits is a FAIL.
-    EC_ENTRIES=0; EC_UNUSED=""
-    while IFS= read -r ent; do
+    # Entries are normalised the way TSan's parser does (CR and surrounding
+    # blanks trimmed), and a last line without a newline still counts. The
+    # entry reaches awk through the environment so no escape processing
+    # rewrites it.
+    EC_ENTRIES=0; EC_UNUSED=""; EC_SEEN=""
+    while IFS= read -r ent || [ -n "$ent" ]; do
+        ent=${ent%$'\r'}
+        ent=${ent#"${ent%%[![:blank:]]*}"}
+        ent=${ent%"${ent##*[![:blank:]]}"}
         case "$ent" in ''|'#'*) continue ;; esac
         EC_ENTRIES=$((EC_ENTRIES + 1))
-        awk -v e="$ent" '$1 ~ /^[0-9]+$/ && substr($0, length($1) + 2) == e { f = 1 } END { exit !f }' \
-            "$ROOT/build/tsan_embed_concurrent.err" || EC_UNUSED="$EC_UNUSED $ent"
+        # TSan prints one Matched line per template, so a second copy of an
+        # entry would read as used while matching nothing: refuse duplicates.
+        if printf '%s\n' "${EC_SEEN:-}" | grep -qxF -- "$ent"; then
+            EC_UNUSED="$EC_UNUSED '$ent'(duplicate)"; continue
+        fi
+        EC_SEEN="${EC_SEEN:-}$ent
+"
+        EC_ENT="$ent" awk '$1 ~ /^[0-9]+$/ && substr($0, length($1) + 2) == ENVIRON["EC_ENT"] { f = 1 } END { exit !f }' \
+            "$ROOT/build/tsan_embed_concurrent.err" || EC_UNUSED="$EC_UNUSED '$ent'"
     done < "$EC_SUPP"
     if [ "$LAST_RC" -eq 124 ]; then
         echo "  FAIL: embed-concurrent HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
