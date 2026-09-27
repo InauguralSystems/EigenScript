@@ -7,7 +7,9 @@ All notable changes to EigenScript are documented here.
 - Suite section `[99zb]` counts a run with no bash 3.x as a skip in the
   RESULTS line's `N skipped`, not as a pass (#1326). Before, a lane that never
   ran the old-bash portability audit reported the same pass as one that did.
-  On macOS, whose `/bin/bash` is 3.2, a skip is a failure.
+  On macOS, whose `/bin/bash` is 3.2, a skip is a failure. `make precheck`
+  likewise records a gate that exits 0 after announcing `name: SKIPPED` as a
+  skip rather than a pass.
 
 - `tools/selftests.sh` refuses a self-test trigger that matches a product
   file (`src/`, `lib/`, `docs/`, `examples/`, the suite runner,

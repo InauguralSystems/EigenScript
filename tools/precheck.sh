@@ -52,7 +52,10 @@ run_gate() {   # run_gate <index> <class> <command...>
     fi
     s=$(date +%s)
     bash "$@" > "$OUT/$i.log" 2>&1; rc=$?
-    if [ "$rc" -eq 0 ]; then
+    if [ "$rc" -eq 0 ] && grep -qE '^[a-z0-9_-]+: SKIPPED' "$OUT/$i.log"; then
+        # An announced skip exits 0 and measured nothing: never a PASS (#1326).
+        echo "SKIP|$(( $(date +%s) - s ))|$(grep -m1 -E '^[a-z0-9_-]+: SKIPPED' "$OUT/$i.log" | cut -c1-120)" > "$OUT/$i.st"
+    elif [ "$rc" -eq 0 ]; then
         echo "PASS|$(( $(date +%s) - s ))|$(grep -v '^[[:space:]]*$' "$OUT/$i.log" | tail -1 | cut -c1-120)" > "$OUT/$i.st"
     else
         echo "FAIL|$(( $(date +%s) - s ))|exit $rc" > "$OUT/$i.st"
