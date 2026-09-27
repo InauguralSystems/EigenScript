@@ -108,7 +108,9 @@ The bulk of the surface, but mostly *not* reimplemented:
 `pthread_self` is thread IDENTITY, not scheduling: the #1142 replay tape
 records which OS thread opened it, so a take from any other thread fails
 loud instead of silently mixing taped and live values. On EigenOS it is a
-comparable task handle.
+constant, because every task runs on the one CPU thread (the replay check
+keys the owning state separately). EigenOS checks before each kernel link
+that it defines every root in `tools/freestanding_hal_roots.txt` (#1181).
 Route onto the kernel's own scheduler + sync primitives via the HAL. **But
 harden first**: the threading/channel layer is the youngest part of the runtime
 (#293 cross-thread channel UAF; before #295/#297 the cycle collector was
