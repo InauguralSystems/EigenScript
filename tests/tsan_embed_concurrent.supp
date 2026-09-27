@@ -1,0 +1,10 @@
+# ThreadSanitizer suppressions for build/tsan/embed_concurrent (tests/test_tsan.sh).
+# Every entry needs a reason, and test_tsan.sh asserts each one MATCHED on
+# the run (an unused suppression means the case it covers stopped running).
+#
+# planted_worker: test_planted_fault_is_detectable races on a file-scope
+# global ON PURPOSE. It is the harness's control, proving that a shared
+# global does cross-talk under this scheduler, so the isolation checks above
+# it are informative. The race is the point; suppressing it is what lets the
+# embed row fail on every OTHER report (#1334).
+race:planted_worker
