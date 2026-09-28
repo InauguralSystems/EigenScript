@@ -5,6 +5,8 @@ All notable changes to EigenScript are documented here.
 ## [Unreleased]
 
 - A token's column is its byte offset on tab-indented lines too (#1343): the lexer counted each leading tab (also inside `f"{...}"`) as 4 columns, so LSP rename, semantic tokens, cursor lookup, diagnostics and the error caret all landed 3 bytes right per tab.
+- eigenlsp rename: the scope table and each scope's bindings grow instead of silently stopping at 256 scopes / 32 names / 47 bytes, which let a rename of a global rewrite a late shadowing parameter or `local` (#1341).
+- eigenlsp's JSON strings and `--lint --json` share one UTF-8-safe escape, `eigs_json_escape_append`: a cut character is dropped whole, a bad byte becomes U+FFFD, and control characters are escaped rather than dropped (#1336).
 
 - The ThreadSanitizer embed row in `tests/test_tsan.sh` fails on any report,
   not only those in `src/trace.c` (#1334). The harness's one deliberate race

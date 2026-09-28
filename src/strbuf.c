@@ -82,6 +82,45 @@ void eigs_utf8_sanitize(char *dst, size_t cap, const char *src) {
     memcpy(dst + o, "...", 4);
 }
 
+/* JSON-escape `s` onto `sb` with no surrounding quotes, appending at most
+ * `limit` bytes; returns the bytes appended. The one chokepoint for
+ * `--lint --json` and eigenlsp (#1048, #1336): eigs_utf8_step decides each
+ * byte, a cut tail is dropped, a byte that is not a character becomes U+FFFD,
+ * and controls are escaped (a document echoed by the LSP keeps its CR). An
+ * escape or a character that would pass `limit` is left out whole, so the
+ * output is always valid JSON string content and valid UTF-8. */
+size_t eigs_json_escape_append(strbuf *sb, const char *s, size_t limit) {
+    if (!sb || !s) return 0;
+    const unsigned char *p = (const unsigned char *)s;
+    size_t n = strlen(s), i = 0, out = 0;
+    while (i < n) {
+        char esc[7];
+        const char *unit = esc;
+        size_t w, adv = 1;
+        unsigned char c = p[i];
+        if (c == '"' || c == '\\') { esc[0] = '\\'; esc[1] = (char)c; w = 2; }
+        else if (c == '\n') { unit = "\\n"; w = 2; }
+        else if (c == '\r') { unit = "\\r"; w = 2; }
+        else if (c == '\t') { unit = "\\t"; w = 2; }
+        else if (c < 0x20) {
+            memcpy(esc, "\\u00", 4);
+            esc[4] = "0123456789abcdef"[c >> 4];
+            esc[5] = "0123456789abcdef"[c & 15];
+            w = 6;
+        } else {
+            int step = eigs_utf8_step(p + i, n - i);
+            if (step < 0) break;                       /* cut tail: drop it */
+            if (step > 0) { unit = s + i; w = adv = (size_t)step; }
+            else          { unit = "\xEF\xBF\xBD"; w = 3; }   /* U+FFFD */
+        }
+        if (w > limit - out) break;
+        strbuf_append_n(sb, unit, w);
+        out += w;
+        i += adv;
+    }
+    return out;
+}
+
 
 void strbuf_init(strbuf *b) {
     b->cap = STRBUF_INIT_CAP;
