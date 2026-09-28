@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+- A token's column is its byte offset on tab-indented lines too (#1343): the lexer counted each leading tab (also inside `f"{...}"`) as 4 columns, so LSP rename, semantic tokens, cursor lookup, diagnostics and the error caret all landed 3 bytes right per tab.
+
 - The ThreadSanitizer embed row in `tests/test_tsan.sh` fails on any report,
   not only those in `src/trace.c` (#1334). The harness's one deliberate race
   is suppressed in `tests/tsan_embed_concurrent.supp` with its reason, and the

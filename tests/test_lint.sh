@@ -2529,6 +2529,22 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "#1048 '# lint: allow W024' suppresses it" "$OUTPUT" "W024"
 rm -f "$TMPFILE"
 
+# --- #1343: the source-excerpt caret sits under the token on a TAB-indented
+# line. Token columns are byte offsets; the caret prefix copies the line's tab
+# bytes, so a terminal renders both lines alike. With the old 4-per-tab column
+# the parse excerpt was dropped (column past the line's end) and the runtime
+# caret sat 3 cells right.
+TAB=$(printf '\t')
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'if 1 > 0:\n\tx is [1, 2)\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1343 parse error on a TAB-indented line names the byte column" "$OUTPUT" "line 2:12: expected ']'"
+check_contains "#1343 parse caret under the token on a TAB-indented line" "$OUTPUT" "^       | ${TAB}          ^\$"
+printf 'x is 1\nif x:\n\ty is x + "a" * nope\n' > "$TMPFILE"
+OUTPUT=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "#1343 runtime caret under the token on a TAB-indented line" "$OUTPUT" "^       | ${TAB}               ^\$"
+rm -f "$TMPFILE"
+
 # --- #1121 ledger: no child of this file may have tripped a sanitizer ---
 # One check, covering every linter invocation above rather than a sample. In a
 # release build no file is ever written and this passes trivially, which is

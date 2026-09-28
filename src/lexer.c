@@ -418,8 +418,11 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
         if (at_line_start && bracket_depth == 0) {
             int spaces = 0;
             while (*p == ' ') { spaces++; p++; col++; }
+            /* #1343: `spaces` is indentation WIDTH (a tab counts 4); `col` is
+             * the token's BYTE offset, which the LSP (utf-8 positions), the
+             * caret printer and --lint --json all read. One byte, one col. */
             if (*p == '\t') {
-                while (*p == '\t') { spaces += 4; p++; col += 4; }
+                while (*p == '\t') { spaces += 4; p++; col++; }
                 while (*p == ' ') { spaces++; p++; col++; }
             }
             if (*p == '#') {
