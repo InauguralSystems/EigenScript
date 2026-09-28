@@ -66,7 +66,7 @@ static void check(int ok, const char *what) {
  * the number: bumping a population pin to clear its own red is how a gate
  * launders the loss it exists to report (mechanical-gates §4, §106). The
  * number only ever moves for a check you just wrote. */
-#define EC_EXPECTED_CHECKS 83
+#define EC_EXPECTED_CHECKS 85
 
 /* Rounds are deliberately modest: these assertions fire on the RATIO of two
  * states' settings, not on how long they are held, so a long spin buys nothing
@@ -1930,6 +1930,57 @@ static void test_first_use_concurrent(void) {
             printf("        worker %d: opened=%d got=%g\n", i, args[i].opened, args[i].got);
 }
 
+/* #1388: the builtin layer is written at run time only by
+ * eigs_register_function, while spawn()ed workers read builtins through it
+ * (module code resolves `len` in the layer on every call: inline caches are
+ * not populated under MT). The layer must take the #607 lock like the root
+ * global env, or the registration's names/values growth races the workers'
+ * chain walks. Without env_mark_shared(layer) this is a TSan report. */
+static const char *reg_provider(const char *name, void *ud) {
+    (void)ud;
+    if (strcmp(name, "regmod") == 0)
+        return "define f(xs) as:\n    return len of xs\n";
+    return 0;
+}
+static EigsValue *reg_noop(EigsValue *a) { (void)a; return eigs_value_new_num(1.0); }
+static void test_register_while_workers_read(void) {
+    EigsState *st = eigs_open();
+    eigs_set_source_provider(reg_provider, NULL);
+    EigsValue *r = eigs_eval_string(
+        "import regmod\n"
+        "define work() as:\n"
+        "    local i is 0\n"
+        "    local t is 0\n"
+        "    loop while i < 3000:\n"
+        "        t is t + (regmod.f of ([1, 2, 3]))\n"
+        "        i is i + 1\n"
+        "    return t\n"
+        "rw1 is spawn of work\n"
+        "rw2 is spawn of work\n"
+        "0");
+    if (r) eigs_value_release(r);
+    /* Grow the layer while the workers read through it. The sleeps spread
+     * the registrations over the workers' run so the overlap is not luck
+     * (the planted fault, layer not marked shared, was caught 2 of 3 runs
+     * with a tight loop). */
+    char nm[32];
+    for (int i = 0; i < 200; i++) {
+        snprintf(nm, sizeof nm, "reg_fn_%d", i);
+        eigs_register_function(nm, reg_noop);
+        usleep(200);
+    }
+    r = eigs_eval_string("(thread_join of rw1) + (thread_join of rw2)");
+    check(r && eigs_value_as_num(r) == 18000.0,
+          "register-while-read: workers' module len stays the builtin across 200 registrations");
+    if (r) eigs_value_release(r);
+    r = eigs_eval_string("import regmod\nregmod.f of ([reg_fn_199])");
+    check(r && eigs_value_as_num(r) == 1.0,
+          "register-while-read: a late registration is visible to module code");
+    if (r) eigs_value_release(r);
+    eigs_set_source_provider(NULL, NULL);
+    eigs_close(st);
+}
+
 int main(void) {
     printf("embed concurrent multi-state (#885/#1142/#1143)\n");
     /* EMBED_CONCURRENT_ONLY: the TSan mutant oracle runs just the take
@@ -1960,6 +2011,8 @@ int main(void) {
         test_concurrent_close();
     } else if (only && strcmp(only, "sink-only") == 0) {
         test_sink_only_buffer_bounded();
+    } else if (only && strcmp(only, "register-read") == 0) {
+        test_register_while_workers_read();
     } else {
         /* ORDER IS LOAD-BEARING at the top. test_exit_tail_not_lost forks,
          * so it runs before any thread exists; test_sink_only_buffer_bounded
@@ -1984,6 +2037,7 @@ int main(void) {
         test_owner_state_raises();
         test_shutdown_while_sibling();
         test_concurrent_close();
+        test_register_while_workers_read();
         if (checks_run != EC_EXPECTED_CHECKS) {
             printf("  FAIL: check population: %d checks ran, expected %d "
                    "(a case was added, removed, or returned early — update "

@@ -669,6 +669,15 @@ static int obs_window_arg(Value *v, const char *who) {
     return (int)d;
 }
 
+/* #1388: the module namespace env on `start`'s chain -- the env whose parent
+ * is the builtin layer. Only module code can resolve a name into the layer,
+ * so a caller that reached it always has one. */
+static Env *builtin_window_module_env(Env *start) {
+    for (Env *e = start; e; e = e->parent)
+        if (e->parent == g_builtin_env) return e;
+    return NULL;
+}
+
 /* set_observer_window of n | ["x", n] — set the default (n) or one binding's (["x", n]) observer window depth, 4..64 samples. */
 Value* builtin_set_observer_window(Value *arg) {
     if (arg && arg->type == VAL_LIST) {
@@ -695,21 +704,24 @@ Value* builtin_set_observer_window(Value *arg) {
             return make_null();
         }
         /* #1388: the builtin layer is sealed -- no builtin writes into it.
-         * A module naming a builtin gets a shadow binding (same value) in the
-         * caller's scope, where a plain `is` would have created it, and the
-         * override lands there: the module's own window for its own `len`,
-         * invisible to every other module and thread. */
+         * A module naming a builtin gets a per-MODULE override instead: a
+         * hidden `_#win:<name>` number in the module's namespace env (the
+         * `_` keeps it out of the snapshot, the `#` out of the live view and
+         * out of source). Every function of that module sees it; no other
+         * module, the host, or the layer does. */
         if (target == g_builtin_env) {
-            Env *home = start;
-            while (home->is_loop_env && home->parent) home = home->parent;
-            Value *bv = slot_to_value(target->values[slot]);
-            env_set_local(home, name, bv);
-            val_decref(bv);
-            target = env_resolve_chain(home, name, env_hash_name(name), &slot, &depth);
-            if (target != home || slot < 0) {
-                rt_error(EK_LIMIT, 0, "set_observer_window: cannot shadow '%s'", name);
+            Env *mod = builtin_window_module_env(start);
+            if (!mod) {
+                rt_error(EK_LIMIT, 0, "set_observer_window: no module scope for '%s'", name);
                 return make_null();
             }
+            char key[256];
+            snprintf(key, sizeof(key), "_#win:%s", name);
+            Value *wv = make_num((double)n);
+            env_set_local(mod, key, wv);
+            val_decref(wv);
+            trace_obs_window_binding(name, n);
+            return make_null();
         }
         if (!observer_slot_set_window(target, slot, n)) {
             rt_error(EK_LIMIT, 0, "set_observer_window: observer slot table full");
@@ -739,6 +751,15 @@ Value* builtin_get_observer_window(Value *arg) {
         if (!target || slot < 0) {
             rt_error(EK_UNDEFINED_NAME, 0, "get_observer_window: no binding named '%s'", name);
             return make_null();
+        }
+        if (target == g_builtin_env) {   /* #1388: the module's own override */
+            char key[256];
+            snprintf(key, sizeof(key), "_#win:%s", name);
+            Env *mod = builtin_window_module_env(start);
+            Value *wv = mod ? env_get(mod, key) : NULL;
+            if (wv && wv->type == VAL_NUM && wv->data.num > 0)
+                return make_num(wv->data.num);
+            return make_num((double)observer_slot_window(NULL));
         }
         const ObserverSlot *s = (slot < target->obs_cap) ? env_obs_slot(target, slot) : NULL;
         return make_num((double)observer_slot_window(s));
@@ -6428,6 +6449,10 @@ Env *eigs_global_env_create(void) {
         env_set_local(layer, global->names[i], v);
         val_decref(v);
     }
+    /* #1388: eigs_register_function can add to the layer at run time while
+     * workers read through it, so its writes take the #607 lock like the
+     * root global env's (a parented env is not auto-marked). */
+    env_mark_shared(layer);
     eigs_current->state->builtin_env = layer;
     g_global_env = global;
     return global;

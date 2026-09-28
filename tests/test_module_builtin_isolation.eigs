@@ -22,6 +22,8 @@ f_other is (_module_test_dir + "/tmp_iso_other.eigs")
 f_hole is (_module_test_dir + "/tmp_iso_hole.eigs")
 f_wa is (_module_test_dir + "/tmp_iso_wa.eigs")
 f_wb is (_module_test_dir + "/tmp_iso_wb.eigs")
+f_wc is (_module_test_dir + "/tmp_iso_wc.eigs")
+f_wd is (_module_test_dir + "/tmp_iso_wd.eigs")
 
 # Module functions call each builtin; they run AFTER the host rebinds them.
 write_text of [f_mod, "define m_len(xs) as:\n    return len of xs\ndefine m_append(xs, v) as:\n    append of [xs, v]\n    return xs\ndefine m_str(x) as:\n    return str of x\ndefine m_type(x) as:\n    return type of x\ndefine m_host() as:\n    return host_value\n"]
@@ -39,6 +41,10 @@ write_text of [f_hole, "if 0:\n    len is 0\ndefine poke() as:\n    len is 5\n  
 # name from module code shadows in that scope, like `is` (round 2).
 write_text of [f_wa, "define setw() as:\n    set_observer_window of [\"len\", 7]\n    return get_observer_window of \"len\"\n"]
 write_text of [f_wb, "define getw() as:\n    return get_observer_window of \"len\"\n"]
+# The override belongs to the MODULE: set in one function, read in another,
+# and a top-level set must not add `len` to the module's namespace (round 3).
+write_text of [f_wc, "define setup() as:\n    set_observer_window of [\"len\", 9]\ndefine g() as:\n    return get_observer_window of \"len\"\n"]
+write_text of [f_wd, "set_observer_window of [\"len\", 8]\ndefine h() as:\n    return get_observer_window of \"len\"\n"]
 
 B_len is len
 B_append is append
@@ -105,6 +111,17 @@ rec of [(tmp_iso_wa.setw of null) == 7, "W1 module set_observer_window on len ap
 rec of [(tmp_iso_wb.getw of null) == W0, "W2 another module's len window is unchanged"]
 rec of [(tmp_iso_wb.getw of null) != 7, "W3 the override did not leak through the builtin layer"]
 
+import tmp_iso_wc
+tmp_iso_wc.setup of null
+rec of [(tmp_iso_wc.g of null) == 9, "W4 a window set in one module function persists for that module's other functions"]
+rec of [(tmp_iso_wb.getw of null) == W0, "W5 another module still sees the default window"]
+rec of [(get_observer_window of "len") == W0, "W6 the host still sees the default window"]
+import tmp_iso_wd
+rec of [(tmp_iso_wd.h of null) == 8, "W7 a module top-level window applies inside that module"]
+rec of [not (has_key of [tmp_iso_wd, "len"]), "W8 a top-level set_observer_window does not export len"]
+rec of [(B_len of (keys of tmp_iso_wd)) == 1, "W9 the module's keys are just its own definitions"]
+rec of [not (has_key of [tmp_iso_wc, "len"]), "W10 a function-level set_observer_window does not export len"]
+
 # 4. a module's own rebinding stays in that module
 import tmp_iso_own
 import tmp_iso_other
@@ -128,5 +145,7 @@ remove_file of f_other
 remove_file of f_hole
 remove_file of f_wa
 remove_file of f_wb
+remove_file of f_wc
+remove_file of f_wd
 
 test_summary of null
