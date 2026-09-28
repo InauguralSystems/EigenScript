@@ -1935,7 +1935,7 @@ static void test_first_use_concurrent(void) {
  * (module code resolves `len` in the layer on every call: inline caches are
  * not populated under MT). The layer must take the #607 lock like the root
  * global env, or the registration's names/values growth races the workers'
- * chain walks. Without env_mark_shared(layer) this is a TSan report. */
+ * chain walks. Without the layer marked shared this is a TSan report. */
 static const char *reg_provider(const char *name, void *ud) {
     (void)ud;
     if (strcmp(name, "regmod") == 0)
