@@ -1,0 +1,114 @@
+# #1388: module code resolves builtin names against the runtime's pristine
+# builtin layer, never the importer's globals. A host that rebinds a builtin
+# (define / top-level is / top-level local), before OR after the import, leaves
+# the module's use of it untouched; the host's own code keeps its rebinding; a
+# module's own rebinding stays in that module; and no `is` ever writes into the
+# builtin layer. Non-builtin host globals stay readable from module code.
+#
+# lib/test.eigs is load_file'd into THIS scope, so its helpers call whatever
+# `len`/`str` the host has bound. The checks below therefore record into a
+# plain list through saved builtin values, and are only fed to assert_true
+# after every host rebinding is undone.
+
+load_file of "lib/test.eigs"
+
+_module_test_dir is env_get of "EIGS_TEST_DIR"
+if _module_test_dir == "":
+    _module_test_dir is (getcwd of null) + "/../tests"
+
+f_mod is (_module_test_dir + "/tmp_iso_mod.eigs")
+f_own is (_module_test_dir + "/tmp_iso_own.eigs")
+f_other is (_module_test_dir + "/tmp_iso_other.eigs")
+f_hole is (_module_test_dir + "/tmp_iso_hole.eigs")
+
+# Module functions call each builtin; they run AFTER the host rebinds them.
+write_text of [f_mod, "define m_len(xs) as:\n    return len of xs\ndefine m_append(xs, v) as:\n    append of [xs, v]\n    return xs\ndefine m_str(x) as:\n    return str of x\ndefine m_type(x) as:\n    return type of x\ndefine m_host() as:\n    return host_value\n"]
+# A module that rebinds a builtin for itself.
+write_text of [f_own, "define len(x) as:\n    return \"own\"\ndefine own_len(xs) as:\n    return len of xs\n"]
+write_text of [f_other, "define other_len(xs) as:\n    return len of xs\n"]
+# The seal: a module top-level assignment that never runs makes `len` a
+# module name at compile time, so poke's `len is 5` compiles to a plain
+# outward store -- which at run time resolves in the builtin layer. `eval`
+# inside a module function compiles its top level in that function's env,
+# so its `len is 7` walks the same chain.
+write_text of [f_hole, "if 0:\n    len is 0\ndefine poke() as:\n    len is 5\n    return len\ndefine ev() as:\n    eval of \"len is 7\"\n    return len\ndefine after(xs) as:\n    return len of xs\n"]
+
+B_len is len
+B_append is append
+B_str is str
+B_type is type
+B_upper is str_upper
+results is []
+define rec(c, d) as:
+    B_append of [results, [c, d]]
+
+host_value is "host-global"
+
+# ---- rebinding BEFORE the import: define, top-level is, top-level local ----
+define len(x) as:
+    return -1
+str is 3
+local type is "host-type"
+str_upper is 0
+
+import tmp_iso_mod
+import string
+rec of [(len of [1, 2]) == -1, "H0 host define len is what host code calls"]
+
+# ---- rebinding AFTER the import, before the module functions run ----
+define append(xs, v) as:
+    return "host-append"
+len is 99
+
+# 1. isolation: the module's builtins are the builtins
+rec of [(tmp_iso_mod.m_len of ([1, 2, 3])) == 3, "I1 module len is the builtin (host define before + is after)"]
+rec of [(B_len of (tmp_iso_mod.m_append of [[1], 2])) == 2, "I2 module append is the builtin (host define after import)"]
+rec of [(tmp_iso_mod.m_str of 5) == "5", "I3 module str is the builtin (host top-level is)"]
+rec of [(tmp_iso_mod.m_type of 5) == "num", "I4 module type is the builtin (host top-level local)"]
+# lib/string.eigs:59 capitalize calls str_upper; :36/:38 pad_left calls len.
+rec of [(string.capitalize of "abc") == "Abc", "I5 lib/string capitalize's str_upper is the builtin"]
+rec of [(string.pad_left of ["7", 3, "0"]) == "007", "I6 lib/string pad_left's len is the builtin"]
+rec of [(tmp_iso_mod.m_host of null) == "host-global", "I7 non-builtin host globals still reach module code"]
+
+# 2. the host's own rebinding stays in effect in the host's code
+rec of [len == 99, "H1 host len is its own latest binding"]
+rec of [str == 3, "H2 host str keeps its top-level is"]
+rec of [type == "host-type", "H3 host type keeps its top-level local"]
+rec of [(append of [[1], 2]) == "host-append", "H4 host append calls the host's define"]
+
+# 3. the builtin layer is sealed against outward `is`
+import tmp_iso_hole
+rec of [(tmp_iso_hole.poke of null) == 5, "S1 module fn's is on a layer name shadows locally"]
+rec of [(tmp_iso_hole.after of ([1, 2])) == 2, "S2 after that is, the module's len is still the builtin"]
+rec of [(tmp_iso_mod.m_len of ([1, 2])) == 2, "S3 other modules' len is still the builtin"]
+rec of [(tmp_iso_hole.ev of null) == 7, "S4 eval of an is inside a module fn shadows locally"]
+rec of [(tmp_iso_hole.after of ([1, 2, 3])) == 3, "S5 after that eval, the module's len is still the builtin"]
+define host_fn_is() as:
+    type is "fn-is"
+host_fn_is of null
+rec of [type == "fn-is", "S6 host fn's is updates the host's own binding"]
+rec of [(tmp_iso_mod.m_type of 1) == "num", "S7 and never the builtin layer"]
+
+# 4. a module's own rebinding stays in that module
+import tmp_iso_own
+import tmp_iso_other
+rec of [(tmp_iso_own.own_len of ([1, 2])) == "own", "O1 module sees its own define len"]
+rec of [(tmp_iso_other.other_len of ([1, 2])) == 2, "O2 another module does not see it"]
+rec of [len == 99, "O3 the importer does not see it"]
+
+# ---- undo every host rebinding, then report ----
+len is B_len
+append is B_append
+str is B_str
+type is B_type
+str_upper is B_upper
+
+for r in results:
+    assert_true of [r[0], r[1]]
+
+remove_file of f_mod
+remove_file of f_own
+remove_file of f_other
+remove_file of f_hole
+
+test_summary of null

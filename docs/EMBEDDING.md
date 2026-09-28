@@ -302,6 +302,15 @@ eigs_value_release(forty);          /* drop caller's ref; the global keeps its o
 `eigs_get_global` returns a counted ref the caller must release; `NULL`
 if the name isn't bound.
 
+**Globals and imported modules (#1388).** A value set with `eigs_set_global`
+is a host global, like a top-level binding in the host program. Imported
+module code reads it only under a name that is *not* a builtin: module code
+resolves builtin names against the state's sealed builtin layer first, so
+`eigs_set_global("str", v)` changes `str` for host evals and never inside a
+module. A non-builtin name falls through to the global scope, so a module can
+read a host-set `config` (EigenOS's hosted twins rely on this for the
+functions they define before importing a driver).
+
 A name containing `#` is reserved for the runtime (for example `_#fstr`, the
 binding f-strings convert through, #1322). No source can spell one, and the
 embed API refuses it too: `eigs_set_global`, `eigs_get_global` and
@@ -518,6 +527,11 @@ eigs_register_function("host_add", host_add);
 
 After registration, the script side calls it the same way as any
 builtin: `host_add of [3, 4]`.
+
+A registered function joins the state's builtin layer as well as its global
+scope (#1388): imported module code sees it, and a later host rebinding of
+the name (`host_add is 0`) changes it for host code only, exactly as for a
+runtime builtin.
 
 ## Linking
 

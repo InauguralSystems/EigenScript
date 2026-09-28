@@ -1338,6 +1338,35 @@ one exception, per its older, documented contract above: its top-level
 statements still execute directly in the current (caller's) scope, so
 a same-named top-level assignment there *does* bind through.
 
+**Builtins in module code (#1388).** An imported module's builtin names
+resolve against the runtime's own builtin set, never the importer's
+bindings: `len` in module code is the builtin unless the *module* rebinds
+it. A program that rebinds a builtin — `define len`, a top-level
+`len is ...` or `local len` — before or after the import changes it for its
+own code only, and a module's own `define len` stays inside that module.
+Names that are not builtins still resolve to the importer's globals, as
+above. The builtin set is sealed: no `is` anywhere writes into it — an
+assignment that would reach it (from module code, or an `eval` inside a
+module function) creates a binding in the writer's own scope instead.
+`load_file` runs its file in the loader's scope, so loaded code sees the
+loader's rebinding like any other code there. Functions an embedder
+registers with `eigs_register_function` belong to the builtin set
+([EMBEDDING.md](EMBEDDING.md)).
+
+```eigenscript
+write_text of ["spec_iso.eigs", "define count(xs) as:\n    return len of xs\n"]
+define len(x) as:
+    return -1
+import spec_iso
+print of (spec_iso.count of ([1, 2, 3]))
+print of (len of [1, 2, 3])
+rm of "spec_iso.eigs"
+```
+```output
+3
+-1
+```
+
 Mutable state shared across files can live in a plain top-level binding
 — an importer reads and writes it through the live namespace (#1057) —
 or in a dict or list whose fields are mutated. Boxing state in a dict

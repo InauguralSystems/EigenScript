@@ -6393,3 +6393,25 @@ void register_builtins(Env *env) {
      * every writer and the reader only needs a consistent int. */
     __atomic_store_n(&g_builtin_binding_count, env->count, __ATOMIC_RELAXED);
 }
+
+/* #1388: module code resolves builtin names against a PRISTINE layer, not the
+ * importer's globals. The global env keeps its own copy of every builtin (so
+ * a host `define len`, top-level `len is 5` or `local len` rebinds the host's
+ * copy and only the host's code sees it); the layer holds the same values,
+ * and each module namespace env is created under it (vm.c, IMPORT). The
+ * layer's parent is the global env, so a name that is NOT a builtin still
+ * falls through to the importer's globals exactly as before. */
+Env *eigs_global_env_create(void) {
+    Env *global = env_new(NULL);
+    register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
+    Env *layer = env_new(global);
+    for (int i = 0; i < global->count; i++) {
+        if (!global->names[i]) continue;
+        Value *v = slot_to_value(global->values[i]);
+        env_set_local(layer, global->names[i], v);
+        val_decref(v);
+    }
+    eigs_current->state->builtin_env = layer;
+    g_global_env = global;
+    return global;
+}

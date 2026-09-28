@@ -1098,6 +1098,19 @@ static Env *env_binding_home(Env *start) {
     return e;
 }
 
+/* #1388: the builtin layer is SEALED against outward `is`. A plain store
+ * whose name resolves there (module code reaches the layer; the host's own
+ * chain never does, its globals hold their own copies) answers "not found",
+ * so the caller creates the binding at env_binding_home instead -- a shadow
+ * in the writer's scope. Mutating the layer would rebind the builtin for
+ * every module in the state. The inline caches are only populated from this
+ * function's result, so they can never point into the layer either. */
+static inline Env *env_resolve_store(Env *start, const char *name, uint32_t h,
+                                     int *slot_idx, int *depth) {
+    Env *t = env_resolve_chain(start, name, h, slot_idx, depth);
+    return (t && t == g_builtin_env) ? NULL : t;
+}
+
 /* #1063: the ONE implementation of "store TOS into fn-local slot", shared by
  * CASE(SET_LOCAL) and the JIT's out-of-line path (jit_helper_set_local), so
  * the two can never disagree. The in-place branch is load-bearing beyond
@@ -1188,7 +1201,7 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
     uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
     if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
     int slot_idx, depth;
-    Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
+    Env *target = env_resolve_store(start, name, h, &slot_idx, &depth);
     if (target) {
         env_store_slot(target, slot_idx, s);
         if (target->assign_counts)
@@ -3629,7 +3642,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
         int slot_idx, depth;
-        Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
+        Env *target = env_resolve_store(start, name, h, &slot_idx, &depth);
         if (target) {
             env_store_slot(target, slot_idx, s);
             if (target->assign_counts)
@@ -5985,7 +5998,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
 
-        Env *mod_env = env_new(g_global_env);
+        /* #1388: under the sealed builtin layer, not the importer's globals:
+         * a builtin name in module code means the builtin unless the MODULE
+         * rebinds it; other names still reach the importer through the
+         * layer's parent link. */
+        Env *mod_env = env_new(g_builtin_env);
         int saved_errors = g_parse_errors;
         g_parse_errors = 0;
         TokenList tl = tokenize(source);

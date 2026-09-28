@@ -766,6 +766,15 @@ struct EigsState {
     /* Global lexical scope for the script + REPL line bodies + sourced
      * modules (load_file). Owned by main/eigenlsp; set after env_new. */
     Env            *global_env;
+    /* #1388: the builtin layer -- a pristine copy of the runtime's registered
+     * builtins (plus eigs_register_function callbacks), parent = global_env.
+     * Every imported module's namespace env is a child of THIS, so a builtin
+     * name in module code resolves to the builtin before any importer
+     * binding, and non-builtin names still fall through to the importer's
+     * globals. Sealed: an outward `is` never stores into it (vm.c,
+     * env_resolve_store). Owned by the state (one creator ref, taken by
+     * eigs_global_env_create, dropped by gc_collect_at_exit). */
+    Env            *builtin_env;
     /* Filesystem anchors for `import` / `load_file` resolution. */
     char            script_dir[4096];
     char            exe_dir[4096];
@@ -1307,6 +1316,7 @@ extern __thread EigsThread *eigs_current;
 #define g_obs_window        (eigs_current->state->obs_window)
 #define g_obs_scale         (eigs_current->state->obs_scale)
 #define g_global_env          (eigs_current->state->global_env)
+#define g_builtin_env         (eigs_current->state->builtin_env)
 #define g_script_dir          (eigs_current->state->script_dir)
 #define g_exe_dir             (eigs_current->state->exe_dir)
 #define g_exe_path            (eigs_current->state->exe_path)
@@ -1925,6 +1935,10 @@ void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out);
 /* ---- Registration ---- */
 
 void register_builtins(Env *env);
+/* #1388: the ONE constructor of a runtime's global scope: a root env with
+ * the builtins registered, plus the state's sealed builtin layer (see
+ * EigsState.builtin_env). Sets g_global_env and returns it. */
+Env *eigs_global_env_create(void);
 /* #459: the compiler's OP_DISPATCH guard compares the compile-time binding
  * of `dispatch` against the registered builtin to detect a rebound name. */
 Value *builtin_dispatch(Value *arg);

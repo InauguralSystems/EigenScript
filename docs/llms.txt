@@ -314,7 +314,11 @@ A module namespace is a **live view** of that module's bindings, not a
 snapshot (#1057): `m.x` reads the module's current `x` and `m.x is v`
 writes it, for a number or string exactly as for a dict or list. There is
 no "box module state in a container or importers go stale" rule. Names
-starting with `_` stay private to the module.
+starting with `_` stay private to the module. Builtin names in module code
+are always the builtins (#1388): rebinding `len` in your program changes your
+code's `len`, never an imported module's, and a module's own `define len`
+stays in that module. Other names a module does not bind still resolve to the
+importer's globals.
 
 See docs/BUILTINS.md and docs/STDLIB.md before writing your own — or resolve
 a name mechanically: `eigenscript --api --json` dumps every builtin,

@@ -4595,6 +4595,20 @@ void gc_collect_at_exit(Env *global) {
     for (int i = 0; i < seed_count; i++)
         val_decref(seeds[i]);
     free(seeds);
+    /* #1388: the builtin layer lives exactly as long as the global scope, so
+     * the global scope's teardown clears it and drops the state's ref on it.
+     * Module envs parented on it normally went with the module cache and the
+     * collection above; clearing first (as env_clear(global) does for the
+     * global scope) means one that is still pinned (a value retained past
+     * teardown) keeps only the layer's struct alive, never every builtin. The
+     * layer's own ref on the global env goes with it, before the caller's
+     * env_decref(global) releases the creator ref. */
+    if (eigs_current && eigs_current->state->builtin_env) {
+        Env *layer = eigs_current->state->builtin_env;
+        eigs_current->state->builtin_env = NULL;
+        env_clear(layer);
+        env_decref(layer);
+    }
 }
 
 /* #1144: `env->count` of a SHARED module env, read under the #607 lock.

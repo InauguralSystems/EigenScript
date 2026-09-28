@@ -50,6 +50,13 @@ static const char *smoke_provider(const char *name, void *ud) {
     (void)ud;
     if (strcmp(name, "smokemod") == 0)
         return "answer is 42\ndefine twice(k) as:\n    return k * 2\n";
+    /* #1388: module code calling a builtin, a registered function, a
+     * builtin name the host set as a global, and a plain host global. */
+    if (strcmp(name, "isomod") == 0)
+        return "define m_len(xs) as:\n    return len of xs\n"
+               "define m_add() as:\n    return host_add of [3, 4]\n"
+               "define m_str() as:\n    return str of 5\n"
+               "define m_glob() as:\n    return iso_g\n";
     return 0;
 }
 
@@ -440,6 +447,54 @@ int main(void) {
     CHECK(r != NULL && eigs_value_as_num(r) == 42.0,
           "st1 bindings preserved across switches");
     if (r) eigs_value_release(r);
+    /* --- #1388: module builtins are isolated from the host's rebinding.
+     * The host rebinds `len` with a top-level `is` (sealed: the builtin layer
+     * is never written), rebinds the registered `host_add`, and sets a global
+     * named `str`; module code still sees the builtins and the registered
+     * function. A non-builtin eigs_set_global value stays readable from
+     * module code (the layer's parent is the global scope). */
+    eigs_set_source_provider(smoke_provider, NULL);
+    r = eigs_eval_string("saved_len is len\nsaved_add is host_add\nsaved_str is str\nlen is 5\nhost_add is 0\n0");
+    if (r) eigs_value_release(r);
+    EigsValue *one = eigs_value_new_num(1.0);
+    eigs_set_global("str", one);
+    EigsValue *nine = eigs_value_new_num(9.0);
+    eigs_set_global("iso_g", nine);
+    eigs_value_release(one);
+    eigs_value_release(nine);
+    r = eigs_eval_string("import isomod\nisomod.m_len of ([1, 2, 3])");
+    CHECK(r != NULL && eigs_value_as_num(r) == 3.0,
+          "#1388 module len is the builtin after host `len is 5`");
+    if (r) eigs_value_release(r);
+    r = eigs_eval_string("import isomod\nisomod.m_add of null");
+    CHECK(r != NULL && eigs_value_as_num(r) == 7.0,
+          "#1388 registered function visible in module, immune to host rebinding");
+    if (r) eigs_value_release(r);
+    r = eigs_eval_string("import isomod\nisomod.m_str of null");
+    CHECK(r != NULL && eigs_value_type(r) == EIGS_TYPE_STR &&
+          strcmp(eigs_value_as_string(r), "5") == 0,
+          "#1388 eigs_set_global of a builtin name does not reach module code");
+    if (r) eigs_value_release(r);
+    r = eigs_eval_string("import isomod\nisomod.m_glob of null");
+    CHECK(r != NULL && eigs_value_as_num(r) == 9.0,
+          "#1388 non-builtin eigs_set_global value readable from module code");
+    if (r) eigs_value_release(r);
+    r = eigs_eval_string("len");
+    CHECK(r != NULL && eigs_value_as_num(r) == 5.0, "#1388 host keeps its own len");
+    if (r) eigs_value_release(r);
+    /* A second, independent state's `len` is untouched. */
+    CHECK(eigs_thread_switch(st2) != NULL, "#1388 switch to st2");
+    /* (No import on st2: a module imported on a parked, non-last state
+     * leaks its function cycle at eigs_close on origin/main too.) */
+    r = eigs_eval_string("len of [1, 2]");
+    CHECK(r != NULL && eigs_value_as_num(r) == 2.0,
+          "#1388 st2's len untouched by st1's `len is 5`");
+    if (r) eigs_value_release(r);
+    CHECK(eigs_thread_switch(st) != NULL, "#1388 switch back to st1");
+    r = eigs_eval_string("len is saved_len\nhost_add is saved_add\nstr is saved_str\n0");
+    if (r) eigs_value_release(r);
+    eigs_set_source_provider(NULL, NULL);
+
     CHECK(eigs_thread_switch(st2) != NULL, "switch to st2 for close");
     eigs_close(st2);                 /* full teardown; thread left detached */
     CHECK(eigs_thread_switch(st) != NULL, "re-activate st1 after st2 close");
