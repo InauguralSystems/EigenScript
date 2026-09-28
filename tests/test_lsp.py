@@ -1169,6 +1169,85 @@ def main():
     check("CRLF document diagnostics match the LF ones exactly (#880)",
           shape(crlf_diags) == shape(lf_diags))
 
+    # #1341: the scope table used to stop at 256 and say nothing. A rename of
+    # the global then rewrote a later define's same-named parameter. The file
+    # mixes defines, lambdas and fors so every scope kind draws from the one
+    # table; the late define sits past that old cap. Its `local y` makes the
+    # wrong edit change behaviour: g(y) returns y + y, not x + y.
+    parts = ["x is 1"]
+    for i in range(100):
+        parts.append("define d%d() as:\n    return 0" % i)
+    for i in range(100):
+        parts.append("lam%d is (a) => a" % i)
+    for i in range(60):
+        parts.append("for q%d in [0]:\n    t%d is 0" % (i, i))
+    g_src = "define g(x) as:\n    local y is 10\n    return x + y\n"
+    parts.append(g_src.rstrip("\n"))
+    parts.append("print of x")
+    parts.append("print of (g of 2)")
+    wide = "\n".join(parts) + "\n"
+    wide_applied = apply_rename(wide, rename_result(wide, 50, 0, 0, "y"))
+    check("rename past 256 scopes leaves the late define untouched (#1341)",
+          wide_applied is not None and g_src in wide_applied)
+    check("rename past 256 scopes still renames the global (#1341)",
+          wide_applied == wide.replace("x is 1\n", "y is 1\n", 1)
+                              .replace("print of x\n", "print of y\n"))
+    wide_orig = run_eigs(wide)
+    check("renamed wide program prints what the original printed (#1341)",
+          wide_orig == (0, "1\n12\n") and run_eigs(wide_applied or "") == wide_orig)
+
+    # #1341, same shape one level down: each scope's bind list was capped at
+    # 32 names of at most 47 bytes. A 33rd binding, or a 60-byte one, went
+    # unrecorded and the rename rewrote it along with the global.
+    locals31 = "".join("    local l%d is 0\n" % i for i in range(31))
+    long_name = "v" * 60
+    for label, name, pre in (("a 33rd binding", "x", locals31),
+                             ("a 60-byte binding", long_name, "")):
+        body = ("define h(a) as:\n%s    local %s is a\n    local y is 10\n"
+                "    return %s + y\n" % (pre, name, name))
+        src = "%s is 1\n%sprint of %s\nprint of (h of 2)\n" % (name, body, name)
+        got = apply_rename(src, rename_result(src, 51, 0, 0, "y"))
+        check("rename leaves %s of a shadowing define untouched (#1341)" % label,
+              got == src.replace(name + " is 1\n", "y is 1\n", 1)
+                        .replace("print of %s\n" % name, "print of y\n")
+              and run_eigs(src) == (0, "1\n12\n") == run_eigs(got))
+
+    # #1336: eigenlsp's JSON strings must be strict UTF-8 whatever it holds.
+    # No source text reaches the syntax-error buffer's edge: every recorded
+    # parse message is built from token-type names and ASCII identifiers (the
+    # lexer spells a non-ASCII byte as \xNN), and the buffer is now a strbuf.
+    # So this drives the chokepoint through a fixed buffer a client CAN fill:
+    # Document.uri is char[4096]. A valid URI whose 2-byte character starts at
+    # byte 4094 is cut after its lead byte, and the syntax error's
+    # publishDiagnostics echoes that URI. Before the fix the lead byte went
+    # out raw and the message was not UTF-8.
+    edge_uri = "file:///" + "a" * (4094 - len("file:///")) + "\u00e9"
+    edge_open = did_open("x is\n")
+    edge_open["params"]["textDocument"]["uri"] = edge_uri
+    edge_p = subprocess.run(
+        [LSP], input="".join(frame(m) for m in
+                             [INIT, edge_open, SHUTDOWN, EXIT]).encode("ascii"),
+        capture_output=True, timeout=15)
+    if any(mk.encode() in edge_p.stderr for mk in SANITIZER_MARKERS):
+        SANITIZER_HITS.append(edge_p.stderr.decode("utf-8", "replace"))
+    edge_diag = None
+    try:
+        edge_text = edge_p.stdout.decode("utf-8")
+    except UnicodeDecodeError as e:
+        edge_text = None
+        print("    #1336 not UTF-8:", e)
+    for chunk in (edge_text or "").split("Content-Length: ")[1:]:
+        body = chunk.split("\r\n\r\n", 1)[1]
+        obj = json.loads(body)
+        if obj.get("method") == "textDocument/publishDiagnostics":
+            edge_diag = obj["params"]
+    check("syntax-error JSON-RPC is strict UTF-8 with a cut 2-byte char (#1336)",
+          edge_text is not None and edge_diag is not None)
+    check("the cut character is dropped whole, not replaced or halved (#1336)",
+          edge_diag is not None
+          and edge_diag["uri"] == "file:///" + "a" * 4086
+          and edge_diag["diagnostics"][0]["message"].startswith("syntax error: "))
+
     # If the LSP was built under a sanitizer, fail on any report it emitted.
     check("no sanitizer reports from the LSP process", not SANITIZER_HITS)
     if SANITIZER_HITS:

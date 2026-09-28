@@ -73,7 +73,9 @@ static void record_first_error(int line, int col, int len, const char *code,
     g_first_error_len = len;
     g_first_error_col_known = candidate_col_known;
     g_first_error_from_lexer = from_lexer;
-    snprintf(g_first_error_msg, sizeof(g_first_error_msg), "%s", msg ? msg : "syntax error");
+    /* Cut on a character boundary: the LSP publishes this text (#1336). */
+    eigs_utf8_sanitize(g_first_error_msg, sizeof(g_first_error_msg),
+                       msg ? msg : "syntax error");
 }
 
 void eigs_record_first_error_code_at(int line, int col, int len,

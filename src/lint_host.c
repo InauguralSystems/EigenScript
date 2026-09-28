@@ -20,46 +20,18 @@
 #if !EIGENSCRIPT_FREESTANDING
 
 /* Escape a string for embedding in a JSON string literal (into a caller
- * buffer). This helper is host-only now that every JSON-producing lint path
- * lives in this TU; keeping it static prevents a generic host symbol leak.
- *
- * The output buffer is the SECOND place a diagnostic can be cut (the first is
- * lint_vdiag's message buffer) and the ONLY place strings the linter never
- * assembled itself — a file path, the parser's first-error message — reach a
- * consumer. So it does what lint_copy_utf8 does: copy whole UTF-8 characters,
- * replace any byte that is not part of a well-formed one with U+FFFD, and drop
- * an incomplete sequence at the end rather than emit half of it. Emitting half
- * produces a payload strict decoders reject, and `jq` hides that by
- * substituting U+FFFD itself (#1048). Well-formed bytes >= 0x80 pass through
- * raw — JSON accepts UTF-8 as-is. */
+ * buffer). Host-only and static so it does not leak a generic symbol.
+ * The bytes come from eigs_json_escape_append, the chokepoint eigenlsp
+ * uses too (#1336); its limit cuts a too-long string between whole escapes
+ * and characters, never inside one (#1048). */
 static void lint_json_escape(const char *s, char *out, size_t outsz) {
-    size_t o = 0, i = 0, n = s ? strlen(s) : 0;
-    if (outsz == 0) return;
-    while (i < n) {
-        unsigned char c = (unsigned char)s[i];
-        if (c < 0x80) {
-            const char *esc = NULL;
-            if (c == '"')       esc = "\\\"";
-            else if (c == '\\') esc = "\\\\";
-            else if (c == '\n') esc = "\\n";
-            else if (c == '\t') esc = "\\t";
-            else if (c < 0x20)  { i++; continue; }   /* other controls dropped */
-            size_t w = esc ? 2 : 1;
-            if (o + w + 1 > outsz) break;
-            if (esc) { out[o++] = esc[0]; out[o++] = esc[1]; }
-            else     { out[o++] = (char)c; }
-            i++;
-            continue;
-        }
-        int step = eigs_utf8_step((const unsigned char *)s + i, n - i);
-        if (step < 0) break;                          /* cut tail: drop it */
-        size_t w = step > 0 ? (size_t)step : 3;
-        if (o + w + 1 > outsz) break;
-        if (step > 0) { memcpy(out + o, s + i, w); i += w; }
-        else          { memcpy(out + o, "\xEF\xBF\xBD", 3); i += 1; }
-        o += w;
-    }
-    out[o] = '\0';
+    if (!out || outsz == 0) return;
+    strbuf sb;
+    strbuf_init(&sb);
+    size_t w = eigs_json_escape_append(&sb, s, outsz - 1);
+    memcpy(out, sb.data, w);
+    out[w] = '\0';
+    strbuf_free(&sb);
 }
 
 /* Known builtin names — the registry itself, never a hand list (#459: the

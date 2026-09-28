@@ -5424,7 +5424,8 @@ echo ""
 
 # [81u] Lint diagnostic writers (#1048). Every message store and every
 # --lint --json emitter in src/ goes through eigs_utf8_sanitize or
-# lint_json_escape. The mid-character cut itself is in tests/test_lint.sh.
+# lint_json_escape, and eigenlsp's JSON strings through json_escape_to
+# (#1336). The mid-character cut itself is in tests/test_lint.sh.
 echo "[81u] lint diagnostic UTF-8 gate (#1048)"
 TOTAL=$((TOTAL + 1))
 UTF8_OUT=$(bash "$TESTS_DIR/../tools/lint_diag_writers.sh" 2>&1); UTF8_RC=$?

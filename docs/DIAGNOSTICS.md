@@ -366,8 +366,12 @@ so `--lint --json 2>/dev/null` is pure JSON). Each element is:
   channels with `python3` (`bytes.decode` and `json.loads`, never `jq`).
   The same sanitizing applies to the human `--lint` line and to the
   parse-error source excerpt, where a byte that cannot be decoded prints as
-  `?` so the caret below it still lines up. It covers the lint channels; other
-  LSP responses that echo document text (hover, formatting) are outside it.
+  `?` so the caret below it still lines up. eigenlsp is in the same check
+  (#1336): its `json_escape_to` and `lint_json_escape` both call
+  `eigs_json_escape_append`, and every `strbuf_append*` call in
+  `src/eigenlsp.c` that adds a non-literal string must be a named waiver
+  (a pre-built JSON value, a diagnostic code, or a text buffer that reaches
+  JSON only through `json_escape_to`).
 
 The `--json` flag may appear before or after the path. Runtime errors are
 not part of `--lint` — it compiles the program but never runs it.

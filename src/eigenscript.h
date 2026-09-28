@@ -1995,6 +1995,11 @@ int eigs_utf8_step(const unsigned char *s, size_t avail);
  * incomplete tail dropped, and a copy that does not fit truncated on a
  * character boundary and marked "...". Defined in strbuf.c. */
 void eigs_utf8_sanitize(char *dst, size_t cap, const char *src);
+/* Append the JSON-escaped form of `s` (no surrounding quotes), at most
+ * `limit` bytes, never splitting an escape or a character; returns the bytes
+ * appended. A cut tail is dropped, any other bad byte becomes U+FFFD,
+ * controls are escaped. Defined in strbuf.c. */
+size_t eigs_json_escape_append(strbuf *sb, const char *s, size_t limit);
 /* #407: register the compilation unit's raw source so column-carrying parse
  * errors print a one-line excerpt + caret. NULL = no excerpt (unchanged
  * output). Set before parse, clear after — the parser never reads it outside

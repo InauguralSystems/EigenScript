@@ -173,29 +173,23 @@ static char* json_get_object(const char *json, const char *key) {
     return result;
 }
 
-/* Escape a string for JSON output */
+/* Escape a string for JSON output, quotes included. Bytes go through
+ * eigs_json_escape_append, the UTF-8 chokepoint shared with --lint --json. */
 static void json_escape_to(strbuf *sb, const char *s) {
     strbuf_append_char(sb, '"');
-    while (*s) {
-        switch (*s) {
-            case '"': strbuf_append(sb, "\\\""); break;
-            case '\\': strbuf_append(sb, "\\\\"); break;
-            case '\n': strbuf_append(sb, "\\n"); break;
-            case '\r': strbuf_append(sb, "\\r"); break;
-            case '\t': strbuf_append(sb, "\\t"); break;
-            default:
-                if ((unsigned char)*s < 0x20) {
-                    char esc[8];
-                    snprintf(esc, sizeof(esc), "\\u%04x", (unsigned char)*s);
-                    strbuf_append(sb, esc);
-                } else {
-                    strbuf_append_char(sb, *s);
-                }
-                break;
-        }
-        s++;
-    }
+    eigs_json_escape_append(sb, s, SIZE_MAX);
     strbuf_append_char(sb, '"');
+}
+
+/* Format into dst, then repair a mid-character cut (#1336). */
+static void snprintf_utf8(char *dst, size_t cap, const char *fmt, ...) {
+    char *raw = xmalloc(cap);
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(raw, cap, fmt, ap);
+    va_end(ap);
+    eigs_utf8_sanitize(dst, cap, raw);
+    free(raw);
 }
 
 /* ================================================================
@@ -223,9 +217,9 @@ static void lsp_response(int id, const char *result_json) {
 static void lsp_notification(const char *method, const char *params_json) {
     strbuf sb;
     strbuf_init(&sb);
-    strbuf_append(&sb, "{\"jsonrpc\":\"2.0\",\"method\":\"");
-    strbuf_append(&sb, method);
-    strbuf_append(&sb, "\",\"params\":");
+    strbuf_append(&sb, "{\"jsonrpc\":\"2.0\",\"method\":");
+    json_escape_to(&sb, method);
+    strbuf_append(&sb, ",\"params\":");
     strbuf_append(&sb, params_json);
     strbuf_append_char(&sb, '}');
     lsp_send(sb.data);
@@ -237,8 +231,10 @@ static void lsp_error(int id, int code, const char *message) {
     strbuf sb;
     strbuf_init(&sb);
     strbuf_append_fmt(&sb,
-        "{\"jsonrpc\":\"2.0\",\"id\":%d,\"error\":{\"code\":%d,\"message\":\"%s\"}}",
-        id, code, message);
+        "{\"jsonrpc\":\"2.0\",\"id\":%d,\"error\":{\"code\":%d,\"message\":",
+        id, code);
+    json_escape_to(&sb, message ? message : "");
+    strbuf_append(&sb, "}}");
     lsp_send(sb.data);
     strbuf_free(&sb);
 }
@@ -725,9 +721,13 @@ static void send_diagnostics(Document *doc) {
     if (g_parse_errors > 0 && g_first_error_line > 0) {
         int err_line = g_first_error_line - 1;  /* 1-based → 0-based */
         int err_col = g_first_error_col;        /* already 0-based, LSP-native */
-        char full[320];
-        snprintf(full, sizeof(full), "syntax error: %s",
-                 g_first_error_msg[0] ? g_first_error_msg : "invalid syntax");
+        /* A strbuf, not a fixed buffer: nothing here can cut the message
+         * (#1336). json_escape_to makes the bytes valid UTF-8. */
+        strbuf full;
+        strbuf_init(&full);
+        strbuf_append(&full, "syntax error: ");
+        strbuf_append(&full, g_first_error_msg[0] ? g_first_error_msg
+                                                  : "invalid syntax");
 
         /* #407 residual: token-precise range when the parser recorded the
          * offending token's length; the old 0..1000 whole-line span only
@@ -742,7 +742,8 @@ static void send_diagnostics(Document *doc) {
         strbuf_append_fmt(&sb, ",\"character\":%d}},\"severity\":1,\"code\":\"%s\","
                             "\"source\":\"eigenscript\",\"message\":", err_end,
                             g_first_error_code ? g_first_error_code : "E002");
-        json_escape_to(&sb, full);
+        json_escape_to(&sb, full.data);
+        strbuf_free(&full);
         strbuf_append_char(&sb, '}');
     } else if (doc->ast) {
         /* Parse OK → run the linter and publish each diagnostic as a
@@ -924,18 +925,18 @@ static void handle_completion(int id, const char *params) {
     for (int i = 0; keywords[i]; i++) {
         if (!first) strbuf_append_char(&sb, ',');
         first = 0;
-        strbuf_append(&sb, "{\"label\":\"");
-        strbuf_append(&sb, keywords[i]);
-        strbuf_append(&sb, "\",\"kind\":14}");  /* 14 = Keyword */
+        strbuf_append(&sb, "{\"label\":");
+        json_escape_to(&sb, keywords[i]);
+        strbuf_append(&sb, ",\"kind\":14}");  /* 14 = Keyword */
     }
 
     /* Add builtins */
     for (int i = 0; builtin_docs[i][0]; i++) {
         if (!first) strbuf_append_char(&sb, ',');
         first = 0;
-        strbuf_append(&sb, "{\"label\":\"");
-        strbuf_append(&sb, builtin_docs[i][0]);
-        strbuf_append(&sb, "\",\"kind\":3,\"detail\":");  /* 3 = Function */
+        strbuf_append(&sb, "{\"label\":");
+        json_escape_to(&sb, builtin_docs[i][0]);
+        strbuf_append(&sb, ",\"kind\":3,\"detail\":");  /* 3 = Function */
         json_escape_to(&sb, builtin_docs[i][1]);
         strbuf_append_char(&sb, '}');
     }
@@ -952,9 +953,9 @@ static void handle_completion(int id, const char *params) {
                     Symbol *s = &doc->symbols[i];
                     if (!first) strbuf_append_char(&sb, ',');
                     first = 0;
-                    strbuf_append(&sb, "{\"label\":\"");
-                    strbuf_append(&sb, s->name);
-                    strbuf_append(&sb, "\",\"kind\":");
+                    strbuf_append(&sb, "{\"label\":");
+                    json_escape_to(&sb, s->name);
+                    strbuf_append(&sb, ",\"kind\":");
                     switch (s->kind) {
                         case SYM_FUNC: strbuf_append(&sb, "3"); break;   /* Function */
                         case SYM_VAR: strbuf_append(&sb, "6"); break;    /* Variable */
@@ -962,14 +963,19 @@ static void handle_completion(int id, const char *params) {
                         case SYM_IMPORT: strbuf_append(&sb, "9"); break; /* Module */
                     }
                     if (s->kind == SYM_FUNC && s->param_count > 0) {
-                        strbuf_append(&sb, ",\"detail\":\"define ");
-                        strbuf_append(&sb, s->name);
-                        strbuf_append_char(&sb, '(');
+                        strbuf det;
+                        strbuf_init(&det);
+                        strbuf_append(&det, "define ");
+                        strbuf_append(&det, s->name);
+                        strbuf_append_char(&det, '(');
                         for (int j = 0; j < s->param_count; j++) {
-                            if (j > 0) strbuf_append(&sb, ", ");
-                            strbuf_append(&sb, s->params[j]);
+                            if (j > 0) strbuf_append(&det, ", ");
+                            strbuf_append(&det, s->params[j]);
                         }
-                        strbuf_append(&sb, ") as:\"");
+                        strbuf_append(&det, ") as:");
+                        strbuf_append(&sb, ",\"detail\":");
+                        json_escape_to(&sb, det.data);
+                        strbuf_free(&det);
                     }
                     strbuf_append_char(&sb, '}');
                 }
@@ -980,9 +986,9 @@ static void handle_completion(int id, const char *params) {
                     if (!doc_imports_module(doc, stdlib_docs[i][0])) continue;
                     if (!first) strbuf_append_char(&sb, ',');
                     first = 0;
-                    strbuf_append(&sb, "{\"label\":\"");
-                    strbuf_append(&sb, stdlib_docs[i][1]);
-                    strbuf_append(&sb, "\",\"kind\":3,\"detail\":");  /* 3 = Function */
+                    strbuf_append(&sb, "{\"label\":");
+                    json_escape_to(&sb, stdlib_docs[i][1]);
+                    strbuf_append(&sb, ",\"kind\":3,\"detail\":");  /* 3 = Function */
                     json_escape_to(&sb, stdlib_docs[i][3]);
                     strbuf_append_char(&sb, '}');
                 }
@@ -1019,9 +1025,9 @@ static void handle_completion(int id, const char *params) {
                         for (int i = 0; stdlib_modules[i]; i++) {
                             if (!first) strbuf_append_char(&sb, ',');
                             first = 0;
-                            strbuf_append(&sb, "{\"label\":\"");
-                            strbuf_append(&sb, stdlib_modules[i]);
-                            strbuf_append(&sb, "\",\"kind\":9}");  /* 9 = Module */
+                            strbuf_append(&sb, "{\"label\":");
+                            json_escape_to(&sb, stdlib_modules[i]);
+                            strbuf_append(&sb, ",\"kind\":9}");  /* 9 = Module */
                         }
                     }
                 }
@@ -1110,16 +1116,16 @@ static void handle_hover(int id, const char *params) {
                         strbuf_append(&hb, s->params[j]);
                     }
                     strbuf_append_fmt(&hb, ") as:  [line %d]", s->line);
-                    snprintf(hover_buf, sizeof(hover_buf), "%s", hb.data);
+                    snprintf_utf8(hover_buf, sizeof(hover_buf), "%s", hb.data);
                     strbuf_free(&hb);
                     hover_text = hover_buf;
                 } else if (s->kind == SYM_VAR || s->kind == SYM_PARAM) {
-                    snprintf(hover_buf, sizeof(hover_buf), "%s %s — defined at line %d",
-                             s->kind == SYM_PARAM ? "parameter" : "variable",
-                             s->name, s->line);
+                    snprintf_utf8(hover_buf, sizeof(hover_buf), "%s %s — defined at line %d",
+                                  s->kind == SYM_PARAM ? "parameter" : "variable",
+                                  s->name, s->line);
                     hover_text = hover_buf;
                 } else if (s->kind == SYM_IMPORT) {
-                    snprintf(hover_buf, sizeof(hover_buf), "import %s", s->name);
+                    snprintf_utf8(hover_buf, sizeof(hover_buf), "import %s", s->name);
                     hover_text = hover_buf;
                 }
                 break;
@@ -1389,15 +1395,13 @@ static void handle_formatting(int id, const char *params) {
  * (effective at that point), or to the global binding. Rename only the
  * occurrences that resolve to the SAME binding as the cursor — so renaming a
  * global `x` leaves a shadowing param, loop variable, or loop-local alone. */
-#define MAX_FN_SCOPES 256
-#define MAX_SCOPE_BINDS 32
-
 /* A binding is identified by (scope, effective_from) — the token index from
  * which it takes effect. A parameter (explicit, or the implicit `n` of a
  * no-arg define) is effective for the whole body, so from = the `define`
  * token; a `local x` is effective only from its declaration, so from = that
  * ident's token. A reference at index i is bound by this scope's entry only
- * if from <= i. */
+ * if from <= i. The table and each scope's binds grow; a fixed cap used to
+ * drop the rest and a rename then rewrote a shadowed name (#1341). */
 typedef struct {
     int tok_start;   /* index of the `define`/`for` token */
     int tok_end;     /* one past the scope's last body token */
@@ -1405,34 +1409,61 @@ typedef struct {
                             * bindings — a `for` loop's iterable expression
                             * (between `in` and the body), which is evaluated in
                             * the OUTER scope. (-1,-1) = none. */
-    struct { char name[48]; int from; } binds[MAX_SCOPE_BINDS];
+    struct { char *name; int from; } *binds;
     int bind_count;
+    int bind_cap;
 } FnScope;
+
+static void scope_bind_add(FnScope *s, const char *name, int from) {
+    if (s->bind_count == s->bind_cap) {
+        int nc = s->bind_cap ? s->bind_cap * 2 : 4;
+        s->binds = xrealloc_array(s->binds, (size_t)nc, sizeof(*s->binds));
+        s->bind_cap = nc;
+    }
+    s->binds[s->bind_count].name = xstrdup(name);
+    s->binds[s->bind_count].from = from;
+    s->bind_count++;
+}
 
 /* Parameter binding (whole body). Idempotent; a param dominates a later
  * `local` of the same name (it keeps from = tok_start). */
 static void scope_add_param(FnScope *s, const char *name, int from) {
-    if (!name || s->bind_count >= MAX_SCOPE_BINDS) return;
+    if (!name) return;
     for (int i = 0; i < s->bind_count; i++)
         if (strcmp(s->binds[i].name, name) == 0) return;
-    snprintf(s->binds[s->bind_count].name, 48, "%s", name);
-    s->binds[s->bind_count].from = from;
-    s->bind_count++;
+    scope_bind_add(s, name, from);
 }
 
 /* `local` binding, effective from its declaration. Repeated `local x` in one
  * scope is the SAME binding — keep the earliest decl. A pre-existing param of
  * the same name dominates (its from = tok_start <= decl, so it is kept). */
 static void scope_add_local(FnScope *s, const char *name, int decl_idx) {
-    if (!name || s->bind_count >= MAX_SCOPE_BINDS) return;
+    if (!name) return;
     for (int i = 0; i < s->bind_count; i++)
         if (strcmp(s->binds[i].name, name) == 0) {
             if (decl_idx < s->binds[i].from) s->binds[i].from = decl_idx;
             return;
         }
-    snprintf(s->binds[s->bind_count].name, 48, "%s", name);
-    s->binds[s->bind_count].from = decl_idx;
-    s->bind_count++;
+    scope_bind_add(s, name, decl_idx);
+}
+
+static FnScope *scopes_reserve(FnScope *out, int *cap, int n) {
+    if (n < *cap) return out;
+    int nc = *cap ? *cap * 2 : 16;
+    while (nc <= n) nc *= 2;
+    FnScope *grown = xrealloc_array(out, (size_t)nc, sizeof(FnScope));
+    memset(grown + *cap, 0, (size_t)(nc - *cap) * sizeof(FnScope));
+    *cap = nc;
+    return grown;
+}
+
+static void free_scopes(FnScope *scopes, int n) {
+    if (!scopes) return;
+    for (int i = 0; i < n; i++) {
+        for (int b = 0; b < scopes[i].bind_count; b++) free(scopes[i].binds[b].name);
+        free(scopes[i].binds);
+    }
+    free(scopes);
 }
 
 /* Innermost scope containing token `idx`, or -1. */
@@ -1465,6 +1496,8 @@ static int lambda_scope(Token *tk, int count, int i, FnScope *s) {
         return 0;
     s->tok_start = i;
     s->bind_count = 0;
+    s->bind_cap = 0;
+    s->binds = NULL;
     s->excl_lo = -1;
     s->excl_hi = -1;
     int params = 0;
@@ -1499,10 +1532,11 @@ static int lambda_scope(Token *tk, int count, int i, FnScope *s) {
  * `if` and `loop while` are transparent (a `local` inside them binds to the
  * surrounding scope), and a comprehension `for` (inside `[...]`) is not a
  * statement scope. Ranges nest naturally; nested constructs each get a scope. */
-static int build_scopes(Document *doc, FnScope *out, int max) {
+static FnScope *build_scopes(Document *doc, int *out_n) {
     Token *tk = doc->tokens.tokens;
-    int count = doc->tokens.count, n = 0, bracket_depth = 0;
-    for (int i = 0; i < count && n < max; i++) {
+    int count = doc->tokens.count, n = 0, cap = 16, bracket_depth = 0;
+    FnScope *out = xcalloc((size_t)cap, sizeof(FnScope));
+    for (int i = 0; i < count; i++) {
         TokType t = tk[i].type;
         if (t == TOK_LBRACKET || t == TOK_LPAREN || t == TOK_LBRACE) bracket_depth++;
         else if (t == TOK_RBRACKET || t == TOK_RPAREN || t == TOK_RBRACE) {
@@ -1512,14 +1546,18 @@ static int build_scopes(Document *doc, FnScope *out, int max) {
             /* A lambda `(a, b) => body` binds its parameters in its body
              * only (#1243); without this scope a lambda parameter resolved
              * to a same-named global and rename rewrote both. */
+            out = scopes_reserve(out, &cap, n);
             int le = lambda_scope(tk, count, i, &out[n]);
             if (le > 0) { n++; continue; }
         }
         if (t != TOK_DEFINE && t != TOK_FOR) continue;
         if (t == TOK_FOR && bracket_depth > 0) continue;  /* comprehension, not a block */
+        out = scopes_reserve(out, &cap, n);
         FnScope *s = &out[n];
         s->tok_start = i;
         s->bind_count = 0;
+        s->bind_cap = 0;
+        s->binds = NULL;
         s->excl_lo = -1;
         s->excl_hi = -1;
         int in_idx = -1;
@@ -1585,7 +1623,8 @@ static int build_scopes(Document *doc, FnScope *out, int max) {
             int s = find_innermost_scope(out, n, m);
             if (s >= 0) scope_add_local(&out[s], tk[m + 1].str_val, m + 1);
         }
-    return n;
+    *out_n = n;
+    return out;
 }
 
 /* Resolve the binding of `name` at token `idx` to an identity (scope index,
@@ -1655,8 +1694,8 @@ static void handle_rename(int id, const char *params) {
     /* Resolve the cursor's binding, then rename only occurrences that resolve
      * to the SAME binding — so a shadowing parameter (or global) is left
      * alone. Positions still come from the token stream (exact spans). */
-    static FnScope scopes[MAX_FN_SCOPES];
-    int nscopes = build_scopes(doc, scopes, MAX_FN_SCOPES);
+    int nscopes = 0;
+    FnScope *scopes = build_scopes(doc, &nscopes);
     int cursor_idx = (int)(tok - doc->tokens.tokens);
     int cur_scope, cur_from;
     resolve_binding(scopes, nscopes, cursor_idx, name, &cur_scope, &cur_from);
@@ -1686,6 +1725,7 @@ static void handle_rename(int id, const char *params) {
     strbuf_append(&sb, "]}}");
     lsp_response(id, sb.data);
     strbuf_free(&sb);
+    free_scopes(scopes, nscopes);
     free(uri);
     free(new_name);
 }
@@ -1786,8 +1826,8 @@ static void handle_code_action(int id, const char *params) {
             }
         }
         char title[200];
-        if (vname[0]) snprintf(title, sizeof(title), "Remove unused variable '%s'", vname);
-        else snprintf(title, sizeof(title), "Remove unused variable");
+        if (vname[0]) snprintf_utf8(title, sizeof(title), "Remove unused variable '%s'", vname);
+        else snprintf_utf8(title, sizeof(title), "Remove unused variable");
 
         if (!first) strbuf_append_char(&sb, ',');
         first = 0;
