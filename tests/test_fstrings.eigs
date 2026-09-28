@@ -163,5 +163,10 @@ assert_eq of [eval of "import log\nhas_key of [(what is log at 1), \"log_info\"]
 assert_eq of [eval of "define f(i) as:\n    for i in [1, 2, 3]:\n        x is i\n        y is 0\n    return [(what is i at 2), (what is i at 4), i]\nf of 0", [0, 0, 0], "for restore in a function: filed under the for line"]
 assert_eq of [eval of "define f(i) as:\n    for i in [1, 2, 3]:\n        if i == 2:\n            break\n        y is 0\n    return [(what is i at 2), (what is i at 4), i]\nf of 0", [0, 0, 0], "for restore after break: filed under the for line"]
 assert_eq of [eval of "i is 0\nfor i in [1, 2, 3]:\n    x is i\n    y is 0\n[(what is i at 2), (what is i at 4), i]", [3, 3, 0], "module-scope for: no restore is recorded (pin)"]
+# a call in the value runs the callee's own lines: a call-valued store is
+# filed under its statement's line, not the callee's return line
+assert_eq of [eval of "define r7f() as:\n    return 7\nr7x is r7f of null\n[(what is r7x at 2), (what is r7x at 3)]", [null, 7], "call-valued assignment: not filed under the callee's line"]
+assert_eq of [eval of "define r7g() as:\n    return [1, 2]\nr7a is 0\nr7b is 0\n[r7a, r7b] is r7g of null\n[(what is r7a at 2), (what is r7b at 2), (what is r7a at 5)]", [null, null, 1], "call-valued destructuring: not filed under the callee's line"]
+assert_eq of [eval of "define r7h() as:\n    return 7\ndefine r7k(r7p, r7q is r7h of null) as:\n    return [(what is r7q at 2), (what is r7q at 3)]\nr7k of 1", [null, 7], "call-valued default: not filed under the callee's line"]
 
 test_summary of null

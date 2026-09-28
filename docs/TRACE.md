@@ -53,7 +53,10 @@ a multi-line literal ran one line early per swallowed newline, and a literal
 closing on a later line was filed under that closing line.
 
 The same re-stamp comes before every other binding store whose stamp was left
-elsewhere (#1381): a destructuring assignment spanning lines, each iteration's
+elsewhere (#1381). That includes any assignment, destructuring or parameter
+default whose value ends in a call, even on one line: the callee ran its own
+lines, so `x is f of y` now reads `L <line> … L <line> A x=…` with one more
+`L` than before. It also covers a destructuring assignment spanning lines, each iteration's
 `for` loop variable (after the previous iteration's body), a comprehension
 variable, a parameter default spanning lines, a `catch` binding (after the
 faulting line), an `import` binding (after the module's own code), and the

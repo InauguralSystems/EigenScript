@@ -115,10 +115,6 @@ typedef struct Compiler {
                                      * stamp the line". Reset at every basic-block boundary
                                      * (patch_jump targets, emit_loop, loop_start capture,
                                      * after CALL/DISPATCH/RETURN, fn entry). */
-    int               last_real_line; /* the last line actually stamped by
-                                     * emit_line; never reset to -1, so an
-                                     * assignment can tell that its value
-                                     * expression moved the line (#1251). */
     int               dispatch_rebound; /* #459, root-computed and copied to fn
                                      * compilers: the unit binds `dispatch`
                                      * somewhere (any scope) or references
@@ -537,19 +533,16 @@ static void emit_line(Compiler *c, int line) {
     if (c->last_line == line) return;
     emit_op_u32(c, OP_LINE, (uint32_t)line, line);   /* #630: 32-bit — was (uint16_t), wrapped past line 65535 */
     c->last_line = line;
-    c->last_real_line = line;
 }
 
 /* #1381: a statement is filed under its FIRST line. A store whose value
  * expression moved the stamp to a later line (a multi-line list, string or
  * interpolation), or that runs after the stamp went elsewhere (a loop body,
- * a call), re-stamps `line` first. A no-op when the stamp is already there,
- * so one-line statements compile exactly as before. */
+ * a call, a jump target), re-stamps `line` first. A no-op when the stamp is
+ * known to be on `line` already; after a call or a jump target it is not
+ * known, so a one-line call-valued assignment gains one OP_LINE. */
 static void restamp_line(Compiler *c, int line) {
-    if (c->last_real_line != line || c->last_line != line) {
-        c->last_line = -1;
-        emit_line(c, line);
-    }
+    emit_line(c, line);   /* emit_line's own dedup is exactly the test */
 }
 
 /* ---- Constant helpers ---- */
@@ -2115,12 +2108,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         /* #1251: a value spanning lines (a multi-line interpolation, string
          * or bracket) leaves the last stamp on a later line. The binding is
          * recorded under the current line, so restamp the statement's own
-         * line first. One-line statements never reach this branch, so their
-         * bytecode is unchanged. */
-        if (c->last_real_line != node->line) {
-            c->last_line = -1;
-            emit_line(c, node->line);
-        }
+         * line first. A call in the value also counts: the callee ran its own
+         * lines and left the VM there (emit_call resets last_line), so a
+         * call-valued assignment gains one OP_LINE. */
+        restamp_line(c, node->line);
         emit_assign_for_tos(c, node->data.assign.name, node->name_hash,
                             node->data.assign.local_only, node->line);
         break;
@@ -2136,10 +2127,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         compile_node(c, node->data.list_pattern_assign.expr);
         /* #1381: file the stores under the statement's first line, as
          * AST_ASSIGN does. */
-        if (c->last_real_line != node->line) {
-            c->last_line = -1;
-            emit_line(c, node->line);
-        }
+        restamp_line(c, node->line);
         chunk_emit(c->chunk, OP_DESTRUCTURE_UNPACK, node->line);
         chunk_emit_u16(c->chunk, (uint16_t)n, node->line);
         adjust_stack(c, n - 1);  /* pop list (-1), push n elements (+n) */
@@ -2662,10 +2650,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 chunk_emit_u16(fn_chunk, 0xFFFF, line);
                 compile_node(&fn_compiler, dflt);
                 /* #1381: a default spanning lines is filed under its first */
-                if (fn_compiler.last_real_line != line) {
-                    fn_compiler.last_line = -1;
-                    emit_line(&fn_compiler, line);
-                }
+                restamp_line(&fn_compiler, line);
                 emit_op_u16(&fn_compiler, OP_SET_LOCAL, (uint16_t)i, line);
                 chunk_emit(fn_chunk, OP_POP, line);
                 adjust_stack(&fn_compiler, -1);
