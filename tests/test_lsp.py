@@ -15,6 +15,7 @@ import json
 import subprocess
 import sys
 import os
+import tempfile
 
 LSP = os.environ.get("EIGENLSP", os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "src", "eigenlsp"))
@@ -264,6 +265,73 @@ def main():
           any(x.get("message") ==
               "syntax error: indent too deep (max 64 levels)"
               for x in (d or [])))
+
+    # --- #1342: a PARSE_MAX_DEPTH guard must be the recorded diagnostic ---
+    # parse_block is not covered: the lexer rejects indent past 64, and an
+    # expression chain caps at 256 before the following block is entered, so
+    # that guard cannot be reached from source text.
+    def lint_errors(src):
+        with tempfile.NamedTemporaryFile("w", suffix=".eigs", delete=False) as tf:
+            tf.write(src)
+            name = tf.name
+        try:
+            p = subprocess.run([EIGS, "--lint", "--json", name], capture_output=True,
+                               text=True, timeout=15, stdin=subprocess.DEVNULL)
+        finally:
+            os.unlink(name)
+        try:
+            got = json.loads(p.stdout)
+        except ValueError:
+            got = []
+        return [item for item in got if item.get("severity") == "error"]
+
+    paren_src = "x is " + "(" * 300 + "1" + ")" * 300 + "\n"
+    paren_err = lint_errors(paren_src)
+    check("#1342 paren nesting records expression nesting too deep",
+          len(paren_err) == 1
+          and paren_err[0].get("message") == "expression nesting too deep"
+          and paren_err[0].get("line") == 1
+          and paren_err[0].get("column") == 134)
+    if not (len(paren_err) == 1 and paren_err[0].get("message") == "expression nesting too deep"):
+        print("    got:", paren_err[:2])
+    r = converse([INIT, did_open(paren_src), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#1342 LSP publishes expression nesting too deep, not the cascade",
+          bool(d) and d[0].get("message") == "syntax error: expression nesting too deep"
+          and d[0]["range"]["start"] == {"line": 0, "character": 133}
+          and d[0]["range"]["end"] == {"line": 0, "character": 134})
+
+    minus_src = "x is " + ("-" * 300) + "1\n"
+    minus_err = lint_errors(minus_src)
+    check("#1342 unary nesting records expression nesting too deep",
+          len(minus_err) == 1
+          and minus_err[0].get("message") == "expression nesting too deep"
+          and minus_err[0].get("column") == 261)
+    if not (len(minus_err) == 1 and minus_err[0].get("message") == "expression nesting too deep"):
+        print("    got:", minus_err[:2])
+
+    dot_src = "x is a" + (".b" * 300) + "\n"
+    dot_err = lint_errors(dot_src)
+    check("#1342 dot-chain records its depth error at the operator",
+          len(dot_err) == 1
+          and dot_err[0].get("message") == "expression too deeply nested"
+          and dot_err[0].get("column") == 515)
+    if not (len(dot_err) == 1 and dot_err[0].get("column") == 515):
+        print("    got:", dot_err[:2])
+
+    # Both the lexer f-string cap and a parser depth guard fire on this one
+    # line. The parser error sits on a synthetic lowering token, so the
+    # f-string message stays the published diagnostic. (#1342)
+    both_src = "x is " + ("f\"{" * 65) + "x" + ("}\"" * 65)
+    both_err = lint_errors(both_src + "\n")
+    check("#1342 f-string cap wins when both depth limits trip on one line",
+          len(both_err) == 1
+          and both_err[0].get("message") == "f-string nesting too deep (max 64 levels)")
+    r = converse([INIT, did_open(both_src), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#1342 LSP keeps the f-string cap when parser depth also trips",
+          bool(d) and d[0].get("message") ==
+          "syntax error: f-string nesting too deep (max 64 levels)")
 
     # --- error on line 3 maps to 0-based line 2 ---
     r = converse([INIT, did_open("a is 1\nb is 2\nif b\n    print of a\n"), SHUTDOWN, EXIT])
@@ -948,7 +1016,6 @@ def main():
     # interpolation) still reports a real source column in `--lint --json`,
     # not column 1; the depth-limit lexer error is not displaced by the parse
     # errors it causes on the same line.
-    import tempfile
     for src, want_col, label in (
             ('x is 1\ny is f"{[x}"\n', 12, "unclosed list"),
             ('x is 1\ny is f"{x.}"\n', 12, "dangling dot"),

@@ -843,6 +843,9 @@ All notable changes to EigenScript are documented here.
 
 ### Fixed
 
+- **Parser depth-limit errors are the recorded first error (#1342).** Every `PARSE_MAX_DEPTH` guard records its message at the current token, so `--lint --json` and the LSP report `expression nesting too deep` instead of the recovery cascade.
+- **W022 describes the runtime raise, not a silent drop (#1335).** Over-arity on a 2+-parameter callee raises; the warning says so and still tells you to write `f of ([...])` to pass the list whole.
+
 - **Editor grammars: complete numeric literals, `report`/`report_value`, and
   escaped f-string braces (#1233, #1234, #1241).** The VS Code and Vim
   grammars now highlight `0xFF`, `0X10`, `.5` and `1.` over their whole span.

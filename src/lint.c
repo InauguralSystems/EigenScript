@@ -2318,7 +2318,7 @@ static void w022_scan(ASTNode *n, W022Table *t, LintContext *ctx) {
                 arg->data.list.count > f->param_count) {
                 lint_warn(ctx, arg->line, "W022",
                     "'%s of [...]' passes %d arguments but '%s' takes %d — "
-                    "the extras are silently dropped (write '%s of ([...])' "
+                    "the call raises at runtime (write '%s of ([...])' "
                     "to pass the list whole)",
                     f->name, arg->data.list.count, f->name,
                     f->param_count, f->name);
