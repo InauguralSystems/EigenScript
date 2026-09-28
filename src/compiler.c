@@ -535,6 +535,16 @@ static void emit_line(Compiler *c, int line) {
     c->last_line = line;
 }
 
+/* #1381: a statement is filed under its FIRST line. A store whose value
+ * expression moved the stamp to a later line (a multi-line list, string or
+ * interpolation), or that runs after the stamp went elsewhere (a loop body,
+ * a call, a jump target), re-stamps `line` first. A no-op when the stamp is
+ * known to be on `line` already; after a call or a jump target it is not
+ * known, so a one-line call-valued assignment gains one OP_LINE. */
+static void restamp_line(Compiler *c, int line) {
+    emit_line(c, line);   /* emit_line's own dedup is exactly the test */
+}
+
 /* ---- Constant helpers ---- */
 
 /* u16 operand ceiling: constant indices are encoded as 16-bit operands
@@ -2095,6 +2105,13 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
     case AST_ASSIGN: {
         compile_node(c, node->data.assign.expr);
+        /* #1251: a value spanning lines (a multi-line interpolation, string
+         * or bracket) leaves the last stamp on a later line. The binding is
+         * recorded under the current line, so restamp the statement's own
+         * line first. A call in the value also counts: the callee ran its own
+         * lines and left the VM there (emit_call resets last_line), so a
+         * call-valued assignment gains one OP_LINE. */
+        restamp_line(c, node->line);
         emit_assign_for_tos(c, node->data.assign.name, node->name_hash,
                             node->data.assign.local_only, node->line);
         break;
@@ -2108,6 +2125,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
          * convention (the outer AST_PROGRAM/BLOCK emits inter-statement POPs). */
         int n = node->data.list_pattern_assign.name_count;
         compile_node(c, node->data.list_pattern_assign.expr);
+        /* #1381: file the stores under the statement's first line, as
+         * AST_ASSIGN does. */
+        restamp_line(c, node->line);
         chunk_emit(c->chunk, OP_DESTRUCTURE_UNPACK, node->line);
         chunk_emit_u16(c->chunk, (uint16_t)n, node->line);
         adjust_stack(c, n - 1);  /* pop list (-1), push n elements (+n) */
@@ -2395,6 +2415,12 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
         /* ITER_NEXT pushes element on non-exit (+1) */
+        /* #1381: every iteration's loop-variable store is filed under the
+         * `for` line. Without this, the first store took the iterable's last
+         * line and every later one the loop body's last line. */
+        int for_line = node->data.forloop.header_line ? node->data.forloop.header_line
+                                                      : node->line;
+        restamp_line(c, for_line);
 
         if (can_skip_env) {
             /* Bind loop var to a function-env slot. SET_LOCAL leaves the
@@ -2449,6 +2475,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         if (can_persist_env) emit(c, OP_LOOP_ENV_END, node->line);
         emit(c, OP_POP, node->line); /* pop iterator state */
         if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: restore */
+            /* #1381: the restore writes the outer binding's history, so it
+             * is filed under the `for` line like the loop-variable stores.
+             * Normal exit and `break` both arrive here, after the body or the
+             * break left the stamp elsewhere. */
+            restamp_line(c, for_line);
             emit_op_u16(c, OP_GET_LOCAL, (uint16_t)save_slot, node->line);
             emit_op_u16(c, OP_SET_LOCAL, (uint16_t)prior_slot, node->line);
             emit(c, OP_POP, node->line);
@@ -2618,6 +2649,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 int skip_patch = fn_chunk->code_len;
                 chunk_emit_u16(fn_chunk, 0xFFFF, line);
                 compile_node(&fn_compiler, dflt);
+                /* #1381: a default spanning lines is filed under its first */
+                restamp_line(&fn_compiler, line);
                 emit_op_u16(&fn_compiler, OP_SET_LOCAL, (uint16_t)i, line);
                 chunk_emit(fn_chunk, OP_POP, line);
                 adjust_stack(&fn_compiler, -1);
@@ -3032,6 +3065,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         int loop_start = capture_loop_start(c);
         int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
 
+        /* #1381: the comprehension variable is filed under the
+         * comprehension's first line. Free on one line: the element
+         * expression's own stamp then dedups against this one. */
+        restamp_line(c, node->line);
+
         /* Bind loop var via Env */
         {
             int var_idx = add_string_constant(c, node->data.listcomp.var);
@@ -3096,6 +3134,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         patch_jump(c, catch_jump);
         /* Error message string is on stack, pushed by VM error handler */
         if (node->data.trycatch.err_name) {
+            /* #1381: the catch binding is filed under the `catch` line, not
+             * the faulting line inside the try body. */
+            restamp_line(c, node->data.trycatch.catch_line ? node->data.trycatch.catch_line
+                                                          : node->line);
             int idx = add_string_constant(c, node->data.trycatch.err_name);
             emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)idx, node->line);
             emit(c, OP_POP, node->line);
@@ -3279,6 +3321,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
     case AST_IMPORT: {
         int idx = add_string_constant(c, node->data.import.module_name);
         emit_op_u16(c, OP_IMPORT, (uint16_t)idx, node->line);
+        /* #1381: the module's own code ran in between and left the stamp on
+         * its last line; file the binding under the `import` line. */
+        c->last_line = -1;
+        emit_line(c, node->line);
         /* Bind the result dict to the module name */
         emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)idx, node->line);
         break;

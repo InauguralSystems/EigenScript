@@ -2545,6 +2545,22 @@ OUTPUT=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "#1343 runtime caret under the token on a TAB-indented line" "$OUTPUT" "^       | ${TAB}               ^\$"
 rm -f "$TMPFILE"
 
+# --- #1251 round 2: a literal node carries its OWN first line, not the line of
+# the token after it. A key whose ':' sits on the next line, and a list whose
+# ']' does, used to be reported on that later line. ---
+TMPFILE=$(mktemp /tmp/lint_1251_XXXXXX.eigs)
+printf 'd is {"a": 1, "a"\n: 2}\nprint of [d\n]\ns is "x\ny"\nq is {"k": 1, "k": 2}\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1251 W010 names the duplicate key's own line" "$OUTPUT" ":1: warning\[W010\]"
+check_contains "#1251 W017 names the list literal's own line" "$OUTPUT" ":3: warning\[W017\]"
+check_contains "#1251 a warning after a multi-line string is on its physical line" "$OUTPUT" ":7: warning\[W010\]"
+printf 'x is 1\nx is 2\nz is [converged\n]\nprint of z\nwhat is x at (1\n)\nprev of x at (1\n)\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1251 W016 names the bare predicate's own line" "$OUTPUT" ":3: warning\[W016\]"
+check_contains "#1251 W019 names the interrogative's own line" "$OUTPUT" ":6: warning\[W019\]: 'what is"
+check_contains "#1251 W019 names 'prev of's own line" "$OUTPUT" ":8: warning\[W019\]: interrogative 'prev of"
+rm -f "$TMPFILE"
+
 # --- #1121 ledger: no child of this file may have tripped a sanitizer ---
 # One check, covering every linter invocation above rather than a sample. In a
 # release build no file is ever written and this passes trivially, which is

@@ -338,6 +338,11 @@ ASTNode* make_node_col(ASTType type, int line, int col) {
     return n;
 }
 
+/* A node's line is the line of its OWN first token, never p_cur(p) after the
+ * node's tokens were consumed: that is the NEXT token, which sits on a later
+ * line after a multi-line string or a bracket continuation, and the compiler
+ * stamps OP_LINE from node->line, so the statement would be filed (history,
+ * `at`, tape) under the wrong line (#1251 round 2). */
 ASTNode* make_node(ASTType type, int line) {
     return make_node_col(type, line, 0);
 }
@@ -653,7 +658,7 @@ static ASTNode* parse_postfix_chain(Parser *p, ASTNode *n) {
             p_advance(p);
             Token *key_tok = p_cur(p);
             p_expect_dot_key(p);
-            ASTNode *dot = make_node_col(AST_DOT, p_cur(p)->line, key_tok->col);
+            ASTNode *dot = make_node_col(AST_DOT, key_tok->line, key_tok->col);
             dot->data.dot.target = n;
             dot->data.dot.key = xstrdup(key_tok->str_val);
             set_name_hash(dot, dot->data.dot.key);
@@ -688,7 +693,7 @@ static ASTNode* parse_primary(Parser *p) {
                 p_advance(p);
                 when_expr = parse_expression(p);
             }
-            ASTNode *n = make_node(AST_INTERROGATE, p_cur(p)->line);
+            ASTNode *n = make_node(AST_INTERROGATE, t->line);
             n->data.interrogate.kind = kind;
             n->data.interrogate.expr = expr;
             n->data.interrogate.at_expr = at_expr;
@@ -735,7 +740,7 @@ static ASTNode* parse_primary(Parser *p) {
                 p_advance(p);                        /* #868 — see parse_primary */
                 when_expr = parse_expression(p);
             }
-            ASTNode *n = make_node(AST_INTERROGATE, p_cur(p)->line);
+            ASTNode *n = make_node(AST_INTERROGATE, t->line);
             n->data.interrogate.kind = 6;
             n->data.interrogate.expr = expr;
             n->data.interrogate.at_expr = at_expr;
@@ -761,14 +766,14 @@ static ASTNode* parse_primary(Parser *p) {
     if (t->type >= TOK_CONVERGED && t->type <= TOK_EQUILIBRIUM) {
         int kind = t->type - TOK_CONVERGED;
         p_advance(p);
-        ASTNode *n = make_node(AST_PREDICATE, p_cur(p)->line);
+        ASTNode *n = make_node(AST_PREDICATE, t->line);
         n->data.predicate.kind = kind;
         return n;
     }
 
     if (t->type == TOK_NUM) {
         p_advance(p);
-        ASTNode *n = make_node(AST_NUM, p_cur(p)->line);
+        ASTNode *n = make_node(AST_NUM, t->line);
         n->data.num = t->num_val;
         while (p_cur(p)->type == TOK_LBRACKET) {
             if (chain_too_deep(p)) break;
@@ -779,7 +784,7 @@ static ASTNode* parse_primary(Parser *p) {
 
     if (t->type == TOK_STR) {
         p_advance(p);
-        ASTNode *n = make_node(AST_STR, p_cur(p)->line);
+        ASTNode *n = make_node(AST_STR, t->line);
         n->data.str = xstrdup(t->str_val);
         while (p_cur(p)->type == TOK_LBRACKET) {
             if (chain_too_deep(p)) break;
@@ -790,7 +795,7 @@ static ASTNode* parse_primary(Parser *p) {
 
     if (t->type == TOK_NULL) {
         p_advance(p);
-        return make_node(AST_NULL, p_cur(p)->line);
+        return make_node(AST_NULL, t->line);
     }
 
     if (tok_is_report(t->type)) {
@@ -894,7 +899,7 @@ static ASTNode* parse_primary(Parser *p) {
         p_advance(p);
         if (p_cur(p)->type == TOK_RBRACKET) {
             p_advance(p);
-            ASTNode *n = make_node(AST_LIST, p_cur(p)->line);
+            ASTNode *n = make_node(AST_LIST, t->line);
             n->data.list.elems = NULL;
             n->data.list.count = 0;
             return n;
@@ -914,7 +919,7 @@ static ASTNode* parse_primary(Parser *p) {
                 filter = parse_expression(p);
             }
             p_expect(p, TOK_RBRACKET);
-            ASTNode *n = make_node(AST_LISTCOMP, p_cur(p)->line);
+            ASTNode *n = make_node(AST_LISTCOMP, t->line);
             n->data.listcomp.expr = first;
             n->data.listcomp.var = xstrdup(var_tok->str_val);
             set_name_hash(n, n->data.listcomp.var);
@@ -938,7 +943,7 @@ static ASTNode* parse_primary(Parser *p) {
         }
         p_expect(p, TOK_RBRACKET);
 
-        ASTNode *n = make_node(AST_LIST, p_cur(p)->line);
+        ASTNode *n = make_node(AST_LIST, t->line);
         n->data.list.elems = elems;
         n->data.list.count = count;
 
@@ -975,7 +980,7 @@ static ASTNode* parse_primary(Parser *p) {
             }
         }
         p_expect(p, TOK_RBRACE);
-        ASTNode *n = make_node(AST_DICT, p_cur(p)->line);
+        ASTNode *n = make_node(AST_DICT, t->line);
         n->data.dict.keys = keys;
         n->data.dict.vals = vals;
         n->data.dict.count = count;
@@ -986,7 +991,7 @@ static ASTNode* parse_primary(Parser *p) {
                 p_advance(p);
                 Token *key_tok = p_cur(p);
                 p_expect_dot_key(p);
-                ASTNode *dot = make_node_col(AST_DOT, p_cur(p)->line, key_tok->col);
+                ASTNode *dot = make_node_col(AST_DOT, key_tok->line, key_tok->col);
                 dot->data.dot.target = n;
                 dot->data.dot.key = xstrdup(key_tok->str_val);
                 set_name_hash(dot, dot->data.dot.key);
@@ -1440,6 +1445,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
         set_name_hash(n, n->data.trycatch.err_name);
         n->data.trycatch.catch_body = catch_body;
         n->data.trycatch.catch_count = catch_count;
+        n->data.trycatch.catch_line = err_tok->line;  /* the `catch` line (#1381) */
         return n;
     }
 
@@ -1605,6 +1611,10 @@ static ASTNode* parse_statement_inner(Parser *p) {
         ASTNode **body = parse_block(p, &body_count);
         ASTNode *n = make_node(AST_FOR, p_cur(p)->line);
         n->data.forloop.var = xstrdup((var_tok && var_tok->str_val) ? var_tok->str_val : "");
+        /* The `for` keyword's line: the loop variable's stores are filed
+         * under it (#1381). The node's own line is still the next token's
+         * (#1382). */
+        n->data.forloop.header_line = t->line;
         set_name_hash(n, n->data.forloop.var);
         n->data.forloop.iter = iter;
         n->data.forloop.body = body;

@@ -995,6 +995,27 @@ value` raises a user error and the catch variable binds the thrown
 value itself, unchanged — a thrown string stays a string. An *uncaught*
 runtime error stops the program with a nonzero exit.
 
+`line` (and the `Error line N:` header) is the 1-based **physical** line of
+the sub-expression that faulted, even when its statement spans several lines
+(#1381). The division below sits on the statement's second line:
+
+```eigenscript
+total is 0
+try:
+    total is [1,
+        2 / 0]
+catch e:
+    print of e.line
+```
+```output
+4
+```
+
+This deliberately differs from temporal filing. There, the same statement's
+assignment is recorded under its **first** line (see "Temporal
+interrogatives"): an error points at where the fault is, and history points
+at where the statement starts.
+
 ```eigenscript
 try:
     throw of "custom failure"
@@ -1711,6 +1732,31 @@ print of score
 ```eigenscript nocheck an at-line query is line-number sensitive, and a fragment prelude would shift the line it names
 print of (what is score at 2)   # 25 — line-number qualified history
 ```
+
+The line is the **physical** source line. A newline inside a string, f-string
+text or an f-string interpolation counts, and an assignment whose value spans
+several lines (a multi-line list, dict, string or interpolation) is recorded
+under the statement's first line (#1251, #1381):
+
+```eigenscript
+x is 5
+x is [1,
+    2]
+print of (what is x at 2)
+print of (what is x at 1)
+```
+```output
+[1, 2]
+5
+```
+
+The same holds for every binding a statement makes: a destructured name, a
+`for` loop variable (on every iteration), a comprehension variable, a
+parameter default, a `catch` binding, and an `import` binding are each filed
+under the first line of the statement or clause that binds them.
+
+A runtime error inside such a statement reports a different line on purpose:
+the physical line of the faulting sub-expression (see "Error handling").
 
 ### Addressing an occurrence: `when <n>`
 

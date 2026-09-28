@@ -374,7 +374,18 @@ const char* tok_base_string(TokType t) {
     return "";
 }
 
-static TokenList tokenize_at_line(const char *source, int initial_line, int initial_col) {
+/* Step past one source byte inside a string literal or an f-string
+ * interpolation. A physical newline there is still a physical line: advance
+ * `line` and restart `col` (a byte offset) so every later token keeps its
+ * true source position (#1251). */
+#define LEX_STEP_IN_LITERAL() \
+    do { if (*p == '\n') { line++; col = 0; } else col++; p++; } while (0)
+
+/* `layout` is 0 for the spliced sub-lex of an f-string interpolation: the
+ * text is an expression, never a block, so its newlines are plain whitespace
+ * and its continuation lines carry no indentation meaning (#1337). */
+static TokenList tokenize_at_line(const char *source, int initial_line, int initial_col,
+                                  int layout) {
     TokenList tl;
     tl.capacity = MAX_TOKENS;
     tl.tokens = xmalloc_array(tl.capacity, sizeof(Token));
@@ -415,7 +426,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
     int bracket_depth = 0;  /* inside [], {}, () — suppress newlines/indent */
 
     while (*p) {
-        if (at_line_start && bracket_depth == 0) {
+        if (at_line_start && bracket_depth == 0 && layout) {
             int spaces = 0;
             while (*p == ' ') { spaces++; p++; col++; }
             /* #1343: `spaces` is indentation WIDTH (a tab counts 4); `col` is
@@ -485,7 +496,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
         }
 
         if (*p == '\n') {
-            if (bracket_depth == 0) {
+            if (bracket_depth == 0 && layout) {
                 if (tl.count > 0 && tl.tokens[tl.count-1].type != TOK_NEWLINE
                     && tl.tokens[tl.count-1].type != TOK_INDENT
                     && tl.tokens[tl.count-1].type != TOK_DEDENT) {
@@ -498,6 +509,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
         }
 
         int tok_col = col;  /* save column at start of token */
+        int tok_line = line;  /* a string literal may end on a later line */
 
         /* f-string: f"hello {expr}" expands to ("hello " + (str of (expr))) */
         if (*p == 'f' && *(p+1) == '"') {
@@ -509,7 +521,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
              * expression binds as one primary. Without this, `eval of f"..."`
              * parses as `(eval of <first-segment>) + <rest>` because `of`'s
              * RHS only consumes a unary-or-tighter expression. */
-            tok_add_synth(&tl, TOK_LPAREN, NULL, line, tok_col);
+            tok_add_synth(&tl, TOK_LPAREN, NULL, tok_line, tok_col);
 
             while (*p && *p != '"') {
                 if (*p == '\\' && (*(p+1) == '{' || *(p+1) == '}')) {
@@ -532,14 +544,14 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                         case '"': strbuf_append_char(&buf, '"'); break;
                         default: strbuf_append_char(&buf, *p); break;
                     }
-                    p++; col++;
+                    LEX_STEP_IN_LITERAL();
                     continue;
                 }
                 if (*p == '{') {
                     /* Emit accumulated literal and + operator */
                     if (buf.len > 0 || !has_segments) {
-                        if (has_segments) tok_add_synth(&tl, TOK_PLUS, NULL, line, tok_col);
-                        tok_add_synth(&tl, TOK_STR, buf.data, line, tok_col);
+                        if (has_segments) tok_add_synth(&tl, TOK_PLUS, NULL, tok_line, tok_col);
+                        tok_add_synth(&tl, TOK_STR, buf.data, tok_line, tok_col);
                         has_segments = 1;
                     }
                     buf.len = 0;
@@ -562,19 +574,20 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     strbuf expr_buf;
                     strbuf_init(&expr_buf);
                     const char *expr_end = fstr_interp_end(p);
+                    int expr_line = line;
                     while (p < expr_end) {
-                        strbuf_append_char(&expr_buf, *p++);
-                        col++;
+                        strbuf_append_char(&expr_buf, *p);
+                        LEX_STEP_IN_LITERAL();
                     }
                     if (*p == '}') { p++; col++; }
                     else {
-                        fprintf(stderr, "Syntax error line %d: unterminated f-string expression\n", line);
-                        lexer_error_at(line, tok_col,
+                        fprintf(stderr, "Syntax error line %d: unterminated f-string expression\n", tok_line);
+                        lexer_error_at(tok_line, tok_col,
                                        "unterminated f-string expression");
                     }
 
                     /* Tokenize the inner expression and splice tokens in */
-                    TokenList inner = tokenize_at_line(expr_buf.data, line, expr_col);
+                    TokenList inner = tokenize_at_line(expr_buf.data, expr_line, expr_col, 0);
                     strbuf_free(&expr_buf);
                     for (int ti = 0; ti < inner.count; ti++) {
                         if (inner.tokens[ti].type == TOK_EOF) break;
@@ -600,23 +613,23 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     tok_add_synth(&tl, TOK_RPAREN, NULL, line, col);
                     continue;
                 }
-                strbuf_append_char(&buf, *p++);
-                col++;
+                strbuf_append_char(&buf, *p);
+                LEX_STEP_IN_LITERAL();
             }
             /* Emit trailing literal */
             if (buf.len > 0) {
-                if (has_segments) tok_add_synth(&tl, TOK_PLUS, NULL, line, tok_col);
-                tok_add_synth(&tl, TOK_STR, buf.data, line, tok_col);
+                if (has_segments) tok_add_synth(&tl, TOK_PLUS, NULL, tok_line, tok_col);
+                tok_add_synth(&tl, TOK_STR, buf.data, tok_line, tok_col);
             } else if (!has_segments) {
                 /* empty f-string: f"" */
-                tok_add_synth(&tl, TOK_STR, "", line, tok_col);
+                tok_add_synth(&tl, TOK_STR, "", tok_line, tok_col);
             }
             /* Close the outer wrapper paren */
-            tok_add_synth(&tl, TOK_RPAREN, NULL, line, tok_col);
+            tok_add_synth(&tl, TOK_RPAREN, NULL, tok_line, tok_col);
             if (*p == '"') { p++; col++; }
             else {
-                fprintf(stderr, "Syntax error line %d: unterminated f-string\n", line);
-                lexer_error_at(line, tok_col, "unterminated f-string");
+                fprintf(stderr, "Syntax error line %d: unterminated f-string\n", tok_line);
+                lexer_error_at(tok_line, tok_col, "unterminated f-string");
             }
             strbuf_free(&buf);
             continue;
@@ -647,14 +660,14 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 } else {
                     strbuf_append_char(&buf, *p);
                 }
-                p++; col++;
+                LEX_STEP_IN_LITERAL();
             }
             if (*p == '"') { p++; col++; }
             else {
-                fprintf(stderr, "Syntax error line %d: unterminated string\n", line);
-                lexer_error_at(line, tok_col, "unterminated string");
+                fprintf(stderr, "Syntax error line %d: unterminated string\n", tok_line);
+                lexer_error_at(tok_line, tok_col, "unterminated string");
             }
-            tok_add(&tl, TOK_STR, 0, buf.data, line, tok_col);
+            tok_add(&tl, TOK_STR, 0, buf.data, tok_line, tok_col);
             tl.tokens[tl.count - 1].len = (int)(p - str_start);  /* true source span */
             strbuf_free(&buf);
             continue;
@@ -798,5 +811,5 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
 }
 
 TokenList tokenize(const char *source) {
-    return tokenize_at_line(source, 1, 0);
+    return tokenize_at_line(source, 1, 0, 1);
 }

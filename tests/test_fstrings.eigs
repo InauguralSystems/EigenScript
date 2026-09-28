@@ -93,4 +93,80 @@ assert_eq of [f"{f"{ {"k}": w}["k}"] }"}", "5", "dict with brace-bearing keys in
 # malformed nesting still fails with a diagnostic
 assert_eq of [try_parse of "print of f\"outer:{f\"inner:{\"a}b\"}\"}", 0, "unterminated nested f-string is loud"]
 
+# --- #1251 / #1337: a physical newline inside a string literal, inside
+# f-string literal text, or inside an f-string interpolation is still a
+# physical line. Every later token keeps its true line, so `what is x at N`
+# and `e.line` key on the right statement. Run through `eval` so the line
+# numbers are the eval'd source's own and this file stays line-insensitive. ---
+define ml_line_err(src) as:
+    local ln is -1
+    try:
+        eval of src
+    catch mle:
+        ln is mle.line
+    return ln
+assert_eq of [eval of "s is \"a\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "multi-line string: at N is the physical line"]
+assert_eq of [eval of "s is \"a\\nb\"\n\nx is 10\nx is 20\nwhat is x at 3", 10, "control: escaped newline + blank line"]
+assert_eq of [eval of "s is f\"a\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "multi-line f-string text: at N is the physical line"]
+assert_eq of [eval of "s is f\"a\\nb\"\n\nx is 10\nx is 20\nwhat is x at 3", 10, "control: escaped newline in f-string text"]
+assert_eq of [eval of "s is \"a\n\n\nb\"\nx is 10\nx is 20\nwhat is x at 5", 10, "several literal newlines each advance the line"]
+assert_eq of [eval of "s is f\"a\n{1}\nb{2}\n\"\nx is 10\nx is 20\nwhat is x at 5", 10, "f-string newlines around interpolations"]
+assert_eq of [eval of "s is \"a\\\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "backslash before a physical newline still advances the line"]
+assert_eq of [ml_line_err of "s is \"a\nb\"\nq is 1 / 0", 3, "e.line after a multi-line string"]
+assert_eq of [ml_line_err of "s is f\"a\nb\"\nq is 1 / 0", 3, "e.line after a multi-line f-string"]
+assert_eq of [ml_line_err of "s is \"a\\nb\"\nq is 1 / 0", 2, "control: escapes do not advance the line"]
+assert_eq of [len of (eval of "\"a\n\nb\""), 4, "multi-line string keeps its bytes"]
+assert_eq of [eval of "f\"a\n{1 + 1}\nb\"", "a\n2\nb", "multi-line f-string keeps its bytes"]
+# #1337: the spliced sub-lex of an interpolation applies no indentation rule
+assert_eq of [eval of "f\"{  1 +\n 2}\"", "3", "unaligned continuation line in an interpolation"]
+assert_eq of [eval of "f\"{1 +\n        2}\"", "3", "deeper continuation line in an interpolation"]
+assert_eq of [eval of "f\"<{f\"{  1 +\n 2}\"}>\"", "<3>", "unaligned continuation in a nested interpolation"]
+assert_eq of [ml_line_err of "x is f\"{1 +\n 2}\"\nq is 1 / 0", 3, "e.line after a multi-line interpolation"]
+assert_eq of [ml_line_err of "x is f\"{1 +\n\n 2}\"\ny is 1\nq is 1 / 0", 5, "e.line after a two-newline interpolation"]
+assert_eq of [ml_line_err of "x is f\"{1 +\n (1 / 0)}\"", 2, "an error inside an interpolation reports its own line"]
+assert_eq of [eval of "x is f\"{1 +\n 2}\"\nx is 10\nx is 20\nwhat is x at 3", 10, "at N after a multi-line interpolation"]
+assert_eq of [eval of "s is f\"a\\\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "backslash before a physical newline in f-string text advances the line"]
+# #1251 round 2: the multi-line literal's OWN statement is filed under its own
+# line, not the line the literal closes on (a node took the NEXT token's line)
+assert_eq of [eval of "x is 5\nx is \"a\nb\"\nwhat is x at 2", "a\nb", "multi-line string: its own statement at its first line"]
+assert_eq of [eval of "x is 5\nx is f\"a\nb\"\nwhat is x at 2", "a\nb", "multi-line f-string text: its own statement"]
+assert_eq of [eval of "x is 5\nx is f\"a\nb{1}\"\nwhat is x at 2", "a\nb1", "f-string with an interpolation after a newline: its own statement"]
+assert_eq of [eval of "x is 5\nx is f\"{1 +\n 2}\"\nwhat is x at 2", "3", "multi-line interpolation: its own statement"]
+assert_eq of [eval of "x is 5\nx is [1,\n2]\nwhat is x at 2", [1, 2], "multi-line list literal: its own statement"]
+assert_eq of [eval of "x is 5\nx is [\n]\nwhat is x at 2", [], "empty list closing on a later line: its own statement"]
+assert_eq of [eval of "x is 5\nx is {\"a\": 1\n}\nwhat is x at 2", {"a": 1}, "dict closing on a later line: its own statement"]
+# the literal is the last thing stamped before the raising op, so e.line is
+# the literal's own line, not the line of the token after it
+assert_eq of [ml_line_err of "y is 0\nz is -\"a\nb\"", 2, "e.line: negating a multi-line string"]
+assert_eq of [ml_line_err of "y is 0\nz is -([\n])", 2, "e.line: negating a list closed on a later line"]
+assert_eq of [ml_line_err of "y is 0\nz is -({\n})", 2, "e.line: negating a dict closed on a later line"]
+assert_eq of [ml_line_err of "y is 0\nz is ~(null\n)", 2, "e.line: complementing null closed on a later line"]
+assert_eq of [ml_line_err of "y is 0\nz is [1][(5\n)]", 2, "e.line: indexing with a number closed on a later line"]
+assert_eq of [ml_line_err of "define f(xs) as:\n    z is [xs[0].k\n]\n    return z\nf of [[5]]", 2, "e.line: local[const].field closed on a later line"]
+assert_eq of [ml_line_err of "define f(a) as:\n    z is [a.k\n]\n    return z\nf of 5", 2, "e.line: local.field closed on a later line"]
+
+# --- #1381 round 5: every store that writes assignment history is filed under
+# its statement's FIRST line, not the line the value (or a loop body, a catch
+# target, an imported module) left the stamp on. ---
+assert_eq of [eval of "a is 0\nb is 0\n[a, b] is [1,\n 2]\nwhat is a at 3", 1, "destructuring spanning lines: first name at its first line"]
+assert_eq of [eval of "a is 0\nb is 0\n[a, b] is [1,\n 2]\nwhat is b at 3", 2, "destructuring spanning lines: second name at its first line"]
+assert_eq of [eval of "for i in [1,\n 2]:\n    q is i\nwhat is i at 1", 2, "for over a multi-line iterable: loop variable at the for line"]
+assert_eq of [eval of "i is 0\nfor i in [1, 2, 3]:\n    x is 0\n    y is 0\nwhat is i at 2", 3, "for: every iteration's loop variable at the for line"]
+assert_eq of [eval of "define f() as:\n    for i in [1,\n 2]:\n        x is i\n    return (what is i at 2)\nf of []", 2, "for inside a function: loop variable at the for line"]
+assert_eq of [eval of "i is 0\nz is [i for i in\n [5]]\nwhat is i at 2", 5, "comprehension spanning lines: variable at its first line"]
+assert_eq of [eval of "define f(a, b is [1,\n 2]) as:\n    return (what is b at 1)\nf of 5", [1, 2], "default spanning lines: parameter at its first line"]
+assert_eq of [eval of "e is 0\ntry:\n    q is 1 / 0\ncatch e:\n    y is 1\nwhat is e at 3", 0, "catch binding is not filed under the faulting line"]
+assert_eq of [eval of "import log\nhas_key of [(what is log at 1), \"log_info\"]", 1, "import binding at the import line"]
+# the #1064 binder restore after a function-scope `for` writes the outer
+# binding's history: it is filed under the `for` line, on normal exit and on
+# `break`, not under the body's (or the break's) last line
+assert_eq of [eval of "define f(i) as:\n    for i in [1, 2, 3]:\n        x is i\n        y is 0\n    return [(what is i at 2), (what is i at 4), i]\nf of 0", [0, 0, 0], "for restore in a function: filed under the for line"]
+assert_eq of [eval of "define f(i) as:\n    for i in [1, 2, 3]:\n        if i == 2:\n            break\n        y is 0\n    return [(what is i at 2), (what is i at 4), i]\nf of 0", [0, 0, 0], "for restore after break: filed under the for line"]
+assert_eq of [eval of "i is 0\nfor i in [1, 2, 3]:\n    x is i\n    y is 0\n[(what is i at 2), (what is i at 4), i]", [3, 3, 0], "module-scope for: no restore is recorded (pin)"]
+# a call in the value runs the callee's own lines: a call-valued store is
+# filed under its statement's line, not the callee's return line
+assert_eq of [eval of "define r7f() as:\n    return 7\nr7x is r7f of null\n[(what is r7x at 2), (what is r7x at 3)]", [null, 7], "call-valued assignment: not filed under the callee's line"]
+assert_eq of [eval of "define r7g() as:\n    return [1, 2]\nr7a is 0\nr7b is 0\n[r7a, r7b] is r7g of null\n[(what is r7a at 2), (what is r7b at 2), (what is r7a at 5)]", [null, null, 1], "call-valued destructuring: not filed under the callee's line"]
+assert_eq of [eval of "define r7h() as:\n    return 7\ndefine r7k(r7p, r7q is r7h of null) as:\n    return [(what is r7q at 2), (what is r7q at 3)]\nr7k of 1", [null, 7], "call-valued default: not filed under the callee's line"]
+
 test_summary of null

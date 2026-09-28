@@ -35,6 +35,56 @@ The tape is plain text, one record per line, six record kinds:
 | `O cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what the tape last said, immediately before the next `L`/`A` record. See [Observer Configuration](#observer-configuration-1044-1045). |
 | `O win <name> <n>` | Per-binding observer window override (v3) — `set_observer_window of ["name", n]`; `n == 0` clears it. |
 
+### Line stamps
+
+An `L` record carries a **physical** source line. A newline inside a string
+literal, inside f-string text or inside an f-string interpolation counts, and
+an AST node takes the line of its own first token (#1251). An assignment whose
+value spans lines emits one extra `L <statement line>` just before its `A`, so
+the binding is filed under the statement's first line. Take this program:
+
+```
+x is [1,
+2]
+```
+
+Its assignment records read `L 1 L 2 L 1 A x=<list:2>`. Before #1251 the `L` stamps after
+a multi-line literal ran one line early per swallowed newline, and a literal
+closing on a later line was filed under that closing line.
+
+The same re-stamp comes before every other binding store whose stamp was left
+elsewhere (#1381). That includes any assignment, destructuring or parameter
+default whose value ends in a call, even on one line: the callee ran its own
+lines, so `x is f of y` now reads `L <line> … L <line> A x=…` with one more
+`L` than before. It also covers a destructuring assignment spanning lines, each iteration's
+`for` loop variable (after the previous iteration's body), a comprehension
+variable, a parameter default spanning lines, a `catch` binding (after the
+faulting line), an `import` binding (after the module's own code), and the
+restore of a function-scope `for` binder's outer value (after the body or a
+`break`). Under the interpreter, a `for` loop therefore writes one extra
+`L <for line>` record per interpreted iteration. Once OSR has compiled a loop,
+its iterations write no `L` records today, before or after this change
+(#1383), so a JIT run's tape carries fewer `L` records than an
+`EIGS_JIT_OFF=1` run of the same program. Temporal answers
+(`what is x at N`) agree across the interpreter, the JIT and OSR, because the
+JIT still updates the current line that history files under.
+
+The change moves only `L` stamps. It never moves which values a tape records
+or the order of `N` records, so a tape recorded before the change replays
+under a binary built after it, and the reverse. Checked with a
+`random of []` program containing a multi-line string, f-string text and a
+multi-line interpolation:
+
+```
+EIGS_TRACE=t.tape <old>/eigenscript prog.eigs > old.out
+EIGS_REPLAY=t.tape <new>/eigenscript prog.eigs   # prints old.out
+EIGS_TRACE=u.tape <new>/eigenscript prog.eigs > new.out
+EIGS_REPLAY=u.tape <old>/eigenscript prog.eigs   # prints new.out
+```
+
+The only output that follows the replaying binary is output that reads line
+identity: `what is x at N`, `e.line` and error headers.
+
 ### Value serialization
 
 `N` records are written with full fidelity so they can be parsed back

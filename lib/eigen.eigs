@@ -175,9 +175,16 @@ define _interrogative_index(word) as:
     return 0
 
 define eigen_tokenize(source) as:
+    return _eigen_tokenize_at of [source, 1]
+
+# `line` is the physical line `source` starts on: an f-string interpolation is
+# sub-lexed from the line of its `{`, and a newline inside a string or an
+# interpolation advances it (#1251). No layout switch is needed for #1337:
+# this tokenizer never rejects an inconsistent dedent, and the splice drops
+# layout tokens, so a continuation line's indentation is already inert here.
+define _eigen_tokenize_at(source, line) as:
     tokens is []
     pos is 0
-    line is 1
     src_len is len of source
     indent_stack is [0]
     at_line_start is 1
@@ -269,6 +276,7 @@ define eigen_tokenize(source) as:
             if (handled == 0) and (c == "f") and ((pos + 1) < src_len):
                 if (char_at of [source, pos + 1]) == "\"":
                     pos is pos + 2
+                    fstr_line is line
                     has_segments is 0
                     buf is ""
                     reading_fstr is 1
@@ -295,6 +303,8 @@ define eigen_tokenize(source) as:
                                     buf is buf + "}"
                                 else:
                                     buf is buf + esc
+                                    if esc == "\n":
+                                        line is line + 1
                                 pos is pos + 1
                         elif fc == "{":
                             # Emit accumulated literal
@@ -318,11 +328,14 @@ define eigen_tokenize(source) as:
                             # extent comes from the one shared scanner
                             iend is _fstr_interp_end of [source, pos]
                             if iend >= src_len:
-                                throw of f"parse error line {line}: unterminated f-string expression"
+                                throw of f"parse error line {fstr_line}: unterminated f-string expression"
                             expr_buf is source[pos:iend]
                             pos is iend + 1
                             # Recursively tokenize the inner expression
-                            inner_tokens is eigen_tokenize of expr_buf
+                            inner_tokens is _eigen_tokenize_at of [expr_buf, line]
+                            for eci in range of (len of expr_buf):
+                                if (char_at of [expr_buf, eci]) == "\n":
+                                    line is line + 1
                             for iti in range of (len of inner_tokens):
                                 itok is inner_tokens[iti]
                                 # Layout tokens are meaningless inside a
@@ -334,6 +347,11 @@ define eigen_tokenize(source) as:
                         else:
                             buf is buf + fc
                             pos is pos + 1
+                            if fc == "\n":
+                                line is line + 1
+                    # The C lexer rejects an unterminated f-string (#1338)
+                    if reading_fstr == 1:
+                        throw of f"parse error line {fstr_line}: unterminated f-string"
                     # Emit trailing literal
                     if (len of buf) > 0:
                         if has_segments == 1:
@@ -346,6 +364,7 @@ define eigen_tokenize(source) as:
             if (handled == 0) and (c == "\""):
                 pos is pos + 1
                 buf is ""
+                str_line is line
                 reading_str is 1
                 loop while (pos < src_len) and (reading_str == 1):
                     ch is char_at of [source, pos]
@@ -365,11 +384,15 @@ define eigen_tokenize(source) as:
                             buf is buf + "\""
                         else:
                             buf is buf + esc
+                            if esc == "\n":
+                                line is line + 1
                         pos is pos + 1
                     else:
                         buf is buf + ch
                         pos is pos + 1
-                append of [tokens, ["str", buf, line]]
+                        if ch == "\n":
+                            line is line + 1
+                append of [tokens, ["str", buf, str_line]]
                 handled is 1
             # Numbers
             if (handled == 0) and ((_is_digit of c) == 1):

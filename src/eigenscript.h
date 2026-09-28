@@ -206,14 +206,14 @@ struct ASTNode {
         struct { ASTNode **elems; int count; } list;
         struct { ASTNode *target; ASTNode *index; } index;
         struct { ASTNode *expr; char *var; ASTNode *iter; ASTNode *filter; } listcomp;
-        struct { char *var; ASTNode *iter; ASTNode **body; int body_count; } forloop;
+        struct { char *var; ASTNode *iter; ASTNode **body; int body_count; int header_line; } forloop;
         struct { ASTNode **stmts; int count; } program;
         /* #868: `at_expr` is a source line, `when_expr` an assignment ordinal.
          * At most one is ever non-NULL — the parser takes whichever qualifier
          * it sees and there is no form carrying both. */
         struct { int kind; ASTNode *expr; ASTNode *at_expr; ASTNode *when_expr; } interrogate;
         struct { int kind; } predicate;
-        struct { ASTNode **try_body; int try_count; char *err_name; ASTNode **catch_body; int catch_count; } trycatch;
+        struct { ASTNode **try_body; int try_count; char *err_name; ASTNode **catch_body; int catch_count; int catch_line; } trycatch;
         struct { ASTNode **keys; ASTNode **vals; int count; } dict;
         struct { ASTNode *target; char *key; } dot;
         struct { ASTNode *target; char *key; ASTNode *expr; char compound_op[4]; } dot_assign;
