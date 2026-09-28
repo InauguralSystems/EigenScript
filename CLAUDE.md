@@ -106,7 +106,8 @@ Always-on:
   that rule describes the call site, not the binding — a 1-parameter
   callee re-collects a 2+-element arg list WHOLE (`one of [5, 6]` binds
   `a = [5, 6]`, not `a = 5`; this is what keeps `len of [1, 2]`
-  working). Over-arity on 2+-param callees is silently dropped — W022
+  working). Over-arity on 2+-param callees raises at runtime
+  (`call passes 3 arguments but the callee takes 2`) — W022
   flags it for same-file callees. (More `.eigs`-writing gotchas:
   the `write-eigenscript` skill.)
 - **A semantics change must update `docs/SPEC.md`, `docs/COMPARISON.md`,

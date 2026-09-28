@@ -15,6 +15,7 @@ import json
 import subprocess
 import sys
 import os
+import tempfile
 
 LSP = os.environ.get("EIGENLSP", os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "src", "eigenlsp"))
@@ -264,6 +265,105 @@ def main():
           any(x.get("message") ==
               "syntax error: indent too deep (max 64 levels)"
               for x in (d or [])))
+
+    # --- #1342: a PARSE_MAX_DEPTH guard must be the recorded diagnostic ---
+    # parse_block is reached by an elif chain plus nested try blocks. Indent
+    # alone stops at 64, which is not enough; the chain below is.
+    def lint_errors(src):
+        with tempfile.NamedTemporaryFile("w", suffix=".eigs", delete=False) as tf:
+            tf.write(src)
+            name = tf.name
+        try:
+            p = subprocess.run([EIGS, "--lint", "--json", name], capture_output=True,
+                               text=True, timeout=15, stdin=subprocess.DEVNULL)
+        finally:
+            os.unlink(name)
+        try:
+            got = json.loads(p.stdout)
+        except ValueError:
+            got = []
+        return [item for item in got if item.get("severity") == "error"]
+
+    paren_src = "x is " + "(" * 300 + "1" + ")" * 300 + "\n"
+    paren_err = lint_errors(paren_src)
+    check("#1342 paren nesting records expression nesting too deep",
+          len(paren_err) == 1
+          and paren_err[0].get("message") == "expression nesting too deep"
+          and paren_err[0].get("line") == 1
+          and paren_err[0].get("column") == 134)
+    if not (len(paren_err) == 1 and paren_err[0].get("message") == "expression nesting too deep"):
+        print("    got:", paren_err[:2])
+    r = converse([INIT, did_open(paren_src), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#1342 LSP publishes expression nesting too deep, not the cascade",
+          bool(d) and d[0].get("message") == "syntax error: expression nesting too deep"
+          and d[0]["range"]["start"] == {"line": 0, "character": 133}
+          and d[0]["range"]["end"] == {"line": 0, "character": 134})
+
+    minus_src = "x is " + ("-" * 300) + "1\n"
+    minus_err = lint_errors(minus_src)
+    check("#1342 unary nesting records expression nesting too deep",
+          len(minus_err) == 1
+          and minus_err[0].get("message") == "expression nesting too deep"
+          and minus_err[0].get("column") == 261)
+    if not (len(minus_err) == 1 and minus_err[0].get("message") == "expression nesting too deep"):
+        print("    got:", minus_err[:2])
+
+    dot_src = "x is a" + (".b" * 300) + "\n"
+    dot_err = lint_errors(dot_src)
+    check("#1342 dot-chain records its depth error at the operator",
+          len(dot_err) == 1
+          and dot_err[0].get("message") == "expression too deeply nested"
+          and dot_err[0].get("column") == 515)
+    if not (len(dot_err) == 1 and dot_err[0].get("column") == 515):
+        print("    got:", dot_err[:2])
+
+    # Leftmost real-token error wins; synthetic f-string scaffolding yields to the lexer.
+    both_src = "x is " + ("f\"{" * 65) + "x" + ("}\"" * 65)
+    both_err = lint_errors(both_src + "\n")
+    real_both = ("x is " + ("(" * 300) + "1" + (")" * 300) + " + "
+                 + ("f\"{" * 65) + "x" + ("}\"" * 65))
+    real_both_err = lint_errors(real_both + "\n")
+    check("#1342 leftmost real token wins; synthetic scaffolding yields to the lexer",
+          len(both_err) == 1
+          and both_err[0].get("message") == "f-string nesting too deep (max 64 levels)"
+          and len(real_both_err) == 1
+          and real_both_err[0].get("message") == "expression nesting too deep"
+          and real_both_err[0].get("column") == 134)
+    if not (len(real_both_err) == 1 and real_both_err[0].get("column") == 134):
+        print("    got:", real_both_err[:2])
+    r = converse([INIT, did_open(both_src), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#1342 LSP yields to the lexer when the parser hit is synthetic",
+          bool(d) and d[0].get("message") ==
+          "syntax error: f-string nesting too deep (max 64 levels)")
+
+    # 240 if/elif arms, then 20 nested try blocks in the last arm.
+    block_lines = ["x is 1", "if x == 0:", "    y is 0"]
+    for i in range(1, 240):
+        block_lines += ["elif x == %d:" % i, "    y is 0"]
+    block_lines.pop()
+
+    def nest_try(ind, k):
+        if k == 0:
+            return [ind + "y is 2"]
+        return ([ind + "try:"] + nest_try(ind + "    ", k - 1)
+                + [ind + "catch e:", ind + "    y is 3"])
+
+    block_src = "\n".join(block_lines + nest_try("    ", 20)) + "\n"
+    block_err = lint_errors(block_src)
+    check("#1342 block nesting records block nesting too deep",
+          len(block_err) == 1
+          and block_err[0].get("message") == "block nesting too deep"
+          and block_err[0].get("line") == 498)
+    if not (len(block_err) == 1 and block_err[0].get("message") == "block nesting too deep"):
+        print("    got:", block_err[:2])
+    r = converse([INIT, did_open(block_src), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#1342 LSP publishes block nesting too deep",
+          bool(d) and d[0].get("message") == "syntax error: block nesting too deep"
+          and d[0]["range"]["start"] == {"line": 497, "character": 72}
+          and d[0]["range"]["end"] == {"line": 497, "character": 73})
 
     # --- error on line 3 maps to 0-based line 2 ---
     r = converse([INIT, did_open("a is 1\nb is 2\nif b\n    print of a\n"), SHUTDOWN, EXIT])
@@ -948,7 +1048,6 @@ def main():
     # interpolation) still reports a real source column in `--lint --json`,
     # not column 1; the depth-limit lexer error is not displaced by the parse
     # errors it causes on the same line.
-    import tempfile
     for src, want_col, label in (
             ('x is 1\ny is f"{[x}"\n', 12, "unclosed list"),
             ('x is 1\ny is f"{x.}"\n', 12, "dangling dot"),

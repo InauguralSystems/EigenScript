@@ -1828,9 +1828,10 @@ rm -f "$TMPFILE"
 rm -f "$TMPFILE"
 
 # --- W022 (#733): literal arg list longer than the callee's params ---
-# Over-arity is silent at runtime (two of [1, 2, 99] drops 99, rc=0);
-# W022 fires only when the callee name provably has one meaning in the
-# file (one define, no other binding).
+# Over-arity on a 2+-param callee raises at runtime
+# (call passes 3 arguments but the callee takes 2). W022 fires only when
+# the callee name provably has one meaning in the file (one define, no
+# other binding).
 
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'
@@ -1839,7 +1840,7 @@ define two(a, b) as:
 print of (two of [1, 2, 99])
 EIGS
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
-check_contains "W022 fires on over-arity to a unique define" "$OUTPUT" "W022.*passes 3 arguments but 'two' takes 2"
+check_contains "W022 fires on over-arity to a unique define" "$OUTPUT" "W022.*passes 3 arguments but 'two' takes 2.*raises at runtime"
 rm -f "$TMPFILE"
 
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
@@ -1891,7 +1892,7 @@ define three(a, b, c is 9) as:
 print of (three of [1, 2, 3, 4])
 EIGS
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
-check_contains "W022 counts defaulted params in the arity" "$OUTPUT" "W022.*passes 4 arguments but 'three' takes 3"
+check_contains "W022 counts defaulted params in the arity" "$OUTPUT" "W022.*passes 4 arguments but 'three' takes 3.*raises at runtime"
 rm -f "$TMPFILE"
 
 # --- Compile-stage errors reach the lint surface (#927) ---

@@ -558,6 +558,7 @@ static ASTNode** parse_block(Parser *p, int *count) {
     if (g_parse_depth >= PARSE_MAX_DEPTH) {
         fprintf(stderr, "Parse error line %d: block nesting too deep\n",
                 p_cur(p)->line);
+        p_record_tok_error(p_cur(p), "E002", "block nesting too deep");
         g_parse_errors++;
         return stmts;
     }
@@ -1040,7 +1041,7 @@ static ASTNode* parse_unary_body(Parser *p);
  * must stop extending the chain) when the limit is reached. */
 static int chain_too_deep(Parser *p) {
     if (g_parse_depth >= PARSE_MAX_DEPTH) {
-        eigs_record_first_error(p_cur(p)->line, "expression too deeply nested");
+        p_record_tok_error(p_cur(p), "E002", "expression too deeply nested");
         g_parse_errors++;
         return 1;
     }
@@ -1080,6 +1081,7 @@ static ASTNode* parse_unary(Parser *p) {
     if (g_parse_depth >= PARSE_MAX_DEPTH) {
         fprintf(stderr, "Parse error line %d: expression nesting too deep\n",
                 p_cur(p)->line);
+        p_record_tok_error(p_cur(p), "E002", "expression nesting too deep");
         g_parse_errors++;
         return make_node(AST_NULL, p_cur(p)->line);
     }
@@ -1290,6 +1292,7 @@ static ASTNode* parse_expression(Parser *p) {
     if (g_parse_depth >= PARSE_MAX_DEPTH) {
         fprintf(stderr, "Parse error line %d: expression nesting too deep\n",
                 p_cur(p)->line);
+        p_record_tok_error(p_cur(p), "E002", "expression nesting too deep");
         g_parse_errors++;
         return make_node(AST_NULL, p_cur(p)->line);
     }
