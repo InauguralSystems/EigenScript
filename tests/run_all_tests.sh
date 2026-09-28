@@ -2595,6 +2595,7 @@ check_eigs_suite "builtin argument errors" test_builtin_errors.eigs "All builtin
 check_eigs_suite "module-boundary write insulation (#373)" test_module_scope.eigs "All module-scope tests passed" 9
 check_eigs_suite "import top-level scope insulation vs load_file current-scope contract (#589)" test_import_toplevel_scope.eigs "All import top-level scope tests passed" 11
 check_eigs_suite "module namespace is a LIVE VIEW of the module env (#1057)" test_module_live_view.eigs "All tests passed" 30
+check_eigs_suite "module builtins isolated from the importer's rebinding; builtin layer sealed (#1388)" test_module_builtin_isolation.eigs "All tests passed" 32
 
 echo "[43a2b] build_corpus slot-mode identifier encoding (6 checks)"
 CS_OUTPUT=$(bash "$TESTS_DIR/test_corpus_slots.sh" 2>&1)

@@ -1713,9 +1713,7 @@ static void *http_conn_thread(void *arg) {
         goto drop;
     }
 
-    Env *global = env_new(NULL);
-    register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
-    g_global_env = global;
+    Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
 
     /* register_http_builtins allocated a scratch Server on the worker
      * state (so http_route/http_serve called inside a code route don't

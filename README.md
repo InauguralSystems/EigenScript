@@ -382,6 +382,10 @@ The table names importable modules. The `lib/ui_*.eigs` files are
 **fragments of `lib/ui.eigs`**, composed by it rather than imported directly,
 so they have no row of their own. Inspect `lib/` for the current module set.
 
+An imported module's builtin names are the builtins: rebinding `len` or `str`
+in your program changes them for your code, never inside a module you import
+([SPEC, Modules](docs/SPEC.md#modules), #1388).
+
 ```eigenscript fragment
 load_file of "lib/list.eigs"
 define double as:                        # functions take one argument, n

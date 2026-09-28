@@ -20,10 +20,7 @@ int eigs_state_init_runtime(EigsState *st) {
     if (!st) return -1;
     if (!eigs_current || eigs_current->state != st) return -1;
     if (g_global_env) return 0;
-    Env *global = env_new(NULL);
-    if (!global) return -1;
-    register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
-    g_global_env = global;
+    if (!eigs_global_env_create()) return -1;   /* + builtin layer (#1388) */
     /* #1038: a module compiled later cannot classify the surrounding native
      * host. Pin default embedding open; only the explicit eval opt-in may
      * renew permission for a compile verdict. CLI state setup is separate. */
@@ -416,6 +413,12 @@ void eigs_register_function(const char *name, EigsHostFn fn) {
     obs_flag_store(eval_host_callbacks, 1);
     eigs_obs_enable_runtime();
     Value *bv = make_builtin((BuiltinFn)fn);
+    /* #1388: a registered function joins the builtin layer too, so module
+     * code sees it (and the host's own rebinding of the name stays out of
+     * modules, as for any builtin). eigs_set_global values stay host
+     * globals: module code reaches them only through the layer's parent
+     * link, so they can never shadow a builtin there. */
+    if (g_builtin_env) env_set_local(g_builtin_env, name, bv);
     env_set_local_owned(g_global_env, name, bv);
 }
 

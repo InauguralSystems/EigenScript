@@ -631,6 +631,12 @@ The namespace is still an ordinary dict, so `keys`, `values`, `len` and
 indexing work on it — closer to a Lua module table than to a Rust `mod`,
 which has no runtime value at all.
 
+Builtin names inside a module are isolated the way Python's are: a Python
+module's `len` is unaffected by `__main__` rebinding `len`, and an
+EigenScript module's `len`, `str` or `append` is the builtin unless the
+module itself rebinds it (#1388). Unlike Python, a name the module does not
+bind and that is not a builtin still resolves to the importer's globals.
+
 <!-- Embed contract: #1038/#1028; language-level observer semantics unchanged. -->
 The C embedding API starts observer recording open. Source evals retain
 cross-unit history by default; hosts may explicitly promise isolated observer

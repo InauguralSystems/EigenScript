@@ -361,15 +361,18 @@ pred_parent=$(printf '%s\n' "$pred_body" | grep -c 'parent == NULL' || true)
 pred_mt=$(printf '%s\n' "$pred_body" | grep -c 'g_vm_multithreaded' || true)
 mark_new=$(printf '%s\n' "$(fn_body "$ES_C" "env_new")" | grep -c 'e->mt_shared = (parent == NULL);' || true)
 mark_attach=$(printf '%s\n' "$(fn_body "$ES_C" "eigs_module_ns_attach")" | grep -c 'env_mark_shared(env);' || true)
-# found == declared in both directions: exactly two marking sites exist.
+# #1388: the builtin layer (parented, so env_new does not mark it) is marked
+# where it is built -- eigs_register_function writes it while workers read.
+mark_layer=$(printf '%s\n' "$(fn_body "$SRC_DIR/builtins.c" "eigs_global_env_create")" | grep -c 'env_mark_shared(layer);' || true)
+# found == declared in both directions: exactly three marking sites exist.
 mark_total=$(grep -c 'env_mark_shared(' "$SRC_DIR"/*.c "$SRC_DIR"/*.h 2>/dev/null | awk -F: '{n+=$2} END{print n+0}')
-MARK_TOTAL_DECLARED=3   # attach call site + definition + header declaration
+MARK_TOTAL_DECLARED=4   # attach + builtin-layer call sites + definition + header declaration
 if [ "$pred_flag" -eq 1 ] && [ "$pred_parent" -eq 0 ] && [ "$pred_mt" -eq 1 ] \
-   && [ "$mark_new" -eq 1 ] && [ "$mark_attach" -eq 1 ] \
+   && [ "$mark_new" -eq 1 ] && [ "$mark_attach" -eq 1 ] && [ "$mark_layer" -eq 1 ] \
    && [ "$mark_total" -eq "$MARK_TOTAL_DECLARED" ]; then
-    ok "construction_modenv: env_mt_shared reads Env::mt_shared (no parent==NULL); marked at env_new + eigs_module_ns_attach only"
+    ok "construction_modenv: env_mt_shared reads Env::mt_shared (no parent==NULL); marked at env_new + eigs_module_ns_attach + eigs_global_env_create only"
 else
-    fail "construction_modenv: predicate" "flag=$pred_flag parent=$pred_parent mt=$pred_mt new=$mark_new attach=$mark_attach total=$mark_total/$MARK_TOTAL_DECLARED"
+    fail "construction_modenv: predicate" "flag=$pred_flag parent=$pred_parent mt=$pred_mt new=$mark_new attach=$mark_attach layer=$mark_layer total=$mark_total/$MARK_TOTAL_DECLARED"
 fi
 
 # 5. #1161, the MIRROR half. A module namespace is two structures; the dict

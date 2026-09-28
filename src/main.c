@@ -277,9 +277,7 @@ int main(int argc, char **argv) {
         srand(time(NULL));
         eigenscript_set_args(argc, argv);
 
-        Env *global = env_new(NULL);
-        register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
-        g_global_env = global;
+        Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
 
         eigenscript_repl(global);
         /* #739: take the exit code BEFORE teardown. It is a bridge macro now
@@ -339,9 +337,7 @@ int main(int argc, char **argv) {
     srand(time(NULL));
     eigenscript_set_args(argc, argv);
 
-    Env *global = env_new(NULL);
-    register_builtins(global);
-    g_global_env = global;   /* register_builtins above composed store/gfx too (#742) */
+    Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
 
     g_parse_errors = 0;
     TokenList tl = tokenize(source);

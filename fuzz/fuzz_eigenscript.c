@@ -51,9 +51,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     srand(0);
     FUZZ_LSAN_DISABLE();
     eigs_thread_attach(eigs_state_new());
-    Env *global = env_new(NULL);
-    register_builtins(global);
-    g_global_env = global;
+    eigs_global_env_create();   /* + builtin layer (#1388) */
     FUZZ_LSAN_ENABLE();
 
     /* libFuzzer itself writes stats to stderr, so let it through.
