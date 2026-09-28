@@ -1881,6 +1881,7 @@ extern int g_compile_module_slots;
 
 TokenList tokenize(const char *source);
 void free_tokenlist(TokenList *tl);
+void tokenlist_user_spelling(TokenList *tl);  /* #1322 */
 
 /* Length of the recognised multi-char operator at `s`, or 0. That set has
  * one home (the lexer table behind this function). Other token-type to

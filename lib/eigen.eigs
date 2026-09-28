@@ -1494,9 +1494,9 @@ define eigen_eval(node, env) as:
         right is eigen_eval of [node[3], env]
         if op == "+":
             if (type of left) == "str":
-                return left + (str of right)
+                return left + (_pristine_str of right)
             if (type of right) == "str":
-                return (str of left) + right
+                return (_pristine_str of left) + right
             return left + right
         if op == "-":
             return left - right
@@ -1620,7 +1620,7 @@ define eigen_eval(node, env) as:
             pair is pairs[i]
             k is eigen_eval of [pair[0], env]
             v is eigen_eval of [pair[1], env]
-            dict_set of [result, str of k, v]
+            dict_set of [result, _pristine_str of k, v]
         return result
 
     if ntype == "index":
@@ -1665,7 +1665,7 @@ define eigen_eval(node, env) as:
             set_at of [target, idx, val]
             return val
         if (type of target) == "dict":
-            dict_set of [target, str of idx, val]
+            dict_set of [target, _pristine_str of idx, val]
             return val
         throw of f"cannot index-assign on {type of target}"
 
@@ -1978,6 +1978,17 @@ define _eval_block(stmts, env) as:
 _report_bridge is (v) => report of v
 _report_value_bridge is (v) => report_value of v
 
+# #1322: the builtin string conversion, unhijackable. An f-string HERE lowers to the host's
+# reserved `_#fstr` binding, which no source, module, embedder or bytecode can
+# rebind, so this reaches the pristine builtin conversion even when the host
+# program has rebound `str` (before `import eigen`, before `eigen_run`, or
+# between runs). Binding the host's `str` instead would read whatever `str`
+# means in the host at `_make_default_env` time. It is the meta env's
+# `_#fstr`, and this interpreter's own string conversions (`+` with one
+# string operand, dict keys) use it too: those feed every f-string's
+# concatenation, and a host `str` rebinding must not reach them either.
+_pristine_str is (v) => f"{v}"
+
 define _make_default_env as:
     env is _env_new of null
     # Bridge the C builtins into the meta-interpreter's environment.
@@ -1989,7 +2000,7 @@ define _make_default_env as:
     _env_set_local of [env, "flush", flush]
     _env_set_local of [env, "len", len]
     _env_set_local of [env, "str", str]
-    _env_set_local of [env, "_#fstr", str]
+    _env_set_local of [env, "_#fstr", _pristine_str]
     _env_set_local of [env, "num", num]
     _env_set_local of [env, "append", append]
     _env_set_local of [env, "type", type]

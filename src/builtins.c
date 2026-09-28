@@ -2743,6 +2743,22 @@ void free_tokenlist(TokenList *tl) {
     tl->count = 0;
 }
 
+/* #1322: user code that receives the lexer's tokens (tokenize_with_names,
+ * build_corpus) sees the f-string lowering's conversion as `str`, its
+ * round-trip-valid spelling, never the reserved `_#fstr`: a detokenized
+ * `_#fstr` comments out the rest of its line. Mapped rather than dropped --
+ * the rest of the lowering (parens, `+`, literal segments) is synthetic too,
+ * and omitting it would erase the f-string from the stream. */
+void tokenlist_user_spelling(TokenList *tl) {
+    for (int i = 0; i < tl->count; i++) {
+        Token *t = &tl->tokens[i];
+        if (t->synth && t->type == TOK_IDENT && eigs_name_is_reserved(t->str_val)) {
+            free(t->str_val);
+            t->str_val = xstrdup("str");
+        }
+    }
+}
+
 /* ==== BUILTIN: tokenize_ids ==== */
 /* tokenize_ids of string → list of token type IDs (integers).
  * Exposes the runtime's own tokenizer to .eigs code.
@@ -2773,6 +2789,7 @@ Value* builtin_tokenize_with_names(Value *arg) {
     if (!src || !src[0]) return make_list(0);
 
     TokenList tl = tokenize(src);
+    tokenlist_user_spelling(&tl);
     Value *result = make_list(tl.count);
     char numbuf[64];
     for (int i = 0; i < tl.count; i++) {

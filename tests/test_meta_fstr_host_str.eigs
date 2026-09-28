@@ -1,0 +1,32 @@
+# #1322: lib/eigen.eigs's f-string conversion must reach the BUILTIN string
+# conversion even when the host program rebinds `str` -- before importing
+# eigen, and again between eigen_run calls. It used to bind the host's `str`
+# into the meta env, so a host `define str` changed every meta f-string (and
+# the meta `+` with one string operand) while the C VM was unaffected.
+# Standalone on purpose: lib/test.eigs formats its own messages with `str`,
+# which this file deliberately hijacks.
+define str(x) as:
+    return "H"
+import eigen
+
+failed is 0
+define check(label, got, want) as:
+    if got != want:
+        failed is failed + 1
+        print of ("FAIL: " + label)
+
+check of ["host str is hijacked for the host's own calls", str of 5, "H"]
+check of ["VM f-string ignores the host str", f"<{5}>", "<5>"]
+check of ["meta f-string ignores a host str bound before import", eigen.eigen_run of "f\"<{5}>\"", "<5>"]
+check of ["meta string + number ignores the host str", eigen.eigen_run of "\"a\" + 5", "a5"]
+check of ["meta f-string of a list matches the VM", eigen.eigen_run of "f\"<{[1, 2]}>\"", f"<{[1, 2]}>"]
+# rebind between runs
+str is (x) => "J"
+check of ["meta f-string ignores a host str rebound between runs", eigen.eigen_run of "f\"[{7}]\"", "[7]"]
+check of ["meta program's own define str still answers its own calls", eigen.eigen_run of "define str(x) as:\n    return \"M\"\nstr of 1", "M"]
+check of ["meta program's own define str does not reach its f-strings", eigen.eigen_run of "define str(x) as:\n    return \"M\"\nf\"<{1}>\"", "<1>"]
+
+if failed == 0:
+    print of "All tests passed"
+else:
+    assert of [0, "meta f-string host-str checks failed"]
