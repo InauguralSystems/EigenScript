@@ -1074,6 +1074,83 @@ def main():
         if not ok:
             print("    got:", p.stdout[:300])
 
+    # --- #1343: a token's column is a BYTE offset, tabs included. The lexer
+    # counted a leading tab as 4 columns in token spans (right for indentation
+    # width, wrong for positions), so every token after a leading tab sat 3
+    # bytes right per tab and a rename rewrote the wrong bytes.
+    tab_doc = ("count is 7\nif count > 0:\n\tprint of count\n"
+               "\tcount is count + 1\nprint of count\n")
+    applied = apply_rename_bytes(tab_doc, rename_result(tab_doc, 1343, 0, 0, "total"))
+    check("rename on a TAB-indented line edits the identifier (#1343)",
+          applied == ("total is 7\nif total > 0:\n\tprint of total\n"
+                      "\ttotal is total + 1\nprint of total\n"))
+    check("TAB-indented rename keeps the program's output (#1343)",
+          run_eigs(tab_doc) == (0, "7\n8\n") and
+          run_eigs(applied or "") == (0, "7\n8\n"))
+    # a leading tab inside an interpolation: the brace text is sub-lexed from
+    # line start, which took the same 4-per-tab path (#1331 extended it here)
+    ftab_doc = 'count is 7\nprint of f"n={\tcount}"\n'
+    applied = apply_rename_bytes(ftab_doc, rename_result(ftab_doc, 1344, 0, 0, "total"))
+    check("rename after a leading tab inside f\"{...}\" (#1343)",
+          applied == 'total is 7\nprint of f"n={\ttotal}"\n')
+    check("f-string TAB rename keeps the program's output (#1343)",
+          run_eigs(ftab_doc) == (0, "n=7\n") and
+          run_eigs(applied or "") == (0, "n=7\n"))
+    # semantic tokens on a tab-indented line: `a` in "\treturn a + 1" is byte 8
+    stt = {"jsonrpc": "2.0", "id": 1345, "method": "textDocument/semanticTokens/full",
+           "params": {"textDocument": {"uri": URI}}}
+    r = converse([INIT, did_open("define f(a) as:\n\treturn a + 1\nprint of (f of 2)\n"),
+                  stt, SHUTDOWN, EXIT])
+    tres = (by_id(r, 1345) or {}).get("result")
+    tdata = tres.get("data") if isinstance(tres, dict) else []
+    ttoks, ln, ch = [], 0, 0
+    for i in range(0, len(tdata or []), 5):
+        dl, dc, L, ty, _mod = tdata[i:i + 5]
+        ln += dl
+        ch = (ch + dc) if dl == 0 else dc
+        ttoks.append((ln, ch, L))
+    check("semanticTokens on a TAB-indented line use byte columns (#1343)",
+          (1, 1, 6) in ttoks and (1, 8, 1) in ttoks and (1, 12, 1) in ttoks)
+    # cursor lookup: definition requested ON `helper` (byte 6 of "\tr is helper of 5")
+    tdef_doc = "define helper(a) as:\n    return a\nif 1 > 0:\n\tr is helper of 5\n"
+    tdefn = {"jsonrpc": "2.0", "id": 1346, "method": "textDocument/definition",
+             "params": {"textDocument": {"uri": URI},
+                        "position": {"line": 3, "character": 6}}}
+    # control: byte 3 is `is`, a keyword with no definition. The old 4-per-tab
+    # columns put `is` at 6, so the request above resolved to nothing.
+    tdefc = {"jsonrpc": "2.0", "id": 1347, "method": "textDocument/definition",
+             "params": {"textDocument": {"uri": URI},
+                        "position": {"line": 3, "character": 3}}}
+    r = converse([INIT, did_open(tdef_doc), tdefn, tdefc, SHUTDOWN, EXIT])
+    res = (by_id(r, 1346) or {}).get("result")
+    loc = res[0] if isinstance(res, list) and res else res
+    check("definition at a position on a TAB-indented line finds the token (#1343)",
+          isinstance(loc, dict) and loc.get("range", {}).get("start", {}).get("line") == 0
+          and by_id(r, 1347) is not None and by_id(r, 1347).get("result") is None)
+    # diagnostics: a lexer error and a lint (E003) error on tab-indented lines
+    d = diagnostics(converse([INIT, did_open("if 1 > 0:\n\tx is @\n"), SHUTDOWN, EXIT]))
+    check("LSP parse diagnostic on a TAB-indented line is at the byte column (#1343)",
+          bool(d) and d[0]["range"]["start"] == {"line": 1, "character": 6})
+    d = diagnostics(converse([INIT, did_open("if 1 > 0:\n\tprint of nope\n"),
+                              SHUTDOWN, EXIT]))
+    e3 = [x for x in (d or []) if x.get("code") == "E003"]
+    check("LSP E003 diagnostic on a TAB-indented line spans the name's bytes (#1343)",
+          len(e3) == 1 and e3[0]["range"]["start"] == {"line": 1, "character": 10}
+          and e3[0]["range"]["end"] == {"line": 1, "character": 14})
+    with tempfile.NamedTemporaryFile("w", suffix=".eigs", delete=False) as tf:
+        tf.write("if 1 > 0:\n\tx is @\n")
+    try:
+        p = subprocess.run([EIGS, "--lint", "--json", tf.name], capture_output=True,
+                           text=True, timeout=15, stdin=subprocess.DEVNULL)
+    finally:
+        os.unlink(tf.name)
+    try:
+        ds = json.loads(p.stdout)
+    except ValueError:
+        ds = []
+    check("--lint --json error on a TAB-indented line has the byte column (#1343)",
+          len(ds) == 1 and ds[0].get("line") == 2 and ds[0].get("column") == 7)
+
     # #880: a CRLF document must behave exactly like the LF one. The
     # JSON-RPC unescaper used to drop \r (re-emitting the backslash), so a
     # Windows document arrived with literal backslash-r in its text and
