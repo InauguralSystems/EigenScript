@@ -688,7 +688,8 @@ Value* builtin_set_observer_window(Value *arg) {
         }
         Env *start = g_builtin_call_env ? g_builtin_call_env : g_global_env;
         int slot = -1, depth = 0;
-        Env *target = env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
+        Env *target = eigs_name_is_reserved(name) ? NULL   /* #1322 */
+            : env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
         if (!target || slot < 0) {
             rt_error(EK_UNDEFINED_NAME, 0, "set_observer_window: no binding named '%s'", name);
             return make_null();
@@ -716,7 +717,8 @@ Value* builtin_get_observer_window(Value *arg) {
         const char *name = arg->data.str;
         Env *start = g_builtin_call_env ? g_builtin_call_env : g_global_env;
         int slot = -1, depth = 0;
-        Env *target = env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
+        Env *target = eigs_name_is_reserved(name) ? NULL   /* #1322 */
+            : env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
         if (!target || slot < 0) {
             rt_error(EK_UNDEFINED_NAME, 0, "get_observer_window: no binding named '%s'", name);
             return make_null();

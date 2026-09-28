@@ -868,6 +868,13 @@ def main():
           bool(e3) and e3["range"]["start"]["character"] == 9)
     check("E003 range is token-precise (end char 13)",
           bool(e3) and e3["range"]["end"]["character"] == 13)
+    # #1322: the E003 near-miss never offers a reserved runtime name.
+    r = converse([INIT, did_open("x is _fstr of 1\nprint of x\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    e3r = next((x for x in (d or []) if x.get("code") == "E003"), None)
+    check("E003 diagnostic never suggests a reserved name (#1322)",
+          bool(e3r) and "_fstr" in e3r.get("message", "")
+          and "#" not in e3r.get("message", ""))
 
     # --- E002 parse-error range is token-precise (#407 residual) ---
     r = converse([INIT, did_open("x is 2 x is 3\n"), SHUTDOWN, EXIT])

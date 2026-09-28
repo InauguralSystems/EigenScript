@@ -256,8 +256,18 @@ void eigs_clear_error(void) {
 
 /* ---- Globals ------------------------------------------------------ */
 
+/* #1322: a reserved name (eigs_name_is_reserved) is runtime-internal; the
+ * embed API refuses to bind or read it, reporting through the pending error
+ * like any other bad input. Returns 1 when refused. */
+static int embed_refuse_reserved(const char *api, const char *name) {
+    if (!eigs_name_is_reserved(name)) return 0;
+    rt_error(EK_VALUE, 0, "%s: '%s' is a reserved runtime name", api, name);
+    return 1;
+}
+
 void eigs_set_global(const char *name, EigsValue *val) {
     if (!name || !val || !eigs_current || !g_global_env) return;
+    if (embed_refuse_reserved("eigs_set_global", name)) return;
     /* env_set_local incref's its argument — caller's ref is undisturbed,
      * matching the documented contract. */
     env_set_local(g_global_env, name, val);
@@ -265,6 +275,7 @@ void eigs_set_global(const char *name, EigsValue *val) {
 
 EigsValue *eigs_get_global(const char *name) {
     if (!name || !eigs_current || !g_global_env) return NULL;
+    if (embed_refuse_reserved("eigs_get_global", name)) return NULL;
     Value *v = env_get(g_global_env, name);
     if (v) val_incref(v);
     return v;
@@ -397,6 +408,7 @@ void eigs_set_abort_flag(volatile int *flag) {
 
 void eigs_register_function(const char *name, EigsHostFn fn) {
     if (!name || !fn || !eigs_current || !g_global_env) return;
+    if (embed_refuse_reserved("eigs_register_function", name)) return;
     /* #1028: a C callback can observe its own assignments, but has no source
      * the compile verdict can inspect. This pin survives enabling isolation
      * after registration. Late registration records the gap; eval's guard

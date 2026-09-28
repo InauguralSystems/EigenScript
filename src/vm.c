@@ -155,7 +155,7 @@ static void obs_dump_scope(const char *scope, Env *e, int shared,
         if (!name && name_chunk && name_chunk->local_names &&
             i < name_chunk->local_count)
             name = name_chunk->local_names[i];
-        if (!name) continue;
+        if (!name || eigs_name_is_reserved(name)) continue;  /* #1322 */
         if (name[0] == '_' && name[1] == '_') continue;
         EigsSlot s = e->values[i];
         if (slot_is_ptr(s)) {
@@ -2307,7 +2307,8 @@ static const char* vm_builtin_name_for(Env *env, BuiltinFn fn) {
             EigsSlot s = env->values[i];
             if (!slot_is_heap(s)) continue;
             Value *v = slot_as_ptr(s);
-            if (v && v->type == VAL_BUILTIN && v->data.builtin == fn)
+            if (v && v->type == VAL_BUILTIN && v->data.builtin == fn &&
+                !eigs_name_is_reserved(env->names[i]))   /* #1322 */
                 return env->names[i];
         }
     }

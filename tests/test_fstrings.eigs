@@ -200,5 +200,20 @@ assert_eq of [(fstr_str_mod.show of 9), "<9>", "#1322: a namespace write of the 
 _fs_bc is vm_run_bytecode of [1, [0, 0, 0, 26, 1, 0, 35, 0, 0, 0, 40], [3, "_#fstr"]]
 assert_eq of [_fs_bc, null, "#1322: assembled bytecode that SETs the reserved name is refused"]
 assert_eq of [f"<{5}>", "<5>", "#1322: f-strings after the refused SET_NAME"]
+# the observer-window builtins resolve a binding by STRING name: refused too
+define _fs_ow_kind(args) as:
+    try:
+        set_observer_window of args
+        return "unrefused"
+    catch e:
+        return e.kind
+define _fs_owg_kind(nm) as:
+    try:
+        get_observer_window of nm
+        return "unrefused"
+    catch e:
+        return e.kind
+assert_eq of [_fs_ow_kind of ["_#fstr", 8], "undefined_name", "#1322: set_observer_window refuses the reserved name"]
+assert_eq of [_fs_owg_kind of "_#fstr", "undefined_name", "#1322: get_observer_window refuses the reserved name"]
 
 test_summary of null

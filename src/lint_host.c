@@ -381,9 +381,9 @@ static int api_is_ext_name(const char *nm) {
 }
 
 /* Not part of the user-visible surface: the ext groups are listed in their
- * own sections, and the f-string conversion name (#1322) is unspellable. */
+ * own sections, and reserved names (#1322) are unspellable. */
 static int api_skip_core_name(const char *nm) {
-    return !nm || api_is_ext_name(nm) || strcmp(nm, EIGS_FSTR_CONV_NAME) == 0;
+    return !nm || api_is_ext_name(nm) || eigs_name_is_reserved(nm);
 }
 
 int eigs_api_dump(FILE *out, int json) {
@@ -833,7 +833,8 @@ static const char *e003_suggest(Env *scope, const char *name) {
     if (strlen(name) < 3) return NULL;   /* 1-2 char typos suggest noise */
     for (Env *s = scope; s; s = s->parent)
         for (int i = 0; i < s->count; i++)
-            if (s->names[i] && e003_dist1(name, s->names[i]))
+            if (s->names[i] && !eigs_name_is_reserved(s->names[i]) &&
+                e003_dist1(name, s->names[i]))
                 return s->names[i];
     return NULL;
 }

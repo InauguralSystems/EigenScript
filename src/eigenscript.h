@@ -107,6 +107,17 @@
  * a module env. register_builtins binds it to builtin_str. */
 #define EIGS_FSTR_CONV_NAME "_#fstr"
 
+/* THE predicate for "a runtime-internal binding name no user source can
+ * spell" (#1322). Every site that surfaces binding names to a person or a
+ * tool (lint suggestions, REPL completion, --api, dumps, diagnostics) skips
+ * such names, and every door that binds or looks up a binding by a STRING
+ * (embed API, observer-window builtins, assembled bytecode) refuses them.
+ * The class is "contains `#`": the lexer can never produce that in an
+ * identifier, because `#` starts a comment. */
+static inline int eigs_name_is_reserved(const char *name) {
+    return name && strchr(name, '#') != NULL;
+}
+
 /* ---- Language limits ---- */
 
 #define MAX_TOKENS      65536

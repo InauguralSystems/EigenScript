@@ -776,8 +776,8 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
                             * the global binding every f-string calls). */
                            else if ((op == OP_SET_NAME || op == OP_SET_NAME_LOCAL ||
                                      op == OP_SET_FN_NAME_LOCAL) &&
-                                    strcmp(chunk->constants[operand]->data.str,
-                                           EIGS_FSTR_CONV_NAME) == 0) ok = 0;
+                                    eigs_name_is_reserved(
+                                        chunk->constants[operand]->data.str)) ok = 0;
                            break;
             case VR_FN:    if (operand >= chunk->fn_count)    ok = 0; break;
             case VR_JFWD:  targets[ntargets++] = end + operand; break;
