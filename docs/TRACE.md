@@ -52,6 +52,13 @@ Its assignment records read `L 1 L 2 L 1 A x=<list:2>`. Before #1251 the `L` sta
 a multi-line literal ran one line early per swallowed newline, and a literal
 closing on a later line was filed under that closing line.
 
+The same re-stamp comes before every other binding store whose stamp was left
+elsewhere (#1381): a destructuring assignment spanning lines, each iteration's
+`for` loop variable (after the previous iteration's body), a comprehension
+variable, a parameter default spanning lines, a `catch` binding (after the
+faulting line), and an `import` binding (after the module's own code). A `for`
+loop therefore adds one `L <for line>` record per iteration.
+
 The change moves only `L` stamps. It never moves which values a tape records
 or the order of `N` records, so a tape recorded before the change replays
 under a binary built after it, and the reverse. Checked with a

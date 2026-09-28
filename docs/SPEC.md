@@ -1750,6 +1750,11 @@ print of (what is x at 1)
 5
 ```
 
+The same holds for every binding a statement makes: a destructured name, a
+`for` loop variable (on every iteration), a comprehension variable, a
+parameter default, a `catch` binding, and an `import` binding are each filed
+under the first line of the statement or clause that binds them.
+
 A runtime error inside such a statement reports a different line on purpose:
 the physical line of the faulting sub-expression (see "Error handling").
 

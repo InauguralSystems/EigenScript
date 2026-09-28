@@ -1445,6 +1445,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
         set_name_hash(n, n->data.trycatch.err_name);
         n->data.trycatch.catch_body = catch_body;
         n->data.trycatch.catch_count = catch_count;
+        n->data.trycatch.catch_line = err_tok->line;  /* the `catch` line (#1381) */
         return n;
     }
 
@@ -1610,6 +1611,10 @@ static ASTNode* parse_statement_inner(Parser *p) {
         ASTNode **body = parse_block(p, &body_count);
         ASTNode *n = make_node(AST_FOR, p_cur(p)->line);
         n->data.forloop.var = xstrdup((var_tok && var_tok->str_val) ? var_tok->str_val : "");
+        /* The `for` keyword's line: the loop variable's stores are filed
+         * under it (#1381). The node's own line is still the next token's
+         * (#1382). */
+        n->data.forloop.header_line = t->line;
         set_name_hash(n, n->data.forloop.var);
         n->data.forloop.iter = iter;
         n->data.forloop.body = body;

@@ -145,4 +145,17 @@ assert_eq of [ml_line_err of "y is 0\nz is [1][(5\n)]", 2, "e.line: indexing wit
 assert_eq of [ml_line_err of "define f(xs) as:\n    z is [xs[0].k\n]\n    return z\nf of [[5]]", 2, "e.line: local[const].field closed on a later line"]
 assert_eq of [ml_line_err of "define f(a) as:\n    z is [a.k\n]\n    return z\nf of 5", 2, "e.line: local.field closed on a later line"]
 
+# --- #1381 round 5: every store that writes assignment history is filed under
+# its statement's FIRST line, not the line the value (or a loop body, a catch
+# target, an imported module) left the stamp on. ---
+assert_eq of [eval of "a is 0\nb is 0\n[a, b] is [1,\n 2]\nwhat is a at 3", 1, "destructuring spanning lines: first name at its first line"]
+assert_eq of [eval of "a is 0\nb is 0\n[a, b] is [1,\n 2]\nwhat is b at 3", 2, "destructuring spanning lines: second name at its first line"]
+assert_eq of [eval of "for i in [1,\n 2]:\n    q is i\nwhat is i at 1", 2, "for over a multi-line iterable: loop variable at the for line"]
+assert_eq of [eval of "i is 0\nfor i in [1, 2, 3]:\n    x is 0\n    y is 0\nwhat is i at 2", 3, "for: every iteration's loop variable at the for line"]
+assert_eq of [eval of "define f() as:\n    for i in [1,\n 2]:\n        x is i\n    return (what is i at 2)\nf of []", 2, "for inside a function: loop variable at the for line"]
+assert_eq of [eval of "i is 0\nz is [i for i in\n [5]]\nwhat is i at 2", 5, "comprehension spanning lines: variable at its first line"]
+assert_eq of [eval of "define f(a, b is [1,\n 2]) as:\n    return (what is b at 1)\nf of 5", [1, 2], "default spanning lines: parameter at its first line"]
+assert_eq of [eval of "e is 0\ntry:\n    q is 1 / 0\ncatch e:\n    y is 1\nwhat is e at 3", 0, "catch binding is not filed under the faulting line"]
+assert_eq of [eval of "import log\nhas_key of [(what is log at 1), \"log_info\"]", 1, "import binding at the import line"]
+
 test_summary of null
