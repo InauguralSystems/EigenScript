@@ -193,7 +193,7 @@ sqrt(2) = 1.414213562373095
   malformed `json_path` document raise catchable errors instead.
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
-- f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`.
+- f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`. Each `{…}` converts with the builtin `str`, even if you rebind `str`.
 
 ## Numeric vectors: `buffer`, not `list`
 

@@ -99,6 +99,14 @@
 #include <poll.h>
 #include <regex.h>
 
+/* The name the f-string lowering calls to convert an interpolated value
+ * (#1322). `#` starts a comment, so no identifier the lexer produces from
+ * user text can contain it: user code cannot bind, shadow or look up this
+ * name, and a user binding of `str` no longer reaches f-strings. The leading
+ * `_` keeps it module-private, so `M["_#fstr"] is v` never writes through to
+ * a module env. register_builtins binds it to builtin_str. */
+#define EIGS_FSTR_CONV_NAME "_#fstr"
+
 /* ---- Language limits ---- */
 
 #define MAX_TOKENS      65536

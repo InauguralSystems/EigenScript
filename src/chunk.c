@@ -770,6 +770,14 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
             case VR_CONST: if (operand >= chunk->const_count) ok = 0; break;
             case VR_NAME:  if (operand >= chunk->const_count ||
                                chunk->constants[operand]->type != VAL_STR) ok = 0;
+                           /* #1322: source cannot spell the f-string
+                            * conversion name; assembled bytecode must not
+                            * bind it either (SET_NAME writes outward, into
+                            * the global binding every f-string calls). */
+                           else if ((op == OP_SET_NAME || op == OP_SET_NAME_LOCAL ||
+                                     op == OP_SET_FN_NAME_LOCAL) &&
+                                    strcmp(chunk->constants[operand]->data.str,
+                                           EIGS_FSTR_CONV_NAME) == 0) ok = 0;
                            break;
             case VR_FN:    if (operand >= chunk->fn_count)    ok = 0; break;
             case VR_JFWD:  targets[ntargets++] = end + operand; break;

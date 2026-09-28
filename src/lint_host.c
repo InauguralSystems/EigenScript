@@ -380,6 +380,12 @@ static int api_is_ext_name(const char *nm) {
     return 0;
 }
 
+/* Not part of the user-visible surface: the ext groups are listed in their
+ * own sections, and the f-string conversion name (#1322) is unspellable. */
+static int api_skip_core_name(const char *nm) {
+    return !nm || api_is_ext_name(nm) || strcmp(nm, EIGS_FSTR_CONV_NAME) == 0;
+}
+
 int eigs_api_dump(FILE *out, int json) {
     /* Core registry on a scratch env (#459: never a hand list). */
     Env *core = env_new(NULL);
@@ -413,7 +419,7 @@ int eigs_api_dump(FILE *out, int json) {
         int b_first = 1;
         for (int i = 0; i < core->count; i++) {
             char esc[600];
-            if (!core->names[i] || api_is_ext_name(core->names[i])) continue;
+            if (api_skip_core_name(core->names[i])) continue;
             lint_json_escape(core->names[i], esc, sizeof(esc));
             fprintf(out, "%s\"%s\"", b_first ? "" : ", ", esc);
             b_first = 0;
@@ -452,7 +458,7 @@ int eigs_api_dump(FILE *out, int json) {
         fprintf(out, "\n]}\n");
     } else {
         for (int i = 0; i < core->count; i++)
-            if (core->names[i] && !api_is_ext_name(core->names[i]))
+            if (!api_skip_core_name(core->names[i]))
                 fprintf(out, "builtin %s\n", core->names[i]);
 #define API_X(nm, fn) \
         fprintf(out, "extension %s %s\n", api_group_label, #nm);

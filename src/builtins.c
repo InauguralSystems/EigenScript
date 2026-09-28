@@ -3487,6 +3487,7 @@ static const char *SANDBOX_ALLOW[] = {
     /* string + regex (pure) */
     "char_at", "chr", "ends_with", "hex", "join", "ord", "split", "starts_with",
     "str", "str_lower", "str_replace", "str_upper", "substr", "trim",
+    EIGS_FSTR_CONV_NAME,   /* f-strings (#1322) */
     "regex_find", "regex_match", "regex_replace",
     /* buffers + text builders (in-memory only; allocators charge #292) */
     "buffer", "buf_copy", "buf_deinterleave", "buf_dot", "buf_fill",
@@ -6135,6 +6136,8 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "screen_render", make_builtin(builtin_screen_render));
     env_set_local_owned(env, "len", make_builtin(builtin_len));
     env_set_local_owned(env, "str", make_builtin(builtin_str));
+    /* f-string conversion (#1322): unspellable in source, so never shadowed. */
+    env_set_local_owned(env, EIGS_FSTR_CONV_NAME, make_builtin(builtin_str));
     env_set_local_owned(env, "num", make_builtin(builtin_num));
     env_set_local_owned(env, "append", make_builtin(builtin_append));
     env_set_local_owned(env, "report", make_builtin(builtin_report));

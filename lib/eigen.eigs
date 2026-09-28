@@ -315,13 +315,17 @@ define _eigen_tokenize_at(source, line) as:
                                 has_segments is 1
                             buf is ""
                             pos is pos + 1
-                            # Emit + (str of (expr))
+                            # Emit + (_#fstr of (expr)). #1322: the
+                            # conversion goes through a name no source can
+                            # spell (`#` starts a comment), bound to the
+                            # builtin in _make_default_env, so a user `str`
+                            # never reaches it (src/lexer.c does the same).
                             if has_segments == 1:
                                 append of [tokens, ["op", "+", line]]
                             else:
                                 has_segments is 1
                             append of [tokens, ["lparen", null, line]]
-                            append of [tokens, ["ident", "str", line]]
+                            append of [tokens, ["ident", "_#fstr", line]]
                             append of [tokens, ["kw", "of", line]]
                             append of [tokens, ["lparen", null, line]]
                             # Collect expression text inside braces: its
@@ -1985,6 +1989,7 @@ define _make_default_env as:
     _env_set_local of [env, "flush", flush]
     _env_set_local of [env, "len", len]
     _env_set_local of [env, "str", str]
+    _env_set_local of [env, "_#fstr", str]
     _env_set_local of [env, "num", num]
     _env_set_local of [env, "append", append]
     _env_set_local of [env, "type", type]

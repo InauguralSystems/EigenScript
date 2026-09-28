@@ -393,6 +393,20 @@ parity of ["lambda: trailing comma still accepted",
 parity of ["lambda: empty signature binds implicit n",
     "dbl1254 is () => n * 2\ndbl1254 of 4", ["ok", 8]]
 
+# --- #1322: f-string interpolation converts with the builtin, whatever `str`
+# is bound to. Both evaluators lower `{e}` through a reserved name no source can
+# spell; the VM probe's eval can rebind the host's `str`, so restore it. ---
+_mp_saved_str is str
+parity of ["#1322: a `define str` does not reach f-strings",
+    "define str(x) as:\n    return \"HIJACK\"\nf\"<{5}>\"", ["ok", "<5>"]]
+str is _mp_saved_str
+parity of ["#1322: a user `define str` still answers its own calls",
+    "define str(x) as:\n    return \"HIJACK\"\nstr of 5", ["ok", "HIJACK"]]
+str is _mp_saved_str
+parity of ["#1322: `str is 3` does not break f-strings",
+    "str is 3\nf\"<{str}>\"", ["ok", "<3>"]]
+str is _mp_saved_str
+
 if checks == passed:
     print of "All tests passed"
 else:

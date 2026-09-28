@@ -11,6 +11,7 @@ All notable changes to EigenScript are documented here.
 - `lib/eigen.eigs` rejects an unterminated f-string, as the C lexer does, instead of returning its partial text (#1338); its tokenizer also counts newlines inside strings, f-string text and interpolations, matching #1251.
 - A token's column is its byte offset on tab-indented lines too (#1343): the lexer counted each leading tab (also inside `f"{...}"`) as 4 columns, so LSP rename, semantic tokens, cursor lookup, diagnostics and the error caret all landed 3 bytes right per tab.
 - eigenlsp rename: the scope table and each scope's bindings grow instead of silently stopping at 256 scopes / 32 names / 47 bytes, which let a rename of a global rewrite a late shadowing parameter or `local` (#1341).
+- f-string interpolation converts with the builtin `str` through a reserved name no source can spell (`_#fstr`), so a user binding of `str` (global, `define`, parameter, `local`, or inside a module) no longer hijacks or breaks every f-string in scope; `lib/eigen.eigs` agrees, and assembled bytecode that SETs the reserved name is refused (#1322).
 - eigenlsp's JSON strings and `--lint --json` share one UTF-8-safe escape, `eigs_json_escape_append`: a cut character is dropped whole, a bad byte becomes U+FFFD, and control characters are escaped rather than dropped (#1336).
 
 - The ThreadSanitizer embed row in `tests/test_tsan.sh` fails on any report,

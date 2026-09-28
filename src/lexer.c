@@ -104,7 +104,7 @@ static const char *fstr_interp_end(const char *p) {
 }
 
 /* A token the f-string lowering synthesizes (the wrapper parens, `+`,
- * `str of`, the literal segments) has no source span of its own. `synth`
+ * `_#fstr of`, the literal segments) has no source span of its own. `synth`
  * marks it, so position consumers (the LSP's rename, cursor lookup and
  * semantic tokens) never treat it as an editable source occurrence (#1244).
  * Its line/col/len stay as before: a parse error that lands on one still
@@ -559,11 +559,17 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     int expr_col = col + 1;
                     p++; col++; /* skip { */
 
-                    /* Emit: + (str of (expr)) */
+                    /* Emit: + (_#fstr of (expr)). #1322: the conversion is
+                     * called through EIGS_FSTR_CONV_NAME, a reserved name no
+                     * user source can spell (it contains `#`), bound at
+                     * startup to builtin_str. Calling `str` by name let any
+                     * user binding of `str` hijack every f-string in scope.
+                     * Chosen over a dedicated opcode (option b): same
+                     * guarantee, no JIT/trace/AOT opcode ABI to extend. */
                     if (has_segments) tok_add_synth(&tl, TOK_PLUS, NULL, line, col);
                     else has_segments = 1;
                     tok_add_synth(&tl, TOK_LPAREN, NULL, line, col);
-                    tok_add_synth(&tl, TOK_IDENT, "str", line, col);
+                    tok_add_synth(&tl, TOK_IDENT, EIGS_FSTR_CONV_NAME, line, col);
                     tok_add_synth(&tl, TOK_OF, NULL, line, col);
                     tok_add_synth(&tl, TOK_LPAREN, NULL, line, col);
 
