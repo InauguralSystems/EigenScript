@@ -5,17 +5,17 @@
 # eigenlsp (#1336): every strbuf_append* call in src/eigenlsp.c is examined
 # (examined == raw substring count > 0). A non-literal string must be a
 # json_escape_to argument or a WAIVED (buffer, argument) pair, and every
-# waiver must be used. A _fmt format must be a string literal; `*` widths and
-# precisions consume their argument, and a `*` on a %s is refused unless the
-# argument is a waived pre-built JSON value. json_escape_to and
-# lint_json_escape must both call eigs_json_escape_append, the one UTF-8 escape.
+# waiver must be used. A _fmt format must be a string literal whose every %
+# begins one of the whitelisted conversions %% %d %zu %s (the tree's own set),
+# with one argument per conversion; any other % sequence is RED.
+# json_escape_to and lint_json_escape must both call eigs_json_escape_append,
+# the one UTF-8 escape.
 # Residual (a textual check, not a proof): pointer aliases; a store call split
 # across lines; strcat/strncat/memmove/stpcpy or indexed stores into .message;
 # a printf whose severity and message sit more than 8 lines apart; an eigenlsp
 # JSON writer that is not a strbuf_append* call; a waived text buffer
 # (det/hb/code/full) whose contents reach JSON other than through json_escape_to;
-# a numeric precision (%.Ns) that cuts a waived value; lsp_send/lsp_response
-# handed a raw string directly.
+# lsp_send/lsp_response handed a raw string directly.
 set -eu
 cd "$(dirname "$0")/.."
 exec python3 - << 'PY'
@@ -84,7 +84,11 @@ def call_args(src, k):
         else: cur += c
         k += 1
 lit = re.compile(r'^(\s*"(?:\\.|[^"\\])*")+\s*$')
-used, lsp_calls = set(), 0
+# The only conversions an eigenlsp _fmt literal may use: exactly those the
+# tree uses, plus %%. Anything else (positional, flags, width, *, %c, %m) is RED.
+FMT_OK_SET = {"%%", "%d", "%zu", "%s"}
+FMT_OK = re.compile("|".join(re.escape(x) for x in sorted(FMT_OK_SET, key=len, reverse=True)))
+used, lsp_calls, spellings = set(), 0, set()
 for m in re.finditer(r"\bstrbuf_append(\w*)\s*\(", lsp):
     lsp_calls += 1
     n, args, kind = lsp.count("\n", 0, m.start()) + 1, call_args(lsp, m.end()), m.group(1)
@@ -96,18 +100,19 @@ for m in re.finditer(r"\bstrbuf_append(\w*)\s*\(", lsp):
     elif kind == "_fmt" and not lit.match(args[1]):
         raw = [f"format is not a string literal: {args[1]}"]
     elif kind == "_fmt":
-        fmt = "".join(re.findall(r'"((?:\\.|[^"\\])*)"', args[1]))
-        vals = iter(args[2:])
-        for w, p, c in re.findall(r"%[-+ #0]*(\*|\d*)(?:\.(\*|\d*))?[hlLzjt]*([a-zA-Z%])", fmt):
-            if c == "%": continue
-            for star in (w, p):
-                if star == "*": next(vals, "?")          # a `*` consumes an int argument
-            a = " ".join(next(vals, "?").split())
-            if c != "s": continue
-            if "*" in (w, p) and not WAIVED.get((dest, a), "").startswith("a JSON value"):
-                raw.append(f"%s with a * width/precision of unescaped {a}")
-            else:
-                raw.append(a)
+        fmt, k, convs = "".join(re.findall(r'"((?:\\.|[^"\\])*)"', args[1])), 0, []
+        while (k := fmt.find("%", k)) >= 0:       # every %, no skip path
+            m = FMT_OK.match(fmt, k)
+            if not m:
+                bad = re.match(r"%[^a-zA-Z%]*[hlLqjztI]*[a-zA-Z%]?", fmt[k:]).group(0)
+                raw.append(f"conversion {bad} is outside the whitelist {sorted(FMT_OK_SET)}")
+                break
+            spellings.add(m.group(0)); k = m.end()
+            if m.group(0) != "%%": convs.append(m.group(0))
+        else:
+            if len(convs) != len(args) - 2:
+                raw.append(f"{len(convs)} conversions for {len(args) - 2} arguments")
+            raw += [" ".join(a.split()) for c, a in zip(convs, args[2:]) if c == "%s"]
     else:
         raw = [f"unknown writer strbuf_append{kind}"]
     for a in (" ".join(r.split()) for r in raw):
@@ -124,4 +129,5 @@ if not messages or not jsons:
 if fail:
     print(f"FAILED: {fail} writer(s) outside the chokepoint; examined={examined}"); sys.exit(1)
 print(f"lint-diag-writers: OK examined={examined} message={messages} json={jsons} eigenlsp={lsp_calls}")
+print(f"eigenlsp _fmt conversions accepted: {' '.join(sorted(spellings))}")
 PY
