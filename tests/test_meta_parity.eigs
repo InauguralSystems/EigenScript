@@ -337,6 +337,39 @@ parity of ["nested f-string: same-line comment inside is loud",
 parity of ["nested f-string: simple nesting",
     "f\"a{f\"inner{2}\"}b\"", ["ok", "ainner2b"]]
 
+# --- #1338: an unterminated f-string is a parse error on both sides (the meta
+# tokenizer used to run off the end and return the partial text) ---
+parity of ["unterminated f-string with an interpolation raises",
+    "f\"a{1}", ["err"]]
+parity of ["unterminated f-string without an interpolation raises",
+    "f\"abc", ["err"]]
+parity of ["control: terminated f-string",
+    "f\"a{1}\"", ["ok", "a1"]]
+
+# --- #1337: a multi-line interpolation is an expression, not a block; its
+# continuation lines carry no indentation rule on either side ---
+parity of ["multi-line interpolation, unaligned continuation",
+    "f\"{  1 +\n 2}\"", ["ok", "3"]]
+parity of ["multi-line interpolation, nested",
+    "f\"<{f\"{  1 +\n 2}\"}>\"", ["ok", "<3>"]]
+
+# --- #1251: a newline inside a string / f-string / interpolation advances the
+# meta tokenizer's line too. The C half is in test_fstrings.eigs (`e.line`,
+# `what is x at N`); meta carries lines only in its diagnostics. ---
+define meta_err_msg(src) as:
+    local m is ""
+    try:
+        eigen_run of src
+    catch mm:
+        m is mm
+    return m
+check of ["meta: line after a multi-line string",
+    contains of [meta_err_msg of "s is \"a\nb\"\nx is $", "at line 3"], 1]
+check of ["meta: line after a multi-line f-string with an interpolation",
+    contains of [meta_err_msg of "s is f\"a\nb{1 +\n2}\"\nx is $", "at line 4"], 1]
+check of ["meta: escaped newline does not advance the line",
+    contains of [meta_err_msg of "s is \"a\\nb\"\nx is $", "at line 2"], 1]
+
 # --- #1254: parameters are comma-separated in define and in lambdas; a
 # missing comma is a parse error on both sides, not a silent second parameter ---
 parity of ["define: missing comma raises",

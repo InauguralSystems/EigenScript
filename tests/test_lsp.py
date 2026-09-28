@@ -1212,6 +1212,23 @@ def main():
                         .replace("print of %s\n" % name, "print of y\n")
               and run_eigs(src) == (0, "1\n12\n") == run_eigs(got))
 
+    # #1251/#1337: a newline inside a string literal, f-string text or an
+    # f-string interpolation is a physical line. The lexer used to leave its
+    # line counter behind there, so every later token sat one line early per
+    # swallowed newline: a rename on the line after landed nowhere (or on the
+    # wrong bytes) and diagnostics pointed at the wrong line.
+    ml_doc = ('s is "a\nb"\nu is f"c\n{1}"\nx is 1\nt is f"{x +\n 1}"\n'
+              'print of x\nprint of t\n')
+    ml_applied = apply_rename_bytes(ml_doc, rename_result(ml_doc, 52, 4, 0, "y"))
+    check("rename after multi-line literals edits every use (#1251)",
+          ml_applied == ml_doc.replace("x", "y"))
+    check("renamed multi-line-literal program prints what the original printed (#1251)",
+          run_eigs(ml_doc) == (0, "1\n2\n") and run_eigs(ml_applied or "") == (0, "1\n2\n"))
+    ml_diag = diagnostics(converse([INIT, did_open('s is "a\nb"\nt is f"{1 +\n 2}"\nq is )\n'),
+                                    SHUTDOWN, EXIT]))
+    check("diagnostic after multi-line literals is on its physical line (#1251)",
+          bool(ml_diag) and ml_diag[0]["range"]["start"]["line"] == 4)
+
     # #1336: an over-long URI is REFUSED, never stored cut. A cut key is a URI
     # the client never sent, and char[4096] can end it mid-character. The
     # client gets a showMessage error naming the limit, nothing is published

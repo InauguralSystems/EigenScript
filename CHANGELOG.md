@@ -4,6 +4,9 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+- A newline inside a string literal or inside f-string literal text advances the lexer's line counter (#1251). Every later token used to sit one line early per swallowed newline, so `what is x at N` answered for the wrong statement and `e.line`, the error header, lint/LSP diagnostics and rename all pointed at the wrong line.
+- A multi-line f-string interpolation is lexed as an expression, not a block (#1337): `f"{  1 +\n 2}"` no longer fails with "indentation does not match any outer level", and its newlines advance the line counter so errors after it report their physical line.
+- `lib/eigen.eigs` rejects an unterminated f-string, as the C lexer does, instead of returning its partial text (#1338); its tokenizer also counts newlines inside strings and interpolations and lexes an interpolation without layout, matching #1251/#1337.
 - A token's column is its byte offset on tab-indented lines too (#1343): the lexer counted each leading tab (also inside `f"{...}"`) as 4 columns, so LSP rename, semantic tokens, cursor lookup, diagnostics and the error caret all landed 3 bytes right per tab.
 - eigenlsp rename: the scope table and each scope's bindings grow instead of silently stopping at 256 scopes / 32 names / 47 bytes, which let a rename of a global rewrite a late shadowing parameter or `local` (#1341).
 - eigenlsp's JSON strings and `--lint --json` share one UTF-8-safe escape, `eigs_json_escape_append`: a cut character is dropped whole, a bad byte becomes U+FFFD, and control characters are escaped rather than dropped (#1336).

@@ -93,4 +93,37 @@ assert_eq of [f"{f"{ {"k}": w}["k}"] }"}", "5", "dict with brace-bearing keys in
 # malformed nesting still fails with a diagnostic
 assert_eq of [try_parse of "print of f\"outer:{f\"inner:{\"a}b\"}\"}", 0, "unterminated nested f-string is loud"]
 
+# --- #1251 / #1337: a physical newline inside a string literal, inside
+# f-string literal text, or inside an f-string interpolation is still a
+# physical line. Every later token keeps its true line, so `what is x at N`
+# and `e.line` key on the right statement. Run through `eval` so the line
+# numbers are the eval'd source's own and this file stays line-insensitive. ---
+define ml_line_err(src) as:
+    local ln is -1
+    try:
+        eval of src
+    catch mle:
+        ln is mle.line
+    return ln
+assert_eq of [eval of "s is \"a\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "multi-line string: at N is the physical line"]
+assert_eq of [eval of "s is \"a\\nb\"\n\nx is 10\nx is 20\nwhat is x at 3", 10, "control: escaped newline + blank line"]
+assert_eq of [eval of "s is f\"a\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "multi-line f-string text: at N is the physical line"]
+assert_eq of [eval of "s is f\"a\\nb\"\n\nx is 10\nx is 20\nwhat is x at 3", 10, "control: escaped newline in f-string text"]
+assert_eq of [eval of "s is \"a\n\n\nb\"\nx is 10\nx is 20\nwhat is x at 5", 10, "several literal newlines each advance the line"]
+assert_eq of [eval of "s is f\"a\n{1}\nb{2}\n\"\nx is 10\nx is 20\nwhat is x at 5", 10, "f-string newlines around interpolations"]
+assert_eq of [eval of "s is \"a\\\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "backslash before a physical newline still advances the line"]
+assert_eq of [ml_line_err of "s is \"a\nb\"\nq is 1 / 0", 3, "e.line after a multi-line string"]
+assert_eq of [ml_line_err of "s is f\"a\nb\"\nq is 1 / 0", 3, "e.line after a multi-line f-string"]
+assert_eq of [ml_line_err of "s is \"a\\nb\"\nq is 1 / 0", 2, "control: escapes do not advance the line"]
+assert_eq of [len of (eval of "\"a\n\nb\""), 4, "multi-line string keeps its bytes"]
+assert_eq of [eval of "f\"a\n{1 + 1}\nb\"", "a\n2\nb", "multi-line f-string keeps its bytes"]
+# #1337: the spliced sub-lex of an interpolation applies no indentation rule
+assert_eq of [eval of "f\"{  1 +\n 2}\"", "3", "unaligned continuation line in an interpolation"]
+assert_eq of [eval of "f\"{1 +\n        2}\"", "3", "deeper continuation line in an interpolation"]
+assert_eq of [eval of "f\"<{f\"{  1 +\n 2}\"}>\"", "<3>", "unaligned continuation in a nested interpolation"]
+assert_eq of [ml_line_err of "x is f\"{1 +\n 2}\"\nq is 1 / 0", 3, "e.line after a multi-line interpolation"]
+assert_eq of [ml_line_err of "x is f\"{1 +\n\n 2}\"\ny is 1\nq is 1 / 0", 5, "e.line after a two-newline interpolation"]
+assert_eq of [ml_line_err of "x is f\"{1 +\n (1 / 0)}\"", 2, "an error inside an interpolation reports its own line"]
+assert_eq of [eval of "x is f\"{1 +\n 2}\"\nx is 10\nx is 20\nwhat is x at 3", 10, "at N after a multi-line interpolation"]
+
 test_summary of null
