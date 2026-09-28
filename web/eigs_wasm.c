@@ -47,10 +47,8 @@ int eigs_run_source(const char *source) {
     /* Fresh global env per run — the playground treats each execution as
      * a clean session. The previous run's closures, globals, and trace
      * tape are reclaimed below. */
-    Env *global = env_new(NULL);
-    register_builtins(global);
-    register_store_builtins(global);
-    g_global_env = global;
+    /* + builtin layer (#1388); register_builtins composes store (#742). */
+    Env *global = eigs_global_env_create();
 
     /* Minimal argv so eigenscript_set_args doesn't see a NULL pointer.
      * The playground has no real argv; expose a single virtual arg so

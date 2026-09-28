@@ -34,9 +34,7 @@ int main(void) {
     /* Init runtime — process is single-shot, no detach/destroy. */
     srand(0);
     eigs_thread_attach(eigs_state_new());
-    Env *global = env_new(NULL);
-    register_builtins(global);
-    g_global_env = global;
+    Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
 
     /* Suppress output */
     int devnull = open("/dev/null", O_WRONLY);

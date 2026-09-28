@@ -694,6 +694,23 @@ Value* builtin_set_observer_window(Value *arg) {
             rt_error(EK_UNDEFINED_NAME, 0, "set_observer_window: no binding named '%s'", name);
             return make_null();
         }
+        /* #1388: the builtin layer is sealed -- no builtin writes into it.
+         * A module naming a builtin gets a shadow binding (same value) in the
+         * caller's scope, where a plain `is` would have created it, and the
+         * override lands there: the module's own window for its own `len`,
+         * invisible to every other module and thread. */
+        if (target == g_builtin_env) {
+            Env *home = start;
+            while (home->is_loop_env && home->parent) home = home->parent;
+            Value *bv = slot_to_value(target->values[slot]);
+            env_set_local(home, name, bv);
+            val_decref(bv);
+            target = env_resolve_chain(home, name, env_hash_name(name), &slot, &depth);
+            if (target != home || slot < 0) {
+                rt_error(EK_LIMIT, 0, "set_observer_window: cannot shadow '%s'", name);
+                return make_null();
+            }
+        }
         if (!observer_slot_set_window(target, slot, n)) {
             rt_error(EK_LIMIT, 0, "set_observer_window: observer slot table full");
             return make_null();

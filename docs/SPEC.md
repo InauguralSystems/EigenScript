@@ -1348,8 +1348,12 @@ Names that are not builtins still resolve to the importer's globals, as
 above. The builtin set is sealed: no `is` anywhere writes into it — an
 assignment that would reach it (from module code, or an `eval` inside a
 module function) creates a binding in the writer's own scope instead.
-`load_file` runs its file in the loader's scope, so loaded code sees the
-loader's rebinding like any other code there. Functions an embedder
+`load_file` is not isolated. While an import is running a module's top
+level, it runs its file in that module's scope; at every other time,
+including inside a module *function* and inside a host function, it runs
+the file's top level in the host program's global scope, so loaded code
+sees the host's rebinding of a builtin (the target scope for a module
+function is tracked in #1391). Functions an embedder
 registers with `eigs_register_function` belong to the builtin set
 ([EMBEDDING.md](EMBEDDING.md)).
 
