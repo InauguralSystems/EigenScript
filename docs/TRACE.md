@@ -56,8 +56,15 @@ The same re-stamp comes before every other binding store whose stamp was left
 elsewhere (#1381): a destructuring assignment spanning lines, each iteration's
 `for` loop variable (after the previous iteration's body), a comprehension
 variable, a parameter default spanning lines, a `catch` binding (after the
-faulting line), and an `import` binding (after the module's own code). A `for`
-loop therefore adds one `L <for line>` record per iteration.
+faulting line), an `import` binding (after the module's own code), and the
+restore of a function-scope `for` binder's outer value (after the body or a
+`break`). Under the interpreter, a `for` loop therefore writes one extra
+`L <for line>` record per interpreted iteration. Once OSR has compiled a loop,
+its iterations write no `L` records today, before or after this change
+(#1383), so a JIT run's tape carries fewer `L` records than an
+`EIGS_JIT_OFF=1` run of the same program. Temporal answers
+(`what is x at N`) agree across the interpreter, the JIT and OSR, because the
+JIT still updates the current line that history files under.
 
 The change moves only `L` stamps. It never moves which values a tape records
 or the order of `N` records, so a tape recorded before the change replays

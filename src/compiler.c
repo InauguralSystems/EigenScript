@@ -2487,6 +2487,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         if (can_persist_env) emit(c, OP_LOOP_ENV_END, node->line);
         emit(c, OP_POP, node->line); /* pop iterator state */
         if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: restore */
+            /* #1381: the restore writes the outer binding's history, so it
+             * is filed under the `for` line like the loop-variable stores.
+             * Normal exit and `break` both arrive here, after the body or the
+             * break left the stamp elsewhere. */
+            restamp_line(c, for_line);
             emit_op_u16(c, OP_GET_LOCAL, (uint16_t)save_slot, node->line);
             emit_op_u16(c, OP_SET_LOCAL, (uint16_t)prior_slot, node->line);
             emit(c, OP_POP, node->line);
