@@ -289,9 +289,26 @@ static Document* doc_create(const char *uri) {
         fprintf(stderr, "[LSP] too many open documents\n");
         return NULL;
     }
+    /* An over-long URI is refused, never truncated: a cut key is a URI the
+     * client never sent, and it can end mid-character (#1336). */
+    size_t ulen = strlen(uri);
+    if (ulen >= sizeof(g_docs[0].uri)) {
+        strbuf msg, params;
+        strbuf_init(&msg);
+        strbuf_init(&params);
+        strbuf_append_fmt(&msg, "eigenlsp: document not opened: its URI is %zu bytes, "
+                          "over the %zu-byte limit", ulen, sizeof(g_docs[0].uri) - 1);
+        strbuf_append(&params, "{\"type\":1,\"message\":");
+        json_escape_to(&params, msg.data);
+        strbuf_append_char(&params, '}');
+        lsp_notification("window/showMessage", params.data);
+        strbuf_free(&msg);
+        strbuf_free(&params);
+        return NULL;
+    }
     Document *doc = &g_docs[g_doc_count++];
     memset(doc, 0, sizeof(Document));
-    snprintf(doc->uri, sizeof(doc->uri), "%s", uri);
+    memcpy(doc->uri, uri, ulen + 1);
     return doc;
 }
 

@@ -1212,41 +1212,57 @@ def main():
                         .replace("print of %s\n" % name, "print of y\n")
               and run_eigs(src) == (0, "1\n12\n") == run_eigs(got))
 
-    # #1336: eigenlsp's JSON strings must be strict UTF-8 whatever it holds.
-    # No source text reaches the syntax-error buffer's edge: every recorded
-    # parse message is built from token-type names and ASCII identifiers (the
-    # lexer spells a non-ASCII byte as \xNN), and the buffer is now a strbuf.
-    # So this drives the chokepoint through a fixed buffer a client CAN fill:
-    # Document.uri is char[4096]. A valid URI whose 2-byte character starts at
-    # byte 4094 is cut after its lead byte, and the syntax error's
-    # publishDiagnostics echoes that URI. Before the fix the lead byte went
-    # out raw and the message was not UTF-8.
-    edge_uri = "file:///" + "a" * (4094 - len("file:///")) + "\u00e9"
-    edge_open = did_open("x is\n")
-    edge_open["params"]["textDocument"]["uri"] = edge_uri
-    edge_p = subprocess.run(
-        [LSP], input="".join(frame(m) for m in
-                             [INIT, edge_open, SHUTDOWN, EXIT]).encode("ascii"),
-        capture_output=True, timeout=15)
-    if any(mk.encode() in edge_p.stderr for mk in SANITIZER_MARKERS):
-        SANITIZER_HITS.append(edge_p.stderr.decode("utf-8", "replace"))
-    edge_diag = None
-    try:
-        edge_text = edge_p.stdout.decode("utf-8")
-    except UnicodeDecodeError as e:
-        edge_text = None
-        print("    #1336 not UTF-8:", e)
-    for chunk in (edge_text or "").split("Content-Length: ")[1:]:
-        body = chunk.split("\r\n\r\n", 1)[1]
-        obj = json.loads(body)
-        if obj.get("method") == "textDocument/publishDiagnostics":
-            edge_diag = obj["params"]
-    check("syntax-error JSON-RPC is strict UTF-8 with a cut 2-byte char (#1336)",
-          edge_text is not None and edge_diag is not None)
-    check("the cut character is dropped whole, not replaced or halved (#1336)",
-          edge_diag is not None
-          and edge_diag["uri"] == "file:///" + "a" * 4086
-          and edge_diag["diagnostics"][0]["message"].startswith("syntax error: "))
+    # #1336: an over-long URI is REFUSED, never stored cut. A cut key is a URI
+    # the client never sent, and char[4096] can end it mid-character. The
+    # client gets a showMessage error naming the limit, nothing is published
+    # under any URI, and later requests find no document: neither the long URI
+    # nor its 4095-byte prefix (the key the old code stored).
+    long_uri = "file:///" + "a" * (4100 - len("file:///"))
+    long_open = did_open("x is 1\n")
+    long_open["params"]["textDocument"]["uri"] = long_uri
+    long_r = converse([
+        INIT, long_open,
+        {"jsonrpc": "2.0", "id": 60, "method": "textDocument/documentSymbol",
+         "params": {"textDocument": {"uri": long_uri[:4095]}}},
+        {"jsonrpc": "2.0", "id": 61, "method": "textDocument/definition",
+         "params": {"textDocument": {"uri": long_uri},
+                    "position": {"line": 0, "character": 0}}},
+        SHUTDOWN, EXIT])
+    shown = [r["params"] for r in long_r if r.get("method") == "window/showMessage"]
+    check("didOpen with a 4100-byte URI is refused with an error naming the limit (#1336)",
+          len(shown) == 1 and shown[0].get("type") == 1
+          and "4100 bytes" in shown[0].get("message", "")
+          and "4095-byte limit" in shown[0].get("message", ""))
+    check("a refused URI publishes no diagnostics under any URI (#1336)",
+          not any(r.get("method") == "textDocument/publishDiagnostics" for r in long_r))
+    check("no document is stored under the refused URI or its cut prefix (#1336)",
+          (by_id(long_r, 60) or {}).get("result") == []
+          and by_id(long_r, 61) is not None
+          and by_id(long_r, 61).get("result") is None)
+
+    # #1336 calibration. With the URI refused, no text a client or a source
+    # file supplies reaches a fixed eigenlsp buffer's edge: parse messages are
+    # ASCII (token-type names, ASCII identifiers, non-ASCII bytes spelled
+    # \xNN), the syntax-error text is a strbuf, and json_escape_to has no
+    # limit. So this drives eigs_json_escape_append AT its limit directly,
+    # through the one caller that passes one: `--lint --json` escaping a file
+    # path into pesc[1024] (limit 1023). A 2-byte character, a quote and a
+    # backslash each start at byte 1022, where only one byte is left: each
+    # must be dropped whole, and the output must be strict UTF-8 JSON.
+    head = "/nonexistent-1336/"
+    fill = head + "a" * (1022 - len(head))
+    for label, ch in (("a 2-byte character", "\u00e9"), ("a quote", '"'),
+                      ("a backslash", "\\")):
+        lp = subprocess.run([EIGS, "--lint", "--json", fill + ch + "zz"],
+                            capture_output=True, timeout=15)
+        try:
+            items = json.loads(lp.stdout.decode("utf-8"))
+        except ValueError as e:     # UnicodeDecodeError is a ValueError
+            items = None
+            print("    #1336 %s: %s" % (label, e))
+        check("--lint --json path cut at the escape limit drops %s whole (#1336)" % label,
+              isinstance(items, list) and len(items) == 1
+              and items[0].get("file") == fill and items[0].get("code") == "E000")
 
     # If the LSP was built under a sanitizer, fail on any report it emitted.
     check("no sanitizer reports from the LSP process", not SANITIZER_HITS)

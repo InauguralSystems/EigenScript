@@ -5,13 +5,17 @@
 # eigenlsp (#1336): every strbuf_append* call in src/eigenlsp.c is examined
 # (examined == raw substring count > 0). A non-literal string must be a
 # json_escape_to argument or a WAIVED (buffer, argument) pair, and every
-# waiver must be used. json_escape_to and lint_json_escape must both call
-# eigs_json_escape_append, the one UTF-8 escape.
+# waiver must be used. A _fmt format must be a string literal; `*` widths and
+# precisions consume their argument, and a `*` on a %s is refused unless the
+# argument is a waived pre-built JSON value. json_escape_to and
+# lint_json_escape must both call eigs_json_escape_append, the one UTF-8 escape.
 # Residual (a textual check, not a proof): pointer aliases; a store call split
 # across lines; strcat/strncat/memmove/stpcpy or indexed stores into .message;
 # a printf whose severity and message sit more than 8 lines apart; an eigenlsp
 # JSON writer that is not a strbuf_append* call; a waived text buffer
-# (det/hb/code/full) whose contents reach JSON other than through json_escape_to.
+# (det/hb/code/full) whose contents reach JSON other than through json_escape_to;
+# a numeric precision (%.Ns) that cuts a waived value; lsp_send/lsp_response
+# handed a raw string directly.
 set -eu
 cd "$(dirname "$0")/.."
 exec python3 - << 'PY'
@@ -89,10 +93,21 @@ for m in re.finditer(r"\bstrbuf_append(\w*)\s*\(", lsp):
         raw = [] if re.fullmatch(r"'(?:\\.|[^'\\])'", args[1]) else [args[1]]
     elif kind in ("", "_n"):
         raw = [] if lit.match(args[1]) else [args[1]]
+    elif kind == "_fmt" and not lit.match(args[1]):
+        raw = [f"format is not a string literal: {args[1]}"]
     elif kind == "_fmt":
         fmt = "".join(re.findall(r'"((?:\\.|[^"\\])*)"', args[1]))
-        convs = [c for c in re.findall(r"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*([a-zA-Z%])", fmt) if c != "%"]
-        raw = [a for c, a in zip(convs, args[2:] + ["?"] * len(convs)) if c == "s"]
+        vals = iter(args[2:])
+        for w, p, c in re.findall(r"%[-+ #0]*(\*|\d*)(?:\.(\*|\d*))?[hlLzjt]*([a-zA-Z%])", fmt):
+            if c == "%": continue
+            for star in (w, p):
+                if star == "*": next(vals, "?")          # a `*` consumes an int argument
+            a = " ".join(next(vals, "?").split())
+            if c != "s": continue
+            if "*" in (w, p) and not WAIVED.get((dest, a), "").startswith("a JSON value"):
+                raw.append(f"%s with a * width/precision of unescaped {a}")
+            else:
+                raw.append(a)
     else:
         raw = [f"unknown writer strbuf_append{kind}"]
     for a in (" ".join(r.split()) for r in raw):
