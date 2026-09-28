@@ -175,13 +175,14 @@ define _interrogative_index(word) as:
     return 0
 
 define eigen_tokenize(source) as:
-    return _eigen_tokenize_at of [source, 1, 1]
+    return _eigen_tokenize_at of [source, 1]
 
-# `layout` is 0 for the spliced sub-lex of an f-string interpolation (C
-# parity, #1337): an interpolation is an expression, so its newlines are
-# whitespace and its continuation lines carry no indentation. A newline inside
-# a string or an interpolation still advances `line` (#1251).
-define _eigen_tokenize_at(source, line, layout) as:
+# `line` is the physical line `source` starts on: an f-string interpolation is
+# sub-lexed from the line of its `{`, and a newline inside a string or an
+# interpolation advances it (#1251). No layout switch is needed for #1337:
+# this tokenizer never rejects an inconsistent dedent, and the splice drops
+# layout tokens, so a continuation line's indentation is already inert here.
+define _eigen_tokenize_at(source, line) as:
     tokens is []
     pos is 0
     src_len is len of source
@@ -193,7 +194,7 @@ define _eigen_tokenize_at(source, line, layout) as:
         # Handle line start: measure indent
         if at_line_start == 1:
             at_line_start is 0
-            if (bracket_depth == 0) and (layout == 1):
+            if bracket_depth == 0:
                 spaces is 0
                 counting is 1
                 loop while (pos < src_len) and (counting == 1):
@@ -260,7 +261,7 @@ define _eigen_tokenize_at(source, line, layout) as:
                 handled is 1
             # Newlines
             if (handled == 0) and (c == "\n"):
-                if (bracket_depth == 0) and (layout == 1):
+                if bracket_depth == 0:
                     if (len of tokens) > 0:
                         last is tokens[(len of tokens) - 1]
                         if last[0] != "newline":
@@ -331,7 +332,7 @@ define _eigen_tokenize_at(source, line, layout) as:
                             expr_buf is source[pos:iend]
                             pos is iend + 1
                             # Recursively tokenize the inner expression
-                            inner_tokens is _eigen_tokenize_at of [expr_buf, line, 0]
+                            inner_tokens is _eigen_tokenize_at of [expr_buf, line]
                             for eci in range of (len of expr_buf):
                                 if (char_at of [expr_buf, eci]) == "\n":
                                     line is line + 1

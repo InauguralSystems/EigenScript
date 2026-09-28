@@ -115,6 +115,10 @@ typedef struct Compiler {
                                      * stamp the line". Reset at every basic-block boundary
                                      * (patch_jump targets, emit_loop, loop_start capture,
                                      * after CALL/DISPATCH/RETURN, fn entry). */
+    int               last_real_line; /* the last line actually stamped by
+                                     * emit_line; never reset to -1, so an
+                                     * assignment can tell that its value
+                                     * expression moved the line (#1251). */
     int               dispatch_rebound; /* #459, root-computed and copied to fn
                                      * compilers: the unit binds `dispatch`
                                      * somewhere (any scope) or references
@@ -533,6 +537,7 @@ static void emit_line(Compiler *c, int line) {
     if (c->last_line == line) return;
     emit_op_u32(c, OP_LINE, (uint32_t)line, line);   /* #630: 32-bit — was (uint16_t), wrapped past line 65535 */
     c->last_line = line;
+    c->last_real_line = line;
 }
 
 /* ---- Constant helpers ---- */
@@ -2095,6 +2100,15 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
     case AST_ASSIGN: {
         compile_node(c, node->data.assign.expr);
+        /* #1251: a value spanning lines (a multi-line interpolation, string
+         * or bracket) leaves the last stamp on a later line. The binding is
+         * recorded under the current line, so restamp the statement's own
+         * line first. One-line statements never reach this branch, so their
+         * bytecode is unchanged. */
+        if (c->last_real_line != node->line) {
+            c->last_line = -1;
+            emit_line(c, node->line);
+        }
         emit_assign_for_tos(c, node->data.assign.name, node->name_hash,
                             node->data.assign.local_only, node->line);
         break;

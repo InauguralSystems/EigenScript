@@ -125,5 +125,24 @@ assert_eq of [ml_line_err of "x is f\"{1 +\n 2}\"\nq is 1 / 0", 3, "e.line after
 assert_eq of [ml_line_err of "x is f\"{1 +\n\n 2}\"\ny is 1\nq is 1 / 0", 5, "e.line after a two-newline interpolation"]
 assert_eq of [ml_line_err of "x is f\"{1 +\n (1 / 0)}\"", 2, "an error inside an interpolation reports its own line"]
 assert_eq of [eval of "x is f\"{1 +\n 2}\"\nx is 10\nx is 20\nwhat is x at 3", 10, "at N after a multi-line interpolation"]
+assert_eq of [eval of "s is f\"a\\\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "backslash before a physical newline in f-string text advances the line"]
+# #1251 round 2: the multi-line literal's OWN statement is filed under its own
+# line, not the line the literal closes on (a node took the NEXT token's line)
+assert_eq of [eval of "x is 5\nx is \"a\nb\"\nwhat is x at 2", "a\nb", "multi-line string: its own statement at its first line"]
+assert_eq of [eval of "x is 5\nx is f\"a\nb\"\nwhat is x at 2", "a\nb", "multi-line f-string text: its own statement"]
+assert_eq of [eval of "x is 5\nx is f\"a\nb{1}\"\nwhat is x at 2", "a\nb1", "f-string with an interpolation after a newline: its own statement"]
+assert_eq of [eval of "x is 5\nx is f\"{1 +\n 2}\"\nwhat is x at 2", "3", "multi-line interpolation: its own statement"]
+assert_eq of [eval of "x is 5\nx is [1,\n2]\nwhat is x at 2", [1, 2], "multi-line list literal: its own statement"]
+assert_eq of [eval of "x is 5\nx is [\n]\nwhat is x at 2", [], "empty list closing on a later line: its own statement"]
+assert_eq of [eval of "x is 5\nx is {\"a\": 1\n}\nwhat is x at 2", {"a": 1}, "dict closing on a later line: its own statement"]
+# the literal is the last thing stamped before the raising op, so e.line is
+# the literal's own line, not the line of the token after it
+assert_eq of [ml_line_err of "y is 0\nz is -\"a\nb\"", 2, "e.line: negating a multi-line string"]
+assert_eq of [ml_line_err of "y is 0\nz is -([\n])", 2, "e.line: negating a list closed on a later line"]
+assert_eq of [ml_line_err of "y is 0\nz is -({\n})", 2, "e.line: negating a dict closed on a later line"]
+assert_eq of [ml_line_err of "y is 0\nz is ~(null\n)", 2, "e.line: complementing null closed on a later line"]
+assert_eq of [ml_line_err of "y is 0\nz is [1][(5\n)]", 2, "e.line: indexing with a number closed on a later line"]
+assert_eq of [ml_line_err of "define f(xs) as:\n    z is [xs[0].k\n]\n    return z\nf of [[5]]", 2, "e.line: local[const].field closed on a later line"]
+assert_eq of [ml_line_err of "define f(a) as:\n    z is [a.k\n]\n    return z\nf of 5", 2, "e.line: local.field closed on a later line"]
 
 test_summary of null

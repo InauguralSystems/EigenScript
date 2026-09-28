@@ -1712,6 +1712,11 @@ print of score
 print of (what is score at 2)   # 25 — line-number qualified history
 ```
 
+The line is the **physical** source line. A newline inside a string, f-string
+text or an f-string interpolation counts, and an assignment whose value spans
+several lines (a multi-line list, dict, string or interpolation) is recorded
+under the statement's first line (#1251).
+
 ### Addressing an occurrence: `when <n>`
 
 `at <line>` addresses a **source line**, which is not injective: a line inside

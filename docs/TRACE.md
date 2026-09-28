@@ -35,6 +35,39 @@ The tape is plain text, one record per line, six record kinds:
 | `O cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what the tape last said, immediately before the next `L`/`A` record. See [Observer Configuration](#observer-configuration-1044-1045). |
 | `O win <name> <n>` | Per-binding observer window override (v3) — `set_observer_window of ["name", n]`; `n == 0` clears it. |
 
+### Line stamps
+
+An `L` record carries a **physical** source line. A newline inside a string
+literal, inside f-string text or inside an f-string interpolation counts, and
+an AST node takes the line of its own first token (#1251). An assignment whose
+value spans lines emits one extra `L <statement line>` just before its `A`, so
+the binding is filed under the statement's first line. Take this program:
+
+```
+x is [1,
+2]
+```
+
+Its assignment records read `L 1 L 2 L 1 A x=<list:2>`. Before #1251 the `L` stamps after
+a multi-line literal ran one line early per swallowed newline, and a literal
+closing on a later line was filed under that closing line.
+
+The change moves only `L` stamps. It never moves which values a tape records
+or the order of `N` records, so a tape recorded before the change replays
+under a binary built after it, and the reverse. Checked with a
+`random of []` program containing a multi-line string, f-string text and a
+multi-line interpolation:
+
+```
+EIGS_TRACE=t.tape <old>/eigenscript prog.eigs > old.out
+EIGS_REPLAY=t.tape <new>/eigenscript prog.eigs   # prints old.out
+EIGS_TRACE=u.tape <new>/eigenscript prog.eigs > new.out
+EIGS_REPLAY=u.tape <old>/eigenscript prog.eigs   # prints new.out
+```
+
+The only output that follows the replaying binary is output that reads line
+identity: `what is x at N`, `e.line` and error headers.
+
 ### Value serialization
 
 `N` records are written with full fidelity so they can be parsed back

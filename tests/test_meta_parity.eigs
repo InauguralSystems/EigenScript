@@ -367,6 +367,10 @@ check of ["meta: line after a multi-line string",
     contains of [meta_err_msg of "s is \"a\nb\"\nx is $", "at line 3"], 1]
 check of ["meta: line after a multi-line f-string with an interpolation",
     contains of [meta_err_msg of "s is f\"a\nb{1 +\n2}\"\nx is $", "at line 4"], 1]
+check of ["meta: backslash before a physical newline in a string advances the line",
+    contains of [meta_err_msg of "s is \"a\\\nb\"\nx is $", "at line 3"], 1]
+check of ["meta: backslash before a physical newline in f-string text advances the line",
+    contains of [meta_err_msg of "s is f\"a\\\nb\"\nx is $", "at line 3"], 1]
 check of ["meta: escaped newline does not advance the line",
     contains of [meta_err_msg of "s is \"a\\nb\"\nx is $", "at line 2"], 1]
 
