@@ -74,6 +74,14 @@ first_count is hist.entries[0][1]
 last_count is hist.entries[(len of hist.entries) - 1][1]
 check of ["histogram sorted descending", first_count >= last_count]
 
+# --- #1322: an f-string's lowered conversion enters the corpus as `str`, the
+# round-trip-valid spelling, never the unspellable `_#fstr` ---
+write_text of ["/tmp/eigs_corpus_f.eigs", "x is 5\ny is f\"a{x}b\"\n"]
+rf is build_corpus of [["/tmp/eigs_corpus_f.eigs"], 8, "/tmp/eigs_corpus_f.bin", "/tmp/eigs_corpus_fv.json", "/tmp/eigs_corpus_fh.json"]
+fh_text is read_text of "/tmp/eigs_corpus_fh.json"
+check of ["f-string corpus names carry no reserved name", (contains of [fh_text, "#"]) == 0]
+check of ["f-string corpus counts the conversion as str", contains of [fh_text, "\"str\""]]
+
 # --- Bad args return null ---
 check of ["non-list arg returns null", (build_corpus of 5) == null]
 check of ["too-few args returns null", (build_corpus of [files, 8]) == null]

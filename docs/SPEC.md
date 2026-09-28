@@ -369,6 +369,21 @@ Ada was born in 1815
 sum = 6
 ```
 
+Each `{…}` is converted with the builtin string conversion, the one `str`
+names at startup. Rebinding `str`, in any scope, changes only your own
+`str of` calls, never an f-string (#1322):
+
+```eigenscript
+define str(x) as:
+    return "mine"
+print of f"<{5}>"
+print of (str of 5)
+```
+```output
+<5>
+mine
+```
+
 Convert explicitly with `str of n` and `num of s`. `num of` accepts
 decimal and hex-integer strings (hex converts identically on every
 profile and stops at the first non-hex character); a string with no

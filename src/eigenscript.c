@@ -2114,7 +2114,7 @@ static pthread_mutex_t g_module_ns_mu = PTHREAD_MUTEX_INITIALIZER;
 static ModuleNsTab *g_module_ns_retired = NULL;   /* static root; see above */
 
 static int module_ns_public(const char *name) {
-    return name && name[0] != '_';
+    return name && name[0] != '_' && !eigs_name_is_reserved(name);
 }
 
 /* "Could another thread be reading a retired table?" — true while this

@@ -302,6 +302,12 @@ eigs_value_release(forty);          /* drop caller's ref; the global keeps its o
 `eigs_get_global` returns a counted ref the caller must release; `NULL`
 if the name isn't bound.
 
+A name containing `#` is reserved for the runtime (for example `_#fstr`, the
+binding f-strings convert through, #1322). No source can spell one, and the
+embed API refuses it too: `eigs_set_global`, `eigs_get_global` and
+`eigs_register_function` bind nothing, `eigs_get_global` returns `NULL`, and a
+`value` error is left pending (`eigs_has_error`, `eigs_last_error_message`).
+
 ## Value handles
 
 `EigsValue` is opaque. Construction:

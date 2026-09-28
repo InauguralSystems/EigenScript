@@ -233,6 +233,33 @@ int main(void) {
     CHECK(r && eigs_value_as_num(r) == 7.0, "host_add(3,4) == 7");
     eigs_value_release(r);
 
+    /* --- #1322: the embed API refuses reserved runtime names. -------- */
+    /* `_#fstr` is the f-string conversion binding; binding it would hijack
+     * every f-string. Each door refuses, leaves a "value" error pending, and
+     * f-strings keep the builtin conversion. */
+    {
+        EigsValue *seven = eigs_value_new_num(7.0);
+        eigs_clear_error();
+        eigs_set_global("_#fstr", seven);
+        CHECK(eigs_has_error() && eigs_last_error_kind() &&
+              strcmp(eigs_last_error_kind(), "value") == 0,
+              "#1322 set_global of a reserved name is refused with a value error");
+        eigs_value_release(seven);
+        eigs_clear_error();
+        eigs_register_function("_#fstr", host_add);
+        CHECK(eigs_has_error(), "#1322 register_function of a reserved name is refused");
+        eigs_clear_error();
+        EigsValue *g = eigs_get_global("_#fstr");
+        CHECK(g == NULL && eigs_has_error(), "#1322 get_global of a reserved name is refused");
+        if (g) eigs_value_release(g);
+        eigs_clear_error();
+        r = eigs_eval_string("f\"<{5}>\"");
+        CHECK(r && eigs_value_type(r) == EIGS_TYPE_STR &&
+              strcmp(eigs_value_as_string(r), "<5>") == 0,
+              "#1322 f-strings still use the builtin after the refused binds");
+        if (r) eigs_value_release(r);
+    }
+
     /* --- List + dict construction. ----------------------------------- */
     EigsValue *lst = eigs_value_new_list(3);
     EigsValue *e0 = eigs_value_new_num(10.0);

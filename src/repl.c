@@ -462,7 +462,7 @@ static void ed_complete(EdState *e, Env *env) {
     for (Env *scope = env; scope; scope = scope->parent) {
         for (int i = 0; i < scope->count && n < COMP_MAX; i++) {
             const char *name = scope->names[i];
-            if (!name) continue;
+            if (!name || eigs_name_is_reserved(name)) continue;  /* #1322 */
             if (strncmp(name, e->buf + ws, (size_t)wlen) != 0) continue;
             int dup = 0;
             for (int j = 0; j < n; j++)

@@ -688,7 +688,8 @@ Value* builtin_set_observer_window(Value *arg) {
         }
         Env *start = g_builtin_call_env ? g_builtin_call_env : g_global_env;
         int slot = -1, depth = 0;
-        Env *target = env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
+        Env *target = eigs_name_is_reserved(name) ? NULL   /* #1322 */
+            : env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
         if (!target || slot < 0) {
             rt_error(EK_UNDEFINED_NAME, 0, "set_observer_window: no binding named '%s'", name);
             return make_null();
@@ -716,7 +717,8 @@ Value* builtin_get_observer_window(Value *arg) {
         const char *name = arg->data.str;
         Env *start = g_builtin_call_env ? g_builtin_call_env : g_global_env;
         int slot = -1, depth = 0;
-        Env *target = env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
+        Env *target = eigs_name_is_reserved(name) ? NULL   /* #1322 */
+            : env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
         if (!target || slot < 0) {
             rt_error(EK_UNDEFINED_NAME, 0, "get_observer_window: no binding named '%s'", name);
             return make_null();
@@ -2741,6 +2743,22 @@ void free_tokenlist(TokenList *tl) {
     tl->count = 0;
 }
 
+/* #1322: user code that receives the lexer's tokens (tokenize_with_names,
+ * build_corpus) sees the f-string lowering's conversion as `str`, its
+ * round-trip-valid spelling, never the reserved `_#fstr`: a detokenized
+ * `_#fstr` comments out the rest of its line. Mapped rather than dropped --
+ * the rest of the lowering (parens, `+`, literal segments) is synthetic too,
+ * and omitting it would erase the f-string from the stream. */
+void tokenlist_user_spelling(TokenList *tl) {
+    for (int i = 0; i < tl->count; i++) {
+        Token *t = &tl->tokens[i];
+        if (t->synth && t->type == TOK_IDENT && eigs_name_is_reserved(t->str_val)) {
+            free(t->str_val);
+            t->str_val = xstrdup("str");
+        }
+    }
+}
+
 /* ==== BUILTIN: tokenize_ids ==== */
 /* tokenize_ids of string → list of token type IDs (integers).
  * Exposes the runtime's own tokenizer to .eigs code.
@@ -2771,6 +2789,7 @@ Value* builtin_tokenize_with_names(Value *arg) {
     if (!src || !src[0]) return make_list(0);
 
     TokenList tl = tokenize(src);
+    tokenlist_user_spelling(&tl);
     Value *result = make_list(tl.count);
     char numbuf[64];
     for (int i = 0; i < tl.count; i++) {
@@ -3487,6 +3506,7 @@ static const char *SANDBOX_ALLOW[] = {
     /* string + regex (pure) */
     "char_at", "chr", "ends_with", "hex", "join", "ord", "split", "starts_with",
     "str", "str_lower", "str_replace", "str_upper", "substr", "trim",
+    EIGS_FSTR_CONV_NAME,   /* f-strings (#1322) */
     "regex_find", "regex_match", "regex_replace",
     /* buffers + text builders (in-memory only; allocators charge #292) */
     "buffer", "buf_copy", "buf_deinterleave", "buf_dot", "buf_fill",
@@ -6135,6 +6155,8 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "screen_render", make_builtin(builtin_screen_render));
     env_set_local_owned(env, "len", make_builtin(builtin_len));
     env_set_local_owned(env, "str", make_builtin(builtin_str));
+    /* f-string conversion (#1322): unspellable in source, so never shadowed. */
+    env_set_local_owned(env, EIGS_FSTR_CONV_NAME, make_builtin(builtin_str));
     env_set_local_owned(env, "num", make_builtin(builtin_num));
     env_set_local_owned(env, "append", make_builtin(builtin_append));
     env_set_local_owned(env, "report", make_builtin(builtin_report));

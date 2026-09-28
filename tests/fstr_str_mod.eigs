@@ -1,0 +1,9 @@
+# Imported by tests/test_fstrings.eigs (#1322): a module that rebinds `str`
+# and uses f-strings. Its f-strings must still convert with the builtin; its
+# own `str of` calls see its own binding.
+define str(x) as:
+    return "MODHIJACK"
+define show(x) as:
+    return f"<{x}>"
+own is str of 1
+direct is f"[{2}]"

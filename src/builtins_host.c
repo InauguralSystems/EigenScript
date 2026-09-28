@@ -521,6 +521,7 @@ Value* builtin_build_corpus(Value *arg) {
 
         /* Tokenize */
         TokenList tl = tokenize(source);
+        tokenlist_user_spelling(&tl);   /* #1322 */
         file_tok_counts[fi] = tl.count;
         total_tokens += tl.count;
         files_found++;
@@ -661,6 +662,7 @@ Value* builtin_build_corpus(Value *arg) {
         stream_pos += 2;
 
         TokenList tl = tokenize(source);
+        tokenlist_user_spelling(&tl);   /* #1322 */
 
         for (int i = 0; i < tl.count; i++) {
             int tid = tl.tokens[i].type;

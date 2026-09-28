@@ -124,7 +124,11 @@ int         eigs_last_error_line(void);
 
 /* Bind `val` into the global env under `name`. The store retains its own
  * reference; the caller's ref on `val` is left untouched (release it if
- * the value was freshly constructed). */
+ * the value was freshly constructed).
+ * A reserved runtime name (one containing `#`, e.g. the f-string conversion
+ * `_#fstr`, #1322) is refused by eigs_set_global, eigs_get_global and
+ * eigs_register_function: nothing is bound, get returns NULL, and a "value"
+ * error is left pending (eigs_has_error / eigs_last_error_message). */
 void        eigs_set_global(const char *name, EigsValue *val);
 /* Look up `name` in the global env. Returns a counted ref (caller releases)
  * or NULL if not bound. */

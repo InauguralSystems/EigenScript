@@ -826,6 +826,17 @@ def main():
     applied = apply_rename_bytes(str_doc, rename_result(str_doc, 43, 0, 0, "s"))
     check("synthetic `str of` from f-string lowering is never renamed (#1244)",
           applied == 's is 3\nprint of f"<{s}>"\n')
+    # #1322: a user `define str` next to an f-string. Rename edits only the
+    # source's own `str` occurrences, and the f-string's output does not move
+    # (its conversion never went through the user's `str`).
+    dstr_doc = ('define str(x) as:\n    return "H"\n'
+                'print of f"<{5}>"\nprint of (str of 5)\n')
+    applied = apply_rename_bytes(dstr_doc, rename_result(dstr_doc, 44, 0, 7, "conv"))
+    check("rename of a user `define str` never edits an f-string (#1322)",
+          applied == ('define conv(x) as:\n    return "H"\n'
+                      'print of f"<{5}>"\nprint of (conv of 5)\n')
+          and run_eigs(dstr_doc) == (0, "<5>\nH\n")
+          and run_eigs(applied or "") == (0, "<5>\nH\n"))
 
     # --- rename of a builtin/keyword is refused (null) ---
     rn_kw = {"jsonrpc": "2.0", "id": 13, "method": "textDocument/rename",
@@ -857,6 +868,13 @@ def main():
           bool(e3) and e3["range"]["start"]["character"] == 9)
     check("E003 range is token-precise (end char 13)",
           bool(e3) and e3["range"]["end"]["character"] == 13)
+    # #1322: the E003 near-miss never offers a reserved runtime name.
+    r = converse([INIT, did_open("x is _fstr of 1\nprint of x\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    e3r = next((x for x in (d or []) if x.get("code") == "E003"), None)
+    check("E003 diagnostic never suggests a reserved name (#1322)",
+          bool(e3r) and "_fstr" in e3r.get("message", "")
+          and "#" not in e3r.get("message", ""))
 
     # --- E002 parse-error range is token-precise (#407 residual) ---
     r = converse([INIT, did_open("x is 2 x is 3\n"), SHUTDOWN, EXIT])

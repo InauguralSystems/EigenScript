@@ -169,4 +169,89 @@ assert_eq of [eval of "define r7f() as:\n    return 7\nr7x is r7f of null\n[(wha
 assert_eq of [eval of "define r7g() as:\n    return [1, 2]\nr7a is 0\nr7b is 0\n[r7a, r7b] is r7g of null\n[(what is r7a at 2), (what is r7b at 2), (what is r7a at 5)]", [null, null, 1], "call-valued destructuring: not filed under the callee's line"]
 assert_eq of [eval of "define r7h() as:\n    return 7\ndefine r7k(r7p, r7q is r7h of null) as:\n    return [(what is r7q at 2), (what is r7q at 3)]\nr7k of 1", [null, 7], "call-valued default: not filed under the callee's line"]
 
+# --- #1322: f-string interpolation converts with the BUILTIN string
+# conversion, whatever `str` is bound to. The lexer lowers `{e}` to a call of
+# a reserved name no source can spell (it contains `#`), so a user binding of
+# `str` in any scope reaches only the user's own `str of` calls. ---
+_fs_saved_str is str
+assert_eq of [eval of "str is 3\nf\"<{str}>\"", "<3>", "#1322: a global `str is 3` does not break f-strings"]
+str is _fs_saved_str
+_fs_define is eval of "define str(x) as:\n    return \"HIJACK\"\nf\"<{5}>\""
+_fs_own is str of 5
+str is _fs_saved_str
+assert_eq of [_fs_define, "<5>", "#1322: a global `define str` does not hijack f-strings"]
+assert_eq of [_fs_own, "HIJACK", "#1322: a user `define str` still answers the user's own calls"]
+assert_eq of [str of 5, "5", "#1322: the builtin `str` is untouched"]
+define _fs_param_str(str) as:
+    return [f"<{7}>", str]
+assert_eq of [_fs_param_str of 3, ["<7>", 3], "#1322: a function parameter named `str` does not reach f-strings"]
+define _fs_local_str() as:
+    local str is (x) => "LOCAL"
+    return [f"<{8}>", str of 8]
+assert_eq of [_fs_local_str of null, ["<8>", "LOCAL"], "#1322: a function-local `str` does not reach f-strings"]
+import fstr_str_mod
+assert_eq of [(fstr_str_mod.show of 9), "<9>", "#1322: a module that rebinds `str` keeps builtin f-strings (in a function)"]
+assert_eq of [fstr_str_mod.direct, "[2]", "#1322: a module that rebinds `str` keeps builtin f-strings (top level)"]
+assert_eq of [fstr_str_mod.own, "MODHIJACK", "#1322: the module's own `str of` sees its own binding"]
+# the reserved name cannot be bound by a door that takes a STRING name either
+fstr_str_mod["_#fstr"] is (x) => "NS"
+assert_eq of [(fstr_str_mod.show of 9), "<9>", "#1322: a namespace write of the reserved name stays out of the module env"]
+# CONST 0; SET_NAME 1; POP; CONST 0; RETURN with constants [3, "_#fstr"]
+_fs_bc is vm_run_bytecode of [1, [0, 0, 0, 26, 1, 0, 35, 0, 0, 0, 40], [3, "_#fstr"]]
+assert_eq of [_fs_bc, null, "#1322: assembled bytecode that SETs the reserved name is refused"]
+assert_eq of [f"<{5}>", "<5>", "#1322: f-strings after the refused SET_NAME"]
+# the observer-window builtins resolve a binding by STRING name: refused too
+define _fs_ow_kind(args) as:
+    try:
+        set_observer_window of args
+        return "unrefused"
+    catch e:
+        return e.kind
+define _fs_owg_kind(nm) as:
+    try:
+        get_observer_window of nm
+        return "unrefused"
+    catch e:
+        return e.kind
+assert_eq of [_fs_ow_kind of ["_#fstr", 8], "undefined_name", "#1322: set_observer_window refuses the reserved name"]
+assert_eq of [_fs_owg_kind of "_#fstr", "undefined_name", "#1322: get_observer_window refuses the reserved name"]
+
+# tokenize_with_names exposes the lexer's token stream to user code (corpus
+# builders detokenize it). The f-string lowering's conversion token must come
+# back in its round-trip-valid spelling `str`, never the unspellable `_#fstr`
+# (whose `#` would comment out the rest of a detokenized line).
+_fs_tid_ident is (tokenize_ids of "q")[0]
+_fs_tid_str is (tokenize_ids of "\"q\"")[0]
+_fs_tid_num is (tokenize_ids of "7")[0]
+_fs_tid_nl is (tokenize_ids of "q\nq")[1]
+define _fs_detok(src) as:
+    local out is ""
+    local ids is tokenize_ids of src
+    local named is tokenize_with_names of src
+    for i in range of (len of named):
+        local tid is named[i][0]
+        local nm is named[i][1]
+        if tid == _fs_tid_str:
+            out is out + (json_encode of nm) + " "
+        elif (tid == _fs_tid_ident) or (tid == _fs_tid_num):
+            out is out + nm + " "
+        elif tid == _fs_tid_nl:
+            out is out + "\n"
+        else:
+            local piece is ""
+            for probe in ["(", ")", "+", "of", "is"]:
+                if ((tokenize_ids of probe)[0]) == tid:
+                    piece is probe
+            out is out + piece + " "
+    return out
+_fs_tsrc is "x is 5\ny is f\"a{x}b\"\n"
+_fs_names is []
+for _fs_t in (tokenize_with_names of _fs_tsrc):
+    if _fs_t[0] == _fs_tid_ident:
+        append of [_fs_names, _fs_t[1]]
+assert_eq of [_fs_names, ["x", "y", "str", "x"], "#1322: tokenize_with_names spells the f-string conversion `str`"]
+_fs_round is _fs_detok of _fs_tsrc
+assert_eq of [try_parse of _fs_round, 1, "#1322: a detokenized f-string parses"]
+assert_eq of [contains of [_fs_round, "#"], 0, "#1322: a detokenized f-string carries no `#`"]
+
 test_summary of null

@@ -99,6 +99,25 @@
 #include <poll.h>
 #include <regex.h>
 
+/* The name the f-string lowering calls to convert an interpolated value
+ * (#1322). `#` starts a comment, so no identifier the lexer produces from
+ * user text can contain it: user code cannot bind, shadow or look up this
+ * name, and a user binding of `str` no longer reaches f-strings. The leading
+ * `_` keeps it module-private, so `M["_#fstr"] is v` never writes through to
+ * a module env. register_builtins binds it to builtin_str. */
+#define EIGS_FSTR_CONV_NAME "_#fstr"
+
+/* THE predicate for "a runtime-internal binding name no user source can
+ * spell" (#1322). Every site that surfaces binding names to a person or a
+ * tool (lint suggestions, REPL completion, --api, dumps, diagnostics) skips
+ * such names, and every door that binds or looks up a binding by a STRING
+ * (embed API, observer-window builtins, assembled bytecode) refuses them.
+ * The class is "contains `#`": the lexer can never produce that in an
+ * identifier, because `#` starts a comment. */
+static inline int eigs_name_is_reserved(const char *name) {
+    return name && strchr(name, '#') != NULL;
+}
+
 /* ---- Language limits ---- */
 
 #define MAX_TOKENS      65536
@@ -1862,6 +1881,7 @@ extern int g_compile_module_slots;
 
 TokenList tokenize(const char *source);
 void free_tokenlist(TokenList *tl);
+void tokenlist_user_spelling(TokenList *tl);  /* #1322 */
 
 /* Length of the recognised multi-char operator at `s`, or 0. That set has
  * one home (the lexer table behind this function). Other token-type to

@@ -380,6 +380,12 @@ static int api_is_ext_name(const char *nm) {
     return 0;
 }
 
+/* Not part of the user-visible surface: the ext groups are listed in their
+ * own sections, and reserved names (#1322) are unspellable. */
+static int api_skip_core_name(const char *nm) {
+    return !nm || api_is_ext_name(nm) || eigs_name_is_reserved(nm);
+}
+
 int eigs_api_dump(FILE *out, int json) {
     /* Core registry on a scratch env (#459: never a hand list). */
     Env *core = env_new(NULL);
@@ -413,7 +419,7 @@ int eigs_api_dump(FILE *out, int json) {
         int b_first = 1;
         for (int i = 0; i < core->count; i++) {
             char esc[600];
-            if (!core->names[i] || api_is_ext_name(core->names[i])) continue;
+            if (api_skip_core_name(core->names[i])) continue;
             lint_json_escape(core->names[i], esc, sizeof(esc));
             fprintf(out, "%s\"%s\"", b_first ? "" : ", ", esc);
             b_first = 0;
@@ -452,7 +458,7 @@ int eigs_api_dump(FILE *out, int json) {
         fprintf(out, "\n]}\n");
     } else {
         for (int i = 0; i < core->count; i++)
-            if (core->names[i] && !api_is_ext_name(core->names[i]))
+            if (!api_skip_core_name(core->names[i]))
                 fprintf(out, "builtin %s\n", core->names[i]);
 #define API_X(nm, fn) \
         fprintf(out, "extension %s %s\n", api_group_label, #nm);
@@ -827,7 +833,8 @@ static const char *e003_suggest(Env *scope, const char *name) {
     if (strlen(name) < 3) return NULL;   /* 1-2 char typos suggest noise */
     for (Env *s = scope; s; s = s->parent)
         for (int i = 0; i < s->count; i++)
-            if (s->names[i] && e003_dist1(name, s->names[i]))
+            if (s->names[i] && !eigs_name_is_reserved(s->names[i]) &&
+                e003_dist1(name, s->names[i]))
                 return s->names[i];
     return NULL;
 }

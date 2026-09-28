@@ -1323,6 +1323,15 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "E003 suggests the near-miss binding" "$OUTPUT" "did you mean 'total'?"
 rm -f "$TMPFILE"
 
+# #1322: a reserved runtime name (the f-string conversion `_#fstr`) is never
+# offered as a near-miss; it cannot be spelled, since `#` starts a comment.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'x is _fstr of 1\nprint of x\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1322 E003 still fires on '_fstr'" "$OUTPUT" "undefined name '_fstr'"
+check_not_contains "#1322 E003 never suggests a reserved name" "$OUTPUT" "#fstr"
+rm -f "$TMPFILE"
+
 # Silent: the scope rules the runtime actually has — closures read
 # enclosing function locals; a function body reads a module name bound
 # after the definition; a parameter rebound by a `for` is restored after

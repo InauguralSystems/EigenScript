@@ -216,6 +216,24 @@ def test_tab_completion_builtin():
     report(ok and rc == 0, "tab completes a builtin name", f"rc={rc}")
 
 
+def test_tab_completion_skips_reserved():
+    # #1322: the f-string conversion binding `_#fstr` is a global env name no
+    # source can spell; completion must never offer it. With it listed, `_`
+    # had two candidates and stayed `_`; without it, `_` is unique.
+    r = Repl()
+    ok = r.expect(b"eigs> ")
+    r.send(b"_zz_probe1322 is 41\r")
+    ok = ok and r.expect(b"=> 41")
+    r.send(b"_\t + 1\r")
+    ok = ok and r.expect(b"=> 42")
+    r.send(b"exit\r")
+    rc = r.close()
+    leaked = b"#fstr" in r.buf
+    report(ok and rc == 0 and not leaked,
+           "tab completion never offers a reserved name (#1322)",
+           f"rc={rc} leaked={leaked}")
+
+
 def test_ctrl_c_cancels():
     r = Repl()
     ok = r.expect(b"eigs> ")
@@ -356,6 +374,7 @@ def main():
     for t in (test_banner_and_eval, test_arrow_editing, test_ctrl_u_and_kill,
               test_history_recall, test_history_draft_parking,
               test_tab_completion_binding, test_tab_completion_builtin,
+              test_tab_completion_skips_reserved,
               test_ctrl_c_cancels, test_ctrl_d_eof, test_multiline_block,
               test_refeed_after_failed_block,
               test_valid_block_closed_by_unindented_line,

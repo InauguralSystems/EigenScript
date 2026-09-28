@@ -1613,6 +1613,7 @@ fi
 # both.
 echo "[107] Meta-Interpreter Parity (#306, #1111, #1057)"
 check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0, report/report_value reservation #1111, module namespaces + import resolution #1057)" test_meta_parity.eigs "All tests passed" 1
+check_eigs_suite "eigen_run f-strings ignore a host rebinding of str (#1322)" test_meta_fstr_host_str.eigs "All tests passed" 1
 
 # [108] sandbox_run allocation budget (#292). The size-controlled allocators
 # (zeros/fill/buffer/range) charge a per-run byte budget so untrusted generated
@@ -5726,7 +5727,7 @@ echo ""
 # [86] Corpus builder — build_corpus + the tok_base_string detokenizer
 # table (both 0% before: nothing in the suite ever built a corpus).
 echo "[86] Corpus Builder (25 checks)"
-check_eigs_suite "all 25 corpus-builder checks" test_corpus.eigs "All tests passed" 25
+check_eigs_suite "all 27 corpus-builder checks" test_corpus.eigs "All tests passed" 27
 echo ""
 
 # [88] LSP behavioral tests — drive src/eigenlsp over real JSON-RPC and
