@@ -267,9 +267,8 @@ def main():
               for x in (d or [])))
 
     # --- #1342: a PARSE_MAX_DEPTH guard must be the recorded diagnostic ---
-    # parse_block is not covered: the lexer rejects indent past 64, and an
-    # expression chain caps at 256 before the following block is entered, so
-    # that guard cannot be reached from source text.
+    # parse_block is reached by an elif chain plus nested try blocks. Indent
+    # alone stops at 64, which is not enough; the chain below is.
     def lint_errors(src):
         with tempfile.NamedTemporaryFile("w", suffix=".eigs", delete=False) as tf:
             tf.write(src)
@@ -319,19 +318,52 @@ def main():
     if not (len(dot_err) == 1 and dot_err[0].get("column") == 515):
         print("    got:", dot_err[:2])
 
-    # Both the lexer f-string cap and a parser depth guard fire on this one
-    # line. The parser error sits on a synthetic lowering token, so the
-    # f-string message stays the published diagnostic. (#1342)
+    # Leftmost real-token error wins; synthetic f-string scaffolding yields to the lexer.
     both_src = "x is " + ("f\"{" * 65) + "x" + ("}\"" * 65)
     both_err = lint_errors(both_src + "\n")
-    check("#1342 f-string cap wins when both depth limits trip on one line",
+    real_both = ("x is " + ("(" * 300) + "1" + (")" * 300) + " + "
+                 + ("f\"{" * 65) + "x" + ("}\"" * 65))
+    real_both_err = lint_errors(real_both + "\n")
+    check("#1342 leftmost real token wins; synthetic scaffolding yields to the lexer",
           len(both_err) == 1
-          and both_err[0].get("message") == "f-string nesting too deep (max 64 levels)")
+          and both_err[0].get("message") == "f-string nesting too deep (max 64 levels)"
+          and len(real_both_err) == 1
+          and real_both_err[0].get("message") == "expression nesting too deep"
+          and real_both_err[0].get("column") == 134)
+    if not (len(real_both_err) == 1 and real_both_err[0].get("column") == 134):
+        print("    got:", real_both_err[:2])
     r = converse([INIT, did_open(both_src), SHUTDOWN, EXIT])
     d = diagnostics(r)
-    check("#1342 LSP keeps the f-string cap when parser depth also trips",
+    check("#1342 LSP yields to the lexer when the parser hit is synthetic",
           bool(d) and d[0].get("message") ==
           "syntax error: f-string nesting too deep (max 64 levels)")
+
+    # 240 if/elif arms, then 20 nested try blocks in the last arm.
+    block_lines = ["x is 1", "if x == 0:", "    y is 0"]
+    for i in range(1, 240):
+        block_lines += ["elif x == %d:" % i, "    y is 0"]
+    block_lines.pop()
+
+    def nest_try(ind, k):
+        if k == 0:
+            return [ind + "y is 2"]
+        return ([ind + "try:"] + nest_try(ind + "    ", k - 1)
+                + [ind + "catch e:", ind + "    y is 3"])
+
+    block_src = "\n".join(block_lines + nest_try("    ", 20)) + "\n"
+    block_err = lint_errors(block_src)
+    check("#1342 block nesting records block nesting too deep",
+          len(block_err) == 1
+          and block_err[0].get("message") == "block nesting too deep"
+          and block_err[0].get("line") == 498)
+    if not (len(block_err) == 1 and block_err[0].get("message") == "block nesting too deep"):
+        print("    got:", block_err[:2])
+    r = converse([INIT, did_open(block_src), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("#1342 LSP publishes block nesting too deep",
+          bool(d) and d[0].get("message") == "syntax error: block nesting too deep"
+          and d[0]["range"]["start"] == {"line": 497, "character": 72}
+          and d[0]["range"]["end"] == {"line": 497, "character": 73})
 
     # --- error on line 3 maps to 0-based line 2 ---
     r = converse([INIT, did_open("a is 1\nb is 2\nif b\n    print of a\n"), SHUTDOWN, EXIT])
