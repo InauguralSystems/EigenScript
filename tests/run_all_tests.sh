@@ -3365,7 +3365,8 @@ rm -f "$AUDIO_PROBE_FILE"
 
 echo "[62] Audio Synthesis"
 if ! echo "$AUDIO_PROBE_OUT" | grep -q "undefined variable"; then
-    AU_OUTPUT=$(./eigenscript ../tests/test_audio.eigs 2>&1); AU_OUTPUT_RC=$?
+    # #1361 EIGS_STRICT=0: pins the rejected-argument stand-ins audio_sine/audio_mix -> [], audio_play_loop -> 0, audio_stream_push -> 0.
+    AU_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_audio.eigs 2>&1); AU_OUTPUT_RC=$?
     if rc_ok "$AU_OUTPUT_RC" "$AU_OUTPUT" && echo "$AU_OUTPUT" | grep -q "All tests passed"; then
         TOTAL=$((TOTAL + 38))
         PASS=$((PASS + 38))
@@ -3397,8 +3398,9 @@ rm -f "$GT_PROBE_FILE"
 
 echo "[120b] Gfx Text Metrics"
 if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
-    GT_FB=$(SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
-    GT_DEF=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
+    # #1361 EIGS_STRICT=0: pins gfx_text_width of a non-string answering 0 (line 38), in both renderer modes.
+    GT_FB=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
+    GT_DEF=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
     if rc_ok "$GT_FB_RC" "$GT_FB" && echo "$GT_FB" | grep -q "All tests passed" \
        && echo "$GT_FB" | grep -q "fallback-mode: 1" \
        && rc_ok "$GT_DEF_RC" "$GT_DEF" && echo "$GT_DEF" | grep -q "All tests passed"; then
@@ -3485,8 +3487,9 @@ print of (audio_capture_open of ["44100", "1"])
 print of (audio_capture_open of [44100, 1])
 print of (audio_capture_close of null)
 TAPEPROG
-    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_TDIR/r.tape"         ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/first.out" 2>&1
-    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_TDIR/r.tape"         ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/second.out" 2>&1
+    # #1361 EIGS_STRICT=0: the rejected call must answer its stand-in 0 and run on, so line 2 reaches the tape.
+    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_TDIR/r.tape"  ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/first.out" 2>&1
+    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_TDIR/r.tape" ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/second.out" 2>&1
     if cmp -s "$GA_TDIR/first.out" "$GA_TDIR/second.out"; then GA_TAPE_OK=1; else GA_TAPE_OK=0; fi
     # A rejected call must consume NO record, so a tape of this program holds
     # exactly one — the well-typed call. Pinned rather than merely compared,
@@ -3511,8 +3514,9 @@ print of (gfx_read of ["1", 1])
 print of (gfx_read of [1, 1])
 ignore is gfx_close of null
 READPROG
-    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
-    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
+    # #1361 EIGS_STRICT=0: gfx_read of ["1", 1] must answer its stand-in and run on to the well-typed read.
+    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
+    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
     if cmp -s "$GA_RDIR/first.out" "$GA_RDIR/second.out"; then GA_READ_OK=1; else GA_READ_OK=0; fi
     GA_READ_N=$(grep -c '^N gfx_read=' "$GA_RDIR/r.tape" 2>/dev/null); GA_READ_N=${GA_READ_N:-0}
     rm -rf "$GA_RDIR"
@@ -3605,8 +3609,9 @@ if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
     gd_probe() {   # <name> <program> <expect: same|differ>
         local nm="$1" prog="$2" want="$3" a b
         printf '%s\n' "$prog" > "$GD_DIR/p.eigs"
-        a=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
-        b=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        # #1361 EIGS_STRICT=0: each probe reads the wrong-type stand-in's returned data; under the default it raises instead.
+        a=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        b=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
         GD_RUN=$((GD_RUN + 1))
         # A probe that produced nothing measured nothing — two empty strings
         # compare equal and would score as "no disclosure". Nor is a stable
