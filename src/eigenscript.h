@@ -2147,6 +2147,10 @@ void   handle_release(int id, uint32_t gen);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
+/* handle_table_drain's HANDLE_STORE pass (ext_store.c): closes the file and
+ * frees a store the program never store_close'd. No catalog flush — exit
+ * leaves the file exactly as it does without the pass. */
+void store_drain_handle(void *ptr);
 
 /* ---- Tape-stepper (#418; step.c, CLI-only) ----
  * Interactive debugger over a recorded trace tape: `--step <tape> [src]`.

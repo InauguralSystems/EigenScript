@@ -5481,6 +5481,15 @@ void handle_table_drain(EigsState *st) {
     }
 #endif
 
+    /* #1361 stores: an unclosed store is a FILE plus the Store and its
+     * catalog. Every worker was joined above, so none can still be using it. */
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (st->handle_table[i].type != HANDLE_STORE) continue;
+        if (!st->handle_table[i].ptr) continue;
+        store_drain_handle(st->handle_table[i].ptr);
+        st->handle_table[i].ptr = NULL;
+    }
+
     /* #408 tasks: cooperative, single-thread, no OS resource — just held
      * refs. An outstanding task at exit (never joined, or the program ended
      * with it still live) is reclaimed here. Its held entry_fn/args/result
