@@ -4719,6 +4719,10 @@ Value* builtin_spawn(Value *arg) {
             free(h->fn_args);
         }
         free(h);
+        /* #1147: this spawn set multithreaded above and no worker exists, so
+         * leave MT mode now, as a join would; otherwise a caught spawn failure
+         * keeps the collector and JIT off for the rest of the run. */
+        spawn_mt_maybe_clear(eigs_current->state);
         rt_error(EK_IO, 0, "spawn: could not create thread: %s", strerror(pc_rc));
         return make_null();
     }
