@@ -9,10 +9,21 @@
  * turned the JIT OFF and EIGS_OBS_FORCE=0 forced the observer gate open
  * (#915). Value-carrying variables (paths, thresholds, prefixes) keep
  * plain getenv -- choosing between the two at the call site IS the
- * decision, so do not re-derive the test inline. */
-static inline int eigs_env_flag(const char *name) {
+ * decision, so do not re-derive the test inline.
+ *
+ * #1361: a flag whose DEFAULT is on (EIGS_STRICT) reads through the same
+ * rule with dflt = 1: unset or empty takes the default, exactly "0" turns
+ * it off, any other value turns it on. */
+static inline int eigs_env_flag_default(const char *name, int dflt) {
     const char *s = getenv(name);
-    return (s && s[0] && s[0] != '0') ? 1 : 0;
+    if (!s || !s[0]) return dflt;
+    /* Exactly "0" is off. Testing only s[0] also read "01"/"00"/"0x" as off,
+     * which the rule above never said (#1361 critic round 1). */
+    return !(s[0] == '0' && s[1] == '\0');
+}
+
+static inline int eigs_env_flag(const char *name) {
+    return eigs_env_flag_default(name, 0);
 }
 
 #endif

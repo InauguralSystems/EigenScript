@@ -10,6 +10,7 @@
  * freestanding profile. Registration stays linkable (eigs_embed.c calls
  * it unconditionally) and registers nothing. */
 void register_store_builtins(Env *env) { (void)env; }
+void store_drain_handle(void *ptr) { (void)ptr; }
 #else
 
 /* ================================================================
@@ -829,6 +830,19 @@ static void store_free(Store *store) {
     if (!store) return;
     if (store->catalog) val_decref(store->catalog);
     free(store);
+}
+
+/* A store the program never closed, reclaimed by handle_table_drain at exit
+ * (#1361: an open store leaked its Store, catalog and FILE, so every program
+ * ending with one open — including on an uncaught error — was LeakSanitizer
+ * red). Deliberately NOT store_close: that forces a catalog flush, and the
+ * exit path never wrote one. fclose flushes only the stdio buffer, which
+ * exit() flushes anyway, so the file on disk is unchanged. */
+void store_drain_handle(void *ptr) {
+    Store *store = (Store*)ptr;
+    if (!store) return;
+    if (store->fp) fclose(store->fp);
+    store_free(store);
 }
 
 /* store_open(path) -> handle dict */

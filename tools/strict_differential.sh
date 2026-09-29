@@ -12,8 +12,14 @@
 #                           ARG_GUARD_PRETAKE / STRICT_REQUIRE / STRICT_DOMAIN /
 #                           num_guard_named; a guarded name with no probe fails
 #   pins                    documented answers must not raise under strict
-#   identical-when-off      baseline vs subject, flag unset, stdout+stderr+rc;
-#                           valid-input rows in both modes when a baseline is given
+#   unset-equals-strict     #1361: strict is the DEFAULT, so every probe row
+#                           (and every pixel row) run with EIGS_STRICT UNSET
+#                           must equal its EIGS_STRICT=1 run: stdout+stderr+rc.
+#                           Needs no baseline, so it runs in suite [99s] too.
+#   identical-when-off      baseline vs subject under an explicit EIGS_STRICT=0
+#                           ("off" is the opt-out since #1361, not the unset
+#                           default), stdout+stderr+rc; valid-input rows in all
+#                           three modes (unset, 0, 1) when a baseline is given
 #   gfx container-shape sweep   ext_gfx.c want-strings, wrong containers
 #   gfx pixel differential  canvas digests and source coverage. Every pixel
 #                           row is compared with the flag off; a flag-off
@@ -371,7 +377,7 @@ run_did_not_measure() {
 }
 run_capture() {   # <binary> <strict-or-dash> <file> -> "rc\noutput"
     local bin="$1" strict="$2" f="$3" out rc
-    if [ "$strict" = "-" ]; then out="$("$bin" "$f" 2>&1)"; rc=$?
+    if [ "$strict" = "-" ]; then out="$(env -u EIGS_STRICT "$bin" "$f" 2>&1)"; rc=$?
     else out="$(EIGS_STRICT="$strict" "$bin" "$f" 2>&1)"; rc=$?; fi
     printf '%s\n%s' "$rc" "$out"
 }
@@ -389,7 +395,7 @@ extract_guard_names() {
 }
 
 rc=0
-n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0
+n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 
@@ -437,8 +443,8 @@ while IFS='|' read -r who prog expect; do
     n_probe=$((n_probe + 1))
     printf '%b\n' "$prog" > "$TMP/p.eigs"
     if [ -n "$BASE" ]; then
-        a="$(run_capture "$BASE" - "$TMP/p.eigs")"
-        b="$(run_capture "$NEW" - "$TMP/p.eigs")"
+        a="$(run_capture "$BASE" 0 "$TMP/p.eigs")"
+        b="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
         if [ "$a" = "$b" ]; then n_ident=$((n_ident + 1))
         else
             n_differ=$((n_differ + 1))
@@ -450,6 +456,12 @@ while IFS='|' read -r who prog expect; do
     fi
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     s_rc="${s%%$'\n'*}"
+    u="$(run_capture "$NEW" - "$TMP/p.eigs")"
+    if [ "$u" = "$s" ]; then n_unset_eq=$((n_unset_eq + 1))
+    else unset_list="$unset_list
+    $who
+      unset: $(clip "$u" 90)
+      =1   : $(clip "$s" 90)"; fi
     why="$(run_did_not_measure "$s_rc")"
     if [ -n "$why" ]; then
         n_unrun=$((n_unrun + 1))
@@ -493,7 +505,7 @@ if [ -n "$BASE" ]; then
         [ -z "$prog" ] && continue
         n_valid=$((n_valid + 1))
         printf '%b\n' "$prog" > "$TMP/v.eigs"
-        for mode in - 1; do
+        for mode in - 0 1; do
             a="$(run_capture "$BASE" "$mode" "$TMP/v.eigs")"
             b="$(run_capture "$NEW" "$mode" "$TMP/v.eigs")"
             if [ "$a" != "$b" ]; then
@@ -521,13 +533,15 @@ if [ "$n_skipped" -gt 0 ]; then
 fi
 if [ -n "$BASE" ]; then echo "  identical-when-off: $n_ident   differing: $n_differ"
 else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
+echo "  unset-equals-strict: $n_unset_eq / $n_probe"
 echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_misattr"
 [ "$n_unrun" -gt 0 ] && echo "  probes that did not run: $n_unrun"
 echo "  answer-pins held: $n_pin_ok   broken: $n_pin_broke"
 if [ -n "$BASE" ]; then
-    echo "  valid-input rows unchanged in BOTH modes: $((n_valid * 2 - n_valid_bad)) / $((n_valid * 2))"
+    echo "  valid-input rows unchanged in all three modes: $((n_valid * 3 - n_valid_bad)) / $((n_valid * 3))"
 fi
-[ -n "$differ_list" ] && { echo "  DIFFERING (the default path was NOT preserved):$differ_list"; rc=1; }
+[ -n "$unset_list" ] && { echo "  UNSET DIFFERS FROM EIGS_STRICT=1 (the default is not strict):$unset_list"; rc=1; }
+[ -n "$differ_list" ] && { echo "  DIFFERING (the EIGS_STRICT=0 path was NOT preserved):$differ_list"; rc=1; }
 [ -n "$silent_list" ] && { echo "  SILENT UNDER STRICT:$silent_list"; rc=1; }
 [ -n "$misattr_list" ] && { echo "  RAISED BY THE WRONG GUARD (probe does not reach its target):$misattr_list"; rc=1; }
 [ -n "$unrun_list" ] && { echo "  DID NOT RUN (the environment, not a guard — nothing is retried):$unrun_list"; rc=1; }
@@ -790,7 +804,7 @@ covered_names=""; covered_slots=""
 blank_digest=""
 if [ "$NO_RENDERER" = 0 ]; then
     mkprog "$TMP/blank.eigs" "ignore is gfx_delay of 0"
-    blank="$(run_capture "$NEW" - "$TMP/blank.eigs")"
+    blank="$(run_capture "$NEW" 0 "$TMP/blank.eigs")"
     blank_digest="${blank#*$'\n'}"
 fi
 PIXBASE="$BASE"
@@ -801,14 +815,17 @@ while IFS='|' read -r label who slot prog; do
     covered_names="$covered_names $who"
     [ "$slot" != "-" ] && covered_slots="$covered_slots $who:$slot"
     mkprog "$TMP/p.eigs" "$prog"
-    b="$(run_capture "$NEW" - "$TMP/p.eigs")"
+    b="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
+    s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
+    u="$(run_capture "$NEW" - "$TMP/p.eigs")"
+    [ "$u" = "$s" ] || { pdiffer="$pdiffer
+    $label [unset vs EIGS_STRICT=1, same binary] — the default is not strict"; rc=1; }
     if [ "$slot" = "-" ]; then
         n_pvalid=$((n_pvalid + 1))
         if [ "$NO_RENDERER" = 0 ] && [ "$who" != "gfx_read" ] && [ "${b#*$'\n'}" = "$blank_digest" ]; then
             pvac="$pvac
     $label — draws nothing: identical to the blank canvas"
         fi
-        s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
         if [ "$s" != "$b" ]; then
             pdiffer="$pdiffer
     $label [strict vs plain, same binary] — a guard rejects a LEGITIMATE call
@@ -818,7 +835,6 @@ while IFS='|' read -r label who slot prog; do
         fi
     else
         n_pwrong=$((n_pwrong + 1))
-        s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
         if [ "${s%%$'\n'*}" = "0" ]; then
             n_psilent=$((n_psilent + 1))
             psilent="$psilent
@@ -831,7 +847,7 @@ while IFS='|' read -r label who slot prog; do
         fi
     fi
     [ -z "$PIXBASE" ] && continue
-    a="$(run_capture "$PIXBASE" - "$TMP/p.eigs")"
+    a="$(run_capture "$PIXBASE" 0 "$TMP/p.eigs")"
     if [ "$a" = "$b" ]; then n_pident=$((n_pident + 1))
     else
         n_pdiffer=$((n_pdiffer + 1))

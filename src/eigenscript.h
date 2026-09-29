@@ -752,11 +752,11 @@ struct EigsState {
     double          tape_obs_scale;
     int             tape_obs_window;
     unsigned        tape_obs_session;
-    /* #971: strict mode. Off by default — a wrong-typed or out-of-domain
-     * argument gets a finite stand-in (NaN→0, domain clamps substitute,
-     * overflow saturates, `cos of "hello"` → 0). On (EIGS_STRICT=1, read
-     * once at creation) the operation RAISES instead of substituting, for
-     * callers that need invalidity to be loud (e.g. grading generated code).
+    /* #971/#1361: strict mode. ON by default (read once at creation; only
+     * EIGS_STRICT=0 turns it off): a wrong-typed or out-of-domain argument,
+     * or a NaN result, RAISES instead of getting a finite stand-in. Off
+     * (EIGS_STRICT=0), the stand-ins apply (NaN→0, domain clamps substitute,
+     * `cos of "hello"` → 0). Overflow saturates in both modes.
      * Per-state config, like the observer thresholds.
      *
      * Named `strict`, not `strict_math`: since Phase A of #971 it governs
@@ -1199,10 +1199,9 @@ extern __thread EigsThread *eigs_current;
  * a plausible value and flowed on indistinguishable from a real one. That is
  * the fail-soft default the #975 reform exists to remove.
  *
- * Default behaviour is BYTE-IDENTICAL to before: the stand-in is still
- * returned. Under EIGS_STRICT=1 the guard raises a catchable `type` error
- * naming the builtin and what it wanted, so a grader running strict sees the
- * mistake instead of scoring a laundered value.
+ * Strict mode, the default since #1361, raises a catchable `type_mismatch`
+ * error naming the builtin and what it wanted. Under EIGS_STRICT=0 the
+ * stand-in is returned, byte-identical to the pre-#971 behaviour.
  *
  * `soft` is evaluated only on the non-strict path, so it may allocate.
  * Deliberately a macro rather than a helper: each call site keeps its own
@@ -1612,7 +1611,7 @@ void free_value(Value *v);
                                  * there. Detection has to sit where the operands
                                  * are still live — the arithmetic dispatch. */
 
-/* #971: under EIGS_STRICT a NaN does not collapse — it RAISES a catchable
+/* #971: in strict mode (the default, #1361) a NaN does not collapse — it RAISES a catchable
  * `value` error. `who` names the builtin whose result was undefined (the
  * enumerated sources call num_guard_named); NULL is the backstop from
  * num_guard itself for a source nobody enumerated. Out of line so the NaN
@@ -2148,6 +2147,10 @@ void   handle_release(int id, uint32_t gen);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
+/* handle_table_drain's HANDLE_STORE pass (ext_store.c): closes the file and
+ * frees a store the program never store_close'd. No catalog flush — exit
+ * leaves the file exactly as it does without the pass. */
+void store_drain_handle(void *ptr);
 
 /* ---- Tape-stepper (#418; step.c, CLI-only) ----
  * Interactive debugger over a recorded trace tape: `--step <tape> [src]`.

@@ -297,7 +297,8 @@ for f in "$CORPUS"/*.eigs; do
         if [ "$mode" = strict ]; then
             if EIGS_STRICT=1 leak_reported "$BIN" "$f"; then LEAK=1; else LEAK=0; fi
         else
-            if leak_reported "$BIN" "$f"; then LEAK=1; else LEAK=0; fi
+            # #1361 EIGS_STRICT=0: the plain pass walks the non-strict stand-in path.
+            if EIGS_STRICT=0 leak_reported "$BIN" "$f"; then LEAK=1; else LEAK=0; fi
         fi
         # Startup failures and signals cannot masquerade as clean corpus rows.
         lsan_classify "$LAST_OUT"; CLASS=$?

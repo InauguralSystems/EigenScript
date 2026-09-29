@@ -550,7 +550,8 @@ Value* builtin_num(Value *arg) {
             return make_num(neg ? -v : v);
         }
         /* #971: strtod reads "nan"/"inf" — the in-language route to a NaN.
-         * Default collapses to 0 (+ EIGS_MATH_INVALID); strict raises, named. */
+         * EIGS_STRICT=0 collapses to 0 (+ EIGS_MATH_INVALID); strict (the
+         * default) raises, named. */
         return make_num(num_guard_named(strtod(arg->data.str, NULL), "num"));
     }
     if (arg->type == VAL_NULL) return make_num(0);   /* fs:ANSWER coercion contract */
@@ -5479,6 +5480,15 @@ void handle_table_drain(EigsState *st) {
         st->handle_table[i].ptr = NULL;
     }
 #endif
+
+    /* #1361 stores: an unclosed store is a FILE plus the Store and its
+     * catalog. Every worker was joined above, so none can still be using it. */
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (st->handle_table[i].type != HANDLE_STORE) continue;
+        if (!st->handle_table[i].ptr) continue;
+        store_drain_handle(st->handle_table[i].ptr);
+        st->handle_table[i].ptr = NULL;
+    }
 
     /* #408 tasks: cooperative, single-thread, no OS resource — just held
      * refs. An outstanding task at exit (never joined, or the program ended

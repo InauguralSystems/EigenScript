@@ -136,9 +136,12 @@ examples (executed by the suite).
 
 **Promise:**
 - One numeric type: IEEE-754 double. Integers are exact up to 2^53.
-- Finite by construction: no NaN, no Infinity. NaN-producing operations
-  return 0; overflow saturates at ±1e308; division by zero warns and
-  yields 0.
+- No NaN, no Infinity reaches a program. By default a NaN-producing
+  operation, an out-of-domain argument or a wrong-typed argument raises a
+  catchable error (strict is the default, #1361); division by zero raises
+  in every mode. Overflow saturates at ±1e308. Under the per-run opt-out
+  `EIGS_STRICT=0` the arithmetic is finite by construction instead: a NaN
+  collapses to 0 and domain functions substitute a stand-in.
 - **Every clamp is recorded.** The finite invariant keeps a program
   running, but it keeps it running with a plausible number, so the
   clamps are readable as sticky status flags — IEEE-754's own model
@@ -151,7 +154,8 @@ examples (executed by the suite).
       print of "a value saturated; this result is contaminated"
   ```
 
-  `overflow` is set by the ±1e308 clamp. `invalid` is set by the
+  `overflow` is set by the ±1e308 clamp. Under `EIGS_STRICT=0` (strict
+  mode is the default since #1361) `invalid` is set by the
   out-of-domain substitutions: `log of x` for `x <= 0` (which
   returns `log(1e-10)`, i.e. `-23.025850929940457`), `sqrt of x` for
   negative `x` (returns 0, otherwise indistinguishable from
@@ -167,9 +171,9 @@ examples (executed by the suite).
   `null`; ROADMAP.md), and `tensor_load` of a file carrying
   NaN bytes collapse the same way. Both bits are sticky until
   `clear_math_flags`, so bracket a computation the way you would on an
-  FPU. Under `EIGS_STRICT=1` every one of those NaN sources raises a
-  catchable `value` error naming the builtin instead of collapsing
-  (SPEC.md, *Strict mode*).
+  FPU. In strict mode, the default, every one of those out-of-domain
+  calls and NaN sources raises a catchable `value` error naming the
+  builtin instead of substituting (SPEC.md, *Strict mode*).
 - **Saturation is not associative, and that is not detectable from the
   value alone.** `(1e300 * 1e300) / 1e300` is `1e8`; `1e300 * (1e300 /
   1e300)` is `1e300`. The first overflowed and came back down, and

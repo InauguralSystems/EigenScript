@@ -293,10 +293,12 @@ and returns a buffer when every tensor operand was one. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
 wants the flat container, and that is the name it reaches for.
 
-EigenScript numbers are finite by construction. Operations that would create
-`NaN` return `0`; operations that would overflow to infinity saturate at
-`+/-1e308`; domain-limited functions clamp their inputs where appropriate
-(`asin`, `acos`) or return a boundary value (`sqrt of -1` -> `0`).
+EigenScript numbers are finite by construction. Operations that would overflow
+to infinity saturate at `+/-1e308`. Strict mode is the default: an
+out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
+argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
+get the finite stand-ins instead: `NaN` becomes `0`, `sqrt of -1` is `0`, and
+`asin`/`acos` clamp their inputs.
 
 ### Arena Memory
 

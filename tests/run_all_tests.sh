@@ -1497,7 +1497,8 @@ fi
 # [18] File I/O builtins: read_text, write_text, exec_capture
 echo "[18/18] File I/O Builtins (14 checks)"
 check_binary_fingerprint
-FIO_OUTPUT=$(./eigenscript ../tests/test_file_io.eigs 2>&1)
+# #1361 EIGS_STRICT=0: pins the wrong-type stand-ins read_text(42)="", write_text(bad)=0, exec_capture(bad)=[-1,""] (RT3/WT3/EC3/EC4).
+FIO_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_file_io.eigs 2>&1)
 
 if echo "$FIO_OUTPUT" | grep -q "All file_io tests passed"; then
     # All asserts passed — count individual checks
@@ -2519,7 +2520,8 @@ echo ""
 
 # [42c] General finite-number guard (scalar, tensor, literals, conversions)
 echo "[42c/47] Numeric Guard (19 checks)"
-NG_OUTPUT=$(./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
+# #1361 EIGS_STRICT=0: pins the finite-by-construction domain stand-ins (sqrt/asin/acos/log clamps, num "nan" -> 0 + math_flags.invalid).
+NG_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
 if rc_ok "$NG_OUTPUT_RC" "$NG_OUTPUT" && echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed"; then
     TOTAL=$((TOTAL + 19))
     PASS=$((PASS + 19))
@@ -2534,7 +2536,8 @@ echo ""
 
 # [42c] Stdlib fixes (math.dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
 echo "[42d/47] Stdlib Fixes (48 checks)"
-SF_OUTPUT=$(./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?
+# #1361 EIGS_STRICT=0: pins math.log10/log2 of x <= 0 taking the log floor stand-in (SF101/SF102).
+SF_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?
 if rc_ok "$SF_OUTPUT_RC" "$SF_OUTPUT" && echo "$SF_OUTPUT" | grep -q "All stdlib-fix tests passed"; then
     TOTAL=$((TOTAL + 48))
     PASS=$((PASS + 48))
@@ -3144,7 +3147,8 @@ echo ""
 
 # [52] Stream I/O
 echo "[52] Stream Tensor I/O"
-SI_OUTPUT=$(./eigenscript ../tests/test_stream_io.eigs 2>&1); SI_OUTPUT_RC=$?
+# #1361 EIGS_STRICT=0: pins stream_open of wrong-typed args answering 0.
+SI_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_stream_io.eigs 2>&1); SI_OUTPUT_RC=$?
 SI_OUTPUT_N=$(derive_count "$SI_OUTPUT" 12 "[52] Stream Tensor I/O")
 if rc_ok "$SI_OUTPUT_RC" "$SI_OUTPUT" && echo "$SI_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + SI_OUTPUT_N))
@@ -3361,7 +3365,8 @@ rm -f "$AUDIO_PROBE_FILE"
 
 echo "[62] Audio Synthesis"
 if ! echo "$AUDIO_PROBE_OUT" | grep -q "undefined variable"; then
-    AU_OUTPUT=$(./eigenscript ../tests/test_audio.eigs 2>&1); AU_OUTPUT_RC=$?
+    # #1361 EIGS_STRICT=0: pins the rejected-argument stand-ins audio_sine/audio_mix -> [], audio_play_loop -> 0, audio_stream_push -> 0.
+    AU_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_audio.eigs 2>&1); AU_OUTPUT_RC=$?
     if rc_ok "$AU_OUTPUT_RC" "$AU_OUTPUT" && echo "$AU_OUTPUT" | grep -q "All tests passed"; then
         TOTAL=$((TOTAL + 38))
         PASS=$((PASS + 38))
@@ -3393,8 +3398,9 @@ rm -f "$GT_PROBE_FILE"
 
 echo "[120b] Gfx Text Metrics"
 if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
-    GT_FB=$(SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
-    GT_DEF=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
+    # #1361 EIGS_STRICT=0: pins gfx_text_width of a non-string answering 0 (line 38), in both renderer modes.
+    GT_FB=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
+    GT_DEF=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
     if rc_ok "$GT_FB_RC" "$GT_FB" && echo "$GT_FB" | grep -q "All tests passed" \
        && echo "$GT_FB" | grep -q "fallback-mode: 1" \
        && rc_ok "$GT_DEF_RC" "$GT_DEF" && echo "$GT_DEF" | grep -q "All tests passed"; then
@@ -3462,7 +3468,8 @@ rm -f "$GA_PROBE_FILE"
 
 echo "[133] Gfx Argument-Type Guards"
 if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
-    GA_PLAIN=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
+    # #1361 EIGS_STRICT=0: the plain pass pins the ext_gfx wrong-type stand-ins (0/null); the strict pass below raises.
+    GA_PLAIN=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
     GA_STRICT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
 
     # THIRD PASS: the tape. audio_capture_open is trace-recorded, so a guard
@@ -3480,8 +3487,9 @@ print of (audio_capture_open of ["44100", "1"])
 print of (audio_capture_open of [44100, 1])
 print of (audio_capture_close of null)
 TAPEPROG
-    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_TDIR/r.tape"         ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/first.out" 2>&1
-    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_TDIR/r.tape"         ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/second.out" 2>&1
+    # #1361 EIGS_STRICT=0: the rejected call must answer its stand-in 0 and run on, so line 2 reaches the tape.
+    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_TDIR/r.tape"  ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/first.out" 2>&1
+    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_TDIR/r.tape" ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/second.out" 2>&1
     if cmp -s "$GA_TDIR/first.out" "$GA_TDIR/second.out"; then GA_TAPE_OK=1; else GA_TAPE_OK=0; fi
     # A rejected call must consume NO record, so a tape of this program holds
     # exactly one — the well-typed call. Pinned rather than merely compared,
@@ -3506,11 +3514,46 @@ print of (gfx_read of ["1", 1])
 print of (gfx_read of [1, 1])
 ignore is gfx_close of null
 READPROG
-    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
-    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
+    # #1361 EIGS_STRICT=0: gfx_read of ["1", 1] must answer its stand-in and run on to the well-typed read.
+    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
+    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
     if cmp -s "$GA_RDIR/first.out" "$GA_RDIR/second.out"; then GA_READ_OK=1; else GA_READ_OK=0; fi
     GA_READ_N=$(grep -c '^N gfx_read=' "$GA_RDIR/r.tape" 2>/dev/null); GA_READ_N=${GA_READ_N:-0}
     rm -rf "$GA_RDIR"
+
+    # FIFTH PASS (#1361): the passes above run under EIGS_STRICT=0, but the
+    # DEFAULT path is strict: the rejected call RAISES, inside try/catch here.
+    # The tape contract must hold on that path too: the rejection consumes no
+    # record, and capture == replay. One program per builtin (pinned BY NAME).
+    GA_DDIR=$(mktemp -d /tmp/eigs_ga_dflt_XXXXXX)
+    cat > "$GA_DDIR/cap.eigs" <<'DFLTCAP'
+try:
+    print of (audio_capture_open of ["44100", "1"])
+catch e:
+    print of "rejected"
+print of (audio_capture_open of [44100, 1])
+print of (audio_capture_close of null)
+DFLTCAP
+    cat > "$GA_DDIR/read.eigs" <<'DFLTREAD'
+o is gfx_open of [32, 32, "eigs #1361 default-mode tape"]
+ignore is gfx_clear of [1, 2, 3]
+try:
+    print of (gfx_read of ["1", 1])
+catch e:
+    print of "rejected"
+print of (gfx_read of [1, 1])
+ignore is gfx_close of null
+DFLTREAD
+    GA_DFLT_OK=1
+    for __ga_p in cap read; do
+        env -u EIGS_STRICT SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_DDIR/$__ga_p.tape"  ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.1" 2>&1
+        env -u EIGS_STRICT SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.2" 2>&1
+        cmp -s "$GA_DDIR/$__ga_p.1" "$GA_DDIR/$__ga_p.2" || GA_DFLT_OK=0
+        grep -qx rejected "$GA_DDIR/$__ga_p.1" || GA_DFLT_OK=0   # the default really raised
+    done
+    GA_DFLT_CAP_N=$(grep -c '^N audio_capture_open=' "$GA_DDIR/cap.tape" 2>/dev/null); GA_DFLT_CAP_N=${GA_DFLT_CAP_N:-0}
+    GA_DFLT_READ_N=$(grep -c '^N gfx_read=' "$GA_DDIR/read.tape" 2>/dev/null); GA_DFLT_READ_N=${GA_DFLT_READ_N:-0}
+    rm -rf "$GA_DDIR"
     # TWO environment axes now, each derived from the file's own marker so
     # neither branch is a floor: an audio device adds 3 rows to the plain pass
     # and 2 to the strict one, and a real renderer adds the 6 pixel-proof rows
@@ -3534,12 +3577,14 @@ READPROG
        && echo "$GA_STRICT" | grep -q "strict-pass: 1" \
        && [ "$GA_GOT_PLAIN" = "$GA_WANT_PLAIN" ] && [ "$GA_GOT_STRICT" = "$GA_WANT_STRICT" ] \
        && [ "$GA_TAPE_OK" = "1" ] && [ "$GA_TAPE_N" = "1" ] \
-       && [ "$GA_READ_OK" = "1" ] && [ "$GA_READ_N" = "1" ]; then
+       && [ "$GA_READ_OK" = "1" ] && [ "$GA_READ_N" = "1" ] \
+       && [ "$GA_DFLT_OK" = "1" ] && [ "$GA_DFLT_CAP_N" = "1" ] && [ "$GA_DFLT_READ_N" = "1" ]; then
         TOTAL=$((TOTAL + 4))
         PASS=$((PASS + 4))
         echo "  PASS: wrong-typed w/h and freq/channels are refused in both modes ($GA_GOT_PLAIN + $GA_GOT_STRICT checks)"
         echo "  PASS: a rejected audio_capture_open consumes no tape record; capture == replay"
         echo "  PASS: a rejected gfx_read consumes no tape record; capture == replay"
+        echo "  PASS: default (strict) mode: a rejected call raises into catch, consumes no record; capture == replay"
         # Say out loud what this environment could NOT exercise, rather than
         # letting a green line imply full coverage.
         echo "$GA_PLAIN" | grep -q "pixel-proof: 1" \
@@ -3553,6 +3598,7 @@ READPROG
         echo "    counts: plain $GA_GOT_PLAIN/$GA_WANT_PLAIN, strict $GA_GOT_STRICT/$GA_WANT_STRICT"
         echo "    tape: capture==replay $GA_TAPE_OK (want 1), N records $GA_TAPE_N (want 1)"
         echo "    gfx_read tape: capture==replay $GA_READ_OK (want 1), N gfx_read records $GA_READ_N (want 1)"
+        echo "    default-mode tape: capture==replay+raised $GA_DFLT_OK (want 1), N audio_capture_open $GA_DFLT_CAP_N, N gfx_read $GA_DFLT_READ_N (want 1 each)"
         echo "$GA_PLAIN"  | grep -iE "assert|error|FAIL" | head -3
         echo "$GA_STRICT" | grep -iE "assert|error|FAIL" | head -3
     fi
@@ -3600,8 +3646,9 @@ if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
     gd_probe() {   # <name> <program> <expect: same|differ>
         local nm="$1" prog="$2" want="$3" a b
         printf '%s\n' "$prog" > "$GD_DIR/p.eigs"
-        a=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
-        b=$(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        # #1361 EIGS_STRICT=0: each probe reads the wrong-type stand-in's returned data; under the default it raises instead.
+        a=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        b=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
         GD_RUN=$((GD_RUN + 1))
         # A probe that produced nothing measured nothing — two empty strings
         # compare equal and would score as "no disclosure". Nor is a stable
@@ -5207,7 +5254,8 @@ fi
 # script path must take the clean cannot-read-file exit, not xmalloc's
 # fatal-OOM SIGABRT (ftell on a directory reports LONG_MAX).
 echo "[105b] Builtin Contracts (#312/#314/#316/#317)"
-check_eigs_suite "negative indices, predicate rejection, min/max reduction" test_builtin_contracts.eigs "All tests passed" 1
+# #1361 EIGS_STRICT=0: pins max(["a",5])=0 and index_of/contains/starts_with/ends_with non-string misses (-1/0).
+EIGS_STRICT=0 check_eigs_suite "negative indices, predicate rejection, min/max reduction" test_builtin_contracts.eigs "All tests passed" 1
 TOTAL=$((TOTAL + 1))
 DIR_OUT=$(./eigenscript ../tests 2>&1); DIR_RC=$?
 if [ "$DIR_RC" -eq 1 ] && echo "$DIR_OUT" | grep -q "cannot read file"; then
@@ -5543,7 +5591,8 @@ check_eigs_suite "all 27 walker-matrix capture checks" test_walker_matrix.eigs "
 # lowerings (dispatch → OP_DISPATCH) and bench-only buffer builtins;
 # asserts the C fallback agrees with the lowered opcode.
 echo "[84] Builtin Direct-vs-Indirect (40 checks)"
-check_eigs_suite "all 40 builtin direct/indirect checks" test_builtin_indirect.eigs "All tests passed" 40
+# #1361 EIGS_STRICT=0: pins buf_len of a non-buffer answering 0 (row "buf_len on non-buffer").
+EIGS_STRICT=0 check_eigs_suite "all 40 builtin direct/indirect checks" test_builtin_indirect.eigs "All tests passed" 40
 
 # [85] Reinstated suites — these .eigs files existed but were never
 # referenced by this runner, so editing them did nothing. Each runs as
@@ -5557,7 +5606,8 @@ check_eigs_suite "error propagation" test_error_propagation.eigs "error propagat
 check_eigs_suite "handle forge" test_handle_forge.eigs "PASS: handle table" 1
 check_eigs_suite "byte<->value builtins (str_from_bytes / f64 bytes)" test_byte_value_builtins.eigs "All tests passed" 19
 check_eigs_suite "write_bytes (binary append/truncate)" test_write_bytes.eigs "All tests passed" 10
-check_eigs_suite "rename / remove_file / is_dir / is_file (atomic swap, delete, dir + regular-file probes)" test_file_rename.eigs "All tests passed" 23
+# #1361 EIGS_STRICT=0: pins is_dir/is_file of a non-string answering 0.
+EIGS_STRICT=0 check_eigs_suite "rename / remove_file / is_dir / is_file (atomic swap, delete, dir + regular-file probes)" test_file_rename.eigs "All tests passed" 23
 
 # #1061 -- the last fail-soft numeric context: a non-number stored into a
 # buffer element was silently DROPPED (old element kept, rc 0). Now it raises
@@ -5596,7 +5646,8 @@ check_eigs_suite "assembled-chunk stack/env underflow (verifier pass 4)" test_ch
 check_eigs_suite "sandbox back-edge loop cap (assembled bare JUMP_BACK)" test_sandbox_backedge_cap.eigs "All tests passed" 6
 check_eigs_suite "sandbox fail-closed allowlist (no host-global escape)" test_sandbox_allow.eigs "SANDBOX_ALLOW_OK" 1
 check_eigs_suite "JIT and/or heap-operand decref (no per-iteration leak)" test_jit_andor_leak.eigs "jit-and-or-ok" 1
-check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
+# #1361 EIGS_STRICT=0: pins json_path walking a malformed document leniently (JH rows, e.g. JH81).
+EIGS_STRICT=0 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
 check_eigs_suite "json roundtrip" test_json_roundtrip.eigs "json roundtrip: all passed" 1
 check_eigs_suite "json.json_merge flat object merge (#1248)" test_json_merge.eigs "JSON_MERGE_ALL_PASS" 10
 check_eigs_suite "json.json_pretty leaves string tokens intact (#1249)" test_json_pretty.eigs "JSON_PRETTY_ALL_PASS" 17
@@ -5616,7 +5667,8 @@ check_eigs_suite "tiled tensor kernels (#745, #932)" test_tensor_kernel_tiling.e
 # byte-identical to matmul of the transposed list operand, scatter_add vs the
 # list loop (and gather's dual), the buffer elementwise/softmax/leaky_relu/mean
 # paths vs the list path, numerical_grad on a buffer parameter; loud raises.
-check_eigs_suite "flat-buffer tensor ops for autograd: matmul_at/bt, scatter_add, buffer paths (#973)" \
+# #1361 EIGS_STRICT=0: pins elementwise divide-by-zero folding to 0 and multiply(buf,"x") answering 0.0.
+EIGS_STRICT=0 check_eigs_suite "flat-buffer tensor ops for autograd: matmul_at/bt, scatter_add, buffer paths (#973)" \
     test_tensor_buffer_ops.eigs "All tests passed." 78
 # #973: lib/autograd.eigs — every vjp rule vs the numerical_grad oracle (1e-4
 # relative + 1e-6 absolute), a 2-layer softmax-CE MLP trained by the tape, and

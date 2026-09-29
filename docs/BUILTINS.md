@@ -20,6 +20,14 @@ gfx, audio) require a full build or the `gfx` target.
 > dumps the full surface — every builtin, extension (by group), and lib
 > function with its parameter list — in one call.
 
+> **Strict mode is the default (#1361).** Rows below that say a wrong-typed
+> or out-of-domain argument "answers `0`" (or `""`, `[]`, `-1`) and "raises
+> under `EIGS_STRICT=1`" describe two modes: by default the call RAISES, and
+> the stand-in answer is what you get only when the run sets `EIGS_STRICT=0`.
+> Documented answers for valid-but-absent input (`index_of` miss `-1`,
+> `file_exists` of a missing path `0`) are the same in both modes
+> (docs/SPEC.md, *Strict mode*).
+
 New since 0.8.1: concurrency (`spawn`, `thread_join`, `channel`, `send`,
 `recv`, `try_recv`, `recv_timeout`, `close_channel`, `channel_closed`),
 streaming subprocess I/O (`proc_spawn`, `proc_write`, `proc_read_line`,

@@ -47,7 +47,7 @@ check_exit "exit inside a spawned worker sets the process exit code" 'define wor
     exit of 9
     return 1
 w is spawn of [worker, 1]
-r is join of w
+r is thread_join of w
 print of "main continued"' 9 "main continued"
 
 echo ""

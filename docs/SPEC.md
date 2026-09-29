@@ -234,20 +234,22 @@ consequences are contracts you can rely on:
   `+ 1` can be invisible. Keep integer identifiers, counters, and money-in-cents
   below 2^53, or use the bitwise seam below for wider exact integer work.
 - **Finite by construction — no `NaN`, no `Infinity` ever reach your program.**
-  A `NaN` result collapses to `0` (`sqrt of -1` is `0`), and overflow saturates
-  at `±1e308` instead of becoming `Infinity`. Every *defined* operation returns
-  a usable finite number; an *undefined* one — division or modulo by zero —
-  raises a `value` error rather than inventing a result (above).
-- **Strict mode (`EIGS_STRICT=1`) makes invalid arguments loud.** By
-  default the substitutions above keep a program running (a kernel or grader
-  wants the finite stand-in). Set the environment variable `EIGS_STRICT=1` and
-  an out-of-domain operation — `sqrt` of a negative, `log` of `≤0`, `asin`/
-  `acos` outside `[-1, 1]` — raises a catchable `value` error instead of
-  substituting, for callers that need arithmetic invalidity to fail loudly.
-  The same flag governs **argument-type guards**: builtins that answered a
-  wrong-typed argument with a stand-in, so `cos of "hello"` was `0` and
-  `str_upper of 42` was `""` — a type mistake became a plausible value. Under
-  strict those raise a catchable `type` error naming the builtin, across the
+  Overflow saturates at `±1e308` instead of becoming `Infinity`. Every
+  *defined* operation returns a usable finite number; an *undefined* one —
+  division or modulo by zero, and (in strict mode, the default) `sqrt` of a
+  negative or a `NaN` result — raises a `value` error rather than inventing a
+  result. With strict mode turned off a `NaN` result collapses to `0` instead
+  (`sqrt of -1` is `0`).
+- **Strict mode is the default; `EIGS_STRICT=0` is the per-run opt-out
+  (#1361).** With the environment variable unset, empty, or set to anything
+  other than `0`, an out-of-domain operation — `sqrt` of a negative, `log` of
+  `≤0`, `asin`/`acos` outside `[-1, 1]` — raises a catchable `value` error
+  instead of substituting a finite stand-in. Set `EIGS_STRICT=0` for a run and
+  the substitutions come back (a kernel or grader that wants the finite
+  stand-in). The same switch governs **argument-type guards**: builtins that
+  would answer a wrong-typed argument with a stand-in — `cos of "hello"` as
+  `0`, `str_upper of 42` as `""`, a type mistake read as a plausible value —
+  raise a catchable `type_mismatch` error naming the builtin, across the
   whole builtin surface (`builtins.c`, the host builtins, the tensor ops, the
   embedded store, and — since #1007 — the graphics/audio extension, where the
   stand-in is usually `null` rather than `0`/`""`: `gfx_rect of [x, y, w, h,
@@ -259,6 +261,23 @@ consequences are contracts you can rely on:
   *success*: `audio_stream_open of [48000]` opened the device at the 44100/1
   defaults and answered a real device id, so the caller that asked for 48000
   was told it got 48000.
+
+  ```eigenscript
+  try:
+      print of (abs of "x")
+  catch e:
+      print of f"{e.kind}: {e.message}"
+  try:
+      print of (sqrt of -1)
+  catch e:
+      print of f"{e.kind}: {e.message}"
+  ```
+  ```output
+  type_mismatch: abs: expected a number
+  value: sqrt: argument out of domain (negative)
+  ```
+
+  Under `EIGS_STRICT=0` the same program prints `0` twice.
   A `0`, `""` or `null` that is a genuine *answer* is untouched
   in both modes: `try_parse` of invalid syntax still returns `0`, `task_alive`
   of an unknown id still returns `0`, `char_at` past the end is still `""`,
@@ -267,26 +286,26 @@ consequences are contracts you can rely on:
   The distinction is not derivable from the code: `task_alive` has two
   `return make_num(0)` lines four apart, one a type guard and one the
   documented answer. `tools/strict_differential.sh` checks the distinction
-  that can be executed: a guard probe must raise under `EIGS_STRICT`, and a
-  pinned documented answer must not.
-  Three further classes are loud under the same flag and unchanged without it:
-  - **The `NaN`→`0` collapse.** With the flag off a `NaN` still collapses to
-    `0` and sets `math_flags.invalid`. Under strict every reachable `NaN`
+  that can be executed: a guard probe must raise in strict mode, the default
+  (with the variable unset or set to `1`), and a pinned documented answer must not.
+  Three further classes are loud in strict mode and unchanged under `EIGS_STRICT=0`:
+  - **The `NaN`→`0` collapse.** Under `EIGS_STRICT=0` a `NaN` still collapses to
+    `0` and sets `math_flags.invalid`. In strict mode every reachable `NaN`
     source raises a catchable `value` error naming the builtin: `pow` of a
     negative base with a fractional exponent, `num of "nan"`,
     `f64_from_bytes` of a `NaN` bit pattern, `matmul` when its accumulation
     reaches `inf - inf`, `tensor_load` of a file carrying `NaN` bytes — and
-    the elementwise `divide` by zero, which answers `0` by default where the
+    the elementwise `divide` by zero, which answers `0` under `EIGS_STRICT=0` where the
     `/` operator raises. The arithmetic operators themselves cannot reach a
     `NaN` from finite operands (`0 / 0` and `x % 0` raise first, and no
     operand can hold an infinity), so any other source hits a backstop that
     raises as `arithmetic`. The JIT bails to the interpreter on a non-finite
-    result, so both tiers raise from the same guard. One default-path
+    result, so both tiers raise from the same guard. One `EIGS_STRICT=0`
     asymmetry is older than strict mode and is left alone by it: a `matmul`
     whose result is a **buffer** preserves a `NaN` sentinel consistently
     across platforms (it reads back as `null`, and `math_flags` is not set),
     where a list result collapses to `0` — strict raises on both.
-  - **JSON parse failure in `json_path`.** With the flag off a malformed
+  - **JSON parse failure in `json_path`.** Under `EIGS_STRICT=0` a malformed
     document is walked leniently and a parse failure answers the same `""`
     an absent key does. Under strict `json_path` applies `json_decode`'s
     acceptance test and raises a catchable `value` error naming the position;
@@ -299,7 +318,7 @@ consequences are contracts you can rely on:
     `tokenize_ids`...) raise on a wrong-typed argument; the documented
     sentinel for a valid-but-absent input — `index_of` miss `-1`,
     `file_exists` of a missing path `0` — is unchanged in both modes.
-  Overflow saturation is unchanged by the flag. (Division and modulo by zero
+  Overflow saturation is the same in both modes. (Division and modulo by zero
   raise in *both* modes — no defined value.)
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
   `>>` and their `bit_*` builtin forms interpret operands as 64-bit integers, so
@@ -309,7 +328,6 @@ consequences are contracts you can rely on:
 ```eigenscript
 print of (9007199254740992 + 1)              # +1 is invisible past 2^53
 print of (9007199254740993 == 9007199254740992)
-print of (sqrt of -1)                        # NaN collapses to 0
 print of (1e308 * 10)                        # saturates, never Infinity
 print of (bit_and of [0xFFFFFFFF, 0xFF])     # int64 bitwise
 print of (bit_shl of [1, 40])                # exact past 2^32
@@ -317,7 +335,6 @@ print of (bit_shl of [1, 40])                # exact past 2^32
 ```output
 9007199254740992
 1
-0
 1e+308
 255
 1099511627776
@@ -2267,7 +2284,8 @@ Changed in this release (#973/#1093): the list form used to answer `0.0` for
 an out-of-range index and the buffer form was added folding the same way. A
 tensor that is not a matrix in the per-row form still answers `0.0` for that
 row — that is the shape reading, not the index one — and a wrong-typed
-argument still answers `0.0` unless `EIGS_STRICT=1` is set.
+argument raises in strict mode, the default, and answers `0.0` only under
+`EIGS_STRICT=0`.
 
 Every tensor builtin that accepts a flat numeric list accepts a buffer in the
 same position, and returns a buffer when **every** tensor operand was a buffer:

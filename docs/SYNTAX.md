@@ -34,15 +34,18 @@ Numbers are finite by construction. EigenScript does not expose `NaN` or
 
 ```eigenscript fragment
 1 / 1e-320       # 1e+308
-sqrt of -1       # 0
 exp of 999999    # 1e+308
-asin of 5        # 1.5708
-num of "nan"     # 0
 ```
 
-Exact division or modulo by zero emits a warning and returns `0`. Results
-that would overflow to infinity saturate at `+/-1e308`; `NaN` collapses to
-`0`; domain-limited functions clamp inputs where appropriate.
+In strict mode, the default, an out-of-domain call or a `NaN` result raises:
+`sqrt of -1`, `asin of 5` and `num of "nan"` are catchable `value` errors
+(docs/SPEC.md, *Strict mode*). Under `EIGS_STRICT=0` they give the finite
+stand-ins `0`, `1.5708` and `0` instead.
+
+Division or modulo by zero raises (`division by zero`, `modulo by zero`) in every mode. Results
+that would overflow to infinity saturate at `+/-1e308`; under `EIGS_STRICT=0`,
+`NaN` collapses to `0` and domain-limited functions clamp inputs where
+appropriate.
 
 ### Compound Assignment
 

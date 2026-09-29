@@ -55,9 +55,11 @@ EigsState *eigs_state_new(void) {
     st->tape_obs_window   = OBSERVER_WINDOW_N;
     st->tape_obs_scale    = OBSERVER_SCALE_DEFAULT;
     st->tape_obs_session  = 0;
-    /* #971: strict math mode, read once from env at creation (like the JIT
-     * thresholds below). Any non-empty, non-"0" value enables it. */
-    st->strict = eigs_env_flag("EIGS_STRICT");
+    /* #971/#1361: strict mode, read once from env at creation (like the JIT
+     * thresholds below). ON BY DEFAULT: unset or empty is strict, and so is
+     * any value other than "0"; EIGS_STRICT=0 is the per-run opt-out that
+     * restores the finite stand-ins. */
+    st->strict = eigs_env_flag_default("EIGS_STRICT", 1);
     /* Filesystem anchor defaults; main/eigenlsp overwrite after attach. */
     st->script_dir[0] = '.'; st->script_dir[1] = '\0';
     st->exe_dir[0]    = '.'; st->exe_dir[1]    = '\0';

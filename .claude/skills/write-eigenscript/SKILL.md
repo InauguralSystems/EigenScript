@@ -43,7 +43,7 @@ The error-prone parts of the language. Most are not surfaced when working in a c
 
 ## Values
 - `+` concatenates **strings only** — list concat is `append of [xs, v]` (in place) or a comprehension; `xs + ys` is a runtime error.
-- Numbers are finite by construction: NaN collapses to `0`, overflow saturates at ±1e308 (`sqrt of -1` is `0`, not an error). Under `EIGS_STRICT=1` the domain clamps, a NaN result, wrong-typed builtin arguments and a malformed `json_path` document raise catchable errors instead — run graders/tests with it on.
+- Numbers are finite by construction: overflow saturates at ±1e308. Strict mode is the DEFAULT (#1361): the domain clamps (`sqrt of -1`), a NaN result, wrong-typed builtin arguments (`abs of "x"`) and a malformed `json_path` document raise catchable errors. `EIGS_STRICT=0` is the per-run opt-out that restores the finite stand-ins (NaN collapses to `0`, `sqrt of -1` is `0`).
 - **Hex integer literals** (`0xFF`, `0X10`; digits only, ends at the first non-hex char) are a real lexed form; hex-FLOAT forms (`0x1p4`, `0xA.8`) are loud parse errors. No modulo keyword — the operator is `%` (`mod` is a parse error).
 
 ## Strings
@@ -69,7 +69,7 @@ zero-padding (twice), and **median/mean** (a consumer's piano-roll UI, while
 `date` (host-only); the civil-math half runs on every profile.
 
 ## Before trusting generated .eigs
-Run it: `eigenscript prog.eigs`. The common failure signatures are **"undefined variable"** (a `local` you forgot, or a soft-keyword/scope surprise), **"unexpected X after statement"** (two statements landed on one line — check generated joins), and **silently wrong numbers** (run with `EIGS_STRICT=1` to turn the numeric clamps into errors). For library code, parse-check with `--lint`.
+Run it: `eigenscript prog.eigs`. The common failure signatures are **"undefined variable"** (a `local` you forgot, or a soft-keyword/scope surprise), **"unexpected X after statement"** (two statements landed on one line — check generated joins), and **silently wrong numbers** (on a pin before #1361, run with `EIGS_STRICT=1` to turn the numeric clamps into errors; strict is the default after it). For library code, parse-check with `--lint`.
 
 ## Old pins
 Every ecosystem consumer pins a current release. These apply only to a checkout pinned at or before the named version:
