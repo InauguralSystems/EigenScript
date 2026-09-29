@@ -3520,6 +3520,40 @@ READPROG
     if cmp -s "$GA_RDIR/first.out" "$GA_RDIR/second.out"; then GA_READ_OK=1; else GA_READ_OK=0; fi
     GA_READ_N=$(grep -c '^N gfx_read=' "$GA_RDIR/r.tape" 2>/dev/null); GA_READ_N=${GA_READ_N:-0}
     rm -rf "$GA_RDIR"
+
+    # FIFTH PASS (#1361): the passes above run under EIGS_STRICT=0, but the
+    # DEFAULT path is strict: the rejected call RAISES, inside try/catch here.
+    # The tape contract must hold on that path too: the rejection consumes no
+    # record, and capture == replay. One program per builtin (pinned BY NAME).
+    GA_DDIR=$(mktemp -d /tmp/eigs_ga_dflt_XXXXXX)
+    cat > "$GA_DDIR/cap.eigs" <<'DFLTCAP'
+try:
+    print of (audio_capture_open of ["44100", "1"])
+catch e:
+    print of "rejected"
+print of (audio_capture_open of [44100, 1])
+print of (audio_capture_close of null)
+DFLTCAP
+    cat > "$GA_DDIR/read.eigs" <<'DFLTREAD'
+o is gfx_open of [32, 32, "eigs #1361 default-mode tape"]
+ignore is gfx_clear of [1, 2, 3]
+try:
+    print of (gfx_read of ["1", 1])
+catch e:
+    print of "rejected"
+print of (gfx_read of [1, 1])
+ignore is gfx_close of null
+DFLTREAD
+    GA_DFLT_OK=1
+    for __ga_p in cap read; do
+        env -u EIGS_STRICT SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_DDIR/$__ga_p.tape"  ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.1" 2>&1
+        env -u EIGS_STRICT SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.2" 2>&1
+        cmp -s "$GA_DDIR/$__ga_p.1" "$GA_DDIR/$__ga_p.2" || GA_DFLT_OK=0
+        grep -qx rejected "$GA_DDIR/$__ga_p.1" || GA_DFLT_OK=0   # the default really raised
+    done
+    GA_DFLT_CAP_N=$(grep -c '^N audio_capture_open=' "$GA_DDIR/cap.tape" 2>/dev/null); GA_DFLT_CAP_N=${GA_DFLT_CAP_N:-0}
+    GA_DFLT_READ_N=$(grep -c '^N gfx_read=' "$GA_DDIR/read.tape" 2>/dev/null); GA_DFLT_READ_N=${GA_DFLT_READ_N:-0}
+    rm -rf "$GA_DDIR"
     # TWO environment axes now, each derived from the file's own marker so
     # neither branch is a floor: an audio device adds 3 rows to the plain pass
     # and 2 to the strict one, and a real renderer adds the 6 pixel-proof rows
@@ -3543,12 +3577,14 @@ READPROG
        && echo "$GA_STRICT" | grep -q "strict-pass: 1" \
        && [ "$GA_GOT_PLAIN" = "$GA_WANT_PLAIN" ] && [ "$GA_GOT_STRICT" = "$GA_WANT_STRICT" ] \
        && [ "$GA_TAPE_OK" = "1" ] && [ "$GA_TAPE_N" = "1" ] \
-       && [ "$GA_READ_OK" = "1" ] && [ "$GA_READ_N" = "1" ]; then
+       && [ "$GA_READ_OK" = "1" ] && [ "$GA_READ_N" = "1" ] \
+       && [ "$GA_DFLT_OK" = "1" ] && [ "$GA_DFLT_CAP_N" = "1" ] && [ "$GA_DFLT_READ_N" = "1" ]; then
         TOTAL=$((TOTAL + 4))
         PASS=$((PASS + 4))
         echo "  PASS: wrong-typed w/h and freq/channels are refused in both modes ($GA_GOT_PLAIN + $GA_GOT_STRICT checks)"
         echo "  PASS: a rejected audio_capture_open consumes no tape record; capture == replay"
         echo "  PASS: a rejected gfx_read consumes no tape record; capture == replay"
+        echo "  PASS: default (strict) mode: a rejected call raises into catch, consumes no record; capture == replay"
         # Say out loud what this environment could NOT exercise, rather than
         # letting a green line imply full coverage.
         echo "$GA_PLAIN" | grep -q "pixel-proof: 1" \
@@ -3562,6 +3598,7 @@ READPROG
         echo "    counts: plain $GA_GOT_PLAIN/$GA_WANT_PLAIN, strict $GA_GOT_STRICT/$GA_WANT_STRICT"
         echo "    tape: capture==replay $GA_TAPE_OK (want 1), N records $GA_TAPE_N (want 1)"
         echo "    gfx_read tape: capture==replay $GA_READ_OK (want 1), N gfx_read records $GA_READ_N (want 1)"
+        echo "    default-mode tape: capture==replay+raised $GA_DFLT_OK (want 1), N audio_capture_open $GA_DFLT_CAP_N, N gfx_read $GA_DFLT_READ_N (want 1 each)"
         echo "$GA_PLAIN"  | grep -iE "assert|error|FAIL" | head -3
         echo "$GA_STRICT" | grep -iE "assert|error|FAIL" | head -3
     fi
