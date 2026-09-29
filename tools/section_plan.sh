@@ -5,6 +5,7 @@
 # Usage: --chunks | --shards N --check | --shards N --shard K |
 #        --shard-owner N [--section ID] | --emit-shard K N OUT |
 #        --changed BASE | --emit-changed BASE OUT |
+#        --sections 'L1 L2' | --emit-sections 'L1 L2' OUT |
 #        --print-weights LOG [--run ID --head SHA] | --skip-audit | --selftest
 set -u
 SP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -852,6 +853,40 @@ $(sp_select "$(basename "$d")")" ;;
     echo "PLAN: changed=$base paths=$paths unmatched=$unm runtime=$rt full=${SP_CHANGED_FULL:-no} bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS ci_asan_weight=${wsec}s${notlocal:+ not-run-locally: $notlocal}"
 }
 
+# Named-sections plan (#1139): the chunks whose headers carry the given labels
+# (`44 45a 45b` selects the chunk printing [44/47], [45a/47], [45b/47]), widened
+# to their dependency groups. For a lane that runs one slice of the suite under
+# a build no other lane has (tsan-http). A label no chunk carries dies: a typo
+# must not become a lane that measures nothing.
+build_sections_plan() {
+    local want="$1" l
+    [ -n "$want" ] || die "sections plan needs at least one section label"
+    SP_WORK=$(sp_workdir sections)
+    derive_chunks "$RUNNER" > "$SP_WORK/chunks"
+    verify_partition "$RUNNER" "$SP_WORK/chunks"
+    check_chunk_count "$SP_WORK/chunks"
+    check_header_shape "$SP_WORK/chunks" "$SP_WORK/headers" || die "section header shape refused"
+    derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
+    for l in $want; do
+        case "$l" in *[!A-Za-z0-9]*) die "section label '$l' is malformed (want e.g. 44 or 45a)" ;; esac
+        awk -v l="$l" '{ for (i = 3; i <= NF; i++) if ($i == "[" l "]" || index($i, "[" l "/") == 1) { f = 1; exit } }
+            END { exit !f }' "$SP_WORK/chunks" || die "no chunk carries section [$l]"
+    done
+    awk -v want=" $want " '
+        FILENAME == ARGV[1] { n++; cs[n] = $1; hit_i = 0
+            for (i = 3; i <= NF; i++) { id = $i; sub(/^\[/, "", id); sub(/[\]\/].*$/, "", id)
+                if (index(want, " " id " ")) hit_i = 1 }
+            if (hit_i) direct[$1] = 1; next }
+        FILENAME == ARGV[2] { lead[$1] = $2; next }
+        END {
+            for (i = 1; i <= n; i++) if (cs[i] in direct) hit[lead[cs[i]]] = 1
+            for (i = 1; i <= n; i++) if (lead[cs[i]] in hit) print cs[i]
+        }' "$SP_WORK/chunks" "$SP_WORK/groups" /dev/null | sort -n > "$SP_WORK/selected"
+    finish_plan "sections plan"
+    note "  selected: $(cut -f4 "$SP_WORK/expected" | grep -o '^[[][^]]*[]]' | tr '\n' ' ')"
+    echo "PLAN: sections=$(printf '%s' "$want" | tr ' ' ',') bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS"
+}
+
 emit_plan() {   # emit_plan <out> <plan builder> <args...>
     local out="$1" planline; shift
     "$@" > "$SP_TMPROOT/plan.line"
@@ -945,6 +980,12 @@ selftest() {
     expect_red 'shard_owner: nonexistent section has no owner' 'no chunk carries section' \
         "$0" --root "$SP_ROOT" --shard-owner 3 --section '[absent]' --quiet
     expect_ok 'control: emit shard passes bash syntax check' "$0" --root "$SP_ROOT" --emit-shard 2 3 "$dir/shard.sh" --quiet
+    expect_ok 'control: sections plan selects the HTTP chunk and passes bash syntax check' \
+        "$0" --root "$SP_ROOT" --emit-sections '44 45a 45b' "$dir/sections.sh" --quiet
+    expect_red 'sections plan: a label no chunk carries is refused' 'no chunk carries section [zz9]' \
+        "$0" --root "$SP_ROOT" --sections '44 zz9' --quiet
+    expect_red 'sections plan: a malformed label is refused' 'is malformed' \
+        "$0" --root "$SP_ROOT" --sections '44/47' --quiet
     [ -s "$dir/shard.sh" ] && bash -n "$dir/shard.sh" || { echo '  FAIL: emitted shard absent or invalid'; fail=$((fail + 1)); }
     # Changed-sections plan (#1347): a throwaway clone, one uncommitted edit
     # per selection rule, each read back from the plan's own report.
@@ -1054,6 +1095,8 @@ while [ "$#" -gt 0 ]; do
         --emit-shard) MODE="$1"; ARG1="$2"; ARG2="$3"; ARG3="$4"; shift 4 ;;
         --changed) MODE="$1"; ARG1="$2"; shift 2 ;;
         --emit-changed) MODE="$1"; ARG1="$2"; ARG2="$3"; shift 3 ;;
+        --sections) MODE="$1"; ARG1="$2"; shift 2 ;;
+        --emit-sections) MODE="$1"; ARG1="$2"; ARG2="$3"; shift 3 ;;
         --print-waivers) SP_PRINT_WAIVERS=1; shift ;;
         *) die "unknown argument '$1'" ;;
     esac
@@ -1078,5 +1121,7 @@ case "$MODE" in
     --emit-shard) emit_plan "$ARG3" build_shard_plan "$ARG1" "$ARG2" ;;
     --changed) build_changed_plan "$ARG1" ;;
     --emit-changed) emit_plan "$ARG2" build_changed_plan "$ARG1" ;;
+    --sections) build_sections_plan "$ARG1" ;;
+    --emit-sections) emit_plan "$ARG2" build_sections_plan "$ARG1" ;;
     --selftest) selftest ;;
 esac

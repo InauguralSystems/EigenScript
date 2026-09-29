@@ -74,7 +74,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx nativefn-test arming-mt-test embed-roads print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-http nativefn-test arming-mt-test embed-roads print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -140,6 +140,10 @@ SRC_V_tsan := $(SOURCES)
 FLAGS_tsan := -fsanitize=thread $(WERROR_FLAGS) -g -O1 $(DEFS_OFF) $(VERDEF)
 LIBS_tsan  := -lm -lpthread
 
+SRC_V_tsan-http := $(SRC_V_asan-http)
+FLAGS_tsan-http := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 $(VERDEF)
+LIBS_tsan-http  := -lm -lpthread
+
 SRC_V_valgrind := $(SOURCES)
 FLAGS_valgrind := $(WERROR_FLAGS) -g -O1 -DEIGS_VALGRIND $(STRLEN_CHECK) $(DEFS_OFF) $(VERDEF)
 LIBS_valgrind  := -lm -lpthread
@@ -148,7 +152,7 @@ SRC_V_poison := $(SOURCES)
 FLAGS_poison := $(WERROR_FLAGS) -g -O1 -DEIGS_POISON $(STRLEN_CHECK) $(DEFS_OFF) $(VERDEF)
 LIBS_poison  := -lm -lpthread
 
-VARIANTS := release full http zlib net gfx asan asan-http asan-gfx tsan valgrind poison
+VARIANTS := release full http zlib net gfx asan asan-http asan-gfx tsan tsan-http valgrind poison
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
@@ -459,6 +463,19 @@ asan-gfx: build/asan-gfx/eigenscript
 tsan: build/tsan/eigenscript
 	$(call RELINK,tsan)
 	@echo "EigenScript $(VERSION) (tsan) built. Binary: $(BINARY)"
+
+# ThreadSanitizer over the EXTENSION surface (#1139) — the tsan analogue of
+# asan-http. `make tsan` compiles ext_http.c out via $(DEFS_OFF), so the
+# repo's most concurrent code (thread-per-connection workers, per-worker
+# EigsState, the init responder thread, the shared store) was never seen by
+# the race detector: #1137's lazily-initialised globals were found only by an
+# ad-hoc variant while the stock tsan lane stayed green. Same sources as
+# asan-http (HTTP+MODEL+NET on, DB off — ext_db.c needs libpq headers).
+#   make tsan-http && TSAN_OPTIONS=halt_on_error=1 EIGS_SUITE_SECTIONS='44 45a 45b' \
+#       setarch -R bash tests/run_all_tests.sh
+tsan-http: build/tsan-http/eigenscript
+	$(call RELINK,tsan-http)
+	@echo "EigenScript $(VERSION) (tsan, http+model+net) built. Binary: $(BINARY)"
 
 # Plain -O1 -g minimal build for Valgrind/Memcheck (tests/valgrind_smoke.sh).
 # No sanitizers — Valgrind shadows the uninstrumented binary at runtime, so it

@@ -512,6 +512,7 @@ limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
 | `freestanding profile (symbol gate + smoke)` | 1 | gate |
 | `valgrind (memcheck smoke, JIT off)` | 1 | the smoke spread (the full corpus is tier 2) |
 | `tsan (concurrency race gate)` | 1 | gate |
+| `tsan-http (race gate over ext_http)` | 1 | gate: the HTTP sections ([44], [45a], [45b]) under a TSan build with ext_http compiled in, which the stock `tsan` build compiles out (#1139) |
 | `install.sh (interpreter + eigenlsp on PATH)` | 1 | gate |
 | `bench (instruction-count regression gate)` | 1 | gate (baseline: `origin/main` on a PR; the candidate's `merge_group.base_sha` in the queue, so a PR is never charged for the PRs queued ahead of it) |
 | `nightly / macos-15-intel full suite` | **2** (`nightly.yml`) | port lane, slow: hit its timeout on nearly every main push (#1265) |
