@@ -1,0 +1,40 @@
+# #1147: the state leaves multithreaded mode when the last worker is joined
+# (collector, JIT and plain refcounts back on), then re-enters it on the next
+# spawn. TSan must see no race across either transition, including a worker
+# that spawns and joins its own worker.
+define sq(n) as:
+    return n * n
+define spawner(n) as:
+    inner is spawn of [sq, n]
+    return thread_join of inner
+define make_counter(start) as:
+    count is start
+    define value() as:
+        return count
+    return value
+define hot(n) as:
+    acc is 0
+    k is 0
+    loop while k < n:
+        acc is acc + k
+        k is k + 1
+    return acc
+total is 0
+round is 0
+loop while round < 3:
+    hs is []
+    for k in range of 4:
+        append of [hs, spawn of [sq, k + round]]
+    append of [hs, spawn of [spawner, round]]
+    for h in hs:
+        total is total + (thread_join of h)
+    j is 0
+    loop while j < 5000:
+        local c is make_counter of j
+        j is j + 1
+    total is total + (hot of 2000) - (hot of 2000)
+    round is round + 1
+if total == 103:
+    print of "All tests passed"
+else:
+    print of f"FAIL: total {total}, want 103"
