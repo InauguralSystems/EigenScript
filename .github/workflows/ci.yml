@@ -1201,6 +1201,67 @@ jobs:
         if: always() && needs.scope.outputs.code == 'true'
         run: bash tools/cc_guard.sh --report
 
+  # ThreadSanitizer over ext_http.c (#1139). The stock tsan lane above builds
+  # with $(DEFS_OFF), so the race detector never saw the repo's most concurrent
+  # code; #1137 was found only by an ad-hoc tsan+http build while that lane
+  # stayed green. This lane runs the HTTP slice of the suite ([44], [45a] —
+  # 256 concurrent connections —, [45b]) through the real runner under
+  # halt_on_error=1, so a race kills the server and its section goes red.
+  tsan-http:
+    name: tsan-http (race gate over ext_http)
+    needs: scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
+
+      - if: needs.scope.outputs.code == 'true'
+        name: ThreadSanitizer build (http+model+net)
+        run: make tsan-http
+
+      - if: needs.scope.outputs.code == 'true'
+        name: HTTP sections under TSan (setarch -R, halt_on_error=1)
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+          EIGS_SUITE_SECTIONS: 44 45a 45b
+        run: |
+          set -o pipefail
+          setarch -R bash tests/run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/tsan-http.log"
+          # Each named section must have EXECUTED: at least one PASS line
+          # under its header, and no SKIP (the [44] probe gate reports a build
+          # without ext_http as a skip, which here means the lane measured
+          # nothing).
+          awk '
+            /^\[[0-9a-z]+\/[0-9]+\] / { sec = $1; sub(/\/.*/, "", sec); sub(/^\[/, "", sec) }
+            sec == "44" || sec == "45a" || sec == "45b" {
+              # "PASS: all 0 ..." is a relay of a child that ran nothing (e.g. a SKIP it swallowed).
+              if ($0 ~ /^  PASS: / && $0 !~ /^  PASS: all 0 /) pass[sec]++
+              if ($0 ~ /^  SKIP: /) { print "ERROR: [" sec "] skipped: " $0; bad = 1 }
+            }
+            END {
+              n = split("44 45a 45b", want, " ")
+              for (i = 1; i <= n; i++) {
+                if (pass[want[i]] < 1) { print "ERROR: [" want[i] "] printed no PASS line -- it did not run"; bad = 1 }
+                else print "OK: [" want[i] "] ran (" pass[want[i]] " PASS line(s))"
+              }
+              exit bad
+            }' "$RUNNER_TEMP/tsan-http.log"
+
+      - if: needs.scope.outputs.code == 'true'
+        name: Seeded race is caught by this binary (the lane can go red)
+        run: bash tests/test_tsan.sh --seeded-only
+
+      - name: Require compiler guard activity
+        if: always() && needs.scope.outputs.code == 'true'
+        run: bash tools/cc_guard.sh --report
+
   # First-run tooling unification (#400): the VS Code tree is canonical and has
   # the LSP client, and a fresh install.sh leaves BOTH binaries on PATH.
   install-smoke:

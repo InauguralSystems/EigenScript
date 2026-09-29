@@ -32,6 +32,30 @@ tsan_warnings() {
     WARNINGS=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
 }
 
+seeded_race_row() {
+    echo "=== gate self-validation: a seeded race MUST be caught ==="
+    tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
+    local w=$WARNINGS
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  note: seeded race killed after ${TSAN_RUN_TIMEOUT}s (UB may hang; detection is what's asserted)"
+    fi
+    if [ "$w" -gt 0 ]; then
+        echo "  PASS: seeded race detected ($w warnings) — the gate is live"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: seeded race NOT detected — the TSan gate is vacuous!"; FAIL=$((FAIL + 1))
+    fi
+}
+
+# --seeded-only (#1139): just the self-validation row, for a lane whose binary
+# is not the stock tsan build (tsan-http). The rest of this script links
+# build/tsan/*.o and is the stock lane's.
+if [ "${1:-}" = "--seeded-only" ]; then
+    seeded_race_row
+    echo ""
+    echo "Results: $PASS passed, $FAIL failed"
+    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 1 ]; exit
+fi
+
 echo "=== concurrency slice must be race-free ==="
 SLICE="test_concurrent test_spawn_parallel test_chan_dict_xthread test_spawn_gc \
        test_channel_nb test_spawn_channel_exit test_spawn_args \
@@ -522,17 +546,7 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-echo "=== gate self-validation: a seeded race MUST be caught ==="
-tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
-w=$WARNINGS
-if [ "$LAST_RC" -eq 124 ]; then
-    echo "  note: seeded race killed after ${TSAN_RUN_TIMEOUT}s (UB may hang; detection is what's asserted)"
-fi
-if [ "$w" -gt 0 ]; then
-    echo "  PASS: seeded race detected ($w warnings) — the gate is live"; PASS=$((PASS + 1))
-else
-    echo "  FAIL: seeded race NOT detected — the TSan gate is vacuous!"; FAIL=$((FAIL + 1))
-fi
+seeded_race_row
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
