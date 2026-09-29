@@ -666,8 +666,10 @@ request-scoped HTTP builtins (`http_request_body`, `http_session_id`,
 `http_request_headers`, `http_post`, and the `shared_*` family below)
 are available; **startup-scope globals are not**. The final
 expression's value is sent as the response body; an uncaught error
-answers **500** with `{"error": "<message>"}` (the message is also logged
-to the server's stderr) instead of a 200 (#1140). Per-worker isolation
+answers **500** with the generic body `{"error": "internal error"}`
+instead of a 200 (#1140). The message itself goes only to the server's
+stderr, since it can carry paths or values a client must not see. An
+`exit` inside the route is not an error and does not produce a 500. Per-worker isolation
 means concurrent requests don't race on script state and mutations
 don't leak across requests; cross-worker state goes through the
 shared store.

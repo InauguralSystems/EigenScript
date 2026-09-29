@@ -2369,5 +2369,5 @@ startup. See [HTTP builtin rules](BUILTINS.md#optional-http-extension) for the f
 limits and reserved names (#1128, #1129).
 Routes and the static root are fixed once `http_serve` starts: `http_route`,
 `http_route_authed` and `http_static` then raise, including from a `code`
-route, and an uncaught error in a `code` route's source answers 500 with the
-error message (#1140).
+route, and an uncaught error in a `code` route's source answers 500 with a
+generic body; the error message goes to the server's stderr only (#1140).

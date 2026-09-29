@@ -954,7 +954,7 @@ INVALID = [
 # code route runs on a worker whose g_server is the SPAWNING server, so each of
 # these used to write the live table while other workers read it lock-free:
 # one request to /mut-http_route made /injected answer 200 for the whole
-# process. Each builtin must now refuse loudly (500 naming it), and nothing it
+# process. Each builtin must now refuse loudly (a generic 500; the server log names it), and nothing it
 # tried to register may be visible afterwards.
 FROZEN_ROWS = [
     ('http_route', '/mut-route', r'http_route of [\"GET\", \"/injected\", \"INJECTED\"]', '/injected'),
@@ -974,7 +974,8 @@ def frozen_config_cases(directory):
                 got = curl(port, 'GET', path, directory)
                 want = f'{builtin}: must register before http_serve'.encode()
                 require(got.status == 500, f'{path}: {builtin} from a code route answered {got.status} {got.body[:120]!r}, want 500')
-                require(want in got.body, f'{path}: 500 body does not name {builtin}: {got.body[:160]!r}')
+                require(got.body == b'{"error": "internal error"}', f'{path}: 500 body is not the generic one (error text must not reach the client): {got.body[:160]!r}')
+                require(want.decode() in log.read_text(errors='replace'), f'{path}: the server log does not name {builtin}')
                 after = curl(port, 'GET', probe, directory)
                 require(after.status == 404, f'{probe} answers {after.status} after {builtin} ran in a code route: the live config was mutated')
                 page = curl(port, 'GET', '/static/asset.txt', directory)

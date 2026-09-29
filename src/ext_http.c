@@ -1668,20 +1668,17 @@ static void handle_request(int fd) {
                 EigsChunk *req_chunk = compile_ast(ast, req_env, r->payload);
                 Value *result = vm_execute(req_chunk, req_env);
                 chunk_free(req_chunk);
-                if (g_has_error || g_parse_errors) {
-                    /* #1140: an uncaught error in the route source is a 500
-                     * naming it, not `200 null` — the error was already on
-                     * the server's stderr, but the client saw a success. */
-                    strbuf eb;
-                    strbuf_init(&eb);
-                    strbuf_append(&eb, "{\"error\": \"");
-                    eigs_json_escape_append(&eb, g_error_raw[0] ? g_error_raw
-                                            : g_has_error ? g_error_msg
-                                            : "route source failed to parse", 1024);
-                    strbuf_append(&eb, "\"}");
+                if ((g_has_error && !g_exit_requested) || g_parse_errors) {
+                    /* #1140: an uncaught error in the route source is a 500,
+                     * not `200 null`. The body is generic: the error text can
+                     * carry paths, connection details or interpolated values,
+                     * and any caller (unauthenticated on http_route) would
+                     * read it. The detail stays on the server's stderr. An
+                     * `exit` in the route is an unwind, not an error, so it
+                     * keeps its old answer. */
+                    static const char body500[] = "{\"error\": \"internal error\"}";
                     send_response(fd, 500, "Internal Server Error", "application/json",
-                                  eb.data, (long)eb.len);
-                    strbuf_free(&eb);
+                                  body500, (long)(sizeof body500 - 1));
                     env_decref(req_env);
                     free_tokenlist(&tl);
                     free_ast(ast);
