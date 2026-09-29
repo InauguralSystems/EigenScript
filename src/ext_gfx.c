@@ -1881,7 +1881,7 @@ Value* builtin_audio_sine(Value *arg) {
      * non-list argument was answered with an empty sample list, which is
      * indistinguishable from a legitimately empty generation (`n <= 0`
      * returns the same list four lines down). Under EIGS_STRICT=1 it now
-     * raises; the empty list stays the non-strict stand-in, so the default
+     * raises; the empty list stays the non-strict stand-in, so the EIGS_STRICT=0
      * path is byte-identical. Found by a blind review measuring the docs'
      * "a wrong type, a short argument list or an out-of-domain value raises"
      * claim against the binary: eight sites answered 0 quietly. */

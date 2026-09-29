@@ -550,7 +550,8 @@ Value* builtin_num(Value *arg) {
             return make_num(neg ? -v : v);
         }
         /* #971: strtod reads "nan"/"inf" — the in-language route to a NaN.
-         * Default collapses to 0 (+ EIGS_MATH_INVALID); strict raises, named. */
+         * EIGS_STRICT=0 collapses to 0 (+ EIGS_MATH_INVALID); strict (the
+         * default) raises, named. */
         return make_num(num_guard_named(strtod(arg->data.str, NULL), "num"));
     }
     if (arg->type == VAL_NULL) return make_num(0);   /* fs:ANSWER coercion contract */

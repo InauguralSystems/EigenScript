@@ -115,8 +115,11 @@ milestone when an issue is filed against them.
   read — and run the differential over both.
   ([#971](https://github.com/InauguralSystems/EigenScript/issues/971))
 
-- **Flip `EIGS_STRICT` to the default?** — **DEFERRED; the evidence
-  says it is now cheap, the decision is still open.** Measured
+- **Flip `EIGS_STRICT` to the default?** — **DECIDED 2026-09-28: flipped
+  ([#1361](https://github.com/InauguralSystems/EigenScript/issues/1361));
+  strict is the default and `EIGS_STRICT=0` is the per-run opt-out.** Still
+  open from the list below: the AOT mirror in ouroboros. The history that
+  informed the decision follows. Measured
   2026-09-06 on the v0.43.0 tree with the #971 Phase C/D + NaN work
   applied: **94 consumer entry points** (DMG `test_cpu`/`test_memory` +
   the 500K-cycle canary, EigenMiniSat DPLL/CDCL solves, EigenRegex S1–S12
@@ -139,10 +142,10 @@ milestone when an issue is filed against them.
   `aot_ddiv` and a raw-`inf` matmul read pinned by its round-187
   fixture — a default flip without the mirror flipping recreates the
   #975 div0 fossil), and a decision on the **raw non-finite in a
-  `matmul` buffer result** (the entry below). Until then:
-  strict stays opt-in, graders and CI lanes turn it on, and the
-  differential (`tools/strict_differential.sh <parent-build>`) keeps
-  the default path byte-identical.
+  `matmul` buffer result** (the entry below; strict raises on it, so it
+  now shows only under `EIGS_STRICT=0`). The differential
+  (`tools/strict_differential.sh <parent-build>`) keeps the
+  `EIGS_STRICT=0` path byte-identical to the previous build.
   ([#971](https://github.com/InauguralSystems/EigenScript/issues/971))
 
 - **Per-layer headers — break up the `src/eigenscript.h` umbrella.** (The

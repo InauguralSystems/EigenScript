@@ -1395,7 +1395,8 @@ Value* builtin_tensor_gather(Value *arg) {
      * falls through (it raises at its branch), so what is left is only the
      * GUARD reading — `tensor` is not a list or buffer, or `indices` is
      * neither a vector nor a number — and it converts to ARG_GUARD like every
-     * other wrong-type case: 0.0 by default, a raise under EIGS_STRICT. */
+     * other wrong-type case: a raise in strict mode (the default, #1361),
+     * 0.0 under EIGS_STRICT=0. */
     ARG_GUARD(1, "gather", "a tensor and an index or index vector", make_num(0.0));
 }
 

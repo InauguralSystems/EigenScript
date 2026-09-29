@@ -69,6 +69,18 @@ All notable changes to EigenScript are documented here.
 
 ### Breaking changes
 
+- **Strict mode is the default (#1361).** Argument-type stand-ins
+  (`abs of "x"` answered `0`, `str_upper of 42` answered `""`) and domain
+  stand-ins (`sqrt of -1` answered `0`, `log of 0` answered `ln(1e-10)`) now
+  RAISE with no flag set, as do a `NaN` result and a malformed `json_path`
+  document: `EIGS_STRICT` unset, empty, or any value other than `0` is strict.
+  **Opt-out: `EIGS_STRICT=0`** for the run restores every stand-in
+  byte-for-byte (`tools/strict_differential.sh` compares it against the
+  previous release). A state made through the embed API (`eigs_open`,
+  `eigs_state_new`) reads the same variable at creation, so embedders get the
+  same default; there is no per-state setter. The freestanding profile's
+  `getenv` answers nothing, so EigenOS states are strict with no opt-out.
+
 - **A missing comma between parameters is a parse error (#1254).**
   `define sub(a b)`, `define sub(a is 7 b is 2)` and `(a b) => a - b` used to
   run as if the commas were written. Both the named-function and the lambda

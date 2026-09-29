@@ -186,11 +186,13 @@ sqrt(2) = 1.414213562373095
 
 - `+` concatenates **strings only**. List concatenation is `append of [xs, v]`
   (in place) or a comprehension — `xs + ys` is a runtime error.
-- Numbers are f64 and finite by construction: `NaN` collapses to `0`, overflow
-  saturates at ±1e308, `sqrt of -1` is `0`. Integer bit ops are `bit_and`/`&`
-  etc. on int64; exactness ends at 2^53. `EIGS_STRICT=1` makes the stand-ins
-  loud: out-of-domain math, a NaN result, a wrong-typed builtin argument and a
-  malformed `json_path` document raise catchable errors instead.
+- Numbers are f64 and finite by construction: overflow saturates at ±1e308.
+  Integer bit ops are `bit_and`/`&` etc. on int64; exactness ends at 2^53.
+  Strict mode is the DEFAULT: out-of-domain math (`sqrt of -1`), a NaN
+  result, a wrong-typed builtin argument (`abs of "x"`) and a malformed
+  `json_path` document raise catchable errors. `EIGS_STRICT=0` is the per-run
+  opt-out that brings the finite stand-ins back (`NaN` collapses to `0`,
+  `sqrt of -1` is `0`, `abs of "x"` is `0`).
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
 - f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`. Each `{…}` converts with the builtin `str`, even if you rebind `str`.
