@@ -4725,15 +4725,22 @@ check "EIGS_OBS_FORCE: only a non-empty non-0 value arms it" "$OBS_FORCE_V" "uns
 #     RESIDUAL, stated exactly: this pins that the bail FIRES, not that the race
 #     it prevents is absent. The latter needs make asan-http plus two concurrent
 #     literal-load routes, which nothing in-tree runs.
+#     #1147: the multithreaded mode now ENDS at the last join, so the witness
+#     keeps its worker parked on recv across the load (the process really is
+#     multithreaded there), and a third row loads after the join: the mode has
+#     ended, so the gate is back to the no-spawn answer.
 OBS_MT_DIR="$OBS_GATE_TMP/mt"
 mkdir -p "$OBS_MT_DIR"
 printf 'print of "inner ok"\n' > "$OBS_MT_DIR/inner.eigs"
 printf 'load_file of "%s/inner.eigs"\n' "$OBS_MT_DIR" > "$OBS_MT_DIR/mid.eigs"
-printf 'define w() as:\n    return 1\nlocal t is spawn of w\nlocal j is thread_join of t\nlocal m is load_file of "%s/mid.eigs"\nprint of "done"\n' "$OBS_MT_DIR" > "$OBS_GATE_TMP/mt.eigs"
+printf 'define w(ch) as:\n    return recv of ch\nlocal ch is channel of null\nlocal t is spawn of [w, ch]\nlocal m is load_file of "%s/mid.eigs"\nsend of [ch, 1]\nlocal j is thread_join of t\nprint of "done"\n' "$OBS_MT_DIR" > "$OBS_GATE_TMP/mt.eigs"
+printf 'define w() as:\n    return 1\nlocal t is spawn of w\nlocal j is thread_join of t\nlocal m is load_file of "%s/mid.eigs"\nprint of "done"\n' "$OBS_MT_DIR" > "$OBS_GATE_TMP/mt_joined.eigs"
 printf 'local m is load_file of "%s/mid.eigs"\nprint of "done"\n' "$OBS_MT_DIR" > "$OBS_GATE_TMP/mt_ctl.eigs"
 OBS_G35=$(EIGS_OBS_GATE_STATS=1 obs_tmo 60 $EIGS_BIN "$OBS_GATE_TMP/mt.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
+OBS_G35J=$(EIGS_OBS_GATE_STATS=1 obs_tmo 60 $EIGS_BIN "$OBS_GATE_TMP/mt_joined.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
 OBS_G35C=$(EIGS_OBS_GATE_STATS=1 obs_tmo 60 $EIGS_BIN "$OBS_GATE_TMP/mt_ctl.eigs" 2>&1 >/dev/null | grep -c 'obs-gate: observed')
-check "a literal load after spawn hits the multithreaded bail" "$OBS_G35" "2"
+check "a literal load while a worker is live hits the multithreaded bail" "$OBS_G35" "2"
+check "after the last join the same load no longer bails (#1147)" "$OBS_G35J" "0"
 check "control: the same load with no spawn does not" "$OBS_G35C" "0"
 # 36. The SAME convention for EIGS_OBS_GATE_STATS. Found by sweeping every
 #     getenv site in src/ after fixing EIGS_OBS_FORCE, rather than assuming
@@ -5033,6 +5040,21 @@ check_eigs_suite "shared chunk JIT-compiled on a worker, many workers" test_spaw
 # an ASan leak here -> bumps the tolerated-leak tally, not a marker failure.
 echo "[101] Threaded Cycle-GC (worker-created cycles collected)"
 check_eigs_suite "worker closure cycles reclaimed at exit" test_spawn_gc.eigs "All tests passed" 1
+
+# [101a] #1147: the collector resumes MID-RUN once every worker is joined, not
+# only at exit. Peak-RSS ratio of a closure-cycle loop after spawn+join vs the
+# same loop with no spawn (bound 3x; 12x before the fix), a live-worker witness
+# that must exceed 4x (the measurement can see the leak), and exact results
+# across join -> collect -> spawn again.
+echo "[101a] Collector resumes after the last join (#1147)"
+SGR_OUTPUT=$(bash "$TESTS_DIR/test_spawn_gc_resume.sh" 2>&1); SGR_RC=$?
+SGR_PASS=$(echo "$SGR_OUTPUT" | grep -c "^  PASS:" || true)
+SGR_FAIL=$(echo "$SGR_OUTPUT" | grep -c "^  FAIL:" || true)
+[ "$SGR_RC" -ne 0 ] && [ "$SGR_FAIL" -eq 0 ] && SGR_FAIL=1
+[ "$SGR_RC" -eq 0 ] && [ "$SGR_PASS" -lt 3 ] && { SGR_FAIL=$((SGR_FAIL + 1)); echo "  FAIL: spawn-gc-resume child ran only $SGR_PASS of 3 checks"; }
+TOTAL=$((TOTAL + SGR_PASS + SGR_FAIL)); PASS=$((PASS + SGR_PASS)); FAIL=$((FAIL + SGR_FAIL))
+if [ "$SGR_FAIL" -gt 0 ]; then echo "  FAIL: collector resume after join"; echo "$SGR_OUTPUT" | grep -E "FAIL:|peak RSS" | head -5; else echo "  PASS: all $SGR_PASS collector-resume checks ($(echo "$SGR_OUTPUT" | grep 'peak RSS' | sed 's/^ *//'))"; fi
+echo ""
 
 # [102] Parallel shared-chunk execution correctness (#297). Workers spawned all
 # at once (genuine parallelism) run the same chunks concurrently; the inline

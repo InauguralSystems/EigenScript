@@ -3863,7 +3863,9 @@ void env_destroy_final(Env *env) {
  * cross-thread roots are still counted refs (so nothing would be freed
  * wrongly), and registration continues under the per-state gc_lock, but
  * the collector only runs single-threaded, so worker-created env<->closure
- * cycles are reclaimed by the exit sweep once workers are joined (#297).
+ * cycles are reclaimed once the last worker is joined — mid-run when the
+ * joiner is the only attached thread (spawn_mt_maybe_clear, #1147), else by
+ * the exit sweep (#297).
  * ================================================================ */
 
 /* gc_threshold, gc_enabled, in_gc are per-thread (EigsThread); the candidate

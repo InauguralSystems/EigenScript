@@ -154,8 +154,13 @@ as a force-destroy escape hatch (no current callers in main).
   (`gc_note_possible_root`) is off during the MT window, so worker-local
   pure-value cycles are not buffered (see "What still leaks" below), but
   env↔closure cycles captured on workers are registered and reclaimed by
-  the exit sweep once the workers are joined (#297). Cross-thread
-  refcounts stay correct (atomic).
+  the first collection after the multithreaded flag clears (#297). The
+  flag clears when the last live worker is joined by the state's only
+  attached thread (#1147, `spawn_mt_maybe_clear` in builtins.c), so
+  collection resumes mid-run, not only at exit; an unjoined worker keeps it
+  deferred until the exit drain. Section [101a]
+  (`test_spawn_gc_resume.sh`) gates the mid-run resume by peak RSS.
+  Cross-thread refcounts stay correct (atomic).
 
 ### Multithreaded and handle-table leaks
 
@@ -171,8 +176,8 @@ three mechanisms closed them:
    return value a second time.
 3. **Threaded cycle-GC.** The candidate registry is per-state under
    `gc_lock` (see "Threads" above), so env↔closure cycles created on any
-   thread stay candidates and the exit sweep reclaims them once workers are
-   joined. Section [101] (`test_spawn_gc`, worker-created cycles) is
+   thread stay candidates and are reclaimed once the last worker is joined
+   (mid-run, #1147) or by the exit sweep. Section [101] (`test_spawn_gc`, worker-created cycles) is
    leak-gated, and `test_concurrent` is clean.
 
 Parallel shared-chunk execution is TSan-clean (#297): the multithreaded flag

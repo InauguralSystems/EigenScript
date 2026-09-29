@@ -238,8 +238,9 @@ cyclic garbage: pinned, edge-cleared, then released through the normal
 destructors. Conservative by construction — any accounting mismatch
 aborts the collection (leaking instead of freeing). While `spawn()` is
 multithreaded, mid-run collection is deferred (not disabled): registration
-continues under the lock, and the exit sweep reclaims worker-created
-env<->closure cycles once workers are joined (#297). See
+continues under the lock, and worker-created env<->closure cycles are
+reclaimed once the last worker is joined — mid-run when the joiner is the
+only attached thread (#1147), else by the exit sweep (#297). See
 `docs/CLOSURE_CYCLE_GC.md`.
 
 ## Extensions

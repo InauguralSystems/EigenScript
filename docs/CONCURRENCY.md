@@ -526,13 +526,22 @@ result. `tests/test_tasks.eigs` now runs both models at once.
 
 ## The multithreaded performance cliff
 
-The first `spawn` in a program permanently flips the runtime into
-multithreaded mode (`g_vm_multithreaded`). From that point the #297 safety gates
-turn **off** the JIT counters, OSR, and inline-cache writes — parallel code runs
-interpreter-only, because those single-threaded fast paths are not safe to
-mutate concurrently. So concurrency trades peak single-thread throughput for
+`spawn` flips the runtime into multithreaded mode (`g_vm_multithreaded`).
+While it is set, the #297 safety gates turn **off** the JIT counters, OSR, and
+inline-cache writes — parallel code runs interpreter-only, because those
+single-threaded fast paths are not safe to mutate concurrently — and the cycle
+collector does not run. So concurrency trades peak single-thread throughput for
 parallelism: use threads for genuinely parallel work, not to speed up a tight
-serial loop. (A quantified before/after number lands with the replay-pinned
+serial loop.
+
+The mode ends when the last spawned worker is **joined** and the joining
+thread is the state's only attached thread (#1147): the JIT, parked-env reuse
+and plain refcounts come back, and the collector resumes mid-run, reclaiming
+the cycles registered while workers ran. A worker that finished but was never
+joined still counts as live, so an unjoined handle keeps the mode on until the
+exit drain. Join workers when you are done with them. (Before #1147 the mode
+lasted to exit: one spawn+join made a closure-cycle loop peak at 117x the RSS
+of the same loop with no spawn.) (A quantified before/after number lands with the replay-pinned
 benchmark harness, #398.)
 
 ## The scheduler trace is a reader, not a source (#846)

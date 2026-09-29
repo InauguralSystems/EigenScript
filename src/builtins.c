@@ -4563,10 +4563,46 @@ static void *thread_entry(void *arg) {
     eigs_clear_error_value();
     h->done = 1;
     /* Detach from the state — runs arena_destroy and clears TLS. The
-     * cycle collector resumes once all workers are joined (handle_table_drain
-     * clears multithreaded); see the threaded cycle-GC change. */
+     * cycle collector resumes when the last worker is JOINED and the joiner
+     * is the only attached thread (spawn_mt_maybe_clear, #1147), or at the
+     * exit drain. */
     eigs_thread_detach();
     return NULL;
+}
+
+/* #1147: return the state to single-threaded mode once the last worker is
+ * joined. `multithreaded` used to be cleared only by the exit drain, so one
+ * spawn+join turned the cycle collector (and the JIT, and the parked-env
+ * reuse) off for the rest of the run: 117x peak RSS on a closure-cycle loop.
+ *
+ * Two conditions, both required:
+ *   live_workers == 0  no spawned worker is unjoined. The count rises BEFORE
+ *                      pthread_create, so a worker that exists but has not
+ *                      attached yet (and so is not in st->threads) still
+ *                      counts — the threads list alone would miss it.
+ *   sole attachment    the caller is the state's only attached thread. An
+ *                      embedder may attach more host threads to one state;
+ *                      a worker that joins its sibling is never alone,
+ *                      because the thread that spawned it is attached.
+ * Checked and cleared under threads_lock, so no attach interleaves. The
+ * joined worker detached (left st->threads, drained its freelists) before
+ * its pthread_join returned, which is the happens-before for every write it
+ * made; from here only this thread touches the value graph, exactly as
+ * before the first spawn. The MT flag gates no lock held across a builtin
+ * call (the env/registry locks are taken and released inside one C
+ * function), so no lock taken under MT is left to be released under ST.
+ * This thread's vm.c hot caches are reset like an attach does. */
+static void spawn_mt_maybe_clear(EigsState *st) {
+    if (!st || !eigs_current || !st->multithreaded) return;
+    if (__atomic_load_n(&st->live_workers, __ATOMIC_ACQUIRE) != 0) return;
+    pthread_mutex_lock(&st->threads_lock);
+    int alone = st->threads == eigs_current && eigs_current->next == NULL;
+    if (alone && __atomic_load_n(&st->live_workers, __ATOMIC_ACQUIRE) == 0)
+        st->multithreaded = 0;
+    else
+        alone = 0;
+    pthread_mutex_unlock(&st->threads_lock);
+    if (alone) vm_thread_reset_caches();
 }
 
 Value* builtin_spawn(Value *arg) {
@@ -4642,8 +4678,8 @@ Value* builtin_spawn(Value *arg) {
     /* Flip refcounts to atomic mode before any new thread can observe a Value.
      * pthread_create supplies the full barrier. The cycle collector's registry
      * is per-state and lock-guarded, so registration safely continues across
-     * threads; collection is gated to single-threaded and resumes once all
-     * workers are joined (see handle_table_drain).
+     * threads; collection is gated to single-threaded and resumes when the
+     * last worker is joined (spawn_mt_maybe_clear, #1147).
      *
      * #297: write the flag ONLY on the 0→1 transition. The first spawn flips it
      * while still single-threaded (no concurrent reader); re-writing `= 1` on
@@ -4664,8 +4700,10 @@ Value* builtin_spawn(Value *arg) {
      * now; the narrowing is a per-assign CPU optimization for the
      * single-threaded long-running programs #827 was actually about. */
     trace_arm_history_all_mt();
+    __atomic_add_fetch(&eigs_current->state->live_workers, 1, __ATOMIC_RELEASE);  /* #1147 */
     int pc_rc = pthread_create(&h->tid, NULL, thread_entry, h);
     if (pc_rc != 0) {
+        __atomic_sub_fetch(&eigs_current->state->live_workers, 1, __ATOMIC_RELEASE);
         /* The thread never started. Returning a live-looking handle here
          * silently strands any code that depends on the thread running —
          * e.g. a sibling that waits on a channel the thread was meant to
@@ -4739,6 +4777,9 @@ Value* builtin_thread_join(Value *arg) {
         free(h->fn_args);
     }
     free(h);
+    EigsState *st = eigs_current_state();
+    __atomic_sub_fetch(&st->live_workers, 1, __ATOMIC_ACQ_REL);   /* #1147 */
+    spawn_mt_maybe_clear(st);
     return result;
 }
 
@@ -5448,6 +5489,7 @@ void handle_table_drain(EigsState *st) {
         }
         free(h);
         st->handle_table[i].ptr = NULL;
+        __atomic_sub_fetch(&st->live_workers, 1, __ATOMIC_ACQ_REL);   /* #1147 */
     }
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
         if (st->handle_table[i].type != HANDLE_CHANNEL) continue;
@@ -5498,7 +5540,8 @@ void handle_table_drain(EigsState *st) {
      * the per-state registry kept accumulating candidates the whole time, so
      * the exit-time gc_collect_at_exit now reclaims env↔closure cycles created
      * after the first spawn — on the main thread or in a (since-joined) worker.
-     * Safe because no live thread remains to mutate the graph. */
+     * Safe because no live thread remains to mutate the graph. A worker
+     * joined mid-run already cleared it the same way (#1147). */
     st->multithreaded = 0;
 }
 

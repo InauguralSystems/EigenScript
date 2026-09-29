@@ -795,13 +795,22 @@ struct EigsState {
     EigsHandleSlot  handle_table[HANDLE_TABLE_SIZE];
     pthread_mutex_t handle_mutex;
     int             handle_next;
-    /* Set to 1 by builtin_spawn before pthread_create; stays 1 for the
-     * state's lifetime. Gates the LOCK-prefixed __atomic_* RMW in
+    /* Set to 1 by builtin_spawn before pthread_create; cleared by
+     * spawn_mt_maybe_clear (builtins.c) when the last live worker is joined
+     * and the joiner is the state's only attached thread (#1147), and by
+     * handle_table_drain at exit. Gates the LOCK-prefixed __atomic_* RMW in
      * val_incref / val_decref / chunk_incref / chunk_decref /
-     * env_incref / env_decref / slot_incref / slot_decref. Single-
-     * threaded states (the common case — DMG, MiniSat, Tidepool, REPL)
-     * keep it at 0 and skip the atomic ~20-cycle penalty on x86. */
+     * env_incref / env_decref / slot_incref / slot_decref, and turns the
+     * cycle collector and the JIT off. Single-threaded states (the common
+     * case — DMG, MiniSat, Tidepool, REPL) keep it at 0 and skip the atomic
+     * ~20-cycle penalty on x86. */
     int             multithreaded;
+    /* #1147: spawn()ed workers not yet joined — incremented before
+     * pthread_create, decremented after pthread_join (thread_join or the exit
+     * drain). Atomic: a worker may spawn or join too. A worker that finished
+     * but was never joined still counts, so `multithreaded` stays set until
+     * someone joins it; that errs toward the MT (safe) side. */
+    int             live_workers;
     /* #739: process-exit request, LATCHED at the state. The per-thread flag
      * above drives CHECK_ERROR's uncatchable unwind and is cleared at host
      * eval entry; this latch is what `main` reports as the process exit code,
@@ -1661,7 +1670,8 @@ static inline double num_guard_named(double x, const char *who) {
     } while (0)
 
 /* The g_vm_multithreaded flag (state->multithreaded, bridge macro above)
- * is set to 1 by builtin_spawn before pthread_create, then stays 1.
+ * is set to 1 by builtin_spawn before pthread_create, and back to 0 when the
+ * last worker is joined with no other thread attached (#1147).
  * Single-threaded scripts (the common case — DMG, MiniSat, Tidepool,
  * REPL) keep it at 0, which lets val_incref/decref, slot_incref/decref,
  * and env_refcount sites skip the LOCK-prefixed atomic RMW (mandatory
