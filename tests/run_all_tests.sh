@@ -2727,9 +2727,9 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     PASS=$((PASS + HR_PASS))
     FAIL=$((FAIL + HR_FAIL))
     HR_LABEL='HTTP_READINESS'
-    HR_WANT=133
+    HR_WANT=136
     # Two SKIPs are the nonblocking witnesses (no cc / not Linux).
-    if [ "$HR_SKIP" -eq 2 ]; then HR_WANT=131; fi
+    if [ "$HR_SKIP" -eq 2 ]; then HR_WANT=134; fi
     if [ "$HR_RC" -ne 0 ] || [ "$HR_PASS" -ne "$HR_WANT" ] || [ "$HR_FAIL" -ne 0 ] \
        || [ "$HR_SKIP" -gt 2 ] ||
        ! echo "$HR_OUTPUT" | grep -qx "${HR_LABEL}: ${HR_WANT} passed, 0 failed"; then
