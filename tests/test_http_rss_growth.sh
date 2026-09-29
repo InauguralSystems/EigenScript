@@ -158,8 +158,10 @@ fi
 # `make asan-http`. That is instrument overhead, not a leak, and it would
 # false-fail this gate in CI's asan-http step. RSS growth is only meaningful
 # on a release build.
-if grep -qa "__asan_init" "$EIGS" 2>/dev/null; then
-    echo "  SKIP: sanitizer build — RSS growth is dominated by ASan overhead, not leaks"
+# TSan too (#1411 review): its shadow memory and per-thread metadata move RSS the same way,
+# and the tsan-http CI lane runs this section.
+if grep -qaE "__asan_init|__tsan_init" "$EIGS" 2>/dev/null; then
+    echo "  SKIP: sanitizer build — RSS growth is dominated by sanitizer overhead, not leaks"
     echo "HTTP_RSS: 0 passed, 0 failed (skipped)"
     exit 0
 fi

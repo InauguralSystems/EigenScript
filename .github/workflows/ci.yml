@@ -1241,7 +1241,8 @@ jobs:
           awk '
             /^\[[0-9a-z]+\/[0-9]+\] / { sec = $1; sub(/\/.*/, "", sec); sub(/^\[/, "", sec) }
             sec == "44" || sec == "45a" || sec == "45b" {
-              if ($0 ~ /^  PASS: /) pass[sec]++
+              # "PASS: all 0 ..." is a relay of a child that ran nothing (e.g. a SKIP it swallowed).
+              if ($0 ~ /^  PASS: / && $0 !~ /^  PASS: all 0 /) pass[sec]++
               if ($0 ~ /^  SKIP: /) { print "ERROR: [" sec "] skipped: " $0; bad = 1 }
             }
             END {
