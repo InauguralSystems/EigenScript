@@ -300,7 +300,7 @@ expect_error of [() => store_open of 42, "CV2-86 store_open bad arg raises"]
 
 # Clean up
 store_close of tmp_store
-exec_capture of "rm -f /tmp/eigs_cv2_test.db"
+remove_file of "/tmp/eigs_cv2_test.db"
 
 # ================================================================
 # EIGENSCRIPT.C GAPS

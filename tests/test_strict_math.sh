@@ -1,7 +1,10 @@
 #!/bin/bash
-# #971: strict math mode (EIGS_STRICT). Off by default the arithmetic is
-# finite-by-construction (domain ops substitute a stand-in + set the invalid
-# flag); on, an out-of-domain op RAISES an EK_VALUE error instead.
+# #971/#1361: strict mode (EIGS_STRICT). Strict is the DEFAULT (#1361): with
+# the variable unset or empty an out-of-domain op or a wrong-typed argument
+# RAISES. EIGS_STRICT=0 is the per-run opt-out, where the arithmetic is
+# finite-by-construction again (domain ops substitute a stand-in + set the
+# invalid flag). Rows marked `unset` run with EIGS_STRICT removed from the
+# environment; rows marked `0` pin the opt-out's stand-ins.
 # Run directly or from run_all_tests.sh. Prints: STRICT: N passed, M failed
 # Exit code: 0 if all pass, 1 if any fail.
 
@@ -39,7 +42,7 @@ trap 'rm -f "$TMP"' EXIT
 # check. Rows asserting an EMPTY result wrap it (`f"[{...}]"` against "[]") so
 # the emptiness is something the assertion can actually see.
 #
-# run <name> <env: unset|0|1> <expect-exit 0|1> <expect-substr> <program>
+# run <name> <env: unset|""|0|1|other> <expect-exit 0|1> <expect-substr> <program>
 # leak_clean <captured-output>: 1 unless LeakSanitizer reported on this run.
 # Only ever non-empty under an ASan build with detect_leaks=1.
 leak_clean() {
@@ -54,7 +57,7 @@ run() {
     printf '%s\n' "$prog" > "$TMP"
     local out rc
     case "$env" in
-        unset) out=$("$EIGS" "$TMP" 2>&1); rc=$? ;;
+        unset) out=$(env -u EIGS_STRICT "$EIGS" "$TMP" 2>&1); rc=$? ;;
         *)     out=$(EIGS_STRICT="$env" "$EIGS" "$TMP" 2>&1); rc=$? ;;
     esac
     local exit_ok=0
@@ -69,26 +72,41 @@ run() {
     fi
 }
 
-# run_jitoff <name> <expect-substr> <program>: EIGS_STRICT=1 with the JIT off,
-# expecting a raise — the interpreter half of the JIT/interpreter agreement.
+# run_jitoff <name> <env: unset|0|1> <expect-exit 0|1> <expect-substr> <program>:
+# the same row with the JIT off — the interpreter half of the JIT/interpreter
+# agreement.
 run_jitoff() {
-    local name="$1" substr="$2" prog="$3"
+    local name="$1" env="$2" xexit="$3" substr="$4" prog="$5"
     printf '%s\n' "$prog" > "$TMP"
     local out rc
-    out=$(EIGS_STRICT=1 EIGS_JIT_OFF=1 "$EIGS" "$TMP" 2>&1); rc=$?
+    case "$env" in
+        unset) out=$(env -u EIGS_STRICT EIGS_JIT_OFF=1 "$EIGS" "$TMP" 2>&1); rc=$? ;;
+        *)     out=$(EIGS_STRICT="$env" EIGS_JIT_OFF=1 "$EIGS" "$TMP" 2>&1); rc=$? ;;
+    esac
+    local exit_ok=0
+    if [ "$xexit" = "0" ] && [ "$rc" = "0" ]; then exit_ok=1; fi
+    if [ "$xexit" = "1" ] && [ "$rc" != "0" ]; then exit_ok=1; fi
     if ! leak_clean "$out"; then
         fail "$name" "LEAKED on this path: $(echo "$out" | grep -F 'SUMMARY: AddressSanitizer')"
-    elif [ "$rc" != "0" ] && echo "$out" | grep -qF -- "$substr"; then
+    elif [ "$exit_ok" = "1" ] && echo "$out" | grep -qF -- "$substr"; then
         ok "$name"
     else
         fail "$name" "rc=$rc out='$out'"
     fi
 }
 
-# --- Default (unset) and explicit EIGS_STRICT=0: finite-by-construction ---
-run "SM01 default sqrt(-1) -> 0"      unset 0 "0"                      'print of (sqrt of -1)'
-run "SM02 default asin(5) clamps"     unset 0 "1.57"                   'print of (asin of 5)'
-run "SM03 EIGS_STRICT=0 is off"       0     0 "0"                      'print of (sqrt of -1)'
+# --- #1361: the DEFAULT is strict; EIGS_STRICT=0 is the opt-out ---
+# Unset, empty and any value other than "0" all raise; only "0" substitutes.
+run "SM01 opt-out sqrt(-1) -> 0"      0     0 "0"                      'print of (sqrt of -1)'
+run "SM02 opt-out asin(5) clamps"     0     0 "1.57"                   'print of (asin of 5)'
+run "SM03 default (unset) sqrt(-1) raises" unset 1 "sqrt: argument out of domain" 'print of (sqrt of -1)'
+run "SM03a default (unset) asin(5) raises" unset 1 "asin: argument out of domain" 'print of (asin of 5)'
+run "SM03b EIGS_STRICT= (empty) is strict" "" 1 "sqrt: argument out of domain" 'print of (sqrt of -1)'
+run "SM03c EIGS_STRICT=yes is strict" yes 1 "sqrt: argument out of domain"   'print of (sqrt of -1)'
+run "SM03d default (unset) abs(str) raises"   unset 1 "abs: expected a number" 'print of (abs of "x")'
+run "SM03e default (unset) abs(list) raises"  unset 1 "abs: expected a number" 'print of (abs of ([-3, 7]))'
+run "SM03f default (unset) floor(list) raises" unset 1 "floor: expected a number" 'print of (floor of [1.5, 2.5])'
+run "SM03g opt-out abs(str) -> 0"             0 0 "0"                      'print of (abs of "x")'
 
 # --- Strict on: out-of-domain raises EK_VALUE ---
 run "SM04 strict sqrt(-1) raises"     1 1 "sqrt: argument out of domain"  'print of (sqrt of -1)'
@@ -112,10 +130,10 @@ run "SM10 strict tensor sqrt raises"  1 1 "out of domain"              'print of
 # --- #971 Phase A: argument TYPE guards, same gate ---------------------------
 # ~34 builtins answered a wrong-typed argument with a soft stand-in, so a type
 # mistake became a plausible value: `cos of "hello"` was 0, `str_upper of 42`
-# was "". Off by default that is unchanged (SM11/SM12 pin it); under strict it
-# raises a catchable `type` error naming the builtin.
-run "SM11 default cos(str) still 0"    unset 0 "0"    'print of (cos of "hello")'
-run "SM12 default str_upper(num) is empty" unset 0 "[]" 'print of f"[{str_upper of 42}]"'
+# was "". Under EIGS_STRICT=0 that is unchanged (SM11/SM12 pin it); strict
+# (the default since #1361) raises a catchable `type` error naming the builtin.
+run "SM11 opt-out cos(str) still 0"    0 0 "0"    'print of (cos of "hello")'
+run "SM12 opt-out str_upper(num) is empty" 0 0 "[]" 'print of f"[{str_upper of 42}]"'
 run "SM13 strict cos(str) raises"      1 1 "cos: expected a number"        'print of (cos of "hello")'
 run "SM14 strict str_upper(num) raises" 1 1 "str_upper: expected a string" 'print of (str_upper of 42)'
 run "SM15 strict arity guard raises"   1 1 "substr: expected"              'print of (substr of 42)'
@@ -158,7 +176,7 @@ run "SM27 strict write_bytes type raises"     1 1 "write_bytes: expected" 'print
 # `return make_num(0)` to convert, so it is invisible to the classifier and
 # needed STRICT_REQUIRE (raise under strict, no-op otherwise). Found by the
 # differential, not by the classifier: SM29 is why both harnesses exist.
-run "SM28 default str_replace(num,..) unchanged" unset 0 "[]" \
+run "SM28 opt-out str_replace(num,..) unchanged" 0 0 "[]" \
 'local r is str_replace of [42, "a", "b"]
 print of f"[{r}]"'
 run "SM29 strict str_replace coercion raises"  1 1 "str_replace: expected a string" \
@@ -184,11 +202,11 @@ run "SM35 strict: JSON false still decodes to 0"       1 0 "0" \
 # returns, so malformed JSON was indistinguishable from a missing field. Under
 # strict the parse failure raises (json_decode's acceptance test: structural
 # error, repaired scalar, trailing garbage) as a catchable `value` error naming
-# the position. Off: byte-identical (SM36/SM37 pin the lenient walk). JSON
+# the position. EIGS_STRICT=0: byte-identical (SM36/SM37 pin the lenient walk). JSON
 # `false`/`null`/absent-key are ANSWERS and stay quiet in both modes.
-run "SM36 default json_path(bad number) still walks partial" unset 0 "[0]" \
+run "SM36 opt-out json_path(bad number) still walks partial" 0 0 "[0]" \
     'print of f"[{json_path of ["{\"a\": 1e", "a"]}]"'
-run "SM37 default json_path(truncated array) still partial" unset 0 "[[1,2]]" \
+run "SM37 opt-out json_path(truncated array) still partial" 0 0 "[[1,2]]" \
     'print of f"[{json_path of ["{\"a\": [1, 2", "a"]}]"'
 run "SM38 strict json_path(bad number) raises with position" 1 1 "json_path: invalid JSON at position 8" \
     'print of (json_path of ["{\"a\": 1e", "a"])'
@@ -214,13 +232,13 @@ run "SM46 strict: valid nested path still resolves"     1 0 "x"  'print of (json
 # of a negative base with a fractional exponent, `num of "nan"` (strtod),
 # `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation (list
 # and buffer paths), `tensor_load` of a file carrying NaN bytes, and the
-# elementwise `divide` by zero (pre-collapsed to 0 where `/` raises). Default
+# elementwise `divide` by zero (pre-collapsed to 0 where `/` raises). EIGS_STRICT=0
 # collapses to 0 + math_flags.invalid exactly as before (SM47-SM49 pin it).
-run "SM47 default pow(-8, 0.5) still 0"            unset 0 "0"  'print of (pow of [0 - 8, 0.5])'
-run "SM48 default num(\"nan\") still 0 + invalid"  unset 0 "0 1" \
+run "SM47 opt-out pow(-8, 0.5) still 0"            0 0 "0"  'print of (pow of [0 - 8, 0.5])'
+run "SM48 opt-out num(\"nan\") still 0 + invalid"  0 0 "0 1" \
 'local v is num of "nan"
 print of f"{v} {(math_flags of null).invalid}"'
-run "SM49a default matmul(inf-inf) LIST path still collapses to 0 + invalid" unset 0 "[0] 1" \
+run "SM49a opt-out matmul(inf-inf) LIST path still collapses to 0 + invalid" 0 0 "[0] 1" \
 'local r is matmul of [[[1e200, 1e200]], [[1e200], [0 - 1e200]]]
 print of f"{r} {(math_flags of null).invalid}"'
 # The BUFFER path is deliberately NOT collapsed with the flag off. The kernel
@@ -232,7 +250,7 @@ print of f"{r} {(math_flags of null).invalid}"'
 # carry a waiver in tools/strict_differential.sh to say so. The `null` read
 # is a real defect and is recorded in ROADMAP.md as its own change; SM49b
 # pins the CURRENT answer so that change cannot happen by accident.
-run "SM49b default matmul(inf-inf) BUFFER path is byte-identical to v0.43.0" unset 0 "null 0" \
+run "SM49b opt-out matmul(inf-inf) BUFFER path is byte-identical to v0.43.0" 0 0 "null 0" \
 'local m1 is buffer of [1, 2]
 m1[0] is 1e200
 m1[1] is 1e200
@@ -243,7 +261,7 @@ local r is matmul of [m1, m2]
 print of f"{r[0]} {(math_flags of null).invalid}"'
 # #1131: canonicalization must visit every NaN and preserve intervening
 # finite results. On ARM the kernel's invalid-operation NaNs are positive.
-run "SM49c default matmul buffer preserves each NaN sentinel and finite neighbor" unset 0 "null 2e+200 null 0" \
+run "SM49c opt-out matmul buffer preserves each NaN sentinel and finite neighbor" 0 0 "null 2e+200 null 0" \
 'local a is buffer of [1, 2]
 a[0] is 1e200
 a[1] is 1e200
@@ -296,7 +314,12 @@ print of (tensor_load of "/tmp/eigs_strict_nan_$$.tensor")'
 rm -f "/tmp/eigs_strict_nan_$$.tensor"
 # The interpreter and the JIT must agree: the JIT bails to the interpreter on
 # any non-finite result, so the raise comes from the same num_guard either way.
-run_jitoff "SM61 strict pow raises with the JIT off too" "pow: result is not a number" \
+run_jitoff "SM61 strict pow raises with the JIT off too" 1 1 "pow: result is not a number" \
+'print of (pow of [0 - 8, 0.5])'
+# #1361: both directions of the default with the JIT off as well.
+run_jitoff "SM61b default (unset) pow raises with the JIT off" unset 1 "pow: result is not a number" \
+'print of (pow of [0 - 8, 0.5])'
+run_jitoff "SM61c opt-out pow -> 0 with the JIT off" 0 0 "0" \
 'print of (pow of [0 - 8, 0.5])'
 
 # --- #971 Phase D: the -1 / falsy sentinel families (#1008) and the --sweep list
@@ -312,7 +335,7 @@ run "SM67 strict file_exists(num) raises"               1 1 "file_exists: expect
 # a plausible answer: `split of 42` -> [""], `buffer of "x"` -> an empty
 # buffer, `channel_closed of 42` -> 1 "closed", `f64_to_bytes of "x"` -> the
 # bytes of 0.0, `random_int of "x"` -> 0, `json_build of {..}` -> "{}").
-run "SM68 default split(num) still [\"\"]"              unset 0 '[""]' 'print of (split of 42)'
+run "SM68 opt-out split(num) still [\"\"]"              0 0 '[""]' 'print of (split of 42)'
 run "SM69 strict split(num) raises"                     1 1 "split: expected"       'print of (split of 42)'
 run "SM70 strict split with a non-string delimiter raises" 1 1 "split: expected a string delimiter" 'print of (split of ["a b", 42])'
 run "SM71 strict scan_ints(dict) raises"                1 1 "scan_ints: expected"   'print of (scan_ints of ({"k": 1}))'
@@ -337,8 +360,8 @@ run "SM84 strict: random_hex of 0 is still empty"       1 0 "[]" 'print of f"[{r
 run "SM85 strict scan_tokens(num) raises"               1 1 "scan_tokens: expected"     'print of (scan_tokens of 42)'
 run "SM86 strict scan_int_tokens(num) raises"           1 1 "scan_int_tokens: expected" 'print of (scan_int_tokens of 42)'
 # Flag-off pins: the wrong type still reads as "no tokens" -> an empty list.
-run "SM87 default scan_tokens(num) is still []"     unset 0 "[]" 'print of f"[{scan_tokens of 42}]"'
-run "SM88 default scan_int_tokens(num) is still []" unset 0 "[]" 'print of f"[{scan_int_tokens of 42}]"'
+run "SM87 opt-out scan_tokens(num) is still []"     0 0 "[]" 'print of f"[{scan_tokens of 42}]"'
+run "SM88 opt-out scan_int_tokens(num) is still []" 0 0 "[]" 'print of f"[{scan_int_tokens of 42}]"'
 
 # #1131: every f64 matmul rounds the product before adding it. These exact
 # binary64 operands give -1 + round((1 + 2^-27) * (1 - 2^-27)) = 0;

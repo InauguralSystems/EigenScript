@@ -73,7 +73,7 @@ o2 is run2 of (0 - 1)
 u2 is run2 of 50
 distinct2 is []
 for v2 in o2[1]:
-    if not (contains of [distinct2, v2]):
+    if not (list_contains of [distinct2, v2]):
         append of [distinct2, v2]
 assert_true of [(len of distinct2) >= 2, "P2 control: the stream is not one constant verdict"]
 assert_eq of [str of u2[1], str of o2[1], "P2 verdict stream identical with read 50 elided"]
