@@ -4200,7 +4200,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=49
+OBS_GATE_EXPECTED_CHECKS=50
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -5053,7 +5053,7 @@ SGR_FAIL=$(echo "$SGR_OUTPUT" | grep -c "^  FAIL:" || true)
 [ "$SGR_RC" -ne 0 ] && [ "$SGR_FAIL" -eq 0 ] && SGR_FAIL=1
 [ "$SGR_RC" -eq 0 ] && [ "$SGR_PASS" -lt 3 ] && { SGR_FAIL=$((SGR_FAIL + 1)); echo "  FAIL: spawn-gc-resume child ran only $SGR_PASS of 3 checks"; }
 TOTAL=$((TOTAL + SGR_PASS + SGR_FAIL)); PASS=$((PASS + SGR_PASS)); FAIL=$((FAIL + SGR_FAIL))
-if [ "$SGR_FAIL" -gt 0 ]; then echo "  FAIL: collector resume after join"; echo "$SGR_OUTPUT" | grep -E "FAIL:|peak RSS" | head -5; else echo "  PASS: all $SGR_PASS collector-resume checks ($(echo "$SGR_OUTPUT" | grep 'peak RSS' | sed 's/^ *//'))"; fi
+if [ "$SGR_FAIL" -gt 0 ]; then echo "  FAIL: collector resume after join"; echo "$SGR_OUTPUT" | grep -E "FAIL:|peak RSS|growth over" | head -5; else echo "  PASS: all $SGR_PASS collector-resume checks ($(echo "$SGR_OUTPUT" | grep 'growth over' | sed 's/^ *//'))"; fi
 echo ""
 
 # [102] Parallel shared-chunk execution correctness (#297). Workers spawned all

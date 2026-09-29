@@ -6,10 +6,14 @@
 # iterations; 117x at 300k).
 #
 # Peak RSS is read with getrusage(RUSAGE_CHILDREN) from a fresh python per
-# program, so each figure is that one child's high-water mark. Only RATIOS
-# are compared, so the unit (kB on Linux, bytes on macOS) cancels.
+# program, so each figure is that one child's high-water mark. Each is taken
+# as GROWTH over `base` (the same prologue, no loop): a sanitizer build's
+# fixed startup footprint (~85 MB under ASan) would otherwise compress every
+# ratio toward 1. Only ratios of growths are compared, so the unit (kB on
+# Linux, bytes on macOS) cancels.
 #
-#   control   the loop, no spawn                         -> baseline
+#   base      prologue only                              -> startup footprint
+#   control   the loop, no spawn                         -> reference growth
 #   joined    spawn + join, then the loop                -> must stay near it
 #   unjoined  a worker is parked on recv during the loop -> must NOT (the
 #             collector is correctly off while a worker lives; this is the
@@ -18,11 +22,18 @@
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="${EIGS:-$TESTS_DIR/../src/eigenscript}"
-# The joined run must stay within BOUND x control. Measured: 1.0x fixed,
-# 12x before the fix. The unjoined witness must exceed WITNESS x control.
+# The joined run's growth must stay within BOUND x the control's. Measured
+# (release): ~1x fixed, ~18x before the fix. The unjoined witness's growth
+# must exceed WITNESS x the control's.
 BOUND=3
 WITNESS=4
 N=${SPAWN_GC_N:-100000}
+# ASan's quarantine keeps freed blocks out of reuse (256 MB by default), so on
+# a sanitized build even a program whose cycles ARE collected grows by what it
+# freed: the control grew 55 MB and the live-worker witness only 3.7x that.
+# Disable it for these children (the caller's other options, detect_leaks
+# included, are kept); a no-op on an unsanitized build.
+export ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}quarantine_size_mb=0"
 PASS=0; FAIL=0
 pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
@@ -56,6 +67,7 @@ loop while i < $N:
     i is i + 1
 EOF
 }
+{ prologue; echo 'h is noop of 1'; echo 'print of "done"'; } > "$TMP/base.eigs"
 { prologue; echo 'h is noop of 1'; loop; echo 'print of "done"'; } > "$TMP/control.eigs"
 { prologue; printf 'h is spawn of [noop, 1]\nthread_join of h\n'; loop; echo 'print of "done"'; } > "$TMP/joined.eigs"
 { prologue; printf 'ch is channel of null\nh is spawn of [parked, ch]\n'; loop
@@ -70,22 +82,31 @@ print(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, 0 if ok else 1)
 EOF
 }
 
+read -r B_KB B_RC <<<"$(peak "$TMP/base.eigs")"
 read -r C_KB C_RC <<<"$(peak "$TMP/control.eigs")"
 read -r J_KB J_RC <<<"$(peak "$TMP/joined.eigs")"
 read -r U_KB U_RC <<<"$(peak "$TMP/unjoined.eigs")"
-echo "  peak RSS (N=$N): control=$C_KB joined=$J_KB unjoined=$U_KB"
-if [ "$C_RC$J_RC$U_RC" != "000" ] || [ "${C_KB:-0}" -le 0 ]; then
-    fail "a program failed to run to 'done' (rc control=$C_RC joined=$J_RC unjoined=$U_RC)"
+echo "  peak RSS (N=$N): base=$B_KB control=$C_KB joined=$J_KB unjoined=$U_KB"
+if [ "$B_RC$C_RC$J_RC$U_RC" != "0000" ] || [ "${B_KB:-0}" -le 0 ]; then
+    fail "a program failed to run to 'done' (rc base=$B_RC control=$C_RC joined=$J_RC unjoined=$U_RC)"
 else
-    if [ "$J_KB" -le $((C_KB * BOUND)) ]; then
-        pass "spawn+join then cycle loop peaks within ${BOUND}x the no-spawn control ($J_KB <= $C_KB x $BOUND)"
+    # Growth over the startup footprint. A collected loop grows ~nothing on
+    # a release build (its freed cycles are reused: 0 measured), so the
+    # control's growth is floored at a quarter of the startup footprint —
+    # scale-free, unit-free, and far below the ~110 MB a live worker (or the
+    # pre-fix join) costs at N=100k.
+    GC=$((C_KB - B_KB)); FLOOR=$((B_KB / 4)); [ "$GC" -ge "$FLOOR" ] || GC=$FLOOR
+    GJ=$((J_KB - B_KB)); GU=$((U_KB - B_KB))
+    echo "  growth over base: control=$GC joined=$GJ unjoined=$GU"
+    if [ "$GJ" -le $((GC * BOUND)) ]; then
+        pass "spawn+join then cycle loop grows within ${BOUND}x the no-spawn control ($GJ <= $GC x $BOUND)"
     else
-        fail "spawn+join then cycle loop peaks at $J_KB, over ${BOUND}x the control's $C_KB — the collector did not resume after the join"
+        fail "spawn+join then cycle loop grows $GJ, over ${BOUND}x the control's $GC — the collector did not resume after the join"
     fi
-    if [ "$U_KB" -gt $((C_KB * WITNESS)) ]; then
-        pass "witness: with a worker live during the loop the peak exceeds ${WITNESS}x ($U_KB > $C_KB x $WITNESS) — the measurement sees the leak"
+    if [ "$GU" -gt $((GC * WITNESS)) ]; then
+        pass "witness: with a worker live during the loop growth exceeds ${WITNESS}x ($GU > $GC x $WITNESS) — the measurement sees the leak"
     else
-        fail "witness: a live worker during the loop peaked at only $U_KB (want > $C_KB x $WITNESS) — the RSS measurement cannot see the regression it gates"
+        fail "witness: a live worker during the loop grew only $GU (want > $GC x $WITNESS) — the RSS measurement cannot see the regression it gates"
     fi
 fi
 
