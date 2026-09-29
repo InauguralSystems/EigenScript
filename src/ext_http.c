@@ -372,7 +372,24 @@ static int route_slot_is_callable(const Value *v) {
     return v && (v->type == VAL_FN || v->type == VAL_BUILTIN);
 }
 
-Value* builtin_http_route(Value *arg) {
+/* #1140: the route table and static root are frozen once http_serve starts.
+ * Workers read them lock-free, and a code route's worker points g_server at
+ * the SPAWNING server, so a registration from a code route used to write the
+ * live table (route_count++ with no fence, static_prefix swapped under
+ * readers). Refuse, the way http_response_header already does; every
+ * lock-free read then sees immutable data. `serving` is only written under
+ * response_mu, so it is read there too. */
+static int http_config_frozen(const char *who) {
+    pthread_mutex_lock(&g_server.response_mu);
+    int serving = g_server.serving;
+    pthread_mutex_unlock(&g_server.response_mu);
+    if (serving)
+        rt_error(EK_VALUE, 0, "%s: must register before http_serve (the route table "
+                              "and static root are frozen while serving)", who);
+    return serving;
+}
+
+static Value *http_route_register(Value *arg, int requires_auth) {
     /* #356: registration failures must raise — the return value is never
      * checked, so a silent make_null() means the route just never exists. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
@@ -439,19 +456,23 @@ Value* builtin_http_route(Value *arg) {
         }
     }
 
+    r->requires_auth = requires_auth;
     g_server.route_count++;
     return make_str("route registered");
 }
 
+Value* builtin_http_route(Value *arg) {
+    if (http_config_frozen("http_route")) return make_null();
+    return http_route_register(arg, 0);
+}
+
 Value* builtin_http_route_authed(Value *arg) {
-    Value *result = builtin_http_route(arg);
-    if (result && result->type == VAL_STR && strcmp(result->data.str, "route registered") == 0) {
-        g_server.routes[g_server.route_count - 1].requires_auth = 1;
-    }
-    return result;
+    if (http_config_frozen("http_route_authed")) return make_null();
+    return http_route_register(arg, 1);
 }
 
 Value* builtin_http_static(Value *arg) {
+    if (http_config_frozen("http_static")) return make_null();
     if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     char *prefix = value_to_string(arg->data.list.items[0]);
     char *dir = value_to_string(arg->data.list.items[1]);
@@ -1647,6 +1668,23 @@ static void handle_request(int fd) {
                 EigsChunk *req_chunk = compile_ast(ast, req_env, r->payload);
                 Value *result = vm_execute(req_chunk, req_env);
                 chunk_free(req_chunk);
+                if ((g_has_error && !g_exit_requested) || g_parse_errors) {
+                    /* #1140: an uncaught error in the route source is a 500,
+                     * not `200 null`. The body is generic: the error text can
+                     * carry paths, connection details or interpolated values,
+                     * and any caller (unauthenticated on http_route) would
+                     * read it. The detail stays on the server's stderr. An
+                     * `exit` in the route is an unwind, not an error, so it
+                     * keeps its old answer. */
+                    static const char body500[] = "{\"error\": \"internal error\"}";
+                    send_response(fd, 500, "Internal Server Error", "application/json",
+                                  body500, (long)(sizeof body500 - 1));
+                    env_decref(req_env);
+                    free_tokenlist(&tl);
+                    free_ast(ast);
+                    if (result) val_decref(result);
+                    goto done;
+                }
                 char *result_str = value_to_string(result);
                 env_decref(req_env);
 

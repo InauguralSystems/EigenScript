@@ -950,6 +950,40 @@ INVALID = [
 ]
 
 
+# #1140: the route table and static root are frozen once http_serve starts. A
+# code route runs on a worker whose g_server is the SPAWNING server, so each of
+# these used to write the live table while other workers read it lock-free:
+# one request to /mut-http_route made /injected answer 200 for the whole
+# process. Each builtin must now refuse loudly (a generic 500; the server log names it), and nothing it
+# tried to register may be visible afterwards.
+FROZEN_ROWS = [
+    ('http_route', '/mut-route', r'http_route of [\"GET\", \"/injected\", \"INJECTED\"]', '/injected'),
+    ('http_route_authed', '/mut-authed', r'http_route_authed of [\"GET\", \"/injected-authed\", \"INJECTED\"]', '/injected-authed'),
+    ('http_static', '/mut-static', r'http_static of [\"/elsewhere\", \"/etc\"]', '/elsewhere/hostname'),
+]
+
+
+def frozen_config_cases(directory):
+    extra = ''.join(f'http_route of ["GET", "{path}", "code", "{src}\\n\\"mutated\\""]\n'
+                    for _b, path, src, _probe in FROZEN_ROWS)
+    with server(directory, delay=.05, extra=extra) as (port, proc, log):
+        wait_ready(lambda: 'accepting on pre-bound' in log.read_text(), proc)
+        def one(row):
+            builtin, path, _src, probe = row
+            def check():
+                got = curl(port, 'GET', path, directory)
+                want = f'{builtin}: must register before http_serve'.encode()
+                require(got.status == 500, f'{path}: {builtin} from a code route answered {got.status} {got.body[:120]!r}, want 500')
+                require(got.body == b'{"error": "internal error"}', f'{path}: 500 body is not the generic one (error text must not reach the client): {got.body[:160]!r}')
+                require(want.decode() in log.read_text(errors='replace'), f'{path}: the server log does not name {builtin}')
+                after = curl(port, 'GET', probe, directory)
+                require(after.status == 404, f'{probe} answers {after.status} after {builtin} ran in a code route: the live config was mutated')
+                page = curl(port, 'GET', '/static/asset.txt', directory)
+                require(page.status == 200 and page.body == b'real-asset\n', f'static root changed after {builtin}: {page.status} {page.body[:60]!r}')
+            run_check('R5-frozen-' + builtin, check)
+        for_each_holder(FROZEN_ROWS, one, 'frozen-config rows')
+
+
 def check_rejection(rc, output, listening, builtin, rule):
     require(rc is not None and rc > 0, f'script did not die loudly rc={rc}')
     require(builtin in output and rule in output, f'diagnostic must name {builtin} and {rule}: {output[-300:]}')
@@ -1376,6 +1410,7 @@ def main():
             require(len(max_header_rows('init')) > 0, 'max-headers-init: empty population')
             require(len(max_header_rows('ready')) > 0, 'max-headers-ready: empty population')
             require_population(lambda: invalid_cases(directory))
+            require_population(lambda: frozen_config_cases(directory))
             run_check('SETUP-and-response-matrix', lambda: require_population(lambda: live_cases(directory)))
     return finish(PASS, FAIL, 'HTTP_READINESS_SELFTEST' if '--selftest' in sys.argv else 'HTTP_READINESS')
 
