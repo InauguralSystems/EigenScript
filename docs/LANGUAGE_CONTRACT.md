@@ -136,9 +136,12 @@ examples (executed by the suite).
 
 **Promise:**
 - One numeric type: IEEE-754 double. Integers are exact up to 2^53.
-- Finite by construction: no NaN, no Infinity. NaN-producing operations
-  return 0; overflow saturates at ±1e308; division by zero warns and
-  yields 0.
+- No NaN, no Infinity reaches a program. By default a NaN-producing
+  operation, an out-of-domain argument or a wrong-typed argument raises a
+  catchable error (strict is the default, #1361); division by zero raises
+  in every mode. Overflow saturates at ±1e308. Under the per-run opt-out
+  `EIGS_STRICT=0` the arithmetic is finite by construction instead: a NaN
+  collapses to 0 and domain functions substitute a stand-in.
 - **Every clamp is recorded.** The finite invariant keeps a program
   running, but it keeps it running with a plausible number, so the
   clamps are readable as sticky status flags — IEEE-754's own model

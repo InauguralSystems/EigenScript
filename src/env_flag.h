@@ -12,12 +12,14 @@
  * decision, so do not re-derive the test inline.
  *
  * #1361: a flag whose DEFAULT is on (EIGS_STRICT) reads through the same
- * rule with dflt = 1: unset or empty takes the default, a value starting
- * with "0" turns it off, any other value turns it on. */
+ * rule with dflt = 1: unset or empty takes the default, exactly "0" turns
+ * it off, any other value turns it on. */
 static inline int eigs_env_flag_default(const char *name, int dflt) {
     const char *s = getenv(name);
     if (!s || !s[0]) return dflt;
-    return s[0] != '0';
+    /* Exactly "0" is off. Testing only s[0] also read "01"/"00"/"0x" as off,
+     * which the rule above never said (#1361 critic round 1). */
+    return !(s[0] == '0' && s[1] == '\0');
 }
 
 static inline int eigs_env_flag(const char *name) {

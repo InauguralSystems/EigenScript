@@ -42,7 +42,7 @@ In strict mode, the default, an out-of-domain call or a `NaN` result raises:
 (docs/SPEC.md, *Strict mode*). Under `EIGS_STRICT=0` they give the finite
 stand-ins `0`, `1.5708` and `0` instead.
 
-Exact division or modulo by zero emits a warning and returns `0`. Results
+Division or modulo by zero raises (`division by zero`, `modulo by zero`) in every mode. Results
 that would overflow to infinity saturate at `+/-1e308`; under `EIGS_STRICT=0`,
 `NaN` collapses to `0` and domain-limited functions clamp inputs where
 appropriate.

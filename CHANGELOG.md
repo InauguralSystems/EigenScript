@@ -79,7 +79,12 @@ All notable changes to EigenScript are documented here.
   previous release). A state made through the embed API (`eigs_open`,
   `eigs_state_new`) reads the same variable at creation, so embedders get the
   same default; there is no per-state setter. The freestanding profile's
-  `getenv` answers nothing, so EigenOS states are strict with no opt-out.
+  `getenv` answers nothing, so EigenOS states are strict with no opt-out. (#1394).
+- **A boolean `EIGS_*` flag is off only when it is exactly `0` (#1361).** The
+  reader tested the first character, so `EIGS_STRICT=01` or `EIGS_JIT_OFF=00`
+  read as `0`. That contradicted the documented rule (#1032: any non-empty value
+  other than `0` is on). Now only `0` itself, or an empty or unset variable,
+  takes the off/default branch.
 
 - **A missing comma between parameters is a parse error (#1254).**
   `define sub(a b)`, `define sub(a is 7 b is 2)` and `(a b) => a - b` used to

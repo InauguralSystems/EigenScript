@@ -103,6 +103,8 @@ run "SM03 default (unset) sqrt(-1) raises" unset 1 "sqrt: argument out of domain
 run "SM03a default (unset) asin(5) raises" unset 1 "asin: argument out of domain" 'print of (asin of 5)'
 run "SM03b EIGS_STRICT= (empty) is strict" "" 1 "sqrt: argument out of domain" 'print of (sqrt of -1)'
 run "SM03c EIGS_STRICT=yes is strict" yes 1 "sqrt: argument out of domain"   'print of (sqrt of -1)'
+run "SM03h EIGS_STRICT=01 is strict (only exactly 0 is off)" 01 1 "sqrt: argument out of domain" 'print of (sqrt of -1)'
+run "SM03i EIGS_STRICT=00 is strict (only exactly 0 is off)" 00 1 "sqrt: argument out of domain" 'print of (sqrt of -1)'
 run "SM03d default (unset) abs(str) raises"   unset 1 "abs: expected a number" 'print of (abs of "x")'
 run "SM03e default (unset) abs(list) raises"  unset 1 "abs: expected a number" 'print of (abs of ([-3, 7]))'
 run "SM03f default (unset) floor(list) raises" unset 1 "floor: expected a number" 'print of (floor of [1.5, 2.5])'
