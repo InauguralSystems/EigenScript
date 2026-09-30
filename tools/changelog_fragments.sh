@@ -30,7 +30,7 @@ assemble() {   # <root> <version> <date>: the whole cut, on <root> (the real tre
         names=$(cd "$r/changes/$c" && ls -A | LC_ALL=C sort -t- -k1,1n -k2)   # issue number (numeric), then slug
         for f in $names; do
             [[ $f =~ $NAME ]] && shape "$r/changes/$c/$f" || { echo "changelog: bad fragment changes/$c/$f"; rm -rf "$sec"; return 1; }
-            [ "$c" = internal ] || cat "$r/changes/$c/$f" >> "$sec/$c"
+            [ "$c" = internal ] || { echo; cat "$r/changes/$c/$f"; } >> "$sec/$c"   # blank line, then the entry, as in the existing blocks
         done
     done
     for c in $CATS; do echo "$c|$(heading "$c")"; done > "$sec/titles"
@@ -49,7 +49,7 @@ assemble() {   # <root> <version> <date>: the whole cut, on <root> (the real tre
                 txt = ""; f = dir "/" C[k]; while ((getline l < f) > 0) txt = txt l "\n"; close(f)
                 if (txt == "") continue
                 hi = 0; for (i = u + 1; i < e; i++) if (L[i] == "### " title[C[k]]) hi = i
-                if (!hi) { tail = tail "\n### " title[C[k]] "\n\n" txt; continue }
+                if (!hi) { tail = tail "\n### " title[C[k]] "\n" txt; continue }
                 p = hi; for (i = hi + 1; i < e && L[i] !~ /^### /; i++) if (L[i] != "") p = i
                 ins[p] = ins[p] txt
             }
@@ -74,13 +74,14 @@ reproduces() {   # <merge-base>: is the working CHANGELOG.md exactly what the cu
 }
 
 check() {
-    local base=${1:-origin/main} mb t st p c f left n=0 src=0 add=0 chlog=0 ver=0 cut=0 bad=0
+    local base=${1:-origin/main} mb t st p c f left n=0 extra=0 src=0 add=0 chlog=0 ver=0 cut=0 bad=0
     mb=$(git merge-base "$base" HEAD) || die "no merge-base with $base (git fetch origin main)"
     t=$(mktemp -d) || die "mktemp"; trap "rm -rf '$t'" EXIT
     git diff -z --no-renames --name-status "$mb" > "$t/l" || die "git diff $mb failed"
     git ls-files -z --others --exclude-standard | while IFS= read -r -d '' p; do printf 'A\0%s\0' "$p"; done >> "$t/l"
     while IFS= read -r -d '' st && IFS= read -r -d '' p; do
         n=$((n + 1))
+        case $p in CHANGELOG.md|VERSION) ;; changes/*) [ "$st" = D ] || extra=$((extra + 1)) ;; *) extra=$((extra + 1)) ;; esac   # what a cut PR may not carry
         case $p in
             CHANGELOG.md) chlog=1 ;;
             VERSION) ver=1 ;;
@@ -98,7 +99,9 @@ check() {
     done < "$t/l"
     left=$(find changes -mindepth 2 -type f 2>/dev/null | wc -l)
     if [ $ver = 1 ]; then   # a cut consumed every fragment, and CHANGELOG.md is exactly what the cut makes of the base tree
-        if [ $chlog = 1 ] && [ "$left" = 0 ] && reproduces "$mb"; then cut=1
+        if [ $chlog = 1 ] && [ "$left" = 0 ] && reproduces "$mb"; then
+            cut=1
+            [ "$extra" = 0 ] || { echo "FAIL a release cut PR carries only the cut; land other changes in their own PR ($extra other changed path(s))"; bad=1; }
         else echo "FAIL VERSION changed but this is not a valid release cut ($left fragment(s) still in changes/): this looks like a release cut that is stale. Re-run tools/changelog_fragments.sh cut <version> <date> on the current main. CHANGELOG.md is never edited by hand"; bad=1
         fi
     elif [ $chlog = 1 ]; then
