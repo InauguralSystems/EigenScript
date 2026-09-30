@@ -23,7 +23,10 @@ fi
 # #1372: a label carries no hand-typed check count. "[88] LSP Behavioral (80
 # checks)" ran 148; a count typed into a label drifts on every added test, and
 # the section's own PASS line already prints the real one.
-counted=$(grep -nE '^[[:space:]]*echo "\[[^]"]+\][^"]*[^0-9][0-9]+ (checks?|tests?)([^a-z]|$)' "$RUNNER")
+# A count is a number standing alone (after a space, "(" or ","), then up to
+# three words, then check(s)/test(s)/case(s), in any case: "(148 LSP checks)"
+# is one; "UTF-8 tests", "IPv4 tests" and "SHA-256 checks" are names.
+counted=$(grep -niE '^[[:space:]]*echo "\[[^]"]+\][^"]*[(, ][0-9]+( [a-z][a-z0-9-]*){0,3} (checks?|tests?|cases?)([^a-z]|$)' "$RUNNER")
 if [ -n "$counted" ]; then
   printf 'FAIL: section label carries a hand-typed count (#1372):\n%s\n' "$counted"; exit 1
 fi
