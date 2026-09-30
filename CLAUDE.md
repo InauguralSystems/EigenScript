@@ -111,6 +111,12 @@ Always-on:
   (`call passes 3 arguments but the callee takes 2`) — W022
   flags it for same-file callees. (More `.eigs`-writing gotchas:
   the `write-eigenscript` skill.)
+- **A `src/` or `lib/` change adds a changelog fragment and never edits
+  `CHANGELOG.md`** (#1268): `changes/<category>/<issue>-<slug>.md` holds the
+  entry text (`changes/internal/` when it needs none; `changes/README.md`).
+  Every PR used to insert at the top of `[Unreleased]`, so concurrent PRs
+  conflicted there. `tools/changelog_fragments.sh check` (a `make precheck`
+  row) fails a change with no fragment and a direct `CHANGELOG.md` edit.
 - **A semantics change must update `docs/SPEC.md`, `docs/COMPARISON.md`,
   `README.md` and `docs/llms.txt` in the same PR** — the last two are the
   front doors (a human's and an agent's), and they used to drift silently
@@ -141,13 +147,14 @@ Always-on:
   has written correct programs from it alone (#734). Resolve "does
   function X exist" with `eigenscript --api` (or `--api --json`) — the
   full builtin/extension/lib surface index in one call.
-- **Cutting a release** (tag/dispatch path, CHANGELOG.md, the tap)? →
+- **Cutting a release** (tag/dispatch path, the changelog cut, the tap)? →
   the **`release`** skill.
 
 ## Current state & where the detail lives
 
 - **Release history:** see **CHANGELOG.md** and `git tag` for published
-  versions; `[Unreleased]` records work on `main`. Roadmap: **ROADMAP.md**.
+  versions; work on `main` is the fragments in `changes/` (plus older entries
+  still under `[Unreleased]`, which the next cut carries over unchanged). Roadmap: **ROADMAP.md**.
 - **Design phase:** the VM tier is the deliberate correctness-first phase —
   its malleability keeps semantics cheap to change; the native path is the
   **AOT compiler in the sibling `ouroboros` repo** (the VM is its byte-exact

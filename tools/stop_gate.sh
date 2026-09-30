@@ -23,17 +23,17 @@ if ! ./src/eigenscript tests/test_hex_literals.eigs >>"$LOG" 2>&1; then
 fi
 
 # Doc-delta check: a change to the semantics surface or stdlib with NO
-# movement in CHANGELOG/docs is either missing its documentation or is
+# movement in changes/docs is either missing its documentation or is
 # doc-neutral — and doc-neutrality must be DECLARED, not defaulted
 # (touch /tmp/eigs_doc_neutral; consumed per stop, like the abort flag).
 SEMSURF="src/lexer.c src/parser.c src/builtins.c src/vm.c src/compiler.c src/vm.h src/eigs_embed.h src/eigs_embed.c lib"
 if ! git diff --quiet HEAD -- $SEMSURF 2>/dev/null; then
-    if git diff --quiet HEAD -- CHANGELOG.md docs 2>/dev/null; then
+    if git diff --quiet HEAD -- changes docs 2>/dev/null && [ -z "$(git ls-files --others --exclude-standard -- changes)" ]; then
         if [ -f /tmp/eigs_doc_neutral ]; then
             rm -f /tmp/eigs_doc_neutral
         else
-            { echo "STOP GATE: semantics-surface/lib changed with NO CHANGELOG/docs delta."
-              echo "Update CHANGELOG [Unreleased] (+ SPEC/COMPARISON if semantics moved,"
+            { echo "STOP GATE: semantics-surface/lib changed with NO changes/docs delta."
+              echo "Add a changes/<category>/<issue>-<slug>.md fragment (+ SPEC/COMPARISON if semantics moved,"
               echo "STDLIB.md for lib modules), or declare the change doc-neutral:"
               echo "  touch /tmp/eigs_doc_neutral    (consumed by this stop)"; } >&2
             exit 2

@@ -33,6 +33,7 @@ run|tools/vm_operand_width_check.sh
 run|tools/stdlib_index_check.sh
 run|tools/codspeed_targets_check.sh
 run|tools/gfx_guard_order_check.sh
+run|tools/changelog_fragments.sh check origin/main
 bin|tools/portability_parse_check.sh
 selftest|tools/selftests.sh --changed origin/main"
 

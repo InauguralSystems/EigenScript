@@ -30,7 +30,12 @@ Building needs only `gcc`. Running the test suite also needs `python3` with PyYA
    A selected section that skips on your build (an extension such as HTTP or
    gfx that `make` leaves out) is listed as NOT RUN LOCALLY after the results.
    A change to the suite runner's shared preamble selects the whole suite.
-6. Open a pull request
+6. If you changed `src/` or `lib/`, add a changelog fragment: one file
+   `changes/<category>/<issue>-<slug>.md` holding the entry text, or
+   `changes/internal/<issue>-<slug>.md` if it needs no entry. Do not edit
+   `CHANGELOG.md`; the release cut assembles it from the fragments. The
+   precheck fails without one. See `changes/README.md`.
+7. Open a pull request
 
 The complete suite (`make test`) takes much longer than that and is not a
 required local step: CI runs it on every PR and again in the merge queue.
