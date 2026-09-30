@@ -1,11 +1,16 @@
-# #1424 uncaught, inside a function frame: the raise is `/` on line 9, after
-# zero (lines 5-7) returned; the module frame is the call on line 11.
-# Pre-fix: "Error line 7" and "at outer (line 7)".
+# #1424 uncaught, inside a function frame, hot: `outer` and `dec` are
+# JIT-compiled after 6001 calls from a module loop, and `/` on line 11 raises
+# on the last call; the module frame is the call on line 15.
+# Pre-fix: "Error line 8" and "at outer (line 8)".
 # LINE-NUMBER SENSITIVE (the [0g] runner section greps these numbers).
-define zero(x) as:
-    y is x - x
+define dec(x) as:
+    y is x - 1
     return y
 define outer(x) as:
-    r is 1 / (zero of x)
+    q is x + 1
+    r is 1 / (dec of x)
     return r
-w is outer of 4
+k is 6001
+loop while k > 0:
+    w is outer of k
+    k is k - 1

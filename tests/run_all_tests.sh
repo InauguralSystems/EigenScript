@@ -656,23 +656,32 @@ check_binary_fingerprint
 # Pre-fix every e.line row in test_line_after_return.eigs and both uncaught
 # headers named a line inside the callee (CASE(RETURN) and the JIT return
 # helpers left the callee's current_line in place). Each tier is its own row:
-# default JIT, interpreter, forced OSR. On x86_64 the JIT arms must also show
-# compiled thunks, or they measured the interpreter twice.
+# default JIT, interpreter, forced OSR. All three programs are hot (6001 calls
+# or iterations, past the JIT entry and OSR thresholds; the fixtures return
+# through RETURN and, in line_after_return_null, RETURN_NULL, since only the
+# last return before a raise decides its line), and on x86_64 EVERY
+# JIT/OSR row must show compiled thunks (lar_jit_witness, the one predicate):
+# a row that compiled nothing measured the interpreter and FAILS by name.
+lar_jit_witness() {   # lar_jit_witness <tier> <output>: prints ok | none
+    if [ "$1" = "EIGS_JIT_OFF=1" ] || [ "$(uname -m)" != x86_64 ] ||
+       grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]' <<< "$2"; then echo ok; else echo none; fi
+}
 for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
     LAR_ENV="EIGS_JIT_STATS=1"; [ "$LAR_TIER" = JIT ] || LAR_ENV="$LAR_ENV $LAR_TIER"
     LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript ../tests/test_line_after_return.eigs </dev/null 2>&1); LAR_RC=$?
     TOTAL=$((TOTAL + 1))
-    LAR_JIT_OK=1
-    if [ "$LAR_TIER" != "EIGS_JIT_OFF=1" ] && [ "$(uname -m)" = x86_64 ] &&
-       ! grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]' <<< "$LAR_OUT"; then LAR_JIT_OK=0; fi
-    if rc_ok "$LAR_RC" "$LAR_OUT" && grep -q "All tests passed" <<< "$LAR_OUT" && [ "$LAR_JIT_OK" -eq 1 ]; then
+    LAR_JIT=$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")
+    if [ "$LAR_JIT" != ok ]; then
+        FAIL=$((FAIL + 1)); echo "  FAIL: e.line after a return ($LAR_TIER): compiled nothing, so it measured the interpreter"
+    elif rc_ok "$LAR_RC" "$LAR_OUT" && grep -q "All tests passed" <<< "$LAR_OUT"; then
         PASS=$((PASS + 1)); echo "  PASS: e.line after a return ($LAR_TIER)"
     else
-        FAIL=$((FAIL + 1)); echo "  FAIL: e.line after a return ($LAR_TIER, rc=$LAR_RC, jit-witness=$LAR_JIT_OK)"
+        FAIL=$((FAIL + 1)); echo "  FAIL: e.line after a return ($LAR_TIER, rc=$LAR_RC)"
         printf '%s\n' "$LAR_OUT" | eigs_failure_output
     fi
-    for LAR_FX in "line_after_return_module.eigs:Error line 7:|  at <module> (line 7)" \
-                  "line_after_return_fn.eigs:Error line 9:|  at outer (line 9)|  at <module> (line 11)"; do
+    for LAR_FX in "line_after_return_module.eigs:Error line 10:|  at <module> (line 10)" \
+                  "line_after_return_fn.eigs:Error line 11:|  at outer (line 11)|  at <module> (line 15)" \
+                  "line_after_return_null.eigs:Error line 13:|  at hot_null (line 13)|  at <module> (line 20)"; do
         LAR_FILE=${LAR_FX%%:*}; LAR_WANT=${LAR_FX#*:}
         LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript "../tests/$LAR_FILE" </dev/null 2>&1); LAR_RC=$?
         LAR_MISS=""
@@ -682,7 +691,10 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
             grep -qxF -- "$LAR_LINE" <<< "$(printf '%s\n' "$LAR_OUT" | sed 's/: .*/:/')" || LAR_MISS="$LAR_MISS [$LAR_LINE]"
         done
         TOTAL=$((TOTAL + 1))
-        if [ "$LAR_RC" -eq 1 ] && [ -z "$LAR_MISS" ]; then
+        LAR_JIT=$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")
+        if [ "$LAR_JIT" != ok ]; then
+            FAIL=$((FAIL + 1)); echo "  FAIL: $LAR_FILE ($LAR_TIER): compiled nothing, so it measured the interpreter"
+        elif [ "$LAR_RC" -eq 1 ] && [ -z "$LAR_MISS" ]; then
             PASS=$((PASS + 1)); echo "  PASS: uncaught header + traceback lines, $LAR_FILE ($LAR_TIER)"
         else
             FAIL=$((FAIL + 1)); echo "  FAIL: $LAR_FILE ($LAR_TIER, rc=$LAR_RC) missing:$LAR_MISS"

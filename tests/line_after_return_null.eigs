@@ -1,0 +1,20 @@
+# #1424 uncaught, RETURN_NULL: `nothing` falls off its end (RETURN_NULL) and
+# `hot_null` is warmed with a non-null callee, so both are JIT-compiled before
+# the last call, where `/` on line 13 divides by nothing's null; the module
+# frame is the call on line 20. Exercises jit_helper_return_null.
+# LINE-NUMBER SENSITIVE (the [0g] runner section greps these numbers).
+define nothing(x) as:
+    y is x
+define one(x) as:
+    y is x
+    return 1
+define hot_null(g, x) as:
+    q is x + 1
+    r is x / (g of x)
+    return r
+k is 0
+loop while k < 6000:
+    w is nothing of k
+    w is hot_null of [one, k]
+    k is k + 1
+w is hot_null of [nothing, 4]
