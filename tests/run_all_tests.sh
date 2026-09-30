@@ -5485,6 +5485,10 @@ fi
 echo ""
 
 # [80] Formatter (--fmt) — exercises fmt.c, which had zero suite coverage.
+# CI-only for .eigs edits (#1349): it round-trips every tests/, lib/ and
+# examples/ program, but `make test-changed` selects it for none of them except
+# examples/hello.eigs, which it names; two critics could not make it red from
+# such an edit.
 echo "[80] Formatter (14 checks)"
 FMT_OUTPUT=$(bash "$TESTS_DIR/test_fmt.sh" </dev/null 2>&1)
 FMT_PASS=$(echo "$FMT_OUTPUT" | grep -c "PASS:" || true)
