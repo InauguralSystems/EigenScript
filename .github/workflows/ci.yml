@@ -226,15 +226,19 @@ jobs:
         name: Contributor precheck (tools/precheck.sh)
         # The base-relative rows diff against the candidate's base: in the merge queue that is
         # merge_group.base_sha (main + the PRs queued ahead), not main's tip. Read from the event
-        # payload inside the script, never via ${{ }} (tier gate rule).
+        # payload inside the script, never via ${{ }} (tier gate rule). python3, not jq: this job
+        # runs in the dev image, which has no jq.
         run: |
           base=origin/main
+          ev() { python3 -c 'import json,os,sys; d=json.load(open(os.environ["GITHUB_EVENT_PATH"]))
+          for k in sys.argv[1:]: d=(d or {}).get(k)
+          print(d or "")' "$@"; }
           if [ "$GITHUB_EVENT_NAME" = merge_group ]; then
-            base=$(jq -r '.merge_group.base_sha' "$GITHUB_EVENT_PATH")
-            [ -n "$base" ] && [ "$base" != null ] || { echo "merge_group event without base_sha"; exit 1; }
+            base=$(ev merge_group base_sha)
+            [ -n "$base" ] || { echo "merge_group event without base_sha"; exit 1; }
           elif [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            base=$(jq -r '.pull_request.base.sha' "$GITHUB_EVENT_PATH")
-            [ -n "$base" ] && [ "$base" != null ] || { echo "pull_request event without base sha"; exit 1; }
+            base=$(ev pull_request base sha)
+            [ -n "$base" ] || { echo "pull_request event without base sha"; exit 1; }
           fi
           PRECHECK_BASE=$base PRECHECK_SELFTESTS=0 bash tools/precheck.sh
       - if: needs.scope.outputs.code == 'true'
