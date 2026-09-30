@@ -20,6 +20,13 @@ n=$(grep -cE '^[[:space:]]*echo "\[[^]"]+\]' "$RUNNER")
 if [ "$n" -lt "$MIN_LABELS" ]; then
   echo "FAIL: suite_label_check found only $n labelled echo lines (< $MIN_LABELS) -- the scan is vacuous"; exit 1
 fi
+# #1372: a label carries no hand-typed check count. "[88] LSP Behavioral (80
+# checks)" ran 148; a count typed into a label drifts on every added test, and
+# the section's own PASS line already prints the real one.
+counted=$(grep -nE '^[[:space:]]*echo "\[[^]"]+\][^"]*[^0-9][0-9]+ (checks?|tests?)([^a-z]|$)' "$RUNNER")
+if [ -n "$counted" ]; then
+  printf 'FAIL: section label carries a hand-typed count (#1372):\n%s\n' "$counted"; exit 1
+fi
 grep -nE '^[[:space:]]*echo "\[[^]"]+\]' "$RUNNER" \
   | sed -E 's/^([0-9]+):[[:space:]]*echo "\[([^]"]+)\](.*)$/\2\t\1\t\3/' \
   | sort -t$'\t' -k1,1 -k2,2n \

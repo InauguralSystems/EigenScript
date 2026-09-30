@@ -321,7 +321,7 @@ rc_ok() {
 #
 # The second half of the bar — "a section that executes zero checks must not
 # report itself as passing" — is NOT covered by exit status: a child can exit
-# 0 having done nothing, and `[42] CLI & REPL (15 checks)` then prints
+# 0 having done nothing, and `[42] CLI & REPL` then prints
 # "PASS: all 0 CLI checks" and contributes 0 to TOTAL, so even the RESULTS
 # line looks untouched. For the `test_*.sh` population (46 of 48 follow the
 # marker convention) the child's output is therefore captured and a run with
@@ -951,7 +951,7 @@ check "RA5 equilibrium predicate" "$RA5_E" "1"   # #861: balanced jitter, NOT co
 check "RA5 report=equilibrium" "$RA5_R" "equilibrium"
 echo ""
 
-echo "[6/15] Halting: Runaway Loop Contract (4 checks, #861)"
+echo "[6/15] Halting: Runaway Loop Contract (#861)"
 HD_OUTPUT=$(./eigenscript ../tests/test_halting_descent.eigs 2>&1)
 
 # #861: the runaway loop's honest contract — the stall backstop ends it
@@ -984,7 +984,7 @@ else
 fi
 echo ""
 
-echo "[7/15] Halting: Settled Constant (5 checks, #861)"
+echo "[7/15] Halting: Settled Constant (#861)"
 HS_OUTPUT=$(./eigenscript ../tests/test_halting_stall.eigs 2>&1)
 
 HS_CONV=$(echo "$HS_OUTPUT" | grep -A1 'HS1:' | tail -1)
@@ -1010,7 +1010,7 @@ HS_REPORT=$(echo "$HS_OUTPUT" | grep -A3 'HS2:' | tail -1)
 check "HS5 report=converged (#861)" "$HS_REPORT" "converged"
 echo ""
 
-echo "[8/15] Stable Band (4 checks)"
+echo "[8/15] Stable Band"
 SB_OUTPUT=$(./eigenscript ../tests/test_stable_band.eigs 2>&1)
 
 SB1_S=$(echo "$SB_OUTPUT" | grep -A1 'SB1:' | tail -1)
@@ -1026,7 +1026,7 @@ SB2_R=$(echo "$SB_OUTPUT" | grep -A2 'SB2:' | tail -1)
 check "SB2 report=converged" "$SB2_R" "converged"
 echo ""
 
-echo "[8b] Windowed Converged (5 checks)"
+echo "[8b] Windowed Converged"
 WC_OUTPUT=$(./eigenscript ../tests/test_windowed_converged.eigs 2>&1)
 WC1=$(echo "$WC_OUTPUT" | grep -A1 'WC1:' | tail -1)
 check "WC1 short trajectory cannot converge" "$WC1" "0"
@@ -1040,39 +1040,39 @@ WC5=$(echo "$WC_OUTPUT" | grep -A1 'WC5:' | tail -1)
 check "WC5 rebind-from-temp loop converges (issue #260)" "$WC5" "converged=1 equilibrium=1"
 echo ""
 
-echo "[8c] Predicate Matrix (15 checks)"
+echo "[8c] Predicate Matrix"
 check_eigs_suite "predicate family matrix: mutual-exclusion + co-fire edges + threshold knob + newton sqrt" \
     "test_predicate_matrix.eigs" "PREDICATE_MATRIX_ALL_PASS" 15
 echo ""
 
-echo "[8d] Windowed Improving (8 checks)"
+echo "[8d] Windowed Improving"
 check_eigs_suite "windowed improving: net-descent + proportional vote + gray-band/sub-majority/partial-window" \
     "test_windowed_improving.eigs" "WINDOWED_IMPROVING_ALL_PASS" 8
 echo ""
 
-echo "[8e] Windowed Diverging (8 checks)"
+echo "[8e] Windowed Diverging"
 check_eigs_suite "windowed diverging: net-ascent + proportional vote + gray-band/sub-majority/partial-window" \
     "test_windowed_diverging.eigs" "WINDOWED_DIVERGING_ALL_PASS" 8
 echo ""
 
-echo "[8f] Windowed Oscillating (8 checks)"
+echo "[8f] Windowed Oscillating"
 check_eigs_suite "windowed oscillating: flip-count threshold + dh_zero deadband + single-reversal/partial-window" \
     "test_windowed_oscillating.eigs" "WINDOWED_OSCILLATING_ALL_PASS" 8
 echo ""
 
-echo "[8g] Windowed Stable (8 checks)"
+echo "[8g] Windowed Stable"
 check_eigs_suite "windowed stable: full-window small-motion + entropy floor + no-flips + h_low boundary" \
     "test_windowed_stable.eigs" "WINDOWED_STABLE_ALL_PASS" 8
 echo ""
 
-echo "[8h] Windowed Equilibrium (8 checks)"
+echo "[8h] Windowed Equilibrium"
 check_eigs_suite "windowed equilibrium: full-window zero-mean low-variance + mean/variance gates + partial-window" \
     "test_windowed_equilibrium.eigs" "WINDOWED_EQUILIBRIUM_ALL_PASS" 8
 check_eigs_suite "named observer predicates: <pred> of x binds the named slot, not the last-observed alias" \
     "test_named_predicates.eigs" "All tests passed" 7
 echo ""
 
-echo "[9/15] Assert (3 checks)"
+echo "[9/15] Assert"
 check_binary_fingerprint
 AS_OUTPUT=$(./eigenscript ../tests/test_assert.eigs 2>&1)
 check "AS1 assert true passes" "$(echo "$AS_OUTPUT" | grep 'pass1')" "pass1"
@@ -1088,7 +1088,7 @@ else
 fi
 echo ""
 
-echo "[10/15] Observe Snapshot (3 checks)"
+echo "[10/15] Observe Snapshot"
 OB_OUTPUT=$(./eigenscript ../tests/test_observe.eigs 2>&1)
 
 OB1_TYPE=$(echo "$OB_OUTPUT" | grep -A1 'OB1:' | tail -1)
@@ -1115,7 +1115,7 @@ else
 fi
 echo ""
 
-echo "[11/15] Loop Exit Reason (3 checks)"
+echo "[11/15] Loop Exit Reason"
 LE_OUTPUT=$(./eigenscript ../tests/test_loop_exit.eigs 2>&1)
 
 LE1_EXIT=$(echo "$LE_OUTPUT" | grep -A1 'LE1:' | tail -1)
@@ -1135,7 +1135,7 @@ LE2_EXIT=$(echo "$LE_OUTPUT" | grep -A1 'LE2:' | tail -1)
 check "LE2 constant exit=normal (#861: converged fires, no stall needed)" "$LE2_EXIT" "normal"
 echo ""
 
-echo "[Structural Equality] (15 checks)"
+echo "[Structural Equality] test_equality.eigs"
 EQ_OUTPUT=$(./eigenscript ../tests/test_equality.eigs 2>&1)
 TOTAL=$((TOTAL + 15))
 if echo "$EQ_OUTPUT" | grep -q "All tests passed"; then
@@ -1146,7 +1146,7 @@ else
 fi
 echo ""
 
-echo "[Number Formatting] (9 checks)"
+echo "[Number Formatting] test_number_format.eigs"
 NF_OUTPUT=$(./eigenscript ../tests/test_number_format.eigs 2>&1)
 TOTAL=$((TOTAL + 9))
 if echo "$NF_OUTPUT" | grep -q "All tests passed"; then
@@ -1157,7 +1157,7 @@ else
 fi
 echo ""
 
-echo "[Security Hardening] (6 checks)"
+echo "[Security Hardening] test_security_hardening.eigs"
 SH_OUTPUT=$(./eigenscript ../tests/test_security_hardening.eigs 2>&1)
 TOTAL=$((TOTAL + 6))
 if echo "$SH_OUTPUT" | grep -q "All tests passed"; then
@@ -1168,7 +1168,7 @@ else
 fi
 echo ""
 
-echo "[JSON Depth / DoS guard] (9 checks)"
+echo "[JSON Depth / DoS guard] test_json_depth.eigs"
 JD_OUTPUT=$(./eigenscript ../tests/test_json_depth.eigs 2>&1)
 TOTAL=$((TOTAL + 9))
 if echo "$JD_OUTPUT" | grep -q "All tests passed"; then
@@ -1179,7 +1179,7 @@ else
 fi
 echo ""
 
-echo "[Call Semantics] (18 checks)"
+echo "[Call Semantics] test_call_semantics.eigs"
 CS_OUTPUT=$(./eigenscript ../tests/test_call_semantics.eigs 2>&1)
 TOTAL=$((TOTAL + 18))
 if echo "$CS_OUTPUT" | grep -q "All tests passed"; then
@@ -1190,7 +1190,7 @@ else
 fi
 echo ""
 
-echo "[STEM Accuracy] (123 checks)"
+echo "[STEM Accuracy] test_stem_accuracy.eigs"
 SA_OUTPUT=$($EIGS_TMO ./eigenscript ../tests/test_stem_accuracy.eigs </dev/null 2>&1)
 TOTAL=$((TOTAL + 131))
 if echo "$SA_OUTPUT" | grep -q "All STEM accuracy checks passed"; then
@@ -1201,7 +1201,7 @@ else
 fi
 echo ""
 
-echo "[Coercion] (16 checks)"
+echo "[Coercion] test_coercion.eigs"
 CO_OUTPUT=$(./eigenscript ../tests/test_coercion.eigs 2>&1)
 TOTAL=$((TOTAL + 16))
 if echo "$CO_OUTPUT" | grep -q "All tests passed"; then
@@ -1212,7 +1212,7 @@ else
 fi
 echo ""
 
-echo "[12/15] Type Labels (4 checks)"
+echo "[12/15] Type Labels"
 TY_OUTPUT=$(./eigenscript ../tests/test_type.eigs 2>&1)
 
 TY_NUM=$(echo "$TY_OUTPUT" | grep -A1 'TY1:' | tail -1)
@@ -1228,7 +1228,7 @@ TY_BUILTIN=$(echo "$TY_OUTPUT" | grep -A4 'TY1:' | tail -1)
 check "TY4 type of builtin" "$TY_BUILTIN" "builtin"
 echo ""
 
-echo "[13/15] JSON Round-Trip (5 checks)"
+echo "[13/15] JSON Round-Trip"
 JS_OUTPUT=$(./eigenscript ../tests/test_json.eigs 2>&1)
 
 JS1_NUM=$(echo "$JS_OUTPUT" | grep -A1 'JS1:' | tail -1)
@@ -1247,7 +1247,7 @@ JS4_KEY=$(echo "$JS_OUTPUT" | grep -A1 'JS4:' | tail -1)
 check "JS5 object decode key" "$JS4_KEY" "eigen"
 echo ""
 
-echo "[14/15] Arena Ownership (5 checks)"
+echo "[14/15] Arena Ownership"
 AO_OUTPUT=$(./eigenscript ../tests/test_arena_ownership.eigs 2>&1)
 
 AO1_Y=$(echo "$AO_OUTPUT" | grep -A1 'AO1:' | tail -1)
@@ -1278,7 +1278,7 @@ check_eigs_suite "reduction builtins dot/sum/norm (vs explicit loop + edge cases
     "test_dot.eigs" "DOT_OK" 1
 echo ""
 
-echo "[15/15] try_parse Validation (11 checks)"
+echo "[15/15] try_parse Validation"
 TP_OUTPUT=$(./eigenscript ../tests/test_try_parse.eigs 2>&1)
 
 check "TP_V1 valid assignment" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V1:' | tail -1)" "1"
@@ -1294,7 +1294,7 @@ check "TP_I6 rejects unterminated string" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I6
 check "TP_I7 rejects lone !" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I7:' | tail -1)" "0"
 echo ""
 
-echo "[16/16] Error Messages (6 checks)"
+echo "[16/16] Error Messages"
 check_binary_fingerprint
 
 check_stderr() {
@@ -1548,7 +1548,7 @@ else
 fi
 
 # [18] File I/O builtins: read_text, write_text, exec_capture
-echo "[18/18] File I/O Builtins (14 checks)"
+echo "[18/18] File I/O Builtins"
 check_binary_fingerprint
 # #1361 EIGS_STRICT=0: pins the wrong-type stand-ins read_text(42)="", write_text(bad)=0, exec_capture(bad)=[-1,""] (RT3/WT3/EC3/EC4).
 FIO_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_file_io.eigs 2>&1)
@@ -1582,7 +1582,7 @@ rm -f /tmp/eigen_test_wt1.txt /tmp/eigen_test_wt2.txt
 echo ""
 
 # [19] String and math builtins
-echo "[19/19] String & Math Builtins (75 checks)"
+echo "[19/19] String & Math Builtins"
 check_binary_fingerprint
 SM_OUTPUT=$(./eigenscript ../tests/test_string_math.eigs 2>&1)
 
@@ -1599,7 +1599,7 @@ fi
 echo ""
 
 # [20] System builtins (random, args, paths, filesystem)
-echo "[20/21] System Builtins (22 checks)"
+echo "[20/21] System Builtins"
 check_binary_fingerprint
 SYS_OUTPUT=$(./eigenscript ../tests/test_system.eigs 2>&1)
 
@@ -1872,14 +1872,14 @@ check_eigs_suite "invalid input raises instead of silent null/0/empty" \
 # the sequence in the body is well-defined: appending no longer loops forever
 # (was an unbounded loop / OOM), removing stops at the live length instead of
 # reading a freed slot. Covers interpreter + JIT tiers, buffer, empty, listcomp.
-echo "[117] for-in Length Snapshot (#491, 9 checks)"
+echo "[117] for-in Length Snapshot (#491)"
 check_eigs_suite "for-in snapshots length; body mutation is bounded + safe" \
     test_for_in_mutation.eigs "FOR_IN_MUTATION_DONE" 9
 
 # [118] Any keyword works as a dot key (#542): keys creatable by literal/
 # dict_set/json_decode were unreachable by `.` — read, write, chains, and
 # all three parser postfix sites (IDENT chain, paren, dict literal).
-echo "[118] Keyword Dot Keys (#542, 49 checks)"
+echo "[118] Keyword Dot Keys (#542)"
 check_eigs_suite "all 39 keywords + chains/json/paren/literal as dot keys" \
     test_dict_keyword_keys.eigs "All tests passed" 49
 
@@ -1993,7 +1993,7 @@ fi
 echo ""
 
 # [27b] Closure mutation (hard mode — regression coverage for #130)
-echo "[27b/27] Closure Mutation (14 checks)"
+echo "[27b/27] Closure Mutation"
 CM_OUTPUT=$(./eigenscript ../tests/test_closure_mutation.eigs 2>&1); CM_OUTPUT_RC=$?
 if rc_ok "$CM_OUTPUT_RC" "$CM_OUTPUT" && echo "$CM_OUTPUT" | grep -q "closure mutation: all passed"; then
     TOTAL=$((TOTAL + 14))
@@ -2197,7 +2197,7 @@ echo ""
 # [41] Coverage-gap builtins (split/starts_with/str_replace/env_get/
 #      random_hex/chdir/free_val, cold tensor ops, streams, grad/sgd
 #      rows & cols variants, tokenize_with_names, json_raw, 2D get/set_at)
-echo "[41/47] Coverage-Gap Builtins (93 checks)"
+echo "[41/47] Coverage-Gap Builtins"
 CG_OUTPUT=$(./eigenscript ../tests/test_coverage_gaps.eigs 2>&1); CG_OUTPUT_RC=$?
 if rc_ok "$CG_OUTPUT_RC" "$CG_OUTPUT" && echo "$CG_OUTPUT" | grep -q "All coverage-gap tests passed"; then
     TOTAL=$((TOTAL + 93))
@@ -2212,7 +2212,7 @@ fi
 echo ""
 
 # [42] CLI / REPL integration tests (always runs — exercises main.c)
-echo "[42/47] CLI & REPL (15 checks)"
+echo "[42/47] CLI & REPL"
 CLI_OUTPUT=$(bash "$TESTS_DIR/test_cli.sh" 2>&1)
 CLI_PASS=$(echo "$CLI_OUTPUT" | grep -c "PASS:" || true)
 CLI_FAIL=$(echo "$CLI_OUTPUT" | grep -c "FAIL:" || true)
@@ -2320,7 +2320,7 @@ fi
 echo ""
 
 # [42a] Replay tape (record/replay determinism for list/dict/buffer)
-echo "[42a/47] Replay Tape (6 checks)"
+echo "[42a/47] Replay Tape"
 RP_OUTPUT=$(bash "$TESTS_DIR/test_replay.sh" 2>&1)
 RP_PASS=$(echo "$RP_OUTPUT" | grep -c "PASS:" || true)
 RP_FAIL=$(echo "$RP_OUTPUT" | grep -c "FAIL:" || true)
@@ -2352,7 +2352,7 @@ fi
 echo ""
 
 # [42b] --test --trace-on-fail (#394): every failure is a replayable tape
-echo "[42b] Trace-on-fail (7 checks)"
+echo "[42b] Trace-on-fail"
 TOF_OUTPUT=$(bash "$TESTS_DIR/test_trace_on_fail.sh" 2>&1)
 TOF_PASS=$(echo "$TOF_OUTPUT" | grep -c "PASS:" || true)
 TOF_FAIL=$(echo "$TOF_OUTPUT" | grep -c "FAIL:" || true)
@@ -2369,7 +2369,7 @@ echo ""
 
 # [42f] Tape stepper (#418 eigsdap v1: --step forward/back, bindings +
 # trajectory labels, breakpoints, jumps, #411 version refusals)
-echo "[42f] Tape Stepper (22 checks)"
+echo "[42f] Tape Stepper"
 ST_OUTPUT=$(bash "$TESTS_DIR/test_step.sh" 2>&1)
 ST_PASS=$(echo "$ST_OUTPUT" | grep -c "PASS:" || true)
 ST_FAIL=$(echo "$ST_OUTPUT" | grep -c "FAIL:" || true)
@@ -2390,7 +2390,7 @@ echo ""
 # classify exactly as the live run did. Includes the v2-tape refusal and the
 # cross-scope cases: an `O win` record governs the one BINDING it resolves
 # to, never every binding that shares its name.
-echo "[42f2] Tape Observer Configuration (68 checks)"
+echo "[42f2] Tape Observer Configuration"
 OC_OUTPUT=$(bash "$TESTS_DIR/test_tape_observer_config.sh" 2>&1)
 OC_PASS=$(echo "$OC_OUTPUT" | grep -c "PASS:" || true)
 OC_FAIL=$(echo "$OC_OUTPUT" | grep -c "FAIL:" || true)
@@ -2407,7 +2407,7 @@ echo ""
 
 # [42g] --bundle (#413): single-file distribution — script + eigs_modules +
 # stdlib in one executable; tape-attached bundles replay byte-identically.
-echo "[42g] Bundle (16 checks)"
+echo "[42g] Bundle"
 BN_OUTPUT=$(bash "$TESTS_DIR/test_bundle.sh" 2>&1)
 BN_PASS=$(echo "$BN_OUTPUT" | grep -c "PASS:" || true)
 BN_FAIL=$(echo "$BN_OUTPUT" | grep -c "FAIL:" || true)
@@ -2526,7 +2526,7 @@ fi
 echo ""
 
 # [42c] REPL (#392): piped transcript byte-exact + pty-driven line editor
-echo "[42c] REPL editor & piped transcript (24 checks)"
+echo "[42c] REPL editor & piped transcript"
 RE_OUTPUT=$(bash "$TESTS_DIR/test_repl.sh" 2>&1)
 RE_PASS=$(echo "$RE_OUTPUT" | grep -c "PASS:" || true)
 RE_FAIL=$(echo "$RE_OUTPUT" | grep -c "FAIL:" || true)
@@ -2557,7 +2557,7 @@ fi
 echo ""
 
 # [42b] Softmax numerical guard (always runs — uses core tensor builtins)
-echo "[42b/47] Softmax Guard (7 checks)"
+echo "[42b/47] Softmax Guard"
 SG_OUTPUT=$(./eigenscript ../tests/test_softmax_guard.eigs 2>&1); SG_OUTPUT_RC=$?
 if rc_ok "$SG_OUTPUT_RC" "$SG_OUTPUT" && echo "$SG_OUTPUT" | grep -q "All softmax-guard tests passed"; then
     TOTAL=$((TOTAL + 7))
@@ -2572,7 +2572,7 @@ fi
 echo ""
 
 # [42c] General finite-number guard (scalar, tensor, literals, conversions)
-echo "[42c/47] Numeric Guard (19 checks)"
+echo "[42c/47] Numeric Guard"
 # #1361 EIGS_STRICT=0: pins the finite-by-construction domain stand-ins (sqrt/asin/acos/log clamps, num "nan" -> 0 + math_flags.invalid).
 NG_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
 if rc_ok "$NG_OUTPUT_RC" "$NG_OUTPUT" && echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed"; then
@@ -2588,7 +2588,7 @@ fi
 echo ""
 
 # [42c] Stdlib fixes (math.dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
-echo "[42d/47] Stdlib Fixes (48 checks)"
+echo "[42d/47] Stdlib Fixes"
 # #1361 EIGS_STRICT=0: pins math.log10/log2 of x <= 0 taking the log floor stand-in (SF101/SF102).
 SF_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?
 if rc_ok "$SF_OUTPUT_RC" "$SF_OUTPUT" && echo "$SF_OUTPUT" | grep -q "All stdlib-fix tests passed"; then
@@ -2604,7 +2604,7 @@ fi
 echo ""
 
 # [42e] Executable-relative stdlib resolution from external projects
-echo "[42e/47] Executable-Relative Stdlib (1 check)"
+echo "[42e/47] Executable-Relative Stdlib"
 EXT_HOME=$(mktemp -d /tmp/eigs_ext_home_XXXXXX)
 EXT_DIR=$(mktemp -d /tmp/eigs_ext_project_XXXXXX)
 EXT_SCRIPT="$EXT_DIR/external_stdlib.eigs"
@@ -2631,7 +2631,7 @@ fi
 echo ""
 
 # [43] Extra error-path coverage (always runs)
-echo "[43/47] Error-Path Extras (48 checks)"
+echo "[43/47] Error-Path Extras"
 EE_OUTPUT=$(./eigenscript ../tests/test_error_extra.eigs 2>&1); EE_OUTPUT_RC=$?
 if rc_ok "$EE_OUTPUT_RC" "$EE_OUTPUT" && echo "$EE_OUTPUT" | grep -q "All error_extra tests passed"; then
     TOTAL=$((TOTAL + 48))
@@ -2646,14 +2646,14 @@ fi
 echo ""
 
 # [43a2] Builtin argument-validation error paths (builtins.c arg guards)
-echo "[43a2] Builtin Argument Errors (26 checks)"
+echo "[43a2] Builtin Argument Errors"
 check_eigs_suite "builtin argument errors" test_builtin_errors.eigs "All builtin_errors tests passed" 30
 check_eigs_suite "module-boundary write insulation (#373)" test_module_scope.eigs "All module-scope tests passed" 9
 check_eigs_suite "import top-level scope insulation vs load_file current-scope contract (#589)" test_import_toplevel_scope.eigs "All import top-level scope tests passed" 11
 check_eigs_suite "module namespace is a LIVE VIEW of the module env (#1057)" test_module_live_view.eigs "All tests passed" 30
 check_eigs_suite "module builtins isolated from the importer's rebinding; builtin layer sealed (#1388)" test_module_builtin_isolation.eigs "All tests passed" 32
 
-echo "[43a2b] build_corpus slot-mode identifier encoding (6 checks)"
+echo "[43a2b] build_corpus slot-mode identifier encoding"
 CS_OUTPUT=$(bash "$TESTS_DIR/test_corpus_slots.sh" 2>&1)
 CS_PASS=$(echo "$CS_OUTPUT" | grep -c "PASS:" || true)
 CS_FAIL=$(echo "$CS_OUTPUT" | grep -c "FAIL:" || true)
@@ -2668,7 +2668,7 @@ else
 fi
 echo ""
 
-echo "[43a2c] build_corpus integer-literal encoding (5 checks)"
+echo "[43a2c] build_corpus integer-literal encoding"
 CI_OUTPUT=$(bash "$TESTS_DIR/test_corpus_ints.sh" 2>&1)
 CI_PASS=$(echo "$CI_OUTPUT" | grep -c "PASS:" || true)
 CI_FAIL=$(echo "$CI_OUTPUT" | grep -c "FAIL:" || true)
@@ -2684,12 +2684,12 @@ fi
 echo ""
 
 # [43a3] EigenStore header-validation / corruption error paths (ext_store.c)
-echo "[43a3] Store Corruption Errors (12 checks)"
+echo "[43a3] Store Corruption Errors"
 check_eigs_suite "store corruption errors" test_store_corruption.eigs "All store_corruption tests passed" 12
 echo ""
 
 # [43b] Eval-recursion-depth guard (runaway recursion → runtime error)
-echo "[43b/47] Recursion Guard (4 checks)"
+echo "[43b/47] Recursion Guard"
 RG_OUTPUT=$(./eigenscript ../tests/test_recursion_guard.eigs 2>&1); RG_OUTPUT_RC=$?
 if rc_ok "$RG_OUTPUT_RC" "$RG_OUTPUT" && echo "$RG_OUTPUT" | grep -q "All recursion-guard tests passed"; then
     TOTAL=$((TOTAL + 4))
@@ -2704,7 +2704,7 @@ fi
 echo ""
 
 # [43c] Auth stdlib bearer parsing
-echo "[43c/47] Auth Stdlib (4 checks)"
+echo "[43c/47] Auth Stdlib"
 AUTH_OUTPUT=$(./eigenscript ../tests/test_auth.eigs 2>&1); AUTH_OUTPUT_RC=$?
 if rc_ok "$AUTH_OUTPUT_RC" "$AUTH_OUTPUT" && echo "$AUTH_OUTPUT" | grep -q "All auth tests passed"; then
     TOTAL=$((TOTAL + 4))
@@ -2719,7 +2719,7 @@ fi
 echo ""
 
 # [43d] HTTP client URL safety
-echo "[43d/47] HTTP Client Security (4 checks)"
+echo "[43d/47] HTTP Client Security"
 HCS_OUTPUT=$(./eigenscript ../tests/test_http_client_security.eigs 2>&1); HCS_OUTPUT_RC=$?
 if rc_ok "$HCS_OUTPUT_RC" "$HCS_OUTPUT" && echo "$HCS_OUTPUT" | grep -q "All http client security tests passed"; then
     TOTAL=$((TOTAL + 4))
@@ -2758,7 +2758,7 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     echo ""
 
     # [45] HTTP server integration (probe-gated)
-    echo "[45/47] HTTP Server Integration (10 checks)"
+    echo "[45/47] HTTP Server Integration"
     HS_OUTPUT=$(bash "$TESTS_DIR/test_http_server.sh" 2>&1)
     HS_PASS=$(echo "$HS_OUTPUT" | grep -c "PASS:" || true)
     HS_FAIL=$(echo "$HS_OUTPUT" | grep -c "FAIL:" || true)
@@ -2803,7 +2803,7 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     # The #988 wrapper still treats a non-completing child as untrustworthy —
     # do not route this through env/timeout/$EIGS_TMO; bash must be the command
     # word.
-    echo "[45b/47] HTTP slow-loris hardening (4 checks)"
+    echo "[45b/47] HTTP slow-loris hardening"
     SL_OUTPUT=$(bash "$TESTS_DIR/test_http_slowloris.sh" 2>&1)
     SL_PASS=$(echo "$SL_OUTPUT" | grep -c "PASS:" || true)
     SL_FAIL=$(echo "$SL_OUTPUT" | grep -c "FAIL:" || true)
@@ -2821,7 +2821,7 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     # [45c] Per-request leak gate by RSS growth (#731, #752). Not covered by the
     # ASan job: LSan runs atexit and the test server is killed, so a per-request
     # leak in ext_http.c is invisible to every sanitizer build.
-    echo "[45c/47] HTTP per-request leak gate (RSS growth, 2 checks)"
+    echo "[45c/47] HTTP per-request leak gate (RSS growth)"
     RSS_OUTPUT=$(bash "$TESTS_DIR/test_http_rss_growth.sh" 2>&1)
     RSS_PASS=$(echo "$RSS_OUTPUT" | grep -c "PASS:" || true)
     RSS_FAIL=$(echo "$RSS_OUTPUT" | grep -c "FAIL:" || true)
@@ -2902,7 +2902,7 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
-    echo "[47b/47] Model Overflow Regression (2 checks)"
+    echo "[47b/47] Model Overflow Regression"
     MO_OUTPUT=$(bash "$TESTS_DIR/test_model_overflow.sh" 2>&1)
     MO_PASS=$(echo "$MO_OUTPUT" | grep -c "PASS:" || true)
     MO_FAIL=$(echo "$MO_OUTPUT" | grep -c "FAIL:" || true)
@@ -2917,7 +2917,7 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
-    echo "[47d/47] Model Incomplete-Checkpoint Rejection (#727, 5 checks)"
+    echo "[47d/47] Model Incomplete-Checkpoint Rejection (#727)"
     MI_OUTPUT=$(bash "$TESTS_DIR/test_model_incomplete.sh" 2>&1)
     if echo "$MI_OUTPUT" | grep -q "SKIP:"; then
         mi_skip_line=$(echo "$MI_OUTPUT" | grep "SKIP:" | head -1)
@@ -2937,7 +2937,7 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
-    echo "[47c/47] native_train_step gradient-check (batched vs per-position, 3 checks)"
+    echo "[47c/47] native_train_step gradient-check (batched vs per-position)"
     GC_OUTPUT=$(bash "$TESTS_DIR/test_native_train_gradcheck.sh" 2>&1)
     GC_PASS=$(echo "$GC_OUTPUT" | grep -c "PASS:" || true)
     GC_FAIL=$(echo "$GC_OUTPUT" | grep -c "FAIL:" || true)
@@ -2952,7 +2952,7 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
-    echo "[47f/47] eigen_eval_loss held-out cross-entropy (4 checks)"
+    echo "[47f/47] eigen_eval_loss held-out cross-entropy"
     EL_OUTPUT=$(bash "$TESTS_DIR/test_eval_loss.sh" 2>&1)
     EL_PASS=$(echo "$EL_OUTPUT" | grep -c "PASS:" || true)
     EL_FAIL=$(echo "$EL_OUTPUT" | grep -c "FAIL:" || true)
@@ -2967,7 +2967,7 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
-    echo "[47e/47] eigen_generate top-p nucleus sampling (4 checks)"
+    echo "[47e/47] eigen_generate top-p nucleus sampling"
     TP_OUTPUT=$(bash "$TESTS_DIR/test_top_p.sh" 2>&1)
     TP_PASS=$(echo "$TP_OUTPUT" | grep -c "PASS:" || true)
     TP_FAIL=$(echo "$TP_OUTPUT" | grep -c "FAIL:" || true)
@@ -2988,7 +2988,7 @@ fi
 
 # [48] Large-buffer regression tests — exercise strbuf growth paths
 # that replaced the fixed MAX_STR stack arrays in v0.8.0.
-echo "[48a] Large Strings (4 checks)"
+echo "[48a] Large Strings"
 LS_OUTPUT=$(./eigenscript "$TESTS_DIR/test_large_strings.eigs" 2>&1)
 if echo "$LS_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 4)); PASS=$((PASS + 4))
@@ -2998,7 +2998,7 @@ else
     echo "  FAIL: large-string checks"; echo "$LS_OUTPUT" | grep FAIL | head -3
 fi
 
-echo "[48b] F-String Large (3 checks)"
+echo "[48b] F-String Large"
 FL_OUTPUT=$(./eigenscript "$TESTS_DIR/test_fstring_large.eigs" 2>&1)
 if echo "$FL_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 3)); PASS=$((PASS + 3))
@@ -3008,7 +3008,7 @@ else
     echo "  FAIL: f-string-large checks"; echo "$FL_OUTPUT" | grep FAIL | head -3
 fi
 
-echo "[48c] Regex Large (3 checks)"
+echo "[48c] Regex Large"
 RL_OUTPUT=$(./eigenscript "$TESTS_DIR/test_regex_large.eigs" 2>&1)
 if echo "$RL_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 3)); PASS=$((PASS + 3))
@@ -3018,7 +3018,7 @@ else
     echo "  FAIL: regex-large checks"; echo "$RL_OUTPUT" | grep FAIL | head -3
 fi
 
-echo "[48d] JSON Large (6 checks)"
+echo "[48d] JSON Large"
 JL_OUTPUT=$(./eigenscript "$TESTS_DIR/test_json_large.eigs" 2>&1)
 if echo "$JL_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 6)); PASS=$((PASS + 6))
@@ -3063,7 +3063,7 @@ echo ""
 
 # [50b] Hex integer literals (lexed, not strtod — the freestanding profile
 # has no hex strtod path, so this form must never regress to delegation)
-echo "[50b] Hex Integer Literals (19 checks + 3 rejects)"
+echo "[50b] Hex Integer Literals (checks + rejects)"
 check_eigs_suite "hex literals: 0x/0X forms, case, adjacency, arithmetic" \
     "test_hex_literals.eigs" "HEX_LITERALS_ALL_PASS" 19
 # Hex-float forms and a bare prefix must be LOUD parse errors on every
@@ -3084,79 +3084,79 @@ rm -f /tmp/eigs_hex_reject.eigs
 echo ""
 
 # [50c] Checksum library (CRC-32 / Adler-32 / sum8 over strings+buffers)
-echo "[50c] Checksums (9 checks)"
+echo "[50c] Checksums"
 check_eigs_suite "checksums: published vectors + buffer/string equivalence" \
     "test_checksum.eigs" "CHECKSUM_ALL_PASS" 9
 echo ""
 
 # [50d] Datetime civil math (pure half of lib/datetime.eigs)
-echo "[50d] Datetime Civil Math (14 checks)"
+echo "[50d] Datetime Civil Math"
 check_eigs_suite "civil days/epoch round-trips + leap edges vs references" \
     "test_datetime_civil.eigs" "DATETIME_CIVIL_ALL_PASS" 14
 echo ""
 
 # [50e-50i] Stdlib backlog train: bcd, wait_until, hexdump, harness, observer_slots
-echo "[50e] BCD Codec (10 checks)"
+echo "[50e] BCD Codec"
 check_eigs_suite "bcd: round-trips + loud invalid-nibble/fraction rejection" \
     "test_bcd.eigs" "BCD_ALL_PASS" 10
 echo ""
 
-echo "[50f] wait_until (20 checks)"
+echo "[50f] wait_until"
 check_eigs_suite "functional.wait_until: success timing, timeout, sleep cadence" \
     "test_wait_until.eigs" "WAIT_UNTIL_ALL_PASS" 20
 echo ""
 
-echo "[50g] hexdump (7 checks)"
+echo "[50g] hexdump"
 check_eigs_suite "format.hexdump: exact rows, offsets, buffer/string parity" \
     "test_hexdump.eigs" "HEXDUMP_ALL_PASS" 7
 echo ""
 
-echo "[50h] Harness (4 checks)"
+echo "[50h] Harness"
 check_eigs_suite "harness: count-and-continue, throwing finish, reset" \
     "test_harness.eigs" "HARNESS_ALL_PASS" 4
 echo ""
 
-echo "[50i] Observer Slots (11 checks)"
+echo "[50i] Observer Slots"
 check_eigs_suite "observer_slots: trajectories through slot dispatch, independence, verdict()" \
     "test_observer_slots.eigs" "OBSERVER_SLOTS_ALL_PASS" 11
 echo ""
 
-echo "[50j] Trajectory Contracts (15 checks)"
+echo "[50j] Trajectory Contracts"
 check_eigs_suite "contract: require/ensure + expect_converging/monotone/invariant_stable, value-channel divergence catch, scalar guard" \
     "test_contract.eigs" "CONTRACT_ALL_PASS" 1
 echo ""
 
-echo "[50j2] Observer pair #421/#422: raw-step signals + trajectory snapshots (20 checks)"
+echo "[50j2] Observer pair #421/#422: raw-step signals + trajectory snapshots"
 check_eigs_suite "value-channel diverging/sub-deadband oscillation, trajectory-of/classify across call boundaries, expect_regime" \
     "test_trajectory.eigs" "TRAJECTORY_ALL_PASS" 1
 echo ""
 
-echo "[50j3] report_value convergence classification (#674) (6 checks)"
+echo "[50j3] report_value convergence classification (#674)"
 check_eigs_suite "slow geometric decay converges (not diverging), geometric/linear growth still diverging" \
     "test_report_value_convergence.eigs" "REPORT_VALUE_CONVERGENCE_ALL_PASS" 1
 echo ""
 
-echo "[50j4] Large-container observer (#706) (7 checks)"
+echo "[50j4] Large-container observer (#706)"
 check_eigs_suite "large containers: growth stays gray-band, a change past any sample cap is seen, size term exact" \
     "test_observer_large.eigs" "OBSERVER_LARGE_ALL_PASS" 7
 echo ""
 
-echo "[50j6] Entropy stops at a reference (#685) (5 checks)"
+echo "[50j6] Entropy stops at a reference (#685)"
 check_eigs_suite "a reference contributes its size term, never its contents" \
     "test_entropy_reference_stop.eigs" "ENTROPY_REF_STOP_ALL_PASS" 5
 echo ""
 
-echo "[50j5] Entropy type coverage (4 checks)"
+echo "[50j5] Entropy type coverage"
 check_eigs_suite "every ValType is measured, not given a plausible constant" \
     "test_entropy_types.eigs" "ENTROPY_TYPES_ALL_PASS" 4
 echo ""
 
-echo "[50k] UTF-8 codepoints (16 checks)"
+echo "[50k] UTF-8 codepoints"
 check_eigs_suite "utf8: decode/len/at/char_at over byte strings + structural validation (published vectors)" \
     "test_utf8.eigs" "UTF8_ALL_PASS" 1
 echo ""
 
-echo "[50l] Numeric validators (36 checks)"
+echo "[50l] Numeric validators"
 check_eigs_suite "validate.is_number/is_integer: a decimal string needs a digit (#1235)" \
     "test_validate.eigs" "VALIDATE_ALL_PASS" 36
 echo ""
@@ -3254,7 +3254,7 @@ check_eigs_suite "plain loop crosses the old 1e8 default cap uncapped" "test_loo
 echo ""
 
 # [55] Concurrency: spawn/join/channel
-echo "[55] Concurrency (6 checks)"
+echo "[55] Concurrency"
 CC_OUTPUT=$(./eigenscript ../tests/test_concurrent.eigs 2>&1)
 CC_PASS=$(echo "$CC_OUTPUT" | grep -c "^PASS:" || true)
 CC_FAIL=$(echo "$CC_OUTPUT" | grep -c "^FAIL:" || true)
@@ -3302,7 +3302,7 @@ fi
 echo ""
 
 # [57] Coverage v2 — close gcov gaps in eval/builtins/eigenscript/ext_store
-echo "[57] Coverage V2 (118 checks)"
+echo "[57] Coverage V2"
 CV2_OUTPUT=$(./eigenscript ../tests/test_coverage_v2.eigs 2>&1); CV2_OUTPUT_RC=$?
 if rc_ok "$CV2_OUTPUT_RC" "$CV2_OUTPUT" && echo "$CV2_OUTPUT" | grep -q "All coverage-v2 tests passed"; then
     TOTAL=$((TOTAL + 118))
@@ -3868,7 +3868,7 @@ else
 fi
 
 # [64] list_truncate builtin
-echo "[64] List Truncate (9 checks)"
+echo "[64] List Truncate"
 LT_OUTPUT=$(./eigenscript ../tests/test_list_truncate.eigs 2>&1); LT_OUTPUT_RC=$?
 if rc_ok "$LT_OUTPUT_RC" "$LT_OUTPUT" && echo "$LT_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 9))
@@ -3883,7 +3883,7 @@ fi
 echo ""
 
 # [66] list_remove_at builtin
-echo "[66] List Remove At (8 checks)"
+echo "[66] List Remove At"
 LRA_OUTPUT=$(./eigenscript ../tests/test_list_remove_at.eigs 2>&1); LRA_OUTPUT_RC=$?
 if rc_ok "$LRA_OUTPUT_RC" "$LRA_OUTPUT" && echo "$LRA_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 8))
@@ -3898,7 +3898,7 @@ fi
 echo ""
 
 # [121] list_insert_at builtin
-echo "[121] List Insert At (8 checks)"
+echo "[121] List Insert At"
 LIA_OUTPUT=$(./eigenscript ../tests/test_list_insert_at.eigs 2>&1); LIA_OUTPUT_RC=$?
 if rc_ok "$LIA_OUTPUT_RC" "$LIA_OUTPUT" && echo "$LIA_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 8))
@@ -3913,7 +3913,7 @@ fi
 echo ""
 
 # [122] list_slice builtin
-echo "[122] List Slice (8 checks)"
+echo "[122] List Slice"
 LSL_OUTPUT=$(./eigenscript ../tests/test_list_slice.eigs 2>&1); LSL_OUTPUT_RC=$?
 if rc_ok "$LSL_OUTPUT_RC" "$LSL_OUTPUT" && echo "$LSL_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 8))
@@ -3928,7 +3928,7 @@ fi
 echo ""
 
 # [543] list_index_of builtin
-echo "[543] List Index Of (8 checks)"
+echo "[543] List Index Of"
 LIO_OUTPUT=$(./eigenscript ../tests/test_list_index_of.eigs 2>&1); LIO_OUTPUT_RC=$?
 if rc_ok "$LIO_OUTPUT_RC" "$LIO_OUTPUT" && echo "$LIO_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 8))
@@ -3943,7 +3943,7 @@ fi
 echo ""
 
 # [543] list_contains builtin
-echo "[543b] List Contains (8 checks)"
+echo "[543b] List Contains"
 LCO_OUTPUT=$(./eigenscript ../tests/test_list_contains.eigs 2>&1); LCO_OUTPUT_RC=$?
 if rc_ok "$LCO_OUTPUT_RC" "$LCO_OUTPUT" && echo "$LCO_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 8))
@@ -4058,7 +4058,7 @@ else
 fi
 
 # [65] sort_by builtin
-echo "[65] Sort By (9 checks)"
+echo "[65] Sort By"
 SBY_OUTPUT=$(./eigenscript ../tests/test_sort_by.eigs 2>&1); SBY_OUTPUT_RC=$?
 if rc_ok "$SBY_OUTPUT_RC" "$SBY_OUTPUT" && echo "$SBY_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 9))
@@ -4115,7 +4115,7 @@ check_eigs_suite "dispatch rebind (eval escape)" test_dispatch_rebind_eval.eigs 
 
 # [70] Temporal interrogatives (prev of, at, state_at). Deep loop histories
 # must still answer early-line queries correctly after #827's pruning.
-echo "[70] Temporal Interrogatives (23 checks)"
+echo "[70] Temporal Interrogatives"
 TT_OUTPUT=$(./eigenscript ../tests/test_temporal.eigs 2>&1); TT_OUTPUT_RC=$?
 if rc_ok "$TT_OUTPUT_RC" "$TT_OUTPUT" && echo "$TT_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 23))
@@ -4251,7 +4251,7 @@ check_eigs_suite "temporal reads from a non-compiler producer (#830)" test_tempo
 check_eigs_suite "descriptor arms its own history recording (#831)" test_temporal_producers_unarmed.eigs "All tests passed" 5
 
 # [98] Cross-thread channel dict-key survival (#293).
-echo "[98] Cross-thread Channel Dict Keys (7 checks)"
+echo "[98] Cross-thread Channel Dict Keys"
 XCD_OUTPUT=$(./eigenscript ../tests/test_chan_dict_xthread.eigs 2>&1); XCD_OUTPUT_RC=$?
 if rc_ok "$XCD_OUTPUT_RC" "$XCD_OUTPUT" && echo "$XCD_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 7))
@@ -5343,7 +5343,7 @@ else
 fi
 
 # [78] spawn with multiple args (0.13.0).
-echo "[78] Spawn With Multiple Args (23 checks)"
+echo "[78] Spawn With Multiple Args"
 SP_OUTPUT=$(./eigenscript ../tests/test_spawn_args.eigs 2>&1); SP_OUTPUT_RC=$?
 if rc_ok "$SP_OUTPUT_RC" "$SP_OUTPUT" && echo "$SP_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 23))
@@ -5358,7 +5358,7 @@ fi
 echo ""
 
 # [77] Non-blocking channel recv (0.13.0).
-echo "[77] Non-blocking Channel Recv (29 checks)"
+echo "[77] Non-blocking Channel Recv"
 CNB_OUTPUT=$(./eigenscript ../tests/test_channel_nb.eigs 2>&1); CNB_OUTPUT_RC=$?
 if rc_ok "$CNB_OUTPUT_RC" "$CNB_OUTPUT" && echo "$CNB_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 29))
@@ -5373,7 +5373,7 @@ fi
 echo ""
 
 # [76] Slicing (0.13.0).
-echo "[76] Slicing (48 checks)"
+echo "[76] Slicing"
 SL_OUTPUT=$(./eigenscript ../tests/test_slicing.eigs 2>&1); SL_OUTPUT_RC=$?
 if rc_ok "$SL_OUTPUT_RC" "$SL_OUTPUT" && echo "$SL_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 48))
@@ -5388,7 +5388,7 @@ fi
 echo ""
 
 # [75] Streaming subprocess I/O (0.13.0).
-echo "[75] Streaming Subprocess I/O (39 checks)"
+echo "[75] Streaming Subprocess I/O"
 PS_OUTPUT=$(./eigenscript ../tests/test_proc_stream.eigs 2>&1); PS_OUTPUT_RC=$?
 if rc_ok "$PS_OUTPUT_RC" "$PS_OUTPUT" && echo "$PS_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 39))
@@ -5403,7 +5403,7 @@ fi
 echo ""
 
 # [74] Destructuring assignment (0.13.0).
-echo "[74] Destructuring (28 checks)"
+echo "[74] Destructuring"
 DS_OUTPUT=$(./eigenscript ../tests/test_destructuring.eigs 2>&1); DS_OUTPUT_RC=$?
 if rc_ok "$DS_OUTPUT_RC" "$DS_OUTPUT" && echo "$DS_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 28))
@@ -5418,7 +5418,7 @@ fi
 echo ""
 
 # [73] Negative indexing (0.13.0).
-echo "[73] Negative Indexing (19 checks)"
+echo "[73] Negative Indexing"
 NI_OUTPUT=$(./eigenscript ../tests/test_negative_index.eigs 2>&1); NI_OUTPUT_RC=$?
 if rc_ok "$NI_OUTPUT_RC" "$NI_OUTPUT" && echo "$NI_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 19))
@@ -5433,7 +5433,7 @@ fi
 echo ""
 
 # [72] Default parameter values (0.13.0).
-echo "[72] Default Parameters (28 checks)"
+echo "[72] Default Parameters"
 DP_OUTPUT=$(./eigenscript ../tests/test_default_params.eigs 2>&1); DP_OUTPUT_RC=$?
 if rc_ok "$DP_OUTPUT_RC" "$DP_OUTPUT" && echo "$DP_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + 28))
@@ -5452,7 +5452,7 @@ echo ""
 # local_names array; freeing the script chunk used to segfault at exit
 # (after correct output — so this check must verify the exit code, which
 # most suite checks don't).
-echo "[71] Module Promotion Teardown (1 check)"
+echo "[71] Module Promotion Teardown"
 MP_OUTPUT=$(./eigenscript ../tests/test_module_promotion_exit.eigs 2>&1)
 MP_RC=$?
 TOTAL=$((TOTAL + 1))
@@ -5489,7 +5489,7 @@ echo ""
 # examples/ program, but `make test-changed` selects it for none of them except
 # examples/hello.eigs, which it names; two critics could not make it red from
 # such an edit.
-echo "[80] Formatter (14 checks)"
+echo "[80] Formatter"
 FMT_OUTPUT=$(bash "$TESTS_DIR/test_fmt.sh" </dev/null 2>&1)
 FMT_PASS=$(echo "$FMT_OUTPUT" | grep -c "PASS:" || true)
 FMT_FAIL=$(echo "$FMT_OUTPUT" | grep -c "FAIL:" || true)
@@ -5604,7 +5604,7 @@ echo ""
 # benchmark-shaped code. Runs with EIGS_JIT_STATS so we can also assert
 # (on x86-64) that thunks really compiled — a regression that quietly
 # disables the JIT must not let this section pass interpreted.
-echo "[82] JIT Fast Paths (23 checks + thunk gate + hot-dump gate)"
+echo "[82] JIT Fast Paths (checks + thunk gate + hot-dump gate)"
 JPATH_OUTPUT=$(EIGS_JIT_STATS=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
 TOTAL=$((TOTAL + 23))
 if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then
@@ -5663,20 +5663,20 @@ echo ""
 # [83] Walker capture matrix — closure capture of names reachable only
 # through each AST node kind (the issue-#156 bug class: a pre-pass walker
 # that doesn't know a node silently breaks capture).
-echo "[83] Walker Capture Matrix (27 checks)"
+echo "[83] Walker Capture Matrix"
 check_eigs_suite "all 27 walker-matrix capture checks" test_walker_matrix.eigs "All tests passed" 27
 
 # [84] Builtin direct-vs-indirect — builtins shadowed by compiler
 # lowerings (dispatch → OP_DISPATCH) and bench-only buffer builtins;
 # asserts the C fallback agrees with the lowered opcode.
-echo "[84] Builtin Direct-vs-Indirect (40 checks)"
+echo "[84] Builtin Direct-vs-Indirect"
 # #1361 EIGS_STRICT=0: pins buf_len of a non-buffer answering 0 (row "buf_len on non-buffer").
 EIGS_STRICT=0 check_eigs_suite "all 40 builtin direct/indirect checks" test_builtin_indirect.eigs "All tests passed" 40
 
 # [85] Reinstated suites — these .eigs files existed but were never
 # referenced by this runner, so editing them did nothing. Each runs as
 # one suite-level check: exit 0 + its own pass marker.
-echo "[85] Reinstated Suites (28 checks)"
+echo "[85] Reinstated Suites"
 check_eigs_suite "break scope" test_break_scope.eigs "break scope: all passed" 1
 check_eigs_suite "control flow interactions" test_control_flow_interactions.eigs "control flow interactions: all passed" 1
 check_eigs_suite "copy_into negative offset" test_copy_into_neg.eigs "PASS: copy_into negative offset" 1
@@ -5840,7 +5840,7 @@ echo ""
 # see docs/CLOSURE_CYCLE_GC.md). Locks that the shapes compute correctly
 # and that the non-leaking invariants (self-ref containers, non-escaping
 # recursion) hold. Tolerated leak-exit under ASan (counted by rc_ok).
-echo "[87] Closure Cycle Shapes (17 checks)"
+echo "[87] Closure Cycle Shapes"
 # STRICT exit gate (no rc_ok leak tolerance): the cycle collector must
 # keep every shape in this file ASan-clean. A LeakSanitizer exit here is
 # a collector regression, not a tolerated known leak.
@@ -5858,7 +5858,7 @@ echo ""
 
 # [86] Corpus builder — build_corpus + the tok_base_string detokenizer
 # table (both 0% before: nothing in the suite ever built a corpus).
-echo "[86] Corpus Builder (25 checks)"
+echo "[86] Corpus Builder"
 check_eigs_suite "all 27 corpus-builder checks" test_corpus.eigs "All tests passed" 27
 echo ""
 
@@ -5866,7 +5866,7 @@ echo ""
 # assert initialize/diagnostics/completion/hover/definition/references/
 # shutdown. The LSP was previously only compile-checked. Skips cleanly
 # without python3 or the eigenlsp build.
-echo "[88] LSP Behavioral (80 checks)"
+echo "[88] LSP Behavioral"
 LSP_OUTPUT=$(bash "$TESTS_DIR/test_lsp.sh" 2>&1)
 # Surface the freshness gate's rebuild notice even on a green run — a
 # silently rebuilt binary is the thing that made this section untrustworthy.
@@ -5896,7 +5896,7 @@ echo ""
 # verification against L records, stack frames from the v2 scope chain,
 # variables with trajectory child nodes, evaluate, stepBack and
 # reverseContinue. Skips cleanly without python3 or the eigsdap build.
-echo "[126] DAP Behavioral (30 checks)"
+echo "[126] DAP Behavioral"
 DAPT_OUTPUT=$(bash "$TESTS_DIR/test_dap.sh" 2>&1)
 # See section [88]: surface the freshness gate's rebuild notice on green runs.
 echo "$DAPT_OUTPUT" | grep "NOTE:.*rebuilding" || true
@@ -5922,7 +5922,7 @@ echo ""
 # report/report_value/predicates/observe answer "opaque"/false instead of
 # a confident "equilibrium" that can never move; numeric bindings and
 # containers holding functions are pinned unchanged.
-echo "[127] Observer Opaque Fn Bindings (13 checks)"
+echo "[127] Observer Opaque Fn Bindings"
 check_eigs_suite "all 13 opaque-classification checks" test_opaque_fn.eigs "All tests passed" 13
 echo ""
 
@@ -5930,7 +5930,7 @@ echo ""
 # assignment trajectory — the issue's stale-fold repro, indexed stores,
 # observe/trajectory refresh, query purity (asking never perturbs dH),
 # and scalar-path sanity.
-echo "[128] Observer Query-Time Entropy (12 checks)"
+echo "[128] Observer Query-Time Entropy"
 check_eigs_suite "all 12 query-time entropy checks" test_entropy_query_time.eigs "All tests passed" 12
 echo ""
 
@@ -6107,7 +6107,7 @@ echo ""
 
 # [90] Error examples — examples/errors/*.eigs must exit nonzero and
 # print their declared '# expect-error:' message.
-echo "[90] Error Examples (20 checks)"
+echo "[90] Error Examples"
 ERR_OUTPUT=$(bash "$TESTS_DIR/test_error_examples.sh" 2>&1)
 ERR_PASS=$(echo "$ERR_OUTPUT" | grep -c "  PASS:" || true)
 ERR_FAIL=$(echo "$ERR_OUTPUT" | grep -c "  FAIL:" || true)
@@ -6122,7 +6122,7 @@ else
 fi
 echo ""
 
-echo "[91] Module Cache (3 checks)"
+echo "[91] Module Cache"
 # Phase 0a of the package design: repeat imports of the same resolved
 # path share one dict + Env (no body re-execution). modcache_fixture.eigs
 # prints FIXTURE_RAN at top level exactly once; test_module_cache.eigs
@@ -6144,7 +6144,7 @@ else
 fi
 echo ""
 
-echo "[115] Circular Import/Load Guard (#496, 3 checks)"
+echo "[115] Circular Import/Load Guard (#496)"
 # A mutual import (a→b→a) or load_file (a↔b) used to recurse through
 # vm_execute until the C stack overflowed — SIGSEGV, rc=139, uncatchable.
 # The in-flight load stack now detects the cycle and raises a catchable
@@ -6185,7 +6185,7 @@ else
 fi
 echo ""
 
-echo "[115b] load_file quiet by default (#560, 2 checks)"
+echo "[115b] load_file quiet by default (#560)"
 # A successful load_file used to print an unconditional "[load_file]
 # Loading ..." banner to stderr per call — 17 lines of runtime chatter
 # before a consumer CLI's own output. Default is silent now (no other
@@ -6210,7 +6210,7 @@ else
 fi
 echo ""
 
-echo "[92] Module Resolve Base (1 check)"
+echo "[92] Module Resolve Base"
 # Phase 0b: an `import` inside a module resolves relative to *that
 # module's* directory, not the main script's. Shell-driven because
 # `import` only takes bare identifiers — we need a HOME-override +
@@ -6227,7 +6227,7 @@ else
 fi
 echo ""
 
-echo "[93] eigs_modules Resolver (2 checks)"
+echo "[93] eigs_modules Resolver"
 # Phase 0c: `import name` looks up eigs_modules/<name>/<name>.eigs by
 # walking upward from the importing file's directory until it hits the
 # project root (a directory containing eigs.json). Both the find and
@@ -6257,7 +6257,7 @@ check_eigs_suite "tensor builtins accept buffers; zeros of n is a buffer" \
     "test_tensor_buffer_inputs.eigs" "TENSOR_BUFFER_INPUTS_ALL_PASS" 99
 echo ""
 
-echo "[94] --pkg dispatcher (7 checks)"
+echo "[94] --pkg dispatcher"
 # Phase 1a of the package design: --pkg dispatcher, manifest read/write,
 # help, list, add (manifest-only — git fetch is Phase 1b), unknown
 # subcommand exits nonzero, plus the bare-name rejection that the
@@ -6275,7 +6275,7 @@ else
 fi
 echo ""
 
-echo "[95] --pkg fetch (11 checks)"
+echo "[95] --pkg fetch"
 # Phase 1b: --pkg add and --pkg install actually shell out to git
 # against a local file:// repo. Verifies the clone lands in
 # eigs_modules/, the lockfile records the resolved commit, the
@@ -6302,7 +6302,7 @@ else
 fi
 echo ""
 
-echo "[96] --pkg verify + update (7 checks)"
+echo "[96] --pkg verify + update"
 # Phase 1c: --pkg verify (re-hash trees against lockfile) and --pkg
 # update (re-resolve manifest tag to a new commit and re-lock).
 # Drives both against a local file:// source repo.
@@ -6326,7 +6326,7 @@ else
 fi
 echo ""
 
-echo "[96b] --pkg argv injection (3 checks)"
+echo "[96b] --pkg argv injection"
 # Security regression: eigs.json / eigs.lock.json values reach git argv, and a
 # leading '-' is parsed as an option even after positionals — a lockfile
 # "commit": "--upload-pack=<cmd>; git-upload-pack" made `--pkg install` execute
