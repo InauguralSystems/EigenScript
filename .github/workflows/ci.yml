@@ -308,7 +308,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install compiler guard
         run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; for c in gcc cc; do printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p || echo missing; done
+          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
@@ -500,7 +500,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install compiler guard
         run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; for c in gcc cc; do printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p || echo missing; done
+          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
@@ -651,7 +651,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install compiler guard
         run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; for c in gcc cc; do printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p || echo missing; done
+          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
@@ -746,7 +746,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install compiler guard
         run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; for c in gcc cc; do printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p || echo missing; done
+          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
@@ -779,7 +779,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install compiler guard
         run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; for c in gcc cc; do printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p || echo missing; done
+          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
@@ -812,7 +812,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install compiler guard
         run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; for c in gcc cc; do printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p || echo missing; done
+          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
@@ -866,7 +866,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install compiler guard
         run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; for c in gcc cc; do printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p || echo missing; done
+          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
@@ -1015,7 +1015,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install compiler guard
         run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; for c in gcc cc; do printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p || echo missing; done
+          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
@@ -1242,7 +1242,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install compiler guard
         run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; for c in gcc cc; do printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p || echo missing; done
+          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
