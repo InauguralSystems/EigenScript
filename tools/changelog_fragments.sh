@@ -24,28 +24,45 @@ assemble() {   # <root> <version> <date>: the whole cut, on <root> (the real tre
     for e in $(ls -A "$r/changes"); do   # refuse, never skip, what is not a known category
         case " README.md internal $CATS " in *" $e "*) ;; *) echo "changelog: unknown entry changes/$e"; return 1;; esac
     done
-    sec=$(mktemp) || return 1
+    sec=$(mktemp -d) || return 1
     for c in $CATS internal; do
         [ -d "$r/changes/$c" ] || continue
         names=$(cd "$r/changes/$c" && ls -A | LC_ALL=C sort -t- -k1,1n -k2)   # issue number (numeric), then slug
-        [ -n "$names" ] || continue
-        [ "$c" = internal ] || printf '### %s\n\n' "$(heading "$c")" >> "$sec"
         for f in $names; do
-            [[ $f =~ $NAME ]] && shape "$r/changes/$c/$f" || { echo "changelog: bad fragment changes/$c/$f"; rm -f "$sec"; return 1; }
-            [ "$c" = internal ] || cat "$r/changes/$c/$f" >> "$sec"
+            [[ $f =~ $NAME ]] && shape "$r/changes/$c/$f" || { echo "changelog: bad fragment changes/$c/$f"; rm -rf "$sec"; return 1; }
+            [ "$c" = internal ] || cat "$r/changes/$c/$f" >> "$sec/$c"
         done
-        [ "$c" = internal ] || echo >> "$sec"
     done
-    # Everything under [Unreleased] stays byte-identical and becomes the head of the new section; the
-    # fragment headings follow it, just before the previous release.
-    awk -v v="$v" -v d="$d" -v sec="$sec" '
-        /^## \[Unreleased\]$/ { print; print ""; print "## [" v "] - " d; u = 1; next }
-        u && /^## \[/ { while ((getline l < sec) > 0) print l; u = 0 }
-        { print }
-        END { if (u) while ((getline l < sec) > 0) print l }' "$r/CHANGELOG.md" > "$r/CHANGELOG.md.new" \
+    for c in $CATS; do echo "$c|$(heading "$c")"; done > "$sec/titles"
+    # Invariant: every line under [Unreleased] stays, unchanged and in order; the cut only INSERTS. It becomes
+    # the head of the new section. A category whose "### " heading is already there gets its entries at the
+    # end of that (last) block; missing headings follow the last block, in the order of CATS.
+    awk -v v="$v" -v d="$d" -v dir="$sec" -v order="$CATS" '
+        BEGIN { while ((getline l < (dir "/titles")) > 0) { split(l, x, "|"); title[x[1]] = x[2] } }
+        { L[NR] = $0 }
+        END {
+            for (i = 1; i <= NR; i++) if (L[i] == "## [Unreleased]") u = i; else if (u && !e && L[i] ~ /^## \[/) e = i
+            if (!e) e = NR + 1
+            last = u; for (i = u + 1; i < e; i++) if (L[i] != "") last = i
+            n = split(order, C, " ")
+            for (k = 1; k <= n; k++) {
+                txt = ""; f = dir "/" C[k]; while ((getline l < f) > 0) txt = txt l "\n"; close(f)
+                if (txt == "") continue
+                hi = 0; for (i = u + 1; i < e; i++) if (L[i] == "### " title[C[k]]) hi = i
+                if (!hi) { tail = tail "\n### " title[C[k]] "\n\n" txt; continue }
+                p = hi; for (i = hi + 1; i < e && L[i] !~ /^### /; i++) if (L[i] != "") p = i
+                ins[p] = ins[p] txt
+            }
+            for (i = 1; i <= NR; i++) {
+                print L[i]
+                if (i == u) { print ""; print "## [" v "] - " d }
+                if (i in ins) printf "%s", ins[i]
+                if (i == last) printf "%s", tail
+            }
+        }' "$r/CHANGELOG.md" > "$r/CHANGELOG.md.new" \
         && mv "$r/CHANGELOG.md.new" "$r/CHANGELOG.md" && printf '%s\n' "$v" > "$r/VERSION" \
         && find "$r/changes" -mindepth 2 -type f -name '*.md' -delete
-    local rc=$?; rm -f "$sec"; return $rc
+    local rc=$?; rm -rf "$sec"; return $rc
 }
 
 reproduces() {   # <merge-base>: is the working CHANGELOG.md exactly what the cut makes of the base tree?
@@ -57,7 +74,7 @@ reproduces() {   # <merge-base>: is the working CHANGELOG.md exactly what the cu
 }
 
 check() {
-    local base=${1:-origin/main} mb t st p c f n=0 src=0 add=0 chlog=0 ver=0 cut=0 bad=0
+    local base=${1:-origin/main} mb t st p c f left n=0 src=0 add=0 chlog=0 ver=0 cut=0 bad=0
     mb=$(git merge-base "$base" HEAD) || die "no merge-base with $base (git fetch origin main)"
     t=$(mktemp -d) || die "mktemp"; trap "rm -rf '$t'" EXIT
     git diff -z --no-renames --name-status "$mb" > "$t/l" || die "git diff $mb failed"
@@ -79,10 +96,13 @@ check() {
                 fi ;;
         esac
     done < "$t/l"
-    if [ $chlog = 1 ]; then
-        if [ $ver = 1 ] && reproduces "$mb"; then cut=1
-        else echo "FAIL CHANGELOG.md is edited directly. Add changes/<category>/<issue>-<slug>.md instead (see changes/README.md); only the release cut (tools/changelog_fragments.sh cut <version> <date>, which also bumps VERSION) may write it"; bad=1
+    left=$(find changes -mindepth 2 -type f 2>/dev/null | wc -l)
+    if [ $ver = 1 ]; then   # a cut consumed every fragment, and CHANGELOG.md is exactly what the cut makes of the base tree
+        if [ $chlog = 1 ] && [ "$left" = 0 ] && reproduces "$mb"; then cut=1
+        else echo "FAIL VERSION changed but this is not a valid release cut ($left fragment(s) still in changes/): this looks like a release cut that is stale. Re-run tools/changelog_fragments.sh cut <version> <date> on the current main. CHANGELOG.md is never edited by hand"; bad=1
         fi
+    elif [ $chlog = 1 ]; then
+        echo "FAIL CHANGELOG.md is edited directly. Add changes/<category>/<issue>-<slug>.md instead (see changes/README.md); only the release cut (tools/changelog_fragments.sh cut <version> <date>, which also bumps VERSION) may write it"; bad=1
     fi
     if [ $src = 1 ] && [ $add = 0 ] && [ $cut = 0 ]; then
         echo "FAIL src/ or lib/ changed without a changelog fragment. Add changes/<category>/<issue>-<slug>.md holding the entry text (category: $CATS), or changes/internal/<issue>-<slug>.md ('- why no entry') if the change needs none"; bad=1

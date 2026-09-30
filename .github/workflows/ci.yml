@@ -78,7 +78,8 @@ jobs:
           files=$(git diff --name-only "$base" "$head")
           echo "changed files:"; echo "$files" | sed 's/^/  /'
           # Anything not ending in .md means the runtime could be affected.
-          if printf '%s\n' "$files" | grep -qvE '\.md$'; then
+          # CHANGELOG.md and changes/ fragments are gated by tools/changelog_fragments.sh (precheck): not docs-only.
+          if printf '%s\n' "$files" | grep -qvE '\.md$' || printf '%s\n' "$files" | grep -qE '^(CHANGELOG\.md|changes/)'; then
             echo "-> code change present: full CI"
             echo "code=true" >> "$GITHUB_OUTPUT"
           else

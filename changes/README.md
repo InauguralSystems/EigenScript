@@ -31,8 +31,12 @@ The gate is `tools/changelog_fragments.sh check`, a row in `tools/precheck.sh` (
 
     bash tools/changelog_fragments.sh cut <version> <YYYY-MM-DD>
 
-It adds a `## [<version>] - <date>` section below `## [Unreleased]`, moves everything that was under `[Unreleased]`
-into it unchanged, appends each category's fragments under its `###` heading, bumps `VERSION` and deletes the
-fragments. Within a heading the order is the issue number (numeric), then the slug, so the same fragments always give
-the same file. The gate recognises a cut by reproducing it: `CHANGELOG.md` and `VERSION` changed, and the assembler
-run on the base tree gives exactly the new `CHANGELOG.md`.
+It adds a `## [<version>] - <date>` section below `## [Unreleased]` and moves everything that was under
+`[Unreleased]` into it. Every existing line stays, unchanged and in order; the cut only inserts. A category whose
+`###` heading is already there gets its fragments at the end of that heading's block; missing headings follow, in the
+table's order. The cut bumps `VERSION` and deletes the fragments. Within a heading the order is the issue number
+(numeric), then the slug, so the same fragments always give the same file.
+
+The gate recognises a cut when `VERSION` changed, `changes/` holds no fragment, and `CHANGELOG.md` is exactly what the
+assembler makes of the base tree. A cut that lost a race with a fragment PR fails that way: re-run the cut on the
+current main.
