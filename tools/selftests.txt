@@ -37,3 +37,4 @@ tools/vm_operand_width_check.sh | timeout 30 bash tools/vm_operand_width_check.s
 tools/werror_switch_check.sh tools/cc_guard.sh tools/cc-guard-bin/cc tools/cc-guard-bin/gcc tools/cc-guard-bin/clang tools/cc-guard-bin/emcc tools/werror_flags.txt | timeout 60 bash tools/werror_switch_check.sh --selftest
 tests/test_lsan_classify.sh tests/lsan_classify.sh tests/fixtures/lsan_classify/* tests/test_doc_examples.py tests/run_all_tests.sh | timeout 60 bash tests/test_lsan_classify.sh --selftest | [{"pattern":"^  PASS:","count":22},{"pattern":"^  FAIL:","count":0},{"pattern":"^  SKIP:","count":0}]
 tools/ci_scope.sh | timeout 30 bash tools/ci_scope.sh --selftest | [{"pattern":"^ci_scope selftest: 7/7 passed$","count":1}]
+tools/asan_receipts_check.sh .github/workflows/ci.yml | timeout 30 bash tools/asan_receipts_check.sh --selftest | [{"pattern":"^asan_receipts selftest: 3/3 passed$","count":1}]
