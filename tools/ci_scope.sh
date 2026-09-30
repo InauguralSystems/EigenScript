@@ -27,14 +27,14 @@ classify() {
 selftest() {
     local fail=0 n=0 got
     d=$(mktemp -d "${TMPDIR:-/tmp}/ci_scope.XXXXXX"); trap 'rm -rf "$d"' EXIT   # global: the trap outlives the function
-    git -C "$d" init -q
+    git -C "$d" init -q; git -C "$d" symbolic-ref HEAD refs/heads/base   # pinned: init.defaultBranch may be anything
     git -C "$d" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
     mkdir -p "$d/src"; echo 'int x;' > "$d/src/foo.c"; echo doc > "$d/README.md"
     git -C "$d" add -A; git -C "$d" -c user.name=t -c user.email=t@t commit -q -m base
     # case <name> <want> <mutation>: apply the mutation on a branch off base
     case_() {
         local name="$1" want="$2"; shift 2
-        git -C "$d" checkout -q -B "t$n" master 2>/dev/null || git -C "$d" checkout -q -B "t$n" main
+        git -C "$d" checkout -q -B "t$n" base
         ( cd "$d" && eval "$*" )
         git -C "$d" add -A; git -C "$d" -c user.name=t -c user.email=t@t commit -q -m "$name"
         got=$(cd "$d" && classify HEAD~1 HEAD 2>/dev/null)
