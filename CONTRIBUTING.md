@@ -30,6 +30,9 @@ Building needs only `gcc`. Running the test suite also needs `python3` with PyYA
    A selected section that skips on your build (an extension such as HTTP or
    gfx that `make` leaves out) is listed as NOT RUN LOCALLY after the results.
    A change to the suite runner's shared preamble selects the whole suite.
+   `[80]` Formatter round-trips every top-level `.eigs` file in `tests/`,
+   `lib/` and `examples/`, but an edit to one of them does not select it
+   (only `examples/hello.eigs`, which it names, does); CI runs it (#1349).
 6. If you changed `src/` or `lib/`, add a changelog fragment: one file
    `changes/<category>/<issue>-<slug>.md` holding the entry text, or
    `changes/internal/<issue>-<slug>.md` if it needs no entry. Do not edit

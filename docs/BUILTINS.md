@@ -770,8 +770,10 @@ wider than it is. A builtin that takes **no** argument (`gfx_poll`,
 `audio_capture_close`, `audio_capture_read`, `audio_stream_close`,
 `audio_stream_clear`, `audio_stream_queued`, `audio_queue_size`,
 `audio_music_stop`) ignores one entirely, and a **surplus trailing** argument
-to a fixed-arity builtin is dropped — both are the general over-arity
-question, which is #989's, not this extension's. `tools/strict_differential.sh`
+to a fixed-arity builtin is dropped (measured: `gfx_rect of` a 9-element
+list draws the rectangle and ignores the 9th). Both are the general
+over-arity question for builtins, tracked in #1398; #989 closed only the
+user-callee half. `tools/strict_differential.sh`
 crosses every guarded builtin in the extension with the wrong-container
 shapes and requires each pair to raise or to carry a reason in its allowlist,
 so this paragraph is checked against the binary rather than asserted.
@@ -931,7 +933,7 @@ Requires full build. Transformer model inference and training.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `spawn` | `spawn of fn` or `spawn of [fn, arg1, ...]` | Spawn a thread running `fn`. Bare-fn form passes no args; list form passes `arg1...` positionally. Missing trailing params bind to `null`; extra args are ignored. Args are shared by reference (unlike channel sends, which copy) — see thread-safety note below. Returns a thread handle dict. |
+| `spawn` | `spawn of fn` or `spawn of [fn, arg1, ...]` | Spawn a thread running `fn`. Bare-fn form passes no args; list form passes `arg1...` positionally. Missing trailing params bind to `null`. Extra args follow the direct-call rule (docs/SPEC.md, Functions): a callee of 2+ parameters raises `call passes 3 arguments but the callee takes 2` at the spawn site (`spawn of [two, 1, 2, 99]`), and a 1-parameter callee receives the whole list (`spawn of [one, 5, 6]` binds `[5, 6]`). Args are shared by reference (unlike channel sends, which copy) — see thread-safety note below. Returns a thread handle dict. |
 | `thread_join` | `thread_join of handle` | Block until thread completes. Returns the thread function's return value. |
 | `channel` | `channel of null` | Create a bounded FIFO channel (capacity 64). Returns a channel handle dict. |
 | `send` | `send of [channel, value]` | Send a value to the channel. Blocks if full. Sending to a **closed** channel raises a catchable `value` error (rather than silently dropping the value); `recv` on a closed empty channel returns `null` (EOF-like). |

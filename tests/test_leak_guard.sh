@@ -48,12 +48,19 @@ ASAN_LOG=/tmp/eigs_leak_guard.log
 # SOURCES is the minimal runtime + main.c: it already excludes ext_*/model_*
 # and the standalone-main tools (eigenlsp, jit_smoke) that define their own main().
 cd "$ROOT" || { echo "  FAIL: cannot cd to $ROOT"; exit 1; }
-SRCS=$(make -s print-SOURCES 2>/dev/null)
+SRCS=$(make --no-print-directory -s print-SOURCES 2>/dev/null)
 if [ -z "$SRCS" ]; then
     echo "  SKIP: could not read SOURCES from Makefile (make print-SOURCES empty)"
     echo "Leak Guard: 0 passed, 0 failed (skipped)"
     exit 0
 fi
+# #1340: every word is a source file. Under an inherited MAKEFLAGS=w the list
+# carried make's "Entering directory" banner, the build failed and the section
+# SKIPPED green below.
+for w in $SRCS; do case "$w" in *.c) ;; *)
+    echo "  FAIL: print-SOURCES gave a word that is not a .c file: '$w' (#1340)"
+    echo "Leak Guard: 0 passed, 1 failed"
+    exit 1 ;; esac; done
 
 if ! gcc $WERROR_FLAGS -O1 -g -fsanitize=address -fno-omit-frame-pointer \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \

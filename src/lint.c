@@ -3295,7 +3295,16 @@ static void w024_render(ASTNode *n, char *buf, size_t cap) {
     size_t bbudget = (so + 2 < cap) ? cap - 1 - so : 1;
     w024_ellipsize(base && base->type == AST_IDENT ? base->data.ident.name : "...",
                    bb, sizeof bb, bbudget);
-    snprintf(buf, cap, "%s%s", bb, sfx);
+    /* #1367: joined by length, not snprintf. strlen(bb) <= bbudget = cap-1-so
+     * whenever so+2 < cap, which every caller meets (so < W024_SFX_CAP = 96,
+     * cap = W024_SPELL_CAP = 272), so nothing is cut; for a smaller cap the
+     * suffix is clipped on a character boundary instead of mid-byte. */
+    size_t bl = strlen(bb);
+    if (bl > cap - 1) bl = lint_utf8_prefix(bb, cap - 1);
+    size_t sl = lint_utf8_prefix(sfx, cap - 1 - bl);
+    memcpy(buf, bb, bl);
+    memcpy(buf + bl, sfx, sl);
+    buf[bl + sl] = '\0';
 }
 
 typedef enum {

@@ -222,12 +222,19 @@ else
     # re-points src/eigenscript per variant and its #681 fingerprint guard
     # fails the suite when the alias moves mid-run. Sources come from the
     # Makefile's own variable so a hand-copied list cannot drift (#223).
-    SRCS=$(make -C "$ROOT" -s print-SRC_V_asan-gfx 2>/dev/null)
+    SRCS=$(make --no-print-directory -C "$ROOT" -s print-SRC_V_asan-gfx 2>/dev/null)
     if [ -z "$SRCS" ]; then
         bad "could not read SRC_V_asan-gfx from the Makefile"
         echo "ASan gfx: $PASS passed, $FAIL failed"
         exit 1
     fi
+    # #1340: every word is a source file. An inherited MAKEFLAGS=w (the suite
+    # run as `make -C <repo> test`) once put make's "Entering directory" banner
+    # into this list, and the build failed pointing at the gfx corpus.
+    for w in $SRCS; do case "$w" in *.c) ;; *)
+        bad "print-SRC_V_asan-gfx gave a word that is not a .c file: '$w' (#1340)"
+        echo "ASan gfx: $PASS passed, $FAIL failed"
+        exit 1 ;; esac; done
     if ! ( cd "$ROOT" && "$CC" $WERROR_FLAGS $ASAN_CFLAGS \
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
         -DEIGENSCRIPT_EXT_GFX=1 '-DEIGENSCRIPT_VERSION="asan_gfx_gate"' \

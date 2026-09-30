@@ -20,6 +20,16 @@ n=$(grep -cE '^[[:space:]]*echo "\[[^]"]+\]' "$RUNNER")
 if [ "$n" -lt "$MIN_LABELS" ]; then
   echo "FAIL: suite_label_check found only $n labelled echo lines (< $MIN_LABELS) -- the scan is vacuous"; exit 1
 fi
+# #1372: a label carries no hand-typed check count. "[88] LSP Behavioral (80
+# checks)" ran 148; a count typed into a label drifts on every added test, and
+# the section's own PASS line already prints the real one.
+# A count is a number standing alone (after a space, "(" or ","), then up to
+# three words, then check(s)/test(s)/case(s), in any case: "(148 LSP checks)"
+# is one; "UTF-8 tests", "IPv4 tests" and "SHA-256 checks" are names.
+counted=$(grep -niE '^[[:space:]]*echo "\[[^]"]+\][^"]*[(, ][0-9]+( [a-z][a-z0-9-]*){0,3} (checks?|tests?|cases?)([^a-z]|$)' "$RUNNER")
+if [ -n "$counted" ]; then
+  printf 'FAIL: section label carries a hand-typed count (#1372):\n%s\n' "$counted"; exit 1
+fi
 grep -nE '^[[:space:]]*echo "\[[^]"]+\]' "$RUNNER" \
   | sed -E 's/^([0-9]+):[[:space:]]*echo "\[([^]"]+)\](.*)$/\2\t\1\t\3/' \
   | sort -t$'\t' -k1,1 -k2,2n \
