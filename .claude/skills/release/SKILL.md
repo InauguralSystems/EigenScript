@@ -11,8 +11,10 @@ workflow), which creates the tag and builds in the same run. This
 environment's git proxy **cannot push tags**, and GITHUB_TOKEN-pushed tags
 don't retrigger workflows — so use the dispatch path.
 
-The release notes belong in CHANGELOG.md; check `git tag` for published
-versions. The front-door docs do not carry a copied latest-version line.
+The release notes belong in CHANGELOG.md, assembled from the `changes/` fragments (#1268): before
+tagging, run `bash tools/changelog_fragments.sh cut <version> <YYYY-MM-DD>`, which writes the new
+section, bumps `VERSION` and deletes the fragments, and commit that as the cut PR (`changes/README.md`).
+Check `git tag` for published versions. The front-door docs do not carry a copied latest-version line.
 
 Homebrew tap: github.com/InauguralSystems/homebrew-eigenscript (tracks the
 latest release).

@@ -9,6 +9,9 @@
 # from what CI runs — a gate listed here is a gate CI runs.
 # `bin` rows need a built eigenscript and SKIP (named) without one; `make` first.
 #
+# The diff base of the base-relative rows is PRECHECK_BASE (default origin/main, for local use). CI sets it to the
+# event's base: pull_request.base.sha, or merge_group.base_sha (the candidate's base, NOT main's tip).
+#
 # Usage: tools/precheck.sh [--list]
 set -u
 cd "$(dirname "$0")/.." || exit 2
@@ -16,6 +19,8 @@ cd "$(dirname "$0")/.." || exit 2
 # The shard count is ci.yml's, so this checks the plan CI checks.
 SHARDS=$(sed -n 's/^[[:space:]]*ASAN_SHARDS:[[:space:]]*\([0-9][0-9]*\)[[:space:]]*$/\1/p' .github/workflows/ci.yml | head -1)
 [ -n "$SHARDS" ] || { echo "precheck: ABORTED: no ASAN_SHARDS in .github/workflows/ci.yml"; exit 2; }
+
+BASE=${PRECHECK_BASE:-origin/main}
 
 # class | command   (lane = alternate rows; the slow ones are spread by order)
 GATES="run|tools/core_ext_boundary_check.sh
@@ -33,8 +38,9 @@ run|tools/vm_operand_width_check.sh
 run|tools/stdlib_index_check.sh
 run|tools/codspeed_targets_check.sh
 run|tools/gfx_guard_order_check.sh
+run|tools/changelog_fragments.sh check $BASE
 bin|tools/portability_parse_check.sh
-selftest|tools/selftests.sh --changed origin/main"
+selftest|tools/selftests.sh --changed $BASE"
 
 if [ "${1:-}" = "--list" ]; then printf '%s\n' "$GATES" | tr '|' ' '; exit 0; fi
 [ -z "${1:-}" ] || { echo "usage: tools/precheck.sh [--list]" >&2; exit 2; }

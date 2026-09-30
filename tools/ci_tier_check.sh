@@ -50,7 +50,7 @@ PR_BODY = re.compile(G.format("event") + r"\s*(?:\.\s*pull_request\b|\[\s*['\"]p
 EV = re.compile(r"\bgithub\b(?!\s*(?:\.\s*(?!" + EVP + r")\w|\[\s*['\"](?!" + EVP + r")\w+['\"]\s*\]))", re.I)
 IND = re.compile(r"\b(env|vars)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?|\b(needs|steps)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?"
                  r"\s*(?:\.\s*|\[\s*['\"])(outputs|result|outcome|conclusion)['\"]?\s*\]?(?:\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?)?", re.I)
-WAIVE = {("ci.yml", "scope", "detect"): "6611d97dc6f0b4e7",
+WAIVE = {("ci.yml", "scope", "detect"): "2ec145a2fd3ffd5a",
          ("ci.yml", "gate-selftests", "select"): "411e6c561962764a"}
 used = set()
 def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)

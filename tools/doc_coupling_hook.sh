@@ -7,9 +7,9 @@ f=$(jq -r '.tool_input.file_path // empty')
 ctx=""
 case "$f" in
   */src/lexer.c|*/src/parser.c|*/src/builtins.c|*/src/vm.c|*/src/compiler.c|*/src/eigenscript.c|*/src/vm.h)
-    ctx="Doc coupling: $f is a SEMANTICS surface. House rule: semantics changes update docs/SPEC.md + docs/COMPARISON.md in the SAME PR (their examples run byte-for-byte in CI, suite [89]/[90]) and add a CHANGELOG [Unreleased] entry." ;;
+    ctx="Doc coupling: $f is a SEMANTICS surface. House rule: semantics changes update docs/SPEC.md + docs/COMPARISON.md in the SAME PR (their examples run byte-for-byte in CI, suite [89]/[90]) and add a changes/<category>/<issue>-<slug>.md fragment (never edit CHANGELOG.md; see changes/README.md)." ;;
   */lib/*.eigs)
-    ctx="Doc coupling: $f is a stdlib module. Every module keeps its docs/STDLIB.md entry, its tests/ file, and a CHANGELOG [Unreleased] line current." ;;
+    ctx="Doc coupling: $f is a stdlib module. Every module keeps its docs/STDLIB.md entry, its tests/ file, and a changes/ fragment (changes/README.md) current." ;;
   */src/eigs_embed.h|*/src/eigs_embed.c)
     ctx="Doc coupling: $f is the embed API. docs/EMBEDDING.md documents this surface — update it if the API shape moved." ;;
   */src/freestanding/*)

@@ -16,7 +16,7 @@ DOCS = ('README.md docs/llms.txt CLAUDE.md docs/ARCHITECTURE.md '
         'docs/BUILTINS.md docs/CONCURRENCY.md ROADMAP.md docs/CI.md').split()
 POP = Path('tools/docs_claims_populations.txt')
 EXEMPT_FLAGS = {'docs/CI.md'}  # This page documents other command-line tools.
-SEGMENTS = ('src lib tests tools docs examples editors bench fuzz web reports '
+SEGMENTS = ('src lib tests tools docs examples editors bench fuzz web reports changes '
             '.github .claude .devcontainer').split()
 TARGET_PROSE = {'sure', 'it', 'them', 'the', 'a', 'an', 'this', 'that', 'your',
                 'no', 'sense', 'one', 'more', 'up', 'do', 'for', 'use', 'room'}
