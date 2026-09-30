@@ -939,7 +939,7 @@ jobs:
           found=$(ls shard-receipts 2>/dev/null | grep -c . || true)
           echo "shard receipts: $found (expected $n)"
           [ "$found" = "$n" ] || { echo "::error::expected $n shard receipts, found $found"; exit 1; }
-          total=0
+          total=0 bearing_total=0
           for k in $(seq 1 "$n"); do
             f="shard-receipts/shard-$k.txt"
             [ -f "$f" ] || { echo "::error::no receipt from shard $k"; exit 1; }
@@ -954,10 +954,15 @@ jobs:
             [ "$plan" = "PLAN: shard=$k/$n" ] || { echo "::error::shard $k reported '$plan', expected 'PLAN: shard=$k/$n' — the shard ran a different split than this lane declares (ASAN_SHARDS=$n)"; exit 1; }
             bearing=$(sed -n 's/.*PLAN: shard=[0-9]*\/[0-9]* bearing=\([0-9][0-9]*\) chunks=.*/\1/p' "$f" | head -1)
             [ -n "$bearing" ] && [ "$bearing" -gt 0 ] || { echo "::error::shard $k reported no header-bearing chunks in its PLAN line"; exit 1; }
+            bearing_total=$((bearing_total + bearing))
             leaked=$(sed -n 's/^leaked=\([0-9][0-9]*\)$/\1/p' "$f")
             [ -n "$leaked" ] || { echo "::error::shard $k did not report a leak tally"; exit 1; }
             total=$((total + leaked))
           done
+          # #1313: the shards together cover the suite, so their bearing chunks
+          # sum to at least the runner's label floor (tools/suite_label_check.sh).
+          [ "$bearing_total" -ge 200 ] || { echo "::error::the $n shards planned $bearing_total header-bearing chunks in total, expected >= 200 — the union cannot be the whole suite"; exit 1; }
+          echo "header-bearing chunks across $n shards: $bearing_total"
           # Exactly one shard must have claimed each extra.
           for extra in gc_traversal lsp_asan; do
             # `grep -c` over MULTIPLE files prints one count per file, not a
