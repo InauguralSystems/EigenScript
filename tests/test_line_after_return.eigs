@@ -141,4 +141,55 @@ try:
 catch e:
     got is e.line
 assert_eq of [got, 125, "compiled caller: / after a native RETURN_NULL callee"]
+# #1434: a callback that ends by ERROR-HALT, not RETURN. sandbox_run swallows
+# its chunk's error; the chunk stamped line 77 first (OP_LINE 77, then 1 / 0),
+# so pre-fix the caller's next builtin raise reported 77. Descriptor opcodes:
+# LINE 68, NUM_ONE 3, NUM_ZERO 2, DIV 7, RETURN 40 (src/vm.h enum order).
+# ok77 stamps 77 and returns 1 (a RETURN, restored since #1424).
+halt77 is [1, [68,77,0,0,0, 3, 2, 7, 40], []]
+ok77 is [1, [68,77,0,0,0, 3, 40], []]
+got is 0
+try:
+    z is sqrt of (0 - (len of (sandbox_run of [halt77, 100])))
+catch e:
+    got is e.line
+assert_eq of [got, 153, "builtin raise after a sandbox_run chunk error-halted"]
+# hot_sb's thunk calls sandbox_run natively (60 calls pass the JIT entry
+# threshold of 50). The OSR row is native under EIGS_JIT_OSR_THRESHOLD=1.
+define hot_sb(d, k) as:
+    r is sqrt of (k - (len of (sandbox_run of [d, 100])))
+    return r
+k is 60
+loop while k > 1:
+    w is hot_sb of [ok77, k]
+    k is k - 1
+got is 0
+try:
+    w is hot_sb of [halt77, 1]
+catch e:
+    got is e.line
+assert_eq of [got, 160, "compiled caller: builtin raise after an error-halted callback"]
+k is 60
+d is ok77
+got is 0
+try:
+    loop while k > 0:
+        if k == 1:
+            d is halt77
+        z is sqrt of (k - (len of (sandbox_run of [d, 100])))
+        k is k - 1
+catch e:
+    got is e.line
+assert_eq of [got, 179, "OSR loop: builtin raise after an error-halted callback"]
+assert_eq of [k, 1, "OSR loop raised on its last iteration"]
+# sort_by raising on its own after an eval-defined key (the AOT's sortby_ev
+# row). In the VM the caller's frame is live, so this is right on the base
+# too; the no-frame half is tests/test_error_line_fallback.c ([0b]).
+eval of "define ekey(x) as:\n    y is x + 1\n    if x == 2:\n        return \"s\"\n    return y"
+got is 0
+try:
+    r is sort_by of [[3, 1, 2], ekey]
+catch e:
+    got is e.line
+assert_eq of [got, 191, "sort_by raised after an eval-defined key"]
 test_summary of null

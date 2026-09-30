@@ -95,6 +95,19 @@ static EigsValue *host_add(EigsValue *arg) {
     return eigs_value_new_num(sum);
 }
 
+/* #1434: runs an eval that raises on its line 5, swallows that error, then
+ * raises its own (a refused bind) with the caller's frame live. */
+static EigsValue *host_swallow(EigsValue *arg) {
+    (void)arg;
+    EigsValue *v = eigs_eval_string("a is 1\nb is 2\nc is 3\nd is 4\ne is a / 0\n");
+    if (v) eigs_value_release(v);
+    eigs_clear_error();
+    EigsValue *one = eigs_value_new_num(1.0);
+    eigs_set_global("_#fstr", one);
+    eigs_value_release(one);
+    return eigs_value_new_null();
+}
+
 int main(void) {
     EigsState *st = eigs_open();
     CHECK(st != NULL, "eigs_open");
@@ -265,6 +278,34 @@ int main(void) {
               strcmp(eigs_value_as_string(r), "<5>") == 0,
               "#1322 f-strings still use the builtin after the refused binds");
         if (r) eigs_value_release(r);
+    }
+
+    /* --- #1434: an error after a call into EigenScript reports the line the
+     * host entered with, not the last line the called code ran. The host
+     * stamps line 30 (the AOT's shape), evaluates three lines, then a refused
+     * bind raises with no VM frame live: pre-fix it reported line 3. Then a
+     * host function called from line 3 runs an eval whose line-5 raise it
+     * swallows, and raises its own: pre-fix `e.line` was 5. */
+    {
+        int line_save = g_trace_current_line;
+        EigsValue *seven = eigs_value_new_num(7.0);
+        g_trace_current_line = 30;
+        r = eigs_eval_string("p is 1\nq is p + 1\nw is q + 1\n");
+        if (r) eigs_value_release(r);
+        eigs_clear_error();
+        eigs_set_global("_#fstr", seven);
+        CHECK(eigs_has_error() && eigs_last_error_line() == 30,
+              "#1434 a raise after eigs_eval_string reports the host's line (30)");
+        eigs_clear_error();
+        eigs_register_function("host_swallow", host_swallow);
+        r = eigs_eval_string("x is 1\ntry:\n    z is host_swallow of 1\ncatch e:\n"
+                             "    got is e.line\ngot");
+        CHECK(r && eigs_value_type(r) == EIGS_TYPE_NUM && eigs_value_as_num(r) == 3.0,
+              "#1434 a host function's raise after a swallowed eval error reports its caller's line (3)");
+        if (r) eigs_value_release(r);
+        eigs_value_release(seven);
+        eigs_clear_error();
+        g_trace_current_line = line_save;
     }
 
     /* --- List + dict construction. ----------------------------------- */
