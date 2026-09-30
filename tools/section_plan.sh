@@ -894,6 +894,12 @@ build_sections_plan() {
 
 emit_plan() {   # emit_plan <out> <plan builder> <args...>
     local out="$1" planline; shift
+    # #1379: OUT is a scratch file. Passing the runner here once overwrote
+    # tests/run_all_tests.sh with a plan; refuse the runner and any tracked file.
+    [ "$(realpath -m -- "$out")" != "$(realpath -m -- "$RUNNER")" ] ||
+        die "refusing to write the plan over the runner it reads: $out"
+    ! git -C "$SP_ROOT" ls-files --error-unmatch -- "$(realpath -m -- "$out")" >/dev/null 2>&1 ||
+        die "refusing to write the plan over a tracked file: $out"
     "$@" > "$SP_TMPROOT/plan.line"
     planline=$(cat "$SP_TMPROOT/plan.line")
     {
@@ -1083,6 +1089,11 @@ STUB_ECHO
     for i in $(seq 1 60); do echo "SECTION_TIME: [fabricated-$i] 1"; done > "$dir/fabricated.log"
     expect_red 'print_weights: labels the runner lacks do not count (#1312)' "only 0 of the runner's sections" \
         "$0" --root "$SP_ROOT" --print-weights "$dir/fabricated.log"
+    # On a COPY, under ulimit -f: without the refusal the plan reads the file it
+    # is writing and grows without bound (154 GB took the box down, #1379).
+    cp "$RUNNER" "$dir/runner-copy.sh"
+    expect_red 'emit_plan: OUT may not be the runner (#1379)' 'over the runner it reads' \
+        bash -c 'ulimit -f 20000; exec "$@"' _ "$0" --root "$SP_ROOT" --runner "$dir/runner-copy.sh" --emit-changed HEAD "$dir/runner-copy.sh"
     echo "section_plan selftest: checks=$((pass + fail)) failures=$fail"
     [ "$pass" -gt 0 ] && [ "$fail" -eq 0 ]
 }

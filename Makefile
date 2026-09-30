@@ -284,8 +284,11 @@ gfx: build/gfx/eigenscript
 	$(call RELINK,gfx)
 	@echo "EigenScript $(VERSION) (gfx) built. Binary: $$(du -sh build/gfx/eigenscript | cut -f1)"
 
+# The label floor first (#1379): a runner overwritten by a generated plan has no
+# sections and no epilogue, so it ran nothing and exited 0.
 test: build sandbox-intern-test
 	$(AUX_REFRESH)
+	bash tools/suite_label_check.sh
 	cd tests && bash run_all_tests.sh
 
 # Contributor fast local gate (#1347): only the suite sections the diff against
@@ -293,6 +296,7 @@ test: build sandbox-intern-test
 BASE ?= origin/main
 test-changed: build
 	$(AUX_REFRESH)
+	bash tools/suite_label_check.sh
 	cd tests && EIGS_SUITE_CHANGED=$(BASE) bash run_all_tests.sh
 
 # Contributor precheck (#1264): the repo's static gates in well under a minute,
