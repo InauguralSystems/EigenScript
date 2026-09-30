@@ -1,0 +1,11 @@
+# #1424 uncaught, module frame, hot: a 6001-iteration module loop (past the
+# 5000 OSR threshold) calls the native `dec`, and `/` on line 10 raises on the
+# last iteration. Pre-fix: "Error line 7" and "at <module> (line 7)".
+# LINE-NUMBER SENSITIVE (the [0g] runner section greps these numbers).
+define dec(x) as:
+    y is x - 1
+    return y
+k is 6001
+loop while k > 0:
+    r is 1 / (dec of k)
+    k is k - 1
