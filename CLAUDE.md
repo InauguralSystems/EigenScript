@@ -113,7 +113,7 @@ Always-on:
   the `write-eigenscript` skill.)
 - **A `src/` or `lib/` change adds a changelog fragment and never edits
   `CHANGELOG.md`** (#1268): `changes/<category>/<issue>-<slug>.md` holds the
-  entry text (`changes/internal/` when it needs none; `changes/README.md`).
+  entry text (category `internal` when it needs none; `changes/README.md`).
   Every PR used to insert at the top of `[Unreleased]`, so concurrent PRs
   conflicted there. `tools/changelog_fragments.sh check` (a `make precheck`
   row) fails a change with no fragment and a direct `CHANGELOG.md` edit.
