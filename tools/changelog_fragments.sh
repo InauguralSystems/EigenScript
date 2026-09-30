@@ -78,7 +78,8 @@ check() {
     mb=$(git merge-base "$base" HEAD) || die "no merge-base with $base (git fetch origin main)"
     t=$(mktemp -d) || die "mktemp"; trap "rm -rf '$t'" EXIT
     git diff -z --no-renames --name-status "$mb" > "$t/l" || die "git diff $mb failed"
-    git ls-files -z --others --exclude-standard | while IFS= read -r -d '' p; do printf 'A\0%s\0' "$p"; done >> "$t/l"
+    # Untracked files count only where a PR's content lives: CI writes artifacts (selection.txt) into the tree.
+    git ls-files -z --others --exclude-standard -- changes src lib | while IFS= read -r -d '' p; do printf 'A\0%s\0' "$p"; done >> "$t/l"
     while IFS= read -r -d '' st && IFS= read -r -d '' p; do
         n=$((n + 1))
         case $p in CHANGELOG.md|VERSION) ;; changes/*) [ "$st" = D ] || extra=$((extra + 1)) ;; *) extra=$((extra + 1)) ;; esac   # what a cut PR may not carry
