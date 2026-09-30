@@ -729,6 +729,21 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
             printf '%s\n' "$LAR_OUT" | sed 's/^/      /'
         fi
     done
+    # #1434: a callback builtin entered after a call RETURNED tapes the
+    # statement's line, not the returned callee's (live: `what is x at 15`).
+    LAR_TAPE=$(mktemp /tmp/eigs_lar_XXXXXX.tape); rm -f "$LAR_TAPE"
+    LAR_OUT=$($EIGS_TMO env $LAR_ENV EIGS_TRACE="$LAR_TAPE" ./eigenscript ../tests/line_after_callback_tape.eigs </dev/null 2>&1); LAR_RC=$?
+    LAR_STEP=$(printf 'c\njb 9\ns\nq\n' | $EIGS_TMO ./eigenscript --step "$LAR_TAPE" 2>&1 | sed -n 's/^step [0-9]*\/[0-9]* *line \([0-9]*\)$/\1/p' | tail -1)
+    rm -f "$LAR_TAPE"
+    TOTAL=$((TOTAL + 1))
+    if [ "$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")" != ok ]; then
+        FAIL=$((FAIL + 1)); echo "  FAIL: line_after_callback_tape.eigs ($LAR_TIER): compiled nothing, so it measured the interpreter"
+    elif [ "$LAR_RC" -eq 0 ] && grep -qx 2 <<< "$LAR_OUT" && [ "$LAR_STEP" = 15 ]; then
+        PASS=$((PASS + 1)); echo "  PASS: tape stop after the callbacks is the statement's line 15 ($LAR_TIER)"
+    else
+        FAIL=$((FAIL + 1)); echo "  FAIL: line_after_callback_tape.eigs ($LAR_TIER, rc=$LAR_RC): tape stop '$LAR_STEP', want 15"
+        printf '%s\n' "$LAR_OUT" | sed 's/^/      /'
+    fi
 done
 echo ""
 

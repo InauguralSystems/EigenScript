@@ -8,5 +8,6 @@
   line (`e.line`, the `Error line N` header and the traceback). `vm_execute` now restores both lines on every
   exit, in the interpreter, the JIT and OSR, and writes an `L` record for the restored line when a tape is
   recording, so `eigenscript --step` and the DAP file a store made right after the call under the same line as
-  live history. Tapes of programs whose builtins run callbacks gain those `L` records; the record shape is
-  unchanged.
+  live history. With an interpreter frame live the restored line is the caller's own line, even when a call
+  that returned earlier in the expression left the stamp on its last line. Tapes of programs that return from
+  `load_file`/`import` or whose builtins run callbacks gain those `L` records; the record shape is unchanged.

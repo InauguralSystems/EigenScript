@@ -6571,7 +6571,14 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
      * its stores under (prev_record_assign). The trace store is skipped under
      * MT, as at OP_LINE (#297). */
     int entry_vm_line    = g_vm.current_line;
-    int entry_trace_line = trace_current_line_load();
+    /* With a VM frame live the VM line is the caller's line: #1424 restores it
+     * on RETURN, the trace stamp it does not, so after `mk of k` returned the
+     * stamp still held mk's last line when `sort_by of (mk of k)` entered here.
+     * Only a native producer with no frame (the AOT, an embedder) keeps the
+     * stamp as its line. Where no call returned in between the two are equal
+     * (OP_LINE writes both), so tapes of other shapes do not move. */
+    int entry_trace_line = (g_vm.frame_count > 0 && !g_vm_multithreaded)
+                           ? entry_vm_line : trace_current_line_load();
     Value *r = vm_run(chunk, env, call_argc);
     /* #744: TaskScheduler and the trampoline live in task.c. This is the one
      * place the VM hands control to them; with no scheduler armed it returns
