@@ -75,17 +75,11 @@ jobs:
           fi
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
-          files=$(git diff --name-only "$base" "$head")
-          echo "changed files:"; echo "$files" | sed 's/^/  /'
-          # Anything not ending in .md means the runtime could be affected.
-          # CHANGELOG.md and changes/ fragments are gated by tools/changelog_fragments.sh (precheck): not docs-only.
-          if printf '%s\n' "$files" | grep -qvE '\.md$' || printf '%s\n' "$files" | grep -qE '^(CHANGELOG\.md|changes/)'; then
-            echo "-> code change present: full CI"
-            echo "code=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "-> docs-only: runtime legs report green without building"
-            echo "code=false" >> "$GITHUB_OUTPUT"
-          fi
+          # tools/ci_scope.sh: both sides of a rename count (#1311); its
+          # --selftest is a tools/selftests.txt row.
+          verdict=$(bash tools/ci_scope.sh "$base" "$head")
+          echo "-> $verdict (code=false: runtime legs report green without building)"
+          echo "$verdict" >> "$GITHUB_OUTPUT"
 
   # Build the shared dev/CI image (.devcontainer/Dockerfile) and push it to
   # GHCR tagged to this commit. Every Linux leg below runs *inside* this image
