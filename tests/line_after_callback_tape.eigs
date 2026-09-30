@@ -1,0 +1,17 @@
+# #1434 r3: a call that RETURNS (mk) feeds a builtin that runs callbacks
+# (sort_by's key) in the same expression. The trace stamp still held mk's
+# `return q` (line 12) when sort_by entered, so each callback exit restored and
+# taped line 12: after the last key return the stepper's next stop was 12, not
+# the statement's line 15. [0g] steps the tape: after the last stop at line 9
+# the next stop must be 15. LINE-NUMBER SENSITIVE.
+define key(v) as:
+    w is 0 - v
+    return w
+define mk(n) as:
+    q is [[n, 2], key]
+    return q
+k is 60
+loop while k > 0:
+    x is len of (sort_by of (mk of k))
+    k is k - 1
+print of (what is x at 15)

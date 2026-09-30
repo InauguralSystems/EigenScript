@@ -535,6 +535,12 @@ check_eigs_suite() {
     fi
 }
 
+# A JIT/OSR row that compiled nothing measured the interpreter ([0b], [0g]).
+lar_jit_witness() {   # lar_jit_witness <tier> <output>: prints ok | none
+    if [ "$1" = "EIGS_JIT_OFF=1" ] || [ "$(uname -m)" != x86_64 ] ||
+       grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]' <<< "$2"; then echo ok; else echo none; fi
+}
+
 echo "============================================"
 echo "  EigenScript Gen 0 Compliance Test Suite"
 echo "============================================"
@@ -591,8 +597,9 @@ echo ""
 
 # #1082: a builtin's line-0 raise with no live VM frame must report the trace
 # stamp (the AOT's per-statement line), not 0. C-level because the shape --
-# rt_error outside any interpreter frame -- has no .eigs spelling.
-echo "[0b] Error line fallback outside a VM frame (#1082)"
+# rt_error outside any interpreter frame -- has no .eigs spelling. #1434: the
+# same binary runs an eval-defined sort_by key from C, so it runs per tier.
+echo "[0b] Error line fallback outside a VM frame (#1082, #1434)"
 check_binary_fingerprint
 ERRLINE_BUILD=$(make --no-print-directory -C .. errline-test 2>&1)
 ERRLINE_BUILD_RC=$?
@@ -602,19 +609,39 @@ if [ "$ERRLINE_BUILD_RC" -ne 0 ]; then
     echo "  FAIL: error-line fallback test build (rc=$ERRLINE_BUILD_RC)"
     echo "$ERRLINE_BUILD" | tail -12
 else
-    ERRLINE_OUT=$(../build/release/test_error_line_fallback 2>&1)
+  EL_WANT=$(grep -c '^ *check(' ../tests/test_error_line_fallback.c)   # every check must report
+  for EL_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
+    EL_ENV="EIGS_JIT_STATS=1"; [ "$EL_TIER" = JIT ] || EL_ENV="$EL_ENV $EL_TIER"
+    EL_TAPE=$(mktemp /tmp/eigs_errline_XXXXXX.tape); rm -f "$EL_TAPE"
+    ERRLINE_OUT=$($EIGS_TMO env $EL_ENV EIGS_TRACE="$EL_TAPE" ../build/release/test_error_line_fallback 2>&1)
     ERRLINE_RC=$?
+    # #1434: `eigs step` files the store after the callbacks under the same
+    # line live history does (the test prints the live line; its tape stop 95
+    # follows the store).
+    EL_LIVE=$(sed -n 's/^LIVE: errline_1434=2 line \([0-9]*\)$/\1/p' <<< "$ERRLINE_OUT")
+    EL_STEP=$(printf 'j 95\nt errline_1434\nq\n' | $EIGS_TMO ./eigenscript --step "$EL_TAPE" 2>&1 |
+              sed -n 's/^  #[0-9]* *line \([0-9]*\) *2 .*/\1/p')
+    rm -f "$EL_TAPE"
+    TOTAL=$((TOTAL + 1))
+    if [ -n "$EL_LIVE" ] && [ "$EL_LIVE" = "$EL_STEP" ]; then
+        PASS=$((PASS + 1)); echo "  PASS: tape stepper and live history file the store under line $EL_LIVE ($EL_TIER)"
+    else
+        FAIL=$((FAIL + 1)); echo "  FAIL: tape stepper says line '$EL_STEP', live history '$EL_LIVE' ($EL_TIER)"
+    fi
     EL_PASS=$(echo "$ERRLINE_OUT" | grep -c "^PASS:" || true)
     EL_FAIL=$(echo "$ERRLINE_OUT" | grep -c "^FAIL:" || true)
-    TOTAL=$((TOTAL + EL_PASS + EL_FAIL))
+    TOTAL=$((TOTAL + EL_PASS + EL_FAIL + 1))
     PASS=$((PASS + EL_PASS))
     FAIL=$((FAIL + EL_FAIL))
-    if [ "$ERRLINE_RC" -eq 0 ] && [ "$EL_FAIL" -eq 0 ]; then
-        echo "  PASS: all $EL_PASS error-line fallback checks"
+    if [ "$(lar_jit_witness "$EL_TIER" "$ERRLINE_OUT")" != ok ]; then
+        FAIL=$((FAIL + 1)); echo "  FAIL: error-line fallback ($EL_TIER): compiled nothing, so it measured the interpreter"
+    elif [ "$ERRLINE_RC" -eq 0 ] && [ "$EL_FAIL" -eq 0 ] && [ "$EL_PASS" -eq "$EL_WANT" ] && [ "$EL_WANT" -gt 0 ]; then
+        PASS=$((PASS + 1)); echo "  PASS: all $EL_PASS error-line fallback checks ($EL_TIER)"
     else
-        echo "  FAIL: error-line fallback (rc=$ERRLINE_RC)"
+        FAIL=$((FAIL + 1)); echo "  FAIL: error-line fallback ($EL_TIER, rc=$ERRLINE_RC, $EL_PASS/$EL_WANT passed)"
         echo "$ERRLINE_OUT" | grep "^FAIL:"
     fi
+  done
 fi
 echo ""
 
@@ -662,10 +689,9 @@ check_binary_fingerprint
 # last return before a raise decides its line), and on x86_64 EVERY
 # JIT/OSR row must show compiled thunks (lar_jit_witness, the one predicate):
 # a row that compiled nothing measured the interpreter and FAILS by name.
-lar_jit_witness() {   # lar_jit_witness <tier> <output>: prints ok | none
-    if [ "$1" = "EIGS_JIT_OFF=1" ] || [ "$(uname -m)" != x86_64 ] ||
-       grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]' <<< "$2"; then echo ok; else echo none; fi
-}
+# #1434: line_after_callback_halt's callback prints its own swallowed error
+# first (#1426), with the same frame lines, so a fixture's frame lines are
+# matched only from its header line onward.
 for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
     LAR_ENV="EIGS_JIT_STATS=1"; [ "$LAR_TIER" = JIT ] || LAR_ENV="$LAR_ENV $LAR_TIER"
     LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript ../tests/test_line_after_return.eigs </dev/null 2>&1); LAR_RC=$?
@@ -681,14 +707,16 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
     fi
     for LAR_FX in "line_after_return_module.eigs:Error line 10:|  at <module> (line 10)" \
                   "line_after_return_fn.eigs:Error line 11:|  at outer (line 11)|  at <module> (line 15)" \
-                  "line_after_return_null.eigs:Error line 13:|  at hot_null (line 13)|  at <module> (line 20)"; do
+                  "line_after_return_null.eigs:Error line 13:|  at hot_null (line 13)|  at <module> (line 20)" \
+                  "line_after_callback_halt.eigs:Error line 9:|  at hot_sb (line 9)|  at <module> (line 15)"; do
         LAR_FILE=${LAR_FX%%:*}; LAR_WANT=${LAR_FX#*:}
         LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript "../tests/$LAR_FILE" </dev/null 2>&1); LAR_RC=$?
         LAR_MISS=""
         LAR_REST="$LAR_WANT|"
+        LAR_TAIL=$(printf '%s\n' "$LAR_OUT" | sed 's/: .*/:/' | awk -v h="${LAR_WANT%%|*}" 'f || $0 == h { f = 1; print }')
         while [ -n "$LAR_REST" ]; do
             LAR_LINE=${LAR_REST%%|*}; LAR_REST=${LAR_REST#*|}
-            grep -qxF -- "$LAR_LINE" <<< "$(printf '%s\n' "$LAR_OUT" | sed 's/: .*/:/')" || LAR_MISS="$LAR_MISS [$LAR_LINE]"
+            grep -qxF -- "$LAR_LINE" <<< "$LAR_TAIL" || LAR_MISS="$LAR_MISS [$LAR_LINE]"
         done
         TOTAL=$((TOTAL + 1))
         LAR_JIT=$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")
@@ -701,6 +729,21 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
             printf '%s\n' "$LAR_OUT" | sed 's/^/      /'
         fi
     done
+    # #1434: a callback builtin entered after a call RETURNED tapes the
+    # statement's line, not the returned callee's (live: `what is x at 15`).
+    LAR_TAPE=$(mktemp /tmp/eigs_lar_XXXXXX.tape); rm -f "$LAR_TAPE"
+    LAR_OUT=$($EIGS_TMO env $LAR_ENV EIGS_TRACE="$LAR_TAPE" ./eigenscript ../tests/line_after_callback_tape.eigs </dev/null 2>&1); LAR_RC=$?
+    LAR_STEP=$(printf 'c\njb 9\ns\nq\n' | $EIGS_TMO ./eigenscript --step "$LAR_TAPE" 2>&1 | sed -n 's/^step [0-9]*\/[0-9]* *line \([0-9]*\)$/\1/p' | tail -1)
+    rm -f "$LAR_TAPE"
+    TOTAL=$((TOTAL + 1))
+    if [ "$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")" != ok ]; then
+        FAIL=$((FAIL + 1)); echo "  FAIL: line_after_callback_tape.eigs ($LAR_TIER): compiled nothing, so it measured the interpreter"
+    elif [ "$LAR_RC" -eq 0 ] && grep -qx 2 <<< "$LAR_OUT" && [ "$LAR_STEP" = 15 ]; then
+        PASS=$((PASS + 1)); echo "  PASS: tape stop after the callbacks is the statement's line 15 ($LAR_TIER)"
+    else
+        FAIL=$((FAIL + 1)); echo "  FAIL: line_after_callback_tape.eigs ($LAR_TIER, rc=$LAR_RC): tape stop '$LAR_STEP', want 15"
+        printf '%s\n' "$LAR_OUT" | sed 's/^/      /'
+    fi
 done
 echo ""
 

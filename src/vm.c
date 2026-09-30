@@ -6560,10 +6560,41 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
      * may not suspend (enforced at CASE(CALL) via base_frame). frame_count==0
      * identifies the outermost. */
     int outermost = (g_vm.frame_count == 0);
+    /* #1434: native code that runs interpreted code (a builtin's callback,
+     * an embedder's eval, the AOT) gets back the line it entered with, on
+     * every exit. The callee's OP_LINEs overwrite both the VM line and the
+     * process-global trace stamp, and #1424's ret_line restore covers only a
+     * RETURN: a chunk that error-halts (sandbox_run swallows the error and the
+     * caller's expression raises next) left the VM line on the callee's line,
+     * and nothing restored the trace stamp, which is the line an embedder or
+     * an AOT binary with no live frame raises at (vm_current_line) and files
+     * its stores under (prev_record_assign). The trace store is skipped under
+     * MT, as at OP_LINE (#297). */
+    int entry_vm_line    = g_vm.current_line;
+    /* With a VM frame live the VM line is the caller's line: #1424 restores it
+     * on RETURN, the trace stamp it does not, so after `mk of k` returned the
+     * stamp still held mk's last line when `sort_by of (mk of k)` entered here.
+     * Only a native producer with no frame (the AOT, an embedder) keeps the
+     * stamp as its line. Where no call returned in between the two are equal
+     * (OP_LINE writes both), so tapes of other shapes do not move. */
+    int entry_trace_line = (g_vm.frame_count > 0 && !g_vm_multithreaded)
+                           ? entry_vm_line : trace_current_line_load();
     Value *r = vm_run(chunk, env, call_argc);
-    if (!outermost) return r;
     /* #744: TaskScheduler and the trampoline live in task.c. This is the one
      * place the VM hands control to them; with no scheduler armed it returns
      * `r` unchanged, so a program that never spawns pays one call. */
-    return task_sched_after_outermost(r);
+    if (outermost) r = task_sched_after_outermost(r);
+    g_vm.current_line = entry_vm_line;
+    if (!g_vm_multithreaded) {
+        trace_current_line_store(entry_trace_line);
+        /* The tape tools (eigs step, eigsdap) file an assignment under the
+         * last L record before it, live history under the stamp: put the
+         * restored line on the tape too, or a store the caller makes next
+         * reads the callee's line there and the entering line here. Line 0
+         * is "no line" (main's own entry, an embedder that never stamps), so
+         * it writes nothing. trace_line dedups against the tape's last L. */
+        if (__builtin_expect(g_trace_enabled, 0) && entry_trace_line > 0)
+            trace_line(entry_trace_line);
+    }
+    return r;
 }
