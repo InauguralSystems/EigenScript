@@ -1,0 +1,7 @@
+# #1424 uncaught, module frame: the raise is sqrt's, on line 7, after neg
+# (lines 4-6) returned. Pre-fix: "Error line 6" and "at <module> (line 6)".
+# LINE-NUMBER SENSITIVE (the [0g] runner section greps these numbers).
+define neg(x) as:
+    y is 0 - x
+    return y
+q is sqrt of (neg of 9)

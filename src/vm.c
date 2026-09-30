@@ -561,6 +561,7 @@ static void callframe_init(CallFrame *f, EigsChunk *chunk, Env *env,
     f->saved_stall_count = g_loop_stall_count;
     f->saved_loop_iter   = g_loop_iterations;
     f->call_argc = call_argc;
+    f->ret_line = g_vm.current_line;   /* #1424: restored on return */
 }
 
 /* Pop/teardown-time release: drop the frame's counted refs — its env iff
@@ -2690,6 +2691,7 @@ void jit_helper_return(void) {
     }
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
+    g_vm.current_line  = frame->ret_line;   /* #1424: as CASE(RETURN) */
     /* The frame's chunk ref is NOT dropped here: the thunk epilogue still
      * writes chunk->jit_advance after we return. vm_run's -1 sentinel
      * handler drops it. */
@@ -2719,6 +2721,7 @@ void jit_helper_return_null(void) {
     }
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
+    g_vm.current_line  = frame->ret_line;   /* #1424: as CASE(RETURN_NULL) */
     /* Chunk ref deferred to vm_run's -1 handler (see jit_helper_return). */
     g_vm.frame_count--;
     g_vm.stack[g_vm.sp++] = slot_null();
@@ -4302,6 +4305,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         /* Restore loop-stall globals saved on entry (scoped per call frame). */
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
+        /* #1424: the caller resumes on ITS line. The callee's OP_LINE stream
+         * moved current_line, and the compiler emits no OP_LINE between a
+         * CALL and the caller's next op in the same expression (the `/` in
+         * `1 / (f of x)`, the builtin CALL in `sqrt of (f of x)`), so a
+         * raise there reported the callee's last line. Restored before the
+         * return-to-C branch too: a builtin that ran this chunk (a sort
+         * comparator, eval) raises on its caller's line afterwards. */
+        current_line = g_vm.current_line = frame->ret_line;
         chunk_decref(frame->chunk);   /* frame's ref; this chunk's code is
                                        * not read again below */
         g_vm.frame_count--;
@@ -4332,6 +4343,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
+        current_line = g_vm.current_line = frame->ret_line;   /* #1424: as CASE(RETURN) */
         chunk_decref(frame->chunk);   /* frame's ref */
         g_vm.frame_count--;
         if (g_vm.frame_count <= base_frame) return make_null();

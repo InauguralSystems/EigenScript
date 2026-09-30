@@ -651,6 +651,47 @@ else
 fi
 echo ""
 
+echo "[0g] After a call returns, a raise reports the caller's line (#1424)"
+check_binary_fingerprint
+# Pre-fix every e.line row in test_line_after_return.eigs and both uncaught
+# headers named a line inside the callee (CASE(RETURN) and the JIT return
+# helpers left the callee's current_line in place). Each tier is its own row:
+# default JIT, interpreter, forced OSR. On x86_64 the JIT arms must also show
+# compiled thunks, or they measured the interpreter twice.
+for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
+    LAR_ENV="EIGS_JIT_STATS=1"; [ "$LAR_TIER" = JIT ] || LAR_ENV="$LAR_ENV $LAR_TIER"
+    LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript ../tests/test_line_after_return.eigs </dev/null 2>&1); LAR_RC=$?
+    TOTAL=$((TOTAL + 1))
+    LAR_JIT_OK=1
+    if [ "$LAR_TIER" != "EIGS_JIT_OFF=1" ] && [ "$(uname -m)" = x86_64 ] &&
+       ! grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]' <<< "$LAR_OUT"; then LAR_JIT_OK=0; fi
+    if rc_ok "$LAR_RC" "$LAR_OUT" && grep -q "All tests passed" <<< "$LAR_OUT" && [ "$LAR_JIT_OK" -eq 1 ]; then
+        PASS=$((PASS + 1)); echo "  PASS: e.line after a return ($LAR_TIER)"
+    else
+        FAIL=$((FAIL + 1)); echo "  FAIL: e.line after a return ($LAR_TIER, rc=$LAR_RC, jit-witness=$LAR_JIT_OK)"
+        printf '%s\n' "$LAR_OUT" | eigs_failure_output
+    fi
+    for LAR_FX in "line_after_return_module.eigs:Error line 7:|  at <module> (line 7)" \
+                  "line_after_return_fn.eigs:Error line 9:|  at outer (line 9)|  at <module> (line 11)"; do
+        LAR_FILE=${LAR_FX%%:*}; LAR_WANT=${LAR_FX#*:}
+        LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript "../tests/$LAR_FILE" </dev/null 2>&1); LAR_RC=$?
+        LAR_MISS=""
+        LAR_REST="$LAR_WANT|"
+        while [ -n "$LAR_REST" ]; do
+            LAR_LINE=${LAR_REST%%|*}; LAR_REST=${LAR_REST#*|}
+            grep -qxF -- "$LAR_LINE" <<< "$(printf '%s\n' "$LAR_OUT" | sed 's/: .*/:/')" || LAR_MISS="$LAR_MISS [$LAR_LINE]"
+        done
+        TOTAL=$((TOTAL + 1))
+        if [ "$LAR_RC" -eq 1 ] && [ -z "$LAR_MISS" ]; then
+            PASS=$((PASS + 1)); echo "  PASS: uncaught header + traceback lines, $LAR_FILE ($LAR_TIER)"
+        else
+            FAIL=$((FAIL + 1)); echo "  FAIL: $LAR_FILE ($LAR_TIER, rc=$LAR_RC) missing:$LAR_MISS"
+            printf '%s\n' "$LAR_OUT" | sed 's/^/      /'
+        fi
+    done
+done
+echo ""
+
 echo "[0e] Recording a tape must not change a program's exit (#1072 arena/history)"
 check_binary_fingerprint
 # EIGS_TRACE on the arena-escape program crashed at shutdown: the prev/history

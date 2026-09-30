@@ -1,0 +1,11 @@
+# #1424 uncaught, inside a function frame: the raise is `/` on line 9, after
+# zero (lines 5-7) returned; the module frame is the call on line 11.
+# Pre-fix: "Error line 7" and "at outer (line 7)".
+# LINE-NUMBER SENSITIVE (the [0g] runner section greps these numbers).
+define zero(x) as:
+    y is x - x
+    return y
+define outer(x) as:
+    r is 1 / (zero of x)
+    return r
+w is outer of 4

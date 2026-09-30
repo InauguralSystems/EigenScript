@@ -1,0 +1,144 @@
+# #1424: after a call returns, a raise in the CALLER's expression reports the
+# caller's faulting line (e.line), never the callee's last line. The rule is
+# #1381's: a runtime error's line is the physical line of the faulting
+# sub-expression. Pre-fix every row below reported a line inside a callee.
+# The runner runs this file under the default JIT, EIGS_JIT_OFF=1 and forced
+# OSR (EIGS_JIT_OSR_THRESHOLD=1); the hot rows run past the 5000-iteration OSR
+# threshold and call JIT-compiled callees from JIT-compiled callers.
+# LINE-NUMBER SENSITIVE: every expected line is a literal. Append new rows
+# only after the last row; re-check the faulting lines with grep -n 'z is\|r is'.
+load_file of "lib/test.eigs"
+define neg(x) as:
+    y is 0 - x
+    return y
+define zero(x) as:
+    y is x - x
+    return y
+define ident(x) as:
+    y is x
+    return y
+define dec(x) as:
+    y is x - 1
+    return y
+define keyfn(x) as:
+    y is 0 - x
+    return y
+define safe(x) as:
+    try:
+        w is 1 / 0
+    catch e:
+        inner_line is e.line
+    y is x - x
+    return y
+define hot_div(x) as:
+    r is 1 / (dec of x)
+    return r
+define hot_sqrt(x) as:
+    r is sqrt of (neg of x)
+    return r
+o is {"zero": zero}
+inner_line is 0
+
+got is 0
+try:
+    z is sqrt of (neg of 4)
+catch e:
+    got is e.line
+assert_eq of [got, 44, "builtin argument: sqrt of (neg of 4)"]
+try:
+    z is 1 / (zero of 4)
+catch e:
+    got is e.line
+assert_eq of [got, 49, "right operand of /"]
+try:
+    z is 7 % (zero of 4)
+catch e:
+    got is e.line
+assert_eq of [got, 54, "right operand of %"]
+try:
+    z is (ident of 1) / (zero of 4)
+catch e:
+    got is e.line
+assert_eq of [got, 59, "call on the right, call on the left"]
+try:
+    z is sqrt of (neg of (ident of 4))
+catch e:
+    got is e.line
+assert_eq of [got, 64, "nested call, raise in the outer caller expression"]
+try:
+    z is 1 / (o.zero of 4)
+catch e:
+    got is e.line
+assert_eq of [got, 69, "method call"]
+try:
+    z is 1 / (safe of 4)
+catch e:
+    got is e.line
+assert_eq of [got, 74, "callee raised and caught inside itself"]
+assert_eq of [inner_line, 28, "the callee's own catch saw the callee's line"]
+try:
+    z is sqrt of (0 - (len of (sort_by of [[3, 1], keyfn])))
+catch e:
+    got is e.line
+assert_eq of [got, 80, "a builtin ran a user callback, then a builtin raised"]
+
+# Hot rows: the call and the raise run natively (JIT thunks, OSR loop).
+k is 6001
+got is 0
+try:
+    loop while k > 0:
+        r is 1 / (dec of k)
+        k is k - 1
+catch e:
+    got is e.line
+assert_eq of [got, 90, "OSR loop: / after a hot call"]
+assert_eq of [k, 1, "OSR loop raised on its last iteration"]
+k is 6001
+got is 0
+try:
+    loop while k > 0:
+        r is hot_div of k
+        k is k - 1
+catch e:
+    got is e.line
+assert_eq of [got, 34, "compiled caller: / after a native call"]
+assert_eq of [k, 1, "compiled caller raised on its last call"]
+k is 6000
+got is 0
+try:
+    loop while k > -1:
+        r is hot_sqrt of (1 - k)
+        k is k - 1
+catch e:
+    got is e.line
+assert_eq of [got, 37, "compiled caller: builtin raise after a native call"]
+assert_eq of [k, 0, "compiled builtin row raised on its last call"]
+# RETURN_NULL callees (interpreter CASE(RETURN_NULL), jit_helper_return_null).
+# `nothing` is warmed past the JIT entry threshold first, so the raising calls
+# run its native thunk to RETURN_NULL; hot_null is warmed with a non-null g.
+define nothing(x) as:
+    y is x
+define one(x) as:
+    y is x
+    return 1
+define hot_null(g, x) as:
+    r is x / (g of x)
+    return r
+k is 0
+loop while k < 6000:
+    w is nothing of k
+    w is hot_null of [one, k]
+    k is k + 1
+got is 0
+try:
+    z is 1 / (nothing of 4)
+catch e:
+    got is e.line
+assert_eq of [got, 134, "RETURN_NULL callee"]
+got is 0
+try:
+    z is hot_null of [nothing, 4]
+catch e:
+    got is e.line
+assert_eq of [got, 125, "compiled caller: / after a native RETURN_NULL callee"]
+test_summary of null

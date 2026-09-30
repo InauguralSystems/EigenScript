@@ -517,6 +517,12 @@ typedef struct {
                                   * The tape's S records carry it so the stepper can
                                   * tell two invocations of the same function apart
                                   * (POD — rides the task save/restore memcpy). */
+    int        ret_line;         /* #1424: the CALLER's current line when this frame was
+                                  * pushed (g_vm.current_line, stamped by callframe_init).
+                                  * The OP_RETURN family and the JIT return helpers put it
+                                  * back, so a raise in the caller's expression after the
+                                  * call reports the caller's line, not the callee's last
+                                  * one. Not an owned field (POD). */
 } CallFrame;
 
 /* #743: drop a saved frame's owned refs — env iff owns_env, then chunk. The

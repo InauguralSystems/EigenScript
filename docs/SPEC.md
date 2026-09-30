@@ -1043,6 +1043,22 @@ catch e:
 4
 ```
 
+A call's own lines never become the caller's: once `zero` returns, the `/`
+that faults is on the caller's line 5, not `zero`'s line 3 (#1424):
+
+```eigenscript
+define zero(x) as:
+    y is x - x
+    return y
+try:
+    z is 1 / (zero of 4)
+catch e:
+    print of e.line
+```
+```output
+5
+```
+
 This deliberately differs from temporal filing. There, the same statement's
 assignment is recorded under its **first** line (see "Temporal
 interrogatives"): an error points at where the fault is, and history points
