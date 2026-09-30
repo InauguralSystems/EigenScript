@@ -519,16 +519,21 @@ print_weights() {
     # produced a table with ~160 sections silently taking the default weight —
     # and a default-weighted section is exactly what the table exists to stop.
     # The input for a sharded lane is the shard logs CONCATENATED.
-    local n distinct want
+    local n distinct want labels
     n=$(grep -cE '^([0-9-]+T[0-9:.]+Z )?SECTION_TIME: ' "$log")
-    distinct=$(grep -oE 'SECTION_TIME: \[[^]]*\]' "$log" | sort -u | grep -c .)
-    want=$(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sort -u | grep -c .)
+    labels=$(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sed 's/^echo "//' | sort -u | grep -c .)
+    # #1312: a runner with no labels made the floor 0, and any 50-row log passed.
+    # The floor is fixed (tools/suite_label_check.sh's MIN_LABELS), and the log
+    # counts only sections the runner actually has.
+    [ "$labels" -ge 200 ] || die "the runner has only $labels section labels (< 200) — the floor would be vacuous"
+    distinct=$(grep -oE 'SECTION_TIME: \[[^]]*\]' "$log" | sed 's/^SECTION_TIME: //' | sort -u |
+               grep -cxFf <(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sed 's/^echo "//' | sort -u))
     # 85%, not 100%: one binary prints only one side of extension branches
     # (the asan-http build never prints the HTTP/model skip headings), so
     # requiring every label would refuse a complete set of real logs.
-    want=$(( want * 85 / 100 ))
+    want=$(( labels * 85 / 100 ))
     [ "$n" -ge 50 ] || die "only $n SECTION_TIME lines in $log — that log is not a suite run at all"
-    [ "$distinct" -ge "$want" ] || die "only $distinct distinct sections in $log, need >= $want (85% of the $(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sort -u | grep -c .) labels in the runner) — this looks like ONE shard's log; concatenate every shard's log, or the table would default the sections it cannot see"
+    [ "$distinct" -ge "$want" ] || die "only $distinct of the runner's sections in $log, need >= $want (85% of the $labels labels in the runner) — this looks like ONE shard's log; concatenate every shard's log, or the table would default the sections it cannot see"
     # PROVENANCE COMES FROM THE ARGS, so the documented recipe reproduces the
     # committed file byte-for-byte (#1160 round 6). Round 5 hand-wrote a
     # 14-line header that the very recipe printed next to it would have ERASED
@@ -1072,6 +1077,12 @@ STUB_ECHO
     echo 'SECTION_TIME: [only-one] 0.01' > "$dir/partial.log"
     expect_red 'print_weights: partial log cannot refresh table' 'only 1 SECTION_TIME' \
         "$0" --root "$SP_ROOT" --print-weights "$dir/partial.log"
+    printf '#!/bin/bash\necho no sections\n' > "$dir/nolabels.sh"
+    expect_red 'print_weights: zero-label runner is vacuous (#1312)' 'section labels (< 200)' \
+        "$0" --root "$SP_ROOT" --runner "$dir/nolabels.sh" --print-weights "$dir/partial.log"
+    for i in $(seq 1 60); do echo "SECTION_TIME: [fabricated-$i] 1"; done > "$dir/fabricated.log"
+    expect_red 'print_weights: labels the runner lacks do not count (#1312)' "only 0 of the runner's sections" \
+        "$0" --root "$SP_ROOT" --print-weights "$dir/fabricated.log"
     echo "section_plan selftest: checks=$((pass + fail)) failures=$fail"
     [ "$pass" -gt 0 ] && [ "$fail" -eq 0 ]
 }
