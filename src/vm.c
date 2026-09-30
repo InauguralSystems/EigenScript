@@ -6578,6 +6578,16 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
      * `r` unchanged, so a program that never spawns pays one call. */
     if (outermost) r = task_sched_after_outermost(r);
     g_vm.current_line = entry_vm_line;
-    if (!g_vm_multithreaded) trace_current_line_store(entry_trace_line);
+    if (!g_vm_multithreaded) {
+        trace_current_line_store(entry_trace_line);
+        /* The tape tools (eigs step, eigsdap) file an assignment under the
+         * last L record before it, live history under the stamp: put the
+         * restored line on the tape too, or a store the caller makes next
+         * reads the callee's line there and the entering line here. Line 0
+         * is "no line" (main's own entry, an embedder that never stamps), so
+         * it writes nothing. trace_line dedups against the tape's last L. */
+        if (__builtin_expect(g_trace_enabled, 0) && entry_trace_line > 0)
+            trace_line(entry_trace_line);
+    }
     return r;
 }

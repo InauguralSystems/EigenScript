@@ -612,8 +612,22 @@ else
   EL_WANT=$(grep -c '^ *check(' ../tests/test_error_line_fallback.c)   # every check must report
   for EL_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
     EL_ENV="EIGS_JIT_STATS=1"; [ "$EL_TIER" = JIT ] || EL_ENV="$EL_ENV $EL_TIER"
-    ERRLINE_OUT=$($EIGS_TMO env $EL_ENV ../build/release/test_error_line_fallback 2>&1)
+    EL_TAPE=$(mktemp /tmp/eigs_errline_XXXXXX.tape); rm -f "$EL_TAPE"
+    ERRLINE_OUT=$($EIGS_TMO env $EL_ENV EIGS_TRACE="$EL_TAPE" ../build/release/test_error_line_fallback 2>&1)
     ERRLINE_RC=$?
+    # #1434: `eigs step` files the store after the callbacks under the same
+    # line live history does (the test prints the live line; its tape stop 95
+    # follows the store).
+    EL_LIVE=$(sed -n 's/^LIVE: errline_1434=2 line \([0-9]*\)$/\1/p' <<< "$ERRLINE_OUT")
+    EL_STEP=$(printf 'j 95\nt errline_1434\nq\n' | $EIGS_TMO ./eigenscript --step "$EL_TAPE" 2>&1 |
+              sed -n 's/^  #[0-9]* *line \([0-9]*\) *2 .*/\1/p')
+    rm -f "$EL_TAPE"
+    TOTAL=$((TOTAL + 1))
+    if [ -n "$EL_LIVE" ] && [ "$EL_LIVE" = "$EL_STEP" ]; then
+        PASS=$((PASS + 1)); echo "  PASS: tape stepper and live history file the store under line $EL_LIVE ($EL_TIER)"
+    else
+        FAIL=$((FAIL + 1)); echo "  FAIL: tape stepper says line '$EL_STEP', live history '$EL_LIVE' ($EL_TIER)"
+    fi
     EL_PASS=$(echo "$ERRLINE_OUT" | grep -c "^PASS:" || true)
     EL_FAIL=$(echo "$ERRLINE_OUT" | grep -c "^FAIL:" || true)
     TOTAL=$((TOTAL + EL_PASS + EL_FAIL + 1))

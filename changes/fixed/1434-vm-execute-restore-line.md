@@ -6,4 +6,7 @@
   the callback's line, and a store right after the call was filed under that line. In the interpreter a callback
   that stopped on an error `sandbox_run` swallowed left the next raise in the caller's expression on the chunk's
   line (`e.line`, the `Error line N` header and the traceback). `vm_execute` now restores both lines on every
-  exit, in the interpreter, the JIT and OSR. Trace tapes are unchanged.
+  exit, in the interpreter, the JIT and OSR, and writes an `L` record for the restored line when a tape is
+  recording, so `eigenscript --step` and the DAP file a store made right after the call under the same line as
+  live history. Tapes of programs whose builtins run callbacks gain those `L` records; the record shape is
+  unchanged.

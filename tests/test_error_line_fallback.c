@@ -34,6 +34,7 @@ static void check(int ok, const char *what) {
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("FAIL: eigs_open\n"); return 1; }
+    trace_init();                         /* EIGS_TRACE, as a native binary opens it */
     g_try_depth = 1;                      /* record only, as the AOT runs */
 
     g_trace_current_line = 42;
@@ -104,9 +105,16 @@ int main(void) {
           "#1434 the history row's sort_by ran its callbacks");
     if (r) val_decref(r);
     sl.d = 2.0; trace_assign(NM, sl);
+    trace_line(95);   /* a stop right after the store, for [0b]'s `--step` query */
     check(trace_query_at(0, NM, 75, &out) && out.d == 1.0 &&
           trace_query_at(0, NM, 85, &out) && out.d == 2.0,
           "#1434 a store after the callbacks is filed under the call's stamp");
+    /* The line live history filed the second store under, for [0b] to compare
+     * with the tape stepper's `t` row over the same run's EIGS_TRACE tape. */
+    int filed = 0;
+    for (int ln = 1; ln <= 100 && !filed; ln++)
+        if (trace_query_at(0, NM, ln, &out) && out.d == 2.0) filed = ln;
+    printf("LIVE: %s=2 line %d\n", NM, filed);
 
     g_has_error = 0;
     g_trace_current_line = 90;
@@ -136,5 +144,18 @@ int main(void) {
     val_decref(sb_args);
     val_decref(args_good); val_decref(args_bad); val_decref(good); val_decref(bad);
     val_decref(ekey);
+
+    /* The OUTERMOST vm_execute runs the task scheduler after vm_run, so an
+     * unjoined task's lines run there; the stamp is restored after it, not
+     * before (a restore before the scheduler reported the task's line 4). */
+    g_has_error = 0;
+    g_trace_current_line = 110;
+    ev = eigs_eval_string("define tf(x) as:\n    y is x\n    w is y + 1\n    return w\n"
+                          "t is task_spawn of [tf, 1]\n");
+    if (ev) eigs_value_release(ev);
+    rt_error(EK_VALUE, 0, "probe %d", 7);
+    check(strncmp(g_error_msg, "Error line 110: probe 7", 23) == 0,
+          "#1434 a raise after an eval whose task ran in the scheduler reports the stamp (110)");
+    trace_shutdown();
     return fail;
 }
