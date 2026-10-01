@@ -1,0 +1,1 @@
+- Preserve multiline string literal bytes when formatting, including indentation, trailing spaces, blank lines, and operator- or comment-looking text (#1245).

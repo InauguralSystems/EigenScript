@@ -48,7 +48,7 @@ static int is_exponent_sign(const char *s, int len, int i) {
 
 /* Fix operator spacing on a single line.
  * Processes character by character, tracking string literals. */
-static void fix_spacing(const char *line, strbuf *out) {
+static void fix_spacing(const char *line, int starts_in_string, strbuf *out) {
     int len = (int)strlen(line);
     if (len == 0) return;
 
@@ -60,8 +60,8 @@ static void fix_spacing(const char *line, strbuf *out) {
      * and ensure space after # in comments. */
     strbuf tmp;
     strbuf_init(&tmp);
-    int in_str = 0;
-    char str_char = 0;
+    int in_str = starts_in_string;
+    char str_char = '"';
     int in_comment = 0;
 
     for (int i = 0; i < len; i++) {
@@ -103,8 +103,8 @@ static void fix_spacing(const char *line, strbuf *out) {
     /* Second pass: fix comma and bracket spacing */
     strbuf tmp2;
     strbuf_init(&tmp2);
-    in_str = 0;
-    str_char = 0;
+    in_str = starts_in_string;
+    str_char = '"';
     in_comment = 0;
     const char *s = tmp.data;
     len = (int)tmp.len;
@@ -167,8 +167,8 @@ static void fix_spacing(const char *line, strbuf *out) {
     /* Third pass: fix symbolic operator spacing (==, !=, <=, >=, <, >, +, *, /, %) */
     strbuf tmp3;
     strbuf_init(&tmp3);
-    in_str = 0;
-    str_char = 0;
+    in_str = starts_in_string;
+    str_char = '"';
     in_comment = 0;
     s = tmp2.data;
     len = (int)tmp2.len;
@@ -243,6 +243,28 @@ static void fix_spacing(const char *line, strbuf *out) {
     strbuf_free(&tmp3);
 }
 
+/* Return whether a double-quoted string remains open after this physical line.
+ * The lexer permits literal newlines in strings, so formatting state must span
+ * lines too.  A comment ends at the physical newline. */
+static int string_state_after_line(const char *line, int in_string) {
+    int in_comment = 0;
+    for (int i = 0; line[i]; i++) {
+        if (in_comment) break;
+        if (in_string) {
+            if (line[i] == '\\' && line[i + 1]) {
+                i++;
+            } else if (line[i] == '"') {
+                in_string = 0;
+            }
+        } else if (line[i] == '#') {
+            in_comment = 1;
+        } else if (line[i] == '"') {
+            in_string = 1;
+        }
+    }
+    return in_string;
+}
+
 /* Strip trailing whitespace from a strbuf */
 static void strip_trailing_ws(strbuf *b) {
     while (b->len > 0 && (b->data[b->len - 1] == ' ' || b->data[b->len - 1] == '\t')) {
@@ -280,9 +302,12 @@ char* format_source_string(const char *source) {
     /* Collect lines */
     char **lines = xcalloc_array(line_count + 1, sizeof(char *));
     int *indents = xcalloc_array(line_count + 1, sizeof(int));
+    int *starts_in_string = xcalloc_array(line_count + 1, sizeof(int));
+    int *ends_in_string = xcalloc_array(line_count + 1, sizeof(int));
     int actual_lines = 0;
     {
         const char *p = source;
+        int in_string = 0;
         while (*p) {
             const char *start = p;
             while (*p && *p != '\n') p++;
@@ -299,18 +324,25 @@ char* format_source_string(const char *source) {
                 llen--;
             }
 
-            indents[actual_lines] = measure_indent(line);
+            starts_in_string[actual_lines] = in_string;
+            ends_in_string[actual_lines] = string_state_after_line(line, in_string);
+            in_string = ends_in_string[actual_lines];
+            indents[actual_lines] = starts_in_string[actual_lines] ? 0 : measure_indent(line);
 
-            /* Store the stripped (no leading whitespace) version */
+            /* Indentation within a multiline literal is data, not layout. */
             const char *stripped = line;
-            while (*stripped == ' ' || *stripped == '\t') stripped++;
+            if (!starts_in_string[actual_lines]) {
+                while (*stripped == ' ' || *stripped == '\t') stripped++;
+            }
 
-            /* Strip trailing whitespace */
+            /* Likewise, trailing whitespace is data while a string is open. */
             int slen = (int)strlen(stripped);
             char *trimmed = xmalloc(slen + 1);
             memcpy(trimmed, stripped, slen + 1);
-            while (slen > 0 && (trimmed[slen - 1] == ' ' || trimmed[slen - 1] == '\t')) {
-                slen--;
+            if (!ends_in_string[actual_lines]) {
+                while (slen > 0 && (trimmed[slen - 1] == ' ' || trimmed[slen - 1] == '\t')) {
+                    slen--;
+                }
             }
             trimmed[slen] = '\0';
 
@@ -323,7 +355,7 @@ char* format_source_string(const char *source) {
     /* Find the minimum non-zero indent level to determine the "unit" */
     int min_indent = 0;
     for (int i = 0; i < actual_lines; i++) {
-        if (indents[i] > 0 && lines[i][0] != '\0') {
+        if (!starts_in_string[i] && indents[i] > 0 && lines[i][0] != '\0') {
             if (min_indent == 0 || indents[i] < min_indent) {
                 min_indent = indents[i];
             }
@@ -340,7 +372,7 @@ char* format_source_string(const char *source) {
         int slen = (int)strlen(trimmed);
 
         /* Blank line handling */
-        if (slen == 0) {
+        if (slen == 0 && !starts_in_string[i]) {
             if (!prev_blank) {
                 strbuf_append_char(&output, '\n');
             }
@@ -373,8 +405,8 @@ char* format_source_string(const char *source) {
         /* Apply spacing fixes */
         strbuf fixed_line;
         strbuf_init(&fixed_line);
-        fix_spacing(trimmed, &fixed_line);
-        strip_trailing_ws(&fixed_line);
+        fix_spacing(trimmed, starts_in_string[i], &fixed_line);
+        if (!ends_in_string[i]) strip_trailing_ws(&fixed_line);
 
         strbuf_append_n(&output, fixed_line.data, fixed_line.len);
         strbuf_append_char(&output, '\n');
@@ -401,6 +433,8 @@ char* format_source_string(const char *source) {
     for (int i = 0; i < actual_lines; i++) free(lines[i]);
     free(lines);
     free(indents);
+    free(starts_in_string);
+    free(ends_in_string);
     return strbuf_finish(&output);  /* transfer ownership to caller */
 }
 

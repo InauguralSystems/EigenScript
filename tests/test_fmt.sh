@@ -89,6 +89,35 @@ ACTUAL=$(fmt_str "$(printf 'x is "hello,world"\n')")
 EXPECTED=$(printf 'x is "hello,world"\n')
 check "string content not modified" "$ACTUAL" "$EXPECTED"
 
+# --- Multiline string bytes are data, not source whitespace (#1245) ---
+# Cover leading/trailing spaces, a blank line, and text that resembles both
+# operators and comments.  Source outside the literal must still normalize.
+MULTILINE_INPUT=$(printf 'value  is "start\n  a+b  \n\n#not a comment\nx==y\nend"\nresult is 1+2   \n')
+MULTILINE_WANT=$(printf 'value is "start\n  a+b  \n\n#not a comment\nx==y\nend"\nresult is 1 + 2\n')
+ACTUAL=$(fmt_str "$MULTILINE_INPUT")
+check "multiline string bytes preserved" "$ACTUAL" "$MULTILINE_WANT"
+
+# --fmt --write uses the same format_source_string path as the LSP provider;
+# exercise persistence separately so a future CLI-path split cannot regress it.
+TMPFILE=$(mktemp /tmp/fmt_multiline_XXXXXX.eigs)
+printf '%s\n' "$MULTILINE_INPUT" > "$TMPFILE"
+$EIGS --fmt --write "$TMPFILE" 2>/dev/null
+ACTUAL=$(cat "$TMPFILE")
+check "--write preserves multiline string bytes" "$ACTUAL" "$MULTILINE_WANT"
+rm -f "$TMPFILE"
+
+# Acceptance repro: formatting must not change the program's byte-exact output.
+ML_DIR=$(mktemp -d /tmp/fmt_multiline_exec_XXXXXX)
+printf 'value is "start\n  a+b  \nend"\nprint of value\n' > "$ML_DIR/original.eigs"
+$EIGS "$ML_DIR/original.eigs" > "$ML_DIR/before" 2> "$ML_DIR/before.err"; BEFORE_RC=$?
+$EIGS --fmt "$ML_DIR/original.eigs" > "$ML_DIR/formatted.eigs" 2> "$ML_DIR/fmt.err"; FMT_RC=$?
+$EIGS "$ML_DIR/formatted.eigs" > "$ML_DIR/after" 2> "$ML_DIR/after.err"; AFTER_RC=$?
+if cmp -s "$ML_DIR/before" "$ML_DIR/after"; then OUTPUTS_MATCH=yes; else OUTPUTS_MATCH=no; fi
+ACTUAL="before=$BEFORE_RC fmt=$FMT_RC after=$AFTER_RC match=$OUTPUTS_MATCH errors=$(cat "$ML_DIR/before.err")$(cat "$ML_DIR/fmt.err")$(cat "$ML_DIR/after.err")"
+check "formatted multiline program has byte-exact output" "$ACTUAL" \
+    "before=0 fmt=0 after=0 match=yes errors="
+rm -rf "$ML_DIR"
+
 # --- Idempotency on clean file ---
 ORIGINAL=$($EIGS --fmt examples/hello.eigs 2>/dev/null)
 TMPF=$(mktemp /tmp/fmt_test_XXXXXX.eigs)
