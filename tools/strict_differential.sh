@@ -423,22 +423,64 @@ $(indent_output "$strict_a")"
     return 0
 }
 
+# This is the execution path used by both live probe loops.  Keep the sampling
+# here so the self-test exercises the real run_capture/classification wiring,
+# rather than passing prearranged strings directly to the classifier.
+measure_unset_strict() { # <label> <binary> <probe-file>
+    local label="$1" bin="$2" probe="$3"
+    strict_run="$(run_capture "$bin" 1 "$probe")"
+    strict_repeat="$(run_capture "$bin" 1 "$probe")"
+    unset_run="$(run_capture "$bin" - "$probe")"
+    unset_repeat="$(run_capture "$bin" - "$probe")"
+    classify_unset_strict "$label" "$unset_run" "$unset_repeat" \
+        "$strict_run" "$strict_repeat"
+}
+
 if [ "$SELFTEST" = 1 ]; then
     unset_list=""; nondet_list=""
-    # Plant one unstable probe (as a random-printing program would produce)
-    # and one stable simulation of reverting strict-by-default.
-    long_prefix="$(printf '%090d' 0)"
-    classify_unset_strict "random-output probe" \
-        "0\nrandom=$RANDOM-first" "0\nrandom=$RANDOM-second" \
-        "0\nstable strict" "0\nstable strict" || true
-    classify_unset_strict "reverted-default probe" "0\nstand-in" "0\nstand-in" \
-        "1\n${long_prefix}strict-tail" "1\n${long_prefix}strict-tail" || true
+    # A fake subject makes the live runner see one unstable strict arm and one
+    # stable unset-vs-strict difference.  Its nonzero strict exits also ensure
+    # run_capture's exit-code component participates in the classification.
+    export STRICT_DIFFERENTIAL_SELFTEST_STATE="$TMP/selftest-count"
+    cat > "$TMP/selftest-subject" <<'EOF'
+#!/usr/bin/env bash
+case "${1##*/}" in
+    unstable-strict.eigs)
+        if [ "${EIGS_STRICT-unset}" = 1 ]; then
+            n=0
+            [ ! -f "$STRICT_DIFFERENTIAL_SELFTEST_STATE" ] || n="$(cat "$STRICT_DIFFERENTIAL_SELFTEST_STATE")"
+            n=$((n + 1))
+            printf '%s\n' "$n" > "$STRICT_DIFFERENTIAL_SELFTEST_STATE"
+            printf 'strict-random-run-%s\n' "$n"
+            exit 7
+        fi
+        printf 'stable unset\n'
+        ;;
+    reverted-default.eigs)
+        if [ "${EIGS_STRICT-unset}" = 1 ]; then
+            printf '%090dstrict-tail\n' 0
+            exit 9
+        fi
+        printf 'stand-in\n'
+        ;;
+esac
+EOF
+    chmod +x "$TMP/selftest-subject"
+    : > "$TMP/unstable-strict.eigs"
+    : > "$TMP/reverted-default.eigs"
+
+    measure_unset_strict "random-output probe" "$TMP/selftest-subject" \
+        "$TMP/unstable-strict.eigs"; nondet_verdict=$?
+    measure_unset_strict "reverted-default probe" "$TMP/selftest-subject" \
+        "$TMP/reverted-default.eigs"; difference_verdict=$?
     echo "NONDETERMINISTIC (not a flag difference):$nondet_list"
     echo "UNSET DIFFERS FROM EIGS_STRICT=1 (the default is not strict):$unset_list"
     verdict_printed=1
-    if str_has "$nondet_list" "random-output probe" \
-       && str_has "$nondet_list" "-first" \
-       && str_has "$nondet_list" "-second" \
+    if [ "$nondet_verdict" = 2 ] \
+       && [ "$difference_verdict" = 1 ] \
+       && str_has "$nondet_list" "random-output probe (EIGS_STRICT=1 arm)" \
+       && str_has "$nondet_list" "strict-random-run-1" \
+       && str_has "$nondet_list" "strict-random-run-2" \
        && ! str_has "$nondet_list" "reverted-default probe" \
        && str_has "$unset_list" "reverted-default probe" \
        && str_has "$unset_list" "strict-tail" \
@@ -521,13 +563,11 @@ while IFS='|' read -r who prog expect; do
       new     : $(clip "$b" 90)"
         fi
     fi
-    s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
-    s2="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
+    measure_unset_strict "$who" "$NEW" "$TMP/p.eigs"
+    classification=$?
+    s="$strict_run"
     s_rc="${s%%$'\n'*}"
-    u="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    u2="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    classify_unset_strict "$who" "$u" "$u2" "$s" "$s2"
-    case $? in 0) n_unset_eq=$((n_unset_eq + 1)) ;; esac
+    case "$classification" in 0) n_unset_eq=$((n_unset_eq + 1)) ;; esac
     why="$(run_did_not_measure "$s_rc")"
     if [ -n "$why" ]; then
         n_unrun=$((n_unrun + 1))
@@ -882,12 +922,9 @@ while IFS='|' read -r label who slot prog; do
     [ "$slot" != "-" ] && covered_slots="$covered_slots $who:$slot"
     mkprog "$TMP/p.eigs" "$prog"
     b="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
-    s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
-    s2="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
-    u="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    u2="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    classify_unset_strict "pixel: $label" "$u" "$u2" "$s" "$s2"
-    case $? in
+    measure_unset_strict "pixel: $label" "$NEW" "$TMP/p.eigs"
+    classification=$?
+    case "$classification" in
         1) pdiffer="$pdiffer
     $label [unset vs EIGS_STRICT=1, same binary] — the default is not strict"; rc=1 ;;
         2) rc=1 ;;
