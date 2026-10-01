@@ -20,9 +20,10 @@ gfx, audio) require a full build or the `gfx` target.
 > dumps the full surface — every builtin, extension (by group), and lib
 > function with its parameter list — in one call.
 
-> **Strict mode is the default (#1361).** Wrong-typed or out-of-domain
-> arguments raise unless the run sets `EIGS_STRICT=0`; rows below state the
-> non-strict stand-in (`0`, `""`, `[]`, `-1`, or another value) explicitly.
+> **Strict mode is the default (#1361).** In rows that explicitly describe a
+> strict-mode stand-in, wrong-typed or out-of-domain arguments raise unless the
+> run sets `EIGS_STRICT=0`; those rows state the non-strict stand-in (`0`, `""`,
+> `[]`, `-1`, or another value) explicitly.
 > Documented answers for valid-but-absent input (`index_of` miss `-1`,
 > `file_exists` of a missing path `0`) are the same in both modes
 > (docs/SPEC.md, *Strict mode*).
@@ -506,8 +507,8 @@ unequal, non-broadcastable length **truncate to the shorter** as they always
 have (the one place the two containers still differ: buffers truncate flat, so
 `add of [buf[5×4], buf[3]]` is `[3]` where the same shapes as lists are
 `[3, 4]` — neither is a meaningful answer, both are pinned in
-`tests/test_autograd.eigs`); a non-numeric partner (a string, a dict) answers
-raises by default and answers `0` under `EIGS_STRICT=0`. Before #1093 only equal-count `add` had a buffer path and
+`tests/test_autograd.eigs`); a non-numeric partner (a string, a dict) raises by
+default and answers `0` under `EIGS_STRICT=0`. Before #1093 only equal-count `add` had a buffer path and
 every other buffer case answered a silent `0`. Same `num_guard` kernels
 either way, so the numbers are byte-identical.
 
@@ -941,7 +942,7 @@ Requires full build. Transformer model inference and training.
 | `recv_timeout` | `recv_timeout of [channel, ms]` | Bounded-wait receive. Returns the value if one arrives before `ms` milliseconds elapse, else `null`. A close while waiting also returns `null`. Fractional `ms` is honored (ns precision on Linux); negative `ms` degenerates to a `try_recv`. |
 | `close_channel` | `close_channel of channel` | Close the channel. Wakes all blocked senders/receivers. |
 | `channel_closed` | `channel_closed of channel` | Returns 1 if closed, 0 otherwise. An unknown or reclaimed channel is closed (1). A value that is not a channel handle raises by default; under `EIGS_STRICT=0` it answers 1 (#971). |
-| `task_spawn` | `task_spawn of fn` or `task_spawn of [fn, arg1, ...]` | Create a cooperative task (#408) running `fn` on the single OS thread — deterministic by construction, unlike `spawn`'s OS thread. Args are deep-COPIED (share-nothing, like channel sends), not shared by reference. Returns a numeric task id. The task runs when its spawner yields, joins, or finishes. |
+| `task_spawn` | `task_spawn of fn` or `task_spawn of [fn, arg1, ...]` | Create a cooperative task (#408) running `fn` on the single OS thread — deterministic by construction, unlike `spawn`'s OS thread. Args are deep-COPIED (share-nothing, like channel sends), not shared by reference. Returns a numeric task id. A ready task can run when the current task explicitly yields, suspends in a blocking scheduler operation, or finishes. |
 | `task_alive` | `task_alive of id` | Returns 1 while the task is runnable or suspended, 0 once it has finished (or for an unknown id). |
 | `task_self` | `task_self of null` | The **running task's own id** (a number, in the same integer space `task_spawn` returns; the main task is 0, including before any task has been spawned). Lets a worker hand out its own id as a reply address — the message-link pattern a mailbox otherwise cannot express (#526). Deterministic — reads scheduler state, records no nondeterminism. |
 | `task_yield` | `task_yield of null` | Cooperatively hand control to the next ready task; this task resumes round-robin. A no-op when no task has been spawned. Forbidden inside an `arena_mark`…`arena_reset` scope or a nested evaluation (raises `value`). |
