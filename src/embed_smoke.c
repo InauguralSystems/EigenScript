@@ -435,6 +435,19 @@ int main(void) {
     CHECK(r != NULL && eigs_value_as_num(r) == 100101.0,
           "live sensor reads 100 then 101");
     if (r) eigs_value_release(r);
+
+    /* #1441: once the interpreted callback above has returned, a native
+     * producer has no VM frame.  Its assignment belongs to module/native
+     * scope, not to the callback frame named by the tape's preceding S. */
+    {
+        static const char *const NM = "native_after_callback";
+        EigsSlot s;
+        s.d = 1441.0;
+        trace_assign(NM, s);
+        g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
+        CHECK(strstr(g_tape, "S <native> 0 0\nA native_after_callback=1441\n") != NULL,
+              "native assignment after callback carries native scope");
+    }
     eigs_set_trace_sink(NULL, NULL);
     CHECK(g_tape_len > 0, "sink captured tape bytes");
     g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
