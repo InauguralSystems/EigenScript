@@ -1,0 +1,43 @@
+# #1178: distinguish a tiny from-zero callee, a substantial callee, and OSR.
+load_file of "lib/test.eigs"
+
+define tiny_entry(x) as:
+    a is x + 1
+    b is a + 1
+    return b + 1
+
+define large_entry(x) as:
+    aa is x + 1
+    bb is aa + 2
+    cc is bb + 3
+    dd is cc + 4
+    ee is dd + 5
+    ff is ee + 6
+    gg is ff + 7
+    hh is gg + 8
+    ii is hh + 9
+    jj is ii + 10
+    kk is jj + 11
+    return kk + 12
+
+define osr_entry(n) as:
+    total is 0
+    oi is 0
+    loop while oi < n:
+        total is total + oi
+        oi is oi + 1
+    return total
+
+tiny_total is 0
+large_total is 0
+outer is 0
+loop while outer < 80:
+    tiny_total is tiny_total + (tiny_entry of outer)
+    large_total is large_total + (large_entry of outer)
+    outer is outer + 1
+
+osr_total is osr_entry of 6000
+assert of [tiny_total == 3400, "tiny output"]
+assert of [large_total == 9400, "large output"]
+assert of [osr_total == 17997000, "OSR output"]
+test_summary of null

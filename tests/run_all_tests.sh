@@ -5759,6 +5759,18 @@ else
 fi
 echo ""
 
+# [82a] #1178 feature-aware from-zero profitability selection.  The helper
+# also proves EIGS_JIT_OFF and OSR retain their deliberately separate scopes.
+echo "[82a] JIT Profitability Selection"
+JPROF_OUTPUT=$(EIGS=./eigenscript bash ../tests/test_jit_profitability.sh 2>&1); JPROF_RC=$?
+TOTAL=$((TOTAL + 1))
+if rc_ok "$JPROF_RC" "$JPROF_OUTPUT" && echo "$JPROF_OUTPUT" | grep -q '^jit_profitability: OK$'; then
+    PASS=$((PASS + 1)); echo "  PASS: entry accept/reject, OSR, OFF, and output"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: JIT profitability selection (rc=$JPROF_RC)"; echo "$JPROF_OUTPUT"
+fi
+echo ""
+
 # [83] Walker capture matrix — closure capture of names reachable only
 # through each AST node kind (the issue-#156 bug class: a pre-pass walker
 # that doesn't know a node silently breaks capture).

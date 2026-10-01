@@ -2480,6 +2480,43 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         return;
     }
 
+    /* #1178's pre-registered, single entry-cost experiment.  This gate is
+     * deliberately limited to from-zero thunks: an OSR entry has already
+     * paid for itself by crossing the back-edge threshold, and changing its
+     * selection in the same experiment would confound the fleet result.
+     *
+     * Formula (specified before collecting the fleet result): a prefix must
+     * contain 48 bytecode bytes, plus 24 for each cached env/frame and 32
+     * when bailout bookkeeping is required.  These are features the scanner
+     * already computes and approximate the differing fixed entry/exit work;
+     * this is not a consumer-name allow/deny list.  Keep the constants here,
+     * rather than making them probe knobs: the registered matrix judges this
+     * one formula as a whole.
+     */
+    if (entry_offset == 0) {
+        int min_prefix = 48 + (needs_env_cache ? 24 : 0) +
+                         (has_bail_op ? 32 : 0) +
+                         (needs_frame_cache ? 24 : 0);
+        if (eigs_env_flag("EIGS_JIT_DUMP_SELECTION")) {
+            fprintf(stderr,
+                    "JIT selection: chunk='%s' scope=entry prefix=%d min=%d "
+                    "env=%d bail=%d frame=%d decision=%s\n",
+                    chunk->name ? chunk->name : "<anon>", prefix, min_prefix,
+                    needs_env_cache, has_bail_op, needs_frame_cache,
+                    prefix >= min_prefix ? "accept" : "reject");
+        }
+        if (prefix < min_prefix) {
+            *out_state = 1;
+            *out_code = NULL;
+            return;
+        }
+    } else if (eigs_env_flag("EIGS_JIT_DUMP_SELECTION")) {
+        fprintf(stderr,
+                "JIT selection: chunk='%s' scope=osr prefix=%d entry=%d "
+                "decision=accept\n",
+                chunk->name ? chunk->name : "<anon>", prefix, entry_offset);
+    }
+
     if (!g_jit_cache) {
         /* EIGS_JIT_CACHE_PAGES: probe knob for the exhaustion ceiling.
          * The default 1 MB fills on DMG (cache_used=1045769 of 1048576
