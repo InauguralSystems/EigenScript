@@ -1792,7 +1792,10 @@ static Value *promote_graph_list(PromoteGraph *g, Value *v) {
         /* This bookkeeping is attacker-controlled during sandbox execution,
          * so it belongs to the same budget as the graph copy itself. */
         if (!sandbox_charge((size_t)(new_cap - old_cap) *
-                            2 * sizeof(Value *))) g->refused = 1;
+                            2 * sizeof(Value *))) {
+            g->refused = 1;
+            return NULL;
+        }
         g->src = xrealloc_array(g->src, (size_t)new_cap, sizeof(Value *));
         g->dst = xrealloc_array(g->dst, (size_t)new_cap, sizeof(Value *));
         g->capacity = new_cap;
@@ -1800,9 +1803,8 @@ static Value *promote_graph_list(PromoteGraph *g, Value *v) {
 
     int cap = v->data.list.count < 8 ? 8 : v->data.list.count;
     if (!sandbox_charge(sizeof(Value) + (size_t)cap * sizeof(Value *))) {
-        /* sandbox_run records the refusal, but completing this bounded copy
-         * keeps all existing store callers' non-NULL ownership contract. */
         g->refused = 1;
+        return NULL;
     }
     Value *h = make_list_heap(v->data.list.count);
     g->src[g->count] = v;
@@ -1815,17 +1817,17 @@ Value* promote_if_arena(Value *v) {
     if (!v || !v->arena) return v;
     if (v->type == VAL_NUM) {
         /* #262 Step E: no observer fields to carry across the promotion. */
-        /* A refusal is sticky and is reported at the sandbox boundary. */
-        (void)sandbox_charge(sizeof(Value));
+        /* The singleton preserves store callers' non-NULL contract after a
+         * refusal without making the allocation that was just denied. */
+        if (!sandbox_charge(sizeof(Value))) return make_null();
         return make_num_permanent(v->data.num);
     }
     if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
-        Value *h = xcalloc(1, sizeof(Value));
-        h->type = v->type;
         /* #1183: the source already knows its length — copy it, don't re-scan. */
         size_t n = val_str_len(v);
-        /* A refusal is sticky and is reported at the sandbox boundary. */
-        (void)sandbox_charge(sizeof(Value) + n + 1);
+        if (!sandbox_charge(sizeof(Value) + n + 1)) return make_null();
+        Value *h = xcalloc(1, sizeof(Value));
+        h->type = v->type;
         char *copy = xmalloc(n + 1);
         memcpy(copy, v->data.str ? v->data.str : "", n);
         copy[n] = '\0';
@@ -1852,7 +1854,7 @@ Value* promote_if_arena(Value *v) {
          * heap-only constructors and never carry v->arena. */
         PromoteGraph g = {0};
         Value *root = promote_graph_list(&g, v);
-        for (int n = 0; n < g.count; n++) {
+        for (int n = 0; n < g.count && !g.refused; n++) {
             Value *src = g.src[n];
             Value *dst = g.dst[n];
             for (int i = 0; i < src->data.list.count; i++) {
@@ -1862,16 +1864,24 @@ Value* promote_if_arena(Value *v) {
                     pc = promote_graph_list(&g, c);
                 else
                     pc = promote_if_arena(c);
-                if (!pc) pc = make_null();
+                if (!pc || (pc == make_null() && c && c->arena &&
+                            c->type != VAL_NULL)) {
+                    g.refused = 1;
+                    break;
+                }
                 if (pc == c || (c && c->arena && c->type == VAL_LIST))
                     val_incref(pc);
-                dst->data.list.items[i] = pc;
+                dst->data.list.items[dst->data.list.count++] = pc;
             }
-            dst->data.list.count = src->data.list.count;
         }
+        /* make_list_heap gives every graph node a constructor (birth) ref.
+         * Edges own their own refs, while only the root birth ref is returned
+         * to the caller; release every other birth ref so cyclic copies can
+         * become collectible after the caller releases the root. */
+        for (int n = 1; n < g.count; n++) val_decref(g.dst[n]);
         free(g.src);
         free(g.dst);
-        return root;
+        return root ? root : make_null();
     }
     /* Remaining types (dict/fn/builtin/buffer/text builder) are
      * heap-only at construction; an arena flag on one is unreachable. */

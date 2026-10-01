@@ -21,9 +21,12 @@ RETURN is 40
 # Arena promotion must treat lists as a graph. Verified bytecode can make an
 # arena list contain itself entirely on the operand stack, then SET_NAME makes
 # it escape. This used to recurse in C until stack overflow while allocating
-# uncharged heap lists; a tiny byte budget must now reject it structurally.
+# uncharged heap lists. First prove the list instruction and cyclic promotion
+# actually run under a sufficient budget; then leave enough for OP_LIST's
+# 136-byte allocation but not for promotion's graph table and heap copy.
 NUM_ZERO is 2
 NULL_OP is 1
+DUP is 36
 DUP2 is 37
 INDEX_SET is 45
 SET_NAME is 26
@@ -32,12 +35,30 @@ arena_cycle_desc is [ABI,
      SET_NAME,0,0, RETURN],
     ["cycle"]]
 arena_mark of null
-arena_cycle_result is sandbox_run of [arena_cycle_desc, 1, 64]
+arena_cycle_ok is sandbox_run of [arena_cycle_desc, 1, 600]
+assert_eq of [arena_cycle_ok["error"]["message"],
+              "sandbox result too large to scan for callables (exceeds the result node/depth budget); refusing to cross the boundary",
+              "arena promotion: cyclic graph reaches the boundary scanner"]
+arena_cycle_result is sandbox_run of [arena_cycle_desc, 1, 400]
 arena_reset of null
 assert_eq of [arena_cycle_result["ok"], 0,
               "arena promotion: cyclic graph terminates within sandbox budget"]
 assert_eq of [arena_cycle_result["error"]["kind"], "sandbox",
               "arena promotion: heap copy is charged to sandbox budget"]
+assert_eq of [arena_cycle_result["error"]["message"],
+              "sandbox memory budget exceeded (used 392 + 136 > 400 bytes)",
+              "arena promotion: refusal occurs after cycle construction"]
+
+# A nested graph exercises the ownership distinction between the returned
+# root's constructor ref and child constructor refs, which must be released
+# after their owning edges have been installed.
+arena_nested_desc is [ABI,
+    [NUM_ZERO, NULL_OP, 42,1,0, DUP, 42,1,0,
+     SET_NAME,0,0, POP, RETURN],
+    ["nested"]]
+arena_nested_result is sandbox_run of [arena_nested_desc, 1, 1000]
+assert_eq of [arena_nested_result["ok"], 1,
+              "arena promotion: nested graph releases child birth references"]
 
 # --- #965 (root redesign): ONE verification context for the WHOLE graph -----
 # The pool bound added in fix7 is shared across ONE chunk's constants — but
