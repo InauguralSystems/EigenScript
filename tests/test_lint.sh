@@ -2554,6 +2554,17 @@ OUTPUT=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "#1343 runtime caret under the token on a TAB-indented line" "$OUTPUT" "^       | ${TAB}               ^\$"
 rm -f "$TMPFILE"
 
+# --- #1373: byte columns remain the machine-facing contract, but a terminal
+# caret needs one padding cell per UTF-8 character rather than per byte. ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'x is ["éé", 2)\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1373 parse caret after multi-byte characters" "$OUTPUT" "^       |              ^\$"
+printf 's is "éé" + nope\n' > "$TMPFILE"
+OUTPUT=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "#1373 runtime caret after multi-byte characters" "$OUTPUT" "^       |             ^\$"
+rm -f "$TMPFILE"
+
 # --- #1251 round 2: a literal node carries its OWN first line, not the line of
 # the token after it. A key whose ':' sits on the next line, and a list whose
 # ']' does, used to be reported on that later line. ---
