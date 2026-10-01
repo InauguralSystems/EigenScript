@@ -243,6 +243,59 @@ static void fix_spacing(const char *line, int starts_in_string, strbuf *out) {
     strbuf_free(&tmp3);
 }
 
+/* Skip an f-string interpolation, returning its closing brace or the NUL. */
+static const char *fmt_fstring_interp_end(const char *p);
+static const char *fmt_fstring_end(const char *p, int *closed);
+
+/* Skip an f-string, returning just after its closing quote or the NUL.  Quotes
+ * in an interpolation belong to its expression, not to the surrounding
+ * f-string: in particular, the three quotes in f"{ "\\\"" }" must not be
+ * mistaken for three successive boundaries of the outer string. */
+static const char *fmt_fstring_end(const char *p, int *closed) {
+    *closed = 0;
+    p += 2; /* skip f" */
+    while (*p && *p != '"') {
+        if (*p == '\\' && p[1]) {
+            p += 2;
+        } else if (*p == '{') {
+            p = fmt_fstring_interp_end(p + 1);
+            if (*p == '}') p++;
+        } else {
+            p++;
+        }
+    }
+    if (*p == '"') {
+        *closed = 1;
+        p++;
+    }
+    return p;
+}
+
+static const char *fmt_fstring_interp_end(const char *p) {
+    int depth = 1;
+    while (*p) {
+        if (*p == 'f' && p[1] == '"') {
+            int closed;
+            p = fmt_fstring_end(p, &closed);
+            continue;
+        }
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"') {
+                if (*p == '\\' && p[1]) p++;
+                p++;
+            }
+            if (*p == '"') p++;
+            continue;
+        }
+        if (*p == '#') return p + strlen(p);
+        if (*p == '{') depth++;
+        else if (*p == '}' && --depth == 0) break;
+        p++;
+    }
+    return p;
+}
+
 /* Return whether a double-quoted string remains open after this physical line.
  * The lexer permits literal newlines in strings, so formatting state must span
  * lines too.  A comment ends at the physical newline. */
@@ -260,6 +313,12 @@ static int string_state_after_line(const char *line, int in_string) {
             }
         } else if (*p == '#') {
             in_comment = 1;
+        } else if (*p == 'f' && p[1] == '"') {
+            int closed;
+            const char *end = fmt_fstring_end(p, &closed);
+            if (!closed) return 1;
+            p = end;
+            continue;
         } else if (*p == '"') {
             in_string = 1;
         }

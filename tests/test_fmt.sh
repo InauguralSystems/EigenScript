@@ -109,6 +109,14 @@ ACTUAL=$(fmt_str "$(printf 'value is \"a\r\nb\"\r\n')")
 EXPECTED=$(printf 'value is "a\r\nb"\n')
 check "carriage return in multiline string preserved" "$ACTUAL" "$EXPECTED"
 
+# Quotes inside an f-string interpolation are expression strings, not the end
+# of the outer f-string.  Losing that distinction leaks string state into the
+# next line and causes the formatter to rewrite bytes inside its plain string.
+INPUT=$'s is f"{ "\\\"" }"\nx is "a+b"\n'
+ACTUAL=$(fmt_str "$INPUT")
+EXPECTED=$'s is f"{ "\\\""}"\nx is "a+b"'
+check "nested quotes in f-string do not leak string state" "$ACTUAL" "$EXPECTED"
+
 # --fmt --write uses the same format_source_string path as the LSP provider;
 # exercise persistence separately so a future CLI-path split cannot regress it.
 TMPFILE=$(mktemp /tmp/fmt_multiline_XXXXXX.eigs)
