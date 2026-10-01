@@ -5707,9 +5707,10 @@ else
     echo "  FAIL: JIT trace-tape differential (rc=$JTAPE_RC)"
     printf '%s\n' "$JTAPE_OUTPUT"
 fi
-# Force the deliberately tiny leaf through the candidate entry gate and dump
-# its decision.  The leaf row below is a direct witness for the native callee
-# in "native call in thunk"; an unrelated compiled thunk cannot satisfy it.
+# Force the deliberately tiny, non-inlined leaf through the candidate entry
+# gate and dump its decision.  The leaf row below is a direct witness for the
+# native callee in "native call in thunk"; an unrelated compiled thunk cannot
+# satisfy it.
 JPATH_OUTPUT=$(EIGS_JIT_STATS=1 EIGS_JIT_TEST_FORCE_ENTRY=1 EIGS_JIT_ENTRY_COST_EXPERIMENT=1 EIGS_JIT_DUMP_SELECTION=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
 TOTAL=$((TOTAL + 23))
 if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then

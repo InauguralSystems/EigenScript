@@ -251,7 +251,10 @@ check of ["for-in buffer in thunk", sb == 80 * 56]
 # 5) Native VAL_FN call inside a thunk (hot fn calling another fn).
 # ----------------------------------------------------------------
 define leaf(x) as:
-    return x * 2 + 1
+    # Keep this as a real chunk rather than the compiler's single-expression
+    # leaf shortcut, so section [82] can witness a native callee explicitly.
+    doubled is x * 2
+    return doubled + 1
 
 define trunk(x) as:
     s is 0
