@@ -441,14 +441,15 @@ writer=41 reader=41 main=41
   of the env rather than dying with the worker's thread (the #1141 rule,
   applied to the loader's write path).
 
-**What is still yours to avoid.** Loading publishes bindings into a *shared*
+Loading publishes bindings into a *shared*
 scope: `load_file` runs in the loader's scope, and at worker top level that is
 the process-wide module env. So **two threads loading the same module are two
-threads writing the same bindings**, which is the ordinary shared-mutable-state
-race this document opens with — the runtime keeps its own tables consistent,
-but the binding's *value*, its refcount and its observer slot are yours. Under
-ThreadSanitizer that shape reports on the slot value, not on the loader.
-The safe patterns:
+threads writing the same bindings**. The runtime keeps the binding value,
+reference count, assignment count, and observer slot internally consistent;
+application-level ordering remains nondeterministic.
+The runtime serializes each shared binding replacement and takes a counted
+reference while holding that same lock, so concurrent readers cannot retain a
+freed value. The clearest and cheapest patterns remain:
 
 - load or import once on the main thread **before** `spawn`, then read from
   the workers; or
@@ -458,28 +459,17 @@ A `spawn`ed worker that imports stdlib modules its siblings do not import is
 fine, and is gated (`tests/test_loader_mt.sh`, plus the loader rows in
 `tests/test_tsan.sh`).
 
-**Two threads writing one binding is a separate, tracked defect, not just a
-style rule.** Because a shared-root slot is read by BORROWING the value and
-taking the reference afterwards, a concurrent overwrite can free what the
-other thread is still running: two workers that `load_file` a module whose
-`define` rebinds one global report ~20 ThreadSanitizer races per run and dump
-core roughly 1 run in 5. That is the class the `#607` comment in
-`src/eigenscript.c` declares out of scope ("two threads racing on the SAME
-slot's value or assign-count"); it predates the loader work and is filed on
-its own as #1171 with a repro and a fix direction (a counted reference taken inside the
-hold). Until it is closed, treat the two patterns above as a requirement
-rather than advice.
+The value and assignment-count contract is enforced by the shared-env hold;
+the hot read path remains a predicted-false branch for single-threaded and
+non-shared environments (`src/eigenscript.c`, #1171).
 
-**One shared slot the patterns above do NOT avoid: `__loop_iterations__`.**
+`__loop_iterations__` uses the same shared-env hold.
 The runtime publishes a loop's iteration count as an ordinary binding in the
 loop's env (`loop_iter_store`, `src/vm.c`). For a MODULE-LEVEL loop that env
 is the shared root env — so main's module-level loop and a worker's
 module-level loop inside `load_file` write the same slot even when the two
-threads load completely different modules. Today the consequence is a lost
-update on a runtime-internal counter (the slot holds an immediate number, so
-nothing is freed twice and no value your program reads is corrupted); a
-`report`/`when is` on that name can under-count. It is tracked with the same
-issue.
+threads load completely different modules. The shared-env hold serializes
+those updates, including the assignment count used by `when is`.
 
 ## Observer arming sets are process-global and locked (#1145)
 

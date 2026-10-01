@@ -1039,8 +1039,7 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
                          ic->starting_ver == start->binding_version, 1)) {
         Env *target = ic->walk_depth ? start->parent : start;
         if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
-            EigsSlot s = target->values[ic->slot_idx];
-            slot_incref(s);
+            EigsSlot s = env_load_slot_owned(target, ic->slot_idx);
             vm_push_slot(s);
             return;
         }
@@ -1065,8 +1064,7 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
         ic->slot_idx     = slot_idx;
         ic->walk_depth   = (uint8_t)depth;
     }
-    EigsSlot s = env_values_ptr(target)[slot_idx];   /* #607 */
-    slot_incref(s);
+    EigsSlot s = env_load_slot_owned(target, slot_idx);   /* #607/#1171 */
     vm_push_slot(s);
 }
 
@@ -1193,8 +1191,6 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
         Env *target = ic->walk_depth ? start->parent : start;
         if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
             env_store_slot(target, ic->slot_idx, s);
-            if (target->assign_counts)
-                target->assign_counts[ic->slot_idx]++;
             return;
         }
     }
@@ -1205,8 +1201,6 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
     Env *target = env_resolve_store(start, name, h, &slot_idx, &depth);
     if (target) {
         env_store_slot(target, slot_idx, s);
-        if (target->assign_counts)
-            env_assign_counts_ptr(target)[slot_idx]++;   /* #607 */
         if (depth <= 1) {
             ic->starting_env = start;
             ic->starting_ver = start->binding_version;
@@ -1240,8 +1234,6 @@ void jit_helper_set_name_local(EigsChunk *chunk, int idx) {
                          ic->walk_depth == 0 &&
                          ic->target_ver == start->binding_version, 1)) {
         env_store_slot(start, ic->slot_idx, s);
-        if (start->assign_counts)
-            start->assign_counts[ic->slot_idx]++;
         return;
     }
     const char *name = chunk->const_interns[idx];
@@ -1291,8 +1283,6 @@ void jit_helper_set_fn_name_local(EigsChunk *chunk, int idx) {
                          ic->walk_depth == 0 &&
                          ic->target_ver == target->binding_version, 1)) {
         env_store_slot(target, ic->slot_idx, s);
-        if (target->assign_counts)
-            target->assign_counts[ic->slot_idx]++;
         return;
     }
     const char *name = chunk->const_interns[idx];
@@ -1969,13 +1959,16 @@ void vm_thread_reset_caches(void) {
 
 static void loop_iter_store(Env *env, double n) {
     LoopIterCache *c = &g_loop_iter_cache;
+    env_dump_lock(env);
     if (c->env == env && c->version == env->binding_version &&
         slot_is_num(env->values[c->slot])) {
         env->values[c->slot].d = n;
         if (env->assign_counts)
             env->assign_counts[c->slot]++;
+        env_dump_unlock(env);
         return;
     }
+    env_dump_unlock(env);
     Value *iter_val = make_num(n);
     env_set_local(env, "__loop_iterations__", iter_val);
     val_decref(iter_val);
@@ -3583,8 +3576,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                              ic->starting_ver == start->binding_version, 1)) {
             Env *target = ic->walk_depth ? start->parent : start;
             if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
-                EigsSlot s = target->values[ic->slot_idx];
-                slot_incref(s);
+                EigsSlot s = env_load_slot_owned(target, ic->slot_idx);
                 vm_push_slot(s);
                 DISPATCH();
             }
@@ -3612,13 +3604,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             ic->slot_idx     = slot_idx;
             ic->walk_depth   = (uint8_t)depth;
         }
-        EigsSlot s = env_values_ptr(target)[slot_idx];   /* #607: the module
+        EigsSlot s = env_load_slot_owned(target, slot_idx); /* #607/#1171: the module
             env may be concurrently grown by main-thread binding creation;
             acquire the republished pointer (the old block stays
             retired-alive). The IC fast paths above stay plain: a worker
             never fast-path-hits the module env (its ICs are never
             populated under MT per #297), and main is the grower itself. */
-        slot_incref(s);
         vm_push_slot(s);
         DISPATCH();
     }
@@ -3636,8 +3627,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             Env *target = ic->walk_depth ? start->parent : start;
             if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
                 env_store_slot(target, ic->slot_idx, s);
-                if (target->assign_counts)
-                    target->assign_counts[ic->slot_idx]++;
                 DISPATCH();
             }
         }
@@ -3648,8 +3637,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *target = env_resolve_store(start, name, h, &slot_idx, &depth);
         if (target) {
             env_store_slot(target, slot_idx, s);
-            if (target->assign_counts)
-                env_assign_counts_ptr(target)[slot_idx]++;   /* #607 */
             if (!g_vm_multithreaded && depth <= 1) {   /* #297: see above */
                 ic->starting_env = start;
                 ic->starting_ver = start->binding_version;
@@ -3686,8 +3673,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                              ic->walk_depth == 0 &&
                              ic->target_ver == start->binding_version, 1)) {
             env_store_slot(start, ic->slot_idx, s);
-            if (start->assign_counts)
-                start->assign_counts[ic->slot_idx]++;
             DISPATCH();
         }
         const char *name = chunk->const_interns[idx];
@@ -3727,8 +3712,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                              ic->walk_depth == 0 &&
                              ic->target_ver == target->binding_version, 1)) {
             env_store_slot(target, ic->slot_idx, s);
-            if (target->assign_counts)
-                target->assign_counts[ic->slot_idx]++;
             DISPATCH();
         }
         const char *name = chunk->const_interns[idx];

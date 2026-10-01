@@ -1699,7 +1699,8 @@ static inline void val_decref(Value *v) {
         else
             newrc = --v->refcount;
         if (newrc <= 0) free_value(v);
-        else if (__builtin_expect((v->type == VAL_LIST || v->type == VAL_DICT)
+        else if (__builtin_expect(!g_vm_multithreaded &&
+                                  (v->type == VAL_LIST || v->type == VAL_DICT)
                                   && !v->gc_buffered, 0))
             gc_note_possible_root(v);
     }
@@ -1823,9 +1824,12 @@ void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
  * TU (the AOT's inline caches) were relying on an implicit declaration. */
 int      env_hash_find_dict(Value *dict, const char *key, uint32_t h);
 EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found);
-/* Direct slot store with arena promotion; used by VM inline-cache fast paths
- * after the slot index has been resolved out-of-band. Caller must update
- * binding_version/assign_counts as appropriate. */
+/* Return an owned slot reference.  For an MT-shared env the load and incref
+ * are one critical section, so a concurrent replacement cannot free the
+ * value between those two operations. */
+EigsSlot env_load_slot_owned(Env *env, int idx);
+/* Direct slot store with arena promotion; replaces the value and increments
+ * assign_counts in one shared-env critical section. */
 void env_store_slot(Env *env, int idx, EigsSlot s);
 /* Walk env chain for `name`. Returns target env on hit (with *out_slot and
  * *out_depth populated), NULL on miss. Depth 0 = start env, 1 = parent, etc. */

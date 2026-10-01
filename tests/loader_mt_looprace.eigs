@@ -1,0 +1,10 @@
+# #1171: the runtime-published __loop_iterations__ slot is shared when a
+# worker executes a module-level loop while main is also looping.
+define lm_loop_worker(_) as:
+    load_file of "loader_mt_modules/lm_loop.eigs"
+    return 1
+h is spawn of [lm_loop_worker, 0]
+i is 0
+loop while i < 200:
+    i is i + 1
+print of f"LOOPRACE {thread_join of h} {i}"

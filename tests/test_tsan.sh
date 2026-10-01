@@ -373,49 +373,37 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-echo "=== #1144 scope boundary: the user-level race names NO loader structure ==="
-# tests/loader_mt_userrace.eigs is the one loader-shaped program that is NOT
-# expected to be clean: two workers load a module whose `define` rebinds one
-# global that the other is calling — the same-slot value/assign-count class
-# `src/eigenscript.c`'s #607 comment declares out of scope, filed on its own.
-#
-# Asserting "zero reports" there would be a gate that can never be green.
-# Asserting nothing would leave "out of scope" as a sentence. So the row
-# asserts what IS in scope: that no LOADER STRUCTURE appears in any report —
-# no in-flight load stack, no module cache, no module-namespace table. If
-# #1144 regresses, one of those symbols comes back here and this goes red.
-#
-# A capture with zero reports cannot witness the boundary (§121: a check that
-# examined nothing is vacuous), so the row retries for a racing capture and
-# says so if it never gets one.
+echo "=== #1171 shared binding reads are TSan-clean ==="
+# Two workers repeatedly replace the same function binding while the sibling
+# calls it. Any TSan report is a failure: reads now pin the value inside the
+# same shared-env hold that serializes replacement (#1171).
 UR_FIXTURE="$TESTS_DIR/loader_mt_userrace.eigs"
-UR_FORBIDDEN='loading_stack|eigs_loading_|module_cache|module_lock|g_module_ns|module_ns_'
 if [ -f "$UR_FIXTURE" ]; then
-    UR_OUT=""; UR_W=0; UR_RC=0; UR_TRIES=0
-    while [ "$UR_TRIES" -lt 3 ]; do
-        UR_TRIES=$((UR_TRIES + 1))
-        UR_OUT=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$UR_FIXTURE" 2>&1)
-        UR_RC=$?
-        UR_W=$(printf '%s\n' "$UR_OUT" | grep -c "WARNING: ThreadSanitizer" || true)
-        [ "$UR_W" -gt 0 ] && break
-    done
-    UR_LOADER=$(printf '%s\n' "$UR_OUT" | grep -cE "$UR_FORBIDDEN" || true)
-    if [ "$UR_RC" -ne 0 ]; then
-        echo "  FAIL: scope-boundary probe exited $UR_RC (want 0)"; FAIL=$((FAIL + 1))
-    elif [ "$UR_W" -eq 0 ]; then
-        echo "  FAIL: scope-boundary probe raced nothing in $UR_TRIES attempts — the"
-        echo "        boundary check examined an empty capture, which proves nothing"
-        FAIL=$((FAIL + 1))
-    elif [ "$UR_LOADER" -ne 0 ]; then
-        echo "  FAIL: a LOADER STRUCTURE appears in the user-race reports ($UR_LOADER line(s)) — #1144 regressed"
-        printf '%s\n' "$UR_OUT" | grep -E "$UR_FORBIDDEN" | head -6
-        FAIL=$((FAIL + 1))
-    else
-        echo "  PASS: user-race reports name no loader structure ($UR_W report(s) examined, 0 loader frames)"
+    tsan_warnings "$UR_FIXTURE"
+    if [ "$WARNINGS" -eq 0 ] && [ "$LAST_RC" -eq 0 ]; then
+        echo "  PASS: shared-binding probe TSan-clean and exited 0"
         PASS=$((PASS + 1))
+    else
+        echo "  FAIL: shared-binding probe reported $WARNINGS warning(s), rc=$LAST_RC"
+        FAIL=$((FAIL + 1))
     fi
 else
-    echo "  FAIL: scope-boundary fixture missing ($UR_FIXTURE)"; FAIL=$((FAIL + 1))
+    echo "  FAIL: shared-binding fixture missing ($UR_FIXTURE)"; FAIL=$((FAIL + 1))
+fi
+
+echo "=== #1171 runtime loop counter is TSan-clean ==="
+LOOP_FIXTURE="$TESTS_DIR/loader_mt_looprace.eigs"
+if [ -f "$LOOP_FIXTURE" ]; then
+    tsan_warnings "$LOOP_FIXTURE"
+    if [ "$WARNINGS" -eq 0 ] && [ "$LAST_RC" -eq 0 ]; then
+        echo "  PASS: shared __loop_iterations__ probe TSan-clean and exited 0"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: shared __loop_iterations__ probe reported $WARNINGS warning(s), rc=$LAST_RC"
+        FAIL=$((FAIL + 1))
+    fi
+else
+    echo "  FAIL: loop-counter fixture missing ($LOOP_FIXTURE)"; FAIL=$((FAIL + 1))
 fi
 
 echo "=== observer arming sets must be race-free (#1145) ==="

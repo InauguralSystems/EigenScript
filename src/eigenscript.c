@@ -704,7 +704,10 @@ static int observer_obs_grow(Env *e, int idx);
 /* Core: fold a precomputed entropy into binding slot `idx` of env `e`. */
 static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
     if (!e || idx < 0) return;
-    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) {
+        env_dump_unlock(e);
+        return;
+    }
     /* Acquire-load the (possibly just-republished) block rather than reading
      * e->obs plainly: a worker assigning a module binding can reach here while
      * the main thread grows. Which block a racing writer lands in is #607's
@@ -769,7 +772,9 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
      * a program that names it opens the gate at COMPILE time and the flicker
      * cannot change an answer. */
     if (!eigs_obs_gate_open()) return;
-    observer_slot_update_e(e, idx, compute_entropy(newval));
+    double entropy = compute_entropy(newval); /* recurse before the env hold */
+    env_dump_lock(e);
+    observer_slot_update_e(e, idx, entropy);
     /* #294 also fold the raw value into the value-signal channel (numbers only:
      * the relative-delta step is only defined for a scalar trajectory). */
     if (newval && newval->type == VAL_NUM) {
@@ -783,6 +788,7 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
         ObserverSlot *s = env_obs_slot(e, idx);
         if (s) s->v_last = 0;
     }
+    env_dump_unlock(e);
 }
 
 /* #262 Phase-3 D: update a binding's observer slot from a raw immediate
@@ -791,9 +797,11 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
 void observer_slot_update_num(Env *e, int idx, double num) {
     eigs_obs_count_call();   /* #972 */
     if (!eigs_obs_gate_open()) return;           /* #915 — see observer_slot_update */
+    env_dump_lock(e);
     observer_slot_update_e(e, idx, entropy_of_num(num));
     ObserverSlot *vs = env_obs_slot(e, idx);    /* #294 value-signal channel */
     if (vs) observer_slot_record_value(vs, num);
+    env_dump_unlock(e);
 }
 
 /* #1049: the ELIDED assignment — what an `unobserved:` block still records.
@@ -830,11 +838,16 @@ void observer_slot_sample_num(Env *e, int idx, double num) {
     eigs_obs_count_call();   /* #972 */
     if (!eigs_obs_gate_open()) return;
     if (!e || idx < 0) return;
-    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    env_dump_lock(e);
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) {
+        env_dump_unlock(e);
+        return;
+    }
     ObserverSlot *s = env_obs_slot(e, idx);
-    if (!s) return;
+    if (!s) { env_dump_unlock(e); return; }
     observer_slot_record_value(s, num);
     s->used = 1;
+    env_dump_unlock(e);
 }
 
 void observer_slot_sample(Env *e, int idx, Value *newval) {
@@ -845,9 +858,14 @@ void observer_slot_sample(Env *e, int idx, Value *newval) {
         return;
     }
     if (!e || idx < 0) return;
-    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    env_dump_lock(e);
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) {
+        env_dump_unlock(e);
+        return;
+    }
     ObserverSlot *s = env_obs_slot(e, idx);
     if (s) s->v_last = 0;   /* #861 route bit only — no walk, no `used` */
+    env_dump_unlock(e);
 }
 
 /* #1044: per-binding window override. Only the OVERRIDE is written — the
@@ -2982,10 +3000,11 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
  *     stores and read at the post-resolve sites via env_values_ptr /
  *     env_assign_counts_ptr (acquire), so the pointer word itself is
  *     synchronized.
- * Out of scope (pre-existing, separate class): two threads racing on
- * the SAME slot's value or assign-count — that is slot-value semantics,
- * not memory safety of the arrays. */
+ * Slot contents use the same hold too: env_load_slot_owned takes its counted
+ * reference before releasing the hold, and every shared-slot writer replaces
+ * the value and updates assign_counts while holding it (#1171). */
 static pthread_mutex_t g_module_env_lock = PTHREAD_MUTEX_INITIALIZER;
+static __thread int g_module_env_lock_depth;
 
 /* #1161: ONE definition of "shared env under MT". The old spelling was
  * `e->parent == NULL`, which silently excluded every imported module's
@@ -3000,10 +3019,12 @@ static inline int env_mt_shared(const Env *e) {
     return __builtin_expect(g_vm_multithreaded, 0) && e->mt_shared;
 }
 static inline void env_shared_lock(const Env *e) {
-    if (env_mt_shared(e)) pthread_mutex_lock(&g_module_env_lock);
+    if (env_mt_shared(e) && g_module_env_lock_depth++ == 0)
+        pthread_mutex_lock(&g_module_env_lock);
 }
 static inline void env_shared_unlock(const Env *e) {
-    if (env_mt_shared(e)) pthread_mutex_unlock(&g_module_env_lock);
+    if (env_mt_shared(e) && --g_module_env_lock_depth == 0)
+        pthread_mutex_unlock(&g_module_env_lock);
 }
 /* Exported form for readers outside this file that walk g_global_env's
  * names/count (builtin_sandbox_run's snapshot, #1035). */
@@ -3096,18 +3117,18 @@ static int observer_obs_grow(Env *e, int idx) {
         e->obs_cap = ncap;
         return 1;
     }
-    pthread_mutex_lock(&g_module_env_lock);
+    env_shared_lock(e);
     if (idx >= e->obs_cap) {              /* re-check: another grow may have won */
         osz = (size_t)e->obs_cap * sizeof(ObserverSlot);
         ObserverSlot *no = malloc(nsz);
-        if (!no) { pthread_mutex_unlock(&g_module_env_lock); return 0; }
+        if (!no) { env_shared_unlock(e); return 0; }
         if (e->obs) memcpy(no, e->obs, osz);
         memset((char *)no + osz, 0, nsz - osz);
         env_retire_block(e, e->obs);
         __atomic_store_n(&e->obs, no, __ATOMIC_RELEASE);
         __atomic_store_n(&e->obs_cap, ncap, __ATOMIC_RELEASE);
     }
-    pthread_mutex_unlock(&g_module_env_lock);
+    env_shared_unlock(e);
     return 1;
 }
 
@@ -3481,6 +3502,7 @@ void env_store_slot(Env *env, int idx, EigsSlot s) {
                 EigsSlot new_s = slot_from_value(promoted);
                 slot_decref(env->values[idx]);
                 env->values[idx] = new_s;
+                if (env->assign_counts) env->assign_counts[idx]++;
                 env_shared_unlock(env);
                 return;
             }
@@ -3489,6 +3511,7 @@ void env_store_slot(Env *env, int idx, EigsSlot s) {
     slot_incref(s);
     slot_decref(env->values[idx]);
     env->values[idx] = s;
+    if (env->assign_counts) env->assign_counts[idx]++;
     env_shared_unlock(env);
 }
 
@@ -3501,8 +3524,6 @@ void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
         env_shared_unlock(e); /* env_store_slot re-locks; mutex is non-recursive */
         if (idx >= 0) {
             env_store_slot(e, idx, s);
-            if (e->assign_counts)
-                env_assign_counts_ptr(e)[idx]++;
             return;
         }
         e = e->parent;
@@ -3529,8 +3550,6 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
     if (idx >= 0) {
         env_shared_unlock(env);
         env_store_slot(env, idx, s);
-        int *ac = env_assign_counts_ptr(env);
-        if (ac) ac[idx]++;
         return;
     }
     if (env->count >= env->capacity) {
@@ -3680,6 +3699,7 @@ EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found)
         int idx = env_hash_find(&e->hash, name, h, e->names);
         if (idx >= 0) {
             EigsSlot s = e->values[idx];
+            slot_incref(s);
             env_shared_unlock(e);
             if (found) *found = 1;
             return s;
@@ -3689,6 +3709,14 @@ EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found)
     }
     if (found) *found = 0;
     return slot_null();
+}
+
+EigsSlot env_load_slot_owned(Env *env, int idx) {
+    env_shared_lock(env);
+    EigsSlot s = env->values[idx];
+    slot_incref(s);
+    env_shared_unlock(env);
+    return s;
 }
 
 /* `when is x`. Every bump site — here, in vm.c, and the JIT's emitted inline
