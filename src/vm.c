@@ -5995,6 +5995,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 char *manifest_text = read_file_util(manifest_path, &manifest_size);
                 if (manifest_text) {
                     int json_pos = 0;
+                    int requirement_unmet = 0;
                     Value *manifest = eigs_json_parse_root(manifest_text, &json_pos);
                     free(manifest_text);
                     if (manifest && manifest->type == VAL_DICT) {
@@ -6009,14 +6010,21 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                                     rt_error(EK_IO, current_line,
                                              "package %s requires the %s variant; this binary was built without it (run make %s)",
                                              shown, req->data.str, req->data.str);
-                                    free_value(manifest);
-                                    vm_push(make_null());
-                                    DISPATCH();
+                                    requirement_unmet = 1;
+                                    break;
                                 }
                             }
                         }
                     }
                     if (manifest) free_value(manifest);
+                    /* DISPATCH is a computed goto on GCC/Clang, but only a
+                     * switch break on the portable fallback. Keep it out of
+                     * the requirements loop so both implementations leave
+                     * IMPORT after the manifest is freed exactly once. */
+                    if (requirement_unmet) {
+                        vm_push(make_null());
+                        DISPATCH();
+                    }
                 }
             }
 

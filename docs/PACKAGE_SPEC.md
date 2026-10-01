@@ -37,6 +37,19 @@ the package name and providing `make` target for every mismatch. Import applies
 the same gate before package code executes. Packages needing no extension use
 `"requires": []`.
 
+The [package template manifest](https://github.com/InauguralSystems/eigs-package-template/blob/main/eigs.json)
+must carry that empty declaration explicitly. Its complete baseline manifest
+is:
+
+```json
+{
+  "name": "mypkg",
+  "version": "0.1.0",
+  "deps": {},
+  "requires": []
+}
+```
+
 ## Naming
 
 Package identifiers are **always namespaced**: `<owner>/<name>`. Bare
