@@ -1448,7 +1448,10 @@ static int rename_work_take(size_t amount) {
 }
 
 static void scope_bind_add(FnScope *s, const char *name, int from) {
-    if (!rename_work_take(1)) return;
+    /* Account for the traversal and copy performed by xstrdup as well as the
+     * binding-table operation itself.  Identifier length is controlled by
+     * the document, so counting only bindings would not bound this work. */
+    if (!rename_work_take(strlen(name) + 1)) return;
     if (s->bind_count == s->bind_cap) {
         int nc = s->bind_cap ? s->bind_cap * 2 : 4;
         s->binds = xrealloc_array(s->binds, (size_t)nc, sizeof(*s->binds));
@@ -1531,7 +1534,10 @@ static int lambda_param_tok(TokType t) {
 
 static int lambda_scope(Token *tk, int count, int i, FnScope *s) {
     int j = i + 1;
-    while (j < count && (lambda_param_tok(tk[j].type) || tk[j].type == TOK_COMMA)) j++;
+    while (j < count && (lambda_param_tok(tk[j].type) || tk[j].type == TOK_COMMA)) {
+        if (!rename_work_take(1)) return 0;
+        j++;
+    }
     if (!(j + 1 < count && tk[j].type == TOK_RPAREN && tk[j + 1].type == TOK_ARROW))
         return 0;
     s->tok_start = i;
@@ -1541,11 +1547,20 @@ static int lambda_scope(Token *tk, int count, int i, FnScope *s) {
     s->excl_lo = -1;
     s->excl_hi = -1;
     int params = 0;
-    for (int k = i + 1; k < j; k++)
+    for (int k = i + 1; k < j; k++) {
+        if (!rename_work_take(1)) {
+            s->tok_end = j + 2;
+            return 1;
+        }
         if (tk[k].type != TOK_COMMA) {
             if (tk[k].str_val) scope_add_param(s, tk[k].str_val, i);
+            if (rename_work_exhausted) {
+                s->tok_end = j + 2;
+                return 1;
+            }
             params++;
         }
+    }
     if (params == 0) scope_add_param(s, "n", i);
     int k = j + 2, depth = 0;
     for (; k < count; k++) {

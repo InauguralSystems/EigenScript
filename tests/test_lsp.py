@@ -57,6 +57,9 @@ def converse(messages):
                        text=True, timeout=15)
     if p.stderr and any(mk in p.stderr for mk in SANITIZER_MARKERS):
         SANITIZER_HITS.append(p.stderr)
+    if p.returncode != 0:
+        raise RuntimeError("eigenlsp exited with status %d:\n%s" %
+                           (p.returncode, p.stderr))
     out = p.stdout
     dec = json.JSONDecoder()
     responses = []
@@ -867,8 +870,12 @@ def main():
            "params": {"textDocument": {"uri": URI},
                       "position": {"line": 0, "character": 0}, "newName": "y"}}
     r = converse([INIT, did_open(large_locals), rnb, SHUTDOWN, EXIT])
+    budget_response = by_id(r, 45)
     check("rename refuses analysis that exceeds its work budget",
-          (by_id(r, 45) or {}).get("result") is None)
+          isinstance(budget_response, dict) and
+          "error" not in budget_response and
+          "result" in budget_response and
+          budget_response["result"] is None)
 
     # --- lint warnings surface as coded diagnostics (severity 2) ---
     r = converse([INIT, did_open("leftover is 5\nprint of \"hi\"\n"), SHUTDOWN, EXIT])
