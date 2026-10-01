@@ -4896,9 +4896,9 @@ Value* builtin_channel(Value *arg) {
 /* Thread safety: values sent through channels are deep-copied (#293) so the
  * received value is self-contained — independent of the sender thread's
  * lifetime (its dict keys are interned per-thread and freed at detach) and of
- * its arena. Data types (num/str/list/dict, nested) are copied; fn/builtin/
- * buffer/text_builder are still shared by refcount. The copy also removes the
- * old shared-mutable-container hazard for the copied types. */
+ * its arena. Data types (num/str/list/dict/buffer/text_builder, nested) are
+ * copied; fn/builtin are shared by refcount. The copy also removes the old
+ * shared-mutable-value hazard for the copied types. */
 Value* builtin_send(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "send requires [channel, value]");
