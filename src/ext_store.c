@@ -113,20 +113,17 @@ static int page_data_used(Page *page);
  * to the tape's own non-JSON grammar. The `_eigs_` prefix is new here and
  * matches that `_`-prefixed reserved-name shape.
  *
- * COLLISION — the cost of any tagged encoding, stated plainly: a user dict
- * with exactly these two keys, `_eigs_buffer` holding a list whose every
- * element is a number or one of the three sentinels below, and `_eigs_shape`
- * holding exactly two integral numbers that satisfy the shape invariant
- * (rows==0 && cols==0, or rows*cols == element count), now decodes as a
- * buffer. Nothing else does — a third key, a missing key, a non-list body, a
- * string element that is not a sentinel, or an inconsistent shape all leave
- * the value a plain dict. The top-level record is never at risk either:
- * store_put stamps `_id` onto it, so it always carries a third key.
+ * A plain two-key dict can spell that same object.  The dict encoder therefore
+ * writes `_eigs_shape` a second time for every dict with exactly these keys.
+ * Duplicate keys cannot be produced by a VAL_DICT, but JSON permits them and
+ * our parser can observe them before dict insertion coalesces them.  One shape
+ * key means buffer; two means user dict.  This makes the tag unforgeable by
+ * user data without reserving either key or changing the record format.
  *
  * BACKWARD COMPATIBILITY — the store is a file (`store_open of path`), so
  * databases written by older builds do exist. The old encoder never emitted
  * this shape (buffers became `null`), so old records decode exactly as
- * before, apart from the collision above. STORE_VERSION is deliberately NOT
+ * before. STORE_VERSION is deliberately NOT
  * bumped: store_read_header rejects any other version outright, so a bump
  * would make every existing database unopenable to fix a value that was
  * already lost. An older binary reading a new file sees the tag as a plain
@@ -201,6 +198,14 @@ static void store_json_encode(Value *v, strbuf *out) {
                 eigs_json_escape_string(out, key);
                 strbuf_append_char(out, ':');
                 store_json_encode(v->data.dict.vals[i], out);
+            }
+            /* Escape the complete buffer-tag namespace.  Repeating the shape
+             * member preserves its value after dict insertion while leaving a
+             * lexical fact that no user VAL_DICT can itself contain. */
+            if (v->data.dict.count == 2 &&
+                dict_get(v, STORE_BUF_TAG) && dict_get(v, STORE_SHAPE_TAG)) {
+                strbuf_append(out, ",\"" STORE_SHAPE_TAG "\":");
+                store_json_encode(dict_get(v, STORE_SHAPE_TAG), out);
             }
             strbuf_append_char(out, '}');
             break;
@@ -310,8 +315,8 @@ static Value* store_json_parse_array(const char *s, int *pos) {
 
 /* If `dict` is exactly the STORE_BUF_TAG shape, build the VAL_BUFFER it
  * encodes; otherwise return NULL and leave `dict` alone. Every clause here is
- * a collision guard — the tighter the match, the less user data the tag can
- * swallow (see the STORE_BUF_TAG block for the surface that remains).
+ * a corruption guard.  The object parser separately rejects the duplicated
+ * shape key used to escape user dicts (see the STORE_BUF_TAG block).
  * Ownership: the returned buffer is a fresh owned ref; the caller drops the
  * dict. */
 static Value* store_buffer_from_tag(Value *dict) {
@@ -379,12 +384,14 @@ static Value* store_json_parse_object(const char *s, int *pos) {
     if (s[*pos] != '{') return NULL;
     (*pos)++;
     Value *dict = make_dict(8);
+    int shape_key_count = 0;
     store_json_skip_ws(s, pos);
     if (s[*pos] == '}') { (*pos)++; return dict; }
     while (1) {
         store_json_skip_ws(s, pos);
         Value *key = store_json_parse_string(s, pos);
         if (!key) { val_decref(dict); return NULL; }
+        if (strcmp(key->data.str, STORE_SHAPE_TAG) == 0) shape_key_count++;
         store_json_skip_ws(s, pos);
         if (s[*pos] != ':') { val_decref(key); val_decref(dict); return NULL; }  /* require colon */
         (*pos)++;
@@ -403,7 +410,7 @@ static Value* store_json_parse_object(const char *s, int *pos) {
             (*pos)++;
             /* A completed object may be the buffer tag (#805) — at any depth,
              * so the check lives here rather than at the record root. */
-            Value *buf = store_buffer_from_tag(dict);
+            Value *buf = shape_key_count == 1 ? store_buffer_from_tag(dict) : NULL;
             if (buf) { val_decref(dict); return buf; }
             return dict;
         }
