@@ -1,0 +1,15 @@
+# Issue #1216 acceptance frame: an image-backed glow rendered additively.
+if (gfx_open of [640, 360, "Tidepool — modern gfx"]):
+    gfx_clear of [3, 10, 25]
+    mote is gfx_image_load of "tests/fixtures/gfx_rgba.png"
+    gfx_blend of "add"
+    for i in range of 24:
+        x is 36 + ((i * 83) % 550)
+        y is 34 + ((i * 47) % 270)
+        size is 18 + ((i * 7) % 34)
+        gfx_image_draw of [mote, x, y, size, size, 150, i * 11]
+    gfx_blend of "blend"
+    gfx_polygon of [[[0, 310], [155, 274], [330, 326], [510, 282], [640, 316], [640, 360], [0, 360]], 4, 30, 58, 235]
+    gfx_present of null
+    gfx_delay of 1200
+    gfx_close of null

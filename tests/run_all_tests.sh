@@ -3546,14 +3546,36 @@ fi
 # [120c] Modern gfx surface (#1216 — probe-gated like the other gfx rows).
 echo "[120c] Gfx Images, Blend, Polygon, Alpha, and Fonts"
 if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
-    GM_OUTPUT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_modern.eigs 2>&1); GM_RC=$?
-    if rc_ok "$GM_RC" "$GM_OUTPUT" && echo "$GM_OUTPUT" | grep -q "Tests: 11 | Pass: 11 | Fail: 0"; then
-        TOTAL=$((TOTAL + 11)); PASS=$((PASS + 11))
-        echo "  PASS: all 11 modern gfx pixel/resource checks"
+    GM_PROBE_FILE=$(mktemp /tmp/eigs_gfx_modern_probe_XXXXXX.eigs)
+    cat > "$GM_PROBE_FILE" <<'PROBE'
+opened is gfx_open of [2, 2, "modern gfx probe"]
+print of ("modern-gfx-ready: " + str of opened)
+gfx_close of null
+PROBE
+    GM_PROBE=$(SDL_VIDEODRIVER=dummy ./eigenscript "$GM_PROBE_FILE" 2>&1); GM_PROBE_RC=$?
+    rm -f "$GM_PROBE_FILE"
+    # Pixel assertions need an actual renderer. Font assertions additionally
+    # need the optional SDL_ttf runtime and the deterministic test font.
+    GM_FONT_READY=0
+    if test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+       && (ldconfig -p 2>/dev/null | grep -q 'libSDL2_ttf' \
+           || test -r /usr/lib/libSDL2_ttf.so || test -r /usr/local/lib/libSDL2_ttf.dylib); then
+        GM_FONT_READY=1
+    fi
+    if ! rc_ok "$GM_PROBE_RC" "$GM_PROBE" || ! echo "$GM_PROBE" | grep -q "modern-gfx-ready: 1"; then
+        section_skip "SDL2 renderer unavailable"
+    elif test "$GM_FONT_READY" -ne 1; then
+        section_skip "SDL2_ttf or deterministic test font unavailable"
     else
-        TOTAL=$((TOTAL + 11)); FAIL=$((FAIL + 11))
-        echo "  FAIL: modern gfx surface"
-        echo "$GM_OUTPUT" | tail -20
+        GM_OUTPUT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_modern.eigs 2>&1); GM_RC=$?
+        if rc_ok "$GM_RC" "$GM_OUTPUT" && echo "$GM_OUTPUT" | grep -q "Tests: 13 | Pass: 13 | Fail: 0"; then
+            TOTAL=$((TOTAL + 13)); PASS=$((PASS + 13))
+            echo "  PASS: all 13 modern gfx pixel/resource checks"
+        else
+            TOTAL=$((TOTAL + 13)); FAIL=$((FAIL + 13))
+            echo "  FAIL: modern gfx surface"
+            echo "$GM_OUTPUT" | tail -20
+        fi
     fi
     echo ""
 else

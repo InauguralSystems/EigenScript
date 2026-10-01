@@ -39,22 +39,20 @@ assert_true of [cap > 0, "framebuffer region captures to a handle"]
 gfx_image_draw of [cap, 20, 20, 2, 2, 255, 0]
 cap_px is gfx_read of [20, 20]
 assert_true of [cap_px[0] > 240, "captured image blits"]
+assert_eq of [gfx_image_from_fb of [-1, 0, 2, 2], 0, "out-of-bounds capture is rejected"]
 
-# Custom font is environment-optional, but when SDL_ttf and the fixture system
-# font exist the handle must render through gfx_text's handle form.
+# The runner only invokes this fixture when SDL_ttf and this font are present,
+# so a font-load failure is a real failure rather than vacuous coverage.
 font is gfx_font of ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12]
-if font > 0:
-    gfx_text of [font, 1, 20, "A", 255, 255, 255]
-    font_lit is 0
-    for fy in range of 12:
-        for fx in range of 12:
-            fp is gfx_read of [1 + fx, 20 + fy]
-            if fp[0] > 0:
-                font_lit is font_lit + 1
-    assert_true of [font_lit > 0, "font handle renders pixels through gfx_text"]
-else:
-    # SDL_ttf is optional at runtime; the argument-path gate still covers it.
-    assert_true of [1, "SDL_ttf unavailable: explicit font rendering skipped"]
+assert_true of [font > 0, "explicit TTF loads to a font handle"]
+gfx_text of [font, 1, 20, "A", 255, 255, 255]
+font_lit is 0
+for fy in range of 12:
+    for fx in range of 12:
+        fp is gfx_read of [1 + fx, 20 + fy]
+        if fp[0] > 0:
+            font_lit is font_lit + 1
+assert_true of [font_lit > 0, "font handle renders pixels through gfx_text"]
 
 gfx_close of null
 test_summary of null

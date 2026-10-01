@@ -25,6 +25,9 @@ typedef uint32_t Uint32;
 typedef int32_t  Sint32;
 
 typedef struct { int x, y, w, h; } SDL_Rect;
+typedef struct { float x, y; } SDL_FPoint;
+typedef struct { Uint8 r, g, b, a; } SDL_Color;
+typedef struct { SDL_FPoint position; SDL_Color color; SDL_FPoint tex_coord; } SDL_Vertex;
 typedef struct { Sint32 scancode; Sint32 sym; uint16_t mod; Uint32 unused; } SDL_Keysym;
 typedef struct { Uint32 type; Uint32 ts; Uint32 wid; Uint8 state; Uint8 rep; Uint8 p2; Uint8 p3; SDL_Keysym keysym; } SDL_KeyboardEvent;
 typedef struct { Uint32 type; Uint32 ts; Uint32 wid; Uint32 which; Uint32 state; Sint32 x; Sint32 y; Sint32 xrel; Sint32 yrel; } SDL_MouseMotionEvent;  /* state (button mask) was missing: x/y decoded misaligned, breaking every real-mouse drag/hover (#599) */
@@ -44,6 +47,7 @@ typedef union {
 
 typedef void SDL_Window;
 typedef void SDL_Renderer;
+typedef void SDL_Texture;
 
 typedef struct {
     int freq;
@@ -105,9 +109,10 @@ static Uint32 (*p_SDL_GetTicks)(void);
 static void (*p_SDL_Delay)(Uint32);
 static int (*p_SDL_RenderSetClipRect)(SDL_Renderer*, const SDL_Rect*);
 static int (*p_SDL_RenderReadPixels)(SDL_Renderer*, const SDL_Rect*, Uint32, void*, int);
+static int (*p_SDL_GetRendererOutputSize)(SDL_Renderer*, int*, int*);
+static int (*p_SDL_RenderGeometry)(SDL_Renderer*, SDL_Texture*, const SDL_Vertex*, int, const int*, int);
 
 /* Texture function pointers (for framebuffer blit) */
-typedef void SDL_Texture;
 #define MY_SDL_PIXELFORMAT_ARGB8888 0x16362004u
 #define MY_SDL_TEXTUREACCESS_STREAMING 1
 static SDL_Texture* (*p_SDL_CreateTexture)(SDL_Renderer*, Uint32, int, int, int);
@@ -183,6 +188,8 @@ static int load_sdl2(void) {
     p_SDL_GetMouseState = dlsym(g_sdl_lib, "SDL_GetMouseState");
     p_SDL_RenderSetClipRect = dlsym(g_sdl_lib, "SDL_RenderSetClipRect");
     p_SDL_RenderReadPixels = dlsym(g_sdl_lib, "SDL_RenderReadPixels");
+    p_SDL_GetRendererOutputSize = dlsym(g_sdl_lib, "SDL_GetRendererOutputSize");
+    p_SDL_RenderGeometry = dlsym(g_sdl_lib, "SDL_RenderGeometry");
     p_SDL_CreateTexture = dlsym(g_sdl_lib, "SDL_CreateTexture");
     p_SDL_DestroyTexture = dlsym(g_sdl_lib, "SDL_DestroyTexture");
     p_SDL_UpdateTexture = dlsym(g_sdl_lib, "SDL_UpdateTexture");
@@ -270,8 +277,6 @@ static int load_sdl_mixer(void) {
  * Text rendering is output-only — no trace-tape records (same class as
  * gfx_rect); the metrics builtins are environment-dependent (which font
  * is installed) but untraced, same class as gfx_ticks. */
-typedef struct { Uint8 r, g, b, a; } SDL_Color;
-
 static void *g_ttf_lib = NULL;
 static int g_ttf_state = 0;            /* 0 unprobed, 1 active, -1 unavailable */
 static char g_ttf_font_path[512];
@@ -302,6 +307,32 @@ static int ttf_available(void) {
     if (g_ttf_state) return g_ttf_state > 0;
     g_ttf_state = -1;
 
+    g_ttf_lib = dlopen("libSDL2_ttf-2.0.so.0", RTLD_LAZY);
+    if (!g_ttf_lib) g_ttf_lib = dlopen("libSDL2_ttf.so", RTLD_LAZY);
+    if (!g_ttf_lib) return 0;   /* silent: bitmap is the normal fallback */
+
+    int ok = 1;
+    #define TLOAD(name) do { p_##name = dlsym(g_ttf_lib, #name); \
+        if (!p_##name) { fprintf(stderr, "gfx_text: missing %s\n", #name); ok = 0; } } while(0)
+    TLOAD(TTF_Init); TLOAD(TTF_Quit);
+    TLOAD(TTF_OpenFont); TLOAD(TTF_CloseFont);
+    TLOAD(TTF_SizeUTF8); TLOAD(TTF_FontHeight);
+    TLOAD(TTF_RenderUTF8_Blended);
+    #undef TLOAD
+    if (!ok || p_TTF_Init() != 0) {
+        dlclose(g_ttf_lib);
+        g_ttf_lib = NULL;
+        return 0;
+    }
+    g_ttf_state = 1;
+    return 1;
+}
+
+/* Locate the font used by the legacy, scale-based text API.  This is kept
+ * separate from loading SDL_ttf: gfx_font(path, size) must not depend on a
+ * machine having a discoverable default font (or a valid EIGS_GFX_FONT). */
+static int ttf_find_default_font(void) {
+    if (g_ttf_font_path[0]) return 1;
     const char *env = getenv("EIGS_GFX_FONT");
     if (env && *env) {
         if (access(env, R_OK) != 0) {
@@ -325,30 +356,13 @@ static int ttf_available(void) {
         snprintf(g_ttf_font_path, sizeof g_ttf_font_path, "%s", found);
     }
 
-    g_ttf_lib = dlopen("libSDL2_ttf-2.0.so.0", RTLD_LAZY);
-    if (!g_ttf_lib) g_ttf_lib = dlopen("libSDL2_ttf.so", RTLD_LAZY);
-    if (!g_ttf_lib) return 0;   /* silent: bitmap is the normal fallback */
-
-    int ok = 1;
-    #define TLOAD(name) do { p_##name = dlsym(g_ttf_lib, #name); \
-        if (!p_##name) { fprintf(stderr, "gfx_text: missing %s\n", #name); ok = 0; } } while(0)
-    TLOAD(TTF_Init); TLOAD(TTF_Quit);
-    TLOAD(TTF_OpenFont); TLOAD(TTF_CloseFont);
-    TLOAD(TTF_SizeUTF8); TLOAD(TTF_FontHeight);
-    TLOAD(TTF_RenderUTF8_Blended);
-    #undef TLOAD
-    if (!ok || p_TTF_Init() != 0) {
-        dlclose(g_ttf_lib);
-        g_ttf_lib = NULL;
-        return 0;
-    }
-    g_ttf_state = 1;
     return 1;
 }
 
 /* Cached TTF_Font* for a bitmap scale; NULL when the font can't open
  * (callers fall back to the bitmap path). */
 static void* ttf_font_for_scale(int scale) {
+    if (!ttf_find_default_font()) return NULL;
     int px = ttf_scale_to_px(scale);
     for (int i = 0; i < g_ttf_font_count; i++)
         if (g_ttf_fonts[i].px == px) return g_ttf_fonts[i].font;
@@ -370,6 +384,7 @@ static void ttf_teardown(void) {
     dlclose(g_ttf_lib);
     g_ttf_lib = NULL;
     g_ttf_state = 0;
+    g_ttf_font_path[0] = '\0';
 }
 
 static void gfx_resources_teardown(void) {
@@ -677,9 +692,9 @@ Value* builtin_gfx_blend(Value *arg) {
     return make_null();
 }
 
-/* gfx_polygon of [vertices, r, g, b, a], filled with an even/odd scanline
- * rasterizer.  This fallback works on every SDL2 version (rather than making
- * SDL_RenderGeometry, introduced in SDL 2.0.18, a runtime requirement). */
+/* gfx_polygon of [vertices, r, g, b, a]. Convex polygons use SDL's geometry
+ * API when SDL >= 2.0.18 provides it; the even/odd rasterizer remains the
+ * compatibility path for older SDL releases and concave polygons. */
 Value* builtin_gfx_polygon(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 5
               || arg->data.list.items[0]->type != VAL_LIST
@@ -699,6 +714,39 @@ Value* builtin_gfx_polygon(Value *arg) {
         int y = (int)vs->data.list.items[i]->data.list.items[1]->data.num;
         if (y < ymin) ymin = y;
         if (y > ymax) ymax = y;
+    }
+    int winding = 0, convex = 1;
+    for (int i = 0; i < n; i++) {
+        Value *a = vs->data.list.items[i];
+        Value *b = vs->data.list.items[(i + 1) % n];
+        Value *c = vs->data.list.items[(i + 2) % n];
+        double cross = (b->data.list.items[0]->data.num - a->data.list.items[0]->data.num)
+                     * (c->data.list.items[1]->data.num - b->data.list.items[1]->data.num)
+                     - (b->data.list.items[1]->data.num - a->data.list.items[1]->data.num)
+                     * (c->data.list.items[0]->data.num - b->data.list.items[0]->data.num);
+        int turn = (cross > 0) - (cross < 0);
+        if (turn && winding && turn != winding) convex = 0;
+        if (turn) winding = turn;
+    }
+    if (convex && winding && p_SDL_RenderGeometry) {
+        SDL_Vertex *vertices = malloc((size_t)n * sizeof *vertices);
+        int *indices = malloc((size_t)(n - 2) * 3 * sizeof *indices);
+        if (!vertices || !indices) { free(vertices); free(indices); return make_null(); }
+        SDL_Color color = {(Uint8)arg->data.list.items[1]->data.num,
+                           (Uint8)arg->data.list.items[2]->data.num,
+                           (Uint8)arg->data.list.items[3]->data.num,
+                           (Uint8)arg->data.list.items[4]->data.num};
+        for (int i = 0; i < n; i++) {
+            vertices[i] = (SDL_Vertex){{(float)vs->data.list.items[i]->data.list.items[0]->data.num,
+                                        (float)vs->data.list.items[i]->data.list.items[1]->data.num},
+                                       color, {0.0f, 0.0f}};
+        }
+        for (int i = 0; i < n - 2; i++) {
+            indices[i * 3] = 0; indices[i * 3 + 1] = i + 1; indices[i * 3 + 2] = i + 2;
+        }
+        p_SDL_RenderGeometry(g_renderer, NULL, vertices, n, indices, (n - 2) * 3);
+        free(vertices); free(indices);
+        return make_null();
     }
     int *xs = malloc((size_t)n * sizeof *xs);
     if (!xs) return make_null();
@@ -831,7 +879,13 @@ Value* builtin_gfx_image_from_fb(Value *arg) {
     if (!g_renderer || !p_SDL_RenderReadPixels || !p_SDL_CreateTexture || !p_SDL_UpdateTexture || g_image_next >= GFX_RESOURCE_MAX) return make_num(0);
     SDL_Rect src = {(int)arg->data.list.items[0]->data.num,(int)arg->data.list.items[1]->data.num,(int)arg->data.list.items[2]->data.num,(int)arg->data.list.items[3]->data.num};
     if (src.w <= 0 || src.h <= 0) return make_num(0);
-    Uint32 *pixels = malloc((size_t)src.w*(size_t)src.h*sizeof *pixels); if (!pixels) return make_num(0);
+    int output_w, output_h;
+    if (!p_SDL_GetRendererOutputSize
+        || p_SDL_GetRendererOutputSize(g_renderer, &output_w, &output_h) != 0
+        || src.x < 0 || src.y < 0 || src.x > output_w - src.w || src.y > output_h - src.h)
+        return make_num(0);
+    if ((size_t)src.w > SIZE_MAX / sizeof(Uint32) / (size_t)src.h) return make_num(0);
+    Uint32 *pixels = calloc((size_t)src.w*(size_t)src.h, sizeof *pixels); if (!pixels) return make_num(0);
     int ok = p_SDL_RenderReadPixels(g_renderer, &src, MY_SDL_PIXELFORMAT_ARGB8888, pixels, src.w*(int)sizeof(Uint32)) == 0;
     SDL_Texture *tex = ok ? p_SDL_CreateTexture(g_renderer, MY_SDL_PIXELFORMAT_ARGB8888, MY_SDL_TEXTUREACCESS_STREAMING, src.w, src.h) : NULL;
     if (tex && p_SDL_UpdateTexture(tex, NULL, pixels, src.w*(int)sizeof(Uint32)) != 0) { p_SDL_DestroyTexture(tex); tex = NULL; }
