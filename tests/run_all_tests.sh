@@ -1636,15 +1636,15 @@ echo ""
 # [20] System builtins (random, args, paths, filesystem)
 echo "[20/21] System Builtins"
 check_binary_fingerprint
-SYS_OUTPUT=$(./eigenscript ../tests/test_system.eigs 2>&1)
+SYS_OUTPUT=$(./eigenscript ../tests/test_system.eigs 2>&1); SYS_RC=$?
 
-if echo "$SYS_OUTPUT" | grep -q "All system tests passed"; then
-    TOTAL=$((TOTAL + 22))
-    PASS=$((PASS + 22))
-    echo "  PASS: all 22 system checks"
+if rc_ok "$SYS_RC" "$SYS_OUTPUT" && echo "$SYS_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 23))
+    PASS=$((PASS + 23))
+    echo "  PASS: all 23 system checks"
 else
-    TOTAL=$((TOTAL + 22))
-    FAIL=$((FAIL + 22))
+    TOTAL=$((TOTAL + 23))
+    FAIL=$((FAIL + 23))
     echo "  FAIL: system tests (assert failed)"
     echo "$SYS_OUTPUT" | grep -i "assert\|error" | head -5
 fi

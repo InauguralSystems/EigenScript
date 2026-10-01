@@ -1,4 +1,5 @@
 # Tests for random, args, path, filesystem builtins
+load_file of "lib/test.eigs"
 
 # ---- random ----
 r1 is random of null
@@ -44,6 +45,9 @@ assert of [(path_ext of "noext") == "", "PE2 no ext"]
 assert of [(path_ext of "/a/b.tar.gz") == ".gz", "PE3 double ext"]
 
 # ---- mkdir ----
+# Start clean so the creation order below is controlled even after an
+# interrupted prior run.
+exec_capture of ["rm", "-rf", "/tmp/eigen_sys_test_dir"]
 ok is mkdir of "/tmp/eigen_sys_test_dir"
 assert of [ok == 1, "MK1 mkdir"]
 assert of [(file_exists of "/tmp/eigen_sys_test_dir") == 1, "MK2 dir exists"]
@@ -51,8 +55,12 @@ assert of [(file_exists of "/tmp/eigen_sys_test_dir") == 1, "MK2 dir exists"]
 # ---- ls ----
 write_text of ["/tmp/eigen_sys_test_dir/a.txt", "a"]
 write_text of ["/tmp/eigen_sys_test_dir/b.txt", "b"]
+write_text of ["/tmp/eigen_sys_test_dir/c.txt", "c"]
+write_text of ["/tmp/eigen_sys_test_dir/d.txt", "d"]
+write_text of ["/tmp/eigen_sys_test_dir/e.txt", "e"]
 files is ls of "/tmp/eigen_sys_test_dir"
-assert of [(len of files) == 2, "LS1 ls count"]
+assert of [(len of files) == 5, "LS1 ls count"]
+assert_eq of [files, ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"], "LS2 ls bytewise order is independent of creation order"]
 
 # ---- getcwd ----
 cwd is getcwd of null
@@ -70,6 +78,9 @@ assert of [(file_exists of tmp) == 0, "RM1 rm removes file"]
 # ---- cleanup ----
 rm of "/tmp/eigen_sys_test_dir/a.txt"
 rm of "/tmp/eigen_sys_test_dir/b.txt"
+rm of "/tmp/eigen_sys_test_dir/c.txt"
+rm of "/tmp/eigen_sys_test_dir/d.txt"
+rm of "/tmp/eigen_sys_test_dir/e.txt"
 exec_capture of ["rmdir", "/tmp/eigen_sys_test_dir"]
 
-print of "All system tests passed"
+test_summary of null
