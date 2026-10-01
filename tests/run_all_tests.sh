@@ -5767,7 +5767,7 @@ echo ""
 echo "[82a] JIT Profitability Selection"
 JPROF_OUTPUT=$(EIGS=./eigenscript bash ../tests/test_jit_profitability.sh 2>&1); JPROF_RC=$?
 TOTAL=$((TOTAL + 1))
-if rc_ok "$JPROF_RC" "$JPROF_OUTPUT" && echo "$JPROF_OUTPUT" | grep -q '^jit_profitability: OK$'; then
+if rc_ok "$JPROF_RC" "$JPROF_OUTPUT" && echo "$JPROF_OUTPUT" | grep -q '^PASS: jit_profitability: OK$'; then
     PASS=$((PASS + 1)); echo "  PASS: entry accept/reject, OSR, OFF, and output"
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: JIT profitability selection (rc=$JPROF_RC)"; echo "$JPROF_OUTPUT"

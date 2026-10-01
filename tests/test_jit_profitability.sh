@@ -14,4 +14,4 @@ printf '%s\n' "$base" | grep -q "chunk='osr_entry'.*scope=osr.*decision=accept" 
 printf '%s\n' "$base" | grep -q "All tests passed" || { echo "FAIL: selected-tier output changed"; exit 1; }
 printf '%s\n' "$off" | grep -q "All tests passed" || { echo "FAIL: EIGS_JIT_OFF output changed"; exit 1; }
 if printf '%s\n' "$off" | grep -q '^JIT selection:'; then echo "FAIL: EIGS_JIT_OFF selected a tier"; exit 1; fi
-echo "jit_profitability: OK"
+echo "PASS: jit_profitability: OK"
