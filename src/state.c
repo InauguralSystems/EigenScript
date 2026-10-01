@@ -91,6 +91,7 @@ static void state_destroy_body(EigsState *st, int already_released) {
     /* Module-cache refs were dropped at gc_collect_at_exit; the array
      * itself may still be allocated (capacity bumped past zero). */
     free(st->module_cache);
+    env_intern_release_state_values(st);
     for (size_t i = 0; i < st->intern_table_count; i++)
         env_intern_table_unref(st->intern_tables[i]);
     free(st->intern_tables);
@@ -194,7 +195,7 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     th->state = st;
     th->intern_tbl = env_intern_table_new();   /* #1065: thread's ref */
     /* State-owned envs retain interned name pointers after this attachment
-     * leaves.  Keep a state-lifetime reference to every attachment's table.
+     * leaves. Keep a state reference unless detach proves the table empty.
      * threads_lock serializes both this registry and the attachment list. */
     pthread_mutex_lock(&st->threads_lock);
     if (st->intern_table_count == st->intern_table_cap) {
@@ -311,6 +312,8 @@ void eigs_thread_detach(void) {
     th->loading_stack = NULL;
     th->loading_count = th->loading_cap = 0;
 
+    env_intern_transfer_values_to_state();
+    EnvInternTable *detached_intern_tbl = th->intern_tbl;
     eigs_thread_drain_caches(th);
     eigs_obs_memo_release();  /* #915: memo + speculative budget, thread-local */
     pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(-1); pthread_mutex_unlock(&g_attached_lock);
@@ -319,6 +322,16 @@ void eigs_thread_detach(void) {
     eigs_current = NULL;
 
     pthread_mutex_lock(&st->threads_lock);
+    /* A spawn worker which executes an existing chunk usually interns no
+     * names. Do not park its 4096 empty buckets until state destruction. */
+    if (env_intern_table_empty(detached_intern_tbl)) {
+        for (size_t i = 0; i < st->intern_table_count; i++) {
+            if (st->intern_tables[i] != detached_intern_tbl) continue;
+            env_intern_table_unref(st->intern_tables[i]);
+            st->intern_tables[i] = st->intern_tables[--st->intern_table_count];
+            break;
+        }
+    }
     EigsThread **slot = &st->threads;
     while (*slot && *slot != th) slot = &(*slot)->next;
     if (*slot == th) *slot = th->next;

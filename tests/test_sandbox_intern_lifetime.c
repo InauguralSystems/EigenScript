@@ -106,6 +106,11 @@ int main(void) {
     const size_t sandbox_prefix_retained =
         sandbox_only_intern_count() - sandbox_baseline;
     snprintf(key, sizeof key, "sandbox-only-key-%d", 0);
+    /* A host may retain the result while replacing its attachment. Promoted
+     * keys must move to state lifetime rather than being drained with the
+     * attachment that ran the sandbox. */
+    eigs_thread_detach();
+    assert(eigs_thread_attach(state) != NULL);
     /* Check the escaped-result control before the retention assertion: a
      * mutant that restores the leak must still demonstrate that the returned
      * key remains readable through the run boundary. */

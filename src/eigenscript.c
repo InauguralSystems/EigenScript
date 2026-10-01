@@ -1573,6 +1573,13 @@ void env_intern_table_unref(EnvInternTable *t) {
     free(t);
 }
 
+int env_intern_table_empty(const EnvInternTable *t) {
+    if (!t) return 1;
+    for (int i = 0; i < ENV_NAME_INTERN_BUCKETS; i++)
+        if (t->buckets[i]) return 0;
+    return 1;
+}
+
 void free_value(Value *v) {
     if (!v || v->arena) return;
     env_intern_release_value(v);
@@ -3263,6 +3270,28 @@ void env_intern_release_value(Value *value) {
     if (!value) return;
     EnvInternValueOwner **link = &g_sandbox_intern_owners;
     while (*link && (*link)->value != value) link = &(*link)->next;
+    if (!*link && eigs_current && eigs_current->state) {
+        EigsState *st = eigs_current->state;
+        pthread_mutex_lock(&st->threads_lock);
+        link = &st->sandbox_intern_owners;
+        while (*link && (*link)->value != value) link = &(*link)->next;
+        if (!*link) {
+            pthread_mutex_unlock(&st->threads_lock);
+            return;
+        }
+        EnvInternValueOwner *owner = *link;
+        *link = owner->next;
+        pthread_mutex_unlock(&st->threads_lock);
+        EnvNameIntern *name = owner->names;
+        while (name) {
+            EnvNameIntern *next = name->owner_next;
+            free(name->name);
+            free(name);
+            name = next;
+        }
+        free(owner);
+        return;
+    }
     if (!*link) return;
     EnvInternValueOwner *owner = *link;
     *link = owner->next;
@@ -3274,6 +3303,36 @@ void env_intern_release_value(Value *value) {
         name = next;
     }
     free(owner);
+}
+
+void env_intern_transfer_values_to_state(void) {
+    if (!eigs_current || !g_sandbox_intern_owners) return;
+    EigsState *st = eigs_current->state;
+    pthread_mutex_lock(&st->threads_lock);
+    EnvInternValueOwner *tail = g_sandbox_intern_owners;
+    while (tail->next) tail = tail->next;
+    tail->next = st->sandbox_intern_owners;
+    st->sandbox_intern_owners = g_sandbox_intern_owners;
+    g_sandbox_intern_owners = NULL;
+    pthread_mutex_unlock(&st->threads_lock);
+}
+
+void env_intern_release_state_values(EigsState *st) {
+    if (!st) return;
+    EnvInternValueOwner *owner = st->sandbox_intern_owners;
+    st->sandbox_intern_owners = NULL;
+    while (owner) {
+        EnvInternValueOwner *next_owner = owner->next;
+        EnvNameIntern *name = owner->names;
+        while (name) {
+            EnvNameIntern *next = name->owner_next;
+            free(name->name);
+            free(name);
+            name = next;
+        }
+        free(owner);
+        owner = next_owner;
+    }
 }
 
 void env_intern_release_all_values(void) {

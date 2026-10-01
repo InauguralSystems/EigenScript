@@ -695,6 +695,9 @@ typedef struct EnvInternTable {
 EnvInternTable *env_intern_table_new(void);
 void            env_intern_table_ref(EnvInternTable *t);
 void            env_intern_table_unref(EnvInternTable *t);
+int             env_intern_table_empty(const EnvInternTable *t);
+void            env_intern_transfer_values_to_state(void);
+void            env_intern_release_state_values(EigsState *st);
 
 /* Per-interpreter-instance config + shared registry. Transparent for
  * internal TUs (Phase 10's embed.h wraps it behind accessors). */
@@ -703,11 +706,13 @@ struct EigsState {
     EigsThread     *threads;
     /* Intern tables whose names have been published into state-owned envs.
      * An attachment drops its own reference at detach, but global/module env
-     * bindings can outlive that attachment.  The state therefore retains
-     * every attachment's table until state teardown (#1162). */
+     * bindings can outlive that attachment. The state retains nonempty
+     * attachment tables until state teardown (#1162). */
     EnvInternTable **intern_tables;
     size_t           intern_table_count;
     size_t           intern_table_cap;
+    /* Promoted sandbox keys transferred from completed attachments. */
+    EnvInternValueOwner *sandbox_intern_owners;
     /* Observer-classification thresholds (set_observer_threshold builtin).
      * Per-state because they're interpreter configuration, not execution
      * state; one knob per host application, shared across worker threads. */

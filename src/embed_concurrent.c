@@ -24,6 +24,7 @@
  * Build:  make embed-concurrent
  */
 #include "eigs_embed.h"
+#include "eigenscript.h"
 /* #1142 round 5: trace_out_capacity() — the witness for the sink-only drop
  * in src/trace.c's sink_flush. It is an internal accessor, not an embedding
  * API, so it comes from the internal header rather than eigs_embed.h. */
@@ -66,7 +67,7 @@ static void check(int ok, const char *what) {
  * the number: bumping a population pin to clear its own red is how a gate
  * launders the loss it exists to report (mechanical-gates §4, §106). The
  * number only ever moves for a check you just wrote. */
-#define EC_EXPECTED_CHECKS 91
+#define EC_EXPECTED_CHECKS 92
 
 /* Rounds are deliberately modest: these assertions fire on the RATIO of two
  * states' settings, not on how long they are held, so a long spin buys nothing
@@ -2028,6 +2029,15 @@ static void test_host_detach_reattach_names(void) {
     check(c2, "host-reattach: reader OS thread created");
     if (c2) pthread_join(t2, NULL);
     check(a.ok, "host-reattach: second OS thread reads builtin and dict names");
+
+    size_t retained = st->intern_table_count;
+    for (int i = 0; i < 128; i++) {
+        EigsThread *th = eigs_thread_attach(st);
+        if (!th) break;
+        eigs_thread_detach();
+    }
+    check(st->intern_table_count == retained,
+          "host-reattach: empty worker intern tables are released at detach");
 
     check(eigs_thread_switch(st) != NULL,
           "host-reattach: same OS thread can attach after both detach");
