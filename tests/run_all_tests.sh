@@ -3022,6 +3022,26 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
+    echo "[47h/47] model inference context window (#1405)"
+    CW_OUTPUT=$(bash "$TESTS_DIR/test_model_context_window.sh" 2>&1); CW_RC=$?
+    CW_PASS=$(echo "$CW_OUTPUT" | grep -c "PASS:" || true)
+    CW_FAIL=$(echo "$CW_OUTPUT" | grep -c "FAIL:" || true)
+    if [ "$CW_RC" -ne 0 ] && [ "$CW_FAIL" -eq 0 ]; then
+        CW_FAIL=1
+        CW_OUTPUT="$CW_OUTPUT
+  FAIL: context-window child exited without a verdict (rc=$CW_RC)"
+    fi
+    TOTAL=$((TOTAL + CW_PASS + CW_FAIL))
+    PASS=$((PASS + CW_PASS))
+    FAIL=$((FAIL + CW_FAIL))
+    if [ "$CW_FAIL" -gt 0 ]; then
+        echo "  FAIL: $CW_FAIL model context-window check(s) failed"
+        echo "$CW_OUTPUT" | grep "FAIL:" | head -4
+    else
+        echo "  PASS: generation and eval loss retain the newest model context"
+    fi
+    echo ""
+
     echo "[47f/47] eigen_eval_loss held-out cross-entropy"
     EL_OUTPUT=$(bash "$TESTS_DIR/test_eval_loss.sh" 2>&1)
     EL_PASS=$(echo "$EL_OUTPUT" | grep -c "PASS:" || true)

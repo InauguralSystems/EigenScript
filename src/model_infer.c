@@ -384,8 +384,12 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
 
     int *token_ids = xcalloc_array(safe_size_mul(max_seq_len, 4), sizeof(int));
     int num_tokens = prompt_len < max_seq_len ? prompt_len : max_seq_len;
+    int prompt_start = prompt_len - num_tokens;
     for (int i = 0; i < num_tokens; i++) {
-        int tid = prompt_ids[i];
+        /* A model can only attend to max_seq_len positions.  Preserve the
+         * most recent context, matching the rolling window used after the
+         * first generated token, rather than silently keeping the oldest. */
+        int tid = prompt_ids[prompt_start + i];
         if (tid < 0) tid = 0;
         if (tid >= vocab_size) tid = vocab_size - 1;
         token_ids[i] = tid;
@@ -651,16 +655,19 @@ Value* builtin_eigen_eval_loss(Value *arg) {
         return make_num(-1.0);
     }
 
-    int *prompt_ids = xcalloc(prompt_len, sizeof(int));
-    for (int i = 0; i < prompt_len; i++) {
-        Value *v = prompt_list->data.list.items[i];
+    int context_len = prompt_len < g_model.config.max_seq_len
+        ? prompt_len : g_model.config.max_seq_len;
+    int prompt_start = prompt_len - context_len;
+    int *prompt_ids = xcalloc(context_len, sizeof(int));
+    for (int i = 0; i < context_len; i++) {
+        Value *v = prompt_list->data.list.items[prompt_start + i];
         int t = (v->type == VAL_NUM) ? (int)v->data.num : 0;
         if (t < 0 || t >= vocab_size) t = 0;
         prompt_ids[i] = t;
     }
 
     float *logits = xcalloc(vocab_size, sizeof(float));
-    native_forward(prompt_ids, prompt_len, &g_model, logits);
+    native_forward(prompt_ids, context_len, &g_model, logits);
     free(prompt_ids);
 
     /* Numerically stable log-softmax at the target: subtract the max before
