@@ -191,12 +191,12 @@ i is 3
 EOF
 EIGS_TRACE="$SCOPE_TAPE" "$EIGS" "$SCOPE_FIX" > /dev/null 2>&1
 
-grep -q '^S work 1 ' "$SCOPE_TAPE" \
+grep -q '^S [0-9][0-9]* work 1 ' "$SCOPE_TAPE" \
     && ok "tape carries S scope-transition records (v2)" \
     || fail "tape carries S scope-transition records (v2)"
 
 # two work() invocations = two distinct frame serials on their S records
-NSER=$(grep '^S work 1 ' "$SCOPE_TAPE" | sort -u | wc -l)
+NSER=$(grep '^S [0-9][0-9]* work 1 ' "$SCOPE_TAPE" | sort -u | wc -l)
 [ "$NSER" -eq 2 ] \
     && ok "same-function invocations get distinct frame serials" \
     || fail "same-function invocations get distinct frame serials" "got $NSER"

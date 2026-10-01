@@ -184,14 +184,14 @@ P1_STEP=$(step_label "$MID_TAPE" "$MID" x "s 1000" "jb 8")
 
 # ---- 6. the tape says what it carries: the records are on it, and the
 # `O cfg` record round-trips the exact doubles (%.17g).
-grep -q '^O win u 50$' "$TMPDIR/win.tape" \
+grep -q '^O [0-9][0-9]* win u 50$' "$TMPDIR/win.tape" \
     && ok "tape carries the per-binding O win record" \
     || fail "tape carries the per-binding O win record"
-grep -q '^O cfg 0.01 0.02 ' "$TMPDIR/thr.tape" \
+grep -q '^O [0-9][0-9]* cfg 0.01 0.02 ' "$TMPDIR/thr.tape" \
     && ok "tape carries the state-level O cfg record" \
     || fail "tape carries the state-level O cfg record" \
             "$(grep '^O ' "$TMPDIR/thr.tape" | head -1)"
-grep -q '^O cfg .* 50 ' "$TMPDIR/windef.tape" \
+grep -q '^O [0-9][0-9]* cfg .* 50 ' "$TMPDIR/windef.tape" \
     && ok "O cfg carries the state window depth" \
     || fail "O cfg carries the state window depth" \
             "$(grep '^O ' "$TMPDIR/windef.tape" | head -1)"
@@ -229,29 +229,29 @@ RC=$?
             "rc=$RC $(head -1 "$TMPDIR/work-limit.err")"
 
 # ---- 7. #411 version/compat path. The `O` records are an ENCODING change,
-# so TRACE_FORMAT_VERSION went 2 -> 3 and the rule is the standing one:
-# version-and-reject, never migrate. A v2 tape — one recorded by any earlier
+# so TRACE_FORMAT_VERSION went 3 -> 4 for stream identities (after 2 -> 3 added O records) and the rule is the standing one:
+# version-and-reject, never migrate. A v3 tape — one recorded by any earlier
 # binary, whose knob calls are simply not on it — is refused loudly by both
 # the stepper and replay rather than silently classified at the defaults.
-head -1 "$TMPDIR/thr.tape" | grep -q '^V 3 ' \
-    && ok "tapes written by this build stamp format v3" \
-    || fail "tapes written by this build stamp format v3" \
+head -1 "$TMPDIR/thr.tape" | grep -q '^V 4 ' \
+    && ok "tapes written by this build stamp format v4" \
+    || fail "tapes written by this build stamp format v4" \
             "$(head -1 "$TMPDIR/thr.tape")"
 
-V2="$TMPDIR/v2.tape"
-sed "1s/^V 3 /V 2 /" "$TMPDIR/thr.tape" > "$V2"
+V2="$TMPDIR/v3.tape"
+sed "1s/^V 4 /V 3 /" "$TMPDIR/thr.tape" > "$V2"
 echo q | "$EIGS" --step "$V2" "$TMPDIR/thr.eigs" >/dev/null 2>"$TMPDIR/v2.err"
 RC=$?
-[ "$RC" -eq 3 ] && grep -q "tape format v2" "$TMPDIR/v2.err" \
-    && ok "a v2 (pre-O-record) tape is refused by --step with exit 3" \
-    || fail "a v2 (pre-O-record) tape is refused by --step with exit 3" \
+[ "$RC" -eq 3 ] && grep -q "tape format v3" "$TMPDIR/v2.err" \
+    && ok "a v3 (pre-stream-id) tape is refused by --step with exit 3" \
+    || fail "a v3 (pre-stream-id) tape is refused by --step with exit 3" \
             "rc=$RC $(head -1 "$TMPDIR/v2.err")"
 
 EIGS_REPLAY="$V2" "$EIGS" "$TMPDIR/thr.eigs" >/dev/null 2>"$TMPDIR/v2r.err"
 RC=$?
-[ "$RC" -eq 3 ] && grep -q "format v2" "$TMPDIR/v2r.err" \
-    && ok "a v2 (pre-O-record) tape is refused by EIGS_REPLAY with exit 3" \
-    || fail "a v2 (pre-O-record) tape is refused by EIGS_REPLAY with exit 3" \
+[ "$RC" -eq 3 ] && grep -q "format v3" "$TMPDIR/v2r.err" \
+    && ok "a v3 (pre-stream-id) tape is refused by EIGS_REPLAY with exit 3" \
+    || fail "a v3 (pre-stream-id) tape is refused by EIGS_REPLAY with exit 3" \
             "rc=$RC $(head -1 "$TMPDIR/v2r.err")"
 
 # The two checks above rewrite this build's own header, which proves the
@@ -381,10 +381,10 @@ print of ("mod=" + (report of u))
 print of ("u=" + (run of [0.0]))
 EOF
 xscope_case xsparam oscillating "$TMPDIR/xsparam.eigs"
-grep -q '^S run ' "$TMPDIR/xsparam.tape" && \
-  [ "$(grep -n '^S run \|^O win u 50$' "$TMPDIR/xsparam.tape" | head -2 | \
+grep -q '^S [0-9][0-9]* run ' "$TMPDIR/xsparam.tape" && \
+  [ "$(grep -n '^S [0-9][0-9]* run \|^O [0-9][0-9]* win u 50$' "$TMPDIR/xsparam.tape" | head -2 | \
        sed -n '1s/:.*//p')" -lt \
-    "$(grep -n '^O win u 50$' "$TMPDIR/xsparam.tape" | sed -n '1s/:.*//p')" ] \
+    "$(grep -n '^O [0-9][0-9]* win u 50$' "$TMPDIR/xsparam.tape" | sed -n '1s/:.*//p')" ] \
     && ok "xsparam: the O win record is preceded by its own frame's S record" \
     || fail "xsparam: the O win record is preceded by its own frame's S record" \
             "$(grep -n '^S \|^O ' "$TMPDIR/xsparam.tape" | head -4 | tr '\n' ' ')"
@@ -541,14 +541,14 @@ corrupt_case() {
         || fail "corrupt O record refused with exit 3: $what" \
                 "rc=$rc $(head -1 "$TMPDIR/corrupt.err")"
 }
-corrupt_case "window 0"        's/^O cfg \(.*\) [0-9]* \(.*\)$/O cfg \1 0 \2/'  "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
-corrupt_case "window -5"       's/^O cfg \(.*\) [0-9]* \(.*\)$/O cfg \1 -5 \2/' "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
-corrupt_case "window 4000000000" 's/^O cfg \(.*\) [0-9]* \(.*\)$/O cfg \1 4000000000 \2/' "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
-corrupt_case "scale 0"         's/^O cfg \(.*\) \(.*\)$/O cfg \1 0/'             "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
-corrupt_case "dh_zero >= dh_small" 's/^O cfg [^ ]* /O cfg 9 /'                    "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
-corrupt_case "truncated cfg"   's/^O cfg .*/O cfg 0.01/'                          "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
-corrupt_case "per-binding window -1" 's/^O win u .*/O win u -1/'                    "$TMPDIR/win.eigs" "$TMPDIR/win.tape"
-corrupt_case "per-binding window 999" 's/^O win u .*/O win u 999/'                 "$TMPDIR/win.eigs" "$TMPDIR/win.tape"
+corrupt_case "window 0"        's/^O [0-9][0-9]* cfg \(.*\) [0-9]* \(.*\)$/O 0 cfg \1 0 \2/'  "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
+corrupt_case "window -5"       's/^O [0-9][0-9]* cfg \(.*\) [0-9]* \(.*\)$/O 0 cfg \1 -5 \2/' "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
+corrupt_case "window 4000000000" 's/^O [0-9][0-9]* cfg \(.*\) [0-9]* \(.*\)$/O 0 cfg \1 4000000000 \2/' "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
+corrupt_case "scale 0"         's/^O [0-9][0-9]* cfg \(.*\) \(.*\)$/O 0 cfg \1 0/'             "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
+corrupt_case "dh_zero >= dh_small" 's/^O [0-9][0-9]* cfg [^ ]* /O 0 cfg 9 /'                    "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
+corrupt_case "truncated cfg"   's/^O [0-9][0-9]* cfg .*/O 0 cfg 0.01/'                          "$TMPDIR/thr.eigs" "$TMPDIR/thr.tape"
+corrupt_case "per-binding window -1" 's/^O [0-9][0-9]* win u .*/O 0 win u -1/'                    "$TMPDIR/win.eigs" "$TMPDIR/win.tape"
+corrupt_case "per-binding window 999" 's/^O [0-9][0-9]* win u .*/O 0 win u 999/'                 "$TMPDIR/win.eigs" "$TMPDIR/win.tape"
 # ...and a well-formed tape is still accepted after all that (the refusal is
 # the record's, not the reader having stopped reading O records at all).
 [ "$(step_label "$TMPDIR/win.tape" "$TMPDIR/win.eigs" u "s 700")" = "oscillating" ] \
@@ -572,7 +572,7 @@ EOF
 CLEAR_LIVE=$("$EIGS" "$TMPDIR/clear.eigs" 2>/dev/null | sed -n 's/^u=//p')
 EIGS_TRACE="$TMPDIR/clear.tape" "$EIGS" "$TMPDIR/clear.eigs" >/dev/null 2>&1
 CLEAR_STEP=$(step_label "$TMPDIR/clear.tape" "$TMPDIR/clear.eigs" u "s 99999")
-grep -q '^O win u 0$' "$TMPDIR/clear.tape" \
+grep -q '^O [0-9][0-9]* win u 0$' "$TMPDIR/clear.tape" \
     && ok "the per-binding CLEAR is recorded as O win <name> 0" \
     || fail "the per-binding CLEAR is recorded as O win <name> 0" \
             "$(grep '^O ' "$TMPDIR/clear.tape" | tr '\n' ' ')"

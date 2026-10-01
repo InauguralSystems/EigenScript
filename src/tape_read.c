@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #ifndef EIGENSCRIPT_VERSION
 #define EIGENSCRIPT_VERSION "dev"
@@ -222,21 +223,36 @@ static int tape_parse(Tape *t, long len) {
         r.kind = p[0];
         r.step = t->nsteps > 0 ? t->nsteps - 1 : 0;
         r.scope = cur_scope;
+        char *body = p + 2;
+        if (p[0] != 'V' && strchr("LASNO", p[0])) {
+            if (p[1] != ' ' || *body < '0' || *body > '9') {
+                fprintf(stderr, "step: malformed v4 stream id in '%s'; refusing to step\n", p);
+                return 0;
+            }
+            char *id_end = NULL;
+            errno = 0;
+            (void)strtoull(body, &id_end, 10);
+            if (errno == ERANGE || id_end == body || *id_end != ' ' || !id_end[1]) {
+                fprintf(stderr, "step: malformed v4 stream id in '%s'; refusing to step\n", p);
+                return 0;
+            }
+            body = id_end + 1;
+        }
         switch (p[0]) {
             case 'V':
                 if (!vline_ok(p)) return 0;   /* mid-stream session header */
                 break;
             case 'L':
-                r.line = atoi(p + 2);
+                r.line = atoi(body);
                 t->steps[t->nsteps] = t->nrecs;
                 r.step = t->nsteps;
                 t->nsteps++;
                 break;
             case 'A': case 'N': {
-                char *eq = strchr(p + 2, '=');
+                char *eq = strchr(body, '=');
                 if (!eq) { r.kind = 0; break; }   /* torn record: skip */
                 *eq = '\0';
-                r.name  = p + 2;
+                r.name  = body;
                 r.value = eq + 1;
                 if (r.kind == 'A') {
                     NameHist *h = tape_hist_for(t, r.name, cur_scope, 1);
@@ -260,8 +276,8 @@ static int tape_parse(Tape *t, long len) {
                 memset(&o, 0, sizeof o);
                 o.rec = t->nrecs;
                 o.scope = cur_scope;
-                if (strncmp(p + 2, "cfg ", 4) == 0) {
-                    char *q = p + 6, *q0;
+                if (strncmp(body, "cfg ", 4) == 0) {
+                    char *q = body + 4, *q0;
                     int ok = 1;
                     o.binding  = 0;
                     q0 = q; o.dh_zero  = strtod(q, &q);        ok &= (q != q0);
@@ -272,8 +288,8 @@ static int tape_parse(Tape *t, long len) {
                     if (!ok) return obs_cfg_refuse("truncated record", p);
                     if (!obs_cfg_rec_ok(&o, p)) return 0;
                     obscfg_push(t, &o);
-                } else if (strncmp(p + 2, "win ", 4) == 0) {
-                    char *nm = p + 6;
+                } else if (strncmp(body, "win ", 4) == 0) {
+                    char *nm = body + 4;
                     char *sp = strchr(nm, ' ');
                     if (sp) {
                         char *q = sp + 1, *q0 = q;
@@ -292,7 +308,7 @@ static int tape_parse(Tape *t, long len) {
                 break;
             }
             case 'S': {                            /* #539 v2 scope transition */
-                char *nm = p + 2;
+                char *nm = body;
                 char *sp1 = strchr(nm, ' ');
                 if (!sp1) { r.kind = 0; break; }
                 *sp1 = '\0';

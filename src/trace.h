@@ -28,7 +28,12 @@ typedef union { double d; uint64_t u; } EigsSlot;
  * value serialization, escaping, truncation markers, the header itself.
  * Replay refuses a tape whose format or runtime version differs from the
  * running binary: version-and-reject, never migrate (docs/TRACE.md). */
-#define TRACE_FORMAT_VERSION 3   /* v3 (#1044/#1045 follow-up): observer-config O records */
+#define TRACE_FORMAT_VERSION 4   /* v4 (#1286): stream id on every non-header record */
+
+/* Reserve an id for an external producer (for example a future GPU stream).
+ * CPU and embedded streams use the same allocator lazily. UINT64_MAX means
+ * there is no active tape session. */
+uint64_t trace_external_stream_acquire(void);
 
 /* 1 when EIGS_TRACE was set and a tape was successfully opened.
  * Hook sites in vm.c gate on this directly so the disabled case

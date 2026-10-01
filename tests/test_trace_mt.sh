@@ -47,14 +47,14 @@ parse_tape() {
     # record. `N random=0.5N monotonic_ns=17` and `A x=1A y=2` are two
     # records glued by a tear and must be malformed, not well-formed.
     function ok_line(s, v) {
-        if (s ~ /^L [0-9]+$/) return 1
-        if (s ~ /^S [^ ]+ [0-9]+ [0-9]+$/) return 1
-        if (s ~ /^O cfg [^ ]+ [^ ]+ [^ ]+ [0-9]+ [^ ]+$/) return 1
-        if (s ~ /^O win [^ ]+ [0-9]+$/) return 1
-        if (s ~ /^V [0-9]+ [^ ]+$/) return 1
-        if (s ~ /^[AN] [^= ]+=/) {
+        if (s ~ /^L [0-9][0-9]* [0-9][0-9]*$/) return 1
+        if (s ~ /^S [0-9][0-9]* [^ ]+ [0-9][0-9]* [0-9][0-9]*$/) return 1
+        if (s ~ /^O [0-9][0-9]* cfg [^ ]+ [^ ]+ [^ ]+ [0-9][0-9]* [^ ]+$/) return 1
+        if (s ~ /^O [0-9][0-9]* win [^ ]+ [0-9][0-9]*$/) return 1
+        if (s ~ /^V [0-9][0-9]* [^ ]+$/) return 1
+        if (s ~ /^[AN] [0-9][0-9]* [^= ]+=/) {
             v = s
-            sub(/^[AN] [^= ]+=/, "", v)
+            sub(/^[AN] [0-9][0-9]* [^= ]+=/, "", v)
             return value_ok(v)
         }
         return 0
@@ -63,8 +63,8 @@ parse_tape() {
         lines++
         if (ok_line($0)) {
             well++
-            if ($0 ~ /^N /) nrec++
-            if ($0 ~ /^O cfg /) ocfg++
+            if ($0 ~ /^N [0-9][0-9]* /) nrec++
+            if ($0 ~ /^O [0-9][0-9]* cfg /) ocfg++
         } else malformed++
     }
     END {
@@ -87,10 +87,10 @@ selftest() {
     local torn="$TMPDIR/torn.tape"
     local empty="$TMPDIR/empty.tape"
     local good="$TMPDIR/good.tape"
-    printf '%s\n' 'V 3 0.43.0' '30257A r=570844060311' '30101653L 7' \
-        'N random=0.5N monotonic_ns=17' 'A x=1A y=2' > "$torn"
+    printf '%s\n' 'V 4 0.43.0' '30257A r=570844060311' '30101653L 7' \
+        'N 0 random=0.5N 0 monotonic_ns=17' 'A 0 x=1A 0 y=2' > "$torn"
     : > "$empty"
-    printf '%s\n' 'V 3 0.43.0' 'L 1' 'N random=0.5' 'A x=1' > "$good"
+    printf '%s\n' 'V 4 0.43.0' 'L 0 1' 'N 0 random=0.5' 'A 0 x=1' > "$good"
 
     local t_lines t_well t_mal t_n t_o t_ex
     read -r t_lines t_well t_mal t_n t_o t_ex <<< "$(parse_tape "$torn")"
@@ -125,8 +125,8 @@ selftest() {
     local concat_n concat_a
     concat_n="$TMPDIR/concat_n.tape"
     concat_a="$TMPDIR/concat_a.tape"
-    printf '%s\n' 'N random=0.5N monotonic_ns=17' > "$concat_n"
-    printf '%s\n' 'A x=1A y=2' > "$concat_a"
+    printf '%s\n' 'N 0 random=0.5N 0 monotonic_ns=17' > "$concat_n"
+    printf '%s\n' 'A 0 x=1A 0 y=2' > "$concat_a"
     read -r t_lines t_well t_mal t_n t_o t_ex <<< "$(parse_tape "$concat_n")"
     if [ "$t_mal" -gt 0 ]; then
         ok "selftest: concatenated N records are red (malformed=$t_mal)"
@@ -284,9 +284,9 @@ for nlen in 5 120 121 160 1000; do
     read -r llines lwell lmal lnrec locfg lexamined <<< "$(parse_tape "$ltape")"
     # The S record is exact (full spelling, depth, serial) and the record
     # after it is the body's assignment, on its own line.
-    lnext=$(awk -v want="S $lname 1 2" '$0 == want { getline; print; exit }' "$ltape")
+    lnext=$(awk -v want="S 0 $lname 1 2" '$0 == want { getline; print; exit }' "$ltape")
     if [ "$lrc" -eq 0 ] && [ "$(cat "$TMPDIR/longname.out")" = "2" ] \
-       && [ "$lexamined" -gt 0 ] && [ "$lmal" -eq 0 ] && [ "$lnext" = "A q=2" ]; then
+       && [ "$lexamined" -gt 0 ] && [ "$lmal" -eq 0 ] && [ "$lnext" = "A 0 q=2" ]; then
         ok "long-scope-name: $nlen-char name, exact S record then A q=2 (examined=$lexamined)"
     else
         fail "long-scope-name: $nlen-char name, exact S record then A q=2" \
@@ -295,7 +295,7 @@ for nlen in 5 120 121 160 1000; do
 done
 
 echo "=== replay-workers (must fail-loud, no signal) ==="
-# Build a synthetic tape with this binary's V header + 4000 N random=0.5.
+# Build a synthetic tape with this binary's V header + 6000 tagged N random=0.5.
 hdr="$TMPDIR/hdr.tape"
 printf 'print of 1\n' > "$TMPDIR/one.eigs"
 EIGS_TRACE="$hdr" "$EIGS" "$TMPDIR/one.eigs" >/dev/null 2>&1
@@ -304,60 +304,32 @@ rtape="$TMPDIR/replay.tape"
 {
     printf '%s\n' "$vline"
     i=0
-    while [ "$i" -lt 4000 ]; do
-        printf 'N random=0.5\n'
+    while [ "$i" -lt 6000 ]; do
+        printf 'N %d random=0.5\n' $((i % 2 + 1))
         i=$((i + 1))
     done
 } > "$rtape"
 EIGS_REPLAY="$rtape" "$EIGS" "$TESTS_DIR/trace_mt_replay_workers.eigs" \
     >"$TMPDIR/replay.out" 2>"$TMPDIR/replay.err"
 rrc=$?
-diag=$(head -1 "$TMPDIR/replay.err" 2>/dev/null || true)
-if [ "$rrc" -eq 1 ]; then
-    ok "replay-workers: rc == 1"
+if [ "$rrc" -eq 0 ] && grep -q '^a=' "$TMPDIR/replay.out"; then
+    ok "replay-workers: two independent worker streams replay"
 else
-    fail "replay-workers: rc == 1" "rc=$rrc"
-fi
-if printf '%s\n' "$diag" | grep -q 'not replayable under EIGS_REPLAY'; then
-    ok "replay-workers: diagnostic names the recv-family refusal"
-else
-    fail "replay-workers: diagnostic names the recv-family refusal" "stderr=$diag"
-fi
-if [ "$rrc" -lt 128 ]; then
-    ok "replay-workers: no signal"
-else
-    fail "replay-workers: no signal" "rc=$rrc (signal $((rrc - 128)))"
+    fail "replay-workers: two independent worker streams replay" "rc=$rrc err=$(cat "$TMPDIR/replay.err")"
 fi
 
-echo "=== read_bytes_buf-worker (hand-rolled take must fail-loud) ==="
-printf 'x\n' > "$TMPDIR/blob"
-printf '%s\n' \
-    "define worker(id) as:" \
-    "    local x is read_bytes_buf of \"$TMPDIR/blob\"" \
-    "    return x" \
-    "h is spawn of [worker, 1]" \
-    "a is thread_join of h" \
-    "print of \"done\"" \
-    > "$TMPDIR/rbb.eigs"
-EIGS_REPLAY="$rtape" "$EIGS" "$TMPDIR/rbb.eigs" \
-    >"$TMPDIR/rbb.out" 2>"$TMPDIR/rbb.err"
-rbrc=$?
-rbdiag=$(head -1 "$TMPDIR/rbb.err" 2>/dev/null || true)
-if [ "$rbrc" -eq 1 ]; then
-    ok "read_bytes_buf-worker: rc == 1"
-else
-    fail "read_bytes_buf-worker: rc == 1" "rc=$rbrc"
-fi
-if printf '%s\n' "$rbdiag" | grep -q 'not replayable under EIGS_REPLAY'; then
-    ok "read_bytes_buf-worker: diagnostic names the recv-family refusal"
-else
-    fail "read_bytes_buf-worker: diagnostic names the recv-family refusal" "stderr=$rbdiag"
-fi
-if [ "$rbrc" -lt 128 ]; then
-    ok "read_bytes_buf-worker: no signal"
-else
-    fail "read_bytes_buf-worker: no signal" "rc=$rbrc"
-fi
+# Missing, signed, overflowed, and concatenated stream tags are all red.
+printf 'print of (random of null)\n' > "$TMPDIR/take.eigs"
+for bad in 'N random=0.5' 'N -1 random=0.5' 'N 18446744073709551616 random=0.5' 'N 0 random=0.5N 1 random=0.4'; do
+    { printf '%s\n' "$vline"; printf '%s\n' "$bad"; } > "$TMPDIR/bad-id.tape"
+    EIGS_REPLAY="$TMPDIR/bad-id.tape" "$EIGS" "$TMPDIR/take.eigs" >/dev/null 2>"$TMPDIR/bad-id.err"
+    brc=$?
+    if [ "$brc" -eq 3 ] && grep -q 'malformed v4 stream id' "$TMPDIR/bad-id.err"; then
+        ok "parser rejects malformed stream tag: $bad"
+    else
+        fail "parser rejects malformed stream tag: $bad" "rc=$brc"
+    fi
+done
 
 echo ""
 echo "TRACE_MT: $PASS passed, $FAIL failed"

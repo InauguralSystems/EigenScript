@@ -1001,6 +1001,10 @@ static char   *g_out     = NULL;
 static size_t  g_out_cap = 0;
 static size_t  g_out_len = 0;   /* bytes formatted but not yet fwritten */
 static size_t  g_rec_at  = 0;   /* offset of the record being formatted */
+static unsigned g_tape_session = 0;
+static uint64_t g_stream_next = 1;
+static pthread_t g_stream_opener_tid;
+static int g_stream_opener_valid = 0;
 
 /* #1142 round 5: read-only witness for the sink-only DROP two functions
  * below. Takes the lock so the read is not a torn one. See trace.h for why
@@ -1143,6 +1147,36 @@ static void tp_printf(const char *fmt, ...) {
     tp_write(buf, (size_t)n);
 }
 
+/* One flat namespace serves CPU attachments, embedded execution streams and
+ * external/GPU producers.  The opener is always stream zero.  Caller holds
+ * g_tape_mu, which also serializes allocation with record emission. */
+static uint64_t stream_id_locked(void) {
+    if (!g_stream_opener_valid || pthread_equal(pthread_self(), g_stream_opener_tid))
+        return 0;
+    if (eigs_current && eigs_current->trace_stream_session == g_tape_session)
+        return eigs_current->trace_stream_id;
+    if (g_stream_next == UINT64_MAX) return UINT64_MAX;
+    uint64_t id = g_stream_next++;
+    if (eigs_current) {
+        eigs_current->trace_stream_id = id;
+        eigs_current->trace_stream_session = g_tape_session;
+    }
+    return id;
+}
+
+uint64_t trace_external_stream_acquire(void) {
+    tape_lock();
+    uint64_t id = trace_out_active() && g_stream_next != UINT64_MAX
+                ? g_stream_next++ : UINT64_MAX;
+    tape_unlock();
+    return id;
+}
+
+static void emit_tag(const char *kind) {
+    tp_puts(kind);
+    tp_printf(" %llu ", (unsigned long long)stream_id_locked());
+}
+
 /* #539 v2: scope-transition dedup state. The last frame-instance serial
  * an S record was emitted for; 0 = none yet (serials start at 1). Reset
  * at every tape open so each session's first A record is preceded by its
@@ -1163,12 +1197,20 @@ static uint32_t g_last_scope_serial = 0;
 static void emit_scope_transition(void) {
     if (!eigs_current || !eigs_current->vm || g_vm.frame_count == 0) return;
     CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
-    if (f->call_serial == g_last_scope_serial) return;
-    g_last_scope_serial = f->call_serial;
+    uint32_t *last = &g_last_scope_serial;
+    if (eigs_current) {
+        if (eigs_current->trace_scope_session != g_tape_session) {
+            eigs_current->trace_scope_serial = 0;
+            eigs_current->trace_scope_session = g_tape_session;
+        }
+        last = &eigs_current->trace_scope_serial;
+    }
+    if (f->call_serial == *last) return;
+    *last = f->call_serial;
     /* The name is variable-length: write it with tp_puts, never through
      * tp_printf's 128-byte staging, which truncated a name of 121+ chars
      * together with the record's newline and glued the next record on (#1157). */
-    tp_puts("S ");
+    emit_tag("S");
     tp_puts((f->chunk && f->chunk->name) ? f->chunk->name : "?");
     tp_printf(" %d %u\n", g_vm.frame_count - 1, f->call_serial);
 }
@@ -1203,8 +1245,6 @@ static void emit_scope_transition(void) {
  * treats a state's last-emitted as defaults when the session mismatches,
  * so a new V header re-emits a non-default config (matching the old
  * process-global reset) without a process-global last-emitted slot. */
-static unsigned g_tape_session = 0;
-
 /* Reset is a session bump: each state's next L/A compares against defaults. */
 static void obs_cfg_reset(void) {
     g_tape_session++;
@@ -1237,7 +1277,8 @@ static void obs_cfg_sync(void) {
     st->tape_obs_window   = st->obs_window;
     /* One field per tp_printf: its staging buffer is 128 bytes and five
      * %.17g fields in one call could silently truncate the record. */
-    tp_puts("O cfg ");
+    emit_tag("O");
+    tp_puts("cfg ");
     tp_printf("%.17g ", st->tape_obs_dh_zero);
     tp_printf("%.17g ", st->tape_obs_dh_small);
     tp_printf("%.17g ", st->tape_obs_h_low);
@@ -1253,7 +1294,8 @@ void trace_obs_window_binding(const char *name, int n) {
     if (!name || !tape_emit_begin()) return;
     obs_cfg_sync();
     emit_scope_transition();
-    tp_puts("O win ");
+    emit_tag("O");
+    tp_puts("win ");
     tp_puts(name);
     tp_printf(" %d\n", n);
     tape_emit_end();
@@ -1271,6 +1313,9 @@ static void emit_header(void) {
     /* A session starts from the defaults on the tape: obs_cfg_sync emits an
      * `O cfg` for whatever the state already carries before the first L/A. */
     obs_cfg_reset();
+    g_stream_next = 1;
+    g_stream_opener_tid = pthread_self();
+    g_stream_opener_valid = 1;
 }
 
 void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
@@ -1394,11 +1439,58 @@ static size_t g_replay_mem_pos = 0;
 static pthread_t   g_replay_owner_tid;
 static EigsState  *g_replay_owner_state = NULL;
 static int         g_replay_owner_valid = 0;
+static unsigned    g_replay_session = 1;
+static uint64_t    g_replay_stream_next = 1;
+typedef struct ReplayPending {
+    uint64_t stream_id;
+    char *name, *value;
+    struct ReplayPending *next;
+} ReplayPending;
+static ReplayPending *g_replay_pending = NULL;
 
 static void replay_note_owner(void) {
     g_replay_owner_tid = pthread_self();
     g_replay_owner_state = eigs_current ? eigs_current->state : NULL;
     g_replay_owner_valid = 1;
+}
+
+static uint64_t replay_stream_id_locked(void) {
+    if (!g_replay_owner_valid || pthread_equal(pthread_self(), g_replay_owner_tid))
+        return 0;
+    if (eigs_current && eigs_current->replay_stream_session == g_replay_session)
+        return eigs_current->replay_stream_id;
+    uint64_t id = g_replay_stream_next++;
+    if (eigs_current) {
+        eigs_current->replay_stream_id = id;
+        eigs_current->replay_stream_session = g_replay_session;
+    }
+    return id;
+}
+
+/* Consume `<kind> <uint64> ` and return the payload.  Signs, overflow,
+ * missing digits and missing separators are malformed rather than aliases. */
+static int replay_record_prefix(char kind, uint64_t *id, char **payload) {
+    char *p = g_replay_line;
+    if (p[0] != kind || p[1] != ' ') return 0;
+    p += 2;
+    if (*p < '0' || *p > '9') return -1;
+    errno = 0;
+    char *end = NULL;
+    unsigned long long n = strtoull(p, &end, 10);
+    if (errno == ERANGE || end == p || *end != ' ') return -1;
+    *id = (uint64_t)n;
+    *payload = end + 1;
+    return **payload ? 1 : -1;
+}
+
+static void replay_malformed_id(void) {
+    fprintf(stderr, "trace: malformed v4 stream id in record '%s'; refusing to replay\n",
+            g_replay_line ? g_replay_line : "");
+#if EIGENSCRIPT_FREESTANDING
+    abort();
+#else
+    _exit(3);
+#endif
 }
 
 int trace_replay_off_owner_thread(void) {
@@ -1410,17 +1502,8 @@ int trace_replay_off_owner_thread(void) {
 }
 
 int trace_replay_refuse_off_owner(const char *fn) {
-    if (!trace_replay_off_owner_thread()) return 0;
-    rt_error(EK_IO, 0,
-        "%s: not replayable under EIGS_REPLAY (subprocess/concurrency "
-        "boundary; see docs/TRACE.md)", fn ? fn : "nondet");
-    return 1;
-}
-
-static int replay_is_owner_state(void) {
-    if (!g_replay_owner_valid) return 0;
-    if (!g_replay_owner_state) return 1; /* CLI opened before attach */
-    return eigs_current && eigs_current->state == g_replay_owner_state;
+    (void)fn;
+    return 0; /* v4 has an independent N stream for every execution stream. */
 }
 
 /* #411: consume and verify the tape's V header(s). Defined below
@@ -1535,6 +1618,13 @@ static void replay_shutdown(void) {
     replay_enabled_store(0);
     g_replay_owner_valid = 0;
     g_replay_owner_state = NULL;
+    while (g_replay_pending) {
+        ReplayPending *next = g_replay_pending->next;
+        free(g_replay_pending->name); free(g_replay_pending->value);
+        free(g_replay_pending); g_replay_pending = next;
+    }
+    g_replay_stream_next = 1;
+    g_replay_session++;
 }
 
 /* getline that does not need _GNU_SOURCE — keeps a growable buffer in the
@@ -1846,25 +1936,35 @@ int trace_replay_take(const char *fn, Value **out) {
         replay_take_unlock();
         return 0;
     }
-    /* #1142: embed API — a state that did not open the tape cannot consume
-     * the single-consumer N stream. Unlock before rt_error (never hold the
-     * tape mutex across a raise). */
-    if (!replay_is_owner_state()) {
-        replay_take_unlock();
-        rt_error(EK_IO, 0,
-            "%s: not replayable under EIGS_REPLAY (subprocess/concurrency "
-            "boundary; see docs/TRACE.md)", fn ? fn : "nondet");
-        *out = make_null();
-        return 1;
+    uint64_t wanted = replay_stream_id_locked();
+    ReplayPending **slot = &g_replay_pending;
+    while (*slot && (*slot)->stream_id != wanted) slot = &(*slot)->next;
+    if (*slot) {
+        ReplayPending *hit = *slot;
+        *slot = hit->next;
+        Value *v = parse_value(hit->value);
+        if (fn && strcmp(hit->name, fn) != 0 && g_replay_strict) {
+            fprintf(stderr, "trace: replay name mismatch — tape has '%s', program called '%s' (EIGS_REPLAY_STRICT — aborting)\n", hit->name, fn);
+#if EIGENSCRIPT_FREESTANDING
+            abort();
+#else
+            _exit(3);
+#endif
+        }
+        free(hit->name); free(hit->value); free(hit);
+        if (!v) { replay_take_unlock(); return 0; }
+        *out = v; replay_take_unlock(); return 1;
     }
     for (;;) {
         int len = read_tape_line();
         if (len < 0) {
-            /* Tape exhausted — turn off replay so future calls skip the
-             * read overhead, and let the builtin run normally. */
+            /* Never borrow another stream or silently run a live source. */
             replay_shutdown();
             replay_take_unlock();
-            return 0;
+            rt_error(EK_IO, 0, "%s: replay stream %llu has no matching recorded N value",
+                     fn ? fn : "nondet", (unsigned long long)wanted);
+            *out = make_null();
+            return 1;
         }
         if (len >= 1 && g_replay_line[0] == 'V') {
             /* Mid-stream header: a concatenated tape (journal appended
@@ -1883,15 +1983,34 @@ int trace_replay_take(const char *fn, Value **out) {
             }
             continue;
         }
-        if (len < 2 || g_replay_line[0] != 'N' || g_replay_line[1] != ' ')
-            continue;  /* skip L, A, blanks, anything else */
-
-        char *p = g_replay_line + 2;
+        if (len < 2 || !strchr("LASNO", g_replay_line[0]) || g_replay_line[1] != ' ')
+            continue;
+        uint64_t rec_stream = 0;
+        char *p = NULL;
+        int pref = replay_record_prefix(g_replay_line[0], &rec_stream, &p);
+        if (pref < 0) replay_malformed_id();
+        if (g_replay_line[0] != 'N') continue;
         char *eq = strchr(p, '=');
-        if (!eq) continue;
+        if (!eq || eq == p) replay_malformed_id();
         *eq = '\0';
         const char *rec_name = p;
         const char *rec_val  = eq + 1;
+        /* A second tagged record without a newline is a torn journal write,
+         * never part of the value grammar. */
+        if (strstr(rec_val, "N ") || strstr(rec_val, "A ") ||
+            strstr(rec_val, "L ") || strstr(rec_val, "S ") ||
+            strstr(rec_val, "O ")) replay_malformed_id();
+
+        if (rec_stream != wanted) {
+            ReplayPending *pending = xcalloc(1, sizeof(*pending));
+            pending->stream_id = rec_stream;
+            pending->name = xstrdup(rec_name);
+            pending->value = xstrdup(rec_val);
+            ReplayPending **tail = &g_replay_pending;
+            while (*tail) tail = &(*tail)->next;
+            *tail = pending;
+            continue;
+        }
 
         if (fn && strcmp(rec_name, fn) != 0) {
             if (g_replay_strict) {
@@ -2024,7 +2143,8 @@ void trace_line(int line) {
         tape_emit_end();
         return;
     }
-    tp_printf("L %d\n", line);
+    emit_tag("L");
+    tp_printf("%d\n", line);
     g_last_line  = line;
     g_line_dirty = 0;
     tape_emit_end();
@@ -2099,7 +2219,7 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered,
      * transitions only cost tape bytes at call boundaries that actually
      * assign. Replay skips S like A; only the stepper folds them. */
     emit_scope_transition();
-    tp_puts("A ");
+    emit_tag("A");
     tp_puts(name);
     tp_putc('=');
     write_slot(value);
@@ -2238,7 +2358,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
 void trace_nondet_value(const char *fn, Value *v) {
     if (!tape_emit_begin()) return;
     if (!fn) fn = "?";
-    tp_puts("N ");
+    emit_tag("N");
     tp_puts(fn);
     tp_putc('=');
     int budget = TRACE_NONDET_MAX;

@@ -27,13 +27,27 @@ The tape is plain text, one record per line, six record kinds:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 3 0.43.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
-| `L <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; the record shape is unchanged, no format bump). Adjacent duplicate lines with no `A`/`N` between them are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
-| `S <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
-| `A <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and is scope-qualified by the preceding `S` record, so a function-local `i` and the top-level `i` are separate streams (`--step` resolves names innermost-first along the reconstructed call chain, with shadowing). |
-| `N <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
-| `O cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what the tape last said, immediately before the next `L`/`A` record. See [Observer Configuration](#observer-configuration-1044-1045). |
-| `O win <name> <n>` | Per-binding observer window override (v3) — `set_observer_window of ["name", n]`; `n == 0` clears it. |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 4 0.43.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `L <stream_id> <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; the record shape is unchanged, no format bump). Adjacent duplicate lines with no `A`/`N` between them are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
+| `S <stream_id> <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
+| `A <stream_id> <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and is scope-qualified by the preceding `S` record, so a function-local `i` and the top-level `i` are separate streams (`--step` resolves names innermost-first along the reconstructed call chain, with shadowing). |
+| `N <stream_id> <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
+| `O <stream_id> cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what the tape last said, immediately before the next `L`/`A` record. See [Observer Configuration](#observer-configuration-1044-1045). |
+| `O <stream_id> win <name> <n>` | Per-binding observer window override (v3) — `set_observer_window of ["name", n]`; `n == 0` clears it. |
+
+### Stream identity (v4, #1286)
+
+Every non-header record carries an unsigned decimal `stream_id` immediately
+after its record kind. `V` remains untagged. ID `0` is reserved for the
+thread that opens the tape session; CPU threads, embedded execution streams,
+and future GPU streams draw positive IDs from one tape-local namespace. IDs
+range from 0 through `UINT64_MAX - 1`, increase monotonically, are never reused
+within a session, and restart when a `V` header begins a new session. State
+ownership is metadata associated with that flat ID, never a second record
+identity. Because allocation order follows scheduling, IDs identify streams
+within one tape and are not stable across recordings. Missing, signed,
+overflowed, empty, or concatenated IDs make replay and stepping refuse the
+tape loudly; there is no v3 migration or live-run fallback.
 
 ### Line stamps
 
@@ -481,20 +495,10 @@ The contract now:
   paired with RELEASE stores, and shutdown publishes the wildcard BEFORE
   freeing the name set so an acquiring reader short-circuits instead of
   walking freed names.
-- **Replay is fail-loud off the main thread.** Until per-thread N streams
-  exist (not this round), a nondeterministic builtin on a non-main OS
-  thread while `EIGS_REPLAY` is active raises the same catchable error
-  the receive family raises (`"<fn>: not replayable under EIGS_REPLAY
-  (subprocess/concurrency boundary; see docs/TRACE.md)"`). A worker's
-  uncaught refusal exits 1, never a signal (#1112). The main-thread
-  single-consumer case is unchanged. For the embed API, `eigs_replay_take`
-  from a state that did not open the tape raises the same error; two
-  threads of the *opener* state may take, serialized by the mutex.
+- **Replay is stream-local.** Each caller consumes only `N` records carrying its assigned `stream_id`; interleaved records for other streams are queued under the tape mutex. A missing stream or mismatched next record is loud in strict replay rather than borrowing another stream.
 - **`O cfg` is per state.** Emitted when that state's thresholds differ
   from what that state last emitted. Record shape unchanged (no #411
-  bump). A multiplexed multi-state tape's sequential reader still cannot
-  attribute an `O cfg` to a state — per-thread streams are the remaining
-  gap, documented here so it is not mistaken for a silent default.
+  bump). A multiplexed reader attributes each `O cfg` to its flat stream id; hosts may associate that id with state metadata without adding a second identity field.
 - **Who shuts the tape.** `trace_shutdown` / `eigs_trace_shutdown` is
   process-wide. `eigs_close` calls it only when it is closing the last
   live `EigsState` — and *deciding* that is the same atomic step as

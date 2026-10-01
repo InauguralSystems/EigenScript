@@ -1165,6 +1165,13 @@ struct EigsThread {
      * other's file mid-write. Closed at thread detach so an unclosed stream
      * is not leaked. Opaque (FILE*) to keep stdio out of this header. */
     void                *stream_file;
+    /* Tape-session-local logical identities (#1286). */
+    uint64_t             trace_stream_id;
+    unsigned             trace_stream_session;
+    uint32_t             trace_scope_serial;
+    unsigned             trace_scope_session;
+    uint64_t             replay_stream_id;
+    unsigned             replay_stream_session;
     /* Registry list — set by eigs_thread_attach. */
     EigsThread *next;
 };

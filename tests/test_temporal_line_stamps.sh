@@ -13,36 +13,36 @@ OUT=$(EIGS_JIT_OFF=1 EIGS_TRACE="$TAPE" "$EIGS" \
 RC=$?
 LINES=$(sed -n 's/^L /L /p' "$TAPE")
 EXPECTED='L 1
-L 2
-L 3
-L 4
-L 5
-L 4
-L 6
-L 7
-L 6
-L 7
-L 8
-L 10
-L 9
-L 10
-L 11
-L 12
-L 14
-L 12
-L 13
-L 14
-L 12
-L 15
-L 17
-L 15
-L 16
-L 17
-L 15
-L 18
-L 19
-L 20
-L 18
+L 0 2
+L 0 3
+L 0 4
+L 0 5
+L 0 4
+L 0 6
+L 0 7
+L 0 6
+L 0 7
+L 0 8
+L 0 10
+L 0 9
+L 0 10
+L 0 11
+L 0 12
+L 0 14
+L 0 12
+L 0 13
+L 0 14
+L 0 12
+L 0 15
+L 0 17
+L 0 15
+L 0 16
+L 0 17
+L 0 15
+L 0 18
+L 0 19
+L 0 20
+L 0 18
 L 22'
 
 if [ "$RC" -eq 0 ] && [ "$OUT" = null ] && [ "$LINES" = "$EXPECTED" ]; then
