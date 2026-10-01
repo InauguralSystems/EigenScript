@@ -1191,7 +1191,11 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
     if (__builtin_expect(ic->starting_env == start &&
                          ic->starting_ver == start->binding_version, 1)) {
         Env *target = ic->walk_depth ? start->parent : start;
-        if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
+        /* GET_NAME and SET_NAME share this per-name IC.  A preceding load can
+         * therefore leave a valid cache entry for the sealed builtin layer;
+         * never let a store consume that entry. */
+        if (__builtin_expect(target && target != g_builtin_env &&
+                             target->binding_version == ic->target_ver, 1)) {
             env_store_slot(target, ic->slot_idx, s);
             if (target->assign_counts)
                 target->assign_counts[ic->slot_idx]++;
@@ -3634,7 +3638,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (__builtin_expect(ic->starting_env == start &&
                              ic->starting_ver == start->binding_version, 1)) {
             Env *target = ic->walk_depth ? start->parent : start;
-            if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
+            /* A GET_NAME cache may target the sealed builtin layer. */
+            if (__builtin_expect(target && target != g_builtin_env &&
+                                 target->binding_version == ic->target_ver, 1)) {
                 env_store_slot(target, ic->slot_idx, s);
                 if (target->assign_counts)
                     target->assign_counts[ic->slot_idx]++;

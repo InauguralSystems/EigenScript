@@ -2861,16 +2861,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_cmp_esi_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_ver));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             if (op == OP_SET_NAME) {
-                /* target = walk_depth ? start->parent : start */
+                /* Only inline a local target.  GET_NAME shares this IC and
+                 * may have cached the sealed builtin parent; the helper must
+                 * validate all parent targets before storing. */
                 w = emit_cmpb_imm8_disp32_rax(w, (int32_t)offsetof(EnvIC, walk_depth), 0);
-                uint8_t *depth0_p;
-                w = emit_je_rel8(w, &depth0_p);
-                uint8_t *depth0_after = w;
-                w = emit_mov_disp32_rdx_to_rdx(w, (int32_t)offsetof(Env, parent));
-                w = emit_test_rdx_rdx(w);
-                w = emit_je_rel32(w, &slow_p[slow_n]); slow_n++;
-                *depth0_p = (uint8_t)(w - depth0_after);
-                w = emit_mov_disp32_rdx_to_esi(w, (int32_t)offsetof(Env, binding_version));
+                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             } else {
                 /* LOCAL variants pin walk_depth == 0; target == start and
                  * %esi still holds start->binding_version. */
