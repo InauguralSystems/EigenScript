@@ -113,9 +113,19 @@ record_floor() {
     while IFS= read -r n; do
       [ -n "$n" ] && [ "$n" -gt "$FLOOR" ] && FLOOR="$n"
     done < <(sed -n 's/^\(record_floor\|inventory\)=\([0-9][0-9]*\).*$/\2/p' "$floor_file")
+    # Only a passing record establishes its rows as accepted inventory.  A
+    # failed record may contain the very undeclared checkout that caused its
+    # refusal; carrying that name forward would make an unchanged retry pass.
+    if grep -q '^VERDICT: PASS$' "$floor_file"; then
+      while IFS= read -r name; do
+        if [ -n "$name" ] && ! contains "$name" "${FLOOR_NAMES[@]}"; then FLOOR_NAMES+=("$name"); fi
+      done < <(awk -F '|' '/^row\|/ { print $2 }' "$floor_file")
+    fi
+    # Preserve names that were established by an earlier passing record even
+    # when this path was subsequently replaced by a failed attempt.
     while IFS= read -r name; do
       if [ -n "$name" ] && ! contains "$name" "${FLOOR_NAMES[@]}"; then FLOOR_NAMES+=("$name"); fi
-    done < <(awk -F '|' '/^row\|/ { print $2 }' "$floor_file")
+    done < <(awk -F '|' '/^accepted\|/ { print $2 }' "$floor_file")
   }
   if [ ! -f "$ECO/.ca_fixture" ]; then
     for f in "$HERE"/reports/consumer_acceptance/*.record; do
@@ -502,6 +512,7 @@ run() {
     echo "inventory=$inventory"
     echo "examined=$examined"
     echo 'status=COMPLETE'
+    for arg in "${FLOOR_NAMES[@]}"; do echo "accepted|$arg"; done
     cat "$BODY"
     if [ "$bad" -eq 0 ]; then echo 'VERDICT: PASS'; else echo 'VERDICT: FAIL'; fi
   } > "$final_tmp" || { rm -f "$final_tmp"; echo 'cannot write final record'; return 2; }
@@ -684,6 +695,20 @@ selftest() {
   if [ "$d_ok" -eq 1 ] && [ "$st_rc" -eq 0 ] && grep -Fqx 'record_floor=3' "$st_record" && grep -Fqx 'inventory=3 examined=3' "$st_record" && grep -Fqx 'VERDICT: PASS' "$st_record"; then
     echo 'plant D check=same-path-record-floor RED runs=FAIL,FAIL missing=third floor=3 recovery=PASS'
   else echo "plant D check=same-path-record-floor SILENT refusals=$d_ok recovery_rc=$st_rc"; tail -8 "$st_out"; tail -8 "$st_record"; st_bad=1; fi
+  # A failed record does not declare the unexpected consumer that it rejected.
+  st_reset; st_consumer first 'eigenscript smoke.eigs'; st_consumer rogue 'eigenscript smoke.eigs'
+  printf 'first\n' > "$st_eco/.ca_expected"
+  printf 'status=COMPLETE\ninventory=2\nrow|first|v0.43.0|PASS|0|\nrow|rogue|v0.43.0|PASS|0|\nVERDICT: FAIL\n' > "$st_record"
+  local d_fail_ok=1
+  for d_run in 1 2; do
+    st_rc=0; : > "$st_out"
+    CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+    if [ "$st_rc" -eq 0 ] || ! grep -Fq 'undeclared consumer present: rogue' "$st_record" ||
+       ! grep -Fqx 'VERDICT: FAIL' "$st_record"; then d_fail_ok=0; fi
+  done
+  if [ "$d_fail_ok" -eq 1 ]; then
+    echo 'plant D2 check=failed-record-names RED runs=FAIL,FAIL undeclared=rogue'
+  else echo "plant D2 check=failed-record-names SILENT rc=$st_rc"; tail -8 "$st_out"; tail -8 "$st_record"; st_bad=1; fi
   # (E) A named missing capability is UNRUNNABLE before the command runs.
   st_reset; st_consumer dynamics 'eigenscript smoke.eigs'
   printf 'dynamics\n' > "$st_eco/.ca_expected"
