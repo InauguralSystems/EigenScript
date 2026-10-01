@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # UI public-surface and real SDL input gate (#1263).
 set -u
+WERROR_FLAGS_FILE="$(dirname "$0")/werror_flags.txt"
+. "$(dirname "$0")/read_werror_flags.sh" || exit 1
 cd "$(dirname "$0")/.." || exit 2
 
 exports() {
@@ -45,7 +47,7 @@ case "${1:-}" in
     # the offsetof assertion fail before a corrupt event can reach a caller.
     tmp=$(mktemp "${TMPDIR:-/tmp}/ui_input_plant.XXXXXX.c") || exit 2
     sed 's/Uint32 state; Sint32 x/\/\* planted deletion *\/ Sint32 x/' src/ext_gfx.c > "$tmp"
-    if ${CC:-cc} -Werror=switch -Werror=comment -Werror=misleading-indentation \
+    if ${CC:-cc} $WERROR_FLAGS \
          -Isrc -DEIGENSCRIPT_EXT_GFX=1 -fsyntax-only "$tmp" >"$tmp.out" 2>&1; then
       echo "SELFTEST FAILED: deleting SDL_MouseMotionEvent.state compiled"; rm -f "$tmp" "$tmp.out"; exit 1
     fi
