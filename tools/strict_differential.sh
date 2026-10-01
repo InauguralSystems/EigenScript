@@ -386,24 +386,38 @@ run_capture() {   # <binary> <strict-or-dash> <file> -> "rc\noutput"
     printf '%s\n%s' "$rc" "$out"
 }
 clip() { printf '%s' "$1" | tr '\n' ' ' | cut -c1-"${2:-80}"; }
+indent_output() { printf '%s\n' "$1" | sed 's/^/        /'; }
 
-# Compare two strict executions before attributing any difference to the flag.
+# Compare two executions of each arm before attributing any difference to the flag.
 # Return 0 for equal, 1 for a stable unset difference, and 2 for an unstable
-# strict arm.  Both the core and gfx halves use this single classifier.
-classify_unset_strict() { # <label> <unset> <strict-1> <strict-2>
-    local label="$1" unset_out="$2" strict_a="$3" strict_b="$4"
-    if [ "$strict_a" != "$strict_b" ]; then
+# arm.  Both the core and gfx halves use this single classifier.
+classify_unset_strict() { # <label> <unset-1> <unset-2> <strict-1> <strict-2>
+    local label="$1" unset_a="$2" unset_b="$3" strict_a="$4" strict_b="$5"
+    if [ "$unset_a" != "$unset_b" ]; then
         nondet_list="$nondet_list
-    $label
-      =1 run 1: $(clip "$strict_a" 90)
-      =1 run 2: $(clip "$strict_b" 90)"
+    $label (unset arm)
+      run 1:
+$(indent_output "$unset_a")
+      run 2:
+$(indent_output "$unset_b")"
         return 2
     fi
-    if [ "$unset_out" != "$strict_a" ]; then
+    if [ "$strict_a" != "$strict_b" ]; then
+        nondet_list="$nondet_list
+    $label (EIGS_STRICT=1 arm)
+      run 1:
+$(indent_output "$strict_a")
+      run 2:
+$(indent_output "$strict_b")"
+        return 2
+    fi
+    if [ "$unset_a" != "$strict_a" ]; then
         unset_list="$unset_list
     $label
-      unset: $(clip "$unset_out" 90)
-      =1   : $(clip "$strict_a" 90)"
+      unset:
+$(indent_output "$unset_a")
+      EIGS_STRICT=1:
+$(indent_output "$strict_a")"
         return 1
     fi
     return 0
@@ -413,18 +427,25 @@ if [ "$SELFTEST" = 1 ]; then
     unset_list=""; nondet_list=""
     # Plant one unstable probe (as a random-printing program would produce)
     # and one stable simulation of reverting strict-by-default.
-    classify_unset_strict "random-output probe" "0" \
-        "0\nrandom=$RANDOM-first" "0\nrandom=$RANDOM-second" || true
-    classify_unset_strict "reverted-default probe" "0\nstand-in" \
-        "1\nstrict error" "1\nstrict error" || true
+    long_prefix="$(printf '%090d' 0)"
+    classify_unset_strict "random-output probe" \
+        "0\nrandom=$RANDOM-first" "0\nrandom=$RANDOM-second" \
+        "0\nstable strict" "0\nstable strict" || true
+    classify_unset_strict "reverted-default probe" "0\nstand-in" "0\nstand-in" \
+        "1\n${long_prefix}strict-tail" "1\n${long_prefix}strict-tail" || true
     echo "NONDETERMINISTIC (not a flag difference):$nondet_list"
     echo "UNSET DIFFERS FROM EIGS_STRICT=1 (the default is not strict):$unset_list"
     verdict_printed=1
-    case "$nondet_list|$unset_list" in
-        *"random-output probe"*"reverted-default probe"*)
-            echo "SELFTEST PASS: strict differential diagnoses both planted faults"
-            exit 0 ;;
-    esac
+    if str_has "$nondet_list" "random-output probe" \
+       && str_has "$nondet_list" "-first" \
+       && str_has "$nondet_list" "-second" \
+       && ! str_has "$nondet_list" "reverted-default probe" \
+       && str_has "$unset_list" "reverted-default probe" \
+       && str_has "$unset_list" "strict-tail" \
+       && ! str_has "$unset_list" "random-output probe"; then
+        echo "SELFTEST PASS: strict differential diagnoses both planted faults"
+        exit 0
+    fi
     echo "SELFTEST FAIL: a planted fault was misclassified"
     exit 1
 fi
@@ -504,7 +525,8 @@ while IFS='|' read -r who prog expect; do
     s2="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     s_rc="${s%%$'\n'*}"
     u="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    classify_unset_strict "$who" "$u" "$s" "$s2"
+    u2="$(run_capture "$NEW" - "$TMP/p.eigs")"
+    classify_unset_strict "$who" "$u" "$u2" "$s" "$s2"
     case $? in 0) n_unset_eq=$((n_unset_eq + 1)) ;; esac
     why="$(run_did_not_measure "$s_rc")"
     if [ -n "$why" ]; then
@@ -863,7 +885,8 @@ while IFS='|' read -r label who slot prog; do
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     s2="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     u="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    classify_unset_strict "pixel: $label" "$u" "$s" "$s2"
+    u2="$(run_capture "$NEW" - "$TMP/p.eigs")"
+    classify_unset_strict "pixel: $label" "$u" "$u2" "$s" "$s2"
     case $? in
         1) pdiffer="$pdiffer
     $label [unset vs EIGS_STRICT=1, same binary] — the default is not strict"; rc=1 ;;

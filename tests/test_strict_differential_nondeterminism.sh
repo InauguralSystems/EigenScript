@@ -9,7 +9,10 @@ rc=$?
 
 if [ "$rc" = 0 ] \
    && case "$out" in *"NONDETERMINISTIC (not a flag difference):"*) true ;; *) false ;; esac \
+   && case "$out" in *"random-output probe (unset arm)"*) true ;; *) false ;; esac \
+   && case "$out" in *"random="*"-first"*"random="*"-second"*) true ;; *) false ;; esac \
    && case "$out" in *"UNSET DIFFERS FROM EIGS_STRICT=1 (the default is not strict):"*) true ;; *) false ;; esac \
+   && case "$out" in *"reverted-default probe"*"strict-tail"*) true ;; *) false ;; esac \
    && case "$out" in *"SELFTEST PASS: strict differential diagnoses both planted faults"*) true ;; *) false ;; esac; then
     echo "PASS: strict differential nondeterminism selftest"
     exit 0
