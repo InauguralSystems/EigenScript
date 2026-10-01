@@ -2213,5 +2213,9 @@ int eigs_api_dump(FILE *out, int json);
  * pinned from script at all (found via iLambdaAi's eval-determinism probe,
  * 2026-08-17). */
 void eigs_ensure_random_seeded(void);
+/* The libc drand48 family owns one process-global state.  These are the only
+ * entry points runtime code may use, so seeding and draws share one lock. */
+double eigs_random_double(void);
+long eigs_random_long(void);
 
 #endif /* EIGENSCRIPT_H */
