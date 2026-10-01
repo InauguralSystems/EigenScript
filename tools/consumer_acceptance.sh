@@ -70,7 +70,7 @@ prereqs_of() {
   fi
 }
 probe_prereq() {
-  local name="$1" cmd="$2" binary="$3" tools t part first api src output rc
+  local name="$1" cmd="$2" binary="$3" tools t part first api src probe_dir="" output rc
   tools="$(prereqs_of "$name")"
   # Only top-level command positions can declare these tool dependencies.
   while IFS= read -r part; do
@@ -83,10 +83,15 @@ probe_prereq() {
       [ -n "${GFX:-}" ] && continue
       api="$(timeout 5 "$binary" --api --json 2>/dev/null)" || api=""
       case "$api" in *gfx_open*) ;; *) printf 'gfx-build'; return 0 ;; esac
-      src="${WORK:-${TMPDIR:-/tmp}}/ca-gfx-probe-$$.eigs"
-      printf 'print of gfx_open\n' > "$src" || { printf 'gfx-build'; return 0; }
+      if [ -n "$WORK" ]; then src="$WORK/gfx_bind.eigs"
+      else
+        probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/ca-gfx-probe.XXXXXX")" || { printf 'gfx-build'; return 0; }
+        src="$probe_dir/gfx_bind.eigs"
+      fi
+      printf 'print of gfx_open\n' > "$src" || { [ -z "$probe_dir" ] || rm -rf "$probe_dir"; printf 'gfx-build'; return 0; }
       output="$(timeout 5 "$binary" "$src" 2>&1)" && rc=0 || rc=$?
       rm -f "$src"
+      [ -z "$probe_dir" ] || rmdir "$probe_dir"
       case "$output" in *'<fn gfx_open>'*|*'<builtin>'*) [ "$rc" -eq 0 ] && continue ;; esac
       printf 'gfx-build (probe rc %s)' "$rc"; return 0
     fi
