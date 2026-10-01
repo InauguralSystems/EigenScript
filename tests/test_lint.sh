@@ -899,6 +899,27 @@ check_status "W023 64-arm family lint returns a warning result" "$LINT_STATUS" "
 check_contains "W023 64-arm family reaches the diagnostic" "$OUTPUT" "warning\[W023\]: 't'"
 rm -f "$TMPFILE"
 
+# W023's sibling/prefix/function rescans have a per-function candidate budget.
+# Pin the fail-safe boundary: inputs beyond it must stop producing W023 work
+# rather than continuing quadratically after the diagnostic buffer fills.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+t is 5
+define f(flag) as:
+    if flag == 1:
+        local t is 1
+    else:
+EIGS
+i=0
+while [ "$i" -lt 256 ]; do
+    printf '        t is 2\n' >> "$TMPFILE"
+    i=$((i + 1))
+done
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+W023_COUNT=$(printf '%s\n' "$OUTPUT" | grep -c "warning\[W023\]: 't'" || true)
+check_status "W023 candidate work stops at its per-function budget" "$W023_COUNT" "64"
+rm -f "$TMPFILE"
+
 # The proof state must not silently discard a real binder after 512 names.
 # `local t` is the 513th distinct name, so the sibling bare write is still
 # function-local at runtime and W023 must fail safe to silence.
