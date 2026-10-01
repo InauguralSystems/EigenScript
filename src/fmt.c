@@ -22,30 +22,87 @@ static int measure_indent(const char *line) {
     return col;
 }
 
-/* Track delimiters which suppress layout in the lexer.  A line which starts
- * inside delimiters is a continuation line even when it closes the last one;
- * its leading whitespace must therefore never change the indentation stack. */
-static void update_bracket_depth(const char *line, int *depth, int *in_string) {
-    /* F-strings have their own recursive lexer (quotes and comments inside an
-     * interpolation do not follow ordinary-string rules).  At layout depth
-     * zero they cannot be a continuation from a preceding delimiter, so do
-     * not let a deliberately exotic f-string manufacture one here. */
-    if (*depth == 0 && !*in_string && strstr(line, "f\"") != NULL) return;
+static int fmt_ident_char(char ch) {
+    return isalnum((unsigned char)ch) || ch == '_';
+}
 
-    for (int i = 0; line[i]; i++) {
-        char c = line[i];
-        if (*in_string) {
-            if (c == '\\' && line[i + 1]) i++;
-            else if (c == '"') *in_string = 0;
-            continue;
+static const char *fmt_fstr_interp_end(const char *p);
+
+/* Return just past an f-string.  This mirrors the lexer's boundary rules so
+ * brackets in literal text and strings inside interpolations stay opaque. */
+static const char *fmt_skip_fstring(const char *p) {
+    p += 2;
+    while (*p && *p != '"') {
+        if (*p == '\\') {
+            p++;
+            if (*p) p++;
+        } else if (*p == '{') {
+            p = fmt_fstr_interp_end(p + 1);
+            if (*p == '}') p++;
+        } else {
+            p++;
         }
-        if (c == '#') break;
-        if (c == '"') {
-            *in_string = 1;
-        } else if (c == '(' || c == '[' || c == '{') {
-            (*depth)++;
-        } else if ((c == ')' || c == ']' || c == '}') && *depth > 0) {
-            (*depth)--;
+    }
+    if (*p == '"') p++;
+    return p;
+}
+
+static const char *fmt_fstr_interp_end(const char *p) {
+    const char *start = p;
+    int depth = 1;
+    while (*p) {
+        if (*p == 'f' && p[1] == '"' &&
+            (p == start || !fmt_ident_char(p[-1]))) {
+            p = fmt_skip_fstring(p);
+        } else if (*p == '"') {
+            p++;
+            while (*p && *p != '"') {
+                if (*p == '\\' && p[1]) p++;
+                p++;
+            }
+            if (*p == '"') p++;
+        } else if (*p == '#') {
+            while (*p && *p != '\n') p++;
+        } else {
+            if (*p == '{') depth++;
+            else if (*p == '}' && --depth == 0) break;
+            p++;
+        }
+    }
+    return p;
+}
+
+/* Record whether each physical line starts where lexer layout is suppressed.
+ * Scan the original source so multiline strings and complete f-strings remain
+ * visible; the formatter's per-line trimmed copies cannot represent either. */
+static void find_continuations(const char *source, int *continuations,
+                               int line_count) {
+    const char *p = source;
+    int depth = 0;
+    int line = 0;
+    while (*p) {
+        if (*p == '#') {
+            while (*p && *p != '\n') p++;
+        } else if (*p == 'f' && p[1] == '"' &&
+                   (p == source || !fmt_ident_char(p[-1]))) {
+            const char *end = fmt_skip_fstring(p);
+            while (p < end) {
+                if (*p++ == '\n' && ++line < line_count)
+                    continuations[line] = 1;
+            }
+        } else if (*p == '"') {
+            p++;
+            while (*p && *p != '"') {
+                if (*p == '\\' && p[1]) p++;
+                if (*p++ == '\n' && ++line < line_count)
+                    continuations[line] = 1;
+            }
+            if (*p == '"') p++;
+        } else {
+            if (*p == '(' || *p == '[' || *p == '{') depth++;
+            else if ((*p == ')' || *p == ']' || *p == '}') && depth > 0) depth--;
+            if (*p++ == '\n' && ++line < line_count)
+                continuations[line] = depth > 0;
         }
     }
 }
@@ -355,14 +412,12 @@ char* format_source_string(const char *source) {
      * create a formatter depth. */
     int *levels = xcalloc_array(line_count + 1, sizeof(int));
     int *indent_stack = xcalloc_array(line_count + 1, sizeof(int));
+    int *continuations = xcalloc_array(line_count + 1, sizeof(int));
     int indent_top = 0;
-    int bracket_depth = 0;
-    int in_string = 0;
+    find_continuations(source, continuations, line_count + 1);
     indent_stack[0] = 0;
     for (int i = 0; i < actual_lines; i++) {
-        int continuation = bracket_depth > 0;
-        update_bracket_depth(lines[i], &bracket_depth, &in_string);
-        if (continuation) {
+        if (continuations[i]) {
             levels[i] = indent_top;
             continue;
         }
@@ -453,6 +508,7 @@ char* format_source_string(const char *source) {
     free(indents);
     free(levels);
     free(indent_stack);
+    free(continuations);
     return strbuf_finish(&output);  /* transfer ownership to caller */
 }
 

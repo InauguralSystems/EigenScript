@@ -73,6 +73,12 @@ check_format_execution "ordinary 4-space indentation preserves execution" \
     "$(printf 'if 1:\n    if 1:\n        print of 4\nprint of 0\n')"
 check_format_execution "bracket continuations do not alter block depth" \
     "$(printf 'if 1:\n    if 0:\n        values is [\n1\n]\n        print of 8\nprint of 9\n')"
+check_format_execution "f-string-like ordinary text still opens a list" \
+    "$(printf 'if 1:\n    if 0:\n        values is ["f",\n0\n]\n        print of 8\nprint of 9\n')"
+check_format_execution "f-string literal brackets do not extend a list" \
+    "$(printf 'if 1:\n    if 0:\n        values is [f"{"["}"]\n    print of 8\nprint of 9\n')"
+check_format_execution "multiline string continuation preserves block depth" \
+    "$(printf 'if 1:\n    if 0:\n        value is "first\nsecond"\n    print of 8\nprint of 9\n')"
 check_format_execution "tabs use the lexer indentation width" \
     "$(printf 'if 1:\n \tprint of 5\n     print of 6\nprint of 7\n')"
 
