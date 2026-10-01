@@ -1,0 +1,1 @@
+- `vm_run_bytecode` now raises a catchable value error with a specific diagnostic when its chunk descriptor is invalid, instead of returning an ambiguous `null`.

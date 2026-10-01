@@ -197,8 +197,14 @@ assert_eq of [fstr_str_mod.own, "MODHIJACK", "#1322: the module's own `str of` s
 fstr_str_mod["_#fstr"] is (x) => "NS"
 assert_eq of [(fstr_str_mod.show of 9), "<9>", "#1322: a namespace write of the reserved name stays out of the module env"]
 # CONST 0; SET_NAME 1; POP; CONST 0; RETURN with constants [3, "_#fstr"]
-_fs_bc is vm_run_bytecode of [1, [0, 0, 0, 26, 1, 0, 35, 0, 0, 0, 40], [3, "_#fstr"]]
-assert_eq of [_fs_bc, null, "#1322: assembled bytecode that SETs the reserved name is refused"]
+_fs_bc_raised is 0
+_fs_bc_message is ""
+try:
+    _fs_bc is vm_run_bytecode of [1, [0, 0, 0, 26, 1, 0, 35, 0, 0, 0, 40], [3, "_#fstr"]]
+catch _fs_bc_error:
+    _fs_bc_raised is 1
+    _fs_bc_message is _fs_bc_error["message"]
+assert of [_fs_bc_raised == 1 and (contains of [_fs_bc_message, "reserved name"]), "#1322/#1386: assembled bytecode that SETs the reserved name raises with its reason"]
 assert_eq of [f"<{5}>", "<5>", "#1322: f-strings after the refused SET_NAME"]
 # the observer-window builtins resolve a binding by STRING name: refused too
 define _fs_ow_kind(args) as:
