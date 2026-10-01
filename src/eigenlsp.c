@@ -1664,6 +1664,14 @@ static FnScope *build_scopes(Document *doc, int *out_n) {
         if (t == TOK_FOR && in_idx >= 0) { s->excl_lo = in_idx + 1; s->excl_hi = body_start; }
         n++;
     }
+    /* Do not start another full-token pass after the construction pass has
+     * spent the request's budget.  In particular, charging only matching
+     * `local` declarations below would otherwise leave a large document with
+     * no locals subject to an unbounded second scan. */
+    if (rename_work_exhausted) {
+        *out_n = n;
+        return out;
+    }
     /* Attribute each `local <ident>` to the innermost scope that contains it
      * (so a local in a nested `for` binds to the loop, not the enclosing
      * function; a top-level local has no scope and stays global). */
