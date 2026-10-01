@@ -1,0 +1,1 @@
+- `sandbox_run` now charges every function and builtin call against `max_iterations`, so recursive call trees cannot escape the sandbox's loop budget and pin the host.

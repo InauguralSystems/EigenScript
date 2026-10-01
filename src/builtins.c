@@ -3651,8 +3651,8 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
 
 /* sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled
  * chunk (same descriptor as vm_run_bytecode) under two safety bounds: dangerous
- * builtins are shadowed by a blocked stub, and loops are capped at
- * max_iterations (default 1,000,000) so runaway code can't hang. Runtime errors
+ * builtins are shadowed by a blocked stub, and loops and calls share the
+ * max_iterations cap (default 1,000,000) so runaway code can't hang. Runtime errors
  * are caught (not propagated). Returns {"ok": 1/0, "result": value} — the graded
  * "does it run?" rung for a self-hosted compiler validating generated code. */
 Value* builtin_sandbox_run(Value *arg) {
@@ -3786,10 +3786,12 @@ Value* builtin_sandbox_run(Value *arg) {
      * frame (a budget on untrusted code must not reset because the chunk
      * called a function). */
     long long saved_backedge_iters = g_loop_backedge_count;
+    long long saved_call_count = g_sandbox_call_count;
     g_sandbox_loop_max = max_iter > 0 ? max_iter : 1000000;
     g_sandbox_cap_hit = 0;
     g_loop_iterations = 0;
     g_loop_backedge_count = 0;
+    g_sandbox_call_count = 0;
     /* #292: arm the allocation budget. Save/restore so nested sandbox_run (or a
      * sandbox_run invoked from already-budgeted code) composes correctly. */
     int    saved_sb_active = g_sandbox_active;
@@ -3851,6 +3853,7 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_cap_hit = saved_cap_hit;
     g_loop_iterations = saved_iters;
     g_loop_backedge_count = saved_backedge_iters;   /* #940 */
+    g_sandbox_call_count = saved_call_count;         /* #1403 */
     g_sandbox_active     = saved_sb_active;
     g_sandbox_bytes_used = saved_sb_used;
     g_sandbox_byte_max   = saved_sb_max;

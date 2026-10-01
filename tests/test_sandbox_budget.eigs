@@ -983,4 +983,42 @@ assert_eq of [buf_len of (buffer of 3), 3, "nosandbox: buffer unchanged"]
 # runner's pass-marker unconditionally — a vacuous gate that reported green
 # over a red assertion for as long as the result-scan budget existed
 # (found by a blind review round, 2026-08-17).
+
+# --- #1403: recursion is charged even though it crosses no loop back-edge ----
+# r(d) calls itself twice until d reaches the constant limit. Before #1403 the
+# depth-12 case completed 8,191 calls with max_iterations=1,000 and returned
+# ok=1; depth 32 could keep the host busy for billions of calls. The call budget
+# is cumulative across frames, just like the assembled-chunk back-edge budget.
+SB_LT is 18
+SB_GET_LOCAL is 23
+SB_GET_NAME is 25
+SB_SET_NAME_LOCAL is 27
+SB_JUMP_IF_FALSE is 31
+SB_POP is 35
+SB_CLOSURE is 38
+SB_CALL is 39
+SB_RETURN is 40
+SB_RETURN_NULL is 41
+rec_body is [SB_GET_LOCAL,0,0, CONST,0,0, SB_LT, SB_JUMP_IF_FALSE,28,0,
+            SB_GET_NAME,1,0, SB_GET_LOCAL,0,0, CONST,2,0, ADD, SB_CALL,1,0, SB_POP,
+            SB_GET_NAME,1,0, SB_GET_LOCAL,0,0, CONST,2,0, ADD, SB_CALL,1,0, SB_POP,
+            CONST,3,0, SB_RETURN, SB_RETURN_NULL]
+rec_mod is [SB_CLOSURE,0,0, SB_SET_NAME_LOCAL,0,0, SB_POP,
+           SB_GET_NAME,0,0, CONST,1,0, SB_CALL,1,0, SB_RETURN]
+rec_fast_fn is [rec_body, [12,"r",1,0], [], 1, "r", ["d"]]
+rec_fast_desc is [ABI, rec_mod, ["r",0], [rec_fast_fn], 0, "<module>", ["r"]]
+rec_fast is sandbox_run of [rec_fast_desc, 1000, 1000000]
+assert_eq of [rec_fast["ok"], 0, "#1403: recursive calls exhaust max_iterations"]
+assert_eq of [rec_fast["error"]["kind"], "sandbox", "#1403: call exhaustion is sandbox-kind"]
+assert_eq of [index_of of [rec_fast["error"]["message"], "call budget exceeded"] >= 0, 1,
+              "#1403: call exhaustion names the call budget"]
+
+# The issue's depth-32 shape must return inside the stated 50,000 budget rather
+# than attempting its roughly 8.6 billion calls.
+rec_deep_fn is [rec_body, [32,"r",1,0], [], 1, "r", ["d"]]
+rec_deep_desc is [ABI, rec_mod, ["r",0], [rec_deep_fn], 0, "<module>", ["r"]]
+rec_deep is sandbox_run of [rec_deep_desc, 50000, 1000000]
+assert_eq of [rec_deep["ok"], 0, "#1403: depth-32 recursion is bounded"]
+assert_eq of [rec_deep["error"]["kind"], "sandbox", "#1403: depth-32 reports sandbox-kind"]
+
 test_summary of null

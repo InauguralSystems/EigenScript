@@ -977,6 +977,10 @@ struct EigsThread {
      * saves/restores it next to saved_iters): a budget on untrusted code
      * must not reset because the chunk called a function. */
     long long            loop_backedge_count;
+    /* #1403: cumulative calls made by the currently armed sandbox.  Unlike
+     * call-frame-local loop accounting this belongs to the whole run, so
+     * recursion cannot reset its own budget. */
+    long long            sandbox_call_count;
     /* #539 v2: next frame-instance serial — incremented at every frame
      * push, stamped into CallFrame.call_serial. Per-thread, never reset
      * (wrap at 2^32 is fine: adjacent frames never collide). */
@@ -1453,6 +1457,7 @@ void eigs_obs_unmute_for_fatal(void);
 #define g_task_suspend_request (eigs_current->task_suspend_request)
 #define g_task_trace_on       (eigs_current->task_trace_on)
 #define g_sandbox_loop_max    (eigs_current->sandbox_loop_max)
+#define g_sandbox_call_count  (eigs_current->sandbox_call_count)
 #define g_sandbox_cap_hit     (eigs_current->sandbox_cap_hit)
 #define g_sandbox_active      (eigs_current->sandbox_active)
 #define g_sandbox_error_latched (eigs_current->sandbox_error_latched)

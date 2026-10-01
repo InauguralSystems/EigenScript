@@ -3993,6 +3993,21 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     }
 
     CASE(CALL): {
+        /* #1403: back-edge accounting cannot see recursive call trees. Charge
+         * every call (builtin or bytecode) to a run-wide counter before doing
+         * any stack mutation. sandbox_run disables the JIT, so this one
+         * interpreter seam covers every sandboxed call and cannot be reset by
+         * pushing a frame. Use max_iterations as the call cap too: it preserves
+         * the API while bounding recursion by default. */
+        if (g_sandbox_loop_max) {
+            g_sandbox_call_count++;
+            if (g_sandbox_call_count >= g_sandbox_loop_max) {
+                rt_error(EK_SANDBOX, current_line,
+                         "sandbox call budget exceeded (max_iterations=%d)",
+                         g_sandbox_loop_max);
+                DISPATCH();
+            }
+        }
         uint16_t argc = read_u16(ip); ip += 2;
         if (g_vm.sp < (int)argc + 1) {
             vm_push(make_null());
