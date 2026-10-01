@@ -477,6 +477,13 @@ else
     echo "  SKIP: capture replay (no gfx build / no capture device)"
 fi
 
+# EigenStore's live file/handle family is an explicit replay boundary (#1242).
+if bash "$TESTS_DIR/test_store_replay.sh" "$EIGS"; then
+    PASS=$((PASS + 1))
+else
+    FAIL=$((FAIL + 1))
+fi
+
 echo
 echo "REPLAY: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ] && exit 0 || exit 1
