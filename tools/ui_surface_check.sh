@@ -45,7 +45,8 @@ case "${1:-}" in
     # the offsetof assertion fail before a corrupt event can reach a caller.
     tmp=$(mktemp "${TMPDIR:-/tmp}/ui_input_plant.XXXXXX.c") || exit 2
     sed 's/Uint32 state; Sint32 x/\/\* planted deletion *\/ Sint32 x/' src/ext_gfx.c > "$tmp"
-    if ${CC:-cc} -Isrc -DEIGENSCRIPT_EXT_GFX=1 -fsyntax-only "$tmp" >"$tmp.out" 2>&1; then
+    if ${CC:-cc} -Werror=switch -Werror=comment -Werror=misleading-indentation \
+         -Isrc -DEIGENSCRIPT_EXT_GFX=1 -fsyntax-only "$tmp" >"$tmp.out" 2>&1; then
       echo "SELFTEST FAILED: deleting SDL_MouseMotionEvent.state compiled"; rm -f "$tmp" "$tmp.out"; exit 1
     fi
     if ! grep -q 'SDL_MouseMotionEvent ABI' "$tmp.out"; then
