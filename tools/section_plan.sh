@@ -44,6 +44,7 @@ e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check
 2b1cec4b6df93886|(c) sub-check: [70d] relays the child rows verbatim, one of which SKIPs when GNU time -f is absent; the section still asserts its other two checks
 cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT section asserts its fast-path checks on every host
 00fd233b835a1ddb|(c) sub-check: the EIGS_JIT_HOT gate on a non-x86_64 host; same section, same reason
+4158c9982233a440|(c) sub-check: the EIGS_JIT_HOT OSR weighting gate on a non-x86_64 host; the JIT section still asserts all portable fast-path checks
 1d4789fa9df25921|(c) sub-check: --api --json validation needs python3; the --api section asserts its other rows without it
 4fd0c1454b26ae7a|(b) an examples-section PASS line that reports how many demos were skipped for want of a gfx build
 62be8333b50e395a|(b) the same PASS line on the no-gfx-build arm
