@@ -121,8 +121,8 @@ record_floor() {
         if [ -n "$name" ] && ! contains "$name" "${FLOOR_NAMES[@]}"; then FLOOR_NAMES+=("$name"); fi
       done < <(awk -F '|' '/^row\|/ { print $2 }' "$floor_file")
     fi
-    # Preserve names that were established by an earlier passing record even
-    # when this path was subsequently replaced by a failed attempt.
+    # Preserve names explicitly established by an earlier run even when this
+    # path was subsequently replaced by a failed attempt.
     while IFS= read -r name; do
       if [ -n "$name" ] && ! contains "$name" "${FLOOR_NAMES[@]}"; then FLOOR_NAMES+=("$name"); fi
     done < <(awk -F '|' '/^accepted\|/ { print $2 }' "$floor_file")
@@ -512,7 +512,10 @@ run() {
     echo "inventory=$inventory"
     echo "examined=$examined"
     echo 'status=COMPLETE'
-    for arg in "${FLOOR_NAMES[@]}"; do echo "accepted|$arg"; done
+    # Record the declared inventory independently of the verdict.  A consumer
+    # command can fail without invalidating the names that this run expected;
+    # unlike row names, this list cannot bless an undeclared checkout.
+    for arg in "${WANT[@]}"; do echo "accepted|$arg"; done
     cat "$BODY"
     if [ "$bad" -eq 0 ]; then echo 'VERDICT: PASS'; else echo 'VERDICT: FAIL'; fi
   } > "$final_tmp" || { rm -f "$final_tmp"; echo 'cannot write final record'; return 2; }
@@ -709,6 +712,26 @@ selftest() {
   if [ "$d_fail_ok" -eq 1 ]; then
     echo 'plant D2 check=failed-record-names RED runs=FAIL,FAIL undeclared=rogue'
   else echo "plant D2 check=failed-record-names SILENT rc=$st_rc"; tail -8 "$st_out"; tail -8 "$st_record"; st_bad=1; fi
+  # A declared inventory remains named when an unrelated consumer command
+  # makes the first completed record fail.
+  st_reset
+  st_consumer first 'eigenscript smoke.eigs'; st_consumer second 'false'
+  printf 'first\nsecond\n' > "$st_eco/.ca_expected"
+  rm -f "$st_record"; : > "$st_out"; st_rc=0
+  CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+  local d_command_ok=0
+  if [ "$st_rc" -ne 0 ] && grep -Fqx 'accepted|first' "$st_record" &&
+     grep -Fqx 'accepted|second' "$st_record" && grep -Fqx 'VERDICT: FAIL' "$st_record"; then
+    rm -rf "$st_eco/second"
+    printf 'first\n' > "$st_eco/.ca_expected"
+    : > "$st_out"; st_rc=0
+    CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+    if [ "$st_rc" -ne 0 ] && grep -Fq 'declared consumer absent: second' "$st_record" &&
+       grep -Fq 'row|second|absent|UNRUNNABLE' "$st_record"; then d_command_ok=1; fi
+  fi
+  if [ "$d_command_ok" -eq 1 ]; then
+    echo 'plant D3 check=failed-command-inventory RED command=FAIL missing=second'
+  else echo "plant D3 check=failed-command-inventory SILENT rc=$st_rc"; tail -8 "$st_out"; tail -8 "$st_record"; st_bad=1; fi
   # (E) A named missing capability is UNRUNNABLE before the command runs.
   st_reset; st_consumer dynamics 'eigenscript smoke.eigs'
   printf 'dynamics\n' > "$st_eco/.ca_expected"
