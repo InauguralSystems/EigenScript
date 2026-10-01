@@ -1,0 +1,1 @@
+- eigenlsp: bound rename scope analysis work (#1451).
