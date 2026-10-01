@@ -1768,6 +1768,11 @@ static void *http_conn_thread(void *arg) {
      * trace sink, and decref'd prev-table slots recorded by other still-live
      * threads. This thread's own prev-table is released by eigs_thread_detach
      * below, beside the other per-thread destructors. */
+    /* A code route can unwind before it closes handles it opened. Drain them
+     * while the worker's value world is still alive, matching eigs_close and
+     * CLI teardown; otherwise each failed request can permanently leak its
+     * store FILE (and eventually exhaust the server's descriptor limit). */
+    handle_table_drain(worker);
     gc_collect_at_exit(global);
     env_decref(global);
     g_global_env = NULL;
