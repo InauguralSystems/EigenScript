@@ -60,6 +60,8 @@ completion, hover, definition, references over stdio).
 
 ## Conventions in these docs
 
+Every `eigenscript` fence must use exactly one of these three forms:
+
 - ` ```eigenscript ` fenced blocks must be followed by an ` ```output ` block;
   the program is executed and its output is checked byte-for-byte.
 - ` ```eigenscript fragment k=v ... ` marks a runnable snippet whose free
