@@ -929,7 +929,16 @@ Value* builtin_tensor_scatter_add(Value *arg) {
              * an out-of-range floating-to-integer conversion is undefined C
              * behavior, and indices can come from sandboxed bytecode. */
             int index_limit = per_row ? cols : dst->data.buffer.count;
-            if (!isfinite(di) || di < 0.0 || di >= (double)index_limit || di != trunc(di)) {
+            int valid_index = isfinite(di) && di >= 0.0 && di < (double)index_limit;
+            int idx = 0;
+            if (valid_index) {
+                /* The range check makes this conversion representable.  Check
+                 * both directions instead of calling trunc(), which is not
+                 * part of the freestanding runtime's mini-libm surface. */
+                idx = (int)di;
+                valid_index = di >= (double)idx && di <= (double)idx;
+            }
+            if (!valid_index) {
                 if (per_row) {
                     rt_error(EK_INDEX, 0, "scatter_add: column index %.17g out of range for row %d (cols %d)",
                              di, i, cols);
@@ -939,7 +948,6 @@ Value* builtin_tensor_scatter_add(Value *arg) {
                 }
                 return make_null();
             }
-            int idx = (int)di;
             if (per_row) {
                 if (pass) {
                     int64_t at = (int64_t)i * cols + idx;
