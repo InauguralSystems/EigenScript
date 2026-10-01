@@ -36,6 +36,10 @@ extern int g_trace_hist_storage;
  * unconditionally — the line prev_record_assign records into history — so the
  * JIT must too, or temporal at/when/state_at freeze at the OSR point. */
 extern int g_trace_current_line;
+/* OP_LINE also emits the tape's L record when a trace sink is open.  Keep the
+ * flag test in native code so an ordinary (untraced) run pays no helper call. */
+extern int g_trace_enabled_storage;
+extern void trace_line(int line);
 /* #410: async abort seam (vm.c). NEVER NULL — unregistered points at an
  * always-zero sentinel — so the back-edge poll is movabs + two derefs +
  * cmpl, mirroring the interpreter's CASE(JUMP_BACK) check. Declared here
@@ -4097,6 +4101,20 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * the line where the thunk took over. %rax is scratch between ops. */
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_current_line);
             w = emit_movl_imm_at_rax(w, (int32_t)line);
+            /* Mirror CASE(LINE)'s tape hook.  On x86 the plain load supplies
+             * the acquire semantics used by g_trace_enabled; trace_line owns
+             * deduplication and tape locking.  %ecx is the cached VM sp and
+             * must survive the ABI call. */
+            uint8_t *no_tape;
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_enabled_storage);
+            w = emit_cmpl_0_mem_rax(w);
+            w = emit_je_rel32(w, &no_tape);
+            w = emit_mov_imm32_edi(w, line);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_line);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            patch_rel32(no_tape, w);
             i += 5;   /* #630: [op][line:32] */
         }
         /* Update last_imm in lockstep with the scanner's last_push_immediate.
