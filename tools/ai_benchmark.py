@@ -43,20 +43,22 @@ def snapshot(repo, revision, work):
     if archive.wait(): raise RuntimeError("git archive failed")
     git_env = isolated_git_env()
     subprocess.run(["git", "init", "-q"], cwd=work, check=True, env=git_env)
-    subprocess.run(["git", "config", "user.email", "benchmark@example.invalid"], cwd=work, check=True, env=git_env)
-    subprocess.run(["git", "config", "user.name", "AI benchmark"], cwd=work, check=True, env=git_env)
     subprocess.run(["git", "add", "-A"], cwd=work, check=True, env=git_env)
-    # A benchmark fixture must not inherit signing or hook policy from the
-    # machine running it.  Besides making the snapshot host-dependent, a
-    # global core.hooksPath can execute arbitrary checkout-external code.
-    # Use a directory we create ourselves instead of ``.git/hooks``.  A host
-    # init.templateDir may populate the latter with active hooks (including
-    # post-commit, which --no-verify does not bypass).
-    hooks = work / ".git" / "benchmark-hooks"
-    hooks.mkdir()
-    subprocess.run(["git", "-c", f"core.hooksPath={hooks}", "commit",
-                    "--no-verify", "--no-gpg-sign", "-q", "-m", "benchmark fixture"],
-                   cwd=work, check=True, env=git_env)
+    # Build the fixture commit with plumbing commands.  Unlike ``git commit``,
+    # commit-tree does not run hooks or consult commit.gpgSign, so machine
+    # policy cannot execute checkout-external code or make the snapshot fail.
+    tree = subprocess.check_output(["git", "write-tree"], cwd=work,
+                                   text=True, env=git_env).strip()
+    identity = dict(git_env,
+                    GIT_AUTHOR_NAME="AI benchmark",
+                    GIT_AUTHOR_EMAIL="benchmark@example.invalid",
+                    GIT_COMMITTER_NAME="AI benchmark",
+                    GIT_COMMITTER_EMAIL="benchmark@example.invalid")
+    commit = subprocess.check_output(["git", "commit-tree", tree], cwd=work,
+                                     input="benchmark fixture\n", text=True,
+                                     env=identity).strip()
+    subprocess.run(["git", "update-ref", "HEAD", commit], cwd=work,
+                   check=True, env=git_env)
     subprocess.run(["git", "remote", "add", "origin", str(work / ".stub-origin")],
                    cwd=work, check=True, env=git_env)
     subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
