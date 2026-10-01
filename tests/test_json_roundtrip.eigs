@@ -42,7 +42,7 @@ assert of [rtb.n == 1e300, "1e300 round-trips through encode/decode (#816)"]
 
 
 # ---- #875: JSON is a LOSSLESS round-trip for every double ----
-# LANGUAGE_CONTRACT.md:108 promises `num of (str of x) == x`. The three JSON
+# docs/SPEC.md's language contract details promises `num of (str of x) == x`. The three JSON
 # encoders each carried their own %.15g — one digit short of the 17 a double
 # needs — so a value written as JSON and read back was a different number.
 # Every encoder now shares `str of`'s rule, so all three must agree with it

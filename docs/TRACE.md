@@ -817,8 +817,8 @@ in-run time travel.
   changed here, so no format-version bump: this was an ownership bug,
   not a format one.
 
-Language-level syntax and examples: [SYNTAX.md](SYNTAX.md),
-[GRAMMAR.md](GRAMMAR.md).
+Language-level syntax and examples: [the specification](SPEC.md); begin with
+[the syntax reading path](SYNTAX.md) if desired.
 
 ## Debugger Step-Back
 

@@ -1,0 +1,1 @@
+- Consolidate the language contract and complete formal grammar into `docs/SPEC.md`, the sole normative language specification; retain `docs/SYNTAX.md` as a link-based explanatory reading path and add a CI authority-duplication gate.

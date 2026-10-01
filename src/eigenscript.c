@@ -2795,7 +2795,7 @@ int values_equal(Value *a, Value *b) { return values_equal_impl(a, b, 0); }
 
 /* THE number->text rule, in one place (#875).
  *
- * LANGUAGE_CONTRACT.md:108 promises `num of (str of x) == x`. That held for
+ * docs/SPEC.md's language contract details promise `num of (str of x) == x`. That held for
  * `str of` and for nothing else: the three JSON encoders each carried their
  * own `%.15g`, one digit short of the 17 a double needs, so a value written
  * as JSON and read back was a DIFFERENT number — silently, in the primary

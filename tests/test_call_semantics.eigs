@@ -1,5 +1,5 @@
 # Function-call argument unpacking + reference aliasing contract.
-# See docs/LANGUAGE_CONTRACT.md.
+# See docs/SPEC.md.
 
 define two(a, b) as:
     return a - b

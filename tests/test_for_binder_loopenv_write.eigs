@@ -6,7 +6,7 @@
 # chain walk that meets the binder in the loop env first -- never saw it:
 # `for p in [7, 8]: p is p + 10; print of p` printed 7 8, while the read
 # after the loop printed 18. The write now lands in the loop env the binder
-# lives in, and the binder stays loop-scoped as LANGUAGE_CONTRACT promises.
+# lives in, and the binder stays loop-scoped as docs/SPEC.md promises.
 # Every interrogated row has a NON-interrogated twin that already behaved.
 
 load_file of "lib/test.eigs"

@@ -696,7 +696,7 @@ static void handle_initialize(int id) {
         "{"
             "\"capabilities\":{"
                 /* #881: positions here are BYTE offsets, which is deliberate —
-                 * LANGUAGE_CONTRACT.md makes the byte model a language-level
+                 * docs/SPEC.md makes the byte model a language-level
                  * promise (`len of "café"` is 5), so the server is internally
                  * consistent. The defect was not saying so: LSP 3.17 treats a
                  * server that negotiates no positionEncoding as utf-16, so a

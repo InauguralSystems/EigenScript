@@ -26,6 +26,7 @@ BASE=${PRECHECK_BASE:-origin/main}
 GATES="run|tools/core_ext_boundary_check.sh
 run|tools/pipefail_verdict_check.sh
 bin|tools/docs_claims_check.sh
+run|tools/spec_authority_check.sh --self-test
 run|tools/section_plan.sh --shards $SHARDS --check
 run|tools/workflow_yaml_check.sh
 run|tools/ci_tier_check.sh

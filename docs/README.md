@@ -11,10 +11,8 @@ WASM build, no install required.
 | document | what it answers |
 |---|---|
 | [SPEC.md](SPEC.md) | **The canonical spec.** Every construct with a runnable example and its exact output — all examples are executed by the test suite, so the spec cannot drift from the implementation. |
-| [SYNTAX.md](SYNTAX.md) | Tutorial-style guide to the same material, in prose. |
+| [SYNTAX.md](SYNTAX.md) | Non-normative reading path that links to exact sections of the specification. |
 | [COMPARISON.md](COMPARISON.md) | EigenScript next to Python / JavaScript / Rust / Lisp, with a porting checklist and before/after transformations (also executed by the suite). |
-| [GRAMMAR.md](GRAMMAR.md) | The formal grammar. |
-| [LANGUAGE_CONTRACT.md](LANGUAGE_CONTRACT.md) | Edge-case promises: exactly what is guaranteed at the boundaries (argument spreading, coercion, subprocess I/O, ...). |
 
 ## Reference
 

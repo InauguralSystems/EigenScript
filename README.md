@@ -547,9 +547,7 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
   Python/JS/Rust/Lisp, with a porting checklist (also suite-verified)
 - [docs/PERFORMANCE.md](docs/PERFORMANCE.md) — benchmarks as a regression-gated
   fact: wall-clock medians for humans, deterministic instruction counts for CI
-- [docs/SYNTAX.md](docs/SYNTAX.md) — tutorial-style language guide
-- [docs/GRAMMAR.md](docs/GRAMMAR.md) — formal EBNF grammar
-- [docs/LANGUAGE_CONTRACT.md](docs/LANGUAGE_CONTRACT.md) — edge-case promises
+- [docs/SYNTAX.md](docs/SYNTAX.md) — non-normative reading path into the specification
 - [docs/BUILTINS.md](docs/BUILTINS.md) — builtin functions; `eigenscript --api` prints the live index
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes

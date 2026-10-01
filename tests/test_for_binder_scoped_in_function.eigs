@@ -1,6 +1,6 @@
 # test_for_binder_scoped_in_function.eigs — #1064.
 #
-# LANGUAGE_CONTRACT: a for binder does not leak past its loop. Module scope
+# docs/SPEC.md: a for binder does not leak past its loop. Module scope
 # kept it (the binder lives in a loop env); inside a function a binder whose
 # name already had a frame slot -- a parameter, a `local`, an earlier plain
 # assignment -- reused the slot and the loop's last value became the name's

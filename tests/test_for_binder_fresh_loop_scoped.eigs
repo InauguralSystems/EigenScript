@@ -1,6 +1,6 @@
 # test_for_binder_fresh_loop_scoped.eigs — #1105.
 #
-# LANGUAGE_CONTRACT: a `for` binder is loop-scoped everywhere. Module scope
+# docs/SPEC.md: a `for` binder is loop-scoped everywhere. Module scope
 # always kept that promise (the binder lives in a loop env); inside a function
 # a binder with NO prior binding took the env-skip fast path, got a fresh
 # frame slot, and stayed readable after the loop with its last value

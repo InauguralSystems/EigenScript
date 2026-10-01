@@ -326,16 +326,14 @@ POPULATION = {
     # file                       fences paired fragment nocheck value-comments
     "README.md":                 (  8,    3,     5,      0,      0),
     "docs/llms.txt":             (  9,    6,     2,      1,      0),
-    "docs/SPEC.md":              ( 83,   79,     1,      3,      0),
+    "docs/SPEC.md":              (119,   94,    22,      3,      1),
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  7,    7,     0,      0,      0),
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
-    "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
     "docs/PREDICATES.md":        ( 13,    2,    10,      1,      4),
     "docs/DIAGNOSTICS.md":       (  4,    1,     3,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
     "docs/BUILTINS.md":          (  1,    1,     0,      0,      0),
-    "docs/LANGUAGE_CONTRACT.md": (  1,    0,     1,      0,      0),
 }
 
 # §122: the fence count the WALK reports must equal the count a completely
@@ -372,7 +370,7 @@ VALUE_COMMENT = re.compile(r"#.*(after|gives|prints|≈|~) *[0-9]")
 # waived here by its EXACT stripped line with a reason (§125). Keyed by
 # (basename, stripped line).
 VALUE_COMMENT_WAIVERS = {
-    ("SYNTAX.md", 'eval of "print of 42"              # prints 42'):
+    ("SPEC.md", 'eval of "print of 42"              # prints 42'):
         "the paired output block below prints 42; the comment restates a value "
         "the gate already compares byte-for-byte",
     ("PREDICATES.md", "x is x * 0.999        # genuine motion, but each step is ~0.1%"):

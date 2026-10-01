@@ -1810,7 +1810,7 @@ static inline int vm_index_is_int(double d, int *out) {
  * *i is left at the original value so error messages report what
  * the user wrote (a[-5] on len 3 says "-5 out of range", not "-2").
  * Negative resolution happens before the bounds check, matching
- * LANGUAGE_CONTRACT.md. */
+ * docs/SPEC.md. */
 static inline int vm_index_resolve(int *i, int len) {
     int r = (*i < 0) ? *i + len : *i;
     if (r < 0 || r >= len) return 0;
@@ -3360,7 +3360,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 /* RHS is the (possibly transformed) right operand expression. For `& | ^`
  * it is the plain int64 operand; for the shifts it is masked to [0,63] so a
  * large or negative shift count is defined (mod-64), never C UB — the same
- * `& 63` the bit_shl/bit_shr builtins apply, honoring the LANGUAGE_CONTRACT
+ * `& 63` the bit_shl/bit_shr builtins apply, honoring the docs/SPEC.md
  * "shifts are defined, not UB" promise. Without the mask, `1 << 64` on the
  * infix path is undefined behavior (UBSan trips; only untested counts hid it). */
 #define INT_BINOP_R(NAME, OP, OPNAME, RHS) \

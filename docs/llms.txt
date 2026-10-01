@@ -354,5 +354,5 @@ check first — this is the same parse→compile→sandbox ladder iLambdaAi uses
    failing test prints an `EIGS_REPLAY=<tape> …` line that reproduces it
    byte-for-byte.
 
-Full executable spec: docs/SPEC.md. Language-vs-Python/JS: docs/COMPARISON.md.
+Sole authoritative, executable language spec (including the complete grammar and edge contracts): docs/SPEC.md. Language-vs-Python/JS: docs/COMPARISON.md.
 Observer model: docs/OBSERVER.md + docs/PREDICATES.md.

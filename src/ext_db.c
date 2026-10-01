@@ -100,7 +100,7 @@ Value* builtin_db_connect(Value *arg) {
  * returns for "no rows" ("[]" / "") — so a typo'd query, a dropped table, a
  * revoked permission and a genuinely empty table were one indistinguishable
  * outcome, and a reporting script kept printing "0 rows" forever after a
- * schema change. LANGUAGE_CONTRACT.md:50-58 says programs never "report
+ * schema change. docs/SPEC.md's error contract says programs never "report
  * success on failure"; every other I/O surface in the runtime honors that.
  *
  * Kind is EK_IO ("the outside world failed") for both the connection and the

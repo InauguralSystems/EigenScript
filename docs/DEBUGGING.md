@@ -114,7 +114,7 @@ value with no label.
 The language itself can ask historical questions with no tape at all —
 the assignment history is always on when the program contains a temporal
 query (see [TRACE.md](TRACE.md) for the compile gate, and
-[SYNTAX.md](SYNTAX.md) for the grammar):
+[the complete grammar](SPEC.md#complete-formal-grammar)):
 
 - `prev of x` — the previous value of `x`
 - `what is x at 42` — `x`'s value when line 42 last ran

@@ -152,6 +152,8 @@ Always-on:
 
 ## Current state & where the detail lives
 
+- **Language authority:** `docs/SPEC.md` is the sole normative language specification; it contains the complete grammar and edge contracts. `docs/SYNTAX.md` is only a linked explanatory reading path.
+
 - **Release history:** see **CHANGELOG.md** and `git tag` for published
   versions; work on `main` is the fragments in `changes/` (plus older entries
   still under `[Unreleased]`, which the next cut carries over unchanged). Roadmap: **ROADMAP.md**.

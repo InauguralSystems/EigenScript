@@ -238,7 +238,7 @@ static void p_expect(Parser *p, TokType type) {
 /* Soft keywords usable as ordinary identifiers in a binding position (params,
  * loop vars, catch names, `local`): TOK_IDENT plus prev/at and the six
  * interrogatives. An explicit binding context disambiguates them from their
- * special forms (`prev of`, `... at e`, `what is e`). See docs/GRAMMAR.md. */
+ * special forms (`prev of`, `... at e`, `what is e`). See docs/SPEC.md's complete formal grammar. */
 static int tok_is_ident_like(TokType type) {
     return type == TOK_IDENT || type == TOK_PREV || type == TOK_AT ||
            (type >= TOK_WHAT && type <= TOK_HOW);
@@ -281,7 +281,7 @@ static void p_expect_dot_key(Parser *p) {
     p_advance(p);
 }
 
-/* #1254: parameters are `param { ',' param }` (docs/GRAMMAR.md). After a
+/* #1254: parameters are `param { ',' param }` (docs/SPEC.md's complete formal grammar). After a
  * parameter (and its default), consume the comma; if the next token would
  * start another parameter with no comma between, report it here. Each
  * malformed signature reports ONCE: `sig_err_base` is g_parse_errors at the

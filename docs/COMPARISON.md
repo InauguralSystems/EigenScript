@@ -637,26 +637,9 @@ EigenScript module's `len`, `str` or `append` is the builtin unless the
 module itself rebinds it (#1388). Unlike Python, a name the module does not
 bind and that is not a builtin still resolves to the importer's globals.
 
-<!-- Embed contract: #1038/#1028; language-level observer semantics unchanged. -->
-The C embedding API starts observer recording open. Source evals retain
-cross-unit history by default; hosts may explicitly promise isolated observer
-use with `eigs_set_eval_observer_isolated`. Missing history then raises
-conservatively instead of answering a rest value. See the
-[embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).
-
-### HTTP startup and response attribution
-
-With the HTTP extension, `http_early_bind of port` (or `of null`) listens
-while initialization continues, answering 503 with `Retry-After: 1`.
-`http_early_bind of [port, "/livez"]` explicitly opts one exact GET/HEAD
-request target into liveness 200s; `http_serve` then hands every path to the
-normal router. Readiness must check the actual routed resource.
-`http_response_header of ["X-Eigen-Release", "build-id"]` before serving
-attaches that field to every response, including startup and static files.
-Header names/values are validated and a rejected registration prevents server
-startup. See [HTTP builtin rules](BUILTINS.md#optional-http-extension) for the full
-limits and reserved names (#1128, #1129).
-Routes and the static root are fixed once `http_serve` starts: `http_route`,
-`http_route_authed` and `http_static` then raise, including from a `code`
-route, and an uncaught error in a `code` route's source answers 500 with a
-generic body; the error message goes to the server's stderr only (#1140).
+The embedding and optional HTTP surfaces differ from the comparison languages
+at their host boundaries. Their language-facing guarantees live only in
+[SPEC, Evaluation model reference](SPEC.md#evaluation-model-reference); see the
+[embedding observer contract](EMBEDDING.md#observer-contract-1038--1028) and
+[HTTP builtin reference](BUILTINS.md#optional-http-extension) for operational
+detail.

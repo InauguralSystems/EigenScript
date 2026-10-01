@@ -5,6 +5,8 @@ description: Use when writing or generating EigenScript (.eigs) source code — 
 
 # Writing EigenScript (.eigs)
 
+Read `docs/SPEC.md` as the sole authoritative language specification. This skill is a non-normative trap list that links back to it.
+
 The error-prone parts of the language. Most are not surfaced when working in a consumer repo (the EigenScript runtime's CLAUDE.md isn't loaded there).
 
 ## One statement per line

@@ -85,7 +85,7 @@ assert_eq of [churn2.keep1 + churn2.keep2, 3, "surviving keys resolve after chur
 assert_eq of [len of churn2, 2, "only survivors remain"]
 
 # ---- #872: null is not a dict, so field access on it RAISES ----
-# LANGUAGE_CONTRACT.md makes dict-miss-returns-null a deliberate decision: a
+# docs/SPEC.md makes dict-miss-returns-null a deliberate decision: a
 # missing key is a lookup miss, not a logic error. That rationale covers a
 # DICT. It does not cover `null`, which was the one non-dict type on which
 # field access silently succeeded — so a typo'd config path propagated through

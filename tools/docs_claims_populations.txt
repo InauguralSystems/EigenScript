@@ -1,6 +1,6 @@
 # Reference population floors: CLASS|document|minimum.
 # Re-pin after an intentional prose rewrite; adding references needs no edit.
-PATHS|README.md|100
+PATHS|README.md|99
 PATHS|docs/llms.txt|3
 PATHS|CLAUDE.md|17
 PATHS|docs/ARCHITECTURE.md|6
@@ -38,9 +38,7 @@ DOC ENROLMENT|docs/SPEC.md|1
 DOC ENROLMENT|docs/COMPARISON.md|1
 DOC ENROLMENT|docs/CONCURRENCY.md|1
 DOC ENROLMENT|docs/STDLIB.md|1
-DOC ENROLMENT|docs/SYNTAX.md|1
 DOC ENROLMENT|docs/PREDICATES.md|1
 DOC ENROLMENT|docs/DIAGNOSTICS.md|1
 DOC ENROLMENT|docs/OBSERVER.md|1
 DOC ENROLMENT|docs/BUILTINS.md|1
-DOC ENROLMENT|docs/LANGUAGE_CONTRACT.md|1

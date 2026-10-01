@@ -10,11 +10,10 @@ states on its own opening line why it is not executed. An untagged block with
 no `output` block fails the suite, so the spec cannot drift from the
 implementation and cannot quietly stop being checked.
 
-Companion documents: [SYNTAX.md](SYNTAX.md) (tutorial-style guide),
-[GRAMMAR.md](GRAMMAR.md) (formal grammar), [LANGUAGE_CONTRACT.md](LANGUAGE_CONTRACT.md)
-(edge-case promises), [BUILTINS.md](BUILTINS.md) (built-in functions),
-[OBSERVER.md](OBSERVER.md) (observer semantics in depth),
-[COMPARISON.md](COMPARISON.md) (EigenScript next to Python/JS/Rust/Lisp).
+This file is the **only normative language specification**. The
+[syntax guide](SYNTAX.md) explains the language by linking here; builtins and
+subsystems have non-language reference material in [BUILTINS.md](BUILTINS.md),
+[OBSERVER.md](OBSERVER.md), and [COMPARISON.md](COMPARISON.md).
 
 ## Table of contents
 
@@ -42,6 +41,9 @@ Companion documents: [SYNTAX.md](SYNTAX.md) (tutorial-style guide),
 - [Concurrency](#concurrency)
 - [Buffers](#buffers)
 - [Evaluation model reference](#evaluation-model-reference)
+- [Language contract details](#language-contract-details)
+- [Complete formal grammar](#complete-formal-grammar)
+- [Migrated syntax-guide examples](#migrated-syntax-guide-examples)
 
 ## Program model
 
@@ -2405,3 +2407,1294 @@ Routes and the static root are fixed once `http_serve` starts: `http_route`,
 `http_route_authed` and `http_static` then raise, including from a `code`
 route, and an uncaught error in a `code` route's source answers 500 with a
 generic body; the error message goes to the server's stderr only (#1140).
+
+## Language contract details
+
+The guarantees below complete the construct-oriented sections above. A status
+line records implementation evidence; it does not create a second authority.
+
+### Equality — `==` / `!=`
+
+**Promise:** Structural for collections, by-value for scalars, by-identity
+for functions. No cross-type coercion: operands of different types are
+never equal (and it is never an error to compare them).
+
+- Numbers, strings, null: by value (`3 == 3.0`, `"a" == "a"`).
+- Lists: equal iff same length and elementwise-equal (recursive).
+- Dicts: equal iff same keys with equal values (order-independent).
+- Buffers / text-builders: by contents.
+- Functions, builtins: by identity.
+- Mixed types: `"3" == 3` is `false`, never an error.
+
+**Status:** Enforced — `tests/test_equality.eigs`, `values_equal()` in
+`eigenscript.c`.
+
+### Ordering — `<` `>` `<=` `>=`
+
+**Promise:** Both operands must be the same comparable type — number/number
+or string/string (lexicographic). Comparing mixed or uncomparable types
+**raises** a runtime error (it does not silently return false).
+
+**Status:** Enforced — `tests/test_coercion.eigs`.
+
+### Coercion
+
+**Promise:** None. EigenScript does not implicitly convert between types.
+`+` adds two numbers or concatenates two strings; a mixed operand raises.
+To build text from mixed types, use an f-string (`f"n={count}"`) or
+`str of` / `num of`.
+
+**Status:** Enforced — `tests/test_coercion.eigs`.
+
+### Errors
+
+**Promise:** A runtime error (undefined variable, bad index, calling a
+non-function, type-mismatched operator, bad builtin argument, stack
+overflow) is recoverable with `try`/`catch`. If uncaught, it is **fatal**:
+execution stops, the process exits non-zero, and a stack trace (every
+frame from the failure to the top level, innermost first) is printed to
+stderr after the error line. Programs never continue past an
+unrecovered error or report success on failure. Warnings are not errors and do not stop execution. Division and modulo by zero
+are runtime errors under the current strict-default numeric contract.
+
+**What `catch` binds (#406):** a **built-in** runtime error binds a small
+dict `{kind, message, line}` — `kind` is drawn from a closed vocabulary
+(see `docs/DIAGNOSTICS.md`), `message` is the error text without the
+`Error line N:` frame, and `line` is the 1-based source line. A `throw`n
+value binds **unchanged** — `throw of {"kind": ...}` gives the handler that
+dict, and a thrown string stays a string. Re-throwing a structured value
+preserves it; a built-in error raised while a structured value is in flight
+supersedes it.
+
+**Status:** Enforced — `run_all_tests.sh` EM14–EM18,
+`tests/test_trycatch.eigs` (incl. structured-throw checks),
+`examples/errors/uncaught_with_trace.eigs`. (Before #406, a built-in error
+bound only its message string.)
+
+### Modules
+
+**Promise:** `import name` executes the module once and binds its
+top-level definitions as a **dict named `name`** — nothing enters the
+importing scope besides that one binding, and module names starting
+with `_` are private (omitted from the dict). That dict is a **live
+view** of the module's bindings, not a snapshot (#1057): `name.x`
+reads the module's current binding and `name.x is v` writes it, for a
+number or string exactly as for a dict or list. Values read *out* of a
+namespace are ordinary values, not aliases. Boxing module state in a
+container is therefore a style choice, not a correctness requirement. Import tries `name.eigs`
+before `lib/name.eigs`, warns on a project/stdlib collision, and chooses
+the project file. `load_file of "path.eigs"` is the
+non-namespaced form: it executes the file directly in the current
+scope. **Module functions never write the loader's bindings** (issue
+#373): a module function's bare assignment to a name that isn't its
+own local/captured/module-top-level state creates a fresh local — it
+does not depend on what existed in the loader's scope at load time
+(it used to: a global declared before the load was silently
+write-through, one declared after was not). Reads and calls resolve
+dynamically across the boundary; share mutable state via dict/list
+fields. A **parse error** in a loaded file (via `import`, `load_file`, or
+`eval`) raises a catchable runtime error rather than silently executing a
+partial AST — consistent with the **Errors** promise.
+
+**One file, three roads (main / import / load_file, #1056):**
+
+- Resolution belongs to the file containing the call, including nested loads
+  and `eval` inside functions, even when called during another module's
+  import, load, or `eigs_eval_file`. The defining file remains the base. The shared chain is: absolute
+  path as-is; containing directory; the `eigs_modules` walk; project root
+  (nearest ancestor, including that directory, with `eigs.json`); executable
+  and HOME stdlib locations. There is no process cwd search or one-parent
+  fallback. The REPL (including piped input) and the embed API without a file
+  path use their working directory as the containing directory. The full ordered
+  stdlib chain and error contract are in [SPEC, Modules](SPEC.md#modules).
+- A `for` binder is loop-scoped everywhere and never writes a same-named
+  outer binding. A `for` body's plain `is` updates the nearest existing
+  binding, including a loop-local; otherwise it creates in the enclosing scope
+  like `if`, `loop while`, and `try`, on every road. An imported module's
+  search stops at its boundary, so fresh names appear in its namespace and
+  never write through to the importer. No function write boundary changes.
+- A top-level `return value` ends the current file and yields its value,
+  skipping later statements. `load_file` returns it to the caller, who
+  continues; import finishes the module; the main program discards the value
+  and exits successfully.
+
+There is no function-scope exception (#1105): a binder with no prior binding
+inside a function is loop-scoped like any other, and reading it after the loop
+raises `undefined variable` on every road. A pre-existing parameter, `local`
+or module binding is restored. See the scope notes below.
+
+**Status:** Enforced — `tools/road_diff.py` and `tests/roads/`, `tests/test_import.eigs`,
+`tests/test_import_errors.eigs` (parse-error surfacing for `import` /
+`load_file` / `eval`) (stdlib + user modules,
+namespacing, `_` privacy, missing-module error),
+`tests/test_module_live_view.eigs` (#1057: live-view reads and writes,
+container state unchanged, privacy, enumeration, module cache, nested
+imports, load_file/eval roads unchanged), docs/SPEC.md Modules
+examples (executed by the suite).
+
+### Numbers
+
+**Promise:**
+- One numeric type: IEEE-754 double. Integers are exact up to 2^53.
+- No NaN, no Infinity reaches a program. By default a NaN-producing
+  operation, an out-of-domain argument or a wrong-typed argument raises a
+  catchable error (strict is the default, #1361); division by zero raises
+  in every mode. Overflow saturates at ±1e308. Under the per-run opt-out
+  `EIGS_STRICT=0` the arithmetic is finite by construction instead: a NaN
+  collapses to 0 and domain functions substitute a stand-in.
+- **Every clamp is recorded.** The finite invariant keeps a program
+  running, but it keeps it running with a plausible number, so the
+  clamps are readable as sticky status flags — IEEE-754's own model
+  (`fetestexcept`) — rather than being undetectable (#865):
+
+  ```eigenscript fragment risky='(vs) => vs[0]' xs=[1,2]
+  clear_math_flags of null
+  result is risky of xs
+  if (math_flags of null).overflow:
+      print of "a value saturated; this result is contaminated"
+  ```
+
+  `overflow` is set by the ±1e308 clamp. Under `EIGS_STRICT=0` (strict
+  mode is the default since #1361) `invalid` is set by the
+  out-of-domain substitutions: `log of x` for `x <= 0` (which
+  returns `log(1e-10)`, i.e. `-23.025850929940457`), `sqrt of x` for
+  negative `x` (returns 0, otherwise indistinguishable from
+  `sqrt of 0`), and `asin`/`acos` outside [-1, 1] (argument clamped).
+  `invalid` is also set when a NaN is collapsed, which the arithmetic
+  operators cannot produce (there is no way to obtain an Inf to combine)
+  but a few builtins can: `num of "nan"` is `0` and `num of "inf"` is
+  `1e308`, so a data column containing either used to parse to a
+  plausible number with nothing to check; `pow` of a negative base with
+  a fractional exponent, `f64_from_bytes` of a NaN bit pattern,
+  `matmul` reaching `inf - inf` (on its list result — a `matmul` whose
+  result is a *buffer* keeps the raw NaN instead, and reads back as
+  `null`; ROADMAP.md), and `tensor_load` of a file carrying
+  NaN bytes collapse the same way. Both bits are sticky until
+  `clear_math_flags`, so bracket a computation the way you would on an
+  FPU. In strict mode, the default, every one of those out-of-domain
+  calls and NaN sources raises a catchable `value` error naming the
+  builtin instead of substituting (SPEC.md, *Strict mode*).
+- **Saturation is not associative, and that is not detectable from the
+  value alone.** `(1e300 * 1e300) / 1e300` is `1e8`; `1e300 * (1e300 /
+  1e300)` is `1e300`. The first overflowed and came back down, and
+  `1e8` will pass any plausibility check a caller applies. The results
+  are what the finite invariant requires — the `overflow` flag is how
+  you tell. Stated here because the trade should be visible rather than
+  discovered.
+- `str of` produces the shortest representation that round-trips back to
+  the same double; `num of (str of x) == x`.
+- **Every producer of number text obeys that same rule** — `str of`,
+  `json_encode`, `json_build`, `json_path`, and the SIGUSR1 observer dump
+  all share one implementation (`eigs_num_text`), so a JSON round-trip
+  returns the same double and `json_encode of x` equals `str of x` for
+  every number (#875).
+- `%` follows the dividend's sign (C semantics): `-7 % 3 == -1`.
+
+**Status:** Enforced — `tests/test_number_format.eigs`,
+`tests/test_numeric_guard.eigs` (NG20–NG30 cover the flags),
+`tests/test_json_roundtrip.eigs`.
+
+### Strings
+
+**Promise:** A string is a sequence of **bytes**, not Unicode codepoints.
+- `len` returns the **byte** count (`len of "café"` is 5, not 4).
+- Indexing `s[i]` returns the one-byte string at byte offset `i`; all string
+  builtins (`split`, `index_of`, `substr`, `contains`, `upper`/`lower`, …)
+  operate bytewise. A multi-byte UTF-8 sequence is therefore split by
+  byte-offset operations — this is the documented consequence of the byte
+  model, not a bug.
+- Strings are immutable; comparison (`==`, `<`) is bytewise.
+- String literals recognize the escapes `\n \t \r \\ \"`; any other `\x`
+  yields the literal character `x` (the backslash is dropped) — this is how
+  `\{` and `\}` produce literal braces in f-strings. There is no `\0`,
+  `\xNN`, or `\u{…}` escape, so a string cannot embed a NUL or an arbitrary
+  byte from source (only the raw bytes present in the source file flow
+  through). An embedded NUL, if one ever arrived from file/buffer input,
+  would truncate the string at that byte.
+
+Unicode-correct length, indexing, and iteration are intentionally **out of
+core scope**: they are an O(n) walk or a per-string index cache, a poor trade
+for the runtime's targets. They may be added later as **opt-in helpers**
+(e.g. `utf8_len`, `utf8_chars`) — purely additive, so this promise does not
+foreclose them.
+
+**Status:** Enforced — `builtin_len` (byte count) and the string index paths
+in `builtins.c` / `vm.c`.
+
+### Bitwise — `&` `|` `^` `<<` `>>` `~`
+
+**Promise:** Bitwise operators (and the `bit_and` / `bit_or` / `bit_xor` /
+`bit_not` / `bit_shl` / `bit_shr` builtins) operate on **64-bit** two's-complement
+integers; operands are truncated toward zero to `int64` (exact for magnitudes
+below 2^63). Shift amounts are masked to `[0,63]`, so large or negative shifts
+are defined, not UB (`1 << 64` == `1 << 0` == `1`; `1 << 100` == `1 << 36`). The
+infix operators and the `bit_*` builtins agree bit-for-bit on the same operands —
+they were once a divergent `int32` implementation (`0xEDB88320`, CRC-32's
+polynomial, was the first casualty). Non-numeric operands **raise** a runtime
+error — they are not silently treated as `0`. This is the same strict error model
+the arithmetic operators use; it makes the **Errors** promise ("type-mismatched
+operator … raises") hold for *every* operator with no exceptions.
+
+**Status:** Enforced — `tests/test_bitwise.eigs` (builtin == infix parity across
+the high-bit range and out-of-range shift counts), `INT_BINOP_R` / `CASE(BNOT)`
+in `vm.c`, `bit_*` builtins in `builtins.c`.
+
+### Truthiness
+
+**Promise:** Falsy values are `0`, `""`, `[]`, `{}`, and `null`. Everything
+else is truthy (including functions).
+
+**Status:** Enforced — `tests/test_coverage_v2.eigs` (CV2-87/88).
+
+### Scope & binding
+
+**Promise:**
+- Lexical scope. Functions capture their defining environment (closures).
+- For-loop variables are block-scoped — they do not leak after the loop,
+  and each iteration binds a fresh variable (so closures created in a loop
+  capture distinct values). Inside a function, a binder whose name was
+  already bound (a parameter, a `local`, an earlier assignment) has that
+  earlier value again after the loop (#1064). A binder whose name had NO
+  prior binding is loop-scoped in a function exactly as at module scope:
+  reading it after the loop is an `undefined variable` error (#1105), and a
+  later plain assignment to the name creates a fresh binding. One rule,
+  every scope, every road (main, `load_file`, `import`).
+- Name resolution walks the scope chain; an unresolved name is a fatal
+  runtime error.
+- Functions resolve referenced names at call time (late binding), so
+  mutual recursion works regardless of definition order; but a *top-level*
+  call must follow the definition in source order.
+
+**Status:** Enforced — `tests/test_closures.eigs`,
+`tests/test_scope_semantics.eigs`.
+
+### Evaluation
+
+**Promise:** `and` / `or` short-circuit and return the deciding operand
+(`5 and 3 == 3`, `0 or 7 == 7`).
+
+**Status:** Enforced.
+
+### Mutability & aliasing
+
+**Promise:** Assignment binds a reference, it does not copy. Lists and
+dicts are reference types: after `b is a`, mutating `b` (e.g. `b[0] is 9`)
+also changes `a`. Numbers and strings are immutable, so sharing them is
+unobservable. To get an independent copy, copy explicitly.
+
+**Status:** Enforced (behavior) — `tests/test_call_semantics.eigs`.
+
+### Function calls & argument unpacking
+
+**Promise (#405):** brackets after `of` are an **argument list**;
+parentheses are **one argument**. A bare literal list `[...]` after `of`
+is the call's argument list at *every* count — its elements bind to the
+callee's parameters in order:
+- `f of []` — **zero** arguments (every default fires).
+- `f of [x]` — **one** argument: the *element* `x`, not the list `[x]`.
+  So `one of [7]` binds `a = 7`.
+- `f of [a, b]` — **two** arguments. So `momentum of [2, 3]` passes
+  `m = 2, v = 3`.
+- **Extra elements raise (#974):** on a callee with 2+ parameters, passing
+  more elements than it has parameters is a runtime error, not a silent
+  truncation — `two of [1, 2, 99]` against `define two(a, b)` raises a
+  catchable `value`-kind error at the call site (`call passes 3 arguments
+  but the callee takes 2`), in the interpreter and the JIT alike, and
+  across module boundaries. Lint `W022` flags the same-file case earlier,
+  at `--lint` time.
+- Parameters with no matching element take their default, else `null`.
+  Under-arity stays silent; #974 changed the over-arity half only.
+- **Arity-1 carve-out:** the elements-bind-in-order rule above assumes
+  a callee with 2+ parameters. A 1-parameter, non-defaulted callee has
+  only one slot, so a 2+-element list doesn't distribute into it — and it
+  neither raises nor binds just the first element, because the over-arity
+  rule above is scoped to callees with 2+ parameters. The whole list
+  re-collects and binds to that one parameter: for `define one(a)`,
+  `one of [3, 4]` binds
+  `a = [3, 4]`, not `a = 3`. This is what keeps `len of [1, 2]`
+  returning `2` and `print of [1, 2]` printing the list. The `f of []`
+  half of this same exception — an empty list still binds `a = []`
+  rather than firing a zero-arg default — is covered under Default
+  parameter values below.
+- **Parentheses always mean one argument** (issue #355). To pass a literal
+  list *whole*, parenthesise it: `f of ([a, b])` binds the list `[a, b]`
+  to the first parameter, and `f of ([7])` binds the one-element list
+  `[7]`. `f of (x)` is likewise always a one-argument call binding `x` to
+  the first parameter (later params take defaults or `null`); `f of x` is
+  the same one-argument form when `x` isn't a bare list literal.
+- A list held in a **variable** never spreads: `xs is [1,2,3]; f of xs`
+  binds the whole list to the first parameter (only a *literal* bracket at
+  the call site is an argument list). So `mean of [1,2,3,4]` passes the
+  four elements to a 4-param `mean`, while `mean of xs` passes the list
+  whole — pass `(...)` or a variable when you mean "one list argument."
+
+Lint **W017** flags the bare 1-element form `f of [x]` as ambiguous-looking
+(pre-#405 it bound the list; now it binds the element) — write `f of (x)`
+for one scalar arg or `f of ([x])` for one list arg.
+
+**Status:** Enforced — `tests/test_call_semantics.eigs`. (This is the #405
+model; before #405 a length-1 literal list bound as the whole list and
+`f of []`/`f of [x, y]` were the only spreading forms — see the CHANGELOG
+for #405/#153.)
+
+### Default parameter values (0.13.0)
+
+**Promise:** A parameter may carry a default expression: `define f(a, b is expr) as: ...`.
+- Defaults are **trailing-only** — once a parameter has a default, every
+  following parameter must also have one. `define f(a is 1, b)` is a
+  parse error.
+- The default expression is **re-evaluated on every call** that omits
+  the argument (no shared mutable-default footgun).
+- A default expression can reference any earlier parameter in the same
+  signature, as well as any name visible in the enclosing scope at
+  call time. Earlier-param references resolve against the values just
+  bound for *this* call.
+- `null` passed explicitly is a real argument — defaults **do not**
+  fire for it. To request the default, call with fewer arguments. For
+  a single-parameter function with a default, write `f of []` to call
+  with zero args (since `f of null` would bind `null`).
+- Lambdas (`(x) => expr`) do **not** support defaults.
+- **Resolved footgun (issue #153, fixed by #405):** a bare `f of [x]`
+  now binds the *element* `x` as one argument (see the argument-unpacking
+  section above), so bracketed recursion on a defaulted function works:
+  `define fib(n, memo is 0)` with `fib of [n - 1]` binds `n = n - 1` and
+  lets `memo` default — no "compare list and num". Before #405 the
+  length-1 literal bound the whole list `[x]`, which surprised such calls;
+  lint **W017** still flags the bare 1-element form as ambiguous-looking,
+  so prefer `f of (x)` for one scalar arg.
+- **Behavior change in 0.13.0 (issue #154):** `f of []` now lowers to
+  a **zero-arg call** for every callee arity. On a multi-param
+  function `g(a, b)` it binds `a = null, b = null` (matches the
+  contract's "missing parameters are `null`"); on `g(a, b is 100)`
+  the `b`-default fires and it binds `a = null, b = 100` (per #158,
+  see below). Prior to 0.13.0 the empty-list literal was treated like
+  any other single list argument and bound `a = [], b = null`.
+  Single-param non-defaulted callees are preserved by a compile-time
+  special case (`one of []` still binds `a = []` there) so existing
+  code that did `f of []` to pass an empty list to a 1-arg function
+  keeps working.
+- **Defaults fire whenever the slot is unsupplied (issue #158):**
+  An underfed call binds every supplied positional slot, then fires
+  the default expression for any defaulted slot the caller skipped —
+  even when `argc < first_default`. So `define f(a, b, c is 1); f of
+  5` binds `a = 5, b = null, c = 1`; `f of []` binds `a = null, b =
+  null, c = 1`. Prior to the fix, defaults only fired when `argc >=
+  first_default`, so an underfed call below that threshold silently
+  left the defaulted tail `null`.
+
+**Status:** Enforced — `tests/test_default_params.eigs`.
+
+### Destructuring assignment (0.13.0)
+
+**Promise:** `[a, b, c] is rhs` evaluates `rhs` once, requires it to be
+a list of length exactly 3, and binds `a` `b` `c` to its elements in
+order.
+- **Length is strict:** mismatch raises a runtime error. No
+  truncation, no padding with `null`, no clamping. Matches the same
+  decision as out-of-range indexing.
+- **Type is strict:** the RHS must be a list. A non-list (number,
+  string, dict, buffer, null) raises. To convert, do it explicitly
+  before the destructure.
+- **RHS evaluated exactly once:** side effects fire once and the
+  result is unpacked. So `[a, b] is mkpair of null` calls `mkpair`
+  once even though two names are bound.
+- **Swap works:** `[a, b] is [b, a]` builds the RHS list first, then
+  unpacks — so the two reads happen before either write.
+- **Plain identifiers only (v1):** the LHS is `[ IDENT (, IDENT)* ]`.
+  Nested patterns (`[a, [b, c]] is ...`), index/field targets
+  (`[items[0], obj.field] is ...`), and rest patterns (`[a, *rest]`)
+  are not supported yet; ambient-list-literal expressions still
+  parse as expressions (lookahead requires the trailing `]` to be
+  followed by `is`).
+
+**Status:** Enforced — `tests/test_destructuring.eigs`.
+
+### Streaming subprocess I/O (0.13.0)
+
+**Promise:** A six-builtin surface for interacting with a child process
+over time, sibling to the all-at-once `exec_capture`. The child runs
+with its stdin and stdout connected to anonymous pipes that the parent
+reads/writes directly with `read(2)`/`write(2)` — no parent-side stdio
+buffering, no shell.
+
+- `proc_spawn of ["cmd", "arg1", ...]` — fork+execvp; returns
+  `[pid, in_fd, out_fd]`. On failure returns `[-1, -1, -1]`. The
+  child's stderr is inherited from the parent. Empty argv is the
+  failure sentinel.
+- `proc_write of [in_fd, "text"]` — full blocking write to the child's
+  stdin. Returns bytes written. After a partial write that hits an
+  error (e.g. EPIPE mid-stream), returns the partial byte count so a
+  caller retrying doesn't double-send the delivered prefix. Returns
+  `-1` only when the very first write failed (nothing delivered).
+  SIGPIPE is masked process-wide on first spawn so writes get EPIPE
+  instead of killing the parent.
+- `proc_read_line of out_fd` — reads bytes from the child's stdout
+  until `\n` or EOF. Returns the line without the trailing newline.
+  Returns `null` only when nothing was buffered before the
+  EOF-or-error; a mid-stream error or EOF that follows a partial line
+  returns the partial line (matches the EOF-with-partial path).
+- `proc_read of [out_fd, max_bytes]` — single `read(2)` of up to
+  `max_bytes` bytes (capped internally at 10 MB). Returns a **string**;
+  may return fewer bytes than requested. Returns `null` on EOF.
+  Text-only: EigenScript strings are C-terminated, so a NUL in the
+  child's output truncates the returned string at the first one. For
+  binary or possibly-NUL output use `proc_read_buf`.
+- `proc_read_buf of [out_fd, max_bytes]` — same semantics as
+  `proc_read` but returns a **VAL_BUFFER** (binary-safe; one
+  byte-as-double per element, indexable like any buffer). Returns
+  `null` on EOF. Use this for any byte stream that isn't guaranteed
+  to be NUL-free.
+- `proc_close of fd` — `close(2)`; idempotent (a bad fd is a no-op).
+- `proc_wait of pid` — blocking `waitpid`; returns the exit code,
+  `128 + signal` if the child was killed by a signal, or `-1` on
+  error.
+
+**Buffering note:** EigenScript's reads are unbuffered, but a child
+that uses stdio block-buffers its own output when stdout is not a
+tty. To get line-streaming behavior from such a child, invoke it via
+`stdbuf -oL` or `stdbuf -o0` (or use a child that flushes after every
+line). The runtime cannot change the child's stdio mode for it.
+
+**No automatic cleanup:** the returned fds and pid are raw OS
+resources, not GC-managed handles. Callers must `proc_close` both
+fds and `proc_wait` the pid to avoid zombies and fd leaks. A future
+revision may add a `with`-style scoped form; v1 stays explicit.
+
+**Status:** Enforced — `tests/test_proc_stream.eigs`.
+
+### Operator precedence
+
+From lowest (binds loosest) to highest (binds tightest):
+
+| Level | Operators | Notes |
+|------:|-----------|-------|
+| 1 | `\|>` | pipe |
+| 2 | `or` | |
+| 3 | `and` | |
+| 4 | `==` `!=` `<` `>` `<=` `>=` | comparison |
+| 5 | `\|` | bitwise OR |
+| 6 | `^` | bitwise XOR |
+| 7 | `&` | bitwise AND |
+| 8 | `<<` `>>` | shift |
+| 9 | `+` `-` | |
+| 10 | `*` `/` `%` | |
+| 11 | `-` `not` `~` | unary (prefix) |
+| 12 | `of` | function application |
+| 13 | `[]` `.` `( )` | indexing, field access, grouping |
+
+Two consequences worth knowing:
+- **Bitwise binds tighter than comparison** (unlike C). `x & mask == 0`
+  parses as `(x & mask) == 0` — the intended reading, avoiding C's classic
+  footgun.
+- **`of` binds tighter than arithmetic.** `len of xs - 1` is
+  `(len of xs) - 1`; `sqrt of x + 1` is `(sqrt of x) + 1`. Parenthesize
+  the argument when it's an expression: `sqrt of (x + 1)`.
+
+**Status:** Enforced (parser). Binary operators are left-associative;
+unary and `of` are right-associative.
+
+### Indexing — `[ ]`
+
+**Promise (decision):** An index must be an integer in `[-length, length)`.
+- Negative indices count from the end: `a[-1]` is the last element,
+  `a[-len of a]` is the first. Resolution is `i + len` *before* the
+  bounds check, matching Python and Ruby.
+- Out-of-range indices (including too-negative, e.g. `a[-(len+1)]`)
+  raise a runtime error.
+- A non-integer index **raises** (`a[1.5]` → error). Integer-valued doubles
+  are accepted (`a[2.0]` works), since EigenScript has a single number type;
+  but a fractional value is never silently truncated. Because `/` always
+  yields a double, a division-derived index must be collapsed explicitly —
+  `a[floor of ((lo + hi) / 2)]` — which keeps the rounding decision in the
+  programmer's hands. A value that is fractional only through float drift
+  (`2.9999998`) also raises, surfacing the sloppy arithmetic rather than
+  mis-indexing.
+
+**Status:** Enforced — `tests/test_trycatch.eigs`; `vm_index_is_int` guards
+every dynamic index site in `OP_INDEX_GET`/`OP_INDEX_SET` and
+`jit_helper_index_get` in `vm.c`.
+
+**Slicing — `a[start:end]`, half-open with defaults and negatives.**
+- **Slices** are half-open `a[start:end)`, with defaults `a[start:]`
+  (end = len), `a[:end]` (start = 0), `a[:]` (the whole sequence).
+- **Slice bounds are positions between elements**, so the valid range is
+  `0 <= start <= end <= len` (note `<=` on the upper end): `a[len:]` and
+  `a[start:len]` are legal and yield an empty slice — even though the bare
+  index `a[len]` raises.
+- **Out-of-range slice bounds raise** (they do not clamp), consistent with
+  the single-index rule and with Rust/Go; only the coercion-happy languages
+  (Python/JS) clamp. Write `min of [end, len of a]` for explicit clamping.
+- Negatives resolve to absolute positions first (same rule as single
+  indexing), then the `0 <= start <= end <= len` check applies.
+- **The slice is an independent copy** — mutating the slice does not
+  alias the source (and vice versa). Applies to lists, strings (which
+  are immutable anyway), and buffers.
+
+**Status:** Enforced — `tests/test_slicing.eigs`; `OP_SLICE_GET` in
+`vm.c` for `VAL_LIST` / `VAL_STR` / `VAL_BUFFER`.
+
+**Dict access — missing key returns `null` (deliberate, not an error).**
+A missing dict key (`d["k"]`) or field (`d.k`) evaluates to `null`, on
+purpose: a missing key is a *lookup miss*, not a logic error. This is
+distinct from out-of-range **list** indexing, which raises — an out-of-range
+list index is a logic error. Both forms of dict access (`d.k` and `d["k"]`)
+agree. Use `has_key of [d, "k"]` to test membership when `null` is itself a
+valid stored value.
+
+That rationale covers a **dict**. It does not cover `null`, which is not a
+dict — so `null.k` and `null["k"]` **raise**, like field access on any other
+non-dict (#872). This is what keeps a typo'd path from propagating: `d.mising`
+is `null` at the miss, and walking through it (`d.mising.deeper`) fails
+*there* rather than yielding `null` through arbitrary depth and surfacing
+somewhere unrelated, or nowhere.
+
+**Status:** Enforced — `tests/test_dict.eigs` (incl. the null-receiver
+cases), `OP_DOT_GET` / `OP_INDEX_GET` in `vm.c`.
+
+### Statistics convention (library)
+
+**Promise:** `variance` / `std_dev` are **population** statistics (÷N).
+`variance_sample` / `std_dev_sample` are the sample estimators with
+Bessel's correction (÷N−1).
+
+**Status:** Enforced — `tests/test_stem_accuracy.eigs`, `lib/stats.eigs`.
+
+---
+
+## Complete formal grammar
+
+The EBNF below specifies the concrete syntax accepted by `src/parser.c`.
+Semantic constraints remain in the corresponding sections of this document.
+
+### Notation
+
+```
+=           definition
+|           alternation
+[ ... ]     optional
+{ ... }     zero or more repetitions
+( ... )     grouping
+'...'       terminal (keyword or symbol)
+UPPER       token class (from lexer)
+lower       non-terminal (grammar rule)
+```
+
+### Lexical Grammar
+
+#### Tokens
+
+```
+NUM         = HEX | DEC
+DEC         = digit { digit } [ '.' { digit } ] [ exp ]
+            | '.' digit { digit } [ exp ]
+            ; the decimal form is parsed with strtod: scientific notation
+            ; (1e5, 1E5) also lexes as one number and a trailing dot (1.)
+            ; is accepted. Malformed forms like 1.2.3 are a parse error
+            ; (one statement per line, #326/#315).
+HEX         = ( '0x' | '0X' ) hexdigit { hexdigit }
+            ; integer-only, lexed explicitly by the front end (#378) — NOT
+            ; via strtod — so the value is exact to int64 and the profile
+            ; is consistent (freestanding lexes it too). Hex-FLOAT forms
+            ; (0x1p4, 0xA.8) are NOT numbers: they are a parse error.
+exp         = ( 'e' | 'E' ) [ '+' | '-' ] digit { digit }
+hexdigit    = digit | 'a'..'f' | 'A'..'F'
+STR         = '"' { char | escape } '"'
+FSTR        = 'f"' { char | escape | '{' expression '}' } '"'
+IDENT       = ( letter | '_' ) { letter | digit | '_' }
+NEWLINE     = '\n' (emitted when not inside brackets)
+INDENT      = increase in leading whitespace
+DEDENT      = decrease in leading whitespace
+COMMENT     = '#' { any } '\n'
+
+letter      = 'a'..'z' | 'A'..'Z'
+digit       = '0'..'9'
+escape      = '\n' | '\t' | '\r' | '\\' | '\"' | '\' any
+              # only n t r \ " are special; any other '\x' yields literal x
+              # (so '\{' and '\}' give literal braces)
+```
+
+#### Keywords
+
+```
+is  of  define  as  if  elif  else  loop  while  for  in
+return  and  or  not  null  try  catch  break  continue  import
+match  case  unobserved  local
+```
+
+#### Interrogatives
+
+```
+what  who  when  where  why  how
+```
+
+#### Temporal Interrogatives (soft keywords)
+
+```
+prev  at
+```
+
+`prev` and `at` are soft keywords: they act as keywords only in
+interrogative position (`prev of x`, `... at <expr>`) and fall back to
+ordinary identifiers everywhere else. The six question words above are
+soft in the same way — `what` not followed by `is` parses as an
+identifier.
+
+#### Reserved Observer Forms
+
+```
+report  report_value
+```
+
+These words cannot be identifiers or binding names (`E005`). Their expression
+form is `('report' | 'report_value') 'of' identifier_operand`, where
+`identifier_operand = IDENT | '(' identifier_operand ')'`. Other operand shapes
+are `E005` errors; `of` retains normal precedence. Like every word keyword,
+these words are allowed as dict keys after a dot.
+
+#### Observer Predicates
+
+```
+converged  stable  improving  oscillating  diverging  equilibrium
+```
+
+#### Operators and Punctuation
+
+```
++  -  *  /  %
+&  |  ^  <<  >>  ~
+<  >  <=  >=  ==  !=
++=  -=  *=  /=  %=  &=  |=  ^=  <<=  >>=
+(  )  [  ]  {  }
+,  :  .
+|>          pipe (left-associative, desugars a |> b to b of a)
+=>          lambda arrow
+```
+
+#### Whitespace Rules
+
+- Indentation is significant (like Python)
+- INDENT/DEDENT tokens are emitted based on leading spaces
+- Inside `(...)`, `[...]`, or `{...}`, newlines and indentation are suppressed
+  (multiline expressions allowed)
+- Comments start with `#` and extend to end of line
+
+### Syntactic Grammar
+
+#### Program
+
+```
+program     = { statement NEWLINE }
+```
+
+#### Statements
+
+```
+statement   = define_stmt
+            | if_stmt
+            | loop_stmt
+            | for_stmt
+            | try_stmt
+            | match_stmt
+            | unobserved_stmt
+            | import_stmt
+            | return_stmt
+            | break_stmt
+            | continue_stmt
+            | dot_assign_stmt
+            | index_assign_stmt
+            | destructure_stmt
+            | local_assign_stmt
+            | assign_stmt
+            | expression
+
+; Every statement ends at NEWLINE (or EOF/DEDENT) — leftover tokens on
+; the line are a parse error ("one statement per line", #326).
+; `break`/`continue` require an enclosing loop (compile error otherwise,
+; #337); a module-level `return` ends the program (see SPEC.md).
+
+define_stmt = 'define' IDENT [ '(' param_list ')' ] [ 'as' ] ':' NEWLINE block
+
+param_list  = param { ',' param }
+param       = IDENT [ 'is' expression ]
+            ; the optional expression is a default value, evaluated in
+            ; the defining scope when the argument is missing
+
+if_stmt     = 'if' expression ':' NEWLINE block
+              { 'elif' expression ':' NEWLINE block }
+              [ 'else' ':' NEWLINE block ]
+
+loop_stmt   = 'loop' [ 'while' ] expression ':' NEWLINE block
+
+for_stmt    = 'for' IDENT 'in' expression ':' NEWLINE block
+
+try_stmt    = 'try' ':' NEWLINE block
+              'catch' [ IDENT ] ':' NEWLINE block
+
+match_stmt  = 'match' expression ':' NEWLINE
+              INDENT { 'case' ( expression | '_' ) ':' NEWLINE block } DEDENT
+
+unobserved_stmt = 'unobserved' ':' NEWLINE block
+
+import_stmt = 'import' IDENT
+
+return_stmt = 'return' expression
+
+break_stmt  = 'break'
+
+continue_stmt = 'continue'
+
+; dot/index assignment targets must be rooted at an IDENT
+; ({"a":1}.k is 2 is a parse error; xs[0].a is 9 works)
+dot_assign_stmt   = ident_chain '.' IDENT assign_op expression
+index_assign_stmt = ident_chain '[' expression ']' assign_op expression
+ident_chain       = IDENT { '[' expression ']' | '.' IDENT }
+
+destructure_stmt  = '[' IDENT { ',' IDENT } ']' 'is' expression
+                  ; the RHS list length must equal the pattern length
+
+local_assign_stmt = 'local' IDENT 'is' expression
+
+assign_stmt = IDENT assign_op expression
+assign_op   = 'is' | '+=' | '-=' | '*=' | '/=' | '%='
+            | '&=' | '|=' | '^=' | '<<=' | '>>='
+            ; compound forms desugar: x += e  ==  x is x + e
+
+block       = INDENT { statement NEWLINE } DEDENT
+```
+
+#### Expressions
+
+Precedence from lowest to highest:
+
+```
+expression  = pipe_expr
+
+pipe_expr   = or_expr { '|>' or_expr }
+
+or_expr     = and_expr { 'or' and_expr }
+
+and_expr    = comparison { 'and' comparison }
+
+comparison  = bitor_expr [ comp_op bitor_expr ]
+comp_op     = '==' | '!=' | '<' | '>' | '<=' | '>='
+            ; comparisons do NOT chain: 1 < 2 < 3 is a parse error
+
+bitor_expr  = bitxor_expr { '|' bitxor_expr }
+
+bitxor_expr = bitand_expr { '^' bitand_expr }
+
+bitand_expr = shift_expr { '&' shift_expr }
+
+shift_expr  = addition { ( '<<' | '>>' ) addition }
+
+addition    = multiply { ( '+' | '-' ) multiply }
+
+multiply    = unary { ( '*' | '/' | '%' ) unary }
+
+unary       = '-' unary
+            | 'not' unary
+            | '~' unary
+            | call
+
+call        = primary [ 'of' unary ]
+            ; the 'of' argument is a single unary-or-tighter expression — it
+            ; does NOT absorb trailing infix, so `sqrt of x + 1` is
+            ; `(sqrt of x) + 1` and `len of xs - 1` is `(len of xs) - 1`.
+            ; Right-associative `f of g of x` and `f of -x` still hold.
+
+primary     = NUM
+            | STR
+            | FSTR
+            | 'null'
+            | IDENT
+            | interrogative
+            | predicate
+            | list_literal
+            | dict_literal
+            | lambda
+            | '(' expression ')'
+
+lambda      = '(' [ param_list ] ')' '=>' expression
+```
+
+#### Postfix Operators
+
+After any primary expression, zero or more postfix operations:
+
+```
+postfix     = primary { subscript | '.' word }
+word        = IDENT | any keyword                         ; #542
+subscript   = '[' expression ']'
+            | '[' [ expression ] ':' [ expression ] ']'   ; slice
+```
+
+The dot-key position accepts any word, keywords included: nothing but a
+field name can appear after `.`, so there is no ambiguity to protect
+against, and keys creatable by literal, `dict_set`, and `json_decode`
+(`"loop"`, `"in"`, `"when"`, …) stay reachable by dot.
+
+Note: which postfix forms a primary accepts depends on the primary.
+IDENT, dict literals, parenthesized expressions, f-strings (which
+desugar to parenthesized expressions), and the soft-keyword identifier
+fallbacks (`prev`/`at`/question words, #328) accept both subscripts and
+dot access. NUM, STR, and list literals accept only subscripts —
+`[10, 20].x` is a parse error.
+
+#### Literals
+
+```
+list_literal = '[' [ expression { ',' expression } [ ',' ] ] ']'
+             | '[' expression 'for' IDENT 'in' expression [ 'if' expression ] ']'
+
+dict_literal = '{' [ dict_entry { ',' dict_entry } [ ',' ] ] '}'
+dict_entry   = expression ':' expression
+```
+
+#### Interrogatives and Predicates
+
+```
+interrogative = ( 'what' | 'who' | 'when' | 'where' | 'why' | 'how' ) 'is' expression [ 'at' expression ]
+              | 'prev' 'of' expression [ 'at' expression ]
+
+predicate     = 'converged' | 'stable' | 'improving'
+              | 'oscillating' | 'diverging' | 'equilibrium'
+```
+
+The `at` qualifier pins the query to a source line: the answer is the
+last value bound to the name at or before that line. The line operand
+is a full expression. `prev of x` returns the value bound to `x` just
+before its most recent assignment; it requires a named binding, so only
+identifier operands are meaningful. Both temporal forms query the
+per-name assignment history (top-level bindings) and evaluate to `null`
+on a miss.
+
+### Operator Precedence Table
+
+From lowest to highest precedence:
+
+| Level | Operators | Associativity | Description |
+|-------|-----------|---------------|-------------|
+| 1 | `\|>` | Left | Pipe (desugars `a \|> b` to `b of a`) |
+| 2 | `or` | Left | Logical OR |
+| 3 | `and` | Left | Logical AND |
+| 4 | `==` `!=` `<` `>` `<=` `>=` | None | Comparison (non-chaining) |
+| 5 | `\|` | Left | Bitwise OR |
+| 6 | `^` | Left | Bitwise XOR |
+| 7 | `&` | Left | Bitwise AND |
+| 8 | `<<` `>>` | Left | Shifts |
+| 9 | `+` `-` | Left | Addition, subtraction |
+| 10 | `*` `/` `%` | Left | Multiplication, division, modulo |
+| 11 | `-` (unary) `not` `~` | Right | Negation, logical NOT, bitwise NOT |
+| 12 | `of` | Right | Function call / observation (`f of g of x` = `f of (g of x)`) |
+| 13 | `[i]` `[a:b]` `.key` | Left | Index, slice, dot access |
+| 14 | `=>` | — | Lambda (inside parenthesized param list) |
+
+### Semantic Notes
+
+- **Assignment** (`is`) is outward-mutable: if the name exists in a parent
+  scope, it updates that binding. If not found, it creates a new local.
+- **Local assignment** (`local name is expr`) always creates or updates the
+  binding in the current evaluator scope only.
+- **Function definition** (`define`) always creates a local binding.
+- **Function call** (`fn of arg`) passes a single value. Multiple arguments
+  are passed as a **literal** list: `fn of [a, b, c]`.
+- **Argument lists** (#405; SPEC.md is normative): a *literal* bracket
+  after `of` is the call's argument list at every count — `f of []` is
+  zero args, `f of [x]` is one arg (the *element* `x`, not the list), and
+  `f of [a, b]` is two. A list passed via a variable never acts as an
+  argument list (`f of xs` binds the whole list to the first parameter;
+  remaining parameters take defaults or `null`). To pass a literal list
+  whole, or make any one-argument call, parenthesise: `f of ([x])` /
+  `f of (x)`.
+- **Implicit parameter**: `define fn as:` (no parameter list) uses the
+  implicit parameter `n`. A zero-parameter lambda `() => expr` mirrors
+  this classic style: it also receives the implicit `n`.
+- **Observer tracking** is automatic on every assignment. Interrogatives and
+  predicates query the observer state without modifying it.
+- **`break`/`continue`** affect the innermost enclosing `loop` or `for`.
+- **`import`** loads `lib/NAME.eigs` and binds all module-level definitions
+  as a dictionary under the module name.
+
+## Migrated syntax-guide examples
+
+These executable examples were retained when the former normative syntax guide
+became a link-based explanation. Their output remains part of this specification.
+
+### Migrated example 1
+
+```eigenscript fragment
+x is 42
+name is "hello"
+data is [1, 2, 3, 4, 5]
+```
+
+### Migrated example 2
+
+```eigenscript fragment
+name is "outer"
+define example as:
+    local name is "inner"
+    return name
+
+result is example of null   # "inner"
+name                         # still "outer"
+```
+
+### Migrated example 3
+
+```eigenscript fragment
+1 / 1e-320       # 1e+308
+exp of 999999    # 1e+308
+```
+
+### Migrated example 4
+
+```eigenscript fragment x=1 flags=0 val=1
+x += 3          # x is x + 3
+x -= 1          # x is x - 1
+x *= 2          # x is x * 2
+flags |= 0x80   # flags is flags | 0x80
+flags &= 0x0F   # flags is flags & 0x0F
+val <<= 4       # val is val << 4
+```
+
+### Migrated example 5
+
+```eigenscript fragment obj={"score":0} arr=[1,2] i=0 buf=[0,0]
+obj.score += 10
+arr[i] *= 2
+buf[0] ^= 0xFF
+```
+
+### Migrated example 6
+
+```eigenscript fragment
+define add(a, b) as:
+    return a + b
+
+result is add of [3, 4]    # 7
+```
+
+### Migrated example 7
+
+```eigenscript
+define greet(name, age) as:
+    return f"Hello {name}, you are {age}"
+
+print of (greet of ["Jon", 30])
+```
+```output
+Hello Jon, you are 30
+```
+
+### Migrated example 8
+
+```eigenscript fragment
+define square as:
+    return n * n
+
+result is square of 5    # 25
+```
+
+### Migrated example 9
+
+```eigenscript fragment
+define add_three as:
+    return n[0] + n[1] + n[2]
+
+result is add_three of [10, 20, 30]    # 60
+```
+
+### Migrated example 10
+
+```eigenscript
+define greet as:
+    print of "Hello!"
+
+greet of null
+```
+```output
+Hello!
+```
+
+### Migrated example 11
+
+```eigenscript fragment items=[1,2,3]
+name is "World"
+x is 42
+print of f"Hello {name}!"
+print of f"x = {x}, doubled = {x * 2}"
+print of f"list length: {len of items}"
+```
+
+### Migrated example 12
+
+```eigenscript fragment x=1
+if x > 0:
+    print of "positive"
+elif x == 0:
+    print of "zero"
+else:
+    print of "negative"
+```
+
+### Migrated example 13
+
+```eigenscript fragment counter=0 limit=3
+loop while counter < limit:
+    counter is counter + 1
+```
+
+### Migrated example 14
+
+```eigenscript fragment items=[1,2]
+for i in range of 10:
+    print of i
+
+for item in items:
+    print of item
+```
+
+### Migrated example 15
+
+```eigenscript
+try:
+    x is items[100]
+catch err:
+    print of f"Caught: {err}"
+```
+```output
+Caught: {"kind": "undefined_name", "message": "undefined variable 'items'", "line": 2}
+```
+
+### Migrated example 16
+
+```eigenscript
+try:
+    throw of {"kind": "validation", "field": "age"}
+catch e:
+    print of e.kind    # "validation"
+```
+```output
+validation
+```
+
+### Migrated example 17
+
+```eigenscript
+define safe_divide(a, b) as:
+    if b == 0:
+        throw of "division by zero"
+    return a / b
+
+try:
+    result is safe_divide of [10, 0]
+catch err:
+    print of f"Error: {err}"
+```
+```output
+Error: division by zero
+```
+
+### Migrated example 18
+
+```eigenscript
+define make_adder(x) as:
+    define adder(y) as:
+        return x + y
+    return adder
+
+add5 is make_adder of 5
+print of (add5 of 10)    # 15
+```
+```output
+15
+```
+
+### Migrated example 19
+
+```eigenscript fragment x=1 total=1 tax=2
+y is sqrt of (x + 1)      # not  sqrt of x + 1
+print of (total + tax)    # not  print of total + tax  (would print total, then error)
+```
+
+### Migrated example 20
+
+```eigenscript
+items is [1, 2, 3, 4, 5]
+print of items[0]         # 1
+print of (len of items)   # 5
+append of [items, 6]      # mutates items
+```
+```output
+1
+5
+```
+
+### Migrated example 21
+
+```eigenscript fragment
+config is {"host": "localhost", "port": 8080, "debug": 1}
+```
+
+### Migrated example 22
+
+```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
+print of config.host       # "localhost"
+print of config.port       # 8080
+```
+
+### Migrated example 23
+
+```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
+key is "host"
+print of config["host"]    # "localhost"
+print of config[key]       # "localhost"
+```
+
+### Migrated example 24
+
+```eigenscript
+app is {"db": {"host": "localhost", "port": 5432}, "name": "myapp"}
+print of app.db.host       # "localhost"
+```
+```output
+localhost
+```
+
+### Migrated example 25
+
+```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
+print of (keys of config)          # ["host", "port", "debug"]
+print of (values of config)        # ["localhost", 8080, 1]
+print of (has_key of [config, "host"])   # 1
+dict_set of [config, "timeout", 30]      # mutates config
+dict_remove of [config, "debug"]         # mutates config
+```
+
+### Migrated example 26
+
+```eigenscript
+result is eval of "1 + 2"          # 3
+eval of "print of 42"              # prints 42
+code is "x is 10\nprint of x"
+eval of code
+```
+```output
+42
+10
+```
+
+### Migrated example 27
+
+```eigenscript
+import math
+print of (math.clamp of [15, 0, 10])
+```
+```output
+10
+```
+
+### Migrated example 28
+
+```eigenscript
+load_file of "lib/math.eigs"
+print of (abs of -5)
+```
+```output
+5
+```
+
+### Migrated example 29
+
+```eigenscript
+loss is 0.9
+loss is 0.5
+loss is 0.2
+
+print of (what is loss)    # 0.2
+print of (why is loss)     # negative — descending into a basin (entropy falling)
+print of (how is loss)     # 0 — the last step is far outside the deadband
+print of (when is loss)    # 3 — three assignments
+```
+```output
+0.2
+-0.26827341240613545
+0
+3
+```
+
+### Migrated example 30
+
+```eigenscript
+loss is 100.0
+loss is 80.0
+print of (prev of loss)    # 100 — the value before the latest assign
+```
+```output
+100
+```
+
+### Migrated example 31
+
+```eigenscript
+x is 1        # line 1
+x is 2        # line 2
+x is 3        # line 3
+
+print of (what is x at 2)    # 2
+print of (prev of x at 3)    # value before the assign at/before line 3
+print of (when is x at 2)    # assignment count up to line 2
+print of (who is x at 2)     # "x"
+print of (where is x at 2)   # entropy as of the line-2 assign
+print of (why is x at 2)     # dH as of the line-2 assign
+```
+```output
+2
+2
+2
+x
+0.9182958340544896
+-0.08170416594551044
+```
+
+### Migrated example 32
+
+```eigenscript
+total is 0
+for i in range of 4:
+    total is total + i     # line 3, runs four times
+print of (what is total at 3)   # 6 — the LAST pass (0+1+2+3), not the first
+print of (when is total at 3)   # 5 — all five assignments, seed included
+```
+```output
+6
+5
+```
+
+### Migrated example 33
+
+```eigenscript fragment loss=1.0
+status is report of loss   # "improving"
+state is observe of loss   # [status, entropy, dH, prev_dH]
+```
+
+### Migrated example 34
+
+```eigenscript fragment loss=1.0 lr=0.1
+loop while not converged:
+    loss is loss * 0.9
+    if stable:
+        print of "reached stable band"
+    if oscillating:
+        lr is lr * 0.5   # reduce learning rate
+```
+
+### Migrated example 35
+
+```eigenscript fragment game={"px":0,"py":0,"vx":1,"vy":1,"angle":0} DT=0.016
+unobserved:
+    game.px is game.px + game.vx * DT
+    game.py is game.py + game.vy * DT
+    game.angle is game.angle + DT
+```

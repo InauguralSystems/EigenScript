@@ -6109,7 +6109,7 @@ else
 fi
 echo ""
 
-# [89] Executable documentation — EVERY eigenscript fence in the twelve
+# [89] Executable documentation — EVERY eigenscript fence in the ten
 # documents below is EXECUTED (opt-OUT since 2026-09-16): a fence paired with
 # an ```output block is compared byte-for-byte, a fence tagged
 # `eigenscript fragment k=v ...` is run with its free names bound and must
@@ -6124,10 +6124,10 @@ echo ""
 DOC_FILES_ARG="$TESTS_DIR/../README.md $TESTS_DIR/../docs/llms.txt \
 $TESTS_DIR/../docs/SPEC.md $TESTS_DIR/../docs/COMPARISON.md \
 $TESTS_DIR/../docs/CONCURRENCY.md $TESTS_DIR/../docs/STDLIB.md \
-$TESTS_DIR/../docs/SYNTAX.md $TESTS_DIR/../docs/PREDICATES.md \
+$TESTS_DIR/../docs/PREDICATES.md \
 $TESTS_DIR/../docs/DIAGNOSTICS.md $TESTS_DIR/../docs/OBSERVER.md \
-$TESTS_DIR/../docs/BUILTINS.md $TESTS_DIR/../docs/LANGUAGE_CONTRACT.md"
-DOC_POPULATIONS=12
+$TESTS_DIR/../docs/BUILTINS.md"
+DOC_POPULATIONS=10
 # ROUND 13 — A WINDOW THAT CANNOT HIDE THE CAUSE.
 # Round 8 made these sections print the child's own words instead of grepping
 # for "^RED", and that was right. The BOUND it chose (20 lines) then spent

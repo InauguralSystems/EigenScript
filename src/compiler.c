@@ -2327,7 +2327,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                     if (loop_var_slot >= 0) {
                         /* #1064: the binder reuses a slot the name already
                          * has (a parameter, a `local`, an earlier plain
-                         * assignment). LANGUAGE_CONTRACT promises a for
+                         * assignment). docs/SPEC.md promises a for
                          * binder does not leak past its loop, and module
                          * scope keeps that promise; the slot path made the
                          * binder's last value the name's value after the
@@ -2392,7 +2392,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                  * CLEAR is what resets the binder's observer slot -- so a
                  * `report of i` inside the loop saw history ACCUMULATE across
                  * iterations for a pre-bound name and RESET for a fresh one,
-                 * identical bodies answering differently. LANGUAGE_CONTRACT
+                 * identical bodies answering differently. docs/SPEC.md
                  * says each iteration binds a fresh variable; a body that
                  * reads the observer therefore stays on the CLEAR tier. */
                 if (safe && for_loop_reads_observer(node)) safe = 0;
