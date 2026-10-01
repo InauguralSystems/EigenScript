@@ -6120,6 +6120,15 @@ Value* builtin_dispatch(Value *arg) {
         return make_null();
     }
 
+    /* This fallback invokes its selected target directly in C, without
+     * crossing OP_CALL or OP_DISPATCH.  Charge that invocation at the shared
+     * seam before entering either a builtin (which may itself be dispatch) or
+     * an EigenScript function; otherwise a table containing `dispatch` can
+     * recurse on the C stack without spending the sandbox call budget. */
+    if ((fn->type == VAL_BUILTIN || fn->type == VAL_FN) &&
+        !vm_charge_sandbox_call(0))
+        return make_null();
+
     if (fn->type == VAL_BUILTIN) {
         /* free_val CONSUMES a reference, and fn_arg is a child of our own
          * arg vector, which still points at it — lend it a ref of our own

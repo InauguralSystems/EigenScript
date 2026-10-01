@@ -1044,4 +1044,29 @@ assert_eq of [disp_bomb["error"]["kind"], "sandbox",
 assert_eq of [index_of of [disp_bomb["error"]["message"], "call budget exceeded"] >= 0, 1,
               "#1403: dispatch exhaustion names the shared call budget"]
 
+# The allowlisted C `dispatch` builtin is also an invocation seam: it calls a
+# selected builtin directly rather than returning through OP_CALL. Build a
+# finite nested argument chain whose table contains `dispatch` itself. Only the
+# outermost call crosses OP_CALL; every inner call must nevertheless spend the
+# shared budget before C recursion can grow.
+direct_code is [SB_GET_NAME,0,0, SB_LIST,1,0,
+                SB_SET_NAME_LOCAL,1,0, SB_POP,
+                SB_GET_NAME,1,0, CONST,3,0, CONST,4,0, SB_LIST,3,0,
+                SB_SET_NAME_LOCAL,2,0, SB_POP]
+for depth in range of 20:
+    for byte in [SB_GET_NAME,1,0, CONST,3,0, SB_GET_NAME,2,0, SB_LIST,3,0,
+                 SB_SET_NAME_LOCAL,2,0, SB_POP]:
+        append of [direct_code, byte]
+for byte in [SB_GET_NAME,0,0, SB_GET_NAME,2,0, SB_CALL,1,0, SB_RETURN]:
+    append of [direct_code, byte]
+direct_desc is [ABI, direct_code, ["dispatch","table","arg",0,null], [], 0,
+               "<module>", ["table","arg"]]
+direct_bomb is sandbox_run of [direct_desc, 10, 1000000]
+assert_eq of [direct_bomb["ok"], 0,
+              "#1403: builtin_dispatch recursion exhausts max_iterations"]
+assert_eq of [direct_bomb["error"]["kind"], "sandbox",
+              "#1403: builtin_dispatch exhaustion is sandbox-kind"]
+assert_eq of [index_of of [direct_bomb["error"]["message"], "call budget exceeded"] >= 0, 1,
+              "#1403: builtin_dispatch exhaustion names the shared call budget"]
+
 test_summary of null

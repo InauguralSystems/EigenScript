@@ -53,6 +53,11 @@ typedef struct ASTNode ASTNode;
 void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
                           Value *fn_val, Env *env);
 
+/* Charge one callable invocation to an armed sandbox's cumulative budget.
+ * Out-of-interpreter call paths (notably builtin_dispatch) must use the same
+ * counter as OP_CALL/OP_DISPATCH so C recursion cannot bypass the limit. */
+int vm_charge_sandbox_call(int line);
+
 /* The one CONSUMING builtin (builtins.c). Declared here — not re-externed in
  * each consumer — because every site that must special-case it (vm.c's three
  * call sites, builtins.c's builtin_dispatch, builtins_tensor.c's

@@ -524,7 +524,7 @@ static inline Env *vm_take_call_env(EigsChunk *fn_chunk, Env *closure,
 /* OP_CALL and OP_DISPATCH are two bytecode spellings of the same operation
  * from the sandbox's point of view.  Keep their cumulative accounting at one
  * seam so a new inline call path cannot quietly acquire a different limit. */
-static inline int vm_charge_sandbox_call(int line) {
+int vm_charge_sandbox_call(int line) {
     if (!g_sandbox_loop_max) return 1;
     g_sandbox_call_count++;
     if (g_sandbox_call_count < g_sandbox_loop_max) return 1;
