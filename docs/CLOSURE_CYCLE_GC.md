@@ -90,11 +90,12 @@ as a force-destroy escape hatch (no current callers in main).
   `in_gc_list` on `Env`), lock-guarded by `state->gc_lock` while
   multithreaded. `g_global_env` is never registered. The env
   destructor and `env_destroy_final` unlink.
-- **Trigger.** Registration is the only way the candidate universe
-  grows, so the threshold check lives there — zero cost on the
-  dispatch/call hot paths. Threshold: collect when the registry reaches
-  `max(64, 2 × live-after-last-collect)`. One more collection runs at
-  exit (below).
+- **Trigger.** Registration checks the captured-env threshold without adding
+  work to dispatch/call hot paths. After a collection it re-arms at
+  `max(64, live captured envs + max(live captured envs, walked universe / 16))`
+  (#1096). A large reachable heap therefore requires more captures before
+  another full walk. Exit also flushes candidates and runs the global snapshot
+  collection (below).
 - **Universe.** Everything reachable from registered envs over **owned
   edges only**: env value slots, `env->parent`, `fn->closure`,
   `fn->chunk` (the OP_CLOSURE ref), `chunk->functions[]`,
@@ -134,7 +135,12 @@ as a force-destroy escape hatch (no current callers in main).
   `rc > internal + pinned`); afterward it clears the flags and drops the pins
   (the final pin drop frees the now-edge-cleared garbage; live candidates keep
   their other refs). The buffer drains on the env-registry threshold trigger,
-  on its own `GC_VAL_THRESHOLD` trigger, and at exit. The hook is off when
+  on its own adaptive threshold, and at exit. After a successful collection
+  that threshold is `max(1024, walked universe - garbage nodes)` (#1096,
+  #1442): a large surviving graph retains a cost-aware cadence, while nodes
+  just cleared do not make the next collection wait for garbage to accumulate
+  again. An accounting-aborted collection retains the walked-universe threshold
+  because it has no trustworthy survivor count. The hook is off when
   GC-disabled, mid-collection, or multithreaded, so the hot decref stays
   lock-free and single-threaded-only. (This is *not* identical to
   `env_mark_captured`, whose registration continues under `gc_lock` while

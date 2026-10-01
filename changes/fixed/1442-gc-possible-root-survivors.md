@@ -1,0 +1,1 @@
+- Re-arm the possible-root cycle collector from surviving nodes after a collection, restoring hot list-loop performance after a live heap without losing the cost-aware cadence for large live graphs (#1442).

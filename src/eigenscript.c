@@ -4223,16 +4223,15 @@ static void gc_clear_node(void *obj, int kind) {
  * to grow by a fraction of the last universe before the next collection
  * makes the amortised scan cost O(1) per capture event; when the heap is
  * mostly captured envs (last universe ~ live) this is the old 2x rule. */
-/* #1096, the possible-root side: a collection seeded by N buffered candidates
- * walks everything reachable from them (the AOT compiler: 990 collections in
- * a 6-second compile, each over ~2800 objects, live captured envs 0). A fixed
- * GC_VAL_THRESHOLD made the cadence proportional to allocations while the
- * walk grew with the heap. Require the candidate count to reach a fraction of
- * the last universe before collecting again (as many candidates as objects the
- * last walk touched, so the amortised walk cost per candidate is O(1); garbage
- * cycles wait for at most that many registrations). */
-static int gc_val_next_threshold(int last_universe) {
-    long t = last_universe;   /* one candidate per object the last walk touched: O(1) amortised */
+/* #1096/#1442, the possible-root side: a large live reachable graph makes a
+ * collection expensive, so wait for a comparable number of candidates before
+ * walking it again. Garbage cleared by this collection is not part of the
+ * next walk's cost. Re-arming from the old universe instead made a short-lived
+ * list loop after a live heap accumulate ~8200 candidates per collection,
+ * even though only ~5 nodes survived each walk. Keep the fixed floor so small
+ * collections still amortise their setup cost. */
+static int gc_val_next_threshold(int survived) {
+    long t = survived;
     if (t < GC_VAL_THRESHOLD) t = GC_VAL_THRESHOLD;
     if (t > 100000000L) t = 100000000L;
     return (int)t;
@@ -4353,7 +4352,7 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     free(u.internal); free(u.pinned); free(u.mark);
     free(u.has_node_children);
     g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
-    g_gc_val_threshold = gc_val_next_threshold(u.count);
+    g_gc_val_threshold = gc_val_next_threshold(u.count - garbage);
     g_in_gc = 0;
 }
 
