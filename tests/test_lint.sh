@@ -132,6 +132,33 @@ EIGS
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "#1287 same-file rebinding is not treated as builtin nondeterminism" "$OUTPUT" "warning\[W025\]"
 
+# Defaults execute at the call boundary, nested/anonymous bodies still expose
+# direct boundaries, and parameters take precedence over builtin names.
+cat > "$TMPFILE" << 'EIGS'
+define defaulted(x is random of null) as:
+    return x
+define nested_factory() as:
+    define inner() as:
+        return clock_unix of null
+    return (x) => random of null
+define callback(random) as:
+    return random of null
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1287 nondeterministic default propagates to summary" "$OUTPUT" "function 'defaulted' has tape-captured nondeterminism"
+check_contains "#1287 nested function direct call is reported" "$OUTPUT" "via 'clock_unix'"
+check_contains "#1287 lambda direct call is reported" "$OUTPUT" "via 'random'"
+DEFAULTED_COUNT=$(printf '%s\n' "$OUTPUT" | grep -c "function 'defaulted' has tape-captured nondeterminism" || true)
+check_contains "#1287 default contributes exactly one function summary" "$DEFAULTED_COUNT" "^1$"
+
+cat > "$TMPFILE" << 'EIGS'
+define callback(random) as:
+    return random of null
+print of (callback of ((random) => random of null))
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1287 function and lambda parameters shadow builtin names" "$OUTPUT" "warning\[W025\]"
+
 # Each existing acknowledgement form applies at both boundary shapes.
 cat > "$TMPFILE" << 'EIGS'
 # lint: allow W025 -- the whole function is the acknowledged boundary

@@ -3545,21 +3545,42 @@ static void check_container_rebind(ASTNode *ast, LintContext *ctx) {
 
 typedef void (*W025CallFn)(ASTNode *, const char *, void *);
 
-static void w025_walk(ASTNode *n, int enter_functions, W025CallFn fn, void *arg) {
+static int w025_is_shadowed(const char *name, char **shadow, int shadow_count) {
+    for (int i = 0; i < shadow_count; i++)
+        if (strcmp(name, shadow[i]) == 0) return 1;
+    return 0;
+}
+
+static void w025_walk(ASTNode *n, int enter_functions, char **shadow,
+                      int shadow_count, int skip_calls, W025CallFn fn, void *arg) {
     if (!n) return;
-#define WALK(x) w025_walk((x), enter_functions, fn, arg)
+#define WALK(x) w025_walk((x), enter_functions, shadow, shadow_count, skip_calls, fn, arg)
     switch (n->type) {
         case AST_RELATION:
-            if (n->data.relation.left && n->data.relation.left->type == AST_IDENT)
+            if (!skip_calls && n->data.relation.left &&
+                n->data.relation.left->type == AST_IDENT &&
+                !w025_is_shadowed(n->data.relation.left->data.ident.name,
+                                  shadow, shadow_count))
                 fn(n, n->data.relation.left->data.ident.name, arg);
             WALK(n->data.relation.left); WALK(n->data.relation.right); break;
         case AST_FUNC:
             if (!enter_functions) break;
+            /* The outer named function is represented by its summary warning;
+             * a nested definition is not in that top-level summary table, so
+             * expose calls in its body directly. */
+            int function_skip = skip_calls ? 0 : 1;
             for (int i = 0; i < n->data.func.param_count; i++)
-                WALK(n->data.func.param_defaults ? n->data.func.param_defaults[i] : NULL);
-            for (int i = 0; i < n->data.func.body_count; i++) WALK(n->data.func.body[i]);
+                w025_walk(n->data.func.param_defaults ? n->data.func.param_defaults[i] : NULL,
+                          enter_functions, shadow, shadow_count, function_skip, fn, arg);
+            for (int i = 0; i < n->data.func.body_count; i++)
+                w025_walk(n->data.func.body[i], enter_functions,
+                          n->data.func.params, n->data.func.param_count, function_skip, fn, arg);
             break;
-        case AST_LAMBDA: if (enter_functions) WALK(n->data.lambda.body); break;
+        case AST_LAMBDA:
+            if (enter_functions)
+                w025_walk(n->data.lambda.body, enter_functions,
+                          n->data.lambda.params, n->data.lambda.param_count, 0, fn, arg);
+            break;
         case AST_PROGRAM:
             for (int i = 0; i < n->data.program.count; i++) { WALK(n->data.program.stmts[i]); }
             break;
@@ -3682,7 +3703,13 @@ static void check_nondeterminism(ASTNode *ast, LintContext *ctx) {
         scan.current = i;
         scan.found = 0;
         for (int j = 0; j < funcs[i].node->data.func.body_count; j++)
-            w025_walk(funcs[i].node->data.func.body[j], 0, w025_scan_call, &scan);
+            w025_walk(funcs[i].node->data.func.body[j], 0,
+                      funcs[i].node->data.func.params,
+                      funcs[i].node->data.func.param_count, 0, w025_scan_call, &scan);
+        for (int j = 0; j < funcs[i].node->data.func.param_count; j++)
+            w025_walk(funcs[i].node->data.func.param_defaults ?
+                          funcs[i].node->data.func.param_defaults[j] : NULL,
+                      0, NULL, 0, 0, w025_scan_call, &scan);
         funcs[i].effect = scan.found;
     }
     /* Least fixed point terminates after at most count severity increases. */
@@ -3704,7 +3731,11 @@ static void check_nondeterminism(ASTNode *ast, LintContext *ctx) {
             lint_warn(ctx, funcs[i].node->line, "W025", "function '%s' has tape-captured nondeterminism", funcs[i].name);
     }
     W025Emit emit = {&scan, ctx};
-    w025_walk(ast, 0, w025_emit_call, &emit); /* module-level call sites only */
+    /* Direct boundaries remain useful inside anonymous and nested functions;
+     * parameter scopes keep a callback named like a builtin from being
+     * mistaken for that builtin. Named top-level functions additionally get
+     * the fixed-point summaries above. */
+    w025_walk(ast, 1, NULL, 0, 0, w025_emit_call, &emit);
     free(scan.deps);
     free(funcs);
 }
