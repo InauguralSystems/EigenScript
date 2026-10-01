@@ -6831,6 +6831,12 @@ echo ""
 # happened was discarded. Capture once; print what THAT run said.
 echo "[99s] Strict argument-guard differential (#971, no-baseline half)"
 TOTAL=$((TOTAL + 1))
+if bash "$TESTS_DIR/test_strict_differential_nondeterminism.sh"; then
+    PASS=$((PASS + 1))
+else
+    FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
 STRICT_DIFF_OUT="$(bash "$TESTS_DIR/../tools/strict_differential.sh" --no-baseline 2>&1)"
 STRICT_DIFF_RC=$?
 if [ "$STRICT_DIFF_RC" = 0 ]; then

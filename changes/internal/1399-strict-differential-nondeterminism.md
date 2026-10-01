@@ -1,0 +1,1 @@
+- Diagnose unstable repeated strict-mode probe output separately from a stable unset-versus-strict difference in the strict differential gate (#1399).

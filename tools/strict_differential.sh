@@ -14,7 +14,9 @@
 #   pins                    documented answers must not raise under strict
 #   unset-equals-strict     #1361: strict is the DEFAULT, so every probe row
 #                           (and every pixel row) run with EIGS_STRICT UNSET
-#                           must equal its EIGS_STRICT=1 run: stdout+stderr+rc.
+#                           must equal two mutually stable EIGS_STRICT=1 runs:
+#                           stdout+stderr+rc. Instability is not blamed on the
+#                           flag (#1399).
 #                           Needs no baseline, so it runs in suite [99s] too.
 #   identical-when-off      baseline vs subject under an explicit EIGS_STRICT=0
 #                           ("off" is the opt-out since #1361, not the unset
@@ -36,7 +38,9 @@ cd "$(cd "$(dirname "$0")/.." && pwd)"
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
 BASE="${1:-}"
 NO_BASELINE=0
+SELFTEST=0
 if [ "$BASE" = "--no-baseline" ]; then NO_BASELINE=1; BASE=""; fi
+if [ "$BASE" = "--selftest" ]; then SELFTEST=1; BASE=""; fi
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-dummy}"
 
@@ -46,8 +50,8 @@ str_has()      { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
 str_has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1 ; }
 str_has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1 ; }
 
-[ -x "$NEW" ] || { echo "FAIL: no built binary at $NEW"; exit 1; }
-if [ -z "$BASE" ] && [ "$NO_BASELINE" = 0 ]; then
+[ "$SELFTEST" = 1 ] || [ -x "$NEW" ] || { echo "FAIL: no built binary at $NEW"; exit 1; }
+if [ -z "$BASE" ] && [ "$NO_BASELINE" = 0 ] && [ "$SELFTEST" = 0 ]; then
     echo "FAIL: no baseline binary. Pass one, or --no-baseline to skip identical-when-off."
     exit 1
 fi
@@ -383,6 +387,47 @@ run_capture() {   # <binary> <strict-or-dash> <file> -> "rc\noutput"
 }
 clip() { printf '%s' "$1" | tr '\n' ' ' | cut -c1-"${2:-80}"; }
 
+# Compare two strict executions before attributing any difference to the flag.
+# Return 0 for equal, 1 for a stable unset difference, and 2 for an unstable
+# strict arm.  Both the core and gfx halves use this single classifier.
+classify_unset_strict() { # <label> <unset> <strict-1> <strict-2>
+    local label="$1" unset_out="$2" strict_a="$3" strict_b="$4"
+    if [ "$strict_a" != "$strict_b" ]; then
+        nondet_list="$nondet_list
+    $label
+      =1 run 1: $(clip "$strict_a" 90)
+      =1 run 2: $(clip "$strict_b" 90)"
+        return 2
+    fi
+    if [ "$unset_out" != "$strict_a" ]; then
+        unset_list="$unset_list
+    $label
+      unset: $(clip "$unset_out" 90)
+      =1   : $(clip "$strict_a" 90)"
+        return 1
+    fi
+    return 0
+}
+
+if [ "$SELFTEST" = 1 ]; then
+    unset_list=""; nondet_list=""
+    # Plant one unstable probe (as a random-printing program would produce)
+    # and one stable simulation of reverting strict-by-default.
+    classify_unset_strict "random-output probe" "0" \
+        "0\nrandom=$RANDOM-first" "0\nrandom=$RANDOM-second" || true
+    classify_unset_strict "reverted-default probe" "0\nstand-in" \
+        "1\nstrict error" "1\nstrict error" || true
+    echo "NONDETERMINISTIC (not a flag difference):$nondet_list"
+    echo "UNSET DIFFERS FROM EIGS_STRICT=1 (the default is not strict):$unset_list"
+    case "$nondet_list|$unset_list" in
+        *"random-output probe"*"reverted-default probe"*)
+            echo "SELFTEST PASS: strict differential diagnoses both planted faults"
+            exit 0 ;;
+    esac
+    echo "SELFTEST FAIL: a planted fault was misclassified"
+    exit 1
+fi
+
 extract_guard_names() {
     awk '
     /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named)\(/ { acc = ""; collecting = 1 }
@@ -395,7 +440,7 @@ extract_guard_names() {
 }
 
 rc=0
-n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_list=""
+n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_list=""; nondet_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 
@@ -455,13 +500,11 @@ while IFS='|' read -r who prog expect; do
         fi
     fi
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
+    s2="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     s_rc="${s%%$'\n'*}"
     u="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    if [ "$u" = "$s" ]; then n_unset_eq=$((n_unset_eq + 1))
-    else unset_list="$unset_list
-    $who
-      unset: $(clip "$u" 90)
-      =1   : $(clip "$s" 90)"; fi
+    classify_unset_strict "$who" "$u" "$s" "$s2"
+    case $? in 0) n_unset_eq=$((n_unset_eq + 1)) ;; esac
     why="$(run_did_not_measure "$s_rc")"
     if [ -n "$why" ]; then
         n_unrun=$((n_unrun + 1))
@@ -817,9 +860,14 @@ while IFS='|' read -r label who slot prog; do
     mkprog "$TMP/p.eigs" "$prog"
     b="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
+    s2="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     u="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    [ "$u" = "$s" ] || { pdiffer="$pdiffer
-    $label [unset vs EIGS_STRICT=1, same binary] — the default is not strict"; rc=1; }
+    classify_unset_strict "pixel: $label" "$u" "$s" "$s2"
+    case $? in
+        1) pdiffer="$pdiffer
+    $label [unset vs EIGS_STRICT=1, same binary] — the default is not strict"; rc=1 ;;
+        2) rc=1 ;;
+    esac
     if [ "$slot" = "-" ]; then
         n_pvalid=$((n_pvalid + 1))
         if [ "$NO_RENDERER" = 0 ] && [ "$who" != "gfx_read" ] && [ "${b#*$'\n'}" = "$blank_digest" ]; then
@@ -931,6 +979,7 @@ if [ -n "$FP_BASE_START" ]; then
         rc=1
     fi
 fi
+[ -n "$nondet_list" ] && { echo "  NONDETERMINISTIC (not a flag difference):$nondet_list"; rc=1; }
 verdict_printed=1
 if [ "$rc" = 0 ]; then echo "OK"; exit 0; fi
 echo "FAIL"
