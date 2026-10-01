@@ -1,0 +1,1 @@
+- Present strict error behaviour first throughout the builtin reference and label legacy fallback values as `EIGS_STRICT=0` behaviour.

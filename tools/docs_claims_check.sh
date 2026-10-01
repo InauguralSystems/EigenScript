@@ -328,6 +328,20 @@ def changelog_version():
     print('  VERSION → CHANGELOG: examined 1')
 
 
+def strict_default_wording():
+    """Keep the builtin reference from presenting strict mode as opt-in."""
+    file = Path('docs/BUILTINS.md')
+    examined = 0
+    for lineno, line in enumerate(file.read_text().splitlines(), 1):
+        if 'EIGS_STRICT=1' in line:
+            red(f'{file}:{lineno}: EIGS_STRICT=1 presents strict mode as opt-in; '
+                'state the default first and the EIGS_STRICT=0 fallback second (#1396)')
+        examined += 1
+    print(f'  STRICT DEFAULT WORDING: examined {examined} line(s)')
+    if examined == 0:
+        red('STRICT DEFAULT WORDING examined 0 lines')
+
+
 def selftest():
     root = Path.cwd()
     index = run('git', '-c', 'safe.directory=*', 'ls-files', '--stage')
@@ -385,6 +399,9 @@ def selftest():
                 ('name', 'README.md', '\n`no_such_1275 of null`\n', 'no_such_1275'),
                 ('count', 'docs/ARCHITECTURE.md', '\nThe 77\n`lib/` modules and a 47-widget toolkit.\n',
                  'hand-typed count "77 `lib/` modules"'),
+                ('strict-default', 'docs/BUILTINS.md',
+                 '\nA bad argument answers `0`; under `EIGS_STRICT=1` it raises.\n',
+                 'EIGS_STRICT=1 presents strict mode as opt-in'),
             ]:
                 p = tree / file
                 original = p.read_text()
@@ -414,8 +431,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 8 case(s) run, {passed} passed, {8-passed} failed')
-            return 0 if passed == 8 else 1
+            print(f'SELFTEST: 9 case(s) run, {passed} passed, {9-passed} failed')
+            return 0 if passed == 9 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
@@ -443,6 +460,7 @@ def main():
     stdlib_headings()
     changelog_version()
     derived_counts()
+    strict_default_wording()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):
         if counts[kind] == 0:
