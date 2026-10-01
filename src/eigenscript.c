@@ -4185,6 +4185,23 @@ static int gc_env_is_node(Env *e) {
         GC_EDGE_TABLE(GC_EDGE_WALK, CHILD_OBJ, CHILD_KIND, BODY)              \
     } while (0)
 
+/* Traversal work includes the node and every slot the walker tests, even
+ * leaves and duplicate references. Derive it from the ownership table so
+ * budgeting cannot drift from traversal. No extra child walk is needed. */
+#define GC_EDGE_WORK(GUARD, COUNT, CHILD, CHILD_KIND, IS_NODE, CLEAR,         \
+                     _x1, _x2, _x3)                                         \
+    if (GUARD) work += (uint64_t)(COUNT);
+
+static uint64_t gc_node_work(void *obj, int kind) {
+    int _k = kind;
+    Env *_e = (Env *)obj;
+    EigsChunk *_c = (EigsChunk *)obj;
+    Value *_v = (Value *)obj;
+    uint64_t work = 1;
+    GC_EDGE_TABLE(GC_EDGE_WORK, 0, 0, 0)
+    return work;
+}
+
 /* Clear every outgoing edge of a garbage node (exactly the edges
  * GC_EDGE_TABLE lists, leaf refs included) so the cycle is broken; the
  * node itself stays allocated (pinned) until the unpin pass. */
@@ -4223,15 +4240,16 @@ static void gc_clear_node(void *obj, int kind) {
  * to grow by a fraction of the last universe before the next collection
  * makes the amortised scan cost O(1) per capture event; when the heap is
  * mostly captured envs (last universe ~ live) this is the old 2x rule. */
-/* #1096/#1442, the possible-root side: a large live reachable graph makes a
- * collection expensive, so wait for a comparable number of candidates before
- * walking it again. Garbage cleared by this collection is not part of the
- * next walk's cost. Re-arming from the old universe instead made a short-lived
- * list loop after a live heap accumulate ~8200 candidates per collection,
- * even though only ~5 nodes survived each walk. Keep the fixed floor so small
- * collections still amortise their setup cost. */
-static int gc_val_next_threshold(int survived) {
-    long t = survived;
+/* #1096/#1442, the possible-root side: budget surviving traversal WORK,
+ * not just nodes. A dense live graph has many slots per node; a node-only
+ * budget repeatedly rescans its edges during short-lived task churn. Count
+ * one unit per surviving node plus each owned slot tested by its walker
+ * (including leaves). Garbage contributes nothing to the next walk's cost,
+ * so garbage-heavy collections return to the floor rather than accumulating
+ * ~8200 candidates when only ~5 nodes survive. The floor amortises setup;
+ * the cap bounds the candidate buffer. Use wide arithmetic before clamping. */
+static int gc_val_next_threshold(uint64_t work) {
+    uint64_t t = work;
     if (t < GC_VAL_THRESHOLD) t = GC_VAL_THRESHOLD;
     if (t > 100000000L) t = 100000000L;
     return (int)t;
@@ -4299,19 +4317,26 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     if (bad) {
         if (eigs_env_flag("EIGS_GC_DEBUG"))
             fprintf(stderr, "[gc] accounting mismatch — collection aborted\n");
+        /* The graph is unchanged: recover its discovery work only on abort,
+         * so successful collections never budget garbage they will discard. */
+        uint64_t discovery_work = 0;
+        for (int n = 0; n < u.count; n++)
+            discovery_work += gc_node_work(u.objs[n], u.kind[n]);
         free(stack);
         free(u.table); free(u.objs); free(u.kind);
         free(u.internal); free(u.pinned); free(u.mark);
         free(u.has_node_children);
         g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
-        g_gc_val_threshold = gc_val_next_threshold(u.count);
+        g_gc_val_threshold = gc_val_next_threshold(discovery_work);
         g_in_gc = 0;
         return;
     }
 
     /* 4. Mark everything reachable from the roots within U. */
+    uint64_t survivor_work = 0;
     while (sp > 0) {
         int n = stack[--sp];
+        survivor_work += gc_node_work(u.objs[n], u.kind[n]);
         if (!u.has_node_children[n]) continue;
         GC_FOR_EACH_CHILD(&u, n, child, child_kind, {
             (void)child_kind;
@@ -4352,7 +4377,7 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     free(u.internal); free(u.pinned); free(u.mark);
     free(u.has_node_children);
     g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
-    g_gc_val_threshold = gc_val_next_threshold(u.count - garbage);
+    g_gc_val_threshold = gc_val_next_threshold(survivor_work);
     g_in_gc = 0;
 }
 
