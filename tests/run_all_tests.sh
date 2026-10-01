@@ -2627,8 +2627,10 @@ echo "[42c/47] Numeric Guard"
 NG_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
 NF_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_buffer_nonfinite_read.eigs 2>&1); NF_OUTPUT_RC=$?
 NF_EXPECTED=$(cat ../tests/test_buffer_nonfinite_read.out)
+NF_AOT_OUTPUT=$(EIGS="$PWD/eigenscript" ../tests/test_buffer_nonfinite_read_aot.sh 2>&1); NF_AOT_RC=$?
 if rc_ok "$NG_OUTPUT_RC" "$NG_OUTPUT" && echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed" && \
-   rc_ok "$NF_OUTPUT_RC" "$NF_OUTPUT" && [ "$NF_OUTPUT" = "$NF_EXPECTED" ]; then
+   rc_ok "$NF_OUTPUT_RC" "$NF_OUTPUT" && [ "$NF_OUTPUT" = "$NF_EXPECTED" ] && \
+   [ "$NF_AOT_RC" -eq 0 ]; then
     TOTAL=$((TOTAL + 19))
     PASS=$((PASS + 19))
     echo "  PASS: all 19 numeric-guard checks"
@@ -2640,6 +2642,10 @@ else
     if [ "$NF_OUTPUT" != "$NF_EXPECTED" ]; then
         echo "  non-finite VM/AOT oracle mismatch"
         diff -u ../tests/test_buffer_nonfinite_read.out <(printf '%s\n' "$NF_OUTPUT") || true
+    fi
+    if [ "$NF_AOT_RC" -ne 0 ]; then
+        echo "  non-finite ouroboros AOT parity failed"
+        echo "$NF_AOT_OUTPUT" | tail -10
     fi
 fi
 echo ""

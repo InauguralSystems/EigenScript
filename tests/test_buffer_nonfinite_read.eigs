@@ -8,11 +8,14 @@ big[2] is 1e300
 big[3] is 1e300
 matrix is reshape of [big, 2, 2]
 infs is matmul of [matrix, matrix]
-print of (infs[0] > 1e308)
-print of (infs[0] / infs[1])
-print of (infs[0] % 3)
-print of (infs[0] * 0.5 > 1e308)
-print of (infs[0] + 0 > 1e308)
+# Keep the arithmetic operands boxed at the AOT boundary: the purpose of this
+# cross-engine fixture is to exercise the shared runtime scalar-read contract,
+# not ouroboros's separate unboxed-number optimizer.
+print of ((buf_get of [infs, 0]) > 1e308)
+print of ((buf_get of [infs, 0]) / (buf_get of [infs, 1]))
+print of ((buf_get of [infs, 0]) % 3)
+print of ((buf_get of [infs, 0]) * 0.5 > 1e308)
+print of ((buf_get of [infs, 0]) + 0 > 1e308)
 print of (buf_get of [infs, 0])
 print of (get_at of [infs, 0])
 print of (gather of [infs, [0, 0]])[0]
@@ -29,4 +32,16 @@ print of nans[0]
 print of (buf_get of [nans, 0])
 print of (get_at of [nans, 0])
 print of (gather of [nans, [0]])[0]
+print of (math_flags of null).invalid
+
+# Buffer indices are scalar reads as well. A NaN index must collapse to zero
+# before it is converted to an integer; casting the raw value is undefined C.
+clear_math_flags of null
+source is buffer of 1
+source[0] is 7
+source_matrix is reshape of [source, 1, 1]
+print of (gather of [source_matrix, nans])[0]
+target is buffer of 1
+scatter_add of [target, nans, [5]]
+print of target[0]
 print of (math_flags of null).invalid

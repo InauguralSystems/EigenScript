@@ -911,7 +911,11 @@ Value* builtin_tensor_scatter_add(Value *arg) {
                 }
                 di = iv->data.num;
             } else {
-                di = indices->data.buffer.data[i];
+                /* #1417: an index is a scalar read too.  Guard before the
+                 * double-to-int conversion: casting a stored NaN is undefined
+                 * behavior, and must follow the same strict/lenient rule as
+                 * [] and the buffer accessors. */
+                di = buffer_read_num(indices, i);
             }
             if (values->type == VAL_LIST) {
                 Value *vv = values->data.list.items[i];
@@ -1266,7 +1270,9 @@ static int flat_index_at(Value *v, int i) {
     if (v->type == VAL_LIST)
         return (v->data.list.items[i]->type == VAL_NUM)
              ? (int)v->data.list.items[i]->data.num : -1;
-    return (int)v->data.buffer.data[i];
+    /* #1417: guard while the value is still a double.  In particular, never
+     * feed a raw NaN to the undefined double-to-int conversion. */
+    return (int)buffer_read_num(v, i);
 }
 /* #973: a non-numeric element of an index LIST has no index, and reporting it
  * as "index -1 out of range" would name the wrong fault. Buffers hold doubles,
