@@ -3,26 +3,35 @@
 from pathlib import Path
 import re, subprocess, sys, tempfile, shutil
 ROOT = Path(__file__).resolve().parents[1]
-TERMS = re.compile(r"\b(must|must not|always|never|requires?|raises?|returns?|is undefined|is a parse error)\b", re.I)
 REMOVED = ("LANGUAGE" + "_CONTRACT.md", "GRAM" + "MAR.md")
 
-def normalized_lines(path):
+def normalized_statements(path):
+    """Return substantive Markdown statements, including short rules and tables."""
     out = {}
+    fenced = False
     for no, raw in enumerate(path.read_text(errors="replace").splitlines(), 1):
-        text = re.sub(r"[`*_]", "", raw.strip())
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced or not stripped or stripped.startswith("#"):
+            continue
+        text = re.sub(r"[`*_]", "", stripped)
+        # Table layout is not part of a rule's identity, but every cell is.
+        text = " | ".join(cell.strip() for cell in text.strip("|").split("|"))
         text = re.sub(r"\s+", " ", text)
-        if len(text) >= 45 and TERMS.search(text) and not text.startswith(("#", "|")):
+        if len(text) >= 12 and not re.fullmatch(r"[-: |]+", text):
             out.setdefault(text.casefold(), []).append(no)
     return out
 
 def check(root, planted=False):
     errors=[]
     spec=root/'docs/SPEC.md'
-    identities=normalized_lines(spec)
+    identities=normalized_statements(spec)
     for doc in sorted((root/'docs').glob('*.md')):
         if doc.name in {'SPEC.md', 'SPEC_CONSOLIDATION_MAP.md'}:
             continue
-        for text, lines in normalized_lines(doc).items():
+        for text, lines in normalized_statements(doc).items():
             if text in identities:
                 errors.append(f"duplicated normative rule: {doc.relative_to(root)}:{lines[0]} matches SPEC.md:{identities[text][0]}")
     if not planted:
@@ -37,16 +46,22 @@ def selftest():
     errs=check(ROOT)
     if errs:
         return errs
-    candidates=normalized_lines(ROOT/'docs/SPEC.md')
-    chosen=next((line for line in candidates if all(line not in normalized_lines(p) for p in (ROOT/'docs').glob('*.md') if p.name not in {'SPEC.md','SPEC_CONSOLIDATION_MAP.md'})), None)
-    if not chosen: return ['self-test could not find a unique normative identity']
+    candidates=normalized_statements(ROOT/'docs/SPEC.md')
+    other_docs = [p for p in (ROOT/'docs').glob('*.md') if p.name not in {'SPEC.md','SPEC_CONSOLIDATION_MAP.md'}]
+    chosen=next((line for line in candidates if all(line not in normalized_statements(p) for p in other_docs)), None)
+    if not chosen: return ['self-test could not find a unique statement identity']
     with tempfile.TemporaryDirectory(prefix='spec-authority-') as td:
         root=Path(td); (root/'docs').mkdir()
         shutil.copy(ROOT/'docs/SPEC.md', root/'docs/SPEC.md')
-        (root/'docs/SYNTAX.md').write_text('# planted duplicate\n\n'+chosen+'\n')
-        planted=check(root, planted=True)
-        if not any('duplicated normative rule' in e for e in planted):
-            return ['self-test planted a copied rule but the gate stayed green']
+        probes = [chosen, 'Functions, builtins: by identity.', '| Rule | Calls use identity |']
+        for probe in probes:
+            (root/'docs/SYNTAX.md').write_text('# planted duplicate\n\n'+probe+'\n')
+            # Add the short/table probes to the temporary authority as well.
+            with (root/'docs/SPEC.md').open('a') as authority:
+                authority.write('\n'+probe+'\n')
+            planted=check(root, planted=True)
+            if not any('duplicated normative rule' in e for e in planted):
+                return [f'self-test planted an undetected duplicate: {probe}']
     return []
 
 errors = selftest() if '--self-test' in sys.argv else check(ROOT)

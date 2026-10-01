@@ -12,23 +12,23 @@ never by keeping both wordings.
 
 | former heading | one destination | resolution |
 |---|---|---|
-| Equality | [Language contract details: Equality](SPEC.md#equality----) | details |
+| Equality | [Booleans, comparison, and logic](SPEC.md#booleans-comparison-and-logic) | merged into the existing construct section |
 | Ordering | [Ordering](SPEC.md#ordering-----) | details |
 | Coercion | [Coercion](SPEC.md#coercion) | details |
 | Errors | [Errors](SPEC.md#errors) | details; the strict-default wording supersedes the old division warning |
-| Modules | [Modules](SPEC.md#modules) | existing construct section plus details |
+| Modules | [Modules](SPEC.md#modules) | merged into the existing construct section |
 | Numbers | [Numbers and arithmetic](SPEC.md#numbers-and-arithmetic) | existing section plus details; strict mode remains the current rule |
-| Strings | [Strings](SPEC.md#strings) | existing section plus byte-model details |
+| Strings | [Strings](SPEC.md#strings) | merged, including byte-model details |
 | Bitwise | [Bitwise operators](SPEC.md#bitwise-operators) | existing section plus details |
 | Truthiness | [Truthiness](SPEC.md#truthiness) | details |
 | Scope & binding | [Scope & binding](SPEC.md#scope--binding) | details; current loop-binder behavior supersedes older guide prose |
 | Evaluation | [Evaluation](SPEC.md#evaluation) | details |
 | Mutability & aliasing | [Mutability & aliasing](SPEC.md#mutability--aliasing) | details |
-| Function calls & argument unpacking | [Function calls & argument unpacking](SPEC.md#function-calls--argument-unpacking) | details; #405/#733 decisions retained |
+| Function calls & argument unpacking | [Functions](SPEC.md#functions) | merged; #405/#733 decisions retained |
 | Default parameter values | [Default parameter values](SPEC.md#default-parameter-values-0130) | details |
 | Destructuring assignment | [Destructuring assignment](SPEC.md#destructuring-assignment-0130) | details |
 | Streaming subprocess I/O | [Streaming subprocess I/O](SPEC.md#streaming-subprocess-io-0130) | details |
-| Operator precedence | [Operator precedence](SPEC.md#operator-precedence) | details and grammar table share this destination |
+| Operator precedence | [Complete formal grammar: Expressions](SPEC.md#expressions) | represented once by the ordered grammar productions |
 | Indexing | [Indexing](SPEC.md#indexing----) | details |
 | Statistics convention | [Statistics convention](SPEC.md#statistics-convention-library) | details |
 | How to use this document | [SPEC introduction](SPEC.md#eigenscript-language-specification) | obsolete workflow removed; new rules go to SPEC directly |
@@ -39,7 +39,7 @@ Every statement under Notation; Lexical Grammar (Tokens, Keywords,
 Interrogatives, Temporal Interrogatives, Reserved Observer Forms, Observer
 Predicates, Operators and Punctuation, Whitespace Rules); Syntactic Grammar
 (Program, Statements, Expressions, Postfix Operators, Literals,
-Interrogatives and Predicates); Operator Precedence Table; and Semantic Notes
+Interrogatives and Predicates); expression precedence productions; and Semantic Notes
 moved to [Complete formal grammar](SPEC.md#complete-formal-grammar). Semantic
 notes that overlap construct prose point to that construct's existing section;
 the grammar has one retained production, not a separately included appendix.

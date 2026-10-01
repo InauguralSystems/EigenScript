@@ -590,11 +590,9 @@ stops at the module boundary, preserving the importer's bindings. Top-level `ret
 load_file yields its value, import finishes its namespace, and main discards
 its value.
 
-There is no function-scope exception (#1105): a binder with no prior binding
-inside a function is loop-scoped like any other, so reading it after the loop
-raises `undefined variable` on every road (Python, by contrast, leaks the
-loop variable into the enclosing function). A pre-existing parameter, `local`
-or module binding is restored after the loop.
+Unlike Python, EigenScript does not leak a fresh loop binder into its enclosing
+function. The exact restoration and post-loop binding rules are specified in
+[SPEC.md](SPEC.md#modules).
 
 ```eigenscript
 define probe() as:

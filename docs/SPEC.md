@@ -403,6 +403,12 @@ print of (str of 5)
 mine
 ```
 
+String literals recognize `\n`, `\t`, `\r`, `\\`, and `\"`. For any
+other escape, the backslash is dropped, so `\{` and `\}` produce literal
+braces in f-strings. There are no `\0`, `\xNN`, or `\u{…}` escapes; source
+therefore cannot express a NUL or arbitrary byte. A NUL received through a
+file or buffer would truncate the C-terminated string at that byte.
+
 Convert explicitly with `str of n` and `num of s`. `num of` accepts
 decimal and hex-integer strings (hex converts identically on every
 profile and stops at the first non-hex character); a string with no
@@ -480,6 +486,11 @@ print of (not 0)
 1
 1
 ```
+
+Equality compares numbers, strings, and `null` by value; lists and dicts
+structurally and recursively; buffers and text-builders by contents; and
+functions and builtins by identity. Values of different types are never equal,
+and comparing them for equality is not an error.
 
 Equality on lists and dicts is structural (deep):
 
@@ -2413,22 +2424,6 @@ generic body; the error message goes to the server's stderr only (#1140).
 The guarantees below complete the construct-oriented sections above. A status
 line records implementation evidence; it does not create a second authority.
 
-### Equality — `==` / `!=`
-
-**Promise:** Structural for collections, by-value for scalars, by-identity
-for functions. No cross-type coercion: operands of different types are
-never equal (and it is never an error to compare them).
-
-- Numbers, strings, null: by value (`3 == 3.0`, `"a" == "a"`).
-- Lists: equal iff same length and elementwise-equal (recursive).
-- Dicts: equal iff same keys with equal values (order-independent).
-- Buffers / text-builders: by contents.
-- Functions, builtins: by identity.
-- Mixed types: `"3" == 3` is `false`, never an error.
-
-**Status:** Enforced — `tests/test_equality.eigs`, `values_equal()` in
-`eigenscript.c`.
-
 ### Ordering — `<` `>` `<=` `>=`
 
 **Promise:** Both operands must be the same comparable type — number/number
@@ -2470,67 +2465,6 @@ supersedes it.
 `tests/test_trycatch.eigs` (incl. structured-throw checks),
 `examples/errors/uncaught_with_trace.eigs`. (Before #406, a built-in error
 bound only its message string.)
-
-### Modules
-
-**Promise:** `import name` executes the module once and binds its
-top-level definitions as a **dict named `name`** — nothing enters the
-importing scope besides that one binding, and module names starting
-with `_` are private (omitted from the dict). That dict is a **live
-view** of the module's bindings, not a snapshot (#1057): `name.x`
-reads the module's current binding and `name.x is v` writes it, for a
-number or string exactly as for a dict or list. Values read *out* of a
-namespace are ordinary values, not aliases. Boxing module state in a
-container is therefore a style choice, not a correctness requirement. Import tries `name.eigs`
-before `lib/name.eigs`, warns on a project/stdlib collision, and chooses
-the project file. `load_file of "path.eigs"` is the
-non-namespaced form: it executes the file directly in the current
-scope. **Module functions never write the loader's bindings** (issue
-#373): a module function's bare assignment to a name that isn't its
-own local/captured/module-top-level state creates a fresh local — it
-does not depend on what existed in the loader's scope at load time
-(it used to: a global declared before the load was silently
-write-through, one declared after was not). Reads and calls resolve
-dynamically across the boundary; share mutable state via dict/list
-fields. A **parse error** in a loaded file (via `import`, `load_file`, or
-`eval`) raises a catchable runtime error rather than silently executing a
-partial AST — consistent with the **Errors** promise.
-
-**One file, three roads (main / import / load_file, #1056):**
-
-- Resolution belongs to the file containing the call, including nested loads
-  and `eval` inside functions, even when called during another module's
-  import, load, or `eigs_eval_file`. The defining file remains the base. The shared chain is: absolute
-  path as-is; containing directory; the `eigs_modules` walk; project root
-  (nearest ancestor, including that directory, with `eigs.json`); executable
-  and HOME stdlib locations. There is no process cwd search or one-parent
-  fallback. The REPL (including piped input) and the embed API without a file
-  path use their working directory as the containing directory. The full ordered
-  stdlib chain and error contract are in [SPEC, Modules](SPEC.md#modules).
-- A `for` binder is loop-scoped everywhere and never writes a same-named
-  outer binding. A `for` body's plain `is` updates the nearest existing
-  binding, including a loop-local; otherwise it creates in the enclosing scope
-  like `if`, `loop while`, and `try`, on every road. An imported module's
-  search stops at its boundary, so fresh names appear in its namespace and
-  never write through to the importer. No function write boundary changes.
-- A top-level `return value` ends the current file and yields its value,
-  skipping later statements. `load_file` returns it to the caller, who
-  continues; import finishes the module; the main program discards the value
-  and exits successfully.
-
-There is no function-scope exception (#1105): a binder with no prior binding
-inside a function is loop-scoped like any other, and reading it after the loop
-raises `undefined variable` on every road. A pre-existing parameter, `local`
-or module binding is restored. See the scope notes below.
-
-**Status:** Enforced — `tools/road_diff.py` and `tests/roads/`, `tests/test_import.eigs`,
-`tests/test_import_errors.eigs` (parse-error surfacing for `import` /
-`load_file` / `eval`) (stdlib + user modules,
-namespacing, `_` privacy, missing-module error),
-`tests/test_module_live_view.eigs` (#1057: live-view reads and writes,
-container state unchanged, privacy, enumeration, module cache, nested
-imports, load_file/eval roads unchanged), docs/SPEC.md Modules
-examples (executed by the suite).
 
 ### Numbers
 
@@ -2594,33 +2528,6 @@ examples (executed by the suite).
 `tests/test_numeric_guard.eigs` (NG20–NG30 cover the flags),
 `tests/test_json_roundtrip.eigs`.
 
-### Strings
-
-**Promise:** A string is a sequence of **bytes**, not Unicode codepoints.
-- `len` returns the **byte** count (`len of "café"` is 5, not 4).
-- Indexing `s[i]` returns the one-byte string at byte offset `i`; all string
-  builtins (`split`, `index_of`, `substr`, `contains`, `upper`/`lower`, …)
-  operate bytewise. A multi-byte UTF-8 sequence is therefore split by
-  byte-offset operations — this is the documented consequence of the byte
-  model, not a bug.
-- Strings are immutable; comparison (`==`, `<`) is bytewise.
-- String literals recognize the escapes `\n \t \r \\ \"`; any other `\x`
-  yields the literal character `x` (the backslash is dropped) — this is how
-  `\{` and `\}` produce literal braces in f-strings. There is no `\0`,
-  `\xNN`, or `\u{…}` escape, so a string cannot embed a NUL or an arbitrary
-  byte from source (only the raw bytes present in the source file flow
-  through). An embedded NUL, if one ever arrived from file/buffer input,
-  would truncate the string at that byte.
-
-Unicode-correct length, indexing, and iteration are intentionally **out of
-core scope**: they are an O(n) walk or a per-string index cache, a poor trade
-for the runtime's targets. They may be added later as **opt-in helpers**
-(e.g. `utf8_len`, `utf8_chars`) — purely additive, so this promise does not
-foreclose them.
-
-**Status:** Enforced — `builtin_len` (byte count) and the string index paths
-in `builtins.c` / `vm.c`.
-
 ### Bitwise — `&` `|` `^` `<<` `>>` `~`
 
 **Promise:** Bitwise operators (and the `bit_and` / `bit_or` / `bit_xor` /
@@ -2683,59 +2590,6 @@ also changes `a`. Numbers and strings are immutable, so sharing them is
 unobservable. To get an independent copy, copy explicitly.
 
 **Status:** Enforced (behavior) — `tests/test_call_semantics.eigs`.
-
-### Function calls & argument unpacking
-
-**Promise (#405):** brackets after `of` are an **argument list**;
-parentheses are **one argument**. A bare literal list `[...]` after `of`
-is the call's argument list at *every* count — its elements bind to the
-callee's parameters in order:
-- `f of []` — **zero** arguments (every default fires).
-- `f of [x]` — **one** argument: the *element* `x`, not the list `[x]`.
-  So `one of [7]` binds `a = 7`.
-- `f of [a, b]` — **two** arguments. So `momentum of [2, 3]` passes
-  `m = 2, v = 3`.
-- **Extra elements raise (#974):** on a callee with 2+ parameters, passing
-  more elements than it has parameters is a runtime error, not a silent
-  truncation — `two of [1, 2, 99]` against `define two(a, b)` raises a
-  catchable `value`-kind error at the call site (`call passes 3 arguments
-  but the callee takes 2`), in the interpreter and the JIT alike, and
-  across module boundaries. Lint `W022` flags the same-file case earlier,
-  at `--lint` time.
-- Parameters with no matching element take their default, else `null`.
-  Under-arity stays silent; #974 changed the over-arity half only.
-- **Arity-1 carve-out:** the elements-bind-in-order rule above assumes
-  a callee with 2+ parameters. A 1-parameter, non-defaulted callee has
-  only one slot, so a 2+-element list doesn't distribute into it — and it
-  neither raises nor binds just the first element, because the over-arity
-  rule above is scoped to callees with 2+ parameters. The whole list
-  re-collects and binds to that one parameter: for `define one(a)`,
-  `one of [3, 4]` binds
-  `a = [3, 4]`, not `a = 3`. This is what keeps `len of [1, 2]`
-  returning `2` and `print of [1, 2]` printing the list. The `f of []`
-  half of this same exception — an empty list still binds `a = []`
-  rather than firing a zero-arg default — is covered under Default
-  parameter values below.
-- **Parentheses always mean one argument** (issue #355). To pass a literal
-  list *whole*, parenthesise it: `f of ([a, b])` binds the list `[a, b]`
-  to the first parameter, and `f of ([7])` binds the one-element list
-  `[7]`. `f of (x)` is likewise always a one-argument call binding `x` to
-  the first parameter (later params take defaults or `null`); `f of x` is
-  the same one-argument form when `x` isn't a bare list literal.
-- A list held in a **variable** never spreads: `xs is [1,2,3]; f of xs`
-  binds the whole list to the first parameter (only a *literal* bracket at
-  the call site is an argument list). So `mean of [1,2,3,4]` passes the
-  four elements to a 4-param `mean`, while `mean of xs` passes the list
-  whole — pass `(...)` or a variable when you mean "one list argument."
-
-Lint **W017** flags the bare 1-element form `f of [x]` as ambiguous-looking
-(pre-#405 it bound the list; now it binds the element) — write `f of (x)`
-for one scalar arg or `f of ([x])` for one list arg.
-
-**Status:** Enforced — `tests/test_call_semantics.eigs`. (This is the #405
-model; before #405 a length-1 literal list bound as the whole list and
-`f of []`/`f of [x, y]` were the only spreading forms — see the CHANGELOG
-for #405/#153.)
 
 ### Default parameter values (0.13.0)
 
@@ -2861,37 +2715,6 @@ fds and `proc_wait` the pid to avoid zombies and fd leaks. A future
 revision may add a `with`-style scoped form; v1 stays explicit.
 
 **Status:** Enforced — `tests/test_proc_stream.eigs`.
-
-### Operator precedence
-
-From lowest (binds loosest) to highest (binds tightest):
-
-| Level | Operators | Notes |
-|------:|-----------|-------|
-| 1 | `\|>` | pipe |
-| 2 | `or` | |
-| 3 | `and` | |
-| 4 | `==` `!=` `<` `>` `<=` `>=` | comparison |
-| 5 | `\|` | bitwise OR |
-| 6 | `^` | bitwise XOR |
-| 7 | `&` | bitwise AND |
-| 8 | `<<` `>>` | shift |
-| 9 | `+` `-` | |
-| 10 | `*` `/` `%` | |
-| 11 | `-` `not` `~` | unary (prefix) |
-| 12 | `of` | function application |
-| 13 | `[]` `.` `( )` | indexing, field access, grouping |
-
-Two consequences worth knowing:
-- **Bitwise binds tighter than comparison** (unlike C). `x & mask == 0`
-  parses as `(x & mask) == 0` — the intended reading, avoiding C's classic
-  footgun.
-- **`of` binds tighter than arithmetic.** `len of xs - 1` is
-  `(len of xs) - 1`; `sqrt of x + 1` is `(sqrt of x) + 1`. Parenthesize
-  the argument when it's an expression: `sqrt of (x + 1)`.
-
-**Status:** Enforced (parser). Binary operators are left-associative;
-unary and `of` are right-associative.
 
 ### Indexing — `[ ]`
 
@@ -3214,7 +3037,9 @@ primary     = NUM
             | lambda
             | '(' expression ')'
 
-lambda      = '(' [ param_list ] ')' '=>' expression
+lambda      = '(' [ lambda_param_list ] ')' '=>' expression
+lambda_param_list = IDENT { ',' IDENT }
+            ; lambdas do not accept default parameter values
 ```
 
 #### Postfix Operators
@@ -3267,27 +3092,6 @@ before its most recent assignment; it requires a named binding, so only
 identifier operands are meaningful. Both temporal forms query the
 per-name assignment history (top-level bindings) and evaluate to `null`
 on a miss.
-
-### Operator Precedence Table
-
-From lowest to highest precedence:
-
-| Level | Operators | Associativity | Description |
-|-------|-----------|---------------|-------------|
-| 1 | `\|>` | Left | Pipe (desugars `a \|> b` to `b of a`) |
-| 2 | `or` | Left | Logical OR |
-| 3 | `and` | Left | Logical AND |
-| 4 | `==` `!=` `<` `>` `<=` `>=` | None | Comparison (non-chaining) |
-| 5 | `\|` | Left | Bitwise OR |
-| 6 | `^` | Left | Bitwise XOR |
-| 7 | `&` | Left | Bitwise AND |
-| 8 | `<<` `>>` | Left | Shifts |
-| 9 | `+` `-` | Left | Addition, subtraction |
-| 10 | `*` `/` `%` | Left | Multiplication, division, modulo |
-| 11 | `-` (unary) `not` `~` | Right | Negation, logical NOT, bitwise NOT |
-| 12 | `of` | Right | Function call / observation (`f of g of x` = `f of (g of x)`) |
-| 13 | `[i]` `[a:b]` `.key` | Left | Index, slice, dot access |
-| 14 | `=>` | — | Lambda (inside parenthesized param list) |
 
 ### Semantic Notes
 

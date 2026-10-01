@@ -32,7 +32,7 @@ together. They share the same block and scope model, detailed under
 The main path is [functions](SPEC.md#functions), followed by
 [closures and lambdas](SPEC.md#closures-and-lambdas) and
 [the pipe operator](SPEC.md#the-pipe-operator). Exact call collection, defaults,
-and destructuring are indexed from [function calls and argument unpacking](SPEC.md#function-calls--argument-unpacking).
+and destructuring are indexed from [function calling rules](SPEC.md#functions).
 
 ## Split a program into files
 
