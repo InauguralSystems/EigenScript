@@ -2465,6 +2465,14 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
          * returned result. */
         if (g_sandbox_intern_scope != 0)
             interned = env_intern_scope_promote(dict, interned);
+        else
+            /* A plain dictionary can already be reachable from a state env
+             * when a later attachment adds this key (`d.k is v`).  Unlike a
+             * new global binding, that mutation never passes through an env
+             * insertion, so publish the table here as well.  The dictionary
+             * may then outlive this attachment and continue borrowing the
+             * interned key until state teardown. */
+            env_intern_table_publish(eigs_current->intern_tbl);
     }
     dict->data.dict.keys[dict->data.dict.count] = interned;
     Value *promoted = promote_if_arena(val);

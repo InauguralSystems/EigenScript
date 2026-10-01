@@ -67,7 +67,7 @@ static void check(int ok, const char *what) {
  * the number: bumping a population pin to clear its own red is how a gate
  * launders the loss it exists to report (mechanical-gates §4, §106). The
  * number only ever moves for a check you just wrote. */
-#define EC_EXPECTED_CHECKS 95
+#define EC_EXPECTED_CHECKS 97
 
 /* Rounds are deliberately modest: these assertions fire on the RATIO of two
  * states' settings, not on how long they are held, so a long spin buys nothing
@@ -2004,7 +2004,7 @@ static void *reattach_reader(void *p) {
     if (!eigs_thread_attach(a->st)) return NULL;
     EigsValue *s = eigs_eval_string("str of (1 + 2)");
     EigsValue *k = eigs_eval_string(
-        "(keys of d) == [\"pre\", \"from_t1\"]");
+        "(keys of d) == [\"pre\", \"from_t1\", \"from_t2\"]");
     a->ok = s && eigs_value_as_string(s) &&
             strcmp(eigs_value_as_string(s), "3") == 0 &&
             k && eigs_value_as_num(k) == 1.0;
@@ -2014,21 +2014,36 @@ static void *reattach_reader(void *p) {
     return NULL;
 }
 
+static void *reattach_mutator(void *p) {
+    ReattachArg *a = (ReattachArg *)p;
+    if (!eigs_thread_attach(a->st)) return NULL;
+    EigsValue *v = eigs_eval_string("d.from_t2 is 42");
+    a->ok = v && eigs_value_as_num(v) == 42.0;
+    if (v) eigs_value_release(v);
+    eigs_thread_detach();
+    return NULL;
+}
+
 static void test_host_detach_reattach_names(void) {
     EigsState *st = eigs_state_new();
     check(st != NULL, "host-reattach: state created");
     if (!st) return;
     ReattachArg a = { st, 0 };
-    pthread_t t1, t2;
+    pthread_t t1, t2, t3;
     int c1 = pthread_create(&t1, NULL, reattach_writer, &a) == 0;
     check(c1, "host-reattach: writer OS thread created");
     if (c1) pthread_join(t1, NULL);
     check(a.ok, "host-reattach: writer initialized globals before detach");
     a.ok = 0;
-    int c2 = pthread_create(&t2, NULL, reattach_reader, &a) == 0;
-    check(c2, "host-reattach: reader OS thread created");
+    int c2 = pthread_create(&t2, NULL, reattach_mutator, &a) == 0;
+    check(c2, "host-reattach: mutator OS thread created");
     if (c2) pthread_join(t2, NULL);
-    check(a.ok, "host-reattach: second OS thread reads builtin and dict names");
+    check(a.ok, "host-reattach: later attachment adds a dictionary key");
+    a.ok = 0;
+    int c3 = pthread_create(&t3, NULL, reattach_reader, &a) == 0;
+    check(c3, "host-reattach: reader OS thread created");
+    if (c3) pthread_join(t3, NULL);
+    check(a.ok, "host-reattach: third OS thread reads builtin and dict names");
 
     size_t retained = st->intern_table_count;
     for (int i = 0; i < 128; i++) {
@@ -2053,7 +2068,7 @@ static void test_host_detach_reattach_names(void) {
           "host-reattach: same OS thread can attach after both detach");
     EigsValue *same_s = eigs_eval_string("str of (1 + 2)");
     EigsValue *same_k = eigs_eval_string(
-        "(keys of d) == [\"pre\", \"from_t1\"]");
+        "(keys of d) == [\"pre\", \"from_t1\", \"from_t2\"]");
     check(same_s && eigs_value_as_string(same_s) &&
           strcmp(eigs_value_as_string(same_s), "3") == 0,
           "host-reattach: same-thread reattach reads builtin value");
