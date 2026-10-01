@@ -20,13 +20,17 @@
  * running chunk's provenance warrants. A compiler-produced chunk was scanned
  * for temporal queries and its names armed, so #827's armed-name filter is a
  * sound per-assign CPU saving there; a chunk assembled from a descriptor
- * (vm_run_bytecode / sandbox_run) was never scanned, so filtering it drops
- * assignments the chunk's own `prev of` / `at` reads then miss. Both callers
- * are already behind the `g_trace_hist` branch, so this costs the hot path
- * nothing. */
+ * (vm_run_bytecode / sandbox_run) was never scanned, so filtering it normally
+ * drops assignments the chunk's own `prev of` / `at` reads then miss. Sandbox
+ * descriptors are the exception: chunk_arm_temporal() has armed every name
+ * they can query, and filtering prevents unrelated attacker-chosen names from
+ * retaining values after the sandbox allocation budget has been restored.
+ * Both callers are already behind the `g_trace_hist` branch, so this costs the
+ * hot path nothing. */
 static inline void vm_trace_assign(const EigsChunk *chunk, const char *name,
                                    EigsSlot value) {
-    if (chunk->compiler_scanned) trace_assign_filtered(name, value);
+    if (chunk->compiler_scanned || g_sandbox_active)
+        trace_assign_filtered(name, value);
     else                         trace_assign(name, value);
 }
 

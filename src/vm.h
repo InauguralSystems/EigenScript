@@ -304,7 +304,9 @@ typedef struct EigsChunk {
      * armed-name filter in trace_assign_filtered — the filter's soundness
      * is exactly that scan. A chunk assembled from a descriptor
      * (vm_run_bytecode / sandbox_run) was never scanned, so its assignments
-     * go through the unfiltered trace_assign and record every name.
+     * normally go through the unfiltered trace_assign and record every name.
+     * sandbox_run is filtered separately after chunk_arm_temporal() arms the
+     * descriptor's queryable names, keeping unrelated values run-scoped.
      * Default 0 (unfiltered) is the conservative direction: forgetting to
      * stamp a compiler-produced chunk costs recording work, while wrongly
      * stamping an unscanned one is a silent wrong answer. */

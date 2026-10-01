@@ -4290,7 +4290,7 @@ echo ""
 # shipped in v0.35.1, and the suite stayed green because this producer class had
 # no coverage anywhere. The C-level twin (the AOT's exact shape) is in
 # src/embed_smoke.c, gated by `make embed-smoke` in CI.
-check_eigs_suite "temporal reads from a non-compiler producer (#830)" test_temporal_producers.eigs "All tests passed" 7
+check_eigs_suite "temporal reads from a non-compiler producer (#830)" test_temporal_producers.eigs "All tests passed" 9
 
 # [70f] #831 — the other half: a descriptor must turn recording ON itself.
 # [70e] proves reads work once recording is on, but its own source contains the
