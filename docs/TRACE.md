@@ -85,6 +85,14 @@ EIGS_REPLAY=u.tape <old>/eigenscript prog.eigs   # prints new.out
 The only output that follows the replaying binary is output that reads line
 identity: `what is x at N`, `e.line` and error headers.
 
+A binary operator whose right operand stamped a different line re-stamps the
+operator's own line just before the operation (#1425), so that a runtime error
+there reports the operator's line. On the tape an `L <operator line>` record
+comes before such an operator. When the operator is on its statement's first
+line, that record replaces the assignment's own re-stamp after the value, so
+only its position moves. Single-line expressions emit nothing extra, and a `+`
+that an f-string is lowered to is not re-stamped.
+
 ### Value serialization
 
 `N` records are written with full fidelity so they can be parsed back
