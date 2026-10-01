@@ -26,6 +26,18 @@ definition = re.search(r"void handle_table_drain\(EigsState \*st\) \{", BUILTINS
 if definition is None:
     fail("could not find handle_table_drain's definition")
 
+handle_enum = re.search(
+    r"typedef[ \t]+enum[ \t]*\{(?P<body>[^}]*)\}[ \t]*HandleType[ \t]*;",
+    HEADER,
+)
+if handle_enum is None:
+    fail("could not find the HandleType enum")
+
+handle_pattern = r"\bHANDLE_[A-Z][A-Z0-9_]*\b"
+handle_types = set(re.findall(handle_pattern, handle_enum.group("body")))
+if not handle_types:
+    fail("HandleType enum does not declare any handle kinds")
+
 start = definition.start()
 depth = 0
 end = None
@@ -40,9 +52,8 @@ for offset, char in enumerate(BUILTINS[definition.end() - 1 :], definition.end()
 if end is None:
     fail("could not find the end of handle_table_drain's definition")
 
-handle_pattern = r"\bHANDLE_(?:STORE|THREAD|CHANNEL|TASK|NET)\b"
-comment_types = set(re.findall(handle_pattern, declaration.group(1)))
-body_types = set(re.findall(handle_pattern, BUILTINS[start:end]))
+comment_types = set(re.findall(handle_pattern, declaration.group(1))) & handle_types
+body_types = set(re.findall(handle_pattern, BUILTINS[start:end])) & handle_types
 if comment_types != body_types:
     missing = sorted(body_types - comment_types)
     extra = sorted(comment_types - body_types)
