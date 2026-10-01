@@ -5668,6 +5668,16 @@ echo ""
 # (on x86-64) that thunks really compiled — a regression that quietly
 # disables the JIT must not let this section pass interpreted.
 echo "[82] JIT Fast Paths (checks + thunk gate + hot-dump gate)"
+JTAPE_OUTPUT=$(bash "$TESTS_DIR/../tools/jit_tape_diff.sh" 2>&1); JTAPE_RC=$?
+TOTAL=$((TOTAL + 1))
+if rc_ok "$JTAPE_RC" "$JTAPE_OUTPUT" && echo "$JTAPE_OUTPUT" | grep -qE '^jit_tape_diff: OK \([1-9][0-9]* programs'; then
+    PASS=$((PASS + 1))
+    echo "  PASS: JIT and OSR trace tapes match the interpreter corpus"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: JIT trace-tape differential (rc=$JTAPE_RC)"
+    printf '%s\n' "$JTAPE_OUTPUT"
+fi
 JPATH_OUTPUT=$(EIGS_JIT_STATS=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
 TOTAL=$((TOTAL + 23))
 if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then
