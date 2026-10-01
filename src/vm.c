@@ -3069,10 +3069,16 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_SLICE_GET] = &&lbl_SLICE_GET,
     };
     #define CHECK_ERROR() do { \
-        if (__builtin_expect(!g_exit_requested, 1)) { \
+        /* Keep the state-wide stop probe in the dispatch hot path, but do \
+         * not pay an out-of-line function call on every opcode.  The acquire \
+         * load is the complete fast path; only a published request needs the \
+         * helper to copy its associated status code. */ \
+        if (__builtin_expect(!g_exit_requested && \
+                __atomic_load_n(&eigs_current->state->exit_latched, \
+                                __ATOMIC_ACQUIRE), 0)) { \
             int _state_exit_code; \
-            if (__builtin_expect(eigs_state_exit_requested( \
-                                     eigs_current->state, &_state_exit_code), 0)) { \
+            if (eigs_state_exit_requested(eigs_current->state, \
+                                          &_state_exit_code)) { \
                 g_exit_code = _state_exit_code; \
                 g_exit_requested = 1; \
                 g_has_error = 1; \
