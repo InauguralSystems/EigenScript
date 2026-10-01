@@ -1487,6 +1487,11 @@ void* xmalloc(size_t size);
 void* xcalloc(size_t nmemb, size_t size);
 void* xrealloc(void *p, size_t size);
 char* xstrdup(const char *s);
+/* Measurement-only allocation accounting for #1319.  Defining free this way
+ * lets the candidate checked-allocation chokepoint observe matching releases;
+ * untracked pointers are passed through unchanged.  No limit is enforced. */
+void eigs_alloc_stats_free(void *p);
+#define free(p) eigs_alloc_stats_free(p)
 size_t safe_size_mul(size_t a, size_t b);
 void* xmalloc_array(size_t nmemb, size_t size);
 void* xcalloc_array(size_t nmemb, size_t size);

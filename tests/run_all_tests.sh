@@ -756,6 +756,29 @@ else
 fi
 echo ""
 
+# #1319 measurement phase: the opt-in accounting path reports requested-byte
+# cumulative/live/peak counters, while the default path remains silent.  This
+# is deliberately not a heap-cap test: the owner left enforcement open until
+# the corpus-and-consumer measurements select cumulative or live accounting.
+echo "[0h] Non-enforcing allocation-accounting instrument (#1319)"
+check_binary_fingerprint
+ALLOC_STATS_OUT=$(EIGS_ALLOC_STATS=1 ./eigenscript -e 'print of len of range of 1000' 2>&1)
+ALLOC_STATS_RC=$?
+ALLOC_STATS_LINE=$(printf '%s\n' "$ALLOC_STATS_OUT" | sed -n 's/^eigs-alloc-stats: //p')
+ALLOC_CUM=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*cumulative=\([0-9][0-9]*\).*/\1/p')
+ALLOC_LIVE=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*live=\([0-9][0-9]*\).*/\1/p')
+ALLOC_PEAK=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*peak=\([0-9][0-9]*\).*/\1/p')
+ALLOC_OFF_OUT=$(EIGS_ALLOC_STATS=0 ./eigenscript -e 'print of 1' 2>&1)
+TOTAL=$((TOTAL + 1))
+if [ "$ALLOC_STATS_RC" -eq 0 ] && [ -n "$ALLOC_CUM" ] && [ -n "$ALLOC_LIVE" ] && [ -n "$ALLOC_PEAK" ] && \
+   [ "$ALLOC_CUM" -ge "$ALLOC_PEAK" ] && [ "$ALLOC_PEAK" -ge "$ALLOC_LIVE" ] && \
+   ! grep -q '^eigs-alloc-stats:' <<< "$ALLOC_OFF_OUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: opt-in counters report cumulative >= peak >= live; disabled path is silent"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: allocation-accounting output (rc=$ALLOC_STATS_RC): $ALLOC_STATS_LINE"
+fi
+echo ""
+
 
 
 # #1060: a native function registered with a name reports as a user fn.

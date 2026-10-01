@@ -6,6 +6,11 @@
  */
 
 #include "eigenscript.h"
+#include <inttypes.h>
+
+/* The public header routes runtime frees through the measurement hook.  This
+ * implementation needs the underlying libc operation for its metadata table. */
+#undef free
 
 #if defined(EIGS_POISON) && defined(__GLIBC__)
 #include <malloc.h>   /* malloc_usable_size, for xrealloc tail poisoning */
@@ -41,6 +46,142 @@ static void x_oom(size_t size) {
     abort();
 }
 
+/* #1319 measurement phase: requested-byte accounting, deliberately without a
+ * cap.  It is opt-in so the normal allocator path pays one predictable branch.
+ * A private open-addressed table records requested sizes without changing the
+ * layout of allocations (important while the model is still being measured).
+ * Table storage itself uses libc calloc/free and is therefore explicitly not
+ * included in the reported numbers. */
+typedef struct {
+    void *ptr;
+    size_t size;
+} AllocStatSlot;
+
+static pthread_once_t g_alloc_stats_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t g_alloc_stats_lock = PTHREAD_MUTEX_INITIALIZER;
+/* -1 until pthread_once reads the environment, then 0/1.  The overwhelmingly
+ * common disabled path is one relaxed load and branch, not a pthread_once call
+ * at every allocation and release. */
+static int g_alloc_stats_enabled = -1;
+static AllocStatSlot *g_alloc_stats_tab;
+static size_t g_alloc_stats_cap;
+static size_t g_alloc_stats_count;
+static uint64_t g_alloc_stats_cumulative;
+static uint64_t g_alloc_stats_live;
+static uint64_t g_alloc_stats_peak;
+static char g_alloc_stats_tombstone;
+#define ALLOC_STATS_TOMB ((void *)&g_alloc_stats_tombstone)
+
+static size_t alloc_stats_hash(void *ptr) {
+    uintptr_t x = (uintptr_t)ptr;
+    x >>= 3;
+    x ^= x >> 17;
+    x *= UINT64_C(0x9e3779b97f4a7c15);
+    return (size_t)x;
+}
+
+static void alloc_stats_report(void) {
+    pthread_mutex_lock(&g_alloc_stats_lock);
+    fprintf(stderr,
+            "eigs-alloc-stats: cumulative=%" PRIu64 " live=%" PRIu64
+            " peak=%" PRIu64 " tracked=%zu\n",
+            g_alloc_stats_cumulative, g_alloc_stats_live,
+            g_alloc_stats_peak, g_alloc_stats_count);
+    pthread_mutex_unlock(&g_alloc_stats_lock);
+}
+
+static void alloc_stats_init(void) {
+    const char *v = getenv("EIGS_ALLOC_STATS");
+    int enabled = v && *v && strcmp(v, "0") != 0;
+    if (enabled) {
+        g_alloc_stats_cap = 4096;
+        g_alloc_stats_tab = calloc(g_alloc_stats_cap, sizeof(*g_alloc_stats_tab));
+        if (!g_alloc_stats_tab) x_oom(g_alloc_stats_cap * sizeof(*g_alloc_stats_tab));
+        atexit(alloc_stats_report);
+    }
+    __atomic_store_n(&g_alloc_stats_enabled, enabled, __ATOMIC_RELEASE);
+}
+
+static size_t alloc_stats_find(void *ptr, int *found) {
+    size_t mask = g_alloc_stats_cap - 1;
+    size_t pos = alloc_stats_hash(ptr) & mask;
+    size_t tomb = SIZE_MAX;
+    for (;;) {
+        void *key = g_alloc_stats_tab[pos].ptr;
+        if (!key) {
+            *found = 0;
+            return tomb == SIZE_MAX ? pos : tomb;
+        }
+        if (key == ptr) {
+            *found = 1;
+            return pos;
+        }
+        if (key == ALLOC_STATS_TOMB && tomb == SIZE_MAX) tomb = pos;
+        pos = (pos + 1) & mask;
+    }
+}
+
+static void alloc_stats_grow(void) {
+    size_t old_cap = g_alloc_stats_cap;
+    AllocStatSlot *old = g_alloc_stats_tab;
+    g_alloc_stats_cap *= 2;
+    g_alloc_stats_tab = calloc(g_alloc_stats_cap, sizeof(*g_alloc_stats_tab));
+    if (!g_alloc_stats_tab) x_oom(g_alloc_stats_cap * sizeof(*g_alloc_stats_tab));
+    for (size_t i = 0; i < old_cap; i++) {
+        if (old[i].ptr && old[i].ptr != ALLOC_STATS_TOMB) {
+            int found;
+            size_t pos = alloc_stats_find(old[i].ptr, &found);
+            g_alloc_stats_tab[pos] = old[i];
+        }
+    }
+    free(old);
+}
+
+static void alloc_stats_add(void *ptr, size_t size, size_t cumulative) {
+    int enabled = __atomic_load_n(&g_alloc_stats_enabled, __ATOMIC_RELAXED);
+    if (__builtin_expect(enabled == 0, 1) || !ptr) return;
+    if (enabled < 0) {
+        pthread_once(&g_alloc_stats_once, alloc_stats_init);
+        if (!__atomic_load_n(&g_alloc_stats_enabled, __ATOMIC_ACQUIRE)) return;
+    }
+    pthread_mutex_lock(&g_alloc_stats_lock);
+    if ((g_alloc_stats_count + 1) * 10 >= g_alloc_stats_cap * 7)
+        alloc_stats_grow();
+    int found;
+    size_t pos = alloc_stats_find(ptr, &found);
+    if (found) g_alloc_stats_live -= g_alloc_stats_tab[pos].size;
+    else g_alloc_stats_count++;
+    g_alloc_stats_tab[pos].ptr = ptr;
+    g_alloc_stats_tab[pos].size = size;
+    g_alloc_stats_live += size;
+    g_alloc_stats_cumulative += cumulative;
+    if (g_alloc_stats_live > g_alloc_stats_peak)
+        g_alloc_stats_peak = g_alloc_stats_live;
+    pthread_mutex_unlock(&g_alloc_stats_lock);
+}
+
+static size_t alloc_stats_remove(void *ptr) {
+    int enabled = __atomic_load_n(&g_alloc_stats_enabled, __ATOMIC_RELAXED);
+    if (__builtin_expect(enabled == 0, 1) || !ptr) return 0;
+    if (enabled < 0) {
+        pthread_once(&g_alloc_stats_once, alloc_stats_init);
+        if (!__atomic_load_n(&g_alloc_stats_enabled, __ATOMIC_ACQUIRE)) return 0;
+    }
+    pthread_mutex_lock(&g_alloc_stats_lock);
+    int found;
+    size_t pos = alloc_stats_find(ptr, &found);
+    size_t old_size = 0;
+    if (found) {
+        old_size = g_alloc_stats_tab[pos].size;
+        g_alloc_stats_live -= old_size;
+        g_alloc_stats_count--;
+        g_alloc_stats_tab[pos].ptr = ALLOC_STATS_TOMB;
+        g_alloc_stats_tab[pos].size = 0;
+    }
+    pthread_mutex_unlock(&g_alloc_stats_lock);
+    return old_size;
+}
+
 size_t safe_size_mul(size_t a, size_t b) {
     if (a == 0 || b == 0) return 0;
     if (a > SIZE_MAX / b) return SIZE_MAX;
@@ -50,13 +191,16 @@ size_t safe_size_mul(size_t a, size_t b) {
 void* xmalloc(size_t size) {
     void *p = malloc(size);
     if (!p) x_oom(size);
+    alloc_stats_add(p, size, size);
     EIGS_POISON_MEM(p, size);
     return p;
 }
 
 void* xcalloc(size_t nmemb, size_t size) {
     void *p = calloc(nmemb, size);
-    if (!p) x_oom(safe_size_mul(nmemb, size));
+    size_t total = safe_size_mul(nmemb, size);
+    if (!p) x_oom(total);
+    alloc_stats_add(p, total, total);
     return p;
 }
 
@@ -64,8 +208,10 @@ void* xrealloc(void *p, size_t size) {
 #if defined(EIGS_POISON) && defined(__GLIBC__)
     size_t old_usable = p ? malloc_usable_size(p) : 0;
 #endif
+    size_t old_size = alloc_stats_remove(p);
     void *q = realloc(p, size);
     if (!q && size) x_oom(size);
+    alloc_stats_add(q, size, size > old_size ? size - old_size : 0);
 #if defined(EIGS_POISON) && defined(__GLIBC__)
     /* Poison only the grown tail — the copied prefix is live data. */
     if (q && size > old_usable)
@@ -76,9 +222,15 @@ void* xrealloc(void *p, size_t size) {
 
 char* xstrdup(const char *s) {
     if (!s) s = "";
-    char *r = strdup(s);
-    if (!r) x_oom(strlen(s) + 1);
+    size_t n = strlen(s) + 1;
+    char *r = xmalloc(n);
+    memcpy(r, s, n);
     return r;
+}
+
+void eigs_alloc_stats_free(void *p) {
+    alloc_stats_remove(p);
+    free(p);
 }
 
 #if !EIGENSCRIPT_FREESTANDING
