@@ -1,0 +1,1 @@
+- Bound nested f-string boundary scanner depth (#1450).
