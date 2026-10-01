@@ -4385,7 +4385,7 @@ Value* builtin_get_at(Value *arg) {
             int idx;
             if (!buf_at_index(arg->data.list.items[1], buf->data.buffer.count,
                               &idx)) return make_null();
-            return make_num(buf->data.buffer.data[idx]);
+            return make_num(buffer_read_num(buf, idx));
         }
         if (argc == 3 && buf->data.buffer.rows > 0) {
             int row, col;
@@ -4393,7 +4393,7 @@ Value* builtin_get_at(Value *arg) {
                               &row)) return make_null();
             if (!buf_at_index(arg->data.list.items[2], buf->data.buffer.cols,
                               &col)) return make_null();
-            return make_num(buf->data.buffer.data[(int64_t)row * buf->data.buffer.cols + col]);
+            return make_num(buffer_read_num(buf, (int64_t)row * buf->data.buffer.cols + col));
         }
         rt_error(EK_TYPE, 0, "get_at: [buffer, row, col] needs a shaped buffer "
                  "(see reshape)");

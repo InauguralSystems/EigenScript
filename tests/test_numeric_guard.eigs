@@ -192,4 +192,23 @@ clear_math_flags of null
 ac is acos of (0 - 9)
 assert of [(math_flags of null).invalid == 1, "NG29 acos clamps and flags"]
 
+# #1417: tensor kernels may hold an intermediate IEEE infinity in their
+# unboxed result buffer.  Every language-level read must expose the numeric
+# ceiling, independent of which opcode consumes the scalar.
+raw_inf_input is buffer of 4
+raw_inf_input[0] is 1e300
+raw_inf_input[1] is 1e300
+raw_inf_input[2] is 1e300
+raw_inf_input[3] is 1e300
+raw_inf_matrix is reshape of [raw_inf_input, 2, 2]
+raw_inf_product is matmul of [raw_inf_matrix, raw_inf_matrix]
+assert of [not (raw_inf_product[0] > CAP), "NG31 comparison reads a clamped buffer infinity"]
+assert of [(raw_inf_product[0] / raw_inf_product[1]) == 1, "NG31 division reads clamped buffer infinities"]
+assert of [(raw_inf_product[0] % 3) == 2, "NG31 modulo reads a clamped buffer infinity"]
+assert of [not (raw_inf_product[0] * 0.5 > CAP), "NG31 multiplication reads a clamped buffer infinity"]
+assert of [not (raw_inf_product[0] + 0 > CAP), "NG31 addition reads a clamped buffer infinity"]
+raw_inf_scalar is raw_inf_product[0]
+assert of [raw_inf_scalar == CAP, "NG31 index read into a scalar is clamped"]
+assert of [(buf_get of [raw_inf_product, 0]) == CAP, "NG31 buf_get is clamped"]
+
 print of "All numeric-guard tests passed"

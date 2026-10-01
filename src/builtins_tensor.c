@@ -1319,7 +1319,7 @@ Value* builtin_tensor_gather(Value *arg) {
                          idx, tensor->data.buffer.count);
                 return make_null();
             }
-            return make_num(tensor->data.buffer.data[idx]);
+            return make_num(buffer_read_num(tensor, idx));
         } else if (flat_is_vector(indices)) {
             int shaped = tensor->data.buffer.rows > 0;
             int rows = shaped ? tensor->data.buffer.rows : tensor->data.buffer.count;

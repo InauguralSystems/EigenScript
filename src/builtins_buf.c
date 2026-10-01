@@ -113,7 +113,7 @@ Value* builtin_buf_get(Value *arg) {
         /* fs:CHANNEL the EK_INDEX rt_error above already raised (#502) */
         return make_num(0);
     }
-    return make_num(buf->data.buffer.data[idx]);
+    return make_num(buffer_read_num(buf, idx));
 }
 
 /* buf_set of [buf, index, value] — O(1) indexed write */

@@ -345,6 +345,9 @@ int main(void) {
     CHECK(eigs_value_buffer_get(buf, 3) == 255.0, "buffer get [3]");
     CHECK(eigs_value_buffer_get(buf, 4) == 0.0,   "buffer OOB get is 0");
     CHECK(eigs_value_buffer_get(buf, -1) == 0.0,  "buffer negative get is 0");
+    eigs_value_buffer_set(buf, 2, INFINITY);
+    CHECK(eigs_value_buffer_get(buf, 2) == EIGS_NUM_MAX,
+          "buffer non-finite get is clamped");
 
     /* Host buffer visible to script — SAME object, no copy at the
      * boundary: the script's buf_set is visible back in C. */
