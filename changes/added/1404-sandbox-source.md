@@ -1,0 +1,1 @@
+- `sandbox_run` now accepts source strings, compiles them with EigenScript's C compiler against the sealed sandbox root, and applies the same capability, loop, memory, and result-boundary policy as bytecode descriptors. Parse and compile failures return structured `compile` errors.

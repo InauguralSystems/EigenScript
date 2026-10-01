@@ -3649,8 +3649,9 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
     return 0;
 }
 
-/* sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled
- * chunk (same descriptor as vm_run_bytecode) under two safety bounds: dangerous
+/* sandbox_run of [descriptor|source, max_iterations?] — compile source with
+ * the C compiler or assemble a descriptor, then run the prepared chunk through
+ * one sandbox path. Dangerous
  * builtins are shadowed by a blocked stub, and loops are capped at
  * max_iterations (default 1,000,000) so runaway code can't hang. Runtime errors
  * are caught (not propagated). Returns {"ok": 1/0, "result": value} — the graded
@@ -3663,6 +3664,8 @@ Value* builtin_sandbox_run(Value *arg) {
      * below, once the chunk exists. */
     Value *desc = (arg && arg->type == VAL_LIST && arg->data.list.count >= 1)
                   ? arg->data.list.items[0] : arg;
+    int source_form = desc && desc->type == VAL_STR;
+    const char *source = source_form ? desc->data.str : NULL;
     int max_iter = 1000000;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
         arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM)
@@ -3688,11 +3691,15 @@ Value* builtin_sandbox_run(Value *arg) {
      * gets its own message — a grading ladder must be able to tell "your
      * producer is stale" from "your bytecode is malformed" without re-running. */
     char abibuf[256];
-    const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
-    EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
+    const char *abi_err = source_form ? NULL
+                                      : vm_desc_abi_error(desc, abibuf,
+                                                          sizeof abibuf);
+    EigsChunk *chunk = source_form ? NULL
+                                   : (abi_err ? NULL
+                                              : vm_build_chunk_desc(desc, 1, 1));
     if (chunk) eigs_obs_enable_runtime();     /* #915: see vm_run_bytecode */
     Value *out = make_dict(2);
-    if (!chunk) {
+    if (!source_form && !chunk) {
         /* Descriptor verification may already have interned constants before
          * rejecting the graph. Restore the caller's scope before constructing
          * the host-owned diagnostic dictionary, then release this run's names. */
@@ -3711,10 +3718,6 @@ Value* builtin_sandbox_run(Value *arg) {
         dict_set_owned(out, "error", ev);
         return out;
     }
-    /* #831: same as vm_run_bytecode — the temporal opcodes in an assembled
-     * chunk must arm recording themselves; the compiler never scanned it. */
-    chunk_arm_temporal(chunk);
-
     /* SEALED restricted env. The parent link is NULL, not g_global_env: the
      * sandbox env is a root, and the allowed builtins are COPIED into it.
      *
@@ -3777,6 +3780,53 @@ Value* builtin_sandbox_run(Value *arg) {
     }
     free(snap);
     val_decref(stub);
+
+    /* #1404: source and descriptor inputs converge here, before any policy or
+     * budgeted execution. Compile against the sealed root itself: using the
+     * caller env (as eval does) would expose host bindings during compilation
+     * and make the two sandbox forms enforce different boundaries. Parse and
+     * compile failures are values, not raised host errors, and no partial
+     * chunk is ever executed. */
+    TokenList source_tokens = {0};
+    ASTNode *source_ast = NULL;
+    if (source_form) {
+        int saved_errors = g_parse_errors;
+        g_parse_errors = 0;
+        source_tokens = tokenize(source ? source : "");
+        source_ast = parse(&source_tokens);
+        int parse_failed = g_parse_errors > 0 || !source_ast;
+        if (!parse_failed)
+            chunk = compile_ast(source_ast, sbox, source ? source : "");
+        int compile_failed = !parse_failed && (g_parse_errors > 0 || !chunk);
+        g_parse_errors = saved_errors;
+        if (parse_failed || compile_failed) {
+            int error_line = g_first_error_line;
+            char error_message[sizeof(((EigsThread *)0)->first_error_msg)];
+            snprintf(error_message, sizeof error_message, "%s",
+                     g_first_error_msg[0]
+                         ? g_first_error_msg
+                         : (parse_failed ? "source parse error"
+                                         : "source compile error"));
+            chunk_free(chunk);
+            free_tokenlist(&source_tokens);
+            free_ast(source_ast);
+            env_decref(sbox);
+            env_intern_scope_end(intern_scope, saved_intern_scope);
+            dict_set_owned(out, "ok", make_num(0));
+            Value *ev = make_dict(3);
+            dict_set_owned(ev, "kind", make_str("compile"));
+            dict_set_owned(ev, "message", make_str(error_message));
+            dict_set_owned(ev, "line", make_num((double)error_line));
+            dict_set_owned(out, "error", ev);
+            return out;
+        }
+    }
+
+    /* Both input forms own a prepared chunk now. Everything below is the one
+     * sealed-root execution, budget, error, and result-boundary path. */
+    /* #831: descriptor chunks were not compiler-scanned. Applying the same
+     * idempotent arm at the convergence point also keeps execution structural. */
+    chunk_arm_temporal(chunk);
 
     int saved_max = g_sandbox_loop_max;
     int saved_cap_hit = g_sandbox_cap_hit;
@@ -3948,6 +3998,10 @@ Value* builtin_sandbox_run(Value *arg) {
     val_decref(okv);
     if (result) { dict_set(out, "result", result); val_decref(result); }
     chunk_free(chunk);
+    if (source_form) {
+        free_tokenlist(&source_tokens);
+        free_ast(source_ast);
+    }
     env_decref(sbox);
     env_intern_scope_end(intern_scope, saved_intern_scope);
     g_sandbox_error_latched = saved_sb_error_latched;

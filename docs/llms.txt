@@ -349,7 +349,8 @@ check first — this is the same parse→compile→sandbox ladder iLambdaAi uses
    caret sits on the leftover token, i.e. one token AFTER the mistake), and
    **silently wrong numbers** (an `f of [x]` that didn't spread — no error,
    bad output).
-3. **Test suites**: name files `test_*.eigs`, `assert of [cond, msg]` on
+3. **Sandbox untrusted source**: `sandbox_run of [source_string, max_iterations?, max_bytes?]`. This form uses the runtime C tokenizer, parser, and compiler — not a vendored or self-hosted compiler — then runs the resulting chunk in the same sealed-root, capability-allowlisted, loop- and memory-bounded sandbox as an ABI-stamped descriptor. Check `ok`; parse and compile failures use `error.kind == "compile"`.
+4. **Test suites**: name files `test_*.eigs`, `assert of [cond, msg]` on
    failure, and run `eigenscript --test [dir]`. Add `--trace-on-fail` and a
    failing test prints an `EIGS_REPLAY=<tape> …` line that reproduces it
    byte-for-byte.
