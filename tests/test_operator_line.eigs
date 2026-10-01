@@ -1,0 +1,161 @@
+# #1425: a runtime error raised by a binary operator whose operands span lines
+# reports the OPERATOR's physical line (e.line here; the uncaught header,
+# excerpt, caret and traceback in operator_line_*.eigs). Pre-fix each row
+# reported the line its right operand ENDED on. Temporal filing (#1381, the
+# statement's first line) is unchanged: the last rows pin it.
+# The runner ([0g]) runs this file under the default JIT, EIGS_JIT_OFF=1 and
+# forced OSR; the hot rows run past the JIT entry and OSR thresholds.
+# LINE-NUMBER SENSITIVE: every expected line is a literal (the line of the
+# operator in the row above it). Append new rows only after the last row.
+load_file of "lib/test.eigs"
+define zero(n) as:
+    return 0
+define hot_div(k) as:
+    r is 1 / (
+        k)
+    return r
+define hot_chain(k, s) as:
+    r is (k +
+        k +
+        s)
+    return r
+x is 0
+s is "s"
+o is {"v": 1}
+lst is [1]
+got is 0
+
+try:
+    z is 1 / (
+        x)
+catch e:
+    got is e.line
+assert_eq of [got, 29, "/ with a multi-line right operand"]
+try:
+    z is 7 % (
+        x)
+catch e:
+    got is e.line
+assert_eq of [got, 35, "% with a multi-line right operand"]
+try:
+    z is 1 + (
+        s)
+catch e:
+    got is e.line
+assert_eq of [got, 41, "+ type error"]
+try:
+    z is 1 < (
+        s)
+catch e:
+    got is e.line
+assert_eq of [got, 47, "comparison type error"]
+try:
+    z is (1 +
+        2 +
+        s)
+catch e:
+    got is e.line
+assert_eq of [got, 54, "chain a + b + c: the SECOND + faults"]
+try:
+    z is 1 / (zero of [
+        4])
+catch e:
+    got is e.line
+assert_eq of [got, 60, "right operand is a multi-line call"]
+try:
+    z is (zero of [
+        4]) / x
+catch e:
+    got is e.line
+assert_eq of [got, 67, "left operand is a multi-line call, operator after it"]
+try:
+    z is (1
+        / x)
+catch e:
+    got is e.line
+assert_eq of [got, 73, "operator on the line after its left operand"]
+try:
+    x += (
+        s)
+catch e:
+    got is e.line
+assert_eq of [got, 78, "compound += on a name"]
+try:
+    o.v += (
+        s)
+catch e:
+    got is e.line
+assert_eq of [got, 84, "compound += on a field"]
+try:
+    lst[0] += (
+        s)
+catch e:
+    got is e.line
+assert_eq of [got, 90, "compound += on an index"]
+
+# Hot rows: the operator runs in a JIT thunk and in an OSR-compiled loop.
+k is 6001
+got is 0
+try:
+    loop while k > 0:
+        r is 1 / (
+            k - 1)
+        k is k - 1
+catch e:
+    got is e.line
+assert_eq of [got, 101, "OSR loop: multi-line /"]
+assert_eq of [k, 1, "OSR loop raised on its last iteration"]
+k is 6001
+got is 0
+try:
+    loop while k > 0:
+        r is hot_div of (k - 1)
+        k is k - 1
+catch e:
+    got is e.line
+assert_eq of [got, 14, "compiled callee: multi-line /"]
+assert_eq of [k, 1, "compiled callee raised on its last call"]
+k is 6001
+got is 0
+try:
+    loop while k > 0:
+        k is k - 1
+        if k == 0:
+            r is hot_chain of [k, s]
+        else:
+            r is hot_chain of [k, k]
+catch e:
+    got is e.line
+assert_eq of [got, 19, "compiled callee: the second + of a chain"]
+
+# #1381 unchanged: a multi-line statement is FILED under its first line.
+y is 1
+y is (2 +
+    3)
+assert_eq of [what is y at 133, 5, "filing: first line of a multi-line +"]
+assert_eq of [what is y at 132, 1, "filing: the line before is the old value"]
+try:
+    z is 1 - (
+        s)
+catch e:
+    got is e.line
+assert_eq of [got, 138, "- type error"]
+try:
+    z is 2 * (
+        s)
+catch e:
+    got is e.line
+assert_eq of [got, 144, "* type error"]
+try:
+    z is 1 & (
+        s)
+catch e:
+    got is e.line
+assert_eq of [got, 150, "bitwise & type error"]
+try:
+    z is f"{1 / (
+        x)}"
+catch e:
+    got is e.line
+assert_eq of [got, 156, "an operator written inside an f-string interpolation"]
+test_summary of null

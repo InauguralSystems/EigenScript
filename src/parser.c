@@ -1153,6 +1153,7 @@ static ASTNode* parse_addition(Parser *p) {
         ASTNode *right = parse_multiply(p);
         ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
+        n->data.binop.synth = op_tok->synth;   /* f-string `+` (#1425) */
         n->data.binop.left = left;
         n->data.binop.right = right;
         left = n;

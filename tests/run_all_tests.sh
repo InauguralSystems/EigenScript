@@ -692,30 +692,38 @@ check_binary_fingerprint
 # #1434: line_after_callback_halt's callback prints its own swallowed error
 # first (#1426), with the same frame lines, so a fixture's frame lines are
 # matched only from its header line onward.
+# #1425: test_operator_line.eigs and operator_line_*.eigs pin a multi-line
+# binary operator's error to the OPERATOR's line (pre-fix: the right operand's
+# last line); the operator_line rows also pin the excerpt and caret lines.
+# A fixture's expected lines are separated by ';' (an excerpt line has '|').
 for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
     LAR_ENV="EIGS_JIT_STATS=1"; [ "$LAR_TIER" = JIT ] || LAR_ENV="$LAR_ENV $LAR_TIER"
-    LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript ../tests/test_line_after_return.eigs </dev/null 2>&1); LAR_RC=$?
-    TOTAL=$((TOTAL + 1))
-    LAR_JIT=$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")
-    if [ "$LAR_JIT" != ok ]; then
-        FAIL=$((FAIL + 1)); echo "  FAIL: e.line after a return ($LAR_TIER): compiled nothing, so it measured the interpreter"
-    elif rc_ok "$LAR_RC" "$LAR_OUT" && grep -q "All tests passed" <<< "$LAR_OUT"; then
-        PASS=$((PASS + 1)); echo "  PASS: e.line after a return ($LAR_TIER)"
-    else
-        FAIL=$((FAIL + 1)); echo "  FAIL: e.line after a return ($LAR_TIER, rc=$LAR_RC)"
-        printf '%s\n' "$LAR_OUT" | eigs_failure_output
-    fi
-    for LAR_FX in "line_after_return_module.eigs:Error line 10:|  at <module> (line 10)" \
-                  "line_after_return_fn.eigs:Error line 11:|  at outer (line 11)|  at <module> (line 15)" \
-                  "line_after_return_null.eigs:Error line 13:|  at hot_null (line 13)|  at <module> (line 20)" \
-                  "line_after_callback_halt.eigs:Error line 9:|  at hot_sb (line 9)|  at <module> (line 15)"; do
+    for LAR_PROG in test_line_after_return.eigs test_operator_line.eigs; do
+        LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript "../tests/$LAR_PROG" </dev/null 2>&1); LAR_RC=$?
+        TOTAL=$((TOTAL + 1))
+        LAR_JIT=$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")
+        if [ "$LAR_JIT" != ok ]; then
+            FAIL=$((FAIL + 1)); echo "  FAIL: e.line, $LAR_PROG ($LAR_TIER): compiled nothing, so it measured the interpreter"
+        elif rc_ok "$LAR_RC" "$LAR_OUT" && grep -q "All tests passed" <<< "$LAR_OUT"; then
+            PASS=$((PASS + 1)); echo "  PASS: e.line, $LAR_PROG ($LAR_TIER)"
+        else
+            FAIL=$((FAIL + 1)); echo "  FAIL: e.line, $LAR_PROG ($LAR_TIER, rc=$LAR_RC)"
+            printf '%s\n' "$LAR_OUT" | eigs_failure_output
+        fi
+    done
+    for LAR_FX in "line_after_return_module.eigs:Error line 10:;  at <module> (line 10)" \
+                  "line_after_return_fn.eigs:Error line 11:;  at outer (line 11);  at <module> (line 15)" \
+                  "line_after_return_null.eigs:Error line 13:;  at hot_null (line 13);  at <module> (line 20)" \
+                  "line_after_callback_halt.eigs:Error line 9:;  at hot_sb (line 9);  at <module> (line 15)" \
+                  "operator_line_module.eigs:Error line 8:;     8 |     r is 1 / (;       |            ^;  at <module> (line 8)" \
+                  "operator_line_fn.eigs:Error line 7:;     7 |         b +;       |           ^;  at chain (line 7);  at <module> (line 16)"; do
         LAR_FILE=${LAR_FX%%:*}; LAR_WANT=${LAR_FX#*:}
         LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript "../tests/$LAR_FILE" </dev/null 2>&1); LAR_RC=$?
         LAR_MISS=""
-        LAR_REST="$LAR_WANT|"
-        LAR_TAIL=$(printf '%s\n' "$LAR_OUT" | sed 's/: .*/:/' | awk -v h="${LAR_WANT%%|*}" 'f || $0 == h { f = 1; print }')
+        LAR_REST="$LAR_WANT;"
+        LAR_TAIL=$(printf '%s\n' "$LAR_OUT" | sed 's/: .*/:/' | awk -v h="${LAR_WANT%%;*}" 'f || $0 == h { f = 1; print }')
         while [ -n "$LAR_REST" ]; do
-            LAR_LINE=${LAR_REST%%|*}; LAR_REST=${LAR_REST#*|}
+            LAR_LINE=${LAR_REST%%;*}; LAR_REST=${LAR_REST#*;}
             grep -qxF -- "$LAR_LINE" <<< "$LAR_TAIL" || LAR_MISS="$LAR_MISS [$LAR_LINE]"
         done
         TOTAL=$((TOTAL + 1))
