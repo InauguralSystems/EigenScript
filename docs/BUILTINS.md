@@ -357,7 +357,7 @@ Boolean keywords that check the most recently observed value:
 | `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom (`""` for `n <= 0` or `n > 256`). A non-number `n` raises by default; under `EIGS_STRICT=0` it answers `""` (#971). |
 | `try_parse` | `try_parse of code_string` | 1 if string is valid EigenScript syntax, 0 otherwise |
 | `mkdir` | `mkdir of "path"` | Create directory (and parents). 1 on success, 0 on failure. Trace-recorded: replay serves the recorded bit and does not re-create the directory (#585) |
-| `ls` | `ls of "path"` | List directory contents as list of strings. Trace-recorded, so replay is deterministic (#585) |
+| `ls` | `ls of "path"` | List non-hidden directory entries as bytewise-sorted strings (the order of `LC_ALL=C ls -1`). Trace-recorded, so replay is deterministic (#585) |
 | `getcwd` | `getcwd of null` | Current working directory as string. Trace-recorded, so replay is deterministic (#585) |
 | `exe_path` | `exe_path of null` | Absolute path of the running interpreter binary. Lets a script re-invoke the same interpreter (e.g. `exec_capture of [exe_path of null, file]`) without assuming `eigenscript` is on PATH. Trace-recorded, so replay is deterministic (#585) |
 | `chdir` | `chdir of "path"` | Change working directory. 1 on success, 0 on failure |
