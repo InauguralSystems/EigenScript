@@ -3,7 +3,8 @@
  * Dynamically loads libSDL2 at runtime (no dev headers needed).
  *
  * Builtins: gfx_open, gfx_close, gfx_clear, gfx_rect, gfx_line,
- *           gfx_point, gfx_circle, gfx_present, gfx_poll, gfx_ticks, gfx_delay,
+ *           gfx_point, gfx_circle, gfx_blend, gfx_polygon, gfx_image_*, gfx_font,
+ *           gfx_present, gfx_poll, gfx_ticks, gfx_delay,
  *           gfx_text, gfx_text_width, gfx_text_height (proportional
  *           antialiased text via SDL2_ttf when available, #593)
  */
@@ -73,6 +74,8 @@ typedef struct {
 #define MY_SDL_RENDERER_ACCELERATED 0x02u
 #define MY_SDL_RENDERER_PRESENTVSYNC 0x04u
 #define MY_SDL_BLENDMODE_BLEND  0x01u
+#define MY_SDL_BLENDMODE_ADD    0x02u
+#define MY_SDL_BLENDMODE_NONE   0x00u
 
 /* ---- Function pointers ---- */
 
@@ -111,6 +114,9 @@ static SDL_Texture* (*p_SDL_CreateTexture)(SDL_Renderer*, Uint32, int, int, int)
 static void (*p_SDL_DestroyTexture)(SDL_Texture*);
 static int (*p_SDL_UpdateTexture)(SDL_Texture*, const SDL_Rect*, const void*, int);
 static int (*p_SDL_RenderCopy)(SDL_Renderer*, SDL_Texture*, const SDL_Rect*, const SDL_Rect*);
+static int (*p_SDL_RenderCopyEx)(SDL_Renderer*, SDL_Texture*, const SDL_Rect*, const SDL_Rect*, double, const void*, int);
+static int (*p_SDL_SetTextureBlendMode)(SDL_Texture*, int);
+static int (*p_SDL_SetTextureAlphaMod)(SDL_Texture*, Uint8);
 static SDL_Texture* (*p_SDL_CreateTextureFromSurface)(SDL_Renderer*, void*);
 static void (*p_SDL_FreeSurface)(void*);
 static int (*p_SDL_QueryTexture)(SDL_Texture*, Uint32*, int*, int*, int*);
@@ -118,6 +124,19 @@ static int (*p_SDL_QueryTexture)(SDL_Texture*, Uint32*, int*, int*, int*);
 /* Framebuffer texture cache */
 static SDL_Texture *g_fb_texture = NULL;
 static int g_fb_w = 0, g_fb_h = 0;
+
+/* Opaque resources are represented by monotonically increasing numeric
+ * handles.  Keeping ownership here makes them independent of Value lifetime
+ * and lets gfx_close release everything in one place. */
+#define GFX_RESOURCE_MAX 128
+typedef struct { SDL_Texture *texture; int w, h; } GfxImage;
+static GfxImage g_images[GFX_RESOURCE_MAX];
+static void *g_fonts[GFX_RESOURCE_MAX];
+static int g_image_next = 1;
+static int g_font_next = 1;
+static int g_draw_blend = MY_SDL_BLENDMODE_BLEND;
+
+static void gfx_resources_teardown(void);
 
 /* Audio function pointers */
 static int (*p_SDL_OpenAudioDevice)(const char*, int, const SDL_AudioSpec*, SDL_AudioSpec*, int);
@@ -168,6 +187,9 @@ static int load_sdl2(void) {
     p_SDL_DestroyTexture = dlsym(g_sdl_lib, "SDL_DestroyTexture");
     p_SDL_UpdateTexture = dlsym(g_sdl_lib, "SDL_UpdateTexture");
     p_SDL_RenderCopy = dlsym(g_sdl_lib, "SDL_RenderCopy");
+    p_SDL_RenderCopyEx = dlsym(g_sdl_lib, "SDL_RenderCopyEx");
+    p_SDL_SetTextureBlendMode = dlsym(g_sdl_lib, "SDL_SetTextureBlendMode");
+    p_SDL_SetTextureAlphaMod = dlsym(g_sdl_lib, "SDL_SetTextureAlphaMod");
     p_SDL_CreateTextureFromSurface = dlsym(g_sdl_lib, "SDL_CreateTextureFromSurface");
     p_SDL_FreeSurface = dlsym(g_sdl_lib, "SDL_FreeSurface");
     p_SDL_QueryTexture = dlsym(g_sdl_lib, "SDL_QueryTexture");
@@ -350,6 +372,20 @@ static void ttf_teardown(void) {
     g_ttf_state = 0;
 }
 
+static void gfx_resources_teardown(void) {
+    for (int i = 1; i < g_image_next; i++) {
+        if (g_images[i].texture && p_SDL_DestroyTexture)
+            p_SDL_DestroyTexture(g_images[i].texture);
+        g_images[i].texture = NULL;
+    }
+    for (int i = 1; i < g_font_next; i++) {
+        if (g_fonts[i] && p_TTF_CloseFont) p_TTF_CloseFont(g_fonts[i]);
+        g_fonts[i] = NULL;
+    }
+    g_image_next = 1;
+    g_font_next = 1;
+}
+
 /* Scancode to key name — SDL2 scancodes */
 static const char* scancode_name(int sc) {
     switch (sc) {
@@ -483,13 +519,15 @@ Value* builtin_gfx_open(Value *arg) {
         g_window = NULL;
         return make_num(0);  /* fs:ANSWER SDL_CreateRenderer failed on both attempts -- 0 open result; the window is destroyed and g_window NULLed first */
     }
-    p_SDL_SetRenderDrawBlendMode(g_renderer, MY_SDL_BLENDMODE_BLEND);
+    g_draw_blend = MY_SDL_BLENDMODE_BLEND;
+    p_SDL_SetRenderDrawBlendMode(g_renderer, g_draw_blend);
     return make_num(1);
 }
 
 /* gfx_close of null */
 Value* builtin_gfx_close(Value *arg) {
     (void)arg;
+    gfx_resources_teardown();
     ttf_teardown();
     if (g_fb_texture && p_SDL_DestroyTexture) { p_SDL_DestroyTexture(g_fb_texture); g_fb_texture = NULL; g_fb_w = 0; g_fb_h = 0; }
     if (g_audio_device) { p_SDL_CloseAudioDevice(g_audio_device); g_audio_device = 0; }
@@ -557,10 +595,10 @@ Value* builtin_gfx_rect(Value *arg) {
     return make_null(); /* fs:VOID gfx_rect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
-/* gfx_line of [x1, y1, x2, y2, r, g, b] */
+/* gfx_line of [x1, y1, x2, y2, r, g, b, alpha?] */
 Value* builtin_gfx_line(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 7
-              || !gfx_nums(arg, 0, 7),
+              || !gfx_nums(arg, 0, 8),
               "gfx_line",
               "[number x1, number y1, number x2, number y2, number r, number g, number b]",
               make_null());
@@ -572,15 +610,16 @@ Value* builtin_gfx_line(Value *arg) {
     int r = (int)arg->data.list.items[4]->data.num;
     int g = (int)arg->data.list.items[5]->data.num;
     int b = (int)arg->data.list.items[6]->data.num;
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
+    int a = arg->data.list.count >= 8 ? (int)arg->data.list.items[7]->data.num : 255;
+    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
     p_SDL_RenderDrawLine(g_renderer, x1, y1, x2, y2);
     return make_null(); /* fs:VOID gfx_line answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
-/* gfx_point of [x, y, r, g, b] */
+/* gfx_point of [x, y, r, g, b, alpha?] */
 Value* builtin_gfx_point(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 5
-              || !gfx_nums(arg, 0, 5),
+              || !gfx_nums(arg, 0, 6),
               "gfx_point", "[number x, number y, number r, number g, number b]",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_point answers null on every path -- the return value, not a rejected-argument stand-in */
@@ -589,7 +628,8 @@ Value* builtin_gfx_point(Value *arg) {
     int r = (int)arg->data.list.items[2]->data.num;
     int g = (int)arg->data.list.items[3]->data.num;
     int b = (int)arg->data.list.items[4]->data.num;
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
+    int a = arg->data.list.count >= 6 ? (int)arg->data.list.items[5]->data.num : 255;
+    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
     p_SDL_RenderDrawPoint(g_renderer, x, y);
     return make_null(); /* fs:VOID gfx_point answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
@@ -617,6 +657,198 @@ Value* builtin_gfx_circle(Value *arg) {
         p_SDL_RenderFillRect(g_renderer, &row);
     }
     return make_null(); /* fs:VOID gfx_circle answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+}
+
+/* gfx_blend of "blend" | "add" | "none".  SDL keeps separate draw and
+ * texture blend state, so image_draw applies the selected mode as well. */
+Value* builtin_gfx_blend(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_STR, "gfx_blend",
+              "string mode (blend, add, or none)", make_null());
+    int mode;
+    if (strcmp(arg->data.str, "blend") == 0) mode = MY_SDL_BLENDMODE_BLEND;
+    else if (strcmp(arg->data.str, "add") == 0) mode = MY_SDL_BLENDMODE_ADD;
+    else if (strcmp(arg->data.str, "none") == 0) mode = MY_SDL_BLENDMODE_NONE;
+    else {
+        ARG_GUARD(1, "gfx_blend", "string mode (blend, add, or none)", make_null());
+        return make_null();
+    }
+    g_draw_blend = mode;
+    if (g_renderer) p_SDL_SetRenderDrawBlendMode(g_renderer, mode);
+    return make_null();
+}
+
+/* gfx_polygon of [vertices, r, g, b, a], filled with an even/odd scanline
+ * rasterizer.  This fallback works on every SDL2 version (rather than making
+ * SDL_RenderGeometry, introduced in SDL 2.0.18, a runtime requirement). */
+Value* builtin_gfx_polygon(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 5
+              || arg->data.list.items[0]->type != VAL_LIST
+              || !gfx_nums(arg, 1, 5), "gfx_polygon",
+              "[list vertices, number r, number g, number b, number a]", make_null());
+    Value *vs = arg->data.list.items[0];
+    int n = vs->data.list.count;
+    for (int i = 0; i < n; i++)
+        ARG_GUARD(vs->data.list.items[i]->type != VAL_LIST
+                  || vs->data.list.items[i]->data.list.count < 2
+                  || !gfx_nums(vs->data.list.items[i], 0, 2), "gfx_polygon",
+                  "vertices containing [number x, number y]", make_null());
+    if (!g_renderer || n < 3) return make_null();
+    int ymin = (int)vs->data.list.items[0]->data.list.items[1]->data.num;
+    int ymax = ymin;
+    for (int i = 1; i < n; i++) {
+        int y = (int)vs->data.list.items[i]->data.list.items[1]->data.num;
+        if (y < ymin) ymin = y;
+        if (y > ymax) ymax = y;
+    }
+    int *xs = malloc((size_t)n * sizeof *xs);
+    if (!xs) return make_null();
+    p_SDL_SetRenderDrawColor(g_renderer,
+        (Uint8)arg->data.list.items[1]->data.num, (Uint8)arg->data.list.items[2]->data.num,
+        (Uint8)arg->data.list.items[3]->data.num, (Uint8)arg->data.list.items[4]->data.num);
+    for (int y = ymin; y <= ymax; y++) {
+        int count = 0;
+        for (int i = 0, j = n - 1; i < n; j = i++) {
+            Value *a = vs->data.list.items[i], *b = vs->data.list.items[j];
+            int ax = (int)a->data.list.items[0]->data.num, ay = (int)a->data.list.items[1]->data.num;
+            int bx = (int)b->data.list.items[0]->data.num, by = (int)b->data.list.items[1]->data.num;
+            if ((ay <= y && by > y) || (by <= y && ay > y))
+                xs[count++] = ax + (int)((double)(y - ay) * (double)(bx - ax) / (double)(by - ay));
+        }
+        for (int i = 1; i < count; i++) { int x = xs[i], j = i; while (j && xs[j-1] > x) { xs[j] = xs[j-1]; j--; } xs[j] = x; }
+        for (int i = 0; i + 1 < count; i += 2) p_SDL_RenderDrawLine(g_renderer, xs[i], y, xs[i+1], y);
+    }
+    free(xs);
+    return make_null();
+}
+
+static Uint32 png_be32(const unsigned char *p) {
+    return ((Uint32)p[0] << 24) | ((Uint32)p[1] << 16) | ((Uint32)p[2] << 8) | p[3];
+}
+
+/* Small dependency-free PNG reader: PNG framing/filtering lives here and
+ * DEFLATE is obtained from the system zlib at runtime, keeping `make gfx`
+ * free of a new link dependency.  The game-facing formats (8-bit RGB/RGBA,
+ * non-interlaced) are intentionally explicit. */
+static Uint32 *gfx_decode_png(const char *path, int *wp, int *hp) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
+    long fl = ftell(f);
+    if (fl < 33 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return NULL; }
+    unsigned char *file = malloc((size_t)fl);
+    if (!file || fread(file, 1, (size_t)fl, f) != (size_t)fl) { free(file); fclose(f); return NULL; }
+    fclose(f);
+    static const unsigned char sig[8] = {137,80,78,71,13,10,26,10};
+    if (memcmp(file, sig, 8) != 0 || memcmp(file + 12, "IHDR", 4) != 0) { free(file); return NULL; }
+    int w = (int)png_be32(file + 16), h = (int)png_be32(file + 20);
+    int depth = file[24], color = file[25], interlace = file[28];
+    int bpp = color == 6 ? 4 : color == 2 ? 3 : 0;
+    if (w <= 0 || h <= 0 || w > 16384 || h > 16384 || depth != 8 || !bpp || interlace) { free(file); return NULL; }
+    size_t idat_n = 0;
+    for (size_t p = 8; p + 12 <= (size_t)fl;) {
+        size_t n = png_be32(file + p); if (n > (size_t)fl - p - 12) { free(file); return NULL; }
+        if (memcmp(file + p + 4, "IDAT", 4) == 0) idat_n += n;
+        p += n + 12;
+    }
+    unsigned char *idat = malloc(idat_n), *q = idat;
+    for (size_t p = 8; idat && p + 12 <= (size_t)fl;) {
+        size_t n = png_be32(file + p);
+        if (memcmp(file + p + 4, "IDAT", 4) == 0) { memcpy(q, file + p + 8, n); q += n; }
+        p += n + 12;
+    }
+    size_t stride = (size_t)w * (size_t)bpp, raw_n = (stride + 1) * (size_t)h;
+    unsigned char *raw = malloc(raw_n);
+    void *zl = dlopen("libz.so.1", RTLD_LAZY); if (!zl) zl = dlopen("libz.so", RTLD_LAZY);
+    typedef int (*uncompress_fn)(unsigned char*, unsigned long*, const unsigned char*, unsigned long);
+    uncompress_fn unzip = zl ? (uncompress_fn)dlsym(zl, "uncompress") : NULL;
+    unsigned long got = (unsigned long)raw_n;
+    int ok = idat && raw && unzip && unzip(raw, &got, idat, (unsigned long)idat_n) == 0 && got == raw_n;
+    free(idat); free(file); if (zl) dlclose(zl);
+    if (!ok) { free(raw); return NULL; }
+    unsigned char *scan = malloc(stride * (size_t)h);
+    if (!scan) { free(raw); return NULL; }
+    for (int y = 0; y < h; y++) {
+        unsigned char filter = raw[(stride + 1) * (size_t)y], *src = raw + (stride + 1) * (size_t)y + 1;
+        unsigned char *dst = scan + stride * (size_t)y, *prev = y ? dst - stride : NULL;
+        if (filter > 4) { free(scan); free(raw); return NULL; }
+        for (size_t x = 0; x < stride; x++) {
+            int a = x >= (size_t)bpp ? dst[x-bpp] : 0, b = prev ? prev[x] : 0, c = prev && x >= (size_t)bpp ? prev[x-bpp] : 0;
+            int add = 0;
+            if (filter == 1) add = a; else if (filter == 2) add = b; else if (filter == 3) add = (a+b)/2;
+            else if (filter == 4) { int p = a+b-c, pa=abs(p-a), pb=abs(p-b), pc=abs(p-c); add = pa<=pb && pa<=pc ? a : pb<=pc ? b : c; }
+            dst[x] = (unsigned char)(src[x] + add);
+        }
+    }
+    free(raw);
+    Uint32 *pixels = malloc((size_t)w * (size_t)h * sizeof *pixels);
+    if (!pixels) { free(scan); return NULL; }
+    for (int i = 0; i < w*h; i++) { unsigned char *p = scan + (size_t)i*bpp; int a = bpp == 4 ? p[3] : 255; pixels[i] = ((Uint32)a<<24)|((Uint32)p[0]<<16)|((Uint32)p[1]<<8)|p[2]; }
+    free(scan); *wp = w; *hp = h; return pixels;
+}
+
+static int gfx_image_handle(Value *v) {
+    if (!v || v->type != VAL_NUM) return 0;
+    int h = (int)v->data.num;
+    return h > 0 && h < g_image_next && g_images[h].texture ? h : 0;
+}
+
+Value* builtin_gfx_image_load(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_STR, "gfx_image_load", "string path", make_num(0));
+    if (!g_renderer || !p_SDL_CreateTexture || !p_SDL_UpdateTexture || g_image_next >= GFX_RESOURCE_MAX) return make_num(0);
+    int w, h; Uint32 *pixels = gfx_decode_png(arg->data.str, &w, &h);
+    if (!pixels) return make_num(0);
+    SDL_Texture *tex = p_SDL_CreateTexture(g_renderer, MY_SDL_PIXELFORMAT_ARGB8888, MY_SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (tex && p_SDL_UpdateTexture(tex, NULL, pixels, w * (int)sizeof(Uint32)) != 0) { p_SDL_DestroyTexture(tex); tex = NULL; }
+    free(pixels); if (!tex) return make_num(0);
+    int id = g_image_next++; g_images[id] = (GfxImage){tex,w,h}; return make_num(id);
+}
+
+Value* builtin_gfx_image_size(Value *arg) {
+    int id = gfx_image_handle(arg);
+    ARG_GUARD(!id, "gfx_image_size", "image handle", make_null());
+    Value *out = make_list(2); list_append_owned(out, make_num(g_images[id].w)); list_append_owned(out, make_num(g_images[id].h)); return out;
+}
+
+Value* builtin_gfx_image_draw(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 7 || !gfx_nums(arg, 0, 7),
+              "gfx_image_draw", "[image, x, y, w, h, alpha, angle]", make_null());
+    int id = gfx_image_handle(arg->data.list.items[0]);
+    ARG_GUARD(!id, "gfx_image_draw", "[image, x, y, w, h, alpha, angle]", make_null());
+    if (!g_renderer) return make_null();
+    SDL_Rect dst = {(int)arg->data.list.items[1]->data.num,(int)arg->data.list.items[2]->data.num,
+                    (int)arg->data.list.items[3]->data.num,(int)arg->data.list.items[4]->data.num};
+    if (p_SDL_SetTextureBlendMode) p_SDL_SetTextureBlendMode(g_images[id].texture, g_draw_blend);
+    if (p_SDL_SetTextureAlphaMod) p_SDL_SetTextureAlphaMod(g_images[id].texture, (Uint8)arg->data.list.items[5]->data.num);
+    double angle = arg->data.list.items[6]->data.num;
+    if (p_SDL_RenderCopyEx) p_SDL_RenderCopyEx(g_renderer, g_images[id].texture, NULL, &dst, angle, NULL, 0);
+    else p_SDL_RenderCopy(g_renderer, g_images[id].texture, NULL, &dst);
+    return make_null();
+}
+
+Value* builtin_gfx_image_from_fb(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 4 || !gfx_nums(arg, 0, 4),
+              "gfx_image_from_fb", "[x, y, w, h]", make_num(0));
+    if (!g_renderer || !p_SDL_RenderReadPixels || !p_SDL_CreateTexture || !p_SDL_UpdateTexture || g_image_next >= GFX_RESOURCE_MAX) return make_num(0);
+    SDL_Rect src = {(int)arg->data.list.items[0]->data.num,(int)arg->data.list.items[1]->data.num,(int)arg->data.list.items[2]->data.num,(int)arg->data.list.items[3]->data.num};
+    if (src.w <= 0 || src.h <= 0) return make_num(0);
+    Uint32 *pixels = malloc((size_t)src.w*(size_t)src.h*sizeof *pixels); if (!pixels) return make_num(0);
+    int ok = p_SDL_RenderReadPixels(g_renderer, &src, MY_SDL_PIXELFORMAT_ARGB8888, pixels, src.w*(int)sizeof(Uint32)) == 0;
+    SDL_Texture *tex = ok ? p_SDL_CreateTexture(g_renderer, MY_SDL_PIXELFORMAT_ARGB8888, MY_SDL_TEXTUREACCESS_STREAMING, src.w, src.h) : NULL;
+    if (tex && p_SDL_UpdateTexture(tex, NULL, pixels, src.w*(int)sizeof(Uint32)) != 0) { p_SDL_DestroyTexture(tex); tex = NULL; }
+    free(pixels); if (!tex) return make_num(0);
+    int id=g_image_next++; g_images[id]=(GfxImage){tex,src.w,src.h}; return make_num(id);
+}
+
+Value* builtin_gfx_font(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
+              || arg->data.list.items[0]->type != VAL_STR || arg->data.list.items[1]->type != VAL_NUM,
+              "gfx_font", "[string path, number size]", make_num(0));
+    if (!ttf_available() || g_font_next >= GFX_RESOURCE_MAX) return make_num(0);
+    void *font = p_TTF_OpenFont(arg->data.list.items[0]->data.str, (int)arg->data.list.items[1]->data.num);
+    if (!font) return make_num(0);
+    int id = g_font_next++;
+    g_fonts[id] = font;
+    return make_num(id);
 }
 
 /* gfx_rrect of [x, y, w, h, radius, r, g, b] or [..., a]
@@ -984,27 +1216,33 @@ Value* builtin_gfx_text(Value *arg) {
      * refusal a regression: tests/test_gfx_argtypes.eigs pins both shapes in
      * pixels. tools/strict_differential.sh's pixel half compares the canvas
      * to a parent build. */
+    int custom = arg && arg->type == VAL_LIST && arg->data.list.count >= 7
+                 && arg->data.list.items[2]->type == VAL_NUM
+                 && arg->data.list.items[3]->type == VAL_STR;
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 6
-              || !gfx_nums(arg, 0, 2)
-              || arg->data.list.items[2]->type != VAL_STR
-              || !gfx_nums(arg, 3, 7),
+              || (custom ? (!gfx_nums(arg, 0, 3) || !gfx_nums(arg, 4, 7))
+                         : (!gfx_nums(arg, 0, 2) || arg->data.list.items[2]->type != VAL_STR || !gfx_nums(arg, 3, 7))),
               "gfx_text",
               "[number x, number y, string text, number r, number g, number b] and an optional number scale",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_text answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)arg->data.list.items[0]->data.num;
-    int y = (int)arg->data.list.items[1]->data.num;
-    const char *text = arg->data.list.items[2]->data.str;
-    int r = (int)arg->data.list.items[3]->data.num;
-    int g = (int)arg->data.list.items[4]->data.num;
-    int b = (int)arg->data.list.items[5]->data.num;
-    int scale = (arg->data.list.count >= 7) ? (int)arg->data.list.items[6]->data.num : 1;
+    int font_id = custom ? (int)arg->data.list.items[0]->data.num : 0;
+    ARG_GUARD(custom && (font_id <= 0 || font_id >= g_font_next || !g_fonts[font_id]),
+              "gfx_text", "valid font handle", make_null());
+    int o = custom ? 1 : 0;
+    int x = (int)arg->data.list.items[o]->data.num;
+    int y = (int)arg->data.list.items[o+1]->data.num;
+    const char *text = arg->data.list.items[o+2]->data.str;
+    int r = (int)arg->data.list.items[o+3]->data.num;
+    int g = (int)arg->data.list.items[o+4]->data.num;
+    int b = (int)arg->data.list.items[o+5]->data.num;
+    int scale = (!custom && arg->data.list.count >= 7) ? (int)arg->data.list.items[6]->data.num : 1;
     if (scale < 1) scale = 1;
 
     if (*text && ttf_available() && p_SDL_CreateTextureFromSurface
         && p_SDL_FreeSurface && p_SDL_QueryTexture && p_SDL_DestroyTexture
         && p_SDL_RenderCopy) {
-        void *font = ttf_font_for_scale(scale);
+        void *font = custom ? g_fonts[font_id] : ttf_font_for_scale(scale);
         if (font) {
             SDL_Color col = { (Uint8)r, (Uint8)g, (Uint8)b, 255 };
             void *surf = p_TTF_RenderUTF8_Blended(font, text, col);

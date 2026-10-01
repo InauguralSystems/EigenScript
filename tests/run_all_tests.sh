@@ -3543,6 +3543,24 @@ else
     echo ""
 fi
 
+# [120c] Modern gfx surface (#1216 — probe-gated like the other gfx rows).
+echo "[120c] Gfx Images, Blend, Polygon, Alpha, and Fonts"
+if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
+    GM_OUTPUT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_modern.eigs 2>&1); GM_RC=$?
+    if rc_ok "$GM_RC" "$GM_OUTPUT" && echo "$GM_OUTPUT" | grep -q "Tests: 11 | Pass: 11 | Fail: 0"; then
+        TOTAL=$((TOTAL + 11)); PASS=$((PASS + 11))
+        echo "  PASS: all 11 modern gfx pixel/resource checks"
+    else
+        TOTAL=$((TOTAL + 11)); FAIL=$((FAIL + 11))
+        echo "  FAIL: modern gfx surface"
+        echo "$GM_OUTPUT" | tail -20
+    fi
+    echo ""
+else
+    section_skip "binary built without EIGENSCRIPT_EXT_GFX"
+    echo ""
+fi
+
 # [133] gfx argument-type guards (#1007 — probe-gated: needs a gfx build).
 # Three *_open builtins read `.data.num` with no type check, so a string
 # where a number belonged reinterpreted a char* as a double: gfx_open
@@ -3684,7 +3702,7 @@ DFLTREAD
     # the audio axis, which is what this did while the pixel proof was being
     # added, made the plain pin wrong by exactly 3 on a machine WITH libSDL2
     # and right on one without.
-    GA_WANT_PLAIN=30; GA_WANT_STRICT=84
+    GA_WANT_PLAIN=30; GA_WANT_STRICT=98
     echo "$GA_PLAIN"  | grep -q "pixel-proof: 1"  && GA_WANT_PLAIN=$((GA_WANT_PLAIN + 6))
     if echo "$GA_STRICT" | grep -q "audio-device: 1"; then
         GA_WANT_PLAIN=$((GA_WANT_PLAIN + 3)); GA_WANT_STRICT=$((GA_WANT_STRICT + 2))

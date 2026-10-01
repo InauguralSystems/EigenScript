@@ -32,6 +32,13 @@
     X(gfx_line, builtin_gfx_line) \
     X(gfx_point, builtin_gfx_point) \
     X(gfx_circle, builtin_gfx_circle) \
+    X(gfx_blend, builtin_gfx_blend) \
+    X(gfx_polygon, builtin_gfx_polygon) \
+    X(gfx_image_load, builtin_gfx_image_load) \
+    X(gfx_image_draw, builtin_gfx_image_draw) \
+    X(gfx_image_size, builtin_gfx_image_size) \
+    X(gfx_image_from_fb, builtin_gfx_image_from_fb) \
+    X(gfx_font, builtin_gfx_font) \
     X(gfx_rrect, builtin_gfx_rrect) \
     X(gfx_clip, builtin_gfx_clip) \
     X(gfx_read, builtin_gfx_read) \

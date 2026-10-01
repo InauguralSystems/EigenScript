@@ -1,0 +1,60 @@
+load_file of "lib/test.eigs"
+
+opened is gfx_open of [32, 32, "gfx modern surface #1216"]
+assert_eq of [opened, 1, "renderer opens"]
+
+# Additive blending must accumulate rather than replace.
+gfx_clear of [0, 0, 0]
+gfx_blend of "add"
+gfx_rect of [2, 2, 4, 4, 50, 0, 0]
+one is gfx_read of [3, 3]
+gfx_rect of [2, 2, 4, 4, 50, 0, 0]
+two is gfx_read of [3, 3]
+assert_true of [two[0] > one[0], "additive overlap is brighter"]
+
+# Optional alpha reaches line and point.
+gfx_blend of "blend"
+gfx_clear of [0, 0, 0]
+gfx_line of [0, 5, 8, 5, 200, 0, 0, 128]
+line_px is gfx_read of [4, 5]
+assert_true of [line_px[0] > 80 and line_px[0] < 150, "line alpha is blended"]
+gfx_point of [10, 5, 0, 200, 0, 128]
+point_px is gfx_read of [10, 5]
+assert_true of [point_px[1] > 80 and point_px[1] < 150, "point alpha is blended"]
+
+# Arbitrary filled polygon.
+gfx_polygon of [[[4, 10], [12, 10], [8, 18]], 0, 0, 220, 255]
+poly_px is gfx_read of [8, 12]
+assert_true of [poly_px[2] > 180, "polygon fills its interior"]
+
+# PNG RGBA load, size, scaled draw, alpha, and framebuffer capture.
+img is gfx_image_load of "../tests/fixtures/gfx_rgba.png"
+assert_true of [img > 0, "PNG loads to an image handle"]
+assert_eq of [gfx_image_size of img, [2, 2], "image reports dimensions"]
+gfx_image_draw of [img, 20, 2, 4, 4, 255, 0]
+img_px is gfx_read of [20, 2]
+assert_true of [img_px[0] > 240 and img_px[1] < 10, "RGBA image blits"]
+cap is gfx_image_from_fb of [20, 2, 2, 2]
+assert_true of [cap > 0, "framebuffer region captures to a handle"]
+gfx_image_draw of [cap, 20, 20, 2, 2, 255, 0]
+cap_px is gfx_read of [20, 20]
+assert_true of [cap_px[0] > 240, "captured image blits"]
+
+# Custom font is environment-optional, but when SDL_ttf and the fixture system
+# font exist the handle must render through gfx_text's handle form.
+font is gfx_font of ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12]
+if font > 0:
+    gfx_text of [font, 1, 20, "A", 255, 255, 255]
+    font_lit is 0
+    for fy in range of 12:
+        for fx in range of 12:
+            fp is gfx_read of [1 + fx, 20 + fy]
+            if fp[0] > 0:
+                font_lit is font_lit + 1
+    assert_true of [font_lit > 0, "font handle renders pixels through gfx_text"]
+else:
+    # SDL_ttf is optional at runtime; the argument-path gate still covers it.
+    assert_true of [1, "SDL_ttf unavailable: explicit font rendering skipped"]
+
+gfx_close of null
+test_summary of null

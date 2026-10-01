@@ -736,13 +736,20 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 | `gfx_close` | `gfx_close of null` | Destroy window and quit SDL |
 | `gfx_clear` | `gfx_clear of [r, g, b]` / `gfx_clear of null` | Clear backbuffer to color; `null` clears to black |
 | `gfx_rect` | `gfx_rect of [x, y, w, h, r, g, b]` or `[..., a]` | Filled rectangle |
-| `gfx_line` | `gfx_line of [x1, y1, x2, y2, r, g, b]` | Line segment |
-| `gfx_point` | `gfx_point of [x, y, r, g, b]` | Single pixel |
+| `gfx_line` | `gfx_line of [x1, y1, x2, y2, r, g, b]` or `[..., a]` | Line segment with optional alpha |
+| `gfx_point` | `gfx_point of [x, y, r, g, b]` or `[..., a]` | Single pixel with optional alpha |
 | `gfx_circle` | `gfx_circle of [cx, cy, radius, r, g, b]` | Filled circle (midpoint) |
+| `gfx_blend` | `gfx_blend of mode` | Set subsequent drawing to `"blend"`, `"add"`, or `"none"` blending |
+| `gfx_polygon` | `gfx_polygon of [vertices, r, g, b, a]` | Fill an arbitrary list of `[x, y]` vertices with RGBA color |
+| `gfx_image_load` | `gfx_image_load of path` | Load an 8-bit RGB/RGBA PNG and return an opaque image handle (or `0`); PNG DEFLATE is loaded dynamically from zlib |
+| `gfx_image_draw` | `gfx_image_draw of [image, x, y, w, h, alpha, angle]` | Draw an image scaled, alpha-modulated, rotated in degrees, and using the active blend mode |
+| `gfx_image_size` | `gfx_image_size of image` | Return an image handle's `[width, height]` |
+| `gfx_image_from_fb` | `gfx_image_from_fb of [x, y, w, h]` | Capture a current-backbuffer region to an image handle |
+| `gfx_font` | `gfx_font of [path, size]` | Load a TTF at a pixel size and return an opaque font handle (or `0`) |
 | `gfx_rrect` | `gfx_rrect of [x, y, w, h, radius, r, g, b]` or `[..., a]` | Filled rounded rectangle (scanline corner fill); radius clamps to half the smaller dimension, `radius 0` = plain rect |
 | `gfx_clip` | `gfx_clip of [x, y, w, h]` / `gfx_clip of null` | Set / clear the render clip rectangle |
 | `gfx_read` | `gfx_read of [x, y]` | Read back one rendered pixel as `[r, g, b]` — the render-decode oracle primitive (#823). Reads the current back buffer: call after drawing, **before** `gfx_present`. Null with no window or a failed read. Nondeterministic input (font raster, driver), so it records/replays on the trace tape |
-| `gfx_text` | `gfx_text of [x, y, text, r, g, b]` or `[..., scale]` | Text. Proportional antialiased TTF when libSDL2_ttf + a font are available (#593); the 5x7 bitmap font otherwise — see the font note below the table |
+| `gfx_text` | `gfx_text of [x, y, text, r, g, b]`, `[..., scale]`, or `[font, x, y, text, r, g, b]` | Text. A `gfx_font` handle selects an explicit TTF; otherwise proportional antialiased TTF is used when available (#593), with the 5x7 bitmap font as fallback — see the font note below the table |
 | `gfx_text_width` | `gfx_text_width of [text, scale?]` or `of "text"` | Pixel width of `text` under the active text renderer: TTF metrics when active, `len * 6 * scale` in bitmap mode. Works before `gfx_open` |
 | `gfx_text_height` | `gfx_text_height of scale?` | Pixel line height under the active text renderer: TTF font height when active, `7 * scale` in bitmap mode |
 | `gfx_present` | `gfx_present of null` | Flip backbuffer to screen |
