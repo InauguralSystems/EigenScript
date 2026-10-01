@@ -638,21 +638,23 @@ echo "[0d] Host frame line in traces from a builtin-run chunk"
 check_binary_fingerprint
 HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>&1); HFL_RC=$?
 TOTAL=$((TOTAL + 1))
+HFL_OK=1
 # The second sandbox_run sits on line 12, the first on line 8. Planted (pre-fix
 # vm.c) both traces printed the same stale line (14, past the end of the file),
 # so both rows below went red; test_vm_run_bytecode showed the previous call's
 # line instead -- the stale value is whatever the frame's ip happened to hold.
 if [ "$HFL_RC" -eq 0 ] && echo "$HFL_OUT" | grep -q "at <module> (line 12)"; then
-    PASS=$((PASS + 1)); echo "  PASS: host frame line is the call's own line"
+    echo "  PASS: host frame line is the call's own line"
 else
-    FAIL=$((FAIL + 1)); echo "  FAIL: host frame line (rc=$HFL_RC): $(echo "$HFL_OUT" | grep 'at <module>' | tr '\n' ' ')"
+    HFL_OK=0; echo "  FAIL: host frame line (rc=$HFL_RC): $(echo "$HFL_OUT" | grep 'at <module>' | tr '\n' ' ')"
 fi
 HFL_N=$(echo "$HFL_OUT" | grep -c "at <module> (line 8)")
 if [ "$HFL_N" -eq 1 ]; then
-    PASS=$((PASS + 1)); echo "  PASS: the first call's line appears once, not for both traces"
+    echo "  PASS: the first call's line appears once, not for both traces"
 else
-    FAIL=$((FAIL + 1)); echo "  FAIL: line 8 appeared $HFL_N times (want 1)"
+    HFL_OK=0; echo "  FAIL: line 8 appeared $HFL_N times (want 1)"
 fi
+[ "$HFL_OK" -eq 1 ] && PASS=$((PASS + 1)) || FAIL=$((FAIL + 1))
 echo ""
 
 echo "[0g] After a call returns, a raise reports the caller's line (#1424)"
@@ -1837,6 +1839,7 @@ body = ['r1 is what is x at %d' % A, 'print of r1',
         'boom is undefined_xyz_at_%d' % B]
 print('\n'.join(L + body))" > "$LW_FILE"
 TOTAL=$((TOTAL + 1))
+LW_OK=1
 # Interpreter tier
 LW_INT=$(EIGS_JIT_OFF=1 ./eigenscript "$LW_FILE" </dev/null 2>&1)
 # JIT tier (thresholds forced low so any hot region compiles)
@@ -1849,21 +1852,22 @@ LW_R2=$(printf '%s\n' "$LW_INT" | sed -n '2p')
 # 65536 (a small number). The invariant is simply: reported line > 65535.
 LW_ERRLINE=$(printf '%s\n' "$LW_INT" | grep -oE "Error line [0-9]+" | head -1 | grep -oE "[0-9]+")
 if [ "$LW_R1" = "111" ] && [ "$LW_R2" = "222" ]; then
-    PASS=$((PASS + 1)); echo "  PASS: 'what is x at L' correct past line 65535 (111, 222)"
+    echo "  PASS: 'what is x at L' correct past line 65535 (111, 222)"
 else
-    FAIL=$((FAIL + 1)); echo "  FAIL: temporal query wrapped (r1='$LW_R1' r2='$LW_R2', want 111/222)"
+    LW_OK=0; echo "  FAIL: temporal query wrapped (r1='$LW_R1' r2='$LW_R2', want 111/222)"
 fi
 if [ -n "$LW_ERRLINE" ] && [ "$LW_ERRLINE" -gt 65535 ]; then
-    PASS=$((PASS + 1)); echo "  PASS: error line reported as $LW_ERRLINE (> 65535, not wrapped)"
+    echo "  PASS: error line reported as $LW_ERRLINE (> 65535, not wrapped)"
 else
-    FAIL=$((FAIL + 1)); echo "  FAIL: error line wrapped ('$LW_ERRLINE', want > 65535)"
+    LW_OK=0; echo "  FAIL: error line wrapped ('$LW_ERRLINE', want > 65535)"
 fi
 if [ "$(printf '%s\n' "$LW_JIT" | sed -n '1,2p' | tr '\n' ',')" = "111,222," ]; then
-    PASS=$((PASS + 1)); echo "  PASS: JIT tier agrees with interpreter past line 65535"
+    echo "  PASS: JIT tier agrees with interpreter past line 65535"
 else
-    FAIL=$((FAIL + 1)); echo "  FAIL: JIT/interpreter divergence past line 65535"
+    LW_OK=0; echo "  FAIL: JIT/interpreter divergence past line 65535"
     printf '%s\n' "$LW_JIT" | head -3
 fi
+[ "$LW_OK" -eq 1 ] && PASS=$((PASS + 1)) || FAIL=$((FAIL + 1))
 rm -f "$LW_FILE"
 
 # [116] Silent-tolerance audit batch-2 (#497/#498/#499/#501/#502/#511/#512).
@@ -6187,22 +6191,24 @@ CI_LF=$( cd "$CIRC_DIR" && "$BIN_ABS" la.eigs </dev/null 2>&1 ); CI_LF_RC=$?
 CI_LF=$(echo "$CI_LF" | grep -v '^\[load_file\]')
 rm -rf "$CIRC_DIR"
 TOTAL=$((TOTAL + 1))
+CI_OK=1
 # rc=1 (raised, uncaught) and NOT 139 (segfault); message present.
 if [ "$CI_IMP_RC" = "1" ] && echo "$CI_IMP" | grep -q "circular dependency"; then
-    echo "  PASS: mutual import raises (no SIGSEGV)"; PASS=$((PASS + 1))
+    echo "  PASS: mutual import raises (no SIGSEGV)"
 else
-    echo "  FAIL: mutual import (rc=$CI_IMP_RC out='$CI_IMP')"; FAIL=$((FAIL + 1))
+    echo "  FAIL: mutual import (rc=$CI_IMP_RC out='$CI_IMP')"; CI_OK=0
 fi
 if [ "$CI_CAT_RC" = "0" ] && echo "$CI_CAT" | grep -q "^CAUGHT$"; then
-    echo "  PASS: circular import is try/catch-able"; PASS=$((PASS + 1))
+    echo "  PASS: circular import is try/catch-able"
 else
-    echo "  FAIL: circular import not catchable (rc=$CI_CAT_RC out='$CI_CAT')"; FAIL=$((FAIL + 1))
+    echo "  FAIL: circular import not catchable (rc=$CI_CAT_RC out='$CI_CAT')"; CI_OK=0
 fi
 if [ "$CI_LF_RC" = "1" ] && echo "$CI_LF" | grep -q "circular dependency"; then
-    echo "  PASS: mutual load_file raises (no SIGSEGV)"; PASS=$((PASS + 1))
+    echo "  PASS: mutual load_file raises (no SIGSEGV)"
 else
-    echo "  FAIL: mutual load_file (rc=$CI_LF_RC out='$CI_LF')"; FAIL=$((FAIL + 1))
+    echo "  FAIL: mutual load_file (rc=$CI_LF_RC out='$CI_LF')"; CI_OK=0
 fi
+[ "$CI_OK" -eq 1 ] && PASS=$((PASS + 1)) || FAIL=$((FAIL + 1))
 echo ""
 
 echo "[115b] load_file quiet by default (#560)"
@@ -6218,16 +6224,18 @@ QL_ERR=$( cd "$QL_DIR" && "$BIN_ABS" main.eigs </dev/null 2>&1 >/dev/null )
 QL_VERB=$( cd "$QL_DIR" && EIGS_VERBOSE_LOAD=1 "$BIN_ABS" main.eigs </dev/null 2>&1 >/dev/null )
 rm -rf "$QL_DIR"
 TOTAL=$((TOTAL + 1))
+QL_OK=1
 if [ -z "$QL_ERR" ]; then
-    echo "  PASS: successful load_file emits nothing on stderr"; PASS=$((PASS + 1))
+    echo "  PASS: successful load_file emits nothing on stderr"
 else
-    echo "  FAIL: load_file stderr not empty: '$QL_ERR'"; FAIL=$((FAIL + 1))
+    echo "  FAIL: load_file stderr not empty: '$QL_ERR'"; QL_OK=0
 fi
 if echo "$QL_VERB" | grep -q '^\[load_file\] Loading'; then
-    echo "  PASS: EIGS_VERBOSE_LOAD=1 re-enables the banner"; PASS=$((PASS + 1))
+    echo "  PASS: EIGS_VERBOSE_LOAD=1 re-enables the banner"
 else
-    echo "  FAIL: EIGS_VERBOSE_LOAD banner missing: '$QL_VERB'"; FAIL=$((FAIL + 1))
+    echo "  FAIL: EIGS_VERBOSE_LOAD banner missing: '$QL_VERB'"; QL_OK=0
 fi
+[ "$QL_OK" -eq 1 ] && PASS=$((PASS + 1)) || FAIL=$((FAIL + 1))
 echo ""
 
 echo "[92] Module Resolve Base"
@@ -6310,9 +6318,8 @@ if [ "$PKG2_RC" = "0" ] && [ "$PKG2_PASS" = "11" ]; then
     echo "$PKG2_OUT" | grep "^  PASS:"
     PASS=$((PASS + 1))
 elif [ "$PKG2_SKIP" -gt "0" ]; then
-    # Round 6 banked 11 passes for a run that asserted nothing. Counted as a
-    # skip now, and TOTAL gives the 11 back.
-    TOTAL=$((TOTAL - 11))
+    # A skipped child asserted nothing, so refund this section's one slot.
+    TOTAL=$((TOTAL - 1))
     PKG2_SKIP_LINE=$(echo "$PKG2_OUT" | grep "^  SKIP:" | head -1)
     section_skip "$PKG2_SKIP_LINE"
 else
@@ -6334,9 +6341,8 @@ if [ "$PKG3_RC" = "0" ] && [ "$PKG3_PASS" = "7" ]; then
     echo "$PKG3_OUT" | grep "^  PASS:"
     PASS=$((PASS + 1))
 elif [ "$PKG3_SKIP" -gt "0" ]; then
-    # Round 6 banked 7 passes for a run that asserted nothing. Counted as a
-    # skip now, and TOTAL gives the 7 back.
-    TOTAL=$((TOTAL - 7))
+    # A skipped child asserted nothing, so refund this section's one slot.
+    TOTAL=$((TOTAL - 1))
     PKG3_SKIP_LINE=$(echo "$PKG3_OUT" | grep "^  SKIP:" | head -1)
     section_skip "$PKG3_SKIP_LINE"
 else
@@ -6360,9 +6366,8 @@ if [ "$PKG4_RC" = "0" ] && [ "$PKG4_PASS" = "3" ]; then
     echo "$PKG4_OUT" | grep "^  PASS:"
     PASS=$((PASS + 1))
 elif [ "$PKG4_SKIP" -gt "0" ]; then
-    # Round 6 banked 3 passes for a run that asserted nothing. Counted as a
-    # skip now, and TOTAL gives the 3 back.
-    TOTAL=$((TOTAL - 3))
+    # A skipped child asserted nothing, so refund this section's one slot.
+    TOTAL=$((TOTAL - 1))
     PKG4_SKIP_LINE=$(echo "$PKG4_OUT" | grep "^  SKIP:" | head -1)
     section_skip "$PKG4_SKIP_LINE"
 else
