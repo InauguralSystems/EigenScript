@@ -81,6 +81,16 @@ int main(void) {
     EigsState *state = eigs_open();
     assert(state != NULL);
 
+    /* A joined worker leaves this state in atomic-refcount mode. Reproduce
+     * that persistent condition directly: sandbox keys must still remain in
+     * their run-owned scope rather than entering the process-global table. */
+    g_vm_multithreaded = 1;
+    /* Warm the fixed allowlist and diagnostic-wrapper names that legitimately
+     * acquire process lifetime in MT mode before measuring attacker keys. */
+    Value *warm = sandbox_call(-1);
+    assert(warm != NULL);
+    val_decref(warm);
+    gc_collect_cycles();
     const size_t baseline = intern_count();
     const size_t sandbox_baseline = sandbox_only_intern_count();
     Value *escaped = NULL;

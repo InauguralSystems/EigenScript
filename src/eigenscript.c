@@ -2385,6 +2385,7 @@ void eigs_module_ns_sync(Value *dict) {
  * single-threaded included), which is a worse trade than the leak it removes.
  */
 static EnvNameIntern *g_shared_key_interns[ENV_NAME_INTERN_BUCKETS];
+static size_t g_shared_key_intern_count;
 static pthread_mutex_t g_shared_key_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* The mutex is load-bearing, not hygiene: two workers inserting into one
@@ -2407,6 +2408,7 @@ static const char *shared_intern_key(const char *name) {
     it->hash = h;
     it->next = g_shared_key_interns[bucket];
     g_shared_key_interns[bucket] = it;
+    g_shared_key_intern_count++;
     pthread_mutex_unlock(&g_shared_key_mutex);
     return it->name;
 }
@@ -2445,23 +2447,23 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
      * predicted-false test on the INSERT path only (an update of an existing
      * key returned above and never reaches here).
      *
-     * The sandbox intern SCOPE is skipped on the MT arm deliberately, not by
-     * omission: env_intern_scope_promote matches by POINTER against this
-     * thread's table and then against the owner list, and a process-global
-     * pointer is in neither, so the call is a guaranteed no-op there. The
-     * lifetime it exists to grant — outliving the sandbox run — a globally
-     * interned key already has. */
+     * A sandbox scope takes precedence over the MT arm. Its dictionaries are
+     * isolated from host mutable values, and promotion gives an escaped dict
+     * ownership of a private key copy. Sending those attacker-controlled keys
+     * to the process-lifetime table would bypass both scoped cleanup and the
+     * sandbox allocation boundary. */
     char *interned;
-    if (__builtin_expect(g_vm_multithreaded, 0)) {
-        interned = (char *)shared_intern_key(key);
-    } else {
+    if (g_sandbox_intern_scope != 0) {
         interned = env_intern_name(key);
         /* Claim scoped keys at insertion, not only at the sandbox result
          * boundary: trace history and other counted Value holders may retain
          * an inner dict even when that dict is not reachable from the
          * returned result. */
-        if (g_sandbox_intern_scope != 0)
-            interned = env_intern_scope_promote(dict, interned);
+        interned = env_intern_scope_promote(dict, interned);
+    } else if (__builtin_expect(g_vm_multithreaded, 0)) {
+        interned = (char *)shared_intern_key(key);
+    } else {
+        interned = env_intern_name(key);
     }
     dict->data.dict.keys[dict->data.dict.count] = interned;
     Value *promoted = promote_if_arena(val);
@@ -3175,6 +3177,11 @@ size_t env_intern_debug_count(const char *prefix) {
     for (EnvInternValueOwner *o = g_sandbox_intern_owners; o; o = o->next)
         for (EnvNameIntern *it = o->names; it; it = it->owner_next)
             if (!prefix || strncmp(it->name, prefix, strlen(prefix)) == 0) count++;
+    if (!prefix) {
+        pthread_mutex_lock(&g_shared_key_mutex);
+        count += g_shared_key_intern_count;
+        pthread_mutex_unlock(&g_shared_key_mutex);
+    }
     return count;
 }
 
