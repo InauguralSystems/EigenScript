@@ -21,7 +21,18 @@ declared_cmd() {
 }
 contains() { local wanted="$1" item; shift; for item in "$@"; do [ "$item" = "$wanted" ] && return 0; done; return 1; }
 resolve_eco() {
-  ECO="$(cd "${CA_ECO:-$HERE/..}" 2>/dev/null && pwd)" || { echo "CA_ECO is not a directory: ${CA_ECO:-$HERE/..}"; exit 2; }
+  local requested="${CA_ECO:-}" common main
+  if [ -z "$requested" ]; then
+    common="$(git -C "$HERE" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || common=""
+    if [ -n "$common" ] && [ "${common#/}" = "$common" ]; then common="$HERE/$common"; fi
+    if [ "${common##*/}" = .git ]; then
+      main="${common%/.git}"
+      requested="${main%/*}"
+    else
+      requested="$HERE/.."
+    fi
+  fi
+  ECO="$(cd "$requested" 2>/dev/null && pwd)" || { echo "CA_ECO is not a directory: $requested"; exit 2; }
 }
 pin_of() {
   local p="" f
@@ -282,6 +293,9 @@ build_overlay() {
   else mkdir -p "$OVERLAY/src" || return 1; fi
   if [ -d "$TREE/lib" ]; then cp -rL "$TREE/lib" "$OVERLAY/lib" || return 1
   else mkdir -p "$OVERLAY/lib" || return 1; fi
+  # The Makefile reads support files while it is being parsed (not merely from
+  # recipes), so an overlay that carries Makefile must carry tools with it.
+  if [ -d "$TREE/tools" ]; then cp -rL "$TREE/tools" "$OVERLAY/tools" || return 1; fi
   for item in "$TREE"/* "$TREE"/.[!.]* "$TREE"/..?*; do
     [ -f "$item" ] || continue
     base="${item##*/}"
@@ -318,6 +332,7 @@ row() {
     session=(python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1],sys.argv[1:])')
   fi
   log="$WORK/$name.log"
+  : > "$log"
   : > "$CALL_LOG"
   if [ "$kind" = missing-inventory ] || [ -z "$cmd" ]; then verdict=UNRUNNABLE; prereq="$kind"
   elif v="$(unsupported_variant "$ECO/$name" "$cmd")" && [ -n "$v" ]; then verdict=UNRUNNABLE; prereq="variant:$v"
@@ -351,8 +366,8 @@ row() {
     elif [ "$ok" -eq 0 ]; then verdict=FAIL; prereq=SWALLOWED
     elif [ "$skips" -gt 0 ]; then verdict=FAIL; prereq="skips:$skips"
     fi
-    if [ -n "${CA_LOGS:-}" ]; then mkdir -p "$CA_LOGS" && cp "$log" "$CA_LOGS/$name.log"; fi
   fi
+  mkdir -p "$LOGS" && cp "$log" "$LOGS/$name.log" || return 1
   # A consumer may write the original binary. Account for that row as a
   # failure even when its command and every counted call returned zero.
   actual="$(sha256sum "$candidate" 2>/dev/null | awk '{print $1}')" || actual=missing
@@ -375,7 +390,7 @@ row() {
   [ "$verdict" = PASS ]
 }
 run() {
-  local candidate="${1:-}" arg i examined=0 bad=0 rc version final_tmp
+  local candidate="${1:-}" arg i examined=0 bad=0 rc version final_tmp gfx_lib
   FULL=""; GFX=""; GFX_ENV=()
   [ -n "$candidate" ] || { echo 'usage: run <tree-or-binary> [--full binary] [--gfx binary]'; return 2; }
   shift
@@ -393,12 +408,18 @@ run() {
   for arg in "$FULL" "$GFX"; do [ -z "$arg" ] || { [ -f "$arg" ] && [ -x "$arg" ]; } || { echo "variant not executable: $arg"; return 2; }; done
   [ -z "$FULL" ] || FULL="$(readlink -f "$FULL")"
   [ -z "$GFX" ] || GFX="$(readlink -f "$GFX")"
+  if [ -n "$GFX" ]; then
+    gfx_lib="$(dirname "$GFX")/../lib"
+    [ -d "$gfx_lib" ] || { echo "gfx variant has no runtime lib directory: $gfx_lib"; return 2; }
+  fi
   BUDGET="${CA_TIMEOUT:-1800}"
   case "$BUDGET" in ''|*[!0-9]*|0) echo 'CA_TIMEOUT must be positive'; return 2 ;; esac
   command -v timeout >/dev/null || { echo 'timeout missing'; return 2; }
   # Output-path selection completes argument validation. Read the old floor,
   # invalidate that exact path, and install traps before any candidate hash.
   RECORD="${CA_RECORD:-$HERE/reports/consumer_acceptance/$(date -u +%F)-candidate.record}"
+  LOGS="${CA_LOGS:-$RECORD.logs}"
+  mkdir -p "$LOGS" || { echo "cannot create consumer log directory: $LOGS"; return 2; }
   record_floor
   {
     echo '# consumer_acceptance record'
@@ -682,8 +703,45 @@ selftest() {
   if [ "$st_rc" -ne 0 ] && grep -Fq 'row|mutated|v0.43.0|FAIL|0|' "$st_record" && grep -Fq 'prereq=candidate-mutated:eigenscript' "$st_record"; then
     echo "plant G check=candidate-mutation RED $(grep '^row|mutated|' "$st_record" | head -1)"
   else echo 'plant G check=candidate-mutation SILENT'; st_bad=1; fi
+  # (H) The private overlay carries files read while parsing the Makefile.
+  mkdir -p "$st_root/tools"
+  printf '%s\n' '-Wall' > "$st_root/tools/werror_flags.txt"
+  printf 'FLAGS := $(shell cat tools/werror_flags.txt)\nall:\n\t@:\n' > "$st_root/Makefile"
+  printf '#!/bin/sh\nexit 0\n' > "$st_candidate"; chmod +x "$st_candidate"
+  st_reset; st_consumer ouroboros 'make -C "$EIGS_DIR" -pqRr >/dev/null || [ $? -eq 1 ]; eigenscript smoke.eigs'
+  printf 'ouroboros\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && grep -Fq 'row|ouroboros|v0.43.0|PASS|0|' "$st_record"; then
+    echo 'plant H check=makefile-overlay GREEN tools/werror_flags.txt=read cand_calls=1'
+  else echo "plant H check=makefile-overlay SILENT $(grep '^row|ouroboros|' "$st_record" | head -1)"; cat "$st_record.logs/ouroboros.log"; st_bad=1; fi
+  # (I) Logs survive beside the record without an explicit CA_LOGS setting.
+  if [ -f "$st_record.logs/ouroboros.log" ]; then
+    echo 'plant I check=default-consumer-logs GREEN record.logs/ouroboros.log=present'
+  else echo 'plant I check=default-consumer-logs SILENT'; st_bad=1; fi
+  # (J) A gfx executable that cannot resolve ../lib is refused up front.
+  mkdir -p "$st_root/build/gfx"
+  cp "$st_candidate" "$st_root/build/gfx/eigenscript"
+  rm -rf "$st_root/build/lib"
+  st_rc=0
+  CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --gfx "$st_root/build/gfx/eigenscript" > "$st_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -eq 2 ] && grep -Fq 'gfx variant has no runtime lib directory:' "$st_out"; then
+    echo 'plant J check=gfx-runtime-lib RED missing=build/lib refused=yes'
+  else echo 'plant J check=gfx-runtime-lib SILENT'; st_bad=1; fi
+  # (K) Git's common directory finds the ecosystem from a nested worktree.
+  local wt_main="$st_root/eco-root/EigenScript" wt="$st_root/eco-root/EigenScript/.worktrees/topic" wt_out="$st_root/worktree.out"
+  mkdir -p "$wt_main/tools" "$st_root/eco-root/one/.devcontainer"
+  cp "$HERE/tools/consumer_acceptance.sh" "$HERE/tools/read_werror_flags.sh" "$HERE/tools/werror_flags.txt" "$HERE/tools/_derive_variants.py" "$HERE/tools/_extract_runcmd.py" "$wt_main/tools/"
+  : > "$st_root/eco-root/.ca_fixture"
+  printf 'ARG EIGS_REF=v0.43.0\n' > "$st_root/eco-root/one/.devcontainer/Dockerfile"
+  printf 'eigenscript smoke.eigs\n' > "$st_root/eco-root/one/.ca_declared"
+  git -C "$wt_main" init -q && git -C "$wt_main" add tools && git -C "$wt_main" -c user.name=test -c user.email=test@example.invalid commit -qm init
+  git -C "$wt_main" worktree add -q -b topic "$wt"
+  st_rc=0; bash "$wt/tools/consumer_acceptance.sh" plan > "$wt_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && grep -Fq 'inventory=1 examined=1' "$wt_out"; then
+    echo 'plant K check=worktree-eco-root GREEN inventory=1 examined=1'
+  else echo 'plant K check=worktree-eco-root SILENT'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 15/15 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 19/19 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 
