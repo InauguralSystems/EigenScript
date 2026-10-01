@@ -3552,9 +3552,11 @@ static int w025_is_shadowed(const char *name, char **shadow, int shadow_count) {
 }
 
 static void w025_walk(ASTNode *n, int enter_functions, char **shadow,
-                      int shadow_count, int skip_calls, W025CallFn fn, void *arg) {
+                      int shadow_count, int skip_calls, int skip_next_function,
+                      W025CallFn fn, void *arg) {
     if (!n) return;
-#define WALK(x) w025_walk((x), enter_functions, shadow, shadow_count, skip_calls, fn, arg)
+#define WALK(x) w025_walk((x), enter_functions, shadow, shadow_count, skip_calls, \
+                          skip_next_function, fn, arg)
     switch (n->type) {
         case AST_RELATION:
             if (!skip_calls && n->data.relation.left &&
@@ -3565,21 +3567,38 @@ static void w025_walk(ASTNode *n, int enter_functions, char **shadow,
             WALK(n->data.relation.left); WALK(n->data.relation.right); break;
         case AST_FUNC:
             if (!enter_functions) break;
-            /* The outer named function is represented by its summary warning;
-             * a nested definition is not in that top-level summary table, so
-             * expose calls in its body directly. */
-            int function_skip = skip_calls ? 0 : 1;
+            /* Defaults are evaluated in the enclosing scope.  Parameters are
+             * added to (rather than replacing) that scope for the body: a
+             * nested closure still captures an enclosing callback binding. */
             for (int i = 0; i < n->data.func.param_count; i++)
                 w025_walk(n->data.func.param_defaults ? n->data.func.param_defaults[i] : NULL,
-                          enter_functions, shadow, shadow_count, function_skip, fn, arg);
+                          enter_functions, shadow, shadow_count, skip_calls,
+                          skip_next_function, fn, arg);
+            int combined_count = shadow_count + n->data.func.param_count;
+            char **combined = combined_count ? xcalloc((size_t)combined_count, sizeof(*combined)) : NULL;
+            for (int i = 0; i < shadow_count; i++) combined[i] = shadow[i];
+            for (int i = 0; i < n->data.func.param_count; i++)
+                combined[shadow_count + i] = n->data.func.params[i];
+            /* Only the summarized top-level function is suppressed.  A
+             * nested function is a distinct boundary and must not inherit
+             * that suppression at every other lexical depth. */
+            int function_skip = skip_next_function;
             for (int i = 0; i < n->data.func.body_count; i++)
                 w025_walk(n->data.func.body[i], enter_functions,
-                          n->data.func.params, n->data.func.param_count, function_skip, fn, arg);
+                          combined, combined_count, function_skip, 0, fn, arg);
+            free(combined);
             break;
         case AST_LAMBDA:
-            if (enter_functions)
+            if (enter_functions) {
+                int combined_count = shadow_count + n->data.lambda.param_count;
+                char **combined = combined_count ? xcalloc((size_t)combined_count, sizeof(*combined)) : NULL;
+                for (int i = 0; i < shadow_count; i++) combined[i] = shadow[i];
+                for (int i = 0; i < n->data.lambda.param_count; i++)
+                    combined[shadow_count + i] = n->data.lambda.params[i];
                 w025_walk(n->data.lambda.body, enter_functions,
-                          n->data.lambda.params, n->data.lambda.param_count, 0, fn, arg);
+                          combined, combined_count, 0, 0, fn, arg);
+                free(combined);
+            }
             break;
         case AST_PROGRAM:
             for (int i = 0; i < n->data.program.count; i++) { WALK(n->data.program.stmts[i]); }
@@ -3705,11 +3724,11 @@ static void check_nondeterminism(ASTNode *ast, LintContext *ctx) {
         for (int j = 0; j < funcs[i].node->data.func.body_count; j++)
             w025_walk(funcs[i].node->data.func.body[j], 0,
                       funcs[i].node->data.func.params,
-                      funcs[i].node->data.func.param_count, 0, w025_scan_call, &scan);
+                      funcs[i].node->data.func.param_count, 0, 0, w025_scan_call, &scan);
         for (int j = 0; j < funcs[i].node->data.func.param_count; j++)
             w025_walk(funcs[i].node->data.func.param_defaults ?
                           funcs[i].node->data.func.param_defaults[j] : NULL,
-                      0, NULL, 0, 0, w025_scan_call, &scan);
+                      0, NULL, 0, 0, 0, w025_scan_call, &scan);
         funcs[i].effect = scan.found;
     }
     /* Least fixed point terminates after at most count severity increases. */
@@ -3735,7 +3754,7 @@ static void check_nondeterminism(ASTNode *ast, LintContext *ctx) {
      * parameter scopes keep a callback named like a builtin from being
      * mistaken for that builtin. Named top-level functions additionally get
      * the fixed-point summaries above. */
-    w025_walk(ast, 1, NULL, 0, 0, w025_emit_call, &emit);
+    w025_walk(ast, 1, NULL, 0, 0, 1, w025_emit_call, &emit);
     free(scan.deps);
     free(funcs);
 }
@@ -3746,12 +3765,15 @@ void lint_run_checks(ASTNode *ast, const char *path,
     check_sibling_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
     check_container_rebind(ast, ctx);
-    check_nondeterminism(ast, ctx);
     check_one_element_arg_list(ast, ctx);
     check_over_arity(ast, ctx);
     check_dead_unobserved(ast, ctx);
     check_error_kind_typo(ast, ctx);
     check_undefined_names(ast, path, source, ctx);
+    /* Error diagnostics must have capacity before advisory rules can fill the
+     * bounded diagnostic array.  In particular, allow-file W025 is applied
+     * after collection and must not let many suppressed warnings hide E003. */
+    check_nondeterminism(ast, ctx);
     check_stdlib_shadow(ast, path, ctx);
     check_empty_blocks(ast, ctx);
     check_dup_keys(ast, ctx);

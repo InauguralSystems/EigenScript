@@ -159,6 +159,40 @@ EIGS
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "#1287 function and lambda parameters shadow builtin names" "$OUTPUT" "warning\[W025\]"
 
+# Lexical shadowing survives nested closure scopes, while traversal does not
+# alternate between enabled and disabled at successive function depths.
+cat > "$TMPFILE" << 'EIGS'
+define outer(random) as:
+    define middle() as:
+        define inner() as:
+            return random of null
+        return inner of null
+    return middle of null
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1287 nested closure retains enclosing callback shadow" "$OUTPUT" "warning\[W025\]"
+cat > "$TMPFILE" << 'EIGS'
+define outer() as:
+    define middle() as:
+        define inner() as:
+            return clock_unix of null
+        return inner of null
+    return middle of null
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1287 third-level function nondeterminism remains visible" "$OUTPUT" "via 'clock_unix'"
+
+# Suppressed advisory diagnostics must not consume the bounded diagnostic
+# array before an error-severity rule gets an opportunity to report.
+{
+    echo '# lint: allow-file W025 -- generated nondeterministic adapter'
+    i=0
+    while [ "$i" -lt 256 ]; do echo 'clock_unix of null'; i=$((i + 1)); done
+    echo 'print of definitely_undefined'
+} > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1287 W025 volume cannot hide E003" "$OUTPUT" "error\[E003\].*undefined name 'definitely_undefined'"
+
 # Each existing acknowledgement form applies at both boundary shapes.
 cat > "$TMPFILE" << 'EIGS'
 # lint: allow W025 -- the whole function is the acknowledged boundary
