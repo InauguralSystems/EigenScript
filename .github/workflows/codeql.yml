@@ -28,6 +28,10 @@ jobs:
       - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
         with:
           languages: c-cpp
+          # This job supplies the build below.  Keep the mode explicit so the
+          # C/C++ extractor installs its compiler tracing before `make` rather
+          # than falling back from an undefined auto-build mode.
+          build-mode: manual
           queries: security-and-quality
 
       - name: Build
