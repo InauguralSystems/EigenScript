@@ -32,13 +32,14 @@ env:
 # a valgrind flake, none superseding the others). Pairs with the per-job
 # timeout-minutes, which bounds a single hang; this bounds the *fan-out*.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# PRs, merge queue candidates, and main pushes run the full suite for every
-# built variant. The HTTP+model ASan build runs the suite in three shards; the
-# required sanitizer aggregator checks their union, receipts and leak tally.
-# Docs-only scope skips runtime steps. macos-15-intel remains nightly-only.
+# Pull requests run the release suite plus build, lint/LSP, self-test,
+# precheck, and docs gates. Heavy variants report their required names with a
+# quick deferral; merge queue candidates and main pushes run their full suites.
+# The HTTP+model ASan build runs in three shards there, and its aggregator
+# checks their union, receipts and leak tally. macos-15-intel stays nightly.
 # Every job here is required or a worker of a required aggregator (#1264).
 
 jobs:
@@ -51,10 +52,11 @@ jobs:
   # executed byte-for-byte ([89]/[90]) and doc drift is checked ([98]) inside
   # run_all_tests.sh, which the linux legs still run in full.
   #
-  # NOTE: the expensive JOBS still run — only their STEPS are guarded. "asan +
-  # ubsan (full suite)" is a REQUIRED status check on the default branch, and a
-  # required check that is skipped never reports, which blocks the merge
-  # forever. Reporting success in seconds is the only safe shape here.
+  # NOTE: every expensive REQUIRED JOB still runs on a PR, but only its
+  # canonical "deferred to merge queue" step does work. A required check that
+  # is absent never reports and blocks the merge forever. Expensive workers of
+  # aggregators may skip before runner allocation; the required aggregator
+  # reports the success and requires the workers in the merge queue.
   scope:
     name: scope
     runs-on: ubuntu-latest
@@ -319,8 +321,13 @@ jobs:
       - name: Verify binary
         run: ./src/eigenscript --version
 
-      - name: Run full suite on gcc and clang
+      - name: Run release suite on gcc
+        if: github.event_name != 'pull_request' || matrix.cc == 'gcc'
         run: cd tests && bash run_all_tests.sh
+
+      - name: Compile-check LSP on the PR clang lane
+        if: github.event_name != 'pull_request' || matrix.cc == 'clang'
+        run: make lsp CC=${{ matrix.cc }}
 
       # Cross-repo observer corpus (#262): real observer-using programs
       # vendored from downstream consumers (dynamics solvers, iLambdaAi) plus
@@ -479,9 +486,10 @@ jobs:
 
   # macOS exercises the BSD/clang toolchain and (on arm64) the non-x86 JIT
   # fallback. Runs natively — a Linux container image can't host these.
-  build-and-test-macos:
-    name: macos / ${{ matrix.os }}
+  build-and-test-macos-worker:
+    name: macos suite / ${{ matrix.os }}
     needs: scope
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     # Intel completed the gfx gate and 540 compiler audit calls but reached
     # 30 minutes in the audit's fault controls (#1130). Keep the full suite.
@@ -575,13 +583,9 @@ jobs:
           test "$(command -v clang)" = "$GITHUB_WORKSPACE/tools/cc-guard-bin/clang"
           bash tests/test_asan_gfx.sh --toolchain-only
 
-      # The suite includes the small [99i] check on both lanes.
-      - if: needs.scope.outputs.code == 'true' && github.event_name == 'pull_request'
-        name: Run test suite (PR lane)
-        run: cd tests && bash run_all_tests.sh
-
-      - if: needs.scope.outputs.code == 'true' && github.event_name != 'pull_request'
-        name: Run test suite (main lane, [99i] included)
+      # The worker is allocated only for the merge queue/main lane.
+      - if: needs.scope.outputs.code == 'true'
+        name: Run test suite ([99i] included)
         run: cd tests && bash run_all_tests.sh
 
       # Linux LSP coverage lives in the extensions job; this leg exists
@@ -607,6 +611,34 @@ jobs:
   # Preserve the existing required check name while requiring every variant.
   # Each worker still checks out on docs-only changes; its code steps skip.
   # A failed/cancelled/skipped worker is never an aggregate success.
+  # The required macOS check runs on an Ubuntu sentinel for PRs so a deferral
+  # never occupies the repository's narrow macOS concurrency. The native worker
+  # is skipped before runner allocation on PRs and is mandatory everywhere else.
+  build-and-test-macos:
+    name: macos / macos-latest
+    needs: [scope, build-and-test-macos-worker]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Deferred on pull requests
+        if: github.event_name == 'pull_request'
+        run: echo "deferred to merge queue"
+      - name: Require the native macOS suite
+        if: github.event_name != 'pull_request'
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CODE: ${{ needs.scope.outputs.code }}
+          MACOS_RESULT: ${{ needs.build-and-test-macos-worker.result }}
+        run: |
+          set -euo pipefail
+          [ "$SCOPE_RESULT" = success ]
+          case "$CODE" in true|false) ;; *) exit 1;; esac
+          [ "$MACOS_RESULT" = success ]
+          echo "macOS suite complete (code=$CODE)"
+
   extensions:
     name: extensions (http+model+gfx suite; embed/lsp/jit-smoke)
     needs: [scope, extensions-http, extensions-gfx, extensions-zlib, extensions-net]
@@ -616,7 +648,12 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Deferred on pull requests
+        if: github.event_name == 'pull_request'
+        run: echo "deferred to merge queue"
+
       - name: Require complete extension coverage
+        if: github.event_name != 'pull_request'
         shell: bash
         env:
           SCOPE_RESULT: ${{ needs.scope.result }}
@@ -637,6 +674,7 @@ jobs:
   extensions-http:
     name: extensions / http+model and ancillary checks
     needs: [dev-image, scope]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -732,6 +770,7 @@ jobs:
   extensions-gfx:
     name: extensions / gfx suite
     needs: [dev-image, scope]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -765,6 +804,7 @@ jobs:
   extensions-zlib:
     name: extensions / zlib suite
     needs: [dev-image, scope]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -798,6 +838,7 @@ jobs:
   extensions-net:
     name: extensions / net suite
     needs: [dev-image, scope]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -836,9 +877,10 @@ jobs:
   # and test_db.eigs's live-path checks (DB09-DB15) additionally gate on an
   # actual connection. When the job is containerized the service is reachable
   # by its label (`db`), not localhost.
-  database:
-    name: db extension (postgres service)
+  database-worker:
+    name: db extension suite (postgres service)
     needs: [dev-image, scope]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -885,6 +927,31 @@ jobs:
         if: always() && needs.scope.outputs.code == 'true'
         run: bash tools/cc_guard.sh --report
 
+  database:
+    name: db extension (postgres service)
+    needs: [scope, database-worker]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Deferred on pull requests
+        if: github.event_name == 'pull_request'
+        run: echo "deferred to merge queue"
+      - name: Require the database extension suite
+        if: github.event_name != 'pull_request'
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CODE: ${{ needs.scope.outputs.code }}
+          DATABASE_RESULT: ${{ needs.database-worker.result }}
+        run: |
+          set -euo pipefail
+          [ "$SCOPE_RESULT" = success ]
+          case "$CODE" in true|false) ;; *) exit 1;; esac
+          [ "$DATABASE_RESULT" = success ]
+          echo "Database extension suite complete (code=$CODE)"
+
   # Run the entire suite under AddressSanitizer + UndefinedBehaviorSanitizer.
   # The net that catches use-after-free, buffer overflow, and UB the normal
   # -O2 build silently tolerates. Per-iteration leak regressions are covered
@@ -899,9 +966,15 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Deferred on pull requests
+        if: github.event_name == 'pull_request'
+        run: echo "deferred to merge queue"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: github.event_name != 'pull_request'
 
       - name: Require complete sanitizer coverage
+        if: github.event_name != 'pull_request'
         shell: bash
         env:
           SCOPE_RESULT: ${{ needs.scope.result }}
@@ -919,11 +992,11 @@ jobs:
       # sharded, so this job re-derives the split and asserts the union is the
       # whole chunk list and the shards are disjoint — the same check the
       # shards themselves cannot make about each other.
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Shard coverage — union == full suite, pairwise disjoint
         run: bash tools/section_plan.sh --shards ${{ env.ASAN_SHARDS }} --check
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Download the shard receipts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1 (pairs with upload-artifact v7)
         with:
@@ -937,7 +1010,7 @@ jobs:
       # shard, a plan line in each, and a SUMMED leak tally of zero — the
       # per-shard tally is the CLAUDE.md gate ("a jump in the tally means a new
       # leak") and splitting the job must not split the gate.
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Require one receipt per shard, and a summed leak tally of zero
         shell: bash
         run: |
@@ -990,6 +1063,7 @@ jobs:
   sanitizers-core:
     name: asan + ubsan / shard ${{ matrix.shard }}/3 (http+model build)
     needs: [dev-image, scope]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1128,14 +1202,20 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Deferred on pull requests
+        if: github.event_name == 'pull_request'
+        run: echo "deferred to merge queue"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: github.event_name != 'pull_request'
       - name: Install compiler guard
+        if: github.event_name != 'pull_request'
         run: |
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Install Valgrind
         # #987: this was a bare `apt-get update && apt-get install`. When the
         # mirror stalled it hung until the job's 30m cap killed it — and a
@@ -1180,16 +1260,16 @@ jobs:
           echo "::error::SETUP FAILURE — could not install valgrind after 3 bounded attempts. This is NOT a regression detected by the gate; the gate never ran."
           exit 1
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Build (-O1 -g, minimal)
         run: make valgrind
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Valgrind memcheck smoke
         run: cd tests && bash valgrind_smoke.sh
 
       - name: Require compiler guard activity
-        if: always() && needs.scope.outputs.code == 'true'
+        if: github.event_name != 'pull_request' && (always() && needs.scope.outputs.code == 'true')
         run: bash tools/cc_guard.sh --report
 
   # ThreadSanitizer concurrency race gate (#401): the spawn/channel slice must
@@ -1206,23 +1286,29 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Deferred on pull requests
+        if: github.event_name == 'pull_request'
+        run: echo "deferred to merge queue"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: github.event_name != 'pull_request'
       - name: Install compiler guard
+        if: github.event_name != 'pull_request'
         run: |
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: ThreadSanitizer build
         run: make tsan
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Concurrency race gate (setarch -R)
         run: bash tests/test_tsan.sh
 
       - name: Require compiler guard activity
-        if: always() && needs.scope.outputs.code == 'true'
+        if: github.event_name != 'pull_request' && (always() && needs.scope.outputs.code == 'true')
         run: bash tools/cc_guard.sh --report
 
   # ThreadSanitizer over ext_http.c (#1139). The stock tsan lane above builds
@@ -1239,19 +1325,25 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Deferred on pull requests
+        if: github.event_name == 'pull_request'
+        run: echo "deferred to merge queue"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: github.event_name != 'pull_request'
       - name: Install compiler guard
+        if: github.event_name != 'pull_request'
         run: |
           { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: ThreadSanitizer build (http+model+net)
         run: make tsan-http
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: HTTP sections under TSan (setarch -R, halt_on_error=1)
         env:
           TSAN_OPTIONS: halt_on_error=1
@@ -1279,12 +1371,12 @@ jobs:
               exit bad
             }' "$RUNNER_TEMP/tsan-http.log"
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Seeded race is caught by this binary (the lane can go red)
         run: bash tests/test_tsan.sh --seeded-only
 
       - name: Require compiler guard activity
-        if: always() && needs.scope.outputs.code == 'true'
+        if: github.event_name != 'pull_request' && (always() && needs.scope.outputs.code == 'true')
         run: bash tools/cc_guard.sh --report
 
   # First-run tooling unification (#400): the VS Code tree is canonical and has
@@ -1389,14 +1481,20 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Deferred on pull requests
+        if: github.event_name == 'pull_request'
+        run: echo "deferred to merge queue"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: github.event_name != 'pull_request'
       - name: Install compiler guard
+        if: github.event_name != 'pull_request'
         run: |
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Install Valgrind
         # #987: this was a bare `apt-get update && apt-get install`. When the
         # mirror stalled it hung until the job's 30m cap killed it — and a
@@ -1441,11 +1539,11 @@ jobs:
           echo "::error::SETUP FAILURE — could not install valgrind after 3 bounded attempts. This is NOT a regression detected by the gate; the gate never ran."
           exit 1
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Build this commit
         run: ./build.sh
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Build the baseline in a worktree (same environment)
         # In the merge queue the candidate is main + the PRs queued AHEAD + this
         # one, so the baseline is the candidate's base (merge_group.base_sha),
@@ -1466,10 +1564,10 @@ jobs:
           ( cd /tmp/main-ref && ./build.sh )
 
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Regression gate — Ir of this commit vs its baseline
         run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --vs /tmp/main-ref/src/eigenscript
 
       - name: Require compiler guard activity
-        if: always() && needs.scope.outputs.code == 'true'
+        if: github.event_name != 'pull_request' && (always() && needs.scope.outputs.code == 'true')
         run: bash tools/cc_guard.sh --report
