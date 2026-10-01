@@ -359,9 +359,9 @@ trap 'rm -f "${CHILD_LEDGER:-}"' EXIT
 # must not fire on them. Each is a waiver and states why; an entry that stops
 # being needed is a review event, and tools/child_exit_check.sh pins the list
 # against the tree so it cannot silently grow.
-#   test_lsp.sh / test_lsp_asan.sh — thin wrappers that exec python drivers
-#   (test_lsp.py) which report their own tally in a different format.
-CHILD_NO_MARKERS=" test_lsp.sh test_lsp_asan.sh "
+#   test_lsp.sh — thin wrapper that execs test_lsp.py, whose tally uses a
+#   different format. test_lsp_asan.sh has its own instrumentation FAIL gate.
+CHILD_NO_MARKERS=" test_lsp.sh "
 bash() {
     # Resolve the script path first: it decides whether this invocation is
     # accounted for at all, and whether its output must be captured.
