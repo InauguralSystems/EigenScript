@@ -325,72 +325,65 @@ int chunk_add_function(EigsChunk *chunk, EigsChunk *fn) {
 
 /* ---- Disassembler ---- */
 
-/* #737: an exhaustive switch on OpCode with NO default arm —
- * -Werror=switch (already in CFLAGS) turns a missing opcode into a build
- * error instead of a silent "???". The strings are derived from the enum
- * spellings themselves (#o + 3 strips "OP_"), so a name can't drift from
- * its opcode either. The old designated-initializer array was missing
- * four opcodes and nothing could notice. */
+/* Opcode names and operand facts are generated from the bytecode ABI table. */
 const char *op_name(uint8_t op) {
-    if (op >= OP_COUNT) return "???";
-    switch ((OpCode)op) {
-#define N(o) case o: return #o + 3;
-    N(OP_CONST) N(OP_NULL) N(OP_NUM_ZERO) N(OP_NUM_ONE)
-    N(OP_ADD) N(OP_SUB) N(OP_MUL) N(OP_DIV) N(OP_MOD)
-    N(OP_BAND) N(OP_BOR) N(OP_BXOR) N(OP_SHL) N(OP_SHR)
-    N(OP_NEG) N(OP_NOT) N(OP_BNOT)
-    N(OP_EQ) N(OP_NE) N(OP_LT) N(OP_GT) N(OP_LE) N(OP_GE)
-    N(OP_GET_LOCAL) N(OP_SET_LOCAL) N(OP_GET_NAME) N(OP_SET_NAME)
-    N(OP_SET_NAME_LOCAL) N(OP_SET_FN_NAME_LOCAL)
-    N(OP_JUMP) N(OP_JUMP_BACK) N(OP_JUMP_IF_FALSE) N(OP_JUMP_IF_TRUE)
-    N(OP_JUMP_IF_FALSE_PEEK) N(OP_JUMP_IF_TRUE_PEEK)
-    N(OP_POP) N(OP_DUP) N(OP_DUP2)
-    N(OP_CLOSURE) N(OP_CALL) N(OP_RETURN) N(OP_RETURN_NULL)
-    N(OP_LIST) N(OP_DICT) N(OP_INDEX_GET) N(OP_INDEX_SET)
-    N(OP_DOT_GET) N(OP_DOT_SET)
-    N(OP_ITER_SETUP) N(OP_ITER_NEXT)
-    N(OP_LOOP_ENV_FRESH) N(OP_LOOP_ENV_END) N(OP_LOOP_ENV_CLEAR)
-    N(OP_BREAK) N(OP_CONTINUE)
-    N(OP_TRY_BEGIN) N(OP_TRY_END)
-    N(OP_OBSERVE_ASSIGN) N(OP_OBSERVE_ASSIGN_LOCAL) N(OP_OBSERVE_NAME_POST)
-    N(OP_INTERROGATE) N(OP_PREDICATE)
-    N(OP_UNOBSERVED_BEGIN) N(OP_UNOBSERVED_END)
-    N(OP_LOOP_STALL_CHECK) N(OP_LOOP_CAP_CHECK)
-    N(OP_IMPORT) N(OP_MATCH)
-    N(OP_LISTCOMP_BEGIN) N(OP_LISTCOMP_APPEND)
-    N(OP_LINE) N(OP_WIDE) N(OP_DISPATCH)
-    N(OP_LOCAL_DOT_GET) N(OP_LOCAL_DOT_SET) N(OP_LOCAL_IDX_GET)
-    N(OP_LOCAL_IDX_DOT_GET) N(OP_LOCAL_IDX_DOT_SET)
-    N(OP_INTERROGATE_NAMED) N(OP_INTERROGATE_NAMED_AT)
-    N(OP_INTERROGATE_NAMED_WHEN)
-    N(OP_DEFAULT_PARAM) N(OP_DESTRUCTURE_UNPACK) N(OP_SLICE_GET)
-    N(OP_REPORT_SLOT)
-    N(OP_REPORT_NAME) N(OP_OBSERVE_VALUE_SLOT) N(OP_OBSERVE_VALUE_NAME)
-    N(OP_PREDICATE_SLOT) N(OP_PREDICATE_NAME)
-    N(OP_REPORT_VALUE_SLOT) N(OP_REPORT_VALUE_NAME)
-    N(OP_TRAJECTORY_SLOT) N(OP_TRAJECTORY_NAME)
-#undef N
-    case OP_COUNT: break;   /* unreachable: bounds-checked above */
-    }
-    return "???";
+    static const char *const names[OP_COUNT] = {
+#define OPCODE(name, observer, count, role1, width1, role2, width2, role3, width3) [name] = #name + 3,
+#include "opcodes.def"
+#undef OPCODE
+    };
+    return op < OP_COUNT ? names[op] : "???";
 }
 
-/* Forward decls: the operand-layout table lives with the verifier below;
- * the disassembler is driven off the SAME table (#737 — the old separate
- * op_has_u16 boolean had drifted on 8 single-operand opcodes and could not
- * express the multi-operand superinstructions at all, so chunk_disassemble
- * desynchronized on 15 opcodes). */
 typedef enum {
-    VR_RAW = 0,   /* count / kind / line / runtime-guarded slot — no bound */
-    VR_CONST,     /* constant-pool index — any value type (OP_CONST push) */
-    VR_NAME,      /* constant-pool index that MUST be a string: the VM derefs it
-                   * as an interned name (const_interns[idx]), which is NULL for
-                   * a non-string constant → NULL deref. Bound AND type-check. */
+    VR_NONE = 0,
+    VR_RAW,       /* count / kind / line / runtime-guarded slot — no bound */
+    VR_CONST,     /* constant-pool index — any value type */
+    VR_NAME,      /* constant-pool index that must be a string */
     VR_FN,        /* index into nested functions[] */
     VR_JFWD,      /* forward jump: target = end_of_instruction + offset */
     VR_JBACK      /* backward jump: target = end_of_instruction - offset */
 } VerifyRole;
-static int op_verify_operands(uint8_t op8, VerifyRole roles[3]);
+
+typedef enum { OBS_NONE, OBS_READS, OBS_WRITES, OBS_DIAG } ObserverClass;
+typedef struct {
+    ObserverClass observer;
+    uint8_t count;
+    VerifyRole roles[3];
+    uint8_t widths[3];
+} OpMetadata;
+
+static const OpMetadata op_metadata[OP_COUNT] = {
+#define OPCODE(name, observer, count, role1, width1, role2, width2, role3, width3) \
+    [name] = { OBS_##observer, count, { VR_##role1, VR_##role2, VR_##role3 }, \
+               { width1, width2, width3 } },
+#include "opcodes.def"
+#undef OPCODE
+};
+
+static int op_verify_operands(uint8_t op, VerifyRole roles[3]) {
+    const OpMetadata *meta = &op_metadata[op];
+    for (int i = 0; i < meta->count; i++) roles[i] = meta->roles[i];
+    return meta->count;
+}
+
+static int op_operand_offset(uint8_t op, int operand) {
+    int offset = 1;
+    for (int i = 0; i < operand; i++) offset += op_metadata[op].widths[i] / 8;
+    return offset;
+}
+
+static int op_instruction_size(uint8_t op) {
+    return op_operand_offset(op, op_metadata[op].count);
+}
+
+static uint32_t op_read_operand(const uint8_t *code, uint8_t op, int operand) {
+    int pos = op_operand_offset(op, operand);
+    uint32_t value = 0;
+    for (int byte = 0; byte < op_metadata[op].widths[operand] / 8; byte++)
+        value |= (uint32_t)code[pos + byte] << (8 * byte);
+    return value;
+}
 
 void chunk_disassemble(EigsChunk *chunk, const char *label) {
     fprintf(stderr, "=== %s (%s, %d bytes, %d constants) ===\n",
@@ -401,28 +394,22 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
         uint8_t op = chunk->code[i];
         fprintf(stderr, "%04d [L%d] %-20s", i, line, op_name(op));
         i++;
-        if (op == OP_LINE && i + 3 < chunk->code_len) {
-            /* #630: 32-bit operand. */
-            uint32_t arg = (uint32_t)chunk->code[i] |
-                           ((uint32_t)chunk->code[i + 1] << 8) |
-                           ((uint32_t)chunk->code[i + 2] << 16) |
-                           ((uint32_t)chunk->code[i + 3] << 24);
-            fprintf(stderr, " %u", arg);
-            i += 4;
-        } else if (op < OP_COUNT) {
-            VerifyRole roles[3];
-            int nops = op_verify_operands(op, roles);
-            for (int k = 0; k < nops && i + 1 < chunk->code_len; k++) {
-                uint16_t arg = chunk->code[i] | (chunk->code[i + 1] << 8);
-                fprintf(stderr, " %d", arg);
-                if (op == OP_CONST && arg < (uint16_t)chunk->const_count) {
+        if (op < OP_COUNT) {
+            const OpMetadata *meta = &op_metadata[op];
+            int start = i - 1;
+            for (int k = 0; k < meta->count; k++) {
+                int bytes = meta->widths[k] / 8;
+                if (i + bytes > chunk->code_len) break;
+                uint32_t arg = op_read_operand(&chunk->code[start], op, k);
+                fprintf(stderr, " %u", arg);
+                if (op == OP_CONST && arg < (uint32_t)chunk->const_count) {
                     Value *v = chunk->constants[arg];
                     if (v->type == VAL_NUM)
                         fprintf(stderr, " (%.6g)", v->data.num);
                     else if (v->type == VAL_STR)
                         fprintf(stderr, " (\"%s\")", v->data.str);
                 }
-                i += 2;
+                i += bytes;
             }
         }
         fprintf(stderr, "\n");
@@ -449,92 +436,7 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
  * the operand stack cannot underflow along any path. NOT checked:
  * local/observer slot operands — the VM already guards every slot access
  * (slot < env->count; observer slots auto-grow), so they cannot fault. */
-/* Fill roles[] for op; return its operand count (0..3). Mirrors the operand
- * layout the VM decodes in vm.c — keep in lockstep if an opcode changes.
- *
- * #737: this is now an EXHAUSTIVE switch on OpCode with NO default arm, so
- * -Werror=switch turns a missing opcode into a build error. The old
- * `default: return 0` silently walked an unknown 3-byte instruction as
- * 1 byte, which marked its operand bytes as valid instruction boundaries —
- * a crafted jump could land mid-instruction and still pass pass 2 (the
- * #721 surface; OP_TRAJECTORY_SLOT had already drifted out this way while
- * its NAME sibling was present). Callers must bounds-check op < OP_COUNT
- * first (chunk_verify pass 1 and the disassembler both do). This is also
- * the disassembler's stepping table — one layout source, not two. */
-static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
-    switch ((OpCode)op8) {
-    case OP_CONST:
-        roles[0] = VR_CONST; return 1;
-    case OP_GET_NAME: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
-    case OP_SET_FN_NAME_LOCAL: case OP_DOT_GET: case OP_DOT_SET:
-    case OP_REPORT_NAME: case OP_OBSERVE_VALUE_NAME: case OP_OBSERVE_NAME_POST:
-    case OP_REPORT_VALUE_NAME: case OP_TRAJECTORY_NAME:
-    case OP_IMPORT:
-        roles[0] = VR_NAME; return 1;
-    case OP_CLOSURE:
-        roles[0] = VR_FN; return 1;
-    case OP_JUMP: case OP_JUMP_IF_FALSE: case OP_JUMP_IF_TRUE:
-    case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
-    case OP_ITER_NEXT: case OP_TRY_BEGIN:
-    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
-        roles[0] = VR_JFWD; return 1;
-    case OP_JUMP_BACK:
-        roles[0] = VR_JBACK; return 1;
-    case OP_GET_LOCAL: case OP_SET_LOCAL: case OP_CALL:
-    case OP_LIST: case OP_DICT:
-    case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
-    case OP_REPORT_SLOT: case OP_OBSERVE_VALUE_SLOT:
-    case OP_REPORT_VALUE_SLOT:
-    case OP_TRAJECTORY_SLOT:   /* #737: was missing — the drift this fixes */
-    case OP_INTERROGATE: case OP_PREDICATE:
-    case OP_MATCH: case OP_DESTRUCTURE_UNPACK:
-        roles[0] = VR_RAW; return 1;
-    case OP_LOCAL_DOT_GET: case OP_LOCAL_DOT_SET:
-        roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* slot, name */
-    case OP_LOCAL_IDX_GET:
-        roles[0] = VR_RAW; roles[1] = VR_RAW; return 2;     /* slot, list idx */
-    case OP_INTERROGATE_NAMED: case OP_INTERROGATE_NAMED_AT:
-    case OP_INTERROGATE_NAMED_WHEN:
-        roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* kind, name */
-    case OP_PREDICATE_SLOT:
-        roles[0] = VR_RAW; roles[1] = VR_RAW; return 2;     /* kind, slot (runtime-guarded) */
-    case OP_PREDICATE_NAME:
-        roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* kind, name */
-    case OP_DEFAULT_PARAM:
-        roles[0] = VR_RAW; roles[1] = VR_JFWD; return 2;    /* slot, skip */
-    case OP_LOCAL_IDX_DOT_GET: case OP_LOCAL_IDX_DOT_SET:
-        roles[0] = VR_RAW; roles[1] = VR_RAW; roles[2] = VR_NAME; return 3;
-    /* Operand-free opcodes — every one listed, so a new opcode cannot
-     * silently walk wrong. */
-    case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
-    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
-    case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
-    case OP_NEG: case OP_NOT: case OP_BNOT:
-    case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
-    case OP_POP: case OP_DUP: case OP_DUP2:
-    case OP_RETURN: case OP_RETURN_NULL:
-    case OP_INDEX_GET: case OP_INDEX_SET:
-    case OP_ITER_SETUP:
-    case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
-    case OP_BREAK: case OP_CONTINUE:
-    case OP_TRY_END:
-    case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
-    case OP_LISTCOMP_BEGIN: case OP_LISTCOMP_APPEND:
-    case OP_WIDE:      /* placeholder — the VM decodes no operand either */
-    case OP_DISPATCH:
-    case OP_SLICE_GET:
-        return 0;
-    /* OP_LINE's operand is 32-bit (#630); chunk_verify and the
-     * disassembler both special-case it BEFORE consulting this u16-strided
-     * table, so this arm is unreachable — listed for the exhaustiveness
-     * gate, not for behavior. */
-    case OP_LINE:
-        return 0;
-    case OP_COUNT:     /* sentinel — callers bounds-check first */
-        return 0;
-    }
-    return 0;   /* unreachable; silences non-GCC fallthrough warnings */
-}
+
 
 /* ---- Stack-height model (pass 4) ----
  *
@@ -751,21 +653,12 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
         if (op >= OP_COUNT) { ok = 0; break; }
         is_start[i] = 1;
         last_op = op;
-        /* #630: OP_LINE has a single 32-bit operand — outside the u16-strided
-         * role machinery below. No index to validate; just skip 4 bytes. */
-        if (op == OP_LINE) {
-            int end = i + 1 + 4;
-            if (end > n) { ok = 0; break; }
-            i = end;
-            continue;
-        }
         VerifyRole roles[3];
         int nops = op_verify_operands(op, roles);
-        int end = i + 1 + 2 * nops;
+        int end = i + op_instruction_size(op);
         if (end > n) { ok = 0; break; }   /* truncated operand */
         for (int k = 0; k < nops && ok; k++) {
-            int pos = i + 1 + 2 * k;
-            int operand = code[pos] | (code[pos + 1] << 8);
+            int operand = (int)op_read_operand(&code[i], op, k);
             switch (roles[k]) {
             case VR_CONST: if (operand >= chunk->const_count) ok = 0; break;
             case VR_NAME:  if (operand >= chunk->const_count ||
@@ -861,20 +754,14 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
             int off = work[--wn];
             int h = height[off];
             uint8_t op = code[off];
-            int end, operand0 = 0, target = -1;
-            if (op == OP_LINE) {
-                end = off + 1 + 4;
-            } else {
-                VerifyRole roles[3];
-                int nops = op_verify_operands(op, roles);
-                end = off + 1 + 2 * nops;
-                if (nops > 0) operand0 = code[off + 1] | (code[off + 2] << 8);
-                for (int k = 0; k < nops; k++) {
-                    int pos = off + 1 + 2 * k;
-                    int operand = code[pos] | (code[pos + 1] << 8);
-                    if (roles[k] == VR_JFWD)       target = end + operand;
-                    else if (roles[k] == VR_JBACK) target = end - operand;
-                }
+            int end = off + op_instruction_size(op), operand0 = 0, target = -1;
+            VerifyRole roles[3];
+            int nops = op_verify_operands(op, roles);
+            if (nops > 0) operand0 = (int)op_read_operand(&code[off], op, 0);
+            for (int k = 0; k < nops; k++) {
+                int operand = (int)op_read_operand(&code[off], op, k);
+                if (roles[k] == VR_JFWD)       target = end + operand;
+                else if (roles[k] == VR_JBACK) target = end - operand;
             }
             StackEffect e = op_verify_stack_effect(op, operand0);
             if (h < e.need) {   /* underflow — the whole point */
@@ -1212,43 +1099,13 @@ int chunk_reads_observer(const EigsChunk *chunk) {
  * So the descriptor sites ask this instead, BEFORE running: does the chunk I am
  * about to execute read observer state while the gate is closed? If so, raise —
  * the same outcome guard builtin_load_file uses, for the same reason. */
-/* THE reader set. One home, and it is the one tools/obs_reader_sync_check.sh
- * extracts and pins against the obs:READS markers in vm.h. Every consumer
- * asks this question rather than restating the list — a fourth restatement had
- * already diverged (OP_LOOP_STALL_CHECK) before anyone noticed. */
+/* The reader classification comes from opcodes.def; every consumer asks this
+ * function rather than restating the list. */
 int opcode_is_observer_reader(uint8_t op) {
-    /* OP_IMPORT is NOT a reader (#1046; marked obs:NONE in vm.h). It sat in
-     * this switch from #915 to v0.43.0 because a module compiled at RUNTIME
-     * flips the bit too late to have observed this unit's earlier assignments
-     * — the ordering hazard, not a read. A literal import target is now
-     * resolved and scanned before line 1 runs, exactly like a literal
-     * `load_file` (chunk_scan_static_loads below), and the OP_IMPORT handler
-     * raises if the module it compiles reads while the gate was closed (the
-     * same outcome guard builtin_load_file has). Suite check 40 and
-     * tests/test_obs_gate_import.sh hold the line: a host's pre-import
-     * history must stay visible to an imported reader. (The comment lives
-     * ABOVE the switch on purpose: the sync gate's demotion selftest plants
-     * against the switch's tail shape, `return 1;` / `default: return 0;`.) */
-    switch ((OpCode)op) {
-        case OP_INTERROGATE:
-        case OP_INTERROGATE_NAMED:
-        case OP_INTERROGATE_NAMED_AT:
-        case OP_INTERROGATE_NAMED_WHEN:
-        case OP_PREDICATE:
-        case OP_PREDICATE_SLOT:
-        case OP_PREDICATE_NAME:
-        case OP_REPORT_SLOT:
-        case OP_REPORT_NAME:
-        case OP_REPORT_VALUE_SLOT:
-        case OP_REPORT_VALUE_NAME:
-        case OP_TRAJECTORY_SLOT:
-        case OP_TRAJECTORY_NAME:
-        case OP_OBSERVE_VALUE_SLOT:
-        case OP_OBSERVE_VALUE_NAME:
-        case OP_LOOP_STALL_CHECK:
-            return 1;
-        default: return 0;
-    }
+    if (op >= OP_COUNT) return 0;
+    /* Conservative compatibility exception: INTERROGATE predates the READS
+     * classification but must still open the observer gate (#915, #1320). */
+    return op == OP_INTERROGATE || op_metadata[op].observer == OBS_READS;
 }
 
 int chunk_has_reader_opcode(const EigsChunk *chunk) {
@@ -1267,13 +1124,8 @@ int chunk_has_reader_opcode(const EigsChunk *chunk) {
 /* `top` is 1 for the chunk vm_execute is handed directly, 0 for a nested
  * function chunk.
  *
- * ONE READER SET, NOT A FOURTH ONE. This used to carry its own hand-written
- * lists of "which opcodes read", separate from chunk_has_reader_opcode() above
- * and invisible to tools/obs_reader_sync_check.sh — a fourth home for a rule
- * that already had three, in the same change that quotes mechanical-gates §26
- * at length. It had ALREADY diverged when a critic looked: OP_LOOP_STALL_CHECK
- * is obs:READS in vm.h and listed above, and was absent from every branch
- * here. So this asks the shared question — "is this opcode a reader?" — and
+ * ONE READER SET, NOT A SECOND ONE. This asks the table-driven shared
+ * question — "is this opcode a reader?" — and
  * only CLASSIFIES the answer by operand shape, which it derives from
  * op_verify_operands, the same table the verifier and disassembler use.
  *
@@ -1357,14 +1209,8 @@ int chunk_has_reader_opcode(const EigsChunk *chunk) {
  * verifier and disassembler are driven off (#737). */
 static int chunk_step_ip(const EigsChunk *chunk, int i) {
     uint8_t op = chunk->code[i];
-    i++;
-    if (op == OP_LINE) {
-        i += 4;                              /* #630: 32-bit operand */
-    } else if (op < OP_COUNT) {
-        VerifyRole roles[3];
-        i += 2 * op_verify_operands(op, roles);
-    }
-    return i;
+    if (op < OP_COUNT) return i + op_instruction_size(op);
+    return i + 1;
 }
 
 /* Next instruction offset at or after `i` that is not OP_LINE. */

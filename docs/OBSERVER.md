@@ -503,20 +503,19 @@ nothing at all (the VM dispatches through `CASE(NAME)` computed-goto macros)
 while the same scan repaired to `CASE(X)` matches everything, including a scope
 marker and a writer.
 
-So every entry in the `OpCode` enum in `src/vm.h` carries a hand-recorded
-marker instead:
+So every row in `src/opcodes.def` carries a hand-recorded observer-class
+token instead:
 
 | marker | meaning |
 |---|---|
-| `obs:READS` | answers **from** recorded observer/temporal state — the set the liveness scan consumes |
-| `obs:WRITES` | records, updates, resets or stamps that state |
-| `obs:DIAG` | reaches it only through the SIGUSR1 diagnostic dump, never through program-visible semantics |
-| `obs:NONE` | none of the above |
+| `READS` | answers **from** recorded observer/temporal state — the set the liveness scan consumes |
+| `WRITES` | records, updates, resets or stamps that state |
+| `DIAG` | reaches it only through the SIGUSR1 diagnostic dump, never through program-visible semantics |
+| `NONE` | none of the above |
 
-`tools/obs_marker_check.sh` enumerates the enum and goes red on any opcode with
-no marker, so a new opcode is a red line at the moment it is added — which is
-when its author knows the answer and nobody else ever will. The gate proves a
-verdict was *recorded*; it cannot prove the verdict is *right*, and it stops at
+Every row in `src/opcodes.def` requires one of these observer-class tokens, so
+the C build rejects an opcode added without a recorded verdict. The structure
+proves a verdict was *recorded*; it cannot prove the verdict is *right*, and it stops at
 the opcode's own handler (`OP_CALL`, the JIT's OSR entry, and assembled chunks
 are excluded by name, each with the mechanism that covers it instead).
 
@@ -597,8 +596,8 @@ otherwise it does not, and nothing else does.
    never called: the interrogatives (`report of x`, `report_value`,
    `trajectory of x`, `where is x`, ...), a predicate (`converged`,
    `diverging of x`, ...), an observer-conditioned loop. The set is
-   `opcode_is_observer_reader()` in `src/chunk.c`, pinned against the
-   `obs:READS` markers by `tools/obs_reader_sync_check.sh`.
+   `opcode_is_observer_reader()` in `src/chunk.c`, generated from the
+   `READS` column in `src/opcodes.def`.
 2. **A binding-load of an observer builtin's name** — `OP_GET_NAME` whose
    operand is `observe`, `classify`, `state_at`, `get_observer_thresholds`,
    `eval` or `record_history` (`report`, `report_value` and `trajectory` are

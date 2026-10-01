@@ -1,0 +1,1 @@
+- Consolidate opcode names, observer classes, and operand layouts into one X-macro table, replacing three source-synchronization gates.

@@ -4383,24 +4383,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=50
-# 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
-#    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
-#    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
-#    declared reader missing from the switch means a program using only that
-#    opcode gates itself off and then reads slots nobody updated — silent, and
-#    forever. This replaces tools/observer_reader_ops_check.py, which derived
-#    the reader set from the C SOURCE: that is the open level, where a read can
-#    be spelled arbitrarily many ways and no matcher bounds the population
-#    (#972 recorded five failed derivations there). The enum is the closed
-#    level. Validated by a 5-mutation train; see the tool's header.
-TOTAL=$((TOTAL + 1))
-if OBS_SYNC_OUT=$("$TESTS_DIR/../tools/obs_reader_sync_check.sh" 2>&1); then
-    PASS=$((PASS + 1)); echo "  PASS: ${OBS_SYNC_OUT##*RESULT: PASS — }"
-else
-    FAIL=$((FAIL + 1)); echo "  FAIL: the observer-reader rule has diverged between src/vm.h and src/chunk.c"
-    echo "$OBS_SYNC_OUT" | sed 's/^/    /'
-fi
+OBS_GATE_EXPECTED_CHECKS=49
 # Answer helper (round 12): an ANSWER-shaped verdict is rc-blind if captured
 # with a bare `| head -1` / `| tail -1` — a program that prints the right
 # answer and THEN crashes scores PASS. This is the THIRD entry of the same
@@ -7309,46 +7292,6 @@ else
     echo "  FAIL: LF sources must be unaffected (rc=$CR_LF_RC out=$CR_LF)"
 fi
 rm -rf "$CR_DIR"
-echo ""
-
-# [99n] VM operand-width comment drift gate (#958).  The checker derives each
-# `kind` width from vm.c's uintN_t/read_uN decoder and confirms chunk.c's shared
-# VR_RAW verifier table carries the same operand.  Its self-test plants a third
-# mismatch so the gate cannot pass merely because the two reported comments
-# happen to be present.
-echo "[99n] VM operand-width comment drift gate (#958)"
-TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/vm_operand_width_check.sh"; then
-    PASS=$((PASS + 1))
-    echo "  PASS: VM kind comments match decoder/verifier widths"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: vm.h kind-width comments drift from vm.c/chunk.c"
-    bash "$TESTS_DIR/../tools/vm_operand_width_check.sh" 2>&1 | sed -n '1,8p'
-fi
-echo ""
-
-# [99t] Observer-classification marker gate (#972).  Every opcode in the OpCode
-# enum must carry exactly one obs:READS / obs:WRITES / obs:DIAG / obs:NONE
-# marker, recorded by a human who read the handler.  Five attempts to DERIVE
-# that classification from the C are on #972 and all five were confidently
-# wrong — twice silently empty, once silently universal — so the gate does not
-# classify anything; it fails on any opcode with no verdict, which is a loud
-# unanswered question at the moment an opcode is added.  This matters because
-# the liveness elision it feeds fails silently and totally: an unlisted reader
-# means a program gates its own bookkeeping off and then answers "equilibrium"
-# forever.  The self-test runs eleven mutations, each witnessed by exactly one
-# fixture (verified by neutering each check in a copy of the gate).
-echo "[99t] Observer-classification marker gate (#972)"
-TOTAL=$((TOTAL + 1))
-if bash "$TESTS_DIR/../tools/obs_marker_check.sh"; then
-    PASS=$((PASS + 1))
-    echo "  PASS: every opcode carries an observer classification"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: an opcode is unclassified"
-    bash "$TESTS_DIR/../tools/obs_marker_check.sh" 2>&1 | sed -n '1,10p'
-fi
 echo ""
 
 # [99m] Lint archive symbol-collision gate (#917, hole closed by #922).

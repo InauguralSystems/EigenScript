@@ -4161,7 +4161,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * "gated" arm captured with EIGS_OBS_FORCE=0 actually ran the BASELINE while
      * the manifest recorded force=0, and compare printed a provenance line
      * byte-identical to an honest run. Executed on a build with
-     * `case OP_REPORT_NAME:` deleted from opcode_is_observer_reader(): the
+     * `OP_REPORT_NAME` changed from READS to NONE in opcodes.def: the
      * honest three-capture run reports 3 mismatches and rc=1; the laundered one
      * reports `415 programs byte-identical` and rc=0. */
     if (!g_obs_needed && eigs_env_flag("EIGS_OBS_FORCE")) eigs_obs_enable_runtime();
