@@ -39,7 +39,7 @@ static void task_reap(Task *t);   /* #530 */
 /* #846: one scheduler-trace entry — a resume. `seq` is the entry's index. */
 typedef struct {
     double  tick;    /* virtual clock (task_now) at the resume */
-    int     task;    /* resumed task id (0 = main) */
+    double  task;    /* public task id (0 = main), including generation */
     uint8_t cause;   /* SCAUSE_* below */
 } SchedTraceEntry;
 
@@ -91,6 +91,27 @@ static const char *const sched_cause_name[SCAUSE__COUNT] = {
 };
 
 static TaskScheduler *sched_get(void) { return (TaskScheduler *)g_task_sched; }
+
+/* A task handle is numeric, so carry its slot generation in the number just
+ * as socket handles do.  IEEE-754 doubles represent every integer through
+ * 2^53 exactly; with 256 slots this leaves 45 generation bits before a task
+ * id can cease to be exact (far beyond uint32_t's wrap). */
+double task_handle_pack(int id, uint32_t gen) {
+    if (id == 0) return 0;
+    return (double)id + (double)gen * (double)HANDLE_TABLE_SIZE;
+}
+
+int task_handle_unpack(double packed, int *id, uint32_t *gen) {
+    if (!(packed > 0) || packed > 9007199254740992.0) return 0;
+    uint64_t p = (uint64_t)packed;
+    if ((double)p != packed) return 0;
+    int slot = (int)(p % HANDLE_TABLE_SIZE);
+    uint64_t generation = p / HANDLE_TABLE_SIZE;
+    if (slot <= 0 || generation == 0 || generation > UINT32_MAX) return 0;
+    if (id) *id = slot;
+    if (gen) *gen = (uint32_t)generation;
+    return 1;
+}
 
 static TaskScheduler *sched_ensure(void) {
     TaskScheduler *s = sched_get();
@@ -253,7 +274,8 @@ static void sched_trace_record(TaskScheduler *s, int id, int cause) {
     }
     SchedTraceEntry *e = &s->trace[s->trace_count++];
     e->tick  = s->now;
-    e->task  = id;
+    Task *t = sched_lookup(s, id);
+    e->task  = id == 0 ? 0 : task_handle_pack(id, t ? t->hgen : 0);
     e->cause = (uint8_t)cause;
 }
 
@@ -266,7 +288,7 @@ Value *task_sched_trace_read(void) {
         Value *d = make_dict(4);
         dict_set_owned(d, "seq",   make_num((double)i));
         dict_set_owned(d, "tick",  make_num(e->tick));
-        dict_set_owned(d, "task",  make_num((double)e->task));
+        dict_set_owned(d, "task",  make_num(e->task));
         dict_set_owned(d, "cause", make_str(e->cause < SCAUSE__COUNT
                                             ? sched_cause_name[e->cause] : "?"));
         list_append_owned(out, d);
@@ -429,9 +451,11 @@ double task_virtual_now(void) {
 /* task_self (builtins.c): the running task's id, in the same integer space
  * task_spawn returns — 0 for the main task, including before any scheduler
  * exists. Pure scheduler state, so no tape participation. */
-int task_current_id(void) {
+double task_current_id(void) {
     TaskScheduler *s = sched_get();
-    return s ? s->current : 0;
+    if (!s || s->current == 0) return 0;
+    Task *t = sched_lookup(s, s->current);
+    return t ? task_handle_pack(t->id, t->hgen) : 0;
 }
 
 /* When the ready queue is empty, advance the virtual clock to the earliest

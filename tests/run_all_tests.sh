@@ -2558,7 +2558,7 @@ echo ""
 # module-env lock predicate. PINNED totals, same reason [42i]-[42k] pin them:
 # a silently shrunk row count reads as green.
 echo "[42l] Thread handles + module-env lock under concurrency (#1146, #1161)"
-HMT_EXPECTED=16
+HMT_EXPECTED=17
 HMT_OUTPUT=$(bash "$TESTS_DIR/test_handles_mt.sh" 2>&1); HMT_RC=$?
 HMT_PASS=$(echo "$HMT_OUTPUT" | grep -c "  PASS:" || true)
 HMT_FAIL=$(echo "$HMT_OUTPUT" | grep -c "  FAIL:" || true)

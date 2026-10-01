@@ -5166,7 +5166,24 @@ Value* builtin_task_spawn(Value *arg) {
     t->id = id;
     t->hgen = tgen;
     task_sched_on_spawn(id);   /* enqueue + arm the scheduler */
-    return make_num((double)id);
+    return make_num(task_handle_pack(id, tgen));
+}
+
+/* Resolve an EigenScript-visible packed task id to the scheduler's raw slot.
+ * Empty/invalid ids retain the historical "unknown task" result.  A live
+ * slot owned by another generation is different: it is the observable ABA
+ * and must raise rather than operating on the replacement task. */
+static Task *task_handle_resolve(Value *arg, const char *who, int *out_id) {
+    int id = 0;
+    uint32_t gen = 0;
+    if (!arg || arg->type != VAL_NUM ||
+        !task_handle_unpack(arg->data.num, &id, &gen)) return NULL;
+    int why = HANDLE_CLAIM_GONE;
+    Task *t = (Task *)handle_lookup(id, gen, HANDLE_TASK, &why);
+    if (!t && (why == HANDLE_CLAIM_STALE || why == HANDLE_CLAIM_TYPE))
+        handle_raise_unresolved(who, "task", id, why, "reaped");
+    if (t && out_id) *out_id = id;
+    return t;
 }
 
 /* #488: a `must_not_yield` region asserts atomicity. A critical section under
@@ -5224,8 +5241,8 @@ Value* builtin_task_yield(Value *arg) {
  * returns null. Same arena/nesting restriction as task_yield. */
 Value* builtin_task_join(Value *arg) {
     if (!arg || arg->type != VAL_NUM || !g_task_sched) return make_null();
-    int target = (int)arg->data.num;
-    Task *t = (Task*)handle_lookup_slot(target, HANDLE_TASK);
+    int target = 0;
+    Task *t = task_handle_resolve(arg, "task_join", &target);
     if (!t) return make_null();
     if (t->state == TASK_DONE || t->state == TASK_DEAD) {
         /* Already finished: deliver its result / error now, no suspend. */
@@ -5274,8 +5291,13 @@ Value* builtin_task_send(Value *arg) {
      * the dead-letter drop this function's contract documents ("0 if
      * dropped") — split out of the arity guard above, which is a mistake. */
     if (!g_task_sched) return make_num(0);
+    int target = 0;
+    /* Main is the reserved public id 0 and has no handle-table generation,
+     * but it does have a scheduler mailbox (reply-to-supervisor pattern). */
+    if (idv->data.num != 0 &&
+        !task_handle_resolve(idv, "task_send", &target)) return make_num(0);
     Value *copy = val_clone_for_send(arg->data.list.items[1]);   /* share-nothing */
-    int sent = task_deliver((int)idv->data.num, copy);
+    int sent = task_deliver(target, copy);
     if (!sent) val_decref(copy);   /* dropped to a dead task — release the copy */
     return make_num(sent ? 1 : 0);
 }
@@ -5317,14 +5339,16 @@ Value* builtin_task_kill(Value *arg) {
     /* fs:ANSWER no scheduler means no such target; 0 is the documented
      * "bad/self/finished target" answer, split from the type guard above. */
     if (!g_task_sched) return make_num(0);
-    return make_num(task_do_kill((int)arg->data.num) ? 1 : 0);
+    int target = 0;
+    if (!task_handle_resolve(arg, "task_kill", &target)) return make_num(0);
+    return make_num(task_do_kill(target) ? 1 : 0);
 }
 
 /* task_alive of id → 1 while the task is READY/RUNNING/SUSPENDED, else 0
  * (DONE, DEAD, or an unknown id). */
 Value* builtin_task_alive(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "task_alive", "a task id (number)", make_num(0));
-    Task *t = (Task*)handle_lookup_slot((int)arg->data.num, HANDLE_TASK);
+    Task *t = task_handle_resolve(arg, "task_alive", NULL);
     /* fs:ANSWER an unknown id is NOT alive; 0 is this function's documented
      * answer. Four lines above, an identical `return make_num(0)` is a type
      * guard that DID convert — the pair Phase A pinned as the reason this
@@ -5395,7 +5419,7 @@ Value* builtin_task_now(Value *arg) {
  * state, so it records no tape nondet. */
 Value* builtin_task_self(Value *arg) {
     (void)arg;
-    return make_num((double)task_current_id());
+    return make_num(task_current_id());
 }
 
 /* task_detach of id -> 1 (0 for main/unknown). Marks the task fire-and-forget
@@ -5411,7 +5435,9 @@ Value* builtin_task_detach(Value *arg) {
         rt_error(EK_TYPE, 0, "task_detach requires a task id (a number)");
         return make_null();
     }
-    return make_num((double)task_do_detach((int)arg->data.num));
+    int target = 0;
+    if (!task_handle_resolve(arg, "task_detach", &target)) return make_num(0);
+    return make_num((double)task_do_detach(target));
 }
 
 /* task_sched_seed of n — install a scheduling seed. By default tasks run FIFO

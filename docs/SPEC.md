@@ -2131,12 +2131,12 @@ for e in task_sched_trace of null:
     print of f"{e.seq} t={e.tick} task={e.task} {e.cause}"
 ```
 ```output
-0 t=0 task=1 spawn
-1 t=0 task=2 spawn
-2 t=0 task=1 yield
-3 t=0 task=2 yield
-4 t=10 task=1 sleep-wake
-5 t=10 task=2 sleep-wake
+0 t=0 task=257 spawn
+1 t=0 task=258 spawn
+2 t=0 task=257 yield
+3 t=0 task=258 yield
+4 t=10 task=257 sleep-wake
+5 t=10 task=258 sleep-wake
 6 t=10 task=0 join-release
 ```
 
