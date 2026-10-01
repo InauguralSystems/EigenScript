@@ -657,6 +657,58 @@ catch sgd_e:
     sgdRefused is 1
     sgdWhy is str of sgd_e
 assert_true of [sgdRefused, "ag_sgd_step throws on a gradient whose element count is not the parameter's: " + sgdWhy]
+
+# --- transformer primitives: isolate every new VJP against finite differences ---
+# Keep these checks separate from the attention composition below: a compensating
+# error in two rules can make an end-to-end derivative look right.
+trX is rnd_buf of [2, 3, -0.7, 0.7]
+trWeight is rnd_buf of [3, 2, -0.6, 0.6]
+define loss_transpose() as:
+    local t is autograd.ag_tape of []
+    local y is autograd.ag_transpose of [t, (autograd.ag_leaf of [t, trX])]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, y, (autograd.ag_const of [t, trWeight])])])
+trTape is autograd.ag_tape of []
+trNode is autograd.ag_leaf of [trTape, trX]
+trY is autograd.ag_transpose of [trTape, trNode]
+autograd.ag_backward of [trTape, (autograd.ag_sum of [trTape, (autograd.ag_mul of [trTape, trY, (autograd.ag_const of [trTape, trWeight])])])]
+check_grad of ["transpose dX", trX, loss_transpose, autograd.ag_grad of trNode]
+
+csX is rnd_buf of [3, 3, -0.7, 0.7]
+csWeight is rnd_buf of [3, 3, -0.6, 0.6]
+define loss_causal_softmax() as:
+    local t is autograd.ag_tape of []
+    local y is autograd.ag_causal_softmax of [t, (autograd.ag_leaf of [t, csX])]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, y, (autograd.ag_const of [t, csWeight])])])
+csTape is autograd.ag_tape of []
+csNode is autograd.ag_leaf of [csTape, csX]
+csY is autograd.ag_causal_softmax of [csTape, csNode]
+autograd.ag_backward of [csTape, (autograd.ag_sum of [csTape, (autograd.ag_mul of [csTape, csY, (autograd.ag_const of [csTape, csWeight])])])]
+check_grad of ["causal_softmax dX", csX, loss_causal_softmax, autograd.ag_grad of csNode]
+
+lnX is rnd_buf of [3, 4, -0.7, 0.7]
+lnWeight is rnd_buf of [3, 4, -0.6, 0.6]
+define loss_layernorm() as:
+    local t is autograd.ag_tape of []
+    local y is autograd.ag_layernorm of [t, (autograd.ag_leaf of [t, lnX]), 0.00001]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, y, (autograd.ag_const of [t, lnWeight])])])
+lnTape is autograd.ag_tape of []
+lnNode is autograd.ag_leaf of [lnTape, lnX]
+lnY is autograd.ag_layernorm of [lnTape, lnNode, 0.00001]
+autograd.ag_backward of [lnTape, (autograd.ag_sum of [lnTape, (autograd.ag_mul of [lnTape, lnY, (autograd.ag_const of [lnTape, lnWeight])])])]
+check_grad of ["layernorm dX", lnX, loss_layernorm, autograd.ag_grad of lnNode]
+
+geluX is rnd_buf of [3, 4, -1.2, 1.2]
+geluWeight is rnd_buf of [3, 4, -0.6, 0.6]
+define loss_gelu() as:
+    local t is autograd.ag_tape of []
+    local y is autograd.ag_gelu of [t, (autograd.ag_leaf of [t, geluX])]
+    return autograd.ag_value of (autograd.ag_sum of [t, (autograd.ag_mul of [t, y, (autograd.ag_const of [t, geluWeight])])])
+geluTape is autograd.ag_tape of []
+geluNode is autograd.ag_leaf of [geluTape, geluX]
+geluY is autograd.ag_gelu of [geluTape, geluNode]
+autograd.ag_backward of [geluTape, (autograd.ag_sum of [geluTape, (autograd.ag_mul of [geluTape, geluY, (autograd.ag_const of [geluTape, geluWeight])])])]
+check_grad of ["gelu dX", geluX, loss_gelu, autograd.ag_grad of geluNode]
+
 # --- one-block causal self-attention: every transformer rule composes ---
 att_x is rnd_buf of [3, 2, -0.4, 0.4]
 att_wq is rnd_buf of [2, 2, -0.3, 0.3]
