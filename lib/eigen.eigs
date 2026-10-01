@@ -1989,89 +1989,172 @@ _report_value_bridge is (v) => report_value of v
 # concatenation, and a host `str` rebinding must not reach them either.
 _pristine_str is (v) => f"{v}"
 
+# #1386: snapshot every host builtin used to construct a fresh meta environment.
+# EigenScript names are late-bound, so referring to (for example) `len` inside
+# `_make_default_env` would otherwise observe a host rebinding made after this
+# module loaded.  The two environment helpers are dependencies too.
+_default_env_new is _env_new
+_default_env_set_local is _env_set_local
+_default_print is print
+_default_write is write
+_default_flush is flush
+_default_len is len
+_default_str is _pristine_str
+_default_num is num
+_default_append is append
+_default_type is type
+_default_assert is assert
+_default_throw is throw
+_default_keys is keys
+_default_values is values
+_default_has_key is has_key
+_default_dict_set is dict_set
+_default_dict_remove is dict_remove
+_default_observe is observe
+_default_contains is contains
+_default_starts_with is starts_with
+_default_ends_with is ends_with
+_default_split is split
+_default_trim is trim
+_default_str_replace is str_replace
+_default_str_lower is str_lower
+_default_str_upper is str_upper
+_default_char_at is char_at
+_default_substr is substr
+_default_index_of is index_of
+_default_join is join
+_default_concat is concat
+_default_range is range
+_default_abs is abs
+_default_floor is floor
+_default_ceil is ceil
+_default_round is round
+_default_min is min
+_default_max is max
+_default_sin is sin
+_default_cos is cos
+_default_tan is tan
+_default_asin is asin
+_default_acos is acos
+_default_atan is atan
+_default_atan2 is atan2
+_default_log is log
+_default_exp is exp
+_default_sqrt is sqrt
+_default_pow is pow
+_default_pi is pi
+_default_random is random
+_default_random_int is random_int
+_default_seed_random is seed_random
+_default_set_at is set_at
+_default_get_at is get_at
+_default_load_file is load_file
+_default_file_exists is file_exists
+_default_read_text is read_text
+_default_write_text is write_text
+_default_json_encode is json_encode
+_default_json_decode is json_decode
+_default_coalesce is coalesce
+_default_env_get is env_get
+_default_exec_capture is exec_capture
+_default_path_join is path_join
+_default_path_dir is path_dir
+_default_path_base is path_base
+_default_path_ext is path_ext
+_default_mkdir is mkdir
+_default_ls is ls
+_default_rm is rm
+_default_regex_match is regex_match
+_default_regex_find is regex_find
+_default_regex_replace is regex_replace
+_default_monotonic_ms is monotonic_ms
+_default_monotonic_ns is monotonic_ns
+_default_chr is chr
+_default_try_parse is try_parse
+
 define _make_default_env as:
-    env is _env_new of null
+    env is _default_env_new of null
     # Bridge the C builtins into the meta-interpreter's environment.
-    # Since we're running inside the C runtime, these names resolve to
-    # VAL_BUILTIN values. The "call" handler calls them
+    # The load-time snapshots above are VAL_BUILTIN values. The "call"
+    # handler calls them
     # with `fn of arg` which the C runtime handles natively.
-    _env_set_local of [env, "print", print]
-    _env_set_local of [env, "write", write]
-    _env_set_local of [env, "flush", flush]
-    _env_set_local of [env, "len", len]
-    _env_set_local of [env, "str", str]
-    _env_set_local of [env, "_#fstr", _pristine_str]
-    _env_set_local of [env, "num", num]
-    _env_set_local of [env, "append", append]
-    _env_set_local of [env, "type", type]
-    _env_set_local of [env, "assert", assert]
-    _env_set_local of [env, "throw", throw]
-    _env_set_local of [env, "keys", keys]
-    _env_set_local of [env, "values", values]
-    _env_set_local of [env, "has_key", has_key]
-    _env_set_local of [env, "dict_set", dict_set]
-    _env_set_local of [env, "dict_remove", dict_remove]
-    _env_set_local of [env, "observe", observe]
-    _env_set_local of [env, "contains", contains]
-    _env_set_local of [env, "starts_with", starts_with]
-    _env_set_local of [env, "ends_with", ends_with]
-    _env_set_local of [env, "split", split]
-    _env_set_local of [env, "trim", trim]
-    _env_set_local of [env, "str_replace", str_replace]
-    _env_set_local of [env, "str_lower", str_lower]
-    _env_set_local of [env, "str_upper", str_upper]
-    _env_set_local of [env, "char_at", char_at]
-    _env_set_local of [env, "substr", substr]
-    _env_set_local of [env, "index_of", index_of]
-    _env_set_local of [env, "join", join]
-    _env_set_local of [env, "concat", concat]
-    _env_set_local of [env, "range", range]
-    _env_set_local of [env, "abs", abs]
-    _env_set_local of [env, "floor", floor]
-    _env_set_local of [env, "ceil", ceil]
-    _env_set_local of [env, "round", round]
-    _env_set_local of [env, "min", min]
-    _env_set_local of [env, "max", max]
-    _env_set_local of [env, "sin", sin]
-    _env_set_local of [env, "cos", cos]
-    _env_set_local of [env, "tan", tan]
-    _env_set_local of [env, "asin", asin]
-    _env_set_local of [env, "acos", acos]
-    _env_set_local of [env, "atan", atan]
-    _env_set_local of [env, "atan2", atan2]
-    _env_set_local of [env, "log", log]
-    _env_set_local of [env, "exp", exp]
-    _env_set_local of [env, "sqrt", sqrt]
-    _env_set_local of [env, "pow", pow]
-    _env_set_local of [env, "pi", pi]
-    _env_set_local of [env, "random", random]
-    _env_set_local of [env, "random_int", random_int]
-    _env_set_local of [env, "seed_random", seed_random]
-    _env_set_local of [env, "set_at", set_at]
-    _env_set_local of [env, "get_at", get_at]
-    _env_set_local of [env, "load_file", load_file]
-    _env_set_local of [env, "file_exists", file_exists]
-    _env_set_local of [env, "read_text", read_text]
-    _env_set_local of [env, "write_text", write_text]
-    _env_set_local of [env, "json_encode", json_encode]
-    _env_set_local of [env, "json_decode", json_decode]
-    _env_set_local of [env, "coalesce", coalesce]
-    _env_set_local of [env, "env_get", env_get]
-    _env_set_local of [env, "exec_capture", exec_capture]
-    _env_set_local of [env, "path_join", path_join]
-    _env_set_local of [env, "path_dir", path_dir]
-    _env_set_local of [env, "path_base", path_base]
-    _env_set_local of [env, "path_ext", path_ext]
-    _env_set_local of [env, "mkdir", mkdir]
-    _env_set_local of [env, "ls", ls]
-    _env_set_local of [env, "rm", rm]
-    _env_set_local of [env, "regex_match", regex_match]
-    _env_set_local of [env, "regex_find", regex_find]
-    _env_set_local of [env, "regex_replace", regex_replace]
-    _env_set_local of [env, "monotonic_ms", monotonic_ms]
-    _env_set_local of [env, "monotonic_ns", monotonic_ns]
-    _env_set_local of [env, "chr", chr]
-    _env_set_local of [env, "try_parse", try_parse]
+    _default_env_set_local of [env, "print", _default_print]
+    _default_env_set_local of [env, "write", _default_write]
+    _default_env_set_local of [env, "flush", _default_flush]
+    _default_env_set_local of [env, "len", _default_len]
+    _default_env_set_local of [env, "str", _default_str]
+    _default_env_set_local of [env, "_#fstr", _pristine_str]
+    _default_env_set_local of [env, "num", _default_num]
+    _default_env_set_local of [env, "append", _default_append]
+    _default_env_set_local of [env, "type", _default_type]
+    _default_env_set_local of [env, "assert", _default_assert]
+    _default_env_set_local of [env, "throw", _default_throw]
+    _default_env_set_local of [env, "keys", _default_keys]
+    _default_env_set_local of [env, "values", _default_values]
+    _default_env_set_local of [env, "has_key", _default_has_key]
+    _default_env_set_local of [env, "dict_set", _default_dict_set]
+    _default_env_set_local of [env, "dict_remove", _default_dict_remove]
+    _default_env_set_local of [env, "observe", _default_observe]
+    _default_env_set_local of [env, "contains", _default_contains]
+    _default_env_set_local of [env, "starts_with", _default_starts_with]
+    _default_env_set_local of [env, "ends_with", _default_ends_with]
+    _default_env_set_local of [env, "split", _default_split]
+    _default_env_set_local of [env, "trim", _default_trim]
+    _default_env_set_local of [env, "str_replace", _default_str_replace]
+    _default_env_set_local of [env, "str_lower", _default_str_lower]
+    _default_env_set_local of [env, "str_upper", _default_str_upper]
+    _default_env_set_local of [env, "char_at", _default_char_at]
+    _default_env_set_local of [env, "substr", _default_substr]
+    _default_env_set_local of [env, "index_of", _default_index_of]
+    _default_env_set_local of [env, "join", _default_join]
+    _default_env_set_local of [env, "concat", _default_concat]
+    _default_env_set_local of [env, "range", _default_range]
+    _default_env_set_local of [env, "abs", _default_abs]
+    _default_env_set_local of [env, "floor", _default_floor]
+    _default_env_set_local of [env, "ceil", _default_ceil]
+    _default_env_set_local of [env, "round", _default_round]
+    _default_env_set_local of [env, "min", _default_min]
+    _default_env_set_local of [env, "max", _default_max]
+    _default_env_set_local of [env, "sin", _default_sin]
+    _default_env_set_local of [env, "cos", _default_cos]
+    _default_env_set_local of [env, "tan", _default_tan]
+    _default_env_set_local of [env, "asin", _default_asin]
+    _default_env_set_local of [env, "acos", _default_acos]
+    _default_env_set_local of [env, "atan", _default_atan]
+    _default_env_set_local of [env, "atan2", _default_atan2]
+    _default_env_set_local of [env, "log", _default_log]
+    _default_env_set_local of [env, "exp", _default_exp]
+    _default_env_set_local of [env, "sqrt", _default_sqrt]
+    _default_env_set_local of [env, "pow", _default_pow]
+    _default_env_set_local of [env, "pi", _default_pi]
+    _default_env_set_local of [env, "random", _default_random]
+    _default_env_set_local of [env, "random_int", _default_random_int]
+    _default_env_set_local of [env, "seed_random", _default_seed_random]
+    _default_env_set_local of [env, "set_at", _default_set_at]
+    _default_env_set_local of [env, "get_at", _default_get_at]
+    _default_env_set_local of [env, "load_file", _default_load_file]
+    _default_env_set_local of [env, "file_exists", _default_file_exists]
+    _default_env_set_local of [env, "read_text", _default_read_text]
+    _default_env_set_local of [env, "write_text", _default_write_text]
+    _default_env_set_local of [env, "json_encode", _default_json_encode]
+    _default_env_set_local of [env, "json_decode", _default_json_decode]
+    _default_env_set_local of [env, "coalesce", _default_coalesce]
+    _default_env_set_local of [env, "env_get", _default_env_get]
+    _default_env_set_local of [env, "exec_capture", _default_exec_capture]
+    _default_env_set_local of [env, "path_join", _default_path_join]
+    _default_env_set_local of [env, "path_dir", _default_path_dir]
+    _default_env_set_local of [env, "path_base", _default_path_base]
+    _default_env_set_local of [env, "path_ext", _default_path_ext]
+    _default_env_set_local of [env, "mkdir", _default_mkdir]
+    _default_env_set_local of [env, "ls", _default_ls]
+    _default_env_set_local of [env, "rm", _default_rm]
+    _default_env_set_local of [env, "regex_match", _default_regex_match]
+    _default_env_set_local of [env, "regex_find", _default_regex_find]
+    _default_env_set_local of [env, "regex_replace", _default_regex_replace]
+    _default_env_set_local of [env, "monotonic_ms", _default_monotonic_ms]
+    _default_env_set_local of [env, "monotonic_ns", _default_monotonic_ns]
+    _default_env_set_local of [env, "chr", _default_chr]
+    _default_env_set_local of [env, "try_parse", _default_try_parse]
     return env
 
 # ============================================================
