@@ -3821,9 +3821,14 @@ Value* builtin_sandbox_run(Value *arg) {
      * ramping host value told apart from inside the sealed env. Clear the
      * tracker for the run (the descriptor's own observations set it afresh)
      * and restore the host's afterwards, so the host's next bare predicate
-     * still reads the host's last observation. */
+     * still reads the host's last observation. The saved tracker must own a
+     * reference while it is unpublished: untrusted closure creation can run
+     * cycle collection, and vm_obs_slot_dropped cannot invalidate a pointer
+     * hidden in this local. Restore it before dropping the reference so that
+     * destruction can invalidate the published tracker normally. */
     Env *saved_last_obs_env = g_last_obs_slot_env;
     int  saved_last_obs_idx = g_last_obs_slot_idx;
+    if (saved_last_obs_env) env_incref(saved_last_obs_env);
     g_last_obs_slot_env = NULL;
     g_last_obs_slot_idx = -1;
 
@@ -3831,6 +3836,7 @@ Value* builtin_sandbox_run(Value *arg) {
 
     g_last_obs_slot_env = saved_last_obs_env;
     g_last_obs_slot_idx = saved_last_obs_idx;
+    if (saved_last_obs_env) env_decref(saved_last_obs_env);
 
     /* #965 (fix5): the run fails on the sticky policy-refusal record too, not
      * only on the catch-clearable g_has_error — a byte-budget refusal the
