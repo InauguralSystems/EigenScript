@@ -521,6 +521,19 @@ static inline Env *vm_take_call_env(EigsChunk *fn_chunk, Env *closure,
     return NULL;
 }
 
+/* OP_CALL and OP_DISPATCH are two bytecode spellings of the same operation
+ * from the sandbox's point of view.  Keep their cumulative accounting at one
+ * seam so a new inline call path cannot quietly acquire a different limit. */
+static inline int vm_charge_sandbox_call(int line) {
+    if (!g_sandbox_loop_max) return 1;
+    g_sandbox_call_count++;
+    if (g_sandbox_call_count < g_sandbox_loop_max) return 1;
+    rt_error(EK_SANDBOX, line,
+             "sandbox call budget exceeded (max_iterations=%d)",
+             g_sandbox_loop_max);
+    return 0;
+}
+
 /* ---- CallFrame init / release (#743) ------------------------------------
  * CallFrame rides the task save/restore memcpy as POD (vm.h), but two of
  * its fields carry COUNTED refs — env (only when owns_env) and chunk —
@@ -3999,15 +4012,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * interpreter seam covers every sandboxed call and cannot be reset by
          * pushing a frame. Use max_iterations as the call cap too: it preserves
          * the API while bounding recursion by default. */
-        if (g_sandbox_loop_max) {
-            g_sandbox_call_count++;
-            if (g_sandbox_call_count >= g_sandbox_loop_max) {
-                rt_error(EK_SANDBOX, current_line,
-                         "sandbox call budget exceeded (max_iterations=%d)",
-                         g_sandbox_loop_max);
-                DISPATCH();
-            }
-        }
+        if (!vm_charge_sandbox_call(current_line)) DISPATCH();
         uint16_t argc = read_u16(ip); ip += 2;
         if (g_vm.sp < (int)argc + 1) {
             vm_push(make_null());
@@ -6239,6 +6244,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * VAL_NUM (key sourced from a fn return, arithmetic, variable
          * read — DMG's per-instruction `op` path). Table and arg are
          * heap pointers in practice (list + ctx). */
+        if (!vm_charge_sandbox_call(current_line)) DISPATCH();
         EigsSlot arg_s   = g_vm.stack[g_vm.sp - 1];
         EigsSlot key_s   = g_vm.stack[g_vm.sp - 2];
         EigsSlot table_s = g_vm.stack[g_vm.sp - 3];

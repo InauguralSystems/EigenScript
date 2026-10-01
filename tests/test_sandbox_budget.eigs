@@ -1021,4 +1021,27 @@ rec_deep is sandbox_run of [rec_deep_desc, 50000, 1000000]
 assert_eq of [rec_deep["ok"], 0, "#1403: depth-32 recursion is bounded"]
 assert_eq of [rec_deep["error"]["kind"], "sandbox", "#1403: depth-32 reports sandbox-kind"]
 
+# OP_DISPATCH is a second inline invocation path and must spend the same
+# cumulative budget.  This closure captures a table containing itself and
+# dispatches twice per level; there is deliberately no OP_CALL in either
+# chunk, so this regression fails if accounting exists only in CASE(CALL).
+SB_LIST is 42
+SB_DISPATCH is 70
+disp_body is [SB_GET_LOCAL,0,0, CONST,0,0, SB_LT, SB_JUMP_IF_FALSE,30,0,
+             SB_GET_NAME,1,0, CONST,2,0, SB_GET_LOCAL,0,0, CONST,3,0, ADD,
+             SB_DISPATCH, SB_POP,
+             SB_GET_NAME,1,0, CONST,2,0, SB_GET_LOCAL,0,0, CONST,3,0, ADD,
+             SB_DISPATCH, SB_POP,
+             CONST,3,0, SB_RETURN, SB_RETURN_NULL]
+disp_mod is [SB_CLOSURE,0,0, SB_LIST,1,0, SB_SET_NAME_LOCAL,0,0, SB_POP,
+            SB_GET_NAME,0,0, CONST,1,0, CONST,1,0, SB_DISPATCH, SB_RETURN]
+disp_fn is [disp_body, [12,"table",0,1], [], 1, "dispatch_r", ["d"]]
+disp_desc is [ABI, disp_mod, ["table",0], [disp_fn], 0, "<module>", ["table"]]
+disp_bomb is sandbox_run of [disp_desc, 1000, 1000000]
+assert_eq of [disp_bomb["ok"], 0, "#1403: dispatch recursion exhausts max_iterations"]
+assert_eq of [disp_bomb["error"]["kind"], "sandbox",
+              "#1403: dispatch exhaustion is sandbox-kind"]
+assert_eq of [index_of of [disp_bomb["error"]["message"], "call budget exceeded"] >= 0, 1,
+              "#1403: dispatch exhaustion names the shared call budget"]
+
 test_summary of null
