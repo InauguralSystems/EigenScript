@@ -47,10 +47,41 @@ int eigs_import_resolve(const char *base, const char *name,
 
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
+#include <signal.h>
+#include <sys/socket.h>
 #include <limits.h>
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
+
+static ssize_t io_no_sigpipe(int fd, const void *buf, size_t count,
+                             int use_send, int flags) {
+    sigset_t block, oldmask, pending;
+    sigemptyset(&block);
+    sigaddset(&block, SIGPIPE);
+    if (pthread_sigmask(SIG_BLOCK, &block, &oldmask) != 0)
+        return use_send ? send(fd, buf, count, flags) : write(fd, buf, count);
+
+    int already_pending = sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE);
+    ssize_t result = use_send ? send(fd, buf, count, flags) : write(fd, buf, count);
+    int saved_errno = errno;
+    if (result < 0 && saved_errno == EPIPE && !already_pending) {
+        struct timespec zero = {0, 0};
+        while (sigtimedwait(&block, NULL, &zero) < 0 && errno == EINTR) {}
+    }
+    pthread_sigmask(SIG_SETMASK, &oldmask, NULL);
+    errno = saved_errno;
+    return result;
+}
+
+ssize_t eigs_write_no_sigpipe(int fd, const void *buf, size_t count) {
+    return io_no_sigpipe(fd, buf, count, 0, 0);
+}
+
+ssize_t eigs_send_no_sigpipe(int fd, const void *buf, size_t count, int flags) {
+    return io_no_sigpipe(fd, buf, count, 1, flags);
+}
 
 /* Resolve once at state/CLI startup. In particular dyld's answer may contain
  * a symlink or relative components, so it must be canonicalized before chdir.

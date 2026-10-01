@@ -20,6 +20,10 @@
  * accept an EigsValue* either store it (consuming the caller's ref) or
  * leave the caller's ref untouched — the comment on each prototype says
  * which.
+ *
+ * Signal contract: the runtime does not change any signal disposition
+ * process-wide. CLI-only signal handlers installed by src/main.c are not
+ * reached through this embedding API.
  */
 #ifndef EIGS_EMBED_H
 #define EIGS_EMBED_H

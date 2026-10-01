@@ -657,6 +657,18 @@ else
 fi
 echo ""
 
+echo "[0f2] Host SIGPIPE contract (#1151)"
+check_binary_fingerprint
+TOTAL=$((TOTAL + 1))
+SIGPIPE_OUT=$(bash "$TESTS_DIR/test_sigpipe_contract.sh" 2>&1); SIGPIPE_RC=$?
+if [ "$SIGPIPE_RC" -eq 0 ]; then
+    PASS=$((PASS + 1)); echo "  PASS: subprocess/HTTP calls preserve SIGPIPE and closed stdout is reported"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: host SIGPIPE contract (rc=$SIGPIPE_RC)"
+    printf '%s\n' "$SIGPIPE_OUT" | sed 's/^/      /'
+fi
+echo ""
+
 echo "[0d] sandbox_run policy errors stay contained (#1426)"
 check_binary_fingerprint
 HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>"$TMPDIR/eigs-host-frame.err"); HFL_RC=$?

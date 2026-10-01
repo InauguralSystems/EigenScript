@@ -74,9 +74,10 @@ void dict_remove(Value *dict, const char *key);
 
 Value* builtin_print(Value *arg) {
     char *s = value_to_string(arg);
-    printf("%s\n", s);
-    fflush(stdout);
+    int failed = printf("%s\n", s) < 0 || fflush(stdout) == EOF;
+    int saved_errno = errno;
     free(s);
+    if (failed) rt_error(EK_IO, 0, "print: stdout write failed: %s", strerror(saved_errno));
     return make_null();
 }
 

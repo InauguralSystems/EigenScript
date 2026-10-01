@@ -74,7 +74,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-http nativefn-test arming-mt-test embed-roads print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-http nativefn-test arming-mt-test embed-roads sigpipe-contract-test print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -238,6 +238,15 @@ build/$(ARMING_MT_VARIANT)/test_arming_two_states: tests/test_arming_two_states.
 .PHONY: arming-mt-test
 arming-mt-test: build/$(ARMING_MT_VARIANT)/test_arming_two_states
 	@echo "Arming two-state test built: build/$(ARMING_MT_VARIANT)/test_arming_two_states"
+
+# #1151: host signal dispositions survive proc and HTTP entry points. Build
+# against either release or http without repointing the CLI alias.
+SIGPIPE_VARIANT ?= release
+SIGPIPE_OBJ := $(filter-out build/$(SIGPIPE_VARIANT)/main.o,$(OBJ_$(SIGPIPE_VARIANT)))
+build/$(SIGPIPE_VARIANT)/test_sigpipe_contract: tests/test_sigpipe_contract.c $(SIGPIPE_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(SIGPIPE_VARIANT)) -I$(SRC_DIR) -o $@ $< $(SIGPIPE_OBJ) $(LIBS_$(SIGPIPE_VARIANT))
+sigpipe-contract-test: build/$(SIGPIPE_VARIANT)/test_sigpipe_contract
+	@echo "SIGPIPE contract test built: $<"
 
 # #1038/#1028: same runtime variant as the suite; never repoint the CLI alias.
 EMBED_OBSERVER_VARIANT ?= release

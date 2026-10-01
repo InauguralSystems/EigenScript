@@ -1432,14 +1432,8 @@ Value* builtin_exec_capture(Value *arg) {
  * Children using stdio block-buffer their own stdout when not on a tty —
  * wrap unbuffered programs with stdbuf -oL / -o0 if you need line streaming.
  *
- * SIGPIPE is set to SIG_IGN once on first spawn so a writing parent gets
- * EPIPE instead of dying when the child exits. */
-
-static pthread_once_t g_proc_sigpipe_once = PTHREAD_ONCE_INIT;
-
-static void proc_install_sigpipe_ignore(void) {
-    signal(SIGPIPE, SIG_IGN);
-}
+ * proc_write suppresses SIGPIPE around only its own write, leaving the host's
+ * process-wide disposition untouched. */
 
 static Value* proc_spawn_fail(void) {
     Value *r = make_list(3);
@@ -1464,8 +1458,6 @@ Value* builtin_proc_spawn(Value *arg) {
         argv[i] = v->data.str;
     }
     argv[total] = NULL;
-
-    pthread_once(&g_proc_sigpipe_once, proc_install_sigpipe_ignore);
 
     /* FD_CLOEXEC on both ends of both pipes so subsequent proc_spawn /
      * exec_capture children don't inherit the parent's open pipes (#149).
@@ -1536,7 +1528,7 @@ Value* builtin_proc_write(Value *arg) {
     size_t total = strlen(buf);
     size_t off = 0;
     while (off < total) {
-        ssize_t n = write(fd, buf + off, total - off);
+        ssize_t n = eigs_write_no_sigpipe(fd, buf + off, total - off);
         if (n < 0) {
             if (errno == EINTR) continue;
             /* #159: return partial bytes-written instead of -1 so a
