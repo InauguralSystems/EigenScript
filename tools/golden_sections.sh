@@ -20,7 +20,15 @@ run_one() {
     plan="$work/plan.sh"; selector=$(selector_for "$id")
     bash "$ROOT/tools/section_plan.sh" --emit-sections "$selector" "$plan" --quiet >/dev/null || die "planner rejected section '$id'"
     EIGS_GOLDEN_CHILD=1 EIGS_SECTION_TIME=0 bash "$plan" >"$work/log.stdout" 2>"$work/log.stderr"; rc=$?
-    awk -v h="[$id]" 'index($0,h)==1{on=1} on&&/^@@EIGS-CHUNK [0-9]+@@$/{exit} on&&$0!~/^SECTION_TIME:/{print}' "$work/log.stdout" >"$work/actual.stdout"
+    # A selector can own more than one emitted chunk (notably 42a includes
+    # the replay tests after the reserved-forms block).  Sentinels delimit
+    # chunks; they do not delimit the oracle.  Keep everything from the
+    # canonical heading through the plan verdict so a failure in a later
+    # selected chunk cannot disappear from the comparison.
+    awk -v h="[$id]" '
+        index($0,h)==1 { on=1 }
+        on && $0 !~ /^@@EIGS-CHUNK [0-9]+@@$/ && $0 !~ /^SECTION_TIME:/ { print }
+    ' "$work/log.stdout" >"$work/actual.stdout"
     cp "$work/log.stderr" "$work/actual.stderr"
     if [ "$mode" = bless ]; then
         mkdir -p "$GOLDEN"
@@ -28,13 +36,16 @@ run_one() {
         mv "$GOLDEN/$key.stdout.new" "$GOLDEN/$key.stdout"; mv "$GOLDEN/$key.stderr.new" "$GOLDEN/$key.stderr"
         echo "golden_sections: blessed [$id] ($key.stdout, $key.stderr; section rc=$rc)"
     else
+        mismatch=0
         for stream in stdout stderr; do
             exp="$GOLDEN/$key.$stream"; act="$work/actual.$stream"
             [ -f "$exp" ] || die "missing expected output: $exp"
             if ! diff -u "$exp" "$act"; then
-                echo "golden_sections: mismatch [$id] $stream" >&2; echo "  expected: $exp" >&2; echo "  actual:   $act" >&2; exit 1
+                echo "golden_sections: mismatch [$id] $stream" >&2; echo "  expected: $exp" >&2; echo "  actual:   $act" >&2; mismatch=1
             fi
         done
+        [ "$mismatch" -eq 0 ] || exit 1
+        [ "$rc" -eq 0 ] || die "section '$id' exited $rc after producing matching output"
         echo "golden_sections: PASS [$id] stdout/stderr (section rc=$rc)"
     fi
 }

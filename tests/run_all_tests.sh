@@ -7530,11 +7530,19 @@ if [ "$TOTAL" -le 0 ]; then
     exit 1
 fi
 
-# A normal suite run also checks the stream-separated transcripts for every
-# assertion-dense section converted by #1298. Section plans set the child
-# marker so these checks cannot recursively launch themselves.
-if [ -z "${EIGS_GOLDEN_CHILD:-}" ]; then
-    for __golden_id in 99u 1/15 133 47/47 42a; do
+# A normal *minimal-build* suite also checks the stream-separated transcripts.
+# The checked-in fixtures deliberately describe that feature profile.  Do not
+# compare it with HTTP/model/GFX jobs: those jobs already exercised these
+# sections above, but necessarily took different, healthy feature branches.
+# Section plans set the child marker so checks cannot recursively launch.
+if [ -z "${EIGS_GOLDEN_CHILD:-}" ] \
+   && echo "$HTTP_PROBE_OUT" | grep -q "undefined variable" \
+   && echo "$MODEL_PROBE_OUT" | grep -q "undefined variable" \
+   && echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
+    # The GFX/model sections have no meaningful transcript when their feature
+    # is absent (their emitted plan intentionally exits nonzero after SKIP),
+    # so a minimal lane must not turn those expected skips into failures.
+    for __golden_id in 99u 1/15 42a; do
         TOTAL=$((TOTAL + 1))
         if bash "$TESTS_DIR/../tools/golden_sections.sh" --check "$__golden_id"; then
             PASS=$((PASS + 1))

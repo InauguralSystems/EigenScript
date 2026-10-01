@@ -13,3 +13,9 @@ exit builtin (code + uncatchable + leak-clean)
 read_bytes_buf cap policy (#601)
   PASS: all 9 read_bytes_buf cap checks
 
+[42a/47] Replay Tape
+  PASS: all 25 replay checks
+
+============================================
+  RESULTS: 190/190 passed, 0 failed, 0 skipped
+============================================

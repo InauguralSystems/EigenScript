@@ -10,10 +10,13 @@ bash tests/run_all_tests.sh --bless 1/15
 ```
 
 The converted set is `99u`, `1/15`, `133`, `47/47`, and `42a`; unknown and
-prefix spellings are errors. Ordinary suite runs compare every converted
-section. Blessing stages both streams and replaces their checked-in files even
+prefix spellings are errors. Ordinary minimal-build suite runs compare the
+three applicable core transcripts (`99u`, `1/15`, and `42a`); feature lanes do
+not compare minimal-build fixtures, and feature-disabled GFX/model sections
+are not treated as successful checks. Blessing stages both streams and replaces their checked-in files even
 when the old inline assertions fail, which is precisely when a changed result
-needs a reviewable diff and a deliberate re-bless. The transcript keeps stdout and stderr
+needs a reviewable diff and a deliberate re-bless. A check still requires the
+emitted plan to exit successfully, even when its bytes match. The transcript keeps stdout and stderr
 separate, removes only planner chunk sentinels and `SECTION_TIME` telemetry,
 and does not normalize arbitrary values or paths. PASS, FAIL, SKIP, child
 status, and feature/environment branch evidence remain reviewable.
