@@ -39,6 +39,23 @@ class ApiDocIrTests(unittest.TestCase):
         self.assertEqual((record.kind, record.name), ("library", "identity"))
         self.assertEqual(record.example, "print of identity of 3\n# => 3")
 
+    def test_example_indentation_is_preserved(self):
+        text = GOOD.replace(
+            "# | print of identity of 3\n# | # => 3",
+            "# | define nested(value) as:\n# |     if value:\n# |         return value\n# |     return 0",
+        )
+        self.assertEqual(
+            self.extract(text)[0].example,
+            "define nested(value) as:\n    if value:\n        return value\n    return 0",
+        )
+
+    def test_markdown_has_separate_reference_tables(self):
+        record = self.extract(GOOD)[0]
+        rendered = api_doc_ir.render_markdown([record])
+        self.assertIn("## Library functions", rendered)
+        self.assertIn("| identity | identity of value -> any |", rendered)
+        self.assertIn("## Builtins", rendered)
+
     def test_missing_field_names_function(self):
         with self.assertRaisesRegex(api_doc_ir.DocError, r"identity: missing field\(s\): returns"):
             self.extract(GOOD.replace("# returns: The supplied value.\n", ""))

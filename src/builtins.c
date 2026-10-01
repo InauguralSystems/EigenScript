@@ -6254,6 +6254,14 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "screen_clear", make_builtin(builtin_screen_clear));
     env_set_local_owned(env, "screen_end", make_builtin(builtin_screen_end));
     env_set_local_owned(env, "screen_render", make_builtin(builtin_screen_render));
+    /* @api
+     * signature: len of value -> number
+     * summary: Return the number of items in a value.
+     * arg value: A string, list, dictionary, or other sized value.
+     * returns: The number of contained items.
+     * example:
+     * | assert of [len of [10, 20, 30] == 3, "len example"]
+     */
     env_set_local_owned(env, "len", make_builtin(builtin_len));
     env_set_local_owned(env, "str", make_builtin(builtin_str));
     /* f-string conversion (#1322): unspellable in source, so never shadowed. */

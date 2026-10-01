@@ -7465,7 +7465,13 @@ TOTAL=$((TOTAL + 1))
 if command -v python3 >/dev/null 2>&1; then
     api_doc_ir_out=$(python3 "$TESTS_DIR/test_api_doc_ir.py" 2>&1); api_doc_ir_rc=$?
     if [ "$api_doc_ir_rc" -eq 0 ]; then
-        PASS=$((PASS + 1)); printf '%s\n' "$api_doc_ir_out"
+        api_doc_gate_out=$(EIGS="$EIGS" bash "$TESTS_DIR/../tools/api_docs_check.sh" 2>&1); api_doc_gate_rc=$?
+        if [ "$api_doc_gate_rc" -eq 0 ]; then
+            PASS=$((PASS + 1)); printf '%s\n%s\n' "$api_doc_ir_out" "$api_doc_gate_out"
+        else
+            FAIL=$((FAIL + 1)); echo "  FAIL: generated API reference or extracted examples (rc=$api_doc_gate_rc)"
+            printf '%s\n' "$api_doc_gate_out" | sed 's/^/      /'
+        fi
     else
         FAIL=$((FAIL + 1)); echo "  FAIL: API documentation IR tests (rc=$api_doc_ir_rc)"
         printf '%s\n' "$api_doc_ir_out" | sed 's/^/      /'

@@ -15,6 +15,15 @@
 #   times of [5, fn]                        # call fn(i) for i in 0..4
 
 # ---- identity: return argument unchanged ----
+# @api
+# signature: identity of value -> any
+# summary: Return a value unchanged.
+# arg value: The value to return.
+# returns: The supplied value.
+# example:
+# | load_file of "lib/functional.eigs"
+# | assert of [identity of 3 == 3, "identity example"]
+# @end
 define identity(x) as:
     return x
 
@@ -33,6 +42,18 @@ define compose(f, g) as:
 # ---- chain: apply a pipeline of functions to a value ----
 # chain of [fn_list, value] -> result
 # Applies functions left to right: chain of [[f, g, h], x] = h(g(f(x)))
+# @api
+# signature: chain of [functions, value] -> any
+# summary: Apply functions from left to right.
+# arg functions: The ordered list of functions to apply.
+# arg value: The initial value.
+# returns: The result of the final function.
+# example:
+# | define api_increment(value) as:
+# |     return value + 1
+# | load_file of "lib/functional.eigs"
+# | assert of [chain of [[api_increment, api_increment], 3] == 5, "chain example"]
+# @end
 define chain(fns, val) as:
     for i in range of (len of fns):
         val is fns[i] of val

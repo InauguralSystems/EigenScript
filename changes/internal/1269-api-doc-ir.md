@@ -1,1 +1,1 @@
-- Begin the source-generated API reference migration with a strict, deterministic documentation IR validator shared by library functions and builtin registrations.
+- Begin the source-generated API reference migration with strict source documentation for library functions and builtins, generated reference tables, a regenerate-and-diff gate, and execution of every extracted example.
