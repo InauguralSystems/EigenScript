@@ -7457,6 +7457,18 @@ else
 fi
 echo ""
 
+# [99ac] AI benchmark harness lifecycle and adapter parsers (#1302).
+echo "[99ac] AI contribution benchmark harness (#1302)"
+TOTAL=$((TOTAL + 1))
+ai_bench_out=$(python3 "$TESTS_DIR/test_ai_benchmark.py" 2>&1); ai_bench_rc=$?
+if [ "$ai_bench_rc" -eq 0 ]; then
+    PASS=$((PASS + 1)); echo "  PASS: history-free snapshot, stub base, schema and three adapters"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: AI benchmark harness self-test (rc=$ai_bench_rc)"
+    printf '%s\n' "$ai_bench_out" | tail -20 | sed 's/^/      /'
+fi
+echo ""
+
 # [99ab] Test enrolment (#1264): a tests/*.sh or tests/*.py that no section,
 # workflow step or enrolled script invokes is red, by name. PR #1260's test sat
 # unrun until a maintainer noticed. Self-test case count pinned ([99o] lesson).

@@ -1,0 +1,1 @@
+{"command":["codex","exec","--model","{model}","--json","-"],"version_command":["codex","--version"],"telemetry":{"input_tokens":"usage.input_tokens","output_tokens":"usage.output_tokens","cached_tokens":"usage.cached_input_tokens"}}

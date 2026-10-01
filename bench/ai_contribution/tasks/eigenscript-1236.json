@@ -1,0 +1,1 @@
+{"name":"EigenScript issue 1236 replay","prompt":"bench/ai_contribution/tasks/eigenscript-1236.txt","validation":[["make","precheck","BASE={base}"],["make","test-changed","BASE={base}"]]}

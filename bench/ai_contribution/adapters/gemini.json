@@ -1,0 +1,1 @@
+{"command":["gemini","--model","{model}","--output-format","stream-json"],"version_command":["gemini","--version"],"telemetry":{"input_tokens":"stats.models.0.tokens.input","output_tokens":"stats.models.0.tokens.output","cached_tokens":"stats.models.0.tokens.cached"}}
