@@ -25,10 +25,16 @@ TSAN_RUN_TIMEOUT=${TSAN_RUN_TIMEOUT:-120}
 # LAST_RC, silently disabling the hang branch (caught by a planted hang).
 WARNINGS=0
 LAST_RC=0
+RUN_OUTPUT=""
 tsan_warnings() {
     local out
-    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$1" 2>&1)
+    if [ "${1##*/}" = "tsan_spawn_emitted_jit.eigs" ]; then
+        out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env EIGS_JIT_STATS=1 "$EIGS" "$1" 2>&1)
+    else
+        out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$1" 2>&1)
+    fi
     LAST_RC=$?
+    RUN_OUTPUT=$out
     WARNINGS=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
 }
 
@@ -102,6 +108,9 @@ for t in $SHAPE_FIXTURES; do
         echo "  FAIL: $t reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
     elif [ "$LAST_RC" -ne 0 ]; then
         echo "  FAIL: $t exited $LAST_RC (want 0)"; FAIL=$((FAIL + 1))
+    elif [ "$t" = tsan_spawn_emitted_jit ] &&
+         ! printf '%s\n' "$RUN_OUTPUT" | grep -Eq '\[jit\].*compiled=[1-9][0-9]*'; then
+        echo "  FAIL: $t did not compile emitted JIT code"; FAIL=$((FAIL + 1))
     else
         echo "  PASS: $t TSan-clean and exited 0"; PASS=$((PASS + 1))
     fi

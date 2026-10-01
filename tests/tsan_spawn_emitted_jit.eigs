@@ -1,7 +1,12 @@
+# Keep this deliberately ineligible for the frameless leaf-accessor fast path:
+# the local makes calls enter the ordinary chunk, whose 50th entry emits and
+# executes a JIT thunk. The later spawn then exercises the transition from
+# emitted main-thread calls to the concurrency gate's interpreted fallback.
 define hot(v) as:
-    return (v * 2) + 1
+    local doubled is v * 2
+    return doubled + 1
 i is 0
-loop while i < 200:
+loop while i < 80:
     hot of i
     i is i + 1
 define worker() as:

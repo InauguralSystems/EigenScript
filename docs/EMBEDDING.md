@@ -574,8 +574,11 @@ between minor releases.
     registration against evaluation, and install one provider for the process.
   - The module-namespace table — **locked** and published as immutable
     snapshots across states (#1144).
-  - `g_random_seeded` and the process PRNG — **locked/atomic** for race safety
-    (#1142); the random stream is shared rather than per-state.
+  - `g_random_seeded` is atomic, but the process PRNG used by `random`,
+    `random_int`, and `seed_random` is **shared: the host must serialize** those
+    calls across states. The underlying `drand48`, `lrand48`, and `srand48`
+    calls are not synchronized; the random stream is process-wide rather than
+    per-state.
   - The process's SIGPIPE disposition — **shared: the host must serialize**
     changes and treat the runtime's setting as process-wide.
   - The pointer installed by `eigs_set_abort_flag` — **shared: the host must
