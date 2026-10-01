@@ -30,6 +30,8 @@ NEGATIVE_FAMILY_LINES = {
     ('docs/BUILTINS.md', 'drain. UDP is not yet exposed (#414 tracks it).'),
     ('ROADMAP.md', "  shipped: #414's title says TCP/UDP, and UDP is not exposed — see"),
 }
+CONTRIBUTOR_DOCS = ('CLAUDE.md README.md docs/CI.md docs/PERFORMANCE.md '
+                    'docs/FREESTANDING.md .claude/rules/test-suite.md').split()
 errors = []
 counts = collections.Counter()
 found = {}
@@ -83,6 +85,25 @@ def derived_counts():
     print(f'  COUNTS: examined {examined} front-door page(s)')
     if examined == 0:
         red('COUNTS examined 0')
+
+
+def contributor_reachability():
+    """Keep public contributor instructions independent of an owner's setup."""
+    machine_re = re.compile(r'\b(?:this|the|a) (?:dev )?box\b|~/\.local/bin/bash32', re.I)
+    examined = 0
+    for file in CONTRIBUTOR_DOCS:
+        for lineno, line in enumerate(Path(file).read_text().splitlines(), 1):
+            examined += 1
+            if machine_re.search(line):
+                red(f'{file}:{lineno}: owner-machine wording in public contributor docs')
+            if 'github.com/InauguralSystems/EigenOS' in line:
+                red(f'{file}:{lineno}: public documentation links to private EigenOS repo')
+            if file == 'README.md' and re.search(r'iLambdaAi saw|iLambdaAi.*%', line):
+                red(f'{file}:{lineno}: performance claim is verifiable only in private iLambdaAi')
+    print(f'  CONTRIBUTOR REACHABILITY: examined {examined} line(s) in '
+          f'{len(CONTRIBUTOR_DOCS)} file(s)')
+    if examined == 0:
+        red('CONTRIBUTOR REACHABILITY examined 0 lines')
 
 
 def check_floors():
@@ -333,6 +354,7 @@ def selftest():
     index = run('git', '-c', 'safe.directory=*', 'ls-files', '--stage')
     tracked = {row.split('\t', 1)[1] for row in index.splitlines()}
     content = set(DOCS) | {str(p) for p in Path('docs').glob('*.md')}
+    content |= set(CONTRIBUTOR_DOCS)
     content |= {str(p) for p in Path('lib').glob('*.eigs')}
     content |= {'Makefile', 'VERSION', 'CHANGELOG.md',
                 'tools/docs_claims_check.sh', 'tools/docs_claims_populations.txt',
@@ -385,6 +407,8 @@ def selftest():
                 ('name', 'README.md', '\n`no_such_1275 of null`\n', 'no_such_1275'),
                 ('count', 'docs/ARCHITECTURE.md', '\nThe 77\n`lib/` modules and a 47-widget toolkit.\n',
                  'hand-typed count "77 `lib/` modules"'),
+                ('contributor', 'docs/CI.md', '\nRun this on the dev box.\n',
+                 'owner-machine wording'),
             ]:
                 p = tree / file
                 original = p.read_text()
@@ -414,8 +438,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 8 case(s) run, {passed} passed, {8-passed} failed')
-            return 0 if passed == 8 else 1
+            print(f'SELFTEST: 9 case(s) run, {passed} passed, {9-passed} failed')
+            return 0 if passed == 9 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
@@ -443,6 +467,7 @@ def main():
     stdlib_headings()
     changelog_version()
     derived_counts()
+    contributor_reachability()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):
         if counts[kind] == 0:

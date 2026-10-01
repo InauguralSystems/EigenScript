@@ -1,0 +1,1 @@
+- Make contributor instructions machine-independent, identify private ecosystem projects, and keep public performance claims verifiable.

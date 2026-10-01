@@ -2,7 +2,7 @@
 
 What the EigenScript runtime borrows from the host OS, and what it must do
 instead to run **freestanding** — no libc, no kernel underneath — as the userland
-of [EigenOS](https://github.com/InauguralSystems/EigenOS). This is a planning
+of EigenOS *(private)*. This is a planning
 ledger (like EigenGauntlet's `GAPS.md`), not a build that exists yet: it turns
 "port EigenScript to bare metal" from a vibe into a finite checklist.
 
@@ -300,9 +300,11 @@ Payne-Hanek later if anything needs it); strtod takes no hex floats; rand/
 random are a different (SplitMix64) generator — rand48 is the reproducibility
 surface.
 
-What remains before it links on bare metal is exactly stage 2's residue: the
-30 HAL-root symbols the EigenOS kernel owes (M2 pages→heap, M1 serial→
-console_write, M4 PIT→clock, the scheduler, halt).
+What remains before it links on bare metal is exactly stage 2's residue: a
+platform kernel must implement every public HAL contract listed in
+`tools/freestanding_hal_roots.txt`. Those roots cover pages→heap,
+serial→`console_write`, PIT→clock, the scheduler, and halt; EigenOS is one
+consumer of that contract.
 
 ## Standout findings
 

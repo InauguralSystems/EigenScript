@@ -158,8 +158,9 @@ suggests a deterministic `Ir` comparison instead of a wall clock.
 
 ## Wall-clock medians
 
-Representative n=5 medians (a 2020-era x86-64 Linux dev box; **your numbers will
-differ** — regenerate with `bash bench/run_bench.sh`):
+Representative n=5 medians measured on the worst-case target (2-core Celeron
+N3350, 4 GB, ASUS X540NA); typical machines are faster. Regenerate them with
+`bash bench/run_bench.sh`:
 
 | workload | median | what it exercises |
 |---|---|---|

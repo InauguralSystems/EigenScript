@@ -175,7 +175,7 @@ model — don't work around a gap, surface it).
   the native-perf path. Changing it → the **`aot-differential`** skill.
 - **Consumer / forcing-function projects** (validate the language, drive
   primitives):
-  - **iLambdaAi** — research system whose ternary transformer *generates*
+  - **iLambdaAi** *(private)* — research system whose ternary transformer *generates*
     EigenScript, validated against the runtime's own parser/compiler (the
     no-oracle research project)
   - **Tidepool** — Spore-inspired cell-stage evolution game (AI/physics/gameplay)
@@ -185,7 +185,7 @@ model — don't work around a gap, surface it).
   - **DMG** — Game Boy emulator; its `cpu_instrs` shape is the perf stand-in
   - **EigenMiniSat** (SAT solver + benchmark), **EigenRegex** (Pike-VM regex),
     **EigenGauntlet** (stress-app suite for constrained hardware)
-- **Infra**: **eigen-site** (inauguralsystems.com landing + the self-owned HTTP
+- **Infra**: **eigen-site** *(private)* (inauguralsystems.com landing + the self-owned HTTP
   attack target), **homebrew-eigenscript** (tap), **eigs-package-template**,
   **awesome-eigenscript** (curated index — a list, not a registry).
 

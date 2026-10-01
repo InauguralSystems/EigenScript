@@ -176,8 +176,8 @@ paths:
   `$( { … # its own file's directory … } )` — OK in both.
   So `$( … )` bodies are covered by the parse sweep and `<( … )` bodies are
   not. Suite section [99zb] now EXECUTES the shell gates under the old bash.
-  `~/.local/bin/bash32 tools/docs_claims_check.sh` reproduces the macOS lane in
-  under 20 seconds; use it before believing any portability fix.
+  Run `tools/docs_claims_check.sh` under bash 3.2 where available before believing
+  any portability fix; the macOS CI lane runs it regardless.
   **No `<( … )` or `$( … )` around a multi-line block that can contain a
   comment.** Feed the loop from a temp file (`done < "$tmp"`) and put the
   comment in ordinary shell text. This is the FOURTH apostrophe-class bug in
@@ -185,8 +185,8 @@ paths:
   single-quoted table, r10 an unbalanced paren broke `$(cat <<EOF)`, r14 an
   apostrophe broke `<( … )` — so the rule is the construct, not the character.
   **`make -p`'s database is version-stable for this Makefile — measured under
-  GNU Make 3.81.** macOS runners ship 3.81 (2006) against this box's 4.3, and
-  that was the leading suspicion for a macOS-only PATHS failure. Built the
+  GNU Make 3.81.** macOS runners ship 3.81 (2006), while newer environments commonly use
+  4.x, and that was the leading suspicion for a macOS-only PATHS failure. Built the
   oracle instead of reasoning about it (`ftp.gnu.org/gnu/make/make-3.81.tar.gz`,
   `./configure && make GLOBINC= GLOBLIB= CFLAGS=-O2` — the bundled `glob/` will
   not link against modern glibc, the system one does, ~90 s): 3.81 and 4.3 give
@@ -213,12 +213,10 @@ paths:
   past it, so a fixed-size shrink no longer crossed the floor. The live check
   still floors the derived child-invocation count (a drop is a review, growth
   is not). Prefer `found == declared` when the population is enumerable.
-  **There is a real bash 3.2 on the dev box: `~/.local/bin/bash32`. Use it.**
-  `bash32 -n <file>` answers every "is this portable?" question in one second,
-  and `for f in $(git ls-files '*.sh'); do bash32 -n "$f"; done` audits the repo
-  in under two seconds. Built from GNU bash 3.2.0 source with
-  `./configure --without-bash-malloc --disable-nls && make` (~4 min). Suite
-  section [99zb] runs it and ANNOUNCES itself when no old bash is present.
+  **Test with bash 3.2 where available; the macOS CI lane runs it regardless.**
+  `bash32 -n <file>` answers "is this parseable?", but the live gate must also be
+  run because parsing alone misses runtime incompatibilities. Suite section
+  [99zb] runs it and ANNOUNCES itself when no old bash is present.
   **Do not infer a portability cause from an error's reported LINE.** Round 9
   read `line 737: syntax error near unexpected token ';;'` and concluded that
   bash 3.2 cannot parse an empty inline `case` arm. It can — verified:
@@ -250,9 +248,9 @@ paths:
   and `tools/werror_switch_check.sh` are the local references.
   **A scratch copy for a test goes NEXT TO the repo, never in `/tmp`, and a
   copy that fails is never a skip.** `cp -al` (hard-link copy — the cheap way
-  to give a test its own tree) CANNOT CROSS A FILESYSTEM. On the dev box `/tmp`
-  and the worktree are the same device so it works; in the CI container the
-  workspace and `/tmp` are different mounts, so the copy failed, the helper
+  to give a test its own tree) CANNOT CROSS A FILESYSTEM. Even when `/tmp`
+  and the worktree happen to share a device locally, a CI container can place
+  the workspace and `/tmp` on different mounts, so the copy failed, the helper
   returned early, and three selftest cases silently did not run — 13 red CI
   jobs against a green local ring (PR #1175, 2026-09-16). Put the scratch
   beside the repo (`mktemp -d -p "$(dirname "$ROOT")"`, never INSIDE `$ROOT` —
@@ -334,11 +332,8 @@ paths:
 
       ps -eo pid,cmd | awk '/<pattern>/ && !/awk/ {print $1}' | while read p; do kill "$p"; done
 
-  **This has GRADUATED to enforcement** (2026-09-07). It recurred a fifth time —
-  the same agent that had written the rule into its own brief still reached for
-  `pkill -f` and lost its shell mid-cleanup — so `bash_guard` now denies
-  `pkill`/`killall` at command position and names the PID recipe in the refusal.
-  `pkill -P <pid>` is anchored to a known parent and passes. The prose stays
-  here for the READ direction (polling with a process-table match), which no hook
-  covers; the kill direction is the hook's now, and this note should not grow a
-  second copy of it.
+  **Never kill by pattern; kill the PID you spawned.** `pkill -f` and `killall`
+  can match the invoking shell itself. `pkill -P <pid>` is acceptable only when
+  the parent PID is known and was spawned by the test. For the READ direction
+  (polling a process table), exclude the polling command itself as described
+  above.
