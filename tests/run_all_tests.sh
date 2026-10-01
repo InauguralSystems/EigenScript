@@ -6764,13 +6764,13 @@ else
 fi
 echo ""
 
-# [99zd] Every workflow file LOADS as YAML and has a top-level jobs: mapping
-# (#1207). No PyYAML is red, not a skip.
+# [99zd] Every workflow file LOADS as YAML, and dev-image container steps use
+# only commands that image provides (#1207, #1422). No PyYAML is red, not a skip.
 echo "[99zd] Workflow files load as YAML (#1207)"
 TOTAL=$((TOTAL + 1))
 WORKFLOW_OUTPUT=$(bash "$TESTS_DIR/../tools/workflow_yaml_check.sh" 2>&1); WORKFLOW_RC=$?
 if [ "$WORKFLOW_RC" -eq 0 ] \
-   && grep -qE "^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), loader=pyyaml\)\$" <<<"$WORKFLOW_OUTPUT"; then
+   && grep -qE "^workflow-yaml: OK \(examined=[1-9][0-9]* file\(s\), container-run-steps=[1-9][0-9]*, loader=pyyaml\)\$" <<<"$WORKFLOW_OUTPUT"; then
     PASS=$((PASS + 1))
     printf '%s\n' "$WORKFLOW_OUTPUT" | grep -E '^workflow-yaml: OK'
 else
