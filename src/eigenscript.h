@@ -690,12 +690,13 @@ typedef struct EnvInternValueOwner EnvInternValueOwner;
 /* #1065: see EigsThread.intern_tbl. */
 typedef struct EnvInternTable {
     int            refcount;                       /* atomic */
+    int            state_published;                /* atomic: a state env borrowed a name */
     EnvNameIntern *buckets[ENV_NAME_INTERN_BUCKETS];
 } EnvInternTable;
 EnvInternTable *env_intern_table_new(void);
 void            env_intern_table_ref(EnvInternTable *t);
 void            env_intern_table_unref(EnvInternTable *t);
-int             env_intern_table_empty(const EnvInternTable *t);
+void            env_intern_table_publish(EnvInternTable *t);
 void            env_intern_transfer_values_to_state(void);
 void            env_intern_release_state_values(EigsState *st);
 
@@ -706,7 +707,7 @@ struct EigsState {
     EigsThread     *threads;
     /* Intern tables whose names have been published into state-owned envs.
      * An attachment drops its own reference at detach, but global/module env
-     * bindings can outlive that attachment. The state retains nonempty
+     * bindings can outlive that attachment. The state retains only published
      * attachment tables until state teardown (#1162). */
     EnvInternTable **intern_tables;
     size_t           intern_table_count;

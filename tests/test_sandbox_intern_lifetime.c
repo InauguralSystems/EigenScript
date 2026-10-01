@@ -1,5 +1,6 @@
 /* #964: sandbox-only dictionary keys must not pin the thread intern table. */
 #include <assert.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -77,6 +78,21 @@ static Value *sandbox_call(int key_number) {
     return out;
 }
 
+typedef struct {
+    EigsState *state;
+    Value *value;
+    int ok;
+} ForeignRelease;
+
+static void *release_on_other_attachment(void *opaque) {
+    ForeignRelease *release = (ForeignRelease *)opaque;
+    if (!eigs_thread_attach(release->state)) return NULL;
+    val_decref(release->value);
+    release->ok = 1;
+    eigs_thread_detach();
+    return NULL;
+}
+
 int main(void) {
     EigsState *state = eigs_open();
     assert(state != NULL);
@@ -130,7 +146,16 @@ int main(void) {
      * constant leaks under a different name. */
     assert(sandbox_retained <= 8);
 
-    val_decref(escaped);
+    /* The creator remains attached while a different attachment performs the
+     * final release.  Ownership must already be in the state registry at the
+     * sandbox publication boundary, rather than hidden in creator TLS until
+     * creator detach (which would leave a dangling owner and double-free). */
+    ForeignRelease release = { state, escaped, 0 };
+    pthread_t releaser;
+    assert(pthread_create(&releaser, NULL, release_on_other_attachment,
+                          &release) == 0);
+    assert(pthread_join(releaser, NULL) == 0);
+    assert(release.ok);
     eigs_close(state);
     return 0;
 }

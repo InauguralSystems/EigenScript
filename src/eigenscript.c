@@ -1577,11 +1577,8 @@ void env_intern_table_unref(EnvInternTable *t) {
     free(t);
 }
 
-int env_intern_table_empty(const EnvInternTable *t) {
-    if (!t) return 1;
-    for (int i = 0; i < ENV_NAME_INTERN_BUCKETS; i++)
-        if (t->buckets[i]) return 0;
-    return 1;
+void env_intern_table_publish(EnvInternTable *t) {
+    if (t) __atomic_store_n(&t->state_published, 1, __ATOMIC_RELEASE);
 }
 
 void free_value(Value *v) {
@@ -3268,6 +3265,11 @@ void env_intern_scope_end(uint32_t scope, uint32_t previous) {
         }
     }
     g_sandbox_intern_scope = previous;
+    /* Once the outer run has finished, its result can immediately be handed
+     * to and released by another attachment.  Move promoted-key ownership
+     * into the state registry at that publication boundary; waiting for the
+     * creator to detach leaves a foreign free unable to find the owner. */
+    if (previous == 0) env_intern_transfer_values_to_state();
 }
 
 void env_intern_release_value(Value *value) {
@@ -3508,6 +3510,8 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     env->names[env->count] = __builtin_expect(g_vm_multithreaded, 0)
                              ? (char *)shared_intern_key(name)
                              : env_intern_name(name);
+    if (env->mt_shared && !__builtin_expect(g_vm_multithreaded, 0))
+        env_intern_table_publish(eigs_current->intern_tbl);
     Value *promoted = promote_if_arena(val);
     if (promoted == val) val_incref(promoted);
     env->values[env->count] = slot_from_value(promoted);
@@ -3635,6 +3639,8 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
     env->names[env->count] = __builtin_expect(g_vm_multithreaded, 0)
                              ? (char *)shared_intern_key(interned)
                              : (char *)interned;
+    if (env->mt_shared && !__builtin_expect(g_vm_multithreaded, 0))
+        env_intern_table_publish(eigs_current->intern_tbl);
     EigsSlot stored = s;
     if (slot_is_ptr(s)) {
         Value *v = slot_as_ptr(s);

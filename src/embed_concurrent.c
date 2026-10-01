@@ -67,7 +67,7 @@ static void check(int ok, const char *what) {
  * the number: bumping a population pin to clear its own red is how a gate
  * launders the loss it exists to report (mechanical-gates §4, §106). The
  * number only ever moves for a check you just wrote. */
-#define EC_EXPECTED_CHECKS 92
+#define EC_EXPECTED_CHECKS 95
 
 /* Rounds are deliberately modest: these assertions fire on the RATIO of two
  * states' settings, not on how long they are held, so a long spin buys nothing
@@ -2039,8 +2039,28 @@ static void test_host_detach_reattach_names(void) {
     check(st->intern_table_count == retained,
           "host-reattach: empty worker intern tables are released at detach");
 
+    for (int i = 0; i < 128; i++) {
+        EigsThread *th = eigs_thread_attach(st);
+        if (!th) break;
+        EigsValue *v = eigs_eval_string("str of 1");
+        if (v) eigs_value_release(v);
+        eigs_thread_detach();
+    }
+    check(st->intern_table_count == retained,
+          "host-reattach: nonescaping eval intern tables are released");
+
     check(eigs_thread_switch(st) != NULL,
           "host-reattach: same OS thread can attach after both detach");
+    EigsValue *same_s = eigs_eval_string("str of (1 + 2)");
+    EigsValue *same_k = eigs_eval_string(
+        "(keys of d) == [\"pre\", \"from_t1\"]");
+    check(same_s && eigs_value_as_string(same_s) &&
+          strcmp(eigs_value_as_string(same_s), "3") == 0,
+          "host-reattach: same-thread reattach reads builtin value");
+    check(same_k && eigs_value_as_num(same_k) == 1.0,
+          "host-reattach: same-thread reattach reads dictionary names");
+    if (same_s) eigs_value_release(same_s);
+    if (same_k) eigs_value_release(same_k);
     eigs_close(st);
 }
 

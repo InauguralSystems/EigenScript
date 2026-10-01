@@ -322,9 +322,12 @@ void eigs_thread_detach(void) {
     eigs_current = NULL;
 
     pthread_mutex_lock(&st->threads_lock);
-    /* A spawn worker which executes an existing chunk usually interns no
-     * names. Do not park its 4096 empty buckets until state destruction. */
-    if (env_intern_table_empty(detached_intern_tbl)) {
+    /* Keep only a table whose name storage was actually borrowed by a
+     * state-owned env. Parsing/evaluating ordinary requests can populate a
+     * table heavily, but chunks already carry their own references and an
+     * unpublished table needs no blanket state-lifetime reference. */
+    if (!__atomic_load_n(&detached_intern_tbl->state_published,
+                         __ATOMIC_ACQUIRE)) {
         for (size_t i = 0; i < st->intern_table_count; i++) {
             if (st->intern_tables[i] != detached_intern_tbl) continue;
             env_intern_table_unref(st->intern_tables[i]);
