@@ -35,7 +35,7 @@ arena_cycle_desc is [ABI,
      SET_NAME,0,0, RETURN],
     ["cycle"]]
 arena_mark of null
-arena_cycle_ok is sandbox_run of [arena_cycle_desc, 1, 600]
+arena_cycle_ok is sandbox_run of [arena_cycle_desc, 1, 1000]
 assert_eq of [arena_cycle_ok["error"]["message"],
               "sandbox result too large to scan for callables (exceeds the result node/depth budget); refusing to cross the boundary",
               "arena promotion: cyclic graph reaches the boundary scanner"]
