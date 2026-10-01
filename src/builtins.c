@@ -3781,8 +3781,39 @@ Value* builtin_sandbox_run(Value *arg) {
     free(snap);
     val_decref(stub);
 
-    /* #1404: source and descriptor inputs converge here, before any policy or
-     * budgeted execution. Compile against the sealed root itself: using the
+    /* Source preparation is part of the sandbox, not trusted host setup.
+     * Arm both budgets before touching attacker-controlled text.  The byte
+     * budget accounts for the linear lexer pass, while the hard ceiling keeps
+     * preparation work bounded even when a caller grants an enormous runtime
+     * allocation budget.  MAX_TOKENS independently bounds parser/compiler
+     * work after lexing. */
+    int saved_max = g_sandbox_loop_max;
+    int saved_cap_hit = g_sandbox_cap_hit;
+    long long saved_iters = g_loop_iterations;
+    long long saved_backedge_iters = g_loop_backedge_count;
+    int saved_sb_active = g_sandbox_active;
+    int saved_sb_error_latched = g_sandbox_error_latched;
+    int saved_sb_refusal = g_sandbox_refusal;
+    int saved_sb_refusal_kind = g_sandbox_refusal_kind;
+    int saved_sb_refusal_line = g_sandbox_refusal_line;
+    char saved_sb_refusal_msg[sizeof g_sandbox_refusal_msg];
+    memcpy(saved_sb_refusal_msg, g_sandbox_refusal_msg,
+           sizeof saved_sb_refusal_msg);
+    size_t saved_sb_used = g_sandbox_bytes_used;
+    size_t saved_sb_max = g_sandbox_byte_max;
+
+    g_sandbox_loop_max = max_iter > 0 ? max_iter : 1000000;
+    g_sandbox_cap_hit = 0;
+    g_loop_iterations = 0;
+    g_loop_backedge_count = 0;
+    g_sandbox_active = 1;
+    g_sandbox_error_latched = 0;
+    g_sandbox_refusal = 0;
+    g_sandbox_bytes_used = 0;
+    g_sandbox_byte_max = max_bytes;
+
+    /* #1404: source and descriptor inputs converge here, before execution.
+     * Compile against the sealed root itself: using the
      * caller env (as eval does) would expose host bindings during compilation
      * and make the two sandbox forms enforce different boundaries. Parse and
      * compile failures are values, not raised host errors, and no partial
@@ -3790,16 +3821,38 @@ Value* builtin_sandbox_run(Value *arg) {
     TokenList source_tokens = {0};
     ASTNode *source_ast = NULL;
     if (source_form) {
+        enum { SANDBOX_SOURCE_WORK_MAX = 8 * 1024 * 1024 };
+        size_t source_len = strnlen(source ? source : "",
+                                   (size_t)SANDBOX_SOURCE_WORK_MAX + 1);
+        int prep_failed = source_len > SANDBOX_SOURCE_WORK_MAX;
+        if (prep_failed) {
+            rt_error(EK_SANDBOX, 0,
+                     "sandbox source preparation work budget exceeded (max %d bytes)",
+                     SANDBOX_SOURCE_WORK_MAX);
+        } else if (!sandbox_charge(source_len + 1)) {
+            prep_failed = 1;
+        }
+
         int saved_errors = g_parse_errors;
         g_parse_errors = 0;
-        source_tokens = tokenize(source ? source : "");
-        source_ast = parse(&source_tokens);
-        int parse_failed = g_parse_errors > 0 || !source_ast;
-        if (!parse_failed)
+        if (!prep_failed) {
+            source_tokens = tokenize(source ? source : "");
+            source_ast = parse(&source_tokens);
+        }
+        int parse_failed = !prep_failed && (g_parse_errors > 0 || !source_ast);
+        if (!prep_failed && !parse_failed) {
+            /* Static-load resolution is an observer optimization which reads
+             * host files.  Compilation inside a closed sandbox must never
+             * exercise that capability; runtime policy will reject the load. */
+            int saved_obs_scan = g_obs_gate_scan_enabled;
+            g_obs_gate_scan_enabled = 0;
             chunk = compile_ast(source_ast, sbox, source ? source : "");
-        int compile_failed = !parse_failed && (g_parse_errors > 0 || !chunk);
+            g_obs_gate_scan_enabled = saved_obs_scan;
+        }
+        int compile_failed = !prep_failed && !parse_failed &&
+                             (g_parse_errors > 0 || !chunk);
         g_parse_errors = saved_errors;
-        if (parse_failed || compile_failed) {
+        if (prep_failed || parse_failed || compile_failed) {
             int error_line = g_first_error_line;
             char error_message[sizeof(((EigsThread *)0)->first_error_msg)];
             snprintf(error_message, sizeof error_message, "%s",
@@ -3812,11 +3865,30 @@ Value* builtin_sandbox_run(Value *arg) {
             free_ast(source_ast);
             env_decref(sbox);
             env_intern_scope_end(intern_scope, saved_intern_scope);
+            g_sandbox_loop_max = saved_max;
+            g_sandbox_cap_hit = saved_cap_hit;
+            g_loop_iterations = saved_iters;
+            g_loop_backedge_count = saved_backedge_iters;
+            g_sandbox_active = saved_sb_active;
+            g_sandbox_bytes_used = saved_sb_used;
+            g_sandbox_byte_max = saved_sb_max;
             dict_set_owned(out, "ok", make_num(0));
             Value *ev = make_dict(3);
-            dict_set_owned(ev, "kind", make_str("compile"));
-            dict_set_owned(ev, "message", make_str(error_message));
-            dict_set_owned(ev, "line", make_num((double)error_line));
+            dict_set_owned(ev, "kind", make_str(prep_failed ? "sandbox" : "compile"));
+            dict_set_owned(ev, "message",
+                           make_str(prep_failed ? g_sandbox_refusal_msg : error_message));
+            dict_set_owned(ev, "line",
+                           make_num((double)(prep_failed ? g_sandbox_refusal_line : error_line)));
+            if (prep_failed && g_has_error) {
+                g_has_error = 0;
+                eigs_clear_error_value();
+            }
+            g_sandbox_error_latched = saved_sb_error_latched;
+            g_sandbox_refusal = saved_sb_refusal;
+            g_sandbox_refusal_kind = saved_sb_refusal_kind;
+            g_sandbox_refusal_line = saved_sb_refusal_line;
+            memcpy(g_sandbox_refusal_msg, saved_sb_refusal_msg,
+                   sizeof g_sandbox_refusal_msg);
             dict_set_owned(out, "error", ev);
             return out;
         }
@@ -3828,42 +3900,6 @@ Value* builtin_sandbox_run(Value *arg) {
      * idempotent arm at the convergence point also keeps execution structural. */
     chunk_arm_temporal(chunk);
 
-    int saved_max = g_sandbox_loop_max;
-    int saved_cap_hit = g_sandbox_cap_hit;
-    long long saved_iters = g_loop_iterations;
-    /* #940: the back-edge counter is the sandbox budget's second half — it
-     * is saved/restored HERE, at the sandbox boundary only, never per call
-     * frame (a budget on untrusted code must not reset because the chunk
-     * called a function). */
-    long long saved_backedge_iters = g_loop_backedge_count;
-    g_sandbox_loop_max = max_iter > 0 ? max_iter : 1000000;
-    g_sandbox_cap_hit = 0;
-    g_loop_iterations = 0;
-    g_loop_backedge_count = 0;
-    /* #292: arm the allocation budget. Save/restore so nested sandbox_run (or a
-     * sandbox_run invoked from already-budgeted code) composes correctly. */
-    int    saved_sb_active = g_sandbox_active;
-    int    saved_sb_error_latched = g_sandbox_error_latched;
-    /* #965 (fix5): the sticky policy-refusal record composes the same way —
-     * an inner run arms, reports, and then restores the outer run's record. */
-    int    saved_sb_refusal = g_sandbox_refusal;
-    int    saved_sb_refusal_kind = g_sandbox_refusal_kind;
-    int    saved_sb_refusal_line = g_sandbox_refusal_line;
-    char   saved_sb_refusal_msg[sizeof g_sandbox_refusal_msg];
-    memcpy(saved_sb_refusal_msg, g_sandbox_refusal_msg,
-           sizeof saved_sb_refusal_msg);
-    size_t saved_sb_used   = g_sandbox_bytes_used;
-    size_t saved_sb_max    = g_sandbox_byte_max;
-    /* Names made by untrusted descriptor assembly or VM execution belong to
-     * this run until a dictionary insertion promotes them (dict_set_hashed,
-     * at insertion -- the only promotion site since #1014).
-     * Pre-existing scope-zero host/global names retain their process lifetime
-     * and pointer identity; channel keys live in their separate stable table. */
-    g_sandbox_active     = 1;
-    g_sandbox_error_latched = 0;
-    g_sandbox_refusal    = 0;
-    g_sandbox_bytes_used = 0;
-    g_sandbox_byte_max   = max_bytes;
     /* #1026: the bare OP_PREDICATE reads the thread's last-observed-slot
      * tracker (g_last_obs_slot_env/idx), not an env, so a descriptor with no
      * operands and no host reference read the HOST's last observed binding

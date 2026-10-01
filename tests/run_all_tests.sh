@@ -5823,7 +5823,7 @@ check_eigs_suite "assembled-chunk stack/env underflow (verifier pass 4)" test_ch
 # guard (rc=124), not an assertion.
 check_eigs_suite "sandbox back-edge loop cap (assembled bare JUMP_BACK)" test_sandbox_backedge_cap.eigs "All tests passed" 6
 check_eigs_suite "sandbox fail-closed allowlist (no host-global escape)" test_sandbox_allow.eigs "SANDBOX_ALLOW_OK" 1
-check_eigs_suite "sandbox source form (#1404)" test_sandbox_source.eigs "All tests passed" 24
+check_eigs_suite "sandbox source form (#1404)" test_sandbox_source.eigs "All tests passed" 26
 check_eigs_suite "JIT and/or heap-operand decref (no per-iteration leak)" test_jit_andor_leak.eigs "jit-and-or-ok" 1
 # #1361 EIGS_STRICT=0: pins json_path walking a malformed document leniently (JH rows, e.g. JH81).
 EIGS_STRICT=0 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
