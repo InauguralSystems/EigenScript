@@ -530,12 +530,28 @@ Value* builtin_eigen_generate(Value *arg) {
      * #960: sampling makes this a nondeterministic return, so it rides the
      * tape like random/random_int. ONE record per call carries the emitted
      * token list -- the draws are an implementation detail of the decoding
-     * policy, the list is what the script observes. The TAKE is the first
-     * statement, so replay serves the tokens before the model is consulted:
-     * no checkpoint load, no RNG draw (the net_* contract). Every return
-     * records exactly one value, argument-error paths included, or a program
-     * that hits one desyncs the stream. Unconditional in temperature: the tape
-     * cannot show which branch ran, and replay may not load a model. */
+     * policy, the list is what the script observes. After deterministic
+     * value-domain validation, TAKE serves recorded tokens before generation:
+     * no RNG draw. Every returning path records exactly one value, including
+     * soft argument-error paths; raising paths record none and must remain
+     * before TAKE to preserve stream alignment. Unconditional in temperature:
+     * the tape cannot show which branch ran. */
+    /* Value-domain failures must happen before replay consumes an N record.
+     * Unlike the soft argument fallbacks below, an overlong prompt raises and
+     * therefore records no return value on a live trace.  Taking first would
+     * steal the following successful generation's record during replay and
+     * turn this rejected call into that generation. */
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 3 &&
+        arg->data.list.items[0]->type == VAL_LIST && g_model.loaded) {
+        int replay_safe_prompt_len = arg->data.list.items[0]->data.list.count;
+        if (replay_safe_prompt_len > g_model.config.max_seq_len) {
+            rt_error(EK_VALUE, 0,
+                "eigen_generate: prompt length %d exceeds model max_seq_len %d",
+                replay_safe_prompt_len, g_model.config.max_seq_len);
+            return make_null();
+        }
+    }
+
     TRACE_NONDET_TAKE("eigen_generate");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         fprintf(stderr, "eigen_generate: requires [prompt_ids, temperature, max_tokens]\n");
@@ -565,12 +581,6 @@ Value* builtin_eigen_generate(Value *arg) {
     if (prompt_len <= 0) {
         fprintf(stderr, "eigen_generate: prompt must be non-empty\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
-    }
-    if (prompt_len > g_model.config.max_seq_len) {
-        rt_error(EK_VALUE, 0,
-            "eigen_generate: prompt length %d exceeds model max_seq_len %d",
-            prompt_len, g_model.config.max_seq_len);
-        return make_null();
     }
     #define EIGS_MAX_GENERATE_TOKENS 4096
     if (max_tokens <= 0 || max_tokens > EIGS_MAX_GENERATE_TOKENS) {
