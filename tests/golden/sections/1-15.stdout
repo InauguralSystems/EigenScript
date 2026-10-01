@@ -1,0 +1,31 @@
+[1/15] Gen 0 Baseline (basic language features)
+  PASS: T01 Numeric Assignment
+  PASS: T02 String Assignment
+  PASS: T03 Addition
+  PASS: T04 Subtraction
+  PASS: T05 Multiplication
+  PASS: T06 Division
+  PASS: T07 String Concat
+  PASS: T08 Boolean And
+  PASS: T09 Boolean Or
+  PASS: T10 Boolean Not
+  PASS: T11 Greater Than
+  PASS: T12 Less Than
+  PASS: T13 Equality (42==42)
+  PASS: T13b Inequality (42==99)
+  PASS: T13c String Equality
+  PASS: T13d String Inequality
+  PASS: T14 If Statement
+  PASS: T15 If-Else
+  PASS: T16 While Loop
+  PASS: T17 List Creation
+  PASS: T18 List Index
+  PASS: T19 Function Def
+  PASS: T20 Nested Arith
+  PASS: T21 String Length
+  PASS: T22 Reassignment
+  PASS: T23 Mixed Types
+
+============================================
+  RESULTS: 26/26 passed, 0 failed, 0 skipped
+============================================

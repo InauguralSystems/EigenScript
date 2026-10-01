@@ -7,6 +7,12 @@
 # #1160: a generated section-plan runner lives outside tests/, so it has to be
 # told where tests/ is. Unset — every ordinary invocation — this resolves from
 # $0 exactly as before.
+if [ "${1:-}" = "--bless" ]; then
+    [ "$#" -eq 2 ] || { echo "usage: tests/run_all_tests.sh --bless <section>" >&2; exit 2; }
+    exec bash "$(cd "$(dirname "$0")/.." && pwd)/tools/golden_sections.sh" --bless "$2"
+elif [ "$#" -ne 0 ]; then
+    echo "usage: tests/run_all_tests.sh [--bless <section>]" >&2; exit 2
+fi
 TESTS_DIR="${EIGS_PLAN_TESTS_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 . "$TESTS_DIR/../tools/read_werror_flags.sh" || exit 1
