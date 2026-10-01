@@ -2338,9 +2338,15 @@ Value* builtin_pi(Value *arg) {
 
 static int g_random_seeded = 0;
 static pthread_once_t g_random_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t g_random_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void random_seed_once(void) {
     if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) return;
+    pthread_mutex_lock(&g_random_lock);
+    if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) {
+        pthread_mutex_unlock(&g_random_lock);
+        return;
+    }
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
 #if EIGENSCRIPT_FREESTANDING
@@ -2349,11 +2355,28 @@ static void random_seed_once(void) {
     srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid());
 #endif
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&g_random_lock);
 }
 
 void eigs_ensure_random_seeded(void) {
     if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) return;
     pthread_once(&g_random_once, random_seed_once);
+}
+
+double eigs_random_double(void) {
+    eigs_ensure_random_seeded();
+    pthread_mutex_lock(&g_random_lock);
+    double result = drand48();
+    pthread_mutex_unlock(&g_random_lock);
+    return result;
+}
+
+long eigs_random_long(void) {
+    eigs_ensure_random_seeded();
+    pthread_mutex_lock(&g_random_lock);
+    long result = lrand48();
+    pthread_mutex_unlock(&g_random_lock);
+    return result;
 }
 
 /* random of null → float in [0, 1) */
@@ -2362,7 +2385,7 @@ Value* builtin_random(Value *arg) {
     /* Seed is part of the live source so a replay take / fail-loud raise
      * does not race g_random_seeded (#1142 TSan on two workers under
      * EIGS_REPLAY). */
-    TRACE_NONDET_RET("random", (eigs_ensure_random_seeded(), make_num(drand48())));
+    TRACE_NONDET_RET("random", make_num(eigs_random_double()));
 }
 
 /* random_int of [lo, hi] → integer in [lo, hi] inclusive */
@@ -2375,7 +2398,6 @@ Value* builtin_random_int(Value *arg) {
     Value *hi = arg->data.list.items[1];
     ARG_GUARD_TAPED(!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM,
                     "random_int", "numeric bounds", make_num(0));
-    eigs_ensure_random_seeded();
     /* Range-check as doubles before any integer cast — a double outside the
      * int64_t range (or non-finite) makes the cast itself UB (#698 fixed the
      * same cast-before-range-check class in value_to_string). */
@@ -2402,14 +2424,16 @@ Value* builtin_random_int(Value *arg) {
                  (unsigned long long)span);
         return make_null();
     }
-    TRACE_NONDET_RET("random_int", make_num(lo_i + (lrand48() % (int64_t)span)));
+    TRACE_NONDET_RET("random_int", make_num(lo_i + (eigs_random_long() % (int64_t)span)));
 }
 
 /* seed_random of n → seeds the RNG, returns 1 */
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_num(0));
+    pthread_mutex_lock(&g_random_lock);
     srand48((long)arg->data.num);
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&g_random_lock);
     return make_num(1);
 }
 

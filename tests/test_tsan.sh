@@ -80,6 +80,22 @@ for t in $SLICE; do
     fi
 done
 
+echo "=== concurrent random streams have no races or duplicate draws (#1150) ==="
+RANDOM_MT="$TESTS_DIR/random_mt_no_duplicates.eigs"
+for run in 1 2 3; do
+    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$RANDOM_MT" 2>&1)
+    LAST_RC=$?
+    w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
+    case "$out" in *"All tests passed."*) summary_ok=1 ;; *) summary_ok=0 ;; esac
+    if [ "$LAST_RC" -eq 0 ] && [ "$w" -eq 0 ] && [ "$summary_ok" -eq 1 ]; then
+        echo "  PASS: random workers run $run: 0 duplicates, TSan-clean"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: random workers run $run: rc=$LAST_RC warnings=$w output='$out'"
+        FAIL=$((FAIL + 1))
+    fi
+done
+
 echo "=== C embed observer contract (raw state and worker arming) ==="
 if TSAN_OPTIONS="halt_on_error=1 exitcode=66" setarch -R \
         bash "$TESTS_DIR/test_embed_observer.sh"; then

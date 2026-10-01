@@ -5247,6 +5247,12 @@ echo ""
 echo "[102] Parallel Shared-Chunk Execution (#297)"
 check_eigs_suite "concurrent workers, same chunks, exact results" test_spawn_parallel.eigs "All tests passed" 1
 
+# [102aa] libc's drand48 family has process-global state.  Two simultaneous
+# 100,000-draw workers must have no exact overlap; the TSan gate repeats this
+# three times while also rejecting sanitizer reports (#1150).
+echo "[102aa] Concurrent Random Stream Serialization (#1150)"
+check_eigs_suite "parallel random streams have no duplicate draws" random_mt_no_duplicates.eigs "All tests passed" 1
+
 # [102a] #1439: the MT safety gate must not leave main-thread temporal
 # assignments stamped with the last pre-spawn line. The worker stays parked
 # until both writes and the query have completed; TSan covers the same case.
