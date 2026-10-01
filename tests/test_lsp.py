@@ -1312,6 +1312,32 @@ def main():
           and by_id(long_r, 61) is not None
           and by_id(long_r, 61).get("result") is None)
 
+    # #1376: C strings cannot represent the NUL decoded from \u0000. The
+    # shared lenient JSON decoder substitutes U+FFFD, but that must not turn a
+    # client's document key into a different URI. Refuse it visibly instead.
+    nul_open = did_open("x is )\n")
+    nul_open["params"]["textDocument"]["uri"] = "file:///a\x00tail"
+    nul_r = converse([INIT, nul_open, SHUTDOWN, EXIT])
+    nul_shown = [r["params"] for r in nul_r if r.get("method") == "window/showMessage"]
+    check("didOpen refuses a URI whose JSON decoding is lossy (#1376)",
+          len(nul_shown) == 1 and nul_shown[0].get("type") == 1
+          and "URI" in nul_shown[0].get("message", "")
+          and "NUL" in nul_shown[0].get("message", "")
+          and not any(r.get("method") == "textDocument/publishDiagnostics" for r in nul_r))
+
+    # The fixed document table is a server limit, not a reason for the 65th
+    # didOpen notification to disappear silently. Name the limit to the client.
+    many_opens = []
+    for i in range(65):
+        msg = did_open("x is 1\n")
+        msg["params"]["textDocument"]["uri"] = "file:///limit-%d.eigs" % i
+        many_opens.append(msg)
+    many_r = converse([INIT] + many_opens + [SHUTDOWN, EXIT])
+    many_shown = [r["params"] for r in many_r if r.get("method") == "window/showMessage"]
+    check("the 65th didOpen reports the 64-document limit (#1376)",
+          len(many_shown) == 1 and many_shown[0].get("type") == 1
+          and "64-document limit" in many_shown[0].get("message", ""))
+
     # #1336 calibration. With the URI refused, no text a client or a source
     # file supplies reaches a fixed eigenlsp buffer's edge: parse messages are
     # ASCII (token-type names, ASCII identifiers, non-ASCII bytes spelled
