@@ -925,21 +925,27 @@ Value* builtin_tensor_scatter_add(Value *arg) {
             } else {
                 v = values->data.num;
             }
+            /* Check the double before converting it to int.  In particular,
+             * an out-of-range floating-to-integer conversion is undefined C
+             * behavior, and indices can come from sandboxed bytecode. */
+            int index_limit = per_row ? cols : dst->data.buffer.count;
+            if (!isfinite(di) || di < 0.0 || di >= (double)index_limit || di != trunc(di)) {
+                if (per_row) {
+                    rt_error(EK_INDEX, 0, "scatter_add: column index %.17g out of range for row %d (cols %d)",
+                             di, i, cols);
+                } else {
+                    rt_error(EK_INDEX, 0, "scatter_add: index %.17g out of range (length %d)",
+                             di, index_limit);
+                }
+                return make_null();
+            }
             int idx = (int)di;
             if (per_row) {
-                if (idx < 0 || idx >= cols) {
-                    rt_error(EK_INDEX, 0, "scatter_add: column index %d out of range for row %d (cols %d)", idx, i, cols);
-                    return make_null();
-                }
                 if (pass) {
                     int64_t at = (int64_t)i * cols + idx;
                     d[at] = num_guard(d[at] + v);
                 }
             } else {
-                if (idx < 0 || idx >= dst->data.buffer.count) {
-                    rt_error(EK_INDEX, 0, "scatter_add: index %d out of range (length %d)", idx, dst->data.buffer.count);
-                    return make_null();
-                }
                 if (pass) d[idx] = num_guard(d[idx] + v);
             }
         }
