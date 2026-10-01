@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REMOVED = ("LANGUAGE" + "_CONTRACT.md", "GRAM" + "MAR.md")
 
 def normalized_statements(path):
-    """Return substantive Markdown statements, including short rules and tables."""
+    """Return substantive prose/table rules and fenced EBNF productions."""
     out = {}
     fenced = False
     for no, raw in enumerate(path.read_text(errors="replace").splitlines(), 1):
@@ -14,7 +14,12 @@ def normalized_statements(path):
         if stripped.startswith("```"):
             fenced = not fenced
             continue
-        if fenced or not stripped or stripped.startswith("#"):
+        if not stripped or stripped.startswith("#"):
+            continue
+        # Most fences contain executable examples, whose repetition is useful
+        # rather than a second language definition.  Grammar productions are
+        # normative even inside a fence, however, and must not evade this gate.
+        if fenced and not re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*=(?!=)", stripped):
             continue
         text = re.sub(r"[`*_]", "", stripped)
         # Table layout is not part of a rule's identity, but every cell is.
@@ -50,15 +55,20 @@ def selftest():
     other_docs = [p for p in (ROOT/'docs').glob('*.md') if p.name not in {'SPEC.md','SPEC_CONSOLIDATION_MAP.md'}]
     chosen=next((line for line in candidates if all(line not in normalized_statements(p) for p in other_docs)), None)
     if not chosen: return ['self-test could not find a unique statement identity']
+    grammar=next((line for line in candidates if re.match(r"^[a-z_][a-z0-9_]*\s*=", line)), None)
+    if not grammar: return ['self-test could not find a fenced grammar production']
     with tempfile.TemporaryDirectory(prefix='spec-authority-') as td:
         root=Path(td); (root/'docs').mkdir()
         shutil.copy(ROOT/'docs/SPEC.md', root/'docs/SPEC.md')
-        probes = [chosen, 'Functions, builtins: by identity.', '| Rule | Calls use identity |']
+        probes = [chosen, 'Functions, builtins: by identity.',
+                  '| Rule | Calls use identity |', grammar]
         for probe in probes:
-            (root/'docs/SYNTAX.md').write_text('# planted duplicate\n\n'+probe+'\n')
+            fenced_probe = '```\n'+probe+'\n```\n' if probe == grammar else probe+'\n'
+            (root/'docs/SYNTAX.md').write_text('# planted duplicate\n\n'+fenced_probe)
             # Add the short/table probes to the temporary authority as well.
-            with (root/'docs/SPEC.md').open('a') as authority:
-                authority.write('\n'+probe+'\n')
+            if probe not in candidates:
+                with (root/'docs/SPEC.md').open('a') as authority:
+                    authority.write('\n'+probe+'\n')
             planted=check(root, planted=True)
             if not any('duplicated normative rule' in e for e in planted):
                 return [f'self-test planted an undetected duplicate: {probe}']

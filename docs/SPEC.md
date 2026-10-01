@@ -3078,8 +3078,9 @@ dict_entry   = expression ':' expression
 #### Interrogatives and Predicates
 
 ```
-interrogative = ( 'what' | 'who' | 'when' | 'where' | 'why' | 'how' ) 'is' expression [ 'at' expression ]
-              | 'prev' 'of' expression [ 'at' expression ]
+interrogative = ( 'what' | 'who' | 'when' | 'where' | 'why' | 'how' ) 'is' expression [ temporal_qualifier ]
+              | 'prev' 'of' expression [ temporal_qualifier ]
+temporal_qualifier = ( 'at' | 'when' ) expression
 
 predicate     = 'converged' | 'stable' | 'improving'
               | 'oscillating' | 'diverging' | 'equilibrium'
@@ -3092,32 +3093,6 @@ before its most recent assignment; it requires a named binding, so only
 identifier operands are meaningful. Both temporal forms query the
 per-name assignment history (top-level bindings) and evaluate to `null`
 on a miss.
-
-### Semantic Notes
-
-- **Assignment** (`is`) is outward-mutable: if the name exists in a parent
-  scope, it updates that binding. If not found, it creates a new local.
-- **Local assignment** (`local name is expr`) always creates or updates the
-  binding in the current evaluator scope only.
-- **Function definition** (`define`) always creates a local binding.
-- **Function call** (`fn of arg`) passes a single value. Multiple arguments
-  are passed as a **literal** list: `fn of [a, b, c]`.
-- **Argument lists** (#405; SPEC.md is normative): a *literal* bracket
-  after `of` is the call's argument list at every count — `f of []` is
-  zero args, `f of [x]` is one arg (the *element* `x`, not the list), and
-  `f of [a, b]` is two. A list passed via a variable never acts as an
-  argument list (`f of xs` binds the whole list to the first parameter;
-  remaining parameters take defaults or `null`). To pass a literal list
-  whole, or make any one-argument call, parenthesise: `f of ([x])` /
-  `f of (x)`.
-- **Implicit parameter**: `define fn as:` (no parameter list) uses the
-  implicit parameter `n`. A zero-parameter lambda `() => expr` mirrors
-  this classic style: it also receives the implicit `n`.
-- **Observer tracking** is automatic on every assignment. Interrogatives and
-  predicates query the observer state without modifying it.
-- **`break`/`continue`** affect the innermost enclosing `loop` or `for`.
-- **`import`** loads `lib/NAME.eigs` and binds all module-level definitions
-  as a dictionary under the module name.
 
 ## Migrated syntax-guide examples
 
