@@ -656,7 +656,49 @@ STUB
     export TIERS="$st_tiers"
     rm -f "$CNT".sl.*
 
-    # (viii)-(x) THE PRODUCTION DECISION BOUNDARY, DRIVEN THROUGH THE REAL
+    # (viii)-(x) THE AGGREGATION ITSELF, WITH UNSORTED INPUT (#1196). The
+    # rows above feed the median runs in blocks (all linear, then all
+    # quadratic), so an insertion sort that accidentally starts at element 3
+    # leaves their result unchanged. These subjects deliberately put unlike
+    # ratios in the first two positions and drive the shipped entry point.
+    # The first row is the minimal rank witness: after sorting, positions 1-7
+    # are 2.00 and positions 8-15 are 4.00. Skipping the first insertion, or
+    # selecting position 7 instead of position 8, changes its verdict.
+    mk_round_subject() {  # $1 name, $2 comma-delimited quadratic rounds
+        cat > "$STUB_DIR/$1" <<STUB
+#!/bin/sh
+n=\$2
+c=\$(cat "$CNT.$1.\$n" 2>/dev/null || echo 0); c=\$((c+1)); echo \$c > "$CNT.$1.\$n"
+case ",$2," in
+    *,\$c,*) awk -v n="\$n" 'BEGIN{ printf "%s %.4f\\n", n, (n/20000)*(n/20000)*10 }' ;;
+    *)       awk -v n="\$n" 'BEGIN{ printf "%s %.4f\\n", n, n/2000 }' ;;
+esac
+STUB
+        chmod +x "$STUB_DIR/$1"
+    }
+
+    st_tiers="$TIERS"; export TIERS=off
+    mk_round_subject rank_witness "1,9,10,11,12,13,14,15"
+    rm -f "$CNT".rank_witness.*
+    chk "the unsorted 8th-of-15 rank witness is RED at 4.00" \
+        "$(gate_says rank_witness FAIL 4.00)" "FAIL"
+
+    # Bracket the rank with a second unsorted 8-quadratic subject and its
+    # 8-linear mirror. This pins both sides of the majority boundary rather
+    # than merely teaching the fixture that every mixed series is red.
+    mk_round_subject eight_quadratic "2,3,4,5,6,7,8,15"
+    rm -f "$CNT".eight_quadratic.*
+    chk "8 quadratic rounds of 15 in unsorted order is RED at 4.00" \
+        "$(gate_says eight_quadratic FAIL 4.00)" "FAIL"
+
+    mk_round_subject eight_linear "1,9,10,11,12,13,14"
+    rm -f "$CNT".eight_linear.*
+    chk "8 linear rounds of 15 in unsorted order is GREEN at 2.00" \
+        "$(gate_says eight_linear PASS 2.00)" "PASS"
+    export TIERS="$st_tiers"
+    rm -f "$CNT".rank_witness.* "$CNT".eight_quadratic.* "$CNT".eight_linear.*
+
+    # (xi)-(xiii) THE PRODUCTION DECISION BOUNDARY, DRIVEN THROUGH THE REAL
     # ENTRY POINT. The two threshold rows near the top of this selftest
     # compute the comparison THEMSELVES in awk, so they say what the numbers
     # mean and nothing about what the gate does with them. A blind critic
@@ -721,7 +763,7 @@ STUB
     mk_series second_bad 10 20 80
     chk "a series bad on only the SECOND doubling is RED" "$(series_verdict second_bad 4.00)" "ok"
 
-    # (xi) the doubling FLOOR. With three lengths there are always two
+    # (xiv) the doubling FLOOR. With three lengths there are always two
     #      doublings, so the `>= 2` guard cannot bind on the shipped
     #      configuration and a critic lowered it to 1 with nothing noticing.
     #      It exists for the day someone shortens LENS, so the row shortens
@@ -737,7 +779,7 @@ STUB
     fi
     chk "a LENS with only one doubling is REFUSED, and says why" "$floor_got" "ok"
 
-    # (xii) A MALFUNCTION IS NOT A VERDICT. The subject here exits 23 with no
+    # (xv) A MALFUNCTION IS NOT A VERDICT. The subject here exits 23 with no
     #       reading at all while printing exact copies of the verdict and
     #       ratio lines -- the critic's spoof. The gate must die as "could
     #       not measure" (exit 2), and a row asking for a superlinear verdict
@@ -753,7 +795,7 @@ STUB
     chk "a subject that only PRINTS a verdict cannot supply one" \
         "$(gate_says spoof FAIL 4.00)" "rc=2 expected 1 (2 = the gate could not measure)"
 
-    # (xiii) BOTH TIERS ARE MEASURED, AND BOTH ARE NAMED. #1200 was a gate
+    # (xvi) BOTH TIERS ARE MEASURED, AND BOTH ARE NAMED. #1200 was a gate
     #        that silently covered one of the language's two index paths, so
     #        "how many tiers ran" cannot be derived from $TIERS the way the
     #        invocation count is -- dropping a tier would move both sides of
@@ -765,7 +807,7 @@ STUB
     chk "every tier in TIERS is measured and named in the output" \
         "${tier_named:-<no tier line at all>}" "off on "
 
-    # (xiv) ...AND THE TIERS ACTUALLY DISPATCH, which the row above does not
+    # (xvii) ...AND THE TIERS ACTUALLY DISPATCH, which the row above does not
     #        show. A blind critic deleted the `"$__tier"` ARGUMENT from the
     #        run_gate call: both passes then ran with the default (off) while
     #        the reporting loop still printed "tier JIT off" and "tier JIT

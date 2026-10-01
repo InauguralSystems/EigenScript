@@ -20,7 +20,7 @@ tests/test_handles_mt.sh tests/handles_mt_fixtures/* | timeout 30 bash tests/tes
 tests/test_http_rss_growth.sh | timeout 30 bash tests/test_http_rss_growth.sh --selftest
 tests/test_http_slowloris.sh | timeout 90 bash tests/test_http_slowloris.sh --self-test | [{"pattern":"^  PASS: plant ","count":4},{"pattern":"^  FAIL: plant ","count":0}]
 tests/test_loader_mt.sh tests/loader_mt_fixtures/* | timeout 30 bash tests/test_loader_mt.sh --selftest | [{"pattern":"  PASS:","count":6},{"pattern":"  FAIL:","count":0}]
-tests/test_string_scaling.sh | timeout 150 bash tests/test_string_scaling.sh --selftest | [{"pattern":"^== selftest 26 run, 26 passed, 0 failed ==$","count":1}]
+tests/test_string_scaling.sh | timeout 210 bash tests/test_string_scaling.sh --selftest | [{"pattern":"^== selftest 29 run, 29 passed, 0 failed ==$","count":1}]
 tests/test_trace_mt.sh | timeout 30 bash tests/test_trace_mt.sh --selftest | [{"pattern":"  PASS:","count":6},{"pattern":"  FAIL:","count":0}]
 tools/_derive_variants.py tools/_extract_runcmd.py | timeout 30 python3 tools/_derive_variants.py --selftest
 tools/_extract_runcmd.py | timeout 30 python3 tools/_extract_runcmd.py --selftest
