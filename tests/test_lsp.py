@@ -877,6 +877,19 @@ def main():
           "result" in budget_response and
           budget_response["result"] is None)
 
+    # Identifier traversal itself is budgeted: an over-budget parameter name
+    # must terminate scope construction and produce an explicit null response,
+    # rather than allowing later overlapping scans to retry a full strlen.
+    huge_name = "v" * 250001
+    huge_binding_doc = "x is 0\ndefine f(%s) as:\n    print of x\n" % huge_name
+    r = converse([INIT, did_open(huge_binding_doc), rnb, SHUTDOWN, EXIT])
+    huge_name_response = by_id(r, 45)
+    check("rename bounds oversized binding-name traversal",
+          isinstance(huge_name_response, dict) and
+          "error" not in huge_name_response and
+          "result" in huge_name_response and
+          huge_name_response["result"] is None)
+
     # --- lint warnings surface as coded diagnostics (severity 2) ---
     r = converse([INIT, did_open("leftover is 5\nprint of \"hi\"\n"), SHUTDOWN, EXIT])
     d = diagnostics(r)

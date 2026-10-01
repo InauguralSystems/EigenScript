@@ -1440,6 +1440,10 @@ static int rename_work_exhausted;
 
 static int rename_work_take(size_t amount) {
     if (amount > rename_work_left) {
+        /* Exhaustion is terminal for this request.  Leaving a small balance
+         * here lets enclosing/overlapping scans resume and repeatedly try
+         * other document-controlled operations after a rejected charge. */
+        rename_work_left = 0;
         rename_work_exhausted = 1;
         return 0;
     }
@@ -1447,11 +1451,23 @@ static int rename_work_take(size_t amount) {
     return 1;
 }
 
+/* Charge traversal of a document-controlled NUL-terminated name without
+ * first performing an unbounded strlen.  Looking for the terminator is part
+ * of the work being limited, so stop at the remaining budget and make
+ * exhaustion terminal when the full string (including NUL) cannot fit. */
+static int rename_work_take_name(const char *name) {
+    if (rename_work_exhausted) return 0;
+    size_t len = 0;
+    while (len < rename_work_left && name[len] != '\0') len++;
+    if (len == rename_work_left) return rename_work_take(rename_work_left + 1);
+    return rename_work_take(len + 1);
+}
+
 static void scope_bind_add(FnScope *s, const char *name, int from) {
     /* Account for the traversal and copy performed by xstrdup as well as the
      * binding-table operation itself.  Identifier length is controlled by
      * the document, so counting only bindings would not bound this work. */
-    if (!rename_work_take(strlen(name) + 1)) return;
+    if (!rename_work_take_name(name)) return;
     if (s->bind_count == s->bind_cap) {
         int nc = s->bind_cap ? s->bind_cap * 2 : 4;
         s->binds = xrealloc_array(s->binds, (size_t)nc, sizeof(*s->binds));
@@ -1467,7 +1483,7 @@ static void scope_bind_add(FnScope *s, const char *name, int from) {
 static void scope_add_param(FnScope *s, const char *name, int from) {
     if (!name) return;
     for (int i = 0; i < s->bind_count; i++) {
-        if (!rename_work_take(strlen(name) + 1)) return;
+        if (!rename_work_take_name(name)) return;
         if (strcmp(s->binds[i].name, name) == 0) return;
     }
     scope_bind_add(s, name, from);
@@ -1479,7 +1495,7 @@ static void scope_add_param(FnScope *s, const char *name, int from) {
 static void scope_add_local(FnScope *s, const char *name, int decl_idx) {
     if (!name) return;
     for (int i = 0; i < s->bind_count; i++) {
-        if (!rename_work_take(strlen(name) + 1)) return;
+        if (!rename_work_take_name(name)) return;
         if (strcmp(s->binds[i].name, name) == 0) {
             if (decl_idx < s->binds[i].from) s->binds[i].from = decl_idx;
             return;
@@ -1713,7 +1729,7 @@ static void resolve_binding(FnScope *scopes, int n, int idx, const char *name,
         if (idx >= scopes[s].excl_lo && idx < scopes[s].excl_hi) continue;  /* iterable expr */
         int from = -1;
         for (int b = 0; b < scopes[s].bind_count; b++) {
-            if (!rename_work_take(strlen(name) + 1)) break;
+            if (!rename_work_take_name(name)) break;
             if (strcmp(scopes[s].binds[b].name, name) == 0 && scopes[s].binds[b].from <= idx)
                 from = scopes[s].binds[b].from;
         }
@@ -1797,7 +1813,7 @@ static void handle_rename(int id, const char *params) {
         if (!rename_work_take(1)) break;
         Token *t = &doc->tokens.tokens[i];
         if (t->type != TOK_IDENT || !t->str_val) continue;
-        if (!rename_work_take(strlen(name) + 1)) break;
+        if (!rename_work_take_name(name)) break;
         if (strcmp(t->str_val, name) != 0) continue;
         if (t->synth) continue;  /* synthesized by f-string lowering, not source (#1244) */
         if (i > 0 && doc->tokens.tokens[i - 1].type == TOK_DOT) continue;  /* member access */
