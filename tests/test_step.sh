@@ -67,15 +67,15 @@ echo "$OUT" | grep -q "steps, .* assigns" && echo "$OUT" | grep -q "^step 1/" \
     || fail "loads tape and shows first stop" "$(echo "$OUT" | head -2)"
 
 # ---- 2. forward stepping walks the L records and shows source + events
-OUT=$(drive s s q)
-echo "$OUT" | grep -q "step 3/.*line 2" \
+OUT=$(drive s q)
+echo "$OUT" | grep -q "step 2/.*line 2" \
     && echo "$OUT" | grep -q "| conv is 1024" \
     && echo "$OUT" | grep -q "A conv=1024" \
     && ok "forward step shows line, source text, assignment events" \
     || fail "forward step shows line, source text, assignment events"
 
 # ---- 3. nondet events surface at their step
-OUT=$(drive "s 4" q)
+OUT=$(drive "s 3" q)
 echo "$OUT" | grep -q "N random=" \
     && ok "nondet record shown at its step" \
     || fail "nondet record shown at its step"
@@ -209,12 +209,12 @@ echo "$OUT" | grep -q "^i = 3 .*(3 assigns)" \
     || fail "module-level i folds only its own stream" \
             "$(echo "$OUT" | grep '^i =' | head -1)"
 
-# inside the second work frame (step 13 = its 'i is i + 1' line; #556
+# inside the second work frame (step 12 = its 'i is i + 1' line; #556
 # moved the define statement's tape record to the define's own line, and
 # #1381 files `r1 is work of 2` under its own line 6 with one more `L`
 # after the call): the frame-local i (31, 2 assigns, {in work}) shadows the
 # module i
-OUT=$(printf 's 12\np\nt i\nq\n' | "$EIGS" --step "$SCOPE_TAPE" "$SCOPE_FIX" 2>&1)
+OUT=$(printf 's 11\np\nt i\nq\n' | "$EIGS" --step "$SCOPE_TAPE" "$SCOPE_FIX" 2>&1)
 echo "$OUT" | grep -q "^i = 31 .*{in work}" \
     && ok "frame-local i shadows module i inside the frame" \
     || fail "frame-local i shadows module i inside the frame" \

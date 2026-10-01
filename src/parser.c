@@ -1563,7 +1563,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             p_skip_newlines(p);
             else_body = parse_block(p, &else_count);
         }
-        ASTNode *n = make_node(AST_IF, p_cur(p)->line);
+        ASTNode *n = make_node(AST_IF, t->line);
         n->data.cond.cond = cond;
         n->data.cond.if_body = if_body;
         n->data.cond.if_count = if_count;
@@ -1580,7 +1580,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
         p_skip_newlines(p);
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
-        ASTNode *n = make_node(AST_LOOP, p_cur(p)->line);
+        ASTNode *n = make_node(AST_LOOP, t->line);
         n->data.loop.cond = cond;
         n->data.loop.body = body;
         n->data.loop.body_count = body_count;
@@ -1609,11 +1609,10 @@ static ASTNode* parse_statement_inner(Parser *p) {
         p_skip_newlines(p);
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
-        ASTNode *n = make_node(AST_FOR, p_cur(p)->line);
+        ASTNode *n = make_node(AST_FOR, t->line);
         n->data.forloop.var = xstrdup((var_tok && var_tok->str_val) ? var_tok->str_val : "");
         /* The `for` keyword's line: the loop variable's stores are filed
-         * under it (#1381). The node's own line is still the next token's
-         * (#1382). */
+         * under it (#1381). */
         n->data.forloop.header_line = t->line;
         set_name_hash(n, n->data.forloop.var);
         n->data.forloop.iter = iter;
@@ -1637,7 +1636,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             expr = parse_expression(p);
         }
         p_end_statement(p);
-        ASTNode *n = make_node(AST_RETURN, p_cur(p)->line);
+        ASTNode *n = make_node(AST_RETURN, t->line);
         n->data.ret.expr = expr;
         return n;
     }
