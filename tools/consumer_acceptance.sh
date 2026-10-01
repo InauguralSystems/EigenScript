@@ -390,7 +390,7 @@ row() {
   [ "$verdict" = PASS ]
 }
 run() {
-  local candidate="${1:-}" arg i examined=0 bad=0 rc version final_tmp gfx_lib
+  local candidate="${1:-}" arg i examined=0 bad=0 rc version final_tmp gfx_prefix_lib gfx_user_lib
   FULL=""; GFX=""; GFX_ENV=()
   [ -n "$candidate" ] || { echo 'usage: run <tree-or-binary> [--full binary] [--gfx binary]'; return 2; }
   shift
@@ -409,8 +409,14 @@ run() {
   [ -z "$FULL" ] || FULL="$(readlink -f "$FULL")"
   [ -z "$GFX" ] || GFX="$(readlink -f "$GFX")"
   if [ -n "$GFX" ]; then
-    gfx_lib="$(dirname "$GFX")/../lib"
-    [ -d "$gfx_lib" ] || { echo "gfx variant has no runtime lib directory: $gfx_lib"; return 2; }
+    # Match the runtime's installed-stdlib probes: a parent lib directory by
+    # itself proves nothing, while a per-user installation is also valid.
+    gfx_prefix_lib="$(dirname "$GFX")/../lib/eigenscript/observer.eigs"
+    gfx_user_lib="${HOME:-}/.local/lib/eigenscript/observer.eigs"
+    if [ ! -f "$gfx_prefix_lib" ] && { [ -z "${HOME:-}" ] || [ ! -f "$gfx_user_lib" ]; }; then
+      echo "gfx variant cannot resolve stdlib module: $gfx_prefix_lib or \$HOME/.local/lib/eigenscript/observer.eigs"
+      return 2
+    fi
   fi
   BUDGET="${CA_TIMEOUT:-1800}"
   case "$BUDGET" in ''|*[!0-9]*|0) echo 'CA_TIMEOUT must be positive'; return 2 ;; esac
@@ -706,9 +712,9 @@ selftest() {
   # (H) The private overlay carries files read while parsing the Makefile.
   mkdir -p "$st_root/tools"
   printf '%s\n' '-Wall' > "$st_root/tools/werror_flags.txt"
-  printf 'FLAGS := $(shell cat tools/werror_flags.txt)\nall:\n\t@:\n' > "$st_root/Makefile"
+  printf 'FLAGS := $(shell cat tools/werror_flags.txt)\nall:\n\t@test "$(FLAGS)" = "-Wall"\n' > "$st_root/Makefile"
   printf '#!/bin/sh\nexit 0\n' > "$st_candidate"; chmod +x "$st_candidate"
-  st_reset; st_consumer ouroboros 'make -C "$EIGS_DIR" -pqRr >/dev/null || [ $? -eq 1 ]; eigenscript smoke.eigs'
+  st_reset; st_consumer ouroboros 'make -C "$EIGS_DIR" --no-print-directory && eigenscript smoke.eigs'
   printf 'ouroboros\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   if [ "$st_rc" -eq 0 ] && grep -Fq 'row|ouroboros|v0.43.0|PASS|0|' "$st_record"; then
@@ -718,16 +724,24 @@ selftest() {
   if [ -f "$st_record.logs/ouroboros.log" ]; then
     echo 'plant I check=default-consumer-logs GREEN record.logs/ouroboros.log=present'
   else echo 'plant I check=default-consumer-logs SILENT'; st_bad=1; fi
-  # (J) A gfx executable that cannot resolve ../lib is refused up front.
+  # (J) A gfx executable must resolve a real stdlib module, not just ../lib.
   mkdir -p "$st_root/build/gfx"
   cp "$st_candidate" "$st_root/build/gfx/eigenscript"
-  rm -rf "$st_root/build/lib"
+  mkdir -p "$st_root/build/lib"
   st_rc=0
-  CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --gfx "$st_root/build/gfx/eigenscript" > "$st_out" 2>&1 || st_rc=$?
-  if [ "$st_rc" -eq 2 ] && grep -Fq 'gfx variant has no runtime lib directory:' "$st_out"; then
-    echo 'plant J check=gfx-runtime-lib RED missing=build/lib refused=yes'
+  HOME="$st_root/home" CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --gfx "$st_root/build/gfx/eigenscript" > "$st_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -eq 2 ] && grep -Fq 'gfx variant cannot resolve stdlib module:' "$st_out"; then
+    echo 'plant J check=gfx-runtime-lib RED empty=build/lib refused=yes'
   else echo 'plant J check=gfx-runtime-lib SILENT'; st_bad=1; fi
-  # (K) Git's common directory finds the ecosystem from a nested worktree.
+  # (K) The runtime also supports a stdlib installed below HOME.
+  mkdir -p "$st_root/home/.local/lib/eigenscript"
+  printf '# stdlib probe\n' > "$st_root/home/.local/lib/eigenscript/observer.eigs"
+  st_rc=0
+  HOME="$st_root/home" CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --gfx "$st_root/build/gfx/eigenscript" > "$st_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && grep -Fq 'VERDICT: PASS' "$st_record"; then
+    echo 'plant K check=gfx-user-runtime-lib GREEN module=observer.eigs'
+  else echo 'plant K check=gfx-user-runtime-lib SILENT'; st_bad=1; fi
+  # (L) Git's common directory finds the ecosystem from a nested worktree.
   local wt_main="$st_root/eco-root/EigenScript" wt="$st_root/eco-root/EigenScript/.worktrees/topic" wt_out="$st_root/worktree.out"
   mkdir -p "$wt_main/tools" "$st_root/eco-root/one/.devcontainer"
   cp "$HERE/tools/consumer_acceptance.sh" "$HERE/tools/read_werror_flags.sh" "$HERE/tools/werror_flags.txt" "$HERE/tools/_derive_variants.py" "$HERE/tools/_extract_runcmd.py" "$wt_main/tools/"
@@ -738,10 +752,10 @@ selftest() {
   git -C "$wt_main" worktree add -q -b topic "$wt"
   st_rc=0; bash "$wt/tools/consumer_acceptance.sh" plan > "$wt_out" 2>&1 || st_rc=$?
   if [ "$st_rc" -eq 0 ] && grep -Fq 'inventory=1 examined=1' "$wt_out"; then
-    echo 'plant K check=worktree-eco-root GREEN inventory=1 examined=1'
-  else echo 'plant K check=worktree-eco-root SILENT'; st_bad=1; fi
+    echo 'plant L check=worktree-eco-root GREEN inventory=1 examined=1'
+  else echo 'plant L check=worktree-eco-root SILENT'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 19/19 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 20/20 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 
