@@ -116,6 +116,24 @@ def req(seq, command, arguments=None):
     return m
 
 
+# A request string can end in the middle of a UTF-8 character.  The adapter's
+# deliberately small JSON reader accepts byte-oriented input, but its output
+# must still be valid UTF-8 JSON for strict DAP clients.
+cut_body = (b'{"seq":1,"type":"request","command":"launch",'
+            b'"arguments":{"tape":"cut-\xe2\x82"}}')
+cut_wire = (b"Content-Length: %d\r\n\r\n" % len(cut_body)) + cut_body
+cut_run = subprocess.run([DAP], input=cut_wire, capture_output=True, timeout=15)
+cut_valid = False
+try:
+    cut_payload = cut_run.stdout.split(b"\r\n\r\n", 1)[1]
+    cut_message = json.loads(cut_payload.decode("utf-8", errors="strict"))
+    cut_valid = (cut_message.get("type") == "response"
+                 and cut_message.get("request_seq") == 1)
+except (IndexError, UnicodeDecodeError, ValueError):
+    pass
+check("message cut mid-character is strict UTF-8 JSON", cut_valid)
+
+
 # ---- 1. initialize / capabilities ------------------------------------
 msgs, rc = converse([req(1, "initialize"), req(2, "disconnect")])
 r = resp(msgs, 1)
