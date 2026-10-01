@@ -40,9 +40,14 @@ def emit(path):
         if m:
             hdr = os.path.normpath(os.path.join('src', os.path.basename(m.group(1))))
             if os.path.exists(hdr):
-                if hdr not in seen:
+                # .def files are deliberately unguarded X-macro tables.  Each
+                # inclusion supplies a different macro expansion, so unlike a
+                # header it must be emitted every time it is encountered.
+                repeatable = hdr.endswith('.def')
+                if repeatable or hdr not in seen:
                     seen.add(hdr)
-                    buf.append(f'/* ==== inlined header: {hdr} ==== */\n')
+                    kind = 'table' if repeatable else 'header'
+                    buf.append(f'/* ==== inlined {kind}: {hdr} ==== */\n')
                     emit(hdr)
                 # else: already inlined (include-guard semantics for one TU)
                 # Preserve any trailing text after the directive — an include

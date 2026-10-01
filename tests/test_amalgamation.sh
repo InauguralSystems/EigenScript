@@ -21,6 +21,16 @@ else
     fail "amalgamation files missing"; echo "Results: $PASS passed, $((FAIL + 1)) failed"; exit 1
 fi
 
+# opcodes.def is an unguarded X-macro table: vm.h, op_name(), and op_metadata[]
+# each include it with a different definition.  Treating it like an ordinary
+# include-guarded header silently leaves the latter expansions empty.
+OPCODE_COPIES=$(grep -c '^OPCODE(OP_CONST,' "$ROOT/build/eigenscript_all.c")
+if [ "$OPCODE_COPIES" -eq 3 ]; then
+    pass "amalgamation preserves all opcode table expansions"
+else
+    fail "amalgamation contains $OPCODE_COPIES opcode table expansions (expected 3)"
+fi
+
 WORK=$(mktemp -d)
 cp "$ROOT/build/eigenscript_all.c" "$ROOT/build/eigs_embed.h" "$WORK/"
 cat > "$WORK/host.c" <<'EOF'

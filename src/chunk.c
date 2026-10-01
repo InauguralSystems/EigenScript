@@ -1103,9 +1103,7 @@ int chunk_reads_observer(const EigsChunk *chunk) {
  * function rather than restating the list. */
 int opcode_is_observer_reader(uint8_t op) {
     if (op >= OP_COUNT) return 0;
-    /* Conservative compatibility exception: INTERROGATE predates the READS
-     * classification but must still open the observer gate (#915, #1320). */
-    return op == OP_INTERROGATE || op_metadata[op].observer == OBS_READS;
+    return op_metadata[op].observer == OBS_READS;
 }
 
 int chunk_has_reader_opcode(const EigsChunk *chunk) {
