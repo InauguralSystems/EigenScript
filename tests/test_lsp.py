@@ -247,6 +247,17 @@ def main():
               "syntax error: f-string nesting too deep (max 64 levels)"
               for x in (d or [])))
 
+    # The interpolation-boundary scanner runs before recursive tokenization,
+    # so its own depth guard must survive hostile nesting without exhausting
+    # the native stack.
+    scanner_bomb = "x is " + ("f\"{" * 10000) + "x" + ("}\"" * 10000)
+    r = converse([INIT, did_open(scanner_bomb), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("nested f-string boundary scan is depth-limited",
+          any(x.get("message") ==
+              "syntax error: f-string nesting too deep (max 64 levels)"
+              for x in (d or [])))
+
     late_depth_doc = "x is 1\n" + deep_fstring
     r = converse([INIT, did_open(late_depth_doc), SHUTDOWN, EXIT])
     d = diagnostics(r)
