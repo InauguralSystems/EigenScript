@@ -51,10 +51,10 @@ static int fstr_ident_char(char ch) {
            (ch >= '0' && ch <= '9') || ch == '_';
 }
 
-static const char *fstr_interp_end(const char *p);
+static const char *fstr_interp_end(const char *p, int nesting, int *too_deep);
 
 /* p at the `f` of f"...": returns the position just past the closing quote. */
-static const char *fstr_skip_fstring(const char *p) {
+static const char *fstr_skip_fstring(const char *p, int nesting, int *too_deep) {
     p += 2; /* skip f" */
     while (*p && *p != '"') {
         if (*p == '\\') {
@@ -63,7 +63,7 @@ static const char *fstr_skip_fstring(const char *p) {
             continue;
         }
         if (*p == '{') {
-            p = fstr_interp_end(p + 1);
+            p = fstr_interp_end(p + 1, nesting, too_deep);
             if (*p == '}') p++;
             continue;
         }
@@ -75,12 +75,16 @@ static const char *fstr_skip_fstring(const char *p) {
 
 /* p just past an interpolation's `{`: returns the position of its matching
  * `}` (or the NUL terminator). */
-static const char *fstr_interp_end(const char *p) {
+static const char *fstr_interp_end(const char *p, int nesting, int *too_deep) {
     const char *start = p;
     int depth = 1;
     while (*p) {
         if (*p == 'f' && p[1] == '"' && (p == start || !fstr_ident_char(p[-1]))) {
-            p = fstr_skip_fstring(p);
+            if (nesting >= MAX_TOKENIZE_DEPTH) {
+                *too_deep = 1;
+                return p + strlen(p);
+            }
+            p = fstr_skip_fstring(p, nesting + 1, too_deep);
             continue;
         }
         if (*p == '"') {
@@ -517,6 +521,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             strbuf buf;
             strbuf_init(&buf);
             int has_segments = 0;
+            int fstr_scan_too_deep = 0;
             /* Wrap the entire concatenation in outer parens so the resulting
              * expression binds as one primary. Without this, `eval of f"..."`
              * parses as `(eval of <first-segment>) + <rest>` because `of`'s
@@ -579,7 +584,18 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                      * `#` comments and nested f-strings all hide braces. */
                     strbuf expr_buf;
                     strbuf_init(&expr_buf);
-                    const char *expr_end = fstr_interp_end(p);
+                    const char *expr_end = fstr_interp_end(p, 0, &fstr_scan_too_deep);
+                    if (fstr_scan_too_deep) {
+                        char msg[64];
+                        snprintf(msg, sizeof(msg),
+                                 "f-string nesting too deep (max %d levels)",
+                                 MAX_TOKENIZE_DEPTH);
+                        fprintf(stderr, "Error: %s\n", msg);
+                        lexer_error_at(tok_line, tok_col, msg);
+                        strbuf_free(&expr_buf);
+                        p = expr_end;
+                        break;
+                    }
                     int expr_line = line;
                     while (p < expr_end) {
                         strbuf_append_char(&expr_buf, *p);
@@ -633,7 +649,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             /* Close the outer wrapper paren */
             tok_add_synth(&tl, TOK_RPAREN, NULL, tok_line, tok_col);
             if (*p == '"') { p++; col++; }
-            else {
+            else if (!fstr_scan_too_deep) {
                 fprintf(stderr, "Syntax error line %d: unterminated f-string\n", tok_line);
                 lexer_error_at(tok_line, tok_col, "unterminated f-string");
             }

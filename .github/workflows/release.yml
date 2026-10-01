@@ -84,6 +84,18 @@ jobs:
         with:
           ref: ${{ needs.tag.outputs.tag }}
 
+      # Install the test-only YAML loader before release artifacts exist. Use
+      # a dedicated environment and accept only the audited wheel hashes for
+      # the runner platforms, rather than executing a mutable PyPI release.
+      - name: Install locked PyYAML (the workflow-YAML gate's loader arm)
+        run: |
+          python3 -m venv .release-venv
+          .release-venv/bin/python -m pip install \
+            --require-hashes --only-binary=:all: \
+            -r .github/requirements-release.txt
+          echo "$PWD/.release-venv/bin" >> "$GITHUB_PATH"
+          .release-venv/bin/python -c 'import yaml; print("PyYAML", yaml.__version__)'
+
       - name: Install GCC (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y gcc
@@ -101,17 +113,6 @@ jobs:
           ./build.sh full
           mv src/eigenscript eigenscript-full-${{ matrix.label }}
           chmod +x eigenscript-full-${{ matrix.label }}
-
-      # [99zd] loads every workflow. Neither ubuntu-22.04 nor the macOS
-      # runners are the dev image, so they do not have PyYAML. A failed
-      # install fails the job; a missing loader is red, not a skip.
-      - name: Install PyYAML (the workflow-YAML gate's loader arm)
-        run: |
-          set -u
-          python3 -c 'import yaml' 2>/dev/null \
-            || python3 -m pip install --user --break-system-packages pyyaml \
-            || python3 -m pip install --user pyyaml
-          python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
 
       - name: Run tests against the release binary
         run: |
