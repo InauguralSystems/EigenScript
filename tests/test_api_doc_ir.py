@@ -55,6 +55,7 @@ class ApiDocIrTests(unittest.TestCase):
         self.assertIn("## Library functions", rendered)
         self.assertIn("| identity | identity of value -> any |", rendered)
         self.assertIn("## Builtins", rendered)
+        self.assertIn("```eigenscript nocheck executed by api_docs_check.sh", rendered)
 
     def test_missing_field_names_function(self):
         with self.assertRaisesRegex(api_doc_ir.DocError, r"identity: missing field\(s\): returns"):

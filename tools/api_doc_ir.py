@@ -189,7 +189,12 @@ def render_markdown(records: list[Record]) -> str:
                 out.extend(f"- `{arg['name']}` — {arg['description']}" for arg in record.args)
             else:
                 out.append("None.")
-            out.extend(("", "**Example**", "", "```eigenscript", record.example, "```", ""))
+            # The source-documentation gate executes these examples directly.
+            # Enrol the generated fences in the general documentation walker,
+            # but do not execute them a second time there.
+            out.extend(("", "**Example**", "",
+                        "```eigenscript nocheck executed by api_docs_check.sh",
+                        record.example, "```", ""))
     return "\n".join(out).rstrip() + "\n"
 
 

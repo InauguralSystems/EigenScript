@@ -18,7 +18,7 @@ This reference is generated from documentation attached to source declarations.
 
 **Example**
 
-```eigenscript
+```eigenscript nocheck executed by api_docs_check.sh
 load_file of "lib/functional.eigs"
 assert of [identity of 3 == 3, "identity example"]
 ```
@@ -32,7 +32,7 @@ assert of [identity of 3 == 3, "identity example"]
 
 **Example**
 
-```eigenscript
+```eigenscript nocheck executed by api_docs_check.sh
 define api_increment(value) as:
     return value + 1
 load_file of "lib/functional.eigs"
@@ -53,6 +53,6 @@ assert of [chain of [[api_increment, api_increment], 3] == 5, "chain example"]
 
 **Example**
 
-```eigenscript
+```eigenscript nocheck executed by api_docs_check.sh
 assert of [len of [10, 20, 30] == 3, "len example"]
 ```

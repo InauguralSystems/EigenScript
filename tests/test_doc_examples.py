@@ -336,6 +336,7 @@ POPULATION = {
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
     "docs/BUILTINS.md":          (  1,    1,     0,      0,      0),
     "docs/LANGUAGE_CONTRACT.md": (  1,    0,     1,      0,      0),
+    "docs/API_REFERENCE.md":     (  3,    0,     0,      3,      0),
 }
 
 # §122: the fence count the WALK reports must equal the count a completely

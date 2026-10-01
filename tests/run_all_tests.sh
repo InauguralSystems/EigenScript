@@ -6109,8 +6109,9 @@ else
 fi
 echo ""
 
-# [89] Executable documentation — EVERY eigenscript fence in the twelve
-# documents below is EXECUTED (opt-OUT since 2026-09-16): a fence paired with
+# [89] Executable documentation — EVERY eigenscript fence in the documents
+# below is enrolled and is EXECUTED unless opted out (since 2026-09-16): a
+# fence paired with
 # an ```output block is compared byte-for-byte, a fence tagged
 # `eigenscript fragment k=v ...` is run with its free names bound and must
 # finish clean, a fence tagged `eigenscript nocheck <reason>` states why it is
@@ -6126,8 +6127,9 @@ $TESTS_DIR/../docs/SPEC.md $TESTS_DIR/../docs/COMPARISON.md \
 $TESTS_DIR/../docs/CONCURRENCY.md $TESTS_DIR/../docs/STDLIB.md \
 $TESTS_DIR/../docs/SYNTAX.md $TESTS_DIR/../docs/PREDICATES.md \
 $TESTS_DIR/../docs/DIAGNOSTICS.md $TESTS_DIR/../docs/OBSERVER.md \
-$TESTS_DIR/../docs/BUILTINS.md $TESTS_DIR/../docs/LANGUAGE_CONTRACT.md"
-DOC_POPULATIONS=12
+$TESTS_DIR/../docs/BUILTINS.md $TESTS_DIR/../docs/LANGUAGE_CONTRACT.md \
+$TESTS_DIR/../docs/API_REFERENCE.md"
+DOC_POPULATIONS=13
 # ROUND 13 — A WINDOW THAT CANNOT HIDE THE CAUSE.
 # Round 8 made these sections print the child's own words instead of grepping
 # for "^RED", and that was right. The BOUND it chose (20 lines) then spent
@@ -6157,7 +6159,7 @@ print_captured() { # label  text
     fi
 }
 
-echo "[89] Doc Examples (README + llms.txt + 10 docs/*.md, every fence executed)"
+echo "[89] Doc Examples (README + llms.txt + 11 docs/*.md, every fence enrolled)"
 if command -v python3 >/dev/null 2>&1; then
     # shellcheck disable=SC2086
     DOC_OUTPUT=$(python3 "$TESTS_DIR/test_doc_examples.py" $DOC_FILES_ARG 2>&1)
