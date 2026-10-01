@@ -397,12 +397,13 @@ void jit_thread_destroy(EigsThread *th) {
             }
             uint64_t total_exec = 0;
             for (int i = 0; i < nrows; i++) total_exec += rows[i].exec_count;
-            /* Static native-byte coverage diagnostic: each chunk entry
-             * executes some prefix of its bytecode natively (if compiled)
-             * and the remainder interpreted. Aggregating exec_count *
-             * advance vs exec_count * code_len tells us roughly what
-             * fraction of executed bytecode bytes are native -- and thus
-             * whether extending the JIT prefix further would still pay. */
+            /* Estimated native-byte coverage diagnostic. Frame entries
+             * account for one trip through the chunk; interpreter back-edges
+             * account for another trip through its bytecode. A compiled OSR
+             * thunk contributes its covered bytes on each such trip. The
+             * chunk length is deliberately the denominator for a back-edge:
+             * the counter does not retain individual loop spans, so this is
+             * a conservative estimate rather than silently ignoring loops. */
             uint64_t bytes_native = 0, bytes_total = 0;
             uint64_t bytes_native_top = 0, bytes_total_top = 0;
             fprintf(stderr, "\n=== Hot chunks (top %d of %d) ===\n",
@@ -445,12 +446,16 @@ void jit_thread_destroy(EigsThread *th) {
                         r->exec_count, jstate, pct, adv_buf, r->code_len, nat,
                         r->back_edge_count, ostate, r->osr_advance, r->osr_entry,
                         r->stop_op == OP_COUNT ? "<end>" : op_name(r->stop_op));
-                bytes_native_top += r->exec_count * (uint64_t)r->advance;
-                bytes_total_top  += r->exec_count * (uint64_t)r->code_len;
+                bytes_native_top += r->exec_count * (uint64_t)r->advance
+                    + r->back_edge_count * (uint64_t)r->osr_advance;
+                bytes_total_top  += (r->exec_count + r->back_edge_count)
+                    * (uint64_t)r->code_len;
             }
             for (int i = 0; i < nrows; i++) {
-                bytes_native += rows[i].exec_count * (uint64_t)rows[i].advance;
-                bytes_total  += rows[i].exec_count * (uint64_t)rows[i].code_len;
+                bytes_native += rows[i].exec_count * (uint64_t)rows[i].advance
+                    + rows[i].back_edge_count * (uint64_t)rows[i].osr_advance;
+                bytes_total  += (rows[i].exec_count + rows[i].back_edge_count)
+                    * (uint64_t)rows[i].code_len;
             }
             double nat_share_top = bytes_total_top
                 ? 100.0 * (double)bytes_native_top / (double)bytes_total_top : 0.0;

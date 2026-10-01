@@ -5753,9 +5753,36 @@ if [ "$(uname -m)" = "x86_64" ]; then
         FAIL=$((FAIL + 1))
         echo "  FAIL: EIGS_JIT_HOT printed no hot-chunk rows -- the hotness registry is empty at dump time"
     fi
+
+    # #1179: frame entries alone are not executed-byte weight.  This fixture
+    # enters its sole chunk once and executes its loop through an OSR thunk.
+    # Derive the oracle from the row using the documented weighting rule:
+    # entries*advance + back_edges*osr_advance, over
+    # (entries+back_edges)*code_len.  Restoring exec_count-only weighting
+    # makes the reported byte totals disagree and turns this row red.
+    TOTAL=$((TOTAL + 1))
+    JHOT_OSR_OUTPUT=$(EIGS_JIT_HOT=1 ./eigenscript ../tests/test_jit_hot_osr.eigs </dev/null 2>&1 >/dev/null)
+    JHOT_OSR_EXPECTED=$(awk '
+        $1 == "<module>" && $9 == "yes" {
+            print ($2 * $5) + ($8 * $10), ($2 + $8) * $6
+        }' <<< "$JHOT_OSR_OUTPUT")
+    JHOT_OSR_ACTUAL=$(sed -n \
+        's/.*bytes native: \([0-9]*\) \/ total: \([0-9]*\).*/\1 \2/p' \
+        <<< "$JHOT_OSR_OUTPUT")
+    if [ -n "$JHOT_OSR_EXPECTED" ] &&
+       [ "$JHOT_OSR_ACTUAL" = "$JHOT_OSR_EXPECTED" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: EIGS_JIT_HOT weights OSR back-edges ($JHOT_OSR_ACTUAL bytes)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: EIGS_JIT_HOT OSR weighting: expected '$JHOT_OSR_EXPECTED', reported '$JHOT_OSR_ACTUAL'"
+        echo "$JHOT_OSR_OUTPUT"
+    fi
 else
-    PASS=$((PASS + 1))
+    TOTAL=$((TOTAL + 1))
+    PASS=$((PASS + 2))
     echo "  SKIP: EIGS_JIT_HOT gate (JIT not built or not supported on this platform)"
+    echo "  SKIP: EIGS_JIT_HOT OSR weighting gate (JIT not built or not supported on this platform)"
 fi
 echo ""
 
