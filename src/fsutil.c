@@ -66,9 +66,16 @@ static ssize_t io_no_sigpipe(int fd, const void *buf, size_t count,
     int already_pending = sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE);
     ssize_t result = use_send ? send(fd, buf, count, flags) : write(fd, buf, count);
     int saved_errno = errno;
-    if (result < 0 && saved_errno == EPIPE && !already_pending) {
-        struct timespec zero = {0, 0};
-        while (sigtimedwait(&block, NULL, &zero) < 0 && errno == EINTR) {}
+    if (!already_pending && sigpending(&pending) == 0 &&
+        sigismember(&pending, SIGPIPE)) {
+        /* A pipe write may copy some bytes before its reader disappears.  In
+         * that case Linux returns the positive byte count but still queues
+         * SIGPIPE, so checking only for EPIPE would leak the signal when the
+         * caller's mask is restored.  sigwait is available on both POSIX and
+         * macOS, unlike sigtimedwait, and cannot block after the pending check
+         * because SIGPIPE remains blocked in this thread. */
+        int signal_number;
+        (void)sigwait(&block, &signal_number);
     }
     pthread_sigmask(SIG_SETMASK, &oldmask, NULL);
     errno = saved_errno;
