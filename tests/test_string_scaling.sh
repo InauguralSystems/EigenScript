@@ -662,8 +662,10 @@ STUB
     # leaves their result unchanged. These subjects deliberately put unlike
     # ratios in the first two positions and drive the shipped entry point.
     # The first row is the minimal rank witness: after sorting, positions 1-7
-    # are 2.00 and positions 8-15 are 4.00. Skipping the first insertion, or
-    # selecting position 7 instead of position 8, changes its verdict.
+    # are 2.00 and positions 8-15 are 4.00. Skipping the first insertion makes
+    # this row miss; selecting position 7 instead of position 8 makes this row
+    # and the majority-quadratic bracket below miss. Thus each production
+    # mutant has an attributable failure rather than merely a nonzero total.
     mk_round_subject() {  # $1 name, $2 comma-delimited quadratic rounds
         cat > "$STUB_DIR/$1" <<STUB
 #!/bin/sh
