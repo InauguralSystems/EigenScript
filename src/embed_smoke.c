@@ -253,6 +253,19 @@ int main(void) {
     CHECK(r && eigs_value_as_num(r) == 7.0, "host_add(3,4) == 7");
     eigs_value_release(r);
 
+    /* --- #1387: embed API errors do not inherit an eval's last line. -- */
+    {
+        r = eigs_eval_string("a is 1\nb is 2\nc is 3\nd is 4\ne is 5\n");
+        if (r) eigs_value_release(r);
+        eigs_clear_error();
+        EigsValue *one = eigs_value_new_num(1.0);
+        eigs_set_global("_#fstr", one);
+        CHECK(eigs_has_error() && eigs_last_error_line() == 0,
+              "#1387 set_global after an eval has no stale source line");
+        eigs_value_release(one);
+        eigs_clear_error();
+    }
+
     /* --- #1322: the embed API refuses reserved runtime names. -------- */
     /* `_#fstr` is the f-string conversion binding; binding it would hijack
      * every f-string. Each door refuses, leaves a "value" error pending, and
