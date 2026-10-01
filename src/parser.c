@@ -1033,7 +1033,7 @@ static ASTNode* parse_primary(Parser *p) {
             char m[160];
             snprintf(m, sizeof(m), "unexpected %s in expression",
                      tok_type_name(t->type));
-            eigs_record_first_error(t->line, m);
+            p_record_tok_error(t, "E002", m);
         }
         g_parse_errors++;
         p_advance(p);
