@@ -1431,16 +1431,21 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
      * Hint-severity diagnostics (#591) are pure nudges: they print but never
      * fail either level. (Parse/read errors are E-codes that already
      * returned 1 above.) */
-    if (compile_errors > 0) return 1;   /* E004 is error-severity: fails at either level */
+    if (compile_errors > 0) {
+        free(ctx.warnings);
+        return 1;   /* E004 is error-severity: fails at either level */
+    }
     if (!fail_on_warning) {
         int errors = 0;
         for (int i = 0; i < ctx.warning_count; i++)
             if (strcmp(ctx.warnings[i].level, "error") == 0) errors++;
+        free(ctx.warnings);
         return errors > 0 ? 1 : 0;
     }
     int failing = 0;
     for (int i = 0; i < ctx.warning_count; i++)
         if (strcmp(ctx.warnings[i].level, "hint") != 0) failing++;
+    free(ctx.warnings);
     return failing > 0 ? 1 : 0;
 }
 
