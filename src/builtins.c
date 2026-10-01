@@ -5268,7 +5268,7 @@ Value* builtin_task_join(Value *arg) {
         return make_null();
     }
     if (no_yield_forbidden("blocking task_join")) return make_null();   /* #488 */
-    if (!task_request_join(target)) return make_null();
+    if (!task_request_join(target, t->hgen)) return make_null();
     return make_null();   /* placeholder: the scheduler fills it with the result on resume */
 }
 

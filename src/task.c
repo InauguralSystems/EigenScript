@@ -360,13 +360,15 @@ void task_request_yield(void) { g_task_suspend_request = 1; }
  * (main, self, or unknown) so the builtin can fall back; 1 to suspend. A
  * target that is already finished is handled in the builtin (returns its
  * result without suspending). */
-int task_request_join(int target) {
+int task_request_join(int target, uint32_t gen) {
     TaskScheduler *s = sched_get();
     if (!s || target == 0 || target == s->current) return 0;
-    Task *tt = sched_lookup(s, target);
+    int why = HANDLE_CLAIM_GONE;
+    Task *tt = (Task *)handle_lookup(target, gen, HANDLE_TASK, &why);
     if (!tt) return 0;
     Task *cur = sched_lookup(s, s->current);
     cur->join_target = target;
+    cur->join_target_gen = gen;
     g_task_suspend_request = 1;
     return 1;
 }
@@ -559,10 +561,12 @@ int task_do_kill(int tid) {
     }
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
         Task *w = (Task *)handle_lookup_slot(i, HANDLE_TASK);
-        if (w && w->state == TASK_SUSPENDED && w->join_target == tid)
+        if (w && w->state == TASK_SUSPENDED && w->join_target == tid &&
+            w->join_target_gen == t->hgen)
             sched_ready_push(s, w->id, SCAUSE_KILL_RELEASE);
     }
-    if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == tid)
+    if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == tid &&
+        s->main_task.join_target_gen == t->hgen)
         sched_ready_push(s, 0, SCAUSE_KILL_RELEASE);
     /* #530: kill of a detached task is an explicit discard — reap now. (Kill
      * is a deliberate teardown, never an uncaught error: no #493 counting.) */
@@ -693,10 +697,12 @@ static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
      * builtin's placeholder gets overwritten with our result (or re-raise). */
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
         Task *w = (Task *)handle_lookup_slot(i, HANDLE_TASK);
-        if (w && w->state == TASK_SUSPENDED && w->join_target == t->id)
+        if (w && w->state == TASK_SUSPENDED && w->join_target == t->id &&
+            w->join_target_gen == t->hgen)
             sched_ready_push(s, w->id, SCAUSE_JOIN_RELEASE);
     }
-    if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == t->id)
+    if (s->main_task.state == TASK_SUSPENDED && s->main_task.join_target == t->id &&
+        s->main_task.join_target_gen == t->hgen)
         sched_ready_push(s, 0, SCAUSE_JOIN_RELEASE);
     /* #530: a detached task's outcome is nobody's to consume — reap the slot
      * now so task-per-message workloads aren't bounded by lifetime spawns.
@@ -715,8 +721,16 @@ static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
 void task_apply_join_result(Task *t) {
     TaskScheduler *s = sched_get();
     if (!s || t->join_target == 0) return;
-    Task *jt = sched_lookup(s, t->join_target);
+    int target = t->join_target;
+    uint32_t target_gen = t->join_target_gen;
+    int why = HANDLE_CLAIM_GONE;
+    Task *jt = (Task *)handle_lookup(target, target_gen, HANDLE_TASK, &why);
     t->join_target = 0;
+    t->join_target_gen = 0;
+    if (!jt && (why == HANDLE_CLAIM_STALE || why == HANDLE_CLAIM_TYPE)) {
+        handle_raise_unresolved("task_join", "task", target, why, "reaped");
+        return;
+    }
     if (!jt) return;
     if (jt->has_error) {
         jt->err_unobserved = 0;   /* #493: observed by this join (caught or not) */

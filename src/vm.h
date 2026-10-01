@@ -601,6 +601,7 @@ typedef struct Task {
      * task_join builtin left on the stack top — a builtin can't return a
      * value it doesn't know yet — or re-raises the joinee's error. */
     int        join_target;
+    uint32_t   join_target_gen; /* generation captured before the join suspended */
     /* Inc 2: unbounded FIFO mailbox of deep-copied messages (share-nothing,
      * Erlang-style — bounded/backpressure is a cheap later add). Circular
      * buffer; grows on demand. recv_blocked is 1 while this task is suspended
@@ -651,7 +652,7 @@ void task_free(Task *t);
  * other threads' CALL sites into a suspend they never asked for. */
 void task_sched_on_spawn(int id);    /* enqueue a freshly spawned task, arm the scheduler */
 void task_request_yield(void);       /* current task → tail of the ready queue */
-int  task_request_join(int target);  /* current task blocks on `target`; 0 = bad target */
+int  task_request_join(int target, uint32_t gen); /* current task blocks on this exact handle */
 void task_sched_thread_free(void);   /* release the scheduler at thread detach */
 int  task_any_unobserved_error(void);/* #493: any worker died of an uncaught error and was never joined? */
 /* Inc 2 mailbox interface (builtins.c task_send/task_recv/task_try_recv/task_kill). */

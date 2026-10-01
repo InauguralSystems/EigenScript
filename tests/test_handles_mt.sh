@@ -177,9 +177,10 @@ handles_full:handles_full.eigs:0 \
 handles_modenv:handles_mt_modules/hm_modenv.eigs:0 \
 handles_store_stale:handles_store_stale.eigs:1 \
 handles_channel_stale:handles_channel_stale.eigs:1 \
-handles_task_stale:handles_task_stale.eigs:1"
-PROBES_DECLARED=8
-STALEWORD_DECLARED=3
+handles_task_stale:handles_task_stale.eigs:1 \
+handles_task_join_stale:handles_task_join_stale.eigs:1"
+PROBES_DECLARED=9
+STALEWORD_DECLARED=4
 staleword_rows=0
 EXAMINED=0
 
@@ -271,16 +272,18 @@ fi
 # 2. THE GENERATION, enumerated over the WHOLE handle population. Every resolve
 #    a program's handle value can reach presents a generation; the only
 #    exception is the raw-index scan, which is named, counted, and confined to
-#    the two task builtins plus task.c's table walks.
+#    task.c's scheduler-internal table walks.
 #    §122: the population is produced by a SECOND route — a grep for the call
 #    spellings across src/*.c — and compared against a table declared by name
 #    here. A site added in a new file is a FAIL, not a silent omission.
 GEN_SITES="builtins.c:get_channel_why \
 builtins.c:builtin_thread_join \
 builtins.c:task_handle_resolve \
+task.c:task_request_join \
+task.c:task_apply_join_result \
 ext_store.c:get_store_why \
 ext_net.c:net_unpack"
-GEN_DECLARED=5
+GEN_DECLARED=7
 # The raw-slot scans, declared by name (a count alone would not say WHICH):
 #   task.c      sched_lookup, task_any_unobserved_error,
 #               sched_wake_sleepers (x2), task_do_kill, sched_finish
