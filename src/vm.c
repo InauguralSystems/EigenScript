@@ -6562,9 +6562,13 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
     vm_init();
     /* Only the OUTERMOST vm_execute drives the scheduler; a nested call
      * (eval/dispatch/import/comparator) runs to completion on the C stack and
-     * may not suspend (enforced at CASE(CALL) via base_frame). frame_count==0
-     * identifies the outermost. */
-    int outermost = (g_vm.frame_count == 0);
+     * may not suspend (enforced at CASE(CALL) via base_frame). Do not infer
+     * this from frame_count: a task whose entry is a builtin has no bytecode
+     * frame while that builtin invokes a user callback. In that shape the
+     * callback used to re-enter the scheduler and deadlock its own task
+     * (#1437). execute_depth follows the native vm_execute boundary itself. */
+    int outermost = (g_vm.execute_depth == 0);
+    g_vm.execute_depth++;
     /* #1434: native code that runs interpreted code (a builtin's callback,
      * an embedder's eval, the AOT) gets back the line it entered with, on
      * every exit. The callee's OP_LINEs overwrite both the VM line and the
@@ -6589,6 +6593,7 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
      * place the VM hands control to them; with no scheduler armed it returns
      * `r` unchanged, so a program that never spawns pays one call. */
     if (outermost) r = task_sched_after_outermost(r);
+    g_vm.execute_depth--;
     g_vm.current_line = entry_vm_line;
     if (!g_vm_multithreaded) {
         trace_current_line_store(entry_trace_line);
