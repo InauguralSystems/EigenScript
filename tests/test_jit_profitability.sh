@@ -9,6 +9,7 @@ off=$(run EIGS_JIT_DUMP_SELECTION=1 EIGS_JIT_ENTRY_THRESHOLD=2 EIGS_JIT_OSR_THRE
 
 printf '%s\n' "$base" | grep -q "chunk='tiny_entry'.*scope=entry.*decision=reject" || { echo "FAIL: tiny entry was not rejected"; exit 1; }
 printf '%s\n' "$base" | grep -q "chunk='large_entry'.*scope=entry.*decision=accept" || { echo "FAIL: large entry was not accepted"; exit 1; }
+printf '%s\n' "$base" | grep -q "chunk='dict_ic_entry'.*scope=entry.*dict_ic=1.*decision=accept" || { echo "FAIL: short dict-IC entry was not accepted"; exit 1; }
 printf '%s\n' "$base" | grep -q "chunk='osr_entry'.*scope=osr.*decision=accept" || { echo "FAIL: OSR was not independently accepted"; exit 1; }
 printf '%s\n' "$base" | grep -q "All tests passed" || { echo "FAIL: selected-tier output changed"; exit 1; }
 printf '%s\n' "$off" | grep -q "All tests passed" || { echo "FAIL: EIGS_JIT_OFF output changed"; exit 1; }

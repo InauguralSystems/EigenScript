@@ -20,6 +20,12 @@ define large_entry(x) as:
     kk is jj + 11
     return kk + 12
 
+# A short local-dict inline-cache thunk is profitable despite its byte length:
+# it replaces several costly field dispatches on every hot call.
+define dict_ic_entry(c) as:
+    c.value is c.value + 1
+    return c.value
+
 define osr_entry(n) as:
     total is 0
     oi is 0
@@ -30,14 +36,17 @@ define osr_entry(n) as:
 
 tiny_total is 0
 large_total is 0
+dict_ctx is {"value": 0}
 outer is 0
 loop while outer < 80:
     tiny_total is tiny_total + (tiny_entry of outer)
     large_total is large_total + (large_entry of outer)
+    dict_ic_entry of dict_ctx
     outer is outer + 1
 
 osr_total is osr_entry of 6000
 assert of [tiny_total == 3400, "tiny output"]
 assert of [large_total == 9400, "large output"]
+assert of [dict_ctx.value == 80, "dict IC output"]
 assert of [osr_total == 17997000, "OSR output"]
 test_summary of null

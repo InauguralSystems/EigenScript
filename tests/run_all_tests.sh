@@ -685,7 +685,10 @@ check_binary_fingerprint
 # first (#1426), with the same frame lines, so a fixture's frame lines are
 # matched only from its header line onward.
 for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
-    LAR_ENV="EIGS_JIT_STATS=1"; [ "$LAR_TIER" = JIT ] || LAR_ENV="$LAR_ENV $LAR_TIER"
+    # These are semantic native-return tests, not profitability tests. Force
+    # their deliberately tiny fixtures through the entry selector so the JIT
+    # rows cannot silently become interpreter coverage after #1178.
+    LAR_ENV="EIGS_JIT_STATS=1 EIGS_JIT_TEST_FORCE_ENTRY=1"; [ "$LAR_TIER" = JIT ] || LAR_ENV="$LAR_ENV $LAR_TIER"
     LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript ../tests/test_line_after_return.eigs </dev/null 2>&1); LAR_RC=$?
     TOTAL=$((TOTAL + 1))
     LAR_JIT=$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")

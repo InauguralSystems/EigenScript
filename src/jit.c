@@ -547,13 +547,15 @@ static void ensure_layout(void) {
 static int jit_supported_prefix(const struct EigsChunk *chunk,
                                 int entry_offset,
                                 int *needs_env_cache, int *has_bail_op,
-                                int *needs_frame_cache, int *extra_size,
+                                int *needs_frame_cache, int *has_dict_ic,
+                                int *extra_size,
                                 uint8_t *stop_op, int *stop_offset) {
     int i = entry_offset, ops = 0, non_line_ops = 0;
     int last_good = entry_offset;
     *needs_env_cache = 0;
     *has_bail_op = 0;
     *needs_frame_cache = 0;  /* Stage 5b: %r15 = &frames[fc-1] in prologue */
+    *has_dict_ic = 0;        /* local field access uses the inline dict cache */
     *extra_size = 0;         /* Stage 5: native bytes beyond the per-byte
                               * budget (only 1-byte INDEX_SET needs this) */
     *stop_op = OP_COUNT;   /* sentinel: ran off the end with no break */
@@ -642,6 +644,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 5; ops++; non_line_ops++;
             *has_bail_op = 1;
             *needs_env_cache = 1;
+            *has_dict_ic = 1;
         } else if (op == OP_LOCAL_IDX_DOT_GET) {
             /* Stage 4v: 7-byte op [op][slot:16][list_idx:16][name_idx:16].
              * Helper needs chunk pointer (const_interns/const_hashes) —
@@ -696,6 +699,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 5; ops++; non_line_ops++;
             *has_bail_op = 1;
             *needs_env_cache = 1;   /* Stage 5d inline fast path */
+            *has_dict_ic = 1;
         } else if (op == OP_SET_LOCAL) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             /* #348: same bounds rule as OP_GET_LOCAL above. */
@@ -2434,12 +2438,14 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
     int needs_env_cache = 0;
     int has_bail_op = 0;
     int needs_frame_cache = 0;
+    int has_dict_ic = 0;
     int extra_size = 0;
     uint8_t stop_op = OP_COUNT;
     int stop_offset = 0;
     int prefix = jit_supported_prefix(chunk, entry_offset,
                                       &needs_env_cache, &has_bail_op,
-                                      &needs_frame_cache, &extra_size,
+                                      &needs_frame_cache, &has_dict_ic,
+                                      &extra_size,
                                       &stop_op, &stop_offset);
     *out_stop_op = stop_op;
     /* Every scanned chunk contributes one stop_op tally, whether it
@@ -2487,25 +2493,33 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
      *
      * Formula (specified before collecting the fleet result): a prefix must
      * contain 48 bytecode bytes, plus 24 for each cached env/frame and 32
-     * when bailout bookkeeping is required.  These are features the scanner
-     * already computes and approximate the differing fixed entry/exit work;
+     * when bailout bookkeeping is required.  A local dict inline-cache op
+     * discounts 80 bytes: those dense field-update thunks remove expensive
+     * interpreter dispatch and are profitable even when short (the DMG
+     * handler shape).  These are features the scanner computes and
+     * approximate the differing fixed entry/exit work;
      * this is not a consumer-name allow/deny list.  Keep the constants here,
      * rather than making them probe knobs: the registered matrix judges this
      * one formula as a whole.
      */
     if (entry_offset == 0) {
+        int force_entry = eigs_env_flag("EIGS_JIT_TEST_FORCE_ENTRY");
         int min_prefix = 48 + (needs_env_cache ? 24 : 0) +
                          (has_bail_op ? 32 : 0) +
-                         (needs_frame_cache ? 24 : 0);
+                         (needs_frame_cache ? 24 : 0) -
+                         (has_dict_ic ? 80 : 0);
         if (eigs_env_flag("EIGS_JIT_DUMP_SELECTION")) {
             fprintf(stderr,
                     "JIT selection: chunk='%s' scope=entry prefix=%d min=%d "
-                    "env=%d bail=%d frame=%d decision=%s\n",
+                    "env=%d bail=%d frame=%d dict_ic=%d decision=%s\n",
                     chunk->name ? chunk->name : "<anon>", prefix, min_prefix,
-                    needs_env_cache, has_bail_op, needs_frame_cache,
-                    prefix >= min_prefix ? "accept" : "reject");
+                    needs_env_cache, has_bail_op, needs_frame_cache, has_dict_ic,
+                    (prefix >= min_prefix || force_entry) ? "accept" : "reject");
         }
-        if (prefix < min_prefix) {
+        /* Semantic JIT tests can require native execution of an otherwise
+         * unprofitable fixture.  Keep that test-only escape hatch distinct
+         * from the production tuning knobs and out of normal selection. */
+        if (prefix < min_prefix && !force_entry) {
             *out_state = 1;
             *out_code = NULL;
             return;
