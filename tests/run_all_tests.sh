@@ -12,6 +12,7 @@ export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 . "$TESTS_DIR/../tools/read_werror_flags.sh" || exit 1
 export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/failure_output.sh" || exit 1
+. "$TESTS_DIR/suite_program_env.sh" || exit 1
 cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 
 # Shard and changed-sections modes (EIGS_SUITE_SHARD / EIGS_SUITE_CHANGED).
@@ -1586,7 +1587,7 @@ fi
 echo "[18/18] File I/O Builtins"
 check_binary_fingerprint
 # #1361 EIGS_STRICT=0: pins the wrong-type stand-ins read_text(42)="", write_text(bad)=0, exec_capture(bad)=[-1,""] (RT3/WT3/EC3/EC4).
-FIO_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_file_io.eigs 2>&1)
+FIO_OUTPUT=$(suite_program_run test_file_io.eigs ./eigenscript ../tests/test_file_io.eigs 2>&1)
 
 if echo "$FIO_OUTPUT" | grep -q "All file_io tests passed"; then
     # All asserts passed — count individual checks
@@ -2624,7 +2625,7 @@ echo ""
 # [42c] General finite-number guard (scalar, tensor, literals, conversions)
 echo "[42c/47] Numeric Guard"
 # #1361 EIGS_STRICT=0: pins the finite-by-construction domain stand-ins (sqrt/asin/acos/log clamps, num "nan" -> 0 + math_flags.invalid).
-NG_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
+NG_OUTPUT=$(suite_program_run test_numeric_guard.eigs ./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
 if rc_ok "$NG_OUTPUT_RC" "$NG_OUTPUT" && echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed"; then
     TOTAL=$((TOTAL + 19))
     PASS=$((PASS + 19))
@@ -2640,7 +2641,7 @@ echo ""
 # [42c] Stdlib fixes (math.dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
 echo "[42d/47] Stdlib Fixes"
 # #1361 EIGS_STRICT=0: pins math.log10/log2 of x <= 0 taking the log floor stand-in (SF101/SF102).
-SF_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?
+SF_OUTPUT=$(suite_program_run test_stdlib_fixes.eigs ./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?
 if rc_ok "$SF_OUTPUT_RC" "$SF_OUTPUT" && echo "$SF_OUTPUT" | grep -q "All stdlib-fix tests passed"; then
     TOTAL=$((TOTAL + 48))
     PASS=$((PASS + 48))
@@ -3251,7 +3252,7 @@ echo ""
 # [52] Stream I/O
 echo "[52] Stream Tensor I/O"
 # #1361 EIGS_STRICT=0: pins stream_open of wrong-typed args answering 0.
-SI_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_stream_io.eigs 2>&1); SI_OUTPUT_RC=$?
+SI_OUTPUT=$(suite_program_run test_stream_io.eigs ./eigenscript ../tests/test_stream_io.eigs 2>&1); SI_OUTPUT_RC=$?
 SI_OUTPUT_N=$(derive_count "$SI_OUTPUT" 12 "[52] Stream Tensor I/O")
 if rc_ok "$SI_OUTPUT_RC" "$SI_OUTPUT" && echo "$SI_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + SI_OUTPUT_N))
@@ -5380,7 +5381,7 @@ fi
 # fatal-OOM SIGABRT (ftell on a directory reports LONG_MAX).
 echo "[105b] Builtin Contracts (#312/#314/#316/#317)"
 # #1361 EIGS_STRICT=0: pins max(["a",5])=0 and index_of/contains/starts_with/ends_with non-string misses (-1/0).
-EIGS_STRICT=0 check_eigs_suite "negative indices, predicate rejection, min/max reduction" test_builtin_contracts.eigs "All tests passed" 1
+suite_program_run test_builtin_contracts.eigs check_eigs_suite "negative indices, predicate rejection, min/max reduction" test_builtin_contracts.eigs "All tests passed" 1
 TOTAL=$((TOTAL + 1))
 DIR_OUT=$(./eigenscript ../tests 2>&1); DIR_RC=$?
 if [ "$DIR_RC" -eq 1 ] && echo "$DIR_OUT" | grep -q "cannot read file"; then
@@ -5721,7 +5722,7 @@ check_eigs_suite "all 27 walker-matrix capture checks" test_walker_matrix.eigs "
 # asserts the C fallback agrees with the lowered opcode.
 echo "[84] Builtin Direct-vs-Indirect"
 # #1361 EIGS_STRICT=0: pins buf_len of a non-buffer answering 0 (row "buf_len on non-buffer").
-EIGS_STRICT=0 check_eigs_suite "all 40 builtin direct/indirect checks" test_builtin_indirect.eigs "All tests passed" 40
+suite_program_run test_builtin_indirect.eigs check_eigs_suite "all 40 builtin direct/indirect checks" test_builtin_indirect.eigs "All tests passed" 40
 
 # [85] Reinstated suites — these .eigs files existed but were never
 # referenced by this runner, so editing them did nothing. Each runs as
@@ -5736,7 +5737,7 @@ check_eigs_suite "handle forge" test_handle_forge.eigs "PASS: handle table" 1
 check_eigs_suite "byte<->value builtins (str_from_bytes / f64 bytes)" test_byte_value_builtins.eigs "All tests passed" 19
 check_eigs_suite "write_bytes (binary append/truncate)" test_write_bytes.eigs "All tests passed" 10
 # #1361 EIGS_STRICT=0: pins is_dir/is_file of a non-string answering 0.
-EIGS_STRICT=0 check_eigs_suite "rename / remove_file / is_dir / is_file (atomic swap, delete, dir + regular-file probes)" test_file_rename.eigs "All tests passed" 23
+suite_program_run test_file_rename.eigs check_eigs_suite "rename / remove_file / is_dir / is_file (atomic swap, delete, dir + regular-file probes)" test_file_rename.eigs "All tests passed" 23
 
 # #1061 -- the last fail-soft numeric context: a non-number stored into a
 # buffer element was silently DROPPED (old element kept, rc 0). Now it raises
@@ -5776,7 +5777,7 @@ check_eigs_suite "sandbox back-edge loop cap (assembled bare JUMP_BACK)" test_sa
 check_eigs_suite "sandbox fail-closed allowlist (no host-global escape)" test_sandbox_allow.eigs "SANDBOX_ALLOW_OK" 1
 check_eigs_suite "JIT and/or heap-operand decref (no per-iteration leak)" test_jit_andor_leak.eigs "jit-and-or-ok" 1
 # #1361 EIGS_STRICT=0: pins json_path walking a malformed document leniently (JH rows, e.g. JH81).
-EIGS_STRICT=0 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
+suite_program_run test_json_hard.eigs check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
 check_eigs_suite "json roundtrip" test_json_roundtrip.eigs "json roundtrip: all passed" 1
 check_eigs_suite "json.json_merge flat object merge (#1248)" test_json_merge.eigs "JSON_MERGE_ALL_PASS" 10
 check_eigs_suite "json.json_pretty leaves string tokens intact (#1249)" test_json_pretty.eigs "JSON_PRETTY_ALL_PASS" 17
@@ -5797,7 +5798,7 @@ check_eigs_suite "tiled tensor kernels (#745, #932)" test_tensor_kernel_tiling.e
 # list loop (and gather's dual), the buffer elementwise/softmax/leaky_relu/mean
 # paths vs the list path, numerical_grad on a buffer parameter; loud raises.
 # #1361 EIGS_STRICT=0: pins elementwise divide-by-zero folding to 0 and multiply(buf,"x") answering 0.0.
-EIGS_STRICT=0 check_eigs_suite "flat-buffer tensor ops for autograd: matmul_at/bt, scatter_add, buffer paths (#973)" \
+suite_program_run test_tensor_buffer_ops.eigs check_eigs_suite "flat-buffer tensor ops for autograd: matmul_at/bt, scatter_add, buffer paths (#973)" \
     test_tensor_buffer_ops.eigs "All tests passed." 78
 # #973: lib/autograd.eigs — every vjp rule vs the numerical_grad oracle (1e-4
 # relative + 1e-6 absolute), a 2-layer softmax-CE MLP trained by the tape, and
@@ -6768,6 +6769,21 @@ if [ "$EF_FAIL" -gt 0 ]; then
     echo "$EF_OUTPUT" | grep "FAIL:" | head -5
 else
     echo "  PASS: all $EF_PASS env-flag checks"
+fi
+echo ""
+
+# [99yc] jit_diff inherits each program's suite environment (#1395), rather
+# than stopping fail-soft tests at the first strict-mode raise.
+echo "[99yc] JIT differential suite environment (#1395)"
+JDE_OUTPUT=$(bash "$TESTS_DIR/test_jit_diff_env.sh" 2>&1); JDE_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$JDE_RC" -eq 0 ] && echo "$JDE_OUTPUT" | grep -q '^PASS:'; then
+    PASS=$((PASS + 1))
+    echo "  PASS: jit_diff consumes the suite's per-program environment"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: jit_diff per-program environment check failed (rc=$JDE_RC)"
+    print_captured "jit_diff environment check, VERBATIM" "$JDE_OUTPUT"
 fi
 echo ""
 
