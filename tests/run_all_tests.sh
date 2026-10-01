@@ -4179,6 +4179,19 @@ else
 fi
 echo ""
 
+# [70a] #1382 — statement ownership is visible in the tape's L trajectory.
+# Covers if/loop/for/return keyword lines, the absence of a synthetic EOF
+# stamp, and first-line re-stamping after multi-line index/field/destructure
+# values. The live `at` query also proves a pre-for line has no binder value.
+TLS_OUTPUT=$(bash ../tests/test_temporal_line_stamps.sh ./eigenscript 2>&1); TLS_RC=$?
+TOTAL=$((TOTAL + 1))
+if rc_ok "$TLS_RC" "$TLS_OUTPUT" && grep -q "All tests passed" <<< "$TLS_OUTPUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: temporal statement/store line stamps (#1382)"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: temporal statement/store line stamps (#1382, rc=$TLS_RC)"
+    printf '%s\n' "$TLS_OUTPUT" | sed 's/^/      /'
+fi
+
 # [70b] prev-of operand must be a bare name (#634). 'prev of' looks back
 # through a variable's assignment history, so a non-name operand (a literal,
 # a parenthesised expression, an index/dot) has no trajectory. It used to

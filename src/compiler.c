@@ -2050,7 +2050,10 @@ static void compile_node(Compiler *c, ASTNode *node) {
 static void compile_node_inner(Compiler *c, ASTNode *node) {
     if (!node) { emit(c, OP_NULL, 0); return; }
 
-    emit_line(c, node->line);
+    /* AST_PROGRAM is a synthetic container stamped at the parser's EOF.
+     * Let its first real child emit the first line instead of beginning every
+     * tape with a line that never executed (#1382). */
+    if (node->type != AST_PROGRAM) emit_line(c, node->line);
 
     switch (node->type) {
 
@@ -2950,6 +2953,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         } else {
             compile_node(c, node->data.index_assign.expr);
         }
+        /* The target/index/RHS may each span lines or call a function.  The
+         * mutation belongs to the assignment statement's first line, just as
+         * a plain binding assignment does (#1382). */
+        restamp_line(c, node->line);
         emit(c, OP_INDEX_SET, node->line);
         break;
     }
@@ -3019,6 +3026,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                                 (uint16_t)slot, (uint16_t)iv, (uint16_t)name_idx, node->line);
                         compile_node(c, node->data.dot_assign.expr);
                         if (cop[0]) emit(c, binop_to_opcode(cop), node->line);
+                        restamp_line(c, node->line);
                         emit_op_u16_u16_u16(c, OP_LOCAL_IDX_DOT_SET,
                             (uint16_t)slot, (uint16_t)iv, (uint16_t)name_idx, node->line);
                         break;
@@ -3038,6 +3046,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                     emit_op_u16_u16(c, OP_LOCAL_DOT_GET, (uint16_t)slot, (uint16_t)idx, node->line);
                 compile_node(c, node->data.dot_assign.expr);
                 if (cop[0]) emit(c, binop_to_opcode(cop), node->line);
+                restamp_line(c, node->line);
                 emit_op_u16_u16(c, OP_LOCAL_DOT_SET, (uint16_t)slot, (uint16_t)idx, node->line);
                 break;
             }
@@ -3053,6 +3062,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         } else {
             compile_node(c, node->data.dot_assign.expr);
         }
+        restamp_line(c, node->line);
         emit_op_u16(c, OP_DOT_SET, (uint16_t)idx, node->line);
         break;
     }
