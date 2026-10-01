@@ -1,1 +1,1 @@
-- Select from-zero JIT thunks with a feature-aware entry-cost formula that preserves profitable short dict-cache handlers, while keeping hot-loop OSR selection independent.
+- Add an opt-in, feature-aware JIT entry-cost candidate for the registered fleet experiment, preserving short dict-cache handlers and keeping hot-loop OSR selection independent until the required results and decision are recorded.

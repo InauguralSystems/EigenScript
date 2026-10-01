@@ -2502,7 +2502,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
      * rather than making them probe knobs: the registered matrix judges this
      * one formula as a whole.
      */
-    if (entry_offset == 0) {
+    /* The fleet/CodSpeed before-and-after matrix required by #1178 has not
+     * yet been recorded for this candidate.  Keep the candidate selectable
+     * for that measurement, but do not change production selection until
+     * the registered experiment and owner decision have been recorded. */
+    if (entry_offset == 0 &&
+        (eigs_env_flag("EIGS_JIT_ENTRY_COST_EXPERIMENT") ||
+         eigs_env_flag("EIGS_JIT_TEST_FORCE_ENTRY"))) {
         int force_entry = eigs_env_flag("EIGS_JIT_TEST_FORCE_ENTRY");
         int min_prefix = 48 + (needs_env_cache ? 24 : 0) +
                          (has_bail_op ? 32 : 0) +
@@ -2524,7 +2530,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             *out_code = NULL;
             return;
         }
-    } else if (eigs_env_flag("EIGS_JIT_DUMP_SELECTION")) {
+    } else if (entry_offset != 0 && eigs_env_flag("EIGS_JIT_DUMP_SELECTION")) {
         fprintf(stderr,
                 "JIT selection: chunk='%s' scope=osr prefix=%d entry=%d "
                 "decision=accept\n",

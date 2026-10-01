@@ -541,11 +541,18 @@ the cycles registered while workers ran. A worker that finished but was never
 joined still counts as live, so an unjoined handle keeps the mode on until the
 exit drain. Join workers when you are done with them. (Before #1147 the mode
 lasted to exit: one spawn+join made a closure-cycle loop peak at 117x the RSS
-of the same loop with no spawn.) The #1178 consumer fleet measured the JIT-on
-delta against interpreter-only execution at **+4.5% for DMG and -2.4% for
-EigenMiniSat** (five-run paired medians on the same machine). Thus the JIT
-portion of the mode switch ranges from a small loss to a small win on those
-consumer shapes; it is not, by itself, an order-of-magnitude cliff.
+of the same loop with no spawn.) The pre-#1178-selector baseline consumer
+fleet measured the JIT-on delta against interpreter-only execution at **+4.5%
+for DMG and -2.4% for EigenMiniSat** (five-run medians on the same machine).
+Those are baseline figures, not a before/after measurement of the candidate
+selector. The registered full baseline matrix was: ouroboros sheet -5.4%
+(spread 0.4), EigenMiniSat -1.6% (0.6), ouroboros statement-cap -5.4% (0.4),
+DMG +5.0% (1.5), Tidepool +7.4% (1.3), and the liferaft null control +0.1%
+(0.3). The accompanying CodSpeed baseline saved 48% of instructions on the
+DMG-shaped proxy but only 11% on DMG cpu_instrs 2M. The candidate entry-cost
+selector remains opt-in until its same-machine before/after fleet matrix,
+CodSpeed rows, spread adjudication, and the resulting owner decision are
+recorded on #1178; these baseline numbers cannot substitute for that gate.
 
 ## The scheduler trace is a reader, not a source (#846)
 

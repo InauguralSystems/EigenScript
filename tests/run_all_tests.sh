@@ -5707,7 +5707,10 @@ else
     echo "  FAIL: JIT trace-tape differential (rc=$JTAPE_RC)"
     printf '%s\n' "$JTAPE_OUTPUT"
 fi
-JPATH_OUTPUT=$(EIGS_JIT_STATS=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
+# Force the deliberately tiny leaf through the candidate entry gate and dump
+# its decision.  The leaf row below is a direct witness for the native callee
+# in "native call in thunk"; an unrelated compiled thunk cannot satisfy it.
+JPATH_OUTPUT=$(EIGS_JIT_STATS=1 EIGS_JIT_TEST_FORCE_ENTRY=1 EIGS_JIT_ENTRY_COST_EXPERIMENT=1 EIGS_JIT_DUMP_SELECTION=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
 TOTAL=$((TOTAL + 23))
 if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then
     PASS=$((PASS + 23))
@@ -5723,9 +5726,10 @@ TOTAL=$((TOTAL + 1))
 # runs instead — but every other fast path emits). Same thunk-gate as
 # Linux x86_64.
 if [ "$(uname -m)" = "x86_64" ]; then
-    if echo "$JPATH_OUTPUT" | grep -qE "\[jit\] scanned=[0-9]+ compiled=[1-9]"; then
+    if echo "$JPATH_OUTPUT" | grep -qE "\[jit\] scanned=[0-9]+ compiled=[1-9]" &&
+       echo "$JPATH_OUTPUT" | grep -q "JIT selection: chunk='leaf'.*scope=entry.*decision=accept"; then
         PASS=$((PASS + 1))
-        echo "  PASS: JIT thunks compiled (fast paths ran native)"
+        echo "  PASS: JIT thunks compiled, including native-call leaf"
     else
         FAIL=$((FAIL + 1))
         echo "  FAIL: no JIT thunks compiled — fast paths ran interpreted"

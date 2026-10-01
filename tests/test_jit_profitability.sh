@@ -22,8 +22,8 @@ run_checked() {
 
 base=''
 off=''
-run_checked base EIGS_JIT_DUMP_SELECTION=1 EIGS_JIT_ENTRY_THRESHOLD=2 EIGS_JIT_OSR_THRESHOLD=100
-run_checked off EIGS_JIT_DUMP_SELECTION=1 EIGS_JIT_ENTRY_THRESHOLD=2 EIGS_JIT_OSR_THRESHOLD=100 EIGS_JIT_OFF=1
+run_checked base EIGS_JIT_ENTRY_COST_EXPERIMENT=1 EIGS_JIT_DUMP_SELECTION=1 EIGS_JIT_ENTRY_THRESHOLD=2 EIGS_JIT_OSR_THRESHOLD=100
+run_checked off EIGS_JIT_ENTRY_COST_EXPERIMENT=1 EIGS_JIT_DUMP_SELECTION=1 EIGS_JIT_ENTRY_THRESHOLD=2 EIGS_JIT_OSR_THRESHOLD=100 EIGS_JIT_OFF=1
 
 if printf '%s\n' "$base" | grep -q '^JIT selection:'; then
     printf '%s\n' "$base" | grep -q "chunk='tiny_entry'.*scope=entry.*decision=reject" || { echo "FAIL: tiny entry was not rejected"; exit 1; }
