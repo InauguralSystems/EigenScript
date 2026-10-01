@@ -541,8 +541,11 @@ the cycles registered while workers ran. A worker that finished but was never
 joined still counts as live, so an unjoined handle keeps the mode on until the
 exit drain. Join workers when you are done with them. (Before #1147 the mode
 lasted to exit: one spawn+join made a closure-cycle loop peak at 117x the RSS
-of the same loop with no spawn.) (A quantified before/after number lands with the replay-pinned
-benchmark harness, #398.)
+of the same loop with no spawn.) The #1178 consumer fleet measured the JIT-on
+delta against interpreter-only execution at **+4.5% for DMG and -2.4% for
+EigenMiniSat** (five-run paired medians on the same machine). Thus the JIT
+portion of the mode switch ranges from a small loss to a small win on those
+consumer shapes; it is not, by itself, an order-of-magnitude cliff.
 
 ## The scheduler trace is a reader, not a source (#846)
 
