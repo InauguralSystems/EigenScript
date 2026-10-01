@@ -1939,7 +1939,8 @@ static void handle_semantic_tokens(int id, const char *params) {
  * MESSAGE DISPATCH
  * ================================================================ */
 
-static void handle_message(const char *json) {
+/* Return -1 to keep serving, or the process status requested by "exit". */
+static int handle_message(const char *json) {
     char *method = json_get_string(json, "method");
     int id = json_get_int(json, "id");
     char *params_str = json_get_object(json, "params");
@@ -1947,7 +1948,7 @@ static void handle_message(const char *json) {
     if (!method) {
         /* Response or unknown — ignore */
         if (params_str) free(params_str);
-        return;
+        return -1;
     }
 
     fprintf(stderr, "[LSP] method=%s id=%d\n", method, id);
@@ -1960,9 +1961,10 @@ static void handle_message(const char *json) {
         g_shutdown = 1;
         lsp_response_null(id);
     } else if (strcmp(method, "exit") == 0) {
+        int status = g_shutdown ? 0 : 1;
         free(method);
         if (params_str) free(params_str);
-        exit(g_shutdown ? 0 : 1);
+        return status;
     } else if (strcmp(method, "textDocument/didOpen") == 0) {
         if (params_str) handle_did_open(params_str);
     } else if (strcmp(method, "textDocument/didChange") == 0) {
@@ -1998,6 +2000,7 @@ static void handle_message(const char *json) {
 
     free(method);
     if (params_str) free(params_str);
+    return -1;
 }
 
 /* ================================================================
@@ -2015,15 +2018,21 @@ int main(int argc, char **argv) {
     EigsState *eigs_st = eigs_state_new();
     eigs_thread_attach(eigs_st);
 
+    int status = 0;
     while (1) {
         char *msg = lsp_read_message();
         if (!msg) break;
-        handle_message(msg);
+        int requested_status = handle_message(msg);
         free(msg);
+        if (requested_status >= 0) {
+            status = requested_status;
+            break;
+        }
     }
 
     fprintf(stderr, "[LSP] stdin closed, exiting\n");
+    while (g_doc_count > 0) doc_remove(g_docs[0].uri);
     eigs_thread_detach();
     eigs_state_destroy(eigs_st);
-    return 0;
+    return status;
 }

@@ -50,11 +50,21 @@ SANITIZER_MARKERS = ("AddressSanitizer", "LeakSanitizer",
 SANITIZER_HITS = []
 
 
+def lsp_env():
+    """Keep leaked allocations visible to LSan even after stale stack use."""
+    env = os.environ.copy()
+    options = env.get("LSAN_OPTIONS", "")
+    if options and not options.endswith(":"):
+        options += ":"
+    env["LSAN_OPTIONS"] = options + "use_stacks=0:use_registers=0"
+    return env
+
+
 def converse(messages):
     """Feed framed messages to a fresh server, return parsed responses."""
     stream = "".join(frame(m) for m in messages)
     p = subprocess.run([LSP], input=stream, capture_output=True,
-                       text=True, timeout=15)
+                       text=True, timeout=15, env=lsp_env())
     if p.stderr and any(mk in p.stderr for mk in SANITIZER_MARKERS):
         SANITIZER_HITS.append(p.stderr)
     out = p.stdout
