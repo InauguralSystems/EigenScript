@@ -316,17 +316,17 @@ jobs:
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       # The gcc lane runs the full release suite, whose workflow-YAML gate is
-      # deliberately red when PyYAML cannot be imported.  Verify the runtime
-      # prerequisite here instead of relying only on the mutable dev-image
-      # tag: a stale/cached image must not make an otherwise healthy PR red.
+      # deliberately red when PyYAML cannot be imported. Use Debian's Python
+      # explicitly for both installation and the suite: runner toolcache
+      # shims can otherwise select a Python that cannot see apt's dist-packages.
       - name: Install PyYAML for the release suite
         if: matrix.cc == 'gcc'
         run: |
-          if ! python3 -c 'import yaml' 2>/dev/null; then
+          if ! /usr/bin/python3 -c 'import yaml' 2>/dev/null; then
             apt-get update
             apt-get install -y --no-install-recommends python3-yaml
           fi
-          python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
+          /usr/bin/python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
 
       - name: Build
         run: CC=${{ matrix.cc }} ./build.sh
@@ -336,7 +336,7 @@ jobs:
 
       - name: Run release suite on gcc
         if: github.event_name != 'pull_request' || matrix.cc == 'gcc'
-        run: cd tests && bash run_all_tests.sh
+        run: cd tests && PATH=/usr/bin:$PATH bash run_all_tests.sh
 
       - name: Compile-check LSP on the PR clang lane
         if: github.event_name != 'pull_request' || matrix.cc == 'clang'
