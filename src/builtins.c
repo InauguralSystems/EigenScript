@@ -14,6 +14,7 @@
 #include "vm.h"
 #include "builtins_internal.h"
 #include "trace.h"
+#include "concurrency_builtins.h"
 #include <limits.h>
 
 #if defined(__GLIBC__) && !EIGENSCRIPT_FREESTANDING
@@ -6384,28 +6385,9 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "heap_inuse", make_builtin(builtin_heap_inuse));
 
     /* ---- Concurrency builtins ---- */
-    env_set_local_owned(env, "spawn", make_builtin(builtin_spawn));
-    env_set_local_owned(env, "task_spawn", make_builtin(builtin_task_spawn));
-    env_set_local_owned(env, "task_alive", make_builtin(builtin_task_alive));
-    env_set_local_owned(env, "task_self", make_builtin(builtin_task_self));
-    env_set_local_owned(env, "task_detach", make_builtin(builtin_task_detach));
-    env_set_local_owned(env, "task_yield", make_builtin(builtin_task_yield));
-    env_set_local_owned(env, "must_not_yield", make_builtin(builtin_must_not_yield));
-    env_set_local_owned(env, "task_join", make_builtin(builtin_task_join));
-    env_set_local_owned(env, "task_send", make_builtin(builtin_task_send));
-    env_set_local_owned(env, "task_recv", make_builtin(builtin_task_recv));
-    env_set_local_owned(env, "task_try_recv", make_builtin(builtin_task_try_recv));
-    env_set_local_owned(env, "task_kill", make_builtin(builtin_task_kill));
-    env_set_local_owned(env, "task_sleep", make_builtin(builtin_task_sleep));
-    env_set_local_owned(env, "task_now", make_builtin(builtin_task_now));
-    env_set_local_owned(env, "task_sched_seed", make_builtin(builtin_task_sched_seed));
-    env_set_local_owned(env, "task_sched_trace", make_builtin(builtin_task_sched_trace));
-    env_set_local_owned(env, "thread_join", make_builtin(builtin_thread_join));
-    env_set_local_owned(env, "channel", make_builtin(builtin_channel));
-    env_set_local_owned(env, "send", make_builtin(builtin_send));
-    env_set_local_owned(env, "recv", make_builtin(builtin_recv));
-    env_set_local_owned(env, "try_recv", make_builtin(builtin_try_recv));
-    env_set_local_owned(env, "recv_timeout", make_builtin(builtin_recv_timeout));
+#define REGISTER_CONCURRENCY(name, fn) env_set_local_owned(env, name, make_builtin(fn));
+    EIGS_CONCURRENCY_BUILTINS(REGISTER_CONCURRENCY)
+#undef REGISTER_CONCURRENCY
     env_set_local_owned(env, "nearest_in_range", make_builtin(builtin_nearest_in_range));
     env_set_local_owned(env, "nearest_in_range_all", make_builtin(builtin_nearest_in_range_all));
     env_set_local_owned(env, "dispatch", make_builtin(builtin_dispatch));
@@ -6443,9 +6425,6 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "list_index_of", make_builtin(builtin_list_index_of));
     env_set_local_owned(env, "list_contains", make_builtin(builtin_list_contains));
     env_set_local_owned(env, "sort_by", make_builtin(builtin_sort_by));
-    env_set_local_owned(env, "close_channel", make_builtin(builtin_close_channel));
-    env_set_local_owned(env, "channel_closed", make_builtin(builtin_channel_closed));
-
     /* ---- Hash builtins (sha256, md5, hmac) ---- */
     register_hash_builtins(env);
 

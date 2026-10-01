@@ -32,8 +32,10 @@ doc_tokens() { grep -rhoE '`[a-zA-Z_][a-zA-Z0-9_]*`' $DOCS | tr -d '`' | sort -u
 
 # --- registered core builtins (the "must be documented" set) ---
 registered_builtins() {
-    grep -oE 'env_set_local_owned\(env, "[a-zA-Z_][a-zA-Z0-9_]*", make_builtin' src/builtins.c \
-        | sed -E 's/.*"([^"]+)".*/\1/' | sort -u
+    { grep -oE 'env_set_local_owned\(env, "[a-zA-Z_][a-zA-Z0-9_]*", make_builtin' src/builtins.c \
+          | sed -E 's/.*"([^"]+)".*/\1/';
+      sed -n 's/^[[:space:]]*X("\([A-Za-z0-9_]*\)",[[:space:]].*/\1/p' src/concurrency_builtins.h;
+    } | sort -u
 }
 
 check_builtins() {  # arg: optional extra (fake) builtin name for selftest

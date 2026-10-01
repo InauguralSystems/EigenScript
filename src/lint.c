@@ -5,6 +5,8 @@
 
 #include "eigenscript.h"
 #include "lint_internal.h"
+#include "nondet_builtins.h"
+#include "concurrency_builtins.h"
 
 /* ---- Lint warning storage ---- */
 
@@ -3539,12 +3541,181 @@ static void check_container_rebind(ASTNode *ast, LintContext *ctx) {
     w024_walk(ast, 0, ctx);
 }
 
+/* ---- W025: source-visible nondeterminism boundary (#1287) ---- */
+
+typedef void (*W025CallFn)(ASTNode *, const char *, void *);
+
+static void w025_walk(ASTNode *n, int enter_functions, W025CallFn fn, void *arg) {
+    if (!n) return;
+#define WALK(x) w025_walk((x), enter_functions, fn, arg)
+    switch (n->type) {
+        case AST_RELATION:
+            if (n->data.relation.left && n->data.relation.left->type == AST_IDENT)
+                fn(n, n->data.relation.left->data.ident.name, arg);
+            WALK(n->data.relation.left); WALK(n->data.relation.right); break;
+        case AST_FUNC:
+            if (!enter_functions) break;
+            for (int i = 0; i < n->data.func.param_count; i++)
+                WALK(n->data.func.param_defaults ? n->data.func.param_defaults[i] : NULL);
+            for (int i = 0; i < n->data.func.body_count; i++) WALK(n->data.func.body[i]);
+            break;
+        case AST_LAMBDA: if (enter_functions) WALK(n->data.lambda.body); break;
+        case AST_PROGRAM:
+            for (int i = 0; i < n->data.program.count; i++) { WALK(n->data.program.stmts[i]); }
+            break;
+        case AST_IF:
+            WALK(n->data.cond.cond);
+            for (int i = 0; i < n->data.cond.if_count; i++) WALK(n->data.cond.if_body[i]);
+            for (int i = 0; i < n->data.cond.else_count; i++) WALK(n->data.cond.else_body[i]);
+            break;
+        case AST_LOOP:
+            WALK(n->data.loop.cond); for (int i = 0; i < n->data.loop.body_count; i++) WALK(n->data.loop.body[i]); break;
+        case AST_FOR:
+            WALK(n->data.forloop.iter); for (int i = 0; i < n->data.forloop.body_count; i++) WALK(n->data.forloop.body[i]); break;
+        case AST_BLOCK: case AST_UNOBSERVED:
+            for (int i = 0; i < n->data.block.count; i++) { WALK(n->data.block.stmts[i]); }
+            break;
+        case AST_TRY:
+            for (int i = 0; i < n->data.trycatch.try_count; i++) WALK(n->data.trycatch.try_body[i]);
+            for (int i = 0; i < n->data.trycatch.catch_count; i++) { WALK(n->data.trycatch.catch_body[i]); }
+            break;
+        case AST_MATCH:
+            WALK(n->data.match.expr);
+            for (int c = 0; c < n->data.match.case_count; c++)
+                for (int i = 0; i < n->data.match.body_counts[c]; i++) WALK(n->data.match.bodies[c][i]);
+            break;
+        case AST_ASSIGN: WALK(n->data.assign.expr); break;
+        case AST_LIST_PATTERN_ASSIGN: WALK(n->data.list_pattern_assign.expr); break;
+        case AST_DOT_ASSIGN: WALK(n->data.dot_assign.target); WALK(n->data.dot_assign.expr); break;
+        case AST_INDEX_ASSIGN: WALK(n->data.index_assign.target); WALK(n->data.index_assign.index); WALK(n->data.index_assign.expr); break;
+        case AST_RETURN: WALK(n->data.ret.expr); break;
+        case AST_BINOP: WALK(n->data.binop.left); WALK(n->data.binop.right); break;
+        case AST_UNARY: WALK(n->data.unary.operand); break;
+        case AST_LIST:
+            for (int i = 0; i < n->data.list.count; i++) { WALK(n->data.list.elems[i]); }
+            break;
+        case AST_DICT:
+            for (int i = 0; i < n->data.dict.count; i++) { WALK(n->data.dict.keys[i]); WALK(n->data.dict.vals[i]); } break;
+        case AST_INDEX: WALK(n->data.index.target); WALK(n->data.index.index); break;
+        case AST_SLICE: WALK(n->data.slice.target); WALK(n->data.slice.start); WALK(n->data.slice.end); break;
+        case AST_DOT: WALK(n->data.dot.target); break;
+        case AST_LISTCOMP: WALK(n->data.listcomp.expr); WALK(n->data.listcomp.iter); WALK(n->data.listcomp.filter); break;
+        case AST_INTERROGATE: WALK(n->data.interrogate.expr); WALK(n->data.interrogate.at_expr); WALK(n->data.interrogate.when_expr); break;
+        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_PREDICATE:
+        case AST_BREAK: case AST_CONTINUE: case AST_IMPORT: break;
+    }
+#undef WALK
+}
+
+static const char *const w025_captured[] = {
+#define W025_CAPTURED(name) name,
+    EIGS_CAPTURED_BUILTINS(W025_CAPTURED)
+#undef W025_CAPTURED
+};
+static const char *const w025_uncaptured[] = {
+#define W025_UNCAPTURED(name, fn) name,
+    EIGS_CONCURRENCY_BUILTINS(W025_UNCAPTURED)
+#undef W025_UNCAPTURED
+};
+
+int lint_nondet_examined(void) {
+    return EIGS_CAPTURED_BUILTIN_COUNT + EIGS_CONCURRENCY_BUILTIN_COUNT;
+}
+
+static int w025_builtin_effect(const char *name) {
+    for (int i = 0; i < EIGS_CONCURRENCY_BUILTIN_COUNT; i++)
+        if (strcmp(name, w025_uncaptured[i]) == 0) return 2;
+    for (int i = 0; i < EIGS_CAPTURED_BUILTIN_COUNT; i++)
+        if (strcmp(name, w025_captured[i]) == 0) return 1;
+    return 0;
+}
+
+typedef struct { ASTNode *node; const char *name; int effect; } W025Func;
+typedef struct {
+    W025Func *funcs;
+    int count;
+    int found;
+    int current;
+    unsigned char *deps;
+} W025Scan;
+
+static int w025_func_index(W025Scan *s, const char *name) {
+    for (int i = 0; i < s->count; i++) if (strcmp(s->funcs[i].name, name) == 0) return i;
+    return -1;
+}
+static void w025_scan_call(ASTNode *call, const char *name, void *opaque) {
+    (void)call;
+    W025Scan *s = opaque;
+    int effect = w025_builtin_effect(name), fi = w025_func_index(s, name);
+    /* A same-file definition rebinds a builtin name; it is authoritative. */
+    if (fi >= 0) {
+        if (s->deps) s->deps[(size_t)s->current * (size_t)s->count + (size_t)fi] = 1;
+        effect = 0;
+    }
+    if (effect > s->found) s->found = effect;
+}
+typedef struct { W025Scan *scan; LintContext *ctx; } W025Emit;
+static void w025_emit_call(ASTNode *call, const char *name, void *opaque) {
+    W025Emit *e = opaque;
+    int effect = w025_builtin_effect(name), fi = w025_func_index(e->scan, name);
+    if (fi >= 0) effect = e->scan->funcs[fi].effect;
+    if (!effect) return;
+    if (effect == 2)
+        lint_warn(e->ctx, call->line, "W025", "UNCAPTURED scheduling nondeterminism via '%s'; acknowledge this audit boundary", name);
+    else
+        lint_warn(e->ctx, call->line, "W025", "tape-captured nondeterminism via '%s'; acknowledge this audit boundary", name);
+}
+
+static void check_nondeterminism(ASTNode *ast, LintContext *ctx) {
+    if (!ast || ast->type != AST_PROGRAM) return;
+    int cap = ast->data.program.count;
+    W025Func *funcs = cap ? xcalloc((size_t)cap, sizeof(*funcs)) : NULL;
+    W025Scan scan = {funcs, 0, 0, 0, NULL};
+    for (int i = 0; i < ast->data.program.count; i++) {
+        ASTNode *n = ast->data.program.stmts[i];
+        if (n && n->type == AST_FUNC) funcs[scan.count++] = (W025Func){n, n->data.func.name, 0};
+    }
+    scan.deps = scan.count ? xcalloc((size_t)scan.count * (size_t)scan.count, 1) : NULL;
+    /* Scan each body once. The fixed point below walks only the compact call
+     * graph; machine-generated files must not re-walk their AST O(F) times. */
+    for (int i = 0; i < scan.count; i++) {
+        scan.current = i;
+        scan.found = 0;
+        for (int j = 0; j < funcs[i].node->data.func.body_count; j++)
+            w025_walk(funcs[i].node->data.func.body[j], 0, w025_scan_call, &scan);
+        funcs[i].effect = scan.found;
+    }
+    /* Least fixed point terminates after at most count severity increases. */
+    int changed;
+    do {
+        changed = 0;
+        for (int i = 0; i < scan.count; i++) {
+            int effect = funcs[i].effect;
+            for (int j = 0; j < scan.count; j++)
+                if (scan.deps[(size_t)i * (size_t)scan.count + (size_t)j] && funcs[j].effect > effect)
+                    effect = funcs[j].effect;
+            if (effect > funcs[i].effect) { funcs[i].effect = effect; changed = 1; }
+        }
+    } while (changed);
+    for (int i = 0; i < scan.count; i++) if (funcs[i].effect) {
+        if (funcs[i].effect == 2)
+            lint_warn(ctx, funcs[i].node->line, "W025", "function '%s' has UNCAPTURED scheduling nondeterminism", funcs[i].name);
+        else
+            lint_warn(ctx, funcs[i].node->line, "W025", "function '%s' has tape-captured nondeterminism", funcs[i].name);
+    }
+    W025Emit emit = {&scan, ctx};
+    w025_walk(ast, 0, w025_emit_call, &emit); /* module-level call sites only */
+    free(scan.deps);
+    free(funcs);
+}
+
 void lint_run_checks(ASTNode *ast, const char *path,
                      const char *source, LintContext *ctx) {
     check_outer_mutation(ast, ctx);
     check_sibling_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
     check_container_rebind(ast, ctx);
+    check_nondeterminism(ast, ctx);
     check_one_element_arg_list(ast, ctx);
     check_over_arity(ast, ctx);
     check_dead_unobserved(ast, ctx);

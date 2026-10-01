@@ -91,6 +91,88 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "unused variable" "$OUTPUT" "unused variable 'temp'"
 rm -f "$TMPFILE"
 
+# --- #1287: W025 nondeterminism audit boundaries ---
+GEN_OUTPUT=$(bash "$TESTS_DIR/test_nondet_generator.sh")
+check_contains "#1287 generator calibration" "$GEN_OUTPUT" "PASS planted-hook examined delta and non-literal rejection"
+TMPFILE=$(mktemp /tmp/lint_1287_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+define captured_leaf() as:
+    return clock_unix of null
+define recurse_a(n) as:
+    if n > 0:
+        return recurse_b of (n - 1)
+    return 0
+define recurse_b(n) as:
+    if n > 0:
+        return recurse_a of (n - 1)
+    return random of null
+define scheduled() as:
+    return channel of 1
+print of (captured_leaf of null)
+print of (recurse_a of 2)
+spawn of scheduled
+buffer of 4
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1287 reports derived population" "$OUTPUT" "W025 examined=[1-9][0-9]*"
+check_contains "#1287 direct captured function summary" "$OUTPUT" "function 'captured_leaf' has tape-captured nondeterminism"
+check_contains "#1287 recursion-safe transitive summary" "$OUTPUT" "function 'recurse_a' has tape-captured nondeterminism"
+check_contains "#1287 stronger class-2 function text" "$OUTPUT" "function 'scheduled' has UNCAPTURED scheduling nondeterminism"
+check_contains "#1287 propagated same-file call" "$OUTPUT" "via 'captured_leaf'"
+check_contains "#1287 direct class-2 call" "$OUTPUT" "UNCAPTURED scheduling nondeterminism via 'spawn'"
+check_not_contains "#1287 unrelated buffer builtin excluded from class 2" "$OUTPUT" "via 'buffer'"
+JSON=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+check_contains "#1287 JSON diagnostic compatibility" "$JSON" '"code":"W025","severity":"warning"'
+
+cat > "$TMPFILE" << 'EIGS'
+define random(x) as:
+    return x + 1
+print of (random of 2)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1287 same-file rebinding is not treated as builtin nondeterminism" "$OUTPUT" "warning\[W025\]"
+
+# Each existing acknowledgement form applies at both boundary shapes.
+cat > "$TMPFILE" << 'EIGS'
+# lint: allow W025 -- the whole function is the acknowledged boundary
+define intentional() as:
+    return random of null
+# lint: allow W025
+print of (intentional of null)
+spawn of intentional  # lint: allow W025
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1287 preceding/trailing allows suppress function and calls" "$OUTPUT" "warning\[W025\]"
+cat > "$TMPFILE" << 'EIGS'
+# lint: allow-file W025 -- intentionally nondeterministic adapter
+print of (clock_unix of null)
+spawn of null
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1287 allow-file suppresses W025" "$OUTPUT" "warning\[W025\]"
+
+# Dynamic callees and effects reached only across a file boundary are the
+# experiment's documented analysis limits, not guessed effects.
+cat > "$TMPFILE" << 'EIGS'
+f is clock_unix
+print of (f of null)
+load_file of "other.eigs"
+print of (other_effect of null)
+EIGS
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_not_contains "#1287 dynamic calls are outside W025" "$OUTPUT" "via 'f'"
+check_not_contains "#1287 cross-file calls are outside W025" "$OUTPUT" "via 'other_effect'"
+rm -f "$TMPFILE"
+
+LINTPKG=$(mktemp -d /tmp/lint_1287_pkg_XXXXXX)
+mkdir -p "$LINTPKG/lib"
+printf 'print of (random of null)\n' > "$LINTPKG/lib/generated.eigs"
+printf '{ "lint": { "allow": { "lib/generated.eigs": ["W025"] } } }\n' > "$LINTPKG/eigs.json"
+OUTPUT=$($EIGS --lint "$LINTPKG/lib/generated.eigs" 2>&1 || true)
+check_not_contains "#1287 project allow-list suppresses W025" "$OUTPUT" "warning\[W025\]"
+check_contains "#1287 population survives suppression" "$OUTPUT" "W025 examined=[1-9][0-9]*"
+rm -rf "$LINTPKG"
+
 # --- Clean file (no warnings) ---
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'

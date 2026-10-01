@@ -1325,6 +1325,9 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     LintContext ctx = {0};
     lint_run_checks(ast, path, source, &ctx);
 
+    /* Population is metadata, not a diagnostic: allows must never hide it. */
+    fprintf(stderr, "W025 examined=%d\n", lint_nondet_examined());
+
     /* #399 inline suppression: drop warnings silenced by a `# lint: allow`
      * comment on their line (or the line above), a `# lint: allow-file`, or
      * the #455 per-file eigs.json allow-list. Compact in place so suppressed

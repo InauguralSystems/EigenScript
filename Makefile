@@ -34,6 +34,11 @@ CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tap
 
 FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c $(SRC_DIR)/ext_net.c \
                 $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
+NONDET_SOURCES := $(sort $(FULL_SOURCES) $(SRC_DIR)/ext_gfx.c)
+NONDET_HEADER := $(SRC_DIR)/nondet_builtins.h
+
+$(NONDET_HEADER): tools/gen_nondet_builtins.py $(NONDET_SOURCES)
+	python3 tools/gen_nondet_builtins.py --output $@ $(NONDET_SOURCES)
 
 PREFIX  := $(HOME)/.local
 
@@ -158,7 +163,7 @@ VARIANTS := release full http zlib net gfx asan asan-http asan-gfx tsan tsan-htt
 # rebuilds; header edits are covered by the generated .d files.
 define VARIANT_RULES
 OBJ_$(1) := $$(patsubst $(SRC_DIR)/%.c,build/$(1)/%.o,$$(SRC_V_$(1)))
-build/$(1)/%.o: $(SRC_DIR)/%.c Makefile VERSION tools/werror_flags.txt | build/$(1)
+build/$(1)/%.o: $(SRC_DIR)/%.c Makefile VERSION tools/werror_flags.txt $(NONDET_HEADER) | build/$(1)
 	$$(CC) $$(FLAGS_$(1)) -MMD -MP -c $$< -o $$@
 build/$(1)/eigenscript: $$(OBJ_$(1))
 	$$(CC) $$(FLAGS_$(1)) -o $$@ $$(OBJ_$(1)) $$(LIBS_$(1))

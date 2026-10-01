@@ -54,5 +54,6 @@ void check_stdlib_shadow(ASTNode *ast, const char *path, LintContext *ctx);
 void lint_run_checks(ASTNode *ast, const char *path, const char *source,
                      LintContext *ctx);
 int lint_suppressed(const char *source, int warn_line, const char *code);
+int lint_nondet_examined(void);
 
 #endif /* EIGENSCRIPT_LINT_INTERNAL_H */

@@ -65,6 +65,11 @@ fi
 grep -h 'env_set_local_owned(env, "' $CORE_SRCS \
     | sed -n 's/.*env_set_local_owned(env, "\([A-Za-z0-9_]*\)".*/\1/p' \
     | grep -v '^__' | sed 's/$/\tcore/' >> "$TMP_NAMES"
+# Concurrency registrations are an X-macro so W025 consumes the exact same
+# declaration. Extract its quoted first field rather than silently dropping
+# those builtins from the installed LSP index.
+sed -n 's/^[[:space:]]*X("\([A-Za-z0-9_]*\)",[[:space:]].*/\1\tcore/p' \
+    src/concurrency_builtins.h >> "$TMP_NAMES"
 
 # ---- 2. extension names from ext_names.h X-macro groups ----------------
 awk '

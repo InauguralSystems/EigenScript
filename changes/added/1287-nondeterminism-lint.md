@@ -1,0 +1,1 @@
+- Add W025, a derived nondeterminism-boundary lint that distinguishes tape-captured effects from uncaptured scheduling effects and propagates them through same-file calls.
