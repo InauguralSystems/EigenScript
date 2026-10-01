@@ -1690,6 +1690,51 @@ else
     echo "$VC_OUTPUT" | grep -iE "FAIL|LeakSanitizer|assert|error" | head -5
 fi
 
+# #1442: the possible-root buffer must re-arm from survivors. The measured
+# issue shape makes about 1036 collections under v0.42.0, but only 133 under
+# the walked-universe rule. Count collections, never elapsed time; the wide
+# band allows unrelated GC changes while refusing that ~8x collapse. This row
+# checks the hot-list cadence; the AOT compile measurement checks #1096's
+# separate large-live-graph cost-aware behavior.
+TOTAL=$((TOTAL + 1))
+GCT_OUTPUT=$($EIGS_TMO env EIGS_GC_DEBUG=1 ./eigenscript ../tests/test_gc_trigger.eigs </dev/null 2>&1); GCT_RC=$?
+GCT_COUNT=$(awk '/^\[gc\] universe [0-9][0-9]*, freed [0-9][0-9]*, live captured [0-9][0-9]*$/ {n++} END {print n+0}' <<< "$GCT_OUTPUT")
+GCT_GC_LINES=$(awk '/^\[gc\]/ {n++} END {print n+0}' <<< "$GCT_OUTPUT")
+lsan_classify "$GCT_OUTPUT"; GCT_CLASS=$?
+if [ "$GCT_RC" = "0" ] && [ "$GCT_CLASS" = "2" ] &&
+   [ "$GCT_GC_LINES" = "$GCT_COUNT" ] &&
+   [ "$GCT_COUNT" -ge 700 ] && [ "$GCT_COUNT" -le 1500 ] &&
+   grep -Fxq '5000' <<< "$GCT_OUTPUT" && grep -Fxq 'GC_TRIGGER_OK' <<< "$GCT_OUTPUT"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: hot-list possible-root cadence ($GCT_COUNT collections)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: possible-root cadence ($GCT_COUNT/$GCT_GC_LINES collection/debug lines, rc=$GCT_RC, sanitizer=$GCT_CLASS; expected 700..1500 and clean exit)"
+    printf '%s\n' "$GCT_OUTPUT" | tail -8
+fi
+
+# #1442 round 2: 4,000 retained cyclic rows with 32 references each, then
+# 100,000 short-lived task records. A node-only survivor budget rescans the
+# dense graph 30 times (base: 11). Allow at most 18 collections so this real
+# regression goes red; require debug coverage, correct output and clean exit.
+# Together with the hot-list row this bounds both sides of the cadence.
+TOTAL=$((TOTAL + 1))
+GCD_OUTPUT=$($EIGS_TMO env EIGS_GC_DEBUG=1 ./eigenscript ../tests/test_gc_dense_trigger.eigs </dev/null 2>&1); GCD_RC=$?
+GCD_COUNT=$(awk '/^\[gc\] universe [0-9][0-9]*, freed [0-9][0-9]*, live captured [0-9][0-9]*$/ {n++} END {print n+0}' <<< "$GCD_OUTPUT")
+GCD_GC_LINES=$(awk '/^\[gc\]/ {n++} END {print n+0}' <<< "$GCD_OUTPUT")
+lsan_classify "$GCD_OUTPUT"; GCD_CLASS=$?
+if [ "$GCD_RC" = "0" ] && [ "$GCD_CLASS" = "2" ] &&
+   [ "$GCD_GC_LINES" = "$GCD_COUNT" ] &&
+   [ "$GCD_COUNT" -ge 2 ] && [ "$GCD_COUNT" -le 18 ] &&
+   grep -Fxq '4001' <<< "$GCD_OUTPUT" && grep -Fxq 'GC_DENSE_OK' <<< "$GCD_OUTPUT"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: dense-survivor possible-root cadence ($GCD_COUNT collections)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: dense-survivor cadence ($GCD_COUNT/$GCD_GC_LINES collection/debug lines, rc=$GCD_RC, sanitizer=$GCD_CLASS; expected 2..18 and clean exit)"
+    printf '%s\n' "$GCD_OUTPUT" | tail -8
+fi
+
 # [107] Meta-interpreter parity (#306). lib/eigen.eigs (the meta-circular
 # interpreter) must agree with the C evaluator on and/or value-returning
 # short-circuit, raising on unbound identifiers, and div/mod-by-zero values —
