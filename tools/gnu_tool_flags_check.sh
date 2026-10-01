@@ -98,4 +98,26 @@ if [ "${1:-}" = "--selftest" ]; then
         exit 1
     fi
     echo "gnu-tool-flags: selftest OK: realpath-m plant turned the gate red"
+
+    # Options before the prohibited flag and flags clustered after it must not
+    # let an invocation evade the audit (issue #1433 review regression).
+    cp "$work/repo/tools/jit_diff.sh" "$work/planted" || exit 1
+    separated=$(printf 'grep -n \055P pattern file')
+    clustered=$(printf 'grep -\120n pattern file')
+    preceded=$(printf 'stat -L \055c %%s file')
+    printf '\n%s\n%s\n%s\n' "$separated" "$clustered" "$preceded" >> "$work/planted"
+    mv "$work/planted" "$work/repo/tools/jit_diff.sh" || exit 1
+    if (cd "$work/repo" && bash tools/gnu_tool_flags_check.sh) > "$work/option-order.log" 2>&1; then
+        echo "gnu-tool-flags: SELFTEST FAIL: option-order plants passed"
+        cat "$work/option-order.log"
+        exit 1
+    fi
+    for expected in 'grep-P (2 occurrence(s))' 'stat-c (1 occurrence(s))'; do
+        if ! grep -Fq "$expected" "$work/option-order.log"; then
+            echo "gnu-tool-flags: SELFTEST FAIL: option-order plant missing $expected"
+            cat "$work/option-order.log"
+            exit 1
+        fi
+    done
+    echo "gnu-tool-flags: selftest OK: separated and clustered option plants turned the gate red"
 fi

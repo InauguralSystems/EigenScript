@@ -4,5 +4,6 @@ tools/consumer_acceptance.sh|readlink-f|4|Consumer acceptance and its generated 
 tests/test_ci_portability.sh|sed-i-nosuffix|1|Negative fixture calls a fake sed that deliberately rejects this spelling.
 tools/codspeed_targets_check.sh|sed-i-nosuffix|5|Self-test mutations run only in the Ubuntu CodSpeed workflow.
 tools/section_plan.sh|sed-i-nosuffix|1|Mutation seam is exercised only by the Linux planner self-test job.
-tests/run_all_tests.sh|stat-c|3|GNU stat probes are guarded; failure returns before the unguarded same-inode comparison.
+tests/run_all_tests.sh|stat-c|5|GNU stat probes are guarded; failure returns before the unguarded same-inode comparison.
+tools/strict_differential.sh|stat-c|2|GNU stat probes are guarded and fall back to BSD stat when unsupported.
 tests/test_bundle.sh|stat-c|1|Prose explains that portable wc replaces this command; it is not executed.
