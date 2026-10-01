@@ -1608,6 +1608,35 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
     (void)chunk; (void)name_idx;
 }
 
+/* Numeric `unobserved:` assignments are deliberately common in simulation
+ * loops.  Keep the already-allocated ring fast path in this translation unit
+ * so the JIT helper does not bounce through two more out-of-line functions on
+ * every assignment.  The public routine owns allocation/window-growth and is
+ * still the cold fallback. */
+static inline void jit_sample_num_gated(Env *e, int slot, double v) {
+    ObserverSlot *s = env_obs_slot(e, slot);
+    int n = s && s->win_override ? s->win_override : g_obs_window;
+    if (!s || (s->v_used && (!s->v_window || s->v_cap < n))) {
+        observer_slot_sample_num_gated(e, slot, v);
+        return;
+    }
+    if (s->v_used) {
+        double raw = v - s->last_value;
+        double scale = fabs(v);
+        double prev_scale = fabs(s->last_value);
+        if (prev_scale > scale) scale = prev_scale;
+        if (g_obs_scale > scale) scale = g_obs_scale;
+        s->v_window[s->v_window_head] = raw / scale;
+        s->vr_window[s->v_window_head] = raw;
+        if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
+        if (s->v_window_count < s->v_cap) s->v_window_count++;
+    }
+    s->last_value = v;
+    s->v_used = 1;
+    s->v_last = 1;
+    s->used = 1;
+}
+
 void jit_helper_observe_assign_local(int slot) {
     eigs_obs_count_call();   /* #972: entered — the emitter's inline gate test
                               * is what keeps this at 0 for a read-free program */
@@ -1624,8 +1653,8 @@ void jit_helper_observe_assign_local(int slot) {
     Env *e = frame->fn_env;
     if (g_unobserved_depth != 0) {
         /* #1049: elided — value-window sample only (mirrors the CASE body). */
-        if (slot_is_num(s))      observer_slot_sample_num(e, slot, s.d);
-        else if (slot_is_ptr(s)) observer_slot_sample(e, slot, slot_as_ptr(s));
+        if (slot_is_num(s))      jit_sample_num_gated(e, slot, s.d);
+        else if (slot_is_ptr(s)) observer_slot_sample_gated(e, slot, slot_as_ptr(s));
         return;
     }
     if (slot_is_num(s)) {
@@ -1684,8 +1713,8 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     int oidx = -1, odepth = 0;
     Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
     if (oe && oidx >= 0 && g_unobserved_depth != 0) {
-        if (slot_is_num(s)) observer_slot_sample_num(oe, oidx, s.d);
-        else                observer_slot_sample(oe, oidx, slot_as_ptr(s));
+        if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, s.d);
+        else                observer_slot_sample_gated(oe, oidx, slot_as_ptr(s));
         return;
     }
     if (oe && oidx >= 0) {
@@ -5109,8 +5138,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * observer_slot_sample_num (eigenscript.c). */
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             Env *e = frame->fn_env;
-            if (slot_is_num(s))      observer_slot_sample_num(e, (int)slot, s.d);
-            else if (slot_is_ptr(s)) observer_slot_sample(e, (int)slot, slot_as_ptr(s));
+            eigs_obs_count_call();
+            if (slot_is_num(s))      observer_slot_sample_num_gated(e, (int)slot, s.d);
+            else if (slot_is_ptr(s)) observer_slot_sample_gated(e, (int)slot, slot_as_ptr(s));
         }
         DISPATCH();
     }
@@ -5346,8 +5376,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 int oidx = -1, odepth = 0;
                 Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
                 if (oe && oidx >= 0 && g_unobserved_depth != 0) {
-                    if (slot_is_num(s)) observer_slot_sample_num(oe, oidx, s.d);
-                    else                observer_slot_sample(oe, oidx, slot_as_ptr(s));
+                    eigs_obs_count_call();
+                    if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, s.d);
+                    else                observer_slot_sample_gated(oe, oidx, slot_as_ptr(s));
                 } else if (oe && oidx >= 0) {
                     if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
                     else observer_slot_update(oe, oidx, slot_as_ptr(s));

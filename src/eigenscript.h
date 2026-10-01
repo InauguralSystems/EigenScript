@@ -504,6 +504,9 @@ void observer_slot_update_num(struct Env *e, int idx, double num);
  * exported so the AOT runtime can call the same thing instead of skipping. */
 void observer_slot_sample(struct Env *e, int idx, Value *newval);
 void observer_slot_sample_num(struct Env *e, int idx, double num);
+/* Fast forms for observe opcodes which already proved the observer gate open. */
+void observer_slot_sample_gated(struct Env *e, int idx, Value *newval);
+void observer_slot_sample_num_gated(struct Env *e, int idx, double num);
 void observer_slot_reset(struct Env *e);
 /* Observed-loop halting on an explicit env (no VM-frame dependency): one
  * iteration of OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK. Returns 1 when the loop
