@@ -2575,6 +2575,20 @@ OUTPUT=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "#1343 runtime caret under the token on a TAB-indented line" "$OUTPUT" "^       | ${TAB}               ^\$"
 rm -f "$TMPFILE"
 
+# --- #1371: lexer diagnostics carry the same source excerpt and caret as
+# parser diagnostics. Pin both indentation forms because the caret prefix must
+# preserve a tab byte rather than expanding it to spaces.
+TMPFILE=$(mktemp /tmp/lint_1371_XXXXXX.eigs)
+printf 'if 1 > 0:\n    x is @\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1371 lexer excerpt on a space-indented line" "$OUTPUT" "^     2 |     x is @\$"
+check_contains "#1371 lexer caret on a space-indented line" "$OUTPUT" "^       |          ^\$"
+printf 'if 1 > 0:\n\tx is @\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1371 lexer excerpt on a TAB-indented line" "$OUTPUT" "^     2 | ${TAB}x is @\$"
+check_contains "#1371 lexer caret on a TAB-indented line" "$OUTPUT" "^       | ${TAB}     ^\$"
+rm -f "$TMPFILE"
+
 # --- #1251 round 2: a literal node carries its OWN first line, not the line of
 # the token after it. A key whose ':' sits on the next line, and a list whose
 # ']' does, used to be reported on that later line. ---
