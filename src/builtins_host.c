@@ -349,7 +349,7 @@ static int ls_entry_cmp(const void *a, const void *b) {
     return strcmp(va->data.str, vb->data.str);
 }
 
-/* ls of "path" → list of filenames in directory, or [] on failure.
+/* ls of "path" → bytewise-sorted filenames, or [] on failure.
  * Matches `LC_ALL=C ls -1` default behavior: hidden entries (starting with '.')
  * are excluded and names are sorted bytewise. */
 Value* builtin_ls(Value *arg) {

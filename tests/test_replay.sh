@@ -373,7 +373,7 @@ fi
 
 # ls: record two entries, delete them, replay must serve the sorted listing.
 mkdir -p "$TMPDIR/ls585"
-touch "$TMPDIR/ls585/a" "$TMPDIR/ls585/b"
+touch "$TMPDIR/ls585/b" "$TMPDIR/ls585/a"
 cat > "$TMPDIR/p_ls.eigs" <<EOF
 print of (ls of "$TMPDIR/ls585")
 EOF

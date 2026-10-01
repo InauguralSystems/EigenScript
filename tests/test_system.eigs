@@ -45,20 +45,23 @@ assert of [(path_ext of "noext") == "", "PE2 no ext"]
 assert of [(path_ext of "/a/b.tar.gz") == ".gz", "PE3 double ext"]
 
 # ---- mkdir ----
-# Start clean so the creation order below is controlled even after an
-# interrupted prior run.
-exec_capture of ["rm", "-rf", "/tmp/eigen_sys_test_dir"]
-ok is mkdir of "/tmp/eigen_sys_test_dir"
+# Create an exclusive parent first so cleanup can never remove another test's
+# files, including when multiple worktrees run this test concurrently.
+tmpdir_result is exec_capture of ["mktemp", "-d"]
+assert of [tmpdir_result[0] == 0, "MK0 mktemp directory"]
+tmpdir is trim of tmpdir_result[1]
+test_dir is tmpdir + "/system"
+ok is mkdir of test_dir
 assert of [ok == 1, "MK1 mkdir"]
-assert of [(file_exists of "/tmp/eigen_sys_test_dir") == 1, "MK2 dir exists"]
+assert of [(file_exists of test_dir) == 1, "MK2 dir exists"]
 
 # ---- ls ----
-write_text of ["/tmp/eigen_sys_test_dir/a.txt", "a"]
-write_text of ["/tmp/eigen_sys_test_dir/b.txt", "b"]
-write_text of ["/tmp/eigen_sys_test_dir/c.txt", "c"]
-write_text of ["/tmp/eigen_sys_test_dir/d.txt", "d"]
-write_text of ["/tmp/eigen_sys_test_dir/e.txt", "e"]
-files is ls of "/tmp/eigen_sys_test_dir"
+write_text of [test_dir + "/e.txt", "e"]
+write_text of [test_dir + "/c.txt", "c"]
+write_text of [test_dir + "/a.txt", "a"]
+write_text of [test_dir + "/d.txt", "d"]
+write_text of [test_dir + "/b.txt", "b"]
+files is ls of test_dir
 assert of [(len of files) == 5, "LS1 ls count"]
 assert_eq of [files, ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"], "LS2 ls bytewise order is independent of creation order"]
 
@@ -76,11 +79,12 @@ rm of tmp
 assert of [(file_exists of tmp) == 0, "RM1 rm removes file"]
 
 # ---- cleanup ----
-rm of "/tmp/eigen_sys_test_dir/a.txt"
-rm of "/tmp/eigen_sys_test_dir/b.txt"
-rm of "/tmp/eigen_sys_test_dir/c.txt"
-rm of "/tmp/eigen_sys_test_dir/d.txt"
-rm of "/tmp/eigen_sys_test_dir/e.txt"
-exec_capture of ["rmdir", "/tmp/eigen_sys_test_dir"]
+rm of (test_dir + "/a.txt")
+rm of (test_dir + "/b.txt")
+rm of (test_dir + "/c.txt")
+rm of (test_dir + "/d.txt")
+rm of (test_dir + "/e.txt")
+exec_capture of ["rmdir", test_dir]
+exec_capture of ["rmdir", tmpdir]
 
 test_summary of null
