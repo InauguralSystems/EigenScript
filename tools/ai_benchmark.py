@@ -40,8 +40,12 @@ def snapshot(repo, revision, work):
     # A benchmark fixture must not inherit signing or hook policy from the
     # machine running it.  Besides making the snapshot host-dependent, a
     # global core.hooksPath can execute arbitrary checkout-external code.
-    subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "commit",
-                    "--no-gpg-sign", "-q", "-m", "benchmark fixture"],
+    # Point at the empty hooks directory created by ``git init`` instead of
+    # /dev/null: Git requires hooksPath to name a directory, and newer Git
+    # versions reject the device file rather than merely finding no hooks.
+    hooks = work / ".git" / "hooks"
+    subprocess.run(["git", "-c", f"core.hooksPath={hooks}", "commit",
+                    "--no-verify", "--no-gpg-sign", "-q", "-m", "benchmark fixture"],
                    cwd=work, check=True)
     subprocess.run(["git", "remote", "add", "origin", str(work / ".stub-origin")], cwd=work, check=True)
     subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=work, check=True)
