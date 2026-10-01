@@ -213,7 +213,13 @@ check of ["fresh binder over a module name: module value after the loop",
 check of ["post-loop write is a fresh binding",
     meta_probe of "define h() as:\n    for z in [7, 8]:\n        0\n    z is 5\n    return z\nh of []",
     ["ok", 5]]
-# The C VM answers the same five programs (the oracle side of the parity).
+check of ["fresh binder is removed when the loop body raises",
+    meta_probe of "define f() as:\n    try:\n        for z in [1, 2]:\n            throw of \"boom\"\n    catch e:\n        0\n    return z\nf of []",
+    ["err"]]
+check of ["prior binder is restored when the loop body raises",
+    meta_probe of "define f(z) as:\n    try:\n        for z in [1, 2]:\n            throw of \"boom\"\n    catch e:\n        0\n    return z\nf of 9",
+    ["ok", 9]]
+# The C VM supplies the oracle side of these parity checks.
 define vm_probe(src) as:
     try:
         return ["ok", eval of src]
