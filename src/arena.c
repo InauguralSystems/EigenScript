@@ -62,7 +62,7 @@ static pthread_mutex_t g_alloc_stats_lock = PTHREAD_MUTEX_INITIALIZER;
 /* -1 until pthread_once reads the environment, then 0/1.  The overwhelmingly
  * common disabled path is one relaxed load and branch, not a pthread_once call
  * at every allocation and release. */
-static int g_alloc_stats_enabled = -1;
+int eigs_alloc_stats_enabled = -1;
 static AllocStatSlot *g_alloc_stats_tab;
 static size_t g_alloc_stats_cap;
 static size_t g_alloc_stats_count;
@@ -99,7 +99,7 @@ static void alloc_stats_init(void) {
         if (!g_alloc_stats_tab) x_oom(g_alloc_stats_cap * sizeof(*g_alloc_stats_tab));
         atexit(alloc_stats_report);
     }
-    __atomic_store_n(&g_alloc_stats_enabled, enabled, __ATOMIC_RELEASE);
+    __atomic_store_n(&eigs_alloc_stats_enabled, enabled, __ATOMIC_RELEASE);
 }
 
 static size_t alloc_stats_find(void *ptr, int *found) {
@@ -137,12 +137,11 @@ static void alloc_stats_grow(void) {
     free(old);
 }
 
-static void alloc_stats_add(void *ptr, size_t size, size_t cumulative) {
-    int enabled = __atomic_load_n(&g_alloc_stats_enabled, __ATOMIC_RELAXED);
-    if (__builtin_expect(enabled == 0, 1) || !ptr) return;
+static void alloc_stats_add_enabled(void *ptr, size_t size, size_t cumulative) {
+    int enabled = __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED);
     if (enabled < 0) {
         pthread_once(&g_alloc_stats_once, alloc_stats_init);
-        if (!__atomic_load_n(&g_alloc_stats_enabled, __ATOMIC_ACQUIRE)) return;
+        if (!__atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_ACQUIRE)) return;
     }
     pthread_mutex_lock(&g_alloc_stats_lock);
     if ((g_alloc_stats_count + 1) * 10 >= g_alloc_stats_cap * 7)
@@ -160,12 +159,18 @@ static void alloc_stats_add(void *ptr, size_t size, size_t cumulative) {
     pthread_mutex_unlock(&g_alloc_stats_lock);
 }
 
-static size_t alloc_stats_remove(void *ptr) {
-    int enabled = __atomic_load_n(&g_alloc_stats_enabled, __ATOMIC_RELAXED);
-    if (__builtin_expect(enabled == 0, 1) || !ptr) return 0;
+static inline __attribute__((always_inline))
+void alloc_stats_add(void *ptr, size_t size, size_t cumulative) {
+    int enabled = __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED);
+    if (__builtin_expect(enabled == 0, 1) || !ptr) return;
+    alloc_stats_add_enabled(ptr, size, cumulative);
+}
+
+static size_t alloc_stats_remove_enabled(void *ptr) {
+    int enabled = __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED);
     if (enabled < 0) {
         pthread_once(&g_alloc_stats_once, alloc_stats_init);
-        if (!__atomic_load_n(&g_alloc_stats_enabled, __ATOMIC_ACQUIRE)) return 0;
+        if (!__atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_ACQUIRE)) return 0;
     }
     pthread_mutex_lock(&g_alloc_stats_lock);
     int found;
@@ -180,6 +185,12 @@ static size_t alloc_stats_remove(void *ptr) {
     }
     pthread_mutex_unlock(&g_alloc_stats_lock);
     return old_size;
+}
+
+static inline __attribute__((always_inline)) size_t alloc_stats_remove(void *ptr) {
+    int enabled = __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED);
+    if (__builtin_expect(enabled == 0, 1) || !ptr) return 0;
+    return alloc_stats_remove_enabled(ptr);
 }
 
 size_t safe_size_mul(size_t a, size_t b) {

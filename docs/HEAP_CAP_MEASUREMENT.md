@@ -70,16 +70,16 @@ failure semantics, and tape event open until the required table exists.
 
 ## Initial disabled-path measurement
 
-The instrumentation change was paired against its parent (`e765636`) with the
+The instrumentation change was paired against its base (`2bd607e`) with the
 JIT disabled so callgrind measured the same interpreter work.  Three `Ir`
 samples of `tests/bench_perf.eigs` were taken for each executable:
 
 | Build | callgrind `Ir` samples | Median |
 | --- | --- | ---: |
-| parent, counters absent | 332,830,400; 332,839,888; 332,830,073 | 332,830,400 |
-| instrumented, `EIGS_ALLOC_STATS` unset | 340,726,201; 340,735,288; 340,735,461 | 340,735,288 |
+| base, counters absent | 297,040,942; 297,040,797; 297,045,632 | 297,040,942 |
+| instrumented, `EIGS_ALLOC_STATS` unset | 299,460,472; 299,469,884; 299,460,355 | 299,460,472 |
 
-The disabled instrument therefore adds 2.375% instructions on this microbench.
+The disabled instrument therefore adds 0.815% instructions on this microbench.
 This is an attribution result, not a wall-time claim and not the required DMG
 measurement.  It does not select A or B; the owner-required consumer table and
 DMG instruction count remain open.
