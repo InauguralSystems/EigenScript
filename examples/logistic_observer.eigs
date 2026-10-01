@@ -1,0 +1,12 @@
+# Logistic-map observer: critical slowing down below the period-doubling point.
+
+define settling_steps(r) as:
+    local x is 0.2
+    local steps is 0
+    loop while not (converged of x) and steps < 1000:
+        x is r * x * (1.0 - x)
+        steps is steps + 1
+    return steps
+
+for r in [2.8, 2.9, 2.95, 2.99]:
+    print of f"r={r} converged after {settling_steps of r} steps"

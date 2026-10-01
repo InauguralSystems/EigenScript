@@ -2780,7 +2780,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         {
             /* `<predicate> of <ident>` (converged/stable/improving/oscillating/
-             * diverging/equilibrium): classify the NAMED binding's slot
+             * diverging/equilibrium/chaotic): classify the NAMED binding's slot
              * trajectory — not the global last-observed alias the bare predicate
              * reads. Parallels `report of x`; the operand removes the ambiguity. */
             if (fn_node && fn_node->type == AST_PREDICATE &&

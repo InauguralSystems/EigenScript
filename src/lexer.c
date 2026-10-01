@@ -134,6 +134,7 @@ static TokType keyword_type(const char *word) {
         if (strcmp(word, "catch") == 0) return TOK_CATCH;
         if (strcmp(word, "continue") == 0) return TOK_CONTINUE;
         if (strcmp(word, "converged") == 0) return TOK_CONVERGED;
+        if (strcmp(word, "chaotic") == 0) return TOK_CHAOTIC;
         break;
     case 'd':
         if (strcmp(word, "define") == 0) return TOK_DEFINE;
@@ -320,6 +321,7 @@ const char* tok_base_string(TokType t) {
         case TOK_OSCILLATING:return "oscillating ";
         case TOK_DIVERGING:  return "diverging ";
         case TOK_EQUILIBRIUM:return "equilibrium ";
+        case TOK_CHAOTIC:    return "chaotic ";
         case TOK_TRY:        return "try ";
         case TOK_CATCH:      return "catch ";
         case TOK_BREAK:      return "break ";

@@ -806,7 +806,7 @@ void observer_slot_update_num(Env *e, int idx, double num) {
  * walk (entropy_of_num's two log2s for a scalar, compute_entropy's
  * O(children) pass for a container) and the dH bookkeeping built on it. It
  * used to skip the whole update, so an elided assignment was ABSENT from the
- * value window, and every value-channel verdict (`report`, the six predicates
+ * value window, and every value-channel verdict (`report`, the predicates
  * on a numeric binding, `report_value`, a trajectory snapshot's rel/raw
  * lists) differed from the unelided program until the missing sample would
  * have aged out of the 10-deep window: an elided `b is 0.0` initialiser
@@ -932,7 +932,7 @@ static int observer_slot_saturated(const ObserverSlot *s) {
  * The value channel's relative step Δv/(1+|v|) is the standard numerical
  * stopping criterion (|Δx| <= atol + rtol·|x| with atol = rtol), which is
  * what `converged` should have meant all along. So: when a binding's most
- * recent observed assignment is numeric (v_last), the six predicate words
+ * recent observed assignment is numeric (v_last), the predicate words
  * and `report` read the value trajectory below. Non-numeric bindings
  * (strings, containers) keep the entropy classifiers — entropy is the only
  * signal they have, and none of the measured failures involve them.
@@ -950,14 +950,29 @@ static int observer_slot_saturated(const ObserverSlot *s) {
  * converge), so `converged` is a STOPPING CRITERION — "settled at the
  * deadband" — not a proof. No finite-window detector can do better. */
 
+/* The one equivalence relation used by both settling and recurrence.  It is
+ * exactly the value-channel deadband: a relative tolerance above obs_scale,
+ * and an absolute tolerance below it. */
+static int obs_num_equivalent(double a, double b, double threshold) {
+    double scale = fabs(a);
+    if (fabs(b) > scale) scale = fabs(b);
+    double floor = eigs_current ? eigs_current->state->obs_scale : 0.001;
+    if (floor > scale) scale = floor;
+    return fabs(a - b) / scale < threshold;
+}
+
 /* Window flags: every |rel step| under dh_zero / dh_small. */
 static void obs_num_flags(const ObserverSlot *s, int *all_zero, int *all_small) {
     size_t cnt = obs_v_count(s);
+    double newer = s->last_value;
     *all_zero = 1; *all_small = 1;
     for (size_t i = 0; i < cnt; i++) {
+        double raw = observer_slot_vr_get(s, i);
+        double older = newer - raw;
         double w = fabs(observer_slot_v_get(s, i));
-        if (w >= g_obs_dh_zero)  *all_zero = 0;
+        if (!obs_num_equivalent(newer, older, g_obs_dh_zero)) *all_zero = 0;
         if (w >= g_obs_dh_small) *all_small = 0;
+        newer = older;
     }
 }
 
@@ -1020,6 +1035,44 @@ static int obs_num_bounded_oscillating(const ObserverSlot *s) {
 static int obs_num_oscillating(const ObserverSlot *s) {
     return obs_num_rel_oscillating(s) || observer_slot_raw_oscillating(s)
         || obs_num_bounded_oscillating(s);
+}
+
+static int obs_num_converged(const ObserverSlot *s);
+
+/* Reconstruct a prior value from the raw-delta ring.  offset=0 is the current
+ * value, offset=1 the preceding sample. */
+static double obs_num_value_back(const ObserverSlot *s, size_t offset) {
+    double value = s->last_value;
+    for (size_t i = 0; i < offset; i++) value -= observer_slot_vr_get(s, i);
+    return value;
+}
+
+static int obs_num_has_period(const ObserverSlot *s) {
+    size_t N = (size_t)observer_slot_window(s);
+    for (size_t k = 1; k <= N / 2; k++) {
+        int repeats = 1;
+        /* Use every comparison the full window offers.  For the largest
+         * candidate (N/2) this is exactly two cycles; shorter candidates get
+         * correspondingly stronger evidence instead of treating one chance
+         * adjacent near-hit as a period-1 attractor. */
+        for (size_t i = 0; i < N - k; i++) {
+            double a = obs_num_value_back(s, i);
+            double b = obs_num_value_back(s, i + k);
+            if (!obs_num_equivalent(a, b, g_obs_dh_zero)) {
+                repeats = 0;
+                break;
+            }
+        }
+        if (repeats) return 1;
+    }
+    return 0;
+}
+
+static int obs_num_chaotic(const ObserverSlot *s) {
+    size_t N = (size_t)observer_slot_window(s);
+    if (!s || obs_v_count(s) < N) return 0;
+    if (obs_num_converged(s) || !obs_num_oscillating(s)) return 0;
+    return !obs_num_has_period(s);
 }
 
 /* Divergence: position at the saturation ceiling (claimed before the window
@@ -1249,6 +1302,11 @@ int observer_slot_oscillating(const ObserverSlot *s) {
     return (flips >= FLIPS) ? 1 : 0;
 }
 
+int observer_slot_chaotic(const ObserverSlot *s) {
+    /* Chaos is deliberately a numeric-trajectory claim. */
+    return obs_route_num(s) ? obs_num_chaotic(s) : 0;
+}
+
 int observer_slot_stable(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_stable(s);
     size_t cnt = s ? obs_dh_count(s) : 0;
@@ -1268,12 +1326,12 @@ int observer_slot_stable(const ObserverSlot *s) {
  * `TOK_CONVERGED + k` (parser.c:842) and vm_slot_predicate switches on the same
  * k, so this table is the one place the words live — lint's W016 reads it too,
  * rather than keeping a second copy that could drift out of order. */
-static const char *EIGS_PREDICATE_NAMES[6] = {
-    "converged", "stable", "improving", "oscillating", "diverging", "equilibrium"
+static const char *EIGS_PREDICATE_NAMES[7] = {
+    "converged", "stable", "improving", "oscillating", "diverging", "equilibrium", "chaotic"
 };
 
 const char* eigs_predicate_name(unsigned kind) {
-    return kind < 6 ? EIGS_PREDICATE_NAMES[kind] : "predicate";
+    return kind < 7 ? EIGS_PREDICATE_NAMES[kind] : "predicate";
 }
 
 /* Slot mirror of builtin_report — same priority order and partial-window

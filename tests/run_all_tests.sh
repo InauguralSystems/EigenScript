@@ -1080,6 +1080,17 @@ check_eigs_suite "predicate family matrix: mutual-exclusion + co-fire edges + th
     "test_predicate_matrix.eigs" "PREDICATE_MATRIX_ALL_PASS" 15
 echo ""
 
+echo "[8ca] Chaotic Predicate"
+check_eigs_suite "chaotic: 101-point Lyapunov-oracle sweep + period/deadband/report regressions" \
+    "test_chaotic_predicate.eigs" "CHAOTIC_PREDICATE_ALL_PASS periodic=52 chaotic=38 ungraded=11" 30
+LOGISTIC_OUTPUT=$(./eigenscript ../examples/logistic_observer.eigs 2>&1)
+LOGISTIC_EXPECTED='r=2.8 converged after 35 steps
+r=2.9 converged after 61 steps
+r=2.95 converged after 111 steps
+r=2.99 converged after 462 steps'
+check "logistic example pins critical slowing down" "$LOGISTIC_OUTPUT" "$LOGISTIC_EXPECTED"
+echo ""
+
 echo "[8d] Windowed Improving"
 check_eigs_suite "windowed improving: net-descent + proportional vote + gray-band/sub-majority/partial-window" \
     "test_windowed_improving.eigs" "WINDOWED_IMPROVING_ALL_PASS" 8

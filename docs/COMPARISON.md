@@ -397,6 +397,12 @@ works; you can reach for it long before you need the theory.
 
 ## What has no equivalent elsewhere: the observer
 
+The numeric `chaotic` predicate distinguishes aperiodic oscillation by finding
+no deadband-merged recurrence up to half the finite observer window. It is
+explicitly evidence rather than mathematical proof: period `k` needs about
+`2k` samples, and `report` deliberately keeps its existing `oscillating`
+vocabulary.
+
 Every assignment (outside `unobserved` blocks) updates an observer
 tracking the value's entropy and trend (for containers, one pass over the
 value's own elements — the walk stops at a reference, so a nested container

@@ -1312,7 +1312,7 @@ int chunk_has_reader_opcode(const EigsChunk *chunk) {
  * across candidates, so ONE benign literal load disarmed the conservative
  * fallback for every other load in the same unit — the failure got LESS likely
  * as the program got simpler, which is why no corpus differential would ever
- * have caught it; (3) the six predicates lex to their own token types, so
+ * have caught it; (3) the predicate words lex to their own token types, so
  * matching them as TOK_IDENT was dead code and a module using the documented
  * preferred form went unseen.
  *

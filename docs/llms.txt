@@ -100,7 +100,7 @@ not any outer `n`.
 ## Reserved and soft keywords (cannot be plain variable names)
 
 - **Reserved** (never identifiers): `in`, and the observer predicates
-  `converged`, `stable`, `improving`, `diverging`, `oscillating`, `equilibrium`,
+  `converged`, `stable`, `improving`, `diverging`, `oscillating`, `equilibrium`, `chaotic`,
   plus `report` and `report_value`. Never bind either report name, even as a
   parameter or loop variable (`E005`). Use `report of x` / `report_value of x`
   with an identifier (parentheses allowed); expressions/arg lists are `E005`
@@ -136,7 +136,7 @@ what is e
 
 Every assignment (outside `unobserved:`) updates the value's observer. Trajectory
 predicates classify it: `converged`, `stable`, `improving`, `diverging`,
-`oscillating`, `equilibrium`.
+`oscillating`, `equilibrium`, `chaotic`.
 
 ```eigenscript
 define newton_sqrt as:
@@ -165,6 +165,7 @@ sqrt(2) = 1.414213562373095
   zero reads `improving` until inside the scale. A mode slower than N samples
   of your cadence cannot fold in the window — `set_observer_window of ["x", n]`
   (4..64; default 10, `set_observer_window of n`) so N >= period/step.
+- `chaotic of x` is numeric, full-window, oscillating and non-converged, with no deadband-merged period `k <= floor(N/2)` found. It is finite-window evidence, not proof: period `k` needs about `2k` samples, so widen the window for longer periods. `report of x` remains `"oscillating"` for this case.
 - Trajectory is keyed to a binding's env slot, never to a value: a dict field,
   list element, parameter or `for` binder has none, and ONE binding rebound
   from `fleet[i][2]` in a loop carries the interleave of every entity (lint

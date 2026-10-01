@@ -210,7 +210,10 @@ report of reading             # "oscillating"  (needs a few periods to classify)
 ```
 
 Trajectory states: `converged`, `stable`, `equilibrium`, `oscillating`,
-`improving`, `diverging` — handy for convergence detection, instability
+`improving`, `diverging`, plus numeric `chaotic` (no deadband-merged period up
+to half the observer window; finite-window evidence, not proof). Period `k`
+needs about `2k` samples, and chaotic trajectories still `report` as
+`oscillating`. They are handy for convergence detection, instability
 alerts, or debugging without writing logging code.
 
 The everyday payoff before any theory: `loop while not converged` deletes the

@@ -270,7 +270,7 @@ static inline void eigs_observe_safepoint(Env *e) {
         eigs_observer_dump(e);
 }
 
-/* Classify an observer slot's trajectory by predicate kind (0..5), matching the
+/* Classify an observer slot's trajectory by predicate kind (0..6), matching the
  * bare OP_PREDICATE dispatch. Shared by the named OP_PREDICATE_SLOT/NAME ops,
  * which read a SPECIFIC binding's slot instead of the global last-observed one. */
 /* #871: a predicate asked inside an `unobserved:` block cannot be answered.
@@ -312,6 +312,7 @@ static int vm_slot_predicate(const ObserverSlot *s, uint16_t kind) {
     case 3: return observer_slot_oscillating(s);
     case 4: return observer_slot_diverging(s);
     case 5: return observer_slot_equilibrium(s);
+    case 6: return observer_slot_chaotic(s);
     }
     return 0;
 }

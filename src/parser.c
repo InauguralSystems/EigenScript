@@ -763,7 +763,7 @@ static ASTNode* parse_primary(Parser *p) {
         return parse_postfix_chain(p, n);
     }
 
-    if (t->type >= TOK_CONVERGED && t->type <= TOK_EQUILIBRIUM) {
+    if (t->type >= TOK_CONVERGED && t->type <= TOK_CHAOTIC) {
         int kind = t->type - TOK_CONVERGED;
         p_advance(p);
         ASTNode *n = make_node(AST_PREDICATE, t->line);

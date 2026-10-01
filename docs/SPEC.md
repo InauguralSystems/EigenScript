@@ -1424,7 +1424,7 @@ Every observed variable can be interrogated. `what is x` is its value,
 assigned — **every** assignment, including those made inside an
 `unobserved:` block, which elides the **entropy** half of observation —
 not assignment, and not the O(1) value-window sample that `report`,
-`report_value` and the six predicates read on a numeric binding
+`report_value` and the seven predicates read on a numeric binding
 (#908/#1049); [PREDICATES.md](PREDICATES.md#inputs) lists the readers
 that can differ. (`where`, `why`, `how` return the observer's entropy,
 entropy-delta, and stability — see [OBSERVER.md](OBSERVER.md).)
@@ -1460,9 +1460,9 @@ have always followed, so a dict holding a 5-element list measures exactly
 as one holding a 5-element buffer. The cost of an observed assignment is
 therefore proportional to the value's own size, never to everything it can
 reach, and cyclic or shared object graphs are well-defined because they are
-never traversed (see [OBSERVER.md](OBSERVER.md)). Six bare-keyword predicates query
+never traversed (see [OBSERVER.md](OBSERVER.md)). Seven bare-keyword predicates query
 the most recently observed variable: `converged`, `stable`,
-`improving`, `oscillating`, `diverging`, `equilibrium`. The canonical
+`improving`, `oscillating`, `diverging`, `equilibrium`, `chaotic`. The canonical
 use is a self-terminating loop:
 
 ```eigenscript
@@ -1632,6 +1632,7 @@ a value at the saturation ceiling; `oscillating` deadband sign-flips,
 non-vanishing alternation (a perpetual oscillation below the deadband is
 still an oscillation), or window-scale folding (net travel small against
 path length — a sinusoid sampled slower than its half-period).
+The numeric-only `chaotic` predicate requires a full window, oscillation, and non-convergence, then returns true only when no deadband-merged recurrence with period `k ≤ floor(N/2)` appears. This is finite-window evidence, not proof of mathematical chaos: confirming period `k` needs about `2k` samples, and a longer period can read chaotic until `set_observer_window` is widened. `chaotic` does not add a report state; the same trajectory still reports `oscillating`.
 `converged` is a **stopping criterion, not a proof**: vanishing steps do
 not imply a limit (the harmonic series' steps vanish; its sum does not
 converge), so it means *settled at the deadband* — the strongest claim a

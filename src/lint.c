@@ -2918,7 +2918,7 @@ static const char *w024_observer_read(ASTNode *n, const char **subject) {
         int k = l->data.predicate.kind;
         static const char *forms[] = {
             "converged of", "stable of", "improving of",
-            "diverging of", "oscillating of", "equilibrium of" };
+            "diverging of", "oscillating of", "equilibrium of", "chaotic of" };
         const char *nm = (k >= 0) ? eigs_predicate_name((unsigned)k) : NULL;
         if (!nm) return NULL;
         for (size_t i = 0; i < sizeof(forms) / sizeof(forms[0]); i++)

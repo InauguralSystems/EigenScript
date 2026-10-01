@@ -1,7 +1,7 @@
 # Predicates
 
 The bare predicate words — `converged`, `equilibrium`, `stable`,
-`improving`, `diverging`, `oscillating` — and the `report of x` builtin
+`improving`, `diverging`, `oscillating`, `chaotic` — and the `report of x` builtin
 classify a value's recent trajectory into one of those bands (`report` adds
 one label the predicates don't have: `moving`, for a full window in which
 none of the six is true — see [The `report` builtin](#the-report-builtin)).
@@ -62,12 +62,16 @@ steps `Δv` kept alongside — #422):
 | `improving` | ≥ 4 samples, **monotone** raw steps whose mean *and* max contract to ≤ 0.7× the older half — a summable (geometric-class) tail, genuinely closing on a limit |
 | `diverging` | value at the saturation ceiling (any window fill), or non-vanishing same-sign raw steps (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
 | `oscillating` | ≥ 4 deadband sign-flips of `rel`; or non-vanishing raw alternation (a perpetual oscillation below the deadband is still an oscillation); or **window-scale folding** — ≥ 2 direction reversals with net travel ≤ 0.3× path length and motion above the deadband (a sinusoid sampled slower than its half-period) |
+| `chaotic` | numeric, full window, oscillating and not converged, with no deadband-merged period `k ≤ floor(N/2)` found in the window |
 
 The quiescent lattice on this route: `converged ⊂ equilibrium` and
 `converged ⊂ stable` (all-under-deadband satisfies all three). The rest
 bands exclude the raw structure tests; the motion bands are mutually
 exclusive. `report` resolves the canonical priority `oscillating →
 diverging → improving → converged → equilibrium → stable → moving`.
+`chaotic` is deliberately not a report band: `report` strings and priority are unchanged, so a chaotic trajectory still reports `oscillating`.
+
+**Finite-window chaos is an honest negative result, not a proof.** `chaotic` means the observer found no recurrence up to `floor(N/2)` in the available numeric history. Values are merged with exactly `converged`'s normalized deadband, preventing floating-point noise around a fixed point from becoming a spurious cycle. Confirming period `k` needs about `2k` samples; widen the window with `set_observer_window` when longer periods matter. A period beyond the window's bound can therefore read chaotic.
 
 **The relative step is scale-free (#1045).** `rel` divides the raw step
 by the step's own local scale, `max(|v|, |v_prev|)`, floored at the

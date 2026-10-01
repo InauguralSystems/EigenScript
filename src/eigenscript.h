@@ -148,7 +148,7 @@ typedef enum {
     TOK_FOR, TOK_IN, TOK_NULL,
     TOK_WHAT, TOK_WHO, TOK_WHEN, TOK_WHERE, TOK_WHY, TOK_HOW,
     TOK_PREV, TOK_AT,
-    TOK_CONVERGED, TOK_STABLE, TOK_IMPROVING, TOK_OSCILLATING, TOK_DIVERGING, TOK_EQUILIBRIUM,
+    TOK_CONVERGED, TOK_STABLE, TOK_IMPROVING, TOK_OSCILLATING, TOK_DIVERGING, TOK_EQUILIBRIUM, TOK_CHAOTIC,
     TOK_TRY, TOK_CATCH, TOK_BREAK, TOK_CONTINUE, TOK_IMPORT,
     TOK_MATCH, TOK_CASE,
     TOK_UNOBSERVED,
@@ -538,6 +538,7 @@ int  observer_slot_equilibrium(const struct ObserverSlot *s);
 int  observer_slot_improving(const struct ObserverSlot *s);
 int  observer_slot_diverging(const struct ObserverSlot *s);
 int  observer_slot_oscillating(const struct ObserverSlot *s);
+int  observer_slot_chaotic(const struct ObserverSlot *s);
 int  observer_slot_stable(const struct ObserverSlot *s);
 /* Classify a slot into a report band (mirrors builtin_report's priority).
  * Returns a static string; NULL if the slot is unusable. */

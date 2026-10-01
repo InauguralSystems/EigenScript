@@ -3817,7 +3817,7 @@ Value* builtin_sandbox_run(Value *arg) {
     /* #1026: the bare OP_PREDICATE reads the thread's last-observed-slot
      * tracker (g_last_obs_slot_env/idx), not an env, so a descriptor with no
      * operands and no host reference read the HOST's last observed binding
-     * through it -- six predicate kinds, six bits per probe, and a flat vs
+     * through it -- every predicate kind, one bit per probe, and a flat vs
      * ramping host value told apart from inside the sealed env. Clear the
      * tracker for the run (the descriptor's own observations set it afresh)
      * and restore the host's afterwards, so the host's next bare predicate
