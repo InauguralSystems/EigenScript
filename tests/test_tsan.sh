@@ -386,24 +386,19 @@ echo "=== #1144 scope boundary: the user-level race names NO loader structure ==
 # #1144 regresses, one of those symbols comes back here and this goes red.
 #
 # A capture with zero reports cannot witness the boundary (§121: a check that
-# examined nothing is vacuous), so the row retries for a racing capture and
-# says so if it never gets one.
+# examined nothing is vacuous).  The fixture deliberately creates an
+# happens-before-unordered list race, so one run must produce a report.
 UR_FIXTURE="$TESTS_DIR/loader_mt_userrace.eigs"
 UR_FORBIDDEN='loading_stack|eigs_loading_|module_cache|module_lock|g_module_ns|module_ns_'
 if [ -f "$UR_FIXTURE" ]; then
-    UR_OUT=""; UR_W=0; UR_RC=0; UR_TRIES=0
-    while [ "$UR_TRIES" -lt 3 ]; do
-        UR_TRIES=$((UR_TRIES + 1))
-        UR_OUT=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$UR_FIXTURE" 2>&1)
-        UR_RC=$?
-        UR_W=$(printf '%s\n' "$UR_OUT" | grep -c "WARNING: ThreadSanitizer" || true)
-        [ "$UR_W" -gt 0 ] && break
-    done
+    UR_OUT=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$UR_FIXTURE" 2>&1)
+    UR_RC=$?
+    UR_W=$(printf '%s\n' "$UR_OUT" | grep -c "WARNING: ThreadSanitizer" || true)
     UR_LOADER=$(printf '%s\n' "$UR_OUT" | grep -cE "$UR_FORBIDDEN" || true)
     if [ "$UR_RC" -ne 0 ]; then
         echo "  FAIL: scope-boundary probe exited $UR_RC (want 0)"; FAIL=$((FAIL + 1))
     elif [ "$UR_W" -eq 0 ]; then
-        echo "  FAIL: scope-boundary probe raced nothing in $UR_TRIES attempts — the"
+        echo "  FAIL: scope-boundary probe raced nothing — the"
         echo "        boundary check examined an empty capture, which proves nothing"
         FAIL=$((FAIL + 1))
     elif [ "$UR_LOADER" -ne 0 ]; then

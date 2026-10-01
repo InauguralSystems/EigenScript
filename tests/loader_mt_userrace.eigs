@@ -21,6 +21,12 @@ lm_ur_ready2 is 0
 # Both workers inherit this same heap object by reference.
 lm_ur_collision is [0]
 define lm_ur_worker(do_load) as:
+    # Resolve the shared object before rendezvous.  Looking up a global takes
+    # the environment mutex, so resolving it at the point of set_at could
+    # order the two list writes when one worker reaches that point first.
+    # Keeping the reference local leaves no synchronized operation between
+    # the rendezvous and either deliberately racy access.
+    local collision is lm_ur_collision
     # This spin barrier uses the environment's synchronized global accesses.
     # Each worker publishes arrival and waits until the other has arrived, so
     # both are guaranteed to proceed to the deliberately unprotected list
@@ -37,7 +43,7 @@ define lm_ur_worker(do_load) as:
     # rendezvous.  Their accesses have no happens-before ordering, so TSan
     # observes this race even if a one-core scheduler runs them sequentially;
     # detection does not depend on overlapping scheduling quanta.
-    set_at of [lm_ur_collision, 0, do_load]
+    set_at of [collision, 0, do_load]
     local i is 0
     local n is 0
     loop while i < 40:
