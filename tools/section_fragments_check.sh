@@ -24,9 +24,9 @@ check bash -c 'bash tools/runner_text.sh | grep -qF '\''echo "[zz1487] section f
 name='section_plan can select the planted label'
 check bash -c 'bash tools/section_plan.sh --sections zz1487 --quiet | grep -q "bearing=1"'
 name='suite_label_check counts the planted label'
-check bash -c 'bash tools/suite_label_check.sh | grep -q "PASS: 262 labelled"'
+check bash -c 'bash tools/suite_label_check.sh | grep -q "PASS: 263 labelled"'
 name='child_exit_check counts the planted child invocation'
-check bash -c 'bash tools/child_exit_check.sh | grep -q "89 child-script sites"'
+check bash -c 'bash tools/child_exit_check.sh | grep -q "90 child-script sites"'
 name='enrolment_check reaches a test invoked only by the fragment'
 check bash tools/enrolment_check.sh
 
@@ -35,7 +35,7 @@ check bash tools/enrolment_check.sh
 # red result here. Thus removing fragment awareness from any one gate cannot
 # leave this calibration green.
 sed '/RUNNER_TEXT=$(mktemp/,/RUNNER="$RUNNER_TEXT"/d' tools/suite_label_check.sh > "$work/ignores-sections.sh"
-if out=$(bash "$work/ignores-sections.sh" 2>&1) && ! grep -q 'PASS: 262 labelled' <<< "$out"; then
+if out=$(bash "$work/ignores-sections.sh" 2>&1) && ! grep -q 'PASS: 263 labelled' <<< "$out"; then
     checks=$((checks + 1)); echo '  PASS: negative plant is red when one gate ignores tests/sections'
 else
     checks=$((checks + 1)); echo '  FAIL: negative plant did not expose a gate ignoring tests/sections'; bad=1
