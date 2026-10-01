@@ -15,11 +15,18 @@ extract_verdict() {
     sed -n '/^# A run that asserted NOTHING/,${p;}' "$RUNNER"
 }
 
-run_case() { # name pass fail total skipped expected_rc expected_text
+extract_section_skip() {
+    sed -n '/^section_skip() {$/,/^}$/p' "$RUNNER"
+}
+
+run_case() { # name pass fail total skipped expected_rc expected_text [setup]
     name=$1; pass=$2; fail=$3; total=$4; skipped=$5; want_rc=$6; want=$7
+    setup=${8:-:}
     {
         printf '%s\n' '#!/bin/bash' 'check_binary_fingerprint() { :; }' '__eigs_section_close() { :; }'
+        extract_section_skip
         printf 'PASS=%s FAIL=%s TOTAL=%s SKIPPED=%s LEAKED=0\n' "$pass" "$fail" "$total" "$skipped"
+        printf '%s\n' "$setup"
         extract_verdict
     } > "$TMP"
     out=$(bash "$TMP" 2>&1); rc=$?
@@ -34,7 +41,8 @@ run_case() { # name pass fail total skipped expected_rc expected_text
 
 bad=0
 run_case 'double-counted PASS is rejected' 2 0 1 0 1 'PASS + FAIL != TOTAL' || bad=$((bad + 1))
-run_case 'vanished verdict is rejected'     0 0 1 0 1 'PASS + FAIL != TOTAL' || bad=$((bad + 1))
+run_case 'vanished verdict is rejected'     1 0 1 0 0 'RESULTS: 1/1 passed, 0 failed, 1 skipped' \
+    "section_skip 'fixture unavailable'" || bad=$((bad + 1))
 run_case 'skip without TOTAL rollback is rejected' 0 0 1 1 1 'PASS + FAIL != TOTAL' || bad=$((bad + 1))
 run_case 'section skip stays outside TOTAL' 1 0 1 1 0 'RESULTS: 1/1 passed, 0 failed, 1 skipped' || bad=$((bad + 1))
 
