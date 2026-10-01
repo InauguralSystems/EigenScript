@@ -11,15 +11,43 @@
 
 /* ---- helpers ---- */
 
-/* Measure leading whitespace in columns (tabs count as 4 spaces) */
+/* Measure leading whitespace exactly as the lexer does (each tab adds 4). */
 static int measure_indent(const char *line) {
     int col = 0;
     while (*line == ' ' || *line == '\t') {
-        if (*line == '\t') col = (col / 4 + 1) * 4;
+        if (*line == '\t') col += 4;
         else col++;
         line++;
     }
     return col;
+}
+
+/* Track delimiters which suppress layout in the lexer.  A line which starts
+ * inside delimiters is a continuation line even when it closes the last one;
+ * its leading whitespace must therefore never change the indentation stack. */
+static void update_bracket_depth(const char *line, int *depth, int *in_string) {
+    /* F-strings have their own recursive lexer (quotes and comments inside an
+     * interpolation do not follow ordinary-string rules).  At layout depth
+     * zero they cannot be a continuation from a preceding delimiter, so do
+     * not let a deliberately exotic f-string manufacture one here. */
+    if (*depth == 0 && !*in_string && strstr(line, "f\"") != NULL) return;
+
+    for (int i = 0; line[i]; i++) {
+        char c = line[i];
+        if (*in_string) {
+            if (c == '\\' && line[i + 1]) i++;
+            else if (c == '"') *in_string = 0;
+            continue;
+        }
+        if (c == '#') break;
+        if (c == '"') {
+            *in_string = 1;
+        } else if (c == '(' || c == '[' || c == '{') {
+            (*depth)++;
+        } else if ((c == ')' || c == ']' || c == '}') && *depth > 0) {
+            (*depth)--;
+        }
+    }
 }
 
 /* True if s[i] (a '+' or '-') is the sign of a numeric literal's exponent, as
@@ -328,8 +356,16 @@ char* format_source_string(const char *source) {
     int *levels = xcalloc_array(line_count + 1, sizeof(int));
     int *indent_stack = xcalloc_array(line_count + 1, sizeof(int));
     int indent_top = 0;
+    int bracket_depth = 0;
+    int in_string = 0;
     indent_stack[0] = 0;
     for (int i = 0; i < actual_lines; i++) {
+        int continuation = bracket_depth > 0;
+        update_bracket_depth(lines[i], &bracket_depth, &in_string);
+        if (continuation) {
+            levels[i] = indent_top;
+            continue;
+        }
         if (lines[i][0] == '\0' || lines[i][0] == '#') {
             levels[i] = indent_top;
             continue;

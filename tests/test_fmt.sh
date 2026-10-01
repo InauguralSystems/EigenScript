@@ -71,6 +71,10 @@ check_format_execution "ordinary 2-space indentation preserves execution" \
     "$(printf 'if 1:\n  if 1:\n    print of 2\nprint of 0\n')"
 check_format_execution "ordinary 4-space indentation preserves execution" \
     "$(printf 'if 1:\n    if 1:\n        print of 4\nprint of 0\n')"
+check_format_execution "bracket continuations do not alter block depth" \
+    "$(printf 'if 1:\n    if 0:\n        values is [\n1\n]\n        print of 8\nprint of 9\n')"
+check_format_execution "tabs use the lexer indentation width" \
+    "$(printf 'if 1:\n \tprint of 5\n     print of 6\nprint of 7\n')"
 
 # --- Trailing whitespace removal ---
 ACTUAL=$(fmt_str "$(printf 'x is 42   \ny is 10  \n')")
