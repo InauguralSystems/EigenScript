@@ -29,19 +29,20 @@ def clean(repo):
     return not p.stdout
 
 def isolated_git_env():
-    """Return an environment that cannot inject host Git configuration."""
+    """Return an environment that cannot redirect or configure fixture Git."""
     env = {key: value for key, value in os.environ.items()
-           if not key.startswith("GIT_CONFIG_")}
+           if not key.startswith("GIT_")}
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     return env
 
 def snapshot(repo, revision, work):
-    archive = subprocess.Popen(["git", "archive", revision], cwd=repo, stdout=subprocess.PIPE)
+    git_env = isolated_git_env()
+    archive = subprocess.Popen(["git", "archive", revision], cwd=repo,
+                               stdout=subprocess.PIPE, env=git_env)
     subprocess.run(["tar", "-x", "-C", work], stdin=archive.stdout, check=True)
     archive.stdout.close()
     if archive.wait(): raise RuntimeError("git archive failed")
-    git_env = isolated_git_env()
     subprocess.run(["git", "init", "-q"], cwd=work, check=True, env=git_env)
     subprocess.run(["git", "add", "-A"], cwd=work, check=True, env=git_env)
     # Build the fixture commit with plumbing commands.  Unlike ``git commit``,

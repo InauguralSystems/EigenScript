@@ -43,7 +43,10 @@ class BenchmarkTest(unittest.TestCase):
             template=Path(td)/"template"; (template/"hooks").mkdir(parents=True)
             hook=template/"hooks"/"post-commit"; hook.write_text("#!/bin/sh\nexit 98\n"); hook.chmod(0o755)
             source=Path(td)/"source"; source.mkdir()
-            injected={"GIT_CONFIG_COUNT":"3", "GIT_CONFIG_KEY_0":"core.hooksPath",
+            foreign=Path(td)/"foreign.git"
+            injected={"GIT_DIR":str(foreign), "GIT_WORK_TREE":str(source),
+                      "GIT_INDEX_FILE":str(Path(td)/"foreign.index"),
+                      "GIT_CONFIG_COUNT":"3", "GIT_CONFIG_KEY_0":"core.hooksPath",
                       "GIT_CONFIG_VALUE_0":str(hooks), "GIT_CONFIG_KEY_1":"commit.gpgsign",
                       "GIT_CONFIG_VALUE_1":"true", "GIT_CONFIG_KEY_2":"init.templateDir",
                       "GIT_CONFIG_VALUE_2":str(template)}
@@ -56,6 +59,7 @@ class BenchmarkTest(unittest.TestCase):
                     else: os.environ[key]=value
             self.assertEqual(subprocess.check_output(["git","rev-list","--count","HEAD"],cwd=source,text=True).strip(),"1")
             self.assertFalse((source/".git"/"hooks"/"post-commit").exists())
+            self.assertFalse(foreign.exists())
 
     def test_eigenscript_validation_is_public_contract_in_order(self):
         task=json.loads((ROOT/"bench/ai_contribution/tasks/eigenscript-1236.json").read_text())
