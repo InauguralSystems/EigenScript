@@ -1719,6 +1719,9 @@ check_eigs_suite "eigen_run f-strings ignore a host rebinding of str (#1322)" te
 echo "[108] Sandbox Allocation Budget (#292)"
 check_eigs_suite "budget rejects bombs ({ok:0}), allows small, cumulative, per-run reset" test_sandbox_budget.eigs "All tests passed" 1
 
+echo "[108a] Sandbox Error Key Lifetime (#1402)"
+check_eigs_suite "catch and caught budget errors retain exact host dictionary keys" test_sandbox_error_keys.eigs "All tests passed" 1
+
 # [109] throw propagation across call frames (#322). A throw out of a called
 # function must unwind to the nearest enclosing try — NOT keep running the
 # caller's remaining statements. Covers multi-level, loop-in-fn, inner-catch
