@@ -5,7 +5,9 @@
 #   tools/ci_scope.sh BASE HEAD     classify the diff BASE..HEAD
 #   tools/ci_scope.sh --selftest    build tiny histories and check each verdict
 #
-# Any path not ending in .md means the runtime could be affected. CHANGELOG.md
+# Any path not ending in .md means the runtime could be affected. A symlink at
+# either side of the diff is code regardless of its name: its target can be a
+# runtime file even when the link itself ends in .md. CHANGELOG.md
 # and changes/ fragments are gated by tools/changelog_fragments.sh (precheck),
 # so they are not docs-only either (#1268). Both sides of a rename count
 # (#1311): `git mv src/foo.c notes.md` removes a C source from the build, and a
@@ -17,8 +19,14 @@ classify() {
     files=$(git diff --name-only --no-renames "$1" "$2")
     [ -n "$files" ] || { echo "ci_scope: empty diff $1..$2" >&2; echo "code=true"; return; }
     echo "changed files:" >&2; printf '%s\n' "$files" | sed 's/^/  /' >&2
-    local f
+    local f old_entry new_entry
     while IFS= read -r f; do
+        # name-only classification is insufficient for symlinks: docs/x.md may
+        # expose src/x.c. Inspect both trees so a changed or deleted link cannot
+        # hide behind a documentation suffix.
+        old_entry=$(git ls-tree "$1" -- "$f")
+        new_entry=$(git ls-tree "$2" -- "$f")
+        case "$old_entry $new_entry" in *120000*) echo "code=true"; return ;; esac
         case "$f" in CHANGELOG.md|changes/*) echo "code=true"; return ;; *.md) ;; *) echo "code=true"; return ;; esac
     done <<< "$files"
     echo "code=false"
@@ -49,7 +57,8 @@ selftest() {
     case_ "rename .md to .md"  false 'git mv README.md GUIDE.md'
     case_ "CHANGELOG.md edit"  true  'echo entry > CHANGELOG.md'
     case_ "changes/ fragment"  true  'mkdir -p changes/fixed && echo "- x" > changes/fixed/1-x.md'
-    [ "$n" -eq 7 ] || { echo "ci_scope selftest: ran $n cases, want 7"; exit 1; }
+    case_ "docs symlink to code" true 'mkdir -p docs && ln -s ../src/foo.c docs/link.md'
+    [ "$n" -eq 8 ] || { echo "ci_scope selftest: ran $n cases, want 8"; exit 1; }
     echo "ci_scope selftest: $((n - fail))/$n passed"
     [ "$fail" -eq 0 ]
 }
