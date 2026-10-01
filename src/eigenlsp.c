@@ -107,6 +107,7 @@ typedef struct {
 static Document g_docs[MAX_DOCS];
 static int g_doc_count = 0;
 static int g_shutdown = 0;
+static int g_multiline_token_support = 0;
 
 /* ================================================================
  * JSON HELPERS (minimal, for LSP message parsing/generation)
@@ -691,7 +692,25 @@ static int doc_imports_module(Document *doc, const char *module) {
     return 0;
 }
 
-static void handle_initialize(int id) {
+static void handle_initialize(int id, const char *params) {
+    /* LSP 3.17: a token may cross a line boundary only when the client says
+     * it supports that representation.  Scope the lookup to the semanticTokens
+     * capability object rather than accepting an unrelated same-named key. */
+    g_multiline_token_support = 0;
+    char *caps = params ? json_get_object(params, "capabilities") : NULL;
+    char *text_doc = caps ? json_get_object(caps, "textDocument") : NULL;
+    char *semantic = text_doc ? json_get_object(text_doc, "semanticTokens") : NULL;
+    if (semantic) {
+        const char *p = strstr(semantic, "\"multilineTokenSupport\"");
+        if (p) {
+            p += strlen("\"multilineTokenSupport\"");
+            while (*p == ' ' || *p == ':' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+            g_multiline_token_support = strncmp(p, "true", 4) == 0;
+        }
+    }
+    free(semantic);
+    free(text_doc);
+    free(caps);
     lsp_response(id,
         "{"
             "\"capabilities\":{"
@@ -1896,6 +1915,19 @@ static int semantic_type_for(Document *doc, Token *t) {
     return -1;                 /* operators / punctuation: left to the grammar */
 }
 
+static void append_semantic_token(strbuf *sb, int line, int col, int len, int type,
+                                  int *prev_line, int *prev_col, int *first) {
+    if (len <= 0) return;
+    int dline = line - *prev_line;
+    int dchar = dline == 0 ? col - *prev_col : col;
+    if (dline < 0 || (dline == 0 && dchar < 0)) return;
+    if (!*first) strbuf_append_char(sb, ',');
+    *first = 0;
+    strbuf_append_fmt(sb, "%d,%d,%d,%d,0", dline, dchar, len, type);
+    *prev_line = line;
+    *prev_col = col;
+}
+
 static void handle_semantic_tokens(int id, const char *params) {
     char *td = json_get_object(params, "textDocument");
     if (!td) { lsp_response(id, "{\"data\":[]}"); return; }
@@ -1918,17 +1950,35 @@ static void handle_semantic_tokens(int id, const char *params) {
         int line0 = t->line - 1;
         if (line0 < 0) continue;
         int col = t->col;
-        int dline = line0 - prev_line;
-        int dchar = (dline == 0) ? col - prev_col : col;
-        /* Skip any out-of-order synthesized token (e.g. f-string desugar):
-         * the LSP delta encoding requires non-decreasing positions. */
-        if (dline < 0 || (dline == 0 && dchar < 0)) continue;
         int len = t->len > 0 ? t->len : 1;
-        if (!first) strbuf_append_char(&sb, ',');
-        first = 0;
-        strbuf_append_fmt(&sb, "%d,%d,%d,%d,0", dline, dchar, len, stype);
-        prev_line = line0;
-        prev_col = col;
+        if (g_multiline_token_support || !doc->text ||
+            !memchr(doc->text, '\n', (size_t)doc->text_len)) {
+            append_semantic_token(&sb, line0, col, len, stype,
+                                  &prev_line, &prev_col, &first);
+            continue;
+        }
+
+        /* Locate this source span and emit one legal, single-line token for
+         * each non-empty piece. Token lengths are byte lengths, matching the
+         * server's advertised utf-8 position encoding. */
+        const char *p = doc->text;
+        for (int line = 0; line < line0 && *p; p++)
+            if (*p == '\n') line++;
+        p += col;
+        int remaining = len;
+        int piece_line = line0, piece_col = col;
+        while (remaining > 0) {
+            const char *nl = memchr(p, '\n', (size_t)remaining);
+            int piece_len = nl ? (int)(nl - p) : remaining;
+            if (piece_len > 0 && p[piece_len - 1] == '\r') piece_len--;
+            append_semantic_token(&sb, piece_line, piece_col, piece_len, stype,
+                                  &prev_line, &prev_col, &first);
+            if (!nl) break;
+            remaining -= (int)(nl - p) + 1;
+            p = nl + 1;
+            piece_line++;
+            piece_col = 0;
+        }
     }
     strbuf_append(&sb, "]}");
     lsp_response(id, sb.data);
@@ -1953,7 +2003,7 @@ static void handle_message(const char *json) {
     fprintf(stderr, "[LSP] method=%s id=%d\n", method, id);
 
     if (strcmp(method, "initialize") == 0) {
-        handle_initialize(id);
+        handle_initialize(id, params_str);
     } else if (strcmp(method, "initialized") == 0) {
         /* no-op */
     } else if (strcmp(method, "shutdown") == 0) {

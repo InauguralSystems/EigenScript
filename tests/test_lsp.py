@@ -168,6 +168,12 @@ def apply_rename_bytes(doc, result):
 
 
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+INIT_MULTILINE_TOKENS = {
+    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+    "params": {"capabilities": {"textDocument": {"semanticTokens": {
+        "multilineTokenSupport": True
+    }}}}
+}
 SHUTDOWN = {"jsonrpc": "2.0", "id": 99, "method": "shutdown"}
 EXIT = {"jsonrpc": "2.0", "method": "exit"}
 
@@ -896,6 +902,14 @@ def main():
     check("E002 range ends after the token (char 8)",
           bool(e2) and e2["range"]["end"]["character"] == 8)
 
+    r = converse([INIT, did_open("x is )\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    e2 = next((x for x in (d or []) if x.get("code") == "E002"), None)
+    check("unexpected ')' range starts at its token (#1380)",
+          bool(e2) and e2["range"]["start"]["character"] == 5)
+    check("unexpected ')' range ends after its token (#1380)",
+          bool(e2) and e2["range"]["end"]["character"] == 6)
+
     # --- '# lint: allow-file' silences the code in the LSP too ---
     r = converse([INIT, did_open("# lint: allow-file E003\nx is 1\nif x > 5:\n    y is totl + 1\n    print of y\n"),
                   SHUTDOWN, EXIT])
@@ -1052,6 +1066,32 @@ def main():
           any(ty == fi for (_, _, _, ty) in toks))
     check("semanticTokens carries accurate lengths (22 → len 2)",
           any(ty == ni and L == 2 for (_, _, L, ty) in toks))
+
+    # LSP clients must explicitly opt into tokens spanning line boundaries.
+    # Without that capability, split a source string at every physical line.
+    ml_doc = 'x is "a\nbc"\n'
+    r = converse([INIT, did_open(ml_doc), st, SHUTDOWN, EXIT])
+    ml_data = ((by_id(r, 13) or {}).get("result") or {}).get("data", [])
+    ml_toks, ln, ch = [], 0, 0
+    for i in range(0, len(ml_data), 5):
+        dl, dc, length, ty, _mod = ml_data[i:i + 5]
+        ln += dl
+        ch = (ch + dc) if dl == 0 else dc
+        ml_toks.append((ln, ch, length, ty))
+    si = legend.index("string") if "string" in legend else 5
+    check("semanticTokens split a multi-line string for default clients (#1380)",
+          (0, 5, 2, si) in ml_toks and (1, 0, 3, si) in ml_toks)
+
+    r = converse([INIT_MULTILINE_TOKENS, did_open(ml_doc), st, SHUTDOWN, EXIT])
+    ml_data = ((by_id(r, 13) or {}).get("result") or {}).get("data", [])
+    ml_toks, ln, ch = [], 0, 0
+    for i in range(0, len(ml_data), 5):
+        dl, dc, length, ty, _mod = ml_data[i:i + 5]
+        ln += dl
+        ch = (ch + dc) if dl == 0 else dc
+        ml_toks.append((ln, ch, length, ty))
+    check("semanticTokens preserve a multi-line token for opted-in clients (#1380)",
+          (0, 5, 6, si) in ml_toks and not any(t[0] == 1 and t[3] == si for t in ml_toks))
 
     # #1244: f-string lowering tokens are flagged synthetic and skipped, so
     # the stream stays in source order and the interpolated identifier sits
