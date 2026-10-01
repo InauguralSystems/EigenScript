@@ -38,7 +38,10 @@ rbb_blk    is (sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN]
 # Temporal history is attached to the host thread rather than the sealed
 # sandbox Env. Reject both the builtin route and direct opcodes, including an
 # opcode hidden in an uncalled nested function (which used to arm host history).
-state_at_blk is (sandbox_run of [[ABI, [GET_NAME,0,0, RETURN], ["state_at"]], 1000])["ok"] == 0
+state_at_result is sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["state_at", 1]], 1000]
+# Pin the descriptor-level temporal rejection, rather than accepting the later
+# callable-result or blocked-builtin guards as equivalent reasons to fail.
+state_at_blk is (state_at_result["ok"] == 0) and (state_at_result["error"]["kind"] == "value") and (state_at_result["error"]["message"] == "sandbox descriptors cannot access temporal history")
 temporal_fn is [[GET_NAME,0,0, INTERROGATE_NAMED,6,0,0,0, RETURN], ["secret"], [], 0, "hidden", []]
 temporal_nested_blk is (sandbox_run of [[ABI, [RETURN_NULL], [], [temporal_fn], 0, "<mod>", []], 1000])["ok"] == 0
 
