@@ -225,6 +225,8 @@ typedef enum {
                                 * iteration but the last is unaddressable. Ordinals are
                                 * injective and edit-stable. Appended, not mid-list. */
 
+    OP_SET_LOCAL_INTERNAL, /*obs:NONE*/ /* [slot:16] internal TOS store; no history/tape.
+                           * Appended to preserve the public bytecode ABI. */
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
