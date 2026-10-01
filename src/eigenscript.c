@@ -567,32 +567,45 @@ static double observer_slot_vr_get(const ObserverSlot *s, size_t offset_back) {
     return s->vr_window[idx];
 }
 
+static double observer_slot_vv_get(const ObserverSlot *s, size_t offset_back) {
+    if (!s->vv_window || offset_back >= s->v_window_count) return 0.0;
+    int idx = (int)s->v_window_head - 1 - (int)offset_back;
+    while (idx < 0) idx += s->v_cap;
+    return s->vv_window[idx];
+}
+
 /* #1044: value-channel twin of observer_slot_dh_ensure (both rings share
  * head/count, so they grow together). */
 static void observer_slot_v_ensure(ObserverSlot *s, int n) {
     if (s->v_window && s->v_cap >= n) return;
     double *nv = xcalloc((size_t)n, sizeof(double));
     double *nr = xcalloc((size_t)n, sizeof(double));
+    double *na = xcalloc((size_t)n, sizeof(double));
     int cnt = s->v_window ? s->v_window_count : 0;
     if (cnt > n) cnt = n;
     for (int i = 0; i < cnt; i++) {
         nv[i] = observer_slot_v_get(s, (size_t)(cnt - 1 - i));
         nr[i] = observer_slot_vr_get(s, (size_t)(cnt - 1 - i));
+        na[i] = observer_slot_vv_get(s, (size_t)(cnt - 1 - i));
     }
     free(s->v_window);
     free(s->vr_window);
+    free(s->vv_window);
     s->v_window = nv;
     s->vr_window = nr;
+    s->vv_window = na;
     s->v_cap = (uint8_t)n;
     s->v_window_count = (uint8_t)cnt;
     s->v_window_head = (uint8_t)(cnt % n);
 }
 
-static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_delta) {
+static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_delta,
+                                 double value) {
     int n = obs_win(s);
     if (!s->v_window || s->v_cap < n) observer_slot_v_ensure(s, n);
     s->v_window[s->v_window_head] = rel_delta;
     s->vr_window[s->v_window_head] = raw_delta;
+    s->vv_window[s->v_window_head] = value;
     if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
     if (s->v_window_count < s->v_cap) s->v_window_count++;
 }
@@ -694,7 +707,7 @@ void observer_slot_record_value(ObserverSlot *s, double v) {
         double fl = eigs_current ? eigs_current->state->obs_scale : 0.001;
         if (fl > a) a = fl;
         double rel = raw / a;
-        observer_slot_v_push(s, rel, raw);
+        observer_slot_v_push(s, rel, raw, v);
     }
     s->last_value = v;
     s->v_used = 1;
@@ -882,6 +895,7 @@ void observer_slot_reset(Env *e) {
         free(e->obs[i].dh_window);
         free(e->obs[i].v_window);   /* #294 value-signal window */
         free(e->obs[i].vr_window);  /* #422 raw-step window */
+        free(e->obs[i].vv_window);  /* exact samples for recurrence */
     }
     free(e->obs);
     e->obs = NULL;
@@ -1039,14 +1053,6 @@ static int obs_num_oscillating(const ObserverSlot *s) {
 
 static int obs_num_converged(const ObserverSlot *s);
 
-/* Reconstruct a prior value from the raw-delta ring.  offset=0 is the current
- * value, offset=1 the preceding sample. */
-static double obs_num_value_back(const ObserverSlot *s, size_t offset) {
-    double value = s->last_value;
-    for (size_t i = 0; i < offset; i++) value -= observer_slot_vr_get(s, i);
-    return value;
-}
-
 static int obs_num_has_period(const ObserverSlot *s) {
     size_t N = (size_t)observer_slot_window(s);
     for (size_t k = 1; k <= N / 2; k++) {
@@ -1056,8 +1062,8 @@ static int obs_num_has_period(const ObserverSlot *s) {
          * correspondingly stronger evidence instead of treating one chance
          * adjacent near-hit as a period-1 attractor. */
         for (size_t i = 0; i < N - k; i++) {
-            double a = obs_num_value_back(s, i);
-            double b = obs_num_value_back(s, i + k);
+            double a = observer_slot_vv_get(s, i);
+            double b = observer_slot_vv_get(s, i + k);
             if (!obs_num_equivalent(a, b, g_obs_dh_zero)) {
                 repeats = 0;
                 break;
@@ -1459,17 +1465,20 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     int dcnt = (s && s->dh_window) ? (int)obs_dh_count(s) : 0;
     Value *rel = make_list_heap(vcnt > 0 ? vcnt : 1);
     Value *raw = make_list_heap(vcnt > 0 ? vcnt : 1);
+    Value *values = make_list_heap(vcnt > 0 ? vcnt : 1);
     Value *dh  = make_list_heap(dcnt > 0 ? dcnt : 1);
     /* windows read newest-first (offset 0 = most recent); emit oldest-first
      * so the lists read chronologically, like a history. */
     for (int i = vcnt - 1; i >= 0; i--) {
         list_append_owned(rel, make_num(observer_slot_v_get(s, (size_t)i)));
         list_append_owned(raw, make_num(observer_slot_vr_get(s, (size_t)i)));
+        list_append_owned(values, make_num(observer_slot_vv_get(s, (size_t)i)));
     }
     for (int i = dcnt - 1; i >= 0; i--)
         list_append_owned(dh, make_num(observer_slot_window_get(s, (size_t)i)));
     dict_set_owned(out, "rel", rel);
     dict_set_owned(out, "raw", raw);
+    dict_set_owned(out, "values", values);
     dict_set_owned(out, "dh",  dh);
     dict_set_owned(out, "entropy",      make_num(s ? s->entropy : 0.0));
     dict_set_owned(out, "dH",           make_num(s ? s->dH : 0.0));
@@ -1496,9 +1505,10 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         return 0;
     Value *rel = dict_get(dict, "rel");
     Value *raw = dict_get(dict, "raw");
+    Value *values = dict_get(dict, "values");
     Value *dh  = dict_get(dict, "dh");
     if (!rel || rel->type != VAL_LIST || !raw || raw->type != VAL_LIST ||
-        !dh || dh->type != VAL_LIST)
+        (values && values->type != VAL_LIST) || !dh || dh->type != VAL_LIST)
         return 0;
     /* #1044: a snapshot carries the depth it was taken at (a hand-built dict
      * may omit it — the state default then applies). Out of range means a
@@ -1520,16 +1530,19 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     int vstart = vcnt > N ? vcnt - N : 0;
     out->v_window  = xcalloc((size_t)N, sizeof(double));
     out->vr_window = xcalloc((size_t)N, sizeof(double));
+    out->vv_window = xcalloc((size_t)N, sizeof(double));
     out->v_cap = out->dh_cap = (uint8_t)N;
     for (int i = vstart; i < vcnt; i++) {
         Value *a = rel->data.list.items[i], *b = raw->data.list.items[i];
+        Value *c = values && i < values->data.list.count ? values->data.list.items[i] : NULL;
         if (!a || a->type != VAL_NUM || !b || b->type != VAL_NUM) {
-            free(out->v_window); free(out->vr_window);
+            free(out->v_window); free(out->vr_window); free(out->vv_window);
             memset(out, 0, sizeof *out);
             return 0;
         }
         out->v_window[out->v_window_count]  = a->data.num;
         out->vr_window[out->v_window_count] = b->data.num;
+        out->vv_window[out->v_window_count] = (c && c->type == VAL_NUM) ? c->data.num : NAN;
         out->v_window_count++;
     }
     out->v_window_head = (uint8_t)(out->v_window_count % N);
@@ -1539,7 +1552,7 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     for (int i = dstart; i < dcnt; i++) {
         Value *a = dh->data.list.items[i];
         if (!a || a->type != VAL_NUM) {
-            free(out->v_window); free(out->vr_window); free(out->dh_window);
+            free(out->v_window); free(out->vr_window); free(out->vv_window); free(out->dh_window);
             memset(out, 0, sizeof *out);
             return 0;
         }

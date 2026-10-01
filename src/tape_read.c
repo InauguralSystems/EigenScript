@@ -533,6 +533,7 @@ const char *tape_traj_settle(TapeTraj *tr, int pos) {
 void tape_traj_end(TapeTraj *tr) {
     free(tr->slot.v_window);
     free(tr->slot.vr_window);
+    free(tr->slot.vv_window);
     free(tr->slot.dh_window);
     memset(&tr->slot, 0, sizeof tr->slot);
     obs_cfg_install(&tr->saved);

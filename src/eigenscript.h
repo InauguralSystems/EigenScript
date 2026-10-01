@@ -297,6 +297,8 @@ typedef struct ObserverSlot {
                                  * the non-vanishing-step signal that catches additive
                                  * runaway and sub-deadband oscillation, both of which
                                  * relative normalization erases */
+    double *vv_window;          /* exact numeric samples, aligned with the step rings;
+                                 * recurrence must not reconstruct these from rounded deltas */
     uint8_t v_window_head, v_window_count;
     /* #1044: ring CAPACITIES (what is allocated) and the per-binding window
      * OVERRIDE (what the classifiers read). The depth a slot classifies over

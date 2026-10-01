@@ -989,6 +989,7 @@ Value* builtin_classify(Value *arg) {
     free(s.dh_window);
     free(s.v_window);
     free(s.vr_window);
+    free(s.vv_window);
     return out;
 }
 

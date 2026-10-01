@@ -55,4 +55,21 @@ for n in range of 20:
     drift is drift + 1.0
 assert of [(chaotic of drift) == 0, "non-oscillating binding must not be chaotic"]
 
+# Recurrence compares the samples themselves, not values reconstructed by
+# subtracting rounded deltas. At this scale, 1e20 - 1 rounds away the 1.
+wide is 1.0
+wide is 1e20
+wide is 1.0
+wide is 1e20
+wide is 1.0
+wide is 1e20
+wide is 1.0
+wide is 1e20
+wide is 1.0
+wide is 1e20
+wide is 1.0
+wide is 1e20
+wide is 1.0
+assert of [(chaotic of wide) == 0, "wide period-2 recurrence must not be chaotic"]
+
 print of "CHAOTIC_PREDICATE_ALL_PASS periodic=52 chaotic=38 ungraded=11"

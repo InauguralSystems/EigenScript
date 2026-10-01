@@ -1629,6 +1629,7 @@ static inline void jit_sample_num_gated(Env *e, int slot, double v) {
         if (g_obs_scale > scale) scale = g_obs_scale;
         s->v_window[s->v_window_head] = raw / scale;
         s->vr_window[s->v_window_head] = raw;
+        s->vv_window[s->v_window_head] = v;
         if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
         if (s->v_window_count < s->v_cap) s->v_window_count++;
     }
