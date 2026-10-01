@@ -7262,6 +7262,22 @@ fi
 rm -rf "$CR_DIR"
 echo ""
 
+# [99n2] handle_table_drain declaration-comment drift gate (#1400). The body
+# owns the list: derive its HANDLE_* passes and require the public declaration
+# comment to name exactly that population.
+echo "[99n2] handle-table drain comment drift gate (#1400)"
+TOTAL=$((TOTAL + 1))
+HD_OUT=$(python3 "$TESTS_DIR/test_handle_drain_comment.py" 2>&1); HD_RC=$?
+if [ "$HD_RC" -eq 0 ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: handle-table drain comment matches the implementation"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: handle-table drain comment drifted (exit $HD_RC)"
+    echo "$HD_OUT" | sed -n '1,8p'
+fi
+echo ""
+
 # [99n] VM operand-width comment drift gate (#958).  The checker derives each
 # `kind` width from vm.c's uintN_t/read_uN decoder and confirms chunk.c's shared
 # VR_RAW verifier table carries the same operand.  Its self-test plants a third
