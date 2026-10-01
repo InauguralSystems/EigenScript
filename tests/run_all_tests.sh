@@ -7457,6 +7457,20 @@ else
 fi
 echo ""
 
+# [99ac] PERFORMANCE.md's observer figures are generated from the local Ir
+# baseline (#1206), rather than a second hand-maintained copy. The self-test
+# changes one baseline figure and proves that the checker goes red.
+echo "[99ac] generated observer performance documentation (#1206)"
+TOTAL=$((TOTAL + 1))
+perf_docs_out=$(python3 "$TESTS_DIR/../tools/performance_observer_docs.py" --selftest 2>&1); perf_docs_rc=$?
+if [ "$perf_docs_rc" -eq 0 ]; then
+    PASS=$((PASS + 1)); printf '%s\n' "$perf_docs_out" | sed 's/^/  /'
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: generated observer performance documentation (rc=$perf_docs_rc)"
+    printf '%s\n' "$perf_docs_out" | sed 's/^/      /'
+fi
+echo ""
+
 # [99ab] Test enrolment (#1264): a tests/*.sh or tests/*.py that no section,
 # workflow step or enrolled script invokes is red, by name. PR #1260's test sat
 # unrun until a maintainer noticed. Self-test case count pinned ([99o] lesson).

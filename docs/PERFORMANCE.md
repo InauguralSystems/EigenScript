@@ -166,22 +166,39 @@ differ** — regenerate with `bash bench/run_bench.sh`):
 | `scalar_loop` | ~26 ms | arithmetic dispatch + env-slot reuse (40k iters) |
 | `dict_ops` | ~54 ms | hash insert + lookup under churn (12k keys) |
 | `string_build` | ~28 ms | native text builder (15k appends) |
-| `observed_loop` | ~37 ms | numeric loop **with** per-assignment observer |
-| `unobserved_loop` | ~29 ms | the same loop inside `unobserved:` |
+| `observed_loop` | ~6 ms | numeric loop, statically observer-gated |
+| `unobserved_loop` | ~6 ms | the same loop inside `unobserved:` |
 
 ## The observer overhead, measured
 
-`observed_loop` vs `unobserved_loop` is the same arithmetic; the only difference
-is that the observed one pays per-assignment entropy/trend bookkeeping. That cost
-is now an executable document:
+`observed_loop` and `unobserved_loop` contain the same arithmetic, with the
+second spelling the loop inside `unobserved:`. On 2026-10-01, five cachegrind
+runs of each were byte-for-byte stable at the checked-in counts below. The
+observer gate added by #915 on 2026-08-23 proves that this whole-file workload
+does not read observer state, so it omits observer bookkeeping in both cases.
+`unobserved:` therefore buys nothing on this ordinary hot loop (the small
+negative difference is fixed instruction-layout noise, not observer cost).
 
-- **Wall-clock:** ~28% slower observed (~37 ms vs ~29 ms here).
-- **Instructions (deterministic):** ~46% more (`Ir` ≈ 93.2M vs 63.8M).
+| workload | cachegrind `Ir` |
+|---|---:|
+<!-- observer-ir:start -->
+| `observed_loop` | 59,530,737 |
+| `unobserved_loop` | 59,536,974 |
+| observed overhead | -0.01% |
+<!-- observer-ir:end -->
 
-So wrap a hot numeric loop that doesn't need convergence tracking in
-`unobserved:` — the win is real and now regression-gated in both directions
-(a change that made the observer cheaper, or the unobserved path costlier, would
-move the baseline).
+The table is generated from `bench/baseline.txt`; run
+`python3 tools/performance_observer_docs.py --update` after deliberately
+re-pinning that file. The suite checks the generated block and plants a changed
+baseline figure to prove drift is rejected.
+
+There remains one narrow use for `unobserved:`. The gate deliberately stays
+open when static analysis cannot resolve a computed `load_file` path. In a
+constructed conservative case using the same 60,000-iteration loop, n=5
+cachegrind runs were stable at 101,243,088 `Ir` normally and 88,048,182 `Ir`
+with the loop wrapped in `unobserved:`: a 13.0% reduction. Use the keyword only
+when profiling identifies observer bookkeeping in such a conservatively gated
+program; it is not a default hot-loop optimization.
 
 ## Concurrency
 
