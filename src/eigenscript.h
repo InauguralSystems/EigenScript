@@ -2194,6 +2194,9 @@ typedef struct {
  * directive take effect. Used by the LSP to publish diagnostics. */
 int lint_collect(ASTNode *ast, const char *path, const char *source,
                  LintDiag *out, int max);
+/* Allocate and return every diagnostic. The caller owns the returned array. */
+LintDiag *lint_collect_alloc(ASTNode *ast, const char *path,
+                             const char *source, int *count);
 /* 1 if the source carries a file-wide `# lint: allow-file <code>` directive
  * for `code` (or `all`). Callers of lint_collect apply it themselves (the
  * CLI and the LSP both do) — suppression filters lint_collect's OUTPUT;

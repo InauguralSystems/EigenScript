@@ -538,6 +538,22 @@ def main():
     check("references returns a list of locations",
           isinstance(res, list) and len(res) >= 1 and "range" in res[0])
 
+    # #1375: neither result stream may silently stop at its former fixed cap.
+    many_ref_doc = "target is 1\n" + "".join("print of target\n" for _ in range(520))
+    many_refs = {"jsonrpc": "2.0", "id": 5, "method": "textDocument/references",
+                 "params": {"textDocument": {"uri": URI},
+                            "position": {"line": 0, "character": 2},
+                            "context": {"includeDeclaration": True}}}
+    r = converse([INIT, did_open(many_ref_doc), many_refs, SHUTDOWN, EXIT])
+    res = (by_id(r, 5) or {}).get("result")
+    check("references include all 520 uses past the former 512 cap (#1375)",
+          isinstance(res, list) and len(res) == 521)
+
+    many_diag_doc = "".join("print of missing%d\n" % i for i in range(300))
+    d = diagnostics(converse([INIT, did_open(many_diag_doc), SHUTDOWN, EXIT]))
+    check("diagnostics include all 300 errors past the former 256 cap (#1375)",
+          isinstance(d, list) and len(d) == 300)
+
     # --- didClose then reference on the closed doc must not crash ---
     close = {"jsonrpc": "2.0", "method": "textDocument/didClose",
              "params": {"textDocument": {"uri": URI}}}

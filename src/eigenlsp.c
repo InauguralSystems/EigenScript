@@ -767,10 +767,10 @@ static void send_diagnostics(Document *doc) {
          * squiggle carrying its stable code (#3 taxonomy) — warnings
          * yellow, E-class errors red. The doc's filesystem path anchors
          * E003's load_file resolution (as-you-type typo squiggles). */
-        LintDiag diags[256];
         const char *fs_path =
             strncmp(doc->uri, "file://", 7) == 0 ? doc->uri + 7 : NULL;
-        int n = lint_collect(doc->ast, fs_path, doc->text, diags, 256);
+        int n = 0;
+        LintDiag *diags = lint_collect_alloc(doc->ast, fs_path, doc->text, &n);
         int emitted = 0;
         for (int i = 0; i < n; i++) {
             if (lint_file_allows(doc->text, diags[i].code)) continue;
@@ -793,6 +793,7 @@ static void send_diagnostics(Document *doc) {
             json_escape_to(&sb, diags[i].message);
             strbuf_append_char(&sb, '}');
         }
+        free(diags);
 
         /* #935: a unit that PARSES but does not COMPILE used to publish an
          * empty diagnostics array while the CLI reported the error —
@@ -1266,20 +1267,31 @@ static void handle_references(int id, const char *params) {
     if (!tok || !tok->str_val) { free(uri); lsp_response(id, "[]"); return; }
 
     /* Collect all references */
-    Location locs[512];
+    int loc_capacity = 64;
+    Location *locs = xmalloc((size_t)loc_capacity * sizeof *locs);
     int loc_count = 0;
-    collect_references(doc->ast, tok->str_val, locs, &loc_count, 512);
+    for (;;) {
+        loc_count = 0;
+        collect_references(doc->ast, tok->str_val, locs, &loc_count, loc_capacity);
+        if (loc_count < loc_capacity) break;
+        loc_capacity *= 2;
+        locs = xrealloc(locs, (size_t)loc_capacity * sizeof *locs);
+    }
 
     /* Also add definition locations from symbol table */
     for (int i = 0; i < doc->symbol_count; i++) {
         Symbol *s = &doc->symbols[i];
-        if (strcmp(tok->str_val, s->name) == 0 && loc_count < 512) {
+        if (strcmp(tok->str_val, s->name) == 0) {
             /* Check if already in list */
             int found = 0;
             for (int j = 0; j < loc_count; j++) {
                 if (locs[j].line == s->line && locs[j].col == s->col) { found = 1; break; }
             }
             if (!found) {
+                if (loc_count == loc_capacity) {
+                    loc_capacity *= 2;
+                    locs = xrealloc(locs, (size_t)loc_capacity * sizeof *locs);
+                }
                 locs[loc_count].line = s->line;
                 locs[loc_count].col = s->col;
                 loc_count++;
@@ -1300,6 +1312,7 @@ static void handle_references(int id, const char *params) {
     strbuf_append_char(&sb, ']');
     lsp_response(id, sb.data);
     strbuf_free(&sb);
+    free(locs);
     free(uri);
 }
 
@@ -1816,10 +1829,10 @@ static void handle_code_action(int id, const char *params) {
 
     /* Recompute diagnostics from the AST rather than parsing the client's
      * context.diagnostics array — more robust, and the codes are ours. */
-    LintDiag diags[256];
     const char *fs_path =
         strncmp(doc->uri, "file://", 7) == 0 ? doc->uri + 7 : NULL;
-    int n = lint_collect(doc->ast, fs_path, doc->text, diags, 256);
+    int n = 0;
+    LintDiag *diags = lint_collect_alloc(doc->ast, fs_path, doc->text, &n);
 
     strbuf sb;
     strbuf_init(&sb);
@@ -1861,6 +1874,7 @@ static void handle_code_action(int id, const char *params) {
     strbuf_append_char(&sb, ']');
     lsp_response(id, sb.data);
     strbuf_free(&sb);
+    free(diags);
     free(uri);
 }
 
