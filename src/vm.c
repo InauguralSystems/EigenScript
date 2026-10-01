@@ -5977,7 +5977,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * contract.  Reject an unavailable build variant before any of
              * the package's source executes, rather than letting the first
              * extension call fail later as an undefined name. */
-            char *pkg_dir = eigs_file_directory(path_buf);
+            /* Use the directory of the resolved entry *as named*, rather
+             * than eigs_file_directory(), which canonicalizes the file.
+             * Package entry points may be symlinks; following one before
+             * looking for eigs.json would let a target in a child directory
+             * escape the package-root contract. */
+            char *pkg_dir = xstrdup(path_buf);
+            char *pkg_slash = strrchr(pkg_dir, '/');
+            if (pkg_slash == pkg_dir) pkg_dir[1] = '\0';
+            else if (pkg_slash) *pkg_slash = '\0';
+            else { free(pkg_dir); pkg_dir = xstrdup("."); }
             if (pkg_dir) {
                 char manifest_path[8192];
                 snprintf(manifest_path, sizeof(manifest_path), "%.8000s/eigs.json", pkg_dir);
