@@ -77,6 +77,14 @@ static Value *sandbox_call(int key_number) {
     return out;
 }
 
+static Value *invalid_sandbox_call(void) {
+    Value *descriptor = make_list(1);
+    append_num(descriptor, 1); /* ABI only: missing code and constants. */
+    Value *out = builtin_sandbox_run(descriptor);
+    val_decref(descriptor);
+    return out;
+}
+
 int main(void) {
     EigsState *state = eigs_open();
     assert(state != NULL);
@@ -93,6 +101,16 @@ int main(void) {
     list_append(cycle, cycle);
     val_decref(cycle);
     assert(g_gc_val_count > 0);
+
+    /* A rejected descriptor is still a completed sandbox boundary. It must
+     * drain pre-existing state candidates rather than returning early. */
+    Value *invalid_out = invalid_sandbox_call();
+    assert(invalid_out != NULL);
+    Value *invalid_ok = dict_get(invalid_out, "ok");
+    assert(invalid_ok && invalid_ok->type == VAL_NUM &&
+           invalid_ok->data.num == 0.0);
+    assert(g_gc_val_count == 0);
+    val_decref(invalid_out);
 
     for (int i = 0; i < 128; i++) {
         snprintf(key, sizeof key, "sandbox-only-key-%d", i);

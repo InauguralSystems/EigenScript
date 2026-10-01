@@ -3649,6 +3649,14 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
     return 0;
 }
 
+static Value *sandbox_finish_run(Value *out) {
+    /* Descriptor assembly and execution can both create possible-root pins.
+     * Every descriptor outcome passes through this state-wide boundary, while
+    * the candidate-only collector avoids scanning unrelated captured envs. */
+    gc_collect_value_candidates();
+    return out;
+}
+
 /* sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled
  * chunk (same descriptor as vm_run_bytecode) under two safety bounds: dangerous
  * builtins are shadowed by a blocked stub, and loops are capped at
@@ -3709,7 +3717,7 @@ Value* builtin_sandbox_run(Value *arg) {
                        make_str(abi_err ? abi_err : "invalid chunk descriptor"));
         dict_set_owned(ev, "line", make_num(0));
         dict_set_owned(out, "error", ev);
-        return out;
+        return sandbox_finish_run(out);
     }
     /* #831: same as vm_run_bytecode — the temporal opcodes in an assembled
      * chunk must arm recording themselves; the compiler never scanned it. */
@@ -3943,19 +3951,14 @@ Value* builtin_sandbox_run(Value *arg) {
     if (result) { dict_set(out, "result", result); val_decref(result); }
     chunk_free(chunk);
     env_decref(sbox);
-    /* A sandbox invocation has its own allocation budget, but possible-root
-     * pins live on the state.  Do not let cyclic garbage created by one
-     * untrusted invocation accumulate outside that budget until an adaptive
-     * GC threshold inherited from an earlier, large heap is reached. */
-    gc_collect_cycles();
-    env_intern_scope_end(intern_scope, saved_intern_scope);
     g_sandbox_error_latched = saved_sb_error_latched;
     g_sandbox_refusal      = saved_sb_refusal;
     g_sandbox_refusal_kind = saved_sb_refusal_kind;
     g_sandbox_refusal_line = saved_sb_refusal_line;
     memcpy(g_sandbox_refusal_msg, saved_sb_refusal_msg,
            sizeof saved_sb_refusal_msg);
-    return out;
+    env_intern_scope_end(intern_scope, saved_intern_scope);
+    return sandbox_finish_run(out);
 }
 
 /* record_history of flag — enable (nonzero) or disable (0) per-assignment
