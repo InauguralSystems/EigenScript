@@ -92,12 +92,10 @@ done
 # Denied up front: *gfx*|*paint*|*_game* opens a window; *seeded_race* and
 # *userrace* (a user data race: undefined, can crash either side, #1171) are
 # nondeterministic on purpose; *state_at*|*statedump* prints hash-order output.
-obs_files=$(git -C "$ROOT" ls-files '*.eigs' 2>/dev/null || true)
-if [ -z "$obs_files" ]; then
-  obs_files=$(cd "$ROOT" && find . -name '*.eigs' -type f \
-    -not -path './.git/*' -not -path './build/*' -not -path '*/eigs_modules/*' \
-    | sed 's|^\./||')
+if ! obs_files=$(git -c safe.directory="$ROOT" -C "$ROOT" ls-files '*.eigs' 2>/dev/null); then
+  echo "jit_diff: FAIL: cannot enumerate the tracked OBS corpus" >&2; exit 1
 fi
+[ -n "$obs_files" ] || { echo "jit_diff: FAIL: tracked OBS corpus is empty" >&2; exit 1; }
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
   case "$rel" in
