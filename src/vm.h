@@ -540,6 +540,9 @@ typedef struct VM {
     int        sp;
     CallFrame  frames[VM_FRAMES_MAX];
     int        frame_count;
+    /* Native callers can nest vm_execute while no bytecode frame is live
+     * (for example a builtin task entry invoking a user callback). */
+    int        execute_depth;
     int        current_line;
     /* Back-pointer to the owning EigsThread, set in vm_init. Lets the
      * JIT reach EigsThread fields (e.g. unobserved_depth) via a single
