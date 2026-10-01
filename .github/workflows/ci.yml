@@ -315,6 +315,19 @@ jobs:
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
+      # The gcc lane runs the full release suite, whose workflow-YAML gate is
+      # deliberately red when PyYAML cannot be imported.  Verify the runtime
+      # prerequisite here instead of relying only on the mutable dev-image
+      # tag: a stale/cached image must not make an otherwise healthy PR red.
+      - name: Install PyYAML for the release suite
+        if: matrix.cc == 'gcc'
+        run: |
+          if ! python3 -c 'import yaml' 2>/dev/null; then
+            apt-get update
+            apt-get install -y --no-install-recommends python3-yaml
+          fi
+          python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
+
       - name: Build
         run: CC=${{ matrix.cc }} ./build.sh
 
