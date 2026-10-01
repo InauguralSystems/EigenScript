@@ -9,10 +9,11 @@ bash tools/golden_sections.sh --check 1/15
 bash tests/run_all_tests.sh --bless 1/15
 ```
 
-This first self-contained conversion accepts exactly `1/15`; unknown and
-prefix spellings are errors. It stages both streams and replaces their
-checked-in files only after the emitted plan exits zero and reports a
-non-vacuous, zero-failure verdict. The transcript keeps stdout and stderr
+The converted set is `99u`, `1/15`, `133`, `47/47`, and `42a`; unknown and
+prefix spellings are errors. Ordinary suite runs compare every converted
+section. Blessing stages both streams and replaces their checked-in files even
+when the old inline assertions fail, which is precisely when a changed result
+needs a reviewable diff and a deliberate re-bless. The transcript keeps stdout and stderr
 separate, removes only planner chunk sentinels and `SECTION_TIME` telemetry,
 and does not normalize arbitrary values or paths. PASS, FAIL, SKIP, child
 status, and feature/environment branch evidence remain reviewable.
@@ -23,11 +24,5 @@ each top-level runner chunk; it is not a performance or quality measurement.
 The memo's starting result was `99u=40`, `1/15=26`, `133=21`, `47/47=21`, and
 `42a=20`.
 
-## Still open
-
-The memo did not select a cross-variant fixture naming scheme beyond requiring
-reviewed variant keys or canonical branches. This first step preserves the
-minimal-build branch; a later variant fixture must choose and review its key
-without broad normalization. The remaining conversions are `99u`, `133`,
-`47/47`, and `42a`; completing them also requires deciding that still-open
-variant-key question where each section's feature branches demand it.
+The fixtures record the minimal/default build's named feature branches without
+normalizing them away.

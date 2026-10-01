@@ -1,0 +1,56 @@
+[99u] Observer Gate (#915)
+  PASS: 15 marker readers, 16 switch entries, 1 pinned exemptions, 35 assertions
+  PASS: gate CLOSES on a program with no observer surface
+  PASS: gate OPENS on a direct observer surface
+  PASS: gate OPENS on an aliased observe (no reader opcode emitted)
+  PASS: EIGS_OBS_FORCE=1 reopens the gate
+  PASS: worker-thread assignments are observed (gate is per-STATE, not per-thread)
+  PASS: eval of observer code sees the parent's earlier assignments
+  PASS: load_file'd module sees the parent's earlier assignments
+  PASS: a literal load of an observer-free module still GATES
+  PASS: a COMPUTED load path keeps the gate open
+  PASS: one computed load poisons a unit that also has a literal one
+  PASS: an ALIASED load_file keeps the gate open
+  PASS: chdir cannot redirect a file-relative literal load
+  PASS: an observer TWO literal loads down still sees earlier assignments
+  PASS: an unresolvable literal load keeps the gate open
+  PASS: a MUTUAL literal load terminates, both arms identical
+  PASS: a module that fails to compile reports IDENTICALLY under the gate
+  PASS: a module REWRITTEN between the two reads raises, not answers
+  PASS: EIGS_OBS_FORCE=1 (named in the error) runs that program correctly
+  PASS: a BENIGN rewrite of a loaded module still runs (no false positive)
+  PASS: catching the first raise does NOT disarm the guard for later loads
+  PASS: spawn + a nested literal load does not falsely raise
+  PASS: a mid-run arming does not disarm the load_file guard
+  PASS: a descriptor ARMS the observer for its OWN writes (gate-sensitive)
+  PASS: a literal and a computed load path give the same temporal answer
+  PASS: asking the observer MORE does not yield LESS history
+  PASS: a speculative load of a FIFO does not block the compiler
+  PASS: a scanned module's error does not leak into the parent's diagnostics
+  PASS: a literal-load tree past the speculative budget leaves the gate open
+  PASS: a shared module is charged once, not once per reference
+  PASS: control: that leaf loaded once also closes
+  PASS: the largest real module tree (lib/ui) still gates closed
+  PASS: EIGS_OBS_FORCE: only a non-empty non-0 value arms it
+  PASS: a literal load while a worker is live hits the multithreaded bail
+  PASS: after the last join the same load no longer bails (#1147)
+  PASS: control: the same load with no spawn does not
+  PASS: EIGS_OBS_GATE_STATS: only a non-empty non-0 value prints
+  PASS: 24 spellings of ONE file are charged once (identity, not spelling)
+  PASS: verdict helper: a dying program is never 'closed'
+  PASS: verdict helper: exit-0 without the marker is never 'closed'
+  PASS: an imported module sees the host's pre-import history (diverging)
+  PASS: control: one budget-fixture module alone proves closed
+  PASS: no new rc-blind answer capture in [99u] (4 pinned waivers)
+  PASS: a fatal OOM inside the muted window still reaches stderr
+  PASS: gate closed: OBSERVE_NAME_POST never enters the observer (interpreter)
+  PASS: gate closed: OBSERVE_ASSIGN_LOCAL never enters the observer (interpreter)
+  PASS: gate closed: the JIT skips jit_helper_observe_name_post (thunk witnessed)
+  PASS: gate closed: the JIT skips jit_helper_observe_assign_local (thunk witnessed)
+  PASS: control: with a reader the JIT'd loop still records every assignment
+  PASS: control: EIGS_OBS_FORCE=1 still records the read-free program (interpreter)
+  PASS: section [99u] ran all 50 pinned checks
+
+============================================
+  RESULTS: 51/51 passed, 0 failed, 0 skipped
+============================================

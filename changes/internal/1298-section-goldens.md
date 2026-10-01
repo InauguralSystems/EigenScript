@@ -1,1 +1,1 @@
-- Add section-scoped stdout/stderr golden-file tooling and a safe, single-section `--bless` entry point for the test runner.
+- Add stream-separated golden files for the five most assertion-dense test sections, check them in ordinary suite runs, and support safe review-and-bless updates.

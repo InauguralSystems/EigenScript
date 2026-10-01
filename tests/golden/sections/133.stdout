@@ -1,0 +1,8 @@
+[133] Gfx Argument-Type Guards
+  SKIP: binary built without EIGENSCRIPT_EXT_GFX
+
+============================================
+  FAIL: this run executed ZERO assertions (TOTAL=0).
+  A suite — or a section plan — that measured nothing is a harness
+  failure, not a pass (#1160).
+============================================

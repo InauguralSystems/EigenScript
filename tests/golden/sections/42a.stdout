@@ -1,0 +1,15 @@
+[42a] Reserved observer forms (#1102)
+  PASS: all 223 reserved observer checks
+
+Strict math mode (EIGS_STRICT domain-op raises)
+  PASS: all 120 strict-math checks
+
+Crash-safety regressions (parser depth + builtin overflow)
+  PASS: all 29 crash-safety checks
+
+exit builtin (code + uncatchable + leak-clean)
+  PASS: all 6 exit checks
+
+read_bytes_buf cap policy (#601)
+  PASS: all 9 read_bytes_buf cap checks
+

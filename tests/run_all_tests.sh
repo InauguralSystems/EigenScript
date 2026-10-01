@@ -7530,6 +7530,21 @@ if [ "$TOTAL" -le 0 ]; then
     exit 1
 fi
 
+# A normal suite run also checks the stream-separated transcripts for every
+# assertion-dense section converted by #1298. Section plans set the child
+# marker so these checks cannot recursively launch themselves.
+if [ -z "${EIGS_GOLDEN_CHILD:-}" ]; then
+    for __golden_id in 99u 1/15 133 47/47 42a; do
+        TOTAL=$((TOTAL + 1))
+        if bash "$TESTS_DIR/../tools/golden_sections.sh" --check "$__golden_id"; then
+            PASS=$((PASS + 1))
+        else
+            FAIL=$((FAIL + 1))
+            echo "  FAIL: golden transcript for [$__golden_id]"
+        fi
+    done
+fi
+
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed, $SKIPPED skipped"
 if [ "$LEAKED" -gt 0 ]; then
