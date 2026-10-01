@@ -1766,14 +1766,49 @@ Value* slot_to_value(EigsSlot s) {
 typedef struct {
     Value **src;
     Value **dst;
+    int *slots;              /* open-addressed src -> (index + 1) map */
     int count;
     int capacity;
+    int slot_capacity;
     int refused;
 } PromoteGraph;
 
+static size_t promote_ptr_hash(const Value *v) {
+    uintptr_t x = (uintptr_t)v;
+#if UINTPTR_MAX > UINT32_MAX
+    x ^= x >> 33;
+    x *= UINT64_C(0xff51afd7ed558ccd);
+    x ^= x >> 33;
+#else
+    x ^= x >> 16;
+    x *= UINT32_C(0x7feb352d);
+    x ^= x >> 15;
+#endif
+    return (size_t)x;
+}
+
+static int promote_graph_find(const PromoteGraph *g, const Value *v) {
+    if (!g->slot_capacity) return -1;
+    size_t mask = (size_t)g->slot_capacity - 1;
+    size_t slot = promote_ptr_hash(v) & mask;
+    while (g->slots[slot]) {
+        int index = g->slots[slot] - 1;
+        if (g->src[index] == v) return index;
+        slot = (slot + 1) & mask;
+    }
+    return -1;
+}
+
+static void promote_graph_index(PromoteGraph *g, int index) {
+    size_t mask = (size_t)g->slot_capacity - 1;
+    size_t slot = promote_ptr_hash(g->src[index]) & mask;
+    while (g->slots[slot]) slot = (slot + 1) & mask;
+    g->slots[slot] = index + 1;
+}
+
 static Value *promote_graph_list(PromoteGraph *g, Value *v) {
-    for (int i = 0; i < g->count; i++)
-        if (g->src[i] == v) return g->dst[i];
+    int found = promote_graph_find(g, v);
+    if (found >= 0) return g->dst[found];
 
     /* Once the sandbox budget refuses growth, only close edges to copies
      * already made. Do not turn one refusal into more attacker-controlled
@@ -1791,14 +1826,21 @@ static Value *promote_graph_list(PromoteGraph *g, Value *v) {
         if (new_cap > PROMOTE_MAX_LISTS) new_cap = PROMOTE_MAX_LISTS;
         /* This bookkeeping is attacker-controlled during sandbox execution,
          * so it belongs to the same budget as the graph copy itself. */
+        int new_slot_cap = new_cap * 2;
         if (!sandbox_charge((size_t)(new_cap - old_cap) *
-                            2 * sizeof(Value *))) {
+                                2 * sizeof(Value *) +
+                            (size_t)(new_slot_cap - g->slot_capacity) *
+                                sizeof(int))) {
             g->refused = 1;
             return NULL;
         }
         g->src = xrealloc_array(g->src, (size_t)new_cap, sizeof(Value *));
         g->dst = xrealloc_array(g->dst, (size_t)new_cap, sizeof(Value *));
+        g->slots = xrealloc_array(g->slots, (size_t)new_slot_cap, sizeof(int));
+        memset(g->slots, 0, (size_t)new_slot_cap * sizeof(int));
         g->capacity = new_cap;
+        g->slot_capacity = new_slot_cap;
+        for (int i = 0; i < g->count; i++) promote_graph_index(g, i);
     }
 
     int cap = v->data.list.count < 8 ? 8 : v->data.list.count;
@@ -1809,6 +1851,7 @@ static Value *promote_graph_list(PromoteGraph *g, Value *v) {
     Value *h = make_list_heap(v->data.list.count);
     g->src[g->count] = v;
     g->dst[g->count] = h;
+    promote_graph_index(g, g->count);
     g->count++;
     return h;
 }
@@ -1881,6 +1924,7 @@ Value* promote_if_arena(Value *v) {
         for (int n = 1; n < g.count; n++) val_decref(g.dst[n]);
         free(g.src);
         free(g.dst);
+        free(g.slots);
         return root ? root : make_null();
     }
     /* Remaining types (dict/fn/builtin/buffer/text builder) are

@@ -35,7 +35,7 @@ arena_cycle_desc is [ABI,
      SET_NAME,0,0, RETURN],
     ["cycle"]]
 arena_mark of null
-arena_cycle_ok is sandbox_run of [arena_cycle_desc, 1, 1000]
+arena_cycle_ok is sandbox_run of [arena_cycle_desc, 1, 2000]
 assert_eq of [arena_cycle_ok["error"]["message"],
               "sandbox result too large to scan for callables (exceeds the result node/depth budget); refusing to cross the boundary",
               "arena promotion: cyclic graph reaches the boundary scanner"]
@@ -46,7 +46,7 @@ assert_eq of [arena_cycle_result["ok"], 0,
 assert_eq of [arena_cycle_result["error"]["kind"], "sandbox",
               "arena promotion: heap copy is charged to sandbox budget"]
 assert_eq of [arena_cycle_result["error"]["message"],
-              "sandbox memory budget exceeded (used 392 + 136 > 400 bytes)",
+              "sandbox memory budget exceeded (used 136 + 384 > 400 bytes)",
               "arena promotion: refusal occurs after cycle construction"]
 
 # A nested graph exercises the ownership distinction between the returned
@@ -56,7 +56,9 @@ arena_nested_desc is [ABI,
     [NUM_ZERO, NULL_OP, 42,1,0, DUP, 42,1,0,
      SET_NAME,0,0, POP, RETURN],
     ["nested"]]
-arena_nested_result is sandbox_run of [arena_nested_desc, 1, 1000]
+arena_mark of null
+arena_nested_result is sandbox_run of [arena_nested_desc, 1, 2000]
+arena_reset of null
 assert_eq of [arena_nested_result["ok"], 1,
               "arena promotion: nested graph releases child birth references"]
 
