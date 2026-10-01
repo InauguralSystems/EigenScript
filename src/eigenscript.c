@@ -975,18 +975,32 @@ static int obs_num_equivalent(double a, double b, double threshold) {
     return fabs(a - b) / scale < threshold;
 }
 
-/* Window flags: every |rel step| under dh_zero / dh_small. */
+/* Re-normalize a recorded step against the scale in force when the predicate
+ * is queried.  Configuration changes are deliberately retroactive (and tape
+ * replay relies on that), so every numeric predicate must consume the same
+ * view rather than mixing current-scale convergence with recorded-scale
+ * stability/equilibrium. */
+static double obs_num_rel_current(const ObserverSlot *s, size_t offset_back) {
+    double raw = observer_slot_vr_get(s, offset_back);
+    if (!s->vv_window) return observer_slot_v_get(s, offset_back);
+    double newer = observer_slot_vv_get(s, offset_back);
+    if (!isfinite(newer)) return observer_slot_v_get(s, offset_back);
+    double older = newer - raw;
+    double scale = fabs(newer);
+    if (fabs(older) > scale) scale = fabs(older);
+    double floor = eigs_current ? eigs_current->state->obs_scale : 0.001;
+    if (floor > scale) scale = floor;
+    return raw / scale;
+}
+
+/* Window flags: every current-scale |rel step| under dh_zero / dh_small. */
 static void obs_num_flags(const ObserverSlot *s, int *all_zero, int *all_small) {
     size_t cnt = obs_v_count(s);
-    double newer = s->last_value;
     *all_zero = 1; *all_small = 1;
     for (size_t i = 0; i < cnt; i++) {
-        double raw = observer_slot_vr_get(s, i);
-        double older = newer - raw;
-        double w = fabs(observer_slot_v_get(s, i));
-        if (!obs_num_equivalent(newer, older, g_obs_dh_zero)) *all_zero = 0;
+        double w = fabs(obs_num_rel_current(s, i));
+        if (w >= g_obs_dh_zero)  *all_zero = 0;
         if (w >= g_obs_dh_small) *all_small = 0;
-        newer = older;
     }
 }
 
@@ -998,8 +1012,8 @@ static int obs_num_rel_oscillating(const ObserverSlot *s) {
     const int FLIPS = (observer_slot_window(s) + 2) / 3;
     int flips = 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
-        double a = observer_slot_v_get(s, i);
-        double b = observer_slot_v_get(s, i + 1);
+        double a = obs_num_rel_current(s, i);
+        double b = obs_num_rel_current(s, i + 1);
         if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) flips++;
     }
     return (flips >= FLIPS) ? 1 : 0;
@@ -1173,12 +1187,12 @@ static int obs_num_equilibrium(const ObserverSlot *s) {
     if (obs_v_count(s) < N) return 0;
     if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
     double sum = 0.0;
-    for (size_t i = 0; i < N; i++) sum += observer_slot_v_get(s, i);
+    for (size_t i = 0; i < N; i++) sum += obs_num_rel_current(s, i);
     double mean = sum / (double)N;
     if (fabs(mean) >= g_obs_dh_zero) return 0;
     double var = 0.0;
     for (size_t i = 0; i < N; i++) {
-        double d = observer_slot_v_get(s, i) - mean;
+        double d = obs_num_rel_current(s, i) - mean;
         var += d * d;
     }
     var /= (double)N;
@@ -1197,8 +1211,8 @@ static int obs_num_stable(const ObserverSlot *s) {
     obs_num_flags(s, &all_zero, &all_small);
     if (!all_small) return 0;
     for (size_t i = 0; i + 1 < N; i++) {
-        double a = observer_slot_v_get(s, i);
-        double b = observer_slot_v_get(s, i + 1);
+        double a = obs_num_rel_current(s, i);
+        double b = obs_num_rel_current(s, i + 1);
         if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
     }
     return 1;

@@ -142,6 +142,20 @@ assert_eq of [report of srad, "converged", "S1 scale 1: sub-unit radians fall un
 assert_true of [(report of sdeg) != "converged", "S2 scale 1: the same physics in degrees does not (the #1045 defect, now opt-in)"]
 set_observer_scale of 0.001
 
+# A scale change after sampling is consumed at query time. All three quiet
+# predicates must re-normalize the same stored steps so the documented
+# converged-subset lattice cannot split across two scale interpretations.
+late_scale is 1.0
+i is 0
+loop while i < 10:
+    late_scale is late_scale / 2.0
+    i is i + 1
+set_observer_scale of 1000000.0
+assert_true of [converged of late_scale, "S3 late scale change certifies convergence"]
+assert_true of [stable of late_scale, "S4 converged remains a subset of stable after scale change"]
+assert_true of [equilibrium of late_scale, "S5 converged remains a subset of equilibrium after scale change"]
+set_observer_scale of 0.001
+
 # ================================================================ #1044
 # --- the 747 phugoid at 1 Hz: T = 46.9 s, lightly damped, riding on the trim
 # airspeed (~272 m/s, amplitude ~10 m/s — a 3.7% swing whose per-sample steps
