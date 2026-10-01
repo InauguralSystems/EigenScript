@@ -295,11 +295,16 @@ void eigs_thread_detach(void) {
     th->loading_stack = NULL;
     th->loading_count = th->loading_cap = 0;
 
+    /* arena_destroy may release the last reference to heap numbers owned by
+     * an unclosed arena list.  val_decref returns those numbers to this
+     * thread's freelist, so destroy the arena before draining the freelist;
+     * doing this in the opposite order repopulates a cache that is about to
+     * lose its owning EigsThread. */
+    arena_destroy();
     eigs_thread_drain_caches(th);
     eigs_obs_memo_release();  /* #915: memo + speculative budget, thread-local */
     pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(-1); pthread_mutex_unlock(&g_attached_lock);
 
-    arena_destroy();
     eigs_current = NULL;
 
     pthread_mutex_lock(&st->threads_lock);

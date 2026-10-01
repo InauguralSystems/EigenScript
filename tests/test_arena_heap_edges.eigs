@@ -19,4 +19,12 @@ arena_reset of null
 assert_eq of [len of escaped, 200, "#1184 all escaped strings survive reset"]
 assert_eq of [escaped[0], "arena-escape-val", "#1184 first escaped string intact"]
 assert_eq of [escaped[199], "arena-escape-val", "#1184 last escaped string intact"]
+
+# Exercise detach as well as explicit reset.  The arithmetic result is a heap
+# number after local assignment; the arena concat owns a counted edge to it.
+# Deliberately leave this arena window open so arena_destroy must release that
+# edge before the owning thread's numeric freelist is drained.
+arena_mark of null
+local teardown_number is 40 + 2
+local teardown_list is concat of [[], [teardown_number]]
 test_summary of null

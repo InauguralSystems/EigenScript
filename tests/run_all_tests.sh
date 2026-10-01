@@ -287,6 +287,11 @@ rc_ok() {
     [ "$_cls" -eq 1 ] && return 1
     [ "$1" = "0" ] && return 0
     if [ "$_cls" -eq 0 ]; then
+        # A regression whose observable is specifically an allocator leak must
+        # not inherit the suite's legacy leak allowance: otherwise reverting
+        # its fix produces a warning-colored PASS.  Such rows pass "strict"
+        # as the optional third argument.
+        [ "${3:-}" = "strict" ] && return 1
         LEAKED=$((LEAKED + 1))
         return 0
     fi
@@ -504,6 +509,8 @@ derive_count() {
 # multiply its tally by its internal assert count, so declared-1 suites keep 1.
 # A timed-out / crashed run prints no count line, so derivation returns the
 # declared fallback there — the rc=124 branch below then fails by that count.
+# Optional argument 5 is "strict" for leak-regression rows: leak-only
+# sanitizer exits fail rather than entering the suite's legacy leak allowance.
 check_eigs_suite() {
     local test_name="$1"
     local file="$2"
@@ -525,7 +532,7 @@ check_eigs_suite() {
         # instead of folding into the generic rc path — and let the suite continue.
         FAIL=$((FAIL + n))
         echo "  FAIL: $test_name (timed out after ${EIGS_TEST_TIMEOUT}s — runaway in $file)"
-    elif rc_ok "$rc" "$out" && echo "$out" | grep -q "$marker"; then
+    elif rc_ok "$rc" "$out" "${5:-}" && echo "$out" | grep -q "$marker"; then
         PASS=$((PASS + n))
         echo "  PASS: $test_name"
     else
@@ -1310,7 +1317,7 @@ check_eigs_suite "arena escape containment (#873 — list deep-promote at every 
     "test_arena_escape.eigs" "All tests passed" 18
 
 check_eigs_suite "arena list releases heap children on reset (#1184)" \
-    "test_arena_heap_edges.eigs" "All tests passed" 3
+    "test_arena_heap_edges.eigs" "All tests passed" 3 strict
 
 check_eigs_suite "reduction builtins dot/sum/norm (vs explicit loop + edge cases)" \
     "test_dot.eigs" "DOT_OK" 1
