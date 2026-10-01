@@ -518,6 +518,10 @@ def main():
     loc = res[0] if isinstance(res, list) and res else res
     check("definition returns a location with a range",
           isinstance(loc, dict) and "range" in loc and loc.get("uri") == URI)
+    helper_range = {"start": {"line": 0, "character": 7},
+                    "end": {"line": 0, "character": 13}}
+    check("definition range selects the function name (#1369)",
+          isinstance(loc, dict) and loc.get("range") == helper_range)
 
     # --- references returns a list ---
     refs = {"jsonrpc": "2.0", "id": 5, "method": "textDocument/references",
@@ -527,6 +531,8 @@ def main():
     res = (by_id(r, 5) or {}).get("result")
     check("references returns a list of locations",
           isinstance(res, list) and len(res) >= 1 and "range" in res[0])
+    check("references declaration range selects the function name (#1369)",
+          isinstance(res, list) and any(ref.get("range") == helper_range for ref in res))
 
     # --- didClose then reference on the closed doc must not crash ---
     close = {"jsonrpc": "2.0", "method": "textDocument/didClose",
@@ -548,6 +554,12 @@ def main():
           isinstance(res, list) and all("range" in s and "selectionRange" in s for s in res))
     check("documentSymbol function kind is 12 (Function)",
           isinstance(res, list) and any(s.get("name") == "helper" and s.get("kind") == 12 for s in res))
+    helper_symbol = next((s for s in res if s.get("name") == "helper"), {}) if isinstance(res, list) else {}
+    ds_helper_range = {"start": {"line": 1, "character": 7},
+                       "end": {"line": 1, "character": 13}}
+    check("documentSymbol ranges select the function name (#1369)",
+          helper_symbol.get("range") == ds_helper_range
+          and helper_symbol.get("selectionRange") == ds_helper_range)
 
     # --- workspace/symbol: case-insensitive filter across open docs ---
     wsym = {"jsonrpc": "2.0", "id": 7, "method": "workspace/symbol",

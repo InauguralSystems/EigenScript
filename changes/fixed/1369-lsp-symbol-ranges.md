@@ -1,0 +1,1 @@
+- Fixed EigenLSP definition, reference, document-symbol, and workspace-symbol ranges for declarations so they select the symbol name rather than the statement keyword.
