@@ -872,17 +872,25 @@ static inline uint32_t read_u32(uint8_t *ip) {
  * per process (an import statement re-resolves on every execution, and a
  * collided name imported from several files would otherwise repeat the
  * same line). Process-lifetime by design: still-reachable at exit, which
- * LeakSanitizer does not report. Main-thread only, like the module cache. */
+ * LeakSanitizer does not report. HTTP code routes can import concurrently,
+ * so the process-wide cache is protected across lookup, growth and insert. */
 static int import_collision_first_report(const char *name) {
     static char **warned = NULL;
     static size_t warned_n = 0, warned_cap = 0;
-    for (size_t i = 0; i < warned_n; i++)
-        if (strcmp(warned[i], name) == 0) return 0;
+    static pthread_mutex_t warned_lock = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&warned_lock);
+    for (size_t i = 0; i < warned_n; i++) {
+        if (strcmp(warned[i], name) == 0) {
+            pthread_mutex_unlock(&warned_lock);
+            return 0;
+        }
+    }
     if (warned_n == warned_cap) {
         warned_cap = warned_cap ? warned_cap * 2 : 8;
         warned = xrealloc_array(warned, warned_cap, sizeof(char *));
     }
     warned[warned_n++] = xstrdup(name);
+    pthread_mutex_unlock(&warned_lock);
     return 1;
 }
 #endif
