@@ -251,5 +251,27 @@ echo "$OUT" | grep -q '^native_after_callback: 1 assign' \
     || fail "trajectory finds a native assignment after continuing" \
             "$(echo "$OUT" | grep -E "native_after_callback|no binding" | head -1)"
 
+# The native stop itself must also select serial 0.  In particular, a native
+# assignment with the same name as a dead callback local must win; scanning
+# backward for a nonzero record scope used to resurrect frame 41 here.
+NATIVE_SHADOW_TAPE="$TMPDIR/native-shadow-scope.tape"
+{
+    head -1 "$TAPE"
+    cat <<'EOF'
+S first_callback 0 41
+L 1
+A shared_name=1
+S <native> 0 0
+A shared_name=1441
+L 2
+EOF
+} > "$NATIVE_SHADOW_TAPE"
+OUT=$(printf 'c\nt shared_name\nq\n' | "$EIGS" --step "$NATIVE_SHADOW_TAPE" 2>&1)
+echo "$OUT" | grep -q '^shared_name: 1 assign' \
+    && echo "$OUT" | grep -q '^  #1 .* 1441 ' \
+    && ok "native assignment shadows a dead callback binding" \
+    || fail "native assignment shadows a dead callback binding" \
+            "$(echo "$OUT" | grep -E "shared_name|no binding|^[[:space:]]+[0-9]" | head -2)"
+
 echo "STEP: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
