@@ -4258,6 +4258,19 @@ check_eigs_suite "for binder in a loop env: body write lands in the loop env (#1
 # functions too. A binder with no prior binding is loop-scoped as well since
 # #1105 (next block).
 check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 9
+# [70j1] #1384 -- the hidden save and restore used by that slot path are
+# compiler bookkeeping: neither is an assignment-history/tape event. This
+# also keeps temporal answers equal to module scope's loop-env tier.
+echo "[70j1] For-binder internal stores stay off history/tape (#1384)"
+FBI_OUTPUT=$(bash "$TESTS_DIR/test_for_binder_internal_store.sh" 2>&1); FBI_RC=$?
+FBI_PASS=$(echo "$FBI_OUTPUT" | grep -c "  PASS:" || true)
+FBI_FAIL=$(echo "$FBI_OUTPUT" | grep -c "  FAIL:" || true)
+if [ "$FBI_RC" -eq 0 ] && [ "$FBI_PASS" -eq 4 ] && [ "$FBI_FAIL" -eq 0 ]; then
+    PASS=$((PASS + 1)); echo "  PASS: all $FBI_PASS internal-store checks"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: for-binder internal stores (rc=$FBI_RC, $FBI_PASS passed, $FBI_FAIL failed)"
+    echo "$FBI_OUTPUT" | tail -20 | sed 's/^/    /'
+fi
 # [70j2] #1105 -- a `for` binder with NO prior binding is loop-scoped inside a
 # function exactly as at module scope: the env-skip fast path's fresh frame
 # slot is retired at the loop exit, so a post-loop read raises

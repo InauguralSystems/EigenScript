@@ -340,7 +340,7 @@ const char *op_name(uint8_t op) {
     N(OP_BAND) N(OP_BOR) N(OP_BXOR) N(OP_SHL) N(OP_SHR)
     N(OP_NEG) N(OP_NOT) N(OP_BNOT)
     N(OP_EQ) N(OP_NE) N(OP_LT) N(OP_GT) N(OP_LE) N(OP_GE)
-    N(OP_GET_LOCAL) N(OP_SET_LOCAL) N(OP_GET_NAME) N(OP_SET_NAME)
+    N(OP_GET_LOCAL) N(OP_SET_LOCAL) N(OP_SET_LOCAL_INTERNAL) N(OP_GET_NAME) N(OP_SET_NAME)
     N(OP_SET_NAME_LOCAL) N(OP_SET_FN_NAME_LOCAL)
     N(OP_JUMP) N(OP_JUMP_BACK) N(OP_JUMP_IF_FALSE) N(OP_JUMP_IF_TRUE)
     N(OP_JUMP_IF_FALSE_PEEK) N(OP_JUMP_IF_TRUE_PEEK)
@@ -480,7 +480,7 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
         roles[0] = VR_JFWD; return 1;
     case OP_JUMP_BACK:
         roles[0] = VR_JBACK; return 1;
-    case OP_GET_LOCAL: case OP_SET_LOCAL: case OP_CALL:
+    case OP_GET_LOCAL: case OP_SET_LOCAL: case OP_SET_LOCAL_INTERNAL: case OP_CALL:
     case OP_LIST: case OP_DICT:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_REPORT_SLOT: case OP_OBSERVE_VALUE_SLOT:
@@ -628,7 +628,7 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
      * assigned value as the expression's result). Every one of these takes an
      * unguarded g_vm.stack[sp - 1] — in the observer cases through
      * vm_trace_assign / the slot-observe helpers, which index it the same way. */
-    case OP_SET_LOCAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
+    case OP_SET_LOCAL: case OP_SET_LOCAL_INTERNAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL: case OP_LOCAL_DOT_SET: case OP_LOCAL_IDX_DOT_SET:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL: case OP_OBSERVE_NAME_POST:
         return EFF(1, 0, 0);

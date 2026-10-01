@@ -3013,6 +3013,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_LT] = &&lbl_LT, [OP_GT] = &&lbl_GT,
         [OP_LE] = &&lbl_LE, [OP_GE] = &&lbl_GE,
         [OP_GET_LOCAL] = &&lbl_GET_LOCAL, [OP_SET_LOCAL] = &&lbl_SET_LOCAL,
+        [OP_SET_LOCAL_INTERNAL] = &&lbl_SET_LOCAL_INTERNAL,
         [OP_GET_NAME] = &&lbl_GET_NAME, [OP_SET_NAME] = &&lbl_SET_NAME,
         [OP_SET_NAME_LOCAL] = &&lbl_SET_NAME_LOCAL,
         [OP_SET_FN_NAME_LOCAL] = &&lbl_SET_FN_NAME_LOCAL,
@@ -3574,6 +3575,19 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             rt_error(EK_INTERNAL, current_line,
                           "SET_LOCAL slot %d out of range (env has %d slots)",
                           (int)slot, e->count);
+        }
+        DISPATCH();
+    }
+
+    CASE(SET_LOCAL_INTERNAL): {
+        uint16_t slot = read_u16(ip); ip += 2;
+        Env *e = frame->fn_env;
+        if ((int)slot < e->count) {
+            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1]);
+        } else {
+            rt_error(EK_INTERNAL, current_line,
+                     "SET_LOCAL_INTERNAL slot %d out of range (env has %d slots)",
+                     (int)slot, e->count);
         }
         DISPATCH();
     }
