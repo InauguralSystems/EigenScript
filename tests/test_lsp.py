@@ -534,6 +534,37 @@ def main():
     check("references declaration range selects the function name (#1369)",
           isinstance(res, list) and any(ref.get("range") == helper_range for ref in res))
 
+    # Parameter declarations must be found structurally: a default string can
+    # have the same spelling as a later parameter, and a declaration can live
+    # on a continuation line.
+    param_doc = ('define f(a is "b", b is 0) as:\n'
+                 '    return b\n')
+    param_refs = {"jsonrpc": "2.0", "id": 31, "method": "textDocument/references",
+                  "params": {"textDocument": {"uri": URI},
+                             "position": {"line": 1, "character": 11},
+                             "context": {"includeDeclaration": True}}}
+    r = converse([INIT, did_open(param_doc), param_refs, SHUTDOWN, EXIT])
+    res = (by_id(r, 31) or {}).get("result")
+    b_decl = {"start": {"line": 0, "character": 19},
+              "end": {"line": 0, "character": 20}}
+    check("parameter range ignores matching default strings (#1369)",
+          isinstance(res, list) and any(ref.get("range") == b_decl for ref in res))
+
+    multiline_doc = ('define f(\n'
+                     '    value\n'
+                     ') as:\n'
+                     '    return value\n')
+    multiline_refs = {"jsonrpc": "2.0", "id": 32, "method": "textDocument/references",
+                      "params": {"textDocument": {"uri": URI},
+                                 "position": {"line": 3, "character": 11},
+                                 "context": {"includeDeclaration": True}}}
+    r = converse([INIT, did_open(multiline_doc), multiline_refs, SHUTDOWN, EXIT])
+    res = (by_id(r, 32) or {}).get("result")
+    multiline_decl = {"start": {"line": 1, "character": 4},
+                      "end": {"line": 1, "character": 9}}
+    check("multiline parameter range selects its name (#1369)",
+          isinstance(res, list) and any(ref.get("range") == multiline_decl for ref in res))
+
     # --- didClose then reference on the closed doc must not crash ---
     close = {"jsonrpc": "2.0", "method": "textDocument/didClose",
              "params": {"textDocument": {"uri": URI}}}

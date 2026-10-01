@@ -347,6 +347,59 @@ static int declaration_col(const TokenList *tokens, int line, const char *name,
     return fallback;
 }
 
+/* Find the token which declares the nth explicit parameter.  A text search is
+ * not sufficient here: a default expression may contain the next parameter's
+ * spelling (including as a string), and signatures may span several lines. */
+static int function_param_location(const TokenList *tokens, int func_line,
+                                   const char *func_name, int ordinal,
+                                   int *line, int *col) {
+    if (!tokens || !func_name || !line || !col) return 0;
+
+    int i = 0;
+    for (; i + 1 < tokens->count; i++) {
+        const Token *t = &tokens->tokens[i];
+        const Token *next = &tokens->tokens[i + 1];
+        if (!t->synth && t->type == TOK_DEFINE && t->line == func_line &&
+            !next->synth && next->str_val && strcmp(next->str_val, func_name) == 0)
+            break;
+    }
+    while (i < tokens->count && tokens->tokens[i].type != TOK_LPAREN) i++;
+    if (i == tokens->count) return 0; /* implicit `n` has no declaration token */
+
+    int parens = 1, brackets = 0, braces = 0;
+    int param = 0;
+    int expect_param = 1;
+    for (i++; i < tokens->count && parens > 0; i++) {
+        const Token *t = &tokens->tokens[i];
+        if (t->synth || t->type == TOK_NEWLINE || t->type == TOK_INDENT ||
+            t->type == TOK_DEDENT)
+            continue;
+        if (expect_param && parens == 1 && brackets == 0 && braces == 0) {
+            if (t->type == TOK_RPAREN) break;
+            if (param == ordinal && t->str_val) {
+                *line = t->line;
+                *col = t->col;
+                return 1;
+            }
+            param++;
+            expect_param = 0;
+        }
+        switch (t->type) {
+            case TOK_LPAREN: parens++; break;
+            case TOK_RPAREN: parens--; break;
+            case TOK_LBRACKET: brackets++; break;
+            case TOK_RBRACKET: brackets--; break;
+            case TOK_LBRACE: braces++; break;
+            case TOK_RBRACE: braces--; break;
+            case TOK_COMMA:
+                if (parens == 1 && brackets == 0 && braces == 0) expect_param = 1;
+                break;
+            default: break;
+        }
+    }
+    return 0;
+}
+
 static void walk_ast_symbols(ASTNode *node, const TokenList *tokens,
                              Symbol *symbols, int *count, int depth) {
     if (!node || *count >= MAX_SYMBOLS) return;
@@ -365,16 +418,15 @@ static void walk_ast_symbols(ASTNode *node, const TokenList *tokens,
             }
             s->scope_depth = depth;
             /* Add params as symbols */
-            int next_param_col = s->col + (int)strlen(s->name);
             for (int i = 0; i < node->data.func.param_count && *count < MAX_SYMBOLS; i++) {
                 Symbol *ps = &symbols[(*count)++];
                 snprintf(ps->name, sizeof(ps->name), "%s",
                          node->data.func.params[i] ? node->data.func.params[i] : "");
                 ps->kind = SYM_PARAM;
                 ps->line = node->line;
-                ps->col = declaration_col(tokens, ps->line, ps->name,
-                                          next_param_col, node->col);
-                next_param_col = ps->col + (int)strlen(ps->name);
+                ps->col = node->col;
+                (void)function_param_location(tokens, node->line, s->name, i,
+                                              &ps->line, &ps->col);
                 ps->param_count = 0;
                 ps->scope_depth = depth + 1;
             }
