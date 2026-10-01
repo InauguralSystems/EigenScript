@@ -346,6 +346,13 @@ parity of ["unterminated f-string without an interpolation raises",
 parity of ["control: terminated f-string",
     "f\"a{1}\"", ["ok", "a1"]]
 
+# --- #1378: ordinary strings and indentation failures are rejected by both
+# tokenizers instead of the meta tokenizer accepting a partial program ---
+parity of ["unterminated plain string raises",
+    "\"abc", ["err"]]
+parity of ["dedent to a column outside the indentation stack raises",
+    "if 1:\n    x is 1\n  y is 2\ny", ["err"]]
+
 # --- #1337: a multi-line interpolation is an expression, not a block; its
 # continuation lines carry no indentation rule on either side ---
 parity of ["multi-line interpolation, unaligned continuation",
