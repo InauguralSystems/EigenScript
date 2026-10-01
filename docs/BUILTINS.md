@@ -924,8 +924,8 @@ Requires full build. Transformer model inference and training.
 | `eigen_model_load` | `eigen_model_load of "path.json"` | Load model weights from JSON |
 | `eigen_model_loaded` | `eigen_model_loaded of null` | 1 if model loaded, 0 otherwise |
 | `eigen_model_info` | `eigen_model_info of null` | JSON with model config and stats |
-| `eigen_generate` | `eigen_generate of [prompt, temp, max_tokens]` | Generate text from prompt. Prompts longer than the model's `max_seq_len` use their last `max_seq_len` tokens. |
-| `eigen_eval_loss` | `eigen_eval_loss of [prompt, target]` | Return the target token's cross-entropy loss. Prompts longer than the model's `max_seq_len` use their last `max_seq_len` tokens. |
+| `eigen_generate` | `eigen_generate of [prompt, temp, max_tokens]` | Generate text from prompt. Raises when the prompt exceeds the model's `max_seq_len`. |
+| `eigen_eval_loss` | `eigen_eval_loss of [prompt, target]` | Return the target token's cross-entropy loss. Raises when the prompt exceeds the model's `max_seq_len`. |
 | `native_train_step_builtin` | `native_train_step_builtin of [input, output, lr]` | Single training step. Raises when the combined input and output length exceeds the model's `max_seq_len`. |
 | `model_save_weights` | `model_save_weights of "path.json"` | Save model weights to JSON |
 | `model_load_weights` | `model_load_weights of "path.json"` | Load model weights (alias) |

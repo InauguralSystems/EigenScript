@@ -1,5 +1,5 @@
 #!/bin/bash
-# Model inference must retain the newest max_seq_len prompt tokens (#1405).
+# Model inference must reject prompts beyond max_seq_len (#1405).
 
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -24,30 +24,50 @@ fi
 cat > "$HARNESS" <<EIGS
 eigen_model_load of "$MODEL"
 long is range of 20
-tail is range of [4, 20]
-print of ("GL " + (str of (eigen_generate of [long, 0, 4])))
-print of ("GT " + (str of (eigen_generate of [tail, 0, 4])))
-print of ("EL " + (str of (eigen_eval_loss of [long, 3])))
-print of ("ET " + (str of (eigen_eval_loss of [tail, 3])))
+try:
+    eigen_generate of [long, 0, 4]
+    print of "generation accepted"
+catch e:
+    print of e.message
+try:
+    eigen_eval_loss of [long, 3]
+    print of "eval accepted"
+catch e:
+    print of e.message
 EIGS
 
-OUT=$("$EIGS" "$HARNESS" 2>/dev/null)
-GL=$(printf '%s\n' "$OUT" | sed -n 's/^GL //p')
-GT=$(printf '%s\n' "$OUT" | sed -n 's/^GT //p')
-EL=$(printf '%s\n' "$OUT" | sed -n 's/^EL //p')
-ET=$(printf '%s\n' "$OUT" | sed -n 's/^ET //p')
+OUT_FILE=/tmp/eigs_context_window_stdout.log
+ERR_FILE=/tmp/eigs_context_window_stderr.log
+"$EIGS" "$HARNESS" >"$OUT_FILE" 2>"$ERR_FILE"
+RC=$?
+OUT=$(cat "$OUT_FILE")
+ERR=$(cat "$ERR_FILE")
 
-if [ -n "$GL" ] && [ "$GL" = "$GT" ]; then
-    ok "CW01 greedy generation uses the last max_seq_len prompt tokens"
+if [ "$RC" -eq 0 ]; then
+    ok "CW01 inference overflow harness exits cleanly"
 else
-    fail "CW01 greedy generation uses the last max_seq_len prompt tokens" "long='$GL', tail='$GT'"
+    fail "CW01 inference overflow harness exits cleanly" "rc=$RC, stderr='$ERR'"
 fi
 
-if [ -n "$EL" ] && [ "$EL" = "$ET" ]; then
-    ok "CW02 eval loss uses the last max_seq_len prompt tokens"
+EXPECTED_ERR="[model-load] No live weights, using locked baseline: $MODEL"
+if [ "$ERR" = "$EXPECTED_ERR" ]; then
+    ok "CW02 inference overflow harness has only the expected model-load diagnostic"
 else
-    fail "CW02 eval loss uses the last max_seq_len prompt tokens" "long='$EL', tail='$ET'"
+    fail "CW02 inference overflow harness has only the expected model-load diagnostic" "stderr='$ERR'"
 fi
+
+CHECK=3
+for expected in \
+    "eigen_generate: prompt length 20 exceeds model max_seq_len 16" \
+    "eigen_eval_loss: prompt length 20 exceeds model max_seq_len 16"
+do
+    if [ "$(printf '%s\n' "$OUT" | grep -Fxc "$expected" || true)" -eq 1 ]; then
+        ok "CW0$CHECK $expected"
+    else
+        fail "CW0$CHECK overlong inference prompt is rejected" "expected '$expected'; stdout='$OUT'; stderr='$ERR'"
+    fi
+    CHECK=$((CHECK+1))
+done
 
 echo "MODEL CONTEXT WINDOW: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
