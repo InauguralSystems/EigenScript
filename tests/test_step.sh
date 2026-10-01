@@ -227,5 +227,29 @@ echo "$OUT" | grep -q "^i = 2 " \
     && fail "shadowed module i leaks into frame bindings" \
     || ok "shadowed module i stays hidden inside the frame"
 
+# ---- 13. #1441: a native producer runs between two interpreted callbacks.
+# Its explicit serial-0 transition puts the assignment in module scope, so
+# after continuing into the later callback `t` resolves it through that
+# callback's parent instead of looking in the now-dead first frame.
+NATIVE_TAPE="$TMPDIR/native-scope.tape"
+{
+    head -1 "$TAPE"
+    cat <<'EOF'
+S first_callback 0 41
+L 1
+A callback_local=1
+S <native> 0 0
+A native_after_callback=1441
+S later_callback 0 42
+L 2
+A later_local=2
+EOF
+} > "$NATIVE_TAPE"
+OUT=$(printf 'c\nt native_after_callback\nq\n' | "$EIGS" --step "$NATIVE_TAPE" 2>&1)
+echo "$OUT" | grep -q '^native_after_callback: 1 assign' \
+    && ok "trajectory finds a native assignment after continuing" \
+    || fail "trajectory finds a native assignment after continuing" \
+            "$(echo "$OUT" | grep -E "native_after_callback|no binding" | head -1)"
+
 echo "STEP: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
