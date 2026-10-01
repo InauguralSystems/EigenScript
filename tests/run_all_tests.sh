@@ -3554,8 +3554,9 @@ gfx_close of null
 PROBE
     GM_PROBE=$(SDL_VIDEODRIVER=dummy ./eigenscript "$GM_PROBE_FILE" 2>&1); GM_PROBE_RC=$?
     rm -f "$GM_PROBE_FILE"
-    # Pixel assertions need an actual renderer. Font assertions additionally
-    # need the optional SDL_ttf runtime and the deterministic test font.
+    # Pixel assertions need an actual renderer. Keep them independent of the
+    # optional font stack so a machine without SDL_ttf still covers images,
+    # polygons, blending, alpha, and framebuffer capture.
     GM_FONT_READY=0
     if test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
        && (ldconfig -p 2>/dev/null | grep -q 'libSDL2_ttf' \
@@ -3564,17 +3565,28 @@ PROBE
     fi
     if ! rc_ok "$GM_PROBE_RC" "$GM_PROBE" || ! echo "$GM_PROBE" | grep -q "modern-gfx-ready: 1"; then
         section_skip "SDL2 renderer unavailable"
-    elif test "$GM_FONT_READY" -ne 1; then
-        section_skip "SDL2_ttf or deterministic test font unavailable"
     else
         GM_OUTPUT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_modern.eigs 2>&1); GM_RC=$?
-        if rc_ok "$GM_RC" "$GM_OUTPUT" && echo "$GM_OUTPUT" | grep -q "Tests: 13 | Pass: 13 | Fail: 0"; then
-            TOTAL=$((TOTAL + 13)); PASS=$((PASS + 13))
-            echo "  PASS: all 13 modern gfx pixel/resource checks"
+        if rc_ok "$GM_RC" "$GM_OUTPUT" && echo "$GM_OUTPUT" | grep -q "Tests: 11 | Pass: 11 | Fail: 0"; then
+            TOTAL=$((TOTAL + 11)); PASS=$((PASS + 11))
+            echo "  PASS: all 11 modern gfx pixel/resource checks"
         else
-            TOTAL=$((TOTAL + 13)); FAIL=$((FAIL + 13))
+            TOTAL=$((TOTAL + 11)); FAIL=$((FAIL + 11))
             echo "  FAIL: modern gfx surface"
             echo "$GM_OUTPUT" | tail -20
+        fi
+        if test "$GM_FONT_READY" -eq 1; then
+            GM_FONT_OUTPUT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_modern_font.eigs 2>&1); GM_FONT_RC=$?
+            if rc_ok "$GM_FONT_RC" "$GM_FONT_OUTPUT" && echo "$GM_FONT_OUTPUT" | grep -q "Tests: 4 | Pass: 4 | Fail: 0"; then
+                TOTAL=$((TOTAL + 4)); PASS=$((PASS + 4))
+                echo "  PASS: all 4 modern gfx font checks"
+            else
+                TOTAL=$((TOTAL + 4)); FAIL=$((FAIL + 4))
+                echo "  FAIL: modern gfx fonts"
+                echo "$GM_FONT_OUTPUT" | tail -20
+            fi
+        else
+            section_skip "SDL2_ttf or deterministic test font unavailable (font checks only)"
         fi
     fi
     echo ""

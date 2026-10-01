@@ -1307,6 +1307,12 @@ Value* builtin_gfx_text(Value *arg) {
                     int tw = 0, th = 0;
                     p_SDL_QueryTexture(tex, NULL, NULL, &tw, &th);
                     SDL_Rect dst = { x, y, tw, th };
+                    /* Text surfaces become textures just like loaded images.
+                     * SDL initializes their texture blend state independently
+                     * of the renderer, so carry the caller's selected mode
+                     * across before copying. */
+                    if (p_SDL_SetTextureBlendMode)
+                        p_SDL_SetTextureBlendMode(tex, g_draw_blend);
                     p_SDL_RenderCopy(g_renderer, tex, NULL, &dst);
                     p_SDL_DestroyTexture(tex);
                     return make_null(); /* fs:VOID the TTF path rendered the string; gfx_text answers null on every path -- this is the return value, not a stand-in for a rejected argument */

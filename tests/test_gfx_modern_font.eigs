@@ -1,0 +1,32 @@
+load_file of "lib/test.eigs"
+
+opened is gfx_open of [32, 32, "gfx modern font #1216"]
+assert_eq of [opened, 1, "renderer opens"]
+
+# The runner invokes this fixture only when SDL_ttf and this deterministic
+# font are present. A font-load failure is therefore a real failure.
+font is gfx_font of ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12]
+assert_true of [font > 0, "explicit TTF loads to a font handle"]
+gfx_clear of [0, 0, 0]
+gfx_blend of "add"
+gfx_text of [font, 1, 1, "A", 255, 255, 255]
+font_lit is 0
+font_x is 0
+font_y is 0
+font_first is 0
+for fy in range of 16:
+    for fx in range of 16:
+        fp is gfx_read of [1 + fx, 1 + fy]
+        if fp[0] > 0:
+            font_lit is font_lit + 1
+            if font_first == 0:
+                font_x is 1 + fx
+                font_y is 1 + fy
+                font_first is fp[0]
+assert_true of [font_lit > 0, "font handle renders pixels through gfx_text"]
+gfx_text of [font, 1, 1, "A", 255, 255, 255]
+font_second is gfx_read of [font_x, font_y]
+assert_true of [font_second[0] > font_first, "TTF texture honors additive blend mode"]
+
+gfx_close of null
+test_summary of null

@@ -228,6 +228,13 @@ gfx_text|print of (gfx_text of [1, 2, "hi", "255", 0, 0])
 gfx_text_height|print of (gfx_text_height of "2")
 gfx_text_width|print of (gfx_text_width of 5)
 gfx_title|print of (gfx_title of 42)
+gfx_blend|print of (gfx_blend of 42)
+gfx_polygon|print of (gfx_polygon of [42, 1, 2, 3, 4])
+gfx_image_load|print of (gfx_image_load of 42)
+gfx_image_size|print of (gfx_image_size of 42)
+gfx_image_draw|print of (gfx_image_draw of ["image", 1, 2, 3, 4, 5, 6])
+gfx_image_from_fb|print of (gfx_image_from_fb of ["0", 0, 1, 1])
+gfx_font|print of (gfx_font of [42, 12])
 ppu_render_frame|print of (ppu_render_frame of [1, 2])
 EOF
 )
@@ -582,6 +589,7 @@ audio_music_volume|scalar|`audio_music_volume of 96` is the documented form
 audio_music_volume|list2|[volume] with a numeric first slot is the documented list form; the surplus slot is #989
 gfx_delay|scalar|`gfx_delay of 16` is the documented one-argument form
 gfx_title|string|`gfx_title of "name"` is the documented one-argument form
+gfx_image_load|string|a string is the documented image-path argument, even when the file does not exist
 audio_play|list2|a 2-element numeric list IS a sample list -- the valid call
 audio_stream_push|list2|a 2-element numeric list IS a sample list -- the valid call
 EOF
@@ -592,7 +600,8 @@ audio_play_loop audio_saw audio_sine audio_square audio_stop
 audio_stream_open audio_stream_push audio_sweep audio_volume gfx_circle
 gfx_clear gfx_clip gfx_delay gfx_fb gfx_line
 gfx_open gfx_point gfx_read gfx_rect gfx_rrect
-gfx_text gfx_text_height gfx_text_width gfx_title ppu_render_frame"
+gfx_blend gfx_font gfx_image_draw gfx_image_from_fb gfx_image_load
+gfx_image_size gfx_polygon gfx_text gfx_text_height gfx_text_width gfx_title ppu_render_frame"
 POP="$(tr '\n' ' ' < src/ext_gfx.c \
   | grep -oE '(ARG_GUARD|ARG_GUARD_TAPED|ARG_GUARD_PRETAKE|STRICT_REQUIRE)\([^;]*;' \
   | grep -oE '"(gfx|audio|ppu)_[a-z_]+", *"[^"]*"' \
@@ -774,6 +783,17 @@ valid-text-scale|gfx_text|-|ignore is gfx_text of [0, 0, "H", 255, 255, 255, 2]
 valid-fb|gfx_fb|-|fb is buffer of 16\nignore is buf_fill of [fb, 0, 16, 0]\nignore is gfx_fb of [fb, 4, 4, 0, 0, 2]
 valid-read|gfx_read|-|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of [1, 1])
 valid-open-title|gfx_open|-|ignore is gfx_title of "pixdiff2"\nignore is gfx_rect of [1, 1, 3, 3, 9, 9, 9]
+valid-blend|gfx_blend|-|ignore is gfx_blend of "add"\nignore is gfx_rect of [2, 2, 8, 8, 40, 0, 0]\nignore is gfx_rect of [2, 2, 8, 8, 40, 0, 0]|introduced
+valid-polygon-alpha|gfx_polygon|-|ignore is gfx_polygon of [[[2, 2], [16, 3], [8, 18]], 0, 70, 0, 128]|introduced
+valid-image-path|gfx_image_load|-|im is gfx_image_load of "tests/fixtures/gfx_rgba.png"\nif im > 0:\n    ignore is gfx_image_draw of [im, 20, 2, 6, 6, 128, 0]|introduced
+valid-image-draw-alpha|gfx_image_draw|-|im is gfx_image_load of "tests/fixtures/gfx_rgba.png"\nif im > 0:\n    ignore is gfx_image_draw of [im, 20, 2, 6, 6, 128, 0]|introduced
+valid-image-capture|gfx_image_from_fb|-|ignore is gfx_rect of [1, 1, 4, 4, 80, 20, 10]\ncap is gfx_image_from_fb of [1, 1, 4, 4]\nif cap > 0:\n    ignore is gfx_image_draw of [cap, 20, 20, 4, 4, 255, 0]|introduced
+wrong-polygon-slot1|gfx_polygon|1|ignore is gfx_polygon of [[[2, 2], [16, 3], [8, 18]], "0", 70, 0, 128]|introduced
+wrong-polygon-slot4|gfx_polygon|4|ignore is gfx_polygon of [[[2, 2], [16, 3], [8, 18]], 0, 70, 0, "128"]|introduced
+wrong-image-draw-slot0|gfx_image_draw|0|ignore is gfx_image_draw of ["image", 20, 2, 6, 6, 255, 0]|introduced
+wrong-image-draw-slot6|gfx_image_draw|6|ignore is gfx_image_draw of [1, 20, 2, 6, 6, 255, "0"]|introduced
+wrong-image-capture-slot0|gfx_image_from_fb|0|ignore is gfx_image_from_fb of ["1", 1, 4, 4]|introduced
+wrong-image-capture-slot3|gfx_image_from_fb|3|ignore is gfx_image_from_fb of [1, 1, 4, "4"]|introduced
 wrong-rect-slot0|gfx_rect|0|ignore is gfx_rect of ["4", 4, 10, 10, 255, 0, 0]
 wrong-rect-slot7|gfx_rect|7|ignore is gfx_rect of [4, 4, 10, 10, 255, 0, 0, "128"]
 wrong-rrect-slot0|gfx_rrect|0|ignore is gfx_rrect of ["4", 4, 12, 12, 3, 0, 255, 0]
@@ -782,14 +802,17 @@ wrong-circle-slot0|gfx_circle|0|ignore is gfx_circle of ["16", 16, 7, 0, 0, 255]
 wrong-circle-slot6|gfx_circle|6|ignore is gfx_circle of [16, 16, 7, 0, 0, 255, "128"]
 wrong-line-slot0|gfx_line|0|ignore is gfx_line of ["0", 0, 30, 30, 255, 255, 0]
 wrong-line-slot6|gfx_line|6|ignore is gfx_line of [0, 0, 30, 30, 255, 255, "0"]
+wrong-line-slot7|gfx_line|7|ignore is gfx_line of [0, 0, 30, 30, 255, 255, 0, "128"]
 wrong-point-slot0|gfx_point|0|ignore is gfx_point of ["5", 5, 255, 0, 255]
 wrong-point-slot4|gfx_point|4|ignore is gfx_point of [5, 5, 255, 0, "255"]
+wrong-point-slot5|gfx_point|5|ignore is gfx_point of [5, 5, 255, 0, 255, "128"]
 wrong-clear-slot0|gfx_clear|0|ignore is gfx_clear of ["10", 20, 30]
 wrong-clear-slot2|gfx_clear|2|ignore is gfx_clear of [10, 20, "30"]
 wrong-clip-slot0|gfx_clip|0|ignore is gfx_clip of ["2", 2, 8, 8]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
 wrong-clip-slot3|gfx_clip|3|ignore is gfx_clip of [2, 2, 8, "8"]\nignore is gfx_rect of [0, 0, 32, 32, 255, 0, 0]
 wrong-text-slot0|gfx_text|0|ignore is gfx_text of ["0", 0, "H", 255, 255, 255]
 wrong-text-slot1|gfx_text|1|ignore is gfx_text of [0, "0", "H", 255, 255, 255]
+wrong-text-slot2|gfx_text|2|ignore is gfx_text of [0, 0, 42, 255, 255, 255, 1]
 wrong-text-slot3|gfx_text|3|ignore is gfx_text of [0, 0, "H", "255", 255, 255]
 wrong-text-slot6|gfx_text|6|ignore is gfx_text of [0, 0, "H", 255, 255, 255, "2"]
 wrong-read-slot0|gfx_read|0|ignore is gfx_rect of [0, 0, 4, 4, 200, 100, 50]\nprint of (gfx_read of ["1", 1])
@@ -812,7 +835,7 @@ if [ "$NO_RENDERER" = 0 ]; then
 fi
 PIXBASE="$BASE"
 [ "$NO_RENDERER" = 1 ] && PIXBASE=""
-while IFS='|' read -r label who slot prog; do
+while IFS='|' read -r label who slot prog origin; do
     [ -z "${label:-}" ] && continue
     n_prow=$((n_prow + 1))
     covered_names="$covered_names $who"
@@ -850,6 +873,10 @@ while IFS='|' read -r label who slot prog; do
         fi
     fi
     [ -z "$PIXBASE" ] && continue
+    # APIs introduced by the subject cannot be byte-compared with a parent
+    # that does not define them; their strict/default and pixel checks above
+    # remain mandatory.
+    [ "$origin" = "introduced" ] && continue
     a="$(run_capture "$PIXBASE" 0 "$TMP/p.eigs")"
     if [ "$a" = "$b" ]; then n_pident=$((n_pident + 1))
     else
