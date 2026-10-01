@@ -85,6 +85,27 @@ def derived_counts():
         red('COUNTS examined 0')
 
 
+def strict_default_wording():
+    """Keep the gfx argument-contract prose aligned with strict-by-default."""
+    text = Path('docs/BUILTINS.md').read_text(encoding='utf-8')
+    start = text.find('**Wrong-typed and wrong-arity arguments (#1007).**')
+    end = text.find('\nTwo shapes are deliberately', start)
+    section = text[start:end if end != -1 else len(text)]
+    if start == -1:
+        red('docs/BUILTINS.md: gfx wrong-argument paragraph is missing')
+        return
+    stale = ('under `EIGS_STRICT=1`', 'with `EIGS_STRICT=1`',
+             'with the flag off', 'Under `EIGS_STRICT=1`')
+    found_stale = [phrase for phrase in stale if phrase in section]
+    if found_stale:
+        red('docs/BUILTINS.md: gfx paragraph describes strict as opt-in: '
+            + ', '.join(found_stale))
+    if 'By default' not in section or '`EIGS_STRICT=0`' not in section:
+        red('docs/BUILTINS.md: gfx paragraph must name the strict default and '
+            'EIGS_STRICT=0 compatibility mode (#1428)')
+    print('  STRICT DEFAULT: examined the gfx wrong-argument paragraph')
+
+
 def check_floors():
     declared = {}
     for row in POP.read_text().splitlines():
@@ -443,6 +464,7 @@ def main():
     stdlib_headings()
     changelog_version()
     derived_counts()
+    strict_default_wording()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):
         if counts[kind] == 0:

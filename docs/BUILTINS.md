@@ -732,7 +732,7 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer. Returns `1` on success, `0` when libSDL2 is unavailable or `width`/`height` are not numbers (#1007 — they used to be read without a type check, so a string opened a `0x0` window and still answered `1`). Under `EIGS_STRICT=1` a non-numeric size raises. |
+| `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer. Returns `1` on success or `0` when libSDL2 is unavailable. By default a non-numeric `width` or `height` raises; with `EIGS_STRICT=0` it answers `0` (#1007 — those values used to be read without a type check, so a string opened a `0x0` window and still answered `1`). |
 | `gfx_close` | `gfx_close of null` | Destroy window and quit SDL |
 | `gfx_clear` | `gfx_clear of [r, g, b]` / `gfx_clear of null` | Clear backbuffer to color; `null` clears to black |
 | `gfx_rect` | `gfx_rect of [x, y, w, h, r, g, b]` or `[..., a]` | Filled rectangle |
@@ -756,13 +756,13 @@ libSDL2 at runtime — no SDL2 headers needed at build time.
 **Wrong-typed and wrong-arity arguments (#1007).** Every builtin in this
 extension that takes an argument at all — the drawing calls, the text calls,
 the framebuffer blit, the PPU renderer, and the whole audio surface below —
-type-checks its arguments *before* reading them, and under `EIGS_STRICT=1` a
-wrong type, a short argument list, a wrong-shaped argument *container* (a
-number or a string where a list belonged) or an out-of-domain value raises a
-catchable `type` error naming the builtin and the shape it wanted. With the
-flag off the answer is byte-identical to before: the drawing calls still
-answer `null`, the generators still answer an empty list, the device calls
-still answer `0` or the device id they already answered.
+type-checks its arguments *before* reading them. By default, a wrong type, a
+short argument list, a wrong-shaped argument *container* (a number or a string
+where a list belonged) or an out-of-domain value raises a catchable `type`
+error naming the builtin and the shape it wanted. With `EIGS_STRICT=0`, the
+answer is byte-identical to before: the drawing calls still answer `null`, the
+generators still answer an empty list, and the device calls still answer `0`
+or the device id they already answered.
 
 Two shapes are deliberately **not** covered, so the claim above is not read
 wider than it is. A builtin that takes **no** argument (`gfx_poll`,
@@ -794,20 +794,20 @@ data: with a window open, `gfx_read of ["1", 1]` used to hand back the pixel
 at (0, 1) — the punned 0 — and now answers `null`.
 `tools/strict_differential.sh` measures exactly that surface on a gfx build
 (it opens a window under the dummy driver and diffs a readback digest against
-a baseline build). With the flag off every row must draw byte-identically to
-the baseline, and with `EIGS_STRICT=1` every wrong-typed row must raise from
-its own guard.
+a baseline build). With `EIGS_STRICT=0` every row must draw byte-identically
+to the baseline, while the default mode requires every wrong-typed row to
+raise from its own guard.
 
 **A wrong-typed OPTIONAL argument follows the same rule, which makes the three
 text builtins differ on purpose.** `gfx_text_width` and `gfx_text_height`
 type-checked their scale slot before this change, so a wrong-typed scale there
-is a *coercion*: with the flag off they still measure at scale 1.
+is a *coercion*: with `EIGS_STRICT=0` they still measure at scale 1.
 `gfx_text` did not — its scale slot was one of the unchecked reads — so a
-wrong-typed scale refuses the call and draws nothing. Under `EIGS_STRICT=1`
-all three raise. Layout code that sizes a box with `gfx_text_width` and then
+wrong-typed scale refuses the call and draws nothing. By default all three
+raise. Layout code that sizes a box with `gfx_text_width` and then
 draws with `gfx_text` therefore sees a box with no text in it if it passes a
-stringy scale, which is the loudest signal available with the flag off; run
-strict to get the error.
+stringy scale, which is the loudest signal available with `EIGS_STRICT=0`;
+the default mode reports the error instead.
 
 A few values are deliberately left quiet because they are the *answer*, not a
 rejected argument: a drawing call with no window open answers `null` (that is
