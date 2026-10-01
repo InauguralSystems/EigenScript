@@ -419,6 +419,7 @@ if [ "$SELFTEST" = 1 ]; then
         "1\nstrict error" "1\nstrict error" || true
     echo "NONDETERMINISTIC (not a flag difference):$nondet_list"
     echo "UNSET DIFFERS FROM EIGS_STRICT=1 (the default is not strict):$unset_list"
+    verdict_printed=1
     case "$nondet_list|$unset_list" in
         *"random-output probe"*"reverted-default probe"*)
             echo "SELFTEST PASS: strict differential diagnoses both planted faults"
