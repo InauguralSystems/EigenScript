@@ -1,0 +1,1 @@
+- Add a portability gate that rejects unreviewed GNU-only utility flags in tracked shell scripts.

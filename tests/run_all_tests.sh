@@ -6553,7 +6553,18 @@ echo "[99zb] Portability audit (oldest bash: parse every script, RUN the gates)"
 TOTAL=$((TOTAL + 1))
 PORT_OUTPUT=$(bash "$TESTS_DIR/../tools/portability_parse_check.sh" 2>&1)
 PORT_RC=$?
-printf '%s\n' "$PORT_OUTPUT" | grep -E "^portability(-parse|-run)?: (oracle|OK|ok|SKIPPED|NO OLD BASH|and |looked for|rejected by|every candidate|this machine|this run proves|tools/portability)" | head -14
+printf '%s\n' "$PORT_OUTPUT" | grep -E "^(gnu-tool-flags|portability(-parse|-run)?): (oracle|OK|ok|SKIPPED|NO OLD BASH|and |looked for|rejected by|every candidate|this machine|this run proves|tools/portability|selftest)" | head -16
+# The utility-flag scan is independent of the old-bash oracle and remains a
+# real assertion on machines where the parse/run half is an announced skip.
+TOTAL=$((TOTAL + 1))
+if printf '%s\n' "$PORT_OUTPUT" | grep -q '^gnu-tool-flags: OK:' \
+   && printf '%s\n' "$PORT_OUTPUT" | grep -q '^gnu-tool-flags: selftest OK:'; then
+    PASS=$((PASS + 1))
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: GNU-only utility flag audit did not report its live and planted-control receipts"
+    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
+fi
 # THE ORACLE'S IDENTITY IS PART OF THE VERDICT. Bought 2026-09-21 (round-5
 # blind critics, Astra and Fable, converging). Removing ONE line from the
 # gate's candidate selection — the `<= 3` guard — makes it pick the system

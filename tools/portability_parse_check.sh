@@ -5,6 +5,10 @@
 # portability-parse: oracle-major=N from BASH_VERSINFO, not the banner.
 set -u
 cd "$(dirname "$0")/.." || { echo "portability-parse: ABORTED: cannot cd" >&2; exit 1; }
+if ! bash tools/gnu_tool_flags_check.sh --selftest; then
+    echo "portability: FAIL: GNU-only tool flag audit failed"
+    exit 1
+fi
 FILE_FLOOR=110
 RUN_TARGETS="tools/docs_claims_check.sh tools/child_exit_check.sh tools/suite_label_check.sh"
 RUN_N=3

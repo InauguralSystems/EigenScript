@@ -1,0 +1,10 @@
+# id<TAB>POSIX awk regular expression
+realpath-m	realpath[ 	]+-[^ 	-]*m([^[:alnum:]_]|$)
+realpath-e	realpath[ 	]+-[^ 	-]*e([^[:alnum:]_]|$)
+readlink-f	readlink[ 	]+-[^ 	-]*f([^[:alnum:]_]|$)
+sed-i-nosuffix	sed[ 	]+-i([ 	]|$)
+grep-P	grep[ 	]+-[^ 	-]*P([^[:alnum:]_]|$)
+date-d	date[ 	]+-[^ 	-]*d([^[:alnum:]_]|$)
+stat-c	stat[ 	]+-[^ 	-]*c([^[:alnum:]_]|$)
+find-printf	find([^;&|]*[ 	])-printf([ 	]|$)
+xargs-r	xargs[ 	]+-[^ 	-]*r([^[:alnum:]_]|$)
