@@ -1306,7 +1306,8 @@ static int eigs_json_read_hex4(const char *s, int *pos, unsigned int *out) {
  * document unusable — JSON requires a CR to be escaped, so a Windows client's
  * text arrived with literal backslash-r in it and produced a bogus syntax
  * error and zero real diagnostics. */
-void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
+int eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
+    int lossless = 1;
     while (s[*pos] && s[*pos] != '"') {
         if (s[*pos] == '\\') {
             (*pos)++;
@@ -1338,6 +1339,7 @@ void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
                          * decode raises; lenient callers get U+FFFD and the
                          * offending text is parsed normally from here. */
                         g_json_parse_recoverable = 1;
+                        lossless = 0;
                         eigs_json_append_cp(out, 0xFFFD);
                         break;
                     }
@@ -1362,16 +1364,19 @@ void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
                             eigs_json_append_cp(out, cp);
                         } else {
                             g_json_parse_recoverable = 1;
+                            lossless = 0;
                             eigs_json_append_cp(out, 0xFFFD);
                         }
                     } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
                         /* #724: lone low surrogate — strict raise + U+FFFD */
                         g_json_parse_recoverable = 1;
+                        lossless = 0;
                         eigs_json_append_cp(out, 0xFFFD);
                     } else if (cp == 0) {
                         /* #724: NUL cannot live in a C-terminated string
                          * (EMBEDDING.md) — strict raise + lenient U+FFFD. */
                         g_json_parse_recoverable = 1;
+                        lossless = 0;
                         eigs_json_append_cp(out, 0xFFFD);
                     } else {
                         eigs_json_append_cp(out, cp);
@@ -1386,7 +1391,11 @@ void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
         (*pos)++;
     }
     if (s[*pos] == '"') (*pos)++;
-    else g_json_parse_err = 1;   /* #495: unterminated string (hit EOF) */
+    else {
+        g_json_parse_err = 1;   /* #495: unterminated string (hit EOF) */
+        lossless = 0;
+    }
+    return lossless;
 }
 
 static Value* eigs_json_parse_string(const char *s, int *pos) {

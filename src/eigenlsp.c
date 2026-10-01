@@ -114,7 +114,8 @@ static int g_shutdown = 0;
 
 /* Extract a string value for a given key from a JSON object.
  * Returns a malloc'd string, or NULL if not found. */
-static char* json_get_string(const char *json, const char *key) {
+static char* json_get_string_checked(const char *json, const char *key,
+                                     int *lossless) {
     char pattern[512];
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
     const char *p = strstr(json, pattern);
@@ -132,9 +133,14 @@ static char* json_get_string(const char *json, const char *key) {
      * got a bogus syntax error and zero real diagnostics. */
     {
         int pos = 0;
-        eigs_json_decode_string_body(p, &pos, &sb);
+        int decoded_losslessly = eigs_json_decode_string_body(p, &pos, &sb);
+        if (lossless) *lossless = decoded_losslessly;
     }
     return strbuf_finish(&sb);
+}
+
+static char* json_get_string(const char *json, const char *key) {
+    return json_get_string_checked(json, key, NULL);
 }
 
 /* Extract an integer value for a given key. Returns -1 if not found. */
@@ -287,6 +293,8 @@ static Document* doc_find(const char *uri) {
 static Document* doc_create(const char *uri) {
     if (g_doc_count >= MAX_DOCS) {
         fprintf(stderr, "[LSP] too many open documents\n");
+        lsp_notification("window/showMessage",
+            "{\"type\":1,\"message\":\"eigenlsp: document not opened: the 64-document limit was reached\"}");
         return NULL;
     }
     /* An over-long URI is refused, never truncated: a cut key is a URI the
@@ -857,10 +865,18 @@ static void send_diagnostics(Document *doc) {
 static void handle_did_open(const char *params) {
     char *td = json_get_object(params, "textDocument");
     if (!td) return;
-    char *uri = json_get_string(td, "uri");
+    int uri_lossless = 1;
+    char *uri = json_get_string_checked(td, "uri", &uri_lossless);
     char *text = json_get_string(td, "text");
     free(td);
     if (!uri) { if (text) free(text); return; }
+    if (!uri_lossless) {
+        lsp_notification("window/showMessage",
+            "{\"type\":1,\"message\":\"eigenlsp: document not opened: its URI contains a NUL or invalid Unicode escape\"}");
+        free(uri);
+        if (text) free(text);
+        return;
+    }
 
     Document *doc = doc_find(uri);
     if (!doc) doc = doc_create(uri);
