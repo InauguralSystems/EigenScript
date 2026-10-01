@@ -25,6 +25,8 @@
 
 #include <pthread.h>
 
+static void wake_channels_for_exit(EigsState *st);
+
 /* #744: the extension ENTRY POINTS, not the extensions' private headers.
  * This TU calls five registrars and uses no extension type; pulling
  * ext_db_internal.h for one declaration dragged <libpq-fe.h> into the core
@@ -99,7 +101,24 @@ Value* builtin_flush(Value *arg) {
 Value* builtin_usleep(Value *arg) {
     if (!arg || arg->type != VAL_NUM) return make_null();
     int us = (int)arg->data.num;
-    if (us > 0) usleep(us);
+    if (us > 0) {
+        struct timespec deadline;
+        clock_gettime(CLOCK_REALTIME, &deadline);
+        deadline.tv_sec += us / 1000000;
+        deadline.tv_nsec += (long)(us % 1000000) * 1000L;
+        if (deadline.tv_nsec >= 1000000000L) {
+            deadline.tv_sec++;
+            deadline.tv_nsec -= 1000000000L;
+        }
+        EigsState *st = eigs_current_state();
+        pthread_mutex_lock(&st->exit_mutex);
+        while (!eigs_state_exit_requested(st, NULL)) {
+            int rc = pthread_cond_timedwait(&st->exit_cond, &st->exit_mutex,
+                                            &deadline);
+            if (rc == ETIMEDOUT) break;
+        }
+        pthread_mutex_unlock(&st->exit_mutex);
+    }
     return make_null();
 }
 
@@ -805,7 +824,7 @@ Value* builtin_get_observer_scale(Value *arg) {
  * it is consulted with — as a process global nothing ever reset it, so one
  * script's `exit` disabled try/catch for every later eval in the PROCESS, in
  * any state. The exit CODE is additionally latched at the EigsState, so `exit`
- * inside a spawned worker still decides the process's status. */
+ * inside a spawned worker stops the state and decides the process's status. */
 Value* builtin_exit(Value *arg) {
     int code = 0;
     if (arg && arg->type == VAL_NUM) {
@@ -817,8 +836,8 @@ Value* builtin_exit(Value *arg) {
     }
     g_exit_code = code;
     g_exit_requested = 1;      /* this thread's unwind: uncatchable */
-    g_exit_latch_code = code;  /* the state's: what main reports as the */
-    g_exit_latched = 1;        /* process exit code, incl. from a worker */
+    eigs_state_request_exit(eigs_current_state(), code);
+    wake_channels_for_exit(eigs_current_state());
     g_has_error = 1;   /* triggers CHECK_ERROR -> unwind to main */
     return make_null();
 }
@@ -4807,6 +4826,24 @@ typedef struct {
     pthread_cond_t not_full;
 } Channel;
 
+/* Wake channel waiters after publishing a state-wide exit request. Channel
+ * slots remain alive until the exit drain, so holding handle_mutex makes this
+ * scan stable while a concurrent spawn/channel registration is in flight. */
+static void wake_channels_for_exit(EigsState *st) {
+    if (!st) return;
+    pthread_mutex_lock(&st->handle_mutex);
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (st->handle_table[i].type != HANDLE_CHANNEL) continue;
+        Channel *ch = (Channel *)st->handle_table[i].ptr;
+        if (!ch) continue;
+        pthread_mutex_lock(&ch->mutex);
+        pthread_cond_broadcast(&ch->not_empty);
+        pthread_cond_broadcast(&ch->not_full);
+        pthread_mutex_unlock(&ch->mutex);
+    }
+    pthread_mutex_unlock(&st->handle_mutex);
+}
+
 /* #1146 (2): same generation check as thread handles. `close_channel` only
  * flips a flag — no channel slot is released before the exit drain — so a
  * REAL channel recycle is unreachable from EigenScript today. The check is
@@ -4910,8 +4947,14 @@ Value* builtin_send(Value *arg) {
      * channel buffer; receiver adopts that ref. */
     Value *val = val_clone_for_send(arg->data.list.items[1]);
     pthread_mutex_lock(&ch->mutex);
-    while (ch->count >= CHANNEL_BUF_SIZE && !ch->closed)
+    while (ch->count >= CHANNEL_BUF_SIZE && !ch->closed &&
+           !eigs_state_exit_requested(eigs_current_state(), NULL))
         pthread_cond_wait(&ch->not_full, &ch->mutex);
+    if (eigs_state_exit_requested(eigs_current_state(), NULL)) {
+        pthread_mutex_unlock(&ch->mutex);
+        val_decref(val);
+        return make_null();
+    }
     if (!ch->closed) {
         ch->buffer[ch->tail] = val;
         ch->tail = (ch->tail + 1) % CHANNEL_BUF_SIZE;
@@ -4939,7 +4982,8 @@ Value* builtin_recv(Value *arg) {
     if (!ch) return make_null();
     if (replay_blocks("recv")) return make_null();
     pthread_mutex_lock(&ch->mutex);
-    while (ch->count == 0 && !ch->closed)
+    while (ch->count == 0 && !ch->closed &&
+           !eigs_state_exit_requested(eigs_current_state(), NULL))
         pthread_cond_wait(&ch->not_empty, &ch->mutex);
     Value *val = NULL;
     if (ch->count > 0) {
@@ -5010,7 +5054,8 @@ Value* builtin_recv_timeout(Value *arg) {
 
     pthread_mutex_lock(&ch->mutex);
     int rc = 0;
-    while (ch->count == 0 && !ch->closed && rc == 0) {
+    while (ch->count == 0 && !ch->closed && rc == 0 &&
+           !eigs_state_exit_requested(eigs_current_state(), NULL)) {
         rc = pthread_cond_timedwait(&ch->not_empty, &ch->mutex, &deadline);
     }
     Value *val = NULL;

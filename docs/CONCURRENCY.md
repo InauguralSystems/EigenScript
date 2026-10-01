@@ -595,8 +595,11 @@ and the process exits 1 (#1112 — it died by SIGSEGV before, because a worker
 that runs a builtin directly has no VM and the uncaught-error printer read
 it). The general rule behind that status: a `spawn`ed worker that dies of an
 uncaught error fails the run, joined or not, exactly as a cooperative task
-does (#493); an error caught inside the worker, or a worker's `exit of N`,
-decides its own status.
+does (#493); an error caught inside the worker recovers normally. A worker's
+`exit of N` instead requests an uncatchable stop of the whole state. The first
+request supplies the process status, all VM threads unwind at their next
+dispatch, and blocked `recv`, `recv_timeout`, `thread_join`, and `usleep` calls
+wake promptly; main does not continue past the request (#1149).
 
 ## The race gate
 

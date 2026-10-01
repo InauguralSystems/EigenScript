@@ -26,6 +26,9 @@ shared by reference, the last of which is the open defect
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
 
+`exit of N` is state-wide even when a spawned worker calls it: VM threads stop,
+blocked concurrency calls wake, and the process exits with status `N`.
+
 ## Try it in your browser
 
 **[inauguralsystems.github.io/EigenScript/playground](https://inauguralsystems.github.io/EigenScript/playground/)** —

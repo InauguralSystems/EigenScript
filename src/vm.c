@@ -3069,6 +3069,15 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_SLICE_GET] = &&lbl_SLICE_GET,
     };
     #define CHECK_ERROR() do { \
+        if (__builtin_expect(!g_exit_requested, 1)) { \
+            int _state_exit_code; \
+            if (__builtin_expect(eigs_state_exit_requested( \
+                                     eigs_current->state, &_state_exit_code), 0)) { \
+                g_exit_code = _state_exit_code; \
+                g_exit_requested = 1; \
+                g_has_error = 1; \
+            } \
+        } \
         while (__builtin_expect(g_has_error, 0)) { \
             vm_error_flush_pending(chunk, ip);   /* #407: uncaught print + caret */ \
             if (frame->try_count > 0 && !g_exit_requested) { \

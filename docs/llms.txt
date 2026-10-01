@@ -211,6 +211,8 @@ sqrt(2) = 1.414213562373095
 ## Threads: VALUES copy through a channel, HANDLES share
 
 - `spawn of [fn, arg]` / `channel of n` / `send` / `recv` / `thread_join`.
+- `exit of N` in any spawned worker stops the whole state: blocked concurrency
+  calls wake, all VM threads unwind, and the process exits with N.
 - **A number, string, list or dict sent through a channel is DEEP-COPIED**;
   the receiver cannot see a later mutation by the sender.
 - **A `buffer`, a `text_builder`, a closure, or another channel/store/thread

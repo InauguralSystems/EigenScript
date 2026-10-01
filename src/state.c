@@ -35,6 +35,8 @@ EigsState *eigs_state_new(void) {
     EigsState *st = xcalloc(1, sizeof(*st));
     pthread_mutex_init(&st->threads_lock, NULL);
     pthread_mutex_init(&st->handle_mutex, NULL);
+    pthread_mutex_init(&st->exit_mutex, NULL);
+    pthread_cond_init(&st->exit_cond, NULL);
     pthread_mutex_init(&st->gc_lock, NULL);   /* cycle-collector registry */
     pthread_mutex_init(&st->module_lock, NULL);   /* #1144: import cache */
     st->handle_next = 1;  /* 0 reserved as invalid */
@@ -100,6 +102,8 @@ static void state_destroy_body(EigsState *st, int already_released) {
     pthread_mutex_destroy(&st->module_lock);
     pthread_mutex_destroy(&st->threads_lock);
     pthread_mutex_destroy(&st->handle_mutex);
+    pthread_cond_destroy(&st->exit_cond);
+    pthread_mutex_destroy(&st->exit_mutex);
     pthread_mutex_destroy(&st->gc_lock);
     if (!already_released) {
         pthread_mutex_lock(&g_attached_lock);
@@ -107,6 +111,23 @@ static void state_destroy_body(EigsState *st, int already_released) {
         pthread_mutex_unlock(&g_attached_lock);
     }
     free(st);
+}
+
+void eigs_state_request_exit(EigsState *st, int code) {
+    if (!st) return;
+    pthread_mutex_lock(&st->exit_mutex);
+    if (!__atomic_load_n(&st->exit_latched, __ATOMIC_RELAXED)) {
+        st->exit_latch_code = code;
+        __atomic_store_n(&st->exit_latched, 1, __ATOMIC_RELEASE);
+    }
+    pthread_cond_broadcast(&st->exit_cond);
+    pthread_mutex_unlock(&st->exit_mutex);
+}
+
+int eigs_state_exit_requested(EigsState *st, int *code) {
+    if (!st || !__atomic_load_n(&st->exit_latched, __ATOMIC_ACQUIRE)) return 0;
+    if (code) *code = st->exit_latch_code;
+    return 1;
 }
 
 void eigs_state_destroy(EigsState *st) {

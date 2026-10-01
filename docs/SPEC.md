@@ -1925,9 +1925,13 @@ A worker that **dies of an uncaught error** prints its trace and the
 fire-and-forget thread's failure is never swallowed into a success exit.
 This covers a builtin spawned directly (`spawn of [recv, 5]` raises
 "invalid channel" on the worker) as well as a function body. An error
-`catch`-ed inside the worker recovers normally (exit 0), and a worker's
-`exit of N` still decides the status (#739). The failure is always a
-clean exit, never a signal (#1112).
+`catch`-ed inside the worker recovers normally (exit 0). A worker's
+`exit of N` is instead a state-wide, uncatchable stop request: the first
+request decides the process status, every VM thread stops at its next dispatch,
+and main-thread waits in `recv`, `recv_timeout`, `thread_join`, or `usleep` are
+woken so teardown can begin. Code after the request, including code on main,
+does not run (#1149). The failure is always a clean exit, never a signal
+(#1112).
 
 ## Cooperative tasks
 

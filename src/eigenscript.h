@@ -814,10 +814,14 @@ struct EigsState {
     /* #739: process-exit request, LATCHED at the state. The per-thread flag
      * above drives CHECK_ERROR's uncatchable unwind and is cleared at host
      * eval entry; this latch is what `main` reports as the process exit code,
-     * so `exit of N` inside a spawned worker still sets it — the per-thread
-     * flag alone would have silently dropped a worker's exit code to 0. */
+     * so `exit of N` inside a spawned worker stops every VM thread and still
+     * supplies the process status — the per-thread flag alone could do neither. */
     int             exit_latched;
     int             exit_latch_code;
+    /* State-wide exit wakeup. The latch is published atomically; this condvar
+     * interrupts sleeps without polling when any attached thread calls exit. */
+    pthread_mutex_t exit_mutex;
+    pthread_cond_t  exit_cond;
     /* #1112: number of spawn()ed OS-thread workers that died of an UNCAUGHT
      * runtime error (the #493 rule for cooperative tasks, applied to
      * threads: a fire-and-forget worker's death must not green the run).
@@ -2154,6 +2158,10 @@ void   handle_raise_unresolved(const char *who, const char *kind, int id,
  * done and the value world is still alive (before env/thread teardown). */
 void   handle_table_drain(struct EigsState *st);
 void   handle_release(int id, uint32_t gen);
+
+/* State-wide `exit`: first request wins and is visible to every VM thread. */
+void   eigs_state_request_exit(struct EigsState *st, int code);
+int    eigs_state_exit_requested(struct EigsState *st, int *code);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
