@@ -1646,7 +1646,13 @@ static inline double num_guard(double x) {
  * boundary: every scalar read goes through this helper.  Keeping the guard at
  * that boundary also lets bulk kernels retain their unboxed representation. */
 static inline double buffer_read_num(const Value *buffer, int64_t index) {
-    return num_guard(buffer->data.buffer.data[index]);
+    double x = buffer->data.buffer.data[index];
+    /* In non-strict mode a NaN stored in a buffer is the canonical null
+     * sentinel.  Preserve it (and its flag-free behavior) rather than
+     * converting it into a numeric zero at this read boundary.  Strict mode
+     * still routes the sentinel through num_guard so it raises as required. */
+    if (x != x && !g_strict) return x;
+    return num_guard(x);
 }
 
 /* #971: num_guard for a builtin whose result CAN be NaN on the current tree
