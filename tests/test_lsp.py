@@ -214,6 +214,18 @@ def main():
     r = converse([INIT, did_open("x is 5\nprint of x\n"), SHUTDOWN, EXIT])
     check("clean document → empty diagnostics", diagnostics(r) == [])
 
+    # #1366: these are capacity/stack invariants rather than observable LSP
+    # semantics at today's 16-parameter parser cap. Pin the shared bound and
+    # heap allocation so neither can silently regress while behavior stays green.
+    lsp_source = open(os.path.join(os.path.dirname(__file__), "..", "src",
+                                   "eigenlsp.c"), encoding="utf-8").read()
+    check("symbol params use the parser's MAX_PARAMS bound (#1366)",
+          "char params[MAX_PARAMS][64];" in lsp_source
+          and "param_count && i < 16" not in lsp_source)
+    check("document-symbol deduplication table is heap allocated (#1366)",
+          "char (*seen)[256] = xcalloc(MAX_SYMBOLS, sizeof(*seen));" in lsp_source
+          and "free(seen);" in lsp_source)
+
     # --- didOpen with a syntax error → one diagnostic at the right line ---
     r = converse([INIT, did_open("if x > 0\n    print of x\n"), SHUTDOWN, EXIT])
     d = diagnostics(r)

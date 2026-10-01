@@ -82,7 +82,7 @@ typedef struct {
     char name[256];
     SymKind kind;
     int line, col;
-    char params[16][64];
+    char params[MAX_PARAMS][64];
     int param_count;
     int scope_depth;
 } Symbol;
@@ -341,7 +341,7 @@ static void walk_ast_symbols(ASTNode *node, Symbol *symbols, int *count, int dep
             s->line = node->line;
             s->col = node->col;
             s->param_count = node->data.func.param_count;
-            for (int i = 0; i < node->data.func.param_count && i < 16; i++) {
+            for (int i = 0; i < node->data.func.param_count; i++) {
                 snprintf(s->params[i], sizeof(s->params[i]), "%s",
                          node->data.func.params[i] ? node->data.func.params[i] : "");
             }
@@ -1336,7 +1336,7 @@ static void handle_document_symbol(int id, const char *params) {
     strbuf_init(&sb);
     strbuf_append_char(&sb, '[');
     int first = 1;
-    char seen[MAX_SYMBOLS][256];
+    char (*seen)[256] = xcalloc(MAX_SYMBOLS, sizeof(*seen));
     int seen_count = 0;
     for (int i = 0; i < doc->symbol_count; i++) {
         Symbol *s = &doc->symbols[i];
@@ -1367,6 +1367,7 @@ static void handle_document_symbol(int id, const char *params) {
     strbuf_append_char(&sb, ']');
     lsp_response(id, sb.data);
     strbuf_free(&sb);
+    free(seen);
 }
 
 /* ---- textDocument/formatting: reuse the CLI formatter (whole-doc edit) ---- */
