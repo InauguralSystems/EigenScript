@@ -17,12 +17,14 @@
 # form of "out of scope", instead of a sentence.
 lm_ur_ready1 is 0
 lm_ur_ready2 is 0
-lm_ur_collision is 0
+# Unlike globals, a list element is not protected by the environment mutex.
+# Both workers inherit this same heap object by reference.
+lm_ur_collision is [0]
 define lm_ur_worker(do_load) as:
-    # Deliberately unsynchronized: this is a spin barrier for an already
-    # deliberately racy fixture.  Each worker publishes arrival and reads the
-    # other's publication, so TSan always has a user-slot race to capture even
-    # when a one-core scheduler runs the loader operations in long slices.
+    # This spin barrier uses the environment's synchronized global accesses.
+    # Each worker publishes arrival and waits until the other has arrived, so
+    # both are guaranteed to proceed to the deliberately unprotected list
+    # access below.
     if do_load == 1:
         lm_ur_ready1 is 1
         loop while lm_ur_ready2 == 0:
@@ -31,13 +33,11 @@ define lm_ur_worker(do_load) as:
         lm_ur_ready2 is 1
         loop while lm_ur_ready1 == 0:
             null
-    # Keep both released workers in the same deliberately racing statement
-    # for longer than a one-core scheduling quantum.  This is the user-slot
-    # race whose nonempty capture makes the loader-symbol assertion nonvacuous.
-    local ri is 0
-    loop while ri < 100000:
-        lm_ur_collision is do_load
-        ri is ri + 1
+    # Both workers necessarily access the same unprotected list element after
+    # rendezvous.  Their accesses have no happens-before ordering, so TSan
+    # observes this race even if a one-core scheduler runs them sequentially;
+    # detection does not depend on overlapping scheduling quanta.
+    set_at of [lm_ur_collision, 0, do_load]
     local i is 0
     local n is 0
     loop while i < 40:
