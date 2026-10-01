@@ -35,7 +35,7 @@ extern int g_trace_hist_storage;
  * immediate so OP_LINE can stamp it. The interpreter CASE(LINE) writes it
  * unconditionally — the line prev_record_assign records into history — so the
  * JIT must too, or temporal at/when/state_at freeze at the OSR point. */
-extern int g_trace_current_line;
+extern int *trace_current_line_addr(void);
 /* OP_LINE also emits the tape's L record when a trace sink is open.  Keep the
  * flag test in native code so an ordinary (untraced) run pays no helper call. */
 extern int g_trace_enabled_storage;
@@ -4099,7 +4099,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * CASE(LINE). Without this, temporal `at`/`when`/`state_at` and
              * named interrogatives are silently wrong under JIT/OSR — frozen at
              * the line where the thunk took over. %rax is scratch between ops. */
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_current_line);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)trace_current_line_addr());
             w = emit_movl_imm_at_rax(w, (int32_t)line);
             /* Mirror CASE(LINE)'s tape hook.  On x86 the plain load supplies
              * the acquire semantics used by g_trace_enabled; trace_line owns

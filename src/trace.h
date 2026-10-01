@@ -154,22 +154,13 @@ int trace_occ_window(void);
 #define TRACE_OCC_WINDOW_MAX     (1 << 20)
 
 /* Source line currently being executed. Written by OP_LINE, read by
- * trace_assign to stamp history entries and by the tape writer. The JIT
- * stamps it via a flat-address write, so it cannot be __thread.
- *
- * #297 gated the interpreter write off under MT (a state's own workers),
- * which is why parallel workers never raced it. #1142: TWO STATES on two
- * threads are each single-threaded by that test, so both wrote this plain
- * int — TSan reported the race on every concurrent-embed run once the
- * louder compiler.c one was silenced. Access is RELAXED-atomic: on x86-64
- * that is the same `mov` (the JIT's flat write stays valid), but it is a
- * defined access rather than a data race.
- *
- * Residual, documented: the VALUE is still process-global, so two states
- * recording at once can stamp each other's line into their (thread-local)
- * history tables. Per-thread line stamping needs the JIT's flat write to
- * become a TLS write — tracked as the remaining #1142 gap, not fixed here. */
-extern int g_trace_current_line;
+ * trace_assign and by native/AOT error fallback. It lives on EigsThread:
+ * #1435's worker must never overwrite the parent's line. The accessor keeps
+ * the historical lvalue spelling used by linked native code and gives the JIT
+ * a flat address to bake into code. JIT code cannot migrate to another thread:
+ * entering multithreaded mode gates both compilation and thunk dispatch. */
+int *trace_current_line_addr(void);
+#define g_trace_current_line (*trace_current_line_addr())
 #define trace_current_line_store(v) \
     __atomic_store_n(&g_trace_current_line, (int)(v), __ATOMIC_RELAXED)
 #define trace_current_line_load() \

@@ -910,6 +910,10 @@ struct EigsThread {
     int          parse_errors;
     int          has_error;
     int          try_depth;
+    /* Source-line stamp used by native/AOT callers and temporal history when
+     * no VM frame supplies a line. Per-thread so a spawned worker cannot
+     * replace its parent's fallback error line (#1435). */
+    int          trace_current_line;
     /* #739: `exit of N` request. Sits with has_error/try_depth because
      * CHECK_ERROR reads all three together — an exit unwind is uncatchable.
      * Cleared at host eval entry (eigs_eval_string) so a second eval on this
