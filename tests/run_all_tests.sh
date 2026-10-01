@@ -6199,6 +6199,16 @@ if command -v python3 >/dev/null 2>&1; then
         printf '%s\n' "$DOC_OUTPUT" | grep -E "populations pinned|population " | head -14
     fi
 
+    TOTAL=$((TOTAL + 1))
+    GUIDE_OUTPUT=$(python3 "$TESTS_DIR/test_doc_example_guide.py" 2>&1)
+    GUIDE_RC=$?
+    if [ "$GUIDE_RC" -eq 0 ]; then
+        PASS=$((PASS + 1))
+    else
+        FAIL=$((FAIL + 1))
+    fi
+    printf '%s\n' "$GUIDE_OUTPUT"
+
 else
     section_skip "python3 not available"
 fi

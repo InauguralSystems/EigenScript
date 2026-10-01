@@ -60,8 +60,13 @@ completion, hover, definition, references over stdio).
 
 ## Conventions in these docs
 
-- ` ```eigenscript ` fenced blocks followed by an ` ```output ` block
-  are **executed and checked** by `tests/test_doc_examples.py`.
-- ` ```eigenscript skip ` marks valid syntax that is deliberately not
-  executed (nondeterministic or environment-dependent).
-- Code without an output block is an illustrative fragment.
+- ` ```eigenscript ` fenced blocks must be followed by an ` ```output ` block;
+  the program is executed and its output is checked byte-for-byte.
+- ` ```eigenscript fragment k=v ... ` marks a runnable snippet whose free
+  variables are declared on the opening line. It is executed but has no
+  output block.
+- ` ```eigenscript nocheck <reason> ` explicitly exempts an example that
+  cannot be executed (for example, because it is environment-dependent).
+  The reason is required on the fence's opening line.
+
+See the checker for the [full fence grammar](../tests/test_doc_examples.py).
