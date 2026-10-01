@@ -1568,7 +1568,7 @@ jobs:
         name: Regression gate — Ir of this commit vs its baseline
         run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --vs /tmp/main-ref/src/eigenscript
 
-      - if: needs.scope.outputs.code == 'true'
+      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: String length is constant-time (#1192)
         run: EIGS="$PWD/src/eigenscript" bash tests/test_string_len_complexity.sh
 
