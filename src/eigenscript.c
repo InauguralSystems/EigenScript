@@ -709,7 +709,6 @@ static int observer_obs_grow(Env *e, int idx);
 static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) {
-        env_dump_unlock(e);
         return;
     }
     /* Acquire-load the (possibly just-republished) block rather than reading
@@ -878,10 +877,15 @@ void observer_slot_sample(Env *e, int idx, Value *newval) {
  * touches no sample. n == 0 restores the state default. */
 int observer_slot_set_window(Env *e, int idx, int n) {
     if (!e || idx < 0) return 0;
-    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return 0;
+    env_dump_lock(e);
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) {
+        env_dump_unlock(e);
+        return 0;
+    }
     ObserverSlot *s = env_obs_slot(e, idx);
-    if (!s) return 0;
+    if (!s) { env_dump_unlock(e); return 0; }
     s->win_override = (uint8_t)n;
+    env_dump_unlock(e);
     return 1;
 }
 

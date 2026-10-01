@@ -762,8 +762,11 @@ Value* builtin_get_observer_window(Value *arg) {
                 return make_num(wv->data.num);
             return make_num((double)observer_slot_window(NULL));
         }
-        const ObserverSlot *s = (slot < target->obs_cap) ? env_obs_slot(target, slot) : NULL;
-        return make_num((double)observer_slot_window(s));
+        env_dump_lock(target);
+        const ObserverSlot *s = env_obs_slot(target, slot);
+        int window = observer_slot_window(s);
+        env_dump_unlock(target);
+        return make_num((double)window);
     }
     return make_num((double)observer_slot_window(NULL));
 }
