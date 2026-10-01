@@ -3022,6 +3022,26 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
+    echo "[47h/47] Model vocabulary independence (#1406)"
+    MVC_OUTPUT=$(bash "$TESTS_DIR/test_model_vocab_coupling.sh" 2>&1); MVC_RC=$?
+    MVC_PASS=$(echo "$MVC_OUTPUT" | grep -c "PASS:" || true)
+    MVC_FAIL=$(echo "$MVC_OUTPUT" | grep -c "FAIL:" || true)
+    if [ "$MVC_RC" -ne 0 ] && [ "$MVC_FAIL" -eq 0 ]; then
+        MVC_FAIL=1
+        MVC_OUTPUT="$MVC_OUTPUT
+  FAIL: model vocabulary check exited without a verdict (rc=$MVC_RC)"
+    fi
+    TOTAL=$((TOTAL + MVC_PASS + MVC_FAIL))
+    PASS=$((PASS + MVC_PASS))
+    FAIL=$((FAIL + MVC_FAIL))
+    if [ "$MVC_FAIL" -gt 0 ]; then
+        echo "  FAIL: model runtime contains consumer-specific vocabulary diagnostics"
+        echo "$MVC_OUTPUT"
+    else
+        echo "  PASS: model training is independent of consumer vocabulary IDs"
+    fi
+    echo ""
+
     echo "[47f/47] eigen_eval_loss held-out cross-entropy"
     EL_OUTPUT=$(bash "$TESTS_DIR/test_eval_loss.sh" 2>&1)
     EL_PASS=$(echo "$EL_OUTPUT" | grep -c "PASS:" || true)
