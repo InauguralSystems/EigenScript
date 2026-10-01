@@ -3564,8 +3564,10 @@ static const char *SANDBOX_ALLOW[] = {
     /* type / value utilities */
     "type", "coalesce", "num_copy", "secure_equals",
     /* observer READS — touch only the sandbox's own values, never globals
-     * (set_observer_thresholds / record_history are intentionally NOT here) */
-    "observe", "report", "get_observer_thresholds", "state_at", "classify",
+     * (set_observer_thresholds / record_history are intentionally NOT here).
+     * state_at is also excluded: temporal history belongs to the host thread,
+     * not the sealed sandbox environment. */
+    "observe", "report", "get_observer_thresholds", "classify",
     /* tokenizer / parser introspection (pure over strings) */
     "tokenize_ids", "tokenize_with_names", "token_name", "scan_ints",
     "scan_int_tokens", "scan_tokens", "try_parse",
@@ -3690,6 +3692,11 @@ Value* builtin_sandbox_run(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
     EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
+    if (chunk && chunk_reads_shared_temporal(chunk)) {
+        chunk_free(chunk);
+        chunk = NULL;
+        abi_err = "sandbox descriptors cannot access temporal history";
+    }
     if (chunk) eigs_obs_enable_runtime();     /* #915: see vm_run_bytecode */
     Value *out = make_dict(2);
     if (!chunk) {
@@ -3711,10 +3718,6 @@ Value* builtin_sandbox_run(Value *arg) {
         dict_set_owned(out, "error", ev);
         return out;
     }
-    /* #831: same as vm_run_bytecode — the temporal opcodes in an assembled
-     * chunk must arm recording themselves; the compiler never scanned it. */
-    chunk_arm_temporal(chunk);
-
     /* SEALED restricted env. The parent link is NULL, not g_global_env: the
      * sandbox env is a root, and the allowed builtins are COPIED into it.
      *

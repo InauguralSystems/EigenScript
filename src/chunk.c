@@ -983,6 +983,36 @@ void chunk_arm_temporal(const EigsChunk *chunk) {
         chunk_arm_temporal(chunk->functions[f]);
 }
 
+/* The history queried by these instructions belongs to the attached host
+ * thread, not to an Env.  A sealed sandbox environment therefore does not
+ * isolate it.  Keep this scan beside chunk_arm_temporal so the two walks cannot
+ * silently disagree about which descriptor instructions access history. */
+int chunk_reads_shared_temporal(const EigsChunk *chunk) {
+    const uint8_t *code = chunk->code;
+    int n = chunk->code_len, i = 0;
+    while (i < n) {
+        uint8_t op = code[i];
+        if (op == OP_LINE) { i += 1 + 4; continue; }
+        VerifyRole roles[3];
+        int nops = op_verify_operands(op, roles);
+        if (op == OP_INTERROGATE_NAMED_AT ||
+            op == OP_INTERROGATE_NAMED_WHEN)
+            return 1;
+        if (op == OP_INTERROGATE_NAMED) {
+            int kind = code[i + 1] | (code[i + 2] << 8);
+            if (kind == 6) return 1; /* prev */
+        } else if (op == OP_GET_NAME) {
+            int name_idx = code[i + 1] | (code[i + 2] << 8);
+            if (strcmp(chunk->constants[name_idx]->data.str, "state_at") == 0)
+                return 1;
+        }
+        i += 1 + 2 * nops;
+    }
+    for (int f = 0; f < chunk->fn_count; f++)
+        if (chunk_reads_shared_temporal(chunk->functions[f])) return 1;
+    return 0;
+}
+
 /* ---- #366: leaf-accessor scan ----
  *
  * Marks a function chunk whose body is one pure expression over its own
