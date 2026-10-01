@@ -1,0 +1,5 @@
+define worker(v) as:
+    return eval of ("local x is " + (str of v) + "\nreturn x + 1")
+h is spawn of [worker, 40]
+if (thread_join of h) != 41:
+    throw of "worker eval returned wrong value"

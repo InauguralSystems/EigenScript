@@ -80,6 +80,39 @@ for t in $SLICE; do
     fi
 done
 
+echo "=== declared concurrency shapes must be race-free (#1152) ==="
+# This is an exact inventory, not a glob. These shapes were absent from the
+# original 13-file slice; a rename must make the row red rather than silently
+# shrinking its coverage.
+SHAPE_FIXTURES="tsan_fanin3 tsan_close_blocked tsan_nested_spawn \
+tsan_worker_throw tsan_worker_exit tsan_worker_tasks tsan_worker_eval \
+tsan_spawn_emitted_jit"
+SHAPE_DECLARED=8
+SHAPE_EXAMINED=0
+for t in $SHAPE_FIXTURES; do
+    SHAPE_EXAMINED=$((SHAPE_EXAMINED + 1))
+    f="$TESTS_DIR/$t.eigs"
+    if [ ! -f "$f" ]; then
+        echo "  FAIL: $t fixture missing ($f)"; FAIL=$((FAIL + 1)); continue
+    fi
+    tsan_warnings "$f"
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$WARNINGS" -ne 0 ]; then
+        echo "  FAIL: $t reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
+    elif [ "$LAST_RC" -ne 0 ]; then
+        echo "  FAIL: $t exited $LAST_RC (want 0)"; FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: $t TSan-clean and exited 0"; PASS=$((PASS + 1))
+    fi
+done
+if [ "$SHAPE_EXAMINED" -eq "$SHAPE_DECLARED" ]; then
+    echo "  PASS: concurrency-shape fixtures examined == declared ($SHAPE_EXAMINED)"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: concurrency-shape fixtures examined == declared (examined=$SHAPE_EXAMINED declared=$SHAPE_DECLARED)"
+    FAIL=$((FAIL + 1))
+fi
+
 echo "=== C embed observer contract (raw state and worker arming) ==="
 if TSAN_OPTIONS="halt_on_error=1 exitcode=66" setarch -R \
         bash "$TESTS_DIR/test_embed_observer.sh"; then

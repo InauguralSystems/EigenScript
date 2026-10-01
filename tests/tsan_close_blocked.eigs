@@ -1,0 +1,9 @@
+ch is channel of 1
+define wait() as:
+    return recv of ch
+a is spawn of wait
+b is spawn of wait
+usleep of 1000
+close_channel of ch
+thread_join of a
+thread_join of b

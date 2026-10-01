@@ -1,0 +1,4 @@
+define done() as:
+    exit of 0
+h is spawn of done
+thread_join of h

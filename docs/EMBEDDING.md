@@ -561,8 +561,25 @@ between minor releases.
 - Inside a single `EigsState`, the VM is not internally re-entrant.
   Don't call `eigs_eval_string` from a host function that was called by
   the VM — return to the VM first.
-- Multiple `EigsState` instances are fully independent. Two host
-  threads each with their own state can run script concurrently.
+- Multiple `EigsState` instances have independent VM heaps and execution
+  state, but the runtime also has the following process-global surfaces. A
+  host running states concurrently must observe each surface's contract:
+  - Trace tape, sink, and replay state — **shared: the host must serialize**
+    tape/replay use across states (#1142).
+  - Observer history and occurrence arming sets — **locked** across states
+    (#1145).
+  - `g_trace_current_line` — atomic but process-global, so **shared: the host
+    must serialize** evaluations that require its diagnostic line (#1434).
+  - `g_source_provider` and its userdata — **shared: the host must serialize**
+    registration against evaluation, and install one provider for the process.
+  - The module-namespace table — **locked** and published as immutable
+    snapshots across states (#1144).
+  - `g_random_seeded` and the process PRNG — **locked/atomic** for race safety
+    (#1142); the random stream is shared rather than per-state.
+  - The process's SIGPIPE disposition — **shared: the host must serialize**
+    changes and treat the runtime's setting as process-wide.
+  - The pointer installed by `eigs_set_abort_flag` — **shared: the host must
+    serialize** registration; it is one process-global abort source (#410).
 - One `EigsState` accessed by multiple OS threads: each thread must
   `eigs_thread_attach`, and the host must serialize eval calls (a
   mutex around `eigs_eval_string` per state is sufficient). The shared
