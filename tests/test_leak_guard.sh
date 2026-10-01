@@ -33,6 +33,17 @@ FAIL=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
 
+# Probe ASan availability before the planted setup-failure checks.  Otherwise
+# each child takes the normal skip path when the configured compiler has no
+# sanitizer support, and the parent misreports that skip as a failed plant.
+if ! echo 'int main(void){return 0;}' | "$CC_CMD" $WERROR_FLAGS -fsanitize=address -x c - -o /tmp/eigs_asan_probe 2>/dev/null; then
+    echo "  SKIP: AddressSanitizer not available in this toolchain"
+    echo "Leak Guard: 0 passed, 0 failed (skipped)"
+    rm -f /tmp/eigs_asan_probe
+    exit 0
+fi
+rm -f /tmp/eigs_asan_probe
+
 # Prove that the two setup failures stay failures rather than being mistaken
 # for an unavailable sanitizer.  The children stop at the planted fault, so
 # these checks do not duplicate the expensive leak-guard build or loops.
@@ -84,15 +95,6 @@ EOF
         exit $?
     fi
 fi
-
-# Probe ASan availability
-if ! echo 'int main(void){return 0;}' | "$CC_CMD" $WERROR_FLAGS -fsanitize=address -x c - -o /tmp/eigs_asan_probe 2>/dev/null; then
-    echo "  SKIP: AddressSanitizer not available in this toolchain"
-    echo "Leak Guard: 0 passed, 0 failed (skipped)"
-    rm -f /tmp/eigs_asan_probe
-    exit 0
-fi
-rm -f /tmp/eigs_asan_probe
 
 ASAN_BIN=/tmp/eigs_leak_guard
 ASAN_LOG=/tmp/eigs_leak_guard.log
