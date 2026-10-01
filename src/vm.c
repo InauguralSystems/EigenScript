@@ -26,8 +26,13 @@
  * nothing. */
 static inline void vm_trace_assign(const EigsChunk *chunk, const char *name,
                                    EigsSlot value) {
-    if (chunk->compiler_scanned) trace_assign_filtered(name, value);
-    else                         trace_assign(name, value);
+    /* g_vm.current_line is per-thread. The process-wide trace stamp is not
+     * updated while workers are live (#297), so consulting it here filed
+     * main-thread stores under the stale pre-spawn line (#1439). */
+    if (chunk->compiler_scanned)
+        trace_assign_filtered_at_line(name, value, g_vm.current_line);
+    else
+        trace_assign_at_line(name, value, g_vm.current_line);
 }
 
 /* #262 slot-keyed observer shadow. Off unless EIGS_OBS_SHADOW is set;
