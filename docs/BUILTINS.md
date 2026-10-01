@@ -52,6 +52,27 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 `audio_stream_queued`, `audio_stream_clear`, `audio_stream_close`), and
 `free_val` for memory management.
 
+<!-- BEGIN GENERATED API: builtin -->
+| Name | Signature | Summary | Returns |
+| --- | --- | --- | --- |
+| len | len of value -> number | Return the number of items in a value. | The number of contained items. |
+
+### `len`
+
+**Arguments**
+
+- `value` — A string, list, dictionary, or other sized value.
+
+**Example**
+
+```eigenscript
+assert of [len of [10, 20, 30] == 3, "len example"]
+```
+
+```output
+```
+<!-- END GENERATED API: builtin -->
+
 ## Core Language
 
 ### Type System

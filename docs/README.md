@@ -20,7 +20,6 @@ WASM build, no install required.
 
 | document | what it answers |
 |---|---|
-| [API_REFERENCE.md](API_REFERENCE.md) | Generated library and builtin API tables whose source examples are executed by CI. |
 | [BUILTINS.md](BUILTINS.md) | Every built-in function: signature, behavior, errors. |
 | [STDLIB.md](STDLIB.md) | The 73 standard-library modules under `lib/`. |
 | [OBSERVER.md](OBSERVER.md) | Observer semantics in depth: entropy, dH, predicates, `unobserved`. |

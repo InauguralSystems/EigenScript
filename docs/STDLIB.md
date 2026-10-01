@@ -12,6 +12,48 @@ functions**. Its module tables are the gate: `tools/stdlib_index_check.sh`
 > can't find something here, it is almost certainly a builtin: check
 > BUILTINS.md.
 
+<!-- BEGIN GENERATED API: library -->
+| Name | Signature | Summary | Returns |
+| --- | --- | --- | --- |
+| identity | identity of value -> any | Return a value unchanged. | The supplied value. |
+| chain | chain of [functions, value] -> any | Apply functions from left to right. | The result of the final function. |
+
+### `identity`
+
+**Arguments**
+
+- `value` — The value to return.
+
+**Example**
+
+```eigenscript
+load_file of "lib/functional.eigs"
+assert of [identity of 3 == 3, "identity example"]
+```
+
+```output
+```
+
+### `chain`
+
+**Arguments**
+
+- `functions` — The ordered list of functions to apply.
+- `value` — The initial value.
+
+**Example**
+
+```eigenscript
+define api_increment(value) as:
+    return value + 1
+load_file of "lib/functional.eigs"
+assert of [chain of [[api_increment, api_increment], 3] == 5, "chain example"]
+```
+
+```output
+```
+<!-- END GENERATED API: library -->
+
 ## Finding Things — "I need to..." → module
 
 Check this table **before hand-rolling.** The library is broad; the failure

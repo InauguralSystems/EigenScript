@@ -149,7 +149,39 @@ def extract(path: Path) -> list[Record]:
     return records
 
 
-def build_ir(paths: list[Path]) -> list[Record]:
+def declarations(path: Path) -> list[tuple[str, str, int]]:
+    """Return public declarations, independently of documentation comments."""
+    found = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if match := DEFINE.match(line):
+            if not match.group(1).startswith("_"):
+                found.append(("library", match.group(1), line_number))
+        if match := REGISTER.search(line):
+            name = match.group(1)
+            if not name.startswith("__"):
+                found.append(("builtin", name, line_number))
+    return found
+
+
+def read_allowlist(path: Path | None) -> set[tuple[str, str]]:
+    if path is None:
+        return set()
+    allowed = set()
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            kind, name = line.split()
+        except ValueError as exc:
+            raise DocError(f"{path}:{number}: malformed allowlist row {line!r}") from exc
+        if kind not in ("library", "builtin"):
+            raise DocError(f"{path}:{number}: unknown declaration kind {kind!r}")
+        allowed.add((kind, name))
+    return allowed
+
+
+def build_ir(paths: list[Path], allowed: set[tuple[str, str]] | None = None) -> list[Record]:
     records = [record for path in sorted(paths, key=str) for record in extract(path)]
     if not records:
         joined = ", ".join(str(path) for path in paths) or "<no input>"
@@ -162,6 +194,18 @@ def build_ir(paths: list[Path]) -> list[Record]:
             raise fail(Path(record.source), record.line, record.name,
                        f"duplicate {record.kind} name (first at {first.source}:{first.line})")
         seen[key] = record
+    documented = set(seen)
+    allowed = allowed or set()
+    declared: set[tuple[str, str]] = set()
+    for path in paths:
+        for kind, name, line in declarations(path):
+            declared.add((kind, name))
+            if (kind, name) not in documented and (kind, name) not in allowed:
+                raise fail(path, line, name, "public declaration has no @api documentation")
+    stale = sorted(allowed - (declared - documented))
+    if stale:
+        kind, name = stale[0]
+        raise DocError(f"legacy allowlist has stale {kind} entry {name!r}")
     return records
 
 
@@ -189,27 +233,54 @@ def render_markdown(records: list[Record]) -> str:
                 out.extend(f"- `{arg['name']}` — {arg['description']}" for arg in record.args)
             else:
                 out.append("None.")
-            # The source-documentation gate executes these examples directly.
-            # Enrol the generated fences in the general documentation walker,
-            # but do not execute them a second time there.
+            # Pair each generated program with its expected empty stdout.  It
+            # is intentionally executed both by the general documentation
+            # walker and directly from the source record by the API gate.
             out.extend(("", "**Example**", "",
-                        "```eigenscript nocheck executed by api_docs_check.sh",
-                        record.example, "```", ""))
+                        "```eigenscript",
+                        record.example, "```", "", "```output", "```", ""))
     return "\n".join(out).rstrip() + "\n"
+
+
+def generated_region(records: list[Record], kind: str) -> str:
+    selected = [record for record in records if record.kind == kind]
+    rendered = render_markdown(selected).splitlines()
+    # Keep only the requested section; the containing document owns its title.
+    heading = "## Library functions" if kind == "library" else "## Builtins"
+    start = rendered.index(heading) + 1
+    other = "## Builtins" if kind == "library" else None
+    end = rendered.index(other) if other and other in rendered else len(rendered)
+    return "\n".join(rendered[start:end]).strip() + "\n"
+
+
+def check_region(path: Path, kind: str, payload: str) -> None:
+    begin = f"<!-- BEGIN GENERATED API: {kind} -->"
+    end = f"<!-- END GENERATED API: {kind} -->"
+    text = path.read_text(encoding="utf-8")
+    pattern = re.compile(re.escape(begin) + r"\n.*?" + re.escape(end), re.DOTALL)
+    replacement = f"{begin}\n{payload.rstrip()}\n{end}"
+    if not pattern.search(text):
+        raise DocError(f"{path}: missing generated region markers for {kind}")
+    if pattern.sub(replacement, text, count=1) != text:
+        raise DocError(f"{path}: generated {kind} documentation is stale; regenerate it")
 
 
 def run_examples(records: list[Record], executable: Path) -> None:
     for record in records:
-        with tempfile.NamedTemporaryFile("w", suffix=".eigs", encoding="utf-8") as example:
+        # Keep the temporary program at the project root so source-tree
+        # relative imports resolve exactly as they do for checked-in examples.
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".eigs", encoding="utf-8", dir=Path.cwd()) as example:
             example.write(record.example + "\n")
             example.flush()
             result = subprocess.run(
                 [str(executable.resolve()), example.name], cwd=Path.cwd(),
                 text=True, capture_output=True, check=False,
             )
-        if result.returncode:
+        if result.returncode or result.stderr:
             detail = (result.stderr or result.stdout).strip()
-            raise DocError(f"{record.source}:{record.line}: {record.name}: example failed: {detail}")
+            reason = "non-empty stderr" if result.stderr and not result.returncode else "failed"
+            raise DocError(f"{record.source}:{record.line}: {record.name}: example {reason}: {detail}")
 
 
 def main() -> int:
@@ -219,13 +290,19 @@ def main() -> int:
     parser.add_argument("--format", choices=("json", "markdown"), default="json")
     parser.add_argument("--check", type=Path, help="fail unless this file equals generated output")
     parser.add_argument("--run-examples", type=Path, metavar="EIGENSCRIPT")
+    parser.add_argument("--allow-undocumented", type=Path)
+    parser.add_argument("--check-region", nargs=2, action="append", metavar=("KIND", "PATH"))
     args = parser.parse_args()
     try:
-        records = build_ir(args.paths)
+        records = build_ir(args.paths, read_allowlist(args.allow_undocumented))
         payload = (render_markdown(records) if args.format == "markdown" else
                    json.dumps([asdict(record) for record in records], indent=2, ensure_ascii=False) + "\n")
         if args.run_examples:
             run_examples(records, args.run_examples)
+        for kind, path in args.check_region or []:
+            if kind not in ("library", "builtin"):
+                raise DocError(f"unknown generated region kind {kind!r}")
+            check_region(Path(path), kind, generated_region(records, kind))
         if args.check:
             current = args.check.read_text(encoding="utf-8")
             if current != payload:

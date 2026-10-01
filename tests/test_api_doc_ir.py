@@ -55,7 +55,22 @@ class ApiDocIrTests(unittest.TestCase):
         self.assertIn("## Library functions", rendered)
         self.assertIn("| identity | identity of value -> any |", rendered)
         self.assertIn("## Builtins", rendered)
-        self.assertIn("```eigenscript nocheck executed by api_docs_check.sh", rendered)
+        self.assertIn("```eigenscript\n", rendered)
+        self.assertIn("```output\n```", rendered)
+
+    def test_undocumented_public_declaration_fails_by_name(self):
+        text = GOOD + "\ndefine newly_public(value) as:\n    return value\n"
+        with self.assertRaisesRegex(
+                api_doc_ir.DocError,
+                r"newly_public: public declaration has no @api documentation"):
+            self.extract(text)
+
+    def test_pinned_legacy_declaration_can_be_deferred(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "sample.eigs"
+            path.write_text(GOOD + "\ndefine legacy(value) as:\n    return value\n")
+            records = api_doc_ir.build_ir([path], {("library", "legacy")})
+        self.assertEqual([record.name for record in records], ["identity"])
 
     def test_missing_field_names_function(self):
         with self.assertRaisesRegex(api_doc_ir.DocError, r"identity: missing field\(s\): returns"):
@@ -88,6 +103,15 @@ env_set_local_owned(env, "clock", make_builtin(builtin_clock));
     def test_zero_entries_fails(self):
         with self.assertRaisesRegex(api_doc_ir.DocError, "extracted zero"):
             self.extract("define identity(value) as:\n    return value\n")
+
+    def test_example_rejects_successful_process_with_stderr(self):
+        record = self.extract(GOOD)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "eigs"
+            executable.write_text("#!/bin/sh\necho 'runtime error: ubsan' >&2\nexit 0\n")
+            executable.chmod(0o755)
+            with self.assertRaisesRegex(api_doc_ir.DocError, "non-empty stderr"):
+                api_doc_ir.run_examples([record], executable)
 
 
 if __name__ == "__main__":
