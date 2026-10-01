@@ -918,7 +918,9 @@ Value* builtin_has_key(Value *arg) {
 }
 
 Value* builtin_dict_set(Value *arg) {
-    if (arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    STRICT_LIST_MAX(arg, 3, "dict_set");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "dict_set", "[dict, key, value]", make_null());
     Value *d = arg->data.list.items[0];
     Value *key = arg->data.list.items[1];
     Value *val = arg->data.list.items[2];
@@ -928,7 +930,9 @@ Value* builtin_dict_set(Value *arg) {
 }
 
 Value* builtin_dict_remove(Value *arg) {
-    if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    STRICT_LIST_MAX(arg, 2, "dict_remove");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "dict_remove", "[dict, key]", make_null());
     Value *d = arg->data.list.items[0];
     Value *key = arg->data.list.items[1];
     if (d->type != VAL_DICT || key->type != VAL_STR) return make_null();
@@ -2378,6 +2382,7 @@ Value* builtin_random(Value *arg) {
 
 /* random_int of [lo, hi] → integer in [lo, hi] inclusive */
 Value* builtin_random_int(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "random_int");
     /* #971 Phase D: a malformed range answered 0 — a number in nobody's
      * range. Taped shape: the soft half still records/replays as before. */
     ARG_GUARD_TAPED(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,

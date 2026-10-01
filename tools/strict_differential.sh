@@ -96,6 +96,8 @@ ceil|print of (ceil of "x")
 chdir|print of (chdir of 42)
 char_at|print of (char_at of [42, 0])
 contains|print of (contains of [[1, 2, 3], 2])
+dict_remove|print of (dict_remove of ([]))
+dict_set|print of (dict_set of ([]))
 cos|print of (cos of "hello")
 dot|print of (dot of [1, 2])
 ends_with|print of (ends_with of [42, "x"])
@@ -558,9 +560,70 @@ if [ "$NO_BASELINE" = 1 ]; then
 fi
 
 # ------------------------------------------------ fixed-shape surplus sweep (#1398)
-# The source annotations are the population: adding/removing a
-# STRICT_LIST_MAX site automatically adds/removes its executable row.
-FIXED_SHAPES=$(sed -n 's/.*STRICT_LIST_MAX(arg, \([0-9][0-9]*\), "\([a-z0-9_]*\)").*/\2|\1/p' src/*.c | sort -u)
+# This manifest is deliberately independent of STRICT_LIST_MAX sites.  The
+# comparison below makes an omitted guard visible instead of silently shrinking
+# the test population (the bug this sweep exists to prevent).
+FIXED_SHAPES=$(cat <<'EOF'
+atan2|2
+audio_envelope|5
+audio_gain|2
+audio_mix|2
+audio_music_play|2
+audio_music_volume|1
+audio_noise|2
+audio_play_loop|2
+audio_saw|3
+audio_sine|3
+audio_square|3
+audio_sweep|5
+audio_volume|2
+char_at|2
+contains|2
+dict_remove|2
+dict_set|3
+dot|2
+ends_with|2
+gfx_circle|7
+gfx_clear|3
+gfx_clip|4
+gfx_fb|6
+gfx_line|7
+gfx_open|3
+gfx_point|5
+gfx_read|2
+gfx_rect|8
+gfx_rrect|9
+gfx_text|7
+gfx_text_height|1
+gfx_text_width|2
+has_key|2
+index_of|2
+join|2
+json_path|2
+list_contains|2
+list_index_of|2
+path_join|2
+ppu_render_frame|2
+proc_write|2
+random_int|2
+rename|2
+secure_equals|2
+sign_extend|2
+split|2
+starts_with|2
+str_replace|3
+stream_open|2
+substr|3
+task_send|2
+tensor_save|2
+write_bytes|3
+write_text|2
+EOF
+)
+annotated_shapes=$(sed -n 's/.*STRICT_LIST_MAX(arg, \([0-9][0-9]*\), "\([a-z0-9_]*\)").*/\2|\1/p' src/*.c | sort -u)
+manifest_shapes=$(printf '%s\n' "$FIXED_SHAPES" | sort -u)
+missing_shape_guards=$(comm -23 <(printf '%s\n' "$manifest_shapes") <(printf '%s\n' "$annotated_shapes"))
+unmanifested_shape_guards=$(comm -13 <(printf '%s\n' "$manifest_shapes") <(printf '%s\n' "$annotated_shapes"))
 n_fixed=0; n_fixed_raise=0; n_fixed_soft=0; fixed_bad=""
 while IFS='|' read -r who max; do
     [ -z "${who:-}" ] && continue
@@ -576,18 +639,27 @@ while IFS='|' read -r who max; do
     strict="$(run_capture "$NEW" 1 "$TMP/surplus.eigs")"
     unset="$(run_capture "$NEW" - "$TMP/surplus.eigs")"
     expected="$who: expected a fixed-shape list with at most $max elements"
-    if [ "${off%%$'\n'*}" = 0 ]; then n_fixed_soft=$((n_fixed_soft + 1))
+    if [ -n "$BASE" ]; then
+        baseline_off="$(run_capture "$BASE" 0 "$TMP/surplus.eigs")"
+        if [ "$off" = "$baseline_off" ]; then n_fixed_soft=$((n_fixed_soft + 1))
+        else fixed_bad="$fixed_bad
+    $who — EIGS_STRICT=0 differs from baseline: $(clip "$off" 90)"; fi
+    elif [ "${off%%$'\n'*}" = 0 ]; then n_fixed_soft=$((n_fixed_soft + 1))
     else fixed_bad="$fixed_bad
-    $who — EIGS_STRICT=0 did not preserve the prefix-consuming answer: $(clip "$off" 90)"; fi
+    $who — EIGS_STRICT=0 did not accept the surplus call: $(clip "$off" 90)"; fi
     if [ "${strict%%$'\n'*}" != 0 ] && str_has "$strict" "$expected" && [ "$unset" = "$strict" ]; then
         n_fixed_raise=$((n_fixed_raise + 1))
     else fixed_bad="$fixed_bad
     $who — surplus did not raise the named max-$max error under strict/default: $(clip "$strict" 90)"; fi
 done <<<"$FIXED_SHAPES"
 echo "== fixed-shape surplus differential =="
-echo "  derived-shapes=$n_fixed strict/default-raises=$n_fixed_raise non-strict-preserved=$n_fixed_soft"
+if [ -n "$BASE" ]; then fixed_soft_label="baseline-identical"
+else fixed_soft_label="non-strict-accepted"; fi
+echo "  manifest-shapes=$n_fixed strict/default-raises=$n_fixed_raise $fixed_soft_label=$n_fixed_soft"
+[ -n "$missing_shape_guards" ] && { echo "  MANIFEST SHAPES WITHOUT GUARDS:"; printf '    %s\n' $missing_shape_guards; rc=1; }
+[ -n "$unmanifested_shape_guards" ] && { echo "  GUARDED SHAPES MISSING FROM MANIFEST:"; printf '    %s\n' $unmanifested_shape_guards; rc=1; }
 if [ -n "$fixed_bad" ]; then echo "  FIXED-SHAPE FAILURES:$fixed_bad"; rc=1; fi
-if [ "$n_fixed" -lt 25 ]; then echo "  VACUOUS: derived fixed shapes=$n_fixed — below floor"; rc=1; fi
+if [ "$n_fixed" -lt 28 ]; then echo "  VACUOUS: exercised fixed shapes=$n_fixed — below floor"; rc=1; fi
 
 # ------------------------------------------------ gfx capability
 printf 'print of (gfx_text_width of ["m", 1])\n' > "$TMP/gfxprobe.eigs"
