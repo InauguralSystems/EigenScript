@@ -1,0 +1,1 @@
+- Keep consumer-acceptance inventory floors and missing consumer names across repeated runs that replace the same record.

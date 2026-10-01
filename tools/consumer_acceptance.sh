@@ -100,23 +100,32 @@ probe_prereq() {
   return 1
 }
 
-NAMES=(); PINS=(); CMDS=(); KINDS=(); WFS=(); GAPS=0; SCANNED=0; FLOOR=0
+NAMES=(); PINS=(); CMDS=(); KINDS=(); WFS=(); GAPS=0; SCANNED=0; FLOOR=0; FLOOR_NAMES=()
 record_floor() {
-  local f n
-  FLOOR=0
+  local f n name
+  FLOOR=0; FLOOR_NAMES=()
+  record_floor_file() {
+    local floor_file="$1"
+    grep -q '^status=COMPLETE$' "$floor_file" || return 0
+    # record_floor is the carried historical value; inventory is the current
+    # observation.  Taking both makes a refusal monotonic across replacement
+    # of CA_RECORD rather than trusting only the newest, smaller inventory.
+    while IFS= read -r n; do
+      [ -n "$n" ] && [ "$n" -gt "$FLOOR" ] && FLOOR="$n"
+    done < <(sed -n 's/^\(record_floor\|inventory\)=\([0-9][0-9]*\).*$/\2/p' "$floor_file")
+    while IFS= read -r name; do
+      if [ -n "$name" ] && ! contains "$name" "${FLOOR_NAMES[@]}"; then FLOOR_NAMES+=("$name"); fi
+    done < <(awk -F '|' '/^row\|/ { print $2 }' "$floor_file")
+  }
   if [ ! -f "$ECO/.ca_fixture" ]; then
     for f in "$HERE"/reports/consumer_acceptance/*.record; do
       [ -f "$f" ] || continue
-      grep -q '^status=COMPLETE$' "$f" || continue
-      n="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$f" | tail -1)"
-      [ -n "$n" ] && [ "$n" -gt "$FLOOR" ] && FLOOR="$n"
+      record_floor_file "$f"
     done
   fi
   # CA_RECORD can live outside the standard reports directory.
-  if [ -n "${RECORD:-}" ] && [ -f "$RECORD" ] && grep -q '^status=COMPLETE$' "$RECORD"; then
-    n="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$RECORD" | tail -1)"
-    [ -n "$n" ] && [ "$n" -gt "$FLOOR" ] && FLOOR="$n"
-  fi
+  if [ -n "${RECORD:-}" ] && [ -f "$RECORD" ]; then record_floor_file "$RECORD"; fi
+  unset -f record_floor_file
 }
 load_expected() {
   WANT=()
@@ -124,6 +133,9 @@ load_expected() {
     local line
     while IFS= read -r line || [ -n "$line" ]; do [ -z "$line" ] || WANT+=("$line"); done < "$ECO/.ca_expected"
   elif [ ! -f "$ECO/.ca_fixture" ]; then WANT=("${EXPECTED[@]}"); fi
+  # A complete record is also a named inventory witness.  Keep those names in
+  # the replacement record so a missing checkout cannot disappear by rerun.
+  for line in "${FLOOR_NAMES[@]}"; do contains "$line" "${WANT[@]}" || WANT+=("$line"); done
 }
 scan_inventory() {
   local d r pin cmd kind wf why e
@@ -461,6 +473,8 @@ run() {
     return 2
   fi
   local inventory="${#NAMES[@]}"
+  # The published floor is monotonic even when the current inventory grows.
+  [ "$inventory" -le "$FLOOR" ] || FLOOR="$inventory"
   echo "inventory=$inventory" >> "$BODY"
   if [ "$SCANNED" -eq 0 ] || [ "$GAPS" -ne 0 ]; then bad=1; fi
   for ((i=0; i<${#NAMES[@]}; i++)); do
@@ -648,18 +662,28 @@ selftest() {
   if [ "$st_rc" -eq 2 ] && grep -Fq 'candidate tree mismatch:' "$st_out"; then
     echo 'plant C check=tree-correspondence RED candidate tree mismatch: unrelated src/eigenscript'
   else echo 'plant C check=tree-correspondence SILENT'; st_bad=1; fi
-  # (D) A completed target record is a floor witness before replacement.
-  st_reset; rm -f "$st_eco/.ca_fixture"
+  # (D) A completed target record remains a named floor witness after the
+  # same path is replaced by refusals, and recovers once the checkout returns.
+  st_reset
   st_consumer first 'eigenscript smoke.eigs'; st_consumer second 'eigenscript smoke.eigs'
   printf 'first\nsecond\n' > "$st_eco/.ca_expected"
   mkdir -p "$st_root/runner/tools" "$st_root/runner/reports/consumer_acceptance"
   cp "$HERE/tools/consumer_acceptance.sh" "$HERE/tools/read_werror_flags.sh" "$HERE/tools/werror_flags.txt" "$HERE/tools/_derive_variants.py" "$HERE/tools/_extract_runcmd.py" "$st_root/runner/tools/"
-  printf 'status=COMPLETE\ninventory=3\nexamined=3\nVERDICT: PASS\n' > "$st_record"
-  st_rc=0
+  printf 'status=COMPLETE\ninventory=3\nexamined=3\nrow|first|v0.43.0|PASS|0|\nrow|second|v0.43.0|PASS|0|\nrow|third|v0.43.0|PASS|0|\nVERDICT: PASS\n' > "$st_record"
+  local d_run d_ok=1
+  for d_run in 1 2; do
+    st_rc=0; : > "$st_out"
+    CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+    if [ "$st_rc" -eq 0 ] || ! grep -Fq 'declared consumer absent: third' "$st_record" ||
+       ! grep -Fqx 'record_floor=3' "$st_record" || ! grep -Fq 'row|third|absent|UNRUNNABLE' "$st_record" ||
+       ! grep -Fqx 'VERDICT: FAIL' "$st_record"; then d_ok=0; fi
+  done
+  st_consumer third 'eigenscript smoke.eigs'; printf 'first\nsecond\nthird\n' > "$st_eco/.ca_expected"
+  st_rc=0; : > "$st_out"
   CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
-  if [ "$st_rc" -ne 0 ] && grep -Fqx 'record_floor=3' "$st_record" && grep -Fqx 'VERDICT: FAIL' "$st_record"; then
-    echo 'plant D check=record-floor-before-replacement RED record_floor=3 VERDICT: FAIL'
-  else echo "plant D check=record-floor-before-replacement SILENT rc=$st_rc"; tail -8 "$st_out"; tail -8 "$st_record"; st_bad=1; fi
+  if [ "$d_ok" -eq 1 ] && [ "$st_rc" -eq 0 ] && grep -Fqx 'record_floor=3' "$st_record" && grep -Fqx 'inventory=3 examined=3' "$st_record" && grep -Fqx 'VERDICT: PASS' "$st_record"; then
+    echo 'plant D check=same-path-record-floor RED runs=FAIL,FAIL missing=third floor=3 recovery=PASS'
+  else echo "plant D check=same-path-record-floor SILENT refusals=$d_ok recovery_rc=$st_rc"; tail -8 "$st_out"; tail -8 "$st_record"; st_bad=1; fi
   # (E) A named missing capability is UNRUNNABLE before the command runs.
   st_reset; st_consumer dynamics 'eigenscript smoke.eigs'
   printf 'dynamics\n' > "$st_eco/.ca_expected"
