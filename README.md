@@ -41,11 +41,13 @@ cd EigenScript
 ./install.sh
 ```
 
-This builds the minimal binary and installs it to `~/.local/bin/eigenscript`.
+This builds the hosted release (including lazily loaded graphics) and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
-Run `./install.sh full` to also build the optional HTTP/DB/model binary
-(`eigenscript-full`); that path requires PostgreSQL development headers.
+Run `./install.sh server` to also build the HTTP + raw-TCP profile
+(`eigenscript-server`), or `./install.sh server-db` to add PostgreSQL; the
+latter path requires PostgreSQL development headers. `full` remains a
+compatibility spelling for `server-db`.
 
 **Homebrew** (macOS + Linux):
 
@@ -602,8 +604,9 @@ get made and how contributors can earn commit access over time.
 ```bash
 make                  # build
 make test             # build and run the full suite
-make gfx              # build with SDL2 graphics (UI toolkit, games)
-make net              # build with raw TCP sockets (record/replay-able)
+make server           # build with HTTP + raw TCP sockets (record/replay-able)
+make server-db        # server profile plus PostgreSQL
+make zlib             # release profile plus DEFLATE codecs (links libz)
 make install          # install to ~/.local/bin
 make clean            # remove build artifacts
 ```

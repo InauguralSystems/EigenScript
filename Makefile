@@ -24,6 +24,7 @@ endif
 
 SRC_DIR := src
 SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/arena.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
+HOSTED_SOURCES := $(SOURCES) $(SRC_DIR)/ext_gfx.c
 BINARY  := $(SRC_DIR)/eigenscript
 
 # CLI-only translation units: linked into the binary, never into the
@@ -32,8 +33,8 @@ BINARY  := $(SRC_DIR)/eigenscript
 # --step tape-stepper, stdio+isatty, same footing).
 CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c
 
-FULL_SOURCES := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_db.c $(SRC_DIR)/ext_net.c \
-                $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
+SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c
+SERVER_DB_SOURCES := $(SERVER_SOURCES) $(SRC_DIR)/ext_db.c
 
 PREFIX  := $(HOME)/.local
 
@@ -74,7 +75,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-http nativefn-test arming-mt-test embed-roads print-%
+.PHONY: all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -100,59 +101,52 @@ MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_tra
 STRLEN_CHECK := -DEIGS_STR_LEN_CHECK
 ASAN_FLAGS := -fsanitize=address,undefined,float-cast-overflow $(WERROR_FLAGS) -g -O1 $(STRLEN_CHECK)
 
-SRC_V_release := $(SOURCES)
-FLAGS_release := $(CFLAGS) $(DEFS_OFF) $(VERDEF)
-LIBS_release  := $(LDFLAGS)
+SRC_V_release := $(HOSTED_SOURCES)
+FLAGS_release := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+LIBS_release  := $(LDFLAGS) -ldl
 
-SRC_V_full := $(FULL_SOURCES)
-FLAGS_full := $(CFLAGS) -I/usr/include/postgresql -DEIGENSCRIPT_EXT_NET=1 $(VERDEF)
-LIBS_full  := $(LDFLAGS) -lpq
+SRC_V_server := $(SERVER_SOURCES)
+FLAGS_server := $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+LIBS_server  := $(LDFLAGS) -ldl
 
-SRC_V_http := $(SOURCES) $(SRC_DIR)/ext_http.c $(MODEL_SRC)
-FLAGS_http := $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 $(VERDEF)
-LIBS_http  := $(LDFLAGS)
+SRC_V_server-db := $(SERVER_DB_SOURCES)
+FLAGS_server-db := $(CFLAGS) -I/usr/include/postgresql -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+LIBS_server-db  := $(LDFLAGS) -ldl -lpq
 
-SRC_V_zlib := $(SOURCES)
-FLAGS_zlib := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_ZLIB=1 $(VERDEF)
-LIBS_zlib  := $(LDFLAGS) -lz
+SRC_V_zlib := $(HOSTED_SOURCES)
+FLAGS_zlib := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_EXT_ZLIB=1 $(VERDEF)
+LIBS_zlib  := $(LDFLAGS) -ldl -lz
 
-SRC_V_net := $(SOURCES) $(SRC_DIR)/ext_net.c
-FLAGS_net := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_NET=1 $(VERDEF)
-LIBS_net  := $(LDFLAGS)
+SRC_V_asan := $(HOSTED_SOURCES)
+FLAGS_asan := $(ASAN_FLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+LIBS_asan  := -lm -lpthread -ldl
+# Compatibility introspection for tests/tools that derive the former gfx
+# sanitizer source set. The artifact itself is now build/asan/eigenscript.
+SRC_V_asan-gfx := $(SRC_V_asan)
+FLAGS_asan-gfx := $(FLAGS_asan)
+LIBS_asan-gfx := $(LIBS_asan)
 
-SRC_V_gfx := $(SOURCES) $(SRC_DIR)/ext_gfx.c
-FLAGS_gfx := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
-LIBS_gfx  := $(LDFLAGS) -ldl
-
-SRC_V_asan := $(SOURCES)
-FLAGS_asan := $(ASAN_FLAGS) $(DEFS_OFF) $(VERDEF)
-LIBS_asan  := -lm -lpthread
-
-SRC_V_asan-gfx := $(SOURCES) $(SRC_DIR)/ext_gfx.c
-FLAGS_asan-gfx := $(ASAN_FLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
-LIBS_asan-gfx  := -lm -lpthread -ldl
-
-SRC_V_asan-http := $(SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c $(MODEL_SRC)
-FLAGS_asan-http := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 $(VERDEF)
-LIBS_asan-http  := -lm -lpthread
+SRC_V_asan-server := $(SERVER_SOURCES)
+FLAGS_asan-server := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+LIBS_asan-server  := -lm -lpthread -ldl
 
 SRC_V_tsan := $(SOURCES)
 FLAGS_tsan := -fsanitize=thread $(WERROR_FLAGS) -g -O1 $(DEFS_OFF) $(VERDEF)
 LIBS_tsan  := -lm -lpthread
 
-SRC_V_tsan-http := $(SRC_V_asan-http)
-FLAGS_tsan-http := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 $(VERDEF)
-LIBS_tsan-http  := -lm -lpthread
+SRC_V_tsan-server := $(SERVER_SOURCES)
+FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+LIBS_tsan-server  := -lm -lpthread -ldl
 
-SRC_V_valgrind := $(SOURCES)
-FLAGS_valgrind := $(WERROR_FLAGS) -g -O1 -DEIGS_VALGRIND $(STRLEN_CHECK) $(DEFS_OFF) $(VERDEF)
-LIBS_valgrind  := -lm -lpthread
+SRC_V_valgrind := $(HOSTED_SOURCES)
+FLAGS_valgrind := $(WERROR_FLAGS) -g -O1 -DEIGS_VALGRIND $(STRLEN_CHECK) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+LIBS_valgrind  := -lm -lpthread -ldl
 
-SRC_V_poison := $(SOURCES)
-FLAGS_poison := $(WERROR_FLAGS) -g -O1 -DEIGS_POISON $(STRLEN_CHECK) $(DEFS_OFF) $(VERDEF)
-LIBS_poison  := -lm -lpthread
+SRC_V_poison := $(HOSTED_SOURCES)
+FLAGS_poison := $(WERROR_FLAGS) -g -O1 -DEIGS_POISON $(STRLEN_CHECK) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+LIBS_poison  := -lm -lpthread -ldl
 
-VARIANTS := release full http zlib net gfx asan asan-http asan-gfx tsan tsan-http valgrind poison
+VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
@@ -256,15 +250,21 @@ build/$(ROAD_VARIANT)/embed_roads: $(SRC_DIR)/embed_roads.c $(EMBED_ROADS_OBJ) $
 embed-roads: build/$(ROAD_VARIANT)/embed_roads
 	@echo "Embed road test built: $<"
 
-full: build/full/eigenscript
-	$(call RELINK,full)
-	@echo "EigenScript $(VERSION) (full) built. Binary: $$(du -sh build/full/eigenscript | cut -f1)"
+server-db: build/server-db/eigenscript
+	$(call RELINK,server-db)
+	@echo "EigenScript $(VERSION) (server+db) built. Binary: $$(du -sh build/server-db/eigenscript | cut -f1)"
 
-# Build with HTTP + model extensions but without DB (no libpq-dev required).
-# Useful for running HTTP test suites on systems without PostgreSQL headers.
-http: build/http/eigenscript
-	$(call RELINK,http)
-	@echo "EigenScript $(VERSION) (http+model, no db) built. Binary: $$(du -sh build/http/eigenscript | cut -f1)"
+server: build/server/eigenscript
+	$(call RELINK,server)
+	@echo "EigenScript $(VERSION) (server: http+net) built. Binary: $$(du -sh build/server/eigenscript | cut -f1)"
+
+# Compatibility target names; release artifacts are now release/server/server-db.
+full: server-db
+	@echo "NOTE: 'make full' is a compatibility alias for 'make server-db'."
+http: server
+	@echo "NOTE: 'make http' is a compatibility alias for 'make server'."
+net: server
+	@echo "NOTE: 'make net' is a compatibility alias for 'make server'."
 
 # Build with the DEFLATE codecs (inflate/deflate builtins, #684) linked
 # against the system zlib. Same opt-in pattern as `make http`: the
@@ -274,15 +274,10 @@ zlib: build/zlib/eigenscript
 	$(call RELINK,zlib)
 	@echo "EigenScript $(VERSION) (zlib) built. Binary: $$(du -sh build/zlib/eigenscript | cut -f1)"
 
-# Raw TCP sockets on the trace tape (#414). Same opt-in pattern as gfx:
-# in no default build, no extra library needed (plain POSIX sockets).
-net: build/net/eigenscript
-	$(call RELINK,net)
-	@echo "EigenScript $(VERSION) (net) built. Binary: $$(du -sh build/net/eigenscript | cut -f1)"
-
-gfx: build/gfx/eigenscript
-	$(call RELINK,gfx)
-	@echo "EigenScript $(VERSION) (gfx) built. Binary: $$(du -sh build/gfx/eigenscript | cut -f1)"
+# gfx is part of every hosted release. Keep the old target as a source-compatible
+# alias, but do not produce a separate gfx distribution identity.
+gfx: build
+	@echo "NOTE: 'make gfx' is a compatibility alias for 'make'."
 
 # The label floor first (#1379): a runner overwritten by a generated plan has no
 # sections and no epilogue, so it ran nothing and exited 0.
@@ -304,16 +299,8 @@ test-changed: build
 precheck:
 	bash tools/precheck.sh
 
-install-gfx: gfx lsp
-	mkdir -p $(PREFIX)/bin
-	mkdir -p $(PREFIX)/lib/eigenscript
-	cp $(BINARY) $(PREFIX)/bin/eigenscript
-	cp $(LSP_BINARY) $(PREFIX)/bin/eigenlsp
-	chmod +x $(PREFIX)/bin/eigenscript $(PREFIX)/bin/eigenlsp
-	cp lib/*.eigs $(PREFIX)/lib/eigenscript/
-	@echo "Installed: $(PREFIX)/bin/eigenscript (v$(VERSION), gfx)"
-	@echo "Installed: $(PREFIX)/bin/eigenlsp (v$(VERSION))"
-	@echo "Stdlib:    $(PREFIX)/lib/eigenscript/"
+install-gfx: install
+	@echo "NOTE: 'make install-gfx' is a compatibility alias for 'make install'."
 
 install: build lsp dap
 	mkdir -p $(PREFIX)/bin
@@ -327,6 +314,7 @@ install: build lsp dap
 	@echo "Installed: $(PREFIX)/bin/eigenlsp (v$(VERSION))"
 	@echo "Installed: $(PREFIX)/bin/eigsdap (v$(VERSION))"
 	@echo "Stdlib:    $(PREFIX)/lib/eigenscript/"
+
 
 # Generated stdlib index for the LSP (#590): public define/signature-comment
 # table scraped from lib/*.eigs. A build artifact, not committed (the build/
@@ -416,10 +404,10 @@ embed-smoke: amalgamation
 # env is composed by the ONE registration seam (#742 — pre-fix, only the
 # CLI registered gfx, so this exact link had no gfx builtins). Registration
 # needs no SDL init, so this runs headless.
-embed-smoke-gfx: gfx
-	$(CC) $(FLAGS_gfx) -o /tmp/embed_smoke_gfx $(SRC_DIR)/embed_smoke.c \
-		$(filter-out build/gfx/main.o,$(wildcard build/gfx/*.o)) \
-		-lm -lpthread $(LIBS_gfx)
+embed-smoke-gfx: build
+	$(CC) $(FLAGS_release) -o /tmp/embed_smoke_gfx $(SRC_DIR)/embed_smoke.c \
+		$(filter-out build/release/main.o,$(wildcard build/release/*.o)) \
+		-lm -lpthread $(LIBS_release)
 	/tmp/embed_smoke_gfx
 
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
@@ -431,35 +419,14 @@ asan: build/asan/eigenscript
 	$(call RELINK,asan)
 	@echo "EigenScript $(VERSION) (asan+ubsan) built. Binary: $(BINARY)"
 
-# ASan+UBSan over the EXTENSION surface — same variant as `make http`
-# (ext_http.c + model_*.c), which `make asan` above compiles out via
-# -DEIGENSCRIPT_EXT_HTTP=0/-DEIGENSCRIPT_EXT_MODEL=0. Until this target
-# existed, no sanitizer build anywhere — local or CI — ever compiled
-# ext_http.c, so the repo's most exposed code (a network-facing server and
-# client) was also its least instrumented. That is the structural reason
-# #239's remote DoS reached main through a green CI, and why #731's leak
-# (2 Values per shared_incr call) sat unnoticed in a request path.
-# Deliberately NOT the `full` variant: ext_db.c needs libpq headers, which
-# would make this unbuildable on a machine without postgres. ext_db.c
-# therefore remains unsanitized — a separate, smaller gap.
-#   make asan-http && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh
-asan-http: build/asan-http/eigenscript
-	$(call RELINK,asan-http)
-	@echo "EigenScript $(VERSION) (asan+ubsan, http+model+net) built. Binary: $(BINARY)"
-
-# ASan+UBSan over ext_gfx.c — the same structural gap asan-http closed for
-# ext_http, one surface over. `make asan` compiles ext_gfx.c out entirely, so
-# until this target existed NO sanitizer build anywhere — local or CI — ever
-# instrumented it, while every app in the fleet (DMG, dynamics, eddy,
-# eigen-edit, eigen-sheet, DeslanStudio) and all 18 lib/ui modules run on it.
-# That is why #1007's union type-puns (a char* read through .data.num and then
-# int-cast) sat in gfx_open and audio_open unreported: -fsanitize=float-cast-
-# overflow names them the moment they execute, and nothing ran it.
-# SDL is dlopen'd, not linked, so this builds on a machine with no libSDL2.
-#   make asan-gfx && SDL_VIDEODRIVER=dummy ./src/eigenscript prog.eigs
-asan-gfx: build/asan-gfx/eigenscript
-	$(call RELINK,asan-gfx)
-	@echo "EigenScript $(VERSION) (asan+ubsan, gfx) built. Binary: $(BINARY)"
+# ASan+UBSan over the server profile. The ordinary asan target now owns gfx.
+asan-server: build/asan-server/eigenscript
+	$(call RELINK,asan-server)
+	@echo "EigenScript $(VERSION) (asan+ubsan, server) built. Binary: $(BINARY)"
+asan-http: asan-server
+	@echo "NOTE: 'make asan-http' is a compatibility alias for 'make asan-server'."
+asan-gfx: asan
+	@echo "NOTE: 'make asan-gfx' is a compatibility alias for 'make asan'."
 
 # ThreadSanitizer build for the concurrency race gate (tests/test_tsan.sh).
 # Complements ASan (which is not run with the thread checker). Run the tests
@@ -468,18 +435,12 @@ tsan: build/tsan/eigenscript
 	$(call RELINK,tsan)
 	@echo "EigenScript $(VERSION) (tsan) built. Binary: $(BINARY)"
 
-# ThreadSanitizer over the EXTENSION surface (#1139) — the tsan analogue of
-# asan-http. `make tsan` compiles ext_http.c out via $(DEFS_OFF), so the
-# repo's most concurrent code (thread-per-connection workers, per-worker
-# EigsState, the init responder thread, the shared store) was never seen by
-# the race detector: #1137's lazily-initialised globals were found only by an
-# ad-hoc variant while the stock tsan lane stayed green. Same sources as
-# asan-http (HTTP+MODEL+NET on, DB off — ext_db.c needs libpq headers).
-#   make tsan-http && TSAN_OPTIONS=halt_on_error=1 EIGS_SUITE_SECTIONS='44 45a 45b' \
-#       setarch -R bash tests/run_all_tests.sh
-tsan-http: build/tsan-http/eigenscript
-	$(call RELINK,tsan-http)
-	@echo "EigenScript $(VERSION) (tsan, http+model+net) built. Binary: $(BINARY)"
+# ThreadSanitizer over the server profile (#1139).
+tsan-server: build/tsan-server/eigenscript
+	$(call RELINK,tsan-server)
+	@echo "EigenScript $(VERSION) (tsan, server) built. Binary: $(BINARY)"
+tsan-http: tsan-server
+	@echo "NOTE: 'make tsan-http' is a compatibility alias for 'make tsan-server'."
 
 # Plain -O1 -g minimal build for Valgrind/Memcheck (tests/valgrind_smoke.sh).
 # No sanitizers — Valgrind shadows the uninstrumented binary at runtime, so it

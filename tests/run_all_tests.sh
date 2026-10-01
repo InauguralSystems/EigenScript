@@ -6520,6 +6520,13 @@ rm -f "$EX_GFX_PROBE"
 echo "[97] Example programs (examples/*.eigs)"
 EX_PASS=0; EX_FAIL=0; EX_SKIP=0
 EIGS_ABS="$(pwd)/eigenscript"
+# RLIMIT_AS cannot coexist with ASan's multi-terabyte shadow mapping. Gfx is
+# now in the default sanitizer profile (#1415), so keep the runaway timeout
+# but omit only the address-space cap under ASan.
+EX_GFX_ULIMIT='ulimit -v 2000000 2>/dev/null'
+if ASAN_OPTIONS=help=1 "$EIGS_ABS" --version 2>&1 | grep -q 'AddressSanitizer'; then
+    EX_GFX_ULIMIT=':'
+fi
 # Runaway guard reuses the shared $EIGS_TMO (defined near the top). The old
 # `timeout 60` here was a latency assertion in disguise: invariant_weak.eigs
 # takes ~60.5s standalone under ASan and tripped the 60s guard under suite load
@@ -6532,7 +6539,7 @@ for f in $(find ../examples -name '*.eigs' -not -path '*/errors/*' | sort); do
         # #886: reaching the event loop (rc 124) is the pass; any other
         # nonzero rc is a real setup failure. Memory-capped — an unbounded
         # UI run can take the whole machine.
-        EX_OUT=$( cd "$(dirname "$f")" && ulimit -v 2000000 2>/dev/null; \
+        EX_OUT=$( cd "$(dirname "$f")" && eval "$EX_GFX_ULIMIT"; \
                   cd "$(dirname "$f")" && SDL_VIDEODRIVER=dummy timeout 3 \
                   "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
         if [ "$EX_RC" = "124" ] || [ "$EX_RC" = "0" ]; then
