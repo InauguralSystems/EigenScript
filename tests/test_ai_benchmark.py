@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import importlib.util, json, subprocess, tempfile, unittest
+import importlib.util, json, os, subprocess, tempfile, unittest
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -13,7 +13,7 @@ class BenchmarkTest(unittest.TestCase):
             subprocess.run(["git","config","user.email","test@example.invalid"],cwd=repo,check=True)
             subprocess.run(["git","config","user.name","Test"],cwd=repo,check=True)
             (repo/"tracked").write_text("clean\n"); subprocess.run(["git","add","tracked"],cwd=repo,check=True)
-            subprocess.run(["git","commit","-qm","fixture"],cwd=repo,check=True)
+            subprocess.run(["git","commit","--no-gpg-sign","-qm","fixture"],cwd=repo,check=True)
             self.assertTrue(bench.clean(repo)); (repo/"untracked").write_text("dirty\n")
             self.assertFalse(bench.clean(repo))
 
@@ -35,6 +35,23 @@ class BenchmarkTest(unittest.TestCase):
             self.assertEqual(count,"1"); self.assertEqual(base,head)
             remote=subprocess.check_output(["git","remote","get-url","origin"],cwd=work,text=True).strip()
             self.assertEqual(remote,str(work/".stub-origin"))
+
+    def test_snapshot_ignores_host_commit_policy(self):
+        with tempfile.TemporaryDirectory() as td:
+            hooks=Path(td)/"hooks"; hooks.mkdir()
+            hook=hooks/"pre-commit"; hook.write_text("#!/bin/sh\nexit 99\n"); hook.chmod(0o755)
+            source=Path(td)/"source"; source.mkdir()
+            injected={"GIT_CONFIG_COUNT":"2", "GIT_CONFIG_KEY_0":"core.hooksPath",
+                      "GIT_CONFIG_VALUE_0":str(hooks), "GIT_CONFIG_KEY_1":"commit.gpgsign",
+                      "GIT_CONFIG_VALUE_1":"true"}
+            previous={key:os.environ.get(key) for key in injected}
+            try:
+                os.environ.update(injected); bench.snapshot(ROOT,"HEAD",source)
+            finally:
+                for key, value in previous.items():
+                    if value is None: os.environ.pop(key,None)
+                    else: os.environ[key]=value
+            self.assertEqual(subprocess.check_output(["git","rev-list","--count","HEAD"],cwd=source,text=True).strip(),"1")
 
     def test_eigenscript_validation_is_public_contract_in_order(self):
         task=json.loads((ROOT/"bench/ai_contribution/tasks/eigenscript-1236.json").read_text())
