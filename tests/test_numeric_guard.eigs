@@ -211,4 +211,28 @@ raw_inf_scalar is raw_inf_product[0]
 assert of [raw_inf_scalar == CAP, "NG31 index read into a scalar is clamped"]
 assert of [(buf_get of [raw_inf_product, 0]) == CAP, "NG31 buf_get is clamped"]
 
+# A NaN uses the same read boundary as infinity. In non-strict mode every
+# accessor returns numeric 0 and sets invalid; none may leak the NaN-box null
+# tag merely because it bypasses make_num.
+nan_left is buffer of [1, 2]
+nan_left[0] is 1e200
+nan_left[1] is 1e200
+nan_right is buffer of [2, 1]
+nan_right[0] is 1e200
+nan_right[1] is 0 - 1e200
+raw_nan_product is matmul of [nan_left, nan_right]
+clear_math_flags of null
+assert of [raw_nan_product[0] == 0, "NG32 indexed NaN read collapses to zero"]
+assert of [(math_flags of null).invalid == 1, "NG32 indexed NaN read sets invalid"]
+clear_math_flags of null
+assert of [(buf_get of [raw_nan_product, 0]) == 0, "NG33 buf_get NaN read collapses to zero"]
+assert of [(math_flags of null).invalid == 1, "NG33 buf_get NaN read sets invalid"]
+clear_math_flags of null
+assert of [(get_at of [raw_nan_product, 0]) == 0, "NG34 get_at NaN read collapses to zero"]
+assert of [(math_flags of null).invalid == 1, "NG34 get_at NaN read sets invalid"]
+clear_math_flags of null
+nan_gathered is gather of [raw_nan_product, [0]]
+assert of [nan_gathered[0] == 0, "NG35 gather NaN read collapses to zero"]
+assert of [(math_flags of null).invalid == 1, "NG35 gather NaN read sets invalid"]
+
 print of "All numeric-guard tests passed"

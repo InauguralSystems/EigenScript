@@ -243,16 +243,10 @@ print of f"{v} {(math_flags of null).invalid}"'
 run "SM49a opt-out matmul(inf-inf) LIST path still collapses to 0 + invalid" 0 0 "[0] 1" \
 'local r is matmul of [[[1e200, 1e200]], [[1e200], [0 - 1e200]]]
 print of f"{r} {(math_flags of null).invalid}"'
-# The BUFFER path is deliberately NOT collapsed with the flag off. The kernel
-# writes into the result buffer raw; its NaN is kept in the canonical legacy
-# sentinel form, which reads back as `null` (a NaN-boxed slot tag,
-# 0xFFF8... == SLOT_NULL_BITS) with math_flags.invalid still 0. That is what
-# v0.43.0 does, and this change's contract is that the flag-off path is
-# byte-identical to it: an earlier draft collapsed it to 0 here and had to
-# carry a waiver in tools/strict_differential.sh to say so. The `null` read
-# is a real defect and is recorded in ROADMAP.md as its own change; SM49b
-# pins the CURRENT answer so that change cannot happen by accident.
-run "SM49b opt-out matmul(inf-inf) BUFFER path is byte-identical to v0.43.0" 0 0 "null 0" \
+# #1417 applies the same scalar-read rule to buffer and list results. The
+# kernel may retain a raw NaN internally, but exposing it collapses it to 0 and
+# sets invalid just as make_num does on the boxed path.
+run "SM49b opt-out matmul(inf-inf) BUFFER read collapses to 0 + invalid" 0 0 "0 1" \
 'local m1 is buffer of [1, 2]
 m1[0] is 1e200
 m1[1] is 1e200
@@ -263,7 +257,7 @@ local r is matmul of [m1, m2]
 print of f"{r[0]} {(math_flags of null).invalid}"'
 # #1131: canonicalization must visit every NaN and preserve intervening
 # finite results. On ARM the kernel's invalid-operation NaNs are positive.
-run "SM49c opt-out matmul buffer preserves each NaN sentinel and finite neighbor" 0 0 "null 2e+200 null 0" \
+run "SM49c opt-out matmul buffer guards each NaN and preserves finite neighbor" 0 0 "0 2e+200 0 1" \
 'local a is buffer of [1, 2]
 a[0] is 1e200
 a[1] is 1e200

@@ -2625,7 +2625,10 @@ echo ""
 echo "[42c/47] Numeric Guard"
 # #1361 EIGS_STRICT=0: pins the finite-by-construction domain stand-ins (sqrt/asin/acos/log clamps, num "nan" -> 0 + math_flags.invalid).
 NG_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
-if rc_ok "$NG_OUTPUT_RC" "$NG_OUTPUT" && echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed"; then
+NF_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_buffer_nonfinite_read.eigs 2>&1); NF_OUTPUT_RC=$?
+NF_EXPECTED=$(cat ../tests/test_buffer_nonfinite_read.out)
+if rc_ok "$NG_OUTPUT_RC" "$NG_OUTPUT" && echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed" && \
+   rc_ok "$NF_OUTPUT_RC" "$NF_OUTPUT" && [ "$NF_OUTPUT" = "$NF_EXPECTED" ]; then
     TOTAL=$((TOTAL + 19))
     PASS=$((PASS + 19))
     echo "  PASS: all 19 numeric-guard checks"
@@ -2634,6 +2637,10 @@ else
     FAIL=$((FAIL + 19))
     echo "  FAIL: numeric-guard tests"
     echo "$NG_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+    if [ "$NF_OUTPUT" != "$NF_EXPECTED" ]; then
+        echo "  non-finite VM/AOT oracle mismatch"
+        diff -u ../tests/test_buffer_nonfinite_read.out <(printf '%s\n' "$NF_OUTPUT") || true
+    fi
 fi
 echo ""
 

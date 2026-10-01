@@ -207,6 +207,10 @@ the rest accept either, and hand back a buffer when every operand was one.
 `matmul`, `matmul_at`, and `matmul_bt` round each multiplication to binary64
 before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.
+Raw non-finite results may remain in a buffer's internal work area, but every
+scalar read applies EigenScript's numeric guard: infinity saturates at
+±`1e308`, and a NaN raises in strict mode (or becomes `0` and sets the invalid
+math flag under `EIGS_STRICT=0`).
 
 One place EigenScript is louder than NumPy: an out-of-range index in `gather`
 **raises** rather than answering a stand-in, on both containers — NumPy's

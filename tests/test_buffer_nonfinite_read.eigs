@@ -1,0 +1,32 @@
+# #1417 byte-for-byte VM/AOT oracle. Keep this program and its .out sibling
+# consumable as a standalone fixture by ouroboros: it pins every operator from
+# the issue plus the scalar accessor paths, without relying on assertions.
+big is buffer of 4
+big[0] is 1e300
+big[1] is 1e300
+big[2] is 1e300
+big[3] is 1e300
+matrix is reshape of [big, 2, 2]
+infs is matmul of [matrix, matrix]
+print of (infs[0] > 1e308)
+print of (infs[0] / infs[1])
+print of (infs[0] % 3)
+print of (infs[0] * 0.5 > 1e308)
+print of (infs[0] + 0 > 1e308)
+print of (buf_get of [infs, 0])
+print of (get_at of [infs, 0])
+print of (gather of [infs, [0, 0]])[0]
+
+left is buffer of [1, 2]
+left[0] is 1e200
+left[1] is 1e200
+right is buffer of [2, 1]
+right[0] is 1e200
+right[1] is 0 - 1e200
+nans is matmul of [left, right]
+clear_math_flags of null
+print of nans[0]
+print of (buf_get of [nans, 0])
+print of (get_at of [nans, 0])
+print of (gather of [nans, [0]])[0]
+print of (math_flags of null).invalid
