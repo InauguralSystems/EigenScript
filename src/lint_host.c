@@ -414,8 +414,16 @@ int eigs_api_dump(FILE *out, int json) {
     }
 
     if (json) {
-        fprintf(out, "{\"version\": \"%s\",\n \"builtins\": [",
+        fprintf(out, "{\"version\": \"%s\",\n \"available_variants\": [",
                 EIGENSCRIPT_VERSION);
+        int v_first = 1;
+        static const char *variants[] = {"http", "gfx", "zlib", "net"};
+        for (size_t i = 0; i < sizeof(variants) / sizeof(variants[0]); i++) {
+            if (!eigs_runtime_has_variant(variants[i])) continue;
+            fprintf(out, "%s\"%s\"", v_first ? "" : ", ", variants[i]);
+            v_first = 0;
+        }
+        fprintf(out, "],\n \"builtins\": [");
         int b_first = 1;
         for (int i = 0; i < core->count; i++) {
             char esc[600];

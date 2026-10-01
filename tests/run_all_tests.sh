@@ -6451,6 +6451,20 @@ else
 fi
 echo ""
 
+echo "[96c] --pkg runtime variant requirements (#1159)"
+TOTAL=$((TOTAL + 3))
+PKG5_OUT=$(EIGENSCRIPT="./eigenscript" bash "$TESTS_DIR/test_pkg_requires.sh" 2>&1); PKG5_RC=$?
+PKG5_PASS=$(echo "$PKG5_OUT" | grep -c "^  PASS:" || true)
+if [ "$PKG5_RC" = "0" ] && [ "$PKG5_PASS" = "3" ]; then
+    echo "$PKG5_OUT" | grep "^  PASS:"
+    PASS=$((PASS + 3))
+else
+    echo "  FAIL: --pkg runtime variant requirements (rc=$PKG5_RC, passes=$PKG5_PASS)"
+    echo "$PKG5_OUT" | head -20
+    FAIL=$((FAIL + 3))
+fi
+echo ""
+
 # ---- stdlib lint gate: every lib/*.eigs must parse clean AND be free of
 # ---- error-severity findings ----
 # Regression guard for the keyword-shadow class: an identifier shadowing a

@@ -37,6 +37,10 @@
 #define EIGENSCRIPT_EXT_ZLIB 0
 #endif
 
+/* The package manager and import gate ask this single, compile-time-backed
+ * capability oracle.  Keep variant names aligned with the public make goals. */
+int eigs_runtime_has_variant(const char *name);
+
 /* Freestanding profile (docs/FREESTANDING.md) — the no-libc/EigenOS
  * carve-out. Compiles out everything that needs a host OS beyond the
  * HAL roots + mini-libc/libm allowlist (tools/freestanding_allowlist.txt):

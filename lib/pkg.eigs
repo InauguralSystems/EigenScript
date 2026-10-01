@@ -27,8 +27,8 @@
 #
 # Design intent:
 #   - The tool is the only thing that touches the network.
-#   - The runtime never reads eigs.json — resolution is by directory
-#     convention so a missing or corrupt manifest never breaks `import`.
+#   - Resolution stays directory-based. At import, the runtime reads only the
+#     resolved package's `requires` field to gate its compiled capabilities.
 #   - Install is `git clone --depth 1` + checkout + hash. No code from
 #     the dep is ever executed at install time.
 
@@ -233,6 +233,38 @@ define write_lockfile(lock) as:
     encoded is json_encode of lock
     write_text of [LOCKFILE_PATH, encoded + "\n"]
 
+# The oracle is emitted by this exact executable's compiled registry; neither
+# the package tool nor its tests carry a second list of enabled variants.
+define available_variants() as:
+    result is exec_capture of [(exe_path of null), "--api", "--json"]
+    if result[0] != 0:
+        throw of "could not query running binary capabilities"
+    api is json_decode of result[1]
+    return api.available_variants
+
+define check_package_requirements(manifest, names) as:
+    available is available_variants of null
+    failed is 0
+    for i in range of (len of names):
+        name is names[i]
+        package_manifest_path is MODULES_DIR + "/" + (pkg_leaf of name) + "/eigs.json"
+        package_text is read_text of package_manifest_path
+        if package_text == "":
+            continue
+        package_manifest is json_decode of package_text
+        if (type of package_manifest) != "dict":
+            continue
+        if (has_key of [package_manifest, "requires"]) == 0:
+            continue
+        requires is package_manifest.requires
+        for r in range of (len of requires):
+            variant is requires[r]
+            if (list_contains of [available, variant]) == 0:
+                print of f"  REQUIREMENT MISMATCH: {name} requires variant {variant} (run make {variant})"
+                failed is failed + 1
+    if failed != 0:
+        throw of f"runtime variant requirements unmet for {failed} package(s)"
+
 # ---- Subcommands -----------------------------------------------------
 
 define cmd_list() as:
@@ -432,6 +464,7 @@ define cmd_install() as:
         print of f"  installed {name} @ {current[0:8]}"
 
     write_lockfile of lock
+    check_package_requirements of [manifest, names]
     print of f"Installed {installed} package(s)."
     return 0
 
@@ -454,6 +487,7 @@ define cmd_verify() as:
 
     lock is read_lockfile of null
     failed is 0
+    check_package_requirements of [manifest, names]
     for i in range of n:
         name is names[i]
         target is MODULES_DIR + "/" + (pkg_leaf of name)

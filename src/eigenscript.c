@@ -7,6 +7,15 @@
 #include <float.h>   /* DBL_EPSILON — the #422 raw-step fp-noise floor */
 #include "env_flag.h"
 #include "eigenscript.h"
+
+int eigs_runtime_has_variant(const char *name) {
+    if (!name) return 0;
+    if (strcmp(name, "http") == 0) return EIGENSCRIPT_EXT_HTTP != 0;
+    if (strcmp(name, "gfx") == 0) return EIGENSCRIPT_EXT_GFX != 0;
+    if (strcmp(name, "zlib") == 0) return EIGENSCRIPT_EXT_ZLIB != 0;
+    if (strcmp(name, "net") == 0) return EIGENSCRIPT_EXT_NET != 0;
+    return 0;
+}
 #include "vm.h"   /* EigsChunk layout: the cycle collector traverses
                    * fn -> chunk -> env_cache / functions[] edges */
 #include <pthread.h>

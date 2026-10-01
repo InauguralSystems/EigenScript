@@ -5973,6 +5973,44 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         name, ureal, shadowed);
             }
 
+            /* #1159: an installed package's manifest is part of its import
+             * contract.  Reject an unavailable build variant before any of
+             * the package's source executes, rather than letting the first
+             * extension call fail later as an undefined name. */
+            char *pkg_dir = eigs_file_directory(path_buf);
+            if (pkg_dir) {
+                char manifest_path[8192];
+                snprintf(manifest_path, sizeof(manifest_path), "%.8000s/eigs.json", pkg_dir);
+                free(pkg_dir);
+                long manifest_size = 0;
+                char *manifest_text = read_file_util(manifest_path, &manifest_size);
+                if (manifest_text) {
+                    int json_pos = 0;
+                    Value *manifest = eigs_json_parse_root(manifest_text, &json_pos);
+                    free(manifest_text);
+                    if (manifest && manifest->type == VAL_DICT) {
+                        Value *pkg_name = dict_get(manifest, "name");
+                        Value *requires = dict_get(manifest, "requires");
+                        if (requires && requires->type == VAL_LIST) {
+                            for (int ri = 0; ri < requires->data.list.count; ri++) {
+                                Value *req = requires->data.list.items[ri];
+                                if (req->type == VAL_STR && !eigs_runtime_has_variant(req->data.str)) {
+                                    const char *shown = (pkg_name && pkg_name->type == VAL_STR)
+                                                        ? pkg_name->data.str : name;
+                                    rt_error(EK_IO, current_line,
+                                             "package %s requires the %s variant; this binary was built without it (run make %s)",
+                                             shown, req->data.str, req->data.str);
+                                    free_value(manifest);
+                                    vm_push(make_null());
+                                    DISPATCH();
+                                }
+                            }
+                        }
+                    }
+                    if (manifest) free_value(manifest);
+                }
+            }
+
             /* Module cache: canonicalize to absolute path so two different
              * importers (different cwds, different relative paths) hash to
              * the same entry. A miss re-executes; a hit binds the same dict

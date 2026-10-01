@@ -15,17 +15,27 @@ that touches the network; **no dependency code runs at install time** —
 install is `git clone --depth 1` + checkout + hash, and only a later
 `import` actually executes any of it.
 
-The runtime never reads the manifest. `import <name>` resolves by
-directory convention (`eigs_modules/<leaf>/<leaf>.eigs`), so a missing
-or corrupt `eigs.json` can never break `import`.
+`import <name>` resolves by directory convention
+(`eigs_modules/<leaf>/<leaf>.eigs`). Once resolved, the runtime reads that
+package's adjacent manifest only to enforce `requires`; a missing manifest is
+treated as having no requirements, while a valid declaration is checked before
+package source executes.
 
 ## Files
 
 | File | Role |
 |------|------|
-| `eigs.json` | Manifest: `name`, `version`, and `deps` keyed by `<owner>/<name>`. Also an optional `lint.allow` map (per-file lint allow-list — see docs/DIAGNOSTICS.md). |
+| `eigs.json` | Manifest: `name`, `version`, `deps` keyed by `<owner>/<name>`, and optional `requires` build variants. Also an optional `lint.allow` map (per-file lint allow-list — see docs/DIAGNOSTICS.md). |
 | `eigs.lock.json` | Resolved commit SHAs + content hashes for each dep. |
 | `eigs_modules/<leaf>/` | One directory per dep — a git checkout at the locked commit. |
+
+`requires` is a list containing zero or more runtime build variants: `http`,
+`gfx`, `zlib`, or `net`. For example, an HTTP client package declares
+`"requires": ["http"]`. `--pkg install` and `--pkg verify` compare each
+installed dependency's declaration with the running executable and fail with
+the package name and providing `make` target for every mismatch. Import applies
+the same gate before package code executes. Packages needing no extension use
+`"requires": []`.
 
 ## Naming
 
