@@ -276,7 +276,7 @@ overlay_runtime_slots() {
 }
 build_overlay() {
   local item base name
-  OVERLAY="$WORK/tree"
+  OVERLAY="$1"
   mkdir -p "$OVERLAY" || return 1
   if [ -d "$TREE/src" ]; then cp -rL "$TREE/src" "$OVERLAY/src" || return 1
   else mkdir -p "$OVERLAY/src" || return 1; fi
@@ -322,6 +322,7 @@ row() {
   if [ "$kind" = missing-inventory ] || [ -z "$cmd" ]; then verdict=UNRUNNABLE; prereq="$kind"
   elif v="$(unsupported_variant "$ECO/$name" "$cmd")" && [ -n "$v" ]; then verdict=UNRUNNABLE; prereq="variant:$v"
   elif v="$(probe_prereq "$name" "$cmd" "$candidate")" && [ -n "$v" ]; then verdict=UNRUNNABLE; prereq="$v"
+  elif ! build_overlay "$WORK/tree-$i"; then verdict=FAIL; prereq=overlay-build
   else
     start="$(date +%s)"
     ( cd "$ECO/$name" && exec "${session[@]}" env PATH="$SHIM:$PATH" EIGS=eigenscript EIGENSCRIPT=eigenscript \
@@ -446,7 +447,6 @@ run() {
   make_shim eigenscript "$candidate"
   make_shim eigenscript-full "${FULL:-missing}"
   make_shim eigenscript-gfx "${GFX:-missing}"
-  build_overlay || { echo "cannot build candidate overlay: $TREE"; return 2; }
   [ -z "$GFX" ] || GFX_ENV=("EIGENSCRIPT_GFX=$SHIM/eigenscript-gfx")
   BODY="$WORK/record-body"; : > "$BODY"
   scan_inventory > "$WORK/inventory"
@@ -682,8 +682,27 @@ selftest() {
   if [ "$st_rc" -ne 0 ] && grep -Fq 'row|mutated|v0.43.0|FAIL|0|' "$st_record" && grep -Fq 'prereq=candidate-mutated:eigenscript' "$st_record"; then
     echo "plant G check=candidate-mutation RED $(grep '^row|mutated|' "$st_record" | head -1)"
   else echo 'plant G check=candidate-mutation SILENT'; st_bad=1; fi
+  # (H) One row's tree-slot overwrite must not bypass the candidate in the next.
+  printf '#!/bin/sh\ncase "$1" in bad.eigs) exit 42;; esac\nexit 0\n' > "$st_candidate"; chmod +x "$st_candidate"
+  st_reset
+  st_consumer overwrite_a 'eigenscript good.eigs && printf "#!/bin/sh\nexit 0\n" > "$EIGS_DIR/src/eigenscript" && chmod +x "$EIGS_DIR/src/eigenscript"'
+  st_consumer overwrite_b 'eigenscript good.eigs && "$EIGS_DIR/src/eigenscript" bad.eigs'
+  printf 'overwrite_a\noverwrite_b\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -ne 0 ] && grep -Fq 'row|overwrite_a|v0.43.0|PASS|0|' "$st_record" && grep -Fq 'row|overwrite_b|v0.43.0|FAIL|42|' "$st_record"; then
+    echo 'plant H check=cross-row-overlay RED overwrite_a=PASS overwrite_b=FAIL rc=42'
+  else echo 'plant H check=cross-row-overlay SILENT overwrite reached later row'; st_bad=1; fi
+  # (I) Without the overwrite, both rows use and count the supplied candidate.
+  st_reset
+  st_consumer clean_a 'eigenscript good.eigs'
+  st_consumer clean_b 'eigenscript good.eigs && "$EIGS_DIR/src/eigenscript" good.eigs'
+  printf 'clean_a\nclean_b\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && [ "$(grep -c '^row|clean_.*|PASS|' "$st_record")" -eq 2 ] && grep -Fq 'row|clean_a|v0.43.0|PASS|0|' "$st_record" && grep -Fq 'row|clean_b|v0.43.0|PASS|0|' "$st_record"; then
+    echo 'plant I check=cross-row-control GREEN rows=2 candidate-calls=counted'
+  else echo 'plant I check=cross-row-control SILENT'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 15/15 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 17/17 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 
