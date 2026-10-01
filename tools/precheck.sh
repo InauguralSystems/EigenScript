@@ -12,9 +12,32 @@
 # The diff base of the base-relative rows is PRECHECK_BASE (default origin/main, for local use). CI sets it to the
 # event's base: pull_request.base.sha, or merge_group.base_sha (the candidate's base, NOT main's tip).
 #
-# Usage: tools/precheck.sh [--list]
+# Usage: tools/precheck.sh [--list|--selftest]
 set -u
 cd "$(dirname "$0")/.." || exit 2
+. tools/portability_verdict.sh
+
+if [ "${1:-}" = --selftest ]; then
+    fail=0
+    check() { # name expected-rc expected-status output [kernel]
+        local name="$1" rc="$2" want="$3" out="$4" kernel="${5:-Linux}"
+        portability_verdict "$rc" "$out" "$kernel"
+        if [ "$PORT_VERDICT" = "$want" ]; then echo "PASS: $name -> $want"
+        else echo "FAIL: $name wanted $want, got $PORT_VERDICT ($PORT_VERDICT_REASON)"; fail=$((fail + 1)); fi
+    }
+    check pass 0 PASS $'portability-parse: oracle-major=3\nportability: OK: complete'
+    check fail 7 FAIL 'portability: FAIL: planted'
+    check announced-skip 0 SKIP 'portability-parse: SKIPPED (planted)'
+    check no-verdict 0 FAIL ''
+    check both-verdicts 0 FAIL $'portability-parse: oracle-major=3\nportability-parse: SKIPPED\nportability: OK:'
+    check wrong-identity 0 FAIL $'portability-parse: oracle-major=5\nportability: OK:'
+    check darwin-skip 0 FAIL 'portability-parse: SKIPPED' Darwin
+    # The no-binary row is classified before execution and cannot accidentally pass.
+    st=PASS; [ -n "" ] || st=SKIP
+    [ "$st" = SKIP ] && echo 'PASS: no binary -> SKIP' || { echo 'FAIL: no binary wanted SKIP'; fail=$((fail + 1)); }
+    echo "precheck-selftest: $((8 - fail))/8 passed, $fail failed"
+    [ "$fail" -eq 0 ]; exit
+fi
 
 # The shard count is ci.yml's, so this checks the plan CI checks.
 SHARDS=$(sed -n 's/^[[:space:]]*ASAN_SHARDS:[[:space:]]*\([0-9][0-9]*\)[[:space:]]*$/\1/p' .github/workflows/ci.yml | head -1)
@@ -43,7 +66,7 @@ bin|tools/portability_parse_check.sh
 selftest|tools/selftests.sh --changed $BASE"
 
 if [ "${1:-}" = "--list" ]; then printf '%s\n' "$GATES" | tr '|' ' '; exit 0; fi
-[ -z "${1:-}" ] || { echo "usage: tools/precheck.sh [--list]" >&2; exit 2; }
+[ -z "${1:-}" ] || { echo "usage: tools/precheck.sh [--list|--selftest]" >&2; exit 2; }
 
 BIN=""
 for b in src/eigenscript build/release/eigenscript; do [ -x "$b" ] && { BIN=$b; break; }; done
@@ -58,10 +81,12 @@ run_gate() {   # run_gate <index> <class> <command...>
     fi
     s=$(date +%s)
     bash "$@" > "$OUT/$i.log" 2>&1; rc=$?
-    if [ "$rc" -eq 0 ] && grep -qE '^[a-z0-9_-]+: SKIPPED' "$OUT/$i.log"; then
-        # An announced skip exits 0 and measured nothing: never a PASS (#1326).
-        echo "SKIP|$(( $(date +%s) - s ))|$(grep -m1 -E '^[a-z0-9_-]+: SKIPPED' "$OUT/$i.log" | cut -c1-120)" > "$OUT/$i.st"
+    if [ "$cmd" = tools/portability_parse_check.sh ]; then
+        portability_verdict "$rc" "$(cat "$OUT/$i.log")"
+        echo "$PORT_VERDICT|$(( $(date +%s) - s ))|$PORT_VERDICT_REASON" > "$OUT/$i.st"
     elif [ "$rc" -eq 0 ]; then
+        # Only gates with an explicit classifier may announce a whole-gate
+        # skip.  A sub-check's `name: SKIPPED` can never mask this row's PASS.
         echo "PASS|$(( $(date +%s) - s ))|$(grep -v '^[[:space:]]*$' "$OUT/$i.log" | tail -1 | cut -c1-120)" > "$OUT/$i.st"
     else
         echo "FAIL|$(( $(date +%s) - s ))|exit $rc" > "$OUT/$i.st"
