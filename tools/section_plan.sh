@@ -49,7 +49,7 @@ cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT
 62be8333b50e395a|(b) the same PASS line on the no-gfx-build arm
 21d7909a4df0a664|(c) sub-check: [99s] on a non-gfx build, the gfx sweep and pixel halves; the core strict halves still assert
 27cfdaf9128456df|(b) the RESULTS line itself, which PRINTS the skipped count
-43af9bdd1c5e1f94|(c) sub-check: [99zb] relays the portability tool own population/oracle line (widened by #1226 to include NO OLD BASH and other arm wordings); the section fails unless the tool reports OK or one of those named arms — supersedes the pre-#1226 row for this same relay
+29b8c942c2e49b7f|(c) sub-check: [99zb] relays the portability tool own population/oracle line (widened by #1226 to include NO OLD BASH and other arm wordings); the section fails unless the tool reports OK or one of those named arms — supersedes the pre-#1226 row for this same relay
 '
 # One scratch root and one EXIT cleanup trap.
 SP_TMPROOT=$(mktemp -d "${TMPDIR:-/tmp}/eigs_section_plan.XXXXXX") || {
