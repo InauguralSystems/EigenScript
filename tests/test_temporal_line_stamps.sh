@@ -12,7 +12,7 @@ OUT=$(EIGS_JIT_OFF=1 EIGS_TRACE="$TAPE" "$EIGS" \
     "$TESTS_DIR/test_temporal_line_stamps.eigs" 2>&1)
 RC=$?
 LINES=$(sed -n 's/^L /L /p' "$TAPE")
-EXPECTED='L 1
+EXPECTED='L 0 1
 L 0 2
 L 0 3
 L 0 4
@@ -43,7 +43,7 @@ L 0 18
 L 0 19
 L 0 20
 L 0 18
-L 22'
+L 0 22'
 
 if [ "$RC" -eq 0 ] && [ "$OUT" = null ] && [ "$LINES" = "$EXPECTED" ]; then
     echo "  PASS: control-flow and store stamps follow statement ownership"

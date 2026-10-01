@@ -213,11 +213,11 @@ grep -q '^O ' "$TMPDIR/plain.tape" \
 WORK_TAPE="$TMPDIR/observer-work-limit.tape"
 head -1 "$TMPDIR/plain.tape" > "$WORK_TAPE"
 for _ in $(seq 1 1000); do
-    echo 'O cfg 0.001 0.01 0.1 10 0.001' >> "$WORK_TAPE"
+    echo 'O 0 cfg 0.001 0.01 0.1 10 0.001' >> "$WORK_TAPE"
 done
-echo 'L 1' >> "$WORK_TAPE"
+echo 'L 0 1' >> "$WORK_TAPE"
 for i in $(seq 1 1001); do
-    echo "A x$i=1" >> "$WORK_TAPE"
+    echo "A 0 x$i=1" >> "$WORK_TAPE"
 done
 echo q | "$EIGS" --step "$WORK_TAPE" "$TMPDIR/plain.eigs" \
     >/dev/null 2>"$TMPDIR/work-limit.err"

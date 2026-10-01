@@ -1474,11 +1474,17 @@ static int replay_record_prefix(char kind, uint64_t *id, char **payload) {
     if (p[0] != kind || p[1] != ' ') return 0;
     p += 2;
     if (*p < '0' || *p > '9') return -1;
-    errno = 0;
-    char *end = NULL;
-    unsigned long long n = strtoull(p, &end, 10);
-    if (errno == ERANGE || end == p || *end != ' ') return -1;
-    *id = (uint64_t)n;
+    uint64_t n = 0;
+    char *end = p;
+    while (*end >= '0' && *end <= '9') {
+        unsigned digit = (unsigned)(*end - '0');
+        if (n > (UINT64_MAX - digit) / 10) return -1;
+        n = n * 10 + digit;
+        end++;
+    }
+    /* UINT64_MAX is the allocator's failure sentinel, not a stream id. */
+    if (n == UINT64_MAX || *end != ' ') return -1;
+    *id = n;
     *payload = end + 1;
     return **payload ? 1 : -1;
 }

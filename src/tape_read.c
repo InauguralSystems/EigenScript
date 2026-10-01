@@ -14,7 +14,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 
 #ifndef EIGENSCRIPT_VERSION
 #define EIGENSCRIPT_VERSION "dev"
@@ -229,10 +228,15 @@ static int tape_parse(Tape *t, long len) {
                 fprintf(stderr, "step: malformed v4 stream id in '%s'; refusing to step\n", p);
                 return 0;
             }
-            char *id_end = NULL;
-            errno = 0;
-            (void)strtoull(body, &id_end, 10);
-            if (errno == ERANGE || id_end == body || *id_end != ' ' || !id_end[1]) {
+            char *id_end = body;
+            uint64_t id = 0;
+            while (*id_end >= '0' && *id_end <= '9') {
+                unsigned digit = (unsigned)(*id_end - '0');
+                if (id > (UINT64_MAX - digit) / 10) break;
+                id = id * 10 + digit;
+                id_end++;
+            }
+            if (id == UINT64_MAX || *id_end != ' ' || !id_end[1]) {
                 fprintf(stderr, "step: malformed v4 stream id in '%s'; refusing to step\n", p);
                 return 0;
             }
