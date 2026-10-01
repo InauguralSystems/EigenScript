@@ -565,6 +565,24 @@ def main():
     check("multiline parameter range selects its name (#1369)",
           isinstance(res, list) and any(ref.get("range") == multiline_decl for ref in res))
 
+    implicit_param_doc = ('define f as:\n'
+                          '    return n\n'
+                          'define g(x) as:\n'
+                          '    return x\n')
+    implicit_param_refs = {
+        "jsonrpc": "2.0", "id": 33, "method": "textDocument/references",
+        "params": {"textDocument": {"uri": URI},
+                   "position": {"line": 1, "character": 11},
+                   "context": {"includeDeclaration": True}}}
+    r = converse([INIT, did_open(implicit_param_doc), implicit_param_refs,
+                  SHUTDOWN, EXIT])
+    res = (by_id(r, 33) or {}).get("result")
+    unrelated_x_decl = {"start": {"line": 2, "character": 9},
+                        "end": {"line": 2, "character": 10}}
+    check("implicit parameter does not borrow a later signature (#1369)",
+          isinstance(res, list) and
+          not any(ref.get("range") == unrelated_x_decl for ref in res))
+
     # --- didClose then reference on the closed doc must not crash ---
     close = {"jsonrpc": "2.0", "method": "textDocument/didClose",
              "params": {"textDocument": {"uri": URI}}}

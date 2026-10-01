@@ -363,8 +363,13 @@ static int function_param_location(const TokenList *tokens, int func_line,
             !next->synth && next->str_val && strcmp(next->str_val, func_name) == 0)
             break;
     }
-    while (i < tokens->count && tokens->tokens[i].type != TOK_LPAREN) i++;
-    if (i == tokens->count) return 0; /* implicit `n` has no declaration token */
+    /* The opening parenthesis, when present, immediately follows the function
+     * name.  Do not search beyond this declaration: a parameterless function
+     * gets an implicit `n`, and a later function's `(` is unrelated. */
+    i += 2;
+    if (i >= tokens->count || tokens->tokens[i].synth ||
+        tokens->tokens[i].type != TOK_LPAREN)
+        return 0; /* implicit `n` has no declaration token */
 
     int parens = 1, brackets = 0, braces = 0;
     int param = 0;
