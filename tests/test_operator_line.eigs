@@ -85,13 +85,13 @@ try:
         s)
 catch e:
     got is e.line
-assert_eq of [got, 84, "compound += on a field"]
+assert_eq of [got, 85, "compound += on a field: unchanged base line"]
 try:
     lst[0] += (
         s)
 catch e:
     got is e.line
-assert_eq of [got, 90, "compound += on an index"]
+assert_eq of [got, 91, "compound += on an index: unchanged base line"]
 
 # Hot rows: the operator runs in a JIT thunk and in an OSR-compiled loop.
 k is 6001

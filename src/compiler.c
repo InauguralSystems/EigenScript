@@ -395,7 +395,7 @@ static int op_stack_effect(uint8_t op8) {
     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
         return 0;
     /* Line: no stack change */
-    case OP_LINE:
+    case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END:
         return 0;
     /* Break/continue: no stack change (compiler emits as jumps) */
     case OP_BREAK: case OP_CONTINUE:
@@ -551,15 +551,13 @@ static void restamp_line(Compiler *c, int line) {
     emit_line(c, line);   /* emit_line's own dedup is exactly the test */
 }
 
-/* #1425: a runtime error raised by a binary operator reports the OPERATOR's
- * line (`op_line`), not the line its right operand ended on. Compiles `rhs`,
- * then emits `opc` (0 = none). The VM's line when `opc` runs is the last
- * OP_LINE executed in this frame (a call's return restores the caller's line,
- * #1424/#1434), and every stamp `rhs` can execute here is one it requested
- * from emit_line. So when `rhs` requested only `op_line`, the VM is already
- * there and nothing is emitted: single-line code compiles byte-identically.
- * Otherwise `op_line` is re-stamped before the op (deduped, so an operand that
- * itself ended on `op_line` adds nothing). */
+/* #1425: scope the operator line to the binary instruction. Saving the
+ * runtime line, rather than guessing from last_line, preserves whichever
+ * short-circuit/conditional operand path executed. Calls also invalidate
+ * last_line. Only a differing stamp needs the scope; one-line bytecode stays
+ * identical. The markers surround one non-calling instruction, so scopes
+ * cannot nest or suspend. An error unwinds before BINARY_LINE_END and keeps
+ * the operator line for its diagnostic; success restores both line caches. */
 static void compile_operand_then_op(Compiler *c, ASTNode *rhs, uint8_t opc, int op_line) {
     int lo = c->req_lo, hi = c->req_hi;
     c->req_lo = INT_MAX; c->req_hi = INT_MIN;
@@ -568,8 +566,10 @@ static void compile_operand_then_op(Compiler *c, ASTNode *rhs, uint8_t opc, int 
     if (c->req_lo > lo) c->req_lo = lo;
     if (c->req_hi < hi) c->req_hi = hi;
     if (!opc) return;
-    if (spans) emit_line(c, op_line);
+    int scope = spans && c->last_line != op_line;
+    if (scope) emit_op_u32(c, OP_BINARY_LINE, (uint32_t)op_line, op_line);
     emit(c, opc, op_line);
+    if (scope) emit(c, OP_BINARY_LINE_END, op_line);
 }
 
 /* ---- Constant helpers ---- */
@@ -2976,8 +2976,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             /* Compound: target index → DUP2 → INDEX_GET → expr → BINOP → INDEX_SET */
             emit(c, OP_DUP2, node->line);
             emit(c, OP_INDEX_GET, node->line);
-            compile_operand_then_op(c, node->data.index_assign.expr,
-                binop_to_opcode(node->data.index_assign.compound_op), node->line);
+            compile_node(c, node->data.index_assign.expr);
+            uint8_t op = binop_to_opcode(node->data.index_assign.compound_op);
+            emit(c, op, node->line);
         } else {
             compile_node(c, node->data.index_assign.expr);
         }
@@ -3048,8 +3049,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                         if (cop[0])
                             emit_op_u16_u16_u16(c, OP_LOCAL_IDX_DOT_GET,
                                 (uint16_t)slot, (uint16_t)iv, (uint16_t)name_idx, node->line);
-                        compile_operand_then_op(c, node->data.dot_assign.expr,
-                            cop[0] ? binop_to_opcode(cop) : 0, node->line);
+                        compile_node(c, node->data.dot_assign.expr);
+                        if (cop[0]) emit(c, binop_to_opcode(cop), node->line);
                         emit_op_u16_u16_u16(c, OP_LOCAL_IDX_DOT_SET,
                             (uint16_t)slot, (uint16_t)iv, (uint16_t)name_idx, node->line);
                         break;
@@ -3067,8 +3068,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 int idx = add_string_constant(c, node->data.dot_assign.key);
                 if (cop[0])
                     emit_op_u16_u16(c, OP_LOCAL_DOT_GET, (uint16_t)slot, (uint16_t)idx, node->line);
-                compile_operand_then_op(c, node->data.dot_assign.expr,
-                    cop[0] ? binop_to_opcode(cop) : 0, node->line);
+                compile_node(c, node->data.dot_assign.expr);
+                if (cop[0]) emit(c, binop_to_opcode(cop), node->line);
                 emit_op_u16_u16(c, OP_LOCAL_DOT_SET, (uint16_t)slot, (uint16_t)idx, node->line);
                 break;
             }
@@ -3079,8 +3080,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             /* target → DUP → DOT_GET → expr → BINOP → DOT_SET */
             emit(c, OP_DUP, node->line);
             emit_op_u16(c, OP_DOT_GET, (uint16_t)idx, node->line);
-            compile_operand_then_op(c, node->data.dot_assign.expr,
-                binop_to_opcode(cop), node->line);
+            compile_node(c, node->data.dot_assign.expr);
+            emit(c, binop_to_opcode(cop), node->line);
         } else {
             compile_node(c, node->data.dot_assign.expr);
         }

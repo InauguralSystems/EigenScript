@@ -261,11 +261,12 @@ stape="$TMPDIR/single.tape"
 EIGS_TRACE="$stape" "$EIGS" "$TESTS_DIR/trace_mt_single.eigs" >"$TMPDIR/single.out" 2>"$TMPDIR/single.err"
 src=$?
 read -r slines swell smal snrec socfg sexamined <<< "$(parse_tape "$stape")"
-if [ "$src" -eq 0 ] && [ "$smal" -eq 0 ] && [ "$snrec" -eq 6000 ] && [ "$sexamined" -gt 0 ]; then
-    ok "single-worker: N == 6000 malformed == 0 (unchanged)"
+szero=$(grep -cx 'L 0' "$stape" || true)
+if [ "$src" -eq 0 ] && [ "$smal" -eq 0 ] && [ "$snrec" -eq 6000 ] && [ "$sexamined" -gt 0 ] && [ "$szero" -eq 0 ]; then
+    ok "single-worker: N == 6000 malformed == 0, scoped binary restores a positive worker line"
 else
     fail "single-worker: N == 6000 malformed == 0" \
-         "rc=$src N=$snrec malformed=$smal examined=$sexamined"
+         "rc=$src N=$snrec malformed=$smal examined=$sexamined zero-lines=$szero"
 fi
 
 echo "=== long-scope-name (S record keeps its full name and newline, #1157) ==="

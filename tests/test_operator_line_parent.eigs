@@ -1,0 +1,234 @@
+# #1425: a successful binary op must restore its operand's runtime line.
+# LINE-NUMBER SENSITIVE: expected lines pin ea9ee90, outside the binary-only decision.
+load_file of "lib/test.eigs"
+define parent_unary(k) as:
+    return -(k +
+        k) # @hot_unary
+
+define parent_index(k, items) as:
+    local result is items[k +
+        k] # @hot_index
+    return result
+
+define identity(n) as:
+    return n
+
+define parent_call(k) as:
+    return k of (1 +
+        2) # @hot_call
+
+define osr_parent_unary(items) as:
+    local k is 6001
+    loop while k > 0:
+        local v is k
+        if k == 1:
+            v is "s"
+        local r is -(v +
+            v) # @osr_unary
+        k is k - 1
+    return r
+
+define osr_parent_index(items) as:
+    local k is 6001
+    loop while k > 0:
+        local v is 0
+        if k == 1:
+            v is "s"
+        local r is items[v +
+            v] # @osr_index
+        k is k - 1
+    return r
+
+define osr_parent_call(items) as:
+    local k is 6001
+    loop while k > 0:
+        local v is identity
+        if k == 1:
+            v is 0
+        local r is v of (1 +
+            2) # @osr_call
+        k is k - 1
+    return r
+
+got is 0
+try:
+    r is -("a" +
+        "b") # @cold_unary
+catch e:
+    got is e.line
+assert_eq of [got, 56, "successful + then unary fails"]
+try:
+    r is [1]["a" +
+        "b"] # @cold_index
+catch e:
+    got is e.line
+assert_eq of [got, 62, "successful + then index fails"]
+try:
+    r is 0 of (1 +
+        2) # @cold_call
+catch e:
+    got is e.line
+assert_eq of [got, 68, "successful + then call fails"]
+
+# Each callee is warmed before the failing parent executes.
+k is 80
+loop while k > 0:
+    r is parent_unary of k
+    r is parent_index of [0, ([1])]
+    r is parent_call of identity
+    k is k - 1
+try:
+    r is parent_unary of "s"
+catch e:
+    got is e.line
+assert_eq of [got, 6, "compiled successful + then unary fails"]
+try:
+    r is parent_index of ["s", ([1])]
+catch e:
+    got is e.line
+assert_eq of [got, 10, "compiled successful + then index fails"]
+try:
+    r is parent_call of 0
+catch e:
+    got is e.line
+assert_eq of [got, 18, "compiled successful + then call fails"]
+
+# Each OSR parent has its own chunk; witness each loop independently.
+try:
+    r is osr_parent_unary of ([1])
+catch e:
+    got is e.line
+assert_eq of [got, 27, "OSR successful + then unary fails"]
+try:
+    r is osr_parent_index of ([1])
+catch e:
+    got is e.line
+assert_eq of [got, 38, "OSR successful + then index fails"]
+try:
+    r is osr_parent_call of ([1])
+catch e:
+    got is e.line
+assert_eq of [got, 49, "OSR successful + then call fails"]
+
+# Runtime restoration matters at a short-circuit join: the last emitted
+# line is not necessarily the last executed one.
+try:
+    r is -("a" + ("b" or # @skipped_rhs
+        "c"))
+catch e:
+    got is e.line
+assert_eq of [got, 116, "restore the executed short-circuit arm"]
+try:
+    r is -("a" + (0 or
+        "c")) # @taken_rhs
+catch e:
+    got is e.line
+assert_eq of [got, 123, "restore the taken short-circuit arm"]
+
+# Dedicated compound field/index nodes retain their pre-#1425 behavior.
+o is {"v": 1}
+lst is [1]
+try:
+    o.v += (
+        "s") # @field
+catch e:
+    got is e.line
+assert_eq of [got, 133, "compound field += keeps base attribution"]
+try:
+    lst[0] += (
+        "s") # @index
+catch e:
+    got is e.line
+assert_eq of [got, 139, "compound index += keeps base attribution"]
+try:
+    lst[
+        0] += (
+        "s") # @multiline_target
+catch e:
+    got is e.line
+assert_eq of [got, 146, "compound index target spans lines: base attribution"]
+define compound_local_field(obj) as:
+    obj.v += (
+        "s") # @local_field
+
+define compound_local_index_field(items) as:
+    items[0].v += (
+        "s") # @local_index_field
+
+try:
+    r is compound_local_field of ({"v": 1})
+catch e:
+    got is e.line
+assert_eq of [got, 152, "fused local field compound keeps base line"]
+try:
+    r is compound_local_index_field of ([{"v": 1}])
+catch e:
+    got is e.line
+assert_eq of [got, 156, "fused local index-field compound keeps base line"]
+# The runtime line at a short-circuit join must survive native execution too.
+define parent_branch(k, flag) as:
+    local result is -(k + (flag or # @branch_skip
+        k)) # @branch_take
+    return result
+
+define osr_parent_branch(mode) as:
+    local k is 6001
+    loop while k > 0:
+        local callee is identity
+        if k == 1:
+            callee is 0
+        local flag is 0
+        if mode:
+            flag is 1
+        local result is callee of (1 + (flag or # @osr_branch_skip
+            1)) # @osr_branch_take
+        k is k - 1
+    return result
+
+k is 80
+loop while k > 0:
+    r is parent_branch of [k, 0]
+    r is parent_branch of [k, k]
+    k is k - 1
+try:
+    r is parent_branch of ["s", "s"]
+catch e:
+    got is e.line
+assert_eq of [got, 170, "compiled skipped short-circuit operand restores its runtime line"]
+try:
+    r is parent_branch of ["s", 0]
+catch e:
+    got is e.line
+assert_eq of [got, 171, "compiled taken short-circuit operand restores its runtime line"]
+try:
+    r is osr_parent_branch of 1
+catch e:
+    got is e.line
+assert_eq of [got, 183, "OSR skipped short-circuit operand restores its runtime line"]
+try:
+    r is osr_parent_branch of 0
+catch e:
+    got is e.line
+assert_eq of [got, 184, "OSR taken short-circuit operand restores its runtime line"]
+
+# New opcode numbers are appended and pinned in test_opcode_abi.c.
+# A descriptor must use an adjacent stamp / binary / restore scope: no
+# call or suspension can overwrite the scalar scratch, nor may a jump enter it.
+SCOPE is 94
+END_SCOPE is 95
+scoped is sandbox_run of [[1, [0,0,0, 0,1,0, SCOPE,7,0,0,0, 4,END_SCOPE,40], [2,3]], 1000]
+assert_eq of [scoped["ok"], 1, "adjacent binary line scope verifies"]
+assert_eq of [scoped["result"], 5, "adjacent scope computes normally"]
+restored is sandbox_run of [[1, [68,9,0,0,0, 0,0,0, 0,1,0, SCOPE,7,0,0,0, 4,END_SCOPE,14,40], ["a","b"]], 1000]
+assert_eq of [restored["error"]["line"], 9, "assembled successful binary restores the parent's line"]
+for code in [
+    [0,0,0, 0,1,0, END_SCOPE,4,40],
+    [0,0,0, 0,1,0, SCOPE,7,0,0,0, 4,40],
+    [0,0,0, 0,1,0, SCOPE,7,0,0,0, 14,END_SCOPE,40],
+    [0,0,0, 0,1,0, SCOPE,7,0,0,0, 39,1,0,END_SCOPE,40],
+    [0,0,0, 0,1,0, 29,5,0, SCOPE,7,0,0,0, 4,END_SCOPE,40],
+    [0,0,0, 0,1,0, 29,6,0, SCOPE,7,0,0,0, 4,END_SCOPE,40]]:
+    bad is sandbox_run of [[1, code, [2,3]], 1000]
+    assert_eq of [bad["ok"], 0, "malformed or jumped-into binary line scope is refused"]
+    assert_eq of [bad["error"]["message"], "invalid chunk descriptor", "scope is refused by verification before execution"]
+test_summary of null

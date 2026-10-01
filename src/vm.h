@@ -225,6 +225,9 @@ typedef enum {
                                 * iteration but the last is unaddressable. Ordinals are
                                 * injective and edit-stable. Appended, not mid-list. */
 
+    OP_BINARY_LINE,     /*obs:WRITES*/ /* [line:32] save line caches and stamp one binary op */
+    OP_BINARY_LINE_END, /*obs:WRITES*/ /* restore line caches after a successful binary op */
+
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
@@ -541,6 +544,10 @@ typedef struct VM {
     CallFrame  frames[VM_FRAMES_MAX];
     int        frame_count;
     int        current_line;
+    /* #1425: scratch for adjacent BINARY_LINE / binop / BINARY_LINE_END.
+     * No call, jump or suspension lies inside a compiler-emitted scope. */
+    int        binary_prev_line;
+    int        binary_prev_trace_line;
     /* Back-pointer to the owning EigsThread, set in vm_init. Lets the
      * JIT reach EigsThread fields (e.g. unobserved_depth) via a single
      * `mov off_vm_owner(%rbx), %rax` instead of a TLS read at every

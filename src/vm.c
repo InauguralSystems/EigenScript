@@ -1813,7 +1813,9 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
     uint8_t *ip = c->code;
     for (;;) {
         switch (*ip++) {
-        case OP_LINE:
+        case OP_BINARY_LINE_END:
+            break;
+        case OP_LINE: case OP_BINARY_LINE:
             ip += 4;   /* #630: 32-bit operand */
             break;
         case OP_CONST: {
@@ -2751,6 +2753,8 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->off_frame_count     = (int)offsetof(VM, frame_count);
     out->off_frames          = (int)offsetof(VM, frames);
     out->off_current_line    = (int)offsetof(VM, current_line);
+    out->off_binary_prev_line = (int)offsetof(VM, binary_prev_line);
+    out->off_binary_prev_trace_line = (int)offsetof(VM, binary_prev_trace_line);
     out->off_callframe_ip    = (int)offsetof(CallFrame, ip);
     out->off_callframe_fn_env= (int)offsetof(CallFrame, fn_env);
     out->sizeof_callframe    = (int)sizeof(CallFrame);
@@ -3049,6 +3053,8 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_IMPORT] = &&lbl_IMPORT, [OP_MATCH] = &&lbl_MATCH,
         [OP_LISTCOMP_BEGIN] = &&lbl_LISTCOMP_BEGIN,
         [OP_LISTCOMP_APPEND] = &&lbl_LISTCOMP_APPEND,
+        [OP_BINARY_LINE] = &&lbl_BINARY_LINE,
+        [OP_BINARY_LINE_END] = &&lbl_BINARY_LINE_END,
         [OP_LINE] = &&lbl_LINE, [OP_WIDE] = &&lbl_WIDE,
         [OP_DISPATCH] = &&lbl_DISPATCH,
         [OP_LOCAL_DOT_GET] = &&lbl_LOCAL_DOT_GET,
@@ -6202,7 +6208,26 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         DISPATCH();
     }
 
-    CASE(LINE): {
+    CASE(BINARY_LINE): {
+        g_vm.binary_prev_line = current_line;
+        g_vm.binary_prev_trace_line = g_vm_multithreaded
+            ? current_line : trace_current_line_load();
+        /* Same stamp/tape behavior as LINE; only its lifetime differs. */
+        goto vm_stamp_line;
+    }
+
+    CASE(BINARY_LINE_END): {
+        current_line = g_vm.binary_prev_line;
+        g_vm.current_line = current_line;
+        if (!g_vm_multithreaded)
+            trace_current_line_store(g_vm.binary_prev_trace_line);
+        if (__builtin_expect(g_trace_enabled, 0))
+            trace_line(g_vm.binary_prev_trace_line);
+        DISPATCH();
+    }
+
+    CASE(LINE):
+    vm_stamp_line: {
         uint32_t line = read_u32(ip); ip += 4;   /* #630: 32-bit operand */
         current_line = (int)line;
         g_vm.current_line = (int)line;

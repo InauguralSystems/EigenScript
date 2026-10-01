@@ -313,6 +313,11 @@ scope are safe: anything stored into a binding or a container that
 outlives the window is promoted to the heap at the store (#873) — the
 arena reclaims only the unstored intermediates.
 
+Runtime errors from multiline binary operations report the operator's physical
+line. Successful binary operations restore the previous line attribution;
+compound field/index assignments retain their prior behavior. See
+[the error-line rule](docs/SPEC.md#error-handling) for the binary-only scope.
+
 ## Standard Library
 
 Pure EigenScript libraries under `lib/`:

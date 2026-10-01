@@ -269,6 +269,12 @@ Not Found
 
 ## Error handling
 
+A runtime error raised by a multiline binary operation reports the operator's
+physical line. Plain-name compound assignments follow their desugared binary
+operation; dedicated compound field/index assignments keep their prior line
+attribution. A successful binary operation restores the previous runtime line,
+so an enclosing unary, index or call error keeps its prior attribution.
+
 Python:
 
 ```python
