@@ -769,6 +769,20 @@ build_changed_plan() {
     git -C "$SP_ROOT" ls-files | sed 's#.*/##' | sort | uniq -d > "$SP_WORK/dupnames"
     while read -r p; do
         [ -n "$p" ] && [ "$p" != tests/run_all_tests.sh ] || continue
+        case "$p" in
+            tests/sections/*.sh)
+                # A fragment is itself a section definition. Select every
+                # header it contributes in the expanded runner; treating its
+                # own line numbers as main-runner lines would select nonsense.
+                fragment="$SP_ROOT/$p"
+                [ -f "$fragment" ] || fragment="$SP_WORK/old-fragment"
+                if [ ! -f "$SP_ROOT/$p" ]; then git -C "$SP_ROOT" show "$mb:$p" > "$fragment" 2>/dev/null || :; fi
+                while IFS= read -r label; do
+                    [ -n "$label" ] || continue
+                    sp_refs "$RUNNER" "$label" >> "$SP_WORK/lines"
+                done < <(sed -n 's/^[[:space:]]*echo "\(\[[^]"]*\]\).*$/\1/p' "$fragment")
+                continue ;;
+        esac
         # The hop also reads the tools/ gates the runner calls (docs_claims
         # checks README.md for [99za]); a src/ file is reported as runtime
         # anyway, and tools/ naming it (consumer_acceptance) only adds cost.
@@ -1132,6 +1146,9 @@ done
 [ -n "$MODE" ] || { [ -n "$SP_SHARDS" ] && [ -n "$SP_SHARD_K" ] && MODE='--shard-plan'; }
 [ -n "$MODE" ] || die 'no mode given (see header)'
 [ -f "$RUNNER" ] || die "runner not found: $RUNNER"
+RUNNER_SOURCE=$RUNNER
+RUNNER=$SP_TMPROOT/expanded-runner.sh
+bash "$SP_ROOT/tools/runner_text.sh" "$RUNNER_SOURCE" "$SP_ROOT/tests/sections" > "$RUNNER" || die "cannot expand section fragments"
 case "$MODE" in
     --chunks)
         W=$(sp_workdir chunks); derive_chunks "$RUNNER" > "$W/chunks"

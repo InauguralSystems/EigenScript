@@ -7457,20 +7457,17 @@ else
 fi
 echo ""
 
-# [99ab] Test enrolment (#1264): a tests/*.sh or tests/*.py that no section,
-# workflow step or enrolled script invokes is red, by name. PR #1260's test sat
-# unrun until a maintainer noticed. Self-test case count pinned ([99o] lesson).
-echo "[99ab] test enrolment (#1264)"
-TOTAL=$((TOTAL + 1))
-enrol_out=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" 2>&1); enrol_rc=$?
-if [ "$enrol_rc" -eq 0 ]; then
-    PASS=$((PASS + 1)); echo "  $enrol_out"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: test enrolment (rc=$enrol_rc)"
-    printf '%s\n' "$enrol_out" | grep -E 'FAIL|ABORT' | head -8 | sed 's/^/      /'
-fi
-echo ""
+# Section fragments are sourced by byte-sorted pathname. This marker is also
+# expanded by tools/runner_text.sh so static gates inspect exactly what runs.
+# EIGS_SECTION_FRAGMENTS
+__eigs_old_lc_all=${LC_ALL-}; LC_ALL=C
+for __eigs_section_file in "$TESTS_DIR"/sections/*.sh; do
+    [ -f "$__eigs_section_file" ] || continue
+    . "$__eigs_section_file" || exit 1
+done
+if [ -n "$__eigs_old_lc_all" ]; then LC_ALL=$__eigs_old_lc_all; else unset LC_ALL; fi
+unset __eigs_old_lc_all __eigs_section_file
+# EIGS_SECTION_FRAGMENTS_END
 
 # [99p] Child-script exit-status ledger (#988). The synthetic FAIL: markers
 # emitted by the `bash` wrapper already fail each affected section; this is the
