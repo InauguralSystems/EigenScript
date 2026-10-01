@@ -1,0 +1,1 @@
+- Make the test runner reject internally inconsistent pass, failure, and total counters, and mutation-test all three known tally corruption shapes.

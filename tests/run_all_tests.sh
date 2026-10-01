@@ -7526,6 +7526,12 @@ fi
 
 echo "============================================"
 echo "  RESULTS: $PASS/$TOTAL passed, $FAIL failed, $SKIPPED skipped"
+if [ $((PASS + FAIL)) -ne "$TOTAL" ]; then
+    echo "  FAIL: suite tally invariant broken: PASS + FAIL != TOTAL ($PASS + $FAIL != $TOTAL) (#1354)"
+    TALLY_MISMATCH=1
+else
+    TALLY_MISMATCH=0
+fi
 if [ "$LEAKED" -gt 0 ]; then
     echo "  NOTE: $LEAKED test program(s) exited nonzero on LeakSanitizer"
     echo "  reports (spawn-thread programs + known non-closure leak"
@@ -7533,6 +7539,6 @@ if [ "$LEAKED" -gt 0 ]; then
 fi
 echo "============================================"
 
-if [ "$FAIL" -gt 0 ]; then
+if [ "$FAIL" -gt 0 ] || [ "$TALLY_MISMATCH" -ne 0 ]; then
     exit 1
 fi
