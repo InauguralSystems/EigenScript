@@ -737,6 +737,9 @@ void       chunk_verify_self_check(EigsChunk *chunk, const char *unit);
  * contains (the compiler's source scan, replayed over verified bytecode).
  * Only call on a chunk tree chunk_verify accepted. */
 void       chunk_arm_temporal(const EigsChunk *chunk);
+/* True when a verified chunk tree can read the thread-wide temporal history.
+ * Sandboxes reject such chunks until history storage is sandbox-local. */
+int        chunk_reads_shared_temporal(const EigsChunk *chunk);
 
 /* Compiler */
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src);
