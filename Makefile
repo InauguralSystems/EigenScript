@@ -347,7 +347,7 @@ $(SRC_DIR)/lsp_builtin_index.h: $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_host.c
 # Makefile, or VERSION change — so `make` after a VERSION bump relinks
 # them instead of leaving version-skewed binaries for the #411 tape gate
 # to refuse. `lsp`/`dap` stay as the phony entry points.
-$(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
+$(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/opcodes.def $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(LSP_BINARY) $(LSP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
@@ -358,7 +358,7 @@ $(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_built
 
 lsp: $(LSP_BINARY)
 
-$(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
+$(DAP_BINARY): $(DAP_SOURCES) $(SRC_DIR)/opcodes.def $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(DAP_BINARY) $(DAP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
