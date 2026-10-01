@@ -2538,9 +2538,10 @@ void dict_set_owned(Value *dict, const char *key, Value *val) {
  * only the interned KEYS need rehoming. We deep-copy the value on send and
  * re-intern its dict keys into the process-global table above. Copying
  * also removes the old shared-by-reference concurrent-mutation footgun for the
- * data types it covers. Non-container types (fn/builtin/buffer/text_builder/
- * json) are still shared by refcount; sending a closure from a thread that then
- * exits remains unsupported (its interned params would dangle). */
+ * data types it covers. Flat mutable buffers and text builders are copied too;
+ * fn/builtin/json values are shared by refcount. Sending a closure from a
+ * thread that then exits remains unsupported (its interned params would
+ * dangle). */
 
 #define CHAN_CLONE_MAX_DEPTH 64
 static Value *chan_clone_rec(Value *v, int depth) {
@@ -2583,13 +2584,38 @@ static Value *chan_clone_rec(Value *v, int depth) {
                 out->data.dict.keys[i] = (char *)shared_intern_key(out->data.dict.keys[i]);
             return out;
         }
+        case VAL_BUFFER: {
+            Value *out = xcalloc(1, sizeof(Value));
+            out->type = VAL_BUFFER;
+            out->data.buffer.count = v->data.buffer.count;
+            out->data.buffer.rows = v->data.buffer.rows;
+            out->data.buffer.cols = v->data.buffer.cols;
+            size_t n = (size_t)v->data.buffer.count;
+            out->data.buffer.data = xcalloc(n > 0 ? n : 1, sizeof(double));
+            if (n > 0)
+                memcpy(out->data.buffer.data, v->data.buffer.data,
+                       n * sizeof(double));
+            out->refcount = 1;
+            return out;
+        }
+        case VAL_TEXT_BUILDER: {
+            Value *out = make_text_builder();
+            size_t need = v->data.text_builder.len + 1;
+            if (out->data.text_builder.cap < need) {
+                out->data.text_builder.data =
+                    xrealloc(out->data.text_builder.data, need);
+                out->data.text_builder.cap = need;
+            }
+            memcpy(out->data.text_builder.data, v->data.text_builder.data, need);
+            out->data.text_builder.len = v->data.text_builder.len;
+            out->data.text_builder.parts = v->data.text_builder.parts;
+            return out;
+        }
         /* Shared by refcount, not cloned. Enumerated rather than covered by a
          * `default:` so that -Werror=switch (Makefile CFLAGS) forces a new
          * ValType to choose clone-vs-share here. */
         case VAL_FN:
         case VAL_BUILTIN:
-        case VAL_BUFFER:
-        case VAL_TEXT_BUILDER:
         case VAL_JSON_RAW:
             val_incref(v);
             return v;

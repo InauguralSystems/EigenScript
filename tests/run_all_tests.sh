@@ -4348,6 +4348,12 @@ else
 fi
 echo ""
 
+# [98a] Mutable channel/join values are independent snapshots (#1148).
+echo "[98a] Mutable Message Snapshots"
+check_eigs_suite "buffer and text_builder message snapshots (#1148)" \
+    test_message_mutable_copies.eigs "All tests passed" 5
+echo ""
+
 # [99] Value-signal observer channel — report_value (#294). Pins that the value
 # channel classifies the value trajectory (not entropy) against closed-form
 # oracles: blind-to-slow-oscillation entropy vs not-settled value, fast

@@ -19,10 +19,8 @@
 A complete, standalone programming language with native observer semantics,
 OS-thread concurrency (`spawn`/`channel`/`thread_join`, with a documented
 memory model in [docs/CONCURRENCY.md](docs/CONCURRENCY.md) — *values* copy
-through a channel, while closures and `buffer`/`text_builder` HANDLES are
-shared by reference, the last of which is the open defect
-[#1148](https://github.com/InauguralSystems/EigenScript/issues/1148) under
-[#1153](https://github.com/InauguralSystems/EigenScript/issues/1153)),
+through a channel, including mutable buffers and text builders, while closures
+and resource handles share by reference),
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
 

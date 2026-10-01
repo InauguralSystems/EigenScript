@@ -1881,6 +1881,12 @@ handle; `thread_join of handle` waits and returns its result. Channels
 (`channel of null`, `send`, `recv`, `try_recv`, `recv_timeout`)
 communicate between threads.
 
+Channel messages and `thread_join` results are deep-copied snapshots. This
+includes mutable `buffer` and `text_builder` values, including those nested in
+lists or dicts. Closures remain shared by reference, including their captured
+state, as do numeric resource handles. The full measured kind table and the
+depth/aliasing limits are in docs/CONCURRENCY.md.
+
 ```eigenscript
 ch is channel of null
 spawn of [(v) => send of [ch, v * 2], 21]

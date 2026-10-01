@@ -18,10 +18,9 @@ still points at. **Do not read a list of handle kinds out of this prose: read
 the table the next section MEASURES.** An earlier revision of this page listed
 "three things"; a blind reviewer immediately found a fourth by sending a
 channel through a channel. A remembered list goes stale, so the enumeration
-here is a program's output. The handle half is open issue
-[#1148](https://github.com/InauguralSystems/EigenScript/issues/1148), tracked
-by [#1153](https://github.com/InauguralSystems/EigenScript/issues/1153); this
-page changes when the fix lands.
+here is a program's output. Functions and resource handles are the sharing
+exceptions; the table below executes the distinction rather than relying on a
+hand-maintained list.
 
 ```eigenscript
 c is channel of 1
@@ -39,9 +38,9 @@ print of original
 
 ### Which kinds copy and which share — MEASURED, not remembered (#1148)
 
-`val_clone_for_send` walks the value graph, and a handle's payload is not in
-that graph. So the receiver of a handle sees the sender's LATER mutations — the
-opposite of the rule above.
+`val_clone_for_send` walks the value graph. A resource handle's payload and a
+closure's captured environment are not in that graph, so their receiver sees
+the sender's later mutations — the opposite of the rule above.
 
 The program below sends one value of each kind, mutates the sender's copy
 afterwards, and asks the receiver what it sees. **Its output IS the
@@ -118,8 +117,8 @@ string         copies
 list           copies
 dict           copies
 closure        SHARES
-buffer         SHARES
-text_builder   SHARES
+buffer         copies
+text_builder   copies
 channel handle SHARES
 ```
 
@@ -127,8 +126,8 @@ channel handle SHARES
 way they do.** `chan_clone_rec` (src/eigenscript.c) switches on `ValType` with
 no `default:`, so `-Werror=switch` forces every new type to choose a side; the
 switch handles each type explicitly: `VAL_NUM`, `VAL_NULL`, `VAL_STR`, `VAL_LIST`,
-`VAL_DICT` are rebuilt (copy), and `VAL_FN`, `VAL_BUILTIN`, `VAL_BUFFER`,
-`VAL_TEXT_BUILDER`, `VAL_JSON_RAW` take a refcount (share).
+`VAL_DICT`, `VAL_BUFFER`, and `VAL_TEXT_BUILDER` are rebuilt (copy), while
+`VAL_FN`, `VAL_BUILTIN`, and `VAL_JSON_RAW` take a refcount (share).
 A new `ValType` must choose a side in the switch for the compiler to accept it.
 Two kinds are not in the table: `null` and a builtin have no mutable state, so there is nothing to observe. And a **store
 handle** and a **thread handle** behave exactly like the channel row: they are
@@ -136,7 +135,8 @@ handle** and a **thread handle** behave exactly like the channel row: they are
 NUMBER copies while the resource it names is shared — which is why the channel
 row says SHARES even though a number copies.
 
-Until #1148 lands, send an explicit SNAPSHOT rather than the handle:
+Buffers and text builders are snapshotted automatically; an explicit snapshot
+is equivalent:
 
 ```eigenscript
 c is channel of 1
@@ -152,9 +152,15 @@ print of (buf_get of [(recv of c), 0])
 1.5
 ```
 
-`text_builder_to_string of t` is the same move for a builder, and a closure
-captures its environment by reference whether or not it crosses a channel (the
-next section).
+`text_builder_to_string of t` also makes a string snapshot of a builder. A
+closure itself remains shared by reference, **including all of its captured
+state**, whether or not it crosses a channel (the next section).
+
+Deep cloning does not preserve internal aliases: if both `d.xs` and a sibling
+value refer to the same list before transfer, the two independently walked
+paths are distinct lists afterward. At nesting deeper than 64 levels,
+`chan_clone_rec` falls back to sharing the value at that depth to bound the C
+stack. Avoid mutation across a transfer when either limitation matters.
 
 A joined result is a copy the same way — a worker that returns a pure value
 hands the parent an independent value:
