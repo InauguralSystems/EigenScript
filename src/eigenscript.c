@@ -3024,7 +3024,7 @@ static __thread int g_module_env_lock_depth;
  * g_vm_multithreaded test stays FIRST and is the whole single-threaded cost:
  * one predicted-false load, exactly as before. */
 static inline int env_mt_shared(const Env *e) {
-    return __builtin_expect(g_vm_multithreaded, 0) && e->mt_shared;
+    return e && __builtin_expect(g_vm_multithreaded, 0) && e->mt_shared;
 }
 static inline void env_shared_lock(const Env *e) {
     if (env_mt_shared(e) && g_module_env_lock_depth++ == 0)

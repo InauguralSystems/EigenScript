@@ -5167,15 +5167,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         Value *result;
+        env_dump_lock(e);
         const ObserverSlot *vs_l = env_obs_slot(e, (int)slot);
         if (!(vs_l && vs_l->used) && !vm_slot_value_opaque(e, (int)slot) &&
-            vm_desc_unrecorded(chunk, current_line, "slot")) { vm_push_slot(slot_null()); DISPATCH(); }
+            vm_desc_unrecorded(chunk, current_line, "slot")) { env_dump_unlock(e); vm_push_slot(slot_null()); DISPATCH(); }
         if (vm_slot_value_opaque(e, (int)slot))
             result = make_str("opaque");       /* #708 */
         else if (vs_l)
             result = make_str(observer_slot_report_value(vs_l));
         else
             result = make_str("equilibrium");
+        env_dump_unlock(e);
         vm_push(result);
         DISPATCH();
     }
@@ -5195,18 +5197,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         Value *result;
+        env_dump_lock(oe);
         const ObserverSlot *vs_n = env_obs_slot(oe, oidx);
-        {
-            const ObserverSlot *vs_n = env_obs_slot(oe, oidx);
-            if (!(vs_n && vs_n->used) && !vm_slot_value_opaque(oe, oidx) &&
-                vm_desc_unrecorded(chunk, current_line, name)) { vm_push_slot(slot_null()); DISPATCH(); }
-        }
+        if (!(vs_n && vs_n->used) && !vm_slot_value_opaque(oe, oidx) &&
+            vm_desc_unrecorded(chunk, current_line, name)) { env_dump_unlock(oe); vm_push_slot(slot_null()); DISPATCH(); }
         if (vm_slot_value_opaque(oe, oidx))
             result = make_str("opaque");       /* #708 */
         else if (vs_n)
             result = make_str(observer_slot_report_value(vs_n));
         else
             result = make_str("equilibrium");
+        env_dump_unlock(oe);
         vm_push(result);
         DISPATCH();
     }
@@ -5218,8 +5219,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * (classifies "equilibrium", mirroring report_value's fallback). */
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
+        env_dump_lock(e);
         const ObserverSlot *s = env_obs_slot(e, (int)slot);
-        if (!(s && s->used) && vm_desc_unrecorded(chunk, current_line, "slot")) { vm_push_slot(slot_null()); DISPATCH(); }
+        if (!(s && s->used) && vm_desc_unrecorded(chunk, current_line, "slot")) { env_dump_unlock(e); vm_push_slot(slot_null()); DISPATCH(); }
         if (s) {
             /* #711: snapshot the query-time view — the snapshot IS a
              * query, so its entropy field reflects the current value. */
@@ -5228,6 +5230,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         } else {
             vm_push(observer_slot_trajectory(s));
         }
+        env_dump_unlock(e);
         DISPATCH();
     }
 
@@ -5245,14 +5248,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push_slot(slot_null());
             DISPATCH();
         }
+        env_dump_lock(oe);
         const ObserverSlot *s = env_obs_slot(oe, oidx);
-        if (!(s && s->used) && vm_desc_unrecorded(chunk, current_line, name)) { vm_push_slot(slot_null()); DISPATCH(); }
+        if (!(s && s->used) && vm_desc_unrecorded(chunk, current_line, name)) { env_dump_unlock(oe); vm_push_slot(slot_null()); DISPATCH(); }
         if (s) {
             ObserverSlot q = vm_slot_query_view(oe, oidx, s);         /* #711 */
             vm_push(observer_slot_trajectory(&q));
         } else {
             vm_push(observer_slot_trajectory(s));
         }
+        env_dump_unlock(oe);
         DISPATCH();
     }
 
@@ -5261,6 +5266,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * from the local's slot trajectory; no-observation tuple if unpopulated. */
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
+        env_dump_lock(e);
         const ObserverSlot *s = env_obs_slot(e, (int)slot);
         if (s && s->used) {
             /* #708: the band is "opaque" for a fn/builtin binding; the
@@ -5278,6 +5284,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         } else {
             vm_push(builtin_observe(NULL));
         }
+        env_dump_unlock(e);
         DISPATCH();
     }
 
@@ -5300,6 +5307,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push_slot(slot_null());
             DISPATCH();
         }
+        env_dump_lock(oe);
         const ObserverSlot *s = env_obs_slot(oe, oidx);
         if (s && s->used) {
             ObserverSlot q = vm_slot_query_view(oe, oidx, s);         /* #711 */
@@ -5314,6 +5322,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         } else {
             vm_push(builtin_observe(NULL));
         }
+        env_dump_unlock(oe);
         DISPATCH();
     }
 
