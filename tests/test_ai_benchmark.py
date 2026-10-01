@@ -40,10 +40,13 @@ class BenchmarkTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             hooks=Path(td)/"hooks"; hooks.mkdir()
             hook=hooks/"pre-commit"; hook.write_text("#!/bin/sh\nexit 99\n"); hook.chmod(0o755)
+            template=Path(td)/"template"; (template/"hooks").mkdir(parents=True)
+            hook=template/"hooks"/"post-commit"; hook.write_text("#!/bin/sh\nexit 98\n"); hook.chmod(0o755)
             source=Path(td)/"source"; source.mkdir()
-            injected={"GIT_CONFIG_COUNT":"2", "GIT_CONFIG_KEY_0":"core.hooksPath",
+            injected={"GIT_CONFIG_COUNT":"3", "GIT_CONFIG_KEY_0":"core.hooksPath",
                       "GIT_CONFIG_VALUE_0":str(hooks), "GIT_CONFIG_KEY_1":"commit.gpgsign",
-                      "GIT_CONFIG_VALUE_1":"true"}
+                      "GIT_CONFIG_VALUE_1":"true", "GIT_CONFIG_KEY_2":"init.templateDir",
+                      "GIT_CONFIG_VALUE_2":str(template)}
             previous={key:os.environ.get(key) for key in injected}
             try:
                 os.environ.update(injected); bench.snapshot(ROOT,"HEAD",source)

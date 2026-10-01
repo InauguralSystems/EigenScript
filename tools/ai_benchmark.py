@@ -40,10 +40,11 @@ def snapshot(repo, revision, work):
     # A benchmark fixture must not inherit signing or hook policy from the
     # machine running it.  Besides making the snapshot host-dependent, a
     # global core.hooksPath can execute arbitrary checkout-external code.
-    # Point at the empty hooks directory created by ``git init`` instead of
-    # /dev/null: Git requires hooksPath to name a directory, and newer Git
-    # versions reject the device file rather than merely finding no hooks.
-    hooks = work / ".git" / "hooks"
+    # Use a directory we create ourselves instead of ``.git/hooks``.  A host
+    # init.templateDir may populate the latter with active hooks (including
+    # post-commit, which --no-verify does not bypass).
+    hooks = work / ".git" / "benchmark-hooks"
+    hooks.mkdir()
     subprocess.run(["git", "-c", f"core.hooksPath={hooks}", "commit",
                     "--no-verify", "--no-gpg-sign", "-q", "-m", "benchmark fixture"],
                    cwd=work, check=True)
