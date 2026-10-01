@@ -13,6 +13,7 @@ bench/check_regression.sh bench/scalar_loop.eigs | timeout 30 bash bench/check_r
 tests/http_readiness.py tests/test_http_readiness.sh | timeout 60 python3 tests/http_readiness.py --selftest | [{"pattern":"PASS:","count":510},{"pattern":"^HTTP_READINESS_SELFTEST: 510 passed, 0 failed$","count":1},{"pattern":"FAIL:","count":0}]
 tests/test_arming_mt.sh tests/arming_mt_fixtures/* | timeout 30 bash tests/test_arming_mt.sh --selftest | [{"pattern":"  PASS:","count":5},{"pattern":"  FAIL:","count":0}]
 tests/test_child_exit.sh tests/run_all_tests.sh | timeout 30 bash tests/test_child_exit.sh --selftest
+tests/test_changelog_fragments.sh tools/changelog_fragments.sh | timeout 30 bash tests/test_changelog_fragments.sh --selftest | [{"pattern":"^  PASS:","count":4},{"pattern":"^  FAIL:","count":0},{"pattern":"^SELFTEST: 4 case\\(s\\) run, 4 passed, 0 failed$","count":1}]
 tests/test_dict_keys_mt.sh tests/dict_keys_mt_fixtures/* | timeout 30 bash tests/test_dict_keys_mt.sh --selftest | [{"pattern":"  PASS:","count":8},{"pattern":"  FAIL:","count":0}]
 tests/test_doc_examples.py | timeout 30 python3 tests/test_doc_examples.py --selftest | [{"pattern":"  selftest ok:","count":29}]
 tests/test_doc_examples_markers.py tests/test_doc_examples.py tests/lsan_classify.sh | timeout 30 python3 tests/test_doc_examples_markers.py --selftest
