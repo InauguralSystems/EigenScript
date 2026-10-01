@@ -1,0 +1,10 @@
+# #1425 uncaught, module frame, hot: a 6001-iteration module loop (past the
+# 5000 OSR threshold); the `/` on line 8 has its right operand on line 9 and
+# raises on the last iteration. Pre-fix: "Error line 9" and no excerpt.
+# LINE-NUMBER SENSITIVE (the [0g] runner section greps these numbers).
+k is 6001
+d is 1
+loop while k > 0:
+    r is 1 / (
+        k - d)
+    k is k - 1

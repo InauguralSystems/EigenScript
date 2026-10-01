@@ -1064,6 +1064,35 @@ catch e:
 5
 ```
 
+When the faulting sub-expression is a binary operator (`+`, `-`, `*`, `/`,
+`%`, a comparison, a bitwise operator, or a plain-name compound
+assignment such as `x += rhs`) whose operands span lines, the reported line is the
+**operator's** line, not the line its right operand ends on (#1425). The `/`
+below is on line 3; its operand ends on line 4. The excerpt and caret point at
+the operator too, and so does the traceback:
+
+```eigenscript
+x is 0
+try:
+    z is 1 / (
+        x)
+catch e:
+    print of e.line
+```
+```output
+3
+```
+
+A successful binary operation restores the line attribution that preceded its
+operator stamp, so an enclosing unary operation, index or call keeps its prior
+attribution. Compound field/index assignments (`obj.key += rhs`, `xs[i] += rhs`)
+keep their prior attribution; their location policy awaits a separate owner
+decision. This rule covers binary operators only. Temporal filing is unchanged (the
+statement's first line). Other constructs that span lines (call arguments,
+indexing, and the concatenation an f-string is lowered to) are not decided by
+it; an operator written inside an f-string interpolation is a binary operator
+and follows it.
+
 ```eigenscript
 try:
     throw of "custom failure"

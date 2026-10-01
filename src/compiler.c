@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #if !EIGENSCRIPT_FREESTANDING
 /* NB: EIGENSCRIPT_FREESTANDING is always DEFINED (eigenscript.h defaults it to
  * 0), so this must test its VALUE. `#ifndef` here silently excluded both
@@ -115,6 +116,9 @@ typedef struct Compiler {
                                      * stamp the line". Reset at every basic-block boundary
                                      * (patch_jump targets, emit_loop, loop_start capture,
                                      * after CALL/DISPATCH/RETURN, fn entry). */
+    int               req_lo, req_hi; /* #1425: min/max line passed to emit_line (requested,
+                                     * deduped or not) since compile_operand_then_op opened
+                                     * its window; meaningful only inside that window. */
     int               dispatch_rebound; /* #459, root-computed and copied to fn
                                      * compilers: the unit binds `dispatch`
                                      * somewhere (any scope) or references
@@ -391,7 +395,7 @@ static int op_stack_effect(uint8_t op8) {
     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
         return 0;
     /* Line: no stack change */
-    case OP_LINE:
+    case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END:
         return 0;
     /* Break/continue: no stack change (compiler emits as jumps) */
     case OP_BREAK: case OP_CONTINUE:
@@ -530,6 +534,8 @@ static int capture_loop_start(Compiler *c) {
  * parent's line). Emit only when the line changes; reset at every
  * basic-block boundary so we never *skip* a stamp the runtime needs. */
 static void emit_line(Compiler *c, int line) {
+    if (line < c->req_lo) c->req_lo = line;   /* #1425: see compile_operand_then_op */
+    if (line > c->req_hi) c->req_hi = line;
     if (c->last_line == line) return;
     emit_op_u32(c, OP_LINE, (uint32_t)line, line);   /* #630: 32-bit — was (uint16_t), wrapped past line 65535 */
     c->last_line = line;
@@ -543,6 +549,27 @@ static void emit_line(Compiler *c, int line) {
  * known, so a one-line call-valued assignment gains one OP_LINE. */
 static void restamp_line(Compiler *c, int line) {
     emit_line(c, line);   /* emit_line's own dedup is exactly the test */
+}
+
+/* #1425: scope the operator line to the binary instruction. Saving the
+ * runtime line, rather than guessing from last_line, preserves whichever
+ * short-circuit/conditional operand path executed. Calls also invalidate
+ * last_line. Only a differing stamp needs the scope; one-line bytecode stays
+ * identical. The markers surround one non-calling instruction, so scopes
+ * cannot nest or suspend. An error unwinds before BINARY_LINE_END and keeps
+ * the operator line for its diagnostic; success restores both line caches. */
+static void compile_operand_then_op(Compiler *c, ASTNode *rhs, uint8_t opc, int op_line) {
+    int lo = c->req_lo, hi = c->req_hi;
+    c->req_lo = INT_MAX; c->req_hi = INT_MIN;
+    compile_node(c, rhs);
+    int spans = c->req_lo != op_line || c->req_hi != op_line;
+    if (c->req_lo > lo) c->req_lo = lo;
+    if (c->req_hi < hi) c->req_hi = hi;
+    if (!opc) return;
+    int scope = spans && c->last_line != op_line;
+    if (scope) emit_op_u32(c, OP_BINARY_LINE, (uint32_t)op_line, op_line);
+    emit(c, opc, op_line);
+    if (scope) emit(c, OP_BINARY_LINE_END, op_line);
 }
 
 /* ---- Constant helpers ---- */
@@ -2163,11 +2190,16 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             patch_jump(c, jump);
             break;
         }
-        /* Normal binary op */
+        /* Normal binary op. An f-string's `+` (lexer-synthesized) keeps
+         * the old stamping: #1425 decided written operators only. */
         compile_node(c, node->data.binop.left);
-        compile_node(c, node->data.binop.right);
         uint8_t opc = binop_to_opcode(op);
-        if (opc) emit(c, opc, node->line);
+        if (node->data.binop.synth) {
+            compile_node(c, node->data.binop.right);
+            if (opc) emit(c, opc, node->line);
+        } else {
+            compile_operand_then_op(c, node->data.binop.right, opc, node->line);
+        }
         break;
     }
 

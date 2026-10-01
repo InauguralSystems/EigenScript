@@ -6,7 +6,8 @@ define worker(id) as:
         local r is random of []
         local t is monotonic_ns of []
         local e is env_get of "HOME"
-        acc is acc + r
+        acc is acc + (
+            r)
         i is i + 1
     return acc
 h1 is spawn of [worker, 1]

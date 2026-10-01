@@ -140,6 +140,8 @@ typedef struct {
     int  off_frame_count;
     int  off_frames;
     int  off_current_line;
+    int  off_binary_prev_line;
+    int  off_binary_prev_trace_line;
     int  off_callframe_ip;
     int  off_callframe_fn_env;
     int  sizeof_callframe;

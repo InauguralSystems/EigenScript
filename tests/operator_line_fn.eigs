@@ -1,0 +1,16 @@
+# #1425 uncaught, inside a function frame, hot: `chain` is JIT-compiled after
+# 6001 calls from a module loop; on the last call the SECOND `+` (line 7)
+# raises. Pre-fix: "Error line 8", the excerpt of line 8, "at chain (line 8)".
+# LINE-NUMBER SENSITIVE (the [0g] runner section greps these numbers).
+define chain(a, b, c) as:
+    r is (a +
+        b +
+        c)
+    return r
+k is 6001
+loop while k > 0:
+    k is k - 1
+    s is k
+    if k == 0:
+        s is "s"
+    w is chain of [k, k, s]

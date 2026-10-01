@@ -213,7 +213,7 @@ struct ASTNode {
         double num;
         char *str;
         struct { char *name; } ident;
-        struct { char op[4]; ASTNode *left; ASTNode *right; } binop;
+        struct { char op[4]; ASTNode *left; ASTNode *right; uint8_t synth; } binop; /* synth: f-string `+` (#1425) */
         struct { char op[4]; ASTNode *operand; } unary;
         struct { char *name; ASTNode *expr; int local_only; } assign;
         struct { ASTNode *left; ASTNode *right; } relation;

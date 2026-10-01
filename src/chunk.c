@@ -358,7 +358,7 @@ const char *op_name(uint8_t op) {
     N(OP_LOOP_STALL_CHECK) N(OP_LOOP_CAP_CHECK)
     N(OP_IMPORT) N(OP_MATCH)
     N(OP_LISTCOMP_BEGIN) N(OP_LISTCOMP_APPEND)
-    N(OP_LINE) N(OP_WIDE) N(OP_DISPATCH)
+    N(OP_LINE) N(OP_BINARY_LINE) N(OP_BINARY_LINE_END) N(OP_WIDE) N(OP_DISPATCH)
     N(OP_LOCAL_DOT_GET) N(OP_LOCAL_DOT_SET) N(OP_LOCAL_IDX_GET)
     N(OP_LOCAL_IDX_DOT_GET) N(OP_LOCAL_IDX_DOT_SET)
     N(OP_INTERROGATE_NAMED) N(OP_INTERROGATE_NAMED_AT)
@@ -401,7 +401,7 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
         uint8_t op = chunk->code[i];
         fprintf(stderr, "%04d [L%d] %-20s", i, line, op_name(op));
         i++;
-        if (op == OP_LINE && i + 3 < chunk->code_len) {
+        if ((op == OP_LINE || op == OP_BINARY_LINE) && i + 3 < chunk->code_len) {
             /* #630: 32-bit operand. */
             uint32_t arg = (uint32_t)chunk->code[i] |
                            ((uint32_t)chunk->code[i + 1] << 8) |
@@ -528,7 +528,7 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
      * disassembler both special-case it BEFORE consulting this u16-strided
      * table, so this arm is unreachable — listed for the exhaustiveness
      * gate, not for behavior. */
-    case OP_LINE:
+    case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END:
         return 0;
     case OP_COUNT:     /* sentinel — callers bounds-check first */
         return 0;
@@ -715,7 +715,7 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
 
     /* Stack-neutral. BREAK/CONTINUE set a flag nothing reads — the compiler
      * lowers both to jumps — so they are pure no-ops here too. */
-    case OP_LINE: case OP_WIDE:
+    case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END: case OP_WIDE:
     case OP_TRY_END: case OP_BREAK: case OP_CONTINUE:
     case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
@@ -749,11 +749,23 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
     while (i < n) {
         uint8_t op = code[i];
         if (op >= OP_COUNT) { ok = 0; break; }
-        is_start[i] = 1;
+        if (!is_start[i]) is_start[i] = 1;
         last_op = op;
+        /* #1425: one scalar save slot is sufficient only for an adjacent,
+         * non-calling binary scope. Its interior is a valid fall-through
+         * boundary (2), but not a legal jump/handler entry (1). */
+        if (op == OP_BINARY_LINE) {
+            if (i + 7 > n || code[i + 6] != OP_BINARY_LINE_END) { ok = 0; break; }
+            uint8_t bin = code[i + 5];
+            if (!((bin >= OP_ADD && bin <= OP_SHR) ||
+                  (bin >= OP_EQ && bin <= OP_GE))) { ok = 0; break; }
+            is_start[i + 5] = is_start[i + 6] = 2;
+        } else if (op == OP_BINARY_LINE_END && is_start[i] != 2) {
+            ok = 0; break;
+        }
         /* #630: OP_LINE has a single 32-bit operand — outside the u16-strided
          * role machinery below. No index to validate; just skip 4 bytes. */
-        if (op == OP_LINE) {
+        if (op == OP_LINE || op == OP_BINARY_LINE) {
             int end = i + 1 + 4;
             if (end > n) { ok = 0; break; }
             i = end;
@@ -792,7 +804,7 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
     /* Pass 2: every jump must land on an in-range instruction boundary. */
     for (int t = 0; ok && t < ntargets; t++) {
         int tgt = targets[t];
-        if (tgt < 0 || tgt >= n || !is_start[tgt]) ok = 0;
+        if (tgt < 0 || tgt >= n || is_start[tgt] != 1) ok = 0;
     }
 
     /* Pass 3: execution must not be able to run off the end. Pass 2 pins every
@@ -862,7 +874,7 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
             int h = height[off];
             uint8_t op = code[off];
             int end, operand0 = 0, target = -1;
-            if (op == OP_LINE) {
+            if (op == OP_LINE || op == OP_BINARY_LINE) {
                 end = off + 1 + 4;
             } else {
                 VerifyRole roles[3];
@@ -956,7 +968,7 @@ void chunk_arm_temporal(const EigsChunk *chunk) {
     int n = chunk->code_len, i = 0;
     while (i < n) {
         uint8_t op = code[i];
-        if (op == OP_LINE) { i += 1 + 4; continue; }
+        if (op == OP_LINE || op == OP_BINARY_LINE) { i += 1 + 4; continue; }
         VerifyRole roles[3];
         int nops = op_verify_operands(op, roles);
         if (op == OP_INTERROGATE_NAMED || op == OP_INTERROGATE_NAMED_AT ||
@@ -1009,7 +1021,9 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
     while (ip < end) {
         uint8_t op = *ip++;
         switch (op) {
-        case OP_LINE:
+        case OP_BINARY_LINE_END:
+            break;
+        case OP_LINE: case OP_BINARY_LINE:
             if (ip + 4 > end) return;   /* #630: 32-bit operand */
             ip += 4;
             break;
@@ -1358,7 +1372,7 @@ int chunk_has_reader_opcode(const EigsChunk *chunk) {
 static int chunk_step_ip(const EigsChunk *chunk, int i) {
     uint8_t op = chunk->code[i];
     i++;
-    if (op == OP_LINE) {
+    if (op == OP_LINE || op == OP_BINARY_LINE) {
         i += 4;                              /* #630: 32-bit operand */
     } else if (op < OP_COUNT) {
         VerifyRole roles[3];
@@ -1369,7 +1383,7 @@ static int chunk_step_ip(const EigsChunk *chunk, int i) {
 
 /* Next instruction offset at or after `i` that is not OP_LINE. */
 static int chunk_skip_lines(const EigsChunk *chunk, int i) {
-    while (i < chunk->code_len && chunk->code[i] == OP_LINE)
+    while (i < chunk->code_len && (chunk->code[i] == OP_LINE || chunk->code[i] == OP_BINARY_LINE || chunk->code[i] == OP_BINARY_LINE_END))
         i = chunk_step_ip(chunk, i);
     return i;
 }
@@ -1418,7 +1432,7 @@ int chunk_scan_static_loads(const EigsChunk *chunk,
             uint8_t op = chunk->code[i];
             int nops = 0;
             VerifyRole roles[3];
-            if (op != OP_LINE && op < OP_COUNT) nops = op_verify_operands(op, roles);
+            if (op != OP_LINE && op != OP_BINARY_LINE && op < OP_COUNT) nops = op_verify_operands(op, roles);
 
             if (op == OP_IMPORT) {
                 if (nops != 1 || i + 3 > chunk->code_len) return 1;
