@@ -1,0 +1,16 @@
+# #1426: sandbox_run catches errors at its C boundary.  OP_LINE deliberately
+# gives the assembled divide-by-zero a distinctive line so this pins both the
+# structured result and the exact error that must not leak to stderr.
+load_file of "lib/test.eigs"
+LINE is 68
+CONST is 0
+DIV is 7
+RETURN is 40
+desc is [1, [LINE,77,0,0,0, CONST,0,0, CONST,1,0, DIV, RETURN], [1, 0]]
+r is sandbox_run of [desc, 1000]
+
+assert_eq of [r["ok"], 0, "sandbox error reports ok=0"]
+assert_eq of [r["error"]["kind"], "value", "sandbox error retains kind"]
+assert_eq of [r["error"]["message"], "division by zero", "sandbox error retains message"]
+assert_eq of [r["error"]["line"], 77, "sandbox error retains bytecode line"]
+test_summary of null
