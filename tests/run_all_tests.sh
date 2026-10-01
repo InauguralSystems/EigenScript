@@ -3339,6 +3339,12 @@ else
 fi
 echo ""
 
+# [55a] Mutable values copy across every concurrency transfer (#1148/#1153)
+echo "[55a] Concurrency Mutable-Value Copies"
+check_eigs_suite "buffer/text-builder copies: channel, nested, join, cooperative task" \
+    test_transfer_copy.eigs "PASS: concurrency mutable values copy" 1
+echo ""
+
 # [56] EigenStore embedded database
 echo "[56] EigenStore Database"
 ST_OUTPUT=$(./eigenscript ../tests/test_store.eigs 2>&1); ST_OUTPUT_RC=$?
