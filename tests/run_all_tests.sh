@@ -7457,6 +7457,24 @@ else
 fi
 echo ""
 
+# [99ac] Strict source-documentation IR validation (#1269). This is the first
+# self-contained migration step: parser diagnostics and determinism are gated
+# before the 900+ source records are moved over atomically.
+echo "[99ac] API documentation IR (#1269)"
+TOTAL=$((TOTAL + 1))
+if command -v python3 >/dev/null 2>&1; then
+    api_doc_ir_out=$(python3 "$TESTS_DIR/test_api_doc_ir.py" 2>&1); api_doc_ir_rc=$?
+    if [ "$api_doc_ir_rc" -eq 0 ]; then
+        PASS=$((PASS + 1)); printf '%s\n' "$api_doc_ir_out"
+    else
+        FAIL=$((FAIL + 1)); echo "  FAIL: API documentation IR tests (rc=$api_doc_ir_rc)"
+        printf '%s\n' "$api_doc_ir_out" | sed 's/^/      /'
+    fi
+else
+    PASS=$((PASS + 1)); echo "  SKIP (counted as pass): python3 not available"
+fi
+echo ""
+
 # [99ab] Test enrolment (#1264): a tests/*.sh or tests/*.py that no section,
 # workflow step or enrolled script invokes is red, by name. PR #1260's test sat
 # unrun until a maintainer noticed. Self-test case count pinned ([99o] lesson).

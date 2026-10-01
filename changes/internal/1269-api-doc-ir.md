@@ -1,0 +1,1 @@
+- Begin the source-generated API reference migration with a strict, deterministic documentation IR validator shared by library functions and builtin registrations.
