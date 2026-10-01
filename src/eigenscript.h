@@ -1902,6 +1902,9 @@ extern int g_compile_module_slots;
 /* ---- Parser / Evaluator ---- */
 
 TokenList tokenize(const char *source);
+/* Measure leading spaces/tabs using the language's four-column tab stops.
+ * byte_count, when non-NULL, receives the number of source bytes consumed. */
+int eigs_measure_indent(const char *line, int *byte_count);
 void free_tokenlist(TokenList *tl);
 void tokenlist_user_spelling(TokenList *tl);  /* #1322 */
 
