@@ -1431,7 +1431,24 @@ typedef struct {
     int bind_cap;
 } FnScope;
 
+/* Rename runs synchronously on editor-controlled text.  Keep the analysis
+ * bounded even when a document contains enough scopes/bindings to make the
+ * otherwise-correct linear searches multiply into quadratic work. */
+#define RENAME_WORK_LIMIT 250000u
+static size_t rename_work_left;
+static int rename_work_exhausted;
+
+static int rename_work_take(size_t amount) {
+    if (amount > rename_work_left) {
+        rename_work_exhausted = 1;
+        return 0;
+    }
+    rename_work_left -= amount;
+    return 1;
+}
+
 static void scope_bind_add(FnScope *s, const char *name, int from) {
+    if (!rename_work_take(1)) return;
     if (s->bind_count == s->bind_cap) {
         int nc = s->bind_cap ? s->bind_cap * 2 : 4;
         s->binds = xrealloc_array(s->binds, (size_t)nc, sizeof(*s->binds));
@@ -1446,8 +1463,10 @@ static void scope_bind_add(FnScope *s, const char *name, int from) {
  * `local` of the same name (it keeps from = tok_start). */
 static void scope_add_param(FnScope *s, const char *name, int from) {
     if (!name) return;
-    for (int i = 0; i < s->bind_count; i++)
+    for (int i = 0; i < s->bind_count; i++) {
+        if (!rename_work_take(strlen(name) + 1)) return;
         if (strcmp(s->binds[i].name, name) == 0) return;
+    }
     scope_bind_add(s, name, from);
 }
 
@@ -1456,11 +1475,13 @@ static void scope_add_param(FnScope *s, const char *name, int from) {
  * the same name dominates (its from = tok_start <= decl, so it is kept). */
 static void scope_add_local(FnScope *s, const char *name, int decl_idx) {
     if (!name) return;
-    for (int i = 0; i < s->bind_count; i++)
+    for (int i = 0; i < s->bind_count; i++) {
+        if (!rename_work_take(strlen(name) + 1)) return;
         if (strcmp(s->binds[i].name, name) == 0) {
             if (decl_idx < s->binds[i].from) s->binds[i].from = decl_idx;
             return;
         }
+    }
     scope_bind_add(s, name, decl_idx);
 }
 
@@ -1486,9 +1507,11 @@ static void free_scopes(FnScope *scopes, int n) {
 /* Innermost scope containing token `idx`, or -1. */
 static int find_innermost_scope(FnScope *scopes, int n, int idx) {
     int best = -1, best_start = -1;
-    for (int s = 0; s < n; s++)
+    for (int s = 0; s < n; s++) {
+        if (!rename_work_take(1)) return -1;
         if (idx >= scopes[s].tok_start && idx < scopes[s].tok_end &&
             scopes[s].tok_start > best_start) { best_start = scopes[s].tok_start; best = s; }
+    }
     return best;
 }
 
@@ -1526,6 +1549,7 @@ static int lambda_scope(Token *tk, int count, int i, FnScope *s) {
     if (params == 0) scope_add_param(s, "n", i);
     int k = j + 2, depth = 0;
     for (; k < count; k++) {
+        if (!rename_work_take(1)) break;
         TokType tt = tk[k].type;
         if (tt == TOK_LPAREN || tt == TOK_LBRACKET || tt == TOK_LBRACE) depth++;
         else if (tt == TOK_RPAREN || tt == TOK_RBRACKET || tt == TOK_RBRACE) {
@@ -1554,6 +1578,7 @@ static FnScope *build_scopes(Document *doc, int *out_n) {
     int count = doc->tokens.count, n = 0, cap = 16, bracket_depth = 0;
     FnScope *out = xcalloc((size_t)cap, sizeof(FnScope));
     for (int i = 0; i < count; i++) {
+        if (!rename_work_take(1)) break;
         TokType t = tk[i].type;
         if (t == TOK_LBRACKET || t == TOK_LPAREN || t == TOK_LBRACE) bracket_depth++;
         else if (t == TOK_RBRACKET || t == TOK_RPAREN || t == TOK_RBRACE) {
@@ -1592,6 +1617,7 @@ static FnScope *build_scopes(Document *doc, int *out_n) {
                 int seg_name_pending = 1, depth = 0;
                 while (j < count && !(depth == 0 && tk[j].type == TOK_RPAREN) &&
                        tk[j].type != TOK_NEWLINE) {
+                    if (!rename_work_take(1)) break;
                     TokType tt = tk[j].type;
                     if (tt == TOK_LPAREN || tt == TOK_LBRACKET || tt == TOK_LBRACE) depth++;
                     else if (tt == TOK_RPAREN || tt == TOK_RBRACKET || tt == TOK_RBRACE) depth--;
@@ -1609,17 +1635,23 @@ static FnScope *build_scopes(Document *doc, int *out_n) {
             /* `for <var(s)> in ...` — the loop variable(s) are bound for the
              * whole loop body and do not leak out (SS5E/SS5F, SS8). */
             int j = i + 1;
-            for (; j < count && tk[j].type != TOK_IN && tk[j].type != TOK_NEWLINE; j++)
+            for (; j < count && tk[j].type != TOK_IN && tk[j].type != TOK_NEWLINE; j++) {
+                if (!rename_work_take(1)) break;
                 if (tk[j].type == TOK_IDENT) scope_add_param(s, tk[j].str_val, i);
+            }
             if (j < count && tk[j].type == TOK_IN) in_idx = j;
         }
         /* Body span: the first INDENT after the keyword, to its matching DEDENT. */
         int k = i, end = count;
-        while (k < count && tk[k].type != TOK_INDENT) k++;
+        while (k < count && tk[k].type != TOK_INDENT) {
+            if (!rename_work_take(1)) break;
+            k++;
+        }
         int body_start = k;  /* the INDENT index (or count if none) */
         if (k < count && tk[k].type == TOK_INDENT) {
             int depth = 0;
             for (; k < count; k++) {
+                if (!rename_work_take(1)) break;
                 if (tk[k].type == TOK_INDENT) depth++;
                 else if (tk[k].type == TOK_DEDENT) { depth--; if (depth == 0) { k++; break; } }
             }
@@ -1637,6 +1669,7 @@ static FnScope *build_scopes(Document *doc, int *out_n) {
      * function; a top-level local has no scope and stays global). */
     for (int m = 0; m + 1 < count; m++)
         if (tk[m].type == TOK_LOCAL && tk[m + 1].type == TOK_IDENT) {
+            if (!rename_work_take(1)) break;
             int s = find_innermost_scope(out, n, m);
             if (s >= 0) scope_add_local(&out[s], tk[m + 1].str_val, m + 1);
         }
@@ -1652,12 +1685,16 @@ static void resolve_binding(FnScope *scopes, int n, int idx, const char *name,
                             int *out_scope, int *out_from) {
     int best_scope = -1, best_from = -1, best_start = -1;
     for (int s = 0; s < n; s++) {
+        if (!rename_work_take(1)) break;
         if (!(idx >= scopes[s].tok_start && idx < scopes[s].tok_end)) continue;
         if (idx >= scopes[s].excl_lo && idx < scopes[s].excl_hi) continue;  /* iterable expr */
         int from = -1;
-        for (int b = 0; b < scopes[s].bind_count; b++)
+        for (int b = 0; b < scopes[s].bind_count; b++) {
+            if (!rename_work_take(strlen(name) + 1)) break;
             if (strcmp(scopes[s].binds[b].name, name) == 0 && scopes[s].binds[b].from <= idx)
                 from = scopes[s].binds[b].from;
+        }
+        if (rename_work_exhausted) break;
         if (from < 0) continue;  /* name not (yet) bound in this scope */
         if (scopes[s].tok_start > best_start) {
             best_start = scopes[s].tok_start;
@@ -1712,10 +1749,20 @@ static void handle_rename(int id, const char *params) {
      * to the SAME binding — so a shadowing parameter (or global) is left
      * alone. Positions still come from the token stream (exact spans). */
     int nscopes = 0;
+    rename_work_left = RENAME_WORK_LIMIT;
+    rename_work_exhausted = 0;
     FnScope *scopes = build_scopes(doc, &nscopes);
+    if (rename_work_exhausted) {
+        free_scopes(scopes, nscopes);
+        free(uri); free(new_name); lsp_response_null(id); return;
+    }
     int cursor_idx = (int)(tok - doc->tokens.tokens);
     int cur_scope, cur_from;
     resolve_binding(scopes, nscopes, cursor_idx, name, &cur_scope, &cur_from);
+    if (rename_work_exhausted) {
+        free_scopes(scopes, nscopes);
+        free(uri); free(new_name); lsp_response_null(id); return;
+    }
 
     strbuf sb;
     strbuf_init(&sb);
@@ -1724,12 +1771,16 @@ static void handle_rename(int id, const char *params) {
     strbuf_append(&sb, ":[");
     int emitted = 0;
     for (int i = 0; i < doc->tokens.count; i++) {
+        if (!rename_work_take(1)) break;
         Token *t = &doc->tokens.tokens[i];
-        if (t->type != TOK_IDENT || !t->str_val || strcmp(t->str_val, name) != 0) continue;
+        if (t->type != TOK_IDENT || !t->str_val) continue;
+        if (!rename_work_take(strlen(name) + 1)) break;
+        if (strcmp(t->str_val, name) != 0) continue;
         if (t->synth) continue;  /* synthesized by f-string lowering, not source (#1244) */
         if (i > 0 && doc->tokens.tokens[i - 1].type == TOK_DOT) continue;  /* member access */
         int ts, tf;
         resolve_binding(scopes, nscopes, i, name, &ts, &tf);
+        if (rename_work_exhausted) break;
         if (ts != cur_scope || tf != cur_from) continue;  /* a different binding */
         if (emitted) strbuf_append_char(&sb, ',');
         emitted++;
@@ -1740,7 +1791,8 @@ static void handle_rename(int id, const char *params) {
         strbuf_append_char(&sb, '}');
     }
     strbuf_append(&sb, "]}}");
-    lsp_response(id, sb.data);
+    if (rename_work_exhausted) lsp_response_null(id);
+    else lsp_response(id, sb.data);
     strbuf_free(&sb);
     free_scopes(scopes, nscopes);
     free(uri);

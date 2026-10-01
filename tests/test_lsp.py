@@ -845,6 +845,20 @@ def main():
     r = converse([INIT, did_open(rename_doc), rn_kw, SHUTDOWN, EXIT])
     check("rename refuses a non-user symbol (print)", (by_id(r, 13) or {}).get("result") is None)
 
+    # Adversarially many unique locals used to make the per-scope duplicate
+    # checks quadratic and block the synchronous server.  Rename has an
+    # explicit work budget now; exhausting it refuses the edit rather than
+    # returning a partial WorkspaceEdit.
+    large_locals = ("x is 0\ndefine f as:\n" +
+                    "".join("    local v%d is %d\n" % (i, i) for i in range(1000)) +
+                    "print of x\n")
+    rnb = {"jsonrpc": "2.0", "id": 45, "method": "textDocument/rename",
+           "params": {"textDocument": {"uri": URI},
+                      "position": {"line": 0, "character": 0}, "newName": "y"}}
+    r = converse([INIT, did_open(large_locals), rnb, SHUTDOWN, EXIT])
+    check("rename refuses analysis that exceeds its work budget",
+          (by_id(r, 45) or {}).get("result") is None)
+
     # --- lint warnings surface as coded diagnostics (severity 2) ---
     r = converse([INIT, did_open("leftover is 5\nprint of \"hi\"\n"), SHUTDOWN, EXIT])
     d = diagnostics(r)
