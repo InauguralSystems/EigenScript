@@ -3822,8 +3822,14 @@ Value* builtin_sandbox_run(Value *arg) {
     ASTNode *source_ast = NULL;
     if (source_form) {
         enum { SANDBOX_SOURCE_WORK_MAX = 8 * 1024 * 1024 };
-        size_t source_len = strnlen(source ? source : "",
-                                   (size_t)SANDBOX_SOURCE_WORK_MAX + 1);
+        const volatile char *source_scan = source ? source : "";
+        size_t source_len = 0;
+        /* Keep this bounded scan explicit.  In particular, volatile prevents
+         * hosted compilers from folding the loop into strnlen(), which is not
+         * part of the freestanding mini-libc surface. */
+        while (source_len <= (size_t)SANDBOX_SOURCE_WORK_MAX &&
+               source_scan[source_len] != '\0')
+            source_len++;
         int prep_failed = source_len > SANDBOX_SOURCE_WORK_MAX;
         if (prep_failed) {
             rt_error(EK_SANDBOX, 0,
