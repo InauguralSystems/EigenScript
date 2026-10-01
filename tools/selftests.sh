@@ -51,6 +51,7 @@ def main():
     # A row's own command scripts are exempt for that row.
     product = [f for f in git('ls-files', '-z') if f in ('tests/run_all_tests.sh', 'CHANGELOG.md', 'README.md')
                or f.startswith(('src/', 'lib/', 'docs/', 'examples/'))
+               or f.startswith('tests/sections/')
                or (f.startswith('tests/test_') and f.count('/') == 1)]
     if len(product) < 100:
         error(f'product population examined={len(product)} is below 100 (git ls-files failed?)')

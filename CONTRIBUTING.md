@@ -44,8 +44,14 @@ The complete suite (`make test`) takes much longer than that and is not a
 required local step: CI runs it on every PR and again in the merge queue.
 
 
-Adding a test is the test file plus its section in `tests/run_all_tests.sh` —
-no counts to bump, no documentation numbers to edit.
+Adding a test is the test file plus one independently owned section fragment in
+`tests/sections/<label>-<slug>.sh` — never edit `tests/run_all_tests.sh` merely to
+enrol a section. Fragments are sourced in bytewise filename order, so choose the
+filename for the intended position and keep each section self-contained. Run
+`bash tools/section_plan.sh --print-section-plan` to review the complete ordered
+label list and `bash tools/section_plan.sh --changed <base>` to verify that the
+new fragment selects its own section. There are no counts or shared rosters to
+bump.
 
 Two gates worth knowing before you push:
 

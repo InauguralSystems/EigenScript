@@ -54,6 +54,11 @@ bash tools/consumer_acceptance.sh plan            # pinned consumers' CI command
 bash tools/consumer_acceptance.sh run src/eigenscript   # run them serially against a candidate; record -> reports/consumer_acceptance/
 ```
 
+- **Adding a test section:** create one independently owned
+  `tests/sections/<label>-<slug>.sh`; do not add it to the shared
+  `tests/run_all_tests.sh`. The runner and all static gates discover fragments
+  in bytewise filename order. Use the roster and changed-selector commands
+  documented in `CONTRIBUTING.md` to verify ordering and routing.
 - The suite must pass **both** release and ASan with leaks on:
   `make asan && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh`
   (CI enforces `detect_leaks=1`).

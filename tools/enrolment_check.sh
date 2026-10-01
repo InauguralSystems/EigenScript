@@ -91,7 +91,7 @@ function strip(s,   c) {
         if (w !~ /tools\// && w ~ /\.(sh|py)$/ && intests && index(known, " " b " ")) print FILENAME "\ttests/" b
         else if (w ~ /tools\/[^\/]*\.sh$/) print FILENAME "\ttools/" b
     }
-}' tests/run_all_tests.sh .github/workflows/*.yml tests/*.sh tools/*.sh | sort -u > "$EDGES"
+}' tests/run_all_tests.sh tests/sections/*.sh .github/workflows/*.yml tests/*.sh tools/*.sh | sort -u > "$EDGES"
 # Commands in the self-test table are reachable through its driver.
 awk -F '[|]' '$0 !~ /^#/ {
     n = split($2, a, /[[:space:]]+/)
@@ -99,6 +99,7 @@ awk -F '[|]' '$0 !~ /^#/ {
 }' tools/selftests.txt >> "$EDGES"
 REACHED=$(awk -F'\t' '{ adj[$1] = adj[$1] " " $2 }
     END { q[1] = "tests/run_all_tests.sh"; n = 1
+          for (f in adj) if (f ~ /^tests\/sections\/[^/]+[.]sh$/) q[++n] = f
           for (f in adj) if (f ~ /^\.github\//) q[++n] = f
           for (h = 1; h <= n; h++) { m = split(adj[q[h]], t, " ")
               for (j = 1; j <= m; j++) if (!(t[j] in seen)) { seen[t[j]] = 1; q[++n] = t[j]; print t[j] } } }' \
@@ -117,7 +118,7 @@ for f in tests/*.sh tests/*.py; do
     [ -f "$f" ] || continue; total=$((total + 1))
     if grep -qxF "$f" <<< "$REACHED"; then ok=$((ok + 1))
     elif grep -q "^[[:space:]]*$f[[:space:]]*|" <<< "$EXEMPTED"; then ex=$((ex + 1))
-    else echo "  FAIL: $f is invoked by nothing -- add a suite section in tests/run_all_tests.sh (or a workflow step), or list it in $EXEMPT with a reason"; rc=1; fi
+    else echo "  FAIL: $f is invoked by nothing -- add a suite section in tests/sections/ (or a workflow step), or list it in $EXEMPT with a reason"; rc=1; fi
 done
 [ "$total" -gt 0 ] || { echo "test-enrolment: ABORTED: tests/*.sh + tests/*.py is empty"; exit 2; }
 [ "$rc" -eq 0 ] && echo "PASS: test-enrolment: examined=$total enrolled=$ok exempt=$ex"

@@ -8,6 +8,9 @@
 # told where tests/ is. Unset — every ordinary invocation — this resolves from
 # $0 exactly as before.
 TESTS_DIR="${EIGS_PLAN_TESTS_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+if [ "${1:-}" = "--print-section-plan" ]; then
+    exec "$TESTS_DIR/../tools/section_plan.sh" --print-section-plan
+fi
 export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 . "$TESTS_DIR/../tools/read_werror_flags.sh" || exit 1
 export EIGS_TEST_DIR="$TESTS_DIR"
@@ -7401,20 +7404,19 @@ else
 fi
 echo ""
 
-# [99ab] Test enrolment (#1264): a tests/*.sh or tests/*.py that no section,
-# workflow step or enrolled script invokes is red, by name. PR #1260's test sat
-# unrun until a maintainer noticed. Self-test case count pinned ([99o] lesson).
-echo "[99ab] test enrolment (#1264)"
-TOTAL=$((TOTAL + 1))
-enrol_out=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" 2>&1); enrol_rc=$?
-if [ "$enrol_rc" -eq 0 ]; then
-    PASS=$((PASS + 1)); echo "  $enrol_out"
-else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: test enrolment (rc=$enrol_rc)"
-    printf '%s\n' "$enrol_out" | grep -E 'FAIL|ABORT' | head -8 | sed 's/^/      /'
-fi
-echo ""
+# Test-section fragments are sourced in bytewise filename order.  A contributor
+# adds a section by creating tests/sections/<label>-<slug>.sh; no shared roster
+# is edited.  Keep this marker in sync with tools/test_section_files.sh, which
+# expands the same files for every static runner gate and section planner.
+# EIGS_SECTION_FRAGMENTS
+__eigs_had_lc_all=${LC_ALL+x}; __eigs_old_lc_all=${LC_ALL-}; LC_ALL=C
+for __eigs_section_file in "$TESTS_DIR"/sections/*.sh; do
+    [ -f "$__eigs_section_file" ] || continue
+    . "$__eigs_section_file" || exit 1
+done
+[ -n "$__eigs_had_lc_all" ] && LC_ALL=$__eigs_old_lc_all || unset LC_ALL
+unset __eigs_section_file __eigs_had_lc_all __eigs_old_lc_all
+# EIGS_SECTION_FRAGMENTS_END
 
 # [99p] Child-script exit-status ledger (#988). The synthetic FAIL: markers
 # emitted by the `bash` wrapper already fail each affected section; this is the

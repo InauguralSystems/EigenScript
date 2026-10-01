@@ -6,6 +6,14 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 RUNNER="${RUNNER:-tests/run_all_tests.sh}"
+RUNNER_TMP=""
+if [ "$RUNNER" = tests/run_all_tests.sh ]; then
+    RUNNER_TMP=$(mktemp "${TMPDIR:-/tmp}/eigs_child_runner.XXXXXX") || exit 2
+    trap 'rm -f "$RUNNER_TMP"' EXIT
+    . tools/test_section_files.sh || exit 2
+    materialize_test_runner "$PWD" "$RUNNER_TMP" || exit 2
+    RUNNER="$RUNNER_TMP"
+fi
 CHILD_SITES_FLOOR="${CHILD_SITES_FLOOR:-86}"
 fail() { echo "GATE ERROR: $*" >&2; RC=1; }
 RC=0

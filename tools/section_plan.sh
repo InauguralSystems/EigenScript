@@ -11,6 +11,7 @@ set -u
 SP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SP_HOP_DIRS=tests
 RUNNER="$SP_ROOT/tests/run_all_tests.sh"
+RUNNER_IS_DEFAULT=1
 VERBOSE=1
 # A floor below the normal chunk population catches a collapsed scan while allowing growth.
 CHUNK_FLOOR=400
@@ -775,6 +776,13 @@ build_changed_plan() {
         case "$p" in src/*) SP_HOP_DIRS=tests ;; *) SP_HOP_DIRS='tests tools' ;; esac
         tok=$(sp_file_token "$p")
         lines=$(sp_select "$tok")
+        # A fragment owns its section header. Selecting the fragment itself
+        # must select that chunk even though it need not name its own filename.
+        case "$p" in tests/sections/*.sh)
+            lines="$lines
+$(grep -oE '^[[:space:]]*echo "\[[^]]+\]' "$SP_ROOT/$p" | sed -E 's/^[[:space:]]*echo "(\[[^]]+\]).*/\1/' |
+  while IFS= read -r label; do [ -z "$label" ] || sp_refs "$RUNNER" "$label"; done)" ;;
+        esac
         # A test script may build its program names from the stem
         # (`dict_keys_mt_single|expect.out` -> "$probe.eigs"), so a tests/
         # file is also looked up by its stem. (Not examples/: a stem such as
@@ -1012,7 +1020,20 @@ selftest() {
         git -C "$dir/cl" checkout -q -- . && git -C "$dir/cl" clean -qfd
     }
     git clone -q --shared "$SP_ROOT" "$dir/cl" || { echo '  FAIL: clone for the changed plan'; fail=$((fail + 1)); }
+    # The mechanism under test may itself be uncommitted. Seed the clone with
+    # the live discovery files, then make that its clean baseline.
+    mkdir -p "$dir/cl/tests/sections"
+    cp "$SP_ROOT/tests/run_all_tests.sh" "$dir/cl/tests/run_all_tests.sh"
+    cp "$SP_ROOT/tools/test_section_files.sh" "$dir/cl/tools/test_section_files.sh"
+    cp "$SP_ROOT"/tests/sections/*.sh "$dir/cl/tests/sections/"
+    git -C "$dir/cl" add tests/run_all_tests.sh tests/sections tools/test_section_files.sh
+    git -C "$dir/cl" -c user.name=selftest -c user.email=selftest@example.invalid commit -qm 'selftest fragment baseline'
     expect_plan 'control: an empty diff selects the core floor alone' 'paths=0 unmatched=0 runtime=0 full=no '
+    cat > "$dir/cl/tests/sections/zzproof-planted.sh" <<'PLANTED_SECTION'
+#!/bin/bash
+echo "[zzproof] Planted fragment"
+PLANTED_SECTION
+    expect_plan 'changed: a new section fragment selects its own section' '[zzproof]'
     printf '\n' >> "$dir/cl/tests/test_trace_mt.sh"
     expect_plan 'changed: an edited test script selects its section' '[42h]'
     sed -i.bak 's/^\(echo "\[17\/17\] Transformer Smoke.*\)$/\1 # edited/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
@@ -1049,7 +1070,7 @@ selftest() {
     # is top-level; a test-only echo override hides all but three at runtime.
     local stub="$dir/stub" i
     mkdir -p "$stub/tests" "$stub/tools" "$stub/src" "$stub/.github/workflows"
-    cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/read_werror_flags.sh" \
+    cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/test_section_files.sh" "$SP_ROOT/tools/read_werror_flags.sh" \
        "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
     cp "$SP_ROOT/tests/failure_output.sh" "$SP_ROOT/tests/suite_plan.sh" "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
     cp "$CI_FILE" "$stub/.github/workflows/ci.yml"
@@ -1072,7 +1093,7 @@ STUB_ECHO
         printf '# [%s] Stub\necho "[%s] Stub"\n' \
             "$((9000 + i))" "$((9000 + i))" >> "$stub/tests/run_all_tests.sh"
     done
-    printf '# Final guard (#681)\n__eigs_section_close\nexit 0\n' >> "$stub/tests/run_all_tests.sh"
+    printf '# EIGS_SECTION_FRAGMENTS\n# EIGS_SECTION_FRAGMENTS_END\n# Final guard (#681)\n__eigs_section_close\nexit 0\n' >> "$stub/tests/run_all_tests.sh"
     expect_ok 'control: ordered chunk sentinels and bearing headers appear' \
         env EIGS_SUITE_SHARD=2/3 SP_HIDE_SECTIONS=0 bash "$stub/tests/run_all_tests.sh"
     expect_red 'verify_shard_chunks: header-bearing chunk printed no header' 'header-bearing chunk at start line' \
@@ -1107,11 +1128,11 @@ STUB_ECHO
 MODE='' ARG1='' ARG2='' ARG3='' SP_SHARDS='' SP_SHARD_K=''
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --root) SP_ROOT=$(cd "$2" && pwd); RUNNER="$SP_ROOT/tests/run_all_tests.sh"; CI_FILE="$SP_ROOT/.github/workflows/ci.yml"; shift 2 ;;
-        --runner) RUNNER="$2"; shift 2 ;;
+        --root) SP_ROOT=$(cd "$2" && pwd); RUNNER="$SP_ROOT/tests/run_all_tests.sh"; RUNNER_IS_DEFAULT=1; CI_FILE="$SP_ROOT/.github/workflows/ci.yml"; shift 2 ;;
+        --runner) RUNNER="$2"; RUNNER_IS_DEFAULT=0; shift 2 ;;
         --ci-file) CI_FILE="$2"; shift 2 ;;
         --quiet) VERBOSE=0; shift ;;
-        --chunks|--skip-audit|--selftest|--header-regex) MODE="$1"; shift ;;
+        --chunks|--print-section-plan|--skip-audit|--selftest|--header-regex) MODE="$1"; shift ;;
         --shards) SP_SHARDS="$2"; shift 2 ;;
         --shard) SP_SHARD_K="$2"; shift 2 ;;
         --check) MODE='--shard-check'; shift ;;
@@ -1132,7 +1153,16 @@ done
 [ -n "$MODE" ] || { [ -n "$SP_SHARDS" ] && [ -n "$SP_SHARD_K" ] && MODE='--shard-plan'; }
 [ -n "$MODE" ] || die 'no mode given (see header)'
 [ -f "$RUNNER" ] || die "runner not found: $RUNNER"
+if [ "$RUNNER_IS_DEFAULT" = 1 ]; then
+    . "$SP_ROOT/tools/test_section_files.sh" || die "cannot load test-section discovery"
+    RUNNER_SOURCE="$RUNNER"
+    RUNNER="$SP_TMPROOT/run_all_tests.materialized.sh"
+    materialize_test_runner "$SP_ROOT" "$RUNNER" || die "cannot materialize section fragments"
+fi
 case "$MODE" in
+    --print-section-plan)
+        grep -E '^[[:space:]]*echo "\[[^]"]+\]' "$RUNNER" |
+            sed -E 's/^[[:space:]]*echo "(\[[^]]+\]).*/\1/' ;;
     --chunks)
         W=$(sp_workdir chunks); derive_chunks "$RUNNER" > "$W/chunks"
         verify_partition "$RUNNER" "$W/chunks"; check_chunk_count "$W/chunks"
