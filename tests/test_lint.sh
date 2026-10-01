@@ -541,6 +541,38 @@ check_contains "parse error json has error severity" "$JSON" '"severity":"error"
 check_contains "parse error json carries a column (#407)" "$JSON" '"column":'
 rm -f "$TMPFILE"
 
+# --- #1360: collection-size errors are the primary structured diagnostic ---
+# These guards historically printed their useful error only to stderr.  The
+# first-error recorder therefore exposed the later recovery error ("expected
+# ']', got number" / "expected '}', got string") to JSON and the LSP.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+python3 - "$TMPFILE" << 'PY'
+import pathlib
+import sys
+
+pathlib.Path(sys.argv[1]).write_text(
+    "x is [" + ", ".join(map(str, range(1025))) + "]\n",
+    encoding="utf-8",
+)
+PY
+JSON=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+JSON_OK=$(python3 -c 'import json,sys; d=json.load(sys.stdin); r=d[0]; print("ok" if len(d)==1 and r.get("code")=="E002" and r.get("line")==1 and r.get("column")==5041 and r.get("message")=="list literal exceeds 1024 elements" else "bad")' <<< "$JSON")
+check_contains "#1360 over-limit list records the size error in JSON" "$JSON_OK" "^ok$"
+
+python3 - "$TMPFILE" << 'PY'
+import pathlib
+import sys
+
+pathlib.Path(sys.argv[1]).write_text(
+    "x is {" + ", ".join(f'"k{i}": {i}' for i in range(1025)) + "}\n",
+    encoding="utf-8",
+)
+PY
+JSON=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+JSON_OK=$(python3 -c 'import json,sys; d=json.load(sys.stdin); r=d[0]; print("ok" if len(d)==1 and r.get("code")=="E002" and r.get("line")==1 and r.get("column")==13147 and r.get("message")=="dict literal exceeds 1024 entries" else "bad")' <<< "$JSON")
+check_contains "#1360 over-limit dict records the size error in JSON" "$JSON_OK" "^ok$"
+rm -f "$TMPFILE"
+
 # --- #407: parse errors carry line:col in human output ---
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 printf 'value is 1 extra\n' > "$TMPFILE"   # two statements -> error at 'extra' (col 12)
