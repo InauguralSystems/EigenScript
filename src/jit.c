@@ -167,8 +167,9 @@ JitConstFn jit_emit_const_return(EigsJitCache *jc, int64_t value) {
  * registry, scan counters, and stop-opcode histogram — all live on
  * `eigs_current` (EigsThread). The `g_*` identifiers below are
  * bridge macros (eigenscript.h) so call-site code stays unchanged.
- * Stop-opcode histogram rules in jit_try_compile_chunk: every bail
- * bumps g_jit_stop_counts[stop_op]; if prefix==0 we also bump
+ * Stop-opcode histogram rules in jit_try_compile_chunk: every scanner result
+ * that reaches a verdict bumps g_jit_stop_counts[stop_op]; if prefix==0 it
+ * also bumps
  * g_jit_stop_at_zero. Compiled chunks bump g_jit_compiled_count and
  * ALSO record their trailing stop_op (the op that would unlock
  * further extension). */
@@ -422,10 +423,12 @@ void jit_thread_destroy(EigsThread *th) {
             for (int a = 0; a < top; a++) {
                 EigsJitHotRow *r = &rows[a];
                 if (r->exec_count == 0) break;
-                const char *jstate =
-                    r->jit_state == 2 ? "yes" : r->jit_state == 1 ? "no " : "?  ";
-                const char *ostate =
-                    r->osr_state == 2 ? "yes" : r->osr_state == 1 ? "no " : "?  ";
+                const char *jstate = r->jit_state == 2 ? "yes " :
+                    r->jit_state == 1 ? "no  " :
+                    r->jit_state == 3 ? "full" : "?   ";
+                const char *ostate = r->osr_state == 2 ? "yes " :
+                    r->osr_state == 1 ? "no  " :
+                    r->osr_state == 3 ? "full" : "?   ";
                 double pct = total_exec
                     ? (100.0 * (double)r->exec_count / (double)total_exec) : 0.0;
                 double nat = r->code_len
@@ -444,6 +447,7 @@ void jit_thread_destroy(EigsThread *th) {
                         r->name ? r->name : "<anon>",
                         r->exec_count, jstate, pct, adv_buf, r->code_len, nat,
                         r->back_edge_count, ostate, r->osr_advance, r->osr_entry,
+                        r->jit_state == 3 ? "<cache-full>" :
                         r->stop_op == OP_COUNT ? "<end>" : op_name(r->stop_op));
                 bytes_native_top += r->exec_count * (uint64_t)r->advance;
                 bytes_total_top  += r->exec_count * (uint64_t)r->code_len;
@@ -2507,7 +2511,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
     uint8_t *code = jit_cache_alloc(g_jit_cache, size);
     if (!code) {
         g_jit_cache_full_rejects++;
-        *out_state = 1;
+        /* The prefix scanner succeeded, but no code was emitted. This is
+         * neither an unsupported-bytecode verdict nor a stop-opcode sample:
+         * cache capacity, not stop_op, decided the outcome. */
+        g_jit_stop_counts[stop_op]--;
+        *out_state = 3;
         *out_code = NULL;
         jit_cache_seal(g_jit_cache);
         return;
