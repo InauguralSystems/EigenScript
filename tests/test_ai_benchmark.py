@@ -36,6 +36,25 @@ class BenchmarkTest(unittest.TestCase):
             remote=subprocess.check_output(["git","remote","get-url","origin"],cwd=work,text=True).strip()
             self.assertEqual(remote,str(work/".stub-origin"))
 
+    @unittest.skipUnless(os.geteuid() == 0, "requires ownership mismatch")
+    def test_snapshot_archives_checkout_owned_by_runner_user(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo=Path(td)/"repo"; repo.mkdir()
+            subprocess.run(["git","init","-q"],cwd=repo,check=True)
+            (repo/"tracked").write_text("fixture\n")
+            subprocess.run(["git","add","tracked"],cwd=repo,check=True)
+            tree=subprocess.check_output(["git","write-tree"],cwd=repo,text=True).strip()
+            identity=dict(os.environ, GIT_AUTHOR_NAME="Fixture", GIT_AUTHOR_EMAIL="fixture@example.invalid",
+                          GIT_COMMITTER_NAME="Fixture", GIT_COMMITTER_EMAIL="fixture@example.invalid")
+            commit=subprocess.check_output(["git","commit-tree",tree],cwd=repo,input="fixture\n",
+                                           text=True,env=identity).strip()
+            subprocess.run(["git","update-ref","HEAD",commit],cwd=repo,check=True)
+            for path in [repo, *repo.rglob("*")]:
+                os.chown(path, 65534, 65534, follow_symlinks=False)
+            work=Path(td)/"work"; work.mkdir()
+            bench.snapshot(repo,"HEAD",work)
+            self.assertEqual((work/"tracked").read_text(),"fixture\n")
+
     def test_snapshot_ignores_host_commit_policy(self):
         with tempfile.TemporaryDirectory() as td:
             hooks=Path(td)/"hooks"; hooks.mkdir()

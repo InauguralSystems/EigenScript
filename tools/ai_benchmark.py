@@ -38,7 +38,8 @@ def isolated_git_env():
 
 def snapshot(repo, revision, work):
     git_env = isolated_git_env()
-    archive = subprocess.Popen(["git", "archive", revision], cwd=repo,
+    archive = subprocess.Popen(["git", "-c", f"safe.directory={repo}",
+                                "archive", revision], cwd=repo,
                                stdout=subprocess.PIPE, env=git_env)
     subprocess.run(["tar", "-x", "-C", work], stdin=archive.stdout, check=True)
     archive.stdout.close()
