@@ -55,8 +55,11 @@ ir_of() { # program, expected stdout
 
 make_probe "$SHORT_LEN" "$WORK/short.eigs"
 make_probe "$LONG_LEN" "$WORK/long.eigs"
-short_ir=$(ir_of "$WORK/short.eigs" "$((SHORT_LEN * CALLS))")
-long_ir=$(ir_of "$WORK/long.eigs" "$((LONG_LEN * CALLS))")
+# `ir_of` runs in a command-substitution subshell.  Propagate its status
+# explicitly: without these guards, `fail` only exits that subshell and an
+# empty reading can be mistaken for a zero ratio by awk.
+short_ir=$(ir_of "$WORK/short.eigs" "$((SHORT_LEN * CALLS))") || exit $?
+long_ir=$(ir_of "$WORK/long.eigs" "$((LONG_LEN * CALLS))") || exit $?
 ratio=$(awk -v a="$long_ir" -v b="$short_ir" 'BEGIN { printf "%.3f", a/b }')
 
 echo "string-len-complexity: short(${SHORT_LEN}) Ir=$short_ir long(${LONG_LEN}) Ir=$long_ir ratio=$ratio max=$MAX_RATIO"
