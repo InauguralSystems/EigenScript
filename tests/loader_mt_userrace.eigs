@@ -1,8 +1,11 @@
 # The SCOPE BOUNDARY of #1144, made executable.
 #
-# Two workers load_file the same module 40x while main loads another; the
-# shared module's `define` rebinds one global that the other thread is
-# calling. That is the user-level shared-mutable-state race
+# Two workers rendezvous with main before one reloads a module and the other
+# calls the global function that reload rebinds. Main does not release either
+# worker until both are waiting, so the rebind and call are concurrent in the
+# happens-before sense even on one core: neither worker's access is ordered
+# before the other's. That is the user-level
+# shared-mutable-state race
 # (docs/CONCURRENCY.md, "Loading from workers") and the same-slot value /
 # assign-count class `src/eigenscript.c`'s #607 comment declares out of scope
 # — it is filed on its own and is NOT expected to be ThreadSanitizer-clean.
@@ -12,16 +15,42 @@
 # stack, no module cache, no module-namespace table. If #1144 regresses, one
 # of those symbols comes back and the row goes red — which is the executable
 # form of "out of scope", instead of a sentence.
-define lm_ur_worker(k) as:
+lm_ur_ready1 is 0
+lm_ur_ready2 is 0
+lm_ur_collision is 0
+define lm_ur_worker(do_load) as:
+    # Deliberately unsynchronized: this is a spin barrier for an already
+    # deliberately racy fixture.  Each worker publishes arrival and reads the
+    # other's publication, so TSan always has a user-slot race to capture even
+    # when a one-core scheduler runs the loader operations in long slices.
+    if do_load == 1:
+        lm_ur_ready1 is 1
+        loop while lm_ur_ready2 == 0:
+            null
+    else:
+        lm_ur_ready2 is 1
+        loop while lm_ur_ready1 == 0:
+            null
+    # Keep both released workers in the same deliberately racing statement
+    # for longer than a one-core scheduling quantum.  This is the user-slot
+    # race whose nonempty capture makes the loader-symbol assertion nonvacuous.
+    local ri is 0
+    loop while ri < 100000:
+        lm_ur_collision is do_load
+        ri is ri + 1
     local i is 0
     local n is 0
     loop while i < 40:
-        load_file of "loader_mt_modules/lm_rebind.eigs"
-        n is n + (lm_rebind_fn of k)
+        if do_load == 1:
+            load_file of "loader_mt_modules/lm_rebind.eigs"
+        else:
+            n is n + (lm_rebind_fn of 2)
         i is i + 1
     return n
+# Establish the function before the caller starts; only the worker reloads it.
+load_file of "loader_mt_modules/lm_rebind.eigs"
 h1 is spawn of [lm_ur_worker, 1]
-h2 is spawn of [lm_ur_worker, 2]
+h2 is spawn of [lm_ur_worker, 0]
 mi is 0
 loop while mi < 40:
     load_file of "loader_mt_modules/lm_other.eigs"
