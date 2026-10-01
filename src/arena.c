@@ -48,6 +48,7 @@ size_t safe_size_mul(size_t a, size_t b) {
 }
 
 void* xmalloc(size_t size) {
+    if (eigs_current && g_sandbox_preparing) (void)sandbox_charge(size);
     void *p = malloc(size);
     if (!p) x_oom(size);
     EIGS_POISON_MEM(p, size);
@@ -55,12 +56,17 @@ void* xmalloc(size_t size) {
 }
 
 void* xcalloc(size_t nmemb, size_t size) {
+    size_t total = safe_size_mul(nmemb, size);
+    if (eigs_current && g_sandbox_preparing) (void)sandbox_charge(total);
     void *p = calloc(nmemb, size);
     if (!p) x_oom(safe_size_mul(nmemb, size));
     return p;
 }
 
 void* xrealloc(void *p, size_t size) {
+    /* Charging the complete replacement rather than trying to discover the
+     * allocator's old usable size is deliberately conservative and portable. */
+    if (eigs_current && g_sandbox_preparing) (void)sandbox_charge(size);
 #if defined(EIGS_POISON) && defined(__GLIBC__)
     size_t old_usable = p ? malloc_usable_size(p) : 0;
 #endif
@@ -76,6 +82,8 @@ void* xrealloc(void *p, size_t size) {
 
 char* xstrdup(const char *s) {
     if (!s) s = "";
+    if (eigs_current && g_sandbox_preparing)
+        (void)sandbox_charge(strlen(s) + 1);
     char *r = strdup(s);
     if (!r) x_oom(strlen(s) + 1);
     return r;

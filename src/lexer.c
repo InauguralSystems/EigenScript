@@ -17,9 +17,19 @@ static void lexer_error_at(int line, int col, const char *message) {
 }
 
 static void tok_add(TokenList *tl, TokType type, double num, const char *str, int line, int col) {
-    if (tl->count >= tl->capacity) {
-        tl->capacity *= 2;
-        tl->tokens = xrealloc_array(tl->tokens, tl->capacity, sizeof(Token));
+    /* MAX_TOKENS is a limit, not merely the first allocation size. Keep one
+     * slot for EOF so every parser consumer remains safe after refusal. */
+    if (tl->count >= MAX_TOKENS - 1) {
+        if (tl->count == MAX_TOKENS - 1) {
+            lexer_error_at(line, col, "source has too many tokens");
+            Token *eof = &tl->tokens[tl->count++];
+            memset(eof, 0, sizeof(*eof));
+            eof->type = TOK_EOF;
+            eof->line = line;
+            eof->col = col;
+            eof->len = 1;
+        }
+        return;
     }
     Token *t = &tl->tokens[tl->count++];
     t->type = type;

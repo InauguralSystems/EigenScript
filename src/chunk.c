@@ -16,7 +16,7 @@
 EigsSrcBuf *srcbuf_new(const char *text) {
     if (!text) return NULL;
     EigsSrcBuf *sb = xcalloc(1, sizeof(EigsSrcBuf));
-    sb->text = strdup(text);
+    sb->text = xstrdup(text);
     sb->refcount = 1;
     return sb;
 }
@@ -56,7 +56,7 @@ EigsChunk *chunk_new(const char *name) {
     c->cols = xcalloc(c->lines_cap, sizeof(int));
     c->fn_cap = 8;
     c->functions = xcalloc(c->fn_cap, sizeof(EigsChunk *));
-    c->name = name ? strdup(name) : strdup("<module>");
+    c->name = xstrdup(name ? name : "<module>");
     c->jit_stop_op = OP_COUNT;  /* sentinel: scan never ran */
     for (int k = 0; k < JIT_OSR_SLOTS; k++)
         c->jit_osr[k].stop_op = OP_COUNT;

@@ -1144,6 +1144,9 @@ struct EigsThread {
                                               * cleanly" — it produced partial
                                               * results with exit 0) */
     int                  sandbox_active;
+    /* While sandbox source is tokenized/parsed/compiled, the ordinary
+     * compiler allocators are part of the sandbox byte budget too. */
+    int                  sandbox_preparing;
     int                  sandbox_error_latched; /* first diagnostic in the
                                                   * currently armed run wins */
     size_t               sandbox_bytes_used;
@@ -1458,6 +1461,7 @@ void eigs_obs_unmute_for_fatal(void);
 #define g_sandbox_loop_max    (eigs_current->sandbox_loop_max)
 #define g_sandbox_cap_hit     (eigs_current->sandbox_cap_hit)
 #define g_sandbox_active      (eigs_current->sandbox_active)
+#define g_sandbox_preparing   (eigs_current->sandbox_preparing)
 #define g_sandbox_error_latched (eigs_current->sandbox_error_latched)
 #define g_sandbox_bytes_used  (eigs_current->sandbox_bytes_used)
 #define g_sandbox_byte_max    (eigs_current->sandbox_byte_max)
@@ -1491,6 +1495,7 @@ size_t safe_size_mul(size_t a, size_t b);
 void* xmalloc_array(size_t nmemb, size_t size);
 void* xcalloc_array(size_t nmemb, size_t size);
 void* xrealloc_array(void *p, size_t nmemb, size_t size);
+int sandbox_charge(size_t bytes);
 /* fopen wrapper for any write mode ("w"/"wb"/"w+"/"a"/...). Pins the
  * created file's mode to 0644 regardless of process umask, so a permissive
  * umask cannot leave the file world-writable. Use for any newly-created

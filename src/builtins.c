@@ -3792,6 +3792,7 @@ Value* builtin_sandbox_run(Value *arg) {
     long long saved_iters = g_loop_iterations;
     long long saved_backedge_iters = g_loop_backedge_count;
     int saved_sb_active = g_sandbox_active;
+    int saved_sb_preparing = g_sandbox_preparing;
     int saved_sb_error_latched = g_sandbox_error_latched;
     int saved_sb_refusal = g_sandbox_refusal;
     int saved_sb_refusal_kind = g_sandbox_refusal_kind;
@@ -3842,8 +3843,10 @@ Value* builtin_sandbox_run(Value *arg) {
         int saved_errors = g_parse_errors;
         g_parse_errors = 0;
         if (!prep_failed) {
+            g_sandbox_preparing = 1;
             source_tokens = tokenize(source ? source : "");
             source_ast = parse(&source_tokens);
+            if (g_sandbox_refusal) prep_failed = 1;
         }
         int parse_failed = !prep_failed && (g_parse_errors > 0 || !source_ast);
         if (!prep_failed && !parse_failed) {
@@ -3855,6 +3858,7 @@ Value* builtin_sandbox_run(Value *arg) {
             chunk = compile_ast(source_ast, sbox, source ? source : "");
             g_obs_gate_scan_enabled = saved_obs_scan;
         }
+        g_sandbox_preparing = saved_sb_preparing;
         int compile_failed = !prep_failed && !parse_failed &&
                              (g_parse_errors > 0 || !chunk);
         g_parse_errors = saved_errors;
@@ -3876,6 +3880,7 @@ Value* builtin_sandbox_run(Value *arg) {
             g_loop_iterations = saved_iters;
             g_loop_backedge_count = saved_backedge_iters;
             g_sandbox_active = saved_sb_active;
+            g_sandbox_preparing = saved_sb_preparing;
             g_sandbox_bytes_used = saved_sb_used;
             g_sandbox_byte_max = saved_sb_max;
             dict_set_owned(out, "ok", make_num(0));
@@ -3885,7 +3890,10 @@ Value* builtin_sandbox_run(Value *arg) {
                            make_str(prep_failed ? g_sandbox_refusal_msg : error_message));
             dict_set_owned(ev, "line",
                            make_num((double)(prep_failed ? g_sandbox_refusal_line : error_line)));
-            if (prep_failed && g_has_error) {
+            /* Allocation refusal may coincide with a lexer/parser/compiler
+             * diagnostic. Every preparation failure is returned as data and
+             * must consume, rather than leak, that pending host error. */
+            if (g_has_error) {
                 g_has_error = 0;
                 eigs_clear_error_value();
             }

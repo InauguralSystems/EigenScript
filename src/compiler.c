@@ -2004,6 +2004,11 @@ static int cond_is_observer_based(const ASTNode *n) {
 }
 
 static void compile_node(Compiler *c, ASTNode *node) {
+    /* A sandbox preparation allocation refusal is sticky. Stop walking the
+     * remaining attacker-controlled tree immediately; compile_ast will return
+     * the partial chunk solely so sandbox_run can destroy it and report the
+     * structured refusal. */
+    if (g_sandbox_preparing && g_sandbox_refusal) return;
     if (g_parse_depth >= COMPILE_MAX_DEPTH) {
         /* Too deep to compile without overflowing the C stack. Flag the error
          * (entry paths abort before executing, cf. the post-compile check) and

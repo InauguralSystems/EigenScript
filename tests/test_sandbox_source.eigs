@@ -42,6 +42,11 @@ bytes_r is sandbox_run of ["range of 10000", 1000, 128]
 assert_eq of [bytes_r["ok"], 0, "source sandbox: max_bytes"]
 prep_bytes_r is sandbox_run of ["2 + 3", 1000, 1]
 assert_eq of [prep_bytes_r["error"]["kind"], "sandbox", "source sandbox: preparation uses max_bytes"]
+# A refusal raised by compiler allocation accounting must win over a
+# simultaneous syntax error without escaping sandbox_run into the host.
+prep_parse_r is sandbox_run of ["x is (", 1000, 128]
+assert_eq of [prep_parse_r["ok"], 0, "source sandbox: budgeted parse failure stays structured"]
+assert_eq of [prep_parse_r["error"]["kind"], "sandbox", "source sandbox: budget refusal wins over parse error"]
 
 # Callables and results too large to verify never cross the boundary.
 fn_r is sandbox_run of ["define f() as:\n    return 1\nf", 1000]
