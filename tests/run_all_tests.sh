@@ -6712,6 +6712,19 @@ fi
 
 echo ""
 
+# [99zb0] Precheck reads the same strict receipt that the suite reads (#1355).
+echo "[99zb0] Precheck row-classification self-test"
+TOTAL=$((TOTAL + 1))
+PRECHECK_CLASS_OUTPUT=$(bash "$TESTS_DIR/../tools/precheck.sh" --selftest 2>&1)
+PRECHECK_CLASS_RC=$?
+if [ "$PRECHECK_CLASS_RC" -eq 0 ] && printf '%s\n' "$PRECHECK_CLASS_OUTPUT" | grep -q '^precheck-selftest: 10/10 passed, 0 failed$'; then
+    PASS=$((PASS + 1)); echo "  PASS: run-gate pass/fail/skip/no-verdict/identity/platform/no-binary cases"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: precheck row classifier self-test (rc=$PRECHECK_CLASS_RC)"
+    print_captured "precheck classifier, VERBATIM" "$PRECHECK_CLASS_OUTPUT"
+fi
+echo ""
+
 # [99zb] Portability audit — every tracked *.sh PARSED by the OLDEST bash on
 # the machine, AND this repo's shell gates RUN under it.
 #
@@ -6729,72 +6742,18 @@ TOTAL=$((TOTAL + 1))
 PORT_OUTPUT=$(bash "$TESTS_DIR/../tools/portability_parse_check.sh" 2>&1)
 PORT_RC=$?
 printf '%s\n' "$PORT_OUTPUT" | grep -E "^portability(-parse|-run)?: (oracle|OK|ok|SKIPPED|NO OLD BASH|and |looked for|rejected by|every candidate|this machine|this run proves|tools/portability)" | head -14
-# THE ORACLE'S IDENTITY IS PART OF THE VERDICT. Bought 2026-09-21 (round-5
-# blind critics, Astra and Fable, converging). Removing ONE line from the
-# gate's candidate selection — the `<= 3` guard — makes it pick the system
-# bash 5, do all the work honestly, and print a receipt that SAYS bash 5; this
-# caller then read rc 0 and the `portability: OK:` prefix and passed it. The
-# gate's own version guard was the only thing standing between "the macOS
-# shell was modelled" and "a modern shell was exercised twice", and a caller
-# that cannot see through its gate's selection is not an independent check.
-# So the caller holds its OWN literal maximum and parses the identity line.
-# ROUND 7 — THE IDENTITY IS A FACT THE GATE REPORTS, NOT A BANNER THIS CALLER
-# PARSES. Bought 2026-09-21 (round-6 blind critic, Fable, item 2): round 6 read
-# the major version out of `--version`'s GNU banner, so an interpreter whose
-# banner does not begin "GNU bash, version" — a vendor build, a wrapper, a
-# rebuild with a changed RELEASE string — yielded NO number and this caller
-# failed a perfectly good bash 3.2 by name (measured with a wrapper printing
-# `Custom Bash 3.2.0` around the real 3.2 oracle). The gate now prints
-# `portability-parse: oracle-major=N` from the SELECTED candidate's own
-# `BASH_VERSINFO[0]`; this caller parses that and keeps its own `<= 3` literal.
-# The banner is display only.
-PORT_OLD_MAJOR_MAX=3
-# port_identity_verdict <gate output>
-#   Sets PORT_IDENTITY_VERDICT: empty when the receipt is acceptable, else the
-#   named reason. The gate prints oracle-major from BASH_VERSINFO; this holds <= 3.
-port_identity_verdict() {
-    local out="$1" major measured
-    measured=0
-    printf '%s\n' "$out" | grep -q "^portability: OK:" && measured=1
-    major=$(printf '%s\n' "$out" | sed -n 's/^portability-parse: oracle-major=\([0-9][0-9]*\)$/\1/p' | head -1)
-    PORT_IDENTITY_VERDICT=""
-    if [ "$measured" -eq 1 ] && [ -z "$major" ]; then
-        PORT_IDENTITY_VERDICT="the portability gate claimed a completed audit and never printed a 'portability-parse: oracle-major=N' line — nothing here says which shell it measured under, and a version banner is prose, not a version"
-    elif [ "$measured" -eq 1 ] && [ "$major" -gt "$PORT_OLD_MAJOR_MAX" ]; then
-        PORT_IDENTITY_VERDICT="the portability gate measured under bash $major — that is not the old shell it exists to model"
-    fi
-}
-port_identity_verdict "$PORT_OUTPUT"
+. "$TESTS_DIR/../tools/portability_verdict.sh"
+portability_verdict "$PORT_RC" "$PORT_OUTPUT"
+# Receipt classification is shared with contributor precheck so the local and
+# suite gates cannot disagree about identity, skips, or missing verdicts (#1355).
 # rc 0 is not enough: a verdict line must be PRESENT. A tool that died after
 # printing nothing also exits 0 if its last command did (mechanical-gates §121,
 # applied to the section rather than the tool).
-if [ "$PORT_RC" -eq 0 ] \
-   && ! printf '%s\n' "$PORT_OUTPUT" | grep -qE "^portability: OK:|^portability-parse: SKIPPED"; then
+if [ "$PORT_VERDICT" = FAIL ]; then
     FAIL=$((FAIL + 1))
-    echo "  FAIL: the portability audit exited 0 without printing a verdict line — it measured nothing"
+    echo "  FAIL: $PORT_VERDICT_REASON"
     print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
-elif [ "$PORT_RC" -eq 0 ] && [ -n "$PORT_IDENTITY_VERDICT" ]; then
-    # A NAMED SKIP is still a counted skip: no `portability: OK:` line, so
-    # this arm never fires on the "no old bash here" path.
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: $PORT_IDENTITY_VERDICT"
-    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
-elif [ "$PORT_RC" -eq 0 ] \
-     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability-parse: SKIPPED" \
-     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability: OK:"; then
-    # Both verdicts at once is a tool that cannot say what it did.
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: the portability audit printed BOTH a skip and a completed-audit verdict"
-    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
-elif [ "$PORT_RC" -eq 0 ] && [ "$(uname -s)" = "Darwin" ] \
-     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability-parse: SKIPPED"; then
-    # macOS ships bash 3.2 as /bin/bash, so this lane is always provisioned;
-    # a skip here is a broken candidate walk, never a missing shell.
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: the portability audit skipped on macOS, whose /bin/bash IS the old shell it exists to model"
-    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
-elif [ "$PORT_RC" -eq 0 ] \
-     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability-parse: SKIPPED"; then
+elif [ "$PORT_VERDICT" = SKIP ]; then
     # #1326: no old bash here, so nothing was parsed or run under one. That
     # used to count as a PASS, indistinguishable from a lane that ran the
     # audit; it is a section-level skip and is tallied as one.
