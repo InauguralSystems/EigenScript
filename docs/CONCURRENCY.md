@@ -204,13 +204,10 @@ The same holds for a dict the worker builds and publishes through a shared
 list, for nested dicts, and for a read that happens long after the worker was
 joined and its handle released. (Mechanically: key strings are interned, and
 while the process is multithreaded new keys are interned into a
-process-global, mutex-guarded table instead of the writing thread's own — the
-thread's table is freed when the thread detaches, which is exactly the
-lifetime a shared dict does not have.) The guarantee is keyed on the
-multithreaded flag that `spawn` sets. The embed API's other thread shape —
-host threads attaching to one state without any `spawn` — is NOT covered:
-there a detaching host thread still frees the names it interned, dict keys
-and global bindings alike (#1162).
+process-global, mutex-guarded table instead of the writing thread's own.
+Every state also retains the intern tables of its host attachments until the
+state is destroyed, so a host thread may detach without invalidating dict keys
+or global bindings used by a later attachment.)
 
 This is a statement about the KEY, not about the VALUE. Two threads writing
 the same dict, or one writing while another reads, is still **your** race to

@@ -1539,11 +1539,10 @@ void eigs_thread_drain_caches(EigsThread *th) {
      * but drain defensively before freeing the table itself. */
     env_intern_release_all_values();
 
-    /* env_name_interns (#1065): release the THREAD's ref on its intern
-     * table. Chunks created on this thread hold their own refs (they carry
-     * pointers into the table and may outlive the thread as function values
-     * sent through a channel), so the table -- bucket heads + nodes owning
-     * ->name -- frees on the last release, not here. */
+    /* env_name_interns (#1065/#1162): release the THREAD's ref on its intern
+     * table. Chunks and the state hold their own refs: chunks can outlive the
+     * producing thread, while state-owned env bindings can outlive every
+     * attachment that interned their names. The state ref drops at teardown. */
     env_intern_table_unref(th->intern_tbl);
     th->intern_tbl = NULL;
 }

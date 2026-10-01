@@ -91,6 +91,9 @@ static void state_destroy_body(EigsState *st, int already_released) {
     /* Module-cache refs were dropped at gc_collect_at_exit; the array
      * itself may still be allocated (capacity bumped past zero). */
     free(st->module_cache);
+    for (size_t i = 0; i < st->intern_table_count; i++)
+        env_intern_table_unref(st->intern_tables[i]);
+    free(st->intern_tables);
     /* #1144: the in-flight load stack moved to EigsThread — it is freed by
      * eigs_thread_detach, which runs before the state is destroyed. */
     free(st->exe_path);
@@ -190,6 +193,19 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
     th->intern_tbl = env_intern_table_new();   /* #1065: thread's ref */
+    /* State-owned envs retain interned name pointers after this attachment
+     * leaves.  Keep a state-lifetime reference to every attachment's table.
+     * threads_lock serializes both this registry and the attachment list. */
+    pthread_mutex_lock(&st->threads_lock);
+    if (st->intern_table_count == st->intern_table_cap) {
+        size_t cap = st->intern_table_cap ? st->intern_table_cap * 2 : 4;
+        st->intern_tables = xrealloc(st->intern_tables,
+                                    cap * sizeof(*st->intern_tables));
+        st->intern_table_cap = cap;
+    }
+    env_intern_table_ref(th->intern_tbl);
+    st->intern_tables[st->intern_table_count++] = th->intern_tbl;
+    pthread_mutex_unlock(&st->threads_lock);
     pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(1); pthread_mutex_unlock(&g_attached_lock);
     /* #915: xcalloc zeroes, and 0 here would mean "never scan", silently
      * disabling the observer gate's eager pass on every thread. Default ON;

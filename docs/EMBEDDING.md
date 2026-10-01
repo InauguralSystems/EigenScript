@@ -111,7 +111,10 @@ eigs_state_destroy(st);
 
 `eigs_thread_attach` is called once per OS thread that needs to enter
 the state; `eigs_thread_detach` is called from the same thread before
-the state is destroyed or the thread exits.
+the state is destroyed or the thread exits. Detaching an attachment does not
+invalidate names stored in the state's global environment or dictionaries;
+a later attachment, including one created by `eigs_thread_switch`, can keep
+using those bindings until the state is destroyed.
 
 ## Source eval
 

@@ -701,6 +701,13 @@ void            env_intern_table_unref(EnvInternTable *t);
 struct EigsState {
     pthread_mutex_t threads_lock;
     EigsThread     *threads;
+    /* Intern tables whose names have been published into state-owned envs.
+     * An attachment drops its own reference at detach, but global/module env
+     * bindings can outlive that attachment.  The state therefore retains
+     * every attachment's table until state teardown (#1162). */
+    EnvInternTable **intern_tables;
+    size_t           intern_table_count;
+    size_t           intern_table_cap;
     /* Observer-classification thresholds (set_observer_threshold builtin).
      * Per-state because they're interpreter configuration, not execution
      * state; one knob per host application, shared across worker threads. */

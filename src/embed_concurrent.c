@@ -66,7 +66,7 @@ static void check(int ok, const char *what) {
  * the number: bumping a population pin to clear its own red is how a gate
  * launders the loss it exists to report (mechanical-gates §4, §106). The
  * number only ever moves for a check you just wrote. */
-#define EC_EXPECTED_CHECKS 85
+#define EC_EXPECTED_CHECKS 91
 
 /* Rounds are deliberately modest: these assertions fire on the RATIO of two
  * states' settings, not on how long they are held, so a long spin buys nothing
@@ -1981,6 +1981,59 @@ static void test_register_while_workers_read(void) {
     eigs_close(st);
 }
 
+/* #1162: state-owned env names must outlive the host attachment that interned
+ * them.  These workers run sequentially on distinct OS threads deliberately:
+ * concurrency is not required to trigger the lifetime defect; detach is the
+ * boundary under test. */
+typedef struct { EigsState *st; int ok; } ReattachArg;
+
+static void *reattach_writer(void *p) {
+    ReattachArg *a = (ReattachArg *)p;
+    if (!eigs_thread_attach(a->st) || eigs_state_init_runtime(a->st) != 0)
+        return NULL;
+    EigsValue *v = eigs_eval_string("d is {\"pre\": 1}\nd.from_t1 is 42");
+    a->ok = v && eigs_value_as_num(v) == 42.0;
+    if (v) eigs_value_release(v);
+    eigs_thread_detach();
+    return NULL;
+}
+
+static void *reattach_reader(void *p) {
+    ReattachArg *a = (ReattachArg *)p;
+    if (!eigs_thread_attach(a->st)) return NULL;
+    EigsValue *s = eigs_eval_string("str of (1 + 2)");
+    EigsValue *k = eigs_eval_string(
+        "(keys of d) == [\"pre\", \"from_t1\"]");
+    a->ok = s && eigs_value_as_string(s) &&
+            strcmp(eigs_value_as_string(s), "3") == 0 &&
+            k && eigs_value_as_num(k) == 1.0;
+    if (s) eigs_value_release(s);
+    if (k) eigs_value_release(k);
+    eigs_thread_detach();
+    return NULL;
+}
+
+static void test_host_detach_reattach_names(void) {
+    EigsState *st = eigs_state_new();
+    check(st != NULL, "host-reattach: state created");
+    if (!st) return;
+    ReattachArg a = { st, 0 };
+    pthread_t t1, t2;
+    int c1 = pthread_create(&t1, NULL, reattach_writer, &a) == 0;
+    check(c1, "host-reattach: writer OS thread created");
+    if (c1) pthread_join(t1, NULL);
+    check(a.ok, "host-reattach: writer initialized globals before detach");
+    a.ok = 0;
+    int c2 = pthread_create(&t2, NULL, reattach_reader, &a) == 0;
+    check(c2, "host-reattach: reader OS thread created");
+    if (c2) pthread_join(t2, NULL);
+    check(a.ok, "host-reattach: second OS thread reads builtin and dict names");
+
+    check(eigs_thread_switch(st) != NULL,
+          "host-reattach: same OS thread can attach after both detach");
+    eigs_close(st);
+}
+
 int main(void) {
     printf("embed concurrent multi-state (#885/#1142/#1143)\n");
     /* EMBED_CONCURRENT_ONLY: the TSan mutant oracle runs just the take
@@ -2013,6 +2066,8 @@ int main(void) {
         test_sink_only_buffer_bounded();
     } else if (only && strcmp(only, "register-read") == 0) {
         test_register_while_workers_read();
+    } else if (only && strcmp(only, "host-reattach") == 0) {
+        test_host_detach_reattach_names();
     } else {
         /* ORDER IS LOAD-BEARING at the top. test_exit_tail_not_lost forks,
          * so it runs before any thread exists; test_sink_only_buffer_bounded
@@ -2038,6 +2093,7 @@ int main(void) {
         test_shutdown_while_sibling();
         test_concurrent_close();
         test_register_while_workers_read();
+        test_host_detach_reattach_names();
         if (checks_run != EC_EXPECTED_CHECKS) {
             printf("  FAIL: check population: %d checks ran, expected %d "
                    "(a case was added, removed, or returned early — update "

@@ -685,6 +685,24 @@ int main(void) {
 
     eigs_close(st);
 
+    /* #1162's smallest documented sequence, isolated from the long-lived
+     * fixture above: detach destroys the attachment, then switch creates a
+     * fresh one for the same state. State-owned builtin names must survive. */
+    EigsState *reattach = eigs_open();
+    CHECK(reattach != NULL, "#1162: open state for detach/switch");
+    r = reattach ? eigs_eval_string("1 + 1") : NULL;
+    CHECK(r && eigs_value_as_num(r) == 2.0,
+          "#1162: evaluate before detach");
+    if (r) eigs_value_release(r);
+    eigs_thread_detach();
+    CHECK(eigs_thread_switch(reattach) != NULL,
+          "#1162: switch back to detached state");
+    r = eigs_eval_string("abs of -3");
+    CHECK(r && eigs_value_as_num(r) == 3.0,
+          "#1162: builtin survives same-thread detach/switch");
+    if (r) eigs_value_release(r);
+    eigs_close(reattach);
+
     if (failures == 0) {
         printf("embed_smoke: OK\n");
         return 0;
