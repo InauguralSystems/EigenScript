@@ -151,6 +151,42 @@ int main(void) {
         g_trace_current_line = line_save;
     }
 
+    /* #1394: strictness is state-local embedder configuration. Reuse the
+     * one-shot state already keeping the process alive, then create a staged
+     * sibling. Closing that sibling must not perform process-wide trace
+     * shutdown and accidentally arm all history names. */
+    {
+        eigs_state_set_strict(NULL, 1); /* lifecycle setters are NULL-safe */
+        eigs_state_set_strict(st, 0);
+
+        EigsState *strict = eigs_state_new();
+        CHECK(strict != NULL, "#1394 create staged strict state");
+        eigs_state_set_strict(strict, -1); /* every nonzero value enables */
+        CHECK(eigs_thread_switch(strict) != NULL, "#1394 switch to strict state");
+        CHECK(eigs_state_init_runtime(strict) == 0, "#1394 init staged strict state");
+        EigsValue *strict_result = eigs_eval_string("abs of \"x\"");
+        CHECK(strict_result == NULL && eigs_has_error(),
+              "#1394 strict state rejects abs(string)");
+        eigs_value_release(strict_result);
+        eigs_clear_error();
+
+        CHECK(eigs_thread_switch(st) != NULL, "#1394 switch to non-strict state");
+        EigsValue *soft_result = eigs_eval_string("abs of \"x\"");
+        CHECK(soft_result != NULL && eigs_value_type(soft_result) == EIGS_TYPE_NUM &&
+                  eigs_value_as_num(soft_result) == 0.0 && !eigs_has_error(),
+              "#1394 non-strict state returns the finite stand-in");
+        eigs_value_release(soft_result);
+
+        CHECK(eigs_thread_switch(strict) != NULL, "#1394 switch back to strict state");
+        eigs_close(strict);
+        CHECK(eigs_thread_switch(st) != NULL, "#1394 restore non-strict state");
+        soft_result = eigs_eval_string("abs of \"x\"");
+        CHECK(soft_result != NULL && eigs_value_as_num(soft_result) == 0.0 &&
+                  !eigs_has_error(),
+              "#1394 non-strict state remains non-strict after switching");
+        eigs_value_release(soft_result);
+    }
+
     /* --- Eval a script that defines a global. ------------------------ */
     EigsValue *r = eigs_eval_string("x is 5\ny is x * 7\ny");
     CHECK(r != NULL, "eval returns a value");

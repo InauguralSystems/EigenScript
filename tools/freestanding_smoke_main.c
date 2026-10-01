@@ -16,6 +16,30 @@ static const char *fs_smoke_provider(const char *name, void *ud) {
 
 int main(int argc, char **argv) {
     if (argc < 2) { fprintf(stderr, "usage: %s '<eigenscript source>'\n", argv[0]); return 2; }
+    if (argc == 2 && argv[1][0] == '-' && argv[1][1] == '-' &&
+        argv[1][2] == 's' && argv[1][3] == 't' && argv[1][4] == 'r' &&
+        argv[1][5] == 'i' && argv[1][6] == 'c' && argv[1][7] == 't' &&
+        argv[1][8] == '-' && argv[1][9] == 'a' && argv[1][10] == 'p' &&
+        argv[1][11] == 'i' && argv[1][12] == 0) {
+        EigsState *soft = eigs_open();
+        if (!soft) return 2;
+        eigs_state_set_strict(soft, 0);
+        EigsValue *v = eigs_eval_string("abs of \"x\"");
+        if (!v || eigs_has_error() || eigs_value_as_num(v) != 0.0) return 1;
+        eigs_value_release(v);
+        eigs_close(soft);
+
+        EigsState *strict = eigs_state_new();
+        if (!strict) return 2;
+        eigs_state_set_strict(strict, 2);
+        if (!eigs_thread_attach(strict) || eigs_state_init_runtime(strict) != 0) return 2;
+        v = eigs_eval_string("abs of \"x\"");
+        if (v || !eigs_has_error()) return 1;
+        eigs_value_release(v);
+        eigs_close(strict);
+        puts("strict setter works");
+        return 0;
+    }
     EigsState *st = eigs_open();
     if (!st) { fprintf(stderr, "eigs_open failed\n"); return 2; }
     eigs_set_source_provider(fs_smoke_provider, 0);
