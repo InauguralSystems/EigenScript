@@ -5777,7 +5777,7 @@ if [ "$(uname -m)" = "x86_64" ]; then
     JHOT_OUTPUT=$(EIGS_JIT_HOT=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
     JHOT_BYTES=$(echo "$JHOT_OUTPUT" | sed -n 's/.*bytes native: [0-9]* \/ total: \([0-9]*\).*/\1/p' | head -1)
     if echo "$JHOT_OUTPUT" | grep -q "=== Hot chunks" &&
-       echo "$JHOT_OUTPUT" | grep -qE '[0-9]+  (yes|no |\?  ) +[0-9.]+%' &&
+       echo "$JHOT_OUTPUT" | grep -qE '[0-9]+  (yes |no  |full|\?   ) +[0-9.]+%' &&
        [ -n "$JHOT_BYTES" ] && [ "$JHOT_BYTES" -gt 0 ]; then
         PASS=$((PASS + 1))
         echo "  PASS: EIGS_JIT_HOT dumped hot-chunk rows (total bytes=$JHOT_BYTES)"
@@ -5788,6 +5788,36 @@ if [ "$(uname -m)" = "x86_64" ]; then
 else
     PASS=$((PASS + 1))
     echo "  SKIP: EIGS_JIT_HOT gate (JIT not built or not supported on this platform)"
+fi
+TOTAL=$((TOTAL + 1))
+# A one-page cache deterministically exhausts on this corpus.  Space rejection
+# is not an unsupported-bytecode verdict: every rejected hot row must say
+# "full", and those rows must not enter the stop-opcode histogram.
+if [ "$(uname -m)" = "x86_64" ]; then
+    JFULL_OUTPUT=$(EIGS_JIT_CACHE_PAGES=1 EIGS_JIT_STATS=1 EIGS_JIT_STOPS=1 EIGS_JIT_HOT=1 \
+        ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
+    JFULL_SCANNED=$(sed -n 's/.*scanned=\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
+    JFULL_REJECTS=$(sed -n 's/.*cache_full_rejects=\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
+    JFULL_COMPILED=$(sed -n 's/^compiled: *\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
+    JFULL_BAILOUTS=$(sed -n 's/^total bailouts: *\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
+    JFULL_ROWS=$(awk '
+        $3 == "full" { n++ }
+        $9 == "full" { n++ }
+        END { print n + 0 }
+    ' <<< "$JFULL_OUTPUT")
+    if [ -n "$JFULL_SCANNED" ] && [ -n "$JFULL_REJECTS" ] &&
+       [ -n "$JFULL_COMPILED" ] && [ -n "$JFULL_BAILOUTS" ] &&
+       [ "$JFULL_REJECTS" -gt 0 ] && [ "$JFULL_ROWS" -eq "$JFULL_REJECTS" ] &&
+       [ $((JFULL_COMPILED + JFULL_BAILOUTS)) -eq $((JFULL_SCANNED - JFULL_REJECTS)) ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: cache-full chunks are distinct and absent from stop histogram (rejected=$JFULL_REJECTS)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: cache-full JIT diagnostics disagree (scanned=${JFULL_SCANNED:-?} rejected=${JFULL_REJECTS:-?} full_rows=${JFULL_ROWS:-?} histogram=$((${JFULL_COMPILED:-0} + ${JFULL_BAILOUTS:-0})))"
+    fi
+else
+    PASS=$((PASS + 1))
+    echo "  SKIP: cache-full JIT diagnostic gate (JIT not built or not supported on this platform)"
 fi
 echo ""
 

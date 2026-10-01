@@ -380,7 +380,8 @@ typedef struct EigsChunk {
     int      max_stack;         /* computed max stack depth */
 
     /* JIT — populated lazily on first frame push.
-     * jit_state: 0 = untried, 1 = failed/unsupported, 2 = compiled.
+     * jit_state: 0 = untried, 1 = failed/unsupported, 2 = compiled,
+     * 3 = supported but rejected because the code cache was full.
      * jit_code: callable native thunk (signature void(void)) when
      * jit_state == 2. The thunk runs a prefix of opcodes against g_vm
      * thread-local state and returns; the caller advances frame->ip by
