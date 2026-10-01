@@ -19,6 +19,11 @@
 #define EIGENSCRIPT_VERSION "dev"
 #endif
 
+/* Each displayed binding replays the observer records that precede it. Keep
+ * a hostile tape from turning that intentionally simple fold into unbounded
+ * multiplicative work in the stepper or the single-threaded DAP server. */
+#define TAPE_OBS_REPLAY_WORK_MAX 1000000ULL
+
 static char *read_whole_file_priv(const char *path, long *out_len) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
@@ -320,6 +325,13 @@ static int tape_parse(Tape *t, long len) {
         }
         if (r.kind) t->recs[t->nrecs++] = r;
         p = nl ? nl + 1 : end;
+    }
+    if ((unsigned long long)t->nobscfg * (unsigned long long)t->nnames >
+        TAPE_OBS_REPLAY_WORK_MAX) {
+        fprintf(stderr, "step: tape observer replay exceeds the %llu-work "
+                "limit; refusing to step (docs/TRACE.md)\n",
+                TAPE_OBS_REPLAY_WORK_MAX);
+        return 0;
     }
     return 1;
 }

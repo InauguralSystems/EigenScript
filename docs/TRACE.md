@@ -301,6 +301,11 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   configuration. Clamping was rejected: a clamped window is a configuration
   the recording run never had, so the label would still be a confident lie,
   just a different one.
+- **Observer replay has an aggregate work limit.** Each binding's trajectory
+  folds the configuration records from the start of the tape. A tape whose
+  number of bindings multiplied by its number of `O` records exceeds
+  1,000,000 is therefore refused with exit 3, rather than allowing one
+  unfiltered stepper display or DAP locals request to monopolize the reader.
 
 **Replay is unaffected**, and deliberately so: `EIGS_REPLAY` re-executes the
 program, so the program's own knob calls run again in the same order. The
