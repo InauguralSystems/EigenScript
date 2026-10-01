@@ -9,6 +9,18 @@
  * now lives on EigsThread (Phase 8); the identifier is a bridge macro. */
 #define MAX_TOKENIZE_DEPTH 64
 
+int eigs_measure_indent(const char *line, int *byte_count) {
+    int width = 0;
+    int bytes = 0;
+    while (line[bytes] == ' ' || line[bytes] == '\t') {
+        if (line[bytes] == '\t') width = (width / 4 + 1) * 4;
+        else width++;
+        bytes++;
+    }
+    if (byte_count) *byte_count = bytes;
+    return width;
+}
+
 /* A lexer error always updates both the LSP's first diagnostic and the
  * parser's error tally. Keep those effects inseparable at every call site. */
 static void lexer_error_at(int line, int col, const char *message) {
@@ -431,15 +443,13 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
 
     while (*p) {
         if (at_line_start && bracket_depth == 0 && layout) {
-            int spaces = 0;
-            while (*p == ' ') { spaces++; p++; col++; }
-            /* #1343: `spaces` is indentation WIDTH (a tab counts 4); `col` is
-             * the token's BYTE offset, which the LSP (utf-8 positions), the
-             * caret printer and --lint --json all read. One byte, one col. */
-            if (*p == '\t') {
-                while (*p == '\t') { spaces += 4; p++; col++; }
-                while (*p == ' ') { spaces++; p++; col++; }
-            }
+            int indent_bytes = 0;
+            int spaces = eigs_measure_indent(p, &indent_bytes);
+            /* #1343: `spaces` is indentation WIDTH; `col` is the token's BYTE
+             * offset, which the LSP (utf-8 positions), the caret printer and
+             * --lint --json all read. One byte, one col. */
+            p += indent_bytes;
+            col += indent_bytes;
             if (*p == '#') {
                 while (*p && *p != '\n') { p++; col++; }
                 if (*p == '\n') { p++; line++; col = 0; }
